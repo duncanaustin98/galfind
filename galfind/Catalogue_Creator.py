@@ -45,7 +45,7 @@ class Catalogue_Creator:
                 phot = funcs.flux_image_to_Jy(fits_cat[phot_label], zero_point)
                 phot_err = funcs.flux_image_to_Jy(fits_cat[err_label], zero_point)
             elif self.flux_or_mag == "mag":
-                phot = funcs.mag_to_flux(fits_cat[phot_label], zero_point)
+                phot = funcs.mag_to_flux(fits_cat[phot_label], u.Jy.to(u.ABmag))
                 phot_err = funcs.mag_to_flux
         else:
             raise(Exception(f"'arr_index' = {self.arr_index} is not valid in {__name__}! Must be either 'None' or type() = int !"))
@@ -55,28 +55,45 @@ class Catalogue_Creator:
 
 class GALFIND_Catalogue_Creator(Catalogue_Creator):
     
-    # DECIDE WHERE TO PUT THE ZP INPUT HERE!
-    def __init__(self, cat_type, aper_diam, flux_or_mag_units = "flux"):
+    def __init__(self, cat_type, aper_diam, zero_point, flux_or_mag = "flux"):
         if cat_type == "sex":
             phot_conv = self.sex_phot_conv
         elif cat_type == "loc_depth":
             phot_conv = self.loc_depth_phot_conv
         else:
             raise(Exception(f"'cat_type' = {cat_type} is not valid in {__name__}! Must be either 'sex' or 'loc_depth' !"))
+        property_conv = self.property_conv
         phot_fits_ext = 0 # check whether this works!
-        arr_index = np.where(aper_diam.value == json.loads(config.get("SExtractor", "APERTURE_DIAMS")))[0][0]
-        super().__init__(phot_conv, phot_fits_ext, flux_or_mag_units)
-            
-    @staticmethod
-    def sex_phot_conv(band, aper_diam_index):
-        pass
-    
-    @staticmethod
-    def loc_depth_phot_conv(band, aper_diam_index):
-        # outputs catalogue column names for photometric fluxes + errors
-        phot_label = f"FLUX_APER_{band}_aper_corr"
-        err_label = f"FLUXERR_APER_{band}_loc_depth"
+        aper_diam_index = np.where(aper_diam.value == json.loads(config.get("SExtractor", "APERTURE_DIAMS")))[0][0]
+        super().__init__(phot_conv, property_conv, phot_fits_ext, aper_diam_index, flux_or_mag, zero_point, phot_fits_ext)
+
+    def sex_phot_conv(self, band):
+        if self.mag_or_flux_units == "flux":
+            phot_label = f"FLUX_APER_{band}"
+            err_label = f"FLUXERR_APER_{band}"
+        elif self.mag_or_flux_units == "mag":
+            phot_label = f"MAG_APER_{band}"
+            err_label = f"MAGERR_APER_{band}"
+        else:
+            raise(Exception("self.mag_or_flux_units = {self.mag_or_flux_units} is invalid! It should be either 'flux' or 'mag' !"))
         return phot_label, err_label
+    
+    def loc_depth_phot_conv(self, band):
+        # outputs catalogue column names for photometric fluxes + errors
+        if self.mag_or_flux_units == "flux":
+            phot_label = f"FLUX_APER_{band}_aper_corr"
+            err_label = f"FLUXERR_APER_{band}_loc_depth"
+        elif self.mag_or_flux_units == "mag":
+            print("Beware that mag errors are asymmetric!")
+            phot_label = f"MAG_APER_{band}_aper_corr"
+            err_label = [f"MAGERR_APER_{band}_l1_loc_depth", f"MAGERR_APER_{band}_u1_loc_depth"] # this doesn't currently work!
+        else:
+            raise(Exception("self.mag_or_flux_units = {self.mag_or_flux_units} is invalid! It should be either 'flux' or 'mag' !"))
+        return phot_label, err_label
+    
+    def property_conv(self, code):
+        property_conv_dict = {}
+        return
     
     # overriding load_photometry from parent class to include .T[aper_diam_index]'s
     def load_photometry(self, fits_cat, band):
@@ -87,14 +104,22 @@ class GALFIND_Catalogue_Creator(Catalogue_Creator):
                 phot = funcs.flux_image_to_Jy(fits_cat[phot_label].T[self.aper_diam_index], zero_point)
                 phot_err = funcs.flux_image_to_Jy(fits_cat[err_label].T[self.aper_diam_index], zero_point)
             elif self.flux_or_mag == "mag":
-                phot = funcs.mag_to_flux(fits_cat[phot_label], zero_point)
-                phot_err = funcs.mag_to_flux
+                print("Beware that mag errors are asymmetric!")
+                phot = funcs.mag_to_flux(fits_cat[phot_label], u.Jy.to(u.ABmag))
+                phot_err = funcs.mag_to_flux # this doesn't currently work!
         else:
             raise(Exception(f"'arr_index' = {self.arr_index} is not valid in {__name__}! Must be either 'None' or type() = int !"))
         return phot, phot_err
     
 
 # %% Common catalogue converters
+
+class JADES_DR1_Catalogue_Creator(Catalogue_Creator):
+    
+    def __init__(self, aper_diam_index, flux_or_mag = "flux"):
+        super().__init__(self.phot_conv, self.property_conv, aper_diam_index, flux_or_mag, u.uJy.to(u.ABmag))
+
+    def JADES_DR1_Catalogue_Creator(self, )
 
 # JADES-DR1
 
