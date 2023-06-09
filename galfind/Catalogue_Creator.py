@@ -104,7 +104,9 @@ def JADES_DR1_phot_conv(band, aper_diam_index):
 
 def JADES_DR1_property_conv(gal_property):
     return
-    
+
+zero_point = 0
+
 JADES_cat_creator = Catalogue_Creator(JADES_DR1_phot_conv, JADES_DR1_property_conv, zero_point)
 
 # JAGUAR
