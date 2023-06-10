@@ -21,6 +21,8 @@ from astropy.io import fits
 
 from . import useful_funcs_austind as funcs
 from . import config
+from . import LePhare
+from . import EAZY
 
 # %% SED_code class
 
@@ -124,6 +126,13 @@ class SED_code(ABC):
         z, PDF = self.extract_z_PDF(cat, ID)
         # plot PDF on ax
         pass
+    
+    @staticmethod
+    def from_name(name):
+        if name == "LePhare":
+            return LePhare()
+        elif name == "EAZY":
+            return EAZY()
 
 # %% Other SED code related functions / dicts
 

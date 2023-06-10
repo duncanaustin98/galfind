@@ -13,6 +13,7 @@ import json
 
 from . import useful_funcs_austind as funcs
 from . import config
+from . import SED_codes
 
 class Catalogue_Creator:
     
@@ -50,6 +51,10 @@ class Catalogue_Creator:
         else:
             raise(Exception(f"'arr_index' = {self.arr_index} is not valid in {__name__}! Must be either 'None' or type() = int !"))
         return phot, phot_err
+    
+    def load_property(self, fits_cat, gal_property, *args):
+        property_label = self.property_conv(gal_property, *args)
+        return fits_cat[property_label]
 
 # %% GALFIND conversion from photometry .fits catalogue row to Photometry_obs class
 
@@ -91,48 +96,57 @@ class GALFIND_Catalogue_Creator(Catalogue_Creator):
             raise(Exception("self.mag_or_flux_units = {self.mag_or_flux_units} is invalid! It should be either 'flux' or 'mag' !"))
         return phot_label, err_label
     
-    def property_conv(self, code):
-        property_conv_dict = {}
-        return
+    def property_conv(self, gal_property, code_name):
+        for code in json.loads(config["Other"]["CODES"]):
+            property_conv_dict = {code: SED_codes.from_name(code).galaxy_properties}
+        return property_conv_dict[code_name][gal_property]
     
     # overriding load_photometry from parent class to include .T[aper_diam_index]'s
     def load_photometry(self, fits_cat, band):
-        if isinstance(self.arr_index, int):
-            zero_point = self.load_zero_point(band) # check that self.zero_point is saved in the correct format and extract ZP for this band
-            phot_label, err_label = self.phot_conv(band)
-            if self.flux_or_mag == "flux":
-                phot = funcs.flux_image_to_Jy(fits_cat[phot_label].T[self.aper_diam_index], zero_point)
-                phot_err = funcs.flux_image_to_Jy(fits_cat[err_label].T[self.aper_diam_index], zero_point)
-            elif self.flux_or_mag == "mag":
-                print("Beware that mag errors are asymmetric!")
-                phot = funcs.mag_to_flux(fits_cat[phot_label], u.Jy.to(u.ABmag))
-                phot_err = funcs.mag_to_flux # this doesn't currently work!
-        else:
-            raise(Exception(f"'arr_index' = {self.arr_index} is not valid in {__name__}! Must be either 'None' or type() = int !"))
+        zero_point = self.load_zero_point(band) # check that self.zero_point is saved in the correct format and extract ZP for this band
+        phot_label, err_label = self.phot_conv(band)
+        if self.flux_or_mag == "flux":
+            phot = funcs.flux_image_to_Jy(fits_cat[phot_label].T[self.aper_diam_index], zero_point)
+            phot_err = funcs.flux_image_to_Jy(fits_cat[err_label].T[self.aper_diam_index], zero_point)
+        elif self.flux_or_mag == "mag":
+            print("Beware that mag errors are asymmetric!")
+            phot = funcs.mag_to_flux(fits_cat[phot_label], u.Jy.to(u.ABmag))
+            phot_err = funcs.mag_to_flux # this doesn't currently work!
         return phot, phot_err
-    
 
 # %% Common catalogue converters
 
 class JADES_DR1_Catalogue_Creator(Catalogue_Creator):
     
-    def __init__(self, aper_diam_index, flux_or_mag = "flux"):
-        super().__init__(self.phot_conv, self.property_conv, aper_diam_index, flux_or_mag, u.uJy.to(u.ABmag))
+    def __init__(self, aper_diam_index, phot_fits_ext, flux_or_mag = "flux"):
+        super().__init__(self.phot_conv, self.property_conv, aper_diam_index, flux_or_mag, u.nJy.to(u.ABmag), phot_fits_ext)
 
-    def JADES_DR1_Catalogue_Creator(self, )
+    def phot_conv(self, band):
+        if self.flux_or_mag == "flux":
+            if self.phot_fits_ext == 4: # CIRC
+                phot_label = f"{band.replace('f', 'F')}_CIRC{self.aper_diam_index}"
+                err_label = f"{phot_label}_e"
+        return phot_label, err_label
+        
+    def property_conv(self, gal_property):
+        property_conv_dict = {"z": ""}
+        return property_conv_dict[gal_property]
+    
+    # overriding load_photometry from parent class to include .T[aper_diam_index]'s
+    def load_photometry(self, fits_cat, band):
+        zero_point = self.load_zero_point(band) # check that self.zero_point is saved in the correct format and extract ZP for this band
+        phot_label, err_label = self.phot_conv(band)
+        if self.flux_or_mag == "flux":
+            phot = funcs.flux_image_to_Jy(fits_cat[phot_label], zero_point)
+            phot_err = funcs.flux_image_to_Jy(fits_cat[err_label], zero_point)
+        elif self.flux_or_mag == "mag":
+            print("Beware that mag errors are asymmetric!")
+            phot = funcs.mag_to_flux(fits_cat[phot_label], u.Jy.to(u.ABmag))
+            phot_err = funcs.mag_to_flux # this doesn't currently work!
+        return phot, phot_err
 
-# JADES-DR1
+JADES_DR1_cat_creator = JADES_DR1_Catalogue_Creator(2, 4) # 0.15 arcsec radius apertures; CIRC .fits table extension
 
-def JADES_DR1_phot_conv(band, aper_diam_index):
-    band.replace("f", "F")
-    return
-
-def JADES_DR1_property_conv(gal_property):
-    return
-
-zero_point = 0
-
-JADES_cat_creator = Catalogue_Creator(JADES_DR1_phot_conv, JADES_DR1_property_conv, zero_point)
 
 # JAGUAR
     
