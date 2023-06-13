@@ -21,8 +21,8 @@ def NIRCam_pipeline(surveys, version, xy_offsets, aper_diams, sed_codes):
 
 if __name__ == "__main__":
     version = "v8a"
-    surveys = ["SMACS-0723"]
-    aper_diams = [0.32, 1.0] * u.arcsec
-    xy_offsets = [[0, 0]]
+    surveys = ["CEERSP1"]
+    aper_diams = [0.32] * u.arcsec
+    xy_offsets = [[100, 0]]
     sed_codes = [LePhare()]
     NIRCam_pipeline(surveys, version, xy_offsets, aper_diams, sed_codes)

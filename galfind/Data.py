@@ -109,9 +109,9 @@ class Data:
             survey_im_dirs = {"CLIO": "CLIO/mosaic_1084", "El-Gordo": "elgordo/mosaic_1084", "GLASS": "GLASS-12/mosaic_1084", "NEP": "NEP/mosaic_1084", \
                           "NEP-2": "NEP-2/mosaic_1084", "NEP-3": "NEP-3/mosaic_1084", "SMACS-0723": "SMACS0723/mosaic_1084", "MACS-0416": "MACS0416/mosaic_1084_v3"} | ceers_im_dirs
         elif version == "v8a":
-            ceers_im_dirs = {f"CEERSP{str(i + 1)}": f"ceers/mosaic_1084_182/P{str(i + 1)}" for i in range(10)}
+            ceers_im_dirs = {f"CEERSP{str(i + 1)}": f"CEERSP{str(i + 1)}/mosaic_1084_182" for i in range(10)}
             survey_im_dirs = {"CLIO": "CLIO/mosaic_1084_182", "El-Gordo": "elgordo/mosaic_1084_182", "NEP-1": "NEP/mosaic_1084_182", "NEP-2": "NEP-2/mosaic_1084_182", \
-                              "NEP-3": "NEP-3/mosaic_1084_182", "MACS-0416": "MACS0416/mosaic_1084_182", "GLASS": "GLASS-12/mosaic_1084_182", "SMACS-0723": "SMACS0723/mosaic_1084_182"} | ceers_im_dirs
+                              "NEP-3": "NEP-3/mosaic_1084_182", "NEP-4": "NEP-4/mosaic_1084_182", "MACS-0416": "MACS0416/mosaic_1084_182", "GLASS": "GLASS-12/mosaic_1084_182", "SMACS-0723": "SMACS0723/mosaic_1084_182"} | ceers_im_dirs
             
         survey_im_dirs = {key: f"/raid/scratch/data/jwst/{value}" for (key, value) in survey_im_dirs.items()}
         survey_dir = survey_im_dirs[survey]
