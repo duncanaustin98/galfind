@@ -7,4 +7,4 @@ Python package for easy UV, optical and infra-red photometric and spectroscopic 
 3) If you have cloned locally on morgan, you can use ```git push -u origin {new_master_branch_name}``` to push to a new branch in the master galfind repository and ```git pull``` to pull files from the master galfind repository located at /nvme/scratch/work/austind/GALFIND. If you have cloned remotely, you will need to push and pull via GitHub. These are completed via pull requests which I still need to test and learn more about. These push commands will merge your (tested!) code with the master galfind code and MUST be merged with a galfind branch rather than main as to not overwrite the working pipeline.
 # PLEASE NOTE: If you intend to add any new features to galfind, please raise an issue on GitHub and inform me at duncan.austin@postgrad.manchester.ac.uk or via the EPOCHS slack channel
 
-
+To install your local version of galfind for testing, first make a new environment and then run ```pip install -e .``` from your clones GALFIND folder.
