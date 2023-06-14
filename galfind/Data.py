@@ -198,7 +198,7 @@ class Data:
         print(self.__repr__)
         return self
     
-# %% Class methods
+# %% Methods
         
     def load_data(self, band, incl_mask = True):
         im_path = self.im_paths[band]

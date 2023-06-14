@@ -13,18 +13,21 @@ import pyregion
 from astropy.io import fits
 from pathlib import Path
 from astropy.wcs import WCS
+import astropy.units as u
 
 from .Data import Data
 from .useful_funcs_austind import Galaxy
 from . import useful_funcs_austind as funcs
+from .Catalogue_Creator import GALFIND_Catalogue_Creator
 
 
 class Catalogue:
     # later on, the gal_arr should be calculated from the Instrument and sex_cat path, with SED codes already given
-    def __init__(self, gals, cat_path, survey, codes = []): #, UV_PDF_path):
+    def __init__(self, gals, cat_path, survey, cat_creator, codes = []): #, UV_PDF_path):
         self.survey = survey
         self.cat_path = cat_path
         #self.UV_PDF_path = UV_PDF_path
+        self.cat_creator = cat_creator
         self.codes = codes
         self.gals = gals
         
@@ -43,34 +46,34 @@ class Catalogue:
         
     # %% alternative constructors
     @classmethod
-    def from_NIRCam_pipeline(cls, survey, version, aper_diams, xy_offset = [0, 0]):
+    def from_NIRCam_pipeline(cls, survey, version, aper_diams, cat_creator, xy_offset = [0, 0]):
         # make 'Data' object
         data = Data.from_NIRCam_pipeline(survey, version)
-        return cls.from_data(data, aper_diams, xy_offset = xy_offset)
+        return cls.from_data(data, aper_diams, cat_creator, xy_offset = xy_offset)
     
     @classmethod
-    def from_data(cls, data, aper_diams, cat_type = "loc_depth", xy_offset = [0, 0]):
+    def from_data(cls, data, aper_diams, cat_creator, xy_offset = [0, 0]):
         # make masked local depth catalogue from the 'Data' object
         data.combine_sex_cats()
         data.calc_depths(xy_offset, aper_diams)
-        if cat_type == "loc_depth":
+        if cat_creator.cat_type == "loc_depth":
             data.make_loc_depth_cat(aper_diams)
         # load the catalogue that has just been created into a 'Catalogue' object
-        if cat_type == "loc_depth":
+        if cat_creator.cat_type == "loc_depth":
             cat_path = data.loc_depth_cat_path
-        elif cat_type == "sex":
+        elif cat_creator.cat_type == "sex":
             cat_path = data.sex_cat_master_path
-        cat = cls.from_sex_cat(cat_path, data.instrument, data.survey)
+        cat = cls.from_sex_cat(cat_path, data.instrument, data.survey, cat_creator)
         cat.mask(data)
         return cat
     
     @classmethod
-    def from_sex_cat(cls, cat_path, instrument, survey):
+    def from_sex_cat(cls, cat_path, instrument, survey, cat_creator):
         # open the catalogue
         cat = cls.cat_from_path(cat_path)
         # produce galaxy array from each row of the catalogue
-        gals = np.array([Galaxy.from_sex_cat_row(row, instrument) for row in cat])
-        return cls(gals, cat_path, survey)
+        gals = np.array([Galaxy.from_sex_cat_row(row, instrument, cat_creator) for row in cat])
+        return cls(gals, cat_path, survey, cat_creator)
     
     @classmethod
     def from_photo_z_cat(cls, cat_path, instrument, survey, codes):

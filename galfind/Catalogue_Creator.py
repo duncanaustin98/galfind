@@ -17,14 +17,15 @@ from . import SED_codes
 
 class Catalogue_Creator:
     
-    def __init__(self, phot_conv, property_conv, aper_diam_index, flux_or_mag, zero_point = u.Jy.to(u.ABmag), phot_fits_ext = 0):
+    def __init__(self, phot_conv, property_conv, aper_diam_index, flux_or_mag, min_flux_pc_err, zero_point = u.Jy.to(u.ABmag), phot_fits_ext = 0):
         self.phot_conv = phot_conv
         self.property_conv = property_conv
         self.aper_diam_index = aper_diam_index # set to 'None' by default as very few people actually put arrays in catalogue columns
         self.flux_or_mag = flux_or_mag # either "flux" or "mag"
+        self.min_flux_pc_err = min_flux_pc_err
         self.zero_point = zero_point # must be astropy units; can be either integer or dict of {band: zero_point}
         self.phot_fits_ext = phot_fits_ext # only compatible with .fits currently
-    
+        
     def load_zero_point(self, band):
         if isinstance(self.zero_point, dict):
             if band in self.zero_point.keys():
@@ -45,6 +46,7 @@ class Catalogue_Creator:
             if self.flux_or_mag == "flux":
                 phot = funcs.flux_image_to_Jy(fits_cat[phot_label], zero_point)
                 phot_err = funcs.flux_image_to_Jy(fits_cat[err_label], zero_point)
+                phot, phot_err = self.apply_min_flux_pc_err(phot, phot_err)
             elif self.flux_or_mag == "mag":
                 phot = funcs.mag_to_flux(fits_cat[phot_label], u.Jy.to(u.ABmag))
                 phot_err = funcs.mag_to_flux
@@ -55,12 +57,20 @@ class Catalogue_Creator:
     def load_property(self, fits_cat, gal_property, *args):
         property_label = self.property_conv(gal_property, *args)
         return fits_cat[property_label]
+    
+    def apply_min_flux_pc_err(self, flux, err):
+        # encorporate minimum flux error
+        if err / flux < self.min_flux_err_pc / 100:
+            err = self.min_flux_err_pc * flux / 100
+        return flux, err
 
 # %% GALFIND conversion from photometry .fits catalogue row to Photometry_obs class
 
 class GALFIND_Catalogue_Creator(Catalogue_Creator):
     
-    def __init__(self, cat_type, aper_diam, zero_point, flux_or_mag = "flux"):
+    def __init__(self, cat_type, aper_diam, min_flux_pc_err, zero_point, flux_or_mag = "flux"):
+        self.cat_type = cat_type
+        self.aper_diam = aper_diam
         if cat_type == "sex":
             phot_conv = self.sex_phot_conv
         elif cat_type == "loc_depth":
@@ -69,8 +79,9 @@ class GALFIND_Catalogue_Creator(Catalogue_Creator):
             raise(Exception(f"'cat_type' = {cat_type} is not valid in {__name__}! Must be either 'sex' or 'loc_depth' !"))
         property_conv = self.property_conv
         phot_fits_ext = 0 # check whether this works!
-        aper_diam_index = np.where(aper_diam.value == json.loads(config.get("SExtractor", "APERTURE_DIAMS")))[0][0]
-        super().__init__(phot_conv, property_conv, phot_fits_ext, aper_diam_index, flux_or_mag, zero_point, phot_fits_ext)
+        aper_diam_index = int(json.loads(config.get("SExtractor", "APERTURE_DIAMS")).index(aper_diam.value))
+        #aper_diam_index = np.where(aper_diam.value == json.loads(config.get("SExtractor", "APERTURE_DIAMS")))[0][0]
+        super().__init__(phot_conv, property_conv, phot_fits_ext, aper_diam_index, flux_or_mag, min_flux_pc_err, zero_point, phot_fits_ext)
 
     def sex_phot_conv(self, band):
         if self.mag_or_flux_units == "flux":
@@ -108,6 +119,7 @@ class GALFIND_Catalogue_Creator(Catalogue_Creator):
         if self.flux_or_mag == "flux":
             phot = funcs.flux_image_to_Jy(fits_cat[phot_label].T[self.aper_diam_index], zero_point)
             phot_err = funcs.flux_image_to_Jy(fits_cat[err_label].T[self.aper_diam_index], zero_point)
+            phot, phot_err = self.apply_min_flux_pc_err(phot, phot_err)
         elif self.flux_or_mag == "mag":
             print("Beware that mag errors are asymmetric!")
             phot = funcs.mag_to_flux(fits_cat[phot_label], u.Jy.to(u.ABmag))
@@ -118,8 +130,8 @@ class GALFIND_Catalogue_Creator(Catalogue_Creator):
 
 class JADES_DR1_Catalogue_Creator(Catalogue_Creator):
     
-    def __init__(self, aper_diam_index, phot_fits_ext, flux_or_mag = "flux"):
-        super().__init__(self.phot_conv, self.property_conv, aper_diam_index, flux_or_mag, u.nJy.to(u.ABmag), phot_fits_ext)
+    def __init__(self, aper_diam_index, phot_fits_ext, min_flux_err_pc = None, flux_or_mag = "flux"):
+        super().__init__(self.phot_conv, self.property_conv, aper_diam_index, flux_or_mag, min_flux_err_pc, u.nJy.to(u.ABmag), phot_fits_ext)
 
     def phot_conv(self, band):
         if self.flux_or_mag == "flux":
@@ -147,7 +159,7 @@ class JADES_DR1_Catalogue_Creator(Catalogue_Creator):
 
 JADES_DR1_cat_creator = JADES_DR1_Catalogue_Creator(2, 4) # 0.15 arcsec radius apertures; CIRC .fits table extension
 
-
 # JAGUAR
+
     
     

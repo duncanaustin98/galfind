@@ -165,8 +165,7 @@ class Simulation(ABC):
         
         # load depths from specific survey
         depths = Catalogue.load_depths(self.survey_depth_name)
-        
-        pass
+
     
     @abstractmethod
     def flux_col_name(self, band):
@@ -204,8 +203,9 @@ class Photometry_obs:
         return (self.flux_Jy_errs * const.c / (self.instrument.wav ** 2)).to(u.erg / (u.s * (u.cm ** 2) * u.Angstrom))
 
     @classmethod # not a gal object here, more like a catalogue row
-    def get_phot_from_sex(cls, sex_cat_row, instrument, aper_diam = 0.32 * u.arcsec, min_flux_err_pc = 5): # single unit of sextractor catalogue
-        aper_diam_index = int(json.loads(config.get("SExtractor", "APERTURE_DIAMS")).index(aper_diam.value))
+    def get_phot_from_sex(cls, sex_cat_row, instrument, cat_creator): # single unit of sextractor catalogue
+        # below is contained within cat_creator
+        #aper_diam_index = int(json.loads(config.get("SExtractor", "APERTURE_DIAMS")).index(cat_creator.aper_diam.value))
         fluxes = []
         flux_errs = []
         #print("instrument = ", instrument)
@@ -214,20 +214,15 @@ class Photometry_obs:
         #print("instrument_copy = ", instrument_copy)
         for (band, zero_point) in zip(instrument_copy.bands, instrument_copy.zero_points.values()):
             try:
-                flux = sex_cat_row[f"FLUX_APER_{band}_aper_corr"].T[aper_diam_index]
-                err = sex_cat_row[f"FLUXERR_APER_{band}_loc_depth"].T[aper_diam_index]
-                # encorporate minimum flux error
-                if err / flux < min_flux_err_pc / 100:
-                    err = min_flux_err_pc * flux / 100
-                flux_Jy = flux_image_to_Jy(flux, zero_point)
-                err_Jy = flux_image_to_Jy(err, zero_point)
-                fluxes.append(flux_Jy.value)
-                flux_errs.append(err_Jy.value)
+                flux, err = cat_creator.load_photometry(sex_cat_row, band)
+                fluxes.append(flux.value)
+                flux_errs.append(err.value)
             except:
+                # no data for the relevant band within the catalogue
                 instrument.remove_band(band)
                 print(f"{band} flux not loaded")
-        phot_obs = cls(instrument, fluxes * u.Jy, flux_errs * u.Jy, aper_diam)
-        phot_obs.load_local_depths(sex_cat_row, instrument, aper_diam_index)
+        phot_obs = cls(instrument, fluxes * u.Jy, flux_errs * u.Jy, cat_creator.aper_diam)
+        phot_obs.load_local_depths(sex_cat_row, instrument, cat_creator.aper_diam_index)
         return phot_obs
         
     @classmethod
@@ -594,9 +589,9 @@ class Galaxy:
         self.mask_flags = {}
         
     @classmethod
-    def from_sex_cat_row(cls, sex_cat_row, instrument):
+    def from_sex_cat_row(cls, sex_cat_row, instrument, cat_creator):
         # load the photometry from the sextractor catalogue
-        phot = Photometry_obs.get_phot_from_sex(sex_cat_row, instrument)
+        phot = Photometry_obs.get_phot_from_sex(sex_cat_row, instrument, cat_creator)
         # load the ID and Sky Coordinate from the source catalogue
         ID = sex_cat_row["NUMBER"]
         sky_coord = SkyCoord(sex_cat_row["ALPHA_J2000"] * u.deg, sex_cat_row["DELTA_J2000"] * u.deg, frame = "icrs")
