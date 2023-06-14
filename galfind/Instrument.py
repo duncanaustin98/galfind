@@ -155,7 +155,9 @@ class Instrument:
         elif name == "MIRI":
             return MIRI()
         elif name == "ACS":
-            return ACS()
+            return ACS_WFC()
+        elif name == "WFC3IR":
+            return WFC3IR()
         else:
             raise(Exception(f"Instrument name: {name} does not exist in 'Instrument.from_name()'!"))
 
@@ -197,21 +199,46 @@ class MIRI(Instrument):
     def new_instrument(self, excl_bands = []):
         return MIRI(excl_bands)
     
-class ACS(Instrument):
+class ACS_WFC(Instrument):
     
     def __init__(self, excl_bands = []):
-        bands = []
-        band_wavelengths = {}
+        bands = ["f435W", "f606W", "f775W", "f814W", "f850LP"]
+        # Wavelengths corrrespond to lambda effective of the filters from SVO Filter Profile Service
+        band_wavelengths = {"f435W":4341.62, "f606W":5809.26, "f775W":7652.44, "f814W":7973.39, "f850LP":9004.99}
         band_wavelengths = {key: value * u.Angstrom for (key, value) in band_wavelengths.items()} # convert each individual value to Angstrom
-        band_FWHMs = {}
+        # FWHMs corrrespond to FWHM of the filters from SVO Filter Profile Service
+        band_FWHMs = {"f435W":900.04, "f606W":2253.40, "f775W":1517.31, "f814W":2098.15, "f850LP":1273.50}
         band_FWHMs = {key: value * u.Angstrom for (key, value) in band_FWHMs.items()} # convert each individual value to Angstrom
-        super().__init__("ACS", bands, band_wavelengths, band_FWHMs, zero_points, pixel_scales, excl_bands)
+        super().__init__("ACS_WFC", bands, band_wavelengths, band_FWHMs, zero_points, pixel_scales, excl_bands)
     
     def aper_corr(self, aper_diam, band):
-        pass
+        aper_corr_path = f'{config["DEFAULT"]["GALFIND_DIR"]}/hst_acs_wfc_aper_corr.dat'
+        aper_corr_data = np.loadtxt(aper_corr_path, comments = "#", dtype=[('band', 'U10'), ('0.32', 'f4'), ('0.5', 'f4'), ('1.0', 'f4'), ('1.5', 'f4'), ('2.0', 'f4')])
+        return aper_corr_data[aper_corr_data['band'] == band.upper()][str(aper_diam)][0]
+    
+
+    def new_instrument(self, excl_bands = []):
+        return ACS_WFC(excl_bands)
+   
+class WFC3IR(Instrument):
+
+    def __init__(self, excl_bands = []):
+        bands = ["f105W",  "f125W", "f140W", "f160W"]
+        # Wavelengths corrrespond to lambda effective of the filters from SVO Filter Profile Service
+        band_wavelengths = { "f105W":10430.83, "f125W":12363.55, "f140W":13734.66, "f160W":15278.47}
+        band_wavelengths = {key: value * u.Angstrom for (key, value) in band_wavelengths.items()} # convert each individual value to Angstrom
+        # FWHMs corrrespond to FWHM of the filters from SVO Filter Profile Service
+        band_FWHMs = {"f105W":2894.94,  "f125W":2993.79, "f140W":3933.32, "f160W":2876.73}
+        band_FWHMs = {key: value * u.Angstrom for (key, value) in band_FWHMs.items()} # convert each individual value to Angstrom
+        super().__init__("WFC3IR", bands, band_wavelengths, band_FWHMs, zero_points, pixel_scales, excl_bands)
+    
+    def aper_corr(self, aper_diam, band):
+        aper_corr_path = f'{config["DEFAULT"]["GALFIND_DIR"]}/hst_wfc3ir_aper_corr.dat'
+        aper_corr_data = np.loadtxt(aper_corr_path, comments = "#", dtype=[('band', 'U10'), ('0.32', 'f4'), ('0.5', 'f4'), ('1.0', 'f4'), ('1.5', 'f4'), ('2.0', 'f4')])
+        return aper_corr_data[aper_corr_data['band'] == band.upper()][str(aper_diam)][0]
     
     def new_instrument(self, excl_bands = []):
-        return ACS(excl_bands)
+        return WFC3IR(excl_bands)
     
 class Combined_Instrument(Instrument):
     

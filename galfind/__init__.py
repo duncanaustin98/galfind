@@ -29,7 +29,7 @@ else:
     config.set("DEFAULT", "IS_CLUSTER", "NO")
 
 from .Data import Data
-from .Instrument import Instrument, ACS, NIRCam, MIRI, Combined_Instrument
+from .Instrument import Instrument, ACS_WFC,WFC3IR, NIRCam, MIRI, Combined_Instrument
 from .Catalogue import Catalogue
 from .SED_codes import SED_code
 from .LePhare import LePhare
