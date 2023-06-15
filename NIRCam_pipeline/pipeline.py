@@ -13,16 +13,17 @@ import numpy as np
 
 from galfind import Catalogue, LePhare, EAZY
 
-def NIRCam_pipeline(surveys, version, xy_offsets, aper_diams, sed_codes):
+def NIRCam_pipeline(surveys, version, xy_offsets, aper_diams, sed_codes, forced_phot_band):
     for survey, xy_offset in zip(surveys, xy_offsets):
-        cat = Catalogue.from_NIRCam_pipeline(survey, version, aper_diams, xy_offset)
+        cat = Catalogue.from_NIRCam_pipeline(survey, version, aper_diams, xy_offset, forced_phot_band)
         for code in sed_codes:
             cat = code.fit_cat(cat)
 
 if __name__ == "__main__":
-    version = "v8a"
-    surveys = ["CEERSP1"]
+    version = "lit_version"
+    surveys = ["JADES-DR1"]
     aper_diams = [0.32] * u.arcsec
-    xy_offsets = [[100, 0]]
-    sed_codes = [LePhare()]
-    NIRCam_pipeline(surveys, version, xy_offsets, aper_diams, sed_codes)
+    xy_offsets = [[0, 0]]
+    sed_codes = []#[LePhare()]
+    forced_phot_band = "f444W"
+    NIRCam_pipeline(surveys, version, xy_offsets, aper_diams, sed_codes, forced_phot_band)
