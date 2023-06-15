@@ -115,6 +115,8 @@ class Data:
         elif version == "v8b":
             ceers_experiment = {"CEERSP9": "CEERSP9-Experiment/mosaic_aaronwisp"}
             survey_im_dirs = ceers_experiment
+        elif version == "lit_version":
+            survey_im_dirs = {"JADES-DR1": "JADES/DR1"}
                 
         survey_im_dirs = {key: f"/raid/scratch/data/jwst/{value}" for (key, value) in survey_im_dirs.items()}
         survey_dir = survey_im_dirs[survey]
@@ -123,7 +125,10 @@ class Data:
         nadams_seg_path_arr = glob.glob(f"{survey_dir}/*_seg.fits")
         nadams_bkg_path_arr = glob.glob(f"{survey_dir}/*_bkg.fits")
         
-        im_path_arr = glob.glob(f"{survey_dir}/*_i2d*.fits")
+        if version == "lit_version":
+            im_path_arr = glob.glob(f"{survey_dir}/*_drz.fits")
+        else:
+            im_path_arr = glob.glob(f"{survey_dir}/*_i2d*.fits")
         im_path_arr = np.array([path for path in im_path_arr if path not in nadams_seg_path_arr and path not in nadams_bkg_path_arr])
         
         # obtain available bands from imaging without having to hard code these
