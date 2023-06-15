@@ -21,8 +21,6 @@ from astropy.io import fits
 
 from . import useful_funcs_austind as funcs
 from . import config
-from . import LePhare
-from . import EAZY
 
 # %% SED_code class
 
@@ -32,6 +30,10 @@ class SED_code(ABC):
         self.code_name = code_name
         self.galaxy_properties = galaxy_properties
         self.code_dir = f"{config['DEFAULT']['GALFIND_WORK']}/{code_name}"
+    
+    @classmethod
+    def from_name(cls):
+        return cls()
     
     def load_photometry(self, cat, SED_input_bands, out_units, no_data_val, upper_sigma_lim = {}):
         # load in raw photometry from the galaxies in the catalogue and convert to appropriate units
@@ -75,7 +77,7 @@ class SED_code(ABC):
         in_path = self.make_in(cat, *args, **kwargs)
         out_folder = funcs.split_dir_name(in_path.replace("input", "output"), "dir")
         out_path = f"{out_folder}/{funcs.split_dir_name(in_path, 'name')[:-3]}.out"
-        sed_folder = f"{out_folder}/SEDs"
+        sed_folder = f"{out_folder}/SEDs/{cat.cat_creator.min_flux_pc_err}pc"
         os.makedirs(sed_folder, exist_ok = True)
         if not Path(out_path).is_file() or config["DEFAULT"].getboolean("OVERWRITE"):
             self.run_fit(in_path, out_path, sed_folder, *args, **kwargs)
@@ -126,21 +128,14 @@ class SED_code(ABC):
         z, PDF = self.extract_z_PDF(cat, ID)
         # plot PDF on ax
         pass
-    
-    @staticmethod
-    def from_name(name):
-        if name == "LePhare":
-            return LePhare()
-        elif name == "EAZY":
-            return EAZY()
 
 # %% Other SED code related functions / dicts
 
-def get_SED_code(code):
-    if code == "LePhare":
-        return LePhare()
-    elif code == "EAZY":
-        return EAZY()
+# def get_SED_code(code):
+#     if code == "LePhare":
+#         return LePhare()
+#     elif code == "EAZY":
+#         return EAZY()
 
 # LePhare
 LePhare_outputs = {"z": "Z_BEST", "mass": "MASS_BEST"}

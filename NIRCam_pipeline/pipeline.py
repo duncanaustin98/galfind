@@ -19,14 +19,14 @@ def NIRCam_pipeline(surveys, version, xy_offsets, aper_diams, sed_codes, min_flu
         # make appropriate galfind catalogue creator for each aperture diameter
         cat_creator = GALFIND_Catalogue_Creator(cat_type, aper_diams[0], pc_err, NIRCam_ZP)
         for survey, xy_offset in zip(surveys, xy_offsets):
-            cat = Catalogue.from_NIRCam_pipeline(survey, version, aper_diams, xy_offset)
+            cat = Catalogue.from_NIRCam_pipeline(survey, version, aper_diams, cat_creator, xy_offset)
             for code in sed_codes:
                 cat = code.fit_cat(cat)
 
 if __name__ == "__main__":
     version = "v8a"
     cat_type = "loc_depth"
-    surveys = ["NEP-3"]
+    surveys = ["NEP-2"]
     aper_diams = [0.32] * u.arcsec
     xy_offsets = [[100, 0]]
     sed_codes = [LePhare()]

@@ -33,7 +33,7 @@ class Catalogue_Creator:
                 zero_point = self.zero_point[band]
             else:
                 raise(Exception(f"{band} not in self.zero_point = {self.zero_point_dict} in {__name__} !"))
-        elif isinstance(self.zero_point, int):
+        elif isinstance(self.zero_point, float):
             zero_point = self.zero_point
         else:
             raise(Exception(f"self.zero_point of type {type(self.zero_point)} in {__name__} must be of type 'dict' or 'int' !"))
@@ -60,8 +60,8 @@ class Catalogue_Creator:
     
     def apply_min_flux_pc_err(self, flux, err):
         # encorporate minimum flux error
-        if err / flux < self.min_flux_err_pc / 100:
-            err = self.min_flux_err_pc * flux / 100
+        if err / flux < self.min_flux_pc_err / 100:
+            err = self.min_flux_pc_err * flux / 100
         return flux, err
 
 # %% GALFIND conversion from photometry .fits catalogue row to Photometry_obs class
@@ -81,30 +81,30 @@ class GALFIND_Catalogue_Creator(Catalogue_Creator):
         phot_fits_ext = 0 # check whether this works!
         aper_diam_index = int(json.loads(config.get("SExtractor", "APERTURE_DIAMS")).index(aper_diam.value))
         #aper_diam_index = np.where(aper_diam.value == json.loads(config.get("SExtractor", "APERTURE_DIAMS")))[0][0]
-        super().__init__(phot_conv, property_conv, phot_fits_ext, aper_diam_index, flux_or_mag, min_flux_pc_err, zero_point, phot_fits_ext)
+        super().__init__(phot_conv, property_conv, aper_diam_index, flux_or_mag, min_flux_pc_err, zero_point, phot_fits_ext)
 
     def sex_phot_conv(self, band):
-        if self.mag_or_flux_units == "flux":
+        if self.flux_or_mag == "flux":
             phot_label = f"FLUX_APER_{band}"
             err_label = f"FLUXERR_APER_{band}"
-        elif self.mag_or_flux_units == "mag":
+        elif self.flux_or_mag == "mag":
             phot_label = f"MAG_APER_{band}"
             err_label = f"MAGERR_APER_{band}"
         else:
-            raise(Exception("self.mag_or_flux_units = {self.mag_or_flux_units} is invalid! It should be either 'flux' or 'mag' !"))
+            raise(Exception("self.flux_or_mag = {self.flux_or_mag} is invalid! It should be either 'flux' or 'mag' !"))
         return phot_label, err_label
     
     def loc_depth_phot_conv(self, band):
         # outputs catalogue column names for photometric fluxes + errors
-        if self.mag_or_flux_units == "flux":
+        if self.flux_or_mag == "flux":
             phot_label = f"FLUX_APER_{band}_aper_corr"
             err_label = f"FLUXERR_APER_{band}_loc_depth"
-        elif self.mag_or_flux_units == "mag":
+        elif self.flux_or_mag == "mag":
             print("Beware that mag errors are asymmetric!")
             phot_label = f"MAG_APER_{band}_aper_corr"
             err_label = [f"MAGERR_APER_{band}_l1_loc_depth", f"MAGERR_APER_{band}_u1_loc_depth"] # this doesn't currently work!
         else:
-            raise(Exception("self.mag_or_flux_units = {self.mag_or_flux_units} is invalid! It should be either 'flux' or 'mag' !"))
+            raise(Exception("self.flux_or_mag = {self.flux_or_mag} is invalid! It should be either 'flux' or 'mag' !"))
         return phot_label, err_label
     
     def property_conv(self, gal_property, code_name):
@@ -130,8 +130,8 @@ class GALFIND_Catalogue_Creator(Catalogue_Creator):
 
 class JADES_DR1_Catalogue_Creator(Catalogue_Creator):
     
-    def __init__(self, aper_diam_index, phot_fits_ext, min_flux_err_pc = None, flux_or_mag = "flux"):
-        super().__init__(self.phot_conv, self.property_conv, aper_diam_index, flux_or_mag, min_flux_err_pc, u.nJy.to(u.ABmag), phot_fits_ext)
+    def __init__(self, aper_diam_index, phot_fits_ext, min_flux_pc_err = None, flux_or_mag = "flux"):
+        super().__init__(self.phot_conv, self.property_conv, aper_diam_index, flux_or_mag, min_flux_pc_err, u.nJy.to(u.ABmag), phot_fits_ext)
 
     def phot_conv(self, band):
         if self.flux_or_mag == "flux":
