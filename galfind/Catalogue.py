@@ -57,7 +57,7 @@ class Catalogue:
         data.combine_sex_cats()
         data.calc_depths(xy_offset, aper_diams)
         if cat_creator.cat_type == "loc_depth":
-            data.make_loc_depth_cat(aper_diams)
+            data.make_loc_depth_cat(aper_diams, min_flux_pc_err = cat_creator.min_flux_pc_err)
         # load the catalogue that has just been created into a 'Catalogue' object
         if cat_creator.cat_type == "loc_depth":
             cat_path = data.loc_depth_cat_path
