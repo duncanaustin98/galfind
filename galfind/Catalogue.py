@@ -43,9 +43,9 @@ class Catalogue:
         
     # %% alternative constructors
     @classmethod
-    def from_NIRCam_pipeline(cls, survey, version, aper_diams, xy_offset = [0, 0], forced_phot_band = "f444W"):
+    def from_NIRCam_pipeline(cls, survey, version, aper_diams, xy_offset = [0, 0], forced_phot_band = "f444W", excl_bands = []):
         # make 'Data' object
-        data = Data.from_NIRCam_pipeline(survey, version)
+        data = Data.from_NIRCam_pipeline(survey, version, excl_bands = excl_bands)
         return cls.from_data(data, aper_diams, xy_offset = xy_offset, forced_phot_band = forced_phot_band)
     
     @classmethod
