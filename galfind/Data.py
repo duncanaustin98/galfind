@@ -7,7 +7,7 @@ Created on Wed May 17 14:20:31 2023
 """
 
 from __future__ import absolute_import
-
+from photutils import Background2D, MedianBackground, SkyCircularAperture, aperture_photometry
 import numpy as np
 from astropy.io import fits
 from random import randrange
@@ -19,7 +19,7 @@ from mpl_toolkits.axes_grid1 import make_axes_locatable
 from astropy.wcs.utils import pixel_to_skycoord
 from astropy.coordinates import search_around_sky, SkyCoord
 from matplotlib.colors import LogNorm
-from astropy.table import Table, hstack
+from astropy.table import Table, hstack, Column
 import copy
 import pyregion
 import subprocess
@@ -445,14 +445,26 @@ class Data:
     @run_in_dir(path = config['DEFAULT']['GALFIND_DIR'])
     def make_sex_cats(self, forced_phot_band = "f444W"):
         # make individual forced photometry catalogues
+        force_pho_size = self.im_shapes[forced_phot_band]
         for band in self.instrument.bands:
             # if not run before
-            if not Path(f"{config['DEFAULT']['GALFIND_WORK']}/SExtractor/{self.instrument.name}/{self.version}/{self.survey}/{self.survey}_{band}_{forced_phot_band}_sel_cat_{self.version}.fits").is_file():
+            path = Path(f"{config['DEFAULT']['GALFIND_WORK']}/SExtractor/{self.instrument.name}/{self.version}/{self.survey}/{self.survey}_{band}_{forced_phot_band}_sel_cat_{self.version}.fits")
+            if not path.is_file():
                 # SExtractor bash script python wrapper
-                process = subprocess.Popen([f"./make_sex_cat.sh", config['DEFAULT']['GALFIND_WORK'], self.im_paths[band], str(self.im_pixel_scales[band].value), \
-                                    str(self.img_zps[band].value), self.instrument.name, self.survey, band, self.version, \
-                                        forced_phot_band, self.im_paths[forced_phot_band]])
-                process.wait()
+                if force_pho_size == self.im_shapes[band] and self.wht_types[band] == self.wht_types[forced_phot_band]:
+                    process = subprocess.Popen([f"./make_sex_cat.sh", config['DEFAULT']['GALFIND_WORK'], self.im_paths[band], str(self.im_pixel_scales[band].value), \
+                                        str(self.img_zps[band].value), self.instrument.name, self.survey, band, self.version, \
+                                            forced_phot_band, self.im_paths[forced_phot_band], self.wht_paths[band], str(self.wht_exts[band]), \
+                                            self.im_exts[band], self.wht_paths[forced_phot_band], self.wht_exts[forced_phot_band], self.wht_types[band], 
+                                            str(self.im_exts[forced_phot_band]), f"{config['DEFAULT']['GALFIND_DIR']}/config/"])
+                    process.wait()
+                # Use photutils
+                else:
+                    forcephot_path = path = Path(f"{config['DEFAULT']['GALFIND_WORK']}/SExtractor/{self.instrument.name}/{self.version}/{self.survey}/{self.survey}_{forced_phot_band}_{forced_phot_band}_sel_cat_{self.version}.fits")
+          
+                    self.forced_photometry(band, forced_phot_band, path, forcephot_path)
+                    
+             
             print(f"Finished making SExtractor catalogue for {self.survey} {self.version} {band}!")
         self.sex_cats = {band: f"{config['DEFAULT']['GALFIND_WORK']}/SExtractor/{self.instrument.name}/{self.version}/{self.survey}/{self.survey}_{band}_{forced_phot_band}_sel_cat_{self.version}.fits" for band in self.instrument.bands}
     
@@ -482,6 +494,75 @@ class Data:
     def make_sex_plusplus_cat(self):
         pass
     
+    def forced_photometry(self, band, forced_phot_band, path, forcephot_path, radii = [0.16, 0.25, 0.5, 0.75, 1]*u.arcsec, ra_col='ALPHA_J2000', dec_col='DELTA_J2000', coord_unit=u.deg, id_col='NUMBER', x_col='X_IMAGE', y_col='Y_IMAGE'):
+        
+        catalog = Table.read(forcephot_path, character_as_bytes = False)
+        
+        image = self.im_paths[band]
+        with fits.open(image) as hdul:
+            im_ext = self.im_exts[band]
+            image = hdul[im_ext].data
+            wcs = WCS(hdul[im_ext].header)
+
+        assert(type(image) == np.ndarray)  
+  
+        assert(type(catalog) == Table)
+
+        ra = catalog[ra_col]
+        dec = catalog[dec_col]
+         # Make SkyCoord from catlog
+        positions = SkyCoord(ra, dec, unit=coord_unit)
+    
+        # Define radii in sky units
+        # This checks if radii is iterable and if not makes it a list
+        try:
+            iter(radii)
+        except TypeError:
+            radii = [radii]
+        apertures = []
+
+        for rad in radii:
+            aperture = SkyCircularAperture(positions, r=rad)
+            apertures.append(aperture)
+            # Convert to pixel using image WCS
+    
+        background = Background2D(image, (64, 64), filter_size=(3, 3))
+    
+        image = image-background.background
+        phot_table = aperture_photometry(image, apertures, wcs=wcs)
+        assert(len(phot_table) == len(catalog))
+        # Replace detection ID with catalog ID
+        sky = SkyCoord(phot_table['sky_center'])
+        phot_table['id'] = catalog[id_col]
+        phot_table.rename_column('id', id_col )
+        phot_table.rename_column('xcenter', x_col)
+        phot_table.rename_column('ycenter', y_col)
+
+        phot_table[ra_col] = sky.ra.to('deg')
+        phot_table[dec_col] = sky.dec.to('deg')
+        phot_table.remove_column('sky_center')
+        #phot_table['FLUX_APER'] = 
+        colnames = [f'aperture_sum_{i}' for i in range(len(radii))]
+        aper_tab = Column(np.array(phot_table[colnames].as_array().tolist()), name=f'FLUX_APER_{band}')
+        phot_table[f'FLUX_APER_{band}'] = aper_tab
+        
+        zp = self.im_zps[band]
+        
+        mag_colnames  = []
+        for pos,col in enumerate(colnames):
+            name = f'MAG_APER_{pos}'
+            phot_table[name] = -2.5 * np.log10(phot_table[col]) + zp
+            phot_table[name][np.isnan(phot_table[name])] = -99
+            mag_colnames.append(name)
+        aper_tab = Column(np.array(phot_table[mag_colnames].as_array().tolist()), name=f'MAG_APER_{band}')
+        print(aper_tab)
+        phot_table[f'MAG_APER_{band}'] = aper_tab
+
+        phot_table.remove_columns(mag_colnames)
+
+        phot_table.write(path, format='fits', overwrite=True)
+
+
     def make_mask(self, band, stellar_dir = "GAIA DR3"):
         im_data, im_header, seg_data, seg_header = self.load_data(band, incl_mask = False)
         # works as long as your images are aligned with the stellar directory
