@@ -162,10 +162,10 @@ class Instrument:
 class NIRCam(Instrument):
     
     def __init__(self, zero_point = 28.08, pixel_scale = 0.03 * u.arcsec, excl_bands = []):
-        bands = ["f090W", "f115W", "f150W", "f200W", "f277W", "f356W", "f410M", "f444W"]
-        band_wavelengths = {"f090W": 9_044., "f115W": 11_571., "f150W": 15_040., "f200W": 19_934., "f277W": 27_695., "f356W": 35_768., "f410M": 40_844., "f444W": 44_159.}
+        bands = ["f090W", "f115W", "f150W", "f200W", "f277W", "f335M", "f356W", "f410M", "f444W"]
+        band_wavelengths = {"f090W": 9_044., "f115W": 11_571., "f150W": 15_040., "f200W": 19_934., "f277W": 27_695., "f335M": 33_639., "f356W": 35_768., "f410M": 40_844., "f444W": 44_159.}
         band_wavelengths = {key: value * u.Angstrom for (key, value) in band_wavelengths.items()} # convert each individual value to Angstrom
-        band_FWHMs = {"f090W": 2_101., "f115W": 2_683., "f150W": 3_371., "f200W": 4_717., "f277W": 7_110., "f356W": 8_408., "f410M": 4_375., "f444W": 11_055.}
+        band_FWHMs = {"f090W": 2_101., "f115W": 2_683., "f150W": 3_371., "f200W": 4_717., "f277W": 7_110., "f335M": 3_609., "f356W": 8_408., "f410M": 4_375., "f444W": 11_055.}
         band_FWHMs = {key: value * u.Angstrom for (key, value) in band_FWHMs.items()} # convert each individual value to Angstrom
         zero_points = {band: zero_point for band in bands}
         pixel_scales = {band: pixel_scale for band in bands}
