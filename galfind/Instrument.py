@@ -87,10 +87,10 @@ class Instrument:
             all_instruments = json.loads(config.get("Other", "INSTRUMENT_NAMES"))
             if np.where(self.name == all_instruments) < np.where(instrument.name == all_instruments):
                 # self is bluer than other
-                name = str([self.name, instrument.name])
+                name = f'{str(self.name)}+{str(instrument.name)}'
             else:
                 # self is redder than other
-                name = str([instrument.name, self.name])
+                name = f'{str(instrument.name)}+{str(self.name)}'
             out_instrument = Combined_Instrument(name, bands, band_wavelengths, band_FWHMs)
             #self.__del__() # delete old self
         return out_instrument

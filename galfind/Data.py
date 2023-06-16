@@ -58,7 +58,6 @@ class Data:
         self.wht_types = wht_types
         self.im_pixel_scales = im_pixel_scales
         self.im_shapes = im_shapes
-        print(self.instrument.bands)
         print(im_paths)
         print(im_zps)
         print(wht_paths)
@@ -432,11 +431,13 @@ class Data:
         print('makin bacon pancakes')
         
         for band in self.instrument.bands:
-            print(band)
+            print([config['DEFAULT']['GALFIND_WORK'], self.im_paths[band], str(self.im_pixel_scales[band]), \
+                                    str(self.im_zps[band]), self.instrument.name, self.survey, band, self.version, str(self.wht_paths[band]), \
+                                    str(self.wht_exts[band]),self.wht_types[band],str(self.im_exts[band]),f"{config['DEFAULT']['GALFIND_DIR']}/configs/"])
             # SExtractor bash script python wrapper
             process = subprocess.Popen([f"./make_seg_map.sh", config['DEFAULT']['GALFIND_WORK'], self.im_paths[band], str(self.im_pixel_scales[band]), \
-                                    str(self.im_zps[band]), self.instrument.name, self.survey, band, self.version, self.wht_paths[band], \
-                                    str(self.wht_exts[band]),self.wht_types[band],str(self.im_exts[band]),f"{config['DEFAULT']['GALFIND_DIR']}/config/"])
+                                    str(self.im_zps[band]), self.instrument.name, self.survey, band, self.version, str(self.wht_paths[band]), \
+                                    str(self.wht_exts[band]),self.wht_types[band],str(self.im_exts[band]),f"{config['DEFAULT']['GALFIND_DIR']}/configs/"])
             process.wait()
             
             
@@ -472,6 +473,7 @@ class Data:
         self.make_sex_cats(forced_phot_band)
         # run only if this doesn't already exist
         save_name = f"{self.survey}_MASTER_Sel-{forced_phot_band}_{self.version}.fits"
+        print(self.instrument.name)
         save_dir = f"{config['DEFAULT']['GALFIND_WORK']}/Catalogues/{self.version}/{self.instrument.name}/{self.survey}"
         self.sex_cat_master_path = f"{save_dir}/{save_name}"
         if not Path(self.sex_cat_master_path).is_file():
