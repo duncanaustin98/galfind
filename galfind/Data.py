@@ -231,17 +231,42 @@ class Data:
         else:
             return im_data, im_header, seg_data, seg_header
         
-    def plot_image_from_band(self, band, norm = LogNorm(vmin = 0., vmax = 10.)):
-        im_data = self.load_data(band)[0]
-        self.plot_image_from_data(im_data, band, norm)
+    def plot_image_from_band(self, ax, band, norm = LogNorm(vmin = 0., vmax = 10.), show = True):
+        im_data = self.load_data(band, incl_mask = False)[0]
+        self.plot_image_from_data(ax, im_data, band, norm, show)
         
     @staticmethod
-    def plot_image_from_data(im_data, label, norm = LogNorm(vmin = 0., vmax = 10.)):
-        plt.imshow(im_data, norm = norm)
-        plt.title(label)
+    def plot_image_from_data(ax, im_data, label, norm = LogNorm(vmin = 0., vmax = 10.), show = True):
+        ax.imshow(im_data, norm = norm, origin = "lower")
+        plt.title(f"{label} image")
         plt.xlabel("X / pix")
         plt.ylabel("Y / pix")
-        plt.show()
+        if show:
+            plt.show()
+            
+    def plot_mask_from_band(self, ax, band, show = True):
+        mask = self.load_data(band, incl_mask = True)[4]
+        self.plot_mask_from_data(ax, mask, band, show)
+        
+    @staticmethod
+    def plot_mask_from_data(ax, mask, label, show = True):
+        cbar_in = ax.imshow(mask, origin = "lower")
+        plt.title(f"{label} mask")
+        plt.xlabel("X / pix")
+        plt.ylabel("Y / pix")
+        plt.colorbar(cbar_in)
+        if show:
+            plt.show()
+    
+    def plot_mask_regions_from_band(self, ax, band):
+        im_header = self.load_data(band, incl_mask = False)[1]
+        mask_path = self.mask_paths[band]
+        mask_file = pyregion.open(mask_path).as_imagecoord(im_header)
+        patch_list, artist_list = mask_file.get_mpl_patches_texts()
+        for p in patch_list:
+            ax.add_patch(p)
+        for t in artist_list:
+            ax.add_artist(t)
     
     @run_in_dir(path = config['DEFAULT']['GALFIND_DIR'])
     def make_seg_maps(self):
@@ -300,6 +325,21 @@ class Data:
         stellar_mask.write(f"{os.getcwd()}/Masks/{survey}/{band}_stellar_mask.reg", header = im_header)
         # maybe insert a step here to align your images
         pass
+    
+    def clean_mask_regions(self, band):
+        # open region file
+        mask_path = self.mask_paths[band]
+        with open(mask_path, 'r') as f:
+            lines = f.readlines()
+            with open(mask_path.replace(".reg", "_clean.reg"), 'w') as temp:          
+                for i, line in enumerate(lines):
+                    if line.startswith('physical'):
+                        lines[i] = line.replace('physical', 'image')
+                    if not ( line.endswith(',0)\n') and line.startswith('circle')):
+                        if not (line.endswith(',0)\n') and line.startswith('ellipse')):
+                           temp.write(line)
+        # insert original mask ds9 region file into an unclean folder
+        # update mask paths for the object
     
     def calc_unmasked_area(self):
         # calculate mask area
@@ -464,7 +504,7 @@ class Data:
         return (aper_diam / (2 * self.instrument.pixel_scales[band])).value
     
     def calc_depths(self, xy_offset = [0, 0], aper_diams = [0.32] * u.arcsec, size = 500, n_busy_iters = 1_000, number = 600, \
-                    mask_rad = 25, aper_disp_rad = 2, excl_bands = [], use_xy_offset_txt = True):
+                    mask_rad = 25, aper_disp_rad = 2, excl_bands = [], use_xy_offset_txt = True, plot = False):
         
         for aper_diam in aper_diams:
             print(aper_diam)
@@ -474,6 +514,13 @@ class Data:
             header = "band, average_5σ_depth"
             for band in self.instrument.bands:
                 if band not in excl_bands:
+                    if plot:
+                        fig, ax = plt.subplots()
+                        self.plot_mask_regions_from_band(ax, band)
+                        self.plot_image_from_band(ax, band, show = True)
+                        fig, ax = plt.subplots()
+                        self.plot_mask_from_band(ax, band, show = True)
+                        
                     if use_xy_offset_txt:
                         try:
                             # use the xy_offset defined in .txt in appropriate folder
@@ -486,9 +533,8 @@ class Data:
                     if not Path(f"{self.depth_dir}/coord_{band}.reg").is_file() or not Path(f"{self.depth_dir}/{self.survey}_depths.txt").is_file() or not Path(f"{self.depth_dir}/coord_{band}.txt").is_file():
                         xoff, yoff = calc_xy_offsets(xy_offset)
                         im_data, im_header, seg_data, seg_header, mask = self.load_data(band)
-                        self.plot_image_from_data(im_data, band)
                         print(f"Finished loading {band}")
-    
+                        
                     if not Path(f"{self.depth_dir}/coord_{band}.txt").is_file():
                         # place apertures in blank regions of sky
                         xcoord, ycoord = place_blank_regions(im_data, im_header, seg_data, mask, self.survey, xy_offset, self.instrument.pixel_scales[band], band, \
@@ -600,8 +646,8 @@ def place_blank_regions(im_data, im_header, seg_data, mask, survey, offset, pix_
             ylen = seg_chunk.shape[0]
             
             # check if there is enough space to fit apertures even if perfectly aligned
-            if i == 16 and j == 16:
-                print(np.argwhere(seg_chunk == 0), np.argwhere(im_chunk != 0), np.argwhere(mask_chunk == False), np.argwhere(aper_mask_chunk == 0))
+            # if i == 16 and j == 16:
+            #     print(np.argwhere(seg_chunk == 0), np.argwhere(im_chunk != 0), np.argwhere(mask_chunk == False), np.argwhere(aper_mask_chunk == 0))
             z = np.argwhere((seg_chunk == 0) & (im_chunk != 0.) & (mask_chunk == False) & (aper_mask_chunk == 0)) #generate a list of candidate locations for empty apertures
             #print(z)
             if len(z) > 0:
