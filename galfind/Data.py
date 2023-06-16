@@ -113,7 +113,7 @@ class Data:
             survey_im_dirs = {"CLIO": "CLIO/mosaic_1084_182", "El-Gordo": "elgordo/mosaic_1084_182", "NEP-1": "NEP/mosaic_1084_182", "NEP-2": "NEP-2/mosaic_1084_182", \
                               "NEP-3": "NEP-3/mosaic_1084_182", "NEP-4": "NEP-4/mosaic_1084_182", "MACS-0416": "MACS0416/mosaic_1084_182", "GLASS": "GLASS-12/mosaic_1084_182", "SMACS-0723": "SMACS0723/mosaic_1084_182"} | ceers_im_dirs
         elif version == "v8b":
-            ceers_experiment = {"CEERSP9": "CEERSP9-Experiment/mosaic_aaronwisp"}
+            ceers_experiment = {"CEERSP8": "CEERSP8-Experiment/mosaic_aaronwisp", "CEERSP9": "CEERSP9-Experiment/mosaic_aaronwisp"}
             survey_im_dirs = ceers_experiment
                 
         survey_im_dirs = {key: f"/raid/scratch/data/jwst/{value}" for (key, value) in survey_im_dirs.items()}
