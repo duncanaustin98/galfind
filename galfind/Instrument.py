@@ -52,7 +52,10 @@ class Instrument:
         self.band_wavelengths = {}
         self.band_FWHMs = {}
 
-
+    def instrument_from_band(self, band):
+        # Pointless here but makes it compatible with Combined_Instrument
+        return self.instrument.name
+    
     def __getitem__(self, get_index): # create a new instrument with only the indexed band
         excl_bands = []
         for index, band in enumerate(self):
@@ -251,13 +254,20 @@ class Combined_Instrument(Instrument):
         super().__init__(name, bands, band_wavelengths, band_FWHMs, excl_bands = [])
         
     def aper_corr(self, aper_diam, band):
-        names = np.array(self.name)
+        names = self.name.split("+")
         for name in names:
             instrument = Instrument.from_name(name)
             if band in instrument.bands:
                 return instrument.aper_corr(aper_diam, band)
         raise(Exception(f"{band} does not exist in Instrument = {self.name}!"))
     
+    def instrument_from_band(self, band):
+        names = self.name.split("+")
+        for name in names:
+            instrument = Instrument.from_name(name)
+            if band in instrument.bands:
+                return instrument.name
+            
     def new_instrument(self):
         print("Still need to understand shallow and deep copy constructors in python!")
         return self

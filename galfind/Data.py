@@ -432,11 +432,11 @@ class Data:
         
         for band in self.instrument.bands:
             print([config['DEFAULT']['GALFIND_WORK'], self.im_paths[band], str(self.im_pixel_scales[band]), \
-                                    str(self.im_zps[band]), self.instrument.name, self.survey, band, self.version, str(self.wht_paths[band]), \
+                                    str(self.im_zps[band]), self.instrument.instrument_from_band(band), self.survey, band, self.version, str(self.wht_paths[band]), \
                                     str(self.wht_exts[band]),self.wht_types[band],str(self.im_exts[band]),f"{config['DEFAULT']['GALFIND_DIR']}/configs/"])
             # SExtractor bash script python wrapper
             process = subprocess.Popen([f"./make_seg_map.sh", config['DEFAULT']['GALFIND_WORK'], self.im_paths[band], str(self.im_pixel_scales[band]), \
-                                    str(self.im_zps[band]), self.instrument.name, self.survey, band, self.version, str(self.wht_paths[band]), \
+                                    str(self.im_zps[band]), self.instrument.instrument_from_band(band), self.survey, band, self.version, str(self.wht_paths[band]), \
                                     str(self.wht_exts[band]),self.wht_types[band],str(self.im_exts[band]),f"{config['DEFAULT']['GALFIND_DIR']}/configs/"])
             process.wait()
             
