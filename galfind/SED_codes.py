@@ -129,12 +129,12 @@ class SED_code(ABC):
         # plot PDF on ax
         pass
     
-    @staticmethod
+    ''' @staticmethod
     def from_name(name):
         if name == "LePhare":
             return LePhare()
         elif name == "EAZY":
-            return EAZY()
+            return EAZY()'''
 
 # %% Other SED code related functions / dicts
 

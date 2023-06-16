@@ -46,6 +46,12 @@ class Catalogue:
         
     # %% alternative constructors
     @classmethod
+    def from_pipeline(cls, survey, version, aper_diams, cat_creator, xy_offset = [0, 0], instruments = ['NIRCam', 'ACS_WFC', 'WFC3IR']):
+        # make 'Data' object
+        data = Data.from_pipeline(survey, version, instruments)
+        return cls.from_data(data, aper_diams, cat_creator, xy_offset = xy_offset)
+    
+    @classmethod
     def from_NIRCam_pipeline(cls, survey, version, aper_diams, cat_creator, xy_offset = [0, 0]):
         # make 'Data' object
         data = Data.from_NIRCam_pipeline(survey, version)
