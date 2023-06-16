@@ -212,8 +212,8 @@ class Data:
         im_path = self.im_paths[band]
         seg_path = self.seg_paths[band]
         im_ext = self.im_exts[band]
-        #print("im_path, seg_path, band")
-        #print(im_path, seg_path, band)
+        #print("im_path, seg_path, band, im_ext")
+        #print(im_path, seg_path, band, im_ext)
         im_hdul = fits.open(im_path) #directory of images and image name structure for science image
         im_data = im_hdul[im_ext].data
         im_data = im_data.byteswap().newbyteorder()
@@ -467,18 +467,20 @@ class Data:
                             # use the xy_offset defined in .txt in appropriate folder
                             xy_offset_path = f"{self.depth_dir}/offset_{band}.txt"
                             xy_offset = list(np.genfromtxt(xy_offset_path, dtype = int))
-                            print(f"xy_offset = {xy_offset}")
+                            #print(f"xy_offset = {xy_offset}")
                         except: # use default xy offset if this .txt does not exist
                             pass
                         
                     if not Path(f"{self.depth_dir}/coord_{band}.reg").is_file() or not Path(f"{self.depth_dir}/{self.survey}_depths.txt").is_file() or not Path(f"{self.depth_dir}/coord_{band}.txt").is_file():
                         xoff, yoff = calc_xy_offsets(xy_offset)
                         im_data, im_header, seg_data, seg_header, mask = self.load_data(band)
+                        print(f"Finished loading {band}")
     
                     if not Path(f"{self.depth_dir}/coord_{band}.txt").is_file():
                         # place apertures in blank regions of sky
                         xcoord, ycoord = place_blank_regions(im_data, im_header, seg_data, mask, self.survey, xy_offset, self.instrument.pixel_scales[band], band, \
                                                          aper_diam, size, n_busy_iters, number, mask_rad, aper_disp_rad)
+                        print(f"Finished placing blank regions in {band}")
                         np.savetxt(f"{self.depth_dir}/coord_{band}.txt", np.column_stack((xcoord, ycoord)))
                         # save xy offset for this field and band
                         np.savetxt(f"{self.depth_dir}/offset_{band}.txt", np.column_stack((xoff, yoff)), header = "x_off, y_off", fmt = "%d %d")
@@ -576,22 +578,24 @@ def place_blank_regions(im_data, im_header, seg_data, mask, survey, offset, pix_
     for i in tqdm(range(0, int((xchunk - (2 * xoff)) / size)), desc = f"Running {band} depths for {survey}"):
         for j in tqdm(range(0, int((ychunk - (2 * yoff)) / size)), desc = f"Current row = {i + 1}", leave = False):
             busyflag = 0
-            #print(j, i)
             # narrow seg, image and mask data to appropriate size for the chunk
             seg_chunk = seg_data[(j * size) + yoff : ((j + 1) * size) + yoff, (i * size) + xoff:((i + 1) * size) + xoff]
             aper_mask_chunk = copy.deepcopy(seg_chunk)
             im_chunk = im_data[(j*size)+yoff:((j+1)*size)+yoff, (i*size)+xoff:((i+1)*size)+xoff]
-            mask_chunk = mask[(j*size)+yoff:((j+1)*size)+yoff, (i*size)+xoff:((i+1)*size)+xoff] #cut the box of interest out of the images
+            mask_chunk = mask[(j*size)+yoff:((j+1)*size)+yoff, (i*size)+xoff:((i+1)*size)+xoff] # cut the box of interest out of the images
             xlen = seg_chunk.shape[1]
             ylen = seg_chunk.shape[0]
             
             # check if there is enough space to fit apertures even if perfectly aligned
+            if i == 0 and j == 0:
+                print(np.argwhere(seg_chunk == 0), np.argwhere(im_chunk != 0), np.argwhere(mask_chunk == False), np.argwhere(aper_mask_chunk == 0))
             z = np.argwhere((seg_chunk == 0) & (im_chunk != 0.) & (mask_chunk == False) & (aper_mask_chunk == 0)) #generate a list of candidate locations for empty apertures
+            #print(z)
             if len(z) > 0:
                 space = True
             else:
                 space = False
-            if space: # there are space for "number" of apertures
+            if space: # there is space for "number" of apertures
                  # cycle through range of available locations for empty apertures
                  for c in range(0, number): # tqdm(), desc = "Grid square completion", total = number * 0.6, leave = False):
                      next = 0
@@ -633,7 +637,7 @@ def place_blank_regions(im_data, im_header, seg_data, mask, survey, offset, pix_
                                  next += 1
                                  busyflag = 1
                                  
-                     if busyflag == 1: # if the region is busy, set the 200 apertures to co-ordinates (0., 0.)
+                     if busyflag == 1: # if the region is busy, set the remaining apertures to co-ordinates (0., 0.)
                          #print(c, "apertures in (", i, ",", j, ") !")
                          xcoord.extend([0] * (number - c))
                          ycoord.extend([0] * (number - c))
