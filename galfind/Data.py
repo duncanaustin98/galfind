@@ -92,8 +92,8 @@ class Data:
             #     print("Making cluster mask. (Not yet implemented; self.cluster_path = '' !!!)")
     
     @classmethod
-    def from_NIRCam_pipeline(cls, survey, version = "v8"):
-        instrument = NIRCam()
+    def from_NIRCam_pipeline(cls, survey, version = "v8", excl_bands = []):
+        instrument = NIRCam(excl_bands = excl_bands)
         # if int(version.split("v")[1]) >= 8:
         #     pmap = "1084"
         # else:
