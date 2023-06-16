@@ -230,6 +230,18 @@ class Data:
             return im_data, im_header, seg_data, seg_header, mask
         else:
             return im_data, im_header, seg_data, seg_header
+        
+    def plot_image_from_band(self, band, norm = LogNorm(vmin = 0., vmax = 10.)):
+        im_data = self.load_data(band)[0]
+        self.plot_image_from_data(im_data, band, norm)
+        
+    @staticmethod
+    def plot_image_from_data(im_data, label, norm = LogNorm(vmin = 0., vmax = 10.)):
+        plt.imshow(im_data, norm = norm)
+        plt.title(label)
+        plt.xlabel("X / pix")
+        plt.ylabel("Y / pix")
+        plt.show()
     
     @run_in_dir(path = config['DEFAULT']['GALFIND_DIR'])
     def make_seg_maps(self):
@@ -474,6 +486,7 @@ class Data:
                     if not Path(f"{self.depth_dir}/coord_{band}.reg").is_file() or not Path(f"{self.depth_dir}/{self.survey}_depths.txt").is_file() or not Path(f"{self.depth_dir}/coord_{band}.txt").is_file():
                         xoff, yoff = calc_xy_offsets(xy_offset)
                         im_data, im_header, seg_data, seg_header, mask = self.load_data(band)
+                        self.plot_image_from_data(im_data, band)
                         print(f"Finished loading {band}")
     
                     if not Path(f"{self.depth_dir}/coord_{band}.txt").is_file():
@@ -587,7 +600,7 @@ def place_blank_regions(im_data, im_header, seg_data, mask, survey, offset, pix_
             ylen = seg_chunk.shape[0]
             
             # check if there is enough space to fit apertures even if perfectly aligned
-            if i == 0 and j == 0:
+            if i == 16 and j == 16:
                 print(np.argwhere(seg_chunk == 0), np.argwhere(im_chunk != 0), np.argwhere(mask_chunk == False), np.argwhere(aper_mask_chunk == 0))
             z = np.argwhere((seg_chunk == 0) & (im_chunk != 0.) & (mask_chunk == False) & (aper_mask_chunk == 0)) #generate a list of candidate locations for empty apertures
             #print(z)
