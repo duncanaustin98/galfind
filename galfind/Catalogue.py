@@ -76,12 +76,12 @@ class Catalogue:
         return cls(gals, cat_path, survey, cat_creator)
     
     @classmethod
-    def from_photo_z_cat(cls, cat_path, instrument, survey, codes):
+    def from_photo_z_cat(cls, cat_path, instrument, survey, cat_creator, codes):
         # open the catalogue
         cat = cls.cat_from_path(cat_path)
         # produce galaxy array from each row of the catalogue
-        gals = np.array([Galaxy.from_photo_z_cat_row(row, instrument, codes) for row in cat])
-        return cls(gals, cat_path, survey, codes)
+        gals = np.array([Galaxy.from_photo_z_cat_row(row, instrument, cat_creator, codes) for row in cat])
+        return cls(gals, cat_path, survey, cat_creator)
     
     # %% Overloaded operators
     
@@ -280,6 +280,9 @@ class Catalogue:
     
     def flag_good_high_z(self, relaxed = False):
         # should make use of an overloaded __setattr__ here!
+        pass
+    
+    def flag_hot_pixel(self):
         pass
     
     def crop(self, crop_property, crop_limits): # upper and lower limits on galaxy properties (e.g. ID, redshift, mass, SFR, SkyCoord)

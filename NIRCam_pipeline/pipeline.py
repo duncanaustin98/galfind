@@ -29,6 +29,6 @@ if __name__ == "__main__":
     surveys = ["NEP-2"]
     aper_diams = [0.32] * u.arcsec
     xy_offsets = [[100, 0]]
-    sed_codes = [LePhare(), EAZY()]
-    min_flux_pc_errs = [5, 10]
+    sed_codes = [EAZY()]
+    min_flux_pc_errs = [10, 5]
     NIRCam_pipeline(surveys, version, xy_offsets, aper_diams, sed_codes, min_flux_pc_errs, cat_type = cat_type)

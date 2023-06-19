@@ -572,17 +572,17 @@ def tex_to_fits(tex_path, col_names, col_errs, replace = {"&": "", "\\\\": "", "
 class Galaxy:
     
     # should really expand this to allow for more than one redshift here (only works fro one 'code' class at the moment)
-    def __init__(self, sky_coord, phot, ID, z, codes = []):
+    def __init__(self, sky_coord, phot, ID, properties):
         # print("'z' here for a short time not a long time (in the 'Galaxy' class)! PUT THIS INSTEAD IN THE 'CODE' class")
         self.sky_coord = sky_coord
         # phot_obs is within phot_rest (it shouldn't be!)
-        if z == 0:
+        if properties["LePhare"]["z"] == 0:
             self.phot_rest = None
         else:
-            self.phot_rest = Photometry_rest(phot, z, codes[0]) # works for LePhare only currently
+            self.phot_rest = Photometry_rest(phot, properties["LePhare"]["z"], "LePhare") # works for LePhare only currently
         self.phot_obs = phot # need to improve this still!
         self.ID = int(ID)
-        self.codes = codes
+        #self.codes = codes
         # this should be contained within each 'code' object
         self.properties = {}
         #self.redshifts = {code.code_name: np.float(z) for code in codes}
@@ -597,18 +597,19 @@ class Galaxy:
         sky_coord = SkyCoord(sex_cat_row["ALPHA_J2000"] * u.deg, sex_cat_row["DELTA_J2000"] * u.deg, frame = "icrs")
         # perform SED fitting to measure the redshift from the photometry
         # for now, load in z = 0 as a placeholder
-        return cls(sky_coord, phot, ID, 0)
+        return cls(sky_coord, phot, ID, {})
         
     @classmethod # currently only works for a singular code
-    def from_photo_z_cat_row(cls, photo_z_cat_row, instrument, codes):
+    def from_photo_z_cat_row(cls, photo_z_cat_row, instrument, cat_creator, codes):
         # load the photometry from the sextractor catalogue
-        phot = Photometry_obs.get_phot_from_sex(photo_z_cat_row, instrument)
+        phot = Photometry_obs.get_phot_from_sex(photo_z_cat_row, instrument, cat_creator)
         # load the ID and Sky Coordinate from the source catalogue
         ID = photo_z_cat_row["NUMBER"]
         sky_coord = SkyCoord(photo_z_cat_row["ALPHA_J2000"] * u.deg, photo_z_cat_row["DELTA_J2000"] * u.deg, frame = "icrs")
-        # also load the photo-z from the catalogue
-        z = photo_z_cat_row[codes.galaxy_properties["z"]] # currently only works for a singular code, not an array of codes
-        return cls(sky_coord, phot, ID, z, codes)
+        # also load the galaxy properties from the catalogue
+        properties = {code.code_name: {gal_property: {photo_z_cat_row[code.galaxy_properties[gal_property]]}} for code in codes for gal_property in code.galaxy_properties.keys()}
+        print(properties)  
+        return cls(sky_coord, phot, ID, properties)
         
 def ext_source_corr(data, corr_factor, is_log_data = True):
     if is_log_data:
