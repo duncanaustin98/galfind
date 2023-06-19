@@ -737,7 +737,7 @@ class Data:
                     print("total nans =", nans)
         
     def get_depth_dir(self, aper_diam, band):
-        self.depth_dir = f"{config['DEFAULT']['GALFIND_WORK']}/Depths/{self.instrument.intrument_from_band(band)}/{self.version}/{self.survey}/{str(aper_diam.value)}as"
+        self.depth_dir = f"{config['DEFAULT']['GALFIND_WORK']}/Depths/{self.instrument.instrument_from_band(band)}/{self.version}/{self.survey}/{str(aper_diam.value)}as"
         os.makedirs(self.depth_dir, exist_ok = True)
         return self.depth_dir
     
@@ -745,7 +745,7 @@ class Data:
         return (aper_diam / (2 * self.im_pixel_scales[band])).value
     
     def calc_depths(self, xy_offset = [0, 0], aper_diams = [0.32] * u.arcsec, size = 500, n_busy_iters = 1_000, number = 600, \
-                    mask_rad = 25, aper_disp_rad = 2, excl_bands = [], use_xy_offset_txt = True, n_jobs = 1):
+                    mask_rad = 25, aper_disp_rad = 2, excl_bands = [], use_xy_offset_txt = True, n_jobs = 4):
        
         if type(aper_disp_rad) == u.Quantity:
             aper_disp_rad = aper_disp_rad.to(u.radian).value    
