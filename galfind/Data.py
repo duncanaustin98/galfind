@@ -49,7 +49,7 @@ class Data:
         self.version = version
         self.instrument = instrument
         self.is_blank = is_blank
-        
+        print(im_paths)
         # make segmentation maps from image paths if they don't already exist
         made_new_seg_maps = False
         for i, (band, seg_path) in enumerate(seg_paths.items()):
@@ -113,8 +113,7 @@ class Data:
             survey_im_dirs = {"CLIO": "CLIO/mosaic_1084_182", "El-Gordo": "elgordo/mosaic_1084_182", "NEP-1": "NEP/mosaic_1084_182", "NEP-2": "NEP-2/mosaic_1084_182", \
                               "NEP-3": "NEP-3/mosaic_1084_182", "NEP-4": "NEP-4/mosaic_1084_182", "MACS-0416": "MACS0416/mosaic_1084_182", "GLASS": "GLASS-12/mosaic_1084_182", "SMACS-0723": "SMACS0723/mosaic_1084_182"} | ceers_im_dirs
         elif version == "v8b":
-            ceers_experiment = {"CEERSP8": "CEERSP8-Experiment/mosaic_aaronwisp", "CEERSP9": "CEERSP9-Experiment/mosaic_aaronwisp"}
-            survey_im_dirs = {survey: f"{survey}/mosaic_1084_wispfix"} | ceers_experiment
+            survey_im_dirs = {survey: f"{survey}/mosaic_1084_wispfix"}
         elif version == "lit_version":
             survey_im_dirs = {"JADES-DR1": "JADES/DR1"}
                 
@@ -144,13 +143,21 @@ class Data:
         im_exts = {}
         seg_paths = {}
         mask_paths = {}
-        for i, band in enumerate(bands):
-            im_paths[band] = im_path_arr[i]
-            im_hdul = fits.open(im_path_arr[i])
+        for band in bands:
+            # obtains all image paths from the correct band 
+            im_paths_band = [im_path for im_path in im_path_arr if band.lower() in im_path or band in im_path or \
+                              band.replace("f", "F").replace("W", "w") in im_path or band.upper() in im_path]
+            # checks to see if there is just one singular image for the given band
+            if len(im_paths_band) == 1:
+                im_paths[band] = im_paths_band[0]
+            else:
+                raise(Exception(f"Multiple images found for {band} in {survey} {version}"))
+
+            im_hdul = fits.open(im_paths[band])
             # obtain appropriate extension from the image
-            for j, im_hdu in enumerate(im_hdul):
+            for i, im_hdu in enumerate(im_hdul):
                 if im_hdu.name == "SCI":
-                    im_exts[band] = int(j)
+                    im_exts[band] = int(i)
                     break
             # need to change this to work if there are no segmentation maps (with the [0] indexing)
             try:
@@ -622,8 +629,13 @@ def calc_xy_offsets(offset):
 
 def place_blank_regions(im_data, im_header, seg_data, mask, survey, offset, pix_scale, band, aper_diam = 0.32 * u.arcsec, size = 500, n_busy_iters = 1_000, number = 600, mask_rad = 25, aper_disp_rad = 2):
     
-    im_wcs = WCS(im_header)
+    #im_wcs = WCS(im_header)
     r = aper_diam / (2 * pix_scale) # radius of aperture in pixels
+    print(type(r))
+    # cast radius to a float from astropy.units.radians
+    if type(r) == u.Quantity:
+        r = r.value
+    print(type(r))
     
     xoff, yoff = calc_xy_offsets(offset)
     
@@ -631,8 +643,6 @@ def place_blank_regions(im_data, im_header, seg_data, mask, survey, offset, pix_
     ychunk = int(seg_data.shape[0])
     xcoord = list()
     ycoord = list()
-    busylist = list()
-    no_space = 0
     # finds locations to place empty apertures in
     for i in tqdm(range(0, int((xchunk - (2 * xoff)) / size)), desc = f"Running {band} depths for {survey}"):
         for j in tqdm(range(0, int((ychunk - (2 * yoff)) / size)), desc = f"Current row = {i + 1}", leave = False):
