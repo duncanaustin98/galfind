@@ -33,7 +33,9 @@ from matplotlib import cm
 from tqdm import tqdm
 import json
 from joblib import Parallel, delayed
-
+import contextlib
+import joblib
+from tqdm import tqdm
 from .Instrument import Instrument, ACS_WFC,WFC3IR, NIRCam, MIRI, Combined_Instrument
 from . import config
 from . import useful_funcs_austind as funcs
@@ -116,6 +118,7 @@ class Data:
         im_zps = {}
         im_shapes = {}
         mask_paths = {}
+        depth_dir = {}
         is_blank = is_blank_survey(survey)
 
     
@@ -131,8 +134,8 @@ class Data:
                     ceers_im_dirs = {f"CEERSP{str(i + 1)}": f"ceers/mosaic_1084/P{str(i + 1)}" for i in range(10)}
                     survey_im_dirs = {"CLIO": "CLIO/mosaic_1084", "El-Gordo": "elgordo/mosaic_1084", "GLASS": "GLASS-12/mosaic_1084", "NEP": "NEP/mosaic_1084", \
                                 "NEP-2": "NEP-2/mosaic_1084", "NEP-3": "NEP-3/mosaic_1084", "SMACS-0723": "SMACS0723/mosaic_1084", "MACS-0416": "MACS0416/mosaic_1084_v3"} | ceers_im_dirs
-                elif version == "v8a":
-                    ceers_im_dirs = {f"CEERSP{str(i + 1)}": f"CEERSP{str(i + 1)}/mosaic_1084_182_CANDELS" for i in range(10)}
+                elif version == "v8a" or version == 'v8b':
+                    ceers_im_dirs = {f"CEERSP{str(i + 1)}": f"CEERSP{str(i + 1)}/mosaic_1084_wispfix" for i in range(10)}
                     survey_im_dirs = {"CLIO": "CLIO/mosaic_1084_182", "El-Gordo": "elgordo/mosaic_1084_182", "NEP-1": "NEP/mosaic_1084_182", "NEP-2": "NEP-2/mosaic_1084_182", \
                                     "NEP-3": "NEP-3/mosaic_1084_182", "MACS-0416": "MACS0416/mosaic_1084_182", "GLASS": "GLASS-12/mosaic_1084_182"} | ceers_im_dirs
                     
@@ -149,7 +152,7 @@ class Data:
                 # obtain available bands from imaging without having to hard code these
                 bands = np.array([split_path.lower().replace("w", "W").replace("m", "M") for path in im_path_arr for i, split_path in \
                         enumerate(path.split("-")[-1].split("/")[-1].split("_")) if split_path.lower().replace("w", "W").replace("m", "M") in instrument.bands])
-                
+                # If band not used in instrument, remove it
                 for band in instrument.bands:
                     if band not in bands:
                         instrument.remove_band(band)
@@ -655,7 +658,7 @@ class Data:
                 for diam_index, aper_diam in enumerate(aper_diams):
                     r = self.calc_aper_radius_pix(aper_diam, band)
                     # open aperture positions in this band
-                    aper_loc = np.loadtxt(f"{self.get_depth_dir(aper_diam, band)}/coord_{band}.txt")
+                    aper_loc = np.loadtxt(f"{self.get_depth_dir(aper_diam)}/coord_{band}.txt")
                     xcoord = aper_loc[:, 0]
                     ycoord = aper_loc[:, 1]
                     index = np.argwhere(xcoord == 0.)
@@ -736,16 +739,18 @@ class Data:
                                                 three_sigma_non_detected], ["L", "L", "L"], True, self.loc_depth_cat_path) # save .fits table
                     print("total nans =", nans)
         
-    def get_depth_dir(self, aper_diam, band):
-        self.depth_dir = f"{config['DEFAULT']['GALFIND_WORK']}/Depths/{self.instrument.instrument_from_band(band)}/{self.version}/{self.survey}/{str(aper_diam.value)}as"
-        os.makedirs(self.depth_dir, exist_ok = True)
-        return self.depth_dir
+    def get_depth_dir(self, aper_diam):
+        self.depth_dirs = {}
+        for band in self.instrument.bands:
+            self.depth_dirs[band] = f"{config['DEFAULT']['GALFIND_WORK']}/Depths/{self.instrument.instrument_from_band(band)}/{self.version}/{self.survey}/{str(aper_diam.value)}as"
+            os.makedirs(self.depth_dirs[band], exist_ok = True)
+        
     
     def calc_aper_radius_pix(self, aper_diam, band):
         return (aper_diam / (2 * self.im_pixel_scales[band])).value
     
     def calc_depths(self, xy_offset = [0, 0], aper_diams = [0.32] * u.arcsec, size = 500, n_busy_iters = 1_000, number = 600, \
-                    mask_rad = 25, aper_disp_rad = 2, excl_bands = [], use_xy_offset_txt = True, n_jobs = 4):
+                    mask_rad = 25, aper_disp_rad = 2, excl_bands = [], use_xy_offset_txt = True, n_jobs = 1):
        
         if type(aper_disp_rad) == u.Quantity:
             aper_disp_rad = aper_disp_rad.to(u.radian).value    
@@ -753,19 +758,20 @@ class Data:
         params = []  
         average_depths = []
         # Look over all aperture diameters and bands
+        self.get_depth_dir(aper_diam)
         for aper_diam in aper_diams:
             print(aper_diam)
             for band in self.instrument.bands:
                 # Only run for non excluded bands
                 if band not in excl_bands:
-                    self.get_depth_dir(aper_diam, band)
                     params.append((band, xy_offset, aper_diam, size, n_busy_iters, number, mask_rad, aper_disp_rad, use_xy_offset_txt, average_depths))
         # Parallelise the calculation of depths for each band
-        Parallel(n_jobs=n_jobs)(delayed(self.calc_band_depth)(param) for param in params)
+        with tqdm_joblib(tqdm(desc="Running local depths", total=len(params))) as progress_bar:
+            Parallel(n_jobs=n_jobs)(delayed(self.calc_band_depth)(param) for param in params)
         # print table of depths for these bands
         header = "band, average_5sigma_depth"
-        if not Path(f"{self.depth_dir}/{self.survey}_depths.txt").is_file():
-            np.savetxt(f"{self.depth_dir}/{self.survey}_depths.txt", np.column_stack((np.array(self.instrument.bands), np.array(average_depths))), header = header, fmt = "%s")
+        if not Path(f"{self.depth_dirs['f444W']}/{self.survey}_depths.txt").is_file():
+            np.savetxt(f"{self.depth_dirs['f444W']}/{self.survey}_depths.txt", np.column_stack((np.array(self.instrument.bands), np.array(average_depths))), header = header, fmt = "%s")
         
     def calc_band_depth(self, params):
         band, xy_offset, aper_diam, size, n_busy_iters, number, mask_rad, aper_disp_rad, use_xy_offset_txt, average_depths = params
@@ -773,27 +779,27 @@ class Data:
         if use_xy_offset_txt:
             try:
                 # use the xy_offset defined in .txt in appropriate folder
-                xy_offset_path = f"{self.depth_dir}/offset_{band}.txt"
+                xy_offset_path = f"{self.depth_dirs[band]}/offset_{band}.txt"
                 xy_offset = list(np.genfromtxt(xy_offset_path, dtype = int))
                 print(f"xy_offset = {xy_offset}")
             except: # use default xy offset if this .txt does not exist
                 pass
             
-        if not Path(f"{self.depth_dir}/coord_{band}.reg").is_file() or not Path(f"{self.depth_dir}/{self.survey}_depths.txt").is_file() or not Path(f"{self.depth_dir}/coord_{band}.txt").is_file():
+        if not Path(f"{self.depth_dirs[band]}/coord_{band}.reg").is_file() or not Path(f"{self.depth_dirs[band]}/{self.survey}_depths.txt").is_file() or not Path(f"{self.depth_dirs[band]}/coord_{band}.txt").is_file():
             xoff, yoff = calc_xy_offsets(xy_offset)
             im_data, im_header, seg_data, seg_header, mask = self.load_data(band)
 
-        if not Path(f"{self.depth_dir}/coord_{band}.txt").is_file():
+        if not Path(f"{self.depth_dirs[band]}/coord_{band}.txt").is_file():
             # place apertures in blank regions of sky
             xcoord, ycoord = place_blank_regions(im_data, im_header, seg_data, mask, self.survey, xy_offset, self.im_pixel_scales[band], band, \
                                                 aper_diam, size, n_busy_iters, number, mask_rad, aper_disp_rad)
-            np.savetxt(f"{self.depth_dir}/coord_{band}.txt", np.column_stack((xcoord, ycoord)))
+            np.savetxt(f"{self.depth_dirs[band]}/coord_{band}.txt", np.column_stack((xcoord, ycoord)))
             # save xy offset for this field and band
-            np.savetxt(f"{self.depth_dir}/offset_{band}.txt", np.column_stack((xoff, yoff)), header = "x_off, y_off", fmt = "%d %d")
+            np.savetxt(f"{self.depth_dirs[band]}/offset_{band}.txt", np.column_stack((xoff, yoff)), header = "x_off, y_off", fmt = "%d %d")
         
         # read in aperture locations
-        if not Path(f"{self.depth_dir}/coord_{band}.reg").is_file() or not Path(f"{self.depth_dir}/{self.survey}_depths.txt").is_file():
-            aper_loc = np.loadtxt(f"{self.depth_dir}/coord_{band}.txt")
+        if not Path(f"{self.depth_dirs[band]}/coord_{band}.reg").is_file() or not Path(f"{self.depth_dirs[band]}/{self.survey}_depths.txt").is_file():
+            aper_loc = np.loadtxt(f"{self.depth_dirs[band]}/coord_{band}.txt")
             xcoord = aper_loc[:, 0]
             ycoord = aper_loc[:, 1]
             index = np.argwhere(xcoord == 0.)
@@ -801,13 +807,13 @@ class Data:
             ycoord = np.delete(ycoord, index)
         
         # convert these to .reg region file
-        if not Path(f"{self.depth_dir}/coord_{band}.reg").is_file():
-            aper_loc_to_reg(xcoord, ycoord, WCS(im_header), aper_diam.value, f"{self.depth_dir}/coord_{band}.reg")
+        if not Path(f"{self.depth_dirs[band]}/coord_{band}.reg").is_file():
+            aper_loc_to_reg(xcoord, ycoord, WCS(im_header), aper_diam.value, f"{self.depth_dirs[band]}/coord_{band}.reg")
         
         r = self.calc_aper_radius_pix(aper_diam, band)
-        if not Path(f"{self.depth_dir}/{self.survey}_depths.txt").is_file():
+        if not Path(f"{self.depth_dirs[band]}/{self.survey}_depths.txt").is_file():
             # plot the depths in the grid
-            plot_depths(im_data, self.depth_dir, band, seg_data, xcoord, ycoord, xy_offset, r, size, self.im_zps[band])
+            plot_depths(im_data, self.depth_dirs[band], band, seg_data, xcoord, ycoord, xy_offset, r, size, self.im_zps[band])
             # calculate average depth
             average_depths.append(calc_5sigma_depth(xcoord, ycoord, im_data, r, self.im_zps[band]))
         
@@ -1097,6 +1103,23 @@ def make_new_fits_columns(orig_fits_table, col_name, col_data, col_format, save 
     return out_fits_table.data
 
 
+# The below makes TQDM work with joblib
+@contextlib.contextmanager
+def tqdm_joblib(tqdm_object):
+    """Context manager to patch joblib to report into tqdm progress bar given as argument"""
+    class TqdmBatchCompletionCallback(joblib.parallel.BatchCompletionCallBack):
+        def __call__(self, *args, **kwargs):
+            tqdm_object.update(n=self.batch_size)
+            return super().__call__(*args, **kwargs)
+
+    old_batch_callback = joblib.parallel.BatchCompletionCallBack
+    joblib.parallel.BatchCompletionCallBack = TqdmBatchCompletionCallback
+    try:
+        yield tqdm_object
+    finally:
+        joblib.parallel.BatchCompletionCallBack = old_batch_callback
+        tqdm_object.close()
+
 # def correct_medium_band_syntax(fits_table, save_name, old_band_name):
 #     if log.lower_case_m[survey]: # if medium band correction is required
 #         new_band_name = old_band_name[:-1] + "M"
@@ -1121,3 +1144,4 @@ def is_blank_survey(survey):
 
 if __name__ == "__main__":
     pass
+
