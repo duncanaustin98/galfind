@@ -58,14 +58,9 @@ class Data:
         self.wht_types = wht_types
         self.im_pixel_scales = im_pixel_scales
         self.im_shapes = im_shapes
-        print(im_paths)
-        print(im_zps)
-        print(wht_paths)
         # make segmentation maps from image paths if they don't already exist
         made_new_seg_maps = False
         for i, (band, seg_path) in enumerate(seg_paths.items()):
-            print(f"{config['DEFAULT']['GALFIND_WORK']}/SExtractor/{self.instrument.instrument_from_band(band)}/{version}/{survey}/{survey}*{band}_{band}*{version}*seg.fits")
-
             print(band, seg_path)
             if (seg_path == "" or seg_path == []) and not made_new_seg_maps:
                 self.make_seg_maps()
@@ -183,7 +178,7 @@ class Data:
                         if im_hdu.name == 'ERR':
                             wht_exts[band] = int(j)
                             wht_types[band] = "MAP_RMS"
-                            wht_paths[band] = im_path_arr[i]
+                            wht_paths[band] = str(im_path_arr[i])
                         
                     # need to change this to work if there are no segmentation maps (with the [0] indexing)
                 
@@ -238,7 +233,7 @@ class Data:
                                 else:
                                     path = Path(f"{config['DEFAULT']['GALFIND_DATA']}/hst/{survey}/{instrument.name}/{pix_scale}/{instrument.name}_{band}_{survey}_rms.fits")
                                     if path.is_file():
-                                        wht_paths[band] = path
+                                        wht_paths[band] = str(path)
                                         wht_types[band] = 'MAP_RMS'
                                         wht_exts[band] = 0
                                     else:
@@ -246,7 +241,7 @@ class Data:
                                         wht_types[band] = "NONE"
                                         wht_exts[band] = ""
 
-                        im_pixel_scales[band] = pix_scale
+                        im_pixel_scales[band] = float(pix_scale.split('mas')[0]) * 1e-3 
                         if instrument.name == 'ACS_WFC':
                             im_zps[band] = -2.5 * np.log10(imheader["PHOTFLAM"]) - 21.10 - 5 * np.log10(imheader["PHOTPLAM"]) + 18.6921
                         elif instrument.name == 'WFC3IR':
@@ -441,7 +436,7 @@ class Data:
             # SExtractor bash script python wrapper
             process = subprocess.Popen([f"./make_seg_map.sh", config['DEFAULT']['GALFIND_WORK'], self.im_paths[band], str(self.im_pixel_scales[band]), \
                                     str(self.im_zps[band]), self.instrument.instrument_from_band(band), self.survey, band, self.version, str(self.wht_paths[band]), \
-                                    str(self.wht_exts[band]),self.wht_types[band],str(self.im_exts[band]),f"{config['DEFAULT']['GALFIND_DIR']}/configs/"], check =True)
+                                    str(self.wht_exts[band]),self.wht_types[band],str(self.im_exts[band]),f"{config['DEFAULT']['GALFIND_DIR']}/configs/"])
             process.wait()
             
             
@@ -455,19 +450,20 @@ class Data:
             # if not run before
             path = Path(f"{config['DEFAULT']['GALFIND_WORK']}/SExtractor/{self.instrument.instrument_from_band(band)}/{self.version}/{self.survey}/{self.survey}_{band}_{forced_phot_band}_sel_cat_{self.version}.fits")
             if not path.is_file():
+                print(self.instrument.instrument_from_band(band))
                 # SExtractor bash script python wrapper
                 if force_pho_size == self.im_shapes[band] and self.wht_types[band] == self.wht_types[forced_phot_band]:
                     print([f"./make_sex_cat.sh", config['DEFAULT']['GALFIND_WORK'], self.im_paths[band], str(self.im_pixel_scales[band]), \
-                                        str(self.im_zps[band]), self.instrument.name, self.survey, band, self.version, \
+                                        str(self.im_zps[band]), self.instrument.instrument_from_band(band), self.survey, band, self.version, \
                                             forced_phot_band, self.im_paths[forced_phot_band], self.wht_paths[band], str(self.wht_exts[band]), \
                                             str(self.im_exts[band]), self.wht_paths[forced_phot_band], str(self.wht_exts[forced_phot_band]), self.wht_types[band], 
                                             str(self.im_exts[forced_phot_band]), f"{config['DEFAULT']['GALFIND_DIR']}/configs/"])
                     
                     process = subprocess.Popen([f"./make_sex_cat.sh", config['DEFAULT']['GALFIND_WORK'], self.im_paths[band], str(self.im_pixel_scales[band]), \
-                                        str(self.im_zps[band]), self.instrument.instrument_from_band(band), self.survey, band, self.version, \
-                                            forced_phot_band, self.im_paths[forced_phot_band], self.wht_paths[band], str(self.wht_exts[band]), \
-                                            str(self.im_exts[band]), self.wht_paths[forced_phot_band], str(self.wht_exts[forced_phot_band]), self.wht_types[band], 
-                                            str(self.im_exts[forced_phot_band]), f"{config['DEFAULT']['GALFIND_DIR']}/configs/"])
+                                        str(self.im_zps[band]),self.instrument.instrument_from_band(band), self.survey, band, self.version, \
+                                            forced_phot_band, str(self.im_paths[forced_phot_band]), str(self.wht_paths[band]), str(self.wht_exts[band]), \
+                                            str(self.im_exts[band]), str(self.wht_paths[forced_phot_band]), str(self.im_exts[forced_phot_band]), self.wht_types[band], 
+                                            str(self.wht_exts[forced_phot_band]), f"{config['DEFAULT']['GALFIND_DIR']}/configs/"])
                     process.wait()
                 # Use photutils
                 else:
@@ -483,12 +479,10 @@ class Data:
         self.make_sex_cats(forced_phot_band)
         # run only if this doesn't already exist
         save_name = f"{self.survey}_MASTER_Sel-{forced_phot_band}_{self.version}.fits"
-        print(self.instrument.name)
         save_dir = f"{config['DEFAULT']['GALFIND_WORK']}/Catalogues/{self.version}/{self.instrument.name}/{self.survey}"
         self.sex_cat_master_path = f"{save_dir}/{save_name}"
         if not Path(self.sex_cat_master_path).is_file():
             for i, (band, path) in enumerate(self.sex_cats.items()):
-                print(path)
                 tab = Table.read(path, character_as_bytes = False)
                 if i != 0:
                     # remove the duplicated IDs and RA/DECs
@@ -660,7 +654,7 @@ class Data:
                 for diam_index, aper_diam in enumerate(aper_diams):
                     r = self.calc_aper_radius_pix(aper_diam, band)
                     # open aperture positions in this band
-                    aper_loc = np.loadtxt(f"{self.get_depth_dir(aper_diam)}/coord_{band}.txt")
+                    aper_loc = np.loadtxt(f"{self.get_depth_dir(aper_diam, band)}/coord_{band}.txt")
                     xcoord = aper_loc[:, 0]
                     ycoord = aper_loc[:, 1]
                     index = np.argwhere(xcoord == 0.)
@@ -741,8 +735,8 @@ class Data:
                                                 three_sigma_non_detected], ["L", "L", "L"], True, self.loc_depth_cat_path) # save .fits table
                     print("total nans =", nans)
         
-    def get_depth_dir(self, aper_diam):
-        self.depth_dir = f"{config['DEFAULT']['GALFIND_WORK']}/Depths/{self.instrument.name}/{self.version}/{self.survey}/{str(aper_diam.value)}as"
+    def get_depth_dir(self, aper_diam, band):
+        self.depth_dir = f"{config['DEFAULT']['GALFIND_WORK']}/Depths/{self.instrument.intrument_from_band(band)}/{self.version}/{self.survey}/{str(aper_diam.value)}as"
         os.makedirs(self.depth_dir, exist_ok = True)
         return self.depth_dir
     
@@ -751,10 +745,14 @@ class Data:
     
     def calc_depths(self, xy_offset = [0, 0], aper_diams = [0.32] * u.arcsec, size = 500, n_busy_iters = 1_000, number = 600, \
                     mask_rad = 25, aper_disp_rad = 2, excl_bands = [], use_xy_offset_txt = True):
-        
+       
+        if type(aper_disp_rad) == u.Quantity:
+            aper_disp_rad = aper_disp_rad.to(u.radian).value    
+            
         for aper_diam in aper_diams:
             print(aper_diam)
-            self.get_depth_dir(aper_diam)
+            for band in self.instrument.bands:
+                self.get_depth_dir(aper_diam, band)
         
             average_depths = []
             header = "band, average_5σ_depth"
@@ -859,9 +857,12 @@ def calc_xy_offsets(offset):
 
 def place_blank_regions(im_data, im_header, seg_data, mask, survey, offset, pix_scale, band, aper_diam = 0.32 * u.arcsec, size = 500, n_busy_iters = 1_000, number = 600, mask_rad = 25, aper_disp_rad = 2):
     
-    im_wcs = WCS(im_header)
+    #im_wcs = WCS(im_header)
     r = aper_diam / (2 * pix_scale) # radius of aperture in pixels
-    
+ 
+    if type(r) == u.Quantity:
+        r = r.to(u.radian).value   
+
     xoff, yoff = calc_xy_offsets(offset)
     
     xchunk = int(seg_data.shape[1])
@@ -912,7 +913,7 @@ def place_blank_regions(im_data, im_header, seg_data, mask, survey, offset, pix_
                              source_mask = circ_mask(w, h, radius = mask_rad, center = z[idx]) #draw a circle on segmentation map so make sure empty aperture isn't near another object and truly empty
                              masked_source_image = copy.deepcopy(seg_chunk)
                              masked_source_image[source_mask == 0] = 0 #set all area outside of circle to 0
-                             source = np.argwhere((masked_source_image != 0)) #check if any part of the masked segmentation map contains another source
+                             source = np.argwhere((masked_source_image != 0)) #check if any part of the masked segmentation map contains another source      
                              aper_mask = circ_mask(w, h, radius = r + aper_disp_rad, center = z[idx])
                              masked_aper_image = copy.deepcopy(aper_mask_chunk)
                              masked_aper_image[aper_mask == 0] = 0 #set all area outside of circle to 0
