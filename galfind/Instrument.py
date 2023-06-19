@@ -54,7 +54,10 @@ class Instrument:
 
     def instrument_from_band(self, band):
         # Pointless here but makes it compatible with Combined_Instrument
-        return self.instrument.name
+        if band in self.bands:
+            return self.name
+        else:
+            return False
     
     def __getitem__(self, get_index): # create a new instrument with only the indexed band
         excl_bands = []

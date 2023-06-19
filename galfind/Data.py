@@ -64,12 +64,14 @@ class Data:
         # make segmentation maps from image paths if they don't already exist
         made_new_seg_maps = False
         for i, (band, seg_path) in enumerate(seg_paths.items()):
+            print(f"{config['DEFAULT']['GALFIND_WORK']}/SExtractor/{self.instrument.instrument_from_band(band)}/{version}/{survey}/{survey}*{band}_{band}*{version}*seg.fits")
+
             print(band, seg_path)
             if (seg_path == "" or seg_path == []) and not made_new_seg_maps:
                 self.make_seg_maps()
                 made_new_seg_maps = True
             # load new segmentation maps
-            seg_paths[band] = glob.glob(f"{config['DEFAULT']['GALFIND_WORK']}/SExtractor/{instrument.name}/{version}/{survey}/{survey}*{band}_{band}*{version}*seg.fits")[0]
+            seg_paths[band] = glob.glob(f"{config['DEFAULT']['GALFIND_WORK']}/SExtractor/{self.instrument.instrument_from_band(band)}/{version}/{survey}/{survey}*{band}_{band}*{version}*seg.fits")[0]
         self.seg_paths = dict(sorted(seg_paths.items()))
         
         # make masks from image paths if they don't already exist
@@ -269,22 +271,24 @@ class Data:
             # All seg maps and masks should be in same format, so load those last when we know what bands we have
             for band in comb_instrument.bands:
                 try:
-                    seg_paths[band] = glob.glob(f"{config['DEFAULT']['GALFIND_WORK']}/SExtractor/{instrument.name}/{version}/{survey}/{survey}*{band}_{band}*{version}*seg.fits")[0]
-                except:
+                    print(f"{config['DEFAULT']['GALFIND_WORK']}/SExtractor/{comb_instrument.instrument_from_band(band)}/{version}/{survey}/{survey}*{band}_{band}*{version}*seg.fits")
+            
+                    seg_paths[band] = glob.glob(f"{config['DEFAULT']['GALFIND_WORK']}/SExtractor/{comb_instrument.instrument_from_band(band)}/{version}/{survey}/{survey}*{band}_{band}*{version}*seg.fits")[0]
+                except IndexError:
                     seg_paths[band] = ""
                 # include just the masks corresponding to the correct bands
                 try:
                     mask_paths[band] = glob.glob(f"{config['DEFAULT']['GALFIND_WORK']}/Masks/{survey}/*{band.replace('W', 'w').replace('M', 'm')}*")[0]
-                except:
+                except IndexError:
                     mask_paths[band] = ""
             # Moved out as not actually specific to NIRCam
             try:
                 cluster_mask_path = glob.glob(f"{config['DEFAULT']['GALFIND_WORK']}/Masks/{survey}/*cluster*")[0]
-            except:
+            except IndexError:
                 cluster_mask_path = ""
             try:
                 blank_mask_path = glob.glob(f"{config['DEFAULT']['GALFIND_WORK']}/Masks/{survey}/*blank*")[0]
-            except:
+            except IndexError:
                 blank_mask_path = ""
 
             #im_paths, im_exts, im_shapes, im_zps, wht_paths, wht_exts, wht_types, im_pixel_scales, seg_paths, mask_paths, cluster_mask_path, blank_mask_path 
@@ -437,7 +441,7 @@ class Data:
             # SExtractor bash script python wrapper
             process = subprocess.Popen([f"./make_seg_map.sh", config['DEFAULT']['GALFIND_WORK'], self.im_paths[band], str(self.im_pixel_scales[band]), \
                                     str(self.im_zps[band]), self.instrument.instrument_from_band(band), self.survey, band, self.version, str(self.wht_paths[band]), \
-                                    str(self.wht_exts[band]),self.wht_types[band],str(self.im_exts[band]),f"{config['DEFAULT']['GALFIND_DIR']}/configs/"])
+                                    str(self.wht_exts[band]),self.wht_types[band],str(self.im_exts[band]),f"{config['DEFAULT']['GALFIND_DIR']}/configs/"], check =True)
             process.wait()
             
             
@@ -449,25 +453,31 @@ class Data:
         force_pho_size = self.im_shapes[forced_phot_band]
         for band in self.instrument.bands:
             # if not run before
-            path = Path(f"{config['DEFAULT']['GALFIND_WORK']}/SExtractor/{self.instrument.name}/{self.version}/{self.survey}/{self.survey}_{band}_{forced_phot_band}_sel_cat_{self.version}.fits")
+            path = Path(f"{config['DEFAULT']['GALFIND_WORK']}/SExtractor/{self.instrument.instrument_from_band(band)}/{self.version}/{self.survey}/{self.survey}_{band}_{forced_phot_band}_sel_cat_{self.version}.fits")
             if not path.is_file():
                 # SExtractor bash script python wrapper
                 if force_pho_size == self.im_shapes[band] and self.wht_types[band] == self.wht_types[forced_phot_band]:
-                    process = subprocess.Popen([f"./make_sex_cat.sh", config['DEFAULT']['GALFIND_WORK'], self.im_paths[band], str(self.im_pixel_scales[band].value), \
-                                        str(self.img_zps[band].value), self.instrument.name, self.survey, band, self.version, \
+                    print([f"./make_sex_cat.sh", config['DEFAULT']['GALFIND_WORK'], self.im_paths[band], str(self.im_pixel_scales[band]), \
+                                        str(self.im_zps[band]), self.instrument.name, self.survey, band, self.version, \
                                             forced_phot_band, self.im_paths[forced_phot_band], self.wht_paths[band], str(self.wht_exts[band]), \
-                                            self.im_exts[band], self.wht_paths[forced_phot_band], self.wht_exts[forced_phot_band], self.wht_types[band], 
-                                            str(self.im_exts[forced_phot_band]), f"{config['DEFAULT']['GALFIND_DIR']}/config/"])
+                                            str(self.im_exts[band]), self.wht_paths[forced_phot_band], str(self.wht_exts[forced_phot_band]), self.wht_types[band], 
+                                            str(self.im_exts[forced_phot_band]), f"{config['DEFAULT']['GALFIND_DIR']}/configs/"])
+                    
+                    process = subprocess.Popen([f"./make_sex_cat.sh", config['DEFAULT']['GALFIND_WORK'], self.im_paths[band], str(self.im_pixel_scales[band]), \
+                                        str(self.im_zps[band]), self.instrument.instrument_from_band(band), self.survey, band, self.version, \
+                                            forced_phot_band, self.im_paths[forced_phot_band], self.wht_paths[band], str(self.wht_exts[band]), \
+                                            str(self.im_exts[band]), self.wht_paths[forced_phot_band], str(self.wht_exts[forced_phot_band]), self.wht_types[band], 
+                                            str(self.im_exts[forced_phot_band]), f"{config['DEFAULT']['GALFIND_DIR']}/configs/"])
                     process.wait()
                 # Use photutils
                 else:
-                    forcephot_path = path = Path(f"{config['DEFAULT']['GALFIND_WORK']}/SExtractor/{self.instrument.name}/{self.version}/{self.survey}/{self.survey}_{forced_phot_band}_{forced_phot_band}_sel_cat_{self.version}.fits")
+                    forcephot_path =  Path(f"{config['DEFAULT']['GALFIND_WORK']}/SExtractor/{self.instrument.instrument_from_band(forced_phot_band)}/{self.version}/{self.survey}/{self.survey}_{forced_phot_band}_{forced_phot_band}_sel_cat_{self.version}.fits")
           
                     self.forced_photometry(band, forced_phot_band, path, forcephot_path)
                     
              
             print(f"Finished making SExtractor catalogue for {self.survey} {self.version} {band}!")
-        self.sex_cats = {band: f"{config['DEFAULT']['GALFIND_WORK']}/SExtractor/{self.instrument.name}/{self.version}/{self.survey}/{self.survey}_{band}_{forced_phot_band}_sel_cat_{self.version}.fits" for band in self.instrument.bands}
+        self.sex_cats = {band: f"{config['DEFAULT']['GALFIND_WORK']}/SExtractor/{self.instrument.instrument_from_band(band)}/{self.version}/{self.survey}/{self.survey}_{band}_{forced_phot_band}_sel_cat_{self.version}.fits" for band in self.instrument.bands}
     
     def combine_sex_cats(self, forced_phot_band = "f444W"):
         self.make_sex_cats(forced_phot_band)
@@ -478,6 +488,7 @@ class Data:
         self.sex_cat_master_path = f"{save_dir}/{save_name}"
         if not Path(self.sex_cat_master_path).is_file():
             for i, (band, path) in enumerate(self.sex_cats.items()):
+                print(path)
                 tab = Table.read(path, character_as_bytes = False)
                 if i != 0:
                     # remove the duplicated IDs and RA/DECs
@@ -497,19 +508,19 @@ class Data:
         pass
     
     def forced_photometry(self, band, forced_phot_band, path, forcephot_path, radii = [0.16, 0.25, 0.5, 0.75, 1]*u.arcsec, ra_col='ALPHA_J2000', dec_col='DELTA_J2000', coord_unit=u.deg, id_col='NUMBER', x_col='X_IMAGE', y_col='Y_IMAGE'):
-        
+        # Read in sextractor catalogue
         catalog = Table.read(forcephot_path, character_as_bytes = False)
-        
+        # Get image path
         image = self.im_paths[band]
+        # Ipen image with correct extension and get WCS
         with fits.open(image) as hdul:
             im_ext = self.im_exts[band]
             image = hdul[im_ext].data
             wcs = WCS(hdul[im_ext].header)
-
+        # Check types
         assert(type(image) == np.ndarray)  
-  
         assert(type(catalog) == Table)
-
+        # Get positions from sextractor catalog
         ra = catalog[ra_col]
         dec = catalog[dec_col]
          # Make SkyCoord from catlog
@@ -527,15 +538,17 @@ class Data:
             aperture = SkyCircularAperture(positions, r=rad)
             apertures.append(aperture)
             # Convert to pixel using image WCS
-    
+        # Generate background
         background = Background2D(image, (64, 64), filter_size=(3, 3))
     
         image = image-background.background
+        # Do aperture photometry
         phot_table = aperture_photometry(image, apertures, wcs=wcs)
         assert(len(phot_table) == len(catalog))
         # Replace detection ID with catalog ID
         sky = SkyCoord(phot_table['sky_center'])
         phot_table['id'] = catalog[id_col]
+        # Rename columns
         phot_table.rename_column('id', id_col )
         phot_table.rename_column('xcenter', x_col)
         phot_table.rename_column('ycenter', y_col)
@@ -543,13 +556,13 @@ class Data:
         phot_table[ra_col] = sky.ra.to('deg')
         phot_table[dec_col] = sky.dec.to('deg')
         phot_table.remove_column('sky_center')
-        #phot_table['FLUX_APER'] = 
+         
         colnames = [f'aperture_sum_{i}' for i in range(len(radii))]
         aper_tab = Column(np.array(phot_table[colnames].as_array().tolist()), name=f'FLUX_APER_{band}')
         phot_table[f'FLUX_APER_{band}'] = aper_tab
         
         zp = self.im_zps[band]
-        
+        # This converts the fluxes to magnitudes using the correct zp, and puts them in the same format as the sextractor catalogue
         mag_colnames  = []
         for pos,col in enumerate(colnames):
             name = f'MAG_APER_{pos}'
@@ -559,9 +572,9 @@ class Data:
         aper_tab = Column(np.array(phot_table[mag_colnames].as_array().tolist()), name=f'MAG_APER_{band}')
         print(aper_tab)
         phot_table[f'MAG_APER_{band}'] = aper_tab
-
+        # Remove old columns
         phot_table.remove_columns(mag_colnames)
-
+        print(path)
         phot_table.write(path, format='fits', overwrite=True)
 
 
@@ -610,7 +623,7 @@ class Data:
                                                  phot_data.columns.formats[list(phot_data.columns.names).index("FLUX_APER_" + band)]])
                 for j, aper_diam in enumerate(json.loads(config.get("SExtractor", "APERTURE_DIAMS")) * u.arcsec):
                     phot_data["MAG_APER_" + band + "_aper_corr"].T[j] = (phot_data["MAG_APER_" + band].T[j] - self.instrument.aper_corr(aper_diam, band)).T
-                    phot_data["FLUX_APER_" + band + "_aper_corr"].T[j] = 10 ** ((phot_data["MAG_APER_" + band + "_aper_corr"].T[j] - self.img_zps[band]) / -2.5)
+                    phot_data["FLUX_APER_" + band + "_aper_corr"].T[j] = 10 ** ((phot_data["MAG_APER_" + band + "_aper_corr"].T[j] - self.im_zps[band]) / -2.5)
                     print("Performed aperture corrections")
                 
                 # make new columns (fill with original errors and overwrite in a couple of lines)
@@ -642,7 +655,7 @@ class Data:
                         phot_data["sigma_" + band].T[j][k] = -99.
                         
                         # update column for flux in Jy
-                        phot_data["FLUX_APER_" + band + "_aper_corr_Jy"].T[j][k] = funcs.flux_image_to_Jy(phot_data["FLUX_APER_" + band + "_aper_corr"].T[j][k], self.img_zps[band]).value
+                        phot_data["FLUX_APER_" + band + "_aper_corr_Jy"].T[j][k] = funcs.flux_image_to_Jy(phot_data["FLUX_APER_" + band + "_aper_corr"].T[j][k], self.im_zps[band]).value
             
                 for diam_index, aper_diam in enumerate(aper_diams):
                     r = self.calc_aper_radius_pix(aper_diam, band)
@@ -656,7 +669,7 @@ class Data:
                     aper_coords = pixel_to_skycoord(xcoord, ycoord, wcs)
                     
                     # calculate local depths for all galaxies
-                    loc_depths = calc_loc_depths(phot_data["ALPHA_J2000"], phot_data["DELTA_J2000"], aper_coords, xcoord, ycoord, im_data, r, self.survey, band, n_samples = n_samples, zero_point = self.img_zps[band])
+                    loc_depths = calc_loc_depths(phot_data["ALPHA_J2000"], phot_data["DELTA_J2000"], aper_coords, xcoord, ycoord, im_data, r, self.survey, band, n_samples = n_samples, zero_point = self.im_zps[band])
                     
                     five_sigma_detected = []
                     two_sigma_non_detected = []
@@ -671,7 +684,7 @@ class Data:
                         if loc_depth == np.nan:
                             nans = nans + 1
                             loc_depth_nan = True
-                        aper_flux_err = (10 ** ((loc_depth - self.img_zps[band]) / -2.5)) / 5 # in image units
+                        aper_flux_err = (10 ** ((loc_depth - self.im_zps[band]) / -2.5)) / 5 # in image units
                         if aper_flux_err == np.nan and not loc_depth_nan:
                             nans = nans + 1
                             print("loc_depth =", loc_depth)
@@ -683,7 +696,7 @@ class Data:
                             phot_data["FLUX_APER_" + band + "_aper_corr_Jy"].T[diam_index][k] * min_percentage_err / 100
                         else:
                             phot_data["FLUXERR_APER_" + band + "_loc_depth_" + str(min_percentage_err) + "pc_Jy"].T[diam_index][k] = \
-                                funcs.flux_image_to_Jy(phot_data["FLUXERR_APER_" + band + "_loc_depth"].T[diam_index][k], self.img_zps[band]).value
+                                funcs.flux_image_to_Jy(phot_data["FLUXERR_APER_" + band + "_loc_depth"].T[diam_index][k], self.im_zps[band]).value
                         
                         # calculate local depth mag errors both with and without 5pc minimum flux errors imposed
                         for m in range(2):
@@ -706,7 +719,7 @@ class Data:
                                 phot_data["MAGERR_APER_" + band + "_u1_loc_depth" + add_suffix].T[diam_index][k] = mag_u1
                         
                         # make boolean columns to say whether there is a local 5σ detection and 2σ non-detection in the band in the smallest aperture
-                        phot_data["sigma_" + band].T[diam_index][k] = funcs.n_sigma_detection(loc_depth, phot_data[f"MAG_APER_{band}"].T[diam_index][k], self.img_zps[band])
+                        phot_data["sigma_" + band].T[diam_index][k] = funcs.n_sigma_detection(loc_depth, phot_data[f"MAG_APER_{band}"].T[diam_index][k], self.im_zps[band])
                         if phot_data[f"MAG_APER_{band}"].T[diam_index][k] < loc_depth:
                             five_sigma_detected.append(True)
                         else:
@@ -784,9 +797,9 @@ class Data:
                     r = self.calc_aper_radius_pix(aper_diam, band)
                     if not Path(f"{self.depth_dir}/{self.survey}_depths.txt").is_file():
                         # plot the depths in the grid
-                        plot_depths(im_data, self.depth_dir, band, seg_data, xcoord, ycoord, xy_offset, r, size, self.img_zps[band])
+                        plot_depths(im_data, self.depth_dir, band, seg_data, xcoord, ycoord, xy_offset, r, size, self.im_zps[band])
                         # calculate average depth
-                        average_depths.append(calc_5sigma_depth(xcoord, ycoord, im_data, r, self.img_zps[band]))
+                        average_depths.append(calc_5sigma_depth(xcoord, ycoord, im_data, r, self.im_zps[band]))
                         
             # print table of depths for these bands
             if not Path(f"{self.depth_dir}/{self.survey}_depths.txt").is_file():
