@@ -32,6 +32,7 @@ import matplotlib.pyplot as plt
 from matplotlib import cm
 from tqdm import tqdm
 import json
+from joblib import Parallel, delayed
 
 from .Instrument import Instrument, ACS_WFC,WFC3IR, NIRCam, MIRI, Combined_Instrument
 from . import config
@@ -744,65 +745,73 @@ class Data:
         return (aper_diam / (2 * self.im_pixel_scales[band])).value
     
     def calc_depths(self, xy_offset = [0, 0], aper_diams = [0.32] * u.arcsec, size = 500, n_busy_iters = 1_000, number = 600, \
-                    mask_rad = 25, aper_disp_rad = 2, excl_bands = [], use_xy_offset_txt = True):
+                    mask_rad = 25, aper_disp_rad = 2, excl_bands = [], use_xy_offset_txt = True, n_jobs = 1):
        
         if type(aper_disp_rad) == u.Quantity:
             aper_disp_rad = aper_disp_rad.to(u.radian).value    
-            
+
+        params = []  
+        average_depths = []
+        # Look over all aperture diameters and bands
         for aper_diam in aper_diams:
             print(aper_diam)
             for band in self.instrument.bands:
-                self.get_depth_dir(aper_diam, band)
-        
-            average_depths = []
-            header = "band, average_5σ_depth"
-            for band in self.instrument.bands:
+                # Only run for non excluded bands
                 if band not in excl_bands:
-                    if use_xy_offset_txt:
-                        try:
-                            # use the xy_offset defined in .txt in appropriate folder
-                            xy_offset_path = f"{self.depth_dir}/offset_{band}.txt"
-                            xy_offset = list(np.genfromtxt(xy_offset_path, dtype = int))
-                            print(f"xy_offset = {xy_offset}")
-                        except: # use default xy offset if this .txt does not exist
-                            pass
-                        
-                    if not Path(f"{self.depth_dir}/coord_{band}.reg").is_file() or not Path(f"{self.depth_dir}/{self.survey}_depths.txt").is_file() or not Path(f"{self.depth_dir}/coord_{band}.txt").is_file():
-                        xoff, yoff = calc_xy_offsets(xy_offset)
-                        im_data, im_header, seg_data, seg_header, mask = self.load_data(band)
-    
-                    if not Path(f"{self.depth_dir}/coord_{band}.txt").is_file():
-                        # place apertures in blank regions of sky
-                        xcoord, ycoord = place_blank_regions(im_data, im_header, seg_data, mask, self.survey, xy_offset, self.im_pixel_scales[band], band, \
-                                                         aper_diam, size, n_busy_iters, number, mask_rad, aper_disp_rad)
-                        np.savetxt(f"{self.depth_dir}/coord_{band}.txt", np.column_stack((xcoord, ycoord)))
-                        # save xy offset for this field and band
-                        np.savetxt(f"{self.depth_dir}/offset_{band}.txt", np.column_stack((xoff, yoff)), header = "x_off, y_off", fmt = "%d %d")
-                    
-                    # read in aperture locations
-                    if not Path(f"{self.depth_dir}/coord_{band}.reg").is_file() or not Path(f"{self.depth_dir}/{self.survey}_depths.txt").is_file():
-                        aper_loc = np.loadtxt(f"{self.depth_dir}/coord_{band}.txt")
-                        xcoord = aper_loc[:, 0]
-                        ycoord = aper_loc[:, 1]
-                        index = np.argwhere(xcoord == 0.)
-                        xcoord = np.delete(xcoord, index)
-                        ycoord = np.delete(ycoord, index)
-                    
-                    # convert these to .reg region file
-                    if not Path(f"{self.depth_dir}/coord_{band}.reg").is_file():
-                        aper_loc_to_reg(xcoord, ycoord, WCS(im_header), aper_diam.value, f"{self.depth_dir}/coord_{band}.reg")
-                    
-                    r = self.calc_aper_radius_pix(aper_diam, band)
-                    if not Path(f"{self.depth_dir}/{self.survey}_depths.txt").is_file():
-                        # plot the depths in the grid
-                        plot_depths(im_data, self.depth_dir, band, seg_data, xcoord, ycoord, xy_offset, r, size, self.im_zps[band])
-                        # calculate average depth
-                        average_depths.append(calc_5sigma_depth(xcoord, ycoord, im_data, r, self.im_zps[band]))
-                        
-            # print table of depths for these bands
-            if not Path(f"{self.depth_dir}/{self.survey}_depths.txt").is_file():
-                np.savetxt(f"{self.depth_dir}/{self.survey}_depths.txt", np.column_stack((np.array(self.instrument.bands), np.array(average_depths))), header = header, fmt = "%s")
+                    self.get_depth_dir(aper_diam, band)
+                    params.append((band, xy_offset, aper_diam, size, n_busy_iters, number, mask_rad, aper_disp_rad, use_xy_offset_txt, average_depths))
+        # Parallelise the calculation of depths for each band
+        Parallel(n_jobs=n_jobs)(delayed(self.calc_band_depth)(param) for param in params)
+        # print table of depths for these bands
+        header = "band, average_5sigma_depth"
+        if not Path(f"{self.depth_dir}/{self.survey}_depths.txt").is_file():
+            np.savetxt(f"{self.depth_dir}/{self.survey}_depths.txt", np.column_stack((np.array(self.instrument.bands), np.array(average_depths))), header = header, fmt = "%s")
         
+    def calc_band_depth(self, params):
+        band, xy_offset, aper_diam, size, n_busy_iters, number, mask_rad, aper_disp_rad, use_xy_offset_txt, average_depths = params
+            
+        if use_xy_offset_txt:
+            try:
+                # use the xy_offset defined in .txt in appropriate folder
+                xy_offset_path = f"{self.depth_dir}/offset_{band}.txt"
+                xy_offset = list(np.genfromtxt(xy_offset_path, dtype = int))
+                print(f"xy_offset = {xy_offset}")
+            except: # use default xy offset if this .txt does not exist
+                pass
+            
+        if not Path(f"{self.depth_dir}/coord_{band}.reg").is_file() or not Path(f"{self.depth_dir}/{self.survey}_depths.txt").is_file() or not Path(f"{self.depth_dir}/coord_{band}.txt").is_file():
+            xoff, yoff = calc_xy_offsets(xy_offset)
+            im_data, im_header, seg_data, seg_header, mask = self.load_data(band)
+
+        if not Path(f"{self.depth_dir}/coord_{band}.txt").is_file():
+            # place apertures in blank regions of sky
+            xcoord, ycoord = place_blank_regions(im_data, im_header, seg_data, mask, self.survey, xy_offset, self.im_pixel_scales[band], band, \
+                                                aper_diam, size, n_busy_iters, number, mask_rad, aper_disp_rad)
+            np.savetxt(f"{self.depth_dir}/coord_{band}.txt", np.column_stack((xcoord, ycoord)))
+            # save xy offset for this field and band
+            np.savetxt(f"{self.depth_dir}/offset_{band}.txt", np.column_stack((xoff, yoff)), header = "x_off, y_off", fmt = "%d %d")
+        
+        # read in aperture locations
+        if not Path(f"{self.depth_dir}/coord_{band}.reg").is_file() or not Path(f"{self.depth_dir}/{self.survey}_depths.txt").is_file():
+            aper_loc = np.loadtxt(f"{self.depth_dir}/coord_{band}.txt")
+            xcoord = aper_loc[:, 0]
+            ycoord = aper_loc[:, 1]
+            index = np.argwhere(xcoord == 0.)
+            xcoord = np.delete(xcoord, index)
+            ycoord = np.delete(ycoord, index)
+        
+        # convert these to .reg region file
+        if not Path(f"{self.depth_dir}/coord_{band}.reg").is_file():
+            aper_loc_to_reg(xcoord, ycoord, WCS(im_header), aper_diam.value, f"{self.depth_dir}/coord_{band}.reg")
+        
+        r = self.calc_aper_radius_pix(aper_diam, band)
+        if not Path(f"{self.depth_dir}/{self.survey}_depths.txt").is_file():
+            # plot the depths in the grid
+            plot_depths(im_data, self.depth_dir, band, seg_data, xcoord, ycoord, xy_offset, r, size, self.im_zps[band])
+            # calculate average depth
+            average_depths.append(calc_5sigma_depth(xcoord, ycoord, im_data, r, self.im_zps[band]))
+        
+    
 # match sextractor catalogue codes
 sex_id_params = ["NUMBER", "X_IMAGE", "Y_IMAGE", "ALPHA_J2000", "DELTA_J2000"]
 
