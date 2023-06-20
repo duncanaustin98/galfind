@@ -576,10 +576,11 @@ class Galaxy:
         # print("'z' here for a short time not a long time (in the 'Galaxy' class)! PUT THIS INSTEAD IN THE 'CODE' class")
         self.sky_coord = sky_coord
         # phot_obs is within phot_rest (it shouldn't be!)
-        if properties["LePhare"]["z"] == 0:
-            self.phot_rest = None
-        else:
-            self.phot_rest = Photometry_rest(phot, properties["LePhare"]["z"], "LePhare") # works for LePhare only currently
+        if properties != {}:
+            if properties["LePhare"]["z"] == 0:
+                self.phot_rest = None
+            else:
+                self.phot_rest = Photometry_rest(phot, properties["LePhare"]["z"], "LePhare") # works for LePhare only currently
         self.phot_obs = phot # need to improve this still!
         self.ID = int(ID)
         #self.codes = codes
