@@ -64,6 +64,7 @@ class Catalogue:
         elif cat_creator.cat_type == "sex":
             cat_path = data.sex_cat_master_path
         cat = cls.from_sex_cat(cat_path, data.instrument, data.survey, cat_creator)
+        print("cat_path = ", cat.cat_path)
         cat.mask(data)
         return cat
     

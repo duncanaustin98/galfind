@@ -300,7 +300,7 @@ class Data:
         # if depths havn't already been run, run them
         self.calc_depths(aper_diams = aper_diams)
         # correct the base sextractor catalogue to include local depth errors if not already done so
-        self.loc_depth_cat_path = self.sex_cat_master_path.replace(".fits", "_loc_depth_{min_flux_pc_err}.fits")
+        self.loc_depth_cat_path = self.sex_cat_master_path.replace(".fits", f"_loc_depth_{min_flux_pc_err}pc.fits")
         if not Path(self.loc_depth_cat_path).is_file():
             # open photometric data
             phot_data = fits.open(self.sex_cat_master_path)[1].data  
