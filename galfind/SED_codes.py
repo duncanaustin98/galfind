@@ -26,9 +26,9 @@ from . import config
 
 class SED_code(ABC):
     
-    def __init__(self, code_name, galaxy_properties):
+    def __init__(self, code_name, galaxy_property_labels):
         self.code_name = code_name
-        self.galaxy_properties = galaxy_properties
+        self.galaxy_property_labels = galaxy_property_labels
         self.code_dir = f"{config['DEFAULT']['GALFIND_WORK']}/{code_name}"
     
     @classmethod
@@ -89,14 +89,14 @@ class SED_code(ABC):
     
     def update_cat(self, cat, fits_out_path):
         # save concatenated catalogue
-        combined_cat = join(Table.read(fits_out_path), Table.read(cat.cat_path), keys_left = "IDENT", keys_right = "NUMBER")
+        combined_cat = join(Table.read(cat.cat_path), Table.read(fits_out_path), keys_left = "NUMBER", keys_right = "IDENT")
         combined_cat_path = f"{config['DEFAULT']['GALFIND_WORK']}/Catalogues/{cat.data.version}/{cat.data.instrument.name}/" + \
             f"{cat.data.survey}/{funcs.split_dir_name(fits_out_path.replace('.fits', '_matched.fits'), 'name')}"
         combined_cat.write(combined_cat_path, overwrite = True)
-        # update 'Catalogue' object
-        # use Catalogue.__setattr__() here!
-        #return cat.from_photo_z_cat(combined_cat_path, cat.data.instrument, cat.data.survey, self.code_name)
-    
+        # update 'Catalogue' object using Catalogue.__setattr__()
+        code_names = cat.codes + [self.code_name]
+        return cat.from_photo_z_cat(combined_cat_path, cat.data.instrument, cat.data.survey, code_names)
+        
     @abstractmethod
     def make_in(self, cat):
         pass

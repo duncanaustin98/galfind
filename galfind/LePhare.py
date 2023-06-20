@@ -25,8 +25,8 @@ class LePhare(SED_code):
     
     def __init__(self):
         code_name = "LePhare"
-        galaxy_properties = {"z": "Z_BEST", "mass": "MASS_BEST"}
-        super().__init__(code_name, galaxy_properties)
+        galaxy_property_labels = {"z": "Z_BEST", "mass": "MASS_BEST"}
+        super().__init__(code_name, galaxy_property_labels)
     
     def make_in(self, cat, units = u.ABmag, fix_z = False): # from FITS_organiser.py
         lephare_in_path = f"{self.code_dir}/input/{cat.data.instrument.name}/{cat.data.version}/{cat.data.survey}/{cat.cat_name[:-5]}.in"
