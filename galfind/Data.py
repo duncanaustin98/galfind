@@ -49,7 +49,7 @@ class Data:
         self.version = version
         self.instrument = instrument
         self.is_blank = is_blank
-        
+        print(im_paths)
         # make segmentation maps from image paths if they don't already exist
         made_new_seg_maps = False
         for i, (band, seg_path) in enumerate(seg_paths.items()):
@@ -92,8 +92,8 @@ class Data:
             #     print("Making cluster mask. (Not yet implemented; self.cluster_path = '' !!!)")
     
     @classmethod
-    def from_NIRCam_pipeline(cls, survey, version = "v8"):
-        instrument = NIRCam()
+    def from_NIRCam_pipeline(cls, survey, version = "v8", excl_bands = []):
+        instrument = NIRCam(excl_bands = excl_bands)
         # if int(version.split("v")[1]) >= 8:
         #     pmap = "1084"
         # else:
@@ -109,10 +109,16 @@ class Data:
             survey_im_dirs = {"CLIO": "CLIO/mosaic_1084", "El-Gordo": "elgordo/mosaic_1084", "GLASS": "GLASS-12/mosaic_1084", "NEP": "NEP/mosaic_1084", \
                           "NEP-2": "NEP-2/mosaic_1084", "NEP-3": "NEP-3/mosaic_1084", "SMACS-0723": "SMACS0723/mosaic_1084", "MACS-0416": "MACS0416/mosaic_1084_v3"} | ceers_im_dirs
         elif version == "v8a":
-            ceers_im_dirs = {f"CEERSP{str(i + 1)}": f"ceers/mosaic_1084_182/P{str(i + 1)}" for i in range(10)}
+            ceers_im_dirs = {f"CEERSP{str(i + 1)}": f"CEERSP{str(i + 1)}/mosaic_1084_182" for i in range(10)}
             survey_im_dirs = {"CLIO": "CLIO/mosaic_1084_182", "El-Gordo": "elgordo/mosaic_1084_182", "NEP-1": "NEP/mosaic_1084_182", "NEP-2": "NEP-2/mosaic_1084_182", \
-                              "NEP-3": "NEP-3/mosaic_1084_182", "MACS-0416": "MACS0416/mosaic_1084_182", "GLASS": "GLASS-12/mosaic_1084_182"} | ceers_im_dirs
-            
+                              "NEP-3": "NEP-3/mosaic_1084_182", "NEP-4": "NEP-4/mosaic_1084_182", "MACS-0416": "MACS0416/mosaic_1084_182", "GLASS": "GLASS-12/mosaic_1084_182", "SMACS-0723": "SMACS0723/mosaic_1084_182"} | ceers_im_dirs
+        elif version == "v8b":
+            survey_im_dirs = {survey: f"{survey}/mosaic_1084_wispfix"}
+        elif version == "v8c":
+            survey_im_dirs = {survey: f"{survey}/mosaic_1084_wispfix2"}
+        elif version == "lit_version":
+            survey_im_dirs = {"JADES-DR1": "JADES/DR1"}
+                
         survey_im_dirs = {key: f"/raid/scratch/data/jwst/{value}" for (key, value) in survey_im_dirs.items()}
         survey_dir = survey_im_dirs[survey]
         
@@ -120,7 +126,10 @@ class Data:
         nadams_seg_path_arr = glob.glob(f"{survey_dir}/*_seg.fits")
         nadams_bkg_path_arr = glob.glob(f"{survey_dir}/*_bkg.fits")
         
-        im_path_arr = glob.glob(f"{survey_dir}/*_i2d*.fits")
+        if version == "lit_version":
+            im_path_arr = glob.glob(f"{survey_dir}/*_drz.fits")
+        else:
+            im_path_arr = glob.glob(f"{survey_dir}/*_i2d*.fits")
         im_path_arr = np.array([path for path in im_path_arr if path not in nadams_seg_path_arr and path not in nadams_bkg_path_arr])
         
         # obtain available bands from imaging without having to hard code these
@@ -136,13 +145,21 @@ class Data:
         im_exts = {}
         seg_paths = {}
         mask_paths = {}
-        for i, band in enumerate(bands):
-            im_paths[band] = im_path_arr[i]
-            im_hdul = fits.open(im_path_arr[i])
+        for band in bands:
+            # obtains all image paths from the correct band 
+            im_paths_band = [im_path for im_path in im_path_arr if band.lower() in im_path or band in im_path or \
+                              band.replace("f", "F").replace("W", "w") in im_path or band.upper() in im_path]
+            # checks to see if there is just one singular image for the given band
+            if len(im_paths_band) == 1:
+                im_paths[band] = im_paths_band[0]
+            else:
+                raise(Exception(f"Multiple images found for {band} in {survey} {version}"))
+
+            im_hdul = fits.open(im_paths[band])
             # obtain appropriate extension from the image
-            for j, im_hdu in enumerate(im_hdul):
+            for i, im_hdu in enumerate(im_hdul):
                 if im_hdu.name == "SCI":
-                    im_exts[band] = int(j)
+                    im_exts[band] = int(i)
                     break
             # need to change this to work if there are no segmentation maps (with the [0] indexing)
             try:
@@ -204,8 +221,8 @@ class Data:
         im_path = self.im_paths[band]
         seg_path = self.seg_paths[band]
         im_ext = self.im_exts[band]
-        #print("im_path, seg_path, band")
-        #print(im_path, seg_path, band)
+        #print("im_path, seg_path, band, im_ext")
+        #print(im_path, seg_path, band, im_ext)
         im_hdul = fits.open(im_path) #directory of images and image name structure for science image
         im_data = im_hdul[im_ext].data
         im_data = im_data.byteswap().newbyteorder()
@@ -222,6 +239,43 @@ class Data:
             return im_data, im_header, seg_data, seg_header, mask
         else:
             return im_data, im_header, seg_data, seg_header
+        
+    def plot_image_from_band(self, ax, band, norm = LogNorm(vmin = 0., vmax = 10.), show = True):
+        im_data = self.load_data(band, incl_mask = False)[0]
+        self.plot_image_from_data(ax, im_data, band, norm, show)
+        
+    @staticmethod
+    def plot_image_from_data(ax, im_data, label, norm = LogNorm(vmin = 0., vmax = 10.), show = True):
+        ax.imshow(im_data, norm = norm, origin = "lower")
+        plt.title(f"{label} image")
+        plt.xlabel("X / pix")
+        plt.ylabel("Y / pix")
+        if show:
+            plt.show()
+            
+    def plot_mask_from_band(self, ax, band, show = True):
+        mask = self.load_data(band, incl_mask = True)[4]
+        self.plot_mask_from_data(ax, mask, band, show)
+        
+    @staticmethod
+    def plot_mask_from_data(ax, mask, label, show = True):
+        cbar_in = ax.imshow(mask, origin = "lower")
+        plt.title(f"{label} mask")
+        plt.xlabel("X / pix")
+        plt.ylabel("Y / pix")
+        plt.colorbar(cbar_in)
+        if show:
+            plt.show()
+    
+    def plot_mask_regions_from_band(self, ax, band):
+        im_header = self.load_data(band, incl_mask = False)[1]
+        mask_path = self.mask_paths[band]
+        mask_file = pyregion.open(mask_path).as_imagecoord(im_header)
+        patch_list, artist_list = mask_file.get_mpl_patches_texts()
+        for p in patch_list:
+            ax.add_patch(p)
+        for t in artist_list:
+            ax.add_artist(t)
     
     @run_in_dir(path = config['DEFAULT']['GALFIND_DIR'])
     def make_seg_maps(self):
@@ -280,6 +334,21 @@ class Data:
         stellar_mask.write(f"{os.getcwd()}/Masks/{survey}/{band}_stellar_mask.reg", header = im_header)
         # maybe insert a step here to align your images
         pass
+    
+    def clean_mask_regions(self, band):
+        # open region file
+        mask_path = self.mask_paths[band]
+        with open(mask_path, 'r') as f:
+            lines = f.readlines()
+            with open(mask_path.replace(".reg", "_clean.reg"), 'w') as temp:          
+                for i, line in enumerate(lines):
+                    if line.startswith('physical'):
+                        lines[i] = line.replace('physical', 'image')
+                    if not ( line.endswith(',0)\n') and line.startswith('circle')):
+                        if not (line.endswith(',0)\n') and line.startswith('ellipse')):
+                           temp.write(line)
+        # insert original mask ds9 region file into an unclean folder
+        # update mask paths for the object
     
     def calc_unmasked_area(self):
         # calculate mask area
@@ -444,7 +513,7 @@ class Data:
         return (aper_diam / (2 * self.instrument.pixel_scales[band])).value
     
     def calc_depths(self, xy_offset = [0, 0], aper_diams = [0.32] * u.arcsec, size = 500, n_busy_iters = 1_000, number = 600, \
-                    mask_rad = 25, aper_disp_rad = 2, excl_bands = [], use_xy_offset_txt = True):
+                    mask_rad = 25, aper_disp_rad = 2, excl_bands = [], use_xy_offset_txt = True, plot = False):
         
         for aper_diam in aper_diams:
             print(aper_diam)
@@ -454,23 +523,32 @@ class Data:
             header = "band, average_5σ_depth"
             for band in self.instrument.bands:
                 if band not in excl_bands:
+                    if plot:
+                        fig, ax = plt.subplots()
+                        self.plot_mask_regions_from_band(ax, band)
+                        self.plot_image_from_band(ax, band, show = True)
+                        fig, ax = plt.subplots()
+                        self.plot_mask_from_band(ax, band, show = True)
+                        
                     if use_xy_offset_txt:
                         try:
                             # use the xy_offset defined in .txt in appropriate folder
                             xy_offset_path = f"{self.depth_dir}/offset_{band}.txt"
                             xy_offset = list(np.genfromtxt(xy_offset_path, dtype = int))
-                            print(f"xy_offset = {xy_offset}")
+                            #print(f"xy_offset = {xy_offset}")
                         except: # use default xy offset if this .txt does not exist
                             pass
                         
                     if not Path(f"{self.depth_dir}/coord_{band}.reg").is_file() or not Path(f"{self.depth_dir}/{self.survey}_depths.txt").is_file() or not Path(f"{self.depth_dir}/coord_{band}.txt").is_file():
                         xoff, yoff = calc_xy_offsets(xy_offset)
                         im_data, im_header, seg_data, seg_header, mask = self.load_data(band)
-    
+                        print(f"Finished loading {band}")
+                        
                     if not Path(f"{self.depth_dir}/coord_{band}.txt").is_file():
                         # place apertures in blank regions of sky
                         xcoord, ycoord = place_blank_regions(im_data, im_header, seg_data, mask, self.survey, xy_offset, self.instrument.pixel_scales[band], band, \
                                                          aper_diam, size, n_busy_iters, number, mask_rad, aper_disp_rad)
+                        print(f"Finished placing blank regions in {band}")
                         np.savetxt(f"{self.depth_dir}/coord_{band}.txt", np.column_stack((xcoord, ycoord)))
                         # save xy offset for this field and band
                         np.savetxt(f"{self.depth_dir}/offset_{band}.txt", np.column_stack((xoff, yoff)), header = "x_off, y_off", fmt = "%d %d")
@@ -551,39 +629,46 @@ def calc_xy_offsets(offset):
     return xoff, yoff
 
 
-def place_blank_regions(im_data, im_header, seg_data, mask, survey, offset, pix_scale, band, aper_diam = 0.32 * u.arcsec, size = 500, n_busy_iters = 1_000, number = 600, mask_rad = 25, aper_disp_rad = 2):
+def place_blank_regions(im_data, im_header, seg_data, mask, survey, offset, pix_scale, band, aper_diam = 0.32 * u.arcsec, size = 500, n_busy_iters = 1_000, number = 600, mask_rad = 25, aper_disp_rad = 2, fast_mode = True):
     
-    im_wcs = WCS(im_header)
+    #im_wcs = WCS(im_header)
     r = aper_diam / (2 * pix_scale) # radius of aperture in pixels
+    if fast_mode:
+        r = 1e-10
+
+    # cast radius to a float from astropy.units.radians
+    if type(r) == u.Quantity:
+        r = r.value
     
     xoff, yoff = calc_xy_offsets(offset)
+    
     
     xchunk = int(seg_data.shape[1])
     ychunk = int(seg_data.shape[0])
     xcoord = list()
     ycoord = list()
-    busylist = list()
-    no_space = 0
     # finds locations to place empty apertures in
     for i in tqdm(range(0, int((xchunk - (2 * xoff)) / size)), desc = f"Running {band} depths for {survey}"):
         for j in tqdm(range(0, int((ychunk - (2 * yoff)) / size)), desc = f"Current row = {i + 1}", leave = False):
             busyflag = 0
-            #print(j, i)
             # narrow seg, image and mask data to appropriate size for the chunk
             seg_chunk = seg_data[(j * size) + yoff : ((j + 1) * size) + yoff, (i * size) + xoff:((i + 1) * size) + xoff]
             aper_mask_chunk = copy.deepcopy(seg_chunk)
             im_chunk = im_data[(j*size)+yoff:((j+1)*size)+yoff, (i*size)+xoff:((i+1)*size)+xoff]
-            mask_chunk = mask[(j*size)+yoff:((j+1)*size)+yoff, (i*size)+xoff:((i+1)*size)+xoff] #cut the box of interest out of the images
+            mask_chunk = mask[(j*size)+yoff:((j+1)*size)+yoff, (i*size)+xoff:((i+1)*size)+xoff] # cut the box of interest out of the images
             xlen = seg_chunk.shape[1]
             ylen = seg_chunk.shape[0]
             
             # check if there is enough space to fit apertures even if perfectly aligned
+            # if i == 16 and j == 16:
+            #     print(np.argwhere(seg_chunk == 0), np.argwhere(im_chunk != 0), np.argwhere(mask_chunk == False), np.argwhere(aper_mask_chunk == 0))
             z = np.argwhere((seg_chunk == 0) & (im_chunk != 0.) & (mask_chunk == False) & (aper_mask_chunk == 0)) #generate a list of candidate locations for empty apertures
+            #print(z)
             if len(z) > 0:
                 space = True
             else:
                 space = False
-            if space: # there are space for "number" of apertures
+            if space: # there is space for "number" of apertures
                  # cycle through range of available locations for empty apertures
                  for c in range(0, number): # tqdm(), desc = "Grid square completion", total = number * 0.6, leave = False):
                      next = 0
@@ -591,7 +676,7 @@ def place_blank_regions(im_data, im_header, seg_data, mask, survey, offset, pix_
                      
                      while next == 0:
      
-                         idx = randrange(len(z)) #find random candidate location for empty aperture
+                         idx = randrange(len(z)) # find random candidate location for empty aperture
                          # z[idx] is (y, x) pixel number
                          if (z[idx][0] < mask_rad or z[idx][0] > ylen - mask_rad) or (z[idx][1] < mask_rad or z[idx][1] > xlen - mask_rad): # dont place empty aperture near edges of image (not data)
                              iters += 1
@@ -625,7 +710,7 @@ def place_blank_regions(im_data, im_header, seg_data, mask, survey, offset, pix_
                                  next += 1
                                  busyflag = 1
                                  
-                     if busyflag == 1: # if the region is busy, set the 200 apertures to co-ordinates (0., 0.)
+                     if busyflag == 1: # if the region is busy, set the remaining apertures to co-ordinates (0., 0.)
                          #print(c, "apertures in (", i, ",", j, ") !")
                          xcoord.extend([0] * (number - c))
                          ycoord.extend([0] * (number - c))
