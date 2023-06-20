@@ -20,10 +20,10 @@ def NIRCam_pipeline(surveys, version, xy_offsets, aper_diams, sed_codes, forced_
             cat = code.fit_cat(cat)
 
 if __name__ == "__main__":
-    version = "v8b"
-    surveys = ["CEERSP8"]
+    version = "v8c"
+    surveys = ["CEERSP4"]
     aper_diams = [0.32] * u.arcsec
-    xy_offsets = [[50, 180]]
+    xy_offsets = [[100, 200]]
     sed_codes = []#[LePhare()]
     forced_phot_band = "f200W"
     excl_bands = ["f090W", "f115W", "f277W", "f335M", "f356W", "f410M", "f444W"]
