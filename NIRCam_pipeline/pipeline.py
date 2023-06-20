@@ -14,12 +14,12 @@ import numpy as np
 from galfind import Catalogue, LePhare, EAZY
 from galfind.Catalogue_Creator import GALFIND_Catalogue_Creator
 
-def NIRCam_pipeline(surveys, version, xy_offsets, aper_diams, sed_codes, min_flux_pc_errs, cat_type = "loc_depth", NIRCam_ZP = 28.08):
+def NIRCam_pipeline(surveys, version, xy_offsets, aper_diams, sed_codes, min_flux_pc_errs, forced_phot_band, excl_bands, cat_type = "loc_depth", NIRCam_ZP = 28.08):
     for pc_err in min_flux_pc_errs:
         # make appropriate galfind catalogue creator for each aperture diameter
         cat_creator = GALFIND_Catalogue_Creator(cat_type, aper_diams[0], pc_err, NIRCam_ZP)
         for survey, xy_offset in zip(surveys, xy_offsets):
-            cat = Catalogue.from_NIRCam_pipeline(survey, version, aper_diams, cat_creator, xy_offset)
+            cat = Catalogue.from_NIRCam_pipeline(survey, version, aper_diams, cat_creator, xy_offset, forced_phot_band, excl_bands)
             for code in sed_codes:
                 cat = code.fit_cat(cat)
 
@@ -31,4 +31,6 @@ if __name__ == "__main__":
     xy_offsets = [[100, 0]]
     sed_codes = [EAZY()]
     min_flux_pc_errs = [10, 5]
-    NIRCam_pipeline(surveys, version, xy_offsets, aper_diams, sed_codes, min_flux_pc_errs, cat_type = cat_type)
+    forced_phot_band = "f200W"
+    excl_bands = ["f090W", "f115W", "f277W", "f335M", "f356W", "f410M", "f444W"]
+    NIRCam_pipeline(surveys, version, xy_offsets, aper_diams, sed_codes, min_flux_pc_errs, forced_phot_band, excl_bands, cat_type = cat_type)
