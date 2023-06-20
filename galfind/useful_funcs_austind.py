@@ -584,7 +584,7 @@ class Galaxy:
         self.ID = int(ID)
         #self.codes = codes
         # this should be contained within each 'code' object
-        self.properties = {}
+        self.properties = properties
         #self.redshifts = {code.code_name: np.float(z) for code in codes}
         self.mask_flags = {}
         
