@@ -114,6 +114,8 @@ class Data:
                               "NEP-3": "NEP-3/mosaic_1084_182", "NEP-4": "NEP-4/mosaic_1084_182", "MACS-0416": "MACS0416/mosaic_1084_182", "GLASS": "GLASS-12/mosaic_1084_182", "SMACS-0723": "SMACS0723/mosaic_1084_182"} | ceers_im_dirs
         elif version == "v8b":
             survey_im_dirs = {survey: f"{survey}/mosaic_1084_wispfix"}
+        elif version == "v8c":
+            survey_im_dirs = {survey: f"{survey}/mosaic_1084_wispfix2"}
         elif version == "lit_version":
             survey_im_dirs = {"JADES-DR1": "JADES/DR1"}
                 
@@ -627,17 +629,19 @@ def calc_xy_offsets(offset):
     return xoff, yoff
 
 
-def place_blank_regions(im_data, im_header, seg_data, mask, survey, offset, pix_scale, band, aper_diam = 0.32 * u.arcsec, size = 500, n_busy_iters = 1_000, number = 600, mask_rad = 25, aper_disp_rad = 2):
+def place_blank_regions(im_data, im_header, seg_data, mask, survey, offset, pix_scale, band, aper_diam = 0.32 * u.arcsec, size = 500, n_busy_iters = 1_000, number = 600, mask_rad = 25, aper_disp_rad = 2, fast_mode = True):
     
     #im_wcs = WCS(im_header)
     r = aper_diam / (2 * pix_scale) # radius of aperture in pixels
-    print(type(r))
+    if fast_mode:
+        r = 1e-10
+
     # cast radius to a float from astropy.units.radians
     if type(r) == u.Quantity:
         r = r.value
-    print(type(r))
     
     xoff, yoff = calc_xy_offsets(offset)
+    
     
     xchunk = int(seg_data.shape[1])
     ychunk = int(seg_data.shape[0])
@@ -672,7 +676,7 @@ def place_blank_regions(im_data, im_header, seg_data, mask, survey, offset, pix_
                      
                      while next == 0:
      
-                         idx = randrange(len(z)) #find random candidate location for empty aperture
+                         idx = randrange(len(z)) # find random candidate location for empty aperture
                          # z[idx] is (y, x) pixel number
                          if (z[idx][0] < mask_rad or z[idx][0] > ylen - mask_rad) or (z[idx][1] < mask_rad or z[idx][1] > xlen - mask_rad): # dont place empty aperture near edges of image (not data)
                              iters += 1
