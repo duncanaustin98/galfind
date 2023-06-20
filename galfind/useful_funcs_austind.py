@@ -165,8 +165,7 @@ class Simulation(ABC):
         
         # load depths from specific survey
         depths = Catalogue.load_depths(self.survey_depth_name)
-        
-        pass
+
     
     @abstractmethod
     def flux_col_name(self, band):
@@ -204,8 +203,9 @@ class Photometry_obs:
         return (self.flux_Jy_errs * const.c / (self.instrument.wav ** 2)).to(u.erg / (u.s * (u.cm ** 2) * u.Angstrom))
 
     @classmethod # not a gal object here, more like a catalogue row
-    def get_phot_from_sex(cls, sex_cat_row, instrument, aper_diam = 0.32 * u.arcsec, min_flux_err_pc = 5): # single unit of sextractor catalogue
-        aper_diam_index = int(json.loads(config.get("SExtractor", "APERTURE_DIAMS")).index(aper_diam.value))
+    def get_phot_from_sex(cls, sex_cat_row, instrument, cat_creator): # single unit of sextractor catalogue
+        # below is contained within cat_creator
+        #aper_diam_index = int(json.loads(config.get("SExtractor", "APERTURE_DIAMS")).index(cat_creator.aper_diam.value))
         fluxes = []
         flux_errs = []
         #print("instrument = ", instrument)
@@ -214,20 +214,15 @@ class Photometry_obs:
         #print("instrument_copy = ", instrument_copy)
         for (band, zero_point) in zip(instrument_copy.bands, instrument_copy.zero_points.values()):
             try:
-                flux = sex_cat_row[f"FLUX_APER_{band}_aper_corr"].T[aper_diam_index]
-                err = sex_cat_row[f"FLUXERR_APER_{band}_loc_depth"].T[aper_diam_index]
-                # encorporate minimum flux error
-                if err / flux < min_flux_err_pc / 100:
-                    err = min_flux_err_pc * flux / 100
-                flux_Jy = flux_image_to_Jy(flux, zero_point)
-                err_Jy = flux_image_to_Jy(err, zero_point)
-                fluxes.append(flux_Jy.value)
-                flux_errs.append(err_Jy.value)
+                flux, err = cat_creator.load_photometry(sex_cat_row, band)
+                fluxes.append(flux.value)
+                flux_errs.append(err.value)
             except:
+                # no data for the relevant band within the catalogue
                 instrument.remove_band(band)
                 print(f"{band} flux not loaded")
-        phot_obs = cls(instrument, fluxes * u.Jy, flux_errs * u.Jy, aper_diam)
-        phot_obs.load_local_depths(sex_cat_row, instrument, aper_diam_index)
+        phot_obs = cls(instrument, fluxes * u.Jy, flux_errs * u.Jy, cat_creator.aper_diam)
+        phot_obs.load_local_depths(sex_cat_row, instrument, cat_creator.aper_diam_index)
         return phot_obs
         
     @classmethod
@@ -577,43 +572,45 @@ def tex_to_fits(tex_path, col_names, col_errs, replace = {"&": "", "\\\\": "", "
 class Galaxy:
     
     # should really expand this to allow for more than one redshift here (only works fro one 'code' class at the moment)
-    def __init__(self, sky_coord, phot, ID, z, codes = []):
+    def __init__(self, sky_coord, phot, ID, properties):
         # print("'z' here for a short time not a long time (in the 'Galaxy' class)! PUT THIS INSTEAD IN THE 'CODE' class")
         self.sky_coord = sky_coord
         # phot_obs is within phot_rest (it shouldn't be!)
-        if z == 0:
-            self.phot_rest = None
-        else:
-            self.phot_rest = Photometry_rest(phot, z, codes[0]) # works for LePhare only currently
+        if properties != {}:
+            if properties["LePhare"]["z"] == 0:
+                self.phot_rest = None
+            else:
+                self.phot_rest = Photometry_rest(phot, properties["LePhare"]["z"], "LePhare") # works for LePhare only currently
         self.phot_obs = phot # need to improve this still!
         self.ID = int(ID)
-        self.codes = codes
+        #self.codes = codes
         # this should be contained within each 'code' object
-        self.properties = {}
+        self.properties = properties
         #self.redshifts = {code.code_name: np.float(z) for code in codes}
         self.mask_flags = {}
         
     @classmethod
-    def from_sex_cat_row(cls, sex_cat_row, instrument):
+    def from_sex_cat_row(cls, sex_cat_row, instrument, cat_creator):
         # load the photometry from the sextractor catalogue
-        phot = Photometry_obs.get_phot_from_sex(sex_cat_row, instrument)
+        phot = Photometry_obs.get_phot_from_sex(sex_cat_row, instrument, cat_creator)
         # load the ID and Sky Coordinate from the source catalogue
         ID = sex_cat_row["NUMBER"]
         sky_coord = SkyCoord(sex_cat_row["ALPHA_J2000"] * u.deg, sex_cat_row["DELTA_J2000"] * u.deg, frame = "icrs")
         # perform SED fitting to measure the redshift from the photometry
         # for now, load in z = 0 as a placeholder
-        return cls(sky_coord, phot, ID, 0)
+        return cls(sky_coord, phot, ID, {})
         
     @classmethod # currently only works for a singular code
-    def from_photo_z_cat_row(cls, photo_z_cat_row, instrument, codes):
+    def from_photo_z_cat_row(cls, photo_z_cat_row, instrument, cat_creator, codes):
         # load the photometry from the sextractor catalogue
-        phot = Photometry_obs.get_phot_from_sex(photo_z_cat_row, instrument)
+        phot = Photometry_obs.get_phot_from_sex(photo_z_cat_row, instrument, cat_creator)
         # load the ID and Sky Coordinate from the source catalogue
         ID = photo_z_cat_row["NUMBER"]
         sky_coord = SkyCoord(photo_z_cat_row["ALPHA_J2000"] * u.deg, photo_z_cat_row["DELTA_J2000"] * u.deg, frame = "icrs")
-        # also load the photo-z from the catalogue
-        z = photo_z_cat_row[codes.galaxy_properties["z"]] # currently only works for a singular code, not an array of codes
-        return cls(sky_coord, phot, ID, z, codes)
+        # also load the galaxy properties from the catalogue
+        properties = {code.code_name: {gal_property: {photo_z_cat_row[code.galaxy_properties[gal_property]]}} for code in codes for gal_property in code.galaxy_properties.keys()}
+        print(properties)  
+        return cls(sky_coord, phot, ID, properties)
         
 def ext_source_corr(data, corr_factor, is_log_data = True):
     if is_log_data:
