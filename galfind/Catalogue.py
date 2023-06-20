@@ -13,18 +13,21 @@ import pyregion
 from astropy.io import fits
 from pathlib import Path
 from astropy.wcs import WCS
+import astropy.units as u
 
 from .Data import Data
 from .useful_funcs_austind import Galaxy
 from . import useful_funcs_austind as funcs
+from .Catalogue_Creator import GALFIND_Catalogue_Creator
 
 
 class Catalogue:
     # later on, the gal_arr should be calculated from the Instrument and sex_cat path, with SED codes already given
-    def __init__(self, gals, cat_path, survey, codes = []): #, UV_PDF_path):
+    def __init__(self, gals, cat_path, survey, cat_creator, codes = []): #, UV_PDF_path):
         self.survey = survey
         self.cat_path = cat_path
         #self.UV_PDF_path = UV_PDF_path
+        self.cat_creator = cat_creator
         self.codes = codes
         self.gals = gals
         
@@ -43,42 +46,44 @@ class Catalogue:
         
     # %% alternative constructors
     @classmethod
-    def from_NIRCam_pipeline(cls, survey, version, aper_diams, xy_offset = [0, 0], forced_phot_band = "f444W", excl_bands = []):
+    def from_NIRCam_pipeline(cls, survey, version, aper_diams, cat_creator, xy_offset = [0, 0], forced_phot_band = "f444W", excl_bands = []):
         # make 'Data' object
         data = Data.from_NIRCam_pipeline(survey, version, excl_bands = excl_bands)
-        return cls.from_data(data, aper_diams, xy_offset = xy_offset, forced_phot_band = forced_phot_band)
+        return cls.from_data(data, aper_diams, cat_creator, xy_offset = xy_offset, forced_phot_band = forced_phot_band)
     
     @classmethod
-    def from_data(cls, data, aper_diams, cat_type = "loc_depth", xy_offset = [0, 0], forced_phot_band = "f444W"):
+    def from_data(cls, data, aper_diams, cat_creator, xy_offset = [0, 0], forced_phot_band = "f444W"):
         # make masked local depth catalogue from the 'Data' object
         data.combine_sex_cats(forced_phot_band)
         data.calc_depths(xy_offset, aper_diams)
-        if cat_type == "loc_depth":
-            data.make_loc_depth_cat(aper_diams, forced_phot_band = forced_phot_band)
+
         # load the catalogue that has just been created into a 'Catalogue' object
-        if cat_type == "loc_depth":
+        if cat_creator.cat_type == "loc_depth":
+            data.make_loc_depth_cat(aper_diams, min_flux_pc_err = cat_creator.min_flux_pc_err, forced_phot_band)
             cat_path = data.loc_depth_cat_path
-        elif cat_type == "sex":
+        elif cat_creator.cat_type == "sex":
             cat_path = data.sex_cat_master_path
-        cat = cls.from_sex_cat(cat_path, data.instrument, data.survey)
+            
+        cat = cls.from_sex_cat(cat_path, data.instrument, data.survey, cat_creator)
+        print("cat_path = ", cat.cat_path)
         cat.mask(data)
         return cat
     
     @classmethod
-    def from_sex_cat(cls, cat_path, instrument, survey):
+    def from_sex_cat(cls, cat_path, instrument, survey, cat_creator):
         # open the catalogue
         cat = cls.cat_from_path(cat_path)
         # produce galaxy array from each row of the catalogue
-        gals = np.array([Galaxy.from_sex_cat_row(row, instrument) for row in cat])
-        return cls(gals, cat_path, survey)
+        gals = np.array([Galaxy.from_sex_cat_row(row, instrument, cat_creator) for row in cat])
+        return cls(gals, cat_path, survey, cat_creator)
     
     @classmethod
-    def from_photo_z_cat(cls, cat_path, instrument, survey, codes):
+    def from_photo_z_cat(cls, cat_path, instrument, survey, cat_creator, codes):
         # open the catalogue
         cat = cls.cat_from_path(cat_path)
         # produce galaxy array from each row of the catalogue
-        gals = np.array([Galaxy.from_photo_z_cat_row(row, instrument, codes) for row in cat])
-        return cls(gals, cat_path, survey, codes)
+        gals = np.array([Galaxy.from_photo_z_cat_row(row, instrument, cat_creator, codes) for row in cat])
+        return cls(gals, cat_path, survey, cat_creator)
     
     # %% Overloaded operators
     
@@ -277,6 +282,9 @@ class Catalogue:
     
     def flag_good_high_z(self, relaxed = False):
         # should make use of an overloaded __setattr__ here!
+        pass
+    
+    def flag_hot_pixel(self):
         pass
     
     def crop(self, crop_property, crop_limits): # upper and lower limits on galaxy properties (e.g. ID, redshift, mass, SFR, SkyCoord)

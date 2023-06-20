@@ -26,10 +26,14 @@ from . import config
 
 class SED_code(ABC):
     
-    def __init__(self, code_name, galaxy_properties):
+    def __init__(self, code_name, galaxy_property_labels):
         self.code_name = code_name
-        self.galaxy_properties = galaxy_properties
+        self.galaxy_property_labels = galaxy_property_labels
         self.code_dir = f"{config['DEFAULT']['GALFIND_WORK']}/{code_name}"
+    
+    @classmethod
+    def from_name(cls):
+        return cls()
     
     def load_photometry(self, cat, SED_input_bands, out_units, no_data_val, upper_sigma_lim = {}):
         # load in raw photometry from the galaxies in the catalogue and convert to appropriate units
@@ -73,7 +77,7 @@ class SED_code(ABC):
         in_path = self.make_in(cat, *args, **kwargs)
         out_folder = funcs.split_dir_name(in_path.replace("input", "output"), "dir")
         out_path = f"{out_folder}/{funcs.split_dir_name(in_path, 'name')[:-3]}.out"
-        sed_folder = f"{out_folder}/SEDs"
+        sed_folder = f"{out_folder}/SEDs/{cat.cat_creator.min_flux_pc_err}pc"
         os.makedirs(sed_folder, exist_ok = True)
         if not Path(out_path).is_file() or config["DEFAULT"].getboolean("OVERWRITE"):
             self.run_fit(in_path, out_path, sed_folder, *args, **kwargs)
@@ -85,14 +89,14 @@ class SED_code(ABC):
     
     def update_cat(self, cat, fits_out_path):
         # save concatenated catalogue
-        combined_cat = join(Table.read(fits_out_path), Table.read(cat.cat_path), keys_left = "IDENT", keys_right = "NUMBER")
+        combined_cat = join(Table.read(cat.cat_path), Table.read(fits_out_path), keys_left = "NUMBER", keys_right = "IDENT")
         combined_cat_path = f"{config['DEFAULT']['GALFIND_WORK']}/Catalogues/{cat.data.version}/{cat.data.instrument.name}/" + \
             f"{cat.data.survey}/{funcs.split_dir_name(fits_out_path.replace('.fits', '_matched.fits'), 'name')}"
         combined_cat.write(combined_cat_path, overwrite = True)
-        # update 'Catalogue' object
-        # use Catalogue.__setattr__() here!
-        #return cat.from_photo_z_cat(combined_cat_path, cat.data.instrument, cat.data.survey, self.code_name)
-    
+        # update 'Catalogue' object using Catalogue.__setattr__()
+        code_names = cat.codes + [self.code_name]
+        return cat.from_photo_z_cat(combined_cat_path, cat.data.instrument, cat.data.survey, code_names)
+        
     @abstractmethod
     def make_in(self, cat):
         pass
@@ -127,11 +131,11 @@ class SED_code(ABC):
 
 # %% Other SED code related functions / dicts
 
-def get_SED_code(code):
-    if code == "LePhare":
-        return LePhare()
-    elif code == "EAZY":
-        return EAZY()
+# def get_SED_code(code):
+#     if code == "LePhare":
+#         return LePhare()
+#     elif code == "EAZY":
+#         return EAZY()
 
 # LePhare
 LePhare_outputs = {"z": "Z_BEST", "mass": "MASS_BEST"}
