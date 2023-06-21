@@ -15,6 +15,7 @@ from pathlib import Path
 import sep # sextractor for python
 import matplotlib.pyplot as plt
 import math
+import timeit
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 from astropy.wcs.utils import pixel_to_skycoord
 from astropy.coordinates import search_around_sky, SkyCoord
@@ -64,7 +65,7 @@ class Data:
         # make segmentation maps from image paths if they don't already exist
         made_new_seg_maps = False
         for i, (band, seg_path) in enumerate(seg_paths.items()):
-            print(band, seg_path)
+            #print(band, seg_path)
             if (seg_path == "" or seg_path == []) and not made_new_seg_maps:
                 self.make_seg_maps()
                 made_new_seg_maps = True
@@ -73,7 +74,7 @@ class Data:
         self.seg_paths = dict(sorted(seg_paths.items()))
         
         # make masks from image paths if they don't already exist
-        print(mask_paths)
+    
         for i, (band, mask_path) in enumerate(mask_paths.items()):
             if (mask_path == "" or mask_path == []):
                 self.make_mask(band)
@@ -134,8 +135,8 @@ class Data:
                     ceers_im_dirs = {f"CEERSP{str(i + 1)}": f"ceers/mosaic_1084/P{str(i + 1)}" for i in range(10)}
                     survey_im_dirs = {"CLIO": "CLIO/mosaic_1084", "El-Gordo": "elgordo/mosaic_1084", "GLASS": "GLASS-12/mosaic_1084", "NEP": "NEP/mosaic_1084", \
                                 "NEP-2": "NEP-2/mosaic_1084", "NEP-3": "NEP-3/mosaic_1084", "SMACS-0723": "SMACS0723/mosaic_1084", "MACS-0416": "MACS0416/mosaic_1084_v3"} | ceers_im_dirs
-                elif version == "v8a" or version == 'v8b':
-                    ceers_im_dirs = {f"CEERSP{str(i + 1)}": f"CEERSP{str(i + 1)}/mosaic_1084_wispfix" for i in range(10)}
+                elif version in ['v8a', 'v8b', 'v8c']:
+                    ceers_im_dirs = {f"CEERSP{str(i + 1)}": f"CEERSP{str(i + 1)}/mosaic_1084_wispfix3" for i in range(10)}
                     survey_im_dirs = {"CLIO": "CLIO/mosaic_1084_182", "El-Gordo": "elgordo/mosaic_1084_182", "NEP-1": "NEP/mosaic_1084_182", "NEP-2": "NEP-2/mosaic_1084_182", \
                                     "NEP-3": "NEP-3/mosaic_1084_182", "MACS-0416": "MACS0416/mosaic_1084_182", "GLASS": "GLASS-12/mosaic_1084_182"} | ceers_im_dirs
                     
@@ -194,7 +195,6 @@ class Data:
                     path_found = False
                     for pix_scale in pix_scales:
                         path = Path(f"{config['DEFAULT']['GALFIND_DATA']}/hst/{survey}/{instrument.name}/{pix_scale}/{instrument.name}_{band}_{survey}_drz.fits")
-                        print(path)
                         if path.is_file():
                             any_path_found = True
                             path_found = True
@@ -270,7 +270,7 @@ class Data:
             # All seg maps and masks should be in same format, so load those last when we know what bands we have
             for band in comb_instrument.bands:
                 try:
-                    print(f"{config['DEFAULT']['GALFIND_WORK']}/SExtractor/{comb_instrument.instrument_from_band(band)}/{version}/{survey}/{survey}*{band}_{band}*{version}*seg.fits")
+                    #print(f"{config['DEFAULT']['GALFIND_WORK']}/SExtractor/{comb_instrument.instrument_from_band(band)}/{version}/{survey}/{survey}*{band}_{band}*{version}*seg.fits")
             
                     seg_paths[band] = glob.glob(f"{config['DEFAULT']['GALFIND_WORK']}/SExtractor/{comb_instrument.instrument_from_band(band)}/{version}/{survey}/{survey}*{band}_{band}*{version}*seg.fits")[0]
                 except IndexError:
@@ -336,7 +336,7 @@ class Data:
         for band in instrument.bands:
             if band not in bands:
                 instrument.remove_band(band)
-        print(instrument.bands)
+        #print(instrument.bands)
         
         im_paths = {}
         im_exts = {}
@@ -431,8 +431,6 @@ class Data:
     
     @run_in_dir(path = config['DEFAULT']['GALFIND_DIR'])
     def make_seg_maps(self):
-        print('makin bacon pancakes')
-        
         for band in self.instrument.bands:
             print([config['DEFAULT']['GALFIND_WORK'], self.im_paths[band], str(self.im_pixel_scales[band]), \
                                     str(self.im_zps[band]), self.instrument.instrument_from_band(band), self.survey, band, self.version, str(self.wht_paths[band]), \
@@ -454,15 +452,10 @@ class Data:
             # if not run before
             path = Path(f"{config['DEFAULT']['GALFIND_WORK']}/SExtractor/{self.instrument.instrument_from_band(band)}/{self.version}/{self.survey}/{self.survey}_{band}_{forced_phot_band}_sel_cat_{self.version}.fits")
             if not path.is_file():
-                print(self.instrument.instrument_from_band(band))
+                
                 # SExtractor bash script python wrapper
                 if force_pho_size == self.im_shapes[band] and self.wht_types[band] == self.wht_types[forced_phot_band]:
-                    print([f"./make_sex_cat.sh", config['DEFAULT']['GALFIND_WORK'], self.im_paths[band], str(self.im_pixel_scales[band]), \
-                                        str(self.im_zps[band]), self.instrument.instrument_from_band(band), self.survey, band, self.version, \
-                                            forced_phot_band, self.im_paths[forced_phot_band], self.wht_paths[band], str(self.wht_exts[band]), \
-                                            str(self.im_exts[band]), self.wht_paths[forced_phot_band], str(self.wht_exts[forced_phot_band]), self.wht_types[band], 
-                                            str(self.im_exts[forced_phot_band]), f"{config['DEFAULT']['GALFIND_DIR']}/configs/"])
-                    
+                   
                     process = subprocess.Popen([f"./make_sex_cat.sh", config['DEFAULT']['GALFIND_WORK'], self.im_paths[band], str(self.im_pixel_scales[band]), \
                                         str(self.im_zps[band]),self.instrument.instrument_from_band(band), self.survey, band, self.version, \
                                             forced_phot_band, str(self.im_paths[forced_phot_band]), str(self.wht_paths[band]), str(self.wht_exts[band]), \
@@ -568,11 +561,9 @@ class Data:
             phot_table[name][np.isnan(phot_table[name])] = -99
             mag_colnames.append(name)
         aper_tab = Column(np.array(phot_table[mag_colnames].as_array().tolist()), name=f'MAG_APER_{band}')
-        print(aper_tab)
         phot_table[f'MAG_APER_{band}'] = aper_tab
         # Remove old columns
         phot_table.remove_columns(mag_colnames)
-        print(path)
         phot_table.write(path, format='fits', overwrite=True)
 
 
@@ -758,9 +749,10 @@ class Data:
         params = []  
         average_depths = []
         # Look over all aperture diameters and bands
-        self.get_depth_dir(aper_diam)
+        
         for aper_diam in aper_diams:
-            print(aper_diam)
+            # Generate folder for depths
+            self.get_depth_dir(aper_diam)
             for band in self.instrument.bands:
                 # Only run for non excluded bands
                 if band not in excl_bands:
@@ -870,22 +862,22 @@ def calc_xy_offsets(offset):
     return xoff, yoff
 
 
-def place_blank_regions(im_data, im_header, seg_data, mask, survey, offset, pix_scale, band, aper_diam = 0.32 * u.arcsec, size = 500, n_busy_iters = 1_000, number = 600, mask_rad = 25, aper_disp_rad = 2):
+def place_blank_regions(im_data, im_header, seg_data, mask, survey, offset, pix_scale, band, aper_diam = 0.32 * u.arcsec, size = 500, n_busy_iters = 1_000, number = 600, mask_rad = 25, aper_disp_rad = 2, fast=True):
     
     #im_wcs = WCS(im_header)
-    r = aper_diam / (2 * pix_scale) # radius of aperture in pixels
- 
+    r = aper_diam / (2 * pix_scale * u.arcsec) # radius of aperture in pixels
+    
     if type(r) == u.Quantity:
-        r = r.to(u.radian).value   
-
+        r = r.value   
+    if fast:
+        r = 1e-5
+        
     xoff, yoff = calc_xy_offsets(offset)
     
     xchunk = int(seg_data.shape[1])
     ychunk = int(seg_data.shape[0])
     xcoord = list()
     ycoord = list()
-    busylist = list()
-    no_space = 0
     # finds locations to place empty apertures in
     for i in tqdm(range(0, int((xchunk - (2 * xoff)) / size)), desc = f"Running {band} depths for {survey}"):
         for j in tqdm(range(0, int((ychunk - (2 * yoff)) / size)), desc = f"Current row = {i + 1}", leave = False):
