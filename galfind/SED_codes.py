@@ -129,14 +129,6 @@ class SED_code(ABC):
         # plot PDF on ax
         pass
 
-# %% Other SED code related functions / dicts
-
-# def get_SED_code(code):
-#     if code == "LePhare":
-#         return LePhare()
-#     elif code == "EAZY":
-#         return EAZY()
-
 # LePhare
 LePhare_outputs = {"z": "Z_BEST", "mass": "MASS_BEST"}
 LePhare_col_names = LePhare_outputs.values()

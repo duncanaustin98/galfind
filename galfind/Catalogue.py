@@ -46,6 +46,13 @@ class Catalogue:
         
     # %% alternative constructors
     @classmethod
+    def from_pipeline(cls, survey, version, aper_diams, cat_creator, xy_offset = [0, 0], instruments = ['NIRCam', 'ACS_WFC', 'WFC3IR'], \
+                      forced_phot_band = "f444W", excl_bands = [], loc_depth_min_flux_pc_errs = [5, 10], n_loc_depth_samples = 5):
+        # make 'Data' object
+        data = Data.from_pipeline(survey, version, instruments, excl_bands = excl_bands)
+        return cls.from_data(data, aper_diams, cat_creator, xy_offset, forced_phot_band, loc_depth_min_flux_pc_errs, n_loc_depth_samples)
+
+    @classmethod
     def from_NIRCam_pipeline(cls, survey, version, aper_diams, cat_creator, xy_offset = [0, 0], forced_phot_band = "f444W", excl_bands = [], loc_depth_min_flux_pc_errs = [5, 10], n_loc_depth_samples = 5):
         # make 'Data' object
         data = Data.from_NIRCam_pipeline(survey, version, excl_bands = excl_bands)
