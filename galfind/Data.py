@@ -110,7 +110,7 @@ class Data:
                           "NEP-2": "NEP-2/mosaic_1084", "NEP-3": "NEP-3/mosaic_1084", "SMACS-0723": "SMACS0723/mosaic_1084", "MACS-0416": "MACS0416/mosaic_1084_v3"} | ceers_im_dirs
         elif version == "v8a":
             ceers_im_dirs = {f"CEERSP{str(i + 1)}": f"CEERSP{str(i + 1)}/mosaic_1084_182" for i in range(10)}
-            survey_im_dirs = {"CLIO": "CLIO/mosaic_1084_182", "El-Gordo": "elgordo/mosaic_1084_182", "NEP-1": "NEP/mosaic_1084_182", "NEP-2": "NEP-2/mosaic_1084_182", \
+            survey_im_dirs = {"CLIO": "CLIO/mosaic_1084_182", "El-Gordo": "elgordo/mosaic_1084_182", "NEP-1": "NEP-1/mosaic_1084_182", "NEP-2": "NEP-2/mosaic_1084_182", \
                               "NEP-3": "NEP-3/mosaic_1084_182", "NEP-4": "NEP-4/mosaic_1084_182", "MACS-0416": "MACS0416/mosaic_1084_182", "GLASS": "GLASS-12/mosaic_1084_182", "SMACS-0723": "SMACS0723/mosaic_1084_182"} | ceers_im_dirs
         elif version == "v8b":
             survey_im_dirs = {survey: f"{survey}/mosaic_1084_wispfix"}
@@ -139,7 +139,7 @@ class Data:
         for band in instrument.bands:
             if band not in bands:
                 instrument.remove_band(band)
-        print(instrument.bands)
+        print("bands = ", instrument.bands)
         
         im_paths = {}
         im_exts = {}
@@ -180,6 +180,7 @@ class Data:
             except:
                 blank_mask_path = ""
             # if this mask doesn't exist, create it using automated code (NOT YET IMPLEMENTED!)
+            print("cluster mask path = ", cluster_mask_path)
         return cls(instrument, im_paths, im_exts, seg_paths, mask_paths, cluster_mask_path, blank_mask_path, survey, version, is_blank = is_blank_survey(survey))
 
 # %% Overloaded operators
@@ -363,7 +364,6 @@ class Data:
         pass
         
     def make_loc_depth_cat(self, aper_diams = [0.32] * u.arcsec, n_samples = 5, forced_phot_band = "f444W", min_flux_pc_err_arr = [5, 10]):
-        print(f"Making local depth catalogue for {self.survey} {self.version} in {aper_diams} diameter apertures with min. error(s) {min_flux_pc_err_arr}%!")
         # if sextractor catalogue has not already been made, make it
         self.combine_sex_cats(forced_phot_band)
         # if depths havn't already been run, run them
@@ -371,6 +371,7 @@ class Data:
         # correct the base sextractor catalogue to include local depth errors if not already done so
         self.loc_depth_cat_path = self.sex_cat_master_path.replace(".fits", "_loc_depth.fits")
         if not Path(self.loc_depth_cat_path).is_file():
+            print(f"Making local depth catalogue for {self.survey} {self.version} in {aper_diams} diameter apertures with min. error(s) {min_flux_pc_err_arr}%!")
             # open photometric data
             phot_data = fits.open(self.sex_cat_master_path)[1].data  
             for i, band in enumerate(tqdm(self.instrument.bands, desc = f"Making local depth catalogue", total = len(self.instrument))):

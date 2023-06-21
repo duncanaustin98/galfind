@@ -175,7 +175,6 @@ class NIRCam(Instrument):
 
     def aper_corr(self, aper_diam, band):
         aper_corr_path = f"{config['Depths']['APER_CORR_DIR']}/NIRCam_aper_corr.txt"
-        print(aper_corr_path)
         if not Path(aper_corr_path).is_file():
             # perform aperture corrections
             NIRCam_aper_corr.main(self.bands)
