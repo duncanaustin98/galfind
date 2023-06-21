@@ -25,11 +25,11 @@ class LePhare(SED_code):
     
     def __init__(self):
         code_name = "LePhare"
-        galaxy_properties = {"z": "Z_BEST", "mass": "MASS_BEST"}
-        super().__init__(code_name, galaxy_properties)
+        galaxy_property_labels = {"z": "Z_BEST", "mass": "MASS_BEST"}
+        super().__init__(code_name, galaxy_property_labels)
     
     def make_in(self, cat, units = u.ABmag, fix_z = False): # from FITS_organiser.py
-        lephare_in_path = f"{self.code_dir}/input/{cat.data.instrument.name}/{cat.data.version}/{cat.data.survey}/{cat.cat_name[:-5]}.in"
+        lephare_in_path = f"{self.code_dir}/input/{cat.data.instrument.name}/{cat.data.version}/{cat.data.survey}/{cat.cat_name.replace('.fits', '')}_{cat.cat_creator.min_flux_pc_err}pc.in"
         if not Path(lephare_in_path).is_file():
         # 1) obtain input data
             IDs = np.array([gal.ID for gal in cat.gals]) # load IDs
@@ -67,10 +67,10 @@ class LePhare(SED_code):
         return np.array(contexts).astype(int)
     
     # Currently black box fitting from the lephare config path. Need to make this function more general
-    def run_fit(self, in_path, out_path, sed_folder):
+    def run_fit(self, in_path, out_path, sed_folder, template_name = "NIRCam_JADES_DR1"):
         lephare_config_path = f"{self.code_dir}/Photo_z.para"
         # LePhare bash script python wrapper
-        process = subprocess.Popen([f"{config['DEFAULT']['GALFIND_DIR']}/run_lephare.sh", lephare_config_path, in_path, out_path, config['DEFAULT']['GALFIND_DIR'], sed_folder])
+        process = subprocess.Popen([f"{config['DEFAULT']['GALFIND_DIR']}/run_lephare.sh", lephare_config_path, in_path, out_path, config['DEFAULT']['GALFIND_DIR'], sed_folder, template_name])
         process.wait()
     
     def make_fits_from_out(self, out_path): # from TXT_to_FITS_converter.py

@@ -29,13 +29,13 @@ else:
     config.set("DEFAULT", "IS_CLUSTER", "NO")
 
 # Not currently including all ACS/MIRI bands (does include all NIRCam Wide/Medium band filters), and none are included from WFC3IR yet
-
 config.set("Other", "ALL_BANDS", ', '.join(["f435W", "f606W", "f775W", "f814W", "f850LP", "f070W",
              "f090W","f105W", "f115W", "f125W","f140M","f140W", "f150W","f160W",
              "f162M", "f182M", "f200W", "f210M", "f250M","f277W", "f300M", "f335M",
              "f356W", "f360M", "f410M", "f430M", "f444W", "f460M", "f480M", "f560W",
              "f770W", "f1000W","f1130W", "f1280W", "f1500W", "f1800W", "f2100W", "f2550W"]))
 
+from . import NIRCam_aperture_corrections as NIRCam_aper_corr
 from .Data import Data
 from .Instrument import Instrument, ACS_WFC,WFC3IR, NIRCam, MIRI, Combined_Instrument
 from .Catalogue import Catalogue

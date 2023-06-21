@@ -12,9 +12,11 @@ from copy import copy, deepcopy
 from abc import ABC, abstractmethod
 import astropy.units as u
 import json
+from pathlib import Path
 
 from . import useful_funcs_austind as funcs
 from . import config
+from . import NIRCam_aper_corr
 
 class Instrument:
     
@@ -175,15 +177,20 @@ class Instrument:
 class NIRCam(Instrument):
     
     def __init__(self, excl_bands = []):
-        bands = ["f090W", "f115W", "f150W", "f200W", "f277W", "f356W", "f410M", "f444W"]
-        band_wavelengths = {"f090W": 9_044., "f115W": 11_571., "f150W": 15_040., "f200W": 19_934., "f277W": 27_695., "f356W": 35_768., "f410M": 40_844., "f444W": 44_159.}
+        bands = ["f090W", "f115W", "f150W", "f200W", "f277W", "f335M", "f356W", "f410M", "f444W"]
+        band_wavelengths = {"f090W": 9_044., "f115W": 11_571., "f150W": 15_040., "f200W": 19_934., "f277W": 27_695., "f335M": 33_639., "f356W": 35_768., "f410M": 40_844., "f444W": 44_159.}
         band_wavelengths = {key: value * u.Angstrom for (key, value) in band_wavelengths.items()} # convert each individual value to Angstrom
-        band_FWHMs = {"f090W": 2_101., "f115W": 2_683., "f150W": 3_371., "f200W": 4_717., "f277W": 7_110., "f356W": 8_408., "f410M": 4_375., "f444W": 11_055.}
+        band_FWHMs = {"f090W": 2_101., "f115W": 2_683., "f150W": 3_371., "f200W": 4_717., "f277W": 7_110., "f335M": 3_609., "f356W": 8_408., "f410M": 4_375., "f444W": 11_055.}
         band_FWHMs = {key: value * u.Angstrom for (key, value) in band_FWHMs.items()} # convert each individual value to Angstrom
         super().__init__("NIRCam", bands, band_wavelengths, band_FWHMs, excl_bands)
 
     def aper_corr(self, aper_diam, band):
-        aper_corr_data = np.loadtxt("/nvme/scratch/work/austind/aper_corr.txt", dtype = str, comments = "#")
+        aper_corr_path = f"{config['Depths']['APER_CORR_DIR']}/NIRCam_aper_corr.txt"
+        if not Path(aper_corr_path).is_file():
+            # perform aperture corrections
+            NIRCam_aper_corr.main(self.bands)
+        # load aperture corrections from appropriate path (bands in NIRCam class must be the same as those saved in aper_corr)
+        aper_corr_data = np.loadtxt(aper_corr_path, dtype = str, comments = "#")
         aper_diam_index = np.where(json.loads(config.get("SExtractor", "APERTURE_DIAMS")) == aper_diam.value)[0][0] + 1
         band_index = list(self.bands).index(band)
         # print((aper_diam_index, band_index))
