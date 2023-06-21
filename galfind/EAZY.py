@@ -37,8 +37,8 @@ class EAZY(SED_code):
     
     def __init__(self):
         code_name = "EAZY"
-        galaxy_properties = {"z": "zbest"}
-        super().__init__(code_name, galaxy_properties)
+        galaxy_property_labels = {"z": "zbest"}
+        super().__init__(code_name, galaxy_property_labels)
 
     def make_in(self, cat, fix_z = False):
         eazy_in_path = f"{self.code_dir}/input/{cat.data.instrument.name}/{cat.data.version}/{cat.data.survey}/{cat.cat_name[:-5]}.in"

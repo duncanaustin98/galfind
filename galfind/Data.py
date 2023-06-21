@@ -62,6 +62,7 @@ class Data:
         self.wht_types = wht_types
         self.im_pixel_scales = im_pixel_scales
         self.im_shapes = im_shapes
+
         # make segmentation maps from image paths if they don't already exist
         made_new_seg_maps = False
         for i, (band, seg_path) in enumerate(seg_paths.items()):
@@ -104,8 +105,8 @@ class Data:
             #     print("Making cluster mask. (Not yet implemented; self.cluster_path = '' !!!)")
     
     @classmethod
-    def from_pipeline(cls, survey, version = "v8", instruments=['NIRCam', 'ACS_WFC', 'WFC3IR'],  pix_scales= ['30mas', '60mas']):
-        instruments_obj = {'NIRCam':NIRCam(), 'ACS_WFC':ACS_WFC(), 'WFC3IR':WFC3IR()}
+    def from_pipeline(cls, survey, version = "v8", instruments = ['NIRCam', 'ACS_WFC', 'WFC3IR'], excl_bands = [], pix_scales = ['30mas', '60mas']):
+        instruments_obj = {'NIRCam': NIRCam(excl_bands = excl_bands), 'ACS_WFC': ACS_WFC(excl_bands = excl_bands), 'WFC3IR': WFC3IR(excl_bands = excl_bands)}
         # Build a combined instrument object
         comb_instrument_created = False
         
@@ -129,39 +130,49 @@ class Data:
                 if version == "v7": #pmap == "0995":
                     ceers_im_dirs = {f"CEERSP{str(i + 1)}": f"ceers/mosaic_0995/P{str(i + 1)}" for i in range(10)}
                     survey_im_dirs = {"SMACS-0723": "SMACS-0723/mosaic_0995", "GLASS": "glass_0995/mosaic_v5", "MACS-0416": "MACS0416/mosaic_0995_v1", \
-                            "El-Gordo": "elgordo/mosaic_0995_v1", "NEP": "NEP/mosaic", "NEP-2": "NEP-2/mosaic_0995", "NGDEEP": "NGDEEP/mosaic", \
+                               "El-Gordo": "elgordo/mosaic_0995_v1", "NEP": "NEP/mosaic", "NEP-2": "NEP-2/mosaic_0995", "NGDEEP": "NGDEEP/mosaic", \
                                             "CLIO": "CLIO/mosaic_0995_2"} | ceers_im_dirs
                 elif version == "v8": #pmap == "1084":
                     ceers_im_dirs = {f"CEERSP{str(i + 1)}": f"ceers/mosaic_1084/P{str(i + 1)}" for i in range(10)}
                     survey_im_dirs = {"CLIO": "CLIO/mosaic_1084", "El-Gordo": "elgordo/mosaic_1084", "GLASS": "GLASS-12/mosaic_1084", "NEP": "NEP/mosaic_1084", \
-                                "NEP-2": "NEP-2/mosaic_1084", "NEP-3": "NEP-3/mosaic_1084", "SMACS-0723": "SMACS0723/mosaic_1084", "MACS-0416": "MACS0416/mosaic_1084_v3"} | ceers_im_dirs
-                elif version in ['v8a', 'v8b', 'v8c']:
-                    ceers_im_dirs = {f"CEERSP{str(i + 1)}": f"CEERSP{str(i + 1)}/mosaic_1084_wispfix3" for i in range(10)}
-                    survey_im_dirs = {"CLIO": "CLIO/mosaic_1084_182", "El-Gordo": "elgordo/mosaic_1084_182", "NEP-1": "NEP/mosaic_1084_182", "NEP-2": "NEP-2/mosaic_1084_182", \
-                                    "NEP-3": "NEP-3/mosaic_1084_182", "MACS-0416": "MACS0416/mosaic_1084_182", "GLASS": "GLASS-12/mosaic_1084_182"} | ceers_im_dirs
-                    
+                                  "NEP-2": "NEP-2/mosaic_1084", "NEP-3": "NEP-3/mosaic_1084", "SMACS-0723": "SMACS0723/mosaic_1084", "MACS-0416": "MACS0416/mosaic_1084_v3"} | ceers_im_dirs
+                elif version == "v8a":
+                    ceers_im_dirs = {f"CEERSP{str(i + 1)}": f"CEERSP{str(i + 1)}/mosaic_1084_182" for i in range(10)}
+                    survey_im_dirs = {"CLIO": "CLIO/mosaic_1084_182", "El-Gordo": "elgordo/mosaic_1084_182", "NEP-1": "NEP-1/mosaic_1084_182", "NEP-2": "NEP-2/mosaic_1084_182", \
+                                      "NEP-3": "NEP-3/mosaic_1084_182", "NEP-4": "NEP-4/mosaic_1084_182", "MACS-0416": "MACS0416/mosaic_1084_182", "GLASS": "GLASS-12/mosaic_1084_182", "SMACS-0723": "SMACS0723/mosaic_1084_182"} | ceers_im_dirs
+                elif version == "v8b":
+                    survey_im_dirs = {survey: f"{survey}/mosaic_1084_wispfix"}
+                elif version == "v8c":
+                    survey_im_dirs = {survey: f"{survey}/mosaic_1084_wispfix2"}
+                elif version == "lit_version":
+                    survey_im_dirs = {"JADES-DR1": "JADES/DR1"}
+
                 survey_im_dirs = {key: f"/raid/scratch/data/jwst/{value}" for (key, value) in survey_im_dirs.items()}
                 survey_dir = survey_im_dirs[survey]
-                
+
                 # don't use these if they are in the same folder
                 nadams_seg_path_arr = glob.glob(f"{survey_dir}/*_seg.fits")
                 nadams_bkg_path_arr = glob.glob(f"{survey_dir}/*_bkg.fits")
-                
-                im_path_arr = glob.glob(f"{survey_dir}/*_i2d*.fits")
+
+                if version == "lit_version":
+                    im_path_arr = glob.glob(f"{survey_dir}/*_drz.fits")
+                else:
+                    im_path_arr = glob.glob(f"{survey_dir}/*_i2d*.fits")
                 im_path_arr = np.array([path for path in im_path_arr if path not in nadams_seg_path_arr and path not in nadams_bkg_path_arr])
-                print(f"{survey_dir}/*_i2d*.fits")
+
                 # obtain available bands from imaging without having to hard code these
                 bands = np.array([split_path.lower().replace("w", "W").replace("m", "M") for path in im_path_arr for i, split_path in \
                         enumerate(path.split("-")[-1].split("/")[-1].split("_")) if split_path.lower().replace("w", "W").replace("m", "M") in instrument.bands])
+                
                 # If band not used in instrument, remove it
                 for band in instrument.bands:
                     if band not in bands:
                         instrument.remove_band(band)
                     else:
-                        # Maybe generalize this 
+                        # Maybe generalize this
+                        print("Generalize on line 177 of Data.from_pipeline()")
                         im_pixel_scales[band] = 0.03 
                         im_zps[band] = 28.08
-
                 
                 # If no images found for this instrument, don't add it to the combined instrument
                 if len(bands) != 0:
@@ -172,9 +183,16 @@ class Data:
                         comb_instrument_created = True
 
                 for i, band in enumerate(bands):
-                    im_paths[band] = im_path_arr[i]
-                    im_hdul = fits.open(im_path_arr[i])
+                    # obtains all image paths from the correct band 
+                    im_paths_band = [im_path for im_path in im_path_arr if band.lower() in im_path or band in im_path or \
+                                      band.replace("f", "F").replace("W", "w") in im_path or band.upper() in im_path]
+                    # checks to see if there is just one singular image for the given band
+                    if len(im_paths_band) == 1:
+                        im_paths[band] = im_paths_band[0]
+                    else:
+                        raise(Exception(f"Multiple images found for {band} in {survey} {version}"))
                     
+                    im_hdul = fits.open(im_paths[band])
                     # obtain appropriate extension from the image
                     for j, im_hdu in enumerate(im_hdul):
                         if im_hdu.name == "SCI":
@@ -294,12 +312,11 @@ class Data:
             
             return cls(comb_instrument, im_paths, im_exts,im_pixel_scales, im_shapes, im_zps, wht_paths, wht_exts, wht_types, seg_paths, mask_paths, cluster_mask_path, blank_mask_path, survey, version = version, is_blank = is_blank)
         else:
-            raise(Exception(f'Failed to find any data for {survey}'))
-            
+            raise(Exception(f'Failed to find any data for {survey}')  
 
     @classmethod
-    def from_NIRCam_pipeline(cls, survey, version = "v8"):
-        instrument = NIRCam()
+    def from_NIRCam_pipeline(cls, survey, version = "v8", excl_bands = []):
+        instrument = NIRCam(excl_bands = excl_bands)
         # if int(version.split("v")[1]) >= 8:
         #     pmap = "1084"
         # else:
@@ -315,10 +332,16 @@ class Data:
             survey_im_dirs = {"CLIO": "CLIO/mosaic_1084", "El-Gordo": "elgordo/mosaic_1084", "GLASS": "GLASS-12/mosaic_1084", "NEP": "NEP/mosaic_1084", \
                           "NEP-2": "NEP-2/mosaic_1084", "NEP-3": "NEP-3/mosaic_1084", "SMACS-0723": "SMACS0723/mosaic_1084", "MACS-0416": "MACS0416/mosaic_1084_v3"} | ceers_im_dirs
         elif version == "v8a":
-            ceers_im_dirs = {f"CEERSP{str(i + 1)}": f"ceers/mosaic_1084_182/P{str(i + 1)}" for i in range(10)}
-            survey_im_dirs = {"CLIO": "CLIO/mosaic_1084_182", "El-Gordo": "elgordo/mosaic_1084_182", "NEP-1": "NEP/mosaic_1084_182", "NEP-2": "NEP-2/mosaic_1084_182", \
-                              "NEP-3": "NEP-3/mosaic_1084_182", "MACS-0416": "MACS0416/mosaic_1084_182", "GLASS": "GLASS-12/mosaic_1084_182"} | ceers_im_dirs
-            
+            ceers_im_dirs = {f"CEERSP{str(i + 1)}": f"CEERSP{str(i + 1)}/mosaic_1084_182" for i in range(10)}
+            survey_im_dirs = {"CLIO": "CLIO/mosaic_1084_182", "El-Gordo": "elgordo/mosaic_1084_182", "NEP-1": "NEP-1/mosaic_1084_182", "NEP-2": "NEP-2/mosaic_1084_182", \
+                              "NEP-3": "NEP-3/mosaic_1084_182", "NEP-4": "NEP-4/mosaic_1084_182", "MACS-0416": "MACS0416/mosaic_1084_182", "GLASS": "GLASS-12/mosaic_1084_182", "SMACS-0723": "SMACS0723/mosaic_1084_182"} | ceers_im_dirs
+        elif version == "v8b":
+            survey_im_dirs = {survey: f"{survey}/mosaic_1084_wispfix"}
+        elif version == "v8c":
+            survey_im_dirs = {survey: f"{survey}/mosaic_1084_wispfix2"}
+        elif version == "lit_version":
+            survey_im_dirs = {"JADES-DR1": "JADES/DR1"}
+                
         survey_im_dirs = {key: f"/raid/scratch/data/jwst/{value}" for (key, value) in survey_im_dirs.items()}
         survey_dir = survey_im_dirs[survey]
         
@@ -326,7 +349,10 @@ class Data:
         nadams_seg_path_arr = glob.glob(f"{survey_dir}/*_seg.fits")
         nadams_bkg_path_arr = glob.glob(f"{survey_dir}/*_bkg.fits")
         
-        im_path_arr = glob.glob(f"{survey_dir}/*_i2d*.fits")
+        if version == "lit_version":
+            im_path_arr = glob.glob(f"{survey_dir}/*_drz.fits")
+        else:
+            im_path_arr = glob.glob(f"{survey_dir}/*_i2d*.fits")
         im_path_arr = np.array([path for path in im_path_arr if path not in nadams_seg_path_arr and path not in nadams_bkg_path_arr])
         
         # obtain available bands from imaging without having to hard code these
@@ -336,19 +362,26 @@ class Data:
         for band in instrument.bands:
             if band not in bands:
                 instrument.remove_band(band)
-        #print(instrument.bands)
         
         im_paths = {}
         im_exts = {}
         seg_paths = {}
         mask_paths = {}
-        for i, band in enumerate(bands):
-            im_paths[band] = im_path_arr[i]
-            im_hdul = fits.open(im_path_arr[i])
+        for band in bands:
+            # obtains all image paths from the correct band 
+            im_paths_band = [im_path for im_path in im_path_arr if band.lower() in im_path or band in im_path or \
+                              band.replace("f", "F").replace("W", "w") in im_path or band.upper() in im_path]
+            # checks to see if there is just one singular image for the given band
+            if len(im_paths_band) == 1:
+                im_paths[band] = im_paths_band[0]
+            else:
+                raise(Exception(f"Multiple images found for {band} in {survey} {version}"))
+
+            im_hdul = fits.open(im_paths[band])
             # obtain appropriate extension from the image
-            for j, im_hdu in enumerate(im_hdul):
+            for i, im_hdu in enumerate(im_hdul):
                 if im_hdu.name == "SCI":
-                    im_exts[band] = int(j)
+                    im_exts[band] = int(i)
                     break
             # need to change this to work if there are no segmentation maps (with the [0] indexing)
             try:
@@ -369,6 +402,7 @@ class Data:
             except:
                 blank_mask_path = ""
             # if this mask doesn't exist, create it using automated code (NOT YET IMPLEMENTED!)
+            print("cluster mask path = ", cluster_mask_path)
         return cls(instrument, im_paths, im_exts, seg_paths, mask_paths, cluster_mask_path, blank_mask_path, survey, version, is_blank = is_blank_survey(survey))
 
 # %% Overloaded operators
@@ -410,8 +444,8 @@ class Data:
         im_path = self.im_paths[band]
         seg_path = self.seg_paths[band]
         im_ext = self.im_exts[band]
-        #print("im_path, seg_path, band")
-        #print(im_path, seg_path, band)
+        #print("im_path, seg_path, band, im_ext")
+        #print(im_path, seg_path, band, im_ext)
         im_hdul = fits.open(im_path) #directory of images and image name structure for science image
         im_data = im_hdul[im_ext].data
         im_data = im_data.byteswap().newbyteorder()
@@ -428,6 +462,43 @@ class Data:
             return im_data, im_header, seg_data, seg_header, mask
         else:
             return im_data, im_header, seg_data, seg_header
+        
+    def plot_image_from_band(self, ax, band, norm = LogNorm(vmin = 0., vmax = 10.), show = True):
+        im_data = self.load_data(band, incl_mask = False)[0]
+        self.plot_image_from_data(ax, im_data, band, norm, show)
+        
+    @staticmethod
+    def plot_image_from_data(ax, im_data, label, norm = LogNorm(vmin = 0., vmax = 10.), show = True):
+        ax.imshow(im_data, norm = norm, origin = "lower")
+        plt.title(f"{label} image")
+        plt.xlabel("X / pix")
+        plt.ylabel("Y / pix")
+        if show:
+            plt.show()
+            
+    def plot_mask_from_band(self, ax, band, show = True):
+        mask = self.load_data(band, incl_mask = True)[4]
+        self.plot_mask_from_data(ax, mask, band, show)
+        
+    @staticmethod
+    def plot_mask_from_data(ax, mask, label, show = True):
+        cbar_in = ax.imshow(mask, origin = "lower")
+        plt.title(f"{label} mask")
+        plt.xlabel("X / pix")
+        plt.ylabel("Y / pix")
+        plt.colorbar(cbar_in)
+        if show:
+            plt.show()
+    
+    def plot_mask_regions_from_band(self, ax, band):
+        im_header = self.load_data(band, incl_mask = False)[1]
+        mask_path = self.mask_paths[band]
+        mask_file = pyregion.open(mask_path).as_imagecoord(im_header)
+        patch_list, artist_list = mask_file.get_mpl_patches_texts()
+        for p in patch_list:
+            ax.add_patch(p)
+        for t in artist_list:
+            ax.add_artist(t)
     
     @run_in_dir(path = config['DEFAULT']['GALFIND_DIR'])
     def make_seg_maps(self):
@@ -576,6 +647,21 @@ class Data:
         # maybe insert a step here to align your images
         pass
     
+    def clean_mask_regions(self, band):
+        # open region file
+        mask_path = self.mask_paths[band]
+        with open(mask_path, 'r') as f:
+            lines = f.readlines()
+            with open(mask_path.replace(".reg", "_clean.reg"), 'w') as temp:          
+                for i, line in enumerate(lines):
+                    if line.startswith('physical'):
+                        lines[i] = line.replace('physical', 'image')
+                    if not ( line.endswith(',0)\n') and line.startswith('circle')):
+                        if not (line.endswith(',0)\n') and line.startswith('ellipse')):
+                           temp.write(line)
+        # insert original mask ds9 region file into an unclean folder
+        # update mask paths for the object
+    
     def calc_unmasked_area(self):
         # calculate mask area
         # unmasked_pix = 0
@@ -588,8 +674,7 @@ class Data:
         # unmasked_area_arr.append(unmasked_area)
         pass
         
-    def make_loc_depth_cat(self, aper_diams = [0.32] * u.arcsec, n_samples = 5, forced_phot_band = "f444W", min_percentage_err = 5):
-        print(f"Making local depth catalogue for {self.survey} {self.version} in {aper_diams} diameter apertures with min. error {min_percentage_err}%!")
+    def make_loc_depth_cat(self, aper_diams = [0.32] * u.arcsec, n_samples = 5, forced_phot_band = "f444W", min_flux_pc_err_arr = [5, 10]):
         # if sextractor catalogue has not already been made, make it
         self.combine_sex_cats(forced_phot_band)
         # if depths havn't already been run, run them
@@ -597,6 +682,7 @@ class Data:
         # correct the base sextractor catalogue to include local depth errors if not already done so
         self.loc_depth_cat_path = self.sex_cat_master_path.replace(".fits", "_loc_depth.fits")
         if not Path(self.loc_depth_cat_path).is_file():
+            print(f"Making local depth catalogue for {self.survey} {self.version} in {aper_diams} diameter apertures with min. error(s) {min_flux_pc_err_arr}%!")
             # open photometric data
             phot_data = fits.open(self.sex_cat_master_path)[1].data  
             for i, band in enumerate(tqdm(self.instrument.bands, desc = f"Making local depth catalogue", total = len(self.instrument))):
@@ -617,19 +703,23 @@ class Data:
                 
                 # make new columns (fill with original errors and overwrite in a couple of lines)
                 phot_data = make_new_fits_columns(phot_data, ["loc_depth_" + band, "FLUXERR_APER_" + band + "_loc_depth", "MAGERR_APER_" + band + "_l1_loc_depth", \
-                                            "MAGERR_APER_" + band + "_u1_loc_depth", "FLUX_APER_" + band + "_aper_corr_Jy", "FLUXERR_APER_" + band + "_loc_depth_" + str(min_percentage_err) + "pc_Jy", \
-                                            "MAGERR_APER_" + band + "_l1_loc_depth_" + str(min_percentage_err) + "pc", "MAGERR_APER_" + band + "_u1_loc_depth_" + str(min_percentage_err) + "pc", "sigma_" + band], \
+                                            "MAGERR_APER_" + band + "_u1_loc_depth", "FLUX_APER_" + band + "_aper_corr_Jy", "sigma_" + band], \
                                             [phot_data["FLUXERR_APER_" + band], phot_data["FLUXERR_APER_" + band], phot_data["MAGERR_APER_" + band], phot_data["MAGERR_APER_" + band], \
-                                             phot_data["FLUX_APER_" + band], phot_data["FLUXERR_APER_" + band], phot_data["MAGERR_APER_" + band], phot_data["MAGERR_APER_" + band], phot_data["MAGERR_APER_" + band]], \
+                                             phot_data["FLUX_APER_" + band], phot_data["MAGERR_APER_" + band]], \
                                             [phot_data.columns.formats[list(phot_data.columns.names).index("FLUXERR_APER_" + band)], \
                                              phot_data.columns.formats[list(phot_data.columns.names).index("FLUXERR_APER_" + band)], \
                                              phot_data.columns.formats[list(phot_data.columns.names).index("MAGERR_APER_" + band)], \
                                              phot_data.columns.formats[list(phot_data.columns.names).index("MAGERR_APER_" + band)], \
                                              phot_data.columns.formats[list(phot_data.columns.names).index("FLUX_APER_" + band)], \
-                                             phot_data.columns.formats[list(phot_data.columns.names).index("FLUXERR_APER_" + band)], \
-                                             phot_data.columns.formats[list(phot_data.columns.names).index("MAGERR_APER_" + band)], \
-                                             phot_data.columns.formats[list(phot_data.columns.names).index("MAGERR_APER_" + band)], \
                                              phot_data.columns.formats[list(phot_data.columns.names).index("FLUXERR_APER_" + band)]])
+                    
+                for min_flux_pc_err in min_flux_pc_err_arr:
+                    phot_data = make_new_fits_columns(phot_data, ["FLUXERR_APER_" + band + "_loc_depth_" + str(min_flux_pc_err) + "pc_Jy", \
+                        "MAGERR_APER_" + band + "_l1_loc_depth_" + str(min_flux_pc_err) + "pc", "MAGERR_APER_" + band + "_u1_loc_depth_" + str(min_flux_pc_err) + "pc"], \
+                        [phot_data["FLUXERR_APER_" + band], phot_data["MAGERR_APER_" + band], phot_data["MAGERR_APER_" + band]], \
+                        [phot_data.columns.formats[list(phot_data.columns.names).index("FLUXERR_APER_" + band)], \
+                        phot_data.columns.formats[list(phot_data.columns.names).index("MAGERR_APER_" + band)], \
+                        phot_data.columns.formats[list(phot_data.columns.names).index("MAGERR_APER_" + band)]])
                 
                 for j, aper_diam in enumerate(json.loads(config.get("SExtractor", "APERTURE_DIAMS")) * u.arcsec):
                     for k in range(len(phot_data["NUMBER"])):
@@ -638,9 +728,10 @@ class Data:
                         phot_data["FLUXERR_APER_" + band + "_loc_depth"].T[j][k] = -99.
                         phot_data["MAGERR_APER_" + band + "_l1_loc_depth"].T[j][k] = -99.
                         phot_data["MAGERR_APER_" + band + "_u1_loc_depth"].T[j][k] = -99.
-                        phot_data["FLUXERR_APER_" + band + "_loc_depth_" + str(min_percentage_err) + "pc_Jy"].T[j][k] = -99.
-                        phot_data["MAGERR_APER_" + band + "_l1_loc_depth_" + str(min_percentage_err) + "pc"].T[j][k] = -99.
-                        phot_data["MAGERR_APER_" + band + "_u1_loc_depth_" + str(min_percentage_err) + "pc"].T[j][k] = -99.
+                        for min_flux_pc_err in min_flux_pc_err_arr:
+                            phot_data["FLUXERR_APER_" + band + "_loc_depth_" + str(min_flux_pc_err) + "pc_Jy"].T[j][k] = -99.
+                            phot_data["MAGERR_APER_" + band + "_l1_loc_depth_" + str(min_flux_pc_err) + "pc"].T[j][k] = -99.
+                            phot_data["MAGERR_APER_" + band + "_u1_loc_depth_" + str(min_flux_pc_err) + "pc"].T[j][k] = -99.
                         phot_data["sigma_" + band].T[j][k] = -99.
                         
                         # update column for flux in Jy
@@ -679,33 +770,35 @@ class Data:
                             print("loc_depth =", loc_depth)
                         phot_data["FLUXERR_APER_" + band + "_loc_depth"].T[diam_index][k] = aper_flux_err
                         
-                        # add column setting flux in Jy to minimum 5pc error
-                        if phot_data["FLUXERR_APER_" + band + "_loc_depth"].T[diam_index][k] / phot_data["FLUX_APER_" + band + "_aper_corr"].T[diam_index][k] < min_percentage_err / 100:
-                            phot_data["FLUXERR_APER_" + band + "_loc_depth_" + str(min_percentage_err) + "pc_Jy"].T[diam_index][k] = \
-                            phot_data["FLUX_APER_" + band + "_aper_corr_Jy"].T[diam_index][k] * min_percentage_err / 100
-                        else:
-                            phot_data["FLUXERR_APER_" + band + "_loc_depth_" + str(min_percentage_err) + "pc_Jy"].T[diam_index][k] = \
-                                funcs.flux_image_to_Jy(phot_data["FLUXERR_APER_" + band + "_loc_depth"].T[diam_index][k], self.im_zps[band]).value
+                        # add column setting flux in Jy to minimum n_pc error
+                        for min_flux_pc_err in min_flux_pc_err_arr:
+                            if phot_data["FLUXERR_APER_" + band + "_loc_depth"].T[diam_index][k] / phot_data["FLUX_APER_" + band + "_aper_corr"].T[diam_index][k] < min_flux_pc_err / 100:
+                                phot_data["FLUXERR_APER_" + band + "_loc_depth_" + str(min_flux_pc_err) + "pc_Jy"].T[diam_index][k] = \
+                                phot_data["FLUX_APER_" + band + "_aper_corr_Jy"].T[diam_index][k] * min_flux_pc_err / 100
+                            else:
+                                phot_data["FLUXERR_APER_" + band + "_loc_depth_" + str(min_flux_pc_err) + "pc_Jy"].T[diam_index][k] = \
+                                    funcs.flux_image_to_Jy(phot_data["FLUXERR_APER_" + band + "_loc_depth"].T[diam_index][k], self.instrument.zero_points[band]).value
                         
                         # calculate local depth mag errors both with and without 5pc minimum flux errors imposed
                         for m in range(2):
-                            if m == 0:
-                                flux = phot_data["FLUX_APER_" + band + "_aper_corr"].T[diam_index][k]
-                                aper_flux_err = phot_data["FLUXERR_APER_" + band + "_loc_depth"].T[diam_index][k]
-                                add_suffix = ""
-                            elif m == 1:
-                                flux = phot_data["FLUX_APER_" + band + "_aper_corr_Jy"].T[diam_index][k]
-                                aper_flux_err = phot_data["FLUXERR_APER_" + band + "_loc_depth_" + str(min_percentage_err) + "pc_Jy"].T[diam_index][k]
-                                add_suffix = "_" + str(min_percentage_err) + "pc"
-                        
-                            mag_l1 = -(-2.5 * np.log10(flux) + 2.5 * np.log10(flux - aper_flux_err))
-                            mag_u1 = -(-2.5 * np.log10(flux + aper_flux_err) + 2.5 * np.log10(flux))
-                            #print(mag_l1)
-                            #print(mag_u1)
-                            if np.isfinite(mag_l1):
-                                phot_data["MAGERR_APER_" + band + "_l1_loc_depth" + add_suffix].T[diam_index][k] = mag_l1
-                            if np.isfinite(mag_u1):  
-                                phot_data["MAGERR_APER_" + band + "_u1_loc_depth" + add_suffix].T[diam_index][k] = mag_u1
+                            for n, min_flux_pc_err in enumerate(min_flux_pc_err_arr):
+                                if m == 0 and n == 0:
+                                    flux = phot_data["FLUX_APER_" + band + "_aper_corr"].T[diam_index][k]
+                                    aper_flux_err = phot_data["FLUXERR_APER_" + band + "_loc_depth"].T[diam_index][k]
+                                    add_suffix = ""
+                                if m == 1:
+                                    flux = phot_data["FLUX_APER_" + band + "_aper_corr_Jy"].T[diam_index][k]
+                                    aper_flux_err = phot_data["FLUXERR_APER_" + band + "_loc_depth_" + str(min_flux_pc_err) + "pc_Jy"].T[diam_index][k]
+                                    add_suffix = "_" + str(min_flux_pc_err) + "pc"
+                            
+                                mag_l1 = -(-2.5 * np.log10(flux) + 2.5 * np.log10(flux - aper_flux_err))
+                                mag_u1 = -(-2.5 * np.log10(flux + aper_flux_err) + 2.5 * np.log10(flux))
+                                #print(mag_l1)
+                                #print(mag_u1)
+                                if np.isfinite(mag_l1):
+                                    phot_data["MAGERR_APER_" + band + "_l1_loc_depth" + add_suffix].T[diam_index][k] = mag_l1
+                                if np.isfinite(mag_u1):  
+                                    phot_data["MAGERR_APER_" + band + "_u1_loc_depth" + add_suffix].T[diam_index][k] = mag_u1
                         
                         # make boolean columns to say whether there is a local 5σ detection and 2σ non-detection in the band in the smallest aperture
                         phot_data["sigma_" + band].T[diam_index][k] = funcs.n_sigma_detection(loc_depth, phot_data[f"MAG_APER_{band}"].T[diam_index][k], self.im_zps[band])
@@ -741,22 +834,18 @@ class Data:
         return (aper_diam / (2 * self.im_pixel_scales[band])).value
     
     def calc_depths(self, xy_offset = [0, 0], aper_diams = [0.32] * u.arcsec, size = 500, n_busy_iters = 1_000, number = 600, \
-                    mask_rad = 25, aper_disp_rad = 2, excl_bands = [], use_xy_offset_txt = True, n_jobs = 1):
-       
-        if type(aper_disp_rad) == u.Quantity:
-            aper_disp_rad = aper_disp_rad.to(u.radian).value    
+                    mask_rad = 25, aper_disp_rad = 2, excl_bands = [], use_xy_offset_txt = True, plot = False, n_jobs = 1):   
 
         params = []  
         average_depths = []
-        # Look over all aperture diameters and bands
-        
+        # Look over all aperture diameters and bands  
         for aper_diam in aper_diams:
             # Generate folder for depths
             self.get_depth_dir(aper_diam)
             for band in self.instrument.bands:
                 # Only run for non excluded bands
                 if band not in excl_bands:
-                    params.append((band, xy_offset, aper_diam, size, n_busy_iters, number, mask_rad, aper_disp_rad, use_xy_offset_txt, average_depths))
+                    params.append((band, xy_offset, aper_diam, size, n_busy_iters, number, mask_rad, aper_disp_rad, use_xy_offset_txt, plot, average_depths))
         # Parallelise the calculation of depths for each band
         with tqdm_joblib(tqdm(desc="Running local depths", total=len(params))) as progress_bar:
             Parallel(n_jobs=n_jobs)(delayed(self.calc_band_depth)(param) for param in params)
@@ -766,8 +855,14 @@ class Data:
             np.savetxt(f"{self.depth_dirs['f444W']}/{self.survey}_depths.txt", np.column_stack((np.array(self.instrument.bands), np.array(average_depths))), header = header, fmt = "%s")
         
     def calc_band_depth(self, params):
-        band, xy_offset, aper_diam, size, n_busy_iters, number, mask_rad, aper_disp_rad, use_xy_offset_txt, average_depths = params
-            
+        band, xy_offset, aper_diam, size, n_busy_iters, number, mask_rad, aper_disp_rad, use_xy_offset_txt, plot, average_depths = params
+        if plot:
+            fig, ax = plt.subplots()
+            self.plot_mask_regions_from_band(ax, band)
+            self.plot_image_from_band(ax, band, show = True)
+            fig, ax = plt.subplots()
+            self.plot_mask_from_band(ax, band, show = True)
+                  
         if use_xy_offset_txt:
             try:
                 # use the xy_offset defined in .txt in appropriate folder
@@ -780,11 +875,13 @@ class Data:
         if not Path(f"{self.depth_dirs[band]}/coord_{band}.reg").is_file() or not Path(f"{self.depth_dirs[band]}/{self.survey}_depths.txt").is_file() or not Path(f"{self.depth_dirs[band]}/coord_{band}.txt").is_file():
             xoff, yoff = calc_xy_offsets(xy_offset)
             im_data, im_header, seg_data, seg_header, mask = self.load_data(band)
+            print(f"Finished loading {band}")
 
         if not Path(f"{self.depth_dirs[band]}/coord_{band}.txt").is_file():
             # place apertures in blank regions of sky
             xcoord, ycoord = place_blank_regions(im_data, im_header, seg_data, mask, self.survey, xy_offset, self.im_pixel_scales[band], band, \
                                                 aper_diam, size, n_busy_iters, number, mask_rad, aper_disp_rad)
+            print(f"Finished placing blank regions in {band}")
             np.savetxt(f"{self.depth_dirs[band]}/coord_{band}.txt", np.column_stack((xcoord, ycoord)))
             # save xy offset for this field and band
             np.savetxt(f"{self.depth_dirs[band]}/offset_{band}.txt", np.column_stack((xoff, yoff)), header = "x_off, y_off", fmt = "%d %d")
@@ -807,8 +904,7 @@ class Data:
             # plot the depths in the grid
             plot_depths(im_data, self.depth_dirs[band], band, seg_data, xcoord, ycoord, xy_offset, r, size, self.im_zps[band])
             # calculate average depth
-            average_depths.append(calc_5sigma_depth(xcoord, ycoord, im_data, r, self.im_zps[band]))
-        
+            average_depths.append(calc_5sigma_depth(xcoord, ycoord, im_data, r, self.im_zps[band]) 
     
 # match sextractor catalogue codes
 sex_id_params = ["NUMBER", "X_IMAGE", "Y_IMAGE", "ALPHA_J2000", "DELTA_J2000"]
@@ -863,16 +959,16 @@ def calc_xy_offsets(offset):
 
 
 def place_blank_regions(im_data, im_header, seg_data, mask, survey, offset, pix_scale, band, aper_diam = 0.32 * u.arcsec, size = 500, n_busy_iters = 1_000, number = 600, mask_rad = 25, aper_disp_rad = 2, fast=True):
-    
-    #im_wcs = WCS(im_header)
-    r = aper_diam / (2 * pix_scale * u.arcsec) # radius of aperture in pixels
-    
+    if type(pix_scale) != u.Quantity:
+       pix_scale = pix_scale * u.arcsec                          
+    r = aper_diam / (2 * pix_scale) # radius of aperture in pixels
     if type(r) == u.Quantity:
         r = r.value   
     if fast:
-        r = 1e-5
+        r = 1e-10
         
     xoff, yoff = calc_xy_offsets(offset)
+    
     
     xchunk = int(seg_data.shape[1])
     ychunk = int(seg_data.shape[0])
@@ -882,22 +978,24 @@ def place_blank_regions(im_data, im_header, seg_data, mask, survey, offset, pix_
     for i in tqdm(range(0, int((xchunk - (2 * xoff)) / size)), desc = f"Running {band} depths for {survey}"):
         for j in tqdm(range(0, int((ychunk - (2 * yoff)) / size)), desc = f"Current row = {i + 1}", leave = False):
             busyflag = 0
-            #print(j, i)
             # narrow seg, image and mask data to appropriate size for the chunk
             seg_chunk = seg_data[(j * size) + yoff : ((j + 1) * size) + yoff, (i * size) + xoff:((i + 1) * size) + xoff]
             aper_mask_chunk = copy.deepcopy(seg_chunk)
             im_chunk = im_data[(j*size)+yoff:((j+1)*size)+yoff, (i*size)+xoff:((i+1)*size)+xoff]
-            mask_chunk = mask[(j*size)+yoff:((j+1)*size)+yoff, (i*size)+xoff:((i+1)*size)+xoff] #cut the box of interest out of the images
+            mask_chunk = mask[(j*size)+yoff:((j+1)*size)+yoff, (i*size)+xoff:((i+1)*size)+xoff] # cut the box of interest out of the images
             xlen = seg_chunk.shape[1]
             ylen = seg_chunk.shape[0]
             
             # check if there is enough space to fit apertures even if perfectly aligned
+            # if i == 16 and j == 16:
+            #     print(np.argwhere(seg_chunk == 0), np.argwhere(im_chunk != 0), np.argwhere(mask_chunk == False), np.argwhere(aper_mask_chunk == 0))
             z = np.argwhere((seg_chunk == 0) & (im_chunk != 0.) & (mask_chunk == False) & (aper_mask_chunk == 0)) #generate a list of candidate locations for empty apertures
+            #print(z)
             if len(z) > 0:
                 space = True
             else:
                 space = False
-            if space: # there are space for "number" of apertures
+            if space: # there is space for "number" of apertures
                  # cycle through range of available locations for empty apertures
                  for c in range(0, number): # tqdm(), desc = "Grid square completion", total = number * 0.6, leave = False):
                      next = 0
@@ -905,7 +1003,7 @@ def place_blank_regions(im_data, im_header, seg_data, mask, survey, offset, pix_
                      
                      while next == 0:
      
-                         idx = randrange(len(z)) #find random candidate location for empty aperture
+                         idx = randrange(len(z)) # find random candidate location for empty aperture
                          # z[idx] is (y, x) pixel number
                          if (z[idx][0] < mask_rad or z[idx][0] > ylen - mask_rad) or (z[idx][1] < mask_rad or z[idx][1] > xlen - mask_rad): # dont place empty aperture near edges of image (not data)
                              iters += 1
@@ -939,7 +1037,7 @@ def place_blank_regions(im_data, im_header, seg_data, mask, survey, offset, pix_
                                  next += 1
                                  busyflag = 1
                                  
-                     if busyflag == 1: # if the region is busy, set the 200 apertures to co-ordinates (0., 0.)
+                     if busyflag == 1: # if the region is busy, set the remaining apertures to co-ordinates (0., 0.)
                          #print(c, "apertures in (", i, ",", j, ") !")
                          xcoord.extend([0] * (number - c))
                          ycoord.extend([0] * (number - c))
