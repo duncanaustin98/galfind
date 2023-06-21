@@ -7,7 +7,7 @@ Created on Wed May 17 14:20:31 2023
 """
 
 from __future__ import absolute_import
-
+from photutils import Background2D, MedianBackground, SkyCircularAperture, aperture_photometry
 import numpy as np
 from astropy.io import fits
 from random import randrange
@@ -15,11 +15,12 @@ from pathlib import Path
 import sep # sextractor for python
 import matplotlib.pyplot as plt
 import math
+import timeit
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 from astropy.wcs.utils import pixel_to_skycoord
 from astropy.coordinates import search_around_sky, SkyCoord
 from matplotlib.colors import LogNorm
-from astropy.table import Table, hstack
+from astropy.table import Table, hstack, Column
 import copy
 import pyregion
 import subprocess
@@ -32,8 +33,11 @@ import matplotlib.pyplot as plt
 from matplotlib import cm
 from tqdm import tqdm
 import json
-
-from .Instrument import Instrument, ACS, NIRCam, MIRI, Combined_Instrument
+from joblib import Parallel, delayed
+import contextlib
+import joblib
+from tqdm import tqdm
+from .Instrument import Instrument, ACS_WFC,WFC3IR, NIRCam, MIRI, Combined_Instrument
 from . import config
 from . import useful_funcs_austind as funcs
 from .decorators import run_in_dir, hour_timer, email_update
@@ -41,7 +45,9 @@ from .decorators import run_in_dir, hour_timer, email_update
 # GALFIND data object
 class Data:
     
-    def __init__(self, instrument, im_paths, im_exts, seg_paths, mask_paths, cluster_mask_path, blank_mask_path, survey, version = "v0", is_blank = True):
+    def __init__(self, instrument, im_paths, im_exts,im_pixel_scales, im_shapes, im_zps, wht_paths, wht_exts, wht_types, seg_paths, mask_paths, cluster_mask_path, blank_mask_path, survey, version = "v0", is_blank = True):
+        # self, instrument, im_paths, im_exts, seg_paths, mask_paths, cluster_mask_path, blank_mask_path, survey, version = "v0", is_blank = True):
+        
         # sort dicts from blue -> red bands in ascending wavelength order
         self.im_paths = dict(sorted(im_paths.items()))
         self.im_exts = dict(sorted(im_exts.items())) # science image extension
@@ -49,20 +55,27 @@ class Data:
         self.version = version
         self.instrument = instrument
         self.is_blank = is_blank
-        print(im_paths)
+        
+        self.im_zps = im_zps
+        self.wht_exts = wht_exts
+        self.wht_paths = wht_paths
+        self.wht_types = wht_types
+        self.im_pixel_scales = im_pixel_scales
+        self.im_shapes = im_shapes
+
         # make segmentation maps from image paths if they don't already exist
         made_new_seg_maps = False
         for i, (band, seg_path) in enumerate(seg_paths.items()):
-            print(band, seg_path)
+            #print(band, seg_path)
             if (seg_path == "" or seg_path == []) and not made_new_seg_maps:
                 self.make_seg_maps()
                 made_new_seg_maps = True
             # load new segmentation maps
-            seg_paths[band] = glob.glob(f"{config['DEFAULT']['GALFIND_WORK']}/SExtractor/{instrument.name}/{version}/{survey}/{survey}*{band}_{band}*{version}*seg.fits")[0]
+            seg_paths[band] = glob.glob(f"{config['DEFAULT']['GALFIND_WORK']}/SExtractor/{self.instrument.instrument_from_band(band)}/{version}/{survey}/{survey}*{band}_{band}*{version}*seg.fits")[0]
         self.seg_paths = dict(sorted(seg_paths.items()))
         
         # make masks from image paths if they don't already exist
-        print(mask_paths)
+    
         for i, (band, mask_path) in enumerate(mask_paths.items()):
             if (mask_path == "" or mask_path == []):
                 self.make_mask(band)
@@ -91,6 +104,216 @@ class Data:
             #     self.cluster_mask_path = ""
             #     print("Making cluster mask. (Not yet implemented; self.cluster_path = '' !!!)")
     
+    @classmethod
+    def from_pipeline(cls, survey, version = "v8", instruments = ['NIRCam', 'ACS_WFC', 'WFC3IR'], excl_bands = [], pix_scales = ['30mas', '60mas']):
+        instruments_obj = {'NIRCam': NIRCam(excl_bands = excl_bands), 'ACS_WFC': ACS_WFC(excl_bands = excl_bands), 'WFC3IR': WFC3IR(excl_bands = excl_bands)}
+        # Build a combined instrument object
+        comb_instrument_created = False
+        
+        im_paths = {} 
+        im_exts = {}
+        seg_paths = {}
+        wht_paths = {}
+        wht_exts = {}
+        wht_types = {}
+        im_pixel_scales = {}
+        im_zps = {}
+        im_shapes = {}
+        mask_paths = {}
+        depth_dir = {}
+        is_blank = is_blank_survey(survey)
+
+    
+        for instrument in instruments:
+            instrument = instruments_obj[instrument]
+            if instrument.name == "NIRCam":
+                if version == "v7": #pmap == "0995":
+                    ceers_im_dirs = {f"CEERSP{str(i + 1)}": f"ceers/mosaic_0995/P{str(i + 1)}" for i in range(10)}
+                    survey_im_dirs = {"SMACS-0723": "SMACS-0723/mosaic_0995", "GLASS": "glass_0995/mosaic_v5", "MACS-0416": "MACS0416/mosaic_0995_v1", \
+                               "El-Gordo": "elgordo/mosaic_0995_v1", "NEP": "NEP/mosaic", "NEP-2": "NEP-2/mosaic_0995", "NGDEEP": "NGDEEP/mosaic", \
+                                            "CLIO": "CLIO/mosaic_0995_2"} | ceers_im_dirs
+                elif version == "v8": #pmap == "1084":
+                    ceers_im_dirs = {f"CEERSP{str(i + 1)}": f"ceers/mosaic_1084/P{str(i + 1)}" for i in range(10)}
+                    survey_im_dirs = {"CLIO": "CLIO/mosaic_1084", "El-Gordo": "elgordo/mosaic_1084", "GLASS": "GLASS-12/mosaic_1084", "NEP": "NEP/mosaic_1084", \
+                                  "NEP-2": "NEP-2/mosaic_1084", "NEP-3": "NEP-3/mosaic_1084", "SMACS-0723": "SMACS0723/mosaic_1084", "MACS-0416": "MACS0416/mosaic_1084_v3"} | ceers_im_dirs
+                elif version == "v8a":
+                    ceers_im_dirs = {f"CEERSP{str(i + 1)}": f"CEERSP{str(i + 1)}/mosaic_1084_182" for i in range(10)}
+                    survey_im_dirs = {"CLIO": "CLIO/mosaic_1084_182", "El-Gordo": "elgordo/mosaic_1084_182", "NEP-1": "NEP-1/mosaic_1084_182", "NEP-2": "NEP-2/mosaic_1084_182", \
+                                      "NEP-3": "NEP-3/mosaic_1084_182", "NEP-4": "NEP-4/mosaic_1084_182", "MACS-0416": "MACS0416/mosaic_1084_182", "GLASS": "GLASS-12/mosaic_1084_182", "SMACS-0723": "SMACS0723/mosaic_1084_182"} | ceers_im_dirs
+                elif version == "v8b":
+                    survey_im_dirs = {survey: f"{survey}/mosaic_1084_wispfix"}
+                elif version == "v8c":
+                    survey_im_dirs = {survey: f"{survey}/mosaic_1084_wispfix2"}
+                elif version == "lit_version":
+                    survey_im_dirs = {"JADES-DR1": "JADES/DR1"}
+
+                survey_im_dirs = {key: f"/raid/scratch/data/jwst/{value}" for (key, value) in survey_im_dirs.items()}
+                survey_dir = survey_im_dirs[survey]
+
+                # don't use these if they are in the same folder
+                nadams_seg_path_arr = glob.glob(f"{survey_dir}/*_seg.fits")
+                nadams_bkg_path_arr = glob.glob(f"{survey_dir}/*_bkg.fits")
+
+                if version == "lit_version":
+                    im_path_arr = glob.glob(f"{survey_dir}/*_drz.fits")
+                else:
+                    im_path_arr = glob.glob(f"{survey_dir}/*_i2d*.fits")
+                im_path_arr = np.array([path for path in im_path_arr if path not in nadams_seg_path_arr and path not in nadams_bkg_path_arr])
+
+                # obtain available bands from imaging without having to hard code these
+                bands = np.array([split_path.lower().replace("w", "W").replace("m", "M") for path in im_path_arr for i, split_path in \
+                        enumerate(path.split("-")[-1].split("/")[-1].split("_")) if split_path.lower().replace("w", "W").replace("m", "M") in instrument.bands])
+                
+                # If band not used in instrument, remove it
+                for band in instrument.bands:
+                    if band not in bands:
+                        instrument.remove_band(band)
+                    else:
+                        # Maybe generalize this
+                        print("Generalize on line 177 of Data.from_pipeline()")
+                        im_pixel_scales[band] = 0.03 
+                        im_zps[band] = 28.08
+                
+                # If no images found for this instrument, don't add it to the combined instrument
+                if len(bands) != 0:
+                    if comb_instrument_created:
+                        comb_instrument += instrument
+                    else:
+                        comb_instrument = instrument
+                        comb_instrument_created = True
+
+                for i, band in enumerate(bands):
+                    # obtains all image paths from the correct band 
+                    im_paths_band = [im_path for im_path in im_path_arr if band.lower() in im_path or band in im_path or \
+                                      band.replace("f", "F").replace("W", "w") in im_path or band.upper() in im_path]
+                    # checks to see if there is just one singular image for the given band
+                    if len(im_paths_band) == 1:
+                        im_paths[band] = im_paths_band[0]
+                    else:
+                        raise(Exception(f"Multiple images found for {band} in {survey} {version}"))
+                    
+                    im_hdul = fits.open(im_paths[band])
+                    # obtain appropriate extension from the image
+                    for j, im_hdu in enumerate(im_hdul):
+                        if im_hdu.name == "SCI":
+                            im_exts[band] = int(j)
+                            im_shapes[band] = im_hdu.data.shape
+                        if im_hdu.name == 'ERR':
+                            wht_exts[band] = int(j)
+                            wht_types[band] = "MAP_RMS"
+                            wht_paths[band] = str(im_path_arr[i])
+                        
+                    # need to change this to work if there are no segmentation maps (with the [0] indexing)
+                
+
+            elif instrument.name in ["ACS_WFC", 'WFC3IR']:
+                # Iterate through bands and check if images exist 
+                any_path_found = False
+                for band in instrument.bands:
+                    path_found = False
+                    for pix_scale in pix_scales:
+                        path = Path(f"{config['DEFAULT']['GALFIND_DATA']}/hst/{survey}/{instrument.name}/{pix_scale}/{instrument.name}_{band}_{survey}_drz.fits")
+                        if path.is_file():
+                            any_path_found = True
+                            path_found = True
+                            break
+
+                    # If no images found, remove band from instrument
+                    if not path_found:
+                        instrument.remove_band(band)
+                    else:
+                        # otherwise open band, work out if it has a weight map, calc zero point and image scale
+                        hdu = fits.open(str(path))
+                        
+                        im_paths[band] = str(path)
+                        # Not great to use try/except but not sure how else to do it with index_of
+                        try:
+                            im_exts[band] = hdu.index_of('SCI')
+                        except KeyError:
+                            im_exts[band] = 0
+                        # Get header of image extension
+                        imheader = hdu[im_exts[band]].header
+                        im_shapes[band] = hdu[im_exts[band]].data.shape
+                        hdu.close()
+                        try:
+                            # This nice nested loop checks if there is a wht extension, if not trys to find wht or rms file
+                            wht_exts[band] = hdu.index_of('WHT')
+                            wht_paths[band] = str(path)
+                            wht_types[band] = "MAP_WEIGHT"
+                        except KeyError:
+                            try:
+                                wht_exts[band] = hdu.index_of('ERR')
+                                wht_paths[band] = str(path)
+                                wht_types[band] = "MAP_RMS"
+
+                            except KeyError:
+                                path = Path(f"{config['DEFAULT']['GALFIND_DATA']}/hst/{survey}/{instrument.name}/{pix_scale}/{instrument.name}_{band}_{survey}_wht.fits")
+                                if path.is_file():
+                                    wht_paths[band] = str(path)
+                                    wht_types[band] = 'MAP_WEIGHT'
+                                    wht_exts[band] = 0
+                                else:
+                                    path = Path(f"{config['DEFAULT']['GALFIND_DATA']}/hst/{survey}/{instrument.name}/{pix_scale}/{instrument.name}_{band}_{survey}_rms.fits")
+                                    if path.is_file():
+                                        wht_paths[band] = str(path)
+                                        wht_types[band] = 'MAP_RMS'
+                                        wht_exts[band] = 0
+                                    else:
+                                        wht_paths[band] = ""
+                                        wht_types[band] = "NONE"
+                                        wht_exts[band] = ""
+
+                        im_pixel_scales[band] = float(pix_scale.split('mas')[0]) * 1e-3 
+                        if instrument.name == 'ACS_WFC':
+                            im_zps[band] = -2.5 * np.log10(imheader["PHOTFLAM"]) - 21.10 - 5 * np.log10(imheader["PHOTPLAM"]) + 18.6921
+                        elif instrument.name == 'WFC3IR':
+                        # Taken from Appendix A of https://www.stsci.edu/files/live/sites/www/files/home/hst/instrumentation/wfc3/documentation/instrument-science-reports-isrs/_documents/2020/WFC3-ISR-2020-10.pdf
+                            wfc3ir_zps = {'f098M':25.661, 'f105W':26.2637, 'f110W':26.8185, 'f125W':26.231, 'f140W':26.4502, 'f160W':25.9362}
+                            im_zps[band] = wfc3ir_zps[band]
+                        # Need to move my segmentation maps and masks to the correct place
+                
+                if any_path_found:
+                    if comb_instrument_created:
+                        comb_instrument += instrument
+                        print('Added instrument')
+                    else:
+                        comb_instrument = instrument
+                        comb_instrument_created = True
+
+                        # Need to update what it suggests
+           
+            elif instrument.name == 'MIRI':
+                raise NotImplementedError("MIRI not yet implemented")
+        if comb_instrument_created:
+            # All seg maps and masks should be in same format, so load those last when we know what bands we have
+            for band in comb_instrument.bands:
+                try:
+                    #print(f"{config['DEFAULT']['GALFIND_WORK']}/SExtractor/{comb_instrument.instrument_from_band(band)}/{version}/{survey}/{survey}*{band}_{band}*{version}*seg.fits")
+            
+                    seg_paths[band] = glob.glob(f"{config['DEFAULT']['GALFIND_WORK']}/SExtractor/{comb_instrument.instrument_from_band(band)}/{version}/{survey}/{survey}*{band}_{band}*{version}*seg.fits")[0]
+                except IndexError:
+                    seg_paths[band] = ""
+                # include just the masks corresponding to the correct bands
+                try:
+                    mask_paths[band] = glob.glob(f"{config['DEFAULT']['GALFIND_WORK']}/Masks/{survey}/*{band.replace('W', 'w').replace('M', 'm')}*")[0]
+                except IndexError:
+                    mask_paths[band] = ""
+            # Moved out as not actually specific to NIRCam
+            try:
+                cluster_mask_path = glob.glob(f"{config['DEFAULT']['GALFIND_WORK']}/Masks/{survey}/*cluster*")[0]
+            except IndexError:
+                cluster_mask_path = ""
+            try:
+                blank_mask_path = glob.glob(f"{config['DEFAULT']['GALFIND_WORK']}/Masks/{survey}/*blank*")[0]
+            except IndexError:
+                blank_mask_path = ""
+
+            #im_paths, im_exts, im_shapes, im_zps, wht_paths, wht_exts, wht_types, im_pixel_scales, seg_paths, mask_paths, cluster_mask_path, blank_mask_path 
+            
+            return cls(comb_instrument, im_paths, im_exts,im_pixel_scales, im_shapes, im_zps, wht_paths, wht_exts, wht_types, seg_paths, mask_paths, cluster_mask_path, blank_mask_path, survey, version = version, is_blank = is_blank)
+        else:
+            raise(Exception(f'Failed to find any data for {survey}')  
+
     @classmethod
     def from_NIRCam_pipeline(cls, survey, version = "v8", excl_bands = []):
         instrument = NIRCam(excl_bands = excl_bands)
@@ -139,7 +362,6 @@ class Data:
         for band in instrument.bands:
             if band not in bands:
                 instrument.remove_band(band)
-        print("bands = ", instrument.bands)
         
         im_paths = {}
         im_exts = {}
@@ -281,25 +503,45 @@ class Data:
     @run_in_dir(path = config['DEFAULT']['GALFIND_DIR'])
     def make_seg_maps(self):
         for band in self.instrument.bands:
+            print([config['DEFAULT']['GALFIND_WORK'], self.im_paths[band], str(self.im_pixel_scales[band]), \
+                                    str(self.im_zps[band]), self.instrument.instrument_from_band(band), self.survey, band, self.version, str(self.wht_paths[band]), \
+                                    str(self.wht_exts[band]),self.wht_types[band],str(self.im_exts[band]),f"{config['DEFAULT']['GALFIND_DIR']}/configs/"])
             # SExtractor bash script python wrapper
-            process = subprocess.Popen([f"./make_seg_map.sh", config['DEFAULT']['GALFIND_WORK'], self.im_paths[band], str(self.instrument.pixel_scales[band].value), \
-                                    str(self.instrument.zero_points[band]), self.instrument.name, self.survey, band, self.version])
+            process = subprocess.Popen([f"./make_seg_map.sh", config['DEFAULT']['GALFIND_WORK'], self.im_paths[band], str(self.im_pixel_scales[band]), \
+                                    str(self.im_zps[band]), self.instrument.instrument_from_band(band), self.survey, band, self.version, str(self.wht_paths[band]), \
+                                    str(self.wht_exts[band]),self.wht_types[band],str(self.im_exts[band]),f"{config['DEFAULT']['GALFIND_DIR']}/configs/"])
             process.wait()
+            
+            
             print(f"Made segmentation map for {self.survey} {self.version} {band}")
     
     @run_in_dir(path = config['DEFAULT']['GALFIND_DIR'])
     def make_sex_cats(self, forced_phot_band = "f444W"):
         # make individual forced photometry catalogues
+        force_pho_size = self.im_shapes[forced_phot_band]
         for band in self.instrument.bands:
             # if not run before
-            if not Path(f"{config['DEFAULT']['GALFIND_WORK']}/SExtractor/{self.instrument.name}/{self.version}/{self.survey}/{self.survey}_{band}_{forced_phot_band}_sel_cat_{self.version}.fits").is_file():
+            path = Path(f"{config['DEFAULT']['GALFIND_WORK']}/SExtractor/{self.instrument.instrument_from_band(band)}/{self.version}/{self.survey}/{self.survey}_{band}_{forced_phot_band}_sel_cat_{self.version}.fits")
+            if not path.is_file():
+                
                 # SExtractor bash script python wrapper
-                process = subprocess.Popen([f"./make_sex_cat.sh", config['DEFAULT']['GALFIND_WORK'], self.im_paths[band], str(self.instrument.pixel_scales[band].value), \
-                                    str(self.instrument.zero_points[band]), self.instrument.name, self.survey, band, self.version, \
-                                        forced_phot_band, self.im_paths[forced_phot_band]])
-                process.wait()
+                if force_pho_size == self.im_shapes[band] and self.wht_types[band] == self.wht_types[forced_phot_band]:
+                   
+                    process = subprocess.Popen([f"./make_sex_cat.sh", config['DEFAULT']['GALFIND_WORK'], self.im_paths[band], str(self.im_pixel_scales[band]), \
+                                        str(self.im_zps[band]),self.instrument.instrument_from_band(band), self.survey, band, self.version, \
+                                            forced_phot_band, str(self.im_paths[forced_phot_band]), str(self.wht_paths[band]), str(self.wht_exts[band]), \
+                                            str(self.im_exts[band]), str(self.wht_paths[forced_phot_band]), str(self.im_exts[forced_phot_band]), self.wht_types[band], 
+                                            str(self.wht_exts[forced_phot_band]), f"{config['DEFAULT']['GALFIND_DIR']}/configs/"])
+                    process.wait()
+                # Use photutils
+                else:
+                    forcephot_path =  Path(f"{config['DEFAULT']['GALFIND_WORK']}/SExtractor/{self.instrument.instrument_from_band(forced_phot_band)}/{self.version}/{self.survey}/{self.survey}_{forced_phot_band}_{forced_phot_band}_sel_cat_{self.version}.fits")
+          
+                    self.forced_photometry(band, forced_phot_band, path, forcephot_path)
+                    
+             
             print(f"Finished making SExtractor catalogue for {self.survey} {self.version} {band}!")
-        self.sex_cats = {band: f"{config['DEFAULT']['GALFIND_WORK']}/SExtractor/{self.instrument.name}/{self.version}/{self.survey}/{self.survey}_{band}_{forced_phot_band}_sel_cat_{self.version}.fits" for band in self.instrument.bands}
+        self.sex_cats = {band: f"{config['DEFAULT']['GALFIND_WORK']}/SExtractor/{self.instrument.instrument_from_band(band)}/{self.version}/{self.survey}/{self.survey}_{band}_{forced_phot_band}_sel_cat_{self.version}.fits" for band in self.instrument.bands}
     
     def combine_sex_cats(self, forced_phot_band = "f444W"):
         self.make_sex_cats(forced_phot_band)
@@ -327,6 +569,75 @@ class Data:
     def make_sex_plusplus_cat(self):
         pass
     
+    def forced_photometry(self, band, forced_phot_band, path, forcephot_path, radii = [0.16, 0.25, 0.5, 0.75, 1]*u.arcsec, ra_col='ALPHA_J2000', dec_col='DELTA_J2000', coord_unit=u.deg, id_col='NUMBER', x_col='X_IMAGE', y_col='Y_IMAGE'):
+        # Read in sextractor catalogue
+        catalog = Table.read(forcephot_path, character_as_bytes = False)
+        # Get image path
+        image = self.im_paths[band]
+        # Ipen image with correct extension and get WCS
+        with fits.open(image) as hdul:
+            im_ext = self.im_exts[band]
+            image = hdul[im_ext].data
+            wcs = WCS(hdul[im_ext].header)
+        # Check types
+        assert(type(image) == np.ndarray)  
+        assert(type(catalog) == Table)
+        # Get positions from sextractor catalog
+        ra = catalog[ra_col]
+        dec = catalog[dec_col]
+         # Make SkyCoord from catlog
+        positions = SkyCoord(ra, dec, unit=coord_unit)
+    
+        # Define radii in sky units
+        # This checks if radii is iterable and if not makes it a list
+        try:
+            iter(radii)
+        except TypeError:
+            radii = [radii]
+        apertures = []
+
+        for rad in radii:
+            aperture = SkyCircularAperture(positions, r=rad)
+            apertures.append(aperture)
+            # Convert to pixel using image WCS
+        # Generate background
+        background = Background2D(image, (64, 64), filter_size=(3, 3))
+    
+        image = image-background.background
+        # Do aperture photometry
+        phot_table = aperture_photometry(image, apertures, wcs=wcs)
+        assert(len(phot_table) == len(catalog))
+        # Replace detection ID with catalog ID
+        sky = SkyCoord(phot_table['sky_center'])
+        phot_table['id'] = catalog[id_col]
+        # Rename columns
+        phot_table.rename_column('id', id_col )
+        phot_table.rename_column('xcenter', x_col)
+        phot_table.rename_column('ycenter', y_col)
+
+        phot_table[ra_col] = sky.ra.to('deg')
+        phot_table[dec_col] = sky.dec.to('deg')
+        phot_table.remove_column('sky_center')
+         
+        colnames = [f'aperture_sum_{i}' for i in range(len(radii))]
+        aper_tab = Column(np.array(phot_table[colnames].as_array().tolist()), name=f'FLUX_APER_{band}')
+        phot_table[f'FLUX_APER_{band}'] = aper_tab
+        
+        zp = self.im_zps[band]
+        # This converts the fluxes to magnitudes using the correct zp, and puts them in the same format as the sextractor catalogue
+        mag_colnames  = []
+        for pos,col in enumerate(colnames):
+            name = f'MAG_APER_{pos}'
+            phot_table[name] = -2.5 * np.log10(phot_table[col]) + zp
+            phot_table[name][np.isnan(phot_table[name])] = -99
+            mag_colnames.append(name)
+        aper_tab = Column(np.array(phot_table[mag_colnames].as_array().tolist()), name=f'MAG_APER_{band}')
+        phot_table[f'MAG_APER_{band}'] = aper_tab
+        # Remove old columns
+        phot_table.remove_columns(mag_colnames)
+        phot_table.write(path, format='fits', overwrite=True)
+
+
     def make_mask(self, band, stellar_dir = "GAIA DR3"):
         im_data, im_header, seg_data, seg_header = self.load_data(band, incl_mask = False)
         # works as long as your images are aligned with the stellar directory
@@ -387,7 +698,7 @@ class Data:
                                                  phot_data.columns.formats[list(phot_data.columns.names).index("FLUX_APER_" + band)]])
                 for j, aper_diam in enumerate(json.loads(config.get("SExtractor", "APERTURE_DIAMS")) * u.arcsec):
                     phot_data["MAG_APER_" + band + "_aper_corr"].T[j] = (phot_data["MAG_APER_" + band].T[j] - self.instrument.aper_corr(aper_diam, band)).T
-                    phot_data["FLUX_APER_" + band + "_aper_corr"].T[j] = 10 ** ((phot_data["MAG_APER_" + band + "_aper_corr"].T[j] - self.instrument.zero_points[band]) / -2.5)
+                    phot_data["FLUX_APER_" + band + "_aper_corr"].T[j] = 10 ** ((phot_data["MAG_APER_" + band + "_aper_corr"].T[j] - self.im_zps[band]) / -2.5)
                     print("Performed aperture corrections")
                 
                 # make new columns (fill with original errors and overwrite in a couple of lines)
@@ -424,7 +735,7 @@ class Data:
                         phot_data["sigma_" + band].T[j][k] = -99.
                         
                         # update column for flux in Jy
-                        phot_data["FLUX_APER_" + band + "_aper_corr_Jy"].T[j][k] = funcs.flux_image_to_Jy(phot_data["FLUX_APER_" + band + "_aper_corr"].T[j][k], self.instrument.zero_points[band]).value
+                        phot_data["FLUX_APER_" + band + "_aper_corr_Jy"].T[j][k] = funcs.flux_image_to_Jy(phot_data["FLUX_APER_" + band + "_aper_corr"].T[j][k], self.im_zps[band]).value
             
                 for diam_index, aper_diam in enumerate(aper_diams):
                     r = self.calc_aper_radius_pix(aper_diam, band)
@@ -438,7 +749,7 @@ class Data:
                     aper_coords = pixel_to_skycoord(xcoord, ycoord, wcs)
                     
                     # calculate local depths for all galaxies
-                    loc_depths = calc_loc_depths(phot_data["ALPHA_J2000"], phot_data["DELTA_J2000"], aper_coords, xcoord, ycoord, im_data, r, self.survey, band, n_samples = n_samples, zero_point = self.instrument.zero_points[band])
+                    loc_depths = calc_loc_depths(phot_data["ALPHA_J2000"], phot_data["DELTA_J2000"], aper_coords, xcoord, ycoord, im_data, r, self.survey, band, n_samples = n_samples, zero_point = self.im_zps[band])
                     
                     five_sigma_detected = []
                     two_sigma_non_detected = []
@@ -453,7 +764,7 @@ class Data:
                         if loc_depth == np.nan:
                             nans = nans + 1
                             loc_depth_nan = True
-                        aper_flux_err = (10 ** ((loc_depth - self.instrument.zero_points[band]) / -2.5)) / 5 # in image units
+                        aper_flux_err = (10 ** ((loc_depth - self.im_zps[band]) / -2.5)) / 5 # in image units
                         if aper_flux_err == np.nan and not loc_depth_nan:
                             nans = nans + 1
                             print("loc_depth =", loc_depth)
@@ -490,7 +801,7 @@ class Data:
                                     phot_data["MAGERR_APER_" + band + "_u1_loc_depth" + add_suffix].T[diam_index][k] = mag_u1
                         
                         # make boolean columns to say whether there is a local 5σ detection and 2σ non-detection in the band in the smallest aperture
-                        phot_data["sigma_" + band].T[diam_index][k] = funcs.n_sigma_detection(loc_depth, phot_data[f"MAG_APER_{band}"].T[diam_index][k], self.instrument.zero_points[band])
+                        phot_data["sigma_" + band].T[diam_index][k] = funcs.n_sigma_detection(loc_depth, phot_data[f"MAG_APER_{band}"].T[diam_index][k], self.im_zps[band])
                         if phot_data[f"MAG_APER_{band}"].T[diam_index][k] < loc_depth:
                             five_sigma_detected.append(True)
                         else:
@@ -513,78 +824,88 @@ class Data:
                     print("total nans =", nans)
         
     def get_depth_dir(self, aper_diam):
-        self.depth_dir = f"{config['DEFAULT']['GALFIND_WORK']}/Depths/{self.instrument.name}/{self.version}/{self.survey}/{str(aper_diam.value)}as"
-        os.makedirs(self.depth_dir, exist_ok = True)
-        return self.depth_dir
+        self.depth_dirs = {}
+        for band in self.instrument.bands:
+            self.depth_dirs[band] = f"{config['DEFAULT']['GALFIND_WORK']}/Depths/{self.instrument.instrument_from_band(band)}/{self.version}/{self.survey}/{str(aper_diam.value)}as"
+            os.makedirs(self.depth_dirs[band], exist_ok = True)
+        
     
     def calc_aper_radius_pix(self, aper_diam, band):
-        return (aper_diam / (2 * self.instrument.pixel_scales[band])).value
+        return (aper_diam / (2 * self.im_pixel_scales[band])).value
     
     def calc_depths(self, xy_offset = [0, 0], aper_diams = [0.32] * u.arcsec, size = 500, n_busy_iters = 1_000, number = 600, \
-                    mask_rad = 25, aper_disp_rad = 2, excl_bands = [], use_xy_offset_txt = True, plot = False):
-        
+                    mask_rad = 25, aper_disp_rad = 2, excl_bands = [], use_xy_offset_txt = True, plot = False, n_jobs = 1):   
+
+        params = []  
+        average_depths = []
+        # Look over all aperture diameters and bands  
         for aper_diam in aper_diams:
-            print(aper_diam)
+            # Generate folder for depths
             self.get_depth_dir(aper_diam)
-        
-            average_depths = []
-            header = "band, average_5σ_depth"
             for band in self.instrument.bands:
+                # Only run for non excluded bands
                 if band not in excl_bands:
-                    if plot:
-                        fig, ax = plt.subplots()
-                        self.plot_mask_regions_from_band(ax, band)
-                        self.plot_image_from_band(ax, band, show = True)
-                        fig, ax = plt.subplots()
-                        self.plot_mask_from_band(ax, band, show = True)
-                        
-                    if use_xy_offset_txt:
-                        try:
-                            # use the xy_offset defined in .txt in appropriate folder
-                            xy_offset_path = f"{self.depth_dir}/offset_{band}.txt"
-                            xy_offset = list(np.genfromtxt(xy_offset_path, dtype = int))
-                            #print(f"xy_offset = {xy_offset}")
-                        except: # use default xy offset if this .txt does not exist
-                            pass
-                        
-                    if not Path(f"{self.depth_dir}/coord_{band}.reg").is_file() or not Path(f"{self.depth_dir}/{self.survey}_depths.txt").is_file() or not Path(f"{self.depth_dir}/coord_{band}.txt").is_file():
-                        xoff, yoff = calc_xy_offsets(xy_offset)
-                        im_data, im_header, seg_data, seg_header, mask = self.load_data(band)
-                        print(f"Finished loading {band}")
-                        
-                    if not Path(f"{self.depth_dir}/coord_{band}.txt").is_file():
-                        # place apertures in blank regions of sky
-                        xcoord, ycoord = place_blank_regions(im_data, im_header, seg_data, mask, self.survey, xy_offset, self.instrument.pixel_scales[band], band, \
-                                                         aper_diam, size, n_busy_iters, number, mask_rad, aper_disp_rad)
-                        print(f"Finished placing blank regions in {band}")
-                        np.savetxt(f"{self.depth_dir}/coord_{band}.txt", np.column_stack((xcoord, ycoord)))
-                        # save xy offset for this field and band
-                        np.savetxt(f"{self.depth_dir}/offset_{band}.txt", np.column_stack((xoff, yoff)), header = "x_off, y_off", fmt = "%d %d")
-                    
-                    # read in aperture locations
-                    if not Path(f"{self.depth_dir}/coord_{band}.reg").is_file() or not Path(f"{self.depth_dir}/{self.survey}_depths.txt").is_file():
-                        aper_loc = np.loadtxt(f"{self.depth_dir}/coord_{band}.txt")
-                        xcoord = aper_loc[:, 0]
-                        ycoord = aper_loc[:, 1]
-                        index = np.argwhere(xcoord == 0.)
-                        xcoord = np.delete(xcoord, index)
-                        ycoord = np.delete(ycoord, index)
-                    
-                    # convert these to .reg region file
-                    if not Path(f"{self.depth_dir}/coord_{band}.reg").is_file():
-                        aper_loc_to_reg(xcoord, ycoord, WCS(im_header), aper_diam.value, f"{self.depth_dir}/coord_{band}.reg")
-                    
-                    r = self.calc_aper_radius_pix(aper_diam, band)
-                    if not Path(f"{self.depth_dir}/{self.survey}_depths.txt").is_file():
-                        # plot the depths in the grid
-                        plot_depths(im_data, self.depth_dir, band, seg_data, xcoord, ycoord, xy_offset, r, size, self.instrument.zero_points[band])
-                        # calculate average depth
-                        average_depths.append(calc_5sigma_depth(xcoord, ycoord, im_data, r, self.instrument.zero_points[band]))
-                        
-            # print table of depths for these bands
-            if not Path(f"{self.depth_dir}/{self.survey}_depths.txt").is_file():
-                np.savetxt(f"{self.depth_dir}/{self.survey}_depths.txt", np.column_stack((np.array(self.instrument.bands), np.array(average_depths))), header = header, fmt = "%s")
+                    params.append((band, xy_offset, aper_diam, size, n_busy_iters, number, mask_rad, aper_disp_rad, use_xy_offset_txt, plot, average_depths))
+        # Parallelise the calculation of depths for each band
+        with tqdm_joblib(tqdm(desc="Running local depths", total=len(params))) as progress_bar:
+            Parallel(n_jobs=n_jobs)(delayed(self.calc_band_depth)(param) for param in params)
+        # print table of depths for these bands
+        header = "band, average_5sigma_depth"
+        if not Path(f"{self.depth_dirs['f444W']}/{self.survey}_depths.txt").is_file():
+            np.savetxt(f"{self.depth_dirs['f444W']}/{self.survey}_depths.txt", np.column_stack((np.array(self.instrument.bands), np.array(average_depths))), header = header, fmt = "%s")
         
+    def calc_band_depth(self, params):
+        band, xy_offset, aper_diam, size, n_busy_iters, number, mask_rad, aper_disp_rad, use_xy_offset_txt, plot, average_depths = params
+        if plot:
+            fig, ax = plt.subplots()
+            self.plot_mask_regions_from_band(ax, band)
+            self.plot_image_from_band(ax, band, show = True)
+            fig, ax = plt.subplots()
+            self.plot_mask_from_band(ax, band, show = True)
+                  
+        if use_xy_offset_txt:
+            try:
+                # use the xy_offset defined in .txt in appropriate folder
+                xy_offset_path = f"{self.depth_dirs[band]}/offset_{band}.txt"
+                xy_offset = list(np.genfromtxt(xy_offset_path, dtype = int))
+                print(f"xy_offset = {xy_offset}")
+            except: # use default xy offset if this .txt does not exist
+                pass
+            
+        if not Path(f"{self.depth_dirs[band]}/coord_{band}.reg").is_file() or not Path(f"{self.depth_dirs[band]}/{self.survey}_depths.txt").is_file() or not Path(f"{self.depth_dirs[band]}/coord_{band}.txt").is_file():
+            xoff, yoff = calc_xy_offsets(xy_offset)
+            im_data, im_header, seg_data, seg_header, mask = self.load_data(band)
+            print(f"Finished loading {band}")
+
+        if not Path(f"{self.depth_dirs[band]}/coord_{band}.txt").is_file():
+            # place apertures in blank regions of sky
+            xcoord, ycoord = place_blank_regions(im_data, im_header, seg_data, mask, self.survey, xy_offset, self.im_pixel_scales[band], band, \
+                                                aper_diam, size, n_busy_iters, number, mask_rad, aper_disp_rad)
+            print(f"Finished placing blank regions in {band}")
+            np.savetxt(f"{self.depth_dirs[band]}/coord_{band}.txt", np.column_stack((xcoord, ycoord)))
+            # save xy offset for this field and band
+            np.savetxt(f"{self.depth_dirs[band]}/offset_{band}.txt", np.column_stack((xoff, yoff)), header = "x_off, y_off", fmt = "%d %d")
+        
+        # read in aperture locations
+        if not Path(f"{self.depth_dirs[band]}/coord_{band}.reg").is_file() or not Path(f"{self.depth_dirs[band]}/{self.survey}_depths.txt").is_file():
+            aper_loc = np.loadtxt(f"{self.depth_dirs[band]}/coord_{band}.txt")
+            xcoord = aper_loc[:, 0]
+            ycoord = aper_loc[:, 1]
+            index = np.argwhere(xcoord == 0.)
+            xcoord = np.delete(xcoord, index)
+            ycoord = np.delete(ycoord, index)
+        
+        # convert these to .reg region file
+        if not Path(f"{self.depth_dirs[band]}/coord_{band}.reg").is_file():
+            aper_loc_to_reg(xcoord, ycoord, WCS(im_header), aper_diam.value, f"{self.depth_dirs[band]}/coord_{band}.reg")
+        
+        r = self.calc_aper_radius_pix(aper_diam, band)
+        if not Path(f"{self.depth_dirs[band]}/{self.survey}_depths.txt").is_file():
+            # plot the depths in the grid
+            plot_depths(im_data, self.depth_dirs[band], band, seg_data, xcoord, ycoord, xy_offset, r, size, self.im_zps[band])
+            # calculate average depth
+            average_depths.append(calc_5sigma_depth(xcoord, ycoord, im_data, r, self.im_zps[band]) 
+    
 # match sextractor catalogue codes
 sex_id_params = ["NUMBER", "X_IMAGE", "Y_IMAGE", "ALPHA_J2000", "DELTA_J2000"]
 
@@ -637,17 +958,15 @@ def calc_xy_offsets(offset):
     return xoff, yoff
 
 
-def place_blank_regions(im_data, im_header, seg_data, mask, survey, offset, pix_scale, band, aper_diam = 0.32 * u.arcsec, size = 500, n_busy_iters = 1_000, number = 600, mask_rad = 25, aper_disp_rad = 2, fast_mode = True):
-    
-    #im_wcs = WCS(im_header)
+def place_blank_regions(im_data, im_header, seg_data, mask, survey, offset, pix_scale, band, aper_diam = 0.32 * u.arcsec, size = 500, n_busy_iters = 1_000, number = 600, mask_rad = 25, aper_disp_rad = 2, fast=True):
+    if type(pix_scale) != u.Quantity:
+       pix_scale = pix_scale * u.arcsec                          
     r = aper_diam / (2 * pix_scale) # radius of aperture in pixels
-    if fast_mode:
-        r = 1e-10
-
-    # cast radius to a float from astropy.units.radians
     if type(r) == u.Quantity:
-        r = r.value
-    
+        r = r.value   
+    if fast:
+        r = 1e-10
+        
     xoff, yoff = calc_xy_offsets(offset)
     
     
@@ -699,7 +1018,7 @@ def place_blank_regions(im_data, im_header, seg_data, mask, survey, offset, pix_
                              source_mask = circ_mask(w, h, radius = mask_rad, center = z[idx]) #draw a circle on segmentation map so make sure empty aperture isn't near another object and truly empty
                              masked_source_image = copy.deepcopy(seg_chunk)
                              masked_source_image[source_mask == 0] = 0 #set all area outside of circle to 0
-                             source = np.argwhere((masked_source_image != 0)) #check if any part of the masked segmentation map contains another source
+                             source = np.argwhere((masked_source_image != 0)) #check if any part of the masked segmentation map contains another source      
                              aper_mask = circ_mask(w, h, radius = r + aper_disp_rad, center = z[idx])
                              masked_aper_image = copy.deepcopy(aper_mask_chunk)
                              masked_aper_image[aper_mask == 0] = 0 #set all area outside of circle to 0
@@ -874,6 +1193,23 @@ def make_new_fits_columns(orig_fits_table, col_name, col_data, col_format, save 
     return out_fits_table.data
 
 
+# The below makes TQDM work with joblib
+@contextlib.contextmanager
+def tqdm_joblib(tqdm_object):
+    """Context manager to patch joblib to report into tqdm progress bar given as argument"""
+    class TqdmBatchCompletionCallback(joblib.parallel.BatchCompletionCallBack):
+        def __call__(self, *args, **kwargs):
+            tqdm_object.update(n=self.batch_size)
+            return super().__call__(*args, **kwargs)
+
+    old_batch_callback = joblib.parallel.BatchCompletionCallBack
+    joblib.parallel.BatchCompletionCallBack = TqdmBatchCompletionCallback
+    try:
+        yield tqdm_object
+    finally:
+        joblib.parallel.BatchCompletionCallBack = old_batch_callback
+        tqdm_object.close()
+
 # def correct_medium_band_syntax(fits_table, save_name, old_band_name):
 #     if log.lower_case_m[survey]: # if medium band correction is required
 #         new_band_name = old_band_name[:-1] + "M"
@@ -898,3 +1234,4 @@ def is_blank_survey(survey):
 
 if __name__ == "__main__":
     pass
+
