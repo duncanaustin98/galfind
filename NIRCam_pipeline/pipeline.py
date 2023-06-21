@@ -24,14 +24,14 @@ def NIRCam_pipeline(surveys, version, xy_offsets, aper_diams, sed_codes, min_flu
                 cat = code.fit_cat(cat)
 
 if __name__ == "__main__":
-    version = "lit_version"
+    version = "v8a"
     cat_type = "loc_depth"
-    surveys = ["JADES-DR1"]
+    surveys = ["NEP-1"]
     aper_diams = [0.32] * u.arcsec
     xy_offsets = [[0, 0]]
     sed_codes = [LePhare()]
-    min_flux_pc_errs = [5, 10]
+    min_flux_pc_errs = [10]
     forced_phot_band = "f444W"
     excl_bands = [] #["f090W", "f115W", "f277W", "f335M", "f356W", "f410M", "f444W"]
-    n_loc_depth_samples = 10
+    n_loc_depth_samples = 5
     NIRCam_pipeline(surveys, version, xy_offsets, aper_diams, sed_codes, min_flux_pc_errs, forced_phot_band, excl_bands, cat_type = cat_type, n_loc_depth_samples = n_loc_depth_samples)
