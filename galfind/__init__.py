@@ -28,6 +28,7 @@ if config["DEFAULT"]["SURVEY"] in json.loads(config.get("Other", "CLUSTER_FIELDS
 else:
     config.set("DEFAULT", "IS_CLUSTER", "NO")
 
+from . import NIRCam_aperture_corrections as NIRCam_aper_corr
 from .Data import Data
 from .Instrument import Instrument, ACS, NIRCam, MIRI, Combined_Instrument
 from .Catalogue import Catalogue
