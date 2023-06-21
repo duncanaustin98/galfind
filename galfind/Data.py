@@ -362,14 +362,14 @@ class Data:
         # unmasked_area_arr.append(unmasked_area)
         pass
         
-    def make_loc_depth_cat(self, aper_diams = [0.32] * u.arcsec, n_samples = 5, forced_phot_band = "f444W", min_flux_pc_err = 5):
-        print(f"Making local depth catalogue for {self.survey} {self.version} in {aper_diams} diameter apertures with min. error {min_flux_pc_err}%!")
+    def make_loc_depth_cat(self, aper_diams = [0.32] * u.arcsec, n_samples = 5, forced_phot_band = "f444W", min_flux_pc_err_arr = [5, 10]):
+        print(f"Making local depth catalogue for {self.survey} {self.version} in {aper_diams} diameter apertures with min. error(s) {min_flux_pc_err_arr}%!")
         # if sextractor catalogue has not already been made, make it
         self.combine_sex_cats(forced_phot_band)
         # if depths havn't already been run, run them
         self.calc_depths(aper_diams = aper_diams)
         # correct the base sextractor catalogue to include local depth errors if not already done so
-        self.loc_depth_cat_path = self.sex_cat_master_path.replace(".fits", f"_loc_depth_{min_flux_pc_err}pc.fits")
+        self.loc_depth_cat_path = self.sex_cat_master_path.replace(".fits", f"_loc_depth_{str(min_flux_pc_err_arr)}pc.fits")
         if not Path(self.loc_depth_cat_path).is_file():
             # open photometric data
             phot_data = fits.open(self.sex_cat_master_path)[1].data  
@@ -391,19 +391,23 @@ class Data:
                 
                 # make new columns (fill with original errors and overwrite in a couple of lines)
                 phot_data = make_new_fits_columns(phot_data, ["loc_depth_" + band, "FLUXERR_APER_" + band + "_loc_depth", "MAGERR_APER_" + band + "_l1_loc_depth", \
-                                            "MAGERR_APER_" + band + "_u1_loc_depth", "FLUX_APER_" + band + "_aper_corr_Jy", "FLUXERR_APER_" + band + "_loc_depth_" + str(min_flux_pc_err) + "pc_Jy", \
-                                            "MAGERR_APER_" + band + "_l1_loc_depth_" + str(min_flux_pc_err) + "pc", "MAGERR_APER_" + band + "_u1_loc_depth_" + str(min_flux_pc_err) + "pc", "sigma_" + band], \
+                                            "MAGERR_APER_" + band + "_u1_loc_depth", "FLUX_APER_" + band + "_aper_corr_Jy", "sigma_" + band], \
                                             [phot_data["FLUXERR_APER_" + band], phot_data["FLUXERR_APER_" + band], phot_data["MAGERR_APER_" + band], phot_data["MAGERR_APER_" + band], \
-                                             phot_data["FLUX_APER_" + band], phot_data["FLUXERR_APER_" + band], phot_data["MAGERR_APER_" + band], phot_data["MAGERR_APER_" + band], phot_data["MAGERR_APER_" + band]], \
+                                             phot_data["FLUX_APER_" + band], phot_data["MAGERR_APER_" + band]], \
                                             [phot_data.columns.formats[list(phot_data.columns.names).index("FLUXERR_APER_" + band)], \
                                              phot_data.columns.formats[list(phot_data.columns.names).index("FLUXERR_APER_" + band)], \
                                              phot_data.columns.formats[list(phot_data.columns.names).index("MAGERR_APER_" + band)], \
                                              phot_data.columns.formats[list(phot_data.columns.names).index("MAGERR_APER_" + band)], \
                                              phot_data.columns.formats[list(phot_data.columns.names).index("FLUX_APER_" + band)], \
-                                             phot_data.columns.formats[list(phot_data.columns.names).index("FLUXERR_APER_" + band)], \
-                                             phot_data.columns.formats[list(phot_data.columns.names).index("MAGERR_APER_" + band)], \
-                                             phot_data.columns.formats[list(phot_data.columns.names).index("MAGERR_APER_" + band)], \
                                              phot_data.columns.formats[list(phot_data.columns.names).index("FLUXERR_APER_" + band)]])
+                    
+                for min_flux_pc_err in min_flux_pc_err_arr:
+                    phot_data = make_new_fits_columns(phot_data, ["FLUXERR_APER_" + band + "_loc_depth_" + str(min_flux_pc_err) + "pc_Jy", \
+                        "MAGERR_APER_" + band + "_l1_loc_depth_" + str(min_flux_pc_err) + "pc", "MAGERR_APER_" + band + "_u1_loc_depth_" + str(min_flux_pc_err) + "pc"], \
+                        [phot_data["FLUXERR_APER_" + band], phot_data["MAGERR_APER_" + band], phot_data["MAGERR_APER_" + band]], \
+                        [phot_data.columns.formats[list(phot_data.columns.names).index("FLUXERR_APER_" + band)], \
+                        phot_data.columns.formats[list(phot_data.columns.names).index("MAGERR_APER_" + band)], \
+                        phot_data.columns.formats[list(phot_data.columns.names).index("MAGERR_APER_" + band)]])
                 
                 for j, aper_diam in enumerate(json.loads(config.get("SExtractor", "APERTURE_DIAMS")) * u.arcsec):
                     for k in range(len(phot_data["NUMBER"])):
@@ -412,9 +416,10 @@ class Data:
                         phot_data["FLUXERR_APER_" + band + "_loc_depth"].T[j][k] = -99.
                         phot_data["MAGERR_APER_" + band + "_l1_loc_depth"].T[j][k] = -99.
                         phot_data["MAGERR_APER_" + band + "_u1_loc_depth"].T[j][k] = -99.
-                        phot_data["FLUXERR_APER_" + band + "_loc_depth_" + str(min_flux_pc_err) + "pc_Jy"].T[j][k] = -99.
-                        phot_data["MAGERR_APER_" + band + "_l1_loc_depth_" + str(min_flux_pc_err) + "pc"].T[j][k] = -99.
-                        phot_data["MAGERR_APER_" + band + "_u1_loc_depth_" + str(min_flux_pc_err) + "pc"].T[j][k] = -99.
+                        for min_flux_pc_err in min_flux_pc_err_arr:
+                            phot_data["FLUXERR_APER_" + band + "_loc_depth_" + str(min_flux_pc_err) + "pc_Jy"].T[j][k] = -99.
+                            phot_data["MAGERR_APER_" + band + "_l1_loc_depth_" + str(min_flux_pc_err) + "pc"].T[j][k] = -99.
+                            phot_data["MAGERR_APER_" + band + "_u1_loc_depth_" + str(min_flux_pc_err) + "pc"].T[j][k] = -99.
                         phot_data["sigma_" + band].T[j][k] = -99.
                         
                         # update column for flux in Jy
@@ -453,33 +458,35 @@ class Data:
                             print("loc_depth =", loc_depth)
                         phot_data["FLUXERR_APER_" + band + "_loc_depth"].T[diam_index][k] = aper_flux_err
                         
-                        # add column setting flux in Jy to minimum 5pc error
-                        if phot_data["FLUXERR_APER_" + band + "_loc_depth"].T[diam_index][k] / phot_data["FLUX_APER_" + band + "_aper_corr"].T[diam_index][k] < min_flux_pc_err / 100:
-                            phot_data["FLUXERR_APER_" + band + "_loc_depth_" + str(min_flux_pc_err) + "pc_Jy"].T[diam_index][k] = \
-                            phot_data["FLUX_APER_" + band + "_aper_corr_Jy"].T[diam_index][k] * min_flux_pc_err / 100
-                        else:
-                            phot_data["FLUXERR_APER_" + band + "_loc_depth_" + str(min_flux_pc_err) + "pc_Jy"].T[diam_index][k] = \
-                                funcs.flux_image_to_Jy(phot_data["FLUXERR_APER_" + band + "_loc_depth"].T[diam_index][k], self.instrument.zero_points[band]).value
+                        # add column setting flux in Jy to minimum n_pc error
+                        for min_flux_pc_err in min_flux_pc_err_arr:
+                            if phot_data["FLUXERR_APER_" + band + "_loc_depth"].T[diam_index][k] / phot_data["FLUX_APER_" + band + "_aper_corr"].T[diam_index][k] < min_flux_pc_err / 100:
+                                phot_data["FLUXERR_APER_" + band + "_loc_depth_" + str(min_flux_pc_err) + "pc_Jy"].T[diam_index][k] = \
+                                phot_data["FLUX_APER_" + band + "_aper_corr_Jy"].T[diam_index][k] * min_flux_pc_err / 100
+                            else:
+                                phot_data["FLUXERR_APER_" + band + "_loc_depth_" + str(min_flux_pc_err) + "pc_Jy"].T[diam_index][k] = \
+                                    funcs.flux_image_to_Jy(phot_data["FLUXERR_APER_" + band + "_loc_depth"].T[diam_index][k], self.instrument.zero_points[band]).value
                         
                         # calculate local depth mag errors both with and without 5pc minimum flux errors imposed
                         for m in range(2):
-                            if m == 0:
-                                flux = phot_data["FLUX_APER_" + band + "_aper_corr"].T[diam_index][k]
-                                aper_flux_err = phot_data["FLUXERR_APER_" + band + "_loc_depth"].T[diam_index][k]
-                                add_suffix = ""
-                            elif m == 1:
-                                flux = phot_data["FLUX_APER_" + band + "_aper_corr_Jy"].T[diam_index][k]
-                                aper_flux_err = phot_data["FLUXERR_APER_" + band + "_loc_depth_" + str(min_flux_pc_err) + "pc_Jy"].T[diam_index][k]
-                                add_suffix = "_" + str(min_flux_pc_err) + "pc"
-                        
-                            mag_l1 = -(-2.5 * np.log10(flux) + 2.5 * np.log10(flux - aper_flux_err))
-                            mag_u1 = -(-2.5 * np.log10(flux + aper_flux_err) + 2.5 * np.log10(flux))
-                            #print(mag_l1)
-                            #print(mag_u1)
-                            if np.isfinite(mag_l1):
-                                phot_data["MAGERR_APER_" + band + "_l1_loc_depth" + add_suffix].T[diam_index][k] = mag_l1
-                            if np.isfinite(mag_u1):  
-                                phot_data["MAGERR_APER_" + band + "_u1_loc_depth" + add_suffix].T[diam_index][k] = mag_u1
+                            for n, min_flux_pc_err in enumerate(min_flux_pc_err_arr):
+                                if m == 0 and n == 0:
+                                    flux = phot_data["FLUX_APER_" + band + "_aper_corr"].T[diam_index][k]
+                                    aper_flux_err = phot_data["FLUXERR_APER_" + band + "_loc_depth"].T[diam_index][k]
+                                    add_suffix = ""
+                                if m == 1:
+                                    flux = phot_data["FLUX_APER_" + band + "_aper_corr_Jy"].T[diam_index][k]
+                                    aper_flux_err = phot_data["FLUXERR_APER_" + band + "_loc_depth_" + str(min_flux_pc_err) + "pc_Jy"].T[diam_index][k]
+                                    add_suffix = "_" + str(min_flux_pc_err) + "pc"
+                            
+                                mag_l1 = -(-2.5 * np.log10(flux) + 2.5 * np.log10(flux - aper_flux_err))
+                                mag_u1 = -(-2.5 * np.log10(flux + aper_flux_err) + 2.5 * np.log10(flux))
+                                #print(mag_l1)
+                                #print(mag_u1)
+                                if np.isfinite(mag_l1):
+                                    phot_data["MAGERR_APER_" + band + "_l1_loc_depth" + add_suffix].T[diam_index][k] = mag_l1
+                                if np.isfinite(mag_u1):  
+                                    phot_data["MAGERR_APER_" + band + "_u1_loc_depth" + add_suffix].T[diam_index][k] = mag_u1
                         
                         # make boolean columns to say whether there is a local 5σ detection and 2σ non-detection in the band in the smallest aperture
                         phot_data["sigma_" + band].T[diam_index][k] = funcs.n_sigma_detection(loc_depth, phot_data[f"MAG_APER_{band}"].T[diam_index][k], self.instrument.zero_points[band])

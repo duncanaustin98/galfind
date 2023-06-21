@@ -29,7 +29,7 @@ class LePhare(SED_code):
         super().__init__(code_name, galaxy_property_labels)
     
     def make_in(self, cat, units = u.ABmag, fix_z = False): # from FITS_organiser.py
-        lephare_in_path = f"{self.code_dir}/input/{cat.data.instrument.name}/{cat.data.version}/{cat.data.survey}/{cat.cat_name[:-5]}.in"
+        lephare_in_path = f"{self.code_dir}/input/{cat.data.instrument.name}/{cat.data.version}/{cat.data.survey}/{cat.cat_name.replace('.fits', '.in')}"
         if not Path(lephare_in_path).is_file():
         # 1) obtain input data
             IDs = np.array([gal.ID for gal in cat.gals]) # load IDs
