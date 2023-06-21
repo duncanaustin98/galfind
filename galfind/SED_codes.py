@@ -76,7 +76,7 @@ class SED_code(ABC):
     def fit_cat(self, cat, *args, **kwargs):
         in_path = self.make_in(cat, *args, **kwargs)
         out_folder = funcs.split_dir_name(in_path.replace("input", "output"), "dir")
-        out_path = f"{out_folder}/{funcs.split_dir_name(in_path, 'name')[:-3]}.out"
+        out_path = f"{out_folder}/{funcs.split_dir_name(in_path, 'name').replace('.in', '.out')}"
         sed_folder = f"{out_folder}/SEDs/{cat.cat_creator.min_flux_pc_err}pc"
         os.makedirs(sed_folder, exist_ok = True)
         if not Path(out_path).is_file() or config["DEFAULT"].getboolean("OVERWRITE"):

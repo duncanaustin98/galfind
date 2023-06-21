@@ -46,20 +46,20 @@ class Catalogue:
         
     # %% alternative constructors
     @classmethod
-    def from_NIRCam_pipeline(cls, survey, version, aper_diams, cat_creator, xy_offset = [0, 0], forced_phot_band = "f444W", excl_bands = []):
+    def from_NIRCam_pipeline(cls, survey, version, aper_diams, cat_creator, xy_offset = [0, 0], forced_phot_band = "f444W", excl_bands = [], loc_depth_min_flux_pc_errs = [5, 10], n_loc_depth_samples = 5):
         # make 'Data' object
         data = Data.from_NIRCam_pipeline(survey, version, excl_bands = excl_bands)
-        return cls.from_data(data, aper_diams, cat_creator, xy_offset = xy_offset, forced_phot_band = forced_phot_band)
+        return cls.from_data(data, aper_diams, cat_creator, xy_offset, forced_phot_band, loc_depth_min_flux_pc_errs, n_loc_depth_samples)
     
     @classmethod
-    def from_data(cls, data, aper_diams, cat_creator, xy_offset = [0, 0], forced_phot_band = "f444W"):
+    def from_data(cls, data, aper_diams, cat_creator, xy_offset = [0, 0], forced_phot_band = "f444W", loc_depth_min_flux_pc_errs = [5, 10], n_loc_depth_samples = 5):
         # make masked local depth catalogue from the 'Data' object
         data.combine_sex_cats(forced_phot_band)
         data.calc_depths(xy_offset, aper_diams)
 
         # load the catalogue that has just been created into a 'Catalogue' object
         if cat_creator.cat_type == "loc_depth":
-            data.make_loc_depth_cat(aper_diams, min_flux_pc_err = cat_creator.min_flux_pc_err, forced_phot_band)
+            data.make_loc_depth_cat(aper_diams, min_flux_pc_err_arr = loc_depth_min_flux_pc_errs, forced_phot_band = forced_phot_band, n_samples = n_loc_depth_samples)
             cat_path = data.loc_depth_cat_path
         elif cat_creator.cat_type == "sex":
             cat_path = data.sex_cat_master_path

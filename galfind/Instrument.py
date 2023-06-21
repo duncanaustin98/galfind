@@ -12,9 +12,11 @@ from copy import copy, deepcopy
 from abc import ABC, abstractmethod
 import astropy.units as u
 import json
+from pathlib import Path
 
 from . import useful_funcs_austind as funcs
 from . import config
+from . import NIRCam_aper_corr
 
 class Instrument:
     
@@ -172,7 +174,12 @@ class NIRCam(Instrument):
         super().__init__("NIRCam", bands, band_wavelengths, band_FWHMs, zero_points, pixel_scales, excl_bands)
 
     def aper_corr(self, aper_diam, band):
-        aper_corr_data = np.loadtxt("/nvme/scratch/work/austind/aper_corr.txt", dtype = str, comments = "#")
+        aper_corr_path = f"{config['Depths']['APER_CORR_DIR']}/NIRCam_aper_corr.txt"
+        if not Path(aper_corr_path).is_file():
+            # perform aperture corrections
+            NIRCam_aper_corr.main(self.bands)
+        # load aperture corrections from appropriate path (bands in NIRCam class must be the same as those saved in aper_corr)
+        aper_corr_data = np.loadtxt(aper_corr_path, dtype = str, comments = "#")
         aper_diam_index = np.where(json.loads(config.get("SExtractor", "APERTURE_DIAMS")) == aper_diam.value)[0][0] + 1
         band_index = list(self.bands).index(band)
         # print((aper_diam_index, band_index))
