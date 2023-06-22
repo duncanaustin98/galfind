@@ -20,7 +20,7 @@ def pipeline(surveys, version,instruments, xy_offsets, aper_diams, sed_codes, mi
         cat_creator = GALFIND_Catalogue_Creator(cat_type, aper_diams[0], pc_err, NIRCam_ZP)
         for survey, xy_offset in zip(surveys, xy_offsets):
             cat = Catalogue.from_pipeline(survey = survey, version = version, instruments = instruments,aper_diams = aper_diams, cat_creator = cat_creator, xy_offset = xy_offset, \
-                                          forced_phot_band = forced_phot_band,excl_bands = excl_bands, loc_depth_min_flux_pc_errs = min_flux_pc_errs, n_loc_depth_samples = n_loc_depth_samples, fast = fast)
+                                          forced_phot_band = forced_phot_band, excl_bands = excl_bands, loc_depth_min_flux_pc_errs = min_flux_pc_errs, n_loc_depth_samples = n_loc_depth_samples, fast = fast)
             for code in sed_codes:
                 cat = code.fit_cat(cat)
 
@@ -28,11 +28,11 @@ if __name__ == "__main__":
     version = "v8e"
     instruments = ['NIRCam'] #, 'ACS_WFC', 'WFC3IR'] # Can leave this - if there is no data for an instrument it is removed automatically
     cat_type = "loc_depth"
-    surveys = ["CLIO"]
+    surveys = ["CEERSP8", "CEERSP10"]
     aper_diams = [0.32] * u.arcsec
-    xy_offsets = [[200, 0]]
+    xy_offsets = [[50, 170], [50, 180]]
     sed_codes = []#[LePhare()]
-    min_flux_pc_errs = [10]
+    min_flux_pc_errs = [5, 10]
     forced_phot_band = "f200W"
     fast_depths = True
     excl_bands = ["f606W", "f814W", "f090W", "f115W", "f277W", "f335M", "f356W", "f410M", "f444W"]
