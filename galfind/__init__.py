@@ -11,7 +11,7 @@ from __future__ import absolute_import
 import configparser
 import json
 
-config_path = "/nvme/scratch/work/tharvey/galfind/galfind_config.ini" # needs to be able to be changed by the user
+config_path = "/nvme/scratch/work/austind/GALFIND/galfind_config.ini" # needs to be able to be changed by the user
 # configuration variables
 config = configparser.ConfigParser()
 config.read(config_path)
