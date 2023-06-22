@@ -212,7 +212,7 @@ class Photometry_obs:
         # Copy constructor problem here!
         instrument_copy = instrument.new_instrument(excl_bands = [band for band in instrument.from_name(instrument.name).bands if band not in instrument.bands]) # Problem loading the photometry properly here!!!
         #print("instrument_copy = ", instrument_copy)
-        for (band, zero_point) in zip(instrument_copy.bands, instrument_copy.zero_points.values()):
+        for band in instrument_copy.bands:
             try:
                 flux, err = cat_creator.load_photometry(sex_cat_row, band)
                 fluxes.append(flux.value)
