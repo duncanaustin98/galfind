@@ -25,16 +25,16 @@ def pipeline(surveys, version,instruments, xy_offsets, aper_diams, sed_codes, mi
                 cat = code.fit_cat(cat)
 
 if __name__ == "__main__":
-    version = "v8e"
+    version = "v8f"
     instruments = ['NIRCam'] #, 'ACS_WFC', 'WFC3IR'] # Can leave this - if there is no data for an instrument it is removed automatically
     cat_type = "loc_depth"
-    surveys = ["CLIO", "CEERSP8", "CEERSP10"]
+    surveys = ["CEERSP8"]
     aper_diams = [0.32] * u.arcsec
-    xy_offsets = [[200, 0], [50, 170], [50, 180]]
-    sed_codes = []#[LePhare()]
+    xy_offsets = [[50, 170]]
+    sed_codes = [LePhare(), EAZY()]
     min_flux_pc_errs = [5, 10]
-    forced_phot_band = "f200W"
+    forced_phot_band = "f444W"
     fast_depths = True
-    excl_bands = ["f606W", "f814W", "f090W", "f115W", "f277W", "f335M", "f356W", "f410M", "f444W"]
+    excl_bands = [] #["f606W", "f814W", "f090W", "f115W", "f277W", "f335M", "f356W", "f410M", "f444W"]
     n_loc_depth_samples = 5
     pipeline(surveys, version,instruments, xy_offsets, aper_diams, sed_codes, min_flux_pc_errs, forced_phot_band, excl_bands, cat_type = cat_type, n_loc_depth_samples = n_loc_depth_samples, fast = fast_depths)
