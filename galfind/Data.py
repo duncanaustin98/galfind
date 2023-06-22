@@ -312,7 +312,7 @@ class Data:
             
             return cls(comb_instrument, im_paths, im_exts,im_pixel_scales, im_shapes, im_zps, wht_paths, wht_exts, wht_types, seg_paths, mask_paths, cluster_mask_path, blank_mask_path, survey, version = version, is_blank = is_blank)
         else:
-            raise(Exception(f'Failed to find any data for {survey}')  
+            raise(Exception(f'Failed to find any data for {survey}'))  
 
     @classmethod
     def from_NIRCam_pipeline(cls, survey, version = "v8", excl_bands = []):
@@ -621,7 +621,9 @@ class Data:
          
         colnames = [f'aperture_sum_{i}' for i in range(len(radii))]
         aper_tab = Column(np.array(phot_table[colnames].as_array().tolist()), name=f'FLUX_APER_{band}')
-        phot_table[f'FLUX_APER_{band}'] = aper_tab
+        phot_table[f'FLUX_APER'] = aper_tab
+        phot_table[f'FLUXERR_APER'] = phot_table[f'FLUX_APER'] * -99
+        phot_table['MAGERR_APER'] = phot_table['MAG_APER'] * -99 
         
         zp = self.im_zps[band]
         # This converts the fluxes to magnitudes using the correct zp, and puts them in the same format as the sextractor catalogue
@@ -632,8 +634,9 @@ class Data:
             phot_table[name][np.isnan(phot_table[name])] = -99
             mag_colnames.append(name)
         aper_tab = Column(np.array(phot_table[mag_colnames].as_array().tolist()), name=f'MAG_APER_{band}')
-        phot_table[f'MAG_APER_{band}'] = aper_tab
+        phot_table[f'MAG_APER'] = aper_tab
         # Remove old columns
+        phot_table.remove_columns(colnames)
         phot_table.remove_columns(mag_colnames)
         phot_table.write(path, format='fits', overwrite=True)
 
@@ -838,6 +841,7 @@ class Data:
 
         params = []  
         average_depths = []
+        run_bands = []
         # Look over all aperture diameters and bands  
         for aper_diam in aper_diams:
             # Generate folder for depths
@@ -845,17 +849,19 @@ class Data:
             for band in self.instrument.bands:
                 # Only run for non excluded bands
                 if band not in excl_bands:
-                    params.append((band, xy_offset, aper_diam, size, n_busy_iters, number, mask_rad, aper_disp_rad, use_xy_offset_txt, plot, average_depths))
+                    params.append((band, xy_offset, aper_diam, size, n_busy_iters, number, mask_rad, aper_disp_rad, use_xy_offset_txt, plot, average_depths, run_bands))
         # Parallelise the calculation of depths for each band
         with tqdm_joblib(tqdm(desc="Running local depths", total=len(params))) as progress_bar:
             Parallel(n_jobs=n_jobs)(delayed(self.calc_band_depth)(param) for param in params)
         # print table of depths for these bands
         header = "band, average_5sigma_depth"
-        if not Path(f"{self.depth_dirs['f444W']}/{self.survey}_depths.txt").is_file():
-            np.savetxt(f"{self.depth_dirs['f444W']}/{self.survey}_depths.txt", np.column_stack((np.array(self.instrument.bands), np.array(average_depths))), header = header, fmt = "%s")
-        
+        for band in run_bands:
+            # Save local depths in both folders
+            if not Path(f"{self.depth_dirs[band]}/{self.survey}_depths.txt").is_file():
+                np.savetxt(f"{self.depth_dirs[band]}/{self.survey}_depths.txt", np.column_stack((np.array(run_bands), np.array(average_depths))), header = header, fmt = "%s")
+            
     def calc_band_depth(self, params):
-        band, xy_offset, aper_diam, size, n_busy_iters, number, mask_rad, aper_disp_rad, use_xy_offset_txt, plot, average_depths = params
+        band, xy_offset, aper_diam, size, n_busy_iters, number, mask_rad, aper_disp_rad, use_xy_offset_txt, plot, average_depths, run_bands = params
         if plot:
             fig, ax = plt.subplots()
             self.plot_mask_regions_from_band(ax, band)
@@ -904,8 +910,8 @@ class Data:
             # plot the depths in the grid
             plot_depths(im_data, self.depth_dirs[band], band, seg_data, xcoord, ycoord, xy_offset, r, size, self.im_zps[band])
             # calculate average depth
-            average_depths.append(calc_5sigma_depth(xcoord, ycoord, im_data, r, self.im_zps[band]) 
-    
+            average_depths.append(calc_5sigma_depth(xcoord, ycoord, im_data, r, self.im_zps[band])) 
+            run_bands.append(band)
 # match sextractor catalogue codes
 sex_id_params = ["NUMBER", "X_IMAGE", "Y_IMAGE", "ALPHA_J2000", "DELTA_J2000"]
 
