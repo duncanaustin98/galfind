@@ -630,7 +630,7 @@ class Data:
         aper_tab = Column(np.array(phot_table[colnames].as_array().tolist()), name=f'FLUX_APER_{band}')
         phot_table[f'FLUX_APER'] = aper_tab
         phot_table[f'FLUXERR_APER'] = phot_table[f'FLUX_APER'] * -99
-        phot_table['MAGERR_APER'] = phot_table['MAG_APER'] * -99 
+        phot_table['MAGERR_APER'] = phot_table['FLUX_APER'] * -99 
         
         zp = self.im_zps[band]
         # This converts the fluxes to magnitudes using the correct zp, and puts them in the same format as the sextractor catalogue
@@ -648,14 +648,14 @@ class Data:
         phot_table.write(path, format='fits', overwrite=True)
 
 
-    def make_mask(self, band, stellar_dir = "GAIA DR3"):
-        im_data, im_header, seg_data, seg_header = self.load_data(band, incl_mask = False)
-        # works as long as your images are aligned with the stellar directory
-        stellar_mask = make_stellar_mask(band, im_data, im_header, self.instrument)
-        # save the stellar mask
-        stellar_mask.write(f"{os.getcwd()}/Masks/{survey}/{band}_stellar_mask.reg", header = im_header)
-        # maybe insert a step here to align your images
-        pass
+    # def make_mask(self, band, stellar_dir = "GAIA DR3"):
+    #     im_data, im_header, seg_data, seg_header = self.load_data(band, incl_mask = False)
+    #     # works as long as your images are aligned with the stellar directory
+    #     stellar_mask = make_stellar_mask(band, im_data, im_header, self.instrument)
+    #     # save the stellar mask
+    #     stellar_mask.write(f"{os.getcwd()}/Masks/{survey}/{band}_stellar_mask.reg", header = im_header)
+    #     # maybe insert a step here to align your images
+    #     pass
     
     def clean_mask_regions(self, band):
         # open region file
@@ -750,7 +750,9 @@ class Data:
                 for diam_index, aper_diam in enumerate(aper_diams):
                     r = self.calc_aper_radius_pix(aper_diam, band)
                     # open aperture positions in this band
-                    aper_loc = np.loadtxt(f"{self.get_depth_dir(aper_diam)}/coord_{band}.txt")
+                    self.get_depth_dir(aper_diam)
+                    print(f"self.get_depth_dir(aper_diam) = {self.depth_dirs[band]}", f"aper_diam = {aper_diam}")
+                    aper_loc = np.loadtxt(f"{self.depth_dirs[band]}/coord_{band}.txt")
                     xcoord = aper_loc[:, 0]
                     ycoord = aper_loc[:, 1]
                     index = np.argwhere(xcoord == 0.)
@@ -835,6 +837,8 @@ class Data:
         
     def get_depth_dir(self, aper_diam):
         self.depth_dirs = {}
+        print(self.instrument.bands)
+        print(self.instrument.instrument_from_band("f150W"))
         for band in self.instrument.bands:
             self.depth_dirs[band] = f"{config['DEFAULT']['GALFIND_WORK']}/Depths/{self.instrument.instrument_from_band(band)}/{self.version}/{self.survey}/{str(aper_diam.value)}as"
             os.makedirs(self.depth_dirs[band], exist_ok = True)
