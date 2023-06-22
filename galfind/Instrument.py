@@ -151,11 +151,14 @@ class Instrument:
 # %% Other class methods
 
     def remove_band(self, band):
-        remove_index = np.where(self.bands == np.array(band))[0][0]
-        #print(f"remove index = {remove_index}")
-        self.bands = np.delete(self.bands, remove_index)
-        del self.band_wavelengths[band]
-        del self.band_FWHMs[band]
+        try:
+            remove_index = np.where(self.bands == np.array(band))[0][0]
+            #print(f"remove index = {remove_index}")
+            self.bands = np.delete(self.bands, remove_index)
+            del self.band_wavelengths[band]
+            del self.band_FWHMs[band]
+        except IndexError:
+            pass
         
     def remove_index(self, remove_index):
         remove_band = self.bands[remove_index]
@@ -185,7 +188,7 @@ class NIRCam(Instrument):
         super().__init__("NIRCam", bands, band_wavelengths, band_FWHMs, excl_bands)
 
     def aper_corr(self, aper_diam, band):
-        aper_corr_path = f"{config['Depths']['APER_CORR_DIR']}/NIRCam_aper_corr.txt"
+        aper_corr_path = f'{config["Other"]["GALFIND_DIR"]}/Aperture_corrections/NIRCam_aper_corr.txt'
         if not Path(aper_corr_path).is_file():
             # perform aperture corrections
             NIRCam_aper_corr.main(self.bands)
@@ -230,9 +233,9 @@ class ACS_WFC(Instrument):
         super().__init__("ACS_WFC", bands, band_wavelengths, band_FWHMs, excl_bands)
     
     def aper_corr(self, aper_diam, band):
-        aper_corr_path = f'{config["DEFAULT"]["GALFIND_DIR"]}/configs/hst_acs_wfc_aper_corr.dat'
+        aper_corr_path = f'{config["Other"]["GALFIND_DIR"]}/Aperture_corrections/hst_acs_wfc_aper_corr.dat'
         aper_corr_data = np.loadtxt(aper_corr_path, comments = "#", dtype=[('band', 'U10'), ('0.32', 'f4'), ('0.5', 'f4'), ('1.0', 'f4'), ('1.5', 'f4'), ('2.0', 'f4')])
-        return aper_corr_data[aper_corr_data['band'] == band.upper()][str(aper_diam)][0]
+        return aper_corr_data[aper_corr_data['band'] == band.upper()][str(aper_diam.to('arcsec').value)][0]
     
 
     def new_instrument(self, excl_bands = []):
@@ -251,9 +254,9 @@ class WFC3IR(Instrument):
         super().__init__("WFC3IR", bands, band_wavelengths, band_FWHMs, excl_bands)
     
     def aper_corr(self, aper_diam, band):
-        aper_corr_path = f'{config["DEFAULT"]["GALFIND_DIR"]}/configs/wfc3ir_aper_corr.dat'
+        aper_corr_path = f'{config["Other"]["GALFIND_DIR"]}/Aperture_corrections/wfc3ir_aper_corr.dat'
         aper_corr_data = np.loadtxt(aper_corr_path, comments = "#", dtype=[('band', 'U10'), ('0.32', 'f4'), ('0.5', 'f4'), ('1.0', 'f4'), ('1.5', 'f4'), ('2.0', 'f4')])
-        return aper_corr_data[aper_corr_data['band'] == band.upper()][str(aper_diam)][0]
+        return aper_corr_data[aper_corr_data['band'] == band.upper()][str(aper_diam.to('arcsec').value)][0]
     
     def new_instrument(self, excl_bands = []):
         return WFC3IR(excl_bands)
