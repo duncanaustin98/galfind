@@ -63,6 +63,9 @@ class Data:
         self.im_pixel_scales = im_pixel_scales
         self.im_shapes = im_shapes
 
+        print(self.im_paths)
+        print(self.wht_paths)
+
         # make segmentation maps from image paths if they don't already exist
         made_new_seg_maps = False
         for i, (band, seg_path) in enumerate(seg_paths.items()):
@@ -144,6 +147,10 @@ class Data:
                     survey_im_dirs = {survey: f"{survey}/mosaic_1084_wispfix"}
                 elif version == "v8c":
                     survey_im_dirs = {survey: f"{survey}/mosaic_1084_wispfix2"}
+                elif version == "v8d":
+                    survey_im_dirs = {survey: f"{survey}/mosaic_1084_wispfix3"}
+                elif version == "v8e":
+                    survey_im_dirs = {survey: f"{survey}/mosaic_1084_wisptemp2"}
                 elif version == "lit_version":
                     survey_im_dirs = {"JADES-DR1": "JADES/DR1"}
 
@@ -201,7 +208,7 @@ class Data:
                         if im_hdu.name == 'ERR':
                             wht_exts[band] = int(j)
                             wht_types[band] = "MAP_RMS"
-                            wht_paths[band] = str(im_path_arr[i])
+                            wht_paths[band] = str(im_paths[band])
                         
                     # need to change this to work if there are no segmentation maps (with the [0] indexing)
                 
@@ -267,7 +274,7 @@ class Data:
                         if instrument.name == 'ACS_WFC':
                             im_zps[band] = -2.5 * np.log10(imheader["PHOTFLAM"]) - 21.10 - 5 * np.log10(imheader["PHOTPLAM"]) + 18.6921
                         elif instrument.name == 'WFC3IR':
-                        # Taken from Appendix A of https://www.stsci.edu/files/live/sites/www/files/home/hst/instrumentation/wfc3/documentation/instrument-science-reports-isrs/_documents/2020/WFC3-ISR-2020-10.pdf
+                        # Taken from Appendix A of https://www.stsci.edu/files/live/sites/www/files/home/hst/instrumentation/wfc3/documentation/instrument-science-reports-isrs/_documents/2020/WFC3-ISR-2020-10.pdf
                             wfc3ir_zps = {'f098M':25.661, 'f105W':26.2637, 'f110W':26.8185, 'f125W':26.231, 'f140W':26.4502, 'f160W':25.9362}
                             im_zps[band] = wfc3ir_zps[band]
                         # Need to move my segmentation maps and masks to the correct place
@@ -677,11 +684,11 @@ class Data:
         # unmasked_area_arr.append(unmasked_area)
         pass
         
-    def make_loc_depth_cat(self, aper_diams = [0.32] * u.arcsec, n_samples = 5, forced_phot_band = "f444W", min_flux_pc_err_arr = [5, 10]):
+    def make_loc_depth_cat(self, aper_diams = [0.32] * u.arcsec, n_samples = 5, forced_phot_band = "f444W", min_flux_pc_err_arr = [5, 10], fast = True):
         # if sextractor catalogue has not already been made, make it
         self.combine_sex_cats(forced_phot_band)
         # if depths havn't already been run, run them
-        self.calc_depths(aper_diams = aper_diams)
+        self.calc_depths(aper_diams = aper_diams, fast = fast)
         # correct the base sextractor catalogue to include local depth errors if not already done so
         self.loc_depth_cat_path = self.sex_cat_master_path.replace(".fits", "_loc_depth.fits")
         if not Path(self.loc_depth_cat_path).is_file():
@@ -837,7 +844,7 @@ class Data:
         return (aper_diam / (2 * self.im_pixel_scales[band])).value
     
     def calc_depths(self, xy_offset = [0, 0], aper_diams = [0.32] * u.arcsec, size = 500, n_busy_iters = 1_000, number = 600, \
-                    mask_rad = 25, aper_disp_rad = 2, excl_bands = [], use_xy_offset_txt = True, plot = False, n_jobs = 1):   
+                    mask_rad = 25, aper_disp_rad = 2, excl_bands = [], use_xy_offset_txt = True, plot = False, n_jobs = 1, fast = True):   
 
         params = []  
         average_depths = []
@@ -849,7 +856,7 @@ class Data:
             for band in self.instrument.bands:
                 # Only run for non excluded bands
                 if band not in excl_bands:
-                    params.append((band, xy_offset, aper_diam, size, n_busy_iters, number, mask_rad, aper_disp_rad, use_xy_offset_txt, plot, average_depths, run_bands))
+                    params.append((band, xy_offset, aper_diam, size, n_busy_iters, number, mask_rad, aper_disp_rad, use_xy_offset_txt, plot, average_depths, run_bands, fast))
         # Parallelise the calculation of depths for each band
         with tqdm_joblib(tqdm(desc="Running local depths", total=len(params))) as progress_bar:
             Parallel(n_jobs=n_jobs)(delayed(self.calc_band_depth)(param) for param in params)
@@ -861,7 +868,7 @@ class Data:
                 np.savetxt(f"{self.depth_dirs[band]}/{self.survey}_depths.txt", np.column_stack((np.array(run_bands), np.array(average_depths))), header = header, fmt = "%s")
             
     def calc_band_depth(self, params):
-        band, xy_offset, aper_diam, size, n_busy_iters, number, mask_rad, aper_disp_rad, use_xy_offset_txt, plot, average_depths, run_bands = params
+        band, xy_offset, aper_diam, size, n_busy_iters, number, mask_rad, aper_disp_rad, use_xy_offset_txt, plot, average_depths, run_bands, fast = params
         if plot:
             fig, ax = plt.subplots()
             self.plot_mask_regions_from_band(ax, band)
@@ -886,7 +893,7 @@ class Data:
         if not Path(f"{self.depth_dirs[band]}/coord_{band}.txt").is_file():
             # place apertures in blank regions of sky
             xcoord, ycoord = place_blank_regions(im_data, im_header, seg_data, mask, self.survey, xy_offset, self.im_pixel_scales[band], band, \
-                                                aper_diam, size, n_busy_iters, number, mask_rad, aper_disp_rad)
+                                                aper_diam, size, n_busy_iters, number, mask_rad, aper_disp_rad, fast = fast)
             print(f"Finished placing blank regions in {band}")
             np.savetxt(f"{self.depth_dirs[band]}/coord_{band}.txt", np.column_stack((xcoord, ycoord)))
             # save xy offset for this field and band
