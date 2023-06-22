@@ -28,9 +28,9 @@ if __name__ == "__main__":
     version = "v8e"
     instruments = ['NIRCam'] #, 'ACS_WFC', 'WFC3IR'] # Can leave this - if there is no data for an instrument it is removed automatically
     cat_type = "loc_depth"
-    surveys = ["CEERSP8", "CEERSP10"]
+    surveys = ["CLIO", "CEERSP8", "CEERSP10"]
     aper_diams = [0.32] * u.arcsec
-    xy_offsets = [[50, 170], [50, 180]]
+    xy_offsets = [[200, 0], [50, 170], [50, 180]]
     sed_codes = []#[LePhare()]
     min_flux_pc_errs = [5, 10]
     forced_phot_band = "f200W"
