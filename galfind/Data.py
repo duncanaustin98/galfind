@@ -149,7 +149,7 @@ class Data:
                     survey_im_dirs = {survey: f"{survey}/mosaic_1084_wispfix2"}
                 elif version == "v8d":
                     survey_im_dirs = {survey: f"{survey}/mosaic_1084_wispfix3"}
-                elif version == "v8e":
+                elif version == "v8e" or version == "v8f" or version == "v9":
                     survey_im_dirs = {survey: f"{survey}/mosaic_1084_wisptemp2"}
                 elif version == "lit_version":
                     survey_im_dirs = {"JADES-DR1": "JADES/DR1"}
