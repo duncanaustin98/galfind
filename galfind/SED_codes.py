@@ -31,9 +31,9 @@ class SED_code(ABC):
         self.galaxy_property_labels = galaxy_property_labels
         self.code_dir = f"{config['DEFAULT']['GALFIND_WORK']}/{code_name}"
     
-    @classmethod
-    def from_name(cls):
-        return cls()
+    @abstractmethod
+    def from_name(self):
+        pass
     
     def load_photometry(self, cat, SED_input_bands, out_units, no_data_val, upper_sigma_lim = {}):
         # load in raw photometry from the galaxies in the catalogue and convert to appropriate units
@@ -83,8 +83,9 @@ class SED_code(ABC):
             self.run_fit(in_path, out_path, sed_folder, *args, **kwargs)
         fits_out_path = self.make_fits_from_out(out_path, *args, **kwargs)
         # update galaxies within catalogue object with determined properties
-        # tom here - self.update_cat doesn't seem to return anything?
+        data = cat.data # work around of update_cat function
         cat = self.update_cat(cat, fits_out_path, *args, **kwargs)
+        cat.data = data # work around of update_cat function
         return cat
     
     def update_cat(self, cat, fits_out_path):
@@ -94,8 +95,9 @@ class SED_code(ABC):
             f"{cat.data.survey}/{funcs.split_dir_name(fits_out_path.replace('.fits', '_matched.fits'), 'name')}"
         combined_cat.write(combined_cat_path, overwrite = True)
         # update 'Catalogue' object using Catalogue.__setattr__()
-        code_names = cat.codes + [self.code_name]
-        return cat.from_photo_z_cat(combined_cat_path, cat.data.instrument, cat.data.survey, code_names)
+        codes = cat.codes + [self.from_name()]
+        print("We need to make Catalogue.from_photo_z_cat() produce a data object within the catalogue object!")
+        return cat.from_photo_z_cat(combined_cat_path, cat.data.instrument, cat.data.survey, cat.cat_creator, codes)
         
     @abstractmethod
     def make_in(self, cat):
