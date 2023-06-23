@@ -14,6 +14,7 @@ import itertools
 from astropy.table import Table, join
 import subprocess
 from astropy.io import fits
+import json
 
 from . import SED_code
 from . import useful_funcs_austind as funcs
@@ -25,8 +26,11 @@ class LePhare(SED_code):
     
     def __init__(self):
         code_name = "LePhare"
-        galaxy_property_labels = {"z": "Z_BEST", "mass": "MASS_BEST"}
+        galaxy_property_labels = {"z_phot": "Z_BEST", "mass": "MASS_BEST"}
         super().__init__(code_name, galaxy_property_labels)
+    
+    def from_name(self):
+        return LePhare()
     
     def make_in(self, cat, units = u.ABmag, fix_z = False): # from FITS_organiser.py
         lephare_in_path = f"{self.code_dir}/input/{cat.data.instrument.name}/{cat.data.version}/{cat.data.survey}/{cat.cat_name.replace('.fits', '')}_{cat.cat_creator.min_flux_pc_err}pc.in"
@@ -39,7 +43,12 @@ class LePhare(SED_code):
             else:
                 raise(Exception("The 'fix_z' functionality still requires some work in 'LePhare.convert_fits_to_in'"))
             # load photometry (STILL SHOULD BE MORE GENERAL!!!)
-            SED_input_bands = cat.data.instrument.new_instrument().bands
+            print("FIX LePhare SED_input_bands!")
+            SED_input_bands = ["f090W", "f115W", "f150W", "f200W", "f277W", "f356W", "f410M", "f444W", "f606W", "f814W"] # ["f435W","fr459M","f475W","f550M","f555W","f606W","f625W","fr647M","f070W","f775W","f814W","f850LP",
+                         #"f090W","fr914M","f115W","f140W","f140M","f150W","f162M","f182M",
+                         #"f200W","f210M","f250M","f277W","f300M","f335M","f356W","f360M","f410M","f430M","f444W","f460M","f480M"]
+            # "f098M","f105W","f110W","f125W","f127M","f139M","f153M","f160W",
+            #json.loads(config.get("Other", "ALL_BANDS")) # cat.data.instrument.new_instrument().bands
             phot, phot_err = self.load_photometry(cat, SED_input_bands, units, -99., {"threshold": 2., "value": 3.})
             # calculate context
             contexts = self.calc_context(cat, SED_input_bands)
@@ -67,7 +76,7 @@ class LePhare(SED_code):
         return np.array(contexts).astype(int)
     
     # Currently black box fitting from the lephare config path. Need to make this function more general
-    def run_fit(self, in_path, out_path, sed_folder, template_name = "NIRCam_JADES_DR1"):
+    def run_fit(self, in_path, out_path, sed_folder, template_name = "ACS_WFC+NIRCam_MedWide"):
         lephare_config_path = f"{self.code_dir}/Photo_z.para"
         # LePhare bash script python wrapper
         process = subprocess.Popen([f"{config['DEFAULT']['GALFIND_DIR']}/run_lephare.sh", lephare_config_path, in_path, out_path, config['DEFAULT']['GALFIND_DIR'], sed_folder, template_name])

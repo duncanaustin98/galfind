@@ -37,10 +37,14 @@ class EAZY(SED_code):
     
     def __init__(self):
         code_name = "EAZY"
-        galaxy_property_labels = {"z": "zbest"}
+        galaxy_property_labels = {"z_phot": "zbest"}
         super().__init__(code_name, galaxy_property_labels)
-
+    
+    def from_name(self):
+        return EAZY()
+    
     def make_in(self, cat, fix_z = False):
+        print("MAKE_IN_EAZY_CAT.DATA = ", cat.data)
         eazy_in_path = f"{self.code_dir}/input/{cat.data.instrument.name}/{cat.data.version}/{cat.data.survey}/{cat.cat_name[:-5]}.in"
         if not Path(eazy_in_path).is_file():
             # 1) obtain input data
@@ -134,12 +138,12 @@ class EAZY(SED_code):
         # Redshift stuff
         params['Z_STEP'] = z_step # Setting photo-z step
         params['Z_MIN'] = z_min # Setting minimum Z
-        params['Z_MAX'] =z_max # Setting maxium Z
+        params['Z_MAX'] = z_max # Setting maxium Z
 
         # Errors
         params['WAVELENGTH_FILE'] = os.path.join(path, 'templates/lambda.def')  # Wavelength grid definition file
         params['TEMP_ERR_FILE'] = os.path.join(path, 'templates/TEMPLATE_ERROR.eazy_v1.0') # Template error definition file
-        params['TEMP_ERR_A2']= 0 # Template error amplitude
+        params['TEMP_ERR_A2'] = 0 # Template error amplitude
         params['SYS_ERR'] = 0 
 
         # Priors
@@ -169,7 +173,7 @@ class EAZY(SED_code):
         # Catch custom arguments?
         #params.update(custom_params)
         # Initialize photo-z object with above parameters
-        fit = eazy.photoz.PhotoZ(param_file=None,  zeropoint_file=None, translate_file= params["FILTERS_RES"],
+        fit = eazy.photoz.PhotoZ(param_file=None, zeropoint_file=None, translate_file= params["FILTERS_RES"],
                                 params=params, load_prior=False, load_products=False)
         # Fit templates to catalog                          
         fit.fit_catalog(n_proc=n_proc, get_best_fit=True)
@@ -222,7 +226,7 @@ class EAZY(SED_code):
             print(f'Written out file to: {out_path}')
         if save_pz:
             # Make folders if they don't exist
-            out_path_pdf = f'{out_directory}/PDFs/'
+            out_path_pdf = sed_folder.replace("SEDs", "PDFs")
             if not os.path.exists(out_path_pdf):
                 os.makedirs(out_path_pdf)
             out_path_pdf_template = f'{out_path_pdf}/{templates}'
@@ -237,7 +241,6 @@ class EAZY(SED_code):
                         pz_save.write(f"{z}, {pz[pos_obj][pos]} \n")
         # Save best-fitting SEDs
         if save_best_seds:
-            out_path = f'{out_directory}/SEDs/{templates}/'
             print("Saving best template SEDs")
             percentiles = fit.pz_percentiles([16, 84])
             ids =  fit.OBJID

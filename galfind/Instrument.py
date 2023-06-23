@@ -32,7 +32,7 @@ class Instrument:
 
     def __repr__(self):
         # string representation of what is stored in this class
-        return str(self.__dict__())
+        return str(self.__dict__)
     
     def __len__(self):
         return len(self.bands)
@@ -84,7 +84,6 @@ class Instrument:
         band_FWHMs = self.band_FWHMs
         
         # always name instruments from blue -> red
-        
        
         if self.name == instrument.name:
             self.bands = bands
@@ -163,24 +162,32 @@ class Instrument:
     def remove_index(self, remove_index):
         remove_band = self.bands[remove_index]
         self.remove_band(remove_band)
-        
+    
     @staticmethod
-    def from_name(name):
+    def from_name(name, excl_bands = []):
         if name == "NIRCam":
-            return NIRCam()
+            return NIRCam(excl_bands = excl_bands)
         elif name == "MIRI":
-            return MIRI()
+            return MIRI(excl_bands = excl_bands)
         elif name == "ACS_WFC":
-            return ACS_WFC()
+            return ACS_WFC(excl_bands = excl_bands)
         elif name == "WFC3IR":
-            return WFC3IR()
+            return WFC3IR(excl_bands = excl_bands)
+        elif "+" in name:
+            new_instruments = Combined_Instrument.instruments_from_name(excl_bands = excl_bands)
+            for i, instrument in enumerate(new_instruments):
+                if i == 0:
+                    new_instrument = instrument
+                else:
+                    new_instrument += instrument
+            return new_instrument
         else:
             raise(Exception(f"Instrument name: {name} does not exist in 'Instrument.from_name()'!"))
 
 class NIRCam(Instrument):
     
     def __init__(self, excl_bands = []):
-        bands = ["f090W", "f115W", "f150W", "f200W", "f277W", "f335M", "f356W", "f410M", "f444W"]
+        bands = ["f090W", "f115W", "f150W", "f200W", "f277W", "f356W", "f410M", "f444W"] # "f335M",
         band_wavelengths = {"f090W": 9_044., "f115W": 11_571., "f150W": 15_040., "f200W": 19_934., "f277W": 27_695., "f335M": 33_639., "f356W": 35_768., "f410M": 40_844., "f444W": 44_159.}
         band_wavelengths = {key: value * u.Angstrom for (key, value) in band_wavelengths.items()} # convert each individual value to Angstrom
         band_FWHMs = {"f090W": 2_101., "f115W": 2_683., "f150W": 3_371., "f200W": 4_717., "f277W": 7_110., "f335M": 3_609., "f356W": 8_408., "f410M": 4_375., "f444W": 11_055.}
@@ -210,7 +217,7 @@ class MIRI(Instrument):
         band_wavelengths = {key: value * u.Angstrom for (key, value) in band_wavelengths.items()} # convert each individual value to Angstrom
         band_FWHMs = {}
         band_FWHMs = {key: value * u.Angstrom for (key, value) in band_FWHMs.items()} # convert each individual value to Angstrom
-        # Placeholder       
+        # Placeholder       
         super().__init__("MIRI", bands, band_wavelengths, band_FWHMs, excl_bands)
     
     def aper_corr(self, aper_diam, band):
@@ -222,14 +229,14 @@ class MIRI(Instrument):
 class ACS_WFC(Instrument):
     
     def __init__(self, excl_bands = []):
-        bands = ["f435W", "f606W", "f775W", "f814W", "f850LP"]
+        bands = ["f606W", "f814W"] #["f435W", "f606W", "f775W", "f814W", "f850LP"]
         # Wavelengths corrrespond to lambda effective of the filters from SVO Filter Profile Service
         band_wavelengths = {"f435W":4341.62, "f606W":5809.26, "f775W":7652.44, "f814W":7973.39, "f850LP":9004.99}
         band_wavelengths = {key: value * u.Angstrom for (key, value) in band_wavelengths.items()} # convert each individual value to Angstrom
         # FWHMs corrrespond to FWHM of the filters from SVO Filter Profile Service
         band_FWHMs = {"f435W":900.04, "f606W":2253.40, "f775W":1517.31, "f814W":2098.15, "f850LP":1273.50}
         band_FWHMs = {key: value * u.Angstrom for (key, value) in band_FWHMs.items()} # convert each individual value to Angstrom
-        # Placeholder       
+        # Placeholder       
         super().__init__("ACS_WFC", bands, band_wavelengths, band_FWHMs, excl_bands)
     
     def aper_corr(self, aper_diam, band):
@@ -237,7 +244,6 @@ class ACS_WFC(Instrument):
         aper_corr_data = np.loadtxt(aper_corr_path, comments = "#", dtype=[('band', 'U10'), ('0.32', 'f4'), ('0.5', 'f4'), ('1.0', 'f4'), ('1.5', 'f4'), ('2.0', 'f4')])
         return aper_corr_data[aper_corr_data['band'] == band.upper()][str(aper_diam.to('arcsec').value)][0]
     
-
     def new_instrument(self, excl_bands = []):
         return ACS_WFC(excl_bands)
    
@@ -246,7 +252,7 @@ class WFC3IR(Instrument):
     def __init__(self, excl_bands = []):
         bands = ["f105W",  "f125W", "f140W", "f160W"]
         # Wavelengths corrrespond to lambda effective of the filters from SVO Filter Profile Service
-        band_wavelengths = { "f105W":10430.83, "f125W":12363.55, "f140W":13734.66, "f160W":15278.47}
+        band_wavelengths = {"f105W":10430.83, "f125W":12363.55, "f140W":13734.66, "f160W":15278.47}
         band_wavelengths = {key: value * u.Angstrom for (key, value) in band_wavelengths.items()} # convert each individual value to Angstrom
         # FWHMs corrrespond to FWHM of the filters from SVO Filter Profile Service
         band_FWHMs = {"f105W":2894.94,  "f125W":2993.79, "f140W":3933.32, "f160W":2876.73}
@@ -269,7 +275,7 @@ class Combined_Instrument(Instrument):
     def aper_corr(self, aper_diam, band):
         names = self.name.split("+")
         for name in names:
-            instrument = Instrument.from_name(name)
+            instrument = self.from_name(name)
             if band in instrument.bands:
                 return instrument.aper_corr(aper_diam, band)
         raise(Exception(f"{band} does not exist in Instrument = {self.name}!"))
@@ -277,13 +283,23 @@ class Combined_Instrument(Instrument):
     def instrument_from_band(self, band):
         names = self.name.split("+")
         for name in names:
-            instrument = Instrument.from_name(name)
+            instrument = self.from_name(name)
             if band in instrument.bands:
                 return instrument.name
-            
-    def new_instrument(self):
-        print("Still need to understand shallow and deep copy constructors in python!")
-        return self
+        
+    def instruments_from_name(self, excl_bands = []):
+        combined_instrument_names = self.name.split("+")
+        return [self.from_name(combined_instrument_name, excl_bands) for combined_instrument_name in combined_instrument_names]
+        
+    def new_instrument(self, excl_bands = []):
+        instruments = self.instruments_from_name(excl_bands)
+        for i, instrument in enumerate(instruments):
+            if i == 0:
+                new_instrument = instrument
+            else:
+                new_instrument += instrument
+        # print("Still need to understand shallow and deep copy constructors in python!")
+        return new_instrument
 
 #aper_diams_sex = [0.32, 0.5, 1., 1.5, 2.] * u.arcsec
 
