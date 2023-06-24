@@ -26,11 +26,10 @@ def pipeline(surveys, version,instruments, xy_offsets, aper_diams, sed_codes, mi
                 cat = code.fit_cat(cat)
 
 if __name__ == "__main__":
-    time.sleep(12 * 60 * 60)
     version = "v9"
-    instruments = ['NIRCam'] #, 'ACS_WFC', 'WFC3IR'] # Can leave this - if there is no data for an instrument it is removed automatically
+    instruments = ['NIRCam', 'ACS_WFC'] #, 'WFC3IR'] # Can leave this - if there is no data for an instrument it is removed automatically
     cat_type = "loc_depth"
-    surveys = ["NEP-1"]
+    surveys = ["CEERSP4"]
     aper_diams = [0.32] * u.arcsec
     xy_offsets = [[0, 0]]
     sed_codes = [LePhare()] #, EAZY()]
