@@ -22,6 +22,7 @@ from astropy.coordinates import SkyCoord
 from abc import ABC, abstractmethod
 from copy import copy, deepcopy
 import json
+from tqdm import tqdm
 
 from . import config
 
@@ -196,11 +197,11 @@ class Photometry_obs:
     
     @property
     def flux_lambda(self): # wav and flux_nu must have units here!
-        return (self.flux_Jy * const.c / (self.instrument.wav ** 2)).to(u.erg / (u.s * (u.cm ** 2) * u.Angstrom)) # both flux_nu and wav must be in the same rest or observed frame
+        return (self.flux_Jy * const.c / ((np.array([value.value for value in self.instrument.band_wavelengths.values()]) * u.Angstrom) ** 2)).to(u.erg / (u.s * (u.cm ** 2) * u.Angstrom)) # both flux_nu and wav must be in the same rest or observed frame
     
     @property
     def flux_lambda_errs(self):
-        return (self.flux_Jy_errs * const.c / (self.instrument.wav ** 2)).to(u.erg / (u.s * (u.cm ** 2) * u.Angstrom))
+        return (self.flux_Jy_errs * const.c / ((np.array([value.value for value in self.instrument.band_wavelengths.values()]) * u.Angstrom) ** 2)).to(u.erg / (u.s * (u.cm ** 2) * u.Angstrom))
 
     @classmethod # not a gal object here, more like a catalogue row
     def get_phot_from_sex(cls, sex_cat_row, instrument, cat_creator): # single unit of sextractor catalogue
@@ -251,26 +252,28 @@ class Photometry_obs:
     def crop_phot(self, indices):
         indices = np.array(indices).astype(int)
         for index in reversed(indices):
-            self.instrument.remove_band(self.bands[index])
+            self.instrument.remove_band(self.instrument.bands[index])
         self.flux_Jy = np.delete(self.flux_Jy, indices)
         self.flux_Jy_errs = np.delete(self.flux_Jy_errs, indices)
 
 class Photometry_rest:
     
-    def __init__(self, phot_obs, z, code_name, rest_UV_wav_lims = [1216., 3000.] * u.Angstrom):
+    def __init__(self, phot_obs, z, code_name, rest_UV_wav_lims = [1250., 3000.] * u.Angstrom):
         self.phot_obs = phot_obs
         self.z = z
+        if z < 0.:
+            print(z)
         self.code_name = code_name
         self.rest_UV_wav_lims = rest_UV_wav_lims
     
     @property
     def wav(self):
-        return wav_obs_to_rest(self.phot_obs.instrument.wav, self.z)
+        return wav_obs_to_rest(np.array([value.value for value in self.phot_obs.instrument.band_wavelengths.values()]) * u.Angstrom, self.z)
     
     @property
     def wav_errs(self):
-        return wav_obs_to_rest(self.phot_obs.instrument.wav_errs, self.z)
-        
+        return wav_obs_to_rest(np.array([value.value / 2 for value in self.phot_obs.instrument.band_FWHMs.values()]) * u.Angstrom, self.z)
+    
     @property
     def flux_lambda(self):
         return flux_lambda_obs_to_rest(self.phot_obs.flux_lambda, self.z)
@@ -291,6 +294,14 @@ class Photometry_rest:
     def lum_distance(self, cosmo = astropy_cosmo):
         return cosmo.luminosity_distance(self.z).to(u.pc)
     
+    @property
+    def rest_UV_band_index(self):
+        return np.abs(self.wav - 1500 * u.Angstrom).argmin()
+    
+    @property
+    def rest_UV_band(self):
+        return self.phot_obs.instrument.bands[self.rest_UV_band_index]
+    
     @classmethod # this is actually a row in a catalogue, not a 'Galaxy' object
     def get_phot_from_sex(cls, gal, instrument, code):
         phot_obs = Photometry_obs.get_phot_from_sex(gal, instrument)
@@ -298,7 +309,9 @@ class Photometry_rest:
     
     def rest_UV_phot_only(self):
         crop_indices = []
-        for i, (wav, wav_err) in enumerate(zip(self.wav, self.wav_errs)):
+        for i, (wav, wav_err) in enumerate(zip(self.wav.value, self.wav_errs.value)):
+            wav *= u.Angstrom
+            wav_err *= u.Angstrom
             if wav - wav_err < self.rest_UV_wav_lims[0] or wav + wav_err > self.rest_UV_wav_lims[1]:
                 crop_indices = np.append(crop_indices, i)
         self.phot_obs.crop_phot(crop_indices)
@@ -324,10 +337,10 @@ class Photometry_rest:
             if show:
                 plt.show()
         
-    def fit_UV_slope(self, save_dir, ID, z_PDF = None, iters = 100_000, plot = True): # 1D redshift PDF
+    def fit_UV_slope(self, save_dir, ID, z_PDF = None, iters = 10_000, plot = True): # 1D redshift PDF
         print(f"Fitting UV slope for {ID}")
         self.rest_UV_phot_only()
-        fluxes = np.array([np.random.normal(mu.value, sigma.value, iters) for mu, sigma in zip(self.flux_lambda, self.flux_lambda_errs)]).T
+        fluxes = np.array([np.random.normal(mu.value, sigma.value, iters) for mu, sigma in tqdm(zip(self.flux_lambda, self.flux_lambda_errs), desc = f"Fitting UV slope for {ID}")]).T
         if z_PDF != None:
             # vary within redshift errors
             pass
@@ -577,7 +590,7 @@ class Galaxy:
         self.sky_coord = sky_coord
         # phot_obs is within phot_rest (it shouldn't be!)
         if properties != {}:
-            if properties["LePhare"]["z_phot"] == 0:
+            if properties["LePhare"]["z_phot"] <= 0.:
                 self.phot_rest = None
             else:
                 self.phot_rest = Photometry_rest(phot, properties["LePhare"]["z_phot"], "LePhare") # works for LePhare only currently
@@ -601,8 +614,7 @@ class Galaxy:
         return cls(sky_coord, phot, ID, {})
         
     @classmethod # currently only works for a singular code
-    def from_photo_z_cat_row(cls, photo_z_cat_row, instrument, cat_creator, codes):
-
+    def from_photo_z_cat_row(cls, photo_z_cat_row, instrument, cat_creator, codes): 
         # load the photometry from the sextractor catalogue
         phot = Photometry_obs.get_phot_from_sex(photo_z_cat_row, instrument, cat_creator)
         # load the ID and Sky Coordinate from the source catalogue

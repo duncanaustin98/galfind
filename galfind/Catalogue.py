@@ -14,12 +14,15 @@ from astropy.io import fits
 from pathlib import Path
 from astropy.wcs import WCS
 import astropy.units as u
+from tqdm import tqdm
 
+from . import useful_funcs_austind as useful_funcs
 from .Data import Data
 from .useful_funcs_austind import Galaxy
 from . import useful_funcs_austind as funcs
 from .Catalogue_Creator import GALFIND_Catalogue_Creator
 from . import SED_code
+from . import config
 
 class Catalogue:
     # later on, the gal_arr should be calculated from the Instrument and sex_cat path, with SED codes already given
@@ -148,6 +151,91 @@ class Catalogue:
                 cat = cat[cat[name] == True]
         return cat
     
+    def catch_redshift_minus_99(self, gal_index, out_value = True, condition = None, condition_fail_val = None, minus_99_out = None):
+        try:
+            self[gal_index].phot_rest.z # i.e. if the galaxy has a finite redshift
+            if condition != None:
+                return out_value if condition(out_value) else condition_fail_val
+            else:
+                return out_value
+        except:
+            #print(f"{gal_index} is at z=-99")
+            return minus_99_out
+    
+    def calc_ext_src_corrs(self, band, code = "LePhare", ID = None):
+        # load the catalogue (for obtaining the FLUX_AUTOs; THIS SHOULD BE MORE GENERAL IN FUTURE TO GET THESE FROM THE GALAXY OBJECT!!!)
+        tab = self.open_full_cat()
+        if ID != None:
+            tab = tab[tab["NUMBER"] == ID]
+            cat = self[self["ID"] == ID]
+        else:
+            cat = self
+        # load the relevant FLUX_AUTO from SExtractor output
+        flux_autos = useful_funcs.flux_image_to_Jy(np.array(tab[f"FLUX_AUTO_{band}"]), self.data.im_zps[band])
+        ext_src_corrs = [self.catch_redshift_minus_99(i, flux_autos[i] / gal.phot_obs.flux_Jy[np.where(band == \
+                                            gal.phot_obs.instrument.bands)[0][0]], lambda x: x > 1., 1., -99.) for i, gal in enumerate(cat)]
+        return ext_src_corrs
+    
+    # def calc_UV_ext_src_corrs(self, code = "LePhare"):
+    #     # load the catalogue (for obtaining the FLUX_AUTOs; THIS SHOULD BE MORE GENERAL IN FUTURE TO GET THESE FROM THE GALAXY OBJECT!!!)
+    #     tab = self.open_full_cat()
+    #     cat_ext_src_corrs = []
+    #     corr_bands = []
+    #     for i, gal in enumerate(self):
+    #         # determine the relevant bands for the extended source correction
+    #         # should include reference to 'code' here! i.e. there should be multiple phot_rest within the Galaxy class
+    #         corr_bands.append(self.catch_redshift_minus_99(gal.phot_rest.rest_UV_band)
+            
+
+    #         # load the relevant FLUX_AUTO from SExtractor output
+    #         flux_auto = useful_funcs.flux_image_to_Jy(float(tab_row[f"FLUX_AUTO_{corr_band}"]), self.data.im_zps[corr_band])
+    #         ext_src_corr = flux_auto / gal.phot_obs.flux_Jy[gal.phot_rest.rest_UV_band_index]
+    #         if ext_src_corr < 1.:
+    #             ext_src_corr = 1.
+    #         cat_ext_src_corrs.append(ext_src_corr)
+    #     else:
+    #         cat_ext_src_corrs.append(-99.)
+    #     return np.array(cat_ext_src_corrs)
+    
+    # def calc_mass_ext_src_corrs(self, code = "LePhare", ID = None):
+    #     return self.calc_ext_src_corr(self.data.instrument.bands[-1]) # the reddest band
+            
+    def make_ext_src_corr_cat(self, code = "LePhare", join_tables = True):
+        ext_src_cat_name = self.cat_path.replace('.fits', f'_ext_src_corr_{code}.fits')
+        if not Path(ext_src_cat_name).is_file():
+            ext_src_col_names = np.array(["ID"] + [f"auto_corr_factor_{name}" for name in list([band for band in self.data.instrument.bands] + [f"UV_{code}", "mass"])])
+            ext_src_col_dtypes = np.array([int] + [float for i in range(len(self.data.instrument.bands))] + [float, float])
+            ext_src_corrs_band = {}
+            # determine the relevant bands for the extended source correction (slower than it could be, but it works nevertheless)
+            UV_corr_bands = []
+            for i, gal in enumerate(self):
+                if self.catch_redshift_minus_99(i, True):
+                    # should include reference to 'code' here! i.e. there should be multiple phot_rest within the Galaxy class
+                    UV_corr_bands.append(gal.phot_rest.rest_UV_band)
+                else:
+                    UV_corr_bands.append(None)
+            
+            for i, band in tqdm(enumerate(self.data.instrument.bands), total = len(self.data.instrument.bands), desc = f"Calculating extended source corrections for {self.cat_path}"):
+                band_corrs = self.calc_ext_src_corrs(band, code)
+                ext_src_corrs_band[band] = band_corrs
+            
+            UV_ext_src_corrs = np.array([ext_src_corrs_band[band][i] if self.catch_redshift_minus_99(i) else -99. for i, band in enumerate(UV_corr_bands)])
+            print(f"Finished calculating UV extended source corrections using {code} redshifts")
+            mass_ext_src_corrs = np.array(ext_src_corrs_band["f444W"]) # f444W band (mass tracer)
+            print("Finished calculating mass extended source corrections")
+            ext_src_corr_vals = np.vstack((np.array(self.ID), np.vstack(list(ext_src_corrs_band.values())), UV_ext_src_corrs, mass_ext_src_corrs)).T
+            # open existing cat
+            old_tab = self.open_full_cat()
+            ext_src_tab = Table(ext_src_corr_vals, names = ext_src_col_names, dtype = ext_src_col_dtypes)
+            joined_tab = join(old_tab, ext_src_tab, keys_left = "NUMBER", keys_right = "ID")
+            joined_tab.write(ext_src_cat_name, overwrite = True)
+            print(f"Finished writing table to {ext_src_cat_name}")
+            print("Need to update the galaxies within the catalogue with appropriate flags")
+            return self
+        else:
+            return self
+        
+    
     # altered from original in mask_regions.py
     def mask(self, data, flag_blank_field = True): # mask paths is a dict of form {band: mask_path}
         print(f"Running masking code for {self.cat_path}. (Too much copying and pasting here!)")
@@ -262,7 +350,7 @@ class Catalogue:
         else:
             self.cat_path = masked_cat_path
     
-    def make_UV_fit_cat(self, UV_PDF_path, col_names = ["Beta", "flux_lambda_1500", "flux_Jy_1500", "M_UV", "A_UV", "L_obs", "L_int", "SFR"]):
+    def make_UV_fit_cat(self, UV_PDF_path = config["RestUVProperties"]["UV_PDF_PATH"], col_names = ["Beta", "flux_lambda_1500", "flux_Jy_1500", "M_UV", "A_UV", "L_obs", "L_int", "SFR"]):
         cat_data = []
         for i, gal in enumerate(self):
             gal_data = np.array([gal.ID])
@@ -277,7 +365,7 @@ class Catalogue:
         fits_col_names = np.concatenate((np.array(["ID"]), UV_col_names))
         funcs.make_dirs(self.cat_path)
         UV_tab = Table(cat_data, names = fits_col_names)
-        save_path = f"{self.cat_path[:-5]}_UV.fits"
+        save_path = self.cat_path.replace('.fits', '_UV.fits')
         UV_tab.write(save_path, format = "fits", overwrite = True)
         self.UV_tab = UV_tab
         print(f"Writing UV table to {save_path}")
