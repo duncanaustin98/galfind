@@ -29,7 +29,10 @@ def pipeline(surveys, version, instruments, xy_offsets, aper_diams, sed_codes, m
                 if code.code_name == "LePhare":
                     cat.make_ext_src_corr_cat(code.code_name)
                 # calculate the UV properties for this catalogue
-                cat.make_UV_fit_cat(UV_PDF_path = f"{config['RestUVProperties']['UV_PDF_PATH']}/{survey}/{code}{version}/{pc_err}pc")  
+                if instruments == ["NIRCam"]: # QUICK FIX!
+                    print("Instruments name is a QUICK FIX!")
+                    instruments_name = "NIRCam"
+                cat.make_UV_fit_cat(UV_PDF_path = f"{config['RestUVProperties']['UV_PDF_PATH']}/{version}/{instruments_name}/{survey}/{code.code_name}+{pc_err}pc")  
 
 if __name__ == "__main__":
     version = "v9"
@@ -44,4 +47,4 @@ if __name__ == "__main__":
     fast_depths = False
     excl_bands = [] #["f606W", "f814W", "f090W", "f115W", "f277W", "f335M", "f356W", "f410M", "f444W"]
     n_loc_depth_samples = 5
-    pipeline(surveys, version,instruments, xy_offsets, aper_diams, sed_codes, min_flux_pc_errs, forced_phot_band, excl_bands, cat_type = cat_type, n_loc_depth_samples = n_loc_depth_samples, fast = fast_depths)
+    pipeline(surveys, version, instruments, xy_offsets, aper_diams, sed_codes, min_flux_pc_errs, forced_phot_band, excl_bands, cat_type = cat_type, n_loc_depth_samples = n_loc_depth_samples, fast = fast_depths)

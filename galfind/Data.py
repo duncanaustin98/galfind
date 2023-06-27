@@ -519,7 +519,6 @@ class Data:
                                     str(self.wht_exts[band]),self.wht_types[band],str(self.im_exts[band]),f"{config['DEFAULT']['GALFIND_DIR']}/configs/"])
             process.wait()
             
-            
             print(f"Made segmentation map for {self.survey} {self.version} {band}")
     
     @run_in_dir(path = config['DEFAULT']['GALFIND_DIR'])

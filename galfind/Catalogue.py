@@ -15,6 +15,7 @@ from pathlib import Path
 from astropy.wcs import WCS
 import astropy.units as u
 from tqdm import tqdm
+import copy
 
 from . import useful_funcs_austind as useful_funcs
 from .Data import Data
@@ -150,6 +151,14 @@ class Catalogue:
     def __repr__(self):
         return str(self.__dict__)
     
+    def __deepcopy__(self, memo):
+        cls = self.__class__
+        result = cls.__new__(cls)
+        memo[id(self)] = result
+        for key, value in self.__dict__.items():
+            setattr(result, key, copy.deepcopy(value, memo))
+        return result
+    
     # %%
     
     def open_full_cat(self):
@@ -188,7 +197,7 @@ class Catalogue:
         return ext_src_corrs
             
     def make_ext_src_corr_cat(self, code = "LePhare", join_tables = True):
-        ext_src_cat_name = f"Extended_source_corrections_{code.code_name}.fits"
+        ext_src_cat_name = f"{useful_funcs.split_dir_name(self.cat_path, 'dir')}/Extended_source_corrections_{code}.fits"
         if not Path(ext_src_cat_name).is_file():
             ext_src_col_names = np.array(["ID"] + [f"auto_corr_factor_{name}" for name in list([band for band in self.data.instrument.bands] + [f"UV_{code}", "mass"])])
             ext_src_col_dtypes = np.array([int] + [float for i in range(len(self.data.instrument.bands))] + [float, float])
@@ -214,24 +223,31 @@ class Catalogue:
 
             ext_src_tab = Table(ext_src_corr_vals, names = ext_src_col_names, dtype = ext_src_col_dtypes)
             ext_src_tab.write(ext_src_cat_name, overwrite = True)
-            print(f"Finished writing table to {ext_src_cat_name}")
-
-            # set relevant properties in the galaxies contained within the catalogues
-            for gal, UV_corr, mass_corr in zip(self, UV_ext_src_corrs, mass_ext_src_corrs):
-                gal.properties["UV_{code}_ext_src_corr"] = UV_corr
-                gal.properties["mass_ext_src_corr"] = mass_corr
-            print(self.gals[0].properties)
-            
-            if join_tables:
-                # open existing cat
-                old_tab = self.open_full_cat()
-                joined_tab = join(old_tab, ext_src_tab, keys_left = "NUMBER", keys_right = "ID")
-                joined_tab.write(self.cat_path, overwrite = True)
-                print(f"Finished joining table to {self.cat_path}")
-            return self
+            self.ext_src_tab = ext_src_tab
+            print(f"Writing table to {ext_src_cat_name}")
+        
         else:
-            raise(Exception("NOT YET IMPLEMENTED CATALOGUE LOAD IF EXT SOURCE CAT ALREADY EXISTS!"))
-            return self
+            self.ext_src_tab = Table.read(ext_src_cat_name, character_as_bytes = False)
+            print(f"Opening table: {ext_src_cat_name}")
+            
+        if join_tables:
+            self.join_ext_src_cat(code = code)
+        return self
+        
+    def join_ext_src_cat(self, match_cols = ["NUMBER", "ID"], code = "LePhare"):
+        # open existing cat
+        init_cat = self.open_full_cat()
+        joined_tab = join(init_cat, self.ext_src_tab, keys_left = match_cols[0], keys_right = match_cols[1])
+        self.cat_path = self.cat_path.replace(".fits", "_ext_src.fits")
+        joined_tab.write(self.cat_path, format = "fits", overwrite = True)
+        print(f"Joining ext_src table to catalogue! Saving to {self.cat_path}")
+        
+        # set relevant properties in the galaxies contained within the catalogues (can use __setattr__ here too!)
+        print("Updating Catalogue object")
+        for gal, UV_corr, mass_corr in zip(self, self.ext_src_tab[f"auto_corr_factor_UV_{code}"], self.ext_src_tab["auto_corr_factor_mass"]):
+            gal.properties[f"UV_{code}_ext_src_corr"] = UV_corr
+            gal.properties["mass_ext_src_corr"] = mass_corr
+        print(self[0].properties)
     
     # altered from original in mask_regions.py
     def mask(self, data, flag_blank_field = True): # mask paths is a dict of form {band: mask_path}
@@ -347,32 +363,54 @@ class Catalogue:
         else:
             self.cat_path = masked_cat_path
     
-    def make_UV_fit_cat(self, UV_PDF_path = config["RestUVProperties"]["UV_PDF_PATH"], col_names = ["Beta", "flux_lambda_1500", "flux_Jy_1500", "M_UV", "A_UV", "L_obs", "L_int", "SFR"]):
-        cat_data = []
-        for i, gal in enumerate(self):
-            gal_data = np.array([gal.ID])
-            for name in col_names:
-                gal_data = np.append(gal_data, funcs.percentiles_from_PDF(gal.phot_rest.open_UV_fit_PDF(UV_PDF_path, name, gal.ID))) # not currently saving to object
-            gal_data = np.array(gal_data).flatten()
-            if i == 0: # if the first column
-                cat_data = gal_data
-            else:
-                cat_data = np.vstack([cat_data, gal_data])
-        UV_col_names = np.array([[name, f"{name}_l1", f"{name}_u1"] for name in col_names]).flatten()
-        fits_col_names = np.concatenate((np.array(["ID"]), UV_col_names))
-        funcs.make_dirs(self.cat_path)
-        UV_tab = Table(cat_data, names = fits_col_names)
-        save_path = self.cat_path.replace('.fits', '_UV.fits')
-        UV_tab.write(save_path, format = "fits", overwrite = True)
-        self.UV_tab = UV_tab
-        print(f"Writing UV table to {save_path}")
+    def make_UV_fit_cat(self, UV_PDF_path = config["RestUVProperties"]["UV_PDF_PATH"], col_names = ["Beta", "flux_lambda_1500", "flux_Jy_1500", "M_UV", "A_UV", "L_obs", "L_int", "SFR"], \
+                        code = "LePhare", join_tables = True):
+        UV_cat_name = f"{useful_funcs.split_dir_name(self.cat_path, 'dir')}/UV_properties_{code}.fits"
+        if not Path(UV_cat_name).is_file():
+            cat_data = []
+            print("Bands here: ", self[1].phot_obs.instrument.bands)
+            for i, gal in tqdm(enumerate(self), total = len(self), desc = "Making UV fit catalogue"):
+                gal_copy = gal #copy.deepcopy(gal)
+                #print(gal.phot_obs.instrument.bands)
+                gal_data = np.array([gal_copy.ID])
+                for name in col_names:
+                    #print(f"{gal.ID}: {gal.phot_rest.phot_obs.instrument.bands}")
+                    try:
+                        gal_data = np.append(gal_data, funcs.percentiles_from_PDF(gal.phot_rest.open_UV_fit_PDF(UV_PDF_path, name, gal_copy.ID, gal_copy.properties[f"UV_{code}_ext_src_corr"]))) # not currently saving to object
+                    except:
+                        gal_data = np.append(gal_data, funcs.percentiles_from_PDF([-99.]))
+                gal_data = np.array(gal_data).flatten()
+                if i == 0: # if the first column
+                    cat_data = gal_data
+                else:
+                    cat_data = np.vstack([cat_data, gal_data])
+            UV_col_names = np.array([[name, f"{name}_l1", f"{name}_u1"] for name in col_names]).flatten()
+            fits_col_names = np.concatenate((np.array(["ID"]), UV_col_names))
+            funcs.make_dirs(self.cat_path)
+            UV_tab = Table(cat_data, names = fits_col_names)
+            UV_tab.write(UV_cat_name, format = "fits", overwrite = True)
+            self.UV_tab = UV_tab
+            print(f"Writing UV table to {self.cat_path}")
         
-    def join_UV_fit_cat(self, cat, match_cols = ["NUMBER", "ID"]):
-        joined_tab = join(cat, self.UV_tab, keys_left = match_cols[0], keys_right = match_cols[1])
-        save_path = f"{self.cat_path[:-5]}_UV_matched.fits"
-        joined_tab.write(save_path, format = "fits", overwrite = True)
-        print(f"Joining UV table to catalogue! Saving to {save_path}")
-        return joined_tab
+        else:
+            self.UV_tab = Table.read(UV_cat_name, character_as_bytes = False)
+            print(f"Opening table: {UV_cat_name}")
+        
+        if join_tables:
+            self.join_UV_fit_cat()
+            # set relevant properties in the galaxies contained within the catalogues
+            [setattr(gal, ["properties", name], UV_tab[name][i]) for i, gal in enumerate(self) for name in UV_col_names]
+            print(self[0].properties)
+            
+        return self
+        
+    def join_UV_fit_cat(self, match_cols = ["NUMBER", "ID"]):
+        # open existing cat
+        init_cat = self.open_full_cat()
+        joined_tab = join(init_cat, self.UV_tab, keys_left = match_cols[0], keys_right = match_cols[1])
+        self.cat_path = self.cat_path.replace('.fits', '_UV.fits')
+        joined_tab.write(self.cat_path, format = "fits", overwrite = True)
+        print(f"Joining UV table to catalogue! Saving to {self.cat_path}")
     
     def flag_robust_high_z(self, relaxed = False):
         # should make use of an overloaded __setattr__ here!
