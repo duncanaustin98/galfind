@@ -29,10 +29,10 @@ if __name__ == "__main__":
     version = "v9"
     instruments = ['NIRCam'] #, 'ACS_WFC', 'WFC3IR'] # Can leave this - if there is no data for an instrument it is removed automatically
     cat_type = "loc_depth"
-    surveys = ["NEP-1"]
+    surveys = ["NEP-3"]
     aper_diams = [0.32] * u.arcsec
     xy_offsets = [[0, 0]]
-    sed_codes = [LePhare()] #, EAZY()]
+    sed_codes = [] #, EAZY()]
     min_flux_pc_errs = [5, 10]
     forced_phot_band = "f444W"
     fast_depths = False
