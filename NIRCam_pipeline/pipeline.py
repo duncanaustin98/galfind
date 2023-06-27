@@ -26,8 +26,8 @@ def pipeline(surveys, version, instruments, xy_offsets, aper_diams, sed_codes, m
             for i, code in enumerate(sed_codes):
                 cat = code.fit_cat(cat)
                 # calculate the extended source corrections
-                if i == 0:
-                    cat.make_ext_src_corr_cat()
+                if code.code_name == "LePhare":
+                    cat.make_ext_src_corr_cat(code.code_name)
                 # calculate the UV properties for this catalogue
                 cat.make_UV_fit_cat(UV_PDF_path = f"{config['RestUVProperties']['UV_PDF_PATH']}/{survey}/{code}{version}/{pc_err}pc")  
 

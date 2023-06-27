@@ -124,6 +124,17 @@ class Catalogue:
                 raise AttributeError(f"'{name}' does not exist in all galaxies within {self.cat_name} !!!")
         return np.array([getattr(gal, name) for gal in self])
     
+    def __setattr__(self, name, value, obj = "cat"):
+        if obj == "cat":
+            super().__setattr__(name, value)
+        elif obj == "gal":
+            # set attributes of individual galaxies within the catalogue
+            for i, gal in enumerate(self):
+                if type(value) == list or type(value) == np.array:
+                    setattr(gal, name, value[i])
+                else:
+                    setattr(gal, name, value)
+    
     # not needed!
     def __setitem__(self, index, gal):
         self.gals[index] = gal
@@ -175,33 +186,9 @@ class Catalogue:
         ext_src_corrs = [self.catch_redshift_minus_99(i, flux_autos[i] / gal.phot_obs.flux_Jy[np.where(band == \
                                             gal.phot_obs.instrument.bands)[0][0]], lambda x: x > 1., 1., -99.) for i, gal in enumerate(cat)]
         return ext_src_corrs
-    
-    # def calc_UV_ext_src_corrs(self, code = "LePhare"):
-    #     # load the catalogue (for obtaining the FLUX_AUTOs; THIS SHOULD BE MORE GENERAL IN FUTURE TO GET THESE FROM THE GALAXY OBJECT!!!)
-    #     tab = self.open_full_cat()
-    #     cat_ext_src_corrs = []
-    #     corr_bands = []
-    #     for i, gal in enumerate(self):
-    #         # determine the relevant bands for the extended source correction
-    #         # should include reference to 'code' here! i.e. there should be multiple phot_rest within the Galaxy class
-    #         corr_bands.append(self.catch_redshift_minus_99(gal.phot_rest.rest_UV_band)
-            
-
-    #         # load the relevant FLUX_AUTO from SExtractor output
-    #         flux_auto = useful_funcs.flux_image_to_Jy(float(tab_row[f"FLUX_AUTO_{corr_band}"]), self.data.im_zps[corr_band])
-    #         ext_src_corr = flux_auto / gal.phot_obs.flux_Jy[gal.phot_rest.rest_UV_band_index]
-    #         if ext_src_corr < 1.:
-    #             ext_src_corr = 1.
-    #         cat_ext_src_corrs.append(ext_src_corr)
-    #     else:
-    #         cat_ext_src_corrs.append(-99.)
-    #     return np.array(cat_ext_src_corrs)
-    
-    # def calc_mass_ext_src_corrs(self, code = "LePhare", ID = None):
-    #     return self.calc_ext_src_corr(self.data.instrument.bands[-1]) # the reddest band
             
     def make_ext_src_corr_cat(self, code = "LePhare", join_tables = True):
-        ext_src_cat_name = self.cat_path.replace('.fits', f'_ext_src_corr_{code}.fits')
+        ext_src_cat_name = f"Extended_source_corrections_{code.code_name}.fits"
         if not Path(ext_src_cat_name).is_file():
             ext_src_col_names = np.array(["ID"] + [f"auto_corr_factor_{name}" for name in list([band for band in self.data.instrument.bands] + [f"UV_{code}", "mass"])])
             ext_src_col_dtypes = np.array([int] + [float for i in range(len(self.data.instrument.bands))] + [float, float])
@@ -224,17 +211,27 @@ class Catalogue:
             mass_ext_src_corrs = np.array(ext_src_corrs_band["f444W"]) # f444W band (mass tracer)
             print("Finished calculating mass extended source corrections")
             ext_src_corr_vals = np.vstack((np.array(self.ID), np.vstack(list(ext_src_corrs_band.values())), UV_ext_src_corrs, mass_ext_src_corrs)).T
-            # open existing cat
-            old_tab = self.open_full_cat()
+
             ext_src_tab = Table(ext_src_corr_vals, names = ext_src_col_names, dtype = ext_src_col_dtypes)
-            joined_tab = join(old_tab, ext_src_tab, keys_left = "NUMBER", keys_right = "ID")
-            joined_tab.write(ext_src_cat_name, overwrite = True)
+            ext_src_tab.write(ext_src_cat_name, overwrite = True)
             print(f"Finished writing table to {ext_src_cat_name}")
-            print("Need to update the galaxies within the catalogue with appropriate flags")
+
+            # set relevant properties in the galaxies contained within the catalogues
+            for gal, UV_corr, mass_corr in zip(self, UV_ext_src_corrs, mass_ext_src_corrs):
+                gal.properties["UV_{code}_ext_src_corr"] = UV_corr
+                gal.properties["mass_ext_src_corr"] = mass_corr
+            print(self.gals[0].properties)
+            
+            if join_tables:
+                # open existing cat
+                old_tab = self.open_full_cat()
+                joined_tab = join(old_tab, ext_src_tab, keys_left = "NUMBER", keys_right = "ID")
+                joined_tab.write(self.cat_path, overwrite = True)
+                print(f"Finished joining table to {self.cat_path}")
             return self
         else:
+            raise(Exception("NOT YET IMPLEMENTED CATALOGUE LOAD IF EXT SOURCE CAT ALREADY EXISTS!"))
             return self
-        
     
     # altered from original in mask_regions.py
     def mask(self, data, flag_blank_field = True): # mask paths is a dict of form {band: mask_path}
