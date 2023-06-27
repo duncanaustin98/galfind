@@ -607,10 +607,11 @@ class Data:
             aperture = SkyCircularAperture(positions, r=rad)
             apertures.append(aperture)
             # Convert to pixel using image WCS
-        # Generate background
-        background = Background2D(image, (64, 64), filter_size=(3, 3))
-    
-        image = image-background.background
+            
+        # # Generate background
+        # background = Background2D(image, (64, 64), filter_size=(3, 3))
+        # image = image-background.background
+        
         # Do aperture photometry
         phot_table = aperture_photometry(image, apertures, wcs=wcs)
         assert(len(phot_table) == len(catalog))
@@ -629,8 +630,8 @@ class Data:
         colnames = [f'aperture_sum_{i}' for i in range(len(radii))]
         aper_tab = Column(np.array(phot_table[colnames].as_array().tolist()), name=f'FLUX_APER_{band}')
         phot_table[f'FLUX_APER'] = aper_tab
-        phot_table[f'FLUXERR_APER'] = phot_table[f'FLUX_APER'] * -99
-        phot_table['MAGERR_APER'] = phot_table['FLUX_APER'] * -99 
+        phot_table[f'FLUXERR_APER'] = phot_table[f'FLUX_APER'] * 99.
+        phot_table['MAGERR_APER'] = phot_table['FLUX_APER'] * 99.
         
         zp = self.im_zps[band]
         # This converts the fluxes to magnitudes using the correct zp, and puts them in the same format as the sextractor catalogue
@@ -638,7 +639,7 @@ class Data:
         for pos,col in enumerate(colnames):
             name = f'MAG_APER_{pos}'
             phot_table[name] = -2.5 * np.log10(phot_table[col]) + zp
-            phot_table[name][np.isnan(phot_table[name])] = -99
+            phot_table[name][np.isnan(phot_table[name])] = 99.
             mag_colnames.append(name)
         aper_tab = Column(np.array(phot_table[mag_colnames].as_array().tolist()), name=f'MAG_APER_{band}')
         phot_table[f'MAG_APER'] = aper_tab

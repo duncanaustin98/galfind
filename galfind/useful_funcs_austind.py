@@ -602,6 +602,12 @@ class Galaxy:
         #self.redshifts = {code.code_name: np.float(z) for code in codes}
         self.mask_flags = {}
         
+    def __setattr__(self, name, value, obj = "gal"):
+        if obj == "gal":
+            super().__setattr__(name, value)
+        else:
+            raise(Exception(f"obj = {obj} must be 'gal'!"))
+        
     @classmethod
     def from_sex_cat_row(cls, sex_cat_row, instrument, cat_creator):
         # load the photometry from the sextractor catalogue
