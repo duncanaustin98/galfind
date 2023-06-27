@@ -447,15 +447,16 @@ class Photometry_rest:
         self.save_UV_fit_PDF(save_dir, "SFR", ID)
         return self.SFR_PDF
     
-    def save_UV_fit_PDF(self, save_dir, obs_name, ID, UV_ext_src_corr = None):
+    def save_UV_fit_PDF(self, save_dir, obs_name, ID, UV_ext_src_corr = None, plot_PDF = config.getboolean("RestUVProperties", "PLOT_PDFS")):
         PDF = self.open_UV_fit_PDF(save_dir, obs_name, ID, UV_ext_src_corr)
         try:
             unit = PDF.unit # keep track of PDF units
             PDF = np.array([val.value for val in PDF]) # make PDF unitless
         except:
             unit = "dimensionless"
-
-        PDF_hist(PDF, save_dir, obs_name, ID, show = True, save = True)
+        
+        if plot_PDF:
+            PDF_hist(PDF, save_dir, obs_name, ID, show = True, save = True)
         save_PDF(PDF, f"{obs_name}, units = {unit}, iters = {len(PDF)}", PDF_path(save_dir, obs_name, ID))
     
     def open_UV_fit_PDF(self, save_dir, obs_name, ID, UV_ext_src_corr = None):
