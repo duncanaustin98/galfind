@@ -245,8 +245,8 @@ class Catalogue:
         # set relevant properties in the galaxies contained within the catalogues (can use __setattr__ here too!)
         print("Updating Catalogue object")
         for gal, UV_corr, mass_corr in zip(self, self.ext_src_tab[f"auto_corr_factor_UV_{code}"], self.ext_src_tab["auto_corr_factor_mass"]):
-            gal.properties[f"UV_{code}_ext_src_corr"] = UV_corr
-            gal.properties["mass_ext_src_corr"] = mass_corr
+            gal.properties[code]["auto_corr_factor_UV"] = UV_corr
+            gal.properties[code]["auto_corr_factor_mass"] = mass_corr
         print(self[0].properties)
     
     # altered from original in mask_regions.py
@@ -292,7 +292,8 @@ class Catalogue:
                     # add 'blank_module == True' to every galaxy in the catalogue
                     blank_flags = [True] * len(self.gals)
                     for gal in self:
-                        gal.mask_flags["blank"] = True
+                        # changed syntax from "blank" to "blank_module"
+                        gal.mask_flags["blank_module"] = True
             else: # mask cluster/blank field in reddest band (f444W for our NIRCam fields)
                 if flag_blank_field:
                     blank_flags = []
@@ -329,18 +330,18 @@ class Catalogue:
                         cluster_flags.append(cluster_flag)
                     # update saved catalogue
                     cat = self.open_full_cat()
-                    cat[f"cluster"] = cluster_flags #.astype(bool)
+                    cat["cluster"] = cluster_flags #.astype(bool)
                     cat.write(masked_cat_path, overwrite = True)
-                    print(f"Finished masking cluster")
+                    print("Finished masking cluster")
                 else:
                     raise(Exception("Must manually create a 'cluster' mask in the 'Data' object!"))
             
             if flag_blank_field:
                 # update saved catalogue
                 cat = self.open_full_cat()
-                cat[f"blank_module"] = blank_flags #.astype(bool)
+                cat["blank_module"] = blank_flags #.astype(bool)
                 cat.write(masked_cat_path, overwrite = True)
-                print(f"Finished masking blank field")
+                print("Finished masking blank field")
             
             # add additional boolean column to say whether an object is unmasked in all columns or not
             unmasked_blank = []
@@ -359,9 +360,11 @@ class Catalogue:
             cat = self.open_full_cat()
             cat["unmasked_blank"] = unmasked_blank
             cat.write(masked_cat_path, overwrite = True)
-            print(f"Finished masking!")
+            print("Finished masking!")
         else:
             self.cat_path = masked_cat_path
+            
+        
     
     def make_UV_fit_cat(self, UV_PDF_path = config["RestUVProperties"]["UV_PDF_PATH"], col_names = ["Beta", "flux_lambda_1500", "flux_Jy_1500", "M_UV", "A_UV", "L_obs", "L_int", "SFR"], \
                         code = "LePhare", join_tables = True):
