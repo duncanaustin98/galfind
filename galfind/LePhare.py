@@ -72,10 +72,16 @@ class LePhare(SED_code):
         return np.array(contexts).astype(int)
     
     # Currently black box fitting from the lephare config path. Need to make this function more general
-    def run_fit(self, in_path, out_path, sed_folder, template_name = "NIRCam_JADES_DR1"):
+    def run_fit(self, in_path, out_path, SED_folder, instrument):
+        if instrument.name == "NIRCam":
+            template_name = "NIRCam_JADES_DR1"
+        elif instrument.name == "ACS_WFC+NIRCam":
+            template_name = "ACS_WFC+NIRCam_MedWide"
+        else:
+            raise Exception(f"LePhare input bands incompatible with instrument name = {instrument.name}. Must be 'NIRCam' or 'ACS_WFC+NIRCam'!")
         lephare_config_path = f"{self.code_dir}/Photo_z.para"
         # LePhare bash script python wrapper
-        process = subprocess.Popen([f"{config['DEFAULT']['GALFIND_DIR']}/run_lephare.sh", lephare_config_path, in_path, out_path, config['DEFAULT']['GALFIND_DIR'], sed_folder, template_name])
+        process = subprocess.Popen([f"{config['DEFAULT']['GALFIND_DIR']}/run_lephare.sh", lephare_config_path, in_path, out_path, config['DEFAULT']['GALFIND_DIR'], SED_folder, template_name])
         process.wait()
     
     def make_fits_from_out(self, out_path): # from TXT_to_FITS_converter.py

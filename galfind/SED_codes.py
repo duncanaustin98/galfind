@@ -74,13 +74,14 @@ class SED_code(ABC):
         return phot_in, phot_err_in
     
     def fit_cat(self, cat, *args, **kwargs):
+        print("Updated SED_code.fit_cat to trace SED_input_bands")
         in_path = self.make_in(cat, *args, **kwargs)
         out_folder = funcs.split_dir_name(in_path.replace("input", "output"), "dir")
         out_path = f"{out_folder}/{funcs.split_dir_name(in_path, 'name').replace('.in', '.out')}"
         sed_folder = f"{out_folder}/SEDs/{cat.cat_creator.min_flux_pc_err}pc"
         os.makedirs(sed_folder, exist_ok = True)
         if not Path(out_path).is_file() or config["DEFAULT"].getboolean("OVERWRITE"):
-            self.run_fit(in_path, out_path, sed_folder, *args, **kwargs)
+            self.run_fit(in_path, out_path, sed_folder, cat.data.instrument.new_instrument(), *args, **kwargs)
         fits_out_path = self.make_fits_from_out(out_path, *args, **kwargs)
         # update galaxies within catalogue object with determined properties
         data = cat.data # work around of update_cat function
