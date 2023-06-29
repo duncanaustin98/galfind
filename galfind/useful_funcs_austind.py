@@ -82,6 +82,9 @@ def flux_err_to_loc_depth(flux_err, zero_point):
 #     flux_lambda = flux_Jy_to_lambda(wav, flux_Jy)
 #     return flux_lambda # observed frame
 
+def flux_Jy_to_lambda(flux_Jy, wav): # must akready have associated astropy units
+    return (flux_Jy * const.c / (wav ** 2)).to(u.erg / (u.s * (u.cm ** 2) * u.Angstrom))
+
 def wav_obs_to_rest(wav_obs, z):
     wav_rest = wav_obs / (1 + z)
     return wav_rest
