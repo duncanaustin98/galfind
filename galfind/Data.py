@@ -75,7 +75,7 @@ class Data:
                 made_new_seg_maps = True
             # load new segmentation maps
             seg_paths[band] = glob.glob(f"{config['DEFAULT']['GALFIND_WORK']}/SExtractor/{self.instrument.instrument_from_band(band)}/{version}/{survey}/{survey}*{band}_{band}*{version}*seg.fits")[0]
-        self.seg_paths = dict(sorted(seg_paths.items()))
+        self.seg_paths = dict(sorted(seg_paths.items())) 
         
         # make masks from image paths if they don't already exist
     
@@ -85,8 +85,11 @@ class Data:
                 # load new masks
                 mask_paths[band] = glob.glob(f"{config['DEFAULT']['GALFIND_WORK']}/Masks/{survey}/*{band.replace('W', 'w').replace('M', 'm')}*")[0]
         self.mask_paths = dict(sorted(mask_paths.items()))
-        print(f"image paths = {self.im_paths}, segmentation paths = {self.seg_paths}, mask paths = {self.mask_paths}")
-        
+        try:
+            print(f"image paths = {self.im_paths}, segmentation paths = {self.seg_paths}, mask paths = {self.mask_paths}")
+        except:
+            pass
+
         if is_blank:
             print(f"{survey} is a BLANK field!")
             self.blank_mask_path = ""
@@ -153,6 +156,8 @@ class Data:
                     survey_im_dirs = {survey: f"{survey}/mosaic_1084_wisptemp2"}
                 elif version == "lit_version":
                     survey_im_dirs = {"JADES-DR1": "JADES/DR1"}
+                elif version == 'v9':
+                    survey_im_dirs = {survey: f"{survey}/mosaic_1084_wisptemp2"}
 
                 survey_im_dirs = {key: f"/raid/scratch/data/jwst/{value}" for (key, value) in survey_im_dirs.items()}
                 survey_dir = survey_im_dirs[survey]
@@ -508,6 +513,14 @@ class Data:
             ax.add_artist(t)
     
     @run_in_dir(path = config['DEFAULT']['GALFIND_DIR'])
+    def make_stacked_seg_map(self, path, bands, im_ext=1, wht_ext=2):
+        first_band = bands[0]
+        process = subprocess.Popen([f"./make_seg_map.sh", config['DEFAULT']['GALFIND_WORK'], path, str(self.im_pixel_scales[first_band]), \
+                                    str(self.im_zps[first_band]), self.instrument.instrument_from_band(first_band), self.survey, '_'.join(bands), self.version, path, \
+                                    str(wht_ext),self.wht_types[first_band], str(im_ext),f"{config['DEFAULT']['GALFIND_DIR']}/configs/"])
+
+
+    @run_in_dir(path = config['DEFAULT']['GALFIND_DIR'])
     def make_seg_maps(self):
         for band in self.instrument.bands:
             print([config['DEFAULT']['GALFIND_WORK'], self.im_paths[band], str(self.im_pixel_scales[band]), \
@@ -522,38 +535,121 @@ class Data:
             
             print(f"Made segmentation map for {self.survey} {self.version} {band}")
     
+    def stack_bands(self, bands):
+        
+        save_dir = f"{config['DEFAULT']['GALFIND_WORK']}/DetectionImages/{self.version}/{self.instrument.instrument_from_band(bands[0])}/{self.survey}/"
+        save_name = f"{self.survey}_{'_'.join(bands)}_{self.version}_stack.fits"
+        path = f'{save_dir}{save_name}'
+        
+        if not Path(path).is_file():
+            funcs.make_dirs(save_dir)
+            first_shape = self.im_shapes[bands[0]] 
+            
+            for pos, band in enumerate(bands):
+                if self.im_shapes[band] != first_shape:
+                    raise Exception('All bands used in forced photometry stack must be the same shape')
+                weight_type = self.wht_types[band]
+                if weight_type != 'MAP_RMS':
+                    raise Exception('Only Err maps currently supported')
+                prime_hdu = fits.open(self.im_paths[band])[0].header
+                data =fits.open(self.im_paths[band])[self.im_exts[band]].data
+                header = fits.open(self.im_paths[band])[self.im_exts[band]].header
+                err = fits.open(self.wht_paths[band])[self.wht_exts[band]].data
+                if pos == 0:
+                    sum = data/err**2
+                    sum_err = 1/err**2
+                else:
+                    sum += data/err**2
+                    sum_err += 1/err**2
+                
+            weighted_array = sum/sum_err
+            #https://en.wikipedia.org/wiki/Inverse-variance_weighting
+            combined_err = np.sqrt(1/sum_err)
+
+            primary = fits.PrimaryHDU(header = prime_hdu)
+            hdu = fits.ImageHDU(weighted_array, header = header, name='SCI')
+            hdu_err = fits.ImageHDU(combined_err, header = header, name='ERR')
+            hdul = fits.HDUList([primary, hdu, hdu_err])
+        
+            hdul.writeto(path, overwrite = True)
+
+        return path
+
+
     @run_in_dir(path = config['DEFAULT']['GALFIND_DIR'])
     def make_sex_cats(self, forced_phot_band = "f444W"):
         # make individual forced photometry catalogues
-        force_pho_size = self.im_shapes[forced_phot_band]
+        if type(forced_phot_band) == list:
+            if len(forced_phot_band) > 1:
+                path = self.stack_bands(forced_phot_band)
+                self.make_stacked_seg_map(path, forced_phot_band)
+                forced_phot_size = self.im_shapes[forced_phot_band[0]]
+                forced_phot_weight_type = self.wht_types[forced_phot_band[0]]
+                forced_phot_path = path
+                forced_phot_weight_path = path
+                forced_phot_weight_ext = 2
+                forced_phot_image_ext = 1
+                forced_phot_band_name = '_'.join(forced_phot_band)
+                forced_instrument = self.instrument.instrument_from_band(forced_phot_band[0])
+                
+
+        
+        else:
+            forced_phot_size = self.im_shapes[forced_phot_band]
+            forced_phot_weight_type = self.wht_types[forced_phot_band]
+            forced_phot_path = self.im_paths[band]
+            forced_phot_weight_path = self.weight_paths[band]
+            forced_phot_weight_ext = self.weight_exts[band]
+            forced_phot_image_ext = self.im_exts[band]
+            forced_phot_band_name = forced_phot_band
+            forced_instrument = self.instrument.instrument_from_band(forced_phot_band)
+
+        # Set attributes for forced photometry band for use later (maybe move at some point?)
+        self.forced_phot_path = forced_phot_path
+        self.forced_phot_size = forced_phot_size
+        self.forced_phot_weight_type = forced_phot_weight_type
+        self.forced_phot_weight_ext = forced_phot_weight_ext
+        self.forced_phot_image_ext = forced_phot_image_ext
+        self.forced_instrument = forced_instrument
+
+            
         for band in self.instrument.bands:
             # if not run before
-            path = Path(f"{config['DEFAULT']['GALFIND_WORK']}/SExtractor/{self.instrument.instrument_from_band(band)}/{self.version}/{self.survey}/{self.survey}_{band}_{forced_phot_band}_sel_cat_{self.version}.fits")
+            path = Path(f"{config['DEFAULT']['GALFIND_WORK']}/SExtractor/{self.instrument.instrument_from_band(band)}/{self.version}/{self.survey}/{self.survey}_{band}_{forced_phot_band_name}_sel_cat_{self.version}.fits")
+            print(path)
             if not path.is_file():
                 
                 # SExtractor bash script python wrapper
-                if force_pho_size == self.im_shapes[band] and self.wht_types[band] == self.wht_types[forced_phot_band]:
-                   
+                print(forced_phot_size, self.im_shapes[band], self.wht_types[band], forced_phot_weight_type)
+                if forced_phot_size == self.im_shapes[band] and self.wht_types[band] == forced_phot_weight_type:
+                    
                     process = subprocess.Popen([f"./make_sex_cat.sh", config['DEFAULT']['GALFIND_WORK'], self.im_paths[band], str(self.im_pixel_scales[band]), \
                                         str(self.im_zps[band]),self.instrument.instrument_from_band(band), self.survey, band, self.version, \
-                                            forced_phot_band, str(self.im_paths[forced_phot_band]), str(self.wht_paths[band]), str(self.wht_exts[band]), \
-                                            str(self.im_exts[band]), str(self.wht_paths[forced_phot_band]), str(self.im_exts[forced_phot_band]), self.wht_types[band], 
-                                            str(self.wht_exts[forced_phot_band]), f"{config['DEFAULT']['GALFIND_DIR']}/configs/"])
+                                            forced_phot_band_name, str(forced_phot_path), str(self.wht_paths[band]), str(self.wht_exts[band]), \
+                                            str(self.im_exts[band]), str(forced_phot_weight_path), str(forced_phot_image_ext), self.wht_types[band], 
+                                            str(forced_phot_weight_ext), f"{config['DEFAULT']['GALFIND_DIR']}/configs/"])
                     process.wait()
                 # Use photutils
                 else:
-                    forcephot_path =  Path(f"{config['DEFAULT']['GALFIND_WORK']}/SExtractor/{self.instrument.instrument_from_band(forced_phot_band)}/{self.version}/{self.survey}/{self.survey}_{forced_phot_band}_{forced_phot_band}_sel_cat_{self.version}.fits")
-          
-                    self.forced_photometry(band, forced_phot_band, path, forcephot_path)
+                    forcephot_path =  Path(f"{config['DEFAULT']['GALFIND_WORK']}/SExtractor/{forced_instrument}/{self.version}/{self.survey}/{self.survey}_{forced_phot_band_name}_{forced_phot_band_name}_sel_cat_{self.version}.fits")
+                    print(path, forcephot_path)
+                   
+                    self.forced_photometry(band, forced_phot_band_name, path, forcephot_path)
+                    
                     
              
             print(f"Finished making SExtractor catalogue for {self.survey} {self.version} {band}!")
-        self.sex_cats = {band: f"{config['DEFAULT']['GALFIND_WORK']}/SExtractor/{self.instrument.instrument_from_band(band)}/{self.version}/{self.survey}/{self.survey}_{band}_{forced_phot_band}_sel_cat_{self.version}.fits" for band in self.instrument.bands}
+        self.sex_cats = {band: f"{config['DEFAULT']['GALFIND_WORK']}/SExtractor/{self.instrument.instrument_from_band(band)}/{self.version}/{self.survey}/{self.survey}_{band}_{forced_phot_band_name}_sel_cat_{self.version}.fits" for band in self.instrument.bands}
     
     def combine_sex_cats(self, forced_phot_band = "f444W"):
         self.make_sex_cats(forced_phot_band)
         # run only if this doesn't already exist
-        save_name = f"{self.survey}_MASTER_Sel-{forced_phot_band}_{self.version}.fits"
+        # Get name right 
+        if type(forced_phot_band) == list:
+            forced_phot_band_name = '_'.join(forced_phot_band)
+        else:
+            forced_phot_band_name = forced_phot_band
+        save_name = f"{self.survey}_MASTER_Sel-{forced_phot_band_name}_{self.version}.fits"
         save_dir = f"{config['DEFAULT']['GALFIND_WORK']}/Catalogues/{self.version}/{self.instrument.name}/{self.survey}"
         self.sex_cat_master_path = f"{save_dir}/{save_name}"
         if not Path(self.sex_cat_master_path).is_file():
@@ -568,7 +664,11 @@ class Data:
                 if i == 0:
                     master_tab = tab
                 else:
-                    master_tab = hstack([master_tab, tab])
+                    try:
+                        master_tab = hstack([master_tab, tab])
+                    except Exception as e:
+                        print(e)
+                        print(path)
             # save table
             os.makedirs(save_dir, exist_ok = True)
             master_tab.write(self.sex_cat_master_path, format = "fits", overwrite = True)
@@ -578,6 +678,7 @@ class Data:
     
     def forced_photometry(self, band, forced_phot_band, path, forcephot_path, radii = [0.16, 0.25, 0.5, 0.75, 1]*u.arcsec, ra_col='ALPHA_J2000', dec_col='DELTA_J2000', coord_unit=u.deg, id_col='NUMBER', x_col='X_IMAGE', y_col='Y_IMAGE'):
         # Read in sextractor catalogue
+        print(forcephot_path)
         catalog = Table.read(forcephot_path, character_as_bytes = False)
         # Get image path
         image = self.im_paths[band]
@@ -594,7 +695,7 @@ class Data:
         dec = catalog[dec_col]
          # Make SkyCoord from catlog
         positions = SkyCoord(ra, dec, unit=coord_unit)
-    
+        print('positions', positions)
         # Define radii in sky units
         # This checks if radii is iterable and if not makes it a list
         try:
@@ -607,12 +708,9 @@ class Data:
             aperture = SkyCircularAperture(positions, r=rad)
             apertures.append(aperture)
             # Convert to pixel using image WCS
-        # Generate background
-        print('Maybe think about this background subtraction')
-        background = Background2D(image, (64, 64), filter_size=(3, 3))
-    
-        image = image-background.background
+      
         # Do aperture photometry
+        print(image, apertures, wcs)
         phot_table = aperture_photometry(image, apertures, wcs=wcs)
         assert(len(phot_table) == len(catalog))
         # Replace detection ID with catalog ID
