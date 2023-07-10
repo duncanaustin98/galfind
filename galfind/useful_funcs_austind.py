@@ -8,6 +8,7 @@ Created on Wed Apr 19 21:19:13 2023
 
 # useful_funcs_austind.py
 import sys
+import warnings
 import sep
 import os
 import numpy as np
@@ -23,6 +24,8 @@ from abc import ABC, abstractmethod
 from copy import copy, deepcopy
 import json
 from tqdm import tqdm
+import seaborn as sns
+from scipy.interpolate import interp1d
 
 from . import config
 
@@ -313,6 +316,10 @@ class Photometry_rest:
     def rest_UV_band(self):
         return self.phot_obs.instrument.bands[self.rest_UV_band_index]
     
+    @property
+    def rest_UV_band_flux_Jy(self):
+        return self.phot_obs.flux_Jy[self.rest_UV_band_index]
+    
     def make_rest_UV_phot(self):
         phot_rest_copy = deepcopy(self)
         phot_rest_copy.rest_UV_phot_only()
@@ -342,19 +349,78 @@ class Photometry_rest:
         #print(f"Adding extended source UV correction to {self.ID}")
         self.UV_ext_src_corr = ext_source_UV_corr
         
-    def plot(self, plot_fit = False, iters = 1_000, save = False, show = True):
+    def plot(self, save_dir, ID, plot_fit = True, iters = 1_000, save = True, show = False, n_interp = 100):
         self.make_rest_UV_phot()
-        plt.errorbar(np.log10(self.rest_UV_phot.wav.value), self.rest_UV_phot.log_flux_lambda, self.rest_UV_phot.log_flux_lambda_errs, \
-                     ls = "none", c = "black", zorder = 10)
+    
+        #if not all(beta == -99. for beta in self.beta_PDF):
+        sns.set(style="whitegrid")
+        warnings.filterwarnings("ignore")
+
+        # Create figure and axes
+        fig, ax = plt.subplots()
+        
+        # Plotting code
+        ax.errorbar(np.log10(self.rest_UV_phot.wav.value), self.rest_UV_phot.log_flux_lambda, yerr = self.rest_UV_phot.log_flux_lambda_errs,
+                     ls="none", c="black", zorder=10, marker="o", markersize=5, capsize=3)
+        
         if plot_fit:
+            fit_lines = []
+            fit_lines_interped = []
+            wav_interp = np.linspace(np.log10(self.rest_UV_phot.wav.value)[0], np.log10(self.rest_UV_phot.wav.value)[-1], n_interp)
             for i in range(iters):
-                plt.plot(np.log10(self.rest_UV_phot.wav.value), np.log10(Photometry_rest.beta_slope_power_law_func(self.rest_UV_phot.wav.value, self.amplitude_PDF[i], \
-                                                    self.beta_PDF[i])), c = "red", alpha = 0.1, zorder = 1)
-            plt.xlabel("log10($\lambda_{rest} / \AA$)")
-            plt.ylabel("log10(flux_lambda_rest / whatever these units are)")
-            plt.xlim(*np.log10(self.rest_UV_wav_lims.value))
-            if show:
-                plt.show()
+                #percentiles = np.percentile([16, 50, 84], axis=0)
+                f_interp = interp1d(np.log10(self.rest_UV_phot.wav.value), np.log10(Photometry_rest.beta_slope_power_law_func(self.rest_UV_phot.wav.value, self.amplitude_PDF[i],
+                        self.beta_PDF[i])), kind = 'linear')
+                y_new = f_interp(wav_interp)
+                fit_lines.append(np.log10(Photometry_rest.beta_slope_power_law_func(self.rest_UV_phot.wav.value, self.amplitude_PDF[i],
+                        self.beta_PDF[i])))
+                fit_lines_interped.append(y_new)
+            fit_lines_interped = np.array(fit_lines_interped)
+            fit_lines = np.array(fit_lines)
+            fit_lines.reshape(iters, len(self.rest_UV_phot.wav.value))
+            fit_lines_interped.reshape(iters, len(wav_interp))
+            
+            l1_chains = np.array([np.percentile(x, 16) for x in fit_lines_interped.T])
+            med_chains = np.array([np.percentile(x, 50) for x in fit_lines.T])
+            u1_chains = np.array([np.percentile(x, 84) for x in fit_lines_interped.T])
+            
+            ax.plot(np.log10(self.rest_UV_phot.wav.value), med_chains, color = "red", zorder = 2)
+            ax.fill_between(wav_interp, l1_chains, u1_chains, color="grey", alpha=0.2, zorder=1)
+        
+        ax.set_xlabel(r"$\log_{10}(\lambda_{\mathrm{rest}} / \mathrm{\AA})$")
+        ax.set_ylabel(r"$\log_{10}(\mathrm{f}_{\lambda_{\mathrm{rest}}} / \mathrm{erg} \, \mathrm{s}^{-1} \, \mathrm{cm}^{-2} \, \mathrm{\AA}^{-1})$")
+        
+        # Add the Galaxy ID label
+        ax.text(0.05, 0.05, f"Galaxy ID = {str(ID)}", transform=ax.transAxes, ha="left", va="bottom", fontsize=12)
+        # Add the Beta label
+        ax.text(0.95, 0.95, r"$\beta$" + " = {:.2f} $^{{+{:.2f}}}_{{-{:.2f}}}$".format(np.percentile(self.beta_PDF, 50),
+                                                                                               np.percentile(self.beta_PDF, 84) - np.percentile(self.beta_PDF, 50),
+                                                                                               np.percentile(self.beta_PDF, 50) - np.percentile(self.beta_PDF, 16)),
+                transform=ax.transAxes, ha="right", va="top", fontsize=12)
+
+        
+        ax.set_xlim(*np.log10(self.rest_UV_wav_lims.value))
+        
+        if save:
+            path = f"{save_dir}/plots/{ID}.png"
+            make_dirs(path)
+            fig.savefig(path, dpi=300, bbox_inches='tight')
+        
+        if show:
+            plt.tight_layout()
+            plt.show()
+        
+        plt.clf()
+
+    def basic_beta_calc(self):
+        self.make_rest_UV_phot()
+        #print(self.rest_UV_phot.wav, self.rest_UV_phot.flux_lambda)
+        try:
+            popt, pcov = curve_fit(Photometry_rest.beta_slope_power_law_func, self.rest_UV_phot.wav, self.rest_UV_phot.flux_lambda, sigma = self.rest_UV_phot.flux_lambda_errs, maxfev = 1_000)
+            beta = popt[1]
+            return beta
+        except:
+            return None
         
     def fit_UV_slope(self, save_dir, ID, z_PDF = None, iters = 10_000, plot = True): # 1D redshift PDF
         #print(f"Fitting UV slope for {ID}")
@@ -376,6 +442,7 @@ class Photometry_rest:
                 
         for name in ["Amplitude", "Beta"]:
             self.save_UV_fit_PDF(save_dir, name, ID)
+            
         return amplitude_PDF, beta_PDF
     
     def calc_flux_lambda_1500_PDF(self, save_dir, ID, UV_ext_src_corr):
@@ -459,7 +526,7 @@ class Photometry_rest:
             PDF_hist(PDF, save_dir, obs_name, ID, show = True, save = True)
         save_PDF(PDF, f"{obs_name}, units = {unit}, iters = {len(PDF)}", PDF_path(save_dir, obs_name, ID))
     
-    def open_UV_fit_PDF(self, save_dir, obs_name, ID, UV_ext_src_corr = None):
+    def open_UV_fit_PDF(self, save_dir, obs_name, ID, UV_ext_src_corr = None, plot = True):
         try:
             # attempt to open PDF from object
             PDF = self.obs_name_to_PDF(obs_name)
@@ -489,6 +556,9 @@ class Photometry_rest:
                 else:
                     raise(Exception(f"{obs_name} not valid for calculating UV fit to photometry for {ID}!"))
                 PDF = self.obs_name_to_PDF(obs_name)
+                
+        if obs_name == "Beta" and plot: # and not all(beta == -99. for beta in self.beta_PDF):
+            self.plot(save_dir, ID)
         return PDF
     
     # this function and the one below could be included in the open_UV_fit_PDF
