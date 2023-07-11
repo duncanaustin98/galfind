@@ -56,7 +56,7 @@ class Instrument:
 
     def instrument_from_band(self, band):
         # Pointless here but makes it compatible with Combined_Instrument
-        if band in self.bands:
+        if (band.split("+")[0] in self.bands) or band in self.bands:
             return self.name
         else:
             return False
@@ -210,7 +210,7 @@ class MIRI(Instrument):
         band_wavelengths = {key: value * u.Angstrom for (key, value) in band_wavelengths.items()} # convert each individual value to Angstrom
         band_FWHMs = {}
         band_FWHMs = {key: value * u.Angstrom for (key, value) in band_FWHMs.items()} # convert each individual value to Angstrom
-        # Placeholder       
+        # Placeholder       
         super().__init__("MIRI", bands, band_wavelengths, band_FWHMs, excl_bands)
     
     def aper_corr(self, aper_diam, band):
@@ -229,7 +229,7 @@ class ACS_WFC(Instrument):
         # FWHMs corrrespond to FWHM of the filters from SVO Filter Profile Service
         band_FWHMs = {"f435W":900.04, "f606W":2253.40, "f775W":1517.31, "f814W":2098.15, "f850LP":1273.50}
         band_FWHMs = {key: value * u.Angstrom for (key, value) in band_FWHMs.items()} # convert each individual value to Angstrom
-        # Placeholder       
+        # Placeholder       
         super().__init__("ACS_WFC", bands, band_wavelengths, band_FWHMs, excl_bands)
     
     def aper_corr(self, aper_diam, band):
@@ -278,7 +278,7 @@ class Combined_Instrument(Instrument):
         names = self.name.split("+")
         for name in names:
             instrument = Instrument.from_name(name)
-            if band in instrument.bands:
+            if instrument.instrument_from_band(band) != False:
                 return instrument.name
             
     def new_instrument(self):
