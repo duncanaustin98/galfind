@@ -56,7 +56,7 @@ class Instrument:
 
     def instrument_from_band(self, band):
         # Pointless here but makes it compatible with Combined_Instrument
-        if band in self.bands:
+        if (band.split("+")[0] in self.bands) or band in self.bands:
             return self.name
         else:
             return False
@@ -288,8 +288,8 @@ class Combined_Instrument(Instrument):
     def instrument_from_band(self, band):
         names = self.name.split("+")
         for name in names:
-            instrument = self.from_name(name)
-            if band in instrument.bands:
+            instrument = Instrument.from_name(name)
+            if instrument.instrument_from_band(band) != False:
                 return instrument.name
         
     def instruments_from_name(self, excl_bands = []):
