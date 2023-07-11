@@ -38,10 +38,14 @@ class EAZY(SED_code):
     
     def __init__(self):
         code_name = "EAZY"
-        galaxy_property_labels = {"z": "zbest"}
+        galaxy_property_labels = {"z_phot": "zbest"}
         super().__init__(code_name, galaxy_property_labels)
-
+    
+    def from_name(self):
+        return EAZY()
+    
     def make_in(self, cat, fix_z = False):
+        print("MAKE_IN_EAZY_CAT.DATA = ", cat.data)
         eazy_in_path = f"{self.code_dir}/input/{cat.data.instrument.name}/{cat.data.version}/{cat.data.survey}/{cat.cat_name[:-5]}.in"
         if not Path(eazy_in_path).is_file():
             # 1) obtain input data
@@ -234,7 +238,7 @@ class EAZY(SED_code):
             print(f'Written out file to: {out_path}')
         if save_pz:
             # Make folders if they don't exist
-            out_path_pdf = f'{out_directory}/PDFs/'
+            out_path_pdf = sed_folder.replace("SEDs", "PDFs")
             if not os.path.exists(out_path_pdf):
                 os.makedirs(out_path_pdf)
             out_path_pdf_template = f'{out_path_pdf}/{templates}'
@@ -254,7 +258,6 @@ class EAZY(SED_code):
                             pz_save.write(f"{z}, {lowz_pz[pos_obj][pos]}\n")
         # Save best-fitting SEDs
         if save_best_seds:
-            out_path = f'{out_directory}/SEDs/{templates}/'
             print("Saving best template SEDs")
             percentiles = fit.pz_percentiles([16, 84])
             if run_lowz:
