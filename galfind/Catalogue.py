@@ -19,7 +19,7 @@ from .Data import Data
 from .useful_funcs_austind import Galaxy
 from . import useful_funcs_austind as funcs
 from .Catalogue_Creator import GALFIND_Catalogue_Creator
-
+from . import SED_code
 
 class Catalogue:
     # later on, the gal_arr should be calculated from the Instrument and sex_cat path, with SED codes already given
@@ -47,33 +47,34 @@ class Catalogue:
     # %% alternative constructors
     @classmethod
     def from_pipeline(cls, survey, version, aper_diams, cat_creator, xy_offset = [0, 0], instruments = ['NIRCam', 'ACS_WFC', 'WFC3IR'], \
-                      forced_phot_band = "f444W", excl_bands = [], loc_depth_min_flux_pc_errs = [5, 10], n_loc_depth_samples = 5):
+                      forced_phot_band = "f444W", excl_bands = [], loc_depth_min_flux_pc_errs = [5, 10], n_loc_depth_samples = 5, fast = True):
         # make 'Data' object
         data = Data.from_pipeline(survey, version, instruments, excl_bands = excl_bands)
-        return cls.from_data(data, aper_diams, cat_creator, xy_offset, forced_phot_band, loc_depth_min_flux_pc_errs, n_loc_depth_samples)
+        return cls.from_data(data, aper_diams, cat_creator, xy_offset, forced_phot_band, loc_depth_min_flux_pc_errs, n_loc_depth_samples, fast)
 
     @classmethod
-    def from_NIRCam_pipeline(cls, survey, version, aper_diams, cat_creator, xy_offset = [0, 0], forced_phot_band = "f444W", excl_bands = [], loc_depth_min_flux_pc_errs = [5, 10], n_loc_depth_samples = 5):
+    def from_NIRCam_pipeline(cls, survey, version, aper_diams, cat_creator, xy_offset = [0, 0], forced_phot_band = "f444W", \
+                             excl_bands = [], loc_depth_min_flux_pc_errs = [5, 10], n_loc_depth_samples = 5, fast = True):
         # make 'Data' object
         data = Data.from_NIRCam_pipeline(survey, version, excl_bands = excl_bands)
-        return cls.from_data(data, aper_diams, cat_creator, xy_offset, forced_phot_band, loc_depth_min_flux_pc_errs, n_loc_depth_samples)
+        return cls.from_data(data, aper_diams, cat_creator, xy_offset, forced_phot_band, loc_depth_min_flux_pc_errs, n_loc_depth_samples, fast)
     
     @classmethod
-    def from_data(cls, data, aper_diams, cat_creator, xy_offset = [0, 0], forced_phot_band = "f444W", loc_depth_min_flux_pc_errs = [5, 10], n_loc_depth_samples = 5):
+    def from_data(cls, data, aper_diams, cat_creator, xy_offset = [0, 0], forced_phot_band = "f444W", loc_depth_min_flux_pc_errs = [5, 10], n_loc_depth_samples = 5, fast = True):
         # make masked local depth catalogue from the 'Data' object
         data.combine_sex_cats(forced_phot_band)
-        data.calc_depths(xy_offset, aper_diams)
-
+        data.calc_depths(xy_offset, aper_diams, fast = fast)
+        print("from_data fast = ", fast)
         # load the catalogue that has just been created into a 'Catalogue' object
         if cat_creator.cat_type == "loc_depth":
-            data.make_loc_depth_cat(aper_diams, min_flux_pc_err_arr = loc_depth_min_flux_pc_errs, forced_phot_band = forced_phot_band, n_samples = n_loc_depth_samples)
+            data.make_loc_depth_cat(aper_diams, min_flux_pc_err_arr = loc_depth_min_flux_pc_errs, forced_phot_band = forced_phot_band, n_samples = n_loc_depth_samples, fast = fast)
             cat_path = data.loc_depth_cat_path
         elif cat_creator.cat_type == "sex":
             cat_path = data.sex_cat_master_path
             
         cat = cls.from_sex_cat(cat_path, data.instrument, data.survey, cat_creator)
         print("cat_path = ", cat.cat_path)
-        cat.mask(data)
+        cat.mask(data) # also saves the data object within the catalogue
         return cat
     
     @classmethod
@@ -165,7 +166,12 @@ class Catalogue:
                     pix_values = wcs.world_to_pixel(gal.sky_coord)
                     x_pix = int(np.rint(pix_values[0]))
                     y_pix = int(np.rint(pix_values[1]))
-                    mask_flag_gal = mask[y_pix][x_pix]
+                    # if j == 0:
+                    #     print(mask.shape, im_data.shape, seg_data.shape)
+                    if y_pix >= mask.shape[0] or x_pix >= mask.shape[1] or x_pix < 0 or y_pix < 0: # catch HST masking errors
+                        mask_flag_gal = True
+                    else:
+                        mask_flag_gal = mask[y_pix][x_pix]
                     #print(mask_flag_gal)
                     if mask_flag_gal == True:
                         gal.mask_flags[f"unmasked_{band}"] = False
