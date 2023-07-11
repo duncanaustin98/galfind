@@ -152,7 +152,7 @@ class Data:
                     survey_im_dirs = {survey: f"{survey}/mosaic_1084_wispfix2"}
                 elif version == "v8d":
                     survey_im_dirs = {survey: f"{survey}/mosaic_1084_wispfix3"}
-                elif version == "v8e":
+                elif version == "v8e" or version == "v8f" or version == "v9":
                     survey_im_dirs = {survey: f"{survey}/mosaic_1084_wisptemp2"}
                 elif version == "lit_version":
                     survey_im_dirs = {"JADES-DR1": "JADES/DR1"}
@@ -470,7 +470,7 @@ class Data:
             mask_file = pyregion.open(mask_path) # file for mask
             mask_file = mask_file.as_imagecoord(im_header)
             mask = mask_file.get_mask(hdu = im_hdul[im_ext])
-            #print("mask_path", mask_path)
+            print("mask_path", mask_path)
             return im_data, im_header, seg_data, seg_header, mask
         else:
             return im_data, im_header, seg_data, seg_header
@@ -918,8 +918,6 @@ class Data:
         
     def get_depth_dir(self, aper_diam):
         self.depth_dirs = {}
-        print(self.instrument.bands)
-        print(self.instrument.instrument_from_band("f150W"))
         for band in self.instrument.bands:
             self.depth_dirs[band] = f"{config['DEFAULT']['GALFIND_WORK']}/Depths/{self.instrument.instrument_from_band(band)}/{self.version}/{self.survey}/{str(aper_diam.value)}as"
             os.makedirs(self.depth_dirs[band], exist_ok = True)
@@ -1056,7 +1054,8 @@ def calc_xy_offsets(offset):
     return xoff, yoff
 
 
-def place_blank_regions(im_data, im_header, seg_data, mask, survey, offset, pix_scale, band, aper_diam = 0.32 * u.arcsec, size = 500, n_busy_iters = 1_000, number = 600, mask_rad = 25, aper_disp_rad = 2, fast=True):
+def place_blank_regions(im_data, im_header, seg_data, mask, survey, offset, pix_scale, band, aper_diam = 0.32 * u.arcsec, size = 500, n_busy_iters = 1_000, number = 600, mask_rad = 25, aper_disp_rad = 2, fast = True):
+    
     if type(pix_scale) != u.Quantity:
        pix_scale = pix_scale * u.arcsec                          
     r = aper_diam / (2 * pix_scale) # radius of aperture in pixels
@@ -1064,6 +1063,9 @@ def place_blank_regions(im_data, im_header, seg_data, mask, survey, offset, pix_
         r = r.value   
     if fast:
         r = 1e-10
+        
+    print("r = ", r)
+    print("fast = ", fast)
         
     xoff, yoff = calc_xy_offsets(offset)
     
