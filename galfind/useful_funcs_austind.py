@@ -82,6 +82,9 @@ def flux_err_to_loc_depth(flux_err, zero_point):
 #     flux_lambda = flux_Jy_to_lambda(wav, flux_Jy)
 #     return flux_lambda # observed frame
 
+def flux_Jy_to_lambda(flux_Jy, wav): # must akready have associated astropy units
+    return (flux_Jy * const.c / (wav ** 2)).to(u.erg / (u.s * (u.cm ** 2) * u.Angstrom))
+
 def wav_obs_to_rest(wav_obs, z):
     wav_rest = wav_obs / (1 + z)
     return wav_rest
@@ -210,9 +213,9 @@ class Photometry_obs:
         flux_errs = []
         #print("instrument = ", instrument)
         # Copy constructor problem here!
-        instrument_copy = instrument.new_instrument(excl_bands = [band for band in instrument.from_name(instrument.name).bands if band not in instrument.bands]) # Problem loading the photometry properly here!!!
+        instrument_copy = instrument.new_instrument(excl_bands = [band for band in instrument.new_instrument().bands if band not in instrument.bands]) # Problem loading the photometry properly here!!!
         #print("instrument_copy = ", instrument_copy)
-        for (band, zero_point) in zip(instrument_copy.bands, instrument_copy.zero_points.values()):
+        for band in instrument_copy.bands:
             try:
                 flux, err = cat_creator.load_photometry(sex_cat_row, band)
                 fluxes.append(flux.value)
@@ -577,10 +580,10 @@ class Galaxy:
         self.sky_coord = sky_coord
         # phot_obs is within phot_rest (it shouldn't be!)
         if properties != {}:
-            if properties["LePhare"]["z"] == 0:
+            if properties["LePhare"]["z_phot"] == 0:
                 self.phot_rest = None
             else:
-                self.phot_rest = Photometry_rest(phot, properties["LePhare"]["z"], "LePhare") # works for LePhare only currently
+                self.phot_rest = Photometry_rest(phot, properties["LePhare"]["z_phot"], "LePhare") # works for LePhare only currently
         self.phot_obs = phot # need to improve this still!
         self.ID = int(ID)
         #self.codes = codes
@@ -602,14 +605,14 @@ class Galaxy:
         
     @classmethod # currently only works for a singular code
     def from_photo_z_cat_row(cls, photo_z_cat_row, instrument, cat_creator, codes):
+
         # load the photometry from the sextractor catalogue
         phot = Photometry_obs.get_phot_from_sex(photo_z_cat_row, instrument, cat_creator)
         # load the ID and Sky Coordinate from the source catalogue
         ID = photo_z_cat_row["NUMBER"]
         sky_coord = SkyCoord(photo_z_cat_row["ALPHA_J2000"] * u.deg, photo_z_cat_row["DELTA_J2000"] * u.deg, frame = "icrs")
         # also load the galaxy properties from the catalogue
-        properties = {code.code_name: {gal_property: {photo_z_cat_row[code.galaxy_properties[gal_property]]}} for code in codes for gal_property in code.galaxy_properties.keys()}
-        print(properties)  
+        properties = {code.code_name: {gal_property: photo_z_cat_row[property_label] for gal_property, property_label in code.galaxy_property_labels.items()} for code in codes}
         return cls(sky_coord, phot, ID, properties)
         
 def ext_source_corr(data, corr_factor, is_log_data = True):
