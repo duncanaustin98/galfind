@@ -10,6 +10,7 @@ Created on Tue May 30 16:36:34 2023
 
 import astropy.units as u
 import numpy as np
+import time
 
 from galfind import Catalogue, LePhare, EAZY
 from galfind.Catalogue_Creator import GALFIND_Catalogue_Creator
