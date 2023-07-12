@@ -32,7 +32,7 @@ class LePhare(SED_code):
     def from_name(self):
         return LePhare()
     
-    def make_in(self, cat, units = u.ABmag, fix_z = False): # from FITS_organiser.py
+    def make_in(self, cat, units = u.ABmag, fix_z = False, *args, **kwargs): # from FITS_organiser.py
         lephare_in_path = f"{self.code_dir}/input/{cat.data.instrument.name}/{cat.data.version}/{cat.data.survey}/{cat.cat_name.replace('.fits', '')}_{cat.cat_creator.min_flux_pc_err}pc.in"
         if not Path(lephare_in_path).is_file():
         # 1) obtain input data
@@ -79,8 +79,8 @@ class LePhare(SED_code):
         process = subprocess.Popen([f"{config['DEFAULT']['GALFIND_DIR']}/run_lephare.sh", lephare_config_path, in_path, out_path, config['DEFAULT']['GALFIND_DIR'], SED_folder, template_name])
         process.wait()
     
-    def make_fits_from_out(self, out_path): # from TXT_to_FITS_converter.py
-        fits_out_path = out_path.replace(".out", "_LePhare.fits") # this could probably be inside of SED_codes.fit_cat()
+    def make_fits_from_out(self, out_path, *args, **kwargs): # from TXT_to_FITS_converter.py
+        fits_out_path = self.out_fits_name(out_path, *args, **kwargs)
         
         # read in the data from the .out table
         txt_in = np.genfromtxt(out_path, comments = "#")
@@ -120,6 +120,9 @@ class LePhare(SED_code):
         fits_table = fits.BinTableHDU.from_columns(fits_columns)
         fits_table.writeto(fits_out_path, overwrite = True)
         return fits_out_path
+    
+    def out_fits_name(self, out_path):
+        return out_path.replace(".out", "_LePhare.fits")
     
     def extract_SED(self, cat, ID, units = u.ABmag):
         pass
