@@ -80,16 +80,17 @@ class SED_code(ABC):
         out_path = f"{out_folder}/{funcs.split_dir_name(in_path, 'name').replace('.in', '.out')}"
         sed_folder = f"{out_folder}/SEDs/{cat.cat_creator.min_flux_pc_err}pc"
         os.makedirs(sed_folder, exist_ok = True)
-        if not Path(out_path).is_file() or config["DEFAULT"].getboolean("OVERWRITE"):
+        fits_out_path = self.out_fits_name(out_path, *args, **kwargs)
+        if not Path(fits_out_path).is_file() or config["DEFAULT"].getboolean("OVERWRITE"):
             self.run_fit(in_path, out_path, sed_folder, cat.data.instrument.new_instrument(), *args, **kwargs)
-        fits_out_path = self.make_fits_from_out(out_path, *args, **kwargs)
+            self.make_fits_from_out(out_path, *args, **kwargs)
         # update galaxies within catalogue object with determined properties
         data = cat.data # work around of update_cat function
         cat = self.update_cat(cat, fits_out_path, *args, **kwargs)
         cat.data = data # work around of update_cat function
         return cat
     
-    def update_cat(self, cat, fits_out_path):
+    def update_cat(self, cat, fits_out_path, *args, **kwargs):
         # save concatenated catalogue
         combined_cat = join(Table.read(cat.cat_path), Table.read(fits_out_path), keys_left = "NUMBER", keys_right = "IDENT")
         combined_cat_path = f"{config['DEFAULT']['GALFIND_WORK']}/Catalogues/{cat.data.version}/{cat.data.instrument.name}/" + \
@@ -110,6 +111,10 @@ class SED_code(ABC):
     
     @abstractmethod
     def make_fits_from_out(self, out_path):
+        pass
+    
+    @abstractmethod
+    def out_fits_name(self, out_path):
         pass
     
     @abstractmethod

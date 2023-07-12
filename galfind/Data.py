@@ -919,9 +919,8 @@ class Data:
     def get_depth_dir(self, aper_diam):
         self.depth_dirs = {}
         for band in self.instrument.bands:
-            self.depth_dirs[band] = f"{config['DEFAULT']['GALFIND_WORK']}/Depths/{self.instrument.instrument_from_band(band)}/{self.version}/{self.survey}/{str(aper_diam.value)}as"
+            self.depth_dirs[band] = f"{config['DEFAULT']['GALFIND_WORK']}/Depths/{self.instrument.instrument_from_band(band)}/{self.version}/{self.survey}/{format(aper_diam.value, '.2f')}as"
             os.makedirs(self.depth_dirs[band], exist_ok = True)
-        
     
     def calc_aper_radius_pix(self, aper_diam, band):
         return (aper_diam / (2 * self.im_pixel_scales[band])).value
@@ -936,12 +935,13 @@ class Data:
         for aper_diam in aper_diams:
             # Generate folder for depths
             self.get_depth_dir(aper_diam)
+            print(f"depth_dirs = {self.depth_dirs}")
             for band in self.instrument.bands:
                 # Only run for non excluded bands
                 if band not in excl_bands:
                     params.append((band, xy_offset, aper_diam, size, n_busy_iters, number, mask_rad, aper_disp_rad, use_xy_offset_txt, plot, average_depths, run_bands, fast))
         # Parallelise the calculation of depths for each band
-        with tqdm_joblib(tqdm(desc="Running local depths", total=len(params))) as progress_bar:
+        with tqdm_joblib(tqdm(desc = "Running local depths", total = len(params))) as progress_bar:
             Parallel(n_jobs=n_jobs)(delayed(self.calc_band_depth)(param) for param in params)
         # print table of depths for these bands
         header = "band, average_5sigma_depth"

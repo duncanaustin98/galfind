@@ -580,10 +580,10 @@ class Galaxy:
         self.sky_coord = sky_coord
         # phot_obs is within phot_rest (it shouldn't be!)
         if properties != {}:
-            if properties["LePhare"]["z_phot"] == 0:
+            if properties["EAZY"]["z_phot"] == 0:
                 self.phot_rest = None
             else:
-                self.phot_rest = Photometry_rest(phot, properties["LePhare"]["z_phot"], "LePhare") # works for LePhare only currently
+                self.phot_rest = Photometry_rest(phot, properties["EAZY"]["z_phot"], "EAZY") # works for EAZY only currently
         self.phot_obs = phot # need to improve this still!
         self.ID = int(ID)
         #self.codes = codes

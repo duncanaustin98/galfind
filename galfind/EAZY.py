@@ -22,7 +22,7 @@ from tqdm import tqdm
 from eazy import hdf5, visualization
 from astropy.io import fits
 
-from . import SED_code
+from . import SED_code, Instrument
 from . import useful_funcs_austind as funcs
 from . import config
 from .decorators import run_in_dir, hour_timer, email_update
@@ -31,8 +31,9 @@ from .decorators import run_in_dir, hour_timer, email_update
 
 EAZY_FILTER_CODES = {'NIRCam': {'f070W':36, 'f090W':1, 'f115W':2,'f140M':37, 'f150W':3,'f162M':38, 'f182M':39, 'f200W':4, 'f210M':40, 
                                 'f250M':41, 'f277W':5, 'f300M':42, 'f335M':43, 'f356W':6,'f360M':44, 'f410M':7, 'f430M':45, 'f444W':8, 'f460M':46, 'f480M':47},
-                    'HST-ACS':{'f435W':22, 'f606W':23, 'f814W':24,'f105W':25,'f125W':26, 'f140W':27,'f150W':28}, 
+                    'ACS_WFC':{'f435W':22, 'f606W':23, 'f814W':24,'f105W':25,'f125W':26, 'f140W':27,'f150W':28}, 
                     'MIRI': {'f0560W':13, 'f0770W':14, 'f1000W':15, 'f1130W':16, 'f1280W':17, 'f1500W':18,'f1800W':19, 'f2100W':20, 'f2550W':21}}
+# NOT SO SURE THAT f150W ACS WFC EXISTS!
 
 class EAZY(SED_code):
     
@@ -44,9 +45,9 @@ class EAZY(SED_code):
     def from_name(self):
         return EAZY()
     
-    def make_in(self, cat, fix_z = False):
+    def make_in(self, cat, fix_z = False, *args, **kwargs):
         print("MAKE_IN_EAZY_CAT.DATA = ", cat.data)
-        eazy_in_path = f"{self.code_dir}/input/{cat.data.instrument.name}/{cat.data.version}/{cat.data.survey}/{cat.cat_name[:-5]}.in"
+        eazy_in_path = f"{self.code_dir}/input/{cat.data.instrument.name}/{cat.data.version}/{cat.data.survey}/{cat.cat_name.replace('.fits', '')}_{cat.cat_creator.min_flux_pc_err}pc.in"
         if not Path(eazy_in_path).is_file():
             # 1) obtain input data
             IDs = np.array([gal.ID for gal in cat.gals]) # load IDs
@@ -55,18 +56,17 @@ class EAZY(SED_code):
                 redshifts = np.array([-99. for gal in cat.gals])
             else:
                 redshifts = None
-            # Define instrument
+            # Define SED input bands on the fly
             SED_input_bands = cat.data.instrument.bands
-            instrument_name = cat.data.instrument.name
             # load photometry 
             phot, phot_err = self.load_photometry(cat, SED_input_bands, u.uJy, -99., None)
             # Get filter codes (referenced to GALFIND/EAZY/jwst_nircam_FILTER.RES.info) for the given instrument and bands
-            codes = [EAZY_FILTER_CODES[instrument_name][band] for band in SED_input_bands]
+            filt_codes = [EAZY_FILTER_CODES[cat.data.instrument.instrument_from_band(band)][band] for band in SED_input_bands]
             
             # Make input file
             in_data = np.array([np.concatenate(([IDs[i]], list(itertools.chain(*zip(phot[i], phot_err[i]))), [redshifts[i]]), axis = None) for i in range(len(IDs))])
-            in_names = ["ID"] + list(itertools.chain(*zip([f'F{code}' for code in codes], [f'E{code}' for code in codes]))) + ["z_spec"]
-            print(in_names)
+            in_names = ["ID"] + list(itertools.chain(*zip([f'F{filt_code}' for filt_code in filt_codes], [f'E{filt_code}' for filt_code in filt_codes]))) + ["z_spec"]
+           #print(in_names)
             in_types = [int] + list(np.full(len(SED_input_bands) * 2, float)) + [float]
             in_tab = Table(in_data, dtype = in_types, names = in_names)
             funcs.make_dirs(eazy_in_path)
@@ -74,9 +74,10 @@ class EAZY(SED_code):
             #print(in_tab)
         return eazy_in_path
     
-    @run_in_dir(path = config['DEFAULT']['GALFIND_DIR'])
-    def run_fit(self, in_path, out_path, sed_folder, templates='fsps_larson', fix_z = False, n_proc=6, z_step = 0.01, z_min=0, z_max =25,
-    save_best_seds = True, save_pz = True,write_hdf=True, save_plots=False, plot_ids=None, plot_all=False, save_ubvj = True,run_lowz=True, z_max_lowz=7, **kwargs):
+    @run_in_dir(path = config['EAZY']['EAZY_DIR'])
+    def run_fit(self, in_path, out_path, sed_folder, instrument, default_templates = 'fsps_larson', fix_z = False, n_proc=6, z_step = 0.01, z_min=0, z_max =25,
+                save_best_seds = True, save_pz = True, write_hdf = True, save_plots = False, plot_ids = None, plot_all = False, save_ubvj = True, run_lowz = True, \
+                    z_max_lowz=7, *args, **kwargs):
         '''
         in_path - input EAZY catalogue path
         out_path - output EAZY catalogue path - currently modified by code, needs updating
@@ -105,25 +106,33 @@ class EAZY(SED_code):
         # HOT_60K - modified IMF high-z templates for use at z > 12
         # Nakajima - unobscured AGN templates
         
+        # update templates from within kwargs
+        try:
+            templates = kwargs.get("templates")
+        except:
+            print(f"Using default EAZY templates = {default_templates}!")
+            templates = default_templates
+        
         path = config['EAZY']['EAZY_DIR']
         eazy_templates_path =  config['EAZY']['EAZY_TEMPLATE_DIR']
         default_param_path = f"{config['DEFAULT']['GALFIND_DIR']}/configs/zphot.param.default"
-        param_file = eazy.param.read_param_file(default_param_path)
+        translate_file = f"{config['DEFAULT']['GALFIND_DIR']}/configs/zphot_jwst.translate"
+        #param_file = eazy.param.read_param_file(default_param_path)
         params = {}
-        if templates=='fsps_larson':
+        if templates == 'fsps_larson':
             params['TEMPLATES_FILE'] =f'{eazy_templates_path}/LarsonTemplates/tweak_fsps_QSF_12_v3_newtemplates.param'
-        elif templates=='BC03':
+        elif templates == 'BC03':
             # This path is broken
             params['TEMPLATES_FILE'] =  f"{eazy_templates_path}/bc03_chabrier_2003.param"
-        elif templates=='fsps':
+        elif templates == 'fsps':
             params['TEMPLATES_FILE'] =  f"{eazy_templates_path}/fsps_full/tweak_fsps_QSF_12_v3.param"
-        elif templates=='nakajima_full':
+        elif templates == 'nakajima_full':
             params['TEMPLATES_FILE'] =  f"{eazy_templates_path}/Nakajima2022/tweak_fsps_QSF_12_v3_larson_nakajima_all.param"
-        elif templates=='nakajima_subset':
+        elif templates == 'nakajima_subset':
             params['TEMPLATES_FILE'] =  f"{eazy_templates_path}/Nakajima2022/tweak_fsps_QSF_12_v3_larson_nakajima_subset.param"
         elif templates == 'jades':
             params['TEMPLATES_FILE'] = f"{eazy_templates_path}/inputs/templates/jades/jades.param"
-        elif templates=='HOT_45K':
+        elif templates == 'HOT_45K':
             params['TEMPLATES_FILE'] = f"{eazy_templates_path}/fsps-hot/45k/fsps_45k.param"
             z_min = 8
             z_max = 12
@@ -140,7 +149,7 @@ class EAZY(SED_code):
         
         # Next section deals with passing config parameters into EAZY config dictionary
         # JWST filter_file
-        params["FILTERS_RES"] = f"{eazy_templates_path}/jwst_nircam_FILTER.RES"
+        params["FILTERS_RES"] = f"{config['DEFAULT']['GALFIND_DIR']}/configs/jwst_nircam_FILTER.RES"
 
         # Redshift stuff
         params['Z_STEP'] = z_step # Setting photo-z step
@@ -159,31 +168,30 @@ class EAZY(SED_code):
         
         params['CATALOG_FILE'] = in_path
         # Defining outfiles - top fixes path of out file, second, adds template name to filename
-        out_path = out_path.replace('.out', '.fits')
-        out_path = out_path[:-5] + f'_eazy_{templates}' + out_path[-5:] 
+        fits_out_path = self.out_fits_name(out_path, *args, **kwargs)
         # Setting output directory
-        out_directory = '/'.join(out_path.split('/')[:-1])
+        out_directory = '/'.join(fits_out_path.split('/')[:-1])
         params['OUTPUT_DIRECTORY'] = out_directory
-        params['MAIN_OUTPUT_FILE'] = out_path
+        params['MAIN_OUTPUT_FILE'] = fits_out_path
     
-        h5path  = out_path.replace('.fits', '.h5')
+        h5path = fits_out_path.replace('.fits', '.h5')
         
-        param_file.update(params)
         # Pass in optional arguments
-        param_file.update(kwargs)
+        params.update(kwargs)
+        
         # Catch custom arguments?
         # Initialize photo-z object with above parameters
-        fit = eazy.photoz.PhotoZ(param_file=None,  zeropoint_file=None,
-                                params=param_file, load_prior=False, load_products=False)
+        fit = eazy.photoz.PhotoZ(param_file = default_param_path, zeropoint_file = None,
+                                params = params, load_prior = False, load_products = False, translate_file = translate_file)
         # Fit templates to catalog                          
-        fit.fit_catalog(n_proc=n_proc, get_best_fit=True)
+        fit.fit_catalog(n_proc = n_proc, get_best_fit = True)
         
         params['Z_MAX'] = z_max_lowz # Setting maximum Z
 
         if run_lowz:
-            lowz_fit = eazy.photoz.PhotoZ(param_file=None,  zeropoint_file=None,
-                                    params=param_file, load_prior=False, load_products=False)
-            lowz_fit.fit_catalog(n_proc=n_proc, get_best_fit=True)
+            lowz_fit = eazy.photoz.PhotoZ(param_file = default_param_path,  zeropoint_file = None,
+                                    params = params, load_prior = False, load_products = False, translate_file = translate_file)
+            lowz_fit.fit_catalog(n_proc = n_proc, get_best_fit = True)
 
         if plot_all:
             save_plots = True
@@ -196,7 +204,7 @@ class EAZY(SED_code):
             # Make plot for each object, save fit and close
             for i in ids_to_plot:
                 fit.show_fit(i, show_fnu=1)
-                plt.savefig(out_path_plots+f"/{i}_{templates}.png",)
+                plt.savefig(f"{out_path_plots}/{i}_{templates}.png",)
                 plt.close()   
 
         # Save backup of fit in hdf5 file
@@ -211,9 +219,9 @@ class EAZY(SED_code):
             data = [fit.OBJID, fit.zbest,fit.pz_percentiles([16]), fit.pz_percentiles([84]), fit.chi2_best ]
             if run_lowz:
                 data += [lowz_fit.zbest,lowz_fit.pz_percentiles([16]), lowz_fit.pz_percentiles([84]), lowz_fit.chi2_best ]
-                colnames = ['zbest_lowz', 'zbest_16_lowz', 'zbest_84_lowz', 'chi2_best_lowz']
+                colnames += ['zbest_lowz', 'zbest_16_lowz', 'zbest_84_lowz', 'chi2_best_lowz']
 
-            table = Table(data=data, names=colnames)
+            table = Table(data = data, names = colnames)
            
             # Get rest frame colors
             if save_ubvj:
@@ -232,10 +240,6 @@ class EAZY(SED_code):
                 table['J_rf_flux'] = ubvj[:,3,2]
                 table['J_rf_flux_err'] = (ubvj[:,3,3] - ubvj[:,3,1])/2.
                
-            # Write fits file
-            
-            table.write(out_path, overwrite=True)
-            print(f'Written out file to: {out_path}')
         if save_pz:
             # Make folders if they don't exist
             out_path_pdf = sed_folder.replace("SEDs", "PDFs")
@@ -245,8 +249,8 @@ class EAZY(SED_code):
             if not os.path.exists(out_path_pdf_template):
                 os.makedirs(out_path_pdf_template)
             # Generate PDF
-            pz=10**(fit.lnp)
-            lowz_pz=10**(lowz_fit.lnp)
+            pz = 10 ** (fit.lnp)
+            lowz_pz = 10 ** (lowz_fit.lnp)
             # Save PDFs in loop
             for pos_obj, i in enumerate(fit.OBJID):
                 with open(f'{out_path_pdf_template}/{i}.pz', "w") as pz_save:
@@ -258,26 +262,24 @@ class EAZY(SED_code):
                             pz_save.write(f"{z}, {lowz_pz[pos_obj][pos]}\n")
         # Save best-fitting SEDs
         if save_best_seds:
-            print("Saving best template SEDs")
             percentiles = fit.pz_percentiles([16, 84])
             if run_lowz:
                 percentiles_lowz = lowz_fit.pz_percentiles([16, 84])
             else:
-                percentiles_lowz = None
-            ids =  fit.OBJID
-            for id in ids:
-                self.save_sed(id, fit,lowz_fit, percentiles,percentiles_lowz, templates, sed_folder)
-            
+                percentiles_lowz = False
+            [self.save_sed(id, fit, lowz_fit, percentiles, percentiles_lowz, templates, sed_folder) for id in tqdm(fit.OBJID, total = len(fit.OBJID), desc = "Saving best template SEDs")]
             print('Saved best SEDs')
 
         # Write used parameters
-        fit.param.write(out_directory+f'param_used_just_{templates}.csv')
+        fit.param.write(fits_out_path.replace(".fits", "_params.csv"))
+        print(f'Finished running EAZY!')
+        
+        # Write fits file
+        table.write(fits_out_path, overwrite=True)
+        print(f'Written out file to: {fits_out_path}')
 
-        print(f'Finished running EAZY.')
 
-        return out_path
-
-    def save_sed(self, id, fit,lowz_fit, percentiles, percentiles_lowz, templates, out_path):
+    def save_sed(self, id, fit, lowz_fit, percentiles, percentiles_lowz, templates, out_path):
         # Find location of matching Id
         pos = [fit.OBJID == id]
         # Find percentiles
@@ -286,17 +288,16 @@ class EAZY(SED_code):
 
         self.save_fit(id, fit, out_path=out_path, percentiles_run=percentiles_run, out_flux_unit='mag',  template=templates)
         
-        if percentiles_lowz != None:
+        if type(percentiles_lowz) != bool:
             percentiles_run_lowz = percentiles_lowz[pos]
-            percentiles_run = (percentiles_run_lowz[0][0], percentiles_run_lowz[0][1])
+            percentiles_run_lowz = (percentiles_run_lowz[0][0], percentiles_run_lowz[0][1])
             self.save_fit(id, lowz_fit, out_path=out_path, percentiles_run=percentiles_run_lowz, out_flux_unit='mag',  template=templates, lowz=True)
 
-
-    def save_fit(self, id,photz_obj, percentiles_run=[], out_flux_unit='mag', id_is_idx=False,template='BC03', out_path='', lowz=False):
+    def save_fit(self, id, photz_obj, percentiles_run=[], out_flux_unit='mag', id_is_idx=False,template='BC03', out_path='', lowz=False):
         # Generate best-fitting SED
         data = photz_obj.show_fit(id, id_is_idx=id_is_idx, show_components=False, show_prior=False, logpz=False,  get_spec=True, show_fnu = 1)
         # Get info from data object
-        id_phot=data['id']
+        id_phot = data['id']
         z_best = data['z']
         chi2 = data['chi2']
         flux_unit = data['flux_unit']
@@ -316,10 +317,20 @@ class EAZY(SED_code):
             extra = '_lowz'
         else:
             extra = ''
+
         np.savetxt(f"{out_path}/{id_phot}{extra}.spec", data_out, delimiter="  ", header=f'ID  ZBEST  PERC_16  PERC_84  CHIBEST  WAV_UNIT  FLUX_UNIT\n{id_phot}  {z_best:.3f}  {float(percentiles_run[0]):.3f}  {float(percentiles_run[1]):.3f}  {chi2:.3f}  {wav_unit}  {out_flux_unit}')
 
-    def make_fits_from_out(self, out_path):
-        return out_path.replace('.out', '.fits')
+    def make_fits_from_out(self, out_path, *args, **kwargs):
+        # not required for EAZY
+        pass
+    
+    def out_fits_name(self, out_path, *args, **kwargs):
+        fits_out_path = out_path.replace('.out', '.fits')
+        
+        templates = kwargs.get('templates')
+        print(kwargs)
+        fits_out_path = fits_out_path[:-5] + f"_eazy_{templates}" + fits_out_path[-5:] 
+        return fits_out_path
     
     def extract_SED(self, cat, ID, units = u.ABmag, templates = 'fsps_larson'):
         pass
