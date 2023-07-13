@@ -73,3 +73,4 @@ class Galaxy:
         SED_results = [SED_result.from_photo_z_cat(name, phot, ID, cat_path, cat_creator, low_z_run) for name, low_z_run in zip(code_names, low_z_runs)]
         #properties = {code.code_name: {gal_property: photo_z_cat_row[property_label] for gal_property, property_label in code.galaxy_property_labels.items()} for code in codes}
         return cls(sky_coord, ID, phot, SED_results, mask_flags)
+    
