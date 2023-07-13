@@ -363,41 +363,48 @@ class Catalogue:
             print("Finished masking!")
         else:
             self.cat_path = masked_cat_path
-            
-        
     
     def make_UV_fit_cat(self, UV_PDF_path = config["RestUVProperties"]["UV_PDF_PATH"], col_names = ["Beta", "flux_lambda_1500", "flux_Jy_1500", "M_UV", "A_UV", "L_obs", "L_int", "SFR"], \
                         code = "LePhare", join_tables = True):
         UV_cat_name = f"{useful_funcs.split_dir_name(self.cat_path, 'dir')}/UV_properties_{code}.fits"
-        if not Path(UV_cat_name).is_file():
-            cat_data = []
-            print("Bands here: ", self[1].phot_obs.instrument.bands)
-            for i, gal in tqdm(enumerate(self), total = len(self), desc = "Making UV fit catalogue"):
-                gal_copy = gal #copy.deepcopy(gal)
+        #if not Path(UV_cat_name).is_file():
+        cat_data = []
+        print("Bands here: ", self[1].phot_obs.instrument.bands)
+        for i, gal in tqdm(enumerate(self), total = len(self), desc = "Making UV fit catalogue"):
+            gal_copy = gal #copy.deepcopy(gal)
+            path = f"/nvme/scratch/work/austind/GALFIND/UV_PDFs/v9/NIRCam/NGDEEP/LePhare+5pc/Amplitude/{gal_copy.ID}.txt"
+            #print(path)
+            if Path(path).is_file():
                 #print(gal.phot_obs.instrument.bands)
-                gal_data = np.array([gal_copy.ID])
-                for name in col_names:
-                    #print(f"{gal.ID}: {gal.phot_rest.phot_obs.instrument.bands}")
-                    try:
-                        gal_data = np.append(gal_data, funcs.percentiles_from_PDF(gal.phot_rest.open_UV_fit_PDF(UV_PDF_path, name, gal_copy.ID, gal_copy.properties[f"UV_{code}_ext_src_corr"]))) # not currently saving to object
-                    except:
-                        gal_data = np.append(gal_data, funcs.percentiles_from_PDF([-99.]))
-                gal_data = np.array(gal_data).flatten()
-                if i == 0: # if the first column
-                    cat_data = gal_data
-                else:
-                    cat_data = np.vstack([cat_data, gal_data])
-            UV_col_names = np.array([[name, f"{name}_l1", f"{name}_u1"] for name in col_names]).flatten()
-            fits_col_names = np.concatenate((np.array(["ID"]), UV_col_names))
-            funcs.make_dirs(self.cat_path)
-            UV_tab = Table(cat_data, names = fits_col_names)
-            UV_tab.write(UV_cat_name, format = "fits", overwrite = True)
-            self.UV_tab = UV_tab
-            print(f"Writing UV table to {self.cat_path}")
+                #gal_data = np.array([gal_copy.ID])
+                for name in ["Amplitude", "Beta"]:
+                    if name == "Beta":
+                        plot = True
+                    else:
+                        plot = False
+                    funcs.percentiles_from_PDF(gal.phot_rest.open_UV_fit_PDF(UV_PDF_path, name, gal_copy.ID, gal_copy.properties[f"UV_{code}_ext_src_corr"], plot = plot))
+            # for name in col_names:
+            #     #print(f"{gal.ID}: {gal.phot_rest.phot_obs.instrument.bands}")
+            #     try:
+            #         gal_data = np.append(gal_data, funcs.percentiles_from_PDF(gal.phot_rest.open_UV_fit_PDF(UV_PDF_path, name, gal_copy.ID, gal_copy.properties[f"UV_{code}_ext_src_corr"]))) # not currently saving to object
+            #     except:
+            #         gal_data = np.append(gal_data, funcs.percentiles_from_PDF([-99.]))
+            # gal_data = np.array(gal_data).flatten()
+            # if i == 0: # if the first column
+            #     cat_data = gal_data
+            # else:
+            #     cat_data = np.vstack([cat_data, gal_data])
+        UV_col_names = np.array([[name, f"{name}_l1", f"{name}_u1"] for name in col_names]).flatten()
+        fits_col_names = np.concatenate((np.array(["ID"]), UV_col_names))
+        funcs.make_dirs(self.cat_path)
+        UV_tab = Table(cat_data, names = fits_col_names)
+        UV_tab.write(UV_cat_name, format = "fits", overwrite = True)
+        self.UV_tab = UV_tab
+        print(f"Writing UV table to {self.cat_path}")
         
-        else:
-            self.UV_tab = Table.read(UV_cat_name, character_as_bytes = False)
-            print(f"Opening table: {UV_cat_name}")
+        # else:
+        #     self.UV_tab = Table.read(UV_cat_name, character_as_bytes = False)
+        #     print(f"Opening table: {UV_cat_name}")
         
         if join_tables:
             self.join_UV_fit_cat()
