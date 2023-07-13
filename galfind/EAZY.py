@@ -334,7 +334,6 @@ class EAZY(SED_code):
         return fits_out_path
     
     def extract_SEDs(self, cat_path, ID, low_z_run = False, units = u.ABmag, just_header = False):
-        min_flux_pc_err = str(cat_path.replace(f"_{self.templates}", "").split("_")[-2].replace("pc", ""))
         SED_path = self.SED_path_from_cat_path(cat_path, ID, low_z_run)
         if not Path(SED_path).is_file():
             print(f'Not found EAZY SED at {SED_path}')
@@ -344,18 +343,17 @@ class EAZY(SED_code):
         return {"best_gal": SED}
     
     def extract_z_PDF(self, cat_path, ID, low_z_run = False):
-        path = '' #Make path
+        PDF_path = self.PDF_path_from_cat_path(cat_path, ID, low_z_run)
         try:
-            z, pz  = np.loadtxt(path, delimiter = ',').T  
+            z, PDF = np.loadtxt(PDF_path, delimiter = ',').T  
         except FileNotFoundError:
-            print('PDF not found.')
-        
-        return z, pz
+            print(f'{PDF_path} not found.')
+            return None, None
+        return z, PDF
         
     def z_PDF_path_from_cat_path(self, cat_path, ID, low_z_run = False):
         # should still include aper_diam here
         min_flux_pc_err = str(cat_path.replace(f"_{self.templates}", "").split("_")[-2].replace("pc", ""))
-
         if low_z_run:
             low_z_name = "_lowz"
         else:
@@ -367,7 +365,6 @@ class EAZY(SED_code):
     def SED_path_from_cat_path(self, cat_path, ID, low_z_run = False):
         # should still include aper_diam here
         min_flux_pc_err = str(cat_path.replace(f"_{self.templates}", "").split("_")[-2].replace("pc", ""))
-
         if low_z_run:
             low_z_name = "_lowz"
         else:
@@ -375,4 +372,3 @@ class EAZY(SED_code):
         SED_dir = f"{funcs.split_dir_name(cat_path, 'dir')}/SEDs/{str(min_flux_pc_err)}pc/{self.templates}"
         SED_name = f"{str(ID)}{low_z_name}.pz"
         return f"{SED_dir}/{SED_name}"
-# %%
