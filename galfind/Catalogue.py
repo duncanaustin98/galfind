@@ -81,20 +81,20 @@ class Catalogue:
         cat.mask(data) # also saves the data object within the catalogue
         return cat
     
-    @classmethod
-    def from_sex_cat(cls, cat_path, instrument, survey, cat_creator):
-        # open the catalogue
-        cat = cls.cat_from_path(cat_path)
-        # produce galaxy array from each row of the catalogue
-        gals = np.array([Galaxy.from_sex_cat_row(row, instrument, cat_creator) for row in cat])
-        return cls(gals, cat_path, survey, cat_creator)
+    # @classmethod
+    # def from_sex_cat(cls, cat_path, instrument, survey, cat_creator):
+    #     # open the catalogue
+    #     cat = funcs.cat_from_path(cat_path)
+    #     # produce galaxy array from each row of the catalogue
+    #     gals = np.array([Galaxy.from_sex_cat_row(row, instrument, cat_creator) for row in cat])
+    #     return cls(gals, cat_path, survey, cat_creator)
     
     @classmethod
-    def from_photo_z_cat(cls, cat_path, instrument, survey, cat_creator, codes):
+    def from_photo_z_cat(cls, cat_path, instrument, cat_creator, code_names, low_z_runs, survey):
         # open the catalogue
-        cat = cls.cat_from_path(cat_path)
+        cat = funcs.cat_from_path(cat_path)
         # produce galaxy array from each row of the catalogue
-        gals = np.array([Galaxy.from_photo_z_cat_row(row, instrument, cat_creator, codes) for row in cat])
+        gals = np.array([Galaxy.from_photo_z_cat(cat_path, ID, instrument, cat_creator, code_names, low_z_runs) for ID in np.array(cat["NUMBER"])])
         return cls(gals, cat_path, survey, cat_creator)
     
     # %% Overloaded operators

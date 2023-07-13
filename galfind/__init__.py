@@ -42,7 +42,7 @@ astropy_cosmo = FlatLambdaCDM(H0 = 70, Om0 = 0.3, Ob0 = 0.05, Tcmb0=2.725)
 from . import NIRCam_aperture_corrections as NIRCam_aper_corr
 from .Data import Data
 from .Instrument import Instrument, ACS_WFC,WFC3IR, NIRCam, MIRI, Combined_Instrument
-from .SED_codes import SED_code
+from .SED_codes import SED_code, SED_result
 from .Catalogue import Catalogue
 from .Catalogue_Creator import Catalogue_Creator, GALFIND_Catalogue_Creator
 from .LePhare import LePhare

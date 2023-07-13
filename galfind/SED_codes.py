@@ -162,7 +162,8 @@ class SED_result:
         self.low_z_run = low_z_run
         
     @classmethod
-    def from_GALFIND(cls, code_name, phot, gal_ID, cat_path, low_z_run):
+    def from_photo_z_cat(cls, code_name, phot, gal_ID, cat_path, low_z_run):
+        # could include cat_creator here to construct the photometry from the raw catalogue
         code = SED_code.from_name(code_name)
         cat = funcs.cat_from_path(cat_path) # open catalogue
         cat = cat[cat[code.ID_label == gal_ID]]
