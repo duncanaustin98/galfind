@@ -542,7 +542,6 @@ class Data:
         
         if not Path(self.im_paths[self.combine_band_names(bands)]).is_file():
             funcs.make_dirs(self.im_paths[self.combine_band_names(bands)])
-            
             for pos, band in enumerate(bands):
                 if self.im_shapes[band] != self.im_shapes[bands[0]] or self.im_zps[band] != self.im_zps[bands[0]] or self.im_pixel_scales[band] != self.im_pixel_scales[bands[0]]:
                     raise Exception('All bands used in forced photometry stack must have the same shape, ZP and pixel scale!')
@@ -692,7 +691,7 @@ class Data:
             aperture = SkyCircularAperture(positions, r = rad)
             apertures.append(aperture)
             # Convert to pixel using image WCS
-      
+
         # Do aperture photometry
         print(image, apertures, wcs)
         phot_table = aperture_photometry(image, apertures, wcs=wcs)
@@ -711,8 +710,8 @@ class Data:
          
         colnames = [f'aperture_sum_{i}' for i in range(len(radii))]
         aper_tab = Column(np.array(phot_table[colnames].as_array().tolist()), name=f'FLUX_APER_{band}')
-        phot_table[f'FLUX_APER'] = aper_tab
-        phot_table[f'FLUXERR_APER'] = phot_table[f'FLUX_APER'] * -99
+        phot_table['FLUX_APER'] = aper_tab
+        phot_table['FLUXERR_APER'] = phot_table['FLUX_APER'] * -99
         phot_table['MAGERR_APER'] = phot_table['FLUX_APER'] * 99 
         
         # This converts the fluxes to magnitudes using the correct zp, and puts them in the same format as the sextractor catalogue
@@ -720,7 +719,7 @@ class Data:
         for pos, col in enumerate(colnames):
             name = f'MAG_APER_{pos}'
             phot_table[name] = -2.5 * np.log10(phot_table[col]) + self.im_zps[band]
-            phot_table[name][np.isnan(phot_table[name])] = 99
+            phot_table[name][np.isnan(phot_table[name])] = 99.
             mag_colnames.append(name)
         aper_tab = Column(np.array(phot_table[mag_colnames].as_array().tolist()), name=f'MAG_APER_{band}')
         phot_table[f'MAG_APER'] = aper_tab
