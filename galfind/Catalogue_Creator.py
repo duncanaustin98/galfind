@@ -17,9 +17,10 @@ from . import SED_codes
 
 class Catalogue_Creator:
     
-    def __init__(self, phot_conv, property_conv, aper_diam_index, flux_or_mag, min_flux_pc_err, zero_point = u.Jy.to(u.ABmag), phot_fits_ext = 0):
+    def __init__(self, phot_conv, property_conv, flag_conv, aper_diam_index, flux_or_mag, min_flux_pc_err, zero_point = u.Jy.to(u.ABmag), phot_fits_ext = 0):
         self.phot_conv = phot_conv
         self.property_conv = property_conv
+        self.flag_conv = flag_conv
         self.aper_diam_index = aper_diam_index # set to 'None' by default as very few people actually put arrays in catalogue columns
         self.flux_or_mag = flux_or_mag # either "flux" or "mag"
         self.min_flux_pc_err = min_flux_pc_err
@@ -54,9 +55,13 @@ class Catalogue_Creator:
             raise(Exception(f"'arr_index' = {self.arr_index} is not valid in {__name__}! Must be either 'None' or type() = int !"))
         return phot, phot_err
     
-    def load_property(self, fits_cat, gal_property, *args):
-        property_label = self.property_conv(gal_property, *args)
+    def load_property(self, fits_cat, gal_property, code):
+        property_label = self.property_conv(gal_property, code)
         return fits_cat[property_label]
+    
+    def load_flag(self, fits_cat, gal_flag):
+        flag_label = self.flag_conv(gal_flag)
+        return fits_cat[flag_label]
     
     def apply_min_flux_pc_err(self, flux, err):
         # encorporate minimum flux error
@@ -77,11 +82,19 @@ class GALFIND_Catalogue_Creator(Catalogue_Creator):
             phot_conv = self.loc_depth_phot_conv
         else:
             raise(Exception(f"'cat_type' = {cat_type} is not valid in {__name__}! Must be either 'sex' or 'loc_depth' !"))
+        
+        # only make these dicts once to speed up property loading
+        same_key_value_properties = ["auto_corr_factor_UV", "auto_corr_factor_mass"]
+        self.property_conv_dict = {sed_code: {**SED_codes.from_name(sed_code).galaxy_property_labels, **{element: element for element in same_key_value_properties}} for sed_code in json.loads(config["Other"]["CODES"])}
+        same_key_value_flags = ["robust", "good", "robust_relaxed", "good_relaxed", "blank_module"] + ["unmasked_{band}" for band in json.load(config["Other"]["ALL_BANDS"])]
+        self.flag_conv_dict = {element: element for element in same_key_value_flags}
+        
         property_conv = self.property_conv
+        flag_conv = self.flag_conv
         phot_fits_ext = 0 # check whether this works!
         aper_diam_index = int(json.loads(config.get("SExtractor", "APERTURE_DIAMS")).index(aper_diam.value))
         #aper_diam_index = np.where(aper_diam.value == json.loads(config.get("SExtractor", "APERTURE_DIAMS")))[0][0]
-        super().__init__(phot_conv, property_conv, aper_diam_index, flux_or_mag, min_flux_pc_err, zero_point, phot_fits_ext)
+        super().__init__(phot_conv, property_conv, flag_conv, aper_diam_index, flux_or_mag, min_flux_pc_err, zero_point, phot_fits_ext)
 
     def sex_phot_conv(self, band):
         if self.flux_or_mag == "flux":
@@ -107,10 +120,11 @@ class GALFIND_Catalogue_Creator(Catalogue_Creator):
             raise(Exception("self.flux_or_mag = {self.flux_or_mag} is invalid! It should be either 'flux' or 'mag' !"))
         return phot_label, err_label
     
-    def property_conv(self, gal_property, code_name):
-        for code in json.loads(config["Other"]["CODES"]):
-            property_conv_dict = {code: SED_codes.from_name(code).galaxy_properties}
-        return property_conv_dict[code_name][gal_property]
+    def property_conv(self, gal_property, code):
+        return self.property_conv_dict[code.code_name][gal_property]
+    
+    def flag_conv(self, gal_flag):
+        return self.flag_conv_dict[gal_flag]
     
     # overriding load_photometry from parent class to include .T[aper_diam_index]'s
     def load_photometry(self, fits_cat, band):
