@@ -10,12 +10,14 @@ Created on Thu Jun  1 16:55:23 2023
 from __future__ import absolute_import
 import configparser
 import json
+from astropy.cosmology import FlatLambdaCDM
 
-config_path = "/nvme/scratch/work/austind/GALFIND/galfind_config.ini" # needs to be able to be changed by the user
+galfind_dir = "/".join(__file__.split("/")[:-1])
+config_path = f"{galfind_dir}/configs/galfind_config.ini" # needs to be able to be changed by the user
 # configuration variables
 config = configparser.ConfigParser()
 config.read(config_path)
-config.set("DEFAULT", "GALFIND_DIR", "/".join(__file__.split("/")[:-1]))
+config.set("DEFAULT", "GALFIND_DIR", galfind_dir)
 
 # override VERSION variable from the config parameters if required (NOT GENERAL!)
 if config["DataReduction"].getint("NIRCAM_PMAP") == 1084:
@@ -34,6 +36,9 @@ config.set("Other", "ALL_BANDS", ', '.join(["f435W","fr459M","f475W","f550M","f5
              "f200W","f210M","f250M","f277W","f300M","f335M","f356W","f360M","f410M","f430M","f444W","f460M","f480M"])) #, "f560W",
              #"f770W", "f1000W","f1130W", "f1280W", "f1500W", "f1800W", "f2100W", "f2550W"]))
 
+# set cosmology
+astropy_cosmo = FlatLambdaCDM(H0 = 70, Om0 = 0.3, Ob0 = 0.05, Tcmb0=2.725)
+
 from . import NIRCam_aperture_corrections as NIRCam_aper_corr
 from .Data import Data
 from .Instrument import Instrument, ACS_WFC,WFC3IR, NIRCam, MIRI, Combined_Instrument
@@ -47,3 +52,6 @@ from .Simulated_Catalogue import Simulated_Catalogue
 from .Simulated_Galaxy import Simulated_Galaxy
 from . import useful_funcs_austind
 from . import decorators
+from.Photometry import Photometry_obs, Photometry_rest
+from .Galaxy import Galaxy
+
