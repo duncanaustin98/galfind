@@ -30,14 +30,6 @@ class Photometry:
         self.flux_Jy_errs = flux_Jy_errs
         self.loc_depths = loc_depths
     
-    @property
-    def flux_lambda(self): # wav and flux_nu must have units here!
-        return (self.flux_Jy * const.c / ((np.array([value.value for value in self.instrument.band_wavelengths.values()]) * u.Angstrom) ** 2)).to(u.erg / (u.s * (u.cm ** 2) * u.Angstrom)) # both flux_nu and wav must be in the same rest or observed frame
-    
-    @property
-    def flux_lambda_errs(self):
-        return (self.flux_Jy_errs * const.c / ((np.array([value.value for value in self.instrument.band_wavelengths.values()]) * u.Angstrom) ** 2)).to(u.erg / (u.s * (u.cm ** 2) * u.Angstrom))
-
     def crop_phot(self, indices):
         indices = np.array(indices).astype(int)
         for index in reversed(indices):
@@ -52,6 +44,14 @@ class Photometry_obs(Photometry):
         self.min_flux_pc_err = min_flux_pc_err
         self.SED_results = SED_results # array of SED_result objects with different SED fitting runs
         super().__init__(instrument, flux_Jy, flux_Jy_errs, loc_depths)
+
+    @property
+    def flux_lambda(self): # wav and flux_nu must have units here!
+        return (self.flux_Jy * const.c / ((np.array([value.value for value in self.instrument.band_wavelengths.values()]) * u.Angstrom) ** 2)).to(u.erg / (u.s * (u.cm ** 2) * u.Angstrom)) # both flux_nu and wav must be in the same rest or observed frame
+    
+    @property
+    def flux_lambda_errs(self):
+        return (self.flux_Jy_errs * const.c / ((np.array([value.value for value in self.instrument.band_wavelengths.values()]) * u.Angstrom) ** 2)).to(u.erg / (u.s * (u.cm ** 2) * u.Angstrom))
 
     @classmethod # not a gal object here, more like a catalogue row
     def get_phot_from_sex(cls, sex_cat_row, instrument, cat_creator): # single unit of sextractor catalogue
@@ -117,19 +117,21 @@ class Photometry_rest(Photometry):
     
     @property
     def wav(self):
-        return funcs.wav_obs_to_rest(np.array([value.value for value in self.phot_obs.instrument.band_wavelengths.values()]) * u.Angstrom, self.z)
+        return funcs.wav_obs_to_rest(np.array([value.value for value in self.instrument.band_wavelengths.values()]) * u.Angstrom, self.z)
     
     @property
     def wav_errs(self):
-        return funcs.wav_obs_to_rest(np.array([value.value / 2 for value in self.phot_obs.instrument.band_FWHMs.values()]) * u.Angstrom, self.z)
+        return funcs.wav_obs_to_rest(np.array([value.value / 2 for value in self.instrument.band_FWHMs.values()]) * u.Angstrom, self.z)
     
     @property
     def flux_lambda(self):
-        return funcs.flux_lambda_obs_to_rest(self.phot_obs.flux_lambda, self.z)
+        flux_lambda_obs = (self.flux_Jy * const.c / ((np.array([value.value for value in self.instrument.band_wavelengths.values()]) * u.Angstrom) ** 2)).to(u.erg / (u.s * (u.cm ** 2) * u.Angstrom))
+        return funcs.flux_lambda_obs_to_rest(flux_lambda_obs, self.z)
     
     @property
     def flux_lambda_errs(self):
-        return funcs.flux_lambda_obs_to_rest(self.phot_obs.flux_lambda_errs, self.z)
+        flux_lambda_obs_errs = (self.flux_Jy_errs * const.c / ((np.array([value.value for value in self.instrument.band_wavelengths.values()]) * u.Angstrom) ** 2)).to(u.erg / (u.s * (u.cm ** 2) * u.Angstrom))
+        return funcs.flux_lambda_obs_to_rest(self.flux_lambda_errs, self.z)
     
     @property
     def log_flux_lambda(self):
@@ -149,11 +151,11 @@ class Photometry_rest(Photometry):
     
     @property
     def rest_UV_band(self):
-        return self.phot_obs.instrument.bands[self.rest_UV_band_index]
+        return self.instrument.bands[self.rest_UV_band_index]
     
     @property
     def rest_UV_band_flux_Jy(self):
-        return self.phot_obs.flux_Jy[self.rest_UV_band_index]
+        return self.flux_Jy[self.rest_UV_band_index]
     
     def make_rest_UV_phot(self):
         phot_rest_copy = deepcopy(self)
@@ -175,14 +177,13 @@ class Photometry_rest(Photometry):
             if wav - wav_err < self.rest_UV_wav_lims[0] or wav + wav_err > self.rest_UV_wav_lims[1]:
                 crop_indices = np.append(crop_indices, i)
         #print(crop_indices)
-        self.phot_obs.crop_phot(crop_indices)
+        self.crop_phot(crop_indices)
      
     def beta_slope_power_law_func(wav_rest, A, beta):
         return (10 ** A) * (wav_rest ** beta)
     
-    def set_ext_source_UV_corr(self, ext_source_UV_corr):
-        #print(f"Adding extended source UV correction to {self.ID}")
-        self.UV_ext_src_corr = ext_source_UV_corr
+    def set_ext_source_UV_corr(self, UV_ext_source_corr):
+        self.UV_ext_src_corr = UV_ext_source_corr
         
     def plot(self, save_dir, ID, plot_fit = True, iters = 1_000, save = True, show = False, n_interp = 100):
         self.make_rest_UV_phot()
@@ -228,12 +229,10 @@ class Photometry_rest(Photometry):
         # Add the Galaxy ID label
         ax.text(0.05, 0.05, f"Galaxy ID = {str(ID)}", transform=ax.transAxes, ha="left", va="bottom", fontsize=12)
         # Add the Beta label
-        ax.text(0.95, 0.95, r"$\beta$" + " = {:.2f} $^{{+{:.2f}}}_{{-{:.2f}}}$".format(np.percentile(self.beta_PDF, 50),
-                                                                                               np.percentile(self.beta_PDF, 84) - np.percentile(self.beta_PDF, 50),
-                                                                                               np.percentile(self.beta_PDF, 50) - np.percentile(self.beta_PDF, 16)),
-                transform=ax.transAxes, ha="right", va="top", fontsize=12)
-
-        
+        ax.text(0.95, 0.95, r"$\beta$" + " = {:.2f} $^{{+{:.2f}}}_{{-{:.2f}}}$".format(np.percentile(self.beta_PDF, 50), \
+            np.percentile(self.beta_PDF, 84) - np.percentile(self.beta_PDF, 50), np.percentile(self.beta_PDF, 50) - \
+            np.percentile(self.beta_PDF, 16)), transform = ax.transAxes, ha = "right", va = "top", fontsize = 12)
+            
         ax.set_xlim(*np.log10(self.rest_UV_wav_lims.value))
         
         if save:
@@ -444,3 +443,5 @@ class Photometry_rest(Photometry):
             return self.SFR_PDF
         else:
             raise(Exception(f"No {obs_name} PDF found in object!")) 
+            
+            
