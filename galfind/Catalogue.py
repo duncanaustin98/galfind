@@ -163,13 +163,6 @@ class Catalogue:
     
     def open_full_cat(self):
         return Table.read(self.cat_path, character_as_bytes = False)
-
-    def cat_from_path(path, crop_names = None):
-        cat = Table.read(path, character_as_bytes = False)
-        if crop_names != None:
-            for name in crop_names:
-                cat = cat[cat[name] == True]
-        return cat
     
     def catch_redshift_minus_99(self, gal_index, out_value = True, condition = None, condition_fail_val = None, minus_99_out = None):
         try:

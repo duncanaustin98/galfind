@@ -21,15 +21,20 @@ from astropy.io import fits
 
 from . import useful_funcs_austind as funcs
 from . import config
+from. import Photometry_rest
+
 
 # %% SED_code class
 
 class SED_code(ABC):
     
-    def __init__(self, code_name, galaxy_property_labels):
+    def __init__(self, code_name, ID_label, galaxy_property_labels, chi_sq_labels, low_z_run):
         self.code_name = code_name
+        self.ID_label = ID_label
         self.galaxy_property_labels = galaxy_property_labels
-        self.code_dir = f"{config['DEFAULT']['GALFIND_WORK']}/{code_name}"
+        self.chi_sq_labels = chi_sq_labels
+        #self.code_dir = f"{config['DEFAULT']['GALFIND_WORK']}/{code_name}"
+        self.low_z_run = low_z_run
     
     @abstractmethod
     def from_name(self):
@@ -118,7 +123,7 @@ class SED_code(ABC):
         pass
     
     @abstractmethod
-    def extract_SED(self, cat, ID):
+    def extract_SEDs(self, cat, ID):
         pass
     
     def plot_best_fit_SED(self, ax, cat, ID, save = True, show = True):
@@ -136,6 +141,36 @@ class SED_code(ABC):
         z, PDF = self.extract_z_PDF(cat, ID)
         # plot PDF on ax
         pass
+    
+    @abstractmethod
+    def z_PDF_path_from_cat_path(self, cat_path, ID, low_z_run = False):
+        pass
+    
+    @abstractmethod
+    def SED_path_from_cat_path(self, cat_path, ID, low_z_run = False):
+        pass
+
+class SED_result:
+    
+    def __init__(self, instrument, flux_Jy, flux_Jy_errs, loc_depths, z, code_name, chi_sqs = None, z_PDF_gal = None, SEDs = None, low_z_run = False):
+        self.photometry_rest = Photometry_rest(instrument, flux_Jy, flux_Jy_errs, loc_depths, z, code_name)
+        self.z = z
+        self.chi_sqs = chi_sqs
+        self.z_PDF_gal = z_PDF_gal
+        self.SEDs = SEDs
+        self.code_name
+        self.low_z_run = low_z_run
+        
+    @classmethod
+    def from_GALFIND(cls, code_name, phot, gal_ID, cat_path, low_z_run):
+        code = SED_code.from_name(code_name)
+        cat = funcs.cat_from_path(cat_path) # open catalogue
+        cat = cat[cat[code.ID_label == gal_ID]]
+        z = float(cat[code.galaxy_property_labels("z")])
+        chi_sqs = {name: float(cat[chi_sq]) for name, chi_sq in code.chi_sq_labels.items()}
+        z_PDF = code.extract_z_PDF(cat_path, gal_ID, low_z_run)
+        SEDs = code.extract_SEDs(cat_path, gal_ID, low_z_run)
+        return cls(code_name, phot.flux_Jy, phot.flux_errs, phot.instrument, phot.loc_depths, z, chi_sqs, z_PDF, SEDs, low_z_run)
 
 # LePhare
 LePhare_outputs = {"z": "Z_BEST", "mass": "MASS_BEST"}

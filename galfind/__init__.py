@@ -52,6 +52,6 @@ from .Simulated_Catalogue import Simulated_Catalogue
 from .Simulated_Galaxy import Simulated_Galaxy
 from . import useful_funcs_austind
 from . import decorators
-from.Photometry import Photometry_obs, Photometry_rest
+from .Photometry import Photometry_obs, Photometry_rest
 from .Galaxy import Galaxy
 

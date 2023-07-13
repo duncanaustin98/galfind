@@ -24,10 +24,12 @@ from . import config
 
 class LePhare(SED_code):
     
-    def __init__(self):
+    def __init__(self, low_z_run = False):
         code_name = "LePhare"
+        ID_label = "IDENT"
         galaxy_property_labels = {"z_phot": "Z_BEST", "mass": "MASS_BEST"}
-        super().__init__(code_name, galaxy_property_labels)
+        chi_sq_labels = {}
+        super().__init__(code_name, ID_label, galaxy_property_labels, chi_sq_labels, low_z_run)
     
     def from_name(self):
         return LePhare()
@@ -124,18 +126,17 @@ class LePhare(SED_code):
     def out_fits_name(self, out_path):
         return out_path.replace(".out", "_LePhare.fits")
     
-    def extract_SED(self, cat, ID, units = u.ABmag):
+    def extract_SEDs(self, cat_path, ID, units = u.ABmag, low_z_run = False):
         pass
     
-    def extract_z_PDF(self, cat, ID):
+    def extract_z_PDF(self, cat_path, ID, low_z_run = False):
         str_ID = "0" * (9 - len(str(ID))) + str(ID)
         print("ID = " + str_ID)
 
         z = []
         PDF = []
         reached_output_format = False
-        print("THIS PATH NEEDS TO CHANGE!")
-        with open(f"{self.code_dir}/PDFs/{cat.data.version}/{cat.data.instrument.name}/ID{str_ID}.spec") as open_file:
+        with open(self.z_PDF_path_from_cat_path(cat_path, ID, low_z_run)) as open_file:
             while True:
                 line = open_file.readline()
                 # start at z = 0
@@ -154,3 +155,9 @@ class LePhare(SED_code):
                     break
             open_file.close()
         return z, PDF
+    
+    def z_PDF_path_from_cat_path(self, cat_path, ID, low_z_run = False):
+        pass
+    
+    def SED_path_from_cat_path(self, cat_path, ID, low_z_run = False):
+        pass
