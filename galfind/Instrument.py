@@ -56,7 +56,7 @@ class Instrument:
 
     def instrument_from_band(self, band):
         # Pointless here but makes it compatible with Combined_Instrument
-        if band in self.bands:
+        if (band.split("+")[0] in self.bands) or band in self.bands:
             return self.name
         else:
             return False
@@ -188,10 +188,14 @@ class Instrument:
 class NIRCam(Instrument):
     
     def __init__(self, excl_bands = []):
-        bands = ["f090W", "f115W", "f150W", "f200W", "f277W", "f335M", "f356W", "f410M", "f444W"]
-        band_wavelengths = {"f090W": 9_044., "f115W": 11_571., "f150W": 15_040., "f200W": 19_934., "f277W": 27_695., "f335M": 33_639., "f356W": 35_768., "f410M": 40_844., "f444W": 44_159.}
+        bands = ["f070W", "f090W", "f115W", "f140M", "f150W", "f162M", "f182M", "f200W", "f210M", "f250M", "f277W", "f300M", "f335M", "f356W", "f360M", "f410M", "f430M", "f444W", "f460M", "f480M"]
+        band_wavelengths = {"f070W": 7_056., "f090W": 9_044., "f115W": 11_571., "f140M": 14_060., "f150W": 15_040., "f162M": 16_281., "f182M": 18_466., "f200W": 19_934., "f210M": 20_964., \
+                            "f250M": 25_038., "f277W": 27_695., "f300M": 29_908., "f335M": 33_639., "f356W": 35_768., "f360M": 36_261., "f410M": 40_844., "f430M": 42_818., "f444W": 44_159., \
+                                "f460M": 46_305., "f480M": 48_192.}
         band_wavelengths = {key: value * u.Angstrom for (key, value) in band_wavelengths.items()} # convert each individual value to Angstrom
-        band_FWHMs = {"f090W": 2_101., "f115W": 2_683., "f150W": 3_371., "f200W": 4_717., "f277W": 7_110., "f335M": 3_609., "f356W": 8_408., "f410M": 4_375., "f444W": 11_055.}
+        band_FWHMs = {"f070W": 1_600., "f090W": 2_101., "f115W": 2_683., "f140M": 1_478., "f150W": 3_371., "f162M": 1_713., "f182M": 2_459., "f200W": 4_717., "f210M": 2_089., \
+                      "f250M": 1_825., "f277W": 7_110., "f300M": 3_264., "f335M": 3_609., "f356W": 8_408., "f360M": 3_873., "f410M": 4_375., "f430M": 2_312., "f444W": 11_055., \
+                          "f460M": 2_322., "f480M": 3_145.}
         band_FWHMs = {key: value * u.Angstrom for (key, value) in band_FWHMs.items()} # convert each individual value to Angstrom
         super().__init__("NIRCam", bands, band_wavelengths, band_FWHMs, excl_bands)
 
@@ -230,14 +234,15 @@ class MIRI(Instrument):
 class ACS_WFC(Instrument):
     
     def __init__(self, excl_bands = []):
-        bands = ["f606W", "f814W"] #["f435W", "f606W", "f775W", "f814W", "f850LP"]
+        bands = ["f435W", "fr459M", "f475W", "f550M", "f555W", "f606W", "f625W", "fr647M", "f775W", "f814W", "f850LP", "fr914M"]
         # Wavelengths corrrespond to lambda effective of the filters from SVO Filter Profile Service
-        band_wavelengths = {"f435W":4341.62, "f606W":5809.26, "f775W":7652.44, "f814W":7973.39, "f850LP":9004.99}
+        band_wavelengths = {"f435W": 4_340., "fr459M": 4_590., "f475W": 4_766., "f550M": 5_584., "f555W": 5_373., "f606W": 5_960., \
+                            "f625W": 6_325., "fr647M": 6_472., "f775W": 7_706., "f814W": 8_073., "f850LP": 9_047., "fr914M": 9_072.}
         band_wavelengths = {key: value * u.Angstrom for (key, value) in band_wavelengths.items()} # convert each individual value to Angstrom
         # FWHMs corrrespond to FWHM of the filters from SVO Filter Profile Service
-        band_FWHMs = {"f435W":900.04, "f606W":2253.40, "f775W":1517.31, "f814W":2098.15, "f850LP":1273.50}
-        band_FWHMs = {key: value * u.Angstrom for (key, value) in band_FWHMs.items()} # convert each individual value to Angstrom
-        # Placeholder       
+        band_FWHMs = {"f435W": 937., "fr459M": 350., "f475W": 1_437., "f550M": 546., "f555W": 1_240., "f606W": 2_322., \
+                            "f625W": 1_416., "fr647M": 501., "f775W": 1_511., "f814W": 1_858., "f850LP": 1_208., "fr914M": 774.}
+        band_FWHMs = {key: value * u.Angstrom for (key, value) in band_FWHMs.items()} # convert each individual value to Angstrom    
         super().__init__("ACS_WFC", bands, band_wavelengths, band_FWHMs, excl_bands)
     
     def aper_corr(self, aper_diam, band):
@@ -251,12 +256,12 @@ class ACS_WFC(Instrument):
 class WFC3IR(Instrument):
 
     def __init__(self, excl_bands = []):
-        bands = ["f105W",  "f125W", "f140W", "f160W"]
+        bands = ["f098M", "f105W",  "f110W", "f125W", "f127M", "f139M", "f140W", "f153M", "f160W"]
         # Wavelengths corrrespond to lambda effective of the filters from SVO Filter Profile Service
-        band_wavelengths = {"f105W":10430.83, "f125W":12363.55, "f140W":13734.66, "f160W":15278.47}
+        band_wavelengths = {"f098M": 9_875., "f105W": 10_584.,  "f110W": 11_624., "f125W": 12_516., "f127M": 12_743., "f139M": 13_843., "f140W": 13_970., "f153M": 15_334., "f160W": 15_392.}
         band_wavelengths = {key: value * u.Angstrom for (key, value) in band_wavelengths.items()} # convert each individual value to Angstrom
         # FWHMs corrrespond to FWHM of the filters from SVO Filter Profile Service
-        band_FWHMs = {"f105W":2894.94,  "f125W":2993.79, "f140W":3933.32, "f160W":2876.73}
+        band_FWHMs = {"f098M": 1_692., "f105W": 2_917.,  "f110W": 4_994., "f125W": 3_005., "f127M": 692., "f139M": 652., "f140W": 3_941., "f153M": 693., "f160W": 2_875.}
         band_FWHMs = {key: value * u.Angstrom for (key, value) in band_FWHMs.items()} # convert each individual value to Angstrom
         super().__init__("WFC3IR", bands, band_wavelengths, band_FWHMs, excl_bands)
     
@@ -284,8 +289,8 @@ class Combined_Instrument(Instrument):
     def instrument_from_band(self, band):
         names = self.name.split("+")
         for name in names:
-            instrument = self.from_name(name)
-            if band in instrument.bands:
+            instrument = Instrument.from_name(name)
+            if instrument.instrument_from_band(band) != False:
                 return instrument.name
         
     def instruments_from_name(self, excl_bands = []):
