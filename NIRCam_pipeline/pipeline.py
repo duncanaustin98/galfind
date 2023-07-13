@@ -12,7 +12,7 @@ import astropy.units as u
 import numpy as np
 import time
 
-from galfind import Catalogue, LePhare, EAZY
+from galfind import Catalogue, LePhare, EAZY, config
 from galfind.Catalogue_Creator import GALFIND_Catalogue_Creator
 
 def pipeline(surveys, version,instruments, xy_offsets, aper_diams, sed_codes, min_flux_pc_errs, forced_phot_band, excl_bands, \
@@ -21,11 +21,19 @@ def pipeline(surveys, version,instruments, xy_offsets, aper_diams, sed_codes, mi
         # make appropriate galfind catalogue creator for each aperture diameter
         cat_creator = GALFIND_Catalogue_Creator(cat_type, aper_diams[0], pc_err, NIRCam_ZP)
         for survey, xy_offset in zip(surveys, xy_offsets):
-            cat = Catalogue.from_pipeline(survey = survey, version = version, instruments = instruments,aper_diams = aper_diams, cat_creator = cat_creator, xy_offset = xy_offset, \
+            cat = Catalogue.from_pipeline(survey = survey, version = version, instruments = instruments, aper_diams = aper_diams, cat_creator = cat_creator, xy_offset = xy_offset, \
                                           forced_phot_band = forced_phot_band, excl_bands = excl_bands, loc_depth_min_flux_pc_errs = min_flux_pc_errs, n_loc_depth_samples = n_loc_depth_samples, fast = fast)
-            for code in sed_codes:
-                code.fit_cat(cat, templates = eazy_templates)
-                #cat = code.fit_cat(cat, templates = eazy_templates)
+            for i, code in enumerate(sed_codes):
+                cat = code.fit_cat(cat, templates = eazy_templates)
+                #code.fit_cat(cat, templates = eazy_templates)
+                # calculate the extended source corrections
+                if code.code_name == "LePhare":
+                    cat.make_ext_src_corr_cat(code.code_name)
+                # calculate the UV properties for this catalogue
+                if instruments == ["NIRCam"]: # QUICK FIX!
+                    print("Instruments name is a QUICK FIX!")
+                    instruments_name = "NIRCam"
+                cat.make_UV_fit_cat(UV_PDF_path = f"{config['RestUVProperties']['UV_PDF_PATH']}/{version}/{instruments_name}/{survey}/{code.code_name}+{pc_err}pc")  
 
 if __name__ == "__main__":
     version = "v9"
@@ -41,5 +49,6 @@ if __name__ == "__main__":
     fast_depths = False
     excl_bands = [] #["f606W", "f814W", "f090W", "f115W", "f277W", "f335M", "f356W", "f410M", "f444W"]
     n_loc_depth_samples = 5
+
     for survey in surveys:
-        pipeline([survey], version,instruments, xy_offsets, aper_diams, sed_codes, min_flux_pc_errs, forced_phot_band, excl_bands, cat_type = cat_type, n_loc_depth_samples = n_loc_depth_samples, fast = fast_depths)
+        pipeline([survey], version,instruments, xy_offsets, aper_diams, sed_codes, min_flux_pc_errs, forced_phot_band, excl_bands, cat_type = cat_type, n_loc_depth_samples = n_loc_depth_samples, fast = fast_depths, eazy_templates = eazy_templates)

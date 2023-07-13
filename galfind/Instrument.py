@@ -123,8 +123,8 @@ class Instrument:
         cls = self.__class__
         result = cls.__new__(cls)
         memo[id(self)] = result
-        for k, v in self.__dict__.items():
-            setattr(result, k, deepcopy(v, memo))
+        for key, value in self.__dict__.items():
+            setattr(result, key, deepcopy(value, memo))
         return result
     
 # %% Class properties
@@ -157,6 +157,7 @@ class Instrument:
             del self.band_wavelengths[band]
             del self.band_FWHMs[band]
         except IndexError:
+            raise(Exception("Remove band failed!"))
             pass
         
     def remove_index(self, remove_index):
