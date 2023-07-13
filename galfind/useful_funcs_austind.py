@@ -157,6 +157,26 @@ def gauss_func(x, mu, sigma):
 def power_law_func(x, A, slope):
     return A * (x ** slope)
 
+def cat_from_path(path, crop_names = None):
+    cat = Table.read(path, character_as_bytes = False)
+    if crop_names != None:
+        for name in crop_names:
+            cat = cat[cat[name] == True]
+    return cat
+
+# GALFIND specific functions
+def GALFIND_cat_path(SED_code_name, instrument_name, version, survey, forced_phot_band_name, min_flux_pc_err, cat_type = "loc_depth", masked = True, templates = "fsps_larson"):
+    # should still include aper_diam here
+    if masked:
+        masked_name = "_masked"
+    else:
+        masked_name = ""
+    if SED_code_name == "EAZY":
+        SED_code_name = f"eazy_{templates}"
+    cat_dir = f"{config['DEFAULT']['GALFIND_WORK']}{SED_code_name}/output/{instrument_name}/{version}/{survey}"
+    cat_name = f"{survey}_MASTER_Sel-{forced_phot_band_name}_{version}_{cat_type}{masked_name}_{str(min_flux_pc_err)}pc_{SED_code_name}.fits"
+    return f"{cat_dir}/{cat_name}"
+
 # Simulations
 class Simulation(ABC):
     

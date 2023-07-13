@@ -19,22 +19,13 @@ from . import Photometry_rest, Photometry_obs
 class Galaxy:
     
     # should really expand this to allow for more than one redshift here (only works fro one 'code' class at the moment)
-    def __init__(self, sky_coord, phot, ID, properties):
+    def __init__(self, sky_coord, ID, phot, SED_results, mask_flags = {}):
         # print("'z' here for a short time not a long time (in the 'Galaxy' class)! PUT THIS INSTEAD IN THE 'CODE' class")
         self.sky_coord = sky_coord
-        # phot_obs is within phot_rest (it shouldn't be!)
-        if properties != {}:
-            if properties["EAZY"]["z_phot"] == 0:
-                self.phot_rest = None
-            else:
-                self.phot_rest = Photometry_rest(phot, properties["EAZY"]["z_phot"], "EAZY") # works for EAZY only currently
-        self.phot_obs = phot # need to improve this still!
         self.ID = int(ID)
-        #self.codes = codes
-        # this should be contained within each 'code' object
-        self.properties = properties
-        #self.redshifts = {code.code_name: np.float(z) for code in codes}
-        self.mask_flags = {}
+        self.phot = phot
+        self.SED_results = SED_results
+        self.mask_flags = mask_flags
         
     def __setattr__(self, name, value, obj = "gal"):
         if obj == "gal":

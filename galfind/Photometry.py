@@ -22,13 +22,13 @@ from . import astropy_cosmo
 from . import config
 
 # each "Photometry_obs" should have an "Instrument" object inside it (e.g. NIRCam/MIRI/HST_ACS/HST_WFC3IR)
-class Photometry_obs:
-
-    def __init__(self, instrument, flux_Jy, flux_Jy_errs, aper_diam):
+class Photometry:
+    
+    def __init__(self, instrument, flux_Jy, flux_Jy_errs, loc_depths):
         self.instrument = instrument
         self.flux_Jy = flux_Jy
         self.flux_Jy_errs = flux_Jy_errs
-        self.aper_diam = aper_diam
+        self.loc_depths = loc_depths
     
     @property
     def flux_lambda(self): # wav and flux_nu must have units here!
@@ -37,6 +37,21 @@ class Photometry_obs:
     @property
     def flux_lambda_errs(self):
         return (self.flux_Jy_errs * const.c / ((np.array([value.value for value in self.instrument.band_wavelengths.values()]) * u.Angstrom) ** 2)).to(u.erg / (u.s * (u.cm ** 2) * u.Angstrom))
+
+    def crop_phot(self, indices):
+        indices = np.array(indices).astype(int)
+        for index in reversed(indices):
+            self.instrument.remove_band(self.instrument.bands[index])
+        self.flux_Jy = np.delete(self.flux_Jy, indices)
+        self.flux_Jy_errs = np.delete(self.flux_Jy_errs, indices)
+
+class Photometry_obs(Photometry):
+
+    def __init__(self, instrument, flux_Jy, flux_Jy_errs, aper_diam, min_flux_pc_err, loc_depths, SED_results = []):
+        self.aper_diam = aper_diam
+        self.min_flux_pc_err = min_flux_pc_err
+        self.SED_results = SED_results # array of SED_result objects with different SED fitting runs
+        super().__init__(instrument, flux_Jy, flux_Jy_errs, loc_depths)
 
     @classmethod # not a gal object here, more like a catalogue row
     def get_phot_from_sex(cls, sex_cat_row, instrument, cat_creator): # single unit of sextractor catalogue
@@ -83,23 +98,13 @@ class Photometry_obs:
     
     def load_local_depths(self, sex_cat_row, instrument, aper_diam_index):
         self.loc_depths = np.array([sex_cat_row[f"loc_depth_{band}"].T[aper_diam_index] for band in instrument.bands])
-    
-    def crop_phot(self, indices):
-        indices = np.array(indices).astype(int)
-        for index in reversed(indices):
-            self.instrument.remove_band(self.instrument.bands[index])
-        self.flux_Jy = np.delete(self.flux_Jy, indices)
-        self.flux_Jy_errs = np.delete(self.flux_Jy_errs, indices)
 
-class Photometry_rest:
+class Photometry_rest(Photometry):
     
-    def __init__(self, phot_obs, z, code_name, rest_UV_wav_lims = [1250., 3000.] * u.Angstrom):
-        self.phot_obs = phot_obs
+    def __init__(self, instrument, flux_Jy, flux_Jy_errs, loc_depths, z, code_name, rest_UV_wav_lims = [1250., 3000.] * u.Angstrom):
         self.z = z
-        if z < 0.:
-            print(z)
-        self.code_name = code_name
         self.rest_UV_wav_lims = rest_UV_wav_lims
+        super().__init__(instrument, flux_Jy, flux_Jy_errs, loc_depths)
     
     # STILL NEED TO LOOK FURTHER INTO THIS
     def __deepcopy__(self, memo):

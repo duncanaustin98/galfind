@@ -37,10 +37,13 @@ EAZY_FILTER_CODES = {'NIRCam': {'f070W':36, 'f090W':1, 'f115W':2,'f140M':37, 'f1
 
 class EAZY(SED_code):
     
-    def __init__(self):
+    def __init__(self, templates = "fsps_larson", low_z_run = False):
         code_name = "EAZY"
+        ID_label = "IDENT"
         galaxy_property_labels = {"z_phot": "zbest"}
-        super().__init__(code_name, galaxy_property_labels)
+        chi_sq_labels = {}
+        self.templates = templates
+        super().__init__(code_name, ID_label, galaxy_property_labels, chi_sq_labels, low_z_run)
     
     def from_name(self):
         return EAZY()
@@ -326,22 +329,50 @@ class EAZY(SED_code):
     
     def out_fits_name(self, out_path, *args, **kwargs):
         fits_out_path = out_path.replace('.out', '.fits')
-        
         templates = kwargs.get('templates')
-        print(kwargs)
         fits_out_path = fits_out_path[:-5] + f"_eazy_{templates}" + fits_out_path[-5:] 
         return fits_out_path
     
-    def extract_SED(self, cat, ID, units = u.ABmag, templates = 'fsps_larson'):
-        pass
+    def extract_SEDs(self, cat_path, ID, low_z_run = False, units = u.ABmag, just_header = False):
+        min_flux_pc_err = str(cat_path.replace(f"_{self.templates}", "").split("_")[-2].replace("pc", ""))
+        SED_path = self.SED_path_from_cat_path(cat_path, ID, low_z_run)
+        if not Path(SED_path).is_file():
+            print(f'Not found EAZY SED at {SED_path}')
+        if not just_header: 
+            SED = Table.read(SED_path, format = 'ascii.no_header', delimiter = '\s', names = ['wav', 'mag'], data_start = 0)
+            SED['mag'][np.isinf(SED['mag'])] = 99.
+        return {"best_gal": SED}
     
-    def extract_z_PDF(self, cat, ID, templates = 'fsps_larson'):
+    def extract_z_PDF(self, cat_path, ID, low_z_run = False):
         path = '' #Make path
         try:
-            z, pz  = np.loadtxt(path, delimiter=',').T  
+            z, pz  = np.loadtxt(path, delimiter = ',').T  
         except FileNotFoundError:
             print('PDF not found.')
         
         return z, pz
         
+    def z_PDF_path_from_cat_path(self, cat_path, ID, low_z_run = False):
+        # should still include aper_diam here
+        min_flux_pc_err = str(cat_path.replace(f"_{self.templates}", "").split("_")[-2].replace("pc", ""))
+
+        if low_z_run:
+            low_z_name = "_lowz"
+        else:
+            low_z_name = ""
+        PDF_dir = f"{funcs.split_dir_name(cat_path, 'dir')}/PDFs/{str(min_flux_pc_err)}pc/{self.templates}"
+        PDF_name = f"{str(ID)}{low_z_name}.pz"
+        return f"{PDF_dir}/{PDF_name}"
+    
+    def SED_path_from_cat_path(self, cat_path, ID, low_z_run = False):
+        # should still include aper_diam here
+        min_flux_pc_err = str(cat_path.replace(f"_{self.templates}", "").split("_")[-2].replace("pc", ""))
+
+        if low_z_run:
+            low_z_name = "_lowz"
+        else:
+            low_z_name = ""
+        SED_dir = f"{funcs.split_dir_name(cat_path, 'dir')}/SEDs/{str(min_flux_pc_err)}pc/{self.templates}"
+        SED_name = f"{str(ID)}{low_z_name}.pz"
+        return f"{SED_dir}/{SED_name}"
 # %%
