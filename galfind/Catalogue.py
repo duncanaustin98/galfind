@@ -423,11 +423,11 @@ class Catalogue:
         print(f"Joining UV table to catalogue! Saving to {self.cat_path}")
     
     def flag_robust_high_z(self, relaxed = False):
-        # should make use of an overloaded __setattr__ here!
+        # could make use of an overloaded __setattr__ here!
         pass
     
     def flag_good_high_z(self, relaxed = False):
-        # should make use of an overloaded __setattr__ here!
+        # could make use of an overloaded __setattr__ here!
         pass
     
     def flag_hot_pixel(self):
