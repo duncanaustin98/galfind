@@ -26,10 +26,10 @@ class LePhare(SED_code):
     
     def __init__(self, low_z_run = False):
         code_name = "LePhare"
-        ID_label = "IDENT"
+        #ID_label = "IDENT"
         galaxy_property_labels = {"z_phot": "Z_BEST", "mass": "MASS_BEST"}
         chi_sq_labels = {}
-        super().__init__(code_name, ID_label, galaxy_property_labels, chi_sq_labels, low_z_run)
+        super().__init__(code_name, galaxy_property_labels, chi_sq_labels, low_z_run)
     
     def from_name(self):
         return LePhare()
