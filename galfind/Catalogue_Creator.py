@@ -17,13 +17,15 @@ from . import SED_codes
 
 class Catalogue_Creator:
     
-    def __init__(self, phot_conv, property_conv, flag_conv, aper_diam_index, flux_or_mag, min_flux_pc_err, zero_point = u.Jy.to(u.ABmag), phot_fits_ext = 0):
+    def __init__(self, phot_conv, property_conv, flag_conv, aper_diam_index, flux_or_mag, min_flux_pc_err, ra_dec_labels, ID_label, zero_point = u.Jy.to(u.ABmag), phot_fits_ext = 0):
         self.phot_conv = phot_conv
         self.property_conv = property_conv
         self.flag_conv = flag_conv
         self.aper_diam_index = aper_diam_index # set to 'None' by default as very few people actually put arrays in catalogue columns
         self.flux_or_mag = flux_or_mag # either "flux" or "mag"
         self.min_flux_pc_err = min_flux_pc_err
+        self.ra_dec_labels = ra_dec_labels
+        self.ID_label = ID_label
         self.zero_point = zero_point # must be astropy units; can be either integer or dict of {band: zero_point}
         self.phot_fits_ext = phot_fits_ext # only compatible with .fits currently
         
@@ -91,10 +93,12 @@ class GALFIND_Catalogue_Creator(Catalogue_Creator):
         
         property_conv = self.property_conv
         flag_conv = self.flag_conv
+        ra_dec_labels = {"RA": "ALPHA_J2000", "DEC": "DELTA_J2000"}
+        ID_label = "NUMBER"
         phot_fits_ext = 0 # check whether this works!
         aper_diam_index = int(json.loads(config.get("SExtractor", "APERTURE_DIAMS")).index(aper_diam.value))
         #aper_diam_index = np.where(aper_diam.value == json.loads(config.get("SExtractor", "APERTURE_DIAMS")))[0][0]
-        super().__init__(phot_conv, property_conv, flag_conv, aper_diam_index, flux_or_mag, min_flux_pc_err, zero_point, phot_fits_ext)
+        super().__init__(phot_conv, property_conv, flag_conv, aper_diam_index, flux_or_mag, min_flux_pc_err, ra_dec_labels, ID_label, zero_point, phot_fits_ext)
 
     def sex_phot_conv(self, band):
         if self.flux_or_mag == "flux":

@@ -20,6 +20,7 @@ from scipy.optimize import curve_fit
 from . import useful_funcs_austind as funcs
 from . import astropy_cosmo
 from . import config
+from . import SED_result
 
 # each "Photometry_obs" should have an "Instrument" object inside it (e.g. NIRCam/MIRI/HST_ACS/HST_WFC3IR)
 class Photometry:
@@ -54,7 +55,7 @@ class Photometry_obs(Photometry):
         return (self.flux_Jy_errs * const.c / ((np.array([value.value for value in self.instrument.band_wavelengths.values()]) * u.Angstrom) ** 2)).to(u.erg / (u.s * (u.cm ** 2) * u.Angstrom))
 
     @classmethod # not a gal object here, more like a catalogue row
-    def get_phot_from_sex(cls, sex_cat_row, instrument, cat_creator): # single unit of sextractor catalogue
+    def from_fits_cat(cls, fits_cat_row, instrument, cat_creator, aper_diam, min_flux_pc_err, code_names, low_z_runs): # single unit of sextractor catalogue
         # below is contained within cat_creator
         #aper_diam_index = int(json.loads(config.get("SExtractor", "APERTURE_DIAMS")).index(cat_creator.aper_diam.value))
         fluxes = []
@@ -65,36 +66,37 @@ class Photometry_obs(Photometry):
         #print("instrument_copy = ", instrument_copy)
         for band in instrument_copy.bands:
             try:
-                flux, err = cat_creator.load_photometry(sex_cat_row, band)
+                flux, err = cat_creator.load_photometry(fits_cat_row, band)
                 fluxes.append(flux.value)
                 flux_errs.append(err.value)
             except:
                 # no data for the relevant band within the catalogue
                 instrument.remove_band(band)
                 print(f"{band} flux not loaded")
-        phot_obs = cls(instrument, fluxes * u.Jy, flux_errs * u.Jy, cat_creator.aper_diam)
-        phot_obs.load_local_depths(sex_cat_row, instrument, cat_creator.aper_diam_index)
+        SED_results = [SED_result.from_fits_cat(fits_cat_row, name, phot, cat_path, cat_creator, low_z_run) for name, low_z_run in zip(code_names, low_z_runs)]
+        phot_obs = cls(instrument, fluxes * u.Jy, flux_errs * u.Jy, aper_diam, min_flux_pc_err, loc_depths = None, SED_results = SED_results)
+        phot_obs.load_local_depths(fits_cat_row, instrument, cat_creator.aper_diam_index)
         return phot_obs
         
-    @classmethod
-    def get_phot_from_sim(cls, gal, instrument, sim, min_flux_err_pc = 5):
-        fluxes = []
-        flux_errs = []
-        instrument_copy = instrument.copy()
-        for band in instrument_copy.bands:
-            try:
-                flux = np.array(gal[sim.flux_col_name(band)])
-                err = np.array(gal[sim.flux_err_name(band)])
-                # encorporate minimum flux error
-                err = np.array([err_band if err_band / flux_band >= min_flux_err_pc / 100 else \
-                                min_flux_err_pc * flux_band / 100 for flux_band, err_band in zip(flux, err)])
-                flux_Jy = funcs.flux_image_to_Jy(flux, sim.zero_point)
-                err_Jy = funcs.flux_image_to_Jy(err, sim.zero_point)
-                fluxes = np.append(fluxes, flux_Jy.value)
-                flux_errs = np.append(flux_errs, err_Jy.value)
-            except:
-                instrument.remove_band(band)
-                print(f"{band} flux not loaded")
+    # @classmethod
+    # def get_phot_from_sim(cls, gal, instrument, sim, min_flux_err_pc = 5):
+    #     fluxes = []
+    #     flux_errs = []
+    #     instrument_copy = instrument.copy()
+    #     for band in instrument_copy.bands:
+    #         try:
+    #             flux = np.array(gal[sim.flux_col_name(band)])
+    #             err = np.array(gal[sim.flux_err_name(band)])
+    #             # encorporate minimum flux error
+    #             err = np.array([err_band if err_band / flux_band >= min_flux_err_pc / 100 else \
+    #                             min_flux_err_pc * flux_band / 100 for flux_band, err_band in zip(flux, err)])
+    #             flux_Jy = funcs.flux_image_to_Jy(flux, sim.zero_point)
+    #             err_Jy = funcs.flux_image_to_Jy(err, sim.zero_point)
+    #             fluxes = np.append(fluxes, flux_Jy.value)
+    #             flux_errs = np.append(flux_errs, err_Jy.value)
+    #         except:
+    #             instrument.remove_band(band)
+    #             print(f"{band} flux not loaded")
     
     def load_local_depths(self, sex_cat_row, instrument, aper_diam_index):
         self.loc_depths = np.array([sex_cat_row[f"loc_depth_{band}"].T[aper_diam_index] for band in instrument.bands])
@@ -105,6 +107,11 @@ class Photometry_rest(Photometry):
         self.z = z
         self.rest_UV_wav_lims = rest_UV_wav_lims
         super().__init__(instrument, flux_Jy, flux_Jy_errs, loc_depths)
+    
+    @classmethod # this is actually a row in a catalogue, not a 'Galaxy' object
+    def from_fits_cat(cls, gal, instrument, code):
+        phot_obs = Photometry_obs.from_fits_cat(gal, instrument)
+        return cls(phot_obs, np.float(gal[code.galaxy_properties["z"]]), code.code_name)
     
     # STILL NEED TO LOOK FURTHER INTO THIS
     def __deepcopy__(self, memo):
@@ -162,11 +169,6 @@ class Photometry_rest(Photometry):
         phot_rest_copy.rest_UV_phot_only()
         #print(f"rest frame UV bands = {phot_rest_copy.phot_obs.instrument.bands}")
         self.rest_UV_phot = phot_rest_copy
-    
-    @classmethod # this is actually a row in a catalogue, not a 'Galaxy' object
-    def get_phot_from_sex(cls, gal, instrument, code):
-        phot_obs = Photometry_obs.get_phot_from_sex(gal, instrument)
-        return cls(phot_obs, np.float(gal[code.galaxy_properties["z"]]), code.code_name)
     
     def rest_UV_phot_only(self):
         crop_indices = []

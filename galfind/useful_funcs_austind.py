@@ -162,6 +162,9 @@ def cat_from_path(path, crop_names = None):
     if crop_names != None:
         for name in crop_names:
             cat = cat[cat[name] == True]
+    # include catalogue metadata
+    metadata = {"cat_path": path}
+    cat.meta = metadata
     return cat
 
 # GALFIND specific functions
@@ -209,10 +212,6 @@ class Jaguar(Simulation):
     def flux_col_name(self, band):
         if band in NIRCam().bands:
             return f"NRC_{band.replace('f', 'F')}_fnu"
-
-# SExtractor photometry
-
-
 
 def make_dirs(path):
     os.makedirs(split_dir_name(path, "dir"), exist_ok = True)
@@ -298,7 +297,6 @@ def tex_to_fits(tex_path, col_names, col_errs, replace = {"&": "", "\\\\": "", "
 #col_names = ["NAME", "RA", "DEC", "MAG_f444W", "MAG_f277W", "z_LePhare", "mass_LePhare", "Beta", "SFR", "M_UV", "References"]
 #col_errs = [False, False, False, True, True, True, False, True, True, True, False]
 #tex_to_fits("/nvme/scratch/work/austind/Arxiv_papers/matched_cats/HUDF-Par2/NGDEEP_paper_literature_tex.txt", col_names, col_errs)
-        
 
         
 def ext_source_corr(data, corr_factor, is_log_data = True):
