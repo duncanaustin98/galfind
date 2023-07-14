@@ -76,7 +76,7 @@ class EAZY(SED_code):
     
     @run_in_dir(path = config['EAZY']['EAZY_DIR'])
     def run_fit(self, in_path, out_path, sed_folder, instrument, default_templates = 'fsps_larson', fix_z = False, n_proc=6, z_step = 0.01, z_min=0, z_max =25,
-                save_best_seds = True, save_pz = True, write_hdf = True, save_plots = False, plot_ids = None, plot_all = False, save_ubvj = True, run_lowz = True, \
+                save_best_seds = True, save_pz = True, write_hdf = True, save_plots = True, plot_ids = None, plot_all = False, save_ubvj = True, run_lowz = True, \
                     z_max_lowz=7, *args, **kwargs):
         '''
         in_path - input EAZY catalogue path
@@ -202,8 +202,8 @@ class EAZY(SED_code):
             if not os.path.exists(out_path_plots):
                 os.makedirs(out_path_plots)
             # Make plot for each object, save fit and close
-            for i in ids_to_plot:
-                fit.show_fit(i, show_fnu=1)
+            for i in tqdm(ids_to_plot, total = len(ids_to_plot), desc = f"Plotting EAZY {templates} SEDs"):
+                fit.show_fit(i, show_fnu = 1)
                 plt.savefig(f"{out_path_plots}/{i}_{templates}.png",)
                 plt.close()   
 
