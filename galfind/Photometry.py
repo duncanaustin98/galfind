@@ -31,6 +31,29 @@ class Photometry:
         self.flux_Jy_errs = flux_Jy_errs
         self.loc_depths = loc_depths
     
+    @classmethod
+    def from_fits_cat(cls, fits_cat_row, instrument, cat_creator):
+        fluxes = []
+        flux_errs = []
+        # Copy constructor problem here!
+        instrument_copy = instrument.new_instrument(excl_bands = [band for band in instrument.new_instrument().bands if band not in instrument.bands]) # Problem loading the photometry properly here!!!
+        for band in instrument_copy.bands:
+            try:
+                flux, err = cat_creator.load_photometry(fits_cat_row, band)
+                fluxes.append(flux.value)
+                flux_errs.append(err.value)
+            except:
+                # no data for the relevant band within the catalogue
+                instrument.remove_band(band)
+                print(f"{band} flux not loaded")
+        try:
+            # local depths only currently works for one aperture diameter
+            loc_depths = np.array([fits_cat_row[f"loc_depth_{band}"].T[cat_creator.aper_diam_index] for band in instrument.bands])
+        except:
+            print("loc depths not loaded")
+            loc_depths = None
+        return cls(instrument, fluxes * u.Jy, flux_errs * u.Jy, loc_depths)
+    
     def crop_phot(self, indices):
         indices = np.array(indices).astype(int)
         for index in reversed(indices):
@@ -55,28 +78,14 @@ class Photometry_obs(Photometry):
         return (self.flux_Jy_errs * const.c / ((np.array([value.value for value in self.instrument.band_wavelengths.values()]) * u.Angstrom) ** 2)).to(u.erg / (u.s * (u.cm ** 2) * u.Angstrom))
 
     @classmethod # not a gal object here, more like a catalogue row
-    def from_fits_cat(cls, fits_cat_row, instrument, cat_creator, aper_diam, min_flux_pc_err, code_names, low_z_runs): # single unit of sextractor catalogue
-        # below is contained within cat_creator
-        #aper_diam_index = int(json.loads(config.get("SExtractor", "APERTURE_DIAMS")).index(cat_creator.aper_diam.value))
-        fluxes = []
-        flux_errs = []
-        #print("instrument = ", instrument)
-        # Copy constructor problem here!
-        instrument_copy = instrument.new_instrument(excl_bands = [band for band in instrument.new_instrument().bands if band not in instrument.bands]) # Problem loading the photometry properly here!!!
-        #print("instrument_copy = ", instrument_copy)
-        for band in instrument_copy.bands:
-            try:
-                flux, err = cat_creator.load_photometry(fits_cat_row, band)
-                fluxes.append(flux.value)
-                flux_errs.append(err.value)
-            except:
-                # no data for the relevant band within the catalogue
-                instrument.remove_band(band)
-                print(f"{band} flux not loaded")
-        SED_results = [SED_result.from_fits_cat(fits_cat_row, name, phot, cat_path, cat_creator, low_z_run) for name, low_z_run in zip(code_names, low_z_runs)]
-        phot_obs = cls(instrument, fluxes * u.Jy, flux_errs * u.Jy, aper_diam, min_flux_pc_err, loc_depths = None, SED_results = SED_results)
-        phot_obs.load_local_depths(fits_cat_row, instrument, cat_creator.aper_diam_index)
-        return phot_obs
+    def from_fits_cat(cls, fits_cat_row, instrument, cat_creator, aper_diam, min_flux_pc_err, code_names, low_z_runs):
+        phot = Photometry.from_fits_cat(fits_cat_row, instrument, cat_creator)
+        SED_results = [SED_result.from_fits_cat(fits_cat_row, name, phot, cat_creator, low_z_run) for name, low_z_run in zip(code_names, low_z_runs)]
+        return cls.from_phot(phot, aper_diam, min_flux_pc_err, SED_results)
+    
+    @classmethod
+    def from_phot(cls, phot, aper_diam, min_flux_pc_err, SED_results = []):
+        return cls(phot.instrument, phot.flux_Jy, phot.flux_Jy_errs, aper_diam, min_flux_pc_err, phot.loc_depths, SED_results)
         
     # @classmethod
     # def get_phot_from_sim(cls, gal, instrument, sim, min_flux_err_pc = 5):
@@ -103,15 +112,19 @@ class Photometry_obs(Photometry):
 
 class Photometry_rest(Photometry):
     
-    def __init__(self, instrument, flux_Jy, flux_Jy_errs, loc_depths, z, code_name, rest_UV_wav_lims = [1250., 3000.] * u.Angstrom):
+    def __init__(self, instrument, flux_Jy, flux_Jy_errs, loc_depths, z, rest_UV_wav_lims = [1250., 3000.] * u.Angstrom):
         self.z = z
         self.rest_UV_wav_lims = rest_UV_wav_lims
         super().__init__(instrument, flux_Jy, flux_Jy_errs, loc_depths)
     
-    @classmethod # this is actually a row in a catalogue, not a 'Galaxy' object
-    def from_fits_cat(cls, gal, instrument, code):
-        phot_obs = Photometry_obs.from_fits_cat(gal, instrument)
-        return cls(phot_obs, np.float(gal[code.galaxy_properties["z"]]), code.code_name)
+    @classmethod
+    def from_fits_cat(cls, fits_cat_row, instrument, cat_creator, code):
+        phot = Photometry.from_fits_cat(fits_cat_row, instrument, cat_creator)
+        return cls(phot, np.float(fits_cat_row[code.galaxy_properties["z"]]))
+    
+    @classmethod
+    def from_phot(cls, phot, z):
+        return cls(phot.instrument, phot.flux_Jy, phot.flux_Jy_errs, phot.loc_depths, z)
     
     # STILL NEED TO LOOK FURTHER INTO THIS
     def __deepcopy__(self, memo):
@@ -199,7 +212,7 @@ class Photometry_rest(Photometry):
         
         # Plotting code
         ax.errorbar(np.log10(self.rest_UV_phot.wav.value), self.rest_UV_phot.log_flux_lambda, yerr = self.rest_UV_phot.log_flux_lambda_errs,
-                     ls="none", c="black", zorder=10, marker="o", markersize=5, capsize=3)
+                     ls = "none", c = "black", zorder = 10, marker = "o", markersize = 5, capsize = 3)
         
         if plot_fit:
             fit_lines = []

@@ -32,8 +32,8 @@ class SED_code(ABC):
         self.code_name = code_name
         self.galaxy_property_labels = galaxy_property_labels
         self.chi_sq_labels = chi_sq_labels
-        #self.code_dir = f"{config['DEFAULT']['GALFIND_WORK']}/{code_name}"
         self.low_z_run = low_z_run
+        #self.code_dir = f"{config['DEFAULT']['GALFIND_WORK']}/{code_name}"
     
     @abstractmethod
     def from_name(self):
@@ -103,7 +103,7 @@ class SED_code(ABC):
         # update 'Catalogue' object using Catalogue.__setattr__()
         codes = cat.codes + [self.from_name()]
         print("We need to make Catalogue.from_photo_z_cat() produce a data object within the catalogue object!")
-        return cat.from_photo_z_cat(combined_cat_path, cat.data.instrument, cat.data.survey, cat.cat_creator, codes)
+        return cat.from_fits_cat(combined_cat_path, cat.data.instrument, cat.data.survey, cat.cat_creator, codes)
         
     @abstractmethod
     def make_in(self, cat):
@@ -151,8 +151,8 @@ class SED_code(ABC):
 
 class SED_result:
     
-    def __init__(self, instrument, flux_Jy, flux_Jy_errs, loc_depths, z, code_name, chi_sqs = None, z_PDF_gal = None, SEDs = None, low_z_run = False):
-        self.photometry_rest = Photometry_rest(instrument, flux_Jy, flux_Jy_errs, loc_depths, z, code_name)
+    def __init__(self, phot, z, code_name, chi_sqs = None, z_PDF_gal = None, SEDs = None, low_z_run = False):
+        self.photometry_rest = Photometry_rest.from_phot(phot, z)
         self.z = z
         self.chi_sqs = chi_sqs
         self.z_PDF_gal = z_PDF_gal
@@ -161,16 +161,17 @@ class SED_result:
         self.low_z_run = low_z_run
         
     @classmethod
-    def from_photo_z_cat(cls, fits_cat_path, ID, cat_creator, code_name, phot, gal_ID, low_z_run):
+    def from_fits_cat(cls, fits_cat_row, code_name, phot, cat_creator, low_z_run):
         # could include cat_creator here to construct the photometry from the raw catalogue
-        fits_cat = funcs.cat_from_path(fits_cat_path)
         code = SED_code.from_name(code_name)
-        cat = fits_cat[fits_cat[cat_creator.ID_label == gal_ID]]
-        z = float(fits_cat[code.galaxy_property_labels("z")])
-        chi_sqs = {name: float(fits_cat[chi_sq]) for name, chi_sq in code.chi_sq_labels.items()}
-        z_PDF = code.extract_z_PDF(fits_cat_path, ID, low_z_run)
-        SEDs = code.extract_SEDs(fits_cat_path, ID, low_z_run)
-        return cls(phot.instrument, phot.flux_Jy, phot.flux_Jy_errs, phot.loc_depths, z, code_name, chi_sqs, z_PDF, SEDs, low_z_run)
+        try:
+            z = float(fits_cat_row[code.galaxy_property_labels["z"]])
+        except:
+            raise(Exception(f"SED run not performed for {code_name}, low_z_run = {low_z_run}"))
+        chi_sqs = {name: float(fits_cat_row[chi_sq]) for name, chi_sq in code.chi_sq_labels.items()}
+        z_PDF = code.extract_z_PDF(fits_cat_row, low_z_run)
+        SEDs = code.extract_SEDs(fits_cat_row, low_z_run)
+        return cls(phot, z, code_name, chi_sqs, z_PDF, SEDs, low_z_run)
 
 # LePhare
 LePhare_outputs = {"z": "Z_BEST", "mass": "MASS_BEST"}

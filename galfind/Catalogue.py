@@ -50,11 +50,11 @@ class Catalogue:
         
     # %% alternative constructors
     @classmethod
-    def from_pipeline(cls, survey, version, aper_diams, cat_creator, xy_offset = [0, 0], instruments = ['NIRCam', 'ACS_WFC', 'WFC3IR'], \
+    def from_pipeline(cls, survey, version, aper_diams, cat_creator, code_names, low_z_runs, xy_offset = [0, 0], instruments = ['NIRCam', 'ACS_WFC', 'WFC3IR'], \
                       forced_phot_band = "f444W", excl_bands = [], loc_depth_min_flux_pc_errs = [5, 10], n_loc_depth_samples = 5, fast = True):
         # make 'Data' object
         data = Data.from_pipeline(survey, version, instruments, excl_bands = excl_bands)
-        return cls.from_data(data, aper_diams, cat_creator, xy_offset, forced_phot_band, loc_depth_min_flux_pc_errs, n_loc_depth_samples, fast)
+        return cls.from_data(data, aper_diams, cat_creator, code_names, low_z_runs, xy_offset, forced_phot_band, loc_depth_min_flux_pc_errs, n_loc_depth_samples, fast)
 
     # @classmethod
     # def from_NIRCam_pipeline(cls, survey, version, aper_diams, cat_creator, xy_offset = [0, 0], forced_phot_band = "f444W", \
@@ -64,7 +64,7 @@ class Catalogue:
     #     return cls.from_data(data, aper_diams, cat_creator, xy_offset, forced_phot_band, loc_depth_min_flux_pc_errs, n_loc_depth_samples, fast)
     
     @classmethod
-    def from_data(cls, data, aper_diams, cat_creator, xy_offset = [0, 0], forced_phot_band = "f444W", loc_depth_min_flux_pc_errs = [5, 10], n_loc_depth_samples = 5, fast = True):
+    def from_data(cls, data, aper_diams, cat_creator, code_names, low_z_runs, xy_offset = [0, 0], forced_phot_band = "f444W", loc_depth_min_flux_pc_errs = [5, 10], n_loc_depth_samples = 5, fast = True):
         # make masked local depth catalogue from the 'Data' object
         data.combine_sex_cats(forced_phot_band)
         data.calc_depths(xy_offset, aper_diams, fast = fast)
@@ -76,7 +76,7 @@ class Catalogue:
         elif cat_creator.cat_type == "sex":
             cat_path = data.sex_cat_master_path
         
-        cat = cls.from_fits_cat(cat_path, data.instrument, data.survey, cat_creator)
+        cat = cls.from_fits_cat(cat_path, data.instrument, cat_creator, code_names, low_z_runs, data.survey)
         print("cat_path = ", cat.cat_path)
         cat.mask(data) # also saves the data object within the catalogue
         return cat
@@ -90,11 +90,23 @@ class Catalogue:
     #     return cls(gals, cat_path, survey, cat_creator)
     
     @classmethod
-    def from_fits_cat(cls, fits_cat_path, instrument, cat_creator, code_names, low_z_runs, survey):
+    def from_fits_cat(cls, fits_cat_path, instrument, cat_creator, code_names, low_z_runs, survey, templates = "fsps_larson"):
         # open the catalogue
         fits_cat = funcs.cat_from_path(fits_cat_path)
+        # run SED fitting for the appropriate code names/low-z runs
+        for code_name, low_z_run in zip(code_names, low_z_runs):
+            code = SED_code.from_name(code_name)
+            try:
+                if low_z_run:
+                    low_z_label = "_lowz"
+                else:
+                    low_z_label = ""
+                fits_cat[f"{code.galaxy_property_labels['z']}{low_z_label}"]
+            except:
+                # perform SED fitting
+                fits_cat = code.fit_cat(fits_cat, templates = templates)
         # produce galaxy array from each row of the catalogue
-        gals = np.array([Galaxy.from_fits_cat(fits_cat[fits_cat[cat_creator.ID_label == ID]], instrument, cat_creator, code_names, low_z_runs) for ID in np.array(fits_cat["NUMBER"])])
+        gals = np.array([Galaxy.from_fits_cat(fits_cat[fits_cat[cat_creator.ID_label == ID]], instrument, cat_creator, code_names, low_z_runs) for ID in np.array(fits_cat[cat_creator.ID_label])])
         return cls(gals, fits_cat_path, survey, cat_creator)
     
     # %% Overloaded operators

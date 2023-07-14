@@ -17,9 +17,7 @@ from . import Photometry_rest, Photometry_obs
 
 class Galaxy:
     
-    # should really expand this to allow for more than one redshift here (only works fro one 'code' class at the moment)
     def __init__(self, sky_coord, ID, phot, mask_flags = {}):
-        # print("'z' here for a short time not a long time (in the 'Galaxy' class)! PUT THIS INSTEAD IN THE 'CODE' class")
         self.sky_coord = sky_coord
         self.ID = int(ID)
         self.phot = phot
@@ -46,14 +44,14 @@ class Galaxy:
         return result
         
     @classmethod
-    def from_fits_cat(cls, fits_cat_row, instrument, cat_creator, code_names, low_z_runs):
+    def from_fits_cat(cls, fits_cat_row, instrument, cat_creator, codes, low_z_runs):
         # load multiple photometries from the fits catalogue
-        phot = [Photometry_obs.from_fits_cat(fits_cat_row, instrument, cat_creator, aper_diam, min_flux_pc_err, code_names, low_z_runs) \
+        phot = [Photometry_obs.from_fits_cat(fits_cat_row, instrument, cat_creator, aper_diam, min_flux_pc_err, codes, low_z_runs) \
                 for min_flux_pc_err in cat_creator.min_flux_pc_err for aper_diam in cat_creator.aper_diam]
         # load the ID and Sky Coordinate from the source catalogue
         ID = int(fits_cat_row[cat_creator.ID_label])
         sky_coord = SkyCoord(fits_cat_row[cat_creator.ra_dec_labels["RA"]] * u.deg, fits_cat_row[cat_creator.ra_dec_labels["DEC"]] * u.deg, frame = "icrs")
         # mask flags should come from cat_creator
-        mask_flags = {}
+        mask_flags = {band: cat_creator.load_flag(fits_cat_row, f"unmasked_{band}") for band in instrument.bands}
         return cls(sky_coord, ID, phot, mask_flags)
     

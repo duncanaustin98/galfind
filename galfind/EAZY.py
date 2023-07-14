@@ -39,11 +39,11 @@ class EAZY(SED_code):
     
     def __init__(self, templates = "fsps_larson", low_z_run = False):
         code_name = "EAZY"
-        ID_label = "IDENT"
+        #ID_label = "IDENT"
         galaxy_property_labels = {"z_phot": "zbest"}
         chi_sq_labels = {}
         self.templates = templates
-        super().__init__(code_name, ID_label, galaxy_property_labels, chi_sq_labels, low_z_run)
+        super().__init__(code_name, galaxy_property_labels, chi_sq_labels, low_z_run)
     
     def from_name(self):
         return EAZY()
@@ -79,7 +79,7 @@ class EAZY(SED_code):
     
     @run_in_dir(path = config['EAZY']['EAZY_DIR'])
     def run_fit(self, in_path, out_path, sed_folder, instrument, default_templates = 'fsps_larson', fix_z = False, n_proc=6, z_step = 0.01, z_min=0, z_max =25,
-                save_best_seds = True, save_pz = True, write_hdf = True, save_plots = False, plot_ids = None, plot_all = False, save_ubvj = True, run_lowz = True, \
+                save_best_seds = True, save_pz = True, write_hdf = True, save_plots = True, plot_ids = None, plot_all = False, save_ubvj = True, run_lowz = True, \
                     z_max_lowz=7, *args, **kwargs):
         '''
         in_path - input EAZY catalogue path
