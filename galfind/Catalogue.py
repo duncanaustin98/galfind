@@ -56,12 +56,12 @@ class Catalogue:
         data = Data.from_pipeline(survey, version, instruments, excl_bands = excl_bands)
         return cls.from_data(data, aper_diams, cat_creator, xy_offset, forced_phot_band, loc_depth_min_flux_pc_errs, n_loc_depth_samples, fast)
 
-    @classmethod
-    def from_NIRCam_pipeline(cls, survey, version, aper_diams, cat_creator, xy_offset = [0, 0], forced_phot_band = "f444W", \
-                             excl_bands = [], loc_depth_min_flux_pc_errs = [5, 10], n_loc_depth_samples = 5, fast = True):
-        # make 'Data' object
-        data = Data.from_NIRCam_pipeline(survey, version, excl_bands = excl_bands)
-        return cls.from_data(data, aper_diams, cat_creator, xy_offset, forced_phot_band, loc_depth_min_flux_pc_errs, n_loc_depth_samples, fast)
+    # @classmethod
+    # def from_NIRCam_pipeline(cls, survey, version, aper_diams, cat_creator, xy_offset = [0, 0], forced_phot_band = "f444W", \
+    #                          excl_bands = [], loc_depth_min_flux_pc_errs = [5, 10], n_loc_depth_samples = 5, fast = True):
+    #     # make 'Data' object
+    #     data = Data.from_NIRCam_pipeline(survey, version, excl_bands = excl_bands)
+    #     return cls.from_data(data, aper_diams, cat_creator, xy_offset, forced_phot_band, loc_depth_min_flux_pc_errs, n_loc_depth_samples, fast)
     
     @classmethod
     def from_data(cls, data, aper_diams, cat_creator, xy_offset = [0, 0], forced_phot_band = "f444W", loc_depth_min_flux_pc_errs = [5, 10], n_loc_depth_samples = 5, fast = True):
@@ -75,8 +75,8 @@ class Catalogue:
             cat_path = data.loc_depth_cat_path
         elif cat_creator.cat_type == "sex":
             cat_path = data.sex_cat_master_path
-            
-        cat = cls.from_sex_cat(cat_path, data.instrument, data.survey, cat_creator)
+        
+        cat = cls.from_fits_cat(cat_path, data.instrument, data.survey, cat_creator)
         print("cat_path = ", cat.cat_path)
         cat.mask(data) # also saves the data object within the catalogue
         return cat
@@ -90,12 +90,12 @@ class Catalogue:
     #     return cls(gals, cat_path, survey, cat_creator)
     
     @classmethod
-    def from_photo_z_cat(cls, cat_path, instrument, cat_creator, code_names, low_z_runs, survey):
+    def from_fits_cat(cls, fits_cat_path, instrument, cat_creator, code_names, low_z_runs, survey):
         # open the catalogue
-        cat = funcs.cat_from_path(cat_path)
+        fits_cat = funcs.cat_from_path(fits_cat_path)
         # produce galaxy array from each row of the catalogue
-        gals = np.array([Galaxy.from_photo_z_cat(cat_path, ID, instrument, cat_creator, code_names, low_z_runs) for ID in np.array(cat["NUMBER"])])
-        return cls(gals, cat_path, survey, cat_creator)
+        gals = np.array([Galaxy.from_fits_cat(fits_cat[fits_cat[cat_creator.ID_label == ID]], instrument, cat_creator, code_names, low_z_runs) for ID in np.array(fits_cat["NUMBER"])])
+        return cls(gals, fits_cat_path, survey, cat_creator)
     
     # %% Overloaded operators
     

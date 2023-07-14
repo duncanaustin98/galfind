@@ -14,17 +14,15 @@ from astropy.coordinates import SkyCoord
 
 from . import useful_funcs_austind as funcs
 from . import Photometry_rest, Photometry_obs
-from . import SED_result
 
 class Galaxy:
     
     # should really expand this to allow for more than one redshift here (only works fro one 'code' class at the moment)
-    def __init__(self, sky_coord, ID, phot, SED_results, mask_flags = {}):
+    def __init__(self, sky_coord, ID, phot, mask_flags = {}):
         # print("'z' here for a short time not a long time (in the 'Galaxy' class)! PUT THIS INSTEAD IN THE 'CODE' class")
         self.sky_coord = sky_coord
         self.ID = int(ID)
         self.phot = phot
-        self.SED_results = SED_results
         self.mask_flags = mask_flags
         
     def __setattr__(self, name, value, obj = "gal"):
@@ -47,30 +45,15 @@ class Galaxy:
             setattr(result, key, deepcopy(value, memo))
         return result
         
-    # @classmethod
-    # def from_sex_cat_row(cls, sex_cat_row, instrument, cat_creator):
-    #     # load the photometry from the sextractor catalogue
-    #     phot = Photometry_obs.get_phot_from_sex(sex_cat_row, instrument, cat_creator)
-    #     # load the ID and Sky Coordinate from the source catalogue
-    #     ID = sex_cat_row["NUMBER"]
-    #     sky_coord = SkyCoord(sex_cat_row["ALPHA_J2000"] * u.deg, sex_cat_row["DELTA_J2000"] * u.deg, frame = "icrs")
-    #     # perform SED fitting to measure the redshift from the photometry
-    #     # for now, load in z = 0 as a placeholder
-    #     return cls(sky_coord, phot, ID, {})
-        
-    @classmethod # currently only works for a singular code
-    def from_photo_z_cat(cls, cat_path, ID, instrument, cat_creator, code_names, low_z_runs, mask_flags = {}):
-        # load the photometry from the sextractor catalogue
-        cat = funcs.cat_from_path(cat_path)
-        photo_z_cat_row = cat[cat["NUMBER"] == ID]
-        
-        # include multiple photometries
-        phot = Photometry_obs.get_phot_from_sex(photo_z_cat_row, instrument, cat_creator)
+    @classmethod
+    def from_fits_cat(cls, fits_cat_row, instrument, cat_creator, code_names, low_z_runs):
+        # load multiple photometries from the fits catalogue
+        phot = [Photometry_obs.from_fits_cat(fits_cat_row, instrument, cat_creator, aper_diam, min_flux_pc_err, code_names, low_z_runs) \
+                for min_flux_pc_err in cat_creator.min_flux_pc_err for aper_diam in cat_creator.aper_diam]
         # load the ID and Sky Coordinate from the source catalogue
-        sky_coord = SkyCoord(photo_z_cat_row["ALPHA_J2000"] * u.deg, photo_z_cat_row["DELTA_J2000"] * u.deg, frame = "icrs")
-        # also load the galaxy properties from the catalogue # remove 'None' results from this array
-        raise(Exception("Put this in the Photometry_obs class!"))
-        SED_results = [SED_result.from_photo_z_cat(name, phot, ID, cat_path, cat_creator, low_z_run) for name, low_z_run in zip(code_names, low_z_runs)]
-        #properties = {code.code_name: {gal_property: photo_z_cat_row[property_label] for gal_property, property_label in code.galaxy_property_labels.items()} for code in codes}
-        return cls(sky_coord, ID, phot, SED_results, mask_flags)
+        ID = int(fits_cat_row[cat_creator.ID_label])
+        sky_coord = SkyCoord(fits_cat_row[cat_creator.ra_dec_labels["RA"]] * u.deg, fits_cat_row[cat_creator.ra_dec_labels["DEC"]] * u.deg, frame = "icrs")
+        # mask flags should come from cat_creator
+        mask_flags = {}
+        return cls(sky_coord, ID, phot, mask_flags)
     
