@@ -20,8 +20,8 @@
 20  650 jwst_miri_f2100w v20171115151044 lambda_c= 2.0801e+05
 21  650 jwst_miri_f2550w v20171115151044 lambda_c= 2.5230e+05
 22  133 hst/ACS_update_sep07/wfc_f435w_t81.dat obs_AFTER_7-4-06+rebin-5A lambda_c= 4.3189e+03 AB-Vega=-0.104 w95=992.7
-23  172 hst/wfc3/UVIS/f606w.dat lambda_c= 5.8925e+03 AB-Vega= 0.080 w95=2193.0
-24  113 hst/wfc3/UVIS/f814w.dat lambda_c= 8.0595e+03 AB-Vega= 0.417 w95=2377.1
+23  173 hst/ACS_update_sep07/wfc_f606w_t81.dat obs_AFTER_7-4-06+rebin-5A lambda_c= 5.9211e+03 AB-Vega= 0.083 w95=2224.8
+24  117 hst/ACS_update_sep07/wfc_f814w_t81.dat obs_AFTER_7-4-06+rebin-5A lambda_c= 8.0570e+03 AB-Vega= 0.419 w95=2357.9
 25  206 hst/wfc3/IR/f105w.dat lambda_c= 1.0545e+04 AB-Vega= 0.641 w95=2781.0
 26  87 hst/wfc3/IR/f125w.dat lambda_c= 1.2471e+04 AB-Vega= 0.895 w95=2867.0
 27  105 hst/wfc3/IR/f140w.dat lambda_c= 1.3924e+04 AB-Vega= 1.072 w95=3759.7
@@ -33,3 +33,18 @@
 33 101 y_HSC.txt http://cosmos.astro.caltech.edu/page/filterset  lambda_c=9775.1 AB-Vega=0.740
 34 2401 NB816_HSC.txt http://cosmos.astro.caltech.edu/page/filterset  lambda_c=8176.7 AB-Vega=0.476
 35 1001 NB921_HSC.txt http://cosmos.astro.caltech.edu/page/filterset  lambda_c=9213.2 AB-Vega=0.647
+36  563 jwst_nircam_f070w v20160902164019 lambda_c= 7.0432e+03
+37  562 jwst_nircam_f140m v20160902164019 lambda_c= 1.4054e+04
+38  562 jwst_nircam_f162m v20160902164019 lambda_c= 1.6272e+04
+39  562 jwst_nircam_f182m v20160902164019 lambda_c= 1.8452e+04
+40  562 jwst_nircam_f210m v20160902164019 lambda_c= 2.0955e+04
+41  319 jwst_nircam_f250m v20160902164019 lambda_c= 2.5037e+04
+42  420 jwst_nircam_f300m v20160902164019 lambda_c= 2.9895e+04
+43  420 jwst_nircam_f335m v20160902164019 lambda_c= 3.3623e+04
+44  420 jwst_nircam_f360m v20160902164019 lambda_c= 3.6243e+04
+45  495 jwst_nircam_f430m v20160902164019 lambda_c= 4.2813e+04
+46  420 jwst_nircam_f460m v20160902164019 lambda_c= 4.6302e+04
+47  420 jwst_nircam_f480m v20160902164019 lambda_c= 4.8156e+04
+48  88 hst/ACS_update_sep07/wfc_f625w_t81.dat obs_AFTER_7-4-06+rebin-5A lambda_c= 6.3114e+03 AB-Vega= 0.158 w95=1391.2
+49  86 hst/ACS_update_sep07/wfc_f775w_t81.dat obs_AFTER_7-4-06+rebin-5A lambda_c= 7.6924e+03 AB-Vega= 0.384 w95=1490.9
+50 102 hst/ACS_update_sep07/wfc_f850lp_t81.dat obs_AFTER_7-4-06+rebin-5A lambda_c= 9.0331e+03 AB-Vega= 0.517 w95=2091.9
