@@ -42,6 +42,7 @@ class Catalogue_Creator:
     def load_photometry(self, fits_cat, band):
         if isinstance(self.arr_index, int):
             zero_point = self.load_zero_point(band) # check that self.zero_point is saved in the correct format and extract ZP for this band
+            print(f"ZP = {zero_point}")
             phot_label, err_label = self.phot_conv(band, self.aper_diam_index)
             if self.flux_or_mag == "flux":
                 phot = funcs.flux_image_to_Jy(fits_cat[phot_label], zero_point)
@@ -68,7 +69,7 @@ class Catalogue_Creator:
 
 class GALFIND_Catalogue_Creator(Catalogue_Creator):
     
-    def __init__(self, cat_type, aper_diam, min_flux_pc_err, zero_point, flux_or_mag = "flux"):
+    def __init__(self, cat_type, aper_diam, min_flux_pc_err, zero_point = u.Jy.to(u.ABmag), flux_or_mag = "flux"):
         self.cat_type = cat_type
         self.aper_diam = aper_diam
         if cat_type == "sex":
@@ -97,10 +98,11 @@ class GALFIND_Catalogue_Creator(Catalogue_Creator):
     def loc_depth_phot_conv(self, band):
         # outputs catalogue column names for photometric fluxes + errors
         if self.flux_or_mag == "flux":
-            phot_label = f"FLUX_APER_{band}_aper_corr"
-            err_label = f"FLUXERR_APER_{band}_loc_depth"
+            phot_label = f"FLUX_APER_{band}_aper_corr_Jy"
+            err_label = f"FLUXERR_APER_{band}_loc_depth_{str(int(self.min_flux_pc_err))}pc_Jy"
         elif self.flux_or_mag == "mag":
             print("Beware that mag errors are asymmetric!")
+            raise(Exception("MAG_APER functionality not yet working!"))
             phot_label = f"MAG_APER_{band}_aper_corr"
             err_label = [f"MAGERR_APER_{band}_l1_loc_depth", f"MAGERR_APER_{band}_u1_loc_depth"] # this doesn't currently work!
         else:

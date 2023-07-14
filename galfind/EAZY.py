@@ -46,6 +46,7 @@ class EAZY(SED_code):
         return EAZY()
     
     def make_in(self, cat, fix_z = False, *args, **kwargs):
+        units = u.uJy
         print("MAKE_IN_EAZY_CAT.DATA = ", cat.data)
         eazy_in_path = f"{self.code_dir}/input/{cat.data.instrument.name}/{cat.data.version}/{cat.data.survey}/{cat.cat_name.replace('.fits', '')}_{cat.cat_creator.min_flux_pc_err}pc.in"
         if not Path(eazy_in_path).is_file():
@@ -59,14 +60,14 @@ class EAZY(SED_code):
             # Define SED input bands on the fly
             SED_input_bands = cat.data.instrument.bands
             # load photometry 
-            phot, phot_err = self.load_photometry(cat, SED_input_bands, u.uJy, -99., None)
+            phot, phot_err = self.load_photometry(cat, SED_input_bands, units, -99., None)
             # Get filter codes (referenced to GALFIND/EAZY/jwst_nircam_FILTER.RES.info) for the given instrument and bands
             filt_codes = [EAZY_FILTER_CODES[cat.data.instrument.instrument_from_band(band)][band] for band in SED_input_bands]
             
             # Make input file
             in_data = np.array([np.concatenate(([IDs[i]], list(itertools.chain(*zip(phot[i], phot_err[i]))), [redshifts[i]]), axis = None) for i in range(len(IDs))])
             in_names = ["ID"] + list(itertools.chain(*zip([f'F{filt_code}' for filt_code in filt_codes], [f'E{filt_code}' for filt_code in filt_codes]))) + ["z_spec"]
-           #print(in_names)
+            #print(in_names)
             in_types = [int] + list(np.full(len(SED_input_bands) * 2, float)) + [float]
             in_tab = Table(in_data, dtype = in_types, names = in_names)
             funcs.make_dirs(eazy_in_path)
@@ -75,9 +76,9 @@ class EAZY(SED_code):
         return eazy_in_path
     
     @run_in_dir(path = config['EAZY']['EAZY_DIR'])
-    def run_fit(self, in_path, out_path, sed_folder, instrument, default_templates = 'fsps_larson', fix_z = False, n_proc=6, z_step = 0.01, z_min=0, z_max =25,
-                save_best_seds = True, save_pz = True, write_hdf = True, save_plots = True, plot_ids = None, plot_all = False, save_ubvj = True, run_lowz = True, \
-                    z_max_lowz=7, *args, **kwargs):
+    def run_fit(self, in_path, out_path, sed_folder, instrument, default_templates = 'fsps_larson', fix_z = False, n_proc = 6, z_step = 0.01, z_min = 0, z_max = 25,
+                save_best_seds = True, save_pz = True, write_hdf = True, save_plots = False, plot_ids = None, plot_all = False, save_ubvj = True, run_lowz = True, \
+                    z_max_lowz = 7, *args, **kwargs):
         '''
         in_path - input EAZY catalogue path
         out_path - output EAZY catalogue path - currently modified by code, needs updating
