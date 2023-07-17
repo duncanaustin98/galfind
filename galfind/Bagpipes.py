@@ -17,6 +17,9 @@ class Bagpipes(SED_code):
     def __init__(self, SFH, priors, t_SFR, SPS_code):
         pass
     
+    def from_name(self):
+        return Bagpipes()
+    
     def make_in(self, cat):
         pass
     

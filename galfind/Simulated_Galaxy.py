@@ -10,7 +10,7 @@ Created on Wed Jun  7 01:21:35 2023
 import astropy.units as u
 from astropy.coordinates import SkyCoord
 
-from .useful_funcs_austind import Galaxy, Photometry_obs
+from . import Galaxy, Photometry_obs
 
 class Simulated_Galaxy(Galaxy):
     

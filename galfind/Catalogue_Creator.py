@@ -13,7 +13,7 @@ import json
 
 from . import useful_funcs_austind as funcs
 from . import config
-from . import SED_codes
+from . import SED_code
 
 class Catalogue_Creator:
     
@@ -75,7 +75,7 @@ class Catalogue_Creator:
 
 class GALFIND_Catalogue_Creator(Catalogue_Creator):
     
-    def __init__(self, cat_type, aper_diam, min_flux_pc_err, zero_point, flux_or_mag = "flux"):
+    def __init__(self, cat_type, aper_diam, min_flux_pc_err, zero_point = u.Jy.to(u.ABmag), flux_or_mag = "flux"):
         self.cat_type = cat_type
         self.aper_diam = aper_diam
         if cat_type == "sex":
@@ -86,8 +86,9 @@ class GALFIND_Catalogue_Creator(Catalogue_Creator):
             raise(Exception(f"'cat_type' = {cat_type} is not valid in {__name__}! Must be either 'sex' or 'loc_depth' !"))
         
         # only make these dicts once to speed up property loading
-        same_key_value_properties = ["auto_corr_factor_UV", "auto_corr_factor_mass"]
-        self.property_conv_dict = {sed_code: {**SED_codes.from_name(sed_code).galaxy_property_labels, **{element: element for element in same_key_value_properties}} for sed_code in json.loads(config["Other"]["CODES"])}
+        same_key_value_properties = [] #["auto_corr_factor_UV", "auto_corr_factor_mass"]
+        print([SED_code.from_name(sed_code) for sed_code in json.loads(config["Other"]["CODES"])])
+        self.property_conv_dict = {sed_code: {**SED_code.from_name().galaxy_property_labels, **{element: element for element in same_key_value_properties}} for sed_code in json.loads(config["Other"]["CODES"])}
         same_key_value_flags = ["robust", "good", "robust_relaxed", "good_relaxed", "blank_module"] + ["unmasked_{band}" for band in json.load(config["Other"]["ALL_BANDS"])]
         self.flag_conv_dict = {element: element for element in same_key_value_flags}
         
@@ -114,10 +115,10 @@ class GALFIND_Catalogue_Creator(Catalogue_Creator):
     def loc_depth_phot_conv(self, band):
         # outputs catalogue column names for photometric fluxes + errors
         if self.flux_or_mag == "flux":
-            phot_label = f"FLUX_APER_{band}_aper_corr"
-            err_label = f"FLUXERR_APER_{band}_loc_depth"
+            phot_label = f"FLUX_APER_{band}_aper_corr_Jy"
+            err_label = f"FLUXERR_APER_{band}_loc_depth_{str(int(self.min_flux_pc_err))}pc_Jy"
         elif self.flux_or_mag == "mag":
-            print("Beware that mag errors are asymmetric!")
+            raise(Exception("Not implemented mag localc depth errors yet!")) # "Beware that mag errors are asymmetric!")
             phot_label = f"MAG_APER_{band}_aper_corr"
             err_label = [f"MAGERR_APER_{band}_l1_loc_depth", f"MAGERR_APER_{band}_u1_loc_depth"] # this doesn't currently work!
         else:
@@ -175,7 +176,7 @@ class JADES_DR1_Catalogue_Creator(Catalogue_Creator):
             phot_err = funcs.mag_to_flux # this doesn't currently work!
         return phot, phot_err
 
-JADES_DR1_cat_creator = JADES_DR1_Catalogue_Creator(2, 4) # 0.15 arcsec radius apertures; CIRC .fits table extension
+#JADES_DR1_cat_creator = JADES_DR1_Catalogue_Creator(2, 4) # 0.15 arcsec radius apertures; CIRC .fits table extension
 
 # JAGUAR
 

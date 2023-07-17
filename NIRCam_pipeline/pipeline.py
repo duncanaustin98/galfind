@@ -16,10 +16,10 @@ from galfind import Catalogue, LePhare, EAZY, config
 from galfind.Catalogue_Creator import GALFIND_Catalogue_Creator
 
 def pipeline(surveys, version,instruments, xy_offsets, aper_diams, code_names, low_z_runs, min_flux_pc_errs, forced_phot_band, excl_bands, \
-             cat_type = "loc_depth", NIRCam_ZP = 28.08, n_loc_depth_samples = 5, fast = True, eazy_templates = "fsps_larson"):
+             cat_type = "loc_depth", n_loc_depth_samples = 5, fast = True, eazy_templates = "fsps_larson"):
     for pc_err in min_flux_pc_errs:
         # make appropriate galfind catalogue creator for each aperture diameter
-        cat_creator = GALFIND_Catalogue_Creator(cat_type, aper_diams[0], pc_err, NIRCam_ZP)
+        cat_creator = GALFIND_Catalogue_Creator(cat_type, aper_diams[0], pc_err)
         for survey, xy_offset in zip(surveys, xy_offsets):
             cat = Catalogue.from_pipeline(survey = survey, version = version, instruments = instruments, aper_diams = aper_diams, cat_creator = cat_creator, code_names = code_names, low_z_runs = low_z_runs, xy_offset = xy_offset, \
                                           forced_phot_band = forced_phot_band, excl_bands = excl_bands, loc_depth_min_flux_pc_errs = min_flux_pc_errs, n_loc_depth_samples = n_loc_depth_samples, fast = fast)
@@ -39,7 +39,7 @@ if __name__ == "__main__":
     version = "v9"
     instruments = ['NIRCam', 'ACS_WFC', 'WFC3IR'] # Can leave this - if there is no data for an instrument it is removed automatically
     cat_type = "loc_depth"
-    surveys = ["CEERSP2"]
+    surveys = ["CEERSP1"]
     aper_diams = [0.32] * u.arcsec
     xy_offsets = [[200, 0]]
     code_names = ["EAZY", "EAZY"] #[LePhare()]
