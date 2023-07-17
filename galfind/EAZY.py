@@ -76,7 +76,7 @@ class EAZY(SED_code):
         return eazy_in_path
     
     @run_in_dir(path = config['EAZY']['EAZY_DIR'])
-    def run_fit(self, in_path, out_path, sed_folder, instrument, default_templates = 'fsps_larson', fix_z = False, n_proc = 6, z_step = 0.01, z_min = 0, z_max = 25,
+    def run_fit(self, in_path, out_path, sed_folder, instrument, default_templates = 'fsps_larson', fix_z = False, n_proc = 2, z_step = 0.01, z_min = 0, z_max = 25,
                 save_best_seds = True, save_pz = True, write_hdf = True, save_plots = False, plot_ids = None, plot_all = False, save_ubvj = True, run_lowz = True, \
                     z_max_lowz = 7, *args, **kwargs):
         '''
@@ -276,7 +276,7 @@ class EAZY(SED_code):
         print(f'Finished running EAZY!')
         
         # Write fits file
-        table.write(fits_out_path, overwrite=True)
+        table.write(fits_out_path, overwrite = True)
         print(f'Written out file to: {fits_out_path}')
 
 

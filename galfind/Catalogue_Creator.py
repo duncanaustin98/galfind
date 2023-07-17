@@ -42,7 +42,6 @@ class Catalogue_Creator:
     def load_photometry(self, fits_cat, band):
         if isinstance(self.arr_index, int):
             zero_point = self.load_zero_point(band) # check that self.zero_point is saved in the correct format and extract ZP for this band
-            print(f"ZP = {zero_point}")
             phot_label, err_label = self.phot_conv(band, self.aper_diam_index)
             if self.flux_or_mag == "flux":
                 phot = funcs.flux_image_to_Jy(fits_cat[phot_label], zero_point)

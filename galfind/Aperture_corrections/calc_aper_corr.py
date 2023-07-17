@@ -26,6 +26,8 @@ import os
 import sys
 
 from . import config
+from . import useful_funcs_austind as funcs
+from . import NIRCam
 
 def log_transform(im): # function to transform fits image to log scaling
     '''returns log(image) scaled to the interval [0,1]'''
@@ -95,7 +97,7 @@ def calc_aper_corr(PSFdata, x_cen, y_cen, band, aper_diam, extract_code = "sep",
     return flux_pc, aper_corr, x_cen, y_cen
 
 def plot_flux_curve(PSFdata, pixel_scale, x_cen, y_cen, band, flux_pcs, aper_corrs, PSF_loc = "/Users/user/Documents/PGR/JWST_PSFs_003as/", PSF_name = "PSF_Resample_03_", \
-                    save_loc = "", tot_aper_size = None, aper_diams = []):
+                    save_loc = "", tot_aper_size = None, aper_diams = [], aper_corr_curve_dir = f"{config['DEFAULT']['GALFIND_WORK']}/Aperture_corrections"):
     
     rlist = np.arange(0, tot_aper_size * pixel_scale.value / 2, 0.01) / pixel_scale
     print("pix_centre:", (x_cen, y_cen))
@@ -121,7 +123,8 @@ def plot_flux_curve(PSFdata, pixel_scale, x_cen, y_cen, band, flux_pcs, aper_cor
     plt.legend(loc = "lower right")
     plt.title(band.replace("f", "F"))
     print("Saved to: " + save_loc + PSF_name + band.replace("f", "F") + "_flux_curve.png")
-    plt.savefig(save_loc + PSF_name + band.replace("f", "F") + "_flux_curve.png", dpi = 800)
+    funcs.make_dirs(aper_corr_curve_dir)
+    plt.savefig(aper_corr_curve_dir + PSF_name + band.replace("f", "F") + "_flux_curve.png", dpi = 800)
     plt.show()
         
 #def compare_aper_flux_to_full_radius():
@@ -155,6 +158,7 @@ def fit_2d_moffatt(PSFdata, maxfev = 10000):
 
 def main(in_bands, extract_code, save_loc, PSF_loc, PSF_name, plot_PSF, aper_diams = json.loads(config.get("SExtractor", "APERTURE_DIAMS")) * u.arcsec):
     print("extract code =", extract_code)
+    funcs.make_dirs(save_loc)
     print_line = [["# aper_diam / arcsec"] + [str(aper_diam.value) for aper_diam in aper_diams]]
     for band in in_bands:
         print(band)
@@ -181,10 +185,11 @@ def main(in_bands, extract_code, save_loc, PSF_loc, PSF_name, plot_PSF, aper_dia
 
 if __name__ == "__main__":
     extract_code = "sep"
-    save_loc = config["DEFAULT"]["GALFIND_WORK"]/Aperture_corrections
+    save_loc = f"{config['DEFAULT']['GALFIND_DIR']}/Aperture_corrections"
     PSF_loc = config["DEFAULT"]["PSF_DIR"]
     #PSF_name = "PSF_Resample_03_"
     PSF_name = ["PSF_", "cen_G5V_fov299px_ISIM41"]
-    plot_PSF = True
+    plot_PSF = False
+    in_bands = NIRCam().bands
     
-    main(extract_code, save_loc, PSF_loc, PSF_name, plot_PSF)
+    main(in_bands, extract_code, save_loc, PSF_loc, PSF_name, plot_PSF)

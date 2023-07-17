@@ -519,6 +519,8 @@ class Data:
     def make_seg_map(self, band):
         if type(band) == str:
             pass
+        elif type(band) == np.str_:
+            band = str(band)
         elif type(band) == list or type(band) == np.array:
             band = self.combine_band_names(band)
         else:
@@ -694,7 +696,7 @@ class Data:
             # Convert to pixel using image WCS
       
         # Do aperture photometry
-        print(image, apertures, wcs)
+        #print(image, apertures, wcs)
         phot_table = aperture_photometry(image, apertures, wcs=wcs)
         assert(len(phot_table) == len(catalog))
         # Replace detection ID with catalog ID
@@ -776,21 +778,24 @@ class Data:
             print(f"Making local depth catalogue for {self.survey} {self.version} in {aper_diams} diameter apertures with min. error(s) {min_flux_pc_err_arr}%!")
             # open photometric data
             phot_data = fits.open(self.sex_cat_master_path)[1].data  
-            for i, band in enumerate(tqdm(self.instrument.bands, desc = f"Making local depth catalogue", total = len(self.instrument))):
+            for i, band in enumerate(tqdm(self.instrument.bands, desc = "Making local depth catalogue", total = len(self.instrument))):
                 
                 im_data, im_header, seg_data, seg_header = self.load_data(band, incl_mask = False)
                 wcs = WCS(im_header)
                 
-                # perform aperture correction
+                # perform aperture corrections
                 # make new columns and overwrite them in the next couple of lines
                 phot_data = make_new_fits_columns(phot_data, ["MAG_APER_" + band + "_aper_corr", "FLUX_APER_" + band + "_aper_corr"], \
                                             [phot_data["MAG_APER_" + band], phot_data["FLUX_APER_" + band]], \
                                                 [phot_data.columns.formats[list(phot_data.columns.names).index("MAG_APER_" + band)], \
                                                  phot_data.columns.formats[list(phot_data.columns.names).index("FLUX_APER_" + band)]])
                 for j, aper_diam in enumerate(json.loads(config.get("SExtractor", "APERTURE_DIAMS")) * u.arcsec):
-                    phot_data["MAG_APER_" + band + "_aper_corr"].T[j] = (phot_data["MAG_APER_" + band].T[j] - self.instrument.aper_corr(aper_diam, band)).T
-                    phot_data["FLUX_APER_" + band + "_aper_corr"].T[j] = 10 ** ((phot_data["MAG_APER_" + band + "_aper_corr"].T[j] - self.im_zps[band]) / -2.5)
-                    print("Performed aperture corrections")
+                    # only do aperture correction if flux is positive
+                    phot_data["MAG_APER_" + band + "_aper_corr"].T[j] = np.array([phot_data["MAG_APER_" + band][k].T[j] - self.instrument.aper_corr(aper_diam, band) \
+                        if phot_data["FLUX_APER_" + band][k].T[j] > 0. else phot_data["MAG_APER_" + band][k].T[j] for k in range(len(phot_data))])
+                    phot_data["FLUX_APER_" + band + "_aper_corr"].T[j] = np.array([10 ** ((phot_data["MAG_APER_" + band + "_aper_corr"][k].T[j] - self.im_zps[band]) / -2.5) \
+                        if phot_data["FLUX_APER_" + band][k].T[j] > 0. else phot_data["FLUX_APER_" + band][k].T[j] for k in range(len(phot_data))])
+                    print(f"Performed aperture corrections for {band} {aper_diam}")
                 
                 # make new columns (fill with original errors and overwrite in a couple of lines)
                 phot_data = make_new_fits_columns(phot_data, ["loc_depth_" + band, "FLUXERR_APER_" + band + "_loc_depth", "MAGERR_APER_" + band + "_l1_loc_depth", \
