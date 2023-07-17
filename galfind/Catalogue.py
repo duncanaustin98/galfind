@@ -19,7 +19,7 @@ import copy
 
 from . import useful_funcs_austind as useful_funcs
 from .Data import Data
-from .useful_funcs_austind import Galaxy
+from . import Galaxy
 from . import useful_funcs_austind as funcs
 from .Catalogue_Creator import GALFIND_Catalogue_Creator
 from . import SED_code
