@@ -31,9 +31,6 @@ class LePhare(SED_code):
         chi_sq_labels = {}
         super().__init__(code_name, galaxy_property_labels, chi_sq_labels, low_z_run)
     
-    def from_name(self):
-        return LePhare()
-    
     def make_in(self, cat, units = u.ABmag, fix_z = False, *args, **kwargs): # from FITS_organiser.py
         lephare_in_path = f"{self.code_dir}/input/{cat.data.instrument.name}/{cat.data.version}/{cat.data.survey}/{cat.cat_name.replace('.fits', '')}_{cat.cat_creator.min_flux_pc_err}pc.in"
         if not Path(lephare_in_path).is_file():

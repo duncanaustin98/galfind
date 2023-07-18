@@ -38,6 +38,7 @@ class Photometry:
         for band in instrument_copy.bands:
             try:
                 flux, err = cat_creator.load_photometry(fits_cat_row, band)
+                #print(flux, err)
                 fluxes.append(flux.value)
                 flux_errs.append(err.value)
             except:

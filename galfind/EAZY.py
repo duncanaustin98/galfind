@@ -33,7 +33,6 @@ EAZY_FILTER_CODES = {'NIRCam': {'f070W':36, 'f090W':1, 'f115W':2,'f140M':37, 'f1
                                 'f250M':41, 'f277W':5, 'f300M':42, 'f335M':43, 'f356W':6,'f360M':44, 'f410M':7, 'f430M':45, 'f444W':8, 'f460M':46, 'f480M':47},
                     'ACS_WFC':{'f435W':22, 'f606W':23, 'f814W':24,'f105W':25,'f125W':26, 'f140W':27,'f150W':28}, 
                     'MIRI': {'f0560W':13, 'f0770W':14, 'f1000W':15, 'f1130W':16, 'f1280W':17, 'f1500W':18,'f1800W':19, 'f2100W':20, 'f2550W':21}}
-# NOT SO SURE THAT f150W ACS WFC EXISTS!
 
 class EAZY(SED_code):
     
@@ -41,19 +40,19 @@ class EAZY(SED_code):
         code_name = "EAZY"
         #ID_label = "IDENT"
         galaxy_property_labels = {"z_phot": "zbest"}
+        # if low_z_run:
+        #     galaxy_property_labels = {key: f"{value}_lowz" for (key, value) in galaxy_property_labels.items()}
         chi_sq_labels = {}
         self.templates = templates
         super().__init__(code_name, galaxy_property_labels, chi_sq_labels, low_z_run)
     
-    def from_name(self):
-        return EAZY()
-    
     def make_in(self, cat, fix_z = False, *args, **kwargs):
         print("MAKE_IN_EAZY_CAT.DATA = ", cat.data)
-        eazy_in_path = f"{self.code_dir}/input/{cat.data.instrument.name}/{cat.data.version}/{cat.data.survey}/{cat.cat_name.replace('.fits', '')}_{cat.cat_creator.min_flux_pc_err}pc.in"
+        eazy_in_path = f"{config['EAZY']['EAZY_DIR']}/input/{cat.data.instrument.name}/{cat.data.version}/{cat.data.survey}/{cat.cat_name.replace('.fits', '')}_{cat.cat_creator.min_flux_pc_err}pc.in"
         if not Path(eazy_in_path).is_file():
             # 1) obtain input data
             IDs = np.array([gal.ID for gal in cat.gals]) # load IDs
+            
             # load redshifts
             if not fix_z:
                 redshifts = np.array([-99. for gal in cat.gals])
@@ -67,6 +66,7 @@ class EAZY(SED_code):
             filt_codes = [EAZY_FILTER_CODES[cat.data.instrument.instrument_from_band(band)][band] for band in SED_input_bands]
             
             # Make input file
+            print(IDs, phot, phot_err, redshifts, len(IDs), len(phot), len(phot_err), len(redshifts))
             in_data = np.array([np.concatenate(([IDs[i]], list(itertools.chain(*zip(phot[i], phot_err[i]))), [redshifts[i]]), axis = None) for i in range(len(IDs))])
             in_names = ["ID"] + list(itertools.chain(*zip([f'F{filt_code}' for filt_code in filt_codes], [f'E{filt_code}' for filt_code in filt_codes]))) + ["z_spec"]
            #print(in_names)
@@ -333,8 +333,8 @@ class EAZY(SED_code):
         fits_out_path = fits_out_path[:-5] + f"_eazy_{templates}" + fits_out_path[-5:] 
         return fits_out_path
     
-    def extract_SEDs(self, cat_path, ID, low_z_run = False, units = u.ABmag, just_header = False):
-        SED_path = self.SED_path_from_cat_path(cat_path, ID, low_z_run)
+    def extract_SEDs(self, fits_cat, ID, low_z_run = False, units = u.ABmag, just_header = False):
+        SED_path = self.SED_path_from_cat_path(fits_cat.meta["cat_path"], ID, low_z_run)
         if not Path(SED_path).is_file():
             print(f'Not found EAZY SED at {SED_path}')
         if not just_header: 
@@ -342,8 +342,8 @@ class EAZY(SED_code):
             SED['mag'][np.isinf(SED['mag'])] = 99.
         return {"best_gal": SED}
     
-    def extract_z_PDF(self, cat_path, ID, low_z_run = False):
-        PDF_path = self.PDF_path_from_cat_path(cat_path, ID, low_z_run)
+    def extract_z_PDF(self, fits_cat, ID, low_z_run = False):
+        PDF_path = self.z_PDF_path_from_cat_path(fits_cat.meta["cat_path"], ID, low_z_run)
         try:
             z, PDF = np.loadtxt(PDF_path, delimiter = ',').T  
         except FileNotFoundError:
@@ -354,11 +354,13 @@ class EAZY(SED_code):
     def z_PDF_path_from_cat_path(self, cat_path, ID, low_z_run = False):
         # should still include aper_diam here
         min_flux_pc_err = str(cat_path.replace(f"_{self.templates}", "").split("_")[-2].replace("pc", ""))
+        print(cat_path)
+        print(min_flux_pc_err)
         if low_z_run:
             low_z_name = "_lowz"
         else:
             low_z_name = ""
-        PDF_dir = f"{funcs.split_dir_name(cat_path, 'dir')}/PDFs/{str(min_flux_pc_err)}pc/{self.templates}"
+        PDF_dir = f"{funcs.split_dir_name(cat_path, 'dir')}PDFs/{str(min_flux_pc_err)}pc/{self.templates}"
         PDF_name = f"{str(ID)}{low_z_name}.pz"
         return f"{PDF_dir}/{PDF_name}"
     

@@ -76,8 +76,9 @@ class Instrument:
                 raise(Exception("Cannot add multiple of the same band together in 'Instrument.__add__()'!"))
         
         # add and sort bands from blue -> red
-        all_bands = config.get("Other", "ALL_BANDS").split(', ')
-        bands = [band for band in all_bands if band in np.concatenate([self.bands,instrument.bands])]
+        all_bands = json.loads(config.get("Other", "ALL_BANDS"))
+        # print("all bands = ", all_bands, type(all_bands), type(all_bands[0]))
+        bands = [band for band in all_bands if band in np.concatenate([self.bands, instrument.bands])]
         self.band_wavelengths.update(instrument.band_wavelengths)
         band_wavelengths = self.band_wavelengths
         self.band_FWHMs.update(instrument.band_FWHMs)
@@ -150,14 +151,16 @@ class Instrument:
 # %% Other class methods
 
     def remove_band(self, band):
+        band = str(band)
+        assert type(band) == str, f"band = {band} of type = {type(band)} is not str"
         try:
-            remove_index = np.where(self.bands == np.array(band))[0][0]
+            remove_index = np.where(self.bands == band)[0][0]
             #print(f"remove index = {remove_index}")
             self.bands = np.delete(self.bands, remove_index)
             del self.band_wavelengths[band]
             del self.band_FWHMs[band]
         except IndexError:
-            raise(Exception("Remove band failed!"))
+            #raise(Exception("Remove band failed!"))
             pass
         
     def remove_index(self, remove_index):

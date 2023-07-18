@@ -13,6 +13,7 @@ import astropy.units as u
 from copy import copy, deepcopy
 
 from . import Photometry
+from . import SED_result
 
 class Photometry_obs(Photometry):
 
@@ -31,15 +32,18 @@ class Photometry_obs(Photometry):
         return (self.flux_Jy_errs * const.c / ((np.array([value.value for value in self.instrument.band_wavelengths.values()]) * u.Angstrom) ** 2)).to(u.erg / (u.s * (u.cm ** 2) * u.Angstrom))
 
     @classmethod # not a gal object here, more like a catalogue row
-    def from_fits_cat(cls, fits_cat_row, instrument, cat_creator, aper_diam, min_flux_pc_err, code_names, low_z_runs):
+    def from_fits_cat(cls, fits_cat_row, instrument, cat_creator, aper_diam, min_flux_pc_err, codes, low_z_runs):
         phot = Photometry.from_fits_cat(fits_cat_row, instrument, cat_creator)
-        SED_results = [SED_result.from_fits_cat(fits_cat_row, name, phot, cat_creator, low_z_run) for name, low_z_run in zip(code_names, low_z_runs)]
+        SED_results = [SED_result.from_fits_cat(fits_cat_row, code, phot, cat_creator, low_z_run) for code, low_z_run in zip(codes, low_z_runs)]
         return cls.from_phot(phot, aper_diam, min_flux_pc_err, SED_results)
     
     @classmethod
     def from_phot(cls, phot, aper_diam, min_flux_pc_err, SED_results = []):
         return cls(phot.instrument, phot.flux_Jy, phot.flux_Jy_errs, aper_diam, min_flux_pc_err, phot.loc_depths, SED_results)
-        
+    
+    def update(self, SED_result):
+        self.SED_results += SED_result
+    
     # @classmethod
     # def get_phot_from_sim(cls, gal, instrument, sim, min_flux_err_pc = 5):
     #     fluxes = []

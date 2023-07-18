@@ -32,7 +32,7 @@ class Photometry_rest(Photometry):
     @classmethod
     def from_fits_cat(cls, fits_cat_row, instrument, cat_creator, code):
         phot = Photometry.from_fits_cat(fits_cat_row, instrument, cat_creator)
-        return cls(phot, np.float(fits_cat_row[code.galaxy_properties["z"]]))
+        return cls(phot, np.float(fits_cat_row[code.galaxy_properties["z_phot"]]))
     
     @classmethod
     def from_phot(cls, phot, z):
