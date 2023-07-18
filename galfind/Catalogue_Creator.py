@@ -13,7 +13,7 @@ import json
 
 from . import useful_funcs_austind as funcs
 from . import config
-from . import SED_code
+from . import SED_code, LePhare, EAZY, Bagpipes
 
 class Catalogue_Creator:
     
@@ -63,7 +63,10 @@ class Catalogue_Creator:
     
     def load_flag(self, fits_cat, gal_flag):
         flag_label = self.flag_conv(gal_flag)
-        return fits_cat[flag_label]
+        try:
+            return fits_cat[flag_label]
+        except:
+            return None
     
     def apply_min_flux_pc_err(self, flux, err):
         # encorporate minimum flux error
@@ -87,9 +90,8 @@ class GALFIND_Catalogue_Creator(Catalogue_Creator):
         
         # only make these dicts once to speed up property loading
         same_key_value_properties = [] #["auto_corr_factor_UV", "auto_corr_factor_mass"]
-        print([SED_code.from_name(sed_code) for sed_code in json.loads(config["Other"]["CODES"])])
-        self.property_conv_dict = {sed_code: {**SED_code.from_name().galaxy_property_labels, **{element: element for element in same_key_value_properties}} for sed_code in json.loads(config["Other"]["CODES"])}
-        same_key_value_flags = ["robust", "good", "robust_relaxed", "good_relaxed", "blank_module"] + ["unmasked_{band}" for band in json.load(config["Other"]["ALL_BANDS"])]
+        self.property_conv_dict = {sed_code: {**getattr(globals()[sed_code], sed_code)().galaxy_property_labels, **{element: element for element in same_key_value_properties}} for sed_code in json.loads(config["Other"]["CODES"])}
+        same_key_value_flags = ["robust", "good", "robust_relaxed", "good_relaxed", "blank_module"] + [f"unmasked_{band}" for band in json.loads(config.get("Other", "ALL_BANDS"))]
         self.flag_conv_dict = {element: element for element in same_key_value_flags}
         
         property_conv = self.property_conv

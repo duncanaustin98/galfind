@@ -129,7 +129,6 @@ class Data:
         depth_dir = {}
         is_blank = is_blank_survey(survey)
 
-    
         for instrument in instruments:
             instrument = instruments_obj[instrument]
             if instrument.name == "NIRCam":
@@ -171,7 +170,6 @@ class Data:
                 else:
                     im_path_arr = glob.glob(f"{survey_dir}/*_i2d*.fits")
                 im_path_arr = np.array([path for path in im_path_arr if path not in nadams_seg_path_arr and path not in nadams_bkg_path_arr])
-
                 # obtain available bands from imaging without having to hard code these
                 bands = np.array([split_path.lower().replace("w", "W").replace("m", "M") for path in im_path_arr for i, split_path in \
                         enumerate(path.split("-")[-1].split("/")[-1].split("_")) if split_path.lower().replace("w", "W").replace("m", "M") in instrument.bands])
@@ -216,7 +214,6 @@ class Data:
                             wht_paths[band] = str(im_paths[band])
                         
                     # need to change this to work if there are no segmentation maps (with the [0] indexing)
-                
 
             elif instrument.name in ["ACS_WFC", 'WFC3IR']:
                 # Iterate through bands and check if images exist 
@@ -287,13 +284,14 @@ class Data:
                 if any_path_found:
                     if comb_instrument_created:
                         comb_instrument += instrument
-                        print('Added instrument')
+                        print(f'Added instrument = {instrument.name}')
                     else:
                         comb_instrument = instrument
                         comb_instrument_created = True
+                        print("Making combined_instrument")
 
                         # Need to update what it suggests
-           
+                print(comb_instrument.bands, instrument.bands, instrument.name, comb_instrument.name)
             elif instrument.name == 'MIRI':
                 raise NotImplementedError("MIRI not yet implemented")
         if comb_instrument_created:
@@ -321,7 +319,7 @@ class Data:
                 blank_mask_path = ""
 
             #im_paths, im_exts, im_shapes, im_zps, wht_paths, wht_exts, wht_types, im_pixel_scales, seg_paths, mask_paths, cluster_mask_path, blank_mask_path 
-            
+            print("combined instrument bands", comb_instrument.bands, comb_instrument.name)
             return cls(comb_instrument, im_paths, im_exts,im_pixel_scales, im_shapes, im_zps, wht_paths, wht_exts, wht_types, seg_paths, mask_paths, cluster_mask_path, blank_mask_path, survey, version = version, is_blank = is_blank)
         else:
             raise(Exception(f'Failed to find any data for {survey}'))  

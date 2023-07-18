@@ -21,8 +21,7 @@ from astropy.io import fits
 
 from . import useful_funcs_austind as funcs
 from . import config
-from . import Photometry_rest
-
+from . import SED_result
 
 # %% SED_code class
 
@@ -35,31 +34,27 @@ class SED_code(ABC):
         self.low_z_run = low_z_run
         #self.code_dir = f"{config['DEFAULT']['GALFIND_WORK']}/{code_name}"
     
-    @abstractmethod
-    def from_name(self):
-        pass
-    
     def load_photometry(self, cat, SED_input_bands, out_units, no_data_val, upper_sigma_lim = {}):
         # load in raw photometry from the galaxies in the catalogue and convert to appropriate units
-        phot = np.array([gal.phot_obs.flux_Jy.to(out_units) for gal in cat])
+        phot = np.array([gal.phot[0].flux_Jy.to(out_units) for gal in cat])[:, :, 0]
         phot_shape = phot.shape
 
         if out_units != u.ABmag:
-            phot_err = np.array([gal.phot_obs.flux_Jy_errs.to(out_units) for gal in cat])
+            phot_err = np.array([gal.phot[0].flux_Jy_errs.to(out_units) for gal in cat])[:, :, 0]
         else:
             # Not correct in general! Only for high S/N! Fails to scale mag errors asymetrically from flux errors
-            phot_err = np.array([funcs.flux_pc_to_mag_err(gal.phot_obs.flux_Jy_errs / gal.phot_obs.flux_Jy) for gal in cat])
+            phot_err = np.array([funcs.flux_pc_to_mag_err(gal.phot[0].flux_Jy_errs / gal.phot[0].flux_Jy) for gal in cat])[:, :, 0]
         
         # include upper limits if wanted
         if upper_sigma_lim != None and upper_sigma_lim != {}:
             # determine relevant indices
-            upper_lim_indices = [[i, j] for i, gal in enumerate(cat) for j, depth in enumerate(gal.phot_obs.loc_depths) \
+            upper_lim_indices = [[i, j] for i, gal in enumerate(cat) for j, depth in enumerate(gal.phot[0].loc_depths) \
                                  if funcs.n_sigma_detection(depth, (phot[i][j] * out_units).to(u.ABmag).value + \
-                                gal.phot_obs.instrument.aper_corr(gal.phot_obs.aper_diam, gal.phot_obs.instrument.bands[j]), u.Jy.to(u.ABmag)) < upper_sigma_lim["threshold"]]
+                                gal.phot[0].instrument.aper_corr(gal.phot[0].aper_diam, gal.phot[0].instrument.bands[j]), u.Jy.to(u.ABmag)) < upper_sigma_lim["threshold"]]
             phot = np.array([funcs.five_to_n_sigma_mag(loc_depth, upper_sigma_lim["value"]) if [i, j] in upper_lim_indices else phot[i][j] \
-                    for i, gal in enumerate(cat) for j, loc_depth in enumerate(gal.phot_obs.loc_depths)]).reshape(phot_shape)
+                    for i, gal in enumerate(cat) for j, loc_depth in enumerate(gal.phot[0].loc_depths)]).reshape(phot_shape)
             phot_err = np.array([-1.0 if [i, j] in upper_lim_indices else phot_err[i][j] \
-                    for i, gal in enumerate(cat) for j, loc_depth in enumerate(gal.phot_obs.loc_depths)]).reshape(phot_shape)
+                    for i, gal in enumerate(cat) for j, loc_depth in enumerate(gal.phot[0].loc_depths)]).reshape(phot_shape)
 
         # insert 'no_data_val' from SED_input_bands with no data in the catalogue
         phot_in = []
@@ -77,8 +72,7 @@ class SED_code(ABC):
         
         return phot_in, phot_err_in
     
-    def fit_cat(self, cat, *args, **kwargs):
-        print("Updated SED_code.fit_cat to trace SED_input_bands")
+    def fit_cat(self, cat, low_z_run, *args, **kwargs): # low_z_run, 
         in_path = self.make_in(cat, *args, **kwargs)
         out_folder = funcs.split_dir_name(in_path.replace("input", "output"), "dir")
         out_path = f"{out_folder}/{funcs.split_dir_name(in_path, 'name').replace('.in', '.out')}"
@@ -89,21 +83,21 @@ class SED_code(ABC):
             self.run_fit(in_path, out_path, sed_folder, cat.data.instrument.new_instrument(), *args, **kwargs)
             self.make_fits_from_out(out_path, *args, **kwargs)
         # update galaxies within catalogue object with determined properties
-        data = cat.data # work around of update_cat function
-        cat = self.update_cat(cat, fits_out_path, *args, **kwargs)
-        cat.data = data # work around of update_cat function
+        cat = self.update_cat(cat, fits_out_path, low_z_run, *args, **kwargs)
         return cat
     
-    def update_cat(self, cat, fits_out_path, *args, **kwargs):
+    def update_cat(self, cat, fits_out_path, low_z_run, *args, **kwargs):
         # save concatenated catalogue
         combined_cat = join(Table.read(cat.cat_path), Table.read(fits_out_path), keys_left = "NUMBER", keys_right = "IDENT")
         combined_cat_path = f"{config['DEFAULT']['GALFIND_WORK']}/Catalogues/{cat.data.version}/{cat.data.instrument.name}/" + \
             f"{cat.data.survey}/{funcs.split_dir_name(fits_out_path.replace('.fits', '_matched.fits'), 'name')}"
         combined_cat.write(combined_cat_path, overwrite = True)
-        # update 'Catalogue' object using Catalogue.__setattr__()
-        codes = cat.codes + [self.from_name()]
-        print("We need to make Catalogue.from_photo_z_cat() produce a data object within the catalogue object!")
-        return cat.from_fits_cat(combined_cat_path, cat.data.instrument, cat.data.survey, cat.cat_creator, codes)
+        combined_cat.meta["cat_path"] = combined_cat_path
+        # update galaxies within the catalogue with new SED fits
+        cat.cat_path = combined_cat_path
+        SED_results = [SED_result.from_fits_cat(combined_cat[combined_cat["NUMBER"] == gal.ID], self.__class__(), gal.phot[0], cat.cat_creator, low_z_run) for gal in cat]
+        cat.update_SED_results(SED_results)
+        return cat #.from_fits_cat(combined_cat_path, cat.data.instrument, cat.cat_creator, codes, low_z_runs, cat.data.survey)
         
     @abstractmethod
     def make_in(self, cat):
@@ -148,30 +142,6 @@ class SED_code(ABC):
     @abstractmethod
     def SED_path_from_cat_path(self, cat_path, ID, low_z_run = False):
         pass
-
-class SED_result:
-    
-    def __init__(self, phot, z, code_name, chi_sqs = None, z_PDF_gal = None, SEDs = None, low_z_run = False):
-        self.photometry_rest = Photometry_rest.from_phot(phot, z)
-        self.z = z
-        self.chi_sqs = chi_sqs
-        self.z_PDF_gal = z_PDF_gal
-        self.SEDs = SEDs
-        self.code_name = code_name
-        self.low_z_run = low_z_run
-        
-    @classmethod
-    def from_fits_cat(cls, fits_cat_row, code_name, phot, cat_creator, low_z_run):
-        # could include cat_creator here to construct the photometry from the raw catalogue
-        code = SED_code.from_name(code_name)
-        try:
-            z = float(fits_cat_row[code.galaxy_property_labels["z"]])
-        except:
-            raise(Exception(f"SED run not performed for {code_name}, low_z_run = {low_z_run}"))
-        chi_sqs = {name: float(fits_cat_row[chi_sq]) for name, chi_sq in code.chi_sq_labels.items()}
-        z_PDF = code.extract_z_PDF(fits_cat_row, low_z_run)
-        SEDs = code.extract_SEDs(fits_cat_row, low_z_run)
-        return cls(phot, z, code_name, chi_sqs, z_PDF, SEDs, low_z_run)
 
 # LePhare
 LePhare_outputs = {"z": "Z_BEST", "mass": "MASS_BEST"}

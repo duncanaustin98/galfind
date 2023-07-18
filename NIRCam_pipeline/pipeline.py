@@ -39,7 +39,7 @@ if __name__ == "__main__":
     version = "v9"
     instruments = ['NIRCam', 'ACS_WFC', 'WFC3IR'] # Can leave this - if there is no data for an instrument it is removed automatically
     cat_type = "loc_depth"
-    surveys = ["CEERSP1"]
+    surveys = ["CEERSP10"]
     aper_diams = [0.32] * u.arcsec
     xy_offsets = [[200, 0]]
     code_names = ["EAZY", "EAZY"] #[LePhare()]
