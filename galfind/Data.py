@@ -862,14 +862,15 @@ class Data:
                         
                         # add column setting flux in Jy to minimum n_pc error
                         for min_flux_pc_err in min_flux_pc_err_arr:
-                            if phot_data["FLUXERR_APER_" + band + "_loc_depth"].T[diam_index][k] / phot_data["FLUX_APER_" + band + "_aper_corr"].T[diam_index][k] < min_flux_pc_err / 100:
+                            if phot_data["FLUXERR_APER_" + band + "_loc_depth"].T[diam_index][k] / phot_data["FLUX_APER_" + band + "_aper_corr"].T[diam_index][k] < min_flux_pc_err / 100 \
+                                and phot_data["FLUX_APER_" + band + "_aper_corr"].T[diam_index][k] > 0.:
                                 phot_data["FLUXERR_APER_" + band + "_loc_depth_" + str(min_flux_pc_err) + "pc_Jy"].T[diam_index][k] = \
                                 phot_data["FLUX_APER_" + band + "_aper_corr_Jy"].T[diam_index][k] * min_flux_pc_err / 100
                             else:
                                 phot_data["FLUXERR_APER_" + band + "_loc_depth_" + str(min_flux_pc_err) + "pc_Jy"].T[diam_index][k] = \
                                     funcs.flux_image_to_Jy(phot_data["FLUXERR_APER_" + band + "_loc_depth"].T[diam_index][k], self.im_zps[band]).value
                         
-                        # calculate local depth mag errors both with and without 5pc minimum flux errors imposed
+                        # calculate local depth mag errors both with and without n_pc minimum flux errors imposed
                         for m in range(2):
                             for n, min_flux_pc_err in enumerate(min_flux_pc_err_arr):
                                 if m == 0 and n == 0:

@@ -93,6 +93,7 @@ class SED_code(ABC):
             f"{cat.data.survey}/{funcs.split_dir_name(fits_out_path.replace('.fits', '_matched.fits'), 'name')}"
         combined_cat.write(combined_cat_path, overwrite = True)
         combined_cat.meta["cat_path"] = combined_cat_path
+        combined_cat.meta = {**combined_cat.meta, **{f"{self.code_name}_path": fits_out_path}}
         # update galaxies within the catalogue with new SED fits
         cat.cat_path = combined_cat_path
         SED_results = [SED_result.from_fits_cat(combined_cat[combined_cat["NUMBER"] == gal.ID], self.__class__(), gal.phot[0], cat.cat_creator, low_z_run) for gal in cat]
