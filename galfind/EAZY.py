@@ -334,7 +334,7 @@ class EAZY(SED_code):
         return fits_out_path
     
     def extract_SEDs(self, fits_cat, ID, low_z_run = False, units = u.ABmag, just_header = False):
-        SED_path = self.SED_path_from_cat_path(fits_cat.meta["cat_path"], ID, low_z_run)
+        SED_path = self.SED_path_from_cat_path(fits_cat.meta[f"{self.name}_path"], ID, low_z_run)
         if not Path(SED_path).is_file():
             print(f'Not found EAZY SED at {SED_path}')
         if not just_header: 
@@ -343,7 +343,7 @@ class EAZY(SED_code):
         return {"best_gal": SED}
     
     def extract_z_PDF(self, fits_cat, ID, low_z_run = False):
-        PDF_path = self.z_PDF_path_from_cat_path(fits_cat.meta["cat_path"], ID, low_z_run)
+        PDF_path = self.z_PDF_path_from_cat_path(fits_cat.meta[f"{self.name}_path"], ID, low_z_run)
         try:
             z, PDF = np.loadtxt(PDF_path, delimiter = ',').T  
         except FileNotFoundError:
@@ -353,7 +353,7 @@ class EAZY(SED_code):
         
     def z_PDF_path_from_cat_path(self, cat_path, ID, low_z_run = False):
         # should still include aper_diam here
-        min_flux_pc_err = str(cat_path.replace(f"_{self.templates}", "").split("_")[-2].replace("pc", ""))
+        min_flux_pc_err = str(cat_path.replace(f"_{self.templates}", "").split("_")[-3].replace("pc", ""))
         print(cat_path)
         print(min_flux_pc_err)
         if low_z_run:
@@ -366,11 +366,11 @@ class EAZY(SED_code):
     
     def SED_path_from_cat_path(self, cat_path, ID, low_z_run = False):
         # should still include aper_diam here
-        min_flux_pc_err = str(cat_path.replace(f"_{self.templates}", "").split("_")[-2].replace("pc", ""))
+        min_flux_pc_err = str(cat_path.replace(f"_{self.templates}", "").split("_")[-3].replace("pc", ""))
         if low_z_run:
             low_z_name = "_lowz"
         else:
             low_z_name = ""
-        SED_dir = f"{funcs.split_dir_name(cat_path, 'dir')}/SEDs/{str(min_flux_pc_err)}pc/{self.templates}"
+        SED_dir = f"{funcs.split_dir_name(cat_path, 'dir')}SEDs/{str(min_flux_pc_err)}pc/{self.templates}"
         SED_name = f"{str(ID)}{low_z_name}.pz"
         return f"{SED_dir}/{SED_name}"
