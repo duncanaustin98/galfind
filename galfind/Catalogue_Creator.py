@@ -49,7 +49,7 @@ class Catalogue_Creator:
             if self.flux_or_mag == "flux":
                 phot = funcs.flux_image_to_Jy(fits_cat[phot_label], zero_point)
                 phot_err = funcs.flux_image_to_Jy(fits_cat[err_label], zero_point)
-                phot, phot_err = self.apply_min_flux_pc_err(phot, phot_err)
+                #phot, phot_err = self.apply_min_flux_pc_err(phot, phot_err)
             elif self.flux_or_mag == "mag":
                 phot = funcs.mag_to_flux(fits_cat[phot_label], u.Jy.to(u.ABmag))
                 phot_err = funcs.mag_to_flux
@@ -69,8 +69,8 @@ class Catalogue_Creator:
             return None
     
     def apply_min_flux_pc_err(self, flux, err):
-        # encorporate minimum flux error
-        if err / flux < self.min_flux_pc_err / 100:
+        # encorporate minimum flux error to positive fluxes only
+        if err / flux < self.min_flux_pc_err / 100 and flux > 0.:
             err = self.min_flux_pc_err * flux / 100
         return flux, err
 

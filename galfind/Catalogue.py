@@ -64,7 +64,7 @@ class Catalogue:
     #     return cls.from_data(data, aper_diams, cat_creator, xy_offset, forced_phot_band, loc_depth_min_flux_pc_errs, n_loc_depth_samples, fast)
     
     @classmethod
-    def from_data(cls, data, aper_diams, cat_creator, code_names, low_z_runs, xy_offset = [0, 0], forced_phot_band = "f444W", loc_depth_min_flux_pc_errs = [5, 10], n_loc_depth_samples = 5, fast = True):
+    def from_data(cls, data, aper_diams, cat_creator, code_names, low_z_runs, xy_offset = [0, 0], forced_phot_band = "f444W", loc_depth_min_flux_pc_errs = [5, 10], n_loc_depth_samples = 5, fast = True, mask = True):
         # make masked local depth catalogue from the 'Data' object
         data.combine_sex_cats(forced_phot_band)
         data.calc_depths(xy_offset, aper_diams, fast = fast)
@@ -75,10 +75,7 @@ class Catalogue:
             cat_path = data.loc_depth_cat_path
         elif cat_creator.cat_type == "sex":
             cat_path = data.sex_cat_master_path
-        cat = cls.from_fits_cat(cat_path, data.instrument, cat_creator, code_names, low_z_runs, data.survey, data = data)
-        print("cat_path = ", cat.cat_path)
-        cat.mask(data) # also saves the data object within the catalogue
-        return cat
+        return cls.from_fits_cat(cat_path, data.instrument, cat_creator, code_names, low_z_runs, data.survey, data = data, mask = mask)
     
     # @classmethod
     # def from_sex_cat(cls, cat_path, instrument, survey, cat_creator):
@@ -89,7 +86,7 @@ class Catalogue:
     #     return cls(gals, cat_path, survey, cat_creator)
     
     @classmethod
-    def from_fits_cat(cls, fits_cat_path, instrument, cat_creator, code_names, low_z_runs, survey, templates = "fsps_larson", data = None):
+    def from_fits_cat(cls, fits_cat_path, instrument, cat_creator, code_names, low_z_runs, survey, templates = "fsps_larson", data = None, mask = True):
         # open the catalogue
         fits_cat = funcs.cat_from_path(fits_cat_path)
         # produce galaxy array from each row of the catalogue
@@ -99,6 +96,8 @@ class Catalogue:
         cat_obj = cls(gals, fits_cat_path, survey, cat_creator)
         if cat_obj != None:
             cat_obj.data = data
+        if mask:
+            cat_obj.mask(data)
         # run SED fitting for the appropriate code names/low-z runs
         for code_name, low_z_run in zip(code_names, low_z_runs):
             code = getattr(globals()[code_name], code_name)()
