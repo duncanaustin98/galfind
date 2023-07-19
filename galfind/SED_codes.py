@@ -18,6 +18,7 @@ from astropy.table import Table, join
 import subprocess
 from pathlib import Path
 from astropy.io import fits
+from tqdm import tqdm
 
 from . import useful_funcs_austind as funcs
 from . import config
@@ -96,7 +97,8 @@ class SED_code(ABC):
         combined_cat.meta = {**combined_cat.meta, **{f"{self.code_name}_path": fits_out_path}}
         # update galaxies within the catalogue with new SED fits
         cat.cat_path = combined_cat_path
-        SED_results = [SED_result.from_fits_cat(combined_cat[combined_cat["NUMBER"] == gal.ID], self.__class__(), gal.phot[0], cat.cat_creator, low_z_run) for gal in cat]
+        SED_results = [SED_result.from_fits_cat(combined_cat[combined_cat["NUMBER"] == gal.ID], self.__class__(), gal.phot[0], cat.cat_creator, low_z_run) \
+                       for gal in tqdm(cat, total = len(cat), desc = "Loading SED results into catalogue")]
         cat.update_SED_results(SED_results)
         return cat #.from_fits_cat(combined_cat_path, cat.data.instrument, cat.cat_creator, codes, low_z_runs, cat.data.survey)
         

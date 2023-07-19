@@ -8,7 +8,7 @@ Created on Mon Jul 17 16:50:27 2023
 
 # SED_result.py
 
-from . import Photometry_rest
+from .Photometry_rest import Photometry_rest
 
 class SED_result:
     

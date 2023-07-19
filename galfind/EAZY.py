@@ -78,9 +78,9 @@ class EAZY(SED_code):
         return eazy_in_path
     
     @run_in_dir(path = config['EAZY']['EAZY_DIR'])
-    def run_fit(self, in_path, out_path, sed_folder, instrument, default_templates = 'fsps_larson', fix_z = False, n_proc=6, z_step = 0.01, z_min=0, z_max =25,
-                save_best_seds = True, save_pz = True, write_hdf = True, save_plots = True, plot_ids = None, plot_all = False, save_ubvj = True, run_lowz = True, \
-                    z_max_lowz=7, *args, **kwargs):
+    def run_fit(self, in_path, out_path, sed_folder, instrument, default_templates = 'fsps_larson', fix_z = False, n_proc = 6, z_step = 0.01, z_min = 0, z_max = 25,
+                save_best_seds = True, save_pz = True, write_hdf = True, save_plots = False, plot_ids = None, plot_all = False, save_ubvj = True, run_lowz = True, \
+                    z_max_lowz = 7, *args, **kwargs):
         '''
         in_path - input EAZY catalogue path
         out_path - output EAZY catalogue path - currently modified by code, needs updating
@@ -309,7 +309,7 @@ class EAZY(SED_code):
         model_flux = data['templf'] * flux_unit
         # Convert units of ouput
         if out_flux_unit == 'mag':
-            model_flux_converted = -2.5 * np.log10(model_flux.to("Jy").value) + 8.90
+            model_flux_converted = -2.5 * np.log10(model_flux.to("Jy").value) + (u.Jy).to(u.ABmag)
         model_flux_converted[np.isinf(model_flux_converted)] = 99 
         # Construct output
         data_out = np.transpose(np.vstack((model_lam.value, model_flux_converted)))
@@ -334,7 +334,7 @@ class EAZY(SED_code):
         return fits_out_path
     
     def extract_SEDs(self, fits_cat, ID, low_z_run = False, units = u.ABmag, just_header = False):
-        SED_path = self.SED_path_from_cat_path(fits_cat.meta[f"{self.name}_path"], ID, low_z_run)
+        SED_path = self.SED_path_from_cat_path(fits_cat.meta[f"{self.code_name}_path"], ID, low_z_run)
         if not Path(SED_path).is_file():
             print(f'Not found EAZY SED at {SED_path}')
         if not just_header: 
@@ -343,7 +343,7 @@ class EAZY(SED_code):
         return {"best_gal": SED}
     
     def extract_z_PDF(self, fits_cat, ID, low_z_run = False):
-        PDF_path = self.z_PDF_path_from_cat_path(fits_cat.meta[f"{self.name}_path"], ID, low_z_run)
+        PDF_path = self.z_PDF_path_from_cat_path(fits_cat.meta[f"{self.code_name}_path"], ID, low_z_run)
         try:
             z, PDF = np.loadtxt(PDF_path, delimiter = ',').T  
         except FileNotFoundError:
@@ -353,9 +353,7 @@ class EAZY(SED_code):
         
     def z_PDF_path_from_cat_path(self, cat_path, ID, low_z_run = False):
         # should still include aper_diam here
-        min_flux_pc_err = str(cat_path.replace(f"_{self.templates}", "").split("_")[-3].replace("pc", ""))
-        print(cat_path)
-        print(min_flux_pc_err)
+        min_flux_pc_err = str(cat_path.replace(f"_{self.templates}", "").split("_")[-2].replace("pc", ""))
         if low_z_run:
             low_z_name = "_lowz"
         else:
@@ -366,11 +364,11 @@ class EAZY(SED_code):
     
     def SED_path_from_cat_path(self, cat_path, ID, low_z_run = False):
         # should still include aper_diam here
-        min_flux_pc_err = str(cat_path.replace(f"_{self.templates}", "").split("_")[-3].replace("pc", ""))
+        min_flux_pc_err = str(cat_path.replace(f"_{self.templates}", "").split("_")[-2].replace("pc", ""))
         if low_z_run:
             low_z_name = "_lowz"
         else:
             low_z_name = ""
         SED_dir = f"{funcs.split_dir_name(cat_path, 'dir')}SEDs/{str(min_flux_pc_err)}pc/{self.templates}"
-        SED_name = f"{str(ID)}{low_z_name}.pz"
+        SED_name = f"{str(ID)}{low_z_name}.spec"
         return f"{SED_dir}/{SED_name}"
