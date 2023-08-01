@@ -39,17 +39,17 @@ if __name__ == "__main__":
     version = "v9"
     instruments = ['NIRCam', 'ACS_WFC', 'WFC3IR'] # Can leave this - if there is no data for an instrument it is removed automatically
     cat_type = "loc_depth"
-    surveys = ["CEERSP10"]
+    surveys = ["CEERSP6", "CEERSP7", "CEERSP8", "CEERSP9", "CEERSP10"]
     aper_diams = [0.32] * u.arcsec
-    xy_offsets = [[200, 0]]
-    code_names = ["EAZY", "EAZY"] #[LePhare()]
-    low_z_runs = [False, True]
+    xy_offsets = [[0, 0], [0, 0], [0, 0], [0, 0], [0, 0]]
+    code_names = ["EAZY"] #, "EAZY"] #[LePhare()]
+    low_z_runs = [True] #, False]
     eazy_templates = "fsps_larson"
-    min_flux_pc_errs = [5, 10]
-    forced_phot_band = ['f277W', "f356W","f444W"]
+    min_flux_pc_errs = [5, 10] #, 10]
+    forced_phot_band = ["f277W", "f356W", "f444W"]
     fast_depths = False
     excl_bands = [] #["f606W", "f814W", "f090W", "f115W", "f277W", "f335M", "f356W", "f410M", "f444W"]
-    n_loc_depth_samples = 5
+    n_loc_depth_samples = 10
 
     for survey in surveys:
         pipeline([survey], version,instruments, xy_offsets, aper_diams, code_names, low_z_runs, min_flux_pc_errs, forced_phot_band, excl_bands, cat_type = cat_type, n_loc_depth_samples = n_loc_depth_samples, fast = fast_depths, eazy_templates = eazy_templates)

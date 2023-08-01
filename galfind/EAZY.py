@@ -66,7 +66,7 @@ class EAZY(SED_code):
             filt_codes = [EAZY_FILTER_CODES[cat.data.instrument.instrument_from_band(band)][band] for band in SED_input_bands]
             
             # Make input file
-            print(IDs, phot, phot_err, redshifts, len(IDs), len(phot), len(phot_err), len(redshifts))
+            #print(IDs, phot, phot_err, redshifts, len(IDs), len(phot), len(phot_err), len(redshifts))
             in_data = np.array([np.concatenate(([IDs[i]], list(itertools.chain(*zip(phot[i], phot_err[i]))), [redshifts[i]]), axis = None) for i in range(len(IDs))])
             in_names = ["ID"] + list(itertools.chain(*zip([f'F{filt_code}' for filt_code in filt_codes], [f'E{filt_code}' for filt_code in filt_codes]))) + ["z_spec"]
            #print(in_names)
@@ -80,7 +80,7 @@ class EAZY(SED_code):
     @run_in_dir(path = config['EAZY']['EAZY_DIR'])
     def run_fit(self, in_path, out_path, sed_folder, instrument, default_templates = 'fsps_larson', fix_z = False, n_proc = 6, z_step = 0.01, z_min = 0, z_max = 25,
                 save_best_seds = True, save_pz = True, write_hdf = True, save_plots = False, plot_ids = None, plot_all = False, save_ubvj = True, run_lowz = True, \
-                    z_max_lowz = 7, *args, **kwargs):
+                    z_max_lowz = [4., 6.], *args, **kwargs):
         '''
         in_path - input EAZY catalogue path
         out_path - output EAZY catalogue path - currently modified by code, needs updating
@@ -98,7 +98,7 @@ class EAZY(SED_code):
         plot_all - whether to plot all SEDs. Default False.
         save_ubvj - whether to save restframe UBVJ fluxes -default True.
         run_lowz - whether to run low-z fit. Default True.
-        z_max_lowz - maximum redshift to fit in low-z fit. Default 7.
+        z_max_lowz - maximum redshifts to fit in low-z fits. Default [4., 6.]
         **kwargs - additional arguments to pass to EAZY to overide defaults
         '''
         # Change this to config file path
@@ -133,7 +133,7 @@ class EAZY(SED_code):
             params['TEMPLATES_FILE'] =  f"{eazy_templates_path}/Nakajima2022/tweak_fsps_QSF_12_v3_larson_nakajima_all.param"
         elif templates == 'nakajima_subset':
             params['TEMPLATES_FILE'] =  f"{eazy_templates_path}/Nakajima2022/tweak_fsps_QSF_12_v3_larson_nakajima_subset.param"
-        elif templates == 'jades':
+        elif templates == 'fsps_jades':
             params['TEMPLATES_FILE'] = f"{eazy_templates_path}/inputs/templates/jades/jades.param"
         elif templates == 'HOT_45K':
             params['TEMPLATES_FILE'] = f"{eazy_templates_path}/fsps-hot/45k/fsps_45k.param"
@@ -189,26 +189,30 @@ class EAZY(SED_code):
         # Fit templates to catalog                          
         fit.fit_catalog(n_proc = n_proc, get_best_fit = True)
         
-        params['Z_MAX'] = z_max_lowz # Setting maximum Z
-
+        lowz_fits = {}
         if run_lowz:
-            lowz_fit = eazy.photoz.PhotoZ(param_file = default_param_path,  zeropoint_file = None,
+            for z_max in z_max_lowz:
+                params['Z_MAX'] = z_max # Setting maximum Z
+                lowz_fit = eazy.photoz.PhotoZ(param_file = default_param_path,  zeropoint_file = None,
                                     params = params, load_prior = False, load_products = False, translate_file = translate_file)
-            lowz_fit.fit_catalog(n_proc = n_proc, get_best_fit = True)
+                lowz_fit.fit_catalog(n_proc = n_proc, get_best_fit = True)
+                lowz_fits[f"zmax={z_max:.1f}"] = lowz_fit
 
-        if plot_all:
-            save_plots = True
-            ids_to_plot = fit.OBJID
-        if save_plots:
-            # Make output directory if it doesn't exist
-            out_path_plots = out_directory + '/plots/'
-            if not os.path.exists(out_path_plots):
-                os.makedirs(out_path_plots)
-            # Make plot for each object, save fit and close
-            for i in ids_to_plot:
-                fit.show_fit(i, show_fnu=1)
-                plt.savefig(f"{out_path_plots}/{i}_{templates}.png",)
-                plt.close()   
+    # RUN AT SELECTION STAGE
+        # if plot_all:
+        #     save_plots = True
+        #     ids_to_plot = fit.OBJID
+        # if save_plots:
+        #     # Make output directory if it doesn't exist
+        #     out_path_plots = out_directory + '/plots/'
+        #     if not os.path.exists(out_path_plots):
+        #         os.makedirs(out_path_plots)
+        #     # Make plot for each object, save fit and close
+        #     for i in ids_to_plot:
+        #         fit.show_fit(i, show_fnu=1)
+        #         plt.savefig(f"{out_path_plots}/{i}_{templates}.png",)
+        #         plt.close()   
+    # ------------------------
 
         # Save backup of fit in hdf5 file
         if write_hdf:
@@ -218,18 +222,21 @@ class EAZY(SED_code):
             fit.standard_output(UBVJ=(9, 10, 11, 12), absmag_filters=[9, 10, 11, 12], extra_rf_filters=[9, 10, 11, 12] ,n_proc=n_proc, save_fits=1, get_err=True, simple=False)
             lowz_fit.standard_output(UBVJ=(9, 10, 11, 12), absmag_filters=[9, 10, 11, 12], extra_rf_filters=[9, 10, 11, 12] ,n_proc=n_proc, save_fits=1, get_err=True, simple=False)
         else:
+            colnames_orig = ['zbest', 'zbest_16', 'zbest_84', 'chi2_best']
             colnames = ['IDENT', 'zbest', 'zbest_16', 'zbest_84', 'chi2_best']
-            data = [fit.OBJID, fit.zbest,fit.pz_percentiles([16]), fit.pz_percentiles([84]), fit.chi2_best ]
+            data = [fit.OBJID, fit.zbest,fit.pz_percentiles([16]), fit.pz_percentiles([84]), fit.chi2_best]
             if run_lowz:
-                data += [lowz_fit.zbest,lowz_fit.pz_percentiles([16]), lowz_fit.pz_percentiles([84]), lowz_fit.chi2_best ]
-                colnames += ['zbest_lowz', 'zbest_16_lowz', 'zbest_84_lowz', 'chi2_best_lowz']
+                for low_z_suffix, lowz_fit in lowz_fits.items():
+                    data += [lowz_fit.zbest,lowz_fit.pz_percentiles([16]), lowz_fit.pz_percentiles([84]), lowz_fit.chi2_best]
+                    colnames += [f"{name}_{low_z_suffix}" for name in colnames_orig]
+                    #print(colnames)
 
             table = Table(data = data, names = colnames)
            
             # Get rest frame colors
             if save_ubvj:
                 # This is all duplicated from base code.
-                rf_tempfilt, lc_rest, ubvj = fit.rest_frame_fluxes(f_numbers=[9, 10, 11, 12], simple=False, n_proc=n_proc)
+                rf_tempfilt, lc_rest, ubvj = fit.rest_frame_fluxes(f_numbers = [9, 10, 11, 12], simple=False, n_proc=n_proc)
 
                 table['U_rf_flux'] = ubvj[:,0,2]
                 table['U_rf_flux_err'] = (ubvj[:,0,3] - ubvj[:,0,1])/2.
@@ -253,24 +260,27 @@ class EAZY(SED_code):
                 os.makedirs(out_path_pdf_template)
             # Generate PDF
             pz = 10 ** (fit.lnp)
-            lowz_pz = 10 ** (lowz_fit.lnp)
+            if run_lowz:
+                zmax_names = [name for name in lowz_fits.keys()]
+                lowz_pzs = [10 ** (lowz_fit.lnp) for lowz_fit in lowz_fits.values()]
             # Save PDFs in loop
             for pos_obj, i in enumerate(fit.OBJID):
                 with open(f'{out_path_pdf_template}/{i}.pz', "w") as pz_save:
                     for pos, z in enumerate(fit.zgrid):
                         pz_save.write(f"{z}, {pz[pos_obj][pos]}\n")
                 if run_lowz:
-                    with open(f'{out_path_pdf_template}/{i}_lowz.pz', "w") as pz_save:
-                        for pos, z in enumerate(lowz_fit.zgrid):
-                            pz_save.write(f"{z}, {lowz_pz[pos_obj][pos]}\n")
+                    for zmax_name, lowz_fit, lowz_pz in zip(zmax_names, lowz_fits.values(), lowz_pzs):
+                        with open(f'{out_path_pdf_template}/{i}_{zmax_name}.pz', "w") as pz_save:
+                            for pos, z in enumerate(lowz_fit.zgrid):
+                                pz_save.write(f"{z}, {lowz_pz[pos_obj][pos]}\n")
         # Save best-fitting SEDs
         if save_best_seds:
             percentiles = fit.pz_percentiles([16, 84])
             if run_lowz:
-                percentiles_lowz = lowz_fit.pz_percentiles([16, 84])
+                percentiles_lowz = [lowz_fit.pz_percentiles([16, 84]) for lowz_fit in lowz_fits.values()]
             else:
                 percentiles_lowz = False
-            [self.save_sed(id, fit, lowz_fit, percentiles, percentiles_lowz, templates, sed_folder) for id in tqdm(fit.OBJID, total = len(fit.OBJID), desc = "Saving best template SEDs")]
+            [self.save_sed(id, fit, lowz_fits, percentiles, percentiles_lowz, templates, sed_folder) for id in tqdm(fit.OBJID, total = len(fit.OBJID), desc = "Saving best template SEDs")]
             print('Saved best SEDs')
 
         # Write used parameters
@@ -282,23 +292,23 @@ class EAZY(SED_code):
         print(f'Written out file to: {fits_out_path}')
 
 
-    def save_sed(self, id, fit, lowz_fit, percentiles, percentiles_lowz, templates, out_path):
+    def save_sed(self, id, fit, lowz_fits, percentiles, percentiles_lowz, templates, out_path):
         # Find location of matching Id
         pos = [fit.OBJID == id]
         # Find percentiles
         percentiles_run = percentiles[pos]
         percentiles_run = (percentiles_run[0][0], percentiles_run[0][1])
-
-        self.save_fit(id, fit, out_path=out_path, percentiles_run=percentiles_run, out_flux_unit='mag',  template=templates)
+        self.save_fit(id, fit, out_path = out_path, percentiles_run = percentiles_run, out_flux_unit = 'mag', template = templates)
         
         if type(percentiles_lowz) != bool:
-            percentiles_run_lowz = percentiles_lowz[pos]
-            percentiles_run_lowz = (percentiles_run_lowz[0][0], percentiles_run_lowz[0][1])
-            self.save_fit(id, lowz_fit, out_path=out_path, percentiles_run=percentiles_run_lowz, out_flux_unit='mag',  template=templates, lowz=True)
+            for name, lowz_fit, percentiles in zip(lowz_fits.keys(), lowz_fits.values(), percentiles_lowz):
+                percentiles_run_lowz = percentiles[pos]
+                percentiles_run_lowz = (percentiles_run_lowz[0][0], percentiles_run_lowz[0][1])
+                self.save_fit(id, lowz_fit, out_path = out_path, percentiles_run = percentiles_run_lowz, out_flux_unit = 'mag', template = templates, lowz = True, zmax_name = f"_{name}")
 
-    def save_fit(self, id, photz_obj, percentiles_run=[], out_flux_unit='mag', id_is_idx=False,template='BC03', out_path='', lowz=False):
+    def save_fit(self, id, photz_obj, percentiles_run=[], out_flux_unit='mag', id_is_idx=False,template='BC03', out_path='', lowz=False, zmax_name = ""):
         # Generate best-fitting SED
-        data = photz_obj.show_fit(id, id_is_idx=id_is_idx, show_components=False, show_prior=False, logpz=False,  get_spec=True, show_fnu = 1)
+        data = photz_obj.show_fit(id, id_is_idx = id_is_idx, show_components=False, show_prior=False, logpz=False,  get_spec=True, show_fnu = 1)
         # Get info from data object
         id_phot = data['id']
         z_best = data['z']
@@ -316,12 +326,8 @@ class EAZY(SED_code):
         out_path = f'{out_path}/{template}/'
         if not os.path.exists(out_path):
             os.makedirs(out_path)
-        if lowz:
-            extra = '_lowz'
-        else:
-            extra = ''
 
-        np.savetxt(f"{out_path}/{id_phot}{extra}.spec", data_out, delimiter="  ", header=f'ID  ZBEST  PERC_16  PERC_84  CHIBEST  WAV_UNIT  FLUX_UNIT\n{id_phot}  {z_best:.3f}  {float(percentiles_run[0]):.3f}  {float(percentiles_run[1]):.3f}  {chi2:.3f}  {wav_unit}  {out_flux_unit}')
+        np.savetxt(f"{out_path}/{id_phot}{zmax_name}.spec", data_out, delimiter="  ", header=f'ID  ZBEST  PERC_16  PERC_84  CHIBEST  WAV_UNIT  FLUX_UNIT\n{id_phot}  {z_best:.3f}  {float(percentiles_run[0]):.3f}  {float(percentiles_run[1]):.3f}  {chi2:.3f}  {wav_unit}  {out_flux_unit}')
 
     def make_fits_from_out(self, out_path, *args, **kwargs):
         # not required for EAZY

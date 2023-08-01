@@ -180,7 +180,7 @@ class Data:
                         instrument.remove_band(band)
                     else:
                         # Maybe generalize this
-                        print("Generalize on line 177 of Data.from_pipeline()")
+                        #print("Generalize on line 177 of Data.from_pipeline()")
                         im_pixel_scales[band] = 0.03 
                         im_zps[band] = 28.08
                 
@@ -239,6 +239,7 @@ class Data:
                         try:
                             im_exts[band] = hdu.index_of('SCI')
                         except KeyError:
+                            print("No 'SCI' extension for {band} image. Default to im_ext = 0!")
                             im_exts[band] = 0
                         # Get header of image extension
                         imheader = hdu[im_exts[band]].header
@@ -291,7 +292,6 @@ class Data:
                         print("Making combined_instrument")
 
                         # Need to update what it suggests
-                print(comb_instrument.bands, instrument.bands, instrument.name, comb_instrument.name)
             elif instrument.name == 'MIRI':
                 raise NotImplementedError("MIRI not yet implemented")
         if comb_instrument_created:
@@ -460,15 +460,22 @@ class Data:
         im_data = im_hdul[im_ext].data
         im_data = im_data.byteswap().newbyteorder()
         im_header = im_hdul[im_ext].header
+        #print(f"Finished loading {band} image")
         seg_hdul = fits.open(seg_path) #directory of images and image name structure for segmentation map
         seg_data = seg_hdul[0].data
         seg_header = seg_hdul[0].header
+        #print(f"Finished loading {band} seg map")
         if incl_mask:
             mask_path = self.mask_paths[band]
             mask_file = pyregion.open(mask_path) # file for mask
             mask_file = mask_file.as_imagecoord(im_header)
-            mask = mask_file.get_mask(hdu = im_hdul[im_ext])
-            print("mask_path", mask_path)
+            # time how long it takes to create the mask
+            start_time = time.time()
+            mask = mask_file.get_mask(hdu=im_hdul[im_ext])
+            end_time = time.time()
+            elapsed_time = end_time - start_time
+            print(f"Time to load mask for {band}: {float(elapsed_time)} seconds")
+            #print("mask_path", mask_path)
             return im_data, im_header, seg_data, seg_header, mask
         else:
             return im_data, im_header, seg_data, seg_header
@@ -515,7 +522,7 @@ class Data:
 
     @run_in_dir(path = config['DEFAULT']['GALFIND_DIR'])
     def make_seg_map(self, band):
-        if type(band) == str:
+        if type(band) == str or type(band) == np.str_:
             pass
         elif type(band) == list or type(band) == np.array:
             band = self.combine_band_names(band)
@@ -597,7 +604,6 @@ class Data:
                 # make the stacked image and save all appropriate parameters
                 self.stack_bands(forced_phot_band)
                 self.forced_phot_band = self.combine_band_names(forced_phot_band)
-                print(Path(self.im_paths[self.forced_phot_band]).is_file(), self.im_paths[self.forced_phot_band])
                 self.seg_paths[self.forced_phot_band] = self.seg_path(self.forced_phot_band)
                 if not Path(self.seg_paths[self.forced_phot_band]).is_file():
                     self.make_seg_map(forced_phot_band)
@@ -661,7 +667,7 @@ class Data:
     def forced_photometry(self, band, forced_phot_band, radii = [0.16, 0.25, 0.5, 0.75, 1] * u.arcsec, ra_col = 'ALPHA_J2000', dec_col = 'DELTA_J2000', coord_unit = u.deg, id_col = 'NUMBER', x_col = 'X_IMAGE', y_col = 'Y_IMAGE'):
         # Read in sextractor catalogue
         catalog = Table.read(self.sex_cat_path(forced_phot_band, forced_phot_band), character_as_bytes = False)
-        # Ipen image with correct extension and get WCS
+        # Open image with correct extension and get WCS
         with fits.open(self.im_paths[band]) as hdul:
             im_ext = self.im_exts[band]
             image = hdul[im_ext].data
@@ -676,7 +682,7 @@ class Data:
         dec = catalog[dec_col]
          # Make SkyCoord from catlog
         positions = SkyCoord(ra, dec, unit = coord_unit)
-        print('positions', positions)
+        #print('positions', positions)
         # Define radii in sky units
         # This checks if radii is iterable and if not makes it a list
         try:
@@ -691,7 +697,7 @@ class Data:
             # Convert to pixel using image WCS
 
         # Do aperture photometry
-        print(image, apertures, wcs)
+        #print(image, apertures, wcs)
         phot_table = aperture_photometry(image, apertures, wcs=wcs)
         assert(len(phot_table) == len(catalog))
         # Replace detection ID with catalog ID
@@ -974,8 +980,12 @@ class Data:
             im_data, im_header, seg_data, seg_header, mask = self.load_data(band)
             print(f"Finished loading {band}")
 
+        # print(f"{self.depth_dirs[band]}/coord_{band}.txt")
         if not Path(f"{self.depth_dirs[band]}/coord_{band}.txt").is_file():
             # place apertures in blank regions of sky
+            # print(f"Placing blank regions in {band}")
+            # print(self.survey, xy_offset, self.im_pixel_scales[band], band, \
+            #                                     aper_diam, size, n_busy_iters, number, mask_rad, aper_disp_rad, fast = fast)
             xcoord, ycoord = place_blank_regions(im_data, im_header, seg_data, mask, self.survey, xy_offset, self.im_pixel_scales[band], band, \
                                                 aper_diam, size, n_busy_iters, number, mask_rad, aper_disp_rad, fast = fast)
             print(f"Finished placing blank regions in {band}")
@@ -1234,10 +1244,10 @@ def plot_depths(im_data, depth_dir, band, seg_data, xcoord, ycoord, offset, r, s
 
 # depth codes (taken from print_depth_table.py)
 
-def calc_5sigma_depth(x_pix, y_pix, im_data, r, zero_point, subpix = 5): # not sure how to get a tqdm progress bar for this
+def calc_5sigma_depth(x_pix, y_pix, im_data, r, zero_point, subpix = 5):
     flux, fluxerr, flag = sep.sum_circle(im_data, x_pix, y_pix, r, subpix = subpix)
     if len(flux) == 1:
-        print("len(flux)=1")
+        raise(Exception("len(flux)=1 in calc_5sigma_depth"))
     med_flux = np.nanmedian(flux)
     mad_5sigma_flux = np.nanmedian(abs(flux - med_flux)) * 1.4826 * 5
     #print(mad_5sigma_flux)
@@ -1249,10 +1259,10 @@ def calc_5sigma_depth(x_pix, y_pix, im_data, r, zero_point, subpix = 5): # not s
 
 # local depth sextractor catalogue (from correct_sextractor_photometry.py)
 
-def calc_loc_depths(ra_gal, dec_gal, aper_coords_loc, xcoord, ycoord, im_data, r, survey, band, separation = 10 * u.deg, n_samples = 1, n_aper = 200, plot = False, zero_point = None):
+def calc_loc_depths(ra_gal, dec_gal, aper_coords_loc, xcoord, ycoord, im_data, r, survey, band, separation = 1. * u.arcmin, n_samples = 1, \
+                    n_aper = 200, plot = False, zero_point = None, max_separation = 10.0 * u.deg):
     
     start_time = time.time()
-    #print(len(ra_gal))
     loc_depths = []
     rounded_sample_size = int((len(ra_gal) / n_samples) + 1)
     for n in tqdm(range(n_samples), desc = f"{band} progress", total = n_samples):
@@ -1264,10 +1274,17 @@ def calc_loc_depths(ra_gal, dec_gal, aper_coords_loc, xcoord, ycoord, im_data, r
         #print(len(ra_gal_sample))
         
         gal_coords = SkyCoord(ra = ra_gal_sample * u.degree, dec = dec_gal_sample * u.degree)
-        idx1, idx2, sep2d, dist3d = search_around_sky(gal_coords, aper_coords_loc, separation)
-        for i in tqdm(range(len(gal_coords)), desc = f"Calculating local depth sample {n}", leave = False):
+        # crop aper_coords_loc so that it only contains empty regions in the vicinity of the galaxy sample
+        mask = (aper_coords_loc.ra >= gal_coords.ra.min() - separation) & (aper_coords_loc.ra <= gal_coords.ra.max() + separation) & \
+            (aper_coords_loc.dec >= gal_coords.dec.min() - separation) & (aper_coords_loc.dec <= gal_coords.dec.max() + separation)
+        aper_coords_loc = aper_coords_loc[mask]
+        idx1, idx2, sep2d, dist3d = search_around_sky(gal_coords, aper_coords_loc, max_separation)
+        
+        for i in range(len(gal_coords)): #(, desc = f"Calculating local depth sample {n}", leave = False):
             aper_idx = idx2[i * len(aper_coords_loc) : (i + 1) * len(aper_coords_loc)]
             sep2d_loc = sep2d[i * len(aper_idx) + aper_idx]
+            if len(sep2d_loc) < n_aper:
+                raise(Exception(f"Separation too small for {str(n_aper)} local depth apertures for galaxy {str(i)} in sample {str(n)}!"))
             aper_idx_sorted = (np.argsort(sep2d_loc))[0 : n_aper] # use only closest n_aper apertures for each galaxy
             xcoord_loc = xcoord[aper_idx_sorted]
             ycoord_loc = ycoord[aper_idx_sorted]
