@@ -42,7 +42,7 @@ class Photometry_obs(Photometry):
         return cls(phot.instrument, phot.flux_Jy, phot.flux_Jy_errs, aper_diam, min_flux_pc_err, phot.loc_depths, SED_results)
     
     def update(self, SED_result):
-        self.SED_results += SED_result
+        self.SED_results.append(SED_result)
     
     # @classmethod
     # def get_phot_from_sim(cls, gal, instrument, sim, min_flux_err_pc = 5):

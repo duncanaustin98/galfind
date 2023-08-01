@@ -30,6 +30,6 @@ class SED_result:
             raise(Exception(f"SED run not performed for {code}, low_z_run = {low_z_run}"))
         chi_sqs = {name: float(fits_cat_row[chi_sq]) for name, chi_sq in code.chi_sq_labels.items()}
         ID = int(fits_cat_row[cat_creator.ID_label])
-        z_PDF = code.extract_z_PDF(fits_cat_row, ID, low_z_run)
-        SEDs = code.extract_SEDs(fits_cat_row, ID, low_z_run)
+        z_PDF = [] #code.extract_z_PDF(fits_cat_row, ID, low_z_run)
+        SEDs = [] #code.extract_SEDs(fits_cat_row, ID, low_z_run)
         return cls(phot, z, code, chi_sqs, z_PDF, SEDs, low_z_run)

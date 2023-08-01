@@ -35,8 +35,8 @@ class Galaxy:
         mask_flags = {band: cat_creator.load_flag(fits_cat_row, f"unmasked_{band}") for band in instrument.bands}
         return cls(sky_coord, ID, phot, mask_flags)
     
-    def update(self, SED_result): # for now just update the single photometry
-        self.phot = phot[0].update(SED_result)
+    def update(self, SED_result, index = 0): # for now just update the single photometry
+        self.phot[index].update(SED_result)
         
     def update_mask_full(self, bool_values):
         pass
