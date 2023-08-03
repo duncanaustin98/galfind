@@ -112,11 +112,12 @@ class EAZY(SED_code):
         # update templates from within kwargs
         try:
             templates = kwargs.get("templates")
+            print(f"Using templates = {templates}")
         except:
-            print(f"Using default EAZY templates = {default_templates}!")
             templates = default_templates
+            print(f"Using default EAZY templates = {default_templates}!")
         
-        path = config['EAZY']['EAZY_DIR']
+        #path = config['EAZY']['EAZY_DIR']
         eazy_templates_path =  config['EAZY']['EAZY_TEMPLATE_DIR']
         default_param_path = f"{config['DEFAULT']['GALFIND_DIR']}/configs/zphot.param.default"
         translate_file = f"{config['DEFAULT']['GALFIND_DIR']}/configs/zphot_jwst.translate"
@@ -198,27 +199,11 @@ class EAZY(SED_code):
                 lowz_fit.fit_catalog(n_proc = n_proc, get_best_fit = True)
                 lowz_fits[f"zmax={z_max:.1f}"] = lowz_fit
 
-    # RUN AT SELECTION STAGE
-        # if plot_all:
-        #     save_plots = True
-        #     ids_to_plot = fit.OBJID
-        # if save_plots:
-        #     # Make output directory if it doesn't exist
-        #     out_path_plots = out_directory + '/plots/'
-        #     if not os.path.exists(out_path_plots):
-        #         os.makedirs(out_path_plots)
-        #     # Make plot for each object, save fit and close
-        #     for i in ids_to_plot:
-        #         fit.show_fit(i, show_fnu=1)
-        #         plt.savefig(f"{out_path_plots}/{i}_{templates}.png",)
-        #         plt.close()   
-    # ------------------------
-
         # Save backup of fit in hdf5 file
         if write_hdf:
             hdf5.write_hdf5(fit, h5file=h5path, include_fit_coeffs=False, include_templates=True, verbose=False)
         # If not using Fsps larson, use standard saving output. Otherwise generate own fits file.
-        if templates == 'fsps' or templates == 'HOT_45K' or templates == 'HOT_60K':
+        if templates == 'HOT_45K' or templates == 'HOT_60K':
             fit.standard_output(UBVJ=(9, 10, 11, 12), absmag_filters=[9, 10, 11, 12], extra_rf_filters=[9, 10, 11, 12] ,n_proc=n_proc, save_fits=1, get_err=True, simple=False)
             lowz_fit.standard_output(UBVJ=(9, 10, 11, 12), absmag_filters=[9, 10, 11, 12], extra_rf_filters=[9, 10, 11, 12] ,n_proc=n_proc, save_fits=1, get_err=True, simple=False)
         else:
@@ -249,7 +234,11 @@ class EAZY(SED_code):
                
                 table['J_rf_flux'] = ubvj[:,3,2]
                 table['J_rf_flux_err'] = (ubvj[:,3,3] - ubvj[:,3,1])/2.
-               
+                
+            # add the template name to the column labels
+            for col_name in table.colnames:
+                table.rename_column(col_name, f"{col_name}_{templates}")
+                
         if save_pz:
             # Make folders if they don't exist
             out_path_pdf = sed_folder.replace("SEDs", "PDFs")
@@ -285,7 +274,7 @@ class EAZY(SED_code):
 
         # Write used parameters
         fit.param.write(fits_out_path.replace(".fits", "_params.csv"))
-        print(f'Finished running EAZY!')
+        print('Finished running EAZY!')
         
         # Write fits file
         table.write(fits_out_path, overwrite=True)
@@ -320,7 +309,7 @@ class EAZY(SED_code):
         # Convert units of ouput
         if out_flux_unit == 'mag':
             model_flux_converted = -2.5 * np.log10(model_flux.to("Jy").value) + (u.Jy).to(u.ABmag)
-        model_flux_converted[np.isinf(model_flux_converted)] = 99 
+        model_flux_converted[np.isinf(model_flux_converted)] = 99.
         # Construct output
         data_out = np.transpose(np.vstack((model_lam.value, model_flux_converted)))
         out_path = f'{out_path}/{template}/'

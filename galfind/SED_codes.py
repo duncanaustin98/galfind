@@ -73,7 +73,7 @@ class SED_code(ABC):
         
         return phot_in, phot_err_in
     
-    def fit_cat(self, cat, low_z_run, *args, **kwargs): # low_z_run, 
+    def fit_cat(self, cat, z_max_lowz, *args, **kwargs):
         in_path = self.make_in(cat, *args, **kwargs)
         out_folder = funcs.split_dir_name(in_path.replace("input", "output"), "dir")
         out_path = f"{out_folder}/{funcs.split_dir_name(in_path, 'name').replace('.in', '.out')}"
@@ -81,10 +81,10 @@ class SED_code(ABC):
         os.makedirs(sed_folder, exist_ok = True)
         fits_out_path = self.out_fits_name(out_path, *args, **kwargs)
         if not Path(fits_out_path).is_file() or config["DEFAULT"].getboolean("OVERWRITE"):
-            self.run_fit(in_path, out_path, sed_folder, cat.data.instrument.new_instrument(), *args, **kwargs)
+            self.run_fit(in_path, out_path, sed_folder, cat.data.instrument.new_instrument(), z_max_lowz = z_max_lowz, *args, **kwargs)
             self.make_fits_from_out(out_path, *args, **kwargs)
         # update galaxies within catalogue object with determined properties
-        cat = self.update_cat(cat, fits_out_path, low_z_run, *args, **kwargs)
+        cat = self.update_cat(cat, fits_out_path, z_max_lowz, *args, **kwargs)
         return cat
     
     def update_cat(self, cat, fits_out_path, low_z_run, *args, **kwargs):

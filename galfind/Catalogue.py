@@ -17,7 +17,6 @@ import astropy.units as u
 from tqdm import tqdm
 import copy
 
-from . import useful_funcs_austind as useful_funcs
 from .Data import Data
 from .Galaxy import Galaxy
 from . import useful_funcs_austind as funcs
@@ -50,11 +49,11 @@ class Catalogue:
         
     # %% alternative constructors
     @classmethod
-    def from_pipeline(cls, survey, version, aper_diams, cat_creator, code_names, low_z_runs, xy_offset = [0, 0], instruments = ['NIRCam', 'ACS_WFC', 'WFC3IR'], \
-                      forced_phot_band = "f444W", excl_bands = [], loc_depth_min_flux_pc_errs = [5, 10], n_loc_depth_samples = 5, fast = True):
+    def from_pipeline(cls, survey, version, aper_diams, cat_creator, code_names, z_max_lowz, xy_offset = [0, 0], instruments = ['NIRCam', 'ACS_WFC', 'WFC3IR'], \
+                      forced_phot_band = "f444W", excl_bands = [], loc_depth_min_flux_pc_errs = [5, 10], n_loc_depth_samples = 5, templates_arr = ["fsps_larson"], fast = True):
         # make 'Data' object
         data = Data.from_pipeline(survey, version, instruments, excl_bands = excl_bands)
-        return cls.from_data(data, aper_diams, cat_creator, code_names, low_z_runs, xy_offset, forced_phot_band, loc_depth_min_flux_pc_errs, n_loc_depth_samples, fast)
+        return cls.from_data(data, aper_diams, cat_creator, code_names, z_max_lowz, xy_offset, forced_phot_band, loc_depth_min_flux_pc_errs, n_loc_depth_samples, templates_arr, fast)
 
     # @classmethod
     # def from_NIRCam_pipeline(cls, survey, version, aper_diams, cat_creator, xy_offset = [0, 0], forced_phot_band = "f444W", \
@@ -64,7 +63,8 @@ class Catalogue:
     #     return cls.from_data(data, aper_diams, cat_creator, xy_offset, forced_phot_band, loc_depth_min_flux_pc_errs, n_loc_depth_samples, fast)
     
     @classmethod
-    def from_data(cls, data, aper_diams, cat_creator, code_names, low_z_runs, xy_offset = [0, 0], forced_phot_band = "f444W", loc_depth_min_flux_pc_errs = [5, 10], n_loc_depth_samples = 5, fast = True, mask = True):
+    def from_data(cls, data, aper_diams, cat_creator, code_names, z_max_lowz, xy_offset = [0, 0], forced_phot_band = "f444W", loc_depth_min_flux_pc_errs = [5, 10], \
+                  n_loc_depth_samples = 5, templates_arr = ["fsps_larson"], fast = True, mask = True):
         # make masked local depth catalogue from the 'Data' object
         data.combine_sex_cats(forced_phot_band)
         data.calc_depths(xy_offset, aper_diams, fast = fast)
@@ -75,7 +75,7 @@ class Catalogue:
             cat_path = data.loc_depth_cat_path
         elif cat_creator.cat_type == "sex":
             cat_path = data.sex_cat_master_path
-        return cls.from_fits_cat(cat_path, data.instrument, cat_creator, code_names, low_z_runs, data.survey, data = data, mask = mask)
+        return cls.from_fits_cat(cat_path, data.instrument, cat_creator, code_names, data.survey, z_max_lowz, templates_arr = templates_arr, data = data, mask = mask)
     
     # @classmethod
     # def from_sex_cat(cls, cat_path, instrument, survey, cat_creator):
@@ -86,7 +86,7 @@ class Catalogue:
     #     return cls(gals, cat_path, survey, cat_creator)
     
     @classmethod
-    def from_fits_cat(cls, fits_cat_path, instrument, cat_creator, code_names, low_z_runs, survey, templates = "fsps_larson", data = None, mask = True):
+    def from_fits_cat(cls, fits_cat_path, instrument, cat_creator, code_names, survey, z_max_lowz, templates_arr = ["fsps_larson"], data = None, mask = True):
         # open the catalogue
         fits_cat = funcs.cat_from_path(fits_cat_path)
         # produce galaxy array from each row of the catalogue
@@ -99,17 +99,13 @@ class Catalogue:
         if mask:
             cat_obj.mask(data)
         # run SED fitting for the appropriate code names/low-z runs
-        for code_name, low_z_run in zip(code_names, low_z_runs):
+        for code_name, templates in zip(code_names, templates_arr):
             code = getattr(globals()[code_name], code_name)()
             try: # see whether SED fitting has already been performed
-                if low_z_run:
-                    low_z_label = "_lowz"
-                else:
-                    low_z_label = ""
-                fits_cat[f"{code.galaxy_property_labels['z_phot']}{low_z_label}"]
+                fits_cat[f"{code.galaxy_property_labels['z_phot']}"]
             except:
                 # perform SED fitting
-                cat_obj = code.fit_cat(cat_obj, low_z_run, templates = templates)
+                cat_obj = code.fit_cat(cat_obj, z_max_lowz, templates = templates)
         return cat_obj
     
     def update_SED_results(self, SED_results):
@@ -202,13 +198,13 @@ class Catalogue:
         else:
             cat = self
         # load the relevant FLUX_AUTO from SExtractor output
-        flux_autos = useful_funcs.flux_image_to_Jy(np.array(tab[f"FLUX_AUTO_{band}"]), self.data.im_zps[band])
+        flux_autos = funcs.flux_image_to_Jy(np.array(tab[f"FLUX_AUTO_{band}"]), self.data.im_zps[band])
         ext_src_corrs = [self.catch_redshift_minus_99(i, flux_autos[i] / gal.phot_obs.flux_Jy[np.where(band == \
                                             gal.phot_obs.instrument.bands)[0][0]], lambda x: x > 1., 1., -99.) for i, gal in enumerate(cat)]
         return ext_src_corrs
             
     def make_ext_src_corr_cat(self, code = "LePhare", join_tables = True):
-        ext_src_cat_name = f"{useful_funcs.split_dir_name(self.cat_path, 'dir')}/Extended_source_corrections_{code}.fits"
+        ext_src_cat_name = f"{funcs.split_dir_name(self.cat_path, 'dir')}/Extended_source_corrections_{code}.fits"
         if not Path(ext_src_cat_name).is_file():
             ext_src_col_names = np.array(["ID"] + [f"auto_corr_factor_{name}" for name in list([band for band in self.data.instrument.bands] + [f"UV_{code}", "mass"])])
             ext_src_col_dtypes = np.array([int] + [float for i in range(len(self.data.instrument.bands))] + [float, float])
@@ -377,7 +373,7 @@ class Catalogue:
     
     def make_UV_fit_cat(self, UV_PDF_path = config["RestUVProperties"]["UV_PDF_PATH"], col_names = ["Beta", "flux_lambda_1500", "flux_Jy_1500", "M_UV", "A_UV", "L_obs", "L_int", "SFR"], \
                         code = "LePhare", join_tables = True):
-        UV_cat_name = f"{useful_funcs.split_dir_name(self.cat_path, 'dir')}/UV_properties_{code}.fits"
+        UV_cat_name = f"{funcs.split_dir_name(self.cat_path, 'dir')}/UV_properties_{code}.fits"
         #if not Path(UV_cat_name).is_file():
         cat_data = []
         print("Bands here: ", self[1].phot_obs.instrument.bands)
