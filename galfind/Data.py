@@ -155,7 +155,7 @@ class Data:
                     survey_im_dirs = {survey: f"{survey}/mosaic_1084_wisptemp2"}
                 elif version == "lit_version":
                     survey_im_dirs = {"JADES-DR1": "JADES/DR1"}
-                elif version == 'v9':
+                elif version == 'v9' or version == "v9_test":
                     survey_im_dirs = {survey: f"{survey}/mosaic_1084_wisptemp2"}
 
                 survey_im_dirs = {key: f"/raid/scratch/data/jwst/{value}" for (key, value) in survey_im_dirs.items()}
@@ -324,96 +324,96 @@ class Data:
         else:
             raise(Exception(f'Failed to find any data for {survey}'))  
 
-    @classmethod
-    def from_NIRCam_pipeline(cls, survey, version = "v8", excl_bands = []):
-        instrument = NIRCam(excl_bands = excl_bands)
-        # if int(version.split("v")[1]) >= 8:
-        #     pmap = "1084"
-        # else:
-        #     pmap = "0995"
+    # @classmethod
+    # def from_NIRCam_pipeline(cls, survey, version = "v8", excl_bands = []):
+    #     instrument = NIRCam(excl_bands = excl_bands)
+    #     # if int(version.split("v")[1]) >= 8:
+    #     #     pmap = "1084"
+    #     # else:
+    #     #     pmap = "0995"
         
-        if version == "v7": #pmap == "0995":
-            ceers_im_dirs = {f"CEERSP{str(i + 1)}": f"ceers/mosaic_0995/P{str(i + 1)}" for i in range(10)}
-            survey_im_dirs = {"SMACS-0723": "SMACS-0723/mosaic_0995", "GLASS": "glass_0995/mosaic_v5", "MACS-0416": "MACS0416/mosaic_0995_v1", \
-                       "El-Gordo": "elgordo/mosaic_0995_v1", "NEP": "NEP/mosaic", "NEP-2": "NEP-2/mosaic_0995", "NGDEEP": "NGDEEP/mosaic", \
-                                    "CLIO": "CLIO/mosaic_0995_2"} | ceers_im_dirs
-        elif version == "v8": #pmap == "1084":
-            ceers_im_dirs = {f"CEERSP{str(i + 1)}": f"ceers/mosaic_1084/P{str(i + 1)}" for i in range(10)}
-            survey_im_dirs = {"CLIO": "CLIO/mosaic_1084", "El-Gordo": "elgordo/mosaic_1084", "GLASS": "GLASS-12/mosaic_1084", "NEP": "NEP/mosaic_1084", \
-                          "NEP-2": "NEP-2/mosaic_1084", "NEP-3": "NEP-3/mosaic_1084", "SMACS-0723": "SMACS0723/mosaic_1084", "MACS-0416": "MACS0416/mosaic_1084_v3"} | ceers_im_dirs
-        elif version == "v8a":
-            ceers_im_dirs = {f"CEERSP{str(i + 1)}": f"CEERSP{str(i + 1)}/mosaic_1084_182" for i in range(10)}
-            survey_im_dirs = {"CLIO": "CLIO/mosaic_1084_182", "El-Gordo": "elgordo/mosaic_1084_182", "NEP-1": "NEP-1/mosaic_1084_182", "NEP-2": "NEP-2/mosaic_1084_182", \
-                              "NEP-3": "NEP-3/mosaic_1084_182", "NEP-4": "NEP-4/mosaic_1084_182", "MACS-0416": "MACS0416/mosaic_1084_182", "GLASS": "GLASS-12/mosaic_1084_182", "SMACS-0723": "SMACS0723/mosaic_1084_182"} | ceers_im_dirs
-        elif version == "v8b":
-            survey_im_dirs = {survey: f"{survey}/mosaic_1084_wispfix"}
-        elif version == "v8c":
-            survey_im_dirs = {survey: f"{survey}/mosaic_1084_wispfix2"}
-        elif version == "lit_version":
-            survey_im_dirs = {"JADES-DR1": "JADES/DR1"}
+    #     if version == "v7": #pmap == "0995":
+    #         ceers_im_dirs = {f"CEERSP{str(i + 1)}": f"ceers/mosaic_0995/P{str(i + 1)}" for i in range(10)}
+    #         survey_im_dirs = {"SMACS-0723": "SMACS-0723/mosaic_0995", "GLASS": "glass_0995/mosaic_v5", "MACS-0416": "MACS0416/mosaic_0995_v1", \
+    #                    "El-Gordo": "elgordo/mosaic_0995_v1", "NEP": "NEP/mosaic", "NEP-2": "NEP-2/mosaic_0995", "NGDEEP": "NGDEEP/mosaic", \
+    #                                 "CLIO": "CLIO/mosaic_0995_2"} | ceers_im_dirs
+    #     elif version == "v8": #pmap == "1084":
+    #         ceers_im_dirs = {f"CEERSP{str(i + 1)}": f"ceers/mosaic_1084/P{str(i + 1)}" for i in range(10)}
+    #         survey_im_dirs = {"CLIO": "CLIO/mosaic_1084", "El-Gordo": "elgordo/mosaic_1084", "GLASS": "GLASS-12/mosaic_1084", "NEP": "NEP/mosaic_1084", \
+    #                       "NEP-2": "NEP-2/mosaic_1084", "NEP-3": "NEP-3/mosaic_1084", "SMACS-0723": "SMACS0723/mosaic_1084", "MACS-0416": "MACS0416/mosaic_1084_v3"} | ceers_im_dirs
+    #     elif version == "v8a":
+    #         ceers_im_dirs = {f"CEERSP{str(i + 1)}": f"CEERSP{str(i + 1)}/mosaic_1084_182" for i in range(10)}
+    #         survey_im_dirs = {"CLIO": "CLIO/mosaic_1084_182", "El-Gordo": "elgordo/mosaic_1084_182", "NEP-1": "NEP-1/mosaic_1084_182", "NEP-2": "NEP-2/mosaic_1084_182", \
+    #                           "NEP-3": "NEP-3/mosaic_1084_182", "NEP-4": "NEP-4/mosaic_1084_182", "MACS-0416": "MACS0416/mosaic_1084_182", "GLASS": "GLASS-12/mosaic_1084_182", "SMACS-0723": "SMACS0723/mosaic_1084_182"} | ceers_im_dirs
+    #     elif version == "v8b":
+    #         survey_im_dirs = {survey: f"{survey}/mosaic_1084_wispfix"}
+    #     elif version == "v8c":
+    #         survey_im_dirs = {survey: f"{survey}/mosaic_1084_wispfix2"}
+    #     elif version == "lit_version":
+    #         survey_im_dirs = {"JADES-DR1": "JADES/DR1"}
                 
-        survey_im_dirs = {key: f"/raid/scratch/data/jwst/{value}" for (key, value) in survey_im_dirs.items()}
-        survey_dir = survey_im_dirs[survey]
+    #     survey_im_dirs = {key: f"/raid/scratch/data/jwst/{value}" for (key, value) in survey_im_dirs.items()}
+    #     survey_dir = survey_im_dirs[survey]
         
-        # don't use these if they are in the same folder
-        nadams_seg_path_arr = glob.glob(f"{survey_dir}/*_seg.fits")
-        nadams_bkg_path_arr = glob.glob(f"{survey_dir}/*_bkg.fits")
+    #     # don't use these if they are in the same folder
+    #     nadams_seg_path_arr = glob.glob(f"{survey_dir}/*_seg.fits")
+    #     nadams_bkg_path_arr = glob.glob(f"{survey_dir}/*_bkg.fits")
         
-        if version == "lit_version":
-            im_path_arr = glob.glob(f"{survey_dir}/*_drz.fits")
-        else:
-            im_path_arr = glob.glob(f"{survey_dir}/*_i2d*.fits")
-        im_path_arr = np.array([path for path in im_path_arr if path not in nadams_seg_path_arr and path not in nadams_bkg_path_arr])
+    #     if version == "lit_version":
+    #         im_path_arr = glob.glob(f"{survey_dir}/*_drz.fits")
+    #     else:
+    #         im_path_arr = glob.glob(f"{survey_dir}/*_i2d*.fits")
+    #     im_path_arr = np.array([path for path in im_path_arr if path not in nadams_seg_path_arr and path not in nadams_bkg_path_arr])
         
-        # obtain available bands from imaging without having to hard code these
-        bands = np.array([split_path.lower().replace("w", "W").replace("m", "M") for path in im_path_arr for i, split_path in \
-                enumerate(path.split("-")[-1].split("/")[-1].split("_")) if split_path.lower().replace("w", "W").replace("m", "M") in instrument.bands])
+    #     # obtain available bands from imaging without having to hard code these
+    #     bands = np.array([split_path.lower().replace("w", "W").replace("m", "M") for path in im_path_arr for i, split_path in \
+    #             enumerate(path.split("-")[-1].split("/")[-1].split("_")) if split_path.lower().replace("w", "W").replace("m", "M") in instrument.bands])
 
-        for band in instrument.bands:
-            if band not in bands:
-                instrument.remove_band(band)
+    #     for band in instrument.bands:
+    #         if band not in bands:
+    #             instrument.remove_band(band)
         
-        im_paths = {}
-        im_exts = {}
-        seg_paths = {}
-        mask_paths = {}
-        for band in bands:
-            # obtains all image paths from the correct band 
-            im_paths_band = [im_path for im_path in im_path_arr if band.lower() in im_path or band in im_path or \
-                              band.replace("f", "F").replace("W", "w") in im_path or band.upper() in im_path]
-            # checks to see if there is just one singular image for the given band
-            if len(im_paths_band) == 1:
-                im_paths[band] = im_paths_band[0]
-            else:
-                raise(Exception(f"Multiple images found for {band} in {survey} {version}"))
+    #     im_paths = {}
+    #     im_exts = {}
+    #     seg_paths = {}
+    #     mask_paths = {}
+    #     for band in bands:
+    #         # obtains all image paths from the correct band 
+    #         im_paths_band = [im_path for im_path in im_path_arr if band.lower() in im_path or band in im_path or \
+    #                           band.replace("f", "F").replace("W", "w") in im_path or band.upper() in im_path]
+    #         # checks to see if there is just one singular image for the given band
+    #         if len(im_paths_band) == 1:
+    #             im_paths[band] = im_paths_band[0]
+    #         else:
+    #             raise(Exception(f"Multiple images found for {band} in {survey} {version}"))
 
-            im_hdul = fits.open(im_paths[band])
-            # obtain appropriate extension from the image
-            for i, im_hdu in enumerate(im_hdul):
-                if im_hdu.name == "SCI":
-                    im_exts[band] = int(i)
-                    break
-            # need to change this to work if there are no segmentation maps (with the [0] indexing)
-            try:
-                seg_paths[band] = glob.glob(f"{config['DEFAULT']['GALFIND_WORK']}/SExtractor/{instrument.name}/{version}/{survey}/{survey}*{band}_{band}*{version}*seg.fits")[0]
-            except:
-                seg_paths[band] = ""
-            # include just the masks corresponding to the correct bands
-            try:
-                mask_paths[band] = glob.glob(f"{config['DEFAULT']['GALFIND_WORK']}/Masks/{survey}/*{band.replace('W', 'w').replace('M', 'm')}*")[0]
-            except:
-                mask_paths[band] = ""
-            try:
-                cluster_mask_path = glob.glob(f"{config['DEFAULT']['GALFIND_WORK']}/Masks/{survey}/*cluster*")[0]
-            except:
-                cluster_mask_path = ""
-            try:
-                blank_mask_path = glob.glob(f"{config['DEFAULT']['GALFIND_WORK']}/Masks/{survey}/*blank*")[0]
-            except:
-                blank_mask_path = ""
-            # if this mask doesn't exist, create it using automated code (NOT YET IMPLEMENTED!)
-            print("cluster mask path = ", cluster_mask_path)
-        return cls(instrument, im_paths, im_exts, seg_paths, mask_paths, cluster_mask_path, blank_mask_path, survey, version, is_blank = is_blank_survey(survey))
+    #         im_hdul = fits.open(im_paths[band])
+    #         # obtain appropriate extension from the image
+    #         for i, im_hdu in enumerate(im_hdul):
+    #             if im_hdu.name == "SCI":
+    #                 im_exts[band] = int(i)
+    #                 break
+    #         # need to change this to work if there are no segmentation maps (with the [0] indexing)
+    #         try:
+    #             seg_paths[band] = glob.glob(f"{config['DEFAULT']['GALFIND_WORK']}/SExtractor/{instrument.name}/{version}/{survey}/{survey}*{band}_{band}*{version}*seg.fits")[0]
+    #         except:
+    #             seg_paths[band] = ""
+    #         # include just the masks corresponding to the correct bands
+    #         try:
+    #             mask_paths[band] = glob.glob(f"{config['DEFAULT']['GALFIND_WORK']}/Masks/{survey}/*{band.replace('W', 'w').replace('M', 'm')}*")[0]
+    #         except:
+    #             mask_paths[band] = ""
+    #         try:
+    #             cluster_mask_path = glob.glob(f"{config['DEFAULT']['GALFIND_WORK']}/Masks/{survey}/*cluster*")[0]
+    #         except:
+    #             cluster_mask_path = ""
+    #         try:
+    #             blank_mask_path = glob.glob(f"{config['DEFAULT']['GALFIND_WORK']}/Masks/{survey}/*blank*")[0]
+    #         except:
+    #             blank_mask_path = ""
+    #         # if this mask doesn't exist, create it using automated code (NOT YET IMPLEMENTED!)
+    #         print("cluster mask path = ", cluster_mask_path)
+    #     return cls(instrument, im_paths, im_exts, seg_paths, mask_paths, cluster_mask_path, blank_mask_path, survey, version, is_blank = is_blank_survey(survey))
 
 # %% Overloaded operators
 
@@ -516,7 +516,8 @@ class Data:
             ax.add_patch(p)
         for t in artist_list:
             ax.add_artist(t)
-            
+    
+    #@staticmethod
     def combine_band_names(self, bands):
         return '+'.join(bands)
 
@@ -641,11 +642,21 @@ class Data:
         save_dir = f"{config['DEFAULT']['GALFIND_WORK']}/Catalogues/{self.version}/{self.instrument.name}/{self.survey}"
         self.sex_cat_master_path = f"{save_dir}/{save_name}"
         if not Path(self.sex_cat_master_path).is_file():
+            if type(forced_phot_band) == np.array or type(forced_phot_band) == list:
+                forced_phot_band_name = self.combine_band_names(forced_phot_band)
+            else:
+                forced_phot_band_name = forced_phot_band
+            print("Loading cat", self.sex_cats, forced_phot_band_name)
             for i, (band, path) in enumerate(self.sex_cats.items()):
                 tab = Table.read(path, character_as_bytes = False)
-                if i != 0:
-                    # remove the duplicated IDs and RA/DECs
-                    tab = remove_non_band_dependent_sex_params(tab)
+                if band == forced_phot_band_name:
+                    ID_detect_band = tab["NUMBER"]
+                    x_image_detect_band = tab["X_IMAGE"]
+                    y_image_detect_band = tab["Y_IMAGE"]
+                    ra_detect_band = tab["ALPHA_J2000"]
+                    dec_detect_band = tab["DELTA_J2000"]
+                # remove the duplicated IDs, X_IMAGE/Y_IMAGE and RA/DECs
+                tab = remove_non_band_dependent_sex_params(tab)
                 # load each one into an astropy table and update the column names by adding an "_FILT" suffix
                 tab = add_band_suffix_to_cols(tab, band)
                 # combine the astropy tables
@@ -657,6 +668,12 @@ class Data:
                     except Exception as e:
                         print(e)
                         print(path)
+            # add the detection band parameters to the start of the catalogue
+            master_tab.add_column(ID_detect_band, name = 'NUMBER', index = 0)
+            master_tab.add_column(x_image_detect_band, name = 'X_IMAGE', index = 1)
+            master_tab.add_column(y_image_detect_band, name = 'Y_IMAGE', index = 2)
+            master_tab.add_column(ra_detect_band, name = 'ALPHA_J2000', index = 3)
+            master_tab.add_column(dec_detect_band, name = 'DELTA_J2000', index = 4)
             # save table
             os.makedirs(save_dir, exist_ok = True)
             master_tab.write(self.sex_cat_master_path, format = "fits", overwrite = True)
@@ -664,7 +681,7 @@ class Data:
     def make_sex_plusplus_cat(self):
         pass
     
-    def forced_photometry(self, band, forced_phot_band, radii = [0.16, 0.25, 0.5, 0.75, 1] * u.arcsec, ra_col = 'ALPHA_J2000', dec_col = 'DELTA_J2000', coord_unit = u.deg, id_col = 'NUMBER', x_col = 'X_IMAGE', y_col = 'Y_IMAGE'):
+    def forced_photometry(self, band, forced_phot_band, radii = [0.16, 0.25, 0.5, 0.75, 1.] * u.arcsec, ra_col = 'ALPHA_J2000', dec_col = 'DELTA_J2000', coord_unit = u.deg, id_col = 'NUMBER', x_col = 'X_IMAGE', y_col = 'Y_IMAGE'):
         # Read in sextractor catalogue
         catalog = Table.read(self.sex_cat_path(forced_phot_band, forced_phot_band), character_as_bytes = False)
         # Open image with correct extension and get WCS
@@ -1246,8 +1263,8 @@ def plot_depths(im_data, depth_dir, band, seg_data, xcoord, ycoord, offset, r, s
 
 def calc_5sigma_depth(x_pix, y_pix, im_data, r, zero_point, subpix = 5):
     flux, fluxerr, flag = sep.sum_circle(im_data, x_pix, y_pix, r, subpix = subpix)
-    if len(flux) == 1:
-        raise(Exception("len(flux)=1 in calc_5sigma_depth"))
+    #if len(flux) == 1:
+    #    raise(Exception("len(flux)=1 in calc_5sigma_depth"))
     med_flux = np.nanmedian(flux)
     mad_5sigma_flux = np.nanmedian(abs(flux - med_flux)) * 1.4826 * 5
     #print(mad_5sigma_flux)
