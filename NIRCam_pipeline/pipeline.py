@@ -36,10 +36,10 @@ def pipeline(surveys, version,instruments, xy_offsets, aper_diams, code_names, l
             #     cat.make_UV_fit_cat(UV_PDF_path = f"{config['RestUVProperties']['UV_PDF_PATH']}/{version}/{instruments_name}/{survey}/{code.code_name}+{pc_err}pc")  
 
 if __name__ == "__main__":
-    version = "v9"
+    version = "v9_test"
     instruments = ['NIRCam', 'ACS_WFC', 'WFC3IR'] # Can leave this - if there is no data for an instrument it is removed automatically
     cat_type = "loc_depth"
-    surveys = ["NEP-3"]
+    surveys = ["GLASS"]
     aper_diams = [0.32] * u.arcsec
     xy_offsets = [[0, 0]]
     code_names = ["EAZY"] #, "EAZY", "EAZY"] #, "EAZY"] #[LePhare()]
