@@ -18,7 +18,7 @@ from tqdm import tqdm
 import copy
 
 from .Data import Data
-from .Galaxy import Galaxy
+from .Galaxy import Galaxy, Multiple_Galaxy
 from . import useful_funcs_austind as funcs
 from .Catalogue_Creator import GALFIND_Catalogue_Creator
 from . import SED_code, LePhare, EAZY, Bagpipes
@@ -89,9 +89,19 @@ class Catalogue:
     def from_fits_cat(cls, fits_cat_path, instrument, cat_creator, code_names, survey, z_max_lowz, templates_arr = ["fsps_larson"], data = None, mask = True):
         # open the catalogue
         fits_cat = funcs.cat_from_path(fits_cat_path)
+        # crop instrument bands that don't appear in the first row of the catalogue
+        for band in instrument.bands:
+            try:
+                cat_creator.load_photometry(Table(fits_cat[0]), [band]) #[band])
+            except:
+                # no data for the relevant band within the catalogue
+                instrument.remove_band(band)
+                print(f"{band} flux not loaded")
+        print(instrument.bands)
         # produce galaxy array from each row of the catalogue
-        gals = np.array([Galaxy.from_fits_cat(fits_cat[fits_cat[cat_creator.ID_label] == ID], instrument, cat_creator, [], []) \
-            for ID in tqdm(np.array(fits_cat[cat_creator.ID_label]), total = len(np.array(fits_cat[cat_creator.ID_label])), desc = "Loading galaxies into catalogue")])
+        gals = Multiple_Galaxy.from_fits_cat(fits_cat, instrument, cat_creator, code_names, z_max_lowz).gals
+        #gals = np.array([Galaxy.from_fits_cat(fits_cat[fits_cat[cat_creator.ID_label] == ID], instrument, cat_creator, [], []) \
+        #    for ID in tqdm(np.array(fits_cat[cat_creator.ID_label]), total = len(np.array(fits_cat[cat_creator.ID_label])), desc = "Loading galaxies into catalogue")])
         # make catalogue with no SED fitting information
         cat_obj = cls(gals, fits_cat_path, survey, cat_creator)
         if cat_obj != None:
