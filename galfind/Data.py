@@ -85,10 +85,10 @@ class Data:
                 # load new masks
                 mask_paths[band] = glob.glob(f"{config['DEFAULT']['GALFIND_WORK']}/Masks/{survey}/*{band.replace('W', 'w').replace('M', 'm')}*")[0]
         self.mask_paths = dict(sorted(mask_paths.items()))
-        try:
-            print(f"image paths = {self.im_paths}, segmentation paths = {self.seg_paths}, mask paths = {self.mask_paths}")
-        except:
-            pass
+        # try:
+        #     print(f"image paths = {self.im_paths}, segmentation paths = {self.seg_paths}, mask paths = {self.mask_paths}")
+        # except:
+        #     pass
 
         if is_blank:
             print(f"{survey} is a BLANK field!")
@@ -239,7 +239,7 @@ class Data:
                         try:
                             im_exts[band] = hdu.index_of('SCI')
                         except KeyError:
-                            print("No 'SCI' extension for {band} image. Default to im_ext = 0!")
+                            #print(f"No 'SCI' extension for {band} image. Default to im_ext = 0!")
                             im_exts[band] = 0
                         # Get header of image extension
                         imheader = hdu[im_exts[band]].header
@@ -317,9 +317,7 @@ class Data:
                 blank_mask_path = glob.glob(f"{config['DEFAULT']['GALFIND_WORK']}/Masks/{survey}/*blank*")[0]
             except IndexError:
                 blank_mask_path = ""
-
-            #im_paths, im_exts, im_shapes, im_zps, wht_paths, wht_exts, wht_types, im_pixel_scales, seg_paths, mask_paths, cluster_mask_path, blank_mask_path 
-            print("combined instrument bands", comb_instrument.bands, comb_instrument.name)
+            
             return cls(comb_instrument, im_paths, im_exts,im_pixel_scales, im_shapes, im_zps, wht_paths, wht_exts, wht_types, seg_paths, mask_paths, cluster_mask_path, blank_mask_path, survey, version = version, is_blank = is_blank)
         else:
             raise(Exception(f'Failed to find any data for {survey}'))  
@@ -849,7 +847,7 @@ class Data:
                         phot_data["sigma_" + band].T[j][k] = -99.
                         
                         # update column for flux in Jy
-                        phot_data["FLUX_APER_" + band + "_aper_corr_Jy"].T[j][k] = funcs.flux_image_to_Jy(phot_data["FLUX_APER_" + band + "_aper_corr"].T[j][k], self.im_zps[band]).value
+                        phot_data["FLUX_APER_" + band + "_aper_corr_Jy"].T[j][k] = funcs.flux_image_to_Jy([phot_data["FLUX_APER_" + band + "_aper_corr"].T[j][k]], self.im_zps[band])[0]
             
                 for diam_index, aper_diam in enumerate(aper_diams):
                     r = self.calc_aper_radius_pix(aper_diam, band)
@@ -894,7 +892,7 @@ class Data:
                                 phot_data["FLUX_APER_" + band + "_aper_corr_Jy"].T[diam_index][k] * min_flux_pc_err / 100
                             else:
                                 phot_data["FLUXERR_APER_" + band + "_loc_depth_" + str(min_flux_pc_err) + "pc_Jy"].T[diam_index][k] = \
-                                    funcs.flux_image_to_Jy(phot_data["FLUXERR_APER_" + band + "_loc_depth"].T[diam_index][k], self.im_zps[band]).value
+                                    funcs.flux_image_to_Jy([phot_data["FLUXERR_APER_" + band + "_loc_depth"].T[diam_index][k]], self.im_zps[band])[0]
                         
                         # calculate local depth mag errors both with and without n_pc minimum flux errors imposed
                         for m in range(2):
@@ -959,7 +957,7 @@ class Data:
         for aper_diam in aper_diams:
             # Generate folder for depths
             self.get_depth_dir(aper_diam)
-            print(f"depth_dirs = {self.depth_dirs}")
+            #print(f"depth_dirs = {self.depth_dirs}")
             for band in self.instrument.bands:
                 # Only run for non excluded bands
                 if band not in excl_bands:
@@ -988,7 +986,7 @@ class Data:
                 # use the xy_offset defined in .txt in appropriate folder
                 xy_offset_path = f"{self.depth_dirs[band]}/offset_{band}.txt"
                 xy_offset = list(np.genfromtxt(xy_offset_path, dtype = int))
-                print(f"xy_offset = {xy_offset}")
+                #print(f"xy_offset = {xy_offset}")
             except: # use default xy offset if this .txt does not exist
                 pass
             

@@ -26,7 +26,7 @@ class Galaxy:
     @classmethod
     def from_fits_cat(cls, fits_cat_row, instrument, cat_creator, codes, low_z_runs):
         # load multiple photometries from the fits catalogue
-        phot = [Photometry_obs.from_fits_cat(fits_cat_row, instrument, cat_creator, cat_creator.aper_diam, cat_creator.min_flux_pc_err, codes, low_z_runs)] # \
+        phot = Photometry_obs.from_fits_cat(fits_cat_row, instrument, cat_creator, cat_creator.aper_diam, cat_creator.min_flux_pc_err, codes, low_z_runs) # \
                 # for min_flux_pc_err in cat_creator.min_flux_pc_err for aper_diam in cat_creator.aper_diam]
         # load the ID and Sky Coordinate from the source catalogue
         ID = int(fits_cat_row[cat_creator.ID_label])
@@ -87,6 +87,9 @@ class Multiple_Galaxy:
             gal = self[self.iter]
             self.iter += 1
             return gal
+    
+    def __getitem__(self, index):
+        return self.gals[index]
         
     @classmethod
     def from_fits_cat(cls, fits_cat, instrument, cat_creator, codes, low_z_runs):
