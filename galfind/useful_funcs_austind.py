@@ -65,9 +65,11 @@ def flux_pc_to_mag_err(flux_pc_err):
     mag_err = 2.5 * flux_pc_err / (np.log(10)) # divide by 100 here to convert into percentage?
     return mag_err
 
-def flux_image_to_Jy(flux, zero_point):
+def flux_image_to_Jy(fluxes, zero_points):
     # convert flux from image units to Jy
-    return flux * (10 ** ((zero_point - 8.9) / -2.5)) * u.Jy
+    fluxes_Jy = np.array([flux * (10 ** ((zero_points - 8.9) / -2.5)) for flux in fluxes])
+    #print("fluxes_Jy = ", fluxes_Jy, fluxes_Jy[0])
+    return fluxes_Jy
 
 def five_to_n_sigma_mag(five_sigma_depth, n):
     n_sigma_mag = -2.5 * np.log10(n / 5) + five_sigma_depth
@@ -166,6 +168,14 @@ def cat_from_path(path, crop_names = None):
     metadata = {"cat_path": path}
     cat.meta = metadata
     return cat
+
+def fits_cat_to_np(fits_cat, column_labels):
+    new_cat = fits_cat[column_labels].as_array()
+    if type(new_cat) == np.ma.core.MaskedArray:
+        new_cat = new_cat.data
+    n_aper_diams = len(new_cat[0][0])
+    new_cat = np.lib.recfunctions.structured_to_unstructured(new_cat).reshape(len(fits_cat), len(column_labels), n_aper_diams)
+    return new_cat 
 
 # GALFIND specific functions
 def GALFIND_cat_path(SED_code_name, instrument_name, version, survey, forced_phot_band_name, min_flux_pc_err, cat_type = "loc_depth", masked = True, templates = "fsps_larson"):

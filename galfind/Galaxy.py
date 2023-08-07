@@ -13,7 +13,7 @@ import astropy.units as u
 from astropy.coordinates import SkyCoord
 
 from . import useful_funcs_austind as funcs
-from . import Photometry_rest, Photometry_obs
+from . import Photometry_rest, Photometry_obs, Multiple_Photometry_obs
 
 class Galaxy:
     
@@ -26,7 +26,7 @@ class Galaxy:
     @classmethod
     def from_fits_cat(cls, fits_cat_row, instrument, cat_creator, codes, low_z_runs):
         # load multiple photometries from the fits catalogue
-        phot = [Photometry_obs.from_fits_cat(fits_cat_row, instrument, cat_creator, cat_creator.aper_diam, cat_creator.min_flux_pc_err, codes, low_z_runs)] # \
+        phot = Photometry_obs.from_fits_cat(fits_cat_row, instrument, cat_creator, cat_creator.aper_diam, cat_creator.min_flux_pc_err, codes, low_z_runs) # \
                 # for min_flux_pc_err in cat_creator.min_flux_pc_err for aper_diam in cat_creator.aper_diam]
         # load the ID and Sky Coordinate from the source catalogue
         ID = int(fits_cat_row[cat_creator.ID_label])
@@ -63,4 +63,43 @@ class Galaxy:
         for key, value in self.__dict__.items():
             setattr(result, key, deepcopy(value, memo))
         return result
+    
+class Multiple_Galaxy:
+    
+    def __init__(self, sky_coords, IDs, phots, mask_flags_arr):
+        self.gals = [Galaxy(sky_coord, ID, phot, mask_flags) for sky_coord, ID, phot, mask_flags in zip(sky_coords, IDs, phots, mask_flags_arr)]
+        
+    def __repr__(self):
+        # string representation of what is stored in this class
+        return str(self.__dict__)
+    
+    def __len__(self):
+        return len(self.gals)
+    
+    def __iter__(self):
+        self.iter = 0
+        return self
+    
+    def __next__(self):
+        if self.iter > len(self) - 1:
+            raise StopIteration
+        else:
+            gal = self[self.iter]
+            self.iter += 1
+            return gal
+    
+    def __getitem__(self, index):
+        return self.gals[index]
+        
+    @classmethod
+    def from_fits_cat(cls, fits_cat, instrument, cat_creator, codes, low_z_runs):
+        # load photometries from catalogue
+        phots = Multiple_Photometry_obs.from_fits_cat(fits_cat, instrument, cat_creator, cat_creator.aper_diam, cat_creator.min_flux_pc_err, codes, low_z_runs)
+        # load the ID and Sky Coordinate from the source catalogue
+        IDs = np.array(fits_cat[cat_creator.ID_label]).astype(int)
+        sky_coords = [SkyCoord(ra * u.deg, dec * u.deg, frame = "icrs") \
+                      for ra, dec in zip(fits_cat[cat_creator.ra_dec_labels["RA"]], fits_cat[cat_creator.ra_dec_labels["DEC"]])]
+        # mask flags should come from cat_creator
+        mask_flags_arr = [{band: cat_creator.load_flag(fits_cat_row, f"unmasked_{band}") for band in instrument.bands} for fits_cat_row in fits_cat]
+        return cls(sky_coords, IDs, phots, mask_flags_arr)
     
