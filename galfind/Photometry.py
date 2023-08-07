@@ -44,12 +44,12 @@ class Photometry:
             except:
                 # no data for the relevant band within the catalogue
                 instrument.remove_band(band)
-                print(f"{band} flux not loaded")
+                #print(f"{band} flux not loaded")
         try:
             # local depths only currently works for one aperture diameter
             loc_depths = np.array([fits_cat_row[f"loc_depth_{band}"].T[cat_creator.aper_diam_index] for band in instrument.bands])
         except:
-            print("loc depths not loaded")
+            #print("loc depths not loaded")
             loc_depths = None
         return cls(instrument, fluxes * u.Jy, flux_errs * u.Jy, loc_depths)
     
