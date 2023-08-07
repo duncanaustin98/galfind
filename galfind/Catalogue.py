@@ -15,10 +15,11 @@ from pathlib import Path
 from astropy.wcs import WCS
 import astropy.units as u
 from tqdm import tqdm
+import time
 import copy
 
 from .Data import Data
-from .Galaxy import Galaxy
+from .Galaxy import Galaxy, Multiple_Galaxy
 from . import useful_funcs_austind as funcs
 from .Catalogue_Creator import GALFIND_Catalogue_Creator
 from . import SED_code, LePhare, EAZY, Bagpipes
@@ -89,9 +90,21 @@ class Catalogue:
     def from_fits_cat(cls, fits_cat_path, instrument, cat_creator, code_names, survey, z_max_lowz, templates_arr = ["fsps_larson"], data = None, mask = True):
         # open the catalogue
         fits_cat = funcs.cat_from_path(fits_cat_path)
+        # crop instrument bands that don't appear in the first row of the catalogue (I believe this is already done when running from data)
+        # for band in instrument.bands:
+        #     try:
+        #         cat_creator.load_photometry(Table(fits_cat[0]), [band])
+        #     except:
+        #         # no data for the relevant band within the catalogue
+        #         instrument.remove_band(band)
+        #         print(f"{band} flux not loaded")
+        print("instrument bands = ", instrument.bands)
         # produce galaxy array from each row of the catalogue
-        gals = np.array([Galaxy.from_fits_cat(fits_cat[fits_cat[cat_creator.ID_label] == ID], instrument, cat_creator, [], []) \
-            for ID in tqdm(np.array(fits_cat[cat_creator.ID_label]), total = len(np.array(fits_cat[cat_creator.ID_label])), desc = "Loading galaxies into catalogue")])
+        start_time = time.time()
+        gals = Multiple_Galaxy.from_fits_cat(fits_cat, instrument, cat_creator, code_names, z_max_lowz).gals
+        end_time = time.time()
+        elapsed_time = end_time - start_time
+        print(f"Finished loading in {len(gals)} galaxies. This took {elapsed_time:.6f} seconds")
         # make catalogue with no SED fitting information
         cat_obj = cls(gals, fits_cat_path, survey, cat_creator)
         if cat_obj != None:
@@ -101,14 +114,17 @@ class Catalogue:
         # run SED fitting for the appropriate code names/low-z runs
         for code_name, templates in zip(code_names, templates_arr):
             code = getattr(globals()[code_name], code_name)()
-            try: # see whether SED fitting has already been performed
-                fits_cat[f"{code.galaxy_property_labels['z_phot']}"]
-            except:
-                # perform SED fitting
-                cat_obj = code.fit_cat(cat_obj, z_max_lowz, templates = templates)
+            # try: # see whether SED fitting has already been performed
+            #     fits_cat[code.galaxy_property_labels[f'z_phot_{templates}']]
+            #     print(f"Already loaded SED fitting for {code_name} using templates = {templates}") # still need to implement SED_result loading
+            # except:
+            #     # perform SED fitting
+            #     print(f"Performing SED fitting for {code_name} using templates = {templates}")
+            cat_obj = code.fit_cat(cat_obj, z_max_lowz, templates = templates)
         return cat_obj
     
     def update_SED_results(self, SED_results):
+        print("Updating SED results in galfind catalogue object")
         [gal.update(SED_result) for gal, SED_result in zip(self, SED_results)]
     
     # %% Overloaded operators
@@ -370,6 +386,7 @@ class Catalogue:
             print("Finished masking!")
         else:
             self.cat_path = masked_cat_path
+            print("Already masked!")
     
     def make_UV_fit_cat(self, UV_PDF_path = config["RestUVProperties"]["UV_PDF_PATH"], col_names = ["Beta", "flux_lambda_1500", "flux_Jy_1500", "M_UV", "A_UV", "L_obs", "L_int", "SFR"], \
                         code = "LePhare", join_tables = True):
