@@ -22,14 +22,19 @@ class SED_result:
         self.low_z_run = low_z_run
         
     @classmethod
-    def from_fits_cat(cls, fits_cat_row, code, phot, cat_creator, low_z_run):
+    def from_fits_cat(cls, fits_cat_row, code, phot, cat_creator, low_z_zmax, templates):
         # could construct the photometry from the raw catalogue using cat_creator here
         try:
             z = float(fits_cat_row[code.galaxy_property_labels["z_phot"]])
         except:
-            raise(Exception(f"SED run not performed for {code}, low_z_run = {low_z_run}"))
+            raise(Exception(f"SED run not performed for {code.code_name}, low_z_zmax = {low_z_zmax}"))
         chi_sqs = {name: float(fits_cat_row[chi_sq]) for name, chi_sq in code.chi_sq_labels.items()}
         ID = int(fits_cat_row[cat_creator.ID_label])
         z_PDF = [] #code.extract_z_PDF(fits_cat_row, ID, low_z_run)
         SEDs = [] #code.extract_SEDs(fits_cat_row, ID, low_z_run)
         return cls(phot, z, code, chi_sqs, z_PDF, SEDs, low_z_run)
+    
+class Multiple_SED_result:
+    
+    def __init__(self):
+        pass
