@@ -24,30 +24,10 @@ from . import useful_funcs_austind as funcs
 from .Catalogue_Creator import GALFIND_Catalogue_Creator
 from . import SED_code, LePhare, EAZY, Bagpipes
 from . import config
+from . import Catalogue_Base
 
-class Catalogue:
-    # later on, the gal_arr should be calculated from the Instrument and sex_cat path, with SED codes already given
-    def __init__(self, gals, cat_path, survey, cat_creator, codes = []): #, UV_PDF_path):
-        self.survey = survey
-        self.cat_path = cat_path
-        #self.UV_PDF_path = UV_PDF_path
-        self.cat_creator = cat_creator
-        self.codes = codes
-        self.gals = gals
-        
-        # concat is commutative for catalogues
-        self.__radd__ = self.__add__
-        # cross-match is commutative for catalogues
-        self.__rmul__ = self.__mul__
-        
-    @property
-    def cat_dir(self):
-        return funcs.split_dir_name(self.cat_path, "dir")
+class Catalogue(Catalogue_Base):
     
-    @property
-    def cat_name(self):
-        return funcs.split_dir_name(self.cat_path, "name")
-        
     # %% alternative constructors
     @classmethod
     def from_pipeline(cls, survey, version, aper_diams, cat_creator, code_names, low_z_runs, xy_offset = [0, 0], instruments = ['NIRCam', 'ACS_WFC', 'WFC3IR'], \
@@ -86,14 +66,14 @@ class Catalogue:
     #     return cls(gals, cat_path, survey, cat_creator)
     
     @classmethod
-    def from_fits_cat(cls, fits_cat_path, instrument, cat_creator, code_names, low_z_runs, survey, templates = "fsps_larson", data = None, mask = True):
+    def from_fits_cat(cls, fits_cat_path, version, instrument, cat_creator, code_names, low_z_runs, survey, templates = "fsps_larson", data = None, mask = True):
         # open the catalogue
         fits_cat = funcs.cat_from_path(fits_cat_path)
         # produce galaxy array from each row of the catalogue
         gals = np.array([Galaxy.from_fits_cat(fits_cat[fits_cat[cat_creator.ID_label] == ID], instrument, cat_creator, [], []) \
             for ID in tqdm(np.array(fits_cat[cat_creator.ID_label]), total = len(np.array(fits_cat[cat_creator.ID_label])), desc = "Loading galaxies into catalogue")])
         # make catalogue with no SED fitting information
-        cat_obj = cls(gals, fits_cat_path, survey, cat_creator)
+        cat_obj = cls(gals, fits_cat_path, survey, cat_creator, instrument, code_names, version)
         if cat_obj != None:
             cat_obj.data = data
         if mask:
@@ -106,6 +86,7 @@ class Catalogue:
                     low_z_label = "_lowz"
                 else:
                     low_z_label = ""
+                # This is broken!
                 fits_cat[f"{code.galaxy_property_labels['z_phot']}{low_z_label}"]
             except:
                 # perform SED fitting

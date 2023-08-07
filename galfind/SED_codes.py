@@ -61,8 +61,8 @@ class SED_code(ABC):
         phot_in = []
         phot_err_in = []
         for band in SED_input_bands:
-            if band in cat.data.instrument.bands:
-                band_index = np.where(band == cat.data.instrument.bands)[0][0]
+            if band in cat.instrument.bands:
+                band_index = np.where(band == cat.instrument.bands)[0][0]
                 phot_in.append(phot[:, band_index])
                 phot_err_in.append(phot_err[:, band_index])
             else: # band does not exist in data but still needs to be included
@@ -81,17 +81,21 @@ class SED_code(ABC):
         os.makedirs(sed_folder, exist_ok = True)
         fits_out_path = self.out_fits_name(out_path, *args, **kwargs)
         if not Path(fits_out_path).is_file() or config["DEFAULT"].getboolean("OVERWRITE"):
-            self.run_fit(in_path, out_path, sed_folder, cat.data.instrument.new_instrument(), *args, **kwargs)
+            self.run_fit(in_path, out_path, sed_folder, cat.instrument.new_instrument(), *args, **kwargs)
             self.make_fits_from_out(out_path, *args, **kwargs)
         # update galaxies within catalogue object with determined properties
+        print(fits_out_path)
         cat = self.update_cat(cat, fits_out_path, low_z_run, *args, **kwargs)
         return cat
     
     def update_cat(self, cat, fits_out_path, low_z_run, *args, **kwargs):
         # save concatenated catalogue
         combined_cat = join(Table.read(cat.cat_path), Table.read(fits_out_path), keys_left = "NUMBER", keys_right = "IDENT")
-        combined_cat_path = f"{config['DEFAULT']['GALFIND_WORK']}/Catalogues/{cat.data.version}/{cat.data.instrument.name}/" + \
-            f"{cat.data.survey}/{funcs.split_dir_name(fits_out_path.replace('.fits', '_matched.fits'), 'name')}"
+        combined_cat_path = f"{config['DEFAULT']['GALFIND_WORK']}/Catalogues/{cat.version}/{cat.instrument.name}/" + \
+            f"{cat.survey}/{funcs.split_dir_name(fits_out_path.replace('.fits', '_matched.fits'), 'name')}"
+        print(Path(combined_cat_path).parent)
+        if not Path(combined_cat_path).parent.is_dir():
+            funcs.make_dirs(str(Path(combined_cat_path).parent)+'/')
         combined_cat.write(combined_cat_path, overwrite = True)
         combined_cat.meta["cat_path"] = combined_cat_path
         combined_cat.meta = {**combined_cat.meta, **{f"{self.code_name}_path": fits_out_path}}

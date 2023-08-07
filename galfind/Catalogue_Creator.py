@@ -182,5 +182,4 @@ class JADES_DR1_Catalogue_Creator(Catalogue_Creator):
 
 # JAGUAR
 
-    
-    
+
