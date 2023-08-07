@@ -175,9 +175,19 @@ def fits_cat_to_np(fits_cat, column_labels):
         new_cat = new_cat.data
     n_aper_diams = len(new_cat[0][0])
     new_cat = np.lib.recfunctions.structured_to_unstructured(new_cat).reshape(len(fits_cat), len(column_labels), n_aper_diams)
-    return new_cat 
+    return new_cat
+
+def lowz_label(lowz_zmax):
+    if lowz_zmax != None:
+        label = f"zmax={lowz_zmax:.1f}"
+    else:
+        label = ""
+    return label
 
 # GALFIND specific functions
+def GALFIND_SED_column_labels(codes, lowz_zmaxs, templates_arr, gal_property):
+    return [code.galaxy_property_labels(gal_property, templates, lowz_zmax) for code, lowz_zmax, templates in zip(codes, lowz_zmaxs, templates_arr)]
+
 def GALFIND_cat_path(SED_code_name, instrument_name, version, survey, forced_phot_band_name, min_flux_pc_err, cat_type = "loc_depth", masked = True, templates = "fsps_larson"):
     # should still include aper_diam here
     if masked:

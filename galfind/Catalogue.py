@@ -87,7 +87,7 @@ class Catalogue:
     #     return cls(gals, cat_path, survey, cat_creator)
     
     @classmethod
-    def from_fits_cat(cls, fits_cat_path, instrument, cat_creator, code_names, survey, z_max_lowz, templates_arr = ["fsps_larson"], data = None, mask = True):
+    def from_fits_cat(cls, fits_cat_path, instrument, cat_creator, code_names, survey, lowz_zmax, templates_arr = ["fsps_larson"], data = None, mask = True):
         # open the catalogue
         fits_cat = funcs.cat_from_path(fits_cat_path)
         # crop instrument bands that don't appear in the first row of the catalogue (I believe this is already done when running from data)
@@ -101,7 +101,7 @@ class Catalogue:
         print("instrument bands = ", instrument.bands)
         # produce galaxy array from each row of the catalogue
         start_time = time.time()
-        gals = Multiple_Galaxy.from_fits_cat(fits_cat, instrument, cat_creator, code_names, z_max_lowz).gals
+        gals = Multiple_Galaxy.from_fits_cat(fits_cat, instrument, cat_creator, code_names, lowz_zmax).gals
         end_time = time.time()
         elapsed_time = end_time - start_time
         print(f"Finished loading in {len(gals)} galaxies. This took {elapsed_time:.6f} seconds")
@@ -120,7 +120,7 @@ class Catalogue:
             # except:
             #     # perform SED fitting
             #     print(f"Performing SED fitting for {code_name} using templates = {templates}")
-            cat_obj = code.fit_cat(cat_obj, z_max_lowz, templates = templates)
+            cat_obj = code.fit_cat(cat_obj, lowz_zmax, templates = templates)
         return cat_obj
     
     def update_SED_results(self, SED_results):

@@ -12,8 +12,8 @@ import astropy.constants as const
 import astropy.units as u
 from copy import copy, deepcopy
 
-from . import Photometry
-from . import SED_result
+from .Photometry import Photometry, Multiple_Photometry
+from .SED_result import Galaxy_SED_results, Catalogue_SED_results
 
 class Photometry_obs(Photometry):
 
@@ -32,9 +32,10 @@ class Photometry_obs(Photometry):
         return (self.flux_Jy_errs * const.c / ((np.array([value.value for value in self.instrument.band_wavelengths.values()]) * u.Angstrom) ** 2)).to(u.erg / (u.s * (u.cm ** 2) * u.Angstrom))
 
     @classmethod # not a gal object here, more like a catalogue row
-    def from_fits_cat(cls, fits_cat_row, instrument, cat_creator, aper_diam, min_flux_pc_err, codes, low_z_runs):
+    def from_fits_cat(cls, fits_cat_row, instrument, cat_creator, aper_diam, min_flux_pc_err, codes, lowz_zmaxs):
         phot = Photometry.from_fits_cat(fits_cat_row, instrument, cat_creator)
-        SED_results = [SED_result.from_fits_cat(fits_cat_row, code, phot, cat_creator, low_z_run) for code, low_z_run in zip(codes, low_z_runs)]
+        raise(Exception("Fix this!"))
+        SED_results = Galaxy_SED_results.from_fits_cat(fits_cat_row, cat_creator, codes, lowz_zmaxs, instrument = instrument)
         return cls.from_phot(phot, aper_diam, min_flux_pc_err, SED_results)
     
     @classmethod
@@ -43,26 +44,6 @@ class Photometry_obs(Photometry):
     
     def update(self, SED_result):
         self.SED_results.append(SED_result)
-    
-    # @classmethod
-    # def get_phot_from_sim(cls, gal, instrument, sim, min_flux_err_pc = 5):
-    #     fluxes = []
-    #     flux_errs = []
-    #     instrument_copy = instrument.copy()
-    #     for band in instrument_copy.bands:
-    #         try:
-    #             flux = np.array(gal[sim.flux_col_name(band)])
-    #             err = np.array(gal[sim.flux_err_name(band)])
-    #             # encorporate minimum flux error
-    #             err = np.array([err_band if err_band / flux_band >= min_flux_err_pc / 100 else \
-    #                             min_flux_err_pc * flux_band / 100 for flux_band, err_band in zip(flux, err)])
-    #             flux_Jy = funcs.flux_image_to_Jy(flux, sim.zero_point)
-    #             err_Jy = funcs.flux_image_to_Jy(err, sim.zero_point)
-    #             fluxes = np.append(fluxes, flux_Jy.value)
-    #             flux_errs = np.append(flux_errs, err_Jy.value)
-    #         except:
-    #             instrument.remove_band(band)
-    #             print(f"{band} flux not loaded")
     
     def load_local_depths(self, sex_cat_row, instrument, aper_diam_index):
         self.loc_depths = np.array([sex_cat_row[f"loc_depth_{band}"].T[aper_diam_index] for band in instrument.bands])
@@ -99,9 +80,10 @@ class Multiple_Photometry_obs:
         return self.phot_obs_arr[index]
     
     @classmethod
-    def from_fits_cat(cls, fits_cat, instrument, cat_creator, aper_diam, min_flux_pc_err, codes, low_z_runs):
+    def from_fits_cat(cls, fits_cat, instrument, cat_creator, aper_diam, min_flux_pc_err, codes, lowz_zmaxs, templates_arr):
         flux_Jy_arr, flux_Jy_errs_arr = cat_creator.load_photometry(fits_cat, instrument.bands)
         # TO DO: MAKE MULTIPLE_SED_RESULTS CLASS TO LOAD IN SED_RESULTS SIMULTANEOUSLY (LEAVE AS [] FOR NOW)
         loc_depths_arr = np.full(len(flux_Jy_arr), None)
-        SED_results_arr = np.full(len(flux_Jy_arr), None)
+        SED_results_arr = Catalogue_SED_results.from_fits_cat(fits_cat, cat_creator, codes, lowz_zmaxs, templates_arr, instrument = instrument)
+        #SED_results_arr = np.full(len(flux_Jy_arr), None)
         return cls(instrument, flux_Jy_arr, flux_Jy_errs_arr, aper_diam, min_flux_pc_err, loc_depths_arr, SED_results_arr)
