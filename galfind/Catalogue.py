@@ -446,6 +446,9 @@ class Catalogue:
         joined_tab.write(self.cat_path, format = "fits", overwrite = True)
         print(f"Joining UV table to catalogue! Saving to {self.cat_path}")
     
+    def phot_SNR_crop(self, band, n_sigma, remove = False, flag = True):
+        
+    
     def flag_robust_high_z(self, relaxed = False):
         # could make use of an overloaded __setattr__ here!
         pass
