@@ -24,37 +24,17 @@ from . import useful_funcs_austind as funcs
 from .Catalogue_Creator import GALFIND_Catalogue_Creator
 from . import SED_code, LePhare, EAZY, Bagpipes
 from . import config
+from . import Catalogue_Base
 
-class Catalogue:
-    # later on, the gal_arr should be calculated from the Instrument and sex_cat path, with SED codes already given
-    def __init__(self, gals, cat_path, survey, cat_creator, codes = []): #, UV_PDF_path):
-        self.survey = survey
-        self.cat_path = cat_path
-        #self.UV_PDF_path = UV_PDF_path
-        self.cat_creator = cat_creator
-        self.codes = codes
-        self.gals = gals
-        
-        # concat is commutative for catalogues
-        self.__radd__ = self.__add__
-        # cross-match is commutative for catalogues
-        self.__rmul__ = self.__mul__
-        
-    @property
-    def cat_dir(self):
-        return funcs.split_dir_name(self.cat_path, "dir")
+class Catalogue(Catalogue_Base):
     
-    @property
-    def cat_name(self):
-        return funcs.split_dir_name(self.cat_path, "name")
-        
     # %% alternative constructors
     @classmethod
     def from_pipeline(cls, survey, version, aper_diams, cat_creator, code_names, z_max_lowz, xy_offset = [0, 0], instruments = ['NIRCam', 'ACS_WFC', 'WFC3IR'], \
                       forced_phot_band = "f444W", excl_bands = [], loc_depth_min_flux_pc_errs = [5, 10], n_loc_depth_samples = 5, templates_arr = ["fsps_larson"], fast = True):
         # make 'Data' object
         data = Data.from_pipeline(survey, version, instruments, excl_bands = excl_bands)
-        return cls.from_data(data, aper_diams, cat_creator, code_names, z_max_lowz, xy_offset, forced_phot_band, loc_depth_min_flux_pc_errs, n_loc_depth_samples, templates_arr, fast)
+        return cls.from_data(data, version, aper_diams, cat_creator, code_names, z_max_lowz, xy_offset, forced_phot_band, loc_depth_min_flux_pc_errs, n_loc_depth_samples, templates_arr, fast)
 
     # @classmethod
     # def from_NIRCam_pipeline(cls, survey, version, aper_diams, cat_creator, xy_offset = [0, 0], forced_phot_band = "f444W", \
@@ -64,7 +44,7 @@ class Catalogue:
     #     return cls.from_data(data, aper_diams, cat_creator, xy_offset, forced_phot_band, loc_depth_min_flux_pc_errs, n_loc_depth_samples, fast)
     
     @classmethod
-    def from_data(cls, data, aper_diams, cat_creator, code_names, z_max_lowz, xy_offset = [0, 0], forced_phot_band = "f444W", loc_depth_min_flux_pc_errs = [5, 10], \
+    def from_data(cls, data, version, aper_diams, cat_creator, code_names, z_max_lowz, xy_offset = [0, 0], forced_phot_band = "f444W", loc_depth_min_flux_pc_errs = [5, 10], \
                   n_loc_depth_samples = 5, templates_arr = ["fsps_larson"], fast = True, mask = True):
         # make masked local depth catalogue from the 'Data' object
         data.combine_sex_cats(forced_phot_band)
@@ -76,7 +56,7 @@ class Catalogue:
             cat_path = data.loc_depth_cat_path
         elif cat_creator.cat_type == "sex":
             cat_path = data.sex_cat_master_path
-        return cls.from_fits_cat(cat_path, data.instrument, cat_creator, code_names, data.survey, z_max_lowz, templates_arr = templates_arr, data = data, mask = mask)
+        return cls.from_fits_cat(cat_path, version, data.instrument, cat_creator, code_names, data.survey, z_max_lowz, templates_arr = templates_arr, data = data, mask = mask)
     
     # @classmethod
     # def from_sex_cat(cls, cat_path, instrument, survey, cat_creator):
@@ -87,7 +67,7 @@ class Catalogue:
     #     return cls(gals, cat_path, survey, cat_creator)
     
     @classmethod
-    def from_fits_cat(cls, fits_cat_path, instrument, cat_creator, code_names, survey, z_max_lowz, templates_arr = ["fsps_larson"], data = None, mask = True):
+    def from_fits_cat(cls, fits_cat_path, version, instrument, cat_creator, code_names, survey, z_max_lowz, templates_arr = ["fsps_larson"], data = None, mask = True):
         # open the catalogue
         fits_cat = funcs.cat_from_path(fits_cat_path)
         # crop instrument bands that don't appear in the first row of the catalogue (I believe this is already done when running from data)
@@ -106,7 +86,7 @@ class Catalogue:
         elapsed_time = end_time - start_time
         print(f"Finished loading in {len(gals)} galaxies. This took {elapsed_time:.6f} seconds")
         # make catalogue with no SED fitting information
-        cat_obj = cls(gals, fits_cat_path, survey, cat_creator)
+        cat_obj = cls(gals, fits_cat_path, survey, cat_creator, instrument, code_names, version)
         if cat_obj != None:
             cat_obj.data = data
         if mask:
