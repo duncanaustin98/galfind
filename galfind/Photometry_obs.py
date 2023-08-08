@@ -47,6 +47,17 @@ class Photometry_obs(Photometry):
     
     def load_local_depths(self, sex_cat_row, instrument, aper_diam_index):
         self.loc_depths = np.array([sex_cat_row[f"loc_depth_{band}"].T[aper_diam_index] for band in instrument.bands])
+        
+    def SNR_crop(self, band, sigma_detect_thresh):
+        index = self.instrument.band_from_index(band)
+        # local depth in units of Jy
+        loc_depth_Jy = self.loc_depths[index].to(u.Jy) / 5
+        detection_Jy = self.flux_Jy[index].to(u.Jy)
+        sigma_detection = (detection_Jy / loc_depth_Jy).value
+        if sigma_detection >= sigma_detect_thresh:
+            return True
+        else:
+            return False
 
 # %%    
         

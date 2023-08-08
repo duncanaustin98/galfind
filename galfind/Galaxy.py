@@ -34,15 +34,6 @@ class Galaxy:
         # mask flags should come from cat_creator
         mask_flags = {band: cat_creator.load_flag(fits_cat_row, f"unmasked_{band}") for band in instrument.bands}
         return cls(sky_coord, ID, phot, mask_flags)
-    
-    def update(self, SED_result, index = 0): # for now just update the single photometry
-        self.phot[index].update(SED_result)
-        
-    def update_mask_full(self, bool_values):
-        pass
-        
-    def update_mask_band(self, band, bool_value):
-        self.mask_flags[band] = bool_value
         
     def __setattr__(self, name, value, obj = "gal"):
         if obj == "gal":
@@ -63,6 +54,19 @@ class Galaxy:
         for key, value in self.__dict__.items():
             setattr(result, key, deepcopy(value, memo))
         return result
+    
+    def update(self, SED_result, index = 0): # for now just update the single photometry
+        self.phot[index].update(SED_result)
+        
+    def update_mask_full(self, bool_values):
+        pass
+        
+    def update_mask_band(self, band, bool_value):
+        self.mask_flags[band] = bool_value
+        
+    def phot_SNR_crop(self, band, sigma_detect_thresh, flag = True):
+        self.phot.SNR_crop(band, sigma_detect_thresh)
+        pass
     
 class Multiple_Galaxy:
     
