@@ -36,19 +36,22 @@ EAZY_FILTER_CODES = {'NIRCam': {'f070W':36, 'f090W':1, 'f115W':2,'f140M':37, 'f1
 
 class EAZY(SED_code):
     
-    def __init__(self, templates = "fsps_larson", low_z_run = False):
+    def __init__(self):
         code_name = "EAZY"
         #ID_label = "IDENT"
-        galaxy_property_labels = {"z_phot": "zbest"}
-        # if low_z_run:
-        #     galaxy_property_labels = {key: f"{value}_lowz" for (key, value) in galaxy_property_labels.items()}
-        chi_sq_labels = {}
-        self.templates = templates
-        super().__init__(code_name, galaxy_property_labels, chi_sq_labels, low_z_run)
+        galaxy_property_dict = {"z_phot": "zbest", "chi_sq": "chi2_best"}
+        available_templates = ["fsps", "fsps_larson", "fsps_jades"]
+        super().__init__(code_name, galaxy_property_dict, available_templates)
     
     def make_in(self, cat, fix_z = False, *args, **kwargs):
-        print("MAKE_IN_EAZY_CAT.DATA = ", cat.data)
-        eazy_in_path = f"{config['EAZY']['EAZY_DIR']}/input/{cat.instrument.name}/{cat.version}/{cat.survey}/{cat.cat_name.replace('.fits', '')}_{cat.cat_creator.min_flux_pc_err}pc.in"
+        #print("MAKE_IN_EAZY_CAT.DATA = ", cat.data)
+        eazy_in_dir = f"{config['EAZY']['EAZY_DIR']}/input/{cat.instrument.name}/{cat.version}/{cat.survey}"
+        split_name = cat.cat_name.split('_')
+        if split_name[-1] == "masked.fits":
+            eazy_in_name = cat.cat_name.replace('.fits', f'_{cat.cat_creator.min_flux_pc_err}pc.in')
+        else: 
+            eazy_in_name = f"{'_'.join(cat.cat_name.split('pc')[0].split('_')[:-1])}_{cat.cat_creator.min_flux_pc_err}pc.in"
+        eazy_in_path = f"{eazy_in_dir}/{eazy_in_name}"
         if not Path(eazy_in_path).is_file():
             # 1) obtain input data
             IDs = np.array([gal.ID for gal in cat.gals]) # load IDs
@@ -78,7 +81,7 @@ class EAZY(SED_code):
         return eazy_in_path
     
     @run_in_dir(path = config['EAZY']['EAZY_DIR'])
-    def run_fit(self, in_path, out_path, sed_folder, instrument, default_templates = 'fsps_larson', fix_z = False, n_proc = 6, z_step = 0.01, z_min = 0, z_max = 25,
+    def run_fit(self, in_path, out_path, sed_folder, instrument, default_templates = 'fsps_larson', fix_z = False, n_proc = 1, z_step = 0.01, z_min = 0, z_max = 25,
                 save_best_seds = True, save_pz = True, write_hdf = True, save_plots = False, plot_ids = None, plot_all = False, save_ubvj = True, run_lowz = True, \
                     z_max_lowz = [4., 6.], *args, **kwargs):
         '''
@@ -112,11 +115,12 @@ class EAZY(SED_code):
         # update templates from within kwargs
         try:
             templates = kwargs.get("templates")
+            print(f"Using templates = {templates}")
         except:
-            print(f"Using default EAZY templates = {default_templates}!")
             templates = default_templates
+            print(f"Using default EAZY templates = {default_templates}!")
         
-        path = config['EAZY']['EAZY_DIR']
+        #path = config['EAZY']['EAZY_DIR']
         eazy_templates_path =  config['EAZY']['EAZY_TEMPLATE_DIR']
         default_param_path = f"{config['DEFAULT']['GALFIND_DIR']}/configs/zphot.param.default"
         translate_file = f"{config['DEFAULT']['GALFIND_DIR']}/configs/zphot_jwst.translate"
@@ -198,27 +202,11 @@ class EAZY(SED_code):
                 lowz_fit.fit_catalog(n_proc = n_proc, get_best_fit = True)
                 lowz_fits[f"zmax={z_max:.1f}"] = lowz_fit
 
-    # RUN AT SELECTION STAGE
-        # if plot_all:
-        #     save_plots = True
-        #     ids_to_plot = fit.OBJID
-        # if save_plots:
-        #     # Make output directory if it doesn't exist
-        #     out_path_plots = out_directory + '/plots/'
-        #     if not os.path.exists(out_path_plots):
-        #         os.makedirs(out_path_plots)
-        #     # Make plot for each object, save fit and close
-        #     for i in ids_to_plot:
-        #         fit.show_fit(i, show_fnu=1)
-        #         plt.savefig(f"{out_path_plots}/{i}_{templates}.png",)
-        #         plt.close()   
-    # ------------------------
-
         # Save backup of fit in hdf5 file
         if write_hdf:
             hdf5.write_hdf5(fit, h5file=h5path, include_fit_coeffs=False, include_templates=True, verbose=False)
         # If not using Fsps larson, use standard saving output. Otherwise generate own fits file.
-        if templates == 'fsps' or templates == 'HOT_45K' or templates == 'HOT_60K':
+        if templates == 'HOT_45K' or templates == 'HOT_60K':
             fit.standard_output(UBVJ=(9, 10, 11, 12), absmag_filters=[9, 10, 11, 12], extra_rf_filters=[9, 10, 11, 12] ,n_proc=n_proc, save_fits=1, get_err=True, simple=False)
             lowz_fit.standard_output(UBVJ=(9, 10, 11, 12), absmag_filters=[9, 10, 11, 12], extra_rf_filters=[9, 10, 11, 12] ,n_proc=n_proc, save_fits=1, get_err=True, simple=False)
         else:
@@ -249,7 +237,12 @@ class EAZY(SED_code):
                
                 table['J_rf_flux'] = ubvj[:,3,2]
                 table['J_rf_flux_err'] = (ubvj[:,3,3] - ubvj[:,3,1])/2.
-               
+                
+            # add the template name to the column labels except for IDENT
+            for col_name in table.colnames:
+                if col_name != "IDENT":
+                    table.rename_column(col_name, f"{col_name}_{templates}")
+                
         if save_pz:
             # Make folders if they don't exist
             out_path_pdf = sed_folder.replace("SEDs", "PDFs")
@@ -285,12 +278,11 @@ class EAZY(SED_code):
 
         # Write used parameters
         fit.param.write(fits_out_path.replace(".fits", "_params.csv"))
-        print(f'Finished running EAZY!')
+        print('Finished running EAZY!')
         
         # Write fits file
         table.write(fits_out_path, overwrite=True)
         print(f'Written out file to: {fits_out_path}')
-
 
     def save_sed(self, id, fit, lowz_fits, percentiles, percentiles_lowz, templates, out_path):
         # Find location of matching Id
@@ -320,7 +312,7 @@ class EAZY(SED_code):
         # Convert units of ouput
         if out_flux_unit == 'mag':
             model_flux_converted = -2.5 * np.log10(model_flux.to("Jy").value) + (u.Jy).to(u.ABmag)
-        model_flux_converted[np.isinf(model_flux_converted)] = 99 
+        model_flux_converted[np.isinf(model_flux_converted)] = 99.
         # Construct output
         data_out = np.transpose(np.vstack((model_lam.value, model_flux_converted)))
         out_path = f'{out_path}/{template}/'
@@ -357,24 +349,24 @@ class EAZY(SED_code):
             return None, None
         return z, PDF
         
-    def z_PDF_path_from_cat_path(self, cat_path, ID, low_z_run = False):
+    def z_PDF_path_from_cat_path(self, cat_path, ID, templates, low_z_run = False):
         # should still include aper_diam here
-        min_flux_pc_err = str(cat_path.replace(f"_{self.templates}", "").split("_")[-2].replace("pc", ""))
+        min_flux_pc_err = str(cat_path.replace(f"_{templates}", "").split("_")[-2].replace("pc", ""))
         if low_z_run:
             low_z_name = "_lowz"
         else:
             low_z_name = ""
-        PDF_dir = f"{funcs.split_dir_name(cat_path, 'dir')}PDFs/{str(min_flux_pc_err)}pc/{self.templates}"
+        PDF_dir = f"{funcs.split_dir_name(cat_path, 'dir')}PDFs/{str(min_flux_pc_err)}pc/{templates}"
         PDF_name = f"{str(ID)}{low_z_name}.pz"
         return f"{PDF_dir}/{PDF_name}"
     
-    def SED_path_from_cat_path(self, cat_path, ID, low_z_run = False):
+    def SED_path_from_cat_path(self, cat_path, ID, templates, low_z_run = False):
         # should still include aper_diam here
-        min_flux_pc_err = str(cat_path.replace(f"_{self.templates}", "").split("_")[-2].replace("pc", ""))
+        min_flux_pc_err = str(cat_path.replace(f"_{templates}", "").split("_")[-2].replace("pc", ""))
         if low_z_run:
             low_z_name = "_lowz"
         else:
             low_z_name = ""
-        SED_dir = f"{funcs.split_dir_name(cat_path, 'dir')}SEDs/{str(min_flux_pc_err)}pc/{self.templates}"
+        SED_dir = f"{funcs.split_dir_name(cat_path, 'dir')}SEDs/{str(min_flux_pc_err)}pc/{templates}"
         SED_name = f"{str(ID)}{low_z_name}.spec"
         return f"{SED_dir}/{SED_name}"

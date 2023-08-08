@@ -9,6 +9,7 @@ Created on Wed Jun  7 13:59:59 2023
 # Catalogue_Creator.py
 import numpy as np
 import astropy.units as u
+from astropy.table import Table, Row
 import json
 
 from . import useful_funcs_austind as funcs
@@ -29,18 +30,17 @@ class Catalogue_Creator:
         self.zero_point = zero_point # must be astropy units; can be either integer or dict of {band: zero_point}
         self.phot_fits_ext = phot_fits_ext # only compatible with .fits currently
         
-    def load_zero_point(self, band):
+    def load_zero_points(self, bands):
         if isinstance(self.zero_point, dict):
-            if band in self.zero_point.keys():
-                # determine the ZP for this band
-                zero_point = self.zero_point[band]
+            if all(band in self.zero_point.keys() for band in bands):
+                zero_points = [self.zero_point[band] for band in bands]
             else:
-                raise(Exception(f"{band} not in self.zero_point = {self.zero_point_dict} in {__name__} !"))
+                raise(Exception(f"Not all bands in self.zero_points = {self.zero_point_dict} in {self.__name__} !"))
         elif isinstance(self.zero_point, float):
-            zero_point = self.zero_point
+            zero_points = list(np.full(len(bands), self.zero_point))
         else:
             raise(Exception(f"self.zero_point of type {type(self.zero_point)} in {__name__} must be of type 'dict' or 'int' !"))
-        return zero_point
+        return np.array(zero_points)
     
     def load_photometry(self, fits_cat, band):
         if isinstance(self.arr_index, int):
@@ -68,11 +68,10 @@ class Catalogue_Creator:
         except:
             return None
     
-    def apply_min_flux_pc_err(self, flux, err):
-        # encorporate minimum flux error to positive fluxes only
-        if err / flux < self.min_flux_pc_err / 100 and flux > 0.:
-            err = self.min_flux_pc_err * flux / 100
-        return flux, err
+    def apply_min_flux_pc_err(self, fluxes, errs):
+        errs = np.array([[self.min_flux_pc_err * flux / 100 if err / flux < self.min_flux_pc_err / 100 and flux > 0. else err \
+                          for flux, err in zip(gal_fluxes, gal_errs)] for gal_fluxes, gal_errs in zip(fluxes, errs)])
+        return fluxes, errs
 
 # %% GALFIND conversion from photometry .fits catalogue row to Photometry_obs class
 
@@ -90,7 +89,7 @@ class GALFIND_Catalogue_Creator(Catalogue_Creator):
         
         # only make these dicts once to speed up property loading
         same_key_value_properties = [] #["auto_corr_factor_UV", "auto_corr_factor_mass"]
-        self.property_conv_dict = {sed_code: {**getattr(globals()[sed_code], sed_code)().galaxy_property_labels, **{element: element for element in same_key_value_properties}} for sed_code in json.loads(config["Other"]["CODES"])}
+        self.property_conv_dict = {sed_code: {**getattr(globals()[sed_code], sed_code)().galaxy_property_dict, **{element: element for element in same_key_value_properties}} for sed_code in json.loads(config["Other"]["CODES"])}
         same_key_value_flags = ["robust", "good", "robust_relaxed", "good_relaxed", "blank_module"] + [f"unmasked_{band}" for band in json.loads(config.get("Other", "ALL_BANDS"))]
         self.flag_conv_dict = {element: element for element in same_key_value_flags}
         
@@ -114,18 +113,18 @@ class GALFIND_Catalogue_Creator(Catalogue_Creator):
             raise(Exception("self.flux_or_mag = {self.flux_or_mag} is invalid! It should be either 'flux' or 'mag' !"))
         return phot_label, err_label
     
-    def loc_depth_phot_conv(self, band):
+    def loc_depth_phot_conv(self, bands):
         # outputs catalogue column names for photometric fluxes + errors
         if self.flux_or_mag == "flux":
-            phot_label = f"FLUX_APER_{band}_aper_corr_Jy"
-            err_label = f"FLUXERR_APER_{band}_loc_depth_{str(int(self.min_flux_pc_err))}pc_Jy"
+            phot_labels = [f"FLUX_APER_{band}_aper_corr_Jy" for band in bands]
+            err_labels = [f"FLUXERR_APER_{band}_loc_depth_{str(int(self.min_flux_pc_err))}pc_Jy" for band in bands]
         elif self.flux_or_mag == "mag":
             raise(Exception("Not implemented mag localc depth errors yet!")) # "Beware that mag errors are asymmetric!")
-            phot_label = f"MAG_APER_{band}_aper_corr"
-            err_label = [f"MAGERR_APER_{band}_l1_loc_depth", f"MAGERR_APER_{band}_u1_loc_depth"] # this doesn't currently work!
+            phot_labels = [f"MAG_APER_{band}_aper_corr" for band in bands]
+            err_labels = [[f"MAGERR_APER_{band}_l1_loc_depth", f"MAGERR_APER_{band}_u1_loc_depth"] for band in bands] # this doesn't currently work!
         else:
             raise(Exception("self.flux_or_mag = {self.flux_or_mag} is invalid! It should be either 'flux' or 'mag' !"))
-        return phot_label, err_label
+        return phot_labels, err_labels
     
     def property_conv(self, gal_property, code):
         return self.property_conv_dict[code.code_name][gal_property]
@@ -134,16 +133,19 @@ class GALFIND_Catalogue_Creator(Catalogue_Creator):
         return self.flag_conv_dict[gal_flag]
     
     # overriding load_photometry from parent class to include .T[aper_diam_index]'s
-    def load_photometry(self, fits_cat, band):
-        zero_point = self.load_zero_point(band) # check that self.zero_point is saved in the correct format and extract ZP for this band
-        phot_label, err_label = self.phot_conv(band)
+    def load_photometry(self, fits_cat, bands):
+        zero_points = self.load_zero_points(bands)
+        phot_labels, err_labels = self.phot_conv(bands)
+        assert len(phot_labels) == len(err_labels), "Length of photometry and error labels inconsistent!"
+        phot_cat = funcs.fits_cat_to_np(fits_cat, phot_labels)
+        err_cat = funcs.fits_cat_to_np(fits_cat, err_labels)
         if self.flux_or_mag == "flux":
-            phot = funcs.flux_image_to_Jy(fits_cat[phot_label].T[self.aper_diam_index], zero_point)
-            phot_err = funcs.flux_image_to_Jy(fits_cat[err_label].T[self.aper_diam_index], zero_point)
+            phot = funcs.flux_image_to_Jy(phot_cat[:, :, self.aper_diam_index], zero_points)
+            phot_err = funcs.flux_image_to_Jy(err_cat[:, :, self.aper_diam_index], zero_points)
             phot, phot_err = self.apply_min_flux_pc_err(phot, phot_err)
         elif self.flux_or_mag == "mag":
-            print("Beware that mag errors are asymmetric!")
-            phot = funcs.mag_to_flux(fits_cat[phot_label], u.Jy.to(u.ABmag))
+            raise(Exception("Beware that mag errors are asymmetric! FUNCTIONALITY NOT YET INCORPORATED!"))
+            phot = funcs.mag_to_flux(fits_cat[phot_labels], u.Jy.to(u.ABmag))
             phot_err = funcs.mag_to_flux # this doesn't currently work!
         return phot, phot_err
 
