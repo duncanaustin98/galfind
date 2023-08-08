@@ -25,6 +25,7 @@ from .Catalogue_Creator import GALFIND_Catalogue_Creator
 from . import SED_code, LePhare, EAZY, Bagpipes
 from . import config
 from . import Catalogue_Base
+from .Instrument import NIRCam, ACS_WFC, WFC3IR, Instrument, Combined_Instrument
 
 class Catalogue(Catalogue_Base):
     
@@ -67,17 +68,25 @@ class Catalogue(Catalogue_Base):
     #     return cls(gals, cat_path, survey, cat_creator)
     
     @classmethod
-    def from_fits_cat(cls, fits_cat_path, version, instrument, cat_creator, code_names, survey, z_max_lowz, templates_arr = ["fsps_larson"], data = None, mask = True):
+    def from_fits_cat(cls, fits_cat_path, version, instrument, cat_creator, code_names, survey, z_max_lowz, templates_arr = ["fsps_larson"], data = None, mask = True, excl_bands=[]):
         # open the catalogue
         fits_cat = funcs.cat_from_path(fits_cat_path)
+
+        if type(instrument) not in [Instrument, Combined_Instrument]:
+            if type(instrument) in [list, np.ndarray]:
+                instrument = '+'.join(instrument)
+            instrument = Instrument.from_name(instrument, excl_bands=excl_bands)
+        print('wave')
+        print("instrument bands = ", instrument.bands)
         # crop instrument bands that don't appear in the first row of the catalogue (I believe this is already done when running from data)
-        # for band in instrument.bands:
-        #     try:
-        #         cat_creator.load_photometry(Table(fits_cat[0]), [band])
-        #     except:
-        #         # no data for the relevant band within the catalogue
-        #         instrument.remove_band(band)
-        #         print(f"{band} flux not loaded")
+        # Removed comments from following 
+        for band in instrument.bands:
+             try:
+                 cat_creator.load_photometry(Table(fits_cat[0]), [band])
+             except:
+                 # no data for the relevant band within the catalogue
+                 instrument.remove_band(band)
+                 print(f"{band} flux not loaded")
         print("instrument bands = ", instrument.bands)
         # produce galaxy array from each row of the catalogue
         start_time = time.time()

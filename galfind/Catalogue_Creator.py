@@ -102,13 +102,14 @@ class GALFIND_Catalogue_Creator(Catalogue_Creator):
         #aper_diam_index = np.where(aper_diam.value == json.loads(config.get("SExtractor", "APERTURE_DIAMS")))[0][0]
         super().__init__(phot_conv, property_conv, flag_conv, aper_diam_index, flux_or_mag, min_flux_pc_err, ra_dec_labels, ID_label, zero_point, phot_fits_ext)
 
-    def sex_phot_conv(self, band):
+    def sex_phot_conv(self, bands):
+        # Updated to take a list of bands as input
         if self.flux_or_mag == "flux":
-            phot_label = f"FLUX_APER_{band}"
-            err_label = f"FLUXERR_APER_{band}"
+            phot_label = [f"FLUX_APER_{band}" for band in bands]
+            err_label = [f"FLUXERR_APER_{band}" for band in bands]
         elif self.flux_or_mag == "mag":
-            phot_label = f"MAG_APER_{band}"
-            err_label = f"MAGERR_APER_{band}"
+            phot_label = [f"MAG_APER_{band}" for band in bands]
+            err_label = [f"MAGERR_APER_{band}" for band in bands]
         else:
             raise(Exception("self.flux_or_mag = {self.flux_or_mag} is invalid! It should be either 'flux' or 'mag' !"))
         return phot_label, err_label
