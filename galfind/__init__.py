@@ -45,6 +45,7 @@ from .Photometry_obs import Photometry_obs, Multiple_Photometry_obs
 from .Photometry_rest import Photometry_rest
 from .SED_result import SED_result
 from .SED_codes import SED_code
+from .Catalogue_Base import Catalogue_Base
 from .Catalogue import Catalogue
 from .Catalogue_Creator import Catalogue_Creator, GALFIND_Catalogue_Creator
 from .LePhare import LePhare
