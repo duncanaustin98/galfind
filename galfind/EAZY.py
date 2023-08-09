@@ -49,7 +49,7 @@ class EAZY(SED_code):
         split_name = cat.cat_name.split('_')
         if split_name[-1] == "masked.fits":
             eazy_in_name = cat.cat_name.replace('.fits', f'_{cat.cat_creator.min_flux_pc_err}pc.in')
-        else: 
+        else:
             eazy_in_name = f"{'_'.join(cat.cat_name.split('pc')[0].split('_')[:-1])}_{cat.cat_creator.min_flux_pc_err}pc.in"
         eazy_in_path = f"{eazy_in_dir}/{eazy_in_name}"
         
@@ -351,7 +351,7 @@ class EAZY(SED_code):
             return None, None
         return z, PDF
         
-    def z_PDF_path_from_cat_path(self, cat_path, ID, templates, lowz_label = ""):
+    def z_PDF_paths_from_cat_path(self, cat_path, ID, templates, lowz_label = ""):
         # should still include aper_diam here
         min_flux_pc_err = str(cat_path.replace(f"_{templates}", "").split("_")[-2].replace("pc", ""))
         
@@ -360,7 +360,7 @@ class EAZY(SED_code):
         print(PDF_name)
         return f"{PDF_dir}/{PDF_name}"
     
-    def SED_path_from_cat_path(self, cat_path, ID, templates, lowz_label = ""):
+    def SED_paths_from_cat_path(self, cat_path, ID, templates, lowz_label = ""):
         # should still include aper_diam here
         min_flux_pc_err = str(cat_path.replace(f"_{templates}", "").split("_")[-2].replace("pc", ""))
         SED_dir = f"{funcs.split_dir_name(cat_path, 'dir')}SEDs/{str(min_flux_pc_err)}pc/{templates}"
