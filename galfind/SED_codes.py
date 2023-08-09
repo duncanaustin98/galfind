@@ -32,7 +32,11 @@ class SED_code(ABC):
         self.code_name = code_name
         self.galaxy_property_dict = galaxy_property_dict
         self.available_templates = available_templates
-        
+    
+    @staticmethod
+    def code_from_name(code_name):
+        return getattr(globals()[code_name], code_name)()
+    
     @staticmethod
     def galaxy_property_labels(gal_property, templates, lowz_zmax = None):
         if templates not in ["fsps", "fsps_larson", "fsps_jades"]:
@@ -160,11 +164,11 @@ class SED_code(ABC):
         pass
     
     @abstractmethod
-    def z_PDF_path_from_cat_path(self, cat_path, ID, low_z_run = False):
+    def z_PDF_paths_from_cat_path(self, cat_path, ID, low_z_run = False):
         pass
     
     @abstractmethod
-    def SED_path_from_cat_path(self, cat_path, ID, low_z_run = False):
+    def SED_paths_from_cat_path(self, cat_path, ID, low_z_run = False):
         pass
 
 # LePhare

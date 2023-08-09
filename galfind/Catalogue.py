@@ -50,11 +50,11 @@ class Catalogue:
         
     # %% alternative constructors
     @classmethod
-    def from_pipeline(cls, survey, version, aper_diams, cat_creator, code_names, z_max_lowz, xy_offset = [0, 0], instruments = ['NIRCam', 'ACS_WFC', 'WFC3IR'], \
+    def from_pipeline(cls, survey, version, aper_diams, cat_creator, code_names, lowz_zmax, xy_offset = [0, 0], instruments = ['NIRCam', 'ACS_WFC', 'WFC3IR'], \
                       forced_phot_band = "f444W", excl_bands = [], loc_depth_min_flux_pc_errs = [5, 10], n_loc_depth_samples = 5, templates_arr = ["fsps_larson"], fast = True):
         # make 'Data' object
         data = Data.from_pipeline(survey, version, instruments, excl_bands = excl_bands)
-        return cls.from_data(data, aper_diams, cat_creator, code_names, z_max_lowz, xy_offset, forced_phot_band, loc_depth_min_flux_pc_errs, n_loc_depth_samples, templates_arr, fast)
+        return cls.from_data(data, aper_diams, cat_creator, code_names, lowz_zmax, xy_offset, forced_phot_band, loc_depth_min_flux_pc_errs, n_loc_depth_samples, templates_arr, fast)
 
     # @classmethod
     # def from_NIRCam_pipeline(cls, survey, version, aper_diams, cat_creator, xy_offset = [0, 0], forced_phot_band = "f444W", \
@@ -64,7 +64,7 @@ class Catalogue:
     #     return cls.from_data(data, aper_diams, cat_creator, xy_offset, forced_phot_band, loc_depth_min_flux_pc_errs, n_loc_depth_samples, fast)
     
     @classmethod
-    def from_data(cls, data, aper_diams, cat_creator, code_names, z_max_lowz, xy_offset = [0, 0], forced_phot_band = "f444W", loc_depth_min_flux_pc_errs = [5, 10], \
+    def from_data(cls, data, aper_diams, cat_creator, code_names, lowz_zmax, xy_offset = [0, 0], forced_phot_band = "f444W", loc_depth_min_flux_pc_errs = [5, 10], \
                   n_loc_depth_samples = 5, templates_arr = ["fsps_larson"], fast = True, mask = True):
         # make masked local depth catalogue from the 'Data' object
         data.combine_sex_cats(forced_phot_band)
@@ -76,7 +76,7 @@ class Catalogue:
             cat_path = data.loc_depth_cat_path
         elif cat_creator.cat_type == "sex":
             cat_path = data.sex_cat_master_path
-        return cls.from_fits_cat(cat_path, data.instrument, cat_creator, code_names, data.survey, z_max_lowz, templates_arr = templates_arr, data = data, mask = mask)
+        return cls.from_fits_cat(cat_path, data.instrument, cat_creator, code_names, data.survey, lowz_zmax, templates_arr = templates_arr, data = data, mask = mask)
     
     # @classmethod
     # def from_sex_cat(cls, cat_path, instrument, survey, cat_creator):
@@ -101,7 +101,7 @@ class Catalogue:
         print("instrument bands = ", instrument.bands)
         # produce galaxy array from each row of the catalogue
         start_time = time.time()
-        gals = Multiple_Galaxy.from_fits_cat(fits_cat, instrument, cat_creator, code_names, lowz_zmax).gals
+        gals = Multiple_Galaxy.from_fits_cat(fits_cat, instrument, cat_creator, code_names, lowz_zmax, templates_arr).gals
         end_time = time.time()
         elapsed_time = end_time - start_time
         print(f"Finished loading in {len(gals)} galaxies. This took {elapsed_time:.6f} seconds")
@@ -447,7 +447,7 @@ class Catalogue:
         print(f"Joining UV table to catalogue! Saving to {self.cat_path}")
     
     def phot_SNR_crop(self, band, n_sigma, remove = False, flag = True):
-        
+        pass
     
     def flag_robust_high_z(self, relaxed = False):
         # could make use of an overloaded __setattr__ here!

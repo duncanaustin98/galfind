@@ -184,6 +184,22 @@ def lowz_label(lowz_zmax):
         label = ""
     return label
 
+def get_z_PDF_paths(fits_cat, IDs, codes, templates_arr, lowz_zmaxs, fits_cat_path = None):
+    try:
+        fits_cat_path = fits_cat.meta["cat_path"]
+    except:
+        pass
+    return [code.z_PDF_paths_from_cat_path(fits_cat_path, ID, templates, lowz_label(lowz_zmax)) for code, templates, lowz_zmax in \
+            zip(codes, templates_arr, lowz_zmaxs) for ID in IDs]
+
+def get_SED_paths(fits_cat, IDs, codes, templates_arr, lowz_zmaxs, fits_cat_path = None):
+    try:
+        fits_cat_path = fits_cat.meta["cat_path"]
+    except:
+        pass
+    return [code.SED_paths_from_cat_path(fits_cat_path, ID, templates, lowz_label(lowz_zmax)) for code, templates, lowz_zmax in \
+            zip(codes, templates_arr, lowz_zmaxs) for ID in IDs]
+
 # GALFIND specific functions
 def GALFIND_SED_column_labels(codes, lowz_zmaxs, templates_arr, gal_property):
     return [code.galaxy_property_labels(gal_property, templates, lowz_zmax) for code, lowz_zmax, templates in zip(codes, lowz_zmaxs, templates_arr)]

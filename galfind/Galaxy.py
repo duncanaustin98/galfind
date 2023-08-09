@@ -24,9 +24,9 @@ class Galaxy:
         self.mask_flags = mask_flags
         
     @classmethod
-    def from_fits_cat(cls, fits_cat_row, instrument, cat_creator, codes, lowz_zmax):
+    def from_fits_cat(cls, fits_cat_row, instrument, cat_creator, codes, lowz_zmax, templates_arr):
         # load multiple photometries from the fits catalogue
-        phot = Photometry_obs.from_fits_cat(fits_cat_row, instrument, cat_creator, cat_creator.aper_diam, cat_creator.min_flux_pc_err, codes, lowz_zmax) # \
+        phot = Photometry_obs.from_fits_cat(fits_cat_row, instrument, cat_creator, cat_creator.aper_diam, cat_creator.min_flux_pc_err, codes, lowz_zmax, templates_arr) # \
                 # for min_flux_pc_err in cat_creator.min_flux_pc_err for aper_diam in cat_creator.aper_diam]
         # load the ID and Sky Coordinate from the source catalogue
         ID = int(fits_cat_row[cat_creator.ID_label])
@@ -96,9 +96,9 @@ class Multiple_Galaxy:
         return self.gals[index]
         
     @classmethod
-    def from_fits_cat(cls, fits_cat, instrument, cat_creator, codes, lowz_zmax):
+    def from_fits_cat(cls, fits_cat, instrument, cat_creator, codes, lowz_zmax, templates_arr):
         # load photometries from catalogue
-        phots = Multiple_Photometry_obs.from_fits_cat(fits_cat, instrument, cat_creator, cat_creator.aper_diam, cat_creator.min_flux_pc_err, codes, lowz_zmax)
+        phots = Multiple_Photometry_obs.from_fits_cat(fits_cat, instrument, cat_creator, cat_creator.aper_diam, cat_creator.min_flux_pc_err, codes, lowz_zmax, templates_arr)
         # load the ID and Sky Coordinate from the source catalogue
         IDs = np.array(fits_cat[cat_creator.ID_label]).astype(int)
         # load sky co-ordinate one at a time (can improve efficiency here)
