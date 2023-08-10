@@ -37,6 +37,8 @@ from joblib import Parallel, delayed
 import contextlib
 import joblib
 from tqdm import tqdm
+import logging
+
 from .Instrument import Instrument, ACS_WFC,WFC3IR, NIRCam, MIRI, Combined_Instrument
 from . import config
 from . import useful_funcs_austind as funcs
@@ -155,9 +157,8 @@ class Data:
                     survey_im_dirs = {survey: f"{survey}/mosaic_1084_wisptemp2"}
                 elif version == "lit_version":
                     survey_im_dirs = {"JADES-DR1": "JADES/DR1"}
-                elif version == 'v9' or version == "v9_test":
+                elif version == 'v9' or version[:2] == "v9":
                     survey_im_dirs = {survey: f"{survey}/mosaic_1084_wisptemp2"}
-
                 survey_im_dirs = {key: f"/raid/scratch/data/jwst/{value}" for (key, value) in survey_im_dirs.items()}
                 survey_dir = survey_im_dirs[survey]
 
@@ -520,7 +521,7 @@ class Data:
         return '+'.join(bands)
 
     @run_in_dir(path = config['DEFAULT']['GALFIND_DIR'])
-    def make_seg_map(self, band):
+    def make_seg_map(self, band, sex_config_path = config['SExtractor']['CONFIG_PATH']):
         if type(band) == str or type(band) == np.str_:
             pass
         elif type(band) == list or type(band) == np.array:
@@ -528,11 +529,12 @@ class Data:
         else:
             raise(Exception(f"Cannot make segmentation map for {band}! type(band) = {type(band)} must be either str, list, or np.array!"))
         # SExtractor bash script python wrapper
-        process = subprocess.Popen([f"./make_seg_map.sh", config['DEFAULT']['GALFIND_WORK'], self.im_paths[band], str(self.im_pixel_scales[band]), \
+        process = subprocess.Popen(["./make_seg_map.sh", config['DEFAULT']['GALFIND_WORK'], self.im_paths[band], str(self.im_pixel_scales[band]), \
                                 str(self.im_zps[band]), self.instrument.instrument_from_band(band), self.survey, band, self.version, str(self.wht_paths[band]), \
-                                str(self.wht_exts[band]), self.wht_types[band], str(self.im_exts[band]), f"{config['DEFAULT']['GALFIND_DIR']}/configs/"])
+                                str(self.wht_exts[band]), self.wht_types[band], str(self.im_exts[band]), sex_config_path])
         process.wait()
-        print(f"Made segmentation map for {self.survey} {self.version} {band}")
+        print(f"Made segmentation map for {self.survey} {self.version} {band} using config = {sex_config_path}")
+        
 
     def make_seg_maps(self):
         for band in self.instrument.bands:
@@ -595,8 +597,8 @@ class Data:
         return f"{config['DEFAULT']['GALFIND_WORK']}/SExtractor/{self.instrument.instrument_from_band(band)}/{self.version}/{self.survey}/{self.survey}_{band}_{band}_sel_cat_{self.version}_seg.fits"
 
     @run_in_dir(path = config['DEFAULT']['GALFIND_DIR'])
-    def make_sex_cats(self, forced_phot_band = "f444W"):
-
+    def make_sex_cats(self, forced_phot_band = "f444W", sex_config_path = config['SExtractor']['CONFIG_PATH']):
+        print(f"Using SExtractor config file = {sex_config_path}")
         # make individual forced photometry catalogues
         if type(forced_phot_band) == list:
             if len(forced_phot_band) > 1:
@@ -620,11 +622,11 @@ class Data:
             if not Path(sex_cat_path).is_file():
                 # SExtractor bash script python wrapper
                 if self.im_shapes[self.forced_phot_band] == self.im_shapes[band] and self.wht_types[self.forced_phot_band] == self.wht_types[band]:
-                    process = subprocess.Popen([f"./make_sex_cat.sh", config['DEFAULT']['GALFIND_WORK'], self.im_paths[band], str(self.im_pixel_scales[band]), \
+                    process = subprocess.Popen(["./make_sex_cat.sh", config['DEFAULT']['GALFIND_WORK'], self.im_paths[band], str(self.im_pixel_scales[band]), \
                                         str(self.im_zps[band]), self.instrument.instrument_from_band(band), self.survey, band, self.version, \
                                             self.forced_phot_band, self.im_paths[self.forced_phot_band], str(self.wht_paths[band]), str(self.wht_exts[band]), \
                                             str(self.im_exts[band]), self.wht_paths[self.forced_phot_band], str(self.im_exts[self.forced_phot_band]), self.wht_types[band], 
-                                            str(self.wht_exts[self.forced_phot_band]), f"{config['DEFAULT']['GALFIND_DIR']}/configs/"])
+                                            str(self.wht_exts[self.forced_phot_band]), sex_config_path])
                     process.wait()
                 # Use photutils
                 else:
