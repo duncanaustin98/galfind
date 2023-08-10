@@ -323,97 +323,6 @@ class Data:
         else:
             raise(Exception(f'Failed to find any data for {survey}'))  
 
-    # @classmethod
-    # def from_NIRCam_pipeline(cls, survey, version = "v8", excl_bands = []):
-    #     instrument = NIRCam(excl_bands = excl_bands)
-    #     # if int(version.split("v")[1]) >= 8:
-    #     #     pmap = "1084"
-    #     # else:
-    #     #     pmap = "0995"
-        
-    #     if version == "v7": #pmap == "0995":
-    #         ceers_im_dirs = {f"CEERSP{str(i + 1)}": f"ceers/mosaic_0995/P{str(i + 1)}" for i in range(10)}
-    #         survey_im_dirs = {"SMACS-0723": "SMACS-0723/mosaic_0995", "GLASS": "glass_0995/mosaic_v5", "MACS-0416": "MACS0416/mosaic_0995_v1", \
-    #                    "El-Gordo": "elgordo/mosaic_0995_v1", "NEP": "NEP/mosaic", "NEP-2": "NEP-2/mosaic_0995", "NGDEEP": "NGDEEP/mosaic", \
-    #                                 "CLIO": "CLIO/mosaic_0995_2"} | ceers_im_dirs
-    #     elif version == "v8": #pmap == "1084":
-    #         ceers_im_dirs = {f"CEERSP{str(i + 1)}": f"ceers/mosaic_1084/P{str(i + 1)}" for i in range(10)}
-    #         survey_im_dirs = {"CLIO": "CLIO/mosaic_1084", "El-Gordo": "elgordo/mosaic_1084", "GLASS": "GLASS-12/mosaic_1084", "NEP": "NEP/mosaic_1084", \
-    #                       "NEP-2": "NEP-2/mosaic_1084", "NEP-3": "NEP-3/mosaic_1084", "SMACS-0723": "SMACS0723/mosaic_1084", "MACS-0416": "MACS0416/mosaic_1084_v3"} | ceers_im_dirs
-    #     elif version == "v8a":
-    #         ceers_im_dirs = {f"CEERSP{str(i + 1)}": f"CEERSP{str(i + 1)}/mosaic_1084_182" for i in range(10)}
-    #         survey_im_dirs = {"CLIO": "CLIO/mosaic_1084_182", "El-Gordo": "elgordo/mosaic_1084_182", "NEP-1": "NEP-1/mosaic_1084_182", "NEP-2": "NEP-2/mosaic_1084_182", \
-    #                           "NEP-3": "NEP-3/mosaic_1084_182", "NEP-4": "NEP-4/mosaic_1084_182", "MACS-0416": "MACS0416/mosaic_1084_182", "GLASS": "GLASS-12/mosaic_1084_182", "SMACS-0723": "SMACS0723/mosaic_1084_182"} | ceers_im_dirs
-    #     elif version == "v8b":
-    #         survey_im_dirs = {survey: f"{survey}/mosaic_1084_wispfix"}
-    #     elif version == "v8c":
-    #         survey_im_dirs = {survey: f"{survey}/mosaic_1084_wispfix2"}
-    #     elif version == "lit_version":
-    #         survey_im_dirs = {"JADES-DR1": "JADES/DR1"}
-                
-    #     survey_im_dirs = {key: f"/raid/scratch/data/jwst/{value}" for (key, value) in survey_im_dirs.items()}
-    #     survey_dir = survey_im_dirs[survey]
-        
-    #     # don't use these if they are in the same folder
-    #     nadams_seg_path_arr = glob.glob(f"{survey_dir}/*_seg.fits")
-    #     nadams_bkg_path_arr = glob.glob(f"{survey_dir}/*_bkg.fits")
-        
-    #     if version == "lit_version":
-    #         im_path_arr = glob.glob(f"{survey_dir}/*_drz.fits")
-    #     else:
-    #         im_path_arr = glob.glob(f"{survey_dir}/*_i2d*.fits")
-    #     im_path_arr = np.array([path for path in im_path_arr if path not in nadams_seg_path_arr and path not in nadams_bkg_path_arr])
-        
-    #     # obtain available bands from imaging without having to hard code these
-    #     bands = np.array([split_path.lower().replace("w", "W").replace("m", "M") for path in im_path_arr for i, split_path in \
-    #             enumerate(path.split("-")[-1].split("/")[-1].split("_")) if split_path.lower().replace("w", "W").replace("m", "M") in instrument.bands])
-
-    #     for band in instrument.bands:
-    #         if band not in bands:
-    #             instrument.remove_band(band)
-        
-    #     im_paths = {}
-    #     im_exts = {}
-    #     seg_paths = {}
-    #     mask_paths = {}
-    #     for band in bands:
-    #         # obtains all image paths from the correct band 
-    #         im_paths_band = [im_path for im_path in im_path_arr if band.lower() in im_path or band in im_path or \
-    #                           band.replace("f", "F").replace("W", "w") in im_path or band.upper() in im_path]
-    #         # checks to see if there is just one singular image for the given band
-    #         if len(im_paths_band) == 1:
-    #             im_paths[band] = im_paths_band[0]
-    #         else:
-    #             raise(Exception(f"Multiple images found for {band} in {survey} {version}"))
-
-    #         im_hdul = fits.open(im_paths[band])
-    #         # obtain appropriate extension from the image
-    #         for i, im_hdu in enumerate(im_hdul):
-    #             if im_hdu.name == "SCI":
-    #                 im_exts[band] = int(i)
-    #                 break
-    #         # need to change this to work if there are no segmentation maps (with the [0] indexing)
-    #         try:
-    #             seg_paths[band] = glob.glob(f"{config['DEFAULT']['GALFIND_WORK']}/SExtractor/{instrument.name}/{version}/{survey}/{survey}*{band}_{band}*{version}*seg.fits")[0]
-    #         except:
-    #             seg_paths[band] = ""
-    #         # include just the masks corresponding to the correct bands
-    #         try:
-    #             mask_paths[band] = glob.glob(f"{config['DEFAULT']['GALFIND_WORK']}/Masks/{survey}/*{band.replace('W', 'w').replace('M', 'm')}*")[0]
-    #         except:
-    #             mask_paths[band] = ""
-    #         try:
-    #             cluster_mask_path = glob.glob(f"{config['DEFAULT']['GALFIND_WORK']}/Masks/{survey}/*cluster*")[0]
-    #         except:
-    #             cluster_mask_path = ""
-    #         try:
-    #             blank_mask_path = glob.glob(f"{config['DEFAULT']['GALFIND_WORK']}/Masks/{survey}/*blank*")[0]
-    #         except:
-    #             blank_mask_path = ""
-    #         # if this mask doesn't exist, create it using automated code (NOT YET IMPLEMENTED!)
-    #         print("cluster mask path = ", cluster_mask_path)
-    #     return cls(instrument, im_paths, im_exts, seg_paths, mask_paths, cluster_mask_path, blank_mask_path, survey, version, is_blank = is_blank_survey(survey))
-
 # %% Overloaded operators
 
     def __repr__(self):
@@ -521,7 +430,7 @@ class Data:
         return '+'.join(bands)
 
     @run_in_dir(path = config['DEFAULT']['GALFIND_DIR'])
-    def make_seg_map(self, band, sex_config_path = config['SExtractor']['CONFIG_PATH']):
+    def make_seg_map(self, band, sex_config_path = config['SExtractor']['CONFIG_PATH'], params_path = config['SExtractor']['PARAMS_PATH']):
         if type(band) == str or type(band) == np.str_:
             pass
         elif type(band) == list or type(band) == np.array:
@@ -531,7 +440,7 @@ class Data:
         # SExtractor bash script python wrapper
         process = subprocess.Popen(["./make_seg_map.sh", config['DEFAULT']['GALFIND_WORK'], self.im_paths[band], str(self.im_pixel_scales[band]), \
                                 str(self.im_zps[band]), self.instrument.instrument_from_band(band), self.survey, band, self.version, str(self.wht_paths[band]), \
-                                str(self.wht_exts[band]), self.wht_types[band], str(self.im_exts[band]), sex_config_path])
+                                str(self.wht_exts[band]), self.wht_types[band], str(self.im_exts[band]), sex_config_path, params_path])
         process.wait()
         print(f"Made segmentation map for {self.survey} {self.version} {band} using config = {sex_config_path}")
         
@@ -597,7 +506,7 @@ class Data:
         return f"{config['DEFAULT']['GALFIND_WORK']}/SExtractor/{self.instrument.instrument_from_band(band)}/{self.version}/{self.survey}/{self.survey}_{band}_{band}_sel_cat_{self.version}_seg.fits"
 
     @run_in_dir(path = config['DEFAULT']['GALFIND_DIR'])
-    def make_sex_cats(self, forced_phot_band = "f444W", sex_config_path = config['SExtractor']['CONFIG_PATH']):
+    def make_sex_cats(self, forced_phot_band = "f444W", sex_config_path = config['SExtractor']['CONFIG_PATH'], params_path = config['SExtractor']['PARAMS_PATH']):
         print(f"Using SExtractor config file = {sex_config_path}")
         # make individual forced photometry catalogues
         if type(forced_phot_band) == list:
@@ -626,7 +535,7 @@ class Data:
                                         str(self.im_zps[band]), self.instrument.instrument_from_band(band), self.survey, band, self.version, \
                                             self.forced_phot_band, self.im_paths[self.forced_phot_band], str(self.wht_paths[band]), str(self.wht_exts[band]), \
                                             str(self.im_exts[band]), self.wht_paths[self.forced_phot_band], str(self.im_exts[self.forced_phot_band]), self.wht_types[band], 
-                                            str(self.wht_exts[self.forced_phot_band]), sex_config_path])
+                                            str(self.wht_exts[self.forced_phot_band]), sex_config_path, params_path])
                     process.wait()
                 # Use photutils
                 else:
@@ -1344,21 +1253,6 @@ def tqdm_joblib(tqdm_object):
     finally:
         joblib.parallel.BatchCompletionCallBack = old_batch_callback
         tqdm_object.close()
-
-# def correct_medium_band_syntax(fits_table, save_name, old_band_name):
-#     if log.lower_case_m[survey]: # if medium band correction is required
-#         new_band_name = old_band_name[:-1] + "M"
-#         fits_columns = []
-#         column_labels = fits_table.columns.names
-#         column_formats = fits_table.columns.formats
-#         for i in range(len(column_labels)):
-#             # change the lower case m for an upper case M
-#             if column_labels[i][-len(old_band_name):] == old_band_name:
-#                 column_labels[i] = column_labels[i][:-len(old_band_name)] + new_band_name
-#             loc_col = fits.Column(name = column_labels[i], array = fits_table[column_labels[i]], format = column_formats[i])
-#             fits_columns.append(loc_col)
-#         out_fits_table = fits.BinTableHDU.from_columns(fits_columns)
-#         out_fits_table.writeto(save_name, overwrite = True)
         
 def is_blank_survey(survey):
     cluster_surveys = ["El-Gordo", "MACS-0416", "CLIO", "SMACS-0723"]
