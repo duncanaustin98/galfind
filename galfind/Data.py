@@ -69,13 +69,11 @@ class Data:
         #print(self.wht_paths)
 
         # make segmentation maps from image paths if they don't already exist
-        made_new_seg_maps = False
         for i, (band, seg_path) in enumerate(seg_paths.items()):
             #print(band, seg_path)
-            if (seg_path == "" or seg_path == []) and not made_new_seg_maps:
-                self.make_seg_maps()
-                made_new_seg_maps = True
-            # load new segmentation maps
+            if (seg_path == "" or seg_path == []):
+                self.make_seg_map(band)
+            # load segmentation map
             seg_paths[band] = glob.glob(f"{config['DEFAULT']['GALFIND_WORK']}/SExtractor/{self.instrument.instrument_from_band(band)}/{version}/{survey}/{survey}*{band}_{band}*{version}*seg.fits")[0]
         self.seg_paths = dict(sorted(seg_paths.items())) 
         
