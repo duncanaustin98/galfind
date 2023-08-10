@@ -178,7 +178,7 @@ class Instrument:
         elif name == "WFC3IR":
             return WFC3IR(excl_bands = excl_bands)
         elif "+" in name:
-            new_instruments = Combined_Instrument.instruments_from_name(excl_bands = excl_bands)
+            new_instruments = Combined_Instrument.instruments_from_name(name, excl_bands = excl_bands)
             for i, instrument in enumerate(new_instruments):
                 if i == 0:
                     new_instrument = instrument
@@ -281,6 +281,11 @@ class Combined_Instrument(Instrument):
     def __init__(self, name, bands, band_wavelengths, band_FWHMs):
         super().__init__(name, bands, band_wavelengths, band_FWHMs, excl_bands = [])
         
+    @classmethod
+    def instruments_from_name(cls, name, excl_bands = []):
+        combined_instrument_names = name.split("+")
+        return [cls.from_name(combined_instrument_name, excl_bands) for combined_instrument_name in combined_instrument_names]
+        
     def aper_corr(self, aper_diam, band):
         names = self.name.split("+")
         for name in names:
@@ -295,10 +300,6 @@ class Combined_Instrument(Instrument):
             instrument = Instrument.from_name(name)
             if instrument.instrument_from_band(band) != False:
                 return instrument.name
-        
-    def instruments_from_name(self, excl_bands = []):
-        combined_instrument_names = self.name.split("+")
-        return [self.from_name(combined_instrument_name, excl_bands) for combined_instrument_name in combined_instrument_names]
         
     def new_instrument(self, excl_bands = []):
         instruments = self.instruments_from_name(excl_bands)

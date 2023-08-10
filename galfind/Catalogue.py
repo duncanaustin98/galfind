@@ -73,13 +73,13 @@ class Catalogue(Catalogue_Base):
         fits_cat = funcs.cat_from_path(fits_cat_path)
 
         if type(instrument) not in [Instrument, Combined_Instrument]:
+            instrument_name = instrument
             if type(instrument) in [list, np.ndarray]:
-                instrument = '+'.join(instrument)
-            instrument = Instrument.from_name(instrument, excl_bands=excl_bands)
-        print('wave')
+                instrument_name = '+'.join(instrument)
+            instrument = Instrument.from_name(instrument_name, excl_bands=excl_bands)
         print("instrument bands = ", instrument.bands)
         # crop instrument bands that don't appear in the first row of the catalogue (I believe this is already done when running from data)
-        # Removed comments from following 
+        # Removed comments from following
         for band in instrument.bands:
              try:
                  cat_creator.load_photometry(Table(fits_cat[0]), [band])
