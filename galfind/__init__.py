@@ -39,9 +39,9 @@ if config.getboolean("DEFAULT", "USE_LOGGING"):
         'ERROR': logging.ERROR, 'CRITICAL': logging.CRITICAL}[config["DEFAULT"]["LOGGING_LEVEL"]])
     # Create a logger instance
     galfind_logger = logging.getLogger(__name__)
-    # Generate a timestamp for the log file name
-    current_timestamp = time.strftime("%Y-%m-%d_%H-%M-%S", time.localtime())
-    log_file_name = f"{current_timestamp}.log"
+    #current_timestamp = time.strftime("%Y-%m-%d_%H-%M-%S", time.localtime())
+    #log_file_name = f"{current_timestamp}.log"
+    log_file_name = f"{config['DEFAULT']['SURVEY']}_{config['DEFAULT']['VERSION']}.log"
     os.makedirs(config['DEFAULT']['LOGGING_OUT_DIR'], exist_ok = True) # make directory if it doesnt already exist
     log_file_path = f"{config['DEFAULT']['LOGGING_OUT_DIR']}/{log_file_name}"
     # Create a file handler
@@ -60,18 +60,20 @@ if config.getboolean("DEFAULT", "USE_LOGGING"):
             # Reattach the original formatter
             galfind_logger.handlers[0].setFormatter(galfind_log_formatter)
         galfind_logger.info(f"{option}: {value}")
+    for section in config.sections():
+        galfind_logger.handlers[0].setFormatter(logging.Formatter(''))
+        galfind_logger.info(f"{config_path.split('/')[-1]}: [{section}]")
+        galfind_logger.info("------------------------------------------")
+        galfind_logger.handlers[0].setFormatter(galfind_log_formatter)
+        for option in config.options(section):
+            if option not in config["DEFAULT"].keys():
+                value = config.get(section, option)
+                galfind_logger.info(f"{option}: {value}")
     # Temporarily remove the formatter
     galfind_logger.handlers[0].setFormatter(logging.Formatter(''))
     galfind_logger.info("------------------------------------------")
     # Reattach the original formatter
     galfind_logger.handlers[0].setFormatter(galfind_log_formatter)
-    
-    # for section in config.sections():
-    #     print(section)
-    #     # galfind_logger.info(f"Section: {section}")
-    #     # for option in config.options(section):
-    #     #     value = config.get(section, option)
-    #     #     galfind_logger.info(f"{option}: {value}")
 else:
     raise(Exception("galfind currently not set up to allow users to ignore logging!"))
 

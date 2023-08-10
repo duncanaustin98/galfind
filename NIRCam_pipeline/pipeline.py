@@ -12,10 +12,10 @@ import astropy.units as u
 import numpy as np
 import time
 
-from galfind import Catalogue #, config, LePhare, EAZY, 
+from galfind import Catalogue, config #, LePhare, EAZY, 
 from galfind.Catalogue_Creator import GALFIND_Catalogue_Creator
 
-def pipeline(surveys, version,instruments, xy_offsets, aper_diams, code_names, low_z_runs, min_flux_pc_errs, forced_phot_band, excl_bands, \
+def pipeline(surveys, version, instruments, xy_offsets, aper_diams, code_names, low_z_runs, min_flux_pc_errs, forced_phot_band, excl_bands, \
              cat_type = "loc_depth", n_loc_depth_samples = 5, fast = True, eazy_templates = ["fsps_larson"]):
     for pc_err in min_flux_pc_errs:
         # make appropriate galfind catalogue creator for each aperture diameter
@@ -36,14 +36,14 @@ def pipeline(surveys, version,instruments, xy_offsets, aper_diams, code_names, l
             #     cat.make_UV_fit_cat(UV_PDF_path = f"{config['RestUVProperties']['UV_PDF_PATH']}/{version}/{instruments_name}/{survey}/{code.code_name}+{pc_err}pc")  
 
 if __name__ == "__main__":
-    version = "v9"
+    version = config["DEFAULT"]["VERSION"] #"v9_sex_test1"
     instruments = ['NIRCam', 'ACS_WFC', 'WFC3IR'] # Can leave this - if there is no data for an instrument it is removed automatically
     cat_type = "loc_depth"
-    surveys = ["NEP-2"]
+    surveys =  [config["DEFAULT"]["SURVEY"]] #["NEP-1"]
     aper_diams = [0.32] * u.arcsec
     xy_offsets = [[0, 0]]
-    code_names = ["EAZY", "EAZY", "EAZY"] #, "EAZY"] #[LePhare()]
-    eazy_templates = ["fsps", "fsps_larson", "fsps_jades"] #["fsps", "fsps_larson", "fsps_jades"]
+    code_names = ["EAZY"] #, "EAZY", "EAZY"] #, "EAZY"] #[LePhare()]
+    eazy_templates = ["fsps"] #, "fsps_larson", "fsps_jades"] #["fsps", "fsps_larson", "fsps_jades"]
     eazy_zmax_lowz = [4., 6.]
     min_flux_pc_errs = [5, 10]
     forced_phot_band = ["f277W", "f356W", "f444W"]

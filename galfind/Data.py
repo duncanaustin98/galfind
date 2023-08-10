@@ -157,9 +157,8 @@ class Data:
                     survey_im_dirs = {survey: f"{survey}/mosaic_1084_wisptemp2"}
                 elif version == "lit_version":
                     survey_im_dirs = {"JADES-DR1": "JADES/DR1"}
-                elif version == 'v9' or version == "v9_test":
+                elif version == 'v9' or version[:2] == "v9":
                     survey_im_dirs = {survey: f"{survey}/mosaic_1084_wisptemp2"}
-
                 survey_im_dirs = {key: f"/raid/scratch/data/jwst/{value}" for (key, value) in survey_im_dirs.items()}
                 survey_dir = survey_im_dirs[survey]
 
