@@ -189,7 +189,7 @@ class EAZY(SED_code):
         # Catch custom arguments?
         # Initialize photo-z object with above parameters
         fit = eazy.photoz.PhotoZ(param_file = default_param_path, zeropoint_file = None,
-                                params = params, load_prior = False, load_products = False, translate_file = translate_file)
+                                params = params, load_prior = False, load_products = False, translate_file = translate_file, n_proc = n_proc)
         # Fit templates to catalog                          
         fit.fit_catalog(n_proc = n_proc, get_best_fit = True)
         
@@ -197,8 +197,8 @@ class EAZY(SED_code):
         if run_lowz:
             for z_max in z_max_lowz:
                 params['Z_MAX'] = z_max # Setting maximum Z
-                lowz_fit = eazy.photoz.PhotoZ(param_file = default_param_path,  zeropoint_file = None,
-                                    params = params, load_prior = False, load_products = False, translate_file = translate_file)
+                lowz_fit = eazy.photoz.PhotoZ(param_file = default_param_path, zeropoint_file = None,
+                                    params = params, load_prior = False, load_products = False, translate_file = translate_file, n_proc = n_proc)
                 lowz_fit.fit_catalog(n_proc = n_proc, get_best_fit = True)
                 lowz_fits[f"zmax={z_max:.1f}"] = lowz_fit
 
