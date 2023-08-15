@@ -43,6 +43,7 @@ from .Instrument import Instrument, ACS_WFC,WFC3IR, NIRCam, MIRI, Combined_Instr
 from . import config
 from . import useful_funcs_austind as funcs
 from .decorators import run_in_dir, hour_timer, email_update
+from . import galfind_logger
 
 # GALFIND data object
 class Data:
@@ -91,15 +92,15 @@ class Data:
         #     pass
 
         if is_blank:
-            print(f"{survey} is a BLANK field!")
+            galfind_logger.info(f"{survey} is a BLANK field!")
             self.blank_mask_path = ""
             self.cluster_mask_path = ""
         else:
-            print(f"{survey} is a CLUSTER field!")
+            galfind_logger.info(f"{survey} is a CLUSTER field!")
             self.blank_mask_path = blank_mask_path
             self.cluster_mask_path = cluster_mask_path
             if self.cluster_mask_path == "":
-                print("Making cluster mask. (Not yet implemented; self.cluster_path = '' !!!)")
+                galfind_logger.info("Making cluster mask. (Not yet implemented; self.cluster_path = '' !!!)")
             # try:
             #     self.blank_mask_path = glob.glob(f"{config['DEFAULT']['GALFIND_WORK']}/Masks/{survey}/*blank*")[0]
             # except:
@@ -111,7 +112,7 @@ class Data:
             #     print("Making cluster mask. (Not yet implemented; self.cluster_path = '' !!!)")
     
     @classmethod
-    def from_pipeline(cls, survey, version = "v8", instruments = ['NIRCam', 'ACS_WFC', 'WFC3IR'], excl_bands = [], pix_scales = ['30mas', '60mas']):
+    def from_pipeline(cls, survey, version = "v9", instruments = ['NIRCam', 'ACS_WFC', 'WFC3IR'], excl_bands = [], pix_scales = ['30mas', '60mas']):
         instruments_obj = {'NIRCam': NIRCam(excl_bands = excl_bands), 'ACS_WFC': ACS_WFC(excl_bands = excl_bands), 'WFC3IR': WFC3IR(excl_bands = excl_bands)}
         # Build a combined instrument object
         comb_instrument_created = False
@@ -284,11 +285,11 @@ class Data:
                 if any_path_found:
                     if comb_instrument_created:
                         comb_instrument += instrument
-                        print(f'Added instrument = {instrument.name}')
+                        galfind_logger.debug(f'Added instrument = {instrument.name}')
                     else:
                         comb_instrument = instrument
                         comb_instrument_created = True
-                        print("Making combined_instrument")
+                        galfind_logger.debug("Making combined_instrument")
 
                         # Need to update what it suggests
             elif instrument.name == 'MIRI':
@@ -351,7 +352,7 @@ class Data:
             raise(Exception(f"Cannot add two of the same bands from different instruments together! Culprits: {common_bands}"))
         # add all dictionaries together
         self.__dict__ = {k: self.__dict__.get(k, 0) + data.__dict__.get(k, 0) for k in set(self.__dict__()) | set(data.__dict__())}
-        print(self.__repr__)
+        galfind_logger.debug(self.__repr__)
         return self
     
 # %% Methods
@@ -380,7 +381,7 @@ class Data:
             mask = mask_file.get_mask(hdu=im_hdul[im_ext])
             end_time = time.time()
             elapsed_time = end_time - start_time
-            print(f"Time to load mask for {band}: {float(elapsed_time)} seconds")
+            galfind_logger.debug(f"Time to load mask for {band}: {float(elapsed_time)} seconds")
             #print("mask_path", mask_path)
             return im_data, im_header, seg_data, seg_header, mask
         else:
@@ -440,14 +441,17 @@ class Data:
                                 str(self.im_zps[band]), self.instrument.instrument_from_band(band), self.survey, band, self.version, str(self.wht_paths[band]), \
                                 str(self.wht_exts[band]), self.wht_types[band], str(self.im_exts[band]), sex_config_path, params_path])
         process.wait()
-        print(f"Made segmentation map for {self.survey} {self.version} {band} using config = {sex_config_path}")
-        
+        galfind_logger.info(f"Made segmentation map for {self.survey} {self.version} {band} using config = {sex_config_path}")
 
     def make_seg_maps(self):
         for band in self.instrument.bands:
             self.make_seg_map(band)
     
     def stack_bands(self, bands):
+        for band in bands:
+            if band not in self.im_paths.keys():
+                bands.remove(band)
+                print(f"{band} not available for {self.survey}")
         detection_image_dir = f"{config['DEFAULT']['GALFIND_WORK']}/Stacked_Images/{self.version}/{self.instrument.instrument_from_band(bands[0])}/{self.survey}"
         detection_image_name = f"{self.survey}_{self.combine_band_names(bands)}_{self.version}_stack.fits"
         self.im_paths[self.combine_band_names(bands)] = f'{detection_image_dir}/{detection_image_name}'
@@ -482,7 +486,7 @@ class Data:
             hdu_err = fits.ImageHDU(combined_err, header = header, name = 'ERR')
             hdul = fits.HDUList([primary, hdu, hdu_err])
             hdul.writeto(self.im_paths[self.combine_band_names(bands)], overwrite = True)
-            print(f"Finished stacking bands = {bands}")
+            galfind_logger.info(f"Finished stacking bands = {bands}")
         
         # save forced photometry band parameters
         self.im_shapes[self.combine_band_names(bands)] = self.im_shapes[bands[0]]
@@ -505,7 +509,7 @@ class Data:
 
     @run_in_dir(path = config['DEFAULT']['GALFIND_DIR'])
     def make_sex_cats(self, forced_phot_band = "f444W", sex_config_path = config['SExtractor']['CONFIG_PATH'], params_path = config['SExtractor']['PARAMS_PATH']):
-        print(f"Using SExtractor config file = {sex_config_path}")
+        galfind_logger.info(f"Making SExtractor catalogues with: config file = {sex_config_path}; parameters file = {params_path}")
         # make individual forced photometry catalogues
         if type(forced_phot_band) == list:
             if len(forced_phot_band) > 1:
@@ -525,6 +529,7 @@ class Data:
         sex_cats = {}
         for band in sextractor_bands:
             sex_cat_path = self.sex_cat_path(band, self.forced_phot_band)
+            galfind_logger.debug(f"band = {band}, sex_cat_path = {sex_cat_path} in Data.make_sex_cats")
             # if not run before
             if not Path(sex_cat_path).is_file():
                 # SExtractor bash script python wrapper
@@ -538,7 +543,7 @@ class Data:
                 # Use photutils
                 else:
                     self.forced_photometry(band, self.forced_phot_band)
-            print(f"Finished making SExtractor catalogue for {self.survey} {self.version} {band}!")
+            galfind_logger.info(f"Finished making SExtractor catalogue for {self.survey} {self.version} {band}!")
             sex_cats[band] = sex_cat_path
         self.sex_cats = sex_cats
     
@@ -584,6 +589,7 @@ class Data:
             # save table
             os.makedirs(save_dir, exist_ok = True)
             master_tab.write(self.sex_cat_master_path, format = "fits", overwrite = True)
+            galfind_logger.info(f"Saved combined SExtractor catalogue as {self.sex_cat_master_path}")
         
     def make_sex_plusplus_cat(self):
         pass

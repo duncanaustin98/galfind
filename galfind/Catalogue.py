@@ -71,8 +71,7 @@ class Catalogue(Catalogue_Base):
     def from_fits_cat(cls, fits_cat_path, version, instrument, cat_creator, code_names, survey, z_max_lowz, templates_arr = ["fsps_larson"], data = None, mask = True, excl_bands=[]):
         # open the catalogue
         fits_cat = funcs.cat_from_path(fits_cat_path)
-
-        if type(instrument) not in [Instrument, Combined_Instrument]:
+        if type(instrument) not in [Instrument, NIRCam, ACS_WFC, WFC3IR, Combined_Instrument]:
             instrument_name = instrument
             if type(instrument) in [list, np.ndarray]:
                 instrument_name = '+'.join(instrument)

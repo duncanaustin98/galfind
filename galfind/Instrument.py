@@ -302,7 +302,7 @@ class Combined_Instrument(Instrument):
                 return instrument.name
         
     def new_instrument(self, excl_bands = []):
-        instruments = self.instruments_from_name(excl_bands)
+        instruments = self.instruments_from_name(self.name, excl_bands)
         for i, instrument in enumerate(instruments):
             if i == 0:
                 new_instrument = instrument
