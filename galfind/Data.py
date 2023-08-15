@@ -275,7 +275,13 @@ class Data:
 
                         im_pixel_scales[band] = float(pix_scale.split('mas')[0]) * 1e-3 
                         if instrument.name == 'ACS_WFC':
-                            im_zps[band] = -2.5 * np.log10(imheader["PHOTFLAM"]) - 21.10 - 5 * np.log10(imheader["PHOTPLAM"]) + 18.6921
+                            if "PHOTFLAM" in imheader and "PHOTPLAM" in imheader:
+                                im_zps[band] = -2.5 * np.log10(imheader["PHOTFLAM"]) - 21.10 - 5 * np.log10(imheader["PHOTPLAM"]) + 18.6921
+                            elif "ZEROPNT" in imheader:
+                                im_zps[band] = imheader["ZEROPNT"]
+                            else:
+                                raise(Exception(f"ACS_WFC data for {survey} {version} {band} located at {im_paths[band]} must contain either 'ZEROPNT' or 'PHOTFLAM' and 'PHOTPLAM' in its header to calculate its ZP!"))
+                            
                         elif instrument.name == 'WFC3IR':
                         # Taken from Appendix A of https://www.stsci.edu/files/live/sites/www/files/home/hst/instrumentation/wfc3/documentation/instrument-science-reports-isrs/_documents/2020/WFC3-ISR-2020-10.pdf
                             wfc3ir_zps = {'f098M':25.661, 'f105W':26.2637, 'f110W':26.8185, 'f125W':26.231, 'f140W':26.4502, 'f160W':25.9362}

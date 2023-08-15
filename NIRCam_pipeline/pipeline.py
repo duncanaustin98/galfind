@@ -48,7 +48,7 @@ if __name__ == "__main__":
     min_flux_pc_errs = [5, 10]
     forced_phot_band = ["f277W", "f356W", "f444W"]
     fast_depths = False
-    excl_bands = ["f435W", "f775W", "f850LP"] #["f606W", "f814W", "f090W", "f115W", "f277W", "f335M", "f356W", "f410M", "f444W"]
+    excl_bands = ["f435W", "f775W", "f850LP", "f105W", "f125W", "f160W"] #["f606W", "f814W", "f090W", "f115W", "f277W", "f335M", "f356W", "f410M", "f444W"]
     n_loc_depth_samples = 10
 
     for survey in surveys:
