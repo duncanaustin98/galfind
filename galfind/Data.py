@@ -266,22 +266,36 @@ class Data:
                                 wht_types[band] = "MAP_RMS"
 
                             except KeyError:
-                                path = Path(f"{config['DEFAULT']['GALFIND_DATA']}/hst/{survey}/{instrument.name}/{pix_scale}/{instrument.name}_{band}_{survey}_wht.fits")
-                                if path.is_file():
-                                    wht_paths[band] = str(path)
+                                #path = Path(f"{config['DEFAULT']['GALFIND_DATA']}/hst/{survey}/{instrument.name}/{pix_scale}/{instrument.name}_{band}_{survey}_wht.fits")
+                                glob_paths = glob.glob(f"{config['DEFAULT']['GALFIND_DATA']}/hst/{survey}/{instrument.name}/{pix_scale}/*{band.replace('W', 'w').replace('M', 'm')}*_wht.fits")
+                                glob_paths += glob.glob(f"{config['DEFAULT']['GALFIND_DATA']}/hst/{survey}/{instrument.name}/{pix_scale}/*{band}*_wht.fits")
+                                if len(glob_paths) == 1:
+                                    wht_paths[band] = str(Path(glob_paths[0]))
                                     wht_types[band] = 'MAP_WEIGHT'
                                     wht_exts[band] = 0
+                                elif len(glob_paths) > 1:
+                                    galfind_logger.critical(f"Multiple wht image paths found for {survey} {version} {band} {pix_scale}!")
+                                    raise(Exception(f"Multiple wht image paths found for {survey} {version} {band} {pix_scale}!"))
                                 else:
-                                    path = Path(f"{config['DEFAULT']['GALFIND_DATA']}/hst/{survey}/{instrument.name}/{pix_scale}/{instrument.name}_{band}_{survey}_rms.fits")
-                                    if path.is_file():
-                                        wht_paths[band] = str(path)
+                                    galfind_logger.debug(f"No wht image path found for {survey} {version} {band} {pix_scale}!")
+                                    #path = Path(f"{config['DEFAULT']['GALFIND_DATA']}/hst/{survey}/{instrument.name}/{pix_scale}/{instrument.name}_{band}_{survey}_rms.fits")
+                                    glob_paths = glob.glob(f"{config['DEFAULT']['GALFIND_DATA']}/hst/{survey}/{instrument.name}/{pix_scale}/*{band.replace('W', 'w').replace('M', 'm')}*_rms.fits")
+                                    glob_paths += glob.glob(f"{config['DEFAULT']['GALFIND_DATA']}/hst/{survey}/{instrument.name}/{pix_scale}/*{band}*_rms.fits")
+                                    if len(glob_paths) == 1:
+                                        wht_paths[band] = str(Path(glob_paths[0]))
                                         wht_types[band] = 'MAP_RMS'
                                         wht_exts[band] = 0
+                                    elif len(glob_paths) > 1:
+                                        galfind_logger.critical(f"Multiple rms image paths found for {survey} {version} {band} {pix_scale}!")
+                                        raise(Exception(f"Multiple rms image paths found for {survey} {version} {band} {pix_scale}!"))
                                     else:
-                                        wht_paths[band] = ""
-                                        wht_types[band] = "NONE"
-                                        wht_exts[band] = ""
+                                        galfind_logger.critical(f"No wht or rms image paths found for {survey} {version} {band} {pix_scale}!")
+                                        raise(Exception(f"No wht or rms image paths found for {survey} {version} {band} {pix_scale}!"))
+                                        # wht_paths[band] = ""
+                                        # wht_types[band] = "NONE"
+                                        # wht_exts[band] = ""
 
+                        print(band, wht_paths[band])
                         im_pixel_scales[band] = float(pix_scale.split('mas')[0]) * 1e-3 
                         if instrument.name == 'ACS_WFC':
                             if "PHOTFLAM" in imheader and "PHOTPLAM" in imheader:
