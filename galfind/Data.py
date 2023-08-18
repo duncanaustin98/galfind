@@ -183,6 +183,7 @@ class Data:
                         #print("Generalize on line 177 of Data.from_pipeline()")
                         im_pixel_scales[band] = 0.03 
                         im_zps[band] = 28.08
+                        galfind_logger.debug(f"im_zp[{band}] = 28.08 only for pixel scale of 0.03 arcsec! This will change if different images are used!")
                 
                 # If no images found for this instrument, don't add it to the combined instrument
                 if len(bands) != 0:
@@ -221,11 +222,19 @@ class Data:
                 for band in instrument.bands:
                     path_found = False
                     for pix_scale in pix_scales:
-                        path = Path(f"{config['DEFAULT']['GALFIND_DATA']}/hst/{survey}/{instrument.name}/{pix_scale}/{instrument.name}_{band}_{survey}_drz.fits")
-                        if path.is_file():
+                        #path = Path(f"{config['DEFAULT']['GALFIND_DATA']}/hst/{survey}/{instrument.name}/{pix_scale}/{instrument.name}_{band}_{survey}_drz.fits")
+                        glob_paths = glob.glob(f"{config['DEFAULT']['GALFIND_DATA']}/hst/{survey}/{instrument.name}/{pix_scale}/*{band.replace('W', 'w').replace('M', 'm')}*_drz.fits")
+                        glob_paths += glob.glob(f"{config['DEFAULT']['GALFIND_DATA']}/hst/{survey}/{instrument.name}/{pix_scale}/*{band}*_drz.fits")
+                        #print(glob_paths)
+                        if len(glob_paths) == 0:
+                            galfind_logger.debug(f"No image path found for {survey} {version} {band} {pix_scale}!")
+                        elif len(glob_paths) == 1:
+                            path = Path(glob_paths[0])
                             any_path_found = True
                             path_found = True
                             break
+                        else:
+                            raise(Exception("Multiple image paths found for {survey} {version} {band} {pix_scale}!"))
 
                     # If no images found, remove band from instrument
                     if not path_found:
