@@ -261,7 +261,7 @@ class Catalogue(Catalogue_Base):
         print(self[0].properties)
     
     # altered from original in mask_regions.py
-    def mask(self, data): # mask paths is a dict of form {band: mask_path}
+    def mask(self, data, mask_instrument = NIRCam()): # mask paths is a dict of form {band: mask_path}
         print(f"Running masking code for {self.cat_path}. (Too much copying and pasting here!)")
         self.data = data # store data object in catalogue object
         masked_cat_path = self.cat_path.replace(".fits", "_masked.fits")
@@ -301,6 +301,7 @@ class Catalogue(Catalogue_Base):
                     cat = self.open_full_cat()
                     cat["blank_module"] = blank_flags #.astype(bool)
                     cat.write(masked_cat_path, overwrite = True)
+                    self.cat_path = masked_cat_path
                     print("Finished masking blank field")
                 else:
                     raise(Exception("Must manually create a 'blank' field mask in the 'Data' object if 'flag_blank_field == True'!"))
@@ -321,6 +322,7 @@ class Catalogue(Catalogue_Base):
                     cat = self.open_full_cat()
                     cat["cluster"] = cluster_flags #.astype(bool)
                     cat.write(masked_cat_path, overwrite = True)
+                    self.cat_path = masked_cat_path
                     print("Finished masking cluster")
                 else:
                     raise(Exception("Must manually create a 'cluster' mask in the 'Data' object!"))
@@ -356,24 +358,25 @@ class Catalogue(Catalogue_Base):
                 print(f"Finished masking {band}")
                 self.cat_path = masked_cat_path
 
-            # # add additional boolean column to say whether an object is unmasked in all columns or not
-            # unmasked_blank = []
-            # for i, gal in enumerate(self):
-            #     good_galaxy = True
-            #     for band in self.data.instrument.bands:
-            #         if not gal.mask_flags[f"unmasked_{band}"]:
-            #             good_galaxy = False
-            #             break
-            #     # don't include blank field galaxies in final boolean unmasked column
-            #     if not self.data.is_blank and flag_blank_field:
-            #         if not gal.mask_flags["blank_module"]:
-            #             good_galaxy = False
-            #     unmasked_blank.append(good_galaxy)
-            #     gal.mask_flags["unmasked_blank"] = good_galaxy
-            # cat = self.open_full_cat()
-            # cat["unmasked_blank"] = unmasked_blank
-            # cat.write(masked_cat_path, overwrite = True)
-            # print("Finished masking!")
+            # add additional boolean column to say whether an object is unmasked in all columns or not
+            unmasked_blank = []
+            for i, gal in enumerate(self):
+                good_galaxy = True
+                for band in self.data.instrument.bands:
+                    if not gal.mask_flags[f"unmasked_{band}"] and band in mask_instrument.bands:
+                        good_galaxy = False
+                        break
+                # don't include blank field galaxies in final boolean unmasked column
+                if not self.data.is_blank:
+                    if not gal.mask_flags["blank_module"]:
+                        good_galaxy = False
+                unmasked_blank.append(good_galaxy)
+                gal.mask_flags[f"unmasked_blank_{mask_instrument.name}"] = good_galaxy
+            cat = self.open_full_cat()
+            cat[f"unmasked_blank_{mask_instrument.name}"] = unmasked_blank
+            cat.write(masked_cat_path, overwrite = True)
+            self.cat_path = masked_cat_path
+            print("Finished masking!")
         else:
             self.cat_path = masked_cat_path
             print("Already masked!")
