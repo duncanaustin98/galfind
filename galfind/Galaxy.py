@@ -55,8 +55,8 @@ class Galaxy:
             setattr(result, key, deepcopy(value, memo))
         return result
     
-    def update(self, SED_result, index = 0): # for now just update the single photometry
-        self.phot[index].update(SED_result)
+    def update(self, gal_SED_results, index = 0): # for now just update the single photometry
+        self.phot.update(gal_SED_results)
         
     def update_mask_full(self, bool_values):
         pass
@@ -98,7 +98,7 @@ class Multiple_Galaxy:
     @classmethod
     def from_fits_cat(cls, fits_cat, instrument, cat_creator, codes, lowz_zmax, templates_arr):
         # load photometries from catalogue
-        phots = Multiple_Photometry_obs.from_fits_cat(fits_cat, instrument, cat_creator, cat_creator.aper_diam, cat_creator.min_flux_pc_err, codes, lowz_zmax, templates_arr)
+        phots = Multiple_Photometry_obs.from_fits_cat(fits_cat, instrument, cat_creator, cat_creator.aper_diam, cat_creator.min_flux_pc_err, codes, lowz_zmax, templates_arr).phot_obs_arr
         # load the ID and Sky Coordinate from the source catalogue
         IDs = np.array(fits_cat[cat_creator.ID_label]).astype(int)
         # load sky co-ordinate one at a time (can improve efficiency here)

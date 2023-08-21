@@ -357,7 +357,7 @@ class EAZY(SED_code):
         
         PDF_dir = f"{funcs.split_dir_name(cat_path, 'dir')}PDFs/{str(min_flux_pc_err)}pc/{templates}"
         PDF_name = f"{str(ID)}{lowz_label}.pz"
-        print(PDF_name)
+        #print(PDF_name)
         return f"{PDF_dir}/{PDF_name}"
     
     def SED_paths_from_cat_path(self, cat_path, ID, templates, lowz_label = ""):

@@ -87,7 +87,7 @@ class Catalogue:
     #     return cls(gals, cat_path, survey, cat_creator)
     
     @classmethod
-    def from_fits_cat(cls, fits_cat_path, instrument, cat_creator, code_names, survey, lowz_zmax, templates_arr = ["fsps_larson"], data = None, mask = True):
+    def from_fits_cat(cls, fits_cat_path, instrument, cat_creator, code_names, survey, lowz_zmax, templates_arr = ["fsps", "fsps_larson", "fsps_jades"], data = None, mask = True):
         # open the catalogue
         fits_cat = funcs.cat_from_path(fits_cat_path)
         # crop instrument bands that don't appear in the first row of the catalogue (I believe this is already done when running from data)
@@ -99,9 +99,11 @@ class Catalogue:
         #         instrument.remove_band(band)
         #         print(f"{band} flux not loaded")
         print("instrument bands = ", instrument.bands)
+        codes = [getattr(globals()[name], name)() for name in code_names]
         # produce galaxy array from each row of the catalogue
         start_time = time.time()
-        gals = Multiple_Galaxy.from_fits_cat(fits_cat, instrument, cat_creator, code_names, lowz_zmax, templates_arr).gals
+        gals = Multiple_Galaxy.from_fits_cat(fits_cat, instrument, cat_creator, [], [], []).gals #codes, lowz_zmax, templates_arr).gals
+        print(gals[0].phot.SED_results)
         end_time = time.time()
         elapsed_time = end_time - start_time
         print(f"Finished loading in {len(gals)} galaxies. This took {elapsed_time:.6f} seconds")
@@ -112,20 +114,14 @@ class Catalogue:
         if mask:
             cat_obj.mask(data)
         # run SED fitting for the appropriate code names/low-z runs
-        for code_name, templates in zip(code_names, templates_arr):
-            code = getattr(globals()[code_name], code_name)()
-            # try: # see whether SED fitting has already been performed
-            #     fits_cat[code.galaxy_property_labels[f'z_phot_{templates}']]
-            #     print(f"Already loaded SED fitting for {code_name} using templates = {templates}") # still need to implement SED_result loading
-            # except:
-            #     # perform SED fitting
-            #     print(f"Performing SED fitting for {code_name} using templates = {templates}")
+        for code, templates in zip(codes, templates_arr):
             cat_obj = code.fit_cat(cat_obj, lowz_zmax, templates = templates)
         return cat_obj
     
-    def update_SED_results(self, SED_results):
+    def update_SED_results(self, cat_SED_results):
+        assert(len(cat_SED_results) == len(self))
         print("Updating SED results in galfind catalogue object")
-        [gal.update(SED_result) for gal, SED_result in zip(self, SED_results)]
+        [gal.update(gal_SED_result) for gal, gal_SED_result in zip(self, cat_SED_results)]
     
     # %% Overloaded operators
     
@@ -235,8 +231,11 @@ class Catalogue:
                     UV_corr_bands.append(None)
             
             for i, band in tqdm(enumerate(self.data.instrument.bands), total = len(self.data.instrument.bands), desc = f"Calculating extended source corrections for {self.cat_path}"):
-                band_corrs = self.calc_ext_src_corrs(band, code)
-                ext_src_corrs_band[band] = band_corrs
+                try:
+                    band_corrs = self.calc_ext_src_corrs(band, code)
+                    ext_src_corrs_band[band] = band_corrs
+                except:
+                    print(f"No flux auto for {band}")
             
             UV_ext_src_corrs = np.array([ext_src_corrs_band[band][i] if self.catch_redshift_minus_99(i) else -99. for i, band in enumerate(UV_corr_bands)])
             print(f"Finished calculating UV extended source corrections using {code} redshifts")
