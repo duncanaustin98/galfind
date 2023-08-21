@@ -190,18 +190,21 @@ class Catalogue:
     def open_full_cat(self):
         return Table.read(self.cat_path, character_as_bytes = False)
     
-    def catch_redshift_minus_99(self, gal_index, out_value = True, condition = None, condition_fail_val = None, minus_99_out = None):
-        try:
-            self[gal_index].phot_rest.z # i.e. if the galaxy has a finite redshift
+    def catch_redshift_minus_99(self, gal_index, code, templates, out_value = True, condition = None, condition_fail_val = None, minus_99_out = None):
+        #try:
+            self[gal_index].phot.SED_results[code][templates].z # i.e. if the galaxy has a finite redshift
             if condition != None:
                 return out_value if condition(out_value) else condition_fail_val
             else:
                 return out_value
-        except:
+        #except:
             #print(f"{gal_index} is at z=-99")
             return minus_99_out
     
-    def calc_ext_src_corrs(self, band, code = "LePhare", ID = None):
+    def cap_ext_src_corrs(self, vals, condition = lambda x: x > 1., fail_val = 1.):
+        return np.array([val if condition(val) else fail_val for val in vals])
+    
+    def calc_ext_src_corrs(self, band, ID = None):
         # load the catalogue (for obtaining the FLUX_AUTOs; THIS SHOULD BE MORE GENERAL IN FUTURE TO GET THESE FROM THE GALAXY OBJECT!!!)
         tab = self.open_full_cat()
         if ID != None:
@@ -211,52 +214,56 @@ class Catalogue:
             cat = self
         # load the relevant FLUX_AUTO from SExtractor output
         flux_autos = funcs.flux_image_to_Jy(np.array(tab[f"FLUX_AUTO_{band}"]), self.data.im_zps[band])
-        ext_src_corrs = [self.catch_redshift_minus_99(i, flux_autos[i] / gal.phot_obs.flux_Jy[np.where(band == \
-                                            gal.phot_obs.instrument.bands)[0][0]], lambda x: x > 1., 1., -99.) for i, gal in enumerate(cat)]
+        ext_src_corrs = self.cap_ext_src_corrs([flux_autos[i] / gal.phot.flux_Jy[np.where(band == \
+                                            gal.phot.instrument.bands)[0][0]].value for i, gal in enumerate(cat)])
         return ext_src_corrs
             
-    def make_ext_src_corr_cat(self, code = "LePhare", join_tables = True):
-        ext_src_cat_name = f"{funcs.split_dir_name(self.cat_path, 'dir')}/Extended_source_corrections_{code}.fits"
+    def make_ext_src_corr_cat(self, code_name = "EAZY", templates_arr = ["fsps", "fsps_larson", "fsps_jades"], join_tables = True):
+        ext_src_cat_name = f"{funcs.split_dir_name(self.cat_path, 'dir')}/Extended_source_corrections_{code_name}.fits"
         if not Path(ext_src_cat_name).is_file():
-            ext_src_col_names = np.array(["ID"] + [f"auto_corr_factor_{name}" for name in list([band for band in self.data.instrument.bands] + [f"UV_{code}", "mass"])])
-            ext_src_col_dtypes = np.array([int] + [float for i in range(len(self.data.instrument.bands))] + [float, float])
             ext_src_corrs_band = {}
-            # determine the relevant bands for the extended source correction (slower than it could be, but it works nevertheless)
-            UV_corr_bands = []
-            for i, gal in enumerate(self):
-                if self.catch_redshift_minus_99(i, True):
-                    # should include reference to 'code' here! i.e. there should be multiple phot_rest within the Galaxy class
-                    UV_corr_bands.append(gal.phot_rest.rest_UV_band)
-                else:
-                    UV_corr_bands.append(None)
-            
             for i, band in tqdm(enumerate(self.data.instrument.bands), total = len(self.data.instrument.bands), desc = f"Calculating extended source corrections for {self.cat_path}"):
                 try:
-                    band_corrs = self.calc_ext_src_corrs(band, code)
+                    band_corrs = self.calc_ext_src_corrs(band)
+                    #print(band, band_corrs)
                     ext_src_corrs_band[band] = band_corrs
                 except:
                     print(f"No flux auto for {band}")
-            
-            UV_ext_src_corrs = np.array([ext_src_corrs_band[band][i] if self.catch_redshift_minus_99(i) else -99. for i, band in enumerate(UV_corr_bands)])
-            print(f"Finished calculating UV extended source corrections using {code} redshifts")
+            ext_src_col_names = np.array(["ID"] + [f"auto_corr_factor_{name}" for name in [band for band in self.data.instrument.bands if band in ext_src_corrs_band.keys()]] + \
+                                         [f"auto_corr_factor_UV_{code_name}_{templates}" for templates in templates_arr] + ["auto_corr_factor_mass"])
+            ext_src_col_dtypes = np.array([int] + [float for name in [band for band in self.data.instrument.bands if band in ext_src_corrs_band.keys()]] + \
+                                          [float for templates in templates_arr] + [float])
+                    
+            # determine the relevant bands for the extended source correction (slower than it could be, but it works nevertheless)
+            UV_ext_src_corrs = []
+            for templates in templates_arr:
+                UV_corr_bands = []
+                for i, gal in enumerate(self):
+                    try:  # test whether the UV band already has existing 
+                        ext_src_corrs_band[gal.phot.SED_results[code_name][templates].phot_rest.rest_UV_band]
+                        UV_corr_bands.append(gal.phot.SED_results[code_name][templates].phot_rest.rest_UV_band)
+                    except:
+                        UV_corr_bands.append(None)
+                UV_ext_src_corrs.append(np.array([ext_src_corrs_band[band][j] if band != None else -99. for j, band in enumerate(UV_corr_bands)]))
+            print(UV_ext_src_corrs, np.array(UV_ext_src_corrs).shape)
+            print(f"Finished calculating UV extended source corrections using {code_name} {templates_arr} redshifts")
             mass_ext_src_corrs = np.array(ext_src_corrs_band["f444W"]) # f444W band (mass tracer)
             print("Finished calculating mass extended source corrections")
-            ext_src_corr_vals = np.vstack((np.array(self.ID), np.vstack(list(ext_src_corrs_band.values())), UV_ext_src_corrs, mass_ext_src_corrs)).T
-
-            ext_src_tab = Table(ext_src_corr_vals, names = ext_src_col_names, dtype = ext_src_col_dtypes)
+            ext_src_corr_vals = np.vstack((np.array(self.ID), np.vstack(list(ext_src_corrs_band.values())), np.vstack(UV_ext_src_corrs), mass_ext_src_corrs)) #.T
+            print(ext_src_corr_vals, ext_src_col_names, ext_src_col_dtypes, ext_src_corr_vals.shape, len(ext_src_col_names), len(ext_src_col_dtypes))
+            ext_src_tab = Table(ext_src_corr_vals.T, names = ext_src_col_names, dtype = ext_src_col_dtypes)
             ext_src_tab.write(ext_src_cat_name, overwrite = True)
             self.ext_src_tab = ext_src_tab
             print(f"Writing table to {ext_src_cat_name}")
-        
         else:
             self.ext_src_tab = Table.read(ext_src_cat_name, character_as_bytes = False)
             print(f"Opening table: {ext_src_cat_name}")
             
         if join_tables:
-            self.join_ext_src_cat(code = code)
+            self.join_ext_src_cat(code_name = code_name, templates_arr = templates_arr)
         return self
         
-    def join_ext_src_cat(self, match_cols = ["NUMBER", "ID"], code = "LePhare"):
+    def join_ext_src_cat(self, match_cols = ["NUMBER", "ID"], code_name = "EAZY", templates_arr = ["fsps", "fsps_larson", "fsps_jades"]):
         # open existing cat
         init_cat = self.open_full_cat()
         joined_tab = join(init_cat, self.ext_src_tab, keys_left = match_cols[0], keys_right = match_cols[1])
@@ -265,11 +272,10 @@ class Catalogue:
         print(f"Joining ext_src table to catalogue! Saving to {self.cat_path}")
         
         # set relevant properties in the galaxies contained within the catalogues (can use __setattr__ here too!)
-        print("Updating Catalogue object")
-        for gal, UV_corr, mass_corr in zip(self, self.ext_src_tab[f"auto_corr_factor_UV_{code}"], self.ext_src_tab["auto_corr_factor_mass"]):
-            gal.properties[code]["auto_corr_factor_UV"] = UV_corr
-            gal.properties[code]["auto_corr_factor_mass"] = mass_corr
-        print(self[0].properties)
+        print("Updating Catalogue object with extended source corrections")
+        for i, (gal, mass_corr) in enumerate(zip(self, self.ext_src_tab["auto_corr_factor_mass"])):
+            for templates in templates_arr:
+                gal.phot.SED_results[code_name][templates].ext_src_corrs = {**{"UV": self.ext_src_tab[f"auto_corr_factor_UV_{code_name}_{templates}"][i] for templates in templates_arr}, **{"mass": mass_corr}}
     
     # altered from original in mask_regions.py
     def mask(self, data, flag_blank_field = True): # mask paths is a dict of form {band: mask_path}
@@ -387,47 +393,51 @@ class Catalogue:
             self.cat_path = masked_cat_path
             print("Already masked!")
     
-    def make_UV_fit_cat(self, UV_PDF_path = config["RestUVProperties"]["UV_PDF_PATH"], col_names = ["Beta", "flux_lambda_1500", "flux_Jy_1500", "M_UV", "A_UV", "L_obs", "L_int", "SFR"], \
-                        code = "LePhare", join_tables = True):
-        UV_cat_name = f"{funcs.split_dir_name(self.cat_path, 'dir')}/UV_properties_{code}.fits"
+    def make_UV_fit_cat(self, code_name = "EAZY", templates = "fsps_larson", UV_PDF_path = config["RestUVProperties"]["UV_PDF_PATH"], col_names = ["Beta", "flux_lambda_1500", "flux_Jy_1500", "M_UV", "A_UV", "L_obs", "L_int", "SFR"], \
+                        join_tables = True, skip_IDs = []):
+        UV_cat_name = f"{funcs.split_dir_name(self.cat_path, 'dir')}/UV_properties_{code_name}_{templates}_{str(self.cat_creator.min_flux_pc_err)}pc.fits"
         #if not Path(UV_cat_name).is_file():
         cat_data = []
-        print("Bands here: ", self[1].phot_obs.instrument.bands)
+        #print("Bands here: ", self[1].phot.instrument.bands)
         for i, gal in tqdm(enumerate(self), total = len(self), desc = "Making UV fit catalogue"):
             gal_copy = gal #copy.deepcopy(gal)
-            path = f"/nvme/scratch/work/austind/GALFIND/UV_PDFs/v9/NIRCam/NGDEEP/LePhare+5pc/Amplitude/{gal_copy.ID}.txt"
-            #print(path)
-            if Path(path).is_file():
-                #print(gal.phot_obs.instrument.bands)
-                #gal_data = np.array([gal_copy.ID])
-                for name in ["Amplitude", "Beta"]:
-                    if name == "Beta":
-                        plot = True
-                    else:
-                        plot = False
-                    funcs.percentiles_from_PDF(gal.phot_rest.open_UV_fit_PDF(UV_PDF_path, name, gal_copy.ID, gal_copy.properties[f"UV_{code}_ext_src_corr"], plot = plot))
-            # for name in col_names:
-            #     #print(f"{gal.ID}: {gal.phot_rest.phot_obs.instrument.bands}")
-            #     try:
-            #         gal_data = np.append(gal_data, funcs.percentiles_from_PDF(gal.phot_rest.open_UV_fit_PDF(UV_PDF_path, name, gal_copy.ID, gal_copy.properties[f"UV_{code}_ext_src_corr"]))) # not currently saving to object
-            #     except:
-            #         gal_data = np.append(gal_data, funcs.percentiles_from_PDF([-99.]))
-            # gal_data = np.array(gal_data).flatten()
-            # if i == 0: # if the first column
-            #     cat_data = gal_data
+            gal_data = np.array([gal_copy.ID])
+            if gal.ID in skip_IDs:
+                for name in col_names:
+                    gal_data = np.append(gal_data, funcs.percentiles_from_PDF([-99.]))
+            else:
+                path = f"{config['DEFAULT']['GALFIND_WORK']}/UV_PDFs/{self.data.version}/{self.data.instrument.name}/{self.survey}/{code_name}+{str(self.cat_creator.min_flux_pc_err)}pc/{templates}/Amplitude/{gal_copy.ID}.txt"
+                #print(path)
+                if not Path(path).is_file():
+                    #print(gal.phot_obs.instrument.bands)
+                    for name in ["Amplitude", "Beta"]:
+                        if name == "Beta":
+                            plot = True
+                        else:
+                            plot = False
+                        funcs.percentiles_from_PDF(gal.phot.SED_results[code_name][templates].phot_rest.open_UV_fit_PDF(UV_PDF_path, name, gal_copy.ID, gal_copy.phot.SED_results[code_name][templates].ext_src_corrs["UV"], plot = plot))
+                for name in col_names:
+                    #print(f"{gal.ID}: {gal.phot_rest.phot_obs.instrument.bands}")
+                    try:
+                        gal_data = np.append(gal_data, funcs.percentiles_from_PDF(gal.phot.SED_results[code_name][templates].phot_rest.open_UV_fit_PDF(UV_PDF_path, name, gal_copy.ID, gal_copy.phot.SED_results[code_name][templates].ext_src_corrs["UV"]))) # not currently saving to object
+                    except:
+                        gal_data = np.append(gal_data, funcs.percentiles_from_PDF([-99.]))
+            gal_data = np.array(gal_data).flatten()
+            if i == 0: # if the first column
+                cat_data = gal_data
+            else:
+                cat_data = np.vstack([cat_data, gal_data])
+            UV_col_names = np.array([[name, f"{name}_l1", f"{name}_u1"] for name in col_names]).flatten()
+            fits_col_names = np.concatenate((np.array(["ID"]), UV_col_names))
+            funcs.make_dirs(self.cat_path)
+            UV_tab = Table(cat_data, names = fits_col_names)
+            UV_tab.write(UV_cat_name, format = "fits", overwrite = True)
+            self.UV_tab = UV_tab
+            #print(f"Writing UV table to {UV_cat_name}")
+            
             # else:
-            #     cat_data = np.vstack([cat_data, gal_data])
-        UV_col_names = np.array([[name, f"{name}_l1", f"{name}_u1"] for name in col_names]).flatten()
-        fits_col_names = np.concatenate((np.array(["ID"]), UV_col_names))
-        funcs.make_dirs(self.cat_path)
-        UV_tab = Table(cat_data, names = fits_col_names)
-        UV_tab.write(UV_cat_name, format = "fits", overwrite = True)
-        self.UV_tab = UV_tab
-        print(f"Writing UV table to {self.cat_path}")
-        
-        # else:
-        #     self.UV_tab = Table.read(UV_cat_name, character_as_bytes = False)
-        #     print(f"Opening table: {UV_cat_name}")
+            #     self.UV_tab = Table.read(UV_cat_name, character_as_bytes = False)
+            #     print(f"Opening table: {UV_cat_name}")
         
         if join_tables:
             self.join_UV_fit_cat()
