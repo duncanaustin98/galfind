@@ -37,13 +37,14 @@ config.set("Other", "ALL_BANDS", json.dumps(["f435W","fr459M","f475W","f550M","f
 # set cosmology
 astropy_cosmo = FlatLambdaCDM(H0 = 70, Om0 = 0.3, Ob0 = 0.05, Tcmb0 = 2.725)
 
+from . import useful_funcs_austind
 from . import NIRCam_aperture_corrections as NIRCam_aper_corr
 from .Data import Data
 from .Instrument import Instrument, ACS_WFC,WFC3IR, NIRCam, MIRI, Combined_Instrument
 from .Photometry import Photometry, Multiple_Photometry
 from .Photometry_obs import Photometry_obs, Multiple_Photometry_obs
 from .Photometry_rest import Photometry_rest
-from .SED_result import SED_result
+from .SED_result import SED_result, Galaxy_SED_results, Catalogue_SED_results
 from .SED_codes import SED_code
 from .Catalogue import Catalogue
 from .Catalogue_Creator import Catalogue_Creator, GALFIND_Catalogue_Creator
@@ -53,7 +54,6 @@ from .Bagpipes import Bagpipes
 from .Galaxy import Galaxy, Multiple_Galaxy
 from .Simulated_Galaxy import Simulated_Galaxy
 from .Simulated_Catalogue import Simulated_Catalogue
-from . import useful_funcs_austind
 from . import decorators
 
 
