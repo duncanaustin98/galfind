@@ -144,14 +144,17 @@ def PDF_path(save_dir, obs_name, ID):
     return f"{save_dir}/{obs_name}/{ID}"
 
 def percentiles_from_PDF(PDF):
-    try:
-        PDF = np.array([val.value for val in PDF.copy()]) # remove the units
-    except:
-        pass
-    PDF_median = np.median(PDF)
-    PDF_l1 = PDF_median - np.percentile(PDF, 16)
-    PDF_u1 = np.percentile(PDF, 84) - PDF_median
-    return PDF_median, PDF_l1, PDF_u1
+    if all(val == -99. for val in PDF):
+        return -99., -99., -99.
+    else:
+        try:
+            PDF = np.array([val.value for val in PDF.copy()]) # remove the units
+        except:
+            pass
+        PDF_median = np.median(PDF)
+        PDF_l1 = PDF_median - np.percentile(PDF, 16)
+        PDF_u1 = np.percentile(PDF, 84) - PDF_median
+        return PDF_median, PDF_l1, PDF_u1
 
 def gauss_func(x, mu, sigma):
     return (np.pi * sigma) * np.exp(-0.5 * ((x - mu) / sigma) ** 2)

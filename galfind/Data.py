@@ -790,6 +790,7 @@ class Data:
         self.calc_depths(aper_diams = aper_diams, fast = fast)
         # correct the base sextractor catalogue to include local depth errors if not already done so
         self.loc_depth_cat_path = self.sex_cat_master_path.replace(".fits", "_loc_depth.fits")
+        print(self.loc_depth_cat_path)
         if not Path(self.loc_depth_cat_path).is_file():
             print(f"Making local depth catalogue for {self.survey} {self.version} in {aper_diams} diameter apertures with min. error(s) {min_flux_pc_err_arr}%!")
             # open photometric data

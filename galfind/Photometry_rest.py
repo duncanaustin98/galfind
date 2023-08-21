@@ -63,7 +63,7 @@ class Photometry_rest(Photometry):
     @property
     def flux_lambda_errs(self):
         flux_lambda_obs_errs = (self.flux_Jy_errs * const.c / ((np.array([value.value for value in self.instrument.band_wavelengths.values()]) * u.Angstrom) ** 2)).to(u.erg / (u.s * (u.cm ** 2) * u.Angstrom))
-        return funcs.flux_lambda_obs_to_rest(self.flux_lambda_errs, self.z)
+        return funcs.flux_lambda_obs_to_rest(flux_lambda_obs_errs, self.z)
     
     @property
     def log_flux_lambda(self):
