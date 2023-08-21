@@ -261,12 +261,70 @@ class Catalogue(Catalogue_Base):
         print(self[0].properties)
     
     # altered from original in mask_regions.py
-    def mask(self, data, flag_blank_field = True): # mask paths is a dict of form {band: mask_path}
+    def mask(self, data): # mask paths is a dict of form {band: mask_path}
         print(f"Running masking code for {self.cat_path}. (Too much copying and pasting here!)")
         self.data = data # store data object in catalogue object
         masked_cat_path = self.cat_path.replace(".fits", "_masked.fits")
         
         if not Path(masked_cat_path).is_file():
+            im_data, im_header, seg_data, seg_header, mask = self.data.load_data("f444W", incl_mask = True)
+            wcs = WCS(im_header)
+            if self.data.is_blank:
+                # add 'blank_module == True' to every galaxy in the catalogue
+                blank_flags = [True] * len(self.gals)
+                for gal in self:
+                    # changed syntax from "blank" to "blank_module"
+                    gal.mask_flags["blank_module"] = True
+            else: # mask cluster/blank field in reddest band (f444W for our NIRCam fields)
+                blank_flags = []
+                # add 'blank_module == True' to galaxies in the blank module
+                if self.data.blank_mask_path != "":
+                    blank_mask_file = pyregion.open(self.data.blank_mask_path).as_imagecoord(im_header) # file for mask
+                    blank_mask = blank_mask_file.get_mask(hdu = fits.open(self.data.im_paths[self.data.instrument.bands[-1]])[self.data.im_exts[self.data.instrument.bands[-1]]])
+                    for gal in self:
+                        pix_values = wcs.world_to_pixel(gal.sky_coord)
+                        x_pix = int(np.rint(pix_values[0]))
+                        y_pix = int(np.rint(pix_values[1]))
+                        blank_flag = blank_mask[y_pix][x_pix]
+                        #print(mask_flag_gal)
+                        if y_pix >= mask.shape[0] or x_pix >= mask.shape[1] or x_pix < 0 or y_pix < 0: # catch HST masking errors
+                            mask_flag_gal = True
+                        else:
+                            mask_flag_gal = mask[y_pix][x_pix]
+                        if mask_flag_gal == True:
+                            gal.mask_flags["blank_module"] = False
+                            blank_flags.append(False)
+                        else:
+                            gal.mask_flags["blank_module"] = True
+                            blank_flags.append(True)
+                    # update saved catalogue
+                    cat = self.open_full_cat()
+                    cat["blank_module"] = blank_flags #.astype(bool)
+                    cat.write(masked_cat_path, overwrite = True)
+                    print("Finished masking blank field")
+                else:
+                    raise(Exception("Must manually create a 'blank' field mask in the 'Data' object if 'flag_blank_field == True'!"))
+                # add 'cluster == True' to every galaxy within the cluster
+                cluster_flags = []
+                if self.data.cluster_mask_path != "":
+                    cluster_mask_file = pyregion.open(self.data.cluster_mask_path).as_imagecoord(im_header) # file for mask
+                    cluster_mask = cluster_mask_file.get_mask(hdu = fits.open(self.data.im_paths[self.data.instrument.bands[-1]])[self.data.im_exts[self.data.instrument.bands[-1]]])
+                    for gal in self:
+                        pix_values = wcs.world_to_pixel(gal.sky_coord)
+                        x_pix = int(np.rint(pix_values[0]))
+                        y_pix = int(np.rint(pix_values[1]))
+                        cluster_flag = cluster_mask[y_pix][x_pix]
+                        #print(mask_flag_gal)
+                        gal.mask_flags["cluster"] = cluster_flag
+                        cluster_flags.append(cluster_flag)
+                    # update saved catalogue
+                    cat = self.open_full_cat()
+                    cat["cluster"] = cluster_flags #.astype(bool)
+                    cat.write(masked_cat_path, overwrite = True)
+                    print("Finished masking cluster")
+                else:
+                    raise(Exception("Must manually create a 'cluster' mask in the 'Data' object!"))
+                    
             # mask each band individually
             for i, (band, mask_path) in enumerate(self.data.mask_paths.items()):
                 im_data, im_header, seg_data, seg_header, mask = self.data.load_data(band, incl_mask = True)
@@ -297,81 +355,25 @@ class Catalogue(Catalogue_Base):
                 cat.write(masked_cat_path, overwrite = True)
                 print(f"Finished masking {band}")
                 self.cat_path = masked_cat_path
-            
-            if self.data.is_blank:
-                if flag_blank_field:
-                    # add 'blank_module == True' to every galaxy in the catalogue
-                    blank_flags = [True] * len(self.gals)
-                    for gal in self:
-                        # changed syntax from "blank" to "blank_module"
-                        gal.mask_flags["blank_module"] = True
-            else: # mask cluster/blank field in reddest band (f444W for our NIRCam fields)
-                if flag_blank_field:
-                    blank_flags = []
-                    # add 'blank_module == True' to galaxies in the blank module
-                    if self.data.blank_mask_path != "":
-                        blank_mask_file = pyregion.open(self.data.blank_mask_path).as_imagecoord(im_header) # file for mask
-                        blank_mask = blank_mask_file.get_mask(hdu = fits.open(self.data.im_paths[self.data.instrument.bands[-1]])[self.data.im_exts[self.data.instrument.bands[-1]]])
-                        for gal in self:
-                            pix_values = wcs.world_to_pixel(gal.sky_coord)
-                            x_pix = int(np.rint(pix_values[0]))
-                            y_pix = int(np.rint(pix_values[1]))
-                            blank_flag = blank_mask[y_pix][x_pix]
-                            #print(mask_flag_gal)
-                            if mask_flag_gal == True:
-                                gal.mask_flags["blank_module"] = False
-                                blank_flags.append(False)
-                            else:
-                                gal.mask_flags["blank_module"] = True
-                                blank_flags.append(True)
-                    else:
-                        raise(Exception("Must manually create a 'blank' field mask in the 'Data' object if 'flag_blank_field == True'!"))
-                # add 'cluster == True' to every galaxy within the cluster
-                cluster_flags = []
-                if self.data.cluster_mask_path != "":
-                    cluster_mask_file = pyregion.open(self.data.cluster_mask_path).as_imagecoord(im_header) # file for mask
-                    cluster_mask = cluster_mask_file.get_mask(hdu = fits.open(self.data.im_paths[self.data.instrument.bands[-1]])[self.data.im_exts[self.data.instrument.bands[-1]]])
-                    for gal in self:
-                        pix_values = wcs.world_to_pixel(gal.sky_coord)
-                        x_pix = int(np.rint(pix_values[0]))
-                        y_pix = int(np.rint(pix_values[1]))
-                        cluster_flag = cluster_mask[y_pix][x_pix]
-                        #print(mask_flag_gal)
-                        gal.mask_flags["cluster"] = cluster_flag
-                        cluster_flags.append(cluster_flag)
-                    # update saved catalogue
-                    cat = self.open_full_cat()
-                    cat["cluster"] = cluster_flags #.astype(bool)
-                    cat.write(masked_cat_path, overwrite = True)
-                    print("Finished masking cluster")
-                else:
-                    raise(Exception("Must manually create a 'cluster' mask in the 'Data' object!"))
-            
-            if flag_blank_field:
-                # update saved catalogue
-                cat = self.open_full_cat()
-                cat["blank_module"] = blank_flags #.astype(bool)
-                cat.write(masked_cat_path, overwrite = True)
-                print("Finished masking blank field")
-            
-            # add additional boolean column to say whether an object is unmasked in all columns or not
-            unmasked_blank = []
-            for i, gal in enumerate(self):
-                good_galaxy = True
-                for band in self.data.instrument.bands:
-                    if not gal.mask_flags[f"unmasked_{band}"]:
-                        good_galaxy = False
-                        break
-                # don't include blank field galaxies in final boolean unmasked column
-                if not self.data.is_blank and flag_blank_field:
-                    if not gal.mask_flags["blank_module"]:
-                        good_galaxy = False
-                unmasked_blank.append(good_galaxy)
-                gal.mask_flags["unmasked_blank"] = good_galaxy
-            cat = self.open_full_cat()
-            cat["unmasked_blank"] = unmasked_blank
-            cat.write(masked_cat_path, overwrite = True)
-            print("Finished masking!")
+
+            # # add additional boolean column to say whether an object is unmasked in all columns or not
+            # unmasked_blank = []
+            # for i, gal in enumerate(self):
+            #     good_galaxy = True
+            #     for band in self.data.instrument.bands:
+            #         if not gal.mask_flags[f"unmasked_{band}"]:
+            #             good_galaxy = False
+            #             break
+            #     # don't include blank field galaxies in final boolean unmasked column
+            #     if not self.data.is_blank and flag_blank_field:
+            #         if not gal.mask_flags["blank_module"]:
+            #             good_galaxy = False
+            #     unmasked_blank.append(good_galaxy)
+            #     gal.mask_flags["unmasked_blank"] = good_galaxy
+            # cat = self.open_full_cat()
+            # cat["unmasked_blank"] = unmasked_blank
+            # cat.write(masked_cat_path, overwrite = True)
+            # print("Finished masking!")
         else:
             self.cat_path = masked_cat_path
             print("Already masked!")
