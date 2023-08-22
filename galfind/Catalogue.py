@@ -222,13 +222,16 @@ class Catalogue:
         ext_src_cat_name = f"{funcs.split_dir_name(self.cat_path, 'dir')}/Extended_source_corrections_{code_name}.fits"
         if not Path(ext_src_cat_name).is_file():
             ext_src_corrs_band = {}
+            ext_src_bands = []
             for i, band in tqdm(enumerate(self.data.instrument.bands), total = len(self.data.instrument.bands), desc = f"Calculating extended source corrections for {self.cat_path}"):
                 try:
                     band_corrs = self.calc_ext_src_corrs(band)
                     #print(band, band_corrs)
                     ext_src_corrs_band[band] = band_corrs
+                    ext_src_bands.append(band)
                 except:
                     print(f"No flux auto for {band}")
+            print(ext_src_bands)
             ext_src_col_names = np.array(["ID"] + [f"auto_corr_factor_{name}" for name in [band for band in self.data.instrument.bands if band in ext_src_corrs_band.keys()]] + \
                                          [f"auto_corr_factor_UV_{code_name}_{templates}" for templates in templates_arr] + ["auto_corr_factor_mass"])
             ext_src_col_dtypes = np.array([int] + [float for name in [band for band in self.data.instrument.bands if band in ext_src_corrs_band.keys()]] + \
@@ -244,7 +247,8 @@ class Catalogue:
                         UV_corr_bands.append(gal.phot.SED_results[code_name][templates].phot_rest.rest_UV_band)
                     except:
                         UV_corr_bands.append(None)
-                UV_ext_src_corrs.append(np.array([ext_src_corrs_band[band][j] if band != None else -99. for j, band in enumerate(UV_corr_bands)]))
+                # use bluest band with an extended src correction, since it is the blue HST data that doesn't have FLUX_AUTO's
+                UV_ext_src_corrs.append(np.array([ext_src_corrs_band[band][j] if band != None else ext_src_corrs_band[ext_src_bands[0]][j] for j, band in enumerate(UV_corr_bands)]))
             print(UV_ext_src_corrs, np.array(UV_ext_src_corrs).shape)
             print(f"Finished calculating UV extended source corrections using {code_name} {templates_arr} redshifts")
             mass_ext_src_corrs = np.array(ext_src_corrs_band["f444W"]) # f444W band (mass tracer)
@@ -418,10 +422,11 @@ class Catalogue:
                         funcs.percentiles_from_PDF(gal.phot.SED_results[code_name][templates].phot_rest.open_UV_fit_PDF(UV_PDF_path, name, gal_copy.ID, gal_copy.phot.SED_results[code_name][templates].ext_src_corrs["UV"], plot = plot))
                 for name in col_names:
                     #print(f"{gal.ID}: {gal.phot_rest.phot_obs.instrument.bands}")
-                    try:
+                    #try:
                         gal_data = np.append(gal_data, funcs.percentiles_from_PDF(gal.phot.SED_results[code_name][templates].phot_rest.open_UV_fit_PDF(UV_PDF_path, name, gal_copy.ID, gal_copy.phot.SED_results[code_name][templates].ext_src_corrs["UV"]))) # not currently saving to object
-                    except:
-                        gal_data = np.append(gal_data, funcs.percentiles_from_PDF([-99.]))
+                    #except:
+                    #    print(f"EXCEPT ID = {gal.ID}")
+                    #    gal_data = np.append(gal_data, funcs.percentiles_from_PDF([-99.]))
             gal_data = np.array(gal_data).flatten()
             if i == 0: # if the first column
                 cat_data = gal_data
