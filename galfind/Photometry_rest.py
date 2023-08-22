@@ -49,20 +49,20 @@ class Photometry_rest(Photometry):
     
     @property
     def wav(self):
-        return funcs.wav_obs_to_rest(np.array([value.value for value in self.instrument.band_wavelengths.values()]) * u.Angstrom, self.z)
+        return funcs.wav_obs_to_rest(np.array([self.instrument.band_wavelengths[band].value for band in self.instrument.bands]) * u.Angstrom, self.z)
     
     @property
     def wav_errs(self):
-        return funcs.wav_obs_to_rest(np.array([value.value / 2 for value in self.instrument.band_FWHMs.values()]) * u.Angstrom, self.z)
+        return funcs.wav_obs_to_rest(np.array([self.instrument.band_FWHMs[band].value / 2 for band in self.instrument.bands]) * u.Angstrom, self.z)
     
     @property
     def flux_lambda(self):
-        flux_lambda_obs = (self.flux_Jy * const.c / ((np.array([value.value for value in self.instrument.band_wavelengths.values()]) * u.Angstrom) ** 2)).to(u.erg / (u.s * (u.cm ** 2) * u.Angstrom))
+        flux_lambda_obs = (self.flux_Jy * const.c / ((np.array([self.instrument.band_wavelengths[band].value for band in self.instrument.bands]) * u.Angstrom) ** 2)).to(u.erg / (u.s * (u.cm ** 2) * u.Angstrom))
         return funcs.flux_lambda_obs_to_rest(flux_lambda_obs, self.z)
     
     @property
     def flux_lambda_errs(self):
-        flux_lambda_obs_errs = (self.flux_Jy_errs * const.c / ((np.array([value.value for value in self.instrument.band_wavelengths.values()]) * u.Angstrom) ** 2)).to(u.erg / (u.s * (u.cm ** 2) * u.Angstrom))
+        flux_lambda_obs_errs = (self.flux_Jy_errs * const.c / ((np.array([self.instrument.band_wavelengths[band].value for band in self.instrument.bands]) * u.Angstrom) ** 2)).to(u.erg / (u.s * (u.cm ** 2) * u.Angstrom))
         return funcs.flux_lambda_obs_to_rest(flux_lambda_obs_errs, self.z)
     
     @property
@@ -100,10 +100,8 @@ class Photometry_rest(Photometry):
         for i, (wav, wav_err) in enumerate(zip(self.wav.value, self.wav_errs.value)):
             wav *= u.Angstrom
             wav_err *= u.Angstrom
-            #print(wav, wav_err, self.rest_UV_wav_lims)
             if wav - wav_err < self.rest_UV_wav_lims[0] or wav + wav_err > self.rest_UV_wav_lims[1]:
                 crop_indices = np.append(crop_indices, i)
-        #print(crop_indices)
         self.crop_phot(crop_indices)
      
     def beta_slope_power_law_func(wav_rest, A, beta):
@@ -112,7 +110,7 @@ class Photometry_rest(Photometry):
     def set_ext_source_UV_corr(self, UV_ext_source_corr):
         self.UV_ext_src_corr = UV_ext_source_corr
         
-    def plot(self, save_dir, ID, plot_fit = True, iters = 1_000, save = True, show = False, n_interp = 100):
+    def plot(self, save_dir, ID, plot_fit = True, iters = 10_000, save = True, show = False, n_interp = 100):
         self.make_rest_UV_phot()
     
         #if not all(beta == -99. for beta in self.beta_PDF):
@@ -288,6 +286,8 @@ class Photometry_rest(Photometry):
         funcs.save_PDF(PDF, f"{obs_name}, units = {unit}, iters = {len(PDF)}", funcs.PDF_path(save_dir, obs_name, ID))
     
     def open_UV_fit_PDF(self, save_dir, obs_name, ID, UV_ext_src_corr = None, plot = True):
+        if obs_name == "flux_lambda_1500":
+            print(f"UV_ext_src_corr = {UV_ext_src_corr}")
         try:
             # attempt to open PDF from object
             PDF = self.obs_name_to_PDF(obs_name)
