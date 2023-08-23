@@ -49,7 +49,7 @@ class EAZY(SED_code):
         split_name = cat.cat_name.split('_')
         if split_name[-1] == "masked.fits":
             eazy_in_name = cat.cat_name.replace('.fits', f'_{cat.cat_creator.min_flux_pc_err}pc.in')
-        else: 
+        else:
             eazy_in_name = f"{'_'.join(cat.cat_name.split('pc')[0].split('_')[:-1])}_{cat.cat_creator.min_flux_pc_err}pc.in"
         eazy_in_path = f"{eazy_in_dir}/{eazy_in_name}"
         if not Path(eazy_in_path).is_file():
@@ -200,7 +200,7 @@ class EAZY(SED_code):
                 lowz_fit = eazy.photoz.PhotoZ(param_file = default_param_path, zeropoint_file = None,
                                     params = params, load_prior = False, load_products = False, translate_file = translate_file, n_proc = n_proc)
                 lowz_fit.fit_catalog(n_proc = n_proc, get_best_fit = True)
-                lowz_fits[f"zmax={z_max:.1f}"] = lowz_fit
+                lowz_fits[funcs.lowz_zmax(z_max)] = lowz_fit
 
         # Save backup of fit in hdf5 file
         if write_hdf:
@@ -349,24 +349,18 @@ class EAZY(SED_code):
             return None, None
         return z, PDF
         
-    def z_PDF_path_from_cat_path(self, cat_path, ID, templates, low_z_run = False):
+    def z_PDF_paths_from_cat_path(self, cat_path, ID, templates, lowz_label = ""):
         # should still include aper_diam here
         min_flux_pc_err = str(cat_path.replace(f"_{templates}", "").split("_")[-2].replace("pc", ""))
-        if low_z_run:
-            low_z_name = "_lowz"
-        else:
-            low_z_name = ""
+        
         PDF_dir = f"{funcs.split_dir_name(cat_path, 'dir')}PDFs/{str(min_flux_pc_err)}pc/{templates}"
-        PDF_name = f"{str(ID)}{low_z_name}.pz"
+        PDF_name = f"{str(ID)}{lowz_label}.pz"
+        #print(PDF_name)
         return f"{PDF_dir}/{PDF_name}"
     
-    def SED_path_from_cat_path(self, cat_path, ID, templates, low_z_run = False):
+    def SED_paths_from_cat_path(self, cat_path, ID, templates, lowz_label = ""):
         # should still include aper_diam here
         min_flux_pc_err = str(cat_path.replace(f"_{templates}", "").split("_")[-2].replace("pc", ""))
-        if low_z_run:
-            low_z_name = "_lowz"
-        else:
-            low_z_name = ""
         SED_dir = f"{funcs.split_dir_name(cat_path, 'dir')}SEDs/{str(min_flux_pc_err)}pc/{templates}"
-        SED_name = f"{str(ID)}{low_z_name}.spec"
+        SED_name = f"{str(ID)}{lowz_label}.spec"
         return f"{SED_dir}/{SED_name}"

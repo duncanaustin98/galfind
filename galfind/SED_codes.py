@@ -22,7 +22,8 @@ from tqdm import tqdm
 
 from . import useful_funcs_austind as funcs
 from . import config
-from . import SED_result
+from . import SED_result, Catalogue_SED_results
+#from . import galfind_logger
 
 # %% SED_code class
 
@@ -32,9 +33,14 @@ class SED_code(ABC):
         self.code_name = code_name
         self.galaxy_property_dict = galaxy_property_dict
         self.available_templates = available_templates
-        
+    
+    @staticmethod
+    def code_from_name(code_name):
+        return getattr(globals()[code_name], code_name)()
+    
     @staticmethod
     def galaxy_property_labels(gal_property, templates, lowz_zmax = None):
+        print(gal_property, templates, lowz_zmax)
         if templates not in ["fsps", "fsps_larson", "fsps_jades"]:
             raise(Exception(f"templates = {templates} are not yet encorporated for galfind EAZY SED fitting"))
         if lowz_zmax != None:
@@ -43,7 +49,7 @@ class SED_code(ABC):
             lowz_suffix = ""
         if gal_property == "z_phot":
             return f"zbest{lowz_suffix}_{templates}"
-        elif gal_property == "chi2":
+        elif gal_property == "chi_sq":
             return f"chi2_best{lowz_suffix}_{templates}"
         else:
             raise(Exception(f"EAZY.galaxy_property_labels does not include option for gal_property = {gal_property}!"))
@@ -102,7 +108,7 @@ class SED_code(ABC):
         cat = self.update_cat(cat, fits_out_path, z_max_lowz, *args, **kwargs)
         return cat
     
-    def update_cat(self, cat, fits_out_path, low_z_run, *args, **kwargs):
+    def update_cat(self, cat, fits_out_path, z_max_lowz, *args, **kwargs):
         # save concatenated catalogue
         #print(f"update_cat fits_out_path = {fits_out_path}")
         combined_cat = join(Table.read(cat.cat_path), Table.read(fits_out_path), keys_left = "NUMBER", keys_right = "IDENT")
@@ -112,22 +118,28 @@ class SED_code(ABC):
             templates = kwargs.get("templates")
             combined_cat_path = combined_cat_path.replace(f"_eazy_{templates}", "_EAZY")
             #print("EAZY naming system requires updating")
-        
+        elif self.__class__.__name__ == "LePhare":
+            templates = "BC03"
+           
         # makes appropriate directory (could be done elsewhere) - needed for case of loading in data from outside galfind
         #print(Path(combined_cat_path).parent)
         if not Path(combined_cat_path).parent.is_dir():
             funcs.make_dirs(str(Path(combined_cat_path).parent)+'/')
-            
+           
         combined_cat.remove_column("IDENT")
         combined_cat.write(combined_cat_path, overwrite = True)
         combined_cat.meta["cat_path"] = combined_cat_path
         combined_cat.meta = {**combined_cat.meta, **{f"{self.code_name}_path": fits_out_path}}
         # update galaxies within the catalogue with new SED fits
         cat.cat_path = combined_cat_path
-        SED_results = [] #[SED_result.from_fits_cat(combined_cat[combined_cat["NUMBER"] == gal.ID], self.__class__(), gal.phot[0], cat.cat_creator, low_z_run) \
-                       #for gal in tqdm(cat, total = len(cat), desc = "Loading SED results into catalogue")]
-        cat.update_SED_results(SED_results)
-        return cat #.from_fits_cat(combined_cat_path, cat.data.instrument, cat.cat_creator, codes, low_z_runs, cat.data.survey)
+        #print(f"z_max_lowz = {z_max_lowz}")
+        z_max_lowz = None
+        print("Quick z_max_lowz fix!!!")
+        #galfind_logger.error("Quick z_max_lowz fix!!!")
+        cat_SED_results = Catalogue_SED_results.from_fits_cat(combined_cat, cat.cat_creator, \
+                        [self], [z_max_lowz], [templates], phot_arr = [gal.phot for gal in cat]).SED_results
+        cat.update_SED_results(cat_SED_results)
+        return cat
         
     @abstractmethod
     def make_in(self, cat):
@@ -166,11 +178,11 @@ class SED_code(ABC):
         pass
     
     @abstractmethod
-    def z_PDF_path_from_cat_path(self, cat_path, ID, low_z_run = False):
+    def z_PDF_paths_from_cat_path(self, cat_path, ID, low_z_run = False):
         pass
     
     @abstractmethod
-    def SED_path_from_cat_path(self, cat_path, ID, low_z_run = False):
+    def SED_paths_from_cat_path(self, cat_path, ID, low_z_run = False):
         pass
 
 # LePhare

@@ -153,8 +153,8 @@ class LePhare(SED_code):
             open_file.close()
         return z, PDF
     
-    def z_PDF_path_from_cat_path(self, cat_path, ID, low_z_run = False):
+    def z_PDF_paths_from_cat_path(self, cat_path, ID, low_z_run = False):
         pass
     
-    def SED_path_from_cat_path(self, cat_path, ID, low_z_run = False):
+    def SED_paths_from_cat_path(self, cat_path, ID, low_z_run = False):
         pass
