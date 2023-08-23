@@ -24,9 +24,9 @@ class Galaxy:
         self.mask_flags = mask_flags
         
     @classmethod
-    def from_fits_cat(cls, fits_cat_row, instrument, cat_creator, codes, low_z_runs):
+    def from_fits_cat(cls, fits_cat_row, instrument, cat_creator, codes, lowz_zmax, templates_arr):
         # load multiple photometries from the fits catalogue
-        phot = Photometry_obs.from_fits_cat(fits_cat_row, instrument, cat_creator, cat_creator.aper_diam, cat_creator.min_flux_pc_err, codes, low_z_runs) # \
+        phot = Photometry_obs.from_fits_cat(fits_cat_row, instrument, cat_creator, cat_creator.aper_diam, cat_creator.min_flux_pc_err, codes, lowz_zmax, templates_arr) # \
                 # for min_flux_pc_err in cat_creator.min_flux_pc_err for aper_diam in cat_creator.aper_diam]
         # load the ID and Sky Coordinate from the source catalogue
         ID = int(fits_cat_row[cat_creator.ID_label])
@@ -34,15 +34,6 @@ class Galaxy:
         # mask flags should come from cat_creator
         mask_flags = {band: cat_creator.load_flag(fits_cat_row, f"unmasked_{band}") for band in instrument.bands}
         return cls(sky_coord, ID, phot, mask_flags)
-    
-    def update(self, SED_result, index = 0): # for now just update the single photometry
-        self.phot[index].update(SED_result)
-        
-    def update_mask_full(self, bool_values):
-        pass
-        
-    def update_mask_band(self, band, bool_value):
-        self.mask_flags[band] = bool_value
         
     def __setattr__(self, name, value, obj = "gal"):
         if obj == "gal":
@@ -63,6 +54,19 @@ class Galaxy:
         for key, value in self.__dict__.items():
             setattr(result, key, deepcopy(value, memo))
         return result
+    
+    def update(self, gal_SED_results, index = 0): # for now just update the single photometry
+        self.phot.update(gal_SED_results)
+        
+    def update_mask_full(self, bool_values):
+        pass
+        
+    def update_mask_band(self, band, bool_value):
+        self.mask_flags[band] = bool_value
+        
+    def phot_SNR_crop(self, band, sigma_detect_thresh, flag = True):
+        self.phot.SNR_crop(band, sigma_detect_thresh)
+        pass
     
 class Multiple_Galaxy:
     
@@ -92,11 +96,12 @@ class Multiple_Galaxy:
         return self.gals[index]
         
     @classmethod
-    def from_fits_cat(cls, fits_cat, instrument, cat_creator, codes, low_z_runs):
+    def from_fits_cat(cls, fits_cat, instrument, cat_creator, codes, lowz_zmax, templates_arr):
         # load photometries from catalogue
-        phots = Multiple_Photometry_obs.from_fits_cat(fits_cat, instrument, cat_creator, cat_creator.aper_diam, cat_creator.min_flux_pc_err, codes, low_z_runs)
+        phots = Multiple_Photometry_obs.from_fits_cat(fits_cat, instrument, cat_creator, cat_creator.aper_diam, cat_creator.min_flux_pc_err, codes, lowz_zmax, templates_arr).phot_obs_arr
         # load the ID and Sky Coordinate from the source catalogue
         IDs = np.array(fits_cat[cat_creator.ID_label]).astype(int)
+        # load sky co-ordinate one at a time (can improve efficiency here)
         sky_coords = [SkyCoord(ra * u.deg, dec * u.deg, frame = "icrs") \
                       for ra, dec in zip(fits_cat[cat_creator.ra_dec_labels["RA"]], fits_cat[cat_creator.ra_dec_labels["DEC"]])]
         # mask flags should come from cat_creator

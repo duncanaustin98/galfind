@@ -154,7 +154,7 @@ class Instrument:
         band = str(band)
         assert type(band) == str, f"band = {band} of type = {type(band)} is not str"
         try:
-            remove_index = np.where(self.bands == band)[0][0]
+            remove_index = self.index_from_band(band)
             #print(f"remove index = {remove_index}")
             self.bands = np.delete(self.bands, remove_index)
             del self.band_wavelengths[band]
@@ -164,8 +164,14 @@ class Instrument:
             pass
         
     def remove_index(self, remove_index):
-        remove_band = self.bands[remove_index]
+        remove_band = self.band_from_index(remove_index)
         self.remove_band(remove_band)
+        
+    def index_from_band(self, band):
+        return np.where(self.bands == band)[0][0]
+    
+    def band_from_index(self, index):
+        return self.bands[index]
     
     @staticmethod
     def from_name(name, excl_bands = []):

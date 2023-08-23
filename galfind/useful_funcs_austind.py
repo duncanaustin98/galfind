@@ -145,14 +145,17 @@ def PDF_path(save_dir, obs_name, ID):
     return f"{save_dir}/{obs_name}/{ID}"
 
 def percentiles_from_PDF(PDF):
-    try:
-        PDF = np.array([val.value for val in PDF.copy()]) # remove the units
-    except:
-        pass
-    PDF_median = np.median(PDF)
-    PDF_l1 = PDF_median - np.percentile(PDF, 16)
-    PDF_u1 = np.percentile(PDF, 84) - PDF_median
-    return PDF_median, PDF_l1, PDF_u1
+    if all(val == -99. for val in PDF):
+        return -99., -99., -99.
+    else:
+        try:
+            PDF = np.array([val.value for val in PDF.copy()]) # remove the units
+        except:
+            pass
+        PDF_median = np.median(PDF)
+        PDF_l1 = PDF_median - np.percentile(PDF, 16)
+        PDF_u1 = np.percentile(PDF, 84) - PDF_median
+        return PDF_median, PDF_l1, PDF_u1
 
 def gauss_func(x, mu, sigma):
     return (np.pi * sigma) * np.exp(-0.5 * ((x - mu) / sigma) ** 2)
@@ -176,9 +179,35 @@ def fits_cat_to_np(fits_cat, column_labels):
         new_cat = new_cat.data
     n_aper_diams = len(new_cat[0][0])
     new_cat = np.lib.recfunctions.structured_to_unstructured(new_cat).reshape(len(fits_cat), len(column_labels), n_aper_diams)
-    return new_cat 
+    return new_cat
+
+def lowz_label(lowz_zmax):
+    if lowz_zmax != None:
+        label = f"zmax={lowz_zmax:.1f}"
+    else:
+        label = ""
+    return label
+
+def get_z_PDF_paths(fits_cat, IDs, codes, templates_arr, lowz_zmaxs, fits_cat_path = None):
+    try:
+        fits_cat_path = fits_cat.meta["cat_path"]
+    except:
+        pass
+    return [code.z_PDF_paths_from_cat_path(fits_cat_path, ID, templates, lowz_label(lowz_zmax)) for code, templates, lowz_zmax in \
+            zip(codes, templates_arr, lowz_zmaxs) for ID in IDs]
+
+def get_SED_paths(fits_cat, IDs, codes, templates_arr, lowz_zmaxs, fits_cat_path = None):
+    try:
+        fits_cat_path = fits_cat.meta["cat_path"]
+    except:
+        pass
+    return [code.SED_paths_from_cat_path(fits_cat_path, ID, templates, lowz_label(lowz_zmax)) for code, templates, lowz_zmax in \
+            zip(codes, templates_arr, lowz_zmaxs) for ID in IDs]
 
 # GALFIND specific functions
+def GALFIND_SED_column_labels(codes, lowz_zmaxs, templates_arr, gal_property):
+    return [code.galaxy_property_labels(gal_property, templates, lowz_zmax) for code, lowz_zmax, templates in zip(codes, lowz_zmaxs, templates_arr)]
+
 def GALFIND_cat_path(SED_code_name, instrument_name, version, survey, forced_phot_band_name, min_flux_pc_err, cat_type = "loc_depth", masked = True, templates = "fsps_larson"):
     # should still include aper_diam here
     if masked:
