@@ -400,55 +400,54 @@ class Catalogue:
     def make_UV_fit_cat(self, code_name = "EAZY", templates = "fsps_larson", UV_PDF_path = config["RestUVProperties"]["UV_PDF_PATH"], col_names = ["Beta", "flux_lambda_1500", "flux_Jy_1500", "M_UV", "A_UV", "L_obs", "L_int", "SFR"], \
                         join_tables = True, skip_IDs = []):
         UV_cat_name = f"{funcs.split_dir_name(self.cat_path, 'dir')}/UV_properties_{code_name}_{templates}_{str(self.cat_creator.min_flux_pc_err)}pc.fits"
-        #if not Path(UV_cat_name).is_file():
-        cat_data = []
-        #print("Bands here: ", self[1].phot.instrument.bands)
-        for i, gal in tqdm(enumerate(self), total = len(self), desc = "Making UV fit catalogue"):
-            gal_copy = gal #copy.deepcopy(gal)
-            gal_data = np.array([gal_copy.ID])
-            if gal.ID in skip_IDs:
-                for name in col_names:
-                    gal_data = np.append(gal_data, funcs.percentiles_from_PDF([-99.]))
-            else:
-                path = f"{config['DEFAULT']['GALFIND_WORK']}/UV_PDFs/{self.data.version}/{self.data.instrument.name}/{self.survey}/{code_name}+{str(self.cat_creator.min_flux_pc_err)}pc/{templates}/Amplitude/{gal_copy.ID}.txt"
-                #print(path)
-                if not Path(path).is_file():
-                    #print(gal.phot_obs.instrument.bands)
-                    for name in ["Amplitude", "Beta"]:
-                        if name == "Beta":
-                            plot = True
-                        else:
-                            plot = False
-                        funcs.percentiles_from_PDF(gal.phot.SED_results[code_name][templates].phot_rest.open_UV_fit_PDF(UV_PDF_path, name, gal_copy.ID, gal_copy.phot.SED_results[code_name][templates].ext_src_corrs["UV"], plot = plot))
-                for name in col_names:
-                    #print(f"{gal.ID}: {gal.phot_rest.phot_obs.instrument.bands}")
-                    #try:
-                        gal_data = np.append(gal_data, funcs.percentiles_from_PDF(gal.phot.SED_results[code_name][templates].phot_rest.open_UV_fit_PDF(UV_PDF_path, name, gal_copy.ID, gal_copy.phot.SED_results[code_name][templates].ext_src_corrs["UV"]))) # not currently saving to object
-                    #except:
-                    #    print(f"EXCEPT ID = {gal.ID}")
-                    #    gal_data = np.append(gal_data, funcs.percentiles_from_PDF([-99.]))
-            gal_data = np.array(gal_data).flatten()
-            if i == 0: # if the first column
-                cat_data = gal_data
-            else:
-                cat_data = np.vstack([cat_data, gal_data])
-            UV_col_names = np.array([[name, f"{name}_l1", f"{name}_u1"] for name in col_names]).flatten()
-            fits_col_names = np.concatenate((np.array(["ID"]), UV_col_names))
-            funcs.make_dirs(self.cat_path)
-            UV_tab = Table(cat_data, names = fits_col_names)
-            UV_tab.write(UV_cat_name, format = "fits", overwrite = True)
-            self.UV_tab = UV_tab
-            #print(f"Writing UV table to {UV_cat_name}")
+        if not Path(UV_cat_name).is_file():
+            cat_data = []
+            #print("Bands here: ", self[1].phot.instrument.bands)
+            for i, gal in tqdm(enumerate(self), total = len(self), desc = "Making UV fit catalogue"):
+                gal_copy = gal #copy.deepcopy(gal)
+                gal_data = np.array([gal_copy.ID])
+                if gal.ID in skip_IDs:
+                    for name in col_names:
+                        gal_data = np.append(gal_data, funcs.percentiles_from_PDF([-99.]))
+                else:
+                    path = f"{config['DEFAULT']['GALFIND_WORK']}/UV_PDFs/{self.data.version}/{self.data.instrument.name}/{self.survey}/{code_name}+{str(self.cat_creator.min_flux_pc_err)}pc/{templates}/Amplitude/{gal_copy.ID}.txt"
+                    #print(path)
+                    if not Path(path).is_file():
+                        #print(gal.phot_obs.instrument.bands)
+                        for name in ["Amplitude", "Beta"]:
+                            if name == "Beta":
+                                plot = True
+                            else:
+                                plot = False
+                            funcs.percentiles_from_PDF(gal.phot.SED_results[code_name][templates].phot_rest.open_UV_fit_PDF(UV_PDF_path, name, gal_copy.ID, gal_copy.phot.SED_results[code_name][templates].ext_src_corrs["UV"], plot = plot))
+                    for name in col_names:
+                        #print(f"{gal.ID}: {gal.phot_rest.phot_obs.instrument.bands}")
+                        #try:
+                            gal_data = np.append(gal_data, funcs.percentiles_from_PDF(gal.phot.SED_results[code_name][templates].phot_rest.open_UV_fit_PDF(UV_PDF_path, name, gal_copy.ID, gal_copy.phot.SED_results[code_name][templates].ext_src_corrs["UV"]))) # not currently saving to object
+                        #except:
+                        #    print(f"EXCEPT ID = {gal.ID}")
+                        #    gal_data = np.append(gal_data, funcs.percentiles_from_PDF([-99.]))
+                gal_data = np.array(gal_data).flatten()
+                if i == 0: # if the first column
+                    cat_data = gal_data
+                else:
+                    cat_data = np.vstack([cat_data, gal_data])
+                UV_col_names = np.array([[name, f"{name}_l1", f"{name}_u1"] for name in col_names]).flatten()
+                fits_col_names = np.concatenate((np.array(["ID"]), UV_col_names))
+                funcs.make_dirs(self.cat_path)
+                UV_tab = Table(cat_data, names = fits_col_names)
+                UV_tab.write(UV_cat_name, format = "fits", overwrite = True)
+                self.UV_tab = UV_tab
+                print(f"Writing UV table to {UV_cat_name}")
             
-            # else:
-            #     self.UV_tab = Table.read(UV_cat_name, character_as_bytes = False)
-            #     print(f"Opening table: {UV_cat_name}")
+            else:
+                self.UV_tab = Table.read(UV_cat_name, character_as_bytes = False)
+                print(f"Opening table: {UV_cat_name}")
         
         if join_tables:
             self.join_UV_fit_cat()
             # set relevant properties in the galaxies contained within the catalogues
-            [setattr(gal, ["properties", name], UV_tab[name][i]) for i, gal in enumerate(self) for name in UV_col_names]
-            print(self[0].properties)
+            #[setattr(gal, ["properties", name], UV_tab[name][i]) for i, gal in enumerate(self) for name in UV_col_names]
             
         return self
         
