@@ -36,7 +36,7 @@ class Photometry:
             # local depths only currently works for one aperture diameter
             loc_depths = np.array([fits_cat_row[f"loc_depth_{band}"].T[cat_creator.aper_diam_index] for band in instrument.bands])
         except:
-            print("local depths not loaded")
+            #print("local depths not loaded")
             loc_depths = None
         return cls(instrument, fluxes[0] * u.Jy, flux_errs[0] * u.Jy, loc_depths)
     

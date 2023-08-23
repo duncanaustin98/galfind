@@ -17,6 +17,7 @@ from galfind.Catalogue_Creator import GALFIND_Catalogue_Creator
 
 def calc_UV_properties(surveys, version, instruments, xy_offsets, aper_diams, code_names, lowz_zmax, min_flux_pc_errs, forced_phot_band, excl_bands, \
              cat_type = "loc_depth", n_loc_depth_samples = 5, fast = True, templates_arr = ["fsps", "fsps_larson", "fsps_jades"]):
+
     for pc_err in min_flux_pc_errs:
         # make appropriate galfind catalogue creator for each aperture diameter
         cat_creator = GALFIND_Catalogue_Creator(cat_type, aper_diams[0], pc_err)
@@ -51,4 +52,4 @@ if __name__ == "__main__":
     n_loc_depth_samples = 10
 
     for survey in surveys:
-        calc_UV_properties([survey], version,instruments, xy_offsets, aper_diams, code_names, eazy_zmax_lowz, min_flux_pc_errs, forced_phot_band, excl_bands, cat_type = cat_type, n_loc_depth_samples = n_loc_depth_samples, fast = fast_depths, templates_arr = templates_arr)
+        calc_UV_properties([survey], version, instruments, xy_offsets, aper_diams, code_names, eazy_zmax_lowz, min_flux_pc_errs, forced_phot_band, excl_bands, cat_type = cat_type, n_loc_depth_samples = n_loc_depth_samples, fast = fast_depths, templates_arr = templates_arr)

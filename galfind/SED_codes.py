@@ -80,8 +80,8 @@ class SED_code(ABC):
         phot_in = []
         phot_err_in = []
         for band in SED_input_bands:
-            if band in cat.data.instrument.bands:
-                band_index = np.where(band == cat.data.instrument.bands)[0][0]
+            if band in cat.instrument.bands:
+                band_index = np.where(band == cat.instrument.bands)[0][0]
                 phot_in.append(phot[:, band_index])
                 phot_err_in.append(phot_err[:, band_index])
             else: # band does not exist in data but still needs to be included
@@ -102,7 +102,7 @@ class SED_code(ABC):
         #print(f"fit_cat fits_out_path = {fits_out_path}")
         if not Path(fits_out_path).is_file() or config["DEFAULT"].getboolean("OVERWRITE"):
             print(f"Running SED fitting for {self.__class__.__name__}")
-            self.run_fit(in_path, out_path, sed_folder, cat.data.instrument.new_instrument(), z_max_lowz = zmax_lowz, *args, **kwargs)
+            self.run_fit(in_path, out_path, sed_folder, cat.instrument.new_instrument(), z_max_lowz = z_max_lowz, *args, **kwargs)
             self.make_fits_from_out(out_path, *args, **kwargs)
         # update galaxies within catalogue object with determined properties
         cat = self.update_cat(cat, fits_out_path, z_max_lowz, *args, **kwargs)
@@ -112,13 +112,20 @@ class SED_code(ABC):
         # save concatenated catalogue
         #print(f"update_cat fits_out_path = {fits_out_path}")
         combined_cat = join(Table.read(cat.cat_path), Table.read(fits_out_path), keys_left = "NUMBER", keys_right = "IDENT")
-        combined_cat_path = f"{config['DEFAULT']['GALFIND_WORK']}/Catalogues/{cat.data.version}/{cat.data.instrument.name}/" + \
-            f"{cat.data.survey}/{funcs.split_dir_name(fits_out_path.replace('_matched', '').replace('_EAZY', '').replace('.fits', '_matched.fits'), 'name')}"
+        combined_cat_path = f"{config['DEFAULT']['GALFIND_WORK']}/Catalogues/{cat.version}/{cat.instrument.name}/" + \
+            f"{cat.survey}/{funcs.split_dir_name(fits_out_path.replace('_matched', '').replace('_EAZY', '').replace('.fits', '_matched.fits'), 'name')}"
         if self.__class__.__name__ == "EAZY":
             templates = kwargs.get("templates")
             combined_cat_path = combined_cat_path.replace(f"_eazy_{templates}", "_EAZY")
+            #print("EAZY naming system requires updating")
         elif self.__class__.__name__ == "LePhare":
             templates = "BC03"
+           
+        # makes appropriate directory (could be done elsewhere) - needed for case of loading in data from outside galfind
+        #print(Path(combined_cat_path).parent)
+        if not Path(combined_cat_path).parent.is_dir():
+            funcs.make_dirs(str(Path(combined_cat_path).parent)+'/')
+           
         combined_cat.remove_column("IDENT")
         combined_cat.write(combined_cat_path, overwrite = True)
         combined_cat.meta["cat_path"] = combined_cat_path

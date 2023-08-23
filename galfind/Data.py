@@ -37,10 +37,13 @@ from joblib import Parallel, delayed
 import contextlib
 import joblib
 from tqdm import tqdm
+import logging
+
 from .Instrument import Instrument, ACS_WFC,WFC3IR, NIRCam, MIRI, Combined_Instrument
 from . import config
 from . import useful_funcs_austind as funcs
 from .decorators import run_in_dir, hour_timer, email_update
+from . import galfind_logger
 
 # GALFIND data object
 class Data:
@@ -67,13 +70,11 @@ class Data:
         #print(self.wht_paths)
 
         # make segmentation maps from image paths if they don't already exist
-        made_new_seg_maps = False
         for i, (band, seg_path) in enumerate(seg_paths.items()):
             #print(band, seg_path)
-            if (seg_path == "" or seg_path == []) and not made_new_seg_maps:
-                self.make_seg_maps()
-                made_new_seg_maps = True
-            # load new segmentation maps
+            if (seg_path == "" or seg_path == []):
+                self.make_seg_map(band)
+            # load segmentation map
             seg_paths[band] = glob.glob(f"{config['DEFAULT']['GALFIND_WORK']}/SExtractor/{self.instrument.instrument_from_band(band)}/{version}/{survey}/{survey}*{band}_{band}*{version}*seg.fits")[0]
         self.seg_paths = dict(sorted(seg_paths.items())) 
         
@@ -91,15 +92,15 @@ class Data:
         #     pass
 
         if is_blank:
-            print(f"{survey} is a BLANK field!")
+            galfind_logger.info(f"{survey} is a BLANK field!")
             self.blank_mask_path = ""
             self.cluster_mask_path = ""
         else:
-            print(f"{survey} is a CLUSTER field!")
+            galfind_logger.info(f"{survey} is a CLUSTER field!")
             self.blank_mask_path = blank_mask_path
             self.cluster_mask_path = cluster_mask_path
             if self.cluster_mask_path == "":
-                print("Making cluster mask. (Not yet implemented; self.cluster_path = '' !!!)")
+                galfind_logger.info("Making cluster mask. (Not yet implemented; self.cluster_path = '' !!!)")
             # try:
             #     self.blank_mask_path = glob.glob(f"{config['DEFAULT']['GALFIND_WORK']}/Masks/{survey}/*blank*")[0]
             # except:
@@ -111,7 +112,7 @@ class Data:
             #     print("Making cluster mask. (Not yet implemented; self.cluster_path = '' !!!)")
     
     @classmethod
-    def from_pipeline(cls, survey, version = "v8", instruments = ['NIRCam', 'ACS_WFC', 'WFC3IR'], excl_bands = [], pix_scales = ['30mas', '60mas']):
+    def from_pipeline(cls, survey, version = "v9", instruments = ['NIRCam', 'ACS_WFC', 'WFC3IR'], excl_bands = [], pix_scales = ['30mas', '60mas']):
         instruments_obj = {'NIRCam': NIRCam(excl_bands = excl_bands), 'ACS_WFC': ACS_WFC(excl_bands = excl_bands), 'WFC3IR': WFC3IR(excl_bands = excl_bands)}
         # Build a combined instrument object
         comb_instrument_created = False
@@ -155,9 +156,8 @@ class Data:
                     survey_im_dirs = {survey: f"{survey}/mosaic_1084_wisptemp2"}
                 elif version == "lit_version":
                     survey_im_dirs = {"JADES-DR1": "JADES/DR1"}
-                elif version == 'v9' or version == "v9_test":
+                elif version == 'v9' or version[:2] == "v9":
                     survey_im_dirs = {survey: f"{survey}/mosaic_1084_wisptemp2"}
-
                 survey_im_dirs = {key: f"/raid/scratch/data/jwst/{value}" for (key, value) in survey_im_dirs.items()}
                 survey_dir = survey_im_dirs[survey]
 
@@ -183,6 +183,7 @@ class Data:
                         #print("Generalize on line 177 of Data.from_pipeline()")
                         im_pixel_scales[band] = 0.03 
                         im_zps[band] = 28.08
+                        galfind_logger.debug(f"im_zp[{band}] = 28.08 only for pixel scale of 0.03 arcsec! This will change if different images are used!")
                 
                 # If no images found for this instrument, don't add it to the combined instrument
                 if len(bands) != 0:
@@ -221,11 +222,19 @@ class Data:
                 for band in instrument.bands:
                     path_found = False
                     for pix_scale in pix_scales:
-                        path = Path(f"{config['DEFAULT']['GALFIND_DATA']}/hst/{survey}/{instrument.name}/{pix_scale}/{instrument.name}_{band}_{survey}_drz.fits")
-                        if path.is_file():
+                        #path = Path(f"{config['DEFAULT']['GALFIND_DATA']}/hst/{survey}/{instrument.name}/{pix_scale}/{instrument.name}_{band}_{survey}_drz.fits")
+                        glob_paths = glob.glob(f"{config['DEFAULT']['GALFIND_DATA']}/hst/{survey}/{instrument.name}/{pix_scale}/*{band.replace('W', 'w').replace('M', 'm')}*_drz.fits")
+                        glob_paths += glob.glob(f"{config['DEFAULT']['GALFIND_DATA']}/hst/{survey}/{instrument.name}/{pix_scale}/*{band}*_drz.fits")
+                        #print(glob_paths)
+                        if len(glob_paths) == 0:
+                            galfind_logger.debug(f"No image path found for {survey} {version} {band} {pix_scale}!")
+                        elif len(glob_paths) == 1:
+                            path = Path(glob_paths[0])
                             any_path_found = True
                             path_found = True
                             break
+                        else:
+                            raise(Exception("Multiple image paths found for {survey} {version} {band} {pix_scale}!"))
 
                     # If no images found, remove band from instrument
                     if not path_found:
@@ -257,25 +266,45 @@ class Data:
                                 wht_types[band] = "MAP_RMS"
 
                             except KeyError:
-                                path = Path(f"{config['DEFAULT']['GALFIND_DATA']}/hst/{survey}/{instrument.name}/{pix_scale}/{instrument.name}_{band}_{survey}_wht.fits")
-                                if path.is_file():
-                                    wht_paths[band] = str(path)
+                                #path = Path(f"{config['DEFAULT']['GALFIND_DATA']}/hst/{survey}/{instrument.name}/{pix_scale}/{instrument.name}_{band}_{survey}_wht.fits")
+                                glob_paths = glob.glob(f"{config['DEFAULT']['GALFIND_DATA']}/hst/{survey}/{instrument.name}/{pix_scale}/*{band.replace('W', 'w').replace('M', 'm')}*_wht.fits")
+                                glob_paths += glob.glob(f"{config['DEFAULT']['GALFIND_DATA']}/hst/{survey}/{instrument.name}/{pix_scale}/*{band}*_wht.fits")
+                                if len(glob_paths) == 1:
+                                    wht_paths[band] = str(Path(glob_paths[0]))
                                     wht_types[band] = 'MAP_WEIGHT'
                                     wht_exts[band] = 0
+                                elif len(glob_paths) > 1:
+                                    galfind_logger.critical(f"Multiple wht image paths found for {survey} {version} {band} {pix_scale}!")
+                                    raise(Exception(f"Multiple wht image paths found for {survey} {version} {band} {pix_scale}!"))
                                 else:
-                                    path = Path(f"{config['DEFAULT']['GALFIND_DATA']}/hst/{survey}/{instrument.name}/{pix_scale}/{instrument.name}_{band}_{survey}_rms.fits")
-                                    if path.is_file():
-                                        wht_paths[band] = str(path)
+                                    galfind_logger.debug(f"No wht image path found for {survey} {version} {band} {pix_scale}!")
+                                    #path = Path(f"{config['DEFAULT']['GALFIND_DATA']}/hst/{survey}/{instrument.name}/{pix_scale}/{instrument.name}_{band}_{survey}_rms.fits")
+                                    glob_paths = glob.glob(f"{config['DEFAULT']['GALFIND_DATA']}/hst/{survey}/{instrument.name}/{pix_scale}/*{band.replace('W', 'w').replace('M', 'm')}*_rms.fits")
+                                    glob_paths += glob.glob(f"{config['DEFAULT']['GALFIND_DATA']}/hst/{survey}/{instrument.name}/{pix_scale}/*{band}*_rms.fits")
+                                    if len(glob_paths) == 1:
+                                        wht_paths[band] = str(Path(glob_paths[0]))
                                         wht_types[band] = 'MAP_RMS'
                                         wht_exts[band] = 0
+                                    elif len(glob_paths) > 1:
+                                        galfind_logger.critical(f"Multiple rms image paths found for {survey} {version} {band} {pix_scale}!")
+                                        raise(Exception(f"Multiple rms image paths found for {survey} {version} {band} {pix_scale}!"))
                                     else:
-                                        wht_paths[band] = ""
-                                        wht_types[band] = "NONE"
-                                        wht_exts[band] = ""
+                                        galfind_logger.critical(f"No wht or rms image paths found for {survey} {version} {band} {pix_scale}!")
+                                        raise(Exception(f"No wht or rms image paths found for {survey} {version} {band} {pix_scale}!"))
+                                        # wht_paths[band] = ""
+                                        # wht_types[band] = "NONE"
+                                        # wht_exts[band] = ""
 
+                        print(band, wht_paths[band])
                         im_pixel_scales[band] = float(pix_scale.split('mas')[0]) * 1e-3 
                         if instrument.name == 'ACS_WFC':
-                            im_zps[band] = -2.5 * np.log10(imheader["PHOTFLAM"]) - 21.10 - 5 * np.log10(imheader["PHOTPLAM"]) + 18.6921
+                            if "PHOTFLAM" in imheader and "PHOTPLAM" in imheader:
+                                im_zps[band] = -2.5 * np.log10(imheader["PHOTFLAM"]) - 21.10 - 5 * np.log10(imheader["PHOTPLAM"]) + 18.6921
+                            elif "ZEROPNT" in imheader:
+                                im_zps[band] = imheader["ZEROPNT"]
+                            else:
+                                raise(Exception(f"ACS_WFC data for {survey} {version} {band} located at {im_paths[band]} must contain either 'ZEROPNT' or 'PHOTFLAM' and 'PHOTPLAM' in its header to calculate its ZP!"))
+                            
                         elif instrument.name == 'WFC3IR':
                         # Taken from Appendix A of https://www.stsci.edu/files/live/sites/www/files/home/hst/instrumentation/wfc3/documentation/instrument-science-reports-isrs/_documents/2020/WFC3-ISR-2020-10.pdf
                             wfc3ir_zps = {'f098M':25.661, 'f105W':26.2637, 'f110W':26.8185, 'f125W':26.231, 'f140W':26.4502, 'f160W':25.9362}
@@ -285,11 +314,11 @@ class Data:
                 if any_path_found:
                     if comb_instrument_created:
                         comb_instrument += instrument
-                        print(f'Added instrument = {instrument.name}')
+                        galfind_logger.debug(f'Added instrument = {instrument.name}')
                     else:
                         comb_instrument = instrument
                         comb_instrument_created = True
-                        print("Making combined_instrument")
+                        galfind_logger.debug("Making combined_instrument")
 
                         # Need to update what it suggests
             elif instrument.name == 'MIRI':
@@ -322,97 +351,6 @@ class Data:
         else:
             raise(Exception(f'Failed to find any data for {survey}'))  
 
-    # @classmethod
-    # def from_NIRCam_pipeline(cls, survey, version = "v8", excl_bands = []):
-    #     instrument = NIRCam(excl_bands = excl_bands)
-    #     # if int(version.split("v")[1]) >= 8:
-    #     #     pmap = "1084"
-    #     # else:
-    #     #     pmap = "0995"
-        
-    #     if version == "v7": #pmap == "0995":
-    #         ceers_im_dirs = {f"CEERSP{str(i + 1)}": f"ceers/mosaic_0995/P{str(i + 1)}" for i in range(10)}
-    #         survey_im_dirs = {"SMACS-0723": "SMACS-0723/mosaic_0995", "GLASS": "glass_0995/mosaic_v5", "MACS-0416": "MACS0416/mosaic_0995_v1", \
-    #                    "El-Gordo": "elgordo/mosaic_0995_v1", "NEP": "NEP/mosaic", "NEP-2": "NEP-2/mosaic_0995", "NGDEEP": "NGDEEP/mosaic", \
-    #                                 "CLIO": "CLIO/mosaic_0995_2"} | ceers_im_dirs
-    #     elif version == "v8": #pmap == "1084":
-    #         ceers_im_dirs = {f"CEERSP{str(i + 1)}": f"ceers/mosaic_1084/P{str(i + 1)}" for i in range(10)}
-    #         survey_im_dirs = {"CLIO": "CLIO/mosaic_1084", "El-Gordo": "elgordo/mosaic_1084", "GLASS": "GLASS-12/mosaic_1084", "NEP": "NEP/mosaic_1084", \
-    #                       "NEP-2": "NEP-2/mosaic_1084", "NEP-3": "NEP-3/mosaic_1084", "SMACS-0723": "SMACS0723/mosaic_1084", "MACS-0416": "MACS0416/mosaic_1084_v3"} | ceers_im_dirs
-    #     elif version == "v8a":
-    #         ceers_im_dirs = {f"CEERSP{str(i + 1)}": f"CEERSP{str(i + 1)}/mosaic_1084_182" for i in range(10)}
-    #         survey_im_dirs = {"CLIO": "CLIO/mosaic_1084_182", "El-Gordo": "elgordo/mosaic_1084_182", "NEP-1": "NEP-1/mosaic_1084_182", "NEP-2": "NEP-2/mosaic_1084_182", \
-    #                           "NEP-3": "NEP-3/mosaic_1084_182", "NEP-4": "NEP-4/mosaic_1084_182", "MACS-0416": "MACS0416/mosaic_1084_182", "GLASS": "GLASS-12/mosaic_1084_182", "SMACS-0723": "SMACS0723/mosaic_1084_182"} | ceers_im_dirs
-    #     elif version == "v8b":
-    #         survey_im_dirs = {survey: f"{survey}/mosaic_1084_wispfix"}
-    #     elif version == "v8c":
-    #         survey_im_dirs = {survey: f"{survey}/mosaic_1084_wispfix2"}
-    #     elif version == "lit_version":
-    #         survey_im_dirs = {"JADES-DR1": "JADES/DR1"}
-                
-    #     survey_im_dirs = {key: f"/raid/scratch/data/jwst/{value}" for (key, value) in survey_im_dirs.items()}
-    #     survey_dir = survey_im_dirs[survey]
-        
-    #     # don't use these if they are in the same folder
-    #     nadams_seg_path_arr = glob.glob(f"{survey_dir}/*_seg.fits")
-    #     nadams_bkg_path_arr = glob.glob(f"{survey_dir}/*_bkg.fits")
-        
-    #     if version == "lit_version":
-    #         im_path_arr = glob.glob(f"{survey_dir}/*_drz.fits")
-    #     else:
-    #         im_path_arr = glob.glob(f"{survey_dir}/*_i2d*.fits")
-    #     im_path_arr = np.array([path for path in im_path_arr if path not in nadams_seg_path_arr and path not in nadams_bkg_path_arr])
-        
-    #     # obtain available bands from imaging without having to hard code these
-    #     bands = np.array([split_path.lower().replace("w", "W").replace("m", "M") for path in im_path_arr for i, split_path in \
-    #             enumerate(path.split("-")[-1].split("/")[-1].split("_")) if split_path.lower().replace("w", "W").replace("m", "M") in instrument.bands])
-
-    #     for band in instrument.bands:
-    #         if band not in bands:
-    #             instrument.remove_band(band)
-        
-    #     im_paths = {}
-    #     im_exts = {}
-    #     seg_paths = {}
-    #     mask_paths = {}
-    #     for band in bands:
-    #         # obtains all image paths from the correct band 
-    #         im_paths_band = [im_path for im_path in im_path_arr if band.lower() in im_path or band in im_path or \
-    #                           band.replace("f", "F").replace("W", "w") in im_path or band.upper() in im_path]
-    #         # checks to see if there is just one singular image for the given band
-    #         if len(im_paths_band) == 1:
-    #             im_paths[band] = im_paths_band[0]
-    #         else:
-    #             raise(Exception(f"Multiple images found for {band} in {survey} {version}"))
-
-    #         im_hdul = fits.open(im_paths[band])
-    #         # obtain appropriate extension from the image
-    #         for i, im_hdu in enumerate(im_hdul):
-    #             if im_hdu.name == "SCI":
-    #                 im_exts[band] = int(i)
-    #                 break
-    #         # need to change this to work if there are no segmentation maps (with the [0] indexing)
-    #         try:
-    #             seg_paths[band] = glob.glob(f"{config['DEFAULT']['GALFIND_WORK']}/SExtractor/{instrument.name}/{version}/{survey}/{survey}*{band}_{band}*{version}*seg.fits")[0]
-    #         except:
-    #             seg_paths[band] = ""
-    #         # include just the masks corresponding to the correct bands
-    #         try:
-    #             mask_paths[band] = glob.glob(f"{config['DEFAULT']['GALFIND_WORK']}/Masks/{survey}/*{band.replace('W', 'w').replace('M', 'm')}*")[0]
-    #         except:
-    #             mask_paths[band] = ""
-    #         try:
-    #             cluster_mask_path = glob.glob(f"{config['DEFAULT']['GALFIND_WORK']}/Masks/{survey}/*cluster*")[0]
-    #         except:
-    #             cluster_mask_path = ""
-    #         try:
-    #             blank_mask_path = glob.glob(f"{config['DEFAULT']['GALFIND_WORK']}/Masks/{survey}/*blank*")[0]
-    #         except:
-    #             blank_mask_path = ""
-    #         # if this mask doesn't exist, create it using automated code (NOT YET IMPLEMENTED!)
-    #         print("cluster mask path = ", cluster_mask_path)
-    #     return cls(instrument, im_paths, im_exts, seg_paths, mask_paths, cluster_mask_path, blank_mask_path, survey, version, is_blank = is_blank_survey(survey))
-
 # %% Overloaded operators
 
     def __repr__(self):
@@ -443,7 +381,7 @@ class Data:
             raise(Exception(f"Cannot add two of the same bands from different instruments together! Culprits: {common_bands}"))
         # add all dictionaries together
         self.__dict__ = {k: self.__dict__.get(k, 0) + data.__dict__.get(k, 0) for k in set(self.__dict__()) | set(data.__dict__())}
-        print(self.__repr__)
+        galfind_logger.debug(self.__repr__)
         return self
     
 # %% Methods
@@ -472,7 +410,7 @@ class Data:
             mask = mask_file.get_mask(hdu=im_hdul[im_ext])
             end_time = time.time()
             elapsed_time = end_time - start_time
-            print(f"Time to load mask for {band}: {float(elapsed_time)} seconds")
+            galfind_logger.debug(f"Time to load mask for {band}: {float(elapsed_time)} seconds")
             #print("mask_path", mask_path)
             return im_data, im_header, seg_data, seg_header, mask
         else:
@@ -520,7 +458,7 @@ class Data:
         return '+'.join(bands)
 
     @run_in_dir(path = config['DEFAULT']['GALFIND_DIR'])
-    def make_seg_map(self, band):
+    def make_seg_map(self, band, sex_config_path = config['SExtractor']['CONFIG_PATH'], params_path = config['SExtractor']['PARAMS_PATH']):
         if type(band) == str or type(band) == np.str_:
             pass
         elif type(band) == list or type(band) == np.array:
@@ -528,17 +466,21 @@ class Data:
         else:
             raise(Exception(f"Cannot make segmentation map for {band}! type(band) = {type(band)} must be either str, list, or np.array!"))
         # SExtractor bash script python wrapper
-        process = subprocess.Popen([f"./make_seg_map.sh", config['DEFAULT']['GALFIND_WORK'], self.im_paths[band], str(self.im_pixel_scales[band]), \
+        process = subprocess.Popen(["./make_seg_map.sh", config['DEFAULT']['GALFIND_WORK'], self.im_paths[band], str(self.im_pixel_scales[band]), \
                                 str(self.im_zps[band]), self.instrument.instrument_from_band(band), self.survey, band, self.version, str(self.wht_paths[band]), \
-                                str(self.wht_exts[band]), self.wht_types[band], str(self.im_exts[band]), f"{config['DEFAULT']['GALFIND_DIR']}/configs/"])
+                                str(self.wht_exts[band]), self.wht_types[band], str(self.im_exts[band]), sex_config_path, params_path])
         process.wait()
-        print(f"Made segmentation map for {self.survey} {self.version} {band}")
+        galfind_logger.info(f"Made segmentation map for {self.survey} {self.version} {band} using config = {sex_config_path}")
 
     def make_seg_maps(self):
         for band in self.instrument.bands:
             self.make_seg_map(band)
     
     def stack_bands(self, bands):
+        for band in bands:
+            if band not in self.im_paths.keys():
+                bands.remove(band)
+                print(f"{band} not available for {self.survey}")
         detection_image_dir = f"{config['DEFAULT']['GALFIND_WORK']}/Stacked_Images/{self.version}/{self.instrument.instrument_from_band(bands[0])}/{self.survey}"
         detection_image_name = f"{self.survey}_{self.combine_band_names(bands)}_{self.version}_stack.fits"
         self.im_paths[self.combine_band_names(bands)] = f'{detection_image_dir}/{detection_image_name}'
@@ -573,7 +515,7 @@ class Data:
             hdu_err = fits.ImageHDU(combined_err, header = header, name = 'ERR')
             hdul = fits.HDUList([primary, hdu, hdu_err])
             hdul.writeto(self.im_paths[self.combine_band_names(bands)], overwrite = True)
-            print(f"Finished stacking bands = {bands}")
+            galfind_logger.info(f"Finished stacking bands = {bands}")
         
         # save forced photometry band parameters
         self.im_shapes[self.combine_band_names(bands)] = self.im_shapes[bands[0]]
@@ -595,8 +537,8 @@ class Data:
         return f"{config['DEFAULT']['GALFIND_WORK']}/SExtractor/{self.instrument.instrument_from_band(band)}/{self.version}/{self.survey}/{self.survey}_{band}_{band}_sel_cat_{self.version}_seg.fits"
 
     @run_in_dir(path = config['DEFAULT']['GALFIND_DIR'])
-    def make_sex_cats(self, forced_phot_band = "f444W"):
-
+    def make_sex_cats(self, forced_phot_band = "f444W", sex_config_path = config['SExtractor']['CONFIG_PATH'], params_path = config['SExtractor']['PARAMS_PATH']):
+        galfind_logger.info(f"Making SExtractor catalogues with: config file = {sex_config_path}; parameters file = {params_path}")
         # make individual forced photometry catalogues
         if type(forced_phot_band) == list:
             if len(forced_phot_band) > 1:
@@ -616,20 +558,21 @@ class Data:
         sex_cats = {}
         for band in sextractor_bands:
             sex_cat_path = self.sex_cat_path(band, self.forced_phot_band)
+            galfind_logger.debug(f"band = {band}, sex_cat_path = {sex_cat_path} in Data.make_sex_cats")
             # if not run before
             if not Path(sex_cat_path).is_file():
                 # SExtractor bash script python wrapper
                 if self.im_shapes[self.forced_phot_band] == self.im_shapes[band] and self.wht_types[self.forced_phot_band] == self.wht_types[band]:
-                    process = subprocess.Popen([f"./make_sex_cat.sh", config['DEFAULT']['GALFIND_WORK'], self.im_paths[band], str(self.im_pixel_scales[band]), \
+                    process = subprocess.Popen(["./make_sex_cat.sh", config['DEFAULT']['GALFIND_WORK'], self.im_paths[band], str(self.im_pixel_scales[band]), \
                                         str(self.im_zps[band]), self.instrument.instrument_from_band(band), self.survey, band, self.version, \
                                             self.forced_phot_band, self.im_paths[self.forced_phot_band], str(self.wht_paths[band]), str(self.wht_exts[band]), \
                                             str(self.im_exts[band]), self.wht_paths[self.forced_phot_band], str(self.im_exts[self.forced_phot_band]), self.wht_types[band], 
-                                            str(self.wht_exts[self.forced_phot_band]), f"{config['DEFAULT']['GALFIND_DIR']}/configs/"])
+                                            str(self.wht_exts[self.forced_phot_band]), sex_config_path, params_path])
                     process.wait()
                 # Use photutils
                 else:
                     self.forced_photometry(band, self.forced_phot_band)
-            print(f"Finished making SExtractor catalogue for {self.survey} {self.version} {band}!")
+            galfind_logger.info(f"Finished making SExtractor catalogue for {self.survey} {self.version} {band}!")
             sex_cats[band] = sex_cat_path
         self.sex_cats = sex_cats
     
@@ -675,6 +618,7 @@ class Data:
             # save table
             os.makedirs(save_dir, exist_ok = True)
             master_tab.write(self.sex_cat_master_path, format = "fits", overwrite = True)
+            galfind_logger.info(f"Saved combined SExtractor catalogue as {self.sex_cat_master_path}")
         
     def make_sex_plusplus_cat(self):
         pass
@@ -1343,21 +1287,6 @@ def tqdm_joblib(tqdm_object):
     finally:
         joblib.parallel.BatchCompletionCallBack = old_batch_callback
         tqdm_object.close()
-
-# def correct_medium_band_syntax(fits_table, save_name, old_band_name):
-#     if log.lower_case_m[survey]: # if medium band correction is required
-#         new_band_name = old_band_name[:-1] + "M"
-#         fits_columns = []
-#         column_labels = fits_table.columns.names
-#         column_formats = fits_table.columns.formats
-#         for i in range(len(column_labels)):
-#             # change the lower case m for an upper case M
-#             if column_labels[i][-len(old_band_name):] == old_band_name:
-#                 column_labels[i] = column_labels[i][:-len(old_band_name)] + new_band_name
-#             loc_col = fits.Column(name = column_labels[i], array = fits_table[column_labels[i]], format = column_formats[i])
-#             fits_columns.append(loc_col)
-#         out_fits_table = fits.BinTableHDU.from_columns(fits_columns)
-#         out_fits_table.writeto(save_name, overwrite = True)
         
 def is_blank_survey(survey):
     cluster_surveys = ["El-Gordo", "MACS-0416", "CLIO", "SMACS-0723"]

@@ -45,15 +45,13 @@ class EAZY(SED_code):
     
     def make_in(self, cat, fix_z = False, *args, **kwargs):
         #print("MAKE_IN_EAZY_CAT.DATA = ", cat.data)
-        eazy_in_dir = f"{config['EAZY']['EAZY_DIR']}/input/{cat.data.instrument.name}/{cat.data.version}/{cat.data.survey}"
+        eazy_in_dir = f"{config['EAZY']['EAZY_DIR']}/input/{cat.instrument.name}/{cat.version}/{cat.survey}"
         split_name = cat.cat_name.split('_')
         if split_name[-1] == "masked.fits":
             eazy_in_name = cat.cat_name.replace('.fits', f'_{cat.cat_creator.min_flux_pc_err}pc.in')
         else:
             eazy_in_name = f"{'_'.join(cat.cat_name.split('pc')[0].split('_')[:-1])}_{cat.cat_creator.min_flux_pc_err}pc.in"
         eazy_in_path = f"{eazy_in_dir}/{eazy_in_name}"
-        
-        #print("EAZY make_in = ", cat.cat_name, eazy_in_name)
         if not Path(eazy_in_path).is_file():
             # 1) obtain input data
             IDs = np.array([gal.ID for gal in cat.gals]) # load IDs
@@ -64,11 +62,11 @@ class EAZY(SED_code):
             else:
                 redshifts = None
             # Define SED input bands on the fly
-            SED_input_bands = cat.data.instrument.bands
+            SED_input_bands = cat.instrument.bands
             # load photometry 
             phot, phot_err = self.load_photometry(cat, SED_input_bands, u.uJy, -99., None)
             # Get filter codes (referenced to GALFIND/EAZY/jwst_nircam_FILTER.RES.info) for the given instrument and bands
-            filt_codes = [EAZY_FILTER_CODES[cat.data.instrument.instrument_from_band(band)][band] for band in SED_input_bands]
+            filt_codes = [EAZY_FILTER_CODES[cat.instrument.instrument_from_band(band)][band] for band in SED_input_bands]
             
             # Make input file
             #print(IDs, phot, phot_err, redshifts, len(IDs), len(phot), len(phot_err), len(redshifts))
@@ -191,7 +189,7 @@ class EAZY(SED_code):
         # Catch custom arguments?
         # Initialize photo-z object with above parameters
         fit = eazy.photoz.PhotoZ(param_file = default_param_path, zeropoint_file = None,
-                                params = params, load_prior = False, load_products = False, translate_file = translate_file)
+                                params = params, load_prior = False, load_products = False, translate_file = translate_file, n_proc = n_proc)
         # Fit templates to catalog                          
         fit.fit_catalog(n_proc = n_proc, get_best_fit = True)
         
@@ -199,8 +197,8 @@ class EAZY(SED_code):
         if run_lowz:
             for z_max in z_max_lowz:
                 params['Z_MAX'] = z_max # Setting maximum Z
-                lowz_fit = eazy.photoz.PhotoZ(param_file = default_param_path,  zeropoint_file = None,
-                                    params = params, load_prior = False, load_products = False, translate_file = translate_file)
+                lowz_fit = eazy.photoz.PhotoZ(param_file = default_param_path, zeropoint_file = None,
+                                    params = params, load_prior = False, load_products = False, translate_file = translate_file, n_proc = n_proc)
                 lowz_fit.fit_catalog(n_proc = n_proc, get_best_fit = True)
                 lowz_fits[funcs.lowz_zmax(z_max)] = lowz_fit
 
@@ -288,16 +286,16 @@ class EAZY(SED_code):
 
     def save_sed(self, id, fit, lowz_fits, percentiles, percentiles_lowz, templates, out_path):
         # Find location of matching Id
-        pos = [fit.OBJID == id]
+        pos = np.argwhere(fit.OBJID == id)
         # Find percentiles
-        percentiles_run = percentiles[pos]
-        percentiles_run = (percentiles_run[0][0], percentiles_run[0][1])
+        percentiles_run = np.ravel(np.array(percentiles[pos]))
+        percentiles_run = (percentiles_run[0], percentiles_run[1])
         self.save_fit(id, fit, out_path = out_path, percentiles_run = percentiles_run, out_flux_unit = 'mag', template = templates)
         
         if type(percentiles_lowz) != bool:
             for name, lowz_fit, percentiles in zip(lowz_fits.keys(), lowz_fits.values(), percentiles_lowz):
-                percentiles_run_lowz = percentiles[pos]
-                percentiles_run_lowz = (percentiles_run_lowz[0][0], percentiles_run_lowz[0][1])
+                percentiles_run_lowz = np.ravel(np.array(percentiles[pos]))
+                percentiles_run_lowz = (percentiles_run_lowz[0], percentiles_run_lowz[1])
                 self.save_fit(id, lowz_fit, out_path = out_path, percentiles_run = percentiles_run_lowz, out_flux_unit = 'mag', template = templates, lowz = True, zmax_name = f"_{name}")
 
     def save_fit(self, id, photz_obj, percentiles_run=[], out_flux_unit='mag', id_is_idx=False,template='BC03', out_path='', lowz=False, zmax_name = ""):

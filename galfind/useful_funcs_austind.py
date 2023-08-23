@@ -26,6 +26,7 @@ import json
 from tqdm import tqdm
 import seaborn as sns
 from scipy.interpolate import interp1d
+import inspect
 
 from . import config
 from . import astropy_cosmo
@@ -219,6 +220,18 @@ def GALFIND_cat_path(SED_code_name, instrument_name, version, survey, forced_pho
     cat_name = f"{survey}_MASTER_Sel-{forced_phot_band_name}_{version}_{cat_type}{masked_name}_{str(min_flux_pc_err)}pc_{SED_code_name}.fits"
     return f"{cat_dir}/{cat_name}"
 
+def GALFIND_final_cat_path(survey, version, instrument_name, sel_band_name, min_pc_err, SED_code_name, masked = True):
+    cat_dir = f"{config['DEFAULT']['GALFIND_WORK']}/Catalogues/{version}/{instrument_name}/{survey}"
+    if masked:
+        cat_name = f"{survey}_MASTER_Sel-{sel_band_name}_{version}_loc_depth_masked_{str(min_pc_err)}pc_{SED_code_name}_matched_selection.fits"
+    else:
+        raise(Exception("masked = False currently not implemented!"))
+    return f"{cat_dir}/{cat_name}"
+
+def inspect_info():
+  info = inspect.getframeinfo(inspect.stack()[1][0])
+  return info.filename, info.function, info.lineno
+  
 # Simulations
 class Simulation(ABC):
     
