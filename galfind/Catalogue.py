@@ -403,23 +403,27 @@ class Catalogue(Catalogue_Base):
                     for name in col_names:
                         gal_data = np.append(gal_data, funcs.percentiles_from_PDF([-99.]))
                 else:
-                    path = f"{config['DEFAULT']['GALFIND_WORK']}/UV_PDFs/{self.data.version}/{self.data.instrument.name}/{self.survey}/{code_name}+{str(self.cat_creator.min_flux_pc_err)}pc/{templates}/Amplitude/{gal_copy.ID}.txt"
-                    #print(path)
-                    if not Path(path).is_file():
-                        #print(gal.phot_obs.instrument.bands)
-                        for name in ["Amplitude", "Beta"]:
-                            if name == "Beta":
-                                plot = True
-                            else:
-                                plot = False
-                            funcs.percentiles_from_PDF(gal.phot.SED_results[code_name][templates].phot_rest.open_UV_fit_PDF(UV_PDF_path, name, gal_copy.ID, gal_copy.phot.SED_results[code_name][templates].ext_src_corrs["UV"], plot = plot))
+                    # path = f"{config['DEFAULT']['GALFIND_WORK']}/UV_PDFs/{self.data.version}/{self.data.instrument.name}/{self.survey}/{code_name}+{str(self.cat_creator.min_flux_pc_err)}pc/{templates}/Amplitude/{gal_copy.ID}.txt"
+                    # #print(path)
+                    # if not Path(path).is_file():
+                    #print(gal.phot_obs.instrument.bands)
+                    for name in ["Amplitude", "Beta"]:
+                        if name == "Beta":
+                            plot = True
+                        else:
+                            plot = False
+                        try:
+                            gal.phot.SED_results[code_name][templates].phot_rest.open_UV_fit_PDF(UV_PDF_path, name, gal_copy.ID, gal_copy.phot.SED_results[code_name][templates].ext_src_corrs["UV"], plot = plot)
+                        except:
+                            print(f"Fitting not performed for {gal.ID}")
+                            break
                     for name in col_names:
                         #print(f"{gal.ID}: {gal.phot_rest.phot_obs.instrument.bands}")
-                        #try:
-                            gal_data = np.append(gal_data, funcs.percentiles_from_PDF(gal.phot.SED_results[code_name][templates].phot_rest.open_UV_fit_PDF(UV_PDF_path, name, gal_copy.ID, gal_copy.phot.SED_results[code_name][templates].ext_src_corrs["UV"]))) # not currently saving to object
-                        #except:
-                        #    print(f"EXCEPT ID = {gal.ID}")
-                        #    gal_data = np.append(gal_data, funcs.percentiles_from_PDF([-99.]))
+                        try:
+                            gal_data = np.append(gal_data, funcs.percentiles_from_PDF(gal.phot.SED_results[code_name][templates].phot_rest.open_UV_fit_PDF(UV_PDF_path, name, gal_copy.ID, gal_copy.phot.SED_results[code_name][templates].ext_src_corrs["UV"])))
+                        except:
+                            print(f"EXCEPT ID = {gal.ID}")
+                            gal_data = np.append(gal_data, funcs.percentiles_from_PDF([-99.]))
                 gal_data = np.array(gal_data).flatten()
                 if i == 0: # if the first column
                     cat_data = gal_data
@@ -431,7 +435,7 @@ class Catalogue(Catalogue_Base):
                 UV_tab = Table(cat_data, names = fits_col_names)
                 UV_tab.write(UV_cat_name, format = "fits", overwrite = True)
                 self.UV_tab = UV_tab
-                print(f"Writing UV table to {UV_cat_name}")
+                #print(f"Writing UV table to {UV_cat_name}")
             
             else:
                 self.UV_tab = Table.read(UV_cat_name, character_as_bytes = False)

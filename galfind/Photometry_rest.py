@@ -189,7 +189,10 @@ class Photometry_rest(Photometry):
         if z_PDF != None:
             # vary within redshift errors
             pass
-        popt_arr = np.array([curve_fit(Photometry_rest.beta_slope_power_law_func, self.rest_UV_phot.wav, flux, maxfev = 1_000)[0] for flux in fluxes])
+        try:
+            popt_arr = np.array([curve_fit(Photometry_rest.beta_slope_power_law_func, self.rest_UV_phot.wav, flux, maxfev = 10_000)[0] for flux in fluxes])
+        except:
+            popt_arr = []
         if len(popt_arr) > 1:
             amplitude_PDF = popt_arr.T[0]
             beta_PDF = popt_arr.T[1]

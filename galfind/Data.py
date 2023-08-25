@@ -1204,10 +1204,10 @@ def plot_depths(im_data, depth_dir, band, seg_data, xcoord, ycoord, offset, r, s
 
 # depth codes (taken from print_depth_table.py)
 
-def calc_5sigma_depth(x_pix, y_pix, im_data, r, zero_point, subpix = 5):
+def calc_5sigma_depth(x_pix, y_pix, im_data, r, zero_point, subpix = 5, n_aper = 200):
     flux, fluxerr, flag = sep.sum_circle(im_data, x_pix, y_pix, r, subpix = subpix)
-    #if len(flux) == 1:
-    #    raise(Exception("len(flux)=1 in calc_5sigma_depth"))
+    if len(flux) != n_aper:
+        raise(Exception(f"len(flux)!={n_aper} in calc_5sigma_depth"))
     med_flux = np.nanmedian(flux)
     mad_5sigma_flux = np.nanmedian(abs(flux - med_flux)) * 1.4826 * 5
     #print(mad_5sigma_flux)
@@ -1219,7 +1219,7 @@ def calc_5sigma_depth(x_pix, y_pix, im_data, r, zero_point, subpix = 5):
 
 # local depth sextractor catalogue (from correct_sextractor_photometry.py)
 
-def calc_loc_depths(ra_gal, dec_gal, aper_coords_loc, xcoord, ycoord, im_data, r, survey, band, separation = 1. * u.arcmin, n_samples = 1, \
+def calc_loc_depths(ra_gal, dec_gal, aper_coords, xcoord, ycoord, im_data, r, survey, band, separation = 1. * u.arcmin, n_samples = 1, \
                     n_aper = 200, plot = False, zero_point = None, max_separation = 10.0 * u.deg):
     
     start_time = time.time()
@@ -1235,9 +1235,13 @@ def calc_loc_depths(ra_gal, dec_gal, aper_coords_loc, xcoord, ycoord, im_data, r
         
         gal_coords = SkyCoord(ra = ra_gal_sample * u.degree, dec = dec_gal_sample * u.degree)
         # crop aper_coords_loc so that it only contains empty regions in the vicinity of the galaxy sample
-        mask = (aper_coords_loc.ra >= gal_coords.ra.min() - separation) & (aper_coords_loc.ra <= gal_coords.ra.max() + separation) & \
-            (aper_coords_loc.dec >= gal_coords.dec.min() - separation) & (aper_coords_loc.dec <= gal_coords.dec.max() + separation)
-        aper_coords_loc = aper_coords_loc[mask]
+        # print("Quicker local depth parameters (below):")
+        # print("RA range:", gal_coords.ra.min() - separation, gal_coords.ra.max() + separation)
+        # print("DEC range:", gal_coords.dec.min() - separation, gal_coords.dec.max() + separation)
+        # print(f"len(aper_coords) = {len(aper_coords)}")
+        mask = (aper_coords.ra >= gal_coords.ra.min() - separation) & (aper_coords.ra <= gal_coords.ra.max() + separation) & \
+            (aper_coords.dec >= gal_coords.dec.min() - separation) & (aper_coords.dec <= gal_coords.dec.max() + separation)
+        aper_coords_loc = aper_coords[mask]
         idx1, idx2, sep2d, dist3d = search_around_sky(gal_coords, aper_coords_loc, max_separation)
         
         for i in range(len(gal_coords)): #(, desc = f"Calculating local depth sample {n}", leave = False):
@@ -1248,7 +1252,7 @@ def calc_loc_depths(ra_gal, dec_gal, aper_coords_loc, xcoord, ycoord, im_data, r
             aper_idx_sorted = (np.argsort(sep2d_loc))[0 : n_aper] # use only closest n_aper apertures for each galaxy
             xcoord_loc = xcoord[aper_idx_sorted]
             ycoord_loc = ycoord[aper_idx_sorted]
-            loc_depths.append(calc_5sigma_depth(xcoord_loc, ycoord_loc, im_data, r, zero_point))
+            loc_depths.append(calc_5sigma_depth(xcoord_loc, ycoord_loc, im_data, r, zero_point, n_aper = n_aper))
             
     end_time = time.time()
     print("Local depth calculation took {} seconds!".format(np.round(end_time - start_time, 2)))
