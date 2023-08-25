@@ -200,7 +200,7 @@ class EAZY(SED_code):
                 lowz_fit = eazy.photoz.PhotoZ(param_file = default_param_path, zeropoint_file = None,
                                     params = params, load_prior = False, load_products = False, translate_file = translate_file, n_proc = n_proc)
                 lowz_fit.fit_catalog(n_proc = n_proc, get_best_fit = True)
-                lowz_fits[funcs.lowz_zmax(z_max)] = lowz_fit
+                lowz_fits[funcs.lowz_label(z_max)] = lowz_fit
 
         # Save backup of fit in hdf5 file
         if write_hdf:
