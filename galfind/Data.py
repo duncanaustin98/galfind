@@ -1234,14 +1234,15 @@ def calc_loc_depths(ra_gal, dec_gal, aper_coords, xcoord, ycoord, im_data, r, su
         #print(len(ra_gal_sample))
         
         gal_coords = SkyCoord(ra = ra_gal_sample * u.degree, dec = dec_gal_sample * u.degree)
-        # crop aper_coords_loc so that it only contains empty regions in the vicinity of the galaxy sample
-        # print("Quicker local depth parameters (below):")
-        # print("RA range:", gal_coords.ra.min() - separation, gal_coords.ra.max() + separation)
-        # print("DEC range:", gal_coords.dec.min() - separation, gal_coords.dec.max() + separation)
-        # print(f"len(aper_coords) = {len(aper_coords)}")
-        mask = (aper_coords.ra >= gal_coords.ra.min() - separation) & (aper_coords.ra <= gal_coords.ra.max() + separation) & \
-            (aper_coords.dec >= gal_coords.dec.min() - separation) & (aper_coords.dec <= gal_coords.dec.max() + separation)
-        aper_coords_loc = aper_coords[mask]
+        # # crop aper_coords_loc so that it only contains empty regions in the vicinity of the galaxy sample
+        # # print("Quicker local depth parameters (below):")
+        # # print("RA range:", gal_coords.ra.min() - separation, gal_coords.ra.max() + separation)
+        # # print("DEC range:", gal_coords.dec.min() - separation, gal_coords.dec.max() + separation)
+        # # print(f"len(aper_coords) = {len(aper_coords)}")
+        # mask = (aper_coords.ra >= gal_coords.ra.min() - separation) & (aper_coords.ra <= gal_coords.ra.max() + separation) & \
+        #     (aper_coords.dec >= gal_coords.dec.min() - separation) & (aper_coords.dec <= gal_coords.dec.max() + separation)
+        # aper_coords_loc = aper_coords[mask]
+        aper_coords_loc = aper_coords
         idx1, idx2, sep2d, dist3d = search_around_sky(gal_coords, aper_coords_loc, max_separation)
         
         for i in range(len(gal_coords)): #(, desc = f"Calculating local depth sample {n}", leave = False):
