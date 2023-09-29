@@ -38,9 +38,9 @@ def calc_UV_properties(surveys, version, instruments, xy_offsets, aper_diams, co
 
 if __name__ == "__main__":
     version = "v9" #config["DEFAULT"]["VERSION"] #"v9_sex_test1"
-    instruments = ['NIRCam'] #, "ACS_WFC"] #, 'WFC3IR'] # Can leave this - if there is no data for an instrument it is removed automatically
+    instruments = ['NIRCam', "ACS_WFC"] #, 'WFC3IR'] # Can leave this - if there is no data for an instrument it is removed automatically
     cat_type = "loc_depth"
-    surveys = ["SMACS-0723"] #[f"CEERSP{int(i + 1)}" for i in range(0, 10)] [config["DEFAULT"]["SURVEY"]] #  #
+    surveys = ["CEERSP1"] #[f"CEERSP{int(i + 1)}" for i in range(0, 10)] [config["DEFAULT"]["SURVEY"]] #  #
     aper_diams = [0.32] * u.arcsec
     xy_offsets = [[0, 0] for i in range(0, 10)]
     code_names = ["EAZY", "EAZY", "EAZY"] #[EAZY(), EAZY(), EAZY()] #, "EAZY"] #[LePhare()]

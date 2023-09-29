@@ -112,7 +112,7 @@ def errs_to_log(data, data_err):
     log_u1 = np.log10(data + data_err[1]) - np.log10(data)
     return np.log10(data), [log_l1, log_u1]
 
-def PDF_hist(PDF, save_dir, obs_name, ID, show = True, save = True):
+def PDF_hist(PDF, save_dir, obs_name, ID, show = True, save = True, rest_UV_wavs = [1268., 2580.]):
     if not all(value == -99. for value in PDF):
         plt.hist(PDF, label = ID)
         #print(f"Plotting {obs_name} hist for {ID}")
@@ -120,7 +120,7 @@ def PDF_hist(PDF, save_dir, obs_name, ID, show = True, save = True):
         if show:
             plt.legend()
             if save:
-                path = f"{split_dir_name(PDF_path(save_dir, obs_name, ID), 'dir')}/hist/{ID}.png"
+                path = f"{split_dir_name(PDF_path(save_dir, obs_name, ID, rest_UV_wavs), 'dir')}/hist/{ID}.png"
                 make_dirs(path)
                 #print(f"Saving hist: {path}")
                 plt.savefig(path)
@@ -141,8 +141,8 @@ def save_PDF(PDF, header, path):
         #print(f"Saving PDF: {path}")
         np.savetxt(path, PDF, header = header)
 
-def PDF_path(save_dir, obs_name, ID):
-    return f"{save_dir}/{obs_name}/{ID}"
+def PDF_path(save_dir, obs_name, ID, rest_UV_wavs = [1268., 2580.]):
+    return f"{save_dir}/{obs_name}/{int(rest_UV_wavs[0])}-{int(rest_UV_wavs[1])}Angstrom/{ID}"
 
 def percentiles_from_PDF(PDF):
     if all(val == -99. for val in PDF):

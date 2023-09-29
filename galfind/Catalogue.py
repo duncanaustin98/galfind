@@ -25,6 +25,7 @@ from .Catalogue_Creator import GALFIND_Catalogue_Creator
 from . import SED_code, LePhare, EAZY, Bagpipes
 from . import config
 from . import Catalogue_Base
+from . import Photometry_rest
 from .Instrument import NIRCam, ACS_WFC, WFC3IR, Instrument, Combined_Instrument
 
 class Catalogue(Catalogue_Base):
@@ -391,7 +392,7 @@ class Catalogue(Catalogue_Base):
             print("Already masked!")
     
     def make_UV_fit_cat(self, code_name = "EAZY", templates = "fsps_larson", UV_PDF_path = config["RestUVProperties"]["UV_PDF_PATH"], col_names = ["Beta", "flux_lambda_1500", "flux_Jy_1500", "M_UV", "A_UV", "L_obs", "L_int", "SFR"], \
-                        join_tables = True, skip_IDs = []):
+                        join_tables = True, skip_IDs = [], rest_UV_wavs_arr = [[1268., 2580.] * u.Angstrom, [1250., 3000.] * u.Angstrom]):
         UV_cat_name = f"{funcs.split_dir_name(self.cat_path, 'dir')}/UV_properties_{code_name}_{templates}_{str(self.cat_creator.min_flux_pc_err)}pc.fits"
         if not Path(UV_cat_name).is_file():
             cat_data = []
@@ -400,36 +401,41 @@ class Catalogue(Catalogue_Base):
                 gal_copy = gal #copy.deepcopy(gal)
                 gal_data = np.array([gal_copy.ID])
                 if gal.ID in skip_IDs:
-                    for name in col_names:
-                        gal_data = np.append(gal_data, funcs.percentiles_from_PDF([-99.]))
+                    for rest_UV_wavs in rest_UV_wavs_arr:
+                        for name in col_names:
+                            gal_data = np.append(gal_data, funcs.percentiles_from_PDF([-99.]))
                 else:
                     # path = f"{config['DEFAULT']['GALFIND_WORK']}/UV_PDFs/{self.data.version}/{self.data.instrument.name}/{self.survey}/{code_name}+{str(self.cat_creator.min_flux_pc_err)}pc/{templates}/Amplitude/{gal_copy.ID}.txt"
                     # #print(path)
                     # if not Path(path).is_file():
                     #print(gal.phot_obs.instrument.bands)
-                    for name in ["Amplitude", "Beta"]:
-                        if name == "Beta":
-                            plot = True
-                        else:
-                            plot = False
-                        try:
-                            gal.phot.SED_results[code_name][templates].phot_rest.open_UV_fit_PDF(UV_PDF_path, name, gal_copy.ID, gal_copy.phot.SED_results[code_name][templates].ext_src_corrs["UV"], plot = plot)
-                        except:
-                            print(f"Fitting not performed for {gal.ID}")
-                            break
-                    for name in col_names:
-                        #print(f"{gal.ID}: {gal.phot_rest.phot_obs.instrument.bands}")
-                        try:
-                            gal_data = np.append(gal_data, funcs.percentiles_from_PDF(gal.phot.SED_results[code_name][templates].phot_rest.open_UV_fit_PDF(UV_PDF_path, name, gal_copy.ID, gal_copy.phot.SED_results[code_name][templates].ext_src_corrs["UV"])))
-                        except:
-                            print(f"EXCEPT ID = {gal.ID}")
-                            gal_data = np.append(gal_data, funcs.percentiles_from_PDF([-99.]))
+                    for rest_UV_wavs in rest_UV_wavs_arr:
+                        for name in ["Amplitude", "Beta"]:
+                            if name == "Beta":
+                                plot = True
+                            else:
+                                plot = False
+                            try:
+                                gal.phot.SED_results[code_name][templates].phot_rest[Photometry_rest.rest_UV_wavs_name(rest_UV_wavs)].open_UV_fit_PDF(UV_PDF_path, name, gal_copy.ID, gal_copy.phot.SED_results[code_name][templates].ext_src_corrs["UV"], plot = plot, rest_UV_wavs = rest_UV_wavs)
+                            except:
+                                print(f"Fitting not performed for {gal.ID}")
+                                break
+                        for name in col_names:
+                            #print(f"{gal.ID}: {gal.phot_rest.phot_obs.instrument.bands}")
+                            try:
+                                gal_data = np.append(gal_data, funcs.percentiles_from_PDF(gal.phot.SED_results[code_name][templates].phot_rest[Photometry_rest.rest_UV_wavs_name(rest_UV_wavs)].open_UV_fit_PDF(UV_PDF_path, name, gal_copy.ID, gal_copy.phot.SED_results[code_name][templates].ext_src_corrs["UV"])))
+                            except:
+                                print(f"EXCEPT ID = {gal.ID}")
+                                gal_data = np.append(gal_data, funcs.percentiles_from_PDF([-99.]))
+                        
                 gal_data = np.array(gal_data).flatten()
                 if i == 0: # if the first column
                     cat_data = gal_data
                 else:
                     cat_data = np.vstack([cat_data, gal_data])
-                UV_col_names = np.array([[name, f"{name}_l1", f"{name}_u1"] for name in col_names]).flatten()
+                UV_col_names = np.array([[f"{name}_{Photometry_rest.rest_UV_wavs_name(rest_UV_wavs.value)}", f"{name}_l1_{Photometry_rest.rest_UV_wavs_name(rest_UV_wavs.value)}", \
+                                          f"{name}_u1_{Photometry_rest.rest_UV_wavs_name(rest_UV_wavs.value)}"]  for rest_UV_wavs in rest_UV_wavs_arr for name in col_names]).flatten()
+                #print(UV_col_names)
                 fits_col_names = np.concatenate((np.array(["ID"]), UV_col_names))
                 funcs.make_dirs(self.cat_path)
                 UV_tab = Table(cat_data, names = fits_col_names)
