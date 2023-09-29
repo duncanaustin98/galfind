@@ -35,8 +35,8 @@ class Photometry_rest(Photometry):
         return cls(phot, np.float(fits_cat_row[code.galaxy_properties["z_phot"]]))
     
     @classmethod
-    def from_phot(cls, phot, z):
-        return cls(phot.instrument, phot.flux_Jy, phot.flux_Jy_errs, phot.loc_depths, z)
+    def from_phot(cls, phot, z, rest_UV_wav_lims):
+        return cls(phot.instrument, phot.flux_Jy, phot.flux_Jy_errs, phot.loc_depths, z, rest_UV_wav_lims)
     
     # STILL NEED TO LOOK FURTHER INTO THIS
     def __deepcopy__(self, memo):
@@ -88,6 +88,17 @@ class Photometry_rest(Photometry):
     @property
     def rest_UV_band_flux_Jy(self):
         return self.flux_Jy[self.rest_UV_band_index]
+    
+    @staticmethod
+    def rest_UV_wavs_name(rest_UV_wavs):
+        try:
+            rest_UV_wavs.unit
+            rest_UV_wavs = rest_UV_wavs.to(u.Angstrom).value
+            #print("Converted to Angstrom")
+        except:
+            #print("Assumed the unitless value is inserted in Angstrom!")
+            pass
+        return f"{str(int(rest_UV_wavs[0]))}-{str(int(rest_UV_wavs[1]))}Angstrom"
     
     def make_rest_UV_phot(self):
         phot_rest_copy = deepcopy(self)
@@ -171,7 +182,7 @@ class Photometry_rest(Photometry):
         
         plt.clf()
 
-    def basic_beta_calc(self, incl_errs = True):
+    def basic_beta_calc(self, incl_errs = True, output_errs = False):
         self.make_rest_UV_phot()
         #print(self.rest_UV_phot.wav, self.rest_UV_phot.flux_lambda)
         try:
@@ -180,11 +191,15 @@ class Photometry_rest(Photometry):
             else:
                 popt, pcov = curve_fit(Photometry_rest.beta_slope_power_law_func, self.rest_UV_phot.wav, self.rest_UV_phot.flux_lambda, maxfev = 1_000)
             beta = popt[1]
-            return beta
+            if output_errs:
+                beta_err = np.sqrt(pcov[1][1])
+                return beta, beta_err
+            else:
+                return beta
         except:
             return None
         
-    def basic_m_UV_calc(self, UV_ext_src_corr, incl_errs = True):
+    def basic_m_UV_calc(self, UV_ext_src_corr, incl_errs = True, output_errs = False):
         self.make_rest_UV_phot()
         try:
             if incl_errs:
@@ -319,7 +334,7 @@ class Photometry_rest(Photometry):
         
         if plot_PDF:
             funcs.PDF_hist(PDF, save_dir, obs_name, ID, show = True, save = True)
-        funcs.save_PDF(PDF, f"{obs_name}, units = {unit}, iters = {len(PDF)}", funcs.PDF_path(save_dir, obs_name, ID))
+        funcs.save_PDF(PDF, f"{obs_name}, units = {unit}, iters = {len(PDF)}", funcs.PDF_path(save_dir, obs_name, ID, self.rest_UV_wavs))
     
     def open_UV_fit_PDF(self, save_dir, obs_name, ID, UV_ext_src_corr = None, plot = True):
         if obs_name == "flux_lambda_1500":
@@ -361,7 +376,7 @@ class Photometry_rest(Photometry):
     # this function and the one below could be included in the open_UV_fit_PDF
     def load_UV_fit_PDF(self, save_dir, obs_name, ID):
         # load PDF from directory
-        PDF = np.array(np.loadtxt(f"{funcs.PDF_path(save_dir, obs_name, ID)}.txt"))
+        PDF = np.array(np.loadtxt(f"{funcs.PDF_path(save_dir, obs_name, ID, self.rest_UV_wav_lims)}.txt"))
         if obs_name == "Amplitude":
             self.amplitude_PDF = PDF
         elif obs_name == "Beta":

@@ -17,8 +17,8 @@ from . import useful_funcs_austind as funcs
 
 class SED_result:
     
-    def __init__(self, phot, z, chi_sq, z_PDF_path, SED_path, code_name, lowz_zmax, templates):
-        self.phot_rest = Photometry_rest.from_phot(phot, z)
+    def __init__(self, phot, z, chi_sq, z_PDF_path, SED_path, code_name, lowz_zmax, templates, rest_UV_wavs_arr = [[1268., 2580.]]):
+        self.phot_rest = {Photometry_rest.rest_UV_wavs_name(rest_UV_wavs): Photometry_rest.from_phot(phot, z, rest_UV_wavs) for rest_UV_wavs in rest_UV_wavs_arr}
         self.z = z
         self.chi_sq = chi_sq
         self.z_PDF_path = z_PDF_path
