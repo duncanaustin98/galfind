@@ -21,8 +21,10 @@ def pipeline(surveys, version,instruments, xy_offsets, aper_diams, code_names, l
         # make appropriate galfind catalogue creator for each aperture diameter
         cat_creator = GALFIND_Catalogue_Creator(cat_type, aper_diams[0], pc_err)
         for survey, xy_offset in zip(surveys, xy_offsets):
-            Catalogue.from_pipeline(survey = survey, version = version, instruments = instruments, aper_diams = aper_diams, cat_creator = cat_creator, code_names = code_names, lowz_zmax = lowz_zmax, xy_offset = xy_offset, \
+            cat = Catalogue.from_pipeline(survey = survey, version = version, instruments = instruments, aper_diams = aper_diams, cat_creator = cat_creator, code_names = code_names, lowz_zmax = lowz_zmax, xy_offset = xy_offset, \
                                           forced_phot_band = forced_phot_band, excl_bands = excl_bands, loc_depth_min_flux_pc_errs = min_flux_pc_errs, n_loc_depth_samples = n_loc_depth_samples, templates_arr = eazy_templates, fast = fast)
+            #cat.data.calc_unmasked_area(forced_phot_band)
+            
             # for i, code in enumerate(sed_codes):
             #     cat = code.fit_cat(cat, templates = eazy_templates)
             #     #code.fit_cat(cat, templates = eazy_templates)
@@ -37,9 +39,9 @@ def pipeline(surveys, version,instruments, xy_offsets, aper_diams, code_names, l
 
 if __name__ == "__main__":
     version = "v9" #config["DEFAULT"]["VERSION"] #"v9_sex_test1"
-    instruments = ['NIRCam', 'ACS_WFC'] #, 'WFC3IR'] # Can leave this - if there is no data for an instrument it is removed automatically
+    instruments = ['NIRCam'] #, 'ACS_WFC'] #, 'WFC3IR'] # Can leave this - if there is no data for an instrument it is removed automatically
     cat_type = "loc_depth"
-    surveys = ["NEP-4"] #[config["DEFAULT"]["SURVEY"]] # [f"CEERSP{int(i + 1)}" for i in range(0, 10)] #
+    surveys = ["MACS-0416"] #[config["DEFAULT"]["SURVEY"]] # [f"CEERSP{int(i + 1)}" for i in range(0, 10)] #
     aper_diams = [0.32] * u.arcsec
     xy_offsets = [[0, 0], [0, 0], [0, 0], [0, 0], [0, 0], [0, 0], [0, 0], [0, 0], [0, 0], [0, 0]]
     code_names = ["EAZY", "EAZY", "EAZY"] #, "EAZY"] #[LePhare()]
