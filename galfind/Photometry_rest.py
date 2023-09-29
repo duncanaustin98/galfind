@@ -183,6 +183,21 @@ class Photometry_rest(Photometry):
             return beta
         except:
             return None
+        
+    def basic_m_UV_calc(self, UV_ext_src_corr, incl_errs = True):
+        self.make_rest_UV_phot()
+        try:
+            if incl_errs:
+                popt, pcov = curve_fit(Photometry_rest.beta_slope_power_law_func, self.rest_UV_phot.wav, self.rest_UV_phot.flux_lambda, sigma = self.rest_UV_phot.flux_lambda_errs, maxfev = 1_000)
+            else:
+                popt, pcov = curve_fit(Photometry_rest.beta_slope_power_law_func, self.rest_UV_phot.wav, self.rest_UV_phot.flux_lambda, maxfev = 1_000)
+            amplitude = popt[0]
+            beta = popt[1]
+            flux_lambda_1500 = Photometry_rest.beta_slope_power_law_func(1500., amplitude, beta) * UV_ext_src_corr * u.erg / (u.s * (u.cm ** 2) * u.Angstrom)
+            m_UV = funcs.flux_to_mag((flux_lambda_1500 * ((1500. * u.Angstrom) ** 2) / const.c).to(u.Jy), 8.9)
+            return m_UV
+        except:
+            return None
     
     def basic_M_UV_calc(self, UV_ext_src_corr, incl_errs = True):
         self.make_rest_UV_phot()

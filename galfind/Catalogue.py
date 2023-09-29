@@ -299,7 +299,7 @@ class Catalogue(Catalogue_Base):
                         if y_pix >= mask.shape[0] or x_pix >= mask.shape[1] or x_pix < 0 or y_pix < 0: # catch HST masking errors
                             mask_flag_gal = True
                         else:
-                            mask_flag_gal = mask[y_pix][x_pix]
+                            mask_flag_gal = blank_mask[y_pix][x_pix]
                         if mask_flag_gal == True:
                             gal.mask_flags["blank_module"] = False
                             blank_flags.append(False)
@@ -372,7 +372,7 @@ class Catalogue(Catalogue_Base):
             for i, gal in enumerate(self):
                 good_galaxy = True
                 for band in self.data.instrument.bands:
-                    if not gal.mask_flags[f"unmasked_{band}"] and band in mask_instrument.bands:
+                    if band in mask_instrument.bands and not gal.mask_flags[f"unmasked_{band}"]:
                         good_galaxy = False
                         break
                 # don't include blank field galaxies in final boolean unmasked column
@@ -437,9 +437,9 @@ class Catalogue(Catalogue_Base):
                 self.UV_tab = UV_tab
                 #print(f"Writing UV table to {UV_cat_name}")
             
-            else:
-                self.UV_tab = Table.read(UV_cat_name, character_as_bytes = False)
-                print(f"Opening table: {UV_cat_name}")
+        else:
+            self.UV_tab = Table.read(UV_cat_name, character_as_bytes = False)
+            print(f"Opening table: {UV_cat_name}")
         
         if join_tables:
             self.join_UV_fit_cat()

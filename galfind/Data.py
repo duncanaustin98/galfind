@@ -67,6 +67,8 @@ class Data:
         self.im_shapes = im_shapes
 
         #print(self.im_paths)
+        #print(self.im_zps)
+        #print(self.im_pixel_scales)
         #print(self.wht_paths)
 
         # make segmentation maps from image paths if they don't already exist
@@ -79,7 +81,7 @@ class Data:
         self.seg_paths = dict(sorted(seg_paths.items())) 
         
         # make masks from image paths if they don't already exist
-    
+        self.mask_dir = f"{config['DEFAULT']['GALFIND_WORK']}/Masks/{survey}"
         for i, (band, mask_path) in enumerate(mask_paths.items()):
             if (mask_path == "" or mask_path == []):
                 self.make_mask(band)
@@ -346,8 +348,7 @@ class Data:
                 blank_mask_path = glob.glob(f"{config['DEFAULT']['GALFIND_WORK']}/Masks/{survey}/*blank*")[0]
             except IndexError:
                 blank_mask_path = ""
-            
-            return cls(comb_instrument, im_paths, im_exts,im_pixel_scales, im_shapes, im_zps, wht_paths, wht_exts, wht_types, seg_paths, mask_paths, cluster_mask_path, blank_mask_path, survey, version = version, is_blank = is_blank)
+            return cls(comb_instrument, im_paths, im_exts, im_pixel_scales, im_shapes, im_zps, wht_paths, wht_exts, wht_types, seg_paths, mask_paths, cluster_mask_path, blank_mask_path, survey, version = version, is_blank = is_blank)
         else:
             raise(Exception(f'Failed to find any data for {survey}'))  
 
@@ -385,8 +386,12 @@ class Data:
         return self
     
 # %% Methods
-        
+
     def load_data(self, band, incl_mask = True):
+        if type(band) not in [str, np.str_]:
+            galfind_logger.debug(f"band = {band}, type(band) = {type(band)} not in [str, np.str_] in Data.load_data")
+            band = self.combine_band_names(band)
+        
         im_path = self.im_paths[band]
         seg_path = self.seg_paths[band]
         im_ext = self.im_exts[band]
@@ -402,19 +407,41 @@ class Data:
         seg_header = seg_hdul[0].header
         #print(f"Finished loading {band} seg map")
         if incl_mask:
-            mask_path = self.mask_paths[band]
-            mask_file = pyregion.open(mask_path) # file for mask
-            mask_file = mask_file.as_imagecoord(im_header)
-            # time how long it takes to create the mask
-            start_time = time.time()
-            mask = mask_file.get_mask(hdu=im_hdul[im_ext])
-            end_time = time.time()
-            elapsed_time = end_time - start_time
-            galfind_logger.debug(f"Time to load mask for {band}: {float(elapsed_time)} seconds")
-            #print("mask_path", mask_path)
+            mask = self.load_mask(band, band, im_header, im_hdul, im_ext)
+            # mask_file = pyregion.open(self.mask_paths[band]) # file for mask
+            # mask_file = mask_file.as_imagecoord(im_header)
+            # # time how long it takes to create the mask
+            # start_time = time.time()
+            # mask = mask_file.get_mask(hdu=im_hdul[im_ext])
+            # end_time = time.time()
+            # elapsed_time = end_time - start_time
+            # galfind_logger.debug(f"Time to load mask for {band}: {float(elapsed_time)} seconds")
+            # #print("mask_path", mask_path)
             return im_data, im_header, seg_data, seg_header, mask
         else:
             return im_data, im_header, seg_data, seg_header
+    
+    def load_mask(self, mask_band, im_band, im_header = None, im_hdul = None, im_ext = None):
+        # if mask_band in ["blank", "cluster"]:
+        #     im_band = "f444W"
+        if im_header == None or im_hdul == None or im_ext == None:
+            im_hdul = fits.open(self.im_paths[im_band])
+            im_ext = self.im_exts[im_band]
+            im_header = im_hdul[im_ext].header
+        # if mask_band == "blank":
+        #     mask_file = pyregion.open(self.blank_mask_path)
+        # elif mask_band == "cluster":
+        #     mask_file = pyregion.open(self.cluster_mask_path)
+        # else:
+        mask_file = pyregion.open(self.mask_paths[mask_band]) # file for mask
+        mask_file = mask_file.as_imagecoord(im_header)
+        # time how long it takes to create the mask
+        start_time = time.time()
+        mask = mask_file.get_mask(hdu = im_hdul[im_ext])
+        end_time = time.time()
+        elapsed_time = end_time - start_time
+        galfind_logger.debug(f"Time to load mask for {mask_band}: {float(elapsed_time)} seconds")
+        return mask
         
     def plot_image_from_band(self, ax, band, norm = LogNorm(vmin = 0., vmax = 10.), show = True):
         im_data = self.load_data(band, incl_mask = False)[0]
@@ -485,6 +512,14 @@ class Data:
         detection_image_name = f"{self.survey}_{self.combine_band_names(bands)}_{self.version}_stack.fits"
         self.im_paths[self.combine_band_names(bands)] = f'{detection_image_dir}/{detection_image_name}'
         self.wht_paths[self.combine_band_names(bands)] = f'{detection_image_dir}/{detection_image_name}'
+        glob_mask_names = glob.glob(f"{self.mask_dir}/{self.combine_band_names(bands)}_basemask.reg")
+        print(glob_mask_names)
+        if len(glob_mask_names) == 0:
+            self.mask_paths[self.combine_band_names(bands)] = self.combine_masks(bands)
+        elif len(glob_mask_names) == 1:
+            self.mask_paths[self.combine_band_names(bands)] = glob_mask_names[0]
+        else:
+            raise(Exception(f"More than 1 mask for {self.combine_band_names(bands)}. Please change this in {self.mask_dir}"))
         
         if not Path(self.im_paths[self.combine_band_names(bands)]).is_file():
             funcs.make_dirs(self.im_paths[self.combine_band_names(bands)])
@@ -700,6 +735,27 @@ class Data:
     #     # maybe insert a step here to align your images
     #     pass
     
+    def combine_masks(self, bands):
+        shapelist = []
+        for band in tqdm(bands, desc = f"Making combined mask for {bands}"):
+            if band == "blank":
+                shapelist_ = pyregion.open(self.blank_mask_path)
+            elif band == "cluster":
+                shapelist_ = pyregion.open(self.cluster_mask_path)
+            else:
+                shapelist_ = pyregion.open(self.mask_paths[band])
+            # do not append duplicate regions
+            for shape_ in shapelist_:
+                if shape_.name != "composite": # composite region line is commented out in the .reg file, components still included
+                    same_shape_list = [shape for shape in shapelist if shape.name == shape_.name and shape.coord_list == shape_.coord_list]
+                    if len(same_shape_list) == 0:
+                        shapelist.append(shape_)
+        shapelist = pyregion.ShapeList(shapelist)
+        output_path = f"{self.mask_dir}/{self.combine_band_names(bands)}_basemask.reg"
+        galfind_logger.info(f"Created combined mask for {bands}")
+        shapelist.write(output_path)
+        return output_path
+
     def clean_mask_regions(self, band):
         # open region file
         mask_path = self.mask_paths[band]
@@ -715,17 +771,57 @@ class Data:
         # insert original mask ds9 region file into an unclean folder
         # update mask paths for the object
     
-    def calc_unmasked_area(self):
-        # calculate mask area
-        # unmasked_pix = 0
-        # for i in range(mask.shape[0]):
-        #     for j in range(mask.shape[1]):
-        #         if mask[i][j] == False: # and obs_region_mask[i][j] == True
-        #             unmasked_pix = unmasked_pix + 1
-        # unmasked_area = unmasked_pix * ((0.03 * u.arcsec) ** 2).to(u.arcmin ** 2)
-        # print(unmasked_area)
-        # unmasked_area_arr.append(unmasked_area)
-        pass
+    def calc_unmasked_area(self, forced_phot_band = ["f277W", "f356W", "f444W"], masking_instrument_name = "NIRCam"):
+        masking_bands = np.array([band for band in self.instrument.bands if band in Instrument.from_name(masking_instrument_name).bands])
+        # make combined mask if required
+        glob_mask_names = glob.glob(f"{self.mask_dir}/*{self.combine_band_names(masking_bands)}_*")
+        if len(glob_mask_names) == 0:
+            self.mask_paths[masking_instrument_name] = self.combine_masks(masking_bands)
+        elif len(glob_mask_names) == 1:
+            self.mask_paths[masking_instrument_name] = glob_mask_names[0]
+        else:
+            raise(Exception(f"More than 1 mask for {masking_bands}. Please change this in {self.mask_dir}"))
+        # open detection image
+        if type(forced_phot_band) not in [str, np.str_]:
+            forced_phot_band = self.combine_band_names(forced_phot_band)
+
+        pixel_scale = self.im_pixel_scales[forced_phot_band]
+        try:
+            pixel_scale.unit
+        except:
+            pixel_scale = pixel_scale * u.arcsec
+        print(f"pixel_scale = {pixel_scale}")
+        
+        full_mask = self.load_mask(masking_instrument_name, forced_phot_band)
+        if self.is_blank:
+            blank_mask = full_mask
+        else:
+            # make combined mask for masking_instrument_name blank field area
+            glob_mask_names = glob.glob(f"{self.mask_dir}/*{self.combine_band_names(list(masking_bands) + ['blank'])}_*")
+            if len(glob_mask_names) == 0:
+                self.mask_paths[f"{masking_instrument_name}+blank"] = self.combine_masks(list(masking_bands) + ["blank"])
+            elif len(glob_mask_names) == 1:
+                self.mask_paths[f"{masking_instrument_name}+blank"] = glob_mask_names[0]
+            else:
+                raise(Exception(f"More than 1 mask for {masking_bands}. Please change this in {self.mask_dir}"))
+            blank_mask = self.load_mask(f"{masking_instrument_name}+blank", forced_phot_band)
+        
+        unmasked_area_blank_modules = (((blank_mask.shape[0] * blank_mask.shape[1]) - np.sum(blank_mask)) * pixel_scale * pixel_scale).to(u.arcmin ** 2)
+        print(f"unmasked_area_blank_modules = {unmasked_area_blank_modules}")
+        
+        output_path = f"/{config['DEFAULT']['GALFIND_WORK']}/Unmasked_areas/{masking_instrument_name}/{self.survey}_unmasked_area_{self.version}.txt"
+        funcs.make_dirs(output_path)
+        f = open(output_path, "w")
+        f.write(f"# {self.survey} {self.version}, bands = {self.instrument.bands}; UNIT = {unmasked_area_blank_modules.unit}\n")
+        f.write(f"{str(np.round(unmasked_area_blank_modules.value, 2))} # unmasked blank")
+        if not self.is_blank:
+            full_mask = self.load_mask(masking_instrument_name, forced_phot_band)
+            unmasked_area_tot = (((full_mask.shape[0] * full_mask.shape[1]) - np.sum(full_mask)) * pixel_scale * pixel_scale).to(u.arcmin ** 2)
+            unmasked_area_cluster_module = unmasked_area_tot - unmasked_area_blank_modules
+            f.write("\n")
+            f.write(f"{str(np.round(unmasked_area_cluster_module.value, 2))} # unmasked cluster")
+        f.close()
+        return unmasked_area_blank_modules
         
     def make_loc_depth_cat(self, aper_diams = [0.32] * u.arcsec, n_samples = 5, forced_phot_band = "f444W", min_flux_pc_err_arr = [5, 10], fast = True):
         # if sextractor catalogue has not already been made, make it
@@ -971,7 +1067,7 @@ class Data:
             # plot the depths in the grid
             plot_depths(im_data, self.depth_dirs[band], band, seg_data, xcoord, ycoord, xy_offset, r, size, self.im_zps[band])
             # calculate average depth
-            average_depths.append(calc_5sigma_depth(xcoord, ycoord, im_data, r, self.im_zps[band])) 
+            average_depths.append(calc_5sigma_depth(xcoord, ycoord, im_data, r, self.im_zps[band], n_aper = len(xcoord))) 
             run_bands.append(band)
 # match sextractor catalogue codes
 sex_id_params = ["NUMBER", "X_IMAGE", "Y_IMAGE", "ALPHA_J2000", "DELTA_J2000"]
@@ -1175,7 +1271,7 @@ def calc_chunk_depths(im_data, xcoord_in, ycoord_in, xchunk, ychunk, xoff, yoff,
             ycoord_loc2 = np.delete(ycoord_loc2, y_invalid_high)
             #print(len(xcoord_loc2), len(ycoord_loc2))
             if len(xcoord_loc2) != 0:
-                depth_5sigma = calc_5sigma_depth(list(xcoord_loc2), list(ycoord_loc2), im_data, r, zero_point)
+                depth_5sigma = calc_5sigma_depth(list(xcoord_loc2), list(ycoord_loc2), im_data, r, zero_point, n_aper = len(list(xcoord_loc2)))
                 #print(depth_5sigma)
                 depth_image[(j*size)+yoff:((j+1)*size)+yoff, (i*size)+xoff:((i+1)*size)+xoff] = depth_5sigma
 
