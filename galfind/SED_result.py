@@ -9,6 +9,7 @@ Created on Mon Jul 17 16:50:27 2023
 # SED_result.py
 import warnings
 import numpy as np
+import astropy.units as u
 
 from .Photometry import Photometry, Multiple_Photometry
 from .Photometry_rest import Photometry_rest
@@ -17,7 +18,7 @@ from . import useful_funcs_austind as funcs
 
 class SED_result:
     
-    def __init__(self, phot, z, chi_sq, z_PDF_path, SED_path, code_name, lowz_zmax, templates, rest_UV_wavs_arr = [[1268., 2580.]]):
+    def __init__(self, phot, z, chi_sq, z_PDF_path, SED_path, code_name, lowz_zmax, templates, rest_UV_wavs_arr = [[1268., 2580.] * u.Angstrom, [1250., 3000.] * u.Angstrom]):
         self.phot_rest = {Photometry_rest.rest_UV_wavs_name(rest_UV_wavs): Photometry_rest.from_phot(phot, z, rest_UV_wavs) for rest_UV_wavs in rest_UV_wavs_arr}
         self.z = z
         self.chi_sq = chi_sq

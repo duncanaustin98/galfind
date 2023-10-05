@@ -23,7 +23,7 @@ def pipeline(surveys, version,instruments, xy_offsets, aper_diams, code_names, l
         for survey, xy_offset in zip(surveys, xy_offsets):
             cat = Catalogue.from_pipeline(survey = survey, version = version, instruments = instruments, aper_diams = aper_diams, cat_creator = cat_creator, code_names = code_names, lowz_zmax = lowz_zmax, xy_offset = xy_offset, \
                                           forced_phot_band = forced_phot_band, excl_bands = excl_bands, loc_depth_min_flux_pc_errs = min_flux_pc_errs, n_loc_depth_samples = n_loc_depth_samples, templates_arr = eazy_templates, fast = fast)
-            #cat.data.calc_unmasked_area(forced_phot_band)
+            cat.data.calc_unmasked_area(forced_phot_band)
             
             # for i, code in enumerate(sed_codes):
             #     cat = code.fit_cat(cat, templates = eazy_templates)
@@ -39,9 +39,9 @@ def pipeline(surveys, version,instruments, xy_offsets, aper_diams, code_names, l
 
 if __name__ == "__main__":
     version = "v9" #config["DEFAULT"]["VERSION"] #"v9_sex_test1"
-    instruments = ['NIRCam'] #, 'ACS_WFC'] #, 'WFC3IR'] # Can leave this - if there is no data for an instrument it is removed automatically
+    instruments = ['NIRCam', 'ACS_WFC'] #, 'WFC3IR'] # Can leave this - if there is no data for an instrument it is removed automatically
     cat_type = "loc_depth"
-    surveys = ["MACS-0416"] #[config["DEFAULT"]["SURVEY"]] # [f"CEERSP{int(i + 1)}" for i in range(0, 10)] #
+    surveys = ["JADES-Deep-GS"] #[config["DEFAULT"]["SURVEY"]] # [f"CEERSP{int(i + 1)}" for i in range(0, 10)] #
     aper_diams = [0.32] * u.arcsec
     xy_offsets = [[0, 0], [0, 0], [0, 0], [0, 0], [0, 0], [0, 0], [0, 0], [0, 0], [0, 0], [0, 0]]
     code_names = ["EAZY", "EAZY", "EAZY"] #, "EAZY"] #[LePhare()]
@@ -50,7 +50,9 @@ if __name__ == "__main__":
     min_flux_pc_errs = [10]
     forced_phot_band = ["f277W", "f356W", "f444W"]
     fast_depths = False
-    excl_bands = [] #"f435W", "f775W", "f850LP"] #["f606W", "f814W", "f090W", "f115W", "f277W", "f335M", "f356W", "f410M", "f444W"]
+    jems_bands = ["f182M", "f210M", "f430M", "f460M", "f480M"]
+    ngdeep_excl_bands = ["f435W", "f775W", "f850LP"]
+    excl_bands = jems_bands #["f606W", "f814W", "f090W", "f115W", "f277W", "f335M", "f356W", "f410M", "f444W"]
     n_loc_depth_samples = 20
 
     for survey in surveys:

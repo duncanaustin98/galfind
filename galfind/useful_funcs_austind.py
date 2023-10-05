@@ -141,8 +141,8 @@ def save_PDF(PDF, header, path):
         #print(f"Saving PDF: {path}")
         np.savetxt(path, PDF, header = header)
 
-def PDF_path(save_dir, obs_name, ID, rest_UV_wavs = [1268., 2580.]):
-    return f"{save_dir}/{obs_name}/{int(rest_UV_wavs[0])}-{int(rest_UV_wavs[1])}Angstrom/{ID}"
+def PDF_path(save_dir, obs_name, ID):
+    return f"{save_dir}/{obs_name}/{ID}" # /{int(rest_UV_wavs[0])}-{int(rest_UV_wavs[1])}Angstrom
 
 def percentiles_from_PDF(PDF):
     if all(val == -99. for val in PDF):
