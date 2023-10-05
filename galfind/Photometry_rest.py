@@ -89,6 +89,10 @@ class Photometry_rest(Photometry):
     def rest_UV_band_flux_Jy(self):
         return self.flux_Jy[self.rest_UV_band_index]
     
+    @property
+    def N_bands(self):
+        return len(self.flux_Jy)
+    
     @staticmethod
     def rest_UV_wavs_name(rest_UV_wavs):
         try:
@@ -334,7 +338,7 @@ class Photometry_rest(Photometry):
         
         if plot_PDF:
             funcs.PDF_hist(PDF, save_dir, obs_name, ID, show = True, save = True)
-        funcs.save_PDF(PDF, f"{obs_name}, units = {unit}, iters = {len(PDF)}", funcs.PDF_path(save_dir, obs_name, ID, self.rest_UV_wavs))
+        funcs.save_PDF(PDF, f"{obs_name}, units = {unit}, iters = {len(PDF)}", funcs.PDF_path(save_dir, obs_name, ID))
     
     def open_UV_fit_PDF(self, save_dir, obs_name, ID, UV_ext_src_corr = None, plot = True):
         if obs_name == "flux_lambda_1500":
