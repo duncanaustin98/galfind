@@ -16,7 +16,7 @@ from astropy.table import Table
 from scipy.interpolate import interp1d
 from scipy.integrate import quad
 
-from . import astropy_cosmo, Photometry, Photometry_obs, Mock_Photometry
+from . import astropy_cosmo, Photometry, Photometry_obs, Mock_Photometry, IGM_attenuation
 from . import useful_funcs_austind as funcs
 
 class SED:
@@ -57,7 +57,7 @@ class SED:
             self.mags = mags
         return mags
         
-    def plot_SED(self, ax, wav_units = u.AA, mag_units = u.ABmag, label = None, annotate = True, plot_kwargs = {}):
+    def plot_SED(self, ax, wav_units = u.AA, mag_units = u.ABmag, label = None, annotate = True, plot_kwargs = {}, legend_kwargs = {}):
         wavs = self.convert_wav_units(wav_units, update = False)
         mags = self.convert_mag_units(mag_units, update = False)
         plot = ax.plot(wavs, mags, label = label, **plot_kwargs)
@@ -76,7 +76,7 @@ class SED:
             elif u.get_physical_type(mag_units) == "power density/spectral flux density wav":
                 y_label = r"$f_{\lambda} / \mathrm{%s}$" % str(mag_units)
             ax.set_ylabel(y_label)
-            ax.legend()
+            ax.legend(**legend_kwargs)
         return plot
 
 
@@ -224,6 +224,7 @@ class Mock_SED_obs(SED_obs):
     def attenuate_IGM(self, prescription = "Inoue+14"):
         if prescription == "Inoue+14":
             self.IGM_attenuated = True
+            
         else:
             raise(Exception(f"IGM attenuation not available for prescription = {prescription}"))
             

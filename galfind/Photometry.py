@@ -23,11 +23,12 @@ from . import config
 
 class Photometry:
     
-    def __init__(self, instrument, flux_Jy, flux_Jy_errs, loc_depths):
+    def __init__(self, instrument, flux_Jy, flux_Jy_errs, depths):
         self.instrument = instrument
+        # check that the fluxes and errors are in the correct units
         self.flux_Jy = flux_Jy
         self.flux_Jy_errs = flux_Jy_errs
-        self.loc_depths = loc_depths
+        self.loc_depths = depths
     
     @classmethod
     def from_fits_cat(cls, fits_cat_row, instrument, cat_creator):

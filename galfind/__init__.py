@@ -101,5 +101,6 @@ from .Simulated_Galaxy import Simulated_Galaxy
 from .Simulated_Catalogue import Simulated_Catalogue
 from . import decorators
 from .SED import SED, SED_rest, SED_obs, Mock_SED_rest, Mock_SED_obs
+from . import IGM_attenuation
 
 
