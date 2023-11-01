@@ -39,7 +39,7 @@ import joblib
 from tqdm import tqdm
 import logging
 
-from .Instrument import Instrument, ACS_WFC,WFC3IR, NIRCam, MIRI, Combined_Instrument
+from .Instrument import Instrument, ACS_WFC, WFC3_IR, NIRCam, MIRI, Combined_Instrument
 from . import config
 from . import useful_funcs_austind as funcs
 from .decorators import run_in_dir, hour_timer, email_update

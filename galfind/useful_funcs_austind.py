@@ -81,6 +81,9 @@ def five_to_n_sigma_mag(five_sigma_depth, n):
 def flux_err_to_loc_depth(flux_err, zero_point):
     return -2.5 * np.log10(flux_err * 5) + zero_point
 
+def loc_depth_to_flux_err(loc_depth, zero_point):
+    return (10 ** ((loc_depth - zero_point) /-2.5)) / 5
+
 # now in Photometry class!
 # def flux_image_to_lambda(wav, flux, zero_point):
 #     flux_Jy = flux_image_to_Jy(flux, zero_point)
@@ -90,9 +93,16 @@ def flux_err_to_loc_depth(flux_err, zero_point):
 def flux_Jy_to_lambda(flux_Jy, wav): # must akready have associated astropy units
     return (flux_Jy * const.c / (wav ** 2)).to(u.erg / (u.s * (u.cm ** 2) * u.Angstrom))
 
+def flux_lambda_to_Jy(flux_lambda, wav):
+    return (flux_lambda * (wav ** 2) / const.c).to(u.Jy)
+
 def wav_obs_to_rest(wav_obs, z):
     wav_rest = wav_obs / (1 + z)
     return wav_rest
+
+def wav_rest_to_obs(wav_rest, z):
+    wav_obs = wav_rest * (1 + z)
+    return wav_obs
 
 def flux_lambda_obs_to_rest(flux_lambda_obs, z):
     flux_lambda_rest = flux_lambda_obs * ((1 + np.full(len(flux_lambda_obs), z)) ** 2)
