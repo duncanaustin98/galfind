@@ -14,8 +14,9 @@ import h5py
 from pathlib import Path
 import matplotlib.pyplot as plt
 from tqdm import tqdm
+from scipy.interpolate import RegularGridInterpolator
 
-from . import config, wav_lyman_lim
+from . import config, wav_lyman_lim, wav_lyman_alpha
 
 def calc_Inoue14_LS_LAF_optical_depth(lyman_series, wav_obs_arr, z):
     tau_arr = np.zeros((len(lyman_series), len(wav_obs_arr)))
@@ -80,9 +81,11 @@ def calc_IGM_transmission(lyman_series, wav_rest_arr, z, prescription = config["
     elif isinstance(wav_rest_arr, list):
         wav_rest_arr = np.array(wav_rest_arr)
     wav_obs_arr = wav_rest_arr * (1 + z)
-    if prescription == "Inoue14":
+    if prescription == "Inoue+14":
         optical_depth = np.array(calc_Inoue14_LC_DLA_optical_depth(wav_obs_arr, z) + calc_Inoue14_LC_LAF_optical_depth(wav_obs_arr, z) + \
             calc_Inoue14_LS_DLA_optical_depth(lyman_series, wav_obs_arr, z) + calc_Inoue14_LS_LAF_optical_depth(lyman_series, wav_obs_arr, z))
+    else:
+        raise(Exception(f"IGM attenuation not available for prescription = {prescription}. Please choose one of ['Inoue+14']"))
     transmission = np.exp(-optical_depth)
     return transmission
 
@@ -99,15 +102,70 @@ def make_IGM_transmission_grid(wav_rest_arr, z_arr, prescription = config["MockS
         IGM_grid.create_dataset("Redshifts", data = z_arr)
         IGM_grid.create_dataset("Rest_wavelengths", data = wav_rest_arr)
         IGM_grid.close()
+
+class IGM:
+    
+    def __init__(self, prescription = config["MockSEDs"]["IGM_PRESCRIPTION"], max_z = 10., n_z = 1_000, n_wav_rest = 10_000):
+        self.prescription = prescription
+        # make IGM grid if it doesn't exist, else load it
+        if not Path(f"{config['MockSEDs']['IGM_DIR']}/{config['MockSEDs']['IGM_PRESCRIPTION']}_IGM_grid.h5").is_file():
+            make_IGM_transmission_grid(np.linspace(wav_lyman_lim, wav_lyman_alpha, n_wav_rest), np.linspace(0., max_z, n_z))
+        self.load_IGM_transmission_grid()
         
-def load_IGM_transmission_grid(prescription = config["MockSEDs"]["IGM_PRESCRIPTION"]):
-    with h5py.File(f"{config['MockSEDs']['IGM_DIR']}/{prescription}_IGM_grid.h5", "r") as IGM_grid:
-        IGM_transmission = IGM_grid["IGM_transmission"][()]
-        z_arr = IGM_grid["Redshifts"][()]
-        wav_rest_arr = IGM_grid["Rest_wavelengths"][()]
-        IGM_grid.close()
-    return IGM_transmission, z_arr, wav_rest_arr
-        
+    @property
+    def interpolator(self):
+        return RegularGridInterpolator((self.z_arr, self.wav_rest_arr), self.transmission_grid, bounds_error = False, fill_value = None) # extrapolate points too
+    
+    def load_IGM_transmission_grid(self):
+        with h5py.File(f"{config['MockSEDs']['IGM_DIR']}/{self.prescription}_IGM_grid.h5", "r") as IGM_grid:
+            self.transmission_grid = IGM_grid["IGM_transmission"][()]
+            self.z_arr = IGM_grid["Redshifts"][()]
+            self.wav_rest_arr = IGM_grid["Rest_wavelengths"][()]
+            IGM_grid.close()
+            
+    def plot_IGM_transmission_grid(self, ax, imshow_kwargs = {}, cbar_kwargs = {}, annotate = True, save = False, show = False):
+        grid = ax.imshow(self.transmission_grid, aspect = (np.max(self.wav_rest_arr) - np.min(self.wav_rest_arr)) / (np.max(self.z_arr) - np.min(self.z_arr)), \
+                     extent = [np.min(self.wav_rest_arr), np.max(self.wav_rest_arr), np.min(self.z_arr), np.max(self.z_arr)], **imshow_kwargs)
+        if annotate:
+            plt.colorbar(grid, label = "Transmission", **cbar_kwargs)
+            ax.set_xlabel(r"$\lambda_{\mathrm{rest}}~/~\mathrm{\AA}$")
+            ax.set_ylabel(r"Redshift, $z$")
+        if save:
+            #plt.savefig()
+            pass
+        if show:
+            plt.show()
+            
+    def interp_transmission(self, z, wav_rest_arr): # wav_rest_arr should have units
+        interp_pts = [[z, wav_rest] for wav_rest in wav_rest_arr.to(u.AA).value]
+        transmission_arr = self.interpolator(interp_pts)
+        # ensure any potentially extrapolated points are within the transmission range 0 < T < 1
+        transmission_arr = [0. if trans < 0. else 1. if trans > 1. else trans for trans in transmission_arr]
+        return transmission_arr
+    
+    def plot_slice(self, ax, z, wav_rest_arr, frame = "rest", plot_kwargs = {}, legend_kwargs = {}, annotate = True, save = False, show = False):
+        transmission_arr = self.interp_transmission(z, wav_rest_arr)
+        if frame == "rest":
+            plt.plot(wav_rest_arr.value, transmission_arr, **plot_kwargs)
+        elif frame == "obs":
+            plt.plot(wav_rest_arr.value * (1 + z), transmission_arr, **plot_kwargs)
+        else:
+            raise(Exception(f"frame = {frame} is invalid! Please choose either 'rest' or 'obs'"))
+        if annotate:
+            ax.set_title(f"{self.prescription} IGM attenuation")
+            if frame == "rest":
+                ax.set_xlabel(r"$\lambda_{\mathrm{rest}}~/~\mathrm{%s}$" % wav_rest_arr.unit)
+                ax.set_xlim(wav_lyman_lim, wav_lyman_alpha)
+            else:
+                ax.set_xlabel(r"$\lambda_{\mathrm{obs}}~/~\mathrm{%s}$" % wav_rest_arr.unit)
+            ax.set_ylabel("Transmission")
+            ax.set_ylim(0., 1.)
+            plt.legend(**legend_kwargs)
+        if save:
+            #plt.savefig()
+            pass
+        if show:
+            plt.show()
 
     
     

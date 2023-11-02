@@ -15,8 +15,9 @@ import matplotlib.pyplot as plt
 from astropy.table import Table
 from scipy.interpolate import interp1d
 from scipy.integrate import quad
+from scipy.optimize import curve_fit
 
-from . import astropy_cosmo, Photometry, Photometry_obs, Mock_Photometry, IGM_attenuation
+from . import config, astropy_cosmo, Photometry, Photometry_obs, Mock_Photometry, IGM_attenuation, wav_lyman_lim, wav_lyman_alpha
 from . import useful_funcs_austind as funcs
 
 class SED:
@@ -86,6 +87,18 @@ class SED_rest(SED):
         mags = mags[(wavs.value > wav_range.to(wav_units).value[0]) & (wavs.value < wav_range.to(wav_units).value[1])]
         wavs = wavs[(wavs.value > wav_range.to(wav_units).value[0]) & (wavs.value < wav_range.to(wav_units).value[1])]
         super().__init__(wavs, mags, wav_units, mag_units)
+        
+    def crop_to_Calzetti94_filters(self, update = False):
+        wavs = self.wavs.to(u.AA)
+        Calzetti94_filter_indices = np.logical_or.reduce([(wavs.value > low_lim) & (wavs.value < up_lim) \
+                        for low_lim, up_lim in zip(funcs.lower_Calzetti_filt, funcs.upper_Calzetti_filt)])
+        wavs = self.wavs[Calzetti94_filter_indices]
+        mags = self.mags[Calzetti94_filter_indices]
+        if update:
+            self.wavs = wavs
+            self.wav_units = u.AA # should improve this functionality
+            self.mags = mags
+        return wavs, mags
 
 class SED_obs(SED):
     
@@ -102,7 +115,7 @@ class SED_obs(SED):
             raise(Exception("Not yet implemented!"))
         return cls(z_int, wav_obs, mag_obs, SED_rest.wavs.unit, SED_rest.mags.unit)
         
-    def create_mock_photometry(self, instrument, depth_dict = {}, min_pc_err = []):
+    def create_mock_photometry(self, instrument, depth_dict = {}, min_pc_err = 0.):
         # calculate band pass averaged fluxes from each band within the instrument
         instrument.load_instrument_filter_profiles()
         bp_averaged_fluxes = []
@@ -147,11 +160,26 @@ class Mock_SED_rest(SED_rest): #, Mock_SED):
         super().__init__(wavs, mags, wav_units, mag_units)
         
     @classmethod
-    def power_law_from_beta_m_UV(cls, beta, m_UV, wav_range = [1216, 5000], wav_res = 1):
+    def from_Mock_SED_obs(cls, mock_SED_obs, out_wav_units = u.AA, out_mag_units = u.ABmag, IGM_out = None):
+        wavs = funcs.convert_wav_units(mock_SED_obs.wavs / (1 + mock_SED_obs.z), out_wav_units)
+        mags = funcs.convert_mag_units(wavs, mock_SED_obs.mags, out_mag_units)
+        # ensure IGM output is of the correct type
+        mock_sed_rest_obj = cls(wavs.value, mags.value, wavs.unit, mags.unit, mock_SED_obs.template_name)
+        if IGM_out == None:
+            mock_sed_rest_obj.un_attenuate_IGM(mock_SED_obs.IGM)
+        elif isinstance(IGM_out, IGM_attenuation.IGM):
+            if IGM_out.prescription != mock_SED_obs.IGM.prescription:
+                raise(Exception("Not currently included the functionality to swap IGM attenuation whilst creating new Mock_SED_rest object from Mock_SED_obs object yet"))
+        else:
+            raise(Exception(f"'IGM_out' = {IGM_out} must be either 'None' or 'IGM' class"))
+        return mock_sed_rest_obj
+        
+    @classmethod
+    def power_law_from_beta_m_UV(cls, beta, m_UV, wav_range = [912., 5_000.], wav_res = 1):
         wavs = np.linspace(wav_range[0], wav_range[1], int((wav_range[1] - wav_range[0]) / wav_res))
         print("Still need to include Inoue+2014 Lyman alpha forest attenuation here, relevant at λ<1216 Angstrom!")
         mags = funcs.flux_to_mag(funcs.flux_lambda_to_Jy(((wavs * u.Angstrom) ** beta) \
-                .to(u.erg / (u.s * (u.cm ** 2) * u.Angstrom)), 1500. * u.Angstrom), 8.9)
+                .to(u.erg / (u.s * (u.cm ** 2) * u.Angstrom)), 1_500. * u.Angstrom), 8.9)
         mock_sed = cls(wavs, mags, u.AA, u.ABmag)
         mock_sed.normalize_to_m_UV(m_UV)
         return mock_sed
@@ -187,21 +215,50 @@ class Mock_SED_rest(SED_rest): #, Mock_SED):
             
     def renorm_at_wav(self, mag): # this mag can also be a flux, but must have astropy units
         pass
+    
+    def un_attenuate_IGM(self, IGM):
+        if isinstance(IGM, IGM_attenuation.IGM):
+            # un_attenuate SED for IGM absorption
+            # calculate rest wavelengths from self in the appropriate wavelength range between wav_lyman_lim and wav_lyman_alpha
+            attenuated_indices = ((self.wavs.value > wav_lyman_lim) & (self.wavs.value < wav_lyman_alpha))
+            IGM_transmission = IGM.interp_transmission(self.z, self.wavs[attenuated_indices])
+            if self.mags.unit == u.ABmag:
+                self.mags[attenuated_indices] = (self.mags[attenuated_indices].value - -2.5 * np.log10(IGM_transmission)) * u.ABmag
+            else:
+                self.mags[attenuated_indices] /= IGM_transmission
+        elif IGM == None: # nothing to un-attenuate
+            pass
+        else:
+            raise(Exception(f"Could not attenuate by a non IGM object = {IGM}"))
+    
+    def calc_UV_slope(self, output_errs = False, method = "Calzetti+94"):
+        if method == "Calzetti+94":
+            # crop to Calzetti+94 filters
+            wavs, mags = self.crop_to_Calzetti94_filters()
+            # convert mag units to f_λ
+            mags = funcs.convert_mag_units(wavs, mags, u.erg / (u.s * (u.cm ** 2) * u.AA))
+        popt, pcov = curve_fit(funcs.beta_slope_power_law_func, wavs.value, mags.value, maxfev = 1_000)
+        A, beta = popt[0], popt[1]
+        if output_errs:
+            A_err = np.sqrt(pcov[0][0])
+            beta_err = np.sqrt(pcov[1][1])
+            return A, beta, A_err, beta_err
+        else:
+            return A, beta
 
 class Mock_SED_obs(SED_obs):
     
-    def __init__(self, z, wavs, mags, wav_units, mag_units, template_name):
-        self.IGM_attenuated = False
+    def __init__(self, z, wavs, mags, wav_units, mag_units, template_name, IGM = IGM_attenuation.IGM()):
         self.template_name = template_name
         super().__init__(z, wavs, mags, wav_units, mag_units)
+        if IGM != None:
+            self.attenuate_IGM(IGM)
     
     @classmethod
-    def from_Mock_SED_rest(cls, mock_SED_rest, z, out_wav_units = u.AA, out_mag_units = u.ABmag, IGM_prescription = None):
+    def from_Mock_SED_rest(cls, mock_SED_rest, z, out_wav_units = u.AA, out_mag_units = u.ABmag, IGM = IGM_attenuation.IGM()):
         mags = mock_SED_rest.convert_mag_units(out_mag_units)
         wavs = (mock_SED_rest.wavs * (1 + z)).to(out_wav_units)
-        mock_SED_obs_obj = cls(z, wavs.value, mags.value, out_wav_units, out_mag_units, mock_SED_rest.template_name)
-        if IGM_prescription != None:
-            mock_SED_obs_obj.attenuate_IGM(IGM_prescription)
+        mock_SED_obs_obj = cls(z, wavs.value, mags.value, out_wav_units, out_mag_units, mock_SED_rest.template_name, IGM)
         return mock_SED_obs_obj
     
     @classmethod
@@ -213,25 +270,46 @@ class Mock_SED_obs(SED_obs):
         obs_SED.attenuate_IGM()
         return obs_SED
     
-    def create_phot_obs(self, instrument, loc_depths, min_pc_err = 10):
-        # calculate band pass averaged fluxes
-        fluxes = []
-        # calculate flux errors from loc depths
-        flux_errs = [funcs.loc_depth_to_flux_err(depth, 8.9) if funcs.loc_depth_to_flux_err(depth, 8.9) * 100 / flux > min_pc_err \
-                     else min_pc_err * flux / 100 for flux, depth in zip(fluxes, loc_depths.items)]
-        return Photometry(instrument, fluxes, flux_errs, loc_depths)
+    # def create_phot_obs(self, instrument, loc_depths, min_pc_err = 10):
+    #     # calculate band pass averaged fluxes
+    #     fluxes = []
+    #     # calculate flux errors from loc depths
+    #     flux_errs = [funcs.loc_depth_to_flux_err(depth, 8.9) if funcs.loc_depth_to_flux_err(depth, 8.9) * 100 / flux > min_pc_err \
+    #                  else min_pc_err * flux / 100 for flux, depth in zip(fluxes, loc_depths.items)]
+    #     return Photometry(instrument, fluxes, flux_errs, loc_depths)
     
-    def attenuate_IGM(self, prescription = "Inoue+14"):
-        if prescription == "Inoue+14":
-            self.IGM_attenuated = True
-            
+    def attenuate_IGM(self, IGM = IGM_attenuation.IGM()):
+        if not hasattr(self, IGM):
+            self.IGM = None
+        if isinstance(IGM, IGM_attenuation.IGM):
+            if self.IGM == None: # not already been attenuated
+                # attenuate SED for IGM absorption
+                # calculate rest wavelengths from self in the appropriate wavelength range between wav_lyman_lim and wav_lyman_alpha
+                wav_rest_arr = self.wavs / (1 + self.z)
+                attenuated_indices = ((wav_rest_arr.value > wav_lyman_lim) & (wav_rest_arr.value < wav_lyman_alpha))
+                IGM_transmission = IGM.interp_transmission(self.z, wav_rest_arr[attenuated_indices])
+                if self.mags.unit == u.ABmag:
+                    self.mags[attenuated_indices] = (self.mags[attenuated_indices].value -2.5 * np.log10(IGM_transmission)) * u.ABmag
+                else:
+                    self.mags[attenuated_indices] *= IGM_transmission
+                # save IGM object after attenuating
+                self.IGM = IGM
+            else:
+                print("SED has already been attenuated! Ignoring")
         else:
-            raise(Exception(f"IGM attenuation not available for prescription = {prescription}"))
-            
+            raise(Exception(f"Could not attenuate by a non IGM object = {IGM}"))
+
     def scatter_mock_photometry(self):
         if not hasattr(self, "mock_photometry"):
             raise(Exception("Must have previously created mock photometry from the observed frame template"))
-    
+            
+    def calc_UV_slope(self, output_errs = False, method = "Calzetti+94"):
+        # create rest frame mock SED object
+        mock_sed_rest = Mock_SED_rest.from_Mock_SED_obs(self)
+        # calculate amplitude and beta of power law fit
+        A, beta = mock_sed_rest.calc_UV_slope(output_errs = output_errs, method = method)
+        return A, beta
+
 class Mock_SED_template_set:
     
     def __init__(self, mock_SED_arr):

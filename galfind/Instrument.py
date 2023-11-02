@@ -250,7 +250,6 @@ class Instrument:
         if show:
             plt.show()
             
-    
 
 class NIRCam(Instrument):
     
