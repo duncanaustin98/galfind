@@ -14,6 +14,8 @@ import logging
 import time
 import os
 import astropy.units as u
+import numpy as np
+from pathlib import Path
 from astropy.cosmology import FlatLambdaCDM
 
 galfind_dir = "/".join(__file__.split("/")[:-1])
@@ -81,6 +83,9 @@ else:
 # set cosmology
 astropy_cosmo = FlatLambdaCDM(H0 = 70, Om0 = 0.3, Ob0 = 0.05, Tcmb0 = 2.725)
 
+# set lyman limit wavelength
+wav_lyman_lim = 911.8 # * u.AA
+
 from . import useful_funcs_austind
 from . import NIRCam_aperture_corrections as NIRCam_aper_corr
 from .Data import Data
@@ -102,5 +107,10 @@ from .Simulated_Catalogue import Simulated_Catalogue
 from . import decorators
 from .SED import SED, SED_rest, SED_obs, Mock_SED_rest, Mock_SED_obs
 from . import IGM_attenuation
+
+# make IGM grid if it doesn't exist, else load it
+if not Path(f"{config['MockSEDs']['IGM_DIR']}/{config['MockSEDs']['IGM_PRESCRIPTION']}_IGM_grid.h5").is_file():
+    IGM_grid = IGM_attenuation.make_IGM_transmission_grid(np.linspace(wav_lyman_lim, 1216., 10000), np.linspace(0., 10., 1000))
+IGM_transmission_grid, IGM_z_arr, IGM_wav_rest_arr = IGM_attenuation.load_IGM_transmission_grid()
 
 

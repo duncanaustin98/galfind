@@ -24,7 +24,8 @@ fig, ax = plt.subplots()
 for i in range(13, 19):
     sed_obj_rest = Mock_SED_rest.load_EAZY_in_template(25., "fsps_larson", i)
     sed_obj_obs = Mock_SED_obs.from_Mock_SED_rest(sed_obj_rest, z)
-    sed_plot = sed_obj_obs.plot_SED(ax, u.um, u.Jy, label = sed_obj_rest.template_name, annotate = True, plot_kwargs = {"alpha": 0.6}, legend_kwargs = {"bbox_to_anchor": [0., 0.], "loc": "lower left", "fontsize": 8.})
+    sed_plot = sed_obj_obs.plot_SED(ax, u.um, u.Jy, label = sed_obj_rest.template_name, annotate = True, \
+            plot_kwargs = {"alpha": 0.6}, legend_kwargs = {"bbox_to_anchor": [0., 0.], "loc": "lower left", "fontsize": 8.})
     sed_obj_obs.create_mock_photometry(instrument, depths, min_pc_err)
     sed_obj_obs.mock_photometry.plot_phot(ax, u.um, u.Jy, plot_errs = True, errorbar_kwargs = {"color": sed_plot[0].get_color()})
 plt.yscale("log")

@@ -590,11 +590,11 @@ figure.constrained_layout.wspace: 0.02     # a fraction of the subplot widths be
 # ***************************************************************************
 # * IMAGES                                                                  *
 # ***************************************************************************
-image.aspect:          equal        # {equal, auto} or a number
+image.aspect:          equal       # {equal, auto} or a number
 image.interpolation:   antialiased  # see help(imshow) for options
-image.cmap:            viridis      # A colormap name (plasma, magma, etc.)
+image.cmap:            Blues      # A colormap name (plasma, magma, etc.)
 image.lut:             256          # the size of the colormap lookup table
-image.origin:          upper        # {lower, upper}
+image.origin:          lower        # {lower, upper}
 image.resample:        True
 image.composite_image: True  # When True, all the images on a set of axes are
                              #  combined into a single composite image before
