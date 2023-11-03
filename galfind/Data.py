@@ -297,7 +297,7 @@ class Data:
                                         # wht_types[band] = "NONE"
                                         # wht_exts[band] = ""
 
-                        print(band, wht_paths[band])
+                        #print(band, wht_paths[band])
                         im_pixel_scales[band] = float(pix_scale.split('mas')[0]) * 1e-3 
                         if instrument.name == 'ACS_WFC':
                             if "PHOTFLAM" in imheader and "PHOTPLAM" in imheader:
