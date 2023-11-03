@@ -808,7 +808,6 @@ class Data:
         
         unmasked_area_blank_modules = (((blank_mask.shape[0] * blank_mask.shape[1]) - np.sum(blank_mask)) * pixel_scale * pixel_scale).to(u.arcmin ** 2)
         print(f"unmasked_area_blank_modules = {unmasked_area_blank_modules}")
-        
         output_path = f"/{config['DEFAULT']['GALFIND_WORK']}/Unmasked_areas/{masking_instrument_name}/{self.survey}_unmasked_area_{self.version}.txt"
         funcs.make_dirs(output_path)
         f = open(output_path, "w")
@@ -822,7 +821,7 @@ class Data:
             f.write(f"{str(np.round(unmasked_area_cluster_module.value, 2))} # unmasked cluster")
         f.close()
         return unmasked_area_blank_modules
-        
+
     def make_loc_depth_cat(self, aper_diams = [0.32] * u.arcsec, n_samples = 5, forced_phot_band = "f444W", min_flux_pc_err_arr = [5, 10], fast = True):
         # if sextractor catalogue has not already been made, make it
         self.combine_sex_cats(forced_phot_band)

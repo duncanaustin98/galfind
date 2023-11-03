@@ -22,7 +22,7 @@ from . import astropy_cosmo
 from . import config
 
 class Photometry:
-    
+
     def __init__(self, instrument, flux_Jy, flux_Jy_errs, depths):
         self.instrument = instrument
         # check that the fluxes and errors are in the correct units
@@ -52,7 +52,7 @@ class Photometry:
             return phot_obj_arr[0]
         else:
             return phot_obj_arr
-    
+
     def crop_phot(self, indices):
         indices = np.array(indices).astype(int)
         for index in reversed(indices):
@@ -77,7 +77,6 @@ class Photometry:
             ax.legend()
         return plot
 
-        
 class Multiple_Photometry:
     
     def __init__(self, instrument, flux_Jy_arr, flux_Jy_errs_arr, loc_depths_arr):
@@ -89,7 +88,7 @@ class Multiple_Photometry:
         # local depths not yet loaded in
         loc_depths_arr = np.full(len(flux_Jy_arr), None)
         return cls(instrument, flux_Jy_arr, flux_Jy_errs_arr, loc_depths_arr)
-    
+
 class Mock_Photometry(Photometry):
     
     def __init__(self, instrument, flux_Jy, depths, min_pc_err): # these depths should be 5σ and in units of ABmag
@@ -110,6 +109,7 @@ class Mock_Photometry(Photometry):
         # apply min_pc_err criteria
         flux_Jy_errs = np.array([depth if depth > flux * min_pc_err / 100 else flux * min_pc_err / 100 for flux, depth in zip(flux_Jy.value, one_sig_depths_Jy.value)]) * u.Jy
         return flux_Jy_errs
+
         
             
             

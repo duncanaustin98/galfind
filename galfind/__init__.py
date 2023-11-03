@@ -34,7 +34,7 @@ else:
 # Not currently including all ACS/MIRI bands (does include all NIRCam Wide/Medium band filters), and none are included from WFC3IR yet
 config.set("Other", "ALL_BANDS", json.dumps(["f435W","fr459M","f475W","f550M","f555W","f606W","f625W","fr647M","f070W","f775W","f814W","f850LP",
              "f090W","fr914M","f098M","f105W","f110W","f115W","f125W","f127M","f139M","f140W","f140M","f150W","f153M","f160W","f162M","f182M",
-             "f200W","f210M","f250M","f277W","f300M","f335M","f356W","f360M","f410M","f430M","f444W","f460M","f480M"]))
+             "f200W","f210M","f250M","f277W","f300M","f335M","f356W","f360M","f410M","f430M","f444W","f460M","f480M", 'f560W', 'f770W', 'f1000W','f1130W', 'f1280W', 'f1500W', 'f1800W', 'f2100W', 'f2550W']))
 
 # set up logging
 if config.getboolean("DEFAULT", "USE_LOGGING"):
@@ -108,10 +108,3 @@ from .Simulated_Catalogue import Simulated_Catalogue
 from . import decorators
 from .SED import SED, SED_rest, SED_obs, Mock_SED_rest, Mock_SED_obs
 from . import IGM_attenuation
-
-# # make IGM grid if it doesn't exist, else load it
-# if not Path(f"{config['MockSEDs']['IGM_DIR']}/{config['MockSEDs']['IGM_PRESCRIPTION']}_IGM_grid.h5").is_file():
-#     IGM_grid = IGM_attenuation.make_IGM_transmission_grid(np.linspace(wav_lyman_lim, 1216., 10000), np.linspace(0., 10., 1000))
-# IGM_transmission_grid, IGM_z_arr, IGM_wav_rest_arr = IGM_attenuation.load_IGM_transmission_grid()
-
-

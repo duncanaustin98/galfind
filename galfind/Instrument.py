@@ -17,6 +17,7 @@ from pathlib import Path
 from astroquery.svo_fps import SvoFps
 import matplotlib.pyplot as plt
 
+
 from . import useful_funcs_austind as funcs
 from . import config
 from . import NIRCam_aper_corr
@@ -283,12 +284,11 @@ class NIRCam(Instrument):
 class MIRI(Instrument):
     
     def __init__(self, excl_bands = []):
-        bands = []
-        band_wavelengths = {}
+        bands = ['f560W', 'f770W', 'f1000W', 'f1130W', 'f1280W', 'f1500W', 'f1800W', 'f2100W', 'f2550W']
+        band_wavelengths = {'f560W':55870.25, 'f770W':75224.94, 'f1000W': 98793.45, 'f1130W':112960.71, 'f1280W':127059.68,  'f1500W':149257.07,  'f1800W':178734.17, 'f2100W':205601.06, 'f2550W':251515.99}
         band_wavelengths = {key: value * u.Angstrom for (key, value) in band_wavelengths.items()} # convert each individual value to Angstrom
-        band_FWHMs = {}
-        band_FWHMs = {key: value * u.Angstrom for (key, value) in band_FWHMs.items()} # convert each individual value to Angstrom
-        # Placeholder       
+        band_FWHMs = {'f560W':11114.05, 'f770W':20734.55, 'f1000W':18679.18, 'f1130W':7091.01, 'f1280W':25306.74, 'f1500W':31119.13, 'f1800W':29839.89,'f2100W':46711.97, 'f2550W':36393.71}
+        band_FWHMs = {key: value * u.Angstrom for (key, value) in band_FWHMs.items()} # convert each individual value to Angstrom    
         super().__init__("MIRI", bands, band_wavelengths, band_FWHMs, excl_bands, "JWST")
     
     def aper_corr(self, aper_diam, band):
@@ -348,11 +348,11 @@ class Combined_Instrument(Instrument):
     def instruments_from_name(cls, name, excl_bands = []):
         combined_instrument_names = name.split("+")
         return [cls.from_name(combined_instrument_name, excl_bands) for combined_instrument_name in combined_instrument_names]
-    
+
     @classmethod
     def combined_instrument_from_name(cls, name, excl_bands = []):
         return cls.from_name(name, excl_bands)
-    
+      
     def aper_corr(self, aper_diam, band):
         names = self.name.split("+")
         for name in names:

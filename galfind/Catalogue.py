@@ -26,7 +26,7 @@ from . import SED_code, LePhare, EAZY, Bagpipes
 from . import config
 from . import Catalogue_Base
 from . import Photometry_rest
-from .Instrument import NIRCam, ACS_WFC, WFC3_IR, Instrument, Combined_Instrument
+from .Instrument import NIRCam, MIRI, ACS_WFC, WFC3_IR, Instrument, Combined_Instrument
 
 class Catalogue(Catalogue_Base):
     
