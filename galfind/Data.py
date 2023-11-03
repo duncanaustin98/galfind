@@ -39,7 +39,7 @@ import joblib
 from tqdm import tqdm
 import logging
 
-from .Instrument import Instrument, ACS_WFC,WFC3IR, NIRCam, MIRI, Combined_Instrument
+from .Instrument import Instrument, ACS_WFC, WFC3_IR, NIRCam, MIRI, Combined_Instrument
 from . import config
 from . import useful_funcs_austind as funcs
 from .decorators import run_in_dir, hour_timer, email_update
@@ -808,7 +808,6 @@ class Data:
         
         unmasked_area_blank_modules = (((blank_mask.shape[0] * blank_mask.shape[1]) - np.sum(blank_mask)) * pixel_scale * pixel_scale).to(u.arcmin ** 2)
         print(f"unmasked_area_blank_modules = {unmasked_area_blank_modules}")
-        
         output_path = f"/{config['DEFAULT']['GALFIND_WORK']}/Unmasked_areas/{masking_instrument_name}/{self.survey}_unmasked_area_{self.version}.txt"
         funcs.make_dirs(output_path)
         f = open(output_path, "w")
@@ -822,7 +821,7 @@ class Data:
             f.write(f"{str(np.round(unmasked_area_cluster_module.value, 2))} # unmasked cluster")
         f.close()
         return unmasked_area_blank_modules
-        
+
     def make_loc_depth_cat(self, aper_diams = [0.32] * u.arcsec, n_samples = 5, forced_phot_band = "f444W", min_flux_pc_err_arr = [5, 10], fast = True):
         # if sextractor catalogue has not already been made, make it
         self.combine_sex_cats(forced_phot_band)
@@ -984,6 +983,10 @@ class Data:
         for band in self.instrument.bands:
             self.depth_dirs[band] = f"{config['DEFAULT']['GALFIND_WORK']}/Depths/{self.instrument.instrument_from_band(band)}/{self.version}/{self.survey}/{format(aper_diam.value, '.2f')}as"
             os.makedirs(self.depth_dirs[band], exist_ok = True)
+            
+    def load_depths(self):
+        # load depths from saved .txt file
+        pass
     
     def calc_aper_radius_pix(self, aper_diam, band):
         return (aper_diam / (2 * self.im_pixel_scales[band])).value
@@ -1119,7 +1122,6 @@ def calc_xy_offsets(offset):
         yoff = offset
     print(f"x_off = {xoff}, y_off = {yoff}")
     return xoff, yoff
-
 
 def place_blank_regions(im_data, im_header, seg_data, mask, survey, offset, pix_scale, band, aper_diam = 0.32 * u.arcsec, size = 500, n_busy_iters = 1_000, number = 600, mask_rad = 25, aper_disp_rad = 2, fast = True):
     

@@ -26,7 +26,7 @@ from . import SED_code, LePhare, EAZY, Bagpipes
 from . import config
 from . import Catalogue_Base
 from . import Photometry_rest
-from .Instrument import NIRCam, ACS_WFC, WFC3IR, Instrument, Combined_Instrument
+from .Instrument import NIRCam, MIRI, ACS_WFC, WFC3_IR, Instrument, Combined_Instrument
 
 class Catalogue(Catalogue_Base):
     
@@ -72,7 +72,7 @@ class Catalogue(Catalogue_Base):
     def from_fits_cat(cls, fits_cat_path, version, instrument, cat_creator, code_names, survey, lowz_zmax, templates_arr = ["fsps", "fsps_larson", "fsps_jades"], data = None, mask = True, excl_bands = []):
         # open the catalogue
         fits_cat = funcs.cat_from_path(fits_cat_path)
-        if type(instrument) not in [Instrument, NIRCam, ACS_WFC, WFC3IR, Combined_Instrument]:
+        if type(instrument) not in [Instrument, NIRCam, ACS_WFC, WFC3_IR, Combined_Instrument]:
             instrument_name = instrument
             if type(instrument) in [list, np.ndarray]:
                 instrument_name = '+'.join(instrument)
