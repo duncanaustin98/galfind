@@ -984,6 +984,10 @@ class Data:
         for band in self.instrument.bands:
             self.depth_dirs[band] = f"{config['DEFAULT']['GALFIND_WORK']}/Depths/{self.instrument.instrument_from_band(band)}/{self.version}/{self.survey}/{format(aper_diam.value, '.2f')}as"
             os.makedirs(self.depth_dirs[band], exist_ok = True)
+            
+    def load_depths(self):
+        # load depths from saved .txt file
+        pass
     
     def calc_aper_radius_pix(self, aper_diam, band):
         return (aper_diam / (2 * self.im_pixel_scales[band])).value
@@ -1119,7 +1123,6 @@ def calc_xy_offsets(offset):
         yoff = offset
     print(f"x_off = {xoff}, y_off = {yoff}")
     return xoff, yoff
-
 
 def place_blank_regions(im_data, im_header, seg_data, mask, survey, offset, pix_scale, band, aper_diam = 0.32 * u.arcsec, size = 500, n_busy_iters = 1_000, number = 600, mask_rad = 25, aper_disp_rad = 2, fast = True):
     

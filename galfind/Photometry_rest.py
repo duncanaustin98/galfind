@@ -35,7 +35,7 @@ class Photometry_rest(Photometry):
         return cls(phot, np.float(fits_cat_row[code.galaxy_properties["z_phot"]]))
     
     @classmethod
-    def from_phot(cls, phot, z, rest_UV_wav_lims):
+    def from_phot(cls, phot, z, rest_UV_wav_lims = [1250., 3000.] * u.Angstrom):
         return cls(phot.instrument, phot.flux_Jy, phot.flux_Jy_errs, phot.loc_depths, z, rest_UV_wav_lims)
     
     # STILL NEED TO LOOK FURTHER INTO THIS

@@ -30,6 +30,10 @@ class Photometry:
         self.flux_Jy_errs = flux_Jy_errs
         self.loc_depths = depths
     
+    @property
+    def wav(self):
+        return np.array([self.instrument.band_wavelengths[band].value for band in self.instrument.bands]) * u.Angstrom
+    
     @classmethod
     def from_fits_cat(cls, fits_cat_row, instrument, cat_creator):
         fluxes, flux_errs = cat_creator.load_photometry(fits_cat_row, instrument.bands)
@@ -61,13 +65,13 @@ class Photometry:
             uplims = np.full(len(self.flux_Jy), False)
         else:
             # calculate upper limits based on depths
-            uplims = [True if flux.to(u.Jy) < depth.to(u.Jy) * upper_limit_sigma / 5. else False for (flux, depth) in zip(self.flux_Jy, self.loc_depths)]
+            uplims = [True if flux.to(u.Jy) < depth.to(u.Jy) * upper_limit_sigma / 5. or np.isnan(flux) else False for (flux, depth) in zip(self.flux_Jy, self.loc_depths)]
         if plot_errs:
             yerr = [flux_err if uplim == False else 0.2 * flux for (flux, flux_err, uplim) in zip(self.flux_Jy.value, self.flux_Jy_errs.value, uplims)]
         else:
             yerr = None
-            print("Unit plotting errors here!")
-        plot = ax.errorbar([wav.to(wav_units).value for (band, wav) in self.instrument.band_wavelengths.items()], self.flux_Jy.value, yerr = yerr, \
+        print("Unit plotting errors here!")
+        plot = ax.errorbar(self.wav.to(wav_units), self.flux_Jy.value, yerr = yerr, \
                 uplims = uplims, ls = "", marker = "o", ms = 8, mfc = "none", **errorbar_kwargs)
         if annotate:
             ax.legend()

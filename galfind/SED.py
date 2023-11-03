@@ -37,16 +37,15 @@ class SED:
         if units == self.mags.unit:
             mags = self.mags
         elif units == u.ABmag:
-            if u.get_physical_type(self.mags.unit) == "ABmag/spectral flux density": # f_ν -> derivative of u.Jy
+            if u.get_physical_type(self.mags.unit) in ["ABmag/spectral flux density", "spectral flux density"]: # f_ν -> derivative of u.Jy
                 mags = self.mags.to(u.ABmag)
             elif u.get_physical_type(self.mags.unit) == "power density/spectral flux density wav": # f_λ -> derivative of u.erg / (u.s * (u.cm ** 2) * u.AA)
                 mags = self.mags.to(u.ABmag, equivalencies = u.spectral_density(self.wavs))
-        elif u.get_physical_type(units) == "ABmag/spectral flux density": # f_ν -> derivative of u.Jy
+        elif u.get_physical_type(units) in ["ABmag/spectral flux density", "spectral flux density"]: # f_ν -> derivative of u.Jy
             if self.mags.unit == u.ABmag:
                 mags = self.mags.to(units)
             elif u.get_physical_type(self.mags.unit) == "power density/spectral flux density wav" or u.get_physical_type(self.mags.unit) == "ABmag/spectral flux density":
                 mags = self.mags.to(units, equivalencies = u.spectral_density(self.wavs))
-        
         elif u.get_physical_type(units) == "power density/spectral flux density wav": # f_λ -> derivative of u.erg / (u.s * (u.cm ** 2) * u.AA):
             #if self.mags.unit == u.ABmag:
             mags = self.mags.to(units, equivalencies = u.spectral_density(self.wavs))
@@ -84,8 +83,12 @@ class SED:
 class SED_rest(SED):
     
     def __init__(self, wavs, mags, wav_units, mag_units, wav_range = [900, 100_000] * u.AA):
-        mags = mags[(wavs.value > wav_range.to(wav_units).value[0]) & (wavs.value < wav_range.to(wav_units).value[1])]
-        wavs = wavs[(wavs.value > wav_range.to(wav_units).value[0]) & (wavs.value < wav_range.to(wav_units).value[1])]
+        try:
+            wavs = wavs.value # if wavs is in Angstrom
+        except:
+            pass
+        mags = mags[(wavs > wav_range.to(wav_units).value[0]) & (wavs < wav_range.to(wav_units).value[1])]
+        wavs = wavs[(wavs > wav_range.to(wav_units).value[0]) & (wavs < wav_range.to(wav_units).value[1])]
         super().__init__(wavs, mags, wav_units, mag_units)
         
     def crop_to_Calzetti94_filters(self, update = False):
@@ -122,28 +125,38 @@ class SED_obs(SED):
         depths = []
         given_depth_dir = True
         for i, band in enumerate(instrument):
-            # interpolate filter to be on the same wavelength grid as the SED template
-            band_transmission = interp1d(np.array(instrument.filter_profiles[band]["Wavelength"]), \
-                    np.array(instrument.filter_profiles[band]["Transmission"]), fill_value = "extrapolate")
-            band_interp = band_transmission(self.wavs.value)
-            # convert self.mags to f_ν
-            mags = self.convert_mag_units(u.Jy, update = False)
-            # calculate integral(f(ν) * T(ν)dν)
-            #numerator = np.trapz(mags.value * band_interp, x = self.wavs.value)
-            numerator = quad(interp1d(self.wavs.value, mags.value * band_interp), np.min(np.array(instrument.filter_profiles[band]["Wavelength"])), \
-                             np.max(np.array(instrument.filter_profiles[band]["Wavelength"])))[0]
-            # calculate integral(T(ν)dν)
-            #denominator = np.trapz(band_interp, x = self.wavs.value)
-            denominator = quad(interp1d(self.wavs.value, band_interp), np.min(np.array(instrument.filter_profiles[band]["Wavelength"])), \
-                             np.max(np.array(instrument.filter_profiles[band]["Wavelength"])))[0]
-            # calculate bandpass-averaged flux in Jy
-            bp_averaged_fluxes.append(numerator / denominator)
             if given_depth_dir:
                 try:
                     depths.append(depth_dict[band])
                 except:
+                    given_depth_dir = False
                     print(f"Not given depth value for depth_dict['{band}']")
-        self.mock_photometry = Mock_Photometry(instrument, np.array(bp_averaged_fluxes) * u.Jy, np.array(depths), min_pc_err)
+            # convert self.mags to f_λ
+            mags = funcs.convert_mag_units(self.wavs, self.mags, u.erg / (u.s * (u.cm ** 2) * u.AA))
+            # integral wavelength ranges
+            wav_min = np.max([np.min(np.array(instrument.filter_profiles[band]["Wavelength"])), np.min(self.wavs.value)])
+            wav_max = np.max(np.array(instrument.filter_profiles[band]["Wavelength"]))
+            # don't compute in band is completely bluewards of lyman break
+            if wav_max < wav_min:
+                bp_averaged_fluxes.append(np.nan)
+                continue
+            # interpolate filter to be on the same wavelength grid as the SED template
+            band_transmission = interp1d(np.array(instrument.filter_profiles[band]["Wavelength"]), \
+                    np.array(instrument.filter_profiles[band]["Transmission"]), fill_value = "extrapolate")
+            band_interp = band_transmission(self.wavs.value)
+
+            # calculate integral(f(λ) * T(λ)dλ)
+            #numerator = np.trapz(mags.value * band_interp, x = self.wavs.value)
+            numerator = quad(interp1d(self.wavs.value, mags.value * band_interp, fill_value = (0., "extrapolate")), wav_min, wav_max)[0]
+            # calculate integral(T(λ)dλ)
+            #denominator = np.trapz(band_interp, x = self.wavs.value)
+            denominator = quad(interp1d(self.wavs.value, band_interp, fill_value = (0., "extrapolate")), wav_min, wav_max)[0]
+            # calculate bandpass-averaged flux in Jy
+            bp_averaged_fluxes.append(numerator / denominator)
+        # convert bp_averaged_fluxes to Jy
+        band_wavs = np.array([instrument.band_wavelengths[band].value for band in instrument]) * u.Angstrom
+        bp_averaged_fluxes_Jy = funcs.convert_mag_units(band_wavs, bp_averaged_fluxes * u.erg / (u.s * (u.cm ** 2) * u.AA), u.Jy)
+        self.mock_photometry = Mock_Photometry(instrument, bp_averaged_fluxes_Jy, np.array(depths), min_pc_err)
 
 # class Mock_SED(SED):
     
@@ -166,7 +179,7 @@ class Mock_SED_rest(SED_rest): #, Mock_SED):
         # ensure IGM output is of the correct type
         mock_sed_rest_obj = cls(wavs.value, mags.value, wavs.unit, mags.unit, mock_SED_obs.template_name)
         if IGM_out == None:
-            mock_sed_rest_obj.un_attenuate_IGM(mock_SED_obs.IGM)
+            mock_sed_rest_obj.un_attenuate_IGM(mock_SED_obs.z, mock_SED_obs.IGM)
         elif isinstance(IGM_out, IGM_attenuation.IGM):
             if IGM_out.prescription != mock_SED_obs.IGM.prescription:
                 raise(Exception("Not currently included the functionality to swap IGM attenuation whilst creating new Mock_SED_rest object from Mock_SED_obs object yet"))
@@ -216,12 +229,12 @@ class Mock_SED_rest(SED_rest): #, Mock_SED):
     def renorm_at_wav(self, mag): # this mag can also be a flux, but must have astropy units
         pass
     
-    def un_attenuate_IGM(self, IGM):
+    def un_attenuate_IGM(self, z_obs, IGM):
         if isinstance(IGM, IGM_attenuation.IGM):
             # un_attenuate SED for IGM absorption
             # calculate rest wavelengths from self in the appropriate wavelength range between wav_lyman_lim and wav_lyman_alpha
             attenuated_indices = ((self.wavs.value > wav_lyman_lim) & (self.wavs.value < wav_lyman_alpha))
-            IGM_transmission = IGM.interp_transmission(self.z, self.wavs[attenuated_indices])
+            IGM_transmission = IGM.interp_transmission(z_obs, self.wavs[attenuated_indices])
             if self.mags.unit == u.ABmag:
                 self.mags[attenuated_indices] = (self.mags[attenuated_indices].value - -2.5 * np.log10(IGM_transmission)) * u.ABmag
             else:
@@ -279,19 +292,16 @@ class Mock_SED_obs(SED_obs):
     #     return Photometry(instrument, fluxes, flux_errs, loc_depths)
     
     def attenuate_IGM(self, IGM = IGM_attenuation.IGM()):
-        if not hasattr(self, IGM):
+        if not hasattr(self, "IGM"):
             self.IGM = None
         if isinstance(IGM, IGM_attenuation.IGM):
             if self.IGM == None: # not already been attenuated
                 # attenuate SED for IGM absorption
-                # calculate rest wavelengths from self in the appropriate wavelength range between wav_lyman_lim and wav_lyman_alpha
-                wav_rest_arr = self.wavs / (1 + self.z)
-                attenuated_indices = ((wav_rest_arr.value > wav_lyman_lim) & (wav_rest_arr.value < wav_lyman_alpha))
-                IGM_transmission = IGM.interp_transmission(self.z, wav_rest_arr[attenuated_indices])
+                IGM_transmission = IGM.interp_transmission(self.z, self.wavs / (1 + self.z))
                 if self.mags.unit == u.ABmag:
-                    self.mags[attenuated_indices] = (self.mags[attenuated_indices].value -2.5 * np.log10(IGM_transmission)) * u.ABmag
+                    self.mags = (self.mags.value -2.5 * np.log10(IGM_transmission)) * u.ABmag
                 else:
-                    self.mags[attenuated_indices] *= IGM_transmission
+                    self.mags *= IGM_transmission
                 # save IGM object after attenuating
                 self.IGM = IGM
             else:

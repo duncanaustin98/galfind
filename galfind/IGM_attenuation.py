@@ -105,11 +105,11 @@ def make_IGM_transmission_grid(wav_rest_arr, z_arr, prescription = config["MockS
 
 class IGM:
     
-    def __init__(self, prescription = config["MockSEDs"]["IGM_PRESCRIPTION"], max_z = 10., n_z = 1_000, n_wav_rest = 10_000):
+    def __init__(self, prescription = config["MockSEDs"]["IGM_PRESCRIPTION"], max_z = 25., delta_z = 0.01, n_wav_rest = 10_000):
         self.prescription = prescription
         # make IGM grid if it doesn't exist, else load it
         if not Path(f"{config['MockSEDs']['IGM_DIR']}/{config['MockSEDs']['IGM_PRESCRIPTION']}_IGM_grid.h5").is_file():
-            make_IGM_transmission_grid(np.linspace(wav_lyman_lim, wav_lyman_alpha, n_wav_rest), np.linspace(0., max_z, n_z))
+            make_IGM_transmission_grid(np.linspace(wav_lyman_lim, wav_lyman_alpha, n_wav_rest), np.linspace(0., max_z, int(max_z / delta_z)))
         self.load_IGM_transmission_grid()
         
     @property
@@ -137,10 +137,11 @@ class IGM:
             plt.show()
             
     def interp_transmission(self, z, wav_rest_arr): # wav_rest_arr should have units
-        interp_pts = [[z, wav_rest] for wav_rest in wav_rest_arr.to(u.AA).value]
-        transmission_arr = self.interpolator(interp_pts)
-        # ensure any potentially extrapolated points are within the transmission range 0 < T < 1
-        transmission_arr = [0. if trans < 0. else 1. if trans > 1. else trans for trans in transmission_arr]
+        wav_rest_arr = wav_rest_arr.to(u.AA).value
+        # calculate rest wavelengths from self in the appropriate wavelength range between wav_lyman_lim and wav_lyman_alpha
+        attenuated_indices = ((wav_rest_arr > wav_lyman_lim) & (wav_rest_arr <= wav_lyman_alpha))
+        interp_pts = [[z, wav_rest] for wav_rest in wav_rest_arr[attenuated_indices]]
+        transmission_arr = list(np.zeros(len(wav_rest_arr[wav_rest_arr <= wav_lyman_lim] - 1))) + list(self.interpolator(interp_pts)) + list(np.ones(len(wav_rest_arr[wav_rest_arr > wav_lyman_alpha])))
         return transmission_arr
     
     def plot_slice(self, ax, z, wav_rest_arr, frame = "rest", plot_kwargs = {}, legend_kwargs = {}, annotate = True, save = False, show = False):

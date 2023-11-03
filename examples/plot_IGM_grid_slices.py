@@ -17,7 +17,7 @@ from galfind import config, IGM_attenuation, wav_lyman_lim, wav_lyman_alpha
 plt.style.use(f"{config['DEFAULT']['GALFIND_DIR']}/galfind_style.mplstyle")
 
 igm_prescription = "Inoue+14"
-z_arr = [2.5, 3.5, 4.5, 5.5, 6.5, 7.5]
+z_arr = [2.]
 wav_rest_arr = np.linspace(wav_lyman_lim, wav_lyman_alpha, 505) * u.AA
 frame = "obs"
 

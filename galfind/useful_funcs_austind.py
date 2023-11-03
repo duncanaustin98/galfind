@@ -40,11 +40,11 @@ def convert_mag_units(wavs, mags, units):
     if units == mags.unit:
         pass
     elif units == u.ABmag:
-        if u.get_physical_type(mags.unit) == "ABmag/spectral flux density": # f_ν -> derivative of u.Jy
+        if u.get_physical_type(mags.unit) in ["ABmag/spectral flux density", "spectral flux density"]: # f_ν -> derivative of u.Jy
             mags = mags.to(u.ABmag)
         elif u.get_physical_type(mags.unit) == "power density/spectral flux density wav": # f_λ -> derivative of u.erg / (u.s * (u.cm ** 2) * u.AA)
             mags = mags.to(u.ABmag, equivalencies = u.spectral_density(wavs))
-    elif u.get_physical_type(units) == "ABmag/spectral flux density": # f_ν -> derivative of u.Jy
+    elif u.get_physical_type(units) in ["ABmag/spectral flux density", "spectral flux density"]: # f_ν -> derivative of u.Jy
         if mags.unit == u.ABmag:
             mags = mags.to(units)
         elif u.get_physical_type(mags.unit) == "power density/spectral flux density wav" or u.get_physical_type(mags.unit) == "ABmag/spectral flux density":
