@@ -219,8 +219,15 @@ class Instrument:
             raise(Exception("Not yet implemented another way to load bands other than via SVO"))
     
     def load_instrument_filter_profiles(self, from_SVO = True):
-        for band in self.bands:
+        for band in self:
             self.load_band_filter_profile(band, from_SVO = from_SVO)
+    
+    def load_instrument_rest_filter_profiles(self, z, from_SVO = True):
+        if not hasattr(self, "filter_profiles"):
+            self.load_band_filter_profiles(from_SVO = from_SVO)
+        for band in self:
+            self.rest_filter_profiles[band]["Wavelength"] = self.filter_profiles[band]["Wavelength"] / (1 + z)
+            self.rest_filter_profiles[band]["Transmission"] = self.filter_profiles[band]["Transmission"]
         
     def plot_filter_profile(self, ax, band, from_SVO = True, color = "black"):
         if not hasattr(self, "filter_profiles"):
@@ -285,9 +292,9 @@ class MIRI(Instrument):
     
     def __init__(self, excl_bands = []):
         bands = ['f560W', 'f770W', 'f1000W', 'f1130W', 'f1280W', 'f1500W', 'f1800W', 'f2100W', 'f2550W']
-        band_wavelengths = {'f560W':55870.25, 'f770W':75224.94, 'f1000W': 98793.45, 'f1130W':112960.71, 'f1280W':127059.68,  'f1500W':149257.07,  'f1800W':178734.17, 'f2100W':205601.06, 'f2550W':251515.99}
+        band_wavelengths = {'f560W':55870.25, 'f770W':75224.94, 'f1000W': 98793.45, 'f1130W':112960.71, 'f1280W':127059.68, 'f1500W':149257.07, 'f1800W':178734.17, 'f2100W':205601.06, 'f2550W':251515.99}
         band_wavelengths = {key: value * u.Angstrom for (key, value) in band_wavelengths.items()} # convert each individual value to Angstrom
-        band_FWHMs = {'f560W':11114.05, 'f770W':20734.55, 'f1000W':18679.18, 'f1130W':7091.01, 'f1280W':25306.74, 'f1500W':31119.13, 'f1800W':29839.89,'f2100W':46711.97, 'f2550W':36393.71}
+        band_FWHMs = {'f560W': 11114.05, 'f770W': 20734.55, 'f1000W': 18679.18, 'f1130W': 7091.01, 'f1280W': 25306.74, 'f1500W': 31119.13, 'f1800W': 29839.89,'f2100W':46711.97, 'f2550W':36393.71}
         band_FWHMs = {key: value * u.Angstrom for (key, value) in band_FWHMs.items()} # convert each individual value to Angstrom    
         super().__init__("MIRI", bands, band_wavelengths, band_FWHMs, excl_bands, "JWST")
     
