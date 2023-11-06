@@ -24,10 +24,10 @@ from . import useful_funcs_austind as funcs
 
 class Photometry_rest(Photometry):
     
-    def __init__(self, instrument, flux_Jy, flux_Jy_errs, loc_depths, z, rest_UV_wav_lims = [1250., 3000.] * u.Angstrom):
+    def __init__(self, instrument, flux_Jy, flux_Jy_errs, depths, z, rest_UV_wav_lims = [1250., 3000.] * u.Angstrom):
         self.z = z
         self.rest_UV_wav_lims = rest_UV_wav_lims
-        super().__init__(instrument, flux_Jy, flux_Jy_errs, loc_depths)
+        super().__init__(instrument, flux_Jy, flux_Jy_errs, depths)
     
     @classmethod
     def from_fits_cat(cls, fits_cat_row, instrument, cat_creator, code):
