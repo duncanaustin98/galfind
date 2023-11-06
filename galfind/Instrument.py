@@ -221,13 +221,6 @@ class Instrument:
     def load_instrument_filter_profiles(self, from_SVO = True):
         for band in self:
             self.load_band_filter_profile(band, from_SVO = from_SVO)
-    
-    def load_instrument_rest_filter_profiles(self, z, from_SVO = True):
-        if not hasattr(self, "filter_profiles"):
-            self.load_band_filter_profiles(from_SVO = from_SVO)
-        for band in self:
-            self.rest_filter_profiles[band]["Wavelength"] = self.filter_profiles[band]["Wavelength"] / (1 + z)
-            self.rest_filter_profiles[band]["Transmission"] = self.filter_profiles[band]["Transmission"]
         
     def plot_filter_profile(self, ax, band, from_SVO = True, color = "black"):
         if not hasattr(self, "filter_profiles"):
@@ -242,7 +235,6 @@ class Instrument:
         ax.grid(False)
 
     def plot_filter_profiles(self, ax, plot_bands = [], from_SVO = True, cmap_name = "Spectral_r", show = True, save = False):
-        # normalize cmap
         cmap = sns.color_palette(cmap_name, len(plot_bands))
         for i, band in enumerate(plot_bands):
             if not band in self.bands:

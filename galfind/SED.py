@@ -80,7 +80,9 @@ class SED:
         return plot
     
     def calc_bandpass_averaged_flux(self, filter_profile):
-        if u.get_physical_type(self.mags.unit) != "power density/spectral flux density wav":
+        if self.mags.unit == u.ABmag:
+            self.mags = funcs.convert_mag_units(self.wavs, self.mags, u.erg / (u.s * (u.cm ** 2) * u.AA))
+        elif u.get_physical_type(self.mags.unit) != "power density/spectral flux density wav":
             self.mags = funcs.convert_mag_units(self.wavs, self.mags, u.erg / (u.s * (u.cm ** 2) * u.AA))
         # integral wavelength ranges
         wav_min = np.max([np.min(np.array(filter_profile["Wavelength"])), np.min(self.wavs.value)])
@@ -101,54 +103,10 @@ class SED:
             denominator = quad(interp1d(self.wavs.value, band_interp, fill_value = (0., "extrapolate")), wav_min, wav_max)[0]
             # calculate bandpass-averaged flux in Jy
             return numerator / denominator
-    
-    def calc_bandpass_averaged_fluxes(self, bands, filter_profiles):
-        # convert self.mags to f_λ
-        if u.get_physical_type(self.mags.unit) != "power density/spectral flux density wav":
-            self.mags = funcs.convert_mag_units(self.wavs, self.mags, u.erg / (u.s * (u.cm ** 2) * u.AA))
-        bp_averaged_fluxes = np.zeros(len(instrument))
-        for i, band in enumerate(instrument):
-            bp_averaged_flux[i] = self.
-            # integral wavelength ranges
-            wav_min = np.max([np.min(np.array(instrument.filter_profiles[band]["Wavelength"])), np.min(self.wavs.value)])
-            wav_max = np.max(np.array(instrument.filter_profiles[band]["Wavelength"]))
-            # don't compute in band is completely bluewards of lyman break
-            if wav_max < wav_min:
-                bp_averaged_fluxes.append(np.nan)
-                continue
-            # interpolate filter to be on the same wavelength grid as the SED template
-            band_transmission = interp1d(np.array(instrument.filter_profiles[band]["Wavelength"]), \
-                    np.array(instrument.filter_profiles[band]["Transmission"]), fill_value = "extrapolate")
-            band_interp = band_transmission(self.wavs.value)
-        
-            # calculate integral(f(λ) * T(λ)dλ)
-            #numerator = np.trapz(mags.value * band_interp, x = self.wavs.value)
-            numerator = quad(interp1d(self.wavs.value, mags.value * band_interp, fill_value = (0., "extrapolate")), wav_min, wav_max)[0]
-            # calculate integral(T(λ)dλ)
-            #denominator = np.trapz(band_interp, x = self.wavs.value)
-            denominator = quad(interp1d(self.wavs.value, band_interp, fill_value = (0., "extrapolate")), wav_min, wav_max)[0]
-            bp_averaged_fluxes.append(numerator / denominator)
-        # convert bp_averaged_fluxes to Jy
-        band_wavs = np.array([instrument.band_wavelengths[band].value for band in instrument]) * u.Angstrom
-        bp_averaged_fluxes_Jy = funcs.convert_mag_units(band_wavs, bp_averaged_fluxes * u.erg / (u.s * (u.cm ** 2) * u.AA), u.Jy)
-
-    def create_mock_phot(self, instrument, depths = [], min_pc_err = 0.):
-        # convert self.mags to f_λ
-        if u.get_physical_type(self.mags.unit) != "power density/spectral flux density wav":
-            self.mags = funcs.convert_mag_units(self.wavs, self.mags, u.erg / (u.s * (u.cm ** 2) * u.AA))
-        # load observed frame filter profiles
-        instrument.load_instrument_filter_profiles()
-        bp_averaged_fluxes = np.zeros(len(instrument))
-        for i, band in enumerate(instrument):
-            bp_averaged_fluxes[i] = self.calc_bandpass_averaged_flux(filter_profile)
-        # convert bp_averaged_fluxes to Jy
-        band_wavs = np.array([instrument.band_wavelengths[band].value for band in instrument]) * u.Angstrom
-        bp_averaged_fluxes_Jy = funcs.convert_mag_units(band_wavs, bp_averaged_fluxes * u.erg / (u.s * (u.cm ** 2) * u.AA), u.Jy)
-        self.mock_photometry = Mock_Photometry(instrument, bp_averaged_fluxes_Jy, depths, min_pc_err)
 
 class SED_rest(SED):
     
-    def __init__(self, wavs, mags, wav_units, mag_units, wav_range = [900, 100_000] * u.AA):
+    def __init__(self, wavs, mags, wav_units, mag_units, wav_range = [0, 100_000] * u.AA):
         try:
             wavs = wavs.value # if wavs is in Angstrom
         except:
@@ -233,6 +191,10 @@ class Mock_SED_rest(SED_rest): #, Mock_SED):
     @classmethod
     def load_EAZY_in_template(cls, m_UV, template_set, template_filename):
         EAZY_template_units = {"fsps_larson": {"wavs": u.AA, "mags": u.erg / (u.s * (u.cm ** 2) * u.AA)}}
+        if isinstance(template_filename, int):
+            template_labels = open(f"{config['EAZY']['EAZY_DIR']}/{template_set}.txt", "r")
+            template_filename = template_labels.readlines()[template_filename].replace("\n", "")
+            template_labels.close()
         template = Table.read(f"{config['EAZY']['EAZY_TEMPLATE_DIR']}/{template_filename}", names = ["Wavelength", "SED"], format = "ascii")
         # restrict template to appropriate wavelength range
         template_obj = cls(template["Wavelength"], template["SED"], EAZY_template_units[template_set]["wavs"], \
@@ -266,14 +228,19 @@ class Mock_SED_rest(SED_rest): #, Mock_SED):
     #         raise(Exception(f"Could not attenuate by a non IGM object = {IGM}"))
     
     def create_mock_phot(self, instrument, z, depths = [], min_pc_err = 0.):
-        # convert self.mags to f_λ
-        if u.get_physical_type(self.mags.unit) != "power density/spectral flux density wav":
+        # convert self.mags to f_λ if needed
+        if self.mags.unit == u.ABmag:
+            self.mags = funcs.convert_mag_units(self.wavs, self.mags, u.erg / (u.s * (u.cm ** 2) * u.AA))
+        elif u.get_physical_type(self.mags.unit) != "power density/spectral flux density wav":
             self.mags = funcs.convert_mag_units(self.wavs, self.mags, u.erg / (u.s * (u.cm ** 2) * u.AA))
         # load observed frame filter profiles
-        instrument.load_instrument_rest_filter_profiles(z)
+        instrument.load_instrument_filter_profiles()
         bp_averaged_fluxes = np.zeros(len(instrument))
         for i, band in enumerate(instrument):
-            bp_averaged_fluxes[i] = self.calc_bandpass_averaged_flux(instrument.rest_filter_profiles[band])
+            filter_profile = instrument.filter_profiles[band]
+            # convert filter profile to rest frame
+            filter_profile["Wavelength"] = filter_profile["Wavelength"] / (1 + z)
+            bp_averaged_fluxes[i] = self.calc_bandpass_averaged_flux(filter_profile)
         # convert bp_averaged_fluxes to Jy
         band_wavs = np.array([instrument.band_wavelengths[band].value / (1 + z) for band in instrument]) * u.Angstrom
         bp_averaged_fluxes_Jy = funcs.convert_mag_units(band_wavs, bp_averaged_fluxes * u.erg / (u.s * (u.cm ** 2) * u.AA), u.Jy)
@@ -283,8 +250,11 @@ class Mock_SED_rest(SED_rest): #, Mock_SED):
         if method == "Calzetti+94":
             # crop to Calzetti+94 filters
             wavs, mags = self.crop_to_Calzetti94_filters()
-            # convert mag units to f_λ
-            mags = funcs.convert_mag_units(wavs, mags, u.erg / (u.s * (u.cm ** 2) * u.AA))
+            # convert self.mags to f_λ if needed
+            if mags.unit == u.ABmag:
+                mags = funcs.convert_mag_units(wavs, mags, u.erg / (u.s * (u.cm ** 2) * u.AA))
+            elif u.get_physical_type(mags.unit) != "power density/spectral flux density wav":
+                mags = funcs.convert_mag_units(wavs, mags, u.erg / (u.s * (u.cm ** 2) * u.AA))
         popt, pcov = curve_fit(funcs.beta_slope_power_law_func, wavs.value, mags.value, maxfev = 1_000)
         A, beta = popt[0], popt[1]
         if output_errs:
@@ -346,7 +316,9 @@ class Mock_SED_obs(SED_obs):
 
     def create_mock_phot(self, instrument, depths = [], min_pc_err = 0.):
         # convert self.mags to f_λ
-        if u.get_physical_type(self.mags.unit) != "power density/spectral flux density wav":
+        if self.mags.unit == u.ABmag:
+            self.mags = funcs.convert_mag_units(self.wavs, self.mags, u.erg / (u.s * (u.cm ** 2) * u.AA))
+        elif u.get_physical_type(self.mags.unit) != "power density/spectral flux density wav":
             self.mags = funcs.convert_mag_units(self.wavs, self.mags, u.erg / (u.s * (u.cm ** 2) * u.AA))
         # load observed frame filter profiles
         instrument.load_instrument_filter_profiles()
@@ -373,10 +345,28 @@ class Mock_SED_template_set(ABC):
     
     def __init__(self, mock_SED_arr):
         self.SED_arr = mock_SED_arr
+    
+    def __iter__(self):
+        self.iter = 0
+        return self
+    
+    def __next__(self):
+        if self.iter > len(self) - 1:
+            raise StopIteration
+        else:
+            template = self[self.iter]
+            self.iter += 1
+            return template
+    
+    def __getitem__(self, index):
+        return self.SED_arr[index]
+    
+    def __len__(self):
+        return len(self.SED_arr)
         
-    @abstractmethod
-    def calc_UV_slope():
-        pass
+    # @abstractmethod
+    # def calc_UV_slope():
+    #     pass
     
 class Mock_SED_rest_template_set(Mock_SED_template_set):
     
@@ -387,13 +377,13 @@ class Mock_SED_rest_template_set(Mock_SED_template_set):
     def load_EAZY_in_template(cls, m_UV, template_set):
         mock_SED_rest_arr = []
         # read in .txt file if it exists
-        template_labels = open(f"{config['EAZY']['EAZY_DIR']}/{template_set}.txt", "r").readlines()
-        for name in template_labels:
-            mock_SED_rest_arr.append(SED_rest.load_EAZY_in_template(m_UV, template_set, name.replace("\n", "")))
+        template_labels = open(f"{config['EAZY']['EAZY_DIR']}/{template_set}.txt", "r")
+        for name in template_labels.readlines():
+            mock_SED_rest_arr.append(Mock_SED_rest.load_EAZY_in_template(m_UV, template_set, name.replace("\n", "")))
         template_labels.close()
         return cls(mock_SED_rest_arr)
     
-    def calc_UV_slope():
+    def calc_mock_beta_phot(self, m_UV, template_set, instrument, depths, rest_UV_wav_lims = [1250., 3000.] * u.Angstrom):
         pass
 
 class Mock_SED_obs_template_set(Mock_SED_template_set):
