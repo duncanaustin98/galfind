@@ -72,7 +72,7 @@ def calc_C94_beta(template_set, m_UV_norm):
 def plot_dbeta(ax, z_arr, template_set, incl_bands, rest_UV_wav_lims, m_UV_norm, fixed_depth_mag, \
                incl_errs = False, annotate = True, show = True, save = True, cmap_name = "Oranges", \
                    plot_indices = [], output_dir = f"{config['DEFAULT']['GALFIND_WORK']}/Beta_paper/Delta_beta_fsps_larson"):
-    mock_sed_rest_set = Mock_SED_rest_template_set.load_EAZY_in_template(m_UV_norm, template_set)
+    mock_sed_rest_set = Mock_SED_rest_template_set.load_EAZY_in_templates(m_UV_norm, template_set)
     cmap = sns.color_palette(cmap_name, len(plot_indices) + 5)
     # determine appropriate file to load mock photometric beta calculations
     input_phot_dir = f"{config['DEFAULT']['GALFIND_WORK']}/Beta_paper/Beta_phot_{template_set}"
@@ -107,7 +107,7 @@ def plot_dbeta(ax, z_arr, template_set, incl_bands, rest_UV_wav_lims, m_UV_norm,
         plt.show()
 
 if __name__ == "__main__":
-    rest_UV_band_arr = ["f105W", "f125W", "f140W", "f140M", "f160W", "f162M", "f182M", "f210M", "f250M", "f300M", "f335M"]
+    rest_UV_band_arr = ["f125W", "f140W", "f140M", "f160W", "f162M", "f182M", "f210M", "f250M", "f300M", "f335M"]
     z_arr = np.linspace(6.5, 12., 100)
     min_pc_err = 10
     template_set = "fsps_larson"
@@ -127,5 +127,5 @@ if __name__ == "__main__":
     for incl_bands in tqdm(band_combinations, total = len(band_combinations), desc = f"Calculating β for {template_set} λ_rest={str(rest_UV_wav_lims_arr)} incl_errs={incl_errs}", leave = False):
         calc_mock_beta_phot(z_arr, template_set, incl_bands, rest_UV_wav_lims_arr, m_UV_norm, fixed_depth_mag, incl_errs = incl_errs)
         fig, ax = plt.subplots()
-        plot_dbeta(ax, z_arr, template_set, incl_bands, rest_UV_wav_lims_arr[0], m_UV_norm, fixed_depth_mag, incl_errs, cmap_name = "Oranges_r", plot_indices = np.linspace(0, 11, 12), show = False)
+        #plot_dbeta(ax, z_arr, template_set, incl_bands, rest_UV_wav_lims_arr[0], m_UV_norm, fixed_depth_mag, incl_errs, cmap_name = "Oranges_r", plot_indices = np.linspace(0, 11, 12), show = False)
         plot_dbeta(ax, z_arr, template_set, incl_bands, rest_UV_wav_lims_arr[0], m_UV_norm, fixed_depth_mag, incl_errs, cmap_name = "Blues_r", plot_indices = np.linspace(12, 17, 6))

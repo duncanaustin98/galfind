@@ -19,7 +19,7 @@ plt.style.use(f"{config['DEFAULT']['GALFIND_DIR']}/galfind_style.mplstyle")
 instrument = NIRCam(excl_bands = ["f070W", "f140M", "f162M", "f182M", "f250M", "f300M", "f335M", "f360M", "f430M", "f460M", "f480M"])
 depths = [26. for band in instrument.bands]
 min_pc_err = 10
-z = 8.5
+z = 0.
 template_set = "fsps_larson"
 incl_IGM_att = True
 fig, ax = plt.subplots()
@@ -44,7 +44,7 @@ for i in range(12, 18):
 plt.yscale("log")
 #plt.ylim(32., 20.) # ABmag
 #plt.ylim(1e-3, 1e0) # uJy
-plt.xlim(0.1, 5.) # um
-plt.ylim(3e-8, 1e-6) # Jy
+#plt.xlim(0.1, 5.) # um
+#plt.ylim(3e-8, 1e-6) # Jy
 #plt.ylim(1e-21, 1e-15) # erg/s/cm^2/AA
 plt.show()

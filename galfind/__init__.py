@@ -109,3 +109,4 @@ from . import decorators
 from .SED import SED, SED_rest, SED_obs, Mock_SED_rest, Mock_SED_obs
 from .SED import Mock_SED_template_set, Mock_SED_rest_template_set, Mock_SED_obs_template_set
 from . import IGM_attenuation
+from . import lyman_alpha_damping_wing

@@ -16,6 +16,7 @@ from astropy.table import Table
 from scipy.interpolate import interp1d
 from scipy.integrate import quad
 from scipy.optimize import curve_fit
+import glob
 
 from . import config, astropy_cosmo, Photometry, Photometry_obs, Mock_Photometry, IGM_attenuation, wav_lyman_lim, wav_lyman_alpha
 from . import useful_funcs_austind as funcs
@@ -204,6 +205,23 @@ class Mock_SED_rest(SED_rest): #, Mock_SED):
         template_obj.normalize_to_m_UV(m_UV)
         return template_obj
     
+    @classmethod
+    def load_Yggdrasil_popIII_in_template(cls, imf, fcov, sfh, template_filename):
+        #print("Incorrect normalization for yggdrasil input templates!")
+        yggdrasil_dir = f"/Users/user/Documents/PGR/yggdrasil_grids/{imf}_fcov_{str(fcov)}_SFR_{sfh}_Spectra"
+        # if isinstance(template_filename, int):
+        #     SED_arr = glob.glob(yggdrasil_dir)
+        #     print(SED_arr)
+        template = Table.read(f"{yggdrasil_dir}/{template_filename}", format = "ascii")
+        # convert template fluxes to appropriate units
+        #  * (astropy_cosmo.luminosity_distance(z) ** 2 / (1 + z))
+        fluxes = ((template["flux"] * (u.erg / (u.s * u.AA)) / (4 * np.pi * u.pc ** 2)).to(u.erg / (u.s * (u.cm ** 2) * u.AA))).value
+        template_obj = cls(template["wav"], fluxes, u.AA, u.erg / (u.s * (u.cm ** 2) * u.AA), template_filename)
+        template_obj.convert_mag_units(u.Jy, update = True)
+        template_obj.convert_wav_units(u.AA, update = True)
+        template_obj.age = template.meta["age"] * u.Myr
+        return template_obj
+    
     def normalize_to_m_UV(self, m_UV):
         if not m_UV == None:
             norm = (m_UV * u.ABmag).to(u.Jy).value / self.mags.to(u.Jy).value[np.abs(self.wavs.to(u.AA).value - 1500.).argmin()]
@@ -372,15 +390,28 @@ class Mock_SED_rest_template_set(Mock_SED_template_set):
     
     def __init__(self, mock_SED_rest_arr):
         super().__init__(mock_SED_rest_arr)
-        
+    
     @classmethod
-    def load_EAZY_in_template(cls, m_UV, template_set):
+    def load_SED_in_templates():
+        pass
+    
+    @classmethod
+    def load_EAZY_in_templates(cls, m_UV, template_set):
         mock_SED_rest_arr = []
         # read in .txt file if it exists
         template_labels = open(f"{config['EAZY']['EAZY_DIR']}/{template_set}.txt", "r")
         for name in template_labels.readlines():
             mock_SED_rest_arr.append(Mock_SED_rest.load_EAZY_in_template(m_UV, template_set, name.replace("\n", "")))
         template_labels.close()
+        return cls(mock_SED_rest_arr)
+    
+    @classmethod
+    def load_Yggdrasil_popIII_in_templates(cls, imf, fcov, sfh):
+        mock_SED_rest_arr = []
+        yggdrasil_dir = f"/Users/user/Documents/PGR/yggdrasil_grids/{imf}_fcov_{str(fcov)}_SFR_{sfh}_Spectra"
+        SED_filenames = glob.glob(f"{yggdrasil_dir}/*.ecsv")
+        for name in SED_filenames:
+            mock_SED_rest_arr.append(Mock_SED_rest.load_Yggdrasil_popIII_in_template(imf, fcov, sfh, name.split("/")[-1]))
         return cls(mock_SED_rest_arr)
     
     def calc_mock_beta_phot(self, m_UV, template_set, instrument, depths, rest_UV_wav_lims = [1250., 3000.] * u.Angstrom):
