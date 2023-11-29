@@ -71,7 +71,7 @@ class Photometry:
         else:
             yerr = None
         print("Unit plotting errors here!")
-        plot = ax.errorbar(self.wav.to(wav_units), self.flux_Jy.value, yerr = yerr, \
+        plot = ax.errorbar(self.wav.to(wav_units).value, self.flux_Jy.value, yerr = yerr, \
                 uplims = uplims, ls = "", marker = "o", ms = 8, mfc = "none", **errorbar_kwargs)
         if annotate:
             ax.legend()

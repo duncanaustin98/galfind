@@ -218,7 +218,7 @@ class Data:
                         
                     # need to change this to work if there are no segmentation maps (with the [0] indexing)
 
-            elif instrument.name in ["ACS_WFC", 'WFC3IR']:
+            elif instrument.name in ["ACS_WFC", 'WFC3_IR']:
                 # Iterate through bands and check if images exist 
                 any_path_found = False
                 for band in instrument.bands:
@@ -307,7 +307,7 @@ class Data:
                             else:
                                 raise(Exception(f"ACS_WFC data for {survey} {version} {band} located at {im_paths[band]} must contain either 'ZEROPNT' or 'PHOTFLAM' and 'PHOTPLAM' in its header to calculate its ZP!"))
                             
-                        elif instrument.name == 'WFC3IR':
+                        elif instrument.name == 'WFC3_IR':
                         # Taken from Appendix A of https://www.stsci.edu/files/live/sites/www/files/home/hst/instrumentation/wfc3/documentation/instrument-science-reports-isrs/_documents/2020/WFC3-ISR-2020-10.pdf
                             wfc3ir_zps = {'f098M':25.661, 'f105W':26.2637, 'f110W':26.8185, 'f125W':26.231, 'f140W':26.4502, 'f160W':25.9362}
                             im_zps[band] = wfc3ir_zps[band]
