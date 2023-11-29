@@ -192,7 +192,7 @@ class Mock_SED_rest(SED_rest): #, Mock_SED):
     def load_EAZY_in_template(cls, m_UV, template_set, template_filename):
         EAZY_template_units = {"fsps_larson": {"wavs": u.AA, "mags": u.erg / (u.s * (u.cm ** 2) * u.AA)}}
         if isinstance(template_filename, int):
-            template_labels = open(f"{config['EAZY']['EAZY_DIR']}/{template_set}.txt", "r")
+            template_labels = open(f"{config['EAZY']['EAZY_TEMPLATE_DIR']}/{template_set}.txt", "r")
             template_filename = template_labels.readlines()[template_filename].replace("\n", "")
             template_labels.close()
         template = Table.read(f"{config['EAZY']['EAZY_TEMPLATE_DIR']}/{template_filename}", names = ["Wavelength", "SED"], format = "ascii")
