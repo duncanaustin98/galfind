@@ -65,7 +65,7 @@ class Instrument:
     def instrument_from_band(self, band):
         # Pointless here but makes it compatible with Combined_Instrument
         if (band.split("+")[0] in self.bands) or band in self.bands:
-            return self.name
+            return self
         else:
             return False
     
@@ -360,7 +360,7 @@ class Combined_Instrument(Instrument):
                 return instrument.aper_corr(aper_diam, band)
         raise(Exception(f"{band} does not exist in Instrument = {self.name}!"))
     
-    def instrument_from_band(self, band):
+    def instrument_from_band(self, band, return_name = True):
         names = self.name.split("+")
         for name in names:
             instrument = Instrument.from_name(name)
