@@ -1093,6 +1093,7 @@ class Data:
             # calculate average depth
             average_depths.append(calc_5sigma_depth(xcoord, ycoord, im_data, r, self.im_zps[band], n_aper = len(xcoord))) 
             run_bands.append(band)
+            
 # match sextractor catalogue codes
 sex_id_params = ["NUMBER", "X_IMAGE", "Y_IMAGE", "ALPHA_J2000", "DELTA_J2000"]
 
@@ -1159,26 +1160,31 @@ def place_blank_regions(im_data, im_header, seg_data, mask, survey, offset, pix_
         
     xoff, yoff = calc_xy_offsets(offset)
     
-    
     xchunk = int(seg_data.shape[1])
     ychunk = int(seg_data.shape[0])
     xcoord = list()
     ycoord = list()
     # finds locations to place empty apertures in
-    for i in tqdm(range(0, int((xchunk - (2 * xoff)) / size)), desc = f"Running {band} depths for {survey}"):
-        for j in tqdm(range(0, int((ychunk - (2 * yoff)) / size)), desc = f"Current row = {i + 1}", leave = False):
+    for i in tqdm(range(0, int((xchunk + size - (2 * xoff)) / size)), desc = f"Running {band} depths for {survey}"):
+        for j in tqdm(range(0, int((ychunk + size - (2 * yoff)) / size)), desc = f"Current row = {i + 1}", leave = False):
             busyflag = 0
             # narrow seg, image and mask data to appropriate size for the chunk
-            seg_chunk = seg_data[(j * size) + yoff : ((j + 1) * size) + yoff, (i * size) + xoff:((i + 1) * size) + xoff]
+            xmin, xmax = (i * size) + xoff, ((i + 1) * size) + xoff
+            ymin, ymax = (j * size) + yoff, ((j + 1) * size) + yoff
+            if xmax > seg_data.shape[1]:
+                xmax = seg_data.shape[1]
+                #print("x maxed out")
+            if ymax > seg_data.shape[0]:
+                ymax = seg_data.shape[0]
+                #print("y maxed out")
+            seg_chunk = seg_data[ymin : ymax, xmin : xmax]
             aper_mask_chunk = copy.deepcopy(seg_chunk)
-            im_chunk = im_data[(j*size)+yoff:((j+1)*size)+yoff, (i*size)+xoff:((i+1)*size)+xoff]
-            mask_chunk = mask[(j*size)+yoff:((j+1)*size)+yoff, (i*size)+xoff:((i+1)*size)+xoff] # cut the box of interest out of the images
+            im_chunk = im_data[ymin : ymax, xmin : xmax]
+            mask_chunk = mask[ymin : ymax, xmin : xmax] # cut the box of interest out of the images
             xlen = seg_chunk.shape[1]
             ylen = seg_chunk.shape[0]
             
             # check if there is enough space to fit apertures even if perfectly aligned
-            # if i == 16 and j == 16:
-            #     print(np.argwhere(seg_chunk == 0), np.argwhere(im_chunk != 0), np.argwhere(mask_chunk == False), np.argwhere(aper_mask_chunk == 0))
             z = np.argwhere((seg_chunk == 0) & (im_chunk != 0.) & (mask_chunk == False) & (aper_mask_chunk == 0)) #generate a list of candidate locations for empty apertures
             #print(z)
             if len(z) > 0:
@@ -1205,11 +1211,11 @@ def place_blank_regions(im_data, im_header, seg_data, mask, survey, offset, pix_
                              iters += 1				
                              h, w = seg_chunk.shape[:2]
                              # changed to be different to maskrad, which now just looks at the region edges
-                             source_mask = circ_mask(w, h, radius = mask_rad, center = z[idx]) #draw a circle on segmentation map so make sure empty aperture isn't near another object and truly empty
+                             source_mask = circ_mask(h, w, radius = mask_rad, center = z[idx]) #draw a circle on segmentation map so make sure empty aperture isn't near another object and truly empty
                              masked_source_image = copy.deepcopy(seg_chunk)
                              masked_source_image[source_mask == 0] = 0 #set all area outside of circle to 0
                              source = np.argwhere((masked_source_image != 0)) #check if any part of the masked segmentation map contains another source      
-                             aper_mask = circ_mask(w, h, radius = r + aper_disp_rad, center = z[idx])
+                             aper_mask = circ_mask(h, w, radius = r + aper_disp_rad, center = z[idx])
                              masked_aper_image = copy.deepcopy(aper_mask_chunk)
                              masked_aper_image[aper_mask == 0] = 0 #set all area outside of circle to 0
                              aper = np.argwhere((masked_aper_image != 0))
@@ -1217,8 +1223,8 @@ def place_blank_regions(im_data, im_header, seg_data, mask, survey, offset, pix_
                              empty = np.argwhere(img == 0) # make sure there is data for this region
                              # could also search to see if the aperture covers any manually masked areas
                              if (len(source) == 0 and len(aper) == 0 and len(empty) == 0):# or iters > 200: #if location is good or too many iterations and given up
-                                 xcoord.append(int(z[idx][1] + (i*size) + xoff))
-                                 ycoord.append(int(z[idx][0] + (j*size) + yoff)) #convert coordinate of empty aperture in mini section to coordinate on full image
+                                 xcoord.append(int(z[idx][1] + xmin))
+                                 ycoord.append(int(z[idx][0] + ymin)) #convert coordinate of empty aperture in mini section to coordinate on full image
                                  # set segmentation map to include previous apertures
                                  aper_mask_chunk[aper_mask == 1] = 1
                                  next += 1
@@ -1275,28 +1281,36 @@ def aper_loc_to_reg(xcoord, ycoord, wcs, aper_diam, save_path):
 def calc_chunk_depths(im_data, xcoord_in, ycoord_in, xchunk, ychunk, xoff, yoff, r, size, zero_point, label):
     # split image into equal sized chunks
     depth_image = np.full(im_data.shape, np.nan)
-    for i in tqdm(range(0,int((xchunk-(2*xoff))/size)), desc = label):
-        x_invalid_low = np.argwhere((xcoord_in <= (i * size) + xoff))# or (xcoord > (i + 1) * size + xoff))
+    for i in tqdm(range(0, int((xchunk + size - (2 * xoff)) / size)), desc = label):
+        xmin = (i * size) + xoff
+        xmax = ((i + 1) * size) + xoff
+        if xmax > xchunk:
+            xmax = xchunk
+        x_invalid_low = np.argwhere((xcoord_in <= xmin))
         xcoord_loc = np.delete(xcoord_in, x_invalid_low)
         ycoord_loc = np.delete(ycoord_in, x_invalid_low)
         #print(len(xcoord_loc), len(ycoord_loc))
-        x_invalid_high = np.argwhere((xcoord_loc >= ((i + 1) * size) + xoff))
+        x_invalid_high = np.argwhere((xcoord_loc >= xmax))
         xcoord_loc = np.delete(xcoord_loc, x_invalid_high)
         ycoord_loc = np.delete(ycoord_loc, x_invalid_high)
         #print(len(xcoord_loc), len(ycoord_loc))
-        for j in range(0,int((ychunk-(2*yoff))/size)):       
-            y_invalid_low = np.argwhere((ycoord_loc <= (j * size) + yoff))# or (ycoord > (j + 1) * size + yoff))
+        for j in range(0,int((ychunk + size - (2 * yoff)) / size)):
+            ymin = (j * size) + yoff
+            ymax = ((j + 1) * size) + yoff
+            if ymax > ychunk:
+                ymax = ychunk
+            y_invalid_low = np.argwhere((ycoord_loc <= ymin))
             xcoord_loc2 = np.delete(xcoord_loc, y_invalid_low)
             ycoord_loc2 = np.delete(ycoord_loc, y_invalid_low)
             #print(len(xcoord_loc2), len(ycoord_loc2))
-            y_invalid_high = np.argwhere((ycoord_loc2 >= ((j + 1) * size) + yoff))
+            y_invalid_high = np.argwhere((ycoord_loc2 >= ymax))
             xcoord_loc2 = np.delete(xcoord_loc2, y_invalid_high)
             ycoord_loc2 = np.delete(ycoord_loc2, y_invalid_high)
             #print(len(xcoord_loc2), len(ycoord_loc2))
             if len(xcoord_loc2) != 0:
                 depth_5sigma = calc_5sigma_depth(list(xcoord_loc2), list(ycoord_loc2), im_data, r, zero_point, n_aper = len(list(xcoord_loc2)))
                 #print(depth_5sigma)
-                depth_image[(j*size)+yoff:((j+1)*size)+yoff, (i*size)+xoff:((i+1)*size)+xoff] = depth_5sigma
+                depth_image[ymin : ymax, xmin : xmax] = depth_5sigma
 
     # print mean/median depths for the field
     depths_no_nans = [depth_image[j][i] for j in range(depth_image.shape[0]) for i in range(depth_image.shape[1]) if not math.isnan(depth_image[j][i])]
