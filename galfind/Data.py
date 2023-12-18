@@ -88,6 +88,10 @@ class Data:
                 # load new masks
                 mask_paths[band] = glob.glob(f"{config['DEFAULT']['GALFIND_WORK']}/Masks/{survey}/*{band.replace('W', 'w').replace('M', 'm')}*")[0]
         self.mask_paths = dict(sorted(mask_paths.items()))
+        # clean masks of any zero size regions
+        for band in self.instrument:
+            self.clean_mask_regions(band)
+            
         # try:
         #     print(f"image paths = {self.im_paths}, segmentation paths = {self.seg_paths}, mask paths = {self.mask_paths}")
         # except:
@@ -763,17 +767,24 @@ class Data:
     def clean_mask_regions(self, band):
         # open region file
         mask_path = self.mask_paths[band]
-        with open(mask_path, 'r') as f:
-            lines = f.readlines()
-            with open(mask_path.replace(".reg", "_clean.reg"), 'w') as temp:          
-                for i, line in enumerate(lines):
-                    if line.startswith('physical'):
-                        lines[i] = line.replace('physical', 'image')
-                    if not ( line.endswith(',0)\n') and line.startswith('circle')):
-                        if not (line.endswith(',0)\n') and line.startswith('ellipse')):
-                           temp.write(line)
-        # insert original mask ds9 region file into an unclean folder
-        # update mask paths for the object
+        if "_clean" not in mask_path:
+            with open(mask_path, 'r') as f:
+                lines = f.readlines()
+                clean_mask_path = mask_path.replace(".reg", "_clean.reg")
+                with open(clean_mask_path, 'w') as temp:          
+                    for i, line in enumerate(lines):
+                        # if line.startswith('physical'):
+                        #     lines[i] = line.replace('physical', 'image')
+                        if i <= 2:
+                            temp.write(line)
+                        if not (line.endswith(',0)\n') and line.startswith('circle')):
+                            if (line.startswith('ellipse') and not line.endswith(',0)\n') and not (line.split(",")[3] == "0")) or line.startswith("box"):
+                               temp.write(line)
+            # insert original mask ds9 region file into an unclean folder
+            os.makedirs(f"{funcs.split_dir_name(mask_path,'dir')}/unclean", exist_ok = True)
+            os.rename(mask_path, f"{funcs.split_dir_name(mask_path,'dir')}/unclean/{funcs.split_dir_name(mask_path,'name')}")
+            # update mask paths for the object
+            self.mask_paths[band] = clean_mask_path
     
     def calc_unmasked_area(self, forced_phot_band = ["f277W", "f356W", "f444W"], masking_instrument_name = "NIRCam"):
         masking_bands = np.array([band for band in self.instrument.bands if band in Instrument.from_name(masking_instrument_name).bands])
