@@ -505,12 +505,17 @@ class Catalogue(Catalogue_Base):
             raise(Exception(f"'crop_limits'={crop_limits} in 'Catalogue.crop_cat()' is inappropriate !"))
         return self
     
-    # def plot_best_fit_SED_results(self, x_name, y_name, code_name, ):
-    #     x_arr = []
-    #     y_arr = []
-    #     for gal in self:
-    #         gal.phot.SED_results
-    #     pass
+    def plot_SED_properties(self, x_name, y_name, code_name):
+        x_arr = []
+        y_arr = []
+        for i, gal in enumerate(self):
+            gal_properties = getattr(gal.phot.SED_results[code_name], properties)
+            if x_name in gal_properties and y_name in gal_properties:
+                x_arr[i] = gal_properties(x_name)
+                y_arr[i] = gal_properties(y_name)
+            else:
+                raise(Exception(f"{x_name} and {y_name} not available for all galaxies in this catalogue!"))
+        
     
     
     

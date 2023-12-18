@@ -58,7 +58,7 @@ class Data:
         self.version = version
         self.instrument = instrument
         self.is_blank = is_blank
-        
+        print(self.im_paths)
         self.im_zps = im_zps
         self.wht_exts = wht_exts
         self.wht_paths = wht_paths
@@ -160,6 +160,8 @@ class Data:
                     survey_im_dirs = {"JADES-DR1": "JADES/DR1"}
                 elif version == 'v9' or version[:2] == "v9":
                     survey_im_dirs = {survey: f"{survey}/mosaic_1084_wisptemp2"}
+                elif version == 'v10' or version[:2] == "v10":
+                    survey_im_dirs = {survey: f"{survey}/mosaic_1084_wispscale"}
                 survey_im_dirs = {key: f"/raid/scratch/data/jwst/{value}" for (key, value) in survey_im_dirs.items()}
                 survey_dir = survey_im_dirs[survey]
 
@@ -577,11 +579,14 @@ class Data:
         if type(forced_phot_band) == list:
             if len(forced_phot_band) > 1:
                 # make the stacked image and save all appropriate parameters
+                print(forced_phot_band)
                 self.stack_bands(forced_phot_band)
                 self.forced_phot_band = self.combine_band_names(forced_phot_band)
                 self.seg_paths[self.forced_phot_band] = self.seg_path(self.forced_phot_band)
                 if not Path(self.seg_paths[self.forced_phot_band]).is_file():
                     self.make_seg_map(forced_phot_band)
+            else:
+                self.forced_phot_band = forced_phot_band[0]
         else:
             self.forced_phot_band = forced_phot_band
         
