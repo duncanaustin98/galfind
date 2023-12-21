@@ -85,7 +85,6 @@ astropy_cosmo = FlatLambdaCDM(H0 = 70, Om0 = 0.3, Ob0 = 0.05, Tcmb0 = 2.725)
 
 # set lyman limit and lyman alpha wavelengths
 wav_lyman_lim = 911.8 # * u.AA
-wav_lyman_alpha = 1215.67 # u.AA
 
 from . import useful_funcs_austind
 from . import NIRCam_aperture_corrections as NIRCam_aper_corr
@@ -108,5 +107,6 @@ from .Simulated_Catalogue import Simulated_Catalogue
 from . import decorators
 from .SED import SED, SED_rest, SED_obs, Mock_SED_rest, Mock_SED_obs
 from .SED import Mock_SED_template_set, Mock_SED_rest_template_set, Mock_SED_obs_template_set
+from .Emission_lines import Emission_line, wav_lyman_alpha, line_diagnostics
 from . import IGM_attenuation
 from . import lyman_alpha_damping_wing

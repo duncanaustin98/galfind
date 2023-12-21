@@ -13,16 +13,17 @@ import astropy.units as u
 import astropy.cosmology.units as cu
 from scipy.special import wofz
 
-from . import astropy_cosmo, wav_lyman_alpha
+from . import astropy_cosmo
+from .Emission_lines import wav_lyman_alpha
 
 lambda_alpha_classical = (8 * (np.pi * const.e.esu) ** 2 / (3 * const.m_e * const.c * (wav_lyman_alpha * u.AA) ** 2)).to(1 / u.s)
 lyman_alpha_oscillator_strength = 0.4162
-print(lambda_alpha_classical)
+#print(lambda_alpha_classical)
 lambda_alpha = lambda_alpha_classical * lyman_alpha_oscillator_strength
-print(lambda_alpha)
+#print(lambda_alpha)
 R_alpha = (lambda_alpha * wav_lyman_alpha * u.AA / (4 * np.pi * const.c)).to(u.dimensionless_unscaled)
 lyman_alpha_photon_absorption_const = (lyman_alpha_oscillator_strength * 4 * np.sqrt(np.pi ** 3) * (const.e.esu ** 2) / (const.m_e * const.c * lambda_alpha)).to(u.cm ** 2)
-print(lyman_alpha_photon_absorption_const)
+#print(lyman_alpha_photon_absorption_const)
 
 def integral_result(x):
     term_1 = (x ** (9 / 2)) / (1 - x)
@@ -70,14 +71,11 @@ def Tepper_Garcia06_voigt_profile(a, x):
     H_0 = np.exp(-x_sq)
     Q = 1.5 / x_sq
     return H_0 - (a / (np.sqrt(np.pi) * x_sq)) * (((H_0 ** 2) * (4 * x_sq ** 2 + 7 * x_sq + 4 + Q)) - 1 - Q)
-    #print(x, np.sinh(x ** 2))
-    #K_x = ((4 * (x ** 2) + 3) * ((x ** 2) + 1) * np.exp(-x ** 2) - (2 * (x ** 2) + 3) * np.sinh(x ** 2) / (x ** 2)) / (2 * (x ** 2))
-    #return np.exp(-x ** 2) * (1 - a * 2 * K_x / np.sqrt(np.pi))
 
 def Tepper_Garcia06_lyman_alpha_voigt_profile(wav_rest, delta_lambda):
     a = DLA_damping_param(delta_lambda)
     #print(a)
-    x = ((wav_rest - wav_lyman_alpha * u.AA) / delta_lambda).value
+    x = ((wav_rest - wav_lyman_alpha * u.AA) / delta_lambda).to(u.dimensionless_unscaled)
     return Tepper_Garcia06_voigt_profile(a, x)
 
 def tau_proximate_DLA(wav_rest, N_HI, delta_lambda, voigt_method = "Tepper-Garcia+06"):
@@ -89,5 +87,6 @@ def tau_proximate_DLA(wav_rest, N_HI, delta_lambda, voigt_method = "Tepper-Garci
 
 def get_transmission(tau_arr):
     return np.exp(-np.sum(tau_arr))
+
 
     

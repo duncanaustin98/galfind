@@ -16,7 +16,8 @@ import matplotlib.pyplot as plt
 from tqdm import tqdm
 from scipy.interpolate import RegularGridInterpolator
 
-from . import config, wav_lyman_lim, wav_lyman_alpha
+from . import config, wav_lyman_lim
+from .Emission_lines import wav_lyman_alpha
 
 def calc_Inoue14_LS_LAF_optical_depth(lyman_series, wav_obs_arr, z):
     tau_arr = np.zeros((len(lyman_series), len(wav_obs_arr)))
