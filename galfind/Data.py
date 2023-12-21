@@ -114,8 +114,8 @@ class Data:
             #     print("Making cluster mask. (Not yet implemented; self.cluster_path = '' !!!)")
     
     @classmethod
-    def from_pipeline(cls, survey, version = "v9", instruments = ['NIRCam', 'ACS_WFC', 'WFC3IR'], excl_bands = [], pix_scales = ['30mas', '60mas']):
-        instruments_obj = {'NIRCam': NIRCam(excl_bands = excl_bands), 'ACS_WFC': ACS_WFC(excl_bands = excl_bands), 'WFC3IR': WFC3IR(excl_bands = excl_bands)}
+    def from_pipeline(cls, survey, version = "v9", instruments = ['NIRCam', 'ACS_WFC', 'WFC3_IR'], excl_bands = [], pix_scales = ['30mas', '60mas']):
+        instruments_obj = {'NIRCam': NIRCam(excl_bands = excl_bands), 'ACS_WFC': ACS_WFC(excl_bands = excl_bands), 'WFC3_IR': WFC3_IR(excl_bands = excl_bands)}
         # Build a combined instrument object
         comb_instrument_created = False
         
