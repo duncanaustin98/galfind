@@ -16,10 +16,12 @@ from astropy.table import Table
 from scipy.interpolate import interp1d
 from scipy.integrate import quad
 from scipy.optimize import curve_fit
+from copy import deepcopy
 import glob
 
-from . import config, astropy_cosmo, Photometry, Photometry_obs, Mock_Photometry, IGM_attenuation, wav_lyman_lim, wav_lyman_alpha
+from . import config, astropy_cosmo, Photometry, Photometry_obs, Mock_Photometry, IGM_attenuation, wav_lyman_lim, Emission_lines
 from . import useful_funcs_austind as funcs
+from .Emission_lines import wav_lyman_alpha, line_diagnostics
 
 class SED:
     
@@ -80,30 +82,46 @@ class SED:
             ax.legend(**legend_kwargs)
         return plot
     
+    # def calc_bandpass_averaged_flux(self, filter_profile):
+    #     if self.mags.unit == u.ABmag:
+    #         self.mags = funcs.convert_mag_units(self.wavs, self.mags, u.erg / (u.s * (u.cm ** 2) * u.AA))
+    #     elif u.get_physical_type(self.mags.unit) != "power density/spectral flux density wav":
+    #         self.mags = funcs.convert_mag_units(self.wavs, self.mags, u.erg / (u.s * (u.cm ** 2) * u.AA))
+    #     # integral wavelength ranges
+    #     wav_min = np.max([np.min(np.array(filter_profile["Wavelength"])), np.min(self.wavs.value)])
+    #     wav_max = np.max(np.array(filter_profile["Wavelength"]))
+    #     # don't compute in band is completely bluewards of lyman break
+    #     if wav_max < wav_min:
+    #         return np.nan
+    #     else:
+    #         # interpolate filter to be on the same wavelength grid as the SED template
+    #         band_transmission = interp1d(np.array(filter_profile["Wavelength"]), \
+    #                 np.array(filter_profile["Transmission"]), fill_value = "extrapolate")
+    #         band_interp = band_transmission(self.wavs.value)
+    #         # calculate integral(f(λ) * T(λ)dλ)
+    #         #numerator = np.trapz(mags.value * band_interp, x = self.wavs.value)
+    #         numerator = quad(interp1d(self.wavs.value, self.mags.value * band_interp, fill_value = (0., "extrapolate")), wav_min, wav_max)[0]
+    #         # calculate integral(T(λ)dλ)
+    #         #denominator = np.trapz(band_interp, x = self.wavs.value)
+    #         denominator = quad(interp1d(self.wavs.value, band_interp, fill_value = (0., "extrapolate")), wav_min, wav_max)[0]
+    #         # calculate bandpass-averaged flux in Jy
+    #         return numerator / denominator
+    
     def calc_bandpass_averaged_flux(self, filter_profile):
         if self.mags.unit == u.ABmag:
             self.mags = funcs.convert_mag_units(self.wavs, self.mags, u.erg / (u.s * (u.cm ** 2) * u.AA))
         elif u.get_physical_type(self.mags.unit) != "power density/spectral flux density wav":
             self.mags = funcs.convert_mag_units(self.wavs, self.mags, u.erg / (u.s * (u.cm ** 2) * u.AA))
-        # integral wavelength ranges
-        wav_min = np.max([np.min(np.array(filter_profile["Wavelength"])), np.min(self.wavs.value)])
-        wav_max = np.max(np.array(filter_profile["Wavelength"]))
-        # don't compute in band is completely bluewards of lyman break
-        if wav_max < wav_min:
-            return np.nan
-        else:
-            # interpolate filter to be on the same wavelength grid as the SED template
-            band_transmission = interp1d(np.array(filter_profile["Wavelength"]), \
-                    np.array(filter_profile["Transmission"]), fill_value = "extrapolate")
-            band_interp = band_transmission(self.wavs.value)
-            # calculate integral(f(λ) * T(λ)dλ)
-            #numerator = np.trapz(mags.value * band_interp, x = self.wavs.value)
-            numerator = quad(interp1d(self.wavs.value, self.mags.value * band_interp, fill_value = (0., "extrapolate")), wav_min, wav_max)[0]
-            # calculate integral(T(λ)dλ)
-            #denominator = np.trapz(band_interp, x = self.wavs.value)
-            denominator = quad(interp1d(self.wavs.value, band_interp, fill_value = (0., "extrapolate")), wav_min, wav_max)[0]
-            # calculate bandpass-averaged flux in Jy
-            return numerator / denominator
+        # interpolate SED to be on same grid as filter_profile
+        sed_interp = interp1d(self.wavs, self.mags, fill_value = "extrapolate")(np.array(filter_profile["Wavelength"])) # in f_lambda
+        
+        # calculate integral(f(λ) * T(λ)dλ)
+        numerator = np.trapz(sed_interp * filter_profile["Transmission"], x = filter_profile["Wavelength"])
+        # calculate integral(T(λ)dλ)
+        denominator = np.trapz(filter_profile["Transmission"], x = filter_profile["Wavelength"])
+        # calculate bandpass-averaged flux in Jy
+        return numerator / denominator
+    
 
 class SED_rest(SED):
     
@@ -127,7 +145,49 @@ class SED_rest(SED):
             self.wav_units = u.AA # should improve this functionality
             self.mags = mags
         return wavs, mags
-
+    
+    def calc_line_continuum(self, line_name):
+        wavs_AA = self.convert_wav_units(u.AA, update = False)
+        flux_Jy = self.convert_mag_units(u.Jy, update = False)
+        # calculate continuum flux
+        cont_lims_blue, cont_lims_red = line_diagnostics[line_name]["cont_wavs"][0], line_diagnostics[line_name]["cont_wavs"][1]
+        cont_mask = ((wavs_AA > cont_lims_blue[0].to(u.AA)) & (wavs_AA < cont_lims_blue[1].to(u.AA))) | \
+                    ((wavs_AA > cont_lims_red[0].to(u.AA)) & (wavs_AA < cont_lims_red[1].to(u.AA)))
+        # calculate mean continuum level
+        mean_cont = np.mean(flux_Jy[cont_mask])
+        if not hasattr(self, "line_EWs"):
+            self.line_cont = {line_name: mean_cont}
+        else:
+            self.line_cont[line_name] = mean_cont
+        return mean_cont
+    
+    def calc_line_EW(self, line_name, res = 1_000):
+        wavs_AA = self.convert_wav_units(u.AA, update = False)
+        flux_Jy = self.convert_mag_units(u.Jy, update = False)
+        # calculate line + continuum flux
+        line_lims = line_diagnostics[line_name]["feature_wavs"]
+        # mask everything but the line of interest
+        feature_mask = (wavs_AA > line_lims[0].to(u.AA)) & (wavs_AA < line_lims[1].to(u.AA))
+        feature_width = np.max(wavs_AA) - np.min(wavs_AA)
+        line_plus_cont_flux = np.mean(flux_Jy)
+        # calculate continuum flux and mean continuum level
+        cont_flux = self.calc_line_continuum(line_name)
+        # calculate line flux
+        line_flux = (line_plus_cont_flux - cont_flux) * feature_width # emission positive EW
+        # calculate EW
+        line_EW = line_flux / cont_flux
+        # convert line flux to erg / (u.s * u.cm ** 2)
+        line_flux = (line_flux / u.AA).to(u.erg / (u.s * u.AA * u.cm ** 2), \
+            equivalencies = u.spectral_density(line_diagnostics[line_name]["line_wav"])) * u.AA
+        # save result in self
+        if not hasattr(self, "line_EWs"):
+            self.line_EWs = {line_name: line_EW}
+            self.line_fluxes = {line_name: line_flux}
+        else:
+            self.line_EWs[line_name] = line_EW
+            self.line_fluxes[line_name] = line_flux
+        return line_EW
+    
 class SED_obs(SED):
     
     def __init__(self, z, wavs, mags, wav_units, mag_units):
@@ -173,12 +233,10 @@ class Mock_SED_rest(SED_rest): #, Mock_SED):
         return mock_sed_rest_obj
         
     @classmethod
-    def power_law_from_beta_m_UV(cls, beta, m_UV, wav_range = [912., 5_000.], wav_res = 1):
+    def power_law_from_beta_m_UV(cls, beta, m_UV, wav_range = [912., 5_000.], wav_res = 1, template_name = None):
         wavs = np.linspace(wav_range[0], wav_range[1], int((wav_range[1] - wav_range[0]) / wav_res))
-        print("Still need to include Inoue+2014 Lyman alpha forest attenuation here, relevant at λ<1216 Angstrom!")
-        mags = funcs.flux_to_mag(funcs.flux_lambda_to_Jy(((wavs * u.Angstrom) ** beta) \
-                .to(u.erg / (u.s * (u.cm ** 2) * u.Angstrom)), 1_500. * u.Angstrom), 8.9)
-        mock_sed = cls(wavs, mags, u.AA, u.ABmag)
+        mags = wavs ** beta
+        mock_sed = cls(wavs, mags, u.AA, u.erg / (u.s * u.AA * u.cm ** 2), template_name = template_name)
         mock_sed.normalize_to_m_UV(m_UV)
         return mock_sed
     
@@ -224,7 +282,7 @@ class Mock_SED_rest(SED_rest): #, Mock_SED):
     
     def normalize_to_m_UV(self, m_UV):
         if not m_UV == None:
-            norm = (m_UV * u.ABmag).to(u.Jy).value / self.mags.to(u.Jy).value[np.abs(self.wavs.to(u.AA).value - 1500.).argmin()]
+            norm = (m_UV * u.ABmag).to(u.Jy).value / funcs.convert_mag_units(self.wavs, self.mags, u.Jy).value[np.abs(self.wavs.to(u.AA).value - 1500.).argmin()]
             self.mags = np.array([norm * mag for mag in self.mags.value]) * self.mags.unit
             
     def renorm_at_wav(self, mag): # this mag can also be a flux, but must have astropy units
@@ -245,7 +303,7 @@ class Mock_SED_rest(SED_rest): #, Mock_SED):
     #     else:
     #         raise(Exception(f"Could not attenuate by a non IGM object = {IGM}"))
     
-    def create_mock_phot(self, instrument, z, depths = [], min_pc_err = 0.):
+    def create_mock_phot(self, instrument, z, depths = [], min_pc_err = 10.):
         # convert self.mags to f_λ if needed
         if self.mags.unit == u.ABmag:
             self.mags = funcs.convert_mag_units(self.wavs, self.mags, u.erg / (u.s * (u.cm ** 2) * u.AA))
@@ -255,6 +313,7 @@ class Mock_SED_rest(SED_rest): #, Mock_SED):
         instrument.load_instrument_filter_profiles()
         bp_averaged_fluxes = np.zeros(len(instrument))
         for i, band in enumerate(instrument):
+            print(band)
             filter_profile = instrument.filter_profiles[band]
             # convert filter profile to rest frame
             filter_profile["Wavelength"] = filter_profile["Wavelength"] / (1 + z)
@@ -281,6 +340,28 @@ class Mock_SED_rest(SED_rest): #, Mock_SED):
             return A, beta, A_err, beta_err
         else:
             return A, beta
+        
+    def add_emission_lines(self, emission_lines):
+        assert(type(emission_lines) in [list, np.array])
+        for emission_line in emission_lines:
+            # update units
+            orig_wav_unit = self.wavs.unit
+            orig_mag_unit = self.mags.unit
+            self.convert_wav_units(emission_line.line_profile["wavs"].unit, update = True)
+            self.convert_mag_units(emission_line.line_profile["flux"].unit, update = True)
+            # interpolate emission line to be on the same wavelength grid as the spectrum
+            interp_line_profile = interp1d(emission_line.line_profile["wavs"], \
+                emission_line.line_profile["flux"].value, bounds_error = False, fill_value = 0.)(self.wavs)
+            # correct for line flux difference between interped and non-interped line profile
+            self_copy = deepcopy(self)
+            self_copy.mags += interp_line_profile * self_copy.mags.unit
+            self_copy.calc_line_EW(emission_line.line_name)
+            line_flux = (self_copy.line_fluxes[emission_line.line_name] / u.AA).to(u.erg / (u.s * u.AA * u.cm ** 2), \
+                            equivalencies = u.spectral_density(line_diagnostics[emission_line.line_name]["line_wav"])) * u.AA
+            print(line_flux, emission_line.line_flux / line_flux)
+            # add normalized line profile to spectrum
+            self.mags += interp_line_profile * self.mags.unit * emission_line.line_flux / line_flux
+            
 
 class Mock_SED_obs(SED_obs):
     
@@ -298,12 +379,11 @@ class Mock_SED_obs(SED_obs):
         return mock_SED_obs_obj
     
     @classmethod
-    def power_law_from_beta_M_UV(cls, z, beta, M_UV):
+    def power_law_from_beta_M_UV(cls, z, beta, M_UV, IGM = IGM_attenuation.IGM()):
         lum_distance = astropy_cosmo.luminosity_distance(z).to(u.pc)
         m_UV = M_UV - 2.5 * np.log10(1 + z) + 5 * np.log10(lum_distance.value / 10)
         mock_SED_rest = Mock_SED_rest.from_beta_m_UV(beta, m_UV)
-        obs_SED = cls.from_SED_rest(z, mock_SED_rest)
-        obs_SED.attenuate_IGM()
+        obs_SED = cls.from_SED_rest(z, mock_SED_rest, IGM = IGM)
         return obs_SED
     
     # def create_phot_obs(self, instrument, loc_depths, min_pc_err = 10):
@@ -332,7 +412,7 @@ class Mock_SED_obs(SED_obs):
         else:
             raise(Exception(f"Could not attenuate by a non IGM object = {IGM}"))
 
-    def create_mock_phot(self, instrument, depths = [], min_pc_err = 0.):
+    def create_mock_phot(self, instrument, depths = [], min_pc_err = 10.):
         # convert self.mags to f_λ
         if self.mags.unit == u.ABmag:
             self.mags = funcs.convert_mag_units(self.wavs, self.mags, u.erg / (u.s * (u.cm ** 2) * u.AA))
@@ -358,6 +438,9 @@ class Mock_SED_obs(SED_obs):
         # calculate amplitude and beta of power law fit
         A, beta = mock_sed_rest.calc_UV_slope(output_errs = output_errs, method = method)
         return A, beta
+    
+    def add_emission_lines(self, line_diagnostics):
+        pass
 
 class Mock_SED_template_set(ABC):
     
