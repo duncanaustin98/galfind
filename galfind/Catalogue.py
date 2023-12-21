@@ -12,6 +12,7 @@ from astropy.table import Table, join
 import pyregion
 from astropy.io import fits
 from pathlib import Path
+import traceback
 from astropy.wcs import WCS
 import astropy.units as u
 from tqdm import tqdm
@@ -393,7 +394,7 @@ class Catalogue(Catalogue_Base):
             print("Already masked!")
     
     def make_UV_fit_cat(self, code_name = "EAZY", templates = "fsps_larson", UV_PDF_path = config["RestUVProperties"]["UV_PDF_PATH"], col_names = ["Beta", "flux_lambda_1500", "flux_Jy_1500", "M_UV", "A_UV", "L_obs", "L_int", "SFR"], \
-                        join_tables = True, skip_IDs = [], rest_UV_wavs_arr = [[1268., 2580.] * u.Angstrom, [1250., 3000.] * u.Angstrom], conv_filt_arr = [True]):
+                        join_tables = True, skip_IDs = [], rest_UV_wavs_arr = [[1250., 3000.] * u.Angstrom], conv_filt_arr = [True, False]):
         UV_cat_name = f"{funcs.split_dir_name(self.cat_path, 'dir')}/UV_properties_{code_name}_{templates}_{str(self.cat_creator.min_flux_pc_err)}pc.fits" # _test
         if not Path(UV_cat_name).is_file():
             cat_data = []
@@ -427,16 +428,21 @@ class Catalogue(Catalogue_Base):
                                 try:
                                     #gal.phot.SED_results[code_name][templates].phot_rest[Photometry_rest.rest_UV_wavs_name(rest_UV_wavs)]
                                     gal.phot.SED_results[code_name][templates].phot_rest[Photometry_rest.rest_UV_wavs_name(rest_UV_wavs)] \
-                                        .open_UV_fit_PDF(UV_PDF_path_loc, name, gal_copy.ID, UV_ext_src_corr = gal_copy.phot.SED_results[code_name][templates].ext_src_corrs["UV"], conv_filt = conv_filt, plot = plot)
-                                except:
-                                    print(f"Fitting not performed for {gal.ID}")
+                                        .open_UV_fit_PDF(UV_PDF_path_loc, name, gal_copy.ID, UV_ext_src_corr = 1., conv_filt = conv_filt, plot = plot)
+                                        # UV_ext_src_corr = gal_copy.phot.SED_results[code_name][templates].ext_src_corrs["UV"]
+                                except Exception as e:
+                                    print(f"Fitting not performed for {gal.ID}. Error code: {e}")
+                                    print(traceback.format_exc())
                                     break
                             for name in col_names:
                                 #print(f"{gal.ID}: {gal.phot_rest.phot_obs.instrument.bands}")
                                 try:
-                                    gal_data = np.append(gal_data, funcs.percentiles_from_PDF(gal.phot.SED_results[code_name][templates].phot_rest[Photometry_rest.rest_UV_wavs_name(rest_UV_wavs)].open_UV_fit_PDF(UV_PDF_path_loc, name, gal_copy.ID, gal_copy.phot.SED_results[code_name][templates].ext_src_corrs["UV"])))
-                                except:
-                                    print(f"EXCEPT ID = {gal.ID}")
+                                    gal_data = np.append(gal_data, funcs.percentiles_from_PDF(gal.phot.SED_results[code_name][templates].\
+                                            phot_rest[Photometry_rest.rest_UV_wavs_name(rest_UV_wavs)].open_UV_fit_PDF(UV_PDF_path_loc, name, gal_copy.ID, 1., conv_filt = conv_filt, plot = plot)))
+                                    # gal_copy.phot.SED_results[code_name][templates].ext_src_corrs["UV"]
+                                except Exception as e:
+                                    print(f"EXCEPT ID = {gal.ID}. Error code: {e}")
+                                    print(traceback.format_exc())
                                     gal_data = np.append(gal_data, funcs.percentiles_from_PDF([-99.]))
                             try:
                                 n_bands.append(int(len(gal.phot.SED_results[code_name][templates].phot_rest[Photometry_rest.rest_UV_wavs_name(rest_UV_wavs)].rest_UV_phot.flux_Jy)))
@@ -515,9 +521,6 @@ class Catalogue(Catalogue_Base):
                 y_arr[i] = gal_properties(y_name)
             else:
                 raise(Exception(f"{x_name} and {y_name} not available for all galaxies in this catalogue!"))
-        
-    
-    
-    
+
     # def fit_sed(self, code):
     #     return code.fit_cat(self)

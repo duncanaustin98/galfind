@@ -48,13 +48,13 @@ if __name__ == "__main__":
     eazy_templates = ["fsps", "fsps_larson", "fsps_jades"] #["fsps", "fsps_larson", "fsps_jades"]
     eazy_lowz_zmax = [4., 6.]
     min_flux_pc_errs = [10]
-    forced_phot_band = ["f090W"] #["f277W", "f356W", "f444W"]
-    fast_depths = True
+    forced_phot_band = ["f277W", "f356W", "f444W"]
+    fast_depths = False
     jems_bands = ["f182M", "f210M", "f430M", "f460M", "f480M"]
     ngdeep_excl_bands = ["f435W", "f775W", "f850LP"]
-    jades_3215_excl_bands = ["f162M", "f115W", "f150W", "f200W", "f410M", "f182M", "f210M", "f250M", "f300M", "f335M", "f277W", "f356W", "f444W"] 
-    excl_bands = jades_3215_excl_bands #["f606W", "f814W", "f090W", "f115W", "f277W", "f335M", "f356W", "f410M", "f444W"]
-    n_loc_depth_samples = 10
+    #jades_3215_excl_bands = ["f162M", "f115W", "f150W", "f200W", "f410M", "f182M", "f210M", "f250M", "f300M", "f335M", "f277W", "f356W", "f444W"] 
+    excl_bands = []
+    n_loc_depth_samples = 20
 
     for survey in surveys:
         pipeline([survey], version, instruments, xy_offsets, aper_diams, code_names, eazy_lowz_zmax, min_flux_pc_errs, forced_phot_band, excl_bands, cat_type = cat_type, n_loc_depth_samples = n_loc_depth_samples, fast = fast_depths, eazy_templates = eazy_templates)

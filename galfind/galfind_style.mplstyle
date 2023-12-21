@@ -523,16 +523,16 @@ grid.alpha:     0.8        # transparency, between 0.0 and 1.0
 # ***************************************************************************
 legend.loc:           best
 legend.frameon:       True     # if True, draw the legend on a background patch
-legend.framealpha:    0.8      # legend patch transparency
+legend.framealpha:    0.6      # legend patch transparency
 legend.facecolor:     inherit  # inherit from axes.facecolor; or color spec
 legend.edgecolor:     0.8      # background patch boundary color
-legend.fancybox:      True     # if True, use a rounded box for the
+legend.fancybox:      False     # if True, use a rounded box for the
                                # legend background, else a rectangle
-legend.shadow:        True    # if True, give background a shadow effect
+legend.shadow:        False    # if True, give background a shadow effect
 legend.numpoints:     1        # the number of marker points in the legend line
 legend.scatterpoints: 1        # number of scatter points
 legend.markerscale:   1.0      # the relative size of legend markers vs. original
-legend.fontsize:      14.0
+legend.fontsize:      10.0
 legend.labelcolor:    None
 legend.title_fontsize: None    # None sets to the same as the default axes.
 

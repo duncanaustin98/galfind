@@ -38,9 +38,9 @@ def calc_UV_properties(surveys, version, instruments, xy_offsets, aper_diams, co
 
 if __name__ == "__main__":
     version = "v9" #config["DEFAULT"]["VERSION"] #"v9_sex_test1"
-    instruments = ['NIRCam', "ACS_WFC"] #, 'WFC3IR'] # Can leave this - if there is no data for an instrument it is removed automatically
+    instruments = ['NIRCam']#, "ACS_WFC"] #, 'WFC3IR'] # Can leave this - if there is no data for an instrument it is removed automatically
     cat_type = "loc_depth"
-    surveys = ["CLIO"] #"SMACS-0723", "GLASS", "CLIO", "El-Gordo", "MACS-0416"] #[f"CEERSP{int(i + 1)}" for i in range(0, 10)] + ["NEP-1", "NEP-2", "NEP-3", "NEP-4"] #[config["DEFAULT"]["SURVEY"]] #  #
+    surveys = ["CLIO", "SMACS-0723", "GLASS", "El-Gordo", "MACS-0416"]#, "JADES-Deep-GS"] + [f"CEERSP{int(i + 1)}" for i in range(0, 10)] + ["NEP-1", "NEP-2", "NEP-3", "NEP-4"] #[config["DEFAULT"]["SURVEY"]] #  #
     aper_diams = [0.32] * u.arcsec
     xy_offsets = [[0, 0] for i in range(0, 14)]
     code_names = ["EAZY", "EAZY", "EAZY"] #[EAZY(), EAZY(), EAZY()] #, "EAZY"] #[LePhare()]
@@ -51,7 +51,7 @@ if __name__ == "__main__":
     fast_depths = False
     jems_bands = ["f182M", "f210M", "f430M", "f460M", "f480M"]
     ngdeep_excl_bands = ["f435W", "f775W", "f850LP"]
-    excl_bands = ngdeep_excl_bands #["f435W", "f775W", "f850LP"] # ["f606W", "f814W", "f090W", "f115W", "f277W", "f335M", "f356W", "f410M", "f444W"]
+    excl_bands = [] #["f435W", "f775W", "f850LP"] # ["f606W", "f814W", "f090W", "f115W", "f277W", "f335M", "f356W", "f410M", "f444W"]
     n_loc_depth_samples = 10
 
     for survey in surveys:

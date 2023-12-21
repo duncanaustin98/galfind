@@ -174,12 +174,11 @@ class Mock_SED_rest(SED_rest): #, Mock_SED):
         return mock_sed_rest_obj
         
     @classmethod
-    def power_law_from_beta_m_UV(cls, beta, m_UV, wav_range = [912., 5_000.], wav_res = 1):
+    def power_law_from_beta_m_UV(cls, beta, m_UV, wav_range = [912., 10_000.], wav_res = 1, template_name = None):
         wavs = np.linspace(wav_range[0], wav_range[1], int((wav_range[1] - wav_range[0]) / wav_res))
-        print("Still need to include Inoue+2014 Lyman alpha forest attenuation here, relevant at λ<1216 Angstrom!")
-        mags = funcs.flux_to_mag(funcs.flux_lambda_to_Jy(((wavs * u.Angstrom) ** beta) \
-                .to(u.erg / (u.s * (u.cm ** 2) * u.Angstrom)), 1_500. * u.Angstrom), 8.9)
-        mock_sed = cls(wavs, mags, u.AA, u.ABmag)
+        #print("Still need to include Inoue+2014 Lyman alpha forest attenuation here, relevant at λ<1216 Angstrom!")
+        mags = wavs ** beta
+        mock_sed = cls(wavs, mags, u.AA, u.erg / (u.s * (u.cm ** 2) * u.AA), template_name = template_name)
         mock_sed.normalize_to_m_UV(m_UV)
         return mock_sed
     
@@ -241,7 +240,7 @@ class Mock_SED_rest(SED_rest): #, Mock_SED):
     
     def normalize_to_m_UV(self, m_UV):
         if not m_UV == None:
-            self.meta["m_UV"] = m_UV
+            #self.meta["m_UV"] = m_UV
             norm = (m_UV * u.ABmag).to(u.Jy).value / self.mags.to(u.Jy).value[np.abs(self.wavs.to(u.AA).value - 1500.).argmin()]
             self.mags = np.array([norm * mag for mag in self.mags.value]) * self.mags.unit
             
@@ -319,10 +318,10 @@ class Mock_SED_obs(SED_obs):
         return mock_SED_obs_obj
     
     @classmethod
-    def power_law_from_beta_M_UV(cls, z, beta, M_UV):
+    def power_law_from_beta_M_UV(cls, z, beta, M_UV, template_name = None):
         lum_distance = astropy_cosmo.luminosity_distance(z).to(u.pc)
         m_UV = M_UV - 2.5 * np.log10(1 + z) + 5 * np.log10(lum_distance.value / 10)
-        mock_SED_rest = Mock_SED_rest.from_beta_m_UV(beta, m_UV)
+        mock_SED_rest = Mock_SED_rest.power_law_from_beta_m_UV(beta, m_UV, template_name = template_name)
         obs_SED = cls.from_SED_rest(z, mock_SED_rest)
         obs_SED.attenuate_IGM()
         return obs_SED
@@ -353,7 +352,7 @@ class Mock_SED_obs(SED_obs):
         else:
             raise(Exception(f"Could not attenuate by a non IGM object = {IGM}"))
 
-    def create_mock_phot(self, instrument, depths = [], min_pc_err = 0.):
+    def create_mock_phot(self, instrument, depths = [], min_pc_err = 10.):
         if type(depths) == dict:
             depths = [depth for (band, depth) in depths.items()]
         # convert self.mags to f_λ
