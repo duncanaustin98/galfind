@@ -66,7 +66,7 @@ class EAZY(SED_code):
             # load photometry 
             phot, phot_err = self.load_photometry(cat, SED_input_bands, u.uJy, -99., None)
             # Get filter codes (referenced to GALFIND/EAZY/jwst_nircam_FILTER.RES.info) for the given instrument and bands
-            filt_codes = [EAZY_FILTER_CODES[cat.instrument.instrument_from_band(band)][band] for band in SED_input_bands]
+            filt_codes = [EAZY_FILTER_CODES[cat.instrument.instrument_from_band(band).name][band] for band in SED_input_bands]
             
             # Make input file
             #print(IDs, phot, phot_err, redshifts, len(IDs), len(phot), len(phot_err), len(redshifts))

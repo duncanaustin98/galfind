@@ -12,11 +12,13 @@ from astropy.table import Table, join
 import pyregion
 from astropy.io import fits
 from pathlib import Path
+import traceback
 from astropy.wcs import WCS
 import astropy.units as u
 from tqdm import tqdm
 import time
 import copy
+import os
 
 from .Data import Data
 from .Galaxy import Galaxy, Multiple_Galaxy
@@ -392,8 +394,8 @@ class Catalogue(Catalogue_Base):
             print("Already masked!")
     
     def make_UV_fit_cat(self, code_name = "EAZY", templates = "fsps_larson", UV_PDF_path = config["RestUVProperties"]["UV_PDF_PATH"], col_names = ["Beta", "flux_lambda_1500", "flux_Jy_1500", "M_UV", "A_UV", "L_obs", "L_int", "SFR"], \
-                        join_tables = True, skip_IDs = [], rest_UV_wavs_arr = [[1268., 2580.] * u.Angstrom, [1250., 3000.] * u.Angstrom]):
-        UV_cat_name = f"{funcs.split_dir_name(self.cat_path, 'dir')}/UV_properties_{code_name}_{templates}_{str(self.cat_creator.min_flux_pc_err)}pc.fits"
+                        join_tables = True, skip_IDs = [], rest_UV_wavs_arr = [[1250., 3000.] * u.Angstrom], conv_filt_arr = [True, False]):
+        UV_cat_name = f"{funcs.split_dir_name(self.cat_path, 'dir')}/UV_properties_{code_name}_{templates}_{str(self.cat_creator.min_flux_pc_err)}pc.fits" # _test
         if not Path(UV_cat_name).is_file():
             cat_data = []
             #print("Bands here: ", self[1].phot.instrument.bands)
@@ -401,42 +403,51 @@ class Catalogue(Catalogue_Base):
                 n_bands = []
                 gal_copy = gal #copy.deepcopy(gal)
                 gal_data = np.array([gal_copy.ID])
-                for rest_UV_wavs in rest_UV_wavs_arr:
-                    UV_PDF_path_loc = f"{UV_PDF_path}/{Photometry_rest.rest_UV_wavs_name(rest_UV_wavs)}"
-                    if gal.ID in skip_IDs:
-                        for name in col_names:
-                            gal_data = np.append(gal_data, funcs.percentiles_from_PDF([-99.]))
-                        # append n_bands
-                        n_bands.append(0)
-                    else:
-                        # path = f"{config['DEFAULT']['GALFIND_WORK']}/UV_PDFs/{self.data.version}/{self.data.instrument.name}/{self.survey}/{code_name}+{str(self.cat_creator.min_flux_pc_err)}pc/{templates}/Amplitude/{gal_copy.ID}.txt"
-                        # #print(path)
-                        # if not Path(path).is_file():
-                        #print(gal.phot_obs.instrument.bands)
-                        for name in ["Amplitude", "Beta"]:
-                            if name == "Beta":
-                                plot = True
-                            else:
-                                plot = False
-                            #raise(Exception("Failing try/except here!"))
-                            try:
-                                #gal.phot.SED_results[code_name][templates].phot_rest[Photometry_rest.rest_UV_wavs_name(rest_UV_wavs)]
-                                gal.phot.SED_results[code_name][templates].phot_rest[Photometry_rest.rest_UV_wavs_name(rest_UV_wavs)] \
-                                    .open_UV_fit_PDF(UV_PDF_path_loc, name, gal_copy.ID, gal_copy.phot.SED_results[code_name][templates].ext_src_corrs["UV"], plot = plot)
-                            except:
-                                print(f"Fitting not performed for {gal.ID}")
-                                break
-                        for name in col_names:
-                            #print(f"{gal.ID}: {gal.phot_rest.phot_obs.instrument.bands}")
-                            try:
-                                gal_data = np.append(gal_data, funcs.percentiles_from_PDF(gal.phot.SED_results[code_name][templates].phot_rest[Photometry_rest.rest_UV_wavs_name(rest_UV_wavs)].open_UV_fit_PDF(UV_PDF_path_loc, name, gal_copy.ID, gal_copy.phot.SED_results[code_name][templates].ext_src_corrs["UV"])))
-                            except:
-                                print(f"EXCEPT ID = {gal.ID}")
+                conv_filt_names = {True: "conv_filt_PL", False: "pure_PL"}
+                for conv_filt in conv_filt_arr:
+                    conv_filt_name = conv_filt_names[conv_filt]
+                    for rest_UV_wavs in rest_UV_wavs_arr:
+                        UV_PDF_path_loc = f"{UV_PDF_path}/{Photometry_rest.rest_UV_wavs_name(rest_UV_wavs)}/{conv_filt_name}"
+                        os.makedirs(UV_PDF_path_loc, exist_ok = True) # not sure if this is done later or not
+                        if gal.ID in skip_IDs:
+                            for name in col_names:
                                 gal_data = np.append(gal_data, funcs.percentiles_from_PDF([-99.]))
-                        try:
-                            n_bands.append(int(len(gal.phot.SED_results[code_name][templates].phot_rest[Photometry_rest.rest_UV_wavs_name(rest_UV_wavs)].rest_UV_phot.flux_Jy)))
-                        except:
+                            # append n_bands
                             n_bands.append(0)
+                        else:
+                            # path = f"{config['DEFAULT']['GALFIND_WORK']}/UV_PDFs/{self.data.version}/{self.data.instrument.name}/{self.survey}/{code_name}+{str(self.cat_creator.min_flux_pc_err)}pc/{templates}/Amplitude/{gal_copy.ID}.txt"
+                            # #print(path)
+                            # if not Path(path).is_file():
+                            #print(gal.phot_obs.instrument.bands)
+                            for name in ["Amplitude", "Beta"]:
+                                if name == "Beta":
+                                    plot = True
+                                else:
+                                    plot = False
+                                #raise(Exception("Failing try/except here!"))
+                                try:
+                                    #gal.phot.SED_results[code_name][templates].phot_rest[Photometry_rest.rest_UV_wavs_name(rest_UV_wavs)]
+                                    gal.phot.SED_results[code_name][templates].phot_rest[Photometry_rest.rest_UV_wavs_name(rest_UV_wavs)] \
+                                        .open_UV_fit_PDF(UV_PDF_path_loc, name, gal_copy.ID, UV_ext_src_corr = 1., conv_filt = conv_filt, plot = plot)
+                                        # UV_ext_src_corr = gal_copy.phot.SED_results[code_name][templates].ext_src_corrs["UV"]
+                                except Exception as e:
+                                    print(f"Fitting not performed for {gal.ID}. Error code: {e}")
+                                    print(traceback.format_exc())
+                                    break
+                            for name in col_names:
+                                #print(f"{gal.ID}: {gal.phot_rest.phot_obs.instrument.bands}")
+                                try:
+                                    gal_data = np.append(gal_data, funcs.percentiles_from_PDF(gal.phot.SED_results[code_name][templates].\
+                                            phot_rest[Photometry_rest.rest_UV_wavs_name(rest_UV_wavs)].open_UV_fit_PDF(UV_PDF_path_loc, name, gal_copy.ID, 1., conv_filt = conv_filt, plot = plot)))
+                                    # gal_copy.phot.SED_results[code_name][templates].ext_src_corrs["UV"]
+                                except Exception as e:
+                                    print(f"EXCEPT ID = {gal.ID}. Error code: {e}")
+                                    print(traceback.format_exc())
+                                    gal_data = np.append(gal_data, funcs.percentiles_from_PDF([-99.]))
+                            try:
+                                n_bands.append(int(len(gal.phot.SED_results[code_name][templates].phot_rest[Photometry_rest.rest_UV_wavs_name(rest_UV_wavs)].rest_UV_phot.flux_Jy)))
+                            except:
+                                n_bands.append(0)
                         
                 gal_data = np.concatenate((np.array(gal_data).flatten(), np.array(n_bands)))
                 if i == 0: # if the first column
@@ -444,16 +455,15 @@ class Catalogue(Catalogue_Base):
                 else:
                     cat_data = np.vstack([cat_data, gal_data])
     
-                UV_col_names = np.array([[f"{name}_{Photometry_rest.rest_UV_wavs_name(rest_UV_wavs.value)}", f"{name}_l1_{Photometry_rest.rest_UV_wavs_name(rest_UV_wavs.value)}", \
-                                          f"{name}_u1_{Photometry_rest.rest_UV_wavs_name(rest_UV_wavs.value)}"] for rest_UV_wavs in rest_UV_wavs_arr for name in col_names]).flatten()
+                UV_col_names = np.array([[f"{name}_{Photometry_rest.rest_UV_wavs_name(rest_UV_wavs.value)}_{conv_filt_names[conv_filt]}", f"{name}_l1_{Photometry_rest.rest_UV_wavs_name(rest_UV_wavs.value)}_{conv_filt_names[conv_filt]}", \
+                                          f"{name}_u1_{Photometry_rest.rest_UV_wavs_name(rest_UV_wavs.value)}_{conv_filt_names[conv_filt]}"] for conv_filt in conv_filt_arr for rest_UV_wavs in rest_UV_wavs_arr for name in col_names]).flatten()
                 #print(UV_col_names)
-                fits_col_names = np.concatenate((np.array(["ID"]), UV_col_names, np.array([f"n_bands_{Photometry_rest.rest_UV_wavs_name(rest_UV_wavs.value)}" for rest_UV_wavs in rest_UV_wavs_arr])))
+                fits_col_names = np.concatenate((np.array(["ID"]), UV_col_names, np.array([f"n_bands_{Photometry_rest.rest_UV_wavs_name(rest_UV_wavs.value)}_{conv_filt_names[conv_filt]}" for conv_filt in conv_filt_arr for rest_UV_wavs in rest_UV_wavs_arr])))
                 funcs.make_dirs(self.cat_path)
                 UV_tab = Table(cat_data, names = fits_col_names)
                 UV_tab.write(UV_cat_name, format = "fits", overwrite = True)
                 self.UV_tab = UV_tab
-                #print(f"Writing UV table to {UV_cat_name}")
-                
+                # print(f"Writing UV table to {UV_cat_name}")
         else:
             self.UV_tab = Table.read(UV_cat_name, character_as_bytes = False)
             print(f"Opening table: {UV_cat_name}")
@@ -501,5 +511,16 @@ class Catalogue(Catalogue_Base):
             raise(Exception(f"'crop_limits'={crop_limits} in 'Catalogue.crop_cat()' is inappropriate !"))
         return self
     
+    def plot_SED_properties(self, x_name, y_name, code_name):
+        x_arr = []
+        y_arr = []
+        for i, gal in enumerate(self):
+            gal_properties = getattr(gal.phot.SED_results[code_name], properties)
+            if x_name in gal_properties and y_name in gal_properties:
+                x_arr[i] = gal_properties(x_name)
+                y_arr[i] = gal_properties(y_name)
+            else:
+                raise(Exception(f"{x_name} and {y_name} not available for all galaxies in this catalogue!"))
+
     # def fit_sed(self, code):
     #     return code.fit_cat(self)

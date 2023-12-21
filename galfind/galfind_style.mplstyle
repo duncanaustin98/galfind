@@ -118,8 +118,8 @@ lines.color:     C0                # has no affect on plot(); see axes.prop_cycl
 lines.marker:          None        # the default marker
 lines.markerfacecolor: auto        # the default marker face color
 lines.markeredgecolor: auto        # the default marker edge color
-lines.markeredgewidth: 2.0         # the line width around the marker symbol
-lines.markersize:      8.0           # marker size, in points
+lines.markeredgewidth: 1.5         # the line width around the marker symbol
+lines.markersize:      6.0           # marker size, in points
 lines.dash_joinstyle:  round       # {miter, round, bevel}
 lines.dash_capstyle:   butt        # {butt, round, projecting}
 lines.solid_joinstyle: round       # {miter, round, bevel}
@@ -500,7 +500,7 @@ ytick.minor.pad:     3.4     # distance to the minor tick label in points
 ytick.color:         black   # color of the ticks
 ytick.labelcolor:    inherit # color of the tick labels or inherit from ytick.color
 ytick.labelsize:     14.0  # font size of the tick labels
-ytick.direction:     out     # direction: {in, out, inout}
+ytick.direction:     inout     # direction: {in, out, inout}
 ytick.minor.visible: True   # visibility of minor ticks on y-axis
 ytick.major.left:    True    # draw y axis left major ticks
 ytick.major.right:   True    # draw y axis right major ticks
@@ -523,16 +523,16 @@ grid.alpha:     0.8        # transparency, between 0.0 and 1.0
 # ***************************************************************************
 legend.loc:           best
 legend.frameon:       True     # if True, draw the legend on a background patch
-legend.framealpha:    0.8      # legend patch transparency
+legend.framealpha:    0.6      # legend patch transparency
 legend.facecolor:     inherit  # inherit from axes.facecolor; or color spec
 legend.edgecolor:     0.8      # background patch boundary color
-legend.fancybox:      True     # if True, use a rounded box for the
+legend.fancybox:      False     # if True, use a rounded box for the
                                # legend background, else a rectangle
-legend.shadow:        True    # if True, give background a shadow effect
+legend.shadow:        False    # if True, give background a shadow effect
 legend.numpoints:     1        # the number of marker points in the legend line
 legend.scatterpoints: 1        # number of scatter points
 legend.markerscale:   1.0      # the relative size of legend markers vs. original
-legend.fontsize:      14.0
+legend.fontsize:      10.0
 legend.labelcolor:    None
 legend.title_fontsize: None    # None sets to the same as the default axes.
 

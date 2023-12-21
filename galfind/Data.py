@@ -58,7 +58,7 @@ class Data:
         self.version = version
         self.instrument = instrument
         self.is_blank = is_blank
-        
+        print(self.im_paths)
         self.im_zps = im_zps
         self.wht_exts = wht_exts
         self.wht_paths = wht_paths
@@ -77,7 +77,7 @@ class Data:
             if (seg_path == "" or seg_path == []):
                 self.make_seg_map(band)
             # load segmentation map
-            seg_paths[band] = glob.glob(f"{config['DEFAULT']['GALFIND_WORK']}/SExtractor/{self.instrument.instrument_from_band(band)}/{version}/{survey}/{survey}*{band}_{band}*{version}*seg.fits")[0]
+            seg_paths[band] = glob.glob(f"{config['DEFAULT']['GALFIND_WORK']}/SExtractor/{self.instrument.instrument_from_band(band).name}/{version}/{survey}/{survey}*{band}_{band}*{version}*seg.fits")[0]
         self.seg_paths = dict(sorted(seg_paths.items())) 
         
         # make masks from image paths if they don't already exist
@@ -88,6 +88,10 @@ class Data:
                 # load new masks
                 mask_paths[band] = glob.glob(f"{config['DEFAULT']['GALFIND_WORK']}/Masks/{survey}/*{band.replace('W', 'w').replace('M', 'm')}*")[0]
         self.mask_paths = dict(sorted(mask_paths.items()))
+        # clean masks of any zero size regions
+        for band in self.instrument:
+            self.clean_mask_regions(band)
+            
         # try:
         #     print(f"image paths = {self.im_paths}, segmentation paths = {self.seg_paths}, mask paths = {self.mask_paths}")
         # except:
@@ -160,6 +164,8 @@ class Data:
                     survey_im_dirs = {"JADES-DR1": "JADES/DR1"}
                 elif version == 'v9' or version[:2] == "v9":
                     survey_im_dirs = {survey: f"{survey}/mosaic_1084_wisptemp2"}
+                elif version == 'v10' or version[:2] == "v10":
+                    survey_im_dirs = {survey: f"{survey}/mosaic_1084_wispscale"}
                 survey_im_dirs = {key: f"/raid/scratch/data/jwst/{value}" for (key, value) in survey_im_dirs.items()}
                 survey_dir = survey_im_dirs[survey]
 
@@ -330,8 +336,7 @@ class Data:
             for band in comb_instrument.bands:
                 try:
                     #print(f"{config['DEFAULT']['GALFIND_WORK']}/SExtractor/{comb_instrument.instrument_from_band(band)}/{version}/{survey}/{survey}*{band}_{band}*{version}*seg.fits")
-            
-                    seg_paths[band] = glob.glob(f"{config['DEFAULT']['GALFIND_WORK']}/SExtractor/{comb_instrument.instrument_from_band(band)}/{version}/{survey}/{survey}*{band}_{band}*{version}*seg.fits")[0]
+                    seg_paths[band] = glob.glob(f"{config['DEFAULT']['GALFIND_WORK']}/SExtractor/{comb_instrument.instrument_from_band(band).name}/{version}/{survey}/{survey}*{band}_{band}*{version}*seg.fits")[0]
                 except IndexError:
                     seg_paths[band] = ""
                 # include just the masks corresponding to the correct bands
@@ -494,7 +499,7 @@ class Data:
             raise(Exception(f"Cannot make segmentation map for {band}! type(band) = {type(band)} must be either str, list, or np.array!"))
         # SExtractor bash script python wrapper
         process = subprocess.Popen(["./make_seg_map.sh", config['DEFAULT']['GALFIND_WORK'], self.im_paths[band], str(self.im_pixel_scales[band]), \
-                                str(self.im_zps[band]), self.instrument.instrument_from_band(band), self.survey, band, self.version, str(self.wht_paths[band]), \
+                                str(self.im_zps[band]), self.instrument.instrument_from_band(band).name, self.survey, band, self.version, str(self.wht_paths[band]), \
                                 str(self.wht_exts[band]), self.wht_types[band], str(self.im_exts[band]), sex_config_path, params_path])
         process.wait()
         galfind_logger.info(f"Made segmentation map for {self.survey} {self.version} {band} using config = {sex_config_path}")
@@ -508,7 +513,7 @@ class Data:
             if band not in self.im_paths.keys():
                 bands.remove(band)
                 print(f"{band} not available for {self.survey}")
-        detection_image_dir = f"{config['DEFAULT']['GALFIND_WORK']}/Stacked_Images/{self.version}/{self.instrument.instrument_from_band(bands[0])}/{self.survey}"
+        detection_image_dir = f"{config['DEFAULT']['GALFIND_WORK']}/Stacked_Images/{self.version}/{self.instrument.instrument_from_band(bands[0]).name}/{self.survey}"
         detection_image_name = f"{self.survey}_{self.combine_band_names(bands)}_{self.version}_stack.fits"
         self.im_paths[self.combine_band_names(bands)] = f'{detection_image_dir}/{detection_image_name}'
         self.wht_paths[self.combine_band_names(bands)] = f'{detection_image_dir}/{detection_image_name}'
@@ -562,14 +567,14 @@ class Data:
 
     def sex_cat_path(self, band, forced_phot_band):
         # forced phot band here is the string version
-        sex_cat_dir = f"{config['DEFAULT']['GALFIND_WORK']}/SExtractor/{self.instrument.instrument_from_band(band)}/{self.version}/{self.survey}"
+        sex_cat_dir = f"{config['DEFAULT']['GALFIND_WORK']}/SExtractor/{self.instrument.instrument_from_band(band).name}/{self.version}/{self.survey}"
         sex_cat_name = f"{self.survey}_{band}_{forced_phot_band}_sel_cat_{self.version}.fits"
         sex_cat_path = f"{sex_cat_dir}/{sex_cat_name}"
         return sex_cat_path
 
     def seg_path(self, band):
         # IF THIS IS CHANGED MUST ALSO CHANGE THE PATH IN __init__ AND make_seg_map.sh
-        return f"{config['DEFAULT']['GALFIND_WORK']}/SExtractor/{self.instrument.instrument_from_band(band)}/{self.version}/{self.survey}/{self.survey}_{band}_{band}_sel_cat_{self.version}_seg.fits"
+        return f"{config['DEFAULT']['GALFIND_WORK']}/SExtractor/{self.instrument.instrument_from_band(band).name}/{self.version}/{self.survey}/{self.survey}_{band}_{band}_sel_cat_{self.version}_seg.fits"
 
     @run_in_dir(path = config['DEFAULT']['GALFIND_DIR'])
     def make_sex_cats(self, forced_phot_band = "f444W", sex_config_path = config['SExtractor']['CONFIG_PATH'], params_path = config['SExtractor']['PARAMS_PATH']):
@@ -578,11 +583,14 @@ class Data:
         if type(forced_phot_band) == list:
             if len(forced_phot_band) > 1:
                 # make the stacked image and save all appropriate parameters
+                print(forced_phot_band)
                 self.stack_bands(forced_phot_band)
                 self.forced_phot_band = self.combine_band_names(forced_phot_band)
                 self.seg_paths[self.forced_phot_band] = self.seg_path(self.forced_phot_band)
                 if not Path(self.seg_paths[self.forced_phot_band]).is_file():
                     self.make_seg_map(forced_phot_band)
+            else:
+                self.forced_phot_band = forced_phot_band[0]
         else:
             self.forced_phot_band = forced_phot_band
         
@@ -599,7 +607,7 @@ class Data:
                 # SExtractor bash script python wrapper
                 if self.im_shapes[self.forced_phot_band] == self.im_shapes[band] and self.wht_types[self.forced_phot_band] == self.wht_types[band]:
                     process = subprocess.Popen(["./make_sex_cat.sh", config['DEFAULT']['GALFIND_WORK'], self.im_paths[band], str(self.im_pixel_scales[band]), \
-                                        str(self.im_zps[band]), self.instrument.instrument_from_band(band), self.survey, band, self.version, \
+                                        str(self.im_zps[band]), self.instrument.instrument_from_band(band).name, self.survey, band, self.version, \
                                             self.forced_phot_band, self.im_paths[self.forced_phot_band], str(self.wht_paths[band]), str(self.wht_exts[band]), \
                                             str(self.im_exts[band]), self.wht_paths[self.forced_phot_band], str(self.im_exts[self.forced_phot_band]), self.wht_types[band], 
                                             str(self.wht_exts[self.forced_phot_band]), sex_config_path, params_path])
@@ -759,17 +767,24 @@ class Data:
     def clean_mask_regions(self, band):
         # open region file
         mask_path = self.mask_paths[band]
-        with open(mask_path, 'r') as f:
-            lines = f.readlines()
-            with open(mask_path.replace(".reg", "_clean.reg"), 'w') as temp:          
-                for i, line in enumerate(lines):
-                    if line.startswith('physical'):
-                        lines[i] = line.replace('physical', 'image')
-                    if not ( line.endswith(',0)\n') and line.startswith('circle')):
-                        if not (line.endswith(',0)\n') and line.startswith('ellipse')):
-                           temp.write(line)
-        # insert original mask ds9 region file into an unclean folder
-        # update mask paths for the object
+        if "_clean" not in mask_path:
+            with open(mask_path, 'r') as f:
+                lines = f.readlines()
+                clean_mask_path = mask_path.replace(".reg", "_clean.reg")
+                with open(clean_mask_path, 'w') as temp:          
+                    for i, line in enumerate(lines):
+                        # if line.startswith('physical'):
+                        #     lines[i] = line.replace('physical', 'image')
+                        if i <= 2:
+                            temp.write(line)
+                        if not (line.endswith(',0)\n') and line.startswith('circle')):
+                            if (line.startswith('ellipse') and not line.endswith(',0)\n') and not (line.split(",")[3] == "0")) or line.startswith("box"):
+                               temp.write(line)
+            # insert original mask ds9 region file into an unclean folder
+            os.makedirs(f"{funcs.split_dir_name(mask_path,'dir')}/unclean", exist_ok = True)
+            os.rename(mask_path, f"{funcs.split_dir_name(mask_path,'dir')}/unclean/{funcs.split_dir_name(mask_path,'name')}")
+            # update mask paths for the object
+            self.mask_paths[band] = clean_mask_path
     
     def calc_unmasked_area(self, forced_phot_band = ["f277W", "f356W", "f444W"], masking_instrument_name = "NIRCam"):
         masking_bands = np.array([band for band in self.instrument.bands if band in Instrument.from_name(masking_instrument_name).bands])
@@ -981,12 +996,18 @@ class Data:
     def get_depth_dir(self, aper_diam):
         self.depth_dirs = {}
         for band in self.instrument.bands:
-            self.depth_dirs[band] = f"{config['DEFAULT']['GALFIND_WORK']}/Depths/{self.instrument.instrument_from_band(band)}/{self.version}/{self.survey}/{format(aper_diam.value, '.2f')}as"
+            self.depth_dirs[band] = f"{config['DEFAULT']['GALFIND_WORK']}/Depths/{self.instrument.instrument_from_band(band).name}/{self.version}/{self.survey}/{format(aper_diam.value, '.2f')}as"
             os.makedirs(self.depth_dirs[band], exist_ok = True)
+        return self.depth_dirs
             
-    def load_depths(self):
-        # load depths from saved .txt file
-        pass
+    def load_depths(self, aper_diam):
+        self.get_depth_dir(aper_diam)
+        self.depths = {}
+        for band in self.instrument.bands:
+            # load depths from saved .txt file
+            depths = Table.read(f"{self.depth_dirs[band]}/{self.survey}_depths.txt", names = ["band", "depth"], format = "ascii")
+            self.depths[band] = float(depths[depths["band"] == band]["depth"])
+        return self.depths
     
     def calc_aper_radius_pix(self, aper_diam, band):
         return (aper_diam / (2 * self.im_pixel_scales[band])).value
@@ -1072,6 +1093,7 @@ class Data:
             # calculate average depth
             average_depths.append(calc_5sigma_depth(xcoord, ycoord, im_data, r, self.im_zps[band], n_aper = len(xcoord))) 
             run_bands.append(band)
+            
 # match sextractor catalogue codes
 sex_id_params = ["NUMBER", "X_IMAGE", "Y_IMAGE", "ALPHA_J2000", "DELTA_J2000"]
 
@@ -1138,26 +1160,31 @@ def place_blank_regions(im_data, im_header, seg_data, mask, survey, offset, pix_
         
     xoff, yoff = calc_xy_offsets(offset)
     
-    
     xchunk = int(seg_data.shape[1])
     ychunk = int(seg_data.shape[0])
     xcoord = list()
     ycoord = list()
     # finds locations to place empty apertures in
-    for i in tqdm(range(0, int((xchunk - (2 * xoff)) / size)), desc = f"Running {band} depths for {survey}"):
-        for j in tqdm(range(0, int((ychunk - (2 * yoff)) / size)), desc = f"Current row = {i + 1}", leave = False):
+    for i in tqdm(range(0, int((xchunk + size - (2 * xoff)) / size)), desc = f"Running {band} depths for {survey}"):
+        for j in tqdm(range(0, int((ychunk + size - (2 * yoff)) / size)), desc = f"Current row = {i + 1}", leave = False):
             busyflag = 0
             # narrow seg, image and mask data to appropriate size for the chunk
-            seg_chunk = seg_data[(j * size) + yoff : ((j + 1) * size) + yoff, (i * size) + xoff:((i + 1) * size) + xoff]
+            xmin, xmax = (i * size) + xoff, ((i + 1) * size) + xoff
+            ymin, ymax = (j * size) + yoff, ((j + 1) * size) + yoff
+            if xmax > seg_data.shape[1]:
+                xmax = seg_data.shape[1]
+                #print("x maxed out")
+            if ymax > seg_data.shape[0]:
+                ymax = seg_data.shape[0]
+                #print("y maxed out")
+            seg_chunk = seg_data[ymin : ymax, xmin : xmax]
             aper_mask_chunk = copy.deepcopy(seg_chunk)
-            im_chunk = im_data[(j*size)+yoff:((j+1)*size)+yoff, (i*size)+xoff:((i+1)*size)+xoff]
-            mask_chunk = mask[(j*size)+yoff:((j+1)*size)+yoff, (i*size)+xoff:((i+1)*size)+xoff] # cut the box of interest out of the images
+            im_chunk = im_data[ymin : ymax, xmin : xmax]
+            mask_chunk = mask[ymin : ymax, xmin : xmax] # cut the box of interest out of the images
             xlen = seg_chunk.shape[1]
             ylen = seg_chunk.shape[0]
             
             # check if there is enough space to fit apertures even if perfectly aligned
-            # if i == 16 and j == 16:
-            #     print(np.argwhere(seg_chunk == 0), np.argwhere(im_chunk != 0), np.argwhere(mask_chunk == False), np.argwhere(aper_mask_chunk == 0))
             z = np.argwhere((seg_chunk == 0) & (im_chunk != 0.) & (mask_chunk == False) & (aper_mask_chunk == 0)) #generate a list of candidate locations for empty apertures
             #print(z)
             if len(z) > 0:
@@ -1184,11 +1211,11 @@ def place_blank_regions(im_data, im_header, seg_data, mask, survey, offset, pix_
                              iters += 1				
                              h, w = seg_chunk.shape[:2]
                              # changed to be different to maskrad, which now just looks at the region edges
-                             source_mask = circ_mask(w, h, radius = mask_rad, center = z[idx]) #draw a circle on segmentation map so make sure empty aperture isn't near another object and truly empty
+                             source_mask = circ_mask(h, w, radius = mask_rad, center = z[idx]) #draw a circle on segmentation map so make sure empty aperture isn't near another object and truly empty
                              masked_source_image = copy.deepcopy(seg_chunk)
                              masked_source_image[source_mask == 0] = 0 #set all area outside of circle to 0
                              source = np.argwhere((masked_source_image != 0)) #check if any part of the masked segmentation map contains another source      
-                             aper_mask = circ_mask(w, h, radius = r + aper_disp_rad, center = z[idx])
+                             aper_mask = circ_mask(h, w, radius = r + aper_disp_rad, center = z[idx])
                              masked_aper_image = copy.deepcopy(aper_mask_chunk)
                              masked_aper_image[aper_mask == 0] = 0 #set all area outside of circle to 0
                              aper = np.argwhere((masked_aper_image != 0))
@@ -1196,8 +1223,8 @@ def place_blank_regions(im_data, im_header, seg_data, mask, survey, offset, pix_
                              empty = np.argwhere(img == 0) # make sure there is data for this region
                              # could also search to see if the aperture covers any manually masked areas
                              if (len(source) == 0 and len(aper) == 0 and len(empty) == 0):# or iters > 200: #if location is good or too many iterations and given up
-                                 xcoord.append(int(z[idx][1] + (i*size) + xoff))
-                                 ycoord.append(int(z[idx][0] + (j*size) + yoff)) #convert coordinate of empty aperture in mini section to coordinate on full image
+                                 xcoord.append(int(z[idx][1] + xmin))
+                                 ycoord.append(int(z[idx][0] + ymin)) #convert coordinate of empty aperture in mini section to coordinate on full image
                                  # set segmentation map to include previous apertures
                                  aper_mask_chunk[aper_mask == 1] = 1
                                  next += 1
@@ -1254,28 +1281,36 @@ def aper_loc_to_reg(xcoord, ycoord, wcs, aper_diam, save_path):
 def calc_chunk_depths(im_data, xcoord_in, ycoord_in, xchunk, ychunk, xoff, yoff, r, size, zero_point, label):
     # split image into equal sized chunks
     depth_image = np.full(im_data.shape, np.nan)
-    for i in tqdm(range(0,int((xchunk-(2*xoff))/size)), desc = label):
-        x_invalid_low = np.argwhere((xcoord_in <= (i * size) + xoff))# or (xcoord > (i + 1) * size + xoff))
+    for i in tqdm(range(0, int((xchunk + size - (2 * xoff)) / size)), desc = label):
+        xmin = (i * size) + xoff
+        xmax = ((i + 1) * size) + xoff
+        if xmax > xchunk:
+            xmax = xchunk
+        x_invalid_low = np.argwhere((xcoord_in <= xmin))
         xcoord_loc = np.delete(xcoord_in, x_invalid_low)
         ycoord_loc = np.delete(ycoord_in, x_invalid_low)
         #print(len(xcoord_loc), len(ycoord_loc))
-        x_invalid_high = np.argwhere((xcoord_loc >= ((i + 1) * size) + xoff))
+        x_invalid_high = np.argwhere((xcoord_loc >= xmax))
         xcoord_loc = np.delete(xcoord_loc, x_invalid_high)
         ycoord_loc = np.delete(ycoord_loc, x_invalid_high)
         #print(len(xcoord_loc), len(ycoord_loc))
-        for j in range(0,int((ychunk-(2*yoff))/size)):       
-            y_invalid_low = np.argwhere((ycoord_loc <= (j * size) + yoff))# or (ycoord > (j + 1) * size + yoff))
+        for j in range(0,int((ychunk + size - (2 * yoff)) / size)):
+            ymin = (j * size) + yoff
+            ymax = ((j + 1) * size) + yoff
+            if ymax > ychunk:
+                ymax = ychunk
+            y_invalid_low = np.argwhere((ycoord_loc <= ymin))
             xcoord_loc2 = np.delete(xcoord_loc, y_invalid_low)
             ycoord_loc2 = np.delete(ycoord_loc, y_invalid_low)
             #print(len(xcoord_loc2), len(ycoord_loc2))
-            y_invalid_high = np.argwhere((ycoord_loc2 >= ((j + 1) * size) + yoff))
+            y_invalid_high = np.argwhere((ycoord_loc2 >= ymax))
             xcoord_loc2 = np.delete(xcoord_loc2, y_invalid_high)
             ycoord_loc2 = np.delete(ycoord_loc2, y_invalid_high)
             #print(len(xcoord_loc2), len(ycoord_loc2))
             if len(xcoord_loc2) != 0:
                 depth_5sigma = calc_5sigma_depth(list(xcoord_loc2), list(ycoord_loc2), im_data, r, zero_point, n_aper = len(list(xcoord_loc2)))
                 #print(depth_5sigma)
-                depth_image[(j*size)+yoff:((j+1)*size)+yoff, (i*size)+xoff:((i+1)*size)+xoff] = depth_5sigma
+                depth_image[ymin : ymax, xmin : xmax] = depth_5sigma
 
     # print mean/median depths for the field
     depths_no_nans = [depth_image[j][i] for j in range(depth_image.shape[0]) for i in range(depth_image.shape[1]) if not math.isnan(depth_image[j][i])]

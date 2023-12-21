@@ -38,10 +38,10 @@ def pipeline(surveys, version,instruments, xy_offsets, aper_diams, code_names, l
             #     cat.make_UV_fit_cat(UV_PDF_path = f"{config['RestUVProperties']['UV_PDF_PATH']}/{version}/{instruments_name}/{survey}/{code.code_name}+{pc_err}pc")  
 
 if __name__ == "__main__":
-    version = "v9" #config["DEFAULT"]["VERSION"] #"v9_sex_test1"
-    instruments = ['NIRCam', 'ACS_WFC'] #, 'WFC3IR'] # Can leave this - if there is no data for an instrument it is removed automatically
+    version = "v10" #config["DEFAULT"]["VERSION"] #"v9_sex_test1"
+    instruments = ['NIRCam'] #, 'ACS_WFC'] #, 'WFC3IR'] # Can leave this - if there is no data for an instrument it is removed automatically
     cat_type = "loc_depth"
-    surveys = ["CEERSP1"] #[config["DEFAULT"]["SURVEY"]] # [f"CEERSP{int(i + 1)}" for i in range(0, 10)] #
+    surveys = ["JADES-3215"] #[config["DEFAULT"]["SURVEY"]] # [f"CEERSP{int(i + 1)}" for i in range(0, 10)] #
     aper_diams = [0.32] * u.arcsec
     xy_offsets = [[0, 0], [0, 0], [0, 0], [0, 0], [0, 0], [0, 0], [0, 0], [0, 0], [0, 0], [0, 0]]
     code_names = ["EAZY", "EAZY", "EAZY"] #, "EAZY"] #[LePhare()]
@@ -52,7 +52,8 @@ if __name__ == "__main__":
     fast_depths = False
     jems_bands = ["f182M", "f210M", "f430M", "f460M", "f480M"]
     ngdeep_excl_bands = ["f435W", "f775W", "f850LP"]
-    excl_bands = jems_bands #["f606W", "f814W", "f090W", "f115W", "f277W", "f335M", "f356W", "f410M", "f444W"]
+    #jades_3215_excl_bands = ["f162M", "f115W", "f150W", "f200W", "f410M", "f182M", "f210M", "f250M", "f300M", "f335M", "f277W", "f356W", "f444W"] 
+    excl_bands = []
     n_loc_depth_samples = 20
 
     for survey in surveys:

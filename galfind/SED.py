@@ -125,7 +125,7 @@ class SED:
 
 class SED_rest(SED):
     
-    def __init__(self, wavs, mags, wav_units, mag_units, wav_range = [0, 100_000] * u.AA):
+    def __init__(self, wavs, mags, wav_units, mag_units, wav_range = [0, 10_000] * u.AA):
         try:
             wavs = wavs.value # if wavs is in Angstrom
         except:
@@ -213,8 +213,9 @@ class SED_obs(SED):
     
 class Mock_SED_rest(SED_rest): #, Mock_SED):
     
-    def __init__(self, wavs, mags, wav_units, mag_units, template_name):
+    def __init__(self, wavs, mags, wav_units, mag_units, template_name, meta = None):
         self.template_name = template_name
+        self.meta = meta
         super().__init__(wavs, mags, wav_units, mag_units)
         
     @classmethod
@@ -233,7 +234,7 @@ class Mock_SED_rest(SED_rest): #, Mock_SED):
         return mock_sed_rest_obj
         
     @classmethod
-    def power_law_from_beta_m_UV(cls, beta, m_UV, wav_range = [912., 5_000.], wav_res = 1, template_name = None):
+    def power_law_from_beta_m_UV(cls, beta, m_UV, wav_range = [912., 10_000.], wav_res = 1, template_name = None):
         wavs = np.linspace(wav_range[0], wav_range[1], int((wav_range[1] - wav_range[0]) / wav_res))
         mags = wavs ** beta
         mock_sed = cls(wavs, mags, u.AA, u.erg / (u.s * u.AA * u.cm ** 2), template_name = template_name)
@@ -244,6 +245,8 @@ class Mock_SED_rest(SED_rest): #, Mock_SED):
     def load_SED_in_template(cls, code_name, m_UV, template_set, template_number):
         if code_name == "EAZY":
             return cls.load_EAZY_in_template(m_UV, template_set, template_number)
+        elif code_name == "Bagpipes":
+            return cls.load_pipes_in_template()
         else:
             raise(Exception(f"Rest frame template load in currently unavailable for code_name = {code_name}"))
     
@@ -258,6 +261,20 @@ class Mock_SED_rest(SED_rest): #, Mock_SED):
         # restrict template to appropriate wavelength range
         template_obj = cls(template["Wavelength"], template["SED"], EAZY_template_units[template_set]["wavs"], \
                            EAZY_template_units[template_set]["mags"], template_filename.split("/")[1])
+        template_obj.convert_mag_units(u.Jy, update = True)
+        template_obj.convert_wav_units(u.AA, update = True)
+        template_obj.normalize_to_m_UV(m_UV)
+        return template_obj
+    
+    @classmethod
+    def load_pipes_in_template(cls, m_UV, template_set, template_filename):
+        pipes_template_units = {"wavs": u.AA, "mags": u.erg / (u.s * (u.cm ** 2))} # rest frame f_lambda
+        if isinstance(template_filename, int):
+            template_name = glob.glob(f"{config['Bagpipes']['BAGPIPES_TEMPLATE_DIR']}/{template_set}/*_{str(template_filename)}.ecsv")[0]
+        template = Table.read(template_name, names = ["Wavelength", "SED"], format = "ascii.ecsv")
+        # restrict template to appropriate wavelength range
+        template_obj = cls(template["Wavelength"].value, template["SED"].value, pipes_template_units["wavs"], \
+                           pipes_template_units["mags"] / u.AA, template_name.split("/")[-1].replace(".ecsv", ""), meta = dict(template.meta))
         template_obj.convert_mag_units(u.Jy, update = True)
         template_obj.convert_wav_units(u.AA, update = True)
         template_obj.normalize_to_m_UV(m_UV)
@@ -304,6 +321,8 @@ class Mock_SED_rest(SED_rest): #, Mock_SED):
     #         raise(Exception(f"Could not attenuate by a non IGM object = {IGM}"))
     
     def create_mock_phot(self, instrument, z, depths = [], min_pc_err = 10.):
+        if type(depths) == dict:
+           depths = [depth for (band, depth) in depths.items()]
         # convert self.mags to f_λ if needed
         if self.mags.unit == u.ABmag:
             self.mags = funcs.convert_mag_units(self.wavs, self.mags, u.erg / (u.s * (u.cm ** 2) * u.AA))
@@ -365,8 +384,9 @@ class Mock_SED_rest(SED_rest): #, Mock_SED):
 
 class Mock_SED_obs(SED_obs):
     
-    def __init__(self, z, wavs, mags, wav_units, mag_units, template_name, IGM = IGM_attenuation.IGM()):
+    def __init__(self, z, wavs, mags, wav_units, mag_units, template_name, IGM = IGM_attenuation.IGM(), meta = None):
         self.template_name = template_name
+        self.meta = meta
         super().__init__(z, wavs, mags, wav_units, mag_units)
         if IGM != None:
             self.attenuate_IGM(IGM)
@@ -375,14 +395,14 @@ class Mock_SED_obs(SED_obs):
     def from_Mock_SED_rest(cls, mock_SED_rest, z, out_wav_units = u.AA, out_mag_units = u.ABmag, IGM = IGM_attenuation.IGM()):
         mags = mock_SED_rest.convert_mag_units(out_mag_units)
         wavs = (mock_SED_rest.wavs * (1 + z)).to(out_wav_units)
-        mock_SED_obs_obj = cls(z, wavs.value, mags.value, out_wav_units, out_mag_units, mock_SED_rest.template_name, IGM)
+        mock_SED_obs_obj = cls(z, wavs.value, mags.value, out_wav_units, out_mag_units, mock_SED_rest.template_name, IGM, meta = mock_SED_rest.meta)
         return mock_SED_obs_obj
     
     @classmethod
-    def power_law_from_beta_M_UV(cls, z, beta, M_UV, IGM = IGM_attenuation.IGM()):
+    def power_law_from_beta_M_UV(cls, z, beta, M_UV, template_name = None, IGM = IGM_attenuation.IGM()):
         lum_distance = astropy_cosmo.luminosity_distance(z).to(u.pc)
         m_UV = M_UV - 2.5 * np.log10(1 + z) + 5 * np.log10(lum_distance.value / 10)
-        mock_SED_rest = Mock_SED_rest.from_beta_m_UV(beta, m_UV)
+        mock_SED_rest = Mock_SED_rest.power_law_from_beta_m_UV(beta, m_UV, template_name = template_name)
         obs_SED = cls.from_SED_rest(z, mock_SED_rest, IGM = IGM)
         return obs_SED
     
@@ -413,6 +433,8 @@ class Mock_SED_obs(SED_obs):
             raise(Exception(f"Could not attenuate by a non IGM object = {IGM}"))
 
     def create_mock_phot(self, instrument, depths = [], min_pc_err = 10.):
+        if type(depths) == dict:
+            depths = [depth for (band, depth) in depths.items()]
         # convert self.mags to f_λ
         if self.mags.unit == u.ABmag:
             self.mags = funcs.convert_mag_units(self.wavs, self.mags, u.erg / (u.s * (u.cm ** 2) * u.AA))

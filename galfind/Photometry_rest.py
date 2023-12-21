@@ -11,7 +11,9 @@ import numpy as np
 import astropy.constants as const
 import astropy.units as u
 from copy import copy, deepcopy
+import traceback
 import seaborn as sns
+from tqdm import tqdm
 import warnings
 import matplotlib.pyplot as plt
 from scipy.interpolate import interp1d
@@ -21,6 +23,21 @@ from . import Photometry
 from . import astropy_cosmo
 from . import config
 from . import useful_funcs_austind as funcs
+
+class beta_fit:
+    def __init__(self, z, instrument):
+        self.z = z
+        self.instrument = instrument
+        self.instrument.load_instrument_filter_profiles()
+        self.wavelength = {}
+        self.transmission = {}
+        self.norm = {}
+        for band in instrument:
+            self.wavelength[band] = np.array(self.instrument.filter_profiles[band]["Wavelength"].value / (1 + self.z))
+            self.transmission[band] = np.array(self.instrument.filter_profiles[band]["Transmission"].value)
+            self.norm[band] = np.trapz(self.transmission[band], x = self.wavelength[band])
+    def beta_slope_power_law_func_conv_filt(self, _, A, beta):
+        return np.array([np.trapz((10 ** A) * (self.wavelength[band] ** beta) * self.transmission[band], x = self.wavelength[band]) / self.norm[band] for band in self.instrument])
 
 class Photometry_rest(Photometry):
     
@@ -145,10 +162,10 @@ class Photometry_rest(Photometry):
             wav_interp = np.linspace(np.log10(self.rest_UV_phot.wav.value)[0], np.log10(self.rest_UV_phot.wav.value)[-1], n_interp)
             for i in range(iters):
                 #percentiles = np.percentile([16, 50, 84], axis=0)
-                f_interp = interp1d(np.log10(self.rest_UV_phot.wav.value), np.log10(Photometry_rest.beta_slope_power_law_func(self.rest_UV_phot.wav.value, self.amplitude_PDF[i],
+                f_interp = interp1d(np.log10(self.rest_UV_phot.wav.value), np.log10(Photometry_rest.beta_slope_power_law_func(self.rest_UV_phot.wav.value, self.amplitude_PDF[i], \
                         self.beta_PDF[i])), kind = 'linear')
                 y_new = f_interp(wav_interp)
-                fit_lines.append(np.log10(Photometry_rest.beta_slope_power_law_func(self.rest_UV_phot.wav.value, self.amplitude_PDF[i],
+                fit_lines.append(np.log10(Photometry_rest.beta_slope_power_law_func(self.rest_UV_phot.wav.value, self.amplitude_PDF[i], \
                         self.beta_PDF[i])))
                 fit_lines_interped.append(y_new)
             fit_lines_interped = np.array(fit_lines_interped)
@@ -233,7 +250,7 @@ class Photometry_rest(Photometry):
         except:
             return None
         
-    def fit_UV_slope(self, save_dir, ID, z_PDF = None, iters = 10_000, plot = True): # 1D redshift PDF
+    def fit_UV_slope(self, save_dir, ID, z_PDF = None, iters = 1_000, plot = True, conv_filt = False): # 1D redshift PDF
         #print(f"Fitting UV slope for {ID}")
         self.make_rest_UV_phot()
         fluxes = np.array([np.random.normal(mu.value, sigma.value, iters) for mu, sigma in zip(self.rest_UV_phot.flux_lambda, self.rest_UV_phot.flux_lambda_errs)]).T
@@ -242,9 +259,14 @@ class Photometry_rest(Photometry):
             # vary within redshift errors
             pass
         try:
-            popt_arr = np.array([curve_fit(Photometry_rest.beta_slope_power_law_func, self.rest_UV_phot.wav, flux, maxfev = 10_000)[0] for flux in fluxes])
-        except:
+            if conv_filt:
+                popt_arr = np.array([curve_fit(beta_fit(self.z, self.rest_UV_phot.instrument).beta_slope_power_law_func_conv_filt, None, flux, maxfev = 100_000)[0] for flux in tqdm(fluxes)])
+            else:
+                popt_arr = np.array([curve_fit(Photometry_rest.beta_slope_power_law_func, self.rest_UV_phot.wav, flux, maxfev = 100_000)[0] for flux in fluxes])
+        except Exception as e:
+            #print(traceback.format_exc())
             popt_arr = []
+            
         if len(popt_arr) > 1:
             amplitude_PDF = popt_arr.T[0]
             beta_PDF = popt_arr.T[1]
@@ -255,81 +277,81 @@ class Photometry_rest(Photometry):
         self.beta_PDF = beta_PDF # unitless
                 
         for name in ["Amplitude", "Beta"]:
-            self.save_UV_fit_PDF(save_dir, name, ID)
+            self.save_UV_fit_PDF(save_dir, name, ID, conv_filt = conv_filt)
             
         return amplitude_PDF, beta_PDF
     
-    def calc_flux_lambda_1500_PDF(self, save_dir, ID, UV_ext_src_corr):
-        self.open_UV_fit_PDF(save_dir, "Amplitude", ID)
-        self.open_UV_fit_PDF(save_dir, "Beta", ID)
+    def calc_flux_lambda_1500_PDF(self, save_dir, ID, UV_ext_src_corr, conv_filt = False):
+        self.open_UV_fit_PDF(save_dir, "Amplitude", ID, conv_filt = conv_filt)
+        self.open_UV_fit_PDF(save_dir, "Beta", ID, conv_filt = conv_filt)
 
         if all(value == -99 for value in self.amplitude_PDF):
             self.flux_lambda_1500_PDF = [-99.]
         else:
             self.flux_lambda_1500_PDF = (Photometry_rest.beta_slope_power_law_func(1500., self.amplitude_PDF, self.beta_PDF) \
                                 * UV_ext_src_corr) * u.erg / (u.s * (u.cm ** 2) * u.Angstrom)
-        self.save_UV_fit_PDF(save_dir, "flux_lambda_1500", ID)
+        self.save_UV_fit_PDF(save_dir, "flux_lambda_1500", ID, conv_filt = conv_filt)
         return self.flux_lambda_1500_PDF
     
-    def calc_flux_Jy_1500_PDF(self, save_dir, ID):
-        self.open_UV_fit_PDF(save_dir, "flux_lambda_1500", ID)
+    def calc_flux_Jy_1500_PDF(self, save_dir, ID, UV_ext_src_corr = None, conv_filt = False):
+        self.open_UV_fit_PDF(save_dir, "flux_lambda_1500", ID, UV_ext_src_corr = UV_ext_src_corr, conv_filt = conv_filt)
         if all(value == -99 for value in self.amplitude_PDF):
             self.flux_Jy_1500_PDF = [-99.]
         else:
             self.flux_Jy_1500_PDF = (self.flux_lambda_1500_PDF * ((1500. * u.Angstrom) ** 2) / const.c).to(u.Jy)
-        self.save_UV_fit_PDF(save_dir, "flux_Jy_1500", ID)
+        self.save_UV_fit_PDF(save_dir, "flux_Jy_1500", ID, conv_filt = conv_filt)
         return self.flux_Jy_1500_PDF
     
-    def calc_M_UV_PDF(self, save_dir, ID):
-        self.open_UV_fit_PDF(save_dir, "flux_Jy_1500", ID)
+    def calc_M_UV_PDF(self, save_dir, ID, UV_ext_src_corr = None, conv_filt = False):
+        self.open_UV_fit_PDF(save_dir, "flux_Jy_1500", ID, UV_ext_src_corr = UV_ext_src_corr, conv_filt = conv_filt)
         if all(value == -99 for value in self.amplitude_PDF):
             self.m_1500_PDF = [-99.]
             self.M_UV_PDF = [-99.]
         else:
             self.m_1500_PDF = funcs.flux_to_mag(self.flux_Jy_1500_PDF, 8.9)
             self.M_UV_PDF = self.m_1500_PDF - 5 * np.log10(self.lum_distance.value / 10) + 2.5 * np.log10(1 + self.z)
-        self.save_UV_fit_PDF(save_dir, "M_UV", ID)
+        self.save_UV_fit_PDF(save_dir, "M_UV", ID, conv_filt = conv_filt)
         return self.M_UV_PDF
     
-    def calc_A_UV_PDF(self, save_dir, ID, scatter_dex = 0.5):
-        self.open_UV_fit_PDF(save_dir, "Beta", ID)
+    def calc_A_UV_PDF(self, save_dir, ID, conv_filt = False, scatter_dex = 0.5):
+        self.open_UV_fit_PDF(save_dir, "Beta", ID, conv_filt = conv_filt)
         if all(value == -99 for value in self.amplitude_PDF):
             self.A_UV_PDF = [-99.]
         else:
             self.A_UV_PDF = 4.43 + (1.99 * self.beta_PDF) + np.random.uniform(-scatter_dex, scatter_dex)
-        self.save_UV_fit_PDF(save_dir, "A_UV", ID)
+        self.save_UV_fit_PDF(save_dir, "A_UV", ID, conv_filt = conv_filt)
         return self.A_UV_PDF
     
-    def calc_L_obs_PDF(self, save_dir, ID, alpha = 0.): # α=0 in Donnan 2022
-        self.open_UV_fit_PDF(save_dir, "flux_Jy_1500", ID)
+    def calc_L_obs_PDF(self, save_dir, ID, UV_ext_src_corr = None, conv_filt = False, alpha = 0.): # α=0 in Donnan 2022
+        self.open_UV_fit_PDF(save_dir, "flux_Jy_1500", ID, UV_ext_src_corr = UV_ext_src_corr, conv_filt = conv_filt)
         if all(value == -99 for value in self.amplitude_PDF):
             self.L_obs_PDF = [-99.]
         else:
             self.L_obs_PDF = ((4 * np.pi * self.flux_Jy_1500_PDF * self.lum_distance ** 2) / ((1 + self.z) ** (1 + alpha))).to(u.erg / (u.s * u.Hz))
-        self.save_UV_fit_PDF(save_dir, "L_obs", ID)
+        self.save_UV_fit_PDF(save_dir, "L_obs", ID, conv_filt = conv_filt)
         return self.L_obs_PDF
     
-    def calc_L_int_PDF(self, save_dir, ID):
-        self.open_UV_fit_PDF(save_dir, "L_obs", ID)
-        self.open_UV_fit_PDF(save_dir, "A_UV", ID)
+    def calc_L_int_PDF(self, save_dir, ID, UV_ext_src_corr = None, conv_filt = False):
+        self.open_UV_fit_PDF(save_dir, "L_obs", ID, UV_ext_src_corr = UV_ext_src_corr, conv_filt = conv_filt)
+        self.open_UV_fit_PDF(save_dir, "A_UV", ID, conv_filt = conv_filt)
         if all(value == -99 for value in self.amplitude_PDF):
             self.L_int_PDF = [-99.]
         else:
             self.L_int_PDF = np.array([L_obs * 10 ** (A_UV / 2.5) if A_UV > 0 else L_obs for L_obs, A_UV in zip(self.L_obs_PDF.value, self.A_UV_PDF)]) * (u.erg / (u.s * u.Hz))
-        self.save_UV_fit_PDF(save_dir, "L_int", ID)
+        self.save_UV_fit_PDF(save_dir, "L_int", ID, conv_filt = conv_filt)
         return self.L_int_PDF
     
-    def calc_SFR_PDF(self, save_dir, ID):
-        self.open_UV_fit_PDF(save_dir, "L_int", ID)
+    def calc_SFR_PDF(self, save_dir, ID, UV_ext_src_corr = None, conv_filt = False):
+        self.open_UV_fit_PDF(save_dir, "L_int", ID, UV_ext_src_corr = UV_ext_src_corr, conv_filt = conv_filt)
         if all(value == -99 for value in self.amplitude_PDF):
             self.SFR_PDF = [-99.]
         else:
             self.SFR_PDF = 1.15e-28 * self.L_int_PDF.value * u.solMass / u.yr # Madau, Dickinson 2014, FSPS, Salpeter IMF templates
-        self.save_UV_fit_PDF(save_dir, "SFR", ID)
+        self.save_UV_fit_PDF(save_dir, "SFR", ID, conv_filt = conv_filt)
         return self.SFR_PDF
     
-    def save_UV_fit_PDF(self, save_dir, obs_name, ID, UV_ext_src_corr = None, plot_PDF = config.getboolean("RestUVProperties", "PLOT_PDFS")):
-        PDF = self.open_UV_fit_PDF(save_dir, obs_name, ID, UV_ext_src_corr)
+    def save_UV_fit_PDF(self, save_dir, obs_name, ID, UV_ext_src_corr = None, conv_filt = False, plot_PDF = config.getboolean("RestUVProperties", "PLOT_PDFS")):
+        PDF = self.open_UV_fit_PDF(save_dir, obs_name, ID, UV_ext_src_corr, conv_filt)
         try:
             unit = PDF.unit # keep track of PDF units
             PDF = np.array([val.value for val in PDF]) # make PDF unitless
@@ -340,7 +362,7 @@ class Photometry_rest(Photometry):
             funcs.PDF_hist(PDF, save_dir, obs_name, ID, show = True, save = True)
         funcs.save_PDF(PDF, f"{obs_name}, units = {unit}, iters = {len(PDF)}", funcs.PDF_path(save_dir, obs_name, ID))
     
-    def open_UV_fit_PDF(self, save_dir, obs_name, ID, UV_ext_src_corr = None, plot = True):
+    def open_UV_fit_PDF(self, save_dir, obs_name, ID, UV_ext_src_corr = None, conv_filt = False, plot = True):
         if obs_name == "flux_lambda_1500":
             print(f"UV_ext_src_corr = {UV_ext_src_corr}")
         try:
@@ -354,33 +376,33 @@ class Photometry_rest(Photometry):
             except: # if PDF not in object and not already saved
                 # calculate the PDF (can take on the order of minutes depending on PDF iters)
                 if obs_name == "Amplitude" or obs_name == "Beta":
-                    self.fit_UV_slope(save_dir, ID)
+                    self.fit_UV_slope(save_dir, ID, conv_filt = conv_filt)
                 elif obs_name == "flux_lambda_1500":
-                    self.calc_flux_lambda_1500_PDF(save_dir, ID, UV_ext_src_corr)
+                    self.calc_flux_lambda_1500_PDF(save_dir, ID, UV_ext_src_corr = UV_ext_src_corr, conv_filt = conv_filt)
                 elif obs_name == "flux_Jy_1500":
-                    self.calc_flux_Jy_1500_PDF(save_dir, ID)
+                    self.calc_flux_Jy_1500_PDF(save_dir, ID, UV_ext_src_corr = UV_ext_src_corr, conv_filt = conv_filt)
                 elif obs_name == "M_UV":
-                    self.calc_M_UV_PDF(save_dir, ID)
+                    self.calc_M_UV_PDF(save_dir, ID, UV_ext_src_corr = UV_ext_src_corr, conv_filt = conv_filt)
                 elif obs_name == "A_UV":
-                    self.calc_A_UV_PDF(save_dir, ID)
+                    self.calc_A_UV_PDF(save_dir, ID, conv_filt = conv_filt)
                 elif obs_name == "L_obs":
-                    self.calc_L_obs_PDF(save_dir, ID)
+                    self.calc_L_obs_PDF(save_dir, ID, UV_ext_src_corr = UV_ext_src_corr, conv_filt = conv_filt)
                 elif obs_name == "L_int":
-                    self.calc_L_int_PDF(save_dir, ID)
+                    self.calc_L_int_PDF(save_dir, ID, UV_ext_src_corr = UV_ext_src_corr, conv_filt = conv_filt)
                 elif obs_name == "SFR":
-                    self.calc_SFR_PDF(save_dir, ID)
+                    self.calc_SFR_PDF(save_dir, ID, UV_ext_src_corr = UV_ext_src_corr, conv_filt = conv_filt)
                 else:
                     raise(Exception(f"{obs_name} not valid for calculating UV fit to photometry for {ID}!"))
                 PDF = self.obs_name_to_PDF(obs_name)
                 
-        if obs_name == "Beta" and plot: # and not all(beta == -99. for beta in self.beta_PDF):
+        if obs_name == "Beta" and plot and not conv_filt: # and not all(beta == -99. for beta in self.beta_PDF):
             self.plot(save_dir, ID)
         return PDF
     
     # this function and the one below could be included in the open_UV_fit_PDF
     def load_UV_fit_PDF(self, save_dir, obs_name, ID):
         # load PDF from directory
-        PDF = np.array(np.loadtxt(f"{funcs.PDF_path(save_dir, obs_name, ID, self.rest_UV_wav_lims)}.txt"))
+        PDF = np.array(np.loadtxt(f"{funcs.PDF_path(save_dir, obs_name, ID)}.txt"))
         if obs_name == "Amplitude":
             self.amplitude_PDF = PDF
         elif obs_name == "Beta":
