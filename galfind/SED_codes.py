@@ -44,7 +44,7 @@ class SED_code(ABC):
         if templates not in ["fsps", "fsps_larson", "fsps_jades"]:
             raise(Exception(f"templates = {templates} are not yet encorporated for galfind EAZY SED fitting"))
         if lowz_zmax != None:
-            lowz_suffix = f"_zmax={lowz_zmax:.1f}"
+            lowz_suffix = f"_zmax={str(lowz_zmax)}" #"{lowz_zmax:.1f}"
         else:
             lowz_suffix = ""
         if gal_property == "z_phot":
@@ -93,6 +93,7 @@ class SED_code(ABC):
         return phot_in, phot_err_in
     
     def fit_cat(self, cat, z_max_lowz, *args, **kwargs):
+        print(z_max_lowz)
         in_path = self.make_in(cat, *args, **kwargs)
         out_folder = funcs.split_dir_name(in_path.replace("input", "output"), "dir")
         out_path = f"{out_folder}/{funcs.split_dir_name(in_path, 'name').replace('.in', '.out')}"
@@ -109,32 +110,37 @@ class SED_code(ABC):
         return cat
     
     def update_cat(self, cat, fits_out_path, z_max_lowz, *args, **kwargs):
-        # save concatenated catalogue
-        #print(f"update_cat fits_out_path = {fits_out_path}")
-        combined_cat = join(Table.read(cat.cat_path), Table.read(fits_out_path), keys_left = "NUMBER", keys_right = "IDENT")
-        combined_cat_path = f"{config['DEFAULT']['GALFIND_WORK']}/Catalogues/{cat.version}/{cat.instrument.name}/" + \
-            f"{cat.survey}/{funcs.split_dir_name(fits_out_path.replace('_matched', '').replace('_EAZY', '').replace('.fits', '_matched.fits'), 'name')}"
         if self.__class__.__name__ == "EAZY":
             templates = kwargs.get("templates")
-            combined_cat_path = combined_cat_path.replace(f"_eazy_{templates}", "_EAZY")
-            #print("EAZY naming system requires updating")
         elif self.__class__.__name__ == "LePhare":
             templates = "BC03"
-           
-        # makes appropriate directory (could be done elsewhere) - needed for case of loading in data from outside galfind
-        #print(Path(combined_cat_path).parent)
-        if not Path(combined_cat_path).parent.is_dir():
-            funcs.make_dirs(str(Path(combined_cat_path).parent)+'/')
-           
-        combined_cat.remove_column("IDENT")
-        combined_cat.write(combined_cat_path, overwrite = True)
-        combined_cat.meta["cat_path"] = combined_cat_path
+        # save concatenated catalogue only if it has not already been concatenated
+        concat_tables = False
+        orig_cat_col_names = Table.read(cat.cat_path).columns
+        for name in Table.read(fits_out_path).columns:
+            if name != "IDENT" and name not in orig_cat_col_names:
+                concat_tables = True
+                break
+        print(f"concat_tables = {concat_tables}")
+        if concat_tables:
+            combined_cat = join(Table.read(cat.cat_path), Table.read(fits_out_path), keys_left = "NUMBER", keys_right = "IDENT")
+            combined_cat_path = f"{config['DEFAULT']['GALFIND_WORK']}/Catalogues/{cat.version}/{cat.instrument.name}/" + \
+                f"{cat.survey}/{funcs.split_dir_name(fits_out_path.replace('_matched', '').replace('_EAZY', '').replace('.fits', '_matched.fits'), 'name')}"
+            if self.__class__.__name__ == "EAZY":
+                combined_cat_path = combined_cat_path.replace(f"_eazy_{templates}", "_EAZY")
+                #print("EAZY naming system requires updating")
+            if not Path(combined_cat_path).parent.is_dir():
+                funcs.make_dirs(str(Path(combined_cat_path).parent)+'/')
+            combined_cat.remove_column("IDENT")
+            combined_cat.write(combined_cat_path, overwrite = True)
+            cat.cat_path = combined_cat_path
+        else:
+            combined_cat = Table.read(cat.cat_path)
+
+        combined_cat.meta["cat_path"] = cat.cat_path
         combined_cat.meta = {**combined_cat.meta, **{f"{self.code_name}_path": fits_out_path}}
         # update galaxies within the catalogue with new SED fits
-        cat.cat_path = combined_cat_path
-        #print(f"z_max_lowz = {z_max_lowz}")
-        z_max_lowz = None
-        print("Quick z_max_lowz fix!!!")
+        print(f"z_max_lowz = {z_max_lowz}")
         #galfind_logger.error("Quick z_max_lowz fix!!!")
         cat_SED_results = Catalogue_SED_results.from_fits_cat(combined_cat, cat.cat_creator, \
                         [self], [z_max_lowz], [templates], phot_arr = [gal.phot for gal in cat]).SED_results

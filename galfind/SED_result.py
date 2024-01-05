@@ -77,8 +77,8 @@ class Catalogue_SED_results:
         # an array (each element is a galaxy) of dictionaries (each element is a single SED fitting code) containing a dictionary (each containing SED results from a specific template set)
         self.SED_results = [Galaxy_SED_results(gal_phot, gal_redshifts, gal_chi_sqs, gal_z_PDF_paths, gal_SED_paths, code_names, lowz_zmaxs, templates_arr).SED_results \
                             for gal_phot, gal_redshifts, gal_chi_sqs, gal_z_PDF_paths, gal_SED_paths in zip(phot_arr, cat_redshifts, cat_chi_sqs, cat_z_PDF_paths, cat_SED_paths)]
-        print(len(self.SED_results))
-        print(len(phot_arr), len(cat_redshifts), len(cat_chi_sqs), len(cat_z_PDF_paths), len(cat_SED_paths))
+        #print(len(self.SED_results))
+        #print(len(phot_arr), len(cat_redshifts), len(cat_chi_sqs), len(cat_z_PDF_paths), len(cat_SED_paths))
     
     def __len__(self):
         return len(self.SED_results)
@@ -93,18 +93,27 @@ class Catalogue_SED_results:
             pass
         else:
             raise(Exception("Must specify either phot or instrument in Galaxy_SED_results!"))
-            
-        try:
+        
+        if fits_cat_path != None:
+            pass
+        elif "cat_path" in fits_cat.meta.keys():
             fits_cat_path = fits_cat.meta["cat_path"]
-        except:
+        else:
             warnings.warn(f"fits_cat_path not loaded from catalogue meta, instead using SED_result.from_fits_cat(fits_cat_path) = {fits_cat_path}!")
+            raise(Exception())
+        
         labels_dict = {gal_property: funcs.GALFIND_SED_column_labels(codes, lowz_zmaxs, templates_arr, gal_property) for gal_property in gal_properties}
-        #print(labels_dict)
+        print(labels_dict)
+        
+        print(codes, lowz_zmaxs, templates_arr, gal_properties)
         print("Need to sort out cat_redshifts and cat_chi_sqs in Catalogue_SED_results.from_fits_cat")
         #galfind_logger.error("ERROR!")
+        #z = float(fits_cat_row[code.galaxy_property_labels("z_phot", templates, lowz_zmax)])
+        print(fits_cat.columns)
+        print(fits_cat["zbest_fsps_larson"])
         cat_redshifts = np.array([fits_cat[labels] for labels in labels_dict["z_phot"]])
         cat_chi_sqs = np.array([fits_cat[labels] for labels in labels_dict["chi_sq"]])
-        
+        print(cat_redshifts, cat_chi_sqs, fits_cat, labels_dict, labels_dict["z_phot"])
         IDs = np.array(fits_cat[cat_creator.ID_label]).astype(int)
         cat_z_PDF_paths = []
         cat_SED_paths = []

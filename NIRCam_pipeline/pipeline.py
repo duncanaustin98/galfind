@@ -15,7 +15,7 @@ import time
 from galfind import Catalogue, config #, LePhare, EAZY, 
 from galfind.Catalogue_Creator import GALFIND_Catalogue_Creator
 
-def pipeline(surveys, version,instruments, xy_offsets, aper_diams, code_names, lowz_zmax, min_flux_pc_errs, forced_phot_band, excl_bands, \
+def pipeline(surveys, version, instruments, xy_offsets, aper_diams, code_names, lowz_zmax, min_flux_pc_errs, forced_phot_band, excl_bands, \
              cat_type = "loc_depth", n_loc_depth_samples = 5, fast = True, eazy_templates = ["fsps_larson"]):
     for pc_err in min_flux_pc_errs:
         # make appropriate galfind catalogue creator for each aperture diameter

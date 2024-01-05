@@ -71,15 +71,15 @@ class Catalogue(Catalogue_Base):
     #     return cls(gals, cat_path, survey, cat_creator)
     
     @classmethod
-    def from_fits_cat(cls, fits_cat_path, version, instrument, cat_creator, code_names, survey, lowz_zmax, templates_arr = ["fsps", "fsps_larson", "fsps_jades"], data = None, mask = True, excl_bands = []):
+    def from_fits_cat(cls, fits_cat_path, version, instrument, cat_creator, code_names, survey, lowz_zmax_arr = [None, None, None], templates_arr = ["fsps", "fsps_larson", "fsps_jades"], data = None, mask = False, excl_bands = []):
         # open the catalogue
         fits_cat = funcs.cat_from_path(fits_cat_path)
-        if type(instrument) not in [Instrument, NIRCam, ACS_WFC, WFC3_IR, Combined_Instrument]:
-            instrument_name = instrument
-            if type(instrument) in [list, np.ndarray]:
-                instrument_name = '+'.join(instrument)
-            instrument = Instrument.from_name(instrument_name, excl_bands = excl_bands)
-        print("instrument bands = ", instrument.bands)
+        # if type(instrument) not in [Instrument, NIRCam, ACS_WFC, WFC3_IR, Combined_Instrument]:
+        #     instrument_name = instrument
+        #     if type(instrument) in [list, np.ndarray]:
+        #         instrument_name = '+'.join(instrument)
+        #     instrument = Instrument.from_name(instrument_name, excl_bands = excl_bands)
+        # print("instrument bands = ", instrument.bands)
         # crop instrument bands that don't appear in the first row of the catalogue (I believe this is already done when running from data)
         # Removed comments from following
         for band in instrument.bands:
@@ -94,7 +94,6 @@ class Catalogue(Catalogue_Base):
         # produce galaxy array from each row of the catalogue
         start_time = time.time()
         gals = Multiple_Galaxy.from_fits_cat(fits_cat, instrument, cat_creator, [], [], []).gals #codes, lowz_zmax, templates_arr).gals
-        print(gals[0].phot.SED_results)
         end_time = time.time()
         elapsed_time = end_time - start_time
         print(f"Finished loading in {len(gals)} galaxies. This took {elapsed_time:.6f} seconds")
@@ -105,7 +104,7 @@ class Catalogue(Catalogue_Base):
         if mask:
             cat_obj.mask(data)
         # run SED fitting for the appropriate code names/low-z runs
-        for code, templates in zip(codes, templates_arr):
+        for code, lowz_zmax, templates in zip(codes, lowz_zmax_arr, templates_arr):
             cat_obj = code.fit_cat(cat_obj, lowz_zmax, templates = templates)
         return cat_obj
     

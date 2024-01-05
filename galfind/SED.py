@@ -197,11 +197,8 @@ class SED_obs(SED):
     @classmethod
     def from_SED_rest(cls, z_int, SED_rest):
         wav_obs = funcs.wav_rest_to_obs(SED_rest.wavs, z_int)
-        if SED_rest.mags.unit == u.ABmag:
-            mag_obs = SED_rest.mags
-        else:
-            raise(Exception("Not yet implemented!"))
-        return cls(z_int, wav_obs, mag_obs, SED_rest.wavs.unit, SED_rest.mags.unit)
+        mag_obs = funcs.convert_mag_units(SED_rest.wavs, SED_rest.mags, u.ABmag)
+        return cls(z_int, wav_obs.value, mag_obs.value, SED_rest.wavs.unit, u.ABmag)
 
 # class Mock_SED(SED):
     
@@ -213,7 +210,7 @@ class SED_obs(SED):
     
 class Mock_SED_rest(SED_rest): #, Mock_SED):
     
-    def __init__(self, wavs, mags, wav_units, mag_units, template_name, meta = None):
+    def __init__(self, wavs, mags, wav_units, mag_units, template_name = None, meta = None):
         self.template_name = template_name
         self.meta = meta
         super().__init__(wavs, mags, wav_units, mag_units)
@@ -384,7 +381,7 @@ class Mock_SED_rest(SED_rest): #, Mock_SED):
 
 class Mock_SED_obs(SED_obs):
     
-    def __init__(self, z, wavs, mags, wav_units, mag_units, template_name, IGM = IGM_attenuation.IGM(), meta = None):
+    def __init__(self, z, wavs, mags, wav_units, mag_units, template_name = None, IGM = IGM_attenuation.IGM(), meta = None):
         self.template_name = template_name
         self.meta = meta
         super().__init__(z, wavs, mags, wav_units, mag_units)
@@ -403,7 +400,8 @@ class Mock_SED_obs(SED_obs):
         lum_distance = astropy_cosmo.luminosity_distance(z).to(u.pc)
         m_UV = M_UV - 2.5 * np.log10(1 + z) + 5 * np.log10(lum_distance.value / 10)
         mock_SED_rest = Mock_SED_rest.power_law_from_beta_m_UV(beta, m_UV, template_name = template_name)
-        obs_SED = cls.from_SED_rest(z, mock_SED_rest, IGM = IGM)
+        obs_SED = cls.from_SED_rest(z, mock_SED_rest)
+        obs_SED.attenuate_IGM(IGM)
         return obs_SED
     
     # def create_phot_obs(self, instrument, loc_depths, min_pc_err = 10):
@@ -428,7 +426,8 @@ class Mock_SED_obs(SED_obs):
                 # save IGM object after attenuating
                 self.IGM = IGM
             else:
-                print("SED has already been attenuated! Ignoring")
+                #print("SED has already been attenuated! Ignoring")
+                pass
         else:
             raise(Exception(f"Could not attenuate by a non IGM object = {IGM}"))
 
@@ -450,9 +449,12 @@ class Mock_SED_obs(SED_obs):
         bp_averaged_fluxes_Jy = funcs.convert_mag_units(band_wavs, bp_averaged_fluxes * u.erg / (u.s * (u.cm ** 2) * u.AA), u.Jy)
         self.mock_photometry = Mock_Photometry(instrument, bp_averaged_fluxes_Jy, depths, min_pc_err)
 
-    def scatter_mock_photometry(self):
-        if not hasattr(self, "mock_photometry"):
-            raise(Exception("Must have previously created mock photometry from the observed frame template"))
+    # def scatter_mock_photometry(self):
+    #     if not hasattr(self, "mock_photometry"):
+    #         raise(Exception("Must have previously created mock photometry from the observed frame template"))
+    #     else:
+    #         for band in self.mock_photometry:
+    #             pass
             
     def calc_UV_slope(self, output_errs = False, method = "Calzetti+94"):
         # create rest frame mock SED object

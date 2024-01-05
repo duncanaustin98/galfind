@@ -58,7 +58,7 @@ class Data:
         self.version = version
         self.instrument = instrument
         self.is_blank = is_blank
-        print(self.im_paths)
+        #print(self.im_paths)
         self.im_zps = im_zps
         self.wht_exts = wht_exts
         self.wht_paths = wht_paths
@@ -303,7 +303,7 @@ class Data:
                                         # wht_types[band] = "NONE"
                                         # wht_exts[band] = ""
 
-                        print(band, wht_paths[band])
+                        #print(band, wht_paths[band])
                         im_pixel_scales[band] = float(pix_scale.split('mas')[0]) * 1e-3 
                         if instrument.name == 'ACS_WFC':
                             if "PHOTFLAM" in imheader and "PHOTPLAM" in imheader:

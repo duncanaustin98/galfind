@@ -90,6 +90,7 @@ class GALFIND_Catalogue_Creator(Catalogue_Creator):
         # only make these dicts once to speed up property loading
         same_key_value_properties = [] #["auto_corr_factor_UV", "auto_corr_factor_mass"]
         self.property_conv_dict = {sed_code: {**getattr(globals()[sed_code], sed_code)().galaxy_property_dict, **{element: element for element in same_key_value_properties}} for sed_code in json.loads(config["Other"]["CODES"])}
+        print(self.property_conv_dict)
         same_key_value_flags = ["robust", "good", "robust_relaxed", "good_relaxed", "blank_module"] + [f"unmasked_{band}" for band in json.loads(config.get("Other", "ALL_BANDS"))]
         self.flag_conv_dict = {element: element for element in same_key_value_flags}
         
@@ -120,7 +121,7 @@ class GALFIND_Catalogue_Creator(Catalogue_Creator):
             phot_labels = [f"FLUX_APER_{band}_aper_corr_Jy" for band in bands]
             err_labels = [f"FLUXERR_APER_{band}_loc_depth_{str(int(self.min_flux_pc_err))}pc_Jy" for band in bands]
         elif self.flux_or_mag == "mag":
-            raise(Exception("Not implemented mag localc depth errors yet!")) # "Beware that mag errors are asymmetric!")
+            raise(Exception("Not implemented mag local depth errors yet!")) # "Beware that mag errors are asymmetric!")
             phot_labels = [f"MAG_APER_{band}_aper_corr" for band in bands]
             err_labels = [[f"MAGERR_APER_{band}_l1_loc_depth", f"MAGERR_APER_{band}_u1_loc_depth"] for band in bands] # this doesn't currently work!
         else:
