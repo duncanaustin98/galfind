@@ -12,19 +12,21 @@ import matplotlib.pyplot as plt
 import matplotlib as mpl
 import astropy.units as u
 
-from galfind import SED, Mock_SED_rest, Mock_SED_obs, config, NIRCam, IGM_attenuation
+from galfind import SED, Mock_SED_rest, Mock_SED_obs, config, NIRCam, IGM_attenuation, Emission_line
+from galfind.Emission_lines import line_diagnostics
 
 plt.style.use(f"{config['DEFAULT']['GALFIND_DIR']}/galfind_style.mplstyle")
 
 instrument = NIRCam(excl_bands = ["f070W", "f140M", "f162M", "f182M", "f250M", "f300M", "f335M", "f360M", "f430M", "f460M", "f480M"])
-depths = [26. for band in instrument.bands]
+depths = [30. for band in instrument.bands]
 min_pc_err = 10
 z = 0.
 template_set = "fsps_larson"
+lines = ["Lya", "CIV-1549", "HeII-1640", "OIII]-1665", "CIII]-1909"]
 incl_IGM_att = True
 fig, ax = plt.subplots()
-for i in range(12, 18):
-    sed_obj_rest = Mock_SED_rest.load_EAZY_in_template(25., template_set, i)
+for i in range(12, 15):
+    sed_obj_rest = Mock_SED_rest.load_EAZY_in_template(22., template_set, i)
     if incl_IGM_att:
         IGM = IGM_attenuation.IGM()
     else:
@@ -34,14 +36,28 @@ for i in range(12, 18):
             plot_kwargs = {"alpha": 0.6}, legend_kwargs = {"bbox_to_anchor": [0., 0.], "loc": "lower left", "fontsize": 8.})
     sed_obj_obs.create_mock_phot(instrument, depths, min_pc_err)
     sed_obj_obs.mock_photometry.plot_phot(ax, u.um, u.Jy, plot_errs = True, errorbar_kwargs = {"color": sed_plot[0].get_color()})
+    print(sed_obj_obs.template_name)
+    for line in lines:
+        try:
+            sed_obj_obs.calc_line_EW(line)
+            print(line, sed_obj_obs.line_EWs[line] / (1 + z))
+        except:
+            print(f"FAILED TO CALCULATE EW of {line}")
 # plot rest frame UV
 #ax.axvline((1250. * u.AA).to(u.um).value * (1 + z), color = "darkblue")
 #ax.axvline((3000. * u.AA).to(u.um).value * (1 + z), color = "darkblue")
 # plot emission lines
-#ax.axvline((1906. * u.AA).to(u.um).value * (1 + z), color = "black", ls = "--", label = "CIII]")
-#ax.axvline((1640. * u.AA).to(u.um).value * (1 + z), color = "black", ls = "--", label = "HeII")
-#ax.axvline((1660. * u.AA).to(u.um).value * (1 + z), color = "black", ls = "--", label = "OIII]")
+for line in lines:
+    ax.axvline(line_diagnostics[line]["line_wav"].to(u.um).value * (1 + z), c = "black", ls = "--", label = line)
+    # ax.axvline(line_diagnostics[line]["feature_wavs"][0].to(u.um).value * (1 + z))
+    # ax.axvline(line_diagnostics[line]["feature_wavs"][1].to(u.um).value * (1 + z))
+    # for wav in np.array(line_diagnostics[line]["cont_wavs"]).flatten():
+    #     ax.axvline((wav * u.AA).to(u.um).value * (1 + z))
+
+#plt.legend()
 plt.yscale("log")
+#plt.ylim(4e-6, 1e-5)
+#ax.set_xlim((1250. * u.AA * (1 + z)).to(u.um).value, (1500. * u.AA * (1 + z)).to(u.um).value)
 #plt.ylim(32., 20.) # ABmag
 #plt.ylim(1e-3, 1e0) # uJy
 #plt.xlim(0.1, 5.) # um

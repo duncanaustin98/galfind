@@ -110,7 +110,6 @@ class Catalogue_SED_results:
         #galfind_logger.error("ERROR!")
         #z = float(fits_cat_row[code.galaxy_property_labels("z_phot", templates, lowz_zmax)])
         print(fits_cat.columns)
-        print(fits_cat["zbest_fsps_larson"])
         cat_redshifts = np.array([fits_cat[labels] for labels in labels_dict["z_phot"]])
         cat_chi_sqs = np.array([fits_cat[labels] for labels in labels_dict["chi_sq"]])
         print(cat_redshifts, cat_chi_sqs, fits_cat, labels_dict, labels_dict["z_phot"])

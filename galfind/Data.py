@@ -166,6 +166,8 @@ class Data:
                     survey_im_dirs = {survey: f"{survey}/mosaic_1084_wisptemp2"}
                 elif version == 'v10' or version[:2] == "v10":
                     survey_im_dirs = {survey: f"{survey}/mosaic_1084_wispscale"}
+                elif version == "v11" or version[:-2] == "v11":
+                    survey_im_dirs = {survey: f"{survey}/mosaic_1084_wispnathan"}
                 survey_im_dirs = {key: f"/raid/scratch/data/jwst/{value}" for (key, value) in survey_im_dirs.items()}
                 survey_dir = survey_im_dirs[survey]
 

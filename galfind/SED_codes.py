@@ -111,9 +111,9 @@ class SED_code(ABC):
     
     def update_cat(self, cat, fits_out_path, z_max_lowz, *args, **kwargs):
         if self.__class__.__name__ == "EAZY":
-            templates = kwargs.get("templates")
+            templates = [kwargs.get("templates")]
         elif self.__class__.__name__ == "LePhare":
-            templates = "BC03"
+            templates = ["BC03"]
         # save concatenated catalogue only if it has not already been concatenated
         concat_tables = False
         orig_cat_col_names = Table.read(cat.cat_path).columns
@@ -142,8 +142,10 @@ class SED_code(ABC):
         # update galaxies within the catalogue with new SED fits
         print(f"z_max_lowz = {z_max_lowz}")
         #galfind_logger.error("Quick z_max_lowz fix!!!")
+        if type(z_max_lowz) not in [list, np.array]:
+            z_max_lowz = [z_max_lowz]
         cat_SED_results = Catalogue_SED_results.from_fits_cat(combined_cat, cat.cat_creator, \
-                        [self], [z_max_lowz], [templates], phot_arr = [gal.phot for gal in cat]).SED_results
+                        [self], z_max_lowz, templates, phot_arr = [gal.phot for gal in cat]).SED_results
         cat.update_SED_results(cat_SED_results)
         return cat
         

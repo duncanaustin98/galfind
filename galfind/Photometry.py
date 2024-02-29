@@ -31,9 +31,24 @@ class Photometry:
         self.loc_depths = depths # not sure what problems renaming this will have
         self.depths = depths
     
+    def __getitem__(self, i):
+        if type(i) == int:
+            return self.flux_Jy[i]
+        elif type(i) == str:
+            return self.flux_Jy[self.instrument.index_from_band(i)]
+        else:
+            raise(TypeError(f"i={i} in {__class__.__name__}.__getitem__ has type={type(i)} which is not in [int, str]"))
+    
+    def __len__(self):
+        return len(self.flux_Jy)
+    
     @property
     def wav(self):
         return np.array([self.instrument.band_wavelengths[band].value for band in self.instrument.bands]) * u.Angstrom
+    
+    # @property
+    # def band_detections(self):
+    #     return [funcs.n_sigma_detection()]
     
     @classmethod
     def from_fits_cat(cls, fits_cat_row, instrument, cat_creator):
@@ -61,20 +76,21 @@ class Photometry:
         self.flux_Jy = np.delete(self.flux_Jy, indices)
         self.flux_Jy_errs = np.delete(self.flux_Jy_errs, indices)
         
-    def plot_phot(self, ax, wav_units = u.AA, mag_units = u.Jy, plot_errs = True, annotate = False, upper_limit_sigma = 3., errorbar_kwargs = {}):
+    def plot_phot(self, ax, wav_units = u.AA, mag_units = u.Jy, plot_errs = True, annotate = True, upper_limit_sigma = 3., errorbar_kwargs = {}, label = None):
         if upper_limit_sigma == None:
             uplims = np.full(len(self.flux_Jy), False)
         else:
             # calculate upper limits based on depths
             uplims = [True if flux.to(u.Jy) < depth.to(u.Jy) * upper_limit_sigma / 5. or np.isnan(flux) else False for (flux, depth) in zip(self.flux_Jy, self.loc_depths)]
+        self.non_detected_indices = uplims
         if plot_errs:
             yerr = [flux_err if uplim == False else 0.2 * flux for (flux, flux_err, uplim) in zip(self.flux_Jy.value, self.flux_Jy_errs.value, uplims)]
         else:
             yerr = None
         print("Unit plotting errors here!")
         plot = ax.errorbar(self.wav.to(wav_units).value, self.flux_Jy.value, yerr = yerr, \
-                uplims = uplims, ls = "", marker = "o", ms = 8, mfc = "none", **errorbar_kwargs)
-        if annotate:
+                uplims = uplims, ls = "", marker = "o", ms = 8, mfc = "none", label = label, **errorbar_kwargs)
+        if label != None and annotate:
             ax.legend()
         return plot
 

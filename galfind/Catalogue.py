@@ -393,9 +393,9 @@ class Catalogue(Catalogue_Base):
             print("Already masked!")
     
     def make_UV_fit_cat(self, code_name = "EAZY", templates = "fsps_larson", UV_PDF_path = config["RestUVProperties"]["UV_PDF_PATH"], col_names = ["Beta", "flux_lambda_1500", "flux_Jy_1500", "M_UV", "A_UV", "L_obs", "L_int", "SFR"], \
-                        join_tables = True, skip_IDs = [], rest_UV_wavs_arr = [[1250., 3000.] * u.Angstrom], conv_filt_arr = [True, False]):
+                        join_tables = True, skip_IDs = [], rest_UV_wavs_arr = [[1250., 3000.] * u.AA], conv_filt_arr = [True, False], overwrite = True):
         UV_cat_name = f"{funcs.split_dir_name(self.cat_path, 'dir')}/UV_properties_{code_name}_{templates}_{str(self.cat_creator.min_flux_pc_err)}pc.fits" # _test
-        if not Path(UV_cat_name).is_file():
+        if not Path(UV_cat_name).is_file() or overwrite:
             cat_data = []
             #print("Bands here: ", self[1].phot.instrument.bands)
             for i, gal in tqdm(enumerate(self), total = len(self), desc = "Making UV fit catalogue"):
@@ -412,7 +412,7 @@ class Catalogue(Catalogue_Base):
                             for name in col_names:
                                 gal_data = np.append(gal_data, funcs.percentiles_from_PDF([-99.]))
                             # append n_bands
-                            n_bands.append(0)
+                            n_bands.append(-99.)
                         else:
                             # path = f"{config['DEFAULT']['GALFIND_WORK']}/UV_PDFs/{self.data.version}/{self.data.instrument.name}/{self.survey}/{code_name}+{str(self.cat_creator.min_flux_pc_err)}pc/{templates}/Amplitude/{gal_copy.ID}.txt"
                             # #print(path)
@@ -444,9 +444,13 @@ class Catalogue(Catalogue_Base):
                                     print(traceback.format_exc())
                                     gal_data = np.append(gal_data, funcs.percentiles_from_PDF([-99.]))
                             try:
+                                if not hasattr(gal.phot.SED_results[code_name][templates].phot_rest[Photometry_rest.rest_UV_wavs_name(rest_UV_wavs)], "rest_UV_phot"):
+                                    gal.phot.SED_results[code_name][templates].phot_rest[Photometry_rest.rest_UV_wavs_name(rest_UV_wavs)].make_rest_UV_phot()
                                 n_bands.append(int(len(gal.phot.SED_results[code_name][templates].phot_rest[Photometry_rest.rest_UV_wavs_name(rest_UV_wavs)].rest_UV_phot.flux_Jy)))
-                            except:
-                                n_bands.append(0)
+                            except Exception as e:
+                                print(f"EXCEPT ID = {gal.ID}. n_bands=0 error. Error code: {e}")
+                                print(traceback.format_exc())
+                                n_bands.append(0.)
                         
                 gal_data = np.concatenate((np.array(gal_data).flatten(), np.array(n_bands)))
                 if i == 0: # if the first column

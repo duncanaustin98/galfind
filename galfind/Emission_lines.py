@@ -15,8 +15,14 @@ from scipy.interpolate import interp1d
 from scipy.integrate import quad
 
 wav_lyman_alpha = 1215.67 # u.AA
+line_diagnostics = {
+    "Lya": {"line_wav": 1_215.67 * u.AA, "feature_wavs": [1_211., 1_221.] * u.AA, "cont_wavs": [[1_226., 1_246.]] * u.AA, "rel_lambda": 6.262e8 / u.s, "oscillator_strength": 0.4162}, \
+    "CIV-1549": {"line_wav": 1_549. * u.AA, "feature_wavs": [1_540., 1_556.] * u.AA, "cont_wavs": [[1_528., 1_538.], [1_556., 1_566.]] * u.AA, "rel_lambda": None}, \
+    "HeII-1640": {"line_wav": 1_640. * u.AA, "feature_wavs": [1_630., 1_652.5] * u.AA, "cont_wavs": [[1_620., 1_630.], [1_675., 1_685.]] * u.AA, "rel_lambda": None}, \
+    "OIII]-1665": {"line_wav": 1_665. * u.AA, "feature_wavs": [1_652.5, 1_675.] * u.AA, "cont_wavs": [[1_620., 1_630.], [1_675., 1_685.]] * u.AA, "rel_lambda": None}, \
+    "CIII]-1909": {"line_wav": 1_909. * u.AA, "feature_wavs": [1_901., 1_914.] * u.AA, "cont_wavs": [[1_864., 1_874.], [1_914., 1_924.]] * u.AA, "rel_lambda": None}
+}
 
-line_diagnostics = {"Lya": {"line_wav": 1_215.67 * u.AA, "feature_wavs": [1_211., 1_221.] * u.AA, "cont_wavs": [[1_186., 1_206.], [1_226., 1_246.]] * u.AA, "rel_lambda": 6.262e8 / u.s}}
 
 class Emission_line:
     
@@ -37,11 +43,17 @@ class Emission_line:
     
     @property
     def R(self):
-        return (self.line_diagnostics["rel_lambda"] * self.line_diagnostics["line_wav"] / (4 * np.pi * const.c)).to(u.dimensionless_unscaled)
+        if self.line_diagnostics["rel_lambda"] == None:
+            return 0.
+        else:
+            return (self.line_diagnostics["rel_lambda"] * self.line_diagnostics["line_wav"] / (4 * np.pi * const.c)).to(u.dimensionless_unscaled)
     
     @property
     def a(self):
-        return ((self.line_diagnostics["line_wav"] ** 2) * self.line_diagnostics["rel_lambda"] / (4 * np.pi * const.c * self.delta_lambda)).to(u.dimensionless_unscaled)
+        if self.line_diagnostics["rel_lambda"] == None:
+            return 0.
+        else:
+            return ((self.line_diagnostics["line_wav"] ** 2) * self.line_diagnostics["rel_lambda"] / (4 * np.pi * const.c * self.delta_lambda)).to(u.dimensionless_unscaled)
     
     @property
     def line_profile(self):
@@ -58,7 +70,6 @@ class Emission_line:
     def line_width(self, lim = 1e-4):
         mask = (self.line_profile["flux"] < lim * np.max(self.line_profile["flux"]))
         cont_wavs = self.wavs[mask]
-        
     
     def Tepper_Garcia06_profile(self, bins = 1_000):
         line_profile = {}
@@ -69,8 +80,6 @@ class Emission_line:
         Q = 1.5 / x_sq
         line_profile["flux"] = H_0 - (self.a / (np.sqrt(np.pi) * x_sq)) * (((H_0 ** 2) * (4 * x_sq ** 2 + 7 * x_sq + 4 + Q)) - 1 - Q)
         return line_profile
-    
-    
     
     def plot_profile(self, ax, kwargs = {}, show = False, save = False):
         ax.plot(self.line_profile["wavs"], self.line_profile["flux"], **kwargs)

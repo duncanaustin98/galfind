@@ -11,7 +11,7 @@ from astropy.units import u
 import matplotlib.pyplot as plt
 
 from galfind.lyman_alpha_damping_wing import *
-from galfind import wav_lyman_alpha
+from galfind import wav_lyman_alpha, DLA
 from galfind.Emission_lines import Emission_line
 
 def plot_transmission(ax, ax2, wav_rest, trans, z, label = None, annotate = True, save = True, show = False, legend_kwargs = {}):
@@ -27,12 +27,12 @@ def plot_transmission(ax, ax2, wav_rest, trans, z, label = None, annotate = True
         plt.show()  
 
 def plot_lyman_alpha_damping_wing():
-    z_arr = [6.5, 8., 10., 12.]
+    z_arr = [8., 8., 8., 8.]
     x_HI_arr = [0.5, 0.5, 0.5, 0.5]
     helium_mass_frac_arr = [0.25, 0.25, 0.25, 0.25]
     R_b_arr = [0., 0., 0., 0.] * u.Mpc
     wav_rest = np.linspace(1_200., 1_268., 100) * u.AA
-    velocity_offset_arr = [0., 0., 0., 0., 200., 400., 400.] * u.km / u.s
+    velocity_offset_arr = [0., 200., 400., 800.] * u.km / u.s
     legend_kwargs = {"bbox_to_anchor": (0.5, -0.2), "loc": "upper center"}
     
     fig, ax = plt.subplots()
@@ -74,10 +74,20 @@ def plot_voigt_profile():
     #plt.xlabel("v / km/s")
     plt.show()
 
-if __name__ == "__main__":
-    lya = Emission_line("Lya", Doppler_b = 200. * u.km / u.s)
+def plot_obj_DLA(log_N_HI_arr = [21., 22., 22.5, 23.]):
     fig, ax = plt.subplots()
-    lya.plot_profile(ax)
+    wav_rest = np.linspace(1216., 1400., 1_000) * u.AA
+    for log_N_HI in log_N_HI_arr:
+        dla = DLA(10 ** log_N_HI / (u.cm ** 2), 150 * u.km / u.s, 0. * u.km / u.s, 0.)
+        dla.plot_transmission_profile(ax, wav_rest)
+
+if __name__ == "__main__":
+    # lya = Emission_line("Lya", Doppler_b = 200. * u.km / u.s)
+    # fig, ax = plt.subplots()
+    # lya.plot_profile(ax)
+    
+    plot_obj_DLA()
+    
     #plot_voigt_profile()
     #plot_lyman_alpha_damping_wing()
     #plot_proximate_DLA()

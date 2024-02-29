@@ -54,8 +54,13 @@ class Instrument:
             self.iter += 1
             return band
     
-    def __getitem__(self, index):
-        return self.bands[index]
+    def __getitem__(self, i):
+        if type(i) in [int, slice]:
+            return self.bands[i]
+        elif type(i) == str:
+            return self.bands[self.index_from_band(i)]
+        else:
+            raise(TypeError(f"i={i} in {__class__.__name__}.__getitem__ has type={type(i)} which is not in [int, str]"))
     
     def __del__(self):
         self.bands = []
@@ -178,8 +183,8 @@ class Instrument:
     def index_from_band(self, band):
         return np.where(self.bands == band)[0][0]
     
-    def band_from_index(self, index):
-        return self.bands[index]
+    # def band_from_index(self, index):
+    #     return self.bands[index]
     
     @staticmethod
     def from_name(name, excl_bands = []):

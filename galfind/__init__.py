@@ -110,3 +110,4 @@ from .SED import Mock_SED_template_set, Mock_SED_rest_template_set, Mock_SED_obs
 from .Emission_lines import Emission_line, wav_lyman_alpha, line_diagnostics
 from . import IGM_attenuation
 from . import lyman_alpha_damping_wing
+from .DLA import DLA

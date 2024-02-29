@@ -82,31 +82,6 @@ class SED:
             ax.legend(**legend_kwargs)
         return plot
     
-    # def calc_bandpass_averaged_flux(self, filter_profile):
-    #     if self.mags.unit == u.ABmag:
-    #         self.mags = funcs.convert_mag_units(self.wavs, self.mags, u.erg / (u.s * (u.cm ** 2) * u.AA))
-    #     elif u.get_physical_type(self.mags.unit) != "power density/spectral flux density wav":
-    #         self.mags = funcs.convert_mag_units(self.wavs, self.mags, u.erg / (u.s * (u.cm ** 2) * u.AA))
-    #     # integral wavelength ranges
-    #     wav_min = np.max([np.min(np.array(filter_profile["Wavelength"])), np.min(self.wavs.value)])
-    #     wav_max = np.max(np.array(filter_profile["Wavelength"]))
-    #     # don't compute in band is completely bluewards of lyman break
-    #     if wav_max < wav_min:
-    #         return np.nan
-    #     else:
-    #         # interpolate filter to be on the same wavelength grid as the SED template
-    #         band_transmission = interp1d(np.array(filter_profile["Wavelength"]), \
-    #                 np.array(filter_profile["Transmission"]), fill_value = "extrapolate")
-    #         band_interp = band_transmission(self.wavs.value)
-    #         # calculate integral(f(λ) * T(λ)dλ)
-    #         #numerator = np.trapz(mags.value * band_interp, x = self.wavs.value)
-    #         numerator = quad(interp1d(self.wavs.value, self.mags.value * band_interp, fill_value = (0., "extrapolate")), wav_min, wav_max)[0]
-    #         # calculate integral(T(λ)dλ)
-    #         #denominator = np.trapz(band_interp, x = self.wavs.value)
-    #         denominator = quad(interp1d(self.wavs.value, band_interp, fill_value = (0., "extrapolate")), wav_min, wav_max)[0]
-    #         # calculate bandpass-averaged flux in Jy
-    #         return numerator / denominator
-    
     def calc_bandpass_averaged_flux(self, filter_profile):
         if self.mags.unit == u.ABmag:
             self.mags = funcs.convert_mag_units(self.wavs, self.mags, u.erg / (u.s * (u.cm ** 2) * u.AA))
@@ -121,6 +96,47 @@ class SED:
         denominator = np.trapz(filter_profile["Transmission"], x = filter_profile["Wavelength"])
         # calculate bandpass-averaged flux in Jy
         return numerator / denominator
+    
+    def calc_line_EW(self, line_name, plot = False): # ONLY WORKS FOR EMISSION LINES, NOT ABSORPTION AT THIS POINT
+        wavs_AA = self.convert_wav_units(u.AA, update = True)
+        flux_lambda = self.convert_mag_units(u.erg / (u.s * u.cm ** 2 * u.AA), update = False)
+        # calculate line + continuum flux
+        if "rest" in type(self).__name__:
+            line_lims = line_diagnostics[line_name]["feature_wavs"]
+            cont_lims = line_diagnostics[line_name]["cont_wavs"]
+        elif "obs" in type(self).__name__:
+            line_lims = line_diagnostics[line_name]["feature_wavs"] * (1 + self.z)
+            cont_lims = line_diagnostics[line_name]["cont_wavs"] * (1 + self.z)
+        else:
+            raise(Exception("Attempted EW calculation in a class not containing 'rest' or 'obs' in the class name!"))
+        # mask everything but the line of interest
+        feature_mask = (wavs_AA > line_lims[0].to(u.AA)) & (wavs_AA < line_lims[1].to(u.AA))
+        if plot:
+            plt.plot(wavs_AA[feature_mask], flux_lambda[feature_mask])
+            plt.show()
+        line_plus_cont_flux = np.trapz(flux_lambda[feature_mask], x = wavs_AA[feature_mask])
+        # calculate continuum flux and mean continuum level
+        cont_mask = np.logical_or.reduce(np.array([((wavs_AA > lims[0].to(u.AA)) & \
+                        (wavs_AA < lims[1].to(u.AA))) for lims in cont_lims]))
+        # mask everything but the line of interest
+        cont_flux = interp1d(wavs_AA[cont_mask], flux_lambda[cont_mask], fill_value = "extrapolate")(wavs_AA[feature_mask]) * u.erg / (u.s * u.cm ** 2 * u.AA)
+        mean_cont = np.trapz(cont_flux, x = wavs_AA[feature_mask]) # not 100% correct here in the case of cont > line flux
+        # calculate line flux
+        # if line flux goes negative at any point, set to zero (only works for emission and not absorption)
+        line_flux_integrand = np.array([(flux_lambda[feature_mask][i] - cont_flux[i]).value if (flux_lambda[feature_mask][i] - cont_flux[i]).value > 0. else 0. for i, x in enumerate(wavs_AA[feature_mask])]) * u.erg / (u.s * u.cm ** 2 * u.AA)
+        line_flux = np.trapz(line_flux_integrand, x = wavs_AA[feature_mask]) #(line_plus_cont_flux - cont_flux) * feature_width # emission == positive EW
+        # calculate line EW
+        line_EW = np.trapz(line_flux_integrand / cont_flux, x = wavs_AA[feature_mask])
+        # save result in self
+        if not hasattr(self, "line_EWs"):
+            self.line_EWs = {line_name: line_EW}
+            self.line_fluxes = {line_name: line_flux}
+            self.line_cont = {line_name: mean_cont}
+        else:
+            self.line_EWs[line_name] = line_EW
+            self.line_fluxes[line_name] = line_flux
+            self.line_cont[line_name] = mean_cont
+        return line_EW
     
 
 class SED_rest(SED):
@@ -145,48 +161,6 @@ class SED_rest(SED):
             self.wav_units = u.AA # should improve this functionality
             self.mags = mags
         return wavs, mags
-    
-    def calc_line_continuum(self, line_name):
-        wavs_AA = self.convert_wav_units(u.AA, update = False)
-        flux_Jy = self.convert_mag_units(u.Jy, update = False)
-        # calculate continuum flux
-        cont_lims_blue, cont_lims_red = line_diagnostics[line_name]["cont_wavs"][0], line_diagnostics[line_name]["cont_wavs"][1]
-        cont_mask = ((wavs_AA > cont_lims_blue[0].to(u.AA)) & (wavs_AA < cont_lims_blue[1].to(u.AA))) | \
-                    ((wavs_AA > cont_lims_red[0].to(u.AA)) & (wavs_AA < cont_lims_red[1].to(u.AA)))
-        # calculate mean continuum level
-        mean_cont = np.mean(flux_Jy[cont_mask])
-        if not hasattr(self, "line_EWs"):
-            self.line_cont = {line_name: mean_cont}
-        else:
-            self.line_cont[line_name] = mean_cont
-        return mean_cont
-    
-    def calc_line_EW(self, line_name, res = 1_000):
-        wavs_AA = self.convert_wav_units(u.AA, update = False)
-        flux_Jy = self.convert_mag_units(u.Jy, update = False)
-        # calculate line + continuum flux
-        line_lims = line_diagnostics[line_name]["feature_wavs"]
-        # mask everything but the line of interest
-        feature_mask = (wavs_AA > line_lims[0].to(u.AA)) & (wavs_AA < line_lims[1].to(u.AA))
-        feature_width = np.max(wavs_AA) - np.min(wavs_AA)
-        line_plus_cont_flux = np.mean(flux_Jy)
-        # calculate continuum flux and mean continuum level
-        cont_flux = self.calc_line_continuum(line_name)
-        # calculate line flux
-        line_flux = (line_plus_cont_flux - cont_flux) * feature_width # emission positive EW
-        # calculate EW
-        line_EW = line_flux / cont_flux
-        # convert line flux to erg / (u.s * u.cm ** 2)
-        line_flux = (line_flux / u.AA).to(u.erg / (u.s * u.AA * u.cm ** 2), \
-            equivalencies = u.spectral_density(line_diagnostics[line_name]["line_wav"])) * u.AA
-        # save result in self
-        if not hasattr(self, "line_EWs"):
-            self.line_EWs = {line_name: line_EW}
-            self.line_fluxes = {line_name: line_flux}
-        else:
-            self.line_EWs[line_name] = line_EW
-            self.line_fluxes[line_name] = line_flux
-        return line_EW
     
 class SED_obs(SED):
     
@@ -369,15 +343,13 @@ class Mock_SED_rest(SED_rest): #, Mock_SED):
             interp_line_profile = interp1d(emission_line.line_profile["wavs"], \
                 emission_line.line_profile["flux"].value, bounds_error = False, fill_value = 0.)(self.wavs)
             # correct for line flux difference between interped and non-interped line profile
-            self_copy = deepcopy(self)
-            self_copy.mags += interp_line_profile * self_copy.mags.unit
-            self_copy.calc_line_EW(emission_line.line_name)
-            line_flux = (self_copy.line_fluxes[emission_line.line_name] / u.AA).to(u.erg / (u.s * u.AA * u.cm ** 2), \
-                            equivalencies = u.spectral_density(line_diagnostics[emission_line.line_name]["line_wav"])) * u.AA
-            print(line_flux, emission_line.line_flux / line_flux)
+            # self_copy = deepcopy(self)
+            # self_copy.mags += interp_line_profile * self_copy.mags.unit
+            # self_copy.calc_line_EW(emission_line.line_name)
+            # line_flux = (self_copy.line_fluxes[emission_line.line_name] / u.AA).to(u.erg / (u.s * u.AA * u.cm ** 2), \
+            #                 equivalencies = u.spectral_density(line_diagnostics[emission_line.line_name]["line_wav"])) * u.AA
             # add normalized line profile to spectrum
-            self.mags += interp_line_profile * self.mags.unit * emission_line.line_flux / line_flux
-            
+            self.mags += interp_line_profile * self.mags.unit #* emission_line.line_flux / line_flux
 
 class Mock_SED_obs(SED_obs):
     
@@ -462,6 +434,11 @@ class Mock_SED_obs(SED_obs):
         # calculate amplitude and beta of power law fit
         A, beta = mock_sed_rest.calc_UV_slope(output_errs = output_errs, method = method)
         return A, beta
+    
+    def add_DLA(self, DLA_obj):
+        self.wavs = funcs.convert_wav_units(self.wavs, u.AA)
+        self.mags = funcs.convert_mag_units(self.wavs, self.mags, u.Jy)
+        self.mags *= DLA_obj.transmission(self.wavs / (1 + self.z))
     
     def add_emission_lines(self, line_diagnostics):
         pass
