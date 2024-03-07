@@ -236,6 +236,10 @@ class Data:
                         glob_paths = glob.glob(f"{config['DEFAULT']['GALFIND_DATA']}/hst/{survey}/{instrument.name}/{pix_scale}/*{band.replace('W', 'w').replace('M', 'm')}*_drz.fits")
                         glob_paths += glob.glob(f"{config['DEFAULT']['GALFIND_DATA']}/hst/{survey}/{instrument.name}/{pix_scale}/*{band}*_drz.fits")
                         #print(glob_paths)
+                        
+                        # Make sure no duplicates
+                        glob_paths = list(set(glob_paths))
+                       
                         if len(glob_paths) == 0:
                             galfind_logger.debug(f"No image path found for {survey} {version} {band} {pix_scale}!")
                         elif len(glob_paths) == 1:
@@ -279,6 +283,10 @@ class Data:
                                 #path = Path(f"{config['DEFAULT']['GALFIND_DATA']}/hst/{survey}/{instrument.name}/{pix_scale}/{instrument.name}_{band}_{survey}_wht.fits")
                                 glob_paths = glob.glob(f"{config['DEFAULT']['GALFIND_DATA']}/hst/{survey}/{instrument.name}/{pix_scale}/*{band.replace('W', 'w').replace('M', 'm')}*_wht.fits")
                                 glob_paths += glob.glob(f"{config['DEFAULT']['GALFIND_DATA']}/hst/{survey}/{instrument.name}/{pix_scale}/*{band}*_wht.fits")
+                                
+                                # Make sure no duplicates
+                                glob_paths = list(set(glob_paths))
+                       
                                 if len(glob_paths) == 1:
                                     wht_paths[band] = str(Path(glob_paths[0]))
                                     wht_types[band] = 'MAP_WEIGHT'
@@ -291,6 +299,9 @@ class Data:
                                     #path = Path(f"{config['DEFAULT']['GALFIND_DATA']}/hst/{survey}/{instrument.name}/{pix_scale}/{instrument.name}_{band}_{survey}_rms.fits")
                                     glob_paths = glob.glob(f"{config['DEFAULT']['GALFIND_DATA']}/hst/{survey}/{instrument.name}/{pix_scale}/*{band.replace('W', 'w').replace('M', 'm')}*_rms.fits")
                                     glob_paths += glob.glob(f"{config['DEFAULT']['GALFIND_DATA']}/hst/{survey}/{instrument.name}/{pix_scale}/*{band}*_rms.fits")
+                                                # Make sure no duplicates
+                                    glob_paths = list(set(glob_paths))
+                                
                                     if len(glob_paths) == 1:
                                         wht_paths[band] = str(Path(glob_paths[0]))
                                         wht_types[band] = 'MAP_RMS'
