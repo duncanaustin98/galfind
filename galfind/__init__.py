@@ -53,6 +53,10 @@ if config.getboolean("DEFAULT", "USE_LOGGING"):
     galfind_log_formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s', datefmt = '%Y-%m-%d %H:%M:%S')
     file_handler.setFormatter(galfind_log_formatter)
     galfind_logger.addHandler(file_handler)
+    try:
+        os.chmod(log_file_path, 0o777)
+    except PermissionError:
+        galfind_logger.warning(f"Could not change permissions of {log_file_path} to 777.")
     # print out the default galfind config file parameters
     for i, (option, value) in enumerate(config["DEFAULT"].items()):
         if i == 0:
