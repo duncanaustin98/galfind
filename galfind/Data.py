@@ -544,6 +544,9 @@ class Data:
      
             
         if not Path(self.im_paths[self.combine_band_names(bands)]).is_file() or overwrite:
+            if not config["DEFAULT"].getboolean("RUN"):
+                galfind_logger.critical("RUN = YES, so not stacking detection bands. Returning Error.")
+                raise Exception(f"RUN = YES, and combination of {self.survey} {self.version} or {self.instrument.name} has not previously been stacked.")
             funcs.make_dirs(self.im_paths[self.combine_band_names(bands)])
             for pos, band in enumerate(bands):
                 if self.im_shapes[band] != self.im_shapes[bands[0]] or self.im_zps[band] != self.im_zps[bands[0]] or self.im_pixel_scales[band] != self.im_pixel_scales[bands[0]]:
@@ -609,7 +612,12 @@ class Data:
                     galfind_logger.info("OVERWRITE = YES, so overwriting segmentation map if it exists.")
             
                 if not Path(self.seg_paths[self.forced_phot_band]).is_file() or overwrite:
+                    if not config["DEFAULT"].getboolean("RUN"):
+                        galfind_logger.critical("RUN = YES, so running through sextractor. Returning Error.")
+                        raise Exception(f"RUN = YES, and combination of {self.survey} {self.version} or {self.instrument.name} has not previously been run through sextractor.")
+
                     self.make_seg_map(forced_phot_band)
+                    
             else:
                 self.forced_phot_band = forced_phot_band[0]
         else:
@@ -629,6 +637,9 @@ class Data:
                     galfind_logger.info("OVERWRITE = YES, so overwriting sextractor output if it exists.")
          
             if not Path(sex_cat_path).is_file() or overwrite:
+                if not config["DEFAULT"].getboolean("RUN"):
+                    galfind_logger.critical("RUN = YES, so not running sextractor. Returning Error.")
+                    raise Exception(f"RUN = YES, and combination of {self.survey} {self.version} or {self.instrument.name} has not previously been run through sextractor.")
                 # SExtractor bash script python wrapper
                 if self.im_shapes[self.forced_phot_band] == self.im_shapes[band] and self.wht_types[self.forced_phot_band] == self.wht_types[band]:
                     process = subprocess.Popen(["./make_sex_cat.sh", config['DEFAULT']['GALFIND_WORK'], self.im_paths[band], str(self.im_pixel_scales[band]), \
@@ -655,6 +666,10 @@ class Data:
             galfind_logger.info("OVERWRITE = YES, so overwriting combined catalogue if it exists.")
          
         if not Path(self.sex_cat_master_path).is_file() or overwrite:
+            if not config["DEFAULT"].getboolean("RUN"):
+                galfind_logger.critical("RUN = YES, so not combining catalogues. Returning Error.")
+                raise Exception(f"RUN = YES, and combination of {self.survey} {self.version} or {self.instrument.name} has not previously been combined into a catalogue.")
+
             if type(forced_phot_band) == np.array or type(forced_phot_band) == list:
                 forced_phot_band_name = self.combine_band_names(forced_phot_band)
             else:
@@ -879,6 +894,10 @@ class Data:
             galfind_logger.info("OVERWRITE = YES, so overwriting local depth catalogue if it exists.")
             
         if not Path(self.loc_depth_cat_path).is_file() or overwrite:
+            if not config["DEFAULT"].getboolean("RUN"):
+                galfind_logger.critical("RUN = YES, so not making local depth catalogue. Returning Error.")
+                raise Exception(f"RUN = YES, and combination of {self.survey} {self.version} or {self.instrument.name} has not previously had local depth catalogue run.")
+
             print(f"Making local depth catalogue for {self.survey} {self.version} in {aper_diams} diameter apertures with min. error(s) {min_flux_pc_err_arr}%!")
             # open photometric data
             phot_data = fits.open(self.sex_cat_master_path)[1].data  
@@ -1072,6 +1091,10 @@ class Data:
                 galfind_logger.info("OVERWRITE = YES, so overwriting survey_depths.txt if it exists.")
             
             if not Path(f"{self.depth_dirs[band]}/{self.survey}_depths.txt").is_file() or overwrite:
+                if not config["DEFAULT"].getboolean("RUN"):
+                    galfind_logger.info("RUN = YES, so not making depth output file. Returning Error.")
+                    raise Exception(f"RUN = YES, and combination of {self.survey} {self.version} or {self.instrument.name} has not previously been run.")
+
                 np.savetxt(f"{self.depth_dirs[band]}/{self.survey}_depths.txt", np.column_stack((np.array(run_bands), np.array(average_depths))), header = header, fmt = "%s")
             
     def calc_band_depth(self, params):
@@ -1097,6 +1120,10 @@ class Data:
             galfind_logger.info("OVERWRITE = YES, so overwriting combined local depth catalogue if it exists.")
          
         if not Path(f"{self.depth_dirs[band]}/coord_{band}.reg").is_file() or not Path(f"{self.depth_dirs[band]}/{self.survey}_depths.txt").is_file() or not Path(f"{self.depth_dirs[band]}/coord_{band}.txt").is_file() or overwrite:
+            if not config["DEFAULT"].getboolean("RUN"):
+                galfind_logger.info("RUN = YES, so not loading region file. Returning Error.")
+                raise Exception(f"RUN = YES, and combination of {self.survey} {self.version} or {self.instrument.name} has not previously been run.")
+
             xoff, yoff = calc_xy_offsets(xy_offset)
             im_data, im_header, seg_data, seg_header, mask = self.load_data(band)
             print(f"Finished loading {band}")
@@ -1105,6 +1132,10 @@ class Data:
         if overwrite:
             galfind_logger.info(f"OVERWRITE = YES, so overwriting coord_{band}.txt if it exists.")
         if not Path(f"{self.depth_dirs[band]}/coord_{band}.txt").is_file() or overwrite:
+            if not config["DEFAULT"].getboolean("RUN"):
+                galfind_logger.info("RUN = YES, so not placing depth regions. Returning Error.")
+                raise Exception(f"RUN = YES, and combination of {self.survey} {self.version} or {self.instrument.name} has not previously been run.")
+
             # place apertures in blank regions of sky
             # print(f"Placing blank regions in {band}")
             # print(self.survey, xy_offset, self.im_pixel_scales[band], band, \
@@ -1120,6 +1151,10 @@ class Data:
             galfind_logger.info(f"OVERWRITE = YES, so overwriting coord_{band}.reg if it exists.")
         # read in aperture locations
         if not Path(f"{self.depth_dirs[band]}/coord_{band}.reg").is_file() or not Path(f"{self.depth_dirs[band]}/{self.survey}_depths.txt").is_file() or overwrite:
+            if not config["DEFAULT"].getboolean("RUN"):
+                galfind_logger.info("RUN = YES, so not placing depth regions. Returning Error.")
+                raise Exception(f"RUN = YES, and combination of {self.survey} {self.version} or {self.instrument.name} has not previously been run.")
+
             aper_loc = np.loadtxt(f"{self.depth_dirs[band]}/coord_{band}.txt")
             xcoord = aper_loc[:, 0]
             ycoord = aper_loc[:, 1]
@@ -1131,6 +1166,10 @@ class Data:
             galfind_logger.info(f"OVERWRITE = YES, so overwriting coord_{band}.reg if it exists.")
         # convert these to .reg region file
         if not Path(f"{self.depth_dirs[band]}/coord_{band}.reg").is_file() or overwrite:
+            if not config["DEFAULT"].getboolean("RUN"):
+                galfind_logger.info("RUN = YES, so not converting depth regions. Returning Error.")
+                raise Exception(f"RUN = YES, and combination of {self.survey} {self.version} or {self.instrument.name} has not previously been run.")
+
             aper_loc_to_reg(xcoord, ycoord, WCS(im_header), aper_diam.value, f"{self.depth_dirs[band]}/coord_{band}.reg")
         
         r = self.calc_aper_radius_pix(aper_diam, band)
@@ -1138,6 +1177,10 @@ class Data:
             galfind_logger.info(f"OVERWRITE = YES, so overwriting {self.depth_dirs[band]}/{self.survey}_depths.txt if it exists.")
         if not Path(f"{self.depth_dirs[band]}/{self.survey}_depths.txt").is_file() or overwrite:
             # plot the depths in the grid
+            if not config["DEFAULT"].getboolean("RUN"):
+                galfind_logger.info("RUN = YES, so not plotting depth regions. Returning Error.")
+                raise Exception(f"RUN = YES, and combination of {self.survey} {self.version} or {self.instrument.name} has not previously been run.")
+
             plot_depths(im_data, self.depth_dirs[band], band, seg_data, xcoord, ycoord, xy_offset, r, size, self.im_zps[band])
             # calculate average depth
             average_depths.append(calc_5sigma_depth(xcoord, ycoord, im_data, r, self.im_zps[band], n_aper = len(xcoord))) 

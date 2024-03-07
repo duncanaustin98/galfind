@@ -107,6 +107,11 @@ class SED_code(ABC):
  
         if not Path(fits_out_path).is_file() or overwrite:
             print(f"Running SED fitting for {self.__class__.__name__}")
+            if not config["DEFAULT"].getboolean("RUN"):
+                galfind_logger.critical("RUN = YES, so not making running EAZY. Returning Error.")
+                raise Exception(f"RUN = YES, and combination of {self.survey} {self.version} or {self.instrument.name} has not previously been run through EAZY.")
+
+
             self.run_fit(in_path, out_path, sed_folder, cat.instrument.new_instrument(), z_max_lowz = z_max_lowz, *args, **kwargs)
             self.make_fits_from_out(out_path, *args, **kwargs)
         # update galaxies within catalogue object with determined properties

@@ -216,6 +216,10 @@ class Catalogue(Catalogue_Base):
             galfind_logger.info(f"OVERWRITE = YES, so overwriting coord_{band}.reg if it exists.")
       
         if not Path(ext_src_cat_name).is_file() or overwrite:
+            if not config["DEFAULT"].getboolean("RUN"):
+                galfind_logger.critical("RUN = YES, so not making ext correction cat. Returning Error.")
+                raise Exception(f"RUN = YES, and combination of {self.survey} {self.version} or {self.instrument.name} has not previously been run.")
+
             ext_src_corrs_band = {}
             ext_src_bands = []
             for i, band in tqdm(enumerate(self.data.instrument.bands), total = len(self.data.instrument.bands), desc = f"Calculating extended source corrections for {self.cat_path}"):
@@ -287,6 +291,11 @@ class Catalogue(Catalogue_Base):
             galfind_logger.info("OVERWRITE = YES, so overwriting masked catalogue if it exists.")
     
         if not Path(masked_cat_path).is_file() or overwrite:
+            if not config["DEFAULT"].getboolean("RUN"):
+                galfind_logger.critical("RUN = YES, so not masking cat. Returning Error.")
+                raise Exception(f"RUN = YES, and combination of {self.survey} {self.version} or {self.instrument.name} has not previously been run.")
+
+
             im_data, im_header, seg_data, seg_header, mask = self.data.load_data("f444W", incl_mask = True)
             wcs = WCS(im_header)
             if self.data.is_blank:
@@ -405,6 +414,11 @@ class Catalogue(Catalogue_Base):
                         join_tables = True, skip_IDs = [], rest_UV_wavs_arr = [[1250., 3000.] * u.AA], conv_filt_arr = [True, False], overwrite = True):
         UV_cat_name = f"{funcs.split_dir_name(self.cat_path, 'dir')}/UV_properties_{code_name}_{templates}_{str(self.cat_creator.min_flux_pc_err)}pc.fits" # _test
         if not Path(UV_cat_name).is_file() or overwrite:
+            if not config["DEFAULT"].getboolean("RUN"):
+                galfind_logger.critical("RUN = YES, so not making UV corrected cat. Returning Error.")
+                raise Exception(f"RUN = YES, and combination of {self.survey} {self.version} or {self.instrument.name} has not previously been run.")
+
+
             cat_data = []
             #print("Bands here: ", self[1].phot.instrument.bands)
             for i, gal in tqdm(enumerate(self), total = len(self), desc = "Making UV fit catalogue"):

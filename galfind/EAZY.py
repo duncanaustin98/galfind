@@ -57,6 +57,11 @@ class EAZY(SED_code):
             galfind_logger.info("OVERWRITE = YES, so overwriting EAZY output if it exists.")
     
         if not Path(eazy_in_path).is_file() or overwrite:
+            if not config["DEFAULT"].getboolean("RUN"):
+                galfind_logger.critical("RUN = YES, so not running EAZY. Returning Error.")
+                raise Exception(f"RUN = YES, and combination of {self.survey} {self.version} or {self.instrument.name} has not previously been run through EAZY.")
+
+
             # 1) obtain input data
             IDs = np.array([gal.ID for gal in cat.gals]) # load IDs
             
