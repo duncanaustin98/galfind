@@ -101,7 +101,11 @@ class SED_code(ABC):
         os.makedirs(sed_folder, exist_ok = True)
         fits_out_path = self.out_fits_name(out_path, *args, **kwargs)
         #print(f"fit_cat fits_out_path = {fits_out_path}")
-        if not Path(fits_out_path).is_file() or config["DEFAULT"].getboolean("OVERWRITE"):
+        overwrite = config["DEFAULT"].getboolean("OVERWRITE")
+        if overwrite:
+            galfind_logger.info("OVERWRITE = YES, so overwriting EAZY fits if they exist.")
+ 
+        if not Path(fits_out_path).is_file() or overwrite:
             print(f"Running SED fitting for {self.__class__.__name__}")
             self.run_fit(in_path, out_path, sed_folder, cat.instrument.new_instrument(), z_max_lowz = z_max_lowz, *args, **kwargs)
             self.make_fits_from_out(out_path, *args, **kwargs)

@@ -52,7 +52,11 @@ class EAZY(SED_code):
         else:
             eazy_in_name = f"{'_'.join(cat.cat_name.split('pc')[0].split('_')[:-1])}_{cat.cat_creator.min_flux_pc_err}pc.in"
         eazy_in_path = f"{eazy_in_dir}/{eazy_in_name}"
-        if not Path(eazy_in_path).is_file():
+        overwrite = config["DEFAULT"].getboolean("OVERWRITE")
+        if overwrite:
+            galfind_logger.info("OVERWRITE = YES, so overwriting EAZY output if it exists.")
+    
+        if not Path(eazy_in_path).is_file() or overwrite:
             # 1) obtain input data
             IDs = np.array([gal.ID for gal in cat.gals]) # load IDs
             
@@ -333,6 +337,7 @@ class EAZY(SED_code):
     
     def extract_SEDs(self, fits_cat, ID, low_z_run = False, units = u.ABmag, just_header = False):
         SED_path = self.SED_path_from_cat_path(fits_cat.meta[f"{self.code_name}_path"], ID, low_z_run)
+       
         if not Path(SED_path).is_file():
             print(f'Not found EAZY SED at {SED_path}')
         if not just_header: 

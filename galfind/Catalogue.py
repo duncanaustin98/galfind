@@ -210,7 +210,12 @@ class Catalogue(Catalogue_Base):
             
     def make_ext_src_corr_cat(self, code_name = "EAZY", templates_arr = ["fsps", "fsps_larson", "fsps_jades"], join_tables = True):
         ext_src_cat_name = f"{funcs.split_dir_name(self.cat_path, 'dir')}/Extended_source_corrections_{code_name}.fits"
-        if not Path(ext_src_cat_name).is_file():
+        overwrite = config["DEFAULT"].getboolean("OVERWRITE")
+        
+        if overwrite:
+            galfind_logger.info(f"OVERWRITE = YES, so overwriting coord_{band}.reg if it exists.")
+      
+        if not Path(ext_src_cat_name).is_file() or overwrite:
             ext_src_corrs_band = {}
             ext_src_bands = []
             for i, band in tqdm(enumerate(self.data.instrument.bands), total = len(self.data.instrument.bands), desc = f"Calculating extended source corrections for {self.cat_path}"):
@@ -277,7 +282,11 @@ class Catalogue(Catalogue_Base):
         self.data = data # store data object in catalogue object
         masked_cat_path = self.cat_path.replace(".fits", "_masked.fits")
         
-        if not Path(masked_cat_path).is_file():
+        overwrite = config["DEFAULT"].getboolean("OVERWRITE")
+        if overwrite:
+            galfind_logger.info("OVERWRITE = YES, so overwriting masked catalogue if it exists.")
+    
+        if not Path(masked_cat_path).is_file() or overwrite:
             im_data, im_header, seg_data, seg_header, mask = self.data.load_data("f444W", incl_mask = True)
             wcs = WCS(im_header)
             if self.data.is_blank:

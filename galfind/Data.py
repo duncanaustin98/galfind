@@ -538,8 +538,12 @@ class Data:
             self.mask_paths[self.combine_band_names(bands)] = glob_mask_names[0]
         else:
             raise(Exception(f"More than 1 mask for {self.combine_band_names(bands)}. Please change this in {self.mask_dir}"))
-        
-        if not Path(self.im_paths[self.combine_band_names(bands)]).is_file():
+        overwrite = config["DEFAULT"].getboolean("OVERWRITE")
+        if overwrite:
+            galfind_logger.info("OVERWRITE = YES, so overwriting stacked image if it exists.")
+     
+            
+        if not Path(self.im_paths[self.combine_band_names(bands)]).is_file() or overwrite:
             funcs.make_dirs(self.im_paths[self.combine_band_names(bands)])
             for pos, band in enumerate(bands):
                 if self.im_shapes[band] != self.im_shapes[bands[0]] or self.im_zps[band] != self.im_zps[bands[0]] or self.im_pixel_scales[band] != self.im_pixel_scales[bands[0]]:
@@ -600,7 +604,11 @@ class Data:
                 self.stack_bands(forced_phot_band)
                 self.forced_phot_band = self.combine_band_names(forced_phot_band)
                 self.seg_paths[self.forced_phot_band] = self.seg_path(self.forced_phot_band)
-                if not Path(self.seg_paths[self.forced_phot_band]).is_file():
+                overwrite = config["DEFAULT"].getboolean("OVERWRITE")
+                if overwrite:
+                    galfind_logger.info("OVERWRITE = YES, so overwriting segmentation map if it exists.")
+            
+                if not Path(self.seg_paths[self.forced_phot_band]).is_file() or overwrite:
                     self.make_seg_map(forced_phot_band)
             else:
                 self.forced_phot_band = forced_phot_band[0]
@@ -616,7 +624,11 @@ class Data:
             sex_cat_path = self.sex_cat_path(band, self.forced_phot_band)
             galfind_logger.debug(f"band = {band}, sex_cat_path = {sex_cat_path} in Data.make_sex_cats")
             # if not run before
-            if not Path(sex_cat_path).is_file():
+            overwrite = config["DEFAULT"].getboolean("OVERWRITE")
+            if overwrite:
+                    galfind_logger.info("OVERWRITE = YES, so overwriting sextractor output if it exists.")
+         
+            if not Path(sex_cat_path).is_file() or overwrite:
                 # SExtractor bash script python wrapper
                 if self.im_shapes[self.forced_phot_band] == self.im_shapes[band] and self.wht_types[self.forced_phot_band] == self.wht_types[band]:
                     process = subprocess.Popen(["./make_sex_cat.sh", config['DEFAULT']['GALFIND_WORK'], self.im_paths[band], str(self.im_pixel_scales[band]), \
@@ -638,7 +650,11 @@ class Data:
         save_name = f"{self.survey}_MASTER_Sel-{self.combine_band_names(forced_phot_band)}_{self.version}.fits"
         save_dir = f"{config['DEFAULT']['GALFIND_WORK']}/Catalogues/{self.version}/{self.instrument.name}/{self.survey}"
         self.sex_cat_master_path = f"{save_dir}/{save_name}"
-        if not Path(self.sex_cat_master_path).is_file():
+        overwrite = config["DEFAULT"].getboolean("OVERWRITE")
+        if overwrite:
+            galfind_logger.info("OVERWRITE = YES, so overwriting combined catalogue if it exists.")
+         
+        if not Path(self.sex_cat_master_path).is_file() or overwrite:
             if type(forced_phot_band) == np.array or type(forced_phot_band) == list:
                 forced_phot_band_name = self.combine_band_names(forced_phot_band)
             else:
@@ -858,7 +874,11 @@ class Data:
         # correct the base sextractor catalogue to include local depth errors if not already done so
         self.loc_depth_cat_path = self.sex_cat_master_path.replace(".fits", "_loc_depth.fits")
         print(self.loc_depth_cat_path)
-        if not Path(self.loc_depth_cat_path).is_file():
+        overwrite = config["DEFAULT"].getboolean("OVERWRITE")
+        if overwrite:
+            galfind_logger.info("OVERWRITE = YES, so overwriting local depth catalogue if it exists.")
+            
+        if not Path(self.loc_depth_cat_path).is_file() or overwrite:
             print(f"Making local depth catalogue for {self.survey} {self.version} in {aper_diams} diameter apertures with min. error(s) {min_flux_pc_err_arr}%!")
             # open photometric data
             phot_data = fits.open(self.sex_cat_master_path)[1].data  
@@ -1047,7 +1067,11 @@ class Data:
         header = "band, average_5sigma_depth"
         for band in run_bands:
             # Save local depths in both folders
-            if not Path(f"{self.depth_dirs[band]}/{self.survey}_depths.txt").is_file():
+            overwrite = config["DEFAULT"].getboolean("OVERWRITE")
+            if overwrite:
+                galfind_logger.info("OVERWRITE = YES, so overwriting survey_depths.txt if it exists.")
+            
+            if not Path(f"{self.depth_dirs[band]}/{self.survey}_depths.txt").is_file() or overwrite:
                 np.savetxt(f"{self.depth_dirs[band]}/{self.survey}_depths.txt", np.column_stack((np.array(run_bands), np.array(average_depths))), header = header, fmt = "%s")
             
     def calc_band_depth(self, params):
@@ -1067,14 +1091,20 @@ class Data:
                 #print(f"xy_offset = {xy_offset}")
             except: # use default xy offset if this .txt does not exist
                 pass
-            
-        if not Path(f"{self.depth_dirs[band]}/coord_{band}.reg").is_file() or not Path(f"{self.depth_dirs[band]}/{self.survey}_depths.txt").is_file() or not Path(f"{self.depth_dirs[band]}/coord_{band}.txt").is_file():
+
+        overwrite = config["DEFAULT"].getboolean("OVERWRITE")
+        if overwrite:
+            galfind_logger.info("OVERWRITE = YES, so overwriting combined local depth catalogue if it exists.")
+         
+        if not Path(f"{self.depth_dirs[band]}/coord_{band}.reg").is_file() or not Path(f"{self.depth_dirs[band]}/{self.survey}_depths.txt").is_file() or not Path(f"{self.depth_dirs[band]}/coord_{band}.txt").is_file() or overwrite:
             xoff, yoff = calc_xy_offsets(xy_offset)
             im_data, im_header, seg_data, seg_header, mask = self.load_data(band)
             print(f"Finished loading {band}")
 
         # print(f"{self.depth_dirs[band]}/coord_{band}.txt")
-        if not Path(f"{self.depth_dirs[band]}/coord_{band}.txt").is_file():
+        if overwrite:
+            galfind_logger.info(f"OVERWRITE = YES, so overwriting coord_{band}.txt if it exists.")
+        if not Path(f"{self.depth_dirs[band]}/coord_{band}.txt").is_file() or overwrite:
             # place apertures in blank regions of sky
             # print(f"Placing blank regions in {band}")
             # print(self.survey, xy_offset, self.im_pixel_scales[band], band, \
@@ -1086,8 +1116,10 @@ class Data:
             # save xy offset for this field and band
             np.savetxt(f"{self.depth_dirs[band]}/offset_{band}.txt", np.column_stack((xoff, yoff)), header = "x_off, y_off", fmt = "%d %d")
         
+        if overwrite:
+            galfind_logger.info(f"OVERWRITE = YES, so overwriting coord_{band}.reg if it exists.")
         # read in aperture locations
-        if not Path(f"{self.depth_dirs[band]}/coord_{band}.reg").is_file() or not Path(f"{self.depth_dirs[band]}/{self.survey}_depths.txt").is_file():
+        if not Path(f"{self.depth_dirs[band]}/coord_{band}.reg").is_file() or not Path(f"{self.depth_dirs[band]}/{self.survey}_depths.txt").is_file() or overwrite:
             aper_loc = np.loadtxt(f"{self.depth_dirs[band]}/coord_{band}.txt")
             xcoord = aper_loc[:, 0]
             ycoord = aper_loc[:, 1]
@@ -1095,12 +1127,16 @@ class Data:
             xcoord = np.delete(xcoord, index)
             ycoord = np.delete(ycoord, index)
         
+        if overwrite:
+            galfind_logger.info(f"OVERWRITE = YES, so overwriting coord_{band}.reg if it exists.")
         # convert these to .reg region file
-        if not Path(f"{self.depth_dirs[band]}/coord_{band}.reg").is_file():
+        if not Path(f"{self.depth_dirs[band]}/coord_{band}.reg").is_file() or overwrite:
             aper_loc_to_reg(xcoord, ycoord, WCS(im_header), aper_diam.value, f"{self.depth_dirs[band]}/coord_{band}.reg")
         
         r = self.calc_aper_radius_pix(aper_diam, band)
-        if not Path(f"{self.depth_dirs[band]}/{self.survey}_depths.txt").is_file():
+        if overwrite:
+            galfind_logger.info(f"OVERWRITE = YES, so overwriting {self.depth_dirs[band]}/{self.survey}_depths.txt if it exists.")
+        if not Path(f"{self.depth_dirs[band]}/{self.survey}_depths.txt").is_file() or overwrite:
             # plot the depths in the grid
             plot_depths(im_data, self.depth_dirs[band], band, seg_data, xcoord, ycoord, xy_offset, r, size, self.im_zps[band])
             # calculate average depth
