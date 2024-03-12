@@ -23,6 +23,7 @@ from matplotlib.colors import LogNorm
 from astropy.table import Table, hstack, Column
 import copy
 import pyregion
+from astropy.nddata import Cutout2D
 import subprocess
 import time
 import glob
@@ -404,6 +405,24 @@ class Data:
         return self
     
 # %% Methods
+
+    def make_cutout(self, gal, cutout_size = 32):
+        primary_header = {}
+        for pos, band in tqdm(enumerate(self.instrument)):
+            print(band)
+            hdul = [fits.PrimaryHDU(header = primary_header)]
+            im_data, im_header, seg_data, seg_header = self.load_data(band, incl_mask = False)
+            wht_data = 
+            wcs = WCS(im_header)
+
+            cutout = Cutout2D(im_data, gal["sky_coord"], size = (cutout_size, cutout_size), wcs = im_wcs)
+            im_header.update(cutout.wcs.to_header())
+            print(im_header)
+            hdul.append(fits.ImageHDU(cutout.data, header = im_header))
+            out_path = f"{config['DEFAULT']['GALFIND_WORK']}/Cutouts/{self.survey}/{self.version}/{band}/{str(gal['ID'])}.fits"
+            os.makedirs("/".join(out_path.split("/")[:-1]), exist_ok = True)
+            hdul.writeto(out_path, overwrite = True)
+            print('Saved fits cutout to:', out_path)
 
     def load_data(self, band, incl_mask = True):
         if type(band) not in [str, np.str_]:
