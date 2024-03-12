@@ -7,7 +7,8 @@ matplotlib
 numpy
 photutils
 seaborn
-pyregionscipy
+pyregion
+scipy
 sep
 setuptools
 tqdm
