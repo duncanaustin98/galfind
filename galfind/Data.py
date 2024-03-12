@@ -448,7 +448,7 @@ class Data:
             im_header = im_hdul[im_ext].header
         # if mask_band == "blank":
         #     mask_file = pyregion.open(self.blank_mask_path)
-        # elif mask_band == "cluster":
+        # elif mask == "cluster":
         #     mask_file = pyregion.open(self.cluster_mask_path)
         # else:
         mask_file = pyregion.open(self.mask_paths[mask_band]) # file for mask
@@ -460,6 +460,12 @@ class Data:
         elapsed_time = end_time - start_time
         galfind_logger.debug(f"Time to load mask for {mask_band}: {float(elapsed_time)} seconds")
         return mask
+    
+    def load_wht(self, band, incl_header = False):
+        if not incl_header:
+            return fits.open(self.wht_paths[band])[self.wht_exts[band]].data
+        else:
+            return fits.open(self.wht_paths[band])[self.wht_exts[band]].data, fits.open(self.wht_paths[band])[self.wht_exts[band]].header
         
     def plot_image_from_band(self, ax, band, norm = LogNorm(vmin = 0., vmax = 10.), show = True):
         im_data = self.load_data(band, incl_mask = False)[0]

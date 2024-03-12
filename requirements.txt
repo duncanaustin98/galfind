@@ -1,0 +1,17 @@
+astropy==5.2.1
+astroquery==0.4.6
+eazy==0.6.7.dev1+g34999c6
+h5py==3.7.0
+joblib==1.2.0
+lmfit==1.2.1
+matplotlib==3.6.0
+numpy==1.26.4
+pandas==1.5.1
+photutils==1.5.0
+pyregion==2.1.1
+scipy==1.12.0
+seaborn==0.13.2
+sep==1.2.1
+setuptools==61.2.0
+tqdm==4.64.1
+yagmail==0.15.293

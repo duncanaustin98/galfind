@@ -280,6 +280,16 @@ class Catalogue(Catalogue_Base):
             for templates in templates_arr:
                 gal.phot.SED_results[code_name][templates].ext_src_corrs = {**{"UV": self.ext_src_tab[f"auto_corr_factor_UV_{code_name}_{templates}"][i] for templates in templates_arr}, **{"mass": mass_corr}}
     
+    def make_cutouts(self, IDs, cutout_size = 32):
+        for band in tqdm(self.instrument, total = len(self.instrument), desc = "Making band cutouts"):
+            im_data, im_header, seg_data, seg_header = self.data.load_data(band, incl_mask = False)
+            wht_data = self.data.load_wht(band)
+            wcs = WCS(im_header)
+            for gal in self:
+                if gal.ID in IDs:
+                    gal.make_cutout(band, data = {"SCI": im_data, "SEG": seg_data, self.data.wht_types[band]: wht_data}, \
+                        wcs = wcs, im_header = im_header, survey = self.survey, version = self.version, cutout_size = cutout_size)
+
     # altered from original in mask_regions.py
     def mask(self, data, mask_instrument = NIRCam()): # mask paths is a dict of form {band: mask_path}
         print(f"Running masking code for {self.cat_path}. (Too much copying and pasting here!)")
