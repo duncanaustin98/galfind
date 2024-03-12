@@ -49,11 +49,11 @@ class Catalogue(Catalogue_Base):
     
     @classmethod
     def from_data(cls, data, version, aper_diams, cat_creator, code_names, lowz_zmax, xy_offset = [0, 0], forced_phot_band = "f444W", loc_depth_min_flux_pc_errs = [5, 10], \
-                  n_loc_depth_samples = 5, templates_arr = ["fsps_larson"], fast = True, mask = True):
+                  n_loc_depth_samples = 5, templates_arr = ["fsps_larson"], mask = True):
         # make masked local depth catalogue from the 'Data' object
         data.combine_sex_cats(forced_phot_band)
-        data.calc_depths(xy_offset, aper_diams, fast = fast)
-        print("from_data fast = ", fast)
+        data.calc_depths(aper_diams = aper_diams)
+        raise(Exception())
         # load the catalogue that has just been created into a 'Catalogue' object
         if cat_creator.cat_type == "loc_depth":
             data.make_loc_depth_cat(aper_diams, min_flux_pc_err_arr = loc_depth_min_flux_pc_errs, forced_phot_band = forced_phot_band, n_samples = n_loc_depth_samples, fast = fast)

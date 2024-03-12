@@ -14,7 +14,6 @@ from astropy.table import Table
 import cv2 as cv2
 from galfind import Data
 from astropy.io import fits
-from galfind import Catalogue
 from sklearn.cluster import KMeans
 from skimage.measure import label, regionprops
 from scipy import ndimage
@@ -97,9 +96,9 @@ def make_grid(data, mask, radius, scatter_size, pixel_scale=0.03, plot=False, ax
 def calc_depths(coordinates, fluxes, img_data, mask = None, catalogue = None, 
                 mode='rolling', sigma_level = 5, step_size=100, region_radius_used_pix=300, 
                 zero_point = 28.08, min_number_of_values=100, n_nearest=100, split_depths = False, wht_data = None,
-                split_depth_regions = 2, split_depth_min_size = 100000, split_depths_factor = 5,
-                cat_x_col='X_IMAGE', cat_y_col='Y_IMAGE', coord_type='pixel', wcs=None, provide_labels=None,
-                diagnostic_id = None):
+                n_split = 2, split_depth_min_size = 100000, split_depths_factor = 5,
+                coord_type = 'sky', wcs = None, provide_labels=None,
+                diagnostic_id = None, plot = True):
     '''
     coordinates: list of tuples - (x, y) coordinates
     fluxes: list of floats - fluxes corresponding to the coordinates
@@ -112,46 +111,40 @@ def calc_depths(coordinates, fluxes, img_data, mask = None, catalogue = None,
     zero_point: float - the zero point for the depth calculation
     min_number_of_values: int - the minimum number of values required to calculate the depth if the mode is 'rolling'
     n_nearest: int - the number of nearest neighbors to use for the depth calculation - only used if mode is 'n_nearest'
-    split_depths: bool - whether to split the depths into regions using KMeans clustering
-    split_depth_regions: int - the number of regions to split the depths into
+    n_split: int - the number of regions to split the depths into using KMeans clustering
     split_depth_min_size: int - the minimum size of the regions
     split_depths_factor - int - the factor to use for the binning of the weight map
     wht_data: 2D numpy array - the weight data - only used if split_depths is True
-    cat_x_col: str - the name of the x column in the catalogue
-    cat_y_col: str - the name of the y column in the catalogue
     coord_type: str - 'sky' or 'pixel'
     wcs: WCS object - the wcs object to use for the conversion if coord_type is 'sky'
-    diagnostic_id: int - the position of a glaaxy in the catalogue to show the diagnostic plot
+    diagnostic_id: int - the position of a galaxy in the catalogue to show the diagnostic plot
+    plot: bool - whether the nmad grid is plotted or not
     '''
+    # Determine whether to split depths or not
+    if n_split == 1:
+        split_depths = True
+    else:
+        split_depths = False
     # Extract x and y coordinates
     coordinates = np.array(coordinates)
     x, y = coordinates[:, 0], coordinates[:, 1]
-    # Determine the grid size
-    if type(wht_data) == str:
-        weight_map = fits.open(wht_data)
-        print(f'Opening weight map: {wht_data}')
-        # Check if we have multiple extensions
-        if len(weight_map) > 1:
-            weight_map = weight_map['WHT'].data
-        else:
-            weight_map = weight_map[0].data
-        wht_data = weight_map
-    
-    #plt.imshow(wht_data, origin='lower', interpolation='None', cmap='Reds')
-    #plt.show()
-    
-    #stretch = vis.CompositeStretch(vis.LogStretch(), vis.ContrastBiasStretch(contrast=30, bias=0.08))    
-    #norm = ImageNormalize(stretch=stretch, vmin=0.001, vmax=10)
 
-    #plt.imshow(img_data, cmap='Greys', origin='lower', interpolation='None', norm=norm)
- 
-    
+    # if type(wht_data) == str:
+    #     weight_map = fits.open(wht_data)
+    #     print(f"Opening weight map: {wht_data}")
+    #     # Check if we have multiple extensions
+    #     if len(weight_map) > 1:
+    #         weight_map = weight_map['WHT'].data
+    #     else:
+    #         weight_map = weight_map[0].data
+    #     wht_data = weight_map
+
+    # Determine the grid size
     if type(wht_data) != type(None) and split_depths:
         if type(provide_labels) == type(None):
             print('Obtaining labels...')
             assert np.shape(wht_data) == np.shape(img_data), f'The weight map must have the same shape as the image {np.shape(wht_data)} != {np.shape(img_data)}'
-            labels_final, weight_map_smoothed = cluster_wht_map(wht_data, num_regions=split_depth_regions, 
-                                                                bin_factor=split_depths_factor, min_size=split_depth_min_size)
+            labels_final, weight_map_smoothed = cluster_wht_map(wht_data, num_regions = split_depth_regions, bin_factor = split_depths_factor, min_size = split_depth_min_size)
             print('Labels obtained')
         else:
             labels_final = provide_labels
@@ -159,7 +152,6 @@ def calc_depths(coordinates, fluxes, img_data, mask = None, catalogue = None,
     else:   
         print('Not labelling data')
         labels_final = np.zeros_like(img_data)
-
 
     #  NOTE np.shape on a 2D array returns (y, x) not (x, y)
     # So references to an x, y coordinate in the array should be [y, x]
@@ -174,12 +166,14 @@ def calc_depths(coordinates, fluxes, img_data, mask = None, catalogue = None,
 
         if coord_type == 'sky' and wcs != None:
             # This doesn't work because footprint of the image is not the same as the footprint of the catalogue
+            cat_x_col, cat_y_col = "ALPHA_J2000", "DELTA_J2000"
             ra_pix, dec_pix = wcs.all_world2pix(catalogue[cat_x_col], catalogue[cat_y_col], 0)
             cat_x, cat_y = ra_pix, dec_pix
             if type(wht_data) != type(None):
                 assert np.shape(wht_data) == np.shape(img_data)
 
         elif coord_type == 'pixel':
+            cat_x_col, cat_y_col = "X_IMAGE", "Y_IMAGE"
             cat_x, cat_y = catalogue[cat_x_col], catalogue[cat_y_col]
         else:
             raise ValueError('coord_type must be either "sky" or "pixel"')
@@ -187,9 +181,8 @@ def calc_depths(coordinates, fluxes, img_data, mask = None, catalogue = None,
     #print('Image dimensions:', np.shape(img_data))
    
     x_max, y_max = np.max(x), np.max(y)
-    
     x_label, y_label = x.astype(int), y.astype(int)
-                        # Don't look for label of pixels outside the image
+    # Don't look for label of pixels outside the image
     #print('X label max:', np.max(x_label), 'Y label max:', np.max(y_label))
     #print('before clip')
     x_label = np.clip(x_label, 0, x_max - 1).astype(int)
@@ -236,24 +229,19 @@ def calc_depths(coordinates, fluxes, img_data, mask = None, catalogue = None,
                     try:
                         #  NOTE np.shape on a 2D array returns (y, x) not (x, y)
                         # So references to an x, y coordinate in the array should be [y, x]
-    
                         if mask[j, i] == 1.0:
                             depth = np.nan
                             setnan = True
-                            num_of_apers = np.nan
-                            
-                            
+                            num_of_apers = np.nan    
                     except IndexError:
                         setnan = True
                         depth = np.nan
                         num_of_apers = np.nan
                         
-                
                 if not setnan:
                     # Calculate the distance from the center
                     distances = np.sqrt((x - i)**2 + (y - j)**2)
                     
-         
                     if mode == 'rolling':
                         # Extract the neighboring Y values within the circular window
                         # Ensure label values of regions are the same as label
@@ -278,8 +266,9 @@ def calc_depths(coordinates, fluxes, img_data, mask = None, catalogue = None,
                 nmad_sized_grid[j//step_size, i//step_size] = depth
                 label_size_grid[j//step_size, i//step_size] = label_name
 
-        plt.imshow(nmad_sized_grid, origin='lower', interpolation='None', cmap='plasma')
-        plt.show()
+        if plot:
+            plt.imshow(nmad_sized_grid, origin='lower', interpolation='None', cmap='plasma')
+            plt.show()
         
         return nmad_sized_grid, num_sized_grid, label_size_grid, labels_final
 
@@ -353,11 +342,9 @@ def calc_depths(coordinates, fluxes, img_data, mask = None, catalogue = None,
                                 circle = plt.Circle((xi, yi), radius_pixels, color='b', fill=False)
                                 ax.add_artist(circle)
                             plt.show()
-                            
-                            
 
                     depth = calculate_depth(neighbor_values, sigma_level, zero_point, min_number_of_values=min_number_of_values)
-                
+
             cat_labels.append(label)
             depths.append(depth)
             diagnostic.append(depth_diagnostic)
@@ -365,7 +352,7 @@ def calc_depths(coordinates, fluxes, img_data, mask = None, catalogue = None,
         
         return np.array(depths), np.array(diagnostic), np.array(cat_labels), labels_final
 
-def calculate_depth(values, sigma_level=5, zero_point = 28.08, min_number_of_values=100):
+def calculate_depth(values, sigma_level = 5, zero_point = 28.08, min_number_of_values = 100):
     if len(values) < min_number_of_values:
         return np.nan
     median = np.nanmedian(values)
@@ -377,10 +364,11 @@ def calculate_depth(values, sigma_level=5, zero_point = 28.08, min_number_of_val
         depth_sigma = np.nan
     return depth_sigma
 
-def show_depths(nmad_grid, num_grid, step_size, region_radius_used_pix, labels=None,
-                cat_labels=None, cat_depths=None, cat_diagnostics=None, 
-                x_pix=None, y_pix=None, img_mask=None, labels_final=None, suptitle=None):
-    fig, axs = plt.subplots(3 if type(labels) == type(None) else 4, 1 if type(cat_depths) == type(None) else 2, layout='tight', facecolor='white', figsize=(8, 14))
+def show_depths(nmad_grid, num_grid, step_size, region_radius_used_pix, labels = None,
+                cat_labels = None, cat_depths = None, cat_diagnostics = None, 
+                x_pix = None, y_pix = None, img_mask = None, labels_final = None, \
+                suptitle = None, save_path = None, show = False):
+    fig, axs = plt.subplots(3 if type(labels) == type(None) else 4, 1 if type(cat_depths) == type(None) else 2, facecolor = 'white', figsize = (8, 14))
     axs = axs.flatten()
     if type(suptitle) != type(None):
         fig.suptitle(suptitle, fontsize='large', fontweight='bold')
@@ -399,7 +387,6 @@ def show_depths(nmad_grid, num_grid, step_size, region_radius_used_pix, labels=N
     axs[0].text(circle_x, circle_y - 1.4*radius, s='Filter Size', va='center', ha='center', color='white', fontsize='medium')# path_effects = [pe.Stroke(linewidth=0.5, foreground='black')])
     fig.colorbar(mappable, label=r'5$\sigma$ Depth',  ax=axs[0])
     axs[0].set_title('Rolling Average 5$\sigma$ Depth')
-
 
     mappable2 = axs[1].imshow(num_grid, origin='lower', cmap=cmap)
     fig.colorbar(mappable2, label=r'Number of Apertures Used',  ax=axs[1])
@@ -424,7 +411,6 @@ def show_depths(nmad_grid, num_grid, step_size, region_radius_used_pix, labels=N
             colors = [custom_cmap(possible_labels[0]),custom_cmap(possible_labels[1])]
             axs[pos+1].set_title('Labels')
 
-
             axs[pos].set_title('Catalogue Labels')
 
             axs[pos].imshow(img_mask, cmap='Greens', origin='lower', interpolation='None', alpha=0.3, zorder=4)
@@ -440,8 +426,6 @@ def show_depths(nmad_grid, num_grid, step_size, region_radius_used_pix, labels=N
         
     # Histogram of depths
     if type(cat_depths) != type(None):
-  
-       
         #plt.scatter(x_pix, y_pix, s=1, zorder=5, c = depth, cmap='plasma')
 
         axs[2].set_title('Catalogue Depths')
@@ -468,35 +452,29 @@ def show_depths(nmad_grid, num_grid, step_size, region_radius_used_pix, labels=N
             # Label with text
             axs[3].text(np.nanmean(depth), 0.7*max, f'{np.nanmean(depth):.2f}', va='top', ha='center', fontsize='medium', color=colors[pos], rotation=90, path_effects = [pe.withStroke(linewidth=3, foreground='white')], zorder=10, fontweight='bold')
             axs[3].text(np.nanmedian(depth), 0.9*max, f'{np.nanmedian(depth):.2f}', va='top', ha='center', fontsize='medium', color=colors[pos], rotation=90, path_effects = [pe.withStroke(linewidth=3, foreground='white')], zorder=10, fontweight='bold')
-            
         
         axs[3].set_xlabel('5$\sigma$ Depth')
         axs[3].set_title('Depth Histogram')
         axs[3].legend(frameon=False)
+
     else:
         print('No catalogue depths')
-        
-        
-
-
     #axs[7].remove()
-
-    plt.show()
-
- #unique_labels = np.unique(cat_labels[~np.isnan(cat_labels)])
-
-            
-        
-
-    #axs[0].imshow(labels, cmap='Reds', origin='lower', interpolation='None', alpha=0.5)
+    #plt.tight_layout()
+    if type(save_path) != type(None):
+        plt.savefig(save_path)
+        print(f"Saved depths plot to {save_path}")
+    if show:
+        plt.show()
+    else:
+        plt.clf()
 
     print('Median 5 sigma depth:', np.nanmedian(nmad_grid))
     print('Median number of apertures used:', np.nanmedian(num_grid))
     print('Mean 5 sigma depth:', np.nanmean(nmad_grid))
-    
     return fig, axs
 
-def make_ds9_region_file(coordinates, radius, filename,  coordinate_type = 'sky', convert=True, wcs=None, pixel_scale=0.03):
+def make_ds9_region_file(coordinates, radius, filename, coordinate_type = 'sky', convert=True, wcs=None, pixel_scale=0.03):
     '''
     coordinates: list of tuples - (x, y) coordinates
     radius: float - the radius of the circles in units of sky or pixels
@@ -531,7 +509,7 @@ def make_ds9_region_file(coordinates, radius, filename,  coordinate_type = 'sky'
             f.write(f'circle({xi},{yi},{radius:.5f}{radius_unit})\n')
     
 
-def cluster_wht_map(wht_map, num_regions=2, bin_factor=1, min_size=10000, ):
+def cluster_wht_map(wht_map, num_regions = 2, bin_factor = 1, min_size = 10000):
     'Works best for 2 regions, but can be used for more than 2 regions - may need additional smoothing and cleaning'
     # Read the image and associated weight map
     if type(wht_map) == str:
@@ -568,8 +546,6 @@ def cluster_wht_map(wht_map, num_regions=2, bin_factor=1, min_size=10000, ):
 
         kmeans.fit(weight_map_smoothed.flatten().reshape(-1, 1))
         labels = kmeans.labels_.reshape(weight_map_smoothed.shape[:2])
-
-       
 
         if num_regions == 2:
             # Closing and opening to remove light and dark spots
@@ -609,9 +585,7 @@ def cluster_wht_map(wht_map, num_regions=2, bin_factor=1, min_size=10000, ):
     # If bin_factor is greater than 1, enlarge the labels_filled to the original size
     if bin_factor > 1:
         labels_filled = cv2.resize(labels_filled.astype(np.uint8), (weight_map_new.shape[1], weight_map_new.shape[0]), interpolation=cv2.INTER_NEAREST)
-        
     return labels_filled, weight_map_smoothed
-
 
 if __name__ == '__main__':
     
@@ -640,16 +614,16 @@ if __name__ == '__main__':
 
     # Aperture Grid Options
     distance_to_mask = 30 # minimum distance to mask for aperture placement (pixels)
-    scatter_size  = 0.1 # distance to scatter positions of apertures in grid (arcsec)
+    scatter_size = 0.1 # distance to scatter positions of apertures in grid (arcsec)
     plot = True # plot the grid of apertures
 
     # Split Depths Options
     split_depths = False # whether to split the depths into regions using KMeans clustering
     split_depth_regions = 2 # the number of regions to split the depths into
-    split_depth_min_size = 100000 # the minimum size of the regions
+    split_depth_min_size = 100_000 # the minimum size of the regions
     split_depths_factor = 5 # the factor to use for the binning of the weight map - lower is more accurate but slower
 
-    diagnotic_id = None # the position of a glaaxy in the catalogue to show the diagnostic plot
+    diagnostic_id = None # the position of a glaaxy in the catalogue to show the diagnostic plot
 
     # Depth Options
     step_size = 100 # 2D step size for depth plot
@@ -720,7 +694,7 @@ if __name__ == '__main__':
                                         cat_y_col = cat_y_col, coord_type=coord_type,
                                         mode='n_nearest', n_nearest=n_nearest, zero_point=zero_point, split_depths=split_depths,
                                         split_depth_regions=split_depth_regions, split_depth_min_size=split_depth_min_size,
-                                        split_depths_factor=split_depths_factor, wht_data = wht_path, diagnostic_id=diagnotic_id)
+                                        split_depths_factor=split_depths_factor, wht_data = wht_path, diagnostic_id=diagnostic_id)
         # Diagnostic plot comparing depths to previous depths
         fig, ax = plt.subplots()
         x = cat[f'loc_depth_{filter}'][:, 0]
@@ -748,10 +722,10 @@ if __name__ == '__main__':
     # Calculate depth plot
     nmad_grid, num_grid, labels_grid, final_labels = calc_depths(xy, fluxes, img_data, img_mask,
                                     region_radius_used_pix=region_radius_used_pix, 
-                                    step_size=step_size, mode='rolling', min_number_of_values=min_number_of_values,
-                                    zero_point=zero_point, split_depths=split_depths,
-                                    split_depth_regions=split_depth_regions, split_depth_min_size=split_depth_min_size,
-                                    split_depths_factor=split_depths_factor, wht_data = wht_path, provide_labels=final_labels)
+                                    step_size = step_size, mode = 'rolling', min_number_of_values = min_number_of_values,
+                                    zero_point = zero_point, split_depths = split_depths,
+                                    split_depth_regions = split_depth_regions, split_depth_min_size = split_depth_min_size,
+                                    split_depths_factor = split_depths_factor, wht_data = wht_path, provide_labels = final_labels)
 
     # Show depth plot
     if cat_path is not None:
@@ -763,12 +737,9 @@ if __name__ == '__main__':
         depths = None
         diagnostic = None
 
-
     depths_fig, depths_ax = show_depths(nmad_grid, num_grid, step_size, region_radius_used_pix, 
-                                        labels_grid, depth_labels, depths, diagnostic, x_pix, y_pix, 
-                                        img_mask, final_labels, suptitle=f'{survey} {version} {filter} Depths')
-                                        
-    depths_fig.show()
-    depths_fig.savefig(f'{save_path}/{survey}_{version}_{filter}_depths.png')
-
-
+        labels_grid, depth_labels, depths, diagnostic, x_pix, y_pix, 
+        img_mask, final_labels, suptitle=f'{survey} {version} {filter} Depths')                               
+    #depths_fig.show()
+    #depths_fig.savefig(f'{save_path}/{survey}_{version}_{filter}_depths.png')
+    

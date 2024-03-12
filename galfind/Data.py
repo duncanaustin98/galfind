@@ -41,6 +41,7 @@ import logging
 
 from .Instrument import Instrument, ACS_WFC, WFC3_IR, NIRCam, MIRI, Combined_Instrument
 from . import config
+from . import Depths
 from . import useful_funcs_austind as funcs
 from .decorators import run_in_dir, hour_timer, email_update
 from . import galfind_logger
@@ -48,7 +49,8 @@ from . import galfind_logger
 # GALFIND data object
 class Data:
     
-    def __init__(self, instrument, im_paths, im_exts, im_pixel_scales, im_shapes, im_zps, wht_paths, wht_exts, wht_types, seg_paths, mask_paths, cluster_mask_path, blank_mask_path, survey, version = "v0", is_blank = True):
+    def __init__(self, instrument, im_paths, im_exts, im_pixel_scales, im_shapes, im_zps, wht_paths, wht_exts, wht_types, \
+        seg_paths, mask_paths, cluster_mask_path, blank_mask_path, survey, version, cat_path = "", is_blank = True):
         # self, instrument, im_paths, im_exts, seg_paths, mask_paths, cluster_mask_path, blank_mask_path, survey, version = "v0", is_blank = True):
         
         # sort dicts from blue -> red bands in ascending wavelength order
@@ -58,18 +60,18 @@ class Data:
         self.version = version
         self.instrument = instrument
         self.is_blank = is_blank
-        #print(self.im_paths)
         self.im_zps = im_zps
         self.wht_exts = wht_exts
         self.wht_paths = wht_paths
         self.wht_types = wht_types
         self.im_pixel_scales = im_pixel_scales
         self.im_shapes = im_shapes
-
-        #print(self.im_paths)
-        #print(self.im_zps)
-        #print(self.im_pixel_scales)
-        #print(self.wht_paths)
+        if cat_path == "":
+            pass
+        elif type(cat_path) == str:
+            self.cat_path = cat_path
+        else:
+            raise(Exception(f"cat_path = {cat_path} has type = '{type(cat_path)}', which is not 'str'!"))
 
         # make segmentation maps from image paths if they don't already exist
         for i, (band, seg_path) in enumerate(seg_paths.items()):
@@ -83,19 +85,21 @@ class Data:
         # make masks from image paths if they don't already exist
         self.mask_dir = f"{config['DEFAULT']['GALFIND_WORK']}/Masks/{survey}"
         for i, (band, mask_path) in enumerate(mask_paths.items()):
-            if (mask_path == "" or mask_path == []):
-                self.make_mask(band)
-                # load new masks
-                mask_paths[band] = glob.glob(f"{config['DEFAULT']['GALFIND_WORK']}/Masks/{survey}/*{band.replace('W', 'w').replace('M', 'm')}*")[0]
+            # the input mask path is a pixel mask
+            if ".fits" in mask_path:
+                pass
+            # convert region mask to pixel mask
+            elif ".reg" in mask_path:
+                # clean region mask of any zero size regions
+                mask_path = self.clean_mask_regions(band, mask_path)
+                mask_paths[band] = self.mask_reg_to_pix(band, mask_path)
+            # make pixel mask automatically
+            else:
+                # make an automatic mask for the band
+                mask_paths[band] = self.make_mask(band)
+                # load new mask for band
+                #mask_paths[band] = glob.glob(f"{config['DEFAULT']['GALFIND_WORK']}/Masks/{survey}/*{band.replace('W', 'w').replace('M', 'm')}*")[0]
         self.mask_paths = dict(sorted(mask_paths.items()))
-        # clean masks of any zero size regions
-        for band in self.instrument:
-            self.clean_mask_regions(band)
-            
-        # try:
-        #     print(f"image paths = {self.im_paths}, segmentation paths = {self.seg_paths}, mask paths = {self.mask_paths}")
-        # except:
-        #     pass
 
         if is_blank:
             galfind_logger.info(f"{survey} is a BLANK field!")
@@ -171,15 +175,11 @@ class Data:
                 survey_im_dirs = {key: f"/raid/scratch/data/jwst/{value}" for (key, value) in survey_im_dirs.items()}
                 survey_dir = survey_im_dirs[survey]
 
-                # don't use these if they are in the same folder
-                nadams_seg_path_arr = glob.glob(f"{survey_dir}/*_seg.fits")
-                nadams_bkg_path_arr = glob.glob(f"{survey_dir}/*_bkg.fits")
-
                 if version == "lit_version":
-                    im_path_arr = glob.glob(f"{survey_dir}/*_drz.fits")
+                    im_path_arr = np.array(glob.glob(f"{survey_dir}/*_drz.fits"))
                 else:
-                    im_path_arr = glob.glob(f"{survey_dir}/*_i2d*.fits")
-                im_path_arr = np.array([path for path in im_path_arr if path not in nadams_seg_path_arr and path not in nadams_bkg_path_arr])
+                    im_path_arr = np.array(glob.glob(f"{survey_dir}/*_i2d*.fits"))
+
                 # obtain available bands from imaging without having to hard code these
                 bands = np.array([split_path.lower().replace("w", "W").replace("m", "M") for path in im_path_arr for i, split_path in \
                         enumerate(path.split("-")[-1].split("/")[-1].split("_")) if split_path.lower().replace("w", "W").replace("m", "M") in instrument.bands])
@@ -216,6 +216,7 @@ class Data:
                     im_hdul = fits.open(im_paths[band])
                     # obtain appropriate extension from the image
                     for j, im_hdu in enumerate(im_hdul):
+                        #print(im_hdu.name)
                         if im_hdu.name == "SCI":
                             im_exts[band] = int(j)
                             im_shapes[band] = im_hdu.data.shape
@@ -353,10 +354,22 @@ class Data:
                 except IndexError:
                     seg_paths[band] = ""
                 # include just the masks corresponding to the correct bands
-                try:
-                    mask_paths[band] = glob.glob(f"{config['DEFAULT']['GALFIND_WORK']}/Masks/{survey}/*{band.replace('W', 'w').replace('M', 'm')}*")[0]
-                except IndexError:
-                    mask_paths[band] = ""
+                fits_mask_paths_ = glob.glob(f"{config['DEFAULT']['GALFIND_WORK']}/Masks/{survey}/fits_masks/*{band.replace('W', 'w').replace('M', 'm')}*")
+                if len(fits_mask_paths_) == 1:
+                    mask_paths[band] = fits_mask_paths_[0]
+                elif len(fits_mask_paths_) == 0:
+                    mask_paths_ = glob.glob(f"{config['DEFAULT']['GALFIND_WORK']}/Masks/{survey}/*{band.replace('W', 'w').replace('M', 'm')}*")
+                    if len(mask_paths_) == 0:
+                        mask_paths[band] = ""
+                    elif len(mask_paths_) == 1:
+                        mask_paths[band] = glob.glob(f"{config['DEFAULT']['GALFIND_WORK']}/Masks/{survey}/*{band.replace('W', 'w').replace('M', 'm')}*")[0]
+                    else:
+                        raise(Exception(f"Too many region masks found for {survey} {band}!"))
+                else:
+                    raise(Exception(f"Too many fits masks found for {survey} {band}!"))
+
+            cat_path = f""
+
             # Moved out as not actually specific to NIRCam
             try:
                 cluster_mask_path = glob.glob(f"{config['DEFAULT']['GALFIND_WORK']}/Masks/{survey}/*cluster*")[0]
@@ -366,7 +379,9 @@ class Data:
                 blank_mask_path = glob.glob(f"{config['DEFAULT']['GALFIND_WORK']}/Masks/{survey}/*blank*")[0]
             except IndexError:
                 blank_mask_path = ""
-            return cls(comb_instrument, im_paths, im_exts, im_pixel_scales, im_shapes, im_zps, wht_paths, wht_exts, wht_types, seg_paths, mask_paths, cluster_mask_path, blank_mask_path, survey, version = version, is_blank = is_blank)
+            
+            return cls(comb_instrument, im_paths, im_exts, im_pixel_scales, im_shapes, im_zps, wht_paths, wht_exts, wht_types, \
+                seg_paths, mask_paths, cluster_mask_path, blank_mask_path, survey, version, cat_path, is_blank = is_blank)
         else:
             raise(Exception(f'Failed to find any data for {survey}'))  
 
@@ -438,28 +453,32 @@ class Data:
             return im_data, im_header, seg_data, seg_header, mask
         else:
             return im_data, im_header, seg_data, seg_header
-    
-    def load_mask(self, mask_band, im_band, im_header = None, im_hdul = None, im_ext = None):
-        # if mask_band in ["blank", "cluster"]:
-        #     im_band = "f444W"
-        if im_header == None or im_hdul == None or im_ext == None:
-            im_hdul = fits.open(self.im_paths[im_band])
-            im_ext = self.im_exts[im_band]
-            im_header = im_hdul[im_ext].header
-        # if mask_band == "blank":
-        #     mask_file = pyregion.open(self.blank_mask_path)
-        # elif mask_band == "cluster":
-        #     mask_file = pyregion.open(self.cluster_mask_path)
-        # else:
-        mask_file = pyregion.open(self.mask_paths[mask_band]) # file for mask
-        mask_file = mask_file.as_imagecoord(im_header)
-        # time how long it takes to create the mask
-        start_time = time.time()
-        mask = mask_file.get_mask(hdu = im_hdul[im_ext])
-        end_time = time.time()
-        elapsed_time = end_time - start_time
-        galfind_logger.debug(f"Time to load mask for {mask_band}: {float(elapsed_time)} seconds")
+
+    def load_mask(self, mask_band, im_band, im_header = None, im_hdul = None, im_ext = None, as_pix = True):
+
+        # if im_header == None or im_hdul == None or im_ext == None:
+        #     im_hdul = fits.open(self.im_paths[im_band])
+        #     im_ext = self.im_exts[im_band]
+        #     im_header = im_hdul[im_ext].header
+
+        if ".fits" in self.mask_paths[mask_band]:
+            mask = fits.open(self.mask_paths[mask_band])[1].data
+            #print(mask)
+        else:
+            raise(Exception())
+            galfind_logger.fatal(f"Mask for {self.survey} {mask_band} at {self.mask_paths[mask_band]} is not a .fits mask!")
+        # mask_file = pyregion.open(self.mask_paths[mask_band]) # file for mask
+        # mask_file = mask_file.as_imagecoord(im_header)
+        # # time how long it takes to create the mask
+        # start_time = time.time()
+        # mask = mask_file.get_mask(hdu = im_hdul[im_ext])
+        # end_time = time.time()
+        # elapsed_time = end_time - start_time
+        # galfind_logger.debug(f"Time to load mask for {mask_band}: {float(elapsed_time)} seconds")
         return mask
+    
+    def load_wht(self, band):
+        return fits.open(self.wht_paths[band])[self.wht_exts[band]].data
         
     def plot_image_from_band(self, ax, band, norm = LogNorm(vmin = 0., vmax = 10.), show = True):
         im_data = self.load_data(band, incl_mask = False)[0]
@@ -746,15 +765,22 @@ class Data:
         phot_table.remove_columns(colnames)
         phot_table.remove_columns(mag_colnames)
         phot_table.write(self.sex_cat_path(band, forced_phot_band), format='fits', overwrite=True)
-
-    # def make_mask(self, band, stellar_dir = "GAIA DR3"):
-    #     im_data, im_header, seg_data, seg_header = self.load_data(band, incl_mask = False)
-    #     # works as long as your images are aligned with the stellar directory
-    #     stellar_mask = make_stellar_mask(band, im_data, im_header, self.instrument)
-    #     # save the stellar mask
-    #     stellar_mask.write(f"{os.getcwd()}/Masks/{survey}/{band}_stellar_mask.reg", header = im_header)
-    #     # maybe insert a step here to align your images
-    #     pass
+        
+    def mask_reg_to_pix(self, band, mask_path):
+        # open image corresponding to band
+        im_data, im_header, seg_data, seg_header = self.load_data(band, incl_mask = False)
+        # open .reg mask file
+        mask_regions = pyregion.open(mask_path).as_imagecoord(im_header)
+        # make 2D np.array boolean pixel mask
+        pix_mask = np.array(mask_regions.get_mask(header = im_header, shape = im_data.shape), dtype = bool)
+        # make .fits mask
+        mask_hdu = fits.ImageHDU(pix_mask.astype(np.uint8), header = WCS(im_header).to_header(), name = 'MASK')
+        hdu = fits.HDUList([fits.PrimaryHDU(), mask_hdu])
+        out_path = f"{'/'.join(mask_path.split('/')[:-1])}/fits_masks/{mask_path.split('/')[-1].replace('_clean', '').replace('.reg', '')}.fits"
+        os.makedirs("/".join(out_path.split("/")[:-1]), exist_ok = True)
+        hdu.writeto(out_path, overwrite = True)
+        galfind_logger.info(f"Created fits mask for {band} from manually created reg mask")
+        return out_path
     
     def combine_masks(self, bands):
         shapelist = []
@@ -777,9 +803,8 @@ class Data:
         shapelist.write(output_path)
         return output_path
 
-    def clean_mask_regions(self, band):
+    def clean_mask_regions(self, band, mask_path):
         # open region file
-        mask_path = self.mask_paths[band]
         if "_clean" not in mask_path:
             with open(mask_path, 'r') as f:
                 lines = f.readlines()
@@ -796,8 +821,9 @@ class Data:
             # insert original mask ds9 region file into an unclean folder
             os.makedirs(f"{funcs.split_dir_name(mask_path,'dir')}/unclean", exist_ok = True)
             os.rename(mask_path, f"{funcs.split_dir_name(mask_path,'dir')}/unclean/{funcs.split_dir_name(mask_path,'name')}")
-            # update mask paths for the object
-            self.mask_paths[band] = clean_mask_path
+            return clean_mask_path
+        else:
+            return mask_path
     
     def calc_unmasked_area(self, forced_phot_band = ["f277W", "f356W", "f444W"], masking_instrument_name = "NIRCam"):
         masking_bands = np.array([band for band in self.instrument.bands if band in Instrument.from_name(masking_instrument_name).bands])
@@ -854,7 +880,7 @@ class Data:
         # if sextractor catalogue has not already been made, make it
         self.combine_sex_cats(forced_phot_band)
         # if depths havn't already been run, run them
-        self.calc_depths(aper_diams = aper_diams, fast = fast)
+        self.calc_depths(aper_diams = aper_diams)
         # correct the base sextractor catalogue to include local depth errors if not already done so
         self.loc_depth_cat_path = self.sex_cat_master_path.replace(".fits", "_loc_depth.fits")
         print(self.loc_depth_cat_path)
@@ -1025,88 +1051,98 @@ class Data:
     def calc_aper_radius_pix(self, aper_diam, band):
         return (aper_diam / (2 * self.im_pixel_scales[band])).value
     
-    def calc_depths(self, xy_offset = [0, 0], aper_diams = [0.32] * u.arcsec, size = 500, n_busy_iters = 1_000, number = 600, \
-                    mask_rad = 25, aper_disp_rad = 2, excl_bands = [], use_xy_offset_txt = True, plot = False, n_jobs = 1, fast = True):   
-
-        params = []  
+    def calc_depths(self, aper_diams = [0.32] * u.arcsec, mode = "n_nearest", scatter_size = 0.1, distance_to_mask = 30, \
+        region_radius_used_pix = 300, n_nearest = 200, coord_type = "sky", n_split = 1, split_depth_min_size = 100_000, \
+        split_depths_factor = 5, step_size = 100, excl_bands = [], plot = True, n_jobs = 1):
+        # n_split needs to be automaticllay determined
+        params = []
         average_depths = []
         run_bands = []
         # Look over all aperture diameters and bands  
         for aper_diam in aper_diams:
             # Generate folder for depths
+            #print(aper_diam, aper_diams)
             self.get_depth_dir(aper_diam)
             #print(f"depth_dirs = {self.depth_dirs}")
             for band in self.instrument.bands:
                 # Only run for non excluded bands
                 if band not in excl_bands:
-                    params.append((band, xy_offset, aper_diam, size, n_busy_iters, number, mask_rad, aper_disp_rad, use_xy_offset_txt, plot, average_depths, run_bands, fast))
+                    params.append((band, aper_diam, self.depth_dirs[band], mode, scatter_size, distance_to_mask, region_radius_used_pix, n_nearest, \
+                    coord_type, n_split, split_depth_min_size, split_depths_factor, step_size, plot, average_depths, run_bands))
         # Parallelise the calculation of depths for each band
-        with tqdm_joblib(tqdm(desc = "Running local depths", total = len(params))) as progress_bar:
-            Parallel(n_jobs=n_jobs)(delayed(self.calc_band_depth)(param) for param in params)
-        # print table of depths for these bands
-        header = "band, average_5sigma_depth"
-        for band in run_bands:
-            # Save local depths in both folders
-            if not Path(f"{self.depth_dirs[band]}/{self.survey}_depths.txt").is_file():
-                np.savetxt(f"{self.depth_dirs[band]}/{self.survey}_depths.txt", np.column_stack((np.array(run_bands), np.array(average_depths))), header = header, fmt = "%s")
-            
+        with tqdm_joblib(tqdm(desc = "Calculating depths", total = len(params))) as progress_bar:
+            Parallel(n_jobs = n_jobs)(delayed(self.calc_band_depth)(param) for param in params)
+        # # print table of depths for these bands
+        # header = "band, average_5sigma_depth"
+        # for band in run_bands:
+        #     # Save local depths in both folders
+        #     if not Path(f"{self.depth_dirs[band]}/{self.survey}_depths.txt").is_file():
+        #         np.savetxt(f"{self.depth_dirs[band]}/{self.survey}_depths.txt", np.column_stack((np.array(run_bands), np.array(average_depths))), header = header, fmt = "%s")
+    
     def calc_band_depth(self, params):
-        band, xy_offset, aper_diam, size, n_busy_iters, number, mask_rad, aper_disp_rad, use_xy_offset_txt, plot, average_depths, run_bands, fast = params
-        if plot:
-            fig, ax = plt.subplots()
-            self.plot_mask_regions_from_band(ax, band)
-            self.plot_image_from_band(ax, band, show = True)
-            fig, ax = plt.subplots()
-            self.plot_mask_from_band(ax, band, show = True)
-                  
-        if use_xy_offset_txt:
-            try:
-                # use the xy_offset defined in .txt in appropriate folder
-                xy_offset_path = f"{self.depth_dirs[band]}/offset_{band}.txt"
-                xy_offset = list(np.genfromtxt(xy_offset_path, dtype = int))
-                #print(f"xy_offset = {xy_offset}")
-            except: # use default xy offset if this .txt does not exist
-                pass
-            
-        if not Path(f"{self.depth_dirs[band]}/coord_{band}.reg").is_file() or not Path(f"{self.depth_dirs[band]}/{self.survey}_depths.txt").is_file() or not Path(f"{self.depth_dirs[band]}/coord_{band}.txt").is_file():
-            xoff, yoff = calc_xy_offsets(xy_offset)
-            im_data, im_header, seg_data, seg_header, mask = self.load_data(band)
-            print(f"Finished loading {band}")
+        # unpack parameters
+        band, aper_diam, depth_dir, mode, scatter_size, distance_to_mask, region_radius_used_pix, n_nearest, \
+            coord_type, n_split, split_depth_min_size, split_depths_factor, step_size, plot, average_depths, run_bands = params
+        overwrite = config["Depths"].getboolean("OVERWRITE_DEPTHS")
+        if overwrite:
+            galfind_logger.info("OVERWRITE_DEPTHS = YES, re-doing depths should they exist.")
+        region_path = f"{depth_dir}/{self.survey}_{self.version}_{band}.reg"
 
-        # print(f"{self.depth_dirs[band]}/coord_{band}.txt")
-        if not Path(f"{self.depth_dirs[band]}/coord_{band}.txt").is_file():
-            # place apertures in blank regions of sky
-            # print(f"Placing blank regions in {band}")
-            # print(self.survey, xy_offset, self.im_pixel_scales[band], band, \
-            #                                     aper_diam, size, n_busy_iters, number, mask_rad, aper_disp_rad, fast = fast)
-            xcoord, ycoord = place_blank_regions(im_data, im_header, seg_data, mask, self.survey, xy_offset, self.im_pixel_scales[band], band, \
-                                                aper_diam, size, n_busy_iters, number, mask_rad, aper_disp_rad, fast = fast)
-            print(f"Finished placing blank regions in {band}")
-            np.savetxt(f"{self.depth_dirs[band]}/coord_{band}.txt", np.column_stack((xcoord, ycoord)))
-            # save xy offset for this field and band
-            np.savetxt(f"{self.depth_dirs[band]}/offset_{band}.txt", np.column_stack((xoff, yoff)), header = "x_off, y_off", fmt = "%d %d")
-        
-        # read in aperture locations
-        if not Path(f"{self.depth_dirs[band]}/coord_{band}.reg").is_file() or not Path(f"{self.depth_dirs[band]}/{self.survey}_depths.txt").is_file():
-            aper_loc = np.loadtxt(f"{self.depth_dirs[band]}/coord_{band}.txt")
-            xcoord = aper_loc[:, 0]
-            ycoord = aper_loc[:, 1]
-            index = np.argwhere(xcoord == 0.)
-            xcoord = np.delete(xcoord, index)
-            ycoord = np.delete(ycoord, index)
-        
-        # convert these to .reg region file
-        if not Path(f"{self.depth_dirs[band]}/coord_{band}.reg").is_file():
-            aper_loc_to_reg(xcoord, ycoord, WCS(im_header), aper_diam.value, f"{self.depth_dirs[band]}/coord_{band}.reg")
-        
-        r = self.calc_aper_radius_pix(aper_diam, band)
-        if not Path(f"{self.depth_dirs[band]}/{self.survey}_depths.txt").is_file():
-            # plot the depths in the grid
-            plot_depths(im_data, self.depth_dirs[band], band, seg_data, xcoord, ycoord, xy_offset, r, size, self.im_zps[band])
-            # calculate average depth
-            average_depths.append(calc_5sigma_depth(xcoord, ycoord, im_data, r, self.im_zps[band], n_aper = len(xcoord))) 
-            run_bands.append(band)
+        if not Path(region_path).is_file() or overwrite:
             
+            # load the image/segmentation/mask data for the specific band
+            im_data, im_header, seg_data, seg_header, mask = self.load_data(band, incl_mask = True)
+            wcs = WCS(im_header)
+            radius_pix = self.calc_aper_radius_pix(aper_diam, band)
+            # Load wht data if it has the correct type
+            if self.wht_types[band] == "WHT":
+                wht_data = self.load_wht(band)
+            else:
+                print(f"self.wht_types[band] = {self.wht_types[band]}")
+                wht_data = None
+            cat = Table.read(self.sex_cat_master_path)
+            
+            # Place apertures in empty regions in the image
+            xy = Depths.make_grid(im_data, mask, radius = (aper_diam / 2.).value, 
+                scatter_size = scatter_size, distance_to_mask = distance_to_mask, plot = plot)
+            #print(f"{len(xy)} empty apertures placed in {band}")
+            
+            # Make ds9 region file of apertures for compatability and debugging
+            Depths.make_ds9_region_file(xy, radius_pix, region_path, coordinate_type = 'pixel', 
+                convert = False, wcs = wcs, pixel_scale = self.im_pixel_scales[band])
+            
+            # Get fluxes in regions
+            fluxes = Depths.do_photometry(im_data, xy, radius_pix)
+            
+            if type(cat) != type(None):
+                depths, diagnostic, depth_labels, final_labels = Depths.calc_depths(xy, fluxes, im_data, mask, 
+                    region_radius_used_pix = region_radius_used_pix, step_size = step_size, catalogue = cat, wcs = wcs, \
+                    coord_type = coord_type, mode = mode, n_nearest = n_nearest, zero_point = self.im_zps[band], n_split = n_split, \
+                    split_depth_min_size = split_depth_min_size, split_depths_factor = split_depths_factor, wht_data = wht_data)
+
+            # calculate the depths for plotting purposes
+            nmad_grid, num_grid, labels_grid, final_labels = Depths.calc_depths(xy, fluxes, im_data, mask, 
+                region_radius_used_pix = region_radius_used_pix, step_size = step_size, wcs = wcs, \
+                coord_type = coord_type, mode = mode, n_nearest = n_nearest, zero_point = self.im_zps[band], \
+                n_split = n_split, split_depth_min_size = split_depth_min_size, \
+                split_depths_factor = split_depths_factor, wht_data = wht_data, provide_labels = final_labels)
+            
+            grid_depth_path = f"{depth_dir}/{str(int(n_split))}region_grid_depths/{band}.h5"
+            with (grid_depth_path, "w") as f:
+                f.write(nmad_grid)
+                f.close()
+            print(nmad_grid, num_grid, labels_grid, final_labels) 
+
+            # update average_depths and run_bands
+
+        if plot:
+            # load catalogue of given type to extract x/y positions
+            cat_x, cat_y = wcs.world_to_pixel(SkyCoord(cat["ALPHA_J2000"], cat["DELTA_J2000"]))
+            save_path = f"{depth_dir}/{band}_depths.png"
+            depths_fig, depths_ax = Depths.show_depths(nmad_grid, num_grid, step_size, region_radius_used_pix,
+                labels_grid, depth_labels, depths, diagnostic, cat_x, cat_y, 
+                mask, final_labels, suptitle = f"{self.survey} {self.version} {band} Depths", save_path = save_path)
+                    
 # match sextractor catalogue codes
 sex_id_params = ["NUMBER", "X_IMAGE", "Y_IMAGE", "ALPHA_J2000", "DELTA_J2000"]
 
