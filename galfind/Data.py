@@ -412,13 +412,13 @@ class Data:
             print(band)
             hdul = [fits.PrimaryHDU(header = primary_header)]
             im_data, im_header, seg_data, seg_header = self.load_data(band, incl_mask = False)
-            wht_data = 
-            wcs = WCS(im_header)
+            wht_data = self.load_wht(band)
+            im_wcs = WCS(im_header)
 
-            cutout = Cutout2D(im_data, gal["sky_coord"], size = (cutout_size, cutout_size), wcs = im_wcs)
-            im_header.update(cutout.wcs.to_header())
-            print(im_header)
-            hdul.append(fits.ImageHDU(cutout.data, header = im_header))
+            for data, label in zip([im_data, seg_data, wht_data], ["im", "seg", self.wht_types[band]]):
+                cutout = Cutout2D(im_data, gal["sky_coord"], size = (cutout_size, cutout_size), wcs = im_wcs)
+                header = fits.Header(cutout.wcs.to_header())
+                hdul.append(fits.ImageHDU(cutout.data, header = header, name = label))
             out_path = f"{config['DEFAULT']['GALFIND_WORK']}/Cutouts/{self.survey}/{self.version}/{band}/{str(gal['ID'])}.fits"
             os.makedirs("/".join(out_path.split("/")[:-1]), exist_ok = True)
             hdul.writeto(out_path, overwrite = True)
@@ -479,6 +479,12 @@ class Data:
         elapsed_time = end_time - start_time
         galfind_logger.debug(f"Time to load mask for {mask_band}: {float(elapsed_time)} seconds")
         return mask
+    
+    def load_wht(self, band, incl_header = False):
+        if not incl_header:
+            return fits.open(self.wht_paths[band])[self.wht_exts[band]].data
+        else:
+            return fits.open(self.wht_paths[band])[self.wht_exts[band]].data, fits.open(self.wht_paths[band])[self.wht_exts[band]].header
         
     def plot_image_from_band(self, ax, band, norm = LogNorm(vmin = 0., vmax = 10.), show = True):
         im_data = self.load_data(band, incl_mask = False)[0]

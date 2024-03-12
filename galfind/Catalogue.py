@@ -271,6 +271,11 @@ class Catalogue(Catalogue_Base):
             for templates in templates_arr:
                 gal.phot.SED_results[code_name][templates].ext_src_corrs = {**{"UV": self.ext_src_tab[f"auto_corr_factor_UV_{code_name}_{templates}"][i] for templates in templates_arr}, **{"mass": mass_corr}}
     
+    def make_cutouts(self, IDs):
+        for gal in self:
+            if gal["ID"] in IDs:
+                self.data.make_cutout(gal)
+
     # altered from original in mask_regions.py
     def mask(self, data, mask_instrument = NIRCam()): # mask paths is a dict of form {band: mask_path}
         print(f"Running masking code for {self.cat_path}. (Too much copying and pasting here!)")
