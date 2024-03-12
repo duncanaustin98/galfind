@@ -17,12 +17,9 @@ from matplotlib.patches import Circle
 import warnings
 from scipy import optimize
 from astropy.modeling import models, fitting
-import lmfit
-from lmfit.lineshapes import gaussian2d
 import sep
 import json
 import photutils
-import pandas as pd
 import os
 import sys
 
@@ -126,7 +123,7 @@ def plot_flux_curve(PSFdata, pixel_scale, x_cen, y_cen, band, flux_pcs, aper_cor
 #def compare_aper_flux_to_full_radius():
 #    tot_flux = sep.sum_circle(PSFdata, [len(PSFdata[0]) / 2 - 0.5], [len(PSFdata[1]) / 2 - 0.5], len(PSFdata[0]) / 2)[0][0]
     
-
+'''
 def plot_additional_flux_curve(band):
     df = pd.read_csv('/Users/user/Documents/PGR/JWST_PSFs_003as/Encircled_Energy_LW_ETCv2.txt', header = 1)
     #print(df_init[0][0])
@@ -136,7 +133,7 @@ def plot_additional_flux_curve(band):
     #print("data[0] = ", data[0], data[2])
     #[Cov], columns = ["Sequence", "Start", "End", "Coverage"]
     #plt.plot(data[0], data[2], c = "green")
-    
+'''    
 def fit_2d_moffatt(PSFdata, maxfev = 10000):
     def moffatcurve(xdata_tuple, A, a, b, xcen, ycen):
         (x, y) = xdata_tuple
