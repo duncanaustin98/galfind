@@ -11,9 +11,15 @@ import numpy as np
 from copy import copy, deepcopy
 import astropy.units as u
 from astropy.coordinates import SkyCoord
+from astropy.io import fits
+import os
+from pathlib import Path
+from astropy.nddata import Cutout2D
+from tqdm import tqdm
+from astropy.wcs import WCS
 
 from . import useful_funcs_austind as funcs
-from . import Photometry_rest, Photometry_obs, Multiple_Photometry_obs
+from . import Photometry_rest, Photometry_obs, Multiple_Photometry_obs, config, Data
 
 class Galaxy:
     
@@ -57,6 +63,39 @@ class Galaxy:
     
     def update(self, gal_SED_results, index = 0): # for now just update the single photometry
         self.phot.update(gal_SED_results)
+
+    def make_cutout(self, band, data, wcs = None, im_header = None, survey = None, version = None, cutout_size = 32):
+        
+        if type(data) == Data:
+            survey = data.survey
+            version = data.version
+        if survey == None or version == None:
+            raise(Exception("'survey' and 'version' must both be given to construct save paths"))
+        
+        out_path = f"{config['Cutouts']['CUTOUT_DIR']}/{version}/{survey}/{band}/{self.ID}.fits"
+        if not Path(out_path).is_file() or config.getboolean('Cutouts', 'OVERWRITE_CUTOUTS'):
+            if type(data) == Data:
+                im_data, im_header, seg_data, seg_header = data.load_data(band, incl_mask = False)
+                wht_data = data.load_wht(band)
+                data = {"SCI": im_data, "SEG": seg_data, data.wht_types[band]: wht_data}
+                wcs = WCS(im_header)
+            elif type(data) == dict and type(wcs) != type(None) and type(im_header) != type(None):
+                pass
+            else:
+                raise(Exception(""))
+            hdul = [fits.PrimaryHDU(header = fits.Header({"ID": self.ID, "survey": survey, "version": version, \
+                        "RA": self.sky_coord.ra.value, "DEC": self.sky_coord.dec.value, "size": cutout_size}))]
+            for i, (label_i, data_i) in enumerate(data.items()):
+                cutout = Cutout2D(data_i, self.sky_coord, size = (cutout_size, cutout_size), wcs = wcs)
+                im_header.update(cutout.wcs.to_header())
+                hdul.append(fits.ImageHDU(cutout.data, header = im_header, name = label_i))
+            #print(hdul)
+            os.makedirs("/".join(out_path.split("/")[:-1]), exist_ok = True)
+            fits_hdul = fits.HDUList(hdul)
+            fits_hdul.writeto(out_path, overwrite = True)
+            print('Saved fits cutout to:', out_path)
+        else:
+            print(f"Already made fits cutout for {survey} {version} {self.ID}")
         
     def update_mask_full(self, bool_values):
         pass

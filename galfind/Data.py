@@ -23,7 +23,6 @@ from matplotlib.colors import LogNorm
 from astropy.table import Table, hstack, Column
 import copy
 import pyregion
-from astropy.nddata import Cutout2D
 import subprocess
 import time
 import glob
@@ -406,24 +405,6 @@ class Data:
     
 # %% Methods
 
-    def make_cutout(self, gal, cutout_size = 32):
-        primary_header = {}
-        for pos, band in tqdm(enumerate(self.instrument)):
-            print(band)
-            hdul = [fits.PrimaryHDU(header = primary_header)]
-            im_data, im_header, seg_data, seg_header = self.load_data(band, incl_mask = False)
-            wht_data = self.load_wht(band)
-            im_wcs = WCS(im_header)
-
-            for data, label in zip([im_data, seg_data, wht_data], ["im", "seg", self.wht_types[band]]):
-                cutout = Cutout2D(im_data, gal["sky_coord"], size = (cutout_size, cutout_size), wcs = im_wcs)
-                header = fits.Header(cutout.wcs.to_header())
-                hdul.append(fits.ImageHDU(cutout.data, header = header, name = label))
-            out_path = f"{config['DEFAULT']['GALFIND_WORK']}/Cutouts/{self.survey}/{self.version}/{band}/{str(gal['ID'])}.fits"
-            os.makedirs("/".join(out_path.split("/")[:-1]), exist_ok = True)
-            hdul.writeto(out_path, overwrite = True)
-            print('Saved fits cutout to:', out_path)
-
     def load_data(self, band, incl_mask = True):
         if type(band) not in [str, np.str_]:
             galfind_logger.debug(f"band = {band}, type(band) = {type(band)} not in [str, np.str_] in Data.load_data")
@@ -467,7 +448,7 @@ class Data:
             im_header = im_hdul[im_ext].header
         # if mask_band == "blank":
         #     mask_file = pyregion.open(self.blank_mask_path)
-        # elif mask_band == "cluster":
+        # elif mask == "cluster":
         #     mask_file = pyregion.open(self.cluster_mask_path)
         # else:
         mask_file = pyregion.open(self.mask_paths[mask_band]) # file for mask
