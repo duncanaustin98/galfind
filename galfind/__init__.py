@@ -18,8 +18,15 @@ import numpy as np
 from pathlib import Path
 from astropy.cosmology import FlatLambdaCDM
 
-galfind_dir = "/".join(__file__.split("/")[:-1])
-config_path = f"{galfind_dir}/configs/galfind_config.ini" # needs to be able to be changed by the user
+galfind_dir = "/".join(__file__.split("/")[:-1]) 
+
+try:
+    config_path = os.environ['GALFIND_CONFIG_PATH']
+
+except KeyError:
+    config_path = f"{galfind_dir}/configs/galfind_config.ini" # needs to be able to be changed by the user
+
+print('Reading GALFIND config file from:', config_path)
 # configuration variables
 config = configparser.ConfigParser()
 config.read(config_path)
