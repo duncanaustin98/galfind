@@ -92,9 +92,10 @@ def flux_pc_to_mag_err(flux_pc_err):
 
 def flux_image_to_Jy(fluxes, zero_points):
     # convert flux from image units to Jy
-    fluxes_Jy = np.array([flux * (10 ** ((zero_points - 8.9) / -2.5)) for flux in fluxes])
-    #print("fluxes_Jy = ", fluxes_Jy, fluxes_Jy[0])
-    return fluxes_Jy
+    if type(fluxes) in [list, np.array]:
+        return np.array([flux * (10 ** ((zero_points - 8.9) / -2.5)) for flux in fluxes])
+    else:
+        return np.array(fluxes * (10 ** ((zero_points - 8.9) / -2.5)))
 
 def five_to_n_sigma_mag(five_sigma_depth, n):
     n_sigma_mag = -2.5 * np.log10(n / 5) + five_sigma_depth
@@ -207,8 +208,7 @@ def cat_from_path(path, crop_names = None):
         for name in crop_names:
             cat = cat[cat[name] == True]
     # include catalogue metadata
-    metadata = {"cat_path": path}
-    cat.meta = metadata
+    cat.meta = {**cat.meta, **{"cat_path": path}}
     return cat
 
 def fits_cat_to_np(fits_cat, column_labels):

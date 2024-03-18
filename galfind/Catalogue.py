@@ -34,54 +34,31 @@ class Catalogue(Catalogue_Base):
     
     # %% alternative constructors
     @classmethod
-    def from_pipeline(cls, survey, version, aper_diams, cat_creator, code_names, lowz_zmax, xy_offset = [0, 0], instruments = ['NIRCam', 'ACS_WFC', 'WFC3IR'], \
-                      forced_phot_band = "f444W", excl_bands = [], loc_depth_min_flux_pc_errs = [5, 10], n_loc_depth_samples = 5, templates_arr = ["fsps_larson"], fast = True):
+    def from_pipeline(cls, survey, version, aper_diams, cat_creator, code_names, lowz_zmax, instruments = ['NIRCam', 'ACS_WFC', 'WFC3IR'], \
+                      forced_phot_band = "f444W", excl_bands = [], loc_depth_min_flux_pc_errs = [5, 10], templates_arr = ["fsps_larson"]):
         # make 'Data' object
         data = Data.from_pipeline(survey, version, instruments, excl_bands = excl_bands)
-        return cls.from_data(data, version, aper_diams, cat_creator, code_names, lowz_zmax, xy_offset, forced_phot_band, loc_depth_min_flux_pc_errs, n_loc_depth_samples, templates_arr, fast)
-
-    # @classmethod
-    # def from_NIRCam_pipeline(cls, survey, version, aper_diams, cat_creator, xy_offset = [0, 0], forced_phot_band = "f444W", \
-    #                          excl_bands = [], loc_depth_min_flux_pc_errs = [5, 10], n_loc_depth_samples = 5, fast = True):
-    #     # make 'Data' object
-    #     data = Data.from_NIRCam_pipeline(survey, version, excl_bands = excl_bands)
-    #     return cls.from_data(data, aper_diams, cat_creator, xy_offset, forced_phot_band, loc_depth_min_flux_pc_errs, n_loc_depth_samples, fast)
+        return cls.from_data(data, version, aper_diams, cat_creator, code_names, lowz_zmax, forced_phot_band, \
+                loc_depth_min_flux_pc_errs, templates_arr)
     
     @classmethod
-    def from_data(cls, data, version, aper_diams, cat_creator, code_names, lowz_zmax, xy_offset = [0, 0], forced_phot_band = "f444W", loc_depth_min_flux_pc_errs = [5, 10], \
-                  n_loc_depth_samples = 5, templates_arr = ["fsps_larson"], mask = True):
+    def from_data(cls, data, version, aper_diams, cat_creator, code_names, lowz_zmax, forced_phot_band = "f444W", \
+                loc_depth_min_flux_pc_errs = [10], templates_arr = ["fsps_larson"], mask = True):
         # make masked local depth catalogue from the 'Data' object
         data.combine_sex_cats(forced_phot_band)
-        data.calc_depths(aper_diams = aper_diams)
-        raise(Exception())
-        # load the catalogue that has just been created into a 'Catalogue' object
-        if cat_creator.cat_type == "loc_depth":
-            data.make_loc_depth_cat(aper_diams, min_flux_pc_err_arr = loc_depth_min_flux_pc_errs, forced_phot_band = forced_phot_band, n_samples = n_loc_depth_samples, fast = fast)
-            cat_path = data.loc_depth_cat_path
-        elif cat_creator.cat_type == "sex":
-            cat_path = data.sex_cat_master_path
-        return cls.from_fits_cat(cat_path, version, data.instrument, cat_creator, code_names, data.survey, lowz_zmax, templates_arr = templates_arr, data = data, mask = mask)
-    
-    # @classmethod
-    # def from_sex_cat(cls, cat_path, instrument, survey, cat_creator):
-    #     # open the catalogue
-    #     cat = funcs.cat_from_path(cat_path)
-    #     # produce galaxy array from each row of the catalogue
-    #     gals = np.array([Galaxy.from_sex_cat_row(row, instrument, cat_creator) for row in cat])
-    #     return cls(gals, cat_path, survey, cat_creator)
+        mode = str(config["Depths"]["MODE"]).lower() # mode to calculate depths (either "n_nearest" or "rolling")
+        data.calc_depths(aper_diams, mode = mode, cat_creator = cat_creator)
+        data.perform_aper_corrs()
+        data.make_loc_depth_cat(cat_creator, depth_mode = mode)
+        return cls.from_fits_cat(data.sex_cat_master_path, version, data.instrument, cat_creator, \
+                code_names, data.survey, lowz_zmax, templates_arr = templates_arr, data = data, mask = mask)
     
     @classmethod
-    def from_fits_cat(cls, fits_cat_path, version, instrument, cat_creator, code_names, survey, lowz_zmax_arr = [None, None, None], templates_arr = ["fsps", "fsps_larson", "fsps_jades"], data = None, mask = False, excl_bands = []):
+    def from_fits_cat(cls, fits_cat_path, version, instrument, cat_creator, code_names, survey, \
+                lowz_zmax_arr = [None, None, None], templates_arr = ["fsps", "fsps_larson", "fsps_jades"], \
+                data = None, mask = False, excl_bands = []):
         # open the catalogue
         fits_cat = funcs.cat_from_path(fits_cat_path)
-        # if type(instrument) not in [Instrument, NIRCam, ACS_WFC, WFC3_IR, Combined_Instrument]:
-        #     instrument_name = instrument
-        #     if type(instrument) in [list, np.ndarray]:
-        #         instrument_name = '+'.join(instrument)
-        #     instrument = Instrument.from_name(instrument_name, excl_bands = excl_bands)
-        # print("instrument bands = ", instrument.bands)
-        # crop instrument bands that don't appear in the first row of the catalogue (I believe this is already done when running from data)
-        # Removed comments from following
         for band in instrument.bands:
              try:
                  cat_creator.load_photometry(Table(fits_cat[0]), [band])

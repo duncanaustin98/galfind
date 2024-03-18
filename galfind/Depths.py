@@ -61,7 +61,7 @@ def make_grid(data, mask, radius, scatter_size, pixel_scale=0.03, plot=False, ax
     mask = mask.astype(np.uint8)
 
     kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (distance_to_mask, distance_to_mask)) #set up a circle of radius distance_to_mask pixels to mask around location of 0's
-    mask = cv2.dilate(mask, kernel, iterations=1) #dilate mask using the circle
+    mask = cv2.dilate(mask, kernel, iterations = 1) #dilate mask using the circle
 
     mask = mask.astype(bool)
 
@@ -144,7 +144,7 @@ def calc_depths(coordinates, fluxes, img_data, mask = None, catalogue = None,
         if type(provide_labels) == type(None):
             print('Obtaining labels...')
             assert np.shape(wht_data) == np.shape(img_data), f'The weight map must have the same shape as the image {np.shape(wht_data)} != {np.shape(img_data)}'
-            labels_final, weight_map_smoothed = cluster_wht_map(wht_data, num_regions = split_depth_regions, bin_factor = split_depths_factor, min_size = split_depth_min_size)
+            labels_final, weight_map_smoothed = cluster_wht_map(wht_data, num_regions = n_split, bin_factor = split_depths_factor, min_size = split_depth_min_size)
             print('Labels obtained')
         else:
             labels_final = provide_labels
@@ -274,8 +274,6 @@ def calc_depths(coordinates, fluxes, img_data, mask = None, catalogue = None,
 
     elif iterate_mode == 'catalogue':
         depths, diagnostic, cat_labels = [], [], []
-        
-        #print(f'i max: {np.max(cat_x)}, j max: {np.max(cat_y)}')
         count = 0
         for i, j in tq(zip(cat_x, cat_y), total = len(cat_x)):
             # Check if the coordinate is outside the image or in the mask
@@ -283,67 +281,51 @@ def calc_depths(coordinates, fluxes, img_data, mask = None, catalogue = None,
                 depth = np.nan
                 num_of_apers = np.nan
                 label = np.nan
-                depth_diagnostic = np.nan  
-
+                depth_diagnostic = np.nan
             else:
-                if type(mask) != type(None):
-                    if mask[int(j), int(i)] == 1.0:
-                        masked = True
-                        label = np.nan
-                        depth = np.nan
-                        num_of_apers = np.nan
-                        depth_diagnostic = np.nan
-                        
-                    else:
-                        masked = False
-                else:
-                    masked = False
-                
-                if not masked:
-                    label = labels_final[int(j), int(i)]
-                    
-                    distances = np.sqrt((x - i)**2 + (y - j)**2)
-                    # NOTE np.shape on a 2D array returns (y, x) not (x, y)
-                    # So references to an x, y coordinate in the array should be [y, x]
-    
-                    distances_i = distances[labels_final[y_label, x_label] == label]
+                label = labels_final[int(j), int(i)]
+                distances = np.sqrt((x - i)**2 + (y - j)**2)
+                # NOTE np.shape on a 2D array returns (y, x) not (x, y)
+                # So references to an x, y coordinate in the array should be [y, x]
+
+                distances_i = distances[labels_final[y_label, x_label] == label]
+                fluxes_i = fluxes[labels_final[y_label, x_label] == label]
+
+                if mode == 'rolling':
+                    # Extract the neighboring Y values within the circular window
+
+                    neighbor_values = fluxes_i[distances_i <= region_radius_used_pix]
+                    # Calculate the NMAD of the neighboring Y values
+                    # Diagnostic is number of apertures used
+                    depth_diagnostic = len(neighbor_values)
+                elif mode == 'n_nearest':
+                    # Extract the n nearest Y values
                     fluxes_i = fluxes[labels_final[y_label, x_label] == label]
+                    indexes = np.argsort(distances_i)
+                    #print(i, j, label, distances[indexes][:n_nearest], neighbor_values)
+                    neighbor_values = fluxes_i[indexes][:n_nearest]
+                    min_number_of_values = n_nearest
+                    # Diagnostic is the distance to the n_nearest neighbor
+                    depth_diagnostic = distances_i[indexes][:n_nearest][-1]
 
-                    if mode == 'rolling':
-                        # Extract the neighboring Y values within the circular window
+                    if count == diagnostic_id:
+        
+                        # Plot regions used and image
+                        fig, ax = plt.subplots()
+                        ax.imshow(img_data, cmap='Greys', origin='lower', interpolation='None')
 
-                        neighbor_values = fluxes_i[distances_i <= region_radius_used_pix]
-                        # Calculate the NMAD of the neighboring Y values
-                        # Diagnostic is number of apertures used
-                        depth_diagnostic = len(neighbor_values)
-                    elif mode == 'n_nearest':
-                        # Extract the n nearest Y values
-                        fluxes_i = fluxes[labels_final[y_label, x_label] == label]
-                        indexes = np.argsort(distances_i)
-                        #print(i, j, label, distances[indexes][:n_nearest], neighbor_values)
-                        neighbor_values = fluxes_i[indexes][:n_nearest]
-                        min_number_of_values = n_nearest
-                        # Diagnostic is the distance to the n_nearest neighbor
-                        depth_diagnostic = distances_i[indexes][:n_nearest][-1]
-
-                        if count == diagnostic_id:
-            
-                            # Plot regions used and image
-                            fig, ax = plt.subplots()
-                            ax.imshow(img_data, cmap='Greys', origin='lower', interpolation='None')
-
-                            # Do this with matplotlib instead
-                            circle = plt.Circle((i, j), radius_pixels, color='r', fill=False)
+                        # Do this with matplotlib instead
+                        circle = plt.Circle((i, j), radius_pixels, color='r', fill=False)
+                        ax.add_artist(circle)
+                        xtest, ytest = x[labels_final[y_label, x_label] == label], y[labels_final[y_label, x_label] == label]
+                        xtest = xtest[indexes][:n_nearest]
+                        ytest = ytest[indexes][:n_nearest]
+                        for (xi, yi) in zip(xtest, ytest):
+                            circle = plt.Circle((xi, yi), radius_pixels, color='b', fill=False)
                             ax.add_artist(circle)
-                            xtest, ytest = x[labels_final[y_label, x_label] == label], y[labels_final[y_label, x_label] == label]
-                            xtest = xtest[indexes][:n_nearest]
-                            ytest = ytest[indexes][:n_nearest]
-                            for (xi, yi) in zip(xtest, ytest):
-                                circle = plt.Circle((xi, yi), radius_pixels, color='b', fill=False)
-                                ax.add_artist(circle)
-                            plt.show()
+                        plt.show()
 
-                    depth = calculate_depth(neighbor_values, sigma_level, zero_point, min_number_of_values=min_number_of_values)
+                depth = calculate_depth(neighbor_values, sigma_level, zero_point, min_number_of_values=min_number_of_values)
 
             cat_labels.append(label)
             depths.append(depth)
@@ -507,20 +489,16 @@ def make_ds9_region_file(coordinates, radius, filename, coordinate_type = 'sky',
         f.write(f'# Region file format: DS9 version 4.1\nglobal color=green dashlist=8 3 width=1 font="helvetica 10 normal roman" select=1 highlite=1 dash=0 fixed=0 edit=1 move=1 delete=1 include=1 source=1\n{coord_type}\n')
         for xi, yi in zip(x, y):
             f.write(f'circle({xi},{yi},{radius:.5f}{radius_unit})\n')
-    
 
-def cluster_wht_map(wht_map, num_regions = 2, bin_factor = 1, min_size = 10000):
-    'Works best for 2 regions, but can be used for more than 2 regions - may need additional smoothing and cleaning'
+def cluster_wht_map(wht_map, num_regions = "auto", bin_factor = 1, min_size = 10_000):
     # Read the image and associated weight map
     if type(wht_map) == str:
-        # 
         weight_map = fits.open(wht_map)
         # Check if we have multiple extensions
         if len(weight_map) > 1:
             weight_map = weight_map['WHT'].data
         else:
             weight_map = weight_map[0].data
-            
     elif type(wht_map) == np.ndarray:
         weight_map = wht_map
 
@@ -529,8 +507,6 @@ def cluster_wht_map(wht_map, num_regions = 2, bin_factor = 1, min_size = 10000):
     weights = weight_map_new.flatten()
     # Exclude zero values
     weights = weights[weights > 0]
-    #plt.hist(weights, bins=100, range=(0, np.max(weights)))
-    #plt.show()
 
     weight_map_smoothed = cv2.resize(weight_map_new, (weight_map_new.shape[1]//bin_factor, weight_map_new.shape[0]//bin_factor), interpolation=cv2.INTER_LINEAR)
     # Renormalize
@@ -540,51 +516,65 @@ def cluster_wht_map(wht_map, num_regions = 2, bin_factor = 1, min_size = 10000):
 
     labels_filled = []
     iterations = 0
-    while len(np.unique(labels_filled)) != num_regions:
-        #suming you want to segment into 2 regions (deep and non-deep)
-        kmeans = KMeans(n_clusters=num_regions)
-
+    if num_regions == 'auto':
+        num_regions_list = [1, 2, 3, 4]
+    else:
+        num_regions_list = [num_regions]
+    
+    sse = []
+    for num_regions in num_regions_list:
+        print(num_regions)
+        kmeans = KMeans(n_clusters = num_regions, n_init = 5)
         kmeans.fit(weight_map_smoothed.flatten().reshape(-1, 1))
-        labels = kmeans.labels_.reshape(weight_map_smoothed.shape[:2])
+        sse.append(kmeans.inertia_)
 
-        if num_regions == 2:
-            # Closing and opening to remove light and dark spots
-            labels_filled = morphology.binary_closing(labels, morphology.disk(5))
-            labels_filled = morphology.binary_opening(labels_filled, morphology.disk(5))
-        
-        else:
-            # Do this when you have more than 2 regions - doesn't work quite as well at the edges
-            labels_filled = morphology.area_closing(labels, area_threshold=min_size)
-            labels_filled = morphology.area_opening(labels_filled, area_threshold=min_size)
+    kneedle = KneeLocator(num_regions_list, sse, curve='convex', direction='decreasing')
+    num_regions = kneedle.elbow
+    print(f'Detected {num_regions} regions as best.')
+    # Find best of doing it 15x
+    kmeans = KMeans(n_clusters = num_regions, n_init = 15)
+    kmeans.fit(weight_map_smoothed.flatten().reshape(-1, 1))
+    
+    labels = kmeans.labels_.reshape(weight_map_smoothed.shape[:2])
+    
+    if num_regions == 2:
+        # Closing and opening to remove light and dark spots
+        labels_filled = morphology.binary_closing(labels, morphology.disk(5))
+        labels_filled = morphology.binary_opening(labels_filled, morphology.disk(5))
+    else:
+        # Do this when you have more than 2 regions - doesn't work quite as well at the edges
+        labels_filled = morphology.area_closing(labels, area_threshold=min_size)
+        labels_filled = morphology.area_opening(labels_filled, area_threshold=min_size)
 
-        # Remove remaining holes
-        possible_labels = np.unique(labels_filled)
-        for label in possible_labels:
-            region = labels_filled == label
-            region_cleaned = morphology.remove_small_holes(region, area_threshold=min_size)
-            labels_filled = np.where(region_cleaned, label, labels_filled)
-         
-        if iterations > 5:
-            print(f'Can\'t find {num_regions} clean regions')
-            break
-        
-        iterations += 1
-        
-    '''
+    # Remove remaining holes
+    possible_labels = np.unique(labels_filled)
+    for label in possible_labels:
+        region = labels_filled == label
+        region_cleaned = morphology.remove_small_holes(region, area_threshold=min_size)
+        labels_filled = np.where(region_cleaned, label, labels_filled)
+    
+    # Check if both labels are present
+    possible_labels = np.unique(labels_filled)
+    if len(possible_labels) != num_regions:
+        #print('One of the Kmeans labelled regions didn\'t survive cleaning.')
+        num_regions = len(possible_labels)
+
     # Check if one of regions is background (i.e very close to zero)
-    mean_levels = [np.mean(weight_map_smoothed[labels_filled == label]) for label in possible_labels]
-    possible_background_label = np.argmin(mean_levels)
-    print(mean_levels)
+    zero_levels = [np.count_nonzero(weight_map_smoothed[labels_filled == label] < 10) / np.count_nonzero(labels_filled == label) for label in possible_labels]
+    #print('Zero levels:', zero_levels)
+    possible_background_label = np.argmax(zero_levels)
     background_label = possible_labels[possible_background_label]
-    background_level = np.mean(weight_map_smoothed[labels_filled == background_label])
-    if background_level < 20:
-        print('Label', int(background_label), 'is background')
-    '''
-    #plt.imshow(weight_map_smoothed, cmap='Greys', origin='lower', interpolation='None')
-    #plt.imshow(labels_filled, cmap='viridis', origin='lower', interpolation='None', alpha=0.7)
+    background_frac = zero_levels[possible_background_label]
+    if background_frac > 0.80:
+        #print('Label', int(background_label), 'is background')
+        if num_regions == 2:
+            #print('No other regions detected, so no need to break depths into regions.')
+            labels_filled = np.zeros_like(labels_filled)
+
     # If bin_factor is greater than 1, enlarge the labels_filled to the original size
     if bin_factor > 1:
         labels_filled = cv2.resize(labels_filled.astype(np.uint8), (weight_map_new.shape[1], weight_map_new.shape[0]), interpolation=cv2.INTER_NEAREST)
+
     return labels_filled, weight_map_smoothed
 
 if __name__ == '__main__':
