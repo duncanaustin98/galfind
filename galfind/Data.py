@@ -51,7 +51,7 @@ from . import galfind_logger
 class Data:
     
     def __init__(self, instrument, im_paths, im_exts, im_pixel_scales, im_shapes, im_zps, wht_paths, wht_exts, rms_err_paths, rms_err_exts, \
-        seg_paths, mask_paths, cluster_mask_path, blank_mask_path, survey, version, cat_path = "", is_blank = True):
+        seg_paths, mask_paths, cluster_mask_path, blank_mask_path, survey, version, cat_path = "", is_blank = True, alignment_band = "f444W"):
         # self, instrument, im_paths, im_exts, seg_paths, mask_paths, cluster_mask_path, blank_mask_path, survey, version = "v0", is_blank = True):
         
         # sort dicts from blue -> red bands in ascending wavelength order
@@ -68,6 +68,11 @@ class Data:
         self.rms_err_exts = rms_err_exts
         self.im_pixel_scales = im_pixel_scales
         self.im_shapes = im_shapes
+        # ensure alignment band exists
+        if alignment_band not in self.instrument.bands:
+            galfind_logger.critical(f"Alignment band = {alignment_band} does not exist in instrument!")
+        else:
+            self.alignment_band = alignment_band
         if cat_path == "":
             pass
         elif type(cat_path) == str:
@@ -93,14 +98,11 @@ class Data:
             # convert region mask to pixel mask
             elif ".reg" in mask_path:
                 # clean region mask of any zero size regions
-                mask_path = self.clean_mask_regions(band, mask_path)
+                mask_path = self.clean_mask_regions(mask_path)
                 mask_paths[band] = self.mask_reg_to_pix(band, mask_path)
-            # make pixel mask automatically
             else:
-                # make an automatic mask for the band
-                mask_paths[band] = self.make_mask(band)
-                # load new mask for band
-                #mask_paths[band] = glob.glob(f"{config['DEFAULT']['GALFIND_WORK']}/Masks/{survey}/*{band.replace('W', 'w').replace('M', 'm')}*")[0]
+                # make an pixel mask automatically for the band
+                galfind_logger.critical(f"No .fits or .reg mask for {survey} {band} and not yet implemented auto-masking.")
         self.mask_paths = dict(sorted(mask_paths.items()))
 
         if is_blank:
@@ -109,11 +111,17 @@ class Data:
             self.cluster_mask_path = ""
         else:
             galfind_logger.info(f"{survey} is a CLUSTER field!")
+            for mask_path, mask_type in zip([blank_mask_path, cluster_mask_path], ["blank", "cluster"]):
+                if ".fits" in mask_path:
+                    pass
+                elif ".reg" in mask_path:
+                    mask_path = self.clean_mask_regions(mask_path)
+                    mask_path = self.mask_reg_to_pix(self.alignment_band, mask_path)
+                else:
+                    galfind_logger.critical(f"{mask_type.capitalize()} mask does not exist for {survey} and no auto-masking has yet been implemented!")
             self.blank_mask_path = blank_mask_path
             self.cluster_mask_path = cluster_mask_path
-            if self.cluster_mask_path == "":
-                galfind_logger.info("Making cluster mask. (Not yet implemented; self.cluster_path = '' !!!)")
-    
+
     @classmethod
     def from_pipeline(cls, survey, version = "v9", instruments = ['NIRCam', 'ACS_WFC', 'WFC3_IR'], excl_bands = [], pix_scales = ['30mas', '60mas']):
         instruments_obj = {'NIRCam': NIRCam(excl_bands = excl_bands), 'ACS_WFC': ACS_WFC(excl_bands = excl_bands), 'WFC3_IR': WFC3_IR(excl_bands = excl_bands)}
@@ -188,7 +196,6 @@ class Data:
                         im_pixel_scales[band] = 0.03 
                         im_zps[band] = 28.08
                         galfind_logger.debug(f"im_zp[{band}] = 28.08 only for pixel scale of 0.03 arcsec! This will change if different images are used!")
-                
                 # If no images found for this instrument, don't add it to the combined instrument
                 if len(bands) != 0:
                     if comb_instrument_created:
@@ -267,7 +274,6 @@ class Data:
                                 map_exts[band] = hdul.index_of(map_type)
                                 map_paths[band] = str(path)
                             except KeyError:
-                                print(map_type.lower())
                                 glob_paths = glob.glob(f"{config['DEFAULT']['GALFIND_DATA']}/hst/{survey}/{instrument.name}/{pix_scale}/*{band.replace('W', 'w').replace('M', 'm')}*_{map_type.lower()}.fits")
                                 glob_paths += glob.glob(f"{config['DEFAULT']['GALFIND_DATA']}/hst/{survey}/{instrument.name}/{pix_scale}/*{band}*_{map_type.lower()}.fits")
                                 if map_type == "ERR":
@@ -338,21 +344,37 @@ class Data:
                         raise(Exception(f"Too many region masks found for {survey} {band}!"))
                 else:
                     raise(Exception(f"Too many fits masks found for {survey} {band}!"))
-
-            cat_path = f""
-
-            # Moved out as not actually specific to NIRCam
-            try:
-                cluster_mask_path = glob.glob(f"{config['DEFAULT']['GALFIND_WORK']}/Masks/{survey}/*cluster*")[0]
-            except IndexError:
-                cluster_mask_path = ""
-            try:
-                blank_mask_path = glob.glob(f"{config['DEFAULT']['GALFIND_WORK']}/Masks/{survey}/*blank*")[0]
-            except IndexError:
-                blank_mask_path = ""
             
+            if is_blank:
+                cluster_mask_path = ""
+                blank_mask_path = ""
+            else: # load in cluster core / blank field fits/reg masks
+                mask_path_dict = {}
+                for mask_type in ["cluster", "blank"]:
+                    fits_masks = glob.glob(f"{config['DEFAULT']['GALFIND_WORK']}/Masks/{survey}/fits_masks/*_{mask_type}*.fits")
+                    galfind_logger.debug(f"Available {mask_type} .fits masks for {survey} = {fits_masks}")
+                    if len(fits_masks) == 1:
+                        mask_path = fits_masks[0]
+                    elif len(fits_masks) > 1:
+                        galfind_logger.critical(f"Multiple .fits {mask_type} masks exist for {survey}!")
+                    else: # no .fits masks, now look for .reg masks
+                        galfind_logger.info(f"No .fits {mask_type} masks exist for {survey}. Searching for .reg masks")
+                        reg_masks = glob.glob(f"{config['DEFAULT']['GALFIND_WORK']}/Masks/{survey}/*_{mask_type}*.reg")
+                        galfind_logger.debug(f"Available {mask_type} .reg masks for {survey} = {reg_masks}")
+                        if len(reg_masks) == 1:
+                            mask_path = reg_masks[0]
+                        elif len(reg_masks) > 1:
+                            galfind_logger.critical(f"Multiple .reg {mask_type} masks exist for {survey}!")
+                        else: # no .reg masks
+                            galfind_logger.warning(f"No .fits or .reg {mask_type} masks exist for {survey}. May cause catalogue masking issues!")
+                    mask_path_dict[mask_type] = mask_path
+                cluster_mask_path = mask_path_dict["cluster"]
+                galfind_logger.debug(f"cluster_mask_path = {cluster_mask_path}")
+                blank_mask_path = mask_path_dict["blank"]
+                galfind_logger.debug(f"blank_mask_path = {blank_mask_path}")
+
             return cls(comb_instrument, im_paths, im_exts, im_pixel_scales, im_shapes, im_zps, wht_paths, wht_exts, rms_err_paths, rms_err_exts, \
-                seg_paths, mask_paths, cluster_mask_path, blank_mask_path, survey, version, cat_path, is_blank = is_blank)
+                seg_paths, mask_paths, cluster_mask_path, blank_mask_path, survey, version, is_blank = is_blank)
         else:
             raise(Exception(f'Failed to find any data for {survey}'))  
 
@@ -410,7 +432,7 @@ class Data:
         if ".fits" in self.mask_paths[mask_band]:
             mask = fits.open(self.mask_paths[mask_band])[1].data
         else:
-            galfind_logger.fatal(f"Mask for {self.survey} {mask_band} at {self.mask_paths[mask_band]} is not a .fits mask!")
+            galfind_logger.critical(f"Mask for {self.survey} {mask_band} at {self.mask_paths[mask_band]} is not a .fits mask!")
         return mask
     
     def load_im(self, band, return_hdul = False):
@@ -733,7 +755,7 @@ class Data:
             phot_table[name][np.isnan(phot_table[name])] = 99.
             mag_colnames.append(name)
         aper_tab = Column(np.array(phot_table[mag_colnames].as_array().tolist()), name=f'MAG_APER_{band}')
-        phot_table[f'MAG_APER'] = aper_tab
+        phot_table['MAG_APER'] = aper_tab
         # Remove old columns
         phot_table.remove_columns(colnames)
         phot_table.remove_columns(mag_colnames)
@@ -752,7 +774,7 @@ class Data:
         out_path = f"{'/'.join(mask_path.split('/')[:-1])}/fits_masks/{mask_path.split('/')[-1].replace('_clean', '').replace('.reg', '')}.fits"
         os.makedirs("/".join(out_path.split("/")[:-1]), exist_ok = True)
         hdu.writeto(out_path, overwrite = True)
-        galfind_logger.info(f"Created fits mask for {band} from manually created reg mask")
+        galfind_logger.info(f"Created fits mask from manually created reg mask, saving as {out_path}")
         return out_path
     
     def combine_masks(self, bands): # this combines region masks, not fits masks
@@ -776,7 +798,8 @@ class Data:
         shapelist.write(output_path)
         return output_path
 
-    def clean_mask_regions(self, band, mask_path): # cleans region masks
+    @staticmethod
+    def clean_mask_regions(mask_path):
         # open region file
         if "_clean" not in mask_path:
             with open(mask_path, 'r') as f:
@@ -884,30 +907,7 @@ class Data:
         #    for band in self.instrument.bands]) for aper_diam in json.loads(config.get("SExtractor", "APERTURE_DIAMS")) * u.arcsec}
         cat.meta = {**cat.meta, **{"APERCORR": True}} #, **mag_aper_corrs}
         # overwrite original catalogue with local depth columns
-        cat.write(self.sex_cat_master_path, overwrite = True)
-
-    def make_loc_depth_cat_old(self, aper_diams = [0.32] * u.arcsec, n_samples = 5, forced_phot_band = "f444W", min_flux_pc_err_arr = [5, 10], fast = True):
-        # calculate local depth mag errors both with and without n_pc minimum flux errors imposed
-        for m in range(2):
-            for n, min_flux_pc_err in enumerate(min_flux_pc_err_arr):
-                if m == 0 and n == 0:
-                    flux = phot_data["FLUX_APER_" + band + "_aper_corr"].T[diam_index][k]
-                    aper_flux_err = phot_data["FLUXERR_APER_" + band + "_loc_depth"].T[diam_index][k]
-                    add_suffix = ""
-                if m == 1:
-                    flux = phot_data["FLUX_APER_" + band + "_aper_corr_Jy"].T[diam_index][k]
-                    aper_flux_err = phot_data["FLUXERR_APER_" + band + "_loc_depth_" + str(min_flux_pc_err) + "pc_Jy"].T[diam_index][k]
-                    add_suffix = "_" + str(min_flux_pc_err) + "pc"
-            
-                mag_l1 = -(-2.5 * np.log10(flux) + 2.5 * np.log10(flux - aper_flux_err))
-                mag_u1 = -(-2.5 * np.log10(flux + aper_flux_err) + 2.5 * np.log10(flux))
-                #print(mag_l1)
-                #print(mag_u1)
-                if np.isfinite(mag_l1):
-                    phot_data["MAGERR_APER_" + band + "_l1_loc_depth" + add_suffix].T[diam_index][k] = mag_l1
-                if np.isfinite(mag_u1):  
-                    phot_data["MAGERR_APER_" + band + "_u1_loc_depth" + add_suffix].T[diam_index][k] = mag_u1
-                        
+        cat.write(self.sex_cat_master_path, overwrite = True)    
 
     def make_loc_depth_cat(self, cat_creator, depth_mode = "n_nearest"):
         overwrite = config["Depths"].getboolean("OVERWRITE_LOC_DEPTH_CAT")
@@ -1100,7 +1100,7 @@ class Data:
             if not Path(save_path).is_file() or overwrite:
                 # load depth data
                 h5_path = f"{self.depth_dirs[band]}/{mode}/{band}.h5"
-                if not Path(h5_path).if_file():
+                if not Path(h5_path).is_file():
                     raise(Exception(f"Must first run depths for {self.survey} {self.version} {band} {mode} {aper_diam} before plotting!"))
                 hf = h5py.File(h5_path, "r")
                 hf_output = {label: np.array(hf[label]) for label in self.get_depth_h5_labels()}
@@ -1112,7 +1112,7 @@ class Data:
                 combined_mask = self.combine_seg_data_and_mask(band)
                 # load catalogue to calculate x/y image coordinates
                 cat = Table.read(self.sex_cat_master_path)
-                cat_x, cat_y = wcs.world_to_pixel(SkyCoord(cat[cat_creator.ra_dec_labels["RA"]], cat[cat_creator.ra_dec_labels["Dec"]]))
+                cat_x, cat_y = wcs.world_to_pixel(SkyCoord(cat[cat_creator.ra_dec_labels["RA"]], cat[cat_creator.ra_dec_labels["DEC"]]))
                 
                 depths_fig, depths_ax = Depths.show_depths(hf_output["nmad_grid"], hf_output["num_grid"], hf_output["step_size"], \
                     hf_output["region_radius_used_pix"], hf_output["labels_grid"], hf_output["depth_labels"], hf_output["depths"], hf_output["diagnostic"], cat_x, cat_y, 
