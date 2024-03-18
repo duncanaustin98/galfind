@@ -39,13 +39,13 @@ def pipeline(surveys, version, instruments, aper_diams, code_names, lowz_zmax, m
             #     cat.make_UV_fit_cat(UV_PDF_path = f"{config['RestUVProperties']['UV_PDF_PATH']}/{version}/{instruments_name}/{survey}/{code.code_name}+{pc_err}pc")  
 
 if __name__ == "__main__":
-    version = "v9" #config["DEFAULT"]["VERSION"] #"v9_sex_test1"
-    instruments = ['NIRCam'] #, 'ACS_WFC'] #, 'WFC3IR'] # Can leave this - if there is no data for an instrument it is removed automatically
+    version = "v11" #config["DEFAULT"]["VERSION"] #"v9_sex_test1"
+    instruments = ["ACS_WFC", "NIRCam"] #, 'ACS_WFC'] #, 'WFC3IR'] # Can leave this - if there is no data for an instrument it is removed automatically
     cat_type = "loc_depth"
-    surveys = ["SMACS-0723"] #[config["DEFAULT"]["SURVEY"]] # [f"CEERSP{int(i + 1)}" for i in range(0, 10)] #
+    surveys = ["NGDEEP2"] #[config["DEFAULT"]["SURVEY"]] # [f"CEERSP{int(i + 1)}" for i in range(0, 10)] #
     aper_diams = [0.32] * u.arcsec
-    code_names = ["EAZY", "EAZY", "EAZY"] #[LePhare()]
-    eazy_templates = ["fsps", "fsps_larson", "fsps_jades"] #["fsps", "fsps_larson", "fsps_jades"]
+    code_names = ["EAZY"]
+    eazy_templates = ["fsps_larson"] #["fsps", "fsps_larson", "fsps_jades"]
     eazy_lowz_zmax = [[4., 6.], [4., 6.], [4., 6.]]
     min_flux_pc_errs = [10]
     forced_phot_band = ["f277W", "f356W", "f444W"]

@@ -520,10 +520,19 @@ class Data:
             band = self.combine_band_names(band)
         else:
             raise(Exception(f"Cannot make segmentation map for {band}! type(band) = {type(band)} must be either str, list, or np.array!"))
+        # preferentially use rms maps
+        if self.rms_err_paths[band] != "":
+            err_map_path = str(self.rms_err_paths[band])
+            err_map_exts = str(self.rms_err_exts[band])
+            err_map_type = "MAP_RMS"
+        else: # wht map must exist, otherwise this error would already have been caught in the __init__
+            err_map_path = str(self.wht_paths[band])
+            err_map_exts = str(self.wht_exts[band])
+            err_map_type = "MAP_WEIGHT"
         # SExtractor bash script python wrapper
         process = subprocess.Popen(["./make_seg_map.sh", config['DEFAULT']['GALFIND_WORK'], self.im_paths[band], str(self.im_pixel_scales[band]), \
-                                str(self.im_zps[band]), self.instrument.instrument_from_band(band).name, self.survey, band, self.version, str(self.wht_paths[band]), \
-                                str(self.wht_exts[band]), self.wht_types[band], str(self.im_exts[band]), sex_config_path, params_path])
+                                str(self.im_zps[band]), self.instrument.instrument_from_band(band).name, self.survey, band, self.version, err_map_path, \
+                                err_map_exts, err_map_type, str(self.im_exts[band]), sex_config_path, params_path])
         process.wait()
         galfind_logger.info(f"Made segmentation map for {self.survey} {self.version} {band} using config = {sex_config_path}")
 
