@@ -88,7 +88,6 @@ class Data:
             # load segmentation map
             seg_paths[band] = glob.glob(f"{config['DEFAULT']['GALFIND_WORK']}/SExtractor/{self.instrument.instrument_from_band(band).name}/{version}/{survey}/{survey}*{band}_{band}*{version}*seg.fits")[0]
         self.seg_paths = dict(sorted(seg_paths.items())) 
-        
         # make masks from image paths if they don't already exist
         self.mask_dir = f"{config['DEFAULT']['GALFIND_WORK']}/Masks/{survey}"
         for i, (band, mask_path) in enumerate(mask_paths.items()):
@@ -322,6 +321,7 @@ class Data:
                         # Need to update what it suggests
             elif instrument.name == 'MIRI':
                 raise NotImplementedError("MIRI not yet implemented")
+
         if comb_instrument_created:
             # All seg maps and masks should be in same format, so load those last when we know what bands we have
             for band in comb_instrument.bands:
@@ -521,7 +521,7 @@ class Data:
         else:
             raise(Exception(f"Cannot make segmentation map for {band}! type(band) = {type(band)} must be either str, list, or np.array!"))
         # preferentially use rms maps
-        if self.rms_err_paths[band] != "":
+        if band in self.rms_err_paths.keys():
             err_map_path = str(self.rms_err_paths[band])
             err_map_exts = str(self.rms_err_exts[band])
             err_map_type = "MAP_RMS"
@@ -529,6 +529,7 @@ class Data:
             err_map_path = str(self.wht_paths[band])
             err_map_exts = str(self.wht_exts[band])
             err_map_type = "MAP_WEIGHT"
+        galfind_logger.info(f"Using {err_map_type} to make segmentation map for {self.survey} {self.version} {band}")
         # SExtractor bash script python wrapper
         process = subprocess.Popen(["./make_seg_map.sh", config['DEFAULT']['GALFIND_WORK'], self.im_paths[band], str(self.im_pixel_scales[band]), \
                                 str(self.im_zps[band]), self.instrument.instrument_from_band(band).name, self.survey, band, self.version, err_map_path, \
