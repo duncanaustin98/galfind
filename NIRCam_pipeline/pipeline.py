@@ -40,16 +40,17 @@ def pipeline(surveys, version, instruments, aper_diams, code_names, lowz_zmax, m
 
 if __name__ == "__main__":
     version = "v11" #config["DEFAULT"]["VERSION"] #"v9_sex_test1"
-    instruments = ["ACS_WFC", "NIRCam"] #, 'ACS_WFC'] #, 'WFC3IR'] # Can leave this - if there is no data for an instrument it is removed automatically
+    instruments = ["NIRCam"] #, 'ACS_WFC'] #, 'WFC3IR'] # Can leave this - if there is no data for an instrument it is removed automatically
     cat_type = "loc_depth"
     surveys = ["NGDEEP2"] #[config["DEFAULT"]["SURVEY"]] # [f"CEERSP{int(i + 1)}" for i in range(0, 10)] #
     aper_diams = [0.32] * u.arcsec
     code_names = ["EAZY"]
     eazy_templates = ["fsps_larson"] #["fsps", "fsps_larson", "fsps_jades"]
-    eazy_lowz_zmax = [[4., 6.], [4., 6.], [4., 6.]]
+    eazy_lowz_zmax = [[4., 6.]] #, [4., 6.], [4., 6.]]
     min_flux_pc_errs = [10]
     forced_phot_band = ["f277W", "f356W", "f444W"]
     jems_bands = ["f182M", "f210M", "f430M", "f460M", "f480M"]
+
     ngdeep_excl_bands = ["f435W", "f775W", "f850LP"]
     #jades_3215_excl_bands = ["f162M", "f115W", "f150W", "f200W", "f410M", "f182M", "f210M", "f250M", "f300M", "f335M", "f277W", "f356W", "f444W"] 
     excl_bands = []

@@ -511,6 +511,42 @@ class Data:
     #@staticmethod
     def combine_band_names(self, bands):
         return '+'.join(bands)
+    
+    def get_err_map(self, band, prefer = "rms_err"):
+        """ Loads either the rms_err or wht map for use in SExtractor depending on the preferred map to use
+
+        Args:
+            band (str): Filter to extract the rms_err or wht maps from
+            prefer (str, optional): Preferred error map type to use. Either 'rms_err' or 'wht', anything else throws critical. Defaults to "rms_err".
+        Returns:
+            tuple(3): (Error map path, Error map fits extension, Error map type)
+        """
+        
+        # determine which error map to use based on what is available or preferred
+        if prefer == "rms_err":
+            if band in self.rms_err_paths.keys():
+                err_map_type = "MAP_RMS"
+            elif band in self.wht_paths.keys():
+                err_map_type = "MAP_WEIGHT"
+        elif prefer == "wht":
+            if band in self.wht_paths.keys():
+                err_map_type = "MAP_WEIGHT"
+            elif band in self.rms_err_paths.keys():
+                err_map_type = "MAP_RMS"
+        else:
+            galfind_logger.critical(f"prefer = {prefer} not in ['rms_err', 'wht'] in Data.get_err_map()")
+        
+        # extract relevant fits paths and extensions
+        if err_map_type == "MAP_RMS":
+            err_map_path = str(self.rms_err_paths[band])
+            err_map_ext = str(self.rms_err_exts[band])
+        elif err_map_type == "MAP_WEIGHT":
+            err_map_path = str(self.wht_paths[band])
+            err_map_ext = str(self.wht_exts[band])
+        else:
+            galfind_logger.critical(f"No rms_err or wht maps available for {band} {self.survey} {self.version}")
+
+        return err_map_path, err_map_ext, err_map_type
 
     @run_in_dir(path = config['DEFAULT']['GALFIND_DIR'])
     def make_seg_map(self, band, sex_config_path = config['SExtractor']['CONFIG_PATH'], params_path = config['SExtractor']['PARAMS_PATH']):
@@ -520,22 +556,16 @@ class Data:
             band = self.combine_band_names(band)
         else:
             raise(Exception(f"Cannot make segmentation map for {band}! type(band) = {type(band)} must be either str, list, or np.array!"))
-        # preferentially use rms maps
-        if band in self.rms_err_paths.keys():
-            err_map_path = str(self.rms_err_paths[band])
-            err_map_exts = str(self.rms_err_exts[band])
-            err_map_type = "MAP_RMS"
-        else: # wht map must exist, otherwise this error would already have been caught in the __init__
-            err_map_path = str(self.wht_paths[band])
-            err_map_exts = str(self.wht_exts[band])
-            err_map_type = "MAP_WEIGHT"
-        galfind_logger.info(f"Using {err_map_type} to make segmentation map for {self.survey} {self.version} {band}")
+
+        # load relevant err map paths, preferring rms_err maps if available
+        err_map_path, err_map_ext, err_map_type = self.get_err_map(band, prefer = "rms_err")
+        
         # SExtractor bash script python wrapper
         process = subprocess.Popen(["./make_seg_map.sh", config['DEFAULT']['GALFIND_WORK'], self.im_paths[band], str(self.im_pixel_scales[band]), \
                                 str(self.im_zps[band]), self.instrument.instrument_from_band(band).name, self.survey, band, self.version, err_map_path, \
-                                err_map_exts, err_map_type, str(self.im_exts[band]), sex_config_path, params_path])
+                                err_map_ext, err_map_type, str(self.im_exts[band]), sex_config_path, params_path])
         process.wait()
-        galfind_logger.info(f"Made segmentation map for {self.survey} {self.version} {band} using config = {sex_config_path}")
+        galfind_logger.info(f"Made segmentation map for {self.survey} {self.version} {band} using config = {sex_config_path} and {err_map_type}")
 
     def make_seg_maps(self):
         for band in self.instrument.bands:
@@ -545,35 +575,35 @@ class Data:
         for band in bands:
             if band not in self.im_paths.keys():
                 bands.remove(band)
-                print(f"{band} not available for {self.survey}")
+                galfind_logger.warning(f"{band} not available for {self.survey} {self.version}")
+        stack_band_name = self.combine_band_names(bands)
         detection_image_dir = f"{config['DEFAULT']['GALFIND_WORK']}/Stacked_Images/{self.version}/{self.instrument.instrument_from_band(bands[0]).name}/{self.survey}"
-        detection_image_name = f"{self.survey}_{self.combine_band_names(bands)}_{self.version}_stack.fits"
-        self.im_paths[self.combine_band_names(bands)] = f'{detection_image_dir}/{detection_image_name}'
-        self.rms_err_paths[self.combine_band_names(bands)] = f'{detection_image_dir}/{detection_image_name}'
-        glob_mask_names = glob.glob(f"{self.mask_dir}/{self.combine_band_names(bands)}_basemask.reg")
+        detection_image_name = f"{self.survey}_{stack_band_name}_{self.version}_stack.fits"
+        self.im_paths[stack_band_name] = f'{detection_image_dir}/{detection_image_name}'
+        self.rms_err_paths[stack_band_name] = f'{detection_image_dir}/{detection_image_name}'
+        glob_mask_names = glob.glob(f"{self.mask_dir}/{stack_band_name}_basemask.reg")
         #print(glob_mask_names)
         if len(glob_mask_names) == 0:
-            self.mask_paths[self.combine_band_names(bands)] = self.combine_masks(bands)
+            self.mask_paths[stack_band_name] = self.combine_masks(bands)
         elif len(glob_mask_names) == 1:
-            self.mask_paths[self.combine_band_names(bands)] = glob_mask_names[0]
+            self.mask_paths[stack_band_name] = glob_mask_names[0]
         else:
-            raise(Exception(f"More than 1 mask for {self.combine_band_names(bands)}. Please change this in {self.mask_dir}"))
+            raise(Exception(f"More than 1 mask for {stack_band_name}. Please change this in {self.mask_dir}"))
         
-        if not Path(self.im_paths[self.combine_band_names(bands)]).is_file():
-            funcs.make_dirs(self.im_paths[self.combine_band_names(bands)])
+        if not Path(self.im_paths[stack_band_name]).is_file():
+            funcs.make_dirs(self.im_paths[stack_band_name])
             for pos, band in enumerate(bands):
                 if self.im_shapes[band] != self.im_shapes[bands[0]] or self.im_zps[band] != self.im_zps[bands[0]] or self.im_pixel_scales[band] != self.im_pixel_scales[bands[0]]:
                     raise Exception('All bands used in forced photometry stack must have the same shape, ZP and pixel scale!')
                 
                 prime_hdu = fits.open(self.im_paths[band])[0].header
-                data = fits.open(self.im_paths[band])[self.im_exts[band]].data
-                header = fits.open(self.im_paths[band])[self.im_exts[band]].header
+                im_data, im_header = self.load_im(band)
                 err = fits.open(self.rms_err_paths[band])[self.rms_err_exts[band]].data
                 if pos == 0:
-                    sum = data / err ** 2
+                    sum = im_data / err ** 2
                     sum_err = 1 / err ** 2
                 else:
-                    sum += data / err ** 2
+                    sum += im_data / err ** 2
                     sum_err += 1 / err ** 2
                 
             weighted_array = sum / sum_err
@@ -582,18 +612,18 @@ class Data:
             combined_err = np.sqrt(1 / sum_err)
 
             primary = fits.PrimaryHDU(header = prime_hdu)
-            hdu = fits.ImageHDU(weighted_array, header = header, name = 'SCI')
-            hdu_err = fits.ImageHDU(combined_err, header = header, name = 'ERR')
+            hdu = fits.ImageHDU(weighted_array, header = im_header, name = 'SCI')
+            hdu_err = fits.ImageHDU(combined_err, header = im_header, name = 'ERR')
             hdul = fits.HDUList([primary, hdu, hdu_err])
-            hdul.writeto(self.im_paths[self.combine_band_names(bands)], overwrite = True)
-            galfind_logger.info(f"Finished stacking bands = {bands}")
+            hdul.writeto(self.im_paths[stack_band_name], overwrite = True)
+            galfind_logger.info(f"Finished stacking bands = {bands} for {self.survey} {self.version}")
         
         # save forced photometry band parameters
-        self.im_shapes[self.combine_band_names(bands)] = self.im_shapes[bands[0]]
-        self.im_zps[self.combine_band_names(bands)] = self.im_zps[bands[0]]
-        self.im_pixel_scales[self.combine_band_names(bands)] = self.im_pixel_scales[bands[0]]
-        self.im_exts[self.combine_band_names(bands)] = 1
-        self.rms_err_exts[self.combine_band_names(bands)] = 2
+        self.im_shapes[stack_band_name] = self.im_shapes[bands[0]]
+        self.im_zps[stack_band_name] = self.im_zps[bands[0]]
+        self.im_pixel_scales[stack_band_name] = self.im_pixel_scales[bands[0]]
+        self.im_exts[stack_band_name] = 1
+        self.rms_err_exts[stack_band_name] = 2
 
         # could compute a wht map from the rms_err map here!
 
@@ -615,7 +645,7 @@ class Data:
         if type(forced_phot_band) == list:
             if len(forced_phot_band) > 1:
                 # make the stacked image and save all appropriate parameters
-                print(forced_phot_band)
+                galfind_logger.debug(f"forced_phot_band = {forced_phot_band}")
                 self.stack_bands(forced_phot_band)
                 self.forced_phot_band = self.combine_band_names(forced_phot_band)
                 self.seg_paths[self.forced_phot_band] = self.seg_path(self.forced_phot_band)
@@ -630,23 +660,49 @@ class Data:
             sextractor_bands = np.append(self.instrument.bands, self.forced_phot_band)
         else:
             sextractor_bands = self.instrument.bands
+        
         sex_cats = {}
+
         for band in sextractor_bands:
             sex_cat_path = self.sex_cat_path(band, self.forced_phot_band)
             galfind_logger.debug(f"band = {band}, sex_cat_path = {sex_cat_path} in Data.make_sex_cats")
+            
             # if not run before
             if not Path(sex_cat_path).is_file():
-                # SExtractor bash script python wrapper
-                if self.im_shapes[self.forced_phot_band] == self.im_shapes[band] and self.wht_types[self.forced_phot_band] == self.wht_types[band]:
-                    process = subprocess.Popen(["./make_sex_cat.sh", config['DEFAULT']['GALFIND_WORK'], self.im_paths[band], str(self.im_pixel_scales[band]), \
-                                        str(self.im_zps[band]), self.instrument.instrument_from_band(band).name, self.survey, band, self.version, \
-                                            self.forced_phot_band, self.im_paths[self.forced_phot_band], str(self.wht_paths[band]), str(self.wht_exts[band]), \
-                                            str(self.im_exts[band]), self.wht_paths[self.forced_phot_band], str(self.im_exts[self.forced_phot_band]), self.wht_types[band], 
-                                            str(self.wht_exts[self.forced_phot_band]), sex_config_path, params_path])
-                    process.wait()
-                # Use photutils
+                
+                # check whether the image of the forced photometry band and sextraction band have the same shape
+                if self.im_shapes[self.forced_phot_band] == self.im_shapes[band]:
+                    sextract = True
                 else:
+                    sextract = False
+                # check whether the band and forced phot band have error maps with consistent types
+                if sextract:
+                    if band in self.rms_err_paths.keys() and self.forced_phot_band in self.rms_err_paths.keys():
+                        prefer = "rms_err"
+                    elif band in self.rms_err_paths.keys() and self.forced_phot_band in self.rms_err_paths.keys():
+                        prefer = "wht"
+                    else: # do not perform sextraction
+                        sextract = False
+                
+                # perform sextraction
+                if sextract:
+                    # load relevant err map paths
+                    err_map_path, err_map_ext, err_map_type = self.get_err_map(band, prefer = prefer)
+                    # load relevant err map paths for the forced photometry band
+                    forced_phot_band_err_map_path, forced_phot_band_err_map_ext, forced_phot_band_err_map_type = self.get_err_map(self.forced_phot_band, prefer = prefer)
+                    assert(err_map_type == forced_phot_band_err_map_type) # should always be true
+                
+                    # SExtractor bash script python wrapper
+                    process = subprocess.Popen(["./make_sex_cat.sh", config['DEFAULT']['GALFIND_WORK'], self.im_paths[band], str(self.im_pixel_scales[band]), \
+                        str(self.im_zps[band]), self.instrument.instrument_from_band(band).name, self.survey, band, self.version, \
+                        self.forced_phot_band, self.im_paths[self.forced_phot_band], err_map_path, err_map_ext, \
+                        str(self.im_exts[band]), forced_phot_band_err_map_path, str(self.im_exts[self.forced_phot_band]), err_map_type, 
+                        forced_phot_band_err_map_ext, sex_config_path, params_path])
+                    process.wait()
+
+                else: # use photutils
                     self.forced_photometry(band, self.forced_phot_band)
+            
             galfind_logger.info(f"Finished making SExtractor catalogue for {self.survey} {self.version} {band}!")
             sex_cats[band] = sex_cat_path
         self.sex_cats = sex_cats
@@ -663,7 +719,7 @@ class Data:
             else:
                 forced_phot_band_name = forced_phot_band
             print("Loading cat", self.sex_cats, forced_phot_band_name)
-            for i, (band, path) in enumerate(self.sex_cats.items()):
+            for i, (band, path) in reversed(enumerate(self.sex_cats.items())):
                 tab = Table.read(path, character_as_bytes = False)
                 if band == forced_phot_band_name:
                     ID_detect_band = tab["NUMBER"]
@@ -787,26 +843,17 @@ class Data:
         galfind_logger.info(f"Created fits mask from manually created reg mask, saving as {out_path}")
         return out_path
     
-    def combine_masks(self, bands): # this combines region masks, not fits masks
-        shapelist = []
-        for band in tqdm(bands, desc = f"Making combined mask for {bands}"):
-            if band == "blank":
-                shapelist_ = pyregion.open(self.blank_mask_path)
-            elif band == "cluster":
-                shapelist_ = pyregion.open(self.cluster_mask_path)
-            else:
-                shapelist_ = pyregion.open(self.mask_paths[band])
-            # do not append duplicate regions
-            for shape_ in shapelist_:
-                if shape_.name != "composite": # composite region line is commented out in the .reg file, components still included
-                    same_shape_list = [shape for shape in shapelist if shape.name == shape_.name and shape.coord_list == shape_.coord_list]
-                    if len(same_shape_list) == 0:
-                        shapelist.append(shape_)
-        shapelist = pyregion.ShapeList(shapelist)
-        output_path = f"{self.mask_dir}/{self.combine_band_names(bands)}_basemask.reg"
+    def combine_masks(self, bands):
+        combined_mask = np.logical_or.reduce(tuple([self.load_mask(band) for band in bands]))
+        assert(combined_mask.shape == self.load_mask(bands[-1]).shape)
+        # wcs taken from the reddest band
+        mask_hdu = fits.ImageHDU(combined_mask.astype(np.uint8), header = WCS(self.load_im(bands[-1])[1]).to_header(), name = 'MASK')
+        hdu = fits.HDUList([fits.PrimaryHDU(), mask_hdu])
+        out_path = f"{self.mask_dir}/fits_cats/{self.combine_band_names(bands)}_basemask.fits"
+        os.makedirs("/".join(out_path.split("/")[:-1]), exist_ok = True)
+        hdu.writeto(out_path, overwrite = True)
         galfind_logger.info(f"Created combined mask for {bands}")
-        shapelist.write(output_path)
-        return output_path
+        return out_path
 
     @staticmethod
     def clean_mask_regions(mask_path):
