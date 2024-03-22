@@ -83,7 +83,8 @@ class Catalogue(Catalogue_Base):
         if mask:
             cat_obj.mask()
         # run SED fitting for the appropriate code names/low-z runs
-        for code, lowz_zmax, templates in zip(codes, lowz_zmax_arr, templates_arr):
+        for i, (code, lowz_zmax, templates) in enumerate(zip(codes, lowz_zmax_arr, templates_arr)):
+            print(i)
             cat_obj = code.fit_cat(cat_obj, lowz_zmax, templates = templates)
         return cat_obj
     

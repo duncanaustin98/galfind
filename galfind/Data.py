@@ -73,6 +73,7 @@ class Data:
             galfind_logger.critical(f"Alignment band = {alignment_band} does not exist in instrument!")
         else:
             self.alignment_band = alignment_band
+
         if cat_path == "":
             pass
         elif type(cat_path) == str:
@@ -120,6 +121,30 @@ class Data:
                     galfind_logger.critical(f"{mask_type.capitalize()} mask does not exist for {survey} and no auto-masking has yet been implemented!")
             self.blank_mask_path = blank_mask_path
             self.cluster_mask_path = cluster_mask_path
+        
+        # find common directories for im/seg/rms_err/wht maps
+        self.common_dirs = {}
+        galfind_logger.warning(f"self.common_dirs has errors when the len(rms_err_paths) = {len(self.rms_err_paths)} != len(wht_paths) = {len(self.wht_paths)}")
+        for paths, key in zip([im_paths, seg_paths, mask_paths, rms_err_paths, wht_paths], \
+            ["SCI", "SEG", "MASK", "ERR", "WHT"]):
+            try:
+                for band in self.instrument:
+                    assert("/".join(paths[band].split("/")[:-1]) == "/".join(paths[self.instrument[0]].split("/")[:-1]))
+                self.common_dirs[key] = "/".join(paths[self.instrument[0]].split("/")[:-1])
+                galfind_logger.info(f"Common directory found for {key}: {self.common_dirs[key]}")
+            except AssertionError:
+                galfind_logger.info(f"No common directory for {key}")
+
+        # find other things in common between bands
+        self.common = {}
+        for label, item_dict in zip(["ZERO POINT", "PIXEL SCALE", "SCI SHAPE"], [self.im_zps, self.im_pixel_scales, self.im_shapes]):
+            try:
+                for band in self.instrument:
+                    assert(item_dict[band] == item_dict[self.instrument[0]])
+                self.common[label] = item_dict[self.instrument[0]]
+                galfind_logger.info(f"Common {label} found")
+            except AssertionError:
+                galfind_logger.info(f"No common {label}")
 
     @classmethod
     def from_pipeline(cls, survey, version = "v9", instruments = ['NIRCam', 'ACS_WFC', 'WFC3_IR'], excl_bands = [], pix_scales = ['30mas', '60mas']):
@@ -192,7 +217,7 @@ class Data:
                     else:
                         # Maybe generalize this
                         #print("Generalize on line 177 of Data.from_pipeline()")
-                        im_pixel_scales[band] = 0.03 
+                        im_pixel_scales[band] = 0.03 * u.arcsec
                         im_zps[band] = 28.08
                         galfind_logger.debug(f"im_zp[{band}] = 28.08 only for pixel scale of 0.03 arcsec! This will change if different images are used!")
                 # If no images found for this instrument, don't add it to the combined instrument
@@ -294,7 +319,7 @@ class Data:
                             raise(Exception(f"No wht or rms_err map for {survey} {version} {band} {pix_scale}!"))
 
                         #print(band, wht_paths[band])
-                        im_pixel_scales[band] = float(pix_scale.split('mas')[0]) * 1e-3 
+                        im_pixel_scales[band] = float(pix_scale.split('mas')[0]) * 1e-3 * u.arcsec
                         if instrument.name == 'ACS_WFC':
                             if "PHOTFLAM" in imheader and "PHOTPLAM" in imheader:
                                 im_zps[band] = -2.5 * np.log10(imheader["PHOTFLAM"]) - 21.10 - 5 * np.log10(imheader["PHOTPLAM"]) + 18.6921
@@ -380,9 +405,70 @@ class Data:
 
 # %% Overloaded operators
 
-    def __repr__(self):
-        # string representation of what is stored in this class
-        return str(self.__dict__)
+    def __str__(self):
+        """ Function to print summary of Data class
+
+        Returns:
+            str: Summary containing survey name, version, and whether field is blank or cluster.
+                Includes summary of Instrument class, including bands, instruments and facilities used.
+                Image depths in relevant aperture sizes are included here if calculated.
+                Masked/unmasked areas are also quoted here.
+                Also includes paths/extensions to SCI/SEG/ERR/WHT/MASK in each band, pixel scales, zero points and fits shapes.
+        """
+        line_sep = "*" * 40 + "\n"
+        band_sep = "-" * 10 + "\n"
+        output_str = line_sep
+        output_str += "DATA OBJECT:\n"
+        output_str += band_sep
+        output_str += f"SURVEY: {self.survey}\n"
+        output_str += f"VERSION: {self.version}\n"
+        output_str += f"FIELD TYPE: " + "BLANK\n" if self.is_blank else "CLUSTER\n"
+        # print instrument string representation
+        output_str += str(self.instrument) # should include aperture sizes + aperture corrections + paths to WebbPSF models
+        # print basic data quantities: common ZPs, pixel scales, and SCI image shapes, as well as unmasked sky area and depths should they exist
+        for (key, item) in self.common.items():
+            output_str += f"{key}: {item}\n"
+        try:
+            unmasked_area = self.calc_unmasked_area().to(u.arcmin ** 2)
+            output_str += f"UNMASKED AREA = {unmasked_area}"
+        except:
+            pass
+        try:
+            depths = []
+            for aper_diam in json.loads(config.get("SExtractor", "APERTURE_DIAMS")) * u.arcsec:
+                depths.append(self.load_depths(aper_diam))
+            print(depths)
+        except:
+            pass
+        # if there are common directories for data, print these
+        if self.common_dirs != {}:
+            output_str += line_sep
+            output_str += "SHARED DIRECTORIES:\n"
+            for (key, value) in self.common_dirs.items():
+                output_str += f"{key}: {value}\n"
+            output_str += line_sep
+        # loop through available bands, printing paths, exts, ZPs, fits shapes
+        output_str += "BAND DATA:\n"
+        for band in self.instrument:
+            output_str += band_sep
+            output_str += f"{band}\n"
+            band_data_paths = [self.im_paths[band], self.seg_paths[band], self.mask_paths[band]]
+            band_data_exts = [self.im_exts[band], 1, 1]
+            band_data_labels = ["SCI", "SEG", "MASK"]
+            for paths, exts, label in zip([self.rms_err_paths, self.wht_paths], [self.rms_err_exts, self.wht_exts], ["ERR", "WHT"]):
+                if band in self.rms_err_paths.keys():
+                    band_data_paths.append(paths[band])
+                    band_data_exts.append(exts[band])
+                    band_data_labels.append(label)
+            for path, ext, label in zip(band_data_paths, band_data_exts, band_data_labels):
+                if label in self.common_dirs:
+                    path = path.split("/")[-1]
+                output_str += f"{label} path = {path}[{str(ext)}]\n"
+            for label, data in zip(["ZERO POINT", "PIXEL SCALE", "SCI SHAPE"], [self.im_zps, self.im_pixel_scales, self.im_shapes]):
+                if label not in self.common.keys():
+                    output_str += f"{label} = {data[band]}\n"
+        output_str += line_sep
+        return output_str
     
     def __len__(self):
         return len(self.instrument)
@@ -561,7 +647,7 @@ class Data:
         err_map_path, err_map_ext, err_map_type = self.get_err_map(band, prefer = "rms_err")
         
         # SExtractor bash script python wrapper
-        process = subprocess.Popen(["./make_seg_map.sh", config['DEFAULT']['GALFIND_WORK'], self.im_paths[band], str(self.im_pixel_scales[band]), \
+        process = subprocess.Popen(["./make_seg_map.sh", config['DEFAULT']['GALFIND_WORK'], self.im_paths[band], str(self.im_pixel_scales[band].value), \
                                 str(self.im_zps[band]), self.instrument.instrument_from_band(band).name, self.survey, band, self.version, err_map_path, \
                                 err_map_ext, err_map_type, str(self.im_exts[band]), sex_config_path, params_path])
         process.wait()
@@ -693,7 +779,7 @@ class Data:
                     assert(err_map_type == forced_phot_band_err_map_type) # should always be true
                 
                     # SExtractor bash script python wrapper
-                    process = subprocess.Popen(["./make_sex_cat.sh", config['DEFAULT']['GALFIND_WORK'], self.im_paths[band], str(self.im_pixel_scales[band]), \
+                    process = subprocess.Popen(["./make_sex_cat.sh", config['DEFAULT']['GALFIND_WORK'], self.im_paths[band], str(self.im_pixel_scales[band].value), \
                         str(self.im_zps[band]), self.instrument.instrument_from_band(band).name, self.survey, band, self.version, \
                         self.forced_phot_band, self.im_paths[self.forced_phot_band], err_map_path, err_map_ext, \
                         str(self.im_exts[band]), forced_phot_band_err_map_path, str(self.im_exts[self.forced_phot_band]), err_map_type, 
@@ -719,7 +805,7 @@ class Data:
             else:
                 forced_phot_band_name = forced_phot_band
             print("Loading cat", self.sex_cats, forced_phot_band_name)
-            for i, (band, path) in reversed(enumerate(self.sex_cats.items())):
+            for i, (band, path) in enumerate(self.sex_cats.items()):
                 tab = Table.read(path, character_as_bytes = False)
                 if band == forced_phot_band_name:
                     ID_detect_band = tab["NUMBER"]
@@ -748,13 +834,34 @@ class Data:
             master_tab.add_column(dec_detect_band, name = 'DELTA_J2000', index = 4)
             
             # update table header
+            master_tab.meta = {**master_tab.meta, **{"INSTR": self.instrument.name, "BANDS": str(self.instrument.bands)}}
 
             # create galfind catalogue README
+            #self.make_sex_readme(self.sex_cat_master_path.replace(".fits", "_README.txt"))
 
             # save table
             os.makedirs(save_dir, exist_ok = True)
             master_tab.write(self.sex_cat_master_path, format = "fits", overwrite = True)
             galfind_logger.info(f"Saved combined SExtractor catalogue as {self.sex_cat_master_path}")
+
+    def make_sex_readme(self, save_path):
+        text = f"""
+        Catalogue Readme
+
+
+
+        Fluxes/Magnitudes:
+        NIRCam Photometry is done by SExtractor. HST/ACS photometry performed by Galaxies are labelled by column NUMBER, with image position X_IMAGE and Y_IMAGE and sky position RA ?ALPHA_J2000? and DEC ?DELTA_J2000?. The image coordinates are based on the detection image. The fluxes are in image units (MJy/sr for NIRCam, DIFFERENT for HST). Both aperture and auto fluxes are calculated.
+        Aperture fluxes are done in 5 diameters (0.32, 0.5, 1.0, 1.5, 2.0) arcsec. This produces an Nx5 column for all aperture flux derived measurements.
+        The form for fluxes and flux errors is FLUX_APER_'band' and FLUXERR_APER_'band'. Magnitudes are of the form MAG_APER_{band}, and are in AB mags.
+        See SExtractor documentation for descriptions of other columns.
+        """
+        f = open(save_path, "w")
+        f.write("Catalogue README\n", "-" * 20, "\n\n")
+        f.write("-" * 20, "\n")
+        f.write(str(self))
+        #f.write(text)
+        f.close()
 
     def make_sex_plusplus_cat(self):
         pass
@@ -894,10 +1001,6 @@ class Data:
             forced_phot_band = self.combine_band_names(forced_phot_band)
 
         pixel_scale = self.im_pixel_scales[forced_phot_band]
-        try:
-            pixel_scale.unit
-        except:
-            pixel_scale = pixel_scale * u.arcsec
         print(f"pixel_scale = {pixel_scale}")
         
         full_mask = self.load_mask(masking_instrument_name, forced_phot_band)
@@ -1114,7 +1217,7 @@ class Data:
             # Make ds9 region file of apertures for compatability and debugging
             region_path = f"{depth_dir}/{mode}/{self.survey}_{self.version}_{band}.reg"
             Depths.make_ds9_region_file(xy, radius_pix, region_path, coordinate_type = 'pixel', 
-                convert = False, wcs = wcs, pixel_scale = self.im_pixel_scales[band])
+                convert = False, wcs = wcs, pixel_scale = self.im_pixel_scales[band].value)
             
             # Get fluxes in regions
             fluxes = Depths.do_photometry(im_data, xy, radius_pix)

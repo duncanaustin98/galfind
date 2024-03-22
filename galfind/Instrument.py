@@ -35,9 +35,22 @@ class Instrument:
     
 # %% Overloaded operators
 
-    def __repr__(self):
-        # string representation of what is stored in this class
-        return str(self.__dict__)
+    def __str__(self):
+        """ Function to print summary of Instrument class
+
+        Returns:
+            str: Summary containing telescopes, instruments and filter set included in the instrument
+        """
+        line_sep = "*" * 40 + "\n"
+        band_sep = "-" * 10 + "\n"
+        output_str = line_sep
+        output_str += f"TELESCOPE(S): {self.telescope}\n"
+        output_str += f"INSTRUMENT(S): {self.name}\n"
+        # show individual bands used, ordered from blue to red
+        output_str += f"FILTER SET: {str([f'{self.instrument_from_band(band).telescope}/{self.instrument_from_band(band).name}/{band}' for band in self])}\n"
+        # could also include PSF path and correction factors here
+        output_str += line_sep
+        return output_str
     
     def __len__(self):
         return len(self.bands)

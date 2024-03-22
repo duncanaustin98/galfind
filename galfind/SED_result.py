@@ -93,7 +93,6 @@ class Catalogue_SED_results:
             pass
         else:
             raise(Exception("Must specify either phot or instrument in Galaxy_SED_results!"))
-        
         if fits_cat_path != None:
             pass
         elif "cat_path" in fits_cat.meta.keys():

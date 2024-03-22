@@ -44,14 +44,8 @@ class EAZY(SED_code):
         super().__init__(code_name, galaxy_property_dict, available_templates)
     
     def make_in(self, cat, fix_z = False, *args, **kwargs):
-        #print("MAKE_IN_EAZY_CAT.DATA = ", cat.data)
         eazy_in_dir = f"{config['EAZY']['EAZY_DIR']}/input/{cat.instrument.name}/{cat.version}/{cat.survey}"
-        split_name = cat.cat_name.split('_')
-        if split_name[-1] == "masked.fits":
-            eazy_in_name = cat.cat_name.replace('.fits', f'_{cat.cat_creator.min_flux_pc_err}pc.in')
-        else:
-            eazy_in_name = f"{'_'.join(cat.cat_name.split('pc')[0].split('_')[:-1])}_{cat.cat_creator.min_flux_pc_err}pc.in"
-        eazy_in_path = f"{eazy_in_dir}/{eazy_in_name}"
+        eazy_in_path = f"{eazy_in_dir}/{cat.cat_name.replace('.fits', '.in')}"
         if not Path(eazy_in_path).is_file():
             # 1) obtain input data
             IDs = np.array([gal.ID for gal in cat.gals]) # load IDs
@@ -322,8 +316,7 @@ class EAZY(SED_code):
         np.savetxt(f"{out_path}/{id_phot}{zmax_name}.spec", data_out, delimiter="  ", header=f'ID  ZBEST  PERC_16  PERC_84  CHIBEST  WAV_UNIT  FLUX_UNIT\n{id_phot}  {z_best:.3f}  {float(percentiles_run[0]):.3f}  {float(percentiles_run[1]):.3f}  {chi2:.3f}  {wav_unit}  {out_flux_unit}')
 
     def make_fits_from_out(self, out_path, *args, **kwargs):
-        # not required for EAZY
-        pass
+        return self.out_fits_name(out_path, *args, **kwargs)
     
     def out_fits_name(self, out_path, *args, **kwargs):
         fits_out_path = out_path.replace('.out', '.fits')
