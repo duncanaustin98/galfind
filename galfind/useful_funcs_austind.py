@@ -114,11 +114,17 @@ def loc_depth_to_flux_err(loc_depth, zero_point):
 #     flux_lambda = flux_Jy_to_lambda(wav, flux_Jy)
 #     return flux_lambda # observed frame
 
-def flux_Jy_to_lambda(flux_Jy, wav): # must akready have associated astropy units
+def flux_Jy_to_lambda(flux_Jy, wav): # must already have associated astropy units
     return (flux_Jy * const.c / (wav ** 2)).to(u.erg / (u.s * (u.cm ** 2) * u.Angstrom))
 
 def flux_lambda_to_Jy(flux_lambda, wav):
     return (flux_lambda * (wav ** 2) / const.c).to(u.Jy)
+
+def lum_nu_to_lum_lam(lum_nu, wav):
+    return lum_nu * const.c / (wav ** 2)
+
+def lum_lam_to_lum_nu(lum_wav, wav):
+    return lum_wav * (wav ** 2) / const.c
 
 def wav_obs_to_rest(wav_obs, z):
     wav_rest = wav_obs / (1 + z)
@@ -131,6 +137,29 @@ def wav_rest_to_obs(wav_rest, z):
 def flux_lambda_obs_to_rest(flux_lambda_obs, z):
     flux_lambda_rest = flux_lambda_obs * ((1 + np.full(len(flux_lambda_obs), z)) ** 2)
     return flux_lambda_rest
+
+def luminosity_to_flux(lum, wavs, z = None, cosmo = astropy_cosmo, out_units = u.Jy):
+    # calculate luminosity distance
+    if z == None:
+        lum_distance = 10 * u.pc
+        z = 0.
+    else:
+        lum_distance = cosmo.luminosity_distance(z)
+    # sort out the units
+    if u.get_physical_type(lum.unit) == "yank": # i.e. L_λ, Lsun / AA or equivalent
+        if u.get_physical_type(out_units) == "spectral flux density": # f_ν
+            return (lum_lam_to_lum_nu(lum, wavs) * (1 + z) / (4 * np.pi * lum_distance ** 2)).to(out_units)
+        elif u.get_physical_type(out_units) == "power density/spectral flux density wav": # f_λ
+            return (lum * (1 + z) / (4 * np.pi * lum_distance ** 2)).to(out_units)
+        else:
+            raise(Exception(""))
+    elif u.get_physical_type(lum.unit) == "energy/torque/work": # i.e L_ν, Lsun / Hz or equivalent
+        if u.get_physical_type(out_units) == "spectral flux density": # f_ν
+            return (lum * (1 + z) / (4 * np.pi * lum_distance ** 2)).to(out_units)
+        elif u.get_physical_type(out_units) == "power density/spectral flux density wav": # f_λ
+            return (lum_nu_to_lum_lam(lum, wavs) * (1 + z) / (4 * np.pi * lum_distance ** 2)).to(out_units)
+        else:
+            raise(Exception(""))
 
 # Calzetti 1994 filters
 lower_Calzetti_filt = [1268., 1309., 1342., 1407., 1562., 1677., 1760., 1866., 1930., 2400.]
