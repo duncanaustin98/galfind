@@ -441,17 +441,29 @@ class Mock_SED_obs(SED_obs):
             colour = -2.5 * np.log10(self.mock_photometry[bands[0]] / self.mock_photometry[bands[1]])
             # save colour in Mock_SED object
             if "colours" in self.__dict__:
-                self.colours = {**self.colours, **{colour_name: colour}}
+                self.colours = {**self.colours, **{colour_name: colour.value}}
             else:
-                self.colours = {colour_name: colour}
-            return colour
+                self.colours = {colour_name: colour.value}
+            return colour.value
         else:
             galfind_logger.critical("self.mock_photometry does not exist! Please first create photometry from SED template!")
     
     def add_DLA(self, DLA_obj):
+        self.colours = {} # reset colours
+        self.DLA = DLA_obj
         self.wavs = funcs.convert_wav_units(self.wavs, u.AA)
         self.mags = funcs.convert_mag_units(self.wavs, self.mags, u.Jy)
         self.mags *= DLA_obj.transmission(self.wavs / (1 + self.z))
+
+    def add_dust_attenuation(self, dust_attenuation, E_BminusV):
+        self.colours = {} # reset colours
+        self.dust_attenuation = dust_attenuation
+        self.E_BminusV = E_BminusV
+        self.wavs = funcs.convert_wav_units(self.wavs, u.AA)
+        self.mags = funcs.convert_mag_units(self.wavs, self.mags, u.Jy)
+        # attenuate flux in Jy (named self.mags)
+        print(dust_attenuation)
+        self.mags *= 10 ** (-0.4 * dust_attenuation.attenuate(self.wavs, E_BminusV))
     
     def add_emission_lines(self, line_diagnostics):
         pass
@@ -516,7 +528,7 @@ class Mock_SED_rest_template_set(Mock_SED_template_set):
         return cls(mock_SED_rest_arr)
     
     @classmethod
-    def load_bpass_in_templates(cls, metallicity = "z020", imf = "imf135_300", model_type = "bin", alpha_enhancement = "a+06", log_ages = "all", bpass_version = 2.3, m_UV_norm = 26.):
+    def load_bpass_in_templates(cls, metallicity = "z020", imf = "imf135_300", model_type = "bin", alpha_enhancement = "a+06", log_ages = np.linspace(6., 9., int(np.round(3 / 0.1)) + 1), bpass_version = 2.3, m_UV_norm = 26.):
         meta = {"metallicity": metallicity, "imf": imf, "model_type": model_type, "alpha_enhancement": alpha_enhancement, "bpass_version": bpass_version}
         bpass_Lsun = 3.848e26 * u.J / u.s
         bpass_dir = f"/raid/scratch/data/BPASS/BPASS_v{str(bpass_version)}_release/bpass_v{str(bpass_version)}.{alpha_enhancement}"

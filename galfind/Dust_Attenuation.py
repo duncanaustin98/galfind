@@ -4,6 +4,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import astropy.units as u
 from scipy.optimize import curve_fit
+from scipy.interpolate import interp1d
 from abc import ABC, abstractmethod
 
 class Dust_Attenuation(ABC):
@@ -43,7 +44,7 @@ class Dust_Attenuation(ABC):
         """
         pass
 
-    def attenuation(self, wavs, E_BminusV):
+    def attenuate(self, wavs, E_BminusV):
         """ Function to calculate the amount of dust attenuation at wavelength(s) λ, A(λ) = m(λ) - m(λ,0)
 
         Args:
@@ -87,7 +88,7 @@ class Dust_Attenuation(ABC):
         return slope[0]
 
     @property
-    def near_IR_slope(self, NIR_range = [0.9, 5] * u.um, resolution = 0.1 * u.um):
+    def near_IR_slope(self, NIR_range = [0.9, 5.] * u.um, resolution = 0.1 * u.um):
         """ Property giving the near-IR slope of the dust attenuation curve, β_NIR
         The equation concerning this slope is as follows:
         A(λ)/A(V) = (λ / 5500 Angstrom)^-β_NIR, or equivalently
@@ -146,17 +147,20 @@ class Calzetti00(Dust_Attenuation):
         else:
             k = np.zeros(len(wavs.value))
             wavs = np.array([wav.to(u.um).value for wav in wavs])
-        
-        # extrapolate bluewards of 0.12 microns
-        # mask_1 = 
-        # k[mask_1] = 
+
+        mask_1 = (wavs <= 0.12)
         mask_2 = ((wavs > 0.12) & (wavs <= 0.63))
-        k[mask_2] = 2.659 * (-2.156 + (1.509 / (wavs[mask_2])) - (0.198 / (wavs[mask_2] ** 2)) + (0.011 / (wavs[mask_2] ** 3))) + self.R_V
         mask_3 = ((wavs > 0.63) & (wavs <= 2.2))
+        mask_4 = (wavs > 2.2)
+
+        k[mask_2] = 2.659 * (-2.156 + (1.509 / (wavs[mask_2])) - (0.198 / (wavs[mask_2] ** 2)) + (0.011 / (wavs[mask_2] ** 3))) + self.R_V
         k[mask_3] = 2.659 * (-1.857 + 1.040 / wavs[mask_3]) + self.R_V
-        # extrapolate redwards of 2.2 microns
-        # mask_4 = 
-        # k[mask_4] = 
+        if len(wavs[mask_2]) > 1 and len(wavs[mask_1]) > 0:
+            # extrapolate bluewards of 0.12 microns
+            k[mask_1] = interp1d(wavs[mask_2], k[mask_2], fill_value = "extrapolate")(wavs[mask_1])
+        if len(wavs[mask_3]) > 1 and len(wavs[mask_4]) > 0:
+            # extrapolate redwards of 2.2 microns
+            k[mask_4] = interp1d(wavs[mask_3], k[mask_3], fill_value = "extrapolate")(wavs[mask_4])
         return k
 
 
