@@ -95,15 +95,14 @@ class SED_code(ABC):
     
     def fit_cat(self, cat, z_max_lowz, *args, **kwargs):
         in_path = self.make_in(cat, *args, **kwargs)
-        print(in_path)
+        #print(in_path)
         out_folder = funcs.split_dir_name(in_path.replace("input", "output"), "dir")
         out_path = f"{out_folder}/{funcs.split_dir_name(in_path, 'name').replace('.in', '.out')}"
-        print(out_path)
+        #print(out_path)
         sed_folder = f"{out_folder}/SEDs/{cat.cat_creator.min_flux_pc_err}pc"
         os.makedirs(sed_folder, exist_ok = True)
 
         overwrite = config[self.__class__.__name__].getboolean(f"OVERWRITE_{self.__class__.__name__}_COLS")
-        print(overwrite)
         tab = Table.read(cat.cat_path, memmap = True)
         if not f"RUN_{self.__class__.__name__}" in tab.meta.keys() or overwrite:
             if config[self.__class__.__name__].getboolean(f"RUN_{self.__class__.__name__}"):
@@ -133,7 +132,6 @@ class SED_code(ABC):
             combined_cat.remove_column("IDENT")
             combined_cat.meta = {**combined_cat.meta, **{f"RUN_{self.code_name.upper()}": True, "ZMAXLOWZ": str(z_max_lowz), \
                 "CAT_PATH": cat.cat_path, "TEMPLATE": str(orig_templates + [templates])}}
-            raise(Exception())
             combined_cat.write(cat.cat_path, overwrite = True)
         else:
             combined_cat = orig_cat
