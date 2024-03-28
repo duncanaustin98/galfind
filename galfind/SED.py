@@ -9,18 +9,22 @@ Created on Tue Oct 10 13:30:14 2023
 # SED.py
 
 import astropy.units as u
+import astropy.constants as const
 import numpy as np
+import astropy.io.ascii as ascii
 from abc import ABC, abstractmethod
 import matplotlib.pyplot as plt
 from astropy.table import Table
 from scipy.interpolate import interp1d
 from scipy.integrate import quad
 from scipy.optimize import curve_fit
+import os
 from copy import deepcopy
 import glob
 
 from . import config, astropy_cosmo, Photometry, Photometry_obs, Mock_Photometry, IGM_attenuation, wav_lyman_lim, Emission_lines
 from . import useful_funcs_austind as funcs
+from . import galfind_logger
 from .Emission_lines import wav_lyman_alpha, line_diagnostics
 
 class SED:
@@ -276,24 +280,11 @@ class Mock_SED_rest(SED_rest): #, Mock_SED):
     def renorm_at_wav(self, mag): # this mag can also be a flux, but must have astropy units
         pass
     
-    # def un_attenuate_IGM(self, z_obs, IGM):
-    #     if isinstance(IGM, IGM_attenuation.IGM):
-    #         # un_attenuate SED for IGM absorption
-    #         # calculate rest wavelengths from self in the appropriate wavelength range between wav_lyman_lim and wav_lyman_alpha
-    #         attenuated_indices = ((self.wavs.value > wav_lyman_lim) & (self.wavs.value < wav_lyman_alpha))
-    #         IGM_transmission = IGM.interp_transmission(z_obs, self.wavs[attenuated_indices])
-    #         if self.mags.unit == u.ABmag:
-    #             self.mags[attenuated_indices] = (self.mags[attenuated_indices].value - -2.5 * np.log10(IGM_transmission)) * u.ABmag
-    #         else:
-    #             self.mags[attenuated_indices] /= IGM_transmission
-    #     elif IGM == None: # nothing to un-attenuate
-    #         pass
-    #     else:
-    #         raise(Exception(f"Could not attenuate by a non IGM object = {IGM}"))
-    
     def create_mock_phot(self, instrument, z, depths = [], min_pc_err = 10.):
         if type(depths) == dict:
            depths = [depth for (band, depth) in depths.items()]
+        if depths == []: # if depths not given, expect the galaxy to be very well detected
+            depths = [99. for band in instrument.bands]
         # convert self.mags to f_λ if needed
         if self.mags.unit == u.ABmag:
             self.mags = funcs.convert_mag_units(self.wavs, self.mags, u.erg / (u.s * (u.cm ** 2) * u.AA))
@@ -406,6 +397,8 @@ class Mock_SED_obs(SED_obs):
     def create_mock_phot(self, instrument, depths = [], min_pc_err = 10.):
         if type(depths) == dict:
             depths = [depth for (band, depth) in depths.items()]
+        if depths == []: # if depths not given, expect the galaxy to be very well detected
+            depths = [99. for band in instrument.bands]
         # convert self.mags to f_λ
         if self.mags.unit == u.ABmag:
             self.mags = funcs.convert_mag_units(self.wavs, self.mags, u.erg / (u.s * (u.cm ** 2) * u.AA))
@@ -435,13 +428,46 @@ class Mock_SED_obs(SED_obs):
         A, beta = mock_sed_rest.calc_UV_slope(output_errs = output_errs, method = method)
         return A, beta
     
+    def get_colour(self, colour_name):
+        if "mock_photometry" in self.__dict__:
+            bands = colour_name.split("-")
+            assert(len(bands) == 2)
+            # requires colour to exist in the mock photometry
+            for band in bands:
+                if band not in self.mock_photometry.instrument:
+                    galfind_logger.critical(f"self.mock_photometry includes the bands = {self.mock_photometry.instrument.bands}, and {band} is not included!")
+                assert(self.mock_photometry[band].unit == u.Jy)
+            # calculate colour in mags
+            colour = -2.5 * np.log10(self.mock_photometry[bands[0]] / self.mock_photometry[bands[1]])
+            # save colour in Mock_SED object
+            if "colours" in self.__dict__:
+                self.colours = {**self.colours, **{colour_name: colour.value}}
+            else:
+                self.colours = {colour_name: colour.value}
+            return colour.value
+        else:
+            galfind_logger.critical("self.mock_photometry does not exist! Please first create photometry from SED template!")
+    
     def add_DLA(self, DLA_obj):
+        self.colours = {} # reset colours
+        self.DLA = DLA_obj
         self.wavs = funcs.convert_wav_units(self.wavs, u.AA)
         self.mags = funcs.convert_mag_units(self.wavs, self.mags, u.Jy)
         self.mags *= DLA_obj.transmission(self.wavs / (1 + self.z))
+
+    def add_dust_attenuation(self, dust_attenuation, E_BminusV):
+        self.colours = {} # reset colours
+        self.dust_attenuation = dust_attenuation
+        self.E_BminusV = E_BminusV
+        self.wavs = funcs.convert_wav_units(self.wavs, u.AA)
+        self.mags = funcs.convert_mag_units(self.wavs, self.mags, u.Jy)
+        # attenuate flux in Jy (named self.mags)
+        print(dust_attenuation)
+        self.mags *= 10 ** (-0.4 * dust_attenuation.attenuate(self.wavs, E_BminusV))
     
     def add_emission_lines(self, line_diagnostics):
         pass
+
 
 class Mock_SED_template_set(ABC):
     
@@ -465,6 +491,9 @@ class Mock_SED_template_set(ABC):
     
     def __len__(self):
         return len(self.SED_arr)
+    
+    def create_mock_phot(self, instrument):
+        [sed.create_mock_phot(instrument) for sed in self.SED_arr]
         
     # @abstractmethod
     # def calc_UV_slope():
@@ -498,6 +527,35 @@ class Mock_SED_rest_template_set(Mock_SED_template_set):
             mock_SED_rest_arr.append(Mock_SED_rest.load_Yggdrasil_popIII_in_template(imf, fcov, sfh, name.split("/")[-1]))
         return cls(mock_SED_rest_arr)
     
+    @classmethod
+    def load_bpass_in_templates(cls, metallicity = "z020", imf = "imf135_300", model_type = "bin", alpha_enhancement = "a+06", log_ages = np.linspace(6., 9., int(np.round(3 / 0.1)) + 1), bpass_version = 2.3, m_UV_norm = 26.):
+        meta = {"metallicity": metallicity, "imf": imf, "model_type": model_type, "alpha_enhancement": alpha_enhancement, "bpass_version": bpass_version}
+        bpass_Lsun = 3.848e26 * u.J / u.s
+        bpass_dir = f"/raid/scratch/data/BPASS/BPASS_v{str(bpass_version)}_release/bpass_v{str(bpass_version)}.{alpha_enhancement}"
+        bpass_name = f"spectra-{model_type}-{imf}.{alpha_enhancement}.{metallicity}.dat"
+        SED_file = f"{bpass_dir}/{bpass_name}"
+        mock_SED_rest_arr = []
+        spectra = ascii.read(SED_file)
+        rest_wavs = np.array(spectra["col1"]) * u.AA
+        for i in range(2, 53):
+            age = 10 ** (0.1 * (i - 2)) * u.Myr
+            print(log_ages)
+            load_spectrum = False
+            if log_ages == "all":
+                load_spectrum = True
+            elif np.isclose(log_ages, np.log10(age.value) + 6.).any():
+                load_spectrum = True
+            else:
+                load_spectrum = False
+            if load_spectrum:
+                spectrum = (np.array(spectra[f"col{i}"])) * bpass_Lsun / u.AA
+                spectrum_Jy = funcs.luminosity_to_flux(spectrum, rest_wavs, out_units = u.Jy)
+                mock_sed_rest = Mock_SED_rest(rest_wavs.value, spectrum_Jy.value, u.AA, u.Jy, \
+                    template_name = bpass_name.replace(".dat", f"{age.value:.1f}Myr") , meta = {**meta, **{"age": age, "log_age_yr": np.log10(age.value) + 6.}})
+                mock_sed_rest.normalize_to_m_UV(26.)
+                mock_SED_rest_arr.append(mock_sed_rest)
+        return cls(mock_SED_rest_arr)
+
     def calc_mock_beta_phot(self, m_UV, template_set, instrument, depths, rest_UV_wav_lims = [1250., 3000.] * u.Angstrom):
         pass
 
@@ -505,6 +563,30 @@ class Mock_SED_obs_template_set(Mock_SED_template_set):
     
     def __init__(self, mock_SED_obs_arr):
         super().__init__(mock_SED_obs_arr)
-    
 
+    @classmethod
+    def from_Mock_SED_rest_template_set(cls, Mock_SED_rest_template_set, z_arr):
+        if type(z_arr) in [float, int]:
+            z_arr = np.full(len(Mock_SED_rest_template_set), z_arr)
+        return cls([Mock_SED_obs.from_Mock_SED_rest(mock_sed_rest, z) for mock_sed_rest, z in zip(Mock_SED_rest_template_set, z_arr)])
     
+    def get_colours(self, colour_names):
+        return [sed.get_colour(colour) for sed in self.SED_arr for colour in colour_names]
+    
+    def plot_colour_colour_tracks(self, ax, colour_x_name, colour_y_name, shown_log_ages = [7., 8., 9.], \
+            line_kwargs = {}, save = False, show = False, save_dir = "/nvme/scratch/work/austind/EPOCHS_I_plots"):
+        # assumes the SEDs are already sorted by age, starting with the youngest
+        colour_x = np.array([sed.colours[colour_x_name] for sed in self.SED_arr])
+        colour_y = np.array([sed.colours[colour_y_name] for sed in self.SED_arr])
+        ax.plot(colour_x, colour_y, **line_kwargs)
+
+        log_ages = [sed.meta["log_age_yr"] for sed in self.SED_arr]
+        plot_indices = np.array([True if np.isclose(shown_log_ages, log_age).any() and i != 0 else False for i, log_age in enumerate(log_ages)])
+        # plot youngest age SED as star
+        ax.scatter(colour_x[0], colour_y[0], color = line_kwargs["c"], marker = "*", zorder = 999., s = 50., path_effects = line_kwargs["path_effects"])
+        ax.scatter(colour_x[plot_indices], colour_y[plot_indices], color = line_kwargs["c"], marker = "s", s = 10., zorder = 999., path_effects = line_kwargs["path_effects"])
+        if save:
+            os.makedirs(save_dir, exist_ok = True)
+            plt.savefig(f"{save_dir}/{colour_x_name}_vs_{colour_y_name}.png", dvi = 400)
+        if show:
+            plt.show()

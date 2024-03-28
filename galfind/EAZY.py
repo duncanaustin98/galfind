@@ -326,6 +326,7 @@ class EAZY(SED_code):
     
     def extract_SEDs(self, fits_cat, ID, low_z_run = False, units = u.ABmag, just_header = False):
         SED_path = self.SED_path_from_cat_path(fits_cat.meta[f"{self.code_name}_path"], ID, low_z_run)
+       
         if not Path(SED_path).is_file():
             print(f'Not found EAZY SED at {SED_path}')
         if not just_header: 

@@ -1,0 +1,15 @@
+astropy
+astroquery
+eazy
+h5py
+joblib
+matplotlib
+numpy
+photutils
+seaborn
+pyregion
+scipy
+sep
+setuptools
+tqdm
+yagmail

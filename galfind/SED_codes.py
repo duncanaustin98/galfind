@@ -101,7 +101,7 @@ class SED_code(ABC):
         #print(out_path)
         sed_folder = f"{out_folder}/SEDs/{cat.cat_creator.min_flux_pc_err}pc"
         os.makedirs(sed_folder, exist_ok = True)
-
+        
         overwrite = config[self.__class__.__name__].getboolean(f"OVERWRITE_{self.__class__.__name__}_COLS")
         tab = Table.read(cat.cat_path, memmap = True)
         if not f"RUN_{self.__class__.__name__}" in tab.meta.keys() or overwrite:

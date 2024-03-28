@@ -676,8 +676,16 @@ class Data:
         else:
             raise(Exception(f"More than 1 mask for {stack_band_name}. Please change this in {self.mask_dir}"))
         
-        if not Path(self.im_paths[stack_band_name]).is_file():
+        overwrite = config["DEFAULT"].getboolean("OVERWRITE")
+        if overwrite:
+            galfind_logger.info("OVERWRITE = YES, so overwriting stacked image if it exists.")
+    
+        if not Path(self.im_paths[stack_band_name]).is_file(): # or overwrite
+            # if not config["DEFAULT"].getboolean("RUN"):
+            #     galfind_logger.critical("RUN = YES, so not stacking detection bands. Returning Error.")
+            #     raise Exception(f"RUN = YES, and combination of {self.survey} {self.version} or {self.instrument.name} has not previously been stacked.")
             funcs.make_dirs(self.im_paths[stack_band_name])
+            
             for pos, band in enumerate(bands):
                 if self.im_shapes[band] != self.im_shapes[bands[0]] or self.im_zps[band] != self.im_zps[bands[0]] or self.im_pixel_scales[band] != self.im_pixel_scales[bands[0]]:
                     raise Exception('All bands used in forced photometry stack must have the same shape, ZP and pixel scale!')
@@ -735,8 +743,17 @@ class Data:
                 self.stack_bands(forced_phot_band)
                 self.forced_phot_band = self.combine_band_names(forced_phot_band)
                 self.seg_paths[self.forced_phot_band] = self.seg_path(self.forced_phot_band)
-                if not Path(self.seg_paths[self.forced_phot_band]).is_file():
+                overwrite = config["DEFAULT"].getboolean("OVERWRITE")
+                if overwrite:
+                    galfind_logger.info("OVERWRITE = YES, so overwriting segmentation map if it exists.")
+            
+                if not Path(self.seg_paths[self.forced_phot_band]).is_file() or overwrite:
+                    if not config["DEFAULT"].getboolean("RUN"):
+                        galfind_logger.critical("RUN = YES, so running through sextractor. Returning Error.")
+                        raise Exception(f"RUN = YES, and combination of {self.survey} {self.version} or {self.instrument.name} has not previously been run through sextractor.")
+
                     self.make_seg_map(forced_phot_band)
+                    
             else:
                 self.forced_phot_band = forced_phot_band[0]
         else:
@@ -753,8 +770,14 @@ class Data:
             sex_cat_path = self.sex_cat_path(band, self.forced_phot_band)
             galfind_logger.debug(f"band = {band}, sex_cat_path = {sex_cat_path} in Data.make_sex_cats")
             
+            # overwrite = config["DEFAULT"].getboolean("OVERWRITE")
+            # if overwrite:
+            #         galfind_logger.info("OVERWRITE = YES, so overwriting sextractor output if it exists.")
             # if not run before
-            if not Path(sex_cat_path).is_file():
+            if not Path(sex_cat_path).is_file(): # or overwrite
+                # if not config["DEFAULT"].getboolean("RUN"):
+                #     galfind_logger.critical("RUN = YES, so not running sextractor. Returning Error.")
+                #     raise Exception(f"RUN = YES, and combination of {self.survey} {self.version} or {self.instrument.name} has not previously been run through sextractor.")
                 
                 # check whether the image of the forced photometry band and sextraction band have the same shape
                 if self.im_shapes[self.forced_phot_band] == self.im_shapes[band]:
@@ -799,7 +822,15 @@ class Data:
         save_name = f"{self.survey}_MASTER_Sel-{self.combine_band_names(forced_phot_band)}_{self.version}.fits"
         save_dir = f"{config['DEFAULT']['GALFIND_WORK']}/Catalogues/{self.version}/{self.instrument.name}/{self.survey}"
         self.sex_cat_master_path = f"{save_dir}/{save_name}"
-        if not Path(self.sex_cat_master_path).is_file():
+        overwrite = config["DEFAULT"].getboolean("OVERWRITE")
+        if overwrite:
+            galfind_logger.info("OVERWRITE = YES, so overwriting combined catalogue if it exists.")
+         
+        if not Path(self.sex_cat_master_path).is_file() or overwrite:
+            if not config["DEFAULT"].getboolean("RUN"):
+                galfind_logger.critical("RUN = YES, so not combining catalogues. Returning Error.")
+                raise Exception(f"RUN = YES, and combination of {self.survey} {self.version} or {self.instrument.name} has not previously been combined into a catalogue.")
+
             if type(forced_phot_band) == np.array or type(forced_phot_band) == list:
                 forced_phot_band_name = self.combine_band_names(forced_phot_band)
             else:

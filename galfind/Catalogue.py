@@ -191,7 +191,16 @@ class Catalogue(Catalogue_Base):
             
     def make_ext_src_corr_cat(self, code_name = "EAZY", templates_arr = ["fsps", "fsps_larson", "fsps_jades"], join_tables = True):
         ext_src_cat_name = f"{funcs.split_dir_name(self.cat_path, 'dir')}/Extended_source_corrections_{code_name}.fits"
-        if not Path(ext_src_cat_name).is_file():
+        overwrite = config["DEFAULT"].getboolean("OVERWRITE")
+        
+        if overwrite:
+            galfind_logger.info(f"OVERWRITE = YES, so overwriting coord_{band}.reg if it exists.")
+      
+        if not Path(ext_src_cat_name).is_file() or overwrite:
+            if not config["DEFAULT"].getboolean("RUN"):
+                galfind_logger.critical("RUN = YES, so not making ext correction cat. Returning Error.")
+                raise Exception(f"RUN = YES, and combination of {self.survey} {self.version} or {self.instrument.name} has not previously been run.")
+
             ext_src_corrs_band = {}
             ext_src_bands = []
             for i, band in tqdm(enumerate(self.data.instrument.bands), total = len(self.data.instrument.bands), desc = f"Calculating extended source corrections for {self.cat_path}"):
@@ -329,122 +338,25 @@ class Catalogue(Catalogue_Base):
         else:
             galfind_logger.info(f"Catalogue for {self.survey} {self.version} already masked. Skipping!")    
     
-    def mask_old(self, mask_instrument):
-        im_data, im_header, seg_data, seg_header, mask = self.data.load_data("f444W", incl_mask = True)
-        wcs = WCS(im_header)
-        if self.data.is_blank:
-            # add 'blank_module == True' to every galaxy in the catalogue
-            blank_flags = [True] * len(self.gals)
-            for gal in self:
-                # changed syntax from "blank" to "blank_module"
-                gal.mask_flags["blank_module"] = True
-        else: # mask cluster/blank field in reddest band (f444W for our NIRCam fields)
-            blank_flags = []
-            # add 'blank_module == True' to galaxies in the blank module
-            if self.data.blank_mask_path != "":
-                blank_mask_file = pyregion.open(self.data.blank_mask_path).as_imagecoord(im_header) # file for mask
-                blank_mask = blank_mask_file.get_mask(hdu = fits.open(self.data.im_paths[self.data.instrument.bands[-1]])[self.data.im_exts[self.data.instrument.bands[-1]]])
-                for gal in self:
-                    pix_values = wcs.world_to_pixel(gal.sky_coord)
-                    x_pix = int(np.rint(pix_values[0]))
-                    y_pix = int(np.rint(pix_values[1]))
-                    blank_flag = blank_mask[y_pix][x_pix]
-                    #print(mask_flag_gal)
-                    if y_pix >= mask.shape[0] or x_pix >= mask.shape[1] or x_pix < 0 or y_pix < 0: # catch HST masking errors
-                        mask_flag_gal = True
-                    else:
-                        mask_flag_gal = blank_mask[y_pix][x_pix]
-                    if mask_flag_gal == True:
-                        gal.mask_flags["blank_module"] = False
-                        blank_flags.append(False)
-                    else:
-                        gal.mask_flags["blank_module"] = True
-                        blank_flags.append(True)
-                # update saved catalogue
-                cat = self.open_full_cat()
-                cat["blank_module"] = blank_flags #.astype(bool)
-                cat.write(masked_cat_path, overwrite = True)
-                self.cat_path = masked_cat_path
-                print("Finished masking blank field")
-            else:
-                raise(Exception("Must manually create a 'blank' field mask in the 'Data' object if 'flag_blank_field == True'!"))
-            # add 'cluster == True' to every galaxy within the cluster
-            cluster_flags = []
-            if self.data.cluster_mask_path != "":
-                cluster_mask_file = pyregion.open(self.data.cluster_mask_path).as_imagecoord(im_header) # file for mask
-                cluster_mask = cluster_mask_file.get_mask(hdu = fits.open(self.data.im_paths[self.data.instrument.bands[-1]])[self.data.im_exts[self.data.instrument.bands[-1]]])
-                for gal in self:
-                    pix_values = wcs.world_to_pixel(gal.sky_coord)
-                    x_pix = int(np.rint(pix_values[0]))
-                    y_pix = int(np.rint(pix_values[1]))
-                    cluster_flag = cluster_mask[y_pix][x_pix]
-                    #print(mask_flag_gal)
-                    gal.mask_flags["cluster"] = cluster_flag
-                    cluster_flags.append(cluster_flag)
-                # update saved catalogue
-                cat = self.open_full_cat()
-                cat["cluster"] = cluster_flags #.astype(bool)
-                cat.write(masked_cat_path, overwrite = True)
-                self.cat_path = masked_cat_path
-                print("Finished masking cluster")
-            else:
-                raise(Exception("Must manually create a 'cluster' mask in the 'Data' object!"))
-                
-        # mask each band individually
-        for i, (band, mask_path) in enumerate(self.data.mask_paths.items()):
-            im_data, im_header, seg_data, seg_header, mask = self.data.load_data(band, incl_mask = True)
+    def make_cutouts(self, IDs, cutout_size = 32):
+        for band in tqdm(self.instrument, total = len(self.instrument), desc = "Making band cutouts"):
+            im_data, im_header, seg_data, seg_header = self.data.load_data(band, incl_mask = False)
+            wht_data = self.data.load_wht(band)
             wcs = WCS(im_header)
-            
-            # make a flag array to say whether each object lies within the mask or not
-            mask_flag_arr = []
-            for j, gal in enumerate(self.gals):
-                pix_values = wcs.world_to_pixel(gal.sky_coord)
-                x_pix = int(np.rint(pix_values[0]))
-                y_pix = int(np.rint(pix_values[1]))
-                # if j == 0:
-                #     print(mask.shape, im_data.shape, seg_data.shape)
-                if y_pix >= mask.shape[0] or x_pix >= mask.shape[1] or x_pix < 0 or y_pix < 0: # catch HST masking errors
-                    mask_flag_gal = True
-                else:
-                    mask_flag_gal = mask[y_pix][x_pix]
-                #print(mask_flag_gal)
-                if mask_flag_gal == True:
-                    gal.mask_flags[f"unmasked_{band}"] = False
-                    mask_flag_arr.append(False)
-                else:
-                    gal.mask_flags[f"unmasked_{band}"] = True
-                    mask_flag_arr.append(True)
-            # update saved catalogue
-            cat = self.open_full_cat()
-            cat[f"unmasked_{band}"] = mask_flag_arr #.astype(bool)
-            cat.write(masked_cat_path, overwrite = True)
-            print(f"Finished masking {band}")
-            self.cat_path = masked_cat_path
-
-        # add additional boolean column to say whether an object is unmasked in all columns or not
-        unmasked_blank = []
-        for i, gal in enumerate(self):
-            good_galaxy = True
-            for band in self.data.instrument.bands:
-                if band in mask_instrument.bands and not gal.mask_flags[f"unmasked_{band}"]:
-                    good_galaxy = False
-                    break
-            # don't include blank field galaxies in final boolean unmasked column
-            if not self.data.is_blank:
-                if not gal.mask_flags["blank_module"]:
-                    good_galaxy = False
-            unmasked_blank.append(good_galaxy)
-            gal.mask_flags[f"unmasked_blank_{mask_instrument.name}"] = good_galaxy
-        cat = self.open_full_cat()
-        cat[f"unmasked_blank_{mask_instrument.name}"] = unmasked_blank
-        cat.write(masked_cat_path, overwrite = True)
-        self.cat_path = masked_cat_path
-        print("Finished masking!")
+            for gal in self:
+                if gal.ID in IDs:
+                    gal.make_cutout(band, data = {"SCI": im_data, "SEG": seg_data, self.data.wht_types[band]: wht_data}, \
+                        wcs = wcs, im_header = im_header, survey = self.survey, version = self.version, cutout_size = cutout_size)
     
     def make_UV_fit_cat(self, code_name = "EAZY", templates = "fsps_larson", UV_PDF_path = config["RestUVProperties"]["UV_PDF_PATH"], col_names = ["Beta", "flux_lambda_1500", "flux_Jy_1500", "M_UV", "A_UV", "L_obs", "L_int", "SFR"], \
                         join_tables = True, skip_IDs = [], rest_UV_wavs_arr = [[1250., 3000.] * u.AA], conv_filt_arr = [True, False], overwrite = True):
         UV_cat_name = f"{funcs.split_dir_name(self.cat_path, 'dir')}/UV_properties_{code_name}_{templates}_{str(self.cat_creator.min_flux_pc_err)}pc.fits" # _test
         if not Path(UV_cat_name).is_file() or overwrite:
+            if not config["DEFAULT"].getboolean("RUN"):
+                galfind_logger.critical("RUN = YES, so not making UV corrected cat. Returning Error.")
+                raise Exception(f"RUN = YES, and combination of {self.survey} {self.version} or {self.instrument.name} has not previously been run.")
+
+
             cat_data = []
             #print("Bands here: ", self[1].phot.instrument.bands)
             for i, gal in tqdm(enumerate(self), total = len(self), desc = "Making UV fit catalogue"):

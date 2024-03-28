@@ -18,8 +18,15 @@ import numpy as np
 from pathlib import Path
 from astropy.cosmology import FlatLambdaCDM
 
-galfind_dir = "/".join(__file__.split("/")[:-1])
-config_path = f"{galfind_dir}/configs/galfind_config.ini" # needs to be able to be changed by the user
+galfind_dir = "/".join(__file__.split("/")[:-1]) 
+
+try:
+    config_path = os.environ['GALFIND_CONFIG_PATH']
+
+except KeyError:
+    config_path = f"{galfind_dir}/configs/galfind_config.ini" # needs to be able to be changed by the user
+
+print('Reading GALFIND config file from:', config_path)
 # configuration variables
 config = configparser.ConfigParser()
 config.read(config_path)
@@ -53,6 +60,10 @@ if config.getboolean("DEFAULT", "USE_LOGGING"):
     galfind_log_formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s', datefmt = '%Y-%m-%d %H:%M:%S')
     file_handler.setFormatter(galfind_log_formatter)
     galfind_logger.addHandler(file_handler)
+    try:
+        os.chmod(log_file_path, 0o777)
+    except PermissionError:
+        galfind_logger.warning(f"Could not change permissions of {log_file_path} to 777.")
     # print out the default galfind config file parameters
     for i, (option, value) in enumerate(config["DEFAULT"].items()):
         if i == 0:
@@ -112,3 +123,4 @@ from .Emission_lines import Emission_line, wav_lyman_alpha, line_diagnostics
 from . import IGM_attenuation
 from . import lyman_alpha_damping_wing
 from .DLA import DLA
+from .Dust_Attenuation import Dust_Attenuation, Calzetti00

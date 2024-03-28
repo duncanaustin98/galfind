@@ -33,7 +33,16 @@ class LePhare(SED_code):
     
     def make_in(self, cat, units = u.ABmag, fix_z = False, *args, **kwargs): # from FITS_organiser.py
         lephare_in_path = f"{self.code_dir}/input/{cat.data.instrument.name}/{cat.data.version}/{cat.data.survey}/{cat.cat_name.replace('.fits', '')}_{cat.cat_creator.min_flux_pc_err}pc.in"
-        if not Path(lephare_in_path).is_file():
+        overwrite = config["DEFAULT"].getboolean("OVERWRITE")
+        if overwrite:
+            galfind_logger.info("OVERWRITE = YES, so overwriting LePhare input if it exists.")
+ 
+        if not Path(lephare_in_path).is_file() or overwrite:
+            if not config["DEFAULT"].getboolean("RUN"):
+                galfind_logger.critical("RUN = YES, so not running LePhare. Returning Error.")
+                raise Exception(f"RUN = YES, and combination of {self.survey} {self.version} or {self.instrument.name} has not previously been run through LePhare.")
+
+
         # 1) obtain input data
             IDs = np.array([gal.ID for gal in cat.gals]) # load IDs
             # load redshifts
