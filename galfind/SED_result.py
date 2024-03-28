@@ -93,7 +93,6 @@ class Catalogue_SED_results:
             pass
         else:
             raise(Exception("Must specify either phot or instrument in Galaxy_SED_results!"))
-        
         if fits_cat_path != None:
             pass
         elif "cat_path" in fits_cat.meta.keys():
@@ -103,16 +102,15 @@ class Catalogue_SED_results:
             raise(Exception())
         
         labels_dict = {gal_property: funcs.GALFIND_SED_column_labels(codes, lowz_zmaxs, templates_arr, gal_property) for gal_property in gal_properties}
-        print(labels_dict)
-        
-        print(codes, lowz_zmaxs, templates_arr, gal_properties)
-        print("Need to sort out cat_redshifts and cat_chi_sqs in Catalogue_SED_results.from_fits_cat")
+        #print(labels_dict)
+        #print(codes, lowz_zmaxs, templates_arr, gal_properties)
+        #print("Need to sort out cat_redshifts and cat_chi_sqs in Catalogue_SED_results.from_fits_cat")
         #galfind_logger.error("ERROR!")
         #z = float(fits_cat_row[code.galaxy_property_labels("z_phot", templates, lowz_zmax)])
-        print(fits_cat.columns)
+        #print(fits_cat.columns)
         cat_redshifts = np.array([fits_cat[labels] for labels in labels_dict["z_phot"]])
         cat_chi_sqs = np.array([fits_cat[labels] for labels in labels_dict["chi_sq"]])
-        print(cat_redshifts, cat_chi_sqs, fits_cat, labels_dict, labels_dict["z_phot"])
+        #print(cat_redshifts, cat_chi_sqs, fits_cat, labels_dict, labels_dict["z_phot"])
         IDs = np.array(fits_cat[cat_creator.ID_label]).astype(int)
         cat_z_PDF_paths = []
         cat_SED_paths = []

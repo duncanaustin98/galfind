@@ -11,6 +11,7 @@ Created on Wed May 31 00:17:39 2023
 
 import os
 import numpy as np
+import json
 from abc import ABC, abstractmethod
 import astropy.units as u
 import itertools
@@ -56,7 +57,7 @@ class SED_code(ABC):
     
     def load_photometry(self, cat, SED_input_bands, out_units, no_data_val, upper_sigma_lim = {}):
         # load in raw photometry from the galaxies in the catalogue and convert to appropriate units
-        phot = np.array([gal.phot.flux_Jy.to(out_units) for gal in cat])#[:, :, 0]
+        phot = np.array([gal.phot.flux_Jy.to(out_units) for gal in cat]) #[:, :, 0]
         phot_shape = phot.shape
 
         if out_units != u.ABmag:
@@ -93,68 +94,55 @@ class SED_code(ABC):
         return phot_in, phot_err_in
     
     def fit_cat(self, cat, z_max_lowz, *args, **kwargs):
-        print(z_max_lowz)
         in_path = self.make_in(cat, *args, **kwargs)
+        #print(in_path)
         out_folder = funcs.split_dir_name(in_path.replace("input", "output"), "dir")
         out_path = f"{out_folder}/{funcs.split_dir_name(in_path, 'name').replace('.in', '.out')}"
+        #print(out_path)
         sed_folder = f"{out_folder}/SEDs/{cat.cat_creator.min_flux_pc_err}pc"
         os.makedirs(sed_folder, exist_ok = True)
-        fits_out_path = self.out_fits_name(out_path, *args, **kwargs)
-        #print(f"fit_cat fits_out_path = {fits_out_path}")
-        overwrite = config["DEFAULT"].getboolean("OVERWRITE")
-        if overwrite:
-            galfind_logger.info("OVERWRITE = YES, so overwriting EAZY fits if they exist.")
- 
-        if not Path(fits_out_path).is_file() or overwrite:
-            print(f"Running SED fitting for {self.__class__.__name__}")
-            if not config["DEFAULT"].getboolean("RUN"):
-                galfind_logger.critical("RUN = YES, so not making running EAZY. Returning Error.")
-                raise Exception(f"RUN = YES, and combination of {self.survey} {self.version} or {self.instrument.name} has not previously been run through EAZY.")
-
-
-            self.run_fit(in_path, out_path, sed_folder, cat.instrument.new_instrument(), z_max_lowz = z_max_lowz, *args, **kwargs)
-            self.make_fits_from_out(out_path, *args, **kwargs)
-        # update galaxies within catalogue object with determined properties
-        cat = self.update_cat(cat, fits_out_path, z_max_lowz, *args, **kwargs)
+        
+        overwrite = config[self.__class__.__name__].getboolean(f"OVERWRITE_{self.__class__.__name__}_COLS")
+        tab = Table.read(cat.cat_path, memmap = True)
+        if not f"RUN_{self.__class__.__name__}" in tab.meta.keys() or overwrite:
+            if config[self.__class__.__name__].getboolean(f"RUN_{self.__class__.__name__}"):
+                print(f"Running SED fitting for {self.__class__.__name__}")
+                self.run_fit(in_path, out_path, sed_folder, cat.instrument.new_instrument(), z_max_lowz = z_max_lowz, *args, **kwargs)
+            fits_out_path = self.make_fits_from_out(out_path, *args, **kwargs)
+            # update galaxies within catalogue object with determined properties
+            cat = self.update_cat(cat, fits_out_path, z_max_lowz, *args, **kwargs)
         return cat
     
     def update_cat(self, cat, fits_out_path, z_max_lowz, *args, **kwargs):
         if self.__class__.__name__ == "EAZY":
-            templates = [kwargs.get("templates")]
+            templates = kwargs.get("templates")
         elif self.__class__.__name__ == "LePhare":
-            templates = ["BC03"]
-        # save concatenated catalogue only if it has not already been concatenated
-        concat_tables = False
-        orig_cat_col_names = Table.read(cat.cat_path).columns
-        for name in Table.read(fits_out_path).columns:
-            if name != "IDENT" and name not in orig_cat_col_names:
-                concat_tables = True
-                break
-        print(f"concat_tables = {concat_tables}")
-        if concat_tables:
-            combined_cat = join(Table.read(cat.cat_path), Table.read(fits_out_path), keys_left = "NUMBER", keys_right = "IDENT")
-            combined_cat_path = f"{config['DEFAULT']['GALFIND_WORK']}/Catalogues/{cat.version}/{cat.instrument.name}/" + \
-                f"{cat.survey}/{funcs.split_dir_name(fits_out_path.replace('_matched', '').replace('_EAZY', '').replace('.fits', '_matched.fits'), 'name')}"
-            if self.__class__.__name__ == "EAZY":
-                combined_cat_path = combined_cat_path.replace(f"_eazy_{templates}", "_EAZY")
-                #print("EAZY naming system requires updating")
-            if not Path(combined_cat_path).parent.is_dir():
-                funcs.make_dirs(str(Path(combined_cat_path).parent)+'/')
-            combined_cat.remove_column("IDENT")
-            combined_cat.write(combined_cat_path, overwrite = True)
-            cat.cat_path = combined_cat_path
-        else:
-            combined_cat = Table.read(cat.cat_path)
+            templates = "BC03"
 
-        combined_cat.meta["cat_path"] = cat.cat_path
-        combined_cat.meta = {**combined_cat.meta, **{f"{self.code_name}_path": fits_out_path}}
+        # open original catalogue
+        orig_cat = Table.read(cat.cat_path)
+        if "TEMPLATE" in orig_cat.meta.keys():
+            orig_templates = (orig_cat.meta["TEMPLATE"]).replace(" ", "").replace("[", "").replace("]", "").split(",")
+        else:
+            orig_templates = []
+        # combine catalogues should results for the template set not already be included
+        if templates not in orig_templates:
+            combined_cat = join(orig_cat, Table.read(fits_out_path), keys_left = "NUMBER", keys_right = "IDENT")
+            combined_cat_path = cat.cat_path
+            combined_cat.remove_column("IDENT")
+            combined_cat.meta = {**combined_cat.meta, **{f"RUN_{self.code_name.upper()}": True, "ZMAXLOWZ": str(z_max_lowz), \
+                "CAT_PATH": cat.cat_path, "TEMPLATE": str(orig_templates + [templates])}}
+            combined_cat.write(cat.cat_path, overwrite = True)
+        else:
+            combined_cat = orig_cat
+
         # update galaxies within the catalogue with new SED fits
         print(f"z_max_lowz = {z_max_lowz}")
         #galfind_logger.error("Quick z_max_lowz fix!!!")
         if type(z_max_lowz) not in [list, np.array]:
             z_max_lowz = [z_max_lowz]
         cat_SED_results = Catalogue_SED_results.from_fits_cat(combined_cat, cat.cat_creator, \
-                        [self], z_max_lowz, templates, phot_arr = [gal.phot for gal in cat]).SED_results
+            [self], z_max_lowz, [templates], phot_arr = [gal.phot for gal in cat], fits_cat_path = cat.cat_path).SED_results
         cat.update_SED_results(cat_SED_results)
         return cat
         

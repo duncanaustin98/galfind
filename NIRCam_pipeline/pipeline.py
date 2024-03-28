@@ -15,14 +15,14 @@ import time
 from galfind import Catalogue, config #, LePhare, EAZY, 
 from galfind.Catalogue_Creator import GALFIND_Catalogue_Creator
 
-def pipeline(surveys, version, instruments, xy_offsets, aper_diams, code_names, lowz_zmax, min_flux_pc_errs, forced_phot_band, excl_bands, \
-             cat_type = "loc_depth", n_loc_depth_samples = 5, fast = True, eazy_templates = ["fsps_larson"]):
+def pipeline(surveys, version, instruments, aper_diams, code_names, lowz_zmax, min_flux_pc_errs, forced_phot_band, excl_bands, \
+             cat_type = "loc_depth", eazy_templates = ["fsps_larson"]):
     for pc_err in min_flux_pc_errs:
         # make appropriate galfind catalogue creator for each aperture diameter
         cat_creator = GALFIND_Catalogue_Creator(cat_type, aper_diams[0], pc_err)
-        for survey, xy_offset in zip(surveys, xy_offsets):
-            cat = Catalogue.from_pipeline(survey = survey, version = version, instruments = instruments, aper_diams = aper_diams, cat_creator = cat_creator, code_names = code_names, lowz_zmax = lowz_zmax, xy_offset = xy_offset, \
-                                          forced_phot_band = forced_phot_band, excl_bands = excl_bands, loc_depth_min_flux_pc_errs = min_flux_pc_errs, n_loc_depth_samples = n_loc_depth_samples, templates_arr = eazy_templates, fast = fast)
+        for survey in surveys:
+            cat = Catalogue.from_pipeline(survey = survey, version = version, instruments = instruments, aper_diams = aper_diams, cat_creator = cat_creator, code_names = code_names, lowz_zmax = lowz_zmax, \
+                                          forced_phot_band = forced_phot_band, excl_bands = excl_bands, loc_depth_min_flux_pc_errs = min_flux_pc_errs, templates_arr = eazy_templates)
             print(cat.cat_path)
             cat.data.calc_unmasked_area(forced_phot_band)
             
@@ -40,22 +40,20 @@ def pipeline(surveys, version, instruments, xy_offsets, aper_diams, code_names, 
 
 if __name__ == "__main__":
     version = "v11" #config["DEFAULT"]["VERSION"] #"v9_sex_test1"
-    instruments = ['NIRCam'] #, 'ACS_WFC'] #, 'WFC3IR'] # Can leave this - if there is no data for an instrument it is removed automatically
+    instruments = ["NIRCam"] #, 'ACS_WFC'] #, 'WFC3IR'] # Can leave this - if there is no data for an instrument it is removed automatically
     cat_type = "loc_depth"
-    surveys = ["JADES-3215"] #[config["DEFAULT"]["SURVEY"]] # [f"CEERSP{int(i + 1)}" for i in range(0, 10)] #
+    surveys = ["NGDEEP2"] #[config["DEFAULT"]["SURVEY"]] # [f"CEERSP{int(i + 1)}" for i in range(0, 10)] #
     aper_diams = [0.32] * u.arcsec
-    xy_offsets = [[0, 0], [0, 0], [0, 0], [0, 0], [0, 0], [0, 0], [0, 0], [0, 0], [0, 0], [0, 0]]
-    code_names = ["EAZY", "EAZY", "EAZY"] #[LePhare()]
-    eazy_templates = ["fsps", "fsps_larson", "fsps_jades"] #["fsps", "fsps_larson", "fsps_jades"]
-    eazy_lowz_zmax = [[4., 6.], [4., 6.], [4., 6.]]
+    code_names = ["EAZY"]
+    eazy_templates = ["fsps_larson"] #["fsps", "fsps_larson", "fsps_jades"]
+    eazy_lowz_zmax = [[4., 6.]] #, [4., 6.], [4., 6.]]
     min_flux_pc_errs = [10]
     forced_phot_band = ["f277W", "f356W", "f444W"]
-    fast_depths = False
     jems_bands = ["f182M", "f210M", "f430M", "f460M", "f480M"]
+
     ngdeep_excl_bands = ["f435W", "f775W", "f850LP"]
     #jades_3215_excl_bands = ["f162M", "f115W", "f150W", "f200W", "f410M", "f182M", "f210M", "f250M", "f300M", "f335M", "f277W", "f356W", "f444W"] 
     excl_bands = []
-    n_loc_depth_samples = 20
 
     for survey in surveys:
-        pipeline([survey], version, instruments, xy_offsets, aper_diams, code_names, eazy_lowz_zmax, min_flux_pc_errs, forced_phot_band, excl_bands, cat_type = cat_type, n_loc_depth_samples = n_loc_depth_samples, fast = fast_depths, eazy_templates = eazy_templates)
+        pipeline([survey], version, instruments, aper_diams, code_names, eazy_lowz_zmax, min_flux_pc_errs, forced_phot_band, excl_bands, cat_type = cat_type, eazy_templates = eazy_templates)

@@ -99,6 +99,7 @@ wav_lyman_lim = 911.8 # * u.AA
 
 from . import useful_funcs_austind
 from . import NIRCam_aperture_corrections as NIRCam_aper_corr
+from . import Depths
 from .Data import Data
 from .Instrument import Instrument, ACS_WFC, WFC3_IR, NIRCam, MIRI, Combined_Instrument
 from .Photometry import Photometry, Multiple_Photometry, Mock_Photometry
