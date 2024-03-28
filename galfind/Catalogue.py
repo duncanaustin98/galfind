@@ -83,8 +83,8 @@ class Catalogue(Catalogue_Base):
         if mask:
             cat_obj.mask()
         # run SED fitting for the appropriate code names/low-z runs
+        print(codes, lowz_zmax_arr, templates_arr)
         for i, (code, lowz_zmax, templates) in enumerate(zip(codes, lowz_zmax_arr, templates_arr)):
-            print(i)
             cat_obj = code.fit_cat(cat_obj, lowz_zmax, templates = templates)
         return cat_obj
     
@@ -92,6 +92,7 @@ class Catalogue(Catalogue_Base):
         assert(len(cat_SED_results) == len(self))
         print("Updating SED results in galfind catalogue object")
         [gal.update(gal_SED_result) for gal, gal_SED_result in zip(self, cat_SED_results)]
+
     
     # %% Overloaded operators
     
