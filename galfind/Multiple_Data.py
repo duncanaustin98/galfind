@@ -48,6 +48,7 @@ class Multiple_Data:
     @staticmethod
     def check_available_data(versions):
         # print available data for each version
+        pass
 
 
 if __name__ == "__main__":
