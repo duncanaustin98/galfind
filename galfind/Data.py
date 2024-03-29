@@ -14,15 +14,19 @@ from random import randrange
 from pathlib import Path
 import sep # sextractor for python
 import matplotlib.pyplot as plt
+import cv2
 import math
 import timeit
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 from astropy.wcs.utils import pixel_to_skycoord
 from astropy.coordinates import search_around_sky, SkyCoord
+from astropy.visualization.mpl_normalize import ImageNormalize
+import astropy.visualization as vis
 from matplotlib.colors import LogNorm
 from astropy.table import Table, hstack, Column
 import copy
 import pyregion
+from regions import Regions
 import subprocess
 import time
 import glob
@@ -39,24 +43,22 @@ import joblib
 import h5py
 from tqdm import tqdm
 import logging
+from astroquery.gaia import Gaia
 
 from .Instrument import Instrument, ACS_WFC, WFC3_IR, NIRCam, MIRI, Combined_Instrument
-from . import config
-from . import Depths
+from . import config, galfind_logger, Depths
 from . import useful_funcs_austind as funcs
 from .decorators import run_in_dir, hour_timer, email_update
-from . import galfind_logger
 
 # GALFIND data object
 class Data:
     
     def __init__(self, instrument, im_paths, im_exts, im_pixel_scales, im_shapes, im_zps, wht_paths, wht_exts, rms_err_paths, rms_err_exts, \
         seg_paths, mask_paths, cluster_mask_path, blank_mask_path, survey, version, cat_path = "", is_blank = True, alignment_band = "f444W"):
-        # self, instrument, im_paths, im_exts, seg_paths, mask_paths, cluster_mask_path, blank_mask_path, survey, version = "v0", is_blank = True):
         
         # sort dicts from blue -> red bands in ascending wavelength order
         self.im_paths = dict(sorted(im_paths.items()))
-        self.im_exts = dict(sorted(im_exts.items())) # science image extension
+        self.im_exts = dict(sorted(im_exts.items()))
         self.survey = survey
         self.version = version
         self.instrument = instrument
@@ -102,6 +104,7 @@ class Data:
                 mask_paths[band] = self.mask_reg_to_pix(band, mask_path)
             else:
                 # make an pixel mask automatically for the band
+                mask_paths[band] = self.make_mask(band)
                 galfind_logger.critical(f"No .fits or .reg mask for {survey} {band} and not yet implemented auto-masking.")
         self.mask_paths = dict(sorted(mask_paths.items()))
 
@@ -557,6 +560,8 @@ class Data:
         combined_mask = np.logical_or(seg_data > 0, mask == 1).astype(int)
         return combined_mask
 
+    
+
     def plot_image_from_band(self, ax, band, norm = LogNorm(vmin = 0., vmax = 10.), show = True):
         im_data = self.load_data(band, incl_mask = False)[0]
         self.plot_image_from_data(ax, im_data, band, norm, show)
@@ -593,6 +598,147 @@ class Data:
             ax.add_patch(p)
         for t in artist_list:
             ax.add_artist(t)
+
+    def make_mask(self, band, edge_mask_distance = 50, mask_stars = True, scale_extra = 0.2,
+            mask_a = 694.7, mask_b = 3.5, exclude_gaia_galaxies = True, angle = 0, edge_value = 0, 
+            element = 'ELLIPSE', gaia_row_lim = 500, plot = False):
+        
+        composite = lambda x_coord, y_coord, scale, angle: \
+            f'''# Region file format: DS9 version 4.1
+            global color=green dashlist=8 3 width=1 font="helvetica 10 normal roman" select=1 highlite=1 dash=0 fixed=0 edit=1 move=1 delete=1 include=1 source=1
+            image
+            composite({x_coord},{y_coord},{angle}) || composite=1
+                circle({x_coord},{y_coord},{163*scale}) ||
+                ellipse({x_coord},{y_coord},{29*scale},{730*scale},300.15) ||
+                ellipse({x_coord},{y_coord},{29*scale},{730*scale},240.00) ||
+                ellipse({x_coord},{y_coord},{29*scale},{730*scale},360.00) ||
+                ellipse({x_coord},{y_coord},{29*scale},{300*scale},269.48) ||'''
+
+        # Load data
+        im_data, im_header, seg_data, seg_header = self.load_data(band, incl_mask = False)
+        pixel_scale = self.im_pixel_scales[band]
+        wcs = WCS(im_header)
+        # Scale up the image by boundary by scale_extra factor to include diffraction spikes from stars outside image footprint
+        scale_factor = scale_extra * np.array([im_data.shape[1], im_data.shape[0]])
+        vertices_pix = [(-scale_factor[0], -scale_factor[1]), (-scale_factor[0], im_data.shape[0] + scale_factor[1]), \
+            (im_data.shape[1] + scale_factor[0], im_data.shape[0] + scale_factor[1]), (im_data.shape[1] + scale_factor[0], -scale_factor[1])]    
+        # Convert to sky coordinates
+        vertices_sky = wcs.all_pix2world(vertices_pix, 0)
+
+        if mask_stars:
+            # Get list of Gaia stars in the polygon region
+            Gaia.ROW_LIMIT = gaia_row_lim
+            # Construct the ADQL query string
+            adql_query = \
+                f"""
+                SELECT source_id, ra, dec, phot_g_mean_mag, radius_sersic, classlabel_dsc_joint, vari_best_class_name
+                FROM gaiadr3.gaia_source 
+                LEFT OUTER JOIN gaiadr3.galaxy_candidates USING (source_id) 
+                WHERE 1 = CONTAINS(
+                    POINT('ICRS', ra, dec), 
+                    POLYGON('ICRS', 
+                        POINT('ICRS', {vertices_sky[0][0]}, {vertices_sky[0][1]}), 
+                        POINT('ICRS', {vertices_sky[1][0]}, {vertices_sky[1][1]}), 
+                        POINT('ICRS', {vertices_sky[2][0]}, {vertices_sky[2][1]}), 
+                        POINT('ICRS', {vertices_sky[3][0]}, {vertices_sky[3][1]})))"""
+    
+            # Execute the query asynchronously
+            job = Gaia.launch_job_async(adql_query)
+            gaia_stars = job.get_results()
+            print(f'Found {len(gaia_stars)} stars in the region.')
+            if exclude_gaia_galaxies:
+                gaia_stars = gaia_stars[gaia_stars['vari_best_class_name'] != 'GALAXY']
+                gaia_stars = gaia_stars[gaia_stars['classlabel_dsc_joint'] != 'galaxy']
+                
+            ra_gaia = np.asarray(gaia_stars['ra'])
+            dec_gaia = np.asarray(gaia_stars['dec'])
+            x_gaia, y_gaia = wcs.all_world2pix(ra_gaia, dec_gaia, 0)
+            
+            # Generate mask scale for each star
+            rmask_gaia_arcsec = mask_a * np.exp(-gaia_stars['phot_g_mean_mag'] / mask_b)
+
+            # Update the catalog
+            gaia_stars.add_column(Column(data = x_gaia, name = 'x_pix'))
+            gaia_stars.add_column(Column(data = y_gaia, name = 'y_pix'))
+            gaia_stars.add_column(Column(data = rmask_gaia_arcsec, name = 'rmask_arcsec'))
+
+        # Diagnostic plot
+        if plot:
+            fig = plt.figure(figsize=(10, 15))
+            ax = fig.add_subplot(111, projection=wcs)
+            stretch = vis.CompositeStretch(vis.LogStretch(), vis.ContrastBiasStretch(contrast = 30, bias = 0.08))    
+            norm = ImageNormalize(stretch = stretch, vmin = 0.001, vmax = 10)
+
+            ax.imshow(im_data, cmap='Greys', origin='lower', interpolation='None', norm=norm)
+
+        diffraction_regions = []
+        region_strings = []
+        print(f"Making stellar mask for {band}")
+        for pos, row in tqdm(enumerate(gaia_stars)):    
+            # Plot circle
+            # if plot:
+            #     ax.add_patch(Circle((row['x_pix'], row['y_pix']), 2 * row['rmask_arcsec'] / pixel_scale, color = 'r', fill = False, lw = 2))
+            scale = 2 * row['rmask_arcsec'] / pixel_scale / 730 
+            sky_region = composite(row['x_pix'], row['y_pix'], scale, angle)
+            region_obj = Regions.parse(sky_region, format='ds9')
+            diffraction_regions.append(region_obj)
+            region_strings.append(region_obj.serialize(format='ds9'))
+
+        stellar_mask = np.zeros(im_data.shape, dtype=bool)
+        for pos1, regions in tqdm(enumerate(diffraction_regions)):
+            for pos2, region in enumerate(regions):
+                if pos1 == 0 and pos2 == 0:
+                    composite_region = region
+                else:
+                    composite_region = composite_region | region
+                idx_large, _ = region.to_mask(mode = 'center').get_overlap_slices(im_data.shape)
+                stellar_mask[idx_large] = True
+                if plot:
+                    artist = region.as_artist()
+                    ax.add_patch(artist)
+        
+        # Mask image edges
+        fill = im_data == edge_value #true false array of where 0's are
+        edges = fill * 1 #convert to 1 for true and 0 for false
+        edges = edges.astype(np.uint8) #dtype for cv2
+        print('Masking edges')
+        if element == 'RECT':
+            kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (edge_mask_distance,edge_mask_distance)) 
+        elif element == 'ELLIPSE':
+            kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (edge_mask_distance,edge_mask_distance))
+        else:
+            raise ValueError(f"element = {element} must be 'RECT' or 'ELLIPSE'")
+
+        edge_mask = cv2.dilate(edges, kernel, iterations = 1) # dilate mask using the circle
+        #edge_mask = 1 - dilate # invert mask, so it is 1 where it is not masked and 0 where it is masked
+        #mask = 1 - edge_mask
+
+        # Mask up to 50 pixels from all edges - so edge is still masked if it as at edge of array
+        edge_mask[:edge_mask_distance, :] = edge_mask[-edge_mask_distance:, :] = edge_mask[:, :edge_mask_distance] = edge_mask[:, -edge_mask_distance:] = 1
+        
+        full_mask = np.logical_or(edge_mask.astype(np.uint8), stellar_mask.astype(np.uint8))
+        
+        if plot:
+            ax.imshow(full_mask, cmap='Reds', origin='lower', interpolation='None')
+        
+        # Save mask - could save independent layers as well e.g. stars vs edges vs manual mask etc
+        output_mask_path = f'{self.mask_dir}/fits/{band}_basemask.fits'
+        os.makedirs("/".join(output_mask_path.split("/")[:-1]), exist_ok = True)
+        full_mask_hdu = fits.ImageHDU(full_mask.astype(np.uint8), header = wcs.to_header(), name = "MASK")
+        stellar_mask_hdu = fits.ImageHDU(stellar_mask.astype(np.uint8), header = wcs.to_header(), name = "STELLAR")
+        edge_mask_hdu = fits.ImageHDU(edge_mask.astype(np.uint8), header = wcs.to_header(), name = "EDGE")
+        hdu = fits.HDUList([fits.PrimaryHDU(), full_mask_hdu, stellar_mask_hdu, edge_mask_hdu])
+        hdu.writeto(output_mask_path, overwrite = True)
+
+        if plot:
+            # Save mask plot
+            fig.savefig(f'{self.mask_dir}/{band}_mask.png')
+
+        # Save ds9 region 
+        # with open(f'{self.mask_dir}/{band}_starmask.reg', 'w') as f:
+        #     for region in region_strings:
+        #         f.write(region + '\n')
+        return output_mask_path
     
     #@staticmethod
     def combine_band_names(self, bands):
@@ -676,9 +822,9 @@ class Data:
         else:
             raise(Exception(f"More than 1 mask for {stack_band_name}. Please change this in {self.mask_dir}"))
         
-        overwrite = config["DEFAULT"].getboolean("OVERWRITE")
-        if overwrite:
-            galfind_logger.info("OVERWRITE = YES, so overwriting stacked image if it exists.")
+        # overwrite = config["DEFAULT"].getboolean("OVERWRITE")
+        # if overwrite:
+        #     galfind_logger.info("OVERWRITE = YES, so overwriting stacked image if it exists.")
     
         if not Path(self.im_paths[stack_band_name]).is_file(): # or overwrite
             # if not config["DEFAULT"].getboolean("RUN"):

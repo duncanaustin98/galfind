@@ -142,6 +142,28 @@ class SED:
             self.line_cont[line_name] = mean_cont
         return line_EW
     
+    def calc_UVJ_colours(self, resolution = 1. * u.AA):
+        UVJ_filters = {
+        "U": {"lam_eff": 3_650. * u.AA, "lam_fwhm": 660. * u.AA},
+        "V": {"lam_eff": 5_510. * u.AA, "lam_fwhm": 880. * u.AA},
+        "J": {"lam_eff": 12_200. * u.AA, "lam_fwhm": 2130. * u.AA}
+        } # these are rest frame wavelengths
+    
+        bp_averaged_fluxes = np.zeros(3)
+        for i, band in enumerate(["U", "V", "J"]):
+            galfind_logger.info(f"Calculating {band} fluxes")
+            band_wavs = np.linspace((UVJ_filters[band]["lam_eff"] - UVJ_filters[band]["lam_fwhm"] / 2.), \
+                (UVJ_filters[band]["lam_eff"] + UVJ_filters[band]["lam_fwhm"] / 2.), \
+                int(np.round((UVJ_filters[band]["lam_fwhm"] / resolution).to(u.dimensionless_unscaled).value))) * u.AA
+            filter_profile = {"Wavelength": band_wavs, "Transmission": np.ones(len(band_wavs))}
+            bp_averaged_fluxes[i] = self.calc_bandpass_averaged_flux(filter_profile)
+        # convert bp_averaged_fluxes to Jy
+        bp_averaged_fluxes_Jy = funcs.convert_mag_units([UVJ_filters[band]["lam_eff"] \
+            for band in ["U", "V", "J"]], bp_averaged_fluxes * u.erg / (u.s * (u.cm ** 2) * u.AA), u.Jy)
+        
+        self.UVJ_fluxes = {band: flux_Jy for band, flux_Jy in zip(["U", "V", "J"], bp_averaged_fluxes_Jy)}
+        self.UVJ_colours = {"U-V": -2.5 * np.log10(self.UVJ_fluxes["U"] / self.UVJ_fluxes["V"]), \
+                            "V-J": -2.5 * np.log10(self.UVJ_fluxes["V"] / self.UVJ_fluxes["J"])}
 
 class SED_rest(SED):
     
@@ -165,6 +187,7 @@ class SED_rest(SED):
             self.wav_units = u.AA # should improve this functionality
             self.mags = mags
         return wavs, mags
+    
     
 class SED_obs(SED):
     
