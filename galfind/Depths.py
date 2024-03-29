@@ -468,7 +468,7 @@ def make_ds9_region_file(coordinates, radius, filename, coordinate_type = 'sky',
     # If coordinate shape is (2, n) then we have to transpose it
     if np.shape(coordinates)[-1] == 2:
         coordinates = np.array(coordinates).T
-    
+    print(coordinates)
     x, y = np.array(coordinates)
     
     if coordinate_type == 'sky':

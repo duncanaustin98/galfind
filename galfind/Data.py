@@ -23,8 +23,8 @@ from astropy.coordinates import search_around_sky, SkyCoord
 from astropy.visualization.mpl_normalize import ImageNormalize
 import astropy.visualization as vis
 from matplotlib.colors import LogNorm
-from astropy.table import Table, hstack, Column
-import copy
+from astropy.table import Table, hstack, vstack, Column
+from copy import copy, deepcopy
 import pyregion
 from regions import Regions
 import subprocess
@@ -105,7 +105,6 @@ class Data:
             else:
                 # make an pixel mask automatically for the band
                 mask_paths[band] = self.make_mask(band)
-                galfind_logger.critical(f"No .fits or .reg mask for {survey} {band} and not yet implemented auto-masking.")
         self.mask_paths = dict(sorted(mask_paths.items()))
 
         if is_blank:
@@ -560,8 +559,6 @@ class Data:
         combined_mask = np.logical_or(seg_data > 0, mask == 1).astype(int)
         return combined_mask
 
-    
-
     def plot_image_from_band(self, ax, band, norm = LogNorm(vmin = 0., vmax = 10.), show = True):
         im_data = self.load_data(band, incl_mask = False)[0]
         self.plot_image_from_data(ax, im_data, band, norm, show)
@@ -602,7 +599,8 @@ class Data:
     def make_mask(self, band, edge_mask_distance = 50, mask_stars = True, scale_extra = 0.2,
             mask_a = 694.7, mask_b = 3.5, exclude_gaia_galaxies = True, angle = 0, edge_value = 0, 
             element = 'ELLIPSE', gaia_row_lim = 500, plot = False):
-        
+        galfind_logger.info(f"Automasking {self.survey} {band}.")
+
         composite = lambda x_coord, y_coord, scale, angle: \
             f'''# Region file format: DS9 version 4.1
             global color=green dashlist=8 3 width=1 font="helvetica 10 normal roman" select=1 highlite=1 dash=0 fixed=0 edit=1 move=1 delete=1 include=1 source=1
@@ -678,11 +676,11 @@ class Data:
             # Plot circle
             # if plot:
             #     ax.add_patch(Circle((row['x_pix'], row['y_pix']), 2 * row['rmask_arcsec'] / pixel_scale, color = 'r', fill = False, lw = 2))
-            scale = 2 * row['rmask_arcsec'] / pixel_scale / 730 
+            scale = 2 * row['rmask_arcsec'] / pixel_scale.value / 730 
             sky_region = composite(row['x_pix'], row['y_pix'], scale, angle)
-            region_obj = Regions.parse(sky_region, format='ds9')
+            region_obj = Regions.parse(sky_region, format = 'ds9')
             diffraction_regions.append(region_obj)
-            region_strings.append(region_obj.serialize(format='ds9'))
+            region_strings.append(region_obj.serialize(format = 'ds9'))
 
         stellar_mask = np.zeros(im_data.shape, dtype=bool)
         for pos1, regions in tqdm(enumerate(diffraction_regions)):
@@ -722,7 +720,7 @@ class Data:
             ax.imshow(full_mask, cmap='Reds', origin='lower', interpolation='None')
         
         # Save mask - could save independent layers as well e.g. stars vs edges vs manual mask etc
-        output_mask_path = f'{self.mask_dir}/fits/{band}_basemask.fits'
+        output_mask_path = f'{self.mask_dir}/fits_masks/{band}_basemask.fits'
         os.makedirs("/".join(output_mask_path.split("/")[:-1]), exist_ok = True)
         full_mask_hdu = fits.ImageHDU(full_mask.astype(np.uint8), header = wcs.to_header(), name = "MASK")
         stellar_mask_hdu = fits.ImageHDU(stellar_mask.astype(np.uint8), header = wcs.to_header(), name = "STELLAR")
@@ -1128,12 +1126,18 @@ class Data:
         return out_path
     
     def combine_masks(self, bands):
+        # require pixel scales to be the same across all bands
+        for i, band in enumerate(bands):
+            if i == 0:
+                pix_scale = self.im_pixel_scales[band]
+            else:
+                assert(self.im_pixel_scales[band] == pix_scale)
         combined_mask = np.logical_or.reduce(tuple([self.load_mask(band) for band in bands]))
         assert(combined_mask.shape == self.load_mask(bands[-1]).shape)
         # wcs taken from the reddest band
         mask_hdu = fits.ImageHDU(combined_mask.astype(np.uint8), header = WCS(self.load_im(bands[-1])[1]).to_header(), name = 'MASK')
         hdu = fits.HDUList([fits.PrimaryHDU(), mask_hdu])
-        out_path = f"{self.mask_dir}/fits_cats/{self.combine_band_names(bands)}_basemask.fits"
+        out_path = f"{self.mask_dir}/fits_masks/{self.combine_band_names(bands)}_basemask.fits"
         os.makedirs("/".join(out_path.split("/")[:-1]), exist_ok = True)
         hdu.writeto(out_path, overwrite = True)
         galfind_logger.info(f"Created combined mask for {bands}")
@@ -1163,52 +1167,82 @@ class Data:
             return mask_path
     
     # can be simplified with new masks
-    def calc_unmasked_area(self, forced_phot_band = ["f277W", "f356W", "f444W"], masking_instrument_name = "NIRCam"):
-        masking_bands = np.array([band for band in self.instrument.bands if band in Instrument.from_name(masking_instrument_name).bands])
-        # make combined mask if required
-        glob_mask_names = glob.glob(f"{self.mask_dir}/*{self.combine_band_names(masking_bands)}_*")
+    def calc_unmasked_area(self, masking_instrument_or_band_name = "NIRCam", forced_phot_band = ["f277W", "f356W", "f444W"]):
+        
+        if "PIXEL SCALE" not in self.common.keys():
+            galfind_logger.warning("Masking by bands with different pixel scales is not supported!")
+        
+        if type(masking_instrument_or_band_name) in [list, np.array]:
+            masking_instrument_or_band_name = "+".join(list(masking_instrument_or_band_name))
+
+        # create a list of bands that need to be unmasked in order to calculate the area
+        if type(masking_instrument_or_band_name) == str:
+            # mask by requiring unmasked criteria in all bands for a given Instrument
+            if masking_instrument_or_band_name in [subclass.__name__ for subclass in Instrument.__subclasses__() if subclass.__name__ != "Combined_Instrument"]:
+                masking_bands = np.array([band for band in self.instrument.bands if band in Instrument.from_name(masking_instrument_or_band_name).bands])
+            elif masking_instrument_or_band_name == "All":
+                masking_bands = np.array(self.instrument.bands)
+            else: # string should contain individual bands, separated by a "+"
+                masking_bands = masking_instrument_or_band_name.split("+")
+                for band in masking_bands:
+                    assert(band in json.loads(config.get("Other", "ALL_BANDS")), galfind_logger.critical(f"{band} is not a valid band currently included in galfind! Cannot calculate unmasked area!"))
+        else:
+            galfind_logger.critical(f"type(masking_instrument_or_band_name) = {type(masking_instrument_or_band_name)} must be in [str, list, np.array]!")
+        
+        # make combined mask if required, else load mask
+        glob_mask_names = glob.glob(f"{self.mask_dir}/fits_masks/*{self.combine_band_names(masking_bands)}_*")
         if len(glob_mask_names) == 0:
-            self.mask_paths[masking_instrument_name] = self.combine_masks(masking_bands)
+            if len(masking_bands) > 1:
+                self.mask_paths[masking_instrument_or_band_name] = self.combine_masks(masking_bands)
         elif len(glob_mask_names) == 1:
-            self.mask_paths[masking_instrument_name] = glob_mask_names[0]
+            self.mask_paths[masking_instrument_or_band_name] = glob_mask_names[0]
         else:
             raise(Exception(f"More than 1 mask for {masking_bands}. Please change this in {self.mask_dir}"))
-        # open detection image
-        if type(forced_phot_band) not in [str, np.str_]:
-            forced_phot_band = self.combine_band_names(forced_phot_band)
-
-        pixel_scale = self.im_pixel_scales[forced_phot_band]
-        print(f"pixel_scale = {pixel_scale}")
+        full_mask = self.load_mask(masking_instrument_or_band_name)
         
-        full_mask = self.load_mask(masking_instrument_name, forced_phot_band)
         if self.is_blank:
             blank_mask = full_mask
         else:
             # make combined mask for masking_instrument_name blank field area
-            glob_mask_names = glob.glob(f"{self.mask_dir}/*{self.combine_band_names(list(masking_bands) + ['blank'])}_*")
+            glob_mask_names = glob.glob(f"{self.mask_dir}/fits_masks/*{self.combine_band_names(list(masking_bands) + ['blank'])}_*")
             if len(glob_mask_names) == 0:
-                self.mask_paths[f"{masking_instrument_name}+blank"] = self.combine_masks(list(masking_bands) + ["blank"])
+                self.mask_paths[f"{masking_instrument_or_band_name}+blank"] = self.combine_masks(list(masking_bands) + ["blank"])
             elif len(glob_mask_names) == 1:
-                self.mask_paths[f"{masking_instrument_name}+blank"] = glob_mask_names[0]
+                self.mask_paths[f"{masking_instrument_or_band_name}+blank"] = glob_mask_names[0]
             else:
                 raise(Exception(f"More than 1 mask for {masking_bands}. Please change this in {self.mask_dir}"))
-            blank_mask = self.load_mask(f"{masking_instrument_name}+blank", forced_phot_band)
+            blank_mask = self.load_mask(f"{masking_instrument_or_band_name}+blank")
         
+        # split calculation by depth regions
+        galfind_logger.warning("Area calculation for different dpeth regions not yet implemented!")
+
+        # calculate areas using pixel scale of selection band
+        pixel_scale = self.im_pixel_scales[self.combine_band_names(forced_phot_band)]
+        unmasked_area_tot = (((full_mask.shape[0] * full_mask.shape[1]) - np.sum(full_mask)) * pixel_scale * pixel_scale).to(u.arcmin ** 2)
         unmasked_area_blank_modules = (((blank_mask.shape[0] * blank_mask.shape[1]) - np.sum(blank_mask)) * pixel_scale * pixel_scale).to(u.arcmin ** 2)
-        print(f"unmasked_area_blank_modules = {unmasked_area_blank_modules}")
-        output_path = f"/{config['DEFAULT']['GALFIND_WORK']}/Unmasked_areas/{masking_instrument_name}/{self.survey}_unmasked_area_{self.version}.txt"
+        unmasked_area_cluster_module = unmasked_area_tot - unmasked_area_blank_modules
+        galfind_logger.info(f"Unmasked areas for {self.survey}, masking_instrument_or_band_name = {masking_instrument_or_band_name} - Total: {unmasked_area_tot}, Blank modules: {unmasked_area_blank_modules}, Cluster module: {unmasked_area_cluster_module}")
+        
+        output_path = f"{config['DEFAULT']['GALFIND_WORK']}/Unmasked_areas.ecsv"
         funcs.make_dirs(output_path)
-        f = open(output_path, "w")
-        f.write(f"# {self.survey} {self.version}, bands = {self.instrument.bands}; UNIT = {unmasked_area_blank_modules.unit}\n")
-        f.write(f"{str(np.round(unmasked_area_blank_modules.value, 2))} # unmasked blank")
-        if not self.is_blank:
-            full_mask = self.load_mask(masking_instrument_name, forced_phot_band)
-            unmasked_area_tot = (((full_mask.shape[0] * full_mask.shape[1]) - np.sum(full_mask)) * pixel_scale * pixel_scale).to(u.arcmin ** 2)
-            unmasked_area_cluster_module = unmasked_area_tot - unmasked_area_blank_modules
-            f.write("\n")
-            f.write(f"{str(np.round(unmasked_area_cluster_module.value, 2))} # unmasked cluster")
-        f.close()
-        return unmasked_area_blank_modules
+        areas_data = {"survey": [self.survey], "masking_instrument_band": [masking_instrument_or_band_name], \
+            "unmasked_area_total": [np.round(unmasked_area_tot, 3)], "unmasked_area_blank_modules": [np.round(unmasked_area_blank_modules, 3)], \
+            "unmasked_area_cluster_module": [np.round(unmasked_area_cluster_module, 3)]}
+        areas_tab = Table(areas_data)
+        if Path(output_path).is_file():
+            existing_areas_tab = Table.read(output_path)
+            # if the exact same setup has already been run, overwrite
+            existing_areas_tab_ = deepcopy(existing_areas_tab)
+            existing_areas_tab_["index"] = np.arange(0, len(existing_areas_tab), 1)
+            existing_areas_tab_ = existing_areas_tab[((existing_areas_tab["survey"] == self.survey) & \
+                (existing_areas_tab["masking_instrument_band"] == masking_instrument_or_band_name))]
+            if len(existing_areas_tab_) > 0:
+                # delete existing column using the same setup in favour of new one
+                existing_areas_tab.remove_row(int(existing_areas_tab_["index"]))
+            else:
+                areas_tab = vstack(existing_areas_tab, areas_tab)
+        areas_tab.write(output_path, overwrite = True)
+        return areas_tab
 
     def perform_aper_corrs(self): # not general
         overwrite = config["Depths"].getboolean("OVERWRITE_LOC_DEPTH_CAT")

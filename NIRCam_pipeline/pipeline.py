@@ -24,7 +24,7 @@ def pipeline(surveys, version, instruments, aper_diams, code_names, lowz_zmax, m
             cat = Catalogue.from_pipeline(survey = survey, version = version, instruments = instruments, aper_diams = aper_diams, cat_creator = cat_creator, code_names = code_names, lowz_zmax = lowz_zmax, \
                                           forced_phot_band = forced_phot_band, excl_bands = excl_bands, loc_depth_min_flux_pc_errs = min_flux_pc_errs, templates_arr = eazy_templates)
             print(cat.cat_path)
-            cat.data.calc_unmasked_area(forced_phot_band)
+            cat.data.calc_unmasked_area("NIRCam", forced_phot_band = forced_phot_band)
             
             # for i, code in enumerate(sed_codes):
             #     cat = code.fit_cat(cat, templates = eazy_templates)
@@ -39,10 +39,10 @@ def pipeline(surveys, version, instruments, aper_diams, code_names, lowz_zmax, m
             #     cat.make_UV_fit_cat(UV_PDF_path = f"{config['RestUVProperties']['UV_PDF_PATH']}/{version}/{instruments_name}/{survey}/{code.code_name}+{pc_err}pc")  
 
 if __name__ == "__main__":
-    version = "v11" #config["DEFAULT"]["VERSION"] #"v9_sex_test1"
-    instruments = ["NIRCam"] #, 'ACS_WFC'] #, 'WFC3IR'] # Can leave this - if there is no data for an instrument it is removed automatically
+    version = "v11" #config["DEFAULT"]["VERSION"]
+    instruments = ["NIRCam"] #, 'ACS_WFC'] #, 'WFC3IR']
     cat_type = "loc_depth"
-    surveys = ["G191"] #[config["DEFAULT"]["SURVEY"]] # [f"CEERSP{int(i + 1)}" for i in range(0, 10)] #
+    surveys = ["NGDEEP2"] #[config["DEFAULT"]["SURVEY"]]
     aper_diams = [0.32] * u.arcsec
     code_names = ["EAZY"]
     eazy_templates = ["fsps_larson"] #["fsps", "fsps_larson", "fsps_jades"]
