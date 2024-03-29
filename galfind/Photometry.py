@@ -29,7 +29,28 @@ class Photometry:
         self.flux_Jy = flux_Jy
         self.flux_Jy_errs = flux_Jy_errs
         self.loc_depths = depths # not sure what problems renaming this will have
-        self.depths = depths
+        self.depths = depths # stores exactly the same info as self.loc_depths, but it is a pain to propagate deletion of the above so it is left for now
+        
+        assert(len(self.instrument) == len(self.flux_Jy) == len(self.flux_Jy_errs))
+
+    def __str__(self, print_cls_name = True, print_instrument = False, print_fluxes = True, print_depths = True):
+        line_sep = "*" * 40 + "\n"
+        band_sep = "-" * 10 + "\n"
+        output_str = ""
+        if print_cls_name:
+            output_str += line_sep
+            output_str += "PHOTOMETRY:\n"
+            output_str += band_sep
+        if print_instrument:
+            output_str += str(self.instrument)
+        if print_fluxes:
+            flux_dict = {band: r"$%.1f\\pm%.1f$nJy" %(flux_Jy.to(u.nJy).value, flux_Jy_err.to(u.nJy).value) for band, flux_Jy, flux_Jy_err in zip(self.instrument, self.flux_Jy, self.flux_Jy_errs)}
+            output_str += f"FLUXES: {flux_dict}\n"
+        if print_depths:
+            output_str += f"DEPTHS: {self.depths}\n"
+        if print_cls_name:
+            output_str += line_sep
+        return output_str
     
     def __getitem__(self, i):
         if type(i) == int:

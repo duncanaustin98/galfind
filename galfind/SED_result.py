@@ -30,6 +30,28 @@ class SED_result:
         self.templates = templates
         self.properties = properties
 
+    def __str__(self):
+        line_sep = "*" * 40 + "\n"
+        band_sep = "-" * 10 + "\n"
+        output_str = line_sep
+        output_str += "SED FITTING RESULT:\n"
+        output_str += band_sep
+        output_str += f"CODE: {self.code_name}\n"
+        output_str += f"TEMPLATES: {self.templates}\n"
+        if self.lowz_zmax == None:
+            output_str += "LOW Z RUN: False\n"
+        else:
+            output_str += "LOW Z RUN: True\n"
+            output_str += f"Z MAX: {self.lowz_zmax}\n"
+        output_str += band_sep
+        output_str += f"PHOTO-Z = {self.z}\n"
+        output_str += f"CHI-SQ = {self.chi_sq}\n"
+        for key, value in self.properties:
+            output_str += f"{key.upper()} = {value}\n"
+        # could also print rest frame photometry here
+        output_str += line_sep
+        return output_str
+
 class Galaxy_SED_results:
     
     def __init__(self, phot, redshifts, chi_sqs, z_PDF_paths, SED_paths, code_names, lowz_zmaxs, templates_arr):

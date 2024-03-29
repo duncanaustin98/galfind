@@ -347,7 +347,7 @@ class Catalogue(Catalogue_Base):
                 if gal.ID in IDs:
                     gal.make_cutout(band, data = {"SCI": im_data, "SEG": seg_data, self.data.wht_types[band]: wht_data}, \
                         wcs = wcs, im_header = im_header, survey = self.survey, version = self.version, cutout_size = cutout_size)
-    
+
     def make_UV_fit_cat(self, code_name = "EAZY", templates = "fsps_larson", UV_PDF_path = config["RestUVProperties"]["UV_PDF_PATH"], col_names = ["Beta", "flux_lambda_1500", "flux_Jy_1500", "M_UV", "A_UV", "L_obs", "L_int", "SFR"], \
                         join_tables = True, skip_IDs = [], rest_UV_wavs_arr = [[1250., 3000.] * u.AA], conv_filt_arr = [True, False], overwrite = True):
         UV_cat_name = f"{funcs.split_dir_name(self.cat_path, 'dir')}/UV_properties_{code_name}_{templates}_{str(self.cat_creator.min_flux_pc_err)}pc.fits" # _test
@@ -355,7 +355,6 @@ class Catalogue(Catalogue_Base):
             if not config["DEFAULT"].getboolean("RUN"):
                 galfind_logger.critical("RUN = YES, so not making UV corrected cat. Returning Error.")
                 raise Exception(f"RUN = YES, and combination of {self.survey} {self.version} or {self.instrument.name} has not previously been run.")
-
 
             cat_data = []
             #print("Bands here: ", self[1].phot.instrument.bands)
@@ -446,7 +445,9 @@ class Catalogue(Catalogue_Base):
         self.cat_path = self.cat_path.replace('.fits', '_UV.fits')
         joined_tab.write(self.cat_path, format = "fits", overwrite = True)
         print(f"Joining UV table to catalogue! Saving to {self.cat_path}")
-    
+
+    # %% Selection
+
     def phot_SNR_crop(self, band, n_sigma, remove = False, flag = True):
         pass
     

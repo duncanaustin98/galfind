@@ -23,6 +23,21 @@ class Photometry_obs(Photometry):
         self.SED_results = SED_results # array of SED_result objects with different SED fitting runs
         super().__init__(instrument, flux_Jy, flux_Jy_errs, loc_depths)
 
+    def __str__(self):
+        line_sep = "*" * 40 + "\n"
+        band_sep = "-" * 10 + "\n"
+        output_str = line_sep
+        output_str += "PHOTOMETRY OBS:\n"
+        output_str += band_sep
+        output_str += f"APERTURE DIAMETER: {self.aper_diam}\n"
+        output_str += f"MIN FLUX PC ERR: {self.min_flux_pc_err}%\n"
+        output_str += super().__str__(print_cls_name = False)
+        for (sed_code, templates_result) in self.SED_results.items():
+            for templates, result in templates_result.items():
+                output_str += str(result)
+        output_str += line_sep
+        return output_str
+
     @property
     def flux_lambda(self): # wav and flux_nu must have units here!
         return (self.flux_Jy * const.c / ((np.array([self.instrument.band_wavelengths[band].value for band in self.instrument.bands]) * u.Angstrom) ** 2)).to(u.erg / (u.s * (u.cm ** 2) * u.Angstrom)) # both flux_nu and wav must be in the same rest or observed frame

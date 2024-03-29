@@ -40,6 +40,17 @@ class Galaxy:
         # mask flags should come from cat_creator
         mask_flags = {band: cat_creator.load_flag(fits_cat_row, f"unmasked_{band}") for band in instrument.bands}
         return cls(sky_coord, ID, phot, mask_flags)
+    
+    def __str__(self):
+        line_sep = "*" * 40 + "\n"
+        band_sep = "-" * 10 + "\n"
+        output_str = line_sep
+        output_str += f"GALAXY {self.ID}: (RA, DEC) = ({np.round(self.sky_coord.ra, 5)}, {np.round(self.sky_coord.dec, 5)})\n"
+        output_str += band_sep
+        output_str += f"MASK FLAGS: {self.mask_flags}\n"
+        output_str += str(self.phot)
+        output_str += line_sep
+        return output_str
         
     def __setattr__(self, name, value, obj = "gal"):
         if obj == "gal":
