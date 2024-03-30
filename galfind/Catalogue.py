@@ -92,69 +92,6 @@ class Catalogue(Catalogue_Base):
         assert(len(cat_SED_results) == len(self))
         print("Updating SED results in galfind catalogue object")
         [gal.update(gal_SED_result) for gal, gal_SED_result in zip(self, cat_SED_results)]
-
-    
-    # %% Overloaded operators
-    
-    def __len__(self):
-        return len(self.gals)
-    
-    def __iter__(self):
-        self.iter = 0
-        return self
-    
-    def __next__(self):
-        if self.iter > len(self) - 1:
-            raise StopIteration
-        else:
-            gal = self[self.iter]
-            self.iter += 1
-            return gal
-    
-    def __getitem__(self, index):
-        return self.gals[index]
-    
-    def __getattr__(self, name): # only acts on attributes that don't already exist
-        # get array of galaxy properties for the catalogue if they exist in all galaxies
-        for gal in self:
-            # property must exist in all galaxies within class
-            if not hasattr(gal, name):
-                raise AttributeError(f"'{name}' does not exist in all galaxies within {self.cat_name} !!!")
-        return np.array([getattr(gal, name) for gal in self])
-    
-    def __setattr__(self, name, value, obj = "cat"):
-        if obj == "cat":
-            super().__setattr__(name, value)
-        elif obj == "gal":
-            # set attributes of individual galaxies within the catalogue
-            for i, gal in enumerate(self):
-                if type(value) == list or type(value) == np.array:
-                    setattr(gal, name, value[i])
-                else:
-                    setattr(gal, name, value)
-    
-    # not needed!
-    def __setitem__(self, index, gal):
-        self.gals[index] = gal
-    
-    def __add__(self, cat):
-        # concat catalogues
-        pass
-    
-    def __mul__(self, cat): # self * cat
-        # cross-match catalogues
-        pass
-    
-    def __repr__(self):
-        return str(self.__dict__)
-    
-    def __deepcopy__(self, memo):
-        cls = self.__class__
-        result = cls.__new__(cls)
-        memo[id(self)] = result
-        for key, value in self.__dict__.items():
-            setattr(result, key, copy.deepcopy(value, memo))
-        return result
     
     # %%
     
