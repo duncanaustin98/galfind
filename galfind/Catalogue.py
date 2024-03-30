@@ -57,8 +57,8 @@ class Catalogue(Catalogue_Base):
     
     @classmethod
     def from_fits_cat(cls, fits_cat_path, version, instrument, cat_creator, code_names, survey, \
-                lowz_zmax = [4.0, 6.0, None], templates_arr = ["fsps", "fsps_larson", "fsps_jades"], \
-                data = None, mask = False, excl_bands = []):
+            lowz_zmax = [4.0, 6.0, None], templates_arr = ["fsps", "fsps_larson", "fsps_jades"], \
+            data = None, mask = False, excl_bands = []):
         # open the catalogue
         fits_cat = funcs.cat_from_path(fits_cat_path)
         for band in instrument.bands:
@@ -272,8 +272,10 @@ class Catalogue(Catalogue_Base):
             # update catalogue README
 
         else:
-            galfind_logger.info(f"Catalogue for {self.survey} {self.version} already masked. Skipping!")    
+            galfind_logger.info(f"Catalogue for {self.survey} {self.version} already masked. Skipping!")
     
+        # update masking of individual galaxy objects in catalogue
+
     def make_cutouts(self, IDs, cutout_size = 32):
         for band in tqdm(self.instrument, total = len(self.instrument), desc = "Making band cutouts"):
             im_data, im_header, seg_data, seg_header = self.data.load_data(band, incl_mask = False)

@@ -69,6 +69,12 @@ class Photometry_rest(Photometry):
         return result
     
     @property
+    def first_detect_band(self):
+        pass
+
+    # Old properties! This class should probably be overwritten
+    
+    @property
     def wav(self):
         return funcs.wav_obs_to_rest(np.array([self.instrument.band_wavelengths[band].value for band in self.instrument.bands]) * u.Angstrom, self.z)
     

@@ -240,12 +240,15 @@ def cat_from_path(path, crop_names = None):
     cat.meta = {**cat.meta, **{"cat_path": path}}
     return cat
 
-def fits_cat_to_np(fits_cat, column_labels):
+def fits_cat_to_np(fits_cat, column_labels, reshape_by_aper_diams = True):
     new_cat = fits_cat[column_labels].as_array()
     if type(new_cat) == np.ma.core.MaskedArray:
         new_cat = new_cat.data
-    n_aper_diams = len(new_cat[0][0])
-    new_cat = np.lib.recfunctions.structured_to_unstructured(new_cat).reshape(len(fits_cat), len(column_labels), n_aper_diams)
+    if reshape_by_aper_diams:
+        n_aper_diams = len(new_cat[0][0])
+        new_cat = np.lib.recfunctions.structured_to_unstructured(new_cat).reshape(len(fits_cat), len(column_labels), n_aper_diams)
+    else:
+        new_cat = np.lib.recfunctions.structured_to_unstructured(new_cat).reshape(len(fits_cat), len(column_labels))
     return new_cat
 
 def lowz_label(lowz_zmax):

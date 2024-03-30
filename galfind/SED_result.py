@@ -19,7 +19,7 @@ from . import useful_funcs_austind as funcs
 class SED_result:
     
     def __init__(self, phot, z, chi_sq, z_PDF_path, SED_path, code_name, lowz_zmax, templates, rest_UV_wavs_arr = [[1268., 2580.] * u.Angstrom, [1250., 3000.] * u.Angstrom], properties = {}):
-        self.phot_rest = {Photometry_rest.rest_UV_wavs_name(rest_UV_wavs): Photometry_rest.from_phot(phot, z, rest_UV_wavs) for rest_UV_wavs in rest_UV_wavs_arr}
+        self.phot_rest = Photometry_rest.from_phot(phot, z) #{Photometry_rest.rest_UV_wavs_name(rest_UV_wavs): Photometry_rest.from_phot(phot, z, rest_UV_wavs) for rest_UV_wavs in rest_UV_wavs_arr}
         self.z = z
         self.chi_sq = chi_sq
         self.z_PDF_path = z_PDF_path
@@ -30,7 +30,7 @@ class SED_result:
         self.templates = templates
         self.properties = properties
 
-    def __str__(self):
+    def __str__(self, print_rest_phot = False, print_pdf_sed_paths = True):
         line_sep = "*" * 40 + "\n"
         band_sep = "-" * 10 + "\n"
         output_str = line_sep
@@ -48,7 +48,12 @@ class SED_result:
         output_str += f"CHI-SQ = {self.chi_sq}\n"
         for key, value in self.properties:
             output_str += f"{key.upper()} = {value}\n"
-        # could also print rest frame photometry here
+        if print_pdf_sed_paths:
+            output_str += f"Z-PDF PATH = {self.z_PDF_path}\n"
+            output_str += f"SED PATH = {self.SED_path}\n"
+        if print_rest_phot:
+            for phot_rest in self.phot_rest.values():
+                output_str += str(phot_rest)
         output_str += line_sep
         return output_str
 

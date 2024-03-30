@@ -346,6 +346,8 @@ class EAZY(SED_code):
         min_flux_pc_err = str(cat_path.replace(f"_{templates}", "").split("_")[-2].replace("pc", ""))
         
         PDF_dir = f"{funcs.split_dir_name(cat_path, 'dir')}PDFs/{str(min_flux_pc_err)}pc/{templates}"
+        if lowz_label == "zfree":
+            lowz_label = ""
         PDF_name = f"{str(ID)}{lowz_label}.pz"
         #print(PDF_name)
         return f"{PDF_dir}/{PDF_name}"
@@ -354,5 +356,7 @@ class EAZY(SED_code):
         # should still include aper_diam here
         min_flux_pc_err = str(cat_path.replace(f"_{templates}", "").split("_")[-2].replace("pc", ""))
         SED_dir = f"{funcs.split_dir_name(cat_path, 'dir')}SEDs/{str(min_flux_pc_err)}pc/{templates}"
+        if lowz_label == "zfree":
+            lowz_label = ""
         SED_name = f"{str(ID)}{lowz_label}.spec"
         return f"{SED_dir}/{SED_name}"

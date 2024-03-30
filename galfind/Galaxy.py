@@ -38,7 +38,7 @@ class Galaxy:
         ID = int(fits_cat_row[cat_creator.ID_label])
         sky_coord = SkyCoord(fits_cat_row[cat_creator.ra_dec_labels["RA"]] * u.deg, fits_cat_row[cat_creator.ra_dec_labels["DEC"]] * u.deg, frame = "icrs")
         # mask flags should come from cat_creator
-        mask_flags = {band: cat_creator.load_flag(fits_cat_row, f"unmasked_{band}") for band in instrument.bands}
+        mask_flags = {f"unmasked_{band}": cat_creator.load_flag(fits_cat_row, f"unmasked_{band}") for band in instrument.bands}
         return cls(sky_coord, ID, phot, mask_flags)
     
     def __str__(self):
@@ -155,6 +155,6 @@ class Multiple_Galaxy:
         sky_coords = [SkyCoord(ra * u.deg, dec * u.deg, frame = "icrs") \
                       for ra, dec in zip(fits_cat[cat_creator.ra_dec_labels["RA"]], fits_cat[cat_creator.ra_dec_labels["DEC"]])]
         # mask flags should come from cat_creator
-        mask_flags_arr = [{band: cat_creator.load_flag(fits_cat_row, f"unmasked_{band}") for band in instrument.bands} for fits_cat_row in fits_cat]
+        mask_flags_arr = [{f"unmasked_{band}": cat_creator.load_flag(fits_cat_row, f"unmasked_{band}") for band in instrument.bands} for fits_cat_row in fits_cat]
         return cls(sky_coords, IDs, phots, mask_flags_arr)
     

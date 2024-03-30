@@ -50,7 +50,6 @@ class Photometry_obs(Photometry):
     @classmethod # not a gal object here, more like a catalogue row
     def from_fits_cat(cls, fits_cat_row, instrument, cat_creator, aper_diam, min_flux_pc_err, codes, lowz_zmaxs):
         phot = Photometry.from_fits_cat(fits_cat_row, instrument, cat_creator)
-        #raise(Exception("Fix this!"))
         SED_results = Galaxy_SED_results.from_fits_cat(fits_cat_row, cat_creator, codes, lowz_zmaxs, instrument = instrument)
         return cls.from_phot(phot, aper_diam, min_flux_pc_err, SED_results)
     

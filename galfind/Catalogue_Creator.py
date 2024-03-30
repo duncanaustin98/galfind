@@ -13,8 +13,7 @@ from astropy.table import Table, Row
 import json
 
 from . import useful_funcs_austind as funcs
-from . import config
-from . import SED_code, LePhare, EAZY, Bagpipes
+from . import config, galfind_logger, SED_code, LePhare, EAZY, Bagpipes
 
 class Catalogue_Creator:
     
@@ -60,7 +59,7 @@ class Catalogue_Creator:
     def load_property(self, fits_cat, gal_property, code):
         property_label = self.property_conv(gal_property, code)
         return fits_cat[property_label]
-    
+
     def load_flag(self, fits_cat, gal_flag):
         flag_label = self.flag_conv(gal_flag)
         try:
@@ -128,27 +127,51 @@ class GALFIND_Catalogue_Creator(Catalogue_Creator):
             raise(Exception("self.flux_or_mag = {self.flux_or_mag} is invalid! It should be either 'flux' or 'mag' !"))
         return phot_labels, err_labels
     
+    def depth_conv(self, bands):
+        return [f"loc_depth_{band}" for band in bands]
+    
     def property_conv(self, gal_property, code):
         return self.property_conv_dict[code.code_name][gal_property]
     
-    def flag_conv(self, gal_flag):
-        return self.flag_conv_dict[gal_flag]
+    def band_mask_conv(self, bands):
+        return [self.flag_conv[f"unmasked_{band}"] for band in bands]
     
     # overriding load_photometry from parent class to include .T[aper_diam_index]'s
     def load_photometry(self, fits_cat, bands):
         zero_points = self.load_zero_points(bands)
         phot_labels, err_labels = self.phot_conv(bands)
-        assert len(phot_labels) == len(err_labels), "Length of photometry and error labels inconsistent!"
+        band_mask_labels = self.flag_conv(bands)
+        assert len(phot_labels) == len(err_labels) == band_mask_labels, "Length of photometry and error labels inconsistent!"
+        
         phot_cat = funcs.fits_cat_to_np(fits_cat, phot_labels)
         err_cat = funcs.fits_cat_to_np(fits_cat, err_labels)
+
         if self.flux_or_mag == "flux":
             phot = funcs.flux_image_to_Jy(phot_cat[:, :, self.aper_diam_index], zero_points)
+            if len(fits_cat) > 1:
+                print(phot)
+                raise(Exception())
             phot_err = funcs.flux_image_to_Jy(err_cat[:, :, self.aper_diam_index], zero_points)
             phot, phot_err = self.apply_min_flux_pc_err(phot, phot_err)
         elif self.flux_or_mag == "mag":
             raise(Exception("Beware that mag errors are asymmetric! FUNCTIONALITY NOT YET INCORPORATED!"))
             phot = funcs.mag_to_flux(fits_cat[phot_labels], u.Jy.to(u.ABmag))
             phot_err = funcs.mag_to_flux # this doesn't currently work!
+
+        # mask these arrays based on whether or not each band is masked for each galaxy
+        self.masked = True
+        for label in band_mask_labels:
+            if label not in fits_cat.colnames:
+                galfind_logger.warning("Catalogue not yet masked in Catalogue_Creator.load_photometry()!")
+                self.masked = False
+                break
+        if self.masked:
+            unmasked_arr = funcs.fits_cat_to_np(fits_cat, band_mask_labels, reshape_by_aper_diams = False)
+        else: # everything is unmasked
+            unmasked_arr = np.full(phot.shape, True)
+
+        phot = np.ma.masked_array(phot, mask = unmasked_arr, fill_value = np.nan)
+        phot_err = np.ma.masked_array(phot_err, mask = unmasked_arr, fill_value = np.nan)
         return phot, phot_err
 
 # %% Common catalogue converters

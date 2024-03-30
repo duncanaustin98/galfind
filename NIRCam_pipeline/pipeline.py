@@ -23,8 +23,8 @@ def pipeline(surveys, version, instruments, aper_diams, code_names, lowz_zmax, m
         for survey in surveys:
             cat = Catalogue.from_pipeline(survey = survey, version = version, instruments = instruments, aper_diams = aper_diams, cat_creator = cat_creator, code_names = code_names, lowz_zmax = lowz_zmax, \
                                           forced_phot_band = forced_phot_band, excl_bands = excl_bands, loc_depth_min_flux_pc_errs = min_flux_pc_errs, templates_arr = eazy_templates)
-            cat.data.calc_unmasked_area("NIRCam", forced_phot_band = forced_phot_band)
-            
+            #cat.data.calc_unmasked_area("NIRCam", forced_phot_band = forced_phot_band)
+            print(cat[0])
             # for i, code in enumerate(sed_codes):
             #     cat = code.fit_cat(cat, templates = eazy_templates)
             #     #code.fit_cat(cat, templates = eazy_templates)
