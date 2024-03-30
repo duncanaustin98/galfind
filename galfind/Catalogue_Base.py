@@ -1,5 +1,6 @@
 # Catalogue_Base.py
 
+import numpy as np
 from astropy.table import Table
 
 from . import useful_funcs_austind as useful_funcs
@@ -7,8 +8,7 @@ from .Data import Data
 from .Galaxy import Galaxy
 from . import useful_funcs_austind as funcs
 from .Catalogue_Creator import GALFIND_Catalogue_Creator
-from . import SED_code, LePhare, EAZY, Bagpipes
-from . import config
+from . import config, galfind_logger, SED_code, LePhare, EAZY, Bagpipes
 
 class Catalogue_Base:
     # later on, the gal_arr should be calculated from the Instrument and sex_cat path, with SED codes already given
@@ -88,13 +88,25 @@ class Catalogue_Base:
     def __getitem__(self, index):
         return self.gals[index]
     
-    def __getattr__(self, name): # only acts on attributes that don't already exist
-        # get array of galaxy properties for the catalogue if they exist in all galaxies
-        for gal in self:
-            # property must exist in all galaxies within class
-            if not hasattr(gal, name):
-                raise AttributeError(f"'{name}' does not exist in all galaxies within {self.cat_name} !!!")
-        return np.array([getattr(gal, name) for gal in self])
+    def __getattr__(self, name, code_name = "EAZY", templates = "fsps_larson", lowz_zmax = None): # only acts on attributes that don't already exist
+        # # get array of galaxy properties for the catalogue if they exist in all galaxies
+        # for gal in self:
+        #     # property must exist in all galaxies within class
+        #     if not hasattr(gal, name):
+        #         raise AttributeError(f"'{name}' does not exist in all galaxies within {self.cat_name}!!!")
+        print(self[0].__dict__(), self[0].phot.SED_results[code_name][templates][funcs.lowz_label(lowz_zmax)].__dict__())
+        if name in self[0].__dict__():
+            return np.array([getattr(gal, name) for gal in self])
+        elif name.upper() == "RA":
+            return np.array([getattr(gal, "sky_coord").ra for gal in self])
+        elif name.upper() == "DEC":
+            return np.array([getattr(gal, "sky_coord").dec for gal in self])
+        elif name in self[0].phot.SED_results[code_name][templates][funcs.lowz_label(lowz_zmax)].__dict__():
+            return np.array([getattr(gal.phot.SED_results[code_name][templates][funcs.lowz_label(lowz_zmax)], name) for gal in self])
+        elif name in self[0].mask_flags.__dict__():
+            return np.array([getattr(gal.mask_flags, name) for gal in self])
+        else:
+            galfind_logger.critical(f"Galaxies do not have attribute = {name}!")
     
     def __setattr__(self, name, value, obj = "cat"):
         if obj == "cat":
@@ -102,7 +114,7 @@ class Catalogue_Base:
         elif obj == "gal":
             # set attributes of individual galaxies within the catalogue
             for i, gal in enumerate(self):
-                if type(value) == list or type(value) == np.array:
+                if type(value) in [list, np.array]:
                     setattr(gal, name, value[i])
                 else:
                     setattr(gal, name, value)
@@ -137,4 +149,14 @@ class Catalogue_Base:
     @property
     def cat_name(self):
         return funcs.split_dir_name(self.cat_path, "name")
+    
+    def crop(self, crop_property, crop_limits): # upper and lower limits on galaxy properties (e.g. ID, redshift, mass, SFR, SkyCoord)
+        if type(crop_limits) in [int, float, bool]:
+            self.gals = self[getattr(self, crop_property) == crop_limits]
+            self.crops.append(f"{crop_property}={crop_limits}")
+        elif type(crop_limits) in [list, np.array]:
+            self.gals = self[((getattr(self, crop_property) >= crop_limits[0]) & (getattr(self, crop_property) <= crop_limits[1]))]
+            self.crops.append(f"{crop_limits[0]}<{crop_property}<{crop_limits[1]}")
+        else:
+            galfind_logger.critical(f"crop_limits={crop_limits} with type = {type(crop_limits)} not in [int, float, bool, list, np.array]")
         

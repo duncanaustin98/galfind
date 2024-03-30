@@ -37,13 +37,12 @@ EAZY_FILTER_CODES = {'NIRCam': {'f070W':36, 'f090W':1, 'f115W':2,'f140M':37, 'f1
 class EAZY(SED_code):
     
     def __init__(self):
-        code_name = "EAZY"
         #ID_label = "IDENT"
         galaxy_property_dict = {"z_phot": "zbest", "chi_sq": "chi2_best"}
         available_templates = ["fsps", "fsps_larson", "fsps_jades"]
-        super().__init__(code_name, galaxy_property_dict, available_templates)
+        super().__init__(galaxy_property_dict, available_templates)
     
-    def make_in(self, cat, fix_z = False, *args, **kwargs):
+    def make_in(self, cat, fix_z = False): #, *args, **kwargs):
         eazy_in_dir = f"{config['EAZY']['EAZY_DIR']}/input/{cat.instrument.name}/{cat.version}/{cat.survey}"
         eazy_in_path = f"{eazy_in_dir}/{cat.cat_name.replace('.fits', '.in')}"
         if not Path(eazy_in_path).is_file():
@@ -66,7 +65,7 @@ class EAZY(SED_code):
             #print(IDs, phot, phot_err, redshifts, len(IDs), len(phot), len(phot_err), len(redshifts))
             in_data = np.array([np.concatenate(([IDs[i]], list(itertools.chain(*zip(phot[i], phot_err[i]))), [redshifts[i]]), axis = None) for i in range(len(IDs))])
             in_names = ["ID"] + list(itertools.chain(*zip([f'F{filt_code}' for filt_code in filt_codes], [f'E{filt_code}' for filt_code in filt_codes]))) + ["z_spec"]
-           #print(in_names)
+            #print(in_names)
             in_types = [int] + list(np.full(len(SED_input_bands) * 2, float)) + [float]
             in_tab = Table(in_data, dtype = in_types, names = in_names)
             funcs.make_dirs(eazy_in_path)
@@ -77,7 +76,7 @@ class EAZY(SED_code):
     @run_in_dir(path = config['EAZY']['EAZY_DIR'])
     def run_fit(self, in_path, out_path, sed_folder, instrument, default_templates = 'fsps_larson', fix_z = False, n_proc = 1, z_step = 0.01, z_min = 0, z_max = 25,
                 save_best_seds = config.getboolean('EAZY', 'SAVE_SEDS'), save_pz = True, write_hdf = True, save_plots = False, plot_ids = None, plot_all = False, save_ubvj = True, run_lowz = True, \
-                    z_max_lowz = [4., 6.], *args, **kwargs):
+                    lowz_zmax = [4., 6., None], *args, **kwargs):
         '''
         in_path - input EAZY catalogue path
         out_path - output EAZY catalogue path - currently modified by code, needs updating
@@ -95,7 +94,7 @@ class EAZY(SED_code):
         plot_all - whether to plot all SEDs. Default False.
         save_ubvj - whether to save restframe UBVJ fluxes -default True.
         run_lowz - whether to run low-z fit. Default True.
-        z_max_lowz - maximum redshifts to fit in low-z fits. Default [4., 6.]
+        lowz_zmax - maximum redshifts to fit in low-z fits. Default [4., 6., None]
         **kwargs - additional arguments to pass to EAZY to overide defaults
         '''
         # Change this to config file path
@@ -189,7 +188,7 @@ class EAZY(SED_code):
         
         lowz_fits = {}
         if run_lowz:
-            for z_max in z_max_lowz:
+            for z_max in lowz_zmax.remove(None):
                 params['Z_MAX'] = z_max # Setting maximum Z
                 lowz_fit = eazy.photoz.PhotoZ(param_file = default_param_path, zeropoint_file = None,
                                     params = params, load_prior = False, load_products = False, translate_file = translate_file, n_proc = n_proc)
@@ -315,17 +314,16 @@ class EAZY(SED_code):
 
         np.savetxt(f"{out_path}/{id_phot}{zmax_name}.spec", data_out, delimiter="  ", header=f'ID  ZBEST  PERC_16  PERC_84  CHIBEST  WAV_UNIT  FLUX_UNIT\n{id_phot}  {z_best:.3f}  {float(percentiles_run[0]):.3f}  {float(percentiles_run[1]):.3f}  {chi2:.3f}  {wav_unit}  {out_flux_unit}')
 
-    def make_fits_from_out(self, out_path, *args, **kwargs):
-        return self.out_fits_name(out_path, *args, **kwargs)
+    def make_fits_from_out(self, out_path, templates): #*args, **kwargs):
+        return self.out_fits_name(out_path, templates) #*args, **kwargs)
     
-    def out_fits_name(self, out_path, *args, **kwargs):
+    def out_fits_name(self, out_path, templates): #*args, **kwargs):
         fits_out_path = out_path.replace('.out', '.fits')
-        templates = kwargs.get('templates')
         fits_out_path = fits_out_path[:-5] + f"_eazy_{templates}" + fits_out_path[-5:] 
         return fits_out_path
     
     def extract_SEDs(self, fits_cat, ID, low_z_run = False, units = u.ABmag, just_header = False):
-        SED_path = self.SED_path_from_cat_path(fits_cat.meta[f"{self.code_name}_path"], ID, low_z_run)
+        SED_path = self.SED_path_from_cat_path(fits_cat.meta[f"{self.__class__.__name__}_path"], ID, low_z_run)
        
         if not Path(SED_path).is_file():
             print(f'Not found EAZY SED at {SED_path}')
@@ -335,7 +333,7 @@ class EAZY(SED_code):
         return {"best_gal": SED}
     
     def extract_z_PDF(self, fits_cat, ID, low_z_run = False):
-        PDF_path = self.z_PDF_path_from_cat_path(fits_cat.meta[f"{self.code_name}_path"], ID, low_z_run)
+        PDF_path = self.z_PDF_path_from_cat_path(fits_cat.meta[f"{self.__class__.__name__}_path"], ID, low_z_run)
         try:
             z, PDF = np.loadtxt(PDF_path, delimiter = ',').T  
         except FileNotFoundError:

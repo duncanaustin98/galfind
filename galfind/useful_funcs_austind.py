@@ -252,7 +252,7 @@ def lowz_label(lowz_zmax):
     if lowz_zmax != None:
         label = f"zmax={lowz_zmax:.1f}"
     else:
-        label = ""
+        label = "zfree"
     return label
 
 def get_z_PDF_paths(fits_cat, IDs, codes, templates_arr, lowz_zmaxs, fits_cat_path = None):
@@ -277,7 +277,7 @@ def beta_slope_power_law_func(wav_rest, A, beta):
 
 # GALFIND specific functions
 def GALFIND_SED_column_labels(codes, lowz_zmaxs, templates_arr, gal_property):
-    return [code.galaxy_property_labels(gal_property, templates, lowz_zmax) for code, lowz_zmax, templates in zip(codes, lowz_zmaxs, templates_arr)]
+    return [code.galaxy_property_labels(gal_property, templates, lowz_zmax) for code, templates in zip(codes, templates_arr) for lowz_zmax in lowz_zmaxs]
 
 def GALFIND_cat_path(SED_code_name, instrument_name, version, survey, forced_phot_band_name, min_flux_pc_err, cat_type = "loc_depth", masked = True, templates = "fsps_larson"):
     # should still include aper_diam here

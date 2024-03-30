@@ -32,9 +32,10 @@ class Photometry_obs(Photometry):
         output_str += f"APERTURE DIAMETER: {self.aper_diam}\n"
         output_str += f"MIN FLUX PC ERR: {self.min_flux_pc_err}%\n"
         output_str += super().__str__(print_cls_name = False)
-        for (sed_code, templates_result) in self.SED_results.items():
-            for templates, result in templates_result.items():
-                output_str += str(result)
+        for (sed_code, templates_lowz_zmax_result) in self.SED_results.items():
+            for templates, lowz_zmax_result in templates_lowz_zmax_result.items():
+                for lowz_zmax, result in lowz_zmax_result.items():
+                    output_str += str(result)
         output_str += line_sep
         return output_str
 

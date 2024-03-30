@@ -57,7 +57,7 @@ class Catalogue(Catalogue_Base):
     
     @classmethod
     def from_fits_cat(cls, fits_cat_path, version, instrument, cat_creator, code_names, survey, \
-                lowz_zmax_arr = [None, None, None], templates_arr = ["fsps", "fsps_larson", "fsps_jades"], \
+                lowz_zmax = [4.0, 6.0, None], templates_arr = ["fsps", "fsps_larson", "fsps_jades"], \
                 data = None, mask = False, excl_bands = []):
         # open the catalogue
         fits_cat = funcs.cat_from_path(fits_cat_path)
@@ -83,9 +83,8 @@ class Catalogue(Catalogue_Base):
         if mask:
             cat_obj.mask()
         # run SED fitting for the appropriate code names/low-z runs
-        print(codes, lowz_zmax_arr, templates_arr)
-        for i, (code, lowz_zmax, templates) in enumerate(zip(codes, lowz_zmax_arr, templates_arr)):
-            cat_obj = code.fit_cat(cat_obj, lowz_zmax, templates = templates)
+        for i, (code, templates) in enumerate(zip(codes, templates_arr)):
+            cat_obj = code.fit_cat(cat_obj, templates = templates, lowz_zmax = lowz_zmax)
         return cat_obj
     
     def update_SED_results(self, cat_SED_results):
@@ -398,20 +397,6 @@ class Catalogue(Catalogue_Base):
     
     def flag_hot_pixel(self):
         pass
-    
-    def crop(self, crop_property, crop_limits): # upper and lower limits on galaxy properties (e.g. ID, redshift, mass, SFR, SkyCoord)
-        print("'Catalogue.crop_cat()' currently only works for 'ID' (and in theory any gal.property coming from SExtractor catalogue except astropy.coordinates.SkyCoord)." + \
-              "Implementation for cropping by SED fitting property still not yet included !")
-        if isinstance(crop_limits, int) or isinstance(crop_limits, float):
-            self.gals = self[getattr(self, crop_property) == crop_limits]
-        elif isinstance(crop_limits, list) or isinstance(crop_limits, np.array):
-            upper_gals = self[getattr(self, crop_property) >= crop_limits[0]]
-            self.gals = upper_gals
-            cropped_gals = self[getattr(self, crop_property) <= crop_limits[1]]
-            self.gals = cropped_gals
-        else:
-            raise(Exception(f"'crop_limits'={crop_limits} in 'Catalogue.crop_cat()' is inappropriate !"))
-        return self
     
     def plot_SED_properties(self, x_name, y_name, code_name):
         x_arr = []

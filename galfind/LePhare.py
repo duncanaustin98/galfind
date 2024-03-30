@@ -16,20 +16,18 @@ import subprocess
 from astropy.io import fits
 import json
 
-from . import SED_code
+from . import config, galfind_logger, SED_code
 from . import useful_funcs_austind as funcs
-from . import config
 
 # %% LePhare SED fitting code
 
 class LePhare(SED_code):
     
     def __init__(self):
-        code_name = "LePhare"
         #ID_label = "IDENT"
         galaxy_property_dict = {"z_phot": "Z_BEST", "mass": "MASS_BEST", "chi_sq": "CHI_BEST"}
         available_templates = []
-        super().__init__(code_name, galaxy_property_dict, available_templates)
+        super().__init__(galaxy_property_dict, available_templates)
     
     def make_in(self, cat, units = u.ABmag, fix_z = False, *args, **kwargs): # from FITS_organiser.py
         lephare_in_path = f"{self.code_dir}/input/{cat.data.instrument.name}/{cat.data.version}/{cat.data.survey}/{cat.cat_name.replace('.fits', '')}_{cat.cat_creator.min_flux_pc_err}pc.in"

@@ -24,7 +24,7 @@ def pipeline(surveys, version, instruments, aper_diams, code_names, lowz_zmax, m
             cat = Catalogue.from_pipeline(survey = survey, version = version, instruments = instruments, aper_diams = aper_diams, cat_creator = cat_creator, code_names = code_names, lowz_zmax = lowz_zmax, \
                                           forced_phot_band = forced_phot_band, excl_bands = excl_bands, loc_depth_min_flux_pc_errs = min_flux_pc_errs, templates_arr = eazy_templates)
             print(cat.cat_path)
-            print(str(cat))
+            print(str(cat), str(cat[2000]))
             #cat.data.calc_unmasked_area("NIRCam", forced_phot_band = forced_phot_band)
             
             # for i, code in enumerate(sed_codes):
@@ -47,7 +47,7 @@ if __name__ == "__main__":
     aper_diams = [0.32] * u.arcsec
     code_names = ["EAZY"]
     eazy_templates = ["fsps_larson"] #["fsps", "fsps_larson", "fsps_jades"]
-    eazy_lowz_zmax = [[4., 6.]] #, [4., 6.], [4., 6.]]
+    eazy_lowz_zmax = [4., 6., None] #, [4., 6.], [4., 6.]]
     min_flux_pc_errs = [10]
     forced_phot_band = ["f277W", "f356W", "f444W"]
     jems_bands = ["f182M", "f210M", "f430M", "f460M", "f480M"]
