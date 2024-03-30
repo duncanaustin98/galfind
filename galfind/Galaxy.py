@@ -63,14 +63,14 @@ class Galaxy:
             raise(Exception(f"obj = {obj} must be 'gal'!"))
     
     # STILL NEED TO LOOK FURTHER INTO THIS
-    def __deepcopy__(self, memo):
-        print("Overriding Galaxy.__deepcopy__()")
-        cls = self.__class__
-        result = cls.__new__(cls)
-        memo[id(self)] = result
-        for key, value in self.__dict__.items():
-            setattr(result, key, deepcopy(value, memo))
-        return result
+    # def __deepcopy__(self, memo):
+    #     print("Overriding Galaxy.__deepcopy__()")
+    #     cls = self.__class__
+    #     result = cls.__new__(cls)
+    #     memo[id(self)] = result
+    #     for key, value in self.__dict__.items():
+    #         setattr(result, key, deepcopy(value, memo))
+    #     return result
     
     def update(self, gal_SED_results, index = 0): # for now just update the single photometry
         self.phot.update(gal_SED_results)

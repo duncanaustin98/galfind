@@ -127,7 +127,6 @@ class Catalogue_SED_results:
             raise(Exception())
         
         labels_dict = {gal_property: funcs.GALFIND_SED_column_labels(codes, lowz_zmaxs, templates_arr, gal_property) for gal_property in gal_properties}
-        print(labels_dict)
         #print(labels_dict)
         #print(codes, lowz_zmaxs, templates_arr, gal_properties)
         #print("Need to sort out cat_redshifts and cat_chi_sqs in Catalogue_SED_results.from_fits_cat")

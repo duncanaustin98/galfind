@@ -2,6 +2,7 @@
 
 import numpy as np
 from astropy.table import Table
+from copy import deepcopy
 
 from . import useful_funcs_austind as useful_funcs
 from .Data import Data
@@ -19,7 +20,7 @@ class Catalogue_Base:
         self.cat_creator = cat_creator
         self.instrument = instrument
         self.codes = codes
-        self.gals = gals
+        self.gals = np.array(gals)
         if version == '':
             raise Exception('Version must be specified')
         self.version = version
@@ -94,16 +95,15 @@ class Catalogue_Base:
         #     # property must exist in all galaxies within class
         #     if not hasattr(gal, name):
         #         raise AttributeError(f"'{name}' does not exist in all galaxies within {self.cat_name}!!!")
-        print(self[0].__dict__(), self[0].phot.SED_results[code_name][templates][funcs.lowz_label(lowz_zmax)].__dict__())
-        if name in self[0].__dict__():
+        if name in self[0].__dict__:
             return np.array([getattr(gal, name) for gal in self])
         elif name.upper() == "RA":
             return np.array([getattr(gal, "sky_coord").ra for gal in self])
         elif name.upper() == "DEC":
             return np.array([getattr(gal, "sky_coord").dec for gal in self])
-        elif name in self[0].phot.SED_results[code_name][templates][funcs.lowz_label(lowz_zmax)].__dict__():
+        elif name in self[0].phot.SED_results[code_name][templates][funcs.lowz_label(lowz_zmax)].__dict__:
             return np.array([getattr(gal.phot.SED_results[code_name][templates][funcs.lowz_label(lowz_zmax)], name) for gal in self])
-        elif name in self[0].mask_flags.__dict__():
+        elif name in self[0].mask_flags.__dict__:
             return np.array([getattr(gal.mask_flags, name) for gal in self])
         else:
             galfind_logger.critical(f"Galaxies do not have attribute = {name}!")
@@ -139,7 +139,7 @@ class Catalogue_Base:
         result = cls.__new__(cls)
         memo[id(self)] = result
         for key, value in self.__dict__.items():
-            setattr(result, key, copy.deepcopy(value, memo))
+            setattr(result, key, deepcopy(value, memo))
         return result
         
     @property
@@ -151,12 +151,13 @@ class Catalogue_Base:
         return funcs.split_dir_name(self.cat_path, "name")
     
     def crop(self, crop_property, crop_limits): # upper and lower limits on galaxy properties (e.g. ID, redshift, mass, SFR, SkyCoord)
+        cat_copy = deepcopy(self)
         if type(crop_limits) in [int, float, bool]:
-            self.gals = self[getattr(self, crop_property) == crop_limits]
-            self.crops.append(f"{crop_property}={crop_limits}")
+            cat_copy.gals = cat_copy[getattr(cat_copy, crop_property) == crop_limits]
+            cat_copy.crops.append(f"{crop_property}={crop_limits}")
         elif type(crop_limits) in [list, np.array]:
-            self.gals = self[((getattr(self, crop_property) >= crop_limits[0]) & (getattr(self, crop_property) <= crop_limits[1]))]
-            self.crops.append(f"{crop_limits[0]}<{crop_property}<{crop_limits[1]}")
+            cat_copy.gals = cat_copy[((getattr(cat_copy, crop_property) >= crop_limits[0]) & (getattr(cat_copy, crop_property) <= crop_limits[1]))]
+            cat_copy.crops.append(f"{crop_limits[0]}<{crop_property}<{crop_limits[1]}")
         else:
             galfind_logger.critical(f"crop_limits={crop_limits} with type = {type(crop_limits)} not in [int, float, bool, list, np.array]")
-        
+        return cat_copy

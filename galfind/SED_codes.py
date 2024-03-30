@@ -39,7 +39,7 @@ class SED_code(ABC):
     
     @staticmethod
     def galaxy_property_labels(gal_property, templates, lowz_zmax = None):
-        print(gal_property, templates, lowz_zmax)
+        #print(gal_property, templates, lowz_zmax)
         if templates not in ["fsps", "fsps_larson", "fsps_jades"]:
             raise(Exception(f"templates = {templates} are not yet encorporated for galfind EAZY SED fitting"))
         if lowz_zmax != None:
