@@ -21,6 +21,7 @@ class Photometry_obs(Photometry):
         self.aper_diam = aper_diam
         self.min_flux_pc_err = min_flux_pc_err
         self.SED_results = SED_results # array of SED_result objects with different SED fitting runs
+        self.aper_corrs = [instrument.aper_corr(self.aper_diam, band) for band in instrument]
         super().__init__(instrument, flux_Jy, flux_Jy_errs, loc_depths)
 
     def __str__(self):
@@ -36,6 +37,7 @@ class Photometry_obs(Photometry):
             for templates, lowz_zmax_result in templates_lowz_zmax_result.items():
                 for lowz_zmax, result in lowz_zmax_result.items():
                     output_str += str(result)
+        output_str += f"SNR: {[np.round(snr, 2) for snr in self.SNR]}\n"
         output_str += line_sep
         return output_str
 
@@ -46,6 +48,11 @@ class Photometry_obs(Photometry):
     @property
     def flux_lambda_errs(self):
         return (self.flux_Jy_errs * const.c / ((np.array([self.instrument.band_wavelengths[band].value for band in self.instrument.bands]) * u.Angstrom) ** 2)).to(u.erg / (u.s * (u.cm ** 2) * u.Angstrom))
+
+    @property
+    def SNR(self):
+        return [(flux_Jy * 10 ** (aper_corr / -2.5)) * 5 / depth if flux_Jy > 0. else flux_Jy * 5 / depth \
+            for aper_corr, flux_Jy, depth in zip(self.aper_corrs, self.flux_Jy.filled(fill_value = np.nan).to(u.Jy).value, self.depths.to(u.Jy).value)]
 
     @classmethod # not a gal object here, more like a catalogue row
     def from_fits_cat(cls, fits_cat_row, instrument, cat_creator, aper_diam, min_flux_pc_err, codes, lowz_zmaxs):

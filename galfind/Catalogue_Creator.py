@@ -70,6 +70,10 @@ class Catalogue_Creator(ABC):
         return phot, phot_err
     
     @abstractmethod
+    def load_SNRs(self, fits_cat, bands):
+        pass
+    
+    @abstractmethod
     def load_mask(self, fits_cat, bands):
         pass
     
@@ -146,6 +150,9 @@ class GALFIND_Catalogue_Creator(Catalogue_Creator):
     def depth_labels(self, bands):
         return [f"loc_depth_{band}" for band in bands]
     
+    def SNR_labels(self, bands):
+        return [f"sigma_{band}" for band in bands]
+    
     # overriding load_photometry from parent class to include .T[aper_diam_index]'s
     def load_photometry(self, fits_cat, bands):
         zero_points = self.load_zero_points(bands)
@@ -190,7 +197,7 @@ class GALFIND_Catalogue_Creator(Catalogue_Creator):
         self.has_depths = True
         for label in depth_labels:
             if label not in fits_cat.colnames:
-                galfind_logger.warning("Catalogue not yet masked in Catalogue_Creator.load_photometry()!")
+                galfind_logger.warning("Catalogue not yet had depth calculations performed in Catalogue_Creator.load_photometry()!")
                 self.has_depths = False
                 break
         if self.has_depths:
@@ -198,6 +205,20 @@ class GALFIND_Catalogue_Creator(Catalogue_Creator):
         else: # depths given as np.nan
             depths_arr = np.full((len(fits_cat), len(bands)), np.nan)
         return depths_arr * u.ABmag
+    
+    def load_SNRs(self, fits_cat, bands):
+        SNR_labels = self.SNR_labels(bands)
+        self.has_SNRs = True
+        for label in SNR_labels:
+            if label not in fits_cat.colnames:
+                galfind_logger.warning("Catalogue not yet had SNRs calculated in Catalogue_Creator.load_photometry()!")
+                self.has_SNRs = False
+                break
+        if self.has_SNRs:
+            SNRs_arr = funcs.fits_cat_to_np(fits_cat, SNR_labels)[:, :, self.aper_diam_index]
+        else: # depths given as np.nan
+            SNRs_arr = np.full((len(fits_cat), len(bands)), np.nan)
+        return SNRs_arr * u.ABmag
 
 # %% Common catalogue converters
 

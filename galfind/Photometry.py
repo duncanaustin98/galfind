@@ -52,7 +52,6 @@ class Photometry:
         output_str += f"MAGS: {[np.round(mag, 2) for mag in self.flux_Jy.filled(fill_value = np.nan).to(u.ABmag).value]}\n"
         #if print_depths:
         output_str += f"DEPTHS: {[np.round(depth, 2) for depth in self.depths.value]}\n"
-        output_str += f"SNR: {[np.round(snr, 2) for snr in self.SNR]}\n"
 
         if print_cls_name:
             output_str += line_sep
@@ -72,14 +71,6 @@ class Photometry:
     @property
     def wav(self):
         return np.array([self.instrument.band_wavelengths[band].value for band in self.instrument.bands]) * u.Angstrom
-    
-    @property
-    def SNR(self):
-        return [flux_Jy * 5 / depth for band, flux_Jy, depth in zip(self.instrument, self.flux_Jy.filled(fill_value = np.nan).to(u.Jy).value, self.depths.to(u.Jy).value)]
-
-    # @property
-    # def band_detections(self):
-    #     return [funcs.n_sigma_detection()]
     
     @classmethod
     def from_fits_cat(cls, fits_cat_row, instrument, cat_creator):
