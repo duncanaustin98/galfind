@@ -93,9 +93,9 @@ def flux_pc_to_mag_err(flux_pc_err):
 def flux_image_to_Jy(fluxes, zero_points):
     # convert flux from image units to Jy
     if type(fluxes) in [list, np.array]:
-        return np.array([flux * (10 ** ((zero_points - 8.9) / -2.5)) for flux in fluxes])
+        return np.array([flux * (10 ** ((zero_points - 8.9) / -2.5)) for flux in fluxes]) * u.Jy
     else:
-        return np.array(fluxes * (10 ** ((zero_points - 8.9) / -2.5)))
+        return np.array(fluxes * (10 ** ((zero_points - 8.9) / -2.5))) * u.Jy
 
 def five_to_n_sigma_mag(five_sigma_depth, n):
     n_sigma_mag = -2.5 * np.log10(n / 5) + five_sigma_depth

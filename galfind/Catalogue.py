@@ -62,12 +62,12 @@ class Catalogue(Catalogue_Base):
         # open the catalogue
         fits_cat = funcs.cat_from_path(fits_cat_path)
         for band in instrument.bands:
-             try:
-                 cat_creator.load_photometry(Table(fits_cat[0]), [band])
-             except:
-                 # no data for the relevant band within the catalogue
-                 instrument.remove_band(band)
-                 print(f"{band} flux not loaded")
+            #try:
+            cat_creator.load_photometry(Table(fits_cat[0]), [band])
+            #except:
+            #     # no data for the relevant band within the catalogue
+            #     instrument.remove_band(band)
+            #     print(f"{band} flux not loaded")
         print("instrument bands = ", instrument.bands)
         codes = [getattr(globals()[name], name)() for name in code_names]
         # produce galaxy array from each row of the catalogue

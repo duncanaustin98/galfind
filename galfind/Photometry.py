@@ -30,24 +30,30 @@ class Photometry:
         self.flux_Jy_errs = flux_Jy_errs
         self.loc_depths = depths # not sure what problems renaming this will have
         self.depths = depths # stores exactly the same info as self.loc_depths, but it is a pain to propagate deletion of the above so it is left for now
-        
-        assert(len(self.instrument) == len(self.flux_Jy) == len(self.flux_Jy_errs))
+        assert(len(self.instrument) == len(self.flux_Jy) == len(self.flux_Jy_errs) == len(self.depths))
 
     def __str__(self, print_cls_name = True, print_instrument = False, print_fluxes = True, print_depths = True):
         line_sep = "*" * 40 + "\n"
         band_sep = "-" * 10 + "\n"
         output_str = ""
+
         if print_cls_name:
             output_str += line_sep
             output_str += "PHOTOMETRY:\n"
             output_str += band_sep
+
         if print_instrument:
             output_str += str(self.instrument)
-        if print_fluxes:
-            flux_dict = {band: r"$%.1f\\pm%.1f$nJy" %(flux_Jy.to(u.nJy).value, flux_Jy_err.to(u.nJy).value) for band, flux_Jy, flux_Jy_err in zip(self.instrument, self.flux_Jy, self.flux_Jy_errs)}
-            output_str += f"FLUXES: {flux_dict}\n"
-        if print_depths:
-            output_str += f"DEPTHS: {self.depths}\n"
+        
+        #if print_fluxes:
+        fluxes_str = ["%.1f ± %.1f nJy" %(flux_Jy.to(u.nJy).value, flux_Jy_err.to(u.nJy).value) \
+            for flux_Jy, flux_Jy_err in zip(self.flux_Jy.filled(fill_value = np.nan), self.flux_Jy_errs.filled(fill_value = np.nan))]
+        output_str += f"FLUXES: {fluxes_str}\n"
+        output_str += f"MAGS: {[np.round(mag, 2) for mag in self.flux_Jy.filled(fill_value = np.nan).to(u.ABmag).value]}\n"
+        #if print_depths:
+        output_str += f"DEPTHS: {[np.round(depth, 2) for depth in self.depths.value]}\n"
+        output_str += f"SNR: {[np.round(snr, 2) for snr in self.SNR]}\n"
+
         if print_cls_name:
             output_str += line_sep
         return output_str
@@ -67,6 +73,10 @@ class Photometry:
     def wav(self):
         return np.array([self.instrument.band_wavelengths[band].value for band in self.instrument.bands]) * u.Angstrom
     
+    @property
+    def SNR(self):
+        return [flux_Jy * 5 / depth for band, flux_Jy, depth in zip(self.instrument, self.flux_Jy.filled(fill_value = np.nan).to(u.Jy).value, self.depths.to(u.Jy).value)]
+
     # @property
     # def band_detections(self):
     #     return [funcs.n_sigma_detection()]
@@ -80,7 +90,7 @@ class Photometry:
         except:
             #print("local depths not loaded")
             loc_depths = None
-        return cls(instrument, fluxes[0] * u.Jy, flux_errs[0] * u.Jy, loc_depths)
+        return cls(instrument, fluxes[0], flux_errs[0], loc_depths)
     
     def scatter_phot(self, n_scatter = 1):
         phot_matrix = np.random.normal(self.flux_Jy.value, self.flux_Jy_errs.value, n_scatter)
@@ -124,7 +134,7 @@ class Multiple_Photometry:
     def from_fits_cat(cls, fits_cat, instrument, cat_creator):
         flux_Jy_arr, flux_Jy_errs_arr = cat_creator.load_photometry(fits_cat, instrument.bands)
         # local depths not yet loaded in
-        loc_depths_arr = np.full(len(flux_Jy_arr), None)
+        loc_depths_arr = np.full(flux_Jy_arr.shape, None)
         return cls(instrument, flux_Jy_arr, flux_Jy_errs_arr, loc_depths_arr)
 
 class Mock_Photometry(Photometry):

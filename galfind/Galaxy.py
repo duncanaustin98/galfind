@@ -153,8 +153,9 @@ class Multiple_Galaxy:
         IDs = np.array(fits_cat[cat_creator.ID_label]).astype(int)
         # load sky co-ordinate one at a time (can improve efficiency here)
         sky_coords = [SkyCoord(ra * u.deg, dec * u.deg, frame = "icrs") \
-                      for ra, dec in zip(fits_cat[cat_creator.ra_dec_labels["RA"]], fits_cat[cat_creator.ra_dec_labels["DEC"]])]
+            for ra, dec in zip(fits_cat[cat_creator.ra_dec_labels["RA"]], fits_cat[cat_creator.ra_dec_labels["DEC"]])]
         # mask flags should come from cat_creator
-        mask_flags_arr = [{f"unmasked_{band}": cat_creator.load_flag(fits_cat_row, f"unmasked_{band}") for band in instrument.bands} for fits_cat_row in fits_cat]
+        #mask_flags_arr = [{f"unmasked_{band}": cat_creator.load_flag(fits_cat_row, f"unmasked_{band}") for band in instrument.bands} for fits_cat_row in fits_cat]
+        mask_flags_arr = [{f"unmasked_{band}": None for band in instrument.bands} for fits_cat_row in fits_cat]
         return cls(sky_coords, IDs, phots, mask_flags_arr)
     

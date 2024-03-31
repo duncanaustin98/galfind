@@ -8,19 +8,19 @@ Created on Wed Jun  7 13:59:59 2023
 # 
 # Catalogue_Creator.py
 import numpy as np
+from astropy.utils.masked import Masked
 import astropy.units as u
 from astropy.table import Table, Row
 import json
+from abc import ABC, abstractmethod
 
 from . import useful_funcs_austind as funcs
 from . import config, galfind_logger, SED_code, LePhare, EAZY, Bagpipes
 
-class Catalogue_Creator:
+class Catalogue_Creator(ABC):
     
-    def __init__(self, phot_conv, property_conv, flag_conv, aper_diam_index, flux_or_mag, min_flux_pc_err, ra_dec_labels, ID_label, zero_point = u.Jy.to(u.ABmag), phot_fits_ext = 0):
-        self.phot_conv = phot_conv
-        self.property_conv = property_conv
-        self.flag_conv = flag_conv
+    def __init__(self, property_conv_dict, aper_diam_index, flux_or_mag, min_flux_pc_err, ra_dec_labels, ID_label, zero_point = u.Jy.to(u.ABmag), phot_fits_ext = 0):
+        self.property_conv_dict = property_conv_dict
         self.aper_diam_index = aper_diam_index # set to 'None' by default as very few people actually put arrays in catalogue columns
         self.flux_or_mag = flux_or_mag # either "flux" or "mag"
         self.min_flux_pc_err = min_flux_pc_err
@@ -28,7 +28,19 @@ class Catalogue_Creator:
         self.ID_label = ID_label
         self.zero_point = zero_point # must be astropy units; can be either integer or dict of {band: zero_point}
         self.phot_fits_ext = phot_fits_ext # only compatible with .fits currently
-        
+
+    @abstractmethod
+    def phot_labels(self, bands):
+        pass
+
+    @abstractmethod
+    def mask_labels(self, bands):
+        pass
+
+    @abstractmethod
+    def depth_labels(self, bands):
+        pass
+
     def load_zero_points(self, bands):
         if isinstance(self.zero_point, dict):
             if all(band in self.zero_point.keys() for band in bands):
@@ -41,6 +53,7 @@ class Catalogue_Creator:
             raise(Exception(f"self.zero_point of type {type(self.zero_point)} in {__name__} must be of type 'dict' or 'int' !"))
         return np.array(zero_points)
     
+    #@abstractmethod
     def load_photometry(self, fits_cat, band):
         if isinstance(self.arr_index, int):
             zero_point = self.load_zero_point(band) # check that self.zero_point is saved in the correct format and extract ZP for this band
@@ -56,20 +69,24 @@ class Catalogue_Creator:
             raise(Exception(f"'arr_index' = {self.arr_index} is not valid in {__name__}! Must be either 'None' or type() = int !"))
         return phot, phot_err
     
+    @abstractmethod
+    def load_mask(self, fits_cat, bands):
+        pass
+    
     def load_property(self, fits_cat, gal_property, code):
-        property_label = self.property_conv(gal_property, code)
-        return fits_cat[property_label]
+        return fits_cat[self.property_conv_dict[code.__class__.__name__][gal_property]]
 
     def load_flag(self, fits_cat, gal_flag):
         flag_label = self.flag_conv(gal_flag)
         try:
             return fits_cat[flag_label]
         except:
-            return {} #None
+            return {} # None
     
     def apply_min_flux_pc_err(self, fluxes, errs):
+        assert(fluxes.unit == errs.unit)
         errs = np.array([[self.min_flux_pc_err * flux / 100 if err / flux < self.min_flux_pc_err / 100 and flux > 0. else err \
-                          for flux, err in zip(gal_fluxes, gal_errs)] for gal_fluxes, gal_errs in zip(fluxes, errs)])
+            for flux, err in zip(gal_fluxes, gal_errs)] for gal_fluxes, gal_errs in zip(fluxes.value, errs.value)]) * fluxes.unit
         return fluxes, errs
 
 # %% GALFIND conversion from photometry .fits catalogue row to Photometry_obs class
@@ -79,30 +96,18 @@ class GALFIND_Catalogue_Creator(Catalogue_Creator):
     def __init__(self, cat_type, aper_diam, min_flux_pc_err, zero_point = u.Jy.to(u.ABmag), flux_or_mag = "flux"):
         self.cat_type = cat_type
         self.aper_diam = aper_diam
-        if cat_type == "sex":
-            phot_conv = self.sex_phot_conv
-        elif cat_type == "loc_depth":
-            phot_conv = self.loc_depth_phot_conv
-        else:
-            raise(Exception(f"'cat_type' = {cat_type} is not valid in {__name__}! Must be either 'sex' or 'loc_depth' !"))
         
         # only make these dicts once to speed up property loading
         same_key_value_properties = [] #["auto_corr_factor_UV", "auto_corr_factor_mass"]
-        self.property_conv_dict = {sed_code: {**getattr(globals()[sed_code], sed_code)().galaxy_property_dict, **{element: element for element in same_key_value_properties}} for sed_code in json.loads(config["Other"]["CODES"])}
-        #print(self.property_conv_dict)
-        same_key_value_flags = ["robust", "good", "robust_relaxed", "good_relaxed", "blank_module"] + [f"unmasked_{band}" for band in json.loads(config.get("Other", "ALL_BANDS"))]
-        self.flag_conv_dict = {element: element for element in same_key_value_flags}
+        property_conv_dict = {sed_code: {**getattr(globals()[sed_code], sed_code)().galaxy_property_dict, **{element: element for element in same_key_value_properties}} for sed_code in json.loads(config["Other"]["CODES"])}
         
-        property_conv = self.property_conv
-        flag_conv = self.flag_conv
         ra_dec_labels = {"RA": "ALPHA_J2000", "DEC": "DELTA_J2000"}
         ID_label = "NUMBER"
         phot_fits_ext = 0 # check whether this works!
         aper_diam_index = int(json.loads(config.get("SExtractor", "APERTURE_DIAMS")).index(aper_diam.value))
-        #aper_diam_index = np.where(aper_diam.value == json.loads(config.get("SExtractor", "APERTURE_DIAMS")))[0][0]
-        super().__init__(phot_conv, property_conv, flag_conv, aper_diam_index, flux_or_mag, min_flux_pc_err, ra_dec_labels, ID_label, zero_point, phot_fits_ext)
+        super().__init__(property_conv_dict, aper_diam_index, flux_or_mag, min_flux_pc_err, ra_dec_labels, ID_label, zero_point, phot_fits_ext)
 
-    def sex_phot_conv(self, bands):
+    def sex_phot_labels(self, bands):
         # Updated to take a list of bands as input
         if self.flux_or_mag == "flux":
             phot_label = [f"FLUX_APER_{band}" for band in bands]
@@ -114,7 +119,7 @@ class GALFIND_Catalogue_Creator(Catalogue_Creator):
             raise(Exception("self.flux_or_mag = {self.flux_or_mag} is invalid! It should be either 'flux' or 'mag' !"))
         return phot_label, err_label
     
-    def loc_depth_phot_conv(self, bands):
+    def loc_depth_phot_labels(self, bands):
         # outputs catalogue column names for photometric fluxes + errors
         if self.flux_or_mag == "flux":
             phot_labels = [f"FLUX_APER_{band}_aper_corr_Jy" for band in bands]
@@ -127,30 +132,31 @@ class GALFIND_Catalogue_Creator(Catalogue_Creator):
             raise(Exception("self.flux_or_mag = {self.flux_or_mag} is invalid! It should be either 'flux' or 'mag' !"))
         return phot_labels, err_labels
     
-    def depth_conv(self, bands):
+    def phot_labels(self, bands):
+        if self.cat_type == "sex":
+            return self.sex_phot_labels(bands)
+        elif self.cat_type == "loc_depth":
+            return self.loc_depth_phot_labels(bands)
+        else:
+            galfind_logger.critical(f"self.cat_type = {self.cat_type} not in ['sex', 'loc_depth']!")
+
+    def mask_labels(self, bands):
+        return [f"unmasked_{band}" for band in bands]
+
+    def depth_labels(self, bands):
         return [f"loc_depth_{band}" for band in bands]
-    
-    def property_conv(self, gal_property, code):
-        return self.property_conv_dict[code.code_name][gal_property]
-    
-    def band_mask_conv(self, bands):
-        return [self.flag_conv[f"unmasked_{band}"] for band in bands]
     
     # overriding load_photometry from parent class to include .T[aper_diam_index]'s
     def load_photometry(self, fits_cat, bands):
         zero_points = self.load_zero_points(bands)
-        phot_labels, err_labels = self.phot_conv(bands)
-        band_mask_labels = self.flag_conv(bands)
-        assert len(phot_labels) == len(err_labels) == band_mask_labels, "Length of photometry and error labels inconsistent!"
+        phot_labels, err_labels = self.phot_labels(bands)
+        assert len(phot_labels) == len(err_labels), galfind_logger.critical("Length of photometry and error labels inconsistent!")
         
         phot_cat = funcs.fits_cat_to_np(fits_cat, phot_labels)
         err_cat = funcs.fits_cat_to_np(fits_cat, err_labels)
 
         if self.flux_or_mag == "flux":
             phot = funcs.flux_image_to_Jy(phot_cat[:, :, self.aper_diam_index], zero_points)
-            if len(fits_cat) > 1:
-                print(phot)
-                raise(Exception())
             phot_err = funcs.flux_image_to_Jy(err_cat[:, :, self.aper_diam_index], zero_points)
             phot, phot_err = self.apply_min_flux_pc_err(phot, phot_err)
         elif self.flux_or_mag == "mag":
@@ -159,20 +165,39 @@ class GALFIND_Catalogue_Creator(Catalogue_Creator):
             phot_err = funcs.mag_to_flux # this doesn't currently work!
 
         # mask these arrays based on whether or not each band is masked for each galaxy
-        self.masked = True
+        masked_arr = self.load_mask(fits_cat, bands)
+        assert masked_arr.shape == phot.shape, galfind_logger.critical("Length of mask arr and photometry is inconsistent!")
+        phot = Masked(phot, mask = masked_arr)
+        phot_err = Masked(phot_err, mask = masked_arr)
+        return phot, phot_err
+    
+    def load_mask(self, fits_cat, bands):
+        band_mask_labels = self.mask_labels(bands)
+        self.is_masked = True
         for label in band_mask_labels:
             if label not in fits_cat.colnames:
                 galfind_logger.warning("Catalogue not yet masked in Catalogue_Creator.load_photometry()!")
-                self.masked = False
+                self.is_masked = False
                 break
-        if self.masked:
-            unmasked_arr = funcs.fits_cat_to_np(fits_cat, band_mask_labels, reshape_by_aper_diams = False)
-        else: # everything is unmasked
-            unmasked_arr = np.full(phot.shape, True)
-
-        phot = np.ma.masked_array(phot, mask = unmasked_arr, fill_value = np.nan)
-        phot_err = np.ma.masked_array(phot_err, mask = unmasked_arr, fill_value = np.nan)
-        return phot, phot_err
+        if self.is_masked:
+            masked_arr = np.invert(funcs.fits_cat_to_np(fits_cat, band_mask_labels, reshape_by_aper_diams = False))
+        else: # nothing is masked
+            masked_arr = np.full((len(fits_cat), len(bands)), False)
+        return masked_arr
+    
+    def load_depths(self, fits_cat, bands):
+        depth_labels = self.depth_labels(bands)
+        self.has_depths = True
+        for label in depth_labels:
+            if label not in fits_cat.colnames:
+                galfind_logger.warning("Catalogue not yet masked in Catalogue_Creator.load_photometry()!")
+                self.has_depths = False
+                break
+        if self.has_depths:
+            depths_arr = funcs.fits_cat_to_np(fits_cat, depth_labels)[:, :, self.aper_diam_index]
+        else: # depths given as np.nan
+            depths_arr = np.full((len(fits_cat), len(bands)), np.nan)
+        return depths_arr * u.ABmag
 
 # %% Common catalogue converters
 

@@ -132,23 +132,17 @@ class Catalogue_SED_results:
             raise(Exception())
         
         labels_dict = {gal_property: funcs.GALFIND_SED_column_labels(codes, lowz_zmaxs, templates_arr, gal_property) for gal_property in gal_properties}
-        #print(labels_dict)
-        #print(codes, lowz_zmaxs, templates_arr, gal_properties)
-        #print("Need to sort out cat_redshifts and cat_chi_sqs in Catalogue_SED_results.from_fits_cat")
-        #galfind_logger.error("ERROR!")
-        #z = float(fits_cat_row[code.galaxy_property_labels("z_phot", templates, lowz_zmax)])
-        #print(fits_cat.columns)
         cat_redshifts = np.array([fits_cat[labels] for labels in labels_dict["z_phot"]])
         cat_chi_sqs = np.array([fits_cat[labels] for labels in labels_dict["chi_sq"]])
-        #print(cat_redshifts, cat_chi_sqs, fits_cat, labels_dict, labels_dict["z_phot"])
         IDs = np.array(fits_cat[cat_creator.ID_label]).astype(int)
+        
         cat_z_PDF_paths = []
         cat_SED_paths = []
-        #raise(Exception("This implementation still requires fixing!"))
         # should be a faster way of reading in this data
         for code, templates in zip(codes, templates_arr):
             for lowz_zmax in lowz_zmaxs:
                 lowz_label = funcs.lowz_label(lowz_zmax)
                 cat_z_PDF_paths.append([code.z_PDF_paths_from_cat_path(fits_cat_path, ID, templates, lowz_label) for ID in IDs])
                 cat_SED_paths.append([code.SED_paths_from_cat_path(fits_cat_path, ID, templates, lowz_label) for ID in IDs])
+        
         return cls(phot_arr, cat_redshifts.T, cat_chi_sqs.T, np.array(cat_z_PDF_paths).T, np.array(cat_SED_paths).T, [code.__class__.__name__ for code in codes], lowz_zmaxs, templates_arr)

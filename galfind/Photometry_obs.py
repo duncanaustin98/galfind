@@ -69,8 +69,8 @@ class Photometry_obs(Photometry):
         self.SED_results = {code_name: dict(**self.SED_results[code_name], **gal_SED_results[code_name]) for code_name in self.SED_results.keys()}
         #print("Post update:", self.SED_results)
     
-    def load_local_depths(self, sex_cat_row, instrument, aper_diam_index):
-        self.loc_depths = np.array([sex_cat_row[f"loc_depth_{band}"].T[aper_diam_index] for band in instrument.bands])
+    #def load_local_depths(self, sex_cat_row, instrument, aper_diam_index):
+    #    self.loc_depths = np.array([sex_cat_row[f"loc_depth_{band}"].T[aper_diam_index] for band in instrument.bands])
         
     def SNR_crop(self, band, sigma_detect_thresh):
         index = self.instrument.band_from_index(band)
@@ -91,10 +91,10 @@ class Multiple_Photometry_obs:
         # force SED_results_arr to have the same len as the number of input fluxes
         if SED_results_arr == []:
             SED_results_arr = np.full(len(flux_Jy_arr), {})
-        self.phot_obs_arr = [Photometry_obs(instrument, flux_Jy * u.Jy, flux_Jy_errs * u.Jy, aper_diam, min_flux_pc_err, loc_depths, SED_results) \
-                         for flux_Jy, flux_Jy_errs, loc_depths, SED_results in zip(flux_Jy_arr, flux_Jy_errs_arr, loc_depths_arr, SED_results_arr)]
+        self.phot_obs_arr = [Photometry_obs(instrument, flux_Jy, flux_Jy_errs, aper_diam, min_flux_pc_err, loc_depths, SED_results) \
+            for flux_Jy, flux_Jy_errs, loc_depths, SED_results in zip(flux_Jy_arr, flux_Jy_errs_arr, loc_depths_arr, SED_results_arr)]
 
-    def __repr__(self):
+    def __str__(self):
         # string representation of what is stored in this class
         return str(self.__dict__)
     
@@ -119,8 +119,6 @@ class Multiple_Photometry_obs:
     @classmethod
     def from_fits_cat(cls, fits_cat, instrument, cat_creator, aper_diam, min_flux_pc_err, codes, lowz_zmaxs, templates_arr):
         flux_Jy_arr, flux_Jy_errs_arr = cat_creator.load_photometry(fits_cat, instrument.bands)
-        # TO DO: MAKE MULTIPLE_SED_RESULTS CLASS TO LOAD IN SED_RESULTS SIMULTANEOUSLY (LEAVE AS [] FOR NOW)
-        loc_depths_arr = np.full(len(flux_Jy_arr), None)
+        depths_arr = cat_creator.load_depths(fits_cat, instrument.bands)
         SED_results_arr = Catalogue_SED_results.from_fits_cat(fits_cat, cat_creator, codes, lowz_zmaxs, templates_arr, instrument = instrument).SED_results
-        # print("Photometry_obs SED_results = ", SED_results_arr)
-        return cls(instrument, flux_Jy_arr, flux_Jy_errs_arr, aper_diam, min_flux_pc_err, loc_depths_arr, SED_results_arr)
+        return cls(instrument, flux_Jy_arr, flux_Jy_errs_arr, aper_diam, min_flux_pc_err, depths_arr, SED_results_arr)
