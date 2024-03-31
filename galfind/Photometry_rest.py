@@ -19,9 +19,7 @@ import matplotlib.pyplot as plt
 from scipy.interpolate import interp1d
 from scipy.optimize import curve_fit
 
-from . import Photometry
-from . import astropy_cosmo
-from . import config
+from . import config, galfind_logger, astropy_cosmo, line_diagnostics, Photometry
 from . import useful_funcs_austind as funcs
 
 class beta_fit:
@@ -69,8 +67,17 @@ class Photometry_rest(Photometry):
         return result
     
     @property
-    def first_detect_band(self):
+    def first_Lya_detect_band(self):
+        first_detect_band = ""
+        for band, wav in zip(self.instrument, self.wav):
+            line_diagnostics["Lya"][""]
         pass
+
+    @property
+    def first_Lya_non_detect_band(self):
+        first_non_detect_band = ""
+        for band, wav in zip(self.instrument, self.wav):
+            pass
 
     # Old properties! This class should probably be overwritten
     

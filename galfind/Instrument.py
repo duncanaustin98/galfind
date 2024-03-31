@@ -73,7 +73,7 @@ class Instrument:
         elif type(i) == str:
             return self.bands[self.index_from_band(i)]
         else:
-            raise(TypeError(f"i={i} in {__class__.__name__}.__getitem__ has type={type(i)} which is not in [int, str]"))
+            raise(TypeError(f"i={i} in {__class__.__name__}.__getitem__ has type={type(i)} which is not in [int, slice, str]"))
     
     def __del__(self):
         self.bands = []
@@ -82,7 +82,7 @@ class Instrument:
 
     def instrument_from_band(self, band):
         # Pointless here but makes it compatible with Combined_Instrument
-        if (band.split("+")[0] in self.bands) or band in self.bands:
+        if (band.split("+")[0] in self.band_names) or band in self.band_names:
             return self
         else:
             return False
@@ -98,13 +98,13 @@ class Instrument:
         # cannot add multiple of the same bands together!!! (maybe could just ignore the problem \
         # in Instrument class and just handle it in Data, possibly stacking the two images)
         for band in instrument.bands:
-            if band in self.bands:
+            if band in self.band_names:
                 raise(Exception("Cannot add multiple of the same band together in 'Instrument.__add__()'!"))
         
         # add and sort bands from blue -> red
         all_bands = json.loads(config.get("Other", "ALL_BANDS"))
         # print("all bands = ", all_bands, type(all_bands), type(all_bands[0]))
-        bands = [band for band in all_bands if band in np.concatenate([self.bands, instrument.bands])]
+        bands = [band for band in all_bands if band in np.concatenate([self.band_names, instrument.bands])]
         self.band_wavelengths.update(instrument.band_wavelengths)
         band_wavelengths = self.band_wavelengths
         self.band_FWHMs.update(instrument.band_FWHMs)
@@ -132,7 +132,7 @@ class Instrument:
     def __sub__(self, instrument):
         print("Note that 'Instrument.__sub__()' only removes common bands between the two 'instrument' classes")
         for band in instrument.bands:
-            if band in self.bands:
+            if band in self.band_names:
                 self.remove_band(band)
             else:
                 print(f"Cannot remove {band} from {self.name}!")
@@ -155,6 +155,10 @@ class Instrument:
         return result
     
 # %% Class properties
+    
+    @property
+    def band_names(self):
+        return np.array([band.__class__.__name__ for band in self.bands])
     
     @property
     def bands_from_wavelengths(self):
@@ -194,7 +198,7 @@ class Instrument:
         self.remove_band(remove_band)
         
     def index_from_band(self, band):
-        return np.where(self.bands == band)[0][0]
+        return np.where(self.band_names == band)[0][0]
     
     # def band_from_index(self, index):
     #     return self.bands[index]
@@ -219,22 +223,6 @@ class Instrument:
             return new_instrument
         else:
             raise(Exception(f"Instrument name: {name} does not exist in 'Instrument.from_name()'!"))
-            
-    def load_band_filter_profile(self, band, from_SVO = True):
-        if not hasattr(self, "filter_profiles"):
-            self.filter_profiles = {}
-        if type(self).__name__ == "Combined_Instrument":
-            instrument = self.instrument_from_band(band)
-            name = instrument.name
-            telescope = instrument.telescope
-        else:
-            name = self.name
-            telescope = self.telescope
-        if from_SVO:
-            filter_name = f"{telescope}/{name}.{band.replace('f', 'F')}"
-            self.filter_profiles[band] = SvoFps.get_transmission_data(filter_name)
-        else:
-            raise(Exception("Not yet implemented another way to load bands other than via SVO"))
     
     def load_instrument_filter_profiles(self, from_SVO = True):
         for band in self:
@@ -255,7 +243,7 @@ class Instrument:
     def plot_filter_profiles(self, ax, plot_bands = [], from_SVO = True, cmap_name = "Spectral_r", show = True, save = False):
         cmap = sns.color_palette(cmap_name, len(plot_bands))
         for i, band in enumerate(plot_bands):
-            if not band in self.bands:
+            if not band in self.band_names:
                 raise(Exception(f"{band} not in {self.name}!"))
             else:
                 self.plot_filter_profile(ax, band, from_SVO = from_SVO, color = cmap[i])
@@ -267,7 +255,7 @@ class Instrument:
             pass
         if show:
             plt.show()
-            
+
 
 class NIRCam(Instrument):
     
@@ -287,11 +275,11 @@ class NIRCam(Instrument):
         aper_corr_path = f'{config["Other"]["GALFIND_DIR"]}/Aperture_corrections/NIRCam_aper_corr.txt'
         if not Path(aper_corr_path).is_file():
             # perform aperture corrections
-            NIRCam_aper_corr.main(self.bands)
+            NIRCam_aper_corr.main(self.band_names)
         # load aperture corrections from appropriate path (bands in NIRCam class must be the same as those saved in aper_corr)
         aper_corr_data = np.loadtxt(aper_corr_path, dtype = str, comments = "#")
         aper_diam_index = np.where(json.loads(config.get("SExtractor", "APERTURE_DIAMS")) == aper_diam.value)[0][0] + 1
-        band_index = list(self.bands).index(band)
+        band_index = list(self.band_names).index(band)
         # print((aper_diam_index, band_index))
         return float(aper_corr_data[band_index][aper_diam_index])
     

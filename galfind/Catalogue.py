@@ -30,7 +30,7 @@ from . import config
 from . import Catalogue_Base
 from . import Photometry_rest
 from . import galfind_logger
-from .Instrument import NIRCam, MIRI, ACS_WFC, WFC3_IR, Instrument, Combined_Instrument
+from .Instrument import NIRCam, MIRI, ACS_WFC, WFC3_IR, Instrument, Combined_Instrument, line_diagnostics
 
 class Catalogue(Catalogue_Base):
     
@@ -122,7 +122,7 @@ class Catalogue(Catalogue_Base):
         # load the relevant FLUX_AUTO from SExtractor output
         flux_autos = funcs.flux_image_to_Jy(np.array(tab[f"FLUX_AUTO_{band}"]), self.data.im_zps[band])
         ext_src_corrs = self.cap_ext_src_corrs([flux_autos[i] / gal.phot.flux_Jy[np.where(band == \
-                                            gal.phot.instrument.bands)[0][0]].value for i, gal in enumerate(cat)])
+            gal.phot.instrument.bands)[0][0]].value for i, gal in enumerate(cat)])
         return ext_src_corrs
             
     def make_ext_src_corr_cat(self, code_name = "EAZY", templates_arr = ["fsps", "fsps_larson", "fsps_jades"], join_tables = True):
@@ -386,7 +386,13 @@ class Catalogue(Catalogue_Base):
 
     # %% Selection
 
-    def phot_SNR_crop(self, band, n_sigma, remove = False, flag = True):
+    def phot_bluewards_non_detect(self, SNR, rest_lim = line_diagnostics["Lya"]["line_wav"]):
+        pass
+
+    def phot_redwards_detect(self, SNR, rest_lim = line_diagnostics["Lya"]["line_wav"]):
+        pass
+
+    def phot_SNR_crop(self, band, SNR, remove = False, flag = True):
         pass
     
     def flag_robust_high_z(self, relaxed = False):
