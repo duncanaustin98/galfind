@@ -218,7 +218,7 @@ class Catalogue(Catalogue_Base):
             
             # make columns for individual band masking
             if config["Masking"].getboolean("MASK_BANDS"):
-                for band in tqdm(self.instrument.bands, desc = "Masking galfind catalogue object", total = len(self.instrument.bands)):
+                for band in tqdm(self.instrument.band_names, desc = "Masking galfind catalogue object", total = len(self.instrument.band_names)):
                     # open .fits mask for band
                     mask = self.data.load_mask(band)
                     # load image wcs
@@ -277,7 +277,7 @@ class Catalogue(Catalogue_Base):
         # update masking of individual galaxy objects in catalogue
 
     def make_cutouts(self, IDs, cutout_size = 32):
-        for band in tqdm(self.instrument, total = len(self.instrument), desc = "Making band cutouts"):
+        for band in tqdm(self.instrument.band_names, total = len(self.instrument), desc = "Making band cutouts"):
             im_data, im_header, seg_data, seg_header = self.data.load_data(band, incl_mask = False)
             wht_data = self.data.load_wht(band)
             wcs = WCS(im_header)

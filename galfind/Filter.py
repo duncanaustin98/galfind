@@ -55,7 +55,12 @@ class Filter:
         output_prop["WavelengthLower50"] = output_prop["WavelengthCen"] - output_prop["FWHM"] / 2.
         return cls(facility, instrument, band, wav, trans, output_prop)
     
-    
+    def plot_filter_profile(self, ax, band, from_SVO = True, color = "black"):
+        ax.fill_between(self.wav, 0., self.trans, color = color, alpha = 0.6)
+        ax.plot(self.wav, self.trans, color = "black", lw = 2) #cmap[np.where(self.bands == band)])
+        mid_wav = np.median(self.wav[self.trans > 1e-3])
+        ax.text(self.WavelengthCen, np.max(self.trans) + 0.03, band, ha = "center", fontsize = 8)
+        ax.grid(False)
 
 if __name__ == "__main__":
     Filter.from_SVO("JWST", "NIRCam", "F444W")
