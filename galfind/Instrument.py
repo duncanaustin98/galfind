@@ -43,11 +43,11 @@ class Instrument:
     @property
     def band_wavelengths(self):
         # Central wavelengths
-        return
+        return np.array([band.WavelengthCen.to(u.AA).value for band in self.bands]) * u.AA
     
     @property
     def band_FWHMs(self):
-        return
+        return np.array([band.FWHM.to(u.AA).value for band in self.bands]) * u.AA
     
 # %% Overloaded operators
 
@@ -63,7 +63,7 @@ class Instrument:
         output_str += f"FACILITY: {self.facility}\n"
         output_str += f"INSTRUMENT: {self.name}\n"
         # show individual bands used, ordered from blue to red
-        output_str += f"FILTER SET: {str([f'{self.instrument_from_band(band).facility}/{self.instrument_from_band(band).name}/{band}' for band in self])}\n"
+        output_str += f"FILTER SET: {str([f'{self.instrument_from_band(band_name).facility}/{self.instrument_from_band(band_name).name}/{band_name}' for band_name in self.band_names])}\n"
         # could also include PSF path and correction factors here
         output_str += line_sep
         return output_str
@@ -208,7 +208,7 @@ class Instrument:
         self.remove_band(remove_band)
         
     def index_from_band(self, band):
-        return np.where(self.band_names == band)[0][0]
+        return np.where(self.band_names == band.__class__.__name__)[0][0]
     
     # def band_from_index(self, index):
     #     return self.bands[index]
@@ -363,7 +363,7 @@ class Combined_Instrument(Instrument):
         names = self.name.split("+")
         for name in names:
             instrument = self.from_name(name)
-            if band in instrument.bands:
+            if band in instrument.band_names:
                 return instrument.aper_corr(aper_diam, band)
         raise(Exception(f"{band} does not exist in Instrument = {self.name}!"))
     

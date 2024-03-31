@@ -54,7 +54,7 @@ from .decorators import run_in_dir, hour_timer, email_update
 class Data:
     
     def __init__(self, instrument, im_paths, im_exts, im_pixel_scales, im_shapes, im_zps, wht_paths, wht_exts, rms_err_paths, rms_err_exts, \
-        seg_paths, mask_paths, cluster_mask_path, blank_mask_path, survey, version, cat_path = "", is_blank = True, alignment_band = "f444W"):
+        seg_paths, mask_paths, cluster_mask_path, blank_mask_path, survey, version, cat_path = "", is_blank = True, alignment_band = "F444W"):
         
         # sort dicts from blue -> red bands in ascending wavelength order
         self.im_paths = dict(sorted(im_paths.items()))
@@ -71,7 +71,7 @@ class Data:
         self.im_pixel_scales = im_pixel_scales
         self.im_shapes = im_shapes
         # ensure alignment band exists
-        if alignment_band not in self.instrument.bands:
+        if alignment_band not in self.instrument.band_names:
             galfind_logger.critical(f"Alignment band = {alignment_band} does not exist in instrument!")
         else:
             self.alignment_band = alignment_band
@@ -130,7 +130,7 @@ class Data:
         for paths, key in zip([im_paths, seg_paths, mask_paths, rms_err_paths, wht_paths], \
             ["SCI", "SEG", "MASK", "ERR", "WHT"]):
             try:
-                for band in self.instrument:
+                for band in self.instrument.band_names:
                     assert("/".join(paths[band].split("/")[:-1]) == "/".join(paths[self.instrument[0]].split("/")[:-1]))
                 self.common_dirs[key] = "/".join(paths[self.instrument[0]].split("/")[:-1])
                 galfind_logger.info(f"Common directory found for {key}: {self.common_dirs[key]}")
@@ -141,9 +141,9 @@ class Data:
         self.common = {}
         for label, item_dict in zip(["ZERO POINT", "PIXEL SCALE", "SCI SHAPE"], [self.im_zps, self.im_pixel_scales, self.im_shapes]):
             try:
-                for band in self.instrument:
-                    assert(item_dict[band] == item_dict[self.instrument[0]])
-                self.common[label] = item_dict[self.instrument[0]]
+                for band in self.instrument.band_names:
+                    assert(item_dict[band] == item_dict[self.instrument.band_names[0]])
+                self.common[label] = item_dict[self.instrument.band_names[0]]
                 galfind_logger.info(f"Common {label} found")
             except AssertionError:
                 galfind_logger.info(f"No common {label}")
@@ -451,7 +451,7 @@ class Data:
             output_str += line_sep
         # loop through available bands, printing paths, exts, ZPs, fits shapes
         output_str += "BAND DATA:\n"
-        for band in self.instrument:
+        for band in self.instrument.band_names:
             output_str += band_sep
             output_str += f"{band}\n"
             band_data_paths = [self.im_paths[band], self.seg_paths[band], self.mask_paths[band]]
@@ -488,10 +488,10 @@ class Data:
             return band_data
     
     def __getitem__(self, index):
-        return self.load_data(self.instrument.bands[index], incl_mask = True)
+        return self.load_data(self.instrument.band_names[index], incl_mask = True)
     
     def __add__(self, data):
-        common_bands = [band for band in data.instrument.bands if band in self.instrument.bands]
+        common_bands = [band for band in data.instrument.band_names if band in self.instrument.band_names]
         if len(common_bands) != 0:
             raise(Exception(f"Cannot add two of the same bands from different instruments together! Culprits: {common_bands}"))
         # add all dictionaries together
@@ -798,7 +798,7 @@ class Data:
         galfind_logger.info(f"Made segmentation map for {self.survey} {self.version} {band} using config = {sex_config_path} and {err_map_type}")
 
     def make_seg_maps(self):
-        for band in self.instrument.bands:
+        for band in self.instrument.band_names:
             self.make_seg_map(band)
     
     def stack_bands(self, bands):
@@ -903,10 +903,10 @@ class Data:
         else:
             self.forced_phot_band = forced_phot_band
         
-        if self.forced_phot_band not in self.instrument.bands:
-            sextractor_bands = np.append(self.instrument.bands, self.forced_phot_band)
+        if self.forced_phot_band not in self.instrument.band_names:
+            sextractor_bands = np.append(self.instrument.band_names, self.forced_phot_band)
         else:
-            sextractor_bands = self.instrument.bands
+            sextractor_bands = self.instrument.band_names
         
         sex_cats = {}
 
@@ -1009,7 +1009,7 @@ class Data:
             master_tab.add_column(dec_detect_band, name = 'DELTA_J2000', index = 4)
             
             # update table header
-            master_tab.meta = {**master_tab.meta, **{"INSTR": self.instrument.name, "BANDS": str(self.instrument.bands)}}
+            master_tab.meta = {**master_tab.meta, **{"INSTR": self.instrument.name, "BANDS": str(self.instrument.band_names)}}
 
             # create galfind catalogue README
             #self.make_sex_readme(self.sex_cat_master_path.replace(".fits", "_README.txt"))
@@ -1179,9 +1179,9 @@ class Data:
         if type(masking_instrument_or_band_name) == str:
             # mask by requiring unmasked criteria in all bands for a given Instrument
             if masking_instrument_or_band_name in [subclass.__name__ for subclass in Instrument.__subclasses__() if subclass.__name__ != "Combined_Instrument"]:
-                masking_bands = np.array([band for band in self.instrument.bands if band in Instrument.from_name(masking_instrument_or_band_name).bands])
+                masking_bands = np.array([band for band in self.instrument.band_names if band in Instrument.from_name(masking_instrument_or_band_name).bands])
             elif masking_instrument_or_band_name == "All":
-                masking_bands = np.array(self.instrument.bands)
+                masking_bands = np.array(self.instrument.band_names)
             else: # string should contain individual bands, separated by a "+"
                 masking_bands = masking_instrument_or_band_name.split("+")
                 for band in masking_bands:
@@ -1250,7 +1250,7 @@ class Data:
             galfind_logger.info("OVERWRITE_LOC_DEPTH_CAT = YES, updating catalogue with aperture corrections.")
         cat = Table.read(self.sex_cat_master_path)
         if not "APERCORR" in cat.meta.keys() or overwrite:
-            for i, band in enumerate(self.instrument.bands):
+            for i, band in enumerate(self.instrument.band_names):
                 mag_aper_corr_data = np.zeros(len(cat))
                 flux_aper_corr_data = np.zeros(len(cat))
                 for j, aper_diam in enumerate(json.loads(config.get("SExtractor", "APERTURE_DIAMS")) * u.arcsec):
@@ -1291,7 +1291,7 @@ class Data:
             #mean_depths = {}
             #median_depths = {}
             diagnostic_name = ""
-            for i, band in enumerate(self.instrument.bands):
+            for i, band in enumerate(self.instrument.band_names):
                 for j, aper_diam in enumerate(json.loads(config.get("SExtractor", "APERTURE_DIAMS")) * u.arcsec):
                     self.get_depth_dir(aper_diam)
                     #print(band, aper_diam)
@@ -1357,7 +1357,7 @@ class Data:
         
     def get_depth_dir(self, aper_diam):
         self.depth_dirs = {}
-        for band in self.instrument.bands:
+        for band in self.instrument.band_names:
             self.depth_dirs[band] = f"{config['Depths']['DEPTH_DIR']}/{self.instrument.instrument_from_band(band).name}/{self.version}/{self.survey}/{format(aper_diam.value, '.2f')}as"
             os.makedirs(self.depth_dirs[band], exist_ok = True)
         return self.depth_dirs
@@ -1365,7 +1365,7 @@ class Data:
     def load_depths(self, aper_diam):
         self.get_depth_dir(aper_diam)
         self.depths = {}
-        for band in self.instrument.bands:
+        for band in self.instrument.band_names:
             # load depths from saved .txt file
             depths = Table.read(f"{self.depth_dirs[band]}/{self.survey}_depths.txt", names = ["band", "depth"], format = "ascii")
             self.depths[band] = float(depths[depths["band"] == band]["depth"])
@@ -1382,7 +1382,7 @@ class Data:
         for aper_diam in aper_diams:
             # Generate folder for depths
             self.get_depth_dir(aper_diam)
-            for band in self.instrument.bands:
+            for band in self.instrument.band_names:
                 # Only run for non excluded bands
                 if band not in excl_bands:
                     params.append((band, aper_diam, self.depth_dirs[band], mode, scatter_size, distance_to_mask, region_radius_used_pix, n_nearest, \

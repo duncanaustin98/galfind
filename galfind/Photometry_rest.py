@@ -31,11 +31,11 @@ class beta_fit:
         self.transmission = {}
         self.norm = {}
         for band in instrument:
-            self.wavelength[band] = np.array(self.instrument.filter_profiles[band]["Wavelength"].value / (1 + self.z))
-            self.transmission[band] = np.array(self.instrument.filter_profiles[band]["Transmission"].value)
+            self.wavelength[band] = np.array(band.wav.value / (1 + self.z))
+            self.transmission[band] = np.array(band.trans.value)
             self.norm[band] = np.trapz(self.transmission[band], x = self.wavelength[band])
     def beta_slope_power_law_func_conv_filt(self, _, A, beta):
-        return np.array([np.trapz((10 ** A) * (self.wavelength[band] ** beta) * self.transmission[band], x = self.wavelength[band]) / self.norm[band] for band in self.instrument])
+        return np.array([np.trapz((10 ** A) * (self.wavelength[band] ** beta) * self.transmission[band], x = self.wavelength[band]) / self.norm[band] for band in self.instrument.band_names])
 
 class Photometry_rest(Photometry):
     
@@ -69,34 +69,34 @@ class Photometry_rest(Photometry):
     @property
     def first_Lya_detect_band(self):
         first_detect_band = ""
-        for band, wav in zip(self.instrument, self.wav):
+        for band, wav in zip(self.instrument.band_names, self.wav):
             line_diagnostics["Lya"][""]
         pass
 
     @property
     def first_Lya_non_detect_band(self):
         first_non_detect_band = ""
-        for band, wav in zip(self.instrument, self.wav):
+        for band, wav in zip(self.instrument.band_names, self.wav):
             pass
 
     # Old properties! This class should probably be overwritten
     
     @property
     def wav(self):
-        return funcs.wav_obs_to_rest(np.array([self.instrument.band_wavelengths[band].value for band in self.instrument.bands]) * u.Angstrom, self.z)
+        return funcs.wav_obs_to_rest(np.array([self.instrument.band_wavelengths[band].value for band in self.instrument.band_names]) * u.Angstrom, self.z)
     
     @property
     def wav_errs(self):
-        return funcs.wav_obs_to_rest(np.array([self.instrument.band_FWHMs[band].value / 2 for band in self.instrument.bands]) * u.Angstrom, self.z)
+        return funcs.wav_obs_to_rest(np.array([self.instrument.band_FWHMs[band].value / 2 for band in self.instrument.band_names]) * u.Angstrom, self.z)
     
     @property
     def flux_lambda(self):
-        flux_lambda_obs = (self.flux_Jy * const.c / ((np.array([self.instrument.band_wavelengths[band].value for band in self.instrument.bands]) * u.Angstrom) ** 2)).to(u.erg / (u.s * (u.cm ** 2) * u.Angstrom))
+        flux_lambda_obs = (self.flux_Jy * const.c / ((np.array([self.instrument.band_wavelengths[band].value for band in self.instrument.band_names]) * u.Angstrom) ** 2)).to(u.erg / (u.s * (u.cm ** 2) * u.Angstrom))
         return funcs.flux_lambda_obs_to_rest(flux_lambda_obs, self.z)
     
     @property
     def flux_lambda_errs(self):
-        flux_lambda_obs_errs = (self.flux_Jy_errs * const.c / ((np.array([self.instrument.band_wavelengths[band].value for band in self.instrument.bands]) * u.Angstrom) ** 2)).to(u.erg / (u.s * (u.cm ** 2) * u.Angstrom))
+        flux_lambda_obs_errs = (self.flux_Jy_errs * const.c / ((np.array([self.instrument.band_wavelengths[band].value for band in self.instrument.band_names]) * u.Angstrom) ** 2)).to(u.erg / (u.s * (u.cm ** 2) * u.Angstrom))
         return funcs.flux_lambda_obs_to_rest(flux_lambda_obs_errs, self.z)
     
     @property
@@ -117,7 +117,7 @@ class Photometry_rest(Photometry):
     
     @property
     def rest_UV_band(self):
-        return self.instrument.bands[self.rest_UV_band_index]
+        return self.instrument[self.rest_UV_band_index]
     
     @property
     def rest_UV_band_flux_Jy(self):

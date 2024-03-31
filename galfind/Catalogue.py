@@ -218,7 +218,7 @@ class Catalogue(Catalogue_Base):
             
             # make columns for individual band masking
             if config["Masking"].getboolean("MASK_BANDS"):
-                for band in tqdm(self.instrument.band_names, desc = "Masking galfind catalogue object", total = len(self.instrument.band_names)):
+                for band in tqdm(self.instrument.band_names, desc = "Masking galfind catalogue object", total = len(self.instrument)):
                     # open .fits mask for band
                     mask = self.data.load_mask(band)
                     # load image wcs

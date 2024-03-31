@@ -43,11 +43,11 @@ class Photometry_obs(Photometry):
 
     @property
     def flux_lambda(self): # wav and flux_nu must have units here!
-        return (self.flux_Jy * const.c / ((np.array([self.instrument.band_wavelengths[band].value for band in self.instrument.bands]) * u.Angstrom) ** 2)).to(u.erg / (u.s * (u.cm ** 2) * u.Angstrom)) # both flux_nu and wav must be in the same rest or observed frame
+        return (self.flux_Jy * const.c / ((np.array([self.instrument.band_wavelengths[band].value for band in self.instrument.band_names]) * u.Angstrom) ** 2)).to(u.erg / (u.s * (u.cm ** 2) * u.Angstrom)) # both flux_nu and wav must be in the same rest or observed frame
     
     @property
     def flux_lambda_errs(self):
-        return (self.flux_Jy_errs * const.c / ((np.array([self.instrument.band_wavelengths[band].value for band in self.instrument.bands]) * u.Angstrom) ** 2)).to(u.erg / (u.s * (u.cm ** 2) * u.Angstrom))
+        return (self.flux_Jy_errs * const.c / ((np.array([self.instrument.band_wavelengths[band].value for band in self.instrument.band_names]) * u.Angstrom) ** 2)).to(u.erg / (u.s * (u.cm ** 2) * u.Angstrom))
 
     @property
     def SNR(self):
@@ -79,16 +79,16 @@ class Photometry_obs(Photometry):
     #def load_local_depths(self, sex_cat_row, instrument, aper_diam_index):
     #    self.loc_depths = np.array([sex_cat_row[f"loc_depth_{band}"].T[aper_diam_index] for band in instrument.bands])
         
-    def SNR_crop(self, band, sigma_detect_thresh):
-        index = self.instrument.band_from_index(band)
-        # local depth in units of Jy
-        loc_depth_Jy = self.loc_depths[index].to(u.Jy) / 5
-        detection_Jy = self.flux_Jy[index].to(u.Jy)
-        sigma_detection = (detection_Jy / loc_depth_Jy).value
-        if sigma_detection >= sigma_detect_thresh:
-            return True
-        else:
-            return False
+    # def SNR_crop(self, band, sigma_detect_thresh):
+    #     index = self.instrument.band_from_index(band)
+    #     # local depth in units of Jy
+    #     loc_depth_Jy = self.loc_depths[index].to(u.Jy) / 5
+    #     detection_Jy = self.flux_Jy[index].to(u.Jy)
+    #     sigma_detection = (detection_Jy / loc_depth_Jy).value
+    #     if sigma_detection >= sigma_detect_thresh:
+    #         return True
+    #     else:
+    #         return False
 
 # %%    
         

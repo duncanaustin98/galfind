@@ -70,7 +70,7 @@ class Photometry:
     
     @property
     def wav(self):
-        return np.array([self.instrument.band_wavelengths[band].value for band in self.instrument.bands]) * u.Angstrom
+        return np.array([self.instrument.band_wavelengths[band].value for band in self.instrument.band_names]) * u.Angstrom
     
     @classmethod
     def from_fits_cat(cls, fits_cat_row, instrument, cat_creator):
@@ -94,7 +94,7 @@ class Photometry:
     def crop_phot(self, indices):
         indices = np.array(indices).astype(int)
         for index in reversed(indices):
-            self.instrument.remove_band(self.instrument.bands[index])
+            self.instrument.remove_band(self.instrument[index])
         self.flux_Jy = np.delete(self.flux_Jy, indices)
         self.flux_Jy_errs = np.delete(self.flux_Jy_errs, indices)
         
