@@ -98,34 +98,39 @@ class SED_code(ABC):
         out_folder = funcs.split_dir_name(in_path.replace("input", "output"), "dir")
         out_path = f"{out_folder}/{funcs.split_dir_name(in_path, 'name').replace('.in', '.out')}"
         #print(out_path)
-        sed_folder = f"{out_folder}/SEDs/{cat.cat_creator.min_flux_pc_err}pc"
-        os.makedirs(sed_folder, exist_ok = True)
-        
-        overwrite = config[self.__class__.__name__].getboolean(f"OVERWRITE_{self.__class__.__name__}_COLS")
+        overwrite = config[self.__class__.__name__].getboolean(f"OVERWRITE_{self.__class__.__name__}")
         tab = Table.read(cat.cat_path, memmap = True)
-        if not f"RUN_{self.__class__.__name__}" in tab.meta.keys() or overwrite:
-            if config[self.__class__.__name__].getboolean(f"RUN_{self.__class__.__name__}"):
-                galfind_logger.info(f"Running SED fitting for {self.__class__.__name__}")
-                self.run_fit(in_path, out_path, sed_folder, cat.instrument.new_instrument(), templates = templates, lowz_zmax_arr = lowz_zmax_arr)#, *args, **kwargs)
-            fits_out_path = self.make_fits_from_out(out_path, templates) #, *args, **kwargs)
+        for lowz_zmax in lowz_zmax_arr:
+            fits_out_path = self.out_fits_name(out_path, templates, lowz_zmax)
+            # run the SED fitting if not already done so or if wanted overwriting
+            if f"RUN_{self.__class__.__name__}" not in tab.meta.keys() or overwrite:
+                #if config[self.__class__.__name__].getboolean(f"RUN_{self.__class__.__name__}"):
+                self.run_fit(in_path, fits_out_path, cat.instrument.new_instrument(), templates = templates, lowz_zmax = lowz_zmax, overwrite = overwrite) #, *args, **kwargs)
+                self.make_fits_from_out(out_path, templates, lowz_zmax) #, *args, **kwargs)
             # update galaxies within catalogue object with determined properties
-            cat = self.update_cat(cat, fits_out_path, templates = templates, lowz_zmax_arr = lowz_zmax_arr) #, *args, **kwargs)
+            # cat = self.update_cat(cat, fits_out_path, templates = templates, lowz_zmax = lowz_zmax) #, *args, **kwargs)
         return cat
     
-    def update_cat(self, cat, fits_out_path, templates, lowz_zmax_arr): #*args, **kwargs):
+    def update_cat(self, cat, fits_out_path, templates, lowz_zmax): #*args, **kwargs):
         # open original catalogue
         orig_cat = Table.read(cat.cat_path)
         if "TEMPLATE" in orig_cat.meta.keys():
             orig_templates = (orig_cat.meta["TEMPLATE"]).replace(" ", "").replace("[", "").replace("]", "").split(",")
         else:
             orig_templates = []
-
+        if "ZMAX" in orig_cat.meta.keys():
+            orig_lowz_zmax = (orig_cat.meta["ZMAX"]).replace(" ", "").replace("[", "").replace("]", "").split(",")
+        else:
+            orig_lowz_zmax = []
+        print(templates, orig_templates, templates in orig_templates)
+        print(np.where(orig_templates == templates))
+        #raise(Exception())
         # combine catalogues should results for the template set not already be included
         if templates not in orig_templates:
             combined_cat = join(orig_cat, Table.read(fits_out_path), keys_left = "NUMBER", keys_right = "IDENT")
             combined_cat_path = cat.cat_path
             combined_cat.remove_column("IDENT")
-            combined_cat.meta = {**combined_cat.meta, **{f"RUN_{self.code_name.upper()}": True, "ZMAXLOWZ": str(lowz_zmax_arr), \
+            combined_cat.meta = {**combined_cat.meta, **{f"RUN_{self.__class__.__name__}": True, "ZMAX": str(orig_lowz_zmax + [lowz_zmax]), \
                 "CAT_PATH": cat.cat_path, "TEMPLATE": str(orig_templates + [templates])}}
             combined_cat.write(cat.cat_path, overwrite = True)
         else:
@@ -133,7 +138,7 @@ class SED_code(ABC):
 
         # update galaxies within the catalogue with new SED fits
         cat_SED_results = Catalogue_SED_results.from_fits_cat(combined_cat, cat.cat_creator, \
-            [self], lowz_zmax_arr, [templates], phot_arr = [gal.phot for gal in cat], fits_cat_path = cat.cat_path).SED_results
+            [self], [lowz_zmax], [templates], phot_arr = [gal.phot for gal in cat], fits_cat_path = cat.cat_path).SED_results
         cat.update_SED_results(cat_SED_results)
         return cat
         

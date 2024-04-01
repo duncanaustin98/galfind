@@ -120,7 +120,7 @@ class Data:
                     mask_path = self.clean_mask_regions(mask_path)
                     mask_path = self.mask_reg_to_pix(self.alignment_band, mask_path)
                 else:
-                    galfind_logger.critical(f"{mask_type.capitalize()} mask does not exist for {survey} and no auto-masking has yet been implemented!")
+                    galfind_logger.critical(f"{mask_type.capitalize()} mask does not exist for {survey} and no blank field/cluster auto-masking has yet been implemented!")
             self.blank_mask_path = blank_mask_path
             self.cluster_mask_path = cluster_mask_path
         
@@ -146,8 +146,6 @@ class Data:
                 galfind_logger.info(f"Common {label} found")
             except AssertionError:
                 galfind_logger.info(f"No common {label}")
-        
-        print(str(self))
 
     @classmethod
     def from_pipeline(cls, survey, version = "v9", instruments = ['NIRCam', 'ACS_WFC', 'WFC3_IR'], excl_bands = [], pix_scales = ['30mas', '60mas']):
@@ -1577,7 +1575,4 @@ def is_blank_survey(survey):
         return False
     else:
         return True
-
-if __name__ == "__main__":
-    pass
 

@@ -33,6 +33,8 @@ class Catalogue_Base:
         # cross-match is commutative for catalogues
         self.__rmul__ = self.__mul__
 
+        print(str(self))
+
     # %% Overloaded operators
 
     def __str__(self, print_cls_name = True, print_data = True, print_sel_criteria = True):

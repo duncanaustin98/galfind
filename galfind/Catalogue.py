@@ -38,14 +38,14 @@ class Catalogue(Catalogue_Base):
     # %% alternative constructors
     @classmethod
     def from_pipeline(cls, survey, version, aper_diams, cat_creator, code_names, lowz_zmax, instruments = ['NIRCam', 'ACS_WFC', 'WFC3_IR'], \
-                      forced_phot_band = "f444W", excl_bands = [], loc_depth_min_flux_pc_errs = [5, 10], templates_arr = ["fsps_larson"]):
+                      forced_phot_band = "F444W", excl_bands = [], loc_depth_min_flux_pc_errs = [5, 10], templates_arr = ["fsps_larson"]):
         # make 'Data' object
         data = Data.from_pipeline(survey, version, instruments, excl_bands = excl_bands)
         return cls.from_data(data, version, aper_diams, cat_creator, code_names, lowz_zmax, forced_phot_band, \
                 loc_depth_min_flux_pc_errs, templates_arr)
     
     @classmethod
-    def from_data(cls, data, version, aper_diams, cat_creator, code_names, lowz_zmax, forced_phot_band = "f444W", \
+    def from_data(cls, data, version, aper_diams, cat_creator, code_names, lowz_zmax, forced_phot_band = "F444W", \
                 loc_depth_min_flux_pc_errs = [10], templates_arr = ["fsps_larson"], mask = True):
         # make masked local depth catalogue from the 'Data' object
         data.combine_sex_cats(forced_phot_band)
@@ -54,7 +54,7 @@ class Catalogue(Catalogue_Base):
         data.perform_aper_corrs()
         data.make_loc_depth_cat(cat_creator, depth_mode = mode)
         return cls.from_fits_cat(data.sex_cat_master_path, version, data.instrument, cat_creator, \
-                code_names, data.survey, lowz_zmax, templates_arr = templates_arr, data = data, mask = mask)
+            code_names, data.survey, lowz_zmax, templates_arr = templates_arr, data = data, mask = mask)
     
     @classmethod
     def from_fits_cat(cls, fits_cat_path, version, instrument, cat_creator, code_names, survey, \
@@ -62,14 +62,7 @@ class Catalogue(Catalogue_Base):
             data = None, mask = False, excl_bands = []):
         # open the catalogue
         fits_cat = funcs.cat_from_path(fits_cat_path)
-        # for band in instrument.band_names:
-        #     #try:
-        #     cat_creator.load_photometry(Table(fits_cat[0]), [band])
-        #     #except:
-        #     #     # no data for the relevant band within the catalogue
-        #     #     instrument.remove_band(band)
-        #     #     print(f"{band} flux not loaded")
-        print(f"instrument band names = {instrument.band_names}")
+        #print(f"instrument band names = {instrument.band_names}")
         codes = [getattr(globals()[name], name)() for name in code_names]
         # produce galaxy array from each row of the catalogue
         start_time = time.time()
