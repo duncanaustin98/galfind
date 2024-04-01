@@ -209,11 +209,11 @@ class Data:
                     im_path_arr = np.array(glob.glob(f"{survey_dir}/*_i2d*.fits"))
 
                 # obtain available bands from imaging without having to hard code these
-                bands = np.array([split_path.lower().replace("w", "W").replace("m", "M") for path in im_path_arr for i, split_path in \
-                        enumerate(path.split("-")[-1].split("/")[-1].split("_")) if split_path.lower().replace("w", "W").replace("m", "M") in instrument.bands])
+                bands = np.array([split_path.upper() for path in im_path_arr for i, split_path in \
+                        enumerate(path.split("-")[-1].split("/")[-1].split("_")) if split_path.upper() in instrument.band_names])
                 
                 # If band not used in instrument, remove it
-                for band in instrument.bands:
+                for band in instrument.band_names:
                     if band not in bands:
                         instrument.remove_band(band)
                     else:
@@ -351,7 +351,7 @@ class Data:
 
         if comb_instrument_created:
             # All seg maps and masks should be in same format, so load those last when we know what bands we have
-            for band in comb_instrument.bands:
+            for band in comb_instrument.band_names:
                 try:
                     #print(f"{config['DEFAULT']['GALFIND_WORK']}/SExtractor/{comb_instrument.instrument_from_band(band)}/{version}/{survey}/{survey}*{band}_{band}*{version}*seg.fits")
                     seg_paths[band] = glob.glob(f"{config['DEFAULT']['GALFIND_WORK']}/SExtractor/{comb_instrument.instrument_from_band(band).name}/{version}/{survey}/{survey}*{band}_{band}*{version}*seg.fits")[0]

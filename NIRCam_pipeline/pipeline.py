@@ -43,14 +43,14 @@ if __name__ == "__main__":
     cat_type = "loc_depth"
     surveys = ["NGDEEP2"] #[config["DEFAULT"]["SURVEY"]]
     aper_diams = [0.32] * u.arcsec
-    code_names = ["EAZY"]
+    code_names = [] #"EAZY"]
     eazy_templates = ["fsps_larson"] #["fsps", "fsps_larson", "fsps_jades"]
     eazy_lowz_zmax = [4., 6., None] #, [4., 6.], [4., 6.]]
     min_flux_pc_errs = [10]
-    forced_phot_band = ["f277W", "f356W", "f444W"]
-    jems_bands = ["f182M", "f210M", "f430M", "f460M", "f480M"]
+    forced_phot_band = ["F277W", "F356W", "F444W"]
+    jems_bands = ["F182M", "F210M", "F430M", "F460M", "F480M"]
 
-    ngdeep_excl_bands = ["f435W", "f775W", "f850LP"]
+    ngdeep_excl_bands = ["F435W", "F775W", "F850LP"]
     #jades_3215_excl_bands = ["f162M", "f115W", "f150W", "f200W", "f410M", "f182M", "f210M", "f250M", "f300M", "f335M", "f277W", "f356W", "f444W"] 
     excl_bands = []
 

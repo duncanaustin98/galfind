@@ -19,8 +19,9 @@ import matplotlib.pyplot as plt
 from scipy.interpolate import interp1d
 from scipy.optimize import curve_fit
 
-from . import config, galfind_logger, astropy_cosmo, line_diagnostics, Photometry
+from . import config, galfind_logger, astropy_cosmo, Photometry
 from . import useful_funcs_austind as funcs
+# from . import line_diagnostics
 
 class beta_fit:
     def __init__(self, z, instrument):
@@ -70,7 +71,8 @@ class Photometry_rest(Photometry):
     def first_Lya_detect_band(self):
         first_detect_band = ""
         for band, wav in zip(self.instrument.band_names, self.wav):
-            line_diagnostics["Lya"][""]
+            pass
+            #line_diagnostics["Lya"][""]
         pass
 
     @property

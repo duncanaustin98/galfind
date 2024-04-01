@@ -17,9 +17,9 @@ from pathlib import Path
 from astroquery.svo_fps import SvoFps
 import matplotlib.pyplot as plt
 
-
 from . import useful_funcs_austind as funcs
-from . import config, NIRCam_aper_corr, Filter
+from . import config, NIRCam_aper_corr
+from .Filter import Filter
 
 class Instrument:
     
@@ -32,13 +32,14 @@ class Instrument:
 
     @classmethod
     def from_SVO(cls, facility, instrument, excl_bands = []):
-        filter_list = SvoFps.get_filter_list(facility = facility, instrument = instrument)
-        bands = np.array([Filter.from_SVO(facility, instrument, band) for band in np.array(filter_list["band"])])
+        filter_list = SvoFps.get_filter_list(facility = facility, instrument = instrument.split("_")[0])
+        filter_list = filter_list[np.array([filter_name.split("/")[-1].split(".")[0] for filter_name in np.array(filter_list["filterID"])]) == instrument]
+        bands = np.array([Filter.from_SVO(facility, instrument, filt_ID) for filt_ID in np.array(filter_list["filterID"])])
         return cls(instrument, bands, excl_bands, facility)
 
     @property
     def band_names(self):
-        return np.array([band.__class__.__name__ for band in self.bands])
+        return np.array([band.name for band in self.bands])
     
     @property
     def band_wavelengths(self):
@@ -93,8 +94,6 @@ class Instrument:
     
     def __del__(self):
         self.bands = []
-        self.band_wavelengths = {}
-        self.band_FWHMs = {}
 
     def instrument_from_band(self, band):
         # Pointless here but makes it compatible with Combined_Instrument
@@ -192,11 +191,11 @@ class Instrument:
     
 # %% Other class methods
 
-    def remove_band(self, band):
-        band = str(band)
-        assert type(band) == str, f"band = {band} of type = {type(band)} is not str"
+    def remove_band(self, band_name):
+        band_name = str(band_name)
+        assert type(band_name) == str, f"band = {band_name} of type = {type(band_name)} is not 'str'"
         try:
-            remove_index = self.index_from_band(band)
+            remove_index = self.index_from_band_name(band_name)
             #print(f"remove index = {remove_index}")
             self.bands = np.delete(self.bands, remove_index)
         except IndexError:
@@ -204,14 +203,14 @@ class Instrument:
             pass
         
     def remove_index(self, remove_index):
-        remove_band = self.band_from_index(remove_index)
+        remove_band = self.band_name_from_index(remove_index)
         self.remove_band(remove_band)
         
-    def index_from_band(self, band):
-        return np.where(self.band_names == band.__class__.__name__)[0][0]
+    def index_from_band_name(self, band_name):
+        return np.where(self.band_names == band_name)[0][0]
     
-    # def band_from_index(self, index):
-    #     return self.bands[index]
+    def band_name_from_index(self, index):
+        return self.band_names[index]
     
     @staticmethod
     def from_name(name, excl_bands = []):
@@ -257,7 +256,8 @@ class Instrument:
 class NIRCam(Instrument):
     
     def __init__(self, excl_bands = []):
-        super().from_SVO("JWST", "NIRCam", excl_bands = excl_bands)
+        instr = Instrument.from_SVO("JWST", self.__class__.__name__, excl_bands = excl_bands)
+        super().__init__(instr.name, instr.bands, excl_bands, instr.facility)
         # bands = ["f070W", "f090W", "f115W", "f140M", "f150W", "f162M", "f182M", "f200W", "f210M", "f250M", "f277W", "f300M", "f335M", "f356W", "f360M", "f410M", "f430M", "f444W", "f460M", "f480M"]
         # band_wavelengths = {"f070W": 7_056., "f090W": 9_044., "f115W": 11_571., "f140M": 14_060., "f150W": 15_040., "f162M": 16_281., "f182M": 18_466., "f200W": 19_934., "f210M": 20_964., \
         #                     "f250M": 25_038., "f277W": 27_695., "f300M": 29_908., "f335M": 33_639., "f356W": 35_768., "f360M": 36_261., "f410M": 40_844., "f430M": 42_818., "f444W": 44_159., \
@@ -287,7 +287,8 @@ class NIRCam(Instrument):
 class MIRI(Instrument):
     
     def __init__(self, excl_bands = []):
-        super().from_SVO("JWST", "MIRI", excl_bands = excl_bands)
+        instr = Instrument.from_SVO("JWST", self.__class__.__name__, excl_bands = excl_bands)
+        super().__init__(instr.name, instr.bands, excl_bands, instr.facility)
         # bands = ['f560W', 'f770W', 'f1000W', 'f1130W', 'f1280W', 'f1500W', 'f1800W', 'f2100W', 'f2550W']
         # band_wavelengths = {'f560W':55870.25, 'f770W':75224.94, 'f1000W': 98793.45, 'f1130W':112960.71, 'f1280W':127059.68, 'f1500W':149257.07, 'f1800W':178734.17, 'f2100W':205601.06, 'f2550W':251515.99}
         # band_wavelengths = {key: value * u.Angstrom for (key, value) in band_wavelengths.items()} # convert each individual value to Angstrom
@@ -304,7 +305,8 @@ class MIRI(Instrument):
 class ACS_WFC(Instrument):
     
     def __init__(self, excl_bands = []):
-        super().from_SVO("HST", "ACS_WFC", excl_bands = excl_bands)
+        instr = Instrument.from_SVO("HST", self.__class__.__name__, excl_bands = excl_bands)
+        super().__init__(instr.name, instr.bands, excl_bands, instr.facility)
         # bands = ["f435W", "fr459M", "f475W", "f550M", "f555W", "f606W", "f625W", "fr647M", "f775W", "f814W", "f850LP", "fr914M"]
         # # Wavelengths corrrespond to lambda effective of the filters from SVO Filter Profile Service
         # band_wavelengths = {"f435W": 4_340., "fr459M": 4_590., "f475W": 4_766., "f550M": 5_584., "f555W": 5_373., "f606W": 5_960., \
@@ -327,7 +329,8 @@ class ACS_WFC(Instrument):
 class WFC3_IR(Instrument):
 
     def __init__(self, excl_bands = []):
-        super().from_SVO("HST", "WFC3IR", excl_bands = excl_bands)
+        instr = Instrument.from_SVO("HST", self.__class__.__name__, excl_bands = excl_bands)
+        super().__init__(instr.name, instr.bands, excl_bands, instr.facility)
         # bands = ["f098M", "f105W",  "f110W", "f125W", "f127M", "f139M", "f140W", "f153M", "f160W"]
         # # Wavelengths corrrespond to lambda effective of the filters from SVO Filter Profile Service
         # band_wavelengths = {"f098M": 9_875., "f105W": 10_584.,  "f110W": 11_624., "f125W": 12_516., "f127M": 12_743., "f139M": 13_843., "f140W": 13_970., "f153M": 15_334., "f160W": 15_392.}

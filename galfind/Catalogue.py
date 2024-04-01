@@ -30,7 +30,8 @@ from . import config
 from . import Catalogue_Base
 from . import Photometry_rest
 from . import galfind_logger
-from .Instrument import NIRCam, MIRI, ACS_WFC, WFC3_IR, Instrument, Combined_Instrument, line_diagnostics
+from .Instrument import NIRCam, MIRI, ACS_WFC, WFC3_IR, Instrument
+from .Emission_lines import line_diagnostics
 
 class Catalogue(Catalogue_Base):
     

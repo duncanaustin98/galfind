@@ -70,10 +70,6 @@ class Catalogue_Creator(ABC):
         return phot, phot_err
     
     @abstractmethod
-    def load_SNRs(self, fits_cat, bands):
-        pass
-    
-    @abstractmethod
     def load_mask(self, fits_cat, bands):
         pass
     

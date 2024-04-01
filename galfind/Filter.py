@@ -4,16 +4,16 @@ import numpy as np
 import astropy.units as u
 from astroquery.svo_fps import SvoFps
 
-#from . import galfind_logger
+from . import galfind_logger
 
 class Filter:
 
-    def __init__(self, facility, instrument, band, wav, trans, properties = {}):
-        assert(type(facility) == type(instrument) == type(band) == str)
+    def __init__(self, facility, instrument, band_name, wav, trans, properties = {}):
+        assert(type(facility) == type(instrument) == type(band_name) == str)
         assert(len(wav) == len(trans))
         self.facility = facility
         self.instrument = instrument
-        self.band = band
+        self.band_name = band_name
         self.wav = wav
         self.trans = trans
         for key, value in properties.items():
@@ -26,20 +26,17 @@ class Filter:
         super().__setattr__(key, value)
 
     @classmethod
-    def from_SVO(cls, facility, instrument, band):
-        band = band.upper()
-        filter_name = f"{facility}/{instrument}.{band}"
+    def from_SVO(cls, facility, instrument, filter_name):
+        band = filter_name.split(".")[-1]
         try:
             filter_profile = SvoFps.get_transmission_data(filter_name)
         except:
-            pass
-            #galfind_logger.critical(f"No filter profile for {filter_name}")
+            galfind_logger.critical(f"{filter_name} is not a valid filter name!")
         wav = np.array(filter_profile["Wavelength"])
         trans = np.array(filter_profile["Transmission"])
 
-        properties = SvoFps.data_from_svo(query = {"Facility": facility, "Instrument": instrument})
+        properties = SvoFps.data_from_svo(query = {"Facility": facility, "Instrument": instrument.split("_")[0]}, error_msg = f"'{facility}/{instrument.split('_')[0]}' is not a valid facility/instrument combination!")
         properties = properties[properties["filterID"] == filter_name]
-
         wav *= u.Unit(str(np.array(properties["WavelengthUnit"])[0]))
 
         output_prop = {}
@@ -61,6 +58,3 @@ class Filter:
         mid_wav = np.median(self.wav[self.trans > 1e-3])
         ax.text(self.WavelengthCen, np.max(self.trans) + 0.03, band, ha = "center", fontsize = 8)
         ax.grid(False)
-
-if __name__ == "__main__":
-    Filter.from_SVO("JWST", "NIRCam", "F444W")
