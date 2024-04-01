@@ -347,7 +347,7 @@ def calc_errs_from_cat(cat, col_name, instrument):
         errs = calc_LePhare_errs(cat, col_name)
     elif col_name in EAZY_col_names:
         errs = calc_EAZY_errs(cat, col_name)
-    elif col_name in instrument.bands:
+    elif col_name in instrument.band_names:
         errs = [return_loc_depth_mags(cat, col_name, True)[1]]
     else:
         errs = np.array([cat[f"{col_name}_l1"], cat[f"{col_name}_u1"]])

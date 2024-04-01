@@ -15,7 +15,7 @@ import time
 from galfind import Catalogue, LePhare, EAZY, config
 from galfind.Catalogue_Creator import GALFIND_Catalogue_Creator
 from galfind import Simulated_Catalogue
-from galfind import Instrument, Combined_Instrument, WFC3IR, NIRCam, ACS_WFC
+from galfind import Instrument, Combined_Instrument, WFC3_IR, NIRCam, ACS_WFC
 
 def simulated_pipeline(survey,fits_cat_path, version,instruments, aper_diams, code_names, eazy_zmax_lowz, min_flux_pc_errs, excl_bands, \
              cat_type = "loc_depth", eazy_templates = "fsps_larson", zero_point=31.4):
@@ -43,7 +43,7 @@ if __name__ == "__main__":
     fits_cat_path = '/raid/scratch/data/JAGUAR/JAGUAR_SimDepth_ELG.fits'
 
     #fits_cat_path = '/nvme/scratch/work/tharvey/catalogs/JAGUAR_SHORT_TEST.fits'
-    #instruments = 'Nirc#NIRCam()#+ACS_WFC()+WFC3IR()# Can leave this - if there is no data for an instrument it is removed automatically
+    #instruments = 'Nirc#NIRCam()#+ACS_WFC()+WFC3_IR()# Can leave this - if there is no data for an instrument it is removed automatically
     instruments = ['NIRCam'] # Can leave this - if there is no data for an instrument it is removed automatically
     cat_type = "sex"
     surveys = ["ElGordo"]

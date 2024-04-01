@@ -177,8 +177,8 @@ def split_mock_galfind_tab(tab, instrument, out_path):
         z_split_tab = tab[tab["z_int"] > z_lims[0]]
         z_split_tab = z_split_tab[z_split_tab["z_int"] < z_lims[1]]
         #print(len(z_split_tab))
-        z_split_tab.remove_columns([f"FLUX_APER_{band}_aper_corr_Jy" for band in instrument if band not in bands])
-        z_split_tab.remove_columns([f"FLUXERR_APER_{band}_loc_depth_10pc_Jy" for band in instrument if band not in bands])
+        z_split_tab.remove_columns([f"FLUX_APER_{band}_aper_corr_Jy" for band in instrument.band_names if band not in bands])
+        z_split_tab.remove_columns([f"FLUXERR_APER_{band}_loc_depth_10pc_Jy" for band in instrument.band_names if band not in bands])
         z_split_tab.rename_column("ID", "NUMBER")
         z_split_tab["ALPHA_J2000"] = 0.
         z_split_tab["DELTA_J2000"] = 0.
@@ -265,7 +265,7 @@ def pure_power_law_beta_bias(surveys_arr = [["CEERSP9"] * 2, []], beta_in = -3.)
                     select_tab = Table.read(path)
                     # load in enitre photometry
                     select_tab = join(left = out_tab, right = select_tab, keys_left = "ID", keys_right = "NUMBER", join_type = "inner")
-                    for band in instrument:
+                    for band in instrument.band_names:
                         try:
                             del select_tab[f"FLUX_APER_{band}_aper_corr_Jy_2"]
                             del select_tab[f"FLUXERR_APER_{band}_loc_depth_10pc_Jy_2"]
@@ -352,7 +352,7 @@ def line_beta_bias(line_name = "Lya"):
                 select_tab = Table.read(path)
                 # load in enitre photometry
                 select_tab = join(left = out_tab, right = select_tab, keys_left = "ID", keys_right = "NUMBER", join_type = "inner")
-                for band in instrument:
+                for band in instrument.band_names:
                     try:
                         del select_tab[f"FLUX_APER_{band}_aper_corr_Jy_2"]
                         del select_tab[f"FLUXERR_APER_{band}_loc_depth_10pc_Jy_2"]
@@ -568,7 +568,7 @@ def DLA_beta_bias():
                 select_tab = Table.read(path)
                 # load in enitre photometry
                 select_tab = join(left = out_tab, right = select_tab, keys_left = "ID", keys_right = "NUMBER", join_type = "inner")
-                for band in instrument:
+                for band in instrument.band_names:
                     try:
                         del select_tab[f"FLUX_APER_{band}_aper_corr_Jy_2"]
                         del select_tab[f"FLUXERR_APER_{band}_loc_depth_10pc_Jy_2"]

@@ -74,10 +74,10 @@ class Photometry:
     
     @classmethod
     def from_fits_cat(cls, fits_cat_row, instrument, cat_creator):
-        fluxes, flux_errs = cat_creator.load_photometry(fits_cat_row, instrument.bands)
+        fluxes, flux_errs = cat_creator.load_photometry(fits_cat_row, instrument.band_names)
         try:
             # local depths only currently works for one aperture diameter
-            loc_depths = np.array([fits_cat_row[f"loc_depth_{band}"].T[cat_creator.aper_diam_index] for band in instrument.bands])
+            loc_depths = np.array([fits_cat_row[f"loc_depth_{band_name}"].T[cat_creator.aper_diam_index] for band_name in instrument.band_names])
         except:
             #print("local depths not loaded")
             loc_depths = None
@@ -123,7 +123,7 @@ class Multiple_Photometry:
         
     @classmethod
     def from_fits_cat(cls, fits_cat, instrument, cat_creator):
-        flux_Jy_arr, flux_Jy_errs_arr = cat_creator.load_photometry(fits_cat, instrument.bands)
+        flux_Jy_arr, flux_Jy_errs_arr = cat_creator.load_photometry(fits_cat, instrument.band_names)
         # local depths not yet loaded in
         loc_depths_arr = np.full(flux_Jy_arr.shape, None)
         return cls(instrument, flux_Jy_arr, flux_Jy_errs_arr, loc_depths_arr)

@@ -127,12 +127,11 @@ class Data:
         # find common directories for im/seg/rms_err/wht maps
         self.common_dirs = {}
         galfind_logger.warning(f"self.common_dirs has errors when the len(rms_err_paths) = {len(self.rms_err_paths)} != len(wht_paths) = {len(self.wht_paths)}")
-        for paths, key in zip([im_paths, seg_paths, mask_paths, rms_err_paths, wht_paths], \
-            ["SCI", "SEG", "MASK", "ERR", "WHT"]):
+        for paths, key in zip([im_paths, seg_paths, mask_paths, rms_err_paths, wht_paths], ["SCI", "SEG", "MASK", "ERR", "WHT"]):
             try:
                 for band in self.instrument.band_names:
-                    assert("/".join(paths[band].split("/")[:-1]) == "/".join(paths[self.instrument[0]].split("/")[:-1]))
-                self.common_dirs[key] = "/".join(paths[self.instrument[0]].split("/")[:-1])
+                    assert("/".join(paths[band].split("/")[:-1]) == "/".join(paths[self.instrument.band_names[0]].split("/")[:-1]))
+                self.common_dirs[key] = "/".join(paths[self.instrument.band_names[0]].split("/")[:-1])
                 galfind_logger.info(f"Common directory found for {key}: {self.common_dirs[key]}")
             except AssertionError:
                 galfind_logger.info(f"No common directory for {key}")
@@ -147,6 +146,8 @@ class Data:
                 galfind_logger.info(f"Common {label} found")
             except AssertionError:
                 galfind_logger.info(f"No common {label}")
+        
+        print(str(self))
 
     @classmethod
     def from_pipeline(cls, survey, version = "v9", instruments = ['NIRCam', 'ACS_WFC', 'WFC3_IR'], excl_bands = [], pix_scales = ['30mas', '60mas']):
@@ -259,16 +260,18 @@ class Data:
             elif instrument.name in ["ACS_WFC", 'WFC3_IR']:
                 # Iterate through bands and check if images exist 
                 any_path_found = False
-                for band in instrument.bands:
+                for band, band_name in zip(instrument, instrument.band_names):
                     path_found = False
                     for pix_scale in pix_scales:
-                        glob_paths = glob.glob(f"{config['DEFAULT']['GALFIND_DATA']}/hst/{survey}/{instrument.name}/{pix_scale}/*{band.replace('W', 'w').replace('M', 'm')}*_drz.fits")
-                        glob_paths += glob.glob(f"{config['DEFAULT']['GALFIND_DATA']}/hst/{survey}/{instrument.name}/{pix_scale}/*{band}*_drz.fits")
+                        glob_paths = glob.glob(f"{config['DEFAULT']['GALFIND_DATA']}/hst/{survey}/{instrument.name}/{pix_scale}/*{band_name.lower()}*_drz.fits")
+                        glob_paths += glob.glob(f"{config['DEFAULT']['GALFIND_DATA']}/hst/{survey}/{instrument.name}/{pix_scale}/*{band_name.upper()}*_drz.fits")
+                        glob_paths += glob.glob(f"{config['DEFAULT']['GALFIND_DATA']}/hst/{survey}/{instrument.name}/{pix_scale}/*{band_name.lower().replace('f', 'F')}*_drz.fits")
+                        glob_paths += glob.glob(f"{config['DEFAULT']['GALFIND_DATA']}/hst/{survey}/{instrument.name}/{pix_scale}/*{band_name.upper().replace('F', 'f')}*_drz.fits")
                         # Make sure no duplicates
                         glob_paths = list(set(glob_paths))
                        
                         if len(glob_paths) == 0:
-                            galfind_logger.debug(f"No image path found for {survey} {version} {band} {pix_scale}!")
+                            galfind_logger.debug(f"No image path found for {survey} {version} {band_name} {pix_scale}!")
                         elif len(glob_paths) == 1:
                             path = Path(glob_paths[0])
                             any_path_found = True
@@ -287,53 +290,55 @@ class Data:
                         im_paths[band] = str(path)
                         # Not great to use try/except but not sure how else to do it with index_of
                         try:
-                            im_exts[band] = hdul.index_of('SCI')
+                            im_exts[band_name] = hdul.index_of('SCI')
                         except KeyError:
                             #print(f"No 'SCI' extension for {band} image. Default to im_ext = 0!")
-                            im_exts[band] = 0
+                            im_exts[band_name] = 0
                         # Get header of image extension
-                        imheader = hdul[im_exts[band]].header
-                        im_shapes[band] = hdul[im_exts[band]].data.shape
+                        imheader = hdul[im_exts[band_name]].header
+                        im_shapes[band_name] = hdul[im_exts[band_name]].data.shape
 
                         for map_paths, map_exts, map_type in zip([wht_paths, rms_err_paths], [wht_exts, rms_err_exts], ["WHT", "ERR"]):
                             try:
-                                map_exts[band] = hdul.index_of(map_type)
-                                map_paths[band] = str(path)
+                                map_exts[band_name] = hdul.index_of(map_type)
+                                map_paths[band_name] = str(path)
                             except KeyError:
-                                glob_paths = glob.glob(f"{config['DEFAULT']['GALFIND_DATA']}/hst/{survey}/{instrument.name}/{pix_scale}/*{band.replace('W', 'w').replace('M', 'm')}*_{map_type.lower()}.fits")
-                                glob_paths += glob.glob(f"{config['DEFAULT']['GALFIND_DATA']}/hst/{survey}/{instrument.name}/{pix_scale}/*{band}*_{map_type.lower()}.fits")
+                                glob_paths = glob.glob(f"{config['DEFAULT']['GALFIND_DATA']}/hst/{survey}/{instrument.name}/{pix_scale}/*{band_name.lower()}*_{map_type.lower()}.fits")
+                                glob_paths += glob.glob(f"{config['DEFAULT']['GALFIND_DATA']}/hst/{survey}/{instrument.name}/{pix_scale}/*{band_name.upper()}*_{map_type.lower()}.fits")
+                                glob_paths += glob.glob(f"{config['DEFAULT']['GALFIND_DATA']}/hst/{survey}/{instrument.name}/{pix_scale}/*{band_name.lower().replace('f', 'F')}*_{map_type.lower()}.fits")
+                                glob_paths += glob.glob(f"{config['DEFAULT']['GALFIND_DATA']}/hst/{survey}/{instrument.name}/{pix_scale}/*{band_name.upper().replace('F', 'f')}*_{map_type.lower()}.fits")
                                 if map_type == "ERR":
-                                    glob_paths += glob.glob(f"{config['DEFAULT']['GALFIND_DATA']}/hst/{survey}/{instrument.name}/{pix_scale}/*{band}*_rms.fits")
+                                    glob_paths += glob.glob(f"{config['DEFAULT']['GALFIND_DATA']}/hst/{survey}/{instrument.name}/{pix_scale}/*{band_name}*_rms.fits")
                                 # Make sure no duplicates
                                 glob_paths = list(set(glob_paths))
                                 if len(glob_paths) == 1:
-                                    map_paths[band] = str(Path(glob_paths[0]))
-                                    map_exts[band] = 0
+                                    map_paths[band_name] = str(Path(glob_paths[0]))
+                                    map_exts[band_name] = 0
                                 elif len(glob_paths) > 1:
-                                    galfind_logger.critical(f"Multiple {map_type.lower()} image paths found for {survey} {version} {band} {pix_scale}!")
-                                    raise(Exception(f"Multiple {map_type.lower()} image paths found for {survey} {version} {band} {pix_scale}!"))
+                                    galfind_logger.critical(f"Multiple {map_type.lower()} image paths found for {survey} {version} {band_name} {pix_scale}!")
+                                    raise(Exception(f"Multiple {map_type.lower()} image paths found for {survey} {version} {band_name} {pix_scale}!"))
                                 else:
-                                    galfind_logger.debug(f"No wht image path found for {survey} {version} {band} {pix_scale}!")
+                                    galfind_logger.debug(f"No wht image path found for {survey} {version} {band_name} {pix_scale}!")
                         hdul.close()
                         # if there is neither a wht or rms_err map, raise exception
-                        if band not in wht_paths.keys() and band not in rms_err_paths.keys():
-                            galfind_logger.critical(f"No wht or rms_err map for {survey} {version} {band} {pix_scale}!")
-                            raise(Exception(f"No wht or rms_err map for {survey} {version} {band} {pix_scale}!"))
+                        if band_name not in wht_paths.keys() and band_name not in rms_err_paths.keys():
+                            galfind_logger.critical(f"No wht or rms_err map for {survey} {version} {band_name} {pix_scale}!")
+                            raise(Exception(f"No wht or rms_err map for {survey} {version} {band_name} {pix_scale}!"))
 
                         #print(band, wht_paths[band])
-                        im_pixel_scales[band] = float(pix_scale.split('mas')[0]) * 1e-3 * u.arcsec
+                        im_pixel_scales[band_name] = float(pix_scale.split('mas')[0]) * 1e-3 * u.arcsec
                         if instrument.name == 'ACS_WFC':
                             if "PHOTFLAM" in imheader and "PHOTPLAM" in imheader:
-                                im_zps[band] = -2.5 * np.log10(imheader["PHOTFLAM"]) - 21.10 - 5 * np.log10(imheader["PHOTPLAM"]) + 18.6921
+                                im_zps[band_name] = -2.5 * np.log10(imheader["PHOTFLAM"]) - 21.10 - 5 * np.log10(imheader["PHOTPLAM"]) + 18.6921
                             elif "ZEROPNT" in imheader:
-                                im_zps[band] = imheader["ZEROPNT"]
+                                im_zps[band_name] = imheader["ZEROPNT"]
                             else:
-                                raise(Exception(f"ACS_WFC data for {survey} {version} {band} located at {im_paths[band]} must contain either 'ZEROPNT' or 'PHOTFLAM' and 'PHOTPLAM' in its header to calculate its ZP!"))
+                                raise(Exception(f"ACS_WFC data for {survey} {version} {band_name} located at {im_paths[band_name]} must contain either 'ZEROPNT' or 'PHOTFLAM' and 'PHOTPLAM' in its header to calculate its ZP!"))
                             
                         elif instrument.name == 'WFC3_IR':
                         # Taken from Appendix A of https://www.stsci.edu/files/live/sites/www/files/home/hst/instrumentation/wfc3/documentation/instrument-science-reports-isrs/_documents/2020/WFC3-ISR-2020-10.pdf
                             wfc3ir_zps = {'f098M': 25.661, 'f105W': 26.2637, 'f110W': 26.8185, 'f125W': 26.231, 'f140W': 26.4502, 'f160W': 25.9362}
-                            im_zps[band] = wfc3ir_zps[band]
+                            im_zps[band_name] = wfc3ir_zps[band_name]
                         # Need to move my segmentation maps and masks to the correct place
 
                 if any_path_found:
@@ -351,26 +356,53 @@ class Data:
 
         if comb_instrument_created:
             # All seg maps and masks should be in same format, so load those last when we know what bands we have
-            for band in comb_instrument.band_names:
+            for i, band in enumerate(comb_instrument.band_names):
                 try:
                     #print(f"{config['DEFAULT']['GALFIND_WORK']}/SExtractor/{comb_instrument.instrument_from_band(band)}/{version}/{survey}/{survey}*{band}_{band}*{version}*seg.fits")
                     seg_paths[band] = glob.glob(f"{config['DEFAULT']['GALFIND_WORK']}/SExtractor/{comb_instrument.instrument_from_band(band).name}/{version}/{survey}/{survey}*{band}_{band}*{version}*seg.fits")[0]
                 except IndexError:
                     seg_paths[band] = ""
                 # include just the masks corresponding to the correct bands
-                fits_mask_paths_ = glob.glob(f"{config['DEFAULT']['GALFIND_WORK']}/Masks/{survey}/fits_masks/*{band.replace('W', 'w').replace('M', 'm')}*")
+                fits_mask_paths_ = glob.glob(f"{config['DEFAULT']['GALFIND_WORK']}/Masks/{survey}/fits_masks/*{band.lower()}*")
+                fits_mask_paths_ += glob.glob(f"{config['DEFAULT']['GALFIND_WORK']}/Masks/{survey}/fits_masks/*{band.upper()}*")
+                fits_mask_paths_ += glob.glob(f"{config['DEFAULT']['GALFIND_WORK']}/Masks/{survey}/fits_masks/*{band.lower().replace('f', 'F')}*")
+                fits_mask_paths_ += glob.glob(f"{config['DEFAULT']['GALFIND_WORK']}/Masks/{survey}/fits_masks/*{band.upper().replace('F', 'f')}*")
+                fits_mask_paths_ = list(set(fits_mask_paths_))
+                # exclude masks that include other filters
+                delete_indices = []
+                for j, path in enumerate(fits_mask_paths_):
+                    for k, band_ in enumerate(np.delete(comb_instrument.band_names, i)):
+                        if band_.lower() in path or band_.upper() in path or band_.lower().replace('f', 'F') \
+                                in path or band_.upper().replace('F', 'f') in path:
+                            delete_indices.append(j)
+                            break
+                fits_mask_paths_ = np.delete(fits_mask_paths_, delete_indices)
+
                 if len(fits_mask_paths_) == 1:
                     mask_paths[band] = fits_mask_paths_[0]
                 elif len(fits_mask_paths_) == 0:
-                    mask_paths_ = glob.glob(f"{config['DEFAULT']['GALFIND_WORK']}/Masks/{survey}/*{band.replace('W', 'w').replace('M', 'm')}*")
+                    mask_paths_ = glob.glob(f"{config['DEFAULT']['GALFIND_WORK']}/Masks/{survey}/*{band.lower()}*")
+                    mask_paths_ += glob.glob(f"{config['DEFAULT']['GALFIND_WORK']}/Masks/{survey}/*{band.upper()}*")
+                    mask_paths_ += glob.glob(f"{config['DEFAULT']['GALFIND_WORK']}/Masks/{survey}/*{band.lower().replace('f', 'F')}*")
+                    mask_paths_ += glob.glob(f"{config['DEFAULT']['GALFIND_WORK']}/Masks/{survey}/*{band.upper().replace('F', 'f')}*")
+                    mask_paths_ = list(set(mask_paths_))
+                    # exclude masks that include other filters
+                    delete_indices = []
+                    for j, path in enumerate(mask_paths_):
+                        for k, band_ in enumerate(np.delete(comb_instrument.band_names, i)):
+                            if band_.lower() in path or band_.upper() in path or band_.lower().replace('f', 'F') \
+                                    in path or band_.upper().replace('F', 'f') in path:
+                                delete_indices.append(j)
+                                break
+                    mask_paths_ = np.delete(mask_paths_, delete_indices)
                     if len(mask_paths_) == 0:
                         mask_paths[band] = ""
                     elif len(mask_paths_) == 1:
-                        mask_paths[band] = glob.glob(f"{config['DEFAULT']['GALFIND_WORK']}/Masks/{survey}/*{band.replace('W', 'w').replace('M', 'm')}*")[0]
+                        mask_paths[band] = mask_paths_[0]
                     else:
-                        raise(Exception(f"Too many region masks found for {survey} {band}!"))
+                        raise(Exception(f"Too many region masks found for {survey} {band}! Masks are {mask_paths_}!"))
                 else:
-                    raise(Exception(f"Too many fits masks found for {survey} {band}!"))
+                    raise(Exception(f"Too many fits masks found for {survey} {band}! Masks are {fits_mask_paths_}!"))
             
             if is_blank:
                 cluster_mask_path = ""
@@ -455,7 +487,7 @@ class Data:
             output_str += band_sep
             output_str += f"{band}\n"
             band_data_paths = [self.im_paths[band], self.seg_paths[band], self.mask_paths[band]]
-            band_data_exts = [self.im_exts[band], 1, 1]
+            band_data_exts = [self.im_exts[band], 0, 0]
             band_data_labels = ["SCI", "SEG", "MASK"]
             for paths, exts, label in zip([self.rms_err_paths, self.wht_paths], [self.rms_err_exts, self.wht_exts], ["ERR", "WHT"]):
                 if band in self.rms_err_paths.keys():
@@ -502,6 +534,7 @@ class Data:
 # %% Methods
 
     def load_data(self, band, incl_mask = True):
+        print(band)
         if type(band) not in [str, np.str_]:
             galfind_logger.debug(f"band = {band}, type(band) = {type(band)} not in [str, np.str_] in Data.load_data")
             band = self.combine_band_names(band)
@@ -1251,6 +1284,7 @@ class Data:
         cat = Table.read(self.sex_cat_master_path)
         if not "APERCORR" in cat.meta.keys() or overwrite:
             for i, band in enumerate(self.instrument.band_names):
+                print(band)
                 mag_aper_corr_data = np.zeros(len(cat))
                 flux_aper_corr_data = np.zeros(len(cat))
                 for j, aper_diam in enumerate(json.loads(config.get("SExtractor", "APERTURE_DIAMS")) * u.arcsec):
@@ -1271,14 +1305,13 @@ class Data:
                             for flux_aper_corr, flux_aper in zip(flux_aper_corr_data, cat[f"FLUX_APER_{band}"])]
                 cat[f"MAG_APER_{band}_aper_corr"] = mag_aper_corr_data
                 cat[f"FLUX_APER_{band}_aper_corr"] = flux_aper_corr_data
-                cat[f"FLUX_APER_{band}_aper_corr_Jy"] = [tuple([funcs.flux_image_to_Jy(val, self.im_zps[band]) for val in element]) for element in cat[f"FLUX_APER_{band}_aper_corr"]]
-
+                cat[f"FLUX_APER_{band}_aper_corr_Jy"] = [tuple([funcs.flux_image_to_Jy(val, self.im_zps[band]).value for val in element]) for element in cat[f"FLUX_APER_{band}_aper_corr"]]
         # update catalogue metadata
         #mag_aper_corrs = {f"HIERARCH Mag_aper_corrs_{aper_diam.value}as": tuple([np.round(self.instrument.aper_corr(aper_diam, band), decimals = 4) \
-        #    for band in self.instrument.bands]) for aper_diam in json.loads(config.get("SExtractor", "APERTURE_DIAMS")) * u.arcsec}
+        #    for band in self.instrument.band_names]) for aper_diam in json.loads(config.get("SExtractor", "APERTURE_DIAMS")) * u.arcsec}
         cat.meta = {**cat.meta, **{"APERCORR": True}} #, **mag_aper_corrs}
         # overwrite original catalogue with local depth columns
-        cat.write(self.sex_cat_master_path, overwrite = True)    
+        cat.write(self.sex_cat_master_path, overwrite = True)
 
     def make_loc_depth_cat(self, cat_creator, depth_mode = "n_nearest"):
         overwrite = config["Depths"].getboolean("OVERWRITE_LOC_DEPTH_CAT")
@@ -1341,8 +1374,8 @@ class Data:
                 # impose n_pc min flux error and converting to Jy where appropriate
                 if "APERCORR" in cat.meta.keys():
                     cat[f"FLUXERR_APER_{band}_loc_depth_{str(int(cat_creator.min_flux_pc_err))}pc_Jy"] = \
-                        [tuple([funcs.flux_image_to_Jy(flux, self.im_zps[band]) * cat_creator.min_flux_pc_err / 100. if err / flux < cat_creator.min_flux_pc_err / 100. and flux > 0. \
-                        else funcs.flux_image_to_Jy(flux, self.im_zps[band]) for flux, err in zip(flux_tup, err_tup)]) for flux_tup, err_tup in zip(cat[f"FLUX_APER_{band}_aper_corr"], cat[f"FLUXERR_APER_{band}_loc_depth"])]
+                        [tuple([funcs.flux_image_to_Jy(flux, self.im_zps[band]).value * cat_creator.min_flux_pc_err / 100. if err / flux < cat_creator.min_flux_pc_err / 100. and flux > 0. \
+                        else funcs.flux_image_to_Jy(flux, self.im_zps[band]).value for flux, err in zip(flux_tup, err_tup)]) for flux_tup, err_tup in zip(cat[f"FLUX_APER_{band}_aper_corr"], cat[f"FLUXERR_APER_{band}_loc_depth"])]
                 else:
                     raise(Exception("Couldn't make 'FLUXERR_APER_{band}_loc_depth_{str(int(cat_creator.min_flux_pc_err))}Jy' columns!"))
                 # magnitude and magnitude error columns
@@ -1357,7 +1390,7 @@ class Data:
         
     def get_depth_dir(self, aper_diam):
         self.depth_dirs = {}
-        for band in self.instrument.band_names:
+        for band in self.im_paths.keys():
             self.depth_dirs[band] = f"{config['Depths']['DEPTH_DIR']}/{self.instrument.instrument_from_band(band).name}/{self.version}/{self.survey}/{format(aper_diam.value, '.2f')}as"
             os.makedirs(self.depth_dirs[band], exist_ok = True)
         return self.depth_dirs
@@ -1382,7 +1415,7 @@ class Data:
         for aper_diam in aper_diams:
             # Generate folder for depths
             self.get_depth_dir(aper_diam)
-            for band in self.instrument.band_names:
+            for band in self.im_paths.keys():
                 # Only run for non excluded bands
                 if band not in excl_bands:
                     params.append((band, aper_diam, self.depth_dirs[band], mode, scatter_size, distance_to_mask, region_radius_used_pix, n_nearest, \

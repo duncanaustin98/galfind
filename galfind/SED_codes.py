@@ -69,7 +69,7 @@ class SED_code(ABC):
             # determine relevant indices
             upper_lim_indices = [[i, j] for i, gal in enumerate(cat) for j, depth in enumerate(gal.phot[0].loc_depths) \
                                  if funcs.n_sigma_detection(depth, (phot[i][j] * out_units).to(u.ABmag).value + \
-                                gal.phot.instrument.aper_corr(gal.phot.aper_diam, gal.phot.instrument.bands[j]), u.Jy.to(u.ABmag)) < upper_sigma_lim["threshold"]]
+                                gal.phot.instrument.aper_corr(gal.phot.aper_diam, gal.phot.instrument.band_names[j]), u.Jy.to(u.ABmag)) < upper_sigma_lim["threshold"]]
             phot = np.array([funcs.five_to_n_sigma_mag(loc_depth, upper_sigma_lim["value"]) if [i, j] in upper_lim_indices else phot[i][j] \
                     for i, gal in enumerate(cat) for j, loc_depth in enumerate(gal.phot.loc_depths)]).reshape(phot_shape)
             phot_err = np.array([-1.0 if [i, j] in upper_lim_indices else phot_err[i][j] \
@@ -79,8 +79,8 @@ class SED_code(ABC):
         phot_in = []
         phot_err_in = []
         for band in SED_input_bands:
-            if band in cat.instrument.bands:
-                band_index = np.where(band == cat.instrument.bands)[0][0]
+            if band in cat.instrument.band_names:
+                band_index = np.where(band == cat.instrument.band_names)[0][0]
                 phot_in.append(phot[:, band_index])
                 phot_err_in.append(phot_err[:, band_index])
             else: # band does not exist in data but still needs to be included
@@ -91,7 +91,7 @@ class SED_code(ABC):
         
         return phot_in, phot_err_in
     
-    def fit_cat(self, cat, templates, lowz_zmax): # *args, **kwargs):
+    def fit_cat(self, cat, templates, lowz_zmax_arr): # *args, **kwargs):
         assert(templates in self.available_templates)
         in_path = self.make_in(cat) #, *args, **kwargs)
         #print(in_path)
@@ -106,13 +106,13 @@ class SED_code(ABC):
         if not f"RUN_{self.__class__.__name__}" in tab.meta.keys() or overwrite:
             if config[self.__class__.__name__].getboolean(f"RUN_{self.__class__.__name__}"):
                 galfind_logger.info(f"Running SED fitting for {self.__class__.__name__}")
-                self.run_fit(in_path, out_path, sed_folder, cat.instrument.new_instrument(), templates = templates, lowz_zmax = lowz_zmax)#, *args, **kwargs)
+                self.run_fit(in_path, out_path, sed_folder, cat.instrument.new_instrument(), templates = templates, lowz_zmax_arr = lowz_zmax_arr)#, *args, **kwargs)
             fits_out_path = self.make_fits_from_out(out_path, templates) #, *args, **kwargs)
             # update galaxies within catalogue object with determined properties
-            cat = self.update_cat(cat, fits_out_path, templates = templates, lowz_zmax = lowz_zmax) #, *args, **kwargs)
+            cat = self.update_cat(cat, fits_out_path, templates = templates, lowz_zmax_arr = lowz_zmax_arr) #, *args, **kwargs)
         return cat
     
-    def update_cat(self, cat, fits_out_path, templates, lowz_zmax): #*args, **kwargs):
+    def update_cat(self, cat, fits_out_path, templates, lowz_zmax_arr): #*args, **kwargs):
         # open original catalogue
         orig_cat = Table.read(cat.cat_path)
         if "TEMPLATE" in orig_cat.meta.keys():
@@ -125,7 +125,7 @@ class SED_code(ABC):
             combined_cat = join(orig_cat, Table.read(fits_out_path), keys_left = "NUMBER", keys_right = "IDENT")
             combined_cat_path = cat.cat_path
             combined_cat.remove_column("IDENT")
-            combined_cat.meta = {**combined_cat.meta, **{f"RUN_{self.code_name.upper()}": True, "ZMAXLOWZ": str(lowz_zmax), \
+            combined_cat.meta = {**combined_cat.meta, **{f"RUN_{self.code_name.upper()}": True, "ZMAXLOWZ": str(lowz_zmax_arr), \
                 "CAT_PATH": cat.cat_path, "TEMPLATE": str(orig_templates + [templates])}}
             combined_cat.write(cat.cat_path, overwrite = True)
         else:
@@ -133,7 +133,7 @@ class SED_code(ABC):
 
         # update galaxies within the catalogue with new SED fits
         cat_SED_results = Catalogue_SED_results.from_fits_cat(combined_cat, cat.cat_creator, \
-            [self], lowz_zmax, [templates], phot_arr = [gal.phot for gal in cat], fits_cat_path = cat.cat_path).SED_results
+            [self], lowz_zmax_arr, [templates], phot_arr = [gal.phot for gal in cat], fits_cat_path = cat.cat_path).SED_results
         cat.update_SED_results(cat_SED_results)
         return cat
         

@@ -30,7 +30,7 @@ class CombinedInstrumentTest(unittest.TestCase):
         combined_instrument = NIRCam() + ACS_WFC() + WFC3_IR()
         combined_instrument.load_instrument_filter_profiles(from_SVO = True)
         # ensure that the filter_profile dict is filled with all appropriate bands
-        self.assertCountEqual(list(combined_instrument.filter_profiles.keys()), combined_instrument.bands, "Not loaded instrument filter profiles for each band")
+        self.assertCountEqual(list(combined_instrument.filter_profiles.keys()), combined_instrument.band_names, "Not loaded instrument filter profiles for each band")
         # ensure that each Table in filter_profile dict has appropriate column names and lengths
-        for band in combined_instrument.bands:
+        for band in combined_instrument.band_names:
             self.assertEqual(len(combined_instrument.filter_profiles[band]["Wavelength"]), len(combined_instrument.filter_profiles[band]["Transmission"]))

@@ -54,20 +54,20 @@ class Catalogue_Creator(ABC):
         return np.array(zero_points)
     
     #@abstractmethod
-    def load_photometry(self, fits_cat, band):
-        if isinstance(self.arr_index, int):
-            zero_point = self.load_zero_point(band) # check that self.zero_point is saved in the correct format and extract ZP for this band
-            phot_label, err_label = self.phot_conv(band, self.aper_diam_index)
-            if self.flux_or_mag == "flux":
-                phot = funcs.flux_image_to_Jy(fits_cat[phot_label], zero_point)
-                phot_err = funcs.flux_image_to_Jy(fits_cat[err_label], zero_point)
-                #phot, phot_err = self.apply_min_flux_pc_err(phot, phot_err)
-            elif self.flux_or_mag == "mag":
-                phot = funcs.mag_to_flux(fits_cat[phot_label], u.Jy.to(u.ABmag))
-                phot_err = funcs.mag_to_flux
-        else:
-            raise(Exception(f"'arr_index' = {self.arr_index} is not valid in {__name__}! Must be either 'None' or type() = int !"))
-        return phot, phot_err
+    # def load_photometry(self, fits_cat, band):
+    #     if isinstance(self.arr_index, int):
+    #         zero_point = self.load_zero_point(band) # check that self.zero_point is saved in the correct format and extract ZP for this band
+    #         phot_label, err_label = self.phot_conv(band, self.aper_diam_index)
+    #         if self.flux_or_mag == "flux":
+    #             phot = funcs.flux_image_to_Jy(fits_cat[phot_label], zero_point)
+    #             phot_err = funcs.flux_image_to_Jy(fits_cat[err_label], zero_point)
+    #             #phot, phot_err = self.apply_min_flux_pc_err(phot, phot_err)
+    #         elif self.flux_or_mag == "mag":
+    #             phot = funcs.mag_to_flux(fits_cat[phot_label], u.Jy.to(u.ABmag))
+    #             phot_err = funcs.mag_to_flux
+    #     else:
+    #         raise(Exception(f"'arr_index' = {self.arr_index} is not valid in {__name__}! Must be either 'None' or type() = int !"))
+    #     return phot, phot_err
     
     @abstractmethod
     def load_mask(self, fits_cat, bands):

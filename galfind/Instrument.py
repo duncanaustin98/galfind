@@ -39,7 +39,7 @@ class Instrument:
 
     @property
     def band_names(self):
-        return np.array([band.name for band in self.bands])
+        return np.array([band.band_name for band in self.bands])
     
     @property
     def band_wavelengths(self):
@@ -112,7 +112,7 @@ class Instrument:
     def __add__(self, instrument):
         # cannot add multiple of the same bands together!!! (maybe could just ignore the problem \
         # in Instrument class and just handle it in Data, possibly stacking the two images)
-        for band in instrument.bands:
+        for band in instrument.band_names:
             if band in self.band_names:
                 raise(Exception("Cannot add multiple of the same band together in 'Instrument.__add__()'!"))
         

@@ -39,11 +39,11 @@ def pipeline(surveys, version, instruments, aper_diams, code_names, lowz_zmax, m
 
 if __name__ == "__main__":
     version = "v11" #config["DEFAULT"]["VERSION"]
-    instruments = ["NIRCam"] #, 'ACS_WFC'] #, 'WFC3IR']
+    instruments = ["NIRCam"] #, 'ACS_WFC'] #, 'WFC3_IR']
     cat_type = "loc_depth"
     surveys = ["NGDEEP2"] #[config["DEFAULT"]["SURVEY"]]
     aper_diams = [0.32] * u.arcsec
-    code_names = [] #"EAZY"]
+    code_names = ["EAZY"]
     eazy_templates = ["fsps_larson"] #["fsps", "fsps_larson", "fsps_jades"]
     eazy_lowz_zmax = [4., 6., None] #, [4., 6.], [4., 6.]]
     min_flux_pc_errs = [10]

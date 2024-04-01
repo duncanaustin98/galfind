@@ -37,7 +37,7 @@ class Catalogue(Catalogue_Base):
     
     # %% alternative constructors
     @classmethod
-    def from_pipeline(cls, survey, version, aper_diams, cat_creator, code_names, lowz_zmax, instruments = ['NIRCam', 'ACS_WFC', 'WFC3IR'], \
+    def from_pipeline(cls, survey, version, aper_diams, cat_creator, code_names, lowz_zmax, instruments = ['NIRCam', 'ACS_WFC', 'WFC3_IR'], \
                       forced_phot_band = "f444W", excl_bands = [], loc_depth_min_flux_pc_errs = [5, 10], templates_arr = ["fsps_larson"]):
         # make 'Data' object
         data = Data.from_pipeline(survey, version, instruments, excl_bands = excl_bands)
@@ -62,14 +62,14 @@ class Catalogue(Catalogue_Base):
             data = None, mask = False, excl_bands = []):
         # open the catalogue
         fits_cat = funcs.cat_from_path(fits_cat_path)
-        for band in instrument.bands:
-            #try:
-            cat_creator.load_photometry(Table(fits_cat[0]), [band])
-            #except:
-            #     # no data for the relevant band within the catalogue
-            #     instrument.remove_band(band)
-            #     print(f"{band} flux not loaded")
-        print("instrument bands = ", instrument.bands)
+        # for band in instrument.band_names:
+        #     #try:
+        #     cat_creator.load_photometry(Table(fits_cat[0]), [band])
+        #     #except:
+        #     #     # no data for the relevant band within the catalogue
+        #     #     instrument.remove_band(band)
+        #     #     print(f"{band} flux not loaded")
+        print(f"instrument band names = {instrument.band_names}")
         codes = [getattr(globals()[name], name)() for name in code_names]
         # produce galaxy array from each row of the catalogue
         start_time = time.time()
@@ -85,7 +85,7 @@ class Catalogue(Catalogue_Base):
             cat_obj.mask()
         # run SED fitting for the appropriate code names/low-z runs
         for i, (code, templates) in enumerate(zip(codes, templates_arr)):
-            cat_obj = code.fit_cat(cat_obj, templates = templates, lowz_zmax = lowz_zmax)
+            cat_obj = code.fit_cat(cat_obj, templates = templates, lowz_zmax_arr = lowz_zmax)
         return cat_obj
     
     def update_SED_results(self, cat_SED_results):
@@ -123,7 +123,7 @@ class Catalogue(Catalogue_Base):
         # load the relevant FLUX_AUTO from SExtractor output
         flux_autos = funcs.flux_image_to_Jy(np.array(tab[f"FLUX_AUTO_{band}"]), self.data.im_zps[band])
         ext_src_corrs = self.cap_ext_src_corrs([flux_autos[i] / gal.phot.flux_Jy[np.where(band == \
-            gal.phot.instrument.bands)[0][0]].value for i, gal in enumerate(cat)])
+            gal.phot.instrument.band_names)[0][0]].value for i, gal in enumerate(cat)])
         return ext_src_corrs
             
     def make_ext_src_corr_cat(self, code_name = "EAZY", templates_arr = ["fsps", "fsps_larson", "fsps_jades"], join_tables = True):
@@ -140,7 +140,7 @@ class Catalogue(Catalogue_Base):
 
             ext_src_corrs_band = {}
             ext_src_bands = []
-            for i, band in tqdm(enumerate(self.data.instrument.bands), total = len(self.data.instrument.bands), desc = f"Calculating extended source corrections for {self.cat_path}"):
+            for i, band in tqdm(enumerate(self.data.instrument.band_names), total = len(self.data.instrument.band_names), desc = f"Calculating extended source corrections for {self.cat_path}"):
                 try:
                     band_corrs = self.calc_ext_src_corrs(band)
                     #print(band, band_corrs)
@@ -149,9 +149,9 @@ class Catalogue(Catalogue_Base):
                 except:
                     print(f"No flux auto for {band}")
             print(ext_src_bands)
-            ext_src_col_names = np.array(["ID"] + [f"auto_corr_factor_{name}" for name in [band for band in self.data.instrument.bands if band in ext_src_corrs_band.keys()]] + \
+            ext_src_col_names = np.array(["ID"] + [f"auto_corr_factor_{name}" for name in [band for band in self.data.instrument.band_names if band in ext_src_corrs_band.keys()]] + \
                                          [f"auto_corr_factor_UV_{code_name}_{templates}" for templates in templates_arr] + ["auto_corr_factor_mass"])
-            ext_src_col_dtypes = np.array([int] + [float for name in [band for band in self.data.instrument.bands if band in ext_src_corrs_band.keys()]] + \
+            ext_src_col_dtypes = np.array([int] + [float for name in [band for band in self.data.instrument.band_names if band in ext_src_corrs_band.keys()]] + \
                                           [float for templates in templates_arr] + [float])
                     
             # determine the relevant bands for the extended source correction (slower than it could be, but it works nevertheless)
@@ -296,7 +296,7 @@ class Catalogue(Catalogue_Base):
                 raise Exception(f"RUN = YES, and combination of {self.survey} {self.version} or {self.instrument.name} has not previously been run.")
 
             cat_data = []
-            #print("Bands here: ", self[1].phot.instrument.bands)
+            #print("Bands here: ", self[1].phot.instrument.band_names)
             for i, gal in tqdm(enumerate(self), total = len(self), desc = "Making UV fit catalogue"):
                 n_bands = []
                 gal_copy = gal #copy.deepcopy(gal)
@@ -316,7 +316,7 @@ class Catalogue(Catalogue_Base):
                             # path = f"{config['DEFAULT']['GALFIND_WORK']}/UV_PDFs/{self.data.version}/{self.data.instrument.name}/{self.survey}/{code_name}+{str(self.cat_creator.min_flux_pc_err)}pc/{templates}/Amplitude/{gal_copy.ID}.txt"
                             # #print(path)
                             # if not Path(path).is_file():
-                            #print(gal.phot_obs.instrument.bands)
+                            #print(gal.phot_obs.instrument.band_names)
                             for name in ["Amplitude", "Beta"]:
                                 if name == "Beta":
                                     plot = True
@@ -333,7 +333,7 @@ class Catalogue(Catalogue_Base):
                                     print(traceback.format_exc())
                                     break
                             for name in col_names:
-                                #print(f"{gal.ID}: {gal.phot_rest.phot_obs.instrument.bands}")
+                                #print(f"{gal.ID}: {gal.phot_rest.phot_obs.instrument.band_names}")
                                 try:
                                     gal_data = np.append(gal_data, funcs.percentiles_from_PDF(gal.phot.SED_results[code_name][templates].\
                                             phot_rest[Photometry_rest.rest_UV_wavs_name(rest_UV_wavs)].open_UV_fit_PDF(UV_PDF_path_loc, name, gal_copy.ID, 1., conv_filt = conv_filt, plot = plot)))

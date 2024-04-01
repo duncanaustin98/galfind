@@ -10,7 +10,7 @@ from galfind import Instrument, NIRCam, WFC3_IR, ACS_WFC
 
 instrument = NIRCam() #+ WFC3_IR() + ACS_WFC()
 plot_bands = ["f090W", "f115W", "f150W", "f200W", "f277W", "f356W", "f360M", "f410M", "f444W"]#["f090W", "f115W", "f150W", "f200W", "f277W", "f335M", "f356W", "f410M", "f444W"]
-#plot_bands = instrument.bands
+#plot_bands = instrument.band_names
 fig, ax = plt.subplots()
 # still need to fix title naming system
 instrument.plot_filter_profiles(ax, plot_bands, save = True, show = False)

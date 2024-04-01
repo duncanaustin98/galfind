@@ -21,7 +21,7 @@ class Photometry_obs(Photometry):
         self.aper_diam = aper_diam
         self.min_flux_pc_err = min_flux_pc_err
         self.SED_results = SED_results # array of SED_result objects with different SED fitting runs
-        self.aper_corrs = [instrument.aper_corr(self.aper_diam, band) for band in instrument]
+        self.aper_corrs = [instrument.aper_corr(self.aper_diam, band) for band in instrument.band_names]
         super().__init__(instrument, flux_Jy, flux_Jy_errs, loc_depths)
 
     def __str__(self):
@@ -77,7 +77,7 @@ class Photometry_obs(Photometry):
         #print("Post update:", self.SED_results)
     
     #def load_local_depths(self, sex_cat_row, instrument, aper_diam_index):
-    #    self.loc_depths = np.array([sex_cat_row[f"loc_depth_{band}"].T[aper_diam_index] for band in instrument.bands])
+    #    self.loc_depths = np.array([sex_cat_row[f"loc_depth_{band}"].T[aper_diam_index] for band in instrument.band_names])
         
     # def SNR_crop(self, band, sigma_detect_thresh):
     #     index = self.instrument.band_from_index(band)
@@ -125,7 +125,7 @@ class Multiple_Photometry_obs:
     
     @classmethod
     def from_fits_cat(cls, fits_cat, instrument, cat_creator, aper_diam, min_flux_pc_err, codes, lowz_zmaxs, templates_arr):
-        flux_Jy_arr, flux_Jy_errs_arr = cat_creator.load_photometry(fits_cat, instrument.bands)
-        depths_arr = cat_creator.load_depths(fits_cat, instrument.bands)
+        flux_Jy_arr, flux_Jy_errs_arr = cat_creator.load_photometry(fits_cat, instrument.band_names)
+        depths_arr = cat_creator.load_depths(fits_cat, instrument.band_names)
         SED_results_arr = Catalogue_SED_results.from_fits_cat(fits_cat, cat_creator, codes, lowz_zmaxs, templates_arr, instrument = instrument).SED_results
         return cls(instrument, flux_Jy_arr, flux_Jy_errs_arr, aper_diam, min_flux_pc_err, depths_arr, SED_results_arr)

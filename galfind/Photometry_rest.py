@@ -31,12 +31,12 @@ class beta_fit:
         self.wavelength = {}
         self.transmission = {}
         self.norm = {}
-        for band in instrument:
-            self.wavelength[band] = np.array(band.wav.value / (1 + self.z))
-            self.transmission[band] = np.array(band.trans.value)
-            self.norm[band] = np.trapz(self.transmission[band], x = self.wavelength[band])
+        for band, band_name in zip(instrument, instrument.band_names):
+            self.wavelength[band_name] = np.array(band.wav.value / (1 + self.z))
+            self.transmission[band_name] = np.array(band.trans.value)
+            self.norm[band_name] = np.trapz(self.transmission[band_name], x = self.wavelength[band_name])
     def beta_slope_power_law_func_conv_filt(self, _, A, beta):
-        return np.array([np.trapz((10 ** A) * (self.wavelength[band] ** beta) * self.transmission[band], x = self.wavelength[band]) / self.norm[band] for band in self.instrument.band_names])
+        return np.array([np.trapz((10 ** A) * (self.wavelength[band_name] ** beta) * self.transmission[band_name], x = self.wavelength[band_name]) / self.norm[band_name] for band_name in self.instrument.band_names])
 
 class Photometry_rest(Photometry):
     
@@ -143,7 +143,7 @@ class Photometry_rest(Photometry):
     def make_rest_UV_phot(self):
         phot_rest_copy = deepcopy(self)
         phot_rest_copy.rest_UV_phot_only()
-        #print(f"rest frame UV bands = {phot_rest_copy.phot_obs.instrument.bands}")
+        #print(f"rest frame UV bands = {phot_rest_copy.phot_obs.instrument.band_names}")
         self.rest_UV_phot = phot_rest_copy
     
     def rest_UV_phot_only(self):

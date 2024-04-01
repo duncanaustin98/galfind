@@ -71,7 +71,7 @@ class LePhare(SED_code):
         for i, gal in enumerate(cat):
             gal_context = 2 * (2 ** (len(SED_input_bands) - 1)) - 1
             for j, band in enumerate(SED_input_bands):
-                if band not in gal.phot_obs.instrument.bands:
+                if band not in gal.phot_obs.instrument.band_names:
                     band_context = 2 ** j
                     gal_context = gal_context - band_context
             contexts.append(gal_context)
