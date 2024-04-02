@@ -2,8 +2,9 @@
 
 class Multiple_Catalogue:
 
-    def __init__(self, cat_arr):
+    def __init__(self, cat_arr, survey):
         self.cat_arr = cat_arr
+        self.survey = survey
 
     @classmethod
     def from_pipeline(cls):

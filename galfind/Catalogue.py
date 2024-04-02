@@ -10,6 +10,7 @@ Created on Mon May 22 13:27:47 2023
 import numpy as np
 from astropy.table import Table, join
 import pyregion
+from copy import deepcopy
 from astropy.io import fits
 from pathlib import Path
 import traceback
@@ -82,14 +83,11 @@ class Catalogue(Catalogue_Base):
         return cat_obj
     
     def update_SED_results(self, cat_SED_results):
-        assert(len(cat_SED_results) == len(self))
+        assert(len(cat_SED_results) == len(self)) # if this is not the case then instead should cross match IDs between self and gal_SED_result
         print("Updating SED results in galfind catalogue object")
         [gal.update(gal_SED_result) for gal, gal_SED_result in zip(self, cat_SED_results)]
     
     # %%
-    
-    def open_full_cat(self):
-        return Table.read(self.cat_path, character_as_bytes = False)
     
     def catch_redshift_minus_99(self, gal_index, code, templates, out_value = True, condition = None, condition_fail_val = None, minus_99_out = None):
         #try:
@@ -380,10 +378,38 @@ class Catalogue(Catalogue_Base):
 
     # %% Selection
 
-    def phot_bluewards_non_detect(self, SNR, rest_lim = line_diagnostics["Lya"]["line_wav"]):
-        pass
+    def phot_bluewards_Lya_non_detect(self, SNR_lim, code_name = "EAZY", templates = "fsps_larson", lowz_zmax = None):
+        # extract bands, SNRs, masks and first Lya non-detect bands from each galaxy in self
+        bands_arr = getattr(self, "band_names")
+        SNR_arr = getattr(self, "SNR", phot_type = "obs")
+        mask_arr = getattr(self, "full_mask")
+        first_Lya_non_detect_band_arr = getattr(self, "first_Lya_non_detect_band", \
+            code_name = "EAZY", templates = "fsps_larson", lowz_zmax = None, phot_type = "rest")
+        
+        # this part could go inside galaxy object to speed up the code
+        boolean_keep_arr = np.full(len(self), False) # initialize, removing all galaxies by default
+        for i, (bands, SNR, mask, first_Lya_non_detect_band) in \
+                enumerate(zip(bands_arr, SNR_arr, mask_arr, first_Lya_non_detect_band_arr)):
+            # find index of first Lya non-detect band
+            first_Lya_non_detect_index = np.where(bands == first_Lya_non_detect_band)[0][0]
+            SNR_non_detect = SNR[:first_Lya_non_detect_index + 1]
+            mask_non_detect = mask[:first_Lya_non_detect_index + 1]
+            # require the first Lya non detect band and all bluewards bands to be non-detected at < SNR_lim if not masked
+            if all(SNR < SNR_lim or mask for mask, SNR in zip(mask_non_detect, SNR_non_detect)):
+                boolean_keep_arr[i] = True
+        
+        # crop self to include only galaxies meeting this criteria
+        cat_copy = deepcopy(self)
+        cat_copy.gals = cat_copy[boolean_keep_arr]
+        # make a note of this crop
+        cat_copy.crops.append(f"Lya_non_detect<{SNR_lim}σ")
 
-    def phot_redwards_detect(self, SNR, rest_lim = line_diagnostics["Lya"]["line_wav"]):
+        # append .fits table if not already done so
+
+        # return copy of the catalogue
+        return cat_copy
+
+    def phot_redwards_Lya_detect(self, SNR_lim, code_name = "EAZY", templates = "fsps_larson", lowz_zmax = None):
         pass
 
     def phot_SNR_crop(self, band, SNR, remove = False, flag = True):

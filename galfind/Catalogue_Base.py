@@ -10,6 +10,7 @@ from .Galaxy import Galaxy
 from . import useful_funcs_austind as funcs
 from .Catalogue_Creator import GALFIND_Catalogue_Creator
 from . import config, galfind_logger, SED_code, LePhare, EAZY, Bagpipes
+from . import Multiple_Catalogue, Multiple_Data
 
 class Catalogue_Base:
     # later on, the gal_arr should be calculated from the Instrument and sex_cat path, with SED codes already given
@@ -91,7 +92,7 @@ class Catalogue_Base:
     def __getitem__(self, index):
         return self.gals[index]
     
-    def __getattr__(self, name, code_name = "EAZY", templates = "fsps_larson", lowz_zmax = None): # only acts on attributes that don't already exist
+    def __getattr__(self, name, code_name = "EAZY", templates = "fsps_larson", lowz_zmax = None, phot_type = "obs"): # only acts on attributes that don't already exist
         # # get array of galaxy properties for the catalogue if they exist in all galaxies
         # for gal in self:
         #     # property must exist in all galaxies within class
@@ -103,10 +104,18 @@ class Catalogue_Base:
             return np.array([getattr(gal, "sky_coord").ra for gal in self])
         elif name.upper() == "DEC":
             return np.array([getattr(gal, "sky_coord").dec for gal in self])
+        elif name in self[0].phot.instrument.__dict__:
+            return np.array([getattr(gal.phot.instrument, name) for gal in self])
+        elif phot_type == "obs" and name in self[0].phot.__dict__:
+            return np.array([getattr(gal.phot, name) for gal in self])
         elif name in self[0].phot.SED_results[code_name][templates][funcs.lowz_label(lowz_zmax)].__dict__:
             return np.array([getattr(gal.phot.SED_results[code_name][templates][funcs.lowz_label(lowz_zmax)], name) for gal in self])
+        elif phot_type == "rest" and name in self[0].phot.SED_results[code_name][templates][funcs.lowz_label(lowz_zmax)].phot_rest.__dict__:
+            return np.array([getattr(gal.phot.SED_results[code_name][templates][funcs.lowz_label(lowz_zmax)].phot_rest, name) for gal in self])
         elif name in self[0].mask_flags.__dict__:
             return np.array([getattr(gal.mask_flags, name) for gal in self])
+        elif name == "full_mask":
+            return np.array([getattr(gal, "phot").mask for gal in self])
         else:
             galfind_logger.critical(f"Galaxies do not have attribute = {name}!")
     
@@ -125,12 +134,24 @@ class Catalogue_Base:
     def __setitem__(self, index, gal):
         self.gals[index] = gal
     
-    def __add__(self, cat):
+    def __add__(self, cat, out_survey = None):
         # concat catalogues
-        pass
+        if out_survey == None:
+            out_survey = "+".join([self.survey, cat.survey])
+        return Multiple_Catalogue([self, cat], survey = out_survey)
     
-    def __mul__(self, cat): # self * cat
+    def __mul__(self, cat, out_survey = None, save_fits = False): # self * cat
         # cross-match catalogues
+
+        # update .fits tables with cross-matched version
+        # open tables
+        self_tab = self.open_cat()
+        cat_tab = self.open_cat()
+
+
+        pass
+
+    def __sub__(self):
         pass
     
     def __repr__(self):
@@ -152,7 +173,7 @@ class Catalogue_Base:
     def cat_name(self):
         return funcs.split_dir_name(self.cat_path, "name")
     
-    def crop(self, crop_property, crop_limits): # upper and lower limits on galaxy properties (e.g. ID, redshift, mass, SFR, SkyCoord)
+    def crop(self, crop_limits, crop_property): # upper and lower limits on galaxy properties (e.g. ID, redshift, mass, SFR, SkyCoord)
         cat_copy = deepcopy(self)
         if type(crop_limits) in [int, float, bool]:
             cat_copy.gals = cat_copy[getattr(cat_copy, crop_property) == crop_limits]
@@ -163,3 +184,6 @@ class Catalogue_Base:
         else:
             galfind_logger.critical(f"crop_limits={crop_limits} with type = {type(crop_limits)} not in [int, float, bool, list, np.array]")
         return cat_copy
+    
+    def open_cat(self):
+        return Table.read(self.cat_path, character_as_bytes = False)

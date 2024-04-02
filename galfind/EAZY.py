@@ -113,87 +113,90 @@ class EAZY(SED_code):
 
         os.makedirs("/".join(fits_out_path.split("/")[:-1]), exist_ok = True)
         h5_path = fits_out_path.replace('.fits', '.h5')
+        zPDF_path = h5_path.replace(".h5", "_zPDFs.h5")
+        SED_path = h5_path.replace(".h5", "_SEDs.h5")
         lowz_label = funcs.lowz_label(lowz_zmax)
 
-        if not Path(fits_out_path).is_file() or not Path(h5_path).is_file() or overwrite:
-            eazy_templates_path = config['EAZY']['EAZY_TEMPLATE_DIR']
-            default_param_path = f"{config['DEFAULT']['GALFIND_DIR']}/configs/zphot.param.default"
-            translate_file = f"{config['DEFAULT']['GALFIND_DIR']}/configs/zphot_jwst.translate"
-            params = {}
-            if templates == 'fsps_larson':
-                params['TEMPLATES_FILE'] = f'{eazy_templates_path}/LarsonTemplates/tweak_fsps_QSF_12_v3_newtemplates.param'
-            elif templates == 'BC03':
-                # This path is broken
-                params['TEMPLATES_FILE'] = f"{eazy_templates_path}/bc03_chabrier_2003.param"
-            elif templates == 'fsps':
-                params['TEMPLATES_FILE'] = f"{eazy_templates_path}/fsps_full/tweak_fsps_QSF_12_v3.param"
-            elif templates == 'nakajima_full':
-                params['TEMPLATES_FILE'] = f"{eazy_templates_path}/Nakajima2022/tweak_fsps_QSF_12_v3_larson_nakajima_all.param"
-            elif templates == 'nakajima_subset':
-                params['TEMPLATES_FILE'] = f"{eazy_templates_path}/Nakajima2022/tweak_fsps_QSF_12_v3_larson_nakajima_subset.param"
-            elif templates == 'fsps_jades':
-                params['TEMPLATES_FILE'] = f"{eazy_templates_path}/jades/jades.param"
-            elif templates == 'HOT_45K':
-                params['TEMPLATES_FILE'] = f"{eazy_templates_path}/fsps-hot/45k/fsps_45k.param"
-                z_min = 8
-                z_max = 12
-                #print(f'Running HOT 45K with fixed redshift = {fix_z}')
-                if not fix_z:
-                    #print('Fixing 8<z<12')
-                    pass
-            elif templates=='HOT_60K':
-                params['TEMPLATES_FILE'] = f"{eazy_templates_path}/fsps-hot/60k/fsps_60k.param"
-                z_min = 12
-                z_max = 25
-                #print(f'Running HOT 45K with fixed redshift = {fix_z}')
-                if not fix_z:
-                    #print('Fixing 12<z<25')
-                    pass
-            
-            # Next section deals with passing config parameters into EAZY config dictionary
-            # JWST filter_file
-            params["FILTERS_RES"] = f"{config['DEFAULT']['GALFIND_DIR']}/configs/jwst_nircam_FILTER.RES"
-
-            # Redshift limits
-            params['Z_STEP'] = z_step # Setting photo-z step
-            params['Z_MIN'] = z_min # Setting minimum Z
-            if lowz_zmax == None:
-                params['Z_MAX'] = z_max # Setting maximum Z
-            else:
-                params['Z_MAX'] = lowz_zmax # Setting maximum Z
-
-            # Errors
-            params['WAVELENGTH_FILE'] = f"{eazy_templates_path}/lambda.def"  # Wavelength grid definition file
-            params['TEMP_ERR_FILE'] = f"{eazy_templates_path}/TEMPLATE_ERROR.eazy_v1.0" # Template error definition file
-            
-            # Priors
-            params['FIX_ZSPEC'] = fix_z # Fix redshift to catalog zspec
+        eazy_templates_path = config['EAZY']['EAZY_TEMPLATE_DIR']
+        default_param_path = f"{config['DEFAULT']['GALFIND_DIR']}/configs/zphot.param.default"
+        translate_file = f"{config['DEFAULT']['GALFIND_DIR']}/configs/zphot_jwst.translate"
+        params = {}
+        if templates == 'fsps_larson':
+            params['TEMPLATES_FILE'] = f'{eazy_templates_path}/LarsonTemplates/tweak_fsps_QSF_12_v3_newtemplates.param'
+        elif templates == 'BC03':
+            # This path is broken
+            params['TEMPLATES_FILE'] = f"{eazy_templates_path}/bc03_chabrier_2003.param"
+        elif templates == 'fsps':
+            params['TEMPLATES_FILE'] = f"{eazy_templates_path}/fsps_full/tweak_fsps_QSF_12_v3.param"
+        elif templates == 'nakajima_full':
+            params['TEMPLATES_FILE'] = f"{eazy_templates_path}/Nakajima2022/tweak_fsps_QSF_12_v3_larson_nakajima_all.param"
+        elif templates == 'nakajima_subset':
+            params['TEMPLATES_FILE'] = f"{eazy_templates_path}/Nakajima2022/tweak_fsps_QSF_12_v3_larson_nakajima_subset.param"
+        elif templates == 'fsps_jades':
+            params['TEMPLATES_FILE'] = f"{eazy_templates_path}/jades/jades.param"
+        elif templates == 'HOT_45K':
+            params['TEMPLATES_FILE'] = f"{eazy_templates_path}/fsps-hot/45k/fsps_45k.param"
+            z_min = 8
+            z_max = 12
+            #print(f'Running HOT 45K with fixed redshift = {fix_z}')
+            if not fix_z:
+                #print('Fixing 8<z<12')
+                pass
+        elif templates=='HOT_60K':
+            params['TEMPLATES_FILE'] = f"{eazy_templates_path}/fsps-hot/60k/fsps_60k.param"
+            z_min = 12
+            z_max = 25
+            #print(f'Running HOT 45K with fixed redshift = {fix_z}')
+            if not fix_z:
+                #print('Fixing 12<z<25')
+                pass
         
-            # Input files
-            #-------------------------------------------------------------------------------------------------------------
+        # Next section deals with passing config parameters into EAZY config dictionary
+        # JWST filter_file
+        params["FILTERS_RES"] = f"{config['DEFAULT']['GALFIND_DIR']}/configs/jwst_nircam_FILTER.RES"
+
+        # Redshift limits
+        params['Z_STEP'] = z_step # Setting photo-z step
+        params['Z_MIN'] = z_min # Setting minimum Z
+        if lowz_zmax == None:
+            params['Z_MAX'] = z_max # Setting maximum Z
+        else:
+            params['Z_MAX'] = lowz_zmax # Setting maximum Z
+
+        # Errors
+        params['WAVELENGTH_FILE'] = f"{eazy_templates_path}/lambda.def"  # Wavelength grid definition file
+        params['TEMP_ERR_FILE'] = f"{eazy_templates_path}/TEMPLATE_ERROR.eazy_v1.0" # Template error definition file
+        
+        # Priors
+        params['FIX_ZSPEC'] = fix_z # Fix redshift to catalog zspec
+    
+        # Input files
+        #-------------------------------------------------------------------------------------------------------------
+        
+        # Defining in/out files
+        params['CATALOG_FILE'] = in_path
+        params['MAIN_OUTPUT_FILE'] = fits_out_path
+        params['OUTPUT_DIRECTORY'] = '/'.join(fits_out_path.split('/')[:-1])
+        
+        # Pass in optional arguments
+        params.update(kwargs)
             
-            # Defining in/out files
-            params['CATALOG_FILE'] = in_path
-            params['MAIN_OUTPUT_FILE'] = fits_out_path
-            params['OUTPUT_DIRECTORY'] = '/'.join(fits_out_path.split('/')[:-1])
-            
-            # Pass in optional arguments
-            params.update(kwargs)
-            
+        if not Path(h5_path).is_file() or overwrite:
             # Initialize photo-z object with above parameters
             galfind_logger.info(f'Running {self.__class__.__name__} {templates} {lowz_label}')
             fit = eazy.photoz.PhotoZ(param_file = default_param_path, zeropoint_file = None,
                 params = params, load_prior = False, load_products = False, translate_file = translate_file, n_proc = n_proc)
             fit.fit_catalog(n_proc = n_proc, get_best_fit = True)
-            galfind_logger.info(f'Finished running {self.__class__.__name__} {templates} {lowz_label}')
-
             # Save backup of fit in hdf5 file
-            if write_hdf:
-                hdf5.write_hdf5(fit, h5file = h5_path, include_fit_coeffs = False, include_templates = True, verbose = False)
-                galfind_logger.info(f'Written {self.__class__.__name__} {templates} {lowz_label} h5 out file to: {h5_path}')
-            
-            # ELSE LOAD IN THE FIT FROM THE .H5 FILE
+            hdf5.write_hdf5(fit, h5file = h5_path, include_fit_coeffs = False, include_templates = True, verbose = False)
+            galfind_logger.info(f'Finished running {self.__class__.__name__} {templates} {lowz_label}')
+        elif not Path(fits_out_path).is_file() or not Path(zPDF_path).is_file() or not Path(SED_path).is_file():
+            # load in .h5 file
+            fit = hdf5.initialize_from_hdf5(h5file = h5_path, verbose = True)
+        else:
+            fit = None
 
+        if not Path(fits_out_path).is_file() and fit != None:
             # If not using Fsps larson, use standard saving output. Otherwise generate own fits file.
             if templates == 'HOT_45K' or templates == 'HOT_60K':
                 fit.standard_output(UBVJ=(9, 10, 11, 12), absmag_filters=[9, 10, 11, 12], extra_rf_filters=[9, 10, 11, 12] ,n_proc=n_proc, save_fits=1, get_err=True, simple=False)
@@ -221,36 +224,38 @@ class EAZY(SED_code):
                 table.write(fits_out_path, overwrite = True)
                 galfind_logger.info(f'Written {self.__class__.__name__} {templates} {lowz_label} fits out file to: {fits_out_path}')
 
-            # save PDFs in h5 file
-            if save_PDFs:
-                pz = 10 ** (fit.lnp)
-                hf = h5py.File(h5_path.replace(".h5", "_zPDFs.h5"), "w")
-                print(fit.zgrid, type(fit.zgrid))
-                [self.save_zPDF(pos_obj, ID, hf, fit.zgrid, pz) for pos_obj, ID in \
-                    tqdm(enumerate(fit.OBJID), total = len(fit.OBJID), \
-                    desc = f"Saving z-PDFs for {self.__class__.__name__} {templates} {lowz_label}")]
-                hf.close()
-                galfind_logger.info(f'Finished saving z-PDFs for {self.__class__.__name__} {templates} {lowz_label}')
-            
-            # Save best-fitting SEDs
-            if save_best_seds:
-                hf = h5py.File(h5_path.replace(".h5", "_SEDs.h5"), "w")
-                hf_wav_unit = hf.create_dataset("wav_unit", data = wav_unit)
-                hf_flux_unit = hf.create_dataset("flux_unit", data = flux_unit)
-                [self.save_SED(ID, hf, fit, wav_unit = wav_unit, flux_unit = flux_unit) \
-                    for ID in tqdm(fit.OBJID, total = len(fit.OBJID), \
-                    desc = f"Saving best-fit template SEDs for {self.__class__.__name__} {templates} {lowz_label}")]
-                hf.close()
-                galfind_logger.info(f'Finished saving z-PDFs for {self.__class__.__name__} {templates} {lowz_label}')
+        # save PDFs in h5 file
+        if save_PDFs and not Path(zPDF_path).is_file():
+            pz = 10 ** (fit.lnp)
+            hf = h5py.File(zPDF_path, "w")
+            hf.create_dataset("z", data = np.array(fit.zgrid))
+            print(fit.zgrid, pz[0], len(fit.zgrid), len(pz[0]))
+            [self.save_zPDF(pos_obj, ID, hf, fit.zgrid, pz) for pos_obj, ID in \
+                tqdm(enumerate(fit.OBJID), total = len(fit.OBJID), \
+                desc = f"Saving z-PDFs for {self.__class__.__name__} {templates} {lowz_label}")]
+            hf.close()
+            galfind_logger.info(f'Finished saving z-PDFs for {self.__class__.__name__} {templates} {lowz_label}')
+        
+        # Save best-fitting SEDs
+        if save_best_seds and not Path(SED_path).is_file():
+            hf = h5py.File(SED_path, "w")
+            print(wav_unit, flux_unit)
+            hf.create_dataset("wav_unit", data = str(wav_unit))
+            hf.create_dataset("flux_unit", data = str(flux_unit))
+            [self.save_SED(ID, hf, fit, wav_unit = wav_unit, flux_unit = flux_unit) \
+                for ID in tqdm(fit.OBJID, total = len(fit.OBJID), \
+                desc = f"Saving best-fit template SEDs for {self.__class__.__name__} {templates} {lowz_label}")]
+            hf.close()
+            galfind_logger.info(f'Finished saving SEDss for {self.__class__.__name__} {templates} {lowz_label}')
 
-            # Write used parameters
+        # Write used parameters
+        if fit != None:
             fit.param.write(fits_out_path.replace(".fits", "_params.csv"))
             galfind_logger.info(f'Written output pararmeters for {self.__class__.__name__} {templates} {lowz_label}')
 
     @staticmethod
     def save_zPDF(pos_obj, ID, hf, fit_zgrid, fit_pz):
         gal_zPDF = hf.create_group(f"ID={int(ID)}")
-        gal_zPDF.create_dataset("z", data = np.array(fit_zgrid))
         gal_zPDF.create_dataset("p(z)", data = np.array([fit_pz[pos_obj][pos] for pos, z in enumerate(fit_zgrid)]))
 
     @staticmethod

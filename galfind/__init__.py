@@ -103,6 +103,8 @@ from .Photometry_obs import Photometry_obs, Multiple_Photometry_obs
 from .Photometry_rest import Photometry_rest
 from .SED_result import SED_result, Galaxy_SED_results, Catalogue_SED_results
 from .SED_codes import SED_code
+from .Multiple_Catalogue import Multiple_Catalogue
+from .Multiple_Data import Multiple_Data
 from .Catalogue_Base import Catalogue_Base
 from .Catalogue import Catalogue
 from .Catalogue_Creator import Catalogue_Creator, GALFIND_Catalogue_Creator
