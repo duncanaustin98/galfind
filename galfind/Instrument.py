@@ -50,6 +50,14 @@ class Instrument:
     def band_FWHMs(self):
         return np.array([band.FWHM.to(u.AA).value for band in self.bands]) * u.AA
     
+    @property
+    def band_lower_wav_lims(self):
+        return np.array([band.WavelengthLower50.to(u.AA).value for band in self.bands]) * u.AA
+    
+    @property
+    def band_upper_wav_lims(self):
+        return np.array([band.WavelengthUpper50.to(u.AA).value for band in self.bands]) * u.AA
+    
 # %% Overloaded operators
 
     def __str__(self):

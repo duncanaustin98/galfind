@@ -24,7 +24,14 @@ def pipeline(surveys, version, instruments, aper_diams, code_names, lowz_zmax, m
             cat = Catalogue.from_pipeline(survey = survey, version = version, instruments = instruments, aper_diams = aper_diams, cat_creator = cat_creator, code_names = code_names, lowz_zmax = lowz_zmax, \
                                           forced_phot_band = forced_phot_band, excl_bands = excl_bands, loc_depth_min_flux_pc_errs = min_flux_pc_errs, templates_arr = eazy_templates)
             #cat.data.calc_unmasked_area("NIRCam", forced_phot_band = forced_phot_band)
-            #print(cat.crop("ID", 1407)[0])
+            #print(str(cat[1]))
+            #cat_copy = cat.phot_bluewards_Lya_non_detect(SNR_lim = 2.)
+            #print(str(cat_copy))
+            #cat_copy = cat.phot_redwards_Lya_detect(SNR_lims = 5.)
+            #print(str(cat_copy))
+            cat_copy = cat.phot_redwards_Lya_detect(SNR_lims = [7., 5.])
+            print(str(cat_copy))
+            print(cat_copy.crop(1407, "ID")[0])
             # for i, code in enumerate(sed_codes):
             #     cat = code.fit_cat(cat, templates = eazy_templates)
             #     #code.fit_cat(cat, templates = eazy_templates)
@@ -48,8 +55,8 @@ if __name__ == "__main__":
     eazy_lowz_zmax = [4., 6., None] #, [4., 6.], [4., 6.]]
     min_flux_pc_errs = [10]
     forced_phot_band = ["F277W", "F356W", "F444W"]
-    jems_bands = ["F182M", "F210M", "F430M", "F460M", "F480M"]
 
+    jems_bands = ["F182M", "F210M", "F430M", "F460M", "F480M"]
     ngdeep_excl_bands = ["F435W", "F775W", "F850LP"]
     #jades_3215_excl_bands = ["f162M", "f115W", "f150W", "f200W", "f410M", "f182M", "f210M", "f250M", "f300M", "f335M", "f277W", "f356W", "f444W"] 
     excl_bands = []

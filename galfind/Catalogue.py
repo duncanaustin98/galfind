@@ -379,42 +379,63 @@ class Catalogue(Catalogue_Base):
     # %% Selection
 
     def phot_bluewards_Lya_non_detect(self, SNR_lim, code_name = "EAZY", templates = "fsps_larson", lowz_zmax = None):
-        # extract bands, SNRs, masks and first Lya non-detect bands from each galaxy in self
-        bands_arr = getattr(self, "band_names")
-        SNR_arr = getattr(self, "SNR", phot_type = "obs")
-        mask_arr = getattr(self, "full_mask")
-        first_Lya_non_detect_band_arr = getattr(self, "first_Lya_non_detect_band", \
-            code_name = "EAZY", templates = "fsps_larson", lowz_zmax = None, phot_type = "rest")
-        
-        # this part could go inside galaxy object to speed up the code
-        boolean_keep_arr = np.full(len(self), False) # initialize, removing all galaxies by default
-        for i, (bands, SNR, mask, first_Lya_non_detect_band) in \
-                enumerate(zip(bands_arr, SNR_arr, mask_arr, first_Lya_non_detect_band_arr)):
-            # find index of first Lya non-detect band
-            first_Lya_non_detect_index = np.where(bands == first_Lya_non_detect_band)[0][0]
-            SNR_non_detect = SNR[:first_Lya_non_detect_index + 1]
-            mask_non_detect = mask[:first_Lya_non_detect_index + 1]
-            # require the first Lya non detect band and all bluewards bands to be non-detected at < SNR_lim if not masked
-            if all(SNR < SNR_lim or mask for mask, SNR in zip(mask_non_detect, SNR_non_detect)):
-                boolean_keep_arr[i] = True
-        
-        # crop self to include only galaxies meeting this criteria
-        cat_copy = deepcopy(self)
-        cat_copy.gals = cat_copy[boolean_keep_arr]
         # make a note of this crop
-        cat_copy.crops.append(f"Lya_non_detect<{SNR_lim}σ")
+        selection_name = self[0].phot_bluewards_Lya_non_detect(SNR_lim, code_name = code_name, \
+            templates = templates, lowz_zmax = lowz_zmax, update_obj = False)[1]
+        # perform calculation for each galaxy
+        keep = [gal.phot_bluewards_Lya_non_detect(SNR_lim, code_name = code_name, \
+            templates = templates, lowz_zmax = lowz_zmax, update_obj = False)[0] \
+            for gal in tqdm(self, total = len(self), desc = f"Cropping {selection_name}")]
+        # now update galaxies in self in for loop
+        # for gal, keep_gal in zip(self, keep):
+        #     breakpoint()
+        #     gal.selection_flags[selection_name] = keep_gal
+        # crop copy of self to include only galaxies meeting this criteria
+        cat_copy = deepcopy(self)
+        cat_copy.gals = cat_copy[keep]
+        cat_copy.crops.append(selection_name)
 
         # append .fits table if not already done so
 
-        # return copy of the catalogue
         return cat_copy
 
-    def phot_redwards_Lya_detect(self, SNR_lim, code_name = "EAZY", templates = "fsps_larson", lowz_zmax = None):
+    def phot_redwards_Lya_detect(self, SNR_lims, code_name = "EAZY", templates = "fsps_larson", \
+            lowz_zmax = None, widebands_only = True, update = True):
+        # extract selection name from galaxy method output
+        selection_name = self[0].phot_redwards_Lya_detect(SNR_lims, code_name = code_name, \
+            templates = templates, lowz_zmax = lowz_zmax, widebands_only = widebands_only, update = False)[1]
+        # perform selection if not previously performed
+        if selection_name not in self.crops:
+            # perform calculation for each galaxy and update galaxies in self
+            self.gals = np.array([deepcopy(gal).phot_redwards_Lya_detect(SNR_lims, code_name = code_name, \
+                templates = templates, lowz_zmax = lowz_zmax, widebands_only = widebands_only, \
+                update = True)[0] for gal in tqdm(self, total = len(self), desc = f"Cropping {selection_name}")])
+        # make a deep copy of the current catalogue object
+        cat_copy = deepcopy(self)
+        # crop deep copied catalogue to only the selected galaxies
+        keep = getattr(self, selection_name)
+        cat_copy.gals = cat_copy[keep]
+        # make a note of this crop if the copied catalogue
+        cat_copy.crops.append(selection_name)
+        # append .fits table if not already done so
+        cat_copy.append_selection_to_fits(selection_name)
+        return cat_copy
+
+    def phot_Lya_band(self, SNR_lim, detect_or_non_detect = "detect"):
         pass
 
-    def phot_SNR_crop(self, band, SNR, remove = False, flag = True):
-        pass
-    
+    def phot_SNR_crop(self, band, SNR_lim):
+        # crop self to include only galaxies meeting this criteria
+        cat_copy = deepcopy(self)
+        # perform calculation for each galaxy
+        keep = [gal.phot_SNR_crop(band, SNR_lim)[0] for gal in self]
+        cat_copy.gals = cat_copy[keep]
+        # make a note of this crop
+        selection_name = self[0].phot_SNR_crop(band, SNR_lim)[1]
+        cat_copy.crops.append(selection_name)
+
+        return cat_copy
+
     def flag_robust_high_z(self, relaxed = False):
         # could make use of an overloaded __setattr__ here!
         pass
@@ -425,6 +446,25 @@ class Catalogue(Catalogue_Base):
     
     def flag_hot_pixel(self):
         pass
+
+    def append_selection_to_fits(self, selection_name):
+        full_cat = self.open_cat()
+        # append .fits table if not already done so for this selection
+        if not selection_name in full_cat.colnames:
+            assert(all(getattr(self, selection_name) == True))
+            selection_cat = Table({"ID_temp": getattr(self, "ID"), selection_name: np.full(len(self), True)})
+            output_cat = join(full_cat, selection_cat, keys_left = "NUMBER", keys_right = "ID_temp", join_type = "outer")
+            output_cat.remove_column("ID_temp")
+            # fill unselected columns with False rather than leaving as masked post-join
+            output_cat[selection_name].fill_value = False
+            output_cat = output_cat.filled()
+            # ensure no rows are lost during this column append
+            assert(len(output_cat) == len(full_cat))
+            output_cat.meta = {**full_cat.meta, **{f"HIERARCH SELECTED_{selection_name.upper()}": True}}
+            galfind_logger.info(f"Appending {selection_name} to catalogue = {self.cat_path}")
+            output_cat.write(self.cat_path, overwrite = True)
+        else:
+            galfind_logger.info(f"Already appended {selection_name} to catalogue = {self.cat_path}")
     
     def plot_SED_properties(self, x_name, y_name, code_name):
         x_arr = []

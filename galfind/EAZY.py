@@ -39,7 +39,10 @@ class EAZY(SED_code):
     
     def __init__(self):
         #ID_label = "IDENT"
-        galaxy_property_dict = {"z_phot": "zbest", "chi_sq": "chi2_best"}
+        # now includes UBVJ flux/errs
+        galaxy_property_dict = {**{"z_phot": "zbest", "chi_sq": "chi2_best"}, \
+            **{f"{ubvj_filt}_{flux_or_err}": f"{ubvj_filt}_rf_{flux_or_err}" \
+            for ubvj_filt in ["U", "B", "V", "J"] for flux_or_err in ["flux", "flux_err"]}}
         available_templates = ["fsps", "fsps_larson", "fsps_jades"]
         super().__init__(galaxy_property_dict, available_templates)
     
@@ -219,7 +222,7 @@ class EAZY(SED_code):
                 # add the template name to the column labels except for IDENT
                 for col_name in table.colnames:
                     if col_name != "IDENT":
-                        table.rename_column(col_name, f"{col_name}_{templates}")
+                        table.rename_column(col_name, f"{col_name}_{templates}_{lowz_label}")
                 # Write fits file
                 table.write(fits_out_path, overwrite = True)
                 galfind_logger.info(f'Written {self.__class__.__name__} {templates} {lowz_label} fits out file to: {fits_out_path}')
@@ -273,7 +276,7 @@ class EAZY(SED_code):
         pass
     
     def out_fits_name(self, out_path, templates, lowz_zmax): #*args, **kwargs):
-        fits_out_path = f"{out_path.replace('.out', '')}_EAZY_{templates}{funcs.lowz_label(lowz_zmax)}.fits"
+        fits_out_path = f"{out_path.replace('.out', '')}_EAZY_{templates}_{funcs.lowz_label(lowz_zmax)}.fits"
         return fits_out_path
     
     def extract_SEDs(self, fits_cat, ID, low_z_run = False, units = u.ABmag, just_header = False):

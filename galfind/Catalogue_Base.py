@@ -93,11 +93,6 @@ class Catalogue_Base:
         return self.gals[index]
     
     def __getattr__(self, name, code_name = "EAZY", templates = "fsps_larson", lowz_zmax = None, phot_type = "obs"): # only acts on attributes that don't already exist
-        # # get array of galaxy properties for the catalogue if they exist in all galaxies
-        # for gal in self:
-        #     # property must exist in all galaxies within class
-        #     if not hasattr(gal, name):
-        #         raise AttributeError(f"'{name}' does not exist in all galaxies within {self.cat_name}!!!")
         if name in self[0].__dict__:
             return np.array([getattr(gal, name) for gal in self])
         elif name.upper() == "RA":
@@ -112,10 +107,12 @@ class Catalogue_Base:
             return np.array([getattr(gal.phot.SED_results[code_name][templates][funcs.lowz_label(lowz_zmax)], name) for gal in self])
         elif phot_type == "rest" and name in self[0].phot.SED_results[code_name][templates][funcs.lowz_label(lowz_zmax)].phot_rest.__dict__:
             return np.array([getattr(gal.phot.SED_results[code_name][templates][funcs.lowz_label(lowz_zmax)].phot_rest, name) for gal in self])
-        elif name in self[0].mask_flags.__dict__:
+        elif name in self[0].mask_flags.keys():
             return np.array([getattr(gal.mask_flags, name) for gal in self])
         elif name == "full_mask":
             return np.array([getattr(gal, "phot").mask for gal in self])
+        elif name in self[0].selection_flags.keys():
+            return np.array([getattr(gal, "selection_flags")[name] for gal in self])
         else:
             galfind_logger.critical(f"Galaxies do not have attribute = {name}!")
     
@@ -142,14 +139,10 @@ class Catalogue_Base:
     
     def __mul__(self, cat, out_survey = None, save_fits = False): # self * cat
         # cross-match catalogues
-
         # update .fits tables with cross-matched version
         # open tables
         self_tab = self.open_cat()
         cat_tab = self.open_cat()
-
-
-        pass
 
     def __sub__(self):
         pass
@@ -186,4 +179,4 @@ class Catalogue_Base:
         return cat_copy
     
     def open_cat(self):
-        return Table.read(self.cat_path, character_as_bytes = False)
+        return Table.read(self.cat_path, character_as_bytes = False, memmap = True)

@@ -21,7 +21,7 @@ from scipy.optimize import curve_fit
 
 from . import config, galfind_logger, astropy_cosmo, Photometry
 from . import useful_funcs_austind as funcs
-# from . import line_diagnostics
+from .Emission_lines import line_diagnostics
 
 class beta_fit:
     def __init__(self, z, instrument):
@@ -68,18 +68,23 @@ class Photometry_rest(Photometry):
         return result
     
     @property
-    def first_Lya_detect_band(self):
-        first_detect_band = ""
-        for band, wav in zip(self.instrument.band_names, self.wav):
-            pass
-            #line_diagnostics["Lya"][""]
-        pass
+    def first_Lya_detect_band(self, Lya_wav = line_diagnostics["Lya"]["line_wav"]):
+        first_band = None
+        for band, lower_wav in zip(self.instrument.band_names, self.instrument.band_lower_wav_lims):
+            if lower_wav > Lya_wav * (1 + self.z):
+                first_band = band
+                break
+        return first_band
 
     @property
-    def first_Lya_non_detect_band(self):
-        first_non_detect_band = ""
-        for band, wav in zip(self.instrument.band_names, self.wav):
-            pass
+    def first_Lya_non_detect_band(self, Lya_wav = line_diagnostics["Lya"]["line_wav"]):
+        first_band = None
+        # bands already ordered from blue -> red
+        for band, upper_wav in zip(self.instrument.band_names, self.instrument.band_upper_wav_lims):
+            if upper_wav < Lya_wav * (1 + self.z):
+                first_band = band
+                break
+        return first_band
 
     # Old properties! This class should probably be overwritten
     

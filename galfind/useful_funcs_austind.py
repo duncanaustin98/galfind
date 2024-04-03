@@ -253,9 +253,9 @@ def fits_cat_to_np(fits_cat, column_labels, reshape_by_aper_diams = True):
 
 def lowz_label(lowz_zmax):
     if lowz_zmax != None:
-        label = f"_zmax={lowz_zmax:.1f}"
+        label = f"zmax={lowz_zmax:.1f}"
     else:
-        label = ""
+        label = "zfree"
     return label
 
 def get_z_PDF_paths(fits_cat, IDs, codes, templates_arr, lowz_zmaxs, fits_cat_path = None):

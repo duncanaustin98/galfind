@@ -19,15 +19,17 @@ from tqdm import tqdm
 from astropy.wcs import WCS
 
 from . import useful_funcs_austind as funcs
-from . import Photometry_rest, Photometry_obs, Multiple_Photometry_obs, config, Data
+from . import config, galfind_logger
+from . import Photometry_rest, Photometry_obs, Multiple_Photometry_obs, Data
 
 class Galaxy:
     
-    def __init__(self, sky_coord, ID, phot, mask_flags = {}):
+    def __init__(self, sky_coord, ID, phot, mask_flags = {}, selection_flags = {}):
         self.sky_coord = sky_coord
         self.ID = int(ID)
         self.phot = phot
         self.mask_flags = mask_flags
+        self.selection_flags = selection_flags
         
     @classmethod
     def from_fits_cat(cls, fits_cat_row, instrument, cat_creator, codes, lowz_zmax, templates_arr):
@@ -48,29 +50,30 @@ class Galaxy:
         output_str += f"GALAXY {self.ID}: (RA, DEC) = ({np.round(self.sky_coord.ra, 5)}, {np.round(self.sky_coord.dec, 5)})\n"
         output_str += band_sep
         output_str += f"MASK FLAGS: {self.mask_flags}\n"
+        output_str += f"SELECTION FLAGS: {self.selection_flags}\n"
         output_str += str(self.phot)
         output_str += line_sep
         return output_str
         
-    def __setattr__(self, name, value, obj = "gal"):
-        if obj == "gal":
-            if type(name) != list and type(name) != np.array:
-                super().__setattr__(name, value)
-            else:
-                # use setattr to set values within Galaxy dicts (e.g. properties)
-                self.globals()[name[0]][name[1]] = value
-        else:
-            raise(Exception(f"obj = {obj} must be 'gal'!"))
+    # def __setattr__(self, name, value, obj = "gal"):
+    #     if obj == "gal":
+    #         if type(name) != list and type(name) != np.array:
+    #             super().__setattr__(name, value)
+    #         else:
+    #             # use setattr to set values within Galaxy dicts (e.g. properties)
+    #             self.globals()[name[0]][name[1]] = value
+    #     else:
+    #         raise(Exception(f"obj = {obj} must be 'gal'!"))
     
     # STILL NEED TO LOOK FURTHER INTO THIS
-    # def __deepcopy__(self, memo):
-    #     print("Overriding Galaxy.__deepcopy__()")
-    #     cls = self.__class__
-    #     result = cls.__new__(cls)
-    #     memo[id(self)] = result
-    #     for key, value in self.__dict__.items():
-    #         setattr(result, key, deepcopy(value, memo))
-    #     return result
+    def __deepcopy__(self, memo):
+        #print("Overriding Galaxy.__deepcopy__()")
+        cls = self.__class__
+        result = cls.__new__(cls)
+        memo[id(self)] = result
+        for key, value in self.__dict__.items():
+            setattr(result, key, deepcopy(value, memo))
+        return result
     
     def update(self, gal_SED_results, index = 0): # for now just update the single photometry
         self.phot.update(gal_SED_results)
@@ -114,8 +117,93 @@ class Galaxy:
     def update_mask_band(self, band, bool_value):
         self.mask_flags[band] = bool_value
         
-    def phot_SNR_crop(self, band, sigma_detect_thresh, flag = True):
-        self.phot.SNR_crop(band, sigma_detect_thresh)
+    # %% Selection methods
+        
+    def phot_bluewards_Lya_non_detect(self, SNR_lim, code_name = "EAZY", templates = "fsps_larson", lowz_zmax = None, update_obj = True):
+        assert(type(SNR_lim) in [int, float])
+        selection_name = f"bluewards_Lya_SNR<{SNR_lim:.1f}"
+        # only compute this if not already done so
+        if selection_name in self.selection_flags.keys():
+            galfind_logger.debug(f"{selection_name} already performed for galaxy ID = {self.ID}!")
+        else:
+            # extract bands, SNRs, mask and first Lya non-detect band
+            bands = self.phot.instrument.band_names
+            SNRs = self.phot.SNR
+            mask = self.phot.flux_Jy.mask
+            assert(len(bands) == len(SNRs) == len(mask))
+            first_Lya_non_detect_band = self.phot.SED_results[code_name][templates][funcs.lowz_label(lowz_zmax)].phot_rest.first_Lya_non_detect_band
+            if first_Lya_non_detect_band == None:
+                if update_obj:
+                    self.selection_flags[selection_name] = True
+                return True, selection_name
+            # find index of first Lya non-detect band
+            first_Lya_non_detect_index = np.where(bands == first_Lya_non_detect_band)[0][0]
+            SNR_non_detect = SNRs[:first_Lya_non_detect_index + 1]
+            mask_non_detect = mask[:first_Lya_non_detect_index + 1]
+            # require the first Lya non detect band and all bluewards bands to be non-detected at < SNR_lim if not masked
+            if all(SNR < SNR_lim or mask for mask, SNR in zip(mask_non_detect, SNR_non_detect)):
+                if update_obj:
+                    self.selection_flags[selection_name] = True
+                return True, selection_name
+            else:
+                if update_obj:
+                    self.selection_flags[selection_name] = False
+                return False, selection_name
+        return self.selection_flags[selection_name], selection_name
+    
+    def phot_redwards_Lya_detect(self, SNR_lims, code_name = "EAZY", templates = "fsps_larson", \
+            lowz_zmax = None, widebands_only = True, update = True):
+        # work out selection name based on SNR_lims input type
+        if type(SNR_lims) in [int, float]:
+            # require all redwards bands to be detected at >SNR_lims
+            selection_name = f"ALL_redwards_Lya_SNR>{SNR_lims:.1f}"
+            SNR_lims = np.full(len(self.phot.instrument.band_names), SNR_lims)
+        elif type(SNR_lims) in [list, np.array]:
+            # require the n^th band after the first band redwards of Lya to be detected at >SNR_lims[n]
+            assert(np.all([type(SNR) in [int, float] for SNR in SNR_lims]))
+            selection_name = f"redwards_Lya_SNR>{','.join([str(np.round(SNR, 1)) for SNR in SNR_lims])}"
+        else:
+            galfind_logger.critical(f"SNR_lims = {SNR_lims} has type = {type(SNR_lims)} which is not in [int, float, list, np.array]")
+
+        # only compute this if not already done so
+        if selection_name in self.selection_flags.keys():
+            galfind_logger.debug(f"Already performed {selection_name} for galaxy ID = {self.ID}, skipping!")
+        else:
+            galfind_logger.debug(f"Performing {selection_name} for galaxy ID = {self.ID}!")
+            # extract bands, SNRs, mask and first Lya non-detect band
+            bands = self.phot.instrument.band_names
+            SNRs = self.phot.SNR
+            mask = self.phot.flux_Jy.mask
+            first_Lya_detect_band = self.phot.SED_results[code_name][templates][funcs.lowz_label(lowz_zmax)].phot_rest.first_Lya_detect_band
+            if first_Lya_detect_band == None:
+                #if update_cat:
+                self.selection_flags[selection_name] = False
+                return self, selection_name
+            # find index of first Lya non-detect band
+            first_Lya_detect_index = np.where(bands == first_Lya_detect_band)[0][0] # only 1 band is the first
+            bands_detect = np.array(bands[first_Lya_detect_index:])
+            SNR_detect = np.array(SNRs[first_Lya_detect_index:])
+            mask_detect = np.array(mask[first_Lya_detect_index:])
+            # option as to whether to exclude potentially shallower medium/narrow bands in this calculation
+            if widebands_only:
+                #breakpoint()
+                wide_band_detect_indices = [True if "W" in band.upper() or "LP" in band.upper() else False for band in bands_detect]
+                bands_detect = bands_detect[wide_band_detect_indices]
+                SNR_detect = SNR_detect[wide_band_detect_indices]
+                mask_detect = mask_detect[wide_band_detect_indices]
+                selection_name += "_widebands"
+            # selection criteria
+            if all(SNR > SNR_lim or mask for mask, SNR, SNR_lim in zip(mask_detect, SNR_detect, SNR_lims)):
+                #if update_cat:
+                self.selection_flags[selection_name] = True
+                #return True, selection_name
+            else:
+                #if update_cat:
+                self.selection_flags[selection_name] = False
+                #return False, selection_name
+        return self, selection_name # self.selection_flags[selection_name]
+
+    def phot_SNR_crop(self, band_name, SNR_lim):
         pass
     
 class Multiple_Galaxy:
