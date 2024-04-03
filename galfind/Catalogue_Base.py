@@ -14,7 +14,7 @@ from . import Multiple_Catalogue, Multiple_Data
 
 class Catalogue_Base:
     # later on, the gal_arr should be calculated from the Instrument and sex_cat path, with SED codes already given
-    def __init__(self, gals, cat_path, survey, cat_creator, instrument, codes = [], version = ''): #, UV_PDF_path):
+    def __init__(self, gals, cat_path, survey, cat_creator, instrument, codes = [], version = '', crops = []): #, UV_PDF_path):
         self.survey = survey
         self.cat_path = cat_path
         #self.UV_PDF_path = UV_PDF_path
@@ -27,7 +27,7 @@ class Catalogue_Base:
         self.version = version
         
         # keep a record of the crops that have been made to the catalogue
-        self.crops = []
+        self.crops = crops
         
         # concat is commutative for catalogues
         self.__radd__ = self.__add__
@@ -170,7 +170,10 @@ class Catalogue_Base:
         cat_copy = deepcopy(self)
         if type(crop_limits) in [int, float, bool]:
             cat_copy.gals = cat_copy[getattr(cat_copy, crop_property) == crop_limits]
-            cat_copy.crops.append(f"{crop_property}={crop_limits}")
+            if crop_limits == True:
+                cat_copy.crops.append(crop_property)
+            else:
+                cat_copy.crops.append(f"{crop_property}={crop_limits}")
         elif type(crop_limits) in [list, np.array]:
             cat_copy.gals = cat_copy[((getattr(cat_copy, crop_property) >= crop_limits[0]) & (getattr(cat_copy, crop_property) <= crop_limits[1]))]
             cat_copy.crops.append(f"{crop_limits[0]}<{crop_property}<{crop_limits[1]}")

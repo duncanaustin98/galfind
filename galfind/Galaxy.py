@@ -208,8 +208,9 @@ class Galaxy:
     
 class Multiple_Galaxy:
     
-    def __init__(self, sky_coords, IDs, phots, mask_flags_arr):
-        self.gals = [Galaxy(sky_coord, ID, phot, mask_flags) for sky_coord, ID, phot, mask_flags in zip(sky_coords, IDs, phots, mask_flags_arr)]
+    def __init__(self, sky_coords, IDs, phots, mask_flags_arr, selection_flags_arr):
+        self.gals = [Galaxy(sky_coord, ID, phot, mask_flags, selection_flags) for \
+            sky_coord, ID, phot, mask_flags, selection_flags in zip(sky_coords, IDs, phots, mask_flags_arr, selection_flags_arr)]
         
     def __repr__(self):
         # string representation of what is stored in this class
@@ -232,7 +233,7 @@ class Multiple_Galaxy:
     
     def __getitem__(self, index):
         return self.gals[index]
-        
+    
     @classmethod
     def from_fits_cat(cls, fits_cat, instrument, cat_creator, codes, lowz_zmax, templates_arr):
         # load photometries from catalogue
@@ -245,5 +246,6 @@ class Multiple_Galaxy:
         # mask flags should come from cat_creator
         #mask_flags_arr = [{f"unmasked_{band}": cat_creator.load_flag(fits_cat_row, f"unmasked_{band}") for band in instrument.band_names} for fits_cat_row in fits_cat]
         mask_flags_arr = [{f"unmasked_{band}": None for band in instrument.band_names} for fits_cat_row in fits_cat]
-        return cls(sky_coords, IDs, phots, mask_flags_arr)
+        selection_flags_arr = [{selection_flag: bool(fits_cat_row[selection_flag]) for selection_flag in cat_creator.selection_labels(fits_cat)} for fits_cat_row in fits_cat]
+        return cls(sky_coords, IDs, phots, mask_flags_arr, selection_flags_arr)
     

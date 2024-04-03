@@ -39,15 +39,15 @@ class Catalogue(Catalogue_Base):
     # %% alternative constructors
     @classmethod
     def from_pipeline(cls, survey, version, aper_diams, cat_creator, code_names, lowz_zmax, instruments = ['NIRCam', 'ACS_WFC', 'WFC3_IR'], \
-                      forced_phot_band = "F444W", excl_bands = [], loc_depth_min_flux_pc_errs = [5, 10], templates_arr = ["fsps_larson"]):
+                      forced_phot_band = "F444W", excl_bands = [], loc_depth_min_flux_pc_errs = [5, 10], templates_arr = ["fsps_larson"], select_by = None):
         # make 'Data' object
         data = Data.from_pipeline(survey, version, instruments, excl_bands = excl_bands)
         return cls.from_data(data, version, aper_diams, cat_creator, code_names, lowz_zmax, forced_phot_band, \
-                loc_depth_min_flux_pc_errs, templates_arr)
+                loc_depth_min_flux_pc_errs, templates_arr, select_by = select_by)
     
     @classmethod
     def from_data(cls, data, version, aper_diams, cat_creator, code_names, lowz_zmax, forced_phot_band = "F444W", \
-                loc_depth_min_flux_pc_errs = [10], templates_arr = ["fsps_larson"], mask = True):
+                loc_depth_min_flux_pc_errs = [10], templates_arr = ["fsps_larson"], mask = True, select_by = None):
         # make masked local depth catalogue from the 'Data' object
         data.combine_sex_cats(forced_phot_band)
         mode = str(config["Depths"]["MODE"]).lower() # mode to calculate depths (either "n_nearest" or "rolling")
@@ -55,15 +55,22 @@ class Catalogue(Catalogue_Base):
         data.perform_aper_corrs()
         data.make_loc_depth_cat(cat_creator, depth_mode = mode)
         return cls.from_fits_cat(data.sex_cat_master_path, version, data.instrument, cat_creator, \
-            code_names, data.survey, lowz_zmax, templates_arr = templates_arr, data = data, mask = mask)
+            code_names, data.survey, lowz_zmax, templates_arr = templates_arr, data = data, mask = mask, select_by = select_by)
     
     @classmethod
     def from_fits_cat(cls, fits_cat_path, version, instrument, cat_creator, code_names, survey, \
-            lowz_zmax = [4.0, 6.0, None], templates_arr = ["fsps", "fsps_larson", "fsps_jades"], \
-            data = None, mask = False, excl_bands = []):
+            lowz_zmax = [4., 6., None], templates_arr = ["fsps", "fsps_larson", "fsps_jades"], \
+            data = None, mask = False, excl_bands = [], select_by = None):
         # open the catalogue
         fits_cat = funcs.cat_from_path(fits_cat_path)
-        #print(f"instrument band names = {instrument.band_names}")
+        for band, band_name in zip(instrument, instrument.band_names):
+            try:
+                cat_creator.load_photometry(Table(fits_cat[0]), [band_name])
+            except:
+                # no data for the relevant band within the catalogue
+                instrument.remove_band(band)
+                print(f"{band_name} flux not loaded")
+        print(f"instrument band names = {instrument.band_names}")
         codes = [getattr(globals()[name], name)() for name in code_names]
         # produce galaxy array from each row of the catalogue
         start_time = time.time()
@@ -72,7 +79,7 @@ class Catalogue(Catalogue_Base):
         elapsed_time = end_time - start_time
         print(f"Finished loading in {len(gals)} galaxies. This took {elapsed_time:.6f} seconds")
         # make catalogue with no SED fitting information
-        cat_obj = cls(gals, fits_cat_path, survey, cat_creator, instrument, code_names, version)
+        cat_obj = cls(gals, fits_cat_path, survey, cat_creator, instrument, code_names, version, crops = [])
         if cat_obj != None:
             cat_obj.data = data
         if mask:
@@ -80,6 +87,9 @@ class Catalogue(Catalogue_Base):
         # run SED fitting for the appropriate code names/low-z runs
         for i, (code, templates) in enumerate(zip(codes, templates_arr)):
             cat_obj = code.fit_cat(cat_obj, templates = templates, lowz_zmax_arr = lowz_zmax)
+        # crop catalogue by selection column if it exists in the galaxy objects (currently selection should be same for every galaxy)
+        if type(select_by) == str and select_by in cat_obj[0].selection_flags:
+            cat_obj = cat_obj.crop(True, select_by)
         return cat_obj
     
     def update_SED_results(self, cat_SED_results):
@@ -415,8 +425,9 @@ class Catalogue(Catalogue_Base):
         # crop deep copied catalogue to only the selected galaxies
         keep = getattr(self, selection_name)
         cat_copy.gals = cat_copy[keep]
-        # make a note of this crop if the copied catalogue
-        cat_copy.crops.append(selection_name)
+        if selection_name not in cat_copy.crops:
+            # make a note of this crop if it is new
+            cat_copy.crops.append(selection_name)
         # append .fits table if not already done so
         cat_copy.append_selection_to_fits(selection_name)
         return cat_copy
@@ -460,7 +471,7 @@ class Catalogue(Catalogue_Base):
             output_cat = output_cat.filled()
             # ensure no rows are lost during this column append
             assert(len(output_cat) == len(full_cat))
-            output_cat.meta = {**full_cat.meta, **{f"HIERARCH SELECTED_{selection_name.upper()}": True}}
+            output_cat.meta = {**full_cat.meta, **{f"HIERARCH SELECTED_{selection_name}": True}}
             galfind_logger.info(f"Appending {selection_name} to catalogue = {self.cat_path}")
             output_cat.write(self.cat_path, overwrite = True)
         else:

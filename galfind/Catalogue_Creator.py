@@ -146,6 +146,11 @@ class GALFIND_Catalogue_Creator(Catalogue_Creator):
     def depth_labels(self, bands):
         return [f"loc_depth_{band}" for band in bands]
     
+    def selection_labels(self, fits_cat):
+        labels = [key.replace("SELECTED_", "") for key, value \
+            in fits_cat.meta.items() if value == True and "SELECTED_" in key]
+        return labels
+    
     # overriding load_photometry from parent class to include .T[aper_diam_index]'s
     def load_photometry(self, fits_cat, bands):
         zero_points = self.load_zero_points(bands)
