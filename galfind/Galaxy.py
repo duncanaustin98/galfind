@@ -40,7 +40,7 @@ class Galaxy:
         ID = int(fits_cat_row[cat_creator.ID_label])
         sky_coord = SkyCoord(fits_cat_row[cat_creator.ra_dec_labels["RA"]] * u.deg, fits_cat_row[cat_creator.ra_dec_labels["DEC"]] * u.deg, frame = "icrs")
         # mask flags should come from cat_creator
-        mask_flags = {f"unmasked_{band}": cat_creator.load_flag(fits_cat_row, f"unmasked_{band}") for band in instrument.band_names}
+        mask_flags = {} #{f"unmasked_{band}": cat_creator.load_flag(fits_cat_row, f"unmasked_{band}") for band in instrument.band_names}
         return cls(sky_coord, ID, phot, mask_flags)
     
     def __str__(self):
@@ -111,11 +111,12 @@ class Galaxy:
         else:
             print(f"Already made fits cutout for {survey} {version} {self.ID}")
         
-    def update_mask_full(self, bool_values):
-        pass
+    def update_mask(self, cat, catalogue_creator, update_phot_rest = False):
+        self.phot.update_mask(cat, catalogue_creator, self.ID, update_phot_rest = update_phot_rest)
+        return self
         
-    def update_mask_band(self, band, bool_value):
-        self.mask_flags[band] = bool_value
+    # def update_mask_band(self, band, bool_value):
+    #     self.mask_flags[band] = bool_value
         
     # %% Selection methods
         
@@ -245,7 +246,7 @@ class Multiple_Galaxy:
             for ra, dec in zip(fits_cat[cat_creator.ra_dec_labels["RA"]], fits_cat[cat_creator.ra_dec_labels["DEC"]])]
         # mask flags should come from cat_creator
         #mask_flags_arr = [{f"unmasked_{band}": cat_creator.load_flag(fits_cat_row, f"unmasked_{band}") for band in instrument.band_names} for fits_cat_row in fits_cat]
-        mask_flags_arr = [{f"unmasked_{band}": None for band in instrument.band_names} for fits_cat_row in fits_cat]
+        mask_flags_arr = [{} for fits_cat_row in fits_cat] #f"unmasked_{band}": None for band in instrument.band_names
         selection_flags_arr = [{selection_flag: bool(fits_cat_row[selection_flag]) for selection_flag in cat_creator.selection_labels(fits_cat)} for fits_cat_row in fits_cat]
         return cls(sky_coords, IDs, phots, mask_flags_arr, selection_flags_arr)
     

@@ -76,6 +76,13 @@ class Photometry_obs(Photometry):
         self.SED_results = {code_name: dict(**self.SED_results[code_name], **gal_SED_results[code_name]) for code_name in self.SED_results.keys()}
         #print("Post update:", self.SED_results)
     
+    def update_mask(self, cat, cat_creator, ID, update_phot_rest = False):
+        gal_index = np.where(cat["NUMBER"] == ID)[0][0]
+        mask = cat_creator.load_mask(cat, self.instrument.band_names)[gal_index]
+        self.flux_Jy.mask = mask
+        self.flux_Jy_errs.mask = mask
+        return self
+
     #def load_local_depths(self, sex_cat_row, instrument, aper_diam_index):
     #    self.loc_depths = np.array([sex_cat_row[f"loc_depth_{band}"].T[aper_diam_index] for band in instrument.band_names])
         

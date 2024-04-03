@@ -90,11 +90,14 @@ class Catalogue(Catalogue_Base):
         # crop catalogue by selection column if it exists in the galaxy objects (currently selection should be same for every galaxy)
         if type(select_by) == str and select_by in cat_obj[0].selection_flags:
             cat_obj = cat_obj.crop(True, select_by)
+            galfind_logger.info(f"Catalogue for {cat_obj.survey} {cat_obj.version} cropped by {select_by}")
+        else:
+            galfind_logger.info(f"Catalogue for {cat_obj.survey} {cat_obj.version} could not be cropped by {select_by}!")
         return cat_obj
     
     def update_SED_results(self, cat_SED_results):
         assert(len(cat_SED_results) == len(self)) # if this is not the case then instead should cross match IDs between self and gal_SED_result
-        print("Updating SED results in galfind catalogue object")
+        galfind_logger.info("Updating SED results in galfind catalogue object")
         [gal.update(gal_SED_result) for gal, gal_SED_result in zip(self, cat_SED_results)]
     
     # %%
@@ -263,7 +266,6 @@ class Catalogue(Catalogue_Base):
                     else: # True if within the mask
                         mask_data = np.array([False if x < 0. or x >= mask.shape[1] or y < 0. or y >= mask.shape[0] else bool(mask[int(y)][int(x)]) for x, y in zip(cat_x, cat_y)])
                 cat[mask_label] = mask_data # update catalogue with boolean column
-                [gal.mask_flags.update({mask_label: masked_gal}) for gal, masked_gal in zip(self, mask_data)] # update galfind galaxy objects
 
             # update catalogue metadata
             cat.meta = {**cat.meta, **{"MASKED": True, "HIERARCH MASK_BANDS": config["Masking"].getboolean("MASK_BANDS"), \
@@ -272,11 +274,14 @@ class Catalogue(Catalogue_Base):
             # save catalogue
             cat.write(self.cat_path, overwrite = True)
             # update catalogue README
-
+            galfind_logger.warning("REQUIRED UPDATE: Update README for catalogue masking columns")
+            # update masking of galfind galaxy objects
+            galfind_logger.info("Masking galfind galaxy objects in catalogue")
+            assert(len(cat) == len(self))
+            [gal.update_mask(cat, self.cat_creator, update_phot_rest = False) for gal in \
+                tqdm(self, total = len(self), desc = "Masking galfind galaxy objects")]
         else:
             galfind_logger.info(f"Catalogue for {self.survey} {self.version} already masked. Skipping!")
-    
-        # update masking of individual galaxy objects in catalogue
 
     def make_cutouts(self, IDs, cutout_size = 32):
         for band in tqdm(self.instrument.band_names, total = len(self.instrument), desc = "Making band cutouts"):
