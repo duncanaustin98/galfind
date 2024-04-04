@@ -103,16 +103,16 @@ class Catalogue_Base:
             return np.array([getattr(gal.phot.instrument, name) for gal in self])
         elif phot_type == "obs" and name in self[0].phot.__dict__:
             return np.array([getattr(gal.phot, name) for gal in self])
-        elif name in self[0].phot.SED_results[code_name][templates][funcs.lowz_label(lowz_zmax)].__dict__:
-            return np.array([getattr(gal.phot.SED_results[code_name][templates][funcs.lowz_label(lowz_zmax)], name) for gal in self])
-        elif phot_type == "rest" and name in self[0].phot.SED_results[code_name][templates][funcs.lowz_label(lowz_zmax)].phot_rest.__dict__:
-            return np.array([getattr(gal.phot.SED_results[code_name][templates][funcs.lowz_label(lowz_zmax)].phot_rest, name) for gal in self])
         elif name in self[0].mask_flags.keys():
             return np.array([getattr(gal.mask_flags, name) for gal in self])
         elif name == "full_mask":
             return np.array([getattr(gal, "phot").mask for gal in self])
         elif name in self[0].selection_flags.keys():
             return np.array([getattr(gal, "selection_flags")[name] for gal in self])
+        elif name in self[0].phot.SED_results[code_name][templates][funcs.lowz_label(lowz_zmax)].__dict__:
+            return np.array([getattr(gal.phot.SED_results[code_name][templates][funcs.lowz_label(lowz_zmax)], name) for gal in self])
+        elif phot_type == "rest" and name in self[0].phot.SED_results[code_name][templates][funcs.lowz_label(lowz_zmax)].phot_rest.__dict__:
+            return np.array([getattr(gal.phot.SED_results[code_name][templates][funcs.lowz_label(lowz_zmax)].phot_rest, name) for gal in self])
         else:
             galfind_logger.critical(f"Galaxies do not have attribute = {name}!")
     

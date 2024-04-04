@@ -274,6 +274,13 @@ def get_SED_paths(fits_cat, IDs, codes, templates_arr, lowz_zmaxs, fits_cat_path
     return [code.SED_paths_from_cat_path(fits_cat_path, ID, templates, lowz_label(lowz_zmax)) for code, templates, lowz_zmax in \
             zip(codes, templates_arr, lowz_zmaxs) for ID in IDs]
 
+def ordinal(n: int):
+    if 11 <= (n % 100) <= 13:
+        suffix = 'th'
+    else:
+        suffix = ['th', 'st', 'nd', 'rd', 'th'][min(n % 10, 4)]
+    return str(n) + suffix
+
 # beta slope function
 def beta_slope_power_law_func(wav_rest, A, beta):
     return (10 ** A) * (wav_rest ** beta)

@@ -391,40 +391,61 @@ class Catalogue(Catalogue_Base):
         joined_tab.write(self.cat_path, format = "fits", overwrite = True)
         print(f"Joining UV table to catalogue! Saving to {self.cat_path}")
 
-    # %% Selection
+    # Selection functions
+        
+    # Masking selection
+
+    def select_min_unmasked_bands(self, min_bands):
+        return self.perform_selection(Galaxy.select_min_unmasked_bands, min_bands)
+    
+    def select_unmasked_bands(self, bands):
+        return self.perform_selection(Galaxy.select_unmasked_band, bands)
+    
+    def select_unmasked_instrument(self, instrument_name):
+        return self.perform_selection(Galaxy.select_unmasked_instrument, instrument_name)
+
+    # SNR selection functions
 
     def phot_bluewards_Lya_non_detect(self, SNR_lim, code_name = "EAZY", templates = "fsps_larson", lowz_zmax = None):
-        # make a note of this crop
-        selection_name = self[0].phot_bluewards_Lya_non_detect(SNR_lim, code_name = code_name, \
-            templates = templates, lowz_zmax = lowz_zmax, update_obj = False)[1]
-        # perform calculation for each galaxy
-        keep = [gal.phot_bluewards_Lya_non_detect(SNR_lim, code_name = code_name, \
-            templates = templates, lowz_zmax = lowz_zmax, update_obj = False)[0] \
-            for gal in tqdm(self, total = len(self), desc = f"Cropping {selection_name}")]
-        # now update galaxies in self in for loop
-        # for gal, keep_gal in zip(self, keep):
-        #     breakpoint()
-        #     gal.selection_flags[selection_name] = keep_gal
-        # crop copy of self to include only galaxies meeting this criteria
-        cat_copy = deepcopy(self)
-        cat_copy.gals = cat_copy[keep]
-        cat_copy.crops.append(selection_name)
+        return self.perform_selection(Galaxy.phot_bluewards_Lya_non_detect, SNR_lim, code_name, templates, lowz_zmax)
 
-        # append .fits table if not already done so
+    def phot_redwards_Lya_detect(self, SNR_lims, code_name = "EAZY", templates = "fsps_larson", lowz_zmax = None, widebands_only = True):
+        return self.perform_selection(Galaxy.phot_redwards_Lya_detect, SNR_lims, code_name, templates, lowz_zmax, widebands_only)
 
-        return cat_copy
+    def phot_Lya_band(self, SNR_lim, detect_or_non_detect = "detect", code_name = "EAZY", \
+            templates = "fsps_larson", lowz_zmax = None, widebands_only = True):
+        return self.perform_selection(Galaxy.phot_Lya_band, SNR_lim, detect_or_non_detect, \
+            code_name, templates, lowz_zmax, widebands_only)
 
-    def phot_redwards_Lya_detect(self, SNR_lims, code_name = "EAZY", templates = "fsps_larson", \
-            lowz_zmax = None, widebands_only = True, update = True):
+    def phot_SNR_crop(self, band_name_or_index, SNR_lim):
+        return self.perform_selection(Galaxy.phot_SNR_crop, band_name_or_index, SNR_lim)
+    
+    def select_depth_region(self, band, region_ID, update = True):
+        return NotImplementedError
+    
+    def flag_hot_pixel(self):
+        pass
+
+    # Full sample selection functions - these chain the above functions
+
+    def select_EPOCHS(self, code_name = "EAZY", templates = "fsps_larson", lowz_zmax = None):
+        return self.perform_selection(Galaxy.select_EPOCHS, code_name, templates, lowz_zmax)
+
+    def perform_selection(self, selection_function, *args):
         # extract selection name from galaxy method output
-        selection_name = self[0].phot_redwards_Lya_detect(SNR_lims, code_name = code_name, \
-            templates = templates, lowz_zmax = lowz_zmax, widebands_only = widebands_only, update = False)[1]
+        selection_name = selection_function(self[0], *args, update = False)[1]
         # perform selection if not previously performed
         if selection_name not in self.crops:
             # perform calculation for each galaxy and update galaxies in self
-            self.gals = np.array([deepcopy(gal).phot_redwards_Lya_detect(SNR_lims, code_name = code_name, \
-                templates = templates, lowz_zmax = lowz_zmax, widebands_only = widebands_only, \
-                update = True)[0] for gal in tqdm(self, total = len(self), desc = f"Cropping {selection_name}")])
+            [selection_function(gal, *args, update = True)[0] for gal in \
+                tqdm(self, total = len(self), desc = f"Cropping {selection_name}")]
+        # crop catalogue by the selection
+        cat_copy = self._crop_by_selection(selection_name)
+        # append .fits table if not already done so
+        cat_copy._append_selection_to_fits(selection_name)
+        return cat_copy
+
+    def _crop_by_selection(self, selection_name):
         # make a deep copy of the current catalogue object
         cat_copy = deepcopy(self)
         # crop deep copied catalogue to only the selected galaxies
@@ -433,37 +454,9 @@ class Catalogue(Catalogue_Base):
         if selection_name not in cat_copy.crops:
             # make a note of this crop if it is new
             cat_copy.crops.append(selection_name)
-        # append .fits table if not already done so
-        cat_copy.append_selection_to_fits(selection_name)
         return cat_copy
 
-    def phot_Lya_band(self, SNR_lim, detect_or_non_detect = "detect"):
-        pass
-
-    def phot_SNR_crop(self, band, SNR_lim):
-        # crop self to include only galaxies meeting this criteria
-        cat_copy = deepcopy(self)
-        # perform calculation for each galaxy
-        keep = [gal.phot_SNR_crop(band, SNR_lim)[0] for gal in self]
-        cat_copy.gals = cat_copy[keep]
-        # make a note of this crop
-        selection_name = self[0].phot_SNR_crop(band, SNR_lim)[1]
-        cat_copy.crops.append(selection_name)
-
-        return cat_copy
-
-    def flag_robust_high_z(self, relaxed = False):
-        # could make use of an overloaded __setattr__ here!
-        pass
-    
-    def flag_good_high_z(self, relaxed = False):
-        # could make use of an overloaded __setattr__ here!
-        pass
-    
-    def flag_hot_pixel(self):
-        pass
-
-    def append_selection_to_fits(self, selection_name):
+    def _append_selection_to_fits(self, selection_name):
         full_cat = self.open_cat()
         # append .fits table if not already done so for this selection
         if not selection_name in full_cat.colnames:

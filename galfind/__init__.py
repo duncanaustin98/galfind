@@ -129,3 +129,6 @@ config.set("Other", "ALL_BANDS", json.dumps(["F435W","FR459M","F475W","F550M","F
              "F200W","F210M","F250M","F277W","F300M","F335M","F356W","F360M","F410M","F430M","F444W","F460M","F480M","F560W","F770W","F1000W","F1130W","F1280W","F1500W","F1800W","F2100W","F2550W"]))
 # print(np.array([getattr(globals()[subcls.__class__.__name__], subcls.__class__.__name__)() for subcls in Instrument.__subclasses__()]).flatten())
 # config.set("Other", "ALL_BANDS", json.dumps(np.array([subcls().band_names for subcls in Instrument.__subclasses__]).flatten()))
+
+# dynamically add Galaxy selection methods to Catalogue class?
+
