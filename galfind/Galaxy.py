@@ -342,6 +342,31 @@ class Galaxy:
     
     def select_depth_region(self, band, region_ID, update = True):
         return NotImplementedError
+
+    # chi squared selection functions
+
+    def select_chi_sq_diff(self, chi_sq_diff, code_name = "EAZY", templates = "fsps_larson", delta_z_lowz = 0.5, update = True):
+        assert(type(chi_sq_diff) in [int, float])
+        selection_name = f"chi_sq_diff>{chi_sq_diff:.1f}"
+        lowz_zmax = self.phot.get_lowz_zmax(code_name = code_name, templates = templates)
+        assert (None in lowz_zmax and len(lowz_zmax) > 1)
+        if selection_name in self.selection_flags.keys():
+            galfind_logger.debug(f"{selection_name} already performed for galaxy ID = {self.ID}!")
+        else:
+            z = self.phot.SED_results[code_name][templates][None].phot_rest.z
+            chi_sq_zfree = self.phot.SED_results[code_name][templates][None].chi_sq
+            chi_sq_lowz = [self.phot.SED_results[code_name][templates][zmax].chi_sq for zmax in lowz_zmax]
+            SNR = self.phot.SNR[band_index]
+            mask = self.phot.flux_Jy.mask[band_index]
+            if SNR > SNR_lim or mask:
+                if update:
+                    self.selection_flags[selection_name] = True
+            else:
+                if update:
+                    self.selection_flags[selection_name] = False
+        return self, selection_name
+        # search for SED fitting results currently stored in the object
+        (chi2_lowz[lowz_mask] - chi2_high[lowz_mask]) > 4
     
     def select_EPOCHS(self, code_name = "EAZY", templates = "fsps_larson", lowz_zmax = None, update = True):
         
