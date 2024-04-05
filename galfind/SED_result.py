@@ -142,7 +142,7 @@ class Catalogue_SED_results:
         for code, templates in zip(codes, templates_arr):
             for lowz_zmax in lowz_zmaxs:
                 lowz_label = funcs.lowz_label(lowz_zmax)
-                cat_z_PDF_paths.append([code.z_PDF_paths_from_cat_path(fits_cat_path, ID, templates, lowz_label) for ID in IDs])
-                cat_SED_paths.append([code.SED_paths_from_cat_path(fits_cat_path, ID, templates, lowz_label) for ID in IDs])
+                cat_z_PDF_paths.append([code.z_PDF_path(cat, ID, templates, lowz_label) for ID in IDs])
+                cat_SED_paths.append([code.SED_path(fits_cat_path, ID, templates, lowz_label) for ID in IDs])
         
         return cls(phot_arr, cat_redshifts.T, cat_chi_sqs.T, np.array(cat_z_PDF_paths).T, np.array(cat_SED_paths).T, [code.__class__.__name__ for code in codes], lowz_zmaxs, templates_arr)

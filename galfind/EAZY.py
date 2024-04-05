@@ -298,21 +298,15 @@ class EAZY(SED_code):
             return None, None
         return z, PDF
         
-    def z_PDF_paths_from_cat_path(self, cat_path, ID, templates, lowz_label = ""):
-        # should still include aper_diam here
-        min_flux_pc_err = str(cat_path.replace(f"_{templates}", "").split("_")[-2].replace("pc", ""))
-        
-        PDF_dir = f"{funcs.split_dir_name(cat_path, 'dir')}PDFs/{str(min_flux_pc_err)}pc/{templates}"
-        if lowz_label == "zfree":
-            lowz_label = ""
-        PDF_name = f"{str(ID)}{lowz_label}.pz"
-        #print(PDF_name)
+    def get_z_PDF_path(self, cat, ID, templates, lowz_zmax):
+        PDF_dir = f"{config['EAZY']['EAZY_DIR']}/output/{cat.instrument.name}/{cat.version}/{cat.survey}"
+        PDF_name = f"{cat.cat_name.replace('.fits', f'_EAZY_{templates}_{funcs.lowz_label(lowz_zmax)}_zPDFs.h5')}"
         return f"{PDF_dir}/{PDF_name}"
     
-    def SED_paths_from_cat_path(self, cat_path, ID, templates, lowz_label = ""):
+    def get_SED_path(self, cat, ID, templates, lowz_zmax):
         # should still include aper_diam here
-        min_flux_pc_err = str(cat_path.replace(f"_{templates}", "").split("_")[-2].replace("pc", ""))
-        SED_dir = f"{funcs.split_dir_name(cat_path, 'dir')}SEDs/{str(min_flux_pc_err)}pc/{templates}"
+        min_flux_pc_err = str(cat.cat_path.replace(f"_{templates}", "").split("_")[-2].replace("pc", ""))
+        SED_dir = f"{funcs.split_dir_name(cat.cat_path, 'dir')}SEDs/{str(min_flux_pc_err)}pc/{templates}"
         if lowz_label == "zfree":
             lowz_label = ""
         SED_name = f"{str(ID)}{lowz_label}.spec"

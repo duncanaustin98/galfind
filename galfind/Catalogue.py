@@ -14,6 +14,7 @@ from copy import deepcopy
 from astropy.io import fits
 from pathlib import Path
 import traceback
+import h5py
 from astropy.coordinates import SkyCoord
 from astropy.wcs import WCS
 import astropy.units as u
@@ -420,16 +421,29 @@ class Catalogue(Catalogue_Base):
     def phot_SNR_crop(self, band_name_or_index, SNR_lim):
         return self.perform_selection(Galaxy.phot_SNR_crop, band_name_or_index, SNR_lim)
     
+    # Depth rregion selection
+
     def select_depth_region(self, band, region_ID, update = True):
         return NotImplementedError
     
-    # chi squared selection functions
+    # Chi squared selection functions
 
     def select_chi_sq_lim(self, chi_sq_lim, code_name = "EAZY", templates = "fsps_larson", lowz_zmax = None, reduced = True):
         return self.perform_selection(Galaxy.select_chi_sq_lim, chi_sq_lim, code_name, templates, lowz_zmax, reduced)
 
     def select_chi_sq_diff(self, chi_sq_diff, code_name = "EAZY", templates = "fsps_larson", delta_z_lowz = 0.5):
         return self.perform_selection(Galaxy.select_chi_sq_diff, chi_sq_diff, code_name, templates, delta_z_lowz)
+
+    # Redshift PDF selection functions
+
+    def select_robust_zPDF(self, integral_lim, delta_z, code_name = "EAZY", templates = "fsps_larson", lowz_zmax = None):
+        # open h5 z-PDF file
+        zPDF_h5 = h5py.File(f".h5", "r")
+        cat = self.perform_selection(integral_lim, delta_z, zPDF_h5, code_name, templates, lowz_zmax)
+        zPDF_h5.close()
+        return cat
+    
+    # Cutout quality selection functions
 
     def flag_hot_pixel(self):
         pass

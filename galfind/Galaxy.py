@@ -397,7 +397,41 @@ class Galaxy:
     
     # z-PDF selection functions
 
-    
+    def select_robust_zPDF(self, integral_lim, delta_z, zPDF_h5, code_name = "EAZY", templates = "fsps_larson", lowz_zmax = None, update = True):
+        assert(type(integral_lim) == float and (integral_lim * 100).is_integer())
+        assert(type(delta_z) in [int, float])
+        selection_name = f"zPDF>{int(integral_lim * 100)}%,dz={delta_z}"
+        if selection_name in self.selection_flags.keys():
+            galfind_logger.debug(f"{selection_name} already performed for galaxy ID = {self.ID}!")
+        else:
+            # extract best fitting redshift - peak of the redshift PDF
+            zbest = self.phot.SED_results[code_name][templates][funcs.lowz_label(None)].z
+            if zbest < 0.:
+                if update:
+                    self.selection_flags[selection_name] = False
+            else:
+                # calculate min and max redshift integration values
+                z_min = np.clip(zbest * (1 - delta_z), config["SEDFitting"].getboolean("Z_MIN"), config["SEDFitting"].getboolean("Z_MAX"))
+                z_max = np.clip(zbest * (1 + delta_z), config["SEDFitting"].getboolean("Z_MIN"), config["SEDFitting"].getboolean("Z_MAX"))
+                # load in and normalize PDF
+                z_PDF = zPDF_h5.get("z")
+                pz_PDF = zPDF_h5.get(f"ID={int(self.ID)}").get("p(z)")
+                pz_PDF /= np.trapz(pz_PDF, z_PDF) # normalize
+                # find index of closest values in z_PDF to z_min and z_max
+                index_z_min = np.argmin(np.absolute(z_PDF - z_min))
+                index_z_max = np.argmin(np.absolute(z_PDF - z_max))
+                # clip z/pz distribution to integration limits
+                z_PDF = z_PDF[index_z_min : index_z_max]
+                pz_PDF = pz_PDF[index_z_min : index_z_max]
+                # integrate using trapezium rule between limits
+                integral = np.trapz(pz_PDF, z_PDF)
+                if integral > integral_lim:
+                    if update:
+                        self.selection_flags[selection_name] = True
+                else:
+                    if update:
+                        self.selection_flags[selection_name] = False
+        return self, selection_name
     
     def select_EPOCHS(self, code_name = "EAZY", templates = "fsps_larson", lowz_zmax = None, update = True):
         
