@@ -345,28 +345,59 @@ class Galaxy:
 
     # chi squared selection functions
 
-    def select_chi_sq_diff(self, chi_sq_diff, code_name = "EAZY", templates = "fsps_larson", delta_z_lowz = 0.5, update = True):
-        assert(type(chi_sq_diff) in [int, float])
-        selection_name = f"chi_sq_diff>{chi_sq_diff:.1f}"
-        lowz_zmax = self.phot.get_lowz_zmax(code_name = code_name, templates = templates)
-        assert (None in lowz_zmax and len(lowz_zmax) > 1)
+    def select_chi_sq_lim(self, chi_sq_lim, code_name = "EAZY", templates = "fsps_larson", lowz_zmax = None, reduced = True, update = True):
+        assert(type(chi_sq_lim) in [int, float])
+        assert(type(reduced) == bool)
+        if reduced:
+            n_bands = len([mask_band for mask_band in self.phot.flux_Jy.mask if not mask_band]) # number of unmasked bands for galaxy
+            chi_sq_lim *= (n_bands - 1)
+        selection_name = f"chi_sq>{chi_sq_lim:.1f}"
         if selection_name in self.selection_flags.keys():
             galfind_logger.debug(f"{selection_name} already performed for galaxy ID = {self.ID}!")
         else:
-            z = self.phot.SED_results[code_name][templates][None].phot_rest.z
-            chi_sq_zfree = self.phot.SED_results[code_name][templates][None].chi_sq
-            chi_sq_lowz = [self.phot.SED_results[code_name][templates][zmax].chi_sq for zmax in lowz_zmax]
-            SNR = self.phot.SNR[band_index]
-            mask = self.phot.flux_Jy.mask[band_index]
-            if SNR > SNR_lim or mask:
+            # extract chi_sq
+            chi_sq = self.phot.SED_results[code_name][templates][funcs.lowz_label(lowz_zmax)].chi_sq
+            if chi_sq < chi_sq_lim:
                 if update:
                     self.selection_flags[selection_name] = True
             else:
                 if update:
                     self.selection_flags[selection_name] = False
         return self, selection_name
-        # search for SED fitting results currently stored in the object
-        (chi2_lowz[lowz_mask] - chi2_high[lowz_mask]) > 4
+
+    def select_chi_sq_diff(self, chi_sq_diff, code_name = "EAZY", templates = "fsps_larson", delta_z_lowz = 0.5, update = True):
+        assert(type(chi_sq_diff) in [int, float])
+        assert(type(delta_z_lowz) in [int, float])
+        selection_name = f"chi_sq_diff>{chi_sq_diff:.1f},dz>{delta_z_lowz:.1f}"
+        if selection_name in self.selection_flags.keys():
+            galfind_logger.debug(f"{selection_name} already performed for galaxy ID = {self.ID}!")
+        else:
+            lowz_zmax_arr = self.phot.get_lowz_zmax(code_name = code_name, templates = templates)
+            assert(lowz_zmax_arr[-1] == None and len(lowz_zmax_arr) > 1)
+            lowz_zmax_arr = lowz_zmax_arr[:-1]
+            # extract redshift + chi_sq of zfree run
+            zfree = self.phot.SED_results[code_name][templates][funcs.lowz_label(None)].z
+            chi_sq_zfree = self.phot.SED_results[code_name][templates][funcs.lowz_label(None)].chi_sq
+            # extract redshift and chi_sq of lowz runs
+            z_lowz_arr = [self.phot.SED_results[code_name][templates][funcs.lowz_label(zmax)].z for zmax in lowz_zmax_arr]
+            chi_sq_lowz_arr = [self.phot.SED_results[code_name][templates][funcs.lowz_label(zmax)].chi_sq for zmax in lowz_zmax_arr]
+            # determine which lowz run to use for this galaxy
+            z_lowz = [z for z, lowz_zmax in zip(z_lowz_arr, lowz_zmax_arr) if zfree > lowz_zmax + delta_z_lowz]
+            chi_sq_lowz = [chi_sq for chi_sq, lowz_zmax in zip(chi_sq_lowz_arr, lowz_zmax_arr) if zfree > lowz_zmax + delta_z_lowz]
+            if len(chi_sq_lowz) == 0:
+                if update:
+                    self.selection_flags[selection_name] = True
+            elif (chi_sq_lowz[-1] - chi_sq_zfree > chi_sq_diff) or (chi_sq_lowz[-1] == -1.) or (z_lowz[-1] < 0.):
+                if update:
+                    self.selection_flags[selection_name] = True
+            else:
+                if update:
+                    self.selection_flags[selection_name] = False
+        return self, selection_name
+    
+    # z-PDF selection functions
+
+    
     
     def select_EPOCHS(self, code_name = "EAZY", templates = "fsps_larson", lowz_zmax = None, update = True):
         
@@ -380,7 +411,8 @@ class Galaxy:
         # masking takes a little while
         # self.select_unmasked_instrument("NIRCam")[1], \
         selection_names = [
-            
+            self.select_chi_sq_lim(3., code_name, templates, lowz_zmax, reduced = True)[1], \
+            self.select_chi_sq_diff(9., code_name, templates, delta_z_lowz = 0.5)[1], \
             self.phot_SNR_crop(0, 2.)[1], \
             self.phot_bluewards_Lya_non_detect(2., code_name, templates, lowz_zmax)[1], \
             self.phot_redwards_Lya_detect([5., 3.], code_name, templates, lowz_zmax, widebands_only = True)[1]

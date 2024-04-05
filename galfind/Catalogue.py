@@ -423,6 +423,14 @@ class Catalogue(Catalogue_Base):
     def select_depth_region(self, band, region_ID, update = True):
         return NotImplementedError
     
+    # chi squared selection functions
+
+    def select_chi_sq_lim(self, chi_sq_lim, code_name = "EAZY", templates = "fsps_larson", lowz_zmax = None, reduced = True):
+        return self.perform_selection(Galaxy.select_chi_sq_lim, chi_sq_lim, code_name, templates, lowz_zmax, reduced)
+
+    def select_chi_sq_diff(self, chi_sq_diff, code_name = "EAZY", templates = "fsps_larson", delta_z_lowz = 0.5):
+        return self.perform_selection(Galaxy.select_chi_sq_diff, chi_sq_diff, code_name, templates, delta_z_lowz)
+
     def flag_hot_pixel(self):
         pass
 

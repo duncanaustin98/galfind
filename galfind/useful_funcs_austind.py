@@ -258,6 +258,13 @@ def lowz_label(lowz_zmax):
         label = "zfree"
     return label
 
+def zmax_from_lowz_label(label):
+    if label == "zfree":
+        zmax = None
+    else:
+        zmax = float(label.replace("zmax=", ""))
+    return zmax
+
 def get_z_PDF_paths(fits_cat, IDs, codes, templates_arr, lowz_zmaxs, fits_cat_path = None):
     try:
         fits_cat_path = fits_cat.meta["cat_path"]

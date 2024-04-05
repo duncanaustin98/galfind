@@ -12,6 +12,7 @@ import astropy.constants as const
 import astropy.units as u
 from copy import copy, deepcopy
 
+from . import useful_funcs_austind as funcs
 from .Photometry import Photometry, Multiple_Photometry
 from .SED_result import Galaxy_SED_results, Catalogue_SED_results
 
@@ -84,7 +85,11 @@ class Photometry_obs(Photometry):
         return self
     
     def get_lowz_zmax(self, code_name = "EAZY", templates = "fsps_larson"):
-        return [lowz_zmax for lowz_zmax in self.SED_results[code_name][templates].keys()] # if not zmax == None, also zmax label
+        output = sorted([funcs.zmax_from_lowz_label(label) for label in \
+            self.SED_results[code_name][templates].keys() if funcs.zmax_from_lowz_label(label) != None])
+        if funcs.lowz_label(None) in self.SED_results[code_name][templates].keys():
+            output.append(None)
+        return output
 
     #def load_local_depths(self, sex_cat_row, instrument, aper_diam_index):
     #    self.loc_depths = np.array([sex_cat_row[f"loc_depth_{band}"].T[aper_diam_index] for band in instrument.band_names])
