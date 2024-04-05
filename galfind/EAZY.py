@@ -36,15 +36,15 @@ EAZY_FILTER_CODES = {'NIRCam': {'F070W':36, 'F090W':1, 'F115W':2,'F140M':37, 'F1
                     'MIRI': {'F560W':13, 'F770W':14, 'F1000W':15, 'F1130W':16, 'F1280W':17, 'F1500W':18,'F1800W':19, 'F2100W':20, 'F2550W':21}}
 
 class EAZY(SED_code):
-    
+
+    # now includes UBVJ flux/errs
+    galaxy_property_dict = {**{"z_phot": "zbest", "chi_sq": "chi2_best"}, \
+        **{f"{ubvj_filt}_{flux_or_err}": f"{ubvj_filt}_rf_{flux_or_err}" \
+        for ubvj_filt in ["U", "B", "V", "J"] for flux_or_err in ["flux", "flux_err"]}}
+    available_templates = ["fsps", "fsps_larson", "fsps_jades"]
+
     def __init__(self):
-        #ID_label = "IDENT"
-        # now includes UBVJ flux/errs
-        galaxy_property_dict = {**{"z_phot": "zbest", "chi_sq": "chi2_best"}, \
-            **{f"{ubvj_filt}_{flux_or_err}": f"{ubvj_filt}_rf_{flux_or_err}" \
-            for ubvj_filt in ["U", "B", "V", "J"] for flux_or_err in ["flux", "flux_err"]}}
-        available_templates = ["fsps", "fsps_larson", "fsps_jades"]
-        super().__init__(galaxy_property_dict, available_templates)
+        super().__init__(self.galaxy_property_dict, self.available_templates)
     
     def make_in(self, cat, fix_z = False): #, *args, **kwargs):
         eazy_in_dir = f"{config['EAZY']['EAZY_DIR']}/input/{cat.instrument.name}/{cat.version}/{cat.survey}"
@@ -281,7 +281,6 @@ class EAZY(SED_code):
     
     def extract_SEDs(self, fits_cat, ID, low_z_run = False, units = u.ABmag, just_header = False):
         SED_path = self.SED_path_from_cat_path(fits_cat.meta[f"{self.__class__.__name__}_path"], ID, low_z_run)
-       
         if not Path(SED_path).is_file():
             print(f'Not found EAZY SED at {SED_path}')
         if not just_header: 
@@ -289,21 +288,18 @@ class EAZY(SED_code):
             SED['mag'][np.isinf(SED['mag'])] = 99.
         return {"best_gal": SED}
     
-    def extract_z_PDF(self, fits_cat, ID, low_z_run = False):
-        PDF_path = self.z_PDF_path_from_cat_path(fits_cat.meta[f"{self.__class__.__name__}_path"], ID, low_z_run)
-        try:
-            z, PDF = np.loadtxt(PDF_path, delimiter = ',').T  
-        except FileNotFoundError:
-            print(f'{PDF_path} not found.')
-            return None, None
-        return z, PDF
+    def extract_z_PDF(self, ID, low_z_run = False):
+        self.get_z_PDF_path(ID)
+        return NotImplementedError
         
-    def get_z_PDF_path(self, cat, ID, templates, lowz_zmax):
+    def get_z_PDF_path(self, ID):
+        return ""
         PDF_dir = f"{config['EAZY']['EAZY_DIR']}/output/{cat.instrument.name}/{cat.version}/{cat.survey}"
         PDF_name = f"{cat.cat_name.replace('.fits', f'_EAZY_{templates}_{funcs.lowz_label(lowz_zmax)}_zPDFs.h5')}"
         return f"{PDF_dir}/{PDF_name}"
     
-    def get_SED_path(self, cat, ID, templates, lowz_zmax):
+    def get_SED_path(self, ID):
+        return ""
         # should still include aper_diam here
         min_flux_pc_err = str(cat.cat_path.replace(f"_{templates}", "").split("_")[-2].replace("pc", ""))
         SED_dir = f"{funcs.split_dir_name(cat.cat_path, 'dir')}SEDs/{str(min_flux_pc_err)}pc/{templates}"

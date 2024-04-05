@@ -56,9 +56,9 @@ class Photometry_obs(Photometry):
             for aper_corr, flux_Jy, depth in zip(self.aper_corrs, self.flux_Jy.filled(fill_value = np.nan).to(u.Jy).value, self.depths.to(u.Jy).value)]
 
     @classmethod # not a gal object here, more like a catalogue row
-    def from_fits_cat(cls, fits_cat_row, instrument, cat_creator, aper_diam, min_flux_pc_err, codes, lowz_zmaxs):
+    def from_fits_cat(cls, fits_cat_row, instrument, cat_creator, aper_diam, min_flux_pc_err, codes, lowz_zmaxs, templates):
         phot = Photometry.from_fits_cat(fits_cat_row, instrument, cat_creator)
-        SED_results = Galaxy_SED_results.from_fits_cat(fits_cat_row, cat_creator, codes, lowz_zmaxs, instrument = instrument)
+        SED_results = Galaxy_SED_results.from_fits_cat(fits_cat_row, cat_creator, codes, lowz_zmaxs, templates, instrument = instrument)
         return cls.from_phot(phot, aper_diam, min_flux_pc_err, SED_results)
     
     @classmethod
@@ -78,7 +78,7 @@ class Photometry_obs(Photometry):
         #print("Post update:", self.SED_results)
     
     def update_mask(self, cat, cat_creator, ID, update_phot_rest = False):
-        gal_index = np.where(cat["NUMBER"] == ID)[0][0]
+        gal_index = np.where(cat[cat_creator.ID_label] == ID)[0][0]
         mask = cat_creator.load_mask(cat, self.instrument.band_names)[gal_index]
         self.flux_Jy.mask = mask
         self.flux_Jy_errs.mask = mask
@@ -142,5 +142,5 @@ class Multiple_Photometry_obs:
     def from_fits_cat(cls, fits_cat, instrument, cat_creator, aper_diam, min_flux_pc_err, codes, lowz_zmaxs, templates_arr):
         flux_Jy_arr, flux_Jy_errs_arr = cat_creator.load_photometry(fits_cat, instrument.band_names)
         depths_arr = cat_creator.load_depths(fits_cat, instrument.band_names)
-        SED_results_arr = Catalogue_SED_results.from_fits_cat(fits_cat, cat_creator, codes, lowz_zmaxs, templates_arr, instrument = instrument).SED_results
+        SED_results_arr = Catalogue_SED_results.from_fits_cat(fits_cat, cat_creator, codes, templates_arr, lowz_zmaxs, instrument = instrument).SED_results
         return cls(instrument, flux_Jy_arr, flux_Jy_errs_arr, aper_diam, min_flux_pc_err, depths_arr, SED_results_arr)

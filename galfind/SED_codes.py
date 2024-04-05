@@ -102,8 +102,9 @@ class SED_code(ABC):
             self.update_fits_cat(cat, fits_out_path, templates = templates, lowz_zmax = lowz_zmax) #, *args, **kwargs)
             # update catalogue with paths to 
         # update galaxies within the catalogue with new SED fits
+        breakpoint()
         cat_SED_results = Catalogue_SED_results.from_fits_cat(cat.open_cat(), cat.cat_creator, \
-            [self], lowz_zmax_arr, [templates], phot_arr = [gal.phot for gal in cat], fits_cat_path = cat.cat_path).SED_results
+            [self], [templates], lowz_zmax_arr, phot_arr = [gal.phot for gal in cat], fits_cat_path = cat.cat_path).SED_results
         cat.update_SED_results(cat_SED_results)
         return cat
     
@@ -156,11 +157,11 @@ class SED_code(ABC):
         pass
     
     @abstractmethod
-    def z_PDF_paths_from_cat_path(self, cat_path, ID, low_z_run = False):
+    def get_z_PDF_path(self, cat_path, ID, low_z_run = False):
         pass
     
     @abstractmethod
-    def SED_paths_from_cat_path(self, cat_path, ID, low_z_run = False):
+    def get_SED_path(self, cat_path, ID, low_z_run = False):
         pass
 
 # LePhare

@@ -97,6 +97,7 @@ class Catalogue(Catalogue_Base):
         return cat_obj
     
     def update_SED_results(self, cat_SED_results):
+        breakpoint()
         assert(len(cat_SED_results) == len(self)) # if this is not the case then instead should cross match IDs between self and gal_SED_result
         galfind_logger.info("Updating SED results in galfind catalogue object")
         [gal.update(gal_SED_result) for gal, gal_SED_result in zip(self, cat_SED_results)]
