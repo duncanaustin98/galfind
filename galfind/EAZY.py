@@ -292,8 +292,7 @@ class EAZY(SED_code):
         self.get_z_PDF_path(ID)
         return NotImplementedError
         
-    def get_z_PDF_path(self, ID):
-        return ""
+    def get_z_PDF_path(self, ID, survey, version, instrument_name):
         PDF_dir = f"{config['EAZY']['EAZY_DIR']}/output/{cat.instrument.name}/{cat.version}/{cat.survey}"
         PDF_name = f"{cat.cat_name.replace('.fits', f'_EAZY_{templates}_{funcs.lowz_label(lowz_zmax)}_zPDFs.h5')}"
         return f"{PDF_dir}/{PDF_name}"

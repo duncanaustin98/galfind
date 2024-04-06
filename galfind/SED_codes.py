@@ -102,9 +102,6 @@ class SED_code(ABC):
             self.update_fits_cat(cat, fits_out_path, templates = templates, lowz_zmax = lowz_zmax) #, *args, **kwargs)
             # update catalogue with paths to 
         # update galaxies within the catalogue with new SED fits
-        breakpoint()
-        print(cat.open_cat(), cat.cat_creator, \
-            [self], [templates], lowz_zmax_arr, [gal.phot for gal in cat], cat.cat_path)
         cat_SED_results = Catalogue_SED_results.from_fits_cat(cat.open_cat(), cat.cat_creator, \
             [self], [templates], lowz_zmax_arr, phot_arr = [gal.phot for gal in cat], fits_cat_path = cat.cat_path).SED_results
         cat.update_SED_results(cat_SED_results)
