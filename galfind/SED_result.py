@@ -139,7 +139,7 @@ class Catalogue_SED_results:
             raise(Exception())
         labels_dict = {gal_property: funcs.GALFIND_SED_column_labels(SED_codes, lowz_zmaxs, templates_arr, gal_property) for gal_property in gal_properties}
         ID_labels = [cat_creator.ID_label for SED_code, templates in zip(SED_codes, templates_arr) for lowz_zmax in lowz_zmaxs]
-        
+
         IDs = np.array([fits_cat[labels] for labels in ID_labels]).astype(int)
         cat_redshifts = np.array([fits_cat[labels] for labels in labels_dict["z_phot"]])
         cat_chi_sqs = np.array([fits_cat[labels] for labels in labels_dict["chi_sq"]])
@@ -147,11 +147,11 @@ class Catalogue_SED_results:
         cat_z_PDF_paths = []
         cat_SED_paths = []
         # should be a faster way of reading in this data
-        for SED_code, templates in zip(SED_codes, templates_arr):
-            for lowz_zmax in lowz_zmaxs:
+        for i, (SED_code, templates) in enumerate(zip(SED_codes, templates_arr)):
+            for j, lowz_zmax in enumerate(lowz_zmaxs):
                 lowz_label = funcs.lowz_label(lowz_zmax)
-                cat_z_PDF_paths.append([SED_code.get_z_PDF_path(ID) for ID in IDs])
-                cat_SED_paths.append([SED_code.get_SED_path(ID) for ID in IDs])
+                cat_z_PDF_paths.append([SED_code.get_z_PDF_path(ID) for ID in IDs[j]])
+                cat_SED_paths.append([SED_code.get_SED_path(ID) for ID in IDs[j]])
         
         return cls(phot_arr, cat_redshifts.T, cat_chi_sqs.T, np.array(cat_z_PDF_paths).T, \
             np.array(cat_SED_paths).T, IDs.T, SED_codes, templates_arr, lowz_zmaxs)

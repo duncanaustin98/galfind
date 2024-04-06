@@ -30,9 +30,9 @@ def pipeline(surveys, version, instruments, aper_diams, code_names, lowz_zmax, m
             #cat.select_min_unmasked_bands(min_bands = 4)
             #cat.phot_bluewards_Lya_non_detect(SNR_lim = 2.)
             #cat.phot_redwards_Lya_detect(SNR_lims = 5.)
-            cat_copy = cat.select_EPOCHS()
+            #cat_copy = cat.select_EPOCHS()
             #cat_copy = cat.phot_redwards_Lya_detect(SNR_lims = [7., 5.])
-            print(str(cat_copy))
+            #print(str(cat_copy))
             #print(cat_copy.crop(1407, "ID")[0])
             # for i, code in enumerate(sed_codes):
             #     cat = code.fit_cat(cat, templates = eazy_templates)

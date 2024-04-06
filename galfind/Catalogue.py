@@ -81,6 +81,8 @@ class Catalogue(Catalogue_Base):
         print(f"Finished loading in {len(gals)} galaxies. This took {elapsed_time:.6f} seconds")
         # make catalogue with no SED fitting information
         cat_obj = cls(gals, fits_cat_path, survey, cat_creator, instrument, code_names, version, crops = [])
+        print(cat_obj)
+        breakpoint()
         if cat_obj != None:
             cat_obj.data = data
         if mask:
