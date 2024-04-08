@@ -351,7 +351,7 @@ class Galaxy:
         if reduced:
             n_bands = len([mask_band for mask_band in self.phot.flux_Jy.mask if not mask_band]) # number of unmasked bands for galaxy
             chi_sq_lim *= (n_bands - 1)
-        selection_name = f"chi_sq>{chi_sq_lim:.1f}"
+        selection_name = f"chi_sq<{chi_sq_lim:.1f}"
         if selection_name in self.selection_flags.keys():
             galfind_logger.debug(f"{selection_name} already performed for galaxy ID = {self.ID}!")
         else:

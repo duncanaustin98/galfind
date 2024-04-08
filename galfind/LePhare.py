@@ -154,14 +154,14 @@ class LePhare(SED_code):
                     z.append(float(z_PDF[0]))
                     PDF.append(float(z_PDF[1]))
                 
-                # end at z = 15
+                # end at z = 25
                 if line.startswith(" 25.00000"):
                     break
             open_file.close()
         return z, PDF
     
-    def z_PDF_paths_from_cat_path(self, cat_path, ID, low_z_run = False):
+    def get_z_PDF_path(self, cat_path, ID, low_z_run = False):
         pass
     
-    def SED_paths_from_cat_path(self, cat_path, ID, low_z_run = False):
+    def get_SED_path(self, cat_path, ID, low_z_run = False):
         pass
