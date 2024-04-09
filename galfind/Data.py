@@ -678,14 +678,16 @@ class Data:
             if exclude_gaia_galaxies:
                 gaia_stars = gaia_stars[gaia_stars['vari_best_class_name'] != 'GALAXY']
                 gaia_stars = gaia_stars[gaia_stars['classlabel_dsc_joint'] != 'galaxy']
+                # Remove masked flux values
+                gaia_stars = gaia_stars[~np.isnan(gaia_stars['phot_g_mean_mag'])]
                 
+
             ra_gaia = np.asarray(gaia_stars['ra'])
             dec_gaia = np.asarray(gaia_stars['dec'])
             x_gaia, y_gaia = wcs.all_world2pix(ra_gaia, dec_gaia, 0)
             
             # Generate mask scale for each star
             rmask_gaia_arcsec = mask_a * np.exp(-gaia_stars['phot_g_mean_mag'] / mask_b)
-
             # Update the catalog
             gaia_stars.add_column(Column(data = x_gaia, name = 'x_pix'))
             gaia_stars.add_column(Column(data = y_gaia, name = 'y_pix'))
@@ -693,7 +695,7 @@ class Data:
 
         # Diagnostic plot
         if plot:
-            fig = plt.figure(figsize=(10, 15))
+            fig = plt.figure(figsize=(10, 10))
             ax = fig.add_subplot(111, projection=wcs)
             stretch = vis.CompositeStretch(vis.LogStretch(), vis.ContrastBiasStretch(contrast = 30, bias = 0.08))    
             norm = ImageNormalize(stretch = stretch, vmin = 0.001, vmax = 10)
@@ -714,18 +716,16 @@ class Data:
             region_strings.append(region_obj.serialize(format = 'ds9'))
 
         stellar_mask = np.zeros(im_data.shape, dtype=bool)
-        for pos1, regions in tqdm(enumerate(diffraction_regions)):
-            for pos2, region in enumerate(regions):
-                if pos1 == 0 and pos2 == 0:
-                    composite_region = region
-                else:
-                    composite_region = composite_region | region
-                idx_large, _ = region.to_mask(mode = 'center').get_overlap_slices(im_data.shape)
-                stellar_mask[idx_large] = True
+        for regions in tqdm(diffraction_regions):
+            for region in regions:
+                idx_large, idx_little = region.to_mask(mode = 'center').get_overlap_slices(im_data.shape)
+                # idx_large is x,y box containing bounds of region in image
+                if idx_large is not None:
+                    stellar_mask[idx_large] = np.logical_or(region.to_mask().data[idx_little], stellar_mask[idx_large])
                 if plot:
                     artist = region.as_artist()
                     ax.add_patch(artist)
-        
+       
         # Mask image edges
         fill = im_data == edge_value #true false array of where 0's are
         edges = fill * 1 #convert to 1 for true and 0 for false
@@ -761,12 +761,12 @@ class Data:
 
         if plot:
             # Save mask plot
-            fig.savefig(f'{self.mask_dir}/{band}_mask.png')
+            fig.savefig(f'{self.mask_dir}/{band}_mask.png', dpi=300)
 
         # Save ds9 region 
-        # with open(f'{self.mask_dir}/{band}_starmask.reg', 'w') as f:
-        #     for region in region_strings:
-        #         f.write(region + '\n')
+        with open(f'{self.mask_dir}/{band}_starmask.reg', 'w') as f:
+            for region in region_strings:
+                f.write(region + '\n')
         return output_mask_path
     
     #@staticmethod
