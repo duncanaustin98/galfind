@@ -577,6 +577,15 @@ class Data:
         except:
             wht = None
         return wht
+
+      
+    def load_rms_err(self, band):
+        try:
+            rms_err = fits.open(self.rms_err_paths[band])[self.rms_err_exts[band]].data
+        except:
+            rms_err = None
+        return rms_err
+    
     
     def combine_seg_data_and_mask(self, band = None, seg_data = None, mask = None):
         if type(seg_data) != type(None) and type(mask) != type(None):
@@ -1198,7 +1207,7 @@ class Data:
             return mask_path
     
     # can be simplified with new masks
-    def calc_unmasked_area(self, masking_instrument_or_band_name = "NIRCam", forced_phot_band = ["f277W", "f356W", "f444W"]):
+    def calc_unmasked_area(self, masking_instrument_or_band_name = "NIRCam", forced_phot_band = ["F277W", "F356W", "F444W"]):
         
         if "PIXEL SCALE" not in self.common.keys():
             galfind_logger.warning("Masking by bands with different pixel scales is not supported!")

@@ -355,6 +355,11 @@ class Jaguar(Simulation):
 
 def make_dirs(path):
     os.makedirs(split_dir_name(path, "dir"), exist_ok = True)
+    try:
+        os.chmod(path, 0o777)
+    except PermissionError:
+        galfind_logger.warning(f"Could not change permissions of {path} to 777.")
+
 
 def calc_errs_from_cat(cat, col_name, instrument):
     if col_name in LePhare_col_names:

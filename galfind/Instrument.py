@@ -108,6 +108,7 @@ class Instrument:
         if (band.split("+")[0] in self.band_names) or band in self.band_names:
             return self
         else:
+            # This leads to confusing errors when passing in a bandname which doesn't exist
             return False
     
     # def __getitem__(self, get_index): # create a new instrument with only the indexed band
