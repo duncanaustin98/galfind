@@ -146,6 +146,7 @@ class Data:
                 galfind_logger.info(f"Common {label} found")
             except AssertionError:
                 galfind_logger.info(f"No common {label}")
+        print(str(self))
 
     @classmethod
     def from_pipeline(cls, survey, version = "v9", instruments = ['NIRCam', 'ACS_WFC', 'WFC3_IR'], excl_bands = [], pix_scales = ['30mas', '60mas']):
@@ -206,11 +207,11 @@ class Data:
                     im_path_arr = np.array(glob.glob(f"{survey_dir}/*_drz.fits"))
                 else:
                     im_path_arr = np.array(glob.glob(f"{survey_dir}/*_i2d*.fits"))
+                # obtain available bands from image paths
+                bands = np.array([band for path in im_path_arr for band in instrument.band_names if band.upper() in path \
+                    or band.lower() in path or band.lower().replace('f', 'F') in path or band.upper().replace('F', 'f') in path])
+                galfind_logger.warning("Should check more thoroughly to ensure there are not multiple band names in an image path!")
 
-                # obtain available bands from imaging without having to hard code these
-                bands = np.array([split_path.upper() for path in im_path_arr for i, split_path in \
-                        enumerate(path.split("-")[-1].split("/")[-1].split("_")) if split_path.upper() in instrument.band_names])
-                
                 # If band not used in instrument, remove it
                 for band in instrument.band_names:
                     if band not in bands:
@@ -335,7 +336,7 @@ class Data:
                             
                         elif instrument.name == 'WFC3_IR':
                         # Taken from Appendix A of https://www.stsci.edu/files/live/sites/www/files/home/hst/instrumentation/wfc3/documentation/instrument-science-reports-isrs/_documents/2020/WFC3-ISR-2020-10.pdf
-                            wfc3ir_zps = {'f098M': 25.661, 'f105W': 26.2637, 'f110W': 26.8185, 'f125W': 26.231, 'f140W': 26.4502, 'f160W': 25.9362}
+                            wfc3ir_zps = {'F098M': 25.661, 'F105W': 26.2637, 'F110W': 26.8185, 'F125W': 26.231, 'F140W': 26.4502, 'F160W': 25.9362}
                             im_zps[band_name] = wfc3ir_zps[band_name]
                         # Need to move my segmentation maps and masks to the correct place
 
@@ -732,7 +733,7 @@ class Data:
         edges = edges.astype(np.uint8) #dtype for cv2
         print('Masking edges')
         if element == 'RECT':
-            kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (edge_mask_distance,edge_mask_distance)) 
+            kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (edge_mask_distance,edge_mask_distance))
         elif element == 'ELLIPSE':
             kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (edge_mask_distance,edge_mask_distance))
         else:
@@ -1487,7 +1488,7 @@ class Data:
                 hf.create_dataset(name_i, data = data_i)
             hf.close()
 
-            self.plot_depth(band, cat_creator, mode, aper_diam)
+        self.plot_depth(band, cat_creator, mode, aper_diam)
 
     def plot_depth(self, band, cat_creator, mode, aper_diam): #, **kwargs):
         if cat_creator == None:

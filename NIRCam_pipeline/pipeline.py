@@ -24,15 +24,14 @@ def pipeline(surveys, version, instruments, aper_diams, code_names, lowz_zmax, m
         for survey in surveys:
             cat = Catalogue.from_pipeline(survey = survey, version = version, instruments = instruments, aper_diams = aper_diams, cat_creator = cat_creator, code_names = code_names, lowz_zmax = lowz_zmax, \
                                           forced_phot_band = forced_phot_band, excl_bands = excl_bands, loc_depth_min_flux_pc_errs = min_flux_pc_errs, templates_arr = eazy_templates, select_by = select_by)
-            #cat.data.calc_unmasked_area("NIRCam", forced_phot_band = forced_phot_band)
-
             print(str(cat))
+            cat.data.calc_unmasked_area("NIRCam", forced_phot_band = forced_phot_band)
             #cat.select_min_unmasked_bands(min_bands = 4)
             #cat.phot_bluewards_Lya_non_detect(SNR_lim = 2.)
-            #cat.phot_redwards_Lya_detect(SNR_lims = 5.)
-            cat_copy = cat.select_EPOCHS()
+            #cat_copy = cat.phot_redwards_Lya_detect(SNR_lims = 5.)
+            #cat_copy = cat.select_EPOCHS()
             #cat_copy = cat.phot_redwards_Lya_detect(SNR_lims = [7., 5.])
-            print(str(cat_copy))
+            #print(str(cat_copy))
             #print(cat_copy.crop(1407, "ID")[0])
             # for i, code in enumerate(sed_codes):
             #     cat = code.fit_cat(cat, templates = eazy_templates)
@@ -50,7 +49,7 @@ if __name__ == "__main__":
     version = "v11" #config["DEFAULT"]["VERSION"]
     instruments = ["NIRCam"] #, 'ACS_WFC'] #, 'WFC3_IR']
     cat_type = "loc_depth"
-    surveys = ["NGDEEP2"] #[config["DEFAULT"]["SURVEY"]]
+    surveys = ["JOF"] #[config["DEFAULT"]["SURVEY"]]
     aper_diams = [0.32] * u.arcsec
     code_names = ["EAZY"]
     eazy_templates = ["fsps_larson"] #["fsps", "fsps_larson", "fsps_jades"]
