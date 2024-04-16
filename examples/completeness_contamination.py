@@ -311,5 +311,5 @@ def completeness_main():
     hf.close()
 
 if __name__ == "__main__":
-    #contam_main()
-    completeness_main()
+    contam_main()
+    #completeness_main()
