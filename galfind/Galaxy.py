@@ -27,10 +27,11 @@ class Galaxy:
     
     def __init__(self, sky_coord, ID, phot, mask_flags = {}, selection_flags = {}):
         self.sky_coord = sky_coord
-        self.ID = int(ID)
+        self.ID = int(ID) 
         self.phot = phot
         self.mask_flags = mask_flags
         self.selection_flags = selection_flags
+        self.cutout_paths = {}
         
     @classmethod
     def from_fits_cat(cls, fits_cat_row, instrument, cat_creator, codes, lowz_zmax, templates_arr):
@@ -93,11 +94,18 @@ class Galaxy:
             raise(Exception("'survey' and 'version' must both be given to construct save paths"))
         
         out_path = f"{config['Cutouts']['CUTOUT_DIR']}/{version}/{survey}/{band}/{self.ID}.fits"
-        if not Path(out_path).is_file() or config.getboolean('Cutouts', 'OVERWRITE_CUTOUTS'):
+        rerun = False
+        if Path(out_path).is_file():
+            size = fits.open(out_path)[0].header["size"]
+            if size != cutout_size:
+                print('Cutout size does not match requested size, overwriting...')
+                rerun = True
+        if not Path(out_path).is_file() or config.getboolean('Cutouts', 'OVERWRITE_CUTOUTS') or rerun:
             if type(data) == Data:
                 im_data, im_header, seg_data, seg_header = data.load_data(band, incl_mask = False)
                 wht_data = data.load_wht(band)
-                data = {"SCI": im_data, "SEG": seg_data, data.wht_types[band]: wht_data}
+                rms_err_data = data.load_rms_err(band)
+                data = {"SCI": im_data, "SEG": seg_data, 'WHT': wht_data, 'RMS_ERR': rms_err_data}
                 wcs = WCS(im_header)
             elif type(data) == dict and type(wcs) != type(None) and type(im_header) != type(None):
                 pass
@@ -116,7 +124,7 @@ class Galaxy:
             print('Saved fits cutout to:', out_path)
         else:
             print(f"Already made fits cutout for {survey} {version} {self.ID}")
-        
+        self.cutout_paths[band] = out_path
     # Selection methods
 
     def select_min_unmasked_bands(self, min_bands, update = True):

@@ -70,7 +70,8 @@ class Photometry:
     
     @property
     def wav(self):
-        return np.array([self.instrument.band_wavelengths[band].value for band in self.instrument.band_names]) * u.Angstrom
+        return self.instrument.band_wavelengths
+        #return np.array([self.instrument.band_wavelengths[band].value for band in self.instrument.band_names]) * u.Angstrom
     
     @classmethod
     def from_fits_cat(cls, fits_cat_row, instrument, cat_creator):

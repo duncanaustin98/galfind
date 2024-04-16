@@ -285,13 +285,16 @@ class Catalogue(Catalogue_Base):
             galfind_logger.info(f"Catalogue for {self.survey} {self.version} already masked. Skipping!")
 
     def make_cutouts(self, IDs, cutout_size = 32):
+        if type(IDs) == int:
+            IDs = [IDs]
         for band in tqdm(self.instrument.band_names, total = len(self.instrument), desc = "Making band cutouts"):
             im_data, im_header, seg_data, seg_header = self.data.load_data(band, incl_mask = False)
             wht_data = self.data.load_wht(band)
+            rms_err_data = self.data.load_rms_err(band)
             wcs = WCS(im_header)
             for gal in self:
                 if gal.ID in IDs:
-                    gal.make_cutout(band, data = {"SCI": im_data, "SEG": seg_data, self.data.wht_types[band]: wht_data}, \
+                    gal.make_cutout(band, data = {"SCI": im_data, "SEG": seg_data, 'WHT': wht_data, 'RMS_ERR':rms_err_data}, \
                         wcs = wcs, im_header = im_header, survey = self.survey, version = self.version, cutout_size = cutout_size)
 
     def make_UV_fit_cat(self, code_name = "EAZY", templates = "fsps_larson", UV_PDF_path = config["RestUVProperties"]["UV_PDF_PATH"], col_names = ["Beta", "flux_lambda_1500", "flux_Jy_1500", "M_UV", "A_UV", "L_obs", "L_int", "SFR"], \
