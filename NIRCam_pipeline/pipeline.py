@@ -25,7 +25,7 @@ def pipeline(surveys, version, instruments, aper_diams, code_names, lowz_zmax, m
             cat = Catalogue.from_pipeline(survey = survey, version = version, instruments = instruments, aper_diams = aper_diams, cat_creator = cat_creator, code_names = code_names, lowz_zmax = lowz_zmax, \
                                           forced_phot_band = forced_phot_band, excl_bands = excl_bands, loc_depth_min_flux_pc_errs = min_flux_pc_errs, templates_arr = eazy_templates, select_by = select_by)
             print(str(cat))
-            cat.data.calc_unmasked_area("NIRCam", forced_phot_band = forced_phot_band)
+            #cat.data.calc_unmasked_area("NIRCam", forced_phot_band = forced_phot_band)
             #cat.select_min_unmasked_bands(min_bands = 4)
             #cat.phot_bluewards_Lya_non_detect(SNR_lim = 2.)
             #cat_copy = cat.phot_redwards_Lya_detect(SNR_lims = 5.)
@@ -46,10 +46,10 @@ def pipeline(surveys, version, instruments, aper_diams, code_names, lowz_zmax, m
             #     cat.make_UV_fit_cat(UV_PDF_path = f"{config['RestUVProperties']['UV_PDF_PATH']}/{version}/{instruments_name}/{survey}/{code.code_name}+{pc_err}pc")  
 
 if __name__ == "__main__":
-    version = "v11" #config["DEFAULT"]["VERSION"]
+    version = "v9" #config["DEFAULT"]["VERSION"]
     instruments = ["NIRCam"] #, 'ACS_WFC'] #, 'WFC3_IR']
     cat_type = "loc_depth"
-    surveys = ["JOF"] #[config["DEFAULT"]["SURVEY"]]
+    surveys = ["JADES-Deep-GS+JEMS"] #[config["DEFAULT"]["SURVEY"]]
     aper_diams = [0.32] * u.arcsec
     code_names = ["EAZY"]
     eazy_templates = ["fsps_larson"] #["fsps", "fsps_larson", "fsps_jades"]
