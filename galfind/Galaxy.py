@@ -25,10 +25,11 @@ from . import Photometry_rest, Photometry_obs, Multiple_Photometry_obs, Data, In
 
 class Galaxy:
     
-    def __init__(self, sky_coord, ID, phot, mask_flags = {}, selection_flags = {}):
+    def __init__(self, sky_coord, ID, phot, mask_flags = {}, selection_flags = {}): # cat_path,
         self.sky_coord = sky_coord
         self.ID = int(ID)
         self.phot = phot
+        #self.cat_path = cat_path
         self.mask_flags = mask_flags
         self.selection_flags = selection_flags
         

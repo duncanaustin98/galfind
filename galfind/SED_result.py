@@ -21,7 +21,8 @@ from . import config, galfind_logger
 class SED_result:
     
     def __init__(self, SED_fit_params, phot, properties, property_errs, property_PDFs, SED, rest_UV_wav_lims = [1268., 2580.] * u.Angstrom):
-        [setattr(key, value) for key, value in SED_fit_params.items()]
+        self.SED_fit_params = SED_fit_params
+        #[setattr(key, value) for key, value in SED_fit_params.items()]
         [setattr(key, value) for key, value in properties.items()]
         [setattr(f"{key}_l1", value[0]) for key, value in property_errs.items()]
         [setattr(f"{key}_u1", value[1]) for key, value in property_errs.items()]
@@ -55,89 +56,63 @@ class SED_result:
     @classmethod
     def from_gal(cls, gal, SED_fit_params, rest_UV_wav_lims = [1268., 2580.] * u.Angstrom):
         assert("code" in SED_fit_params.keys())
-        gal_fits_data = gal.open_data()
+        fits_cat_row = gal.open_cat_row() # row of fits catalogue
         # extract best fitting properties from galaxy given the SED_fit_params
         properties = {gal_property: float(SED_fit_params["code"].\
-            get_gal_property(gal_fits_data, gal_property, SED_fit_params)) \
+            get_gal_property(fits_cat_row, gal_property, SED_fit_params)) \
             for gal_property in SED_fit_params["code"].galaxy_property_dict.keys()}
         # extract best fitting errors from galaxy given the SED_fit_params
         property_errs = {gal_property: float(SED_fit_params["code"].\
-            get_gal_property_errs(gal_fits_data, gal_property, SED_fit_params)) \
+            get_gal_property_errs(fits_cat_row, gal_property, SED_fit_params)) \
             for gal_property in SED_fit_params["code"].galaxy_property_dict.keys()}
         # create property PDFs from galaxy given the SED_fit_params
         property_PDFs = {}
-        # create SED from galaxy given the SED_fit_params
+        # load SED from galaxy given the SED_fit_params
         SED = None
         return cls(SED_fit_params, gal.phot, properties, property_errs, property_PDFs, SED)
+    
 
 class Galaxy_SED_results:
     
-    def __init__(self, phot, redshifts, chi_sqs, z_PDF_paths, SED_paths, IDs, SED_codes, templates_arr, lowz_zmaxs):
-        self.SED_results = {SED_code.__class__.__name__: {templates: {funcs.lowz_label(lowz_zmax): \
-            SED_result(phot, z, chi_sq, z_PDF_path, SED_path, SED_code.__class__.__name__, ID) for z, chi_sq, z_PDF_path, SED_path, ID, lowz_zmax \
-            in zip(redshifts, chi_sqs, z_PDF_paths, SED_paths, IDs, lowz_zmaxs)}} for SED_code, templates in zip(SED_codes, templates_arr)}
+    def __init__(self, SED_fit_params_arr, SED_result_arr):
+        self.SED_results = {SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params): \
+            SED_result for SED_fit_params, SED_result in zip(SED_fit_params_arr, SED_result_arr)}
 
     def __len__(self):
         return len([True for (code_names, templates_lowz_zmax_results) in self.SED_results.items() \
             for (templates, lowz_zmax_results) in templates_lowz_zmax_results.items() \
             for (lowz_zmax, results) in lowz_zmax_results.items()])
+    
+    @classmethod
+    def from_gal(cls, gal, SED_fit_params_arr, rest_UV_wav_lims = [1268., 2580.] * u.Angstrom):
+        return cls(SED_fit_params_arr, [SED_result.from_gal(gal, SED_fit_params, \
+            rest_UV_wav_lims = rest_UV_wav_lims) for SED_fit_params in SED_fit_params_arr])
 
     @classmethod
-    def from_fits_cat(cls, fits_cat_row, cat_creator, codes, lowz_zmaxs, templates_arr, phot = None, instrument = None, fits_cat_path = None):
-        
-        # calculate photometry if required
-        if phot == None and instrument != None:
-            phot = Photometry.from_fits_cat(fits_cat_row, instrument, cat_creator)
-        elif phot != None and instrument == None:
-            pass
-        else:
-            raise(Exception("Must specify either phot or instrument in Galaxy_SED_results!"))
-        
-        try:
-            fits_cat_path = fits_cat_row.meta["cat_path"]
-        except:
-            warnings.warn("fits_cat_path not loaded from catalogue meta, instead using SED_result.from_fits_cat(fits_cat_path) = {fits_cat_path}!")
-        
-        # efficiency of this can probably be improved using column_labels
-        IDs = []
-        redshifts = []
-        chi_sqs = []
-        z_PDF_paths = []
-        SED_paths = []
-        for code, lowz_zmax, templates in zip(codes, lowz_zmaxs, templates_arr):
-            try:
-                ID = int(fits_cat_row[code.ID_label])
-                z = float(fits_cat_row[code.galaxy_property_labels("z_phot", templates, lowz_zmax)])
-                chi_sq = float(fits_cat_row[code.galaxy_property_labels("chi_sq", templates, lowz_zmax)])
-            except:
-                raise(Exception(f"SED run not performed for {code.code_name}, lowz_zmax = {lowz_zmax}"))
-            IDs.append(ID)
-            redshifts.append(z)
-            chi_sqs.append(chi_sq)
-            lowz_label = funcs.lowz_label(lowz_zmax)
-            z_PDF_paths.append(code.z_PDF_path(fits_cat_path, ID, templates, lowz_label))
-            SED_paths.append(code.SED_path(fits_cat_path, ID, templates, lowz_label))
-        return cls(phot, redshifts, chi_sqs, z_PDF_paths, SED_paths, IDs, codes, templates_arr, lowz_zmaxs)
+    def from_SED_result_inputs(cls, SED_fit_params_arr, phot, property_arr, \
+            property_errs_arr, property_PDFs_arr, SED_arr, rest_UV_wav_lims = [1268., 2580.] * u.Angstrom):
+        SED_result_arr = [SED_result(SED_fit_params, phot, properties, property_errs, property_PDFs, SED, \
+            rest_UV_wav_lims = rest_UV_wav_lims) for SED_fit_params, properties, property_errs, property_PDFs, \
+            SED in zip(SED_fit_params_arr, property_arr, property_errs_arr, property_PDFs_arr, SED_arr)]
+        return cls(SED_fit_params_arr, SED_result_arr)
+
     
 class Catalogue_SED_results:
-    
-    def __init__(self, phot_arr, cat_properties, cat_z_PDF_paths, cat_SED_paths, IDs, SED_codes, SED_fitting_properties_arr):
-        # an array (each element is a galaxy) of dictionaries (each element is a single SED fitting code) containing a dictionary (each containing SED results from a specific template set)
-        self.SED_results = [Galaxy_SED_results(gal_phot, gal_properties, gal_z_PDF_paths, gal_SED_paths, ID, SED_codes, SED_fitting_properties_arr).SED_results \
-            for gal_phot, gal_properties, gal_z_PDF_paths, gal_SED_paths, ID in zip(phot_arr, cat_properties, cat_z_PDF_paths, cat_SED_paths, IDs)]
+
+    def __init__(self, SED_fit_params_arr, cat_SED_results):
+        self.SED_results = [Galaxy_SED_results(SED_fit_params_arr, SED_result_arr).SED_results for SED_result_arr in cat_SED_results]
     
     def __len__(self):
         return len(self.SED_results)
     
     @classmethod
-    def from_galfind_cat(cls, cat, SED_code, templates, lowz_zmax):
-        return cls.from_fits_cat(cat.open_cat(), cat.cat_creator, SED_code, templates, \
-            lowz_zmax, phot_arr = [gal.phot for gal in cat], fits_cat_path = cat.cat_path, )
+    def from_cat(cls, cat, SED_fit_params_arr):
+        return cls.from_fits_cat(cat.open_cat(), cat.cat_creator, SED_fit_params_arr, phot_arr = [gal.phot for gal in cat])
 
     @classmethod
-    def from_fits_cat(cls, fits_cat_path, cat_creator, SED_code, templates, lowz_zmax, \
-            phot_arr = None, instrument = None, gal_properties = ["z_phot", "chi_sq"]):
-        fits_cat = Table.read(fits_cat_path, character_as_bytes = False)
+    def from_fits_cat(cls, fits_cat, cat_creator, SED_fit_params_arr, phot_arr = None, \
+            instrument = None, rest_UV_wav_lims = [1268., 2580.] * u.Angstrom, ):
+        assert(all(True if "code" in SED_fit_params else False for SED_fit_params in SED_fit_params_arr))
         # calculate array of galaxy photometries if required
         if type(phot_arr) == type(None) and type(instrument) != type(None):
             phot_arr = Multiple_Photometry.from_fits_cat(fits_cat, instrument, cat_creator).phot_arr
@@ -146,19 +121,34 @@ class Catalogue_SED_results:
         else:
             galfind_logger.critical("Must specify either phot or instrument in Galaxy_SED_results!")
 
-        labels_dict = {gal_property: funcs.GALFIND_SED_column_labels(SED_codes, lowz_zmaxs, templates_arr, gal_property) for gal_property in gal_properties}
-        ID_labels = [cat_creator.ID_label]
+        # IDs = list(np.full(len(SED_fit_params_arr), np.array(fits_cat[cat_creator.ID_label]).astype(int)))
+        # convert cat_properties from array of len(SED_fit_params_arr), with each element a dict of galaxy properties for the entire catalogue with values of arrays of len(fits_cat)
+        # to array of len(fits_cat), with each element an array of len(SED_fit_params_arr) containing a dict of properties for a single galaxy
+        labels_arr = [{key: SED_fit_params["code"].galaxy_property_labels(value) for key, value in SED_fit_params["code"].galaxy_property_dict.items()} for SED_fit_params in SED_fit_params_arr]
+        cat_properties = [{gal_property: list(fits_cat[label]) for gal_property, label in labels.items()} for labels in labels_arr]
+        cat_properties = [[{key: value[i] for key, value in SED_fitting_properties.items()} for SED_fitting_properties in cat_properties] for i in range(len(fits_cat))]
+        # convert cat_property_errs from array of len(SED_fit_params_arr), with each element a dict of galaxy properties for the entire catalogue with values of arrays of len(fits_cat)
+        # to array of len(fits_cat), with each element an array of len(SED_fit_params_arr) containing a dict of properties for a single galaxy
+        err_labels_arr = [{key: SED_fit_params["code"].galaxy_property_labels(value) for key, value in SED_fit_params["code"].galaxy_property_errs_dict.items()} for SED_fit_params in SED_fit_params_arr]
+        cat_property_errs = [{gal_property: list(fits_cat[label]) for gal_property, label in labels.items()} for labels in labels_arr]
+        cat_property_errs = [[{key: value[i] for key, value in SED_fitting_properties.items()} for SED_fitting_properties in cat_properties] for i in range(len(fits_cat))]
 
-        IDs = np.array([fits_cat[labels] for labels in ID_labels]).astype(int)
-        cat_redshifts = np.array([fits_cat[labels] for labels in labels_dict["z_phot"]])
-        cat_chi_sqs = np.array([fits_cat[labels] for labels in labels_dict["chi_sq"]])
+        # PDFs - need path to saved PDFs
+        cat_property_PDFs = []
+
+        # SEDs - need path to saved SEDs
+        cat_SEDs = []
         
-        cat_z_PDF_paths = []
-        cat_SED_paths = []
-        # should be a faster way of reading in this data
-        lowz_label = funcs.lowz_label(lowz_zmax)
-        cat_z_PDF_paths.append([SED_code.get_z_PDF_path(ID) for ID in IDs])
-        cat_SED_paths.append([SED_code.get_SED_path(ID) for ID in IDs])
-        
-        return cls(phot_arr, cat_redshifts.T, cat_chi_sqs.T, np.array(cat_z_PDF_paths).T, \
-            np.array(cat_SED_paths).T, IDs.T, SED_codes, templates_arr, lowz_zmaxs)
+        return cls.from_SED_result_inputs(SED_fit_params_arr, phot_arr, cat_properties, \
+            cat_property_errs, cat_property_PDFs, cat_SEDs, rest_UV_wav_lims = rest_UV_wav_lims)
+    
+    @classmethod
+    def from_SED_result_inputs(cls, SED_fit_params_arr, phot_arr, cat_properties, \
+            cat_property_errs, cat_property_PDFs, cat_SEDs, rest_UV_wav_lims = [1268., 2580.] * u.Angstrom):
+        cat_SED_results = [[SED_result.from_SED_result_inputs(SED_fit_params, phot, properties, \
+            property_errs, property_PDFs, SED, rest_UV_wav_lims = rest_UV_wav_lims) \
+            for SED_fit_params, properties, property_errs, property_PDFs, SED in \
+            zip(SED_fit_params_arr, property_arr, property_errs_arr, property_PDF_arr, SED_arr)] \
+            for phot, property_arr, property_errs_arr, property_PDF_arr, SED_arr \
+            in zip(phot_arr, cat_properties, cat_property_errs, cat_property_PDFs, cat_SEDs)]
+        return cls(SED_fit_params_arr, cat_SED_results)

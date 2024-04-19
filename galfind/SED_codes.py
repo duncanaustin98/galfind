@@ -29,20 +29,10 @@ from . import SED_result, Catalogue_SED_results
 
 class SED_code(ABC):
     
-    def __init__(self, galaxy_property_dict, available_templates):
+    def __init__(self, galaxy_property_dict, galaxy_property_errs_dict, available_templates):
         self.galaxy_property_dict = galaxy_property_dict
+        self.galaxy_property_errs_dict = galaxy_property_errs_dict
         self.available_templates = available_templates
-    
-    @staticmethod
-    def code_from_name(code_name):
-        return getattr(globals()[code_name], code_name)()
-    
-    def galaxy_property_labels(self, gal_property, templates, lowz_zmax = None):
-        if templates not in self.available_templates:
-            raise(Exception(f"templates = {templates} are not in {self.available_templates}, and hence are not yet encorporated for galfind EAZY SED fitting"))
-        if gal_property not in self.galaxy_property_dict.keys():
-            raise(Exception(f"{self.__class__.__name__}.galaxy_property_labels = {self.galaxy_property_labels} does not include key for gal_property = {gal_property}!"))
-        return f"{self.galaxy_property_dict[gal_property]}_{templates}_{funcs.lowz_label(lowz_zmax)}"
     
     def load_photometry(self, cat, SED_input_bands, out_units, no_data_val, upper_sigma_lim = {}):
         # load in raw photometry from the galaxies in the catalogue and convert to appropriate units
@@ -54,7 +44,7 @@ class SED_code(ABC):
         else:
             # Not correct in general! Only for high S/N! Fails to scale mag errors asymetrically from flux errors
             phot_err = np.array([funcs.flux_pc_to_mag_err(gal.phot.flux_Jy_errs / gal.phot.flux_Jy) for gal in cat])#[:, :, 0]
-        
+
         # include upper limits if wanted
         if upper_sigma_lim != None and upper_sigma_lim != {}:
             # determine relevant indices
@@ -118,7 +108,16 @@ class SED_code(ABC):
             combined_cat.remove_column("IDENT")
             combined_cat.meta = {**combined_cat.meta, **{f"RUN_{self.__class__.__name__}": True}}
             combined_cat.write(cat.cat_path, overwrite = True)
-        
+
+    @abstractmethod
+    @staticmethod
+    def label_from_SED_fit_params(self, SED_fit_params):
+        pass
+
+    @abstractmethod
+    def galaxy_property_labels(self, gal_property, SED_fit_params):
+        pass
+
     @abstractmethod
     def make_in(self, cat):
         pass
@@ -163,21 +162,9 @@ class SED_code(ABC):
     def get_SED_path(self, cat_path, ID, low_z_run = False):
         pass
 
-# LePhare
-LePhare_outputs = {"z": "Z_BEST", "mass": "MASS_BEST"}
-LePhare_col_names = LePhare_outputs.values()
-
 def calc_LePhare_errs(cat, col_name):
     if col_name == "Z_BEST":
         data = np.array(cat[col_name])
         data_err = np.array([np.array(cat[col_name + "68_LOW"]), np.array(cat[col_name + "68_HIGH"])])
         data, data_err = adjust_errs(data, data_err)
         return data_err
-    
-# EAZY
-EAZY_outputs = {"z": "zbest"}
-EAZY_col_names = EAZY_outputs.values()
-
-def calc_EAZY_errs(cat, col_name):
-    if col_name == "zbest":
-        pass

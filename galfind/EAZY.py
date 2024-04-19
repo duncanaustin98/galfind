@@ -39,12 +39,20 @@ class EAZY(SED_code):
 
     # now includes UBVJ flux/errs
     galaxy_property_dict = {**{"z_phot": "zbest", "chi_sq": "chi2_best"}, \
-        **{f"{ubvj_filt}_{flux_or_err}": f"{ubvj_filt}_rf_{flux_or_err}" \
-        for ubvj_filt in ["U", "B", "V", "J"] for flux_or_err in ["flux", "flux_err"]}}
+        **{f"{ubvj_filt}_flux": f"{ubvj_filt}_rf_flux" for ubvj_filt in ["U", "B", "V", "J"]}}
+    galaxy_property_errs_dict = {f"{ubvj_filt}_flux_err": f"{ubvj_filt}_rf_flux_err" for ubvj_filt in ["U", "B", "V", "J"]}
     available_templates = ["fsps", "fsps_larson", "fsps_jades"]
 
     def __init__(self):
-        super().__init__(self.galaxy_property_dict, self.available_templates)
+        super().__init__(self.galaxy_property_dict, self.galaxy_property_errs_dict, self.self.available_templates)
+
+    def galaxy_property_labels(self, gal_property, SED_fit_params):
+        assert("templates" in SED_fit_params.items() and "lowz_zmax" in SED_fit_params.items())
+        if SED_fit_params["templates"] not in self.available_templates:
+            raise(Exception(f"templates = {SED_fit_params['templates']} are not in {self.available_templates}, and hence are not yet encorporated for galfind EAZY SED fitting"))
+        if gal_property not in self.galaxy_property_dict.keys():
+            raise(Exception(f"{self.__class__.__name__}.galaxy_property_labels = {self.galaxy_property_labels} does not include key for gal_property = {gal_property}!"))
+        return f"{self.galaxy_property_dict[gal_property]}_{SED_fit_params['templates']}_{funcs.lowz_label(SED_fit_params['lowz_zmax'])}"
     
     def make_in(self, cat, fix_z = False): #, *args, **kwargs):
         eazy_in_dir = f"{config['EAZY']['EAZY_DIR']}/input/{cat.instrument.name}/{cat.version}/{cat.survey}"
@@ -271,6 +279,12 @@ class EAZY(SED_code):
         gal_SED = hf.create_group(f"ID={int(fit_data['id'])}")
         gal_SED.create_dataset("wav", data = wav)
         gal_SED.create_dataset("flux", data = flux)
+
+    @staticmethod
+    def label_from_SED_fit_params(SED_fit_params):
+        assert("code" in SED_fit_params.keys() and "templates" in SED_fit_params.keys() and "lowz_zmax" in SED_fit_params.keys())
+        # first write the code name, next write the template name, finish off with lowz_zmax
+        return f"{SED_fit_params['code'].__class__.__name__}_{SED_fit_params['templates']}_{SED_fit_params['lowz_zmax']}"
 
     def make_fits_from_out(self, out_path, templates, lowz_zmax): #*args, **kwargs):
         pass
