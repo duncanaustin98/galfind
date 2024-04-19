@@ -1383,7 +1383,7 @@ class Data:
                 if "APERCORR" in cat.meta.keys():
                     cat[f"FLUXERR_APER_{band}_loc_depth_{str(int(cat_creator.min_flux_pc_err))}pc_Jy"] = \
                         [tuple([funcs.flux_image_to_Jy(flux, self.im_zps[band]).value * cat_creator.min_flux_pc_err / 100. if err / flux < cat_creator.min_flux_pc_err / 100. and flux > 0. \
-                        else funcs.flux_image_to_Jy(flux, self.im_zps[band]).value for flux, err in zip(flux_tup, err_tup)]) for flux_tup, err_tup in zip(cat[f"FLUX_APER_{band}_aper_corr"], cat[f"FLUXERR_APER_{band}_loc_depth"])]
+                        else funcs.flux_image_to_Jy(err, self.im_zps[band]).value for flux, err in zip(flux_tup, err_tup)]) for flux_tup, err_tup in zip(cat[f"FLUX_APER_{band}_aper_corr"], cat[f"FLUXERR_APER_{band}_loc_depth"])]
                 else:
                     raise(Exception("Couldn't make 'FLUXERR_APER_{band}_loc_depth_{str(int(cat_creator.min_flux_pc_err))}Jy' columns!"))
                 # magnitude and magnitude error columns

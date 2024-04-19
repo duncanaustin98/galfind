@@ -46,10 +46,10 @@ def pipeline(surveys, version, instruments, aper_diams, code_names, lowz_zmax, m
             #     cat.make_UV_fit_cat(UV_PDF_path = f"{config['RestUVProperties']['UV_PDF_PATH']}/{version}/{instruments_name}/{survey}/{code.code_name}+{pc_err}pc")  
 
 if __name__ == "__main__":
-    version = "v9" #config["DEFAULT"]["VERSION"]
+    version = "v11" #config["DEFAULT"]["VERSION"]
     instruments = ["NIRCam"] #, 'ACS_WFC'] #, 'WFC3_IR']
     cat_type = "loc_depth"
-    surveys = ["JADES-Deep-GS+JEMS"] #[config["DEFAULT"]["SURVEY"]]
+    surveys = ["JOF"] #[config["DEFAULT"]["SURVEY"]]
     aper_diams = [0.32] * u.arcsec
     code_names = ["EAZY"]
     eazy_templates = ["fsps_larson"] #["fsps", "fsps_larson", "fsps_jades"]
