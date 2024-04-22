@@ -105,6 +105,9 @@ class Data:
             else:
                 # make an pixel mask automatically for the band
                 mask_paths[band] = self.make_mask(band)
+            # Do this for Tom
+            mask_paths[band] = self.make_mask(band)
+
         self.mask_paths = dict(sorted(mask_paths.items()))
 
         if is_blank:
@@ -367,6 +370,9 @@ class Data:
                 fits_mask_paths_ += glob.glob(f"{config['DEFAULT']['GALFIND_WORK']}/Masks/{survey}/fits_masks/*{band.lower().replace('f', 'F')}*")
                 fits_mask_paths_ += glob.glob(f"{config['DEFAULT']['GALFIND_WORK']}/Masks/{survey}/fits_masks/*{band.upper().replace('F', 'f')}*")
                 fits_mask_paths_ = list(set(fits_mask_paths_))
+                # Exclude mask path if it contains the phrase 'artifact'
+                fits_mask_paths_ = [path for path in fits_mask_paths_ if 'artifact' not in path]
+
                 # exclude masks that include other filters
                 delete_indices = []
                 for j, path in enumerate(fits_mask_paths_):
@@ -385,6 +391,8 @@ class Data:
                     mask_paths_ += glob.glob(f"{config['DEFAULT']['GALFIND_WORK']}/Masks/{survey}/*{band.lower().replace('f', 'F')}*")
                     mask_paths_ += glob.glob(f"{config['DEFAULT']['GALFIND_WORK']}/Masks/{survey}/*{band.upper().replace('F', 'f')}*")
                     mask_paths_ = list(set(mask_paths_))
+                    # Exclude mask path if it contains the phrase 'artifact'
+                    mask_paths_ = [path for path in mask_paths_ if 'artifact' not in path]
                     # exclude masks that include other filters
                     delete_indices = []
                     for j, path in enumerate(mask_paths_):
@@ -638,8 +646,34 @@ class Data:
             ax.add_artist(t)
 
     def make_mask(self, band, edge_mask_distance = 50, mask_stars = True, scale_extra = 0.2,
-            mask_a = 694.7, mask_b = 3.5, exclude_gaia_galaxies = True, angle = 0, edge_value = 0, 
+            mask_a_override = None, mask_b_override=None, exclude_gaia_galaxies = True, angle = 0, edge_value = 0, 
             element = 'ELLIPSE', gaia_row_lim = 500, plot = False):
+        
+        if 'NIRCam' not in self.instrument.name and mask_stars:
+            galfind_logger.critical(f"Mask making only implemented for NIRCam data!")
+            raise(Exception("Star mask making only implemented for NIRCam data!"))
+
+        star_pask_params = { # mask_a * exp(-mag / mask_b) is the form 
+            9000 * u.AA: {'mask_a': 1300, 'mask_b': 4},
+            11500 * u.AA: {'mask_a': 1300, 'mask_b': 4},
+            15000 * u.AA: {'mask_a': 1300, 'mask_b': 4},
+            20000 * u.AA: {'mask_a': 1300, 'mask_b': 4},
+            27700 * u.AA: {'mask_a': 1000, 'mask_b': 3.7},
+            35600 * u.AA: {'mask_a': 800, 'mask_b': 3.7},
+            44000 * u.AA: {'mask_a': 800, 'mask_b': 3.7},
+        }
+        if mask_a_override != None and mask_b_override != None:
+            mask_a = mask_a_override
+            mask_b = mask_b_override
+        else:
+            band_wavelength = self.instrument.band_wavelengths[band == self.instrument.band_names]
+            # Get closest wavelength parameters
+            closest_wavelength = min(star_pask_params.keys(), key = lambda x: abs(x - band_wavelength))
+            print(band, closest_wavelength)
+            mask_a = star_pask_params[closest_wavelength]['mask_a']
+            mask_b = star_pask_params[closest_wavelength]['mask_b']
+
+
         galfind_logger.info(f"Automasking {self.survey} {band}.")
 
         composite = lambda x_coord, y_coord, scale, angle: \
@@ -648,10 +682,10 @@ class Data:
             image
             composite({x_coord},{y_coord},{angle}) || composite=1
                 circle({x_coord},{y_coord},{163*scale}) ||
-                ellipse({x_coord},{y_coord},{29*scale},{730*scale},300.15) ||
-                ellipse({x_coord},{y_coord},{29*scale},{730*scale},240.00) ||
-                ellipse({x_coord},{y_coord},{29*scale},{730*scale},360.00) ||
-                ellipse({x_coord},{y_coord},{29*scale},{300*scale},269.48) ||'''
+                ellipse({x_coord},{y_coord},{29*scale**(2/3)},{730*scale},300.15) ||
+                ellipse({x_coord},{y_coord},{29*scale**(2/3)},{730*scale},240.00) ||
+                ellipse({x_coord},{y_coord},{29*scale**(2/3)},{730*scale},360.00) ||
+                ellipse({x_coord},{y_coord},{29*scale**(2/3)},{300*scale},269.48) ||'''
 
         # Load data
         im_data, im_header, seg_data, seg_header = self.load_data(band, incl_mask = False)
@@ -665,6 +699,7 @@ class Data:
         vertices_sky = wcs.all_pix2world(vertices_pix, 0)
 
         if mask_stars:
+        
             # Get list of Gaia stars in the polygon region
             Gaia.ROW_LIMIT = gaia_row_lim
             # Construct the ADQL query string
@@ -690,8 +725,8 @@ class Data:
                 gaia_stars = gaia_stars[gaia_stars['classlabel_dsc_joint'] != 'galaxy']
                 # Remove masked flux values
                 gaia_stars = gaia_stars[~np.isnan(gaia_stars['phot_g_mean_mag'])]
-                
-
+            
+        
             ra_gaia = np.asarray(gaia_stars['ra'])
             dec_gaia = np.asarray(gaia_stars['dec'])
             x_gaia, y_gaia = wcs.all_world2pix(ra_gaia, dec_gaia, 0)
@@ -760,14 +795,42 @@ class Data:
         if plot:
             ax.imshow(full_mask, cmap='Reds', origin='lower', interpolation='None')
         
+        # Check for artefacts mask to combine with exisitng mask
+        files = glob.glob(f'{self.mask_dir}/{band}*.reg')
+        # Check for 'artifact' in file name
+        files = [file for file in files if 'artifact' in file]
+        artifact_mask = None
+        if len(files) > 0:
+            artifact_mask = np.zeros(im_data.shape, dtype=bool)
+            print(f'Found {len(files)} artifact masks')
+            for file in files:
+                print(f'Adding mask {file}')
+                mask = Regions.read(file)
+                
+                for region in mask:
+                    region = region.to_pixel(wcs)
+                    idx_large, idx_little = region.to_mask(mode = 'center').get_overlap_slices(im_data.shape)
+                    if idx_large is not None:
+                        full_mask[idx_large] = np.logical_or(region.to_mask().data[idx_little], full_mask[idx_large])
+                        artifact_mask[idx_large] = np.logical_or(region.to_mask().data[idx_little], artifact_mask[idx_large])
+
+
         # Save mask - could save independent layers as well e.g. stars vs edges vs manual mask etc
         output_mask_path = f'{self.mask_dir}/fits_masks/{band}_basemask.fits'
+
         os.makedirs("/".join(output_mask_path.split("/")[:-1]), exist_ok = True)
         full_mask_hdu = fits.ImageHDU(full_mask.astype(np.uint8), header = wcs.to_header(), name = "MASK")
         stellar_mask_hdu = fits.ImageHDU(stellar_mask.astype(np.uint8), header = wcs.to_header(), name = "STELLAR")
         edge_mask_hdu = fits.ImageHDU(edge_mask.astype(np.uint8), header = wcs.to_header(), name = "EDGE")
-        hdu = fits.HDUList([fits.PrimaryHDU(), full_mask_hdu, stellar_mask_hdu, edge_mask_hdu])
+        hdulist = [fits.PrimaryHDU(), full_mask_hdu, stellar_mask_hdu, edge_mask_hdu]
+        if artifact_mask is not None:
+            artifact_mask_hdu = fits.ImageHDU(artifact_mask.astype(np.uint8), header = wcs.to_header(), name = "ARTIFACT")
+            hdulist.append(artifact_mask_hdu)
+
+        hdu = fits.HDUList(hdulist)
         hdu.writeto(output_mask_path, overwrite = True)
+        # Change permission to read/write for all
+        os.chmod(output_mask_path, 0o777)
 
         if plot:
             # Save mask plot
@@ -777,6 +840,7 @@ class Data:
         with open(f'{self.mask_dir}/{band}_starmask.reg', 'w') as f:
             for region in region_strings:
                 f.write(region + '\n')
+        os.chmod(f'{self.mask_dir}/{band}_starmask.reg', 0o777)
         return output_mask_path
     
     #@staticmethod
