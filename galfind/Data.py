@@ -105,9 +105,7 @@ class Data:
             else:
                 # make an pixel mask automatically for the band
                 mask_paths[band] = self.make_mask(band)
-            # Do this for Tom
-            mask_paths[band] = self.make_mask(band)
-
+            
         self.mask_paths = dict(sorted(mask_paths.items()))
 
         if is_blank:
