@@ -155,11 +155,11 @@ class SED_code(ABC):
         pass
     
     @abstractmethod
-    def get_z_PDF_path(self, cat_path, ID, low_z_run = False):
+    def get_z_PDF_path(self, cat, ID, low_z_run = False):
         pass
     
     @abstractmethod
-    def get_SED_path(self, cat_path, ID, low_z_run = False):
+    def get_SED_path(self, cat, ID, low_z_run = False):
         pass
 
 def calc_LePhare_errs(cat, col_name):
