@@ -138,20 +138,8 @@ class SED_code(ABC):
     def extract_SEDs(self, cat, ID):
         pass
     
-    def plot_best_fit_SED(self, ax, cat, ID, save = True, show = True):
-        # extract best fitting SED
-        wav, mag = self.extract_SED(cat, ID)
-        # plot SED on ax
-        pass
-    
     @abstractmethod
-    def extract_z_PDF(self, cat, ID):
-        pass
-    
-    def plot_z_PDF(self, ax, cat, ID, save = True, show = True):
-        # extract PDF
-        z, PDF = self.extract_z_PDF(cat, ID)
-        # plot PDF on ax
+    def extract_PDFs(self, gal_property, IDs, data_paths):
         pass
     
     @abstractmethod

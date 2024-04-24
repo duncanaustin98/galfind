@@ -142,32 +142,33 @@ class LePhare(SED_code):
     def extract_SEDs(self, cat_path, ID, units = u.ABmag, low_z_run = False):
         pass
     
-    def extract_z_PDF(self, cat_path, ID, low_z_run = False):
-        str_ID = "0" * (9 - len(str(ID))) + str(ID)
-        print("ID = " + str_ID)
+    def extract_PDFs(self, gal_property, IDs, PDF_paths):
+        pass
+        # str_ID = "0" * (9 - len(str(ID))) + str(ID)
+        # print("ID = " + str_ID)
 
-        z = []
-        PDF = []
-        reached_output_format = False
-        with open(self.z_PDF_path_from_cat_path(cat_path, ID, low_z_run)) as open_file:
-            while True:
-                line = open_file.readline()
-                # start at z = 0
-                if line.startswith("  0.00000"):
-                    reached_output_format = True
-                if reached_output_format:
-                    line = line.replace("  "," ")
-                    line = line.replace("\n", "")
-                    z_PDF = line.split(" ")
-                    z_PDF.remove(z_PDF[0])
-                    z.append(float(z_PDF[0]))
-                    PDF.append(float(z_PDF[1]))
+        # z = []
+        # PDF = []
+        # reached_output_format = False
+        # with open(self.z_PDF_path_from_cat_path(cat_path, ID, low_z_run)) as open_file:
+        #     while True:
+        #         line = open_file.readline()
+        #         # start at z = 0
+        #         if line.startswith("  0.00000"):
+        #             reached_output_format = True
+        #         if reached_output_format:
+        #             line = line.replace("  "," ")
+        #             line = line.replace("\n", "")
+        #             z_PDF = line.split(" ")
+        #             z_PDF.remove(z_PDF[0])
+        #             z.append(float(z_PDF[0]))
+        #             PDF.append(float(z_PDF[1]))
                 
-                # end at z = 15
-                if line.startswith(" 25.00000"):
-                    break
-            open_file.close()
-        return z, PDF
+        #         # end at z = 15
+        #         if line.startswith(" 25.00000"):
+        #             break
+        #     open_file.close()
+        # return z, PDF
     
     def get_z_PDF_path(self, cat_path, ID, low_z_run = False):
         pass

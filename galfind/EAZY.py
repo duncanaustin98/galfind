@@ -23,7 +23,7 @@ import h5py
 from eazy import hdf5, visualization
 from astropy.io import fits
 
-from . import SED_code, Instrument
+from . import SED_code, Instrument, Redshift_PDF
 from . import useful_funcs_austind as funcs
 from . import config, galfind_logger
 from .decorators import run_in_dir, hour_timer, email_update
@@ -293,18 +293,44 @@ class EAZY(SED_code):
         fits_out_path = f"{out_path.replace('.out', '')}_EAZY_{templates}_{funcs.lowz_label(lowz_zmax)}.fits"
         return fits_out_path
     
-    def extract_SEDs(self, fits_cat, ID, low_z_run = False, units = u.ABmag, just_header = False):
-        SED_path = self.SED_path_from_cat_path(fits_cat.meta[f"{self.__class__.__name__}_path"], ID, low_z_run)
-        if not Path(SED_path).is_file():
-            print(f'Not found EAZY SED at {SED_path}')
-        if not just_header: 
-            SED = Table.read(SED_path, format = 'ascii.no_header', delimiter = '\s', names = ['wav', 'mag'], data_start = 0)
-            SED['mag'][np.isinf(SED['mag'])] = 99.
-        return {"best_gal": SED}
+    # def extract_SEDs(self, fits_cat, ID, low_z_run = False, units = u.ABmag, just_header = False):
+    #     SED_path = self.SED_path_from_cat_path(fits_cat.meta[f"{self.__class__.__name__}_path"], ID, low_z_run)
+    #     if not Path(SED_path).is_file():
+    #         print(f'Not found EAZY SED at {SED_path}')
+    #     if not just_header: 
+    #         SED = Table.read(SED_path, format = 'ascii.no_header', delimiter = '\s', names = ['wav', 'mag'], data_start = 0)
+    #         SED['mag'][np.isinf(SED['mag'])] = 99.
+    #     return {"best_gal": SED}
+
+    def extract_SEDs(self, ID, SED_path, h5_data = None):
+        pass
     
-    def extract_z_PDF(self, ID, low_z_run = False):
-        self.get_z_PDF_path(ID)
-        return NotImplementedError
+    def extract_PDFs(self, gal_property, IDs, PDF_paths):
+        # ensure this works if only extracting 1 galaxy
+        if type(IDs) in [str, int, float]:
+            IDs = [int(IDs)]
+        if type(PDF_paths) == str:
+           PDF_paths = [PDF_paths]
+
+        # EAZY only has redshift PDFs
+        if gal_property != "z_phot":
+            return list(np.full(len(IDs), None))
+        else:
+            # ensure the correct type 
+            assert type(PDF_paths) in [list, np.array], galfind_logger.critical(f"type(data_paths) = {type(data_paths)} not in [list, np.array]!")
+            assert type(IDs) in [list, np.array], galfind_logger.critical(f"type(IDs) = {type(IDs)} not in [list, np.array]!")
+            # ensure the correct array size
+            assert len(IDs) == len(PDF_paths), galfind_logger.critical(f"len(IDs) = {len(IDs)} != len(data_paths) = {len(data_paths)}!")
+            # ensure all data_paths are the same and are of .h5 type
+            assert all(PDF_path == PDF_paths[0] for PDF_path in PDF_paths), galfind_logger.critical("All data_paths must be the same!")
+            assert PDF_paths[0][:-3] == ".h5", galfind_logger.critical(f"{PDF_paths[0]} must have .h5 file extension")
+            # open .h5 file
+            hf = hdf5.File(PDF_paths[0], "r")
+            # extract redshift PDF for each ID
+            redshift_pdfs = [Redshift_PDF(np.array(hf["z"]), np.array(hf[f"ID={str(int(ID))}"]["p(z)"])) for ID in IDs]
+            # close .h5 file
+            hf.close()
+            return redshift_pdfs
         
     def get_z_PDF_path(self, ID, survey, version, instrument_name):
         PDF_dir = f"{config['EAZY']['EAZY_DIR']}/output/{cat.instrument.name}/{cat.version}/{cat.survey}"

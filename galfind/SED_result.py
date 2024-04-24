@@ -13,6 +13,7 @@ import astropy.units as u
 from astropy.table import Table
 from glob import glob
 import tqdm
+import h5py
 
 from .Photometry import Photometry, Multiple_Photometry
 from .Photometry_rest import Photometry_rest
@@ -150,7 +151,11 @@ class Catalogue_SED_results:
                 # check that these paths correspond to the correct galaxies
                 assert(len(PDF_paths[gal_property]) == len(fits_cat) for gal_property in SED_fit_params["code"].galaxy_property_dict.keys())
                 # construct PDF objects, type = array of len(fits_cat), each element a dict of {gal_property: PDF object}
-                
+                for gal_properties, paths in cat_property_PDF_paths.items():
+                    if all(path == paths[0] for path in paths) and ".h5" in paths[0]:
+                        # open .h5 file
+                        hf = h5py.File(paths[0], "r")
+                        gal_property_arrs = {}
                 cat_property_PDFs_ = [{gal_property: getattr(globals()[f"{gal_property}_PDF"], f"{gal_property}_PDF")()} \
                     if f"{gal_property}_PDF" in globals() else {gal_property: PDF()} for PDF_path in PDF_paths \
                     for gal_property, PDF_paths in cat_property_PDF_paths.items()]
