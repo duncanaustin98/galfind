@@ -169,45 +169,45 @@ class Data:
         depth_dir = {}
         is_blank = is_blank_survey(survey)
 
+        version_to_dir = {"v8b": "mosaic_1084_wispfix", "v8c": "mosaic_1084_wispfix2", "v8d": "mosaic_1084_wispfix3", \
+            "v9": "mosaic_1084_wisptemp2", "v10": "mosaic_1084_wispscale", "v11": "mosaic_1084_wispnathan"}
+
         for instrument in instruments:
             instrument = instruments_obj[instrument]
             if instrument.name == "NIRCam":
-                if version == "v7": #pmap == "0995":
-                    ceers_im_dirs = {f"CEERSP{str(i + 1)}": f"ceers/mosaic_0995/P{str(i + 1)}" for i in range(10)}
-                    survey_im_dirs = {"SMACS-0723": "SMACS-0723/mosaic_0995", "GLASS": "glass_0995/mosaic_v5", "MACS-0416": "MACS0416/mosaic_0995_v1", \
-                               "El-Gordo": "elgordo/mosaic_0995_v1", "NEP": "NEP/mosaic", "NEP-2": "NEP-2/mosaic_0995", "NGDEEP": "NGDEEP/mosaic", \
-                                            "CLIO": "CLIO/mosaic_0995_2"} | ceers_im_dirs
-                elif version == "v8": #pmap == "1084":
-                    ceers_im_dirs = {f"CEERSP{str(i + 1)}": f"ceers/mosaic_1084/P{str(i + 1)}" for i in range(10)}
-                    survey_im_dirs = {"CLIO": "CLIO/mosaic_1084", "El-Gordo": "elgordo/mosaic_1084", "GLASS": "GLASS-12/mosaic_1084", "NEP": "NEP/mosaic_1084", \
-                                  "NEP-2": "NEP-2/mosaic_1084", "NEP-3": "NEP-3/mosaic_1084", "SMACS-0723": "SMACS0723/mosaic_1084", "MACS-0416": "MACS0416/mosaic_1084_v3"} | ceers_im_dirs
-                elif version == "v8a":
-                    ceers_im_dirs = {f"CEERSP{str(i + 1)}": f"CEERSP{str(i + 1)}/mosaic_1084_182" for i in range(10)}
-                    survey_im_dirs = {"CLIO": "CLIO/mosaic_1084_182", "El-Gordo": "elgordo/mosaic_1084_182", "NEP-1": "NEP-1/mosaic_1084_182", "NEP-2": "NEP-2/mosaic_1084_182", \
-                                      "NEP-3": "NEP-3/mosaic_1084_182", "NEP-4": "NEP-4/mosaic_1084_182", "MACS-0416": "MACS0416/mosaic_1084_182", "GLASS": "GLASS-12/mosaic_1084_182", "SMACS-0723": "SMACS0723/mosaic_1084_182"} | ceers_im_dirs
-                elif version == "v8b":
-                    survey_im_dirs = {survey: f"{survey}/mosaic_1084_wispfix"}
-                elif version == "v8c":
-                    survey_im_dirs = {survey: f"{survey}/mosaic_1084_wispfix2"}
-                elif version == "v8d":
-                    survey_im_dirs = {survey: f"{survey}/mosaic_1084_wispfix3"}
-                elif version == "v8e" or version == "v8f" or version == "v9":
-                    survey_im_dirs = {survey: f"{survey}/mosaic_1084_wisptemp2"}
-                elif version == "lit_version":
-                    survey_im_dirs = {"JADES-DR1": "JADES/DR1"}
-                elif version == 'v9' or version[:2] == "v9":
-                    survey_im_dirs = {survey: f"{survey}/mosaic_1084_wisptemp2"}
-                elif version == 'v10' or version[:2] == "v10":
-                    survey_im_dirs = {survey: f"{survey}/mosaic_1084_wispscale"}
-                elif version == "v11" or version[:-2] == "v11":
-                    survey_im_dirs = {survey: f"{survey}/mosaic_1084_wispnathan"}
-                survey_im_dirs = {key: f"/raid/scratch/data/jwst/{value}" for (key, value) in survey_im_dirs.items()}
-                survey_dir = survey_im_dirs[survey]
+                # should generalize this more
+                if version in ["v7", "v8", "v8a", "v8e", "v8f", "lit_version"]:
+                    if version == "v7":
+                        ceers_im_dirs = {f"CEERSP{str(i + 1)}": f"ceers/mosaic_0995/P{str(i + 1)}" for i in range(10)}
+                        survey_im_dirs = {"SMACS-0723": "SMACS-0723/mosaic_0995", "GLASS": "glass_0995/mosaic_v5", "MACS-0416": "MACS0416/mosaic_0995_v1", \
+                                "El-Gordo": "elgordo/mosaic_0995_v1", "NEP": "NEP/mosaic", "NEP-2": "NEP-2/mosaic_0995", "NGDEEP": "NGDEEP/mosaic", \
+                                                "CLIO": "CLIO/mosaic_0995_2"} | ceers_im_dirs
+                    elif version == "v8": #pmap == "1084":
+                        ceers_im_dirs = {f"CEERSP{str(i + 1)}": f"ceers/mosaic_1084/P{str(i + 1)}" for i in range(10)}
+                        survey_im_dirs = {"CLIO": "CLIO/mosaic_1084", "El-Gordo": "elgordo/mosaic_1084", "GLASS": "GLASS-12/mosaic_1084", "NEP": "NEP/mosaic_1084", \
+                                    "NEP-2": "NEP-2/mosaic_1084", "NEP-3": "NEP-3/mosaic_1084", "SMACS-0723": "SMACS0723/mosaic_1084", "MACS-0416": "MACS0416/mosaic_1084_v3"} | ceers_im_dirs
+                    elif version == "v8a":
+                        ceers_im_dirs = {f"CEERSP{str(i + 1)}": f"CEERSP{str(i + 1)}/mosaic_1084_182" for i in range(10)}
+                        survey_im_dirs = {"CLIO": "CLIO/mosaic_1084_182", "El-Gordo": "elgordo/mosaic_1084_182", "NEP-1": "NEP-1/mosaic_1084_182", "NEP-2": "NEP-2/mosaic_1084_182", \
+                                        "NEP-3": "NEP-3/mosaic_1084_182", "NEP-4": "NEP-4/mosaic_1084_182", "MACS-0416": "MACS0416/mosaic_1084_182", "GLASS": "GLASS-12/mosaic_1084_182", "SMACS-0723": "SMACS0723/mosaic_1084_182"} | ceers_im_dirs
+                    elif version == "v8e" or version == "v8f":
+                        survey_im_dirs = {survey: f"{survey}/mosaic_1084_wisptemp2"}
+                    elif version == "lit_version":
+                        survey_im_dirs = {"JADES-DR1": "JADES/DR1"}
+                    survey_im_dirs = {key: f"/raid/scratch/data/jwst/{value}" for (key, value) in survey_im_dirs.items()}
+                    survey_dir = survey_im_dirs[survey]
+                else:
+                    assert version.split("_")[0] in version_to_dir.keys(), galfind_logger.critical(f"Invalid version = {version}. {version.split('_')[0]} must be in {np.array(version_to_dir.keys())} Terminating!")
+                    survey_dir = f"{config['DEFAULT']['GALFIND_DATA']}/{instrument.facility.lower()}/{survey}/{version_to_dir[version.split('_')[0]]}"
+                    if len(version.split('_')) > 1:
+                        survey_dir += f"_{'_'.join(version.split('_')[1:])}"
 
                 if version == "lit_version":
                     im_path_arr = np.array(glob.glob(f"{survey_dir}/*_drz.fits"))
                 else:
-                    im_path_arr = np.array(glob.glob(f"{survey_dir}/*_i2d*.fits"))
+                    #im_path_arr = np.array(glob.glob(f"{survey_dir}/*_i2d*.fits"))
+                    im_path_arr = np.array(glob.glob(f"{survey_dir}/*.fits"))
+                
                 # obtain available bands from image paths
                 bands = np.array([band for path in im_path_arr for band in instrument.band_names if band.upper() in path \
                     or band.lower() in path or band.lower().replace('f', 'F') in path or band.upper().replace('F', 'f') in path])
@@ -373,10 +373,12 @@ class Data:
 
                 # exclude masks that include other filters
                 delete_indices = []
+                # create a new combined instrument including all possible bands
+                new_instrument = comb_instrument.new_instrument()
+                new_instrument.remove_band(band)
                 for j, path in enumerate(fits_mask_paths_):
-                    for k, band_ in enumerate(np.delete(comb_instrument.band_names, i)):
-                        if band_.lower() in path or band_.upper() in path or band_.lower().replace('f', 'F') \
-                                in path or band_.upper().replace('F', 'f') in path:
+                    for k, band_ in enumerate(new_instrument.band_names):
+                        if band_.lower() in path or band_.upper() in path or band_.lower().replace('f', 'F') in path or band_.upper().replace('F', 'f') in path:
                             delete_indices.append(j)
                             break
                 fits_mask_paths_ = np.delete(fits_mask_paths_, delete_indices)
