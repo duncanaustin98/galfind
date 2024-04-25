@@ -23,7 +23,7 @@ import h5py
 from eazy import hdf5, visualization
 from astropy.io import fits
 
-from . import SED_code, Instrument, Redshift_PDF
+from . import SED_code, Instrument, Redshift_PDF, SED, SED_obs
 from . import useful_funcs_austind as funcs
 from . import config, galfind_logger
 from .decorators import run_in_dir, hour_timer, email_update
@@ -253,8 +253,8 @@ class EAZY(SED_code):
             print(wav_unit, flux_unit)
             hf.create_dataset("wav_unit", data = str(wav_unit))
             hf.create_dataset("flux_unit", data = str(flux_unit))
-            [self.save_SED(ID, hf, fit, wav_unit = wav_unit, flux_unit = flux_unit) \
-                for ID in tqdm(fit.OBJID, total = len(fit.OBJID), \
+            [self.save_SED(ID, z, hf, fit, wav_unit = wav_unit, flux_unit = flux_unit) \
+                for ID, z in tqdm(zip(fit.OBJID, np.array(table["zbest"]).astype(float)), total = len(fit.OBJID), \
                 desc = f"Saving best-fit template SEDs for {self.__class__.__name__} {templates} {lowz_label}")]
             hf.close()
             galfind_logger.info(f'Finished saving SEDss for {self.__class__.__name__} {templates} {lowz_label}')
@@ -270,13 +270,14 @@ class EAZY(SED_code):
         gal_zPDF.create_dataset("p(z)", data = np.array([fit_pz[pos_obj][pos] for pos, z in enumerate(fit_zgrid)]))
 
     @staticmethod
-    def save_SED(ID, hf, fit, wav_unit = u.AA, flux_unit = u.nJy):
+    def save_SED(ID, z, hf, fit, wav_unit = u.AA, flux_unit = u.nJy):
         # Load best-fitting SED
         fit_data = fit.show_fit(ID, id_is_idx = False, show_components = False, \
             show_prior = False, logpz = False, get_spec = True, show_fnu = 1)
         wav = (np.array(fit_data['templz']) * fit_data['wave_unit']).to(wav_unit)
         flux = (np.array(fit_data['templf']) * fit_data['flux_unit']).to(flux_unit)
         gal_SED = hf.create_group(f"ID={int(fit_data['id'])}")
+        gal_SED.create_dataset("z", data = z)
         gal_SED.create_dataset("wav", data = wav)
         gal_SED.create_dataset("flux", data = flux)
 
@@ -302,10 +303,26 @@ class EAZY(SED_code):
     #         SED['mag'][np.isinf(SED['mag'])] = 99.
     #     return {"best_gal": SED}
 
-    def extract_SEDs(self, ID, SED_path, h5_data = None):
-        pass
+    @staticmethod
+    def extract_SEDs(IDs, SED_paths):
+        # ensure this works if only extracting 1 galaxy
+        if type(IDs) in [str, int, float]:
+            IDs = [int(IDs)]
+        if type(SED_paths) == str:
+           SED_paths = [SED_paths]
+        assert len(IDs) == len(SED_paths), galfind_logger.critical(f"len(IDs) = {len(IDs)} != len(data_paths) = {len(PDF_paths)}!")
+        # ensure that for EAZY all the SED_paths are the same
+        assert all(SED_path == SED_paths[0] for SED_path in SED_paths), galfind_logger.critical(f"SED_paths must all be the same for {__class__.__name__}")
+        # open .h5 file
+        hf = h5py.File(SED_paths[0], "r")
+        SED_obs_arr = [SED_obs(hf[f"ID={str(int(ID))}"]["z"], hf[f"ID={str(int(ID))}"]["wav"].value, \
+            hf[f"ID={str(int(ID))}"]["flux"].value, hf[f"ID={str(int(ID))}"]["wav"].unit, hf[f"ID={str(int(ID))}"]["flux"].unit) for ID in IDs]
+        # close .h5 file
+        hf.close()
+        return SED_obs_arr
     
-    def extract_PDFs(self, gal_property, IDs, PDF_paths):
+    @staticmethod
+    def extract_PDFs(gal_property, IDs, PDF_paths):
         # ensure this works if only extracting 1 galaxy
         if type(IDs) in [str, int, float]:
             IDs = [int(IDs)]
@@ -317,25 +334,27 @@ class EAZY(SED_code):
             return list(np.full(len(IDs), None))
         else:
             # ensure the correct type 
-            assert type(PDF_paths) in [list, np.array], galfind_logger.critical(f"type(data_paths) = {type(data_paths)} not in [list, np.array]!")
+            assert type(PDF_paths) in [list, np.array], galfind_logger.critical(f"type(data_paths) = {type(PDF_paths)} not in [list, np.array]!")
             assert type(IDs) in [list, np.array], galfind_logger.critical(f"type(IDs) = {type(IDs)} not in [list, np.array]!")
             # ensure the correct array size
-            assert len(IDs) == len(PDF_paths), galfind_logger.critical(f"len(IDs) = {len(IDs)} != len(data_paths) = {len(data_paths)}!")
+            assert len(IDs) == len(PDF_paths), galfind_logger.critical(f"len(IDs) = {len(IDs)} != len(data_paths) = {len(PDF_paths)}!")
             # ensure all data_paths are the same and are of .h5 type
             assert all(PDF_path == PDF_paths[0] for PDF_path in PDF_paths), galfind_logger.critical("All data_paths must be the same!")
             assert PDF_paths[0][:-3] == ".h5", galfind_logger.critical(f"{PDF_paths[0]} must have .h5 file extension")
             # open .h5 file
             hf = hdf5.File(PDF_paths[0], "r")
+            hf_z = np.array(hf["z"])
             # extract redshift PDF for each ID
-            redshift_pdfs = [Redshift_PDF(np.array(hf["z"]), np.array(hf[f"ID={str(int(ID))}"]["p(z)"])) for ID in IDs]
+            redshift_pdfs = [Redshift_PDF(hf_z, np.array(hf[f"ID={str(int(ID))}"]["p(z)"])) for ID in IDs]
             # close .h5 file
             hf.close()
             return redshift_pdfs
         
     def get_z_PDF_path(self, ID, survey, version, instrument_name):
-        PDF_dir = f"{config['EAZY']['EAZY_DIR']}/output/{cat.instrument.name}/{cat.version}/{cat.survey}"
-        PDF_name = f"{cat.cat_name.replace('.fits', f'_EAZY_{templates}_{funcs.lowz_label(lowz_zmax)}_zPDFs.h5')}"
-        return f"{PDF_dir}/{PDF_name}"
+        pass
+        # PDF_dir = f"{config['EAZY']['EAZY_DIR']}/output/{cat.instrument.name}/{cat.version}/{cat.survey}"
+        # PDF_name = f"{cat.cat_name.replace('.fits', f'_EAZY_{templates}_{funcs.lowz_label(lowz_zmax)}_zPDFs.h5')}"
+        # return f"{PDF_dir}/{PDF_name}"
     
     def get_SED_path(self, ID):
         return ""

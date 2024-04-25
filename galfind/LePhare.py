@@ -139,10 +139,12 @@ class LePhare(SED_code):
     def out_fits_name(self, out_path):
         return out_path.replace(".out", "_LePhare.fits")
     
-    def extract_SEDs(self, cat_path, ID, units = u.ABmag, low_z_run = False):
+    @staticmethod
+    def extract_SEDs(IDs, SED_paths):
         pass
     
-    def extract_PDFs(self, gal_property, IDs, PDF_paths):
+    @staticmethod
+    def extract_PDFs(gal_property, IDs, PDF_paths):
         pass
         # str_ID = "0" * (9 - len(str(ID))) + str(ID)
         # print("ID = " + str_ID)

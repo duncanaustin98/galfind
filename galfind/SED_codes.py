@@ -135,11 +135,13 @@ class SED_code(ABC):
         pass
     
     @abstractmethod
-    def extract_SEDs(self, cat, ID):
+    @staticmethod
+    def extract_SEDs(IDs, data_paths):
         pass
     
     @abstractmethod
-    def extract_PDFs(self, gal_property, IDs, data_paths):
+    @staticmethod
+    def extract_PDFs(gal_property, IDs, data_paths):
         pass
     
     @abstractmethod

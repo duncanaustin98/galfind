@@ -115,8 +115,9 @@ class Catalogue_SED_results:
         return cls.from_fits_cat(cat.open_cat(), cat.cat_creator, SED_fit_params_arr, cat_PDF_paths, cat_SED_paths, phot_arr = [gal.phot for gal in cat])
 
     @classmethod
-    def from_fits_cat(cls, fits_cat, cat_creator, SED_fit_params_arr, cat_PDF_paths = None, SED_paths = None, \
+    def from_fits_cat(cls, fits_cat, cat_creator, SED_fit_params_arr, cat_PDF_paths = None, cat_SED_paths = None, \
             phot_arr = None, instrument = None, rest_UV_wav_lims = [1268., 2580.] * u.Angstrom):
+        
         assert(all(True if "code" in SED_fit_params else False for SED_fit_params in SED_fit_params_arr))
         # calculate array of galaxy photometries if required
         if type(phot_arr) == type(None) and type(instrument) != type(None):
@@ -126,6 +127,7 @@ class Catalogue_SED_results:
         else:
             galfind_logger.critical("Must specify either phot or instrument in Galaxy_SED_results!")
 
+        IDs = np.array(fits_cat[cat_creator.ID_label]).astype(int)
         # IDs = list(np.full(len(SED_fit_params_arr), np.array(fits_cat[cat_creator.ID_label]).astype(int)))
         # convert cat_properties from array of len(SED_fit_params_arr), with each element a dict of galaxy properties for the entire catalogue with values of arrays of len(fits_cat)
         # to array of len(fits_cat), with each element an array of len(SED_fit_params_arr) containing a dict of properties for a single galaxy
@@ -138,33 +140,36 @@ class Catalogue_SED_results:
         cat_property_errs = [{gal_property: list(fits_cat[label]) for gal_property, label in labels.items()} for labels in labels_arr]
         cat_property_errs = [[{key: value[i] for key, value in SED_fitting_properties.items()} for SED_fitting_properties in cat_properties] for i in range(len(fits_cat))]
 
-        if type(cat_PDF_paths) == type(None):
-            # make array of the correct shape for appropriate parsing
-            pass
-        else:
+        # load in PDFs
+        # make array of the correct shape for appropriate parsing
+        cat_property_PDFs = list(np.full((len(SED_fit_params_arr), len(fits_cat)), None))
+        if type(cat_PDF_paths) != type(None):
             assert(len(SED_fit_params_arr) == len(cat_PDF_paths))
-            cat_property_PDFs = []
             # loop through SED fit params and their corresponding PDF directories
-            for SED_fit_params, PDF_paths in tqdm(zip(SED_fit_params_arr, cat_PDF_paths), total = len(SED_fit_params_arr), desc = "Constructing galaxy property PDFs"):
-                # dict of paths to PDFs for each galaxy property, type = dict(key: array of len(cat))
-                cat_property_PDF_paths = {gal_property: PDF_paths[gal_property] for gal_property in SED_fit_params["code"].galaxy_property_dict.keys()}
+            for i, (SED_fit_params, PDF_paths) in tqdm(enumerate(zip(SED_fit_params_arr, cat_PDF_paths)), \
+                    total = len(SED_fit_params_arr), desc = "Constructing galaxy property PDFs"):
                 # check that these paths correspond to the correct galaxies
                 assert(len(PDF_paths[gal_property]) == len(fits_cat) for gal_property in SED_fit_params["code"].galaxy_property_dict.keys())
-                # construct PDF objects, type = array of len(fits_cat), each element a dict of {gal_property: PDF object}
-                for gal_properties, paths in cat_property_PDF_paths.items():
-                    if all(path == paths[0] for path in paths) and ".h5" in paths[0]:
-                        # open .h5 file
-                        hf = h5py.File(paths[0], "r")
-                        gal_property_arrs = {}
-                cat_property_PDFs_ = [{gal_property: getattr(globals()[f"{gal_property}_PDF"], f"{gal_property}_PDF")()} \
-                    if f"{gal_property}_PDF" in globals() else {gal_property: PDF()} for PDF_path in PDF_paths \
-                    for gal_property, PDF_paths in cat_property_PDF_paths.items()]
-
-        # SEDs - need path to saved SEDs
-        cat_SEDs = []
+                # construct PDF objects, type = array of len(fits_cat), each element a dict of {gal_property: PDF object} excluding None PDFs
+                cat_property_PDFs_ = {gal_property: SED_fit_params["code"].extract_PDFs(gal_property, IDs, \
+                    PDF_paths[gal_property]) for gal_property in SED_fit_params["code"].galaxy_property_dict.keys()}
+                cat_property_PDFs[i] = [{gal_property: PDF_arr[i] for gal_property, PDF_arr in cat_property_PDFs_.items() if PDF_arr[i] != None} for i in range(len(fits_cat))]
         
+        # load in SEDs
+        # make array of the correct shape for appropriate parsing
+        cat_property_SEDs = list(np.full((len(SED_fit_params_arr), len(fits_cat)), None))
+        if type(cat_SED_paths) != type(None):
+            assert(len(SED_fit_params_arr) == len(cat_SED_paths))
+            # loop through SED fit params and their corresponding PDF directories
+            for i, (SED_fit_params, SED_paths) in tqdm(enumerate(zip(SED_fit_params_arr, cat_SED_paths)), \
+                    total = len(SED_fit_params_arr), desc = "Constructing galaxy property SEDs"):
+                # check that these paths correspond to the correct galaxies
+                assert(len(SED_paths) == len(fits_cat) for gal_property in SED_fit_params["code"].galaxy_property_dict.keys())
+                # construct PDF objects, type = array of len(fits_cat), each element a dict of {gal_property: PDF object} excluding None PDFs
+                cat_property_SEDs[i] = SED_fit_params["code"].extract_SEDs(IDs, SED_paths)
+
         return cls.from_SED_result_inputs(SED_fit_params_arr, phot_arr, cat_properties, \
-            cat_property_errs, cat_property_PDFs, cat_SEDs, rest_UV_wav_lims = rest_UV_wav_lims)
+            cat_property_errs, cat_property_PDFs, cat_property_SEDs, rest_UV_wav_lims = rest_UV_wav_lims)
     
     @classmethod
     def from_SED_result_inputs(cls, SED_fit_params_arr, phot_arr, cat_properties, \
