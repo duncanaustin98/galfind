@@ -72,7 +72,8 @@ class SED_result:
         property_PDFs = {}
         # load SED from galaxy given the SED_fit_params
         SED = None
-        return cls(SED_fit_params, gal.phot, properties, property_errs, property_PDFs, SED)
+        return NotImplementedError # need to load in PDFs and SED
+        #return cls(SED_fit_params, gal.phot, properties, property_errs, property_PDFs, SED)
     
 
 class Galaxy_SED_results:
@@ -145,7 +146,7 @@ class Catalogue_SED_results:
         cat_property_PDFs = list(np.full((len(SED_fit_params_arr), len(fits_cat)), None))
         if type(cat_PDF_paths) != type(None):
             assert(len(SED_fit_params_arr) == len(cat_PDF_paths))
-            # loop through SED fit params and their corresponding PDF directories
+            # loop through SED_fit_params_arr and corresponding cat_PDF_paths
             for i, (SED_fit_params, PDF_paths) in tqdm(enumerate(zip(SED_fit_params_arr, cat_PDF_paths)), \
                     total = len(SED_fit_params_arr), desc = "Constructing galaxy property PDFs"):
                 # check that these paths correspond to the correct galaxies
@@ -160,12 +161,12 @@ class Catalogue_SED_results:
         cat_property_SEDs = list(np.full((len(SED_fit_params_arr), len(fits_cat)), None))
         if type(cat_SED_paths) != type(None):
             assert(len(SED_fit_params_arr) == len(cat_SED_paths))
-            # loop through SED fit params and their corresponding PDF directories
+            # loop through SED_fit_params_arr and corresponding cat_SED_paths
             for i, (SED_fit_params, SED_paths) in tqdm(enumerate(zip(SED_fit_params_arr, cat_SED_paths)), \
                     total = len(SED_fit_params_arr), desc = "Constructing galaxy property SEDs"):
                 # check that these paths correspond to the correct galaxies
                 assert(len(SED_paths) == len(fits_cat) for gal_property in SED_fit_params["code"].galaxy_property_dict.keys())
-                # construct PDF objects, type = array of len(fits_cat), each element a dict of {gal_property: PDF object} excluding None PDFs
+                # construct SED objects, type = array of len(fits_cat), each element containing an SED object
                 cat_property_SEDs[i] = SED_fit_params["code"].extract_SEDs(IDs, SED_paths)
 
         return cls.from_SED_result_inputs(SED_fit_params_arr, phot_arr, cat_properties, \
