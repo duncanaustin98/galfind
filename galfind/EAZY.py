@@ -245,8 +245,8 @@ class EAZY(SED_code):
             print(wav_unit, flux_unit)
             hf.create_dataset("wav_unit", data = str(wav_unit))
             hf.create_dataset("flux_unit", data = str(flux_unit))
-            [self.save_SED(ID, hf, fit, wav_unit = wav_unit, flux_unit = flux_unit) \
-                for ID in tqdm(fit.OBJID, total = len(fit.OBJID), \
+            [self.save_SED(ID, z, hf, fit, wav_unit = wav_unit, flux_unit = flux_unit) \
+                for ID, z in tqdm(zip(fit.OBJID, np.array(table["zbest"]).astype(float)), total = len(fit.OBJID), \
                 desc = f"Saving best-fit template SEDs for {self.__class__.__name__} {templates} {lowz_label}")]
             hf.close()
             galfind_logger.info(f'Finished saving SEDss for {self.__class__.__name__} {templates} {lowz_label}')
@@ -262,13 +262,14 @@ class EAZY(SED_code):
         gal_zPDF.create_dataset("p(z)", data = np.array([fit_pz[pos_obj][pos] for pos, z in enumerate(fit_zgrid)]))
 
     @staticmethod
-    def save_SED(ID, hf, fit, wav_unit = u.AA, flux_unit = u.nJy):
+    def save_SED(ID, z, hf, fit, wav_unit = u.AA, flux_unit = u.nJy):
         # Load best-fitting SED
         fit_data = fit.show_fit(ID, id_is_idx = False, show_components = False, \
             show_prior = False, logpz = False, get_spec = True, show_fnu = 1)
         wav = (np.array(fit_data['templz']) * fit_data['wave_unit']).to(wav_unit)
         flux = (np.array(fit_data['templf']) * fit_data['flux_unit']).to(flux_unit)
         gal_SED = hf.create_group(f"ID={int(fit_data['id'])}")
+        gal_SED.create_dataset("z", data = z)
         gal_SED.create_dataset("wav", data = wav)
         gal_SED.create_dataset("flux", data = flux)
 
