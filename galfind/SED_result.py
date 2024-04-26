@@ -116,7 +116,6 @@ class Catalogue_SED_results:
     
     @classmethod
     def from_cat(cls, cat, SED_fit_params_arr):
-        breakpoint()
         cat_PDF_paths = [cat.phot_PDF_paths[SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)] for SED_fit_params in SED_fit_params_arr]
         cat_SED_paths = [cat.phot_SED_paths[SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)] for SED_fit_params in SED_fit_params_arr]
         return cls.from_fits_cat(cat.open_cat(), cat.cat_creator, SED_fit_params_arr, cat_PDF_paths, cat_SED_paths, phot_arr = [gal.phot for gal in cat])

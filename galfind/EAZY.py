@@ -346,9 +346,9 @@ class EAZY(SED_code):
             assert len(IDs) == len(PDF_paths), galfind_logger.critical(f"len(IDs) = {len(IDs)} != len(data_paths) = {len(PDF_paths)}!")
             # ensure all data_paths are the same and are of .h5 type
             assert all(PDF_path == PDF_paths[0] for PDF_path in PDF_paths), galfind_logger.critical("All data_paths must be the same!")
-            assert PDF_paths[0][:-3] == ".h5", galfind_logger.critical(f"{PDF_paths[0]} must have .h5 file extension")
+            assert PDF_paths[0][-3:] == ".h5", galfind_logger.critical(f"{PDF_paths[0]} must have .h5 file extension")
             # open .h5 file
-            hf = hdf5.File(PDF_paths[0], "r")
+            hf = h5py.File(PDF_paths[0], "r")
             hf_z = np.array(hf["z"])
             # extract redshift PDF for each ID
             redshift_pdfs = [Redshift_PDF(hf_z, np.array(hf[f"ID={str(int(ID))}"]["p(z)"])) \

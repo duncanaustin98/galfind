@@ -10,9 +10,8 @@ class PDF:
     def __init__(self, property_name, x, p_x):
         self.property_name = property_name
         self.x = x
-        self.p_x = p_x
-        # ensure it is normalized
-        assert(np.trapz(p_x, x) == 1)
+        # normalize to np.trapz(p_x, x) == 1
+        self.p_x = p_x / np.trapz(p_x, x)
 
     @classmethod
     def from_1D_arr(cls):
