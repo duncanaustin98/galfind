@@ -13,7 +13,7 @@ if __name__ == "__main__":
     # parameters to change
     surveys = ["JADES-Deep-GS+JEMS"] #[f"CEERSP{i + 1}" for i in range(10)]
     version = "v9"
-    instruments = ["NIRCam"]#, "ACS_WFC"]
+    instruments = ["NIRCam"] #, "ACS_WFC"]
     excl_bands = []
 
     # IDs for cutouts

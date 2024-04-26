@@ -158,7 +158,7 @@ class Catalogue_SED_results:
                 assert(len(PDF_paths[gal_property]) == len(fits_cat) for gal_property in SED_fit_params["code"].galaxy_property_dict.keys())
                 # construct PDF objects, type = array of len(fits_cat), each element a dict of {gal_property: PDF object} excluding None PDFs
                 cat_property_PDFs_ = {gal_property: SED_fit_params["code"].extract_PDFs(gal_property, IDs, \
-                    PDF_paths[gal_property]) for gal_property in SED_fit_params["code"].galaxy_property_dict.keys()}
+                    PDF_paths[gal_property]) for gal_property in PDF_paths.keys()}
                 cat_property_PDFs[i] = [{gal_property: PDF_arr[i] for gal_property, PDF_arr in cat_property_PDFs_.items() if PDF_arr[i] != None} for i in range(len(fits_cat))]
         
         # load in SEDs
