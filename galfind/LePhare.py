@@ -24,6 +24,7 @@ from . import useful_funcs_austind as funcs
 class LePhare(SED_code):
     
     galaxy_property_dict = {"z_phot": "Z_BEST", "mass": "MASS_BEST", "chi_sq": "CHI_BEST"}
+    galaxy_property_errs_dict = {}
     available_templates = ["BC03"]
 
     def __init__(self):
@@ -136,8 +137,10 @@ class LePhare(SED_code):
         fits_table.writeto(fits_out_path, overwrite = True)
         return fits_out_path
     
-    def out_fits_name(self, out_path):
-        return out_path.replace(".out", "_LePhare.fits")
+    @staticmethod
+    def get_out_paths(out_path, SED_fit_params, IDs):
+        return NotImplementedError
+        #return out_path.replace(".out", "_LePhare.fits")
     
     @staticmethod
     def extract_SEDs(IDs, SED_paths):
@@ -171,9 +174,3 @@ class LePhare(SED_code):
         #             break
         #     open_file.close()
         # return z, PDF
-    
-    def get_z_PDF_path(self, cat_path, ID, low_z_run = False):
-        pass
-    
-    def get_SED_path(self, cat_path, ID, low_z_run = False):
-        pass

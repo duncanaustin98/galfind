@@ -137,10 +137,10 @@ class Multiple_Photometry_obs:
     
     def __getitem__(self, index):
         return self.phot_obs_arr[index]
-    
+
     @classmethod
-    def from_fits_cat(cls, fits_cat, instrument, cat_creator, aper_diam, min_flux_pc_err, codes, lowz_zmaxs, templates_arr):
+    def from_fits_cat(cls, fits_cat, instrument, cat_creator, SED_fit_params_arr):
         flux_Jy_arr, flux_Jy_errs_arr = cat_creator.load_photometry(fits_cat, instrument.band_names)
         depths_arr = cat_creator.load_depths(fits_cat, instrument.band_names)
-        SED_results_arr = Catalogue_SED_results.from_fits_cat(fits_cat, cat_creator, codes, templates_arr, lowz_zmaxs, instrument = instrument).SED_results
-        return cls(instrument, flux_Jy_arr, flux_Jy_errs_arr, aper_diam, min_flux_pc_err, depths_arr, SED_results_arr)
+        SED_results_arr = Catalogue_SED_results.from_fits_cat(fits_cat, cat_creator, SED_fit_params_arr, instrument = instrument).SED_results
+        return cls(instrument, flux_Jy_arr, flux_Jy_errs_arr, cat_creator.aper_diam, cat_creator.min_flux_pc_err, depths_arr, SED_results_arr)

@@ -27,7 +27,9 @@ from .Data import Data
 from .Galaxy import Galaxy, Multiple_Galaxy
 from . import useful_funcs_austind as funcs
 from .Catalogue_Creator import GALFIND_Catalogue_Creator
-from . import SED_code, LePhare, EAZY, Bagpipes
+from . import LePhare, Bagpipes
+from .SED_codes import SED_code
+from .EAZY import EAZY
 from . import config
 from . import Catalogue_Base
 from . import Photometry_rest
@@ -39,29 +41,29 @@ class Catalogue(Catalogue_Base):
     
     # %% alternative constructors
     @classmethod
-    def from_pipeline(cls, survey, version, aper_diams, cat_creator, code_names, lowz_zmax, instruments = ['NIRCam', 'ACS_WFC', 'WFC3_IR'], \
-                      forced_phot_band = "F444W", excl_bands = [], loc_depth_min_flux_pc_errs = [5, 10], templates_arr = ["fsps_larson"], select_by = None):
+    def from_pipeline(cls, survey, version, aper_diams, cat_creator, SED_fit_params_arr = [{"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": 4.}, \
+            {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": 6.}, {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}], \
+            instruments = ['NIRCam', 'ACS_WFC', 'WFC3_IR'], forced_phot_band = "F444W", excl_bands = [], loc_depth_min_flux_pc_errs = [5, 10], select_by = None):
         # make 'Data' object
         data = Data.from_pipeline(survey, version, instruments, excl_bands = excl_bands)
-        return cls.from_data(data, version, aper_diams, cat_creator, code_names, lowz_zmax, forced_phot_band, \
-                loc_depth_min_flux_pc_errs, templates_arr, select_by = select_by)
+        return cls.from_data(data, version, aper_diams, cat_creator, SED_fit_params_arr, \
+            forced_phot_band, loc_depth_min_flux_pc_errs, select_by = select_by)
     
     @classmethod
-    def from_data(cls, data, version, aper_diams, cat_creator, code_names, lowz_zmax, forced_phot_band = "F444W", \
-                loc_depth_min_flux_pc_errs = [10], templates_arr = ["fsps_larson"], mask = True, select_by = None):
+    def from_data(cls, data, version, aper_diams, cat_creator, SED_fit_params_arr, forced_phot_band = "F444W", \
+                loc_depth_min_flux_pc_errs = [10], mask = True, select_by = None):
         # make masked local depth catalogue from the 'Data' object
         data.combine_sex_cats(forced_phot_band)
         mode = str(config["Depths"]["MODE"]).lower() # mode to calculate depths (either "n_nearest" or "rolling")
         data.calc_depths(aper_diams, mode = mode, cat_creator = cat_creator)
         data.perform_aper_corrs()
         data.make_loc_depth_cat(cat_creator, depth_mode = mode)
-        return cls.from_fits_cat(data.sex_cat_master_path, version, data.instrument, cat_creator, \
-            code_names, data.survey, lowz_zmax, templates_arr = templates_arr, data = data, mask = mask, select_by = select_by)
+        return cls.from_fits_cat(data.sex_cat_master_path, version, data.instrument, cat_creator, data.survey, \
+            SED_fit_params_arr, data = data, mask = mask, select_by = select_by)
     
     @classmethod
-    def from_fits_cat(cls, fits_cat_path, version, instrument, cat_creator, code_names, survey, \
-            lowz_zmax = [4., 6., None], templates_arr = ["fsps", "fsps_larson", "fsps_jades"], \
-            data = None, mask = False, excl_bands = [], select_by = None):
+    def from_fits_cat(cls, fits_cat_path, version, instrument, cat_creator, survey, \
+            SED_fit_params_arr, data = None, mask = False, excl_bands = [], select_by = None):
         # open the catalogue
         fits_cat = funcs.cat_from_path(fits_cat_path)
         for band, band_name in zip(instrument, instrument.band_names):
@@ -72,24 +74,22 @@ class Catalogue(Catalogue_Base):
                 instrument.remove_band(band)
                 print(f"{band_name} flux not loaded")
         print(f"instrument band names = {instrument.band_names}")
-        codes = [getattr(globals()[name], name)() for name in code_names]
         # produce galaxy array from each row of the catalogue
         start_time = time.time()
-        gals = Multiple_Galaxy.from_fits_cat(fits_cat, instrument, cat_creator, [], [], []).gals #codes, lowz_zmax, templates_arr).gals
+        gals = Multiple_Galaxy.from_fits_cat(fits_cat, instrument, cat_creator, {}).gals #codes, lowz_zmax, templates_arr).gals
         end_time = time.time()
         elapsed_time = end_time - start_time
         print(f"Finished loading in {len(gals)} galaxies. This took {elapsed_time:.6f} seconds")
         # make catalogue with no SED fitting information
-        cat_obj = cls(gals, fits_cat_path, survey, cat_creator, instrument, code_names, version, crops = [])
-        print(cat_obj)
-        breakpoint()
+        cat_obj = cls(gals, fits_cat_path, survey, cat_creator, instrument, version = version, crops = [])
+        #print(cat_obj)
         if cat_obj != None:
             cat_obj.data = data
         if mask:
             cat_obj.mask()
-        # run SED fitting for the appropriate code names/low-z runs
-        for i, (code, templates) in enumerate(zip(codes, templates_arr)):
-            cat_obj = code.fit_cat(cat_obj, templates = templates, lowz_zmax_arr = lowz_zmax)
+        # run SED fitting for the appropriate SED_fit_params
+        for SED_fit_params in SED_fit_params_arr:
+            cat_obj = SED_fit_params["code"].fit_cat(cat_obj, SED_fit_params)
         # crop catalogue by selection column if it exists in the galaxy objects (currently selection should be same for every galaxy)
         if type(select_by) == str and select_by in cat_obj[0].selection_flags:
             cat_obj = cat_obj.crop(True, select_by)
@@ -97,6 +97,16 @@ class Catalogue(Catalogue_Base):
         else:
             galfind_logger.info(f"Catalogue for {cat_obj.survey} {cat_obj.version} could not be cropped by {select_by}!")
         return cat_obj
+    
+    def save_phot_PDF_paths(self, PDF_paths, SED_fit_params):
+        if "phot_PDF_paths" not in self.__dict__.keys():
+            self.phot_PDF_paths = {}
+        self.phot_PDF_paths[SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)] = PDF_paths
+
+    def save_phot_SED_paths(self, SED_paths, SED_fit_params):
+        if "phot_SED_paths" not in self.__dict__.keys():
+            self.phot_SED_paths = {}
+        self.phot_SED_paths[SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)] = SED_paths
     
     def update_SED_results(self, cat_SED_results):
         breakpoint()

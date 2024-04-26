@@ -109,6 +109,8 @@ from .Multiple_Data import Multiple_Data
 from .Catalogue_Base import Catalogue_Base
 from .Catalogue import Catalogue
 from .Catalogue_Creator import Catalogue_Creator, GALFIND_Catalogue_Creator
+from .SED import SED, SED_rest, SED_obs, Mock_SED_rest, Mock_SED_obs
+from .SED import Mock_SED_template_set, Mock_SED_rest_template_set, Mock_SED_obs_template_set
 from .LePhare import LePhare
 from .EAZY import EAZY
 from .Bagpipes import Bagpipes
@@ -116,8 +118,6 @@ from .Galaxy import Galaxy, Multiple_Galaxy
 from .Simulated_Galaxy import Simulated_Galaxy
 from .Simulated_Catalogue import Simulated_Catalogue
 from . import decorators
-from .SED import SED, SED_rest, SED_obs, Mock_SED_rest, Mock_SED_obs
-from .SED import Mock_SED_template_set, Mock_SED_rest_template_set, Mock_SED_obs_template_set
 from .Emission_lines import Emission_line, wav_lyman_alpha, line_diagnostics
 from . import IGM_attenuation
 from . import lyman_alpha_damping_wing

@@ -14,13 +14,13 @@ from . import Multiple_Catalogue, Multiple_Data
 
 class Catalogue_Base:
     # later on, the gal_arr should be calculated from the Instrument and sex_cat path, with SED codes already given
-    def __init__(self, gals, cat_path, survey, cat_creator, instrument, codes = [], version = '', crops = []): #, UV_PDF_path):
+    def __init__(self, gals, cat_path, survey, cat_creator, instrument, SED_fit_params_arr = {}, version = '', crops = []): #, UV_PDF_path):
         self.survey = survey
         self.cat_path = cat_path
         #self.UV_PDF_path = UV_PDF_path
         self.cat_creator = cat_creator
         self.instrument = instrument
-        self.codes = codes
+        self.SED_fit_params_arr = SED_fit_params_arr
         self.gals = np.array(gals)
         if version == '':
             raise Exception('Version must be specified')

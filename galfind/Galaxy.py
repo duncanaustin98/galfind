@@ -503,9 +503,9 @@ class Multiple_Galaxy:
         return self.gals[index]
     
     @classmethod
-    def from_fits_cat(cls, fits_cat, instrument, cat_creator, codes, lowz_zmax, templates_arr):
+    def from_fits_cat(cls, fits_cat, instrument, cat_creator, SED_fit_params_arr):
         # load photometries from catalogue
-        phots = Multiple_Photometry_obs.from_fits_cat(fits_cat, instrument, cat_creator, cat_creator.aper_diam, cat_creator.min_flux_pc_err, codes, lowz_zmax, templates_arr).phot_obs_arr
+        phots = Multiple_Photometry_obs.from_fits_cat(fits_cat, instrument, cat_creator, SED_fit_params_arr).phot_obs_arr
         # load the ID and Sky Coordinate from the source catalogue
         IDs = np.array(fits_cat[cat_creator.ID_label]).astype(int)
         # load sky co-ordinate one at a time (can improve efficiency here)
