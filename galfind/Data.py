@@ -32,6 +32,7 @@ import time
 import glob
 import astropy.units as u
 import os
+import sys
 from astropy.wcs import WCS
 import matplotlib.pyplot as plt
 from matplotlib import cm
@@ -54,7 +55,7 @@ from .decorators import run_in_dir, hour_timer, email_update
 class Data:
     
     def __init__(self, instrument, im_paths, im_exts, im_pixel_scales, im_shapes, im_zps, wht_paths, wht_exts, rms_err_paths, rms_err_exts, \
-        seg_paths, mask_paths, cluster_mask_path, blank_mask_path, survey, version, cat_path = "", is_blank = True, alignment_band = "F444W"):
+        seg_paths, mask_paths, cluster_mask_path, blank_mask_path, survey, version, cat_path = "", is_blank = True, alignment_band = "F444W", RGB_method = "trilogy"):
         
         # sort dicts from blue -> red bands in ascending wavelength order
         self.im_paths = dict(sorted(im_paths.items()))
@@ -147,6 +148,13 @@ class Data:
                 galfind_logger.info(f"Common {label} found")
             except AssertionError:
                 galfind_logger.info(f"No common {label}")
+
+        # make RGB using the default method if the science images have a common shape
+        if "SCI SHAPE" in self.common.keys() and type(RGB_method) != type(None):
+            split_bands = np.split(self.instrument.band_names, \
+                [int(np.round(len(self.instrument.band_names) / 3, 0)), -int(np.round(len(self.instrument.band_names) / 3, 0))])
+            self.make_RGB(list(split_bands[0]), list(split_bands[1]), list(split_bands[2]), RGB_method)
+
         print(str(self))
 
     @classmethod
@@ -620,6 +628,48 @@ class Data:
         plt.ylabel("Y / pix")
         if show:
             plt.show()
+
+    def make_RGB(self, blue_bands = ["F090W"], green_bands = ["F200W"], red_bands = ["F444W"], method = "trilogy"):
+        # ensure all blue, green and red bands are contained in the data object
+        assert all(band in self.instrument.band_names for band in blue_bands + green_bands + red_bands), \
+            galfind_logger.warning(f"Cannot make galaxy RGB as not all {blue_bands + green_bands + red_bands} are in {self.instrument.band_names}")
+        # construct out_path
+        out_path = f"{config['Other']['RGB_DIR']}/{self.version}/{self.survey}/{method}/B={'+'.join(blue_bands)},G={'+'.join(green_bands)},R={'+'.join(red_bands)}.png"
+        funcs.make_dirs(out_path)
+        if not os.path.exists(out_path):
+            # load RGB band paths including .fits image extensions
+            RGB_paths = {}
+            for colour, bands in zip(["B", "G", "R"], [blue_bands, green_bands, red_bands]):
+                RGB_paths[colour] = [f"{self.im_paths[band]}[{self.im_exts[band]}]" for band in bands]
+            if method == "trilogy":
+                # Write trilogy.in
+                in_path = out_path.replace(".png", "_trilogy.in")
+                with open(in_path, "w") as f:
+                    for colour, paths in RGB_paths.items():
+                        f.write(f"{colour}\n")
+                        for path in paths:
+                            f.write(f"{path}\n")
+                        f.write("\n")
+                    f.write("indir  /\n")
+                    f.write(f"outname  {funcs.split_dir_name(out_path, 'name').replace('.png', '')}\n")
+                    f.write(f"outdir  {funcs.split_dir_name(out_path, 'dir')}\n")
+                    f.write("samplesize 20000\n")
+                    f.write("stampsize  2000\n")
+                    f.write("showstamps  0\n")
+                    f.write("satpercent  0.001\n")
+                    f.write("noiselum    0.10\n")
+                    f.write("colorsatfac  1\n")
+                    f.write("deletetests  1\n")
+                    f.write("testfirst   0\n")
+                    f.write("sampledx  0\n")
+                    f.write("sampledy  0\n")
+                # Run trilogy
+                sys.path.insert(1, "/nvme/scratch/software/trilogy") # Not sure why this path doesn't work: config["Other"]["TRILOGY_DIR"]
+                from trilogy3 import Trilogy
+                galfind_logger.info(f"Making full trilogy RGB image at {out_path}")
+                Trilogy(in_path, images = None).run()
+            elif method == "lupton":
+                raise(NotImplementedError())
             
     def plot_mask_from_band(self, ax, band, show = True):
         mask = self.load_data(band, incl_mask = True)[4]

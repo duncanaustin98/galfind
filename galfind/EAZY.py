@@ -246,7 +246,7 @@ class EAZY(SED_code):
             hf.create_dataset("wav_unit", data = str(wav_unit))
             hf.create_dataset("flux_unit", data = str(flux_unit))
             [self.save_SED(ID, z, hf, fit, wav_unit = wav_unit, flux_unit = flux_unit) \
-                for ID, z in tqdm(zip(fit.OBJID, np.array(table["zbest"]).astype(float)), total = len(fit.OBJID), \
+                for ID, z in tqdm(zip(fit.OBJID, np.array(table[f"zbest_{templates}_{lowz_label}"]).astype(float)), total = len(fit.OBJID), \
                 desc = f"Saving best-fit template SEDs for {self.__class__.__name__} {templates} {lowz_label}")]
             hf.close()
             galfind_logger.info(f'Finished saving SEDss for {self.__class__.__name__} {templates} {lowz_label}')

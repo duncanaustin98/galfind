@@ -13,6 +13,7 @@ import astropy.units as u
 from astropy.coordinates import SkyCoord
 from astropy.io import fits
 import os
+import sys
 import json
 from pathlib import Path
 from astropy.nddata import Cutout2D
@@ -125,6 +126,57 @@ class Galaxy:
         else:
             print(f"Already made fits cutout for {survey} {version} {self.ID}")
         self.cutout_paths[band] = out_path
+
+    def make_RGB(self, data, blue_bands = ["F090W"], green_bands = ["F200W"], red_bands = ["F444W"], version = None, survey = None, method = "trilogy", cutout_size = 32):
+        method = method.lower() # make method lowercase
+        # ensure all blue, green and red bands are contained in the data object
+        assert all(band in data.instrument.band_names for band in blue_bands + green_bands + red_bands), \
+            galfind_logger.warning(f"Cannot make galaxy RGB as not all {blue_bands + green_bands + red_bands} are in {data.instrument.band_names}")
+        # extract survey and version from data
+        if type(data) == Data:
+            survey = data.survey
+            version = data.version
+        if survey == None or version == None:
+            raise(Exception("'survey' and 'version' must both be given to construct save paths"))
+        # construct out_path
+        out_path = f"{config['Cutouts']['CUTOUT_DIR']}/{version}/{survey}/B={'+'.join(blue_bands)},G={'+'.join(green_bands)},R={'+'.join(red_bands)}/{method}/{self.ID}.png"
+        funcs.make_dirs(out_path)
+        if not os.path.exists(out_path):
+            # make cutouts for the required bands if they don't already exist, and load cutout paths
+            RGB_cutout_paths = {}
+            for colour, bands in zip(["B", "G", "R"], [blue_bands, green_bands, red_bands]):
+                [self.make_cutout(band, data, cutout_size = cutout_size) for band in bands]
+                RGB_cutout_paths[colour] = [self.cutout_paths[band] for band in bands]
+            if method == "trilogy":
+                # Write trilogy.in
+                in_path = out_path.replace(".png", "_trilogy.in")
+                with open(in_path, "w") as f:
+                    for colour, cutout_paths in RGB_cutout_paths.items():
+                        f.write(f"{colour}\n")
+                        for path in cutout_paths:
+                            f.write(f"{path}[1]\n")
+                        f.write("\n")
+                    f.write("indir  /\n")
+                    f.write(f"outname  {funcs.split_dir_name(out_path, 'name').replace('.png', '')}\n")
+                    f.write(f"outdir  {funcs.split_dir_name(out_path, 'dir')}\n")
+                    f.write("samplesize 20000\n")
+                    f.write("stampsize  2000\n")
+                    f.write("showstamps  0\n")
+                    f.write("satpercent  0.001\n")
+                    f.write("noiselum    0.10\n")
+                    f.write("colorsatfac  1\n")
+                    f.write("deletetests  1\n")
+                    f.write("testfirst   0\n")
+                    f.write("sampledx  0\n")
+                    f.write("sampledy  0\n")
+                # Run trilogy
+                sys.path.insert(1, "/nvme/scratch/software/trilogy") # Not sure why this path doesn't work: config["Other"]["TRILOGY_DIR"]
+                from trilogy3 import Trilogy
+                galfind_logger.info(f"Making trilogy cutout RGB at {out_path}")
+                Trilogy(in_path, images = None).run()
+            elif method == "lupton":
+                raise(NotImplementedError())
+
     # Selection methods
 
     def select_min_unmasked_bands(self, min_bands, update = True):
