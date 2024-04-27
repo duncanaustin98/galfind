@@ -25,39 +25,43 @@ class SED_result:
     
     def __init__(self, SED_fit_params, phot, properties, property_errs, property_PDFs, SED, rest_UV_wav_lims = [1268., 2580.] * u.Angstrom):
         self.SED_fit_params = SED_fit_params
-        #[setattr(key, value) for key, value in SED_fit_params.items()]
+        #[setattr(self, key, value) for key, value in SED_fit_params.items()]
         self.properties = properties
-        [setattr(key, value) for key, value in properties.items()]
+        [setattr(self, key, value) for key, value in properties.items()]
         self.property_errs = property_errs
-        #[setattr(f"{key}_l1", value[0]) for key, value in property_errs.items()]
-        #[setattr(f"{key}_u1", value[1]) for key, value in property_errs.items()]
+        #[setattr(self, f"{key}_l1", value[0]) for key, value in property_errs.items()]
+        #[setattr(self, f"{key}_u1", value[1]) for key, value in property_errs.items()]
         self.property_PDFs = property_PDFs
-        #[setattr(f"{key}_PDF", value) for key, value in property_PDFs.items()]
+        #[setattr(self, f"{key}_PDF", value) for key, value in property_PDFs.items()]
         self.phot_rest = Photometry_rest.from_phot(phot, self.z, rest_UV_wav_lims = rest_UV_wav_lims)
         self.SED = SED
 
-    def __str__(self, print_rest_phot = False):
+    def __str__(self, print_phot_rest = False, print_PDFs = False, print_SED = True):
         line_sep = "*" * 40 + "\n"
         band_sep = "-" * 10 + "\n"
         output_str = line_sep
         output_str += "SED FITTING RESULT:\n"
         output_str += band_sep
-        code_name = self.SED_fit_params["code"].__class__.__name__
-        output_str += f"CODE: {code_name}\n"
-        output_str += f"TEMPLATES: {self.SED_fit_params['templates']}\n"
-        if code_name == "EAZY":
-            if self.lowz_zmax == None:
-                output_str += "LOW Z RUN: False\n"
+        for key, value in self.SED_fit_params.items():
+            if key == "code":
+                output_str += f"{key.upper()}: {value.__class__.__name__}\n"
             else:
-                output_str += "LOW Z RUN: True\n"
-                output_str += f"Z MAX: {self.SED_fit_params['lowz_zmax']}\n"
-        else:
-            pass
+                output_str += f"{key.upper()}: {value}\n"
         output_str += band_sep
-        for key, value in self.properties:
-            output_str += f"{key.upper()} = {str(value)}\n"
-        for phot_rest in self.phot_rest.values():
-            output_str += str(phot_rest)
+        # print property errors and units here too
+        for key, value in self.properties.items():
+            output_str += f"{key} = {str(value)}\n"
+        if print_PDFs:
+            for PDF_obj in self.property_PDFs.values():
+                output_str += str(PDF_obj)
+        else:
+            output_str += f"PDFs LOADED: {', '.join([key for key in self.property_PDFs.keys()])}\n"
+        if print_SED:
+            output_str += str(self.SED)
+        # phot rest should really be contained in self.SED
+        if print_phot_rest:
+            for phot_rest in self.phot_rest.values():
+                output_str += str(phot_rest)
         output_str += line_sep
         return output_str
     
@@ -148,27 +152,27 @@ class Catalogue_SED_results:
 
         # load in PDFs
         # make array of the correct shape for appropriate parsing
-        cat_property_PDFs = list(np.full((len(SED_fit_params_arr), len(fits_cat)), None))
+        cat_property_PDFs = list(np.full((len(fits_cat), len(SED_fit_params_arr)), None))
         if type(cat_PDF_paths) != type(None):
             assert(len(SED_fit_params_arr) == len(cat_PDF_paths))
             # loop through SED_fit_params_arr and corresponding cat_PDF_paths
-            for i, (SED_fit_params, PDF_paths) in tqdm(enumerate(zip(SED_fit_params_arr, cat_PDF_paths)), \
-                    total = len(SED_fit_params_arr), desc = "Constructing galaxy property PDFs"):
+            for i, (SED_fit_params, PDF_paths) in enumerate(zip(SED_fit_params_arr, cat_PDF_paths)): # tqdm(, \
+                   # total = len(SED_fit_params_arr), desc = "Constructing galaxy property PDFs"):
                 # check that these paths correspond to the correct galaxies
                 assert(len(PDF_paths[gal_property]) == len(fits_cat) for gal_property in SED_fit_params["code"].galaxy_property_dict.keys())
                 # construct PDF objects, type = array of len(fits_cat), each element a dict of {gal_property: PDF object} excluding None PDFs
                 cat_property_PDFs_ = {gal_property: SED_fit_params["code"].extract_PDFs(gal_property, IDs, \
                     PDF_paths[gal_property]) for gal_property in PDF_paths.keys()}
-                cat_property_PDFs[i] = [{gal_property: PDF_arr[i] for gal_property, PDF_arr in cat_property_PDFs_.items() if PDF_arr[i] != None} for i in range(len(fits_cat))]
+                cat_property_PDFs[i] = [{gal_property: PDF_arr[j] for gal_property, PDF_arr in cat_property_PDFs_.items() if PDF_arr[j] != None} for j in range(len(fits_cat))]
         
         # load in SEDs
         # make array of the correct shape for appropriate parsing
-        cat_property_SEDs = list(np.full((len(SED_fit_params_arr), len(fits_cat)), None))
+        cat_property_SEDs = list(np.full((len(fits_cat), len(SED_fit_params_arr)), None))
         if type(cat_SED_paths) != type(None):
             assert(len(SED_fit_params_arr) == len(cat_SED_paths))
             # loop through SED_fit_params_arr and corresponding cat_SED_paths
-            for i, (SED_fit_params, SED_paths) in tqdm(enumerate(zip(SED_fit_params_arr, cat_SED_paths)), \
-                    total = len(SED_fit_params_arr), desc = "Constructing galaxy SEDs"):
+            for i, (SED_fit_params, SED_paths) in enumerate(zip(SED_fit_params_arr, cat_SED_paths)): # tqdm(, \
+                   # total = len(SED_fit_params_arr), desc = "Constructing galaxy SEDs"):
                 # check that these paths correspond to the correct galaxies
                 assert(len(SED_paths) == len(fits_cat) for gal_property in SED_fit_params["code"].galaxy_property_dict.keys())
                 # construct SED objects, type = array of len(fits_cat), each element containing an SED object
@@ -180,8 +184,9 @@ class Catalogue_SED_results:
     @classmethod
     def from_SED_result_inputs(cls, SED_fit_params_arr, phot_arr, cat_properties, \
             cat_property_errs, cat_property_PDFs, cat_SEDs, rest_UV_wav_lims = [1268., 2580.] * u.Angstrom):
-        cat_SED_results = [Galaxy_SED_results.from_SED_result_inputs(SED_fit_params_arr, phot, property_arr, \
-            property_errs_arr, property_PDF_arr, SED_arr, rest_UV_wav_lims = rest_UV_wav_lims) \
+        cat_SED_results = [[SED_result(SED_fit_params, phot, properties, property_errs, property_PDFs, SED, \
+            rest_UV_wav_lims = rest_UV_wav_lims) for SED_fit_params, properties, property_errs, property_PDFs, SED in \
+            zip(SED_fit_params_arr, property_arr, property_errs_arr, property_PDF_arr, SED_arr)] \
             for phot, property_arr, property_errs_arr, property_PDF_arr, SED_arr \
             in zip(phot_arr, cat_properties, cat_property_errs, cat_property_PDFs, cat_SEDs)]
         return cls(SED_fit_params_arr, cat_SED_results)

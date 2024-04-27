@@ -42,7 +42,7 @@ class Simulated_Catalogue(Catalogue_Base):
                     low_z_label = "_lowz"
                 else:
                     low_z_label = ""
-                fits_cat[f"{code.galaxy_property_labels['z_phot']}{low_z_label}"]
+                fits_cat[f"{code.galaxy_property_labels['z']}{low_z_label}"]
             except:
                 # perform SED fitting
                 cat_obj = code.fit_cat(cat_obj, low_z_run, templates = templates)

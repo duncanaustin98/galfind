@@ -13,6 +13,9 @@ class PDF:
         # normalize to np.trapz(p_x, x) == 1
         self.p_x = p_x / np.trapz(p_x, x)
 
+    def __str__(self):
+        return f"LOADED PDF FOR {self.property_name}"
+
     @classmethod
     def from_1D_arr(cls):
         return NotImplementedError

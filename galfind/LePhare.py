@@ -23,7 +23,7 @@ from . import useful_funcs_austind as funcs
 
 class LePhare(SED_code):
     
-    galaxy_property_dict = {"z_phot": "Z_BEST", "mass": "MASS_BEST", "chi_sq": "CHI_BEST"}
+    galaxy_property_dict = {"z": "Z_BEST", "mass": "MASS_BEST", "chi_sq": "CHI_BEST"}
     galaxy_property_errs_dict = {}
     available_templates = ["BC03"]
 

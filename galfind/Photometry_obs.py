@@ -34,10 +34,8 @@ class Photometry_obs(Photometry):
         output_str += f"APERTURE DIAMETER: {self.aper_diam}\n"
         output_str += f"MIN FLUX PC ERR: {self.min_flux_pc_err}%\n"
         output_str += super().__str__(print_cls_name = False)
-        for (sed_code, templates_lowz_zmax_result) in self.SED_results.items():
-            for templates, lowz_zmax_result in templates_lowz_zmax_result.items():
-                for lowz_zmax, result in lowz_zmax_result.items():
-                    output_str += str(result)
+        for result in self.SED_results.values():
+            output_str += str(result)
         output_str += f"SNR: {[np.round(snr, 2) for snr in self.SNR]}\n"
         output_str += line_sep
         return output_str
@@ -66,16 +64,10 @@ class Photometry_obs(Photometry):
         return cls(phot.instrument, phot.flux_Jy, phot.flux_Jy_errs, aper_diam, min_flux_pc_err, phot.loc_depths, SED_results)
     
     def update(self, gal_SED_results):
-        # gal_SED_results has type = dict(dict())
-        # ensure the same code_names are keys in both self.SED_results and gal_SED_results
-        for code_name, val in self.SED_results.items():
-            if code_name not in gal_SED_results.keys():
-                gal_SED_results[code_name] = {**{code_name: {}}, **gal_SED_results}
-        for code_name, val in gal_SED_results.items():
-            if code_name not in self.SED_results.keys():
-                self.SED_results = {**{code_name: {}}, **self.SED_results}
-        self.SED_results = {code_name: dict(**self.SED_results[code_name], **gal_SED_results[code_name]) for code_name in self.SED_results.keys()}
-        #print("Post update:", self.SED_results)
+        if hasattr(self, "SED_results"):
+            self.SED_results = {**self.SED_results, **gal_SED_results}
+        else:
+            self.SED_results = gal_SED_results
     
     def update_mask(self, cat, cat_creator, ID, update_phot_rest = False):
         gal_index = np.where(cat[cat_creator.ID_label] == ID)[0][0]
@@ -142,5 +134,8 @@ class Multiple_Photometry_obs:
     def from_fits_cat(cls, fits_cat, instrument, cat_creator, SED_fit_params_arr):
         flux_Jy_arr, flux_Jy_errs_arr = cat_creator.load_photometry(fits_cat, instrument.band_names)
         depths_arr = cat_creator.load_depths(fits_cat, instrument.band_names)
-        SED_results_arr = Catalogue_SED_results.from_fits_cat(fits_cat, cat_creator, SED_fit_params_arr, instrument = instrument).SED_results
+        if SED_fit_params_arr != [{}]:
+            SED_results_arr = Catalogue_SED_results.from_fits_cat(fits_cat, cat_creator, SED_fit_params_arr, instrument = instrument).SED_results
+        else:
+            SED_results_arr = np.full(len(flux_Jy_arr), {})
         return cls(instrument, flux_Jy_arr, flux_Jy_errs_arr, cat_creator.aper_diam, cat_creator.min_flux_pc_err, depths_arr, SED_results_arr)

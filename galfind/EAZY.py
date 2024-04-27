@@ -39,7 +39,7 @@ EAZY_FILTER_CODES = {'NIRCam': {'F070W':36, 'F090W':1, 'F115W':2,'F140M':37, 'F1
 class EAZY(SED_code):
 
     # now includes UBVJ flux/errs
-    galaxy_property_dict = {**{"z_phot": "zbest", "chi_sq": "chi2_best"}, \
+    galaxy_property_dict = {**{"z": "zbest", "chi_sq": "chi2_best"}, \
         **{f"{ubvj_filt}_flux": f"{ubvj_filt}_rf_flux" for ubvj_filt in ["U", "B", "V", "J"]}}
     galaxy_property_errs_dict = {f"{ubvj_filt}_flux": f"{ubvj_filt}_rf_flux_err" for ubvj_filt in ["U", "B", "V", "J"]}
     available_templates = ["fsps", "fsps_larson", "fsps_jades"]
@@ -273,7 +273,7 @@ class EAZY(SED_code):
             galfind_logger.info(f'Written output pararmeters for {self.__class__.__name__} {templates} {lowz_label}')
         
         # return PDF and SED paths
-        return {"z_phot": np.full(len(table), zPDF_path)}, np.full(len(table), SED_path)
+        return {"z": np.full(len(table), zPDF_path)}, np.full(len(table), SED_path)
 
     @staticmethod
     def save_zPDF(pos_obj, ID, hf, fit_zgrid, fit_pz):
@@ -304,7 +304,7 @@ class EAZY(SED_code):
     @staticmethod
     def get_out_paths(out_path, SED_fit_params, IDs): #*args, **kwargs):
         fits_out_path = f"{out_path.replace('.out', '')}_EAZY_{SED_fit_params['templates']}_{funcs.lowz_label(SED_fit_params['lowz_zmax'])}.fits"
-        PDF_paths = {"z_phot": list(np.full(len(IDs), fits_out_path.replace(".fits", "_zPDFs.h5")))}
+        PDF_paths = {"z": list(np.full(len(IDs), fits_out_path.replace(".fits", "_zPDFs.h5")))}
         SED_paths = list(np.full(len(IDs), fits_out_path.replace(".fits", "_SEDs.h5")))
         return fits_out_path, PDF_paths, SED_paths
 
@@ -320,9 +320,9 @@ class EAZY(SED_code):
         assert all(SED_path == SED_paths[0] for SED_path in SED_paths), galfind_logger.critical(f"SED_paths must all be the same for {__class__.__name__}")
         # open .h5 file
         hf = h5py.File(SED_paths[0], "r")
-        SED_obs_arr = [SED_obs(hf[f"ID={str(int(ID))}"]["z"], hf[f"ID={str(int(ID))}"]["wav"].value, \
-            hf[f"ID={str(int(ID))}"]["flux"].value, hf[f"ID={str(int(ID))}"]["wav"].unit, hf[f"ID={str(int(ID))}"]["flux"].unit) \
-            for ID in tqdm(IDs, total = len(IDs), desc = f"Constructing SEDs for {SED_paths[0]}")]
+        SED_obs_arr = [SED_obs(hf[f"ID={str(int(ID))}"]["z"][()], hf[f"ID={str(int(ID))}"]["wav"][:], \
+            hf[f"ID={str(int(ID))}"]["flux"][:], u.Unit(hf["wav_unit"][()].decode()), u.Unit(hf["flux_unit"][()].decode())) \
+            for ID in tqdm(IDs, total = len(IDs), desc = "Constructing SEDs")]
         # close .h5 file
         hf.close()
         return SED_obs_arr
@@ -336,7 +336,7 @@ class EAZY(SED_code):
            PDF_paths = [PDF_paths]
 
         # EAZY only has redshift PDFs
-        if gal_property != "z_phot":
+        if gal_property != "z":
             return list(np.full(len(IDs), None))
         else:
             # ensure the correct type 
@@ -352,7 +352,7 @@ class EAZY(SED_code):
             hf_z = np.array(hf["z"])
             # extract redshift PDF for each ID
             redshift_pdfs = [Redshift_PDF(hf_z, np.array(hf[f"ID={str(int(ID))}"]["p(z)"])) \
-                for ID in tqdm(IDs, total = len(IDs), desc = f"Constructing redshift PDFs for {PDF_paths[0]}")]
+                for ID in tqdm(IDs, total = len(IDs), desc = "Constructing redshift PDFs")]
             # close .h5 file
             hf.close()
             return redshift_pdfs

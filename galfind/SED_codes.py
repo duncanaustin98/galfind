@@ -106,7 +106,7 @@ class SED_code(ABC):
         # open original catalogue
         orig_cat = cat.open_cat()
         # combine catalogues if not already run before
-        if self.galaxy_property_labels("z_phot", SED_fit_params) in orig_cat.colnames:
+        if self.galaxy_property_labels("z", SED_fit_params) in orig_cat.colnames:
             combined_cat = orig_cat
         else:
             combined_cat = join(orig_cat, Table.read(fits_out_path), keys_left = "NUMBER", keys_right = "IDENT")

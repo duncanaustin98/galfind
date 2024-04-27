@@ -76,7 +76,7 @@ class Catalogue(Catalogue_Base):
         print(f"instrument band names = {instrument.band_names}")
         # produce galaxy array from each row of the catalogue
         start_time = time.time()
-        gals = Multiple_Galaxy.from_fits_cat(fits_cat, instrument, cat_creator, {}).gals #codes, lowz_zmax, templates_arr).gals
+        gals = Multiple_Galaxy.from_fits_cat(fits_cat, instrument, cat_creator, [{}]).gals #codes, lowz_zmax, templates_arr).gals
         end_time = time.time()
         elapsed_time = end_time - start_time
         print(f"Finished loading in {len(gals)} galaxies. This took {elapsed_time:.6f} seconds")
@@ -109,7 +109,6 @@ class Catalogue(Catalogue_Base):
         self.phot_SED_paths[SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)] = SED_paths
     
     def update_SED_results(self, cat_SED_results):
-        breakpoint()
         assert(len(cat_SED_results) == len(self)) # if this is not the case then instead should cross match IDs between self and gal_SED_result
         galfind_logger.info("Updating SED results in galfind catalogue object")
         [gal.update(gal_SED_result) for gal, gal_SED_result in zip(self, cat_SED_results)]

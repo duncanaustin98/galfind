@@ -28,6 +28,9 @@ def pipeline(surveys, version, instruments, aper_diams, min_flux_pc_errs, forced
             #cat.data.calc_unmasked_area("NIRCam", forced_phot_band = forced_phot_band)
 
             print(str(cat))
+            print(str(cat[0]))
+            breakpoint()
+
             #cat.select_min_unmasked_bands(min_bands = 4)
             #cat.phot_bluewards_Lya_non_detect(SNR_lim = 2.)
             #cat.phot_redwards_Lya_detect(SNR_lims = 5.)
