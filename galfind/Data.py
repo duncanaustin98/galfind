@@ -154,6 +154,8 @@ class Data:
             split_bands = np.split(self.instrument.band_names, \
                 [int(np.round(len(self.instrument.band_names) / 3, 0)), -int(np.round(len(self.instrument.band_names) / 3, 0))])
             self.make_RGB(list(split_bands[0]), list(split_bands[1]), list(split_bands[2]), RGB_method)
+            #split_bands = np.take(self.instrument.band_names, [0, int(len(self.instrument.band_names) / 2), -1])
+            #self.make_RGB([split_bands[0]], [split_bands[1]], [split_bands[2]], RGB_method)
 
         print(str(self))
 
@@ -634,7 +636,7 @@ class Data:
         assert all(band in self.instrument.band_names for band in blue_bands + green_bands + red_bands), \
             galfind_logger.warning(f"Cannot make galaxy RGB as not all {blue_bands + green_bands + red_bands} are in {self.instrument.band_names}")
         # construct out_path
-        out_path = f"{config['Other']['RGB_DIR']}/{self.version}/{self.survey}/{method}/B={'+'.join(blue_bands)},G={'+'.join(green_bands)},R={'+'.join(red_bands)}.png"
+        out_path = f"{config['RGB']['RGB_DIR']}/{self.version}/{self.survey}/{method}/B={'+'.join(blue_bands)},G={'+'.join(green_bands)},R={'+'.join(red_bands)}.png"
         funcs.make_dirs(out_path)
         if not os.path.exists(out_path):
             # load RGB band paths including .fits image extensions
