@@ -23,7 +23,8 @@ import h5py
 from eazy import hdf5, visualization
 from astropy.io import fits
 
-from . import SED_code, Instrument
+from . import SED_code, Instrument, Redshift_PDF
+from .SED import SED, SED_obs
 from . import useful_funcs_austind as funcs
 from . import config, galfind_logger
 from .decorators import run_in_dir, hour_timer, email_update
@@ -36,15 +37,28 @@ EAZY_FILTER_CODES = {'NIRCam': {'F070W':36, 'F090W':1, 'F115W':2,'F140M':37, 'F1
                     'MIRI': {'F560W':13, 'F770W':14, 'F1000W':15, 'F1130W':16, 'F1280W':17, 'F1500W':18,'F1800W':19, 'F2100W':20, 'F2550W':21}}
 
 class EAZY(SED_code):
-    
+
+    # now includes UBVJ flux/errs
+    galaxy_property_dict = {**{"z": "zbest", "chi_sq": "chi2_best"}, \
+        **{f"{ubvj_filt}_flux": f"{ubvj_filt}_rf_flux" for ubvj_filt in ["U", "B", "V", "J"]}}
+    galaxy_property_errs_dict = {f"{ubvj_filt}_flux": f"{ubvj_filt}_rf_flux_err" for ubvj_filt in ["U", "B", "V", "J"]}
+    available_templates = ["fsps", "fsps_larson", "fsps_jades"]
+
     def __init__(self):
-        #ID_label = "IDENT"
-        # now includes UBVJ flux/errs
-        galaxy_property_dict = {**{"z_phot": "zbest", "chi_sq": "chi2_best"}, \
-            **{f"{ubvj_filt}_{flux_or_err}": f"{ubvj_filt}_rf_{flux_or_err}" \
-            for ubvj_filt in ["U", "B", "V", "J"] for flux_or_err in ["flux", "flux_err"]}}
-        available_templates = ["fsps", "fsps_larson", "fsps_jades"]
-        super().__init__(galaxy_property_dict, available_templates)
+        super().__init__(self.galaxy_property_dict, self.galaxy_property_errs_dict, self.available_templates)
+
+    def galaxy_property_labels(self, gal_property, SED_fit_params, is_err = False):
+        assert("templates" in SED_fit_params.keys() and "lowz_zmax" in SED_fit_params.keys())
+        if SED_fit_params["templates"] not in self.available_templates:
+            raise(Exception(f"templates = {SED_fit_params['templates']} are not in {self.available_templates}, and hence are not yet encorporated for galfind EAZY SED fitting"))
+        if is_err:
+            property_dict = self.galaxy_property_errs_dict
+        else:
+            property_dict = self.galaxy_property_dict
+        if gal_property in property_dict.keys():
+            return f"{property_dict[gal_property]}_{SED_fit_params['templates']}_{funcs.lowz_label(SED_fit_params['lowz_zmax'])}"
+        else:
+            raise(Exception(f"{self.__class__.__name__}.galaxy_property_{'errs_' if is_err else ''}dict = {property_dict} does not include key for gal_property = {gal_property}!"))
     
     def make_in(self, cat, fix_z = False): #, *args, **kwargs):
         eazy_in_dir = f"{config['EAZY']['EAZY_DIR']}/input/{cat.instrument.name}/{cat.version}/{cat.survey}"
@@ -78,9 +92,10 @@ class EAZY(SED_code):
         return eazy_in_path
     
     @run_in_dir(path = config['EAZY']['EAZY_DIR'])
-    def run_fit(self, in_path, fits_out_path, instrument, default_templates = 'fsps_larson', fix_z = False, n_proc = 1, z_step = 0.01, z_min = 0, z_max = 25,
-                save_best_seds = config.getboolean('EAZY', 'SAVE_SEDS'), save_PDFs = config.getboolean('EAZY', 'SAVE_SEDS'), write_hdf = True, save_plots = False, plot_ids = None, plot_all = False, save_ubvj = True, run_lowz = True, \
-                    lowz_zmax = None, wav_unit = u.AA, flux_unit = u.nJy, overwrite = False, *args, **kwargs):
+    def run_fit(self, in_path, fits_out_path, instrument, SED_fit_params, fix_z = False, n_proc = 1, z_step = 0.01, z_min = 0, z_max = 25,
+                save_best_seds = config.getboolean('EAZY', 'SAVE_SEDS'), save_PDFs = config.getboolean('EAZY', 'SAVE_PDFS'), write_hdf = True, \
+                save_plots = False, plot_ids = None, plot_all = False, save_ubvj = True, run_lowz = True, \
+                wav_unit = u.AA, flux_unit = u.nJy, overwrite = False, *args, **kwargs):
         '''
         in_path - input EAZY catalogue path
         fits_out_path - output EAZY catalogue path
@@ -108,11 +123,11 @@ class EAZY(SED_code):
         # HOT_60K - modified IMF high-z templates for use at z > 12
         # Nakajima - unobscured AGN templates
 
-        # update templates from within kwargs
-        try:
-            templates = kwargs.get("templates")
-        except:
-            templates = default_templates
+        assert "lowz_zmax" in SED_fit_params.keys(), \
+            galfind_logger.critical(f"'lowz_zmax' not in SED_fit_params keys = {np.array(SED_fit_params.keys())}")
+        
+        templates = SED_fit_params["templates"]
+        lowz_zmax = SED_fit_params["lowz_zmax"]
 
         os.makedirs("/".join(fits_out_path.split("/")[:-1]), exist_ok = True)
         h5_path = fits_out_path.replace('.fits', '.h5')
@@ -222,17 +237,19 @@ class EAZY(SED_code):
                 # add the template name to the column labels except for IDENT
                 for col_name in table.colnames:
                     if col_name != "IDENT":
-                        table.rename_column(col_name, f"{col_name}_{templates}_{lowz_label}")
+                        table.rename_column(col_name, self.galaxy_property_labels(col_name, SED_fit_params))
                 # Write fits file
                 table.write(fits_out_path, overwrite = True)
                 galfind_logger.info(f'Written {self.__class__.__name__} {templates} {lowz_label} fits out file to: {fits_out_path}')
+        else:
+            table = Table.read(fits_out_path)
 
         # save PDFs in h5 file
         if save_PDFs and not Path(zPDF_path).is_file():
             pz = 10 ** (fit.lnp)
             hf = h5py.File(zPDF_path, "w")
             hf.create_dataset("z", data = np.array(fit.zgrid))
-            print(fit.zgrid, pz[0], len(fit.zgrid), len(pz[0]))
+            #print(fit.zgrid, pz[0], len(fit.zgrid), len(pz[0]))
             [self.save_zPDF(pos_obj, ID, hf, fit.zgrid, pz) for pos_obj, ID in \
                 tqdm(enumerate(fit.OBJID), total = len(fit.OBJID), \
                 desc = f"Saving z-PDFs for {self.__class__.__name__} {templates} {lowz_label}")]
@@ -273,42 +290,73 @@ class EAZY(SED_code):
         gal_SED.create_dataset("wav", data = wav)
         gal_SED.create_dataset("flux", data = flux)
 
-    def make_fits_from_out(self, out_path, templates, lowz_zmax): #*args, **kwargs):
+    @staticmethod
+    def label_from_SED_fit_params(SED_fit_params):
+        assert("code" in SED_fit_params.keys() and "templates" in SED_fit_params.keys() and "lowz_zmax" in SED_fit_params.keys())
+        # first write the code name, next write the template name, finish off with lowz_zmax
+        return f"{SED_fit_params['code'].__class__.__name__}_{SED_fit_params['templates']}_{funcs.lowz_label(SED_fit_params['lowz_zmax'])}"
+
+    def SED_fit_params_from_label(self, label):
+        label_arr = label.split("_")
+        templates = "_".join(label_arr[1:-1]) # templates may contain underscore
+        assert(templates in self.available_templates)
+        return {"code": self, "templates": templates, "lowz_zmax": funcs.zmax_from_lowz_label(label_arr[-1])}
+
+    def make_fits_from_out(self, out_path, SED_fit_params): #*args, **kwargs):
         pass
     
-    def out_fits_name(self, out_path, templates, lowz_zmax): #*args, **kwargs):
-        fits_out_path = f"{out_path.replace('.out', '')}_EAZY_{templates}_{funcs.lowz_label(lowz_zmax)}.fits"
-        return fits_out_path
+    @staticmethod
+    def get_out_paths(out_path, SED_fit_params, IDs): #*args, **kwargs):
+        fits_out_path = f"{out_path.replace('.out', '')}_EAZY_{SED_fit_params['templates']}_{funcs.lowz_label(SED_fit_params['lowz_zmax'])}.fits"
+        PDF_paths = {"z": list(np.full(len(IDs), fits_out_path.replace(".fits", "_zPDFs.h5")))}
+        SED_paths = list(np.full(len(IDs), fits_out_path.replace(".fits", "_SEDs.h5")))
+        return fits_out_path, PDF_paths, SED_paths
+
+    @staticmethod
+    def extract_SEDs(IDs, SED_paths):
+        # ensure this works if only extracting 1 galaxy
+        if type(IDs) in [str, int, float]:
+            IDs = [int(IDs)]
+        if type(SED_paths) == str:
+           SED_paths = [SED_paths]
+        assert len(IDs) == len(SED_paths), galfind_logger.critical(f"len(IDs) = {len(IDs)} != len(data_paths) = {len(SED_paths)}!")
+        # ensure that for EAZY all the SED_paths are the same
+        assert all(SED_path == SED_paths[0] for SED_path in SED_paths), galfind_logger.critical(f"SED_paths must all be the same for {__class__.__name__}")
+        # open .h5 file
+        hf = h5py.File(SED_paths[0], "r")
+        SED_obs_arr = [SED_obs(hf[f"ID={str(int(ID))}"]["z"][()], hf[f"ID={str(int(ID))}"]["wav"][:], \
+            hf[f"ID={str(int(ID))}"]["flux"][:], u.Unit(hf["wav_unit"][()].decode()), u.Unit(hf["flux_unit"][()].decode())) \
+            for ID in tqdm(IDs, total = len(IDs), desc = "Constructing SEDs")]
+        # close .h5 file
+        hf.close()
+        return SED_obs_arr
     
-    def extract_SEDs(self, fits_cat, ID, low_z_run = False, units = u.ABmag, just_header = False):
-        SED_path = self.SED_path_from_cat_path(fits_cat.meta[f"{self.__class__.__name__}_path"], ID, low_z_run)
-       
-        if not Path(SED_path).is_file():
-            print(f'Not found EAZY SED at {SED_path}')
-        if not just_header: 
-            SED = Table.read(SED_path, format = 'ascii.no_header', delimiter = '\s', names = ['wav', 'mag'], data_start = 0)
-            SED['mag'][np.isinf(SED['mag'])] = 99.
-        return {"best_gal": SED}
-    
-    def extract_z_PDF(self, fits_cat, ID, low_z_run = False):
-        PDF_path = self.z_PDF_path_from_cat_path(fits_cat.meta[f"{self.__class__.__name__}_path"], ID, low_z_run)
-        try:
-            z, PDF = np.loadtxt(PDF_path, delimiter = ',').T  
-        except FileNotFoundError:
-            print(f'{PDF_path} not found.')
-            return None, None
-        return z, PDF
-        
-    def get_z_PDF_path(self, cat, ID, templates, lowz_zmax):
-        PDF_dir = f"{config['EAZY']['EAZY_DIR']}/output/{cat.instrument.name}/{cat.version}/{cat.survey}"
-        PDF_name = f"{cat.cat_name.replace('.fits', f'_EAZY_{templates}_{funcs.lowz_label(lowz_zmax)}_zPDFs.h5')}"
-        return f"{PDF_dir}/{PDF_name}"
-    
-    def get_SED_path(self, cat, ID, templates, lowz_zmax):
-        # should still include aper_diam here
-        min_flux_pc_err = str(cat.cat_path.replace(f"_{templates}", "").split("_")[-2].replace("pc", ""))
-        SED_dir = f"{funcs.split_dir_name(cat.cat_path, 'dir')}SEDs/{str(min_flux_pc_err)}pc/{templates}"
-        if lowz_label == "zfree":
-            lowz_label = ""
-        SED_name = f"{str(ID)}{lowz_label}.spec"
-        return f"{SED_dir}/{SED_name}"
+    @staticmethod
+    def extract_PDFs(gal_property, IDs, PDF_paths):
+        # ensure this works if only extracting 1 galaxy
+        if type(IDs) in [str, int, float]:
+            IDs = [int(IDs)]
+        if type(PDF_paths) == str:
+           PDF_paths = [PDF_paths]
+
+        # EAZY only has redshift PDFs
+        if gal_property != "z":
+            return list(np.full(len(IDs), None))
+        else:
+            # ensure the correct type 
+            assert type(PDF_paths) in [list, np.ndarray], galfind_logger.critical(f"type(data_paths) = {type(PDF_paths)} not in [list, np.array]!")
+            assert type(IDs) in [list, np.ndarray], galfind_logger.critical(f"type(IDs) = {type(IDs)} not in [list, np.array]!")
+            # ensure the correct array size
+            assert len(IDs) == len(PDF_paths), galfind_logger.critical(f"len(IDs) = {len(IDs)} != len(data_paths) = {len(PDF_paths)}!")
+            # ensure all data_paths are the same and are of .h5 type
+            assert all(PDF_path == PDF_paths[0] for PDF_path in PDF_paths), galfind_logger.critical("All data_paths must be the same!")
+            assert PDF_paths[0][-3:] == ".h5", galfind_logger.critical(f"{PDF_paths[0]} must have .h5 file extension")
+            # open .h5 file
+            hf = h5py.File(PDF_paths[0], "r")
+            hf_z = np.array(hf["z"])
+            # extract redshift PDF for each ID
+            redshift_pdfs = [Redshift_PDF(hf_z, np.array(hf[f"ID={str(int(ID))}"]["p(z)"])) \
+                for ID in tqdm(IDs, total = len(IDs), desc = "Constructing redshift PDFs")]
+            # close .h5 file
+            hf.close()
+            return redshift_pdfs

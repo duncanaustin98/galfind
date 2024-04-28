@@ -33,6 +33,9 @@ class SED:
         self.wavs = wavs * wav_units
         self.mags = mags * mag_units
         #self.mag_units = mag_units
+
+    def __str__(self):
+        return "LOADED SED\n"
     
     def convert_wav_units(self, units, update = True):
         wavs = self.wavs.to(units)

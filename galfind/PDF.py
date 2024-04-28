@@ -10,9 +10,11 @@ class PDF:
     def __init__(self, property_name, x, p_x):
         self.property_name = property_name
         self.x = x
-        self.p_x = p_x
-        # ensure it is normalized
-        assert(np.trapz(p_x, x) == 1)
+        # normalize to np.trapz(p_x, x) == 1
+        self.p_x = p_x / np.trapz(p_x, x)
+
+    def __str__(self):
+        return f"LOADED PDF FOR {self.property_name}"
 
     @classmethod
     def from_1D_arr(cls):
@@ -44,8 +46,8 @@ class Redshift_PDF(PDF):
         z, p_z = code.extract_z_PDF(data_path, ID)
         return cls(z, p_z)
     
-    def integrate_between_lims(self, delta_z, zbest = None, z_min = config["SEDFitting"].getboolean("Z_MIN"), \
-            z_max = config["SEDFitting"].getboolean("Z_MAX")):
+    def integrate_between_lims(self, delta_z, zbest = None, z_min = config["SEDFitting"].get("Z_MIN"), \
+            z_max = config["SEDFitting"].get("Z_MAX")):
         # find best fitting redshift from peak of the PDF distribution
         if type(zbest) == type(None):
             zbest = self.find_peak(0) # find first peak

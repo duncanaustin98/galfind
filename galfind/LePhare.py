@@ -23,11 +23,12 @@ from . import useful_funcs_austind as funcs
 
 class LePhare(SED_code):
     
+    galaxy_property_dict = {"z": "Z_BEST", "mass": "MASS_BEST", "chi_sq": "CHI_BEST"}
+    galaxy_property_errs_dict = {}
+    available_templates = ["BC03"]
+
     def __init__(self):
-        #ID_label = "IDENT"
-        galaxy_property_dict = {"z_phot": "Z_BEST", "mass": "MASS_BEST", "chi_sq": "CHI_BEST"}
-        available_templates = []
-        super().__init__(galaxy_property_dict, available_templates)
+        super().__init__(self.galaxy_property_dict, self.galaxy_property_errs_dict, self.available_templates)
     
     def make_in(self, cat, units = u.ABmag, fix_z = False, *args, **kwargs): # from FITS_organiser.py
         lephare_in_path = f"{self.code_dir}/input/{cat.data.instrument.name}/{cat.data.version}/{cat.data.survey}/{cat.cat_name.replace('.fits', '')}_{cat.cat_creator.min_flux_pc_err}pc.in"
@@ -84,6 +85,21 @@ class LePhare(SED_code):
         # LePhare bash script python wrapper
         process = subprocess.Popen([f"{config['DEFAULT']['GALFIND_DIR']}/run_lephare.sh", lephare_config_path, in_path, out_path, config['DEFAULT']['GALFIND_DIR'], SED_folder, template_name])
         process.wait()
+
+    @staticmethod
+    def label_from_SED_fit_params(self, SED_fit_params):
+        assert("code" in SED_fit_params.keys() and "templates" in SED_fit_params.keys())
+        # first write the code name and then the template name
+        return f"{SED_fit_params['code'].__class__.__name__}_{SED_fit_params['templates']}"
+    
+    def SED_fit_params_from_label(self, label):
+        label_arr = label.split("_")
+        assert(len(label_arr) == 2)
+        assert(label_arr[1] in self.available_templates)
+        return {"code": self, "templates": label_arr[1]}
+
+    def galaxy_property_labels(self, gal_property, SED_fit_params):
+        pass
     
     def make_fits_from_out(self, out_path, *args, **kwargs): # from TXT_to_FITS_converter.py
         fits_out_path = self.out_fits_name(out_path, *args, **kwargs)
@@ -127,41 +143,39 @@ class LePhare(SED_code):
         fits_table.writeto(fits_out_path, overwrite = True)
         return fits_out_path
     
-    def out_fits_name(self, out_path):
-        return out_path.replace(".out", "_LePhare.fits")
+    @staticmethod
+    def get_out_paths(out_path, SED_fit_params, IDs):
+        return NotImplementedError
+        #return out_path.replace(".out", "_LePhare.fits")
     
-    def extract_SEDs(self, cat_path, ID, units = u.ABmag, low_z_run = False):
+    @staticmethod
+    def extract_SEDs(IDs, SED_paths):
         pass
     
-    def extract_z_PDF(self, cat_path, ID, low_z_run = False):
-        str_ID = "0" * (9 - len(str(ID))) + str(ID)
-        print("ID = " + str_ID)
+    @staticmethod
+    def extract_PDFs(gal_property, IDs, PDF_paths):
+        pass
+        # str_ID = "0" * (9 - len(str(ID))) + str(ID)
+        # print("ID = " + str_ID)
 
-        z = []
-        PDF = []
-        reached_output_format = False
-        with open(self.z_PDF_path_from_cat_path(cat_path, ID, low_z_run)) as open_file:
-            while True:
-                line = open_file.readline()
-                # start at z = 0
-                if line.startswith("  0.00000"):
-                    reached_output_format = True
-                if reached_output_format:
-                    line = line.replace("  "," ")
-                    line = line.replace("\n", "")
-                    z_PDF = line.split(" ")
-                    z_PDF.remove(z_PDF[0])
-                    z.append(float(z_PDF[0]))
-                    PDF.append(float(z_PDF[1]))
-                
-                # end at z = 25
-                if line.startswith(" 25.00000"):
-                    break
-            open_file.close()
-        return z, PDF
-    
-    def get_z_PDF_path(self, cat_path, ID, low_z_run = False):
-        pass
-    
-    def get_SED_path(self, cat_path, ID, low_z_run = False):
-        pass
+        # z = []
+        # PDF = []
+        # reached_output_format = False
+        # with open(self.z_PDF_path_from_cat_path(cat_path, ID, low_z_run)) as open_file:
+        #     while True:
+        #         line = open_file.readline()
+        #         # start at z = 0
+        #         if line.startswith("  0.00000"):
+        #             reached_output_format = True
+        #         if reached_output_format:
+        #             line = line.replace("  "," ")
+        #             line = line.replace("\n", "")
+        #             z_PDF = line.split(" ")
+        #             z_PDF.remove(z_PDF[0])
+        #             z.append(float(z_PDF[0]))
+        #             PDF.append(float(z_PDF[1]))
+        #         # end at z = 15
+        #         if line.startswith(" 25.00000"):
+        #             break
+        #     open_file.close()
+        # return z, PDF
