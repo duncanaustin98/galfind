@@ -85,19 +85,21 @@ def calc_contamination(fig, ax, survey, instrument, x_name, y_name, z_label, cro
     contam_binned = interloper_binned / tot_binned
     
     if plot:
+        ax.grid(True)
         im = ax.imshow(contam_binned, extent = (min(x_bins), max(x_bins), min(y_bins), max(y_bins)), \
-                       cmap = cmap_name, vmin = 0., vmax = 1., aspect = "auto")
-        ax.set_xlabel(var_labels[x_name])
-        ax.set_ylabel(var_labels[y_name])
+                       cmap = cmap_name, vmin = 0., vmax = 1., aspect = "auto", origin = "lower")
+        ax.set_xlabel(var_labels[x_name], fontsize = 22.)
+        ax.set_ylabel(var_labels[y_name], fontsize = 22.)
+        ax.tick_params(axis = 'both', which = 'major', labelsize = 20.)
         if save:
             ax.yaxis.set_label_position("right")
             ax.tick_params(labelright = True)
             plt.subplots_adjust(wspace = 0.05)
             zlabel = f"{z_bin_[0]}<z<{z_bin_[1]}"
-            fig.suptitle(f"{survey}, N={len(interloper_tab)}/{len(tab)}, {zlabel}", y = 0.95)
+            fig.suptitle(f"{survey}, N={len(interloper_tab)}/{len(tab)}, {zlabel}", y = 0.95, fontsize = 22.)
             save_path = f"{config['DEFAULT']['GALFIND_WORK']}/Bagpipes/EPOCHS_III/plots/contamination/{survey}_{zlabel}_contamination_{frame}.png"
             os.makedirs("/".join(save_path.split("/")[:-1]), exist_ok = True)
-            plt.savefig(save_path)
+            plt.savefig(save_path, bbox_inches='tight')
             plt.show()
         return contam_binned, x_bins, y_bins, im
     else:
@@ -154,8 +156,8 @@ def calc_contamination_beta_binned(ax, galfind_tab, pipes_tab = Table(), x_name 
             print(np.array(x[np.argwhere(x_bin_no >= len(x_bins))]), np.array(y[np.argwhere(x_bin_no >= len(x_bins))]), np.array(IDs[np.argwhere(x_bin_no >= len(x_bins))]))
             print(np.array(x[np.argwhere(y_bin_no >= len(y_bins))]), np.array(y[np.argwhere(y_bin_no >= len(y_bins))]), np.array(IDs[np.argwhere(y_bin_no >= len(y_bins))]))
             EPOCHS_III_special_cases = {"M_UV": {"NGDEEP": {15291: 0., 15409: 0.2, 17230: 0.1}, "NEP-2": {8980: 0.}, "NEP-3": {16814: 0.25}, "NEP-4": {10695: 0.25, 12803: 0.}, "GLASS": {4546: 0.1}, \
-                                        "JADES-Deep-GS": {1577: 0., 4054: 0.3, 12044: 0., 23744: 0., 29617: 0., 30485: 0., 36222: 0.}}, "mass": {"CEERSP1": {7463: 0.}, "CEERSP2": {7919: 0.}, "CEERSP5": {7520: 0., 7857: 0.}, "CEERSP7": {8028: 0., 9601: 0.}, \
-                                        "CEERSP8": {2503: 0., 2777: 0.}, "JADES-Deep-GS": {29617: 0., 36222: 0., 36673: 1.}, "NEP-2": {8980: 0.}, "NEP-4": {12803: 0.}, "NGDEEP": {2330: 0., 15291: 0., 15409: 0.}}}
+                "JADES-Deep-GS": {1577: 0., 4054: 0.3, 12044: 0., 23744: 0., 29617: 0., 30485: 0., 36222: 0.}}, "mass": {"CEERSP1": {7463: 0.}, "CEERSP2": {7919: 0.}, "CEERSP5": {7520: 0., 7857: 0.}, "CEERSP7": {8028: 0., 9601: 0.}, \
+                "CEERSP8": {2503: 0., 2777: 0.}, "JADES-Deep-GS": {29617: 0., 36222: 0., 36673: 1.}, "NEP-2": {8980: 0.}, "NEP-4": {12803: 0.}, "NGDEEP": {2330: 0., 15291: 0., 15409: 0.}}}
             cont = [contam_binned[y_bin - 1][x_bin - 1] if x_bin < len(x_bins) and y_bin < len(y_bins) else EPOCHS_III_special_cases[x_name][survey][ID] for ID, x_bin, y_bin in zip(IDs, x_bin_no, y_bin_no)]
             print(IDs[np.where(np.isnan(cont))], x[np.where(np.isnan(cont))], y[np.where(np.isnan(cont))])
             for k in np.where(np.isnan(cont))[0]:
@@ -199,7 +201,7 @@ def calc_contamination_beta_binned(ax, galfind_tab, pipes_tab = Table(), x_name 
     return combined_tab
 
 def contam_main():
-    surveys = ["JADES", "CEERS", "El-Gordo", "GLASS", "MACS-0416", "NEP", "NGDEEP"] # ["CLIO", "SMACS-0723"]
+    surveys = ["JADES", "El-Gordo"] #, "CEERS", "El-Gordo", "GLASS", "MACS-0416", "NEP", "NGDEEP"] # ["CLIO", "SMACS-0723"]
     instruments = ["ACS_WFC+NIRCam" for i in range(len(surveys))]
     frame = "obs"
     x_name_arr = ["M_UV", "mass"]
@@ -214,12 +216,15 @@ def contam_main():
         for survey, instrument in zip(surveys, instruments):
             fig, ax = plt.subplots(ncols = len(x_name_arr), figsize = (12, 6), sharey = True)
             for j, (ax_, x_name) in enumerate(zip(ax, x_name_arr)):
-                calc_contamination_beta_binned(ax_, galfind_tab, pipes_tab, x_name, plot_survey = survey)
+                #calc_contamination_beta_binned(ax_, galfind_tab, pipes_tab, x_name, plot_survey = survey)
                 im = calc_contamination(fig, ax_, survey, instrument, x_name, y_name, frame_names[frame]["z"], \
                                    frame = frame, plot = True, save = True if j == len(x_name_arr) - 1 else False)[3]
                 if j == 0:
-                    fig.colorbar(im, ax = ax.ravel(), label = "Contamination", location = "bottom", \
-                                 orientation = "horizontal", shrink = 0.9, aspect = 40., anchor = (0.5, -2.))
+                    cbar = fig.colorbar(im, ax = ax.ravel(), location = "bottom", \
+                        orientation = "horizontal", shrink = 0.9, aspect = 40., anchor = (0.5, -2.2))
+                    cbar.ax.tick_params(labelsize = 22.)
+                    cbar.set_label("Contamination", fontsize = 22.)
+                    
     if save_data:
         save_path = f"{config['DEFAULT']['GALFIND_WORK']}/Bagpipes/EPOCHS_III/EPOCHS_III_contamination_data.h5"
         os.makedirs("/".join(save_path.split("/")[:-1]), exist_ok = True)
@@ -249,7 +254,7 @@ def add_nan_line(ax, im, x_bins, y_bins, value = 0., color = "red", ls = "-."):
     return lines
 
 def completeness_main():
-    surveys = ["NGDEEP"]
+    surveys = ["JADES", "El-Gordo"]
     plot = True
     frame = "int"
     x_name_arr = ["M_UV", "mass"]
@@ -311,5 +316,5 @@ def completeness_main():
     hf.close()
 
 if __name__ == "__main__":
-    #contam_main()
-    completeness_main()
+    contam_main()
+    #completeness_main()

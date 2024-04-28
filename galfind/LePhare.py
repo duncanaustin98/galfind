@@ -174,7 +174,6 @@ class LePhare(SED_code):
         #             z_PDF.remove(z_PDF[0])
         #             z.append(float(z_PDF[0]))
         #             PDF.append(float(z_PDF[1]))
-                
         #         # end at z = 15
         #         if line.startswith(" 25.00000"):
         #             break

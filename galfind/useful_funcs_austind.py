@@ -28,8 +28,7 @@ import seaborn as sns
 from scipy.interpolate import interp1d
 import inspect
 
-from . import config
-from . import astropy_cosmo
+from . import config, galfind_logger, astropy_cosmo
 
 # fluxes and magnitudes
 
@@ -355,6 +354,10 @@ class Jaguar(Simulation):
 
 def make_dirs(path):
     os.makedirs(split_dir_name(path, "dir"), exist_ok = True)
+    try:
+        os.chmod(split_dir_name(path, "dir"), 0o777)
+    except PermissionError:
+        galfind_logger.warning(f"Could not change permissions of {path} to 777.")
 
 def calc_errs_from_cat(cat, col_name, instrument):
     if col_name in LePhare_col_names:

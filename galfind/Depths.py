@@ -442,7 +442,7 @@ def show_depths(nmad_grid, num_grid, step_size, region_radius_used_pix, labels =
     #axs[7].remove()
     #plt.tight_layout()
     if type(save_path) != type(None):
-        plt.savefig(save_path)
+        plt.savefig(save_path, dpi=300, bbox_inches='tight')
         print(f"Saved depths plot to {save_path}")
     if show:
         plt.show()

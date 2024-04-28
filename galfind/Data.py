@@ -32,6 +32,7 @@ import time
 import glob
 import astropy.units as u
 import os
+import sys
 from astropy.wcs import WCS
 import matplotlib.pyplot as plt
 from matplotlib import cm
@@ -54,7 +55,7 @@ from .decorators import run_in_dir, hour_timer, email_update
 class Data:
     
     def __init__(self, instrument, im_paths, im_exts, im_pixel_scales, im_shapes, im_zps, wht_paths, wht_exts, rms_err_paths, rms_err_exts, \
-        seg_paths, mask_paths, cluster_mask_path, blank_mask_path, survey, version, cat_path = "", is_blank = True, alignment_band = "F444W"):
+        seg_paths, mask_paths, cluster_mask_path, blank_mask_path, survey, version, cat_path = "", is_blank = True, alignment_band = "F444W", RGB_method = "trilogy"):
         
         # sort dicts from blue -> red bands in ascending wavelength order
         self.im_paths = dict(sorted(im_paths.items()))
@@ -105,6 +106,7 @@ class Data:
             else:
                 # make an pixel mask automatically for the band
                 mask_paths[band] = self.make_mask(band)
+            
         self.mask_paths = dict(sorted(mask_paths.items()))
 
         if is_blank:
@@ -147,6 +149,16 @@ class Data:
             except AssertionError:
                 galfind_logger.info(f"No common {label}")
 
+        # make RGB using the default method if the science images have a common shape
+        if "SCI SHAPE" in self.common.keys() and type(RGB_method) != type(None):
+            split_bands = np.split(self.instrument.band_names, \
+                [int(np.round(len(self.instrument.band_names) / 3, 0)), -int(np.round(len(self.instrument.band_names) / 3, 0))])
+            self.make_RGB(list(split_bands[0]), list(split_bands[1]), list(split_bands[2]), RGB_method)
+            #split_bands = np.take(self.instrument.band_names, [0, int(len(self.instrument.band_names) / 2), -1])
+            #self.make_RGB([split_bands[0]], [split_bands[1]], [split_bands[2]], RGB_method)
+
+        print(str(self))
+
     @classmethod
     def from_pipeline(cls, survey, version = "v9", instruments = ['NIRCam', 'ACS_WFC', 'WFC3_IR'], excl_bands = [], pix_scales = ['30mas', '60mas']):
         instruments_obj = {'NIRCam': NIRCam(excl_bands = excl_bands), 'ACS_WFC': ACS_WFC(excl_bands = excl_bands), 'WFC3_IR': WFC3_IR(excl_bands = excl_bands)}
@@ -167,50 +179,50 @@ class Data:
         depth_dir = {}
         is_blank = is_blank_survey(survey)
 
+        version_to_dir = {"v8b": "mosaic_1084_wispfix", "v8c": "mosaic_1084_wispfix2", "v8d": "mosaic_1084_wispfix3", \
+            "v9": "mosaic_1084_wisptemp2", "v10": "mosaic_1084_wispscale", "v11": "mosaic_1084_wispnathan"}
+
         for instrument in instruments:
             instrument = instruments_obj[instrument]
             if instrument.name == "NIRCam":
-                if version == "v7": #pmap == "0995":
-                    ceers_im_dirs = {f"CEERSP{str(i + 1)}": f"ceers/mosaic_0995/P{str(i + 1)}" for i in range(10)}
-                    survey_im_dirs = {"SMACS-0723": "SMACS-0723/mosaic_0995", "GLASS": "glass_0995/mosaic_v5", "MACS-0416": "MACS0416/mosaic_0995_v1", \
-                               "El-Gordo": "elgordo/mosaic_0995_v1", "NEP": "NEP/mosaic", "NEP-2": "NEP-2/mosaic_0995", "NGDEEP": "NGDEEP/mosaic", \
-                                            "CLIO": "CLIO/mosaic_0995_2"} | ceers_im_dirs
-                elif version == "v8": #pmap == "1084":
-                    ceers_im_dirs = {f"CEERSP{str(i + 1)}": f"ceers/mosaic_1084/P{str(i + 1)}" for i in range(10)}
-                    survey_im_dirs = {"CLIO": "CLIO/mosaic_1084", "El-Gordo": "elgordo/mosaic_1084", "GLASS": "GLASS-12/mosaic_1084", "NEP": "NEP/mosaic_1084", \
-                                  "NEP-2": "NEP-2/mosaic_1084", "NEP-3": "NEP-3/mosaic_1084", "SMACS-0723": "SMACS0723/mosaic_1084", "MACS-0416": "MACS0416/mosaic_1084_v3"} | ceers_im_dirs
-                elif version == "v8a":
-                    ceers_im_dirs = {f"CEERSP{str(i + 1)}": f"CEERSP{str(i + 1)}/mosaic_1084_182" for i in range(10)}
-                    survey_im_dirs = {"CLIO": "CLIO/mosaic_1084_182", "El-Gordo": "elgordo/mosaic_1084_182", "NEP-1": "NEP-1/mosaic_1084_182", "NEP-2": "NEP-2/mosaic_1084_182", \
-                                      "NEP-3": "NEP-3/mosaic_1084_182", "NEP-4": "NEP-4/mosaic_1084_182", "MACS-0416": "MACS0416/mosaic_1084_182", "GLASS": "GLASS-12/mosaic_1084_182", "SMACS-0723": "SMACS0723/mosaic_1084_182"} | ceers_im_dirs
-                elif version == "v8b":
-                    survey_im_dirs = {survey: f"{survey}/mosaic_1084_wispfix"}
-                elif version == "v8c":
-                    survey_im_dirs = {survey: f"{survey}/mosaic_1084_wispfix2"}
-                elif version == "v8d":
-                    survey_im_dirs = {survey: f"{survey}/mosaic_1084_wispfix3"}
-                elif version == "v8e" or version == "v8f" or version == "v9":
-                    survey_im_dirs = {survey: f"{survey}/mosaic_1084_wisptemp2"}
-                elif version == "lit_version":
-                    survey_im_dirs = {"JADES-DR1": "JADES/DR1"}
-                elif version == 'v9' or version[:2] == "v9":
-                    survey_im_dirs = {survey: f"{survey}/mosaic_1084_wisptemp2"}
-                elif version == 'v10' or version[:2] == "v10":
-                    survey_im_dirs = {survey: f"{survey}/mosaic_1084_wispscale"}
-                elif version == "v11" or version[:-2] == "v11":
-                    survey_im_dirs = {survey: f"{survey}/mosaic_1084_wispnathan"}
-                survey_im_dirs = {key: f"/raid/scratch/data/jwst/{value}" for (key, value) in survey_im_dirs.items()}
-                survey_dir = survey_im_dirs[survey]
+                # should generalize this more
+                if version in ["v7", "v8", "v8a", "v8e", "v8f", "lit_version"]:
+                    if version == "v7":
+                        ceers_im_dirs = {f"CEERSP{str(i + 1)}": f"ceers/mosaic_0995/P{str(i + 1)}" for i in range(10)}
+                        survey_im_dirs = {"SMACS-0723": "SMACS-0723/mosaic_0995", "GLASS": "glass_0995/mosaic_v5", "MACS-0416": "MACS0416/mosaic_0995_v1", \
+                                "El-Gordo": "elgordo/mosaic_0995_v1", "NEP": "NEP/mosaic", "NEP-2": "NEP-2/mosaic_0995", "NGDEEP": "NGDEEP/mosaic", \
+                                                "CLIO": "CLIO/mosaic_0995_2"} | ceers_im_dirs
+                    elif version == "v8": #pmap == "1084":
+                        ceers_im_dirs = {f"CEERSP{str(i + 1)}": f"ceers/mosaic_1084/P{str(i + 1)}" for i in range(10)}
+                        survey_im_dirs = {"CLIO": "CLIO/mosaic_1084", "El-Gordo": "elgordo/mosaic_1084", "GLASS": "GLASS-12/mosaic_1084", "NEP": "NEP/mosaic_1084", \
+                                    "NEP-2": "NEP-2/mosaic_1084", "NEP-3": "NEP-3/mosaic_1084", "SMACS-0723": "SMACS0723/mosaic_1084", "MACS-0416": "MACS0416/mosaic_1084_v3"} | ceers_im_dirs
+                    elif version == "v8a":
+                        ceers_im_dirs = {f"CEERSP{str(i + 1)}": f"CEERSP{str(i + 1)}/mosaic_1084_182" for i in range(10)}
+                        survey_im_dirs = {"CLIO": "CLIO/mosaic_1084_182", "El-Gordo": "elgordo/mosaic_1084_182", "NEP-1": "NEP-1/mosaic_1084_182", "NEP-2": "NEP-2/mosaic_1084_182", \
+                                        "NEP-3": "NEP-3/mosaic_1084_182", "NEP-4": "NEP-4/mosaic_1084_182", "MACS-0416": "MACS0416/mosaic_1084_182", "GLASS": "GLASS-12/mosaic_1084_182", "SMACS-0723": "SMACS0723/mosaic_1084_182"} | ceers_im_dirs
+                    elif version == "v8e" or version == "v8f":
+                        survey_im_dirs = {survey: f"{survey}/mosaic_1084_wisptemp2"}
+                    elif version == "lit_version":
+                        survey_im_dirs = {"JADES-DR1": "JADES/DR1"}
+                    survey_im_dirs = {key: f"/raid/scratch/data/jwst/{value}" for (key, value) in survey_im_dirs.items()}
+                    survey_dir = survey_im_dirs[survey]
+                else:
+                    assert version.split("_")[0] in version_to_dir.keys(), galfind_logger.critical(f"Invalid version = {version}. {version.split('_')[0]} must be in {np.array(version_to_dir.keys())} Terminating!")
+                    survey_dir = f"{config['DEFAULT']['GALFIND_DATA']}/{instrument.facility.lower()}/{survey}/{version_to_dir[version.split('_')[0]]}"
+                    if len(version.split('_')) > 1:
+                        survey_dir += f"_{'_'.join(version.split('_')[1:])}"
 
                 if version == "lit_version":
                     im_path_arr = np.array(glob.glob(f"{survey_dir}/*_drz.fits"))
                 else:
-                    im_path_arr = np.array(glob.glob(f"{survey_dir}/*_i2d*.fits"))
-
-                # obtain available bands from imaging without having to hard code these
-                bands = np.array([split_path.upper() for path in im_path_arr for i, split_path in \
-                        enumerate(path.split("-")[-1].split("/")[-1].split("_")) if split_path.upper() in instrument.band_names])
+                    #im_path_arr = np.array(glob.glob(f"{survey_dir}/*_i2d*.fits"))
+                    im_path_arr = np.array(glob.glob(f"{survey_dir}/*.fits"))
                 
+                # obtain available bands from image paths
+                bands = np.array([band for path in im_path_arr for band in instrument.band_names if band.upper() in path \
+                    or band.lower() in path or band.lower().replace('f', 'F') in path or band.upper().replace('F', 'f') in path])
+                galfind_logger.warning("Should check more thoroughly to ensure there are not multiple band names in an image path!")
+
                 # If band not used in instrument, remove it
                 for band in instrument.band_names:
                     if band not in bands:
@@ -335,7 +347,7 @@ class Data:
                             
                         elif instrument.name == 'WFC3_IR':
                         # Taken from Appendix A of https://www.stsci.edu/files/live/sites/www/files/home/hst/instrumentation/wfc3/documentation/instrument-science-reports-isrs/_documents/2020/WFC3-ISR-2020-10.pdf
-                            wfc3ir_zps = {'f098M': 25.661, 'f105W': 26.2637, 'f110W': 26.8185, 'f125W': 26.231, 'f140W': 26.4502, 'f160W': 25.9362}
+                            wfc3ir_zps = {'F098M': 25.661, 'F105W': 26.2637, 'F110W': 26.8185, 'F125W': 26.231, 'F140W': 26.4502, 'F160W': 25.9362}
                             im_zps[band_name] = wfc3ir_zps[band_name]
                         # Need to move my segmentation maps and masks to the correct place
 
@@ -366,12 +378,17 @@ class Data:
                 fits_mask_paths_ += glob.glob(f"{config['DEFAULT']['GALFIND_WORK']}/Masks/{survey}/fits_masks/*{band.lower().replace('f', 'F')}*")
                 fits_mask_paths_ += glob.glob(f"{config['DEFAULT']['GALFIND_WORK']}/Masks/{survey}/fits_masks/*{band.upper().replace('F', 'f')}*")
                 fits_mask_paths_ = list(set(fits_mask_paths_))
+                # Exclude mask path if it contains the phrase 'artifact'
+                fits_mask_paths_ = [path for path in fits_mask_paths_ if 'artifact' not in path]
+
                 # exclude masks that include other filters
                 delete_indices = []
+                # create a new combined instrument including all possible bands
+                new_instrument = comb_instrument.new_instrument()
+                new_instrument.remove_band(band)
                 for j, path in enumerate(fits_mask_paths_):
-                    for k, band_ in enumerate(np.delete(comb_instrument.band_names, i)):
-                        if band_.lower() in path or band_.upper() in path or band_.lower().replace('f', 'F') \
-                                in path or band_.upper().replace('F', 'f') in path:
+                    for k, band_ in enumerate(new_instrument.band_names):
+                        if band_.lower() in path or band_.upper() in path or band_.lower().replace('f', 'F') in path or band_.upper().replace('F', 'f') in path:
                             delete_indices.append(j)
                             break
                 fits_mask_paths_ = np.delete(fits_mask_paths_, delete_indices)
@@ -384,6 +401,8 @@ class Data:
                     mask_paths_ += glob.glob(f"{config['DEFAULT']['GALFIND_WORK']}/Masks/{survey}/*{band.lower().replace('f', 'F')}*")
                     mask_paths_ += glob.glob(f"{config['DEFAULT']['GALFIND_WORK']}/Masks/{survey}/*{band.upper().replace('F', 'f')}*")
                     mask_paths_ = list(set(mask_paths_))
+                    # Exclude mask path if it contains the phrase 'artifact'
+                    mask_paths_ = [path for path in mask_paths_ if 'artifact' not in path]
                     # exclude masks that include other filters
                     delete_indices = []
                     for j, path in enumerate(mask_paths_):
@@ -577,6 +596,15 @@ class Data:
         except:
             wht = None
         return wht
+
+      
+    def load_rms_err(self, band):
+        try:
+            rms_err = fits.open(self.rms_err_paths[band])[self.rms_err_exts[band]].data
+        except:
+            rms_err = None
+        return rms_err
+    
     
     def combine_seg_data_and_mask(self, band = None, seg_data = None, mask = None):
         if type(seg_data) != type(None) and type(mask) != type(None):
@@ -602,6 +630,48 @@ class Data:
         plt.ylabel("Y / pix")
         if show:
             plt.show()
+
+    def make_RGB(self, blue_bands = ["F090W"], green_bands = ["F200W"], red_bands = ["F444W"], method = "trilogy"):
+        # ensure all blue, green and red bands are contained in the data object
+        assert all(band in self.instrument.band_names for band in blue_bands + green_bands + red_bands), \
+            galfind_logger.warning(f"Cannot make galaxy RGB as not all {blue_bands + green_bands + red_bands} are in {self.instrument.band_names}")
+        # construct out_path
+        out_path = f"{config['RGB']['RGB_DIR']}/{self.version}/{self.survey}/{method}/B={'+'.join(blue_bands)},G={'+'.join(green_bands)},R={'+'.join(red_bands)}.png"
+        funcs.make_dirs(out_path)
+        if not os.path.exists(out_path):
+            # load RGB band paths including .fits image extensions
+            RGB_paths = {}
+            for colour, bands in zip(["B", "G", "R"], [blue_bands, green_bands, red_bands]):
+                RGB_paths[colour] = [f"{self.im_paths[band]}[{self.im_exts[band]}]" for band in bands]
+            if method == "trilogy":
+                # Write trilogy.in
+                in_path = out_path.replace(".png", "_trilogy.in")
+                with open(in_path, "w") as f:
+                    for colour, paths in RGB_paths.items():
+                        f.write(f"{colour}\n")
+                        for path in paths:
+                            f.write(f"{path}\n")
+                        f.write("\n")
+                    f.write("indir  /\n")
+                    f.write(f"outname  {funcs.split_dir_name(out_path, 'name').replace('.png', '')}\n")
+                    f.write(f"outdir  {funcs.split_dir_name(out_path, 'dir')}\n")
+                    f.write("samplesize 20000\n")
+                    f.write("stampsize  2000\n")
+                    f.write("showstamps  0\n")
+                    f.write("satpercent  0.001\n")
+                    f.write("noiselum    0.10\n")
+                    f.write("colorsatfac  1\n")
+                    f.write("deletetests  1\n")
+                    f.write("testfirst   0\n")
+                    f.write("sampledx  0\n")
+                    f.write("sampledy  0\n")
+                # Run trilogy
+                sys.path.insert(1, "/nvme/scratch/software/trilogy") # Not sure why this path doesn't work: config["Other"]["TRILOGY_DIR"]
+                from trilogy3 import Trilogy
+                galfind_logger.info(f"Making full trilogy RGB image at {out_path}")
+                Trilogy(in_path, images = None).run()
+            elif method == "lupton":
+                raise(NotImplementedError())
             
     def plot_mask_from_band(self, ax, band, show = True):
         mask = self.load_data(band, incl_mask = True)[4]
@@ -628,8 +698,34 @@ class Data:
             ax.add_artist(t)
 
     def make_mask(self, band, edge_mask_distance = 50, mask_stars = True, scale_extra = 0.2,
-            mask_a = 694.7, mask_b = 3.5, exclude_gaia_galaxies = True, angle = 0, edge_value = 0, 
+            mask_a_override = None, mask_b_override=None, exclude_gaia_galaxies = True, angle = 0, edge_value = 0, 
             element = 'ELLIPSE', gaia_row_lim = 500, plot = False):
+        
+        if 'NIRCam' not in self.instrument.name and mask_stars:
+            galfind_logger.critical(f"Mask making only implemented for NIRCam data!")
+            raise(Exception("Star mask making only implemented for NIRCam data!"))
+
+        star_pask_params = { # mask_a * exp(-mag / mask_b) is the form 
+            9000 * u.AA: {'mask_a': 1300, 'mask_b': 4},
+            11500 * u.AA: {'mask_a': 1300, 'mask_b': 4},
+            15000 * u.AA: {'mask_a': 1300, 'mask_b': 4},
+            20000 * u.AA: {'mask_a': 1300, 'mask_b': 4},
+            27700 * u.AA: {'mask_a': 1000, 'mask_b': 3.7},
+            35600 * u.AA: {'mask_a': 800, 'mask_b': 3.7},
+            44000 * u.AA: {'mask_a': 800, 'mask_b': 3.7},
+        }
+        if mask_a_override != None and mask_b_override != None:
+            mask_a = mask_a_override
+            mask_b = mask_b_override
+        else:
+            band_wavelength = self.instrument.band_wavelengths[band == self.instrument.band_names]
+            # Get closest wavelength parameters
+            closest_wavelength = min(star_pask_params.keys(), key = lambda x: abs(x - band_wavelength))
+            print(band, closest_wavelength)
+            mask_a = star_pask_params[closest_wavelength]['mask_a']
+            mask_b = star_pask_params[closest_wavelength]['mask_b']
+
+
         galfind_logger.info(f"Automasking {self.survey} {band}.")
 
         composite = lambda x_coord, y_coord, scale, angle: \
@@ -638,10 +734,10 @@ class Data:
             image
             composite({x_coord},{y_coord},{angle}) || composite=1
                 circle({x_coord},{y_coord},{163*scale}) ||
-                ellipse({x_coord},{y_coord},{29*scale},{730*scale},300.15) ||
-                ellipse({x_coord},{y_coord},{29*scale},{730*scale},240.00) ||
-                ellipse({x_coord},{y_coord},{29*scale},{730*scale},360.00) ||
-                ellipse({x_coord},{y_coord},{29*scale},{300*scale},269.48) ||'''
+                ellipse({x_coord},{y_coord},{29*scale**(2/3)},{730*scale},300.15) ||
+                ellipse({x_coord},{y_coord},{29*scale**(2/3)},{730*scale},240.00) ||
+                ellipse({x_coord},{y_coord},{29*scale**(2/3)},{730*scale},360.00) ||
+                ellipse({x_coord},{y_coord},{29*scale**(2/3)},{300*scale},269.48) ||'''
 
         # Load data
         im_data, im_header, seg_data, seg_header = self.load_data(band, incl_mask = False)
@@ -655,6 +751,7 @@ class Data:
         vertices_sky = wcs.all_pix2world(vertices_pix, 0)
 
         if mask_stars:
+        
             # Get list of Gaia stars in the polygon region
             Gaia.ROW_LIMIT = gaia_row_lim
             # Construct the ADQL query string
@@ -678,14 +775,16 @@ class Data:
             if exclude_gaia_galaxies:
                 gaia_stars = gaia_stars[gaia_stars['vari_best_class_name'] != 'GALAXY']
                 gaia_stars = gaia_stars[gaia_stars['classlabel_dsc_joint'] != 'galaxy']
-                
+                # Remove masked flux values
+                gaia_stars = gaia_stars[~np.isnan(gaia_stars['phot_g_mean_mag'])]
+            
+        
             ra_gaia = np.asarray(gaia_stars['ra'])
             dec_gaia = np.asarray(gaia_stars['dec'])
             x_gaia, y_gaia = wcs.all_world2pix(ra_gaia, dec_gaia, 0)
             
             # Generate mask scale for each star
             rmask_gaia_arcsec = mask_a * np.exp(-gaia_stars['phot_g_mean_mag'] / mask_b)
-
             # Update the catalog
             gaia_stars.add_column(Column(data = x_gaia, name = 'x_pix'))
             gaia_stars.add_column(Column(data = y_gaia, name = 'y_pix'))
@@ -693,7 +792,7 @@ class Data:
 
         # Diagnostic plot
         if plot:
-            fig = plt.figure(figsize=(10, 15))
+            fig = plt.figure(figsize=(10, 10))
             ax = fig.add_subplot(111, projection=wcs)
             stretch = vis.CompositeStretch(vis.LogStretch(), vis.ContrastBiasStretch(contrast = 30, bias = 0.08))    
             norm = ImageNormalize(stretch = stretch, vmin = 0.001, vmax = 10)
@@ -714,25 +813,23 @@ class Data:
             region_strings.append(region_obj.serialize(format = 'ds9'))
 
         stellar_mask = np.zeros(im_data.shape, dtype=bool)
-        for pos1, regions in tqdm(enumerate(diffraction_regions)):
-            for pos2, region in enumerate(regions):
-                if pos1 == 0 and pos2 == 0:
-                    composite_region = region
-                else:
-                    composite_region = composite_region | region
-                idx_large, _ = region.to_mask(mode = 'center').get_overlap_slices(im_data.shape)
-                stellar_mask[idx_large] = True
+        for regions in tqdm(diffraction_regions):
+            for region in regions:
+                idx_large, idx_little = region.to_mask(mode = 'center').get_overlap_slices(im_data.shape)
+                # idx_large is x,y box containing bounds of region in image
+                if idx_large is not None:
+                    stellar_mask[idx_large] = np.logical_or(region.to_mask().data[idx_little], stellar_mask[idx_large])
                 if plot:
                     artist = region.as_artist()
                     ax.add_patch(artist)
-        
+       
         # Mask image edges
         fill = im_data == edge_value #true false array of where 0's are
         edges = fill * 1 #convert to 1 for true and 0 for false
         edges = edges.astype(np.uint8) #dtype for cv2
         print('Masking edges')
         if element == 'RECT':
-            kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (edge_mask_distance,edge_mask_distance)) 
+            kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (edge_mask_distance,edge_mask_distance))
         elif element == 'ELLIPSE':
             kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (edge_mask_distance,edge_mask_distance))
         else:
@@ -750,23 +847,52 @@ class Data:
         if plot:
             ax.imshow(full_mask, cmap='Reds', origin='lower', interpolation='None')
         
+        # Check for artefacts mask to combine with exisitng mask
+        files = glob.glob(f'{self.mask_dir}/{band}*.reg')
+        # Check for 'artifact' in file name
+        files = [file for file in files if 'artifact' in file]
+        artifact_mask = None
+        if len(files) > 0:
+            artifact_mask = np.zeros(im_data.shape, dtype=bool)
+            print(f'Found {len(files)} artifact masks')
+            for file in files:
+                print(f'Adding mask {file}')
+                mask = Regions.read(file)
+                
+                for region in mask:
+                    region = region.to_pixel(wcs)
+                    idx_large, idx_little = region.to_mask(mode = 'center').get_overlap_slices(im_data.shape)
+                    if idx_large is not None:
+                        full_mask[idx_large] = np.logical_or(region.to_mask().data[idx_little], full_mask[idx_large])
+                        artifact_mask[idx_large] = np.logical_or(region.to_mask().data[idx_little], artifact_mask[idx_large])
+
+
         # Save mask - could save independent layers as well e.g. stars vs edges vs manual mask etc
         output_mask_path = f'{self.mask_dir}/fits_masks/{band}_basemask.fits'
+
         os.makedirs("/".join(output_mask_path.split("/")[:-1]), exist_ok = True)
         full_mask_hdu = fits.ImageHDU(full_mask.astype(np.uint8), header = wcs.to_header(), name = "MASK")
         stellar_mask_hdu = fits.ImageHDU(stellar_mask.astype(np.uint8), header = wcs.to_header(), name = "STELLAR")
         edge_mask_hdu = fits.ImageHDU(edge_mask.astype(np.uint8), header = wcs.to_header(), name = "EDGE")
-        hdu = fits.HDUList([fits.PrimaryHDU(), full_mask_hdu, stellar_mask_hdu, edge_mask_hdu])
+        hdulist = [fits.PrimaryHDU(), full_mask_hdu, stellar_mask_hdu, edge_mask_hdu]
+        if artifact_mask is not None:
+            artifact_mask_hdu = fits.ImageHDU(artifact_mask.astype(np.uint8), header = wcs.to_header(), name = "ARTIFACT")
+            hdulist.append(artifact_mask_hdu)
+
+        hdu = fits.HDUList(hdulist)
         hdu.writeto(output_mask_path, overwrite = True)
+        # Change permission to read/write for all
+        os.chmod(output_mask_path, 0o777)
 
         if plot:
             # Save mask plot
-            fig.savefig(f'{self.mask_dir}/{band}_mask.png')
+            fig.savefig(f'{self.mask_dir}/{band}_mask.png', dpi=300)
 
         # Save ds9 region 
-        # with open(f'{self.mask_dir}/{band}_starmask.reg', 'w') as f:
-        #     for region in region_strings:
-        #         f.write(region + '\n')
+        with open(f'{self.mask_dir}/{band}_starmask.reg', 'w') as f:
+            for region in region_strings:
+                f.write(region + '\n')
+        os.chmod(f'{self.mask_dir}/{band}_starmask.reg', 0o777)
         return output_mask_path
     
     #@staticmethod
@@ -1198,7 +1324,7 @@ class Data:
             return mask_path
     
     # can be simplified with new masks
-    def calc_unmasked_area(self, masking_instrument_or_band_name = "NIRCam", forced_phot_band = ["f277W", "f356W", "f444W"]):
+    def calc_unmasked_area(self, masking_instrument_or_band_name = "NIRCam", forced_phot_band = ["F277W", "F356W", "F444W"]):
         
         if "PIXEL SCALE" not in self.common.keys():
             galfind_logger.warning("Masking by bands with different pixel scales is not supported!")
@@ -1489,7 +1615,7 @@ class Data:
                 hf.create_dataset(name_i, data = data_i)
             hf.close()
 
-            self.plot_depth(band, cat_creator, mode, aper_diam)
+        self.plot_depth(band, cat_creator, mode, aper_diam)
 
     def plot_depth(self, band, cat_creator, mode, aper_diam): #, **kwargs):
         if cat_creator == None:
