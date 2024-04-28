@@ -28,8 +28,7 @@ import seaborn as sns
 from scipy.interpolate import interp1d
 import inspect
 
-from . import config
-from . import astropy_cosmo
+from . import config, galfind_logger, astropy_cosmo
 
 # fluxes and magnitudes
 
@@ -93,9 +92,9 @@ def flux_pc_to_mag_err(flux_pc_err):
 def flux_image_to_Jy(fluxes, zero_points):
     # convert flux from image units to Jy
     if type(fluxes) in [list, np.array]:
-        return np.array([flux * (10 ** ((zero_points - 8.9) / -2.5)) for flux in fluxes])
+        return np.array([flux * (10 ** ((zero_points - 8.9) / -2.5)) for flux in fluxes]) * u.Jy
     else:
-        return np.array(fluxes * (10 ** ((zero_points - 8.9) / -2.5)))
+        return np.array(fluxes * (10 ** ((zero_points - 8.9) / -2.5))) * u.Jy
 
 def five_to_n_sigma_mag(five_sigma_depth, n):
     n_sigma_mag = -2.5 * np.log10(n / 5) + five_sigma_depth
@@ -240,20 +239,30 @@ def cat_from_path(path, crop_names = None):
     cat.meta = {**cat.meta, **{"cat_path": path}}
     return cat
 
-def fits_cat_to_np(fits_cat, column_labels):
+def fits_cat_to_np(fits_cat, column_labels, reshape_by_aper_diams = True):
     new_cat = fits_cat[column_labels].as_array()
     if type(new_cat) == np.ma.core.MaskedArray:
         new_cat = new_cat.data
-    n_aper_diams = len(new_cat[0][0])
-    new_cat = np.lib.recfunctions.structured_to_unstructured(new_cat).reshape(len(fits_cat), len(column_labels), n_aper_diams)
+    if reshape_by_aper_diams:
+        n_aper_diams = len(new_cat[0][0])
+        new_cat = np.lib.recfunctions.structured_to_unstructured(new_cat).reshape(len(fits_cat), len(column_labels), n_aper_diams)
+    else:
+        new_cat = np.lib.recfunctions.structured_to_unstructured(new_cat).reshape(len(fits_cat), len(column_labels))
     return new_cat
 
 def lowz_label(lowz_zmax):
     if lowz_zmax != None:
         label = f"zmax={lowz_zmax:.1f}"
     else:
-        label = ""
+        label = "zfree"
     return label
+
+def zmax_from_lowz_label(label):
+    if label == "zfree":
+        zmax = None
+    else:
+        zmax = float(label.replace("zmax=", ""))
+    return zmax
 
 def get_z_PDF_paths(fits_cat, IDs, codes, templates_arr, lowz_zmaxs, fits_cat_path = None):
     try:
@@ -271,13 +280,20 @@ def get_SED_paths(fits_cat, IDs, codes, templates_arr, lowz_zmaxs, fits_cat_path
     return [code.SED_paths_from_cat_path(fits_cat_path, ID, templates, lowz_label(lowz_zmax)) for code, templates, lowz_zmax in \
             zip(codes, templates_arr, lowz_zmaxs) for ID in IDs]
 
+def ordinal(n: int):
+    if 11 <= (n % 100) <= 13:
+        suffix = 'th'
+    else:
+        suffix = ['th', 'st', 'nd', 'rd', 'th'][min(n % 10, 4)]
+    return str(n) + suffix
+
 # beta slope function
 def beta_slope_power_law_func(wav_rest, A, beta):
     return (10 ** A) * (wav_rest ** beta)
 
 # GALFIND specific functions
 def GALFIND_SED_column_labels(codes, lowz_zmaxs, templates_arr, gal_property):
-    return [code.galaxy_property_labels(gal_property, templates, lowz_zmax) for code, lowz_zmax, templates in zip(codes, lowz_zmaxs, templates_arr)]
+    return [code.galaxy_property_labels(gal_property, templates, lowz_zmax) for code, templates in zip(codes, templates_arr) for lowz_zmax in lowz_zmaxs]
 
 def GALFIND_cat_path(SED_code_name, instrument_name, version, survey, forced_phot_band_name, min_flux_pc_err, cat_type = "loc_depth", masked = True, templates = "fsps_larson"):
     # should still include aper_diam here
@@ -338,13 +354,17 @@ class Jaguar(Simulation):
 
 def make_dirs(path):
     os.makedirs(split_dir_name(path, "dir"), exist_ok = True)
+    try:
+        os.chmod(split_dir_name(path, "dir"), 0o777)
+    except PermissionError:
+        galfind_logger.warning(f"Could not change permissions of {path} to 777.")
 
 def calc_errs_from_cat(cat, col_name, instrument):
     if col_name in LePhare_col_names:
         errs = calc_LePhare_errs(cat, col_name)
     elif col_name in EAZY_col_names:
         errs = calc_EAZY_errs(cat, col_name)
-    elif col_name in instrument.bands:
+    elif col_name in instrument.band_names:
         errs = [return_loc_depth_mags(cat, col_name, True)[1]]
     else:
         errs = np.array([cat[f"{col_name}_l1"], cat[f"{col_name}_u1"]])

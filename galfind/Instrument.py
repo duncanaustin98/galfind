@@ -17,21 +17,46 @@ from pathlib import Path
 from astroquery.svo_fps import SvoFps
 import matplotlib.pyplot as plt
 
-
 from . import useful_funcs_austind as funcs
-from . import config
-from . import NIRCam_aper_corr
+from . import config, NIRCam_aper_corr
+from .Filter import Filter
 
 class Instrument:
     
-    def __init__(self, name, bands, band_wavelengths, band_FWHMs, excl_bands, telescope):
+    def __init__(self, name, bands, excl_bands, facility):
         self.bands = np.array(bands)
-        self.band_wavelengths = band_wavelengths
-        self.band_FWHMs = band_FWHMs
         self.name = name
         for band in excl_bands:
             self.remove_band(band)
-        self.telescope = telescope
+        self.facility = facility
+
+    @classmethod
+    def from_SVO(cls, facility, instrument, excl_bands = []):
+        filter_list = SvoFps.get_filter_list(facility = facility, instrument = instrument.split("_")[0])
+        filter_list = filter_list[np.array([filter_name.split("/")[-1].split(".")[0] for filter_name in np.array(filter_list["filterID"])]) == instrument]
+        bands = np.array([Filter.from_SVO(facility, instrument, filt_ID) for filt_ID in np.array(filter_list["filterID"])])
+        return cls(instrument, bands, excl_bands, facility)
+
+    @property
+    def band_names(self):
+        return np.array([band.band_name for band in self.bands])
+    
+    @property
+    def band_wavelengths(self):
+        # Central wavelengths
+        return np.array([band.WavelengthCen.to(u.AA).value for band in self.bands]) * u.AA
+    
+    @property
+    def band_FWHMs(self):
+        return np.array([band.FWHM.to(u.AA).value for band in self.bands]) * u.AA
+    
+    @property
+    def band_lower_wav_lims(self):
+        return np.array([band.WavelengthLower50.to(u.AA).value for band in self.bands]) * u.AA
+    
+    @property
+    def band_upper_wav_lims(self):
+        return np.array([band.WavelengthUpper50.to(u.AA).value for band in self.bands]) * u.AA
     
 # %% Overloaded operators
 
@@ -44,10 +69,10 @@ class Instrument:
         line_sep = "*" * 40 + "\n"
         band_sep = "-" * 10 + "\n"
         output_str = line_sep
-        output_str += f"TELESCOPE(S): {self.telescope}\n"
-        output_str += f"INSTRUMENT(S): {self.name}\n"
+        output_str += f"FACILITY: {self.facility}\n"
+        output_str += f"INSTRUMENT: {self.name}\n"
         # show individual bands used, ordered from blue to red
-        output_str += f"FILTER SET: {str([f'{self.instrument_from_band(band).telescope}/{self.instrument_from_band(band).name}/{band}' for band in self])}\n"
+        output_str += f"FILTER SET: {str([f'{self.instrument_from_band(band_name).facility}/{self.instrument_from_band(band_name).name}/{band_name}' for band_name in self.band_names])}\n"
         # could also include PSF path and correction factors here
         output_str += line_sep
         return output_str
@@ -73,18 +98,17 @@ class Instrument:
         elif type(i) == str:
             return self.bands[self.index_from_band(i)]
         else:
-            raise(TypeError(f"i={i} in {__class__.__name__}.__getitem__ has type={type(i)} which is not in [int, str]"))
+            raise(TypeError(f"i={i} in {self.__class__.__name__}.__getitem__ has type={type(i)} which is not in [int, slice, str]"))
     
     def __del__(self):
         self.bands = []
-        self.band_wavelengths = {}
-        self.band_FWHMs = {}
 
     def instrument_from_band(self, band):
         # Pointless here but makes it compatible with Combined_Instrument
-        if (band.split("+")[0] in self.bands) or band in self.bands:
+        if (band.split("+")[0] in self.band_names) or band in self.band_names:
             return self
         else:
+            # This leads to confusing errors when passing in a bandname which doesn't exist
             return False
     
     # def __getitem__(self, get_index): # create a new instrument with only the indexed band
@@ -97,42 +121,42 @@ class Instrument:
     def __add__(self, instrument):
         # cannot add multiple of the same bands together!!! (maybe could just ignore the problem \
         # in Instrument class and just handle it in Data, possibly stacking the two images)
-        for band in instrument.bands:
-            if band in self.bands:
+        for band in instrument.band_names:
+            if band in self.band_names:
                 raise(Exception("Cannot add multiple of the same band together in 'Instrument.__add__()'!"))
         
         # add and sort bands from blue -> red
         all_bands = json.loads(config.get("Other", "ALL_BANDS"))
         # print("all bands = ", all_bands, type(all_bands), type(all_bands[0]))
-        bands = [band for band in all_bands if band in np.concatenate([self.bands, instrument.bands])]
-        self.band_wavelengths.update(instrument.band_wavelengths)
-        band_wavelengths = self.band_wavelengths
-        self.band_FWHMs.update(instrument.band_FWHMs)
-        band_FWHMs = self.band_FWHMs
+        bands = [band for band in all_bands if band.__class__.__name__ in np.concatenate([self.bands, instrument.bands])]
+        #self.band_wavelengths.update(instrument.band_wavelengths)
+        #band_wavelengths = self.band_wavelengths
+        #self.band_FWHMs.update(instrument.band_FWHMs)
+        #band_FWHMs = self.band_FWHMs
         
         # always name instruments from blue -> red
        
         if self.name == instrument.name:
             self.bands = bands
-            self.band_wavelengths = band_wavelengths
-            self.band_FWHMs = band_FWHMs
+            #self.band_wavelengths = band_wavelengths
+            #self.band_FWHMs = band_FWHMs
             out_instrument = self
         else:
             all_instruments = json.loads(config.get("Other", "INSTRUMENT_NAMES"))
-            all_telescopes = json.loads(config.get("Other", "TELESCOPE_NAMES"))
+            all_facilities = json.loads(config.get("Other", "TELESCOPE_NAMES"))
             # split self.name and instrument.name
             names = list(set(self.name.split("+") + instrument.name.split("+")))
-            telescopes = list(set(self.telescope.split("+") + instrument.telescope.split("+")))
+            facilities = list(set(self.facility.split("+") + instrument.facility.split("+")))
             name = "+".join([name for name in all_instruments if name in names])
-            telescope = "+".join([telescope for telescope in all_telescopes if telescope in telescopes])
-            out_instrument = Combined_Instrument(name, bands, band_wavelengths, band_FWHMs, excl_bands = [], telescope = telescope)
+            facility = "+".join([facility for facility in all_facilities if facility in facilities])
+            out_instrument = Combined_Instrument(name, bands, excl_bands = [], facility = facility)
             #self.__del__() # delete old self
         return out_instrument
     
     def __sub__(self, instrument):
         print("Note that 'Instrument.__sub__()' only removes common bands between the two 'instrument' classes")
-        for band in instrument.bands:
-            if band in self.bands:
+        for band in instrument.band_names:
+            if band in self.band_names:
                 self.remove_band(band)
             else:
                 print(f"Cannot remove {band} from {self.name}!")
@@ -176,28 +200,26 @@ class Instrument:
     
 # %% Other class methods
 
-    def remove_band(self, band):
-        band = str(band)
-        assert type(band) == str, f"band = {band} of type = {type(band)} is not str"
+    def remove_band(self, band_name):
+        band_name = str(band_name)
+        assert type(band_name) == str, f"band = {band_name} of type = {type(band_name)} is not 'str'"
         try:
-            remove_index = self.index_from_band(band)
+            remove_index = self.index_from_band_name(band_name)
             #print(f"remove index = {remove_index}")
             self.bands = np.delete(self.bands, remove_index)
-            del self.band_wavelengths[band]
-            del self.band_FWHMs[band]
         except IndexError:
             #raise(Exception("Remove band failed!"))
             pass
         
     def remove_index(self, remove_index):
-        remove_band = self.band_from_index(remove_index)
+        remove_band = self.band_name_from_index(remove_index)
         self.remove_band(remove_band)
         
-    def index_from_band(self, band):
-        return np.where(self.bands == band)[0][0]
+    def index_from_band_name(self, band_name):
+        return np.where(self.band_names == band_name)[0][0]
     
-    # def band_from_index(self, index):
-    #     return self.bands[index]
+    def band_name_from_index(self, index):
+        return self.band_names[index]
     
     @staticmethod
     def from_name(name, excl_bands = []):
@@ -219,46 +241,18 @@ class Instrument:
             return new_instrument
         else:
             raise(Exception(f"Instrument name: {name} does not exist in 'Instrument.from_name()'!"))
-            
-    def load_band_filter_profile(self, band, from_SVO = True):
-        if not hasattr(self, "filter_profiles"):
-            self.filter_profiles = {}
-        if type(self).__name__ == "Combined_Instrument":
-            instrument = self.instrument_from_band(band)
-            name = instrument.name
-            telescope = instrument.telescope
-        else:
-            name = self.name
-            telescope = self.telescope
-        if from_SVO:
-            filter_name = f"{telescope}/{name}.{band.replace('f', 'F')}"
-            self.filter_profiles[band] = SvoFps.get_transmission_data(filter_name)
-        else:
-            raise(Exception("Not yet implemented another way to load bands other than via SVO"))
     
-    def load_instrument_filter_profiles(self, from_SVO = True):
-        for band in self:
-            self.load_band_filter_profile(band, from_SVO = from_SVO)
-        
-    def plot_filter_profile(self, ax, band, from_SVO = True, color = "black"):
-        if not hasattr(self, "filter_profiles"):
-            self.load_band_filter_profile(band, from_SVO = from_SVO)
-        else:
-            if not band in list(self.filter_profiles.keys()):
-                self.load_band_filter_profile(band, from_SVO = from_SVO)
-        ax.fill_between(self.filter_profiles[band]["Wavelength"], 0., self.filter_profiles[band]["Transmission"], color = color, alpha = 0.6)
-        ax.plot(self.filter_profiles[band]["Wavelength"], self.filter_profiles[band]["Transmission"], color = "black", lw = 2) #cmap[np.where(self.bands == band)])
-        mid_wav = np.median(self.filter_profiles[band]["Wavelength"][self.filter_profiles[band]["Transmission"] > 1e-3])
-        ax.text(mid_wav, np.max(self.filter_profiles[band]["Transmission"]) + 0.03, band.replace("f", "F"), ha = "center", fontsize = 8)
-        ax.grid(False)
+    # def load_instrument_filter_profiles(self, from_SVO = True):
+    #     for band in self:
+    #         band.load_band_filter_profile(band, from_SVO = from_SVO)
 
     def plot_filter_profiles(self, ax, plot_bands = [], from_SVO = True, cmap_name = "Spectral_r", show = True, save = False):
         cmap = sns.color_palette(cmap_name, len(plot_bands))
         for i, band in enumerate(plot_bands):
-            if not band in self.bands:
+            if not band in self.band_names:
                 raise(Exception(f"{band} not in {self.name}!"))
             else:
-                self.plot_filter_profile(ax, band, from_SVO = from_SVO, color = cmap[i])
+                band.plot_filter_profile(ax, band, from_SVO = from_SVO, color = cmap[i])
         ax.set_title(f"{self.name} filters")
         ax.set_xlabel(r"$\lambda_{\mathrm{obs}} / \mathrm{\AA}$")
         ax.set_ylabel("Transmission")
@@ -267,31 +261,32 @@ class Instrument:
             pass
         if show:
             plt.show()
-            
 
 class NIRCam(Instrument):
     
     def __init__(self, excl_bands = []):
-        bands = ["f070W", "f090W", "f115W", "f140M", "f150W", "f162M", "f182M", "f200W", "f210M", "f250M", "f277W", "f300M", "f335M", "f356W", "f360M", "f410M", "f430M", "f444W", "f460M", "f480M"]
-        band_wavelengths = {"f070W": 7_056., "f090W": 9_044., "f115W": 11_571., "f140M": 14_060., "f150W": 15_040., "f162M": 16_281., "f182M": 18_466., "f200W": 19_934., "f210M": 20_964., \
-                            "f250M": 25_038., "f277W": 27_695., "f300M": 29_908., "f335M": 33_639., "f356W": 35_768., "f360M": 36_261., "f410M": 40_844., "f430M": 42_818., "f444W": 44_159., \
-                                "f460M": 46_305., "f480M": 48_192.}
-        band_wavelengths = {key: value * u.Angstrom for (key, value) in band_wavelengths.items()} # convert each individual value to Angstrom
-        band_FWHMs = {"f070W": 1_600., "f090W": 2_101., "f115W": 2_683., "f140M": 1_478., "f150W": 3_371., "f162M": 1_713., "f182M": 2_459., "f200W": 4_717., "f210M": 2_089., \
-                      "f250M": 1_825., "f277W": 7_110., "f300M": 3_264., "f335M": 3_609., "f356W": 8_408., "f360M": 3_873., "f410M": 4_375., "f430M": 2_312., "f444W": 11_055., \
-                          "f460M": 2_322., "f480M": 3_145.}
-        band_FWHMs = {key: value * u.Angstrom for (key, value) in band_FWHMs.items()} # convert each individual value to Angstrom
-        super().__init__("NIRCam", bands, band_wavelengths, band_FWHMs, excl_bands, "JWST")
+        instr = Instrument.from_SVO("JWST", self.__class__.__name__, excl_bands = excl_bands)
+        super().__init__(instr.name, instr.bands, excl_bands, instr.facility)
+        # bands = ["f070W", "f090W", "f115W", "f140M", "f150W", "f162M", "f182M", "f200W", "f210M", "f250M", "f277W", "f300M", "f335M", "f356W", "f360M", "f410M", "f430M", "f444W", "f460M", "f480M"]
+        # band_wavelengths = {"f070W": 7_056., "f090W": 9_044., "f115W": 11_571., "f140M": 14_060., "f150W": 15_040., "f162M": 16_281., "f182M": 18_466., "f200W": 19_934., "f210M": 20_964., \
+        #                     "f250M": 25_038., "f277W": 27_695., "f300M": 29_908., "f335M": 33_639., "f356W": 35_768., "f360M": 36_261., "f410M": 40_844., "f430M": 42_818., "f444W": 44_159., \
+        #                         "f460M": 46_305., "f480M": 48_192.}
+        # band_wavelengths = {key: value * u.Angstrom for (key, value) in band_wavelengths.items()} # convert each individual value to Angstrom
+        # band_FWHMs = {"f070W": 1_600., "f090W": 2_101., "f115W": 2_683., "f140M": 1_478., "f150W": 3_371., "f162M": 1_713., "f182M": 2_459., "f200W": 4_717., "f210M": 2_089., \
+        #               "f250M": 1_825., "f277W": 7_110., "f300M": 3_264., "f335M": 3_609., "f356W": 8_408., "f360M": 3_873., "f410M": 4_375., "f430M": 2_312., "f444W": 11_055., \
+        #                   "f460M": 2_322., "f480M": 3_145.}
+        # band_FWHMs = {key: value * u.Angstrom for (key, value) in band_FWHMs.items()} # convert each individual value to Angstrom
+        # super().__init__("NIRCam", bands, band_wavelengths, band_FWHMs, excl_bands, "JWST")
 
     def aper_corr(self, aper_diam, band):
         aper_corr_path = f'{config["Other"]["GALFIND_DIR"]}/Aperture_corrections/NIRCam_aper_corr.txt'
         if not Path(aper_corr_path).is_file():
             # perform aperture corrections
-            NIRCam_aper_corr.main(self.bands)
+            NIRCam_aper_corr.main(self.band_names)
         # load aperture corrections from appropriate path (bands in NIRCam class must be the same as those saved in aper_corr)
         aper_corr_data = np.loadtxt(aper_corr_path, dtype = str, comments = "#")
         aper_diam_index = np.where(json.loads(config.get("SExtractor", "APERTURE_DIAMS")) == aper_diam.value)[0][0] + 1
-        band_index = list(self.bands).index(band)
+        band_index = list(self.band_names).index(band)
         # print((aper_diam_index, band_index))
         return float(aper_corr_data[band_index][aper_diam_index])
     
@@ -301,12 +296,14 @@ class NIRCam(Instrument):
 class MIRI(Instrument):
     
     def __init__(self, excl_bands = []):
-        bands = ['f560W', 'f770W', 'f1000W', 'f1130W', 'f1280W', 'f1500W', 'f1800W', 'f2100W', 'f2550W']
-        band_wavelengths = {'f560W':55870.25, 'f770W':75224.94, 'f1000W': 98793.45, 'f1130W':112960.71, 'f1280W':127059.68, 'f1500W':149257.07, 'f1800W':178734.17, 'f2100W':205601.06, 'f2550W':251515.99}
-        band_wavelengths = {key: value * u.Angstrom for (key, value) in band_wavelengths.items()} # convert each individual value to Angstrom
-        band_FWHMs = {'f560W': 11114.05, 'f770W': 20734.55, 'f1000W': 18679.18, 'f1130W': 7091.01, 'f1280W': 25306.74, 'f1500W': 31119.13, 'f1800W': 29839.89,'f2100W':46711.97, 'f2550W':36393.71}
-        band_FWHMs = {key: value * u.Angstrom for (key, value) in band_FWHMs.items()} # convert each individual value to Angstrom    
-        super().__init__("MIRI", bands, band_wavelengths, band_FWHMs, excl_bands, "JWST")
+        instr = Instrument.from_SVO("JWST", self.__class__.__name__, excl_bands = excl_bands)
+        super().__init__(instr.name, instr.bands, excl_bands, instr.facility)
+        # bands = ['f560W', 'f770W', 'f1000W', 'f1130W', 'f1280W', 'f1500W', 'f1800W', 'f2100W', 'f2550W']
+        # band_wavelengths = {'f560W':55870.25, 'f770W':75224.94, 'f1000W': 98793.45, 'f1130W':112960.71, 'f1280W':127059.68, 'f1500W':149257.07, 'f1800W':178734.17, 'f2100W':205601.06, 'f2550W':251515.99}
+        # band_wavelengths = {key: value * u.Angstrom for (key, value) in band_wavelengths.items()} # convert each individual value to Angstrom
+        # band_FWHMs = {'f560W': 11114.05, 'f770W': 20734.55, 'f1000W': 18679.18, 'f1130W': 7091.01, 'f1280W': 25306.74, 'f1500W': 31119.13, 'f1800W': 29839.89,'f2100W':46711.97, 'f2550W':36393.71}
+        # band_FWHMs = {key: value * u.Angstrom for (key, value) in band_FWHMs.items()} # convert each individual value to Angstrom    
+        # super().__init__("MIRI", bands, band_wavelengths, band_FWHMs, excl_bands, "JWST")
     
     def aper_corr(self, aper_diam, band):
         pass
@@ -317,16 +314,18 @@ class MIRI(Instrument):
 class ACS_WFC(Instrument):
     
     def __init__(self, excl_bands = []):
-        bands = ["f435W", "fr459M", "f475W", "f550M", "f555W", "f606W", "f625W", "fr647M", "f775W", "f814W", "f850LP", "fr914M"]
-        # Wavelengths corrrespond to lambda effective of the filters from SVO Filter Profile Service
-        band_wavelengths = {"f435W": 4_340., "fr459M": 4_590., "f475W": 4_766., "f550M": 5_584., "f555W": 5_373., "f606W": 5_960., \
-                            "f625W": 6_325., "fr647M": 6_472., "f775W": 7_706., "f814W": 8_073., "f850LP": 9_047., "fr914M": 9_072.}
-        band_wavelengths = {key: value * u.Angstrom for (key, value) in band_wavelengths.items()} # convert each individual value to Angstrom
-        # FWHMs corrrespond to FWHM of the filters from SVO Filter Profile Service
-        band_FWHMs = {"f435W": 937., "fr459M": 350., "f475W": 1_437., "f550M": 546., "f555W": 1_240., "f606W": 2_322., \
-                            "f625W": 1_416., "fr647M": 501., "f775W": 1_511., "f814W": 1_858., "f850LP": 1_208., "fr914M": 774.}
-        band_FWHMs = {key: value * u.Angstrom for (key, value) in band_FWHMs.items()} # convert each individual value to Angstrom    
-        super().__init__("ACS_WFC", bands, band_wavelengths, band_FWHMs, excl_bands, "HST")
+        instr = Instrument.from_SVO("HST", self.__class__.__name__, excl_bands = excl_bands)
+        super().__init__(instr.name, instr.bands, excl_bands, instr.facility)
+        # bands = ["f435W", "fr459M", "f475W", "f550M", "f555W", "f606W", "f625W", "fr647M", "f775W", "f814W", "f850LP", "fr914M"]
+        # # Wavelengths corrrespond to lambda effective of the filters from SVO Filter Profile Service
+        # band_wavelengths = {"f435W": 4_340., "fr459M": 4_590., "f475W": 4_766., "f550M": 5_584., "f555W": 5_373., "f606W": 5_960., \
+        #                     "f625W": 6_325., "fr647M": 6_472., "f775W": 7_706., "f814W": 8_073., "f850LP": 9_047., "fr914M": 9_072.}
+        # band_wavelengths = {key: value * u.Angstrom for (key, value) in band_wavelengths.items()} # convert each individual value to Angstrom
+        # # FWHMs corrrespond to FWHM of the filters from SVO Filter Profile Service
+        # band_FWHMs = {"f435W": 937., "fr459M": 350., "f475W": 1_437., "f550M": 546., "f555W": 1_240., "f606W": 2_322., \
+        #                     "f625W": 1_416., "fr647M": 501., "f775W": 1_511., "f814W": 1_858., "f850LP": 1_208., "fr914M": 774.}
+        # band_FWHMs = {key: value * u.Angstrom for (key, value) in band_FWHMs.items()} # convert each individual value to Angstrom    
+        # super().__init__("ACS_WFC", bands, band_wavelengths, band_FWHMs, excl_bands, "HST")
     
     def aper_corr(self, aper_diam, band):
         aper_corr_path = f'{config["Other"]["GALFIND_DIR"]}/Aperture_corrections/hst_acs_wfc_aper_corr.dat'
@@ -339,14 +338,16 @@ class ACS_WFC(Instrument):
 class WFC3_IR(Instrument):
 
     def __init__(self, excl_bands = []):
-        bands = ["f098M", "f105W",  "f110W", "f125W", "f127M", "f139M", "f140W", "f153M", "f160W"]
-        # Wavelengths corrrespond to lambda effective of the filters from SVO Filter Profile Service
-        band_wavelengths = {"f098M": 9_875., "f105W": 10_584.,  "f110W": 11_624., "f125W": 12_516., "f127M": 12_743., "f139M": 13_843., "f140W": 13_970., "f153M": 15_334., "f160W": 15_392.}
-        band_wavelengths = {key: value * u.Angstrom for (key, value) in band_wavelengths.items()} # convert each individual value to Angstrom
-        # FWHMs corrrespond to FWHM of the filters from SVO Filter Profile Service
-        band_FWHMs = {"f098M": 1_692., "f105W": 2_917.,  "f110W": 4_994., "f125W": 3_005., "f127M": 692., "f139M": 652., "f140W": 3_941., "f153M": 693., "f160W": 2_875.}
-        band_FWHMs = {key: value * u.Angstrom for (key, value) in band_FWHMs.items()} # convert each individual value to Angstrom
-        super().__init__("WFC3_IR", bands, band_wavelengths, band_FWHMs, excl_bands, "HST")
+        instr = Instrument.from_SVO("HST", self.__class__.__name__, excl_bands = excl_bands)
+        super().__init__(instr.name, instr.bands, excl_bands, instr.facility)
+        # bands = ["f098M", "f105W",  "f110W", "f125W", "f127M", "f139M", "f140W", "f153M", "f160W"]
+        # # Wavelengths corrrespond to lambda effective of the filters from SVO Filter Profile Service
+        # band_wavelengths = {"f098M": 9_875., "f105W": 10_584.,  "f110W": 11_624., "f125W": 12_516., "f127M": 12_743., "f139M": 13_843., "f140W": 13_970., "f153M": 15_334., "f160W": 15_392.}
+        # band_wavelengths = {key: value * u.Angstrom for (key, value) in band_wavelengths.items()} # convert each individual value to Angstrom
+        # # FWHMs corrrespond to FWHM of the filters from SVO Filter Profile Service
+        # band_FWHMs = {"f098M": 1_692., "f105W": 2_917.,  "f110W": 4_994., "f125W": 3_005., "f127M": 692., "f139M": 652., "f140W": 3_941., "f153M": 693., "f160W": 2_875.}
+        # band_FWHMs = {key: value * u.Angstrom for (key, value) in band_FWHMs.items()} # convert each individual value to Angstrom
+        # super().__init__("WFC3_IR", bands, band_wavelengths, band_FWHMs, excl_bands, "HST")
     
     def aper_corr(self, aper_diam, band):
         aper_corr_path = f'{config["Other"]["GALFIND_DIR"]}/Aperture_corrections/wfc3ir_aper_corr.dat'
@@ -374,7 +375,7 @@ class Combined_Instrument(Instrument):
         names = self.name.split("+")
         for name in names:
             instrument = self.from_name(name)
-            if band in instrument.bands:
+            if band in instrument.band_names:
                 return instrument.aper_corr(aper_diam, band)
         raise(Exception(f"{band} does not exist in Instrument = {self.name}!"))
     

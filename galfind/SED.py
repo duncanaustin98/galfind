@@ -33,6 +33,9 @@ class SED:
         self.wavs = wavs * wav_units
         self.mags = mags * mag_units
         #self.mag_units = mag_units
+
+    def __str__(self):
+        return "LOADED SED\n"
     
     def convert_wav_units(self, units, update = True):
         wavs = self.wavs.to(units)
@@ -307,7 +310,7 @@ class Mock_SED_rest(SED_rest): #, Mock_SED):
         if type(depths) == dict:
            depths = [depth for (band, depth) in depths.items()]
         if depths == []: # if depths not given, expect the galaxy to be very well detected
-            depths = [99. for band in instrument.bands]
+            depths = [99. for band in instrument.band_names]
         # convert self.mags to f_λ if needed
         if self.mags.unit == u.ABmag:
             self.mags = funcs.convert_mag_units(self.wavs, self.mags, u.erg / (u.s * (u.cm ** 2) * u.AA))
@@ -323,7 +326,7 @@ class Mock_SED_rest(SED_rest): #, Mock_SED):
             filter_profile["Wavelength"] = filter_profile["Wavelength"] / (1 + z)
             bp_averaged_fluxes[i] = self.calc_bandpass_averaged_flux(filter_profile)
         # convert bp_averaged_fluxes to Jy
-        band_wavs = np.array([instrument.band_wavelengths[band].value / (1 + z) for band in instrument]) * u.Angstrom
+        band_wavs = np.array([instrument.band_wavelengths[band_name].value / (1 + z) for band_name in instrument.band_names]) * u.Angstrom
         bp_averaged_fluxes_Jy = funcs.convert_mag_units(band_wavs, bp_averaged_fluxes * u.erg / (u.s * (u.cm ** 2) * u.AA), u.Jy)
         self.mock_photometry = Mock_Photometry(instrument, bp_averaged_fluxes_Jy, depths, min_pc_err)
     
@@ -421,7 +424,7 @@ class Mock_SED_obs(SED_obs):
         if type(depths) == dict:
             depths = [depth for (band, depth) in depths.items()]
         if depths == []: # if depths not given, expect the galaxy to be very well detected
-            depths = [99. for band in instrument.bands]
+            depths = [99. for band in instrument.band_names]
         # convert self.mags to f_λ
         if self.mags.unit == u.ABmag:
             self.mags = funcs.convert_mag_units(self.wavs, self.mags, u.erg / (u.s * (u.cm ** 2) * u.AA))
@@ -433,7 +436,7 @@ class Mock_SED_obs(SED_obs):
         for i, band in enumerate(instrument):
             bp_averaged_fluxes[i] = self.calc_bandpass_averaged_flux(instrument.filter_profiles[band])
         # convert bp_averaged_fluxes to Jy
-        band_wavs = np.array([instrument.band_wavelengths[band].value for band in instrument]) * u.Angstrom
+        band_wavs = np.array([instrument.band_wavelengths[band_name].value for band_name in instrument.band_names]) * u.Angstrom
         bp_averaged_fluxes_Jy = funcs.convert_mag_units(band_wavs, bp_averaged_fluxes * u.erg / (u.s * (u.cm ** 2) * u.AA), u.Jy)
         self.mock_photometry = Mock_Photometry(instrument, bp_averaged_fluxes_Jy, depths, min_pc_err)
 
@@ -458,7 +461,7 @@ class Mock_SED_obs(SED_obs):
             # requires colour to exist in the mock photometry
             for band in bands:
                 if band not in self.mock_photometry.instrument:
-                    galfind_logger.critical(f"self.mock_photometry includes the bands = {self.mock_photometry.instrument.bands}, and {band} is not included!")
+                    galfind_logger.critical(f"self.mock_photometry includes the bands = {self.mock_photometry.instrument.band_names}, and {band} is not included!")
                 assert(self.mock_photometry[band].unit == u.Jy)
             # calculate colour in mags
             colour = -2.5 * np.log10(self.mock_photometry[bands[0]] / self.mock_photometry[bands[1]])

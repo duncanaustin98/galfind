@@ -8,7 +8,7 @@ Created on Mon Jun  5 11:43:05 2023
 
 # decorators.py
 import os
-import tqdm
+from tqdm import tqdm
 import time
 from astropy.units import u
 import yagmail

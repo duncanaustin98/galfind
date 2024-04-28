@@ -1,29 +1,301 @@
+# Catalogue_Base.py
+
+import numpy as np
+from astropy.table import Table
+from copy import deepcopy
+import astropy.units as u
+from tqdm import tqdm
+from astropy.coordinates import SkyCoord
+import time
 from . import useful_funcs_austind as useful_funcs
 from .Data import Data
 from .Galaxy import Galaxy
 from . import useful_funcs_austind as funcs
 from .Catalogue_Creator import GALFIND_Catalogue_Creator
-from . import SED_code, LePhare, EAZY, Bagpipes
-from . import config
+from . import config, galfind_logger, SED_code
+from .EAZY import EAZY
+from . import Multiple_Catalogue, Multiple_Data
 
 class Catalogue_Base:
     # later on, the gal_arr should be calculated from the Instrument and sex_cat path, with SED codes already given
-    def __init__(self, gals, cat_path, survey, cat_creator, instrument, codes = [],  version='', ): #, UV_PDF_path):
+    def __init__(self, gals, cat_path, survey, cat_creator, instrument, SED_fit_params_arr = {}, version = '', crops = []): #, UV_PDF_path):
         self.survey = survey
         self.cat_path = cat_path
         #self.UV_PDF_path = UV_PDF_path
         self.cat_creator = cat_creator
         self.instrument = instrument
-        self.codes = codes
-        self.gals = gals
+        self.SED_fit_params_arr = SED_fit_params_arr
+        self.gals = np.array(gals)
         if version == '':
             raise Exception('Version must be specified')
         self.version = version
+        
+        # keep a record of the crops that have been made to the catalogue
+        self.crops = crops
         
         # concat is commutative for catalogues
         self.__radd__ = self.__add__
         # cross-match is commutative for catalogues
         self.__rmul__ = self.__mul__
+
+    # %% Overloaded operators
+
+    def __str__(self, print_cls_name = True, print_data = True, print_sel_criteria = True):
+        line_sep = "*" * 40 + "\n"
+        band_sep = "-" * 10 + "\n"
+        output_str = ""
+        if print_cls_name:
+            output_str += line_sep
+            output_str += f"CATALOGUE: {self.survey} {self.version}\n" # could also show median RA/DEC from the array of galaxy sky coords
+            output_str += band_sep
+        if print_data and "data" in self.__dict__.keys():
+            output_str += str(self.data)
+        output_str += f"FITS CAT PATH = {self.cat_path}\n"
+        # access table header to display what has been run for this catalogue
+        cat = Table.read(self.cat_path, memmap = True)
+        output_str += f"N_GALS_TOTAL = {len(cat)}\n"
+        # display what other things have previously been calculated for this catalogue, including templates and zmax_lowz
+        output_str += "CAT STATUS = SEXTRACTOR, "
+        for i, (key, value) in enumerate(cat.meta.items()):
+            if key in ["DEPTHS", "MASKED"] + [f"RUN_{subclass.__name__}" for subclass in SED_code.__subclasses__()]:
+                output_str += key
+                if i != len(cat.meta) - 1:
+                    output_str += ", "
+        output_str += "\n"
+        # display total number of galaxies that satisfy the selection criteria previously performed
+        if print_sel_criteria:
+            for sel_criteria in ["EPOCHS", "BROWN_DWARF"]:
+                if sel_criteria in cat.colnames:
+                    output_str += f"N_GALS_{sel_criteria} = {len(cat[cat[sel_criteria]])}\n"
+        output_str += band_sep
+        # display crops that have been performed on this specific object
+        if self.crops != []:
+            output_str += f"N_GALS_OBJECT = {len(self)}\n"
+            output_str += f"CROPS = {self.crops}\n"
+        if print_cls_name:
+            output_str += line_sep
+        return output_str
+    
+
+    def __len__(self):
+        return len(self.gals)
+    
+    def __iter__(self):
+        self.iter = 0
+        return self
+    
+    def __next__(self):
+        if self.iter > len(self) - 1:
+            raise StopIteration
+        else:
+            gal = self[self.iter]
+            self.iter += 1
+            return gal
+    
+    def __getitem__(self, index):
+        return self.gals[index]
+    
+    def __getattr__(self, name, SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}, phot_type = "obs"): # only acts on attributes that don't already exist
+        if name in self[0].__dict__:
+            return np.array([getattr(gal, name) for gal in self])
+        elif name.upper() == "RA":
+            return np.array([getattr(gal, "sky_coord").ra.degree for gal in self]) * u.deg
+        elif name.upper() == "DEC":
+            return np.array([getattr(gal, "sky_coord").dec.degree for gal in self]) * u.deg
+        elif name in self[0].phot.instrument.__dict__:
+            return np.array([getattr(gal.phot.instrument, name) for gal in self])
+        elif phot_type == "obs" and name in self[0].phot.__dict__:
+            return np.array([getattr(gal.phot, name) for gal in self])
+        elif name in self[0].mask_flags.keys():
+            return np.array([getattr(gal.mask_flags, name) for gal in self])
+        elif name == "full_mask":
+            return np.array([getattr(gal, "phot").mask for gal in self])
+        elif name in self[0].selection_flags.keys():
+            return np.array([getattr(gal, "selection_flags")[name] for gal in self])
+        elif name in self[0].phot.SED_results[SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)].__dict__:
+            return np.array([getattr(gal.phot.SED_results[SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)], name) for gal in self])
+        elif phot_type == "rest" and name in self[0].phot.SED_results[SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)].phot_rest.__dict__:
+            return np.array([getattr(gal.phot.SED_results[SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)].phot_rest, name) for gal in self])
+        else:
+            galfind_logger.critical(f"Galaxies do not have attribute = {name}!")
+    
+    def __setattr__(self, name, value, obj = "cat"):
+        if obj == "cat":
+            super().__setattr__(name, value)
+        elif obj == "gal":
+            # set attributes of individual galaxies within the catalogue
+            for i, gal in enumerate(self):
+                if type(value) in [list, np.array]:
+                    setattr(gal, name, value[i])
+                else:
+                    setattr(gal, name, value)
+    
+    # not needed!
+    def __setitem__(self, index, gal):
+        self.gals[index] = gal
+    
+    def __add__(self, cat, out_survey = None):
+        # concat catalogues
+        if out_survey == None:
+            out_survey = "+".join([self.survey, cat.survey])
+        return Multiple_Catalogue([self, cat], survey = out_survey)
+    
+    def __mul__(self, other, out_survey=None, max_sep=1.0 * u.arcsec, match_type='compare_within_radius'):
+        '''
+        'Multiply' two catalogues by performing a cross-match and filtering the best matching galaxies.
+        Ensures no duplicate galaxies are present in the output catalogue.
+
+        Parameters:
+        - other: Catalogue_Base
+            The other catalogue to multiply with.
+        - out_survey: str, optional
+            The name of the output survey. Default is None.
+        - max_sep: Quantity, optional
+            The maximum separation allowed for matching galaxies. Default is 1.0 arcsec.
+        - match_type: str, optional
+            The type of matching to perform. Options are 'nearest' and 'compare_within_radius'.
+            Default is 'compare_within_radius'.
+
+        Returns:
+        - Multiple_Catalogue
+            The resulting MultipleCatalogue after performing the multiplication, with duplicates removed. 
+
+        '''
+        # cross-match catalogues
+        # update .fits tables with cross-matched version
+        # open tables
+        self_copy = deepcopy(self)
+        other_copy = deepcopy(other)
+
+        # Convert from list of SkyCoord to SkyCoord(array)
+        sky_coords_cat = SkyCoord(self_copy.RA, self_copy.DEC, unit=(u.deg, u.deg), frame='icrs')
+        other_sky_coords = SkyCoord(other_copy.RA, self_copy.DEC, unit=(u.deg, u.deg), frame='icrs')
+        if match_type == 'nearest':
+            # This just takes the nearest galaxy as the best match  
+            idx, d2d, d3d = sky_coords_cat.match_to_catalog_sky(other_sky_coords)
+            # Also check mask - don't keep masked galaxies where there is an unmasked match
+            sep_constraint = d2d < max_sep
+            # Get indexes of matches
+            cat_matches = np.arange(len(sky_coords_cat))[sep_constraint]
+            other_cat_matches = idx[sep_constraint]
+        elif match_type == 'compare_within_radius':
+            # This finds all matches within a certain radius and compares the photometry of the galaxies
+            cat_matches = []
+            other_cat_matches = []
+
+            for pos, coord in tqdm(enumerate(self_copy.sky_coord), desc="Cross-matching galaxies"):
+                # Need to save index of match in other_sky_coords
+
+                d2d = coord.separation(other_sky_coords)
+
+                indexes = np.argwhere(d2d < max_sep)
+                indexes = np.ndarray.flatten(indexes)
+
+                if len(indexes) == 0:
+                    print('continuing')
+                    continue
+                elif len(indexes) == 1:
+                    cat_matches.append(pos)
+                    other_cat_matches.append(indexes[0])
+                else:
+
+                    # Compare fluxes and choose the closest match
+                    # Get bands that are in both galaxies 
+
+                    coord_gal = self_copy.gals[pos]
+
+                    other_gals = np.ndarray.flatten(other_copy.gals[indexes])
+                    # Save indexes of other_gals in other_sky_coords
+                    other_gals_indexes = np.arange(len(other_sky_coords))[indexes]
+
+                    bands_gal1 = [band for band in coord_gal.phot.instrument.band_names if band not in coord_gal.mask_flags.keys()]
+
+                    chi_squareds = []
+                    for other_gal in other_gals:
+                        bands_gal2 = [band for band in other_gal.phot.instrument.band_names if band not in other_gal.mask_flags.keys()]
+                        matched_bands = list(set(bands_gal1).union(set(bands_gal2)))
+
+                        if len(matched_bands) == 0:
+                            continue
+                        # Compare fluxes in matched bands
+                        indexes_bands = np.argwhere([band in matched_bands for band in coord_gal.phot.instrument.band_names])
+                        indexes_other_bands = np.argwhere([band in matched_bands for band in other_gal.phot.instrument.band_names])
+                        coord_gal_fluxes = coord_gal.phot.flux_Jy[indexes_bands]
+                        coord_gal_flux_errs = coord_gal.phot.flux_Jy_errs[indexes_bands]
+                        other_gal_fluxes = other_gal.phot.flux_Jy[indexes_other_bands]
+
+                        # Chi-squared comparison
+                        chi_squared = np.sum((coord_gal_fluxes - other_gal_fluxes)**2 / (coord_gal_flux_errs**2))
+                        chi_squareds.append(chi_squared)
+                    if len(chi_squareds) == 0:
+                        continue
+                    best_match_index = int(np.squeeze(np.argmin(chi_squareds)))
+                    # pop empty dimensions
+                    cat_matches.append(pos)
+                    other_cat_matches.append(other_gals_indexes[best_match_index])
+
+        assert len(cat_matches) == len(other_cat_matches), f'{len(cat_matches)} != {len(other_cat_matches)}' # check that the matches are 1-to-1
+        print('Getting galaxies')
+
+        other_cat_matches = np.array(other_cat_matches)
+        cat_matches = np.array(cat_matches)
+        gal_matched_cat = self_copy.gals[cat_matches]
+        # Use indexes instead
+        gal_matched_other = other_copy.gals[other_cat_matches]
+        print('Obtained matched galaxies')
+        assert len(gal_matched_cat) == len(gal_matched_other) # check that the matches are 1-to-1
+
+        for gal1, gal2 in tqdm(zip(gal_matched_cat, gal_matched_other), desc='Filtering best galaxy for matches'):
+            # Compare the two galaxies and choose the better one
+            bands_gal1 = [band for band in gal1.phot.instrument.band_names if band not in gal1.mask_flags.keys()]
+            bands_gal2 = [band for band in gal2.phot.instrument.band_names if band not in gal2.mask_flags.keys()]
+            band_names_union = list(set(bands_gal1).union(set(bands_gal2)))
+
+            if len(bands_gal2) > len(bands_gal1):
+                self_copy.remove_gal(id=gal1.ID)
+            elif len(bands_gal2) < len(bands_gal1):
+                other_copy.remove_gal(id=gal2.ID)
+            else:
+                # If same bands, choose galaxy with deeper depth
+                # Get matching bands between the two galaxies - only use if not masked
+                # logical comparison of depth in each band, keeping the galaxy with the deeper depth in more bands
+                # gal1.phot.depths is just an array. Need to slice by position
+                indexes_gal1 = np.argwhere([band in band_names_union for band in gal1.phot.instrument.band_names])
+                depths_gal1 = gal1.phot.depths[indexes_gal1]
+                indexes_gal2 = np.argwhere([band in band_names_union for band in gal2.phot.instrument.band_names])
+                depths_gal2 = gal2.phot.depths[indexes_gal2]
+                # Compare depths
+                if np.sum(depths_gal1 > depths_gal2) > np.sum(depths_gal1 < depths_gal2):
+                    self_copy.remove_gal(id=gal1.ID)
+                elif np.sum(depths_gal1 > depths_gal2) < np.sum(depths_gal1 < depths_gal2):
+                    other_copy.remove_gal(id=gal2.ID)
+                else:
+                    # Choose first galaxy
+                    self_copy.remove_gal(id=gal1.ID)
+
+        return self_copy + other_copy
+
+
+    # Need to save the cross-match distances
+        
+    def combine_and_remove_duplicates(self, other, out_survey = None, max_sep = 1.0 * u.arcsec, match_type='nearest'):
+        'Alias for self * other'
+        return self.__mul__(other, out_survey = None, max_sep = 1.0 * u.arcsec, match_type='nearest')
+
+
+    def __sub__(self):
+        pass
+    
+    def __repr__(self):
+        return str(self.__dict__)
+    
+    def __deepcopy__(self, memo):
+        cls = self.__class__
+        result = cls.__new__(cls)
+        memo[id(self)] = result
+        for key, value in self.__dict__.items():
+            setattr(result, key, deepcopy(value, memo))
+        return result
         
     @property
     def cat_dir(self):
@@ -32,4 +304,29 @@ class Catalogue_Base:
     @property
     def cat_name(self):
         return funcs.split_dir_name(self.cat_path, "name")
-        
+    
+    def remove_gal(self, index=None, id=None):
+        if index is not None:
+            self.gals = np.delete(self.gals, index)
+        elif id is not None:
+            self.gals = np.delete(self.gals, np.where(self.ID == id))
+        else:
+            galfind_logger.critical("No index or ID provided to remove_gal!")
+
+    def crop(self, crop_limits, crop_property): # upper and lower limits on galaxy properties (e.g. ID, redshift, mass, SFR, SkyCoord)
+        cat_copy = deepcopy(self)
+        if type(crop_limits) in [int, float, bool]:
+            cat_copy.gals = cat_copy[getattr(cat_copy, crop_property) == crop_limits]
+            if crop_limits == True:
+                cat_copy.crops.append(crop_property)
+            else:
+                cat_copy.crops.append(f"{crop_property}={crop_limits}")
+        elif type(crop_limits) in [list, np.array]:
+            cat_copy.gals = cat_copy[((getattr(cat_copy, crop_property) >= crop_limits[0]) & (getattr(cat_copy, crop_property) <= crop_limits[1]))]
+            cat_copy.crops.append(f"{crop_limits[0]}<{crop_property}<{crop_limits[1]}")
+        else:
+            galfind_logger.critical(f"crop_limits={crop_limits} with type = {type(crop_limits)} not in [int, float, bool, list, np.array]")
+        return cat_copy
+    
+    def open_cat(self):
+        return Table.read(self.cat_path, character_as_bytes = False, memmap = True)

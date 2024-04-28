@@ -33,13 +33,13 @@ def main(cat_path, sample_key, instrument_name, templates = "fsps_larson", save 
     obs_redshifts = np.array(tab[f"zbest_{templates}"])
     
     instrument = Instrument.from_name(instrument_name)
-    for band in instrument.bands:
+    for band in instrument.band:
         try:
-            tab[f"MAG_APER_{band}"]
+            tab[f"MAG_APER_{band.band_name}"]
         except:
             instrument.remove_band(band)
             pass
-    print(instrument.bands)
+    print(instrument.band_names)
     
     beta_raw_arr = []
     m_UV_raw_arr = []
@@ -54,7 +54,7 @@ def main(cat_path, sample_key, instrument_name, templates = "fsps_larson", save 
     #obs_rest_UV_mag_arr = []
     for true_z, photo_z, row in tqdm(zip(true_redshifts, obs_redshifts, tab), total = len(true_redshifts), desc = f"Calculating beta/M_UV for {survey} {templates} JAGUAR catalogue"):
         # calculate beta/M_UV for raw photometry
-        raw_phot_vals = [jaguar_phot_unit_conv(row[jaguar_phot_keys(band)]) for band in instrument.bands]
+        raw_phot_vals = [jaguar_phot_unit_conv(row[jaguar_phot_keys(band_name)]) for band_name in instrument.band_names]
         # run raw UV properties through galfind
         raw_phot_obj = Photometry(instrument, raw_phot_vals * u.Jy, np.full(len(raw_phot_vals), 0. * u.Jy), [])
         raw_phot_rest_obj = Photometry_rest.from_phot(raw_phot_obj, float(true_z))
@@ -66,8 +66,8 @@ def main(cat_path, sample_key, instrument_name, templates = "fsps_larson", save 
         M_UV_raw_arr.append(raw_M_UV)
 
         # calculate beta/M_UV for scattered photometry
-        scattered_phot_vals = [jaguar_phot_unit_conv(row[f"FLUX_APER_{band}"][0]) for band in instrument.bands]
-        scattered_phot_errs = [jaguar_phot_unit_conv(row[f"FLUXERR_APER_{band}"][0]) for band in instrument.bands]
+        scattered_phot_vals = [jaguar_phot_unit_conv(row[f"FLUX_APER_{band_name}"][0]) for band_name in instrument.band_names]
+        scattered_phot_errs = [jaguar_phot_unit_conv(row[f"FLUXERR_APER_{band_name}"][0]) for band_name in instrument.band_names]
         
         # run scattered UV properties through galfind
         scattered_phot_obj = Photometry(instrument, scattered_phot_vals * u.Jy, scattered_phot_errs * u.Jy, [])
@@ -115,6 +115,6 @@ if __name__ == "__main__":
     save = True
     
     for survey in surveys:
-        cat_path = f"/raid/scratch/work/austind/GALFIND_WORK/Catalogues/simulated/NIRCam+ACS_WFC+WFC3IR/{survey}-Jaguar/JAGUAR_SimDepth_{survey}_{version}_half_{str(int(min_pc_err))}pc_EAZY_matched_selection.fits"
+        cat_path = f"/raid/scratch/work/austind/GALFIND_WORK/Catalogues/simulated/NIRCam+ACS_WFC+WFC3_IR/{survey}-Jaguar/JAGUAR_SimDepth_{survey}_{version}_half_{str(int(min_pc_err))}pc_EAZY_matched_selection.fits"
         sample_key = f"final_sample_highz_{templates}"
         main(cat_path, sample_key, instrument_name, templates = templates, save = save)

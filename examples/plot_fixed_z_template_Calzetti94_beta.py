@@ -38,7 +38,7 @@ def calc_mock_beta_phot(z_arr, template_set, incl_bands, rest_UV_wav_lims_arr, m
     if not Path(f"{output_dir}/{title}.ecsv").is_file():
         mock_sed_rest_set = Mock_SED_rest_template_set.load_EAZY_in_template(m_UV_norm, template_set)
         beta_phot = {}
-        depths = [fixed_depth_mag for band in instrument.bands]
+        depths = [fixed_depth_mag for band_name in instrument.band_names]
         with tqdm(total = len(rest_UV_wav_lims_arr) * len(mock_sed_rest_set) * len(z_arr), desc = f"Calculating β for bands = {title}", leave = False) as pbar:
             for i, rest_UV_wav_lims in enumerate(rest_UV_wav_lims_arr):
                 wav_name = f"{'-'.join([str(int(wav)) for wav in rest_UV_wav_lims.value])}Angstrom"
@@ -54,7 +54,7 @@ def calc_mock_beta_phot(z_arr, template_set, incl_bands, rest_UV_wav_lims_arr, m
         pbar.close()
         out_tab = Table({**{"template_name": np.array([mock_sed_rest.template_name for mock_sed_rest in mock_sed_rest_set for i in range(len(z_arr))]), \
                     "z": np.tile(z_arr, len(mock_sed_rest_set))}, **beta_phot})
-        out_tab.meta = {"Bands": "+".join([band.replace("f", "F") for band in instrument]), "Beta_errs": False}
+        out_tab.meta = {"Bands": "+".join([band.replace("f", "F") for band in instrument.band_names]), "Beta_errs": False}
         out_tab.write(f"{output_dir}/{title}.ecsv", overwrite = True)
 
 def calc_C94_beta(template_set, m_UV_norm):

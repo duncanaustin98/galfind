@@ -22,7 +22,7 @@ import h5py
 import os
 from scipy.interpolate import interp1d
 from tqdm import tqdm
-from galfind import Mock_SED_rest, Mock_SED_obs, config, NIRCam, ACS_WFC, Data, Catalogue, astropy_cosmo, Mock_Photometry, GALFIND_Catalogue_Creator, Photometry_rest, Emission_line, DLA
+from galfind import Mock_SED_rest, Mock_SED_obs, config, NIRCam, ACS_WFC, Data, Catalogue, astropy_cosmo, Mock_Photometry, GALFIND_Catalogue_Creator, Photometry_rest, Emission_line, DLA, EAZY
 from galfind import useful_funcs_austind as funcs
 
 plt.style.use(f"{config['DEFAULT']['GALFIND_DIR']}/galfind_style.mplstyle")
@@ -177,8 +177,8 @@ def split_mock_galfind_tab(tab, instrument, out_path):
         z_split_tab = tab[tab["z_int"] > z_lims[0]]
         z_split_tab = z_split_tab[z_split_tab["z_int"] < z_lims[1]]
         #print(len(z_split_tab))
-        z_split_tab.remove_columns([f"FLUX_APER_{band}_aper_corr_Jy" for band in instrument if band not in bands])
-        z_split_tab.remove_columns([f"FLUXERR_APER_{band}_loc_depth_10pc_Jy" for band in instrument if band not in bands])
+        z_split_tab.remove_columns([f"FLUX_APER_{band}_aper_corr_Jy" for band in instrument.band_names if band not in bands])
+        z_split_tab.remove_columns([f"FLUXERR_APER_{band}_loc_depth_10pc_Jy" for band in instrument.band_names if band not in bands])
         z_split_tab.rename_column("ID", "NUMBER")
         z_split_tab["ALPHA_J2000"] = 0.
         z_split_tab["DELTA_J2000"] = 0.
@@ -199,19 +199,22 @@ def run_beta_bias_through_EAZY(survey, survey_cat_paths, instrument_in, aper_dia
         out_cats.append(Catalogue.from_fits_cat(path, version, instrument, cat_creator, code_names, survey_name, lowz_zmax_arr = eazy_lowz_zmax, templates_arr = eazy_templates, data = None, mask = False, excl_bands = []))
     return out_cats
 
-def calc_obs_UV_properties(fits_cat_path, survey, instrument_name, aper_diam = 0.32 * u.arcsec, min_pc_err = 10., version = "beta_bias_v9"):
+def calc_obs_UV_properties(fits_cat_path, survey, instrument_name, aper_diam = 0.32 * u.arcsec, min_pc_err = 10., version = "beta_bias_v9", \
+        SED_fit_params_arr = [{"code": EAZY(), "templates": "fsps_larson", "zlowz_zmax": None}]):
     # load galfind catalogue from fits_cat_path
     cat_creator = GALFIND_Catalogue_Creator("loc_depth", aper_diam, min_pc_err)
     if instrument_name == "NIRCam":
         instrument = NIRCam()
     elif instrument_name == "ACS_WFC+NIRCam":
         instrument = NIRCam() + ACS_WFC()
-    galfind_cat = Catalogue.from_fits_cat(fits_cat_path, version, instrument, cat_creator, ["EAZY"], survey, [None], templates_arr = ["fsps_larson"], data = None, mask = False)
+    galfind_cat = Catalogue.from_fits_cat(fits_cat_path, version, instrument, cat_creator, [SED_fit_params["code"].__class__.__name__ for SED_fit_params in SED_fit_params_arr], \
+        survey, [SED_fit_params["lowz_zmax"] for SED_fit_params in SED_fit_params_arr], \
+        templates_arr = [SED_fit_params["templates"] for SED_fit_params in SED_fit_params_arr], data = None, mask = False)
     beta_arr = np.zeros(len(galfind_cat))
     m_UV_arr = np.zeros(len(galfind_cat))
     M_UV_arr = np.zeros(len(galfind_cat))
     for i, gal in tqdm(enumerate(galfind_cat), total = len(galfind_cat), desc = f"Calculating UV properties from {galfind_cat.survey}"):
-        phot = gal.phot.SED_results['EAZY']['fsps_larson'].phot_rest[Photometry_rest.rest_UV_wavs_name([1250., 3000.] * u.AA)]
+        phot = gal.phot.SED_results[SED_fit_params_arr[0]["code"].label_from_SED_fit_params(SED_fit_params_arr[0])].phot_rest[Photometry_rest.rest_UV_wavs_name([1250., 3000.] * u.AA)]
         try:
             beta, m_UV = phot.basic_beta_m_UV_calc(1.)
             M_UV = m_UV - 5 * np.log10(phot.lum_distance.value / 10) + 2.5 * np.log10(1 + phot.z)
@@ -265,7 +268,7 @@ def pure_power_law_beta_bias(surveys_arr = [["CEERSP9"] * 2, []], beta_in = -3.)
                     select_tab = Table.read(path)
                     # load in enitre photometry
                     select_tab = join(left = out_tab, right = select_tab, keys_left = "ID", keys_right = "NUMBER", join_type = "inner")
-                    for band in instrument:
+                    for band in instrument.band_names:
                         try:
                             del select_tab[f"FLUX_APER_{band}_aper_corr_Jy_2"]
                             del select_tab[f"FLUXERR_APER_{band}_loc_depth_10pc_Jy_2"]
@@ -352,7 +355,7 @@ def line_beta_bias(line_name = "Lya"):
                 select_tab = Table.read(path)
                 # load in enitre photometry
                 select_tab = join(left = out_tab, right = select_tab, keys_left = "ID", keys_right = "NUMBER", join_type = "inner")
-                for band in instrument:
+                for band in instrument.band_names:
                     try:
                         del select_tab[f"FLUX_APER_{band}_aper_corr_Jy_2"]
                         del select_tab[f"FLUXERR_APER_{band}_loc_depth_10pc_Jy_2"]
@@ -568,7 +571,7 @@ def DLA_beta_bias():
                 select_tab = Table.read(path)
                 # load in enitre photometry
                 select_tab = join(left = out_tab, right = select_tab, keys_left = "ID", keys_right = "NUMBER", join_type = "inner")
-                for band in instrument:
+                for band in instrument.band_names:
                     try:
                         del select_tab[f"FLUX_APER_{band}_aper_corr_Jy_2"]
                         del select_tab[f"FLUXERR_APER_{band}_loc_depth_10pc_Jy_2"]

@@ -12,6 +12,7 @@ import astropy.constants as const
 import astropy.units as u
 from copy import copy, deepcopy
 
+from . import useful_funcs_austind as funcs
 from .Photometry import Photometry, Multiple_Photometry
 from .SED_result import Galaxy_SED_results, Catalogue_SED_results
 
@@ -21,21 +22,41 @@ class Photometry_obs(Photometry):
         self.aper_diam = aper_diam
         self.min_flux_pc_err = min_flux_pc_err
         self.SED_results = SED_results # array of SED_result objects with different SED fitting runs
+        self.aper_corrs = [instrument.aper_corr(self.aper_diam, band) for band in instrument.band_names]
         super().__init__(instrument, flux_Jy, flux_Jy_errs, loc_depths)
+
+    def __str__(self):
+        line_sep = "*" * 40 + "\n"
+        band_sep = "-" * 10 + "\n"
+        output_str = line_sep
+        output_str += "PHOTOMETRY OBS:\n"
+        output_str += band_sep
+        output_str += f"APERTURE DIAMETER: {self.aper_diam}\n"
+        output_str += f"MIN FLUX PC ERR: {self.min_flux_pc_err}%\n"
+        output_str += super().__str__(print_cls_name = False)
+        for result in self.SED_results.values():
+            output_str += str(result)
+        output_str += f"SNR: {[np.round(snr, 2) for snr in self.SNR]}\n"
+        output_str += line_sep
+        return output_str
 
     @property
     def flux_lambda(self): # wav and flux_nu must have units here!
-        return (self.flux_Jy * const.c / ((np.array([self.instrument.band_wavelengths[band].value for band in self.instrument.bands]) * u.Angstrom) ** 2)).to(u.erg / (u.s * (u.cm ** 2) * u.Angstrom)) # both flux_nu and wav must be in the same rest or observed frame
+        return (self.flux_Jy * const.c / ((np.array([self.instrument.band_wavelengths[band].value for band in self.instrument.band_names]) * u.Angstrom) ** 2)).to(u.erg / (u.s * (u.cm ** 2) * u.Angstrom)) # both flux_nu and wav must be in the same rest or observed frame
     
     @property
     def flux_lambda_errs(self):
-        return (self.flux_Jy_errs * const.c / ((np.array([self.instrument.band_wavelengths[band].value for band in self.instrument.bands]) * u.Angstrom) ** 2)).to(u.erg / (u.s * (u.cm ** 2) * u.Angstrom))
+        return (self.flux_Jy_errs * const.c / ((np.array([self.instrument.band_wavelengths[band].value for band in self.instrument.band_names]) * u.Angstrom) ** 2)).to(u.erg / (u.s * (u.cm ** 2) * u.Angstrom))
+
+    @property
+    def SNR(self):
+        return [(flux_Jy * 10 ** (aper_corr / -2.5)) * 5 / depth if flux_Jy > 0. else flux_Jy * 5 / depth \
+            for aper_corr, flux_Jy, depth in zip(self.aper_corrs, self.flux_Jy.filled(fill_value = np.nan).to(u.Jy).value, self.depths.to(u.Jy).value)]
 
     @classmethod # not a gal object here, more like a catalogue row
-    def from_fits_cat(cls, fits_cat_row, instrument, cat_creator, aper_diam, min_flux_pc_err, codes, lowz_zmaxs):
+    def from_fits_cat(cls, fits_cat_row, instrument, cat_creator, aper_diam, min_flux_pc_err, codes, lowz_zmaxs, templates):
         phot = Photometry.from_fits_cat(fits_cat_row, instrument, cat_creator)
-        #raise(Exception("Fix this!"))
-        SED_results = Galaxy_SED_results.from_fits_cat(fits_cat_row, cat_creator, codes, lowz_zmaxs, instrument = instrument)
+        SED_results = Galaxy_SED_results.from_fits_cat(fits_cat_row, cat_creator, codes, lowz_zmaxs, templates, instrument = instrument)
         return cls.from_phot(phot, aper_diam, min_flux_pc_err, SED_results)
     
     @classmethod
@@ -43,30 +64,34 @@ class Photometry_obs(Photometry):
         return cls(phot.instrument, phot.flux_Jy, phot.flux_Jy_errs, aper_diam, min_flux_pc_err, phot.loc_depths, SED_results)
     
     def update(self, gal_SED_results):
-        # gal_SED_results has type = dict(dict())
-        # ensure the same code_names are keys in both self.SED_results and gal_SED_results
-        for code_name, val in self.SED_results.items():
-            if code_name not in gal_SED_results.keys():
-                gal_SED_results[code_name] = {**{code_name: {}}, **gal_SED_results}
-        for code_name, val in gal_SED_results.items():
-            if code_name not in self.SED_results.keys():
-                self.SED_results = {**{code_name: {}}, **self.SED_results}
-        self.SED_results = {code_name: dict(**self.SED_results[code_name], **gal_SED_results[code_name]) for code_name in self.SED_results.keys()}
-        #print("Post update:", self.SED_results)
-    
-    def load_local_depths(self, sex_cat_row, instrument, aper_diam_index):
-        self.loc_depths = np.array([sex_cat_row[f"loc_depth_{band}"].T[aper_diam_index] for band in instrument.bands])
-        
-    def SNR_crop(self, band, sigma_detect_thresh):
-        index = self.instrument.band_from_index(band)
-        # local depth in units of Jy
-        loc_depth_Jy = self.loc_depths[index].to(u.Jy) / 5
-        detection_Jy = self.flux_Jy[index].to(u.Jy)
-        sigma_detection = (detection_Jy / loc_depth_Jy).value
-        if sigma_detection >= sigma_detect_thresh:
-            return True
+        if hasattr(self, "SED_results"):
+            self.SED_results = {**self.SED_results, **gal_SED_results}
         else:
-            return False
+            self.SED_results = gal_SED_results
+    
+    def update_mask(self, cat, cat_creator, ID, update_phot_rest = False):
+        gal_index = np.where(cat[cat_creator.ID_label] == ID)[0][0]
+        mask = cat_creator.load_mask(cat, self.instrument.band_names)[gal_index]
+        self.flux_Jy.mask = mask
+        self.flux_Jy_errs.mask = mask
+        return self
+    
+    def get_SED_fit_params_arr(self, code):
+        return [code.SED_fit_params_from_label(label) for label in self.SED_results.keys()]
+
+    #def load_local_depths(self, sex_cat_row, instrument, aper_diam_index):
+    #    self.loc_depths = np.array([sex_cat_row[f"loc_depth_{band}"].T[aper_diam_index] for band in instrument.band_names])
+        
+    # def SNR_crop(self, band, sigma_detect_thresh):
+    #     index = self.instrument.band_from_index(band)
+    #     # local depth in units of Jy
+    #     loc_depth_Jy = self.loc_depths[index].to(u.Jy) / 5
+    #     detection_Jy = self.flux_Jy[index].to(u.Jy)
+    #     sigma_detection = (detection_Jy / loc_depth_Jy).value
+    #     if sigma_detection >= sigma_detect_thresh:
+    #         return True
+    #     else:
+    #         return False
 
 # %%    
         
@@ -76,10 +101,10 @@ class Multiple_Photometry_obs:
         # force SED_results_arr to have the same len as the number of input fluxes
         if SED_results_arr == []:
             SED_results_arr = np.full(len(flux_Jy_arr), {})
-        self.phot_obs_arr = [Photometry_obs(instrument, flux_Jy * u.Jy, flux_Jy_errs * u.Jy, aper_diam, min_flux_pc_err, loc_depths, SED_results) \
-                         for flux_Jy, flux_Jy_errs, loc_depths, SED_results in zip(flux_Jy_arr, flux_Jy_errs_arr, loc_depths_arr, SED_results_arr)]
+        self.phot_obs_arr = [Photometry_obs(instrument, flux_Jy, flux_Jy_errs, aper_diam, min_flux_pc_err, loc_depths, SED_results) \
+            for flux_Jy, flux_Jy_errs, loc_depths, SED_results in zip(flux_Jy_arr, flux_Jy_errs_arr, loc_depths_arr, SED_results_arr)]
 
-    def __repr__(self):
+    def __str__(self):
         # string representation of what is stored in this class
         return str(self.__dict__)
     
@@ -100,12 +125,13 @@ class Multiple_Photometry_obs:
     
     def __getitem__(self, index):
         return self.phot_obs_arr[index]
-    
+
     @classmethod
-    def from_fits_cat(cls, fits_cat, instrument, cat_creator, aper_diam, min_flux_pc_err, codes, lowz_zmaxs, templates_arr):
-        flux_Jy_arr, flux_Jy_errs_arr = cat_creator.load_photometry(fits_cat, instrument.bands)
-        # TO DO: MAKE MULTIPLE_SED_RESULTS CLASS TO LOAD IN SED_RESULTS SIMULTANEOUSLY (LEAVE AS [] FOR NOW)
-        loc_depths_arr = np.full(len(flux_Jy_arr), None)
-        SED_results_arr = Catalogue_SED_results.from_fits_cat(fits_cat, cat_creator, codes, lowz_zmaxs, templates_arr, instrument = instrument).SED_results
-        # print("Photometry_obs SED_results = ", SED_results_arr)
-        return cls(instrument, flux_Jy_arr, flux_Jy_errs_arr, aper_diam, min_flux_pc_err, loc_depths_arr, SED_results_arr)
+    def from_fits_cat(cls, fits_cat, instrument, cat_creator, SED_fit_params_arr):
+        flux_Jy_arr, flux_Jy_errs_arr = cat_creator.load_photometry(fits_cat, instrument.band_names)
+        depths_arr = cat_creator.load_depths(fits_cat, instrument.band_names)
+        if SED_fit_params_arr != [{}]:
+            SED_results_arr = Catalogue_SED_results.from_fits_cat(fits_cat, cat_creator, SED_fit_params_arr, instrument = instrument).SED_results
+        else:
+            SED_results_arr = np.full(len(flux_Jy_arr), {})
+        return cls(instrument, flux_Jy_arr, flux_Jy_errs_arr, cat_creator.aper_diam, cat_creator.min_flux_pc_err, depths_arr, SED_results_arr)

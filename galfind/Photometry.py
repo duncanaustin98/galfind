@@ -29,7 +29,33 @@ class Photometry:
         self.flux_Jy = flux_Jy
         self.flux_Jy_errs = flux_Jy_errs
         self.loc_depths = depths # not sure what problems renaming this will have
-        self.depths = depths
+        self.depths = depths # stores exactly the same info as self.loc_depths, but it is a pain to propagate deletion of the above so it is left for now
+        assert(len(self.instrument) == len(self.flux_Jy) == len(self.flux_Jy_errs) == len(self.depths))
+
+    def __str__(self, print_cls_name = True, print_instrument = False, print_fluxes = True, print_depths = True):
+        line_sep = "*" * 40 + "\n"
+        band_sep = "-" * 10 + "\n"
+        output_str = ""
+
+        if print_cls_name:
+            output_str += line_sep
+            output_str += "PHOTOMETRY:\n"
+            output_str += band_sep
+
+        if print_instrument:
+            output_str += str(self.instrument)
+        
+        #if print_fluxes:
+        fluxes_str = ["%.1f ± %.1f nJy" %(flux_Jy.to(u.nJy).value, flux_Jy_err.to(u.nJy).value) \
+            for flux_Jy, flux_Jy_err in zip(self.flux_Jy.filled(fill_value = np.nan), self.flux_Jy_errs.filled(fill_value = np.nan))]
+        output_str += f"FLUXES: {fluxes_str}\n"
+        output_str += f"MAGS: {[np.round(mag, 2) for mag in self.flux_Jy.filled(fill_value = np.nan).to(u.ABmag).value]}\n"
+        #if print_depths:
+        output_str += f"DEPTHS: {[np.round(depth, 2) for depth in self.depths.value]}\n"
+
+        if print_cls_name:
+            output_str += line_sep
+        return output_str
     
     def __getitem__(self, i):
         if type(i) == int:
@@ -44,22 +70,19 @@ class Photometry:
     
     @property
     def wav(self):
-        return np.array([self.instrument.band_wavelengths[band].value for band in self.instrument.bands]) * u.Angstrom
-    
-    # @property
-    # def band_detections(self):
-    #     return [funcs.n_sigma_detection()]
+        return self.instrument.band_wavelengths
+        #return np.array([self.instrument.band_wavelengths[band].value for band in self.instrument.band_names]) * u.Angstrom
     
     @classmethod
     def from_fits_cat(cls, fits_cat_row, instrument, cat_creator):
-        fluxes, flux_errs = cat_creator.load_photometry(fits_cat_row, instrument.bands)
+        fluxes, flux_errs = cat_creator.load_photometry(fits_cat_row, instrument.band_names)
         try:
             # local depths only currently works for one aperture diameter
-            loc_depths = np.array([fits_cat_row[f"loc_depth_{band}"].T[cat_creator.aper_diam_index] for band in instrument.bands])
+            loc_depths = np.array([fits_cat_row[f"loc_depth_{band_name}"].T[cat_creator.aper_diam_index] for band_name in instrument.band_names])
         except:
             #print("local depths not loaded")
             loc_depths = None
-        return cls(instrument, fluxes[0] * u.Jy, flux_errs[0] * u.Jy, loc_depths)
+        return cls(instrument, fluxes[0], flux_errs[0], loc_depths)
     
     def scatter_phot(self, n_scatter = 1):
         phot_matrix = np.random.normal(self.flux_Jy.value, self.flux_Jy_errs.value, n_scatter)
@@ -72,7 +95,7 @@ class Photometry:
     def crop_phot(self, indices):
         indices = np.array(indices).astype(int)
         for index in reversed(indices):
-            self.instrument.remove_band(self.instrument.bands[index])
+            self.instrument.remove_band(self.instrument[index])
         self.flux_Jy = np.delete(self.flux_Jy, indices)
         self.flux_Jy_errs = np.delete(self.flux_Jy_errs, indices)
         
@@ -101,9 +124,9 @@ class Multiple_Photometry:
         
     @classmethod
     def from_fits_cat(cls, fits_cat, instrument, cat_creator):
-        flux_Jy_arr, flux_Jy_errs_arr = cat_creator.load_photometry(fits_cat, instrument.bands)
+        flux_Jy_arr, flux_Jy_errs_arr = cat_creator.load_photometry(fits_cat, instrument.band_names)
         # local depths not yet loaded in
-        loc_depths_arr = np.full(len(flux_Jy_arr), None)
+        loc_depths_arr = np.full(flux_Jy_arr.shape, None)
         return cls(instrument, flux_Jy_arr, flux_Jy_errs_arr, loc_depths_arr)
 
 class Mock_Photometry(Photometry):

@@ -122,7 +122,7 @@ def calc_approx_n_H_v2(z, astropy_cosmo):
 def calc_trec(z, Hydrogen_abundance, astropy_cosmo, electron_temp = 1e4 * u.K, recomb_coeff_func \
         = case_B_recomb_coeff, clumping_factor_func = Shull2012_clumping_factor):
     return (1. / ((1. + (1. - Hydrogen_abundance) / (4. * Hydrogen_abundance)) * \
-        calc_n_H(z, Hydrogen_abundance, astropy_cosmo) * recomb_coeff_func(electron_temp) * clumping_factor_func(z))).to(u.s)
+       calc_n_H(z, Hydrogen_abundance, astropy_cosmo) * recomb_coeff_func(electron_temp) * clumping_factor_func(z))).to(u.s)
 
 def calc_stable_Q_HII_z(Q_HII, M_UV_lim, Hydrogen_abundance, astropy_cosmo, fesc_func = flat_fesc, \
         xi_ion_func = flat_xi_ion, UVLF_func = Bouwens15_UVLF_evolution, electron_temp = 1e4 * u.K, \
@@ -136,7 +136,7 @@ def calc_stable_Q_HII_z(Q_HII, M_UV_lim, Hydrogen_abundance, astropy_cosmo, fesc
 
 def main():
     # plot UV LF
-    z_arr = [5., 6., 7., 8., 9., 10.]
+    z_arr = [7., 8., 9., 10.]
     M_UV = np.linspace(-21., -15., 100)
     # parametrization = "Bouwens+15"
     # fig, ax = plt.subplots()
@@ -144,11 +144,13 @@ def main():
     #     plot_UVLF(ax, z, M_UV, parametrization = parametrization, legend = True if z == z_arr[-1] else False, save = False)
     # plt.savefig(f"z={z_arr}_{parametrization}_UVLF.png")
 
-    fig, ax = plt.subplots()
-    M_UV_lim_arr = np.linspace(-22., -10., 1_000)
-    plot_n_dot_ion_vs_M_UV_lim(ax, z_arr, M_UV_lim_arr, Hydrogen_abundance, astropy_cosmo, stable_Q_HII_lines = [1.])
+    # fig, ax = plt.subplots()
+    # M_UV_lim_arr = np.linspace(-22., -10., 1_000)
+    # plot_n_dot_ion_vs_M_UV_lim(ax, z_arr, M_UV_lim_arr, Hydrogen_abundance, astropy_cosmo, stable_Q_HII_lines = [1.])
 
-    print(calc_stable_Q_HII_z(1., -13., Hydrogen_abundance, astropy_cosmo))
+    print(calc_stable_Q_HII_z(1., -17., Hydrogen_abundance, astropy_cosmo))
+    print(calc_n_H(z_arr[0], Hydrogen_abundance, astropy_cosmo))
+    print(calc_trec(z_arr[0], Hydrogen_abundance, astropy_cosmo, clumping_factor_func = const_clumping_factor).to(u.Myr))
 
 if __name__ == "__main__":
     main()

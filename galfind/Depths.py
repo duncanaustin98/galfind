@@ -46,10 +46,11 @@ def make_grid(data, mask, radius, scatter_size, pixel_scale=0.03, plot=False, ax
     # NOTE!!!!
     # np.shape on a 2D array returns (y, x) not (x, y)
     # So references to an x, y coordinate in the array should be [y, x]
-    
+
     xy = np.mgrid[radius_pixels + scatter_size_pixels:data.shape[1]-(radius_pixels + scatter_size_pixels):2*(radius_pixels + scatter_size_pixels), 
                 radius_pixels + scatter_size_pixels:data.shape[0]-(radius_pixels + scatter_size_pixels):2*(radius_pixels+scatter_size_pixels)]
     
+
     xy = xy.reshape(2, -1).T
 
     scatter = np.random.uniform(low=-scatter_size_pixels, high=scatter_size_pixels, size=(xy.shape[0], 2))
@@ -66,15 +67,12 @@ def make_grid(data, mask, radius, scatter_size, pixel_scale=0.03, plot=False, ax
     mask = mask.astype(bool)
 
     non_overlapping_xy = []
-    
     for x, y in xy:
         # Check if the circle overlaps with the mask
-
         if np.any(mask[int(y-radius_pixels):int(y+radius_pixels), int(x-radius_pixels):int(x+radius_pixels)]):
             continue  # Skip this coordinate if it overlaps
         else:
             non_overlapping_xy.append((x, y))  # Add non-overlapping coordinates to the list
-    
     # Plot the circles using matplotlib
     if plot:
         if ax == None:
@@ -444,7 +442,7 @@ def show_depths(nmad_grid, num_grid, step_size, region_radius_used_pix, labels =
     #axs[7].remove()
     #plt.tight_layout()
     if type(save_path) != type(None):
-        plt.savefig(save_path)
+        plt.savefig(save_path, dpi=300, bbox_inches='tight')
         print(f"Saved depths plot to {save_path}")
     if show:
         plt.show()
@@ -468,7 +466,7 @@ def make_ds9_region_file(coordinates, radius, filename, coordinate_type = 'sky',
     # If coordinate shape is (2, n) then we have to transpose it
     if np.shape(coordinates)[-1] == 2:
         coordinates = np.array(coordinates).T
-    print(coordinates)
+    print(f"empty aperture coordinates = {coordinates}")
     x, y = np.array(coordinates)
     
     if coordinate_type == 'sky':

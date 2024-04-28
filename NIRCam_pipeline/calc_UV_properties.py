@@ -41,7 +41,7 @@ def calc_UV_properties(surveys, version, instruments, xy_offsets, aper_diams, co
 
 if __name__ == "__main__":
     version = "v9" #config["DEFAULT"]["VERSION"]
-    instruments = ['NIRCam', "ACS_WFC"] #, 'WFC3IR'] # Can leave this - if there is no data for an instrument it is removed automatically
+    instruments = ['NIRCam', "ACS_WFC"] #, 'WFC3_IR'] # Can leave this - if there is no data for an instrument it is removed automatically
     cat_type = "loc_depth"
     surveys = ["JADES-Deep-GS"] #["CLIO", "SMACS-0723", "GLASS", "El-Gordo", "MACS-0416"] 
     aper_diams = [0.32] * u.arcsec
