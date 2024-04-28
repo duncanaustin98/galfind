@@ -9,7 +9,8 @@ from .Data import Data
 from .Galaxy import Galaxy
 from . import useful_funcs_austind as funcs
 from .Catalogue_Creator import GALFIND_Catalogue_Creator
-from . import config, galfind_logger, SED_code, LePhare, EAZY, Bagpipes
+from . import config, galfind_logger, SED_code
+from .EAZY import EAZY
 from . import Multiple_Catalogue, Multiple_Data
 
 class Catalogue_Base:
@@ -90,7 +91,7 @@ class Catalogue_Base:
     def __getitem__(self, index):
         return self.gals[index]
     
-    def __getattr__(self, name, code_name = "EAZY", templates = "fsps_larson", lowz_zmax = None, phot_type = "obs"): # only acts on attributes that don't already exist
+    def __getattr__(self, name, SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}, phot_type = "obs"): # only acts on attributes that don't already exist
         if name in self[0].__dict__:
             return np.array([getattr(gal, name) for gal in self])
         elif name.upper() == "RA":
@@ -107,10 +108,10 @@ class Catalogue_Base:
             return np.array([getattr(gal, "phot").mask for gal in self])
         elif name in self[0].selection_flags.keys():
             return np.array([getattr(gal, "selection_flags")[name] for gal in self])
-        elif name in self[0].phot.SED_results[code_name][templates][funcs.lowz_label(lowz_zmax)].__dict__:
-            return np.array([getattr(gal.phot.SED_results[code_name][templates][funcs.lowz_label(lowz_zmax)], name) for gal in self])
-        elif phot_type == "rest" and name in self[0].phot.SED_results[code_name][templates][funcs.lowz_label(lowz_zmax)].phot_rest.__dict__:
-            return np.array([getattr(gal.phot.SED_results[code_name][templates][funcs.lowz_label(lowz_zmax)].phot_rest, name) for gal in self])
+        elif name in self[0].phot.SED_results[SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)].__dict__:
+            return np.array([getattr(gal.phot.SED_results[SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)], name) for gal in self])
+        elif phot_type == "rest" and name in self[0].phot.SED_results[SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)].phot_rest.__dict__:
+            return np.array([getattr(gal.phot.SED_results[SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)].phot_rest, name) for gal in self])
         else:
             galfind_logger.critical(f"Galaxies do not have attribute = {name}!")
     

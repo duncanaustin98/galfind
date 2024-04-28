@@ -92,6 +92,12 @@ class LePhare(SED_code):
         # first write the code name and then the template name
         return f"{SED_fit_params['code'].__class__.__name__}_{SED_fit_params['templates']}"
     
+    def SED_fit_params_from_label(self, label):
+        label_arr = label.split("_")
+        assert(len(label_arr) == 2)
+        assert(label_arr[1] in self.available_templates)
+        return {"code": self, "templates": label_arr[1]}
+
     def galaxy_property_labels(self, gal_property, SED_fit_params):
         pass
     

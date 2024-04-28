@@ -29,18 +29,20 @@ def pipeline(surveys, version, instruments, aper_diams, min_flux_pc_errs, forced
 
             print(str(cat))
             print(str(cat[0]))
-            breakpoint()
 
-            #cat.select_min_unmasked_bands(min_bands = 4)
-            #cat.phot_bluewards_Lya_non_detect(SNR_lim = 2.)
-            #cat.phot_redwards_Lya_detect(SNR_lims = 5.)
-            #cat_copy = cat.select_EPOCHS()
-            #cat_copy = cat.phot_redwards_Lya_detect(SNR_lims = [7., 5.])
+            cat.phot_redwards_Lya_detect(SNR_lims = [5., 3.])
             #print(str(cat_copy))
+            #cat.select_min_unmasked_bands(min_bands = 4)
+            cat.phot_bluewards_Lya_non_detect(SNR_lim = 2.)
+            cat.phot_redwards_Lya_detect(SNR_lims = 5.)
+            cat.select_chi_sq_diff(9.)
+            cat.select_chi_sq_lim(3.)
+            cat.phot_redwards_Lya_detect(SNR_lims = [5., 3.])
+            cat.phot_SNR_crop(0, 2.)
+
+            #cat_copy = cat.select_EPOCHS()
             #print(cat_copy.crop(1407, "ID")[0])
             # for i, code in enumerate(sed_codes):
-            #     cat = code.fit_cat(cat, templates = eazy_templates)
-            #     #code.fit_cat(cat, templates = eazy_templates)
             #     # calculate the extended source corrections
             #     if code.code_name == "LePhare":
             #         cat.make_ext_src_corr_cat(code.code_name)

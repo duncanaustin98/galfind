@@ -123,8 +123,7 @@ class EAZY(SED_code):
         # HOT_60K - modified IMF high-z templates for use at z > 12
         # Nakajima - unobscured AGN templates
 
-        # update templates from within kwargs
-        assert "lowz_zmax" in np.array(SED_fit_params.keys()), \
+        assert "lowz_zmax" in SED_fit_params.keys(), \
             galfind_logger.critical(f"'lowz_zmax' not in SED_fit_params keys = {np.array(SED_fit_params.keys())}")
         
         templates = SED_fit_params["templates"]
@@ -242,6 +241,8 @@ class EAZY(SED_code):
                 # Write fits file
                 table.write(fits_out_path, overwrite = True)
                 galfind_logger.info(f'Written {self.__class__.__name__} {templates} {lowz_label} fits out file to: {fits_out_path}')
+        else:
+            table = Table.read(fits_out_path)
 
         # save PDFs in h5 file
         if save_PDFs and not Path(zPDF_path).is_file():
@@ -271,9 +272,6 @@ class EAZY(SED_code):
         if fit != None:
             fit.param.write(fits_out_path.replace(".fits", "_params.csv"))
             galfind_logger.info(f'Written output pararmeters for {self.__class__.__name__} {templates} {lowz_label}')
-        
-        # return PDF and SED paths
-        return {"z": np.full(len(table), zPDF_path)}, np.full(len(table), SED_path)
 
     @staticmethod
     def save_zPDF(pos_obj, ID, hf, fit_zgrid, fit_pz):
@@ -296,7 +294,13 @@ class EAZY(SED_code):
     def label_from_SED_fit_params(SED_fit_params):
         assert("code" in SED_fit_params.keys() and "templates" in SED_fit_params.keys() and "lowz_zmax" in SED_fit_params.keys())
         # first write the code name, next write the template name, finish off with lowz_zmax
-        return f"{SED_fit_params['code'].__class__.__name__}_{SED_fit_params['templates']}_{SED_fit_params['lowz_zmax']}"
+        return f"{SED_fit_params['code'].__class__.__name__}_{SED_fit_params['templates']}_{funcs.lowz_label(SED_fit_params['lowz_zmax'])}"
+
+    def SED_fit_params_from_label(self, label):
+        label_arr = label.split("_")
+        templates = "_".join(label_arr[1:-1]) # templates may contain underscore
+        assert(templates in self.available_templates)
+        return {"code": self, "templates": templates, "lowz_zmax": funcs.zmax_from_lowz_label(label_arr[-1])}
 
     def make_fits_from_out(self, out_path, SED_fit_params): #*args, **kwargs):
         pass

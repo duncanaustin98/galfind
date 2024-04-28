@@ -120,6 +120,10 @@ class SED_code(ABC):
         pass
 
     @abstractmethod
+    def SED_fit_params_from_label(self, label):
+        pass
+
+    @abstractmethod
     def galaxy_property_labels(self, gal_property, SED_fit_params):
         pass
 

@@ -76,12 +76,8 @@ class Photometry_obs(Photometry):
         self.flux_Jy_errs.mask = mask
         return self
     
-    def get_lowz_zmax(self, code_name = "EAZY", templates = "fsps_larson"):
-        output = sorted([funcs.zmax_from_lowz_label(label) for label in \
-            self.SED_results[code_name][templates].keys() if funcs.zmax_from_lowz_label(label) != None])
-        if funcs.lowz_label(None) in self.SED_results[code_name][templates].keys():
-            output.append(None)
-        return output
+    def get_SED_fit_params_arr(self, code):
+        return [code.SED_fit_params_from_label(label) for label in self.SED_results.keys()]
 
     #def load_local_depths(self, sex_cat_row, instrument, aper_diam_index):
     #    self.loc_depths = np.array([sex_cat_row[f"loc_depth_{band}"].T[aper_diam_index] for band in instrument.band_names])

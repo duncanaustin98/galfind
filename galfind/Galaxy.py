@@ -22,6 +22,7 @@ from astropy.wcs import WCS
 from . import useful_funcs_austind as funcs
 from . import config, galfind_logger
 from . import Photometry_rest, Photometry_obs, Multiple_Photometry_obs, Data, Instrument, NIRCam, ACS_WFC, WFC3_IR
+from .EAZY import EAZY
 
 class Galaxy:
     
@@ -190,8 +191,7 @@ class Galaxy:
                     self.selection_flags[selection_name] = False
         return self, selection_name
         
-    def phot_bluewards_Lya_non_detect(self, SNR_lim, code_name = "EAZY", \
-            templates = "fsps_larson", lowz_zmax = None, update = True):
+    def phot_bluewards_Lya_non_detect(self, SNR_lim, SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}, update = True):
         assert(type(SNR_lim) in [int, float])
         selection_name = f"bluewards_Lya_SNR<{SNR_lim:.1f}"
         # only compute this if not already done so
@@ -203,7 +203,7 @@ class Galaxy:
             SNRs = self.phot.SNR
             mask = self.phot.flux_Jy.mask
             assert(len(bands) == len(SNRs) == len(mask))
-            first_Lya_non_detect_band = self.phot.SED_results[code_name][templates][funcs.lowz_label(lowz_zmax)].phot_rest.first_Lya_non_detect_band
+            first_Lya_non_detect_band = self.phot.SED_results[SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)].phot_rest.first_Lya_non_detect_band
             if first_Lya_non_detect_band == None:
                 if update:
                     self.selection_flags[selection_name] = True
@@ -221,8 +221,8 @@ class Galaxy:
                     self.selection_flags[selection_name] = False
         return self, selection_name
     
-    def phot_redwards_Lya_detect(self, SNR_lims, code_name = "EAZY", templates = "fsps_larson", \
-            lowz_zmax = None, widebands_only = True, update = True):
+    def phot_redwards_Lya_detect(self, SNR_lims, SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}, \
+            widebands_only = True, update = True):
         # work out selection name based on SNR_lims input type
         if type(SNR_lims) in [int, float]:
             # require all redwards bands to be detected at >SNR_lims
@@ -242,7 +242,7 @@ class Galaxy:
             galfind_logger.debug(f"Performing {selection_name} for galaxy ID = {self.ID}!")
             # extract bands, SNRs, mask and first Lya non-detect band
             bands = self.phot.instrument.band_names
-            first_Lya_detect_band = self.phot.SED_results[code_name][templates][funcs.lowz_label(lowz_zmax)].phot_rest.first_Lya_detect_band
+            first_Lya_detect_band = self.phot.SED_results[SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)].phot_rest.first_Lya_detect_band
             if first_Lya_detect_band == None:
                 if update:
                     self.selection_flags[selection_name] = False
@@ -267,8 +267,8 @@ class Galaxy:
                     self.selection_flags[selection_name] = False
         return self, selection_name
     
-    def phot_Lya_band(self, SNR_lim, detect_or_non_detect = "detect", code_name = "EAZY", \
-            templates = "fsps_larson", lowz_zmax = None, widebands_only = True, update = True):
+    def phot_Lya_band(self, SNR_lim, detect_or_non_detect = "detect", SED_fit_params = \
+            {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}, widebands_only = True, update = True):
         assert(type(SNR_lim) in [int, float])
         assert(detect_or_non_detect.lower() in ["detect", "non_detect"], \
             galfind_logger.critical(f"detect_or_non_detect = {detect_or_non_detect} must be either 'detect' or 'non_detect'!"))
@@ -279,9 +279,9 @@ class Galaxy:
             # load bands
             bands = self.phot.instrument.band_names
             # determine Lya band(s) - usually a single band, but could be two in the case of medium bands
-            first_Lya_detect_band = self.phot.SED_results[code_name][templates][funcs.lowz_label(lowz_zmax)].phot_rest.first_Lya_detect_band
+            first_Lya_detect_band = self.phot.SED_results[SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)].phot_rest.first_Lya_detect_band
             first_Lya_detect_index = np.where(bands == first_Lya_detect_band)[0][0]
-            first_Lya_non_detect_band = self.phot.SED_results[code_name][templates][funcs.lowz_label(lowz_zmax)].phot_rest.first_Lya_non_detect_band
+            first_Lya_non_detect_band = self.phot.SED_results[SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)].phot_rest.first_Lya_non_detect_band
             first_Lya_non_detect_index = np.where(bands == first_Lya_non_detect_band)[0][0]
             # load SNRs, cropping by the relevant bands
             bands_detect = bands[first_Lya_detect_band : first_Lya_non_detect_index + 1]
@@ -346,18 +346,20 @@ class Galaxy:
 
     # chi squared selection functions
 
-    def select_chi_sq_lim(self, chi_sq_lim, code_name = "EAZY", templates = "fsps_larson", lowz_zmax = None, reduced = True, update = True):
+    def select_chi_sq_lim(self, chi_sq_lim, SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}, reduced = True, update = True):
         assert(type(chi_sq_lim) in [int, float])
         assert(type(reduced) == bool)
         if reduced:
+            selection_name = f"red_chi_sq<{chi_sq_lim:.1f}"
             n_bands = len([mask_band for mask_band in self.phot.flux_Jy.mask if not mask_band]) # number of unmasked bands for galaxy
             chi_sq_lim *= (n_bands - 1)
-        selection_name = f"chi_sq>{chi_sq_lim:.1f}"
+        else:
+            raise NotImplementedError
         if selection_name in self.selection_flags.keys():
             galfind_logger.debug(f"{selection_name} already performed for galaxy ID = {self.ID}!")
         else:
             # extract chi_sq
-            chi_sq = self.phot.SED_results[code_name][templates][funcs.lowz_label(lowz_zmax)].chi_sq
+            chi_sq = self.phot.SED_results[SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)].chi_sq
             if chi_sq < chi_sq_lim:
                 if update:
                     self.selection_flags[selection_name] = True
@@ -366,22 +368,29 @@ class Galaxy:
                     self.selection_flags[selection_name] = False
         return self, selection_name
 
-    def select_chi_sq_diff(self, chi_sq_diff, code_name = "EAZY", templates = "fsps_larson", delta_z_lowz = 0.5, update = True):
+    def select_chi_sq_diff(self, chi_sq_diff, SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}, delta_z_lowz = 0.5, update = True):
         assert(type(chi_sq_diff) in [int, float])
         assert(type(delta_z_lowz) in [int, float])
+        assert("lowz_zmax" in SED_fit_params.keys())
+        assert(SED_fit_params["lowz_zmax"] == None)
         selection_name = f"chi_sq_diff>{chi_sq_diff:.1f},dz>{delta_z_lowz:.1f}"
         if selection_name in self.selection_flags.keys():
             galfind_logger.debug(f"{selection_name} already performed for galaxy ID = {self.ID}!")
         else:
-            lowz_zmax_arr = self.phot.get_lowz_zmax(code_name = code_name, templates = templates)
+            lowz_zmax_arr = [SED_fit_params["lowz_zmax"] for SED_fit_params in self.phot.get_SED_fit_params_arr(SED_fit_params["code"])]
             assert(lowz_zmax_arr[-1] == None and len(lowz_zmax_arr) > 1)
-            lowz_zmax_arr = lowz_zmax_arr[:-1]
+            lowz_zmax_arr = sorted(lowz_zmax_arr[:-1])
             # extract redshift + chi_sq of zfree run
-            zfree = self.phot.SED_results[code_name][templates][funcs.lowz_label(None)].z
-            chi_sq_zfree = self.phot.SED_results[code_name][templates][funcs.lowz_label(None)].chi_sq
+            zfree = self.phot.SED_results[SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)].z
+            chi_sq_zfree = self.phot.SED_results[SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)].chi_sq
             # extract redshift and chi_sq of lowz runs
-            z_lowz_arr = [self.phot.SED_results[code_name][templates][funcs.lowz_label(zmax)].z for zmax in lowz_zmax_arr]
-            chi_sq_lowz_arr = [self.phot.SED_results[code_name][templates][funcs.lowz_label(zmax)].chi_sq for zmax in lowz_zmax_arr]
+            z_lowz_arr = []
+            chi_sq_lowz_arr = []
+            for zmax in lowz_zmax_arr:
+                SED_fit_params_ = deepcopy(SED_fit_params)
+                SED_fit_params_["lowz_zmax"] = zmax
+                z_lowz_arr.append(self.phot.SED_results[SED_fit_params_["code"].label_from_SED_fit_params(SED_fit_params_)].z)
+                chi_sq_lowz_arr.append(self.phot.SED_results[SED_fit_params_["code"].label_from_SED_fit_params(SED_fit_params_)].chi_sq)
             # determine which lowz run to use for this galaxy
             z_lowz = [z for z, lowz_zmax in zip(z_lowz_arr, lowz_zmax_arr) if zfree > lowz_zmax + delta_z_lowz]
             chi_sq_lowz = [chi_sq for chi_sq, lowz_zmax in zip(chi_sq_lowz_arr, lowz_zmax_arr) if zfree > lowz_zmax + delta_z_lowz]
@@ -398,15 +407,17 @@ class Galaxy:
     
     # z-PDF selection functions
 
-    def select_robust_zPDF(self, integral_lim, delta_z, zPDF_h5, code_name = "EAZY", templates = "fsps_larson", lowz_zmax = None, update = True):
+    def select_robust_zPDF(self, integral_lim, delta_z, zPDF_h5, SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}, update = True):
         assert(type(integral_lim) == float and (integral_lim * 100).is_integer())
         assert(type(delta_z) in [int, float])
+        if "lowz_zmax" in SED_fit_params.keys():
+            assert(SED_fit_params["lowz_zmax"] == None)
         selection_name = f"zPDF>{int(integral_lim * 100)}%,dz={delta_z}"
         if selection_name in self.selection_flags.keys():
             galfind_logger.debug(f"{selection_name} already performed for galaxy ID = {self.ID}!")
         else:
             # extract best fitting redshift - peak of the redshift PDF
-            zbest = self.phot.SED_results[code_name][templates][funcs.lowz_label(None)].z
+            zbest = self.phot.SED_results[SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)].z
             if zbest < 0.:
                 if update:
                     self.selection_flags[selection_name] = False
@@ -434,7 +445,7 @@ class Galaxy:
                         self.selection_flags[selection_name] = False
         return self, selection_name
     
-    def select_EPOCHS(self, code_name = "EAZY", templates = "fsps_larson", lowz_zmax = None, update = True):
+    def select_EPOCHS(self, SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}, update = True):
         
         selection_name = "EPOCHS"
         if not "NIRCam" in self.phot.instrument.name:
@@ -446,11 +457,11 @@ class Galaxy:
         # masking takes a little while
         # self.select_unmasked_instrument("NIRCam")[1], \
         selection_names = [
-            self.select_chi_sq_lim(3., code_name, templates, lowz_zmax, reduced = True)[1], \
-            self.select_chi_sq_diff(9., code_name, templates, delta_z_lowz = 0.5)[1], \
+            self.select_chi_sq_lim(3., SED_fit_params, reduced = True)[1], \
+            self.select_chi_sq_diff(9., SED_fit_params, delta_z_lowz = 0.5)[1], \
             self.phot_SNR_crop(0, 2.)[1], \
-            self.phot_bluewards_Lya_non_detect(2., code_name, templates, lowz_zmax)[1], \
-            self.phot_redwards_Lya_detect([5., 3.], code_name, templates, lowz_zmax, widebands_only = True)[1]
+            self.phot_bluewards_Lya_non_detect(2., SED_fit_params)[1], \
+            self.phot_redwards_Lya_detect([5., 3.], SED_fit_params, widebands_only = True)[1]
         ]
         # masking criteria
          # unmasked in first band
@@ -458,7 +469,7 @@ class Galaxy:
          # 2σ non-detected in first band
          # 2σ non-detected in all bands bluewards of Lya
         # if galaxy is detected only in the LW filters
-        #first_Lya_detect_band = self.phot.SED_results[code_name][templates][funcs.lowz_label(lowz_zmax)].phot_rest.first_Lya_detect_band
+        #first_Lya_detect_band = self.phot.SED_results[SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)].phot_rest.first_Lya_detect_band
         #band_names = self.phot.instrument.band_names
         #first_band = self.phot.instrument[np.where()]
         # 7σ/5σ detected in 1st/2nd bands redwards of Lya
