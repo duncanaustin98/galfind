@@ -152,7 +152,7 @@ class Catalogue_SED_results:
 
         # load in PDFs
         # make array of the correct shape for appropriate parsing
-        cat_property_PDFs = list(np.full((len(fits_cat), len(SED_fit_params_arr)), None))
+        cat_property_PDFs = np.full((len(fits_cat), len(SED_fit_params_arr)), None)
         if type(cat_PDF_paths) != type(None):
             assert(len(SED_fit_params_arr) == len(cat_PDF_paths))
             # loop through SED_fit_params_arr and corresponding cat_PDF_paths
@@ -163,11 +163,11 @@ class Catalogue_SED_results:
                 # construct PDF objects, type = array of len(fits_cat), each element a dict of {gal_property: PDF object} excluding None PDFs
                 cat_property_PDFs_ = {gal_property: SED_fit_params["code"].extract_PDFs(gal_property, IDs, \
                     PDF_paths[gal_property]) for gal_property in PDF_paths.keys()}
-                cat_property_PDFs[i] = [{gal_property: PDF_arr[j] for gal_property, PDF_arr in cat_property_PDFs_.items() if PDF_arr[j] != None} for j in range(len(fits_cat))]
-        
+                cat_property_PDFs[:, i] = [{gal_property: PDF_arr[j] for gal_property, PDF_arr in cat_property_PDFs_.items() if PDF_arr[j] != None} for j in range(len(fits_cat))]
+
         # load in SEDs
         # make array of the correct shape for appropriate parsing
-        cat_property_SEDs = list(np.full((len(fits_cat), len(SED_fit_params_arr)), None))
+        cat_property_SEDs = np.full((len(fits_cat), len(SED_fit_params_arr)), None)
         if type(cat_SED_paths) != type(None):
             assert(len(SED_fit_params_arr) == len(cat_SED_paths))
             # loop through SED_fit_params_arr and corresponding cat_SED_paths
@@ -176,7 +176,7 @@ class Catalogue_SED_results:
                 # check that these paths correspond to the correct galaxies
                 assert(len(SED_paths) == len(fits_cat) for gal_property in SED_fit_params["code"].galaxy_property_dict.keys())
                 # construct SED objects, type = array of len(fits_cat), each element containing an SED object
-                cat_property_SEDs[i] = SED_fit_params["code"].extract_SEDs(IDs, SED_paths)
+                cat_property_SEDs[:, i] = SED_fit_params["code"].extract_SEDs(IDs, SED_paths)
 
         return cls.from_SED_result_inputs(SED_fit_params_arr, phot_arr, cat_properties, \
             cat_property_errs, cat_property_PDFs, cat_property_SEDs, rest_UV_wav_lims = rest_UV_wav_lims)

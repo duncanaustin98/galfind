@@ -438,7 +438,7 @@ class Catalogue(Catalogue_Base):
     def phot_SNR_crop(self, band_name_or_index, SNR_lim):
         return self.perform_selection(Galaxy.phot_SNR_crop, band_name_or_index, SNR_lim)
     
-    # Depth rregion selection
+    # Depth region selection
 
     def select_depth_region(self, band, region_ID, update = True):
         return NotImplementedError
@@ -453,12 +453,8 @@ class Catalogue(Catalogue_Base):
 
     # Redshift PDF selection functions
 
-    def select_robust_zPDF(self, integral_lim, delta_z, SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}):
-        # open h5 z-PDF file
-        zPDF_h5 = h5py.File(f".h5", "r")
-        cat = self.perform_selection(integral_lim, delta_z, zPDF_h5, SED_fit_params)
-        zPDF_h5.close()
-        return cat
+    def select_robust_zPDF(self, integral_lim, delta_z_over_z, SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}):
+        return self.perform_selection(Galaxy.select_robust_zPDF, integral_lim, delta_z_over_z, SED_fit_params)
     
     # Cutout quality selection functions
 

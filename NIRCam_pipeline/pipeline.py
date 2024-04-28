@@ -30,6 +30,7 @@ def pipeline(surveys, version, instruments, aper_diams, min_flux_pc_errs, forced
             print(str(cat))
             print(str(cat[0]))
 
+            cat.select_robust_zPDF(.6, .1)
             cat.phot_redwards_Lya_detect(SNR_lims = [5., 3.])
             #print(str(cat_copy))
             #cat.select_min_unmasked_bands(min_bands = 4)

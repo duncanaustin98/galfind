@@ -468,12 +468,12 @@ class Galaxy:
     
     # z-PDF selection functions
 
-    def select_robust_zPDF(self, integral_lim, delta_z, zPDF_h5, SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}, update = True):
+    def select_robust_zPDF(self, integral_lim, delta_z_over_z, SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}, update = True):
         assert(type(integral_lim) == float and (integral_lim * 100).is_integer())
-        assert(type(delta_z) in [int, float])
+        assert(type(delta_z_over_z) in [int, float])
         if "lowz_zmax" in SED_fit_params.keys():
             assert(SED_fit_params["lowz_zmax"] == None)
-        selection_name = f"zPDF>{int(integral_lim * 100)}%,dz={delta_z}"
+        selection_name = f"zPDF>{int(integral_lim * 100)}%,|dz|/z<{delta_z_over_z}"
         if selection_name in self.selection_flags.keys():
             galfind_logger.debug(f"{selection_name} already performed for galaxy ID = {self.ID}!")
         else:
@@ -483,21 +483,7 @@ class Galaxy:
                 if update:
                     self.selection_flags[selection_name] = False
             else:
-                # calculate min and max redshift integration values
-                z_min = np.clip(zbest * (1 - delta_z), config["SEDFitting"].getboolean("Z_MIN"), config["SEDFitting"].getboolean("Z_MAX"))
-                z_max = np.clip(zbest * (1 + delta_z), config["SEDFitting"].getboolean("Z_MIN"), config["SEDFitting"].getboolean("Z_MAX"))
-                # load in and normalize PDF
-                z_PDF = zPDF_h5.get("z")
-                pz_PDF = zPDF_h5.get(f"ID={int(self.ID)}").get("p(z)")
-                pz_PDF /= np.trapz(pz_PDF, z_PDF) # normalize
-                # find index of closest values in z_PDF to z_min and z_max
-                index_z_min = np.argmin(np.absolute(z_PDF - z_min))
-                index_z_max = np.argmin(np.absolute(z_PDF - z_max))
-                # clip z/pz distribution to integration limits
-                z_PDF = z_PDF[index_z_min : index_z_max]
-                pz_PDF = pz_PDF[index_z_min : index_z_max]
-                # integrate using trapezium rule between limits
-                integral = np.trapz(pz_PDF, z_PDF)
+                integral = self.phot.SED_results[SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)].property_PDFs["z"].integrate_between_lims(float(zbest * delta_z_over_z), float(zbest))
                 if integral > integral_lim:
                     if update:
                         self.selection_flags[selection_name] = True

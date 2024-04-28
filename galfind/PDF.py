@@ -46,8 +46,7 @@ class Redshift_PDF(PDF):
         z, p_z = code.extract_z_PDF(data_path, ID)
         return cls(z, p_z)
     
-    def integrate_between_lims(self, delta_z, zbest = None, z_min = config["SEDFitting"].get("Z_MIN"), \
-            z_max = config["SEDFitting"].get("Z_MAX")):
+    def integrate_between_lims(self, delta_z, zbest = None, z_min = float(config["SEDFitting"].get("Z_MIN")), z_max = float(config["SEDFitting"].get("Z_MAX"))):
         # find best fitting redshift from peak of the PDF distribution
         if type(zbest) == type(None):
             zbest = self.find_peak(0) # find first peak
