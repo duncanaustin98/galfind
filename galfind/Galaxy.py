@@ -26,7 +26,7 @@ import matplotlib.patches as patches
 from mpl_toolkits.axes_grid1.anchored_artists import AnchoredSizeBar
 
 from . import useful_funcs_austind as funcs
-from . import config, galfind_logger
+from . import config, galfind_logger, astropy_cosmo
 from . import Photometry_rest, Photometry_obs, Multiple_Photometry_obs, Data, Instrument, NIRCam, ACS_WFC, WFC3_IR
 from .EAZY import EAZY
 
@@ -198,18 +198,18 @@ class Galaxy:
             phot_ax.set_xscale(scaling["x"])
         phot_ax.set_xlabel(x_label)
         phot_ax.set_ylabel(y_label)
-        ax_eazy_lowz_pdf.set_yticks([])
-        ax_eazy_lowz_pdf.set_visible(True)
-        ax_eazy_pdf.set_yticks([])
-        ax_eazy_pdf.set_title(zPDF_labels[0], fontsize = "medium") # lowz_zmax = None eazy run is first
-        ax_eazy_pdf.set_xlabel("Redshift, z") # this label should again be pulled from somewhere else
+        PDF_ax[1].set_yticks([])
+        PDF_ax[1].set_visible(True)
+        PDF_ax[0].set_yticks([])
+        PDF_ax[0].set_title(zPDF_labels[0], fontsize = "medium") # lowz_zmax = None eazy run is first
+        PDF_ax[0].set_xlabel("Redshift, z") # this label should again be pulled from somewhere else
         
         out_path = f"{config['Selection']['SELECTION_DIR']}/SED_plots/{data.version}/{data.instrument.name}/{data.survey}/{self.ID}.png"
         funcs.make_dirs(out_path)
 
         if not Path(out_path).is_file() or overwrite:
             # %% Cutout Axes
-            for i, band in enumerate(bands):
+            for i, band in enumerate(data.instrument.band_names):
                 
                 wcs = data.wcs[band] # I think this is a function in Data somethwhere
                 # this should probably be a function somewhere!
@@ -257,50 +257,51 @@ class Galaxy:
                     data_cutout = np.clip(data_cutout * 0.9999, bottom_val * 1.000001, top) # why?
                     norm = ImageNormalize(data_cutout, interval = ManualInterval(bottom_val, top), clip = True, stretch = stretch)
 
-                    cutout_ax_list[i].cla()
-                    cutout_ax_list[i].set_visible(True)
-                    cutout_ax_list[i].set_aspect('equal', adjustable = 'box', anchor = 'N')
-                    cutout_ax_list[i].set_xticks([])
-                    cutout_ax_list[i].set_yticks([])
+                    #cutout_ax[i].cla()
+                    cutout_ax[i].set_visible(True)
+                    cutout_ax[i].set_aspect('equal', adjustable = 'box', anchor = 'N')
+                    cutout_ax[i].set_xticks([])
+                    cutout_ax[i].set_yticks([])
 
-                    cutout_ax_list[i].imshow(data_cutout, norm = norm, cmap='magma', origin = "lower")
-                    cutout_ax_list[i].text(0.95, 0.95, band, fontsize = 'small', c = 'white', \
-                        transform = cutout_ax_list[pos].transAxes, ha = 'right', va = 'top', zorder = 10, fontweight = 'bold')         
+                    cutout_ax[i].imshow(data_cutout, norm = norm, cmap='magma', origin = "lower")
+                    cutout_ax[i].text(0.95, 0.95, band, fontsize = 'small', c = 'white', \
+                        transform = cutout_ax[i].transAxes, ha = 'right', va = 'top', zorder = 10, fontweight = 'bold')         
 
                     # add circles to show extraction aperture and sextractor FLUX_RADIUS
-                    xpos = np.mean(cutout_ax_list[i].get_xlim())
-                    ypos = np.mean(cutout_ax_list[i].get_ylim())
+                    xpos = np.mean(cutout_ax[i].get_xlim())
+                    ypos = np.mean(cutout_ax[i].get_ylim())
                     region = patches.Circle((xpos, ypos), radius_pix, fill = False, \
                         linestyle = '--', lw = 1, color = 'white', zorder = 20)
-                    cutout_ax_list[i].add_patch(region)
+                    cutout_ax[i].add_patch(region)
                     if radius_sextractor != 0:
                         region_sextractor = patches.Circle((xpos, ypos), radius_sextractor, \
                             fill = False, linestyle = '--', lw = 1, color = 'blue', zorder = 20)
-                        cutout_ax_list[i].add_patch(region_sextractor)
+                        cutout_ax[i].add_patch(region_sextractor)
                     
                 else: # if the band is masked and this should not be shown
-                    cutout_ax_list[i].cla()
-                    cutout_ax_list[i].set_visible(False)
+                    #cutout_ax[i].cla()
+                    cutout_ax[i].set_visible(False)
                 
                 # add scalebars to the last cutout
-                if nbands > 0:
+                if len(data.instrument) > 0:
                     # re in pixels
                     re = 10 # pixels
-                    d_A = cosmo.angular_diameter_distance(zbest)
+                    d_A = astropy_cosmo.angular_diameter_distance( \
+                        self.phot.SED_results[SED_fit_params_arr[0]["code"].label_from_SED_fit_params(SED_fit_params_arr[0])].z)
                     pix_scal = u.pixel_scale(0.03*u.arcsec/u.pixel)
                     re_as = (re * u.pixel).to(u.arcsec, pix_scal)
                     re_kpc = (re_as * d_A).to(u.kpc, u.dimensionless_angles())
                     
                     # First scalebar
-                    scalebar = AnchoredSizeBar(cutout_ax_list[pos].transData,
+                    scalebar = AnchoredSizeBar(cutout_ax[i].transData,
                         0.3 / self.im_pixel_scales[band], "0.3\"", 'lower right', 
                         pad = 0.3, color='white', frameon=False, size_vertical=2)
-                    cutout_ax_list[-1].add_artist(scalebar)
+                    cutout_ax[-1].add_artist(scalebar)
                     # Plot scalebar with physical size
-                    scalebar = AnchoredSizeBar(cutout_ax_list[-1].transData,
+                    scalebar = AnchoredSizeBar(cutout_ax[-1].transData,
                         re, f"{re_kpc:.1f}", 'upper left', pad=0.3, color='white',
                         frameon=False, size_vertical=1.5)
-                    cutout_ax_list[-1].add_artist(scalebar)
+                    cutout_ax[-1].add_artist(scalebar)
 
             # %% Photometry Axis
                     
@@ -408,21 +409,17 @@ class Galaxy:
                 # annotate PDF with
                 # PDF_ax.annotate(f'$\\sum = {float(integral):.2f}$', (zbest, 0.45), fontsize='small', transform=PDF_ax.get_yaxis_transform(), va='bottom', ha='center', fontweight='bold', color=eazy_color, path_effects=[pe.withStroke(linewidth=3, foreground='white')])
 
-            # %% Save and clear
-
-            # save and clear axes
-            funcs.make_dirs(out_path)
+            # Save and clear axes
             plt.savefig(out_path, dpi = 300, bbox_inches = 'tight')
             for ax in [phot_ax] + PDF_ax + cutout_ax:
                 ax.cla()
-            
-            # %%
+
 
     def plot_spec_diagnostic(self, overwrite = True):
         # bare in mind that not all galaxies have spectroscopic data
         pass
 
-    # Selection methods
+    # %% Selection methods
 
     def select_min_unmasked_bands(self, min_bands, update = True):
 
