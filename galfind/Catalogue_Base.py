@@ -1,7 +1,7 @@
 # Catalogue_Base.py
 
 import numpy as np
-from astropy.table import Table
+from astropy.table import Table, join
 from copy import deepcopy
 import astropy.units as u
 from tqdm import tqdm
@@ -283,7 +283,6 @@ class Catalogue_Base:
         'Alias for self * other'
         return self.__mul__(other, out_survey = None, max_sep = 1.0 * u.arcsec, match_type='nearest')
 
-
     def __sub__(self):
         pass
     
@@ -329,5 +328,14 @@ class Catalogue_Base:
             galfind_logger.critical(f"crop_limits={crop_limits} with type = {type(crop_limits)} not in [int, float, bool, list, np.array]")
         return cat_copy
     
-    def open_cat(self):
-        return Table.read(self.cat_path, character_as_bytes = False, memmap = True)
+    def open_cat(self, cropped = False):
+        fits_cat = Table.read(self.cat_path, character_as_bytes = False, memmap = True)
+        if cropped:
+            IDs_temp = self.ID
+            ID_tab = Table({"IDs_temp": IDs_temp}, dtype = [int])
+            combined_tab = join(fits_cat, ID_tab, keys_left = self.cat_creator.ID_label, keys_right = "IDs_temp")
+            combined_tab.remove_column("IDs_temp")
+            combined_tab.meta = fits_cat.meta
+            return combined_tab
+        else:
+            return fits_cat

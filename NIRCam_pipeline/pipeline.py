@@ -31,8 +31,8 @@ def pipeline(surveys, version, instruments, aper_diams, min_flux_pc_errs, forced
             #print(str(cat[0]))
 
             #cat_copy = cat.select_unmasked_instrument(NIRCam())
-            cat_copy = cat.select_EPOCHS()
-            print(str(cat_copy))
+            #cat_copy = cat.select_EPOCHS()
+            #print(str(cat_copy))
 
             #print(cat_copy.crop(1407, "ID")[0])
             # for i, code in enumerate(sed_codes):
