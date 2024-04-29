@@ -417,6 +417,7 @@ class Catalogue(Catalogue_Base):
     def select_min_unmasked_bands(self, min_bands):
         return self.perform_selection(Galaxy.select_min_unmasked_bands, min_bands)
     
+    #  already made these boolean columns in the catalogue
     def select_unmasked_bands(self, bands):
         return self.perform_selection(Galaxy.select_unmasked_band, bands)
     
@@ -435,8 +436,8 @@ class Catalogue(Catalogue_Base):
             SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}, widebands_only = True):
         return self.perform_selection(Galaxy.phot_Lya_band, SNR_lim, detect_or_non_detect, SED_fit_params, widebands_only)
 
-    def phot_SNR_crop(self, band_name_or_index, SNR_lim):
-        return self.perform_selection(Galaxy.phot_SNR_crop, band_name_or_index, SNR_lim)
+    def phot_SNR_crop(self, band_name_or_index, SNR_lim, detect_or_non_detect = "detect"):
+        return self.perform_selection(Galaxy.phot_SNR_crop, band_name_or_index, SNR_lim, detect_or_non_detect)
     
     # Depth region selection
 
@@ -456,31 +457,39 @@ class Catalogue(Catalogue_Base):
     def select_robust_zPDF(self, integral_lim, delta_z_over_z, SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}):
         return self.perform_selection(Galaxy.select_robust_zPDF, integral_lim, delta_z_over_z, SED_fit_params)
     
-    # Cutout quality selection functions
+    # Morphology selection functions
 
-    def flag_hot_pixel(self):
-        pass
+    def select_band_flux_radius(self, band, arcsec_lim):
+        self.load_band_flux_radius(band)
+        return self.perform_selection(Galaxy.select_band_flux_radius, band, arcsec_lim)
 
     # Full sample selection functions - these chain the above functions
 
     def select_EPOCHS(self, SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}):
+        self.perform_selection(Galaxy.select_unmasked_instrument, NIRCam(), make_cat_copy = False) # all NIRCam bands unmasked
+        self.perform_selection(Galaxy.phot_SNR_crop, 0, 2., "non_detect", make_cat_copy = False) # 2σ non-detected in first band
+        self.perform_selection(Galaxy.phot_bluewards_Lya_non_detect, 2., SED_fit_params, make_cat_copy = False) # 2σ non-detected in all bands bluewards of Lyα
+        self.perform_selection(Galaxy.phot_redwards_Lya_detect, [5., 3.], SED_fit_params, True, make_cat_copy = False) # 5σ/3σ detected in first/second band redwards of Lyα
+        self.perform_selection(Galaxy.select_chi_sq_lim, 3., SED_fit_params, True, make_cat_copy = False) # χ^2_red < 3
+        self.perform_selection(Galaxy.select_chi_sq_diff, 9., SED_fit_params, 0.5, make_cat_copy = False) # Δχ^2 < 9 between redshift free and low redshift SED fits, with Δz=0.5 tolerance 
+        self.perform_selection(Galaxy.select_robust_zPDF, 0.6, 0.1, SED_fit_params, make_cat_copy = False) # 60% of redshift PDF must lie within z ± z * 0.1
         return self.perform_selection(Galaxy.select_EPOCHS, SED_fit_params)
 
-    def perform_selection(self, selection_function, *args):
+    def perform_selection(self, selection_function, *args, make_cat_copy = True):
         # extract selection name from galaxy method output
         selection_name = selection_function(self[0], *args, update = False)[1]
         # open catalogue
-        opened_cat = self.open_cat()
         # perform selection if not previously performed
-        if selection_name not in opened_cat.colnames:
+        if selection_name not in self.selection_cols:
             # perform calculation for each galaxy and update galaxies in self
             [selection_function(gal, *args, update = True)[0] for gal in \
                 tqdm(self, total = len(self), desc = f"Cropping {selection_name}")]
-        # crop catalogue by the selection
-        cat_copy = self._crop_by_selection(selection_name)
-        # append .fits table if not already done so
-        cat_copy._append_selection_to_fits(selection_name, opened_cat)
-        return cat_copy
+        if make_cat_copy:
+            # crop catalogue by the selection
+            cat_copy = self._crop_by_selection(selection_name)
+            # append .fits table if not already done so
+            cat_copy._append_selection_to_fits(selection_name) # this should be written outside of make_cat_copy!
+            return cat_copy
 
     def _crop_by_selection(self, selection_name):
         # make a deep copy of the current catalogue object
@@ -492,24 +501,23 @@ class Catalogue(Catalogue_Base):
             cat_copy.crops.append(selection_name)
         return cat_copy
 
-    def _append_selection_to_fits(self, selection_name, opened_cat = None):
-        # open catalogue if not already done
-        if type(opened_cat) == type(None):
-            opened_cat = self.open_cat()
+    def _append_selection_to_fits(self, selection_name):
         # append .fits table if not already done so for this selection
-        if not selection_name in opened_cat.colnames:
+        if not selection_name in self.selection_cols:
             assert(all(getattr(self, selection_name) == True))
+            full_cat = self.open_cat()
             selection_cat = Table({"ID_temp": getattr(self, "ID"), selection_name: np.full(len(self), True)})
-            output_cat = join(opened_cat, selection_cat, keys_left = "NUMBER", keys_right = "ID_temp", join_type = "outer")
+            output_cat = join(full_cat, selection_cat, keys_left = "NUMBER", keys_right = "ID_temp", join_type = "outer")
             output_cat.remove_column("ID_temp")
             # fill unselected columns with False rather than leaving as masked post-join
             output_cat[selection_name].fill_value = False
             output_cat = output_cat.filled()
             # ensure no rows are lost during this column append
-            assert(len(output_cat) == len(opened_cat))
-            output_cat.meta = {**opened_cat.meta, **{f"HIERARCH SELECTED_{selection_name}": True}}
+            assert(len(output_cat) == len(full_cat))
+            output_cat.meta = {**full_cat.meta, **{f"HIERARCH SELECTED_{selection_name}": True}}
             galfind_logger.info(f"Appending {selection_name} to catalogue = {self.cat_path}")
             output_cat.write(self.cat_path, overwrite = True)
+            self.selection_cols.append(selection_name)
         else:
             galfind_logger.info(f"Already appended {selection_name} to catalogue = {self.cat_path}")
     

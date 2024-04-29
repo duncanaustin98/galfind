@@ -13,7 +13,7 @@ import numpy as np
 import time
 
 from galfind import useful_funcs_austind as funcs
-from galfind import Catalogue, config, LePhare, EAZY
+from galfind import Catalogue, config, LePhare, EAZY, NIRCam
 from galfind.Catalogue_Creator import GALFIND_Catalogue_Creator
 
 def pipeline(surveys, version, instruments, aper_diams, min_flux_pc_errs, forced_phot_band, \
@@ -28,20 +28,12 @@ def pipeline(surveys, version, instruments, aper_diams, min_flux_pc_errs, forced
             #cat.data.calc_unmasked_area("NIRCam", forced_phot_band = forced_phot_band)
 
             print(str(cat))
-            print(str(cat[0]))
+            #print(str(cat[0]))
 
-            cat.select_robust_zPDF(.6, .1)
-            cat.phot_redwards_Lya_detect(SNR_lims = [5., 3.])
-            #print(str(cat_copy))
-            #cat.select_min_unmasked_bands(min_bands = 4)
-            cat.phot_bluewards_Lya_non_detect(SNR_lim = 2.)
-            cat.phot_redwards_Lya_detect(SNR_lims = 5.)
-            cat.select_chi_sq_diff(9.)
-            cat.select_chi_sq_lim(3.)
-            cat.phot_redwards_Lya_detect(SNR_lims = [5., 3.])
-            cat.phot_SNR_crop(0, 2.)
+            #cat_copy = cat.select_unmasked_instrument(NIRCam())
+            cat_copy = cat.select_EPOCHS()
+            print(str(cat_copy))
 
-            #cat_copy = cat.select_EPOCHS()
             #print(cat_copy.crop(1407, "ID")[0])
             # for i, code in enumerate(sed_codes):
             #     # calculate the extended source corrections
