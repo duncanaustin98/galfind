@@ -86,7 +86,7 @@ class Catalogue(Catalogue_Base):
                 assert type(fits_cat[name][0]) in [bool, np.bool_], \
                     galfind_logger.critical(f"{name} in catalogue but column type = {type(fits_cat[name][0])} not in ['bool', 'np.bool_']")
                 fits_cat = fits_cat[fits_cat[name]]
-                galfind_logger.info(f"Catalogue for {cat_obj.survey} {cat_obj.version} cropped by {name}")
+                galfind_logger.info(f"Catalogue for {survey} {version} cropped by {name}")
 
         # produce galaxy array from each row of the catalogue
         start_time = time.time()
