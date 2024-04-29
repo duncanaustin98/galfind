@@ -96,7 +96,7 @@ def calc_depths(coordinates, fluxes, img_data, mask = None, catalogue = None,
                 zero_point = 28.08, min_number_of_values=100, n_nearest=100, split_depths = False, wht_data = None,
                 n_split = 2, split_depth_min_size = 100000, split_depths_factor = 5,
                 coord_type = 'sky', wcs = None, provide_labels=None,
-                diagnostic_id = None, plot = True):
+                diagnostic_id = None, plot = False):
     '''
     coordinates: list of tuples - (x, y) coordinates
     fluxes: list of floats - fluxes corresponding to the coordinates
@@ -306,22 +306,23 @@ def calc_depths(coordinates, fluxes, img_data, mask = None, catalogue = None,
                     # Diagnostic is the distance to the n_nearest neighbor
                     depth_diagnostic = distances_i[indexes][:n_nearest][-1]
 
-                    if count == diagnostic_id:
-        
-                        # Plot regions used and image
-                        fig, ax = plt.subplots()
-                        ax.imshow(img_data, cmap='Greys', origin='lower', interpolation='None')
+                    if plot:
+                        if count == diagnostic_id:
+            
+                            # Plot regions used and image
+                            fig, ax = plt.subplots()
+                            ax.imshow(img_data, cmap='Greys', origin='lower', interpolation='None')
 
-                        # Do this with matplotlib instead
-                        circle = plt.Circle((i, j), radius_pixels, color='r', fill=False)
-                        ax.add_artist(circle)
-                        xtest, ytest = x[labels_final[y_label, x_label] == label], y[labels_final[y_label, x_label] == label]
-                        xtest = xtest[indexes][:n_nearest]
-                        ytest = ytest[indexes][:n_nearest]
-                        for (xi, yi) in zip(xtest, ytest):
-                            circle = plt.Circle((xi, yi), radius_pixels, color='b', fill=False)
+                            # Do this with matplotlib instead
+                            circle = plt.Circle((i, j), radius_pixels, color='r', fill=False)
                             ax.add_artist(circle)
-                        plt.show()
+                            xtest, ytest = x[labels_final[y_label, x_label] == label], y[labels_final[y_label, x_label] == label]
+                            xtest = xtest[indexes][:n_nearest]
+                            ytest = ytest[indexes][:n_nearest]
+                            for (xi, yi) in zip(xtest, ytest):
+                                circle = plt.Circle((xi, yi), radius_pixels, color='b', fill=False)
+                                ax.add_artist(circle)
+                            plt.show()
 
                 depth = calculate_depth(neighbor_values, sigma_level, zero_point, min_number_of_values=min_number_of_values)
 

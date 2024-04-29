@@ -53,19 +53,19 @@ if __name__ == "__main__":
     version = "v11" #config["DEFAULT"]["VERSION"]
     instruments = ["NIRCam"] #, 'ACS_WFC'] #, 'WFC3_IR']
     cat_type = "loc_depth"
-    surveys = ["NGDEEP2"] #[config["DEFAULT"]["SURVEY"]]
+    surveys = ["COSMOS-Web-0A"] #[config["DEFAULT"]["SURVEY"]]
     aper_diams = [0.32] * u.arcsec
-    SED_code_arr = [EAZY()]
+    SED_code_arr = []#EAZY()]
     templates_arr = ["fsps_larson"] #["fsps", "fsps_larson", "fsps_jades"]
     lowz_zmax_arr = [[4., 6., None]] #, [4., 6.], [4., 6.]]
     min_flux_pc_errs = [10]
-    forced_phot_band = ["F277W", "F356W", "F444W"]
+    forced_phot_band = ["F277W", "F444W"] # "F356W", 
     select_by = None
 
     jems_bands = ["F182M", "F210M", "F430M", "F460M", "F480M"]
     ngdeep_excl_bands = ["F435W", "F775W", "F850LP"]
     #jades_3215_excl_bands = ["f162M", "f115W", "f150W", "f200W", "f410M", "f182M", "f210M", "f250M", "f300M", "f335M", "f277W", "f356W", "f444W"] 
-    excl_bands = []
+    excl_bands = ["F115W", "F150W"]
 
     SED_fit_params_arr = make_EAZY_SED_fit_params_arr(SED_code_arr, templates_arr, lowz_zmax_arr)
 

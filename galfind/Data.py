@@ -592,7 +592,7 @@ class Data:
     def load_wcs(self, band, save_attr = True):
         if not hasattr(self, "wcs"):
             self.wcs = {}
-        wcs = WCS(self.load_im(self, band)[1])
+        wcs = WCS(self.load_im(band)[1])
         self.wcs[band] = wcs
         return wcs
 
@@ -1627,9 +1627,9 @@ class Data:
                 hf.create_dataset(name_i, data = data_i)
             hf.close()
 
-        self.plot_depth(band, cat_creator, mode, aper_diam)
+        self.plot_depth(band, cat_creator, mode, aper_diam, show = False)
 
-    def plot_depth(self, band, cat_creator, mode, aper_diam): #, **kwargs):
+    def plot_depth(self, band, cat_creator, mode, aper_diam, show = False): #, **kwargs):
         if cat_creator == None:
             galfind_logger.warning("Could not plot depths as cat_creator == None in Data.plot_depths()")
         else:
@@ -1656,9 +1656,9 @@ class Data:
                 cat = Table.read(self.sex_cat_master_path)
                 cat_x, cat_y = wcs.world_to_pixel(SkyCoord(cat[cat_creator.ra_dec_labels["RA"]], cat[cat_creator.ra_dec_labels["DEC"]]))
                 
-                depths_fig, depths_ax = Depths.show_depths(hf_output["nmad_grid"], hf_output["num_grid"], hf_output["step_size"], \
+                Depths.show_depths(hf_output["nmad_grid"], hf_output["num_grid"], hf_output["step_size"], \
                     hf_output["region_radius_used_pix"], hf_output["labels_grid"], hf_output["depth_labels"], hf_output["depths"], hf_output["diagnostic"], cat_x, cat_y, 
-                    combined_mask, hf_output["final_labels"], suptitle = f"{self.survey} {self.version} {band} Depths", save_path = save_path)
+                    combined_mask, hf_output["final_labels"], suptitle = f"{self.survey} {self.version} {band} Depths", save_path = save_path, show = show)
 
     @staticmethod
     def get_depth_h5_labels():
