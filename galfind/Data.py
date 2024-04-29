@@ -58,8 +58,8 @@ class Data:
         seg_paths, mask_paths, cluster_mask_path, blank_mask_path, survey, version, cat_path = "", is_blank = True, alignment_band = "F444W", RGB_method = "trilogy"):
         
         # sort dicts from blue -> red bands in ascending wavelength order
-        self.im_paths = dict(sorted(im_paths.items()))
-        self.im_exts = dict(sorted(im_exts.items()))
+        self.im_paths = im_paths # not sure these need to be sorted
+        self.im_exts = im_exts # not sure these need to be sorted
         self.survey = survey
         self.version = version
         self.instrument = instrument
@@ -71,6 +71,11 @@ class Data:
         self.rms_err_exts = rms_err_exts
         self.im_pixel_scales = im_pixel_scales
         self.im_shapes = im_shapes
+
+        # load image wcs objects
+        for band in self.instrument.band_names:
+            self.load_wcs(band)
+
         # ensure alignment band exists
         if alignment_band not in self.instrument.band_names:
             galfind_logger.critical(f"Alignment band = {alignment_band} does not exist in instrument!")
@@ -551,7 +556,7 @@ class Data:
 # %% Methods
 
     def load_data(self, band, incl_mask = True):
-        print(band)
+        #print(band)
         if type(band) not in [str, np.str_]:
             galfind_logger.debug(f"band = {band}, type(band) = {type(band)} not in [str, np.str_] in Data.load_data")
             band = self.combine_band_names(band)
@@ -583,6 +588,13 @@ class Data:
             return im_data, im_header, im_hdul
         else:
             return im_data, im_header
+    
+    def load_wcs(self, band, save_attr = True):
+        if not hasattr(self, "wcs"):
+            self.wcs = {}
+        wcs = WCS(self.load_im(self, band)[1])
+        self.wcs[band] = wcs
+        return wcs
 
     def load_seg(self, band):
         seg_hdul = fits.open(self.seg_paths[band])

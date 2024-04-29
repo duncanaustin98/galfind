@@ -31,7 +31,11 @@ class PDF:
         return np.trapz(p_x, x)
     
     def find_peak(self, nth_peak):
-        return NotImplementedError
+        raise NotImplementedError
+        # currently just copied straight from Tom's plotting script
+        # # calculate peak locations etc - should go inside of PDF class
+        # pz_column, integral, peak_z, peak_loc, peak_second_loc, secondary_peak, ratio = useful_funcs_updated_new_galfind.robust_pdf([gal_id], [zbest], SED_code, field_name, rel_limits=True, z_fact=int_limit, use_custom_lephare_seds=custom_lephare, template=template, plot=False, version=catalog_version, custom_sex=custom_sex, min_percentage_err=min_percentage_err, custom_path=eazy_pdf_path, use_galfind=True)
+        # print(integral, 'integral', peak_z, 'peak_z', peak_loc, 'peak_loc', peak_second_loc, 'peak_second_loc', secondary_peak, 'secondary_peak', ratio, 'ratio')
 
     def plot_PDF(self, fig, ax):
         return NotImplementedError

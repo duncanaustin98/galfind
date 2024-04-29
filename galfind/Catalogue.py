@@ -8,6 +8,7 @@ Created on Mon May 22 13:27:47 2023
 
 # Catalogue.py
 import numpy as np
+import matplotlib.pyplot as plt
 from astropy.table import Table, join
 import pyregion
 from copy import deepcopy
@@ -311,6 +312,49 @@ class Catalogue(Catalogue_Base):
 
     def make_RGB_images(self, IDs, cutout_size = 32):
         return NotImplementedError
+    
+    def plot_phot_diagnostics(self, SED_fit_params_arr, zPDF_plot_SED_fit_params_arr, wav_unit = u.AA, flux_unit = u.Jy):
+        # figure size may well depend on how many bands there are
+        overall_fig = plt.figure(figsize = (8, 7), constrained_layout = True)
+        bands = self.phot.instrument.band_names # should be updated
+        nbands = len(bands) # should be updated
+        subfigures = overall_fig.subfigures(2, 1, hspace = -2, height_ratios = [2, 1] if len(bands) <= 8 else [1.8, 1])
+        fig = subfigures[0]
+        cutout_fig = subfigures[1]
+    
+        gs = fig.add_gridspec(2, 4)
+        phot_ax = fig.add_subplot(gs[:, 0:3])
+        if flux_unit != u.Jy:
+            galfind_logger.critical("Convert unit here!!!")
+        galfind_logger.critical("Still need to appropriately label x/y axis")
+        x_label = r"$\lambda_{\mathrm{obs}}~/~\mathrm{\AA}$"
+        y_label = r"$\f_{\nu}~/~\mathrm{Jy}$" #funcs.unit_to_label(self.phot.flux_Jy.unit)
+        #y_label = f'Flux Density ({flux_unit:latex})'
+        #x_label = f'Wavelength ({wav_unit:latex})'
+
+        ax_eazy_lowz_pdf = fig.add_subplot(gs[0, 3:])
+        #ax_eazy_lowz_pdf.set_yticklabels([])
+        ax_eazy_pdf = fig.add_subplot(gs[1, 3:])
+        PDF_ax = [ax_eazy_pdf, ax_eazy_lowz_pdf]
+        
+        if nbands <= 8:
+            gridspec_cutout = cutout_fig.add_gridspec(1, nbands)
+        else:
+            gridspec_cutout = cutout_fig.add_gridspec(2, int(np.ceil(nbands / 2)))
+        
+        cutout_ax_list = []
+        for pos, band in enumerate(bands):
+            cutout_ax = cutout_fig.add_subplot(gridspec_cutout[pos])
+            #cutout_ax.set_xlabel(band, fontsize='small')
+            cutout_ax.set_aspect('equal', adjustable='box', anchor='N')
+            cutout_ax.set_xticks([])
+            cutout_ax.set_yticks([])
+            cutout_ax_list.append(cutout_ax)
+        
+        # plot SEDs
+        [gal.plot_phot_diagnostic([cutout_ax, phot_ax, PDF_ax], self.data, \
+            SED_fit_params_arr, zPDF_plot_SED_fit_params_arr, wav_unit, flux_unit) \
+            for gal in tqdm(self, total = len(self), desc = "Plotting photometry diagnostic plots")]
 
     # def make_UV_fit_cat(self, code_name = "EAZY", templates = "fsps_larson", UV_PDF_path = config["RestUVProperties"]["UV_PDF_PATH"], col_names = ["Beta", "flux_lambda_1500", "flux_Jy_1500", "M_UV", "A_UV", "L_obs", "L_int", "SFR"], \
     #                     join_tables = True, skip_IDs = [], rest_UV_wavs_arr = [[1250., 3000.] * u.AA], conv_filt_arr = [True, False], overwrite = True):
