@@ -104,15 +104,19 @@ class Photometry:
             uplims = np.full(len(self.flux_Jy), False)
         else:
             # calculate upper limits based on depths
-            uplims = [True if flux.to(u.Jy) < depth.to(u.Jy) * upper_limit_sigma / 5. or np.isnan(flux) else False for (flux, depth) in zip(self.flux_Jy, self.loc_depths)]
+            uplims = [True if flux < depth * upper_limit_sigma / 5. or np.isnan(flux) else False \
+                for (flux, depth) in zip(funcs.convert_mag_units(self.wav, self.flux_Jy, u.Jy), funcs.convert_mag_units(self.wav, self.loc_depths, u.Jy))]
         self.non_detected_indices = uplims
         if plot_errs:
-            yerr = [flux_err if uplim == False else 0.2 * flux for (flux, flux_err, uplim) in zip(self.flux_Jy.value, self.flux_Jy_errs.value, uplims)]
+            # if upper limit, plot downwards arrow of length 0.2 * flux
+            yerr = [flux_err if uplim == False else 0.2 * flux for (flux, flux_err, uplim) \
+                in zip(funcs.convert_mag_units(self.wav, self.flux_Jy, u.Jy).value, \
+                funcs.convert_mag_units(self.wav, self.flux_Jy_errs, u.Jy).value, uplims)]
         else:
             yerr = None
-        print("Unit plotting errors here!")
-        plot = ax.errorbar(self.wav.to(wav_units).value, self.flux_Jy.value, yerr = yerr, \
-                uplims = uplims, ls = "", marker = "o", ms = 8, mfc = "none", label = label, **errorbar_kwargs)
+        plot = ax.errorbar(funcs.convert_wav_units(self.wav, wav_units).value, \
+            funcs.convert_mag_units(self.wav, self.flux_Jy, mag_units).value, yerr = yerr, \
+            uplims = uplims, ls = "", marker = "o", ms = 8, mfc = "none", label = label, **errorbar_kwargs)
         if label != None and annotate:
             ax.legend()
         return plot

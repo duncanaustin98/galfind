@@ -107,7 +107,7 @@ class Galaxy:
         if Path(out_path).is_file():
             size = fits.open(out_path)[0].header["size"]
             if size != cutout_size:
-                print("Cutout size does not match requested size, overwriting...")
+                galfind_logger.info("Cutout size does not match requested size, overwriting...")
                 rerun = True
         if not Path(out_path).is_file() or config.getboolean("Cutouts", "OVERWRITE_CUTOUTS") or rerun:
             if type(data) == Data:
@@ -115,14 +115,14 @@ class Galaxy:
                 wht_data = data.load_wht(band)
                 rms_err_data = data.load_rms_err(band)
                 wcs = data.load_wcs(band)
-                data_ = {"SCI": im_data, "SEG": seg_data, "WHT": wht_data, "RMS_ERR": rms_err_data}
+                data = {"SCI": im_data, "SEG": seg_data, "WHT": wht_data, "RMS_ERR": rms_err_data}
             elif type(data) == dict and type(wcs) != type(None) and type(im_header) != type(None):
                 pass
             else:
                 raise(Exception(""))
             hdul = [fits.PrimaryHDU(header = fits.Header({"ID": self.ID, "survey": survey, "version": version, \
                         "RA": self.sky_coord.ra.value, "DEC": self.sky_coord.dec.value, "size": cutout_size}))]
-            for i, (label_i, data_i) in enumerate(data_.items()):
+            for i, (label_i, data_i) in enumerate(data.items()):
                 cutout = Cutout2D(data_i, self.sky_coord, size = (cutout_size, cutout_size), wcs = wcs)
                 im_header.update(cutout.wcs.to_header())
                 hdul.append(fits.ImageHDU(cutout.data, header = im_header, name = label_i))
@@ -132,7 +132,7 @@ class Galaxy:
             fits_hdul.writeto(out_path, overwrite = True)
             galfind_logger.info(f"Saved fits cutout to: {out_path}")
         else:
-            galfind_logger.info(f"Already made fits cutout for {survey} {version} {self.ID}")
+            galfind_logger.info(f"Already made fits cutout for {survey} {version} {self.ID} {band}")
             fits_hdul = fits.open(out_path)
         self.cutout_paths[band] = out_path
         return fits_hdul
@@ -191,16 +191,12 @@ class Galaxy:
             hide_masked_cutouts = True, cutout_size = 32, high_dyn_rng = False):
 
         for i, band in enumerate(data.instrument.band_names):
-
-            # this should probably be a function somewhere!
-            pixel_coords = skycoord_to_pixel(self.sky_coord, data.load_wcs(band))
-            x, y = float(pixel_coords[0]), float(pixel_coords[1])
                 
             # need to load sextractor flux_radius as a general function somewhere!
-            flux_radius = None
             radius = 0.16 * u.arcsec # need access to galfind cat_creator for this
             radius_pix = (radius / data.im_pixel_scales[band]).to(u.dimensionless_unscaled).value
-            radius_sextractor = flux_radius
+            #flux_radius = None
+            #radius_sextractor = flux_radius
 
             if self.phot.flux_Jy.mask[i] and hide_masked_cutouts:
                 data_cutout = None
@@ -236,7 +232,6 @@ class Galaxy:
                 data_cutout = np.clip(data_cutout * 0.9999, bottom_val * 1.000001, top) # why?
                 norm = ImageNormalize(data_cutout, interval = ManualInterval(bottom_val, top), clip = True, stretch = stretch)
 
-                #breakpoint()
                 #ax_arr[i].cla()
                 ax_arr[i].set_visible(True)
                 ax_arr[i].set_aspect('equal', adjustable = 'box', anchor = 'N')
@@ -312,8 +307,6 @@ class Galaxy:
             # plot cutouts (assuming reference SED_fit_params is at 0th index)
             self.plot_cutouts(cutout_ax, data, SED_fit_params_arr[0], \
                 hide_masked_cutouts = hide_masked_cutouts, cutout_size = cutout_size, high_dyn_rng = high_dyn_rng)
-
-            # %% Photometry Axis
                     
             # auto-scale based on available bands (wavelength) and flux/mag values
             if "x" in scaling.keys():
@@ -330,7 +323,7 @@ class Galaxy:
             # this should not be hard-coded
             phot_ax.set_ylim(30.6 * u.ABmag.to(flux_unit), 25 * u.ABmag.to(flux_unit))
                     
-            self.phot.plot_phot(phot_ax)
+            self.phot.plot_phot(phot_ax, wav_units = wav_unit, mag_units = flux_unit, annotate = False, upper_limit_sigma = 2.)
             #p1 = patches.FancyArrowPatch((wav.to(wav_unit).value, three_sig_depth.to(flux_unit).value), (wav.to(wav_unit).value, three_sig_depth.to(flux_unit).value+0.5), arrowstyle='-|>', mutation_scale=10, alpha=1, color='black', zorder=5.6)
             #ax_photo.add_patch(p1)
             #ax_photo.errorbar(wav.to(wav_unit).value, mag.to(flux_unit).value, yerr=mag_err.to(flux_unit).value, xerr=xerr.to(wav_unit).value, color='black', markersize=5, marker='o', zorder=5.6)
@@ -363,61 +356,12 @@ class Galaxy:
                 text.set_path_effects([pe.withStroke(linewidth = 3, foreground = 'white')])
                 text.set_zorder(12)
 
-            # %% PDF Axes
-
-            #ax_eazy_lowz_pdf.set_title(f'EAZY PDF ($z_{{max}}$={custom_lowz.split("=")[-1]})', fontsize='medium')
-
             # plot PDF on relevant axis
-            assert(len(zPDF_plot_SED_fit_params_arr) == len(PDF_ax)) # again, this is not totally generalized and should be == 2
-            for ax, SED_fit_params in enumerate(zip(PDF_ax, zPDF_plot_SED_fit_params_arr)):
-                # this bit is not general
-                # plot PDF - currently NotImplemented
+            assert(len(zPDF_plot_SED_fit_params_arr) == len(PDF_ax)) # again, this is not totally generalized and should be == 2 for now
+            breakpoint()
+            # could extend to plotting multiple PDFs on the same axis
+            for ax, SED_fit_params in zip(PDF_ax, zPDF_plot_SED_fit_params_arr):
                 self.phot.SED_results[SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)].property_PDFs["z"].plot(ax)
-                #ax_eazy_pdf.set_ylim(0, 1.20), also colour needed as input, also could do with SED_result information
-                # # Set xlim to redshifts of 1% and 99% of PDF cumulative distribution
-                # norm = np.cumsum(eazy_pdf_z)
-                # norm = norm / np.max(norm)
-                # lowz = eazy_z[np.argmin(np.abs(norm-0.02))] - 0.3
-                # highz = eazy_z[np.argmin(np.abs(norm-0.98))] + 0.3
-                # PDF_ax.set_xlim(lowz, highz)
-    
-                # x_lim = PDF_ax.get_xlim()
-                # y_lim = PDF_ax.get_ylim()
-                # PDF_ax.grid(False)
-                # # Draw vertical line at zbest
-                # PDF_ax.axvline(zbest, color=eazy_color, linestyle='--', alpha=0.5, lw=2)
-                # PDF_ax.axvline(zbest+upper_lim, color=eazy_color, linestyle=':', alpha=0.5, lw=2)
-                # PDF_ax.axvline(zbest-lower_lim, color=eazy_color, linestyle=':', alpha=0.5, lw=2)
-                # PDF_ax.annotate('-1$\sigma$', (zbest-lower_lim, 0.1), fontsize='small', ha='center', transform=ax_eazy_pdf.get_yaxis_transform(), va='bottom',  color=eazy_color, path_effects=[pe.withStroke(linewidth=3, foreground='white')])
-                # # Shade region between zbest-lower_lim and zbest+upper_lim below PDF)
-                # PDF_ax.annotate('+1$\sigma$', (zbest+upper_lim, 0.1), fontsize='small', ha='center', transform=ax_eazy_pdf.get_yaxis_transform(), va='bottom', color=eazy_color, path_effects=[pe.withStroke(linewidth=3, foreground='white')])
-                # # Shade region between zbest-lower_lim and zbest+upper_lim below PDF
-                # PDF_ax.annotate(r'$z_{\rm phot}=$'+f'{zbest:.1f}'+f'$^{{+{upper_lim:.1f}}}_{{-{lower_lim:.1f}}}$', (zbest, 1.17), fontsize='medium', va='top', ha='center', color=eazy_color, path_effects=[pe.withStroke(linewidth=3, foreground='white')])
-                # # Horizontal arrow at PDF peak going left or right depending on which side PDF is on, labelled with chi2
-                # # Check if zbest is closer to xlim[0] or xlim[1]
-                
-                # amount = 0.3 * (x_lim[1] - x_lim[0])
-                # if zbest - x_lim[0] < x_lim[1] - zbest:
-                #     direction = 1
-                # else:
-                #     direction = -1
-                # PDF_ax.annotate(r'$\chi^2=$'+f'{chi2:.2f}', (zbest, 1.0), xytext = (zbest + direction*amount, 0.90),  fontsize='small', va='top', ha='center', color=eazy_color, path_effects=[pe.withStroke(linewidth=3, foreground='white')], arrowprops=dict(facecolor=eazy_color, edgecolor=eazy_color, arrowstyle='-|>', lw=1.5, path_effects=[pe.withStroke(linewidth=1, foreground='white')]))
-                
-                # # annotate PDF with peak locations etc
-                # if annotate_eazy_pdf:
-                #     PDF_ax.scatter(peak_loc, peak_z, color=eazy_color, edgecolors=eazy_color, marker='o', facecolor='none')
-                    
-                #     if secondary_peak > 0: 
-                #         PDF_ax.scatter(secondary_loc, secondary_peak, edgecolor='orange', marker='o', facecolor='none')
-                #         PDF_ax.annotate(f'P(S)/P(P): {ratio:.2f}', loc_ratio, fontsize='x-small')
-                
-                # fill inside PDF with hatch
-                # eazy_z_lim = np.linspace(0.93*float(zbest), 1.07*float(zbest), 100)
-                # eazy_pdf_lim = np.interp(eazy_z_lim, eazy_z, eazy_pdf_z/np.max(eazy_pdf_z))
-                # PDF_ax.fill_between(eazy_z_lim, eazy_pdf_lim, color=eazy_color, alpha=0.2, hatch='//')
-                
-                # annotate PDF with
-                # PDF_ax.annotate(f'$\\sum = {float(integral):.2f}$', (zbest, 0.45), fontsize='small', transform=PDF_ax.get_yaxis_transform(), va='bottom', ha='center', fontweight='bold', color=eazy_color, path_effects=[pe.withStroke(linewidth=3, foreground='white')])
 
             # Save and clear axes
             plt.savefig(out_path, dpi = 300, bbox_inches = 'tight')
