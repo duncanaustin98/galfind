@@ -19,6 +19,7 @@ import json
 from pathlib import Path
 from astropy.nddata import Cutout2D
 from tqdm import tqdm
+import matplotlib.patheffects as pe
 from astropy.wcs import WCS
 from astropy.wcs.utils import skycoord_to_pixel
 from astropy.visualization import LogStretch, LinearStretch, ImageNormalize, ManualInterval
@@ -113,15 +114,15 @@ class Galaxy:
                 im_data, im_header, seg_data, seg_header = data.load_data(band, incl_mask = False)
                 wht_data = data.load_wht(band)
                 rms_err_data = data.load_rms_err(band)
-                data = {"SCI": im_data, "SEG": seg_data, "WHT": wht_data, "RMS_ERR": rms_err_data}
-                wcs = data.wcs[band]
+                wcs = data.load_wcs(band)
+                data_ = {"SCI": im_data, "SEG": seg_data, "WHT": wht_data, "RMS_ERR": rms_err_data}
             elif type(data) == dict and type(wcs) != type(None) and type(im_header) != type(None):
                 pass
             else:
                 raise(Exception(""))
             hdul = [fits.PrimaryHDU(header = fits.Header({"ID": self.ID, "survey": survey, "version": version, \
                         "RA": self.sky_coord.ra.value, "DEC": self.sky_coord.dec.value, "size": cutout_size}))]
-            for i, (label_i, data_i) in enumerate(data.items()):
+            for i, (label_i, data_i) in enumerate(data_.items()):
                 cutout = Cutout2D(data_i, self.sky_coord, size = (cutout_size, cutout_size), wcs = wcs)
                 im_header.update(cutout.wcs.to_header())
                 hdul.append(fits.ImageHDU(cutout.data, header = im_header, name = label_i))
@@ -132,7 +133,7 @@ class Galaxy:
             galfind_logger.info(f"Saved fits cutout to: {out_path}")
         else:
             galfind_logger.info(f"Already made fits cutout for {survey} {version} {self.ID}")
-            # load cutout - NotImplementedError
+            fits_hdul = fits.open(out_path)
         self.cutout_paths[band] = out_path
         return fits_hdul
 
@@ -186,18 +187,118 @@ class Galaxy:
             elif method == "lupton":
                 raise(NotImplementedError())
     
+    def plot_cutouts(self, ax_arr, data, SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}, \
+            hide_masked_cutouts = True, cutout_size = 32, high_dyn_rng = False):
+
+        for i, band in enumerate(data.instrument.band_names):
+
+            # this should probably be a function somewhere!
+            pixel_coords = skycoord_to_pixel(self.sky_coord, data.load_wcs(band))
+            x, y = float(pixel_coords[0]), float(pixel_coords[1])
+                
+            # need to load sextractor flux_radius as a general function somewhere!
+            flux_radius = None
+            radius = 0.16 * u.arcsec # need access to galfind cat_creator for this
+            radius_pix = (radius / data.im_pixel_scales[band]).to(u.dimensionless_unscaled).value
+            radius_sextractor = flux_radius
+
+            if self.phot.flux_Jy.mask[i] and hide_masked_cutouts:
+                data_cutout = None
+            else:
+                # load cutout if already made, else produce one
+                cutout_hdul = self.make_cutout(band, data, cutout_size = cutout_size)
+                data_cutout = cutout_hdul[1].data # should handle None in the case of NoOverlapError        
+
+            if type(data_cutout) != type(None):
+                # Set top value based on central 10x10 pixel region
+                top = np.max(data_cutout[:20, 10:20])
+                top = np.max(data_cutout[int(cutout_size // 2 - 0.3 * cutout_size) : int(cutout_size // 2 + 0.3 * cutout_size), \
+                    int(cutout_size // 2 - 0.3 * cutout_size) : int(cutout_size // 2 + 0.3 * cutout_size)])
+                bottom_val = top / 10 ** 5
+                
+                if high_dyn_rng:
+                    a = 300
+                else:
+                    a = 0.1
+                stretch = LogStretch(a = a)
+
+                n_sig_detect = self.phot.SNR[i]
+                if n_sig_detect < 100:
+                    bottom_val = top / 10 ** 3
+                    a = 100
+                if n_sig_detect <= 15:
+                    bottom_val = top/10**2
+                    a = 0.1
+                if n_sig_detect < 8:
+                    bottom_val = top / 100000
+                    stretch = LinearStretch()
+                    
+                data_cutout = np.clip(data_cutout * 0.9999, bottom_val * 1.000001, top) # why?
+                norm = ImageNormalize(data_cutout, interval = ManualInterval(bottom_val, top), clip = True, stretch = stretch)
+
+                #breakpoint()
+                #ax_arr[i].cla()
+                ax_arr[i].set_visible(True)
+                ax_arr[i].set_aspect('equal', adjustable = 'box', anchor = 'N')
+                ax_arr[i].set_xticks([])
+                ax_arr[i].set_yticks([])
+
+                ax_arr[i].imshow(data_cutout, norm = norm, cmap='magma', origin = "lower")
+                ax_arr[i].text(0.95, 0.95, band, fontsize = 'small', c = 'white', \
+                    transform = ax_arr[i].transAxes, ha = 'right', va = 'top', zorder = 10, fontweight = 'bold')         
+
+                # add circles to show extraction aperture and sextractor FLUX_RADIUS
+                xpos = np.mean(ax_arr[i].get_xlim())
+                ypos = np.mean(ax_arr[i].get_ylim())
+                region = patches.Circle((xpos, ypos), radius_pix, fill = False, \
+                    linestyle = '--', lw = 1, color = 'white', zorder = 20)
+                ax_arr[i].add_patch(region)
+                galfind_logger.warning("Need to load in SExtractor FLUX_RADIUS")
+                # if radius_sextractor != 0:
+                #     region_sextractor = patches.Circle((xpos, ypos), radius_sextractor, \
+                #         fill = False, linestyle = '--', lw = 1, color = 'blue', zorder = 20)
+                #     ax_arr[i].add_patch(region_sextractor)
+                
+            else: # if the band is masked and this should not be shown
+                #ax_arr[i].cla()
+                ax_arr[i].set_visible(False)
+            
+            # add scalebars to the last cutout
+            if len(data.instrument) > 0:
+                # re in pixels
+                re = 10 # pixels
+                d_A = astropy_cosmo.angular_diameter_distance( \
+                    self.phot.SED_results[SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)].z)
+                pix_scal = u.pixel_scale(0.03*u.arcsec/u.pixel)
+                re_as = (re * u.pixel).to(u.arcsec, pix_scal)
+                re_kpc = (re_as * d_A).to(u.kpc, u.dimensionless_angles())
+                
+                # First scalebar
+                scalebar = AnchoredSizeBar(ax_arr[i].transData,
+                    0.3 / data.im_pixel_scales[band], "0.3\"", 'lower right', 
+                    pad = 0.3, color='white', frameon=False, size_vertical=2)
+                ax_arr[-1].add_artist(scalebar)
+                # Plot scalebar with physical size
+                scalebar = AnchoredSizeBar(ax_arr[-1].transData,
+                    re, f"{re_kpc:.1f}", 'upper left', pad=0.3, color='white',
+                    frameon=False, size_vertical=1.5)
+                ax_arr[-1].add_artist(scalebar)
+    
     def plot_phot_diagnostic(self, ax, data, SED_fit_params_arr, zPDF_plot_SED_fit_params_arr, wav_unit = u.AA, flux_unit = u.ABmag, \
             scaling = {}, hide_masked_cutouts = True, cutout_size = 32, high_dyn_rng = False, overwrite = True):
-        # Tom's SED plotting code here - currently trimming this down
-        cutout_ax, phot_ax, PDF_ax = zip(*ax)
-        # GALAXY FUNCTION!!! (here down)
+        
+        cutout_ax, phot_ax, PDF_ax = ax
+
+        # update SED_fit_params with appropriate lowz_zmax
+        SED_fit_params_arr = [SED_fit_params["code"].update_lowz_zmax(SED_fit_params, self.phot.SED_results) for SED_fit_params in SED_fit_params_arr]
+        zPDF_plot_SED_fit_params_arr = [SED_fit_params["code"].update_lowz_zmax(SED_fit_params, self.phot.SED_results) for SED_fit_params in zPDF_plot_SED_fit_params_arr] 
         
         zPDF_labels = [f"{SED_fit_params['code'].label_from_SED_fit_params(SED_fit_params)} PDF" for SED_fit_params in zPDF_plot_SED_fit_params_arr]
         # reset parameters
         if "x" in scaling.keys():
             phot_ax.set_xscale(scaling["x"])
-        phot_ax.set_xlabel(x_label)
-        phot_ax.set_ylabel(y_label)
+        #phot_ax.set_xlabel(x_label)
+        #phot_ax.set_ylabel(y_label)
         PDF_ax[1].set_yticks([])
         PDF_ax[1].set_visible(True)
         PDF_ax[0].set_yticks([])
@@ -208,100 +309,9 @@ class Galaxy:
         funcs.make_dirs(out_path)
 
         if not Path(out_path).is_file() or overwrite:
-            # %% Cutout Axes
-            for i, band in enumerate(data.instrument.band_names):
-                
-                wcs = data.wcs[band] # I think this is a function in Data somethwhere
-                # this should probably be a function somewhere!
-                pixel_coords = skycoord_to_pixel(self.sky_coord, wcs)
-                
-                x, y = pixel_coords[0][0], pixel_coords[1][0]
-                    
-                # need to load sextractor flux_radius as a general function somewhere!
-                flux_radius = None
-                radius = 0.16 # need access to galfind cat_creator for this
-                radius_pix = radius / self.im_pixel_scales[band]
-                radius_sextractor = flux_radius
-
-                if self.phot.flux_Jy.mask[i] and hide_masked_cutouts:
-                    data_cutout = None
-                else:
-                    # load cutout if already made, else produce one
-                    cutout_hdul = self.make_cutout(band, data, cutout_size)
-                    data_cutout = cutout_hdul[1].data # should handle None in the case of NoOverlapError        
-
-                if type(data_cutout) != type(None):
-                    # Set top value based on central 10x10 pixel region
-                    top = np.max(data_cutout[:20, 10:20])
-                    top = np.max(data_cutout[int(cutout_size // 2 - 0.3 * cutout_size) : int(cutout_size // 2 + 0.3 * cutout_size), \
-                        int(cutout_size // 2 - 0.3 * cutout_size) : int(cutout_size // 2 + 0.3 * cutout_size)])
-                    bottom_val = top / 10 ** 5
-                    
-                    if high_dyn_rng:
-                        a = 300
-                    else:
-                        a = 0.1
-                    stretch = LogStretch(a = a)
-
-                    n_sig_detect = self.phot.SNR[i]
-                    if n_sig_detect < 100:
-                        bottom_val = top / 10 ** 3
-                        a = 100
-                    if n_sig_detect <= 15:
-                        bottom_val = top/10**2
-                        a = 0.1
-                    if n_sig_detect < 8:
-                        bottom_val = top / 100000
-                        stretch = LinearStretch()
-                        
-                    data_cutout = np.clip(data_cutout * 0.9999, bottom_val * 1.000001, top) # why?
-                    norm = ImageNormalize(data_cutout, interval = ManualInterval(bottom_val, top), clip = True, stretch = stretch)
-
-                    #cutout_ax[i].cla()
-                    cutout_ax[i].set_visible(True)
-                    cutout_ax[i].set_aspect('equal', adjustable = 'box', anchor = 'N')
-                    cutout_ax[i].set_xticks([])
-                    cutout_ax[i].set_yticks([])
-
-                    cutout_ax[i].imshow(data_cutout, norm = norm, cmap='magma', origin = "lower")
-                    cutout_ax[i].text(0.95, 0.95, band, fontsize = 'small', c = 'white', \
-                        transform = cutout_ax[i].transAxes, ha = 'right', va = 'top', zorder = 10, fontweight = 'bold')         
-
-                    # add circles to show extraction aperture and sextractor FLUX_RADIUS
-                    xpos = np.mean(cutout_ax[i].get_xlim())
-                    ypos = np.mean(cutout_ax[i].get_ylim())
-                    region = patches.Circle((xpos, ypos), radius_pix, fill = False, \
-                        linestyle = '--', lw = 1, color = 'white', zorder = 20)
-                    cutout_ax[i].add_patch(region)
-                    if radius_sextractor != 0:
-                        region_sextractor = patches.Circle((xpos, ypos), radius_sextractor, \
-                            fill = False, linestyle = '--', lw = 1, color = 'blue', zorder = 20)
-                        cutout_ax[i].add_patch(region_sextractor)
-                    
-                else: # if the band is masked and this should not be shown
-                    #cutout_ax[i].cla()
-                    cutout_ax[i].set_visible(False)
-                
-                # add scalebars to the last cutout
-                if len(data.instrument) > 0:
-                    # re in pixels
-                    re = 10 # pixels
-                    d_A = astropy_cosmo.angular_diameter_distance( \
-                        self.phot.SED_results[SED_fit_params_arr[0]["code"].label_from_SED_fit_params(SED_fit_params_arr[0])].z)
-                    pix_scal = u.pixel_scale(0.03*u.arcsec/u.pixel)
-                    re_as = (re * u.pixel).to(u.arcsec, pix_scal)
-                    re_kpc = (re_as * d_A).to(u.kpc, u.dimensionless_angles())
-                    
-                    # First scalebar
-                    scalebar = AnchoredSizeBar(cutout_ax[i].transData,
-                        0.3 / self.im_pixel_scales[band], "0.3\"", 'lower right', 
-                        pad = 0.3, color='white', frameon=False, size_vertical=2)
-                    cutout_ax[-1].add_artist(scalebar)
-                    # Plot scalebar with physical size
-                    scalebar = AnchoredSizeBar(cutout_ax[-1].transData,
-                        re, f"{re_kpc:.1f}", 'upper left', pad=0.3, color='white',
-                        frameon=False, size_vertical=1.5)
-                    cutout_ax[-1].add_artist(scalebar)
+            # plot cutouts (assuming reference SED_fit_params is at 0th index)
+            self.plot_cutouts(cutout_ax, data, SED_fit_params_arr[0], \
+                hide_masked_cutouts = hide_masked_cutouts, cutout_size = cutout_size, high_dyn_rng = high_dyn_rng)
 
             # %% Photometry Axis
                     
@@ -360,7 +370,7 @@ class Galaxy:
             # plot PDF on relevant axis
             assert(len(zPDF_plot_SED_fit_params_arr) == len(PDF_ax)) # again, this is not totally generalized and should be == 2
             for ax, SED_fit_params in enumerate(zip(PDF_ax, zPDF_plot_SED_fit_params_arr)):
-                # this bit not general
+                # this bit is not general
                 # plot PDF - currently NotImplemented
                 self.phot.SED_results[SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)].property_PDFs["z"].plot(ax)
                 #ax_eazy_pdf.set_ylim(0, 1.20), also colour needed as input, also could do with SED_result information
@@ -413,7 +423,6 @@ class Galaxy:
             plt.savefig(out_path, dpi = 300, bbox_inches = 'tight')
             for ax in [phot_ax] + PDF_ax + cutout_ax:
                 ax.cla()
-
 
     def plot_spec_diagnostic(self, overwrite = True):
         # bare in mind that not all galaxies have spectroscopic data

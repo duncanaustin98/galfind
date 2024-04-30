@@ -32,7 +32,7 @@ class Catalogue_Base:
         
         # keep a record of the crops that have been made to the catalogue
         self.selection_cols = [key.replace("SELECTED_", "") for key in self.open_cat().meta.keys() if "SELECTED_" in key]
-        self.crops = crops
+        self.crops = list(crops)
         
         # concat is commutative for catalogues
         self.__radd__ = self.__add__
@@ -41,7 +41,7 @@ class Catalogue_Base:
 
     # %% Overloaded operators
 
-    def __str__(self, print_cls_name = True, print_data = True, print_sel_criteria = True):
+    def __str__(self, print_cls_name = True, print_data = True, print_sel_criteria = True, display_selections = ["EPOCHS", "BROWN_DWARF"]):
         line_sep = "*" * 40 + "\n"
         band_sep = "-" * 10 + "\n"
         output_str = ""
@@ -53,26 +53,27 @@ class Catalogue_Base:
             output_str += str(self.data)
         output_str += f"FITS CAT PATH = {self.cat_path}\n"
         # access table header to display what has been run for this catalogue
-        cat = Table.read(self.cat_path, memmap = True)
+        cat = self.open_cat()
         output_str += f"N_GALS_TOTAL = {len(cat)}\n"
         # display what other things have previously been calculated for this catalogue, including templates and zmax_lowz
         output_str += "CAT STATUS = SEXTRACTOR, "
         for i, (key, value) in enumerate(cat.meta.items()):
             if key in ["DEPTHS", "MASKED"] + [f"RUN_{subclass.__name__}" for subclass in SED_code.__subclasses__()]:
-                output_str += key
-                if i != len(cat.meta) - 1:
-                    output_str += ", "
+                output_str += f"{key.split('_')[-1]}, "
+        for sel_criteria in display_selections:
+            if sel_criteria in cat.colnames:
+                output_str += f"{sel_criteria} SELECTION, "
         output_str += "\n"
         # display total number of galaxies that satisfy the selection criteria previously performed
         if print_sel_criteria:
-            for sel_criteria in ["EPOCHS", "BROWN_DWARF"]:
+            for sel_criteria in display_selections:
                 if sel_criteria in cat.colnames:
                     output_str += f"N_GALS_{sel_criteria} = {len(cat[cat[sel_criteria]])}\n"
         output_str += band_sep
         # display crops that have been performed on this specific object
         if self.crops != []:
             output_str += f"N_GALS_OBJECT = {len(self)}\n"
-            output_str += f"CROPS = {self.crops}\n"
+            output_str += f"CROPS = {' + '.join(self.crops)}\n"
         if print_cls_name:
             output_str += line_sep
         return output_str

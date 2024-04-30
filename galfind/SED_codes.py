@@ -111,6 +111,29 @@ class SED_code(ABC):
             combined_cat.write(cat.cat_path, overwrite = True)
 
     @staticmethod
+    def update_lowz_zmax(SED_fit_params, SED_results):
+        if "dz" in SED_fit_params.keys():
+            assert "lowz_zmax" not in SED_fit_params.keys(), \
+                galfind_logger.critical("Cannot have both 'dz' and 'lowz_zmax' in SED_fit_params")
+            available_SED_fit_params = [SED_fit_params["code"].SED_fit_params_from_label(label) \
+                for label in SED_results.keys() if label.split("_")[0] == SED_fit_params["code"].__class__.__name__]
+            # extract sorted (low -> high) lowz_zmax's (excluding 'None') from available SED_fit_params
+            available_lowz_zmax = sorted(filter(lambda lowz_zmax: lowz_zmax is not None, [SED_fit_params_["lowz_zmax"] \
+                for SED_fit_params_ in available_SED_fit_params if "lowz_zmax" in SED_fit_params_.keys()]))
+            # calculate z
+            z = SED_results[SED_fit_params["code"].label_from_SED_fit_params({**SED_fit_params, "lowz_zmax": None})].z
+            # add appropriate 'lowz_zmax' to dict
+            lowz_zmax = [lowz_zmax for lowz_zmax in reversed(available_lowz_zmax) if lowz_zmax < z - SED_fit_params["dz"]]
+            if len(lowz_zmax) > 0:
+                lowz_zmax = lowz_zmax[0]
+            else:
+                galfind_logger.critical(f"No appropriate lowz_zmax run for z = {z}, dz = {SED_fit_params['dz']}. Available runs are: lowz_zmax = {', '.join(available_lowz_zmax)}")
+            SED_fit_params["lowz_zmax"] = lowz_zmax
+            # remove 'dz' from dict
+            SED_fit_params.pop("dz")
+        return SED_fit_params
+
+    @staticmethod
     @abstractmethod
     def label_from_SED_fit_params(SED_fit_params):
         pass

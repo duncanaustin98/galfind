@@ -95,7 +95,7 @@ class Catalogue(Catalogue_Base):
         elapsed_time = end_time - start_time
         print(f"Finished loading in {len(gals)} galaxies. This took {elapsed_time:.6f} seconds")
         # make catalogue with no SED fitting information
-        cat_obj = cls(gals, fits_cat_path, survey, cat_creator, instrument, version = version, crops = [])
+        cat_obj = cls(gals, fits_cat_path, survey, cat_creator, instrument, version = version, crops = crop_by)
         #print(cat_obj)
         if cat_obj != None:
             cat_obj.data = data
@@ -316,20 +316,21 @@ class Catalogue(Catalogue_Base):
     def make_RGB_images(self, IDs, cutout_size = 32):
         return NotImplementedError
     
-    def plot_phot_diagnostics(self, SED_fit_params_arr, zPDF_plot_SED_fit_params_arr, wav_unit = u.AA, flux_unit = u.Jy):
+    def plot_phot_diagnostics(self, 
+            SED_fit_params_arr = [{"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}, {"code": EAZY(), "templates": "fsps_larson", "dz": 0.5}], \
+            zPDF_plot_SED_fit_params_arr = [{"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}, {"code": EAZY(), "templates": "fsps_larson", "dz": 0.5}], \
+            wav_unit = u.AA, flux_unit = u.Jy):
         # figure size may well depend on how many bands there are
         overall_fig = plt.figure(figsize = (8, 7), constrained_layout = True)
-        bands = self.phot.instrument.band_names # should be updated
+        bands = self.data.instrument.band_names # should be updated
         nbands = len(bands) # should be updated
-        subfigures = overall_fig.subfigures(2, 1, hspace = -2, height_ratios = [2, 1] if len(bands) <= 8 else [1.8, 1])
-        fig = subfigures[0]
-        cutout_fig = subfigures[1]
+        fig, cutout_fig = overall_fig.subfigures(2, 1, hspace = -2, height_ratios = [2, 1] if len(bands) <= 8 else [1.8, 1])
     
         gs = fig.add_gridspec(2, 4)
         phot_ax = fig.add_subplot(gs[:, 0:3])
         if flux_unit != u.Jy:
-            galfind_logger.critical("Convert unit here!!!")
-        galfind_logger.critical("Still need to appropriately label x/y axis")
+            galfind_logger.warning("Convert unit here!!!")
+        galfind_logger.warning("Still need to appropriately label x/y axis")
         x_label = r"$\lambda_{\mathrm{obs}}~/~\mathrm{\AA}$"
         y_label = r"$\f_{\nu}~/~\mathrm{Jy}$" #funcs.unit_to_label(self.phot.flux_Jy.unit)
         #y_label = f'Flux Density ({flux_unit:latex})'
@@ -353,9 +354,9 @@ class Catalogue(Catalogue_Base):
             cutout_ax.set_xticks([])
             cutout_ax.set_yticks([])
             cutout_ax_list.append(cutout_ax)
-        
+
         # plot SEDs
-        [gal.plot_phot_diagnostic([cutout_ax, phot_ax, PDF_ax], self.data, \
+        [gal.plot_phot_diagnostic([cutout_ax_list, phot_ax, PDF_ax], self.data, \
             SED_fit_params_arr, zPDF_plot_SED_fit_params_arr, wav_unit, flux_unit) \
             for gal in tqdm(self, total = len(self), desc = "Plotting photometry diagnostic plots")]
 
