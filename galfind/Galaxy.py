@@ -279,8 +279,8 @@ class Galaxy:
                     frameon=False, size_vertical=1.5)
                 ax_arr[-1].add_artist(scalebar)
     
-    def plot_phot_diagnostic(self, ax, data, SED_fit_params_arr, zPDF_plot_SED_fit_params_arr, wav_unit = u.AA, flux_unit = u.ABmag, \
-            scaling = {}, hide_masked_cutouts = True, cutout_size = 32, high_dyn_rng = False, annotate_PDFs = True, overwrite = True):
+    def plot_phot_diagnostic(self, ax, data, SED_fit_params_arr, zPDF_plot_SED_fit_params_arr, wav_unit = u.um, flux_unit = u.ABmag, \
+            hide_masked_cutouts = True, cutout_size = 32, high_dyn_rng = False, annotate_PDFs = True, plot_rejected_reasons = False, overwrite = True):
         
         cutout_ax, phot_ax, PDF_ax = ax
 
@@ -290,15 +290,10 @@ class Galaxy:
         
         zPDF_labels = [f"{SED_fit_params['code'].label_from_SED_fit_params(SED_fit_params)} PDF" for SED_fit_params in zPDF_plot_SED_fit_params_arr]
         # reset parameters
-        if "x" in scaling.keys():
-            phot_ax.set_xscale(scaling["x"])
-        #phot_ax.set_xlabel(x_label)
-        #phot_ax.set_ylabel(y_label)
-        PDF_ax[1].set_yticks([])
-        PDF_ax[1].set_visible(True)
-        PDF_ax[0].set_yticks([])
-        PDF_ax[0].set_title(zPDF_labels[0], fontsize = "medium") # lowz_zmax = None eazy run is first
-        PDF_ax[0].set_xlabel("Redshift, z") # this label should again be pulled from somewhere else
+        for ax_, label in zip(PDF_ax, zPDF_labels):
+            ax_.set_yticks([])
+            ax_.set_xlabel("Redshift, z")
+            ax_.set_title(label, fontsize = "medium")
         
         out_path = f"{config['Selection']['SELECTION_DIR']}/SED_plots/{data.version}/{data.instrument.name}/{data.survey}/{self.ID}.png"
         funcs.make_dirs(out_path)
@@ -308,37 +303,23 @@ class Galaxy:
             self.plot_cutouts(cutout_ax, data, SED_fit_params_arr[0], \
                 hide_masked_cutouts = hide_masked_cutouts, cutout_size = cutout_size, high_dyn_rng = high_dyn_rng)
                     
-            # auto-scale based on available bands (wavelength) and flux/mag values
-            if "x" in scaling.keys():
-                if scaling["x"] == "log":
-                    phot_ax.set_xlim((0.8 * u.um).to(wav_unit).value, (5 * u.um).to(wav_unit).value)
-                else:
-                    raise NotImplementedError # also not asserted anywhere
-            else:
-                if 'MIRI' in data.instrument.name:
-                    #print('Adjusting xlims for MIRI')
-                    phot_ax.set_xlim((0.3 * u.um).to(wav_unit).value, (8.5 * u.um).to(wav_unit).value)
-                else:
-                    phot_ax.set_xlim((0.3 * u.um).to(wav_unit).value, (5 * u.um).to(wav_unit).value)
-            # this should not be hard-coded
-            phot_ax.set_ylim((30.6 * u.ABmag).to(flux_unit).value, (25 * u.ABmag).to(flux_unit).value)
-                    
-            self.phot.plot_phot(phot_ax, wav_units = wav_unit, mag_units = flux_unit, annotate = False, upper_limit_sigma = 2., label_SNRs = True)
-            
-            # save rejected reasons somewhere
-            # if show_rejected_reason:
-            #     rejected = str(row[f'rejected_reasons{col_ext}'][0])
-            #     if rejected != '':
-            #         phot_ax.annotate(rejected, (0.9, 0.95), ha='center', fontsize='small', xycoords = 'axes fraction', zorder=5)
-                    
             # plot specified SEDs andd save colours
             SED_colours = {}
-            for SED_fit_params in SED_fit_params_arr:
+            for SED_fit_params in reversed(SED_fit_params_arr):
                 key = SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)
                 SED_plot = self.phot.SED_results[key].SED.plot_SED(phot_ax, wav_unit, flux_unit, label = key)
                 # could also plot the expected photometry here as well
                 #ax_photo.scatter(band_wavs_lowz, band_mags_lowz, edgecolors=eazy_color_lowz, marker='o', facecolor='none', s=80, zorder=4.5)
                 SED_colours[key] = SED_plot[0].get_color()
+                                
+            self.phot.plot_phot(phot_ax, wav_units = wav_unit, mag_units = flux_unit, annotate = False, auto_scale = True, label_SNRs = True)
+            # photometry axis title
+            phot_ax.set_title(f"{data.survey} {self.ID} ({data.version})")
+            # plot rejected reasons somewhere
+            # if plot_rejected_reasons:
+            #     rejected = str(row[f'rejected_reasons{col_ext}'][0])
+            #     if rejected != '':
+            #         phot_ax.annotate(rejected, (0.9, 0.95), ha='center', fontsize='small', xycoords = 'axes fraction', zorder=5)
             # photometry axis legend
             phot_ax.legend(loc='upper left', fontsize='small', frameon=False)
             for text in phot_ax.get_legend().get_texts():

@@ -328,11 +328,6 @@ class Catalogue(Catalogue_Base):
     
         gs = fig.add_gridspec(2, 4)
         phot_ax = fig.add_subplot(gs[:, 0:3])
-        #galfind_logger.warning("Still need to appropriately label x/y axis")
-        #x_label = r"$\lambda_{\mathrm{obs}}~/~\mathrm{\AA}$"
-        #y_label = r"$\f_{\nu}~/~\mathrm{Jy}$" #funcs.unit_to_label(self.phot.flux_Jy.unit)
-        #y_label = f'Flux Density ({flux_unit:latex})'
-        #x_label = f'Wavelength ({wav_unit:latex})'
 
         PDF_ax = [fig.add_subplot(gs[0, 3:]), fig.add_subplot(gs[1, 3:])]
         

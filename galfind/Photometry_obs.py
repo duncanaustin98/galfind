@@ -11,8 +11,10 @@ import numpy as np
 import astropy.constants as const
 import astropy.units as u
 from copy import copy, deepcopy
+import matplotlib.patheffects as pe
 
 from . import useful_funcs_austind as funcs
+from . import galfind_logger
 from .Photometry import Photometry, Multiple_Photometry
 from .SED_result import Galaxy_SED_results, Catalogue_SED_results
 
@@ -39,14 +41,6 @@ class Photometry_obs(Photometry):
         output_str += f"SNR: {[np.round(snr, 2) for snr in self.SNR]}\n"
         output_str += line_sep
         return output_str
-
-    @property
-    def flux_lambda(self): # wav and flux_nu must have units here!
-        return (self.flux_Jy * const.c / ((np.array([self.instrument.band_wavelengths[band].value for band in self.instrument.band_names]) * u.Angstrom) ** 2)).to(u.erg / (u.s * (u.cm ** 2) * u.Angstrom)) # both flux_nu and wav must be in the same rest or observed frame
-    
-    @property
-    def flux_lambda_errs(self):
-        return (self.flux_Jy_errs * const.c / ((np.array([self.instrument.band_wavelengths[band].value for band in self.instrument.band_names]) * u.Angstrom) ** 2)).to(u.erg / (u.s * (u.cm ** 2) * u.Angstrom))
 
     @property
     def SNR(self):
@@ -76,8 +70,101 @@ class Photometry_obs(Photometry):
         self.flux_Jy_errs.mask = mask
         return self
     
-    def get_SED_fit_params_arr(self, code):
-        return [code.SED_fit_params_from_label(label) for label in self.SED_results.keys()]
+    #def get_SED_fit_params_arr(self, code):
+    #    return [code.SED_fit_params_from_label(label) for label in self.SED_results.keys()]
+
+    def plot_phot(self, ax, wav_units = u.AA, mag_units = u.Jy, plot_errs = True, plot_band_widths = True, \
+            annotate = True, uplim_sigma = 2., uplim_sigma_arrow = 1.5, auto_scale = True, label_SNRs = False, \
+            errorbar_kwargs = {"ls": "", "marker": "o", "ms": 6., "zorder": 100., "path_effects": [pe.withStroke(linewidth = 3, foreground = "white")]}, \
+            filled = True, colour = "black", label = "Photometry"):
+        
+        wavs_to_plot = funcs.convert_wav_units(self.wav, wav_units)
+        mags_to_plot = funcs.convert_mag_units(self.wav, self.flux_Jy, mag_units)
+
+        if uplim_sigma == None:
+            uplims = list(np.full(len(self.flux_Jy), False))
+        else:
+            assert uplim_sigma_arrow < uplim_sigma, \
+                galfind_logger.critical(f"uplim_sigma_arrow = {uplim_sigma_arrow} < uplim_sigma = {uplim_sigma}")
+            # calculate upper limits based on depths
+            uplims = [True if SNR < uplim_sigma else False for SNR in self.SNR]
+            # set photometry to uplim_sigma for the data to be plotted as upper limits
+            uplim_indices = [i for i, is_uplim in enumerate(uplims) if is_uplim]
+            uplim_vals = [funcs.convert_mag_units(self.wav, funcs.convert_mag_units(self.wav, self.depths[i], u.Jy) \
+                * uplim_sigma / 5., mag_units).value for i in uplim_indices] * mag_units
+            mags_to_plot.put(uplim_indices, uplim_vals)
+            galfind_logger.debug("Should test whether upper plotting limits preserves the mask!")
+        self.non_detected_indices = uplims
+
+        if plot_errs:
+            mag_errs_new_units = funcs.convert_mag_err_units(self.wav, self.flux_Jy, [self.flux_Jy_errs, self.flux_Jy_errs], mag_units)
+            # update with upper limit errors
+            uplim_l1_vals = [funcs.convert_mag_units(self.wav, funcs.convert_mag_units(self.wav, self.depths[i], u.Jy) \
+                * uplim_sigma_arrow / 5., mag_units).value for i in uplim_indices] * mag_units
+            if mag_units == u.ABmag:
+                # swap l1 / u1 errors
+                uplim_u1_vals = (uplim_l1_vals - uplim_vals).to(u.dimensionless_unscaled).value
+                uplim_l1_vals = [np.nan for i in uplim_indices]
+            else:
+                uplim_l1_vals = (uplim_vals - uplim_l1_vals).to(u.dimensionless_unscaled).value
+                uplim_u1_vals = [np.nan for i in uplim_indices]
+            yerr = []
+            for i, uplim_errs in enumerate([uplim_l1_vals, uplim_u1_vals]):
+                mag_errs = mag_errs_new_units[i].value
+                mag_errs.put(uplim_indices, uplim_errs)
+                yerr.append(mag_errs)
+        else:
+            yerr = None
+        
+        if plot_band_widths:
+            xerr = [[funcs.convert_wav_units(filter.WavelengthCen - filter.WavelengthLower50, wav_units).value for filter in self.instrument], \
+                    [funcs.convert_wav_units(filter.WavelengthUpper50 - filter.WavelengthCen, wav_units).value for filter in self.instrument]]
+        else:
+            xerr = None
+
+        # update errorbar kwargs - not quite general
+        if filled:
+            errorbar_kwargs["mfc"] = colour
+        else:
+            errorbar_kwargs["mfc"] = "none"
+        errorbar_kwargs["color"] = colour
+        errorbar_kwargs["label"] = label
+
+        if auto_scale:
+            # auto-scale the x-axis
+            lower_xlim = np.min(wavs_to_plot.value - xerr[0]) * 0.95
+            upper_xlim = np.max(wavs_to_plot.value + xerr[1]) * 1.05
+            ax.set_xlim(lower_xlim, upper_xlim)
+            # auto-scale the y-axis based on plotting units
+            if mags_to_plot.unit == u.ABmag:
+                lower_ylim = np.max(mags_to_plot.value) + 1.
+                upper_ylim = np.min(mags_to_plot.value) - 1.
+            # Tom's auto-scaling
+            # if mag.value < ax.get_ylim()[1] + 1 and mag.value > 15: 
+            #     new_lim = mag.value - 1
+            #     ax_photo.set_ylim(ax.get_ylim()[0], new_lim)
+            # if mag.value > ax.get_ylim()[0] and mag.value < 32 and mag.value > 15:
+            #     new_lim = two_sig_depth.value + 0.5
+            #     ax.set_ylim(new_lim, ax.get_ylim()[1])
+            ax.set_ylim(lower_ylim, upper_ylim)
+
+        if mag_units == u.ABmag:
+            plot_limits = {"lolims": uplims}
+        else:
+            plot_limits = {"uplims": uplims}
+        plot = ax.errorbar(wavs_to_plot.value, mags_to_plot.value, xerr = xerr, yerr = yerr, **plot_limits, **errorbar_kwargs)
+
+        # could probably go into overridden Photometry_obs method
+        if label_SNRs:
+            label_kwargs = {"ha": "center", "fontsize": "medium", "path_effects": [pe.withStroke(linewidth = 3, foreground = "white")], "zorder": 1_000.}
+            [ax.annotate(f"{SNR:.1f}$\sigma$" if SNR < 100 else f"{SNR:.0f}$\sigma$", (funcs.convert_wav_units(filter.WavelengthCen, wav_units).value, \
+                ax.get_ylim()[0] - 0.2 if i % 2 == 0 else ax.get_ylim()[0] - 0.6), **label_kwargs) for i, (SNR, filter) in enumerate(zip(self.SNR, self.instrument))]
+        
+        if annotate:
+            # x/y labels etc here
+            ax.legend()
+
+        return plot
 
     #def load_local_depths(self, sex_cat_row, instrument, aper_diam_index):
     #    self.loc_depths = np.array([sex_cat_row[f"loc_depth_{band}"].T[aper_diam_index] for band in instrument.band_names])
