@@ -31,10 +31,11 @@ class SED_result:
         self.property_errs = property_errs
         #[setattr(self, f"{key}_l1", value[0]) for key, value in property_errs.items()]
         #[setattr(self, f"{key}_u1", value[1]) for key, value in property_errs.items()]
-        self.property_PDFs = property_PDFs
+        # load in peaks
+        self.property_PDFs = {property: property_PDF.load_peaks_from_best_fit(properties[property], properties["chi_sq"]) for property, property_PDF in property_PDFs.items()}
         #[setattr(self, f"{key}_PDF", value) for key, value in property_PDFs.items()]
-        self.phot_rest = Photometry_rest.from_phot(phot, self.z, rest_UV_wav_lims = rest_UV_wav_lims)
         self.SED = SED
+        self.phot_rest = Photometry_rest.from_phot(phot, self.z, rest_UV_wav_lims = rest_UV_wav_lims)
 
     def __str__(self, print_phot_rest = False, print_PDFs = False, print_SED = True):
         line_sep = "*" * 40 + "\n"
@@ -122,7 +123,7 @@ class Catalogue_SED_results:
     def from_cat(cls, cat, SED_fit_params_arr):
         cat_PDF_paths = [cat.phot_PDF_paths[SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)] for SED_fit_params in SED_fit_params_arr]
         cat_SED_paths = [cat.phot_SED_paths[SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)] for SED_fit_params in SED_fit_params_arr]
-        return cls.from_fits_cat(cat.open_cat(), cat.cat_creator, SED_fit_params_arr, cat_PDF_paths, cat_SED_paths, phot_arr = [gal.phot for gal in cat])
+        return cls.from_fits_cat(cat.open_cat(cropped = True), cat.cat_creator, SED_fit_params_arr, cat_PDF_paths, cat_SED_paths, phot_arr = [gal.phot for gal in cat])
 
     @classmethod
     def from_fits_cat(cls, fits_cat, cat_creator, SED_fit_params_arr, cat_PDF_paths = None, cat_SED_paths = None, \
@@ -162,7 +163,7 @@ class Catalogue_SED_results:
                 assert(len(PDF_paths[gal_property]) == len(fits_cat) for gal_property in SED_fit_params["code"].galaxy_property_dict.keys())
                 # construct PDF objects, type = array of len(fits_cat), each element a dict of {gal_property: PDF object} excluding None PDFs
                 cat_property_PDFs_ = {gal_property: SED_fit_params["code"].extract_PDFs(gal_property, IDs, \
-                    PDF_paths[gal_property]) for gal_property in PDF_paths.keys()}
+                    PDF_paths[gal_property], SED_fit_params) for gal_property in PDF_paths.keys()}
                 cat_property_PDFs[:, i] = [{gal_property: PDF_arr[j] for gal_property, PDF_arr in cat_property_PDFs_.items() if PDF_arr[j] != None} for j in range(len(fits_cat))]
 
         # load in SEDs

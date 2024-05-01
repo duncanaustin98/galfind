@@ -153,7 +153,7 @@ class LePhare(SED_code):
         pass
     
     @staticmethod
-    def extract_PDFs(gal_property, IDs, PDF_paths):
+    def extract_PDFs(gal_property, IDs, PDF_paths, SED_fit_params):
         pass
         # str_ID = "0" * (9 - len(str(ID))) + str(ID)
         # print("ID = " + str_ID)
