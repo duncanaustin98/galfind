@@ -49,10 +49,21 @@ class PDF:
         # pz_column, integral, peak_z, peak_loc, peak_second_loc, secondary_peak, ratio = useful_funcs_updated_new_galfind.robust_pdf([gal_id], [zbest], SED_code, field_name, rel_limits=True, z_fact=int_limit, use_custom_lephare_seds=custom_lephare, template=template, plot=False, version=catalog_version, custom_sex=custom_sex, min_percentage_err=min_percentage_err, custom_path=eazy_pdf_path, use_galfind=True)
         # print(integral, 'integral', peak_z, 'peak_z', peak_loc, 'peak_loc', peak_second_loc, 'peak_second_loc', secondary_peak, 'secondary_peak', ratio, 'ratio')
 
-    def get_percentile(self):
-        pass
+    def get_percentile(self, percentile):
+        assert type(percentile) in [float], \
+            galfind_logger.critical(f"percentile = {percentile} with type(percentile) = {type(percentile)} is not in ['float']")
+        try:
+            return self.percentiles[f"{percentile:.1f}"]
+        except (AttributeError, KeyError) as e:
+            if type(e) == AttributeError:
+                self.percentiles = {}
+            # calculate percentile
+            cdf = np.cumsum(self.p_x)
+            cdf /= np.max(cdf)
+            self.percentiles[f"{percentile:.1f}"] = float(self.x[np.argmin(np.abs(cdf - percentile / 100.))])
+            return self.percentiles[f"{percentile:.1f}"]
 
-    def plot(self, ax, annotate = False, annotate_peak_loc = False, colour = "black"):
+    def plot(self, ax, annotate = True, annotate_peak_loc = False, colour = "black"):
         
         ax.plot(self.x, self.p_x, color = colour)
         
@@ -76,13 +87,12 @@ class PDF:
         if annotate:
             # Draw vertical line at zbest
             ax.axvline(self.get_peak(0)["value"], color = colour, linestyle='--', alpha=0.5, lw=2)
-            ax.axvline(self.get_peak(0)["value"] + upper_lim, color = colour, linestyle=':', alpha=0.5, lw=2)
-            ax.axvline(self.get_peak(0)["value"] - lower_lim, color = colour, linestyle=':', alpha=0.5, lw=2)
-            ax.annotate('-1$\sigma$', (self.get_peak(0)["value"] - lower_lim, 0.1), fontsize='small', ha='center', transform = ax.get_yaxis_transform(), va='bottom',  color = colour, path_effects = [pe.withStroke(linewidth=3, foreground='white')])
-            # Shade region between zbest-lower_lim and zbest+upper_lim below PDF)
-            ax.annotate('+1$\sigma$', (self.get_peak(0)["value"] + upper_lim, 0.1), fontsize='small', ha='center', transform = ax.get_yaxis_transform(), va='bottom', color = colour, path_effects = [pe.withStroke(linewidth=3, foreground='white')])
-            # Shade region between zbest-lower_lim and zbest+upper_lim below PDF
-            ax.annotate(r'$z_{\rm phot}=$'+f'{self.get_peak(0)["value"]:.1f}'+f'$^{{+{upper_lim:.1f}}}_{{-{lower_lim:.1f}}}$', (self.get_peak(0)["value"], 1.17), fontsize='medium', va='top', ha='center', color = colour, path_effects = [pe.withStroke(linewidth=3, foreground='white')])
+            ax.axvline(self.get_percentile(16.), color = colour, linestyle=':', alpha=0.5, lw=2)
+            ax.axvline(self.get_percentile(84.), color = colour, linestyle=':', alpha=0.5, lw=2)
+            ax.annotate('-1$\sigma$', (self.get_percentile(16.), 0.1), fontsize='small', ha='center', transform = ax.get_yaxis_transform(), va='bottom',  color = colour, path_effects = [pe.withStroke(linewidth=3, foreground='white')])
+            ax.annotate('+1$\sigma$', (self.get_percentile(84.), 0.1), fontsize='small', ha='center', transform = ax.get_yaxis_transform(), va='bottom', color = colour, path_effects = [pe.withStroke(linewidth=3, foreground='white')])
+            ax.annotate(r'$z_{\rm phot}=$'+f'{self.get_peak(0)["value"]:.1f}' + \
+                f'$^{{+{(self.get_percentile(84.) - self.get_peak(0)["value"]):.1f}}}_{{-{(self.get_peak(0)["value"] - self.get_percentile(16.)):.1f}}}$', (self.get_peak(0)["value"], 1.17), fontsize='medium', va='top', ha='center', color = colour, path_effects = [pe.withStroke(linewidth=3, foreground='white')])
             
             # Horizontal arrow at PDF peak going left or right depending on which side PDF is on, labelled with chi2
             # Check if highest peak is closer to xlim[0] or xlim[1]

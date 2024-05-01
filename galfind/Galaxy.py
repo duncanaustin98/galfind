@@ -280,7 +280,7 @@ class Galaxy:
                 ax_arr[-1].add_artist(scalebar)
     
     def plot_phot_diagnostic(self, ax, data, SED_fit_params_arr, zPDF_plot_SED_fit_params_arr, wav_unit = u.AA, flux_unit = u.ABmag, \
-            scaling = {}, hide_masked_cutouts = True, cutout_size = 32, high_dyn_rng = False, overwrite = True):
+            scaling = {}, hide_masked_cutouts = True, cutout_size = 32, high_dyn_rng = False, annotate_PDFs = True, overwrite = True):
         
         cutout_ax, phot_ax, PDF_ax = ax
 
@@ -354,7 +354,7 @@ class Galaxy:
                     colour = SED_colours[key]
                 else:
                     colour = "black"
-                self.phot.SED_results[key].property_PDFs["z"].plot(ax, colour = colour)
+                self.phot.SED_results[key].property_PDFs["z"].plot(ax, annotate = annotate_PDFs, colour = colour)
 
             # Save and clear axes
             plt.savefig(out_path, dpi = 300, bbox_inches = 'tight')
