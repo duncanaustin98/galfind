@@ -2,6 +2,7 @@
 
 import numpy as np
 import matplotlib.pyplot as plt
+import matplotlib.patheffects as pe
 
 from . import config, galfind_logger
 from . import useful_funcs_austind as funcs
@@ -92,18 +93,24 @@ class PDF:
                 direction = 1
             else:
                 direction = -1
-            ax.annotate(r'$\chi^2=$'+f'{self.get_peak(0)["chi_sq"]:.2f}', (self.get_peak(0)["value"], 1.0), xytext = (self.get_peak(0)["value"] + direction * amount, 0.90),  fontsize='small', va='top', ha='center', color = colour, path_effects=[pe.withStroke(linewidth=3, foreground='white')], arrowprops=dict(facecolor=eazy_color, edgecolor=eazy_color, arrowstyle='-|>', lw=1.5, path_effects=[pe.withStroke(linewidth=1, foreground='white')]))
+            ax.annotate(r'$\chi^2=$'+f'{self.get_peak(0)["chi_sq"]:.2f}', (self.get_peak(0)["value"], 1.0), \
+                xytext = (self.get_peak(0)["value"] + direction * amount, 0.90),  fontsize='small', va='top', \
+                ha='center', color = colour, path_effects=[pe.withStroke(linewidth=3, foreground='white')], \
+                arrowprops = dict(facecolor = colour, edgecolor = colour, arrowstyle='-|>', lw=1.5, \
+                path_effects=[pe.withStroke(linewidth=1, foreground='white')]))
             
             # annotate PDF with peak locations etc
-            if annotate_peak_loc:
-                ax.scatter(self.get_peak(0)["value"], peak_pdf, color = colour, edgecolors = colour, marker='o', facecolor='none')
+            # if annotate_peak_loc:
+            #     ax.scatter(self.get_peak(0)["value"], peak_pdf, color = colour, edgecolors = colour, marker='o', facecolor='none')
                 
-                secondary_peak = self.get_peak(1)["value"]
-                if secondary_peak > 0: 
-                    ax.scatter(secondary_peak, secondary_peak_pdf, edgecolor='orange', marker='o', facecolor='none')
-                    ax.annotate(f'P(S)/P(P): {ratio:.2f}', loc_ratio, fontsize='x-small')
+            #     secondary_peak = self.get_peak(1)["value"]
+            #     if secondary_peak > 0: 
+            #         ax.scatter(secondary_peak, secondary_peak_pdf, edgecolor='orange', marker='o', facecolor='none')
+            #         ax.annotate(f'P(S)/P(P): {ratio:.2f}', loc_ratio, fontsize='x-small')
             
-            #ax.annotate(f'$\\sum = {float(integral):.2f}$', (zbest, 0.45), fontsize='small', transform = ax.get_yaxis_transform(), va='bottom', ha='center', fontweight='bold', color=eazy_color, path_effects=[pe.withStroke(linewidth=3, foreground='white')])
+            #ax.annotate(f'$\\sum = {float(integral):.2f}$', (zbest, 0.45), fontsize='small', \
+                #transform = ax.get_yaxis_transform(), va='bottom', ha='center', fontweight='bold', \
+                #color=eazy_color, path_effects=[pe.withStroke(linewidth=3, foreground='white')])
     
 
 class SED_fit_PDF(PDF):
