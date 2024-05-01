@@ -79,19 +79,21 @@ class SED_code(ABC):
         out_path = f"{out_folder}/{funcs.split_dir_name(in_path, 'name').replace('.in', '.out')}"
         #print(out_path)
         overwrite = config[self.__class__.__name__].getboolean(f"OVERWRITE_{self.__class__.__name__}")
-        
+        tab = Table.read(cat.cat_path, memmap = True)
+            
         for key in ["code", "templates"]:
             assert key in SED_fit_params.keys(), galfind_logger.critical(f"{key} not in SED_fit_params keys = {SED_fit_params.keys()}")
             assert SED_fit_params["templates"] in self.available_templates, \
                 galfind_logger.critical(f"'templates' not in {self.__class__.__name__}.available_templates = {self.available_templates}!")
         
-        fits_out_path, PDF_paths, SED_paths = self.get_out_paths(out_path, SED_fit_params, IDs = np.array(cat.ID))
+        fits_out_path, PDF_paths, SED_paths = self.get_out_paths(out_path, SED_fit_params, IDs = np.array(tab[cat.cat_creator.ID_label]))
         # run the SED fitting if not already done so or if wanted overwriting
-        fits_cat_meta = cat.open_cat().meta # this may be quite slow to load in the catalogue
-        if f"RUN_{self.__class__.__name__}" not in fits_cat_meta.keys(): # or overwrite:
+        if f"RUN_{self.__class__.__name__}" not in tab.meta.keys() or overwrite:
+            #if config[self.__class__.__name__].getboolean(f"RUN_{self.__class__.__name__}"):
             self.run_fit(in_path, fits_out_path, cat.instrument.new_instrument(), SED_fit_params, overwrite = overwrite) #, *args, **kwargs)
             self.make_fits_from_out(out_path, SED_fit_params) #, *args, **kwargs)
-            self.update_fits_cat(cat, fits_out_path, SED_fit_params) #, *args, **kwargs)
+        # update galaxies within catalogue object with determined properties
+        self.update_fits_cat(cat, fits_out_path, SED_fit_params) #, *args, **kwargs)
         # save PDF and SED paths in galfind catalogue object
         cat.save_phot_PDF_paths(PDF_paths, SED_fit_params)
         cat.save_phot_SED_paths(SED_paths, SED_fit_params)
@@ -104,34 +106,13 @@ class SED_code(ABC):
         # open original catalogue
         orig_cat = cat.open_cat()
         # combine catalogues if not already run before
-        if not self.galaxy_property_labels("z", SED_fit_params) in orig_cat.colnames:
+        if self.galaxy_property_labels("z", SED_fit_params) in orig_cat.colnames:
+            combined_cat = orig_cat
+        else:
             combined_cat = join(orig_cat, Table.read(fits_out_path), keys_left = "NUMBER", keys_right = "IDENT")
             combined_cat.remove_column("IDENT")
             combined_cat.meta = {**combined_cat.meta, **{f"RUN_{self.__class__.__name__}": True}}
             combined_cat.write(cat.cat_path, overwrite = True)
-
-    @staticmethod
-    def update_lowz_zmax(SED_fit_params, SED_results):
-        if "dz" in SED_fit_params.keys():
-            assert "lowz_zmax" not in SED_fit_params.keys(), \
-                galfind_logger.critical("Cannot have both 'dz' and 'lowz_zmax' in SED_fit_params")
-            available_SED_fit_params = [SED_fit_params["code"].SED_fit_params_from_label(label) \
-                for label in SED_results.keys() if label.split("_")[0] == SED_fit_params["code"].__class__.__name__]
-            # extract sorted (low -> high) lowz_zmax's (excluding 'None') from available SED_fit_params
-            available_lowz_zmax = sorted(filter(lambda lowz_zmax: lowz_zmax is not None, [SED_fit_params_["lowz_zmax"] \
-                for SED_fit_params_ in available_SED_fit_params if "lowz_zmax" in SED_fit_params_.keys()]))
-            # calculate z
-            z = SED_results[SED_fit_params["code"].label_from_SED_fit_params({**SED_fit_params, "lowz_zmax": None})].z
-            # add appropriate 'lowz_zmax' to dict
-            lowz_zmax = [lowz_zmax for lowz_zmax in reversed(available_lowz_zmax) if lowz_zmax < z - SED_fit_params["dz"]]
-            if len(lowz_zmax) > 0:
-                lowz_zmax = lowz_zmax[0]
-            else:
-                galfind_logger.critical(f"No appropriate lowz_zmax run for z = {z}, dz = {SED_fit_params['dz']}. Available runs are: lowz_zmax = {', '.join(available_lowz_zmax)}")
-            SED_fit_params["lowz_zmax"] = lowz_zmax
-            # remove 'dz' from dict
-            SED_fit_params.pop("dz")
-        return SED_fit_params
 
     @staticmethod
     @abstractmethod
@@ -170,7 +151,7 @@ class SED_code(ABC):
     
     @staticmethod
     @abstractmethod
-    def extract_PDFs(gal_property, IDs, data_paths, SED_fit_params):
+    def extract_PDFs(gal_property, IDs, data_paths):
         pass
 
 # def calc_LePhare_errs(cat, col_name):

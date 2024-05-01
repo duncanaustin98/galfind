@@ -1,7 +1,7 @@
 # Catalogue_Base.py
 
 import numpy as np
-from astropy.table import Table, join
+from astropy.table import Table
 from copy import deepcopy
 import astropy.units as u
 from tqdm import tqdm
@@ -32,7 +32,7 @@ class Catalogue_Base:
         
         # keep a record of the crops that have been made to the catalogue
         self.selection_cols = [key.replace("SELECTED_", "") for key in self.open_cat().meta.keys() if "SELECTED_" in key]
-        self.crops = list(crops)
+        self.crops = crops
         
         # concat is commutative for catalogues
         self.__radd__ = self.__add__
@@ -41,7 +41,7 @@ class Catalogue_Base:
 
     # %% Overloaded operators
 
-    def __str__(self, print_cls_name = True, print_data = True, print_sel_criteria = True, display_selections = ["EPOCHS", "BROWN_DWARF"]):
+    def __str__(self, print_cls_name = True, print_data = True, print_sel_criteria = True):
         line_sep = "*" * 40 + "\n"
         band_sep = "-" * 10 + "\n"
         output_str = ""
@@ -53,27 +53,26 @@ class Catalogue_Base:
             output_str += str(self.data)
         output_str += f"FITS CAT PATH = {self.cat_path}\n"
         # access table header to display what has been run for this catalogue
-        cat = self.open_cat()
+        cat = Table.read(self.cat_path, memmap = True)
         output_str += f"N_GALS_TOTAL = {len(cat)}\n"
         # display what other things have previously been calculated for this catalogue, including templates and zmax_lowz
         output_str += "CAT STATUS = SEXTRACTOR, "
         for i, (key, value) in enumerate(cat.meta.items()):
             if key in ["DEPTHS", "MASKED"] + [f"RUN_{subclass.__name__}" for subclass in SED_code.__subclasses__()]:
-                output_str += f"{key.split('_')[-1]}, "
-        for sel_criteria in display_selections:
-            if sel_criteria in cat.colnames:
-                output_str += f"{sel_criteria} SELECTION, "
+                output_str += key
+                if i != len(cat.meta) - 1:
+                    output_str += ", "
         output_str += "\n"
         # display total number of galaxies that satisfy the selection criteria previously performed
         if print_sel_criteria:
-            for sel_criteria in display_selections:
+            for sel_criteria in ["EPOCHS", "BROWN_DWARF"]:
                 if sel_criteria in cat.colnames:
                     output_str += f"N_GALS_{sel_criteria} = {len(cat[cat[sel_criteria]])}\n"
         output_str += band_sep
         # display crops that have been performed on this specific object
         if self.crops != []:
             output_str += f"N_GALS_OBJECT = {len(self)}\n"
-            output_str += f"CROPS = {' + '.join(self.crops)}\n"
+            output_str += f"CROPS = {self.crops}\n"
         if print_cls_name:
             output_str += line_sep
         return output_str
@@ -284,6 +283,7 @@ class Catalogue_Base:
         'Alias for self * other'
         return self.__mul__(other, out_survey = None, max_sep = 1.0 * u.arcsec, match_type='nearest')
 
+
     def __sub__(self):
         pass
     
@@ -329,14 +329,5 @@ class Catalogue_Base:
             galfind_logger.critical(f"crop_limits={crop_limits} with type = {type(crop_limits)} not in [int, float, bool, list, np.array]")
         return cat_copy
     
-    def open_cat(self, cropped = False):
-        fits_cat = Table.read(self.cat_path, character_as_bytes = False, memmap = True)
-        if cropped:
-            IDs_temp = self.ID
-            ID_tab = Table({"IDs_temp": IDs_temp}, dtype = [int])
-            combined_tab = join(fits_cat, ID_tab, keys_left = self.cat_creator.ID_label, keys_right = "IDs_temp")
-            combined_tab.remove_column("IDs_temp")
-            combined_tab.meta = fits_cat.meta
-            return combined_tab
-        else:
-            return fits_cat
+    def open_cat(self):
+        return Table.read(self.cat_path, character_as_bytes = False, memmap = True)

@@ -72,6 +72,10 @@ class Data:
         self.im_pixel_scales = im_pixel_scales
         self.im_shapes = im_shapes
 
+        # load image wcs objects
+        for band in self.instrument.band_names:
+            self.load_wcs(band)
+
         # ensure alignment band exists
         if alignment_band not in self.instrument.band_names:
             galfind_logger.critical(f"Alignment band = {alignment_band} does not exist in instrument!")
@@ -586,13 +590,11 @@ class Data:
             return im_data, im_header
     
     def load_wcs(self, band, save_attr = True):
-        try:
-            self.wcs[band]
-        except (AttributeError, KeyError) as e:
-            if type(e) == AttributeError:
-                self.wcs = {}
-            self.wcs[band] = WCS(self.load_im(band)[1])
-        return self.wcs[band]
+        if not hasattr(self, "wcs"):
+            self.wcs = {}
+        wcs = WCS(self.load_im(band)[1])
+        self.wcs[band] = wcs
+        return wcs
 
     def load_seg(self, band):
         seg_hdul = fits.open(self.seg_paths[band])

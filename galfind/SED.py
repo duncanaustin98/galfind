@@ -68,8 +68,8 @@ class SED:
         return mags
         
     def plot_SED(self, ax, wav_units = u.AA, mag_units = u.ABmag, label = None, annotate = True, plot_kwargs = {}, legend_kwargs = {}):
-        wavs = funcs.convert_wav_units(self.wavs, wav_units).value
-        mags = funcs.convert_mag_units(self.wavs, self.mags, mag_units).value
+        wavs = self.convert_wav_units(wav_units, update = False)
+        mags = self.convert_mag_units(mag_units, update = False)
         plot = ax.plot(wavs, mags, label = label, **plot_kwargs)
         if annotate:
             if wav_units == u.AA:

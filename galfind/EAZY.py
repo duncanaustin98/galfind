@@ -332,7 +332,7 @@ class EAZY(SED_code):
         return SED_obs_arr
     
     @staticmethod
-    def extract_PDFs(gal_property, IDs, PDF_paths, SED_fit_params):
+    def extract_PDFs(gal_property, IDs, PDF_paths):
         # ensure this works if only extracting 1 galaxy
         if type(IDs) in [str, int, float]:
             IDs = [int(IDs)]
@@ -355,7 +355,7 @@ class EAZY(SED_code):
             hf = h5py.File(PDF_paths[0], "r")
             hf_z = np.array(hf["z"])
             # extract redshift PDF for each ID
-            redshift_pdfs = [Redshift_PDF(hf_z, np.array(hf[f"ID={str(int(ID))}"]["p(z)"]), SED_fit_params) \
+            redshift_pdfs = [Redshift_PDF(hf_z, np.array(hf[f"ID={str(int(ID))}"]["p(z)"])) \
                 for ID in tqdm(IDs, total = len(IDs), desc = "Constructing redshift PDFs")]
             # close .h5 file
             hf.close()

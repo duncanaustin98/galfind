@@ -18,18 +18,9 @@ class Filter:
         self.trans = trans
         for key, value in properties.items():
             self.__setattr__(key, value)
-        self.properties = properties # currently just used in __str__ only
 
     def __str__(self):
-        line_sep = "*" * 40 + "\n"
-        band_sep = "-" * 10 + "\n"
-        output_str = line_sep
-        output_str += f"{self.facility}/{self.instrument}/{self.band_name}\n"
-        output_str += band_sep
-        for key, value in self.properties.items():
-            output_str += f"{key}: {value}\n"
-        output_str += line_sep
-        return output_str
+        pass
 
     def __setattr__(self, key, value):
         super().__setattr__(key, value)
