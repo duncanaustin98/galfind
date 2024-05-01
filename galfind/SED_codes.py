@@ -170,7 +170,7 @@ class SED_code(ABC):
     
     @staticmethod
     @abstractmethod
-    def extract_PDFs(gal_property, IDs, data_paths):
+    def extract_PDFs(gal_property, IDs, data_paths, SED_fit_params):
         pass
 
 # def calc_LePhare_errs(cat, col_name):

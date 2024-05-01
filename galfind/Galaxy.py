@@ -270,7 +270,7 @@ class Galaxy:
                 
                 # First scalebar
                 scalebar = AnchoredSizeBar(ax_arr[i].transData,
-                    0.3 / data.im_pixel_scales[band], "0.3\"", 'lower right', 
+                    0.3 / data.im_pixel_scales[band].value, "0.3\"", 'lower right', 
                     pad = 0.3, color='white', frameon=False, size_vertical=2)
                 ax_arr[-1].add_artist(scalebar)
                 # Plot scalebar with physical size
@@ -321,7 +321,7 @@ class Galaxy:
                 else:
                     phot_ax.set_xlim((0.3 * u.um).to(wav_unit).value, (5 * u.um).to(wav_unit).value)
             # this should not be hard-coded
-            phot_ax.set_ylim(30.6 * u.ABmag.to(flux_unit), 25 * u.ABmag.to(flux_unit))
+            phot_ax.set_ylim((30.6 * u.ABmag).to(flux_unit).value, (25 * u.ABmag).to(flux_unit).value)
                     
             self.phot.plot_phot(phot_ax, wav_units = wav_unit, mag_units = flux_unit, annotate = False, upper_limit_sigma = 2.)
             #p1 = patches.FancyArrowPatch((wav.to(wav_unit).value, three_sig_depth.to(flux_unit).value), (wav.to(wav_unit).value, three_sig_depth.to(flux_unit).value+0.5), arrowstyle='-|>', mutation_scale=10, alpha=1, color='black', zorder=5.6)
@@ -358,7 +358,6 @@ class Galaxy:
 
             # plot PDF on relevant axis
             assert(len(zPDF_plot_SED_fit_params_arr) == len(PDF_ax)) # again, this is not totally generalized and should be == 2 for now
-            breakpoint()
             # could extend to plotting multiple PDFs on the same axis
             for ax, SED_fit_params in zip(PDF_ax, zPDF_plot_SED_fit_params_arr):
                 self.phot.SED_results[SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)].property_PDFs["z"].plot(ax)
