@@ -331,12 +331,14 @@ class Galaxy:
             #     if rejected != '':
             #         phot_ax.annotate(rejected, (0.9, 0.95), ha='center', fontsize='small', xycoords = 'axes fraction', zorder=5)
                     
-            # plot specified SEDs
+            # plot specified SEDs andd save colours
+            SED_colours = {}
             for SED_fit_params in SED_fit_params_arr:
-                self.phot.SED_results[SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)].SED.plot_SED(phot_ax, wav_unit, flux_unit)
+                key = SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)
+                SED_plot = self.phot.SED_results[key].SED.plot_SED(phot_ax, wav_unit, flux_unit, label = key)
                 # could also plot the expected photometry here as well
                 #ax_photo.scatter(band_wavs_lowz, band_mags_lowz, edgecolors=eazy_color_lowz, marker='o', facecolor='none', s=80, zorder=4.5)
-
+                SED_colours[key] = SED_plot[0].get_color()
             # photometry axis legend
             phot_ax.legend(loc='upper left', fontsize='small', frameon=False)
             for text in phot_ax.get_legend().get_texts():
@@ -347,7 +349,12 @@ class Galaxy:
             assert(len(zPDF_plot_SED_fit_params_arr) == len(PDF_ax)) # again, this is not totally generalized and should be == 2 for now
             # could extend to plotting multiple PDFs on the same axis
             for ax, SED_fit_params in zip(PDF_ax, zPDF_plot_SED_fit_params_arr):
-                self.phot.SED_results[SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)].property_PDFs["z"].plot(ax)
+                key = SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)
+                if key in SED_colours.keys():
+                    colour = SED_colours[key]
+                else:
+                    colour = "black"
+                self.phot.SED_results[key].property_PDFs["z"].plot(ax, colour = colour)
 
             # Save and clear axes
             plt.savefig(out_path, dpi = 300, bbox_inches = 'tight')

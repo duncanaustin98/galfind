@@ -114,9 +114,11 @@ class Photometry:
         self.non_detected_indices = uplims
         
         if plot_errs:
-            # if upper limit, plot downwards arrow of length 0.2 * flux - this should be unit dependent
             #mag_new_units = funcs.convert_mag_units(self.wav, self.flux_Jy, mag_units)
             mag_errs_new_units = funcs.convert_mag_err_units(self.wav, self.flux_Jy, [self.flux_Jy_errs, self.flux_Jy_errs], mag_units)
+            # update with upper limit errors
+            # if upper limit, plot downwards arrow of length 0.2 * flux - this should be unit dependent
+            
             yerr = [mag_errs_new_units[0].value, mag_errs_new_units[1].value]
             #yerr = [[flux_l1 if uplim == False else 0.2 * flux for (flux, flux_l1, uplim) in zip(mag_new_units.value, mag_errs_new_units[0], uplims)], \
             #        [flux_u1 if uplim == False else 0.2 * flux for (flux, flux_u1, uplim) in zip(mag_new_units.value, mag_errs_new_units[1], uplims)]]
