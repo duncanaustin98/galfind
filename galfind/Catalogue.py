@@ -319,7 +319,7 @@ class Catalogue(Catalogue_Base):
     def plot_phot_diagnostics(self, 
             SED_fit_params_arr = [{"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}, {"code": EAZY(), "templates": "fsps_larson", "dz": 0.5}], \
             zPDF_plot_SED_fit_params_arr = [{"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}, {"code": EAZY(), "templates": "fsps_larson", "dz": 0.5}], \
-            wav_unit = u.AA, flux_unit = u.Jy):
+            wav_unit = u.AA, flux_unit = u.ABmag):
         # figure size may well depend on how many bands there are
         overall_fig = plt.figure(figsize = (8, 7), constrained_layout = True)
         bands = self.data.instrument.band_names # should be updated
@@ -328,18 +328,13 @@ class Catalogue(Catalogue_Base):
     
         gs = fig.add_gridspec(2, 4)
         phot_ax = fig.add_subplot(gs[:, 0:3])
-        if flux_unit != u.Jy:
-            galfind_logger.warning("Convert unit here!!!")
-        galfind_logger.warning("Still need to appropriately label x/y axis")
-        x_label = r"$\lambda_{\mathrm{obs}}~/~\mathrm{\AA}$"
-        y_label = r"$\f_{\nu}~/~\mathrm{Jy}$" #funcs.unit_to_label(self.phot.flux_Jy.unit)
+        #galfind_logger.warning("Still need to appropriately label x/y axis")
+        #x_label = r"$\lambda_{\mathrm{obs}}~/~\mathrm{\AA}$"
+        #y_label = r"$\f_{\nu}~/~\mathrm{Jy}$" #funcs.unit_to_label(self.phot.flux_Jy.unit)
         #y_label = f'Flux Density ({flux_unit:latex})'
         #x_label = f'Wavelength ({wav_unit:latex})'
 
-        ax_eazy_lowz_pdf = fig.add_subplot(gs[0, 3:])
-        #ax_eazy_lowz_pdf.set_yticklabels([])
-        ax_eazy_pdf = fig.add_subplot(gs[1, 3:])
-        PDF_ax = [ax_eazy_pdf, ax_eazy_lowz_pdf]
+        PDF_ax = [fig.add_subplot(gs[0, 3:]), fig.add_subplot(gs[1, 3:])]
         
         if nbands <= 8:
             gridspec_cutout = cutout_fig.add_gridspec(1, nbands)

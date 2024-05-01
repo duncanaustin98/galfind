@@ -323,20 +323,7 @@ class Galaxy:
             # this should not be hard-coded
             phot_ax.set_ylim((30.6 * u.ABmag).to(flux_unit).value, (25 * u.ABmag).to(flux_unit).value)
                     
-            self.phot.plot_phot(phot_ax, wav_units = wav_unit, mag_units = flux_unit, annotate = False, upper_limit_sigma = 2.)
-            #p1 = patches.FancyArrowPatch((wav.to(wav_unit).value, three_sig_depth.to(flux_unit).value), (wav.to(wav_unit).value, three_sig_depth.to(flux_unit).value+0.5), arrowstyle='-|>', mutation_scale=10, alpha=1, color='black', zorder=5.6)
-            #ax_photo.add_patch(p1)
-            #ax_photo.errorbar(wav.to(wav_unit).value, mag.to(flux_unit).value, yerr=mag_err.to(flux_unit).value, xerr=xerr.to(wav_unit).value, color='black', markersize=5, marker='o', zorder=5.6)
-            # auto-scale the axes
-            # all_mags.append(mag.value)
-            # if mag.value < ax_photo.get_ylim()[1] + 1 and mag.value > 15: 
-            #     new_lim = mag.value - 1
-            #     ax_photo.set_ylim(ax_photo.get_ylim()[0], new_lim)
-            # if mag.value > ax_photo.get_ylim()[0] and mag.value < 32 and mag.value > 15:
-            #     new_lim = two_sig_depth.value + 0.5
-            #     ax_photo.set_ylim(new_lim, ax_photo.get_ylim()[1])
-            # annotate photometry
-            #ax_photo.annotate(f"{n_sig_detect:.1f}$\sigma$" if n_sig_detect < 100 else f"{n_sig_detect:.0f}$\sigma$", (wav.to(wav_unit).value, ax_photo.get_ylim()[0]-0.2 if pos % 2 == 0 else ax_photo.get_ylim()[0]-0.6), ha='center', fontsize='medium', path_effects=[pe.withStroke(linewidth=3, foreground='white')], zorder=5)
+            self.phot.plot_phot(phot_ax, wav_units = wav_unit, mag_units = flux_unit, annotate = False, upper_limit_sigma = 2., label_SNRs = True)
             
             # save rejected reasons somewhere
             # if show_rejected_reason:

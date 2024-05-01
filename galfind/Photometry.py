@@ -16,6 +16,7 @@ import warnings
 import matplotlib.pyplot as plt
 from scipy.interpolate import interp1d
 from scipy.optimize import curve_fit
+import matplotlib.patheffects as pe
 
 from . import useful_funcs_austind as funcs
 from . import astropy_cosmo
@@ -99,7 +100,11 @@ class Photometry:
         self.flux_Jy = np.delete(self.flux_Jy, indices)
         self.flux_Jy_errs = np.delete(self.flux_Jy_errs, indices)
         
-    def plot_phot(self, ax, wav_units = u.AA, mag_units = u.Jy, plot_errs = True, annotate = True, upper_limit_sigma = 3., errorbar_kwargs = {}, label = None):
+    def plot_phot(self, ax, wav_units = u.AA, mag_units = u.Jy, plot_errs = True, plot_band_widths = True, \
+            annotate = True, upper_limit_sigma = 2., auto_scale = True, label_SNRs = False, \
+            errorbar_kwargs = {"ls": "", "marker": "o", "ms": 6., "zorder": 1_000., "path_effects": [pe.withStroke(linewidth = 3, foreground = "white")]}, \
+            filled = True, colour = "black", label = "Photometry"):
+        
         if upper_limit_sigma == None:
             uplims = np.full(len(self.flux_Jy), False)
         else:
@@ -107,18 +112,57 @@ class Photometry:
             uplims = [True if flux < depth * upper_limit_sigma / 5. or np.isnan(flux) else False \
                 for (flux, depth) in zip(funcs.convert_mag_units(self.wav, self.flux_Jy, u.Jy), funcs.convert_mag_units(self.wav, self.loc_depths, u.Jy))]
         self.non_detected_indices = uplims
+        
         if plot_errs:
-            # if upper limit, plot downwards arrow of length 0.2 * flux
-            yerr = [flux_err if uplim == False else 0.2 * flux for (flux, flux_err, uplim) \
-                in zip(funcs.convert_mag_units(self.wav, self.flux_Jy, u.Jy).value, \
-                funcs.convert_mag_units(self.wav, self.flux_Jy_errs, u.Jy).value, uplims)]
+            # if upper limit, plot downwards arrow of length 0.2 * flux - this should be unit dependent
+            #mag_new_units = funcs.convert_mag_units(self.wav, self.flux_Jy, mag_units)
+            mag_errs_new_units = funcs.convert_mag_err_units(self.wav, self.flux_Jy, [self.flux_Jy_errs, self.flux_Jy_errs], mag_units)
+            yerr = [mag_errs_new_units[0].value, mag_errs_new_units[1].value]
+            #yerr = [[flux_l1 if uplim == False else 0.2 * flux for (flux, flux_l1, uplim) in zip(mag_new_units.value, mag_errs_new_units[0], uplims)], \
+            #        [flux_u1 if uplim == False else 0.2 * flux for (flux, flux_u1, uplim) in zip(mag_new_units.value, mag_errs_new_units[1], uplims)]]
+                
+            #print(yerr)
+            #breakpoint()
         else:
             yerr = None
+        
+        if plot_band_widths:
+            xerr = [[funcs.convert_wav_units(filter.WavelengthCen - filter.WavelengthLower50, wav_units).value for filter in self.instrument], \
+                    [funcs.convert_wav_units(filter.WavelengthUpper50 - filter.WavelengthCen, wav_units).value for filter in self.instrument]]
+        else:
+            xerr = None
+
+        # update errorbar kwargs - not quite general
+        if filled:
+            errorbar_kwargs["mfc"] = colour
+        else:
+            errorbar_kwargs["mfc"] = "none"
+        errorbar_kwargs["color"] = colour
+        errorbar_kwargs["label"] = label
+
         plot = ax.errorbar(funcs.convert_wav_units(self.wav, wav_units).value, \
-            funcs.convert_mag_units(self.wav, self.flux_Jy, mag_units).value, yerr = yerr, \
-            uplims = uplims, ls = "", marker = "o", ms = 8, mfc = "none", label = label, **errorbar_kwargs)
-        if label != None and annotate:
+            funcs.convert_mag_units(self.wav, self.flux_Jy, mag_units).value, xerr = xerr, yerr = yerr, \
+            uplims = uplims, **errorbar_kwargs)
+        
+        # if auto_scale:
+        #     # auto-scale the axes
+        #     if mag.value < ax.get_ylim()[1] + 1 and mag.value > 15: 
+        #         new_lim = mag.value - 1
+        #         ax_photo.set_ylim(ax.get_ylim()[0], new_lim)
+        #     if mag.value > ax.get_ylim()[0] and mag.value < 32 and mag.value > 15:
+        #         new_lim = two_sig_depth.value + 0.5
+        #         ax.set_ylim(new_lim, ax.get_ylim()[1])
+
+        # could probably go into overridden Photometry_obs method
+        if label_SNRs and self.__class__.__name__ == "Photometry_obs":
+            label_kwargs = {"ha": "center", "fontsize": "medium", "path_effects": [pe.withStroke(linewidth = 3, foreground = "white")], "zorder": 5}
+            [ax.annotate(f"{SNR:.1f}$\sigma$" if SNR < 100 else f"{SNR:.0f}$\sigma$", (funcs.convert_wav_units(filter.WavelengthCen, wav_units).value, \
+                ax.get_ylim()[0] - 0.2 if i % 2 == 0 else ax.get_ylim()[0] - 0.6), **label_kwargs) for i, (SNR, filter) in enumerate(zip(self.SNR, self.instrument))]
+        
+        if annotate:
+            # x/y labels etc here
             ax.legend()
+
         return plot
 
 class Multiple_Photometry:
