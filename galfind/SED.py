@@ -70,6 +70,7 @@ class SED:
     def plot_SED(self, ax, wav_units = u.AA, mag_units = u.ABmag, label = None, annotate = True, plot_kwargs = {}, legend_kwargs = {}):
         wavs = funcs.convert_wav_units(self.wavs, wav_units).value
         mags = funcs.convert_mag_units(self.wavs, self.mags, mag_units).value
+
         plot = ax.plot(wavs, mags, label = label, **plot_kwargs)
         if annotate:
             if wav_units == u.AA:
@@ -103,6 +104,30 @@ class SED:
         denominator = np.trapz(filter_profile["Transmission"], x = filter_profile["Wavelength"])
         # calculate bandpass-averaged flux in Jy
         return numerator / denominator
+    
+    def create_phot(self, instrument, z, depths = [], min_pc_err = 10.):
+        if type(depths) == dict:
+           depths = [depth for (band, depth) in depths.items()]
+        if depths == []: # if depths not given, expect the galaxy to be very well detected
+            depths = [99. for band in instrument.band_names]
+        # convert self.mags to f_λ if needed
+        if self.mags.unit == u.ABmag:
+            self.mags = funcs.convert_mag_units(self.wavs, self.mags, u.erg / (u.s * (u.cm ** 2) * u.AA))
+        elif u.get_physical_type(self.mags.unit) != "power density/spectral flux density wav":
+            self.mags = funcs.convert_mag_units(self.wavs, self.mags, u.erg / (u.s * (u.cm ** 2) * u.AA))
+        # load observed frame filter profiles
+        instrument.load_instrument_filter_profiles()
+        bp_averaged_fluxes = np.zeros(len(instrument))
+        for i, band in enumerate(instrument):
+            #print(band)
+            filter_profile = instrument.filter_profiles[band]
+            # convert filter profile to rest frame
+            filter_profile["Wavelength"] = filter_profile["Wavelength"] / (1 + z)
+            bp_averaged_fluxes[i] = self.calc_bandpass_averaged_flux(filter_profile)
+        # convert bp_averaged_fluxes to Jy
+        band_wavs = np.array([instrument.band_wavelengths[band_name].value / (1 + z) for band_name in instrument.band_names]) * u.Angstrom
+        bp_averaged_fluxes_Jy = funcs.convert_mag_units(band_wavs, bp_averaged_fluxes * u.erg / (u.s * (u.cm ** 2) * u.AA), u.Jy)
+        self.phot = Photometry(instrument, bp_averaged_fluxes_Jy, depths, min_pc_err)
     
     def calc_line_EW(self, line_name, plot = False): # ONLY WORKS FOR EMISSION LINES, NOT ABSORPTION AT THIS POINT
         wavs_AA = self.convert_wav_units(u.AA, update = True)
@@ -203,14 +228,10 @@ class SED_obs(SED):
         wav_obs = funcs.wav_rest_to_obs(SED_rest.wavs, z_int)
         mag_obs = funcs.convert_mag_units(SED_rest.wavs, SED_rest.mags, u.ABmag)
         return cls(z_int, wav_obs.value, mag_obs.value, SED_rest.wavs.unit, u.ABmag)
+    
+    def create_phot(self, instrument, depths = [], min_pc_err = 10.):
+        super().create_phot(instrument, self.z, depths = depths, min_pc_err = min_pc_err)
 
-# class Mock_SED(SED):
-    
-#     def __init__(self, wavs, mags, wav_units, mag_units, template_name):
-#         self.template_name = template_name
-#         super().__init__(wavs, mags, wav_units, mag_units)
-#         pass
-    
     
 class Mock_SED_rest(SED_rest): #, Mock_SED):
     

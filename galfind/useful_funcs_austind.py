@@ -32,8 +32,11 @@ from . import config, galfind_logger, astropy_cosmo
 
 # fluxes and magnitudes
 
-def convert_wav_units(wavs, out_units):
-    return wavs.to(out_units)
+def convert_wav_units(wavs, units):
+    if units == wavs.unit:
+        return wavs
+    else:
+        return wavs.to(units)
 
 def convert_mag_units(wavs, mags, units):
     if units == mags.unit:
@@ -46,10 +49,17 @@ def convert_mag_units(wavs, mags, units):
     elif u.get_physical_type(units) in ["ABmag/spectral flux density", "spectral flux density"]: # f_ν -> derivative of u.Jy
         if mags.unit == u.ABmag:
             mags = mags.to(units)
-        elif u.get_physical_type(mags.unit) == "power density/spectral flux density wav" or u.get_physical_type(mags.unit) == "ABmag/spectral flux density":
+        elif u.get_physical_type(mags.unit) in ["power density/spectral flux density wav", "ABmag/spectral flux density"]:
             mags = mags.to(units, equivalencies = u.spectral_density(wavs))
+        else:
+            mags = mags.to(units)
     elif u.get_physical_type(units) == "power density/spectral flux density wav": # f_λ -> derivative of u.erg / (u.s * (u.cm ** 2) * u.AA):
-        mags = mags.to(units, equivalencies = u.spectral_density(wavs))
+        if mags.unit == u.ABmag:
+            mags = mags.to(units, equivalencies = u.spectral_density(wavs))
+        elif u.get_physical_type(mags.unit) == "power density/spectral flux density wav":
+            mags = mags.to(units)
+        else: # different phyiscal type that isn't ABmag
+            mags = mags.to(units, equivalencies = u.spectral_density(wavs))
     else:
         raise(Exception("Units must be either ABmag or have physical units of 'spectral flux density' or 'power density/spectral flux density wav'!"))
     return mags
@@ -66,18 +76,19 @@ def convert_mag_err_units(wavs, mags, mag_errs, units):
         mags_u1_new_units = convert_mag_units(wavs, mags + mag_errs[1], units)
         mags_l1_new_units = convert_mag_units(wavs, mags - mag_errs[0], units)
 
+        #breakpoint()
         # work out whether the order needs swapping
         if units == u.ABmag:
             swap_order = True
         elif u.get_physical_type(units) in ["ABmag/spectral flux density", "spectral flux density"]: # f_ν -> derivative of u.Jy
             if mags.unit == u.ABmag:
                 swap_order = True
-            elif u.get_physical_type(mags.unit) == "power density/spectral flux density wav" or u.get_physical_type(mags.unit) == "ABmag/spectral flux density":
+            else:
                 swap_order = False
         elif u.get_physical_type(units) == "power density/spectral flux density wav": # f_λ -> derivative of u.erg / (u.s * (u.cm ** 2) * u.AA):
             if mags.unit == u.ABmag:
                 swap_order = True
-            elif u.get_physical_type(mags.unit) in ["ABmag/spectral flux density", "spectral flux density"]: # f_ν -> derivative of u.Jy
+            else: # f_ν -> derivative of u.Jy
                 swap_order = False
         else:
             raise(Exception("Units must be either ABmag or have physical units of 'spectral flux density' or 'power density/spectral flux density wav'!"))

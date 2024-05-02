@@ -319,7 +319,7 @@ class Catalogue(Catalogue_Base):
     def plot_phot_diagnostics(self, 
             SED_fit_params_arr = [{"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}, {"code": EAZY(), "templates": "fsps_larson", "dz": 0.5}], \
             zPDF_plot_SED_fit_params_arr = [{"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}, {"code": EAZY(), "templates": "fsps_larson", "dz": 0.5}], \
-            wav_unit = u.AA, flux_unit = u.ABmag):
+            wav_unit = u.um, flux_unit = u.nJy):
         # figure size may well depend on how many bands there are
         overall_fig = plt.figure(figsize = (8, 7), constrained_layout = True)
         bands = self.data.instrument.band_names # should be updated

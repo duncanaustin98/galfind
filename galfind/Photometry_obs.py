@@ -74,87 +74,13 @@ class Photometry_obs(Photometry):
     #    return [code.SED_fit_params_from_label(label) for label in self.SED_results.keys()]
 
     def plot_phot(self, ax, wav_units = u.AA, mag_units = u.Jy, plot_errs = True, plot_band_widths = True, \
-            annotate = True, uplim_sigma = 2., uplim_sigma_arrow = 1.5, auto_scale = True, label_SNRs = False, \
+            annotate = True, uplim_sigma = 2., uplim_sigma_arrow = 0.5, auto_scale = True, label_SNRs = False, \
             errorbar_kwargs = {"ls": "", "marker": "o", "ms": 6., "zorder": 100., "path_effects": [pe.withStroke(linewidth = 3, foreground = "white")]}, \
             filled = True, colour = "black", label = "Photometry"):
-        
-        wavs_to_plot = funcs.convert_wav_units(self.wav, wav_units)
-        mags_to_plot = funcs.convert_mag_units(self.wav, self.flux_Jy, mag_units)
 
-        if uplim_sigma == None:
-            uplims = list(np.full(len(self.flux_Jy), False))
-        else:
-            assert uplim_sigma_arrow < uplim_sigma, \
-                galfind_logger.critical(f"uplim_sigma_arrow = {uplim_sigma_arrow} < uplim_sigma = {uplim_sigma}")
-            # calculate upper limits based on depths
-            uplims = [True if SNR < uplim_sigma else False for SNR in self.SNR]
-            # set photometry to uplim_sigma for the data to be plotted as upper limits
-            uplim_indices = [i for i, is_uplim in enumerate(uplims) if is_uplim]
-            uplim_vals = [funcs.convert_mag_units(self.wav, funcs.convert_mag_units(self.wav, self.depths[i], u.Jy) \
-                * uplim_sigma / 5., mag_units).value for i in uplim_indices] * mag_units
-            mags_to_plot.put(uplim_indices, uplim_vals)
-            galfind_logger.debug("Should test whether upper plotting limits preserves the mask!")
-        self.non_detected_indices = uplims
+        plot = super().plot_phot(ax, wav_units, mag_units, plot_errs, plot_band_widths, annotate, \
+            uplim_sigma, uplim_sigma_arrow, auto_scale, errorbar_kwargs, filled, colour, label)
 
-        if plot_errs:
-            mag_errs_new_units = funcs.convert_mag_err_units(self.wav, self.flux_Jy, [self.flux_Jy_errs, self.flux_Jy_errs], mag_units)
-            # update with upper limit errors
-            uplim_l1_vals = [funcs.convert_mag_units(self.wav, funcs.convert_mag_units(self.wav, self.depths[i], u.Jy) \
-                * uplim_sigma_arrow / 5., mag_units).value for i in uplim_indices] * mag_units
-            if mag_units == u.ABmag:
-                # swap l1 / u1 errors
-                uplim_u1_vals = (uplim_l1_vals - uplim_vals).to(u.dimensionless_unscaled).value
-                uplim_l1_vals = [np.nan for i in uplim_indices]
-            else:
-                uplim_l1_vals = (uplim_vals - uplim_l1_vals).to(u.dimensionless_unscaled).value
-                uplim_u1_vals = [np.nan for i in uplim_indices]
-            yerr = []
-            for i, uplim_errs in enumerate([uplim_l1_vals, uplim_u1_vals]):
-                mag_errs = mag_errs_new_units[i].value
-                mag_errs.put(uplim_indices, uplim_errs)
-                yerr.append(mag_errs)
-        else:
-            yerr = None
-        
-        if plot_band_widths:
-            xerr = [[funcs.convert_wav_units(filter.WavelengthCen - filter.WavelengthLower50, wav_units).value for filter in self.instrument], \
-                    [funcs.convert_wav_units(filter.WavelengthUpper50 - filter.WavelengthCen, wav_units).value for filter in self.instrument]]
-        else:
-            xerr = None
-
-        # update errorbar kwargs - not quite general
-        if filled:
-            errorbar_kwargs["mfc"] = colour
-        else:
-            errorbar_kwargs["mfc"] = "none"
-        errorbar_kwargs["color"] = colour
-        errorbar_kwargs["label"] = label
-
-        if auto_scale:
-            # auto-scale the x-axis
-            lower_xlim = np.min(wavs_to_plot.value - xerr[0]) * 0.95
-            upper_xlim = np.max(wavs_to_plot.value + xerr[1]) * 1.05
-            ax.set_xlim(lower_xlim, upper_xlim)
-            # auto-scale the y-axis based on plotting units
-            if mags_to_plot.unit == u.ABmag:
-                lower_ylim = np.max(mags_to_plot.value) + 1.
-                upper_ylim = np.min(mags_to_plot.value) - 1.
-            # Tom's auto-scaling
-            # if mag.value < ax.get_ylim()[1] + 1 and mag.value > 15: 
-            #     new_lim = mag.value - 1
-            #     ax_photo.set_ylim(ax.get_ylim()[0], new_lim)
-            # if mag.value > ax.get_ylim()[0] and mag.value < 32 and mag.value > 15:
-            #     new_lim = two_sig_depth.value + 0.5
-            #     ax.set_ylim(new_lim, ax.get_ylim()[1])
-            ax.set_ylim(lower_ylim, upper_ylim)
-
-        if mag_units == u.ABmag:
-            plot_limits = {"lolims": uplims}
-        else:
-            plot_limits = {"uplims": uplims}
-        plot = ax.errorbar(wavs_to_plot.value, mags_to_plot.value, xerr = xerr, yerr = yerr, **plot_limits, **errorbar_kwargs)
-
-        # could probably go into overridden Photometry_obs method
         if label_SNRs:
             label_kwargs = {"ha": "center", "fontsize": "medium", "path_effects": [pe.withStroke(linewidth = 3, foreground = "white")], "zorder": 1_000.}
             [ax.annotate(f"{SNR:.1f}$\sigma$" if SNR < 100 else f"{SNR:.0f}$\sigma$", (funcs.convert_wav_units(filter.WavelengthCen, wav_units).value, \

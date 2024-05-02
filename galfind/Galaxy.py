@@ -308,9 +308,12 @@ class Galaxy:
             for SED_fit_params in reversed(SED_fit_params_arr):
                 key = SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)
                 SED_plot = self.phot.SED_results[key].SED.plot_SED(phot_ax, wav_unit, flux_unit, label = key)
-                # could also plot the expected photometry here as well
-                #ax_photo.scatter(band_wavs_lowz, band_mags_lowz, edgecolors=eazy_color_lowz, marker='o', facecolor='none', s=80, zorder=4.5)
                 SED_colours[key] = SED_plot[0].get_color()
+                # could also plot the expected photometry here as well
+                #self.phot.SED_results[key].SED.create_phot(self.phot.instrument, depths = self.phot.depths)
+                #self.phot.SED_results[key].SED.phot.plot_phot(phot_ax, wav_unit, flux_unit, \
+                #    label = None, filled = False, colour = SED_colours[key])
+                #ax_photo.scatter(band_wavs_lowz, band_mags_lowz, edgecolors=eazy_color_lowz, marker='o', facecolor='none', s=80, zorder=4.5)
                                 
             self.phot.plot_phot(phot_ax, wav_units = wav_unit, mag_units = flux_unit, annotate = False, auto_scale = True, label_SNRs = True)
             # photometry axis title
