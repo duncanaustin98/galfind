@@ -215,6 +215,47 @@ def luminosity_to_flux(lum, wavs, z = None, cosmo = astropy_cosmo, out_units = u
             return (lum_nu_to_lum_lam(lum, wavs) * (1 + z) / (4 * np.pi * lum_distance ** 2)).to(out_units)
         else:
             raise(Exception(""))
+        
+# unit labelling
+
+unit_labels_dict = \
+{
+    u.AA: r"$\mathrm{\AA}$", \
+    u.um: r"$\mu\mathrm{m}$", \
+    u.erg / (u.s * u.AA * u.cm ** 2): r"$\mathrm{erg s}^{-1}\mathrm{AA}^{-1}\mathrm{cm}^{-2}$", \
+    u.Jy: r"$\mathrm{Jy}$", \
+    u.nJy: r"$\mathrm{nJy}$", \
+    u.ABmag: r"$\mathrm{AB mag}$"
+}
+
+def label_log(label):
+    return r"$\log_{10}($" + label + r"$)$"
+
+def label_wavelengths(unit, is_log_scaled, frame):
+    assert frame in ["", "rest", "obs"]
+    wavelength_label = r"$\lambda_{%s}~/~$" % frame
+    wavelength_label += unit_labels_dict[unit]
+    if is_log_scaled:
+        return label_log(wavelength_label)
+    else:
+        return wavelength_label
+
+def label_fluxes(unit, is_log_scaled):
+    assert unit in unit_labels_dict.keys()
+    if unit == u.ABmag:
+        assert not is_log_scaled
+        return unit_labels_dict[unit]
+    elif u.get_physical_type(unit) in ["ABmag/spectral flux density", "spectral flux density"]:
+        flux_label = r"$f_{\nu}$"
+    elif u.get_physical_type(unit) == "power density/spectral flux density wav":
+        flux_label = r"$f_{\lambda}$"
+    else:
+        galfind_logger.critical(f"{unit=} not valid!")   
+    flux_label += r"$~/~$" + unit_labels_dict[unit]
+    if is_log_scaled:
+        return label_log(flux_label)
+    else:
+        return flux_label
 
 # Calzetti 1994 filters
 lower_Calzetti_filt = [1268., 1309., 1342., 1407., 1562., 1677., 1760., 1866., 1930., 2400.]

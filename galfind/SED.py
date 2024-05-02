@@ -78,20 +78,9 @@ class SED:
 
         plot = ax.plot(wavs.value, mags, label = label, **plot_kwargs)
         if annotate:
-            if wav_units == u.AA:
-                ax.set_xlabel(r"$\lambda / \mathrm{\AA}$")
-            elif wav_units == u.um:
-                ax.set_xlabel(r"$\lambda / \mu\mathrm{m}$")
-            else:
-                ax.set_xlabel(r"$\lambda / \mathrm{%s}$" % str(wav_units))
-            if mag_units == u.ABmag:
-                y_label = r"$m_{\mathrm{AB}}$"
-                plt.gca().invert_yaxis()
-            elif u.get_physical_type(mag_units) == "spectral flux density":
-                y_label = r"$f_{\nu} / \mathrm{%s}$" % str(mag_units)
-            elif u.get_physical_type(mag_units) == "power density/spectral flux density wav":
-                y_label = r"$f_{\lambda} / \mathrm{%s}$" % str(mag_units)
-            ax.set_ylabel(y_label)
+            ax.set_xlabel(funcs.label_wavelengths(wav_units, False, \
+                "" if self.__class__.__name__.split("_")[-1] == "Photometry" else self.__class__.__name__.split("_")[-1]))
+            ax.set_ylabel(funcs.label_fluxes(mag_units, False if mag_units == u.ABmag else True))
             ax.legend(**legend_kwargs)
         return plot
     
