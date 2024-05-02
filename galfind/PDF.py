@@ -67,18 +67,12 @@ class PDF:
         
         ax.plot(self.x, self.p_x, color = colour)
         
-        # Set xlim to 1% and 99% of PDF cumulative distribution
-        norm = np.cumsum(self.p_x)
-        norm = norm / np.max(norm)
-        lowz = self.x[np.argmin(np.abs(norm - 0.01))] #- 0.3
-        highz = self.x[np.argmin(np.abs(norm - 0.99))] #+ 0.3
-        #print(lowz, highz)
-        #breakpoint()
-        ax.set_xlim(lowz, highz)
-        ax.set_ylim(0, 1.2 * np.max(self.p_x)) # * 1.2
+        # Set x and y plot limits
+        ax.set_xlim(self.get_percentile(1.), self.get_percentile(99.))
+        ax.set_ylim(0, 1.2 * np.max(self.p_x))
 
         # fill inside PDF with hatch
-        x_lim = np.linspace(lowz, highz) #np.linspace(0.93 * float(self.get_peak(0)["value"]), 1.07 * float(self.get_peak(0)["value"]), 100)
+        x_lim = np.linspace(self.get_percentile(1.), self.get_percentile(99.)) #np.linspace(0.93 * float(self.get_peak(0)["value"]), 1.07 * float(self.get_peak(0)["value"]), 100)
         pdf_lim = np.interp(x_lim, self.x, self.p_x)
         ax.fill_between(x_lim, pdf_lim, color = colour, alpha = 0.2, hatch = '//')
 

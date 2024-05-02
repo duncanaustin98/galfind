@@ -73,18 +73,23 @@ class Photometry_obs(Photometry):
     #def get_SED_fit_params_arr(self, code):
     #    return [code.SED_fit_params_from_label(label) for label in self.SED_results.keys()]
 
-    def plot_phot(self, ax, wav_units = u.AA, mag_units = u.Jy, plot_errs = True, plot_band_widths = True, \
-            annotate = True, uplim_sigma = 2., uplim_sigma_arrow = 0.5, auto_scale = True, label_SNRs = False, \
+    def plot_phot(self, ax, wav_units = u.AA, mag_units = u.Jy, plot_errs = {"x": True, "y": True}, \
+            annotate = True, uplim_sigma = 2., auto_scale = True, label_SNRs = True, \
             errorbar_kwargs = {"ls": "", "marker": "o", "ms": 6., "zorder": 100., "path_effects": [pe.withStroke(linewidth = 3, foreground = "white")]}, \
             filled = True, colour = "black", label = "Photometry"):
 
-        plot = super().plot_phot(ax, wav_units, mag_units, plot_errs, plot_band_widths, annotate, \
-            uplim_sigma, uplim_sigma_arrow, auto_scale, errorbar_kwargs, filled, colour, label)
+        plot, wavs_to_plot, mags_to_plot, yerr, uplims = super().plot_phot \
+            (ax, wav_units, mag_units, plot_errs, annotate, uplim_sigma, \
+            auto_scale, errorbar_kwargs, filled, colour, label, return_extra = True)
 
         if label_SNRs:
             label_kwargs = {"ha": "center", "fontsize": "medium", "path_effects": [pe.withStroke(linewidth = 3, foreground = "white")], "zorder": 1_000.}
-            [ax.annotate(f"{SNR:.1f}$\sigma$" if SNR < 100 else f"{SNR:.0f}$\sigma$", (funcs.convert_wav_units(filter.WavelengthCen, wav_units).value, \
-                ax.get_ylim()[0] - 0.2 if i % 2 == 0 else ax.get_ylim()[0] - 0.6), **label_kwargs) for i, (SNR, filter) in enumerate(zip(self.SNR, self.instrument))]
+            offset = {"power density/spectral flux density wav": 0.1, "ABmag/spectral flux density": 0.1, \
+                "spectral flux density": 0.1}[str(u.get_physical_type(mag_units))]
+            [ax.annotate(f"{SNR:.1f}$\sigma$" if SNR < 100 else f"{SNR:.0f}$\sigma$", \
+                (wav, mag + offset if is_uplim else mag_l1 - offset), **label_kwargs) \
+                for i, (SNR, wav, mag_l1, mag, is_uplim) in \
+                enumerate(zip(self.SNR, wavs_to_plot, mags_to_plot - yerr[0], mags_to_plot, uplims))]
         
         if annotate:
             # x/y labels etc here

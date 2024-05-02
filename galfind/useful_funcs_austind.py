@@ -76,7 +76,6 @@ def convert_mag_err_units(wavs, mags, mag_errs, units):
         mags_u1_new_units = convert_mag_units(wavs, mags + mag_errs[1], units)
         mags_l1_new_units = convert_mag_units(wavs, mags - mag_errs[0], units)
 
-        #breakpoint()
         # work out whether the order needs swapping
         if units == u.ABmag:
             swap_order = True
@@ -97,6 +96,19 @@ def convert_mag_err_units(wavs, mags, mag_errs, units):
             return [mags_new_units - mags_u1_new_units, mags_l1_new_units - mags_new_units]
         else:
             return [mags_new_units - mags_l1_new_units, mags_u1_new_units - mags_new_units]
+
+def log_scale_fluxes(fluxes): # removes unit
+    log_flux_unit = fluxes.unit
+    log_fluxes = np.log10(fluxes.value)
+    return log_fluxes
+
+def log_scale_flux_errors(fluxes, flux_errs): # removes unit
+    assert len(flux_errs) == 2, galfind_logger.warning(f"{flux_errs=} with {len(flux_errs)=} != 2")
+    assert fluxes.unit == flux_errs[0].unit == flux_errs[1].unit, \
+        galfind_logger.warning(f"{fluxes.unit =} != flux_errs.unit = ({flux_errs[0].unit, flux_errs[1].unit})")
+    log_flux_l1 = log_scale_fluxes(fluxes) - log_scale_fluxes(fluxes - flux_errs[0])
+    log_flux_u1 = log_scale_fluxes(fluxes + flux_errs[1]) - log_scale_fluxes(fluxes)
+    return [log_flux_l1, log_flux_u1]
 
 def calc_flux_from_ra_dec(ra, dec, im_data, wcs, r, unit = "deg"):
     x_pix, y_pix = skycoord_to_pixel(SkyCoord(ra, dec, unit = unit), wcs)

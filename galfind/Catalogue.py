@@ -319,27 +319,25 @@ class Catalogue(Catalogue_Base):
     def plot_phot_diagnostics(self, 
             SED_fit_params_arr = [{"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}, {"code": EAZY(), "templates": "fsps_larson", "dz": 0.5}], \
             zPDF_plot_SED_fit_params_arr = [{"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}, {"code": EAZY(), "templates": "fsps_larson", "dz": 0.5}], \
-            wav_unit = u.um, flux_unit = u.nJy):
+            wav_unit = u.um, flux_unit = u.erg / (u.s * u.AA * u.cm ** 2)):
+        
         # figure size may well depend on how many bands there are
         overall_fig = plt.figure(figsize = (8, 7), constrained_layout = True)
-        bands = self.data.instrument.band_names # should be updated
-        nbands = len(bands) # should be updated
-        fig, cutout_fig = overall_fig.subfigures(2, 1, hspace = -2, height_ratios = [2, 1] if len(bands) <= 8 else [1.8, 1])
+        fig, cutout_fig = overall_fig.subfigures(2, 1, hspace = -2, height_ratios = [2, 1] if len(self.data.instrument) <= 8 else [1.8, 1])
     
         gs = fig.add_gridspec(2, 4)
         phot_ax = fig.add_subplot(gs[:, 0:3])
 
         PDF_ax = [fig.add_subplot(gs[0, 3:]), fig.add_subplot(gs[1, 3:])]
         
-        if nbands <= 8:
-            gridspec_cutout = cutout_fig.add_gridspec(1, nbands)
+        if len(self.data.instrument) <= 8:
+            gridspec_cutout = cutout_fig.add_gridspec(1, len(self.data.instrument))
         else:
-            gridspec_cutout = cutout_fig.add_gridspec(2, int(np.ceil(nbands / 2)))
+            gridspec_cutout = cutout_fig.add_gridspec(2, int(np.ceil(len(self.data.instrument) / 2)))
         
         cutout_ax_list = []
-        for pos, band in enumerate(bands):
-            cutout_ax = cutout_fig.add_subplot(gridspec_cutout[pos])
-            #cutout_ax.set_xlabel(band, fontsize='small')
+        for i, band in enumerate(self.instrument):
+            cutout_ax = cutout_fig.add_subplot(gridspec_cutout[i])
             cutout_ax.set_aspect('equal', adjustable='box', anchor='N')
             cutout_ax.set_xticks([])
             cutout_ax.set_yticks([])

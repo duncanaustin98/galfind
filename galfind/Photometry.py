@@ -99,20 +99,27 @@ class Photometry:
         self.flux_Jy = np.delete(self.flux_Jy, indices)
         self.flux_Jy_errs = np.delete(self.flux_Jy_errs, indices)
 
-    def plot_phot(self, ax, wav_units = u.AA, mag_units = u.Jy, plot_errs = True, plot_band_widths = True, \
-            annotate = True, uplim_sigma = 2., uplim_sigma_arrow = 0.5, auto_scale = True, \
+    def plot_phot(self, ax, wav_units = u.AA, mag_units = u.Jy, plot_errs = {"x": True, "y": True}, \
+            annotate = True, uplim_sigma = 2., auto_scale = True, \
             errorbar_kwargs = {"ls": "", "marker": "o", "ms": 6., "zorder": 100., "path_effects": [pe.withStroke(linewidth = 3, foreground = "white")]}, \
-            filled = True, colour = "black", label = "Photometry"):
+            filled = True, colour = "black", label = "Photometry", return_extra = False):
 
-        wavs_to_plot = funcs.convert_wav_units(self.wav, wav_units)
+        wavs_to_plot = funcs.convert_wav_units(self.wav, wav_units).value
         mags_to_plot = funcs.convert_mag_units(self.wav, self.flux_Jy, mag_units)
 
         if uplim_sigma == None:
             uplims = list(np.full(len(self.flux_Jy), False))
         else:
+            # work out optimal size of error bar in terms of sigma
+            if mag_units == u.ABmag:
+                uplim_sigma_arrow = 0.5
+            else:
+                uplim_sigma_arrow = {"power density/spectral flux density wav": 1.5, \
+                    "ABmag/spectral flux density": 1.5, "spectral flux density": 1.5}[str(u.get_physical_type(mag_units))]
             assert uplim_sigma_arrow < uplim_sigma, \
                 galfind_logger.critical(f"uplim_sigma_arrow = {uplim_sigma_arrow} < uplim_sigma = {uplim_sigma}")
             # calculate upper limits based on depths
+            galfind_logger.warning(f"This will not work if {self.__class__.__name__ =} != 'Photometry_obs'")
             uplims = [True if SNR < uplim_sigma else False for SNR in self.SNR]
             # set photometry to uplim_sigma for the data to be plotted as upper limits
             uplim_indices = [i for i, is_uplim in enumerate(uplims) if is_uplim]
@@ -122,12 +129,12 @@ class Photometry:
             galfind_logger.debug("Should test whether upper plotting limits preserves the mask!")
         self.non_detected_indices = uplims
 
-        if plot_errs:
+        if plot_errs["y"]:
             mag_errs_new_units = funcs.convert_mag_err_units(self.wav, self.flux_Jy, [self.flux_Jy_errs, self.flux_Jy_errs], mag_units)
             # update with upper limit errors
             uplim_l1_vals = [funcs.convert_mag_units(self.wav, funcs.convert_mag_units(self.wav, self.depths[i], u.Jy) \
                 * uplim_sigma_arrow / 5., mag_units).value for i in uplim_indices] * mag_units
-            #breakpoint()
+
             if mag_units == u.ABmag:
                 # swap l1 / u1 errors
                 uplim_u1_vals = (uplim_l1_vals - uplim_vals).value
@@ -139,11 +146,21 @@ class Photometry:
             for i, uplim_errs in enumerate([uplim_l1_vals, uplim_u1_vals]):
                 mag_errs = mag_errs_new_units[i].value
                 mag_errs.put(uplim_indices, uplim_errs)
-                yerr.append(mag_errs)
+                yerr.append(mag_errs * mag_units)
         else:
             yerr = None
-        
-        if plot_band_widths:
+
+        # log scale y axis if not in units of ABmag
+        if mag_units != u.ABmag:
+            if plot_errs["y"]:
+                yerr = funcs.log_scale_flux_errors(mags_to_plot, yerr)
+            mags_to_plot = funcs.log_scale_fluxes(mags_to_plot) # called 'mags_to_plot' but in this case are fluxes
+        else:
+            if plot_errs["y"]:
+                yerr = [yerr[0].value, yerr[1].value]
+            mags_to_plot = mags_to_plot.value
+
+        if plot_errs["x"]:
             xerr = [[funcs.convert_wav_units(filter.WavelengthCen - filter.WavelengthLower50, wav_units).value for filter in self.instrument], \
                     [funcs.convert_wav_units(filter.WavelengthUpper50 - filter.WavelengthCen, wav_units).value for filter in self.instrument]]
         else:
@@ -159,16 +176,24 @@ class Photometry:
 
         if auto_scale:
             # auto-scale the x-axis
-            lower_xlim = np.min(wavs_to_plot.value - xerr[0]) * 0.95
-            upper_xlim = np.max(wavs_to_plot.value + xerr[1]) * 1.05
+            lower_xlim = np.min(wavs_to_plot - xerr[0]) * 0.95
+            upper_xlim = np.max(wavs_to_plot + xerr[1]) * 1.05
             ax.set_xlim(lower_xlim, upper_xlim)
             # auto-scale the y-axis based on plotting units
-            if mags_to_plot.unit == u.ABmag:
-                lower_ylim = np.max(mags_to_plot.value) + 0.75
-                upper_ylim = np.min(mags_to_plot.value) - 1.5
+            if mag_units == u.ABmag:
+                if plot_errs["y"]:
+                    lower_ylim = np.nanmax(mags_to_plot - yerr[0]) + 0.25
+                    upper_ylim = np.nanmin(mags_to_plot + yerr[1]) - 0.75
+                else:
+                    lower_ylim = np.nanmax(mags_to_plot) + 0.25
+                    upper_ylim = np.nanmin(mags_to_plot) - 0.75
             else: # auto-scale flux units
-                lower_ylim = np.min(mags_to_plot.value) * 0.9
-                upper_ylim = np.max(mags_to_plot.value) * 1.2
+                if plot_errs["y"]:
+                    lower_ylim = np.nanmin(mags_to_plot - yerr[0]) - 0.15
+                    upper_ylim = np.nanmax(mags_to_plot + yerr[1]) + 0.35
+                else:
+                    lower_ylim = np.nanmin(mags_to_plot) - 0.15
+                    upper_ylim = np.nanmax(mags_to_plot) + 0.35
             ax.set_ylim(lower_ylim, upper_ylim)
 
         if mag_units == u.ABmag:
@@ -176,8 +201,13 @@ class Photometry:
         else:
             plot_limits = {"uplims": uplims}
         
-        plot = ax.errorbar(wavs_to_plot.value, mags_to_plot.value, xerr = xerr, yerr = yerr, **plot_limits, **errorbar_kwargs)
-        return plot
+        plot = ax.errorbar(wavs_to_plot, mags_to_plot, xerr = xerr, yerr = yerr, **plot_limits, **errorbar_kwargs)
+        
+        if return_extra:
+            return plot, wavs_to_plot, mags_to_plot, yerr, uplims
+        else:
+            return plot
+
 
 class Multiple_Photometry:
     

@@ -68,10 +68,15 @@ class SED:
         return mags
         
     def plot_SED(self, ax, wav_units = u.AA, mag_units = u.ABmag, label = None, annotate = True, plot_kwargs = {}, legend_kwargs = {}):
-        wavs = funcs.convert_wav_units(self.wavs, wav_units).value
-        mags = funcs.convert_mag_units(self.wavs, self.mags, mag_units).value
+        wavs = funcs.convert_wav_units(self.wavs, wav_units)
+        mags = funcs.convert_mag_units(self.wavs, self.mags, mag_units)
 
-        plot = ax.plot(wavs, mags, label = label, **plot_kwargs)
+        if mag_units != u.ABmag:
+            mags = funcs.log_scale_fluxes(mags)
+        else:
+            mags = mags.value
+
+        plot = ax.plot(wavs.value, mags, label = label, **plot_kwargs)
         if annotate:
             if wav_units == u.AA:
                 ax.set_xlabel(r"$\lambda / \mathrm{\AA}$")
@@ -90,44 +95,20 @@ class SED:
             ax.legend(**legend_kwargs)
         return plot
     
-    def calc_bandpass_averaged_flux(self, filter_profile):
-        if self.mags.unit == u.ABmag:
-            self.mags = funcs.convert_mag_units(self.wavs, self.mags, u.erg / (u.s * (u.cm ** 2) * u.AA))
-        elif u.get_physical_type(self.mags.unit) != "power density/spectral flux density wav":
-            self.mags = funcs.convert_mag_units(self.wavs, self.mags, u.erg / (u.s * (u.cm ** 2) * u.AA))
+    def calc_bandpass_averaged_flux(self, filter_wavs, filter_trans):
+
+        wavs = funcs.convert_wav_units(self.wavs, u.AA).value
+        mags = funcs.convert_mag_units(self.wavs, self.mags, u.erg / (u.s * u.AA * u.cm ** 2)).value
+        # update filter wavelengths to correct units
+        filter_wavs = funcs.convert_wav_units(filter_wavs, u.AA).value
         # interpolate SED to be on same grid as filter_profile
-        sed_interp = interp1d(self.wavs, self.mags, fill_value = "extrapolate")(np.array(filter_profile["Wavelength"])) # in f_lambda
-        
+        sed_interp = interp1d(self.wavs, self.mags, fill_value = "extrapolate")(filter_wavs) # in f_lambda
         # calculate integral(f(λ) * T(λ)dλ)
-        numerator = np.trapz(sed_interp * filter_profile["Transmission"], x = filter_profile["Wavelength"])
+        numerator = np.trapz(sed_interp * filter_trans, x = filter_wavs)
         # calculate integral(T(λ)dλ)
-        denominator = np.trapz(filter_profile["Transmission"], x = filter_profile["Wavelength"])
+        denominator = np.trapz(filter_trans, x = filter_wavs)
         # calculate bandpass-averaged flux in Jy
         return numerator / denominator
-    
-    def create_phot(self, instrument, z, depths = [], min_pc_err = 10.):
-        if type(depths) == dict:
-           depths = [depth for (band, depth) in depths.items()]
-        if depths == []: # if depths not given, expect the galaxy to be very well detected
-            depths = [99. for band in instrument.band_names]
-        # convert self.mags to f_λ if needed
-        if self.mags.unit == u.ABmag:
-            self.mags = funcs.convert_mag_units(self.wavs, self.mags, u.erg / (u.s * (u.cm ** 2) * u.AA))
-        elif u.get_physical_type(self.mags.unit) != "power density/spectral flux density wav":
-            self.mags = funcs.convert_mag_units(self.wavs, self.mags, u.erg / (u.s * (u.cm ** 2) * u.AA))
-        # load observed frame filter profiles
-        instrument.load_instrument_filter_profiles()
-        bp_averaged_fluxes = np.zeros(len(instrument))
-        for i, band in enumerate(instrument):
-            #print(band)
-            filter_profile = instrument.filter_profiles[band]
-            # convert filter profile to rest frame
-            filter_profile["Wavelength"] = filter_profile["Wavelength"] / (1 + z)
-            bp_averaged_fluxes[i] = self.calc_bandpass_averaged_flux(filter_profile)
-        # convert bp_averaged_fluxes to Jy
-        band_wavs = np.array([instrument.band_wavelengths[band_name].value / (1 + z) for band_name in instrument.band_names]) * u.Angstrom
-        bp_averaged_fluxes_Jy = funcs.convert_mag_units(band_wavs, bp_averaged_fluxes * u.erg / (u.s * (u.cm ** 2) * u.AA), u.Jy)
-        self.phot = Photometry(instrument, bp_averaged_fluxes_Jy, depths, min_pc_err)
     
     def calc_line_EW(self, line_name, plot = False): # ONLY WORKS FOR EMISSION LINES, NOT ABSORPTION AT THIS POINT
         wavs_AA = self.convert_wav_units(u.AA, update = True)
@@ -216,6 +197,22 @@ class SED_rest(SED):
             self.mags = mags
         return wavs, mags
     
+    def create_mock_phot(self, instrument, z, depths = [], min_pc_err = 10.):
+        if type(depths) == dict:
+           depths = [depth for (band, depth) in depths.items()]
+        if depths == []: # if depths not given, expect the galaxy to be very well detected
+            depths = [99. for band in instrument.band_names]
+        # convert self.mags to f_λ if needed
+        if self.mags.unit == u.ABmag:
+            self.mags = funcs.convert_mag_units(self.wavs, self.mags, u.erg / (u.s * (u.cm ** 2) * u.AA))
+        elif u.get_physical_type(self.mags.unit) != "power density/spectral flux density wav":
+            self.mags = funcs.convert_mag_units(self.wavs, self.mags, u.erg / (u.s * (u.cm ** 2) * u.AA))
+        bp_averaged_fluxes = [self.calc_bandpass_averaged_flux(band.wav / (1. + z), band.trans) for band in instrument] * u.erg / (u.s * (u.cm ** 2) * u.AA)
+        # convert bp_averaged_fluxes to Jy
+        band_wavs = np.array([band.WavelengthCen.value / (1. + z) for band in instrument]) * u.AA
+        bp_averaged_fluxes_Jy = funcs.convert_mag_units(band_wavs, bp_averaged_fluxes, u.Jy)
+        self.mock_phot = Mock_Photometry(instrument, bp_averaged_fluxes_Jy, depths, min_pc_err)
+        return self.mock_phot
     
 class SED_obs(SED):
     
@@ -229,9 +226,8 @@ class SED_obs(SED):
         mag_obs = funcs.convert_mag_units(SED_rest.wavs, SED_rest.mags, u.ABmag)
         return cls(z_int, wav_obs.value, mag_obs.value, SED_rest.wavs.unit, u.ABmag)
     
-    def create_phot(self, instrument, depths = [], min_pc_err = 10.):
-        super().create_phot(instrument, self.z, depths = depths, min_pc_err = min_pc_err)
-
+    def create_mock_phot(self, instrument, depths = [], min_pc_err = 10.):
+        return SED_rest.create_mock_phot(self, instrument, self.z, depths = depths, min_pc_err = min_pc_err)
     
 class Mock_SED_rest(SED_rest): #, Mock_SED):
     
@@ -327,30 +323,6 @@ class Mock_SED_rest(SED_rest): #, Mock_SED):
     def renorm_at_wav(self, mag): # this mag can also be a flux, but must have astropy units
         pass
     
-    def create_mock_phot(self, instrument, z, depths = [], min_pc_err = 10.):
-        if type(depths) == dict:
-           depths = [depth for (band, depth) in depths.items()]
-        if depths == []: # if depths not given, expect the galaxy to be very well detected
-            depths = [99. for band in instrument.band_names]
-        # convert self.mags to f_λ if needed
-        if self.mags.unit == u.ABmag:
-            self.mags = funcs.convert_mag_units(self.wavs, self.mags, u.erg / (u.s * (u.cm ** 2) * u.AA))
-        elif u.get_physical_type(self.mags.unit) != "power density/spectral flux density wav":
-            self.mags = funcs.convert_mag_units(self.wavs, self.mags, u.erg / (u.s * (u.cm ** 2) * u.AA))
-        # load observed frame filter profiles
-        instrument.load_instrument_filter_profiles()
-        bp_averaged_fluxes = np.zeros(len(instrument))
-        for i, band in enumerate(instrument):
-            print(band)
-            filter_profile = instrument.filter_profiles[band]
-            # convert filter profile to rest frame
-            filter_profile["Wavelength"] = filter_profile["Wavelength"] / (1 + z)
-            bp_averaged_fluxes[i] = self.calc_bandpass_averaged_flux(filter_profile)
-        # convert bp_averaged_fluxes to Jy
-        band_wavs = np.array([instrument.band_wavelengths[band_name].value / (1 + z) for band_name in instrument.band_names]) * u.Angstrom
-        bp_averaged_fluxes_Jy = funcs.convert_mag_units(band_wavs, bp_averaged_fluxes * u.erg / (u.s * (u.cm ** 2) * u.AA), u.Jy)
-        self.mock_photometry = Mock_Photometry(instrument, bp_averaged_fluxes_Jy, depths, min_pc_err)
-    
     def calc_UV_slope(self, output_errs = False, method = "Calzetti+94"):
         if method == "Calzetti+94":
             # crop to Calzetti+94 filters
@@ -414,14 +386,6 @@ class Mock_SED_obs(SED_obs):
         obs_SED.attenuate_IGM(IGM)
         return obs_SED
     
-    # def create_phot_obs(self, instrument, loc_depths, min_pc_err = 10):
-    #     # calculate band pass averaged fluxes
-    #     fluxes = []
-    #     # calculate flux errors from loc depths
-    #     flux_errs = [funcs.loc_depth_to_flux_err(depth, 8.9) if funcs.loc_depth_to_flux_err(depth, 8.9) * 100 / flux > min_pc_err \
-    #                  else min_pc_err * flux / 100 for flux, depth in zip(fluxes, loc_depths.items)]
-    #     return Photometry(instrument, fluxes, flux_errs, loc_depths)
-    
     def attenuate_IGM(self, IGM = IGM_attenuation.IGM()):
         if not hasattr(self, "IGM"):
             self.IGM = None
@@ -440,33 +404,6 @@ class Mock_SED_obs(SED_obs):
                 pass
         else:
             raise(Exception(f"Could not attenuate by a non IGM object = {IGM}"))
-
-    def create_mock_phot(self, instrument, depths = [], min_pc_err = 10.):
-        if type(depths) == dict:
-            depths = [depth for (band, depth) in depths.items()]
-        if depths == []: # if depths not given, expect the galaxy to be very well detected
-            depths = [99. for band in instrument.band_names]
-        # convert self.mags to f_λ
-        if self.mags.unit == u.ABmag:
-            self.mags = funcs.convert_mag_units(self.wavs, self.mags, u.erg / (u.s * (u.cm ** 2) * u.AA))
-        elif u.get_physical_type(self.mags.unit) != "power density/spectral flux density wav":
-            self.mags = funcs.convert_mag_units(self.wavs, self.mags, u.erg / (u.s * (u.cm ** 2) * u.AA))
-        # load observed frame filter profiles
-        instrument.load_instrument_filter_profiles()
-        bp_averaged_fluxes = np.zeros(len(instrument))
-        for i, band in enumerate(instrument):
-            bp_averaged_fluxes[i] = self.calc_bandpass_averaged_flux(instrument.filter_profiles[band])
-        # convert bp_averaged_fluxes to Jy
-        band_wavs = np.array([instrument.band_wavelengths[band_name].value for band_name in instrument.band_names]) * u.Angstrom
-        bp_averaged_fluxes_Jy = funcs.convert_mag_units(band_wavs, bp_averaged_fluxes * u.erg / (u.s * (u.cm ** 2) * u.AA), u.Jy)
-        self.mock_photometry = Mock_Photometry(instrument, bp_averaged_fluxes_Jy, depths, min_pc_err)
-
-    # def scatter_mock_photometry(self):
-    #     if not hasattr(self, "mock_photometry"):
-    #         raise(Exception("Must have previously created mock photometry from the observed frame template"))
-    #     else:
-    #         for band in self.mock_photometry:
-    #             pass
             
     def calc_UV_slope(self, output_errs = False, method = "Calzetti+94"):
         # create rest frame mock SED object

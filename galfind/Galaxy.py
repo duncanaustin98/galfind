@@ -310,9 +310,9 @@ class Galaxy:
                 SED_plot = self.phot.SED_results[key].SED.plot_SED(phot_ax, wav_unit, flux_unit, label = key)
                 SED_colours[key] = SED_plot[0].get_color()
                 # could also plot the expected photometry here as well
-                #self.phot.SED_results[key].SED.create_phot(self.phot.instrument, depths = self.phot.depths)
-                #self.phot.SED_results[key].SED.phot.plot_phot(phot_ax, wav_unit, flux_unit, \
-                #    label = None, filled = False, colour = SED_colours[key])
+                self.phot.SED_results[key].SED.create_mock_phot(self.phot.instrument, depths = self.phot.depths)
+                self.phot.SED_results[key].SED.mock_phot.plot_phot(phot_ax, wav_unit, flux_unit, uplim_sigma = None, \
+                    auto_scale = False, plot_errs = {"x": False, "y": False}, label = None, filled = False, colour = SED_colours[key])
                 #ax_photo.scatter(band_wavs_lowz, band_mags_lowz, edgecolors=eazy_color_lowz, marker='o', facecolor='none', s=80, zorder=4.5)
                                 
             self.phot.plot_phot(phot_ax, wav_units = wav_unit, mag_units = flux_unit, annotate = False, auto_scale = True, label_SNRs = True)
@@ -324,7 +324,7 @@ class Galaxy:
             #     if rejected != '':
             #         phot_ax.annotate(rejected, (0.9, 0.95), ha='center', fontsize='small', xycoords = 'axes fraction', zorder=5)
             # photometry axis legend
-            phot_ax.legend(loc='upper left', fontsize='small', frameon=False)
+            phot_ax.legend(loc = "upper right", fontsize = "small", frameon = False)
             for text in phot_ax.get_legend().get_texts():
                 text.set_path_effects([pe.withStroke(linewidth = 3, foreground = 'white')])
                 text.set_zorder(12)
