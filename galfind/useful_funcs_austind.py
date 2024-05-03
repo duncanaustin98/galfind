@@ -202,20 +202,58 @@ def luminosity_to_flux(lum, wavs, z = None, cosmo = astropy_cosmo, out_units = u
         lum_distance = cosmo.luminosity_distance(z)
     # sort out the units
     if u.get_physical_type(lum.unit) == "yank": # i.e. L_λ, Lsun / AA or equivalent
-        if u.get_physical_type(out_units) == "spectral flux density": # f_ν
+        if u.get_physical_type(out_units) in ["ABmag/spectral flux density", "spectral flux density"]: # f_ν
             return (lum_lam_to_lum_nu(lum, wavs) * (1 + z) / (4 * np.pi * lum_distance ** 2)).to(out_units)
         elif u.get_physical_type(out_units) == "power density/spectral flux density wav": # f_λ
             return (lum * (1 + z) / (4 * np.pi * lum_distance ** 2)).to(out_units)
         else:
             raise(Exception(""))
     elif u.get_physical_type(lum.unit) == "energy/torque/work": # i.e L_ν, Lsun / Hz or equivalent
-        if u.get_physical_type(out_units) == "spectral flux density": # f_ν
+        if u.get_physical_type(out_units) in ["ABmag/spectral flux density", "spectral flux density"]: # f_ν
             return (lum * (1 + z) / (4 * np.pi * lum_distance ** 2)).to(out_units)
         elif u.get_physical_type(out_units) == "power density/spectral flux density wav": # f_λ
             return (lum_nu_to_lum_lam(lum, wavs) * (1 + z) / (4 * np.pi * lum_distance ** 2)).to(out_units)
         else:
             raise(Exception(""))
         
+def flux_to_luminosity(flux, wavs, z = None, cosmo = astropy_cosmo, out_units = u.erg / (u.s * u.Hz)):
+    # calculate luminosity distance
+    if z == None:
+        lum_distance = 10 * u.pc
+        z = 0.
+    else:
+        lum_distance = cosmo.luminosity_distance(z)
+    # sort out the units
+    if flux.unit == u.ABmag:
+        # convert to f_ν
+        flux = flux.to(u.Jy)
+    if u.get_physical_type(flux.unit) in ["ABmag/spectral flux density", "spectral flux density"]: # f_ν
+        if u.get_physical_type(out_units) == "yank": # i.e. L_λ, Lsun / AA or equivalent
+            # convert f_ν -> f_λ
+            flux = convert_mag_units(wavs, flux, u.erg / (u.s * u.AA * u.cm ** 2))
+        elif u.get_physical_type(out_units) == "energy/torque/work": # i.e L_ν, Lsun / Hz or equivalent
+            pass
+        else:
+            galfind_logger.critical(f"{out_units=} not in ['yank', 'energy/torque/work']") 
+    elif u.get_physical_type(flux.unit) == "power density/spectral flux density wav": # f_λ
+        if u.get_physical_type(out_units) == "yank": # i.e. L_λ, Lsun / AA or equivalent
+            pass
+        elif u.get_physical_type(out_units) == "energy/torque/work": # i.e L_ν, Lsun / Hz or equivalent
+            # convert f_λ -> f_ν
+            flux = convert_mag_units(wavs, flux, u.Jy)
+        else:
+            galfind_logger.critical(f"{out_units=} not in ['yank', 'energy/torque/work']") 
+    else:
+        galfind_logger.critical(f"{flux.unit=} not in ['spectral flux density', 'power density/spectral flux density wav']")
+    return (4 * np.pi * flux * lum_distance ** 2 / (1 + z)).to(out_units)
+        
+def dust_correct(lum, dust_mag):
+    if dust_mag > 0:
+        return lum * (10 ** (dust_mag / 2.5))
+    else:
+        return lum
+
+
 # unit labelling
 
 unit_labels_dict = \

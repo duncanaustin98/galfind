@@ -19,7 +19,8 @@ class PDF:
         return f"LOADED PDF FOR {self.property_name}"
 
     @classmethod
-    def from_1D_arr(cls):
+    def from_1D_arr(cls, property_name, arr):
+        self.input_arr = arr
         return NotImplementedError
     
     def draw_sample(self, size):
@@ -67,9 +68,12 @@ class PDF:
             self.percentiles[f"{percentile:.1f}"] = float(self.x[np.argmin(np.abs(cdf - percentile / 100.))])
             return self.percentiles[f"{percentile:.1f}"]
 
-    def manipulate_PDF(self, update_func, size = 10_000):
-        sample = self.draw_sample(size)
-        updated_sample = [update_func(val) for val in sample]
+    def manipulate_PDF(self, update_func, size = 10_000, *args):
+        if hasattr(self, "input_arr"):
+            sample = self.input_arr
+        else:
+            sample = self.draw_sample(size)
+        updated_sample = [update_func(val, *args) for val in sample]
         return self.__class__.from_1D_arr(updated_sample)
 
     def plot(self, ax, annotate = True, annotate_peak_loc = False, colour = "black"):
@@ -124,7 +128,7 @@ class PDF:
             #ax.annotate(f'$\\sum = {float(integral):.2f}$', (zbest, 0.45), fontsize='small', \
                 #transform = ax.get_yaxis_transform(), va='bottom', ha='center', fontweight='bold', \
                 #color=eazy_color, path_effects=[pe.withStroke(linewidth=3, foreground='white')])
-    
+
 
 class SED_fit_PDF(PDF):
 
@@ -175,3 +179,34 @@ class Redshift_PDF(SED_fit_PDF):
         return super().integrate_between_lims(lower_z_lim, upper_z_lim)
 
 
+class PDF_nD:
+
+    def __init__(self, ordered_PDFs):
+        # ensure all PDFs have input arr of values, all of which are the same length
+        assert all(hasattr(PDF_obj, "input_arr") for PDF_obj in ordered_PDFs)
+        assert all(len(PDF_obj.input_arr) == len(ordered_PDFs[0].input_arr) for PDF_obj in ordered_PDFs)
+        self.dimensions = len(ordered_PDFs)
+        self.PDFs = ordered_PDFs
+
+    @classmethod
+    def from_matrix(cls, property_names, matrix):
+        assert len(property_names) == matrix.shape[0] # 0 or 1 here, not sure
+        ordered_PDFs = [PDF.from_1D_arr(property_name, row) for property_name, row in zip(property_names, matrix)]
+        return cls(ordered_PDFs)
+
+    def __call__(self, func, independent_var, output_type = "chains"):
+        # need to provide additional assertions here too
+        # assert that the dimensions of PDF_nD must be the same as the input arguments - 1 of func
+        breakpoint()
+        chains = [func(independent_var, vals) for vals in np.array([PDF_obj.input_arr for PDF_obj in self.PDFs]).T]
+        # function output should be of the same length as the independent variable
+        assert len(chains) == len(independent_var)
+        assert output_type in ["chains", "percentiles"]
+        if output_type == "chains":
+            return chains
+        elif output_type == "percentiles":
+            func_l1_med_u1 = [np.percentile(chains[:, i], [16., 50., 84.]) for i in range(len(independent_var))]
+            return [func_l1_med_u1[:, 0], func_l1_med_u1[:, 1], func_l1_med_u1[:, 2]]
+
+    def plot_corner(self):
+        pass

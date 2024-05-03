@@ -28,7 +28,7 @@ from . import galfind_logger
 from .Emission_lines import wav_lyman_alpha, line_diagnostics
 
 class SED:
-    
+    # should include mag errors here
     def __init__(self, wavs, mags, wav_units, mag_units):
         self.wavs = wavs * wav_units
         self.mags = mags * mag_units
@@ -164,7 +164,7 @@ class SED:
                             "V-J": -2.5 * np.log10(self.UVJ_fluxes["V"] / self.UVJ_fluxes["J"])}
 
 class SED_rest(SED):
-    
+    # should include mag errors here
     def __init__(self, wavs, mags, wav_units, mag_units, wav_range = [0, 10_000] * u.AA):
         try:
             wavs = wavs.value # if wavs is in Angstrom
@@ -204,7 +204,7 @@ class SED_rest(SED):
         return self.mock_phot
     
 class SED_obs(SED):
-    
+    # should include mag errors here
     def __init__(self, z, wavs, mags, wav_units, mag_units):
         self.z = z
         super().__init__(wavs, mags, wav_units, mag_units)
