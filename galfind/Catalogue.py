@@ -40,7 +40,6 @@ from .Emission_lines import line_diagnostics
 
 class Catalogue(Catalogue_Base):
     
-    # %% alternative constructors
     @classmethod
     def from_pipeline(cls, survey, version, aper_diams, cat_creator, SED_fit_params_arr = [{"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": 4.}, \
             {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": 6.}, {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}], \
@@ -479,6 +478,9 @@ class Catalogue(Catalogue_Base):
     def calc_beta_phot(self, rest_UV_wav_lims, SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}):
         self.calc_SED_rest_property(Photometry_rest.calc_beta_phot, SED_fit_params, rest_UV_wav_lims)
         
+    def calc_fesc_from_beta_phot(self, rest_UV_wav_lims, conv_author_year, SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}):
+        self.calc_SED_rest_property(Photometry_rest.calc_fesc_from_beta_phot, SED_fit_params, rest_UV_wav_lims, conv_author_year)
+
     def calc_AUV_from_beta_phot(self, rest_UV_wav_lims, conv_author_year, SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}):
         self.calc_SED_rest_property(Photometry_rest.calc_AUV_from_beta_phot, SED_fit_params, rest_UV_wav_lims, conv_author_year)
 
@@ -518,16 +520,21 @@ class Catalogue(Catalogue_Base):
         key = SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)
         property_name = SED_rest_property_function(self[0].SED_results[key].phot_rest, *args, update = False)[1]
 
-        if property_name not in self.SED_rest_property_cols:
+        if key not in self.SED_rest_properties.keys():
+            self.SED_rest_properties[key] = []
+        if property_name not in self.SED_rest_properties[key]:
             # perform calculation for each galaxy and update galaxies in self
             [SED_rest_property_function(gal.SED_results[key].phot_rest, *args, update = True)[0] for gal in \
                 tqdm(self, total = len(self), desc = f"Calculating {property_name}")]
-            self.SED_rest_property_cols.append(property_name)
-        self._append_SED_rest_property_to_fits(property_name)
+            # save the property name
+            self.SED_rest_properties[key].append(property_name)
+        
+        self._append_SED_rest_property_to_fits(property_name, key)
     
-    def _append_SED_rest_property_to_fits(self, property_name):
+    def _append_SED_rest_property_to_fits(self, property_name, SED_fit_params_label):
         self.open_cat(cropped = False)
-        # update elements 
+        # update elements
+        
         pass
 
     def plot_SED_properties(self, x_name, y_name, SED_fit_params):
@@ -540,6 +547,3 @@ class Catalogue(Catalogue_Base):
                 y_arr[i] = gal_properties(y_name)
             else:
                 raise(Exception(f"{x_name} and {y_name} not available for all galaxies in this catalogue!"))
-
-    # def fit_sed(self, code):
-    #     return code.fit_cat(self)

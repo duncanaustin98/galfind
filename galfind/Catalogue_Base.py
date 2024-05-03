@@ -18,21 +18,22 @@ from . import Multiple_Catalogue, Multiple_Data
 
 class Catalogue_Base:
     # later on, the gal_arr should be calculated from the Instrument and sex_cat path, with SED codes already given
-    def __init__(self, gals, cat_path, survey, cat_creator, instrument, SED_fit_params_arr = {}, version = '', crops = []): #, UV_PDF_path):
+    def __init__(self, gals, cat_path, survey, cat_creator, instrument, \
+            SED_fit_params_arr = {}, version = '', crops = [], SED_rest_properties = {}):
         self.survey = survey
         self.cat_path = cat_path
-        #self.UV_PDF_path = UV_PDF_path
         self.cat_creator = cat_creator
         self.instrument = instrument
         self.SED_fit_params_arr = SED_fit_params_arr
         self.gals = np.array(gals)
-        if version == '':
-            raise Exception('Version must be specified')
+        if version == "":
+            galfind_logger.critical("Version must be specified")
         self.version = version
         
         # keep a record of the crops that have been made to the catalogue
         self.selection_cols = [key.replace("SELECTED_", "") for key in self.open_cat().meta.keys() if "SELECTED_" in key]
-        self.crops = list(crops)
+        self.crops = crops
+        self.SED_rest_properties = SED_rest_properties
         
         # concat is commutative for catalogues
         self.__radd__ = self.__add__

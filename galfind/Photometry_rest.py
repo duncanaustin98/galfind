@@ -43,9 +43,15 @@ class beta_fit:
 def power_law_beta_func(wav, A, beta):
     return (10 ** A) * (wav ** beta)
 
-SFR_conversions = {"MadauDickinson2014": 1.15e-28 * u.solMass / u.yr}
+SFR_conversions = \
+{
+    "MadauDickinson2014": 1.15e-28 * u.solMass / u.yr
+}
 
-fesc_from_beta_conversions = {"Chisholm2022": lambda beta: np.random.normal(1.3, 0.6, len(beta)) * 10 ** (-4. - np.random.normal(1.22, 0.1, len(beta)) * beta)}
+fesc_from_beta_conversions = \
+{
+    "Chisholm2022": lambda beta: np.random.normal(1.3, 0.6, len(beta)) * 10 ** (-4. - np.random.normal(1.22, 0.1, len(beta)) * beta)
+}
 
 class Photometry_rest(Photometry):
     
