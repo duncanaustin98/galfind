@@ -565,6 +565,63 @@ class Catalogue(Catalogue_Base):
         else:
             galfind_logger.info(f"Already appended {selection_name} to catalogue = {self.cat_path}")
 
+    # %%
+    # SED property functions 
+            
+    # Rest-frame UV property calculation functions - these are not independent of each other
+    
+    def calc_beta_phot(self, rest_UV_wav_lims, SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}):
+        self.calc_SED_rest_property(Photometry_rest.calc_beta_phot, SED_fit_params, rest_UV_wav_lims)
+        
+    def calc_AUV_from_beta_phot(self, rest_UV_wav_lims, conv_author_year, SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}):
+        self.calc_SED_rest_property(Photometry_rest.calc_AUV_from_beta_phot, SED_fit_params, rest_UV_wav_lims, conv_author_year)
+
+    def calc_mUV_phot(self, rest_UV_wav_lims, ref_wav, SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}):
+        self.calc_SED_rest_property(Photometry_rest.calc_mUV_phot, SED_fit_params, rest_UV_wav_lims, ref_wav)
+
+    def calc_MUV_phot(self, rest_UV_wav_lims, ref_wav, SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}):
+        self.calc_SED_rest_property(Photometry_rest.calc_MUV_phot, SED_fit_params, rest_UV_wav_lims, ref_wav)
+    
+    def calc_LUV_obs_phot(self, rest_UV_wav_lims, ref_wav, SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}):
+        self.calc_SED_rest_property(Photometry_rest.calc_LUV_obs_phot, SED_fit_params, rest_UV_wav_lims, ref_wav)
+    
+    def calc_LUV_int_phot(self, rest_UV_wav_lims, ref_wav, AUV_beta_conv_author_year, \
+            SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}):
+        self.calc_SED_rest_property(Photometry_rest.calc_LUV_int_phot, SED_fit_params, rest_UV_wav_lims, ref_wav)
+    
+    def calc_SFR_UV_phot(self, rest_UV_wav_lims, ref_wav, AUV_beta_conv_author_year, kappa_UV_conv_author_year, \
+            SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}):
+        self.calc_SED_rest_property(Photometry_rest.calc_SFR_UV_phot, SED_fit_params, \
+            rest_UV_wav_lims, ref_wav, AUV_beta_conv_author_year, kappa_UV_conv_author_year)
+    
+    def calc_rest_UV_properties(self, rest_UV_wav_lims, ref_wav, AUV_beta_conv_author_year, kappa_UV_conv_author_year, \
+            SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}):
+        self.calc_beta_phot(rest_UV_wav_lims, SED_fit_params)
+        self.calc_AUV_from_beta_phot(rest_UV_wav_lims, AUV_beta_conv_author_year, SED_fit_params)
+        self.calc_mUV_phot(rest_UV_wav_lims, ref_wav, SED_fit_params)
+        self.calc_MUV_phot(rest_UV_wav_lims, ref_wav, SED_fit_params)
+        self.calc_LUV_obs_phot(rest_UV_wav_lims, ref_wav, SED_fit_params)
+        self.calc_LUV_int_phot(rest_UV_wav_lims, ref_wav, AUV_beta_conv_author_year, SED_fit_params)
+        self.calc_SFR_UV_phot(rest_UV_wav_lims, ref_wav, AUV_beta_conv_author_year, kappa_UV_conv_author_year, SED_fit_params)
+
+    # Emission line EWs
+    
+
+    def calc_SED_rest_property(self, SED_rest_property_function, SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}, *args):
+
+        key = SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)
+        property_name = SED_rest_property_function(self[0].SED_results[key].phot_rest, *args, update = False)[1]
+
+        if property_name not in self.SED_rest_property_cols:
+            # perform calculation for each galaxy and update galaxies in self
+            [SED_rest_property_function(gal.SED_results[key].phot_rest, *args, update = True)[0] for gal in \
+                tqdm(self, total = len(self), desc = f"Calculating {property_name}")]
+
+        self._append_SED_rest_property_to_fits(self, property_name)
+    
+    def _append_SED_rest_property_to_fits(self, property_name):
+        pass
+
     def plot_SED_properties(self, x_name, y_name, SED_fit_params):
         x_arr = []
         y_arr = []

@@ -21,6 +21,10 @@ class PDF:
     @classmethod
     def from_1D_arr(cls):
         return NotImplementedError
+    
+    def draw_sample(self, size):
+        # draw a sample of specified size from the PDF
+        pass
 
     def integrate_between_lims(self, lower_x_lim, upper_x_lim):
         # find index of closest values in self.x to lower_x_lim and upper_x_lim
@@ -62,6 +66,11 @@ class PDF:
             cdf /= np.max(cdf)
             self.percentiles[f"{percentile:.1f}"] = float(self.x[np.argmin(np.abs(cdf - percentile / 100.))])
             return self.percentiles[f"{percentile:.1f}"]
+
+    def manipulate_PDF(self, update_func, size = 10_000):
+        sample = self.draw_sample(size)
+        updated_sample = [update_func(val) for val in sample]
+        return self.__class__.from_1D_arr(updated_sample)
 
     def plot(self, ax, annotate = True, annotate_peak_loc = False, colour = "black"):
         
