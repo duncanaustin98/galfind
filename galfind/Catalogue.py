@@ -123,20 +123,6 @@ class Catalogue(Catalogue_Base):
     
     # %%
     
-    # def catch_redshift_minus_99(self, gal_index, SED_fit_params, out_value = True, condition = None, condition_fail_val = None, minus_99_out = None):
-    #     #try:
-    #         self[gal_index].phot.SED_results[SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)].z # i.e. if the galaxy has a finite redshift
-    #         if condition != None:
-    #             return out_value if condition(out_value) else condition_fail_val
-    #         else:
-    #             return out_value
-    #     #except:
-    #         #print(f"{gal_index} is at z=-99")
-    #         return minus_99_out
-    
-    # def cap_ext_src_corrs(self, vals, condition = lambda x: x > 1., fail_val = 1.):
-    #     return np.array([val if condition(val) else fail_val for val in vals])
-    
     # def calc_ext_src_corrs(self, band, ID = None):
     #     # load the catalogue (for obtaining the FLUX_AUTOs; THIS SHOULD BE MORE GENERAL IN FUTURE TO GET THESE FROM THE GALAXY OBJECT!!!)
     #     tab = self.open_full_cat()
@@ -150,78 +136,6 @@ class Catalogue(Catalogue_Base):
     #     ext_src_corrs = self.cap_ext_src_corrs([flux_autos[i] / gal.phot.flux_Jy[np.where(band == \
     #         gal.phot.instrument.band_names)[0][0]].value for i, gal in enumerate(cat)])
     #     return ext_src_corrs
-            
-    # def make_ext_src_corr_cat(self, SED_fit_params, join_tables = True):
-    #     ext_src_cat_name = f"{funcs.split_dir_name(self.cat_path, 'dir')}/Extended_source_corrections_{code_name}.fits"
-    #     overwrite = config["DEFAULT"].getboolean("OVERWRITE")
-        
-    #     if overwrite:
-    #         galfind_logger.info(f"OVERWRITE = YES, so overwriting coord_{band}.reg if it exists.")
-      
-    #     if not Path(ext_src_cat_name).is_file() or overwrite:
-    #         if not config["DEFAULT"].getboolean("RUN"):
-    #             galfind_logger.critical("RUN = YES, so not making ext correction cat. Returning Error.")
-    #             raise Exception(f"RUN = YES, and combination of {self.survey} {self.version} or {self.instrument.name} has not previously been run.")
-
-    #         ext_src_corrs_band = {}
-    #         ext_src_bands = []
-    #         for i, band in tqdm(enumerate(self.data.instrument.band_names), total = len(self.data.instrument.band_names), desc = f"Calculating extended source corrections for {self.cat_path}"):
-    #             try:
-    #                 band_corrs = self.calc_ext_src_corrs(band)
-    #                 #print(band, band_corrs)
-    #                 ext_src_corrs_band[band] = band_corrs
-    #                 ext_src_bands.append(band)
-    #             except:
-    #                 print(f"No flux auto for {band}")
-    #         print(ext_src_bands)
-    #         #ext_src_col_names = np.array(["ID"] + [f"auto_corr_factor_{name}" for name in [band for band in self.data.instrument.band_names if band in ext_src_corrs_band.keys()]] + \
-    #         #                             [f"auto_corr_factor_UV_{code_name}_{templates}" for templates in templates_arr] + ["auto_corr_factor_mass"])
-    #         #ext_src_col_dtypes = np.array([int] + [float for name in [band for band in self.data.instrument.band_names if band in ext_src_corrs_band.keys()]] + \
-    #         #                              [float for templates in templates_arr] + [float])
-                    
-    #         # determine the relevant bands for the extended source correction (slower than it could be, but it works nevertheless)
-    #         UV_ext_src_corrs = []
-    #         for templates in templates_arr:
-    #             UV_corr_bands = []
-    #             for i, gal in enumerate(self):
-    #                 try:  # test whether the UV band already has existing 
-    #                     ext_src_corrs_band[gal.phot.SED_results[SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)].phot_rest.rest_UV_band]
-    #                     UV_corr_bands.append(gal.phot.SED_results[SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)].phot_rest.rest_UV_band)
-    #                 except:
-    #                     UV_corr_bands.append(None)
-    #             # use bluest band with an extended src correction, since it is the blue HST data that doesn't have FLUX_AUTO's
-    #             UV_ext_src_corrs.append(np.array([ext_src_corrs_band[band][j] if band != None else ext_src_corrs_band[ext_src_bands[0]][j] for j, band in enumerate(UV_corr_bands)]))
-    #         print(UV_ext_src_corrs, np.array(UV_ext_src_corrs).shape)
-    #         print(f"Finished calculating UV extended source corrections using {code_name} {templates_arr} redshifts")
-    #         mass_ext_src_corrs = np.array(ext_src_corrs_band["f444W"]) # f444W band (mass tracer)
-    #         print("Finished calculating mass extended source corrections")
-    #         ext_src_corr_vals = np.vstack((np.array(self.ID), np.vstack(list(ext_src_corrs_band.values())), np.vstack(UV_ext_src_corrs), mass_ext_src_corrs)) #.T
-    #         print(ext_src_corr_vals, ext_src_col_names, ext_src_col_dtypes, ext_src_corr_vals.shape, len(ext_src_col_names), len(ext_src_col_dtypes))
-    #         ext_src_tab = Table(ext_src_corr_vals.T, names = ext_src_col_names, dtype = ext_src_col_dtypes)
-    #         ext_src_tab.write(ext_src_cat_name, overwrite = True)
-    #         self.ext_src_tab = ext_src_tab
-    #         print(f"Writing table to {ext_src_cat_name}")
-    #     else:
-    #         self.ext_src_tab = Table.read(ext_src_cat_name, character_as_bytes = False)
-    #         print(f"Opening table: {ext_src_cat_name}")
-            
-    #     if join_tables:
-    #         self.join_ext_src_cat(code_name = code_name, templates_arr = templates_arr)
-    #     return self
-        
-    # def join_ext_src_cat(self, match_cols = ["NUMBER", "ID"], code_name = "EAZY", templates_arr = ["fsps", "fsps_larson", "fsps_jades"]):
-    #     # open existing cat
-    #     init_cat = self.open_full_cat()
-    #     joined_tab = join(init_cat, self.ext_src_tab, keys_left = match_cols[0], keys_right = match_cols[1])
-    #     self.cat_path = self.cat_path.replace(".fits", "_ext_src.fits")
-    #     joined_tab.write(self.cat_path, format = "fits", overwrite = True)
-    #     print(f"Joining ext_src table to catalogue! Saving to {self.cat_path}")
-        
-    #     # set relevant properties in the galaxies contained within the catalogues (can use __setattr__ here too!)
-    #     print("Updating Catalogue object with extended source corrections")
-    #     for i, (gal, mass_corr) in enumerate(zip(self, self.ext_src_tab["auto_corr_factor_mass"])):
-    #         for templates in templates_arr:
-    #             gal.phot.SED_results[code_name][templates].ext_src_corrs = {**{"UV": self.ext_src_tab[f"auto_corr_factor_UV_{code_name}_{templates}"][i] for templates in templates_arr}, **{"mass": mass_corr}}
 
     def mask(self): #, mask_instrument = NIRCam()):
         galfind_logger.info(f"Running masking code for {self.cat_path}.")
@@ -445,14 +359,6 @@ class Catalogue(Catalogue_Base):
     #         #[setattr(gal, ["properties", name], UV_tab[name][i]) for i, gal in enumerate(self) for name in UV_col_names]
             
     #     return self
-        
-    # def join_UV_fit_cat(self, match_cols = ["NUMBER", "ID"]):
-    #     # open existing cat
-    #     init_cat = self.open_full_cat()
-    #     joined_tab = join(init_cat, self.UV_tab, keys_left = match_cols[0], keys_right = match_cols[1])
-    #     self.cat_path = self.cat_path.replace('.fits', '_UV.fits')
-    #     joined_tab.write(self.cat_path, format = "fits", overwrite = True)
-    #     print(f"Joining UV table to catalogue! Saving to {self.cat_path}")
 
     # Selection functions
         
@@ -616,10 +522,12 @@ class Catalogue(Catalogue_Base):
             # perform calculation for each galaxy and update galaxies in self
             [SED_rest_property_function(gal.SED_results[key].phot_rest, *args, update = True)[0] for gal in \
                 tqdm(self, total = len(self), desc = f"Calculating {property_name}")]
-
-        self._append_SED_rest_property_to_fits(self, property_name)
+            self.SED_rest_property_cols.append(property_name)
+        self._append_SED_rest_property_to_fits(property_name)
     
     def _append_SED_rest_property_to_fits(self, property_name):
+        self.open_cat(cropped = False)
+        # update elements 
         pass
 
     def plot_SED_properties(self, x_name, y_name, SED_fit_params):
