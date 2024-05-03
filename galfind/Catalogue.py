@@ -344,9 +344,17 @@ class Catalogue(Catalogue_Base):
             cutout_ax_list.append(cutout_ax)
 
         # plot SEDs
-        [gal.plot_phot_diagnostic([cutout_ax_list, phot_ax, PDF_ax], self.data, \
+        out_paths = [gal.plot_phot_diagnostic([cutout_ax_list, phot_ax, PDF_ax], self.data, \
             SED_fit_params_arr, zPDF_plot_SED_fit_params_arr, wav_unit, flux_unit) \
             for gal in tqdm(self, total = len(self), desc = "Plotting photometry diagnostic plots")]
+
+        # make a folder to store symlinked photometric diagnostic plots for selected galaxies
+        if self.crops != []:
+            selection_path = f"{config['Selection']['SELECTION_DIR']}/SED_plots/{self.version}/{self.instrument.name}/{'+'.join(self.crops)}/{self.survey}/gal_index.png"
+            funcs.make_dirs(selection_path)
+            # create symlink to selection folder for diagnostic plots
+            [os.symlink(out_path, selection_path.replace('gal_index', str(gal.ID))) for gal, out_path in zip(self, out_paths)]
+
 
     # def make_UV_fit_cat(self, code_name = "EAZY", templates = "fsps_larson", UV_PDF_path = config["RestUVProperties"]["UV_PDF_PATH"], col_names = ["Beta", "flux_lambda_1500", "flux_Jy_1500", "M_UV", "A_UV", "L_obs", "L_int", "SFR"], \
     #                     join_tables = True, skip_IDs = [], rest_UV_wavs_arr = [[1250., 3000.] * u.AA], conv_filt_arr = [True, False], overwrite = True):
@@ -556,7 +564,7 @@ class Catalogue(Catalogue_Base):
             self.selection_cols.append(selection_name)
         else:
             galfind_logger.info(f"Already appended {selection_name} to catalogue = {self.cat_path}")
-    
+
     def plot_SED_properties(self, x_name, y_name, SED_fit_params):
         x_arr = []
         y_arr = []

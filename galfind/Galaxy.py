@@ -344,6 +344,8 @@ class Galaxy:
             plt.savefig(out_path, dpi = 300, bbox_inches = 'tight')
             for ax in [phot_ax] + PDF_ax + cutout_ax:
                 ax.cla()
+            
+        return out_path
 
     def plot_spec_diagnostic(self, overwrite = True):
         # bare in mind that not all galaxies have spectroscopic data
