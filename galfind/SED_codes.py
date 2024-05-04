@@ -1,13 +1,4 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-"""
-Created on Wed May 31 00:17:39 2023
-
-@author: austind
-"""
-
 # SED_codes.py
-# %% Imports
 
 import os
 import numpy as np
@@ -172,10 +163,3 @@ class SED_code(ABC):
     @abstractmethod
     def extract_PDFs(gal_property, IDs, data_paths, SED_fit_params):
         pass
-
-# def calc_LePhare_errs(cat, col_name):
-#     if col_name == "Z_BEST":
-#         data = np.array(cat[col_name])
-#         data_err = np.array([np.array(cat[col_name + "68_LOW"]), np.array(cat[col_name + "68_HIGH"])])
-#         data, data_err = adjust_errs(data, data_err)
-#         return data_err
