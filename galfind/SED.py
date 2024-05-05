@@ -27,12 +27,12 @@ from . import useful_funcs_austind as funcs
 from . import galfind_logger
 from .Emission_lines import wav_lyman_alpha, line_diagnostics
 
-class SED:
-    
-    def __init__(self, wavs, mags, wav_units, mag_units):
+class SED_base:
+
+    def __init__(self, wavs, mags, wav_units, mag_units, properties = {}):
         self.wavs = wavs * wav_units
         self.mags = mags * mag_units
-        #self.mag_units = mag_units
+        self.properties = properties
 
     def __str__(self):
         return "LOADED SED\n"
@@ -85,7 +85,6 @@ class SED:
         return plot
     
     def calc_bandpass_averaged_flux(self, filter_wavs, filter_trans):
-
         wavs = funcs.convert_wav_units(self.wavs, u.AA).value
         mags = funcs.convert_mag_units(self.wavs, self.mags, u.erg / (u.s * u.AA * u.cm ** 2)).value
         # update filter wavelengths to correct units
@@ -99,6 +98,35 @@ class SED:
         # calculate bandpass-averaged flux in Jy
         return numerator / denominator
     
+    def calc_UVJ_colours(self, resolution = 1. * u.AA):
+        UVJ_filters = {
+        "U": {"lam_eff": 3_650. * u.AA, "lam_fwhm": 660. * u.AA},
+        "V": {"lam_eff": 5_510. * u.AA, "lam_fwhm": 880. * u.AA},
+        "J": {"lam_eff": 12_200. * u.AA, "lam_fwhm": 2130. * u.AA}
+        } # these are rest frame wavelengths
+    
+        bp_averaged_fluxes = np.zeros(3)
+        for i, band in enumerate(["U", "V", "J"]):
+            galfind_logger.info(f"Calculating {band} fluxes")
+            band_wavs = np.linspace((UVJ_filters[band]["lam_eff"] - UVJ_filters[band]["lam_fwhm"] / 2.), \
+                (UVJ_filters[band]["lam_eff"] + UVJ_filters[band]["lam_fwhm"] / 2.), \
+                int(np.round((UVJ_filters[band]["lam_fwhm"] / resolution).to(u.dimensionless_unscaled).value))) * u.AA
+            filter_profile = {"Wavelength": band_wavs, "Transmission": np.ones(len(band_wavs))}
+            bp_averaged_fluxes[i] = self.calc_bandpass_averaged_flux(filter_profile)
+        # convert bp_averaged_fluxes to Jy
+        bp_averaged_fluxes_Jy = funcs.convert_mag_units([UVJ_filters[band]["lam_eff"] \
+            for band in ["U", "V", "J"]], bp_averaged_fluxes * u.erg / (u.s * (u.cm ** 2) * u.AA), u.Jy)
+        
+        self.UVJ_fluxes = {band: flux_Jy for band, flux_Jy in zip(["U", "V", "J"], bp_averaged_fluxes_Jy)}
+        self.UVJ_colours = {"U-V": -2.5 * np.log10(self.UVJ_fluxes["U"] / self.UVJ_fluxes["V"]), \
+                            "V-J": -2.5 * np.log10(self.UVJ_fluxes["V"] / self.UVJ_fluxes["J"])}
+
+# No need for this to be a class of its own
+class Galaxy_SED(SED_base):
+    
+    def __init__(self, wavs, mags, wav_units, mag_units):
+        super().__init__(wavs, mags, wav_units, mag_units)
+
     def calc_line_EW(self, line_name, plot = False): # ONLY WORKS FOR EMISSION LINES, NOT ABSORPTION AT THIS POINT
         wavs_AA = self.convert_wav_units(u.AA, update = True)
         flux_lambda = self.convert_mag_units(u.erg / (u.s * u.cm ** 2 * u.AA), update = False)
@@ -139,31 +167,8 @@ class SED:
             self.line_fluxes[line_name] = line_flux
             self.line_cont[line_name] = mean_cont
         return line_EW
-    
-    def calc_UVJ_colours(self, resolution = 1. * u.AA):
-        UVJ_filters = {
-        "U": {"lam_eff": 3_650. * u.AA, "lam_fwhm": 660. * u.AA},
-        "V": {"lam_eff": 5_510. * u.AA, "lam_fwhm": 880. * u.AA},
-        "J": {"lam_eff": 12_200. * u.AA, "lam_fwhm": 2130. * u.AA}
-        } # these are rest frame wavelengths
-    
-        bp_averaged_fluxes = np.zeros(3)
-        for i, band in enumerate(["U", "V", "J"]):
-            galfind_logger.info(f"Calculating {band} fluxes")
-            band_wavs = np.linspace((UVJ_filters[band]["lam_eff"] - UVJ_filters[band]["lam_fwhm"] / 2.), \
-                (UVJ_filters[band]["lam_eff"] + UVJ_filters[band]["lam_fwhm"] / 2.), \
-                int(np.round((UVJ_filters[band]["lam_fwhm"] / resolution).to(u.dimensionless_unscaled).value))) * u.AA
-            filter_profile = {"Wavelength": band_wavs, "Transmission": np.ones(len(band_wavs))}
-            bp_averaged_fluxes[i] = self.calc_bandpass_averaged_flux(filter_profile)
-        # convert bp_averaged_fluxes to Jy
-        bp_averaged_fluxes_Jy = funcs.convert_mag_units([UVJ_filters[band]["lam_eff"] \
-            for band in ["U", "V", "J"]], bp_averaged_fluxes * u.erg / (u.s * (u.cm ** 2) * u.AA), u.Jy)
-        
-        self.UVJ_fluxes = {band: flux_Jy for band, flux_Jy in zip(["U", "V", "J"], bp_averaged_fluxes_Jy)}
-        self.UVJ_colours = {"U-V": -2.5 * np.log10(self.UVJ_fluxes["U"] / self.UVJ_fluxes["V"]), \
-                            "V-J": -2.5 * np.log10(self.UVJ_fluxes["V"] / self.UVJ_fluxes["J"])}
 
-class SED_rest(SED):
+class Galaxy_SED_rest(Galaxy_SED):
     
     def __init__(self, wavs, mags, wav_units, mag_units, wav_range = [0, 10_000] * u.AA):
         try:
@@ -203,22 +208,22 @@ class SED_rest(SED):
         self.mock_phot = Mock_Photometry(instrument, bp_averaged_fluxes_Jy, depths, min_pc_err)
         return self.mock_phot
     
-class SED_obs(SED):
+class Galaxy_SED_obs(Galaxy_SED):
     
     def __init__(self, z, wavs, mags, wav_units, mag_units):
         self.z = z
         super().__init__(wavs, mags, wav_units, mag_units)
     
     @classmethod
-    def from_SED_rest(cls, z_int, SED_rest):
+    def from_Galaxy_SED_rest(cls, z_int, SED_rest):
         wav_obs = funcs.wav_rest_to_obs(SED_rest.wavs, z_int)
         mag_obs = funcs.convert_mag_units(SED_rest.wavs, SED_rest.mags, u.ABmag)
         return cls(z_int, wav_obs.value, mag_obs.value, SED_rest.wavs.unit, u.ABmag)
     
     def create_mock_phot(self, instrument, depths = [], min_pc_err = 10.):
-        return SED_rest.create_mock_phot(self, instrument, self.z, depths = depths, min_pc_err = min_pc_err)
+        return Galaxy_SED_rest.create_mock_phot(self, instrument, self.z, depths = depths, min_pc_err = min_pc_err)
     
-class Mock_SED_rest(SED_rest): #, Mock_SED):
+class Mock_Galaxy_SED_rest(Galaxy_SED_rest):
     
     def __init__(self, wavs, mags, wav_units, mag_units, template_name = None, meta = None):
         self.template_name = template_name
@@ -226,7 +231,7 @@ class Mock_SED_rest(SED_rest): #, Mock_SED):
         super().__init__(wavs, mags, wav_units, mag_units)
         
     @classmethod
-    def from_Mock_SED_obs(cls, mock_SED_obs, out_wav_units = u.AA, out_mag_units = u.ABmag, IGM = None):
+    def from_Mock_Galaxy_SED_obs(cls, mock_SED_obs, out_wav_units = u.AA, out_mag_units = u.ABmag, IGM = None):
         wavs = funcs.convert_wav_units(mock_SED_obs.wavs / (1 + mock_SED_obs.z), out_wav_units)
         mags = funcs.convert_mag_units(wavs, mock_SED_obs.mags, out_mag_units)
         # ensure IGM output is of the correct type
@@ -350,7 +355,7 @@ class Mock_SED_rest(SED_rest): #, Mock_SED):
             # add normalized line profile to spectrum
             self.mags += interp_line_profile * self.mags.unit #* emission_line.line_flux / line_flux
 
-class Mock_SED_obs(SED_obs):
+class Mock_Galaxy_SED_obs(Galaxy_SED_obs):
     
     def __init__(self, z, wavs, mags, wav_units, mag_units, template_name = None, IGM = IGM_attenuation.IGM(), meta = None):
         self.template_name = template_name
@@ -360,7 +365,7 @@ class Mock_SED_obs(SED_obs):
             self.attenuate_IGM(IGM)
     
     @classmethod
-    def from_Mock_SED_rest(cls, mock_SED_rest, z, out_wav_units = u.AA, out_mag_units = u.ABmag, IGM = IGM_attenuation.IGM()):
+    def from_Mock_Galaxy_SED_rest(cls, mock_SED_rest, z, out_wav_units = u.AA, out_mag_units = u.ABmag, IGM = IGM_attenuation.IGM()):
         mags = mock_SED_rest.convert_mag_units(out_mag_units)
         wavs = (mock_SED_rest.wavs * (1 + z)).to(out_wav_units)
         mock_SED_obs_obj = cls(z, wavs.value, mags.value, out_wav_units, out_mag_units, mock_SED_rest.template_name, IGM, meta = mock_SED_rest.meta)
@@ -370,7 +375,7 @@ class Mock_SED_obs(SED_obs):
     def power_law_from_beta_M_UV(cls, z, beta, M_UV, template_name = None, IGM = IGM_attenuation.IGM()):
         lum_distance = astropy_cosmo.luminosity_distance(z).to(u.pc)
         m_UV = M_UV - 2.5 * np.log10(1 + z) + 5 * np.log10(lum_distance.value / 10)
-        mock_SED_rest = Mock_SED_rest.power_law_from_beta_m_UV(beta, m_UV, template_name = template_name)
+        mock_SED_rest = Mock_Galaxy_SED_rest.power_law_from_beta_m_UV(beta, m_UV, template_name = template_name)
         obs_SED = cls.from_SED_rest(z, mock_SED_rest)
         obs_SED.attenuate_IGM(IGM)
         return obs_SED
@@ -396,7 +401,7 @@ class Mock_SED_obs(SED_obs):
             
     def calc_UV_slope(self, output_errs = False, method = "Calzetti+94"):
         # create rest frame mock SED object
-        mock_sed_rest = Mock_SED_rest.from_Mock_SED_obs(self)
+        mock_sed_rest = Mock_Galaxy_SED_rest.from_Mock_SED_obs(self)
         # calculate amplitude and beta of power law fit
         A, beta = mock_sed_rest.calc_UV_slope(output_errs = output_errs, method = method)
         return A, beta
@@ -467,12 +472,8 @@ class Mock_SED_template_set(ABC):
     
     def create_mock_phot(self, instrument):
         [sed.create_mock_phot(instrument) for sed in self.SED_arr]
-        
-    # @abstractmethod
-    # def calc_UV_slope():
-    #     pass
     
-class Mock_SED_rest_template_set(Mock_SED_template_set):
+class Mock_Galaxy_SED_rest_template_set(Mock_SED_template_set):
     
     def __init__(self, mock_SED_rest_arr):
         super().__init__(mock_SED_rest_arr)
@@ -487,7 +488,7 @@ class Mock_SED_rest_template_set(Mock_SED_template_set):
         # read in .txt file if it exists
         template_labels = open(f"{config['EAZY']['EAZY_DIR']}/{template_set}.txt", "r")
         for name in template_labels.readlines():
-            mock_SED_rest_arr.append(Mock_SED_rest.load_EAZY_in_template(m_UV, template_set, name.replace("\n", "")))
+            mock_SED_rest_arr.append(Mock_Galaxy_SED_rest.load_EAZY_in_template(m_UV, template_set, name.replace("\n", "")))
         template_labels.close()
         return cls(mock_SED_rest_arr)
     
@@ -497,7 +498,7 @@ class Mock_SED_rest_template_set(Mock_SED_template_set):
         yggdrasil_dir = f"/Users/user/Documents/PGR/yggdrasil_grids/{imf}_fcov_{str(fcov)}_SFR_{sfh}_Spectra"
         SED_filenames = glob.glob(f"{yggdrasil_dir}/*.ecsv")
         for name in SED_filenames:
-            mock_SED_rest_arr.append(Mock_SED_rest.load_Yggdrasil_popIII_in_template(imf, fcov, sfh, name.split("/")[-1]))
+            mock_SED_rest_arr.append(Mock_Galaxy_SED_rest.load_Yggdrasil_popIII_in_template(imf, fcov, sfh, name.split("/")[-1]))
         return cls(mock_SED_rest_arr)
     
     @classmethod
@@ -523,7 +524,7 @@ class Mock_SED_rest_template_set(Mock_SED_template_set):
             if load_spectrum:
                 spectrum = (np.array(spectra[f"col{i}"])) * bpass_Lsun / u.AA
                 spectrum_Jy = funcs.luminosity_to_flux(spectrum, rest_wavs, out_units = u.Jy)
-                mock_sed_rest = Mock_SED_rest(rest_wavs.value, spectrum_Jy.value, u.AA, u.Jy, \
+                mock_sed_rest = Mock_Galaxy_SED_rest(rest_wavs.value, spectrum_Jy.value, u.AA, u.Jy, \
                     template_name = bpass_name.replace(".dat", f"{age.value:.1f}Myr") , meta = {**meta, **{"age": age, "log_age_yr": np.log10(age.value) + 6.}})
                 mock_sed_rest.normalize_to_m_UV(26.)
                 mock_SED_rest_arr.append(mock_sed_rest)
@@ -532,16 +533,16 @@ class Mock_SED_rest_template_set(Mock_SED_template_set):
     def calc_mock_beta_phot(self, m_UV, template_set, instrument, depths, rest_UV_wav_lims = [1250., 3000.] * u.Angstrom):
         pass
 
-class Mock_SED_obs_template_set(Mock_SED_template_set):
+class Mock_Galaxy_SED_obs_template_set(Mock_SED_template_set):
     
     def __init__(self, mock_SED_obs_arr):
         super().__init__(mock_SED_obs_arr)
 
     @classmethod
-    def from_Mock_SED_rest_template_set(cls, Mock_SED_rest_template_set, z_arr):
+    def from_Mock_Galaxy_SED_rest_template_set(cls, Mock_SED_rest_template_set, z_arr):
         if type(z_arr) in [float, int]:
             z_arr = np.full(len(Mock_SED_rest_template_set), z_arr)
-        return cls([Mock_SED_obs.from_Mock_SED_rest(mock_sed_rest, z) for mock_sed_rest, z in zip(Mock_SED_rest_template_set, z_arr)])
+        return cls([Mock_Galaxy_SED_obs.from_Mock_Galaxy_SED_rest(mock_sed_rest, z) for mock_sed_rest, z in zip(Mock_SED_rest_template_set, z_arr)])
     
     def get_colours(self, colour_names):
         return [sed.get_colour(colour) for sed in self.SED_arr for colour in colour_names]
@@ -563,3 +564,45 @@ class Mock_SED_obs_template_set(Mock_SED_template_set):
             plt.savefig(f"{save_dir}/{colour_x_name}_vs_{colour_y_name}.png", dvi = 400)
         if show:
             plt.show()
+
+# %% Brown Dwarf SED templates
+
+class Brown_Dwarf_SED(SED_base):
+
+    def __init__(self, wavs, mags, wav_units, mag_units, properties):
+        super().__init__(wavs, mags, wav_units, mag_units, properties)
+
+    @classmethod
+    def load_from_ecsv(cls, ecsv_path):
+
+
+    @classmethod
+    def load_sonora_bobcat_template(cls, temp, log_g, metallicity, co_ratio):
+        if type(metallicity) != str:
+            assert type(metallicity) in [int, float, np.float32]
+            metallicity_to_str = {0.: "0.0", 0: "0.0", 0.5: "+0.5", -0.5: "-0.5"}
+            metallicity = metallicity_to_str[metallicity]
+        if log_g != 1000 or metallicity != "0.0":
+            pass
+        # extract path to csv
+
+
+class Brown_Dwarf_SED_template_set(Mock_SED_template_set):
+
+    def __init__(self, brown_dwarf_SED_obs_arr):
+        super().__init__(brown_dwarf_SED_obs_arr)
+
+    @classmethod
+    def load_templates_from_config(cls, templates):
+        pass
+
+    @classmethod
+    def load_sonora_bobcat_templates(cls, \
+            temp_arr = [200, 225, 250, 275, 300, 325, 350, 375, 400, \
+                425, 450, 475, 500, 525, 550, 575, 600, 650, 700, 750, \
+                800, 850, 900, 950, 1000, 1100, 1200, 1300, 1400, 1500, \
+                1600, 1700, 1800, 1900, 2000, 2100, 2200, 2300, 2400], \
+            log_g_arr = [10, 17, 31, 56, 100, 178, 316, 562, 1000, 1780, 3160], \
+            metallicity_arr = ["-0.5", "0.0", "+0.5"], co_ratio_arr = [0.5, 1.5]):
+        #cls([Brown_Dwarf_SED.load_brown_dwarf_template()])
+        pass
