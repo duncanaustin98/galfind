@@ -101,7 +101,7 @@ class Photometry:
 
     def plot_phot(self, ax, wav_units = u.AA, mag_units = u.Jy, plot_errs = {"x": True, "y": True}, \
             annotate = True, uplim_sigma = 2., auto_scale = True, \
-            errorbar_kwargs = {"ls": "", "marker": "o", "ms": 6., "zorder": 100., "path_effects": [pe.withStroke(linewidth = 3, foreground = "white")]}, \
+            errorbar_kwargs = {"ls": "", "marker": "o", "ms": 4., "zorder": 100., "path_effects": [pe.withStroke(linewidth = 2., foreground = "white")]}, \
             filled = True, colour = "black", label = "Photometry", return_extra = False):
 
         wavs_to_plot = funcs.convert_wav_units(self.wav, wav_units).value
@@ -112,7 +112,7 @@ class Photometry:
         else:
             # work out optimal size of error bar in terms of sigma
             if mag_units == u.ABmag:
-                uplim_sigma_arrow = 0.5
+                uplim_sigma_arrow = 1.5
             else:
                 uplim_sigma_arrow = {"power density/spectral flux density wav": 1.5, \
                     "ABmag/spectral flux density": 1.5, "spectral flux density": 1.5}[str(u.get_physical_type(mag_units))]
@@ -182,18 +182,18 @@ class Photometry:
             # auto-scale the y-axis based on plotting units
             if mag_units == u.ABmag:
                 if plot_errs["y"]:
-                    lower_ylim = np.nanmax(mags_to_plot - yerr[0]) + 0.25
-                    upper_ylim = np.nanmin(mags_to_plot + yerr[1]) - 0.75
+                    lower_ylim = np.nanmax(mags_to_plot + yerr[1]) + 0.25
+                    upper_ylim = np.nanmin(mags_to_plot - yerr[0]) - 0.75
                 else:
-                    lower_ylim = np.nanmax(mags_to_plot) + 0.25
-                    upper_ylim = np.nanmin(mags_to_plot) - 0.75
+                    lower_ylim = np.max(mags_to_plot) + 0.25
+                    upper_ylim = np.min(mags_to_plot) - 0.75
             else: # auto-scale flux units
                 if plot_errs["y"]:
                     lower_ylim = np.nanmin(mags_to_plot - yerr[0]) - 0.15
                     upper_ylim = np.nanmax(mags_to_plot + yerr[1]) + 0.35
                 else:
-                    lower_ylim = np.nanmin(mags_to_plot) - 0.15
-                    upper_ylim = np.nanmax(mags_to_plot) + 0.35
+                    lower_ylim = np.min(mags_to_plot) - 0.15
+                    upper_ylim = np.max(mags_to_plot) + 0.35
             ax.set_ylim(lower_ylim, upper_ylim)
 
         if mag_units == u.ABmag:

@@ -246,19 +246,18 @@ class Instrument:
     #     for band in self:
     #         band.load_band_filter_profile(band, from_SVO = from_SVO)
 
-    def plot_filter_profiles(self, ax, plot_bands = [], from_SVO = True, cmap_name = "Spectral_r", show = True, save = False):
-        cmap = sns.color_palette(cmap_name, len(plot_bands))
-        for i, band in enumerate(plot_bands):
-            if not band in self.band_names:
-                raise(Exception(f"{band} not in {self.name}!"))
-            else:
-                band.plot_filter_profile(ax, band, from_SVO = from_SVO, color = cmap[i])
-        ax.set_title(f"{self.name} filters")
-        ax.set_xlabel(r"$\lambda_{\mathrm{obs}} / \mathrm{\AA}$")
-        ax.set_ylabel("Transmission")
+    def plot_filter_profiles(self, ax, wav_units = u.um, from_SVO = True, \
+            cmap_name = "Spectral_r", annotate = True, show = True, save = False):
+        cmap = sns.color_palette(cmap_name, len(self))
+        for i, band in enumerate(self):
+            band.plot_filter_profile(ax, from_SVO = from_SVO, color = cmap[i])
+        if annotate:
+            ax.set_title(f"{self.name} filters")
+            ax.set_xlabel(r"$\lambda_{\mathrm{obs}}$ / " + funcs.unit_labels_dict[wav_units])
+            ax.set_ylabel("Transmission")
+            ax.set_ylim(0., np.max([trans for trans in band.trans for band in self]) + 0.1)
         if save:
-            print("Figure not saved!")
-            pass
+            plt.savefig(f"{self.name}_filter_profiles.png")
         if show:
             plt.show()
 

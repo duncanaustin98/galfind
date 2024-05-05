@@ -5,6 +5,7 @@ import astropy.units as u
 from astroquery.svo_fps import SvoFps
 
 from . import galfind_logger
+from . import useful_funcs_austind as funcs
 
 class Filter:
 
@@ -61,9 +62,12 @@ class Filter:
         output_prop["WavelengthLower50"] = output_prop["WavelengthCen"] - output_prop["FWHM"] / 2.
         return cls(facility, instrument, band, wav, trans, output_prop)
     
-    def plot_filter_profile(self, ax, band, from_SVO = True, color = "black"):
-        ax.fill_between(self.wav, 0., self.trans, color = color, alpha = 0.6)
-        ax.plot(self.wav, self.trans, color = "black", lw = 2) #cmap[np.where(self.bands == band)])
-        mid_wav = np.median(self.wav[self.trans > 1e-3])
-        ax.text(self.WavelengthCen, np.max(self.trans) + 0.03, band, ha = "center", fontsize = 8)
-        ax.grid(False)
+    #def crop_wav_range(self, lower_throughput, upper_throughput):
+    #    self.wavs = self.wavs[self.trans > 1e-1]
+    
+    def plot_filter_profile(self, ax, wav_units = u.um, from_SVO = True, color = "black"):
+        wavs = funcs.convert_wav_units(self.wav, wav_units).value
+        ax.fill_between(wavs, 0., self.trans, color = color, alpha = 0.6)
+        ax.plot(wavs, self.trans, color = "black", lw = 2) #cmap[np.where(self.bands == band)])
+        ax.text(funcs.convert_wav_units(self.WavelengthCen, wav_units).value, \
+            np.max(self.trans) + 0.03, self.band_name, ha = "center", fontsize = 8)

@@ -6,13 +6,18 @@ Created on Sun Oct 29 13:54:02 2023
 @author: u92876da
 """
 import matplotlib.pyplot as plt
+import astropy.units as u
+
 from galfind import Instrument, NIRCam, WFC3_IR, ACS_WFC
 
-instrument = NIRCam() #+ WFC3_IR() + ACS_WFC()
-plot_bands = ["f090W", "f115W", "f150W", "f200W", "f277W", "f356W", "f360M", "f410M", "f444W"]#["f090W", "f115W", "f150W", "f200W", "f277W", "f335M", "f356W", "f410M", "f444W"]
-#plot_bands = instrument.band_names
-fig, ax = plt.subplots()
-# still need to fix title naming system
-instrument.plot_filter_profiles(ax, plot_bands, save = True, show = False)
-ax.set_ylim(0., 0.6)
-plt.show()
+def main():
+    wav_units = u.um
+    plot_bands = ["F090W", "F115W", "F150W", "F200W", "F277W", "F356W", "F360M", "F410M", "F444W"]
+    excl_bands = [band_name for band_name in NIRCam().band_names if band_name not in plot_bands]
+    instrument = NIRCam(excl_bands = excl_bands) #+ WFC3_IR() + ACS_WFC()
+
+    fig, ax = plt.subplots()
+    instrument.plot_filter_profiles(ax, wav_units, save = True, show = False)
+
+if __name__ == "__main__":
+    main()
