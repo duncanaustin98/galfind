@@ -186,22 +186,6 @@ class SED_rest(SED):
             self.mags = mags
         return wavs, mags
     
-    def create_mock_phot(self, instrument, z, depths = [], min_pc_err = 10.):
-        if type(depths) == dict:
-           depths = [depth for (band, depth) in depths.items()]
-        if depths == []: # if depths not given, expect the galaxy to be very well detected
-            depths = [99. for band in instrument.band_names]
-        # convert self.mags to f_λ if needed
-        if self.mags.unit == u.ABmag:
-            self.mags = funcs.convert_mag_units(self.wavs, self.mags, u.erg / (u.s * (u.cm ** 2) * u.AA))
-        elif u.get_physical_type(self.mags.unit) != "power density/spectral flux density wav":
-            self.mags = funcs.convert_mag_units(self.wavs, self.mags, u.erg / (u.s * (u.cm ** 2) * u.AA))
-        bp_averaged_fluxes = [self.calc_bandpass_averaged_flux(band.wav / (1. + z), band.trans) for band in instrument] * u.erg / (u.s * (u.cm ** 2) * u.AA)
-        # convert bp_averaged_fluxes to Jy
-        band_wavs = np.array([band.WavelengthCen.value / (1. + z) for band in instrument]) * u.AA
-        bp_averaged_fluxes_Jy = funcs.convert_mag_units(band_wavs, bp_averaged_fluxes, u.Jy)
-        self.mock_phot = Mock_Photometry(instrument, bp_averaged_fluxes_Jy, depths, min_pc_err)
-        return self.mock_phot
     
 class SED_obs(SED):
     # should include mag errors here
@@ -216,7 +200,21 @@ class SED_obs(SED):
         return cls(z_int, wav_obs.value, mag_obs.value, SED_rest.wavs.unit, u.ABmag)
     
     def create_mock_phot(self, instrument, depths = [], min_pc_err = 10.):
-        return SED_rest.create_mock_phot(self, instrument, self.z, depths = depths, min_pc_err = min_pc_err)
+        if type(depths) == dict:
+           depths = [depth for (band, depth) in depths.items()]
+        if depths == []: # if depths not given, expect the galaxy to be very well detected
+            depths = [99. for band in instrument.band_names]
+        # convert self.mags to f_λ if needed
+        if self.mags.unit == u.ABmag:
+            self.mags = funcs.convert_mag_units(self.wavs, self.mags, u.erg / (u.s * (u.cm ** 2) * u.AA))
+        elif u.get_physical_type(self.mags.unit) != "power density/spectral flux density wav":
+            self.mags = funcs.convert_mag_units(self.wavs, self.mags, u.erg / (u.s * (u.cm ** 2) * u.AA))
+        bp_averaged_fluxes = [self.calc_bandpass_averaged_flux(band.wav, band.trans) for band in instrument] * u.erg / (u.s * (u.cm ** 2) * u.AA)
+        # convert bp_averaged_fluxes to Jy
+        band_wavs = np.array([band.WavelengthCen.value for band in instrument]) * u.AA
+        bp_averaged_fluxes_Jy = funcs.convert_mag_units(band_wavs, bp_averaged_fluxes, u.Jy)
+        self.mock_phot = Mock_Photometry(instrument, bp_averaged_fluxes_Jy, depths, min_pc_err)
+        return self.mock_phot
     
 class Mock_SED_rest(SED_rest): #, Mock_SED):
     
@@ -529,7 +527,7 @@ class Mock_SED_rest_template_set(Mock_SED_template_set):
                 mock_SED_rest_arr.append(mock_sed_rest)
         return cls(mock_SED_rest_arr)
 
-    def calc_mock_beta_phot(self, m_UV, template_set, instrument, depths, rest_UV_wav_lims = [1250., 3000.] * u.Angstrom):
+    def calc_mock_beta_phot(self, m_UV, template_set, instrument, depths):
         pass
 
 class Mock_SED_obs_template_set(Mock_SED_template_set):

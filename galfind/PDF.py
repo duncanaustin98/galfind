@@ -19,9 +19,12 @@ class PDF:
         return f"LOADED PDF FOR {self.property_name}"
 
     @classmethod
-    def from_1D_arr(cls, property_name, arr):
-        self.input_arr = arr
-        return NotImplementedError
+    def from_1D_arr(cls, property_name, arr, Nbins = 50):
+        p_x, x_bin_edges = np.histogram(arr, bins = Nbins, density = True)
+        x = 0.5 * (x_bin_edges[1:] + x_bin_edges[:-1]) 
+        PDF_obj = cls(property_name, x, p_x)
+        PDF_obj.input_arr = arr
+        return PDF_obj
     
     def draw_sample(self, size):
         # draw a sample of specified size from the PDF

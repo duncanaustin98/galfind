@@ -86,19 +86,16 @@ class Photometry:
     
     def scatter_phot(self, n_scatter = 1):
         assert self.flux_Jy.unit != u.ABmag, galfind_logger.critical(f"{self.flux_Jy.unit=} == 'ABmag'")
-        phot_matrix = np.random.normal(self.flux_Jy.value, self.flux_Jy_errs.value, n_scatter)
-        phot_obj_arr = [Photometry(self.instrument, phot_matrix[i], self.flux_Jy_errs.value, self.depths) for i in range(n_scatter)]
-        if n_scatter == 1:
-            return phot_obj_arr[0]
-        else:
-            return phot_obj_arr
+        phot_matrix = np.array([np.random.normal(flux, err, n_scatter) for flux, err in zip(self.flux_Jy.value, self.flux_Jy_errs.value)])
+        return [self.__class__(self.instrument, phot_matrix[:, i] * self.flux_Jy.unit, self.flux_Jy_errs, self.depths) for i in range(n_scatter)]
 
-    def crop_phot(self, indices):
+    def crop_phot(self, indices) -> None:
         indices = np.array(indices).astype(int)
         for index in reversed(indices):
-            self.instrument.remove_band(self.instrument[index])
+            self.instrument.remove_band(self.instrument[index].band_name)
         self.flux_Jy = np.delete(self.flux_Jy, indices)
         self.flux_Jy_errs = np.delete(self.flux_Jy_errs, indices)
+        self.depths = np.delete(self.depths, indices)
 
     def plot_phot(self, ax, wav_units = u.AA, mag_units = u.Jy, plot_errs = {"x": True, "y": True}, \
             annotate = True, uplim_sigma = 2., auto_scale = True, \

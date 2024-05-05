@@ -475,6 +475,7 @@ class Catalogue(Catalogue_Base):
             
     # Rest-frame UV property calculation functions - these are not independent of each other
     
+    # beta_phot tqdm bar not working appropriately!
     def calc_beta_phot(self, rest_UV_wav_lims, SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}):
         self.calc_SED_rest_property(Photometry_rest.calc_beta_phot, SED_fit_params, rest_UV_wav_lims)
         
@@ -502,7 +503,8 @@ class Catalogue(Catalogue_Base):
         self.calc_SED_rest_property(Photometry_rest.calc_SFR_UV_phot, SED_fit_params, \
             rest_UV_wav_lims, ref_wav, AUV_beta_conv_author_year, kappa_UV_conv_author_year)
     
-    def calc_rest_UV_properties(self, rest_UV_wav_lims, ref_wav, AUV_beta_conv_author_year, kappa_UV_conv_author_year, \
+    def calc_rest_UV_properties(self, rest_UV_wav_lims = [1_250., 3_000.] * u.AA, ref_wav = 1_500. * u.AA, \
+            AUV_beta_conv_author_year = "Meurer99", kappa_UV_conv_author_year = "MadauDickinson14", \
             SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}):
         self.calc_beta_phot(rest_UV_wav_lims, SED_fit_params)
         self.calc_AUV_from_beta_phot(rest_UV_wav_lims, AUV_beta_conv_author_year, SED_fit_params)
@@ -518,13 +520,13 @@ class Catalogue(Catalogue_Base):
     def calc_SED_rest_property(self, SED_rest_property_function, SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}, *args):
 
         key = SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)
-        property_name = SED_rest_property_function(self[0].SED_results[key].phot_rest, *args, update = False)[1]
+        property_name = SED_rest_property_function(self[0].phot.SED_results[key].phot_rest, *args, extract_property_name = True)
 
         if key not in self.SED_rest_properties.keys():
             self.SED_rest_properties[key] = []
         if property_name not in self.SED_rest_properties[key]:
             # perform calculation for each galaxy and update galaxies in self
-            [SED_rest_property_function(gal.SED_results[key].phot_rest, *args, update = True)[0] for gal in \
+            [SED_rest_property_function(gal.phot.SED_results[key].phot_rest, *args)[0] for gal in \
                 tqdm(self, total = len(self), desc = f"Calculating {property_name}")]
             # save the property name
             self.SED_rest_properties[key].append(property_name)
@@ -532,10 +534,16 @@ class Catalogue(Catalogue_Base):
         self._append_SED_rest_property_to_fits(property_name, key)
     
     def _append_SED_rest_property_to_fits(self, property_name, SED_fit_params_label):
-        self.open_cat(cropped = False)
+        fits_tab = self.open_cat(cropped = False)
+        SED_rest_property_tab = self.open_cat()
         # update elements
-        
-        pass
+        raise NotImplementedError
+        hdu_list = fits.HDUList()
+        [hdu_list.append(fits.BinTableHDU(data = tab.as_array(), header = fits.Header().update(tab.meta), name = name)) for (tab, name) in zip(combined_tabs, tab_names)]
+        hdu_list.writeto(out_path, overwrite = True)
+        print(f"Written table to {out_path}!")
+        return hdu_list
+
 
     def plot_SED_properties(self, x_name, y_name, SED_fit_params):
         x_arr = []

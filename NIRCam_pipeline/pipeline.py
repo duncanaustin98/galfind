@@ -30,7 +30,9 @@ def pipeline(surveys, version, instruments, aper_diams, min_flux_pc_errs, forced
             print(str(cat))
             #print(str(cat[0]))
 
-            cat.plot_phot_diagnostics()
+            cat.calc_rest_UV_properties()
+
+            #cat.plot_phot_diagnostics()
 
             #cat_copy = cat.select_unmasked_instrument(NIRCam())
             #cat_copy = cat.select_EPOCHS()

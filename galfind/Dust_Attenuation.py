@@ -163,6 +163,14 @@ class Calzetti00(Dust_Attenuation):
             k[mask_4] = interp1d(wavs[mask_3], k[mask_3], fill_value = "extrapolate")(wavs[mask_4])
         return k
 
+class Reddy15_dust_law(Dust_Attenuation):
+    
+    def __init__(self):
+        pass
+
+    def k_lambda(self):
+        pass
+
 
 class AUV_from_beta(ABC):
 
@@ -186,10 +194,10 @@ class Meurer99(AUV_from_beta):
 
 class Reddy15(AUV_from_beta):
     def __init__(self):
-        super().__init__(-4.48 / 1.84, 1. / 1.84, Reddy15(), 1_600. * u.AA)
+        super().__init__(-4.48 / 1.84, 1. / 1.84, Reddy15_dust_law(), 1_600. * u.AA)
 
 class Reddy18(AUV_from_beta):
-    def __init__(self, dust_law = Reddy15(), BPASS_age = 100 * u.Myr):
+    def __init__(self, dust_law = Reddy15_dust_law(), BPASS_age = 100 * u.Myr):
         assert dust_law.__class__.__name__ in ["SMC", "Calzetti00", "Reddy15"]
         assert BPASS_age in [100 * u.Myr, 300 * u.Myr]
         beta_int = {100 * u.Myr: -2.520, 300 * u.Myr: -2.616}

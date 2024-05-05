@@ -23,34 +23,34 @@ from abc import ABC
 from . import config, galfind_logger, astropy_cosmo, Photometry, PDF, PDF_nD
 from . import useful_funcs_austind as funcs
 from .Emission_lines import line_diagnostics
-from .Dust_Attenuation import AUV_from_beta
+from .Dust_Attenuation import AUV_from_beta, Meurer99
+from .decorators import ignore_warnings
 
 class beta_fit:
-    def __init__(self, z, instrument):
-        self.z = z
-        self.instrument = instrument
-        self.instrument.load_instrument_filter_profiles()
-        self.wavelength = {}
+    def __init__(self, z, bands):
+        self.band_names = [band.band_name for band in bands]
+        self.wavelength_rest = {}
         self.transmission = {}
         self.norm = {}
-        for band, band_name in zip(instrument, instrument.band_names):
-            self.wavelength[band_name] = np.array(band.wav.value / (1 + self.z))
-            self.transmission[band_name] = np.array(band.trans.value)
-            self.norm[band_name] = np.trapz(self.transmission[band_name], x = self.wavelength[band_name])
+        for band in bands:
+            self.wavelength_rest[band.band_name] = np.array(band.wav.value / (1. + z))
+            self.transmission[band.band_name] = np.array(band.trans)
+            self.norm[band.band_name] = np.trapz(self.transmission[band.band_name], x = self.wavelength_rest[band.band_name])
     def beta_slope_power_law_func_conv_filt(self, _, A, beta):
-        return np.array([np.trapz((10 ** A) * (self.wavelength[band_name] ** beta) * self.transmission[band_name], x = self.wavelength[band_name]) / self.norm[band_name] for band_name in self.instrument.band_names])
+        return np.array([np.trapz((10 ** A) * (self.wavelength_rest[band_name] ** beta) * self.transmission[band_name], \
+            x = self.wavelength_rest[band_name]) / self.norm[band_name] for band_name in self.band_names])
 
 def power_law_beta_func(wav, A, beta):
     return (10 ** A) * (wav ** beta)
 
 SFR_conversions = \
 {
-    "MadauDickinson2014": 1.15e-28 * u.solMass / u.yr
+    "MadauDickinson14": 1.15e-28 * u.solMass / u.yr
 }
 
 fesc_from_beta_conversions = \
 {
-    "Chisholm2022": lambda beta: np.random.normal(1.3, 0.6, len(beta)) * 10 ** (-4. - np.random.normal(1.22, 0.1, len(beta)) * beta)
+    "Chisholm22": lambda beta: np.random.normal(1.3, 0.6, len(beta)) * 10 ** (-4. - np.random.normal(1.22, 0.1, len(beta)) * beta)
 }
 
 class Photometry_rest(Photometry):
@@ -122,30 +122,38 @@ class Photometry_rest(Photometry):
             self._lum_distance = astropy_cosmo.luminosity_distance(self.z).to(u.pc)
             return self._lum_distance
     
-    @property
-    def rest_UV_band_index(self):
-        return np.abs(self.wav - 1500 * u.Angstrom).argmin()
+    # @property
+    # def rest_UV_band_index(self):
+    #     return np.abs(self.wav - 1500 * u.Angstrom).argmin()
     
-    @property
-    def rest_UV_band(self):
-        return self.instrument[self.rest_UV_band_index]
+    # @property
+    # def rest_UV_band(self):
+    #     return self.instrument[self.rest_UV_band_index]
     
-    @property
-    def rest_UV_band_flux_Jy(self):
-        return self.flux_Jy[self.rest_UV_band_index]
+    # @property
+    # def rest_UV_band_flux_Jy(self):
+    #     return self.flux_Jy[self.rest_UV_band_index]
     
+    def scatter_phot(self, n_scatter = 1):
+        assert self.flux_Jy.unit != u.ABmag, galfind_logger.critical(f"{self.flux_Jy.unit=} == 'ABmag'")
+        phot_matrix = np.array([np.random.normal(flux, err, n_scatter) for flux, err in zip(self.flux_Jy.value, self.flux_Jy_errs.value)])
+        return [self.__class__(self.instrument, phot_matrix[:, i] * self.flux_Jy.unit, self.flux_Jy_errs, self.depths, self.z) for i in range(n_scatter)]
+
     @staticmethod
     def rest_UV_wavs_name(rest_UV_wav_lims):
         assert u.get_physical_type(rest_UV_wav_lims == "length"), \
             galfind_logger.critical(f"{u.get_physical_type(rest_UV_wav_lims)=} != 'length'")
         rest_UV_wav_lims = [int(funcs.convert_wav_units(rest_UV_wav_lim * rest_UV_wav_lims.unit, u.AA).value) \
             for rest_UV_wav_lim in rest_UV_wav_lims.value]
-        return f"{str(rest_UV_wav_lims)}AA"
+        return f"{str(rest_UV_wav_lims).replace(' ', '')}AA"
 
     def get_rest_UV_phot(self, rest_UV_wav_lims):
         phot_rest_copy = deepcopy(self)
-        # crop object
-        raise NotImplementedError
+        rest_UV_wav_lims = funcs.convert_wav_units(rest_UV_wav_lims, u.AA)
+        crop_indices = [int(i) for i, band in enumerate(self.instrument) if \
+            funcs.convert_wav_units(band.WavelengthLower50, u.AA).value < rest_UV_wav_lims.value[0] * (1. + self.z) \
+            or funcs.convert_wav_units(band.WavelengthUpper50, u.AA).value > rest_UV_wav_lims.value[1] * (1. + self.z)]
+        phot_rest_copy.crop_phot(crop_indices)
         phot_rest_copy.UV_wav_range = phot_rest_copy.rest_UV_wavs_name(rest_UV_wav_lims)
         return phot_rest_copy
 
@@ -161,13 +169,14 @@ class Photometry_rest(Photometry):
     
     # Rest-frame UV property calculations
 
-    def calc_beta_phot(self, rest_UV_wav_lims, iters = 1_000, maxfev = 100_000, extract_property_name = False):
+    @ignore_warnings
+    def calc_beta_phot(self, rest_UV_wav_lims, iters = 10_000, maxfev = 100_000, extract_property_name = False):
         assert iters >= 1, galfind_logger.critical(f"{iters=} < 1 in Photometry_rest.calc_beta_phot !!!")
         assert type(iters) == int, galfind_logger.critical(f"{type(iters)=} != 'int' in Photometry_rest.calc_beta_phot !!!")
         # iters = 1 -> fit without errors, iters >> 1 -> fit with errors
         property_name = f"beta_PL_{self.rest_UV_wavs_name(rest_UV_wav_lims)}"
         if extract_property_name:
-            return self, property_name
+            return property_name
         # if already stored in object, do nothing
         if property_name in self.properties.keys() and property_name in self.property_errs.keys() \
                 and property_name in self.property_PDFs.keys():
@@ -176,22 +185,24 @@ class Photometry_rest(Photometry):
             if self.is_correctly_UV_cropped(rest_UV_wav_lims):
                 rest_UV_phot = self
             else:
-                rest_UV_phot = self.get_rest_UV_phot(rest_UV_wav_lims, incl_errs = True) # fluxes in erg * (s * AA * cm**2)**-1 units
+                rest_UV_phot = self.get_rest_UV_phot(rest_UV_wav_lims) # fluxes in erg * (s * AA * cm**2)**-1 units
             if iters == 1:
                 return curve_fit(beta_fit(rest_UV_phot.z, rest_UV_phot.instrument.bands).beta_slope_power_law_func_conv_filt, None, rest_UV_phot.flux_Jy, maxfev = maxfev)[0]
             else:
                 scattered_rest_UV_phot_arr = rest_UV_phot.scatter_phot(iters)
-                popt_arr = [scattered_rest_UV_phot.calc_beta_phot(rest_UV_wav_lims, iters = 1) for scattered_rest_UV_phot in scattered_rest_UV_phot_arr]
+                popt_arr = np.array([scattered_rest_UV_phot.calc_beta_phot(rest_UV_wav_lims, iters = 1) \
+                    for scattered_rest_UV_phot in scattered_rest_UV_phot_arr]) #tqdm(scattered_rest_UV_phot_arr, total = iters, desc = "Calculating beta_PL")])
                 # save amplitude and beta PDFs
-                breakpoint()
                 self._update_properties_and_PDFs(self.PL_amplitude_name(rest_UV_wav_lims), popt_arr[:, 0])
                 self._update_properties_and_PDFs(property_name, popt_arr[:, 1])
                 self.ampl_beta_joint_PDF = PDF_nD([self.property_PDFs[self.PL_amplitude_name(rest_UV_wav_lims)], self.property_PDFs[property_name]])
         return self, property_name
     
-    def fesc_from_beta_phot(self, rest_UV_wav_lims, conv_author_year):
+    def fesc_from_beta_phot(self, rest_UV_wav_lims, conv_author_year, extract_property_name = False):
         assert conv_author_year in fesc_from_beta_conversions.keys()
         property_name = f"fesc_{conv_author_year}_{self.rest_UV_wavs_name(rest_UV_wav_lims)}"
+        if extract_property_name:
+            return property_name
         # if already stored in object, do nothing
         if property_name in self.properties.keys() and property_name in self.property_errs.keys() \
                 and property_name in self.property_PDFs.keys():
@@ -205,10 +216,12 @@ class Photometry_rest(Photometry):
                 [self.property_PDFs[property_name].get_percentile(16.), self.property_PDFs[property_name].get_percentile(84.)]
         return self, property_name
     
-    def calc_AUV_from_beta_phot(self, rest_UV_wav_lims, conv_author_year):
+    def calc_AUV_from_beta_phot(self, rest_UV_wav_lims, conv_author_year, extract_property_name = False):
         conv_author_year_cls = globals()[conv_author_year]()
         assert issubclass(conv_author_year_cls, AUV_from_beta)
         property_name = f"AUV_phot_{conv_author_year}_{self.rest_UV_wavs_name(rest_UV_wav_lims)}"
+        if extract_property_name:
+            return property_name
         # if already stored in object, do nothing
         if property_name in self.properties.keys() and property_name in self.property_errs.keys() \
                 and property_name in self.property_PDFs.keys():
@@ -222,8 +235,10 @@ class Photometry_rest(Photometry):
                 [self.property_PDFs[property_name].get_percentile(16.), self.property_PDFs[property_name].get_percentile(84.)]
         return self, property_name
     
-    def calc_mUV_phot(self, rest_UV_wav_lims, ref_wav, top_hat_width = 100. * u.AA, resolution = 1. * u.AA):
+    def calc_mUV_phot(self, rest_UV_wav_lims, ref_wav, top_hat_width = 100. * u.AA, resolution = 1. * u.AA, extract_property_name = False):
         property_name = f"m_{ref_wav.to(u.AA).value:.0f}_{self.rest_UV_wavs_name(rest_UV_wav_lims)}"
+        if extract_property_name:
+            return property_name
         # if already stored in object, do nothing
         if property_name in self.properties.keys() and property_name in self.property_errs.keys() \
                 and property_name in self.property_PDFs.keys():
@@ -239,8 +254,10 @@ class Photometry_rest(Photometry):
             self._update_properties_and_PDFs(property_name, mUV_chain)
         return self, property_name
 
-    def calc_MUV_phot(self, rest_UV_wav_lims, ref_wav):
+    def calc_MUV_phot(self, rest_UV_wav_lims, ref_wav, extract_property_name = False):
         property_name = f"M_{ref_wav.to(u.AA).value:.0f}_{self.rest_UV_wavs_name(rest_UV_wav_lims)}"
+        if extract_property_name:
+            return property_name
         # if already stored in object, do nothing
         if property_name in self.properties.keys() and property_name in self.property_errs.keys() \
                 and property_name in self.property_PDFs.keys():
@@ -254,8 +271,10 @@ class Photometry_rest(Photometry):
                 [self.property_PDFs[property_name].get_percentile(16.), self.property_PDFs[property_name].get_percentile(84.)]
         return self, property_name
     
-    def calc_LUV_obs_phot(self, rest_UV_wav_lims, ref_wav):
+    def calc_LUV_obs_phot(self, rest_UV_wav_lims, ref_wav, extract_property_name = False):
         property_name = f"Lobs_{ref_wav.to(u.AA).value:.0f}_{self.rest_UV_wavs_name(rest_UV_wav_lims)}"
+        if extract_property_name:
+            return property_name
         # if already stored in object, do nothing
         if property_name in self.properties.keys() and property_name in self.property_errs.keys() \
                 and property_name in self.property_PDFs.keys():
@@ -269,8 +288,10 @@ class Photometry_rest(Photometry):
                 [self.property_PDFs[property_name].get_percentile(16.), self.property_PDFs[property_name].get_percentile(84.)]
         return self, property_name
 
-    def calc_LUV_int_phot(self, rest_UV_wav_lims, ref_wav, AUV_beta_conv_author_year):
+    def calc_LUV_int_phot(self, rest_UV_wav_lims, ref_wav, AUV_beta_conv_author_year, extract_property_name = False):
         property_name = f"Lint_{ref_wav.to(u.AA).value:.0f}_{AUV_beta_conv_author_year}_{self.rest_UV_wavs_name(rest_UV_wav_lims)}"
+        if extract_property_name:
+            return property_name
         # if already stored in object, do nothing
         if property_name in self.properties.keys() and property_name in self.property_errs.keys() \
                 and property_name in self.property_PDFs.keys():
@@ -285,9 +306,11 @@ class Photometry_rest(Photometry):
                 [self.property_PDFs[property_name].get_percentile(16.), self.property_PDFs[property_name].get_percentile(84.)]
         return self, property_name
 
-    def calc_SFR_UV_phot(self, rest_UV_wav_lims, ref_wav, AUV_beta_conv_author_year, kappa_UV_conv_author_year):
+    def calc_SFR_UV_phot(self, rest_UV_wav_lims, ref_wav, AUV_beta_conv_author_year, kappa_UV_conv_author_year, extract_property_name = False):
         assert kappa_UV_conv_author_year in SFR_conversions.keys()
         property_name = f"SFR_{ref_wav.to(u.AA).value:.0f}_{AUV_beta_conv_author_year}_{kappa_UV_conv_author_year}_{self.rest_UV_wavs_name(rest_UV_wav_lims)}"
+        if extract_property_name:
+            return property_name
         # if already stored in object, do nothing
         if property_name in self.properties.keys() and property_name in self.property_errs.keys() \
                 and property_name in self.property_PDFs.keys():
@@ -306,7 +329,7 @@ class Photometry_rest(Photometry):
         self.properties[property_name] = np.median(property_vals)
         self.property_errs[property_name] = np.percentile(property_vals, (16., 84.))
         # construct PDF from property_vals chain
-        self.property_PDFs[property_name] = PDF.from_1D_arr(property_vals)
+        self.property_PDFs[property_name] = PDF.from_1D_arr(property_name, property_vals)
         
     # def plot(self, save_dir, ID, plot_fit = True, iters = 10_000, save = True, show = False, n_interp = 100, conv_filt = False):
     #     self.make_rest_UV_phot()
