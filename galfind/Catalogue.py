@@ -363,7 +363,7 @@ class Catalogue(Catalogue_Base):
         if not selection_name in self.selection_cols:
             assert(all(getattr(self, selection_name) == True))
             full_cat = self.open_cat()
-            selection_cat = Table({"ID_temp": getattr(self, "ID"), selection_name: np.full(len(self), True)})
+            selection_cat = Table({"ID_temp": self.ID, selection_name: np.full(len(self), True)})
             output_cat = join(full_cat, selection_cat, keys_left = "NUMBER", keys_right = "ID_temp", join_type = "outer")
             output_cat.remove_column("ID_temp")
             # fill unselected columns with False rather than leaving as masked post-join
@@ -391,9 +391,9 @@ class Catalogue(Catalogue_Base):
             SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}):
         self.calc_SED_rest_property(Photometry_rest.calc_fesc_from_beta_phot, SED_fit_params, rest_UV_wav_lims, conv_author_year)
 
-    def calc_AUV_from_beta_phot(self, rest_UV_wav_lims = [1_250., 3_000.] * u.AA, conv_author_year = "Meurer99", \
+    def calc_AUV_from_beta_phot(self, rest_UV_wav_lims = [1_250., 3_000.] * u.AA, ref_wav = 1_500. * u.AA, conv_author_year = "Meurer99", \
             SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}):
-        self.calc_SED_rest_property(Photometry_rest.calc_AUV_from_beta_phot, SED_fit_params, rest_UV_wav_lims, conv_author_year)
+        self.calc_SED_rest_property(Photometry_rest.calc_AUV_from_beta_phot, SED_fit_params, rest_UV_wav_lims, ref_wav, conv_author_year)
 
     def calc_mUV_phot(self, rest_UV_wav_lims = [1_250., 3_000.] * u.AA, ref_wav = 1_500. * u.AA, \
             SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}):
@@ -409,7 +409,7 @@ class Catalogue(Catalogue_Base):
     
     def calc_LUV_int_phot(self, rest_UV_wav_lims = [1_250., 3_000.] * u.AA, ref_wav = 1_500. * u.AA, \
             AUV_beta_conv_author_year = "Meurer99", SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}):
-        self.calc_SED_rest_property(Photometry_rest.calc_LUV_int_phot, SED_fit_params, rest_UV_wav_lims, ref_wav)
+        self.calc_SED_rest_property(Photometry_rest.calc_LUV_int_phot, SED_fit_params, rest_UV_wav_lims, ref_wav, AUV_beta_conv_author_year)
     
     def calc_SFR_UV_phot(self, rest_UV_wav_lims = [1_250., 3_000.] * u.AA, ref_wav = 1_500. * u.AA, \
             AUV_beta_conv_author_year = "Meurer99", kappa_UV_conv_author_year = "MadauDickinson14", \
@@ -421,7 +421,7 @@ class Catalogue(Catalogue_Base):
             AUV_beta_conv_author_year = "Meurer99", kappa_UV_conv_author_year = "MadauDickinson14", \
             SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}):
         self.calc_beta_phot(rest_UV_wav_lims, SED_fit_params)
-        self.calc_AUV_from_beta_phot(rest_UV_wav_lims, AUV_beta_conv_author_year, SED_fit_params)
+        self.calc_AUV_from_beta_phot(rest_UV_wav_lims, ref_wav, AUV_beta_conv_author_year, SED_fit_params)
         self.calc_mUV_phot(rest_UV_wav_lims, ref_wav, SED_fit_params)
         self.calc_MUV_phot(rest_UV_wav_lims, ref_wav, SED_fit_params)
         self.calc_LUV_obs_phot(rest_UV_wav_lims, ref_wav, SED_fit_params)
@@ -456,19 +456,28 @@ class Catalogue(Catalogue_Base):
     
     def _append_SED_rest_property_to_fits(self, property_name, SED_fit_params_label):
         fits_tab = self.open_cat(cropped = False)
-        SED_rest_property_tab = self.open_cat(cropped = False, hdu = SED_fit_params_label)
+        #SED_rest_property_tab = self.open_cat(cropped = False, hdu = SED_fit_params_label)
+        SED_rest_property_tab = Table.read(f"{self.cat_path.replace('.fits', '')}_test.fits", hdu = SED_fit_params_label)
+        # if the table does not exist, make the table from scratch
         if type(SED_rest_property_tab) == type(None):
-            # make this table from scratch
             properties = self.__getattr__(property_name, phot_type = "rest", property_type = "vals")
             property_errs = self.__getattr__(property_name, phot_type = "rest", property_type = "errs")
-            new_SED_rest_property_tab = Table({self.cat_creator.ID_label: self.ID, property_name: properties, \
+            out_tab = Table({self.cat_creator.ID_label: self.ID, property_name: properties, \
                 f"{property_name}_l1": property_errs[:, 0], f"{property_name}_u1": property_errs[:, 1]})
-            new_SED_rest_property_tab.meta = {f"HIERARCH {property_name}_{'+'.join(self.crops)}": True}
-            # should be more general than this
-            self.write_cat([fits_tab, new_SED_rest_property_tab], ["OBJECTS", SED_fit_params_label])
-            return
-        # update elements
-        raise NotImplementedError
+            out_tab.meta = {f"HIERARCH {property_name}_{'+'.join(self.crops)}": True}
+        # else if these properties have not already been calculated for this selection
+        elif f"{property_name}_{'+'.join(self.crops)}" not in SED_rest_property_tab.meta.keys():
+            properties = self.__getattr__(property_name, phot_type = "rest", property_type = "vals")
+            property_errs = self.__getattr__(property_name, phot_type = "rest", property_type = "errs")
+            new_SED_rest_property_tab = Table({f"{self.cat_creator.ID_label}_temp": self.ID, property_name: properties, \
+                f"{property_name}_l1": property_errs[:, 0], f"{property_name}_u1": property_errs[:, 1]})
+            out_tab = join(SED_rest_property_tab, new_SED_rest_property_tab, keys_left = \
+                self.cat_creator.ID_label, keys_right = f"{self.cat_creator.ID_label}_temp", join_type = "outer")
+            out_tab.remove_column(f"{self.cat_creator.ID_label}_temp")
+        else:
+            galfind_logger.info(f"{property_name}_{'+'.join(self.crops)} already calculated!")
+            return None
+        return self.write_cat([fits_tab, out_tab], ["OBJECTS", SED_fit_params_label])
 
     def plot_SED_properties(self, x_name, y_name, SED_fit_params):
         x_arr = []

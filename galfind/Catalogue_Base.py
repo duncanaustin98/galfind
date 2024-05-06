@@ -100,6 +100,7 @@ class Catalogue_Base:
         return self.gals[index]
     
     def __getattr__(self, name, SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}, phot_type = "obs", property_type = "vals"): # only acts on attributes that don't already exist
+        #breakpoint()
         if name in self[0].__dict__:
             return np.array([getattr(gal, name) for gal in self])
         elif name.upper() == "RA":
@@ -121,9 +122,9 @@ class Catalogue_Base:
         elif phot_type == "rest" and name in self[0].phot.SED_results[SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)].phot_rest.__dict__:
             return np.array([getattr(gal.phot.SED_results[SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)].phot_rest, name) for gal in self])
         elif phot_type == "rest" and property_type == "vals" and name in self[0].phot.SED_results[SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)].phot_rest.properties.keys():
-            return np.array([getattr(gal.phot.SED_results[SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)].phot_rest, "properties")[name] for gal in self])
+            return np.array([getattr(gal.phot.SED_results[SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)].phot_rest, "properties")[name].value for gal in self])
         elif phot_type == "rest" and property_type == "errs" and name in self[0].phot.SED_results[SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)].phot_rest.property_errs.keys():
-            return np.array([getattr(gal.phot.SED_results[SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)].phot_rest, "property_errs")[name] for gal in self])
+            return np.array([getattr(gal.phot.SED_results[SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)].phot_rest, "property_errs")[name].value for gal in self])
         else:
             galfind_logger.critical(f"Galaxies do not have attribute = {name}!")
     
@@ -362,4 +363,4 @@ class Catalogue_Base:
         [hdu_list.append(fits.BinTableHDU(data = tab.as_array(), header = \
             fits.Header(tab.meta), name = name)) for (tab, name) in zip(tab_arr, tab_names)]
         hdu_list.writeto(f"{self.cat_path.replace('.fits', '')}_test.fits", overwrite = True)
-        galfind_logger.info(f"Written table to {self.cat_path.replace('.fits', '')}_test.fits!")
+        galfind_logger.info(f"Writing table to {self.cat_path.replace('.fits', '')}_test.fits!")

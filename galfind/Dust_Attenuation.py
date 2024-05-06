@@ -182,7 +182,7 @@ class AUV_from_beta(ABC):
     
     def __call__(self, beta):
         # beta = beta_int + slope * A_UV
-        return (beta - self.beta_int) / self.slope
+        return ((beta - self.beta_int) / self.slope).value * u.ABmag
     
     def change_ref_wav(self, ref_wav):
         if not ref_wav == self.ref_wav:

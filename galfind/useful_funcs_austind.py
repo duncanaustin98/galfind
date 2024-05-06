@@ -248,11 +248,8 @@ def flux_to_luminosity(flux, wavs, z = None, cosmo = astropy_cosmo, out_units = 
     return (4 * np.pi * flux * lum_distance ** 2 / (1 + z)).to(out_units)
         
 def dust_correct(lum, dust_mag):
-    if dust_mag > 0:
-        return lum * (10 ** (dust_mag / 2.5))
-    else:
-        return lum
-
+    return [lum_i * (10 ** (dust_mag_i / 2.5)) if dust_mag_i > 0. else lum_i \
+        for lum_i, dust_mag_i in zip(lum.value, dust_mag.value)] * lum.unit
 
 # unit labelling
 
