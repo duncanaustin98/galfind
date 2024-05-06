@@ -30,7 +30,7 @@ def pipeline(surveys, version, instruments, aper_diams, min_flux_pc_errs, forced
             print(str(cat))
             #print(str(cat[0]))
 
-            cat.calc_beta_phot()
+            cat.calc_rest_UV_properties()
 
             #cat.plot_phot_diagnostics()
 

@@ -170,7 +170,7 @@ class Photometry_rest(Photometry):
     # Rest-frame UV property calculations
 
     @ignore_warnings
-    def calc_beta_phot(self, rest_UV_wav_lims, iters = 100, maxfev = 100_000, extract_property_name = False):
+    def calc_beta_phot(self, rest_UV_wav_lims, iters = 10, maxfev = 100_000, extract_property_name = False):
         assert iters >= 1, galfind_logger.critical(f"{iters=} < 1 in Photometry_rest.calc_beta_phot !!!")
         assert type(iters) == int, galfind_logger.critical(f"{type(iters)=} != 'int' in Photometry_rest.calc_beta_phot !!!")
         # iters = 1 -> fit without errors, iters >> 1 -> fit with errors
@@ -220,7 +220,7 @@ class Photometry_rest(Photometry):
         return self, property_name
     
     def calc_AUV_from_beta_phot(self, rest_UV_wav_lims, conv_author_year, extract_property_name = False):
-        conv_author_year_cls = globals()[conv_author_year]()
+        conv_author_year_cls = globals()[conv_author_year]
         assert issubclass(conv_author_year_cls, AUV_from_beta)
         property_name = f"AUV_phot_{conv_author_year}_{self.rest_UV_wavs_name(rest_UV_wav_lims)}"
         if extract_property_name:
@@ -232,7 +232,7 @@ class Photometry_rest(Photometry):
         else: # calculate AUV in the relevant rest-frame UV range
             beta_property_name = self.calc_beta_phot(rest_UV_wav_lims)[1]
             # update PDF
-            self.property_PDFs[property_name] = self.property_PDFs[beta_property_name].manipulate_PDF(conv_author_year_cls)
+            self.property_PDFs[property_name] = self.property_PDFs[beta_property_name].manipulate_PDF(property_name, conv_author_year_cls())
             self.properties[property_name] = self.property_PDFs[property_name].get_percentile(50.)
             self.property_errs[property_name] = \
                 [self.property_PDFs[property_name].get_percentile(16.), self.property_PDFs[property_name].get_percentile(84.)]
@@ -248,12 +248,13 @@ class Photometry_rest(Photometry):
             galfind_logger.debug(f"{property_name=} already calculated!")
         else: # calculate mUV in the relevant rest-frame UV range
             self.calc_beta_phot(rest_UV_wav_lims)
-            rest_wavelengths = np.linspace(ref_wav - top_hat_width / 2, ref_wav + top_hat_width / 2, \
-                int(np.round((top_hat_width / resolution).to(u.dimensionless_unscaled).value, 0)))
-            power_law_chains = self.ampl_beta_joint_PDF(power_law_beta_func, rest_wavelengths)
+            rest_wavelengths = funcs.convert_wav_units(np.linspace(ref_wav - top_hat_width / 2, ref_wav + top_hat_width / 2, \
+                int(np.round((top_hat_width / resolution).to(u.dimensionless_unscaled).value, 0))), u.AA)
+            power_law_chains = self.ampl_beta_joint_PDF(power_law_beta_func, rest_wavelengths.value)
             # take the median of each chain to form a new chain
-            mUV_chain = [np.median(funcs.convert_mag_units(rest_wavelengths * u.AA, \
-                chain * u.erg / (u.s * u.AA * u.cm ** 2), u.ABmag)) for chain in power_law_chains]
+            breakpoint()
+            mUV_chain = [np.median(funcs.convert_mag_units(rest_wavelengths, \
+                chain * u.erg / (u.s * u.AA * u.cm ** 2), u.ABmag).value) for chain in power_law_chains]
             self._update_properties_and_PDFs(property_name, mUV_chain)
         return self, property_name
 
@@ -330,7 +331,8 @@ class Photometry_rest(Photometry):
     # Function to update rest-frame UV properties and PDFs
     def _update_properties_and_PDFs(self, property_name, property_vals):
         self.properties[property_name] = np.median(property_vals)
-        self.property_errs[property_name] = np.percentile(property_vals, (16., 84.))
+        self.property_errs[property_name] = [self.properties[property_name] - np.percentile(property_vals, 16.), \
+            np.percentile(property_vals, 84.) - self.properties[property_name]]
         # construct PDF from property_vals chain
         self.property_PDFs[property_name] = PDF.from_1D_arr(property_name, property_vals)
         

@@ -23,7 +23,24 @@ class PDF:
         self.p_x = p_x / np.trapz(p_x, x)
 
     def __str__(self):
-        return f"LOADED PDF FOR {self.property_name}"
+        line_sep = "*" * 40 + "\n"
+        band_sep = "-" * 10 + "\n"
+        output_str = ""
+        output_str += line_sep
+        output_str += f"PDF PROPERTY: {self.property_name}; UNIT: {self.unit:latex}\n"
+        output_str += band_sep
+        output_str += f"MEDIAN = {self.get_percentile(50.):.3f}" + r"$_{%.3f}^{%.3f}$" \
+            % (self.get_percentile(50.) - self.get_percentile(16.), self.get_percentile(84.) - self.get_percentile(50.))
+        for i, peak in enumerate(self.peaks):
+            output_str += f"{funcs.ordinal(i + 1)} PEAK: {peak:.3f}\n"
+        output_str += line_sep
+        return output_str
+    
+    def __len__(self):
+        if hasattr(self, "input_arr"):
+            return len(self.input_arr)
+        else:
+            return None
 
     @classmethod
     def from_1D_arr(cls, property_name, arr, Nbins = 50):
@@ -78,21 +95,22 @@ class PDF:
             self.percentiles[f"{percentile:.1f}"] = float(self.x[np.argmin(np.abs(cdf - percentile / 100.))])
             return self.percentiles[f"{percentile:.1f}"]
 
-    def manipulate_PDF(self, update_func, size = 10_000, *args):
+    def manipulate_PDF(self, new_property_name, update_func, size = 10_000, *args):
         if hasattr(self, "input_arr"):
             sample = self.input_arr
         else:
             sample = self.draw_sample(size)
         updated_sample = [update_func(val, *args) for val in sample]
-        return self.__class__.from_1D_arr(updated_sample)
+        return self.__class__.from_1D_arr(new_property_name, updated_sample)
     
     def save_PDF(self, save_path, sample_size = 10_000):
         if hasattr(self, "input_arr"):
             save_arr = self.input_arr
         else:
             save_arr = self.draw_sample(sample_size)
-        meta = {"units": self.unit, "size": len(save_arr), "median": np.median(save_arr), \
-            "l1_err": np.median(save_arr) - np.percentile(save_arr, 16.), "u1_err": np.percentile(save_arr, 84.) - np.median(save_arr)}
+        meta = {"units": self.unit, "size": len(save_arr), "median": np.round(np.median(save_arr), 3), \
+            "l1_err": np.round(np.median(save_arr) - np.percentile(save_arr, 16.), 3), \
+            "u1_err": np.round(np.percentile(save_arr, 84.) - np.median(save_arr), 3)}
         save_tab = Table({self.property_name: save_arr})
         save_tab.meta = meta
         save_tab.write(save_path, overwrite = True)
@@ -214,14 +232,16 @@ class PDF_nD:
         assert len(property_names) == matrix.shape[0] # 0 or 1 here, not sure
         ordered_PDFs = [PDF.from_1D_arr(property_name, row) for property_name, row in zip(property_names, matrix)]
         return cls(ordered_PDFs)
+    
+    def __len__(self):
+        return len(self.PDFs[0])
 
     def __call__(self, func, independent_var, output_type = "chains"):
         # need to provide additional assertions here too
         # assert that the dimensions of PDF_nD must be the same as the input arguments - 1 of func
-        breakpoint()
-        chains = [func(independent_var, vals) for vals in np.array([PDF_obj.input_arr for PDF_obj in self.PDFs]).T]
+        chains = np.array([func(independent_var, *vals) for vals in np.array([PDF_obj.input_arr for PDF_obj in self.PDFs]).T])
         # function output should be of the same length as the independent variable
-        assert len(chains) == len(independent_var)
+        assert chains.shape == (len(self), len(independent_var))
         assert output_type in ["chains", "percentiles"]
         if output_type == "chains":
             return chains

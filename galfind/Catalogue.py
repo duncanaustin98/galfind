@@ -267,97 +267,6 @@ class Catalogue(Catalogue_Base):
             # create symlink to selection folder for diagnostic plots
             [os.symlink(out_path, selection_path.replace('gal_index', str(gal.ID))) for gal, out_path in zip(self, out_paths)]
 
-
-    # def make_UV_fit_cat(self, code_name = "EAZY", templates = "fsps_larson", UV_PDF_path = config["RestUVProperties"]["UV_PDF_PATH"], col_names = ["Beta", "flux_lambda_1500", "flux_Jy_1500", "M_UV", "A_UV", "L_obs", "L_int", "SFR"], \
-    #                     join_tables = True, skip_IDs = [], rest_UV_wavs_arr = [[1250., 3000.] * u.AA], conv_filt_arr = [True, False], overwrite = True):
-    #     UV_cat_name = f"{funcs.split_dir_name(self.cat_path, 'dir')}/UV_properties_{code_name}_{templates}_{str(self.cat_creator.min_flux_pc_err)}pc.fits" # _test
-    #     if not Path(UV_cat_name).is_file() or overwrite:
-    #         if not config["DEFAULT"].getboolean("RUN"):
-    #             galfind_logger.critical("RUN = YES, so not making UV corrected cat. Returning Error.")
-    #             raise Exception(f"RUN = YES, and combination of {self.survey} {self.version} or {self.instrument.name} has not previously been run.")
-
-    #         cat_data = []
-    #         #print("Bands here: ", self[1].phot.instrument.band_names)
-    #         for i, gal in tqdm(enumerate(self), total = len(self), desc = "Making UV fit catalogue"):
-    #             n_bands = []
-    #             gal_copy = gal #copy.deepcopy(gal)
-    #             gal_data = np.array([gal_copy.ID])
-    #             conv_filt_names = {True: "conv_filt_PL", False: "pure_PL"}
-    #             for conv_filt in conv_filt_arr:
-    #                 conv_filt_name = conv_filt_names[conv_filt]
-    #                 for rest_UV_wavs in rest_UV_wavs_arr:
-    #                     UV_PDF_path_loc = f"{UV_PDF_path}/{Photometry_rest.rest_UV_wavs_name(rest_UV_wavs)}/{conv_filt_name}"
-    #                     os.makedirs(UV_PDF_path_loc, exist_ok = True) # not sure if this is done later or not
-    #                     if gal.ID in skip_IDs:
-    #                         for name in col_names:
-    #                             gal_data = np.append(gal_data, funcs.percentiles_from_PDF([-99.]))
-    #                         # append n_bands
-    #                         n_bands.append(-99.)
-    #                     else:
-    #                         # path = f"{config['DEFAULT']['GALFIND_WORK']}/UV_PDFs/{self.data.version}/{self.data.instrument.name}/{self.survey}/{code_name}+{str(self.cat_creator.min_flux_pc_err)}pc/{templates}/Amplitude/{gal_copy.ID}.txt"
-    #                         # #print(path)
-    #                         # if not Path(path).is_file():
-    #                         #print(gal.phot_obs.instrument.band_names)
-    #                         for name in ["Amplitude", "Beta"]:
-    #                             if name == "Beta":
-    #                                 plot = True
-    #                             else:
-    #                                 plot = False
-    #                             #raise(Exception("Failing try/except here!"))
-    #                             try:
-    #                                 #gal.phot.SED_results[code_name][templates].phot_rest[Photometry_rest.rest_UV_wavs_name(rest_UV_wavs)]
-    #                                 gal.phot.SED_results[code_name][templates].phot_rest[Photometry_rest.rest_UV_wavs_name(rest_UV_wavs)] \
-    #                                     .open_UV_fit_PDF(UV_PDF_path_loc, name, gal_copy.ID, UV_ext_src_corr = 1., conv_filt = conv_filt, plot = plot)
-    #                                     # UV_ext_src_corr = gal_copy.phot.SED_results[code_name][templates].ext_src_corrs["UV"]
-    #                             except Exception as e:
-    #                                 print(f"Fitting not performed for {gal.ID}. Error code: {e}")
-    #                                 print(traceback.format_exc())
-    #                                 break
-    #                         for name in col_names:
-    #                             #print(f"{gal.ID}: {gal.phot_rest.phot_obs.instrument.band_names}")
-    #                             try:
-    #                                 gal_data = np.append(gal_data, funcs.percentiles_from_PDF(gal.phot.SED_results[code_name][templates].\
-    #                                         phot_rest[Photometry_rest.rest_UV_wavs_name(rest_UV_wavs)].open_UV_fit_PDF(UV_PDF_path_loc, name, gal_copy.ID, 1., conv_filt = conv_filt, plot = plot)))
-    #                                 # gal_copy.phot.SED_results[code_name][templates].ext_src_corrs["UV"]
-    #                             except Exception as e:
-    #                                 print(f"EXCEPT ID = {gal.ID}. Error code: {e}")
-    #                                 print(traceback.format_exc())
-    #                                 gal_data = np.append(gal_data, funcs.percentiles_from_PDF([-99.]))
-    #                         try:
-    #                             if not hasattr(gal.phot.SED_results[code_name][templates].phot_rest[Photometry_rest.rest_UV_wavs_name(rest_UV_wavs)], "rest_UV_phot"):
-    #                                 gal.phot.SED_results[code_name][templates].phot_rest[Photometry_rest.rest_UV_wavs_name(rest_UV_wavs)].make_rest_UV_phot()
-    #                             n_bands.append(int(len(gal.phot.SED_results[code_name][templates].phot_rest[Photometry_rest.rest_UV_wavs_name(rest_UV_wavs)].rest_UV_phot.flux_Jy)))
-    #                         except Exception as e:
-    #                             print(f"EXCEPT ID = {gal.ID}. n_bands=0 error. Error code: {e}")
-    #                             print(traceback.format_exc())
-    #                             n_bands.append(0.)
-                        
-    #             gal_data = np.concatenate((np.array(gal_data).flatten(), np.array(n_bands)))
-    #             if i == 0: # if the first column
-    #                 cat_data = gal_data
-    #             else:
-    #                 cat_data = np.vstack([cat_data, gal_data])
-    
-    #             UV_col_names = np.array([[f"{name}_{Photometry_rest.rest_UV_wavs_name(rest_UV_wavs.value)}_{conv_filt_names[conv_filt]}", f"{name}_l1_{Photometry_rest.rest_UV_wavs_name(rest_UV_wavs.value)}_{conv_filt_names[conv_filt]}", \
-    #                                       f"{name}_u1_{Photometry_rest.rest_UV_wavs_name(rest_UV_wavs.value)}_{conv_filt_names[conv_filt]}"] for conv_filt in conv_filt_arr for rest_UV_wavs in rest_UV_wavs_arr for name in col_names]).flatten()
-    #             #print(UV_col_names)
-    #             fits_col_names = np.concatenate((np.array(["ID"]), UV_col_names, np.array([f"n_bands_{Photometry_rest.rest_UV_wavs_name(rest_UV_wavs.value)}_{conv_filt_names[conv_filt]}" for conv_filt in conv_filt_arr for rest_UV_wavs in rest_UV_wavs_arr])))
-    #             funcs.make_dirs(self.cat_path)
-    #             UV_tab = Table(cat_data, names = fits_col_names)
-    #             UV_tab.write(UV_cat_name, format = "fits", overwrite = True)
-    #             self.UV_tab = UV_tab
-    #             # print(f"Writing UV table to {UV_cat_name}")
-    #     else:
-    #         self.UV_tab = Table.read(UV_cat_name, character_as_bytes = False)
-    #         print(f"Opening table: {UV_cat_name}")
-        
-    #     if join_tables:
-    #         self.join_UV_fit_cat()
-    #         # set relevant properties in the galaxies contained within the catalogues
-    #         #[setattr(gal, ["properties", name], UV_tab[name][i]) for i, gal in enumerate(self) for name in UV_col_names]
-            
-    #     return self
-
     # Selection functions
         
     # Masking selection
@@ -463,11 +372,11 @@ class Catalogue(Catalogue_Base):
             # ensure no rows are lost during this column append
             assert(len(output_cat) == len(full_cat))
             output_cat.meta = {**full_cat.meta, **{f"HIERARCH SELECTED_{selection_name}": True}}
-            galfind_logger.info(f"Appending {selection_name} to catalogue = {self.cat_path}")
+            galfind_logger.info(f"Appending {selection_name} to {self.cat_path=}")
             output_cat.write(self.cat_path, overwrite = True)
             self.selection_cols.append(selection_name)
         else:
-            galfind_logger.info(f"Already appended {selection_name} to catalogue = {self.cat_path}")
+            galfind_logger.info(f"Already appended {selection_name} to {self.cat_path=}")
 
     # %%
     # SED property functions 
@@ -538,7 +447,7 @@ class Catalogue(Catalogue_Base):
             self._save_SED_rest_PDFs(property_name, SED_fit_params)
             # save the property name
             self.SED_rest_properties[key].append(property_name)
-        self._append_SED_rest_property_to_fits(property_name, key)
+            self._append_SED_rest_property_to_fits(property_name, key)
 
     def _save_SED_rest_PDFs(self, property_name, SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}):
         save_dir = f"{config['PhotProperties']['PDF_SAVE_DIR']}/{self.version}/{self.instrument.name}/{self.survey}"
@@ -546,15 +455,20 @@ class Catalogue(Catalogue_Base):
         [gal._save_SED_rest_PDFs(property_name, save_dir, SED_fit_params) for gal in self]
     
     def _append_SED_rest_property_to_fits(self, property_name, SED_fit_params_label):
-        #fits_tab = self.open_cat(cropped = False)
-        #SED_rest_property_tab = self.open_cat(cropped = False, hdu = SED_fit_params_label)
+        fits_tab = self.open_cat(cropped = False)
+        SED_rest_property_tab = self.open_cat(cropped = False, hdu = SED_fit_params_label)
+        if type(SED_rest_property_tab) == type(None):
+            # make this table from scratch
+            properties = self.__getattr__(property_name, phot_type = "rest", property_type = "vals")
+            property_errs = self.__getattr__(property_name, phot_type = "rest", property_type = "errs")
+            new_SED_rest_property_tab = Table({self.cat_creator.ID_label: self.ID, property_name: properties, \
+                f"{property_name}_l1": property_errs[:, 0], f"{property_name}_u1": property_errs[:, 1]})
+            new_SED_rest_property_tab.meta = {f"HIERARCH {property_name}_{'+'.join(self.crops)}": True}
+            # should be more general than this
+            self.write_cat([fits_tab, new_SED_rest_property_tab], ["OBJECTS", SED_fit_params_label])
+            return
         # update elements
         raise NotImplementedError
-        hdu_list = fits.HDUList()
-        [hdu_list.append(fits.BinTableHDU(data = tab.as_array(), header = fits.Header().update(tab.meta), name = name)) for (tab, name) in zip(combined_tabs, tab_names)]
-        hdu_list.writeto(out_path, overwrite = True)
-        print(f"Written table to {out_path}!")
-        return hdu_list
 
     def plot_SED_properties(self, x_name, y_name, SED_fit_params):
         x_arr = []
