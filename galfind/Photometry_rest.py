@@ -185,9 +185,12 @@ class Photometry_rest(Photometry):
             if self.is_correctly_UV_cropped(rest_UV_wav_lims):
                 rest_UV_phot = self
             else:
-                rest_UV_phot = self.get_rest_UV_phot(rest_UV_wav_lims) # fluxes in erg * (s * AA * cm**2)**-1 units
+                rest_UV_phot = self.get_rest_UV_phot(rest_UV_wav_lims)
             if iters == 1:
-                return curve_fit(beta_fit(rest_UV_phot.z, rest_UV_phot.instrument.bands).beta_slope_power_law_func_conv_filt, None, rest_UV_phot.flux_Jy, maxfev = maxfev)[0]
+                f_lambda = funcs.convert_mag_units([funcs.convert_wav_units(band.WavelengthCen, u.AA) \
+                    for band in rest_UV_phot.instrument] * u.AA, rest_UV_phot.flux_Jy, u.erg / (u.s * u.AA * u.cm ** 2))
+                return curve_fit(beta_fit(rest_UV_phot.z, rest_UV_phot.instrument.bands).\
+                    beta_slope_power_law_func_conv_filt, None, f_lambda, maxfev = maxfev)[0]
             else:
                 scattered_rest_UV_phot_arr = rest_UV_phot.scatter_phot(iters)
                 popt_arr = np.array([scattered_rest_UV_phot.calc_beta_phot(rest_UV_wav_lims, iters = 1) \

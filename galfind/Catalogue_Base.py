@@ -337,7 +337,8 @@ class Catalogue_Base:
         elif self.check_hdu_exists(hdu):
             fits_cat = Table.read(self.cat_path, character_as_bytes = False, memmap = True, hdu = hdu)
         else:
-            galfind_logger.critical(f"{hdu=} does not exist in {self.cat_path=}!")
+            galfind_logger.warning(f"{hdu=} does not exist in {self.cat_path=}!")
+            return None
         if cropped:
             ID_tab = Table({"IDs_temp": self.ID}, dtype = [int])
             combined_tab = join(fits_cat, ID_tab, keys_left = self.cat_creator.ID_label, keys_right = "IDs_temp")

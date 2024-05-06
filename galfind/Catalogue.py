@@ -523,11 +523,8 @@ class Catalogue(Catalogue_Base):
     
 
     def calc_SED_rest_property(self, SED_rest_property_function, SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}, *args):
-
         key = SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)
         property_name = SED_rest_property_function(self[0].phot.SED_results[key].phot_rest, *args, extract_property_name = True)
-        #print(property_name)
-        #breakpoint()
         # self.SED_rest_properties should contain the selections these properties have been calculated for
         if key not in self.SED_rest_properties.keys():
             self.SED_rest_properties[key] = []
@@ -546,9 +543,6 @@ class Catalogue(Catalogue_Base):
     def _save_SED_rest_PDFs(self, property_name, SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}):
         save_dir = f"{config['PhotProperties']['PDF_SAVE_DIR']}/{self.version}/{self.instrument.name}/{self.survey}"
         funcs.make_dirs(f"{save_dir}/dummy_path.ecsv")
-        print(self[0].phot.SED_results[SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)].phot_rest.property_PDFs[property_name].input_arr)
-        print(self[1].phot.SED_results[SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)].phot_rest.property_PDFs[property_name].input_arr)
-        breakpoint()
         [gal._save_SED_rest_PDFs(property_name, save_dir, SED_fit_params) for gal in self]
     
     def _append_SED_rest_property_to_fits(self, property_name, SED_fit_params_label):
