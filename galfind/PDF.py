@@ -3,6 +3,8 @@
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.patheffects as pe
+from astropy.table import Table
+import astropy.units as u
 
 from . import config, galfind_logger
 from . import useful_funcs_austind as funcs
@@ -11,6 +13,11 @@ class PDF:
 
     def __init__(self, property_name, x, p_x):
         self.property_name = property_name
+        if type(x) not in [u.Quantity]:
+            self.unit = None
+        else:
+            self.unit = x.unit
+            x = x.value
         self.x = x
         # normalize to np.trapz(p_x, x) == 1
         self.p_x = p_x / np.trapz(p_x, x)
@@ -78,6 +85,17 @@ class PDF:
             sample = self.draw_sample(size)
         updated_sample = [update_func(val, *args) for val in sample]
         return self.__class__.from_1D_arr(updated_sample)
+    
+    def save_PDF(self, save_path, sample_size = 10_000):
+        if hasattr(self, "input_arr"):
+            save_arr = self.input_arr
+        else:
+            save_arr = self.draw_sample(sample_size)
+        meta = {"units": self.unit, "size": len(save_arr), "median": np.median(save_arr), \
+            "l1_err": np.median(save_arr) - np.percentile(save_arr, 16.), "u1_err": np.percentile(save_arr, 84.) - np.median(save_arr)}
+        save_tab = Table({self.property_name: save_arr})
+        save_tab.meta = meta
+        save_tab.write(save_path)
 
     def plot(self, ax, annotate = True, annotate_peak_loc = False, colour = "black"):
         

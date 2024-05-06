@@ -706,6 +706,12 @@ class Galaxy:
             if update:
                 self.selection_flags[selection_name] = False
         return self, selection_name
+    
+    def _save_SED_rest_PDFs(self, property_name, save_dir, SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}):
+        save_path = f"{save_dir}/{property_name}/{self.ID}.ecsv"
+        funcs.make_dirs(save_path)
+        self.phot.SED_results[SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)].\
+            phot_rest.property_PDFs[property_name].save_PDF(save_path)
 
 class Multiple_Galaxy:
     

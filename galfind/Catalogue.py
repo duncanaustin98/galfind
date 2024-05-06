@@ -476,29 +476,35 @@ class Catalogue(Catalogue_Base):
     # Rest-frame UV property calculation functions - these are not independent of each other
     
     # beta_phot tqdm bar not working appropriately!
-    def calc_beta_phot(self, rest_UV_wav_lims, SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}):
+    def calc_beta_phot(self, rest_UV_wav_lims = [1_250., 3_000.] * u.AA, SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}):
         self.calc_SED_rest_property(Photometry_rest.calc_beta_phot, SED_fit_params, rest_UV_wav_lims)
         
-    def calc_fesc_from_beta_phot(self, rest_UV_wav_lims, conv_author_year, SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}):
+    def calc_fesc_from_beta_phot(self, rest_UV_wav_lims = [1_250., 3_000.] * u.AA, conv_author_year = "Chisholm22", \
+            SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}):
         self.calc_SED_rest_property(Photometry_rest.calc_fesc_from_beta_phot, SED_fit_params, rest_UV_wav_lims, conv_author_year)
 
-    def calc_AUV_from_beta_phot(self, rest_UV_wav_lims, conv_author_year, SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}):
+    def calc_AUV_from_beta_phot(self, rest_UV_wav_lims = [1_250., 3_000.] * u.AA, conv_author_year = "Meurer99", \
+            SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}):
         self.calc_SED_rest_property(Photometry_rest.calc_AUV_from_beta_phot, SED_fit_params, rest_UV_wav_lims, conv_author_year)
 
-    def calc_mUV_phot(self, rest_UV_wav_lims, ref_wav, SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}):
+    def calc_mUV_phot(self, rest_UV_wav_lims = [1_250., 3_000.] * u.AA, ref_wav = 1_500. * u.AA, \
+            SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}):
         self.calc_SED_rest_property(Photometry_rest.calc_mUV_phot, SED_fit_params, rest_UV_wav_lims, ref_wav)
 
-    def calc_MUV_phot(self, rest_UV_wav_lims, ref_wav, SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}):
+    def calc_MUV_phot(self, rest_UV_wav_lims = [1_250., 3_000.] * u.AA, ref_wav = 1_500. * u.AA, \
+            SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}):
         self.calc_SED_rest_property(Photometry_rest.calc_MUV_phot, SED_fit_params, rest_UV_wav_lims, ref_wav)
     
-    def calc_LUV_obs_phot(self, rest_UV_wav_lims, ref_wav, SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}):
+    def calc_LUV_obs_phot(self, rest_UV_wav_lims = [1_250., 3_000.] * u.AA, ref_wav = 1_500. * u.AA, \
+            SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}):
         self.calc_SED_rest_property(Photometry_rest.calc_LUV_obs_phot, SED_fit_params, rest_UV_wav_lims, ref_wav)
     
-    def calc_LUV_int_phot(self, rest_UV_wav_lims, ref_wav, AUV_beta_conv_author_year, \
-            SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}):
+    def calc_LUV_int_phot(self, rest_UV_wav_lims = [1_250., 3_000.] * u.AA, ref_wav = 1_500. * u.AA, \
+            AUV_beta_conv_author_year = "Meurer99", SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}):
         self.calc_SED_rest_property(Photometry_rest.calc_LUV_int_phot, SED_fit_params, rest_UV_wav_lims, ref_wav)
     
-    def calc_SFR_UV_phot(self, rest_UV_wav_lims, ref_wav, AUV_beta_conv_author_year, kappa_UV_conv_author_year, \
+    def calc_SFR_UV_phot(self, rest_UV_wav_lims = [1_250., 3_000.] * u.AA, ref_wav = 1_500. * u.AA, \
+            AUV_beta_conv_author_year = "Meurer99", kappa_UV_conv_author_year = "MadauDickinson14", \
             SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}):
         self.calc_SED_rest_property(Photometry_rest.calc_SFR_UV_phot, SED_fit_params, \
             rest_UV_wav_lims, ref_wav, AUV_beta_conv_author_year, kappa_UV_conv_author_year)
@@ -529,14 +535,20 @@ class Catalogue(Catalogue_Base):
             # perform calculation for each galaxy and update galaxies in self
             [SED_rest_property_function(gal.phot.SED_results[key].phot_rest, *args)[0] for gal in \
                 tqdm(self, total = len(self), desc = f"Calculating {property_name}")]
+            # save the property PDFs
+            self._save_SED_rest_PDFs(property_name, SED_fit_params)
             # save the property name
             self.SED_rest_properties[key].append(property_name)
-        
         self._append_SED_rest_property_to_fits(property_name, key)
+
+    def _save_SED_rest_PDFs(self, property_name, SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}):
+        save_dir = f"{config['PhotProperties']['PDF_SAVE_DIR']}/{self.version}/{self.instrument.name}/{self.survey}"
+        funcs.make_dirs(f"{save_dir}/dummy_path.ecsv")
+        [gal._save_SED_rest_PDFs(property_name, save_dir, SED_fit_params) for gal in self]
     
     def _append_SED_rest_property_to_fits(self, property_name, SED_fit_params_label):
         fits_tab = self.open_cat(cropped = False)
-        SED_rest_property_tab = self.open_cat()
+        SED_rest_property_tab = self.open_cat(cropped = False, hdu = SED_fit_params_label)
         # update elements
         raise NotImplementedError
         hdu_list = fits.HDUList()
@@ -544,7 +556,6 @@ class Catalogue(Catalogue_Base):
         hdu_list.writeto(out_path, overwrite = True)
         print(f"Written table to {out_path}!")
         return hdu_list
-
 
     def plot_SED_properties(self, x_name, y_name, SED_fit_params):
         x_arr = []

@@ -6,6 +6,7 @@ from copy import deepcopy
 import astropy.units as u
 from tqdm import tqdm
 from astropy.coordinates import SkyCoord
+from astropy.io import fits
 import time
 from . import useful_funcs_austind as useful_funcs
 from .Data import Data
@@ -330,14 +331,23 @@ class Catalogue_Base:
             galfind_logger.critical(f"crop_limits={crop_limits} with type = {type(crop_limits)} not in [int, float, bool, list, np.array]")
         return cat_copy
     
-    def open_cat(self, cropped = False):
-        fits_cat = Table.read(self.cat_path, character_as_bytes = False, memmap = True)
+    def open_cat(self, cropped = False, hdu = None):
+        if type(hdu) == type(None):
+            fits_cat = Table.read(self.cat_path, character_as_bytes = False, memmap = True)
+        elif self.check_hdu_exists(hdu):
+            fits_cat = Table.read(self.cat_path, character_as_bytes = False, memmap = True, hdu = hdu)
+        else:
+            galfind_logger.critical(f"{hdu=} does not exist in {self.cat_path=}!")
         if cropped:
-            IDs_temp = self.ID
-            ID_tab = Table({"IDs_temp": IDs_temp}, dtype = [int])
+            ID_tab = Table({"IDs_temp": self.ID}, dtype = [int])
             combined_tab = join(fits_cat, ID_tab, keys_left = self.cat_creator.ID_label, keys_right = "IDs_temp")
             combined_tab.remove_column("IDs_temp")
             combined_tab.meta = fits_cat.meta
             return combined_tab
         else:
             return fits_cat
+    
+    def check_hdu_exists(self, hdu):
+        # check whether the hdu extension exists
+        hdul = fits.open(self.cat_path)
+        return any(hdu_.name == hdu for hdu_ in hdul)
