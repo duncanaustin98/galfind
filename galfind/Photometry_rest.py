@@ -191,7 +191,7 @@ class Photometry_rest(Photometry):
             else:
                 scattered_rest_UV_phot_arr = rest_UV_phot.scatter_phot(iters)
                 popt_arr = np.array([scattered_rest_UV_phot.calc_beta_phot(rest_UV_wav_lims, iters = 1) \
-                    for scattered_rest_UV_phot in scattered_rest_UV_phot_arr]) #tqdm(scattered_rest_UV_phot_arr, total = iters, desc = "Calculating beta_PL")])
+                    for scattered_rest_UV_phot in tqdm(scattered_rest_UV_phot_arr, total = iters, desc = "Calculating beta_PL")])
                 # save amplitude and beta PDFs
                 self._update_properties_and_PDFs(self.PL_amplitude_name(rest_UV_wav_lims), popt_arr[:, 0])
                 self._update_properties_and_PDFs(property_name, popt_arr[:, 1])

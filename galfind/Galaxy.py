@@ -624,9 +624,9 @@ class Galaxy:
             # extract redshift and chi_sq of lowz runs
             z_lowz_arr = []
             chi_sq_lowz_arr = []
-            for zmax in lowz_zmax_arr:
+            for lowz_zmax in lowz_zmax_arr:
                 SED_fit_params_ = deepcopy(SED_fit_params)
-                SED_fit_params_["lowz_zmax"] = zmax
+                SED_fit_params_["lowz_zmax"] = lowz_zmax
                 z_lowz_arr.append(self.phot.SED_results[SED_fit_params_["code"].label_from_SED_fit_params(SED_fit_params_)].z)
                 chi_sq_lowz_arr.append(self.phot.SED_results[SED_fit_params_["code"].label_from_SED_fit_params(SED_fit_params_)].chi_sq)
             # determine which lowz run to use for this galaxy
@@ -706,6 +706,13 @@ class Galaxy:
             if update:
                 self.selection_flags[selection_name] = False
         return self, selection_name
+    
+    # Rest-frame SED photometric properties
+
+    def _calc_SED_rest_property(self, SED_rest_property_function, SED_fit_params_label, *args):
+        # calculate and save parameter
+        SED_rest_property_function(self.phot.SED_results[SED_fit_params_label].phot_rest, *args)
+        return self
     
     def _save_SED_rest_PDFs(self, property_name, save_dir, SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}):
         save_path = f"{save_dir}/{property_name}/{self.ID}.ecsv"

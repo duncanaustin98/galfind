@@ -95,7 +95,7 @@ class PDF:
             "l1_err": np.median(save_arr) - np.percentile(save_arr, 16.), "u1_err": np.percentile(save_arr, 84.) - np.median(save_arr)}
         save_tab = Table({self.property_name: save_arr})
         save_tab.meta = meta
-        save_tab.write(save_path)
+        save_tab.write(save_path, overwrite = True)
 
     def plot(self, ax, annotate = True, annotate_peak_loc = False, colour = "black"):
         

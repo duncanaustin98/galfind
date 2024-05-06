@@ -11,7 +11,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from astropy.table import Table, join
 import pyregion
-from copy import deepcopy
+from copy import copy, deepcopy
 from astropy.io import fits
 from pathlib import Path
 import traceback
@@ -21,7 +21,6 @@ from astropy.wcs import WCS
 import astropy.units as u
 from tqdm import tqdm
 import time
-import copy
 import os
 
 from .Data import Data
@@ -477,7 +476,7 @@ class Catalogue(Catalogue_Base):
     
     # beta_phot tqdm bar not working appropriately!
     def calc_beta_phot(self, rest_UV_wav_lims = [1_250., 3_000.] * u.AA, SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}):
-        self.calc_SED_rest_property(Photometry_rest.calc_beta_phot, SED_fit_params, rest_UV_wav_lims)
+        return self.calc_SED_rest_property(Photometry_rest.calc_beta_phot, SED_fit_params, rest_UV_wav_lims)
         
     def calc_fesc_from_beta_phot(self, rest_UV_wav_lims = [1_250., 3_000.] * u.AA, conv_author_year = "Chisholm22", \
             SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}):
@@ -527,14 +526,17 @@ class Catalogue(Catalogue_Base):
 
         key = SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)
         property_name = SED_rest_property_function(self[0].phot.SED_results[key].phot_rest, *args, extract_property_name = True)
-
+        #print(property_name)
+        #breakpoint()
         # self.SED_rest_properties should contain the selections these properties have been calculated for
         if key not in self.SED_rest_properties.keys():
             self.SED_rest_properties[key] = []
         if property_name not in self.SED_rest_properties[key]:
             # perform calculation for each galaxy and update galaxies in self
-            [SED_rest_property_function(gal.phot.SED_results[key].phot_rest, *args)[0] for gal in \
+            self.gals = [deepcopy(gal)._calc_SED_rest_property(SED_rest_property_function, key, *args) for gal in \
                 tqdm(self, total = len(self), desc = f"Calculating {property_name}")]
+            #[SED_rest_property_function(gal.phot.SED_results[key].phot_rest, *args)[0] for gal in \
+            #    tqdm(self, total = len(self), desc = f"Calculating {property_name}")]
             # save the property PDFs
             self._save_SED_rest_PDFs(property_name, SED_fit_params)
             # save the property name
@@ -544,11 +546,14 @@ class Catalogue(Catalogue_Base):
     def _save_SED_rest_PDFs(self, property_name, SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}):
         save_dir = f"{config['PhotProperties']['PDF_SAVE_DIR']}/{self.version}/{self.instrument.name}/{self.survey}"
         funcs.make_dirs(f"{save_dir}/dummy_path.ecsv")
+        print(self[0].phot.SED_results[SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)].phot_rest.property_PDFs[property_name].input_arr)
+        print(self[1].phot.SED_results[SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)].phot_rest.property_PDFs[property_name].input_arr)
+        breakpoint()
         [gal._save_SED_rest_PDFs(property_name, save_dir, SED_fit_params) for gal in self]
     
     def _append_SED_rest_property_to_fits(self, property_name, SED_fit_params_label):
-        fits_tab = self.open_cat(cropped = False)
-        SED_rest_property_tab = self.open_cat(cropped = False, hdu = SED_fit_params_label)
+        #fits_tab = self.open_cat(cropped = False)
+        #SED_rest_property_tab = self.open_cat(cropped = False, hdu = SED_fit_params_label)
         # update elements
         raise NotImplementedError
         hdu_list = fits.HDUList()
