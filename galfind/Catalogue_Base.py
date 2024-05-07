@@ -342,7 +342,7 @@ class Catalogue_Base:
         elif self.check_hdu_exists(hdu):
             fits_cat = Table.read(self.cat_path, character_as_bytes = False, memmap = True, hdu = hdu)
         else:
-            galfind_logger.warning(f"{hdu=} does not exist in {self.cat_path=}!")
+            galfind_logger.warning(f"{hdu.upper()=} does not exist in {self.cat_path=}!")
             return None
         if cropped:
             ID_tab = Table({"IDs_temp": self.ID}, dtype = [int])
@@ -356,6 +356,8 @@ class Catalogue_Base:
     def check_hdu_exists(self, hdu):
         # check whether the hdu extension exists
         hdul = fits.open(self.cat_path)
+        #print(hdu, [hdu_.name for hdu_ in hdul])
+        #breakpoint()
         return any(hdu_.name == hdu.upper() for hdu_ in hdul)
     
     def write_cat(self, tab_arr, tab_names):
@@ -364,3 +366,11 @@ class Catalogue_Base:
             fits.Header(tab.meta), name = name)) for (tab, name) in zip(tab_arr, tab_names)]
         hdu_list.writeto(self.cat_path, overwrite = True)
         galfind_logger.info(f"Writing table to {self.cat_path}")
+
+    def del_hdu(self, hdu):
+        galfind_logger.info(f"Deleting {hdu.upper()=} from {self.cat_path=}!")
+        assert self.check_hdu_exists(hdu), \
+            galfind_logger.critical(f"Cannot delete {hdu=} as it does not exist in {self.cat_path=}")
+        tab_arr = [self.open_cat(cropped = False, hdu = hdu_) for hdu_ in fits.open(self.cat_path) if hdu_ != hdu]
+        tab_names = [tab.name for tab in tab_arr]
+        self.write_cat(tab_arr, tab_names)

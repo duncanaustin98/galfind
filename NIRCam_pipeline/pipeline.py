@@ -27,10 +27,12 @@ def pipeline(surveys, version, instruments, aper_diams, min_flux_pc_errs, forced
                 excl_bands = excl_bands, loc_depth_min_flux_pc_errs = min_flux_pc_errs, crop_by = crop_by)
             #cat.data.calc_unmasked_area("NIRCam", forced_phot_band = forced_phot_band)
 
-            print(str(cat))
+            #print(str(cat))
             #print(str(cat[0]))
 
             #cat.plot_phot_diagnostics()
+
+            cat.del_hdu(SED_fit_params_arr[-1]["code"].label_from_SED_fit_params(SED_fit_params_arr[-1]))
 
             cat.calc_rest_UV_properties()
             cat.calc_fesc_from_beta_phot()

@@ -472,11 +472,13 @@ class Catalogue(Catalogue_Base):
                 self.cat_creator.ID_label, keys_right = f"{self.cat_creator.ID_label}_temp", join_type = "outer")
             out_tab.remove_column(f"{self.cat_creator.ID_label}_temp")
             out_tab.meta = {**SED_rest_property_tab, **new_SED_rest_property_tab}
+            breakpoint()
             #galfind_logger.info(f"{property_name}_{'+'.join(self.crops)} already calculated!") RE-WRITE
         else:
             galfind_logger.info(f"{property_name}_{'+'.join(self.crops)} already calculated!")
-            return None
-        return self.write_cat([fits_tab, out_tab], ["OBJECTS", SED_fit_params_label])
+            return
+        #breakpoint()
+        self.write_cat([fits_tab, out_tab], ["OBJECTS", SED_fit_params_label])
     
     def _save_SED_rest_PDFs(self, property_name, SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}):
         save_dir = f"{config['PhotProperties']['PDF_SAVE_DIR']}/{self.version}/{self.instrument.name}/{self.survey}"
@@ -487,7 +489,7 @@ class Catalogue(Catalogue_Base):
         key = SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)
         PDF_dir = f"{config['PhotProperties']['PDF_SAVE_DIR']}/{self.version}/{self.instrument.name}/{self.survey}/{key}"
         # load SED rest properties that have previously been calculated
-        [gal._load_SED_rest_properties(PDF_dir, SED_fit_params) for gal in self]
+        [deepcopy(gal)._load_SED_rest_properties(PDF_dir, SED_fit_params) for gal in self]
         # save the names of properties that have been calculated for all galaxies in the catalogue
         SED_rest_properties_tab = self.open_cat(cropped = False, hdu = key)
         if type(SED_rest_properties_tab) != type(None):
