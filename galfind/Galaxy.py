@@ -577,6 +577,66 @@ class Galaxy:
                     self.selection_flags[selection_name] = False
         return self, selection_name
     
+    # Colour selection functions
+
+    def select_colour(self, colour_bands, colour_val, bluer_or_redder, update = True):
+        assert(bluer_or_redder in ["bluer", "redder"])
+        assert(type(colour_bands) in [str, np.str_, list, np.ndarray])
+        if type(colour_bands) in [str, np.str_]:
+            colour_bands = colour_bands.split("-")
+        assert(len(colour_bands) == 2)
+        assert(all(colour in self.phot.instrument.band_names for colour in colour_bands))
+        # ensure bands are ordered blue -> red
+        assert(self.phot.instrument.index_from_band_name(colour_bands[0]) < self.phot.instrument.index_from_band_name(colour_bands[1]))
+        selection_name = f"{'-'.join(colour_bands)}{'<' if bluer_or_redder == 'bluer' else '>'}{colour_val:.2f}"
+        if selection_name in self.selection_flags.keys():
+            galfind_logger.debug(f"{selection_name} already performed for galaxy ID = {self.ID}!")
+        else:
+            # calculate colour
+            band_indices = [self.phot.instrument.index_from_band_name(band_name) for band_name in colour_bands]
+            colour = (funcs.convert_mag_errs(self.phot.instrument[band_indices[0]].WavelengthCen, self.phot.flux_Jy[band_indices[0]], u.ABmag) \
+                - funcs.convert_mag_errs(self.phot.instrument[band_indices[1]].WavelengthCen, self.phot.flux_Jy[band_indices[1]], u.ABmag)).value
+            if (colour < colour_val and bluer_or_redder == "bluer") or \
+                (colour > colour_val and bluer_or_redder == "redder"):
+                if update:
+                    self.selection_flags[selection_name] = True
+            else:
+                if update:
+                    self.selection_flags[selection_name] = False
+        return self, selection_name
+    
+    def select_colour_colour(self, colour_bands_arr, colour_select_func):
+        pass
+    
+    def select_UVJ(self, SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}, \
+            quiescent_or_star_forming = "quiescent", update = True):
+        assert(quiescent_or_star_forming in ["quiescent", "star_forming"])
+        selection_name = f"UVJ_{quiescent_or_star_forming}"
+        if selection_name in self.selection_flags.keys():
+            galfind_logger.debug(f"{selection_name} already performed for galaxy ID = {self.ID}!")
+        else:
+            # extract UVJ colours
+            U_minus_V = self.phot.SED_results[SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)].properties["U_flux"] \
+                - self.phot.SED_results[SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)].properties["V_flux"] # in flux
+            V_minus_J = self.phot.SED_results[SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)].properties["V_flux"] \
+                - self.phot.SED_results[SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)].properties["J_flux"] # in flux
+            # selection from Antwi-Danso2022
+            if U_minus_V > 1.23 and V_minus_J < 1.67 and U_minus_V > V_minus_J * 0.98 + 0.38:
+                if update:
+                    self.selection_flags[selection_name] = True
+            else:
+                if update:
+                    self.selection_flags[selection_name] = False
+        return self, selection_name
+
+    def select_Kokorev24_LRDs(self):
+        # red1 selection
+
+        # red2 selection
+        pass
+
+    # Depth selection functions
+
     def select_depth_region(self, band, region_ID, update = True):
         return NotImplementedError
 

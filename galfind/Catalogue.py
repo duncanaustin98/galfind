@@ -482,6 +482,33 @@ class Catalogue(Catalogue_Base):
 
     def phot_SNR_crop(self, band_name_or_index, SNR_lim, detect_or_non_detect = "detect"):
         return self.perform_selection(Galaxy.phot_SNR_crop, band_name_or_index, SNR_lim, detect_or_non_detect)
+
+    # Colour selection functions
+
+    def select_colour(self, colour_bands, colour_val, bluer_or_redder):
+        return self.perform_selection(Galaxy.select_colour, colour_bands, colour_val, bluer_or_redder)
+    
+    def select_colour_colour(self, colour_bands_arr, colour_select_func):
+        return self.perform_selection(Galaxy.select_colour_colour, colour_bands_arr, colour_select_func)
+    
+    def select_UVJ(self, SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}, quiescent_or_star_forming = "quiescent"):
+        return self.perform_selection(Galaxy.select_UVJ, SED_fit_params, quiescent_or_star_forming)
+    
+    def select_Kokorev24_LRDs(self):
+        # only perform this selection if all relevant bands are present
+        required_bands = ["F115W", "F150W", "F200W", "F277W", "F356W", "F444W"]
+        if all(band_name in self.instrument.band_names for band_name in required_bands):
+            # red1 selection (z<6 LRDs)
+            self.perform_selection(Galaxy.select_colour, ["F115W", "F150W"], 0.8, "bluer", make_cat_copy = False)
+            self.perform_selection(Galaxy.select_colour, ["F200W", "F277W"], 0.7, "redder", make_cat_copy = False)
+            self.perform_selection(Galaxy.select_colour, ["F200W", "F356W"], 1.0, "redder", make_cat_copy = False)
+            # red2 selection (z>6 LRDs)
+            self.perform_selection(Galaxy.select_colour, ["F150W", "F200W"], 0.8, "bluer", make_cat_copy = False)
+            self.perform_selection(Galaxy.select_colour, ["F277W", "F356W"], 0.6, "redder", make_cat_copy = False)
+            self.perform_selection(Galaxy.select_colour, ["F277W", "F444W"], 0.7, "redder", make_cat_copy = False)
+            return self.perform_selection(Galaxy.select_Kokorev24_LRDs)
+        else:
+            galfind_logger.warning(f"Not all of {required_bands} in {self.instrument.band_names=}, skipping 'select_Kokorev24_LRDs' selection")
     
     # Depth region selection
 
