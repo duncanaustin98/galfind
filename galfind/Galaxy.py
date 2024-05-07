@@ -615,13 +615,15 @@ class Galaxy:
         if selection_name in self.selection_flags.keys():
             galfind_logger.debug(f"{selection_name} already performed for galaxy ID = {self.ID}!")
         else:
-            # extract UVJ colours
+            # extract UVJ colours -> still need to sort out the units here
             U_minus_V = self.phot.SED_results[SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)].properties["U_flux"] \
-                - self.phot.SED_results[SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)].properties["V_flux"] # in flux
+                - self.phot.SED_results[SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)].properties["V_flux"]
             V_minus_J = self.phot.SED_results[SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)].properties["V_flux"] \
-                - self.phot.SED_results[SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)].properties["J_flux"] # in flux
+                - self.phot.SED_results[SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)].properties["J_flux"]
             # selection from Antwi-Danso2022
-            if U_minus_V > 1.23 and V_minus_J < 1.67 and U_minus_V > V_minus_J * 0.98 + 0.38:
+            is_quiescent = U_minus_V > 1.23 and V_minus_J < 1.67 and U_minus_V > V_minus_J * 0.98 + 0.38
+            if (quiescent_or_star_forming == "quiescent" and is_quiescent) or \
+                    (quiescent_or_star_forming == "star_forming" and not is_quiescent):
                 if update:
                     self.selection_flags[selection_name] = True
             else:
@@ -629,10 +631,30 @@ class Galaxy:
                     self.selection_flags[selection_name] = False
         return self, selection_name
 
-    def select_Kokorev24_LRDs(self):
-        # red1 selection
-
-        # red2 selection
+    def select_Kokorev24_LRDs(self, update = True):
+        selection_name = "Kokorev+24_LRDs"
+        red1_selection = \
+        [
+            self.select_colour(["F115W", "F150W"], 0.8, "bluer")[1], \
+            self.select_colour(["F200W", "F277W"], 0.7, "redder")[1], \
+            self.select_colour(["F200W", "F356W"], 1.0, "redder")[1]
+        ]
+        red2_selection = \
+        [
+            self.select_colour(["F150W", "F200W"], 0.8, "bluer")[1], \
+            self.select_colour(["F277W", "F356W"], 0.6, "redder")[1], \
+            self.select_colour(["F277W", "F444W"], 0.7, "redder")[1]
+        ]
+        
+        # if the galaxy passes either red1 or red2 colour selection criteria
+        if all(self.selection_flags[name] for name in red1_selection) or \
+                all(self.selection_flags[name] for name in red2_selection):
+            if update:
+                self.selection_flags[selection_name] = True
+        else:
+            if update:
+                self.selection_flags[selection_name] = False
+        return self, selection_name
         pass
 
     # Depth selection functions
