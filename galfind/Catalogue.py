@@ -95,7 +95,7 @@ class Catalogue(Catalogue_Base):
         elapsed_time = end_time - start_time
         print(f"Finished loading in {len(gals)} galaxies. This took {elapsed_time:.6f} seconds")
         # make catalogue with no SED fitting information
-        cat_obj = cls(gals, fits_cat_path, survey, cat_creator, instrument, version = version, crops = crop_by)
+        cat_obj = cls(gals, fits_cat_path, survey, cat_creator, instrument, SED_fit_params_arr, version = version, crops = crop_by)
         #print(cat_obj)
         if cat_obj != None:
             cat_obj.data = data
