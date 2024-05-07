@@ -1440,12 +1440,12 @@ class Data:
                 cat[f"MAG_APER_{band}_aper_corr"] = mag_aper_corr_data
                 cat[f"FLUX_APER_{band}_aper_corr"] = flux_aper_corr_data
                 cat[f"FLUX_APER_{band}_aper_corr_Jy"] = [tuple([funcs.flux_image_to_Jy(val, self.im_zps[band]).value for val in element]) for element in cat[f"FLUX_APER_{band}_aper_corr"]]
-        # update catalogue metadata
-        #mag_aper_corrs = {f"HIERARCH Mag_aper_corrs_{aper_diam.value}as": tuple([np.round(self.instrument.aper_corr(aper_diam, band), decimals = 4) \
-        #    for band in self.instrument.band_names]) for aper_diam in json.loads(config.get("SExtractor", "APERTURE_DIAMS")) * u.arcsec}
-        cat.meta = {**cat.meta, **{"APERCORR": True}} #, **mag_aper_corrs}
-        # overwrite original catalogue with local depth columns
-        cat.write(self.sex_cat_master_path, overwrite = True)
+            # update catalogue metadata
+            #mag_aper_corrs = {f"HIERARCH Mag_aper_corrs_{aper_diam.value}as": tuple([np.round(self.instrument.aper_corr(aper_diam, band), decimals = 4) \
+            #    for band in self.instrument.band_names]) for aper_diam in json.loads(config.get("SExtractor", "APERTURE_DIAMS")) * u.arcsec}
+            cat.meta = {**cat.meta, **{"APERCORR": True}} #, **mag_aper_corrs}
+            # overwrite original catalogue with local depth columns
+            cat.write(self.sex_cat_master_path, overwrite = True)
 
     def make_loc_depth_cat(self, cat_creator, depth_mode = "n_nearest"):
         overwrite = config["Depths"].getboolean("OVERWRITE_LOC_DEPTH_CAT")
@@ -1518,11 +1518,11 @@ class Data:
                 #mean_depths[band] = band_mean_depths
                 #median_depths[band] = band_median_depths
 
-        # update catalogue metadata
-        cat.meta = {**cat.meta, **{"DEPTHS": True, "MINPCERR": cat_creator.min_flux_pc_err}} #, "Mean_depths": mean_depths, "Median_depths": median_depths}}
-        #print(cat.meta)
-        # overwrite original catalogue with local depth columns
-        cat.write(self.sex_cat_master_path, overwrite = True)
+            # update catalogue metadata
+            cat.meta = {**cat.meta, **{"DEPTHS": True, "MINPCERR": cat_creator.min_flux_pc_err}} #, "Mean_depths": mean_depths, "Median_depths": median_depths}}
+            #print(cat.meta)
+            # overwrite original catalogue with local depth columns
+            cat.write(self.sex_cat_master_path, overwrite = True)
         
     def get_depth_dir(self, aper_diam):
         self.depth_dirs = {}

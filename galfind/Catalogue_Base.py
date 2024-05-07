@@ -76,6 +76,13 @@ class Catalogue_Base:
         if self.crops != []:
             output_str += f"N_GALS_OBJECT = {len(self)}\n"
             output_str += f"CROPS = {' + '.join(self.crops)}\n"
+        if hasattr(self, "SED_rest_properties"):
+            if len(self.SED_rest_properties) >= 1:
+                output_str += band_sep
+                for key, properties in self.SED_rest_properties.items():
+                    output_str += f"Rest frame SED properties:\n"
+                    output_str += f"{key}: {str(properties)}\n"
+                    output_str += band_sep
         if print_cls_name:
             output_str += line_sep
         return output_str
@@ -100,7 +107,6 @@ class Catalogue_Base:
         return self.gals[index]
     
     def __getattr__(self, name, SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}, phot_type = "obs", property_type = "vals"): # only acts on attributes that don't already exist
-        #breakpoint()
         if name in self[0].__dict__:
             return np.array([getattr(gal, name) for gal in self])
         elif name.upper() == "RA":
@@ -356,8 +362,6 @@ class Catalogue_Base:
     def check_hdu_exists(self, hdu):
         # check whether the hdu extension exists
         hdul = fits.open(self.cat_path)
-        #print(hdu, [hdu_.name for hdu_ in hdul])
-        #breakpoint()
         return any(hdu_.name == hdu.upper() for hdu_ in hdul)
     
     def write_cat(self, tab_arr, tab_names):
@@ -371,6 +375,7 @@ class Catalogue_Base:
         galfind_logger.info(f"Deleting {hdu.upper()=} from {self.cat_path=}!")
         assert self.check_hdu_exists(hdu), \
             galfind_logger.critical(f"Cannot delete {hdu=} as it does not exist in {self.cat_path=}")
-        tab_arr = [self.open_cat(cropped = False, hdu = hdu_) for hdu_ in fits.open(self.cat_path) if hdu_ != hdu]
-        tab_names = [tab.name for tab in tab_arr]
+        tab_arr = [self.open_cat(cropped = False, hdu = hdu_.name) for hdu_ \
+            in fits.open(self.cat_path) if hdu_.name != hdu.upper() and hdu_.name != "PRIMARY"]
+        tab_names = [hdu_.name for hdu_ in fits.open(self.cat_path) if hdu_.name != hdu.upper() and hdu_.name != "PRIMARY"]
         self.write_cat(tab_arr, tab_names)

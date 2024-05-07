@@ -94,7 +94,6 @@ class Catalogue(Catalogue_Base):
         print(f"Finished loading in {len(gals)} galaxies. This took {elapsed_time:.6f} seconds")
         # make catalogue with no SED fitting information
         cat_obj = cls(gals, fits_cat_path, survey, cat_creator, instrument, version = version, crops = crop_by)
-        #print(cat_obj)
         if cat_obj != None:
             cat_obj.data = data
         if mask:
@@ -457,27 +456,25 @@ class Catalogue(Catalogue_Base):
         if type(SED_rest_property_tab) == type(None):
             properties = self.__getattr__(property_name, phot_type = "rest", property_type = "vals")
             property_errs = self.__getattr__(property_name, phot_type = "rest", property_type = "errs")
-            out_tab = Table({self.cat_creator.ID_label: self.ID, property_name: properties, \
-                f"{property_name}_l1": property_errs[:, 0], f"{property_name}_u1": property_errs[:, 1]})
+            out_tab = Table({self.cat_creator.ID_label: np.array(self.ID).astype(int), property_name: properties, \
+                f"{property_name}_l1": property_errs[:, 0], f"{property_name}_u1": property_errs[:, 1]}, dtype = [int, float, float, float])
             out_tab.meta = {f"HIERARCH SED_REST_PROPERTY_{property_name}_{'+'.join(self.crops)}": True}
             #galfind_logger.info(f"{property_name}_{'+'.join(self.crops)} already calculated!") RE-WRITE
         # else if these properties have not already been calculated for this selection
         elif f"{property_name}_{'+'.join(self.crops)}" not in SED_rest_property_tab.meta.keys():
             properties = self.__getattr__(property_name, phot_type = "rest", property_type = "vals")
             property_errs = self.__getattr__(property_name, phot_type = "rest", property_type = "errs")
-            new_SED_rest_property_tab = Table({f"{self.cat_creator.ID_label}_temp": self.ID, property_name: properties, \
-                f"{property_name}_l1": property_errs[:, 0], f"{property_name}_u1": property_errs[:, 1]})
+            new_SED_rest_property_tab = Table({f"{self.cat_creator.ID_label}_temp": np.array(self.ID).astype(int), property_name: properties, \
+                f"{property_name}_l1": property_errs[:, 0], f"{property_name}_u1": property_errs[:, 1]}, dtype = [int, float, float, float])
             new_SED_rest_property_tab.meta = {f"HIERARCH SED_REST_PROPERTY_{property_name}_{'+'.join(self.crops)}": True}
             out_tab = join(SED_rest_property_tab, new_SED_rest_property_tab, keys_left = \
                 self.cat_creator.ID_label, keys_right = f"{self.cat_creator.ID_label}_temp", join_type = "outer")
             out_tab.remove_column(f"{self.cat_creator.ID_label}_temp")
-            out_tab.meta = {**SED_rest_property_tab, **new_SED_rest_property_tab}
-            breakpoint()
+            out_tab.meta = {**SED_rest_property_tab.meta, **new_SED_rest_property_tab.meta}
             #galfind_logger.info(f"{property_name}_{'+'.join(self.crops)} already calculated!") RE-WRITE
         else:
             galfind_logger.info(f"{property_name}_{'+'.join(self.crops)} already calculated!")
             return
-        #breakpoint()
         self.write_cat([fits_tab, out_tab], ["OBJECTS", SED_fit_params_label])
     
     def _save_SED_rest_PDFs(self, property_name, SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}):
@@ -489,13 +486,13 @@ class Catalogue(Catalogue_Base):
         key = SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)
         PDF_dir = f"{config['PhotProperties']['PDF_SAVE_DIR']}/{self.version}/{self.instrument.name}/{self.survey}/{key}"
         # load SED rest properties that have previously been calculated
-        [deepcopy(gal)._load_SED_rest_properties(PDF_dir, SED_fit_params) for gal in self]
+        self.gals = [deepcopy(gal)._load_SED_rest_properties(PDF_dir, SED_fit_params) for gal in self]
         # save the names of properties that have been calculated for all galaxies in the catalogue
         SED_rest_properties_tab = self.open_cat(cropped = False, hdu = key)
         if type(SED_rest_properties_tab) != type(None):
             self.SED_rest_properties[key] = [label.replace("SED_REST_PROPERTY_", ""). \
                 replace(f"_{'+'.join(self.crops)}", "") for label in SED_rest_properties_tab.meta.keys() \
-                if "SED_REST_PROPERTY" == "_".join(label.split("_")[:2]) and "+".join(self.crops) == label.split("_")[-1]]
+                if "SED_REST_PROPERTY" == "_".join(label.split("_")[:3]) and "+".join(self.crops) == label.split("_")[-1]]
 
     def plot_SED_properties(self, x_name, y_name, SED_fit_params):
         x_arr = []
