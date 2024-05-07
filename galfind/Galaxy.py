@@ -269,14 +269,12 @@ class Galaxy:
                 re_kpc = (re_as * d_A).to(u.kpc, u.dimensionless_angles())
                 
                 # First scalebar
-                scalebar = AnchoredSizeBar(ax_arr[i].transData,
-                    0.3 / data.im_pixel_scales[band].value, "0.3\"", 'lower right', 
-                    pad = 0.3, color='white', frameon=False, size_vertical=2)
+                scalebar = AnchoredSizeBar(ax_arr[i].transData, 0.3 / data.im_pixel_scales[band].value, \
+                    "0.3\"", 'lower right', pad = 0.3, color='white', frameon=False, size_vertical=2)
                 ax_arr[-1].add_artist(scalebar)
                 # Plot scalebar with physical size
-                scalebar = AnchoredSizeBar(ax_arr[-1].transData,
-                    re, f"{re_kpc:.1f}", 'upper left', pad=0.3, color='white',
-                    frameon=False, size_vertical=1.5)
+                scalebar = AnchoredSizeBar(ax_arr[-1].transData, re, f"{re_kpc:.1f}", \
+                    'upper left', pad=0.3, color='white', frameon=False, size_vertical=1.5)
                 ax_arr[-1].add_artist(scalebar)
     
     def plot_phot_diagnostic(self, ax, data, SED_fit_params_arr, zPDF_plot_SED_fit_params_arr, wav_unit = u.um, flux_unit = u.ABmag, \
@@ -310,7 +308,7 @@ class Galaxy:
                 key = SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)
                 SED_plot = self.phot.SED_results[key].SED.plot_SED(phot_ax, wav_unit, flux_unit, label = key)
                 SED_colours[key] = SED_plot[0].get_color()
-                # could also plot the expected photometry here as well
+                # plot the mock photometry
                 self.phot.SED_results[key].SED.create_mock_phot(self.phot.instrument, depths = self.phot.depths)
                 self.phot.SED_results[key].SED.mock_phot.plot_phot(phot_ax, wav_unit, flux_unit, uplim_sigma = None, \
                     auto_scale = False, plot_errs = {"x": False, "y": False}, errorbar_kwargs = errorbar_kwargs, \
