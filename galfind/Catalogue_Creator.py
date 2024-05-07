@@ -73,8 +73,8 @@ class Catalogue_Creator(ABC):
     def load_mask(self, fits_cat, bands):
         pass
     
-    def load_property(self, fits_cat, gal_property, code):
-        return fits_cat[self.property_conv_dict[code.__class__.__name__][gal_property]]
+    # def load_property(self, fits_cat, gal_property, code):
+    #     return fits_cat[self.property_conv_dict[code.__class__.__name__][gal_property]]
 
     def load_flag(self, fits_cat, gal_flag):
         flag_label = self.flag_conv(gal_flag)
@@ -203,6 +203,10 @@ class GALFIND_Catalogue_Creator(Catalogue_Creator):
         else: # depths given as np.nan
             depths_arr = np.full((len(fits_cat), len(bands)), np.nan)
         return depths_arr * u.ABmag
+    
+    def load_SED_rest_PDFs(self, fits_cat, property_names):
+        properties = fits_cat
+        pass
 
 # %% Common catalogue converters
 

@@ -16,6 +16,7 @@ from astropy.io import fits
 import os
 import sys
 import json
+import glob
 from pathlib import Path
 from astropy.nddata import Cutout2D
 from tqdm import tqdm
@@ -28,7 +29,7 @@ from mpl_toolkits.axes_grid1.anchored_artists import AnchoredSizeBar
 
 from . import useful_funcs_austind as funcs
 from . import config, galfind_logger, astropy_cosmo
-from . import Photometry_rest, Photometry_obs, Multiple_Photometry_obs, Data, Instrument, NIRCam, ACS_WFC, WFC3_IR
+from . import Photometry_rest, Photometry_obs, Multiple_Photometry_obs, Data, Instrument, NIRCam, ACS_WFC, WFC3_IR, PDF
 from .EAZY import EAZY
 
 class Galaxy:
@@ -715,10 +716,20 @@ class Galaxy:
         return self
     
     def _save_SED_rest_PDFs(self, property_name, save_dir, SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}):
-        save_path = f"{save_dir}/{property_name}/{self.ID}.ecsv"
+        key = SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)
+        save_path = f"{save_dir}/{key}/{property_name}/{self.ID}.ecsv"
         funcs.make_dirs(save_path)
-        self.phot.SED_results[SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)].\
-            phot_rest.property_PDFs[property_name].save_PDF(save_path)
+        self.phot.SED_results[key].phot_rest.property_PDFs[property_name].save_PDF(save_path)
+        
+    def _load_SED_rest_properties(self, PDF_dir, SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}):
+        key = SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)
+        # determine which properties have already been calculated
+        PDF_paths = glob.glob(f"{PDF_dir}/*/{self.ID}.ecsv")
+        for PDF_path in PDF_paths:
+            property_name = PDF_path.split("/")[-2]
+            self.phot.SED_results[key].phot_rest.property_PDFs[property_name] = PDF.from_ecsv(PDF_path)
+            self.phot.SED_results[key].phot_rest._update_properties_from_PDF(property_name)
+        return self
 
 class Multiple_Galaxy:
     

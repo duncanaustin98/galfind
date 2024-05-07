@@ -40,9 +40,9 @@ class PDF:
         
     @classmethod
     def from_ecsv(cls, path):
-        tab = Table.open(path)
-        property_name = tab.meta["property_name"]
-        arr = np.array(tab["property_name"]) * tab.meta["units"]
+        tab = Table.read(path)
+        property_name = tab.colnames[0]
+        arr = np.array(tab[tab.colnames[0]]) * tab.meta["units"]
         return cls.from_1D_arr(property_name, arr)
 
     @classmethod

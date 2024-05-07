@@ -356,11 +356,11 @@ class Catalogue_Base:
     def check_hdu_exists(self, hdu):
         # check whether the hdu extension exists
         hdul = fits.open(self.cat_path)
-        return any(hdu_.name == hdu for hdu_ in hdul)
+        return any(hdu_.name == hdu.upper() for hdu_ in hdul)
     
     def write_cat(self, tab_arr, tab_names):
         hdu_list = fits.HDUList()
         [hdu_list.append(fits.BinTableHDU(data = tab.as_array(), header = \
             fits.Header(tab.meta), name = name)) for (tab, name) in zip(tab_arr, tab_names)]
-        hdu_list.writeto(f"{self.cat_path.replace('.fits', '')}_test.fits", overwrite = True)
-        galfind_logger.info(f"Writing table to {self.cat_path.replace('.fits', '')}_test.fits!")
+        hdu_list.writeto(self.cat_path, overwrite = True)
+        galfind_logger.info(f"Writing table to {self.cat_path}")
