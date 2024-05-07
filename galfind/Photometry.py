@@ -11,7 +11,6 @@ import numpy as np
 import astropy.constants as const
 import astropy.units as u
 from copy import copy, deepcopy
-import seaborn as sns
 import warnings
 import matplotlib.pyplot as plt
 from scipy.interpolate import interp1d

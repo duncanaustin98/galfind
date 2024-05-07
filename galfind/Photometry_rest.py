@@ -12,7 +12,6 @@ import astropy.constants as const
 import astropy.units as u
 from copy import copy, deepcopy
 import traceback
-import seaborn as sns
 from tqdm import tqdm
 import warnings
 import matplotlib.pyplot as plt
@@ -170,7 +169,7 @@ class Photometry_rest(Photometry):
         self.make_rest_UV_phot()
         assert(conv_filt == False)
         #if not all(beta == -99. for beta in self.beta_PDF):
-        sns.set(style="whitegrid")
+        #sns.set(style="whitegrid")
         warnings.filterwarnings("ignore")
 
         # Create figure and axes

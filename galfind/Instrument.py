@@ -11,7 +11,6 @@ import numpy as np
 from copy import copy, deepcopy
 from abc import ABC, abstractmethod
 import astropy.units as u
-import seaborn as sns
 import json
 from pathlib import Path
 from astroquery.svo_fps import SvoFps
@@ -248,7 +247,7 @@ class Instrument:
 
     def plot_filter_profiles(self, ax, wav_units = u.um, from_SVO = True, \
             cmap_name = "Spectral_r", annotate = True, show = True, save = False):
-        cmap = sns.color_palette(cmap_name, len(self))
+        cmap = plt.get_cmap(cmap_name, len(self))
         for i, band in enumerate(self):
             band.plot_filter_profile(ax, from_SVO = from_SVO, color = cmap[i])
         if annotate:
