@@ -11,11 +11,11 @@ import numpy as np
 from copy import copy, deepcopy
 from abc import ABC, abstractmethod
 import astropy.units as u
-import seaborn as sns
 import json
 from pathlib import Path
 from astroquery.svo_fps import SvoFps
 import matplotlib.pyplot as plt
+from typing import NoReturn
 
 from . import useful_funcs_austind as funcs
 from . import config, galfind_logger, NIRCam_aper_corr
@@ -200,21 +200,31 @@ class Instrument:
     
 # %% Other class methods
 
-    def remove_band(self, band_name) -> None:
+    def remove_band(self, band_name) -> NoReturn:
         assert type(band_name) in [str, np.str_], galfind_logger.critical(f"{band_name=} with {type(band_name)=} not in ['str', 'np.str_']")
         assert band_name in self.band_names, galfind_logger.critical(f"{band_name=} not in {self.band_names=}")
         remove_index = self.index_from_band_name(band_name)
         self.bands = np.delete(self.bands, remove_index)
         
-    def remove_index(self, remove_index: int) -> None:
+    def remove_index(self, remove_index: int) -> NoReturn:
         remove_band = self.band_name_from_index(remove_index)
         self.remove_band(remove_band)
         
-    def index_from_band_name(self, band_name):
+    def index_from_band_name(self, band_name) -> int:
         return np.where(self.band_names == band_name)[0][0]
     
-    def band_name_from_index(self, index):
+    def band_name_from_index(self, index) -> str:
         return self.band_names[index]
+    
+    def bands_from_wavelength(self, wavelength) -> list[Filter]:
+        return [band for band in self if wavelength > band.WavelengthLower50 and wavelength < band.WavelengthUpper50]
+
+    def nearest_band_index_to_wavelength(self, wavelength, medium_bands_only = False) -> int:
+        if medium_bands_only:
+            search_bands = [band for band in self if "M" == band.band_name[-1]]
+        else:
+            search_bands = self.bands
+        return np.abs([band.WavelengthCen for band in search_bands] - wavelength).argmin()
     
     @staticmethod
     def from_name(name, excl_bands = []):
@@ -241,19 +251,18 @@ class Instrument:
     #     for band in self:
     #         band.load_band_filter_profile(band, from_SVO = from_SVO)
 
-    def plot_filter_profiles(self, ax, plot_bands = [], from_SVO = True, cmap_name = "Spectral_r", show = True, save = False):
-        cmap = sns.color_palette(cmap_name, len(plot_bands))
-        for i, band in enumerate(plot_bands):
-            if not band in self.band_names:
-                raise(Exception(f"{band} not in {self.name}!"))
-            else:
-                band.plot_filter_profile(ax, band, from_SVO = from_SVO, color = cmap[i])
-        ax.set_title(f"{self.name} filters")
-        ax.set_xlabel(r"$\lambda_{\mathrm{obs}} / \mathrm{\AA}$")
-        ax.set_ylabel("Transmission")
+    def plot_filter_profiles(self, ax, wav_units = u.um, from_SVO = True, \
+            cmap_name = "Spectral_r", annotate = True, show = True, save = False) -> NoReturn:
+        cmap = plt.get_cmap(cmap_name, len(self))
+        for i, band in enumerate(self):
+            band.plot_filter_profile(ax, from_SVO = from_SVO, color = cmap[i])
+        if annotate:
+            ax.set_title(f"{self.name} filters")
+            ax.set_xlabel(r"$\lambda_{\mathrm{obs}}$ / " + funcs.unit_labels_dict[wav_units])
+            ax.set_ylabel("Transmission")
+            ax.set_ylim(0., np.max([trans for trans in band.trans for band in self]) + 0.1)
         if save:
-            print("Figure not saved!")
-            pass
+            plt.savefig(f"{self.name}_filter_profiles.png")
         if show:
             plt.show()
 

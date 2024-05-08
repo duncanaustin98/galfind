@@ -13,7 +13,6 @@ import matplotlib as mpl
 import astropy.units as u
 from tqdm import tqdm
 import os
-import seaborn as sns
 from pathlib import Path
 from astropy.table import Table
 from itertools import combinations
@@ -73,7 +72,7 @@ def plot_dbeta(ax, z_arr, template_set, incl_bands, rest_UV_wav_lims, m_UV_norm,
                incl_errs = False, annotate = True, show = True, save = True, cmap_name = "Oranges", \
                    plot_indices = [], output_dir = f"{config['DEFAULT']['GALFIND_WORK']}/Beta_paper/Delta_beta_fsps_larson"):
     mock_sed_rest_set = Mock_SED_rest_template_set.load_EAZY_in_templates(m_UV_norm, template_set)
-    cmap = sns.color_palette(cmap_name, len(plot_indices) + 5)
+    cmap = plt.get_cmap(cmap_name, len(plot_indices) + 5)
     # determine appropriate file to load mock photometric beta calculations
     input_phot_dir = f"{config['DEFAULT']['GALFIND_WORK']}/Beta_paper/Beta_phot_{template_set}"
     input_spec_dir = f"{config['DEFAULT']['GALFIND_WORK']}/Beta_paper"

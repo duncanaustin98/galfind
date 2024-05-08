@@ -31,6 +31,7 @@ from . import useful_funcs_austind as funcs
 from . import config, galfind_logger, astropy_cosmo
 from . import Photometry_rest, Photometry_obs, Multiple_Photometry_obs, Data, Instrument, NIRCam, ACS_WFC, WFC3_IR, PDF
 from .EAZY import EAZY
+from .Emission_lines import line_diagnostics
 
 class Galaxy:
     
@@ -270,14 +271,12 @@ class Galaxy:
                 re_kpc = (re_as * d_A).to(u.kpc, u.dimensionless_angles())
                 
                 # First scalebar
-                scalebar = AnchoredSizeBar(ax_arr[i].transData,
-                    0.3 / data.im_pixel_scales[band].value, "0.3\"", 'lower right', 
-                    pad = 0.3, color='white', frameon=False, size_vertical=2)
+                scalebar = AnchoredSizeBar(ax_arr[i].transData, 0.3 / data.im_pixel_scales[band].value, \
+                    "0.3\"", 'lower right', pad = 0.3, color='white', frameon=False, size_vertical=2)
                 ax_arr[-1].add_artist(scalebar)
                 # Plot scalebar with physical size
-                scalebar = AnchoredSizeBar(ax_arr[-1].transData,
-                    re, f"{re_kpc:.1f}", 'upper left', pad=0.3, color='white',
-                    frameon=False, size_vertical=1.5)
+                scalebar = AnchoredSizeBar(ax_arr[-1].transData, re, f"{re_kpc:.1f}", \
+                    'upper left', pad=0.3, color='white', frameon=False, size_vertical=1.5)
                 ax_arr[-1].add_artist(scalebar)
     
     def plot_phot_diagnostic(self, ax, data, SED_fit_params_arr, zPDF_plot_SED_fit_params_arr, wav_unit = u.um, flux_unit = u.ABmag, \
@@ -306,16 +305,17 @@ class Galaxy:
                     
             # plot specified SEDs andd save colours
             SED_colours = {}
+            errorbar_kwargs = {"ls": "", "marker": "o", "ms": 8., "zorder": 100., "path_effects": [pe.withStroke(linewidth = 2., foreground = "white")]}
             for SED_fit_params in reversed(SED_fit_params_arr):
                 key = SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)
                 SED_plot = self.phot.SED_results[key].SED.plot_SED(phot_ax, wav_unit, flux_unit, label = key)
                 SED_colours[key] = SED_plot[0].get_color()
-                # could also plot the expected photometry here as well
+                # plot the mock photometry
                 self.phot.SED_results[key].SED.create_mock_phot(self.phot.instrument, depths = self.phot.depths)
                 self.phot.SED_results[key].SED.mock_phot.plot_phot(phot_ax, wav_unit, flux_unit, uplim_sigma = None, \
-                    auto_scale = False, plot_errs = {"x": False, "y": False}, label = None, filled = False, colour = SED_colours[key])
-                #ax_photo.scatter(band_wavs_lowz, band_mags_lowz, edgecolors=eazy_color_lowz, marker='o', facecolor='none', s=80, zorder=4.5)
-                                
+                    auto_scale = False, plot_errs = {"x": False, "y": False}, errorbar_kwargs = errorbar_kwargs, \
+                    label = None, filled = False, colour = SED_colours[key])
+                #ax_photo.scatter(band_wavs_lowz, band_mags_lowz, edgecolors=eazy_color_lowz, marker='o', facecolor='none', s=80, zorder=4.5)               
             self.phot.plot_phot(phot_ax, wav_units = wav_unit, mag_units = flux_unit, annotate = False, auto_scale = True, label_SNRs = True)
             # photometry axis title
             phot_ax.set_title(f"{data.survey} {self.ID} ({data.version})")
@@ -579,6 +579,165 @@ class Galaxy:
                     self.selection_flags[selection_name] = False
         return self, selection_name
     
+    # Selecting line emitters
+
+    def select_rest_UV_line_emitters_dmag(self, emission_line_name, delta_m, rest_UV_wav_lims = [1_250., 3_000.] * u.AA, \
+            medium_bands_only = True, SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}, update = True):
+        assert(line_diagnostics[emission_line_name]["line_wav"] > rest_UV_wav_lims[0] * rest_UV_wav_lims.unit and \
+            line_diagnostics[emission_line_name]["line_wav"] < rest_UV_wav_lims[1] * rest_UV_wav_lims.unit  )
+        assert(type(delta_m) in [int, np.int64, float, np.float64])
+        assert(u.has_physical_type(rest_UV_wav_lims) == "length")
+        assert(type(medium_bands_only) in [bool, np.bool_])
+        selection_name = f"{emission_line_name},dm{'_med' if medium_bands_only else ''}>{delta_m:.1f},UV_{str(rest_UV_wav_lims.value).replace(' ', '')}AA"
+        if selection_name in self.selection_flags.keys():
+            galfind_logger.debug(f"{selection_name} already performed for galaxy ID = {self.ID}!")
+        else:
+            phot_rest = deepcopy(self.phot.SED_results[SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)].phot_rest)
+            # find bands that the emission line lies within
+            obs_frame_emission_line_wav = line_diagnostics[emission_line_name]["line_wav"] * (1. + phot_rest.z)
+            included_bands = self.phot.instrument.bands_from_wavelength(obs_frame_emission_line_wav)
+            # determine index of the closest band to the emission line
+            closest_band_index = self.phot.instrument.nearest_band_index_to_wavelength(obs_frame_emission_line_wav, medium_bands_only)
+            # if there are no included bands or the closest band is masked
+            if len(included_bands) == 0 or self.phot.flux_Jy.mask[closest_band_index]:
+                if update:
+                    self.selection_flags[selection_name] = False
+                return self, selection_name
+            # calculate beta excluding the bands that the emission line contaminates
+            phot_rest.crop_phot([self.phot.instrument.index_from_band_name(band.band_name) for band in included_bands])
+            A, beta = phot_rest.basic_beta_calc() # needs to be changed when merged
+            # calculate expected mag in the band - fit power law to rest UV photometry, then convolve with relevant filter
+            mag_continuum = 0. * u.ABmag # needs to be changed when merged
+            # determine observed magnitude
+            mag_observed = funcs.convert_mag_units(self.phot.instrument[closest_band_index].WavelengthCen, self.phot[closest_band_index], u.ABmag)
+            if (mag_continuum - mag_observed).value > delta_m:
+                if update:
+                    self.selection_flags[selection_name] = True
+            else:
+                if update:
+                    self.selection_flags[selection_name] = False
+        return self, selection_name
+    
+    def select_rest_UV_line_emitters_sigma(self, emission_line_name, sigma, rest_UV_wav_lims = [1_250., 3_000.] * u.AA, \
+            medium_bands_only = True, SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}, update = True):
+        assert(line_diagnostics[emission_line_name]["line_wav"] > rest_UV_wav_lims[0] * rest_UV_wav_lims.unit and \
+            line_diagnostics[emission_line_name]["line_wav"] < rest_UV_wav_lims[1] * rest_UV_wav_lims.unit  )
+        assert(type(sigma) in [int, np.int64, float, np.float64])
+        assert(u.has_physical_type(rest_UV_wav_lims) == "length")
+        assert(type(medium_bands_only) in [bool, np.bool_])
+        selection_name = f"{emission_line_name},sigma{'_med' if medium_bands_only else ''}>{sigma:.1f},UV_{str(rest_UV_wav_lims.value).replace(' ', '')}AA"
+        if selection_name in self.selection_flags.keys():
+            galfind_logger.debug(f"{selection_name} already performed for galaxy ID = {self.ID}!")
+        else:
+            phot_rest = deepcopy(self.phot.SED_results[SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)].phot_rest)
+            # find bands that the emission line lies within
+            obs_frame_emission_line_wav = line_diagnostics[emission_line_name]["line_wav"] * (1. + phot_rest.z)
+            included_bands = self.phot.instrument.bands_from_wavelength(obs_frame_emission_line_wav)
+            # determine index of the closest band to the emission line
+            closest_band_index = self.phot.instrument.nearest_band_index_to_wavelength(obs_frame_emission_line_wav, medium_bands_only)
+            # if there are no included bands or the closest band is masked
+            if len(included_bands) == 0 or self.phot.flux_Jy.mask[closest_band_index]:
+                if update:
+                    self.selection_flags[selection_name] = False
+                return self, selection_name
+            # calculate beta excluding the bands that the emission line contaminates
+            phot_rest.crop_phot([self.phot.instrument.index_from_band_name(band.band_name) for band in included_bands])
+            A, beta = phot_rest.basic_beta_calc() # needs to be changed when merged
+            # calculate expected mag in the band - fit power law to rest UV photometry, then convolve with relevant filter
+            flux_cont = 0. * u.Jy # needs to be changed when merged
+            # determine observed magnitude
+            central_wav = self.phot.instrument[closest_band_index].WavelengthCen
+            flux_obs_err = funcs.convert_mag_err_units(central_wav, self.phot.flux_Jy[closest_band_index], self.phot.flux_Jy_errs[closest_band_index], u.Jy)
+            flux_obs = funcs.convert_mag_units(central_wav, self.phot.flux_Jy[closest_band_index], u.Jy)
+            if abs((flux_obs - flux_cont).value) > sigma * np.mean(flux_obs_err.value):
+                if update:
+                    self.selection_flags[selection_name] = True
+            else:
+                if update:
+                    self.selection_flags[selection_name] = False
+        return self, selection_name
+    
+    # Colour selection functions
+
+    def select_colour(self, colour_bands, colour_val, bluer_or_redder, update = True):
+        assert(bluer_or_redder in ["bluer", "redder"])
+        assert(type(colour_bands) in [str, np.str_, list, np.ndarray])
+        if type(colour_bands) in [str, np.str_]:
+            colour_bands = colour_bands.split("-")
+        assert(len(colour_bands) == 2)
+        assert(all(colour in self.phot.instrument.band_names for colour in colour_bands))
+        # ensure bands are ordered blue -> red
+        assert(self.phot.instrument.index_from_band_name(colour_bands[0]) < self.phot.instrument.index_from_band_name(colour_bands[1]))
+        selection_name = f"{'-'.join(colour_bands)}{'<' if bluer_or_redder == 'bluer' else '>'}{colour_val:.2f}"
+        if selection_name in self.selection_flags.keys():
+            galfind_logger.debug(f"{selection_name} already performed for galaxy ID = {self.ID}!")
+        else:
+            # calculate colour
+            band_indices = [self.phot.instrument.index_from_band_name(band_name) for band_name in colour_bands]
+            colour = (funcs.convert_mag_errs(self.phot.instrument[band_indices[0]].WavelengthCen, self.phot.flux_Jy[band_indices[0]], u.ABmag) \
+                - funcs.convert_mag_errs(self.phot.instrument[band_indices[1]].WavelengthCen, self.phot.flux_Jy[band_indices[1]], u.ABmag)).value
+            if (colour < colour_val and bluer_or_redder == "bluer") or \
+                (colour > colour_val and bluer_or_redder == "redder"):
+                if update:
+                    self.selection_flags[selection_name] = True
+            else:
+                if update:
+                    self.selection_flags[selection_name] = False
+        return self, selection_name
+    
+    def select_colour_colour(self, colour_bands_arr, colour_select_func):
+        pass
+    
+    def select_UVJ(self, SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}, \
+            quiescent_or_star_forming = "quiescent", update = True):
+        assert(quiescent_or_star_forming in ["quiescent", "star_forming"])
+        selection_name = f"UVJ_{quiescent_or_star_forming}"
+        if selection_name in self.selection_flags.keys():
+            galfind_logger.debug(f"{selection_name} already performed for galaxy ID = {self.ID}!")
+        else:
+            # extract UVJ colours -> still need to sort out the units here
+            U_minus_V = -2.5 * np.log10((self.phot.SED_results[SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)].properties["U_flux"] \
+                / self.phot.SED_results[SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)].properties["V_flux"]).to(u.dimensionless_unscaled).value)
+            V_minus_J = -2.5 * np.log10((self.phot.SED_results[SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)].properties["V_flux"] \
+                - self.phot.SED_results[SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)].properties["J_flux"]).to(u.dimensionless_unscaled).value)
+            # selection from Antwi-Danso2022
+            is_quiescent = U_minus_V > 1.23 and V_minus_J < 1.67 and U_minus_V > V_minus_J * 0.98 + 0.38
+            if (quiescent_or_star_forming == "quiescent" and is_quiescent) or \
+                    (quiescent_or_star_forming == "star_forming" and not is_quiescent):
+                if update:
+                    self.selection_flags[selection_name] = True
+            else:
+                if update:
+                    self.selection_flags[selection_name] = False
+        return self, selection_name
+
+    def select_Kokorev24_LRDs(self, update = True):
+        selection_name = "Kokorev+24_LRDs"
+        red1_selection = \
+        [
+            self.select_colour(["F115W", "F150W"], 0.8, "bluer")[1], \
+            self.select_colour(["F200W", "F277W"], 0.7, "redder")[1], \
+            self.select_colour(["F200W", "F356W"], 1.0, "redder")[1]
+        ]
+        red2_selection = \
+        [
+            self.select_colour(["F150W", "F200W"], 0.8, "bluer")[1], \
+            self.select_colour(["F277W", "F356W"], 0.6, "redder")[1], \
+            self.select_colour(["F277W", "F444W"], 0.7, "redder")[1]
+        ]
+        
+        # if the galaxy passes either red1 or red2 colour selection criteria
+        if all(self.selection_flags[name] for name in red1_selection) or \
+                all(self.selection_flags[name] for name in red2_selection):
+            if update:
+                self.selection_flags[selection_name] = True
+        else:
+            if update:
+                self.selection_flags[selection_name] = False
+        return self, selection_name
+
+    # Depth selection functions
+
     def select_depth_region(self, band, region_ID, update = True):
         return NotImplementedError
 
@@ -685,7 +844,7 @@ class Galaxy:
             self.phot_bluewards_Lya_non_detect(2., SED_fit_params)[1], # 2σ non-detected in all bands bluewards of Lyα
             self.phot_redwards_Lya_detect([5., 3.], SED_fit_params, widebands_only = True)[1], # 5σ/3σ detected in first/second band redwards of Lyα
             self.select_chi_sq_lim(3., SED_fit_params, reduced = True)[1], # χ^2_red < 3
-            self.select_chi_sq_diff(9., SED_fit_params, delta_z_lowz = 0.5)[1], # Δχ^2 < 9 between redshift free and low redshift SED fits, with Δz=0.5 tolerance 
+            #self.select_chi_sq_diff(9., SED_fit_params, delta_z_lowz = 0.5)[1], # Δχ^2 < 9 between redshift free and low redshift SED fits, with Δz=0.5 tolerance 
             self.select_robust_zPDF(0.6, 0.1, SED_fit_params)[1] # 60% of redshift PDF must lie within z ± z * 0.1
         ]
         # masking criteria

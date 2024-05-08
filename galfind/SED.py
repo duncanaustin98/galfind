@@ -85,13 +85,12 @@ class SED:
         return plot
     
     def calc_bandpass_averaged_flux(self, filter_wavs, filter_trans):
-
         wavs = funcs.convert_wav_units(self.wavs, u.AA).value
         mags = funcs.convert_mag_units(self.wavs, self.mags, u.erg / (u.s * u.AA * u.cm ** 2)).value
         # update filter wavelengths to correct units
         filter_wavs = funcs.convert_wav_units(filter_wavs, u.AA).value
         # interpolate SED to be on same grid as filter_profile
-        sed_interp = interp1d(self.wavs, self.mags, fill_value = "extrapolate")(filter_wavs) # in f_lambda
+        sed_interp = interp1d(wavs, mags, fill_value = "extrapolate")(filter_wavs) # in f_lambda
         # calculate integral(f(λ) * T(λ)dλ)
         numerator = np.trapz(sed_interp * filter_trans, x = filter_wavs)
         # calculate integral(T(λ)dλ)
@@ -204,11 +203,6 @@ class SED_obs(SED):
            depths = [depth for (band, depth) in depths.items()]
         if depths == []: # if depths not given, expect the galaxy to be very well detected
             depths = [99. for band in instrument.band_names]
-        # convert self.mags to f_λ if needed
-        if self.mags.unit == u.ABmag:
-            self.mags = funcs.convert_mag_units(self.wavs, self.mags, u.erg / (u.s * (u.cm ** 2) * u.AA))
-        elif u.get_physical_type(self.mags.unit) != "power density/spectral flux density wav":
-            self.mags = funcs.convert_mag_units(self.wavs, self.mags, u.erg / (u.s * (u.cm ** 2) * u.AA))
         bp_averaged_fluxes = [self.calc_bandpass_averaged_flux(band.wav, band.trans) for band in instrument] * u.erg / (u.s * (u.cm ** 2) * u.AA)
         # convert bp_averaged_fluxes to Jy
         band_wavs = np.array([band.WavelengthCen.value for band in instrument]) * u.AA
@@ -216,6 +210,7 @@ class SED_obs(SED):
         self.mock_phot = Mock_Photometry(instrument, bp_averaged_fluxes_Jy, depths, min_pc_err)
         return self.mock_phot
     
+
 class Mock_SED_rest(SED_rest): #, Mock_SED):
     
     def __init__(self, wavs, mags, wav_units, mag_units, template_name = None, meta = None):

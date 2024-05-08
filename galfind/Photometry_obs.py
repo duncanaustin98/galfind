@@ -75,7 +75,7 @@ class Photometry_obs(Photometry):
 
     def plot_phot(self, ax, wav_units = u.AA, mag_units = u.Jy, plot_errs = {"x": True, "y": True}, \
             annotate = True, uplim_sigma = 2., auto_scale = True, label_SNRs = True, \
-            errorbar_kwargs = {"ls": "", "marker": "o", "ms": 6., "zorder": 100., "path_effects": [pe.withStroke(linewidth = 3, foreground = "white")]}, \
+            errorbar_kwargs = {"ls": "", "marker": "o", "ms": 4., "zorder": 100., "path_effects": [pe.withStroke(linewidth = 2., foreground = "white")]}, \
             filled = True, colour = "black", label = "Photometry"):
 
         plot, wavs_to_plot, mags_to_plot, yerr, uplims = super().plot_phot \
@@ -83,13 +83,20 @@ class Photometry_obs(Photometry):
             auto_scale, errorbar_kwargs, filled, colour, label, return_extra = True)
 
         if label_SNRs:
-            label_kwargs = {"ha": "center", "fontsize": "medium", "path_effects": [pe.withStroke(linewidth = 3, foreground = "white")], "zorder": 1_000.}
-            offset = {"power density/spectral flux density wav": 0.1, "ABmag/spectral flux density": 0.1, \
-                "spectral flux density": 0.1}[str(u.get_physical_type(mag_units))]
-            [ax.annotate(f"{SNR:.1f}$\sigma$" if SNR < 100 else f"{SNR:.0f}$\sigma$", \
-                (wav, mag + offset if is_uplim else mag_l1 - offset), **label_kwargs) \
-                for i, (SNR, wav, mag_l1, mag, is_uplim) in \
-                enumerate(zip(self.SNR, wavs_to_plot, mags_to_plot - yerr[0], mags_to_plot, uplims))]
+            label_kwargs = {"ha": "center", "fontsize": "medium", "path_effects": [pe.withStroke(linewidth = 2., foreground = "white")], "zorder": 1_000.}
+            label_func = lambda SNR: f"{SNR:.1f}$\sigma$" if SNR < 100 else f"{SNR:.0f}$\sigma$"
+            if mag_units == u.ABmag:
+                offset = 0.15
+                [ax.annotate(label_func(SNR), (wav, mag - offset if is_uplim else mag + mag_u1 + offset), \
+                    **label_kwargs) for i, (SNR, wav, mag, mag_l1, mag_u1, is_uplim) in \
+                    enumerate(zip(self.SNR, wavs_to_plot, mags_to_plot, yerr[0], yerr[1], uplims))]
+            else:
+                offset = {"power density/spectral flux density wav": 0.1, "ABmag/spectral flux density": 0.1, \
+                    "spectral flux density": 0.1}[str(u.get_physical_type(mag_units))]
+                [ax.annotate(label_func(SNR), (wav, mag + offset if is_uplim else mag - mag_l1 - offset), \
+                    **label_kwargs) for i, (SNR, wav, mag, mag_l1, mag_u1, is_uplim) in \
+                    enumerate(zip(self.SNR, wavs_to_plot, mags_to_plot, yerr[0], yerr[1], uplims))]
+
         
         if annotate:
             # x/y labels etc here

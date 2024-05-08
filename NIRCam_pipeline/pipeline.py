@@ -39,18 +39,15 @@ def pipeline(surveys, version, instruments, aper_diams, min_flux_pc_errs, forced
 
             #cat_copy = cat.select_unmasked_instrument(NIRCam())
             #cat_copy = cat.select_EPOCHS()
+            #cat_copy.plot_phot_diagnostics() # flux_unit = u.erg / (u.s * u.AA * u.cm ** 2)
+            
             #print(str(cat_copy))
 
             #print(cat_copy.crop(1407, "ID")[0])
             # for i, code in enumerate(sed_codes):
             #     # calculate the extended source corrections
             #     if code.code_name == "LePhare":
-            #         cat.make_ext_src_corr_cat(code.code_name)
-            #     # calculate the UV properties for this catalogue
-            #     if instruments == ["NIRCam"]: # QUICK FIX!
-            #         print("Instruments name is a QUICK FIX!")
-            #         instruments_name = "NIRCam"
-            #     cat.make_UV_fit_cat(UV_PDF_path = f"{config['RestUVProperties']['UV_PDF_PATH']}/{version}/{instruments_name}/{survey}/{code.code_name}+{pc_err}pc")  
+            #         cat.make_ext_src_corr_cat(code.code_name)  
 
 def make_EAZY_SED_fit_params_arr(SED_code_arr, templates_arr, lowz_zmax_arr):
     return [{"code": code, "templates": templates, "lowz_zmax": lowz_zmax} \
@@ -60,7 +57,7 @@ if __name__ == "__main__":
     version = "v11" #config["DEFAULT"]["VERSION"]
     instruments = ["NIRCam"] #, 'ACS_WFC'] #, 'WFC3_IR']
     cat_type = "loc_depth"
-    surveys = ["NGDEEP2"] #[config["DEFAULT"]["SURVEY"]]
+    surveys = ["JOF"] #[config["DEFAULT"]["SURVEY"]]
     aper_diams = [0.32] * u.arcsec
     SED_code_arr = [EAZY()]
     templates_arr = ["fsps_larson"] #["fsps", "fsps_larson", "fsps_jades"]

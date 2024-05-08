@@ -12,7 +12,6 @@ import astropy.constants as const
 import astropy.units as u
 from copy import copy, deepcopy
 import traceback
-import seaborn as sns
 from tqdm import tqdm
 import warnings
 import matplotlib.pyplot as plt

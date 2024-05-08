@@ -33,6 +33,9 @@ class Catalogue_Base:
         
         # keep a record of the crops that have been made to the catalogue
         self.selection_cols = [key.replace("SELECTED_", "") for key in self.open_cat().meta.keys() if "SELECTED_" in key]
+
+        if crops == None:
+            crops = []
         self.crops = crops
         self.SED_rest_properties = SED_rest_properties
         

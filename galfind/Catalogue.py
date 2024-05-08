@@ -231,7 +231,7 @@ class Catalogue(Catalogue_Base):
     def plot_phot_diagnostics(self, 
             SED_fit_params_arr = [{"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}, {"code": EAZY(), "templates": "fsps_larson", "dz": 0.5}], \
             zPDF_plot_SED_fit_params_arr = [{"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}, {"code": EAZY(), "templates": "fsps_larson", "dz": 0.5}], \
-            wav_unit = u.um, flux_unit = u.erg / (u.s * u.AA * u.cm ** 2)):
+            wav_unit = u.um, flux_unit = u.ABmag):
         
         # figure size may well depend on how many bands there are
         overall_fig = plt.figure(figsize = (8, 7), constrained_layout = True)
@@ -295,6 +295,33 @@ class Catalogue(Catalogue_Base):
 
     def phot_SNR_crop(self, band_name_or_index, SNR_lim, detect_or_non_detect = "detect"):
         return self.perform_selection(Galaxy.phot_SNR_crop, band_name_or_index, SNR_lim, detect_or_non_detect)
+
+    # Colour selection functions
+
+    def select_colour(self, colour_bands, colour_val, bluer_or_redder):
+        return self.perform_selection(Galaxy.select_colour, colour_bands, colour_val, bluer_or_redder)
+    
+    def select_colour_colour(self, colour_bands_arr, colour_select_func):
+        return self.perform_selection(Galaxy.select_colour_colour, colour_bands_arr, colour_select_func)
+    
+    def select_UVJ(self, SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}, quiescent_or_star_forming = "quiescent"):
+        return self.perform_selection(Galaxy.select_UVJ, SED_fit_params, quiescent_or_star_forming)
+    
+    def select_Kokorev24_LRDs(self):
+        # only perform this selection if all relevant bands are present
+        required_bands = ["F115W", "F150W", "F200W", "F277W", "F356W", "F444W"]
+        if all(band_name in self.instrument.band_names for band_name in required_bands):
+            # red1 selection (z<6 LRDs)
+            self.perform_selection(Galaxy.select_colour, ["F115W", "F150W"], 0.8, "bluer", make_cat_copy = False)
+            self.perform_selection(Galaxy.select_colour, ["F200W", "F277W"], 0.7, "redder", make_cat_copy = False)
+            self.perform_selection(Galaxy.select_colour, ["F200W", "F356W"], 1.0, "redder", make_cat_copy = False)
+            # red2 selection (z>6 LRDs)
+            self.perform_selection(Galaxy.select_colour, ["F150W", "F200W"], 0.8, "bluer", make_cat_copy = False)
+            self.perform_selection(Galaxy.select_colour, ["F277W", "F356W"], 0.6, "redder", make_cat_copy = False)
+            self.perform_selection(Galaxy.select_colour, ["F277W", "F444W"], 0.7, "redder", make_cat_copy = False)
+            return self.perform_selection(Galaxy.select_Kokorev24_LRDs)
+        else:
+            galfind_logger.warning(f"Not all of {required_bands} in {self.instrument.band_names=}, skipping 'select_Kokorev24_LRDs' selection")
     
     # Depth region selection
 
@@ -328,7 +355,7 @@ class Catalogue(Catalogue_Base):
         self.perform_selection(Galaxy.phot_bluewards_Lya_non_detect, 2., SED_fit_params, make_cat_copy = False) # 2σ non-detected in all bands bluewards of Lyα
         self.perform_selection(Galaxy.phot_redwards_Lya_detect, [5., 3.], SED_fit_params, True, make_cat_copy = False) # 5σ/3σ detected in first/second band redwards of Lyα
         self.perform_selection(Galaxy.select_chi_sq_lim, 3., SED_fit_params, True, make_cat_copy = False) # χ^2_red < 3
-        self.perform_selection(Galaxy.select_chi_sq_diff, 9., SED_fit_params, 0.5, make_cat_copy = False) # Δχ^2 < 9 between redshift free and low redshift SED fits, with Δz=0.5 tolerance 
+        #self.perform_selection(Galaxy.select_chi_sq_diff, 9., SED_fit_params, 0.5, make_cat_copy = False) # Δχ^2 < 9 between redshift free and low redshift SED fits, with Δz=0.5 tolerance 
         self.perform_selection(Galaxy.select_robust_zPDF, 0.6, 0.1, SED_fit_params, make_cat_copy = False) # 60% of redshift PDF must lie within z ± z * 0.1
         return self.perform_selection(Galaxy.select_EPOCHS, SED_fit_params)
 
