@@ -30,6 +30,7 @@ from . import useful_funcs_austind as funcs
 from . import config, galfind_logger, astropy_cosmo
 from . import Photometry_rest, Photometry_obs, Multiple_Photometry_obs, Data, Instrument, NIRCam, ACS_WFC, WFC3_IR
 from .EAZY import EAZY
+from .Emission_lines import line_diagnostics
 
 class Galaxy:
     
@@ -577,6 +578,45 @@ class Galaxy:
                     self.selection_flags[selection_name] = False
         return self, selection_name
     
+    # Selecting line emitters
+
+    def select_rest_UV_line_emitters(self, emission_line_name, delta_m, rest_UV_wav_lims = [1_250., 3_000.] * u.AA, medium_bands_only = True, \
+            SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}, update = True):
+        assert(line_diagnostics[emission_line_name]["line_wav"] > rest_UV_wav_lims[0] * rest_UV_wav_lims.unit and \
+            line_diagnostics[emission_line_name]["line_wav"] < rest_UV_wav_lims[1] * rest_UV_wav_lims.unit  )
+        assert(type(delta_m) in [int, np.int64, float, np.float64])
+        assert(u.has_physical_type(rest_UV_wav_lims) == "length")
+        assert(type(medium_bands_only) in [bool, np.bool_])
+        selection_name = f"{emission_line_name},dm{'_med' if medium_bands_only else ''}>{delta_m:.1f},UV_{str(rest_UV_wav_lims.value).replace(' ', '')}AA"
+        if selection_name in self.selection_flags.keys():
+            galfind_logger.debug(f"{selection_name} already performed for galaxy ID = {self.ID}!")
+        else:
+            phot_rest = deepcopy(self.phot.SED_results[SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)].phot_rest)
+            # find bands that the emission line lies within
+            obs_frame_emission_line_wav = line_diagnostics[emission_line_name]["line_wav"] * (1. + phot_rest.z)
+            included_bands = self.phot.instrument.bands_from_wavelength(obs_frame_emission_line_wav)
+            # determine index of the closest band to the emission line
+            closest_band_index = self.phot.instrument.nearest_band_index_to_wavelength(obs_frame_emission_line_wav, medium_bands_only)
+            # if there are no included bands or the closest band is masked
+            if len(included_bands) == 0 or self.phot.flux_Jy.mask[closest_band_index]:
+                if update:
+                    self.selection_flags[selection_name] = False
+                return self, selection_name
+            # calculate beta excluding the bands that the emission line contaminates
+            phot_rest.crop_phot([self.phot.instrument.index_from_band_name(band.band_name) for band in included_bands])
+            A, beta = phot_rest.basic_beta_calc() # needs to be changed when merged
+            # calculate expected mag in the band - fit power law to rest UV photometry, then convolve with relevant filter
+            mag_continuum = 0. * u.ABmag # needs to be changed when merged
+            # determine observed magnitude
+            mag_observed = funcs.convert_mag_units(self.phot.instrument[closest_band_index].WavelengthCen, self.phot[closest_band_index], u.ABmag)
+            if (mag_continuum - mag_observed).value > delta_m:
+                if update:
+                    self.selection_flags[selection_name] = True
+            else:
+                if update:
+                    self.selection_flags[selection_name] = False
+        return self, selection_name
+    
     # Colour selection functions
 
     def select_colour(self, colour_bands, colour_val, bluer_or_redder, update = True):
@@ -655,7 +695,6 @@ class Galaxy:
             if update:
                 self.selection_flags[selection_name] = False
         return self, selection_name
-        pass
 
     # Depth selection functions
 
