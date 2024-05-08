@@ -3,6 +3,8 @@
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.patheffects as pe
+from astropy.table import Table
+import astropy.units as u
 
 from . import config, galfind_logger
 from . import useful_funcs_austind as funcs
@@ -10,17 +12,75 @@ from . import useful_funcs_austind as funcs
 class PDF:
 
     def __init__(self, property_name, x, p_x):
+        assert type(x) in [u.Quantity, u.Magnitude]
         self.property_name = property_name
         self.x = x
         # normalize to np.trapz(p_x, x) == 1
-        self.p_x = p_x / np.trapz(p_x, x)
+        self.p_x = p_x / np.trapz(p_x, x.value)
 
     def __str__(self):
-        return f"LOADED PDF FOR {self.property_name}"
+        line_sep = "*" * 40 + "\n"
+        band_sep = "-" * 10 + "\n"
+        output_str = ""
+        output_str += line_sep
+        output_str += f"PDF PROPERTY: {self.property_name}; UNIT: {self.unit:latex}\n"
+        output_str += band_sep
+        output_str += f"MEDIAN = {self.get_percentile(50.):.3f}" + r"$_{%.3f}^{%.3f}$" \
+            % (self.get_percentile(50.) - self.get_percentile(16.), self.get_percentile(84.) - self.get_percentile(50.))
+        for i, peak in enumerate(self.peaks):
+            output_str += f"{funcs.ordinal(i + 1)} PEAK: {peak:.3f}\n"
+        output_str += line_sep
+        return output_str
+    
+    def __len__(self):
+        if hasattr(self, "input_arr"):
+            return len(self.input_arr)
+        else:
+            return None
+        
+    @classmethod
+    def from_ecsv(cls, path):
+        tab = Table.read(path)
+        property_name = tab.colnames[0]
+        arr = np.array(tab[tab.colnames[0]]) * tab.meta["units"]
+        return cls.from_1D_arr(property_name, arr)
 
     @classmethod
-    def from_1D_arr(cls):
-        return NotImplementedError
+    def from_1D_arr(cls, property_name, arr, Nbins = 50):
+        assert type(arr) in [u.Quantity, u.Magnitude]
+        p_x, x_bin_edges = np.histogram(arr.value, bins = Nbins, density = True)
+        x = 0.5 * (x_bin_edges[1:] + x_bin_edges[:-1]) * arr.unit
+        PDF_obj = cls(property_name, x, p_x)
+        PDF_obj.input_arr = arr
+        return PDF_obj
+    
+    @property
+    def median(self):
+        try:
+            return self._median
+        except AttributeError:
+            if hasattr(self, "input_arr"):
+                self._median = np.median(self.input_arr.value) * self.input_arr.unit
+            else:
+                self._median = self.percentile(50.)
+            return self._median
+
+    @property
+    def errs(self):
+        try:
+            return self._errs
+        except AttributeError:
+            if hasattr(self, "input_arr"):
+                self._errs = [self.median.value - np.percentile(self.input_arr.value, 16.), \
+                    np.percentile(self.input_arr.value, 84.) - self.median.value] * self.input_arr.unit
+            else:
+                self._errs = [self.median.value - self.percentile(16.).value, \
+                    self.percentile(84.).value - self.median.value] * self.input_arr.unit
+            return self._errs
+    
+    def draw_sample(self, size):
+        # draw a sample of specified size from the PDF
+        pass
 
     def integrate_between_lims(self, lower_x_lim, upper_x_lim):
         # find index of closest values in self.x to lower_x_lim and upper_x_lim
@@ -60,8 +120,27 @@ class PDF:
             # calculate percentile
             cdf = np.cumsum(self.p_x)
             cdf /= np.max(cdf)
-            self.percentiles[f"{percentile:.1f}"] = float(self.x[np.argmin(np.abs(cdf - percentile / 100.))])
+            self.percentiles[f"{percentile:.1f}"] = float(self.x.value[np.argmin(np.abs(cdf - percentile / 100.))]) * self.x.unit
             return self.percentiles[f"{percentile:.1f}"]
+
+    def manipulate_PDF(self, new_property_name, update_func, size = 10_000, **kwargs):
+        if hasattr(self, "input_arr"):
+            sample = self.input_arr
+        else:
+            sample = self.draw_sample(size)
+        updated_sample = update_func(sample, **kwargs) #[update_func(val, **kwargs) for val in sample]
+        return self.__class__.from_1D_arr(new_property_name, updated_sample)
+    
+    def save_PDF(self, save_path, sample_size = 10_000):
+        if hasattr(self, "input_arr"):
+            save_arr = self.input_arr
+        else:
+            save_arr = self.draw_sample(sample_size)
+        meta = {"units": self.x.unit, "size": len(save_arr), "median": np.round(self.median.value, 3), \
+            "l1_err": np.round(self.errs.value[0], 3), "u1_err": np.round(self.errs.value[1], 3)}
+        save_tab = Table({self.property_name: save_arr.value})
+        save_tab.meta = meta
+        save_tab.write(save_path, overwrite = True)
 
     def plot(self, ax, annotate = True, annotate_peak_loc = False, colour = "black"):
         
@@ -115,7 +194,7 @@ class PDF:
             #ax.annotate(f'$\\sum = {float(integral):.2f}$', (zbest, 0.45), fontsize='small', \
                 #transform = ax.get_yaxis_transform(), va='bottom', ha='center', fontweight='bold', \
                 #color=eazy_color, path_effects=[pe.withStroke(linewidth=3, foreground='white')])
-    
+
 
 class SED_fit_PDF(PDF):
 
@@ -166,3 +245,36 @@ class Redshift_PDF(SED_fit_PDF):
         return super().integrate_between_lims(lower_z_lim, upper_z_lim)
 
 
+class PDF_nD:
+
+    def __init__(self, ordered_PDFs):
+        # ensure all PDFs have input arr of values, all of which are the same length
+        assert all(hasattr(PDF_obj, "input_arr") for PDF_obj in ordered_PDFs)
+        assert all(len(PDF_obj.input_arr) == len(ordered_PDFs[0].input_arr) for PDF_obj in ordered_PDFs)
+        self.dimensions = len(ordered_PDFs)
+        self.PDFs = ordered_PDFs
+
+    @classmethod
+    def from_matrix(cls, property_names, matrix):
+        assert len(property_names) == matrix.shape[0] # 0 or 1 here, not sure
+        ordered_PDFs = [PDF.from_1D_arr(property_name, row) for property_name, row in zip(property_names, matrix)]
+        return cls(ordered_PDFs)
+    
+    def __len__(self):
+        return len(self.PDFs[0])
+
+    def __call__(self, func, independent_var, output_type = "chains"):
+        # need to provide additional assertions here too
+        # assert that the dimensions of PDF_nD must be the same as the input arguments - 1 of func
+        chains = np.array([func(independent_var, *vals) for vals in np.array([PDF_obj.input_arr for PDF_obj in self.PDFs]).T])
+        # function output should be of the same length as the independent variable
+        assert chains.shape == (len(self), len(independent_var))
+        assert output_type in ["chains", "percentiles"]
+        if output_type == "chains":
+            return chains
+        elif output_type == "percentiles":
+            func_l1_med_u1 = [np.percentile(chains[:, i], [16., 50., 84.]) for i in range(len(independent_var))]
+            return [func_l1_med_u1[:, 0], func_l1_med_u1[:, 1], func_l1_med_u1[:, 2]]
+
+    def plot_corner(self):
+        pass

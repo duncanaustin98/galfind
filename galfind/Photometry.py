@@ -84,19 +84,17 @@ class Photometry:
         return cls(instrument, fluxes[0], flux_errs[0], loc_depths)
     
     def scatter_phot(self, n_scatter = 1):
-        phot_matrix = np.random.normal(self.flux_Jy.value, self.flux_Jy_errs.value, n_scatter)
-        phot_obj_arr = [Photometry(self.instrument, phot_matrix[i], self.flux_Jy_errs.value, self.loc_depths) for i in range(n_scatter)]
-        if n_scatter == 1:
-            return phot_obj_arr[0]
-        else:
-            return phot_obj_arr
+        assert self.flux_Jy.unit != u.ABmag, galfind_logger.critical(f"{self.flux_Jy.unit=} == 'ABmag'")
+        phot_matrix = np.array([np.random.normal(flux, err, n_scatter) for flux, err in zip(self.flux_Jy.value, self.flux_Jy_errs.value)])
+        return [self.__class__(self.instrument, phot_matrix[:, i] * self.flux_Jy.unit, self.flux_Jy_errs, self.depths) for i in range(n_scatter)]
 
-    def crop_phot(self, indices):
+    def crop_phot(self, indices) -> None:
         indices = np.array(indices).astype(int)
         for index in reversed(indices):
-            self.instrument.remove_band(self.instrument[index])
+            self.instrument.remove_band(self.instrument[index].band_name)
         self.flux_Jy = np.delete(self.flux_Jy, indices)
         self.flux_Jy_errs = np.delete(self.flux_Jy_errs, indices)
+        self.depths = np.delete(self.depths, indices)
 
     def plot_phot(self, ax, wav_units = u.AA, mag_units = u.Jy, plot_errs = {"x": True, "y": True}, \
             annotate = True, uplim_sigma = 2., auto_scale = True, \
@@ -241,9 +239,9 @@ class Mock_Photometry(Photometry):
         one_sig_depths_Jy = depths.to(u.Jy) / 5
         # apply min_pc_err criteria
         flux_Jy_errs = np.array([depth if depth > flux * min_pc_err / 100 else flux * min_pc_err / 100 for flux, depth in zip(flux_Jy.value, one_sig_depths_Jy.value)]) * u.Jy
-        return flux_Jy_errs
-    
-    def scatter(self, size = 1):
+        return flux_Jy_errs 
+
+    def scatter_phot(self, size = 1):
         scattered_fluxes = np.zeros((len(self.flux_Jy), size))
         for i, (flux, err) in enumerate(zip(self.flux_Jy, self.flux_Jy_errs)):
             scattered_fluxes[i] = np.random.normal(flux.value, err.value, size = size)
@@ -251,8 +249,5 @@ class Mock_Photometry(Photometry):
             scattered_fluxes = scattered_fluxes.flatten()
             self.scattered_phot = [Mock_Photometry(self.instrument, scattered_fluxes * u.Jy, self.depths, self.min_pc_err)]
         else:
-            self.scattered_phot = [Mock_Photometry(self.instrument, scattered_fluxes.T[i] * u.Jy, self.depths, self.min_pc_err) for i in range(size)]
-
-        
-            
+            self.scattered_phot = [Mock_Photometry(self.instrument, scattered_fluxes.T[i] * u.Jy, self.depths, self.min_pc_err) for i in range(size)]   
             

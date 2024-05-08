@@ -12,6 +12,7 @@ from tqdm import tqdm
 import time
 from astropy.units import u
 import yagmail
+import warnings
 
 def run_in_dir(path):
     def decorated(func):
@@ -33,6 +34,13 @@ def hour_timer(func):
         t2 = time.time()
         print(f"Function {func.__name__!r} executed in {((t2-t1) * u.s).to(u.h)}")
         return return_value
+    return wrapper
+
+def ignore_warnings(func):
+    def wrapper(*args, **kwargs):
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            return func(*args, **kwargs)
     return wrapper
 
 # should also include the 'logged' output here!

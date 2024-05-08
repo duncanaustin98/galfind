@@ -16,6 +16,7 @@ from astropy.io import fits
 import os
 import sys
 import json
+import glob
 from pathlib import Path
 from astropy.nddata import Cutout2D
 from tqdm import tqdm
@@ -28,7 +29,7 @@ from mpl_toolkits.axes_grid1.anchored_artists import AnchoredSizeBar
 
 from . import useful_funcs_austind as funcs
 from . import config, galfind_logger, astropy_cosmo
-from . import Photometry_rest, Photometry_obs, Multiple_Photometry_obs, Data, Instrument, NIRCam, ACS_WFC, WFC3_IR
+from . import Photometry_rest, Photometry_obs, Multiple_Photometry_obs, Data, Instrument, NIRCam, ACS_WFC, WFC3_IR, PDF
 from .EAZY import EAZY
 from .Emission_lines import line_diagnostics
 
@@ -783,9 +784,9 @@ class Galaxy:
             # extract redshift and chi_sq of lowz runs
             z_lowz_arr = []
             chi_sq_lowz_arr = []
-            for zmax in lowz_zmax_arr:
+            for lowz_zmax in lowz_zmax_arr:
                 SED_fit_params_ = deepcopy(SED_fit_params)
-                SED_fit_params_["lowz_zmax"] = zmax
+                SED_fit_params_["lowz_zmax"] = lowz_zmax
                 z_lowz_arr.append(self.phot.SED_results[SED_fit_params_["code"].label_from_SED_fit_params(SED_fit_params_)].z)
                 chi_sq_lowz_arr.append(self.phot.SED_results[SED_fit_params_["code"].label_from_SED_fit_params(SED_fit_params_)].chi_sq)
             # determine which lowz run to use for this galaxy
@@ -865,6 +866,29 @@ class Galaxy:
             if update:
                 self.selection_flags[selection_name] = False
         return self, selection_name
+    
+    # Rest-frame SED photometric properties
+
+    def _calc_SED_rest_property(self, SED_rest_property_function, SED_fit_params_label, *args):
+        # calculate and save parameter
+        SED_rest_property_function(self.phot.SED_results[SED_fit_params_label].phot_rest, *args)
+        return self
+    
+    def _save_SED_rest_PDFs(self, property_name, save_dir, SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}):
+        key = SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)
+        save_path = f"{save_dir}/{key}/{property_name}/{self.ID}.ecsv"
+        funcs.make_dirs(save_path)
+        self.phot.SED_results[key].phot_rest.property_PDFs[property_name].save_PDF(save_path)
+        
+    def _load_SED_rest_properties(self, PDF_dir, SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}):
+        key = SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)
+        # determine which properties have already been calculated
+        PDF_paths = glob.glob(f"{PDF_dir}/*/{self.ID}.ecsv")
+        for PDF_path in PDF_paths:
+            property_name = PDF_path.split("/")[-2]
+            self.phot.SED_results[key].phot_rest.property_PDFs[property_name] = PDF.from_ecsv(PDF_path)
+            self.phot.SED_results[key].phot_rest._update_properties_from_PDF(property_name)
+        return self
 
 class Multiple_Galaxy:
     

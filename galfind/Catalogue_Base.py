@@ -6,6 +6,7 @@ from copy import deepcopy
 import astropy.units as u
 from tqdm import tqdm
 from astropy.coordinates import SkyCoord
+from astropy.io import fits
 import time
 from . import useful_funcs_austind as useful_funcs
 from .Data import Data
@@ -18,23 +19,25 @@ from . import Multiple_Catalogue, Multiple_Data
 
 class Catalogue_Base:
     # later on, the gal_arr should be calculated from the Instrument and sex_cat path, with SED codes already given
-    def __init__(self, gals, cat_path, survey, cat_creator, instrument, SED_fit_params_arr = {}, version = '', crops = []): #, UV_PDF_path):
+    def __init__(self, gals, cat_path, survey, cat_creator, instrument, \
+            SED_fit_params_arr = {}, version = '', crops = [], SED_rest_properties = {}):
         self.survey = survey
         self.cat_path = cat_path
-        #self.UV_PDF_path = UV_PDF_path
         self.cat_creator = cat_creator
         self.instrument = instrument
         self.SED_fit_params_arr = SED_fit_params_arr
         self.gals = np.array(gals)
-        if version == '':
-            raise Exception('Version must be specified')
+        if version == "":
+            galfind_logger.critical("Version must be specified")
         self.version = version
         
         # keep a record of the crops that have been made to the catalogue
         self.selection_cols = [key.replace("SELECTED_", "") for key in self.open_cat().meta.keys() if "SELECTED_" in key]
+
         if crops == None:
             crops = []
         self.crops = crops
+        self.SED_rest_properties = SED_rest_properties
         
         # concat is commutative for catalogues
         self.__radd__ = self.__add__
@@ -76,6 +79,13 @@ class Catalogue_Base:
         if self.crops != []:
             output_str += f"N_GALS_OBJECT = {len(self)}\n"
             output_str += f"CROPS = {' + '.join(self.crops)}\n"
+        if hasattr(self, "SED_rest_properties"):
+            if len(self.SED_rest_properties) >= 1:
+                output_str += band_sep
+                for key, properties in self.SED_rest_properties.items():
+                    output_str += f"Rest frame SED properties:\n"
+                    output_str += f"{key}: {str(properties)}\n"
+                    output_str += band_sep
         if print_cls_name:
             output_str += line_sep
         return output_str
@@ -99,7 +109,7 @@ class Catalogue_Base:
     def __getitem__(self, index):
         return self.gals[index]
     
-    def __getattr__(self, name, SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}, phot_type = "obs"): # only acts on attributes that don't already exist
+    def __getattr__(self, name, SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}, phot_type = "obs", property_type = "vals"): # only acts on attributes that don't already exist
         if name in self[0].__dict__:
             return np.array([getattr(gal, name) for gal in self])
         elif name.upper() == "RA":
@@ -120,6 +130,10 @@ class Catalogue_Base:
             return np.array([getattr(gal.phot.SED_results[SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)], name) for gal in self])
         elif phot_type == "rest" and name in self[0].phot.SED_results[SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)].phot_rest.__dict__:
             return np.array([getattr(gal.phot.SED_results[SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)].phot_rest, name) for gal in self])
+        elif phot_type == "rest" and property_type == "vals" and name in self[0].phot.SED_results[SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)].phot_rest.properties.keys():
+            return np.array([getattr(gal.phot.SED_results[SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)].phot_rest, "properties")[name].value for gal in self])
+        elif phot_type == "rest" and property_type == "errs" and name in self[0].phot.SED_results[SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)].phot_rest.property_errs.keys():
+            return np.array([getattr(gal.phot.SED_results[SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)].phot_rest, "property_errs")[name].value for gal in self])
         else:
             galfind_logger.critical(f"Galaxies do not have attribute = {name}!")
     
@@ -331,14 +345,40 @@ class Catalogue_Base:
             galfind_logger.critical(f"crop_limits={crop_limits} with type = {type(crop_limits)} not in [int, float, bool, list, np.array]")
         return cat_copy
     
-    def open_cat(self, cropped = False):
-        fits_cat = Table.read(self.cat_path, character_as_bytes = False, memmap = True)
+    def open_cat(self, cropped = False, hdu = None):
+        if type(hdu) == type(None):
+            fits_cat = Table.read(self.cat_path, character_as_bytes = False, memmap = True)
+        elif self.check_hdu_exists(hdu):
+            fits_cat = Table.read(self.cat_path, character_as_bytes = False, memmap = True, hdu = hdu)
+        else:
+            galfind_logger.warning(f"{hdu.upper()=} does not exist in {self.cat_path=}!")
+            return None
         if cropped:
-            IDs_temp = self.ID
-            ID_tab = Table({"IDs_temp": IDs_temp}, dtype = [int])
+            ID_tab = Table({"IDs_temp": self.ID}, dtype = [int])
             combined_tab = join(fits_cat, ID_tab, keys_left = self.cat_creator.ID_label, keys_right = "IDs_temp")
             combined_tab.remove_column("IDs_temp")
             combined_tab.meta = fits_cat.meta
             return combined_tab
         else:
             return fits_cat
+    
+    def check_hdu_exists(self, hdu):
+        # check whether the hdu extension exists
+        hdul = fits.open(self.cat_path)
+        return any(hdu_.name == hdu.upper() for hdu_ in hdul)
+    
+    def write_cat(self, tab_arr, tab_names):
+        hdu_list = fits.HDUList()
+        [hdu_list.append(fits.BinTableHDU(data = tab.as_array(), header = \
+            fits.Header(tab.meta), name = name)) for (tab, name) in zip(tab_arr, tab_names)]
+        hdu_list.writeto(self.cat_path, overwrite = True)
+        galfind_logger.info(f"Writing table to {self.cat_path}")
+
+    def del_hdu(self, hdu):
+        galfind_logger.info(f"Deleting {hdu.upper()=} from {self.cat_path=}!")
+        assert self.check_hdu_exists(hdu), \
+            galfind_logger.critical(f"Cannot delete {hdu=} as it does not exist in {self.cat_path=}")
+        tab_arr = [self.open_cat(cropped = False, hdu = hdu_.name) for hdu_ \
+            in fits.open(self.cat_path) if hdu_.name != hdu.upper() and hdu_.name != "PRIMARY"]
+        tab_names = [hdu_.name for hdu_ in fits.open(self.cat_path) if hdu_.name != hdu.upper() and hdu_.name != "PRIMARY"]
+        self.write_cat(tab_arr, tab_names)

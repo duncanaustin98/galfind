@@ -18,7 +18,7 @@ import matplotlib.pyplot as plt
 from typing import NoReturn
 
 from . import useful_funcs_austind as funcs
-from . import config, NIRCam_aper_corr
+from . import config, galfind_logger, NIRCam_aper_corr
 from .Filter import Filter
 
 class Instrument:
@@ -64,7 +64,7 @@ class Instrument:
         """ Function to print summary of Instrument class
 
         Returns:
-            str: Summary containing telescopes, instruments and filter set included in the instrument
+            str: Summary containing facility, instrument name and filter set included in the instrument
         """
         line_sep = "*" * 40 + "\n"
         band_sep = "-" * 10 + "\n"
@@ -93,7 +93,7 @@ class Instrument:
             return band
     
     def __getitem__(self, i):
-        if type(i) in [int, slice]:
+        if type(i) in [int, np.int64, slice]:
             return self.bands[i]
         elif type(i) == str:
             return self.bands[self.index_from_band(i)]
@@ -201,17 +201,12 @@ class Instrument:
 # %% Other class methods
 
     def remove_band(self, band_name) -> NoReturn:
-        band_name = str(band_name)
-        assert type(band_name) == str, f"band = {band_name} of type = {type(band_name)} is not 'str'"
-        try:
-            remove_index = self.index_from_band_name(band_name)
-            #print(f"remove index = {remove_index}")
-            self.bands = np.delete(self.bands, remove_index)
-        except IndexError:
-            #raise(Exception("Remove band failed!"))
-            pass
+        assert type(band_name) in [str, np.str_], galfind_logger.critical(f"{band_name=} with {type(band_name)=} not in ['str', 'np.str_']")
+        assert band_name in self.band_names, galfind_logger.critical(f"{band_name=} not in {self.band_names=}")
+        remove_index = self.index_from_band_name(band_name)
+        self.bands = np.delete(self.bands, remove_index)
         
-    def remove_index(self, remove_index) -> NoReturn:
+    def remove_index(self, remove_index: int) -> NoReturn:
         remove_band = self.band_name_from_index(remove_index)
         self.remove_band(remove_band)
         
