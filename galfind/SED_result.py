@@ -23,7 +23,7 @@ from . import config, galfind_logger
 
 class SED_result:
     
-    def __init__(self, SED_fit_params, phot, properties, property_errs, property_PDFs, SED, rest_UV_wav_lims = [1268., 2580.] * u.Angstrom):
+    def __init__(self, SED_fit_params, phot, properties, property_errs, property_PDFs, SED):
         self.SED_fit_params = SED_fit_params
         #[setattr(self, key, value) for key, value in SED_fit_params.items()]
         self.properties = properties
@@ -35,7 +35,7 @@ class SED_result:
         self.property_PDFs = {property: property_PDF.load_peaks_from_best_fit(properties[property], properties["chi_sq"]) for property, property_PDF in property_PDFs.items()}
         #[setattr(self, f"{key}_PDF", value) for key, value in property_PDFs.items()]
         self.SED = SED
-        self.phot_rest = Photometry_rest.from_phot(phot, self.z, rest_UV_wav_lims = rest_UV_wav_lims)
+        self.phot_rest = Photometry_rest.from_phot(phot, self.z)
 
     def __str__(self, print_phot_rest = False, print_PDFs = False, print_SED = True):
         line_sep = "*" * 40 + "\n"
@@ -67,7 +67,7 @@ class SED_result:
         return output_str
     
     @classmethod
-    def from_gal(cls, gal, SED_fit_params, rest_UV_wav_lims = [1268., 2580.] * u.Angstrom):
+    def from_gal(cls, gal, SED_fit_params):
         assert("code" in SED_fit_params.keys())
         fits_cat_row = gal.open_cat_row() # row of fits catalogue
         # extract best fitting properties from galaxy given the SED_fit_params
@@ -98,15 +98,13 @@ class Galaxy_SED_results:
             for (lowz_zmax, results) in lowz_zmax_results.items()])
     
     @classmethod
-    def from_gal(cls, gal, SED_fit_params_arr, rest_UV_wav_lims = [1268., 2580.] * u.Angstrom):
-        return cls(SED_fit_params_arr, [SED_result.from_gal(gal, SED_fit_params, \
-            rest_UV_wav_lims = rest_UV_wav_lims) for SED_fit_params in SED_fit_params_arr])
+    def from_gal(cls, gal, SED_fit_params_arr):
+        return cls(SED_fit_params_arr, [SED_result.from_gal(gal, SED_fit_params) for SED_fit_params in SED_fit_params_arr])
 
     @classmethod
     def from_SED_result_inputs(cls, SED_fit_params_arr, phot, property_arr, \
-            property_errs_arr, property_PDFs_arr, SED_arr, rest_UV_wav_lims = [1268., 2580.] * u.Angstrom):
-        SED_result_arr = [SED_result(SED_fit_params, phot, properties, property_errs, property_PDFs, SED, \
-            rest_UV_wav_lims = rest_UV_wav_lims) for SED_fit_params, properties, property_errs, property_PDFs, \
+            property_errs_arr, property_PDFs_arr, SED_arr):
+        SED_result_arr = [SED_result(SED_fit_params, phot, properties, property_errs, property_PDFs, SED) for SED_fit_params, properties, property_errs, property_PDFs, \
             SED in zip(SED_fit_params_arr, property_arr, property_errs_arr, property_PDFs_arr, SED_arr)]
         return cls(SED_fit_params_arr, SED_result_arr)
 
@@ -127,7 +125,7 @@ class Catalogue_SED_results:
 
     @classmethod
     def from_fits_cat(cls, fits_cat, cat_creator, SED_fit_params_arr, cat_PDF_paths = None, cat_SED_paths = None, \
-            phot_arr = None, instrument = None, rest_UV_wav_lims = [1268., 2580.] * u.Angstrom):
+            phot_arr = None, instrument = None):
         
         assert(all(True if "code" in SED_fit_params else False for SED_fit_params in SED_fit_params_arr))
         # calculate array of galaxy photometries if required
@@ -180,13 +178,13 @@ class Catalogue_SED_results:
                 cat_property_SEDs[:, i] = SED_fit_params["code"].extract_SEDs(IDs, SED_paths)
 
         return cls.from_SED_result_inputs(SED_fit_params_arr, phot_arr, cat_properties, \
-            cat_property_errs, cat_property_PDFs, cat_property_SEDs, rest_UV_wav_lims = rest_UV_wav_lims)
+            cat_property_errs, cat_property_PDFs, cat_property_SEDs)
     
     @classmethod
     def from_SED_result_inputs(cls, SED_fit_params_arr, phot_arr, cat_properties, \
-            cat_property_errs, cat_property_PDFs, cat_SEDs, rest_UV_wav_lims = [1268., 2580.] * u.Angstrom):
-        cat_SED_results = [[SED_result(SED_fit_params, phot, properties, property_errs, property_PDFs, SED, \
-            rest_UV_wav_lims = rest_UV_wav_lims) for SED_fit_params, properties, property_errs, property_PDFs, SED in \
+            cat_property_errs, cat_property_PDFs, cat_SEDs):
+        cat_SED_results = [[SED_result(SED_fit_params, phot, properties, property_errs, property_PDFs, SED) \
+            for SED_fit_params, properties, property_errs, property_PDFs, SED in \
             zip(SED_fit_params_arr, property_arr, property_errs_arr, property_PDF_arr, SED_arr)] \
             for phot, property_arr, property_errs_arr, property_PDF_arr, SED_arr \
             in zip(phot_arr, cat_properties, cat_property_errs, cat_property_PDFs, cat_SEDs)]

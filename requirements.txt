@@ -23,4 +23,5 @@ eazy
 bagpipes
 photutils 
 regions
+typing
 kneed

@@ -353,7 +353,7 @@ class EAZY(SED_code):
             assert PDF_paths[0][-3:] == ".h5", galfind_logger.critical(f"{PDF_paths[0]} must have .h5 file extension")
             # open .h5 file
             hf = h5py.File(PDF_paths[0], "r")
-            hf_z = np.array(hf["z"])
+            hf_z = np.array(hf["z"]) * u.dimensionless_unscaled
             # extract redshift PDF for each ID
             redshift_pdfs = [Redshift_PDF(hf_z, np.array(hf[f"ID={str(int(ID))}"]["p(z)"]), SED_fit_params) \
                 for ID in tqdm(IDs, total = len(IDs), desc = "Constructing redshift PDFs")]
