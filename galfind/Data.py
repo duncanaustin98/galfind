@@ -107,7 +107,7 @@ class Data:
             else:
                 # make an pixel mask automatically for the band
                 mask_paths[band] = self.make_mask(band)
-            
+                
         self.mask_paths = dict(sorted(mask_paths.items()))
 
         if is_blank:
@@ -603,7 +603,8 @@ class Data:
     def load_wht(self, band):
         try:
             wht = fits.open(self.wht_paths[band])[self.wht_exts[band]].data
-        except:
+        except Exception as e:
+            print(e)
             wht = None
         return wht
 
@@ -1306,7 +1307,9 @@ class Data:
         hdu = fits.HDUList([fits.PrimaryHDU(), mask_hdu])
         out_path = f"{self.mask_dir}/fits_masks/{self.combine_band_names(bands)}_basemask.fits"
         os.makedirs("/".join(out_path.split("/")[:-1]), exist_ok = True)
-        hdu.writeto(out_path, overwrite = True)
+        # TEMP CHANGE
+        
+        #hdu.writeto(out_path, overwrite = True)
         galfind_logger.info(f"Created combined mask for {bands}")
         return out_path
 
@@ -1601,7 +1604,6 @@ class Data:
             
             # Get fluxes in regions
             fluxes = Depths.do_photometry(im_data, xy, radius_pix)
-            
             depths, diagnostic, depth_labels, final_labels = Depths.calc_depths(xy, fluxes, im_data, combined_mask, 
                     region_radius_used_pix = region_radius_used_pix, step_size = step_size, catalogue = cat, wcs = wcs, \
                     coord_type = coord_type, mode = mode, n_nearest = n_nearest, zero_point = self.im_zps[band], n_split = n_split, \

@@ -105,11 +105,13 @@ class Galaxy:
         out_path = f"{config['Cutouts']['CUTOUT_DIR']}/{version}/{survey}/{band}/{self.ID}.fits"
         rerun = False
         if Path(out_path).is_file():
+            
             size = fits.open(out_path)[0].header["size"]
             if size != cutout_size:
                 galfind_logger.info("Cutout size does not match requested size, overwriting...")
+                print('Cutout size does not match requested size, overwriting...')
                 rerun = True
-        if not Path(out_path).is_file() or config.getboolean("Cutouts", "OVERWRITE_CUTOUTS") or rerun:
+        if config.getboolean("Cutouts", "OVERWRITE_CUTOUTS") or rerun or not Path(out_path).is_file():
             if type(data) == Data:
                 im_data, im_header, seg_data, seg_header = data.load_data(band, incl_mask = False)
                 wht_data = data.load_wht(band)

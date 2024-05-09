@@ -2,7 +2,6 @@
 
 #import automask as am
 import numpy as np
-from importlib import reload
 import matplotlib.pyplot as plt
 from astropy.visualization.mpl_normalize import ImageNormalize
 import astropy.visualization as vis
@@ -13,6 +12,7 @@ from matplotlib import cm
 from astropy.table import Table
 import cv2 as cv2
 from galfind import Data
+from kneed import KneeLocator
 from astropy.io import fits
 from sklearn.cluster import KMeans
 from skimage.measure import label, regionprops
@@ -24,7 +24,6 @@ from matplotlib.ticker import FuncFormatter
 from matplotlib.colors import LinearSegmentedColormap
 # install cv2, skimage, sklearn 
 
-#reload(am)
 
 def do_photometry(image, xy_coords, radius_pixels):
     aper = CircularAperture(xy_coords, radius_pixels)
@@ -120,9 +119,9 @@ def calc_depths(coordinates, fluxes, img_data, mask = None, catalogue = None,
     '''
     # Determine whether to split depths or not
     if n_split == 1:
-        split_depths = True
-    else:
         split_depths = False
+    else:
+        split_depths = True
     # Extract x and y coordinates
     coordinates = np.array(coordinates)
     x, y = coordinates[:, 0], coordinates[:, 1]
@@ -515,6 +514,7 @@ def cluster_wht_map(wht_map, num_regions = "auto", bin_factor = 1, min_size = 10
 
     labels_filled = []
     iterations = 0
+    print(f'num_regions: {num_regions}')
     if num_regions == 'auto':
         num_regions_list = [1, 2, 3, 4]
     else:
@@ -581,10 +581,10 @@ if __name__ == '__main__':
     plt.rcParams['figure.dpi'] = 300
 
     # General info
-    survey = 'JADES-3215'
-    instruments = ['ACS_WFC', 'NIRCam']
+    survey = 'COSMOS-Web-0A'
+    instruments = ['NIRCam']
     version = 'v11'
-    filter = 'f277W'
+    filter = 'F277W'
     save_path = '/nvme/scratch/work/tharvey/scripts/automask/'
 
     depth_region_radius = 0.16 # arcseconds
@@ -644,6 +644,8 @@ if __name__ == '__main__':
             cat_path  = f"/raid/scratch/work/austind/GALFIND_WORK/Catalogues/{version}/ACS_WFC+NIRCam/{survey}/{survey}_MASTER_Sel-f277W+f356W+f444W_v9_loc_depth_masked_10pc_EAZY_matched_selection.fits"
         elif survey in ['JADES-3215']:
             cat_path  = '/raid/scratch/work/austind/GALFIND_WORK/Catalogues/v11/NIRCam/JADES-3215/JADES-3215_MASTER_Sel-f277W+f356W+f444W_v11_loc_depth_masked_10pc_eazy_fsps_larson_matched_selection.fits'
+        elif 'COSMOS' in survey:
+            cat_path = f'/raid/scratch/work/austind/GALFIND_WORK/Catalogues/v11/NIRCam/{survey}/{survey}_MASTER_Sel-F277W+F444W_v11.fits'
         else:
             cat_path  = None
     else:
@@ -657,7 +659,7 @@ if __name__ == '__main__':
     radius_pixels = depth_region_radius / pixel_size
 
     # Generate mask
-    img_data, img_mask, img_wcs = am.mask_image(image_path, seg_path=seg_path,
+    img_data, img_mask, img_wcs = mask_image(image_path, seg_path=seg_path,
                                             write=write_mask, image_ext=image_ext,
                                             edge_mask_distance=edge_mask_distance)
 
