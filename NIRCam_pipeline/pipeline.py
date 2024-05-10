@@ -30,11 +30,12 @@ def pipeline(surveys, version, instruments, aper_diams, min_flux_pc_errs, forced
             print(str(cat))
             #print(str(cat[0]))
 
-            #cat.plot_phot_diagnostics()
+            cat_copy = cat.select_EPOCHS(allow_lowz = True)
+            cat_copy.plot_phot_diagnostics()
 
             #cat.del_hdu(SED_fit_params_arr[-1]["code"].label_from_SED_fit_params(SED_fit_params_arr[-1]))
 
-            cat.select_rest_UV_line_emitters_sigma("CIV-1549", 2.) # "CIV-1549"
+            #cat.select_rest_UV_line_emitters_sigma("CIV-1549", 2.) # "CIV-1549"
             
             #cat.calc_rest_UV_properties()
             #cat.calc_fesc_from_beta_phot()
@@ -63,10 +64,10 @@ if __name__ == "__main__":
     aper_diams = [0.32] * u.arcsec
     SED_code_arr = [EAZY()]
     templates_arr = ["fsps_larson"] #["fsps", "fsps_larson", "fsps_jades"]
-    lowz_zmax_arr = [[None]] #[[4., 6., None]]
+    lowz_zmax_arr = [[4., 6., None]]
     min_flux_pc_errs = [10]
     forced_phot_band = ["F277W", "F356W", "F444W"]
-    crop_by = "EPOCHS" #None
+    crop_by = None
 
     jems_bands = ["F182M", "F210M", "F430M", "F460M", "F480M"]
     ngdeep_excl_bands = ["F435W", "F775W", "F850LP"]
