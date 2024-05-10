@@ -460,8 +460,8 @@ def show_depths(nmad_grid, num_grid, step_size, region_radius_used_pix, labels =
             except:
                 pass
 
-    fig.get_layout_engine().set(w_pad=1, h_pad=1, hspace=1,
-                            wspace=1)
+    fig.get_layout_engine().set(w_pad=0.1, h_pad=0.1, hspace=0.1,
+                            wspace=0.1)
 
     if type(save_path) != type(None):
         plt.savefig(save_path, dpi=300, bbox_inches='tight')
