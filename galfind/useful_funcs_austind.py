@@ -578,3 +578,6 @@ def ext_source_corr(data, corr_factor, is_log_data = True):
     else:
         return data * corr_factor
     
+def power_law_beta_func(wav, A, beta):
+    return A * (wav ** beta)
+    

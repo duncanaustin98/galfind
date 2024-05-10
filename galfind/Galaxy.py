@@ -26,10 +26,12 @@ from astropy.wcs.utils import skycoord_to_pixel
 from astropy.visualization import LogStretch, LinearStretch, ImageNormalize, ManualInterval
 import matplotlib.patches as patches
 from mpl_toolkits.axes_grid1.anchored_artists import AnchoredSizeBar
+from typing_extensions import Self
 
 from . import useful_funcs_austind as funcs
 from . import config, galfind_logger, astropy_cosmo
 from . import Photometry_rest, Photometry_obs, Multiple_Photometry_obs, Data, Instrument, NIRCam, ACS_WFC, WFC3_IR, PDF
+from .SED import SED, Mock_SED_rest, Mock_SED_obs
 from .EAZY import EAZY
 from .Emission_lines import line_diagnostics
 
@@ -579,7 +581,7 @@ class Galaxy:
                     self.selection_flags[selection_name] = False
         return self, selection_name
     
-    # Selecting line emitters
+    # Emission line selection functions
 
     def select_rest_UV_line_emitters_dmag(self, emission_line_name, delta_m, rest_UV_wav_lims = [1_250., 3_000.] * u.AA, \
             medium_bands_only = True, SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}, update = True):
@@ -598,6 +600,7 @@ class Galaxy:
             included_bands = self.phot.instrument.bands_from_wavelength(obs_frame_emission_line_wav)
             # determine index of the closest band to the emission line
             closest_band_index = self.phot.instrument.nearest_band_index_to_wavelength(obs_frame_emission_line_wav, medium_bands_only)
+            central_wav = self.phot.instrument[closest_band_index].WavelengthCen
             # if there are no included bands or the closest band is masked
             if len(included_bands) == 0 or self.phot.flux_Jy.mask[closest_band_index]:
                 if update:
@@ -605,12 +608,17 @@ class Galaxy:
                 return self, selection_name
             # calculate beta excluding the bands that the emission line contaminates
             phot_rest.crop_phot([self.phot.instrument.index_from_band_name(band.band_name) for band in included_bands])
-            A, beta = phot_rest.basic_beta_calc() # needs to be changed when merged
-            # calculate expected mag in the band - fit power law to rest UV photometry, then convolve with relevant filter
-            mag_continuum = 0. * u.ABmag # needs to be changed when merged
+            A, beta = phot_rest.calc_beta_phot(rest_UV_wav_lims, iters = 1)
+            # make mock SED to calculate bandpass averaged flux from
+            mock_SED_obs = Mock_SED_obs.from_Mock_SED_rest(Mock_SED_rest.power_law_from_beta_m_UV(beta, \
+                funcs.power_law_beta_func(1_500., 10 ** A, beta), mag_units = u.Jy, wav_lims = \
+                [self.phot.instrument[closest_band_index].WavelengthLower50, \
+                self.phot.instrument[closest_band_index].WavelengthUpper50]), self.z, IGM = None)
+            mag_cont = funcs.convert_mag_units(central_wav, mock_SED_obs.calc_bandpass_averaged_flux(self.phot.instrument[closest_band_index].wav, \
+                self.phot.instrument[closest_band_index].trans) * u.erg / (u.s * (u.cm ** 2) * u.AA), u.ABmag)
             # determine observed magnitude
-            mag_observed = funcs.convert_mag_units(self.phot.instrument[closest_band_index].WavelengthCen, self.phot[closest_band_index], u.ABmag)
-            if (mag_continuum - mag_observed).value > delta_m:
+            mag_obs = funcs.convert_mag_units(central_wav, self.phot[closest_band_index], u.ABmag)
+            if (mag_cont - mag_obs).value > delta_m:
                 if update:
                     self.selection_flags[selection_name] = True
             else:
@@ -619,11 +627,12 @@ class Galaxy:
         return self, selection_name
     
     def select_rest_UV_line_emitters_sigma(self, emission_line_name, sigma, rest_UV_wav_lims = [1_250., 3_000.] * u.AA, \
-            medium_bands_only = True, SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}, update = True):
-        assert(line_diagnostics[emission_line_name]["line_wav"] > rest_UV_wav_lims[0] * rest_UV_wav_lims.unit and \
-            line_diagnostics[emission_line_name]["line_wav"] < rest_UV_wav_lims[1] * rest_UV_wav_lims.unit  )
+            medium_bands_only = True, SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}, update = True) -> tuple[Self, str]:
+        breakpoint()
+        assert(line_diagnostics[emission_line_name]["line_wav"] > rest_UV_wav_lims[0] and \
+            line_diagnostics[emission_line_name]["line_wav"] < rest_UV_wav_lims[1])
         assert(type(sigma) in [int, np.int64, float, np.float64])
-        assert(u.has_physical_type(rest_UV_wav_lims) == "length")
+        assert(u.get_physical_type(rest_UV_wav_lims) == "length")
         assert(type(medium_bands_only) in [bool, np.bool_])
         selection_name = f"{emission_line_name},sigma{'_med' if medium_bands_only else ''}>{sigma:.1f},UV_{str(rest_UV_wav_lims.value).replace(' ', '')}AA"
         if selection_name in self.selection_flags.keys():
@@ -635,6 +644,7 @@ class Galaxy:
             included_bands = self.phot.instrument.bands_from_wavelength(obs_frame_emission_line_wav)
             # determine index of the closest band to the emission line
             closest_band_index = self.phot.instrument.nearest_band_index_to_wavelength(obs_frame_emission_line_wav, medium_bands_only)
+            central_wav = self.phot.instrument[closest_band_index].WavelengthCen
             # if there are no included bands or the closest band is masked
             if len(included_bands) == 0 or self.phot.flux_Jy.mask[closest_band_index]:
                 if update:
@@ -642,11 +652,15 @@ class Galaxy:
                 return self, selection_name
             # calculate beta excluding the bands that the emission line contaminates
             phot_rest.crop_phot([self.phot.instrument.index_from_band_name(band.band_name) for band in included_bands])
-            A, beta = phot_rest.basic_beta_calc() # needs to be changed when merged
-            # calculate expected mag in the band - fit power law to rest UV photometry, then convolve with relevant filter
-            flux_cont = 0. * u.Jy # needs to be changed when merged
+            A, beta = phot_rest.calc_beta_phot(rest_UV_wav_lims, iters = 1)
+            # make mock SED to calculate bandpass averaged flux from
+            mock_SED_obs = Mock_SED_obs.from_Mock_SED_rest(Mock_SED_rest.power_law_from_beta_m_UV(beta, \
+                funcs.power_law_beta_func(1_500., 10 ** A, beta), mag_units = u.Jy, wav_lims = \
+                [self.phot.instrument[closest_band_index].WavelengthLower50, \
+                self.phot.instrument[closest_band_index].WavelengthUpper50]), self.z, IGM = None)
+            flux_cont = funcs.convert_mag_units(central_wav, mock_SED_obs.calc_bandpass_averaged_flux(self.phot.instrument[closest_band_index].wav, \
+                self.phot.instrument[closest_band_index].trans) * u.erg / (u.s * (u.cm ** 2) * u.AA), u.Jy)
             # determine observed magnitude
-            central_wav = self.phot.instrument[closest_band_index].WavelengthCen
             flux_obs_err = funcs.convert_mag_err_units(central_wav, self.phot.flux_Jy[closest_band_index], self.phot.flux_Jy_errs[closest_band_index], u.Jy)
             flux_obs = funcs.convert_mag_units(central_wav, self.phot.flux_Jy[closest_band_index], u.Jy)
             if abs((flux_obs - flux_cont).value) > sigma * np.mean(flux_obs_err.value):

@@ -296,6 +296,18 @@ class Catalogue(Catalogue_Base):
     def phot_SNR_crop(self, band_name_or_index, SNR_lim, detect_or_non_detect = "detect"):
         return self.perform_selection(Galaxy.phot_SNR_crop, band_name_or_index, SNR_lim, detect_or_non_detect)
 
+    # Emission line selection functions
+
+    def select_rest_UV_line_emitters_dmag(self, emission_line_name, delta_m, rest_UV_wav_lims = [1_250., 3_000.] * u.AA, \
+            medium_bands_only = True, SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}, update = True):
+        return self.perform_selection(Galaxy.select_rest_UV_line_emitters_dmag, emission_line_name, \
+            delta_m, rest_UV_wav_lims, medium_bands_only, SED_fit_params)
+
+    def select_rest_UV_line_emitters_sigma(self, emission_line_name, sigma, rest_UV_wav_lims = [1_250., 3_000.] * u.AA, \
+            medium_bands_only = True, SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}):
+        return self.perform_selection(Galaxy.select_rest_UV_line_emitters_sigma, emission_line_name, \
+            sigma, rest_UV_wav_lims, medium_bands_only, SED_fit_params)
+
     # Colour selection functions
 
     def select_colour(self, colour_bands, colour_val, bluer_or_redder):
