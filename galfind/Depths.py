@@ -618,7 +618,6 @@ def calc_depths_numba(coordinates, fluxes, img_data, mask = None, catalogue = No
         count = 0
         print('Total number', len(cat_x))
         for i, j in tq(zip(cat_x, cat_y), total = len(cat_x)):
-            start_overall = time.time()
             # Check if the coordinate is outside the image or in the mask
             if (i > x_max or i < 0 or j > y_max or j < 0):
                 depth = np.nan
@@ -643,7 +642,6 @@ def calc_depths_numba(coordinates, fluxes, img_data, mask = None, catalogue = No
                 fluxes_i = fluxes[mask]
 
                 if mode == 'rolling':
-                    start_1 = time.time()
                     neighbor_values = fluxes[(distances <= region_radius_used_pix) & (labels_final[y_label, x_label] == label)]
                     depth_diagnostic = len(neighbor_values)
                     
@@ -675,10 +673,7 @@ def calc_depths_numba(coordinates, fluxes, img_data, mask = None, catalogue = No
                                 circle = plt.Circle((xi, yi), radius_pixels, color='b', fill=False)
                                 ax.add_artist(circle)
                             plt.show()
-                start_depth = time.time()
                 depth = calculate_depth(neighbor_values, sigma_level, zero_point, min_number_of_values=min_number_of_values)
-
-                end_overall = time.time()
                 #print(f'Fractional time for labelling: {(end_labelling - start_labelling)/(end_overall - start_overall)}')
                 #print(f'Fractional time for distances: {(end_distances - start_distances)/(end_overall - start_overall)}')
                 #print(f'Fractional time for filtering: {(end_filtering - start_filtering)/(end_overall - start_overall)}')
@@ -750,7 +745,7 @@ def make_ds9_region_file(coordinates, radius, filename, coordinate_type = 'sky',
             f.write(f'circle({xi},{yi},{radius:.5f}{radius_unit})\n')
 
 
-def cluster_wht_map(wht_map, num_regions='auto', bin_factor=1, min_size=10000, ):
+def cluster_wht_map(wht_map, num_regions='auto', bin_factor=1, min_size=10000, plot=False):
     'Works best for 2 regions, but can be used for more than 2 regions - may need additional smoothing and cleaning'
     # Read the image and associated weight map
 
@@ -807,18 +802,20 @@ def cluster_wht_map(wht_map, num_regions='auto', bin_factor=1, min_size=10000, )
         if len(np.unique(labels_filled)) == 1:
             print('KMeans failed to find regions. No regions used.')
             return np.zeros_like(weight_map), weight_map_smoothed
-        
-        plt.plot(num_regions_list, sse)
-        plt.xlabel('Number of Regions')
-        plt.ylabel('SSE')
         from kneed import KneeLocator
-        
+                
         kneedle = KneeLocator(num_regions_list, sse, curve='convex', direction='decreasing')
         num_regions = kneedle.elbow
         print(f'Detected {num_regions} regions as best.')
-        plt.axvline(num_regions, color='red', linestyle='--')
-        plt.show()
-        plt.close()
+
+        if plot:
+            plt.plot(num_regions_list, sse)
+            plt.xlabel('Number of Regions')
+            plt.ylabel('SSE')
+            plt.axvline(num_regions, color='red', linestyle='--')
+            plt.show()
+            plt.close()
+
         # Find best of doing it 15x
     kmeans = KMeans(n_clusters=num_regions, n_init=15)
     kmeans.fit(weight_map_transformed.flatten().reshape(-1, 1))
