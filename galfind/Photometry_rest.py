@@ -39,9 +39,6 @@ class beta_fit:
         return np.array([np.trapz((10 ** A) * (self.wavelength_rest[band_name] ** beta) * self.transmission[band_name], \
             x = self.wavelength_rest[band_name]) / self.norm[band_name] for band_name in self.band_names])
 
-def power_law_beta_func(wav, A, beta):
-    return A * (wav ** beta)
-
 SFR_conversions = \
 {
     "MD14": 1.15e-28 * (u.solMass / u.yr) / (u.erg / (u.s * u.Hz))
@@ -188,7 +185,7 @@ class Photometry_rest(Photometry):
             if iters == 1:
                 f_lambda = funcs.convert_mag_units([funcs.convert_wav_units(band.WavelengthCen, u.AA).value \
                     for band in rest_UV_phot.instrument] * u.AA, rest_UV_phot.flux_Jy, u.erg / (u.s * u.AA * u.cm ** 2))
-                return curve_fit(beta_fit(rest_UV_phot.z, rest_UV_phot.instrument.bands).\
+                return curve_fit(beta_fit(rest_UV_phot.z, rest_UV_phot.instrument.bands). \
                     beta_slope_power_law_func_conv_filt, None, f_lambda, maxfev = maxfev)[0]
             else:
                 scattered_rest_UV_phot_arr = rest_UV_phot.scatter_phot(iters)
@@ -247,7 +244,7 @@ class Photometry_rest(Photometry):
             self.calc_beta_phot(rest_UV_wav_lims)
             rest_wavelengths = funcs.convert_wav_units(np.linspace(ref_wav - top_hat_width / 2, ref_wav + top_hat_width / 2, \
                 int(np.round((top_hat_width / resolution).to(u.dimensionless_unscaled).value, 0))), u.AA)
-            power_law_chains = self.ampl_beta_joint_PDF(power_law_beta_func, rest_wavelengths.value)
+            power_law_chains = self.ampl_beta_joint_PDF(funcs.power_law_beta_func, rest_wavelengths.value)
             # take the median of each chain to form a new chain
             mUV_chain = [np.median(funcs.convert_mag_units(rest_wavelengths * (1. + self.z), \
                 chain * u.erg / (u.s * u.AA * u.cm ** 2), u.ABmag).value) for chain in power_law_chains] * u.ABmag
