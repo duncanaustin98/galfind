@@ -857,9 +857,9 @@ class Galaxy:
                         self.selection_flags[selection_name] = False
         return self, selection_name
     
-    def select_EPOCHS(self, SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}, mask_instrument = NIRCam(), update = True):
+    def select_EPOCHS(self, SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}, allow_lowz = False, mask_instrument = NIRCam(), update = True):
         
-        selection_name = "EPOCHS"
+        selection_name = f"EPOCHS{'_lowz' if allow_lowz else ''}"
         if not "NIRCam" in self.phot.instrument.name:
             galfind_logger.critical(f"NIRCam data for galaxy ID = {self.ID} must be included for EPOCHS selection!")
             if update:
@@ -868,24 +868,17 @@ class Galaxy:
         
         selection_names = [
             self.select_unmasked_instrument(mask_instrument)[1], # unmasked in NIRCam
-            self.phot_SNR_crop(0, 2., "non_detect")[1], # 2σ non-detected in first band
             self.phot_bluewards_Lya_non_detect(2., SED_fit_params)[1], # 2σ non-detected in all bands bluewards of Lyα
             self.phot_redwards_Lya_detect([5., 3.], SED_fit_params, widebands_only = True)[1], # 5σ/3σ detected in first/second band redwards of Lyα
             self.select_chi_sq_lim(3., SED_fit_params, reduced = True)[1], # χ^2_red < 3
             #self.select_chi_sq_diff(9., SED_fit_params, delta_z_lowz = 0.5)[1], # Δχ^2 < 9 between redshift free and low redshift SED fits, with Δz=0.5 tolerance 
             self.select_robust_zPDF(0.6, 0.1, SED_fit_params)[1] # 60% of redshift PDF must lie within z ± z * 0.1
         ]
-        # masking criteria
-        # unmasked in first band
-        # SNR criteria
-        # if galaxy is detected only in the LW filters
-        # first_Lya_detect_band = self.phot.SED_results[SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)].phot_rest.first_Lya_detect_band
-        #band_names = self.phot.instrument.band_names
-        #first_band = self.phot.instrument[np.where()]
-        # 7σ/5σ detected in 1st/2nd bands redwards of Lya
-        # else
-        # 5σ/3σ detected in 1st/2nd bands redwards of Lya
-        
+
+        if allow_lowz:
+            selection_names += self.phot_SNR_crop(0, 2., "non_detect")[1] # 2σ non-detected in first band
+        breakpoint()
+        print(selection_names, len(selection_names))
         # if the galaxy passes all criteria
         if all(self.selection_flags[name] for name in selection_names):
             if update:
