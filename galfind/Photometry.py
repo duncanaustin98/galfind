@@ -38,7 +38,7 @@ class Photometry:
 
         if print_cls_name:
             output_str += line_sep
-            output_str += "PHOTOMETRY:\n"
+            output_str += f"{self.__class__.__name__.upper()}:\n"
             output_str += band_sep
 
         if print_instrument:

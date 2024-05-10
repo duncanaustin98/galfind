@@ -234,10 +234,11 @@ class Mock_SED_rest(SED_rest): #, Mock_SED):
         return mock_sed_rest_obj
         
     @classmethod
-    def power_law_from_beta_m_UV(cls, beta, m_UV, wav_range = [912., 10_000.], wav_res = 1, template_name = None):
-        wavs = np.linspace(wav_range[0], wav_range[1], int((wav_range[1] - wav_range[0]) / wav_res))
-        mags = wavs ** beta
-        mock_sed = cls(wavs, mags, u.AA, u.erg / (u.s * u.AA * u.cm ** 2), template_name = template_name)
+    def power_law_from_beta_m_UV(cls, beta, m_UV, wav_range = [912., 10_000.] * u.AA, wav_res = 1. * u.AA, template_name = None):
+        wavs = np.linspace(wav_range[0].value, wav_range[1].value, \
+            int(((wav_range[1] - wav_range[0]) / wav_res).to(u.dimensionless_unscaled).value)) * wav_range.unit
+        mags = funcs.convert_wav_units(wavs, u.AA).value ** beta
+        mock_sed = cls(wavs.value, mags, u.AA, u.erg / (u.s * u.AA * u.cm ** 2), template_name = template_name)
         mock_sed.normalize_to_m_UV(m_UV)
         return mock_sed
     
@@ -298,8 +299,10 @@ class Mock_SED_rest(SED_rest): #, Mock_SED):
         return template_obj
     
     def normalize_to_m_UV(self, m_UV):
-        if not m_UV == None:
-            norm = (m_UV * u.ABmag).to(u.Jy).value / funcs.convert_mag_units(self.wavs, self.mags, u.Jy).value[np.abs(self.wavs.to(u.AA).value - 1500.).argmin()]
+        if not type(m_UV) == type(None):
+            assert(type(m_UV) in [u.Quantity, u.Magnitude])
+            norm = funcs.convert_mag_units(1_500. * u.AA, m_UV, u.Jy).value / \
+                funcs.convert_mag_units(self.wavs, self.mags, u.Jy).value[np.abs(self.wavs.to(u.AA).value - 1_500.).argmin()]
             self.mags = np.array([norm * mag for mag in self.mags.value]) * self.mags.unit
             
     def renorm_at_wav(self, mag): # this mag can also be a flux, but must have astropy units

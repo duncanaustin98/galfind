@@ -34,7 +34,7 @@ def pipeline(surveys, version, instruments, aper_diams, min_flux_pc_errs, forced
 
             #cat.del_hdu(SED_fit_params_arr[-1]["code"].label_from_SED_fit_params(SED_fit_params_arr[-1]))
 
-            cat.select_rest_UV_line_emitters_sigma("CIII]-1909", 2.)
+            cat.select_rest_UV_line_emitters_sigma("CIV-1549", 2.) # "CIV-1549"
             
             #cat.calc_rest_UV_properties()
             #cat.calc_fesc_from_beta_phot()
@@ -59,7 +59,7 @@ if __name__ == "__main__":
     version = "v11" #config["DEFAULT"]["VERSION"]
     instruments = ["NIRCam"] #, 'ACS_WFC'] #, 'WFC3_IR']
     cat_type = "loc_depth"
-    surveys = ["COSMOS-Web-0A"] #[config["DEFAULT"]["SURVEY"]]
+    surveys = ["JOF"] #[config["DEFAULT"]["SURVEY"]]
     aper_diams = [0.32] * u.arcsec
     SED_code_arr = [EAZY()]
     templates_arr = ["fsps_larson"] #["fsps", "fsps_larson", "fsps_jades"]

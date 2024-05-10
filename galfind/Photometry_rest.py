@@ -166,7 +166,7 @@ class Photometry_rest(Photometry):
     # Rest-frame UV property calculations
 
     @ignore_warnings
-    def calc_beta_phot(self, rest_UV_wav_lims, iters = 10, maxfev = 100_000, extract_property_name = False):
+    def calc_beta_phot(self, rest_UV_wav_lims, iters = 10, maxfev = 100_000, extract_property_name = False, incl_errs = True):
         assert iters >= 1, galfind_logger.critical(f"{iters=} < 1 in Photometry_rest.calc_beta_phot !!!")
         assert type(iters) == int, galfind_logger.critical(f"{type(iters)=} != 'int' in Photometry_rest.calc_beta_phot !!!")
         # iters = 1 -> fit without errors, iters >> 1 -> fit with errors
@@ -185,8 +185,15 @@ class Photometry_rest(Photometry):
             if iters == 1:
                 f_lambda = funcs.convert_mag_units([funcs.convert_wav_units(band.WavelengthCen, u.AA).value \
                     for band in rest_UV_phot.instrument] * u.AA, rest_UV_phot.flux_Jy, u.erg / (u.s * u.AA * u.cm ** 2))
-                return curve_fit(beta_fit(rest_UV_phot.z, rest_UV_phot.instrument.bands). \
-                    beta_slope_power_law_func_conv_filt, None, f_lambda, maxfev = maxfev)[0]
+                if not incl_errs:
+                    return curve_fit(beta_fit(rest_UV_phot.z, rest_UV_phot.instrument.bands). \
+                        beta_slope_power_law_func_conv_filt, None, f_lambda, maxfev = maxfev)[0]
+                else:
+                    f_lambda_errs = funcs.convert_mag_err_units([funcs.convert_wav_units(band.WavelengthCen, u.AA).value \
+                        for band in rest_UV_phot.instrument] * u.AA, rest_UV_phot.flux_Jy, [rest_UV_phot.flux_Jy_errs.value, \
+                        rest_UV_phot.flux_Jy_errs.value] * rest_UV_phot.flux_Jy_errs.unit, u.erg / (u.s * u.AA * u.cm ** 2))
+                    return curve_fit(beta_fit(rest_UV_phot.z, rest_UV_phot.instrument.bands). \
+                        beta_slope_power_law_func_conv_filt, None, f_lambda, sigma = f_lambda_errs[0], maxfev = maxfev)[0]
             else:
                 scattered_rest_UV_phot_arr = rest_UV_phot.scatter_phot(iters)
                 popt_arr = np.array([scattered_rest_UV_phot.calc_beta_phot(rest_UV_wav_lims, iters = 1) \

@@ -592,7 +592,7 @@ class Galaxy:
         assert(type(delta_m) in [int, np.int64, float, np.float64])
         assert(u.has_physical_type(rest_UV_wav_lims) == "length")
         assert(type(medium_bands_only) in [bool, np.bool_])
-        selection_name = f"{emission_line_name},dm{'_med' if medium_bands_only else ''}>{delta_m:.1f},UV_{str(rest_UV_wav_lims.value).replace(' ', '')}AA"
+        selection_name = f"{emission_line_name},dm{'_med' if medium_bands_only else ''}>{delta_m:.1f},UV_{str(list(np.array(rest_UV_wav_lims.value).astype(int))).replace(' ', '')}AA"
         if selection_name in self.selection_flags.keys():
             galfind_logger.debug(f"{selection_name} already performed for galaxy ID = {self.ID}!")
         else:
@@ -630,22 +630,27 @@ class Galaxy:
     
     def select_rest_UV_line_emitters_sigma(self, emission_line_name, sigma, rest_UV_wav_lims = [1_250., 3_000.] * u.AA, \
             medium_bands_only = True, SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}, update = True) -> tuple[Self, str]:
-        breakpoint()
         assert(line_diagnostics[emission_line_name]["line_wav"] > rest_UV_wav_lims[0] and \
             line_diagnostics[emission_line_name]["line_wav"] < rest_UV_wav_lims[1])
         assert(type(sigma) in [int, np.int64, float, np.float64])
         assert(u.get_physical_type(rest_UV_wav_lims) == "length")
         assert(type(medium_bands_only) in [bool, np.bool_])
-        selection_name = f"{emission_line_name},sigma{'_med' if medium_bands_only else ''}>{sigma:.1f},UV_{str(rest_UV_wav_lims.value).replace(' ', '')}AA"
+        selection_name = f"{emission_line_name},sigma{'_med' if medium_bands_only else ''}>{sigma:.1f},UV_{str(list(np.array(rest_UV_wav_lims.value).astype(int))).replace(' ', '')}AA"
         if selection_name in self.selection_flags.keys():
             galfind_logger.debug(f"{selection_name} already performed for galaxy ID = {self.ID}!")
         else:
+            SED_results_key = SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)
             phot_rest = deepcopy(self.phot.SED_results[SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)].phot_rest)
             # find bands that the emission line lies within
             obs_frame_emission_line_wav = line_diagnostics[emission_line_name]["line_wav"] * (1. + phot_rest.z)
             included_bands = self.phot.instrument.bands_from_wavelength(obs_frame_emission_line_wav)
             # determine index of the closest band to the emission line
-            closest_band_index = self.phot.instrument.nearest_band_index_to_wavelength(obs_frame_emission_line_wav, medium_bands_only)
+            closest_band = self.phot.instrument.nearest_band_to_wavelength(obs_frame_emission_line_wav, medium_bands_only)
+            if type(closest_band) == type(None):
+                if update:
+                    self.selection_flags[selection_name] = False
+                return self, selection_name
+            closest_band_index = self.phot.instrument.index_from_band_name(closest_band.band_name)
             central_wav = self.phot.instrument[closest_band_index].WavelengthCen
             # if there are no included bands or the closest band is masked
             if len(included_bands) == 0 or self.phot.flux_Jy.mask[closest_band_index]:
@@ -654,18 +659,25 @@ class Galaxy:
                 return self, selection_name
             # calculate beta excluding the bands that the emission line contaminates
             phot_rest.crop_phot([self.phot.instrument.index_from_band_name(band.band_name) for band in included_bands])
-            A, beta = phot_rest.calc_beta_phot(rest_UV_wav_lims, iters = 1)
+            A, beta = phot_rest.calc_beta_phot(rest_UV_wav_lims, iters = 1, incl_errs = True)
+            m_UV = funcs.convert_mag_units(1_500. * (1. + self.phot.SED_results[SED_results_key].z) * u.AA, \
+                funcs.power_law_beta_func(1_500., 10 ** A, beta) * u.erg / (u.s * (u.cm ** 2) * u.AA), u.ABmag)
             # make mock SED to calculate bandpass averaged flux from
-            mock_SED_obs = Mock_SED_obs.from_Mock_SED_rest(Mock_SED_rest.power_law_from_beta_m_UV(beta, \
-                funcs.power_law_beta_func(1_500., 10 ** A, beta), mag_units = u.Jy, wav_lims = \
-                [self.phot.instrument[closest_band_index].WavelengthLower50, \
-                self.phot.instrument[closest_band_index].WavelengthUpper50]), self.z, IGM = None)
+            mock_SED_rest = Mock_SED_rest.power_law_from_beta_m_UV(beta, m_UV)#, wav_range = \
+                #[funcs.convert_wav_units(self.phot.instrument[closest_band_index].WavelengthLower50, u.AA).value / (1. + self.phot.SED_results[SED_results_key].z), \
+                #funcs.convert_wav_units(self.phot.instrument[closest_band_index].WavelengthUpper50, u.AA).value / (1. + self.phot.SED_results[SED_results_key].z)] * u.AA)
+            mock_SED_obs = Mock_SED_obs.from_Mock_SED_rest(mock_SED_rest, self.phot.SED_results[SED_results_key].z, IGM = None)
             flux_cont = funcs.convert_mag_units(central_wav, mock_SED_obs.calc_bandpass_averaged_flux(self.phot.instrument[closest_band_index].wav, \
                 self.phot.instrument[closest_band_index].trans) * u.erg / (u.s * (u.cm ** 2) * u.AA), u.Jy)
             # determine observed magnitude
-            flux_obs_err = funcs.convert_mag_err_units(central_wav, self.phot.flux_Jy[closest_band_index], self.phot.flux_Jy_errs[closest_band_index], u.Jy)
+            flux_obs_err = funcs.convert_mag_err_units(central_wav, self.phot.flux_Jy[closest_band_index], \
+                [self.phot.flux_Jy_errs[closest_band_index].value, self.phot.flux_Jy_errs[closest_band_index].value] * self.phot.flux_Jy_errs.unit, u.Jy)
             flux_obs = funcs.convert_mag_units(central_wav, self.phot.flux_Jy[closest_band_index], u.Jy)
-            if abs((flux_obs - flux_cont).value) > sigma * np.mean(flux_obs_err.value):
+            snr_band = abs((flux_obs - flux_cont).value) / np.mean(flux_obs_err.value)
+            mag_cont = funcs.convert_mag_units(central_wav, mock_SED_obs.calc_bandpass_averaged_flux(self.phot.instrument[closest_band_index].wav, \
+                self.phot.instrument[closest_band_index].trans) * u.erg / (u.s * (u.cm ** 2) * u.AA), u.ABmag)
+            print(self.ID, snr_band, beta, mag_cont, self.phot.SED_results[SED_results_key].z, closest_band.band_name)
+            if snr_band > sigma:
                 if update:
                     self.selection_flags[selection_name] = True
             else:

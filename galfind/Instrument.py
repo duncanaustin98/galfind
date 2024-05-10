@@ -15,7 +15,7 @@ import json
 from pathlib import Path
 from astroquery.svo_fps import SvoFps
 import matplotlib.pyplot as plt
-from typing import NoReturn
+from typing import NoReturn, Union
 
 from . import useful_funcs_austind as funcs
 from . import config, galfind_logger, NIRCam_aper_corr
@@ -219,12 +219,18 @@ class Instrument:
     def bands_from_wavelength(self, wavelength) -> list[Filter]:
         return [band for band in self if wavelength > band.WavelengthLower50 and wavelength < band.WavelengthUpper50]
 
-    def nearest_band_index_to_wavelength(self, wavelength, medium_bands_only = False) -> int:
+    def nearest_band_to_wavelength(self, wavelength, medium_bands_only = False, check_wavelength_in_band = True) -> Union[Filter, None]:
         if medium_bands_only:
             search_bands = [band for band in self if "M" == band.band_name[-1]]
         else:
             search_bands = self.bands
-        return np.abs([band.WavelengthCen for band in search_bands] - wavelength).argmin()
+        nearest_band = search_bands[np.abs([funcs.convert_wav_units(band.WavelengthCen, u.AA).value for band in search_bands] \
+            - funcs.convert_wav_units(wavelength, u.AA).value).argmin()]
+        
+        if check_wavelength_in_band and not nearest_band in self.bands_from_wavelength(wavelength):
+            return None
+        else:
+            return nearest_band
     
     @staticmethod
     def from_name(name, excl_bands = []):
