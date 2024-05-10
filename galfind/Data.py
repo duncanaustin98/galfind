@@ -1604,13 +1604,13 @@ class Data:
             
             # Get fluxes in regions
             fluxes = Depths.do_photometry(im_data, xy, radius_pix)
-            depths, diagnostic, depth_labels, final_labels = Depths.calc_depths(xy, fluxes, im_data, combined_mask, 
+            depths, diagnostic, depth_labels, final_labels = Depths.calc_depths_numba(xy, fluxes, im_data, combined_mask, 
                     region_radius_used_pix = region_radius_used_pix, step_size = step_size, catalogue = cat, wcs = wcs, \
                     coord_type = coord_type, mode = mode, n_nearest = n_nearest, zero_point = self.im_zps[band], n_split = n_split, \
                     split_depth_min_size = split_depth_min_size, split_depths_factor = split_depths_factor, wht_data = wht_data)
 
             # calculate the depths for plotting purposes
-            nmad_grid, num_grid, labels_grid, final_labels = Depths.calc_depths(xy, fluxes, im_data, combined_mask, 
+            nmad_grid, num_grid, labels_grid, final_labels = Depths.calc_depths_numba(xy, fluxes, im_data, combined_mask, 
                 region_radius_used_pix = region_radius_used_pix, step_size = step_size, wcs = wcs, \
                 coord_type = coord_type, mode = mode, n_nearest = n_nearest, zero_point = self.im_zps[band], \
                 n_split = n_split, split_depth_min_size = split_depth_min_size, \

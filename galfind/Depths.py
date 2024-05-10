@@ -22,6 +22,8 @@ import matplotlib.patheffects as pe
 from scipy.stats import gaussian_kde
 from matplotlib.ticker import FuncFormatter
 from matplotlib.colors import LinearSegmentedColormap
+from numba import jit
+from kneed import KneeLocator
 # install cv2, skimage, sklearn 
 
 
@@ -332,18 +334,6 @@ def calc_depths(coordinates, fluxes, img_data, mask = None, catalogue = None,
         
         return np.array(depths), np.array(diagnostic), np.array(cat_labels), labels_final
 
-def calculate_depth(values, sigma_level = 5, zero_point = 28.08, min_number_of_values = 100):
-    if len(values) < min_number_of_values:
-        return np.nan
-    median = np.nanmedian(values)
-    abs_deviation = np.abs(values - median)
-    nmad = 1.4826 * np.nanmedian(abs_deviation) * sigma_level
-    if nmad > 0.:
-        depth_sigma = -2.5 * np.log10(nmad) + zero_point
-    else:
-        depth_sigma = np.nan
-    return depth_sigma
-
 def show_depths(nmad_grid, num_grid, step_size, region_radius_used_pix, labels = None,
                 cat_labels = None, cat_depths = None, cat_diagnostics = None, 
                 x_pix = None, y_pix = None, img_mask = None, labels_final = None, \
@@ -454,6 +444,277 @@ def show_depths(nmad_grid, num_grid, step_size, region_radius_used_pix, labels =
     print('Mean 5 sigma depth:', np.nanmean(nmad_grid))
     return fig, axs
 
+def calc_depths_numba(coordinates, fluxes, img_data, mask = None, catalogue = None, 
+                mode='rolling', sigma_level = 5, step_size=100, region_radius_used_pix=300, 
+                zero_point = 28.08, min_number_of_values=100, n_nearest=100, split_depths = False, wht_data = None,
+                n_split = 1, split_depth_min_size = 100000, split_depths_factor = 5,
+                coord_type = 'sky', wcs = None, provide_labels=None,
+                diagnostic_id = None, plot = False):
+    '''
+    coordinates: list of tuples - (x, y) coordinates
+    fluxes: list of floats - fluxes corresponding to the coordinates
+    img_data: 2D numpy array - the image data
+    mask: 2D numpy array - the mask
+    mode: str - 'rolling' or 'n_nearest'
+    sigma_level: float - the number of sigmas to use for the depth calculation
+    step_size: int - the number of pixels to subgrid the image
+    region_radius_used_pix: int - the radius of the window in pixels - only used if mode is 'rolling'
+    zero_point: float - the zero point for the depth calculation
+    min_number_of_values: int - the minimum number of values required to calculate the depth if the mode is 'rolling'
+    n_nearest: int - the number of nearest neighbors to use for the depth calculation - only used if mode is 'n_nearest'
+    n_split: int - the number of regions to split the depths into using KMeans clustering
+    split_depth_min_size: int - the minimum size of the regions
+    split_depths_factor - int - the factor to use for the binning of the weight map
+    wht_data: 2D numpy array - the weight data - only used if split_depths is True
+    coord_type: str - 'sky' or 'pixel'
+    wcs: WCS object - the wcs object to use for the conversion if coord_type is 'sky'
+    diagnostic_id: int - the position of a galaxy in the catalogue to show the diagnostic plot
+    plot: bool - whether the nmad grid is plotted or not
+    '''
+    print('This is the experimental numba version')
+    # Determine whether to split depths or not
+    if n_split == 1:
+        split_depths = False
+    else:
+        split_depths = True
+    # Extract x and y coordinates
+    coordinates = np.array(coordinates)
+    x, y = coordinates[:, 0], coordinates[:, 1]
+
+    # if type(wht_data) == str:
+    #     weight_map = fits.open(wht_data)
+    #     print(f"Opening weight map: {wht_data}")
+    #     # Check if we have multiple extensions
+    #     if len(weight_map) > 1:
+    #         weight_map = weight_map['WHT'].data
+    #     else:
+    #         weight_map = weight_map[0].data
+    #     wht_data = weight_map
+
+    # Determine the grid size
+    if type(wht_data) != type(None) and split_depths:
+        if type(provide_labels) == type(None):
+            print('Obtaining labels...')
+            assert np.shape(wht_data) == np.shape(img_data), f'The weight map must have the same shape as the image {np.shape(wht_data)} != {np.shape(img_data)}'
+            labels_final, weight_map_smoothed = cluster_wht_map(wht_data, num_regions = n_split, bin_factor = split_depths_factor, min_size = split_depth_min_size)
+            print('Labels obtained')
+        else:
+            labels_final = provide_labels
+            print('Using provided labels')
+    else:   
+        print('Not labelling data')
+        labels_final = np.zeros_like(img_data, dtype=np.float64)
+
+    #  NOTE np.shape on a 2D array returns (y, x) not (x, y)
+    # So references to an x, y coordinate in the array should be [y, x]
+    
+    if type(catalogue) == type(None):
+        # If the catalogue is not provided, use the grid mode
+        iterate_mode = 'grid'
+    else:
+        # If the catalogue is provided, use the catalogue mode 
+        iterate_mode = 'catalogue'
+        # Correct the coordinates if they are in sky coordinates
+
+        if coord_type == 'sky' and wcs != None:
+            # This doesn't work because footprint of the image is not the same as the footprint of the catalogue
+            cat_x_col, cat_y_col = "ALPHA_J2000", "DELTA_J2000"
+            ra_pix, dec_pix = wcs.all_world2pix(catalogue[cat_x_col], catalogue[cat_y_col], 0)
+            cat_x, cat_y = ra_pix, dec_pix
+            if type(wht_data) != type(None):
+                assert np.shape(wht_data) == np.shape(img_data)
+
+        elif coord_type == 'pixel':
+            cat_x_col, cat_y_col = "X_IMAGE", "Y_IMAGE"
+            cat_x, cat_y = catalogue[cat_x_col], catalogue[cat_y_col]
+        else:
+            raise ValueError('coord_type must be either "sky" or "pixel"')
+            
+    x_max, y_max = np.max(x), np.max(y)
+    x_label, y_label = x.astype(int), y.astype(int)
+    # Don't look for label of pixels outside the image
+
+    x_label = np.clip(x_label, 0, x_max - 1).astype(int)
+    y_label = np.clip(y_label, 0, y_max - 1).astype(int)
+
+    filter_labels = labels_final[y_label, x_label] #.astype(np.float64)
+
+    # i is the x coordinate, j is the y coordinate
+    print('Iterate mode:', iterate_mode)
+    if iterate_mode == 'grid':
+
+        grid_size = (int(np.ceil(x_max)) + step_size, int(np.ceil(y_max)) + step_size)
+
+        nmad_sized_grid = np.zeros((grid_size[1]//step_size + 1, grid_size[0]//step_size  + 1) )
+        num_sized_grid =  np.zeros((grid_size[1]//step_size + 1, grid_size[0]//step_size  + 1) )
+        num_sized_grid[:] = np.nan
+        label_size_grid = np.zeros((grid_size[1]//step_size + 1, grid_size[0]//step_size  + 1) )
+        label_size_grid[:] = np.nan
+        #print('Grid size:', grid_size)
+        for i in tq(range(0, grid_size[0], step_size)):
+            for j in range(0, grid_size[1], step_size):
+                setnan = False
+                if type(mask) != type(None):
+                    # Don't calculate the depth if the coordinate is masked
+                    try:
+                        #  NOTE np.shape on a 2D array returns (y, x) not (x, y)
+                        # So references to an x, y coordinate in the array should be [y, x]
+                        if mask[j, i] == 1.0:
+                            depth = np.nan
+                            setnan = True
+                            num_of_apers = np.nan    
+                    except IndexError:
+                        setnan = True
+                        depth = np.nan
+                        num_of_apers = np.nan
+                
+                
+                if not setnan:
+                    j_label = np.clip(j, 0, y_max - 1)
+                    i_label = np.clip(i, 0, x_max - 1)
+                    #  NOTE np.shape on a 2D array returns (y, x) not (x, y)
+                    # So references to an x, y coordinate in the array should be [y, x]            
+                    label = labels_final[j_label.astype(int), i_label.astype(int)]
+                    distances = numba_distances(x, y, i, j)
+                    label_name = label
+                    if mode == 'rolling':
+                        # Extract the neighboring Y values within the circular window
+                        # Ensure label values of regions are the same as label
+                        neighbor_values = fluxes[(distances <= region_radius_used_pix) & (filter_labels == label)]
+                        #neighbor_values = fluxes[distances <= region_radius_used_pix]
+                        
+                        # Calculate the NMAD of the neighboring Y values
+                    elif mode == 'n_nearest':
+                        # Extract the n nearest Y values
+                        # Ensure label values of regions are the same as label
+                        
+                        # Create a boolean mask
+                        mask = filter_labels == label
+                        distances_i = distances[mask]
+                        fluxes_i = fluxes[mask]
+
+                        nearest_indices = np.argpartition(distances, n_nearest)[:n_nearest]
+                        neighbor_values = fluxes[nearest_indices]
+                        min_number_of_values = n_nearest
+                        
+                    num_of_apers = len(neighbor_values)
+
+                    depth = calculate_depth(neighbor_values, sigma_level, zero_point, min_number_of_values=min_number_of_values)
+                
+                # NOTE np.shape on a 2D array returns (y, x) not (x, y)
+                # So references to an x, y coordinate in the array should be [y, x]
+                num_sized_grid[j//step_size, i//step_size] = num_of_apers
+                nmad_sized_grid[j//step_size, i//step_size] = depth
+                label_size_grid[j//step_size, i//step_size] = label_name
+
+        if plot:
+            plt.imshow(nmad_sized_grid, origin='lower', interpolation='None', cmap='plasma')
+            plt.show()
+        
+        return nmad_sized_grid, num_sized_grid, label_size_grid, labels_final
+
+    elif iterate_mode == 'catalogue':
+        depths, diagnostic, cat_labels = [], [], []
+        count = 0
+        print('Total number', len(cat_x))
+        for i, j in tq(zip(cat_x, cat_y), total = len(cat_x)):
+            start_overall = time.time()
+            # Check if the coordinate is outside the image or in the mask
+            if (i > x_max or i < 0 or j > y_max or j < 0):
+                depth = np.nan
+                num_of_apers = np.nan
+                label = np.nan
+                depth_diagnostic = np.nan
+            else:
+                label = labels_final[j.astype(int), i.astype(int)]
+                
+                #distances = np.sqrt((x - i)**2 + (y - j)**2)
+                # NOTE np.shape on a 2D array returns (y, x) not (x, y)
+                # So references to an x, y coordinate in the array should be [y, x]
+               
+                distances = numba_distances(x, y, i, j)
+                # Get the label of interest
+                label = labels_final[j.astype(int), i.astype(int)]
+            
+                # Create a boolean mask
+                mask = filter_labels == label
+
+                distances_i = distances[mask]
+                fluxes_i = fluxes[mask]
+
+                if mode == 'rolling':
+                    start_1 = time.time()
+                    neighbor_values = fluxes[(distances <= region_radius_used_pix) & (labels_final[y_label, x_label] == label)]
+                    depth_diagnostic = len(neighbor_values)
+                    
+                elif mode == 'n_nearest':
+
+                    #print(labels_final.dtype, y_label.dtype, x_label.dtype, fluxes.dtype, n_nearest.dtype, label.dtype)
+                    #neighbor_values, depth_diagnostic = numba_n_nearest_filter(fluxes_i, distances_i, n_nearest)
+                    nearest_indices = np.argpartition(distances, n_nearest)[:n_nearest]
+                    neighbor_values = fluxes[nearest_indices]
+
+                    min_number_of_values = n_nearest
+                    # Depth diagnostic is distance to n_nearest
+                    depth_diagnostic = nearest_indices
+
+                    if plot:
+                        if count == diagnostic_id:
+            
+                            # Plot regions used and image
+                            fig, ax = plt.subplots()
+                            ax.imshow(img_data, cmap='Greys', origin='lower', interpolation='None')
+
+                            # Do this with matplotlib instead
+                            circle = plt.Circle((i, j), radius_pixels, color='r', fill=False)
+                            ax.add_artist(circle)
+                            xtest, ytest = x[labels_final[y_label, x_label] == label], y[labels_final[y_label, x_label] == label]
+                            xtest = xtest[indexes][:n_nearest]
+                            ytest = ytest[indexes][:n_nearest]
+                            for (xi, yi) in zip(xtest, ytest):
+                                circle = plt.Circle((xi, yi), radius_pixels, color='b', fill=False)
+                                ax.add_artist(circle)
+                            plt.show()
+                start_depth = time.time()
+                depth = calculate_depth(neighbor_values, sigma_level, zero_point, min_number_of_values=min_number_of_values)
+
+                end_overall = time.time()
+                #print(f'Fractional time for labelling: {(end_labelling - start_labelling)/(end_overall - start_overall)}')
+                #print(f'Fractional time for distances: {(end_distances - start_distances)/(end_overall - start_overall)}')
+                #print(f'Fractional time for filtering: {(end_filtering - start_filtering)/(end_overall - start_overall)}')
+                #print(f'Fractional time for indices: {(end_indices - start_indices)/(end_overall - start_overall)}')
+                #print(f'Fractional time for label2:, {(end_label2 - start_label2)/(end_overall - start_overall)}')
+                #print('\n')    
+            
+            cat_labels.append(label)
+            depths.append(depth)
+            diagnostic.append(depth_diagnostic)
+            count += 1
+            
+        return np.array(depths), np.array(diagnostic), np.array(cat_labels), labels_final
+
+@jit(nopython=True)
+def numba_distances(x=np.array([]), y=np.array([]), x_coords=1, y_coords=1):
+    #distances = np.sqrt((x_coords[:, None] - x)**2 + (y_coords[:, None]- y)**2)
+    #return distances
+    distances = np.zeros_like(x)
+    for i in range(len(x)):
+        distances[i] = np.sqrt((x[i] - y_coords)**2 + (y[i] - y_coords)**2)
+    return distances
+
+@jit(nopython=True)
+def calculate_depth(values, sigma_level = 5, zero_point = 28.08, min_number_of_values = 100):
+    if len(values) < min_number_of_values:
+        return np.nan
+    median = np.nanmedian(values)
+    abs_deviation = np.abs(values - median)
+    nmad = 1.4826 * np.nanmedian(abs_deviation) * sigma_level
+    if nmad > 0.:
+        depth_sigma = -2.5 * np.log10(nmad) + zero_point
+    else:
+        depth_sigma = np.nan
+    return depth_sigma
+
 def make_ds9_region_file(coordinates, radius, filename, coordinate_type = 'sky', convert=True, wcs=None, pixel_scale=0.03):
     '''
     coordinates: list of tuples - (x, y) coordinates
@@ -488,58 +749,87 @@ def make_ds9_region_file(coordinates, radius, filename, coordinate_type = 'sky',
         for xi, yi in zip(x, y):
             f.write(f'circle({xi},{yi},{radius:.5f}{radius_unit})\n')
 
-def cluster_wht_map(wht_map, num_regions = "auto", bin_factor = 1, min_size = 10_000):
+
+def cluster_wht_map(wht_map, num_regions='auto', bin_factor=1, min_size=10000, ):
+    'Works best for 2 regions, but can be used for more than 2 regions - may need additional smoothing and cleaning'
     # Read the image and associated weight map
+
+    # adjust min_size to be in terms of the bin_factor
+    min_size = min_size // bin_factor**2
+    
     if type(wht_map) == str:
+        # 
         weight_map = fits.open(wht_map)
         # Check if we have multiple extensions
         if len(weight_map) > 1:
             weight_map = weight_map['WHT'].data
         else:
             weight_map = weight_map[0].data
+            
     elif type(wht_map) == np.ndarray:
         weight_map = wht_map
 
-    weight_map_new = weight_map / np.max(weight_map)
 
-    weights = weight_map_new.flatten()
-    # Exclude zero values
-    weights = weights[weights > 0]
+    # Remove NANs
+    weight_map[np.isnan(weight_map)] = 0
+    percentiles = np.nanpercentile(weight_map, [5, 95])
 
-    weight_map_smoothed = cv2.resize(weight_map_new, (weight_map_new.shape[1]//bin_factor, weight_map_new.shape[0]//bin_factor), interpolation=cv2.INTER_LINEAR)
+    weight_map_clipped = np.clip(weight_map, percentiles[0], percentiles[1])
+    weight_map_transformed = (weight_map_clipped  - percentiles[0]) / (percentiles[1] - percentiles[0]) * 255
+    
+    weight_map_smoothed = cv2.resize(weight_map_transformed, (weight_map.shape[1]//bin_factor, weight_map.shape[0]//bin_factor), interpolation=cv2.INTER_LINEAR)
     # Renormalize
-    weight_map_smoothed = weight_map_smoothed / np.max(weight_map_smoothed)
-    # Convert to 8 bit
-    weight_map_smoothed = cv2.normalize(weight_map_smoothed, None, 0, 255, cv2.NORM_MINMAX, cv2.CV_8U)
-
+    
+    #weight_map_smoothed = cv2.normalize(weight_map_smoothed, None, 0, 255, cv2.NORM_MINMAX, cv2.CV_8U)
+    percentiles = np.nanpercentile(weight_map_smoothed, [5, 95])
+    weight_map_clipped = np.clip(weight_map_smoothed, percentiles[0], percentiles[1])
+    weight_map_transformed = (weight_map_clipped  - percentiles[0]) / (percentiles[1] - percentiles[0]) * 255
+    
     labels_filled = []
     iterations = 0
-    print(f'num_regions: {num_regions}')
     if num_regions == 'auto':
         num_regions_list = [1, 2, 3, 4]
     else:
         num_regions_list = [num_regions]
-    
     sse = []
-    for num_regions in num_regions_list:
-        print(num_regions)
-        kmeans = KMeans(n_clusters = num_regions, n_init = 5)
-        kmeans.fit(weight_map_smoothed.flatten().reshape(-1, 1))
-        sse.append(kmeans.inertia_)
+    if len(num_regions_list) > 1:
+        for num_regions in num_regions_list:
 
-    kneedle = KneeLocator(num_regions_list, sse, curve='convex', direction='decreasing')
-    num_regions = kneedle.elbow
-    print(f'Detected {num_regions} regions as best.')
-    # Find best of doing it 15x
-    kmeans = KMeans(n_clusters = num_regions, n_init = 15)
-    kmeans.fit(weight_map_smoothed.flatten().reshape(-1, 1))
+            #while len(np.unique(labels_filled)) != num_regions:
+                #suming you want to segment into 2 regions (deep and non-deep)
+            print(num_regions)
+            kmeans = KMeans(n_clusters=num_regions, n_init=5)
+        
+            kmeans.fit(weight_map_transformed.flatten().reshape(-1, 1))
+
+            sse.append(kmeans.inertia_)
+
+        if np.unique(sse) == 0.0:
+            print('KMeans failed to find regions. No regions used.')
+            return np.zeros_like(weight_map), weight_map_smoothed
+        
+        plt.plot(num_regions_list, sse)
+        plt.xlabel('Number of Regions')
+        plt.ylabel('SSE')
+        from kneed import KneeLocator
+        
+        kneedle = KneeLocator(num_regions_list, sse, curve='convex', direction='decreasing')
+        num_regions = kneedle.elbow
+        print(f'Detected {num_regions} regions as best.')
+        plt.axvline(num_regions, color='red', linestyle='--')
+        plt.show()
+        plt.close()
+        # Find best of doing it 15x
+    kmeans = KMeans(n_clusters=num_regions, n_init=15)
+    kmeans.fit(weight_map_transformed.flatten().reshape(-1, 1))
     
-    labels = kmeans.labels_.reshape(weight_map_smoothed.shape[:2])
+    labels = kmeans.labels_.reshape(weight_map_transformed.shape[:2])
     
     if num_regions == 2:
         # Closing and opening to remove light and dark spots
         labels_filled = morphology.binary_closing(labels, morphology.disk(5))
         labels_filled = morphology.binary_opening(labels_filled, morphology.disk(5))
+        
     else:
         # Do this when you have more than 2 regions - doesn't work quite as well at the edges
         labels_filled = morphology.area_closing(labels, area_threshold=min_size)
@@ -552,29 +842,37 @@ def cluster_wht_map(wht_map, num_regions = "auto", bin_factor = 1, min_size = 10
         region_cleaned = morphology.remove_small_holes(region, area_threshold=min_size)
         labels_filled = np.where(region_cleaned, label, labels_filled)
     
+    
     # Check if both labels are present
     possible_labels = np.unique(labels_filled)
     if len(possible_labels) != num_regions:
-        #print('One of the Kmeans labelled regions didn\'t survive cleaning.')
+        print('One of the Kmeans labelled regions didn\'t survive cleaning.')
         num_regions = len(possible_labels)
+    
 
     # Check if one of regions is background (i.e very close to zero)
     zero_levels = [np.count_nonzero(weight_map_smoothed[labels_filled == label] < 10) / np.count_nonzero(labels_filled == label) for label in possible_labels]
-    #print('Zero levels:', zero_levels)
+    print('Zero levels:', zero_levels)
     possible_background_label = np.argmax(zero_levels)
     background_label = possible_labels[possible_background_label]
     background_frac = zero_levels[possible_background_label]
     if background_frac > 0.80:
-        #print('Label', int(background_label), 'is background')
+        print('Label', int(background_label), 'is background')
         if num_regions == 2:
-            #print('No other regions detected, so no need to break depths into regions.')
+            print('No other regions detected, so no need to break depths into regions.')
             labels_filled = np.zeros_like(labels_filled)
 
+    #plt.imshow(weight_map_smoothed, cmap='Greys', origin='lower', interpolation='None')
+    #plt.imshow(labels_filled, cmap='viridis', origin='lower', interpolation='None', alpha=0.7)
     # If bin_factor is greater than 1, enlarge the labels_filled to the original size
     if bin_factor > 1:
-        labels_filled = cv2.resize(labels_filled.astype(np.uint8), (weight_map_new.shape[1], weight_map_new.shape[0]), interpolation=cv2.INTER_NEAREST)
+        labels_filled = cv2.resize(labels_filled.astype(np.uint8), (weight_map.shape[1], weight_map.shape[0]), interpolation=cv2.INTER_NEAREST)
+    show_labels = False
+    if show_labels:
+        plt.imshow(labels_filled, cmap='viridis', origin='lower', interpolation='None')
+        plt.show()
 
-    return labels_filled, weight_map_smoothed
+    return labels_filled, weight_map_transformed
 
 if __name__ == '__main__':
     
