@@ -804,7 +804,7 @@ def cluster_wht_map(wht_map, num_regions='auto', bin_factor=1, min_size=10000, )
 
             sse.append(kmeans.inertia_)
 
-        if np.unique(sse) == 0.0:
+        if len(np.unique(labels_filled)) == 1:
             print('KMeans failed to find regions. No regions used.')
             return np.zeros_like(weight_map), weight_map_smoothed
         
