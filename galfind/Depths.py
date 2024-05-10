@@ -388,9 +388,7 @@ def show_depths(nmad_grid, num_grid, step_size, region_radius_used_pix, labels =
             mappable = axs[pos+1].imshow(labels, cmap=custom_cmap, origin='lower', interpolation='None')
 
             possible_labels = np.unique(labels)
-           
-            
-            print(possible_labels)
+
             order = np.argsort(av_depths)
             possible_labels = possible_labels[order]
             
@@ -633,7 +631,7 @@ def calc_depths_numba(coordinates, fluxes, img_data, mask = None, catalogue = No
                 
                     # NOTE np.shape on a 2D array returns (y, x) not (x, y)
                     # So references to an x, y coordinate in the array should be [y, x]
-                    print(num_of_apers, depth, label_name)
+           
                     num_sized_grid[j//step_size, i//step_size] = num_of_apers
                     nmad_sized_grid[j//step_size, i//step_size] = depth
                     label_size_grid[j//step_size, i//step_size] = label_name
