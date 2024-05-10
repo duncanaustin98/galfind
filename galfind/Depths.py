@@ -24,6 +24,7 @@ from matplotlib.ticker import FuncFormatter
 from matplotlib.colors import LinearSegmentedColormap
 from numba import jit
 from kneed import KneeLocator
+from mpl_toolkits.axes_grid1.axes_divider import make_axes_locatable
 # install cv2, skimage, sklearn 
 
 
@@ -338,12 +339,15 @@ def show_depths(nmad_grid, num_grid, step_size, region_radius_used_pix, labels =
                 cat_labels = None, cat_depths = None, cat_diagnostics = None, 
                 x_pix = None, y_pix = None, img_mask = None, labels_final = None, \
                 suptitle = None, save_path = None, show = False):
-    fig, axs = plt.subplots(3 if type(labels) == type(None) else 4, 1 if type(cat_depths) == type(None) else 2, facecolor = 'white', figsize = (8, 14))
+    fig, axs = plt.subplots(3 if type(labels) == type(None) else 4, 1 if type(cat_depths) == type(None) else 2, facecolor = 'white', figsize = (16, 16), constrained_layout=True)
+
+    # move axis apart
     axs = axs.flatten()
     if type(suptitle) != type(None):
         fig.suptitle(suptitle, fontsize='large', fontweight='bold')
     cmap = cm.get_cmap("plasma")
     cmap.set_bad(color='black')
+    nmad_grid[nmad_grid == 0] = np.nan
     # Make vmin and vmax the 5th and 95th percentile of the nmad_grid
     vmin, vmax = np.nanpercentile(nmad_grid, 1), np.nanpercentile(nmad_grid, 99)
     mappable = axs[0].imshow(nmad_grid, origin='lower', cmap=cmap, vmin=vmin, vmax=vmax)
@@ -355,30 +359,43 @@ def show_depths(nmad_grid, num_grid, step_size, region_radius_used_pix, labels =
     patch = plt.Circle((circle_x, circle_y), radius = radius, fill=True, facecolor='white', lw=2, zorder=10)
     axs[0].add_patch(patch)
     axs[0].text(circle_x, circle_y - 1.4*radius, s='Filter Size', va='center', ha='center', color='white', fontsize='medium')# path_effects = [pe.Stroke(linewidth=0.5, foreground='black')])
-    fig.colorbar(mappable, label=r'5$\sigma$ Depth',  ax=axs[0])
+    #Make colorbar same height as ax
+    divider = make_axes_locatable(axs[0])
+    cax = divider.append_axes('right', size='5%', pad=0.05)
+    fig.colorbar(mappable, label=r'5$\sigma$ Depth', cax=cax)
+    
     axs[0].set_title('Rolling Average 5$\sigma$ Depth')
 
     mappable2 = axs[1].imshow(num_grid, origin='lower', cmap=cmap)
-    fig.colorbar(mappable2, label=r'Number of Apertures Used',  ax=axs[1])
+    divider2 = make_axes_locatable(axs[1])
+    cax2 = divider2.append_axes('right', size='5%', pad=0.05)
+
+    fig.colorbar(mappable2, label=r'Number of Apertures Used',  cax=cax2)
     axs[1].set_title('Rolling Average Diagnostic')      
     
     if type(labels) != type(None):
         cmap = cm.get_cmap('Set2')
-        if len(np.unique(labels)) > 1:
+
+        possible_labels = np.unique(labels)
+        av_depths = [np.nanmedian(nmad_grid[labels == label]) for label in possible_labels]
+        #mask nan in av_depths
+        av_depths = np.array(av_depths)[~np.isnan(av_depths)]
+        if len(av_depths) > 1:
             num_labels = len(np.unique(labels))
             custom_cmap = LinearSegmentedColormap.from_list('custom', [cmap(i/num_labels) for i in range(num_labels)], num_labels)
+            
             pos = 5 if type(cat_depths) != type(None) else 2
             mappable = axs[pos+1].imshow(labels, cmap=custom_cmap, origin='lower', interpolation='None')
 
             possible_labels = np.unique(labels)
-            av_depths = [np.nanmedian(nmad_grid[labels == label]) for label in possible_labels]
-            print('Average depths:', av_depths)
+           
+            
             print(possible_labels)
             order = np.argsort(av_depths)
             possible_labels = possible_labels[order]
             
             label = ['Shallow', 'Deep']
-            colors = [custom_cmap(possible_labels[0]),custom_cmap(possible_labels[1])]
+            colors = [custom_cmap(possible_labels[0]), custom_cmap(possible_labels[1])]
             axs[pos+1].set_title('Labels')
 
             axs[pos].set_title('Catalogue Labels')
@@ -400,15 +417,21 @@ def show_depths(nmad_grid, num_grid, step_size, region_radius_used_pix, labels =
 
         axs[2].set_title('Catalogue Depths')
         m = axs[2].scatter(x_pix, y_pix, s=1, zorder=5, c = cat_depths, cmap='plasma')
-        fig.colorbar(ax=axs[2], mappable=m, label='5$\sigma$ Depth')
+        divider3 = make_axes_locatable(axs[2])
+        cax3 = divider3.append_axes('right', size='5%', pad=0.05)
+        fig.colorbar(mappable=m, label='5$\sigma$ Depth', cax=cax3)
 
         axs[2].imshow(img_mask, cmap='Greens', origin='lower', interpolation='None', alpha=0.3, zorder=4)
         axs[2].imshow(labels_final, cmap='Reds', origin='lower', interpolation='None', alpha=0.3, zorder=4)
 
         axs[4].set_title('Catalogue Diagnostic')
         m = axs[4].scatter(x_pix, y_pix, s=1, zorder=5, c = np.array(cat_diagnostics), cmap = 'plasma')
-        fig.colorbar(ax=axs[4], mappable=m, label='Distance to 200th Nearest Empty Aperture')
-        
+        # Make it so axes aren't stetch disproportionately
+        axs[4].set_aspect('equal')
+        divider4 = make_axes_locatable(axs[4])
+        cax4 = divider4.append_axes('right', size='5%', pad=0.05)
+        fig.colorbar(mappable=m, label='Distance to 200th Empty Aperture', cax=cax4)
+
         set_labels = [cat_depths[cat_labels == label] for label in possible_labels]
         axs[3].hist(set_labels, bins=40, range=(np.nanmin(cat_depths), np.nanmax(cat_depths)), label=label, color=colors, histtype='stepfilled', alpha=0.8)    
         # Plot line at median depth
@@ -431,6 +454,17 @@ def show_depths(nmad_grid, num_grid, step_size, region_radius_used_pix, labels =
         print('No catalogue depths')
     #axs[7].remove()
     #plt.tight_layout()
+    # Delete all axes with nothing on
+    for ax in axs:
+        if len(ax.images) == 0 and len(ax.collections) == 0 and len(ax.lines) == 0 and len(ax.patches) == 0 and len(ax.artists) == 0:
+            try:
+                ax.remove()
+            except:
+                pass
+
+    fig.get_layout_engine().set(w_pad=1, h_pad=1, hspace=1,
+                            wspace=1)
+
     if type(save_path) != type(None):
         plt.savefig(save_path, dpi=300, bbox_inches='tight')
         print(f"Saved depths plot to {save_path}")
@@ -555,6 +589,7 @@ def calc_depths_numba(coordinates, fluxes, img_data, mask = None, catalogue = No
             for j in range(0, grid_size[1], step_size):
                 setnan = False
                 if type(mask) != type(None):
+                    
                     # Don't calculate the depth if the coordinate is masked
                     try:
                         #  NOTE np.shape on a 2D array returns (y, x) not (x, y)
@@ -564,10 +599,10 @@ def calc_depths_numba(coordinates, fluxes, img_data, mask = None, catalogue = No
                             setnan = True
                             num_of_apers = np.nan    
                     except IndexError:
+                        #print('index error')
                         setnan = True
                         depth = np.nan
                         num_of_apers = np.nan
-                
                 
                 if not setnan:
                     j_label = np.clip(j, 0, y_max - 1)
@@ -576,36 +611,32 @@ def calc_depths_numba(coordinates, fluxes, img_data, mask = None, catalogue = No
                     # So references to an x, y coordinate in the array should be [y, x]            
                     label = labels_final[j_label.astype(int), i_label.astype(int)]
                     distances = numba_distances(x, y, i, j)
+
+                    mask_arr = filter_labels == label
+                    distances_i = distances[mask_arr]
+                    fluxes_i = fluxes[mask_arr]
+
                     label_name = label
                     if mode == 'rolling':
                         # Extract the neighboring Y values within the circular window
                         # Ensure label values of regions are the same as label
-                        neighbor_values = fluxes[(distances <= region_radius_used_pix) & (filter_labels == label)]
+                        neighbor_values = fluxes_i[(distances_i <= region_radius_used_pix) & (filter_labels == label)]
                         #neighbor_values = fluxes[distances <= region_radius_used_pix]
-                        
-                        # Calculate the NMAD of the neighboring Y values
                     elif mode == 'n_nearest':
-                        # Extract the n nearest Y values
-                        # Ensure label values of regions are the same as label
-                        
-                        # Create a boolean mask
-                        mask = filter_labels == label
-                        distances_i = distances[mask]
-                        fluxes_i = fluxes[mask]
-
-                        nearest_indices = np.argpartition(distances, n_nearest)[:n_nearest]
-                        neighbor_values = fluxes[nearest_indices]
+                        nearest_indices = np.argpartition(distances_i, n_nearest)[:n_nearest]
+                        neighbor_values = fluxes_i[nearest_indices]
                         min_number_of_values = n_nearest
                         
                     num_of_apers = len(neighbor_values)
 
                     depth = calculate_depth(neighbor_values, sigma_level, zero_point, min_number_of_values=min_number_of_values)
                 
-                # NOTE np.shape on a 2D array returns (y, x) not (x, y)
-                # So references to an x, y coordinate in the array should be [y, x]
-                num_sized_grid[j//step_size, i//step_size] = num_of_apers
-                nmad_sized_grid[j//step_size, i//step_size] = depth
-                label_size_grid[j//step_size, i//step_size] = label_name
+                    # NOTE np.shape on a 2D array returns (y, x) not (x, y)
+                    # So references to an x, y coordinate in the array should be [y, x]
+                    print(num_of_apers, depth, label_name)
+                    num_sized_grid[j//step_size, i//step_size] = num_of_apers
+                    nmad_sized_grid[j//step_size, i//step_size] = depth
+                    label_size_grid[j//step_size, i//step_size] = label_name
 
         if plot:
             plt.imshow(nmad_sized_grid, origin='lower', interpolation='None', cmap='plasma')
@@ -642,20 +673,20 @@ def calc_depths_numba(coordinates, fluxes, img_data, mask = None, catalogue = No
                 fluxes_i = fluxes[mask]
 
                 if mode == 'rolling':
-                    neighbor_values = fluxes[(distances <= region_radius_used_pix) & (labels_final[y_label, x_label] == label)]
+                    neighbor_values = fluxes_i[(distances_i <= region_radius_used_pix) & (labels_final[y_label, x_label] == label)]
                     depth_diagnostic = len(neighbor_values)
                     
                 elif mode == 'n_nearest':
 
                     #print(labels_final.dtype, y_label.dtype, x_label.dtype, fluxes.dtype, n_nearest.dtype, label.dtype)
                     #neighbor_values, depth_diagnostic = numba_n_nearest_filter(fluxes_i, distances_i, n_nearest)
-                    nearest_indices = np.argpartition(distances, n_nearest)[:n_nearest]
-                    neighbor_values = fluxes[nearest_indices]
+                    nearest_indices = np.argpartition(distances_i, n_nearest)[:n_nearest]
+                    neighbor_values = fluxes_i[nearest_indices]
 
                     min_number_of_values = n_nearest
                     # Depth diagnostic is distance to n_nearest
-                    depth_diagnostic = nearest_indices
-
+                    depth_diagnostic = n_nearest #distances_i[np.argsort(distances_i[nearest_indices])][-1]        
+                    
                     if plot:
                         if count == diagnostic_id:
             
@@ -674,13 +705,8 @@ def calc_depths_numba(coordinates, fluxes, img_data, mask = None, catalogue = No
                                 ax.add_artist(circle)
                             plt.show()
                 depth = calculate_depth(neighbor_values, sigma_level, zero_point, min_number_of_values=min_number_of_values)
-                #print(f'Fractional time for labelling: {(end_labelling - start_labelling)/(end_overall - start_overall)}')
-                #print(f'Fractional time for distances: {(end_distances - start_distances)/(end_overall - start_overall)}')
-                #print(f'Fractional time for filtering: {(end_filtering - start_filtering)/(end_overall - start_overall)}')
-                #print(f'Fractional time for indices: {(end_indices - start_indices)/(end_overall - start_overall)}')
-                #print(f'Fractional time for label2:, {(end_label2 - start_label2)/(end_overall - start_overall)}')
-                #print('\n')    
-            
+                
+            #print(label, depth, depth_diagnostic)
             cat_labels.append(label)
             depths.append(depth)
             diagnostic.append(depth_diagnostic)
@@ -694,7 +720,7 @@ def numba_distances(x=np.array([]), y=np.array([]), x_coords=1, y_coords=1):
     #return distances
     distances = np.zeros_like(x)
     for i in range(len(x)):
-        distances[i] = np.sqrt((x[i] - y_coords)**2 + (y[i] - y_coords)**2)
+        distances[i] = np.sqrt((x[i] - x_coords)**2 + (y[i] - y_coords)**2)
     return distances
 
 @jit(nopython=True)
