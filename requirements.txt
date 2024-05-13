@@ -25,3 +25,6 @@ photutils
 regions
 typing
 kneed
+collections
+grizli
+msaexp
