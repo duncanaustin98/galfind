@@ -377,8 +377,8 @@ def show_depths(nmad_grid, num_grid, step_size, region_radius_used_pix, labels =
             order = np.argsort(av_depths)
             possible_labels = possible_labels[order]
             
-            label = ['Shallow', 'Deep']
-            colors = [custom_cmap(possible_labels[0]),custom_cmap(possible_labels[1])]
+            labels_arr = ['Shallow', 'Deep']
+            colours = [custom_cmap(possible_labels[0]), custom_cmap(possible_labels[1])]
             axs[pos+1].set_title('Labels')
 
             axs[pos].set_title('Catalogue Labels')
@@ -388,9 +388,9 @@ def show_depths(nmad_grid, num_grid, step_size, region_radius_used_pix, labels =
             m = axs[pos].scatter(x_pix, y_pix, s=1, zorder=5, c = np.array(cat_labels), cmap='plasma')
             #fig.colorbar(ax=axs[5], mappable=m, label='Label')
         else:
-            label = ['Single Region']
+            labels_arr = ['Single Region']
             possible_labels = [0]
-            colors = [cmap(0)]
+            colours = [cmap(0)]
             axs[-2].remove()
             axs[-1].remove()
         
@@ -410,18 +410,20 @@ def show_depths(nmad_grid, num_grid, step_size, region_radius_used_pix, labels =
         fig.colorbar(ax=axs[4], mappable=m, label='Distance to 200th Nearest Empty Aperture')
         
         set_labels = [cat_depths[cat_labels == label] for label in possible_labels]
-        axs[3].hist(set_labels, bins=40, range=(np.nanmin(cat_depths), np.nanmax(cat_depths)), label=label, color=colors, histtype='stepfilled', alpha=0.8)    
+        for set_label, label, colour in zip(set_labels, labels_arr, colours):
+            axs[3].hist(set_label, bins = 40, range = (np.nanmin(cat_depths), np.nanmax(cat_depths)), \
+                label = label, color = colour, histtype = 'stepfilled', alpha = 0.8)    
         # Plot line at median depth
         # Fix y range
         axs[3].set_ylim(axs[3].get_ylim())
         max = axs[3].get_ylim()[1]
         
-        for pos, depth in enumerate(set_labels):
+        for pos, (depth, colour) in enumerate(zip(set_labels, colours)):
             axs[3].axvline(np.nanmedian(depth), 0, max, color='black', lw=3, linestyle='--', label='Median' if pos == 0 else '', zorder=10)
             axs[3].axvline(np.nanmean(depth), 0, max, color='black', lw=3, linestyle='-', label='Mean' if pos == 0 else '', zorder=10)
             # Label with text
-            axs[3].text(np.nanmean(depth), 0.7*max, f'{np.nanmean(depth):.2f}', va='top', ha='center', fontsize='medium', color=colors[pos], rotation=90, path_effects = [pe.withStroke(linewidth=3, foreground='white')], zorder=10, fontweight='bold')
-            axs[3].text(np.nanmedian(depth), 0.9*max, f'{np.nanmedian(depth):.2f}', va='top', ha='center', fontsize='medium', color=colors[pos], rotation=90, path_effects = [pe.withStroke(linewidth=3, foreground='white')], zorder=10, fontweight='bold')
+            axs[3].text(np.nanmean(depth), 0.7*max, f'{np.nanmean(depth):.2f}', va='top', ha='center', fontsize='medium', color=colour, rotation=90, path_effects = [pe.withStroke(linewidth=3, foreground='white')], zorder=10, fontweight='bold')
+            axs[3].text(np.nanmedian(depth), 0.9*max, f'{np.nanmedian(depth):.2f}', va='top', ha='center', fontsize='medium', color=colour, rotation=90, path_effects = [pe.withStroke(linewidth=3, foreground='white')], zorder=10, fontweight='bold')
         
         axs[3].set_xlabel('5$\sigma$ Depth')
         axs[3].set_title('Depth Histogram')
@@ -803,22 +805,22 @@ def cluster_wht_map(wht_map, num_regions='auto', bin_factor=1, min_size=10000, )
             kmeans.fit(weight_map_transformed.flatten().reshape(-1, 1))
 
             sse.append(kmeans.inertia_)
-
-        if np.unique(sse) == 0.0:
+        breakpoint()
+        if all(val == 0.0 for val in np.unique(sse)) :
             print('KMeans failed to find regions. No regions used.')
             return np.zeros_like(weight_map), weight_map_smoothed
         
-        plt.plot(num_regions_list, sse)
-        plt.xlabel('Number of Regions')
-        plt.ylabel('SSE')
+        #plt.plot(num_regions_list, sse)
+        #plt.xlabel('Number of Regions')
+        #plt.ylabel('SSE')
         from kneed import KneeLocator
         
         kneedle = KneeLocator(num_regions_list, sse, curve='convex', direction='decreasing')
         num_regions = kneedle.elbow
         print(f'Detected {num_regions} regions as best.')
-        plt.axvline(num_regions, color='red', linestyle='--')
-        plt.show()
-        plt.close()
+        #plt.axvline(num_regions, color='red', linestyle='--')
+        #plt.show()
+        #plt.close()
         # Find best of doing it 15x
     kmeans = KMeans(n_clusters=num_regions, n_init=15)
     kmeans.fit(weight_map_transformed.flatten().reshape(-1, 1))

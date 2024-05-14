@@ -36,6 +36,7 @@ from . import Photometry_rest
 from . import galfind_logger
 from .Instrument import NIRCam, MIRI, ACS_WFC, WFC3_IR, Instrument
 from .Emission_lines import line_diagnostics
+from .Spectrum import Spectral_Catalogue
 
 class Catalogue(Catalogue_Base):
     
@@ -119,6 +120,18 @@ class Catalogue(Catalogue_Base):
         galfind_logger.info("Updating SED results in galfind catalogue object")
         [gal.update(gal_SED_result) for gal, gal_SED_result in zip(self, cat_SED_results)]
     
+    # Spectroscopy
+        
+    def match_available_spectra(self):
+        breakpoint()
+        # make catalogue consisting of spectra downloaded from the DJA
+        DJA_cat = np.sum([Spectral_Catalogue.from_DJA(ra_range = self.ra_range, \
+            dec_range = self.dec_range, version = version) for version in ["v1", "v2"]])
+        # cross match this catalogue 
+        cross_matched_cat = self * DJA_cat
+        print(str(cross_matched_cat))
+        return cross_matched_cat
+
     # %%
     
     # def calc_ext_src_corrs(self, band, ID = None):
@@ -150,7 +163,7 @@ class Catalogue(Catalogue_Base):
             galfind_logger.info(f"Masking catalogue for {self.survey} {self.version}")
             
             # calculate x,y for each galaxy in catalogue
-            cat_x, cat_y = self.data.wcs[self.data.alignment_band].world_to_pixel(SkyCoord(fits_cat[self.cat_creator.ra_dec_labels["RA"]], fits_cat[self.cat_creator.ra_dec_labels["DEC"]]))
+            cat_x, cat_y = self.data.load_wcs(self.data.alignment_band).world_to_pixel(SkyCoord(fits_cat[self.cat_creator.ra_dec_labels["RA"]], fits_cat[self.cat_creator.ra_dec_labels["DEC"]]))
             
             # make columns for individual band masking
             if config["Masking"].getboolean("MASK_BANDS"):

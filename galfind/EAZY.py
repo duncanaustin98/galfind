@@ -47,19 +47,24 @@ class EAZY(SED_code):
     def __init__(self):
         super().__init__(self.galaxy_property_dict, self.galaxy_property_errs_dict, self.available_templates)
 
-    def galaxy_property_labels(self, gal_property, SED_fit_params, is_err = False):
+    def galaxy_property_labels(self, gal_property, SED_fit_params, is_err = False, given_as_key = True):
         assert("templates" in SED_fit_params.keys() and "lowz_zmax" in SED_fit_params.keys())
         if SED_fit_params["templates"] not in self.available_templates:
             raise(Exception(f"templates = {SED_fit_params['templates']} are not in {self.available_templates}, and hence are not yet encorporated for galfind EAZY SED fitting"))
-        if is_err:
-            property_dict = self.galaxy_property_errs_dict
-        else:
-            property_dict = self.galaxy_property_dict
-        if gal_property in property_dict.keys():
-            return f"{property_dict[gal_property]}_{SED_fit_params['templates']}_{funcs.lowz_label(SED_fit_params['lowz_zmax'])}"
-        else:
-            raise(Exception(f"{self.__class__.__name__}.galaxy_property_{'errs_' if is_err else ''}dict = {property_dict} does not include key for gal_property = {gal_property}!"))
-    
+        
+        return_suffix = f"{SED_fit_params['templates']}_{funcs.lowz_label(SED_fit_params['lowz_zmax'])}"
+        if given_as_key: # gal_property given as key
+            if is_err:
+                property_dict = self.galaxy_property_errs_dict
+            else:
+                property_dict = self.galaxy_property_dict
+            if gal_property in property_dict.keys():
+                return f"{property_dict[gal_property]}_{return_suffix}"
+            else:
+                raise(Exception(f"{self.__class__.__name__}.galaxy_property_{'errs_' if is_err else ''}dict = {property_dict} does not include key for gal_property = {gal_property}!"))
+        else: # gal_property given as value
+            return f"{gal_property}_{return_suffix}"
+
     def make_in(self, cat, fix_z = False): #, *args, **kwargs):
         eazy_in_dir = f"{config['EAZY']['EAZY_DIR']}/input/{cat.instrument.name}/{cat.version}/{cat.survey}"
         eazy_in_path = f"{eazy_in_dir}/{cat.cat_name.replace('.fits', '.in')}"
@@ -237,7 +242,7 @@ class EAZY(SED_code):
                 # add the template name to the column labels except for IDENT
                 for col_name in table.colnames:
                     if col_name != "IDENT":
-                        table.rename_column(col_name, self.galaxy_property_labels(col_name, SED_fit_params))
+                        table.rename_column(col_name, self.galaxy_property_labels(col_name, SED_fit_params, given_as_key = False))
                 # Write fits file
                 table.write(fits_out_path, overwrite = True)
                 galfind_logger.info(f'Written {self.__class__.__name__} {templates} {lowz_label} fits out file to: {fits_out_path}')

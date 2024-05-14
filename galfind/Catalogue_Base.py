@@ -41,8 +41,8 @@ class Catalogue_Base:
         
         # concat is commutative for catalogues
         self.__radd__ = self.__add__
-        # cross-match is commutative for catalogues
-        self.__rmul__ = self.__mul__
+        # cross-match is commutative for catalogues - not if they are of different classes
+        # self.__rmul__ = self.__mul__
 
     # %% Overloaded operators
 
@@ -266,7 +266,9 @@ class Catalogue_Base:
 
         if self_copy.__class__.__name__ == "Catalogue" and other_copy.__class__.__name__ == "Spectral_Catalogue":
             # update catalogue and galaxies
-            self_copy.gals = [deepcopy(gal).add_spectra() for gal in zip(gal_matched_cat, gal_matched_other)]
+            self_copy.gals = [deepcopy(gal).add_spectra(spectra) for gal, spectra in \
+                tqdm(zip(gal_matched_cat, gal_matched_other), total = len(gal_matched_cat), \
+                desc = "Appending spectra to catalogue!")]
             return self_copy
         else:
             for gal1, gal2 in tqdm(zip(gal_matched_cat, gal_matched_other), desc='Filtering best galaxy for matches'):
@@ -276,9 +278,9 @@ class Catalogue_Base:
                 band_names_union = list(set(bands_gal1).union(set(bands_gal2)))
 
                 if len(bands_gal2) > len(bands_gal1):
-                    self_copy.remove_gal(id=gal1.ID)
+                    self_copy.remove_gal(id = gal1.ID)
                 elif len(bands_gal2) < len(bands_gal1):
-                    other_copy.remove_gal(id=gal2.ID)
+                    other_copy.remove_gal(id = gal2.ID)
                 else:
                     # If same bands, choose galaxy with deeper depth
                     # Get matching bands between the two galaxies - only use if not masked
@@ -326,6 +328,22 @@ class Catalogue_Base:
     @property
     def cat_name(self):
         return funcs.split_dir_name(self.cat_path, "name")
+    
+    @property
+    def ra_range(self):
+        try:
+            return self._ra_range
+        except:
+            self._ra_range = [np.min(self.RA), np.max(self.RA)]
+            return self._ra_range
+    
+    @property
+    def dec_range(self):
+        try:
+            return self._dec_range
+        except:
+            self._dec_range = [np.min(self.DEC), np.max(self.DEC)]
+            return self._dec_range
     
     def remove_gal(self, index=None, id=None):
         if index is not None:

@@ -6,6 +6,7 @@ import numpy as np
 import astropy.units as u
 from typing import NoReturn, Union, List, TYPE_CHECKING
 from numpy.typing import NDArray
+from astropy.utils.masked import Masked
 from collections.abc import Callable
 from abc import abstractmethod, ABC
 from astropy.coordinates import SkyCoord
@@ -15,6 +16,7 @@ from tqdm import tqdm
 from astropy.table import Table
 import msaexp.spectrum
 from msaexp import msa
+import os
 
 if TYPE_CHECKING:
     from . import Catalogue
@@ -129,6 +131,8 @@ class Spectrum:
             z: float,
             z_method: str,
             instrument: Spectral_Instrument,
+            reduction_name: str,
+            MSA_metafile_name: str,
             author_years: dict = {}, # {author_year: z}
             meta: dict = {}
             ) -> NoReturn:
@@ -139,6 +143,8 @@ class Spectrum:
         self.z = z
         self.z_method = z_method
         self.instrument = instrument
+        self.reduction_name = reduction_name
+        self.MSA_metafile_name = MSA_metafile_name
         self.author_years = author_years
         self.meta = meta
 
@@ -149,6 +155,8 @@ class Spectrum:
         except AttributeError:
             if "PROGRAM" in self.meta.keys():
                 self._PID = int(self.meta["PROGRAM"])
+            elif "SRCNAM1" in self.meta.keys():
+                self._PID = int(self.meta["SRCNAM1"].split("_")[0])
             else:
                 raise(Exception())
             return self._PID
@@ -160,6 +168,8 @@ class Spectrum:
         except AttributeError:
             if "SOURCEID" in self.meta.keys():
                 self._src_ID = int(self.meta["SOURCEID"])
+            elif "SRCNAM1" in self.meta.keys():
+                self._src_ID = int(self.meta["SRCNAM1"].split("_")[1])
             else:
                 raise(Exception())
             return self._src_ID
@@ -167,6 +177,28 @@ class Spectrum:
     @property
     def src_name(self):
         return f"{self.PID}_{self.src_ID}"
+    
+    @property
+    def MSA_ID(self):
+        try:
+            return self._meta_ID
+        except AttributeError:
+            if "MSAMETID" in self.meta.keys():
+                self._meta_ID = int(self.meta["MSAMETID"])
+            else:
+                raise(Exception())
+            return self._meta_ID
+
+    @property
+    def dither_pt(self):
+        try:
+            return self._dither_pt
+        except AttributeError:
+            if "PATT_NUM" in self.meta.keys():
+                self._dither_pt = int(self.meta["PATT_NUM"])
+            else:
+                raise(Exception())
+            return self._dither_pt
 
         #meta = {"PID": int(header["PROGRAM"]), "src_ID": int(header("SOURCEID")), "slit_ID": int(header["SLITID"]), "exp_time": float(header["DURATION"]), "readout_pattern": \
         #    "nod_type": str(header["NOD_TYPE"]).replace(" ", ""), "src_slit_pos": [float(header["SRCXPOS"]), float(header["SRCYPOS"])]}
@@ -181,7 +213,7 @@ class Spectrum:
     #         raise(Exception())#galfind_logger.critical(f"{self.__class__.__name__=} has no attribute = {name}")))
 
     @classmethod
-    def from_DJA(cls, fits_cat: Table, url_path: str, save: bool = True, version: str = "v2") -> Self:
+    def from_DJA(cls, url_path: str, save: bool = True, version: str = "v2") -> Self:
         # open 2D spectrum
         loc_2D_path = url_path.replace(config['Spectra']['DJA_WEB_DIR'], config['Spectra']['DJA_2D_SPECTRA_DIR'])
         if not Path(loc_2D_path).is_file():
@@ -202,24 +234,114 @@ class Spectrum:
         except:
             instrument = NIRSpec
         instrument = instrument(grating_name, filter_name)
-
         # extract 1D spectrum from 2D fits image using msaexp
         spectrum_1D = msaexp.spectrum.SpectrumSampler(loc_2D_path)
         flux_unit = u.Unit(str(header["BUNIT"].replace(" ", "")))
-
+        #breakpoint()
         # could also extract resolution here
         mask = spectrum_1D.spec["valid"]
         wavs = spectrum_1D.spec["wave"] * u.um
-        fluxes = spectrum_1D.spec["flux"] * flux_unit
+        fluxes = Masked(spectrum_1D.spec["flux"] * flux_unit, mask = mask)
+
         if version == "v2":
-            flux_errs = None
+            msa_metafile = str(header["MSAMETFL"]).replace(" ", "")
+            #if int(header["PROGRAM"]) == 2561:
+            #     breakpoint()
+            # determine number of exposures
+            N_exposures = int(header["NOUTPUTS"]) * int(header["NFRAMES"])
+            full_flux_errs = spectrum_1D.spec["full_err"] * (N_exposures ** -0.25)
         else:
-            flux_errs = [spectrum_1D.spec["full_err"], spectrum_1D.spec["full_err"]] * flux_unit
+            msa_metafile = str(header[f"MSAMET1"]).replace(" ", "")
+            full_flux_errs = spectrum_1D.spec["full_err"]
+        meta_uri_dir = 'https://mast.stsci.edu/api/v0.1/Download/file?uri=mast:JWST/product'
+        meta_in_path = f"{meta_uri_dir}/{msa_metafile}"
+
+        try:
+            out_dir = config['Spectra']['DJA_2D_SPECTRA_DIR'].replace("2D", "MSA_metafiles")
+            meta_out_path = f"{out_dir}/{msa_metafiles[0]}"
+            if not Path(meta_out_path).is_file():
+                meta = fits.open(meta_in_path, cache = False)
+                funcs.make_dirs(meta_out_path)
+                meta.writeto(meta_out_path)
+            MSA_metafile_name = meta_out_path
+        except:
+            MSA_metafile_name = None
+        
+        flux_errs = Masked(full_flux_errs, mask = mask) * flux_unit
         
         z = None
         z_method = None
-        return cls(wavs, fluxes, flux_errs, z, z_method, sky_coord, instrument, meta = {name: header[name] for name in header})
+        reduction_name = f"DJA_{version}"
+        
+        return cls(wavs, fluxes, flux_errs, z, z_method, sky_coord, instrument, reduction_name, \
+            MSA_metafile_name, meta = {name: header[name] for name in header})
 
+    def load_MSA_metafile(self):
+        if not hasattr(self, "MSA_metafile"):
+            try:
+                self.MSA_metafile = msa.MSAMetafile(self.MSA_metafile_name)
+            except:
+                self.MSA_metafile = None
+
+    def plot_slitlet(self, ax, colour = "black", add_labels = True):
+        # mostly copied from msaexp MSAMetafile base code
+        self.load_MSA_metafile()
+        assert(type(self.MSA_metafile) != type(None))
+        slits = self.MSA_metafile.regions_from_metafile(
+            dither_point_index = self.dither_pt,
+            as_string = False,
+            with_bars = True,
+            msa_metadata_id = self.MSA_ID,
+        )
+        for s in slits:
+            if s.meta["is_source"]:
+                kwargs = dict(color = colour, alpha = 0.8, zorder = 100)
+            else:
+                kwargs = dict(color = "0.7", alpha = 0.8, zorder = 100)
+            ax.plot(*np.vstack([s.xy[0], s.xy[0][:1, :]]).T, **kwargs)
+
+        if add_labels:
+            ax.text(
+                0.03,
+                0.07,
+                f"Dither #{self.dither_pt}",
+                ha = "left",
+                va = "bottom",
+                transform = ax.transAxes,
+                color = colour,
+                fontsize = 8,
+            )
+            ax.text(
+                0.03,
+                0.03,
+                f"{os.path.basename(self.MSA_metafile.metafile)}",
+                ha = "left",
+                va = "bottom",
+                transform = ax.transAxes,
+                color = colour,
+                fontsize = 8,
+            )
+            ax.text(
+                0.97,
+                0.07,
+                f"{self.src_ID}",
+                ha = "right",
+                va = "bottom",
+                transform = ax.transAxes,
+                color = colour,
+                fontsize = 8,
+            )
+            # ax.text(
+            #     0.97,
+            #     0.03,
+            #     f"({self.sky_coord.ra.deg:.6f}, {self.sky_coord.dec.deg:.6f})",
+            #     ha = "right",
+            #     va = "bottom",
+            #     transform = ax.transAxes,
+            #     color = colour,
+            #     fontsize = 8,
+            # )
+      
 
 # should inherit from Catalogue_Base
 class Spectral_Catalogue:
@@ -232,7 +354,7 @@ class Spectral_Catalogue:
         unique_src_names = np.unique(orig_src_names)
         self.spectrum_arr = np.array([[spec for spec in spectrum_arr \
             if spec.src_name == src_name] for src_name in unique_src_names])
-        breakpoint()
+        #breakpoint()
         #self.sky_coords = np.array([spec[0].sky_coord for spec in self.spectrum_arr])
 
     def __len__(self):
@@ -258,7 +380,9 @@ class Spectral_Catalogue:
             return [getattr(gal[0], name) for gal in self]
 
     def __add__(self, cat):
-        return Spectral_Catalogue(np.array(self.spectrum_arr).flatten(), np.array(cat.spectrum_arr).flatten())
+        assert(cat.__class__.__name__ == "Spectral_Catalogue")
+        spectra_arr = np.array([spectrum for gal in self for spectrum in gal] + [spectrum for gal in cat for spectrum in gal])
+        return Spectral_Catalogue(spectra_arr)
 
     @classmethod
     def from_DJA(cls, ra_range: u.Quantity = None, dec_range: u.Quantity = None, PID: int = None, \
@@ -285,9 +409,9 @@ class Spectral_Catalogue:
             DJA_cat = DJA_cat[DJA_cat["filter"] == grating_filter.split("/")[1]]
         if type(PID) != type(None):
             DJA_cat = DJA_cat[DJA_cat["PID"] == PID]
-        return cls([Spectrum.from_DJA(DJA_cat[i], f"{config['Spectra']['DJA_WEB_DIR']}/{root}/{file}", save = save) \
-            for i, (root, file) in tqdm(enumerate(zip(DJA_cat["root"], DJA_cat["file"])), \
-            total = len(DJA_cat), desc = f"Saving 2D spectra from {config['Spectra']['DJA_CAT_PATH'].replace('v2', version)}")])
+        return cls([Spectrum.from_DJA(f"{config['Spectra']['DJA_WEB_DIR']}/{root}/{file}", save = save, \
+            version = version) for root, file in tqdm(zip(DJA_cat["root"], DJA_cat["file"]), \
+            total = len(DJA_cat), desc = f"Loading DJA_{version} catalogue")])
 
             
 
