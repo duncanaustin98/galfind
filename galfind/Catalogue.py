@@ -36,6 +36,7 @@ from . import Photometry_rest
 from . import galfind_logger
 from .Instrument import NIRCam, MIRI, ACS_WFC, WFC3_IR, Instrument
 from .Emission_lines import line_diagnostics
+from .Spectrum import Spectral_Catalogue
 
 class Catalogue(Catalogue_Base):
     
@@ -93,7 +94,8 @@ class Catalogue(Catalogue_Base):
         elapsed_time = end_time - start_time
         print(f"Finished loading in {len(gals)} galaxies. This took {elapsed_time:.6f} seconds")
         # make catalogue with no SED fitting information
-        cat_obj = cls(gals, fits_cat_path, survey, cat_creator, instrument, SED_fit_params_arr, version = version, crops = crop_by)
+        cat_obj = cls(gals, fits_cat_path, survey, cat_creator, instrument, version = version, crops = crop_by)
+        #print(cat_obj)
         if cat_obj != None:
             cat_obj.data = data
         if mask:
@@ -101,7 +103,6 @@ class Catalogue(Catalogue_Base):
         # run SED fitting for the appropriate SED_fit_params
         for SED_fit_params in SED_fit_params_arr:
             cat_obj = SED_fit_params["code"].fit_cat(cat_obj, SED_fit_params)
-            cat_obj.load_SED_rest_properties(SED_fit_params) # load SED rest properties
         return cat_obj
     
     def save_phot_PDF_paths(self, PDF_paths, SED_fit_params):
@@ -119,6 +120,18 @@ class Catalogue(Catalogue_Base):
         galfind_logger.info("Updating SED results in galfind catalogue object")
         [gal.update(gal_SED_result) for gal, gal_SED_result in zip(self, cat_SED_results)]
     
+    # Spectroscopy
+        
+    def match_available_spectra(self):
+        breakpoint()
+        # make catalogue consisting of spectra downloaded from the DJA
+        DJA_cat = np.sum([Spectral_Catalogue.from_DJA(ra_range = self.ra_range, \
+            dec_range = self.dec_range, version = version) for version in ["v1", "v2"]])
+        # cross match this catalogue 
+        cross_matched_cat = self * DJA_cat
+        print(str(cross_matched_cat))
+        return cross_matched_cat
+
     # %%
     
     # def calc_ext_src_corrs(self, band, ID = None):
@@ -150,7 +163,7 @@ class Catalogue(Catalogue_Base):
             galfind_logger.info(f"Masking catalogue for {self.survey} {self.version}")
             
             # calculate x,y for each galaxy in catalogue
-            cat_x, cat_y = self.data.wcs[self.data.alignment_band].world_to_pixel(SkyCoord(fits_cat[self.cat_creator.ra_dec_labels["RA"]], fits_cat[self.cat_creator.ra_dec_labels["DEC"]]))
+            cat_x, cat_y = self.data.load_wcs(self.data.alignment_band).world_to_pixel(SkyCoord(fits_cat[self.cat_creator.ra_dec_labels["RA"]], fits_cat[self.cat_creator.ra_dec_labels["DEC"]]))
             
             # make columns for individual band masking
             if config["Masking"].getboolean("MASK_BANDS"):
@@ -231,7 +244,7 @@ class Catalogue(Catalogue_Base):
     def plot_phot_diagnostics(self, 
             SED_fit_params_arr = [{"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}, {"code": EAZY(), "templates": "fsps_larson", "dz": 0.5}], \
             zPDF_plot_SED_fit_params_arr = [{"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}, {"code": EAZY(), "templates": "fsps_larson", "dz": 0.5}], \
-            wav_unit = u.um, flux_unit = u.ABmag):
+            wav_unit = u.um, flux_unit = u.erg / (u.s * u.AA * u.cm ** 2)):
         
         # figure size may well depend on how many bands there are
         overall_fig = plt.figure(figsize = (8, 7), constrained_layout = True)
@@ -488,10 +501,19 @@ class Catalogue(Catalogue_Base):
             # save the property name
             self.SED_rest_properties[key].append(property_name)
             self._append_SED_rest_property_to_fits(property_name, key)
+
+    def _save_SED_rest_PDFs(self, property_name, SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}):
+        save_dir = f"{config['PhotProperties']['PDF_SAVE_DIR']}/{self.version}/{self.instrument.name}/{self.survey}"
+        funcs.make_dirs(f"{save_dir}/dummy_path.ecsv")
+        [gal._save_SED_rest_PDFs(property_name, save_dir, SED_fit_params) for gal in self]
     
     def _append_SED_rest_property_to_fits(self, property_name, SED_fit_params_label):
         fits_tab = self.open_cat(cropped = False)
-        SED_rest_property_tab = self.open_cat(cropped = False, hdu = SED_fit_params_label)
+        #SED_rest_property_tab = self.open_cat(cropped = False, hdu = SED_fit_params_label)
+        try:
+            SED_rest_property_tab = Table.read(f"{self.cat_path.replace('.fits', '')}_test.fits", hdu = SED_fit_params_label)
+        except FileNotFoundError:
+            SED_rest_property_tab = None
         # if the table does not exist, make the table from scratch
         if type(SED_rest_property_tab) == type(None):
             properties = self.__getattr__(property_name, phot_type = "rest", property_type = "vals")

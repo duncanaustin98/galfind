@@ -30,8 +30,9 @@ def pipeline(surveys, version, instruments, aper_diams, min_flux_pc_errs, forced
             print(str(cat))
             #print(str(cat[0]))
 
-            cat_copy = cat.select_EPOCHS(allow_lowz = True)
-            cat_copy.plot_phot_diagnostics()
+            cat_copy = cat.select_EPOCHS(allow_lowz = False)
+            #cat_copy.plot_phot_diagnostics()
+
 
             #cat.del_hdu(SED_fit_params_arr[-1]["code"].label_from_SED_fit_params(SED_fit_params_arr[-1]))
 
@@ -60,13 +61,13 @@ if __name__ == "__main__":
     version = "v11" #config["DEFAULT"]["VERSION"]
     instruments = ["NIRCam"] #, 'ACS_WFC'] #, 'WFC3_IR']
     cat_type = "loc_depth"
-    surveys = ["JOF"] #[config["DEFAULT"]["SURVEY"]]
+    surveys = ["COSMOS-Web-1A"] #[config["DEFAULT"]["SURVEY"]]
     aper_diams = [0.32] * u.arcsec
     SED_code_arr = [EAZY()]
     templates_arr = ["fsps_larson"] #["fsps", "fsps_larson", "fsps_jades"]
     lowz_zmax_arr = [[4., 6., None]]
     min_flux_pc_errs = [10]
-    forced_phot_band = ["F277W", "F356W", "F444W"]
+    forced_phot_band = ["F444W"] #["F277W", "F356W", "F444W"]
     crop_by = None
 
     jems_bands = ["F182M", "F210M", "F430M", "F460M", "F480M"]

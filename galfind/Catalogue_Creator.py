@@ -203,10 +203,6 @@ class GALFIND_Catalogue_Creator(Catalogue_Creator):
         else: # depths given as np.nan
             depths_arr = np.full((len(fits_cat), len(bands)), np.nan)
         return depths_arr * u.ABmag
-    
-    def load_SED_rest_PDFs(self, fits_cat, property_names):
-        properties = fits_cat
-        pass
 
 # %% Common catalogue converters
 

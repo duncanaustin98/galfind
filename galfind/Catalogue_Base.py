@@ -41,8 +41,8 @@ class Catalogue_Base:
         
         # concat is commutative for catalogues
         self.__radd__ = self.__add__
-        # cross-match is commutative for catalogues
-        self.__rmul__ = self.__mul__
+        # cross-match is commutative for catalogues - not if they are of different classes
+        # self.__rmul__ = self.__mul__
 
     # %% Overloaded operators
 
@@ -153,10 +153,11 @@ class Catalogue_Base:
         self.gals[index] = gal
     
     def __add__(self, cat, out_survey = None):
-        # concat catalogues
-        if out_survey == None:
-            out_survey = "+".join([self.survey, cat.survey])
-        return Multiple_Catalogue([self, cat], survey = out_survey)
+        if not cat.__class__.__name__ == "Spectral_Catalogue":
+            # concat catalogues
+            if out_survey == None:
+                out_survey = "+".join([self.survey, cat.survey])
+            return Multiple_Catalogue([self, cat], survey = out_survey)
     
     def __mul__(self, other, out_survey=None, max_sep=1.0 * u.arcsec, match_type='compare_within_radius'):
         '''
@@ -255,42 +256,48 @@ class Catalogue_Base:
         assert len(cat_matches) == len(other_cat_matches), f'{len(cat_matches)} != {len(other_cat_matches)}' # check that the matches are 1-to-1
         print('Getting galaxies')
 
-        other_cat_matches = np.array(other_cat_matches)
         cat_matches = np.array(cat_matches)
-        gal_matched_cat = self_copy.gals[cat_matches]
+        gal_matched_cat = self_copy[cat_matches]
         # Use indexes instead
-        gal_matched_other = other_copy.gals[other_cat_matches]
+        other_cat_matches = np.array(other_cat_matches)
+        gal_matched_other = other_copy[other_cat_matches]
         print('Obtained matched galaxies')
         assert len(gal_matched_cat) == len(gal_matched_other) # check that the matches are 1-to-1
 
-        for gal1, gal2 in tqdm(zip(gal_matched_cat, gal_matched_other), desc='Filtering best galaxy for matches'):
-            # Compare the two galaxies and choose the better one
-            bands_gal1 = [band for band in gal1.phot.instrument.band_names if band not in gal1.mask_flags.keys()]
-            bands_gal2 = [band for band in gal2.phot.instrument.band_names if band not in gal2.mask_flags.keys()]
-            band_names_union = list(set(bands_gal1).union(set(bands_gal2)))
+        if self_copy.__class__.__name__ == "Catalogue" and other_copy.__class__.__name__ == "Spectral_Catalogue":
+            # update catalogue and galaxies
+            self_copy.gals = [deepcopy(gal).add_spectra(spectra) for gal, spectra in \
+                tqdm(zip(gal_matched_cat, gal_matched_other), total = len(gal_matched_cat), \
+                desc = "Appending spectra to catalogue!")]
+            return self_copy
+        else:
+            for gal1, gal2 in tqdm(zip(gal_matched_cat, gal_matched_other), desc='Filtering best galaxy for matches'):
+                # Compare the two galaxies and choose the better one
+                bands_gal1 = [band for band in gal1.phot.instrument.band_names if band not in gal1.mask_flags.keys()]
+                bands_gal2 = [band for band in gal2.phot.instrument.band_names if band not in gal2.mask_flags.keys()]
+                band_names_union = list(set(bands_gal1).union(set(bands_gal2)))
 
-            if len(bands_gal2) > len(bands_gal1):
-                self_copy.remove_gal(id=gal1.ID)
-            elif len(bands_gal2) < len(bands_gal1):
-                other_copy.remove_gal(id=gal2.ID)
-            else:
-                # If same bands, choose galaxy with deeper depth
-                # Get matching bands between the two galaxies - only use if not masked
-                # logical comparison of depth in each band, keeping the galaxy with the deeper depth in more bands
-                # gal1.phot.depths is just an array. Need to slice by position
-                indexes_gal1 = np.argwhere([band in band_names_union for band in gal1.phot.instrument.band_names])
-                depths_gal1 = gal1.phot.depths[indexes_gal1]
-                indexes_gal2 = np.argwhere([band in band_names_union for band in gal2.phot.instrument.band_names])
-                depths_gal2 = gal2.phot.depths[indexes_gal2]
-                # Compare depths
-                if np.sum(depths_gal1 > depths_gal2) > np.sum(depths_gal1 < depths_gal2):
-                    self_copy.remove_gal(id=gal1.ID)
-                elif np.sum(depths_gal1 > depths_gal2) < np.sum(depths_gal1 < depths_gal2):
-                    other_copy.remove_gal(id=gal2.ID)
+                if len(bands_gal2) > len(bands_gal1):
+                    self_copy.remove_gal(id = gal1.ID)
+                elif len(bands_gal2) < len(bands_gal1):
+                    other_copy.remove_gal(id = gal2.ID)
                 else:
-                    # Choose first galaxy
-                    self_copy.remove_gal(id=gal1.ID)
-
+                    # If same bands, choose galaxy with deeper depth
+                    # Get matching bands between the two galaxies - only use if not masked
+                    # logical comparison of depth in each band, keeping the galaxy with the deeper depth in more bands
+                    # gal1.phot.depths is just an array. Need to slice by position
+                    indexes_gal1 = np.argwhere([band in band_names_union for band in gal1.phot.instrument.band_names])
+                    depths_gal1 = gal1.phot.depths[indexes_gal1]
+                    indexes_gal2 = np.argwhere([band in band_names_union for band in gal2.phot.instrument.band_names])
+                    depths_gal2 = gal2.phot.depths[indexes_gal2]
+                    # Compare depths
+                    if np.sum(depths_gal1 > depths_gal2) > np.sum(depths_gal1 < depths_gal2):
+                        self_copy.remove_gal(id=gal1.ID)
+                    elif np.sum(depths_gal1 > depths_gal2) < np.sum(depths_gal1 < depths_gal2):
+                        other_copy.remove_gal(id=gal2.ID)
+                    else:
+                        # Choose first galaxy
+                        self_copy.remove_gal(id=gal1.ID)
         return self_copy + other_copy
 
 
@@ -321,6 +328,22 @@ class Catalogue_Base:
     @property
     def cat_name(self):
         return funcs.split_dir_name(self.cat_path, "name")
+    
+    @property
+    def ra_range(self):
+        try:
+            return self._ra_range
+        except:
+            self._ra_range = [np.min(self.RA), np.max(self.RA)]
+            return self._ra_range
+    
+    @property
+    def dec_range(self):
+        try:
+            return self._dec_range
+        except:
+            self._dec_range = [np.min(self.DEC), np.max(self.DEC)]
+            return self._dec_range
     
     def remove_gal(self, index=None, id=None):
         if index is not None:

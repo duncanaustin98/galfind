@@ -123,6 +123,7 @@ from . import IGM_attenuation
 from . import lyman_alpha_damping_wing
 from .DLA import DLA
 from .Dust_Attenuation import Dust_Attenuation, Calzetti00
+from .Spectrum import Spectral_Catalogue, Spectrum, NIRSpec, Spectral_Instrument, Spectral_Filter, Spectral_Grating
 
 # ordered band names from blue -> red
 config.set("Other", "ALL_BANDS", json.dumps(["F435W","FR459M","F475W","F550M","F555W","F606W","F625W","FR647M","F070W","F775W","F814W","F850LP",

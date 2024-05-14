@@ -351,10 +351,20 @@ class Galaxy:
                 ax.cla()
             
         return out_path
+    
+    # Spectroscopy
 
-    def plot_spec_diagnostic(self, overwrite = True):
+    def load_spectra(self, spectra):
+        self.spectra = spectra
+        return self
+
+    def plot_spec_diagnostic(self, ax, grating_filter = "PRISM/CLEAR", overwrite = True):
         # bare in mind that not all galaxies have spectroscopic data
-        pass
+        if hasattr(self, "spectra"):
+            # plot spectral diagnostic
+            pass
+        else:
+            pass
 
     # %% Selection methods
 
@@ -712,7 +722,7 @@ class Galaxy:
                 if update:
                     self.selection_flags[selection_name] = False
         return self, selection_name
-    
+     
     def select_colour_colour(self, colour_bands_arr, colour_select_func):
         pass
     
@@ -877,7 +887,7 @@ class Galaxy:
 
         if allow_lowz:
             selection_names.append(self.phot_SNR_crop(0, 2., "non_detect")[1]) # 2σ non-detected in first band
-            
+
         # if the galaxy passes all criteria
         if all(self.selection_flags[name] for name in selection_names):
             if update:
