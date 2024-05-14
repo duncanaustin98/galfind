@@ -88,7 +88,7 @@ class SED_code(ABC):
         fits_out_path, PDF_paths, SED_paths = self.get_out_paths(out_path, SED_fit_params, IDs = np.array(cat.ID))
         # run the SED fitting if not already done so or if wanted overwriting
         fits_cat_meta = cat.open_cat().meta # this may be quite slow to load in the catalogue
-        if f"RUN_{self.__class__.__name__}" not in fits_cat_meta.keys(): # or overwrite:
+        if self.galaxy_property_labels(f"RUN_{self.__class__.__name__}", SED_fit_params, given_as_key = False) not in fits_cat_meta.keys(): # or overwrite:
             self.run_fit(in_path, fits_out_path, cat.instrument.new_instrument(), SED_fit_params, overwrite = overwrite) #, *args, **kwargs)
             self.make_fits_from_out(out_path, SED_fit_params) #, *args, **kwargs)
             self.update_fits_cat(cat, fits_out_path, SED_fit_params) #, *args, **kwargs)
@@ -107,7 +107,7 @@ class SED_code(ABC):
         if not self.galaxy_property_labels("z", SED_fit_params) in orig_cat.colnames:
             combined_cat = join(orig_cat, Table.read(fits_out_path), keys_left = "NUMBER", keys_right = "IDENT")
             combined_cat.remove_column("IDENT")
-            combined_cat.meta = {**combined_cat.meta, **{f"RUN_{self.__class__.__name__}": True}}
+            combined_cat.meta = {**combined_cat.meta, **{self.galaxy_property_labels(f"RUN_{self.__class__.__name__}", SED_fit_params, given_as_key = False): True}}
             combined_cat.write(cat.cat_path, overwrite = True)
 
     @staticmethod

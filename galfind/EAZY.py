@@ -51,7 +51,6 @@ class EAZY(SED_code):
         assert("templates" in SED_fit_params.keys() and "lowz_zmax" in SED_fit_params.keys())
         if SED_fit_params["templates"] not in self.available_templates:
             raise(Exception(f"templates = {SED_fit_params['templates']} are not in {self.available_templates}, and hence are not yet encorporated for galfind EAZY SED fitting"))
-        
         return_suffix = f"{SED_fit_params['templates']}_{funcs.lowz_label(SED_fit_params['lowz_zmax'])}"
         if given_as_key: # gal_property given as key
             if is_err:
