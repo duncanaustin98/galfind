@@ -291,7 +291,7 @@ class Galaxy:
         # update SED_fit_params with appropriate lowz_zmax
         SED_fit_params_arr = [SED_fit_params["code"].update_lowz_zmax(SED_fit_params, self.phot.SED_results) for SED_fit_params in SED_fit_params_arr]
         zPDF_plot_SED_fit_params_arr = [SED_fit_params["code"].update_lowz_zmax(SED_fit_params, self.phot.SED_results) for SED_fit_params in zPDF_plot_SED_fit_params_arr] 
-        
+
         zPDF_labels = [f"{SED_fit_params['code'].label_from_SED_fit_params(SED_fit_params)} PDF" for SED_fit_params in zPDF_plot_SED_fit_params_arr]
         # reset parameters
         for ax_, label in zip(PDF_ax, zPDF_labels):
@@ -416,6 +416,8 @@ class Galaxy:
     #             if update:
     #                 self.selection_flags[selection_name] = False
     #     return self, selection_name
+
+    # Masking Selection
     
     def select_unmasked_instrument(self, instrument, update = True):
         assert(issubclass(instrument.__class__, Instrument))
@@ -435,6 +437,56 @@ class Galaxy:
                 if update:
                     self.selection_flags[selection_name] = False
         return self, selection_name
+    
+    # Galaxy photometry property selection
+
+    def select_phot_galaxy_property(self, property_name, gtr_or_less, property_lim, SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}, update = True):
+        key = SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)
+        assert(property_name in self.phot.SED_results[key].properties.keys())
+        galfind_logger.warning("Ideally need to include appropriate units for photometric galaxy property selection")
+        assert(type(property_lim) in [int, float])
+        assert(gtr_or_less in ["gtr", "less", ">", "<"])
+        if gtr_or_less in ["gtr", ">"]:
+            selection_name = f"{property_name}>{property_lim}"
+        else:
+            selection_name = f"{property_name}<{property_lim}"
+        if selection_name in self.selection_flags.keys():
+            galfind_logger.debug(f"{selection_name} already performed for galaxy ID = {self.ID}!")
+        else:
+            property_val = self.phot.SED_results[key].properties[property_name]
+            if ((gtr_or_less in ["gtr", ">"] and property_val > property_lim) or (gtr_or_less in ["less", "<"] and property_val < property_lim)):
+                if update:
+                    self.selection_flags[selection_name] = True
+            else:
+                if update:
+                    self.selection_flags[selection_name] = False
+        return self, selection_name
+
+    def select_phot_galaxy_property_bin(self, property_name, property_lims, SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}, update = True):
+        key = SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)
+        assert(property_name in self.phot.SED_results[key].properties.keys())
+        galfind_logger.warning("Ideally need to include appropriate units for photometric galaxy property selection")
+        assert(type(property_lims) in [np.ndarray, list])
+        assert(len(property_lims) == 2)
+        assert(property_lims[1] > property_lims[0])
+        selection_name = f"{property_lims[0]}<{property_name}<{property_lims[1]}"
+        if selection_name in self.selection_flags.keys():
+            galfind_logger.debug(f"{selection_name} already performed for galaxy ID = {self.ID}!")
+        else:
+            property_val = self.phot.SED_results[key].properties[property_name]
+            if property_val > property_lims[0] and property_val < property_lims[1]:
+                if update:
+                    self.selection_flags[selection_name] = True
+            else:
+                if update:
+                    self.selection_flags[selection_name] = False
+        return self, selection_name
+    
+    # Rest-frame photometry property selection
+
+
+
+    # Photometric SNR selection
         
     def phot_bluewards_Lya_non_detect(self, SNR_lim, SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}, update = True):
         assert(type(SNR_lim) in [int, float])

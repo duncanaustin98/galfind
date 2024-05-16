@@ -276,10 +276,15 @@ class Catalogue(Catalogue_Base):
 
         # make a folder to store symlinked photometric diagnostic plots for selected galaxies
         if self.crops != []:
-            selection_path = f"{config['Selection']['SELECTION_DIR']}/SED_plots/{self.version}/{self.instrument.name}/{'+'.join(self.crops)}/{self.survey}/gal_index.png"
-            funcs.make_dirs(selection_path)
             # create symlink to selection folder for diagnostic plots
-            [os.symlink(out_path, selection_path.replace('gal_index', str(gal.ID))) for gal, out_path in zip(self, out_paths)]
+            for gal, out_path in zip(self, out_paths):
+                selection_path = f"{config['Selection']['SELECTION_DIR']}/SED_plots/{self.version}/{self.instrument.name}/{'+'.join(self.crops)}/{self.survey}/{str(gal.ID)}.png"
+                funcs.make_dirs(selection_path)
+                try:
+                    os.symlink(out_path, selection_path)
+                except FileExistsError: # replace existing file
+                    os.remove(selection_path)
+                    os.symlink(out_path, selection_path)
 
     # Selection functions
         
@@ -294,6 +299,14 @@ class Catalogue(Catalogue_Base):
     
     def select_unmasked_instrument(self, instrument_name):
         return self.perform_selection(Galaxy.select_unmasked_instrument, instrument_name)
+
+    # Photometric galaxy property selection functions
+
+    def select_phot_galaxy_property(self, property_name, gtr_or_less, property_lim, SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}):
+        return self.perform_selection(Galaxy.select_phot_galaxy_property, property_name, gtr_or_less, property_lim, SED_fit_params)
+
+    def select_phot_galaxy_property_bin(self, property_name, property_lims, SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}):
+        return self.perform_selection(Galaxy.select_phot_galaxy_property_bin, property_name, property_lims, SED_fit_params)
 
     # SNR selection functions
 
@@ -482,8 +495,34 @@ class Catalogue(Catalogue_Base):
         self.calc_LUV_int_phot(rest_UV_wav_lims, ref_wav, AUV_beta_conv_author_year, SED_fit_params)
         self.calc_SFR_UV_phot(rest_UV_wav_lims, ref_wav, AUV_beta_conv_author_year, kappa_UV_conv_author_year, SED_fit_params)
 
-    # Emission line EWs
+    # Emission line EWs from the rest frame UV photometry
+        
+    def calc_cont_rest_optical(self, line_names, rest_optical_wavs = [3_700., 7_000.] * u.AA, \
+            SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}):
+        self.calc_SED_rest_property(Photometry_rest.calc_cont_rest_optical, SED_fit_params, line_names, rest_optical_wavs)
+
+    def calc_EW_rest_optical(self, line_names, medium_bands_only = True, rest_optical_wavs = [3_700., 7_000.] * u.AA, \
+            SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}):
+        self.calc_SED_rest_property(Photometry_rest.calc_EW_rest_optical, SED_fit_params, line_names, medium_bands_only, rest_optical_wavs)
     
+    def calc_obs_line_flux_rest_optical(self, line_names, medium_bands_only = True, rest_optical_wavs = [3_700., 7_000.] * u.AA, \
+            SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}):
+        self.calc_SED_rest_property(Photometry_rest.calc_obs_line_flux_rest_optical, SED_fit_params, line_names, medium_bands_only, rest_optical_wavs)
+
+    def calc_int_line_flux_rest_optical(self, line_names, dust_author_year = "M99", dust_law = "Calzetti00", dust_origin = "UV", \
+            medium_bands_only = True, rest_optical_wavs = [3_700., 7_000.] * u.AA, SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}):
+        self.calc_SED_rest_property(Photometry_rest.calc_int_line_flux_rest_optical, SED_fit_params, line_names, dust_author_year, dust_law, dust_origin, medium_bands_only, rest_optical_wavs)
+
+    # should be generalized slightly more
+    def calc_xi_ion(self, Halpha_NII_ratio_params: dict = {"mu": 10., "sigma": 0.}, fesc_author_year: str = "Chisholm22", \
+            dust_author_year: str = "M99", dust_law: str = "Calzetti00", dust_origin: str = "UV", \
+            medium_bands_only: bool = True, rest_optical_wavs = [3_700., 7_000.] * u.AA, \
+            rest_UV_wav_lims = [1_250., 3_000.] * u.AA, ref_wav = 1_500. * u.AA, \
+            SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}):
+        self.calc_SED_rest_property(Photometry_rest.calc_xi_ion, SED_fit_params, Halpha_NII_ratio_params, fesc_author_year, \
+            dust_author_year, dust_law, dust_origin, medium_bands_only, rest_optical_wavs, rest_UV_wav_lims, ref_wav)
+
+    # Global SED rest-frame photometry calculations
 
     def calc_SED_rest_property(self, SED_rest_property_function, SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}, *args):
         key = SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)

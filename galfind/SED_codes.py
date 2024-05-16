@@ -112,7 +112,6 @@ class SED_code(ABC):
 
     @staticmethod
     def update_lowz_zmax(SED_fit_params, SED_results):
-        #breakpoint()
         if "dz" in SED_fit_params.keys():
             assert "lowz_zmax" not in SED_fit_params.keys(), \
                 galfind_logger.critical("Cannot have both 'dz' and 'lowz_zmax' in SED_fit_params")
@@ -126,10 +125,10 @@ class SED_code(ABC):
             # add appropriate 'lowz_zmax' to dict
             lowz_zmax = [lowz_zmax for lowz_zmax in reversed(available_lowz_zmax) if lowz_zmax < z - SED_fit_params["dz"]]
             if len(lowz_zmax) > 0:
-                lowz_zmax = lowz_zmax[0]
+                SED_fit_params["lowz_zmax"] = lowz_zmax[0]
             else:
-                galfind_logger.critical(f"No appropriate lowz_zmax run for z = {z}, dz = {SED_fit_params['dz']}. Available runs are: lowz_zmax = {', '.join(available_lowz_zmax)}")
-            SED_fit_params["lowz_zmax"] = lowz_zmax
+                galfind_logger.warning(f"No appropriate lowz_zmax run for z = {z}, dz = {SED_fit_params['dz']}. Available runs are: lowz_zmax = {', '.join(np.array(available_lowz_zmax).astype(str))}")
+                SED_fit_params["lowz_zmax"] = None
             # remove 'dz' from dict
             SED_fit_params.pop("dz")
         return SED_fit_params

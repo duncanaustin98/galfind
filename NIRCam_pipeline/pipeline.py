@@ -28,8 +28,10 @@ def pipeline(surveys, version, instruments, aper_diams, min_flux_pc_errs, forced
             #cat.data.calc_unmasked_area("NIRCam", forced_phot_band = forced_phot_band)
 
             print(str(cat))
+            cat.calc_obs_line_flux_rest_optical(["Halpha", "[NII]-6583"], medium_bands_only = True)
             #print(str(cat[0]))
-            cat.plot_phot_diagnostics()
+            #cat_copy = cat.select_phot_galaxy_property("z", ">", 4.5) 
+            #cat.plot_phot_diagnostics(flux_unit = u.ABmag)
             #cat_copy = cat.select_unmasked_instrument(NIRCam())
             #cat_copy = cat.select_EPOCHS(allow_lowz = False)
             #cat_copy.plot_phot_diagnostics()
@@ -69,7 +71,7 @@ if __name__ == "__main__":
     lowz_zmax_arr = [[4., 6., None]]
     min_flux_pc_errs = [10]
     forced_phot_band = ["F277W", "F356W", "F444W"] # ["F444W"]
-    crop_by = "EPOCHS"
+    crop_by = "EPOCHS_lowz+z>4.5"
 
     jems_bands = ["F182M", "F210M", "F430M", "F460M", "F480M"]
     ngdeep_excl_bands = ["F435W", "F775W", "F850LP"]
