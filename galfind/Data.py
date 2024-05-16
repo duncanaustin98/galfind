@@ -293,7 +293,8 @@ class Data:
 
                     # If no images found, remove band from instrument
                     if not path_found:
-                        instrument.remove_band(band)
+
+                        instrument.remove_band(band.band_name)
                     else:
                         # otherwise open band, work out if it has a weight map, calc zero point and image scale
                         hdul = fits.open(str(path))

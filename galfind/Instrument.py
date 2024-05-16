@@ -369,8 +369,8 @@ class WFC3_IR(Instrument):
     
 class Combined_Instrument(Instrument):
     
-    def __init__(self, name, bands, band_wavelengths, band_FWHMs, excl_bands, telescope):
-        super().__init__(name, bands, band_wavelengths, band_FWHMs, excl_bands, telescope)
+    def __init__(self, name, bands, excl_bands, facility):
+        super().__init__(name, bands, excl_bands, facility)
         
     @classmethod
     def instruments_from_name(cls, name, excl_bands = []):
