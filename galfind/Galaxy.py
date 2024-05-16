@@ -320,7 +320,7 @@ class Galaxy:
                     auto_scale = False, plot_errs = {"x": False, "y": False}, errorbar_kwargs = errorbar_kwargs, \
                     label = None, filled = False, colour = SED_colours[key])
                 #ax_photo.scatter(band_wavs_lowz, band_mags_lowz, edgecolors=eazy_color_lowz, marker='o', facecolor='none', s=80, zorder=4.5)               
-            self.phot.plot_phot(phot_ax, wav_units = wav_unit, mag_units = flux_unit, annotate = False, auto_scale = True, label_SNRs = True)
+            self.phot.plot_phot(phot_ax, wav_unit, flux_unit, annotate = False, auto_scale = True, label_SNRs = True)
             # photometry axis title
             phot_ax.set_title(f"{data.survey} {self.ID} ({data.version})")
             # plot rejected reasons somewhere
@@ -885,7 +885,7 @@ class Galaxy:
             self.select_robust_zPDF(0.6, 0.1, SED_fit_params)[1] # 60% of redshift PDF must lie within z ± z * 0.1
         ]
 
-        if allow_lowz:
+        if not allow_lowz:
             selection_names.append(self.phot_SNR_crop(0, 2., "non_detect")[1]) # 2σ non-detected in first band
 
         # if the galaxy passes all criteria

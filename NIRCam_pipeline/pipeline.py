@@ -29,9 +29,9 @@ def pipeline(surveys, version, instruments, aper_diams, min_flux_pc_errs, forced
 
             print(str(cat))
             #print(str(cat[0]))
-
+            cat.plot_phot_diagnostics()
             #cat_copy = cat.select_unmasked_instrument(NIRCam())
-            cat_copy = cat.select_EPOCHS(allow_lowz = True)
+            #cat_copy = cat.select_EPOCHS(allow_lowz = False)
             #cat_copy.plot_phot_diagnostics()
 
 
@@ -69,7 +69,7 @@ if __name__ == "__main__":
     lowz_zmax_arr = [[4., 6., None]]
     min_flux_pc_errs = [10]
     forced_phot_band = ["F277W", "F356W", "F444W"] # ["F444W"]
-    crop_by = None #"EPOCHS"
+    crop_by = "EPOCHS"
 
     jems_bands = ["F182M", "F210M", "F430M", "F460M", "F480M"]
     ngdeep_excl_bands = ["F435W", "F775W", "F850LP"]

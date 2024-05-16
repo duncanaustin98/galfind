@@ -150,16 +150,16 @@ class Photometry:
         # log scale y axis if not in units of ABmag
         if mag_units != u.ABmag:
             if plot_errs["y"]:
-                yerr = funcs.log_scale_flux_errors(mags_to_plot, yerr)
-            mags_to_plot = funcs.log_scale_fluxes(mags_to_plot) # called 'mags_to_plot' but in this case are fluxes
+                yerr = np.array(funcs.log_scale_flux_errors(mags_to_plot, yerr))
+            mags_to_plot = np.array(funcs.log_scale_fluxes(mags_to_plot)) # called 'mags_to_plot' but in this case are fluxes
         else:
             if plot_errs["y"]:
-                yerr = [yerr[0].value, yerr[1].value]
-            mags_to_plot = mags_to_plot.value
+                yerr = np.array([yerr[0].value, yerr[1].value])
+            mags_to_plot = np.array(mags_to_plot.value)
 
         if plot_errs["x"]:
-            xerr = [[funcs.convert_wav_units(filter.WavelengthCen - filter.WavelengthLower50, wav_units).value for filter in self.instrument], \
-                    [funcs.convert_wav_units(filter.WavelengthUpper50 - filter.WavelengthCen, wav_units).value for filter in self.instrument]]
+            xerr = np.array([[funcs.convert_wav_units(filter.WavelengthCen - filter.WavelengthLower50, wav_units).value for filter in self.instrument], \
+                    [funcs.convert_wav_units(filter.WavelengthUpper50 - filter.WavelengthCen, wav_units).value for filter in self.instrument]])
         else:
             xerr = None
 
@@ -197,7 +197,7 @@ class Photometry:
             plot_limits = {"lolims": uplims}
         else:
             plot_limits = {"uplims": uplims}
-        
+
         plot = ax.errorbar(wavs_to_plot, mags_to_plot, xerr = xerr, yerr = yerr, **plot_limits, **errorbar_kwargs)
         
         if return_extra:

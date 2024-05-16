@@ -112,6 +112,7 @@ class SED_code(ABC):
 
     @staticmethod
     def update_lowz_zmax(SED_fit_params, SED_results):
+        #breakpoint()
         if "dz" in SED_fit_params.keys():
             assert "lowz_zmax" not in SED_fit_params.keys(), \
                 galfind_logger.critical("Cannot have both 'dz' and 'lowz_zmax' in SED_fit_params")
