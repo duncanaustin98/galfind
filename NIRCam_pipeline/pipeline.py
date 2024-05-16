@@ -30,7 +30,8 @@ def pipeline(surveys, version, instruments, aper_diams, min_flux_pc_errs, forced
             print(str(cat))
             #print(str(cat[0]))
 
-            cat_copy = cat.select_EPOCHS(allow_lowz = False)
+            #cat_copy = cat.select_unmasked_instrument(NIRCam())
+            cat_copy = cat.select_EPOCHS(allow_lowz = True)
             #cat_copy.plot_phot_diagnostics()
 
 
@@ -41,7 +42,7 @@ def pipeline(surveys, version, instruments, aper_diams, min_flux_pc_errs, forced
             #cat.calc_rest_UV_properties()
             #cat.calc_fesc_from_beta_phot()
 
-            #cat_copy = cat.select_unmasked_instrument(NIRCam())
+            
             #cat_copy = cat.select_EPOCHS()
             #cat_copy.plot_phot_diagnostics() # flux_unit = u.erg / (u.s * u.AA * u.cm ** 2)
             
@@ -58,17 +59,17 @@ def make_EAZY_SED_fit_params_arr(SED_code_arr, templates_arr, lowz_zmax_arr):
         for code, templates, lowz_zmaxs in zip(SED_code_arr, templates_arr, lowz_zmax_arr) for lowz_zmax in lowz_zmaxs]
 
 if __name__ == "__main__":
-    version = "v9" #config["DEFAULT"]["VERSION"]
+    version = "v11" #config["DEFAULT"]["VERSION"]
     instruments = ["NIRCam"] #, 'ACS_WFC'] #, 'WFC3_IR']
     cat_type = "loc_depth"
-    surveys = ["JADES-Deep-GS+JEMS"] #[config["DEFAULT"]["SURVEY"]]
+    surveys = ["JOF"] #[config["DEFAULT"]["SURVEY"]]
     aper_diams = [0.32] * u.arcsec
     SED_code_arr = [EAZY()]
     templates_arr = ["fsps_larson"] #["fsps", "fsps_larson", "fsps_jades"]
     lowz_zmax_arr = [[4., 6., None]]
     min_flux_pc_errs = [10]
     forced_phot_band = ["F277W", "F356W", "F444W"] # ["F444W"]
-    crop_by = None
+    crop_by = None #"EPOCHS"
 
     jems_bands = ["F182M", "F210M", "F430M", "F460M", "F480M"]
     ngdeep_excl_bands = ["F435W", "F775W", "F850LP"]

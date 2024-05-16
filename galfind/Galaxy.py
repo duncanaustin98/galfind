@@ -877,7 +877,7 @@ class Galaxy:
             return self, selection_name
         
         selection_names = [
-            self.select_unmasked_instrument(mask_instrument)[1], # unmasked in NIRCam
+            self.select_unmasked_instrument(mask_instrument)[1], # unmasked in all NIRCam bands
             self.phot_bluewards_Lya_non_detect(2., SED_fit_params)[1], # 2σ non-detected in all bands bluewards of Lyα
             self.phot_redwards_Lya_detect([5., 3.], SED_fit_params, widebands_only = True)[1], # 5σ/3σ detected in first/second band redwards of Lyα
             self.select_chi_sq_lim(3., SED_fit_params, reduced = True)[1], # χ^2_red < 3

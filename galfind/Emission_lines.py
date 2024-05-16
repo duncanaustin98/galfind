@@ -20,7 +20,17 @@ line_diagnostics = {
     "CIV-1549": {"line_wav": 1_549. * u.AA, "feature_wavs": [1_540., 1_556.] * u.AA, "cont_wavs": [[1_528., 1_538.], [1_556., 1_566.]] * u.AA, "rel_lambda": None}, \
     "HeII-1640": {"line_wav": 1_640. * u.AA, "feature_wavs": [1_630., 1_652.5] * u.AA, "cont_wavs": [[1_620., 1_630.], [1_675., 1_685.]] * u.AA, "rel_lambda": None}, \
     "OIII]-1665": {"line_wav": 1_665. * u.AA, "feature_wavs": [1_652.5, 1_675.] * u.AA, "cont_wavs": [[1_620., 1_630.], [1_675., 1_685.]] * u.AA, "rel_lambda": None}, \
-    "CIII]-1909": {"line_wav": 1_909. * u.AA, "feature_wavs": [1_901., 1_914.] * u.AA, "cont_wavs": [[1_864., 1_874.], [1_914., 1_924.]] * u.AA, "rel_lambda": None}
+    "CIII]-1909": {"line_wav": 1_909. * u.AA, "feature_wavs": [1_901., 1_914.] * u.AA, "cont_wavs": [[1_864., 1_874.], [1_914., 1_924.]] * u.AA, "rel_lambda": None}, \
+    "[OII]-3727": {"line_wav": 4_861.3 * u.AA, "feature_wavs": [4_851.3, 4_871.3] * u.AA, "cont_wavs": [[4_841.3, 4_851.3], [4_871.3, 4_881.3]] * u.AA, "rel_lambda": None}, \
+    "[NeIII]-3869": {"line_wav": 4_861.3 * u.AA, "feature_wavs": [4_851.3, 4_871.3] * u.AA, "cont_wavs": [[4_841.3, 4_851.3], [4_871.3, 4_881.3]] * u.AA, "rel_lambda": None}, \
+    "Hgamma": {"line_wav": 4_340.5 * u.AA, "feature_wavs": [4_330.5, 4_350.5] * u.AA, "cont_wavs": [[4_320.5, 4_330.5], [4_350.5, 4_360.5]] * u.AA, "rel_lambda": None}, \
+    "Hbeta": {"line_wav": 4_861.3 * u.AA, "feature_wavs": [4_851.3, 4_871.3] * u.AA, "cont_wavs": [[4_841.3, 4_851.3], [4_871.3, 4_881.3]] * u.AA, "rel_lambda": None}, \
+    "[OIII]-4959": {"line_wav": 4_861.3 * u.AA, "feature_wavs": [4_851.3, 4_871.3] * u.AA, "cont_wavs": [[4_841.3, 4_851.3], [4_871.3, 4_881.3]] * u.AA, "rel_lambda": None}, \
+    "[OIII]-5007": {"line_wav": 4_861.3 * u.AA, "feature_wavs": [4_851.3, 4_871.3] * u.AA, "cont_wavs": [[4_841.3, 4_851.3], [4_871.3, 4_881.3]] * u.AA, "rel_lambda": None}, \
+    "Halpha": {"line_wav": 6_562.8 * u.AA, "feature_wavs": [6_552.8, 6_572.8] * u.AA, "cont_wavs": [[6_542.8, 6_552.8], [6_572.8, 6_582.8]] * u.AA, "rel_lambda": None}, \
+    "[NII]-6583": {"line_wav": 4_861.3 * u.AA, "feature_wavs": [4_851.3, 4_871.3] * u.AA, "cont_wavs": [[4_841.3, 4_851.3], [4_871.3, 4_881.3]] * u.AA, "rel_lambda": None}, \
+    "[SII]-6716": {"line_wav": 4_861.3 * u.AA, "feature_wavs": [4_851.3, 4_871.3] * u.AA, "cont_wavs": [[4_841.3, 4_851.3], [4_871.3, 4_881.3]] * u.AA, "rel_lambda": None}, \
+    "[SII]-6730": {"line_wav": 4_861.3 * u.AA, "feature_wavs": [4_851.3, 4_871.3] * u.AA, "cont_wavs": [[4_841.3, 4_851.3], [4_871.3, 4_881.3]] * u.AA, "rel_lambda": None}
 }
 
 

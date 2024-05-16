@@ -232,6 +232,12 @@ class Instrument:
         else:
             return nearest_band
     
+    def bands_avoiding_wavs(self, wavs):
+        incl_band_indices = np.sorted(np.unique(np.array([self.bands_from_wavelength(wav) for wav in wavs]).flatten()))
+        instr_copy = deepcopy(self)
+        [instr_copy.remove_index(index) for index in reversed(incl_band_indices)]
+        return instr_copy.bands
+    
     @staticmethod
     def from_name(name, excl_bands = []):
         if name == "NIRCam":

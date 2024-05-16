@@ -107,6 +107,8 @@ class Catalogue_Base:
             return gal
     
     def __getitem__(self, index):
+        if type(self.gals) != np.ndarray:
+            self.gals = np.array(self.gals)
         return self.gals[index]
     
     def __getattr__(self, name, SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}, phot_type = "obs", property_type = "vals"): # only acts on attributes that don't already exist
