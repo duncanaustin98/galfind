@@ -30,7 +30,7 @@ def pipeline(surveys, version, instruments, aper_diams, min_flux_pc_errs, forced
             print(str(cat))
             #print(str(cat[0]))
 
-            cat_copy = cat.select_EPOCHS(allow_lowz = False)
+            #cat_copy = cat.select_EPOCHS(allow_lowz = False)
             #cat_copy.plot_phot_diagnostics()
 
 
@@ -59,9 +59,9 @@ def make_EAZY_SED_fit_params_arr(SED_code_arr, templates_arr, lowz_zmax_arr):
 
 if __name__ == "__main__":
     version = "v9" #config["DEFAULT"]["VERSION"]
-    instruments = ["NIRCam"] #, 'ACS_WFC'] #, 'WFC3_IR']
+    instruments = ["ACS_WFC", "NIRCam"] #, 'WFC3_IR'] # "ACS_WFC"
     cat_type = "loc_depth"
-    surveys = ["JADES-Deep-GS+JEMS"] #[config["DEFAULT"]["SURVEY"]]
+    surveys = ["JADES-Deep-GS"] #[config["DEFAULT"]["SURVEY"]]
     aper_diams = [0.32] * u.arcsec
     SED_code_arr = [EAZY()]
     templates_arr = ["fsps_larson"] #["fsps", "fsps_larson", "fsps_jades"]
@@ -73,7 +73,7 @@ if __name__ == "__main__":
     jems_bands = ["F182M", "F210M", "F430M", "F460M", "F480M"]
     ngdeep_excl_bands = ["F435W", "F775W", "F850LP"]
     #jades_3215_excl_bands = ["f162M", "f115W", "f150W", "f200W", "f410M", "f182M", "f210M", "f250M", "f300M", "f335M", "f277W", "f356W", "f444W"] 
-    excl_bands = []
+    excl_bands = ['F162M', 'F182M', 'F210M', 'F430M', 'F460M', 'F480M']
 
     SED_fit_params_arr = make_EAZY_SED_fit_params_arr(SED_code_arr, templates_arr, lowz_zmax_arr)
 
