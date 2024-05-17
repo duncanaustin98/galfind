@@ -84,7 +84,7 @@ class Data:
             self.cat_path = cat_path
         else:
             raise(Exception(f"cat_path = {cat_path} has type = '{type(cat_path)}', which is not 'str'!"))
-
+        breakpoint()
         # make segmentation maps from image paths if they don't already exist
         for i, (band, seg_path) in enumerate(seg_paths.items()):
             #print(band, seg_path)
@@ -162,7 +162,8 @@ class Data:
 
     @classmethod
     def from_pipeline(cls, survey, version = "v9", instruments = ['NIRCam', 'ACS_WFC', 'WFC3_IR'], excl_bands = [], pix_scales = ['30mas', '60mas']):
-        instruments_obj = {'NIRCam': NIRCam(excl_bands = excl_bands), 'ACS_WFC': ACS_WFC(excl_bands = excl_bands), 'WFC3_IR': WFC3_IR(excl_bands = excl_bands)}
+        instruments_obj = {instrument_name: globals()[instrument_name](excl_bands = [band_name for band_name in excl_bands \
+            if band_name in globals()[instrument_name]().band_names]) for instrument_name in instruments}
         # Build a combined instrument object
         comb_instrument_created = False
         
@@ -234,6 +235,7 @@ class Data:
                         im_pixel_scales[band] = 0.03 * u.arcsec
                         im_zps[band] = 28.08
                         galfind_logger.debug(f"im_zp[{band}] = 28.08 only for pixel scale of 0.03 arcsec! This will change if different images are used!")
+
                 # If no images found for this instrument, don't add it to the combined instrument
                 if len(bands) != 0:
                     if comb_instrument_created:
@@ -271,7 +273,8 @@ class Data:
             elif instrument.name in ["ACS_WFC", 'WFC3_IR']:
                 # Iterate through bands and check if images exist 
                 any_path_found = False
-                for band, band_name in zip(instrument, instrument.band_names):
+                instr_copy = deepcopy(instrument)
+                for band, band_name in zip(instr_copy, instr_copy.band_names):
                     path_found = False
                     for pix_scale in pix_scales:
                         glob_paths = glob.glob(f"{config['DEFAULT']['GALFIND_DATA']}/hst/{survey}/{instrument.name}/{pix_scale}/*{band_name.lower()}*_drz.fits")
@@ -289,11 +292,10 @@ class Data:
                             path_found = True
                             break
                         else:
-                            raise(Exception("Multiple image paths found for {survey} {version} {band} {pix_scale}!"))
+                            raise(Exception(f"Multiple image paths found for {survey} {version} {band} {pix_scale}!"))
 
                     # If no images found, remove band from instrument
                     if not path_found:
-
                         instrument.remove_band(band.band_name)
                     else:
                         # otherwise open band, work out if it has a weight map, calc zero point and image scale
@@ -339,7 +341,7 @@ class Data:
 
                         #print(band, wht_paths[band])
                         im_pixel_scales[band_name] = float(pix_scale.split('mas')[0]) * 1e-3 * u.arcsec
-                        if instrument.name == 'ACS_WFC':
+                        if instr_copy.name == 'ACS_WFC':
                             if "PHOTFLAM" in imheader and "PHOTPLAM" in imheader:
                                 im_zps[band_name] = -2.5 * np.log10(imheader["PHOTFLAM"]) - 21.10 - 5 * np.log10(imheader["PHOTPLAM"]) + 18.6921
                             elif "ZEROPNT" in imheader:
@@ -347,8 +349,8 @@ class Data:
                             else:
                                 raise(Exception(f"ACS_WFC data for {survey} {version} {band_name} located at {im_paths[band_name]} must contain either 'ZEROPNT' or 'PHOTFLAM' and 'PHOTPLAM' in its header to calculate its ZP!"))
                             
-                        elif instrument.name == 'WFC3_IR':
-                        # Taken from Appendix A of https://www.stsci.edu/files/live/sites/www/files/home/hst/instrumentation/wfc3/documentation/instrument-science-reports-isrs/_documents/2020/WFC3-ISR-2020-10.pdf
+                        elif instr_copy.name == 'WFC3_IR':
+                            # Taken from Appendix A of https://www.stsci.edu/files/live/sites/www/files/home/hst/instrumentation/wfc3/documentation/instrument-science-reports-isrs/_documents/2020/WFC3-ISR-2020-10.pdf
                             wfc3ir_zps = {'F098M': 25.661, 'F105W': 26.2637, 'F110W': 26.8185, 'F125W': 26.231, 'F140W': 26.4502, 'F160W': 25.9362}
                             im_zps[band_name] = wfc3ir_zps[band_name]
                         # Need to move my segmentation maps and masks to the correct place
@@ -1356,7 +1358,7 @@ class Data:
             else: # string should contain individual bands, separated by a "+"
                 masking_bands = masking_instrument_or_band_name.split("+")
                 for band in masking_bands:
-                    assert(band in json.loads(config.get("Other", "ALL_BANDS")), galfind_logger.critical(f"{band} is not a valid band currently included in galfind! Cannot calculate unmasked area!"))
+                    assert band in json.loads(config.get("Other", "ALL_BANDS"), galfind_logger.critical(f"{band} is not a valid band currently included in galfind! Cannot calculate unmasked area!"))
         else:
             galfind_logger.critical(f"type(masking_instrument_or_band_name) = {type(masking_instrument_or_band_name)} must be in [str, list, np.array]!")
         

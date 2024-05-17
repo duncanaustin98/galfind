@@ -126,20 +126,13 @@ class Instrument:
                 raise(Exception("Cannot add multiple of the same band together in 'Instrument.__add__()'!"))
         
         # add and sort bands from blue -> red
-        all_bands = json.loads(config.get("Other", "ALL_BANDS"))
-        # print("all bands = ", all_bands, type(all_bands), type(all_bands[0]))
-        bands = [band for band in all_bands if band.__class__.__name__ in np.concatenate([self.bands, instrument.bands])]
-        #self.band_wavelengths.update(instrument.band_wavelengths)
-        #band_wavelengths = self.band_wavelengths
-        #self.band_FWHMs.update(instrument.band_FWHMs)
-        #band_FWHMs = self.band_FWHMs
-        
+        bands = [band for band in sorted(np.concatenate([self.bands, instrument.bands]), \
+            key = lambda band: band.WavelengthCen.to(u.AA).value)]
+
         # always name instruments from blue -> red
        
         if self.name == instrument.name:
             self.bands = bands
-            #self.band_wavelengths = band_wavelengths
-            #self.band_FWHMs = band_FWHMs
             out_instrument = self
         else:
             all_instruments = json.loads(config.get("Other", "INSTRUMENT_NAMES"))
@@ -203,15 +196,17 @@ class Instrument:
     def remove_band(self, band_name) -> NoReturn:
         assert type(band_name) in [str, np.str_], galfind_logger.critical(f"{band_name=} with {type(band_name)=} not in ['str', 'np.str_']")
         assert band_name in self.band_names, galfind_logger.critical(f"{band_name=} not in {self.band_names=}")
-        remove_index = self.index_from_band_name(band_name)
-        self.bands = np.delete(self.bands, remove_index)
+        self.remove_index(self.index_from_band_name(band_name))
         
     def remove_index(self, remove_index: int) -> NoReturn:
-        remove_band = self.band_name_from_index(remove_index)
-        self.remove_band(remove_band)
+        if not remove_index == None:
+            self.bands = np.delete(self.bands, remove_index)
         
     def index_from_band_name(self, band_name) -> int:
-        return np.where(self.band_names == band_name)[0][0]
+        if band_name in self.band_names:
+            return np.where(self.band_names == band_name)[0][0]
+        else:
+            return None
     
     def band_name_from_index(self, index) -> str:
         return self.band_names[index]
@@ -275,7 +270,7 @@ class Instrument:
 class NIRCam(Instrument):
     
     def __init__(self, excl_bands = []):
-        instr = Instrument.from_SVO("JWST", self.__class__.__name__, excl_bands = excl_bands)
+        instr = Instrument.from_SVO("JWST", self.__class__.__name__, excl_bands = [])
         super().__init__(instr.name, instr.bands, excl_bands, instr.facility)
         # bands = ["f070W", "f090W", "f115W", "f140M", "f150W", "f162M", "f182M", "f200W", "f210M", "f250M", "f277W", "f300M", "f335M", "f356W", "f360M", "f410M", "f430M", "f444W", "f460M", "f480M"]
         # band_wavelengths = {"f070W": 7_056., "f090W": 9_044., "f115W": 11_571., "f140M": 14_060., "f150W": 15_040., "f162M": 16_281., "f182M": 18_466., "f200W": 19_934., "f210M": 20_964., \
@@ -306,7 +301,7 @@ class NIRCam(Instrument):
 class MIRI(Instrument):
     
     def __init__(self, excl_bands = []):
-        instr = Instrument.from_SVO("JWST", self.__class__.__name__, excl_bands = excl_bands)
+        instr = Instrument.from_SVO("JWST", self.__class__.__name__, excl_bands = [])
         super().__init__(instr.name, instr.bands, excl_bands, instr.facility)
         # bands = ['f560W', 'f770W', 'f1000W', 'f1130W', 'f1280W', 'f1500W', 'f1800W', 'f2100W', 'f2550W']
         # band_wavelengths = {'f560W':55870.25, 'f770W':75224.94, 'f1000W': 98793.45, 'f1130W':112960.71, 'f1280W':127059.68, 'f1500W':149257.07, 'f1800W':178734.17, 'f2100W':205601.06, 'f2550W':251515.99}
@@ -324,7 +319,7 @@ class MIRI(Instrument):
 class ACS_WFC(Instrument):
     
     def __init__(self, excl_bands = []):
-        instr = Instrument.from_SVO("HST", self.__class__.__name__, excl_bands = excl_bands)
+        instr = Instrument.from_SVO("HST", self.__class__.__name__, excl_bands = [])
         super().__init__(instr.name, instr.bands, excl_bands, instr.facility)
         # bands = ["f435W", "fr459M", "f475W", "f550M", "f555W", "f606W", "f625W", "fr647M", "f775W", "f814W", "f850LP", "fr914M"]
         # # Wavelengths corrrespond to lambda effective of the filters from SVO Filter Profile Service
@@ -348,7 +343,7 @@ class ACS_WFC(Instrument):
 class WFC3_IR(Instrument):
 
     def __init__(self, excl_bands = []):
-        instr = Instrument.from_SVO("HST", self.__class__.__name__, excl_bands = excl_bands)
+        instr = Instrument.from_SVO("HST", self.__class__.__name__, excl_bands = [])
         super().__init__(instr.name, instr.bands, excl_bands, instr.facility)
         # bands = ["f098M", "f105W",  "f110W", "f125W", "f127M", "f139M", "f140W", "f153M", "f160W"]
         # # Wavelengths corrrespond to lambda effective of the filters from SVO Filter Profile Service
