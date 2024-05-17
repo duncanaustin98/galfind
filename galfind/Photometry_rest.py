@@ -326,31 +326,33 @@ class Photometry_rest(Photometry):
     def calc_cont_rest_optical(self, line_names, iters = 10, rest_optical_wavs = [3_700., 7_000.] * u.AA, extract_property_name = False):
         assert all(line_name in line_diagnostics.keys() for line_name in line_names)
         included_bands = {}
-        closest_band_index = {}
+        closest_band = {}
         for line_name in line_names:
             rest_frame_emission_line_wav = line_diagnostics[line_name]["line_wav"]
             assert rest_frame_emission_line_wav > rest_optical_wavs[0] and rest_frame_emission_line_wav < rest_optical_wavs[1]
             obs_frame_emission_line_wav = rest_frame_emission_line_wav * (1. + self.z)
-            # determine index of the closest (medium) band to the emission line
-            closest_band_index[line_name] = self.instrument.nearest_band_index_to_wavelength(obs_frame_emission_line_wav, medium_bands_only = False)
-        property_name = f"cont_{'+'.split(line_names)}"
+            # determine the closest (medium) band to the emission line
+            closest_band[line_name] = self.instrument.nearest_band_to_wavelength(obs_frame_emission_line_wav, medium_bands_only = False)
+        property_name = f"cont_{'+'.join(line_names)}"
         if extract_property_name:
             return property_name
         # if already stored in object, do nothing
         if property_name in self.properties.keys() and property_name in self.property_errs.keys() and property_name in self.property_PDFs.keys():
             galfind_logger.debug(f"{property_name=} already calculated!")
         else:
+            breakpoint()
             # determine photometric band that traces the continuum - must avoid other strong lines
-            bands_avoiding_wavs = self.instrument.bands_avoiding_wavs(line["line_wav"] \
-                * (1. + self.z) for line in line_diagnostics.values() \
-                if line["line_wav"] < rest_optical_wavs[0] and line["line_wav"]) < rest_optical_wavs[1]
-            if len(bands_avoiding_wavs) < 1 or not all(index == closest_band_index[line_names[0]] for index in closest_band_index.values()):
+            bands_avoiding_wavs = self.instrument.bands_avoiding_wavs([line["line_wav"] \
+                * (1. + self.z) for line in line_diagnostics.values()]) #\
+                #if line["line_wav"] > rest_optical_wavs[0] and line["line_wav"] < rest_optical_wavs[1])
+            if len(bands_avoiding_wavs) < 1 or not all(band == closest_band[line_names[0]] for band in closest_band.values()):
                 self._update_properties_and_PDFs(property_name, None)
                 return self, property_name
             # find closest band to the band of interest
-            continuum_band = bands_avoiding_wavs[np.abs([band.WavelengthCen.to(u.AA).value for band in bands_avoiding_wavs] \
-                - self.instrument[closest_band_index].WavelengthCen.to(u.AA).value).argmin()]
-            continuum_band_index = self.instrument.index_from_band_name(continuum_band.band_name)
+            continuum_bands = [bands_avoiding_wavs[np.abs([band.WavelengthCen.to(u.AA).value for band in bands_avoiding_wavs] \
+                - (line_diagnostics[line_name]["line_wav"] * (1. + self.z)).value).argmin()] for line_name in line_names]
+            assert(all(band == continuum_bands[0] for band in continuum_bands))
+            continuum_band_index = self.instrument.index_from_band_name(continuum_bands[0].band_name)
             # determine continuum flux of this band in Jy
             cont_flux_Jy = funcs.convert_mag_units(self.instrument[continuum_band_index].WavelengthCen, self.flux_Jy[continuum_band_index], u.Jy).value
             # errors in Jy are symmetric, therefore take the mean
@@ -370,7 +372,7 @@ class Photometry_rest(Photometry):
             obs_frame_emission_line_wav = rest_frame_emission_line_wav * (1. + self.z)
             # determine index of the closest (medium) band to the emission line
             closest_band_index[line_name] = self.instrument.nearest_band_index_to_wavelength(obs_frame_emission_line_wav, medium_bands_only = medium_bands_only)
-        property_name = f"EW_rest_{'+'.split(line_names)}"
+        property_name = f"EW_rest_{'+'.join(line_names)}"
         if extract_property_name:
             return property_name
         # if already stored in object, do nothing
@@ -400,7 +402,7 @@ class Photometry_rest(Photometry):
 
     def calc_obs_line_flux_rest_optical(self, line_names, medium_bands_only = True, iters = 10, rest_optical_wavs = [3_700., 7_000.] * u.AA, extract_property_name = False):
         assert all(line_name in line_diagnostics.keys() for line_name in line_names)
-        property_name = f"line_flux_rest_{'+'.split(line_names)}"
+        property_name = f"line_flux_rest_{'+'.join(line_names)}"
         if extract_property_name:
             return property_name
         # if already stored in object, do nothing
@@ -428,7 +430,7 @@ class Photometry_rest(Photometry):
         dust_law_cls = globals()[dust_law]
         assert issubclass(dust_law_cls, Dust_Attenuation)
         if dust_origin == "UV":
-            property_name = f"line_flux_rest_{'+'.split(line_names)}_{dust_author_year}_{dust_law}_dust_corr"
+            property_name = f"line_flux_rest_{'+'.join(line_names)}_{dust_author_year}_{dust_law}_dust_corr"
         else:
             raise NotImplementedError
         if extract_property_name:
