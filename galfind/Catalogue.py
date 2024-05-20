@@ -503,14 +503,20 @@ class Catalogue(Catalogue_Base):
 
     def calc_EW_rest_optical(self, line_names, medium_bands_only = True, rest_optical_wavs = [3_700., 7_000.] * u.AA, \
             SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}):
+        self.calc_SED_rest_property(Photometry_rest.calc_cont_rest_optical, SED_fit_params, line_names, rest_optical_wavs)
         self.calc_SED_rest_property(Photometry_rest.calc_EW_rest_optical, SED_fit_params, line_names, medium_bands_only, rest_optical_wavs)
     
     def calc_obs_line_flux_rest_optical(self, line_names, medium_bands_only = True, rest_optical_wavs = [3_700., 7_000.] * u.AA, \
             SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}):
+        self.calc_SED_rest_property(Photometry_rest.calc_cont_rest_optical, SED_fit_params, line_names, rest_optical_wavs)
+        self.calc_SED_rest_property(Photometry_rest.calc_EW_rest_optical, SED_fit_params, line_names, medium_bands_only, rest_optical_wavs)
         self.calc_SED_rest_property(Photometry_rest.calc_obs_line_flux_rest_optical, SED_fit_params, line_names, medium_bands_only, rest_optical_wavs)
 
     def calc_int_line_flux_rest_optical(self, line_names, dust_author_year = "M99", dust_law = "Calzetti00", dust_origin = "UV", \
             medium_bands_only = True, rest_optical_wavs = [3_700., 7_000.] * u.AA, SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}):
+        self.calc_SED_rest_property(Photometry_rest.calc_cont_rest_optical, SED_fit_params, line_names, rest_optical_wavs)
+        self.calc_SED_rest_property(Photometry_rest.calc_EW_rest_optical, SED_fit_params, line_names, medium_bands_only, rest_optical_wavs)
+        self.calc_SED_rest_property(Photometry_rest.calc_obs_line_flux_rest_optical, SED_fit_params, line_names, medium_bands_only, rest_optical_wavs)
         self.calc_SED_rest_property(Photometry_rest.calc_int_line_flux_rest_optical, SED_fit_params, line_names, dust_author_year, dust_law, dust_origin, medium_bands_only, rest_optical_wavs)
 
     # should be generalized slightly more
@@ -519,6 +525,11 @@ class Catalogue(Catalogue_Base):
             medium_bands_only: bool = True, rest_optical_wavs = [3_700., 7_000.] * u.AA, \
             rest_UV_wav_lims = [1_250., 3_000.] * u.AA, ref_wav = 1_500. * u.AA, \
             SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}):
+        line_names = ["Halpha", "[NII]-6583"]
+        self.calc_SED_rest_property(Photometry_rest.calc_cont_rest_optical, SED_fit_params, line_names, rest_optical_wavs)
+        self.calc_SED_rest_property(Photometry_rest.calc_EW_rest_optical, SED_fit_params, line_names, medium_bands_only, rest_optical_wavs)
+        self.calc_SED_rest_property(Photometry_rest.calc_obs_line_flux_rest_optical, SED_fit_params, line_names, medium_bands_only, rest_optical_wavs)
+        self.calc_SED_rest_property(Photometry_rest.calc_int_line_flux_rest_optical, SED_fit_params, line_names, dust_author_year, dust_law, dust_origin, medium_bands_only, rest_optical_wavs)
         self.calc_SED_rest_property(Photometry_rest.calc_xi_ion, SED_fit_params, Halpha_NII_ratio_params, fesc_author_year, \
             dust_author_year, dust_law, dust_origin, medium_bands_only, rest_optical_wavs, rest_UV_wav_lims, ref_wav)
 
@@ -548,10 +559,8 @@ class Catalogue(Catalogue_Base):
         [gal._save_SED_rest_PDFs(property_name, save_dir, SED_fit_params) for gal in self]
     
     def _append_SED_rest_property_to_fits(self, property_name, SED_fit_params_label):
-        fits_tab = self.open_cat(cropped = False)
-        #SED_rest_property_tab = self.open_cat(cropped = False, hdu = SED_fit_params_label)
         try:
-            SED_rest_property_tab = Table.read(f"{self.cat_path.replace('.fits', '')}_test.fits", hdu = SED_fit_params_label)
+            SED_rest_property_tab = self.open_cat(cropped = False, hdu = SED_fit_params_label)
         except FileNotFoundError:
             SED_rest_property_tab = None
         # if the table does not exist, make the table from scratch
@@ -561,9 +570,11 @@ class Catalogue(Catalogue_Base):
             out_tab = Table({self.cat_creator.ID_label: np.array(self.ID).astype(int), property_name: properties, \
                 f"{property_name}_l1": property_errs[:, 0], f"{property_name}_u1": property_errs[:, 1]}, dtype = [int, float, float, float])
             out_tab.meta = {f"HIERARCH SED_REST_PROPERTY_{property_name}_{'+'.join(self.crops)}": True}
-            #galfind_logger.info(f"{property_name}_{'+'.join(self.crops)} already calculated!") RE-WRITE
-        # else if these properties have not already been calculated for this selection
-        elif f"{property_name}_{'+'.join(self.crops)}" not in SED_rest_property_tab.meta.keys():
+        # else if these properties have not already been calculated for this galaxy sample
+        elif f"SED_REST_PROPERTY_{property_name}_{'+'.join(self.crops)}" not in SED_rest_property_tab.meta.keys():
+            # ensure this property has not been calculated for a different subset of galaxies in this field
+            assert(f"SED_REST_PROPERTY_{property_name}" not in ["_".join(label.split("_")[:-(1 + "+".join(self.crops).count("_"))]) for label in SED_rest_property_tab.meta.keys()])
+            #galfind_logger.warning("Needs re-writing in the case of the same property being calculated for multiple samples of galaxies in the same field")
             properties = self.__getattr__(property_name, phot_type = "rest", property_type = "vals")
             property_errs = self.__getattr__(property_name, phot_type = "rest", property_type = "errs")
             new_SED_rest_property_tab = Table({f"{self.cat_creator.ID_label}_temp": np.array(self.ID).astype(int), property_name: properties, \
@@ -573,10 +584,10 @@ class Catalogue(Catalogue_Base):
                 self.cat_creator.ID_label, keys_right = f"{self.cat_creator.ID_label}_temp", join_type = "outer")
             out_tab.remove_column(f"{self.cat_creator.ID_label}_temp")
             out_tab.meta = {**SED_rest_property_tab.meta, **new_SED_rest_property_tab.meta}
-            #galfind_logger.info(f"{property_name}_{'+'.join(self.crops)} already calculated!") RE-WRITE
         else:
             galfind_logger.info(f"{property_name}_{'+'.join(self.crops)} already calculated!")
             return
+        fits_tab = self.open_cat(cropped = False)
         self.write_cat([fits_tab, out_tab], ["OBJECTS", SED_fit_params_label])
     
     def _save_SED_rest_PDFs(self, property_name, SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}):
@@ -586,15 +597,17 @@ class Catalogue(Catalogue_Base):
 
     def load_SED_rest_properties(self, SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}):
         key = SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)
-        PDF_dir = f"{config['PhotProperties']['PDF_SAVE_DIR']}/{self.version}/{self.instrument.name}/{self.survey}/{key}"
-        # load SED rest properties that have previously been calculated
-        self.gals = [deepcopy(gal)._load_SED_rest_properties(PDF_dir, SED_fit_params) for gal in self]
-        # save the names of properties that have been calculated for all galaxies in the catalogue
+        # save the names of properties that have been calculated for this sample of galaxies in the catalogue
         SED_rest_properties_tab = self.open_cat(cropped = False, hdu = key)
+        n_underscores_in_crops = "+".join(self.crops).count("_")
         if type(SED_rest_properties_tab) != type(None):
-            self.SED_rest_properties[key] = [label.replace("SED_REST_PROPERTY_", ""). \
+            self.SED_rest_properties[key] = list(np.unique([label.replace("SED_REST_PROPERTY_", ""). \
                 replace(f"_{'+'.join(self.crops)}", "") for label in SED_rest_properties_tab.meta.keys() \
-                if "SED_REST_PROPERTY" == "_".join(label.split("_")[:3]) and "+".join(self.crops) == label.split("_")[-1]]
+                if "SED_REST_PROPERTY" == "_".join(label.split("_")[:3]) and \
+                "_".join(label.split("_")[-(1 + n_underscores_in_crops):]) in "+".join(self.crops)]))
+            # load SED rest properties that have previously been calculated
+            PDF_dir = f"{config['PhotProperties']['PDF_SAVE_DIR']}/{self.version}/{self.instrument.name}/{self.survey}/{key}"
+            self.gals = [deepcopy(gal)._load_SED_rest_properties(PDF_dir, self.SED_rest_properties[key], key) for gal in self]
 
     def plot_SED_properties(self, x_name, y_name, SED_fit_params):
         x_arr = []

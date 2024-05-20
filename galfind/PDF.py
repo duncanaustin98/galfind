@@ -11,24 +11,26 @@ from . import useful_funcs_austind as funcs
 
 class PDF:
 
-    def __init__(self, property_name, x, p_x):
+    def __init__(self, property_name, x, p_x, kwargs = {}):
         assert type(x) in [u.Quantity, u.Magnitude]
         self.property_name = property_name
         self.x = x
         # normalize to np.trapz(p_x, x) == 1
         self.p_x = p_x / np.trapz(p_x, x.value)
+        self.kwargs = kwargs
 
-    def __str__(self):
+    def __str__(self, print_peaks = False):
         line_sep = "*" * 40 + "\n"
         band_sep = "-" * 10 + "\n"
         output_str = ""
         output_str += line_sep
-        output_str += f"PDF PROPERTY: {self.property_name}; UNIT: {self.unit:latex}\n"
+        unit_str = f"{self.x.unit}" if not self.x.unit == u.dimensionless_unscaled else "dimensionless"
+        output_str += f"PDF PROPERTY: {self.property_name}; UNIT: {unit_str}\n"
         output_str += band_sep
-        output_str += f"MEDIAN = {self.get_percentile(50.):.3f}" + r"$_{%.3f}^{%.3f}$" \
-            % (self.get_percentile(50.) - self.get_percentile(16.), self.get_percentile(84.) - self.get_percentile(50.))
-        for i, peak in enumerate(self.peaks):
-            output_str += f"{funcs.ordinal(i + 1)} PEAK: {peak:.3f}\n"
+        output_str += f"MEDIAN = {self.median.value:.3f}" + r"$_{-%.3f}^{+%.3f}$\n" % (self.errs.value[0], self.errs.value[1])
+        if print_peaks:
+            for i, peak in enumerate(self.peaks):
+                output_str += f"{funcs.ordinal(i + 1)} PEAK: {peak:.3f}\n"
         output_str += line_sep
         return output_str
     
@@ -40,17 +42,23 @@ class PDF:
         
     @classmethod
     def from_ecsv(cls, path):
-        tab = Table.read(path)
-        property_name = tab.colnames[0]
-        arr = np.array(tab[tab.colnames[0]]) * tab.meta["units"]
-        return cls.from_1D_arr(property_name, arr)
+        try:
+            tab = Table.read(path)
+            property_name = tab.colnames[0]
+            arr = np.array(tab[tab.colnames[0]]) * tab.meta["units"]
+            kwargs = tab.meta
+            for key in ["units", "size", "median", "l1_err", "u1_err"]:
+                kwargs.pop(key)
+            return cls.from_1D_arr(property_name, arr, kwargs)
+        except FileNotFoundError:
+            return None
 
     @classmethod
-    def from_1D_arr(cls, property_name, arr, Nbins = 50):
+    def from_1D_arr(cls, property_name, arr, kwargs = {}, Nbins = 50):
         assert type(arr) in [u.Quantity, u.Magnitude]
         p_x, x_bin_edges = np.histogram(arr.value, bins = Nbins, density = True)
         x = 0.5 * (x_bin_edges[1:] + x_bin_edges[:-1]) * arr.unit
-        PDF_obj = cls(property_name, x, p_x)
+        PDF_obj = cls(property_name, x, p_x, kwargs)
         PDF_obj.input_arr = arr
         return PDF_obj
     
@@ -62,7 +70,7 @@ class PDF:
             if hasattr(self, "input_arr"):
                 self._median = np.median(self.input_arr.value) * self.input_arr.unit
             else:
-                self._median = self.percentile(50.)
+                self._median = self.get_percentile(50.)
             return self._median
 
     @property
@@ -74,8 +82,8 @@ class PDF:
                 self._errs = [self.median.value - np.percentile(self.input_arr.value, 16.), \
                     np.percentile(self.input_arr.value, 84.) - self.median.value] * self.input_arr.unit
             else:
-                self._errs = [self.median.value - self.percentile(16.).value, \
-                    self.percentile(84.).value - self.median.value] * self.input_arr.unit
+                self._errs = [self.median.value - self.get_percentile(16.).value, \
+                    self.get_percentile(84.).value - self.median.value] * self.x.unit
             return self._errs
     
     def draw_sample(self, size):
@@ -123,21 +131,21 @@ class PDF:
             self.percentiles[f"{percentile:.1f}"] = float(self.x.value[np.argmin(np.abs(cdf - percentile / 100.))]) * self.x.unit
             return self.percentiles[f"{percentile:.1f}"]
 
-    def manipulate_PDF(self, new_property_name, update_func, size = 10_000, **kwargs):
+    def manipulate_PDF(self, new_property_name, update_func, PDF_kwargs = {}, size = 10_000, **kwargs):
         if hasattr(self, "input_arr"):
             sample = self.input_arr
         else:
             sample = self.draw_sample(size)
         updated_sample = update_func(sample, **kwargs) #[update_func(val, **kwargs) for val in sample]
-        return self.__class__.from_1D_arr(new_property_name, updated_sample)
+        return self.__class__.from_1D_arr(new_property_name, updated_sample, PDF_kwargs)
     
     def save_PDF(self, save_path, sample_size = 10_000):
         if hasattr(self, "input_arr"):
             save_arr = self.input_arr
         else:
             save_arr = self.draw_sample(sample_size)
-        meta = {"units": self.x.unit, "size": len(save_arr), "median": np.round(self.median.value, 3), \
-            "l1_err": np.round(self.errs.value[0], 3), "u1_err": np.round(self.errs.value[1], 3)}
+        meta = {**self.kwargs, **{"units": self.x.unit, "size": len(save_arr), "median": np.round(self.median.value, 3), \
+            "l1_err": np.round(self.errs.value[0], 3), "u1_err": np.round(self.errs.value[1], 3)}}
         save_tab = Table({self.property_name: save_arr.value})
         save_tab.meta = meta
         save_tab.write(save_path, overwrite = True)

@@ -27,8 +27,13 @@ def pipeline(surveys, version, instruments, aper_diams, min_flux_pc_errs, forced
                 excl_bands = excl_bands, loc_depth_min_flux_pc_errs = min_flux_pc_errs, crop_by = crop_by)
             #cat.data.calc_unmasked_area("NIRCam", forced_phot_band = forced_phot_band)
 
+            #cat.del_hdu(SED_fit_params_arr[-1]["code"].label_from_SED_fit_params(SED_fit_params_arr[-1]))
+            
+            cat.calc_obs_line_flux_rest_optical(["Halpha", "[NII]-6583"])
+            cat.calc_rest_UV_properties()
+
             print(str(cat))
-            cat.calc_cont_rest_optical(["Halpha", "[NII]-6583"])
+            print(str(cat[0]))
 
             #print(str(cat[0]))
             #cat_copy = cat.select_phot_galaxy_property("z", ">", 4.5) 
@@ -38,11 +43,9 @@ def pipeline(surveys, version, instruments, aper_diams, min_flux_pc_errs, forced
             #cat_copy.plot_phot_diagnostics()
 
 
-            #cat.del_hdu(SED_fit_params_arr[-1]["code"].label_from_SED_fit_params(SED_fit_params_arr[-1]))
-
             #cat.select_rest_UV_line_emitters_sigma("CIV-1549", 2.) # "CIV-1549"
             
-            #cat.calc_rest_UV_properties()
+            #
             #cat.calc_fesc_from_beta_phot()
 
             

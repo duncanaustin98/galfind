@@ -79,6 +79,7 @@ class Catalogue_Base:
         if self.crops != []:
             output_str += f"N_GALS_OBJECT = {len(self)}\n"
             output_str += f"CROPS = {' + '.join(self.crops)}\n"
+        #breakpoint()
         if hasattr(self, "SED_rest_properties"):
             if len(self.SED_rest_properties) >= 1:
                 output_str += band_sep
@@ -133,9 +134,13 @@ class Catalogue_Base:
         elif phot_type == "rest" and name in self[0].phot.SED_results[SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)].phot_rest.__dict__:
             return np.array([getattr(gal.phot.SED_results[SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)].phot_rest, name) for gal in self])
         elif phot_type == "rest" and property_type == "vals" and name in self[0].phot.SED_results[SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)].phot_rest.properties.keys():
-            return np.array([getattr(gal.phot.SED_results[SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)].phot_rest, "properties")[name].value for gal in self])
+            properties = [getattr(gal.phot.SED_results[SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)].phot_rest, "properties")[name] \
+                if name in getattr(gal.phot.SED_results[SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)].phot_rest, "properties").keys() else np.nan for gal in self]
+            return np.array([property.value if type(property) in [u.Quantity, u.Magnitude] else property for property in properties])
         elif phot_type == "rest" and property_type == "errs" and name in self[0].phot.SED_results[SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)].phot_rest.property_errs.keys():
-            return np.array([getattr(gal.phot.SED_results[SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)].phot_rest, "property_errs")[name].value for gal in self])
+            property_errs_arr = [getattr(gal.phot.SED_results[SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)].phot_rest, "property_errs")[name] \
+                if name in getattr(gal.phot.SED_results[SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)].phot_rest, "property_errs").keys() else [np.nan, np.nan] for gal in self]
+            return np.array([property_errs.value if type(property_errs) in [u.Quantity, u.Magnitude] else property_errs for property_errs in property_errs_arr])
         else:
             galfind_logger.critical(f"Galaxies do not have attribute = {name}!")
     

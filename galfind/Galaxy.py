@@ -960,17 +960,20 @@ class Galaxy:
         key = SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)
         save_path = f"{save_dir}/{key}/{property_name}/{self.ID}.ecsv"
         funcs.make_dirs(save_path)
-        self.phot.SED_results[key].phot_rest.property_PDFs[property_name].save_PDF(save_path)
+        if type(self.phot.SED_results[key].phot_rest.property_PDFs[property_name]) != type(None):
+            self.phot.SED_results[key].phot_rest.property_PDFs[property_name].save_PDF(save_path)
         
-    def _load_SED_rest_properties(self, PDF_dir, SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}):
-        key = SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)
+    def _load_SED_rest_properties(self, PDF_dir, property_names, SED_fit_params_label = EAZY().label_from_SED_fit_params({"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None})):
         # determine which properties have already been calculated
-        PDF_paths = glob.glob(f"{PDF_dir}/*/{self.ID}.ecsv")
-        for PDF_path in PDF_paths:
-            property_name = PDF_path.split("/")[-2]
-            self.phot.SED_results[key].phot_rest.property_PDFs[property_name] = PDF.from_ecsv(PDF_path)
-            self.phot.SED_results[key].phot_rest._update_properties_from_PDF(property_name)
+        PDF_paths = [f"{PDF_dir}/{property_name}/{self.ID}.ecsv" for property_name in property_names]
+        for PDF_path, property_name in zip(PDF_paths, property_names):
+            self.phot.SED_results[SED_fit_params_label].phot_rest.property_PDFs[property_name] = PDF.from_ecsv(PDF_path)
+            self.phot.SED_results[SED_fit_params_label].phot_rest._update_properties_from_PDF(property_name)
         return self
+    
+    def _get_SED_rest_property_names(self, PDF_dir):
+        PDF_paths = glob.glob(f"{PDF_dir}/*/{self.ID}.ecsv")
+        return [path.split("/")[-2] for path in PDF_paths]
 
 class Multiple_Galaxy:
     
