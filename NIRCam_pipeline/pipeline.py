@@ -36,7 +36,7 @@ def pipeline(surveys, version, instruments, aper_diams, min_flux_pc_errs, forced
             print(str(cat[0]))
 
             #print(str(cat[0]))
-            #cat_copy = cat.select_phot_galaxy_property("z", ">", 4.5) 
+            #cat_copy = cat.select_phot_galaxy_property("z", ">", 4.5)
             #cat.plot_phot_diagnostics(flux_unit = u.ABmag)
             #cat_copy = cat.select_unmasked_instrument(NIRCam())
             #cat_copy = cat.select_EPOCHS(allow_lowz = False)

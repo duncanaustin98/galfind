@@ -183,7 +183,7 @@ class Photometry_rest(Photometry):
         assert iters >= 1, galfind_logger.critical(f"{iters=} < 1 in Photometry_rest.calc_beta_phot !!!")
         assert type(iters) == int, galfind_logger.critical(f"{type(iters)=} != 'int' in Photometry_rest.calc_beta_phot !!!")
         # iters = 1 -> fit without errors, iters >> 1 -> fit with errors
-        property_name = f"beta_PL_{self.rest_UV_wavs_name(rest_UV_wav_lims)}"
+        property_name = "beta_PL" #_{self.rest_UV_wavs_name(rest_UV_wav_lims)}"
         if extract_property_name:
             return property_name
         # if already stored in object, do nothing
@@ -219,7 +219,7 @@ class Photometry_rest(Photometry):
     
     def calc_fesc_from_beta_phot(self, rest_UV_wav_lims, conv_author_year, extract_property_name = False):
         assert conv_author_year in fesc_from_beta_conversions.keys()
-        property_name = f"fesc_{conv_author_year}_{self.rest_UV_wavs_name(rest_UV_wav_lims)}"
+        property_name = f"fesc_{conv_author_year}" #_{self.rest_UV_wavs_name(rest_UV_wav_lims)}"
         if extract_property_name:
             return property_name
         # if already stored in object, do nothing
@@ -236,7 +236,7 @@ class Photometry_rest(Photometry):
     def calc_AUV_from_beta_phot(self, rest_UV_wav_lims, ref_wav, conv_author_year, extract_property_name = False):
         conv_author_year_cls = globals()[conv_author_year]
         assert issubclass(conv_author_year_cls, AUV_from_beta)
-        property_name = f"A{ref_wav.to(u.AA).value:.0f}_phot_{conv_author_year}_{self.rest_UV_wavs_name(rest_UV_wav_lims)}"
+        property_name = f"A{ref_wav.to(u.AA).value:.0f}_{conv_author_year}" #_{self.rest_UV_wavs_name(rest_UV_wav_lims)}"
         if extract_property_name:
             return property_name
         # if already stored in object, do nothing
@@ -246,14 +246,14 @@ class Photometry_rest(Photometry):
         else: # calculate AUV in the relevant rest-frame UV range
             beta_property_name = self.calc_beta_phot(rest_UV_wav_lims)[1]
             # update PDF
-            # if property_name == 'A1500_phot_Meurer99_[1250,3000]AA':
+            # if property_name == 'A1500_Meurer99_[1250,3000]AA':
             #     breakpoint()
             self.property_PDFs[property_name] = self.property_PDFs[beta_property_name].manipulate_PDF(property_name, conv_author_year_cls())
             self._update_properties_from_PDF(property_name)
         return self, property_name
     
     def calc_mUV_phot(self, rest_UV_wav_lims, ref_wav, top_hat_width = 100. * u.AA, resolution = 1. * u.AA, extract_property_name = False):
-        property_name = f"m{ref_wav.to(u.AA).value:.0f}_{self.rest_UV_wavs_name(rest_UV_wav_lims)}"
+        property_name = f"m{ref_wav.to(u.AA).value:.0f}" #_{self.rest_UV_wavs_name(rest_UV_wav_lims)}"
         if extract_property_name:
             return property_name
         # if already stored in object, do nothing
@@ -272,7 +272,7 @@ class Photometry_rest(Photometry):
         return self, property_name
 
     def calc_MUV_phot(self, rest_UV_wav_lims, ref_wav, extract_property_name = False):
-        property_name = f"M{ref_wav.to(u.AA).value:.0f}_{self.rest_UV_wavs_name(rest_UV_wav_lims)}"
+        property_name = f"M{ref_wav.to(u.AA).value:.0f}" #_{self.rest_UV_wavs_name(rest_UV_wav_lims)}"
         if extract_property_name:
             return property_name
         # if already stored in object, do nothing
@@ -288,7 +288,7 @@ class Photometry_rest(Photometry):
         return self, property_name
     
     def calc_LUV_obs_phot(self, rest_UV_wav_lims, ref_wav, extract_property_name = False):
-        property_name = f"Lobs_{ref_wav.to(u.AA).value:.0f}_{self.rest_UV_wavs_name(rest_UV_wav_lims)}"
+        property_name = f"Lobs_{ref_wav.to(u.AA).value:.0f}" #_{self.rest_UV_wavs_name(rest_UV_wav_lims)}"
         if extract_property_name:
             return property_name
         # if already stored in object, do nothing
@@ -322,7 +322,7 @@ class Photometry_rest(Photometry):
 
     def calc_SFR_UV_phot(self, rest_UV_wav_lims, ref_wav, AUV_beta_conv_author_year, kappa_UV_conv_author_year, extract_property_name = False):
         assert kappa_UV_conv_author_year in SFR_conversions.keys()
-        property_name = f"SFR_{ref_wav.to(u.AA).value:.0f}_{AUV_beta_conv_author_year}_{kappa_UV_conv_author_year}_{self.rest_UV_wavs_name(rest_UV_wav_lims)}"
+        property_name = f"SFR_{ref_wav.to(u.AA).value:.0f}_{AUV_beta_conv_author_year}_{kappa_UV_conv_author_year}" #_{self.rest_UV_wavs_name(rest_UV_wav_lims)}"
         if extract_property_name:
             return property_name
         # if already stored in object, do nothing

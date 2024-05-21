@@ -543,8 +543,9 @@ class Catalogue(Catalogue_Base):
             self.SED_rest_properties[key] = []
         if property_name not in self.SED_rest_properties[key]:
             # perform calculation for each galaxy and update galaxies in self
-            self.gals = [deepcopy(gal)._calc_SED_rest_property(SED_rest_property_function, key, *args) for gal in \
-                tqdm(self, total = len(self), desc = f"Calculating {property_name}")]
+            self.gals = [deepcopy(gal)._calc_SED_rest_property(SED_rest_property_function, key, *args) \
+                for gal in tqdm(self, total = len(self), desc = f"Calculating {property_name}")]
+            galfind_logger.info(f"Calculated {property_name}")
             #[SED_rest_property_function(gal.phot.SED_results[key].phot_rest, *args)[0] for gal in \
             #    tqdm(self, total = len(self), desc = f"Calculating {property_name}")]
             # save the property PDFs
@@ -552,7 +553,7 @@ class Catalogue(Catalogue_Base):
             # save the property name
             self.SED_rest_properties[key].append(property_name)
             self._append_SED_rest_property_to_fits(property_name, key)
-
+        
     def _save_SED_rest_PDFs(self, property_name, SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}):
         save_dir = f"{config['PhotProperties']['PDF_SAVE_DIR']}/{self.version}/{self.instrument.name}/{self.survey}"
         funcs.make_dirs(f"{save_dir}/dummy_path.ecsv")
@@ -599,8 +600,8 @@ class Catalogue(Catalogue_Base):
         key = SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)
         # save the names of properties that have been calculated for this sample of galaxies in the catalogue
         SED_rest_properties_tab = self.open_cat(cropped = False, hdu = key)
-        n_underscores_in_crops = "+".join(self.crops).count("_")
         if type(SED_rest_properties_tab) != type(None):
+            n_underscores_in_crops = "+".join(self.crops).count("_")
             self.SED_rest_properties[key] = list(np.unique([label.replace("SED_REST_PROPERTY_", ""). \
                 replace(f"_{'+'.join(self.crops)}", "") for label in SED_rest_properties_tab.meta.keys() \
                 if "SED_REST_PROPERTY" == "_".join(label.split("_")[:3]) and \
