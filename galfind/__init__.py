@@ -122,7 +122,7 @@ from .Emission_lines import Emission_line, wav_lyman_alpha, line_diagnostics
 from . import IGM_attenuation
 from . import lyman_alpha_damping_wing
 from .DLA import DLA
-from .Dust_Attenuation import Dust_Attenuation, Calzetti00
+from .Dust_Attenuation import Dust_Attenuation, C00
 from .Spectrum import Spectral_Catalogue, Spectrum, NIRSpec, Spectral_Instrument, Spectral_Filter, Spectral_Grating
 
 # ordered band names from blue -> red

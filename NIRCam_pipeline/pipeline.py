@@ -29,9 +29,10 @@ def pipeline(surveys, version, instruments, aper_diams, min_flux_pc_errs, forced
 
             #cat.del_hdu(SED_fit_params_arr[-1]["code"].label_from_SED_fit_params(SED_fit_params_arr[-1]))
             
-            cat.calc_obs_line_flux_rest_optical(["Halpha", "[NII]-6583"])
-            cat.calc_rest_UV_properties()
-
+            #cat.calc_obs_line_flux_rest_optical(["Halpha", "[NII]-6583"])
+            #cat.calc_rest_UV_properties()
+            #cat.calc_int_line_flux_rest_optical(["Halpha", "[NII]-6583"])
+            cat.calc_xi_ion()
             print(str(cat))
             print(str(cat[0]))
 

@@ -452,14 +452,16 @@ class Catalogue(Catalogue_Base):
     
     # beta_phot tqdm bar not working appropriately!
     def calc_beta_phot(self, rest_UV_wav_lims = [1_250., 3_000.] * u.AA, SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}):
-        return self.calc_SED_rest_property(Photometry_rest.calc_beta_phot, SED_fit_params, rest_UV_wav_lims)
+        self.calc_SED_rest_property(Photometry_rest.calc_beta_phot, SED_fit_params, rest_UV_wav_lims)
         
     def calc_fesc_from_beta_phot(self, rest_UV_wav_lims = [1_250., 3_000.] * u.AA, conv_author_year = "Chisholm22", \
             SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}):
+        self.calc_beta_phot(rest_UV_wav_lims, SED_fit_params)
         self.calc_SED_rest_property(Photometry_rest.calc_fesc_from_beta_phot, SED_fit_params, rest_UV_wav_lims, conv_author_year)
 
-    def calc_AUV_from_beta_phot(self, rest_UV_wav_lims = [1_250., 3_000.] * u.AA, ref_wav = 1_500. * u.AA, conv_author_year = "Meurer99", \
+    def calc_AUV_from_beta_phot(self, rest_UV_wav_lims = [1_250., 3_000.] * u.AA, ref_wav = 1_500. * u.AA, conv_author_year = "M99", \
             SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}):
+        self.calc_beta_phot(rest_UV_wav_lims, SED_fit_params)
         self.calc_SED_rest_property(Photometry_rest.calc_AUV_from_beta_phot, SED_fit_params, rest_UV_wav_lims, ref_wav, conv_author_year)
 
     def calc_mUV_phot(self, rest_UV_wav_lims = [1_250., 3_000.] * u.AA, ref_wav = 1_500. * u.AA, \
@@ -475,17 +477,17 @@ class Catalogue(Catalogue_Base):
         self.calc_SED_rest_property(Photometry_rest.calc_LUV_obs_phot, SED_fit_params, rest_UV_wav_lims, ref_wav)
     
     def calc_LUV_int_phot(self, rest_UV_wav_lims = [1_250., 3_000.] * u.AA, ref_wav = 1_500. * u.AA, \
-            AUV_beta_conv_author_year = "Meurer99", SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}):
+            AUV_beta_conv_author_year = "M99", SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}):
         self.calc_SED_rest_property(Photometry_rest.calc_LUV_int_phot, SED_fit_params, rest_UV_wav_lims, ref_wav, AUV_beta_conv_author_year)
     
     def calc_SFR_UV_phot(self, rest_UV_wav_lims = [1_250., 3_000.] * u.AA, ref_wav = 1_500. * u.AA, \
-            AUV_beta_conv_author_year = "Meurer99", kappa_UV_conv_author_year = "MD14", \
+            AUV_beta_conv_author_year = "M99", kappa_UV_conv_author_year = "MD14", \
             SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}):
         self.calc_SED_rest_property(Photometry_rest.calc_SFR_UV_phot, SED_fit_params, \
             rest_UV_wav_lims, ref_wav, AUV_beta_conv_author_year, kappa_UV_conv_author_year)
     
     def calc_rest_UV_properties(self, rest_UV_wav_lims = [1_250., 3_000.] * u.AA, ref_wav = 1_500. * u.AA, \
-            AUV_beta_conv_author_year = "Meurer99", kappa_UV_conv_author_year = "MD14", \
+            AUV_beta_conv_author_year = "M99", kappa_UV_conv_author_year = "MD14", \
             SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}):
         self.calc_beta_phot(rest_UV_wav_lims, SED_fit_params)
         self.calc_AUV_from_beta_phot(rest_UV_wav_lims, ref_wav, AUV_beta_conv_author_year, SED_fit_params)
@@ -503,34 +505,31 @@ class Catalogue(Catalogue_Base):
 
     def calc_EW_rest_optical(self, line_names, medium_bands_only = True, rest_optical_wavs = [3_700., 7_000.] * u.AA, \
             SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}):
-        self.calc_SED_rest_property(Photometry_rest.calc_cont_rest_optical, SED_fit_params, line_names, rest_optical_wavs)
+        self.calc_cont_rest_optical(line_names, rest_optical_wavs, SED_fit_params)
         self.calc_SED_rest_property(Photometry_rest.calc_EW_rest_optical, SED_fit_params, line_names, medium_bands_only, rest_optical_wavs)
     
     def calc_obs_line_flux_rest_optical(self, line_names, medium_bands_only = True, rest_optical_wavs = [3_700., 7_000.] * u.AA, \
             SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}):
-        self.calc_SED_rest_property(Photometry_rest.calc_cont_rest_optical, SED_fit_params, line_names, rest_optical_wavs)
-        self.calc_SED_rest_property(Photometry_rest.calc_EW_rest_optical, SED_fit_params, line_names, medium_bands_only, rest_optical_wavs)
+        self.calc_EW_rest_optical(line_names, medium_bands_only, rest_optical_wavs, SED_fit_params)
         self.calc_SED_rest_property(Photometry_rest.calc_obs_line_flux_rest_optical, SED_fit_params, line_names, medium_bands_only, rest_optical_wavs)
 
-    def calc_int_line_flux_rest_optical(self, line_names, dust_author_year = "M99", dust_law = "Calzetti00", dust_origin = "UV", \
-            medium_bands_only = True, rest_optical_wavs = [3_700., 7_000.] * u.AA, SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}):
-        self.calc_SED_rest_property(Photometry_rest.calc_cont_rest_optical, SED_fit_params, line_names, rest_optical_wavs)
-        self.calc_SED_rest_property(Photometry_rest.calc_EW_rest_optical, SED_fit_params, line_names, medium_bands_only, rest_optical_wavs)
-        self.calc_SED_rest_property(Photometry_rest.calc_obs_line_flux_rest_optical, SED_fit_params, line_names, medium_bands_only, rest_optical_wavs)
+    def calc_int_line_flux_rest_optical(self, line_names, dust_author_year = "M99", dust_law = "C00", dust_origin = "UV", \
+            medium_bands_only = True, rest_optical_wavs = [3_700., 7_000.] * u.AA, rest_UV_wav_lims = [1_250., 3_000.] * u.AA, \
+            ref_wav = 1_500. * u.AA, SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}):
+        self.calc_obs_line_flux_rest_optical(line_names, medium_bands_only, rest_optical_wavs, SED_fit_params)
+        self.calc_AUV_from_beta_phot(rest_UV_wav_lims, ref_wav, dust_author_year, SED_fit_params)
         self.calc_SED_rest_property(Photometry_rest.calc_int_line_flux_rest_optical, SED_fit_params, line_names, dust_author_year, dust_law, dust_origin, medium_bands_only, rest_optical_wavs)
 
     # should be generalized slightly more
-    def calc_xi_ion(self, Halpha_NII_ratio_params: dict = {"mu": 10., "sigma": 0.}, fesc_author_year: str = "Chisholm22", \
-            dust_author_year: str = "M99", dust_law: str = "Calzetti00", dust_origin: str = "UV", \
+    def calc_xi_ion(self, NII_Halpha_ratio_params: dict = {"mu": 0.1, "sigma": 0.}, fesc_author_year: str = "fesc=0.1", \
+            dust_author_year: str = "M99", dust_law: str = "C00", dust_origin: str = "UV", \
             medium_bands_only: bool = True, rest_optical_wavs = [3_700., 7_000.] * u.AA, \
             rest_UV_wav_lims = [1_250., 3_000.] * u.AA, ref_wav = 1_500. * u.AA, \
             SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}):
         line_names = ["Halpha", "[NII]-6583"]
-        self.calc_SED_rest_property(Photometry_rest.calc_cont_rest_optical, SED_fit_params, line_names, rest_optical_wavs)
-        self.calc_SED_rest_property(Photometry_rest.calc_EW_rest_optical, SED_fit_params, line_names, medium_bands_only, rest_optical_wavs)
-        self.calc_SED_rest_property(Photometry_rest.calc_obs_line_flux_rest_optical, SED_fit_params, line_names, medium_bands_only, rest_optical_wavs)
-        self.calc_SED_rest_property(Photometry_rest.calc_int_line_flux_rest_optical, SED_fit_params, line_names, dust_author_year, dust_law, dust_origin, medium_bands_only, rest_optical_wavs)
-        self.calc_SED_rest_property(Photometry_rest.calc_xi_ion, SED_fit_params, Halpha_NII_ratio_params, fesc_author_year, \
+        #self.calc_int_line_flux_rest_optical(line_names, dust_author_year, dust_law, dust_origin, medium_bands_only, rest_optical_wavs, SED_fit_params)
+        #self.calc_SED_rest_property(Photometry_rest.calc_fesc_from_beta_phot, SED_fit_params, rest_UV_wav_lims, fesc_author_year)
+        self.calc_SED_rest_property(Photometry_rest.calc_xi_ion, SED_fit_params, NII_Halpha_ratio_params, fesc_author_year, \
             dust_author_year, dust_law, dust_origin, medium_bands_only, rest_optical_wavs, rest_UV_wav_lims, ref_wav)
 
     # Global SED rest-frame photometry calculations
@@ -570,17 +569,17 @@ class Catalogue(Catalogue_Base):
             property_errs = self.__getattr__(property_name, phot_type = "rest", property_type = "errs")
             out_tab = Table({self.cat_creator.ID_label: np.array(self.ID).astype(int), property_name: properties, \
                 f"{property_name}_l1": property_errs[:, 0], f"{property_name}_u1": property_errs[:, 1]}, dtype = [int, float, float, float])
-            out_tab.meta = {f"HIERARCH SED_REST_PROPERTY_{property_name}_{'+'.join(self.crops)}": True}
+            out_tab.meta = {f"HIERARCH SED_REST_{property_name}_{'+'.join(self.crops)}": True}
         # else if these properties have not already been calculated for this galaxy sample
-        elif f"SED_REST_PROPERTY_{property_name}_{'+'.join(self.crops)}" not in SED_rest_property_tab.meta.keys():
+        elif f"SED_REST_{property_name}_{'+'.join(self.crops)}" not in SED_rest_property_tab.meta.keys():
             # ensure this property has not been calculated for a different subset of galaxies in this field
-            assert(f"SED_REST_PROPERTY_{property_name}" not in ["_".join(label.split("_")[:-(1 + "+".join(self.crops).count("_"))]) for label in SED_rest_property_tab.meta.keys()])
+            assert(f"SED_REST_{property_name}" not in ["_".join(label.split("_")[:-(1 + "+".join(self.crops).count("_"))]) for label in SED_rest_property_tab.meta.keys()])
             #galfind_logger.warning("Needs re-writing in the case of the same property being calculated for multiple samples of galaxies in the same field")
             properties = self.__getattr__(property_name, phot_type = "rest", property_type = "vals")
             property_errs = self.__getattr__(property_name, phot_type = "rest", property_type = "errs")
             new_SED_rest_property_tab = Table({f"{self.cat_creator.ID_label}_temp": np.array(self.ID).astype(int), property_name: properties, \
                 f"{property_name}_l1": property_errs[:, 0], f"{property_name}_u1": property_errs[:, 1]}, dtype = [int, float, float, float])
-            new_SED_rest_property_tab.meta = {f"HIERARCH SED_REST_PROPERTY_{property_name}_{'+'.join(self.crops)}": True}
+            new_SED_rest_property_tab.meta = {f"HIERARCH SED_REST_{property_name}_{'+'.join(self.crops)}": True}
             out_tab = join(SED_rest_property_tab, new_SED_rest_property_tab, keys_left = \
                 self.cat_creator.ID_label, keys_right = f"{self.cat_creator.ID_label}_temp", join_type = "outer")
             out_tab.remove_column(f"{self.cat_creator.ID_label}_temp")
@@ -602,9 +601,9 @@ class Catalogue(Catalogue_Base):
         SED_rest_properties_tab = self.open_cat(cropped = False, hdu = key)
         if type(SED_rest_properties_tab) != type(None):
             n_underscores_in_crops = "+".join(self.crops).count("_")
-            self.SED_rest_properties[key] = list(np.unique([label.replace("SED_REST_PROPERTY_", ""). \
+            self.SED_rest_properties[key] = list(np.unique([label.replace("SED_REST_", ""). \
                 replace(f"_{'+'.join(self.crops)}", "") for label in SED_rest_properties_tab.meta.keys() \
-                if "SED_REST_PROPERTY" == "_".join(label.split("_")[:3]) and \
+                if "SED_REST" == "_".join(label.split("_")[:3]) and \
                 "_".join(label.split("_")[-(1 + n_underscores_in_crops):]) in "+".join(self.crops)]))
             # load SED rest properties that have previously been calculated
             PDF_dir = f"{config['PhotProperties']['PDF_SAVE_DIR']}/{self.version}/{self.instrument.name}/{self.survey}/{key}"

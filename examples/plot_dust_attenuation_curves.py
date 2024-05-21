@@ -5,9 +5,9 @@ import matplotlib.pyplot as plt
 import astropy.units as u
 from matplotlib.patches import Arrow
 
-from galfind import Dust_Attenuation, Calzetti00, Mock_SED_obs, NIRCam
+from galfind import Dust_Attenuation, C00, Mock_SED_obs, NIRCam
 
-def plot_dust_attenuation_curves(dust_laws = [Calzetti00]):
+def plot_dust_attenuation_curves(dust_laws = [C00]):
     wavs = np.linspace(0.13 * u.um, 2.19 * u.um, 1_000)
     fig, ax = plt.subplots()
     for dust_law in dust_laws:
@@ -17,7 +17,7 @@ def plot_dust_attenuation_curves(dust_laws = [Calzetti00]):
     plt.savefig("/nvme/scratch/work/austind/GALFIND/examples/galfind_dust_laws.png")
     plt.show()
 
-def plot_color_color_dust_arrow(ax, z, colour_x_name, colour_y_name, arrow_pos, E_BminusV, dust_law = Calzetti00(), beta = -2.2, M_UV = -22., arrow_kwargs = {"c": "black"}):
+def plot_color_color_dust_arrow(ax, z, colour_x_name, colour_y_name, arrow_pos, E_BminusV, dust_law = C00(), beta = -2.2, M_UV = -22., arrow_kwargs = {"c": "black"}):
     # create NIRCam instrument excluding all bands other than those needed for colours
     instrument = NIRCam(excl_bands = [band for band in NIRCam().bands if band not in colour_x_name.split("-") + colour_y_name.split("-")])
     # make basic power law SED at redshift z and calculate colors
