@@ -520,16 +520,21 @@ class Catalogue(Catalogue_Base):
         self.calc_AUV_from_beta_phot(rest_UV_wav_lims, ref_wav, dust_author_year, SED_fit_params)
         self.calc_SED_rest_property(Photometry_rest.calc_int_line_flux_rest_optical, SED_fit_params, line_names, dust_author_year, dust_law, dust_origin, medium_bands_only, rest_optical_wavs)
 
+    def calc_int_line_lum_rest_optical(self, line_names, flux_contamination_params: dict = {"mu": 0., "sigma": 0.}, dust_author_year: str = "M99", \
+            dust_law: str = "C00", dust_origin: str = "UV", medium_bands_only = True, rest_optical_wavs = [3_700., 7_000.] * u.AA, \
+            rest_UV_wav_lims = [1_250., 3_000.] * u.AA, ref_wav = 1_500. * u.AA, SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}):
+        self.calc_int_line_lum_rest_optical(Photometry_rest.calc_int_line_lum_rest_optical, SED_fit_params, line_names, \
+            flux_contamination_params, dust_author_year, dust_law, dust_origin, medium_bands_only, rest_optical_wavs, rest_UV_wav_lims, ref_wav)
+
     # should be generalized slightly more
-    def calc_xi_ion(self, NII_Halpha_ratio_params: dict = {"mu": 0.1, "sigma": 0.}, fesc_author_year: str = "fesc=0.1", \
-            dust_author_year: str = "M99", dust_law: str = "C00", dust_origin: str = "UV", \
-            medium_bands_only: bool = True, rest_optical_wavs = [3_700., 7_000.] * u.AA, \
+    def calc_xi_ion(self, line_names: list = ["Halpha", "[NII]-6583"], flux_contamination_params: dict = {"mu": 0.1}, \
+            fesc_author_year: str = "fesc=0.1", dust_author_year: str = "M99", dust_law: str = "C00", \
+            dust_origin: str = "UV", medium_bands_only: bool = True, rest_optical_wavs = [3_700., 7_000.] * u.AA, \
             rest_UV_wav_lims = [1_250., 3_000.] * u.AA, ref_wav = 1_500. * u.AA, \
             SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}):
-        line_names = ["Halpha", "[NII]-6583"]
         #self.calc_int_line_flux_rest_optical(line_names, dust_author_year, dust_law, dust_origin, medium_bands_only, rest_optical_wavs, SED_fit_params)
         #self.calc_SED_rest_property(Photometry_rest.calc_fesc_from_beta_phot, SED_fit_params, rest_UV_wav_lims, fesc_author_year)
-        self.calc_SED_rest_property(Photometry_rest.calc_xi_ion, SED_fit_params, NII_Halpha_ratio_params, fesc_author_year, \
+        self.calc_SED_rest_property(Photometry_rest.calc_xi_ion, SED_fit_params, line_names, flux_contamination_params, fesc_author_year, \
             dust_author_year, dust_law, dust_origin, medium_bands_only, rest_optical_wavs, rest_UV_wav_lims, ref_wav)
 
     # Global SED rest-frame photometry calculations
@@ -603,11 +608,23 @@ class Catalogue(Catalogue_Base):
             n_underscores_in_crops = "+".join(self.crops).count("_")
             self.SED_rest_properties[key] = list(np.unique([label.replace("SED_REST_", ""). \
                 replace(f"_{'+'.join(self.crops)}", "") for label in SED_rest_properties_tab.meta.keys() \
-                if "SED_REST" == "_".join(label.split("_")[:3]) and \
+                if "SED_REST" == "_".join(label.split("_")[:2]) and \
                 "_".join(label.split("_")[-(1 + n_underscores_in_crops):]) in "+".join(self.crops)]))
             # load SED rest properties that have previously been calculated
             PDF_dir = f"{config['PhotProperties']['PDF_SAVE_DIR']}/{self.version}/{self.instrument.name}/{self.survey}/{key}"
             self.gals = [deepcopy(gal)._load_SED_rest_properties(PDF_dir, self.SED_rest_properties[key], key) for gal in self]
+
+    def del_SED_rest_property(self, property_name, SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}):
+        key = SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)
+        # SED rest property must exist for this sample
+        assert (property_name in self.SED_rest_properties[key])
+        # remove data from self, starting with catalogue, then gal for gal in self.gals
+        self.SED_rest_properties[key].remove(property_name)
+        self.gals = [deepcopy(gal)._del_SED_rest_properties([property_name], key) for gal in self]
+        # delete data from fits
+        del_col_names = [property_name, f"{property_name}_l1", f"{property_name}_u1"]
+        del_hdr_names = [f"SED_REST_{property_name}_{'+'.join(self.crops)}"]
+        self.del_cols_hdrs_from_fits(del_col_names, del_hdr_names, key)
 
     def plot_SED_properties(self, x_name, y_name, SED_fit_params):
         x_arr = []

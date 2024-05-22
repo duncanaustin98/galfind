@@ -971,6 +971,13 @@ class Galaxy:
             self.phot.SED_results[SED_fit_params_label].phot_rest._update_properties_from_PDF(property_name)
         return self
     
+    def _del_SED_rest_properties(self, property_names, SED_fit_params_label = EAZY().label_from_SED_fit_params({"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None})):
+        for property_name in property_names:
+            self.phot.SED_results[SED_fit_params_label].phot_rest.property_PDFs.pop(property_name)
+            self.phot.SED_results[SED_fit_params_label].phot_rest.properties.pop(property_name)
+            self.phot.SED_results[SED_fit_params_label].phot_rest.property_errs.pop(property_name)
+        return self
+    
     def _get_SED_rest_property_names(self, PDF_dir):
         PDF_paths = glob.glob(f"{PDF_dir}/*/{self.ID}.ecsv")
         return [path.split("/")[-2] for path in PDF_paths]

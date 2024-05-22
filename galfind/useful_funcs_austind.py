@@ -216,12 +216,6 @@ def luminosity_to_flux(lum, wavs, z = None, cosmo = astropy_cosmo, out_units = u
             raise(Exception(""))
         
 def flux_to_luminosity(flux, wavs, z = None, cosmo = astropy_cosmo, out_units = u.erg / (u.s * u.Hz)):
-    # calculate luminosity distance
-    if z == None:
-        lum_distance = 10 * u.pc
-        z = 0.
-    else:
-        lum_distance = cosmo.luminosity_distance(z)
     # sort out the units
     if flux.unit == u.ABmag:
         # convert to f_ν
@@ -244,8 +238,19 @@ def flux_to_luminosity(flux, wavs, z = None, cosmo = astropy_cosmo, out_units = 
             galfind_logger.critical(f"{out_units=} not in ['yank', 'energy/torque/work']") 
     else:
         galfind_logger.critical(f"{flux.unit=} not in ['spectral flux density', 'power density/spectral flux density wav']")
-    return (4 * np.pi * flux * lum_distance ** 2 / (1 + z)).to(out_units)
+    # calculate luminosity distance
+    lum_distance = calc_lum_distance(z, cosmo)
+    if z == None:
+        z = 0.
+    return (4 * np.pi * flux * lum_distance ** 2 / (1. + z)).to(out_units)
         
+def calc_lum_distance(z, cosmo = astropy_cosmo):
+    if z == None or z == 0. or z == 0:
+        lum_distance = 10 * u.pc
+    else:
+        lum_distance = cosmo.luminosity_distance(z)
+    return lum_distance
+
 def dust_correct(lum, dust_mag):
     return [lum_i * (10 ** (dust_mag_i / 2.5)) if dust_mag_i > 0. else lum_i \
         for lum_i, dust_mag_i in zip(lum.value, dust_mag.value)] * lum.unit

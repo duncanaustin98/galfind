@@ -412,3 +412,22 @@ class Catalogue_Base:
             in fits.open(self.cat_path) if hdu_.name != hdu.upper() and hdu_.name != "PRIMARY"]
         tab_names = [hdu_.name for hdu_ in fits.open(self.cat_path) if hdu_.name != hdu.upper() and hdu_.name != "PRIMARY"]
         self.write_cat(tab_arr, tab_names)
+
+    def del_cols_hdrs_from_fits(self, col_names = [], hdr_names = [], hdu = None):
+        # open up all fits extensions
+        tab_arr = []
+        tab_names = []
+        for i, hdu_ in enumerate(fits.open(self.cat_path)):
+            if hdu_.name != "PRIMARY":
+                # open fits extension
+                tab = self.open_cat(cropped = False, hdu = hdu_.name)
+                # append required fits extension
+                if hdu_.name == hdu.upper():
+                    # ensure every column/header name is in catalogue
+                    assert(all(name in tab.colnames for name in col_names))
+                    assert(all(name in tab.meta.keys() for name in hdr_names))
+                    [tab.remove_column(name) for name in col_names]
+                    tab.meta = {key: value for key, value in dict(tab.meta).items() if key not in hdr_names}
+                tab_arr.append(tab)
+                tab_names.append(hdu_.name)
+        self.write_cat(tab_arr, tab_names)
