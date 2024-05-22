@@ -34,8 +34,7 @@ def pipeline(surveys, version, instruments, aper_diams, min_flux_pc_errs, forced
             #cat.calc_rest_UV_properties()
             #cat.calc_int_line_flux_rest_optical(["Halpha", "[NII]-6583"])
             
-            cat.del_SED_rest_property("xi_ion_M99_C00_fesc0.1")
-            breakpoint()
+            #cat.del_SED_rest_property("xi_ion_M99_C00_fesc0.1")
             cat.calc_xi_ion()
             print(str(cat))
             print(str(cat[0]))

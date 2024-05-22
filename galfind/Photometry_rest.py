@@ -474,7 +474,7 @@ class Photometry_rest(Photometry):
                 A_line = self.property_PDFs[A_UV_property_name].manipulate_PDF("A_line", \
                     lambda A_UV: (A_UV.to(u.ABmag).value * dust_law_cls.k_lambda(line_diagnostics[line_names[0]]["line_wav"]) \
                     / dust_law_cls.k_lambda(ref_wav)) * u.ABmag)
-                print(A_line.input_arr)
+                #print(A_line.input_arr)
                 breakpoint()
             else:
                 raise NotImplementedError
