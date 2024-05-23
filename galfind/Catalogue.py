@@ -503,37 +503,46 @@ class Catalogue(Catalogue_Base):
             SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}):
         self.calc_SED_rest_property(Photometry_rest.calc_cont_rest_optical, SED_fit_params, line_names, rest_optical_wavs)
 
-    def calc_EW_rest_optical(self, line_names, medium_bands_only = True, rest_optical_wavs = [3_700., 7_000.] * u.AA, \
+    def calc_EW_rest_optical(self, line_names, frame: str, flux_contamination_params: dict = {"mu": 0., "sigma": 0.}, \
+            medium_bands_only = True, rest_optical_wavs = [3_700., 7_000.] * u.AA, \
             SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}):
         self.calc_cont_rest_optical(line_names, rest_optical_wavs, SED_fit_params)
-        self.calc_SED_rest_property(Photometry_rest.calc_EW_rest_optical, SED_fit_params, line_names, medium_bands_only, rest_optical_wavs)
-    
-    def calc_obs_line_flux_rest_optical(self, line_names, medium_bands_only = True, rest_optical_wavs = [3_700., 7_000.] * u.AA, \
-            SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}):
-        self.calc_EW_rest_optical(line_names, medium_bands_only, rest_optical_wavs, SED_fit_params)
-        self.calc_SED_rest_property(Photometry_rest.calc_obs_line_flux_rest_optical, SED_fit_params, line_names, medium_bands_only, rest_optical_wavs)
+        self.calc_SED_rest_property(Photometry_rest.calc_EW_rest_optical, SED_fit_params, line_names, frame, flux_contamination_params, medium_bands_only, rest_optical_wavs)
 
-    def calc_int_line_flux_rest_optical(self, line_names, dust_author_year = "M99", dust_law = "C00", dust_origin = "UV", \
-            medium_bands_only = True, rest_optical_wavs = [3_700., 7_000.] * u.AA, rest_UV_wav_lims = [1_250., 3_000.] * u.AA, \
-            ref_wav = 1_500. * u.AA, SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}):
-        self.calc_obs_line_flux_rest_optical(line_names, medium_bands_only, rest_optical_wavs, SED_fit_params)
+    def calc_dust_atten(self, calc_wav: u.Quantity, dust_author_year: str = "M99", dust_law: str = "C00", \
+            dust_origin: str = "UV", rest_UV_wav_lims: u.Quantity = [1_250., 3_000.] * u.AA, \
+            ref_wav: u.Quantity = 1_500. * u.AA, SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}):
+        assert(all(type(name) == type(None) for name in [dust_author_year, dust_law, dust_origin]))
         self.calc_AUV_from_beta_phot(rest_UV_wav_lims, ref_wav, dust_author_year, SED_fit_params)
-        self.calc_SED_rest_property(Photometry_rest.calc_int_line_flux_rest_optical, SED_fit_params, line_names, dust_author_year, dust_law, dust_origin, medium_bands_only, rest_optical_wavs)
+        self.calc_SED_rest_property(Photometry_rest.calc_dust_atten, SED_fit_params, calc_wav, dust_author_year, dust_law, dust_origin, rest_UV_wav_lims, ref_wav)
 
-    def calc_int_line_lum_rest_optical(self, line_names, flux_contamination_params: dict = {"mu": 0., "sigma": 0.}, dust_author_year: str = "M99", \
+    def calc_line_flux_rest_optical(self, line_names: list, frame: str, flux_contamination_params: dict = {"mu": 0., "sigma": 0.}, dust_author_year = "M99", \
+            dust_law = "C00", dust_origin = "UV", medium_bands_only = True, rest_optical_wavs = [3_700., 7_000.] * u.AA, rest_UV_wav_lims = [1_250., 3_000.] * u.AA, \
+            ref_wav = 1_500. * u.AA, SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}):
+        self.calc_EW_rest_optical(line_names, frame, flux_contamination_params, medium_bands_only, rest_optical_wavs, SED_fit_params)
+        breakpoint()
+        if all(type(name) != type(None) for name in [dust_author_year, dust_law, dust_origin]):
+            self.calc_dust_atten(line_diagnostics[line_names[0]]["line_wav"], dust_author_year, dust_law, dust_origin, rest_UV_wav_lims, ref_wav, SED_fit_params)
+        self.calc_SED_rest_property(Photometry_rest.calc_line_flux_rest_optical, SED_fit_params, line_names, \
+            frame, flux_contamination_params, dust_author_year, dust_law, dust_origin, medium_bands_only, rest_optical_wavs)
+
+    def calc_line_lum_rest_optical(self, line_names: list, frame: str, flux_contamination_params: dict = {"mu": 0., "sigma": 0.}, dust_author_year: str = "M99", \
             dust_law: str = "C00", dust_origin: str = "UV", medium_bands_only = True, rest_optical_wavs = [3_700., 7_000.] * u.AA, \
             rest_UV_wav_lims = [1_250., 3_000.] * u.AA, ref_wav = 1_500. * u.AA, SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}):
-        self.calc_int_line_lum_rest_optical(Photometry_rest.calc_int_line_lum_rest_optical, SED_fit_params, line_names, \
+        self.calc_line_flux_rest_optical(line_names, frame, flux_contamination_params, dust_author_year, dust_law, \
+            dust_origin, medium_bands_only, rest_optical_wavs, rest_UV_wav_lims, ref_wav, SED_fit_params)
+        self.calc_SED_rest_property(Photometry_rest.calc_line_lum_rest_optical, SED_fit_params, line_names, frame, \
             flux_contamination_params, dust_author_year, dust_law, dust_origin, medium_bands_only, rest_optical_wavs, rest_UV_wav_lims, ref_wav)
 
     # should be generalized slightly more
-    def calc_xi_ion(self, line_names: list = ["Halpha", "[NII]-6583"], flux_contamination_params: dict = {"mu": 0.1}, \
-            fesc_author_year: str = "fesc=0.1", dust_author_year: str = "M99", dust_law: str = "C00", \
-            dust_origin: str = "UV", medium_bands_only: bool = True, rest_optical_wavs = [3_700., 7_000.] * u.AA, \
-            rest_UV_wav_lims = [1_250., 3_000.] * u.AA, ref_wav = 1_500. * u.AA, \
-            SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}):
-        #self.calc_int_line_flux_rest_optical(line_names, dust_author_year, dust_law, dust_origin, medium_bands_only, rest_optical_wavs, SED_fit_params)
-        #self.calc_SED_rest_property(Photometry_rest.calc_fesc_from_beta_phot, SED_fit_params, rest_UV_wav_lims, fesc_author_year)
+    def calc_xi_ion(self, line_names: list = ["Halpha", "[NII]-6583"], flux_contamination_params: dict = {"mu": 0.1}, fesc_author_year: str = "fesc=0.0", \
+            dust_author_year: str = "M99", dust_law: str = "C00", dust_origin: str = "UV", medium_bands_only: bool = True, rest_optical_wavs = [3_700., 7_000.] * u.AA, \
+            rest_UV_wav_lims = [1_250., 3_000.] * u.AA, ref_wav = 1_500. * u.AA, SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}):
+        frame = "obs"
+        self.calc_line_lum_rest_optical(line_names, frame, flux_contamination_params, dust_author_year, dust_law, dust_origin, \
+            medium_bands_only, rest_optical_wavs, rest_UV_wav_lims, ref_wav, SED_fit_params)
+        if "fesc" not in fesc_author_year:
+            self.calc_SED_rest_property(Photometry_rest.calc_fesc_from_beta_phot, SED_fit_params, rest_UV_wav_lims, fesc_author_year)
         self.calc_SED_rest_property(Photometry_rest.calc_xi_ion, SED_fit_params, line_names, flux_contamination_params, fesc_author_year, \
             dust_author_year, dust_law, dust_origin, medium_bands_only, rest_optical_wavs, rest_UV_wav_lims, ref_wav)
 

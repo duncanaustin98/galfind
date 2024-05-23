@@ -137,7 +137,7 @@ class PDF:
         else:
             sample = self.draw_sample(size)
         updated_sample = update_func(sample, **kwargs) #[update_func(val, **kwargs) for val in sample]
-        return self.__class__.from_1D_arr(new_property_name, updated_sample, PDF_kwargs)
+        return self.__class__.from_1D_arr(new_property_name, updated_sample, {**self.kwargs, **PDF_kwargs})
     
     def save_PDF(self, save_path, sample_size = 10_000):
         if hasattr(self, "input_arr"):
