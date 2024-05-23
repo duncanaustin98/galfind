@@ -55,7 +55,7 @@ from .decorators import run_in_dir, hour_timer, email_update
 class Data:
     
     def __init__(self, instrument, im_paths, im_exts, im_pixel_scales, im_shapes, im_zps, wht_paths, wht_exts, rms_err_paths, rms_err_exts, \
-        seg_paths, mask_paths, cluster_mask_path, blank_mask_path, survey, version, cat_path = "", is_blank = True, alignment_band = "F444W", RGB_method = "trilogy"):
+        seg_paths, mask_paths, cluster_mask_path, blank_mask_path, survey, version, cat_path = "", is_blank = True, alignment_band = "F444W", RGB_method = None): # trilogy
         
         # sort dicts from blue -> red bands in ascending wavelength order
         self.im_paths = im_paths # not sure these need to be sorted
@@ -84,7 +84,7 @@ class Data:
             self.cat_path = cat_path
         else:
             raise(Exception(f"cat_path = {cat_path} has type = '{type(cat_path)}', which is not 'str'!"))
-        breakpoint()
+
         # make segmentation maps from image paths if they don't already exist
         for i, (band, seg_path) in enumerate(seg_paths.items()):
             #print(band, seg_path)
