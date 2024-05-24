@@ -31,12 +31,22 @@ def pipeline(surveys, version, instruments, aper_diams, min_flux_pc_errs, forced
 
             #cat.calc_beta_phot()
             #cat.calc_obs_line_flux_rest_optical(["Halpha", "[NII]-6583"])
-            #cat.calc_rest_UV_properties()
             #cat.calc_int_line_flux_rest_optical(["Halpha", "[NII]-6583"])
+
+            # print(cat.SED_rest_properties)
+            for name in ["EW_obs_Halpha_cont_0.0", "flux_Halpha_cont_0.0_obs_M99_C00", "lum_Halpha_cont_0.0_obs_M99_C00", \
+                    "EW_obs_Halpha_cont_0.1", "flux_Halpha_cont_0.1_obs_M99_C00", "lum_Halpha_cont_0.1_obs_M99_C00", "xi_ion_Halpha_cont_0.1_M99_C00_fesc0.0"]:
+                # "continuum_Halpha+[NII]-6583", "EW_rest_Halpha_cont_0.0", "flux_Halpha_cont_0.0_rest_M99_C00", "lum_Halpha_cont_0.0_rest_M99_C00", 
+                cat.del_SED_rest_property(name)
+                print(f"deleted {name}")
             
-            #for name in ["xi_ion_M99_C00_fesc0.1", "Halpha_lum_rest_M99_C00"]:
-            #    cat.del_SED_rest_property(name)
+            # cat.calc_rest_UV_properties(frame = "rest")
+            # cat.calc_rest_UV_properties(frame = "obs")
+            
+            #cat.calc_line_lum_rest_optical(["Halpha", "[NII]-6583"], frame = "rest")
+            #cat.calc_line_lum_rest_optical(["Halpha", "[NII]-6583"], frame = "obs")
             cat.calc_xi_ion()
+            
             print(str(cat))
             print(str(cat[0]))
 
@@ -74,7 +84,7 @@ if __name__ == "__main__":
     aper_diams = [0.32] * u.arcsec
     SED_code_arr = [EAZY()]
     templates_arr = ["fsps_larson"] #["fsps", "fsps_larson", "fsps_jades"]
-    lowz_zmax_arr = [[None]] #[[4., 6., None]]
+    lowz_zmax_arr = [[4., 6., None]] #[[None]] #
     min_flux_pc_errs = [10]
     forced_phot_band = ["F277W", "F356W", "F444W"] # ["F444W"]
     crop_by = "EPOCHS_lowz+z>4.5"

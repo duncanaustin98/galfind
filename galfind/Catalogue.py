@@ -22,6 +22,7 @@ import astropy.units as u
 from tqdm import tqdm
 import time
 import os
+from typing import Union
 
 from .Data import Data
 from .Galaxy import Galaxy, Multiple_Galaxy
@@ -464,38 +465,33 @@ class Catalogue(Catalogue_Base):
         self.calc_beta_phot(rest_UV_wav_lims, SED_fit_params)
         self.calc_SED_rest_property(Photometry_rest.calc_AUV_from_beta_phot, SED_fit_params, rest_UV_wav_lims, ref_wav, conv_author_year)
 
-    def calc_mUV_phot(self, rest_UV_wav_lims = [1_250., 3_000.] * u.AA, ref_wav = 1_500. * u.AA, \
-            SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}):
+    def calc_mUV_phot(self, rest_UV_wav_lims: u.Quantity = [1_250., 3_000.] * u.AA, ref_wav: u.Quantity = 1_500. * u.AA, \
+            SED_fit_params: dict = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}):
         self.calc_SED_rest_property(Photometry_rest.calc_mUV_phot, SED_fit_params, rest_UV_wav_lims, ref_wav)
 
-    def calc_MUV_phot(self, rest_UV_wav_lims = [1_250., 3_000.] * u.AA, ref_wav = 1_500. * u.AA, \
-            SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}):
+    def calc_MUV_phot(self, rest_UV_wav_lims: u.Quantity = [1_250., 3_000.] * u.AA, ref_wav: u.Quantity = 1_500. * u.AA, \
+            SED_fit_params: dict = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}):
         self.calc_SED_rest_property(Photometry_rest.calc_MUV_phot, SED_fit_params, rest_UV_wav_lims, ref_wav)
     
-    def calc_LUV_obs_phot(self, rest_UV_wav_lims = [1_250., 3_000.] * u.AA, ref_wav = 1_500. * u.AA, \
-            SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}):
-        self.calc_SED_rest_property(Photometry_rest.calc_LUV_obs_phot, SED_fit_params, rest_UV_wav_lims, ref_wav)
-    
-    def calc_LUV_int_phot(self, rest_UV_wav_lims = [1_250., 3_000.] * u.AA, ref_wav = 1_500. * u.AA, \
+    def calc_LUV_phot(self, frame: str = "obs", rest_UV_wav_lims = [1_250., 3_000.] * u.AA, ref_wav = 1_500. * u.AA, \
             AUV_beta_conv_author_year = "M99", SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}):
-        self.calc_SED_rest_property(Photometry_rest.calc_LUV_int_phot, SED_fit_params, rest_UV_wav_lims, ref_wav, AUV_beta_conv_author_year)
+        self.calc_SED_rest_property(Photometry_rest.calc_LUV_phot, SED_fit_params, frame, rest_UV_wav_lims, ref_wav, AUV_beta_conv_author_year)
     
-    def calc_SFR_UV_phot(self, rest_UV_wav_lims = [1_250., 3_000.] * u.AA, ref_wav = 1_500. * u.AA, \
-            AUV_beta_conv_author_year = "M99", kappa_UV_conv_author_year = "MD14", \
-            SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}):
-        self.calc_SED_rest_property(Photometry_rest.calc_SFR_UV_phot, SED_fit_params, \
+    def calc_SFR_UV_phot(self, frame: str = "obs", rest_UV_wav_lims: u.Quantity = [1_250., 3_000.] * u.AA, \
+            ref_wav: u.Quantity = 1_500. * u.AA, AUV_beta_conv_author_year: Union[str, None] = "M99", kappa_UV_conv_author_year: str = "MD14", \
+            SED_fit_params: dict = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}):
+        self.calc_SED_rest_property(Photometry_rest.calc_SFR_UV_phot, SED_fit_params, frame, \
             rest_UV_wav_lims, ref_wav, AUV_beta_conv_author_year, kappa_UV_conv_author_year)
     
-    def calc_rest_UV_properties(self, rest_UV_wav_lims = [1_250., 3_000.] * u.AA, ref_wav = 1_500. * u.AA, \
-            AUV_beta_conv_author_year = "M99", kappa_UV_conv_author_year = "MD14", \
-            SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}):
+    def calc_rest_UV_properties(self, frame: str = "obs", rest_UV_wav_lims: u.Quantity = [1_250., 3_000.] * u.AA, \
+            ref_wav: u.Quantity = 1_500. * u.AA, AUV_beta_conv_author_year: Union[str, None] = "M99", kappa_UV_conv_author_year: str = "MD14", \
+            SED_fit_params: dict = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}):
         self.calc_beta_phot(rest_UV_wav_lims, SED_fit_params)
         self.calc_AUV_from_beta_phot(rest_UV_wav_lims, ref_wav, AUV_beta_conv_author_year, SED_fit_params)
         self.calc_mUV_phot(rest_UV_wav_lims, ref_wav, SED_fit_params)
         self.calc_MUV_phot(rest_UV_wav_lims, ref_wav, SED_fit_params)
-        self.calc_LUV_obs_phot(rest_UV_wav_lims, ref_wav, SED_fit_params)
-        self.calc_LUV_int_phot(rest_UV_wav_lims, ref_wav, AUV_beta_conv_author_year, SED_fit_params)
-        self.calc_SFR_UV_phot(rest_UV_wav_lims, ref_wav, AUV_beta_conv_author_year, kappa_UV_conv_author_year, SED_fit_params)
+        self.calc_LUV_phot(frame, rest_UV_wav_lims, ref_wav, AUV_beta_conv_author_year, SED_fit_params)
+        self.calc_SFR_UV_phot(frame, rest_UV_wav_lims, ref_wav, AUV_beta_conv_author_year, kappa_UV_conv_author_year, SED_fit_params)
 
     # Emission line EWs from the rest frame UV photometry
         
@@ -512,21 +508,20 @@ class Catalogue(Catalogue_Base):
     def calc_dust_atten(self, calc_wav: u.Quantity, dust_author_year: str = "M99", dust_law: str = "C00", \
             dust_origin: str = "UV", rest_UV_wav_lims: u.Quantity = [1_250., 3_000.] * u.AA, \
             ref_wav: u.Quantity = 1_500. * u.AA, SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}):
-        assert(all(type(name) == type(None) for name in [dust_author_year, dust_law, dust_origin]))
+        assert(all(type(name) != type(None) for name in [dust_author_year, dust_law, dust_origin]))
         self.calc_AUV_from_beta_phot(rest_UV_wav_lims, ref_wav, dust_author_year, SED_fit_params)
         self.calc_SED_rest_property(Photometry_rest.calc_dust_atten, SED_fit_params, calc_wav, dust_author_year, dust_law, dust_origin, rest_UV_wav_lims, ref_wav)
 
-    def calc_line_flux_rest_optical(self, line_names: list, frame: str, flux_contamination_params: dict = {"mu": 0., "sigma": 0.}, dust_author_year = "M99", \
+    def calc_line_flux_rest_optical(self, line_names: list, frame: str, flux_contamination_params: dict = {"mu": 0.}, dust_author_year = "M99", \
             dust_law = "C00", dust_origin = "UV", medium_bands_only = True, rest_optical_wavs = [3_700., 7_000.] * u.AA, rest_UV_wav_lims = [1_250., 3_000.] * u.AA, \
             ref_wav = 1_500. * u.AA, SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}):
         self.calc_EW_rest_optical(line_names, frame, flux_contamination_params, medium_bands_only, rest_optical_wavs, SED_fit_params)
-        breakpoint()
         if all(type(name) != type(None) for name in [dust_author_year, dust_law, dust_origin]):
             self.calc_dust_atten(line_diagnostics[line_names[0]]["line_wav"], dust_author_year, dust_law, dust_origin, rest_UV_wav_lims, ref_wav, SED_fit_params)
         self.calc_SED_rest_property(Photometry_rest.calc_line_flux_rest_optical, SED_fit_params, line_names, \
             frame, flux_contamination_params, dust_author_year, dust_law, dust_origin, medium_bands_only, rest_optical_wavs)
 
-    def calc_line_lum_rest_optical(self, line_names: list, frame: str, flux_contamination_params: dict = {"mu": 0., "sigma": 0.}, dust_author_year: str = "M99", \
+    def calc_line_lum_rest_optical(self, line_names: list, frame: str, flux_contamination_params: dict = {"mu": 0.}, dust_author_year: str = "M99", \
             dust_law: str = "C00", dust_origin: str = "UV", medium_bands_only = True, rest_optical_wavs = [3_700., 7_000.] * u.AA, \
             rest_UV_wav_lims = [1_250., 3_000.] * u.AA, ref_wav = 1_500. * u.AA, SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}):
         self.calc_line_flux_rest_optical(line_names, frame, flux_contamination_params, dust_author_year, dust_law, \

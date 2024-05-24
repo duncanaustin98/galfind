@@ -242,7 +242,7 @@ def flux_to_luminosity(flux, wavs, z = None, cosmo = astropy_cosmo, out_units = 
     lum_distance = calc_lum_distance(z, cosmo)
     if z == None:
         z = 0.
-    return (4 * np.pi * flux * lum_distance ** 2 / (1. + z)).to(out_units)
+    return (4 * np.pi * flux * lum_distance ** 2 * (1. + z)).to(out_units)
         
 def calc_lum_distance(z, cosmo = astropy_cosmo):
     if z == None or z == 0. or z == 0:

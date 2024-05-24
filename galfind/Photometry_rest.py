@@ -18,6 +18,7 @@ import matplotlib.pyplot as plt
 from scipy.interpolate import interp1d
 from scipy.optimize import curve_fit
 from abc import ABC
+from typing import Union
 
 from . import config, galfind_logger, astropy_cosmo, Photometry, PDF, PDF_nD
 from . import useful_funcs_austind as funcs
@@ -207,6 +208,7 @@ class Photometry_rest(Photometry):
                         rest_UV_phot.flux_Jy_errs.value] * rest_UV_phot.flux_Jy_errs.unit, u.erg / (u.s * u.AA * u.cm ** 2))
                     return curve_fit(beta_fit_func, None, f_lambda, sigma = f_lambda_errs[0], maxfev = maxfev)[0]
             else:
+                # if it has already been calculated, load from saved PDF - not yet implemented
                 assert type(beta_fit_func) == type(None)
                 scattered_rest_UV_phot_arr = rest_UV_phot.scatter_phot(iters)
                 beta_fit_func = beta_fit(rest_UV_phot.z, rest_UV_phot.instrument.bands).beta_slope_power_law_func_conv_filt
@@ -237,7 +239,8 @@ class Photometry_rest(Photometry):
     def calc_AUV_from_beta_phot(self, rest_UV_wav_lims, ref_wav, conv_author_year, extract_property_name = False):
         conv_author_year_cls = globals()[conv_author_year]
         assert issubclass(conv_author_year_cls, AUV_from_beta)
-        property_name = f"A{ref_wav.to(u.AA).value:.0f}_{conv_author_year}" #_{self.rest_UV_wavs_name(rest_UV_wav_lims)}"
+        UV_dust_label = self._get_UV_dust_label(conv_author_year)
+        property_name = f"A{ref_wav.to(u.AA).value:.0f}{UV_dust_label}" #_{self.rest_UV_wavs_name(rest_UV_wav_lims)}"
         if extract_property_name:
             return property_name
         # if already stored in object, do nothing
@@ -247,8 +250,6 @@ class Photometry_rest(Photometry):
         else: # calculate AUV in the relevant rest-frame UV range
             beta_property_name = self.calc_beta_phot(rest_UV_wav_lims)[1]
             # update PDF
-            # if property_name == 'A1500_Meurer99_[1250,3000]AA':
-            #     breakpoint()
             self.property_PDFs[property_name] = self.property_PDFs[beta_property_name].manipulate_PDF(property_name, conv_author_year_cls())
             self._update_properties_from_PDF(property_name)
         return self, property_name
@@ -284,12 +285,15 @@ class Photometry_rest(Photometry):
             mUV_property_name = self.calc_mUV_phot(rest_UV_wav_lims, ref_wav)[1]
             self.property_PDFs[property_name] = self.property_PDFs[mUV_property_name] \
                 .manipulate_PDF(property_name, lambda mUV:  mUV.unit * (mUV.value - \
-                5. * np.log10(self.lum_distance.value / 10.) + 2.5 * np.log10(1. + self.z)))
+                5. * np.log10(funcs.calc_lum_distance(self.z).to(u.pc).value / 10.) + 2.5 * np.log10(1. + self.z)))
             self._update_properties_from_PDF(property_name)
         return self, property_name
     
-    def calc_LUV_obs_phot(self, rest_UV_wav_lims, ref_wav, extract_property_name = False):
-        property_name = f"Lobs_{ref_wav.to(u.AA).value:.0f}" #_{self.rest_UV_wavs_name(rest_UV_wav_lims)}"
+    def calc_LUV_phot(self, frame: str, rest_UV_wav_lims: u.Quantity = [1_250., 3_000.] * u.AA, \
+            ref_wav: u.Quantity = 1_500. * u.AA, dust_author_year: Union[str, None] = "M99", extract_property_name: bool = False):
+        assert(frame in ["rest", "obs"])
+        UV_dust_label = self._get_UV_dust_label(dust_author_year)
+        property_name = f"L{frame}_{ref_wav.to(u.AA).value:.0f}{UV_dust_label}" #_{self.rest_UV_wavs_name(rest_UV_wav_lims)}"
         if extract_property_name:
             return property_name
         # if already stored in object, do nothing
@@ -297,31 +301,28 @@ class Photometry_rest(Photometry):
                 and property_name in self.property_PDFs.keys():
             galfind_logger.debug(f"{property_name=} already calculated!")
         else: # calculate observed LUV in the relevant rest-frame UV range
+            AUV_property_name = self.calc_AUV_from_beta_phot(rest_UV_wav_lims, ref_wav, dust_author_year)[1]
             mUV_property_name = self.calc_mUV_phot(rest_UV_wav_lims, ref_wav)[1]
-            self.property_PDFs[property_name] = self.property_PDFs[mUV_property_name].manipulate_PDF(property_name, \
-                funcs.flux_to_luminosity, wavs = np.full(len(self.property_PDFs[mUV_property_name]), ref_wav), z = self.z, out_units = u.erg / (u.s * u.Hz))
+            if frame == "rest":
+                z = 0.
+                wavs = np.full(len(self.property_PDFs[mUV_property_name]), ref_wav)
+            else: # frame == "obs"
+                z = self.z
+                wavs = np.full(len(self.property_PDFs[mUV_property_name]), ref_wav * (1. + self.z))
+            UV_lum = self.property_PDFs[mUV_property_name].manipulate_PDF(property_name, \
+                funcs.flux_to_luminosity, wavs = wavs, z = z, out_units = u.erg / (u.s * u.Hz))
+            if UV_dust_label == "":
+                self.property_PDFs[property_name] == UV_lum
+            else: # dust correct
+                self.property_PDFs[property_name] = UV_lum.manipulate_PDF(property_name, \
+                    funcs.dust_correct, dust_mag = self.property_PDFs[AUV_property_name].input_arr)
             self._update_properties_from_PDF(property_name)
         return self, property_name
 
-    def calc_LUV_int_phot(self, rest_UV_wav_lims, ref_wav, AUV_beta_conv_author_year, extract_property_name = False):
-        property_name = f"Lint_{ref_wav.to(u.AA).value:.0f}_{AUV_beta_conv_author_year}"
-        if extract_property_name:
-            return property_name
-        # if already stored in object, do nothing
-        if property_name in self.properties.keys() and property_name in self.property_errs.keys() \
-                and property_name in self.property_PDFs.keys():
-            galfind_logger.debug(f"{property_name=} already calculated!")
-        else: # calculate intrinsic LUV in the relevant rest-frame UV range
-            LUV_obs_property_name = self.calc_LUV_obs_phot(rest_UV_wav_lims, ref_wav)[1]
-            AUV_property_name = self.calc_AUV_from_beta_phot(rest_UV_wav_lims, ref_wav, AUV_beta_conv_author_year)[1]
-            self.property_PDFs[property_name] = self.property_PDFs[LUV_obs_property_name] \
-                .manipulate_PDF(property_name, funcs.dust_correct, dust_mag = self.property_PDFs[AUV_property_name].input_arr)
-            self._update_properties_from_PDF(property_name)
-        return self, property_name
-
-    def calc_SFR_UV_phot(self, rest_UV_wav_lims, ref_wav, AUV_beta_conv_author_year, kappa_UV_conv_author_year, extract_property_name = False):
+    def calc_SFR_UV_phot(self, frame, rest_UV_wav_lims, ref_wav, dust_author_year, kappa_UV_conv_author_year, extract_property_name = False):
         assert kappa_UV_conv_author_year in SFR_conversions.keys()
-        property_name = f"SFR_{ref_wav.to(u.AA).value:.0f}_{AUV_beta_conv_author_year}_{kappa_UV_conv_author_year}" #_{self.rest_UV_wavs_name(rest_UV_wav_lims)}"
+        UV_dust_label = self._get_UV_dust_label(dust_author_year)
+        property_name = f"SFR{frame}_{ref_wav.to(u.AA).value:.0f}{UV_dust_label}_{kappa_UV_conv_author_year}" #_{self.rest_UV_wavs_name(rest_UV_wav_lims)}"
         if extract_property_name:
             return property_name
         # if already stored in object, do nothing
@@ -329,9 +330,9 @@ class Photometry_rest(Photometry):
                 and property_name in self.property_PDFs.keys():
             galfind_logger.debug(f"{property_name=} already calculated!")
         else: # calculate UV SFR in the relevant rest-frame UV range
-            LUV_int_property_name = self.calc_LUV_int_phot(rest_UV_wav_lims, ref_wav, AUV_beta_conv_author_year)[1]
-            self.property_PDFs[property_name] = self.property_PDFs[LUV_int_property_name] \
-                .manipulate_PDF(property_name, lambda LUV_int: LUV_int * SFR_conversions[kappa_UV_conv_author_year])
+            LUV_property_name = self.calc_LUV_phot(frame, rest_UV_wav_lims, ref_wav, dust_author_year)[1]
+            self.property_PDFs[property_name] = self.property_PDFs[LUV_property_name] \
+                .manipulate_PDF(property_name, lambda LUV: LUV * SFR_conversions[kappa_UV_conv_author_year])
             self._update_properties_from_PDF(property_name)
         return self, property_name
     
@@ -454,7 +455,7 @@ class Photometry_rest(Photometry):
     #     #return self.calc_dust_atten(line_diagnostics[line_name]["line_wav"].to(u.AA), dust_author_year, dust_law, )
     #     # include option to include additional dust attenuation from birth clouds here!
 
-    def calc_line_flux_rest_optical(self, line_names: list, frame: str = "obs", flux_contamination_params: dict = {"mu": 0., "sigma": 0.}, dust_author_year: str = "M99", dust_law: str = "C00", \
+    def calc_line_flux_rest_optical(self, line_names: list, frame: str = "obs", flux_contamination_params: dict = {"mu": 0.}, dust_author_year: str = "M99", dust_law: str = "C00", \
             dust_origin: str = "UV", medium_bands_only: bool = True, rest_optical_wavs: u.Quantity = [3_700., 7_000.] * u.AA, rest_UV_wav_lims: u.Quantity = [1_250., 3_000.] * u.AA, \
             ref_wav: u.Quantity = 1_500. * u.AA, iters: int = 10, out_units: u.Unit = u.erg / (u.s * u.AA * u.cm ** 2), extract_property_name: bool = False):
         assert all(line_name in line_diagnostics.keys() for line_name in line_names)
@@ -478,7 +479,8 @@ class Photometry_rest(Photometry):
             if frame == "rest":
                 band_wav /= (1. + self.z)
             PDF_kwargs = {**self.property_PDFs[cont_name].kwargs, **self.property_PDFs[A_line_name].kwargs}
-            line_flux_PDF = self.property_PDFs[EW_name].manipulate_PDF("line_flux", lambda EW: EW.to(u.AA) * funcs.convert_mag_units(band_wav, self.property_PDFs[cont_name].input_arr, out_units), PDF_kwargs)
+            line_flux_PDF = self.property_PDFs[EW_name].manipulate_PDF("line_flux", lambda EW: EW.to(u.AA) * \
+                funcs.convert_mag_units(band_wav, self.property_PDFs[cont_name].input_arr, out_units), PDF_kwargs)
             if dust_label == "":
                 self.property_PDFs[property_name] = line_flux_PDF
             else:
@@ -486,7 +488,7 @@ class Photometry_rest(Photometry):
             self._update_properties_from_PDF(property_name)
         return self, property_name
     
-    def calc_line_lum_rest_optical(self, line_names: list, frame: str = "obs", flux_contamination_params: dict = {"mu": 0., "sigma": 0.}, dust_author_year: str = "M99", \
+    def calc_line_lum_rest_optical(self, line_names: list, frame: str = "obs", flux_contamination_params: dict = {"mu": 0.}, dust_author_year: str = "M99", \
             dust_law: str = "C00", dust_origin: str = "UV", medium_bands_only = True, rest_optical_wavs: u.Quantity = [3_700., 7_000.] * u.AA, rest_UV_wav_lims: \
             u.Quantity = [1_250., 3_000.] * u.AA, ref_wav: u.Quantity = 1_500. * u.AA, iters: int = 10, out_units: u.Unit = u.erg / u.s, extract_property_name = False):
         dust_label = self._get_dust_corr_label(dust_author_year = dust_author_year, dust_law = dust_law, dust_origin = dust_origin)
@@ -503,14 +505,16 @@ class Photometry_rest(Photometry):
             if type(self.property_PDFs[line_flux_property_name]) == type(None):
                 self._update_properties_and_PDFs(property_name, None)
                 return self, property_name
-            if frame == "obs":
-                lum_distance = funcs.calc_lum_distance(z = 0)
-            else: # frame == "rest"
-                lum_distance = funcs.calc_lum_distance(z = self.z)
+            if frame == "rest":
+                z = 0.
+                lum_distance = funcs.calc_lum_distance(z = z)
+            else: # frame == "obs"
+                z = self.z
+                lum_distance = funcs.calc_lum_distance(z = z)
             PDF_kwargs = {**self.property_PDFs[line_flux_property_name].kwargs, **{"cont_line_names": line_names[1:]}, \
                 **{f"flux_contamination_params_{key}": value for key, value in flux_contamination_params.items()}}
             self.property_PDFs[property_name] = self.property_PDFs[line_flux_property_name].manipulate_PDF(property_name, \
-                lambda int_line_flux: (4 * np.pi * int_line_flux * lum_distance ** 2).to(u.erg / u.s), PDF_kwargs)
+                lambda line_flux: (4 * np.pi * line_flux * lum_distance ** 2 / (1. + z)).to(u.erg / u.s), PDF_kwargs)
             self._update_properties_from_PDF(property_name)
         return self, property_name
 
@@ -518,7 +522,7 @@ class Photometry_rest(Photometry):
             dust_author_year: str = "M99", dust_law: str = "C00", dust_origin: str = "UV", medium_bands_only: bool = True, \
             rest_optical_wavs: u.Quantity = [3_700., 7_000.] * u.AA, rest_UV_wav_lims: u.Quantity = [1_250., 3_000.] * u.AA, \
             ref_wav: u.Quantity = 1_500. * u.AA, iters: int = 10, extract_property_name: bool = False):
-        frame = "obs"
+        frame = "rest"
         assert "Halpha" in line_names
         flux_contam_label = self._get_rest_optical_flux_contam_label(line_names, flux_contamination_params)
         dust_label = self._get_dust_corr_label(dust_author_year = dust_author_year, dust_law = dust_law, dust_origin = dust_origin)
@@ -543,29 +547,35 @@ class Photometry_rest(Photometry):
                 raise NotImplementedError
             line_lum_property_name = self.calc_line_lum_rest_optical(line_names, frame, flux_contamination_params, dust_author_year, \
                 dust_law, dust_origin, medium_bands_only, rest_optical_wavs, rest_UV_wav_lims, ref_wav, iters = iters)[1]
-            L_UV_int_property_name = self.calc_LUV_int_phot(rest_UV_wav_lims = rest_UV_wav_lims, ref_wav = ref_wav, AUV_beta_conv_author_year = dust_author_year)[1]
-            if any(type(self.property_PDFs[_property_name]) == type(None) for _property_name in [line_lum_property_name, L_UV_int_property_name]):
+            L_UV_property_name = self.calc_LUV_phot(frame = frame, rest_UV_wav_lims = rest_UV_wav_lims, ref_wav = ref_wav, dust_author_year = dust_author_year)[1]
+            if any(type(self.property_PDFs[_property_name]) == type(None) for _property_name in [line_lum_property_name, L_UV_property_name]):
                 self._update_properties_and_PDFs(property_name, None)
                 return self, property_name
             assert self.property_PDFs[line_lum_property_name].kwargs["cont_line_names"] == line_names[1:]
             # calculate xi_ion from Halpha luminosity
-            PDF_kwargs = self.property_PDFs[L_UV_int_property_name].kwargs
+            PDF_kwargs = self.property_PDFs[L_UV_property_name].kwargs
             self.property_PDFs[property_name] = self.property_PDFs[line_lum_property_name].manipulate_PDF(property_name, \
                 lambda int_line_lum: (int_line_lum / (1.36e-12 * u.erg * (1. - fesc_chain) * \
-                self.property_PDFs[L_UV_int_property_name].input_arr)).to(u.Hz / u.erg), PDF_kwargs)
+                self.property_PDFs[L_UV_property_name].input_arr)).to(u.Hz / u.erg), PDF_kwargs)
             self._update_properties_from_PDF(property_name)
         return self, property_name
         # assumes some case for ISM recombination
     
     # Rest optical line property naming functions
 
-    def _get_dust_corr_label(self, dust_author_year: str, dust_law: str, dust_origin: str):
+    def _get_UV_dust_label(self, dust_author_year: Union[str, None]):
+        if type(dust_author_year) == type(None):
+            return ""
+        else:
+            return f"_{dust_author_year}"
+
+    def _get_dust_corr_label(self, dust_author_year: Union[str, None], dust_law: Union[str, None], dust_origin: str):
         if dust_origin != "UV":
             raise NotImplementedError
         if any(type(dust_name) == type(None) for dust_name in [dust_author_year, dust_law]):
             return ""
         else:
-            return f"_{dust_author_year}_{dust_law}"
+            return f"{self._get_UV_dust_label(dust_author_year)}_{dust_law}"
 
     def _get_rest_optical_flux_contam_label(self, line_names: list, flux_contamination_params: dict):
         assert all(line_name in line_diagnostics.keys() for line_name in line_names)
