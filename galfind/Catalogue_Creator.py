@@ -152,7 +152,7 @@ class GALFIND_Catalogue_Creator(Catalogue_Creator):
         return labels
     
     # overriding load_photometry from parent class to include .T[aper_diam_index]'s
-    def load_photometry(self, fits_cat, bands):
+    def load_photometry(self, fits_cat, bands, null_data_val = 0.):
         zero_points = self.load_zero_points(bands)
         phot_labels, err_labels = self.phot_labels(bands)
         assert len(phot_labels) == len(err_labels), galfind_logger.critical("Length of photometry and error labels inconsistent!")
@@ -168,13 +168,27 @@ class GALFIND_Catalogue_Creator(Catalogue_Creator):
             raise(Exception("Beware that mag errors are asymmetric! FUNCTIONALITY NOT YET INCORPORATED!"))
             phot = funcs.mag_to_flux(fits_cat[phot_labels], u.Jy.to(u.ABmag))
             phot_err = funcs.mag_to_flux # this doesn't currently work!
+        assert len(phot[0]) == len(bands)
+
+        if len(bands) > 1:
+            # for each galaxy remove bands that have no data
+            gal_bands = [[band for val, band in zip(gal_phot, bands) if val != null_data_val] for gal_phot in phot]
+            _phot = np.array([np.array([val for val in gal_phot if val != null_data_val] * u.Jy) for gal_phot in phot.to(u.Jy).value])
+            _phot_err = np.array([np.array([err for val, err in zip(gal_phot, gal_phot_err) \
+                if val != null_data_val] * u.Jy) for gal_phot, gal_phot_err in zip(phot.to(u.Jy).value, phot_err.to(u.Jy).value)])
+        else:
+            gal_bands = [bands for i in range(len(phot))]
+            _phot = phot
+            _phot_err = phot_err
 
         # mask these arrays based on whether or not each band is masked for each galaxy
         masked_arr = self.load_mask(fits_cat, bands)
         assert masked_arr.shape == phot.shape, galfind_logger.critical("Length of mask arr and photometry is inconsistent!")
-        phot = Masked(phot, mask = masked_arr)
-        phot_err = Masked(phot_err, mask = masked_arr)
-        return phot, phot_err
+        if len(masked_arr) > 1:
+            masked_arr = np.array([[mask for val, mask in zip(gal_phot, gal_mask) if val != null_data_val] for gal_phot, gal_mask in zip(phot, masked_arr)])
+        phot = [Masked(gal_phot, mask = gal_mask) for gal_phot, gal_mask in zip(_phot, masked_arr)] #Masked(_phot, mask = masked_arr)
+        phot_err = [Masked(gal_phot_err, mask = gal_mask) for gal_phot_err, gal_mask in zip(_phot_err, masked_arr)] #Masked(_phot_err, mask = masked_arr)
+        return phot, phot_err, gal_bands
     
     def load_mask(self, fits_cat, bands):
         band_mask_labels = self.mask_labels(bands)
