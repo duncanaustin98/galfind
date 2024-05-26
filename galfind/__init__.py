@@ -97,8 +97,18 @@ from . import NIRCam_aperture_corrections as NIRCam_aper_corr
 from . import Depths
 from .PDF import PDF, Redshift_PDF, PDF_nD
 from .Filter import Filter
-from .Data import Data
 from .Instrument import Instrument, ACS_WFC, WFC3_IR, NIRCam, MIRI, Combined_Instrument
+
+# ordered band names from blue -> red
+#config.set("Other", "ALL_BANDS", json.dumps(["F435W","FR459M","F475W","F550M","F555W","F606W","F625W","FR647M","F070W","F775W","F814W","F850LP",
+#             "F090W","FR914M","F098M","F105W","F110W","F115W","F125W","F127M","F139M","F140W","F140M","F150W","F153M","F160W","F162M","F182M",
+#             "F200W","F210M","F250M","F277W","F300M","F335M","F356W","F360M","F410M","F430M","F444W","F460M","F480M","F560W","F770W","F1000W","F1130W","F1280W","F1500W","F1800W","F2100W","F2550W"]))
+all_bands = np.hstack([subcls().bands for subcls in Instrument.__subclasses__() if subcls.__name__ != "Combined_Instrument"])
+# sort bands blue -> red based on central wavelength
+all_band_names = [band.band_name for band in sorted(all_bands, key = lambda band: band.WavelengthCen.to(u.AA).value)]
+config.set("Other", "ALL_BANDS", json.dumps(all_band_names))
+
+from .Data import Data
 from .Photometry import Photometry, Multiple_Photometry, Mock_Photometry
 from .Photometry_obs import Photometry_obs, Multiple_Photometry_obs
 from .Photometry_rest import Photometry_rest
@@ -124,13 +134,6 @@ from . import lyman_alpha_damping_wing
 from .DLA import DLA
 from .Dust_Attenuation import Dust_Attenuation, C00
 from .Spectrum import Spectral_Catalogue, Spectrum, NIRSpec, Spectral_Instrument, Spectral_Filter, Spectral_Grating
-
-# ordered band names from blue -> red
-config.set("Other", "ALL_BANDS", json.dumps(["F435W","FR459M","F475W","F550M","F555W","F606W","F625W","FR647M","F070W","F775W","F814W","F850LP",
-             "F090W","FR914M","F098M","F105W","F110W","F115W","F125W","F127M","F139M","F140W","F140M","F150W","F153M","F160W","F162M","F182M",
-             "F200W","F210M","F250M","F277W","F300M","F335M","F356W","F360M","F410M","F430M","F444W","F460M","F480M","F560W","F770W","F1000W","F1130W","F1280W","F1500W","F1800W","F2100W","F2550W"]))
-# print(np.array([getattr(globals()[subcls.__class__.__name__], subcls.__class__.__name__)() for subcls in Instrument.__subclasses__()]).flatten())
-# config.set("Other", "ALL_BANDS", json.dumps(np.array([subcls().band_names for subcls in Instrument.__subclasses__]).flatten()))
 
 # dynamically add Galaxy selection methods to Catalogue class?
 

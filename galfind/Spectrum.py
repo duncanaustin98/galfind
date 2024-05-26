@@ -14,8 +14,6 @@ from pathlib import Path
 from astropy.io import fits
 from tqdm import tqdm
 from astropy.table import Table
-import msaexp.spectrum
-from msaexp import msa
 import os
 
 if TYPE_CHECKING:
@@ -214,6 +212,7 @@ class Spectrum:
 
     @classmethod
     def from_DJA(cls, url_path: str, save: bool = True, version: str = "v2") -> Self:
+        import msaexp.spectrum
         # open 2D spectrum
         loc_2D_path = url_path.replace(config['Spectra']['DJA_WEB_DIR'], config['Spectra']['DJA_2D_SPECTRA_DIR'])
         if not Path(loc_2D_path).is_file():
@@ -277,6 +276,7 @@ class Spectrum:
             MSA_metafile_name, meta = {name: header[name] for name in header})
 
     def load_MSA_metafile(self):
+        from msaexp import msa
         if not hasattr(self, "MSA_metafile"):
             try:
                 self.MSA_metafile = msa.MSAMetafile(self.MSA_metafile_name)
