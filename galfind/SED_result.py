@@ -37,7 +37,7 @@ class SED_result:
         self.SED = SED
         self.phot_rest = Photometry_rest.from_phot(phot, self.z)
 
-    def __str__(self, print_phot_rest = False, print_PDFs = False, print_SED = True):
+    def __str__(self, print_phot_rest = True, print_PDFs = True, print_SED = True):
         line_sep = "*" * 40 + "\n"
         band_sep = "-" * 10 + "\n"
         output_str = line_sep
@@ -61,8 +61,7 @@ class SED_result:
             output_str += str(self.SED)
         # phot rest should really be contained in self.SED
         if print_phot_rest:
-            for phot_rest in self.phot_rest.values():
-                output_str += str(phot_rest)
+            output_str += self.phot_rest.__str__(print_PDFs)
         output_str += line_sep
         return output_str
     

@@ -291,7 +291,7 @@ class Galaxy:
         # update SED_fit_params with appropriate lowz_zmax
         SED_fit_params_arr = [SED_fit_params["code"].update_lowz_zmax(SED_fit_params, self.phot.SED_results) for SED_fit_params in SED_fit_params_arr]
         zPDF_plot_SED_fit_params_arr = [SED_fit_params["code"].update_lowz_zmax(SED_fit_params, self.phot.SED_results) for SED_fit_params in zPDF_plot_SED_fit_params_arr] 
-        
+
         zPDF_labels = [f"{SED_fit_params['code'].label_from_SED_fit_params(SED_fit_params)} PDF" for SED_fit_params in zPDF_plot_SED_fit_params_arr]
         # reset parameters
         for ax_, label in zip(PDF_ax, zPDF_labels):
@@ -320,7 +320,7 @@ class Galaxy:
                     auto_scale = False, plot_errs = {"x": False, "y": False}, errorbar_kwargs = errorbar_kwargs, \
                     label = None, filled = False, colour = SED_colours[key])
                 #ax_photo.scatter(band_wavs_lowz, band_mags_lowz, edgecolors=eazy_color_lowz, marker='o', facecolor='none', s=80, zorder=4.5)               
-            self.phot.plot_phot(phot_ax, wav_units = wav_unit, mag_units = flux_unit, annotate = False, auto_scale = True, label_SNRs = True)
+            self.phot.plot_phot(phot_ax, wav_unit, flux_unit, annotate = False, auto_scale = True, label_SNRs = True)
             # photometry axis title
             phot_ax.set_title(f"{data.survey} {self.ID} ({data.version})")
             # plot rejected reasons somewhere
@@ -416,6 +416,8 @@ class Galaxy:
     #             if update:
     #                 self.selection_flags[selection_name] = False
     #     return self, selection_name
+
+    # Masking Selection
     
     def select_unmasked_instrument(self, instrument, update = True):
         assert(issubclass(instrument.__class__, Instrument))
@@ -435,6 +437,56 @@ class Galaxy:
                 if update:
                     self.selection_flags[selection_name] = False
         return self, selection_name
+    
+    # Galaxy photometry property selection
+
+    def select_phot_galaxy_property(self, property_name, gtr_or_less, property_lim, SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}, update = True):
+        key = SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)
+        assert(property_name in self.phot.SED_results[key].properties.keys())
+        galfind_logger.warning("Ideally need to include appropriate units for photometric galaxy property selection")
+        assert(type(property_lim) in [int, float])
+        assert(gtr_or_less in ["gtr", "less", ">", "<"])
+        if gtr_or_less in ["gtr", ">"]:
+            selection_name = f"{property_name}>{property_lim}"
+        else:
+            selection_name = f"{property_name}<{property_lim}"
+        if selection_name in self.selection_flags.keys():
+            galfind_logger.debug(f"{selection_name} already performed for galaxy ID = {self.ID}!")
+        else:
+            property_val = self.phot.SED_results[key].properties[property_name]
+            if ((gtr_or_less in ["gtr", ">"] and property_val > property_lim) or (gtr_or_less in ["less", "<"] and property_val < property_lim)):
+                if update:
+                    self.selection_flags[selection_name] = True
+            else:
+                if update:
+                    self.selection_flags[selection_name] = False
+        return self, selection_name
+
+    def select_phot_galaxy_property_bin(self, property_name, property_lims, SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}, update = True):
+        key = SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)
+        assert(property_name in self.phot.SED_results[key].properties.keys())
+        galfind_logger.warning("Ideally need to include appropriate units for photometric galaxy property selection")
+        assert(type(property_lims) in [np.ndarray, list])
+        assert(len(property_lims) == 2)
+        assert(property_lims[1] > property_lims[0])
+        selection_name = f"{property_lims[0]}<{property_name}<{property_lims[1]}"
+        if selection_name in self.selection_flags.keys():
+            galfind_logger.debug(f"{selection_name} already performed for galaxy ID = {self.ID}!")
+        else:
+            property_val = self.phot.SED_results[key].properties[property_name]
+            if property_val > property_lims[0] and property_val < property_lims[1]:
+                if update:
+                    self.selection_flags[selection_name] = True
+            else:
+                if update:
+                    self.selection_flags[selection_name] = False
+        return self, selection_name
+    
+    # Rest-frame photometry property selection
+
+
+
+    # Photometric SNR selection
         
     def phot_bluewards_Lya_non_detect(self, SNR_lim, SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}, update = True):
         assert(type(SNR_lim) in [int, float])
@@ -877,7 +929,7 @@ class Galaxy:
             return self, selection_name
         
         selection_names = [
-            self.select_unmasked_instrument(mask_instrument)[1], # unmasked in NIRCam
+            self.select_unmasked_instrument(mask_instrument)[1], # unmasked in all NIRCam bands
             self.phot_bluewards_Lya_non_detect(2., SED_fit_params)[1], # 2σ non-detected in all bands bluewards of Lyα
             self.phot_redwards_Lya_detect([5., 3.], SED_fit_params, widebands_only = True)[1], # 5σ/3σ detected in first/second band redwards of Lyα
             self.select_chi_sq_lim(3., SED_fit_params, reduced = True)[1], # χ^2_red < 3
@@ -885,7 +937,7 @@ class Galaxy:
             self.select_robust_zPDF(0.6, 0.1, SED_fit_params)[1] # 60% of redshift PDF must lie within z ± z * 0.1
         ]
 
-        if allow_lowz:
+        if not allow_lowz:
             selection_names.append(self.phot_SNR_crop(0, 2., "non_detect")[1]) # 2σ non-detected in first band
 
         # if the galaxy passes all criteria
@@ -908,17 +960,27 @@ class Galaxy:
         key = SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)
         save_path = f"{save_dir}/{key}/{property_name}/{self.ID}.ecsv"
         funcs.make_dirs(save_path)
-        self.phot.SED_results[key].phot_rest.property_PDFs[property_name].save_PDF(save_path)
+        if type(self.phot.SED_results[key].phot_rest.property_PDFs[property_name]) != type(None):
+            self.phot.SED_results[key].phot_rest.property_PDFs[property_name].save_PDF(save_path)
         
-    def _load_SED_rest_properties(self, PDF_dir, SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}):
-        key = SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)
+    def _load_SED_rest_properties(self, PDF_dir, property_names, SED_fit_params_label = EAZY().label_from_SED_fit_params({"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None})):
         # determine which properties have already been calculated
-        PDF_paths = glob.glob(f"{PDF_dir}/*/{self.ID}.ecsv")
-        for PDF_path in PDF_paths:
-            property_name = PDF_path.split("/")[-2]
-            self.phot.SED_results[key].phot_rest.property_PDFs[property_name] = PDF.from_ecsv(PDF_path)
-            self.phot.SED_results[key].phot_rest._update_properties_from_PDF(property_name)
+        PDF_paths = [f"{PDF_dir}/{property_name}/{self.ID}.ecsv" for property_name in property_names]
+        for PDF_path, property_name in zip(PDF_paths, property_names):
+            self.phot.SED_results[SED_fit_params_label].phot_rest.property_PDFs[property_name] = PDF.from_ecsv(PDF_path)
+            self.phot.SED_results[SED_fit_params_label].phot_rest._update_properties_from_PDF(property_name)
         return self
+    
+    def _del_SED_rest_properties(self, property_names, SED_fit_params_label = EAZY().label_from_SED_fit_params({"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None})):
+        for property_name in property_names:
+            self.phot.SED_results[SED_fit_params_label].phot_rest.property_PDFs.pop(property_name)
+            self.phot.SED_results[SED_fit_params_label].phot_rest.properties.pop(property_name)
+            self.phot.SED_results[SED_fit_params_label].phot_rest.property_errs.pop(property_name)
+        return self
+    
+    def _get_SED_rest_property_names(self, PDF_dir):
+        PDF_paths = glob.glob(f"{PDF_dir}/*/{self.ID}.ecsv")
+        return [path.split("/")[-2] for path in PDF_paths]
 
 class Multiple_Galaxy:
     

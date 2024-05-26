@@ -227,6 +227,12 @@ class Instrument:
         else:
             return nearest_band
     
+    def bands_avoiding_wavs(self, wavs):
+        # extract the unique band names
+        unique_band_names = np.unique(np.array([band.band_name for wav in wavs for band in self.bands_from_wavelength(wav)]))
+        # return an array of Filter objects corresponding to the band names
+        return np.array([self[self.index_from_band_name(band_name)] for band_name in self.band_names if not band_name in unique_band_names])
+    
     @staticmethod
     def from_name(name, excl_bands = []):
         if name == "NIRCam":

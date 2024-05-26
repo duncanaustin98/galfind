@@ -124,7 +124,7 @@ class Dust_Attenuation(ABC):
         ax.set_xlabel(r"$\lambda_{\mathrm{rest}} / \AA $")
         ax.set_ylabel(r"$k(\lambda)$")
 
-class Calzetti00(Dust_Attenuation):
+class C00(Dust_Attenuation):
 
     def __init__(self):
         R_V = 4.05
@@ -188,9 +188,9 @@ class AUV_from_beta(ABC):
         if not ref_wav == self.ref_wav:
             pass
     
-class Meurer99(AUV_from_beta):
+class M99(AUV_from_beta):
     def __init__(self):
-        super().__init__(-4.43 / 1.99, 1. / 1.99, Calzetti00(), 1_600. * u.AA)
+        super().__init__(-4.43 / 1.99, 1. / 1.99, C00(), 1_600. * u.AA)
 
 class Reddy15(AUV_from_beta):
     def __init__(self):
@@ -198,7 +198,7 @@ class Reddy15(AUV_from_beta):
 
 class Reddy18(AUV_from_beta):
     def __init__(self, dust_law = Reddy15_dust_law(), BPASS_age = 100 * u.Myr):
-        assert dust_law.__class__.__name__ in ["SMC", "Calzetti00", "Reddy15"]
+        assert dust_law.__class__.__name__ in ["SMC", "C00", "Reddy15"]
         assert BPASS_age in [100 * u.Myr, 300 * u.Myr]
         beta_int = {100 * u.Myr: -2.520, 300 * u.Myr: -2.616}
         slope = {"Reddy15": 0.55}
