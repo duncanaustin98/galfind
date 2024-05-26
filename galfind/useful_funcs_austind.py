@@ -202,16 +202,16 @@ def luminosity_to_flux(lum, wavs, z = None, cosmo = astropy_cosmo, out_units = u
     # sort out the units
     if u.get_physical_type(lum.unit) == "yank": # i.e. L_λ, Lsun / AA or equivalent
         if u.get_physical_type(out_units) in ["ABmag/spectral flux density", "spectral flux density"]: # f_ν
-            return (lum_lam_to_lum_nu(lum, wavs) * (1 + z) / (4 * np.pi * lum_distance ** 2)).to(out_units)
+            return (lum_lam_to_lum_nu(lum, wavs) / (4 * np.pi * lum_distance ** 2)).to(out_units)
         elif u.get_physical_type(out_units) == "power density/spectral flux density wav": # f_λ
-            return (lum * (1 + z) / (4 * np.pi * lum_distance ** 2)).to(out_units)
+            return (lum / (4 * np.pi * lum_distance ** 2)).to(out_units)
         else:
             raise(Exception(""))
     elif u.get_physical_type(lum.unit) == "energy/torque/work": # i.e L_ν, Lsun / Hz or equivalent
         if u.get_physical_type(out_units) in ["ABmag/spectral flux density", "spectral flux density"]: # f_ν
-            return (lum * (1 + z) / (4 * np.pi * lum_distance ** 2)).to(out_units)
+            return (lum / (4 * np.pi * lum_distance ** 2)).to(out_units)
         elif u.get_physical_type(out_units) == "power density/spectral flux density wav": # f_λ
-            return (lum_nu_to_lum_lam(lum, wavs) * (1 + z) / (4 * np.pi * lum_distance ** 2)).to(out_units)
+            return (lum_nu_to_lum_lam(lum, wavs) / (4 * np.pi * lum_distance ** 2)).to(out_units)
         else:
             raise(Exception(""))
         
@@ -242,7 +242,7 @@ def flux_to_luminosity(flux, wavs, z = None, cosmo = astropy_cosmo, out_units = 
     lum_distance = calc_lum_distance(z, cosmo)
     if z == None:
         z = 0.
-    return (4 * np.pi * flux * lum_distance ** 2 * (1. + z)).to(out_units)
+    return (4 * np.pi * flux * lum_distance ** 2).to(out_units)
         
 def calc_lum_distance(z, cosmo = astropy_cosmo):
     if z == None or z == 0. or z == 0:

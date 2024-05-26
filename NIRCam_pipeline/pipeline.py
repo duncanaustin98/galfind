@@ -25,6 +25,7 @@ def pipeline(surveys, version, instruments, aper_diams, min_flux_pc_errs, forced
             cat = Catalogue.from_pipeline(survey = survey, version = version, instruments = instruments, aper_diams = aper_diams, \
                 cat_creator = cat_creator, SED_fit_params_arr = SED_fit_params_arr, forced_phot_band = forced_phot_band, \
                 excl_bands = excl_bands, loc_depth_min_flux_pc_errs = min_flux_pc_errs, crop_by = crop_by)
+            
             #cat.data.calc_unmasked_area("NIRCam", forced_phot_band = forced_phot_band)
             
             #cat.del_hdu(SED_fit_params_arr[-1]["code"].label_from_SED_fit_params(SED_fit_params_arr[-1]))
@@ -33,29 +34,30 @@ def pipeline(surveys, version, instruments, aper_diams, min_flux_pc_errs, forced
             #cat.calc_obs_line_flux_rest_optical(["Halpha", "[NII]-6583"])
             #cat.calc_int_line_flux_rest_optical(["Halpha", "[NII]-6583"])
 
-            # print(cat.SED_rest_properties)
-            for name in ["EW_obs_Halpha_cont_0.0", "flux_Halpha_cont_0.0_obs_M99_C00", "lum_Halpha_cont_0.0_obs_M99_C00", \
-                    "EW_obs_Halpha_cont_0.1", "flux_Halpha_cont_0.1_obs_M99_C00", "lum_Halpha_cont_0.1_obs_M99_C00", "xi_ion_Halpha_cont_0.1_M99_C00_fesc0.0"]:
-                # "continuum_Halpha+[NII]-6583", "EW_rest_Halpha_cont_0.0", "flux_Halpha_cont_0.0_rest_M99_C00", "lum_Halpha_cont_0.0_rest_M99_C00", 
-                cat.del_SED_rest_property(name)
-                print(f"deleted {name}")
+            # # print(cat.SED_rest_properties)
+            # for name in ["EW_obs_Halpha_cont_0.1", "flux_Halpha_cont_0.1_obs_M99_C00", "lum_Halpha_cont_0.1_obs_M99_C00", "xi_ion_Halpha_cont_0.1_M99_C00_fesc0.0"]:
+            #     # "EW_obs_Halpha_cont_0.0", "flux_Halpha_cont_0.0_obs_M99_C00", "lum_Halpha_cont_0.0_obs_M99_C00", \
+            #     # "continuum_Halpha+[NII]-6583", "EW_rest_Halpha_cont_0.0", "flux_Halpha_cont_0.0_rest_M99_C00", "lum_Halpha_cont_0.0_rest_M99_C00", 
+            #     cat.del_SED_rest_property(name)
+            #     print(f"deleted {name}")
             
-            # cat.calc_rest_UV_properties(frame = "rest")
-            # cat.calc_rest_UV_properties(frame = "obs")
+            #print(str(cat[0]))
+            #cat_copy = cat.select_phot_galaxy_property("z", ">", 4.5)
+            #cat_copy = cat.select_unmasked_instrument(NIRCam())
+            #cat_copy2 = cat.select_EPOCHS(allow_lowz = False)
+
+            cat.calc_rest_UV_properties(frame = "rest")
+            #cat.calc_rest_UV_properties(frame = "obs")
             
             #cat.calc_line_lum_rest_optical(["Halpha", "[NII]-6583"], frame = "rest")
             #cat.calc_line_lum_rest_optical(["Halpha", "[NII]-6583"], frame = "obs")
-            cat.calc_xi_ion()
+            
+            cat.calc_xi_ion() #dust_author_year = None)
             
             print(str(cat))
             print(str(cat[0]))
 
-            #print(str(cat[0]))
-            #cat_copy = cat.select_phot_galaxy_property("z", ">", 4.5)
-            #cat.plot_phot_diagnostics(flux_unit = u.ABmag)
-            #cat_copy = cat.select_unmasked_instrument(NIRCam())
-            #cat_copy = cat.select_EPOCHS(allow_lowz = False)
-            #cat_copy.plot_phot_diagnostics()
+            cat.plot_phot_diagnostics(flux_unit = u.ABmag)
 
             #cat.select_rest_UV_line_emitters_sigma("CIV-1549", 2.) # "CIV-1549"
             
@@ -77,14 +79,14 @@ def make_EAZY_SED_fit_params_arr(SED_code_arr, templates_arr, lowz_zmax_arr):
         for code, templates, lowz_zmaxs in zip(SED_code_arr, templates_arr, lowz_zmax_arr) for lowz_zmax in lowz_zmaxs]
 
 if __name__ == "__main__":
-    version = "v11" #config["DEFAULT"]["VERSION"]
+    version = "v9" #config["DEFAULT"]["VERSION"]
     instruments = ["NIRCam"] #, 'ACS_WFC'] #, 'WFC3_IR']
     cat_type = "loc_depth"
-    surveys = ["JOF"] #[config["DEFAULT"]["SURVEY"]]
+    surveys = ["JADES-Deep-GS+JEMS"] #[config["DEFAULT"]["SURVEY"]]
     aper_diams = [0.32] * u.arcsec
     SED_code_arr = [EAZY()]
     templates_arr = ["fsps_larson"] #["fsps", "fsps_larson", "fsps_jades"]
-    lowz_zmax_arr = [[4., 6., None]] #[[None]] #
+    lowz_zmax_arr = [[None]] # [[4., 6., None]]
     min_flux_pc_errs = [10]
     forced_phot_band = ["F277W", "F356W", "F444W"] # ["F444W"]
     crop_by = "EPOCHS_lowz+z>4.5"

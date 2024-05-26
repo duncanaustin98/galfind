@@ -530,15 +530,14 @@ class Catalogue(Catalogue_Base):
             flux_contamination_params, dust_author_year, dust_law, dust_origin, medium_bands_only, rest_optical_wavs, rest_UV_wav_lims, ref_wav)
 
     # should be generalized slightly more
-    def calc_xi_ion(self, line_names: list = ["Halpha", "[NII]-6583"], flux_contamination_params: dict = {"mu": 0.1}, fesc_author_year: str = "fesc=0.0", \
+    def calc_xi_ion(self, frame: str = "rest", line_names: list = ["Halpha", "[NII]-6583"], flux_contamination_params: dict = {"mu": 0.1}, fesc_author_year: str = "fesc=0.0", \
             dust_author_year: str = "M99", dust_law: str = "C00", dust_origin: str = "UV", medium_bands_only: bool = True, rest_optical_wavs = [3_700., 7_000.] * u.AA, \
             rest_UV_wav_lims = [1_250., 3_000.] * u.AA, ref_wav = 1_500. * u.AA, SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}):
-        frame = "obs"
         self.calc_line_lum_rest_optical(line_names, frame, flux_contamination_params, dust_author_year, dust_law, dust_origin, \
             medium_bands_only, rest_optical_wavs, rest_UV_wav_lims, ref_wav, SED_fit_params)
         if "fesc" not in fesc_author_year:
             self.calc_SED_rest_property(Photometry_rest.calc_fesc_from_beta_phot, SED_fit_params, rest_UV_wav_lims, fesc_author_year)
-        self.calc_SED_rest_property(Photometry_rest.calc_xi_ion, SED_fit_params, line_names, flux_contamination_params, fesc_author_year, \
+        self.calc_SED_rest_property(Photometry_rest.calc_xi_ion, SED_fit_params, frame, line_names, flux_contamination_params, fesc_author_year, \
             dust_author_year, dust_law, dust_origin, medium_bands_only, rest_optical_wavs, rest_UV_wav_lims, ref_wav)
 
     # Global SED rest-frame photometry calculations
@@ -567,7 +566,7 @@ class Catalogue(Catalogue_Base):
         funcs.make_dirs(f"{save_dir}/dummy_path.ecsv")
         [gal._save_SED_rest_PDFs(property_name, save_dir, SED_fit_params) for gal in self]
     
-    def _append_SED_rest_property_to_fits(self, property_name, SED_fit_params_label):
+    def _append_SED_rest_property_to_fits(self, property_name: str, SED_fit_params_label: str, save_kwargs: bool = True):
         try:
             SED_rest_property_tab = self.open_cat(cropped = False, hdu = SED_fit_params_label)
         except FileNotFoundError:
@@ -578,9 +577,9 @@ class Catalogue(Catalogue_Base):
             property_errs = self.__getattr__(property_name, phot_type = "rest", property_type = "errs")
             out_tab = Table({self.cat_creator.ID_label: np.array(self.ID).astype(int), property_name: properties, \
                 f"{property_name}_l1": property_errs[:, 0], f"{property_name}_u1": property_errs[:, 1]}, dtype = [int, float, float, float])
-            out_tab.meta = {f"HIERARCH SED_REST_{property_name}_{'+'.join(self.crops)}": True}
+            out_tab.meta = {f"HIERARCH SED_REST_{property_name}": True}
         # else if these properties have not already been calculated for this galaxy sample
-        elif f"SED_REST_{property_name}_{'+'.join(self.crops)}" not in SED_rest_property_tab.meta.keys():
+        elif f"SED_REST_{property_name}" not in SED_rest_property_tab.meta.keys():
             # ensure this property has not been calculated for a different subset of galaxies in this field
             assert(f"SED_REST_{property_name}" not in ["_".join(label.split("_")[:-(1 + "+".join(self.crops).count("_"))]) for label in SED_rest_property_tab.meta.keys()])
             #galfind_logger.warning("Needs re-writing in the case of the same property being calculated for multiple samples of galaxies in the same field")
@@ -588,14 +587,25 @@ class Catalogue(Catalogue_Base):
             property_errs = self.__getattr__(property_name, phot_type = "rest", property_type = "errs")
             new_SED_rest_property_tab = Table({f"{self.cat_creator.ID_label}_temp": np.array(self.ID).astype(int), property_name: properties, \
                 f"{property_name}_l1": property_errs[:, 0], f"{property_name}_u1": property_errs[:, 1]}, dtype = [int, float, float, float])
-            new_SED_rest_property_tab.meta = {f"HIERARCH SED_REST_{property_name}_{'+'.join(self.crops)}": True}
+            new_SED_rest_property_tab.meta = {f"HIERARCH SED_REST_{property_name}": True}
             out_tab = join(SED_rest_property_tab, new_SED_rest_property_tab, keys_left = \
                 self.cat_creator.ID_label, keys_right = f"{self.cat_creator.ID_label}_temp", join_type = "outer")
             out_tab.remove_column(f"{self.cat_creator.ID_label}_temp")
             out_tab.meta = {**SED_rest_property_tab.meta, **new_SED_rest_property_tab.meta}
         else:
-            galfind_logger.info(f"{property_name}_{'+'.join(self.crops)} already calculated!")
+            galfind_logger.info(f"{property_name} already calculated!")
             return
+        if save_kwargs:
+            #breakpoint()
+            property_PDFs = self.__getattr__(property_name, phot_type = "rest", property_type = "PDFs")
+            kwarg_names = np.unique(np.hstack([list(property_PDF.kwargs.keys()) for property_PDF in property_PDFs if type(property_PDF) != type(None)]))
+            kwargs = {kwarg_name: [property_PDF.kwargs[kwarg_name] if type(property_PDF) != type(None) \
+                else np.nan for property_PDF in property_PDFs] for kwarg_name in kwarg_names}
+            if "Halpha_cont_lines" in kwarg_names:
+                breakpoint()
+            for kwarg_name, kwarg_vals in kwargs.items():
+                if kwarg_name not in out_tab.colnames:
+                    out_tab[kwarg_name] = kwarg_vals
         fits_tab = self.open_cat(cropped = False)
         self.write_cat([fits_tab, out_tab], ["OBJECTS", SED_fit_params_label])
     
@@ -609,11 +619,8 @@ class Catalogue(Catalogue_Base):
         # save the names of properties that have been calculated for this sample of galaxies in the catalogue
         SED_rest_properties_tab = self.open_cat(cropped = False, hdu = key)
         if type(SED_rest_properties_tab) != type(None):
-            n_underscores_in_crops = "+".join(self.crops).count("_")
-            self.SED_rest_properties[key] = list(np.unique([label.replace("SED_REST_", ""). \
-                replace(f"_{'+'.join(self.crops)}", "") for label in SED_rest_properties_tab.meta.keys() \
-                if "SED_REST" == "_".join(label.split("_")[:2]) and \
-                "_".join(label.split("_")[-(1 + n_underscores_in_crops):]) in "+".join(self.crops)]))
+            self.SED_rest_properties[key] = list(np.unique([label.replace("SED_REST_", "") \
+                for label in SED_rest_properties_tab.meta.keys() if "SED_REST" == "_".join(label.split("_")[:2])]))
             # load SED rest properties that have previously been calculated
             PDF_dir = f"{config['PhotProperties']['PDF_SAVE_DIR']}/{self.version}/{self.instrument.name}/{self.survey}/{key}"
             self.gals = [deepcopy(gal)._load_SED_rest_properties(PDF_dir, self.SED_rest_properties[key], key) for gal in self]
@@ -622,13 +629,17 @@ class Catalogue(Catalogue_Base):
         key = SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)
         # SED rest property must exist for this sample
         assert (property_name in self.SED_rest_properties[key])
+        # delete data from fits
+        del_col_names = [property_name, f"{property_name}_l1", f"{property_name}_u1"]
+        del_hdr_names = [f"SED_REST_{property_name}"]
+        self.del_cols_hdrs_from_fits(del_col_names, del_hdr_names, key)
+        # check whether the SED rest property kwargs are included in the catalogue, and if so delete these as well - Not Implemented Yet!
+
+
         # remove data from self, starting with catalogue, then gal for gal in self.gals
         self.SED_rest_properties[key].remove(property_name)
         self.gals = [deepcopy(gal)._del_SED_rest_properties([property_name], key) for gal in self]
-        # delete data from fits
-        del_col_names = [property_name, f"{property_name}_l1", f"{property_name}_u1"]
-        del_hdr_names = [f"SED_REST_{property_name}_{'+'.join(self.crops)}"]
-        self.del_cols_hdrs_from_fits(del_col_names, del_hdr_names, key)
+
 
     def plot_SED_properties(self, x_name, y_name, SED_fit_params):
         x_arr = []

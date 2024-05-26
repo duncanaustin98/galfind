@@ -141,6 +141,9 @@ class Catalogue_Base:
             property_errs_arr = [getattr(gal.phot.SED_results[SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)].phot_rest, "property_errs")[name] \
                 if name in getattr(gal.phot.SED_results[SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)].phot_rest, "property_errs").keys() else [np.nan, np.nan] for gal in self]
             return np.array([property_errs.value if type(property_errs) in [u.Quantity, u.Magnitude] else property_errs for property_errs in property_errs_arr])
+        elif phot_type == "rest" and property_type == "PDFs" and name in self[0].phot.SED_results[SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)].phot_rest.property_errs.keys():
+            return [getattr(gal.phot.SED_results[SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)].phot_rest, "property_PDFs")[name] \
+                if name in getattr(gal.phot.SED_results[SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)].phot_rest, "property_PDFs").keys() else None for gal in self]
         else:
             galfind_logger.critical(f"Galaxies do not have attribute = {name}!")
     
