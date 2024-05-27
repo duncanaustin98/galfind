@@ -122,12 +122,12 @@ class Photometry_obs(Photometry):
         
 class Multiple_Photometry_obs:
     
-    def __init__(self, instrument, flux_Jy_arr, flux_Jy_errs_arr, aper_diam, min_flux_pc_err, loc_depths_arr, SED_results_arr = []):
+    def __init__(self, instrument_arr, flux_Jy_arr, flux_Jy_errs_arr, aper_diam, min_flux_pc_err, loc_depths_arr, SED_results_arr = []):
         # force SED_results_arr to have the same len as the number of input fluxes
         if SED_results_arr == []:
             SED_results_arr = np.full(len(flux_Jy_arr), {})
         self.phot_obs_arr = [Photometry_obs(instrument, flux_Jy, flux_Jy_errs, aper_diam, min_flux_pc_err, loc_depths, SED_results) \
-            for flux_Jy, flux_Jy_errs, loc_depths, SED_results in zip(flux_Jy_arr, flux_Jy_errs_arr, loc_depths_arr, SED_results_arr)]
+            for instrument, flux_Jy, flux_Jy_errs, loc_depths, SED_results in zip(instrument_arr, flux_Jy_arr, flux_Jy_errs_arr, loc_depths_arr, SED_results_arr)]
 
     def __str__(self):
         # string representation of what is stored in this class
@@ -153,10 +153,11 @@ class Multiple_Photometry_obs:
 
     @classmethod
     def from_fits_cat(cls, fits_cat, instrument, cat_creator, SED_fit_params_arr):
-        flux_Jy_arr, flux_Jy_errs_arr = cat_creator.load_photometry(fits_cat, instrument.band_names)
-        depths_arr = cat_creator.load_depths(fits_cat, instrument.band_names)
+        flux_Jy_arr, flux_Jy_errs_arr, gal_bands = cat_creator.load_photometry(fits_cat, instrument.band_names)
+        depths_arr = cat_creator.load_depths(fits_cat, instrument.band_names, gal_bands)
+        instrument_arr = [deepcopy(instrument).remove_bands([band for band in instrument.band_names if band not in bands]) for bands in gal_bands]
         if SED_fit_params_arr != [{}]:
             SED_results_arr = Catalogue_SED_results.from_fits_cat(fits_cat, cat_creator, SED_fit_params_arr, instrument = instrument).SED_results
         else:
             SED_results_arr = np.full(len(flux_Jy_arr), {})
-        return cls(instrument, flux_Jy_arr, flux_Jy_errs_arr, cat_creator.aper_diam, cat_creator.min_flux_pc_err, depths_arr, SED_results_arr)
+        return cls(instrument_arr, flux_Jy_arr, flux_Jy_errs_arr, cat_creator.aper_diam, cat_creator.min_flux_pc_err, depths_arr, SED_results_arr)

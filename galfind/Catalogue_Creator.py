@@ -173,9 +173,9 @@ class GALFIND_Catalogue_Creator(Catalogue_Creator):
         if len(bands) > 1:
             # for each galaxy remove bands that have no data
             gal_bands = [[band for val, band in zip(gal_phot, bands) if val != null_data_val] for gal_phot in phot]
-            _phot = np.array([np.array([val for val in gal_phot if val != null_data_val] * u.Jy) for gal_phot in phot.to(u.Jy).value])
-            _phot_err = np.array([np.array([err for val, err in zip(gal_phot, gal_phot_err) \
-                if val != null_data_val] * u.Jy) for gal_phot, gal_phot_err in zip(phot.to(u.Jy).value, phot_err.to(u.Jy).value)])
+            _phot = np.array([[val for val in gal_phot if val != null_data_val] * u.Jy for gal_phot in phot.to(u.Jy).value])
+            _phot_err = np.array([[err for val, err in zip(gal_phot, gal_phot_err) if val != null_data_val] * u.Jy \
+                for gal_phot, gal_phot_err in zip(phot.to(u.Jy).value, phot_err.to(u.Jy).value)])
         else:
             gal_bands = [bands for i in range(len(phot))]
             _phot = phot
@@ -204,7 +204,7 @@ class GALFIND_Catalogue_Creator(Catalogue_Creator):
             masked_arr = np.full((len(fits_cat), len(bands)), False)
         return masked_arr
     
-    def load_depths(self, fits_cat, bands):
+    def load_depths(self, fits_cat, bands, gal_bands = None):
         depth_labels = self.depth_labels(bands)
         self.has_depths = True
         for label in depth_labels:
@@ -216,7 +216,9 @@ class GALFIND_Catalogue_Creator(Catalogue_Creator):
             depths_arr = funcs.fits_cat_to_np(fits_cat, depth_labels)[:, :, self.aper_diam_index]
         else: # depths given as np.nan
             depths_arr = np.full((len(fits_cat), len(bands)), np.nan)
-        return depths_arr * u.ABmag
+        if type(gal_bands) != type(None):
+            depths_arr = np.array([[depth for depth, band in zip(_gal_depths, _gal_bands) if band in bands] * u.ABmag for _gal_depths, _gal_bands in zip(depths_arr, gal_bands)])
+        return depths_arr
 
 # %% Common catalogue converters
 
