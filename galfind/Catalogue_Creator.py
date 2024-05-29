@@ -13,6 +13,7 @@ import astropy.units as u
 from astropy.table import Table, Row
 import json
 from abc import ABC, abstractmethod
+import time
 
 from . import useful_funcs_austind as funcs
 from . import config, galfind_logger, SED_code, LePhare, EAZY, Bagpipes
@@ -151,8 +152,23 @@ class GALFIND_Catalogue_Creator(Catalogue_Creator):
             in fits_cat.meta.items() if value == True and "SELECTED_" in key]
         return labels
     
+    @staticmethod
+    def load_gal_instr_mask(phot, null_data_val = 0.):
+        # calculate the mask that is used to crop photometry to only bands including data
+        start_time = time.time()
+        gal_instr_mask = [[True if val != null_data_val else False for val in gal_phot] for gal_phot in phot]
+        end_time = time.time()
+        print(f"Making gal_instr_mask took {(end_time - start_time).to(u.s)}")
+        return gal_instr_mask
+
+    @staticmethod
+    def make_gal_instruments(instrument, gal_instr_mask):
+        assert len(instrument) == len(gal_instr_mask[0])
+        unique_instr = {instr_mask: instrument.crop_indices([i for i, bool in enumerate(instr_mask) if not bool]) for instr_mask in np.unique(gal_instr_mask)}
+        return [unique_instr[instr_mask] for instr_mask in gal_instr_mask]
+
     # overriding load_photometry from parent class to include .T[aper_diam_index]'s
-    def load_photometry(self, fits_cat, bands, null_data_val = 0.):
+    def load_photometry(self, fits_cat, bands, gal_band_mask = None):
         zero_points = self.load_zero_points(bands)
         phot_labels, err_labels = self.phot_labels(bands)
         assert len(phot_labels) == len(err_labels), galfind_logger.critical("Length of photometry and error labels inconsistent!")
@@ -171,26 +187,29 @@ class GALFIND_Catalogue_Creator(Catalogue_Creator):
         assert len(phot[0]) == len(bands)
 
         if len(bands) > 1:
+            assert type(gal_band_mask) == type(None)
+            breakpoint()
             # for each galaxy remove bands that have no data
-            gal_bands = [[band for val, band in zip(gal_phot, bands) if val != null_data_val] for gal_phot in phot]
-            _phot = np.array([[val for val in gal_phot if val != null_data_val] * u.Jy for gal_phot in phot.to(u.Jy).value])
-            _phot_err = np.array([[err for val, err in zip(gal_phot, gal_phot_err) if val != null_data_val] * u.Jy \
-                for gal_phot, gal_phot_err in zip(phot.to(u.Jy).value, phot_err.to(u.Jy).value)])
+            gal_band_mask = self.load_gal_instr_mask(phot)
+            _phot = [gal_phot[band_mask] for gal_phot, band_mask in zip(phot, gal_band_mask)]
+            _phot_err = [gal_phot_err[band_mask] for gal_phot_err, band_mask in zip(phot_err, gal_band_mask)]
+            #gal_bands = [[band for val, band in zip(gal_phot, bands) if val != null_data_val] for gal_phot in phot]
+            # _phot = np.array([[val for val in gal_phot if val != null_data_val] * u.Jy for gal_phot in phot.to(u.Jy).value])
+            # _phot_err = np.array([[err for val, err in zip(gal_phot, gal_phot_err) if val != null_data_val] * u.Jy \
+            #     for gal_phot, gal_phot_err in zip(phot.to(u.Jy).value, phot_err.to(u.Jy).value)])
         else:
             gal_bands = [bands for i in range(len(phot))]
             _phot = phot
             _phot_err = phot_err
 
         # mask these arrays based on whether or not each band is masked for each galaxy
-        masked_arr = self.load_mask(fits_cat, bands)
-        assert masked_arr.shape == phot.shape, galfind_logger.critical("Length of mask arr and photometry is inconsistent!")
-        if len(masked_arr) > 1:
-            masked_arr = np.array([[mask for val, mask in zip(gal_phot, gal_mask) if val != null_data_val] for gal_phot, gal_mask in zip(phot, masked_arr)])
+        masked_arr = self.load_mask(fits_cat, bands, gal_bands)
+        #assert masked_arr.shape == phot.shape, galfind_logger.critical("Length of mask arr and photometry is inconsistent!")
         phot = [Masked(gal_phot, mask = gal_mask) for gal_phot, gal_mask in zip(_phot, masked_arr)] #Masked(_phot, mask = masked_arr)
         phot_err = [Masked(gal_phot_err, mask = gal_mask) for gal_phot_err, gal_mask in zip(_phot_err, masked_arr)] #Masked(_phot_err, mask = masked_arr)
-        return phot, phot_err, gal_bands
+        return phot, phot_err, gal_band_mask
     
-    def load_mask(self, fits_cat, bands):
+    def load_mask(self, fits_cat, bands, gal_band_mask = None):
         band_mask_labels = self.mask_labels(bands)
         self.is_masked = True
         for label in band_mask_labels:
@@ -202,6 +221,8 @@ class GALFIND_Catalogue_Creator(Catalogue_Creator):
             masked_arr = np.invert(funcs.fits_cat_to_np(fits_cat, band_mask_labels, reshape_by_aper_diams = False))
         else: # nothing is masked
             masked_arr = np.full((len(fits_cat), len(bands)), False)
+        if type(gal_bands) != type(None):
+            masked_arr = np.array([[mask for band, mask in zip(_gal_bands, _gal_mask) if band in bands] for _gal_bands, _gal_mask in zip(gal_bands, masked_arr)])
         return masked_arr
     
     def load_depths(self, fits_cat, bands, gal_bands = None):
