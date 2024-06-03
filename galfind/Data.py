@@ -960,7 +960,6 @@ class Data:
 
         # load relevant err map paths, preferring rms_err maps if available
         err_map_path, err_map_ext, err_map_type = self.get_err_map(band, prefer = "rms_err")
-
         # SExtractor bash script python wrapper
         process = subprocess.Popen(["./make_seg_map.sh", config['DEFAULT']['GALFIND_WORK'], self.im_paths[band], str(self.im_pixel_scales[band].value), \
                                 str(self.im_zps[band]), self.instrument.instrument_from_band(band).name, self.survey, band, self.version, err_map_path, \
