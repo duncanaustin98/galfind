@@ -12,6 +12,7 @@ import astropy.constants as const
 import astropy.units as u
 from copy import copy, deepcopy
 import matplotlib.patheffects as pe
+from tqdm import tqdm
 
 from . import useful_funcs_austind as funcs
 from . import galfind_logger
@@ -24,7 +25,7 @@ class Photometry_obs(Photometry):
         self.aper_diam = aper_diam
         self.min_flux_pc_err = min_flux_pc_err
         self.SED_results = SED_results # array of SED_result objects with different SED fitting runs
-        self.aper_corrs = [instrument.aper_corr(self.aper_diam, band) for band in instrument.band_names]
+        self.aper_corrs = instrument.get_aper_corrs(self.aper_diam)
         super().__init__(instrument, flux_Jy, flux_Jy_errs, loc_depths)
 
     def __str__(self):
@@ -127,7 +128,8 @@ class Multiple_Photometry_obs:
         if SED_results_arr == []:
             SED_results_arr = np.full(len(flux_Jy_arr), {})
         self.phot_obs_arr = [Photometry_obs(instrument, flux_Jy, flux_Jy_errs, aper_diam, min_flux_pc_err, loc_depths, SED_results) \
-            for flux_Jy, flux_Jy_errs, loc_depths, SED_results in zip(flux_Jy_arr, flux_Jy_errs_arr, loc_depths_arr, SED_results_arr)]
+            for flux_Jy, flux_Jy_errs, loc_depths, SED_results in tqdm(zip(flux_Jy_arr, flux_Jy_errs_arr, loc_depths_arr, SED_results_arr), \
+            total = len(flux_Jy_arr), desc = "Loading in Multiple_Photometry_obs")]
 
     def __str__(self):
         # string representation of what is stored in this class

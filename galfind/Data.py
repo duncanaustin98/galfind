@@ -158,8 +158,6 @@ class Data:
             #split_bands = np.take(self.instrument.band_names, [0, int(len(self.instrument.band_names) / 2), -1])
             #self.make_RGB([split_bands[0]], [split_bands[1]], [split_bands[2]], RGB_method)
 
-        print(str(self))
-
     @classmethod
     def from_pipeline(cls, survey, version = "v9", instruments = ['NIRCam', 'ACS_WFC', 'WFC3_IR'], excl_bands = [], pix_scales = ['30mas', '60mas']):
         instruments_obj = {instrument_name: globals()[instrument_name](excl_bands = [band_name for band_name in excl_bands \
@@ -1428,7 +1426,7 @@ class Data:
                 flux_aper_corr_data = np.zeros(len(cat))
                 for j, aper_diam in enumerate(json.loads(config.get("SExtractor", "APERTURE_DIAMS")) * u.arcsec):
                     # assumes these have already been calculated for each band
-                    mag_aper_corr_factor = self.instrument.aper_corr(aper_diam, band)
+                    mag_aper_corr_factor = self.instrument.get_aper_corrs(aper_diam)
                     flux_aper_corr_factor = 10 ** (mag_aper_corr_factor / 2.5)
                     #print(band, aper_diam, mag_aper_corr_factor, flux_aper_corr_factor)
                     if j == 0:
@@ -1549,8 +1547,8 @@ class Data:
         return (aper_diam / (2 * self.im_pixel_scales[band])).value
     
     def calc_depths(self, aper_diams = [0.32] * u.arcsec, cat_creator = None, mode = "n_nearest", scatter_size = 0.1, distance_to_mask = 30, \
-        region_radius_used_pix = 300, n_nearest = 200, coord_type = "sky", split_depth_min_size = 100_000, \
-        split_depths_factor = 5, step_size = 100, excl_bands = [], n_jobs = 1):
+            region_radius_used_pix = 300, n_nearest = 200, coord_type = "sky", split_depth_min_size = 100_000, \
+            split_depths_factor = 5, step_size = 100, excl_bands = [], n_jobs = 1):
         params = []
         # Look over all aperture diameters and bands  
         for aper_diam in aper_diams:
@@ -1629,10 +1627,10 @@ class Data:
                 hf.create_dataset(name_i, data = data_i)
             hf.close()
 
-        self.plot_depth(band, cat_creator, mode, aper_diam, show = False)
+            self.plot_depth(band, cat_creator, mode, aper_diam, show = False)
 
     def plot_depth(self, band, cat_creator, mode, aper_diam, show = False): #, **kwargs):
-        if cat_creator == None:
+        if type(cat_creator) == type(None):
             galfind_logger.warning("Could not plot depths as cat_creator == None in Data.plot_depths()")
         else:
             self.get_depth_dir(aper_diam)

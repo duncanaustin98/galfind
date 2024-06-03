@@ -3,6 +3,7 @@ __pycache__
 galfind.egg-info
 test_pipeline.py
 stash info
+galfind/spectra/models/IGM_attenuation/Inoue+14_IGM_grid.h5
 galfind/IGM_attenuation/Inoue+14_IGM_grid.h5
 galfind/IGM_attenuation/Inoue14_IGM_grid.h5
 remove_by_eye_local.py
