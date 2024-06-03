@@ -82,11 +82,17 @@ class Catalogue(Catalogue_Base):
             crop_by = crop_by.split("+")
         if type(crop_by) != type(None):
             for name in crop_by:
-                assert name in fits_cat.colnames, galfind_logger.critical(f"Cannot crop by {name}")
-                assert type(fits_cat[name][0]) in [bool, np.bool_], \
-                    galfind_logger.critical(f"{name} in catalogue but column type = {type(fits_cat[name][0])} not in ['bool', 'np.bool_']")
-                fits_cat = fits_cat[fits_cat[name]]
-                galfind_logger.info(f"Catalogue for {survey} {version} cropped by {name}")
+                if name[:3] == "ID=":
+                    fits_cat = fits_cat[fits_cat[cat_creator.ID_label].astype(int) == int(name[3:])]
+                    galfind_logger.info(f"Catalogue cropped to {name}")
+                elif name in fits_cat.colnames: #, galfind_logger.critical(f"Cannot crop by {name}")
+                    if type(fits_cat[name][0]) in [bool, np.bool_]: #, \
+                        fits_cat = fits_cat[fits_cat[name]]
+                        galfind_logger.info(f"Catalogue for {survey} {version} cropped by {name}")
+                    else:
+                        galfind_logger.warning(f"{type(fits_cat[name][0])=} not in [bool, np.bool_]")
+                else:
+                    galfind_logger.warning(f"Invalid crop name == {name}! Skipping")
 
         # produce galaxy array from each row of the catalogue
         start_time = time.time()
@@ -246,7 +252,7 @@ class Catalogue(Catalogue_Base):
     def plot_phot_diagnostics(self, 
             SED_fit_params_arr = [{"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}, {"code": EAZY(), "templates": "fsps_larson", "dz": 0.5}], \
             zPDF_plot_SED_fit_params_arr = [{"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}, {"code": EAZY(), "templates": "fsps_larson", "dz": 0.5}], \
-            wav_unit = u.um, flux_unit = u.erg / (u.s * u.AA * u.cm ** 2)):
+            wav_unit = u.um, flux_unit = u.ABmag):
         
         # figure size may well depend on how many bands there are
         overall_fig = plt.figure(figsize = (8, 7), constrained_layout = True)

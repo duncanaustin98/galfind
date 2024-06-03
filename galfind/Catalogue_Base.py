@@ -355,7 +355,7 @@ class Catalogue_Base:
             self._dec_range = [np.min(self.DEC), np.max(self.DEC)]
             return self._dec_range
     
-    def remove_gal(self, index=None, id=None):
+    def remove_gal(self, index = None, id = None):
         if index is not None:
             self.gals = np.delete(self.gals, index)
         elif id is not None:

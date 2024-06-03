@@ -26,6 +26,12 @@ def pipeline(surveys, version, instruments, aper_diams, min_flux_pc_errs, forced
                 cat_creator = cat_creator, SED_fit_params_arr = SED_fit_params_arr, forced_phot_band = forced_phot_band, \
                 excl_bands = excl_bands, loc_depth_min_flux_pc_errs = min_flux_pc_errs, crop_by = crop_by)
             
+            cat_copy = cat.crop(8228, "ID")
+
+            print(cat_copy)
+
+            cat_copy.plot_phot_diagnostics()
+
             #cat.data.calc_unmasked_area("NIRCam", forced_phot_band = forced_phot_band)
             
             #cat.del_hdu(SED_fit_params_arr[-1]["code"].label_from_SED_fit_params(SED_fit_params_arr[-1]))
@@ -46,18 +52,18 @@ def pipeline(surveys, version, instruments, aper_diams, min_flux_pc_errs, forced
             #cat_copy = cat.select_unmasked_instrument(NIRCam())
             #cat_copy2 = cat.select_EPOCHS(allow_lowz = False)
 
-            cat.calc_rest_UV_properties(frame = "rest")
-            #cat.calc_rest_UV_properties(frame = "obs")
+            # cat.calc_rest_UV_properties(frame = "rest")
+            # #cat.calc_rest_UV_properties(frame = "obs")
             
-            #cat.calc_line_lum_rest_optical(["Halpha", "[NII]-6583"], frame = "rest")
-            #cat.calc_line_lum_rest_optical(["Halpha", "[NII]-6583"], frame = "obs")
+            # #cat.calc_line_lum_rest_optical(["Halpha", "[NII]-6583"], frame = "rest")
+            # #cat.calc_line_lum_rest_optical(["Halpha", "[NII]-6583"], frame = "obs")
             
-            cat.calc_xi_ion() #dust_author_year = None)
+            # cat.calc_xi_ion() #dust_author_year = None)
             
-            print(str(cat))
-            print(str(cat[0]))
+            # print(str(cat))
+            # print(str(cat[0]))
 
-            cat.plot_phot_diagnostics(flux_unit = u.ABmag)
+            # cat.plot_phot_diagnostics(flux_unit = u.ABmag)
 
             #cat.select_rest_UV_line_emitters_sigma("CIV-1549", 2.) # "CIV-1549"
             
@@ -82,14 +88,14 @@ if __name__ == "__main__":
     version = "v11" #config["DEFAULT"]["VERSION"]
     instruments = ["NIRCam"] #,"ACS_WFC",  'WFC3_IR'] # "ACS_WFC"
     cat_type = "loc_depth"
-    surveys = ["COSMOS-Web-2A"] #[config["DEFAULT"]["SURVEY"]]
+    surveys = ["JOF"] #[config["DEFAULT"]["SURVEY"]]
     aper_diams = [0.32] * u.arcsec
     SED_code_arr = [EAZY()]
     templates_arr = ["fsps_larson"] #["fsps", "fsps_larson", "fsps_jades"]
-    lowz_zmax_arr = [[None]] # [[4., 6., None]]
+    lowz_zmax_arr = [[4., 6., None]] # [[None]]
     min_flux_pc_errs = [10]
-    forced_phot_band = ["F444W"] #["F277W", "F356W", "F444W"] # 
-    crop_by = None
+    forced_phot_band = ["F277W", "F356W", "F444W"] # ["F444W"] #
+    crop_by = "ID=8228" #None
 
     jems_bands = ["F182M", "F210M", "F430M", "F460M", "F480M"]
     ngdeep_excl_bands = ["F435W", "F775W", "F850LP"]
