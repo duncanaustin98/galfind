@@ -301,7 +301,7 @@ class Data:
                         # otherwise open band, work out if it has a weight map, calc zero point and image scale
                         hdul = fits.open(str(path))
                         
-                        im_paths[band] = str(path)
+                        im_paths[band_name] = str(path)
                         # Not great to use try/except but not sure how else to do it with index_of
                         try:
                             im_exts[band_name] = hdul.index_of('SCI')
