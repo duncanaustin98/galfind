@@ -297,7 +297,9 @@ class NIRCam(Instrument):
         # load aperture corrections from appropriate path (bands in NIRCam class must be the same as those saved in aper_corr)
         aper_corr_data = np.loadtxt(aper_corr_path, dtype = str, comments = "#")
         aper_diam_index = np.where(json.loads(config.get("SExtractor", "APERTURE_DIAMS")) == aper_diam.value)[0][0] + 1
-        band_index = list(self.band_names).index(band)
+        #band_index = list(self.band_names).index(band)
+        band_aper_corrs = list(aper_corr_data[:, 0])
+        band_index = band_aper_corrs.index(band)
         # print((aper_diam_index, band_index))
         return float(aper_corr_data[band_index][aper_diam_index])
     

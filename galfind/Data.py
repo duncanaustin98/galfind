@@ -322,7 +322,7 @@ class Data:
                                 glob_paths += glob.glob(f"{config['DEFAULT']['GALFIND_DATA']}/hst/{survey}/{instrument.name}/{pix_scale}/*{band_name.lower().replace('f', 'F')}*_{map_type.lower()}.fits")
                                 glob_paths += glob.glob(f"{config['DEFAULT']['GALFIND_DATA']}/hst/{survey}/{instrument.name}/{pix_scale}/*{band_name.upper().replace('F', 'f')}*_{map_type.lower()}.fits")
                                 if map_type == "ERR":
-                                    glob_paths += glob.glob(f"{config['DEFAULT']['GALFIND_DATA']}/hst/{survey}/{instrument.name}/{pix_scale}/*{band_name}*_rms.fits")
+                                    glob_paths += glob.glob(f"{config['DEFAULT']['GALFIND_DATA']}/hst/{survey}/{instrument.name}/{pix_scale}/*{band_name.lower()}*_rms.fits")
                                 # Make sure no duplicates
                                 glob_paths = list(set(glob_paths))
                                 if len(glob_paths) == 1:
@@ -960,7 +960,7 @@ class Data:
 
         # load relevant err map paths, preferring rms_err maps if available
         err_map_path, err_map_ext, err_map_type = self.get_err_map(band, prefer = "rms_err")
-        
+
         # SExtractor bash script python wrapper
         process = subprocess.Popen(["./make_seg_map.sh", config['DEFAULT']['GALFIND_WORK'], self.im_paths[band], str(self.im_pixel_scales[band].value), \
                                 str(self.im_zps[band]), self.instrument.instrument_from_band(band).name, self.survey, band, self.version, err_map_path, \
