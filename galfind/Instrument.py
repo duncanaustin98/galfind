@@ -295,7 +295,11 @@ class NIRCam(Instrument):
             # perform aperture corrections
             NIRCam_aper_corr.main(self.band_names)
         # load aperture corrections from appropriate path (bands in NIRCam class must be the same as those saved in aper_corr)
-        aper_corr_data = np.loadtxt(aper_corr_path, dtype = str, comments = "#")
+        aper_corr_data = getattr(self, "aper_corr_data", None)
+        if aper_corr_data == None:
+            aper_corr_data = np.loadtxt(aper_corr_path, dtype = str, comments = "#")
+            setattr(self, "aper_corr_data", aper_corr_data)
+        
         aper_diam_index = np.where(json.loads(config.get("SExtractor", "APERTURE_DIAMS")) == aper_diam.value)[0][0] + 1
         #band_index = list(self.band_names).index(band)
         band_aper_corrs = list(aper_corr_data[:, 0])
@@ -341,8 +345,11 @@ class ACS_WFC(Instrument):
         # super().__init__("ACS_WFC", bands, band_wavelengths, band_FWHMs, excl_bands, "HST")
     
     def aper_corr(self, aper_diam, band):
-        aper_corr_path = f'{config["Other"]["GALFIND_DIR"]}/Aperture_corrections/hst_acs_wfc_aper_corr.dat'
-        aper_corr_data = np.loadtxt(aper_corr_path, comments = "#", dtype=[('band', 'U10'), ('0.32', 'f4'), ('0.5', 'f4'), ('1.0', 'f4'), ('1.5', 'f4'), ('2.0', 'f4')])
+        aper_corr_data = getattr(self, "aper_corr_data", None)
+        if aper_corr_data == None:
+            aper_corr_path = f'{config["Other"]["GALFIND_DIR"]}/Aperture_corrections/acs_wfc_aper_corr.dat'
+            aper_corr_data = np.loadtxt(aper_corr_path, comments = "#", dtype=[('band', 'U10'), ('0.32', 'f4'), ('0.5', 'f4'), ('1.0', 'f4'), ('1.5', 'f4'), ('2.0', 'f4')])
+            setattr(self, "aper_corr_data", aper_corr_data)
         return aper_corr_data[aper_corr_data['band'] == band.upper()][str(aper_diam.to('arcsec').value)][0]
     
     def new_instrument(self, excl_bands = []):
@@ -363,8 +370,11 @@ class WFC3_IR(Instrument):
         # super().__init__("WFC3_IR", bands, band_wavelengths, band_FWHMs, excl_bands, "HST")
     
     def aper_corr(self, aper_diam, band):
-        aper_corr_path = f'{config["Other"]["GALFIND_DIR"]}/Aperture_corrections/wfc3ir_aper_corr.dat'
-        aper_corr_data = np.loadtxt(aper_corr_path, comments = "#", dtype=[('band', 'U10'), ('0.32', 'f4'), ('0.5', 'f4'), ('1.0', 'f4'), ('1.5', 'f4'), ('2.0', 'f4')])
+        aper_corr_data = getattr(self, "aper_corr_data", None)
+            if aper_corr_data == None:
+                aper_corr_path = f'{config["Other"]["GALFIND_DIR"]}/Aperture_corrections/wfc3ir_aper_corr.dat'
+                aper_corr_data = np.loadtxt(aper_corr_path, comments = "#", dtype=[('band', 'U10'), ('0.32', 'f4'), ('0.5', 'f4'), ('1.0', 'f4'), ('1.5', 'f4'), ('2.0', 'f4')])
+                setattr(self, "aper_corr_data", aper_corr_data)
         return aper_corr_data[aper_corr_data['band'] == band.upper()][str(aper_diam.to('arcsec').value)][0]
     
     def new_instrument(self, excl_bands = []):
