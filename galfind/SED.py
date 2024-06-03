@@ -67,11 +67,12 @@ class SED:
             self.mags = mags
         return mags
         
-    def plot_SED(self, ax, wav_units = u.AA, mag_units = u.ABmag, label = None, annotate = True, plot_kwargs = {}, legend_kwargs = {}):
+    def plot_SED(self, ax, wav_units = u.AA, mag_units = u.ABmag, label = None, annotate = True, \
+            save = False, save_name = "", log_fluxes = True, plot_kwargs = {}, legend_kwargs = {}):
         wavs = funcs.convert_wav_units(self.wavs, wav_units)
         mags = funcs.convert_mag_units(self.wavs, self.mags, mag_units)
 
-        if mag_units != u.ABmag:
+        if mag_units != u.ABmag and log_fluxes:
             mags = funcs.log_scale_fluxes(mags)
         else:
             mags = mags.value
@@ -82,6 +83,8 @@ class SED:
                 "" if self.__class__.__name__.split("_")[-1] == "Photometry" else self.__class__.__name__.split("_")[-1]))
             ax.set_ylabel(funcs.label_fluxes(mag_units, False if mag_units == u.ABmag else True))
             ax.legend(**legend_kwargs)
+        if save:
+            plt.savefig(f"{save_name}.png")
         return plot
     
     def calc_bandpass_averaged_flux(self, filter_wavs, filter_trans):
@@ -116,6 +119,7 @@ class SED:
             plt.plot(wavs_AA[feature_mask], flux_lambda[feature_mask])
             plt.show()
         line_plus_cont_flux = np.trapz(flux_lambda[feature_mask], x = wavs_AA[feature_mask])
+        #breakpoint()
         # calculate continuum flux and mean continuum level
         cont_mask = np.logical_or.reduce(np.array([((wavs_AA > lims[0].to(u.AA)) & \
                         (wavs_AA < lims[1].to(u.AA))) for lims in cont_lims]))
@@ -497,18 +501,38 @@ class Mock_SED_rest_template_set(Mock_SED_template_set):
         return cls(mock_SED_rest_arr)
     
     @classmethod
-    def load_bpass_in_templates(cls, metallicity = "z020", imf = "imf135_300", model_type = "bin", alpha_enhancement = "a+06", log_ages = np.linspace(6., 9., int(np.round(3 / 0.1)) + 1), bpass_version = 2.3, m_UV_norm = 26.):
+    def load_bpass_in_templates(cls, metallicity = "z020", imf = "imf135_300", model_type = "bin", alpha_enhancement = "a+06", \
+            log_ages = np.linspace(6., 9., int(np.round(3 / 0.1)) + 1), bpass_version = "2.3", m_UV_norm = 26. * u.ABmag, grain_name = "ng", logU = -1.):
         meta = {"metallicity": metallicity, "imf": imf, "model_type": model_type, "alpha_enhancement": alpha_enhancement, "bpass_version": bpass_version}
         bpass_Lsun = 3.848e26 * u.J / u.s
-        bpass_dir = f"/raid/scratch/data/BPASS/BPASS_v{str(bpass_version)}_release/bpass_v{str(bpass_version)}.{alpha_enhancement}"
-        bpass_name = f"spectra-{model_type}-{imf}.{alpha_enhancement}.{metallicity}.dat"
+        bpass_version_dir_dict = {
+            "2.3": f"BPASS_v2.3_release/bpass_v2.3.{alpha_enhancement}", \
+            "2.2_cloudy": f"BPASS_v2.2_cloudy/spec"
+        }
+        bpass_version_name_dict = {
+            "2.3": f"spectra-{model_type}-{imf}.{alpha_enhancement}.{metallicity}.dat", \
+        }
+        if bpass_version == "2.2_cloudy":
+            assert grain_name in ["ng", "gr"]
+            v2_2_model_version = "11" if grain_name == "ng" else "10"
+            logU_dict = {-1.: "a", -1.5: "b", -2.: "c", -2.5: "d", -3.: "e", -3.5: "f", -4.: "g"}
+            assert float(logU) in logU_dict.keys()
+            v2_2_model_version += logU_dict[float(logU)]
+            bpass_version_name_dict["2.2_cloudy"] = f"cloudyspec_{imf}_{metallicity}_{model_type}_v{v2_2_model_version}.sed"
+
+        bpass_dir = f"/raid/scratch/data/BPASS/{bpass_version_dir_dict[bpass_version]}"
+        bpass_name = bpass_version_name_dict[bpass_version] 
         SED_file = f"{bpass_dir}/{bpass_name}"
         mock_SED_rest_arr = []
         spectra = ascii.read(SED_file)
-        rest_wavs = np.array(spectra["col1"]) * u.AA
-        for i in range(2, 53):
+        if bpass_version == "2.3":
+            age_range_indices = [2, 53]
+        if bpass_version == "2.2_cloudy":
+            age_range_indices = [2, 22]
+            spectra = spectra[:-1]
+        rest_wavs = np.array(spectra["col1"]).astype(float) * u.AA
+        for i in range(*age_range_indices):
             age = 10 ** (0.1 * (i - 2)) * u.Myr
-            print(log_ages)
             load_spectrum = False
             if log_ages == "all":
                 load_spectrum = True
@@ -521,7 +545,8 @@ class Mock_SED_rest_template_set(Mock_SED_template_set):
                 spectrum_Jy = funcs.luminosity_to_flux(spectrum, rest_wavs, out_units = u.Jy)
                 mock_sed_rest = Mock_SED_rest(rest_wavs.value, spectrum_Jy.value, u.AA, u.Jy, \
                     template_name = bpass_name.replace(".dat", f"{age.value:.1f}Myr") , meta = {**meta, **{"age": age, "log_age_yr": np.log10(age.value) + 6.}})
-                mock_sed_rest.normalize_to_m_UV(26.)
+                if type(m_UV_norm) != type(None):
+                    mock_sed_rest.normalize_to_m_UV(m_UV_norm)
                 mock_SED_rest_arr.append(mock_sed_rest)
         return cls(mock_SED_rest_arr)
 
