@@ -1425,8 +1425,8 @@ class Data:
                 mag_aper_corr_data = np.zeros(len(cat))
                 flux_aper_corr_data = np.zeros(len(cat))
                 for j, aper_diam in enumerate(json.loads(config.get("SExtractor", "APERTURE_DIAMS")) * u.arcsec):
-                    # assumes these have already been calculated for each band
-                    mag_aper_corr_factor = self.instrument.get_aper_corrs(aper_diam)
+                    # assumes these have already been calculated for each band 
+                    mag_aper_corr_factor = self.instrument.get_aper_corrs(aper_diam)[i]
                     flux_aper_corr_factor = 10 ** (mag_aper_corr_factor / 2.5)
                     #print(band, aper_diam, mag_aper_corr_factor, flux_aper_corr_factor)
                     if j == 0:

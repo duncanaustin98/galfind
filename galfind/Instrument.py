@@ -243,13 +243,21 @@ class Instrument:
         # if no aperture corrections in object, load from aperture corrections txt
         if Path(aper_corr_path).is_file():
             aper_corr_data = np.loadtxt(aper_corr_path, comments = "#", dtype = [('band', 'U10'), \
-                ('0.32', 'f4'), ('0.5', 'f4'), ('1.0', 'f4'), ('1.5', 'f4'), ('2.0', 'f4')])
+                ('0.32', 'f4'), ('0.5', 'f4'), ('1.0', 'f4'), ('1.5', 'f4'), ('2.0', 'f4')])           
             if all([True if band_name in aper_corr_data["band"] else False for band_name in self.band_names]) \
                     and str(aper_diam.to(u.arcsec).value) in aper_corr_data.dtype.names[1:]:
                 band_indices = [list(aper_corr_data["band"]).index(band_name) for band_name in self.band_names]
                 aper_corrs = list(aper_corr_data[str(aper_diam.to(u.arcsec).value)][band_indices])
+                '''
+                if aper_diam == 0.32 * u.arcsec:
+                    print('WARNING! Overwriting aperture corrections for NIRCam with fixed value!')
+                    print(aper_corrs)
+                    aper_corrs = [0.4629] * len(self.band_names)
+                    print(aper_corrs)
+                '''
                 if cache:
-                    self.aper_corrs[aper_diam] = aper_corrs
+                    self.aper_corrs = aper_corrs
+            
                 return aper_corrs
             else:
                 raise(Exception())
