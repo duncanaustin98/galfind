@@ -482,7 +482,8 @@ class Data:
         for (key, item) in self.common.items():
             output_str += f"{key}: {item}\n"
         try:
-            unmasked_area = self.calc_unmasked_area().to(u.arcmin ** 2)
+            unmasked_area_tab = self.calc_unmasked_area() 
+            unmasked_area = unmasked_area_tab[unmasked_area_tab["masking_instrument_band"] == 'NIRCam']['unmasked_area_total'][0] 
             output_str += f"UNMASKED AREA = {unmasked_area}"
         except:
             pass
@@ -1309,7 +1310,7 @@ class Data:
         os.makedirs("/".join(out_path.split("/")[:-1]), exist_ok = True)
         # TEMP CHANGE
         
-        #hdu.writeto(out_path, overwrite = True)
+        hdu.writeto(out_path, overwrite = True)
         galfind_logger.info(f"Created combined mask for {bands}")
         return out_path
 
@@ -1346,7 +1347,8 @@ class Data:
             masking_instrument_or_band_name = "+".join(list(masking_instrument_or_band_name))
 
         # create a list of bands that need to be unmasked in order to calculate the area
-        if type(masking_instrument_or_band_name) == str:
+        if type(masking_instrument_or_band_name) in [str, np.str_]:
+            masking_instrument_or_band_name = str(masking_instrument_or_band_name)
             # mask by requiring unmasked criteria in all bands for a given Instrument
             if masking_instrument_or_band_name in [subclass.__name__ for subclass in Instrument.__subclasses__() if subclass.__name__ != "Combined_Instrument"]:
                 masking_bands = np.array([band for band in self.instrument.band_names if band in Instrument.from_name(masking_instrument_or_band_name).bands])
@@ -1355,15 +1357,22 @@ class Data:
             else: # string should contain individual bands, separated by a "+"
                 masking_bands = masking_instrument_or_band_name.split("+")
                 for band in masking_bands:
-                    assert band in json.loads(config.get("Other", "ALL_BANDS"), galfind_logger.critical(f"{band} is not a valid band currently included in galfind! Cannot calculate unmasked area!"))
+                    assert band in json.loads(config.get("Other", "ALL_BANDS")), galfind_logger.critical(f"{band} is not a valid band currently included in galfind! Cannot calculate unmasked area!")
         else:
             galfind_logger.critical(f"type(masking_instrument_or_band_name) = {type(masking_instrument_or_band_name)} must be in [str, list, np.array]!")
         
         # make combined mask if required, else load mask
         glob_mask_names = glob.glob(f"{self.mask_dir}/fits_masks/*{self.combine_band_names(masking_bands)}_*")
+        if '+' not in masking_bands and len(glob_mask_names) > 1:
+            for mask in glob_mask_names:
+                if '+' in mask:
+                    glob_mask_names.remove(mask)
+
         if len(glob_mask_names) == 0:
             if len(masking_bands) > 1:
-                self.mask_paths[masking_instrument_or_band_name] = self.combine_masks(masking_bands)
+                path = self.combine_masks(masking_bands)
+                print(path)
+                self.mask_paths[masking_instrument_or_band_name] = path
         elif len(glob_mask_names) == 1:
             self.mask_paths[masking_instrument_or_band_name] = glob_mask_names[0]
         else:
@@ -1384,7 +1393,7 @@ class Data:
             blank_mask = self.load_mask(f"{masking_instrument_or_band_name}+blank")
         
         # split calculation by depth regions
-        galfind_logger.warning("Area calculation for different dpeth regions not yet implemented!")
+        galfind_logger.warning("Area calculation for different depth regions not yet implemented!")
 
         # calculate areas using pixel scale of selection band
         pixel_scale = self.im_pixel_scales[self.combine_band_names(forced_phot_band)]
@@ -1403,14 +1412,19 @@ class Data:
             existing_areas_tab = Table.read(output_path)
             # if the exact same setup has already been run, overwrite
             existing_areas_tab_ = deepcopy(existing_areas_tab)
-            existing_areas_tab_["index"] = np.arange(0, len(existing_areas_tab), 1)
+            existing_areas_tab["index"] = np.arange(0, len(existing_areas_tab), 1)
+
             existing_areas_tab_ = existing_areas_tab[((existing_areas_tab["survey"] == self.survey) & \
                 (existing_areas_tab["masking_instrument_band"] == masking_instrument_or_band_name))]
             if len(existing_areas_tab_) > 0:
                 # delete existing column using the same setup in favour of new one
                 existing_areas_tab.remove_row(int(existing_areas_tab_["index"]))
             else:
-                areas_tab = vstack(existing_areas_tab, areas_tab)
+                areas_tab = vstack([existing_areas_tab, areas_tab])
+            for col in areas_tab.colnames:
+                if 'index' in col:
+                    areas_tab.remove_column(col)
+
         areas_tab.write(output_path, overwrite = True)
         return areas_tab
 
@@ -1562,6 +1576,7 @@ class Data:
         # Parallelise the calculation of depths for each band
         with tqdm_joblib(tqdm(desc = "Calculating depths", total = len(params))) as progress_bar:
             Parallel(n_jobs = n_jobs)(delayed(self.calc_band_depth)(param) for param in params)
+        self.plot_area_depth(cat_creator, mode, aper_diam, show = False)
     
     def calc_band_depth(self, params):
         # unpack parameters
@@ -1628,6 +1643,101 @@ class Data:
             hf.close()
 
             self.plot_depth(band, cat_creator, mode, aper_diam, show = False)
+    
+
+    def plot_area_depth(self, cat_creator, mode, aper_diam, show = False, use_area_per_band=True):     
+        if type(cat_creator) == type(None):
+            galfind_logger.warning("Could not plot depths as cat_creator == None in Data.plot_area_depth()")
+        else:
+            self.get_depth_dir(aper_diam)
+
+            fig, ax = plt.subplots(1, 1, figsize = (5, 5))
+            ax.set_title(f"{self.survey} {self.version} {aper_diam}")
+            ax.set_xlabel("Area (arcmin$^{2}$)")
+            ax.set_ylabel("5$\sigma$ Depth (AB mag)")
+
+            area_tab = self.calc_unmasked_area(masking_instrument_or_band_name = self.forced_phot_band)
+            area_row = area_tab[area_tab["masking_instrument_band"] == self.forced_phot_band]
+            area_master = area_row["unmasked_area_total"].to(u.arcmin ** 2).value
+            
+                
+            bands = list(self.instrument.band_names)
+            if self.forced_phot_band not in bands:
+                bands.append(self.forced_phot_band)
+            colors = plt.cm.viridis(np.linspace(0, 1, len(bands)))
+            
+
+            for pos, band in enumerate(bands):
+                save_path = f"{self.depth_dirs[band]}/{mode}/depth_areas.png"
+                h5_path = f"{self.depth_dirs[band]}/{mode}/{band}.h5"
+
+                overwrite = config["Depths"].getboolean("OVERWRITE_DEPTH_PLOTS")
+                if overwrite:
+                    galfind_logger.info("OVERWRITE_DEPTH_PLOTS = YES, re-doing depth plots.")
+
+                if not Path(save_path).is_file() or overwrite:
+                    if not Path(h5_path).is_file():
+                        raise(Exception(f"Must first run depths for {self.survey} {self.version} {band} {mode} {aper_diam} before plotting!"))
+                    hf = h5py.File(h5_path, "r")
+                    hf_output = {label: np.array(hf[label]) for label in self.get_depth_h5_labels()}
+                    hf.close()
+                    # Need unmasked area for each band
+                    if use_area_per_band:
+                        area_tab = self.calc_unmasked_area(masking_instrument_or_band_name = band)
+                        area_row = area_tab[area_tab["masking_instrument_band"] == band]
+
+                    area = area_row["unmasked_area_total"].to(u.arcmin ** 2).value
+
+
+                    total_depths = hf_output["nmad_grid"].flatten()
+                    total_depths = total_depths[~np.isnan(total_depths)]
+                    total_depths = total_depths[total_depths != 0]
+                    total_depths = total_depths[total_depths != np.inf]
+
+                    # Round to 0.01 mag and sort
+                    #total_depths = np.round(total_depths, 2)
+                    total_depths = np.flip(np.sort(total_depths))
+
+                    # Calculate the cumulative distribution scaled to area of band
+                    n = len(total_depths)
+                    cum_dist = np.arange(1, n + 1) / n
+                    cum_dist = cum_dist * area
+
+                    # Plot
+                    ax.plot(cum_dist, total_depths, label = band if '+' not in band else 'Detection', color = colors[pos], drawstyle='steps-post')
+
+                    # Set ylim to 2nd / 98th percentile if depth is smaller than this number
+                    ylim = ax.get_ylim()
+                    
+                    if pos == 0:
+                        min_depth = np.percentile(total_depths, 0.5)
+                        max_depth = np.percentile(total_depths, 99.5)
+                    else:
+                        min_temp = np.percentile(total_depths, 0.5)
+                        max_temp = np.percentile(total_depths, 99.5)
+                        if min_temp < min_depth:
+                            min_depth = min_temp
+                        if max_temp > max_depth:
+                            max_depth = max_temp
+
+                    
+                    
+
+            ax.set_ylim(max_depth, min_depth)
+            ax.legend(frameon = False, ncol = 2)
+            ax.set_xlim(0, area_master)
+            # Add hlines at integer depths
+            depths = np.arange(20, 30, 1)
+            #for depth in depths:
+            #    ax.hlines(depth, 0, area_master, color = "black", linestyle = "dotted", alpha = 0.5)
+            # Invert y axis
+            #ax.invert_yaxis()
+            ax.grid(True)
+
+            fig.savefig(save_path, dpi = 300, bbox_inches = "tight")
+            if show:
+                plt.show()
+
 
     def plot_depth(self, band, cat_creator, mode, aper_diam, show = False): #, **kwargs):
         if type(cat_creator) == type(None):
