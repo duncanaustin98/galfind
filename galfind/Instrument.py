@@ -14,6 +14,7 @@ import astropy.units as u
 import json
 from pathlib import Path
 from astroquery.svo_fps import SvoFps
+import matplotlib as mpl
 import matplotlib.pyplot as plt
 from typing import NoReturn, Union
 
@@ -278,19 +279,33 @@ class Instrument:
             raise(Exception(f"Instrument name: {name} does not exist in 'Instrument.from_name()'!"))
 
     def plot_filter_profiles(self, ax, wav_units = u.um, from_SVO = True, \
-            cmap_name = "Spectral_r", annotate = True, show = True, save = False) -> NoReturn:
-        cmap = plt.get_cmap(cmap_name, len(self))
-        for i, band in enumerate(self):
-            band.plot_filter_profile(ax, from_SVO = from_SVO, color = cmap[i])
+            cmap_name = "turbo_r", annotate = True, show = True, save = False) -> NoReturn:
+        colours = plt.get_cmap(cmap_name)(np.linspace(0, 1, len(self)))
+        for i, (band, colour) in enumerate(zip(self, colours)):
+            band.plot_filter_profile(ax, from_SVO = from_SVO, colour = colour)
         if annotate:
             ax.set_title(f"{self.name} filters")
             ax.set_xlabel(r"$\lambda_{\mathrm{obs}}$ / " + funcs.unit_labels_dict[wav_units])
             ax.set_ylabel("Transmission")
             ax.set_ylim(0., np.max([trans for trans in band.trans for band in self]) + 0.1)
         if save:
-            plt.savefig(f"{self.name}_filter_profiles.png")
+            save_path = f"{self.name}_filter_profiles.png"
+            plt.savefig(save_path)
+            galfind_logger.info(f"Saved to {save_path}")
         if show:
             plt.show()
+    
+    def plot_z_wav_rest_tracks(self, z_arr, wav_lims = [1_250., 3_000.] * u.AA, cmap_name = "Spectral_r", save = True):
+        fig, ax = plt.subplots()
+        colours = plt.get_cmap(cmap_name)(np.linspace(0, 1, len(self)))
+        [band.plot_z_wav_rest_track(ax, z_arr, wav_units = wav_lims.unit, colour = colour) for band, colour in zip(self, colours)]
+        ax.set_xlabel(r"Redshift, $z$")
+        ax.set_ylabel(r"$\lambda_{\mathrm{rest}}~/~$%s" % wav_lims.unit)
+        ax.set_xlim(np.min(z_arr), np.max(z_arr))
+        ax.set_ylim(*wav_lims.value)
+        if save:
+            plt.savefig(f"{self.name}_z_wav_rest_{str(wav_lims)}.png")
+
 
 class NIRCam(Instrument):
     
@@ -327,6 +342,53 @@ class WFC3_IR(Instrument):
     
     def new_instrument(self, excl_bands = []):
         return WFC3_IR(excl_bands)
+
+elt_micado_filters = [
+    #"Br-gamma", 
+    "FeII", 
+    #"H2_1-0S1", 
+    #"H-cont", 
+    "H", 
+    #"He-I", 
+    #"H-long", 
+    #"H-short", 
+    #"I-long", 
+    "J", 
+    #"J-long", 
+    #"J-short", 
+    #"K-cont", 
+    #"K-long",
+    #"K-mid", 
+    "Ks2", 
+    "Ks", 
+    #"K-short", 
+    #"Pa-beta", 
+    "Spec_HK", 
+    "Spec_IJ", 
+    "xH1", 
+    "xH2", 
+    "xI1", 
+    "xI2", 
+    "xJ1", 
+    "xJ2", 
+    "xK1", 
+    "xK2", 
+    "xY1", 
+    "xY2", 
+    "Y"
+]
+
+class MICADO(Instrument):
+
+    def __init__(self, excl_bands = []):
+        from spextra import Passband
+        bands = [Filter.from_spextra(Passband(f"elt/{self.__class__.__name__.lower()}/{filt}")) for filt in elt_micado_filters]
+        # sort by central wavelength
+        bands.sort(key = lambda band: band.WavelengthCen.to(u.AA).value)
+        super().__init__("MICADO", bands, excl_bands, "ELT")
+
+    def new_instrument(self, excl_bands = []):
+        return MICADO(excl_bands)
     
 class Combined_Instrument(Instrument):
     

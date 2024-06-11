@@ -62,12 +62,33 @@ class Filter:
         output_prop["WavelengthLower50"] = output_prop["WavelengthCen"] - output_prop["FWHM"] / 2.
         return cls(facility, instrument, band, wav, trans, output_prop)
     
+    @classmethod
+    def from_spextra(cls, passband):
+        facility = passband.filter_name.split("/")[0].upper()
+        instrument = passband.filter_name.split("/")[1].upper()
+        band = passband.basename
+        wav = np.array(passband.model.points[0]) * u.AA
+        trans = np.array(passband.model.lookup_table)
+        # for output_property
+        _wav = [__wav for __wav, _trans in zip(wav.value, trans) if _trans > 0.5]
+        output_prop = {"WavelengthCen": np.mean(_wav) * u.AA, \
+            "WavelengthLower50": np.min(_wav) * u.AA, "WavelengthUpper50": np.max(_wav) * u.AA}
+        return cls(facility, instrument, band, wav, trans, output_prop)
+
     #def crop_wav_range(self, lower_throughput, upper_throughput):
     #    self.wavs = self.wavs[self.trans > 1e-1]
     
-    def plot_filter_profile(self, ax, wav_units = u.um, from_SVO = True, color = "black"):
+    def plot_filter_profile(self, ax, wav_units = u.um, from_SVO = True, colour = "black"):
         wavs = funcs.convert_wav_units(self.wav, wav_units).value
-        ax.fill_between(wavs, 0., self.trans, color = color, alpha = 0.6)
+        ax.fill_between(wavs, 0., self.trans, color = colour, alpha = 0.6)
         ax.plot(wavs, self.trans, color = "black", lw = 2) #cmap[np.where(self.bands == band)])
         ax.text(funcs.convert_wav_units(self.WavelengthCen, wav_units).value, \
             np.max(self.trans) + 0.03, self.band_name, ha = "center", fontsize = 8)
+        
+    def plot_z_wav_rest_track(self, ax, z_arr, wav_units = u.AA, outline = True, colour = "black", alpha = 0.5):
+        l1_track = self.WavelengthLower50.to(wav_units).value / (1. + z_arr)
+        u1_track = self.WavelengthUpper50.to(wav_units).value / (1. + z_arr)
+        ax.fill_between(z_arr, l1_track, u1_track, color = colour, alpha = alpha)
+        if outline:
+            ax.plot(z_arr, l1_track, color = "black")
+            ax.plot(z_arr, u1_track, color = "black")
