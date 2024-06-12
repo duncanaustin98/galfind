@@ -1650,29 +1650,29 @@ class Data:
             galfind_logger.warning("Could not plot depths as cat_creator == None in Data.plot_area_depth()")
         else:
             self.get_depth_dir(aper_diam)
-
-            fig, ax = plt.subplots(1, 1, figsize = (5, 5))
-            ax.set_title(f"{self.survey} {self.version} {aper_diam}")
-            ax.set_xlabel("Area (arcmin$^{2}$)")
-            ax.set_ylabel("5$\sigma$ Depth (AB mag)")
-
             area_tab = self.calc_unmasked_area(masking_instrument_or_band_name = self.forced_phot_band)
-            area_row = area_tab[area_tab["masking_instrument_band"] == self.forced_phot_band]
-            area_master = float(area_row["unmasked_area_total"].to(u.arcmin ** 2).value)
-            bands = list(self.instrument.band_names)
-            if self.forced_phot_band not in bands:
-                bands.append(self.forced_phot_band)
-            colors = plt.cm.viridis(np.linspace(0, 1, len(bands)))
+            overwrite = config["Depths"].getboolean("OVERWRITE_DEPTH_PLOTS")
+            save_path = f"{self.depth_dirs[self.forced_phot_band]}/{mode}/depth_areas.png" # not entirely general -> need to improve self.depth_dirs
+            
+            if not Path(save_path).is_file() or overwrite:
+                
+                fig, ax = plt.subplots(1, 1, figsize = (5, 5))
+                ax.set_title(f"{self.survey} {self.version} {aper_diam}")
+                ax.set_xlabel("Area (arcmin$^{2}$)")
+                ax.set_ylabel("5$\sigma$ Depth (AB mag)")
+                area_row = area_tab[area_tab["masking_instrument_band"] == self.forced_phot_band]
+                area_master = float(area_row["unmasked_area_total"].to(u.arcmin ** 2).value)
+                bands = list(self.instrument.band_names)
+                if self.forced_phot_band not in bands:
+                    bands.append(self.forced_phot_band)
+                colors = plt.cm.viridis(np.linspace(0, 1, len(bands)))
 
-            for pos, band in enumerate(bands):
-                save_path = f"{self.depth_dirs[band]}/{mode}/depth_areas.png"
-                h5_path = f"{self.depth_dirs[band]}/{mode}/{band}.h5"
+                for pos, band in enumerate(bands):
+                    h5_path = f"{self.depth_dirs[band]}/{mode}/{band}.h5"
 
-                overwrite = config["Depths"].getboolean("OVERWRITE_DEPTH_PLOTS")
-                if overwrite:
-                    galfind_logger.info("OVERWRITE_DEPTH_PLOTS = YES, re-doing depth plots.")
+                    if overwrite:
+                        galfind_logger.info("OVERWRITE_DEPTH_PLOTS = YES, re-doing depth plots.")
 
-                if not Path(save_path).is_file() or overwrite:
                     if not Path(h5_path).is_file():
                         raise(Exception(f"Must first run depths for {self.survey} {self.version} {band} {mode} {aper_diam} before plotting!"))
                     hf = h5py.File(h5_path, "r")
@@ -1684,7 +1684,6 @@ class Data:
                         area_row = area_tab[area_tab["masking_instrument_band"] == band]
 
                     area = area_row["unmasked_area_total"].to(u.arcmin ** 2).value
-
 
                     total_depths = hf_output["nmad_grid"].flatten()
                     total_depths = total_depths[~np.isnan(total_depths)]
@@ -1717,20 +1716,20 @@ class Data:
                         if max_temp > max_depth:
                             max_depth = max_temp
 
-            ax.set_ylim(max_depth, min_depth)
-            ax.legend(frameon = False, ncol = 2)
-            ax.set_xlim(0, area_master)
-            # Add hlines at integer depths
-            depths = np.arange(20, 30, 1)
-            #for depth in depths:
-            #    ax.hlines(depth, 0, area_master, color = "black", linestyle = "dotted", alpha = 0.5)
-            # Invert y axis
-            #ax.invert_yaxis()
-            ax.grid(True)
+                ax.set_ylim(max_depth, min_depth)
+                ax.legend(frameon = False, ncol = 2)
+                ax.set_xlim(0, area_master)
+                # Add hlines at integer depths
+                depths = np.arange(20, 30, 1)
+                #for depth in depths:
+                #    ax.hlines(depth, 0, area_master, color = "black", linestyle = "dotted", alpha = 0.5)
+                # Invert y axis
+                #ax.invert_yaxis()
+                ax.grid(True)
 
-            fig.savefig(save_path, dpi = 300, bbox_inches = "tight")
-            if show:
-                plt.show()
+                fig.savefig(save_path, dpi = 300, bbox_inches = "tight")
+                if show:
+                    plt.show()
 
 
     def plot_depth(self, band, cat_creator, mode, aper_diam, show = False): #, **kwargs):

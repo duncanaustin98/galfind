@@ -248,16 +248,8 @@ class Instrument:
                     and str(aper_diam.to(u.arcsec).value) in aper_corr_data.dtype.names[1:]:
                 band_indices = [list(aper_corr_data["band"]).index(band_name) for band_name in self.band_names]
                 aper_corrs = list(aper_corr_data[str(aper_diam.to(u.arcsec).value)][band_indices])
-                '''
-                if aper_diam == 0.32 * u.arcsec:
-                    print('WARNING! Overwriting aperture corrections for NIRCam with fixed value!')
-                    print(aper_corrs)
-                    aper_corrs = [0.4629] * len(self.band_names)
-                    print(aper_corrs)
-                '''
                 if cache:
-                    self.aper_corrs = aper_corrs
-            
+                    self.aper_corrs[aper_diam] = aper_corrs
                 return aper_corrs
             else:
                 raise(Exception())
@@ -373,6 +365,7 @@ class Combined_Instrument(Instrument):
         _aper_corrs = [band_aper_corr_dict[band_name] for band_name in self.band_names]
         if cache: # save in self
             self.aper_corrs[aper_diam] = _aper_corrs
+        breakpoint()
         return _aper_corrs
 
     def instrument_from_band(self, band, return_name = True):
