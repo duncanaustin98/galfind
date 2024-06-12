@@ -26,11 +26,11 @@ def pipeline(surveys, version, instruments, aper_diams, min_flux_pc_errs, forced
                 cat_creator = cat_creator, SED_fit_params_arr = SED_fit_params_arr, forced_phot_band = forced_phot_band, \
                 excl_bands = excl_bands, loc_depth_min_flux_pc_errs = min_flux_pc_errs, crop_by = crop_by)
             
-            cat_copy = cat.crop(8228, "ID")
+            # cat_copy = cat.crop(8228, "ID")
 
-            print(cat_copy)
+            # print(cat_copy)
 
-            cat_copy.plot_phot_diagnostics()
+            # cat_copy.plot_phot_diagnostics()
 
             #cat.data.calc_unmasked_area("NIRCam", forced_phot_band = forced_phot_band)
             
@@ -85,10 +85,10 @@ def make_EAZY_SED_fit_params_arr(SED_code_arr, templates_arr, lowz_zmax_arr):
         for code, templates, lowz_zmaxs in zip(SED_code_arr, templates_arr, lowz_zmax_arr) for lowz_zmax in lowz_zmaxs]
 
 if __name__ == "__main__":
-    version = "v9" #config["DEFAULT"]["VERSION"]
-    instruments = ["NIRCam", "ACS_WFC"] #, 'WFC3_IR']
+    version = "v11" #config["DEFAULT"]["VERSION"]
+    instruments = ["NIRCam"] #, "ACS_WFC"] #, 'WFC3_IR']
     cat_type = "loc_depth"
-    surveys = ["JADES-Deep-GS-matched"] #[config["DEFAULT"]["SURVEY"]]
+    surveys = ["JOF"] #[config["DEFAULT"]["SURVEY"]]
     aper_diams = [0.32] * u.arcsec
     SED_code_arr = [EAZY()]
     templates_arr = ["fsps_larson"] #["fsps", "fsps_larson", "fsps_jades"]

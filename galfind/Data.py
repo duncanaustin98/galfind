@@ -1658,14 +1658,11 @@ class Data:
 
             area_tab = self.calc_unmasked_area(masking_instrument_or_band_name = self.forced_phot_band)
             area_row = area_tab[area_tab["masking_instrument_band"] == self.forced_phot_band]
-            area_master = area_row["unmasked_area_total"].to(u.arcmin ** 2).value
-            
-                
+            area_master = float(area_row["unmasked_area_total"].to(u.arcmin ** 2).value)
             bands = list(self.instrument.band_names)
             if self.forced_phot_band not in bands:
                 bands.append(self.forced_phot_band)
             colors = plt.cm.viridis(np.linspace(0, 1, len(bands)))
-            
 
             for pos, band in enumerate(bands):
                 save_path = f"{self.depth_dirs[band]}/{mode}/depth_areas.png"
@@ -1719,9 +1716,6 @@ class Data:
                             min_depth = min_temp
                         if max_temp > max_depth:
                             max_depth = max_temp
-
-                    
-                    
 
             ax.set_ylim(max_depth, min_depth)
             ax.legend(frameon = False, ncol = 2)
