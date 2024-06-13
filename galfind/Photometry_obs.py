@@ -22,17 +22,21 @@ from .SED_result import Galaxy_SED_results, Catalogue_SED_results
 
 class Photometry_obs(Photometry):
 
-    def __init__(self, instrument, flux_Jy, flux_Jy_errs, aper_diam, min_flux_pc_err, loc_depths, SED_results = {}):
-        start = time.time()
+    def __init__(self, instrument, flux_Jy, flux_Jy_errs, aper_diam, min_flux_pc_err, loc_depths, SED_results = {}, timed = False):
+        if timed:
+            start = time.time()
         self.aper_diam = aper_diam
         self.min_flux_pc_err = min_flux_pc_err
         self.SED_results = SED_results # array of SED_result objects with different SED fitting runs
-        mid = time.time()
+        if timed:
+            mid = time.time()
         self.aper_corrs = instrument.get_aper_corrs(self.aper_diam)
-        mid_end = time.time()
+        if timed:
+            mid_end = time.time()
         super().__init__(instrument, flux_Jy, flux_Jy_errs, loc_depths)
-        end = time.time()
-        print(mid - start, mid_end - mid, end - mid_end)
+        if timed:
+            end = time.time()
+            print(mid - start, mid_end - mid, end - mid_end)
 
     def __str__(self):
         line_sep = "*" * 40 + "\n"

@@ -125,7 +125,6 @@ class Catalogue_SED_results:
     @classmethod
     def from_fits_cat(cls, fits_cat, cat_creator, SED_fit_params_arr, cat_PDF_paths = None, cat_SED_paths = None, \
             phot_arr = None, instrument = None):
-        breakpoint()
         assert(all(True if "code" in SED_fit_params else False for SED_fit_params in SED_fit_params_arr))
         # calculate array of galaxy photometries if required
         if type(phot_arr) == type(None) and type(instrument) != type(None):

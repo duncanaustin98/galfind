@@ -1656,7 +1656,6 @@ class Data:
             save_path = f"{self.depth_dirs[self.forced_phot_band]}/{mode}/depth_areas.png" # not entirely general -> need to improve self.depth_dirs
             
             if not Path(save_path).is_file() or overwrite:
-                
                 fig, ax = plt.subplots(1, 1, figsize = (5, 5))
                 ax.set_title(f"{self.survey} {self.version} {aper_diam}")
                 ax.set_xlabel("Area (arcmin$^{2}$)")

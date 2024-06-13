@@ -44,15 +44,15 @@ class Catalogue(Catalogue_Base):
     @classmethod
     def from_pipeline(cls, survey, version, aper_diams, cat_creator, SED_fit_params_arr = [{"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": 4.}, \
             {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": 6.}, {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}], \
-            instruments = ['NIRCam', 'ACS_WFC', 'WFC3_IR'], forced_phot_band = "F444W", excl_bands = [], loc_depth_min_flux_pc_errs = [5, 10], crop_by = None):
+            instruments = ['NIRCam', 'ACS_WFC', 'WFC3_IR'], forced_phot_band = "F444W", excl_bands = [], loc_depth_min_flux_pc_errs = [5, 10], crop_by = None, timed = True):
         # make 'Data' object
         data = Data.from_pipeline(survey, version, instruments, excl_bands = excl_bands)
         return cls.from_data(data, version, aper_diams, cat_creator, SED_fit_params_arr, \
-            forced_phot_band, loc_depth_min_flux_pc_errs, crop_by = crop_by)
+            forced_phot_band, loc_depth_min_flux_pc_errs, crop_by = crop_by, timed = timed)
     
     @classmethod
     def from_data(cls, data, version, aper_diams, cat_creator, SED_fit_params_arr, forced_phot_band = "F444W", \
-                loc_depth_min_flux_pc_errs = [10], mask = True, crop_by = None):
+                loc_depth_min_flux_pc_errs = [10], mask = True, crop_by = None, timed = True):
         # make masked local depth catalogue from the 'Data' object
         data.combine_sex_cats(forced_phot_band)
         mode = str(config["Depths"]["MODE"]).lower() # mode to calculate depths (either "n_nearest" or "rolling")
@@ -60,11 +60,11 @@ class Catalogue(Catalogue_Base):
         data.perform_aper_corrs()
         data.make_loc_depth_cat(cat_creator, depth_mode = mode)
         return cls.from_fits_cat(data.sex_cat_master_path, version, data.instrument, cat_creator, data.survey, \
-            SED_fit_params_arr, data = data, mask = mask, crop_by = crop_by)
+            SED_fit_params_arr, data = data, mask = mask, crop_by = crop_by, timed = timed)
     
     @classmethod
     def from_fits_cat(cls, fits_cat_path, version, instrument, cat_creator, survey, \
-            SED_fit_params_arr, data = None, mask = False, excl_bands = [], crop_by = None):
+            SED_fit_params_arr, data = None, mask = False, excl_bands = [], crop_by = None, timed = True):
         # open the catalogue
         fits_cat = funcs.cat_from_path(fits_cat_path)
         for band_name in instrument.band_names:
@@ -96,7 +96,7 @@ class Catalogue(Catalogue_Base):
 
         # produce galaxy array from each row of the catalogue
         start_time = time.time()
-        gals = Multiple_Galaxy.from_fits_cat(fits_cat, instrument, cat_creator, [{}]).gals #codes, lowz_zmax, templates_arr).gals
+        gals = Multiple_Galaxy.from_fits_cat(fits_cat, instrument, cat_creator, [{}], timed = timed).gals #codes, lowz_zmax, templates_arr).gals
         end_time = time.time()
         elapsed_time = end_time - start_time
         print(f"Finished loading in {len(gals)} galaxies. This took {elapsed_time:.6f} seconds")

@@ -989,9 +989,13 @@ class Galaxy:
 
 class Multiple_Galaxy:
     
-    def __init__(self, sky_coords, IDs, phots, mask_flags_arr, selection_flags_arr):
-        self.gals = [Galaxy(sky_coord, ID, phot, mask_flags, selection_flags) for \
-            sky_coord, ID, phot, mask_flags, selection_flags in zip(sky_coords, IDs, phots, mask_flags_arr, selection_flags_arr)]
+    def __init__(self, sky_coords, IDs, phots, mask_flags_arr, selection_flags_arr, timed = True):
+        if timed:
+            self.gals = [Galaxy(sky_coord, ID, phot, mask_flags, selection_flags) for sky_coord, ID, phot, mask_flags, selection_flags \
+                in tqdm(zip(sky_coords, IDs, phots, mask_flags_arr, selection_flags_arr), desc = "Initializing galaxy objects", total = len(sky_coords))]
+        else:
+            self.gals = [Galaxy(sky_coord, ID, phot, mask_flags, selection_flags) for \
+                sky_coord, ID, phot, mask_flags, selection_flags in zip(sky_coords, IDs, phots, mask_flags_arr, selection_flags_arr)]
         
     def __repr__(self):
         # string representation of what is stored in this class
@@ -1016,18 +1020,13 @@ class Multiple_Galaxy:
         return self.gals[index]
     
     @classmethod
-    def from_fits_cat(cls, fits_cat, instrument, cat_creator, SED_fit_params_arr, timed = False):
+    def from_fits_cat(cls, fits_cat, instrument, cat_creator, SED_fit_params_arr, timed = True):
         # load photometries from catalogue
-        start = time.time()
         phots = Multiple_Photometry_obs.from_fits_cat(fits_cat, instrument, cat_creator, SED_fit_params_arr, timed = timed).phot_obs_arr
-        end = time.time()
-        print(end - start)
-        breakpoint()
         # load the ID and Sky Coordinate from the source catalogue
         IDs = np.array(fits_cat[cat_creator.ID_label]).astype(int)
-        # load sky co-ordinate one at a time (can improve efficiency here)
-        sky_coords = [SkyCoord(ra * u.deg, dec * u.deg, frame = "icrs") \
-            for ra, dec in zip(fits_cat[cat_creator.ra_dec_labels["RA"]], fits_cat[cat_creator.ra_dec_labels["DEC"]])]
+        # load sky co-ordinates
+        sky_coords = SkyCoord(fits_cat[cat_creator.ra_dec_labels["RA"]], fits_cat[cat_creator.ra_dec_labels["DEC"]], frame = "icrs")
         # mask flags should come from cat_creator
         #mask_flags_arr = [{f"unmasked_{band}": cat_creator.load_flag(fits_cat_row, f"unmasked_{band}") for band in instrument.band_names} for fits_cat_row in fits_cat]
         mask_flags_arr = [{} for fits_cat_row in fits_cat] #f"unmasked_{band}": None for band in instrument.band_names

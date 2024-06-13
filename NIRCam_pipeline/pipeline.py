@@ -17,14 +17,14 @@ from galfind import Catalogue, config, LePhare, EAZY, NIRCam
 from galfind.Catalogue_Creator import GALFIND_Catalogue_Creator
 
 def pipeline(surveys, version, instruments, aper_diams, min_flux_pc_errs, forced_phot_band, \
-        excl_bands, SED_fit_params_arr, cat_type = "loc_depth", crop_by = None):
+        excl_bands, SED_fit_params_arr, cat_type = "loc_depth", crop_by = None, timed = True):
     for pc_err in min_flux_pc_errs:
         # make appropriate galfind catalogue creator for each aperture diameter
         cat_creator = GALFIND_Catalogue_Creator(cat_type, aper_diams[0], pc_err)
         for survey in surveys:
             cat = Catalogue.from_pipeline(survey = survey, version = version, instruments = instruments, aper_diams = aper_diams, \
                 cat_creator = cat_creator, SED_fit_params_arr = SED_fit_params_arr, forced_phot_band = forced_phot_band, \
-                excl_bands = excl_bands, loc_depth_min_flux_pc_errs = min_flux_pc_errs, crop_by = crop_by)
+                excl_bands = excl_bands, loc_depth_min_flux_pc_errs = min_flux_pc_errs, crop_by = crop_by, timed = timed)
             
             # cat_copy = cat.crop(8228, "ID")
 
@@ -69,10 +69,11 @@ if __name__ == "__main__":
     aper_diams = [0.32] * u.arcsec
     SED_code_arr = [EAZY()]
     templates_arr = ["fsps_larson"] #["fsps", "fsps_larson", "fsps_jades"]
-    lowz_zmax_arr = [[4., 6., None]] #[[None]] # 
+    lowz_zmax_arr = [[None]] #[[4., 6., None]] #[[None]] # 
     min_flux_pc_errs = [10]
     forced_phot_band = ["F277W", "F356W", "F444W"] # ["F444W"] #
     crop_by = None #"EPOCHS_lowz+z>4.5"
+    timed = False
 
     jems_bands = ["F182M", "F210M", "F430M", "F460M", "F480M"]
     ngdeep_excl_bands = ["F435W", "F775W", "F850LP"]
@@ -83,4 +84,4 @@ if __name__ == "__main__":
 
     for survey in surveys:
         pipeline([survey], version, instruments, aper_diams, min_flux_pc_errs, forced_phot_band, \
-        excl_bands, SED_fit_params_arr, cat_type = cat_type, crop_by = crop_by)
+        excl_bands, SED_fit_params_arr, cat_type = cat_type, crop_by = crop_by, timed = timed)
