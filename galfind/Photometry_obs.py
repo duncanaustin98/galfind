@@ -28,7 +28,7 @@ class Photometry_obs(Photometry):
         self.min_flux_pc_err = min_flux_pc_err
         self.SED_results = SED_results # array of SED_result objects with different SED fitting runs
         mid = time.time()
-        self.aper_corrs = [instrument.aper_corr(self.aper_diam, band) for band in instrument.band_names]
+        self.aper_corrs = instrument.get_aper_corrs(self.aper_diam)
         mid_end = time.time()
         super().__init__(instrument, flux_Jy, flux_Jy_errs, loc_depths)
         end = time.time()

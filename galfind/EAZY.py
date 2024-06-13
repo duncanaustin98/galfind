@@ -22,6 +22,10 @@ from tqdm import tqdm
 import h5py
 from eazy import hdf5, visualization
 from astropy.io import fits
+import warnings
+from scipy.linalg import LinAlgWarning
+
+warnings.filterwarnings("ignore", category=LinAlgWarning)
 
 from . import SED_code, Instrument, Redshift_PDF
 from .SED import SED, SED_obs

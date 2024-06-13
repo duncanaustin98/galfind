@@ -26,6 +26,12 @@ def pipeline(surveys, version, instruments, aper_diams, min_flux_pc_errs, forced
                 cat_creator = cat_creator, SED_fit_params_arr = SED_fit_params_arr, forced_phot_band = forced_phot_band, \
                 excl_bands = excl_bands, loc_depth_min_flux_pc_errs = min_flux_pc_errs, crop_by = crop_by)
             
+            # cat_copy = cat.crop(8228, "ID")
+
+            # print(cat_copy)
+
+            # cat_copy.plot_phot_diagnostics()
+
             #cat.data.calc_unmasked_area("NIRCam", forced_phot_band = forced_phot_band)
             
             #cat.del_hdu(SED_fit_params_arr[-1]["code"].label_from_SED_fit_params(SED_fit_params_arr[-1]))
@@ -39,6 +45,7 @@ def pipeline(surveys, version, instruments, aper_diams, min_flux_pc_errs, forced
             
             #cat_copy = cat.select_phot_galaxy_property("z", ">", 4.5)
             #cat_copy = cat.select_unmasked_instrument(NIRCam())
+
             cat_copy = cat.select_EPOCHS(allow_lowz = False)
             #cat.select_rest_UV_line_emitters_sigma("CIV-1549", 2.)
             

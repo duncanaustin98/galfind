@@ -184,10 +184,6 @@ class Instrument:
         return {key: value / 2 for key, value in self.band_FWHMs.items()} # = FWHM/2 in Angstrom
     
 # %% Class abstract methods
-
-    @abstractmethod
-    def aper_corr(self, aper_diam, band):
-        pass
     
     @abstractmethod
     def new_instrument(self, excl_bands):
@@ -252,6 +248,33 @@ class Instrument:
         # return an array of Filter objects corresponding to the band names
         return np.array([self[self.index_from_band_name(band_name)] for band_name in self.band_names if not band_name in unique_band_names])
     
+    def get_aper_corrs(self, aper_diam, cache = True):
+        # load aperture correction from object should it exist
+        if hasattr(self, "aper_corrs"):
+            assert type(self.aper_corrs) in [dict]
+            if aper_diam in self.aper_corrs.keys():
+                return self.aper_corrs[aper_diam]
+        else:
+            self.aper_corrs = {}
+        if self.name in globals():
+            assert globals()[self.name] in Instrument.__subclasses__()
+        aper_corr_path = f'{config["Other"]["GALFIND_DIR"]}/Aperture_corrections/{self.name}_aper_corr{".txt" if self.name == "NIRCam" else ".dat"}'
+        # if no aperture corrections in object, load from aperture corrections txt
+        if Path(aper_corr_path).is_file():
+            aper_corr_data = np.loadtxt(aper_corr_path, comments = "#", dtype = [('band', 'U10'), \
+                ('0.32', 'f4'), ('0.5', 'f4'), ('1.0', 'f4'), ('1.5', 'f4'), ('2.0', 'f4')])           
+            if all([True if band_name in aper_corr_data["band"] else False for band_name in self.band_names]) \
+                    and str(aper_diam.to(u.arcsec).value) in aper_corr_data.dtype.names[1:]:
+                band_indices = [list(aper_corr_data["band"]).index(band_name) for band_name in self.band_names]
+                aper_corrs = list(aper_corr_data[str(aper_diam.to(u.arcsec).value)][band_indices])
+                if cache:
+                    self.aper_corrs[aper_diam] = aper_corrs
+                return aper_corrs
+            else:
+                raise(Exception())
+        # if no aperture corrections txt, create it
+        #NIRCam_aper_corr.main(NIRCam().band_names)
+
     @staticmethod
     def from_name(name, excl_bands = []):
         if name == "NIRCam":
@@ -272,10 +295,6 @@ class Instrument:
             return new_instrument
         else:
             raise(Exception(f"Instrument name: {name} does not exist in 'Instrument.from_name()'!"))
-    
-    # def load_instrument_filter_profiles(self, from_SVO = True):
-    #     for band in self:
-    #         band.load_band_filter_profile(band, from_SVO = from_SVO)
 
     def plot_filter_profiles(self, ax, wav_units = u.um, from_SVO = True, \
             cmap_name = "Spectral_r", annotate = True, show = True, save = False) -> NoReturn:
@@ -297,28 +316,6 @@ class NIRCam(Instrument):
     def __init__(self, excl_bands = []):
         instr = Instrument.from_SVO("JWST", self.__class__.__name__, excl_bands = [])
         super().__init__(instr.name, instr.bands, excl_bands, instr.facility)
-        # bands = ["f070W", "f090W", "f115W", "f140M", "f150W", "f162M", "f182M", "f200W", "f210M", "f250M", "f277W", "f300M", "f335M", "f356W", "f360M", "f410M", "f430M", "f444W", "f460M", "f480M"]
-        # band_wavelengths = {"f070W": 7_056., "f090W": 9_044., "f115W": 11_571., "f140M": 14_060., "f150W": 15_040., "f162M": 16_281., "f182M": 18_466., "f200W": 19_934., "f210M": 20_964., \
-        #                     "f250M": 25_038., "f277W": 27_695., "f300M": 29_908., "f335M": 33_639., "f356W": 35_768., "f360M": 36_261., "f410M": 40_844., "f430M": 42_818., "f444W": 44_159., \
-        #                         "f460M": 46_305., "f480M": 48_192.}
-        # band_wavelengths = {key: value * u.Angstrom for (key, value) in band_wavelengths.items()} # convert each individual value to Angstrom
-        # band_FWHMs = {"f070W": 1_600., "f090W": 2_101., "f115W": 2_683., "f140M": 1_478., "f150W": 3_371., "f162M": 1_713., "f182M": 2_459., "f200W": 4_717., "f210M": 2_089., \
-        #               "f250M": 1_825., "f277W": 7_110., "f300M": 3_264., "f335M": 3_609., "f356W": 8_408., "f360M": 3_873., "f410M": 4_375., "f430M": 2_312., "f444W": 11_055., \
-        #                   "f460M": 2_322., "f480M": 3_145.}
-        # band_FWHMs = {key: value * u.Angstrom for (key, value) in band_FWHMs.items()} # convert each individual value to Angstrom
-        # super().__init__("NIRCam", bands, band_wavelengths, band_FWHMs, excl_bands, "JWST")
-
-    def aper_corr(self, aper_diam, band):
-        aper_corr_path = f'{config["Other"]["GALFIND_DIR"]}/Aperture_corrections/NIRCam_aper_corr.txt'
-        if not Path(aper_corr_path).is_file():
-            # perform aperture corrections
-            NIRCam_aper_corr.main(self.band_names)
-        # load aperture corrections from appropriate path (bands in NIRCam class must be the same as those saved in aper_corr)
-        aper_corr_data = np.loadtxt(aper_corr_path, dtype = str, comments = "#")
-        aper_diam_index = np.where(json.loads(config.get("SExtractor", "APERTURE_DIAMS")) == aper_diam.value)[0][0] + 1
-        band_index = list(self.band_names).index(band)
-        # print((aper_diam_index, band_index))
-        return float(aper_corr_data[band_index][aper_diam_index])
     
     def new_instrument(self, excl_bands = []):
         return NIRCam(excl_bands)
@@ -328,15 +325,6 @@ class MIRI(Instrument):
     def __init__(self, excl_bands = []):
         instr = Instrument.from_SVO("JWST", self.__class__.__name__, excl_bands = [])
         super().__init__(instr.name, instr.bands, excl_bands, instr.facility)
-        # bands = ['f560W', 'f770W', 'f1000W', 'f1130W', 'f1280W', 'f1500W', 'f1800W', 'f2100W', 'f2550W']
-        # band_wavelengths = {'f560W':55870.25, 'f770W':75224.94, 'f1000W': 98793.45, 'f1130W':112960.71, 'f1280W':127059.68, 'f1500W':149257.07, 'f1800W':178734.17, 'f2100W':205601.06, 'f2550W':251515.99}
-        # band_wavelengths = {key: value * u.Angstrom for (key, value) in band_wavelengths.items()} # convert each individual value to Angstrom
-        # band_FWHMs = {'f560W': 11114.05, 'f770W': 20734.55, 'f1000W': 18679.18, 'f1130W': 7091.01, 'f1280W': 25306.74, 'f1500W': 31119.13, 'f1800W': 29839.89,'f2100W':46711.97, 'f2550W':36393.71}
-        # band_FWHMs = {key: value * u.Angstrom for (key, value) in band_FWHMs.items()} # convert each individual value to Angstrom    
-        # super().__init__("MIRI", bands, band_wavelengths, band_FWHMs, excl_bands, "JWST")
-    
-    def aper_corr(self, aper_diam, band):
-        pass
     
     def new_instrument(self, excl_bands = []):
         return MIRI(excl_bands)
@@ -346,21 +334,6 @@ class ACS_WFC(Instrument):
     def __init__(self, excl_bands = []):
         instr = Instrument.from_SVO("HST", self.__class__.__name__, excl_bands = [])
         super().__init__(instr.name, instr.bands, excl_bands, instr.facility)
-        # bands = ["f435W", "fr459M", "f475W", "f550M", "f555W", "f606W", "f625W", "fr647M", "f775W", "f814W", "f850LP", "fr914M"]
-        # # Wavelengths corrrespond to lambda effective of the filters from SVO Filter Profile Service
-        # band_wavelengths = {"f435W": 4_340., "fr459M": 4_590., "f475W": 4_766., "f550M": 5_584., "f555W": 5_373., "f606W": 5_960., \
-        #                     "f625W": 6_325., "fr647M": 6_472., "f775W": 7_706., "f814W": 8_073., "f850LP": 9_047., "fr914M": 9_072.}
-        # band_wavelengths = {key: value * u.Angstrom for (key, value) in band_wavelengths.items()} # convert each individual value to Angstrom
-        # # FWHMs corrrespond to FWHM of the filters from SVO Filter Profile Service
-        # band_FWHMs = {"f435W": 937., "fr459M": 350., "f475W": 1_437., "f550M": 546., "f555W": 1_240., "f606W": 2_322., \
-        #                     "f625W": 1_416., "fr647M": 501., "f775W": 1_511., "f814W": 1_858., "f850LP": 1_208., "fr914M": 774.}
-        # band_FWHMs = {key: value * u.Angstrom for (key, value) in band_FWHMs.items()} # convert each individual value to Angstrom    
-        # super().__init__("ACS_WFC", bands, band_wavelengths, band_FWHMs, excl_bands, "HST")
-    
-    def aper_corr(self, aper_diam, band):
-        aper_corr_path = f'{config["Other"]["GALFIND_DIR"]}/Aperture_corrections/hst_acs_wfc_aper_corr.dat'
-        aper_corr_data = np.loadtxt(aper_corr_path, comments = "#", dtype=[('band', 'U10'), ('0.32', 'f4'), ('0.5', 'f4'), ('1.0', 'f4'), ('1.5', 'f4'), ('2.0', 'f4')])
-        return aper_corr_data[aper_corr_data['band'] == band.upper()][str(aper_diam.to('arcsec').value)][0]
     
     def new_instrument(self, excl_bands = []):
         return ACS_WFC(excl_bands)
@@ -370,19 +343,6 @@ class WFC3_IR(Instrument):
     def __init__(self, excl_bands = []):
         instr = Instrument.from_SVO("HST", self.__class__.__name__, excl_bands = [])
         super().__init__(instr.name, instr.bands, excl_bands, instr.facility)
-        # bands = ["f098M", "f105W",  "f110W", "f125W", "f127M", "f139M", "f140W", "f153M", "f160W"]
-        # # Wavelengths corrrespond to lambda effective of the filters from SVO Filter Profile Service
-        # band_wavelengths = {"f098M": 9_875., "f105W": 10_584.,  "f110W": 11_624., "f125W": 12_516., "f127M": 12_743., "f139M": 13_843., "f140W": 13_970., "f153M": 15_334., "f160W": 15_392.}
-        # band_wavelengths = {key: value * u.Angstrom for (key, value) in band_wavelengths.items()} # convert each individual value to Angstrom
-        # # FWHMs corrrespond to FWHM of the filters from SVO Filter Profile Service
-        # band_FWHMs = {"f098M": 1_692., "f105W": 2_917.,  "f110W": 4_994., "f125W": 3_005., "f127M": 692., "f139M": 652., "f140W": 3_941., "f153M": 693., "f160W": 2_875.}
-        # band_FWHMs = {key: value * u.Angstrom for (key, value) in band_FWHMs.items()} # convert each individual value to Angstrom
-        # super().__init__("WFC3_IR", bands, band_wavelengths, band_FWHMs, excl_bands, "HST")
-    
-    def aper_corr(self, aper_diam, band):
-        aper_corr_path = f'{config["Other"]["GALFIND_DIR"]}/Aperture_corrections/wfc3ir_aper_corr.dat'
-        aper_corr_data = np.loadtxt(aper_corr_path, comments = "#", dtype=[('band', 'U10'), ('0.32', 'f4'), ('0.5', 'f4'), ('1.0', 'f4'), ('1.5', 'f4'), ('2.0', 'f4')])
-        return aper_corr_data[aper_corr_data['band'] == band.upper()][str(aper_diam.to('arcsec').value)][0]
     
     def new_instrument(self, excl_bands = []):
         return WFC3_IR(excl_bands)
@@ -400,15 +360,33 @@ class Combined_Instrument(Instrument):
     @classmethod
     def combined_instrument_from_name(cls, name, excl_bands = []):
         return cls.from_name(name, excl_bands)
-      
-    def aper_corr(self, aper_diam, band):
-        names = self.name.split("+")
-        for name in names:
-            instrument = self.from_name(name)
-            if band in instrument.band_names:
-                return instrument.aper_corr(aper_diam, band)
-        raise(Exception(f"{band} does not exist in Instrument = {self.name}!"))
     
+    def get_bands_from_instrument(self, instrument_name):
+        assert instrument_name in [subcls.__name__ for subcls in \
+            Instrument.__subclasses__() if subcls.__name__ != "Combined_Instrument"]
+        return [band for band in self if band.instrument == instrument_name]
+
+    def get_aper_corrs(self, aper_diam, cache = True):
+        # load from object if already calculated
+        if hasattr(self, "aper_corrs"):
+            assert type(self.aper_corrs) in [dict]
+            if aper_diam in self.aper_corrs.keys():
+                return self.aper_corrs[aper_diam]
+        else:
+            self.aper_corrs = {}
+        # calculate aperture corrections for each instrument
+        instrument_arr = [globals()[name](excl_bands = [band_name for band_name in globals()[name]().band_names \
+            if band_name not in [band.band_name for band in self.get_bands_from_instrument(name)]]) for name in self.name.split("+")]
+        instrument_band_names = np.hstack([instrument.band_names for instrument in instrument_arr])
+        aper_corrs = np.hstack([instrument.get_aper_corrs(aper_diam, cache = False) for instrument in instrument_arr])
+        # re-order aperture corrections
+        band_aper_corr_dict = {band_name: aper_corr for band_name, aper_corr in zip(instrument_band_names, aper_corrs)}
+        _aper_corrs = [band_aper_corr_dict[band_name] for band_name in self.band_names]
+        if cache: # save in self
+            self.aper_corrs[aper_diam] = _aper_corrs
+        breakpoint()
+        return _aper_corrs
+
     def instrument_from_band(self, band, return_name = True):
         names = self.name.split("+")
         for name in names:

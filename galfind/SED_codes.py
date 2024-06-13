@@ -49,12 +49,12 @@ class SED_code(ABC):
         if upper_sigma_lim != None and upper_sigma_lim != {}:
             # determine relevant indices
             upper_lim_indices = [[i, j] for i, gal in enumerate(cat) for j, depth in enumerate(gal.phot[0].loc_depths) \
-                                 if funcs.n_sigma_detection(depth, (phot[i][j] * out_units).to(u.ABmag).value + \
-                                gal.phot.instrument.aper_corr(gal.phot.aper_diam, gal.phot.instrument.band_names[j]), u.Jy.to(u.ABmag)) < upper_sigma_lim["threshold"]]
+                if funcs.n_sigma_detection(depth, (phot[i][j] * out_units).to(u.ABmag).value + \
+                gal.phot.instrument.get_aper_corrs(gal.phot.aper_diam)[j], u.Jy.to(u.ABmag)) < upper_sigma_lim["threshold"]]
             phot = np.array([funcs.five_to_n_sigma_mag(loc_depth, upper_sigma_lim["value"]) if [i, j] in upper_lim_indices else phot[i][j] \
-                    for i, gal in enumerate(cat) for j, loc_depth in enumerate(gal.phot.loc_depths)]).reshape(phot_shape)
+                for i, gal in enumerate(cat) for j, loc_depth in enumerate(gal.phot.loc_depths)]).reshape(phot_shape)
             phot_err = np.array([-1.0 if [i, j] in upper_lim_indices else phot_err[i][j] \
-                    for i, gal in enumerate(cat) for j, loc_depth in enumerate(gal.phot.loc_depths)]).reshape(phot_shape)
+                for i, gal in enumerate(cat) for j, loc_depth in enumerate(gal.phot.loc_depths)]).reshape(phot_shape)
 
         # insert 'no_data_val' from SED_input_bands with no data in the catalogue
         phot_in = []
