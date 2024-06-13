@@ -20,6 +20,7 @@ import subprocess
 from pathlib import Path
 from astropy.io import fits
 from tqdm import tqdm
+import time
 
 from . import useful_funcs_austind as funcs
 from . import config, galfind_logger
@@ -72,7 +73,9 @@ class SED_code(ABC):
         
         return phot_in, phot_err_in
     
-    def fit_cat(self, cat, SED_fit_params): # *args, **kwargs):
+    def fit_cat(self, cat, SED_fit_params, timed = True): # *args, **kwargs):
+        if timed:
+            start = time.time()
         in_path = self.make_in(cat) #, *args, **kwargs)
         #print(in_path)
         out_folder = funcs.split_dir_name(in_path.replace("input", "output"), "dir")
@@ -95,9 +98,12 @@ class SED_code(ABC):
         # save PDF and SED paths in galfind catalogue object
         cat.save_phot_PDF_paths(PDF_paths, SED_fit_params)
         cat.save_phot_SED_paths(SED_paths, SED_fit_params)
+        if timed:
+            mid = time.time()
+            print(f"Running SED fitting took {(mid - start):.1f}s")
         # update galaxies within the catalogue with new SED fits
-        cat_SED_results = Catalogue_SED_results.from_cat(cat, SED_fit_params_arr = [SED_fit_params]).SED_results
-        cat.update_SED_results(cat_SED_results)
+        cat_SED_results = Catalogue_SED_results.from_cat(cat, SED_fit_params_arr = [SED_fit_params], timed = timed).SED_results
+        cat.update_SED_results(cat_SED_results, timed = timed)
         return cat
     
     def update_fits_cat(self, cat, fits_out_path, SED_fit_params): #*args, **kwargs):

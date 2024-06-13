@@ -95,22 +95,24 @@ class Catalogue(Catalogue_Base):
                     galfind_logger.warning(f"Invalid crop name == {name}! Skipping")
 
         # produce galaxy array from each row of the catalogue
-        start_time = time.time()
+        if timed:
+            start_time = time.time()
         gals = Multiple_Galaxy.from_fits_cat(fits_cat, instrument, cat_creator, [{}], timed = timed).gals #codes, lowz_zmax, templates_arr).gals
-        end_time = time.time()
-        elapsed_time = end_time - start_time
-        print(f"Finished loading in {len(gals)} galaxies. This took {elapsed_time:.6f} seconds")
+        if timed:
+            end_time = time.time()
+            elapsed_time = end_time - start_time
+            print(f"Finished loading in {len(gals)} galaxies. This took {elapsed_time:.6f} seconds")
         # make catalogue with no SED fitting information
         cat_obj = cls(gals, fits_cat_path, survey, cat_creator, instrument, SED_fit_params_arr, version = version, crops = crop_by)
         #print(cat_obj)
         if cat_obj != None:
             cat_obj.data = data
         if mask:
-            cat_obj.mask()
+            cat_obj.mask(timed = timed)
         # run SED fitting for the appropriate SED_fit_params
         for SED_fit_params in SED_fit_params_arr:
-            cat_obj = SED_fit_params["code"].fit_cat(cat_obj, SED_fit_params)
-            cat_obj.load_SED_rest_properties(SED_fit_params) # load SED rest properties
+            cat_obj = SED_fit_params["code"].fit_cat(cat_obj, SED_fit_params, timed = timed)
+            cat_obj.load_SED_rest_properties(SED_fit_params, timed = timed) # load SED rest properties
         return cat_obj
     
     def save_phot_PDF_paths(self, PDF_paths, SED_fit_params):
@@ -123,10 +125,14 @@ class Catalogue(Catalogue_Base):
             self.phot_SED_paths = {}
         self.phot_SED_paths[SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)] = SED_paths
     
-    def update_SED_results(self, cat_SED_results):
+    def update_SED_results(self, cat_SED_results, timed = True):
         assert(len(cat_SED_results) == len(self)) # if this is not the case then instead should cross match IDs between self and gal_SED_result
         galfind_logger.info("Updating SED results in galfind catalogue object")
-        [gal.update(gal_SED_result) for gal, gal_SED_result in zip(self, cat_SED_results)]
+        if timed:
+            [gal.update(gal_SED_result) for gal, gal_SED_result \
+                in tqdm(zip(self, cat_SED_results), desc = "Updating galaxy SED results", total = len(self))]
+        else:
+            [gal.update(gal_SED_result) for gal, gal_SED_result in zip(self, cat_SED_results)]
     
     # Spectroscopy
         
@@ -156,7 +162,7 @@ class Catalogue(Catalogue_Base):
     #         gal.phot.instrument.band_names)[0][0]].value for i, gal in enumerate(cat)])
     #     return ext_src_corrs
 
-    def mask(self): #, mask_instrument = NIRCam()):
+    def mask(self, timed = True): #, mask_instrument = NIRCam()):
         galfind_logger.info(f"Running masking code for {self.cat_path}.")
         # determine whether to overwrite catalogue or not
         overwrite = config["Masking"].getboolean("OVERWRITE_MASK_COLS")
@@ -620,7 +626,7 @@ class Catalogue(Catalogue_Base):
         funcs.make_dirs(f"{save_dir}/dummy_path.ecsv")
         [gal._save_SED_rest_PDFs(property_name, save_dir, SED_fit_params) for gal in self]
 
-    def load_SED_rest_properties(self, SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}):
+    def load_SED_rest_properties(self, SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}, timed = True):
         key = SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)
         # save the names of properties that have been calculated for this sample of galaxies in the catalogue
         SED_rest_properties_tab = self.open_cat(cropped = False, hdu = key)

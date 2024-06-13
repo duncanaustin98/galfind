@@ -73,7 +73,7 @@ if __name__ == "__main__":
     min_flux_pc_errs = [10]
     forced_phot_band = ["F277W", "F356W", "F444W"] # ["F444W"] #
     crop_by = None #"EPOCHS_lowz+z>4.5"
-    timed = False
+    timed = True
 
     jems_bands = ["F182M", "F210M", "F430M", "F460M", "F480M"]
     ngdeep_excl_bands = ["F435W", "F775W", "F850LP"]

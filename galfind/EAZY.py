@@ -16,6 +16,7 @@ import matplotlib
 import matplotlib.pyplot as plt
 import eazy
 import os
+import time
 import warnings
 from astropy.utils.exceptions import AstropyWarning
 from tqdm import tqdm
@@ -274,7 +275,7 @@ class EAZY(SED_code):
                 for ID, z in tqdm(zip(fit.OBJID, np.array(table[f"zbest_{templates}_{lowz_label}"]).astype(float)), total = len(fit.OBJID), \
                 desc = f"Saving best-fit template SEDs for {self.__class__.__name__} {templates} {lowz_label}")]
             hf.close()
-            galfind_logger.info(f'Finished saving SEDss for {self.__class__.__name__} {templates} {lowz_label}')
+            galfind_logger.info(f'Finished saving SEDs for {self.__class__.__name__} {templates} {lowz_label}')
 
         # Write used parameters
         if fit != None:
@@ -283,8 +284,8 @@ class EAZY(SED_code):
 
     @staticmethod
     def save_zPDF(pos_obj, ID, hf, fit_zgrid, fit_pz):
-        gal_zPDF = hf.create_group(f"ID={int(ID)}")
-        gal_zPDF.create_dataset("p(z)", data = np.array([fit_pz[pos_obj][pos] for pos, z in enumerate(fit_zgrid)]))
+        #hf.create_dataset(f"ID={int(ID)}_p(z)", data = np.array([fit_pz[pos_obj][pos] for pos, z in enumerate(fit_zgrid)]))
+        hf.create_dataset(f"ID={int(ID)}_p(z)", data = np.array([np.array(fit_pz[pos_obj][pos]) for pos, z in enumerate(fit_zgrid)]))
 
     @staticmethod
     def save_SED(ID, z, hf, fit, wav_unit = u.AA, flux_unit = u.nJy):
@@ -340,7 +341,7 @@ class EAZY(SED_code):
         return SED_obs_arr
     
     @staticmethod
-    def extract_PDFs(gal_property, IDs, PDF_paths, SED_fit_params):
+    def extract_PDFs(gal_property, IDs, PDF_paths, SED_fit_params, timed = True):
         # ensure this works if only extracting 1 galaxy
         if type(IDs) in [str, int, float]:
             IDs = [int(IDs)]
@@ -363,8 +364,17 @@ class EAZY(SED_code):
             hf = h5py.File(PDF_paths[0], "r")
             hf_z = np.array(hf["z"]) * u.dimensionless_unscaled
             # extract redshift PDF for each ID
-            redshift_pdfs = [Redshift_PDF(hf_z, np.array(hf[f"ID={str(int(ID))}"]["p(z)"]), SED_fit_params) \
-                for ID in tqdm(IDs, total = len(IDs), desc = "Constructing redshift PDFs")]
+            if timed:
+                start = time.time()
+            pz_arr = [np.array(hf[f"ID={str(int(ID))}"]["p(z)"]) for ID in IDs]
+            #pz_arr = [np.array(hf[f"ID={str(int(ID))}_p(z)"]) for ID in IDs]
+            if timed:
+                mid = time.time()
+            redshift_pdfs = [Redshift_PDF(hf_z, pz, SED_fit_params, normed = True) \
+                for ID, pz in tqdm(zip(IDs, pz_arr), total = len(IDs), desc = "Constructing redshift PDFs")]
+            if timed:
+                end = time.time()
+                print(mid - start, end - mid)
             # close .h5 file
             hf.close()
             return redshift_pdfs

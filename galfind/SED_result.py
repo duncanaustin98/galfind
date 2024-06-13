@@ -14,6 +14,7 @@ from astropy.table import Table
 from glob import glob
 from tqdm import tqdm
 import h5py
+import time
 
 from .Photometry import Photometry, Multiple_Photometry
 from .Photometry_rest import Photometry_rest
@@ -117,23 +118,32 @@ class Catalogue_SED_results:
         return len(self.SED_results)
     
     @classmethod
-    def from_cat(cls, cat, SED_fit_params_arr):
-        cat_PDF_paths = [cat.phot_PDF_paths[SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)] for SED_fit_params in SED_fit_params_arr]
-        cat_SED_paths = [cat.phot_SED_paths[SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)] for SED_fit_params in SED_fit_params_arr]
-        return cls.from_fits_cat(cat.open_cat(cropped = True), cat.cat_creator, SED_fit_params_arr, cat_PDF_paths, cat_SED_paths, phot_arr = [gal.phot for gal in cat])
+    def from_cat(cls, cat, SED_fit_params_arr, timed = True):
+        if timed:
+            cat_PDF_paths = [cat.phot_PDF_paths[SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)] \
+                for SED_fit_params in tqdm(SED_fit_params_arr, desc = "Collecting cat_PDF_paths", total = len(SED_fit_params_arr))]
+            cat_SED_paths = [cat.phot_SED_paths[SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)] \
+                for SED_fit_params in tqdm(SED_fit_params_arr, desc = "Collecting cat_SED_paths", total = len(SED_fit_params_arr))]
+        else:
+            cat_PDF_paths = [cat.phot_PDF_paths[SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)] for SED_fit_params in SED_fit_params_arr]
+            cat_SED_paths = [cat.phot_SED_paths[SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)] for SED_fit_params in SED_fit_params_arr]
+        return cls.from_fits_cat(cat.open_cat(cropped = True), cat.cat_creator, SED_fit_params_arr, cat_PDF_paths, \
+            cat_SED_paths, phot_arr = [gal.phot for gal in cat], timed = timed)
 
     @classmethod
     def from_fits_cat(cls, fits_cat, cat_creator, SED_fit_params_arr, cat_PDF_paths = None, cat_SED_paths = None, \
-            phot_arr = None, instrument = None):
+            phot_arr = None, instrument = None, timed = True):
         assert(all(True if "code" in SED_fit_params else False for SED_fit_params in SED_fit_params_arr))
         # calculate array of galaxy photometries if required
         if type(phot_arr) == type(None) and type(instrument) != type(None):
-            phot_arr = Multiple_Photometry.from_fits_cat(fits_cat, instrument, cat_creator).phot_arr
+            phot_arr = Multiple_Photometry.from_fits_cat(fits_cat, instrument, cat_creator, timed = timed).phot_arr
         elif type(phot_arr) != type(None) and type(instrument) == type(None):
             pass
         else:
             galfind_logger.critical("Must specify either phot or instrument in Galaxy_SED_results!")
 
+        if timed:
+            start = time.time()
         IDs = np.array(fits_cat[cat_creator.ID_label]).astype(int)
         # IDs = list(np.full(len(SED_fit_params_arr), np.array(fits_cat[cat_creator.ID_label]).astype(int)))
         # convert cat_properties from array of len(SED_fit_params_arr), with each element a dict of galaxy properties for the entire catalogue with values of arrays of len(fits_cat)
@@ -146,7 +156,10 @@ class Catalogue_SED_results:
         err_labels_arr = [{key: SED_fit_params["code"].galaxy_property_labels(key, SED_fit_params) for key in SED_fit_params["code"].galaxy_property_errs_dict.keys()} for SED_fit_params in SED_fit_params_arr]
         cat_property_errs = [{gal_property: list(fits_cat[label]) for gal_property, label in err_labels.items()} for err_labels in err_labels_arr]
         cat_property_errs = [[{key: value[i] for key, value in SED_fitting_property_errs.items()} for SED_fitting_property_errs in cat_property_errs] for i in range(len(fits_cat))]
-
+        if timed:
+            mid = time.time()
+            print(f"Loading properties and associated errors took {(mid - start):.1f}s")
+        
         # load in PDFs
         # make array of the correct shape for appropriate parsing
         cat_property_PDFs = np.full((len(fits_cat), len(SED_fit_params_arr)), None)
