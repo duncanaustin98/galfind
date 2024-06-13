@@ -7,6 +7,8 @@ Created on Fri Jun  2 12:56:53 2023
 """
 
 # Instrument.py
+from __future__ import absolute_import
+
 import numpy as np
 from copy import copy, deepcopy
 from abc import ABC, abstractmethod
@@ -189,20 +191,37 @@ class Instrument:
     
 # %% Other class methods
 
-    def remove_band(self, band_name) -> NoReturn:
+    def remove_band(self, band_name: str) -> NoReturn:
         assert type(band_name) in [str, np.str_], galfind_logger.critical(f"{band_name=} with {type(band_name)=} not in ['str', 'np.str_']")
         assert band_name in self.band_names, galfind_logger.critical(f"{band_name=} not in {self.band_names=}")
         self.remove_index(self.index_from_band_name(band_name))
+        return self
+
+    def remove_bands(self, band_names: str) -> "Instrument":
+        assert all(band in self.band_names for band in band_names)
+        remove_indices = self.indices_from_band_names(band_names)
+        if remove_indices != []:
+            self.remove_indices(remove_indices)
+        return self
         
     def remove_index(self, remove_index: int) -> NoReturn:
-        if not remove_index == None:
+        if not type(remove_index) == type(None):
             self.bands = np.delete(self.bands, remove_index)
+        return self
+
+    def remove_indices(self, remove_indices: list) -> NoReturn:
+        if not type(remove_indices) == type(None):
+            self.bands = np.delete(self.bands, remove_indices)
+        return self
         
-    def index_from_band_name(self, band_name) -> int:
+    def index_from_band_name(self, band_name: str) -> Union[int, None]:
         if band_name in self.band_names:
             return np.where(self.band_names == band_name)[0][0]
         else:
             return None
+        
+    def indices_from_band_names(self, band_names: list) -> list:
+        return [self.index_from_band_name(band_name) for band_name in band_names]
     
     def band_name_from_index(self, index) -> str:
         return self.band_names[index]

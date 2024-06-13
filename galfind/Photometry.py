@@ -208,15 +208,16 @@ class Photometry:
 
 class Multiple_Photometry:
     
-    def __init__(self, instrument, flux_Jy_arr, flux_Jy_errs_arr, loc_depths_arr):
-        self.phot_arr = [Photometry(instrument, flux_Jy, flux_Jy_errs, loc_depths) for flux_Jy, flux_Jy_errs, loc_depths in zip(flux_Jy_arr, flux_Jy_errs_arr, loc_depths_arr)]        
+    def __init__(self, instrument_arr, flux_Jy_arr, flux_Jy_errs_arr, loc_depths_arr):
+        self.phot_arr = [Photometry(instrument, flux_Jy, flux_Jy_errs, loc_depths) for instrument, flux_Jy, flux_Jy_errs, loc_depths in zip(instrument_arr, flux_Jy_arr, flux_Jy_errs_arr, loc_depths_arr)]        
         
     @classmethod
     def from_fits_cat(cls, fits_cat, instrument, cat_creator):
-        flux_Jy_arr, flux_Jy_errs_arr = cat_creator.load_photometry(fits_cat, instrument.band_names)
+        flux_Jy_arr, flux_Jy_errs_arr, gal_bands = cat_creator.load_photometry(fits_cat, instrument.band_names)
         # local depths not yet loaded in
-        loc_depths_arr = np.full(flux_Jy_arr.shape, None)
-        return cls(instrument, flux_Jy_arr, flux_Jy_errs_arr, loc_depths_arr)
+        depths_arr = cat_creator.load_depths(fits_cat, instrument.band_names, gal_bands)
+        instrument_arr = [deepcopy(instrument).remove_bands([band for band in instrument.band_names if band not in bands]) for bands in gal_bands]
+        return cls(instrument_arr, flux_Jy_arr, flux_Jy_errs_arr, depths_arr)
     
 
 class Mock_Photometry(Photometry):

@@ -67,12 +67,12 @@ class Catalogue(Catalogue_Base):
             SED_fit_params_arr, data = None, mask = False, excl_bands = [], crop_by = None):
         # open the catalogue
         fits_cat = funcs.cat_from_path(fits_cat_path)
-        for band, band_name in zip(instrument, instrument.band_names):
+        for band_name in instrument.band_names:
             try:
                 cat_creator.load_photometry(Table(fits_cat[0]), [band_name])
             except:
                 # no data for the relevant band within the catalogue
-                instrument.remove_band(band)
+                instrument.remove_band(band_name)
                 print(f"{band_name} flux not loaded")
         print(f"instrument band names = {instrument.band_names}")
 
