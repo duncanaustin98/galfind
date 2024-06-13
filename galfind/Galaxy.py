@@ -16,6 +16,7 @@ from astropy.io import fits
 import os
 import sys
 import json
+import time
 import glob
 from pathlib import Path
 from astropy.nddata import Cutout2D
@@ -1011,9 +1012,13 @@ class Multiple_Galaxy:
         return self.gals[index]
     
     @classmethod
-    def from_fits_cat(cls, fits_cat, instrument, cat_creator, SED_fit_params_arr):
+    def from_fits_cat(cls, fits_cat, instrument, cat_creator, SED_fit_params_arr, timed = False):
         # load photometries from catalogue
-        phots = Multiple_Photometry_obs.from_fits_cat(fits_cat, instrument, cat_creator, SED_fit_params_arr).phot_obs_arr
+        start = time.time()
+        phots = Multiple_Photometry_obs.from_fits_cat(fits_cat, instrument, cat_creator, SED_fit_params_arr, timed = timed).phot_obs_arr
+        end = time.time()
+        print(end - start)
+        breakpoint()
         # load the ID and Sky Coordinate from the source catalogue
         IDs = np.array(fits_cat[cat_creator.ID_label]).astype(int)
         # load sky co-ordinate one at a time (can improve efficiency here)

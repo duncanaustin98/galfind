@@ -1180,7 +1180,8 @@ class Data:
             master_tab.add_column(dec_detect_band, name = 'DELTA_J2000', index = 4)
             
             # update table header
-            master_tab.meta = {**master_tab.meta, **{"INSTR": self.instrument.name, "BANDS": str(self.instrument.band_names)}}
+            master_tab.meta = {**master_tab.meta, **{"INSTR": self.instrument.name, \
+                "SURVEY": self.survey, "VERSION": self.version, "BANDS": str(self.instrument.band_names)}}
 
             # create galfind catalogue README
             #self.make_sex_readme(self.sex_cat_master_path.replace(".fits", "_README.txt"))

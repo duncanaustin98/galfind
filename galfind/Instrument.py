@@ -199,6 +199,7 @@ class Instrument:
         assert type(band_name) in [str, np.str_], galfind_logger.critical(f"{band_name=} with {type(band_name)=} not in ['str', 'np.str_']")
         assert band_name in self.band_names, galfind_logger.critical(f"{band_name=} not in {self.band_names=}")
         self.remove_index(self.index_from_band_name(band_name))
+        return self
 
     def remove_bands(self, band_names: str) -> "Instrument":
         assert all(band in self.band_names for band in band_names)
@@ -210,10 +211,12 @@ class Instrument:
     def remove_index(self, remove_index: int) -> NoReturn:
         if not type(remove_index) == type(None):
             self.bands = np.delete(self.bands, remove_index)
+        return self
 
     def remove_indices(self, remove_indices: list) -> NoReturn:
         if not type(remove_indices) == type(None):
             self.bands = np.delete(self.bands, remove_indices)
+        return self
         
     def index_from_band_name(self, band_name: str) -> Union[int, None]:
         if band_name in self.band_names:
