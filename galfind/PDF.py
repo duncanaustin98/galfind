@@ -12,7 +12,7 @@ from . import useful_funcs_austind as funcs
 
 class PDF:
 
-    def __init__(self, property_name, x, p_x, kwargs = {}, timed = False):
+    def __init__(self, property_name, x, p_x, kwargs = {}, normed = False, timed = False):
         if timed:
             start = time.time()
         assert type(x) in [u.Quantity, u.Magnitude]
@@ -22,7 +22,9 @@ class PDF:
         if timed:
             mid = time.time()
         # normalize to np.trapz(p_x, x) == 1
-        self.p_x = p_x / np.trapz(p_x, x.value)
+        if not normed:
+            p_x /= np.trapz(p_x, x.value)
+        self.p_x = p_x
         if timed:
             end = time.time()
             print(mid - start, end - mid)
@@ -214,9 +216,9 @@ class PDF:
 
 class SED_fit_PDF(PDF):
 
-    def __init__(self, property_name, x, p_x, SED_fit_params, timed = True):
+    def __init__(self, property_name, x, p_x, SED_fit_params, normed = True, timed = True):
         self.SED_fit_params = SED_fit_params
-        super().__init__(property_name, x, p_x, timed = timed)
+        super().__init__(property_name, x, p_x, normed = normed, timed = timed)
 
     def load_peaks_from_SED_result(self, SED_result, nth_peak = 0):
         assert type(nth_peak) == int, galfind_logger.critical(f"nth_peak with type = {type(nth_peak)} must be of type 'int'")
@@ -239,8 +241,8 @@ class SED_fit_PDF(PDF):
 
 class Redshift_PDF(SED_fit_PDF):
 
-    def __init__(self, z, p_z, SED_fit_params, timed = False):
-        super().__init__("z", z, p_z, SED_fit_params, timed = timed)
+    def __init__(self, z, p_z, SED_fit_params, normed = False, timed = False):
+        super().__init__("z", z, p_z, SED_fit_params, normed = normed, timed = timed)
 
     @classmethod
     def from_SED_code_output(cls, data_path, ID, code):

@@ -22,10 +22,12 @@ def pipeline(surveys, version, instruments, aper_diams, min_flux_pc_errs, forced
         # make appropriate galfind catalogue creator for each aperture diameter
         cat_creator = GALFIND_Catalogue_Creator(cat_type, aper_diams[0], pc_err)
         for survey in surveys:
+            start = time.time()
             cat = Catalogue.from_pipeline(survey = survey, version = version, instruments = instruments, aper_diams = aper_diams, \
                 cat_creator = cat_creator, SED_fit_params_arr = SED_fit_params_arr, forced_phot_band = forced_phot_band, \
                 excl_bands = excl_bands, loc_depth_min_flux_pc_errs = min_flux_pc_errs, crop_by = crop_by, timed = timed)
-            
+            end = time.time()
+            print(f"Time to load catalogue = {(end - start):.1f}s")
             # cat_copy = cat.crop(8228, "ID")
 
             # print(cat_copy)
@@ -43,18 +45,18 @@ def pipeline(surveys, version, instruments, aper_diams, min_flux_pc_errs, forced
             #     cat.del_SED_rest_property(name)
             #     print(f"deleted {name}")
             
-            #cat_copy = cat.select_phot_galaxy_property("z", ">", 4.5)
-            #cat_copy = cat.select_unmasked_instrument(NIRCam())
+            # cat_copy = cat.select_phot_galaxy_property("z", ">", 4.5)
+            # cat_copy = cat.select_unmasked_instrument(NIRCam())
 
-            cat_copy = cat.select_EPOCHS(allow_lowz = False)
-            #cat.select_rest_UV_line_emitters_sigma("CIV-1549", 2.)
+            # cat_copy = cat.select_EPOCHS(allow_lowz = False)
+            # #cat.select_rest_UV_line_emitters_sigma("CIV-1549", 2.)
             
-            # cat.calc_rest_UV_properties(frame = "rest")
-            # cat.calc_xi_ion() #dust_author_year = None)
-            cat_copy.plot_phot_diagnostics(flux_unit = u.ABmag)
+            # # cat.calc_rest_UV_properties(frame = "rest")
+            # # cat.calc_xi_ion() #dust_author_year = None)
+            # cat_copy.plot_phot_diagnostics(flux_unit = u.ABmag)
             
-            print(str(cat_copy))
-            print(str(cat_copy[0]))
+            # print(str(cat_copy))
+            # print(str(cat_copy[0]))
 
 
 def make_EAZY_SED_fit_params_arr(SED_code_arr, templates_arr, lowz_zmax_arr):
@@ -62,10 +64,10 @@ def make_EAZY_SED_fit_params_arr(SED_code_arr, templates_arr, lowz_zmax_arr):
         for code, templates, lowz_zmaxs in zip(SED_code_arr, templates_arr, lowz_zmax_arr) for lowz_zmax in lowz_zmaxs]
 
 if __name__ == "__main__":
-    version = "v9" #config["DEFAULT"]["VERSION"]
+    version = "v11" #config["DEFAULT"]["VERSION"]
     instruments = ["NIRCam"] #,"ACS_WFC",  'WFC3_IR'] # "ACS_WFC"
     cat_type = "loc_depth"
-    surveys = ["JADES-Deep-GS+JEMS"] #[config["DEFAULT"]["SURVEY"]]
+    surveys = ["JOF"] #[config["DEFAULT"]["SURVEY"]]
     aper_diams = [0.32] * u.arcsec
     SED_code_arr = [EAZY()]
     templates_arr = ["fsps_larson"] #["fsps", "fsps_larson", "fsps_jades"]
@@ -73,7 +75,7 @@ if __name__ == "__main__":
     min_flux_pc_errs = [10]
     forced_phot_band = ["F277W", "F356W", "F444W"] # ["F444W"] #
     crop_by = None #"EPOCHS_lowz+z>4.5"
-    timed = True
+    timed = False
 
     jems_bands = ["F182M", "F210M", "F430M", "F460M", "F480M"]
     ngdeep_excl_bands = ["F435W", "F775W", "F850LP"]

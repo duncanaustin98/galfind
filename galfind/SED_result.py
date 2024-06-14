@@ -162,6 +162,7 @@ class Catalogue_SED_results:
         
         # load in PDFs
         # make array of the correct shape for appropriate parsing
+        start_1 = time.time()
         cat_property_PDFs = np.full((len(fits_cat), len(SED_fit_params_arr)), None)
         if type(cat_PDF_paths) != type(None):
             assert(len(SED_fit_params_arr) == len(cat_PDF_paths))
@@ -177,6 +178,7 @@ class Catalogue_SED_results:
 
         # load in SEDs
         # make array of the correct shape for appropriate parsing
+        start = time.time()
         cat_property_SEDs = np.full((len(fits_cat), len(SED_fit_params_arr)), None)
         if type(cat_SED_paths) != type(None):
             assert(len(SED_fit_params_arr) == len(cat_SED_paths))
@@ -187,9 +189,12 @@ class Catalogue_SED_results:
                 assert(len(SED_paths) == len(fits_cat) for gal_property in SED_fit_params["code"].galaxy_property_dict.keys())
                 # construct SED objects, type = array of len(fits_cat), each element containing an SED object
                 cat_property_SEDs[:, i] = SED_fit_params["code"].extract_SEDs(IDs, SED_paths)
-
-        return cls.from_SED_result_inputs(SED_fit_params_arr, phot_arr, cat_properties, \
+        mid = time.time()
+        cls_obj = cls.from_SED_result_inputs(SED_fit_params_arr, phot_arr, cat_properties, \
             cat_property_errs, cat_property_PDFs, cat_property_SEDs)
+        end = time.time()
+        print("Loading PDFs, SEDs: ", start - start_1, mid - start, end - mid)
+        return cls_obj
     
     @classmethod
     def from_SED_result_inputs(cls, SED_fit_params_arr, phot_arr, cat_properties, \

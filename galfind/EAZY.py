@@ -253,28 +253,21 @@ class EAZY(SED_code):
         else:
             table = Table.read(fits_out_path)
 
-        # save PDFs in h5 file
+        # save PDFs in .h5 file
         if save_PDFs and not Path(zPDF_path).is_file():
-            pz = 10 ** (fit.lnp)
-            hf = h5py.File(zPDF_path, "w")
-            hf.create_dataset("z", data = np.array(fit.zgrid))
-            #print(fit.zgrid, pz[0], len(fit.zgrid), len(pz[0]))
-            [self.save_zPDF(pos_obj, ID, hf, fit.zgrid, pz) for pos_obj, ID in \
-                tqdm(enumerate(fit.OBJID), total = len(fit.OBJID), \
-                desc = f"Saving z-PDFs for {self.__class__.__name__} {templates} {lowz_label}")]
-            hf.close()
+            self.save_zPDFs(zPDF_path, fit)
+            #[self.save_zPDF(pos_obj, ID, hf, fit.zgrid, pz) for pos_obj, ID in \
+            #    tqdm(enumerate(fit.OBJID), total = len(fit.OBJID), \
+            #    desc = f"Saving z-PDFs for {self.__class__.__name__} {templates} {lowz_label}")]
             galfind_logger.info(f'Finished saving z-PDFs for {self.__class__.__name__} {templates} {lowz_label}')
-        
+
         # Save best-fitting SEDs
         if save_best_seds and not Path(SED_path).is_file():
-            hf = h5py.File(SED_path, "w")
-            print(wav_unit, flux_unit)
-            hf.create_dataset("wav_unit", data = str(wav_unit))
-            hf.create_dataset("flux_unit", data = str(flux_unit))
-            [self.save_SED(ID, z, hf, fit, wav_unit = wav_unit, flux_unit = flux_unit) \
-                for ID, z in tqdm(zip(fit.OBJID, np.array(table[f"zbest_{templates}_{lowz_label}"]).astype(float)), total = len(fit.OBJID), \
-                desc = f"Saving best-fit template SEDs for {self.__class__.__name__} {templates} {lowz_label}")]
-            hf.close()
+            z_arr = np.array(table[f"zbest_{templates}_{lowz_label}"]).astype(float)
+            self.save_SEDs(SED_path, fit, z_arr, wav_unit, flux_unit)
+            #[self.save_SED(ID, z, hf, fit, wav_unit = wav_unit, flux_unit = flux_unit) \
+            #    for ID, z in tqdm(zip(fit.OBJID, np.array(table[f"zbest_{templates}_{lowz_label}"]).astype(float)), total = len(fit.OBJID), \
+            #    desc = f"Saving best-fit template SEDs for {self.__class__.__name__} {templates} {lowz_label}")]
             galfind_logger.info(f'Finished saving SEDs for {self.__class__.__name__} {templates} {lowz_label}')
 
         # Write used parameters
@@ -282,22 +275,44 @@ class EAZY(SED_code):
             fit.param.write(fits_out_path.replace(".fits", "_params.csv"))
             galfind_logger.info(f'Written output pararmeters for {self.__class__.__name__} {templates} {lowz_label}')
 
-    @staticmethod
-    def save_zPDF(pos_obj, ID, hf, fit_zgrid, fit_pz):
-        #hf.create_dataset(f"ID={int(ID)}_p(z)", data = np.array([fit_pz[pos_obj][pos] for pos, z in enumerate(fit_zgrid)]))
-        hf.create_dataset(f"ID={int(ID)}_p(z)", data = np.array([np.array(fit_pz[pos_obj][pos]) for pos, z in enumerate(fit_zgrid)]))
+    #@staticmethod
+    #def save_zPDF(pos_obj, ID, hf, fit_zgrid, fit_pz):
+    #    #hf.create_dataset(f"ID={int(ID)}_p(z)", data = np.array([fit_pz[pos_obj][pos] for pos, z in enumerate(fit_zgrid)]))
+    #    hf.create_dataset(f"ID={int(ID)}_p(z)", data = np.array([np.array(fit_pz[pos_obj][pos]) for pos, z in enumerate(fit_zgrid)]))
 
     @staticmethod
-    def save_SED(ID, z, hf, fit, wav_unit = u.AA, flux_unit = u.nJy):
-        # Load best-fitting SED
-        fit_data = fit.show_fit(ID, id_is_idx = False, show_components = False, \
-            show_prior = False, logpz = False, get_spec = True, show_fnu = 1)
-        wav = (np.array(fit_data['templz']) * fit_data['wave_unit']).to(wav_unit)
-        flux = (np.array(fit_data['templf']) * fit_data['flux_unit']).to(flux_unit)
-        gal_SED = hf.create_group(f"ID={int(fit_data['id'])}")
-        gal_SED.create_dataset("z", data = z)
-        gal_SED.create_dataset("wav", data = wav)
-        gal_SED.create_dataset("flux", data = flux)
+    def save_zPDFs(zPDF_path, fit):
+        fit_pz = 10 ** (fit.lnp)
+        fit_zgrid = fit.zgrid
+        hf = h5py.File(zPDF_path, "w")
+        hf.create_dataset("z", data = np.array(fit.zgrid))
+        pz_arr = np.array([np.array([np.array(fit_pz[pos_obj][pos]) for pos, z in enumerate(fit_zgrid)]) for pos_obj, ID in \
+            tqdm(enumerate(fit.OBJID), total = len(fit.OBJID), desc = f"Saving z-PDFs")])
+        hf.create_dataset("p_z_arr", data = pz_arr)
+        hf.close()
+
+    @staticmethod
+    def save_SEDs(SED_path, fit, z_arr, wav_unit = u.AA, flux_unit = u.nJy):
+        hf = h5py.File(SED_path, "w")
+        hf.create_dataset("wav_unit", data = str(wav_unit))
+        hf.create_dataset("flux_unit", data = str(flux_unit))
+        hf.create_dataset("z_arr", data = z_arr)
+        #assert(fit.OBJID == np.sort(fit.OBJID))
+        # Load best-fitting SEDs
+        fit_data_arr = [fit.show_fit(ID, id_is_idx = False, show_components = False, \
+            show_prior = False, logpz = False, get_spec = True, show_fnu = 1) \
+            for ID in tqdm(fit.OBJID, desc = "Creating fit_data_arr for SED saving", total = len(fit.OBJID))]
+        wav_flux_arr = [[(np.array(fit_data['templz']) * fit_data['wave_unit']).to(wav_unit), \
+            (np.array(fit_data['templf']) * fit_data['flux_unit']).to(flux_unit)] \
+            for fit_data in tqdm(fit_data_arr, desc = "Creating wav_flux_arr", total = len(fit_data_arr))]
+        #flux_arr = [(np.array(fit_data['templf']) * fit_data['flux_unit']).to(flux_unit) for fit_data in fit_data_arr]
+        #wav_flux_arr = [[wav, flux] for wav, flux in zip(wav_arr, flux_arr)]
+        hf.create_dataset("wav_flux_arr", data = wav_flux_arr)
+        #gal_SED = hf.create_group(f"ID={int(fit_data['id'])}")
+        #gal_SED.create_dataset("z", data = z)
+        #gal_SED.create_dataset("wav", data = wav)
+        #gal_SED.create_dataset("flux", data = flux)
+        hf.close()
 
     @staticmethod
     def label_from_SED_fit_params(SED_fit_params):
@@ -333,11 +348,16 @@ class EAZY(SED_code):
         assert all(SED_path == SED_paths[0] for SED_path in SED_paths), galfind_logger.critical(f"SED_paths must all be the same for {__class__.__name__}")
         # open .h5 file
         hf = h5py.File(SED_paths[0], "r")
-        SED_obs_arr = [SED_obs(hf[f"ID={str(int(ID))}"]["z"][()], hf[f"ID={str(int(ID))}"]["wav"][:], \
-            hf[f"ID={str(int(ID))}"]["flux"][:], u.Unit(hf["wav_unit"][()].decode()), u.Unit(hf["flux_unit"][()].decode())) \
-            for ID in tqdm(IDs, total = len(IDs), desc = "Constructing SEDs")]
-        # close .h5 file
+        z_arr = hf[f"z_arr"][:]
+        wav_flux_arr = hf[f"wav_flux_arr"][:]
+        wav_arr = wav_flux_arr[:, 0]
+        flux_arr = wav_flux_arr[:, 1]
+        wav_unit = u.Unit(hf["wav_unit"][()].decode())
+        flux_unit = u.Unit(hf["flux_unit"][()].decode())
         hf.close()
+        SED_obs_arr = [SED_obs(z, wav, flux, wav_unit, flux_unit) for z, wav, flux in \
+            tqdm(zip(z_arr, wav_arr, flux_arr), total = len(z_arr), desc = "Constructing SEDs")]
+        # close .h5 file
         return SED_obs_arr
     
     @staticmethod
@@ -366,15 +386,14 @@ class EAZY(SED_code):
             # extract redshift PDF for each ID
             if timed:
                 start = time.time()
-            pz_arr = [np.array(hf[f"ID={str(int(ID))}"]["p(z)"]) for ID in IDs]
-            #pz_arr = [np.array(hf[f"ID={str(int(ID))}_p(z)"]) for ID in IDs]
+            pz_arr = hf["p_z_arr"][:]
             if timed:
                 mid = time.time()
-            redshift_pdfs = [Redshift_PDF(hf_z, pz, SED_fit_params, normed = True) \
+            redshift_PDFs = [Redshift_PDF(hf_z, pz, SED_fit_params, normed = True) \
                 for ID, pz in tqdm(zip(IDs, pz_arr), total = len(IDs), desc = "Constructing redshift PDFs")]
             if timed:
                 end = time.time()
                 print(mid - start, end - mid)
             # close .h5 file
             hf.close()
-            return redshift_pdfs
+            return redshift_PDFs
