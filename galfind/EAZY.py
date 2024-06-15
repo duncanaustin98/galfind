@@ -75,29 +75,22 @@ class EAZY(SED_code):
         if not Path(eazy_in_path).is_file():
             # 1) obtain input data
             IDs = np.array([gal.ID for gal in cat.gals]) # load IDs
-            
             # load redshifts
             if not fix_z:
                 redshifts = np.array([-99. for gal in cat.gals])
             else:
                 redshifts = None
-            # Define SED input bands on the fly
-            SED_input_bands = cat.instrument.band_names
             # load photometry 
-            phot, phot_err = self.load_photometry(cat, SED_input_bands, u.uJy, -99., None)
+            phot, phot_err = self.load_photometry(cat, u.uJy, -99., None)
             # Get filter codes (referenced to GALFIND/EAZY/jwst_nircam_FILTER.RES.info) for the given instrument and bands
-            filt_codes = [EAZY_FILTER_CODES[cat.instrument.instrument_from_band(band).name][band] for band in SED_input_bands]
-            
+            filt_codes = [EAZY_FILTER_CODES[cat.instrument.instrument_from_band(band).name][band] for band in cat.instrument.band_names]
             # Make input file
-            #print(IDs, phot, phot_err, redshifts, len(IDs), len(phot), len(phot_err), len(redshifts))
             in_data = np.array([np.concatenate(([IDs[i]], list(itertools.chain(*zip(phot[i], phot_err[i]))), [redshifts[i]]), axis = None) for i in range(len(IDs))])
             in_names = ["ID"] + list(itertools.chain(*zip([f'F{filt_code}' for filt_code in filt_codes], [f'E{filt_code}' for filt_code in filt_codes]))) + ["z_spec"]
-            #print(in_names)
-            in_types = [int] + list(np.full(len(SED_input_bands) * 2, float)) + [float]
+            in_types = [int] + list(np.full(len(cat.instrument.band_names) * 2, float)) + [float]
             in_tab = Table(in_data, dtype = in_types, names = in_names)
             funcs.make_dirs(eazy_in_path)
             in_tab.write(eazy_in_path, format = "ascii.commented_header", delimiter = " ", overwrite = True)
-            #print(in_tab)
         return eazy_in_path
     
     @run_in_dir(path = config['EAZY']['EAZY_DIR'])

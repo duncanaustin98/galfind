@@ -718,26 +718,31 @@ class Data:
             galfind_logger.critical(f"Mask making only implemented for NIRCam data!")
             raise(Exception("Star mask making only implemented for NIRCam data!"))
 
-        star_pask_params = { # mask_a * exp(-mag / mask_b) is the form 
-            9000 * u.AA: {'mask_a': 1300, 'mask_b': 4},
-            11500 * u.AA: {'mask_a': 1300, 'mask_b': 4},
-            15000 * u.AA: {'mask_a': 1300, 'mask_b': 4},
-            20000 * u.AA: {'mask_a': 1300, 'mask_b': 4},
-            27700 * u.AA: {'mask_a': 1000, 'mask_b': 3.7},
-            35600 * u.AA: {'mask_a': 800, 'mask_b': 3.7},
-            44000 * u.AA: {'mask_a': 800, 'mask_b': 3.7},
-        }
+        breakpoint()
+        if "COSMOS-Web" in self.survey:
+            # stellar masks the same for all bands
+            star_mask_params = { # mask_a * exp(-mag / mask_b) is the form 
+                9000 * u.AA: {'mask_a': 700, 'mask_b': 3.7}}
+        else:
+            star_mask_params = { # mask_a * exp(-mag / mask_b) is the form 
+                9000 * u.AA: {'mask_a': 1300, 'mask_b': 4},
+                11500 * u.AA: {'mask_a': 1300, 'mask_b': 4},
+                15000 * u.AA: {'mask_a': 1300, 'mask_b': 4},
+                20000 * u.AA: {'mask_a': 1300, 'mask_b': 4},
+                27700 * u.AA: {'mask_a': 1000, 'mask_b': 3.7},
+                35600 * u.AA: {'mask_a': 800, 'mask_b': 3.7},
+                44000 * u.AA: {'mask_a': 800, 'mask_b': 3.7},
+            }
         if mask_a_override != None and mask_b_override != None:
             mask_a = mask_a_override
             mask_b = mask_b_override
         else:
             band_wavelength = self.instrument.band_wavelengths[band == self.instrument.band_names]
             # Get closest wavelength parameters
-            closest_wavelength = min(star_pask_params.keys(), key = lambda x: abs(x - band_wavelength))
+            closest_wavelength = min(star_mask_params.keys(), key = lambda x: abs(x - band_wavelength))
             print(band, closest_wavelength)
-            mask_a = star_pask_params[closest_wavelength]['mask_a']
-            mask_b = star_pask_params[closest_wavelength]['mask_b']
-
+            mask_a = star_mask_params[closest_wavelength]['mask_a']
+            mask_b = star_mask_params[closest_wavelength]['mask_b']
 
         galfind_logger.info(f"Automasking {self.survey} {band}.")
 
