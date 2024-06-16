@@ -171,6 +171,7 @@ class Photometry:
         errorbar_kwargs["color"] = colour
         errorbar_kwargs["label"] = label
 
+        #breakpoint()
         if auto_scale:
             # auto-scale the x-axis
             lower_xlim = np.min(wavs_to_plot - xerr[0]) * 0.95

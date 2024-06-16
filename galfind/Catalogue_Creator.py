@@ -245,6 +245,8 @@ class GALFIND_Catalogue_Creator(Catalogue_Creator):
         return phot, phot_err, gal_band_mask
     
     def load_mask(self, fits_cat, bands, gal_band_mask = None, timed = False):
+        if len(bands) == 0:
+            return np.array([])
         band_mask_labels = self.mask_labels(bands)
         self.is_masked = True
         for label in band_mask_labels:

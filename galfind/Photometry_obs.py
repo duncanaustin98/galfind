@@ -74,15 +74,15 @@ class Photometry_obs(Photometry):
         else:
             self.SED_results = gal_SED_results
     
-    def update_mask(self, cat, cat_creator, ID, update_phot_rest = False):
-        gal_index = np.where(cat[cat_creator.ID_label] == ID)[0][0]
-        mask = cat_creator.load_mask(cat, self.instrument.band_names)[gal_index]
+    def update_mask(self, mask, update_phot_rest = False):
+        assert len(self.flux_Jy) == len(mask)
+        assert len(self.flux_Jy_errs) == len(mask)
         self.flux_Jy.mask = mask
         self.flux_Jy_errs.mask = mask
         return self
     
-    #def get_SED_fit_params_arr(self, code):
-    #    return [code.SED_fit_params_from_label(label) for label in self.SED_results.keys()]
+    def get_SED_fit_params_arr(self, code):
+       return [code.SED_fit_params_from_label(label) for label in self.SED_results.keys()]
 
     def plot_phot(self, ax, wav_units = u.AA, mag_units = u.Jy, plot_errs = {"x": True, "y": True}, \
             annotate = True, uplim_sigma = 2., auto_scale = True, label_SNRs = True, \

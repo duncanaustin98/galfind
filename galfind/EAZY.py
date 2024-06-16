@@ -333,7 +333,7 @@ class EAZY(SED_code):
     def extract_SEDs(IDs, SED_paths):
         # ensure this works if only extracting 1 galaxy
         if type(IDs) in [str, int, float]:
-            IDs = [int(IDs)]
+            IDs = np.array([int(IDs)])
         if type(SED_paths) == str:
            SED_paths = [SED_paths]
         assert len(IDs) == len(SED_paths), galfind_logger.critical(f"len(IDs) = {len(IDs)} != len(data_paths) = {len(SED_paths)}!")
@@ -341,8 +341,8 @@ class EAZY(SED_code):
         assert all(SED_path == SED_paths[0] for SED_path in SED_paths), galfind_logger.critical(f"SED_paths must all be the same for {__class__.__name__}")
         # open .h5 file
         hf = h5py.File(SED_paths[0], "r")
-        z_arr = hf[f"z_arr"][:]
-        wav_flux_arr = hf[f"wav_flux_arr"][:]
+        z_arr = hf[f"z_arr"][IDs - 1]
+        wav_flux_arr = hf[f"wav_flux_arr"][IDs - 1]
         wav_arr = wav_flux_arr[:, 0]
         flux_arr = wav_flux_arr[:, 1]
         wav_unit = u.Unit(hf["wav_unit"][()].decode())
@@ -357,7 +357,7 @@ class EAZY(SED_code):
     def extract_PDFs(gal_property, IDs, PDF_paths, SED_fit_params, timed = True):
         # ensure this works if only extracting 1 galaxy
         if type(IDs) in [str, int, float]:
-            IDs = [int(IDs)]
+            IDs = np.array([int(IDs)])
         if type(PDF_paths) == str:
            PDF_paths = [PDF_paths]
 
@@ -379,7 +379,7 @@ class EAZY(SED_code):
             # extract redshift PDF for each ID
             if timed:
                 start = time.time()
-            pz_arr = hf["p_z_arr"][:]
+            pz_arr = hf["p_z_arr"][IDs - 1]
             if timed:
                 mid = time.time()
             redshift_PDFs = [Redshift_PDF(hf_z, pz, SED_fit_params, normed = True) \

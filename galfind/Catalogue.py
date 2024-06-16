@@ -234,8 +234,10 @@ class Catalogue(Catalogue_Base):
             # update masking of galfind galaxy objects
             galfind_logger.info("Masking galfind galaxy objects in catalogue")
             assert(len(fits_cat) == len(self))
-            [gal.update_mask(fits_cat, self.cat_creator, update_phot_rest = False) for gal in \
-                tqdm(self, total = len(self), desc = "Masking galfind galaxy objects")]
+            mask_arr = self.cat_creator.load_mask(fits_cat, self.instrument.band_names, \
+                gal_band_mask = self.cat_creator.load_photometry(fits_cat, self.instrument.band_names)[2])
+            [gal.update_mask(mask, update_phot_rest = False) for gal, mask in \
+                tqdm(zip(self, mask_arr), total = len(self), desc = "Masking galfind galaxy objects")]
         else:
             galfind_logger.info(f"Catalogue for {self.survey} {self.version} already masked. Skipping!")
 
@@ -300,6 +302,12 @@ class Catalogue(Catalogue_Base):
                     os.symlink(out_path, selection_path)
 
     # Selection functions
+                    
+    def select_all_bands(self):
+        return self.select_min_bands(len(self.instrument))
+                    
+    def select_min_bands(self, min_bands):
+        return self.perform_selection(Galaxy.select_min_bands, min_bands)
         
     # Masking selection
 
@@ -402,6 +410,7 @@ class Catalogue(Catalogue_Base):
     # Full sample selection functions - these chain the above functions
 
     def select_EPOCHS(self, SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}, allow_lowz = False):
+        self.perform_selection(Galaxy.select_min_bands, 4., make_cat_copy = False) # minimum 4 photometric bands
         self.perform_selection(Galaxy.select_unmasked_instrument, NIRCam(), make_cat_copy = False) # all NIRCam bands unmasked
         if not allow_lowz:
             self.perform_selection(Galaxy.phot_SNR_crop, 0, 2., "non_detect", make_cat_copy = False) # 2σ non-detected in first band
@@ -416,6 +425,7 @@ class Catalogue(Catalogue_Base):
         # extract selection name from galaxy method output
         selection_name = selection_function(self[0], *args, update = False)[1]
         # open catalogue
+        #breakpoint()
         # perform selection if not previously performed
         if selection_name not in self.selection_cols:
             # perform calculation for each galaxy and update galaxies in self
@@ -439,6 +449,7 @@ class Catalogue(Catalogue_Base):
         return cat_copy
 
     def _append_selection_to_fits(self, selection_name):
+        #breakpoint()
         # append .fits table if not already done so for this selection
         if not selection_name in self.selection_cols:
             assert(all(getattr(self, selection_name) == True))

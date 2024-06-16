@@ -95,9 +95,9 @@ class Galaxy:
     
     def update(self, gal_SED_results, index = 0): # for now just update the single photometry
         self.phot.update(gal_SED_results)
-
-    def update_mask(self, cat, catalogue_creator, update_phot_rest = False):
-        self.phot.update_mask(cat, catalogue_creator, self.ID, update_phot_rest = update_phot_rest)
+    
+    def update_mask(self, mask, update_phot_rest = False):
+        self.phot.update_mask(mask, update_phot_rest = update_phot_rest)
         return self
         
     # def update_mask_band(self, band, bool_value):
@@ -201,14 +201,13 @@ class Galaxy:
     def plot_cutouts(self, ax_arr, data, SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}, \
             hide_masked_cutouts = True, cutout_size = 32, high_dyn_rng = False):
 
-        for i, band in enumerate(data.instrument.band_names):
+        for i, band in enumerate(self.phot.instrument.band_names):
                 
             # need to load sextractor flux_radius as a general function somewhere!
             radius = 0.16 * u.arcsec # need access to galfind cat_creator for this
             radius_pix = (radius / data.im_pixel_scales[band]).to(u.dimensionless_unscaled).value
             #flux_radius = None
             #radius_sextractor = flux_radius
-
             if self.phot.flux_Jy.mask[i] and hide_masked_cutouts:
                 data_cutout = None
             else:
@@ -372,16 +371,37 @@ class Galaxy:
             pass
 
     # %% Selection methods
+        
+    def select_min_bands(self, min_bands, update = True):
+        
+        if type(min_bands) != int:
+            min_bands = int(min_bands)
+
+        selection_name = f"bands>{min_bands - 1}"
+        if selection_name in self.selection_flags.keys():
+            galfind_logger.debug(f"{selection_name} already performed for galaxy ID = {self.ID}!")
+        else:
+            if len(self.phot) >= min_bands:
+                if update:
+                    self.selection_flags[selection_name] = True
+            else:
+                if update:
+                    self.selection_flags[selection_name] = False
+        return self, selection_name
 
     def select_min_unmasked_bands(self, min_bands, update = True):
 
         if type(min_bands) != int:
             min_bands = int(min_bands)
 
-        selection_name = f"unmasked_bands>={min_bands}"
+        selection_name = f"unmasked_bands>{min_bands - 1}"
         if selection_name in self.selection_flags.keys():
             galfind_logger.debug(f"{selection_name} already performed for galaxy ID = {self.ID}!")
         else:
+            if len(self.phot) == 0: # no data at all (not sure why sextractor does this)
+                if update:
+                    self.selection_flags[selection_name] = False
+                return self, selection_name
             # extract mask
             mask = self.phot.flux_Jy.mask
             n_unmasked_bands = len([val for val in mask if val == False])
@@ -432,6 +452,10 @@ class Galaxy:
         if selection_name in self.selection_flags.keys():
             galfind_logger.debug(f"{selection_name} already performed for galaxy ID = {self.ID}!")
         else:
+            if len(self.phot) == 0: # no data at all (not sure why sextractor does this)
+                if update:
+                    self.selection_flags[selection_name] = False
+                return self, selection_name
             # extract band IDs belonging to the input instrument name
             band_indices = np.array([i for i, band in enumerate(self.phot.instrument.band_names) if band in instrument.band_names])
             mask = self.phot.flux_Jy.mask[band_indices]
@@ -458,6 +482,10 @@ class Galaxy:
         if selection_name in self.selection_flags.keys():
             galfind_logger.debug(f"{selection_name} already performed for galaxy ID = {self.ID}!")
         else:
+            if len(self.phot) == 0: # no data at all (not sure why sextractor does this)
+                if update:
+                    self.selection_flags[selection_name] = False
+                return self, selection_name
             property_val = self.phot.SED_results[key].properties[property_name]
             if ((gtr_or_less in ["gtr", ">"] and property_val > property_lim) or (gtr_or_less in ["less", "<"] and property_val < property_lim)):
                 if update:
@@ -478,6 +506,10 @@ class Galaxy:
         if selection_name in self.selection_flags.keys():
             galfind_logger.debug(f"{selection_name} already performed for galaxy ID = {self.ID}!")
         else:
+            if len(self.phot) == 0: # no data at all (not sure why sextractor does this)
+                if update:
+                    self.selection_flags[selection_name] = False
+                return self, selection_name
             property_val = self.phot.SED_results[key].properties[property_name]
             if property_val > property_lims[0] and property_val < property_lims[1]:
                 if update:
@@ -500,6 +532,10 @@ class Galaxy:
         if selection_name in self.selection_flags.keys():
             galfind_logger.debug(f"{selection_name} already performed for galaxy ID = {self.ID}!")
         else:
+            if len(self.phot) == 0: # no data at all (not sure why sextractor does this)
+                if update:
+                    self.selection_flags[selection_name] = False
+                return self, selection_name
             # extract bands, SNRs, mask and first Lya non-detect band
             bands = self.phot.instrument.band_names
             SNRs = self.phot.SNR
@@ -541,6 +577,10 @@ class Galaxy:
         if selection_name in self.selection_flags.keys():
             galfind_logger.debug(f"Already performed {selection_name} for galaxy ID = {self.ID}, skipping!")
         else:
+            if len(self.phot) == 0: # no data at all (not sure why sextractor does this)
+                if update:
+                    self.selection_flags[selection_name] = False
+                return self, selection_name
             galfind_logger.debug(f"Performing {selection_name} for galaxy ID = {self.ID}!")
             # extract bands, SNRs, mask and first Lya non-detect band
             bands = self.phot.instrument.band_names
@@ -578,6 +618,10 @@ class Galaxy:
         if selection_name in self.selection_flags.keys():
             galfind_logger.debug(f"{selection_name} already performed for galaxy ID = {self.ID}!")
         else:
+            if len(self.phot) == 0: # no data at all (not sure why sextractor does this)
+                if update:
+                    self.selection_flags[selection_name] = False
+                return self, selection_name
             # load bands
             bands = self.phot.instrument.band_names
             # determine Lya band(s) - usually a single band, but could be two in the case of medium bands
@@ -638,6 +682,10 @@ class Galaxy:
         if selection_name in self.selection_flags.keys():
             galfind_logger.debug(f"{selection_name} already performed for galaxy ID = {self.ID}!")
         else:
+            if len(self.phot) == 0: # no data at all (not sure why sextractor does this)
+                if update:
+                    self.selection_flags[selection_name] = False
+                return self, selection_name
             SNR = self.phot.SNR[band_index]
             mask = self.phot.flux_Jy.mask[band_index]
             # passes if masked
@@ -663,6 +711,10 @@ class Galaxy:
         if selection_name in self.selection_flags.keys():
             galfind_logger.debug(f"{selection_name} already performed for galaxy ID = {self.ID}!")
         else:
+            if len(self.phot) == 0: # no data at all (not sure why sextractor does this)
+                if update:
+                    self.selection_flags[selection_name] = False
+                return self, selection_name
             phot_rest = deepcopy(self.phot.SED_results[SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)].phot_rest)
             # find bands that the emission line lies within
             obs_frame_emission_line_wav = line_diagnostics[emission_line_name]["line_wav"] * (1. + phot_rest.z)
@@ -706,6 +758,10 @@ class Galaxy:
         if selection_name in self.selection_flags.keys():
             galfind_logger.debug(f"{selection_name} already performed for galaxy ID = {self.ID}!")
         else:
+            if len(self.phot) == 0: # no data at all (not sure why sextractor does this)
+                if update:
+                    self.selection_flags[selection_name] = False
+                return self, selection_name
             SED_results_key = SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)
             phot_rest = deepcopy(self.phot.SED_results[SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)].phot_rest)
             # find bands that the emission line lies within
@@ -767,6 +823,10 @@ class Galaxy:
         if selection_name in self.selection_flags.keys():
             galfind_logger.debug(f"{selection_name} already performed for galaxy ID = {self.ID}!")
         else:
+            if len(self.phot) == 0: # no data at all (not sure why sextractor does this)
+                if update:
+                    self.selection_flags[selection_name] = False
+                return self, selection_name
             # calculate colour
             band_indices = [self.phot.instrument.index_from_band_name(band_name) for band_name in colour_bands]
             colour = (funcs.convert_mag_errs(self.phot.instrument[band_indices[0]].WavelengthCen, self.phot.flux_Jy[band_indices[0]], u.ABmag) \
@@ -790,6 +850,10 @@ class Galaxy:
         if selection_name in self.selection_flags.keys():
             galfind_logger.debug(f"{selection_name} already performed for galaxy ID = {self.ID}!")
         else:
+            if len(self.phot) == 0: # no data at all (not sure why sextractor does this)
+                if update:
+                    self.selection_flags[selection_name] = False
+                return self, selection_name
             # extract UVJ colours -> still need to sort out the units here
             U_minus_V = -2.5 * np.log10((self.phot.SED_results[SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)].properties["U_flux"] \
                 / self.phot.SED_results[SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)].properties["V_flux"]).to(u.dimensionless_unscaled).value)
@@ -808,6 +872,10 @@ class Galaxy:
 
     def select_Kokorev24_LRDs(self, update = True):
         selection_name = "Kokorev+24_LRDs"
+        if len(self.phot) == 0: # no data at all (not sure why sextractor does this)
+                if update:
+                    self.selection_flags[selection_name] = False
+                return self, selection_name
         red1_selection = \
         [
             self.select_colour(["F115W", "F150W"], 0.8, "bluer")[1], \
@@ -851,6 +919,10 @@ class Galaxy:
         if selection_name in self.selection_flags.keys():
             galfind_logger.debug(f"{selection_name} already performed for galaxy ID = {self.ID}!")
         else:
+            if len(self.phot) == 0: # no data at all (not sure why sextractor does this)
+                if update:
+                    self.selection_flags[selection_name] = False
+                return self, selection_name
             # extract chi_sq
             chi_sq = self.phot.SED_results[SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)].chi_sq
             if chi_sq < chi_sq_lim:
@@ -870,6 +942,10 @@ class Galaxy:
         if selection_name in self.selection_flags.keys():
             galfind_logger.debug(f"{selection_name} already performed for galaxy ID = {self.ID}!")
         else:
+            if len(self.phot) == 0: # no data at all (not sure why sextractor does this)
+                if update:
+                    self.selection_flags[selection_name] = False
+                return self, selection_name
             lowz_zmax_arr = [SED_fit_params["lowz_zmax"] for SED_fit_params in self.phot.get_SED_fit_params_arr(SED_fit_params["code"])]
             assert(lowz_zmax_arr[-1] == None and len(lowz_zmax_arr) > 1)
             lowz_zmax_arr = sorted(lowz_zmax_arr[:-1])
@@ -909,6 +985,10 @@ class Galaxy:
         if selection_name in self.selection_flags.keys():
             galfind_logger.debug(f"{selection_name} already performed for galaxy ID = {self.ID}!")
         else:
+            if len(self.phot) == 0: # no data at all (not sure why sextractor does this)
+                if update:
+                    self.selection_flags[selection_name] = False
+                return self, selection_name
             # extract best fitting redshift - peak of the redshift PDF
             zbest = self.phot.SED_results[SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)].z
             if zbest < 0.:
@@ -927,6 +1007,10 @@ class Galaxy:
     def select_EPOCHS(self, SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}, allow_lowz = False, mask_instrument = NIRCam(), update = True):
         
         selection_name = f"EPOCHS{'_lowz' if allow_lowz else ''}"
+        if len(self.phot) == 0: # no data at all (not sure why sextractor does this)
+                if update:
+                    self.selection_flags[selection_name] = False
+                return self, selection_name
         if not "NIRCam" in self.phot.instrument.name:
             galfind_logger.critical(f"NIRCam data for galaxy ID = {self.ID} must be included for EPOCHS selection!")
             if update:
@@ -953,6 +1037,9 @@ class Galaxy:
             if update:
                 self.selection_flags[selection_name] = False
         return self, selection_name
+    
+    def select_combined(self):
+        pass
     
     # Rest-frame SED photometric properties
 
