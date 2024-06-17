@@ -76,7 +76,7 @@ if __name__ == "__main__":
     lowz_zmax_arr = [[4., 6., None]] #[[None]] # 
     min_flux_pc_errs = [10]
     forced_phot_band = ["F277W", "F356W", "F444W"] # ["F444W"] #
-    crop_by = "bands>13+EPOCHS" #None #"EPOCHS_lowz+z>4.5"
+    crop_by = "bands>13+EPOCHS" #"EPOCHS_lowz+z>4.5"
     timed = False
 
     jems_bands = ["F182M", "F210M", "F430M", "F460M", "F480M"]

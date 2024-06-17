@@ -289,9 +289,8 @@ class Galaxy:
     
     def plot_phot_diagnostic(self, ax, data, SED_fit_params_arr, zPDF_plot_SED_fit_params_arr, wav_unit = u.um, flux_unit = u.ABmag, \
             hide_masked_cutouts = True, cutout_size = 32, high_dyn_rng = False, annotate_PDFs = True, plot_rejected_reasons = False, overwrite = True):
-        
-        cutout_ax, phot_ax, PDF_ax = ax
 
+        cutout_ax, phot_ax, PDF_ax = ax
         # update SED_fit_params with appropriate lowz_zmax
         SED_fit_params_arr = [SED_fit_params["code"].update_lowz_zmax(SED_fit_params, self.phot.SED_results) for SED_fit_params in SED_fit_params_arr]
         zPDF_plot_SED_fit_params_arr = [SED_fit_params["code"].update_lowz_zmax(SED_fit_params, self.phot.SED_results) for SED_fit_params in zPDF_plot_SED_fit_params_arr] 

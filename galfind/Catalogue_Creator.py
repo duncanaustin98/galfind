@@ -158,7 +158,7 @@ class GALFIND_Catalogue_Creator(Catalogue_Creator):
     
     # current bottleneck
     @staticmethod
-    def load_gal_instr_mask(phot, save_path, null_data_val = 0., timed = True):
+    def load_gal_instr_mask(phot, keep_indices, save_path, null_data_val = 0., timed = True):
         if Path(save_path).is_file():
             # load in gal_instr_mask from .h5
             hf = h5py.File(save_path, "r")
@@ -176,7 +176,7 @@ class GALFIND_Catalogue_Creator(Catalogue_Creator):
             hf.create_dataset("has_data_mask", data = gal_instr_mask)
             galfind_logger.info(f"Saved 'has_data_mask' to {save_path}")
         hf.close()
-        return gal_instr_mask
+        return gal_instr_mask[keep_indices]
     
     @staticmethod
     def load_instruments(instrument, gal_band_mask):
@@ -215,7 +215,9 @@ class GALFIND_Catalogue_Creator(Catalogue_Creator):
             # for each galaxy remove bands that have no data
             gal_band_mask_save_path = f"{config['DEFAULT']['GALFIND_WORK']}/Masks/{fits_cat.meta['SURVEY']}/has_data_mask/{fits_cat.meta['SURVEY']}_{fits_cat.meta['VERSION']}.h5"
             funcs.make_dirs(funcs.split_dir_name(gal_band_mask_save_path, "dir"))
-            gal_band_mask = self.load_gal_instr_mask(phot, gal_band_mask_save_path, timed = timed)
+            keep_indices = np.array(fits_cat[self.ID_label]) - 1
+            gal_band_mask = self.load_gal_instr_mask(phot, keep_indices, gal_band_mask_save_path, timed = timed)
+            assert(len(gal_band_mask) == len(phot) == len(phot_err))
             if timed:
                 _phot = [gal_phot[band_mask] for gal_phot, band_mask in \
                     tqdm(zip(phot, gal_band_mask), desc = "Removing photometric bands without data", total = len(phot))]
@@ -281,12 +283,11 @@ class GALFIND_Catalogue_Creator(Catalogue_Creator):
             depths_arr = np.full((len(fits_cat), len(bands)), np.nan)
         if type(gal_band_mask) != type(None):
             if timed:
-                depths_arr = np.array([[depth for depth, has_data in zip(_gal_depths, _gal_band_mask) if has_data] * u.ABmag for _gal_depths, _gal_band_mask \
-                    in tqdm(zip(depths_arr, gal_band_mask), desc = "Loading depths", total = len(depths_arr))])
+                depths_arr = [[depth for depth, has_data in zip(_gal_depths, _gal_band_mask) if has_data] * u.ABmag for _gal_depths, _gal_band_mask \
+                    in tqdm(zip(depths_arr, gal_band_mask), desc = "Loading depths", total = len(depths_arr))]
             else:
-                depths_arr = np.array([[depth for depth, has_data in zip(_gal_depths, _gal_band_mask) if has_data] * u.ABmag for _gal_depths, _gal_band_mask in zip(depths_arr, gal_band_mask)])
+                depths_arr = [[depth for depth, has_data in zip(_gal_depths, _gal_band_mask) if has_data] * u.ABmag for _gal_depths, _gal_band_mask in zip(depths_arr, gal_band_mask)]
         return depths_arr
-    
 
 # %% Common catalogue converters
 
