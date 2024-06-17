@@ -178,7 +178,7 @@ def main(in_bands, extract_code, save_loc, PSF_loc, PSF_name, plot_PSF, aper_dia
 
 if __name__ == "__main__":
     extract_code = "sep"
-    save_loc = config["DEFAULT"]["GALFIND_WORK"]/Aperture_corrections
+    save_loc = f"{config['DEFAULT']['GALFIND_WORK']}/Aperture_corrections"
     PSF_loc = config["DEFAULT"]["PSF_DIR"]
     #PSF_name = "PSF_Resample_03_"
     PSF_name = ["PSF_", "cen_G5V_fov299px_ISIM41"]

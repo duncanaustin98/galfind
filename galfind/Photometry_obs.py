@@ -13,6 +13,7 @@ import astropy.units as u
 from copy import copy, deepcopy
 import matplotlib.patheffects as pe
 from tqdm import tqdm
+import time
 
 from . import useful_funcs_austind as funcs
 from . import galfind_logger
@@ -21,12 +22,21 @@ from .SED_result import Galaxy_SED_results, Catalogue_SED_results
 
 class Photometry_obs(Photometry):
 
-    def __init__(self, instrument, flux_Jy, flux_Jy_errs, aper_diam, min_flux_pc_err, loc_depths, SED_results = {}):
+    def __init__(self, instrument, flux_Jy, flux_Jy_errs, aper_diam, min_flux_pc_err, loc_depths, SED_results = {}, timed = False):
+        if timed:
+            start = time.time()
         self.aper_diam = aper_diam
         self.min_flux_pc_err = min_flux_pc_err
         self.SED_results = SED_results # array of SED_result objects with different SED fitting runs
+        if timed:
+            mid = time.time()
         self.aper_corrs = instrument.get_aper_corrs(self.aper_diam)
+        if timed:
+            mid_end = time.time()
         super().__init__(instrument, flux_Jy, flux_Jy_errs, loc_depths)
+        if timed:
+            end = time.time()
+            print(mid - start, mid_end - mid, end - mid_end)
 
     def __str__(self):
         line_sep = "*" * 40 + "\n"
@@ -64,15 +74,15 @@ class Photometry_obs(Photometry):
         else:
             self.SED_results = gal_SED_results
     
-    def update_mask(self, cat, cat_creator, ID, update_phot_rest = False):
-        gal_index = np.where(cat[cat_creator.ID_label] == ID)[0][0]
-        mask = cat_creator.load_mask(cat, self.instrument.band_names)[gal_index]
+    def update_mask(self, mask, update_phot_rest = False):
+        assert len(self.flux_Jy) == len(mask)
+        assert len(self.flux_Jy_errs) == len(mask)
         self.flux_Jy.mask = mask
         self.flux_Jy_errs.mask = mask
         return self
     
-    #def get_SED_fit_params_arr(self, code):
-    #    return [code.SED_fit_params_from_label(label) for label in self.SED_results.keys()]
+    def get_SED_fit_params_arr(self, code):
+       return [code.SED_fit_params_from_label(label) for label in self.SED_results.keys()]
 
     def plot_phot(self, ax, wav_units = u.AA, mag_units = u.Jy, plot_errs = {"x": True, "y": True}, \
             annotate = True, uplim_sigma = 2., auto_scale = True, label_SNRs = True, \
@@ -97,7 +107,6 @@ class Photometry_obs(Photometry):
                 [ax.annotate(label_func(SNR), (wav, mag + offset if is_uplim else mag - mag_l1 - offset), \
                     **label_kwargs) for i, (SNR, wav, mag, mag_l1, mag_u1, is_uplim) in \
                     enumerate(zip(self.SNR, wavs_to_plot, mags_to_plot, yerr[0], yerr[1], uplims))]
-
         
         if annotate:
             # x/y labels etc here
@@ -123,13 +132,17 @@ class Photometry_obs(Photometry):
         
 class Multiple_Photometry_obs:
     
-    def __init__(self, instrument, flux_Jy_arr, flux_Jy_errs_arr, aper_diam, min_flux_pc_err, loc_depths_arr, SED_results_arr = []):
+    def __init__(self, instrument_arr, flux_Jy_arr, flux_Jy_errs_arr, aper_diam, min_flux_pc_err, loc_depths_arr, SED_results_arr = [], timed = True):
         # force SED_results_arr to have the same len as the number of input fluxes
         if SED_results_arr == []:
             SED_results_arr = np.full(len(flux_Jy_arr), {})
-        self.phot_obs_arr = [Photometry_obs(instrument, flux_Jy, flux_Jy_errs, aper_diam, min_flux_pc_err, loc_depths, SED_results) \
-            for flux_Jy, flux_Jy_errs, loc_depths, SED_results in tqdm(zip(flux_Jy_arr, flux_Jy_errs_arr, loc_depths_arr, SED_results_arr), \
-            total = len(flux_Jy_arr), desc = "Loading in Multiple_Photometry_obs")]
+        if timed:
+            self.phot_obs_arr = [Photometry_obs(instrument, flux_Jy, flux_Jy_errs, aper_diam, min_flux_pc_err, loc_depths, SED_results) \
+                for instrument, flux_Jy, flux_Jy_errs, loc_depths, SED_results in tqdm(zip(instrument_arr, flux_Jy_arr, flux_Jy_errs_arr, \
+                    loc_depths_arr, SED_results_arr), desc = "Initializing Multiple_Photometry_obs", total = len(instrument_arr))]
+        else:
+            self.phot_obs_arr = [Photometry_obs(instrument, flux_Jy, flux_Jy_errs, aper_diam, min_flux_pc_err, loc_depths, SED_results) \
+                for instrument, flux_Jy, flux_Jy_errs, loc_depths, SED_results in zip(instrument_arr, flux_Jy_arr, flux_Jy_errs_arr, loc_depths_arr, SED_results_arr)]
 
     def __str__(self):
         # string representation of what is stored in this class
@@ -154,11 +167,12 @@ class Multiple_Photometry_obs:
         return self.phot_obs_arr[index]
 
     @classmethod
-    def from_fits_cat(cls, fits_cat, instrument, cat_creator, SED_fit_params_arr):
-        flux_Jy_arr, flux_Jy_errs_arr = cat_creator.load_photometry(fits_cat, instrument.band_names)
-        depths_arr = cat_creator.load_depths(fits_cat, instrument.band_names)
+    def from_fits_cat(cls, fits_cat, instrument, cat_creator, SED_fit_params_arr, timed = False):
+        flux_Jy_arr, flux_Jy_errs_arr, gal_band_mask = cat_creator.load_photometry(fits_cat, instrument.band_names, timed = timed)
+        depths_arr = cat_creator.load_depths(fits_cat, instrument.band_names, gal_band_mask, timed = timed)
+        instrument_arr = cat_creator.load_instruments(instrument, gal_band_mask)
         if SED_fit_params_arr != [{}]:
             SED_results_arr = Catalogue_SED_results.from_fits_cat(fits_cat, cat_creator, SED_fit_params_arr, instrument = instrument).SED_results
         else:
             SED_results_arr = np.full(len(flux_Jy_arr), {})
-        return cls(instrument, flux_Jy_arr, flux_Jy_errs_arr, cat_creator.aper_diam, cat_creator.min_flux_pc_err, depths_arr, SED_results_arr)
+        return cls(instrument_arr, flux_Jy_arr, flux_Jy_errs_arr, cat_creator.aper_diam, cat_creator.min_flux_pc_err, depths_arr, SED_results_arr, timed = timed)

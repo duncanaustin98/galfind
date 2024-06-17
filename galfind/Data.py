@@ -711,46 +711,61 @@ class Data:
             ax.add_artist(t)
 
     def make_mask(self, band, edge_mask_distance = 50, mask_stars = True, scale_extra = 0.2,
-            mask_a_override = None, mask_b_override=None, exclude_gaia_galaxies = True, angle = 0, edge_value = 0, 
+            star_mask_override = None, exclude_gaia_galaxies = True, angle = 0, edge_value = 0, 
             element = 'ELLIPSE', gaia_row_lim = 500, plot = False):
         
         if 'NIRCam' not in self.instrument.name and mask_stars:
             galfind_logger.critical(f"Mask making only implemented for NIRCam data!")
             raise(Exception("Star mask making only implemented for NIRCam data!"))
 
-        star_pask_params = { # mask_a * exp(-mag / mask_b) is the form 
-            9000 * u.AA: {'mask_a': 1300, 'mask_b': 4},
-            11500 * u.AA: {'mask_a': 1300, 'mask_b': 4},
-            15000 * u.AA: {'mask_a': 1300, 'mask_b': 4},
-            20000 * u.AA: {'mask_a': 1300, 'mask_b': 4},
-            27700 * u.AA: {'mask_a': 1000, 'mask_b': 3.7},
-            35600 * u.AA: {'mask_a': 800, 'mask_b': 3.7},
-            44000 * u.AA: {'mask_a': 800, 'mask_b': 3.7},
+        # if "COSMOS-Web" in self.survey:
+        #     # stellar masks the same for all bands
+        #     star_mask_params = { # mask_a * exp(-mag / mask_b) is the form 
+        #         9000 * u.AA: {'mask_a': 700, 'mask_b': 3.7}}
+        # else:
+        #     star_mask_params = { # mask_a * exp(-mag / mask_b) is the form 
+        #         9000 * u.AA: {'mask_a': 1300, 'mask_b': 4},
+        #         11500 * u.AA: {'mask_a': 1300, 'mask_b': 4},
+        #         15000 * u.AA: {'mask_a': 1300, 'mask_b': 4},
+        #         20000 * u.AA: {'mask_a': 1300, 'mask_b': 4},
+        #         27700 * u.AA: {'mask_a': 1000, 'mask_b': 3.7},
+        #         35600 * u.AA: {'mask_a': 800, 'mask_b': 3.7},
+        #         44000 * u.AA: {'mask_a': 800, 'mask_b': 3.7},
+        #     }
+
+        # update to change scaling of central circle independently of spikes
+        star_mask_params_dict = { # a * exp(-mag / b) in arcsec
+            11500 * u.AA: {"central": {'a': 300., 'b': 4.25}, "spikes": {"a": 400., "b": 4.5}},
         }
-        if mask_a_override != None and mask_b_override != None:
-            mask_a = mask_a_override
-            mask_b = mask_b_override
+
+        if star_mask_override != None:
+            assert type(star_mask_override) == dict, galfind_logger.warning(f"Mask overridden, but {type(star_mask_override)=} != dict")
+            assert "central" in star_mask_override.keys() and "spikes" in star_mask_override.keys()
+            assert type(star_mask_override["central"]) == dict, galfind_logger.warning(f"Mask overridden, but {type(star_mask_override['central'])=} != dict")
+            assert "a" in star_mask_override["central"].keys() and "b" in star_mask_override["central"].keys()
+            assert type(star_mask_override["spikes"]) == dict, galfind_logger.warning(f"Mask overridden, but {type(star_mask_override['spikes'])=} != dict")
+            assert "a" in star_mask_override["spikes"].keys() and "b" in star_mask_override["spikes"].keys()
+            assert all(type(scale) in [float, int] for mask_type in star_mask_override.values() for scale in mask_type.values())
+            star_mask_params = star_mask_override
         else:
             band_wavelength = self.instrument.band_wavelengths[band == self.instrument.band_names]
             # Get closest wavelength parameters
-            closest_wavelength = min(star_pask_params.keys(), key = lambda x: abs(x - band_wavelength))
+            closest_wavelength = min(star_mask_params_dict.keys(), key = lambda x: abs(x - band_wavelength))
             print(band, closest_wavelength)
-            mask_a = star_pask_params[closest_wavelength]['mask_a']
-            mask_b = star_pask_params[closest_wavelength]['mask_b']
-
+            star_mask_params = star_mask_params_dict[closest_wavelength]
 
         galfind_logger.info(f"Automasking {self.survey} {band}.")
 
-        composite = lambda x_coord, y_coord, scale, angle: \
+        composite = lambda x_coord, y_coord, central_scale, spike_scale, angle: \
             f'''# Region file format: DS9 version 4.1
             global color=green dashlist=8 3 width=1 font="helvetica 10 normal roman" select=1 highlite=1 dash=0 fixed=0 edit=1 move=1 delete=1 include=1 source=1
             image
             composite({x_coord},{y_coord},{angle}) || composite=1
-                circle({x_coord},{y_coord},{163*scale}) ||
-                ellipse({x_coord},{y_coord},{29*scale**(2/3)},{730*scale},300.15) ||
-                ellipse({x_coord},{y_coord},{29*scale**(2/3)},{730*scale},240.00) ||
-                ellipse({x_coord},{y_coord},{29*scale**(2/3)},{730*scale},360.00) ||
-                ellipse({x_coord},{y_coord},{29*scale**(2/3)},{300*scale},269.48) ||'''
+                circle({x_coord},{y_coord},{163*central_scale}) ||
+                ellipse({x_coord},{y_coord},{29*spike_scale**(2/3)},{730*spike_scale},300.15) ||
+                ellipse({x_coord},{y_coord},{29*spike_scale**(2/3)},{730*spike_scale},240.00) ||
+                ellipse({x_coord},{y_coord},{29*spike_scale**(2/3)},{730*spike_scale},360.00) ||
+                ellipse({x_coord},{y_coord},{29*spike_scale**(2/3)},{300*spike_scale},269.48) ||'''
 
         # Load data
         im_data, im_header, seg_data, seg_header = self.load_data(band, incl_mask = False)
@@ -790,18 +805,17 @@ class Data:
                 gaia_stars = gaia_stars[gaia_stars['classlabel_dsc_joint'] != 'galaxy']
                 # Remove masked flux values
                 gaia_stars = gaia_stars[~np.isnan(gaia_stars['phot_g_mean_mag'])]
-            
         
             ra_gaia = np.asarray(gaia_stars['ra'])
             dec_gaia = np.asarray(gaia_stars['dec'])
             x_gaia, y_gaia = wcs.all_world2pix(ra_gaia, dec_gaia, 0)
             
             # Generate mask scale for each star
-            rmask_gaia_arcsec = mask_a * np.exp(-gaia_stars['phot_g_mean_mag'] / mask_b)
+            central_scale_stars = (2. * star_mask_params["central"]["a"] / (730. * pixel_scale.to(u.arcsec).value)) * np.exp(-gaia_stars["phot_g_mean_mag"] / star_mask_params["central"]["b"])
+            spike_scale_stars = (2. * star_mask_params["spikes"]["a"] / (730. * pixel_scale.to(u.arcsec).value)) * np.exp(-gaia_stars["phot_g_mean_mag"] / star_mask_params["spikes"]["b"])
             # Update the catalog
             gaia_stars.add_column(Column(data = x_gaia, name = 'x_pix'))
             gaia_stars.add_column(Column(data = y_gaia, name = 'y_pix'))
-            gaia_stars.add_column(Column(data = rmask_gaia_arcsec, name = 'rmask_arcsec'))
 
         # Diagnostic plot
         if plot:
@@ -815,12 +829,11 @@ class Data:
         diffraction_regions = []
         region_strings = []
         print(f"Making stellar mask for {band}")
-        for pos, row in tqdm(enumerate(gaia_stars)):    
+        for pos, (row, central_scale, spike_scale) in tqdm(enumerate(zip(gaia_stars, central_scale_stars, spike_scale_stars))):    
             # Plot circle
             # if plot:
             #     ax.add_patch(Circle((row['x_pix'], row['y_pix']), 2 * row['rmask_arcsec'] / pixel_scale, color = 'r', fill = False, lw = 2))
-            scale = 2 * row['rmask_arcsec'] / pixel_scale.value / 730 
-            sky_region = composite(row['x_pix'], row['y_pix'], scale, angle)
+            sky_region = composite(row['x_pix'], row['y_pix'], central_scale, spike_scale, angle)
             region_obj = Regions.parse(sky_region, format = 'ds9')
             diffraction_regions.append(region_obj)
             region_strings.append(region_obj.serialize(format = 'ds9'))
@@ -1178,7 +1191,8 @@ class Data:
             master_tab.add_column(dec_detect_band, name = 'DELTA_J2000', index = 4)
             
             # update table header
-            master_tab.meta = {**master_tab.meta, **{"INSTR": self.instrument.name, "BANDS": str(self.instrument.band_names)}}
+            master_tab.meta = {**master_tab.meta, **{"INSTR": self.instrument.name, \
+                "SURVEY": self.survey, "VERSION": self.version, "BANDS": str(self.instrument.band_names)}}
 
             # create galfind catalogue README
             #self.make_sex_readme(self.sex_cat_master_path.replace(".fits", "_README.txt"))
@@ -1276,7 +1290,7 @@ class Data:
         # Remove old columns
         phot_table.remove_columns(colnames)
         phot_table.remove_columns(mag_colnames)
-        phot_table.write(self.sex_cat_path(band, forced_phot_band), format='fits', overwrite=True)
+        phot_table.write(selff.sex_cat_path(band, forced_phot_band), format='fits', overwrite=True)
         
     def mask_reg_to_pix(self, band, mask_path):
         # open image corresponding to band
@@ -1655,7 +1669,6 @@ class Data:
             save_path = f"{self.depth_dirs[self.forced_phot_band]}/{mode}/depth_areas.png" # not entirely general -> need to improve self.depth_dirs
             
             if not Path(save_path).is_file() or overwrite:
-                
                 fig, ax = plt.subplots(1, 1, figsize = (5, 5))
                 ax.set_title(f"{self.survey} {self.version} {aper_diam}")
                 ax.set_xlabel("Area (arcmin$^{2}$)")

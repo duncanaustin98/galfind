@@ -20,6 +20,7 @@ import subprocess
 from pathlib import Path
 from astropy.io import fits
 from tqdm import tqdm
+import time
 
 from . import useful_funcs_austind as funcs
 from . import config, galfind_logger
@@ -34,11 +35,10 @@ class SED_code(ABC):
         self.galaxy_property_errs_dict = galaxy_property_errs_dict
         self.available_templates = available_templates
     
-    def load_photometry(self, cat, SED_input_bands, out_units, no_data_val, upper_sigma_lim = {}):
+    def load_photometry(self, cat, out_units, no_data_val, upper_sigma_lim = {}):
         # load in raw photometry from the galaxies in the catalogue and convert to appropriate units
         phot = np.array([gal.phot.flux_Jy.to(out_units) for gal in cat]) #[:, :, 0]
         phot_shape = phot.shape
-
         if out_units != u.ABmag:
             phot_err = np.array([gal.phot.flux_Jy_errs.to(out_units) for gal in cat])#[:, :, 0]
         else:
@@ -46,6 +46,7 @@ class SED_code(ABC):
             phot_err = np.array([funcs.flux_pc_to_mag_err(gal.phot.flux_Jy_errs / gal.phot.flux_Jy) for gal in cat])#[:, :, 0]
 
         # include upper limits if wanted
+        # MAY NEED TO UPDATE WHEN USING OTHER SED FITTING TOOLS OTHER THAN EAZY
         if upper_sigma_lim != None and upper_sigma_lim != {}:
             # determine relevant indices
             upper_lim_indices = [[i, j] for i, gal in enumerate(cat) for j, depth in enumerate(gal.phot[0].loc_depths) \
@@ -57,22 +58,22 @@ class SED_code(ABC):
                 for i, gal in enumerate(cat) for j, loc_depth in enumerate(gal.phot.loc_depths)]).reshape(phot_shape)
 
         # insert 'no_data_val' from SED_input_bands with no data in the catalogue
-        phot_in = []
-        phot_err_in = []
-        for band in SED_input_bands:
-            if band in cat.instrument.band_names:
-                band_index = np.where(band == cat.instrument.band_names)[0][0]
-                phot_in.append(phot[:, band_index])
-                phot_err_in.append(phot_err[:, band_index])
-            else: # band does not exist in data but still needs to be included
-                phot_in.append(np.full(phot_shape[0], no_data_val))
-                phot_err_in.append(np.full(phot_shape[0], no_data_val))
-        phot_in = np.array(phot_in).T
-        phot_err_in = np.array(phot_err_in).T
-        
+        phot_in = np.zeros((len(cat), len(cat.instrument))) #[]
+        phot_err_in = np.zeros((len(cat), len(cat.instrument))) #[]
+        for i, gal in tqdm(enumerate(cat), desc = "Making EAZY .in file", total = len(cat)):
+            for j, band_name in enumerate(cat.instrument.band_names):
+                if band_name in gal.phot.instrument.band_names:
+                    index = np.where(band_name == gal.phot.instrument.band_names)[0][0]
+                    phot_in[i, j] = np.array(phot[i].data)[index]
+                    phot_err_in[i, j] = np.array(phot_err[i].data)[index]
+                else:
+                    phot_in[i, j] = no_data_val
+                    phot_err_in[i, j] = no_data_val
         return phot_in, phot_err_in
     
-    def fit_cat(self, cat, SED_fit_params): # *args, **kwargs):
+    def fit_cat(self, cat, SED_fit_params, timed = True): # *args, **kwargs):
+        if timed:
+            start = time.time()
         in_path = self.make_in(cat) #, *args, **kwargs)
         #print(in_path)
         out_folder = funcs.split_dir_name(in_path.replace("input", "output"), "dir")
@@ -95,9 +96,12 @@ class SED_code(ABC):
         # save PDF and SED paths in galfind catalogue object
         cat.save_phot_PDF_paths(PDF_paths, SED_fit_params)
         cat.save_phot_SED_paths(SED_paths, SED_fit_params)
+        if timed:
+            mid = time.time()
+            print(f"Running SED fitting took {(mid - start):.1f}s")
         # update galaxies within the catalogue with new SED fits
-        cat_SED_results = Catalogue_SED_results.from_cat(cat, SED_fit_params_arr = [SED_fit_params]).SED_results
-        cat.update_SED_results(cat_SED_results)
+        cat_SED_results = Catalogue_SED_results.from_cat(cat, SED_fit_params_arr = [SED_fit_params], timed = timed).SED_results
+        cat.update_SED_results(cat_SED_results, timed = timed)
         return cat
     
     def update_fits_cat(self, cat, fits_out_path, SED_fit_params): #*args, **kwargs):

@@ -44,15 +44,15 @@ class Catalogue(Catalogue_Base):
     @classmethod
     def from_pipeline(cls, survey, version, aper_diams, cat_creator, SED_fit_params_arr = [{"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": 4.}, \
             {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": 6.}, {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}], \
-            instruments = ['NIRCam', 'ACS_WFC', 'WFC3_IR'], forced_phot_band = "F444W", excl_bands = [], loc_depth_min_flux_pc_errs = [5, 10], crop_by = None):
+            instruments = ['NIRCam', 'ACS_WFC', 'WFC3_IR'], forced_phot_band = "F444W", excl_bands = [], loc_depth_min_flux_pc_errs = [5, 10], crop_by = None, timed = True):
         # make 'Data' object
         data = Data.from_pipeline(survey, version, instruments, excl_bands = excl_bands)
         return cls.from_data(data, version, aper_diams, cat_creator, SED_fit_params_arr, \
-            forced_phot_band, loc_depth_min_flux_pc_errs, crop_by = crop_by)
+            forced_phot_band, loc_depth_min_flux_pc_errs, crop_by = crop_by, timed = timed)
     
     @classmethod
     def from_data(cls, data, version, aper_diams, cat_creator, SED_fit_params_arr, forced_phot_band = "F444W", \
-                loc_depth_min_flux_pc_errs = [10], mask = True, crop_by = None):
+                loc_depth_min_flux_pc_errs = [10], mask = True, crop_by = None, timed = True):
         # make masked local depth catalogue from the 'Data' object
         data.combine_sex_cats(forced_phot_band)
         mode = str(config["Depths"]["MODE"]).lower() # mode to calculate depths (either "n_nearest" or "rolling")
@@ -60,19 +60,19 @@ class Catalogue(Catalogue_Base):
         data.perform_aper_corrs()
         data.make_loc_depth_cat(cat_creator, depth_mode = mode)
         return cls.from_fits_cat(data.sex_cat_master_path, version, data.instrument, cat_creator, data.survey, \
-            SED_fit_params_arr, data = data, mask = mask, crop_by = crop_by)
+            SED_fit_params_arr, data = data, mask = mask, crop_by = crop_by, timed = timed)
     
     @classmethod
     def from_fits_cat(cls, fits_cat_path, version, instrument, cat_creator, survey, \
-            SED_fit_params_arr, data = None, mask = False, excl_bands = [], crop_by = None):
+            SED_fit_params_arr, data = None, mask = False, excl_bands = [], crop_by = None, timed = True):
         # open the catalogue
         fits_cat = funcs.cat_from_path(fits_cat_path)
-        for band, band_name in zip(instrument, instrument.band_names):
+        for band_name in instrument.band_names:
             try:
                 cat_creator.load_photometry(Table(fits_cat[0]), [band_name])
             except:
                 # no data for the relevant band within the catalogue
-                instrument.remove_band(band)
+                instrument.remove_band(band_name)
                 print(f"{band_name} flux not loaded")
         print(f"instrument band names = {instrument.band_names}")
 
@@ -95,22 +95,24 @@ class Catalogue(Catalogue_Base):
                     galfind_logger.warning(f"Invalid crop name == {name}! Skipping")
 
         # produce galaxy array from each row of the catalogue
-        start_time = time.time()
-        gals = Multiple_Galaxy.from_fits_cat(fits_cat, instrument, cat_creator, [{}]).gals #codes, lowz_zmax, templates_arr).gals
-        end_time = time.time()
-        elapsed_time = end_time - start_time
-        print(f"Finished loading in {len(gals)} galaxies. This took {elapsed_time:.6f} seconds")
+        if timed:
+            start_time = time.time()
+        gals = Multiple_Galaxy.from_fits_cat(fits_cat, instrument, cat_creator, [{}], timed = timed).gals #codes, lowz_zmax, templates_arr).gals
+        if timed:
+            end_time = time.time()
+            elapsed_time = end_time - start_time
+            print(f"Finished loading in {len(gals)} galaxies. This took {elapsed_time:.6f} seconds")
         # make catalogue with no SED fitting information
         cat_obj = cls(gals, fits_cat_path, survey, cat_creator, instrument, SED_fit_params_arr, version = version, crops = crop_by)
         #print(cat_obj)
         if cat_obj != None:
             cat_obj.data = data
         if mask:
-            cat_obj.mask()
+            cat_obj.mask(timed = timed)
         # run SED fitting for the appropriate SED_fit_params
         for SED_fit_params in SED_fit_params_arr:
-            cat_obj = SED_fit_params["code"].fit_cat(cat_obj, SED_fit_params)
-            cat_obj.load_SED_rest_properties(SED_fit_params) # load SED rest properties
+            cat_obj = SED_fit_params["code"].fit_cat(cat_obj, SED_fit_params, timed = timed)
+            cat_obj.load_SED_rest_properties(SED_fit_params, timed = timed) # load SED rest properties
         return cat_obj
     
     def save_phot_PDF_paths(self, PDF_paths, SED_fit_params):
@@ -123,10 +125,14 @@ class Catalogue(Catalogue_Base):
             self.phot_SED_paths = {}
         self.phot_SED_paths[SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)] = SED_paths
     
-    def update_SED_results(self, cat_SED_results):
+    def update_SED_results(self, cat_SED_results, timed = True):
         assert(len(cat_SED_results) == len(self)) # if this is not the case then instead should cross match IDs between self and gal_SED_result
         galfind_logger.info("Updating SED results in galfind catalogue object")
-        [gal.update(gal_SED_result) for gal, gal_SED_result in zip(self, cat_SED_results)]
+        if timed:
+            [gal.update(gal_SED_result) for gal, gal_SED_result \
+                in tqdm(zip(self, cat_SED_results), desc = "Updating galaxy SED results", total = len(self))]
+        else:
+            [gal.update(gal_SED_result) for gal, gal_SED_result in zip(self, cat_SED_results)]
     
     # Spectroscopy
         
@@ -156,7 +162,7 @@ class Catalogue(Catalogue_Base):
     #         gal.phot.instrument.band_names)[0][0]].value for i, gal in enumerate(cat)])
     #     return ext_src_corrs
 
-    def mask(self): #, mask_instrument = NIRCam()):
+    def mask(self, timed = True): #, mask_instrument = NIRCam()):
         galfind_logger.info(f"Running masking code for {self.cat_path}.")
         # determine whether to overwrite catalogue or not
         overwrite = config["Masking"].getboolean("OVERWRITE_MASK_COLS")
@@ -228,8 +234,10 @@ class Catalogue(Catalogue_Base):
             # update masking of galfind galaxy objects
             galfind_logger.info("Masking galfind galaxy objects in catalogue")
             assert(len(fits_cat) == len(self))
-            [gal.update_mask(fits_cat, self.cat_creator, update_phot_rest = False) for gal in \
-                tqdm(self, total = len(self), desc = "Masking galfind galaxy objects")]
+            mask_arr = self.cat_creator.load_mask(fits_cat, self.instrument.band_names, \
+                gal_band_mask = self.cat_creator.load_photometry(fits_cat, self.instrument.band_names)[2])
+            [gal.update_mask(mask, update_phot_rest = False) for gal, mask in \
+                tqdm(zip(self, mask_arr), total = len(self), desc = "Masking galfind galaxy objects")]
         else:
             galfind_logger.info(f"Catalogue for {self.survey} {self.version} already masked. Skipping!")
 
@@ -294,6 +302,12 @@ class Catalogue(Catalogue_Base):
                     os.symlink(out_path, selection_path)
 
     # Selection functions
+                    
+    def select_all_bands(self):
+        return self.select_min_bands(len(self.instrument))
+                    
+    def select_min_bands(self, min_bands):
+        return self.perform_selection(Galaxy.select_min_bands, min_bands)
         
     # Masking selection
 
@@ -396,13 +410,14 @@ class Catalogue(Catalogue_Base):
     # Full sample selection functions - these chain the above functions
 
     def select_EPOCHS(self, SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}, allow_lowz = False):
+        self.perform_selection(Galaxy.select_min_bands, 4., make_cat_copy = False) # minimum 4 photometric bands
         self.perform_selection(Galaxy.select_unmasked_instrument, NIRCam(), make_cat_copy = False) # all NIRCam bands unmasked
         if not allow_lowz:
             self.perform_selection(Galaxy.phot_SNR_crop, 0, 2., "non_detect", make_cat_copy = False) # 2σ non-detected in first band
         self.perform_selection(Galaxy.phot_bluewards_Lya_non_detect, 2., SED_fit_params, make_cat_copy = False) # 2σ non-detected in all bands bluewards of Lyα
         self.perform_selection(Galaxy.phot_redwards_Lya_detect, [5., 3.], SED_fit_params, True, make_cat_copy = False) # 5σ/3σ detected in first/second band redwards of Lyα
         self.perform_selection(Galaxy.select_chi_sq_lim, 3., SED_fit_params, True, make_cat_copy = False) # χ^2_red < 3
-        #self.perform_selection(Galaxy.select_chi_sq_diff, 9., SED_fit_params, 0.5, make_cat_copy = False) # Δχ^2 < 9 between redshift free and low redshift SED fits, with Δz=0.5 tolerance 
+        self.perform_selection(Galaxy.select_chi_sq_diff, 9., SED_fit_params, 0.5, make_cat_copy = False) # Δχ^2 < 9 between redshift free and low redshift SED fits, with Δz=0.5 tolerance 
         self.perform_selection(Galaxy.select_robust_zPDF, 0.6, 0.1, SED_fit_params, make_cat_copy = False) # 60% of redshift PDF must lie within z ± z * 0.1
         return self.perform_selection(Galaxy.select_EPOCHS, SED_fit_params, allow_lowz)
 
@@ -410,6 +425,7 @@ class Catalogue(Catalogue_Base):
         # extract selection name from galaxy method output
         selection_name = selection_function(self[0], *args, update = False)[1]
         # open catalogue
+        #breakpoint()
         # perform selection if not previously performed
         if selection_name not in self.selection_cols:
             # perform calculation for each galaxy and update galaxies in self
@@ -433,6 +449,7 @@ class Catalogue(Catalogue_Base):
         return cat_copy
 
     def _append_selection_to_fits(self, selection_name):
+        #breakpoint()
         # append .fits table if not already done so for this selection
         if not selection_name in self.selection_cols:
             assert(all(getattr(self, selection_name) == True))
@@ -620,7 +637,7 @@ class Catalogue(Catalogue_Base):
         funcs.make_dirs(f"{save_dir}/dummy_path.ecsv")
         [gal._save_SED_rest_PDFs(property_name, save_dir, SED_fit_params) for gal in self]
 
-    def load_SED_rest_properties(self, SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}):
+    def load_SED_rest_properties(self, SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}, timed = True):
         key = SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)
         # save the names of properties that have been calculated for this sample of galaxies in the catalogue
         SED_rest_properties_tab = self.open_cat(cropped = False, hdu = key)
@@ -640,7 +657,6 @@ class Catalogue(Catalogue_Base):
         del_hdr_names = [f"SED_REST_{property_name}"]
         self.del_cols_hdrs_from_fits(del_col_names, del_hdr_names, key)
         # check whether the SED rest property kwargs are included in the catalogue, and if so delete these as well - Not Implemented Yet!
-
 
         # remove data from self, starting with catalogue, then gal for gal in self.gals
         self.SED_rest_properties[key].remove(property_name)

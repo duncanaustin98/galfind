@@ -5,19 +5,29 @@ import matplotlib.pyplot as plt
 import matplotlib.patheffects as pe
 from astropy.table import Table
 import astropy.units as u
+import time
 
 from . import config, galfind_logger
 from . import useful_funcs_austind as funcs
 
 class PDF:
 
-    def __init__(self, property_name, x, p_x, kwargs = {}):
+    def __init__(self, property_name, x, p_x, kwargs = {}, normed = False, timed = False):
+        if timed:
+            start = time.time()
         assert type(x) in [u.Quantity, u.Magnitude]
         self.property_name = property_name
         self.x = x
-        # normalize to np.trapz(p_x, x) == 1
-        self.p_x = p_x / np.trapz(p_x, x.value)
         self.kwargs = kwargs
+        if timed:
+            mid = time.time()
+        # normalize to np.trapz(p_x, x) == 1
+        if not normed:
+            p_x /= np.trapz(p_x, x.value)
+        self.p_x = p_x
+        if timed:
+            end = time.time()
+            print(mid - start, end - mid)
 
     def __str__(self, print_peaks = False):
         line_sep = "*" * 40 + "\n"
@@ -206,9 +216,9 @@ class PDF:
 
 class SED_fit_PDF(PDF):
 
-    def __init__(self, property_name, x, p_x, SED_fit_params):
+    def __init__(self, property_name, x, p_x, SED_fit_params, normed = True, timed = True):
         self.SED_fit_params = SED_fit_params
-        super().__init__(property_name, x, p_x)
+        super().__init__(property_name, x, p_x, normed = normed, timed = timed)
 
     def load_peaks_from_SED_result(self, SED_result, nth_peak = 0):
         assert type(nth_peak) == int, galfind_logger.critical(f"nth_peak with type = {type(nth_peak)} must be of type 'int'")
@@ -231,8 +241,8 @@ class SED_fit_PDF(PDF):
 
 class Redshift_PDF(SED_fit_PDF):
 
-    def __init__(self, z, p_z, SED_fit_params):
-        super().__init__("z", z, p_z, SED_fit_params)
+    def __init__(self, z, p_z, SED_fit_params, normed = False, timed = False):
+        super().__init__("z", z, p_z, SED_fit_params, normed = normed, timed = timed)
 
     @classmethod
     def from_SED_code_output(cls, data_path, ID, code):

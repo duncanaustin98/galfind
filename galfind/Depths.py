@@ -824,8 +824,7 @@ def cluster_wht_map(wht_map, num_regions='auto', bin_factor=1, min_size=10000, p
             kmeans.fit(weight_map_transformed.flatten().reshape(-1, 1))
 
             sse.append(kmeans.inertia_)
-            
-        #breakpoint()
+
         if all(val == 0.0 for val in np.unique(sse)) :
             print('KMeans failed to find regions. No regions used.')
             return np.zeros_like(weight_map), weight_map_smoothed
