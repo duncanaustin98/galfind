@@ -26,13 +26,11 @@ def pipeline(surveys, version, instruments, aper_diams, min_flux_pc_errs, forced
             cat = Catalogue.from_pipeline(survey = survey, version = version, instruments = instruments, aper_diams = aper_diams, \
                 cat_creator = cat_creator, SED_fit_params_arr = SED_fit_params_arr, forced_phot_band = forced_phot_band, \
                 excl_bands = excl_bands, loc_depth_min_flux_pc_errs = min_flux_pc_errs, crop_by = crop_by, timed = timed)
+            cat_copy = cat.select_EPOCHS(allow_lowz = False)
+            cat_copy.plot_phot_diagnostics(flux_unit = u.ABmag)
+            print(str(cat_copy))
             end = time.time()
             print(f"Time to load catalogue = {(end - start):.1f}s")
-            # cat_copy = cat.crop(8228, "ID")
-
-            # print(cat_copy)
-
-            # cat_copy.plot_phot_diagnostics()
 
             #cat.data.calc_unmasked_area("NIRCam", forced_phot_band = forced_phot_band)
             
@@ -44,21 +42,17 @@ def pipeline(surveys, version, instruments, aper_diams, min_flux_pc_errs, forced
             #     # "continuum_Halpha+[NII]-6583", "EW_rest_Halpha_cont_0.0", "flux_Halpha_cont_0.0_rest_M99_C00", "lum_Halpha_cont_0.0_rest_M99_C00", 
             #     cat.del_SED_rest_property(name)
             #     print(f"deleted {name}")
-            
+
             # cat_copy = cat.select_phot_galaxy_property("z", ">", 4.5)
             # cat_copy = cat.select_unmasked_instrument(NIRCam())
 
             #cat_copy = cat.select_all_bands()
             #cat_copy = cat.select_phot_galaxy_property("z", ">", 4.5)
-            #cat_copy = cat.select_EPOCHS(allow_lowz = False)
+
             #cat.select_rest_UV_line_emitters_sigma("CIV-1549", 2.)
             
             # cat.calc_rest_UV_properties(frame = "rest")
-            # cat.calc_xi_ion() #dust_author_year = None)
-            cat.plot_phot_diagnostics(flux_unit = u.ABmag)
-            
-            print(str(cat))
-            # print(str(cat_copy[0]))
+            # cat.calc_xi_ion() #dust_author_year = None
 
 
 def make_EAZY_SED_fit_params_arr(SED_code_arr, templates_arr, lowz_zmax_arr):
@@ -66,12 +60,13 @@ def make_EAZY_SED_fit_params_arr(SED_code_arr, templates_arr, lowz_zmax_arr):
         for code, templates, lowz_zmaxs in zip(SED_code_arr, templates_arr, lowz_zmax_arr) for lowz_zmax in lowz_zmaxs]
 
 if __name__ == "__main__":
+
     version = "v11" #config["DEFAULT"]["VERSION"]
     instruments = ["NIRCam"] #,"ACS_WFC",  'WFC3_IR'] # "ACS_WFC"
     cat_type = "loc_depth"
-    surveys = ["COSMOS-Web-0A"] #[config["DEFAULT"]["SURVEY"]]
+    surveys = ["COSMOS-Web-7B"] #[config["DEFAULT"]["SURVEY"]]
     aper_diams = [0.32] * u.arcsec
-    SED_code_arr = []#EAZY()]
+    SED_code_arr = [EAZY()]
     templates_arr = ["fsps_larson"] #["fsps", "fsps_larson", "fsps_jades"]
     lowz_zmax_arr = [[4., 6., None]] #[[None]] # 
     min_flux_pc_errs = [10]
@@ -85,6 +80,10 @@ if __name__ == "__main__":
     excl_bands = []
 
     SED_fit_params_arr = make_EAZY_SED_fit_params_arr(SED_code_arr, templates_arr, lowz_zmax_arr)
+
+    delay_time = (12 * u.h).to(u.s).value
+    print(f"{surveys[0]} delayed by {delay_time}s")
+    time.sleep(delay_time)
 
     for survey in surveys:
         pipeline([survey], version, instruments, aper_diams, min_flux_pc_errs, forced_phot_band, \
