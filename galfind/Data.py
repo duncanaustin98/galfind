@@ -482,7 +482,7 @@ class Data:
         for (key, item) in self.common.items():
             output_str += f"{key}: {item}\n"
         try:
-            unmasked_area_tab = self.calc_unmasked_area() 
+            unmasked_area_tab = self.calc_unmasked_area(masking_instrument_or_band_name = self.forced_phot_band, forced_phot_band = self.forced_phot_band) 
             unmasked_area = unmasked_area_tab[unmasked_area_tab["masking_instrument_band"] == 'NIRCam']['unmasked_area_total'][0] 
             output_str += f"UNMASKED AREA = {unmasked_area}"
         except:
@@ -923,7 +923,10 @@ class Data:
     
     #@staticmethod
     def combine_band_names(self, bands):
-        return '+'.join(bands)
+        if type(bands) == str:
+            return bands
+        else:
+            return '+'.join(bands)
     
     def get_err_map(self, band, prefer = "rms_err"):
         """ Loads either the rms_err or wht map for use in SExtractor depending on the preferred map to use
@@ -1590,7 +1593,7 @@ class Data:
         # Parallelise the calculation of depths for each band
         with tqdm_joblib(tqdm(desc = "Calculating depths", total = len(params))) as progress_bar:
             Parallel(n_jobs = n_jobs)(delayed(self.calc_band_depth)(param) for param in params)
-        self.plot_area_depth(cat_creator, mode, aper_diam, show = False)
+        #self.plot_area_depth(cat_creator, mode, aper_diam, show = False)
     
     def calc_band_depth(self, params):
         # unpack parameters
@@ -1664,7 +1667,7 @@ class Data:
             galfind_logger.warning("Could not plot depths as cat_creator == None in Data.plot_area_depth()")
         else:
             self.get_depth_dir(aper_diam)
-            area_tab = self.calc_unmasked_area(masking_instrument_or_band_name = self.forced_phot_band)
+            area_tab = self.calc_unmasked_area(masking_instrument_or_band_name = self.forced_phot_band, forced_phot_band = self.forced_phot_band)
             overwrite = config["Depths"].getboolean("OVERWRITE_DEPTH_PLOTS")
             save_path = f"{self.depth_dirs[self.forced_phot_band]}/{mode}/depth_areas.png" # not entirely general -> need to improve self.depth_dirs
             
@@ -1693,7 +1696,7 @@ class Data:
                     hf.close()
                     # Need unmasked area for each band
                     if use_area_per_band:
-                        area_tab = self.calc_unmasked_area(masking_instrument_or_band_name = band)
+                        area_tab = self.calc_unmasked_area(masking_instrument_or_band_name = band, forced_phot_band = self.forced_phot_band)
                         area_row = area_tab[area_tab["masking_instrument_band"] == band]
 
                     area = area_row["unmasked_area_total"].to(u.arcmin ** 2).value

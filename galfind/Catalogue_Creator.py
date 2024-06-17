@@ -167,10 +167,10 @@ class GALFIND_Catalogue_Creator(Catalogue_Creator):
         else:
             # calculate the mask that is used to crop photometry to only bands including data
             if timed:
-                gal_instr_mask = [[True if val != null_data_val else False for val in gal_phot] for gal_phot in \
-                    tqdm(phot, desc = "Making gal_instr_mask", total = len(phot))]
+                gal_instr_mask = np.array([[True if val != null_data_val else False for val in gal_phot] for gal_phot in \
+                    tqdm(phot, desc = "Making gal_instr_mask", total = len(phot))])
             else:
-                gal_instr_mask = [[True if val != null_data_val else False for val in gal_phot] for gal_phot in phot]
+                gal_instr_mask = np.array([[True if val != null_data_val else False for val in gal_phot] for gal_phot in phot])
             # save as .h5
             hf = h5py.File(save_path, "w")
             hf.create_dataset("has_data_mask", data = gal_instr_mask)
