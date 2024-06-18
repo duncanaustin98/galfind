@@ -28,6 +28,7 @@ from astropy.visualization import LogStretch, LinearStretch, ImageNormalize, Man
 import matplotlib.patches as patches
 from mpl_toolkits.axes_grid1.anchored_artists import AnchoredSizeBar
 from typing_extensions import Self
+from typing import Union
 
 from . import useful_funcs_austind as funcs
 from . import config, galfind_logger, astropy_cosmo
@@ -102,6 +103,9 @@ class Galaxy:
         
     # def update_mask_band(self, band, bool_value):
     #     self.mask_flags[band] = bool_value
+
+    def load_property(self, gal_property: Union[dict, u.Quantity], save_name: str):
+        setattr(self, save_name, gal_property)
 
     def make_cutout(self, band, data, wcs = None, im_header = None, survey = None, version = None, cutout_size = 32):
         
@@ -1001,6 +1005,32 @@ class Galaxy:
                 else:
                     if update:
                         self.selection_flags[selection_name] = False
+        return self, selection_name
+    
+    # Morphology selection functions
+    
+    def select_band_flux_radius(self, band: str, gtr_or_less: str, lim: Union[int, float, u.Quantity], update: bool = True):
+        assert(gtr_or_less in ["gtr", "less"])
+        if type(lim) != u.Quantity:
+            lim_str = f"{lim:.1f}pix"
+        elif lim.unit in u.dimensionless_unscaled:
+            lim_str = f"{lim.value:.1f}pix"
+        else:
+            lim_str = f"{lim.to(u.arcsec).value:.1f}as"
+        selection_name = f"Re{'>' if gtr_or_less == 'gtr' else '<'}{lim_str}"
+        if selection_name in self.selection_flags.keys():
+            galfind_logger.debug(f"{selection_name} already performed for galaxy ID = {self.ID}!")
+        else:
+            if len(self.phot) == 0 or band not in self.phot.instrument.band_names: # no data
+                if update:
+                    self.selection_flags[selection_name] = False
+                return self, selection_name
+            if self.sex_Re[band] > lim:
+                if update:
+                    self.selection_flags[selection_name] = True
+            else:
+                if update:
+                    self.selection_flags[selection_name] = False
         return self, selection_name
     
     def select_EPOCHS(self, SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}, allow_lowz = False, mask_instrument = NIRCam(), update = True):

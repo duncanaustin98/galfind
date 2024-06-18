@@ -26,9 +26,13 @@ def pipeline(surveys, version, instruments, aper_diams, min_flux_pc_errs, forced
             cat = Catalogue.from_pipeline(survey = survey, version = version, instruments = instruments, aper_diams = aper_diams, \
                 cat_creator = cat_creator, SED_fit_params_arr = SED_fit_params_arr, forced_phot_band = forced_phot_band, \
                 excl_bands = excl_bands, loc_depth_min_flux_pc_errs = min_flux_pc_errs, crop_by = crop_by, timed = timed)
-            cat_copy = cat.select_EPOCHS(allow_lowz = False)
-            cat_copy.plot_phot_diagnostics(flux_unit = u.ABmag)
-            print(str(cat_copy))
+
+            cat.select_band_flux_radius("F277W", "gtr", 1.5)
+            breakpoint()
+            #cat_copy = cat.select_EPOCHS(allow_lowz = False)
+            #cat_copy.plot_phot_diagnostics(flux_unit = u.ABmag)
+            #print(str(cat_copy))
+
             end = time.time()
             print(f"Time to load catalogue = {(end - start):.1f}s")
 
@@ -61,12 +65,12 @@ def make_EAZY_SED_fit_params_arr(SED_code_arr, templates_arr, lowz_zmax_arr):
 
 if __name__ == "__main__":
 
-    version = "v11" #config["DEFAULT"]["VERSION"]
+    version = "v9" #config["DEFAULT"]["VERSION"]
     instruments = ["NIRCam"] #,"ACS_WFC",  'WFC3_IR'] # "ACS_WFC"
     cat_type = "loc_depth"
-    surveys = ["JOF"] #[config["DEFAULT"]["SURVEY"]]
+    surveys = ["JADES-Deep-GS+JEMS"] #[config["DEFAULT"]["SURVEY"]]
     aper_diams = [0.32] * u.arcsec
-    SED_code_arr = [EAZY()]
+    SED_code_arr = []#EAZY()]
     templates_arr = ["fsps_larson"] #["fsps", "fsps_larson", "fsps_jades"]
     lowz_zmax_arr = [[4., 6., None]] #[[None]] # 
     min_flux_pc_errs = [10]
@@ -81,7 +85,7 @@ if __name__ == "__main__":
 
     SED_fit_params_arr = make_EAZY_SED_fit_params_arr(SED_code_arr, templates_arr, lowz_zmax_arr)
 
-    # delay_time = (12 * u.h).to(u.s).value
+    # delay_time = (8 * u.h).to(u.s).value
     # print(f"{surveys[0]} delayed by {delay_time}s")
     # time.sleep(delay_time)
 

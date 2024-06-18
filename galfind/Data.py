@@ -489,7 +489,7 @@ class Data:
         except:
             pass
         try:
-            breakpoint()
+            #breakpoint()
             depths = []
             for aper_diam in json.loads(config.get("SExtractor", "APERTURE_DIAMS")) * u.arcsec:
                 depths.append(self.load_depths(aper_diam))
@@ -1068,7 +1068,7 @@ class Data:
         return f"{config['DEFAULT']['GALFIND_WORK']}/SExtractor/{self.instrument.instrument_from_band(band).name}/{self.version}/{self.survey}/{self.survey}_{band}_{band}_sel_cat_{self.version}_seg.fits"
 
     @run_in_dir(path = config['DEFAULT']['GALFIND_DIR'])
-    def make_sex_cats(self, forced_phot_band = "f444W", sex_config_path = config['SExtractor']['CONFIG_PATH'], params_path = config['SExtractor']['PARAMS_PATH']):
+    def make_sex_cats(self, forced_phot_band = "f444W", sex_config_path = config['SExtractor']['CONFIG_PATH'], params_path = config['SExtractor']['PARAMS_PATH'], forced_phot_code = "photutils"):
         galfind_logger.info(f"Making SExtractor catalogues with: config file = {sex_config_path}; parameters file = {params_path}")
         # make individual forced photometry catalogues
         if type(forced_phot_band) == list:
@@ -1106,8 +1106,27 @@ class Data:
 
         for band in sextractor_bands:
             sex_cat_path = self.sex_cat_path(band, self.forced_phot_band)
+            self.sex_cats[band] = sex_cat_path
             galfind_logger.debug(f"band = {band}, sex_cat_path = {sex_cat_path} in Data.make_sex_cats")
             
+            # check whether the image of the forced photometry band and sextraction band have the same shape
+            if self.im_shapes[self.forced_phot_band] == self.im_shapes[band]:
+                sextract = True
+            else:
+                sextract = False
+            # check whether the band and forced phot band have error maps with consistent types
+            if sextract:
+                if band in self.rms_err_paths.keys() and self.forced_phot_band in self.rms_err_paths.keys():
+                    prefer = "rms_err"
+                elif band in self.rms_err_paths.keys() and self.forced_phot_band in self.rms_err_paths.keys():
+                    prefer = "wht"
+                else: # do not perform sextraction
+                    sextract = False
+            if sextract:
+                self.sex_cat_types[band] = subprocess.check_output("sex --version", shell = True).decode("utf-8").replace("\n", "")
+            else:
+                self.sex_cat_types[band] = f"{forced_phot_code} v{globals()[forced_phot_code].__version__}"
+
             # overwrite = config["DEFAULT"].getboolean("OVERWRITE")
             # if overwrite:
             #         galfind_logger.info("OVERWRITE = YES, so overwriting sextractor output if it exists.")
@@ -1116,20 +1135,6 @@ class Data:
                 # if not config["DEFAULT"].getboolean("RUN"):
                 #     galfind_logger.critical("RUN = YES, so not running sextractor. Returning Error.")
                 #     raise Exception(f"RUN = YES, and combination of {self.survey} {self.version} or {self.instrument.name} has not previously been run through sextractor.")
-                
-                # check whether the image of the forced photometry band and sextraction band have the same shape
-                if self.im_shapes[self.forced_phot_band] == self.im_shapes[band]:
-                    sextract = True
-                else:
-                    sextract = False
-                # check whether the band and forced phot band have error maps with consistent types
-                if sextract:
-                    if band in self.rms_err_paths.keys() and self.forced_phot_band in self.rms_err_paths.keys():
-                        prefer = "rms_err"
-                    elif band in self.rms_err_paths.keys() and self.forced_phot_band in self.rms_err_paths.keys():
-                        prefer = "wht"
-                    else: # do not perform sextraction
-                        sextract = False
                 
                 # perform sextraction
                 if sextract:
@@ -1146,17 +1151,13 @@ class Data:
                         str(self.im_exts[band]), forced_phot_band_err_map_path, str(self.im_exts[self.forced_phot_band]), err_map_type, 
                         forced_phot_band_err_map_ext, sex_config_path, params_path])
                     process.wait()
-                    cat_type = subprocess.check_output("sex --version", shell = True).decode("utf-8").replace("\n", "")
 
                 else: # use photutils
-                    cat_type = self.forced_photometry(band, self.forced_phot_band)
-                
-                self.sex_cats[band] = sex_cat_path
-                self.sex_cat_type[band] = cat_type
+                    self.forced_photometry(band, self.forced_phot_band, forced_phot_code = forced_phot_code)
             
             galfind_logger.info(f"Finished making SExtractor catalogue for {self.survey} {self.version} {band}!")
     
-    def combine_sex_cats(self, forced_phot_band = "f444W"):
+    def combine_sex_cats(self, forced_phot_band = "F444W", readme_sep = "-" * 20):
         self.make_sex_cats(forced_phot_band)
 
         save_name = f"{self.survey}_MASTER_Sel-{self.combine_band_names(forced_phot_band)}_{self.version}.fits"
@@ -1197,6 +1198,7 @@ class Data:
                     except Exception as e:
                         print(e)
                         print(path)
+
             # add the detection band parameters to the start of the catalogue
             master_tab.add_column(ID_detect_band, name = 'NUMBER', index = 0)
             master_tab.add_column(x_image_detect_band, name = 'X_IMAGE', index = 1)
@@ -1209,43 +1211,56 @@ class Data:
                 "SURVEY": self.survey, "VERSION": self.version, "BANDS": str(self.instrument.band_names)}}
 
             # create galfind catalogue README
-            #self.make_sex_readme(self.sex_cat_master_path.replace(".fits", "_README.txt"))
+            # sex_aper_diams = json.loads(config.get("SExtractor", "APERTURE_DIAMS")) * u.arcsec
+            # text = f"""
+            #     NUMBER: Galaxy ID
+            #     X/Y_IMAGE: X/Y image co-ordinates in 
+            #     ALPHA/DELTA_J2000: RA/Dec (J2000 co-ordinates)
+            #     FLUX(ERR)_APER_'band': Aperture flux/flux errors in {str(sex_aper_diams.to(u.arcsec).value) + 'as'} diameter apertures, image units with ZPs as explained below
+            #     MAG_APER_'band': Aperture magnitudes in {str(sex_aper_diams.to(u.arcsec).value) + 'as'} diameter apertures, AB mag units, defaults to 99. if flux < 0.
+            #     MAGERR_APER_'band': Aperture magnitude errors in {str(sex_aper_diams.to(u.arcsec).value) + 'as'} diameter apertures, AB mag units, negative if mag == 99.
+            # """
+            # if 'sextractor' in [cat_type.lower() for cat_type in self.sex_cat_types.values()]:
+            #     text += f"See SExtractor documentation () for descriptions of other columns. These are only available for {'+'.join([band_name for band_name, sex_cat_type in self.sex_cat_types.items() if 'sextractor' in sex_cat_type.lower()])}\n"
+            # text += readme_sep + "\n"
+            # self.make_sex_readme({"Photometry": text}, self.sex_cat_master_path.replace(".fits", "_README.txt"))
 
             # save table
             os.makedirs(save_dir, exist_ok = True)
             master_tab.write(self.sex_cat_master_path, format = "fits", overwrite = True)
             galfind_logger.info(f"Saved combined SExtractor catalogue as {self.sex_cat_master_path}")
 
-    def sex_readme_text(self):
-        sex_aper_diams = json.loads(config.get("SExtractor", "APERTURE_DIAMS")) * u.arcsec
-        text = f"""
-        Fluxes/Magnitudes:
-        NIRCam Photometry is done by SExtractor. HST/ACS photometry performed by Galaxies are labelled by column NUMBER, with image position X_IMAGE and Y_IMAGE and sky position RA=ALPHA_J2000 and DEC=DELTA_J2000.
-        The image coordinates are based on the {'+'.join(self.forced_phot_band)} detection image. The fluxes are in image units (MJy/sr for NIRCam, DIFFERENT for HST). Both aperture and auto fluxes are calculated.
-        Aperture fluxes are done in {len(sex_aper_diams)} diameters {sex_aper_diams}. This produces an Nx{len(sex_aper_diams)} column for all aperture flux derived measurements.
-        The form for fluxes and flux errors is FLUX_APER_band and FLUXERR_APER_band. Magnitudes are of the form MAG_APER_'band', and are in AB mags.
-        See SExtractor documentation for descriptions of other columns.
+    def produce_readme(self, ):
+        pass
+
+    def make_readme(self, col_desc_dict, save_path, overwrite = False, readme_sep = "-" * 20):
+        assert type(col_desc_dict) == dict
+        assert "Photometry" in col_desc_dict.keys()
+        intro_text = f"""
+        
         """
-
-    def aper_corr_readme_text(self):
-        pass
-
-    def loc_depth_readme_text(self):
-        pass
-
-    def make_sex_readme(self, save_path):
+        # if not overwrite and README already exists, extract previous column labels to append col_desc_dict to
         f = open(save_path, "w")
-        f.write("Catalogue README\n")
-        f.write("-" * 20 + "\n\n")
-        f.write(str(self))
-        # f.write(text)
+        f.write(intro_text)
+        f.write(readme_sep + "\n\n")
+        f.write(str(self) + "\n")
+        for key, value in col_desc_dict.items():
+            if key == "Photometry":
+                init_phot_text = f"Photometry:\n" + '\n'.join([phot_code + '= ' + '+'.join([band_name for band_name, sex_cat_type \
+                    in self.sex_cat_types.items() if sex_cat_type == phot_code]) for phot_code in np.unique(self.sex_cat_types.values())]) + "\n"
+                f.write(init_phot_text)
+            else:
+                f.write(key + "\n")
+            f.write(readme_sep + "\n")
+            f.write(value)
+            f.write(readme_sep + "\n")
         f.close()
 
     def make_sex_plusplus_cat(self):
         pass
     
     def forced_photometry(self, band, forced_phot_band, radii = [0.16, 0.25, 0.5, 0.75, 1.] * u.arcsec, ra_col = 'ALPHA_J2000', dec_col = 'DELTA_J2000', \
-            coord_unit = u.deg, id_col = 'NUMBER', x_col = 'X_IMAGE', y_col = 'Y_IMAGE', extract_method = f"photutils v{photutils.__version__}"):
+            coord_unit = u.deg, id_col = 'NUMBER', x_col = 'X_IMAGE', y_col = 'Y_IMAGE', forced_phot_code = "photutils"):
         # Read in sextractor catalogue
         catalog = Table.read(self.sex_cat_path(forced_phot_band, forced_phot_band), character_as_bytes = False)
         # Open image with correct extension and get WCS
@@ -1312,7 +1327,7 @@ class Data:
         phot_table.remove_columns(colnames)
         phot_table.remove_columns(mag_colnames)
         phot_table.write(self.sex_cat_path(band, forced_phot_band), format='fits', overwrite=True)
-        return extract_method
+        
         
     def mask_reg_to_pix(self, band, mask_path):
         # open image corresponding to band
