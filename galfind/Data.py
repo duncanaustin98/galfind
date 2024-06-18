@@ -7,6 +7,7 @@ Created on Wed May 17 14:20:31 2023
 """
 
 from __future__ import absolute_import
+import photutils
 from photutils import Background2D, MedianBackground, SkyCircularAperture, aperture_photometry
 import numpy as np
 from astropy.io import fits
@@ -484,14 +485,16 @@ class Data:
         try:
             unmasked_area_tab = self.calc_unmasked_area(masking_instrument_or_band_name = self.forced_phot_band, forced_phot_band = self.forced_phot_band) 
             unmasked_area = unmasked_area_tab[unmasked_area_tab["masking_instrument_band"] == 'NIRCam']['unmasked_area_total'][0] 
-            output_str += f"UNMASKED AREA = {unmasked_area}"
+            output_str += f"UNMASKED AREA = {unmasked_area}\n"
         except:
             pass
         try:
+            breakpoint()
             depths = []
             for aper_diam in json.loads(config.get("SExtractor", "APERTURE_DIAMS")) * u.arcsec:
                 depths.append(self.load_depths(aper_diam))
-            print(depths)
+            #breakpoint()
+            output_str += f"DEPTHS = {str(depths)}\n"
         except:
             pass
         # if there are common directories for data, print these
@@ -506,6 +509,9 @@ class Data:
         for band in self.instrument.band_names:
             output_str += band_sep
             output_str += f"{band}\n"
+            if hasattr(self, "sex_cat_types"):
+                if band in self.sex_cat_types.keys():
+                    output_str += f"PHOTOMETRY BY: {self.sex_cat_types[band]}\n"
             band_data_paths = [self.im_paths[band], self.seg_paths[band], self.mask_paths[band]]
             band_data_exts = [self.im_exts[band], 0, 0]
             band_data_labels = ["SCI", "SEG", "MASK"]
@@ -1093,7 +1099,10 @@ class Data:
         else:
             sextractor_bands = self.instrument.band_names
         
-        sex_cats = {}
+        if not hasattr(self, "sex_cats"):
+            self.sex_cats = {}
+        if not hasattr(self, "sex_cat_types"):
+            self.sex_cat_types = {}
 
         for band in sextractor_bands:
             sex_cat_path = self.sex_cat_path(band, self.forced_phot_band)
@@ -1137,13 +1146,15 @@ class Data:
                         str(self.im_exts[band]), forced_phot_band_err_map_path, str(self.im_exts[self.forced_phot_band]), err_map_type, 
                         forced_phot_band_err_map_ext, sex_config_path, params_path])
                     process.wait()
+                    cat_type = subprocess.check_output("sex --version", shell = True).decode("utf-8").replace("\n", "")
 
                 else: # use photutils
-                    self.forced_photometry(band, self.forced_phot_band)
+                    cat_type = self.forced_photometry(band, self.forced_phot_band)
+                
+                self.sex_cats[band] = sex_cat_path
+                self.sex_cat_type[band] = cat_type
             
             galfind_logger.info(f"Finished making SExtractor catalogue for {self.survey} {self.version} {band}!")
-            sex_cats[band] = sex_cat_path
-        self.sex_cats = sex_cats
     
     def combine_sex_cats(self, forced_phot_band = "f444W"):
         self.make_sex_cats(forced_phot_band)
@@ -1205,29 +1216,36 @@ class Data:
             master_tab.write(self.sex_cat_master_path, format = "fits", overwrite = True)
             galfind_logger.info(f"Saved combined SExtractor catalogue as {self.sex_cat_master_path}")
 
-    def make_sex_readme(self, save_path):
+    def sex_readme_text(self):
+        sex_aper_diams = json.loads(config.get("SExtractor", "APERTURE_DIAMS")) * u.arcsec
         text = f"""
-        Catalogue Readme
-
-
-
         Fluxes/Magnitudes:
-        NIRCam Photometry is done by SExtractor. HST/ACS photometry performed by Galaxies are labelled by column NUMBER, with image position X_IMAGE and Y_IMAGE and sky position RA ?ALPHA_J2000? and DEC ?DELTA_J2000?. The image coordinates are based on the detection image. The fluxes are in image units (MJy/sr for NIRCam, DIFFERENT for HST). Both aperture and auto fluxes are calculated.
-        Aperture fluxes are done in 5 diameters (0.32, 0.5, 1.0, 1.5, 2.0) arcsec. This produces an Nx5 column for all aperture flux derived measurements.
-        The form for fluxes and flux errors is FLUX_APER_'band' and FLUXERR_APER_'band'. Magnitudes are of the form MAG_APER_{band}, and are in AB mags.
+        NIRCam Photometry is done by SExtractor. HST/ACS photometry performed by Galaxies are labelled by column NUMBER, with image position X_IMAGE and Y_IMAGE and sky position RA=ALPHA_J2000 and DEC=DELTA_J2000.
+        The image coordinates are based on the {'+'.join(self.forced_phot_band)} detection image. The fluxes are in image units (MJy/sr for NIRCam, DIFFERENT for HST). Both aperture and auto fluxes are calculated.
+        Aperture fluxes are done in {len(sex_aper_diams)} diameters {sex_aper_diams}. This produces an Nx{len(sex_aper_diams)} column for all aperture flux derived measurements.
+        The form for fluxes and flux errors is FLUX_APER_band and FLUXERR_APER_band. Magnitudes are of the form MAG_APER_'band', and are in AB mags.
         See SExtractor documentation for descriptions of other columns.
         """
+
+    def aper_corr_readme_text(self):
+        pass
+
+    def loc_depth_readme_text(self):
+        pass
+
+    def make_sex_readme(self, save_path):
         f = open(save_path, "w")
-        f.write("Catalogue README\n", "-" * 20, "\n\n")
-        f.write("-" * 20, "\n")
+        f.write("Catalogue README\n")
+        f.write("-" * 20 + "\n\n")
         f.write(str(self))
-        #f.write(text)
+        # f.write(text)
         f.close()
 
     def make_sex_plusplus_cat(self):
         pass
     
-    def forced_photometry(self, band, forced_phot_band, radii = [0.16, 0.25, 0.5, 0.75, 1.] * u.arcsec, ra_col = 'ALPHA_J2000', dec_col = 'DELTA_J2000', coord_unit = u.deg, id_col = 'NUMBER', x_col = 'X_IMAGE', y_col = 'Y_IMAGE'):
+    def forced_photometry(self, band, forced_phot_band, radii = [0.16, 0.25, 0.5, 0.75, 1.] * u.arcsec, ra_col = 'ALPHA_J2000', dec_col = 'DELTA_J2000', \
+            coord_unit = u.deg, id_col = 'NUMBER', x_col = 'X_IMAGE', y_col = 'Y_IMAGE', extract_method = f"photutils v{photutils.__version__}"):
         # Read in sextractor catalogue
         catalog = Table.read(self.sex_cat_path(forced_phot_band, forced_phot_band), character_as_bytes = False)
         # Open image with correct extension and get WCS
@@ -1293,7 +1311,8 @@ class Data:
         # Remove old columns
         phot_table.remove_columns(colnames)
         phot_table.remove_columns(mag_colnames)
-        phot_table.write(selff.sex_cat_path(band, forced_phot_band), format='fits', overwrite=True)
+        phot_table.write(self.sex_cat_path(band, forced_phot_band), format='fits', overwrite=True)
+        return extract_method
         
     def mask_reg_to_pix(self, band, mask_path):
         # open image corresponding to band

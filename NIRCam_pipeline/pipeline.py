@@ -64,13 +64,13 @@ if __name__ == "__main__":
     version = "v11" #config["DEFAULT"]["VERSION"]
     instruments = ["NIRCam"] #,"ACS_WFC",  'WFC3_IR'] # "ACS_WFC"
     cat_type = "loc_depth"
-    surveys = ["COSMOS-Web-7B"] #[config["DEFAULT"]["SURVEY"]]
+    surveys = ["JOF"] #[config["DEFAULT"]["SURVEY"]]
     aper_diams = [0.32] * u.arcsec
     SED_code_arr = [EAZY()]
     templates_arr = ["fsps_larson"] #["fsps", "fsps_larson", "fsps_jades"]
     lowz_zmax_arr = [[4., 6., None]] #[[None]] # 
     min_flux_pc_errs = [10]
-    forced_phot_band = ["F444W"] #["F277W", "F356W", "F444W"] # ["F444W"] #
+    forced_phot_band = ["F277W", "F356W", "F444W"] # ["F444W"] #
     crop_by = None #"bands>13+EPOCHS" #"EPOCHS_lowz+z>4.5"
     timed = False
 
@@ -81,9 +81,9 @@ if __name__ == "__main__":
 
     SED_fit_params_arr = make_EAZY_SED_fit_params_arr(SED_code_arr, templates_arr, lowz_zmax_arr)
 
-    delay_time = (12 * u.h).to(u.s).value
-    print(f"{surveys[0]} delayed by {delay_time}s")
-    time.sleep(delay_time)
+    # delay_time = (12 * u.h).to(u.s).value
+    # print(f"{surveys[0]} delayed by {delay_time}s")
+    # time.sleep(delay_time)
 
     for survey in surveys:
         pipeline([survey], version, instruments, aper_diams, min_flux_pc_errs, forced_phot_band, \
