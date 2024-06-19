@@ -207,11 +207,13 @@ class Data:
                         survey_im_dirs = {"JADES-DR1": "JADES/DR1"}
                     survey_im_dirs = {key: f"/raid/scratch/data/jwst/{value}" for (key, value) in survey_im_dirs.items()}
                     survey_dir = survey_im_dirs[survey]
-                else:
+                elif version.split('_')[0] in version_to_dir.keys():
                     assert version.split("_")[0] in version_to_dir.keys(), galfind_logger.critical(f"Invalid version = {version}. {version.split('_')[0]} must be in {np.array(version_to_dir.keys())} Terminating!")
                     survey_dir = f"{config['DEFAULT']['GALFIND_DATA']}/{instrument.facility.lower()}/{survey}/{version_to_dir[version.split('_')[0]]}"
                     if len(version.split('_')) > 1:
                         survey_dir += f"_{'_'.join(version.split('_')[1:])}"
+                else: # version is named the same as the folder it is contained in
+                    survey_dir = f"{config['DEFAULT']['GALFIND_DATA']}/{instrument.facility.lower()}/{survey}/{version}"
 
                 if version == "lit_version":
                     im_path_arr = np.array(glob.glob(f"{survey_dir}/*_drz.fits"))

@@ -1010,14 +1010,15 @@ class Galaxy:
     # Morphology selection functions
     
     def select_band_flux_radius(self, band: str, gtr_or_less: str, lim: Union[int, float, u.Quantity], update: bool = True):
-        assert(gtr_or_less in ["gtr", "less"])
+        assert type(band) == str
+        assert gtr_or_less in ["gtr", "less"]
         if type(lim) != u.Quantity:
             lim_str = f"{lim:.1f}pix"
         elif lim.unit in u.dimensionless_unscaled:
             lim_str = f"{lim.value:.1f}pix"
         else:
             lim_str = f"{lim.to(u.arcsec).value:.1f}as"
-        selection_name = f"Re{'>' if gtr_or_less == 'gtr' else '<'}{lim_str}"
+        selection_name = f"Re_{band}{'>' if gtr_or_less == 'gtr' else '<'}{lim_str}"
         if selection_name in self.selection_flags.keys():
             galfind_logger.debug(f"{selection_name} already performed for galaxy ID = {self.ID}!")
         else:
@@ -1033,7 +1034,8 @@ class Galaxy:
                     self.selection_flags[selection_name] = False
         return self, selection_name
     
-    def select_EPOCHS(self, SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}, allow_lowz = False, mask_instrument = NIRCam(), update = True):
+    def select_EPOCHS(self, SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}, allow_lowz = False, \
+            hot_pixel_bands = ["F277W", "F356W", "F444W"], mask_instrument = NIRCam(), update = True):
         
         selection_name = f"EPOCHS{'_lowz' if allow_lowz else ''}"
         if len(self.phot) == 0: # no data at all (not sure why sextractor does this)
@@ -1055,9 +1057,18 @@ class Galaxy:
             self.select_robust_zPDF(0.6, 0.1, SED_fit_params)[1] # 60% of redshift PDF must lie within z ± z * 0.1
         ]
 
+        # hot pixel checks
+        for band_name in hot_pixel_bands:
+            if band_name in self.phot.instrument.band_names:
+                selection_names.append(self.select_band_flux_radius(band_name, "gtr", 1.5)[1]) # LW NIRCam wideband Re>1.5 pix
+
         if not allow_lowz:
             selection_names.append(self.phot_SNR_crop(0, 2., "non_detect")[1]) # 2σ non-detected in first band
 
+        try:
+            self.selection_flags["Re_F277W>1.5pix"]
+        except:
+            breakpoint()
         # if the galaxy passes all criteria
         if all(self.selection_flags[name] for name in selection_names):
             if update:
