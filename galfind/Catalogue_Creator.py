@@ -263,7 +263,7 @@ class GALFIND_Catalogue_Creator(Catalogue_Creator):
         if type(gal_band_mask) != type(None):
             if timed:
                 masked_arr = np.array([[mask for has_data, mask in zip(_gal_band_mask, _gal_mask) if has_data] \
-                    for _gal_band_mask, _gal_mask in tqdm(zip(gal_band_mask, masked_arr, dtype = object), desc = "Loading mask", total = len(gal_band_mask))])
+                    for _gal_band_mask, _gal_mask in tqdm(zip(gal_band_mask, masked_arr), desc = "Loading mask", total = len(gal_band_mask))], dtype = object)
             else:
                 masked_arr = np.array([[mask for has_data, mask in zip(_gal_band_mask, _gal_mask) if has_data] \
                     for _gal_band_mask, _gal_mask in zip(gal_band_mask, masked_arr)], dtype=object)
