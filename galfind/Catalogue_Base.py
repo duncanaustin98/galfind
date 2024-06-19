@@ -198,7 +198,7 @@ class Catalogue_Base:
 
         # Convert from list of SkyCoord to SkyCoord(array)
         sky_coords_cat = SkyCoord(self_copy.RA, self_copy.DEC, unit=(u.deg, u.deg), frame='icrs')
-        other_sky_coords = SkyCoord(other_copy.RA, self_copy.DEC, unit=(u.deg, u.deg), frame='icrs')
+        other_sky_coords = SkyCoord(other_copy.RA, other_copy.DEC, unit=(u.deg, u.deg), frame='icrs')
         if match_type == 'nearest':
             # This just takes the nearest galaxy as the best match  
             idx, d2d, d3d = sky_coords_cat.match_to_catalog_sky(other_sky_coords)
