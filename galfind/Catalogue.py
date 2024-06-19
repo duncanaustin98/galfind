@@ -162,7 +162,36 @@ class Catalogue(Catalogue_Base):
     #         gal.phot.instrument.band_names)[0][0]].value for i, gal in enumerate(cat)])
     #     return ext_src_corrs
 
-    def mask(self, timed = True): #, mask_instrument = NIRCam()):
+    # should also include errors here
+
+    def load_band_properties_from_cat(self, cat_colname: str, save_name: str, multiply_factor: \
+            Union[dict, u.Quantity, u.Magnitude, None] = None):
+        if not hasattr(self[0], save_name):
+            # load the same property from every available band
+            # open catalogue with astropy
+            fits_cat = self.open_cat(cropped = True)
+            if type(multiply_factor) == type(None):
+                multiply_factor = {band: 1. * u.dimensionless_unscaled for band in self.instrument.band_names if f"{cat_colname}_{band}" in fits_cat.colnames}
+            elif type(multiply_factor) != dict:
+                multiply_factor = {band: multiply_factor for band in self.instrument.band_names if f"{cat_colname}_{band}" in fits_cat.colnames}
+            # load in speed can be improved here!
+            cat_band_properties = {band: np.array(fits_cat[f"{cat_colname}_{band}"]) * multiply_factor[band] \
+                for band in self.instrument.band_names if f"{cat_colname}_{band}" in fits_cat.colnames}
+            cat_band_properties = [{band: cat_band_properties[band][i] for band in cat_band_properties.keys()} for i in range(len(fits_cat))]
+            [gal.load_property(gal_properties, save_name) for gal, gal_properties in zip(self, cat_band_properties)]
+            galfind_logger.info(f"Loaded {cat_colname} from {self.cat_path} saved as {save_name} for bands = {cat_band_properties[0].keys()}")
+
+    def load_property_from_cat(self, cat_colname: str, save_name: str, multiply_factor: \
+            Union[u.Quantity, u.Magnitude] = 1. * u.dimensionless_unscaled, unit: u.Unit = u.dimensionless_unscaled):
+        if not hasattr(self[0], save_name):
+            # open catalogue with astropy
+            fits_cat = self.open_cat(cropped = True)
+            cat_property = np.array(fits_cat[cat_colname])
+            assert len(cat_property) == len(self)
+            [gal.load_property(gal_property * multiply_factor * unit, save_name) for gal, gal_property in zip(self, cat_property)]
+            galfind_logger.info(f"Loaded {cat_colname} from {self.cat_path} saved as {save_name}")
+
+    def mask(self, timed: bool = True): #, mask_instrument = NIRCam()):
         galfind_logger.info(f"Running masking code for {self.cat_path}.")
         # determine whether to overwrite catalogue or not
         overwrite = config["Masking"].getboolean("OVERWRITE_MASK_COLS")
@@ -403,15 +432,19 @@ class Catalogue(Catalogue_Base):
     
     # Morphology selection functions
 
-    def select_band_flux_radius(self, band, arcsec_lim):
-        self.load_band_flux_radius(band)
-        return self.perform_selection(Galaxy.select_band_flux_radius, band, arcsec_lim)
+    def select_band_flux_radius(self, band, gtr_or_less, lim):
+        assert(band in self.instrument.band_names)
+        # load in effective radii as calculated from SExtractor
+        self.load_band_properties_from_cat("FLUX_RADIUS", "sex_Re", None)
+        return self.perform_selection(Galaxy.select_band_flux_radius, band, gtr_or_less, lim)
 
     # Full sample selection functions - these chain the above functions
 
     def select_EPOCHS(self, SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}, allow_lowz = False):
         self.perform_selection(Galaxy.select_min_bands, 4., make_cat_copy = False) # minimum 4 photometric bands
         self.perform_selection(Galaxy.select_unmasked_instrument, NIRCam(), make_cat_copy = False) # all NIRCam bands unmasked
+        [self.perform_selection(Galaxy.select_band_flux_radius, band, "gtr", 1.5, make_cat_copy = False) \
+            for band in ["F277W", "F356W", "F444W"] if band in self.instrument.band_names] # LW NIRCam wideband Re>1.5 pix
         if not allow_lowz:
             self.perform_selection(Galaxy.phot_SNR_crop, 0, 2., "non_detect", make_cat_copy = False) # 2σ non-detected in first band
         self.perform_selection(Galaxy.phot_bluewards_Lya_non_detect, 2., SED_fit_params, make_cat_copy = False) # 2σ non-detected in all bands bluewards of Lyα
