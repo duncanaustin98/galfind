@@ -39,15 +39,15 @@ def make_EAZY_SED_fit_params_arr(SED_code_arr, templates_arr, lowz_zmax_arr):
 
 if __name__ == "__main__":
     version = "v11" #config["DEFAULT"]["VERSION"]
-    instruments = ["NIRCam", 'ACS_WFC'] #, 'ACS_WFC'] #, 'WFC3_IR']
+    instruments = ["NIRCam"] #, 'ACS_WFC'] #, 'WFC3_IR']
     cat_type = "loc_depth"
-    surveys = ["COSMOS-Web-2A", "COSMOS-Web-2B"] #[config["DEFAULT"]["SURVEY"]]
+    surveys = ["COSMOS-Web-0A", "COSMOS-Web-0B"] #[config["DEFAULT"]["SURVEY"]]
     aper_diams = [0.32] * u.arcsec
     SED_code_arr = [EAZY()]
     templates_arr = ["fsps_larson"] #["fsps", "fsps_larson", "fsps_jades"]
     lowz_zmax_arr = [[4., 6., None]]
     min_flux_pc_errs = [10]
-    forced_phot_band = ["F277W", "F356W", "F444W"] # ["F444W"]
+    forced_phot_band = ["F444W"] # ["F444W"]
     crop_by = None
 
     jems_bands = ["F182M", "F210M", "F430M", "F460M", "F480M"]
