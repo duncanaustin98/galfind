@@ -172,6 +172,7 @@ class Data:
         
         im_paths = {} 
         im_exts = {}
+        im_shapes = {}
         seg_paths = {}
         wht_paths = {}
         wht_exts = {}
@@ -179,7 +180,6 @@ class Data:
         rms_err_exts = {}
         im_pixel_scales = {}
         im_zps = {}
-        im_shapes = {}
         mask_paths = {}
         depth_dir = {}
         is_blank = is_blank_survey(survey)
@@ -257,6 +257,15 @@ class Data:
                 # stack bands if there are more than 1 im_path for each band - NOT YET IMPLEMENTED
                 assert len(np.array([path for path in fits_path_arr if path not in \
                     np.concatenate((im_path_arr, rms_err_path_arr, wht_path_arr))])) == 0
+                # save paths to sci, rms_err, and wht maps
+                im_paths = {band: path for band, path in zip(unique_bands, im_path_arr)}
+                im_exts = {band: 0 for band in unique_bands}
+                im_shapes = {band: fits.open(path)[0].data.shape for band, path in \
+                    tqdm(zip(unique_bands, im_path_arr), desc = "Loading SCI shapes", total = len(unique_bands))}
+                rms_err_paths = {band: path for band, path in zip(unique_bands, rms_err_path_arr)}
+                rms_err_exts = {band: 0 for band in unique_bands}
+                wht_paths = {band: path for band, path in zip(unique_bands, wht_path_arr)}
+                wht_exts = {band: 0 for band in unique_bands}
 
             # if band not used in instrument remove it, else save pixel scale and zero point
             for band in instrument.band_names:
