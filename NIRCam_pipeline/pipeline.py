@@ -64,17 +64,17 @@ def make_EAZY_SED_fit_params_arr(SED_code_arr, templates_arr, lowz_zmax_arr):
 
 if __name__ == "__main__":
 
-    version = "v11" #config["DEFAULT"]["VERSION"]
-    instruments = ["NIRCam"] #,"ACS_WFC",  'WFC3_IR'] # "ACS_WFC"
+    version = "v9" #config["DEFAULT"]["VERSION"]
+    instruments = ["ACS_WFC"] #["NIRCam", "ACS_WFC"] #,  'WFC3_IR'] # "ACS_WFC"
     cat_type = "loc_depth"
-    surveys = ["COSMOS-Web-2B"] #[config["DEFAULT"]["SURVEY"]]
+    surveys = ["CEERSP1"] #[config["DEFAULT"]["SURVEY"]]
     aper_diams = [0.32] * u.arcsec
-    SED_code_arr = [EAZY()]
+    SED_code_arr = []#EAZY()]
     templates_arr = ["fsps_larson"] #["fsps", "fsps_larson", "fsps_jades"]
     lowz_zmax_arr = [[4., 6., None]] #[[None]] # 
     min_flux_pc_errs = [10]
-    forced_phot_band = ["F444W"] #["F277W", "F356W", "F444W"] # ["F444W"] #
-    crop_by = "EPOCHS" #None #"bands>13+EPOCHS" #"EPOCHS_lowz+z>4.5"
+    forced_phot_band = ["F277W", "F356W", "F444W"] #["F444W"]
+    crop_by = None #"bands>13+EPOCHS" #"EPOCHS_lowz+z>4.5"
     timed = False
 
     jems_bands = ["F182M", "F210M", "F430M", "F460M", "F480M"]

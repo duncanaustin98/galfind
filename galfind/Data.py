@@ -160,11 +160,15 @@ class Data:
             #self.make_RGB([split_bands[0]], [split_bands[1]], [split_bands[2]], RGB_method)
 
     @classmethod
-    def from_pipeline(cls, survey, version = "v9", instruments = ['NIRCam', 'ACS_WFC', 'WFC3_IR'], excl_bands = [], pix_scales = ['30mas', '60mas']):
-        instruments_obj = {instrument_name: globals()[instrument_name](excl_bands = [band_name for band_name in excl_bands \
-            if band_name in globals()[instrument_name]().band_names]) for instrument_name in instruments}
-        # Build a combined instrument object
-        comb_instrument_created = False
+    def from_pipeline(cls, survey, version, instrument_names = ["ACS_WFC", "WFC3_IR", "NIRCam", "MIRI"], excl_bands = [], \
+            pix_scales = {"ACS_WFC": 0.03 * u.arcsec, "WFC3IR": 0.03 * u.arcsec, "NIRCam": 0.03 * u.arcsec, "MIRI": 0.06 * u.arcsec}, \
+            im_str = ["_sci", "_i2d", "_drz"], rms_err_str = ["_rms", "_err"], wht_str = ["_wht"]):
+        
+        #instruments_obj = {instrument_name: globals()[instrument_name](excl_bands = [band_name for band_name in excl_bands \
+        #    if band_name in globals()[instrument_name]().band_names]) for instrument_name in instruments}
+        
+        # # Build a combined instrument object
+        # comb_instrument_created = False
         
         im_paths = {} 
         im_exts = {}
@@ -179,86 +183,59 @@ class Data:
         mask_paths = {}
         depth_dir = {}
         is_blank = is_blank_survey(survey)
+        instrument_arr = []
 
-        version_to_dir = {"v8b": "mosaic_1084_wispfix", "v8c": "mosaic_1084_wispfix2", "v8d": "mosaic_1084_wispfix3", \
+        # construct dict containing appropriate directories for the given version, survey etc
+        NIRCam_version_to_dir = {"v8b": "mosaic_1084_wispfix", "v8c": "mosaic_1084_wispfix2", "v8d": "mosaic_1084_wispfix3", \
             "v9": "mosaic_1084_wisptemp2", "v10": "mosaic_1084_wispscale", "v11": "mosaic_1084_wispnathan"}
+        MIRI_version_to_dir = {}
+        instrument_version_to_dir = {**{"NIRCam": NIRCam_version_to_dir, "MIRI": MIRI_version_to_dir}, \
+           **{instrument_name: f"{int(np.round(pix_scales[instrument_name].to(u.mas).value, 0))}mas" for instrument_name in instrument_names}}
 
-        for instrument in instruments:
-            instrument = instruments_obj[instrument]
-            if instrument.name == "NIRCam":
-                # should generalize this more
-                if version in ["v7", "v8", "v8a", "v8e", "v8f", "lit_version"]:
-                    if version == "v7":
-                        ceers_im_dirs = {f"CEERSP{str(i + 1)}": f"ceers/mosaic_0995/P{str(i + 1)}" for i in range(10)}
-                        survey_im_dirs = {"SMACS-0723": "SMACS-0723/mosaic_0995", "GLASS": "glass_0995/mosaic_v5", "MACS-0416": "MACS0416/mosaic_0995_v1", \
-                                "El-Gordo": "elgordo/mosaic_0995_v1", "NEP": "NEP/mosaic", "NEP-2": "NEP-2/mosaic_0995", "NGDEEP": "NGDEEP/mosaic", \
-                                                "CLIO": "CLIO/mosaic_0995_2"} | ceers_im_dirs
-                    elif version == "v8": #pmap == "1084":
-                        ceers_im_dirs = {f"CEERSP{str(i + 1)}": f"ceers/mosaic_1084/P{str(i + 1)}" for i in range(10)}
-                        survey_im_dirs = {"CLIO": "CLIO/mosaic_1084", "El-Gordo": "elgordo/mosaic_1084", "GLASS": "GLASS-12/mosaic_1084", "NEP": "NEP/mosaic_1084", \
-                                    "NEP-2": "NEP-2/mosaic_1084", "NEP-3": "NEP-3/mosaic_1084", "SMACS-0723": "SMACS0723/mosaic_1084", "MACS-0416": "MACS0416/mosaic_1084_v3"} | ceers_im_dirs
-                    elif version == "v8a":
-                        ceers_im_dirs = {f"CEERSP{str(i + 1)}": f"CEERSP{str(i + 1)}/mosaic_1084_182" for i in range(10)}
-                        survey_im_dirs = {"CLIO": "CLIO/mosaic_1084_182", "El-Gordo": "elgordo/mosaic_1084_182", "NEP-1": "NEP-1/mosaic_1084_182", "NEP-2": "NEP-2/mosaic_1084_182", \
-                                        "NEP-3": "NEP-3/mosaic_1084_182", "NEP-4": "NEP-4/mosaic_1084_182", "MACS-0416": "MACS0416/mosaic_1084_182", "GLASS": "GLASS-12/mosaic_1084_182", "SMACS-0723": "SMACS0723/mosaic_1084_182"} | ceers_im_dirs
-                    elif version == "v8e" or version == "v8f":
-                        survey_im_dirs = {survey: f"{survey}/mosaic_1084_wisptemp2"}
-                    elif version == "lit_version":
-                        survey_im_dirs = {"JADES-DR1": "JADES/DR1"}
-                    survey_im_dirs = {key: f"/raid/scratch/data/jwst/{value}" for (key, value) in survey_im_dirs.items()}
-                    survey_dir = survey_im_dirs[survey]
-                elif version.split('_')[0] in version_to_dir.keys():
-                    assert version.split("_")[0] in version_to_dir.keys(), galfind_logger.critical(f"Invalid version = {version}. {version.split('_')[0]} must be in {np.array(version_to_dir.keys())} Terminating!")
-                    survey_dir = f"{config['DEFAULT']['GALFIND_DATA']}/{instrument.facility.lower()}/{survey}/{version_to_dir[version.split('_')[0]]}"
-                    if len(version.split('_')) > 1:
-                        survey_dir += f"_{'_'.join(version.split('_')[1:])}"
-                else: # version is named the same as the folder it is contained in
-                    survey_dir = f"{config['DEFAULT']['GALFIND_DATA']}/{instrument.facility.lower()}/{survey}/{version}"
-
-                if version == "lit_version":
-                    im_path_arr = np.array(glob.glob(f"{survey_dir}/*_drz.fits"))
+        for instrument_name in instrument_names:
+            
+            instrument = globals()[instrument_name](excl_bands = [band_name for band_name in excl_bands if band_name in globals()[instrument_name]().band_names])
+            version_to_dir = instrument_version_to_dir[instrument_name]
+            pix_scale = pix_scales[instrument_name]
+            
+            # determine directory where the data is stored for the version, survey and instrument
+            if type(version_to_dir) == str:
+                survey_dir = f"{config['DEFAULT']['GALFIND_DATA']}/{instrument.facility.lower()}/{survey}/{instrument_name}/{version_to_dir}"
+            elif type(version_to_dir) == dict:
+                if version_to_dir == {}:
+                    continue
+                elif version.split("_")[0] in version_to_dir.keys():
+                    survey_dir = f"{config['DEFAULT']['GALFIND_DATA']}/{instrument.facility.lower()}/{survey}/{instrument_name}/{version_to_dir[version.split('_')[0]]}"
                 else:
-                    #im_path_arr = np.array(glob.glob(f"{survey_dir}/*_i2d*.fits"))
-                    im_path_arr = np.array(glob.glob(f"{survey_dir}/*.fits"))
-                
-                # obtain available bands from image paths
-                bands = np.array([band for path in im_path_arr for band in instrument.band_names if band.upper() in path \
-                    or band.lower() in path or band.lower().replace('f', 'F') in path or band.upper().replace('F', 'f') in path])
-                galfind_logger.warning("Should check more thoroughly to ensure there are not multiple band names in an image path!")
+                    survey_dir = f"{config['DEFAULT']['GALFIND_DATA']}/{instrument.facility.lower()}/{survey}/{instrument_name}/{version}"
+                if len(version.split('_')) > 1:
+                    survey_dir += f"_{'_'.join(version.split('_')[1:])}"
+            else:
+                galfind_logger.critical(f"{version_to_dir=} with {type(version_to_dir)=} not in [str, dict]")
+            
+            # extract all .fits files in this directory
+            fits_path_arr = np.array(glob.glob(f"{survey_dir}/*.fits"))
+            if len(fits_path_arr) == 0:
+                continue
 
-                # If band not used in instrument, remove it
-                for band in instrument.band_names:
-                    if band not in bands:
-                        instrument.remove_band(band)
-                    else:
-                        # Maybe generalize this
-                        #print("Generalize on line 177 of Data.from_pipeline()")
-                        im_pixel_scales[band] = 0.03 * u.arcsec
-                        im_zps[band] = 28.08
-                        galfind_logger.debug(f"im_zp[{band}] = 28.08 only for pixel scale of 0.03 arcsec! This will change if different images are used!")
+            # obtain available bands from image paths
+            bands = np.array([band for path in fits_path_arr for band in instrument.band_names if band.upper() in path \
+                or band.lower() in path or band.lower().replace('f', 'F') in path or band.upper().replace('F', 'f') in path])
+            galfind_logger.warning("Should check more thoroughly to ensure there are not multiple band names in an image path!")
 
-                # If no images found for this instrument, don't add it to the combined instrument
-                if len(bands) != 0:
-                    if comb_instrument_created:
-                        comb_instrument += instrument
-                    else:
-                        comb_instrument = instrument
-                        comb_instrument_created = True
-
-                for i, band in enumerate(bands):
-                    # obtains all image paths from the correct band 
-                    im_paths_band = [im_path for im_path in im_path_arr if band.lower() in im_path or band in im_path or \
-                                      band.replace("f", "F").replace("W", "w") in im_path or band.upper() in im_path]
-                    # checks to see if there is just one singular image for the given band
-                    if len(im_paths_band) == 1:
-                        im_paths[band] = im_paths_band[0]
-                    else:
-                        raise(Exception(f"Multiple images found for {band} in {survey} {version}"))
-                    
+            # if there are multiple images per band, separate into im/wht/rms_err
+            unique_bands, band_indices, n_images = np.unique(bands, return_inverse = True, return_counts = True)
+            galfind_logger.debug("These assertions may need to change in the case of e.g. stacking multiple images of same band")
+            assert all(n == n_images[0] for n in n_images) # throw more appropriate warnings here
+            assert n_images[0] in [1, 2, 3]
+            if n_images[1] == 1:
+                im_path_arr = fits_path_arr
+                im_paths = {band: path for band, path in zip(bands, im_path_arr)}
+                # extract sci/rms_err/wht extensions from single band image
+                for band, im_path_arr in tqdm(im_paths.items(), total = len(im_paths), \
+                        desc = f"Extracting SCI/WHT/ERR extensions for {survey} {version} {instrument_name}"):
                     im_hdul = fits.open(im_paths[band])
-                    # obtain appropriate extension from the image
                     for j, im_hdu in enumerate(im_hdul):
-                        #print(im_hdu.name)
                         if im_hdu.name == "SCI":
                             im_exts[band] = int(j)
                             im_shapes[band] = im_hdu.data.shape
@@ -268,32 +245,37 @@ class Data:
                         if im_hdu.name == 'ERR':
                             rms_err_exts[band] = int(j)
                             rms_err_paths[band] = str(im_paths[band])
-                        
-                    # need to change this to work if there are no segmentation maps (with the [0] indexing)
+            else:
+                im_path_arr = np.array([fits_path for band_index in np.unique(band_indices) for fits_path in \
+                    fits_path_arr[band_indices == band_index] if any(str in fits_path for str in im_str) \
+                    and not any(str in fits_path for str in rms_err_str) and not any(str in fits_path for str in wht_str)])
+                rms_err_path_arr = np.array([fits_path for band_index in np.unique(band_indices) for fits_path in \
+                    fits_path_arr[band_indices == band_index] if any(str in fits_path for str in rms_err_str) \
+                    and not any(str in fits_path for str in wht_str)])
+                wht_path_arr = np.array([fits_path for band_index in np.unique(band_indices) for fits_path in \
+                    fits_path_arr[band_indices == band_index] if any(str in fits_path for str in wht_str)])
+                # stack bands if there are more than 1 im_path for each band - NOT YET IMPLEMENTED
+                assert len(np.array([path for path in fits_path_arr if path not in \
+                    np.concatenate((im_path_arr, rms_err_path_arr, wht_path_arr))])) == 0
 
+            # if band not used in instrument remove it, else save pixel scale and zero point
+            for band in instrument.band_names:
+                if band not in unique_bands:
+                    instrument.remove_band(band)
+                else:
+                    im_pixel_scales[band] = pix_scale
+                    # should add the option to extract im_zps
+                    im_zps[band] = -2.5 * np.log10((pix_scale.to(u.rad).value ** 2) * u.MJy.to(u.Jy)) + u.Jy.to(u.ABmag)
+
+            breakpoint()
+
+            if False:
+                pass
             elif instrument.name in ["ACS_WFC", 'WFC3_IR']:
                 # Iterate through bands and check if images exist 
                 any_path_found = False
                 instr_copy = deepcopy(instrument)
                 for band, band_name in zip(instr_copy, instr_copy.band_names):
-                    path_found = False
-                    for pix_scale in pix_scales:
-                        glob_paths = glob.glob(f"{config['DEFAULT']['GALFIND_DATA']}/hst/{survey}/{instrument.name}/{pix_scale}/*{band_name.lower()}*_drz.fits")
-                        glob_paths += glob.glob(f"{config['DEFAULT']['GALFIND_DATA']}/hst/{survey}/{instrument.name}/{pix_scale}/*{band_name.upper()}*_drz.fits")
-                        glob_paths += glob.glob(f"{config['DEFAULT']['GALFIND_DATA']}/hst/{survey}/{instrument.name}/{pix_scale}/*{band_name.lower().replace('f', 'F')}*_drz.fits")
-                        glob_paths += glob.glob(f"{config['DEFAULT']['GALFIND_DATA']}/hst/{survey}/{instrument.name}/{pix_scale}/*{band_name.upper().replace('F', 'f')}*_drz.fits")
-                        # Make sure no duplicates
-                        glob_paths = list(set(glob_paths))
-                       
-                        if len(glob_paths) == 0:
-                            galfind_logger.debug(f"No image path found for {survey} {version} {band_name} {pix_scale}!")
-                        elif len(glob_paths) == 1:
-                            path = Path(glob_paths[0])
-                            any_path_found = True
-                            path_found = True
-                            break
-                        else:
-                            raise(Exception(f"Multiple image paths found for {survey} {version} {band} {pix_scale}!"))
 
                     # If no images found, remove band from instrument
                     if not path_found:
@@ -364,10 +346,6 @@ class Data:
                         comb_instrument = instrument
                         comb_instrument_created = True
                         galfind_logger.debug("Making combined_instrument")
-
-                        # Need to update what it suggests
-            elif instrument.name == 'MIRI':
-                raise NotImplementedError("MIRI not yet implemented")
 
         if comb_instrument_created:
             # All seg maps and masks should be in same format, so load those last when we know what bands we have
