@@ -161,15 +161,10 @@ class Data:
 
     @classmethod
     def from_pipeline(cls, survey, version, instrument_names = ["ACS_WFC", "WFC3_IR", "NIRCam", "MIRI"], excl_bands = [], \
-            pix_scales = {"ACS_WFC": 0.03 * u.arcsec, "WFC3IR": 0.03 * u.arcsec, "NIRCam": 0.03 * u.arcsec, "MIRI": 0.06 * u.arcsec}, \
-            im_str = ["_sci", "_i2d", "_drz"], rms_err_str = ["_rms", "_err"], wht_str = ["_wht"]):
+            pix_scales = {"ACS_WFC": 0.03 * u.arcsec, "WFC3_IR": 0.03 * u.arcsec, "NIRCam": 0.03 * u.arcsec, "MIRI": 0.06 * u.arcsec}, \
+            im_str = ["_sci", "_i2d", "_drz"], rms_err_str = ["_rms", "_err"], wht_str = ["_wht", "_weight"]):
         
-        #instruments_obj = {instrument_name: globals()[instrument_name](excl_bands = [band_name for band_name in excl_bands \
-        #    if band_name in globals()[instrument_name]().band_names]) for instrument_name in instruments}
-        
-        # # Build a combined instrument object
-        # comb_instrument_created = False
-        
+        # may not require all of these inits
         im_paths = {} 
         im_exts = {}
         im_shapes = {}
@@ -190,7 +185,7 @@ class Data:
             "v9": "mosaic_1084_wisptemp2", "v10": "mosaic_1084_wispscale", "v11": "mosaic_1084_wispnathan"}
         MIRI_version_to_dir = {}
         instrument_version_to_dir = {**{"NIRCam": NIRCam_version_to_dir, "MIRI": MIRI_version_to_dir}, \
-           **{instrument_name: f"{int(np.round(pix_scales[instrument_name].to(u.mas).value, 0))}mas" for instrument_name in instrument_names}}
+           **{instrument_name: f"{int(np.round(pix_scales[instrument_name].to(u.mas).value, 0))}mas" for instrument_name in ["ACS_WFC", "WFC3_IR"]}}
 
         for instrument_name in instrument_names:
             
@@ -199,6 +194,7 @@ class Data:
             pix_scale = pix_scales[instrument_name]
             
             # determine directory where the data is stored for the version, survey and instrument
+            #breakpoint()
             if type(version_to_dir) == str:
                 survey_dir = f"{config['DEFAULT']['GALFIND_DATA']}/{instrument.facility.lower()}/{survey}/{instrument_name}/{version_to_dir}"
             elif type(version_to_dir) == dict:
@@ -223,13 +219,13 @@ class Data:
                 or band.lower() in path or band.lower().replace('f', 'F') in path or band.upper().replace('F', 'f') in path])
             galfind_logger.warning("Should check more thoroughly to ensure there are not multiple band names in an image path!")
             
-            breakpoint()
+            #breakpoint()
             # if there are multiple images per band, separate into im/wht/rms_err
             unique_bands, band_indices, n_images = np.unique(bands, return_inverse = True, return_counts = True)
             galfind_logger.debug("These assertions may need to change in the case of e.g. stacking multiple images of same band")
             assert all(n == n_images[0] for n in n_images) # throw more appropriate warnings here
             assert n_images[0] in [1, 2, 3]
-            if n_images[1] == 1:
+            if n_images[0] == 1:
                 im_path_arr = fits_path_arr
                 im_paths = {band: path for band, path in zip(bands, im_path_arr)}
                 # extract sci/rms_err/wht extensions from single band image
@@ -260,20 +256,47 @@ class Data:
                     np.concatenate((im_path_arr, rms_err_path_arr, wht_path_arr))])) == 0
                 # save paths to sci, rms_err, and wht maps
                 im_paths = {band: path for band, path in zip(unique_bands, im_path_arr)}
-                # extract sci extensions from single band image
+                rms_err_paths = {band: path for band, path in zip(unique_bands, rms_err_path_arr)}
+                wht_paths = {band: path for band, path in zip(unique_bands, wht_path_arr)}
+                # extract sci/rms_err/wht extensions from single band image
                 im_exts = {}
                 im_shapes = {}
-                for band, im_path_arr in tqdm(im_paths.items(), total = len(im_paths), \
-                        desc = f"Extracting SCI extensions/shapes for {survey} {version} {instrument_name}"):
+                rms_err_exts = {}
+                wht_exts = {}
+                for band in bands:
                     im_hdul = fits.open(im_paths[band])
+                    assertion_len = 1
                     for j, im_hdu in enumerate(im_hdul):
-                        if im_hdu.name == "SCI":
+                        if im_hdu.name == "PRIMARY" and len(im_hdul) > 1:
+                            assertion_len += 1
+                        else:
                             im_exts[band] = int(j)
-                            im_shapes[band] = im_hdu.data.shape
-                rms_err_paths = {band: path for band, path in zip(unique_bands, rms_err_path_arr)}
-                rms_err_exts = {band: 0 for band in unique_bands}
-                wht_paths = {band: path for band, path in zip(unique_bands, wht_path_arr)}
-                wht_exts = {band: 0 for band in unique_bands}
+                            im_shapes[band] = im_hdul[0].data.shape
+                    breakpoint()
+                    print(band, len(im_hdul), [hdu.name for hdu in im_hdul], assertion_len)
+                    assert len(im_hdul) == assertion_len
+                    if rms_err_paths != {}:
+                        rms_err_hdul = fits.open(rms_err_paths[band])
+                        assertion_len = 1
+                        for j, rms_err_hdu in enumerate(rms_err_hdul):
+                            if rms_err_hdu.name == "PRIMARY" and len(rms_err_hdul) > 1:
+                                assertion_len += 1
+                            else:
+                                rms_err_exts[band] = int(j)
+                        breakpoint()
+                        print(band, len(rms_err_hdul), [hdu.name for hdu in rms_err_hdul], assertion_len)
+                        assert len(rms_err_hdul) == assertion_len
+                    if wht_paths != {}:
+                        wht_hdul = fits.open(wht_paths[band])
+                        assertion_len = 1
+                        for j, wht_hdu in enumerate(wht_hdul):
+                            if wht_hdu.name == "PRIMARY" and len(wht_hdul) > 1:
+                                assertion_len += 1
+                            else:
+                                wht_exts[band] = int(j)
+                        breakpoint()
+                        print(band, len(wht_hdul), [hdu.name for hdu in wht_hdul], assertion_len)
+                        assert len(wht_hdul) == assertion_len
 
             breakpoint()
             # if band not used in instrument remove it, else save pixel scale and zero point
@@ -291,7 +314,7 @@ class Data:
                             im_zps[band_name] = imheader["ZEROPNT"]
                         else:
                             raise(Exception(f"ACS_WFC data for {survey} {version} {band_name} located at {im_paths[band_name]} must contain either 'ZEROPNT' or 'PHOTFLAM' and 'PHOTPLAM' in its header to calculate its ZP!"))
-                    elif instrument_name == "WFC3IR":
+                    elif instrument_name == "WFC3_IR":
                         # Taken from Appendix A of https://www.stsci.edu/files/live/sites/www/files/home/hst/instrumentation/wfc3/documentation/instrument-science-reports-isrs/_documents/2020/WFC3-ISR-2020-10.pdf
                         wfc3ir_zps = {'F098M': 25.661, 'F105W': 26.2637, 'F110W': 26.8185, 'F125W': 26.231, 'F140W': 26.4502, 'F160W': 25.9362}
                         im_zps[band_name] = wfc3ir_zps[band_name]
