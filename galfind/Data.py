@@ -121,6 +121,7 @@ class Data:
                 if ".fits" in mask_path:
                     pass
                 elif ".reg" in mask_path:
+                    #breakpoint()
                     mask_path = self.clean_mask_regions(mask_path)
                     mask_path = self.mask_reg_to_pix(self.alignment_band, mask_path)
                 else:
@@ -131,33 +132,34 @@ class Data:
         # find common directories for im/seg/rms_err/wht maps
         self.common_dirs = {}
         galfind_logger.warning(f"self.common_dirs has errors when the len(rms_err_paths) = {len(self.rms_err_paths)} != len(wht_paths) = {len(self.wht_paths)}")
-        for paths, key in zip([im_paths, seg_paths, mask_paths, rms_err_paths, wht_paths], ["SCI", "SEG", "MASK", "ERR", "WHT"]):
-            try:
-                for band in self.instrument.band_names:
-                    assert("/".join(paths[band].split("/")[:-1]) == "/".join(paths[self.instrument.band_names[0]].split("/")[:-1]))
-                self.common_dirs[key] = "/".join(paths[self.instrument.band_names[0]].split("/")[:-1])
-                galfind_logger.info(f"Common directory found for {key}: {self.common_dirs[key]}")
-            except AssertionError:
-                galfind_logger.info(f"No common directory for {key}")
+        if len(self.rms_err_paths) == len(self.wht_paths):
+            for paths, key in zip([im_paths, seg_paths, mask_paths, rms_err_paths, wht_paths], ["SCI", "SEG", "MASK", "ERR", "WHT"]):
+                try:
+                    for band in self.instrument.band_names:
+                        assert("/".join(paths[band].split("/")[:-1]) == "/".join(paths[self.instrument.band_names[0]].split("/")[:-1]))
+                    self.common_dirs[key] = "/".join(paths[self.instrument.band_names[0]].split("/")[:-1])
+                    galfind_logger.info(f"Common directory found for {key}: {self.common_dirs[key]}")
+                except AssertionError:
+                    galfind_logger.info(f"No common directory for {key}")
 
-        # find other things in common between bands
-        self.common = {}
-        for label, item_dict in zip(["ZERO POINT", "PIXEL SCALE", "SCI SHAPE"], [self.im_zps, self.im_pixel_scales, self.im_shapes]):
-            try:
-                for band in self.instrument.band_names:
-                    assert(item_dict[band] == item_dict[self.instrument.band_names[0]])
-                self.common[label] = item_dict[self.instrument.band_names[0]]
-                galfind_logger.info(f"Common {label} found")
-            except AssertionError:
-                galfind_logger.info(f"No common {label}")
+            # find other things in common between bands
+            self.common = {}
+            for label, item_dict in zip(["ZERO POINT", "PIXEL SCALE", "SCI SHAPE"], [self.im_zps, self.im_pixel_scales, self.im_shapes]):
+                try:
+                    for band in self.instrument.band_names:
+                        assert(item_dict[band] == item_dict[self.instrument.band_names[0]])
+                    self.common[label] = item_dict[self.instrument.band_names[0]]
+                    galfind_logger.info(f"Common {label} found")
+                except AssertionError:
+                    galfind_logger.info(f"No common {label}")
 
-        # make RGB using the default method if the science images have a common shape
-        if "SCI SHAPE" in self.common.keys() and type(RGB_method) != type(None):
-            split_bands = np.split(self.instrument.band_names, \
-                [int(np.round(len(self.instrument.band_names) / 3, 0)), -int(np.round(len(self.instrument.band_names) / 3, 0))])
-            self.make_RGB(list(split_bands[0]), list(split_bands[1]), list(split_bands[2]), RGB_method)
-            #split_bands = np.take(self.instrument.band_names, [0, int(len(self.instrument.band_names) / 2), -1])
-            #self.make_RGB([split_bands[0]], [split_bands[1]], [split_bands[2]], RGB_method)
+            # make RGB using the default method if the science images have a common shape
+            if "SCI SHAPE" in self.common.keys() and type(RGB_method) != type(None):
+                split_bands = np.split(self.instrument.band_names, \
+                    [int(np.round(len(self.instrument.band_names) / 3, 0)), -int(np.round(len(self.instrument.band_names) / 3, 0))])
+                self.make_RGB(list(split_bands[0]), list(split_bands[1]), list(split_bands[2]), RGB_method)
+                #split_bands = np.take(self.instrument.band_names, [0, int(len(self.instrument.band_names) / 2), -1])
+                #self.make_RGB([split_bands[0]], [split_bands[1]], [split_bands[2]], RGB_method)
 
     @classmethod
     def from_pipeline(cls, survey, version, instrument_names = ["ACS_WFC", "WFC3_IR", "NIRCam", "MIRI"], excl_bands = [], \
@@ -272,8 +274,8 @@ class Data:
                         else:
                             im_exts[band] = int(j)
                             im_shapes[band] = im_hdul[0].data.shape
-                    breakpoint()
-                    print(band, len(im_hdul), [hdu.name for hdu in im_hdul], assertion_len)
+                    #breakpoint()
+                    #print(band, len(im_hdul), [hdu.name for hdu in im_hdul], assertion_len)
                     assert len(im_hdul) == assertion_len
                     if rms_err_paths != {}:
                         rms_err_hdul = fits.open(rms_err_paths[band])
@@ -283,8 +285,8 @@ class Data:
                                 assertion_len += 1
                             else:
                                 rms_err_exts[band] = int(j)
-                        breakpoint()
-                        print(band, len(rms_err_hdul), [hdu.name for hdu in rms_err_hdul], assertion_len)
+                        #breakpoint()
+                        #print(band, len(rms_err_hdul), [hdu.name for hdu in rms_err_hdul], assertion_len)
                         assert len(rms_err_hdul) == assertion_len
                     if wht_paths != {}:
                         wht_hdul = fits.open(wht_paths[band])
@@ -294,11 +296,11 @@ class Data:
                                 assertion_len += 1
                             else:
                                 wht_exts[band] = int(j)
-                        breakpoint()
-                        print(band, len(wht_hdul), [hdu.name for hdu in wht_hdul], assertion_len)
+                        #breakpoint()
+                        #print(band, len(wht_hdul), [hdu.name for hdu in wht_hdul], assertion_len)
                         assert len(wht_hdul) == assertion_len
 
-            breakpoint()
+            #breakpoint()
             # if band not used in instrument remove it, else save pixel scale and zero point
             for band_name in instrument.band_names:
                 if band_name not in unique_bands:
@@ -320,10 +322,13 @@ class Data:
                         im_zps[band_name] = wfc3ir_zps[band_name]
                     elif instrument_name == "NIRCam":
                         # assume flux units of MJy/sr and calculate corresponding ZP
-                        im_zps[band] = -2.5 * np.log10((pix_scale.to(u.rad).value ** 2) * u.MJy.to(u.Jy)) + u.Jy.to(u.ABmag)
+                        im_zps[band_name] = -2.5 * np.log10((pix_scale.to(u.rad).value ** 2) * u.MJy.to(u.Jy)) + u.Jy.to(u.ABmag)
             instrument_arr.append(instrument)
-        breakpoint()
-        comb_instrument = np.sum(instrument_arr)
+        #breakpoint()
+        if len(instrument_arr) == 1:
+            comb_instrument = instrument_arr[0]
+        else:
+            comb_instrument = np.sum(instrument_arr)
         
         # All seg maps and masks should be in same format, so load those last when we know what bands we have
         for i, band in enumerate(comb_instrument.band_names):
@@ -937,6 +942,7 @@ class Data:
         # load relevant err map paths, preferring rms_err maps if available
         err_map_path, err_map_ext, err_map_type = self.get_err_map(band, prefer = "rms_err")
         # SExtractor bash script python wrapper
+        #breakpoint()
         process = subprocess.Popen(["./make_seg_map.sh", config['DEFAULT']['GALFIND_WORK'], self.im_paths[band], str(self.im_pixel_scales[band].value), \
                                 str(self.im_zps[band]), self.instrument.instrument_from_band(band).name, self.survey, band, self.version, err_map_path, \
                                 err_map_ext, err_map_type, str(self.im_exts[band]), sex_config_path, params_path])
@@ -982,7 +988,12 @@ class Data:
                 
                 prime_hdu = fits.open(self.im_paths[band])[0].header
                 im_data, im_header = self.load_im(band)
-                err = fits.open(self.rms_err_paths[band])[self.rms_err_exts[band]].data
+                if band in self.rms_err_paths.keys() and band in self.rms_err_exts.keys():
+                    err = fits.open(self.rms_err_paths[band])[self.rms_err_exts[band]].data
+                else:
+                    # determine error map from wht map
+                    wht = fits.open(self.wht_paths[band])[self.wht_exts[band]].data
+                    err = np.sqrt(1. / wht)
                 if pos == 0:
                     sum = im_data / err ** 2
                     sum_err = 1 / err ** 2
@@ -1023,7 +1034,7 @@ class Data:
         return f"{config['DEFAULT']['GALFIND_WORK']}/SExtractor/{self.instrument.instrument_from_band(band).name}/{self.version}/{self.survey}/{self.survey}_{band}_{band}_sel_cat_{self.version}_seg.fits"
 
     @run_in_dir(path = config['DEFAULT']['GALFIND_DIR'])
-    def make_sex_cats(self, forced_phot_band = "f444W", sex_config_path = config['SExtractor']['CONFIG_PATH'], params_path = config['SExtractor']['PARAMS_PATH'], forced_phot_code = "photutils"):
+    def make_sex_cats(self, forced_phot_band = "F444W", sex_config_path = config['SExtractor']['CONFIG_PATH'], params_path = config['SExtractor']['PARAMS_PATH'], forced_phot_code = "photutils"):
         galfind_logger.info(f"Making SExtractor catalogues with: config file = {sex_config_path}; parameters file = {params_path}")
         # make individual forced photometry catalogues
         if type(forced_phot_band) == list:
