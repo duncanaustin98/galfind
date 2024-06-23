@@ -81,7 +81,7 @@ class Catalogue_Base:
         if self.crops != []:
             output_str += f"N_GALS_OBJECT = {len(self)}\n"
             output_str += f"CROPS = {' + '.join(self.crops)}\n"
-        #breakpoint()
+        ##breakpoint()
         if hasattr(self, "SED_rest_properties"):
             if len(self.SED_rest_properties) >= 1:
                 output_str += band_sep

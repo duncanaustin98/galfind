@@ -518,11 +518,11 @@ class Data:
         except:
             pass
         try:
-            #breakpoint()
+            ##breakpoint()
             depths = []
             for aper_diam in json.loads(config.get("SExtractor", "APERTURE_DIAMS")) * u.arcsec:
                 depths.append(self.load_depths(aper_diam))
-            #breakpoint()
+            ##breakpoint()
             output_str += f"DEPTHS = {str(depths)}\n"
         except:
             pass
@@ -1418,7 +1418,7 @@ class Data:
                         if i <= 2:
                             temp.write(line)
                         if not (line.endswith(',0)\n') and line.startswith('circle')):
-                            if (line.startswith('ellipse') and not line.endswith(',0)\n') and not (line.split(",")[3] == "0")) or line.startswith("box"):
+                            if (line.startswith('ellipse') and not (line.split(",")[2] == "0") and not (line.split(",")[3] == "0")) or line.startswith("box") or line.startswith("circle") or line.startswith("polygon"):
                                temp.write(line)
             funcs.change_file_permissions(mask_path)
             funcs.change_file_permissions(clean_mask_path)

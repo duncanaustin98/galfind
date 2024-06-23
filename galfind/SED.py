@@ -120,7 +120,7 @@ class SED:
             plt.plot(wavs_AA[feature_mask], flux_lambda[feature_mask])
             plt.show()
         line_plus_cont_flux = np.trapz(flux_lambda[feature_mask], x = wavs_AA[feature_mask])
-        #breakpoint()
+        ##breakpoint()
         # calculate continuum flux and mean continuum level
         cont_mask = np.logical_or.reduce(np.array([((wavs_AA > lims[0].to(u.AA)) & \
                         (wavs_AA < lims[1].to(u.AA))) for lims in cont_lims]))

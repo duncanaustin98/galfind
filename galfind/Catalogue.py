@@ -137,7 +137,7 @@ class Catalogue(Catalogue_Base):
     # Spectroscopy
         
     def match_available_spectra(self):
-        breakpoint()
+        #breakpoint()
         # make catalogue consisting of spectra downloaded from the DJA
         DJA_cat = np.sum([Spectral_Catalogue.from_DJA(ra_range = self.ra_range, \
             dec_range = self.dec_range, version = version) for version in ["v1", "v2"]])
@@ -458,7 +458,7 @@ class Catalogue(Catalogue_Base):
         # extract selection name from galaxy method output
         selection_name = selection_function(self[0], *args, update = False)[1]
         # open catalogue
-        #breakpoint()
+        ##breakpoint()
         # perform selection if not previously performed
         if selection_name not in self.selection_cols:
             # perform calculation for each galaxy and update galaxies in self
@@ -482,7 +482,7 @@ class Catalogue(Catalogue_Base):
         return cat_copy
 
     def _append_selection_to_fits(self, selection_name):
-        #breakpoint()
+        ##breakpoint()
         # append .fits table if not already done so for this selection
         if not selection_name in self.selection_cols:
             assert(all(getattr(self, selection_name) == True))
@@ -653,7 +653,7 @@ class Catalogue(Catalogue_Base):
             galfind_logger.info(f"{property_name} already calculated!")
             return
         if save_kwargs:
-            #breakpoint()
+            ##breakpoint()
             property_PDFs = self.__getattr__(property_name, phot_type = "rest", property_type = "PDFs")
             kwarg_names = np.unique(np.hstack([list(property_PDF.kwargs.keys()) for property_PDF in property_PDFs if type(property_PDF) != type(None)]))
             kwargs = {kwarg_name: [property_PDF.kwargs[kwarg_name] if type(property_PDF) != type(None) \

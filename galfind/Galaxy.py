@@ -1073,6 +1073,7 @@ class Galaxy:
             self.selection_flags["Re_F277W>1.5pix"]
         except:
             breakpoint()
+            
         # if the galaxy passes all criteria
         if all(self.selection_flags[name] for name in selection_names):
             if update:

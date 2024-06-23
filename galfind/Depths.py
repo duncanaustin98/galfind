@@ -27,6 +27,7 @@ from kneed import KneeLocator
 from mpl_toolkits.axes_grid1.axes_divider import make_axes_locatable
 # install cv2, skimage, sklearn 
 
+from . import useful_funcs_austind as funcs
 
 def do_photometry(image, xy_coords, radius_pixels):
     aper = CircularAperture(xy_coords, radius_pixels)
