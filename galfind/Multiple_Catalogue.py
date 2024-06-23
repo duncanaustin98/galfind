@@ -1,5 +1,6 @@
 # Multiple_Catalogue.py
 import numpy as np
+from astropy.table import vstack
 from astropy.coordinates import SkyCoord
 
 class Multiple_Catalogue:
@@ -21,6 +22,23 @@ class Multiple_Catalogue:
                                             loc_depth_min_flux_pc_errs, templates_arr, select_by) for survey in survey_list]   
             
         return cls(cat_arr)
+
+    def save_combined_cat(self, filename):
+        tables = [cat.open_cat(cropped = True) for cat in self.cat_arr]
+        for table, cat in zip(tables, self.cat_arr):
+            table['SURVEY'] = cat.survey
+
+        combined_table = vstack(tables)
+        combined_table.rename_column('NUMBER', 'SOURCEX_NUMBER')
+        combined_table['ID'] = np.arange(1, len(combined_table)+1)
+        # Move 'ID' to the first column
+        try:
+            new_order = ['ID'] + [col for col in combined_table.colnames if col != 'ID']
+            combined_table = combined_table[new_order]
+        except:
+            pass
+
+        combined_table.write(filename, format = 'fits')
 
     def __add__(self, other):
         # Check types to allow adding, Catalogue + Multiple_Catalogue, Multiple_Catalogue + Catalogue, Multiple_Catalogue + Multiple_Catalogue

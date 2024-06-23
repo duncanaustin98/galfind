@@ -8,12 +8,14 @@ from tqdm import tqdm
 from astropy.coordinates import SkyCoord
 from astropy.io import fits
 import time
+import regions
 from . import useful_funcs_austind as useful_funcs
 from .Data import Data
 from .Galaxy import Galaxy
 from . import useful_funcs_austind as funcs
 from .Catalogue_Creator import GALFIND_Catalogue_Creator
 from . import config, galfind_logger, SED_code
+from astropy.wcs import WCS
 from .EAZY import EAZY
 from . import Multiple_Catalogue, Multiple_Data
 
@@ -194,121 +196,163 @@ class Catalogue_Base:
         # update .fits tables with cross-matched version
         # open tables
         self_copy = deepcopy(self)
-        other_copy = deepcopy(other)
+        
 
-        # Convert from list of SkyCoord to SkyCoord(array)
-        sky_coords_cat = SkyCoord(self_copy.RA, self_copy.DEC, unit=(u.deg, u.deg), frame='icrs')
-        other_sky_coords = SkyCoord(other_copy.RA, other_copy.DEC, unit=(u.deg, u.deg), frame='icrs')
-        if match_type == 'nearest':
-            # This just takes the nearest galaxy as the best match  
-            idx, d2d, d3d = sky_coords_cat.match_to_catalog_sky(other_sky_coords)
-            # Also check mask - don't keep masked galaxies where there is an unmasked match
-            sep_constraint = d2d < max_sep
-            # Get indexes of matches
-            cat_matches = np.arange(len(sky_coords_cat))[sep_constraint]
-            other_cat_matches = idx[sep_constraint]
-        elif match_type == 'compare_within_radius':
-            # This finds all matches within a certain radius and compares the photometry of the galaxies
-            cat_matches = []
-            other_cat_matches = []
-
-            for pos, coord in tqdm(enumerate(self_copy.sky_coord), desc="Cross-matching galaxies"):
-                # Need to save index of match in other_sky_coords
-
-                d2d = coord.separation(other_sky_coords)
-
-                indexes = np.argwhere(d2d < max_sep)
-                indexes = np.ndarray.flatten(indexes)
-
-                if len(indexes) == 0:
-                    print('continuing')
-                    continue
-                elif len(indexes) == 1:
-                    cat_matches.append(pos)
-                    other_cat_matches.append(indexes[0])
-                else:
-
-                    # Compare fluxes and choose the closest match
-                    # Get bands that are in both galaxies 
-
-                    coord_gal = self_copy.gals[pos]
-
-                    other_gals = np.ndarray.flatten(other_copy.gals[indexes])
-                    # Save indexes of other_gals in other_sky_coords
-                    other_gals_indexes = np.arange(len(other_sky_coords))[indexes]
-
-                    bands_gal1 = [band for band in coord_gal.phot.instrument.band_names if band not in coord_gal.mask_flags.keys()]
-
-                    chi_squareds = []
-                    for other_gal in other_gals:
-                        bands_gal2 = [band for band in other_gal.phot.instrument.band_names if band not in other_gal.mask_flags.keys()]
-                        matched_bands = list(set(bands_gal1).union(set(bands_gal2)))
-
-                        if len(matched_bands) == 0:
-                            continue
-                        # Compare fluxes in matched bands
-                        indexes_bands = np.argwhere([band in matched_bands for band in coord_gal.phot.instrument.band_names])
-                        indexes_other_bands = np.argwhere([band in matched_bands for band in other_gal.phot.instrument.band_names])
-                        coord_gal_fluxes = coord_gal.phot.flux_Jy[indexes_bands]
-                        coord_gal_flux_errs = coord_gal.phot.flux_Jy_errs[indexes_bands]
-                        other_gal_fluxes = other_gal.phot.flux_Jy[indexes_other_bands]
-
-                        # Chi-squared comparison
-                        chi_squared = np.sum((coord_gal_fluxes - other_gal_fluxes)**2 / (coord_gal_flux_errs**2))
-                        chi_squareds.append(chi_squared)
-                    if len(chi_squareds) == 0:
-                        continue
-                    best_match_index = int(np.squeeze(np.argmin(chi_squareds)))
-                    # pop empty dimensions
-                    cat_matches.append(pos)
-                    other_cat_matches.append(other_gals_indexes[best_match_index])
-
-        assert len(cat_matches) == len(other_cat_matches), f'{len(cat_matches)} != {len(other_cat_matches)}' # check that the matches are 1-to-1
-        print('Getting galaxies')
-
-        cat_matches = np.array(cat_matches)
-        gal_matched_cat = self_copy[cat_matches]
-        # Use indexes instead
-        other_cat_matches = np.array(other_cat_matches)
-        gal_matched_other = other_copy[other_cat_matches]
-        print('Obtained matched galaxies')
-        assert len(gal_matched_cat) == len(gal_matched_other) # check that the matches are 1-to-1
-
-        if self_copy.__class__.__name__ == "Catalogue" and other_copy.__class__.__name__ == "Spectral_Catalogue":
-            # update catalogue and galaxies
-            self_copy.gals = [deepcopy(gal).add_spectra(spectra) for gal, spectra in \
-                tqdm(zip(gal_matched_cat, gal_matched_other), total = len(gal_matched_cat), \
-                desc = "Appending spectra to catalogue!")]
-            return self_copy
+        if isinstance(other, Multiple_Catalogue):
+            other_copy_gals = other.cat_arr
         else:
-            for gal1, gal2 in tqdm(zip(gal_matched_cat, gal_matched_other), desc='Filtering best galaxy for matches'):
-                # Compare the two galaxies and choose the better one
-                bands_gal1 = [band for band in gal1.phot.instrument.band_names if band not in gal1.mask_flags.keys()]
-                bands_gal2 = [band for band in gal2.phot.instrument.band_names if band not in gal2.mask_flags.keys()]
-                band_names_union = list(set(bands_gal1).union(set(bands_gal2)))
+            other_copy_gals = [other]
+        
+        new_copies = []
+        for o in other_copy_gals:
+            other_copy = deepcopy(o)
+            
+            # Convert from list of SkyCoord to SkyCoord(arra)
+            sky_coords_cat = SkyCoord(self_copy.RA, self_copy.DEC, unit=(u.deg, u.deg), frame='icrs')
+            other_sky_coords = SkyCoord(other_copy.RA, other_copy.DEC, unit=(u.deg, u.deg), frame='icrs')
+            '''
+            band = self_copy.data.forced_phot_band
+            wcs_self = WCS(fits.getheader(self_copy.data.im_paths[band], ext=self_copy.data.im_exts[band]))
+            wcs_other = WCS(fits.getheader(other_copy.data.im_paths[band], ext=other_copy.data.im_exts[band]))
+            if not (any(sky_coords_cat.contained_by(wcs_self)) and any(other_sky_coords.contained_by(wcs_other))):
+                cat_matches = []
+                other_cat_matches = []
+                print('Skipping')
+                continue
 
-                if len(bands_gal2) > len(bands_gal1):
-                    self_copy.remove_gal(id = gal1.ID)
-                elif len(bands_gal2) < len(bands_gal1):
-                    other_copy.remove_gal(id = gal2.ID)
-                else:
-                    # If same bands, choose galaxy with deeper depth
-                    # Get matching bands between the two galaxies - only use if not masked
-                    # logical comparison of depth in each band, keeping the galaxy with the deeper depth in more bands
-                    # gal1.phot.depths is just an array. Need to slice by position
-                    indexes_gal1 = np.argwhere([band in band_names_union for band in gal1.phot.instrument.band_names])
-                    depths_gal1 = gal1.phot.depths[indexes_gal1]
-                    indexes_gal2 = np.argwhere([band in band_names_union for band in gal2.phot.instrument.band_names])
-                    depths_gal2 = gal2.phot.depths[indexes_gal2]
-                    # Compare depths
-                    if np.sum(depths_gal1 > depths_gal2) > np.sum(depths_gal1 < depths_gal2):
-                        self_copy.remove_gal(id=gal1.ID)
-                    elif np.sum(depths_gal1 > depths_gal2) < np.sum(depths_gal1 < depths_gal2):
-                        other_copy.remove_gal(id=gal2.ID)
+            # Check if likely to have any matches
+            idx, _, _, _ = sky_coords_cat.search_around_sky(other_sky_coords, 5*u.arcsec)
+
+        
+            if len(idx) == 0:
+                print('Skipping')
+                cat_matches = []
+                other_cat_matches = []
+                
+                continue
+            '''
+            if match_type == 'nearest':
+                # This just takes the nearest galaxy as the best match  
+                idx, d2d, d3d = sky_coords_cat.match_to_catalog_sky(other_sky_coords)
+                # Also check mask - don't keep masked galaxies where there is an unmasked match
+                sep_constraint = d2d < max_sep
+                # Get indexes of matches
+                cat_matches = np.arange(len(sky_coords_cat))[sep_constraint]
+                other_cat_matches = idx[sep_constraint]
+
+            elif match_type == 'compare_within_radius':
+                # This finds all matches within a certain radius and compares the photometry of the galaxies
+                cat_matches = []
+                other_cat_matches = []
+
+                for pos, coord in tqdm(enumerate(self_copy.sky_coord), desc="Cross-matching galaxies"):
+                    # Need to save index of match in other_sky_coords
+
+                    d2d = coord.separation(other_sky_coords)
+
+                    indexes = np.argwhere(d2d < max_sep)
+                    indexes = np.ndarray.flatten(indexes)
+
+                    if len(indexes) == 0:
+                        continue
+                    elif len(indexes) == 1:
+                        cat_matches.append(pos)
+                        other_cat_matches.append(indexes[0])
                     else:
-                        # Choose first galaxy
-                        self_copy.remove_gal(id=gal1.ID)
-        return self_copy + other_copy
+
+                        # Compare fluxes and choose the closest match
+                        # Get bands that are in both galaxies 
+
+                        coord_gal = self_copy.gals[pos]
+
+                        other_gals = np.ndarray.flatten(other_copy.gals[indexes])
+                        # Save indexes of other_gals in other_sky_coords
+                        other_gals_indexes = np.arange(len(other_sky_coords))[indexes]
+
+                        bands_gal1 = np.array(coord_gal.phot.instrument.band_names)[coord_gal.phot.flux_Jy.mask]
+
+                        chi_squareds = []
+                        for other_gal in other_gals:
+                            bands_gal2 = np.array(other_gal.phot.instrument.band_names)[other_gal.phot.flux_Jy.mask]
+                            matched_bands = list(set(bands_gal1).union(set(bands_gal2)))
+
+                            if len(matched_bands) == 0:
+                                continue
+                            # Compare fluxes in matched bands
+                            indexes_bands = np.argwhere([band in matched_bands for band in coord_gal.phot.instrument.band_names])
+                            indexes_other_bands = np.argwhere([band in matched_bands for band in other_gal.phot.instrument.band_names])
+                            coord_gal_fluxes = coord_gal.phot.flux_Jy[indexes_bands]
+                            coord_gal_flux_errs = coord_gal.phot.flux_Jy_errs[indexes_bands]
+                            other_gal_fluxes = other_gal.phot.flux_Jy[indexes_other_bands]
+
+                            # Chi-squared comparison
+                            try:
+                                chi_squared = np.sum((coord_gal_fluxes - other_gal_fluxes)**2 / (coord_gal_flux_errs**2))
+                            except ValueError:
+                                chi_squareds.append(1000000)
+                                continue
+                            
+                            chi_squareds.append(chi_squared)
+                        if len(chi_squareds) == 0:
+                            continue
+                        best_match_index = int(np.squeeze(np.argmin(chi_squareds)))
+                        # pop empty dimensions
+                        cat_matches.append(pos)
+                        other_cat_matches.append(other_gals_indexes[best_match_index])
+
+            assert len(cat_matches) == len(other_cat_matches), f'{len(cat_matches)} != {len(other_cat_matches)}' # check that the matches are 1-to-1
+            print('Getting galaxies')
+            print(cat_matches)
+            cat_matches = np.array(cat_matches, dtype=int)
+            gal_matched_cat = self_copy[cat_matches]
+            # Use indexes instead
+            other_cat_matches = np.array(other_cat_matches,dtype=int)
+            gal_matched_other = other_copy[other_cat_matches]
+            print('Obtained matched galaxies')
+            assert len(gal_matched_cat) == len(gal_matched_other) # check that the matches are 1-to-1
+
+            if len(gal_matched_cat) > 0:
+                if self_copy.__class__.__name__ == "Catalogue" and other_copy.__class__.__name__ == "Spectral_Catalogue":
+                    # update catalogue and galaxies
+                    self_copy.gals = [deepcopy(gal).add_spectra(spectra) for gal, spectra in \
+                        tqdm(zip(gal_matched_cat, gal_matched_other), total = len(gal_matched_cat), \
+                        desc = "Appending spectra to catalogue!")]
+                    return self_copy
+                else:
+                    print(f'Total matches = {len(gal_matched_cat)}')
+                    for gal1, gal2 in tqdm(zip(gal_matched_cat, gal_matched_other), desc='Filtering best galaxy for matches'):
+                        # Compare the two galaxies and choose the better one
+                        bands_gal1 = np.array(gal1.phot.instrument.band_names)[gal1.phot.flux_Jy.mask]
+                        bands_gal2 = np.array(gal2.phot.instrument.band_names)[gal2.phot.flux_Jy.mask]
+
+                        band_names_union = list(set(bands_gal1).union(set(bands_gal2)))
+
+                        if len(bands_gal2) > len(bands_gal1):
+                            self_copy.remove_gal(id = gal1.ID)
+                        elif len(bands_gal2) < len(bands_gal1):
+                            other_copy.remove_gal(id = gal2.ID)
+                        else:
+                            # If same bands, choose galaxy with deeper depth
+                            # Get matching bands between the two galaxies - only use if not masked
+                            # logical comparison of depth in each band, keeping the galaxy with the deeper depth in more bands
+                            # gal1.phot.depths is just an array. Need to slice by position
+                            indexes_gal1 = np.argwhere([band in band_names_union for band in gal1.phot.instrument.band_names])
+                            depths_gal1 = gal1.phot.depths[indexes_gal1]
+                            indexes_gal2 = np.argwhere([band in band_names_union for band in gal2.phot.instrument.band_names])
+                            depths_gal2 = gal2.phot.depths[indexes_gal2]
+                            # Compare depths
+                            if np.sum(depths_gal1 > depths_gal2) > np.sum(depths_gal1 < depths_gal2):
+                                self_copy.remove_gal(id=gal1.ID)
+                            elif np.sum(depths_gal1 > depths_gal2) < np.sum(depths_gal1 < depths_gal2):
+                                other_copy.remove_gal(id=gal2.ID)
+                            else:
+                                # Choose first galaxy
+                                self_copy.remove_gal(id=gal1.ID)
+                                
+            new_copies.append(other_copy)
+            
+        out_survey = "+".join([self.survey, other.survey])
+        return Multiple_Catalogue([self_copy, *new_copies], survey = out_survey)
 
 
     # Need to save the cross-match distances

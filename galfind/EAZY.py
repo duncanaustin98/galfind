@@ -340,6 +340,7 @@ class EAZY(SED_code):
         # ensure that for EAZY all the SED_paths are the same
         assert all(SED_path == SED_paths[0] for SED_path in SED_paths), galfind_logger.critical(f"SED_paths must all be the same for {__class__.__name__}")
         # open .h5 file
+        #return np.ones(len(IDs))
         hf = h5py.File(SED_paths[0], "r")
         z_arr = hf[f"z_arr"][IDs - 1]
         wav_flux_arr = hf[f"wav_flux_arr"][IDs - 1]

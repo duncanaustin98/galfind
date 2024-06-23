@@ -162,11 +162,13 @@ class PDF:
 
     def plot(self, ax, annotate = True, annotate_peak_loc = False, colour = "black"):
         
-        ax.plot(self.x, self.p_x, color = colour)
+        ax.plot(self.x, self.p_x/np.max(self.p_x), color = colour)
         
         # Set x and y plot limits
-        ax.set_xlim(self.get_percentile(1.), self.get_percentile(99.))
-        ax.set_ylim(0, 1.2 * np.max(self.p_x))
+        ax.set_xlim(self.get_percentile(3.), self.get_percentile(97.))
+        if ax.get_xlim()[1]-ax.get_xlim()[0] < 0.3:
+            ax.set_xlim(ax.get_xlim()[0]-0.3, ax.get_xlim()[1]+0.3)
+        ax.set_ylim(0, 1.2)
 
         # fill inside PDF with hatch
         x_lim = np.linspace(self.get_percentile(1.), self.get_percentile(99.)) #np.linspace(0.93 * float(self.get_peak(0)["value"]), 1.07 * float(self.get_peak(0)["value"]), 100)
