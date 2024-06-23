@@ -113,7 +113,17 @@ def calc_flux_from_ra_dec(ra, dec, im_data, wcs, r, unit = "deg"):
     x_pix, y_pix = skycoord_to_pixel(SkyCoord(ra, dec, unit = unit), wcs)
     flux, fluxerr, flag = sep.sum_circle(im_data, x_pix, y_pix, r)
     return flux # image units
-    
+
+def change_file_permissions(path, permissions = 0o777):
+    if type(path) != list:
+        path = [path]
+    for p in path:
+        try:
+            os.chmod(p, permissions)
+            galfind_logger.info(f"Changed permissions of {p} to {permissions}")
+        except (PermissionError, FileNotFoundError):
+            pass
+
 def calc_1sigma_flux(depth, zero_point):
     flux_1sigma = (10 ** ((depth - zero_point) / -2.5)) / 5
     return flux_1sigma # image units
@@ -326,6 +336,7 @@ def PDF_hist(PDF, save_dir, obs_name, ID, show = True, save = True, rest_UV_wavs
                 make_dirs(path)
                 #print(f"Saving hist: {path}")
                 plt.savefig(path)
+                change_file_permissions(path)
                 plt.clf()
             else:
                 plt.show()
@@ -557,6 +568,8 @@ def tex_to_fits(tex_path, col_names, col_errs, replace = {"&": "", "\\\\": "", "
                     save_data = np.vstack([save_data, line_elements]) 
         print(save_data)
         tab.close()
+    
+    change_file_permissions(tex_path)
     # adjust column names to include errors where appropriate
     cat_col_names = []
     for i, name in enumerate(col_names):
@@ -570,6 +583,7 @@ def tex_to_fits(tex_path, col_names, col_errs, replace = {"&": "", "\\\\": "", "
     fits_table = Table(save_data, names = cat_col_names, dtype = cat_dtypes)
     fits_path = tex_path.replace(".txt", "_as_fits.fits")
     fits_table.write(fits_path, overwrite = True)
+    change_file_permissions(fits_path)
     print(f"Saved {tex_path} as .fits")
 
 #col_names = ["NAME", "RA", "DEC", "MAG_f444W", "MAG_f277W", "z_LePhare", "mass_LePhare", "Beta", "SFR", "M_UV", "References"]

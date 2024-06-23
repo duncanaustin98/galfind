@@ -91,6 +91,7 @@ class EAZY(SED_code):
             in_tab = Table(in_data, dtype = in_types, names = in_names)
             funcs.make_dirs(eazy_in_path)
             in_tab.write(eazy_in_path, format = "ascii.commented_header", delimiter = " ", overwrite = True)
+            funcs.change_file_permissions(eazy_in_path)
         return eazy_in_path
     
     @run_in_dir(path = config['EAZY']['EAZY_DIR'])
@@ -242,6 +243,7 @@ class EAZY(SED_code):
                         table.rename_column(col_name, self.galaxy_property_labels(col_name, SED_fit_params, given_as_key = False))
                 # Write fits file
                 table.write(fits_out_path, overwrite = True)
+                funcs.change_file_permissions(fits_out_path)
                 galfind_logger.info(f'Written {self.__class__.__name__} {templates} {lowz_label} fits out file to: {fits_out_path}')
         else:
             table = Table.read(fits_out_path)
@@ -266,6 +268,7 @@ class EAZY(SED_code):
         # Write used parameters
         if fit != None:
             fit.param.write(fits_out_path.replace(".fits", "_params.csv"))
+            funcs.change_file_permissions(fits_out_path.replace(".fits", "_params.csv"))
             galfind_logger.info(f'Written output pararmeters for {self.__class__.__name__} {templates} {lowz_label}')
 
     #@staticmethod

@@ -119,6 +119,7 @@ def plot_flux_curve(PSFdata, pixel_scale, x_cen, y_cen, band, flux_pcs, aper_cor
     plt.title(band.replace("f", "F"))
     print("Saved to: " + save_loc + PSF_name + band.replace("f", "F") + "_flux_curve.png")
     plt.savefig(save_loc + PSF_name + band.replace("f", "F") + "_flux_curve.png", dpi = 800)
+    funcs.change_file_permissions(save_loc + PSF_name + band.replace("f", "F") + "_flux_curve.png")
     plt.show()
         
 #def compare_aper_flux_to_full_radius():

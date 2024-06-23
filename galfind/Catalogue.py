@@ -258,6 +258,7 @@ class Catalogue(Catalogue_Base):
                 "HIERARCH MASK_CLUSTER_CORE": config["Masking"].getboolean("MASK_CLUSTER_CORE")}}
             # save catalogue
             fits_cat.write(self.cat_path, overwrite = True)
+            funcs.change_file_permissions(self.cat_path)
             # update catalogue README
             galfind_logger.warning("REQUIRED UPDATE: Update README for catalogue masking columns")
             # update masking of galfind galaxy objects
@@ -497,6 +498,7 @@ class Catalogue(Catalogue_Base):
             output_cat.meta = {**full_cat.meta, **{f"HIERARCH SELECTED_{selection_name}": True}}
             galfind_logger.info(f"Appending {selection_name} to {self.cat_path=}")
             output_cat.write(self.cat_path, overwrite = True)
+            funcs.change_file_permissions(self.cat_path)
             self.selection_cols.append(selection_name)
         else:
             galfind_logger.info(f"Already appended {selection_name} to {self.cat_path=}")

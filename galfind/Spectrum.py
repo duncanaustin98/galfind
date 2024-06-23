@@ -220,6 +220,7 @@ class Spectrum:
             img = fits.open(url_path, cache = False)
             if save:
                 img.writeto(loc_2D_path)
+                funcs.change_file_permissions(loc_2D_path)
         else:
             img = fits.open(loc_2D_path)
         # extract info from img header
@@ -262,6 +263,7 @@ class Spectrum:
                 meta = fits.open(meta_in_path, cache = False)
                 funcs.make_dirs(meta_out_path)
                 meta.writeto(meta_out_path)
+                funcs.change_file_permissions(meta_out_path)
             MSA_metafile_name = meta_out_path
         except:
             MSA_metafile_name = None

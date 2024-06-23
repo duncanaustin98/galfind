@@ -113,6 +113,7 @@ class SED_code(ABC):
             combined_cat.remove_column("IDENT")
             combined_cat.meta = {**combined_cat.meta, **{self.galaxy_property_labels(f"RUN_{self.__class__.__name__}", SED_fit_params, given_as_key = False): True}}
             combined_cat.write(cat.cat_path, overwrite = True)
+            funcs.change_file_permissions(cat.cat_path)
 
     @staticmethod
     def update_lowz_zmax(SED_fit_params, SED_results):

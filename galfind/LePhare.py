@@ -134,6 +134,7 @@ class LePhare(SED_code):
                         column_labels.append(output_param[0])   
             open_file.close()
 
+        funcs.change_file_permissions(fits_out_path)
         # write data to a .fits file
         fits_columns = []
         for i in range(len(column_labels)):
@@ -141,6 +142,7 @@ class LePhare(SED_code):
             fits_columns.append(loc_col)
         fits_table = fits.BinTableHDU.from_columns(fits_columns)
         fits_table.writeto(fits_out_path, overwrite = True)
+        funcs.change_file_permissions(fits_out_path)
         return fits_out_path
     
     @staticmethod

@@ -159,6 +159,7 @@ class PDF:
         save_tab = Table({self.property_name: save_arr.value})
         save_tab.meta = meta
         save_tab.write(save_path, overwrite = True)
+        funcs.change_file_permissions(save_path)
 
     def plot(self, ax, annotate = True, annotate_peak_loc = False, colour = "black"):
         

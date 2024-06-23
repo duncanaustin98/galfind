@@ -39,6 +39,7 @@ class Multiple_Catalogue:
             pass
 
         combined_table.write(filename, format = 'fits')
+        funcs.change_file_permissions(filename)
 
     def __add__(self, other):
         # Check types to allow adding, Catalogue + Multiple_Catalogue, Multiple_Catalogue + Catalogue, Multiple_Catalogue + Multiple_Catalogue

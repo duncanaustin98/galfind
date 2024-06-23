@@ -131,14 +131,41 @@ class Data:
         # find common directories for im/seg/rms_err/wht maps
         self.common_dirs = {}
         galfind_logger.warning(f"self.common_dirs has errors when the len(rms_err_paths) = {len(self.rms_err_paths)} != len(wht_paths) = {len(self.wht_paths)}")
+        key_failed = {}
         for paths, key in zip([im_paths, seg_paths, mask_paths, rms_err_paths, wht_paths], ["SCI", "SEG", "MASK", "ERR", "WHT"]):
             try:
                 for band in self.instrument.band_names:
-                    assert("/".join(paths[band].split("/")[:-1]) == "/".join(paths[self.instrument.band_names[0]].split("/")[:-1]))
-                self.common_dirs[key] = "/".join(paths[self.instrument.band_names[0]].split("/")[:-1])
+                    key_failed[key] = []
+                    try:
+                        assert("/".join(paths[band].split("/")[:-1]) == "/".join(paths[self.instrument.band_names[-1]].split("/")[:-1]))
+                    except (AssertionError, KeyError):
+                        key_failed[key].append(band)
+                self.common_dirs[key] = "/".join(paths[self.instrument.band_names[-1]].split("/")[:-1])
                 galfind_logger.info(f"Common directory found for {key}: {self.common_dirs[key]}")
             except AssertionError:
                 galfind_logger.info(f"No common directory for {key}")
+
+        # Check if we have either weight or error maps
+        # check any band in key_failed[ERR] is not in key_failed[WHT] and vice versa
+        if len(key_failed["ERR"]) != 0 and len(key_failed["WHT"]) != 0:
+            for band1 in key_failed["ERR"]:
+                if band in key_failed["WHT"]:
+                    galfind_logger.critical(f"No error or weight map found for band = {band}")
+                else:
+                    galfind_logger.warning(f"No error map found for band = {band}")
+            for band in key_failed["WHT"]:
+                if band in key_failed["ERR"]:
+                    galfind_logger.critical(f"No error or weight map found for band = {band}")
+                else:
+                    galfind_logger.warning(f"No weight map found for band = {band}")
+        
+        if len(key_failed["SCI"]) != 0:
+            galfind_logger.critical(f"No science image found for band = {key_failed['SCI']}")
+        if len(key_failed["SEG"]) != 0:
+            galfind_logger.critical(f"No segmentation map found for band = {key_failed['SEG']}")
+        if len(key_failed["MASK"]) != 0:
+            galfind_logger.critical(f"No mask found for band = {key_failed['MASK']}")
+        
 
         # find other things in common between bands
         self.common = {}
@@ -686,6 +713,8 @@ class Data:
                     f.write("testfirst   0\n")
                     f.write("sampledx  0\n")
                     f.write("sampledy  0\n")
+                
+                funcs.change_file_permissions(in_path)
                 # Run trilogy
                 sys.path.insert(1, "/nvme/scratch/software/trilogy") # Not sure why this path doesn't work: config["Other"]["TRILOGY_DIR"]
                 from trilogy3 import Trilogy
@@ -722,7 +751,7 @@ class Data:
             star_mask_override = None, exclude_gaia_galaxies = True, angle = 0, edge_value = 0, 
             element = 'ELLIPSE', gaia_row_lim = 500, plot = False):
         
-        if 'NIRCam' not in self.instrument.name and mask_stars:
+        if 'NIRCam' not in self.instrument.name and mask_stars: # doesnt stop e.g. ACS_WFC+NIRCam from making star masks
             galfind_logger.critical(f"Mask making only implemented for NIRCam data!")
             raise(Exception("Star mask making only implemented for NIRCam data!"))
 
@@ -916,17 +945,19 @@ class Data:
         hdu = fits.HDUList(hdulist)
         hdu.writeto(output_mask_path, overwrite = True)
         # Change permission to read/write for all
-        os.chmod(output_mask_path, 0o777)
+        funcs.change_file_permissions(output_mask_path)
 
         if plot:
             # Save mask plot
             fig.savefig(f'{self.mask_dir}/{band}_mask.png', dpi=300)
+            funcs.change_file_permissions(f'{self.mask_dir}/{band}_mask.png')
 
         # Save ds9 region 
         with open(f'{self.mask_dir}/{band}_starmask.reg', 'w') as f:
             for region in region_strings:
                 f.write(region + '\n')
-        os.chmod(f'{self.mask_dir}/{band}_starmask.reg', 0o777)
+        funcs.change_file_permissions(f'{self.mask_dir}/{band}_starmask.reg')
+
         return output_mask_path
     
     #@staticmethod
@@ -1047,6 +1078,7 @@ class Data:
             hdu_err = fits.ImageHDU(combined_err, header = im_header, name = 'ERR')
             hdul = fits.HDUList([primary, hdu, hdu_err])
             hdul.writeto(self.im_paths[stack_band_name], overwrite = True)
+            funcs.change_file_permissions(self.im_paths[stack_band_name])
             galfind_logger.info(f"Finished stacking bands = {bands} for {self.survey} {self.version}")
         
         # save forced photometry band parameters
@@ -1063,11 +1095,14 @@ class Data:
         sex_cat_dir = f"{config['DEFAULT']['GALFIND_WORK']}/SExtractor/{self.instrument.instrument_from_band(band).name}/{self.version}/{self.survey}"
         sex_cat_name = f"{self.survey}_{band}_{forced_phot_band}_sel_cat_{self.version}.fits"
         sex_cat_path = f"{sex_cat_dir}/{sex_cat_name}"
+        funcs.change_file_permissions(sex_cat_path)
         return sex_cat_path
 
     def seg_path(self, band):
         # IF THIS IS CHANGED MUST ALSO CHANGE THE PATH IN __init__ AND make_seg_map.sh
-        return f"{config['DEFAULT']['GALFIND_WORK']}/SExtractor/{self.instrument.instrument_from_band(band).name}/{self.version}/{self.survey}/{self.survey}_{band}_{band}_sel_cat_{self.version}_seg.fits"
+        path = f"{config['DEFAULT']['GALFIND_WORK']}/SExtractor/{self.instrument.instrument_from_band(band).name}/{self.version}/{self.survey}/{self.survey}_{band}_{band}_sel_cat_{self.version}_seg.fits"
+        funcs.change_file_permissions(path)
+        return path
 
     @run_in_dir(path = config['DEFAULT']['GALFIND_DIR'])
     def make_sex_cats(self, forced_phot_band = "f444W", sex_config_path = config['SExtractor']['CONFIG_PATH'], params_path = config['SExtractor']['PARAMS_PATH'], forced_phot_code = "photutils"):
@@ -1329,8 +1364,8 @@ class Data:
         phot_table.remove_columns(colnames)
         phot_table.remove_columns(mag_colnames)
         phot_table.write(self.sex_cat_path(band, forced_phot_band), format='fits', overwrite=True)
-        
-        
+        funcs.change_file_permissions(self.sex_cat_path(band, forced_phot_band))
+
     def mask_reg_to_pix(self, band, mask_path):
         # open image corresponding to band
         im_data, im_header, seg_data, seg_header = self.load_data(band, incl_mask = False)
@@ -1344,6 +1379,7 @@ class Data:
         out_path = f"{'/'.join(mask_path.split('/')[:-1])}/fits_masks/{mask_path.split('/')[-1].replace('_clean', '').replace('.reg', '')}.fits"
         os.makedirs("/".join(out_path.split("/")[:-1]), exist_ok = True)
         hdu.writeto(out_path, overwrite = True)
+        funcs.change_file_permissions(out_path)
         galfind_logger.info(f"Created fits mask from manually created reg mask, saving as {out_path}")
         return out_path
     
@@ -1364,6 +1400,7 @@ class Data:
         # TEMP CHANGE
         
         hdu.writeto(out_path, overwrite = True)
+        funcs.change_file_permissions(out_path)
         galfind_logger.info(f"Created combined mask for {bands}")
         return out_path
 
@@ -1383,6 +1420,8 @@ class Data:
                         if not (line.endswith(',0)\n') and line.startswith('circle')):
                             if (line.startswith('ellipse') and not line.endswith(',0)\n') and not (line.split(",")[3] == "0")) or line.startswith("box"):
                                temp.write(line)
+            funcs.change_file_permissions(mask_path)
+            funcs.change_file_permissions(clean_mask_path)
             # insert original mask ds9 region file into an unclean folder
             os.makedirs(f"{funcs.split_dir_name(mask_path,'dir')}/unclean", exist_ok = True)
             os.rename(mask_path, f"{funcs.split_dir_name(mask_path,'dir')}/unclean/{funcs.split_dir_name(mask_path,'name')}")
@@ -1479,6 +1518,7 @@ class Data:
                     areas_tab.remove_column(col)
 
         areas_tab.write(output_path, overwrite = True)
+        funcs.change_file_permissions(output_path)
         return areas_tab
 
     def perform_aper_corrs(self): # not general
@@ -1516,6 +1556,7 @@ class Data:
             cat.meta = {**cat.meta, **{"APERCORR": True}} #, **mag_aper_corrs}
             # overwrite original catalogue with local depth columns
             cat.write(self.sex_cat_master_path, overwrite = True)
+            funcs.change_file_permissions(self.sex_cat_master_path)
 
     def make_loc_depth_cat(self, cat_creator, depth_mode = "n_nearest"):
         overwrite = config["Depths"].getboolean("OVERWRITE_LOC_DEPTH_CAT")
@@ -1593,6 +1634,7 @@ class Data:
             #print(cat.meta)
             # overwrite original catalogue with local depth columns
             cat.write(self.sex_cat_master_path, overwrite = True)
+            funcs.change_file_permissions(self.sex_cat_master_path)
         
     def get_depth_dir(self, aper_diam):
         self.depth_dirs = {}

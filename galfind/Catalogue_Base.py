@@ -449,6 +449,7 @@ class Catalogue_Base:
         [hdu_list.append(fits.BinTableHDU(data = tab.as_array(), header = \
             fits.Header(tab.meta), name = name)) for (tab, name) in zip(tab_arr, tab_names)]
         hdu_list.writeto(self.cat_path, overwrite = True)
+        funcs.change_file_permissions(self.cat_path)
         galfind_logger.info(f"Writing table to {self.cat_path}")
 
     def del_hdu(self, hdu):

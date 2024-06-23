@@ -117,6 +117,7 @@ def plot_flux_curve(PSFdata, pixel_scale, x_cen, y_cen, band, flux_pcs, aper_cor
     plt.legend(loc = "lower right")
     plt.title(band.replace("f", "F"))
     plt.savefig(f"{save_loc}/{PSF_name}_flux_curve.png", dpi = 800)
+    funcs.change_file_permissions(f"{save_loc}/{PSF_name}_flux_curve.png")
     print(f"Saved to: {save_loc}/{PSF_name}_flux_curve.png")
     plt.show()
         

@@ -145,6 +145,7 @@ class Galaxy:
             os.makedirs("/".join(out_path.split("/")[:-1]), exist_ok = True)
             fits_hdul = fits.HDUList(hdul)
             fits_hdul.writeto(out_path, overwrite = True)
+            funcs.change_file_permissions(out_path)
             galfind_logger.info(f"Saved fits cutout to: {out_path}")
         else:
             galfind_logger.info(f"Already made fits cutout for {survey} {version} {self.ID} {band}")
@@ -194,6 +195,8 @@ class Galaxy:
                     f.write("testfirst   0\n")
                     f.write("sampledx  0\n")
                     f.write("sampledy  0\n")
+                
+                funcs.change_file_permissions(in_path)
                 # Run trilogy
                 sys.path.insert(1, "/nvme/scratch/software/trilogy") # Not sure why this path doesn't work: config["Other"]["TRILOGY_DIR"]
                 from trilogy3 import Trilogy
@@ -354,6 +357,7 @@ class Galaxy:
 
             # Save and clear axes
             plt.savefig(out_path, dpi = 300, bbox_inches = 'tight')
+            funcs.change_file_permissions(out_path)
             for ax in [phot_ax] + PDF_ax + cutout_ax:
                 ax.cla()
             
