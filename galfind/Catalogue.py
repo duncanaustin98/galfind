@@ -432,19 +432,18 @@ class Catalogue(Catalogue_Base):
     
     # Morphology selection functions
 
-    def select_band_flux_radius(self, band, gtr_or_less, lim):
+    def select_band_flux_radius(self, band, gtr_or_less, lim, make_cat_copy = False):
         assert(band in self.instrument.band_names)
         # load in effective radii as calculated from SExtractor
         self.load_band_properties_from_cat("FLUX_RADIUS", "sex_Re", None)
-        return self.perform_selection(Galaxy.select_band_flux_radius, band, gtr_or_less, lim)
+        return self.perform_selection(Galaxy.select_band_flux_radius, band, gtr_or_less, lim, make_cat_copy = make_cat_copy)
 
     # Full sample selection functions - these chain the above functions
 
-    def select_EPOCHS(self, SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}, allow_lowz = False):
+    def select_EPOCHS(self, SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}, allow_lowz = False, hot_pixel_bands = ["F277W", "F356W", "F444W"]):
         self.perform_selection(Galaxy.select_min_bands, 4., make_cat_copy = False) # minimum 4 photometric bands
         self.perform_selection(Galaxy.select_unmasked_instrument, NIRCam(), make_cat_copy = False) # all NIRCam bands unmasked
-        [self.perform_selection(Galaxy.select_band_flux_radius, band, "gtr", 1.5, make_cat_copy = False) \
-            for band in ["F277W", "F356W", "F444W"] if band in self.instrument.band_names] # LW NIRCam wideband Re>1.5 pix
+        [self.select_band_flux_radius(band, "gtr", 1.5, make_cat_copy = False) for band in hot_pixel_bands if band in self.instrument.band_names] # LW NIRCam wideband Re>1.5 pix
         if not allow_lowz:
             self.perform_selection(Galaxy.phot_SNR_crop, 0, 2., "non_detect", make_cat_copy = False) # 2σ non-detected in first band
         self.perform_selection(Galaxy.phot_bluewards_Lya_non_detect, 2., SED_fit_params, make_cat_copy = False) # 2σ non-detected in all bands bluewards of Lyα
@@ -452,7 +451,7 @@ class Catalogue(Catalogue_Base):
         self.perform_selection(Galaxy.select_chi_sq_lim, 3., SED_fit_params, True, make_cat_copy = False) # χ^2_red < 3
         self.perform_selection(Galaxy.select_chi_sq_diff, 9., SED_fit_params, 0.5, make_cat_copy = False) # Δχ^2 < 9 between redshift free and low redshift SED fits, with Δz=0.5 tolerance 
         self.perform_selection(Galaxy.select_robust_zPDF, 0.6, 0.1, SED_fit_params, make_cat_copy = False) # 60% of redshift PDF must lie within z ± z * 0.1
-        return self.perform_selection(Galaxy.select_EPOCHS, SED_fit_params, allow_lowz)
+        return self.perform_selection(Galaxy.select_EPOCHS, SED_fit_params, allow_lowz, hot_pixel_bands)
 
     def perform_selection(self, selection_function, *args, make_cat_copy = True):
         # extract selection name from galaxy method output
