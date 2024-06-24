@@ -220,6 +220,7 @@ class Catalogue(Catalogue_Base):
                     # update galaxy objects in catalogue - current bottleneck
                     [gal.mask_flags.update({band: unmasked_band_gal}) for gal, unmasked_band_gal in zip(self, unmasked_band)]
                 # make columns for masking by instrument
+                
 
             # determine which cluster/blank masking columns are wanted
             mask_labels = []

@@ -138,6 +138,9 @@ class Galaxy:
             hdul = [fits.PrimaryHDU(header = fits.Header({"ID": self.ID, "survey": survey, "version": version, \
                         "RA": self.sky_coord.ra.value, "DEC": self.sky_coord.dec.value, "size": cutout_size}))]
             for i, (label_i, data_i) in enumerate(data.items()):
+                if type(data_i) == type(None):
+                    galfind_logger.warning(f"No data found for {label_i} in {band}!")
+                    continue
                 cutout = Cutout2D(data_i, self.sky_coord, size = (cutout_size, cutout_size), wcs = wcs)
                 im_header.update(cutout.wcs.to_header())
                 hdul.append(fits.ImageHDU(cutout.data, header = im_header, name = label_i))

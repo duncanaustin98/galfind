@@ -44,14 +44,14 @@ SEEING_FWHM     0.05             # stellar FWHM in arcsec
 STARNNW_NAME    /nvme/scratch/work/nadams/SExtractor/default.nnw       # Neural-Network_Weight table filename
 
 #------------------------------ Background -----------------------------------
-BACK_SIZE       64              # Background mesh: <size> or <width>,<height>
-BACK_FILTERSIZE 3               # Background filter: <size> or <width>,<height>
+#BACK_SIZE       64              # Background mesh: <size> or <width>,<height>
+#BACK_FILTERSIZE 3               # Background filter: <size> or <width>,<height>
 
-BACKPHOTO_TYPE  LOCAL           # can be "GLOBAL" or "LOCAL" (*)
-BACKPHOTO_THICK 24              # thickness of the background LOCAL annulus (*)
+#BACKPHOTO_TYPE  LOCAL           # can be "GLOBAL" or "LOCAL" (*)
+#BACKPHOTO_THICK 24              # thickness of the background LOCAL annulus (*)
 
-#BACK_TYPE       MANUAL
-#BACK_VALUE      0.0
+BACK_TYPE       MANUAL
+BACK_VALUE      0
 #------------------------------ Check Image ----------------------------------
 
 CHECKIMAGE_TYPE NONE     # can be one of "NONE", "BACKGROUND",

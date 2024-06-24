@@ -27,14 +27,16 @@ def pipeline(surveys, version, instruments, aper_diams, min_flux_pc_errs, forced
                 cat_creator = cat_creator, SED_fit_params_arr = SED_fit_params_arr, forced_phot_band = forced_phot_band, \
                 excl_bands = excl_bands, loc_depth_min_flux_pc_errs = min_flux_pc_errs, crop_by = crop_by, timed = timed)
 
+            
             #cat_copy = cat.select_EPOCHS(allow_lowz = False)
-            '''
+            
             cat.plot_phot_diagnostics(flux_unit = u.ABmag)
+            breakpoint()
             print(str(cat))
 
             end = time.time()
             print(f"Time to load catalogue = {(end - start):.1f}s")
-            '''
+            
             #cat.data.calc_unmasked_area("NIRCam", forced_phot_band = forced_phot_band)
             #cat.select_band_flux_radius("F277W", "gtr", 1.5)
 
@@ -69,13 +71,14 @@ if __name__ == "__main__":
     instruments = ["NIRCam", "ACS_WFC"] #,"ACS_WFC",  'WFC3_IR'] # "ACS_WFC"
     cat_type = "loc_depth"
     surveys = ["JOF"] #[config["DEFAULT"]["SURVEY"]]
-    aper_diams = [0.32] * u.arcsec
+    aper_diams = [0.32, 0.5] * u.arcsec
     SED_code_arr = [EAZY()]
     templates_arr = ["fsps_larson"] #["fsps", "fsps_larson", "fsps_jades"]
     lowz_zmax_arr = [[4., 6., None]] #[[None]] # 
     min_flux_pc_errs = [10]
     forced_phot_band = ["F277W", "F356W", "F444W"] #["F277W", "F356W", "F444W"] # ["F444W"] #
-    crop_by = None #None #"bands>13+EPOCHS" #"EPOCHS_lowz+z>4.5"
+    #gal_ID = 8409
+    crop_by = None #f"ID={int(gal_ID)}" #'EPOCHS' #None #"bands>13+EPOCHS" #"EPOCHS_lowz+z>4.5"
     timed = False
 
     jems_bands = ["F182M", "F210M", "F430M", "F460M", "F480M"]
