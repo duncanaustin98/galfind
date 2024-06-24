@@ -432,7 +432,8 @@ def show_depths(nmad_grid, num_grid, step_size, region_radius_used_pix, labels =
 
         set_labels = [cat_depths[cat_labels == label] for label in possible_labels]
         for set_label, label, colour in zip(set_labels, labels_arr, colours):
-            axs[3].hist(set_label, bins = 40, range = (np.nanmin(cat_depths), np.nanmax(cat_depths)), \
+            _set_label = set_label[~np.isnan(set_label)] # remove nans
+            axs[3].hist(_set_label, bins = 40, range = (np.nanmin(cat_depths), np.nanmax(cat_depths)), \
                 label = label, color = colour, histtype = 'stepfilled', alpha = 0.8)    
         # Plot line at median depth
         # Fix y range

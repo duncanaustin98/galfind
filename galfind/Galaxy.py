@@ -130,17 +130,22 @@ class Galaxy:
                 wht_data = data.load_wht(band)
                 rms_err_data = data.load_rms_err(band)
                 wcs = data.load_wcs(band)
-                data = {"SCI": im_data, "SEG": seg_data, "WHT": wht_data, "RMS_ERR": rms_err_data}
+                data_dict = {"SCI": im_data, "SEG": seg_data, "WHT": wht_data, "RMS_ERR": rms_err_data}
             elif type(data) == dict and type(wcs) != type(None) and type(im_header) != type(None):
                 pass
             else:
                 raise(Exception(""))
             hdul = [fits.PrimaryHDU(header = fits.Header({"ID": self.ID, "survey": survey, "version": version, \
                         "RA": self.sky_coord.ra.value, "DEC": self.sky_coord.dec.value, "size": cutout_size}))]
-            for i, (label_i, data_i) in enumerate(data.items()):
-                cutout = Cutout2D(data_i, self.sky_coord, size = (cutout_size, cutout_size), wcs = wcs)
-                im_header.update(cutout.wcs.to_header())
-                hdul.append(fits.ImageHDU(cutout.data, header = im_header, name = label_i))
+
+            for i, (label_i, data_i) in enumerate(data_dict.items()):
+                if i == 0 and label_i == "SCI":
+                   sci_shape = data_i.shape
+                if not type(data_i) == type(None):
+                    if data_i.shape == sci_shape:
+                        cutout = Cutout2D(data_i, self.sky_coord, size = (cutout_size, cutout_size), wcs = wcs)
+                        im_header.update(cutout.wcs.to_header())
+                        hdul.append(fits.ImageHDU(cutout.data, header = im_header, name = label_i))
             #print(hdul)
             os.makedirs("/".join(out_path.split("/")[:-1]), exist_ok = True)
             fits_hdul = fits.HDUList(hdul)

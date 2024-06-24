@@ -27,9 +27,11 @@ def pipeline(surveys, version, instruments, aper_diams, min_flux_pc_errs, forced
                 cat_creator = cat_creator, SED_fit_params_arr = SED_fit_params_arr, forced_phot_band = forced_phot_band, \
                 excl_bands = excl_bands, loc_depth_min_flux_pc_errs = min_flux_pc_errs, crop_by = crop_by, timed = timed)
 
-            cat_copy = cat.select_EPOCHS(allow_lowz = False)
-            cat_copy.plot_phot_diagnostics(flux_unit = u.ABmag)
-            print(str(cat))
+            #cat_copy = cat.select_phot_galaxy_property("z", "<", 0.5)
+            #cat_copy = cat.select_phot_galaxy_property("z", ">", 0.3)
+            #cat_copy = cat.select_EPOCHS(allow_lowz = False)
+            cat.plot_phot_diagnostics(flux_unit = u.ABmag)
+            #print(str(cat))
 
             end = time.time()
             print(f"Time to load catalogue = {(end - start):.1f}s")
@@ -73,8 +75,8 @@ if __name__ == "__main__":
     templates_arr = ["fsps_larson"] #["fsps", "fsps_larson", "fsps_jades"]
     lowz_zmax_arr = [[4., 6., None]] #[[None]] # 
     min_flux_pc_errs = [10]
-    forced_phot_band = ["F277W", "F356W", "F444W"] #["F444W"]
-    crop_by = None #"bands>13+EPOCHS" #"EPOCHS_lowz+z>4.5"
+    forced_phot_band = ["F444W"] #["F277W", "F356W", "F444W"] #["F444W"]
+    crop_by = "z<0.5+z>0.3" #None #"bands>13+EPOCHS" #"EPOCHS_lowz+z>4.5"
     timed = False
 
     jems_bands = ["F182M", "F210M", "F430M", "F460M", "F480M"]

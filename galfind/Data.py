@@ -989,26 +989,37 @@ class Data:
                 prime_hdu = fits.open(self.im_paths[band])[0].header
                 im_data, im_header = self.load_im(band)
                 if band in self.rms_err_paths.keys() and band in self.rms_err_exts.keys():
+                    err_from = "ERR"
                     err = fits.open(self.rms_err_paths[band])[self.rms_err_exts[band]].data
                 else:
                     # determine error map from wht map
+                    err_from = "WHT"
                     wht = fits.open(self.wht_paths[band])[self.wht_exts[band]].data
                     err = np.sqrt(1. / wht)
                 if pos == 0:
                     sum = im_data / err ** 2
-                    sum_err = 1 / err ** 2
+                    sum_err = 1. / err ** 2
                 else:
                     sum += im_data / err ** 2
-                    sum_err += 1 / err ** 2
+                    sum_err += 1. / err ** 2
                 
             weighted_array = sum / sum_err
+            if err_from == "ERR":
+                combined_err_or_wht = np.sqrt(1. / sum_err)
+                self.rms_err_paths[stack_band_name] = self.im_paths[stack_band_name]
+                self.rms_err_exts[stack_band_name] = 2
+            elif err_from == "WHT":
+                combined_err_or_wht = sum_err
+                self.wht_paths[stack_band_name] = self.im_paths[stack_band_name]
+                self.wht_exts[stack_band_name] = 2
+            else:
+                galfind_logger.critical(f"{err_from=} not in ['ERR', 'WHT']")
             
             #https://en.wikipedia.org/wiki/Inverse-variance_weighting
-            combined_err = np.sqrt(1 / sum_err)
 
             primary = fits.PrimaryHDU(header = prime_hdu)
-            hdu = fits.ImageHDU(weighted_array, header = im_header, name = 'SCI')
-            hdu_err = fits.ImageHDU(combined_err, header = im_header, name = 'ERR')
+            hdu = fits.ImageHDU(weighted_array, header = im_header, name = "SCI")
+            hdu_err = fits.ImageHDU(combined_err_or_wht, header = im_header, name = err_from)
             hdul = fits.HDUList([primary, hdu, hdu_err])
             hdul.writeto(self.im_paths[stack_band_name], overwrite = True)
             galfind_logger.info(f"Finished stacking bands = {bands} for {self.survey} {self.version}")
@@ -1018,9 +1029,7 @@ class Data:
         self.im_zps[stack_band_name] = self.im_zps[bands[0]]
         self.im_pixel_scales[stack_band_name] = self.im_pixel_scales[bands[0]]
         self.im_exts[stack_band_name] = 1
-        self.rms_err_exts[stack_band_name] = 2
 
-        # could compute a wht map from the rms_err map here!
 
     def sex_cat_path(self, band, forced_phot_band):
         # forced phot band here is the string version
@@ -1084,7 +1093,7 @@ class Data:
             if sextract:
                 if band in self.rms_err_paths.keys() and self.forced_phot_band in self.rms_err_paths.keys():
                     prefer = "rms_err"
-                elif band in self.rms_err_paths.keys() and self.forced_phot_band in self.rms_err_paths.keys():
+                elif band in self.wht_paths.keys() and self.forced_phot_band in self.wht_paths.keys():
                     prefer = "wht"
                 else: # do not perform sextraction
                     sextract = False
@@ -1119,6 +1128,7 @@ class Data:
                     process.wait()
 
                 else: # use photutils
+                    breakpoint()
                     self.forced_photometry(band, self.forced_phot_band, forced_phot_code = forced_phot_code)
             
             galfind_logger.info(f"Finished making SExtractor catalogue for {self.survey} {self.version} {band}!")
@@ -1659,7 +1669,10 @@ class Data:
                 hf.create_dataset(name_i, data = data_i)
             hf.close()
 
-            self.plot_depth(band, cat_creator, mode, aper_diam, show = False)
+            try:
+                self.plot_depth(band, cat_creator, mode, aper_diam, show = False)
+            except:
+                pass
     
 
     def plot_area_depth(self, cat_creator, mode, aper_diam, show = False, use_area_per_band=True):     
@@ -1750,7 +1763,7 @@ class Data:
 
     def plot_depth(self, band, cat_creator, mode, aper_diam, show = False): #, **kwargs):
         if type(cat_creator) == type(None):
-            galfind_logger.warning("Could not plot depths as cat_creator == None in Data.plot_depths()")
+            galfind_logger.warning("Could not plot depths as cat_creator == None in Data.plot_depth()")
         else:
             self.get_depth_dir(aper_diam)
             save_path = f"{self.depth_dirs[band]}/{mode}/{band}_depths.png"
