@@ -40,6 +40,7 @@ from matplotlib import cm
 from tqdm import tqdm
 import json
 from joblib import Parallel, delayed
+#from reproject import reproject_adaptive
 import contextlib
 import joblib
 import h5py
@@ -189,6 +190,7 @@ class Data:
         instrument_version_to_dir = {**{"NIRCam": NIRCam_version_to_dir, "MIRI": MIRI_version_to_dir}, \
            **{instrument_name: f"{int(np.round(pix_scales[instrument_name].to(u.mas).value, 0))}mas" for instrument_name in ["ACS_WFC", "WFC3_IR"]}}
 
+        #breakpoint()
         for instrument_name in instrument_names:
             
             instrument = globals()[instrument_name](excl_bands = [band_name for band_name in excl_bands if band_name in globals()[instrument_name]().band_names])
@@ -257,14 +259,12 @@ class Data:
                 assert len(np.array([path for path in fits_path_arr if path not in \
                     np.concatenate((im_path_arr, rms_err_path_arr, wht_path_arr))])) == 0
                 # save paths to sci, rms_err, and wht maps
-                im_paths = {band: path for band, path in zip(unique_bands, im_path_arr)}
-                rms_err_paths = {band: path for band, path in zip(unique_bands, rms_err_path_arr)}
-                wht_paths = {band: path for band, path in zip(unique_bands, wht_path_arr)}
+                im_paths = {**im_paths, **{band: path for band, path in zip(unique_bands, im_path_arr)}}
+                rms_err_paths = {**rms_err_paths, **{band: path for band, path in zip(unique_bands, rms_err_path_arr)}}
+                wht_paths = {**wht_paths, **{band: path for band, path in zip(unique_bands, wht_path_arr)}}
                 # extract sci/rms_err/wht extensions from single band image
-                im_exts = {}
-                im_shapes = {}
-                rms_err_exts = {}
-                wht_exts = {}
+
+                #breakpoint()
                 for band in bands:
                     im_hdul = fits.open(im_paths[band])
                     assertion_len = 1
@@ -277,7 +277,7 @@ class Data:
                     #breakpoint()
                     #print(band, len(im_hdul), [hdu.name for hdu in im_hdul], assertion_len)
                     assert len(im_hdul) == assertion_len
-                    if rms_err_paths != {}:
+                    if band in rms_err_paths.keys():
                         rms_err_hdul = fits.open(rms_err_paths[band])
                         assertion_len = 1
                         for j, rms_err_hdu in enumerate(rms_err_hdul):
@@ -288,7 +288,7 @@ class Data:
                         #breakpoint()
                         #print(band, len(rms_err_hdul), [hdu.name for hdu in rms_err_hdul], assertion_len)
                         assert len(rms_err_hdul) == assertion_len
-                    if wht_paths != {}:
+                    if band in wht_paths.keys():
                         wht_hdul = fits.open(wht_paths[band])
                         assertion_len = 1
                         for j, wht_hdu in enumerate(wht_hdul):
@@ -331,6 +331,7 @@ class Data:
             comb_instrument = np.sum(instrument_arr)
         
         # All seg maps and masks should be in same format, so load those last when we know what bands we have
+        start = time.time()
         for i, band in enumerate(comb_instrument.band_names):
             try:
                 #print(f"{config['DEFAULT']['GALFIND_WORK']}/SExtractor/{comb_instrument.instrument_from_band(band)}/{version}/{survey}/{survey}*{band}_{band}*{version}*seg.fits")
@@ -413,6 +414,9 @@ class Data:
             galfind_logger.debug(f"cluster_mask_path = {cluster_mask_path}")
             blank_mask_path = mask_path_dict["blank"]
             galfind_logger.debug(f"blank_mask_path = {blank_mask_path}")
+
+        end = time.time()
+        print(f"Loading mask paths took {end - start}s")
 
         return cls(comb_instrument, im_paths, im_exts, im_pixel_scales, im_shapes, im_zps, wht_paths, wht_exts, rms_err_paths, rms_err_exts, \
             seg_paths, mask_paths, cluster_mask_path, blank_mask_path, survey, version, is_blank = is_blank)
@@ -976,6 +980,14 @@ class Data:
         # if overwrite:
         #     galfind_logger.info("OVERWRITE = YES, so overwriting stacked image if it exists.")
     
+        if all(band in self.rms_err_paths.keys() and band in self.rms_err_exts.keys() for band in bands):
+            err_from = "ERR"
+        elif all(band in self.wht_paths.keys() and band in self.wht_exts.keys() for band in bands):
+            # determine error map from wht map
+            err_from = "WHT"
+        else:
+            raise(Exception("Inconsistent error maps for stacking bands"))
+
         if not Path(self.im_paths[stack_band_name]).is_file(): # or overwrite
             # if not config["DEFAULT"].getboolean("RUN"):
             #     galfind_logger.critical("RUN = YES, so not stacking detection bands. Returning Error.")
@@ -988,12 +1000,10 @@ class Data:
                 
                 prime_hdu = fits.open(self.im_paths[band])[0].header
                 im_data, im_header = self.load_im(band)
-                if band in self.rms_err_paths.keys() and band in self.rms_err_exts.keys():
-                    err_from = "ERR"
+                if err_from == "ERR":
                     err = fits.open(self.rms_err_paths[band])[self.rms_err_exts[band]].data
-                else:
+                elif err_from == "WHT":
                     # determine error map from wht map
-                    err_from = "WHT"
                     wht = fits.open(self.wht_paths[band])[self.wht_exts[band]].data
                     err = np.sqrt(1. / wht)
                 if pos == 0:
@@ -1006,12 +1016,8 @@ class Data:
             weighted_array = sum / sum_err
             if err_from == "ERR":
                 combined_err_or_wht = np.sqrt(1. / sum_err)
-                self.rms_err_paths[stack_band_name] = self.im_paths[stack_band_name]
-                self.rms_err_exts[stack_band_name] = 2
             elif err_from == "WHT":
                 combined_err_or_wht = sum_err
-                self.wht_paths[stack_band_name] = self.im_paths[stack_band_name]
-                self.wht_exts[stack_band_name] = 2
             else:
                 galfind_logger.critical(f"{err_from=} not in ['ERR', 'WHT']")
             
@@ -1029,6 +1035,13 @@ class Data:
         self.im_zps[stack_band_name] = self.im_zps[bands[0]]
         self.im_pixel_scales[stack_band_name] = self.im_pixel_scales[bands[0]]
         self.im_exts[stack_band_name] = 1
+        if err_from == "ERR":
+            self.rms_err_paths[stack_band_name] = self.im_paths[stack_band_name]
+            self.rms_err_exts[stack_band_name] = 2
+        elif err_from == "WHT":
+            self.wht_paths[stack_band_name] = self.im_paths[stack_band_name]
+            self.wht_exts[stack_band_name] = 2
+
 
 
     def sex_cat_path(self, band, forced_phot_band):

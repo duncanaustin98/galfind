@@ -54,6 +54,7 @@ class Catalogue(Catalogue_Base):
     def from_data(cls, data, version, aper_diams, cat_creator, SED_fit_params_arr, forced_phot_band = "F444W", \
                 loc_depth_min_flux_pc_errs = [10], mask = True, crop_by = None, timed = True):
         # make masked local depth catalogue from the 'Data' object
+        #breakpoint()
         data.combine_sex_cats(forced_phot_band)
         mode = str(config["Depths"]["MODE"]).lower() # mode to calculate depths (either "n_nearest" or "rolling")
         data.calc_depths(aper_diams, mode = mode, cat_creator = cat_creator)

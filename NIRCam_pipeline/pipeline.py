@@ -29,9 +29,9 @@ def pipeline(surveys, version, instruments, aper_diams, min_flux_pc_errs, forced
 
             #cat_copy = cat.select_phot_galaxy_property("z", "<", 0.5)
             #cat_copy = cat.select_phot_galaxy_property("z", ">", 0.3)
-            #cat_copy = cat.select_EPOCHS(allow_lowz = False)
-            cat.plot_phot_diagnostics(flux_unit = u.ABmag)
-            #print(str(cat))
+            cat_copy = cat.select_EPOCHS(allow_lowz = False)
+            cat_copy.plot_phot_diagnostics(flux_unit = u.ABmag)
+            print(str(cat_copy))
 
             end = time.time()
             print(f"Time to load catalogue = {(end - start):.1f}s")
@@ -66,17 +66,17 @@ def make_EAZY_SED_fit_params_arr(SED_code_arr, templates_arr, lowz_zmax_arr):
 
 if __name__ == "__main__":
 
-    version = "Windhorst-BCGsub" #config["DEFAULT"]["VERSION"]
-    instruments = ["NIRCam"] #["NIRCam", "ACS_WFC"] #,  'WFC3_IR'] # "ACS_WFC"
+    version = "v9" #config["DEFAULT"]["VERSION"]
+    instruments = ["NIRCam", "ACS_WFC"] #,  'WFC3_IR'] # "ACS_WFC" ["NIRCam"] #
     cat_type = "loc_depth"
-    surveys = ["MACS-0416"] #[config["DEFAULT"]["SURVEY"]]
+    surveys = ["CEERSP4"] #[config["DEFAULT"]["SURVEY"]]
     aper_diams = [0.32] * u.arcsec
     SED_code_arr = [EAZY()]
     templates_arr = ["fsps_larson"] #["fsps", "fsps_larson", "fsps_jades"]
     lowz_zmax_arr = [[4., 6., None]] #[[None]] # 
     min_flux_pc_errs = [10]
-    forced_phot_band = ["F444W"] #["F277W", "F356W", "F444W"] #["F444W"]
-    crop_by = "z<0.5+z>0.3" #None #"bands>13+EPOCHS" #"EPOCHS_lowz+z>4.5"
+    forced_phot_band = ["F277W", "F356W", "F444W"] #["F444W"]
+    crop_by = None #"bands>13+EPOCHS" #"EPOCHS_lowz+z>4.5"
     timed = False
 
     jems_bands = ["F182M", "F210M", "F430M", "F460M", "F480M"]
