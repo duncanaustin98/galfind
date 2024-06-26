@@ -28,7 +28,7 @@ def pipeline(surveys, version, instruments, aper_diams, min_flux_pc_errs, forced
                 excl_bands = excl_bands, loc_depth_min_flux_pc_errs = min_flux_pc_errs, crop_by = crop_by, timed = timed)
 
             
-            cat = cat.select_EPOCHS(allow_lowz = False)
+            #cat = cat.select_EPOCHS(allow_lowz = False)
             
             cat.plot_phot_diagnostics(flux_unit = u.ABmag)
             
@@ -77,8 +77,8 @@ if __name__ == "__main__":
     lowz_zmax_arr = [[4., 6., None]] #[[None]] # 
     min_flux_pc_errs = [10]
     forced_phot_band = ["F277W", "F356W", "F444W"] #["F277W", "F356W", "F444W"] # ["F444W"] #
-    #gal_ID = 8409
-    crop_by = None #f"ID={int(gal_ID)}" #'EPOCHS' #None #"bands>13+EPOCHS" #"EPOCHS_lowz+z>4.5"
+    gal_ID = 6470
+    crop_by = f"ID={int(gal_ID)}" #'EPOCHS' #None #"bands>13+EPOCHS" #"EPOCHS_lowz+z>4.5"
     timed = False
 
     jems_bands = ["F182M", "F210M", "F430M", "F460M", "F480M"]

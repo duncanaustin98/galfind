@@ -319,21 +319,9 @@ class Catalogue(Catalogue_Base):
 
         PDF_ax = [fig.add_subplot(gs[0, 3:]), fig.add_subplot(gs[1, 3:])]
         
-        if len(self.data.instrument) <= 8:
-            gridspec_cutout = cutout_fig.add_gridspec(1, len(self.data.instrument))
-        else:
-            gridspec_cutout = cutout_fig.add_gridspec(2, int(np.ceil(len(self.data.instrument) / 2)))
-        
-        cutout_ax_list = []
-        for i, band in enumerate(self.instrument):
-            cutout_ax = cutout_fig.add_subplot(gridspec_cutout[i])
-            cutout_ax.set_aspect('equal', adjustable='box', anchor='N')
-            cutout_ax.set_xticks([])
-            cutout_ax.set_yticks([])
-            cutout_ax_list.append(cutout_ax)
 
         # plot SEDs
-        out_paths = [gal.plot_phot_diagnostic([cutout_ax_list, phot_ax, PDF_ax], self.data, \
+        out_paths = [gal.plot_phot_diagnostic([cutout_fig, phot_ax, PDF_ax], self.data, \
             SED_fit_params_arr, zPDF_plot_SED_fit_params_arr, wav_unit, flux_unit) \
             for gal in tqdm(self, total = len(self), desc = "Plotting photometry diagnostic plots")]
 
