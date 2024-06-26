@@ -281,7 +281,7 @@ class Catalogue(Catalogue_Base):
                 rerun = True
             else:
                 for gal in self:
-                    out_path = f"{config['Cutouts']['CUTOUT_DIR']}/{version}/{survey}/{band}/{gal.ID}.fits"
+                    out_path = f"{config['Cutouts']['CUTOUT_DIR']}/{self.version}/{self.survey}/{band}/{gal.ID}.fits"
                     if Path(out_path).is_file():
                         size = fits.open(out_path)[0].header["size"]
                         if size != cutout_size:
@@ -298,6 +298,9 @@ class Catalogue(Catalogue_Base):
                         gal.make_cutout(band, data = {"SCI": im_data, "SEG": seg_data, 'WHT': wht_data, 'RMS_ERR':rms_err_data}, \
                             wcs = wcs, im_header = im_header, survey = self.survey, version = self.version, cutout_size = cutout_size)
             else:
+                for gal in self:
+                    if gal.ID in IDs:
+                        gal.cutout_paths[band] = f"{config['Cutouts']['CUTOUT_DIR']}/{self.version}/{self.survey}/{band}/{gal.ID}.fits"
                 print(f"Cutouts for {band} already exist. Skipping.")
     def make_RGB_images(self, IDs, cutout_size = 32):
         return NotImplementedError
