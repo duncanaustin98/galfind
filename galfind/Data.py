@@ -57,7 +57,8 @@ from .decorators import run_in_dir, hour_timer, email_update
 class Data:
     
     def __init__(self, instrument, im_paths, im_exts, im_pixel_scales, im_shapes, im_zps, wht_paths, wht_exts, rms_err_paths, rms_err_exts, \
-        seg_paths, mask_paths, cluster_mask_path, blank_mask_path, survey, version, cat_path = "", is_blank = True, alignment_band = "F444W", RGB_method = None): # trilogy
+        seg_paths, mask_paths, cluster_mask_path, blank_mask_path, survey, version, cat_path = "", is_blank = True, alignment_band = "F444W", \
+        RGB_method = None, mask_stars = True): # trilogy
         
         # sort dicts from blue -> red bands in ascending wavelength order
         self.im_paths = im_paths # not sure these need to be sorted
@@ -88,15 +89,19 @@ class Data:
             raise(Exception(f"cat_path = {cat_path} has type = '{type(cat_path)}', which is not 'str'!"))
 
         # make segmentation maps from image paths if they don't already exist
-        for i, (band, seg_path) in enumerate(seg_paths.items()):
-            #print(band, seg_path)
-            if (seg_path == "" or seg_path == []):
-                self.make_seg_map(band)
-            # load segmentation map
-            seg_paths[band] = glob.glob(f"{config['DEFAULT']['GALFIND_WORK']}/SExtractor/{self.instrument.instrument_from_band(band).name}/{version}/{survey}/{survey}*{band}_{band}*{version}*seg.fits")[0]
-        self.seg_paths = dict(sorted(seg_paths.items())) 
+        existing_seg_paths = glob.glob(f"{config['DEFAULT']['GALFIND_WORK']}/SExtractor/*/{version}/{survey}/{survey}_*_*_sel_cat_{version}_seg.fits")
+        [self.make_seg_map(band) for band, path in seg_paths.items() if path not in existing_seg_paths]
+        # for i, (band, seg_path) in enumerate(seg_paths.items()):
+        #     #print(band, seg_path)
+        #     if (seg_path == "" or seg_path == []):
+        #         self.make_seg_map(band)
+        #     # load segmentation map
+        #     seg_paths[band] = glob.glob(f"{config['DEFAULT']['GALFIND_WORK']}/SExtractor/{self.instrument.instrument_from_band(band).name}/{version}/{survey}/{survey}_{band}_{band}_sel_cat_{version}_seg.fits")[0]
+        self.seg_paths = seg_paths #dict(sorted(seg_paths.items())) 
         # make masks from image paths if they don't already exist
         self.mask_dir = f"{config['DEFAULT']['GALFIND_WORK']}/Masks/{survey}"
+        print(mask_paths)
+        breakpoint()
         for i, (band, mask_path) in enumerate(mask_paths.items()):
             # the input mask path is a pixel mask
             if ".fits" in mask_path:
@@ -108,7 +113,20 @@ class Data:
                 mask_paths[band] = self.mask_reg_to_pix(band, mask_path)
             else:
                 # make an pixel mask automatically for the band
-                mask_paths[band] = self.make_mask(band)
+                if type(mask_stars) == bool:
+                    mask = self.make_mask(band, mask_stars = mask_stars)
+                elif type(mask_stars) == dict:
+                    if band in mask_stars.keys():
+                        mask = self.make_mask(band, mask_stars = mask_stars[band])
+                    else:
+                        band_instrument = instrument[np.where(band == instrument.band_names)[0][0]].instrument
+                        if band_instrument in mask_stars.keys():
+                            mask = self.make_mask(band, mask_stars = mask_stars[band_instrument])
+                        else:
+                            mask = self.make_mask(band) # default behaviour
+                else:
+                    galfind_logger.critical(f"{mask_stars=} with {type(mask_stars)=} not in [bool, dict]")
+                mask_paths[band] = mask
                 
         self.mask_paths = dict(sorted(mask_paths.items()))
 
@@ -165,7 +183,7 @@ class Data:
     @classmethod
     def from_pipeline(cls, survey, version, instrument_names = ["ACS_WFC", "WFC3_IR", "NIRCam", "MIRI"], excl_bands = [], \
             pix_scales = {"ACS_WFC": 0.03 * u.arcsec, "WFC3_IR": 0.03 * u.arcsec, "NIRCam": 0.03 * u.arcsec, "MIRI": 0.06 * u.arcsec}, \
-            im_str = ["_sci", "_i2d", "_drz"], rms_err_str = ["_rms", "_err"], wht_str = ["_wht", "_weight"]):
+            im_str = ["_sci", "_i2d", "_drz"], rms_err_str = ["_rms", "_err"], wht_str = ["_wht", "_weight"], mask_stars = True):
         
         # may not require all of these inits
         im_paths = {} 
@@ -332,61 +350,91 @@ class Data:
         
         # All seg maps and masks should be in same format, so load those last when we know what bands we have
         start = time.time()
+
+        # re-write to avoid using glob.glob more than absolutely necessary
+        fits_mask_paths = glob.glob(f"{config['DEFAULT']['GALFIND_WORK']}/Masks/{survey}/fits_masks/*.fits")
+        #breakpoint()
         for i, band in enumerate(comb_instrument.band_names):
-            try:
-                #print(f"{config['DEFAULT']['GALFIND_WORK']}/SExtractor/{comb_instrument.instrument_from_band(band)}/{version}/{survey}/{survey}*{band}_{band}*{version}*seg.fits")
-                seg_paths[band] = glob.glob(f"{config['DEFAULT']['GALFIND_WORK']}/SExtractor/{comb_instrument.instrument_from_band(band).name}/{version}/{survey}/{survey}*{band}_{band}*{version}*seg.fits")[0]
-            except IndexError:
-                seg_paths[band] = ""
-            # include just the masks corresponding to the correct bands
-            fits_mask_paths_ = glob.glob(f"{config['DEFAULT']['GALFIND_WORK']}/Masks/{survey}/fits_masks/*{band.lower()}*")
-            fits_mask_paths_ += glob.glob(f"{config['DEFAULT']['GALFIND_WORK']}/Masks/{survey}/fits_masks/*{band.upper()}*")
-            fits_mask_paths_ += glob.glob(f"{config['DEFAULT']['GALFIND_WORK']}/Masks/{survey}/fits_masks/*{band.lower().replace('f', 'F')}*")
-            fits_mask_paths_ += glob.glob(f"{config['DEFAULT']['GALFIND_WORK']}/Masks/{survey}/fits_masks/*{band.upper().replace('F', 'f')}*")
-            fits_mask_paths_ = list(set(fits_mask_paths_))
-            # Exclude mask path if it contains the phrase 'artifact'
-            fits_mask_paths_ = [path for path in fits_mask_paths_ if 'artifact' not in path]
+            # load path to segmentation map
+            seg_paths[band] = f"{config['DEFAULT']['GALFIND_WORK']}/SExtractor/{comb_instrument.instrument_from_band(band).name}/{version}/{survey}/{survey}_{band}_{band}_sel_cat_{version}_seg.fits"
 
-            # exclude masks that include other filters
-            delete_indices = []
-            # create a new combined instrument including all possible bands
-            new_instrument = comb_instrument.new_instrument()
-            new_instrument.remove_band(band)
-            for j, path in enumerate(fits_mask_paths_):
-                for k, band_ in enumerate(new_instrument.band_names):
-                    if band_.lower() in path or band_.upper() in path or band_.lower().replace('f', 'F') in path or band_.upper().replace('F', 'f') in path:
-                        delete_indices.append(j)
-                        break
-            fits_mask_paths_ = np.delete(fits_mask_paths_, delete_indices)
+            # try:
+            #     #print(f"{config['DEFAULT']['GALFIND_WORK']}/SExtractor/{comb_instrument.instrument_from_band(band)}/{version}/{survey}/{survey}*{band}_{band}*{version}*seg.fits")
+            #     seg_paths[band] = glob.glob(f"{config['DEFAULT']['GALFIND_WORK']}/SExtractor/{comb_instrument.instrument_from_band(band).name}/{version}/{survey}/{survey}*{band}_{band}*{version}*seg.fits")[0]
+            # except IndexError:
+            #     seg_paths[band] = ""
 
-            if len(fits_mask_paths_) == 1:
-                mask_paths[band] = fits_mask_paths_[0]
-            elif len(fits_mask_paths_) == 0:
-                mask_paths_ = glob.glob(f"{config['DEFAULT']['GALFIND_WORK']}/Masks/{survey}/*{band.lower()}*")
-                mask_paths_ += glob.glob(f"{config['DEFAULT']['GALFIND_WORK']}/Masks/{survey}/*{band.upper()}*")
-                mask_paths_ += glob.glob(f"{config['DEFAULT']['GALFIND_WORK']}/Masks/{survey}/*{band.lower().replace('f', 'F')}*")
-                mask_paths_ += glob.glob(f"{config['DEFAULT']['GALFIND_WORK']}/Masks/{survey}/*{band.upper().replace('F', 'f')}*")
-                mask_paths_ = list(set(mask_paths_))
-                # Exclude mask path if it contains the phrase 'artifact'
-                mask_paths_ = [path for path in mask_paths_ if 'artifact' not in path]
-                # exclude masks that include other filters
-                delete_indices = []
-                for j, path in enumerate(mask_paths_):
-                    for k, band_ in enumerate(np.delete(comb_instrument.band_names, i)):
-                        if band_.lower() in path or band_.upper() in path or band_.lower().replace('f', 'F') \
-                                in path or band_.upper().replace('F', 'f') in path:
-                            delete_indices.append(j)
-                            break
-                mask_paths_ = np.delete(mask_paths_, delete_indices)
-                if len(mask_paths_) == 0:
-                    mask_paths[band] = ""
-                elif len(mask_paths_) == 1:
-                    mask_paths[band] = mask_paths_[0]
-                else:
-                    raise(Exception(f"Too many region masks found for {survey} {band}! Masks are {mask_paths_}!"))
-            else:
-                raise(Exception(f"Too many fits masks found for {survey} {band}! Masks are {fits_mask_paths_}!"))
+            # load fits mask for band before searching for other existing masks
+            paths_to_masks = [path.split("/")[-1].split("_")[0] for path in fits_mask_paths \
+                if path.split("/")[-1].split("_")[0] == band and "basemask" in path.split("/")[-1].split("_")[1]]
+            print(band)
+            assert len(paths_to_masks) <= 1, galfind_logger.critical(f"{len(paths_to_masks)=} > 1")
+            #breakpoint()
+            if len(paths_to_masks) == 0:
+                # search for manually created mask
+                paths_to_masks = glob.glob(f"{config['DEFAULT']['GALFIND_WORK']}/Masks/{survey}/manual/*{band}_clean.reg")
+                # if no manually created mask, leave blank
+                if len(paths_to_masks) == 0:
+                    paths_to_masks = [""]
+            mask_paths[band] = paths_to_masks[0]
+
+            # # include just the masks corresponding to the correct bands
+            # fits_mask_paths_ = glob.glob(f"{config['DEFAULT']['GALFIND_WORK']}/Masks/{survey}/fits_masks/*{band.lower()}*")
+            # fits_mask_paths_ += glob.glob(f"{config['DEFAULT']['GALFIND_WORK']}/Masks/{survey}/fits_masks/*{band.upper()}*")
+            # fits_mask_paths_ += glob.glob(f"{config['DEFAULT']['GALFIND_WORK']}/Masks/{survey}/fits_masks/*{band.lower().replace('f', 'F')}*")
+            # fits_mask_paths_ += glob.glob(f"{config['DEFAULT']['GALFIND_WORK']}/Masks/{survey}/fits_masks/*{band.upper().replace('F', 'f')}*")
+            # fits_mask_paths_ = list(set(fits_mask_paths_))
+            # # Exclude mask path if it contains the phrase 'artifact'
+            # fits_mask_paths_ = [path for path in fits_mask_paths_ if 'artifact' not in path]
+
+            # mid = time.time()
+            # print(mid - start)
+            # # exclude masks that include other filters
+            # delete_indices = []
+            # # create a new combined instrument including all possible bands
+            # new_instrument = comb_instrument.new_instrument()
+            # new_instrument.remove_band(band)
+            # for j, path in enumerate(fits_mask_paths_):
+            #     for k, band_ in enumerate(new_instrument.band_names):
+            #         if band_.lower() in path or band_.upper() in path or band_.lower().replace('f', 'F') in path or band_.upper().replace('F', 'f') in path:
+            #             delete_indices.append(j)
+            #             break
+            # fits_mask_paths_ = np.delete(fits_mask_paths_, delete_indices)
+
+            # mid = time.time()
+            # print(mid - start)
+
+            # if len(fits_mask_paths_) == 1:
+            #     mask_paths[band] = fits_mask_paths_[0]
+            # elif len(fits_mask_paths_) == 0:
+            #     mask_paths_ = glob.glob(f"{config['DEFAULT']['GALFIND_WORK']}/Masks/{survey}/*{band.lower()}*")
+            #     mask_paths_ += glob.glob(f"{config['DEFAULT']['GALFIND_WORK']}/Masks/{survey}/*{band.upper()}*")
+            #     mask_paths_ += glob.glob(f"{config['DEFAULT']['GALFIND_WORK']}/Masks/{survey}/*{band.lower().replace('f', 'F')}*")
+            #     mask_paths_ += glob.glob(f"{config['DEFAULT']['GALFIND_WORK']}/Masks/{survey}/*{band.upper().replace('F', 'f')}*")
+            #     mask_paths_ = list(set(mask_paths_))
+            #     # Exclude mask path if it contains the phrase 'artifact'
+            #     mask_paths_ = [path for path in mask_paths_ if 'artifact' not in path]
+            #     # exclude masks that include other filters
+            #     delete_indices = []
+            #     for j, path in enumerate(mask_paths_):
+            #         for k, band_ in enumerate(np.delete(comb_instrument.band_names, i)):
+            #             if band_.lower() in path or band_.upper() in path or band_.lower().replace('f', 'F') \
+            #                     in path or band_.upper().replace('F', 'f') in path:
+            #                 delete_indices.append(j)
+            #                 break
+            #     mask_paths_ = np.delete(mask_paths_, delete_indices)
+            #     if len(mask_paths_) == 0:
+            #         mask_paths[band] = ""
+            #     elif len(mask_paths_) == 1:
+            #         mask_paths[band] = mask_paths_[0]
+            #     else:
+            #         raise(Exception(f"Too many region masks found for {survey} {band}! Masks are {mask_paths_}!"))
+            # else:
+            #     raise(Exception(f"Too many fits masks found for {survey} {band}! Masks are {fits_mask_paths_}!"))
         
+            mid = time.time()
+            print(mid - start)
+
         if is_blank:
             cluster_mask_path = ""
             blank_mask_path = ""
@@ -417,9 +465,10 @@ class Data:
 
         end = time.time()
         print(f"Loading mask paths took {end - start}s")
+        #breakpoint()
 
         return cls(comb_instrument, im_paths, im_exts, im_pixel_scales, im_shapes, im_zps, wht_paths, wht_exts, rms_err_paths, rms_err_exts, \
-            seg_paths, mask_paths, cluster_mask_path, blank_mask_path, survey, version, is_blank = is_blank)
+            seg_paths, mask_paths, cluster_mask_path, blank_mask_path, survey, version, is_blank = is_blank, mask_stars = mask_stars)
 
 # %% Overloaded operators
 
@@ -1074,7 +1123,6 @@ class Data:
                     if not config["DEFAULT"].getboolean("RUN"):
                         galfind_logger.critical("RUN = YES, so running through sextractor. Returning Error.")
                         raise Exception(f"RUN = YES, and combination of {self.survey} {self.version} or {self.instrument.name} has not previously been run through sextractor.")
-
                     self.make_seg_map(forced_phot_band)
                     
             else:

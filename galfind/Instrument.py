@@ -384,7 +384,7 @@ class Combined_Instrument(Instrument):
         _aper_corrs = [band_aper_corr_dict[band_name] for band_name in self.band_names]
         if cache: # save in self
             self.aper_corrs[aper_diam] = _aper_corrs
-        breakpoint()
+        #breakpoint()
         return _aper_corrs
 
     def instrument_from_band(self, band, return_name = True):

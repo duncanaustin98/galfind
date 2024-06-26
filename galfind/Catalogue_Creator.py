@@ -213,7 +213,7 @@ class GALFIND_Catalogue_Creator(Catalogue_Creator):
         if len(bands) > 1:
             assert type(gal_band_mask) == type(None)
             # for each galaxy remove bands that have no data
-            gal_band_mask_save_path = f"{config['DEFAULT']['GALFIND_WORK']}/Masks/{fits_cat.meta['SURVEY']}/has_data_mask/{fits_cat.meta['SURVEY']}_{fits_cat.meta['VERSION']}.h5"
+            gal_band_mask_save_path = f"{config['DEFAULT']['GALFIND_WORK']}/Masks/{fits_cat.meta['SURVEY']}/has_data_mask/{fits_cat.meta['SURVEY']}_{fits_cat.meta['VERSION']}_{fits_cat.meta['INSTR']}.h5"
             funcs.make_dirs(funcs.split_dir_name(gal_band_mask_save_path, "dir"))
             keep_indices = np.array(fits_cat[self.ID_label]) - 1
             gal_band_mask = self.load_gal_instr_mask(phot, keep_indices, gal_band_mask_save_path, timed = timed)

@@ -17,7 +17,7 @@ from galfind import Catalogue, config, LePhare, EAZY, NIRCam
 from galfind.Catalogue_Creator import GALFIND_Catalogue_Creator
 
 def pipeline(surveys, version, instruments, aper_diams, min_flux_pc_errs, forced_phot_band, \
-        excl_bands, SED_fit_params_arr, cat_type = "loc_depth", crop_by = None, timed = True):
+        excl_bands, SED_fit_params_arr, cat_type = "loc_depth", crop_by = None, timed = True, mask_stars = True):
     for pc_err in min_flux_pc_errs:
         # make appropriate galfind catalogue creator for each aperture diameter
         cat_creator = GALFIND_Catalogue_Creator(cat_type, aper_diams[0], pc_err)
@@ -25,13 +25,13 @@ def pipeline(surveys, version, instruments, aper_diams, min_flux_pc_errs, forced
             start = time.time()
             cat = Catalogue.from_pipeline(survey = survey, version = version, instruments = instruments, aper_diams = aper_diams, \
                 cat_creator = cat_creator, SED_fit_params_arr = SED_fit_params_arr, forced_phot_band = forced_phot_band, \
-                excl_bands = excl_bands, loc_depth_min_flux_pc_errs = min_flux_pc_errs, crop_by = crop_by, timed = timed)
+                excl_bands = excl_bands, loc_depth_min_flux_pc_errs = min_flux_pc_errs, crop_by = crop_by, timed = timed, mask_stars = mask_stars)
 
             #cat_copy = cat.select_phot_galaxy_property("z", "<", 0.5)
             #cat_copy = cat.select_phot_galaxy_property("z", ">", 0.3)
-            cat_copy = cat.select_EPOCHS(allow_lowz = False)
-            cat_copy.plot_phot_diagnostics(flux_unit = u.ABmag)
-            print(str(cat_copy))
+            #cat_copy = cat.select_EPOCHS(allow_lowz = False)
+            #cat_copy.plot_phot_diagnostics(flux_unit = u.ABmag)
+            #print(str(cat_copy))
 
             end = time.time()
             print(f"Time to load catalogue = {(end - start):.1f}s")
@@ -67,7 +67,7 @@ def make_EAZY_SED_fit_params_arr(SED_code_arr, templates_arr, lowz_zmax_arr):
 if __name__ == "__main__":
 
     version = "v9" #config["DEFAULT"]["VERSION"]
-    instruments = ["NIRCam", "ACS_WFC"] #,  'WFC3_IR'] # "ACS_WFC" ["NIRCam"] #
+    instruments = ["NIRCam", "ACS_WFC", 'WFC3_IR'] # "ACS_WFC" ["NIRCam"] #
     cat_type = "loc_depth"
     surveys = ["CEERSP4"] #[config["DEFAULT"]["SURVEY"]]
     aper_diams = [0.32] * u.arcsec
@@ -78,6 +78,7 @@ if __name__ == "__main__":
     forced_phot_band = ["F277W", "F356W", "F444W"] #["F444W"]
     crop_by = None #"bands>13+EPOCHS" #"EPOCHS_lowz+z>4.5"
     timed = False
+    mask_stars = {"ACS_WFC": False, "NIRCam": True, "WFC3_IR": False}
 
     jems_bands = ["F182M", "F210M", "F430M", "F460M", "F480M"]
     ngdeep_excl_bands = ["F435W", "F775W", "F850LP"]
@@ -92,4 +93,4 @@ if __name__ == "__main__":
 
     for survey in surveys:
         pipeline([survey], version, instruments, aper_diams, min_flux_pc_errs, forced_phot_band, \
-        excl_bands, SED_fit_params_arr, cat_type = cat_type, crop_by = crop_by, timed = timed)
+        excl_bands, SED_fit_params_arr, cat_type = cat_type, crop_by = crop_by, timed = timed, mask_stars = mask_stars)
