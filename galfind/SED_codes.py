@@ -61,8 +61,8 @@ class SED_code(ABC):
         phot_in = np.zeros((len(cat), len(cat.instrument))) #[]
         phot_err_in = np.zeros((len(cat), len(cat.instrument))) #[]
         for i, gal in tqdm(enumerate(cat), desc = "Making EAZY .in file", total = len(cat)):
-            for j, band_name in enumerate(cat.instrument.band_names):
-                if band_name in gal.phot.instrument.band_names:
+            for j, band_name in enumerate(cat.instrument.band_names): 
+                if band_name in gal.phot.instrument.band_names: # Check mask? 
                     index = np.where(band_name == gal.phot.instrument.band_names)[0][0]
                     phot_in[i, j] = np.array(phot[i].data)[index]
                     phot_err_in[i, j] = np.array(phot_err[i].data)[index]

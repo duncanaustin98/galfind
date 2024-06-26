@@ -276,15 +276,29 @@ class Catalogue(Catalogue_Base):
         if type(IDs) == int:
             IDs = [IDs]
         for band in tqdm(self.instrument.band_names, total = len(self.instrument), desc = "Making band cutouts"):
-            im_data, im_header, seg_data, seg_header = self.data.load_data(band, incl_mask = False)
-            wht_data = self.data.load_wht(band)
-            rms_err_data = self.data.load_rms_err(band)
-            wcs = WCS(im_header)
-            for gal in self:
-                if gal.ID in IDs:
-                    gal.make_cutout(band, data = {"SCI": im_data, "SEG": seg_data, 'WHT': wht_data, 'RMS_ERR':rms_err_data}, \
-                        wcs = wcs, im_header = im_header, survey = self.survey, version = self.version, cutout_size = cutout_size)
-
+            rerun = False
+            if config.getboolean("Cutouts", "OVERWRITE_CUTOUTS"):
+                rerun = True
+            else:
+                for gal in self:
+                    out_path = f"{config['Cutouts']['CUTOUT_DIR']}/{version}/{survey}/{band}/{gal.ID}.fits"
+                    if Path(out_path).is_file():
+                        size = fits.open(out_path)[0].header["size"]
+                        if size != cutout_size:
+                            rerun = True
+                    else:
+                        rerun = True
+            if rerun:
+                im_data, im_header, seg_data, seg_header = self.data.load_data(band, incl_mask = False)
+                wht_data = self.data.load_wht(band)
+                rms_err_data = self.data.load_rms_err(band)
+                wcs = WCS(im_header)
+                for gal in self:
+                    if gal.ID in IDs:
+                        gal.make_cutout(band, data = {"SCI": im_data, "SEG": seg_data, 'WHT': wht_data, 'RMS_ERR':rms_err_data}, \
+                            wcs = wcs, im_header = im_header, survey = self.survey, version = self.version, cutout_size = cutout_size)
+            else:
+                print(f"Cutouts for {band} already exist. Skipping.")
     def make_RGB_images(self, IDs, cutout_size = 32):
         return NotImplementedError
     

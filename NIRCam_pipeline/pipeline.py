@@ -28,10 +28,10 @@ def pipeline(surveys, version, instruments, aper_diams, min_flux_pc_errs, forced
                 excl_bands = excl_bands, loc_depth_min_flux_pc_errs = min_flux_pc_errs, crop_by = crop_by, timed = timed)
 
             
-            #cat_copy = cat.select_EPOCHS(allow_lowz = False)
+            cat = cat.select_EPOCHS(allow_lowz = False)
             
             cat.plot_phot_diagnostics(flux_unit = u.ABmag)
-            breakpoint()
+            
             print(str(cat))
 
             end = time.time()
