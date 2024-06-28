@@ -2,7 +2,7 @@
 import numpy as np
 from astropy.table import vstack
 from astropy.coordinates import SkyCoord
-
+import astropy.units as u
 class Multiple_Catalogue:
 
     def __init__(self, cat_arr, survey):
@@ -60,6 +60,74 @@ class Multiple_Catalogue:
 
     def plot(self, x_name, y_name, colour_by, save = False, show = False):
         pass
+
+    def plot_combined_area_depth(self, save_path, save = False, show = False, mode = 'n_nearest', aper_diam = 0.32*u.arcsec):
+        all_array = []
+        max_area = 0
+        for cat in self.cat_arr:
+            cat_creator = cat.cat_creator
+            array = cat.data.plot_area_depth(cat_creator, mode, aper_diam, show = False, save = False, return_array = True)
+            # array is dict  {band: [area, depth]}
+            all_array.append(array)
+        # all_array is list of dicts
+        # Get all bands
+        bands = np.unique([band for array in all_array for band in array.keys()])
+        area_band = {band: 0 for band in bands}
+        depth_array_band = {band: [] for band in bands}
+        for band in bands:
+            # Get all areas
+            for array in all_array:
+                if band in array.keys():
+                    area_band[band] += array[band][0]
+                    depth_array_band[band].append(array[band][1])
+        depth_array_band = {band: np.ndarray.flatten(np.array(depth_array_band[band], dtype=object)) for band in bands}
+        # Plot
+        fig, ax = plt.subplots(1, 1, figsize = (5, 5))
+        ax.set_title(f"{self.survey}")
+        ax.set_xlabel("Area (arcmin$^{2}$)")
+        ax.set_ylabel("5$\sigma$ Depth (AB mag)")
+          
+
+        for band in bands:
+            total_depths = np.flip(np.sort(depth_array_band[band]))
+
+            # Calculate the cumulative distribution scaled to area of band
+            n = len(total_depths)
+            cum_dist = np.arange(1, n + 1) / n
+            cum_dist = cum_dist * area_band[band]
+
+            # Plot
+            ax.plot(cum_dist, total_depths, label = band if '+' not in band else 'Detection', color = colors[pos], drawstyle='steps-post')
+            if return_array:
+                data[band] = [area, total_depths]
+            # Set ylim to 2nd / 98th percentile if depth is smaller than this number
+            ylim = ax.get_ylim()
+            
+            if pos == 0:
+                min_depth = np.percentile(total_depths, 0.5)
+                max_depth = np.percentile(total_depths, 99.5)
+            else:
+                min_temp = np.percentile(total_depths, 0.5)
+                max_temp = np.percentile(total_depths, 99.5)
+                if min_temp < min_depth:
+                    min_depth = min_temp
+                if max_temp > max_depth:
+                    max_depth = max_temp
+            max_area = np.max([max_area, area_band[band]])
+
+        ax.set_ylim(max_depth, min_depth)
+        ax.legend(frameon = False, ncol = 2)
+        ax.set_xlim(0, max_area)
+        ax.grid(True)
+        if save:
+            plt.savefig(save_path)
+        if show:
+            plt.show()
+
+
+
+
+                    
 
     def __str__(self):
         # This should be smarter

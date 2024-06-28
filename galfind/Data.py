@@ -606,7 +606,7 @@ class Data:
 
     def load_mask(self, mask_band):
         if ".fits" in self.mask_paths[mask_band]:
-            mask = fits.open(self.mask_paths[mask_band])[1].data
+            mask = fits.open(self.mask_paths[mask_band], mode='readonly')[1].data
         else:
             galfind_logger.critical(f"Mask for {self.survey} {mask_band} at {self.mask_paths[mask_band]} is not a .fits mask!")
         return mask
@@ -1385,6 +1385,13 @@ class Data:
     
     def combine_masks(self, bands):
         # require pixel scales to be the same across all bands
+        out_path = f"{self.mask_dir}/fits_masks/{self.combine_band_names(bands)}_basemask.fits"
+        
+        if os.path.exists(out_path):
+            galfind_logger.info(f"Combined mask for {bands} already exists at {out_path}")
+            return out_path
+        
+        os.makedirs("/".join(out_path.split("/")[:-1]), exist_ok = True)
         for i, band in enumerate(bands):
             if i == 0:
                 pix_scale = self.im_pixel_scales[band]
@@ -1395,8 +1402,7 @@ class Data:
         # wcs taken from the reddest band
         mask_hdu = fits.ImageHDU(combined_mask.astype(np.uint8), header = WCS(self.load_im(bands[-1])[1]).to_header(), name = 'MASK')
         hdu = fits.HDUList([fits.PrimaryHDU(), mask_hdu])
-        out_path = f"{self.mask_dir}/fits_masks/{self.combine_band_names(bands)}_basemask.fits"
-        os.makedirs("/".join(out_path.split("/")[:-1]), exist_ok = True)
+        
         # TEMP CHANGE
         
         hdu.writeto(out_path, overwrite = True)
@@ -1490,6 +1496,7 @@ class Data:
         # calculate areas using pixel scale of selection band
         pixel_scale = self.im_pixel_scales[self.combine_band_names(forced_phot_band)]
         unmasked_area_tot = (((full_mask.shape[0] * full_mask.shape[1]) - np.sum(full_mask)) * pixel_scale * pixel_scale).to(u.arcmin ** 2)
+        print('hello', unmasked_area_tot)
         unmasked_area_blank_modules = (((blank_mask.shape[0] * blank_mask.shape[1]) - np.sum(blank_mask)) * pixel_scale * pixel_scale).to(u.arcmin ** 2)
         unmasked_area_cluster_module = unmasked_area_tot - unmasked_area_blank_modules
         galfind_logger.info(f"Unmasked areas for {self.survey}, masking_instrument_or_band_name = {masking_instrument_or_band_name} - Total: {unmasked_area_tot}, Blank modules: {unmasked_area_blank_modules}, Cluster module: {unmasked_area_cluster_module}")
@@ -1671,7 +1678,8 @@ class Data:
         # Parallelise the calculation of depths for each band
         with tqdm_joblib(tqdm(desc = "Calculating depths", total = len(params))) as progress_bar:
             Parallel(n_jobs = n_jobs)(delayed(self.calc_band_depth)(param) for param in params)
-        #self.plot_area_depth(cat_creator, mode, aper_diam, show = False)
+        #for aper_diam in aper_diams:
+        #   self.plot_area_depth(cat_creator, mode, aper_diam, show = False)
     
     def calc_band_depth(self, params):
         # unpack parameters
@@ -1740,7 +1748,7 @@ class Data:
             self.plot_depth(band, cat_creator, mode, aper_diam, show = False)
     
 
-    def plot_area_depth(self, cat_creator, mode, aper_diam, show = False, use_area_per_band=True):     
+    def plot_area_depth(self, cat_creator, mode, aper_diam, show = False, use_area_per_band=True, save = True, return_array=False):     
         if type(cat_creator) == type(None):
             galfind_logger.warning("Could not plot depths as cat_creator == None in Data.plot_area_depth()")
         else:
@@ -1760,7 +1768,7 @@ class Data:
                 if self.forced_phot_band not in bands:
                     bands.append(self.forced_phot_band)
                 colors = plt.cm.viridis(np.linspace(0, 1, len(bands)))
-
+                data = {}
                 for pos, band in enumerate(bands):
                     h5_path = f"{self.depth_dirs[band]}/{mode}/{band}.h5"
 
@@ -1795,7 +1803,8 @@ class Data:
 
                     # Plot
                     ax.plot(cum_dist, total_depths, label = band if '+' not in band else 'Detection', color = colors[pos], drawstyle='steps-post')
-
+                    if return_array:
+                        data[band] = [area, total_depths]
                     # Set ylim to 2nd / 98th percentile if depth is smaller than this number
                     ylim = ax.get_ylim()
                     
@@ -1820,10 +1829,12 @@ class Data:
                 # Invert y axis
                 #ax.invert_yaxis()
                 ax.grid(True)
-
-                fig.savefig(save_path, dpi = 300, bbox_inches = "tight")
+                if save:
+                    fig.savefig(save_path, dpi = 300, bbox_inches = "tight")
                 if show:
                     plt.show()
+                if return_array:
+                    return data
 
 
     def plot_depth(self, band, cat_creator, mode, aper_diam, show = False): #, **kwargs):
