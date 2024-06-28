@@ -28,10 +28,7 @@ def pipeline(surveys, version, instruments, aper_diams, min_flux_pc_errs, forced
                 excl_bands = excl_bands, loc_depth_min_flux_pc_errs = min_flux_pc_errs, crop_by = crop_by)
             cats.append(cat)
 
-        cat_combined = cats[0]
-        for i in range(1, len(cats)):
-            print(f'Doing {surveys[i]}')
-            cat_combined = cats[i] * cat_combined 
+    cat_combined = Multiple_Catalogue(cats, survey='NEP')
 
     cat_combined.plot_combined_area_depth('/nvme/scratch/work/tharvey/catalogs/NEP_combined_area.pdf', save = True)
 

@@ -1763,8 +1763,15 @@ class Data:
                 ax.set_xlabel("Area (arcmin$^{2}$)")
                 ax.set_ylabel("5$\sigma$ Depth (AB mag)")
                 area_row = area_tab[area_tab["masking_instrument_band"] == self.forced_phot_band]
-                area_master = float(area_row["unmasked_area_total"].to(u.arcmin ** 2).value)
-                bands = list(self.instrument.band_names)
+                if len(area_row) > 1:
+                    galfind_logger.warning(f"More than one row found in area_tab for {self.forced_phot_band}! Using the first row.")
+                    area_row = area_row[0]
+                area_master = area_row["unmasked_area_total"]
+                if type(area_master) == u.Quantity:
+                    area_master = area_master.value
+                area_master = float(area_master)
+                
+                bands = self.instrument.band_names.tolist()
                 if self.forced_phot_band not in bands:
                     bands.append(self.forced_phot_band)
                 colors = plt.cm.viridis(np.linspace(0, 1, len(bands)))

@@ -3,6 +3,9 @@ import numpy as np
 from astropy.table import vstack
 from astropy.coordinates import SkyCoord
 import astropy.units as u
+import matplotlib.pyplot as plt
+import matplotlib.cm as cm
+
 class Multiple_Catalogue:
 
     def __init__(self, cat_arr, survey):
@@ -61,7 +64,7 @@ class Multiple_Catalogue:
     def plot(self, x_name, y_name, colour_by, save = False, show = False):
         pass
 
-    def plot_combined_area_depth(self, save_path, save = False, show = False, mode = 'n_nearest', aper_diam = 0.32*u.arcsec):
+    def plot_combined_area_depth(self, save_path, save = False, show = False, mode = 'n_nearest', aper_diam = 0.32*u.arcsec, cmap = 'viridis'):
         all_array = []
         max_area = 0
         for cat in self.cat_arr:
@@ -79,16 +82,17 @@ class Multiple_Catalogue:
             for array in all_array:
                 if band in array.keys():
                     area_band[band] += array[band][0]
-                    depth_array_band[band].append(array[band][1])
-        depth_array_band = {band: np.ndarray.flatten(np.array(depth_array_band[band], dtype=object)) for band in bands}
+                    depth_array_band[band].extend(array[band][1])
+        
+        
         # Plot
         fig, ax = plt.subplots(1, 1, figsize = (5, 5))
         ax.set_title(f"{self.survey}")
         ax.set_xlabel("Area (arcmin$^{2}$)")
         ax.set_ylabel("5$\sigma$ Depth (AB mag)")
           
-
-        for band in bands:
+        colors = cm.get_cmap(cmap)(np.linspace(0, 1, len(bands)))
+        for pos, band in enumerate(bands):
             total_depths = np.flip(np.sort(depth_array_band[band]))
 
             # Calculate the cumulative distribution scaled to area of band
@@ -98,8 +102,7 @@ class Multiple_Catalogue:
 
             # Plot
             ax.plot(cum_dist, total_depths, label = band if '+' not in band else 'Detection', color = colors[pos], drawstyle='steps-post')
-            if return_array:
-                data[band] = [area, total_depths]
+            
             # Set ylim to 2nd / 98th percentile if depth is smaller than this number
             ylim = ax.get_ylim()
             
@@ -113,14 +116,16 @@ class Multiple_Catalogue:
                     min_depth = min_temp
                 if max_temp > max_depth:
                     max_depth = max_temp
-            max_area = np.max([max_area, area_band[band]])
+            print(area_band[band])
+            if area_band[band] > max_area:
+                max_area = area_band[band]
 
         ax.set_ylim(max_depth, min_depth)
         ax.legend(frameon = False, ncol = 2)
         ax.set_xlim(0, max_area)
         ax.grid(True)
         if save:
-            plt.savefig(save_path)
+            plt.savefig(save_path, dpi = 300, bbox_inches = 'tight')
         if show:
             plt.show()
 
