@@ -100,7 +100,7 @@ class Data:
         self.seg_paths = seg_paths #dict(sorted(seg_paths.items())) 
         # make masks from image paths if they don't already exist
         self.mask_dir = f"{config['DEFAULT']['GALFIND_WORK']}/Masks/{survey}"
-        print(mask_paths)
+        #print(mask_paths)
         breakpoint()
         for i, (band, mask_path) in enumerate(mask_paths.items()):
             # the input mask path is a pixel mask
@@ -182,7 +182,7 @@ class Data:
 
     @classmethod
     def from_pipeline(cls, survey, version, instrument_names = ["ACS_WFC", "WFC3_IR", "NIRCam", "MIRI"], excl_bands = [], \
-            pix_scales = {"ACS_WFC": 0.03 * u.arcsec, "WFC3_IR": 0.03 * u.arcsec, "NIRCam": 0.03 * u.arcsec, "MIRI": 0.06 * u.arcsec}, \
+            pix_scales = {"ACS_WFC": 0.03 * u.arcsec, "WFC3_IR": 0.03 * u.arcsec, "NIRCam": 0.03 * u.arcsec, "MIRI": 0.09 * u.arcsec}, \
             im_str = ["_sci", "_i2d", "_drz"], rms_err_str = ["_rms", "_err"], wht_str = ["_wht", "_weight"], mask_stars = True):
         
         # may not require all of these inits
@@ -204,13 +204,13 @@ class Data:
         # construct dict containing appropriate directories for the given version, survey etc
         NIRCam_version_to_dir = {"v8b": "mosaic_1084_wispfix", "v8c": "mosaic_1084_wispfix2", "v8d": "mosaic_1084_wispfix3", \
             "v9": "mosaic_1084_wisptemp2", "v10": "mosaic_1084_wispscale", "v11": "mosaic_1084_wispnathan"}
-        MIRI_version_to_dir = {}
-        instrument_version_to_dir = {**{"NIRCam": NIRCam_version_to_dir, "MIRI": MIRI_version_to_dir}, \
-           **{instrument_name: f"{int(np.round(pix_scales[instrument_name].to(u.mas).value, 0))}mas" for instrument_name in ["ACS_WFC", "WFC3_IR"]}}
+        #MIRI_version_to_dir = "60mas"
+        instrument_version_to_dir = {**{"NIRCam": NIRCam_version_to_dir}, \
+            **{instrument_name: f"{int(np.round(pix_scales[instrument_name].to(u.mas).value, 0))}mas" \
+            for instrument_name in ["ACS_WFC", "WFC3_IR", "MIRI"]}}
 
         #breakpoint()
         for instrument_name in instrument_names:
-            
             instrument = globals()[instrument_name](excl_bands = [band_name for band_name in excl_bands if band_name in globals()[instrument_name]().band_names])
             version_to_dir = instrument_version_to_dir[instrument_name]
             pix_scale = pix_scales[instrument_name]
@@ -249,12 +249,14 @@ class Data:
             assert n_images[0] in [1, 2, 3]
             if n_images[0] == 1:
                 im_path_arr = fits_path_arr
-                im_paths = {band: path for band, path in zip(bands, im_path_arr)}
+                instr_im_paths = {band: path for band, path in zip(bands, im_path_arr)}
+                im_paths = {**im_paths, **instr_im_paths}
                 # extract sci/rms_err/wht extensions from single band image
-                for band, im_path_arr in tqdm(im_paths.items(), total = len(im_paths), \
-                        desc = f"Extracting SCI/WHT/ERR extensions/shapes for {survey} {version} {instrument_name}"):
+                for band in tqdm(bands, total = len(bands), desc = f"Extracting SCI/WHT/ERR extensions/shapes for {survey} {version} {instrument_name}"):
                     im_hdul = fits.open(im_paths[band])
                     for j, im_hdu in enumerate(im_hdul):
+                        if instrument_name == "WFC3_IR":
+                            breakpoint()
                         if im_hdu.name == "SCI":
                             im_exts[band] = int(j)
                             im_shapes[band] = im_hdu.data.shape
@@ -320,7 +322,7 @@ class Data:
 
             #breakpoint()
             # if band not used in instrument remove it, else save pixel scale and zero point
-            for band_name in instrument.band_names:
+            for band_name in deepcopy(instrument).band_names:
                 if band_name not in unique_bands:
                     instrument.remove_band(band_name)
                 else:
@@ -338,7 +340,7 @@ class Data:
                         # Taken from Appendix A of https://www.stsci.edu/files/live/sites/www/files/home/hst/instrumentation/wfc3/documentation/instrument-science-reports-isrs/_documents/2020/WFC3-ISR-2020-10.pdf
                         wfc3ir_zps = {'F098M': 25.661, 'F105W': 26.2637, 'F110W': 26.8185, 'F125W': 26.231, 'F140W': 26.4502, 'F160W': 25.9362}
                         im_zps[band_name] = wfc3ir_zps[band_name]
-                    elif instrument_name == "NIRCam":
+                    elif instrument_name == "NIRCam" or instrument_name == "MIRI":
                         # assume flux units of MJy/sr and calculate corresponding ZP
                         im_zps[band_name] = -2.5 * np.log10((pix_scale.to(u.rad).value ** 2) * u.MJy.to(u.Jy)) + u.Jy.to(u.ABmag)
             instrument_arr.append(instrument)
@@ -365,18 +367,20 @@ class Data:
             #     seg_paths[band] = ""
 
             # load fits mask for band before searching for other existing masks
-            paths_to_masks = [path.split("/")[-1].split("_")[0] for path in fits_mask_paths \
+            paths_to_masks = [f"{config['DEFAULT']['GALFIND_WORK']}/Masks/{survey}/fits_masks/{path.split('/')[-1]}" for path in fits_mask_paths \
                 if path.split("/")[-1].split("_")[0] == band and "basemask" in path.split("/")[-1].split("_")[1]]
             print(band)
             assert len(paths_to_masks) <= 1, galfind_logger.critical(f"{len(paths_to_masks)=} > 1")
             #breakpoint()
             if len(paths_to_masks) == 0:
                 # search for manually created mask
-                paths_to_masks = glob.glob(f"{config['DEFAULT']['GALFIND_WORK']}/Masks/{survey}/manual/*{band}_clean.reg")
-                # if no manually created mask, leave blank
-                if len(paths_to_masks) == 0:
-                    paths_to_masks = [""]
-            mask_paths[band] = paths_to_masks[0]
+                manual_mask_path = f"{config['DEFAULT']['GALFIND_WORK']}/Masks/{survey}/manual/{survey}_{band}_clean.reg"
+                if Path(manual_mask_path).is_file():
+                    mask_paths[band] = manual_mask_path
+                else: # if no manually created mask, leave blank
+                    mask_paths[band] = ""
+            else:
+                mask_paths[band] = paths_to_masks[0]
 
             # # include just the masks corresponding to the correct bands
             # fits_mask_paths_ = glob.glob(f"{config['DEFAULT']['GALFIND_WORK']}/Masks/{survey}/fits_masks/*{band.lower()}*")
@@ -733,6 +737,7 @@ class Data:
             star_mask_override = None, exclude_gaia_galaxies = True, angle = 0, edge_value = 0, 
             element = 'ELLIPSE', gaia_row_lim = 500, plot = False):
         
+        #breakpoint()
         if 'NIRCam' not in self.instrument.name and mask_stars:
             galfind_logger.critical(f"Mask making only implemented for NIRCam data!")
             raise(Exception("Star mask making only implemented for NIRCam data!"))
@@ -790,6 +795,7 @@ class Data:
         im_data, im_header, seg_data, seg_header = self.load_data(band, incl_mask = False)
         pixel_scale = self.im_pixel_scales[band]
         wcs = WCS(im_header)
+
         # Scale up the image by boundary by scale_extra factor to include diffraction spikes from stars outside image footprint
         scale_factor = scale_extra * np.array([im_data.shape[1], im_data.shape[0]])
         vertices_pix = [(-scale_factor[0], -scale_factor[1]), (-scale_factor[0], im_data.shape[0] + scale_factor[1]), \
@@ -797,8 +803,17 @@ class Data:
         # Convert to sky coordinates
         vertices_sky = wcs.all_pix2world(vertices_pix, 0)
 
+        # Diagnostic plot
+        if plot:
+            fig = plt.figure(figsize=(10, 10))
+            ax = fig.add_subplot(111, projection=wcs)
+            stretch = vis.CompositeStretch(vis.LogStretch(), vis.ContrastBiasStretch(contrast = 30, bias = 0.08))    
+            norm = ImageNormalize(stretch = stretch, vmin = 0.001, vmax = 10)
+
+            ax.imshow(im_data, cmap='Greys', origin='lower', interpolation='None', norm=norm)
+
         if mask_stars:
-        
+            print(f"Making stellar mask for {band}")
             # Get list of Gaia stars in the polygon region
             Gaia.ROW_LIMIT = gaia_row_lim
             # Construct the ADQL query string
@@ -836,38 +851,28 @@ class Data:
             gaia_stars.add_column(Column(data = x_gaia, name = 'x_pix'))
             gaia_stars.add_column(Column(data = y_gaia, name = 'y_pix'))
 
-        # Diagnostic plot
-        if plot:
-            fig = plt.figure(figsize=(10, 10))
-            ax = fig.add_subplot(111, projection=wcs)
-            stretch = vis.CompositeStretch(vis.LogStretch(), vis.ContrastBiasStretch(contrast = 30, bias = 0.08))    
-            norm = ImageNormalize(stretch = stretch, vmin = 0.001, vmax = 10)
+            diffraction_regions = []
+            region_strings = []
+            for pos, (row, central_scale, spike_scale) in tqdm(enumerate(zip(gaia_stars, central_scale_stars, spike_scale_stars))):    
+                # Plot circle
+                # if plot:
+                #     ax.add_patch(Circle((row['x_pix'], row['y_pix']), 2 * row['rmask_arcsec'] / pixel_scale, color = 'r', fill = False, lw = 2))
+                sky_region = composite(row['x_pix'], row['y_pix'], central_scale, spike_scale, angle)
+                region_obj = Regions.parse(sky_region, format = 'ds9')
+                diffraction_regions.append(region_obj)
+                region_strings.append(region_obj.serialize(format = 'ds9'))
 
-            ax.imshow(im_data, cmap='Greys', origin='lower', interpolation='None', norm=norm)
-
-        diffraction_regions = []
-        region_strings = []
-        print(f"Making stellar mask for {band}")
-        for pos, (row, central_scale, spike_scale) in tqdm(enumerate(zip(gaia_stars, central_scale_stars, spike_scale_stars))):    
-            # Plot circle
-            # if plot:
-            #     ax.add_patch(Circle((row['x_pix'], row['y_pix']), 2 * row['rmask_arcsec'] / pixel_scale, color = 'r', fill = False, lw = 2))
-            sky_region = composite(row['x_pix'], row['y_pix'], central_scale, spike_scale, angle)
-            region_obj = Regions.parse(sky_region, format = 'ds9')
-            diffraction_regions.append(region_obj)
-            region_strings.append(region_obj.serialize(format = 'ds9'))
-
-        stellar_mask = np.zeros(im_data.shape, dtype=bool)
-        for regions in tqdm(diffraction_regions):
-            for region in regions:
-                idx_large, idx_little = region.to_mask(mode = 'center').get_overlap_slices(im_data.shape)
-                # idx_large is x,y box containing bounds of region in image
-                if idx_large is not None:
-                    stellar_mask[idx_large] = np.logical_or(region.to_mask().data[idx_little], stellar_mask[idx_large])
-                if plot:
-                    artist = region.as_artist()
-                    ax.add_patch(artist)
-       
+            stellar_mask = np.zeros(im_data.shape, dtype=bool)
+            for regions in tqdm(diffraction_regions):
+                for region in regions:
+                    idx_large, idx_little = region.to_mask(mode = 'center').get_overlap_slices(im_data.shape)
+                    # idx_large is x,y box containing bounds of region in image
+                    if idx_large is not None:
+                        stellar_mask[idx_large] = np.logical_or(region.to_mask().data[idx_little], stellar_mask[idx_large])
+                    if plot:
+                        artist = region.as_artist()
+                        ax.add_patch(artist)
+        
         # Mask image edges
         fill = im_data == edge_value #true false array of where 0's are
         edges = fill * 1 #convert to 1 for true and 0 for false
@@ -887,7 +892,10 @@ class Data:
         # Mask up to 50 pixels from all edges - so edge is still masked if it as at edge of array
         edge_mask[:edge_mask_distance, :] = edge_mask[-edge_mask_distance:, :] = edge_mask[:, :edge_mask_distance] = edge_mask[:, -edge_mask_distance:] = 1
         
-        full_mask = np.logical_or(edge_mask.astype(np.uint8), stellar_mask.astype(np.uint8))
+        if mask_stars:
+            full_mask = np.logical_or(edge_mask.astype(np.uint8), stellar_mask.astype(np.uint8))
+        else:
+            full_mask = edge_mask.astype(np.uint8)
         
         if plot:
             ax.imshow(full_mask, cmap='Reds', origin='lower', interpolation='None')
@@ -911,15 +919,16 @@ class Data:
                         full_mask[idx_large] = np.logical_or(region.to_mask().data[idx_little], full_mask[idx_large])
                         artifact_mask[idx_large] = np.logical_or(region.to_mask().data[idx_little], artifact_mask[idx_large])
 
-
         # Save mask - could save independent layers as well e.g. stars vs edges vs manual mask etc
         output_mask_path = f'{self.mask_dir}/fits_masks/{band}_basemask.fits'
 
         os.makedirs("/".join(output_mask_path.split("/")[:-1]), exist_ok = True)
         full_mask_hdu = fits.ImageHDU(full_mask.astype(np.uint8), header = wcs.to_header(), name = "MASK")
-        stellar_mask_hdu = fits.ImageHDU(stellar_mask.astype(np.uint8), header = wcs.to_header(), name = "STELLAR")
         edge_mask_hdu = fits.ImageHDU(edge_mask.astype(np.uint8), header = wcs.to_header(), name = "EDGE")
-        hdulist = [fits.PrimaryHDU(), full_mask_hdu, stellar_mask_hdu, edge_mask_hdu]
+        hdulist = [fits.PrimaryHDU(), full_mask_hdu, edge_mask_hdu]
+        if mask_stars:
+            stellar_mask_hdu = fits.ImageHDU(stellar_mask.astype(np.uint8), header = wcs.to_header(), name = "STELLAR")
+            hdulist.append(stellar_mask_hdu)
         if artifact_mask is not None:
             artifact_mask_hdu = fits.ImageHDU(artifact_mask.astype(np.uint8), header = wcs.to_header(), name = "ARTIFACT")
             hdulist.append(artifact_mask_hdu)
@@ -933,11 +942,12 @@ class Data:
             # Save mask plot
             fig.savefig(f'{self.mask_dir}/{band}_mask.png', dpi=300)
 
-        # Save ds9 region 
-        with open(f'{self.mask_dir}/{band}_starmask.reg', 'w') as f:
-            for region in region_strings:
-                f.write(region + '\n')
-        os.chmod(f'{self.mask_dir}/{band}_starmask.reg', 0o777)
+        # Save ds9 region
+        if mask_stars:
+            with open(f'{self.mask_dir}/{band}_starmask.reg', 'w') as f:
+                for region in region_strings:
+                    f.write(region + '\n')
+            os.chmod(f'{self.mask_dir}/{band}_starmask.reg', 0o777)
         return output_mask_path
     
     #@staticmethod
@@ -972,6 +982,8 @@ class Data:
             galfind_logger.critical(f"prefer = {prefer} not in ['rms_err', 'wht'] in Data.get_err_map()")
         
         # extract relevant fits paths and extensions
+        print(band, self.rms_err_paths, self.wht_paths)
+        breakpoint()
         if err_map_type == "MAP_RMS":
             err_map_path = str(self.rms_err_paths[band])
             err_map_ext = str(self.rms_err_exts[band])
@@ -1016,18 +1028,11 @@ class Data:
         detection_image_name = f"{self.survey}_{stack_band_name}_{self.version}_stack.fits"
         self.im_paths[stack_band_name] = f'{detection_image_dir}/{detection_image_name}'
         self.rms_err_paths[stack_band_name] = f'{detection_image_dir}/{detection_image_name}'
-        glob_mask_names = glob.glob(f"{self.mask_dir}/{stack_band_name}_basemask.reg")
-        #print(glob_mask_names)
-        if len(glob_mask_names) == 0:
-            self.mask_paths[stack_band_name] = self.combine_masks(bands)
-        elif len(glob_mask_names) == 1:
-            self.mask_paths[stack_band_name] = glob_mask_names[0]
+        combined_mask_name = f"{self.mask_dir}/combined_masks/{self.survey}_{self.combine_band_names(bands)}.fits"
+        if Path(combined_mask_name).is_file():
+            self.mask_paths[stack_band_name] = combined_mask_name
         else:
-            raise(Exception(f"More than 1 mask for {stack_band_name}. Please change this in {self.mask_dir}"))
-        
-        # overwrite = config["DEFAULT"].getboolean("OVERWRITE")
-        # if overwrite:
-        #     galfind_logger.info("OVERWRITE = YES, so overwriting stacked image if it exists.")
+            self.mask_paths[stack_band_name] = self.combine_masks(bands)
     
         if all(band in self.rms_err_paths.keys() and band in self.rms_err_exts.keys() for band in bands):
             err_from = "ERR"
@@ -1367,39 +1372,39 @@ class Data:
         
         
     def mask_reg_to_pix(self, band, mask_path):
-        # open image corresponding to band
-        im_data, im_header, seg_data, seg_header = self.load_data(band, incl_mask = False)
-        # open .reg mask file
-        mask_regions = pyregion.open(mask_path).as_imagecoord(im_header)
-        # make 2D np.array boolean pixel mask
-        pix_mask = np.array(mask_regions.get_mask(header = im_header, shape = im_data.shape), dtype = bool)
-        # make .fits mask
-        mask_hdu = fits.ImageHDU(pix_mask.astype(np.uint8), header = WCS(im_header).to_header(), name = 'MASK')
-        hdu = fits.HDUList([fits.PrimaryHDU(), mask_hdu])
         out_path = f"{'/'.join(mask_path.split('/')[:-1])}/fits_masks/{mask_path.split('/')[-1].replace('_clean', '').replace('.reg', '')}.fits"
-        os.makedirs("/".join(out_path.split("/")[:-1]), exist_ok = True)
-        hdu.writeto(out_path, overwrite = True)
-        galfind_logger.info(f"Created fits mask from manually created reg mask, saving as {out_path}")
+        if not Path(out_path).is_file():
+            # open image corresponding to band
+            im_data, im_header, seg_data, seg_header = self.load_data(band, incl_mask = False)
+            # open .reg mask file
+            mask_regions = pyregion.open(mask_path).as_imagecoord(im_header)
+            # make 2D np.array boolean pixel mask
+            pix_mask = np.array(mask_regions.get_mask(header = im_header, shape = im_data.shape), dtype = bool)
+            # make .fits mask
+            mask_hdu = fits.ImageHDU(pix_mask.astype(np.uint8), header = WCS(im_header).to_header(), name = 'MASK')
+            hdu = fits.HDUList([fits.PrimaryHDU(), mask_hdu])
+            os.makedirs("/".join(out_path.split("/")[:-1]), exist_ok = True)
+            hdu.writeto(out_path, overwrite = True)
+            galfind_logger.info(f"Created fits mask from manually created reg mask, saving as {out_path}")
         return out_path
     
     def combine_masks(self, bands):
-        # require pixel scales to be the same across all bands
-        for i, band in enumerate(bands):
-            if i == 0:
-                pix_scale = self.im_pixel_scales[band]
-            else:
-                assert(self.im_pixel_scales[band] == pix_scale)
-        combined_mask = np.logical_or.reduce(tuple([self.load_mask(band) for band in bands]))
-        assert(combined_mask.shape == self.load_mask(bands[-1]).shape)
-        # wcs taken from the reddest band
-        mask_hdu = fits.ImageHDU(combined_mask.astype(np.uint8), header = WCS(self.load_im(bands[-1])[1]).to_header(), name = 'MASK')
-        hdu = fits.HDUList([fits.PrimaryHDU(), mask_hdu])
-        out_path = f"{self.mask_dir}/fits_masks/{self.combine_band_names(bands)}_basemask.fits"
-        os.makedirs("/".join(out_path.split("/")[:-1]), exist_ok = True)
-        # TEMP CHANGE
-        
-        hdu.writeto(out_path, overwrite = True)
-        galfind_logger.info(f"Created combined mask for {bands}")
+        out_path = f"{self.mask_dir}/combined_masks/{self.survey}_{self.combine_band_names(bands)}.fits"
+        if not Path(out_path).is_file():
+            # require pixel scales to be the same across all bands
+            for i, band in enumerate(bands):
+                if i == 0:
+                    pix_scale = self.im_pixel_scales[band]
+                else:
+                    assert(self.im_pixel_scales[band] == pix_scale)
+            combined_mask = np.logical_or.reduce(tuple([self.load_mask(band) for band in bands]))
+            assert(combined_mask.shape == self.load_mask(bands[-1]).shape)
+            # wcs taken from the reddest band
+            mask_hdu = fits.ImageHDU(combined_mask.astype(np.uint8), header = WCS(self.load_im(bands[-1])[1]).to_header(), name = 'MASK')
+            hdu = fits.HDUList([fits.PrimaryHDU(), mask_hdu])
+            os.makedirs("/".join(out_path.split("/")[:-1]), exist_ok = True)
+            hdu.writeto(out_path, overwrite = True)
+            galfind_logger.info(f"Created combined mask for {bands}")
         return out_path
 
     @staticmethod

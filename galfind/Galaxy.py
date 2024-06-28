@@ -117,6 +117,7 @@ class Galaxy:
         
         out_path = f"{config['Cutouts']['CUTOUT_DIR']}/{version}/{survey}/{band}/{self.ID}.fits"
         rerun = False
+        
         if Path(out_path).is_file():
             
             size = fits.open(out_path)[0].header["size"]

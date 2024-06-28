@@ -149,12 +149,15 @@ def fit_2d_moffatt(PSFdata, maxfev = 10000):
     popt, pcov = optimize.curve_fit(moffatcurve, (x, y), PSFdata.ravel(), p0 = initial_guess, maxfev = maxfev)
     return [popt[3], popt[4]] # return (x, y) central position
 
-def main(in_bands, extract_code = "sep", save_loc = f"{config['DEFAULT']['GALFIND_WORK']}/Aperture_corrections", PSF_loc = config["DEFAULT"]["PSF_DIR"], PSF_name = ["PSF_", "cen_G5V_fov299px_ISIM41"], plot_PSF = True, aper_diams = json.loads(config.get("SExtractor", "APERTURE_DIAMS")) * u.arcsec):
+def main(in_bands, extract_code = "sep", save_loc = f"{config['DEFAULT']['GALFIND_WORK']}/Aperture_corrections", \
+        PSF_loc = config["DEFAULT"]["PSF_DIR"], PSF_name = "PSF_MIRI_in_flight_opd_filter_", plot_PSF = True, \
+        aper_diams = json.loads(config.get("SExtractor", "APERTURE_DIAMS")) * u.arcsec, instrument_name = "NIRCam"):
     print("extract code =", extract_code)
     print_line = [["# aper_diam / arcsec"] + [str(aper_diam.value) for aper_diam in aper_diams]]
     for band in in_bands:
         print(band)
-        name = PSF_name[0] + band.replace("f", "F") + PSF_name[1]
+        #name = PSF_name[0] + band.replace("f", "F") + PSF_name[1]
+        name = PSF_name + band
         PSFdata, pixel_scale = open_PSF_model(band, PSF_loc, name)
         print(pixel_scale)
         x_cen, y_cen = fit_2d_moffatt(PSFdata)
@@ -173,7 +176,7 @@ def main(in_bands, extract_code = "sep", save_loc = f"{config['DEFAULT']['GALFIN
         aper_corr.insert(0, band)
         print_line.append(aper_corr)
         # print(print_line)
-    np.savetxt(f"{save_loc}/NIRCam_aper_corr.txt", print_line, fmt = "%s" + len(aper_diams) * " %.6s")
+    np.savetxt(f"{save_loc}/{instrument_name}_aper_corr.txt", print_line, fmt = "%s" + len(aper_diams) * " %.6s")
 
 if __name__ == "__main__":
     pass
