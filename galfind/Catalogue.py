@@ -273,6 +273,7 @@ class Catalogue(Catalogue_Base):
             galfind_logger.info(f"Catalogue for {self.survey} {self.version} already masked. Skipping!")
 
     def make_cutouts(self, IDs, cutout_size = 32):
+        breakpoint()
         if type(IDs) == int:
             IDs = [IDs]
         for band in tqdm(self.instrument.band_names, total = len(self.instrument), desc = "Making band cutouts"):
@@ -444,7 +445,7 @@ class Catalogue(Catalogue_Base):
 
     def select_EPOCHS(self, SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}, allow_lowz = False, hot_pixel_bands = ["F277W", "F356W", "F444W"]):
         self.perform_selection(Galaxy.select_min_bands, 4., make_cat_copy = False) # minimum 4 photometric bands
-        self.perform_selection(Galaxy.select_unmasked_instrument, NIRCam(), make_cat_copy = False) # all NIRCam bands unmasked
+        [self.perform_selection(Galaxy.select_unmasked_instrument, globals()[instr_name](), make_cat_copy = False) for instr_name in self.instrument.name.split("+")] # all bands unmasked
         [self.select_band_flux_radius(band, "gtr", 1.5, make_cat_copy = False) for band in hot_pixel_bands if band in self.instrument.band_names] # LW NIRCam wideband Re>1.5 pix
         if not allow_lowz:
             self.perform_selection(Galaxy.phot_SNR_crop, 0, 2., "non_detect", make_cat_copy = False) # 2σ non-detected in first band

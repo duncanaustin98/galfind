@@ -101,7 +101,6 @@ class Data:
         # make masks from image paths if they don't already exist
         self.mask_dir = f"{config['DEFAULT']['GALFIND_WORK']}/Masks/{survey}"
         #print(mask_paths)
-        breakpoint()
         for i, (band, mask_path) in enumerate(mask_paths.items()):
             # the input mask path is a pixel mask
             if ".fits" in mask_path:
@@ -734,7 +733,7 @@ class Data:
             ax.add_artist(t)
 
     def make_mask(self, band, edge_mask_distance = 50, mask_stars = True, scale_extra = 0.2,
-            star_mask_override = None, exclude_gaia_galaxies = True, angle = 0, edge_value = 0, 
+            star_mask_override = None, exclude_gaia_galaxies = True, angle = 0, edge_value = 0., 
             element = 'ELLIPSE', gaia_row_lim = 500, plot = False):
         
         #breakpoint()
@@ -874,7 +873,9 @@ class Data:
                         ax.add_patch(artist)
         
         # Mask image edges
-        fill = im_data == edge_value #true false array of where 0's are
+        breakpoint()
+        fill = (im_data == edge_value) | math.isnan(im_data)  #true false array of where 0's are
+        # also fill in nans
         edges = fill * 1 #convert to 1 for true and 0 for false
         edges = edges.astype(np.uint8) #dtype for cv2
         print('Masking edges')
@@ -1112,6 +1113,7 @@ class Data:
     @run_in_dir(path = config['DEFAULT']['GALFIND_DIR'])
     def make_sex_cats(self, forced_phot_band = "F444W", sex_config_path = config['SExtractor']['CONFIG_PATH'], params_path = config['SExtractor']['PARAMS_PATH'], forced_phot_code = "photutils"):
         galfind_logger.info(f"Making SExtractor catalogues with: config file = {sex_config_path}; parameters file = {params_path}")
+        #breakpoint()
         # make individual forced photometry catalogues
         if type(forced_phot_band) == list:
             if len(forced_phot_band) > 1:

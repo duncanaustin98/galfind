@@ -456,6 +456,8 @@ class Galaxy:
     def select_unmasked_instrument(self, instrument, update = True):
         assert(issubclass(instrument.__class__, Instrument))
         assert(instrument.__class__.__name__ in self.phot.instrument.name.split("+"))
+        if instrument.name == "MIRI":
+            breakpoint()
 
         selection_name = f"unmasked_{instrument.__class__.__name__}"
         if selection_name in self.selection_flags.keys():
@@ -1041,7 +1043,7 @@ class Galaxy:
         return self, selection_name
     
     def select_EPOCHS(self, SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}, allow_lowz = False, \
-            hot_pixel_bands = ["F277W", "F356W", "F444W"], mask_instrument = NIRCam(), update = True):
+            hot_pixel_bands = ["F277W", "F356W", "F444W"], masked_instruments = [NIRCam()], update = True):
         
         selection_name = f"EPOCHS{'_lowz' if allow_lowz else ''}"
         if len(self.phot) == 0: # no data at all (not sure why sextractor does this)
@@ -1055,13 +1057,16 @@ class Galaxy:
             return self, selection_name
         
         selection_names = [
-            self.select_unmasked_instrument(mask_instrument)[1], # unmasked in all NIRCam bands
             self.phot_bluewards_Lya_non_detect(2., SED_fit_params)[1], # 2σ non-detected in all bands bluewards of Lyα
             self.phot_redwards_Lya_detect([5., 3.], SED_fit_params, widebands_only = True)[1], # 5σ/3σ detected in first/second band redwards of Lyα
             self.select_chi_sq_lim(3., SED_fit_params, reduced = True)[1], # χ^2_red < 3
             self.select_chi_sq_diff(9., SED_fit_params, delta_z_lowz = 0.5)[1], # Δχ^2 > 9 between redshift free and low redshift SED fits, with Δz=0.5 tolerance 
             self.select_robust_zPDF(0.6, 0.1, SED_fit_params)[1] # 60% of redshift PDF must lie within z ± z * 0.1
         ]
+
+        # ensure masked in all instruments
+        for instr in masked_instruments:
+            selection_names.append(self.select_unmasked_instrument(instr)[1]) # unmasked in all bands
 
         # hot pixel checks
         for band_name in hot_pixel_bands:
