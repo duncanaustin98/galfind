@@ -26,11 +26,10 @@ def pipeline(surveys, version, instruments, aper_diams, min_flux_pc_errs, forced
             cat = Catalogue.from_pipeline(survey = survey, version = version, instruments = instruments, aper_diams = aper_diams, \
                 cat_creator = cat_creator, SED_fit_params_arr = SED_fit_params_arr, forced_phot_band = forced_phot_band, \
                 excl_bands = excl_bands, loc_depth_min_flux_pc_errs = min_flux_pc_errs, crop_by = crop_by, timed = timed, mask_stars = mask_stars)
-            #breakpoint()
             #cat_copy = cat.select_phot_galaxy_property("z", "<", 0.5)
             #cat_copy = cat.select_phot_galaxy_property("z", ">", 0.3)
-            cat_copy = cat.select_EPOCHS(allow_lowz = False)
-            cat_copy.plot_phot_diagnostics(flux_unit = u.ABmag)
+            #cat_copy = cat.select_EPOCHS(allow_lowz = False)
+            cat.plot_phot_diagnostics(flux_unit = u.ABmag)
             print(str(cat))
 
             end = time.time()
@@ -66,17 +65,17 @@ def make_EAZY_SED_fit_params_arr(SED_code_arr, templates_arr, lowz_zmax_arr):
 
 if __name__ == "__main__":
 
-    version = "v9" #config["DEFAULT"]["VERSION"]
-    instruments = ["NIRCam", "ACS_WFC", "MIRI"] # "WFC3_IR"
+    version = "v11" #config["DEFAULT"]["VERSION"]
+    instruments = ["NIRCam"]#, "ACS_WFC"] #, "MIRI"] # "WFC3_IR"
     cat_type = "loc_depth"
-    surveys = ["CEERSP4"] #[config["DEFAULT"]["SURVEY"]]
+    surveys = ["JOF"] #[config["DEFAULT"]["SURVEY"]]
     aper_diams = [0.32] * u.arcsec
     SED_code_arr = [EAZY()]
     templates_arr = ["fsps_larson"] #["fsps", "fsps_larson", "fsps_jades"]
     lowz_zmax_arr = [[4., 6., None]] #[[None]] # 
     min_flux_pc_errs = [10]
-    forced_phot_band = ["F277W", "F356W", "F444W"] #["F444W"]
-    crop_by = None #"bands>13+EPOCHS" #"EPOCHS_lowz+z>4.5"
+    forced_phot_band = ["F444W"]#["F277W", "F356W", "F444W"] #["F444W"]
+    crop_by = None #{"ID": [1, 2, 3]} #"bands>13+EPOCHS" #"EPOCHS_lowz+z>4.5"
     timed = False
     mask_stars = {"ACS_WFC": False, "NIRCam": True, "WFC3_IR": False, "MIRI": False}
 

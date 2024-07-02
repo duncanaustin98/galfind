@@ -983,7 +983,7 @@ class Data:
         
         # extract relevant fits paths and extensions
         print(band, self.rms_err_paths, self.wht_paths)
-        breakpoint()
+        #breakpoint()
         if err_map_type == "MAP_RMS":
             err_map_path = str(self.rms_err_paths[band])
             err_map_ext = str(self.rms_err_exts[band])
@@ -1195,7 +1195,7 @@ class Data:
                     process.wait()
 
                 else: # use photutils
-                    breakpoint()
+                    #breakpoint()
                     self.forced_photometry(band, self.forced_phot_band, forced_phot_code = forced_phot_code)
             
             galfind_logger.info(f"Finished making SExtractor catalogue for {self.survey} {self.version} {band}!")
