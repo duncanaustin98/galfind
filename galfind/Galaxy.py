@@ -456,19 +456,17 @@ class Galaxy:
     def select_unmasked_instrument(self, instrument, update = True):
         assert(issubclass(instrument.__class__, Instrument))
         assert(instrument.__class__.__name__ in self.phot.instrument.name.split("+"))
-        if instrument.name == "MIRI":
-            breakpoint()
-
         selection_name = f"unmasked_{instrument.__class__.__name__}"
+
         if selection_name in self.selection_flags.keys():
             galfind_logger.debug(f"{selection_name} already performed for galaxy ID = {self.ID}!")
         else:
-            if len(self.phot) == 0: # no data at all (not sure why sextractor does this)
+            # extract band IDs belonging to the input instrument name
+            band_indices = np.array([i for i, band in enumerate(self.phot.instrument.band_names) if band in instrument.band_names])
+            if len(band_indices) == 0: # no data to mask from the instrument
                 if update:
                     self.selection_flags[selection_name] = False
                 return self, selection_name
-            # extract band IDs belonging to the input instrument name
-            band_indices = np.array([i for i, band in enumerate(self.phot.instrument.band_names) if band in instrument.band_names])
             mask = self.phot.flux_Jy.mask[band_indices]
             if all(mask_band == False for mask_band in mask):
                 if update:

@@ -873,8 +873,7 @@ class Data:
                         ax.add_patch(artist)
         
         # Mask image edges
-        breakpoint()
-        fill = (im_data == edge_value) | math.isnan(im_data)  #true false array of where 0's are
+        fill = np.logical_or((im_data == edge_value), np.isnan(im_data))  #true false array of where 0's are
         # also fill in nans
         edges = fill * 1 #convert to 1 for true and 0 for false
         edges = edges.astype(np.uint8) #dtype for cv2
@@ -1571,6 +1570,7 @@ class Data:
             #median_depths = {}
             diagnostic_name = ""
             for i, band in enumerate(self.instrument.band_names):
+                galfind_logger.info(f"Finished making local depth columns for {band=}")
                 for j, aper_diam in enumerate(json.loads(config.get("SExtractor", "APERTURE_DIAMS")) * u.arcsec):
                     self.get_depth_dir(aper_diam)
                     #print(band, aper_diam)
@@ -1617,7 +1617,7 @@ class Data:
                 cat[f"sigma_{band}"] = band_sigmas
                 # make local depth error columns in image units
                 cat[f"FLUXERR_APER_{band}_loc_depth"] = [tuple([funcs.mag_to_flux(val, self.im_zps[band]) / 5. for val in element]) for element in band_depths]
-                # impose n_pc min flux error and converting to Jy where appropriate
+                # impose n_pc min flux error and convert to Jy where appropriate
                 if "APERCORR" in cat.meta.keys():
                     cat[f"FLUXERR_APER_{band}_loc_depth_{str(int(cat_creator.min_flux_pc_err))}pc_Jy"] = \
                         [tuple([funcs.flux_image_to_Jy(flux, self.im_zps[band]).value * cat_creator.min_flux_pc_err / 100. \

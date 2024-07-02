@@ -77,7 +77,7 @@ if __name__ == "__main__":
     min_flux_pc_errs = [10]
     forced_phot_band = ["F277W", "F356W", "F444W"] #["F444W"]
     crop_by = None #"bands>13+EPOCHS" #"EPOCHS_lowz+z>4.5"
-    timed = True
+    timed = False
     mask_stars = {"ACS_WFC": False, "NIRCam": True, "WFC3_IR": False, "MIRI": False}
 
     jems_bands = ["F182M", "F210M", "F430M", "F460M", "F480M"]
