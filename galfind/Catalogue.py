@@ -77,10 +77,17 @@ class Catalogue(Catalogue_Base):
         print(f"instrument band names = {instrument.band_names}")
 
         # crop fits catalogue by the crop_by column name should it exist
-        assert(type(crop_by) in [type(None), str, list, np.array])
+        assert(type(crop_by) in [type(None), str, list, np.array, dict])
         if type(crop_by) in [str]:
             crop_by = crop_by.split("+")
-        if type(crop_by) != type(None):
+        if type(crop_by) == type(None):
+            pass
+        elif type(crop_by) == dict:
+            for key, values in crop_by.items():
+                # currently only crops by ID
+                if "ID" in key.upper():
+                    fits_cat = fits_cat[np.logical_or.reduce([fits_cat[cat_creator.ID_label].astype(int) == int(value) for value in values])]
+        elif type(crop_by) in [list, np.array]:
             for name in crop_by:
                 if name[:3] == "ID=":
                     fits_cat = fits_cat[fits_cat[cat_creator.ID_label].astype(int) == int(name[3:])]
