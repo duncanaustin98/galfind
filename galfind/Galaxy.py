@@ -1074,10 +1074,6 @@ class Galaxy:
         if not allow_lowz:
             selection_names.append(self.phot_SNR_crop(0, 2., "non_detect")[1]) # 2σ non-detected in first band
 
-        try:
-            self.selection_flags["Re_F277W>1.5pix"]
-        except:
-            breakpoint()
         # if the galaxy passes all criteria
         if all(self.selection_flags[name] for name in selection_names):
             if update:
