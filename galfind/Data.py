@@ -248,6 +248,7 @@ class Data:
             assert n_images[0] in [1, 2, 3]
             if n_images[0] == 1:
                 im_path_arr = fits_path_arr
+                assert len(bands) == len(im_path_arr)
                 instr_im_paths = {band: path for band, path in zip(bands, im_path_arr)}
                 im_paths = {**im_paths, **instr_im_paths}
                 # extract sci/rms_err/wht extensions from single band image
@@ -733,10 +734,10 @@ class Data:
             ax.add_artist(t)
 
     def make_mask(self, band, edge_mask_distance = 50, mask_stars = True, scale_extra = 0.2,
-            star_mask_override = None, exclude_gaia_galaxies = True, angle = 0, edge_value = 0., 
+            star_mask_override = None, exclude_gaia_galaxies = True, angle = 75., edge_value = 0., 
             element = 'ELLIPSE', gaia_row_lim = 500, plot = False):
         
-        #breakpoint()
+        breakpoint()
         if 'NIRCam' not in self.instrument.name and mask_stars:
             galfind_logger.critical(f"Mask making only implemented for NIRCam data!")
             raise(Exception("Star mask making only implemented for NIRCam data!"))
@@ -783,13 +784,13 @@ class Data:
             f'''# Region file format: DS9 version 4.1
             global color=green dashlist=8 3 width=1 font="helvetica 10 normal roman" select=1 highlite=1 dash=0 fixed=0 edit=1 move=1 delete=1 include=1 source=1
             image
-            composite({x_coord},{y_coord},{angle}) || composite=1
+            composite({x_coord},{y_coord},0.00) || composite=1
                 circle({x_coord},{y_coord},{163*central_scale}) ||
-                ellipse({x_coord},{y_coord},{29*spike_scale**(2/3)},{730*spike_scale},300.15) ||
-                ellipse({x_coord},{y_coord},{29*spike_scale**(2/3)},{730*spike_scale},240.00) ||
-                ellipse({x_coord},{y_coord},{29*spike_scale**(2/3)},{730*spike_scale},360.00) ||
-                ellipse({x_coord},{y_coord},{29*spike_scale**(2/3)},{300*spike_scale},269.48) ||'''
-
+                ellipse({x_coord},{y_coord},{29*spike_scale**(2/3)},{730*spike_scale},{str(np.round(300.15 + angle, 2))}) ||
+                ellipse({x_coord},{y_coord},{29*spike_scale**(2/3)},{730*spike_scale},{str(np.round(240. + angle, 2))}) ||
+                ellipse({x_coord},{y_coord},{29*spike_scale**(2/3)},{730*spike_scale},{str(np.round(360. + angle, 2))}) ||
+                ellipse({x_coord},{y_coord},{29*spike_scale**(2/3)},{300*spike_scale},{str(np.round(269.48 + angle, 2))}) ||'''
+        breakpoint()
         # Load data
         im_data, im_header, seg_data, seg_header = self.load_data(band, incl_mask = False)
         pixel_scale = self.im_pixel_scales[band]
@@ -1006,11 +1007,13 @@ class Data:
 
         # load relevant err map paths, preferring rms_err maps if available
         err_map_path, err_map_ext, err_map_type = self.get_err_map(band, prefer = "rms_err")
+        # insert specified aperture diameters from config file
+        as_aper_diams = json.loads(config.get("SExtractor", "APERTURE_DIAMS"))
+        pix_aper_diams = str([np.round(pix_aper_diam, 2) for pix_aper_diam in as_aper_diams / self.im_pixel_scales[band].value]).replace("[", "").replace("]", "").replace(" ", "")
         # SExtractor bash script python wrapper
-        #breakpoint()
         process = subprocess.Popen(["./make_seg_map.sh", config['DEFAULT']['GALFIND_WORK'], self.im_paths[band], str(self.im_pixel_scales[band].value), \
                                 str(self.im_zps[band]), self.instrument.instrument_from_band(band).name, self.survey, band, self.version, err_map_path, \
-                                err_map_ext, err_map_type, str(self.im_exts[band]), sex_config_path, params_path])
+                                err_map_ext, err_map_type, str(self.im_exts[band]), sex_config_path, params_path, pix_aper_diams])
         process.wait()
         galfind_logger.info(f"Made segmentation map for {self.survey} {self.version} {band} using config = {sex_config_path} and {err_map_type}")
 
@@ -1186,12 +1189,15 @@ class Data:
                     forced_phot_band_err_map_path, forced_phot_band_err_map_ext, forced_phot_band_err_map_type = self.get_err_map(self.forced_phot_band, prefer = prefer)
                     assert(err_map_type == forced_phot_band_err_map_type) # should always be true
                 
+                    # insert specified aperture diameters from config file
+                    as_aper_diams = json.loads(config.get("SExtractor", "APERTURE_DIAMS"))
+                    pix_aper_diams = str([np.round(pix_aper_diam, 2) for pix_aper_diam in as_aper_diams / self.im_pixel_scales[band].value]).replace("[", "").replace("]", "").replace(" ", "")
                     # SExtractor bash script python wrapper
                     process = subprocess.Popen(["./make_sex_cat.sh", config['DEFAULT']['GALFIND_WORK'], self.im_paths[band], str(self.im_pixel_scales[band].value), \
                         str(self.im_zps[band]), self.instrument.instrument_from_band(band).name, self.survey, band, self.version, \
                         self.forced_phot_band, self.im_paths[self.forced_phot_band], err_map_path, err_map_ext, \
                         str(self.im_exts[band]), forced_phot_band_err_map_path, str(self.im_exts[self.forced_phot_band]), err_map_type, 
-                        forced_phot_band_err_map_ext, sex_config_path, params_path])
+                        forced_phot_band_err_map_ext, sex_config_path, params_path, pix_aper_diams])
                     process.wait()
 
                 else: # use photutils
@@ -1302,8 +1308,8 @@ class Data:
     def make_sex_plusplus_cat(self):
         pass
     
-    def forced_photometry(self, band, forced_phot_band, radii = [0.16, 0.25, 0.5, 0.75, 1.] * u.arcsec, ra_col = 'ALPHA_J2000', dec_col = 'DELTA_J2000', \
-            coord_unit = u.deg, id_col = 'NUMBER', x_col = 'X_IMAGE', y_col = 'Y_IMAGE', forced_phot_code = "photutils"):
+    def forced_photometry(self, band, forced_phot_band, radii = list(np.array(json.loads(config["SExtractor"]["APERTURE_DIAMS"])) / 2.) * u.arcsec, \
+            ra_col = 'ALPHA_J2000', dec_col = 'DELTA_J2000', coord_unit = u.deg, id_col = 'NUMBER', x_col = 'X_IMAGE', y_col = 'Y_IMAGE', forced_phot_code = "photutils"):
         # Read in sextractor catalogue
         catalog = Table.read(self.sex_cat_path(forced_phot_band, forced_phot_band), character_as_bytes = False)
         # Open image with correct extension and get WCS

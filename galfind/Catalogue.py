@@ -44,15 +44,16 @@ class Catalogue(Catalogue_Base):
     @classmethod
     def from_pipeline(cls, survey, version, aper_diams, cat_creator, SED_fit_params_arr = [{"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": 4.}, \
             {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": 6.}, {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}], \
-            instruments = ['NIRCam', 'ACS_WFC', 'WFC3_IR'], forced_phot_band = "F444W", excl_bands = [], loc_depth_min_flux_pc_errs = [5, 10], \
-            crop_by = None, timed = True, mask_stars = True):
+            instruments = ['NIRCam', 'ACS_WFC', 'WFC3_IR'], forced_phot_band = ["F277W", "F356W", "F444W"], excl_bands = [], \
+            pix_scales = {"ACS_WFC": 0.03 * u.arcsec, "WFC3_IR": 0.03 * u.arcsec, "NIRCam": 0.03 * u.arcsec, "MIRI": 0.09 * u.arcsec}, \
+            loc_depth_min_flux_pc_errs = [5, 10], crop_by = None, timed = True, mask_stars = True):
         # make 'Data' object
-        data = Data.from_pipeline(survey, version, instruments, excl_bands = excl_bands, mask_stars = mask_stars)
+        data = Data.from_pipeline(survey, version, instruments, excl_bands = excl_bands, mask_stars = mask_stars, pix_scales = pix_scales)
         return cls.from_data(data, version, aper_diams, cat_creator, SED_fit_params_arr, \
             forced_phot_band, loc_depth_min_flux_pc_errs, crop_by = crop_by, timed = timed)
     
     @classmethod
-    def from_data(cls, data, version, aper_diams, cat_creator, SED_fit_params_arr, forced_phot_band = "F444W", \
+    def from_data(cls, data, version, aper_diams, cat_creator, SED_fit_params_arr, forced_phot_band = ["F277W", "F356W", "F444W"], \
                 loc_depth_min_flux_pc_errs = [10], mask = True, crop_by = None, timed = True):
         # make masked local depth catalogue from the 'Data' object
         #breakpoint()
