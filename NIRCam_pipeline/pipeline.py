@@ -28,7 +28,7 @@ def pipeline(surveys, version, instruments, aper_diams, min_flux_pc_errs, forced
                 cat_creator = cat_creator, SED_fit_params_arr = SED_fit_params_arr, forced_phot_band = forced_phot_band, \
                 excl_bands = excl_bands, loc_depth_min_flux_pc_errs = min_flux_pc_errs, crop_by = crop_by, timed = timed, \
                 mask_stars = mask_stars, pix_scales = pix_scales)
-            breakpoint()
+            #breakpoint()
             #cat_copy = cat.select_phot_galaxy_property("z", "<", 0.5)
             #cat_copy = cat.select_phot_galaxy_property("z", ">", 0.3)
             cat_copy = cat.select_EPOCHS(allow_lowz = False)
@@ -68,10 +68,10 @@ def make_EAZY_SED_fit_params_arr(SED_code_arr, templates_arr, lowz_zmax_arr):
 
 if __name__ == "__main__":
 
-    version = "v0.9" #config["DEFAULT"]["VERSION"]
+    version = "v11_degrade8" #config["DEFAULT"]["VERSION"]
     instruments = ["NIRCam"] #, "ACS_WFC"] # "WFC3_IR"
     cat_type = "loc_depth"
-    surveys = ["PRIMER-COSMOS"] #[config["DEFAULT"]["SURVEY"]]
+    surveys = ["JOF"] #[config["DEFAULT"]["SURVEY"]]
     aper_diams = [0.32] * u.arcsec
     SED_code_arr = [EAZY()]
     templates_arr = ["fsps_larson"] #["fsps", "fsps_larson", "fsps_jades"]
@@ -90,9 +90,9 @@ if __name__ == "__main__":
 
     SED_fit_params_arr = make_EAZY_SED_fit_params_arr(SED_code_arr, templates_arr, lowz_zmax_arr)
 
-    # delay_time = (14 * u.h).to(u.s).value
-    # print(f"{surveys[0]} delayed by {delay_time}s")
-    # time.sleep(delay_time)
+    delay_time = (8 * u.h).to(u.s).value
+    print(f"{surveys[0]} delayed by {delay_time}s")
+    time.sleep(delay_time)
 
     pix_scales = {**{"ACS_WFC": 0.03 * u.arcsec, "WFC3_IR": 0.03 * u.arcsec, "NIRCam": 0.03 * u.arcsec}, **{"MIRI": MIRI_pix_scale}}
 

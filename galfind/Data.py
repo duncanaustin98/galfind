@@ -734,10 +734,9 @@ class Data:
             ax.add_artist(t)
 
     def make_mask(self, band, edge_mask_distance = 50, mask_stars = True, scale_extra = 0.2,
-            star_mask_override = None, exclude_gaia_galaxies = True, angle = 75., edge_value = 0., 
+            star_mask_override = None, exclude_gaia_galaxies = True, angle = -70., edge_value = 0., 
             element = 'ELLIPSE', gaia_row_lim = 500, plot = False):
         
-        breakpoint()
         if 'NIRCam' not in self.instrument.name and mask_stars:
             galfind_logger.critical(f"Mask making only implemented for NIRCam data!")
             raise(Exception("Star mask making only implemented for NIRCam data!"))
@@ -780,6 +779,7 @@ class Data:
 
         galfind_logger.info(f"Automasking {self.survey} {band}.")
 
+        # angle rotation is anti-clockwise for positive angles
         composite = lambda x_coord, y_coord, central_scale, spike_scale, angle: \
             f'''# Region file format: DS9 version 4.1
             global color=green dashlist=8 3 width=1 font="helvetica 10 normal roman" select=1 highlite=1 dash=0 fixed=0 edit=1 move=1 delete=1 include=1 source=1
@@ -790,7 +790,7 @@ class Data:
                 ellipse({x_coord},{y_coord},{29*spike_scale**(2/3)},{730*spike_scale},{str(np.round(240. + angle, 2))}) ||
                 ellipse({x_coord},{y_coord},{29*spike_scale**(2/3)},{730*spike_scale},{str(np.round(360. + angle, 2))}) ||
                 ellipse({x_coord},{y_coord},{29*spike_scale**(2/3)},{300*spike_scale},{str(np.round(269.48 + angle, 2))}) ||'''
-        breakpoint()
+
         # Load data
         im_data, im_header, seg_data, seg_header = self.load_data(band, incl_mask = False)
         pixel_scale = self.im_pixel_scales[band]
