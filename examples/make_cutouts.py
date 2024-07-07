@@ -20,7 +20,7 @@ if __name__ == "__main__":
     # IDs for cutouts
     IDs_arr = [Trussler2024_smouldering_IDs(surveys[0])]
     #IDs_arr = [[52]] # for i in range(10)]
-    cutout_size = 32
+    cutout_size = 0.96 * u.arcsec
 
     # fixed parameters (for now)
     forced_phot_band = ["F277W", "F356W", "F444W"]

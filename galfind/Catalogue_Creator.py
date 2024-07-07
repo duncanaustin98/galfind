@@ -158,7 +158,7 @@ class GALFIND_Catalogue_Creator(Catalogue_Creator):
     
     # current bottleneck
     @staticmethod
-    def load_gal_instr_mask(phot, keep_indices, save_path, null_data_val = 0., timed = True):
+    def load_gal_instr_mask(phot, keep_indices, save_path, null_data_vals = [0., np.nan], timed = True):
         if Path(save_path).is_file():
             # load in gal_instr_mask from .h5
             hf = h5py.File(save_path, "r")
@@ -167,10 +167,10 @@ class GALFIND_Catalogue_Creator(Catalogue_Creator):
         else:
             # calculate the mask that is used to crop photometry to only bands including data
             if timed:
-                gal_instr_mask = np.array([[True if val != null_data_val else False for val in gal_phot] for gal_phot in \
+                gal_instr_mask = np.array([[True if val not in null_data_vals else False for val in gal_phot] for gal_phot in \
                     tqdm(phot, desc = "Making gal_instr_mask", total = len(phot))])
             else:
-                gal_instr_mask = np.array([[True if val != null_data_val else False for val in gal_phot] for gal_phot in phot])
+                gal_instr_mask = np.array([[True if val not in null_data_vals else False for val in gal_phot] for gal_phot in phot])
             # save as .h5
             hf = h5py.File(save_path, "w")
             hf.create_dataset("has_data_mask", data = gal_instr_mask)
@@ -211,9 +211,10 @@ class GALFIND_Catalogue_Creator(Catalogue_Creator):
             galfind_logger.info(f"Extracting photometry from fits took {(end_time - start_time):.1f}s")
 
         if len(bands) > 1:
+            #breakpoint()
             assert type(gal_band_mask) == type(None)
             # for each galaxy remove bands that have no data
-            gal_band_mask_save_path = f"{config['DEFAULT']['GALFIND_WORK']}/Masks/{fits_cat.meta['SURVEY']}/has_data_mask/{fits_cat.meta['SURVEY']}_{fits_cat.meta['VERSION']}.h5"
+            gal_band_mask_save_path = f"{config['DEFAULT']['GALFIND_WORK']}/Masks/{fits_cat.meta['SURVEY']}/has_data_mask/{fits_cat.meta['SURVEY']}_{fits_cat.meta['VERSION']}_{fits_cat.meta['INSTR']}.h5"
             funcs.make_dirs(funcs.split_dir_name(gal_band_mask_save_path, "dir"))
             keep_indices = np.array(fits_cat[self.ID_label]) - 1
             gal_band_mask = self.load_gal_instr_mask(phot, keep_indices, gal_band_mask_save_path, timed = timed)

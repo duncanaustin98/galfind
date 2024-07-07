@@ -44,16 +44,19 @@ class Catalogue(Catalogue_Base):
     @classmethod
     def from_pipeline(cls, survey, version, aper_diams, cat_creator, SED_fit_params_arr = [{"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": 4.}, \
             {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": 6.}, {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}], \
-            instruments = ['NIRCam', 'ACS_WFC', 'WFC3_IR'], forced_phot_band = "F444W", excl_bands = [], loc_depth_min_flux_pc_errs = [5, 10], crop_by = None, timed = True):
+            instruments = ['NIRCam', 'ACS_WFC', 'WFC3_IR'], forced_phot_band = ["F277W", "F356W", "F444W"], excl_bands = [], \
+            pix_scales = {"ACS_WFC": 0.03 * u.arcsec, "WFC3_IR": 0.03 * u.arcsec, "NIRCam": 0.03 * u.arcsec, "MIRI": 0.09 * u.arcsec}, \
+            loc_depth_min_flux_pc_errs = [5, 10], crop_by = None, timed = True, mask_stars = True):
         # make 'Data' object
-        data = Data.from_pipeline(survey, version, instruments, excl_bands = excl_bands)
+        data = Data.from_pipeline(survey, version, instruments, excl_bands = excl_bands, mask_stars = mask_stars, pix_scales = pix_scales)
         return cls.from_data(data, version, aper_diams, cat_creator, SED_fit_params_arr, \
             forced_phot_band, loc_depth_min_flux_pc_errs, crop_by = crop_by, timed = timed)
     
     @classmethod
-    def from_data(cls, data, version, aper_diams, cat_creator, SED_fit_params_arr, forced_phot_band = "F444W", \
+    def from_data(cls, data, version, aper_diams, cat_creator, SED_fit_params_arr, forced_phot_band = ["F277W", "F356W", "F444W"], \
                 loc_depth_min_flux_pc_errs = [10], mask = True, crop_by = None, timed = True):
         # make masked local depth catalogue from the 'Data' object
+        #breakpoint()
         data.combine_sex_cats(forced_phot_band)
         mode = str(config["Depths"]["MODE"]).lower() # mode to calculate depths (either "n_nearest" or "rolling")
         data.calc_depths(aper_diams, mode = mode, cat_creator = cat_creator)
@@ -75,7 +78,6 @@ class Catalogue(Catalogue_Base):
                 instrument.remove_band(band_name)
                 print(f"{band_name} flux not loaded")
         print(f"instrument band names = {instrument.band_names}")
-
         # crop fits catalogue by the crop_by column name should it exist
         assert(type(crop_by) in [type(None), str, list, np.array, dict])
         if type(crop_by) in [str]:
@@ -100,7 +102,6 @@ class Catalogue(Catalogue_Base):
                         galfind_logger.warning(f"{type(fits_cat[name][0])=} not in [bool, np.bool_]")
                 else:
                     galfind_logger.warning(f"Invalid crop name == {name}! Skipping")
-
         # produce galaxy array from each row of the catalogue
         if timed:
             start_time = time.time()
@@ -206,28 +207,39 @@ class Catalogue(Catalogue_Base):
             galfind_logger.info("OVERWRITE_MASK_COLS = YES, updating catalogue with masking columns.")
         # open catalogue with astropy
         fits_cat = self.open_cat(cropped = True)
+        
         # update input catalogue if it hasnt already been masked or if wanted ONLY if len(self) == len(cat)
         if len(self) != len(fits_cat):
             galfind_logger.warning(f"len(self) = {len(self)}, len(cat) = {len(fits_cat)} -> len(self) != len(cat). Skipping masking for {self.survey} {self.version}!")
+        
         elif (not "MASKED" in fits_cat.meta.keys() or overwrite):
             galfind_logger.info(f"Masking catalogue for {self.survey} {self.version}")
             
             # calculate x,y for each galaxy in catalogue
-            cat_x, cat_y = self.data.load_wcs(self.data.alignment_band).world_to_pixel(SkyCoord(fits_cat[self.cat_creator.ra_dec_labels["RA"]], fits_cat[self.cat_creator.ra_dec_labels["DEC"]]))
-            
+            #cat_x, cat_y = self.data.load_wcs(self.data.alignment_band).world_to_pixel(cat_sky_coords)
+            cat_sky_coords = SkyCoord(fits_cat[self.cat_creator.ra_dec_labels["RA"]], fits_cat[self.cat_creator.ra_dec_labels["DEC"]])
+
             # make columns for individual band masking
             if config["Masking"].getboolean("MASK_BANDS"):
-                for band in tqdm(self.instrument.band_names, desc = "Masking galfind catalogue object", total = len(self.instrument)):
-                    # open .fits mask for band
-                    mask = self.data.load_mask(band)
-                    # determine whether a galaxy is unmasked
-                    unmasked_band = np.array([False if x < 0. or x >= mask.shape[1] or y < 0. or y >= mask.shape[0] else not bool(mask[int(y)][int(x)]) for x, y in zip(cat_x, cat_y)])
-                    # update catalogue with new column
+                unmasked_band_dict = {}
+                masks = [self.data.load_mask(band) for band in self.instrument.band_names]
+                # if masks are all the same shape
+                if all(mask.shape == masks[0].shape for mask in masks):
+                    cat_x, cat_y = self.data.load_wcs(self.data.alignment_band).world_to_pixel(cat_sky_coords)
+                    unmasked_band_dict = {band: np.array([False if x < 0. or x >= mask.shape[1] or y < 0. or y >= mask.shape[0] else not bool(mask[int(y)][int(x)]) for x, y in zip(cat_x, cat_y)]) \
+                        for band, mask in tqdm(zip(self.instrument.band_names, masks), desc = "Masking galfind catalogue object", total = len(self.instrument))}
+                else:
+                    unmasked_band_dict = {}
+                    for band, mask in tqdm(zip(self.instrument.band_names, masks), desc = "Masking galfind catalogue object", total = len(self.instrument)):
+                        # convert catalogue RA/Dec to mask X/Y co-ordinates using image wcs
+                        cat_x, cat_y = self.data.load_wcs(band).world_to_pixel(cat_sky_coords)
+                        # determine whether a galaxy is unmasked
+                        unmasked_band_dict[band] = np.array([False if x < 0. or x >= mask.shape[1] or y < 0. or y >= mask.shape[0] else not bool(mask[int(y)][int(x)]) for x, y in zip(cat_x, cat_y)])
+                # update catalogue with new columns
+                for band, unmasked_band in unmasked_band_dict.items():
                     fits_cat[f"unmasked_{band}"] = unmasked_band # assumes order of catalogue and galaxies in self is consistent
                     # update galaxy objects in catalogue - current bottleneck
                     [gal.mask_flags.update({band: unmasked_band_gal}) for gal, unmasked_band_gal in zip(self, unmasked_band)]
-                # make columns for masking by instrument
-                
 
             # determine which cluster/blank masking columns are wanted
             mask_labels = []
@@ -243,6 +255,7 @@ class Catalogue(Catalogue_Base):
                 default_blank_bool_arr.append(False)
             
             # mask columns in catalogue + galfind galaxies
+            cat_x, cat_y = self.data.load_wcs(self.data.alignment_band).world_to_pixel(cat_sky_coords)
             for mask_label, mask_path, default_blank_bool in zip(mask_labels, mask_paths, default_blank_bool_arr):
                 # if using a blank field
                 if self.data.is_blank:
@@ -279,37 +292,39 @@ class Catalogue(Catalogue_Base):
         else:
             galfind_logger.info(f"Catalogue for {self.survey} {self.version} already masked. Skipping!")
 
-    def make_cutouts(self, IDs, cutout_size = 32):
+    def make_cutouts(self, IDs, cutout_size = 0.96 * u.arcsec):
         if type(IDs) == int:
             IDs = [IDs]
         for band in tqdm(self.instrument.band_names, total = len(self.instrument), desc = "Making band cutouts"):
-            rerun = False
-            if config.getboolean("Cutouts", "OVERWRITE_CUTOUTS"):
-                rerun = True
-            else:
-                for gal in self:
-                    out_path = f"{config['Cutouts']['CUTOUT_DIR']}/{self.version}/{self.survey}/{band}/{gal.ID}.fits"
-                    if Path(out_path).is_file():
-                        size = fits.open(out_path)[0].header["size"]
-                        if size != cutout_size:
-                            rerun = True
-                    else:
-                        rerun = True
-            if rerun:
-                im_data, im_header, seg_data, seg_header = self.data.load_data(band, incl_mask = False)
-                wht_data = self.data.load_wht(band)
-                rms_err_data = self.data.load_rms_err(band)
-                wcs = WCS(im_header)
-                for gal in self:
-                    if gal.ID in IDs:
-                        gal.make_cutout(band, data = {"SCI": im_data, "SEG": seg_data, 'WHT': wht_data, 'RMS_ERR':rms_err_data}, \
-                            wcs = wcs, im_header = im_header, survey = self.survey, version = self.version, cutout_size = cutout_size)
-            else:
-                for gal in self:
-                    if gal.ID in IDs:
-                        gal.cutout_paths[band] = f"{config['Cutouts']['CUTOUT_DIR']}/{self.version}/{self.survey}/{band}/{gal.ID}.fits"
-                print(f"Cutouts for {band} already exist. Skipping.")
-    def make_RGB_images(self, IDs, cutout_size = 32):
+#             rerun = False
+#             if config.getboolean("Cutouts", "OVERWRITE_CUTOUTS"):
+#                 rerun = True
+#             else:
+#                 for gal in self:
+#                     out_path = f"{config['Cutouts']['CUTOUT_DIR']}/{self.version}/{self.survey}/{band}/{gal.ID}.fits"
+#                     if Path(out_path).is_file():
+#                         size = fits.open(out_path)[0].header["size"]
+#                         if size != cutout_size:
+#                             rerun = True
+#                     else:
+#                         rerun = True
+#             if rerun:
+            im_data, im_header, seg_data, seg_header = self.data.load_data(band, incl_mask = False)
+            wht_data = self.data.load_wht(band)
+            rms_err_data = self.data.load_rms_err(band)
+            wcs = WCS(im_header)
+            for gal in self:
+                if gal.ID in IDs:
+                    gal.make_cutout(band, data = {"SCI": im_data, "SEG": seg_data, 'WHT': wht_data, 'RMS_ERR':rms_err_data}, \
+                        wcs = wcs, im_header = im_header, survey = self.survey, version = self.version, \
+                        pix_scale = self.data.im_pixel_scales[band], cutout_size = cutout_size)
+#             else:
+#                 for gal in self:
+#                     if gal.ID in IDs:
+#                         gal.cutout_paths[band] = f"{config['Cutouts']['CUTOUT_DIR']}/{self.version}/{self.survey}/{band}/{gal.ID}.fits"
+#                 print(f"Cutouts for {band} already exist. Skipping.")
+
+    def make_RGB_images(self, IDs, cutout_size = 0.96 * u.arcsec):
         return NotImplementedError
     
     def plot_phot_diagnostics(self, 
@@ -456,7 +471,7 @@ class Catalogue(Catalogue_Base):
 
     def select_EPOCHS(self, SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}, allow_lowz = False, hot_pixel_bands = ["F277W", "F356W", "F444W"]):
         self.perform_selection(Galaxy.select_min_bands, 4., make_cat_copy = False) # minimum 4 photometric bands
-        self.perform_selection(Galaxy.select_unmasked_instrument, NIRCam(), make_cat_copy = False) # all NIRCam bands unmasked
+        [self.perform_selection(Galaxy.select_unmasked_instrument, globals()[instr_name](), make_cat_copy = False) for instr_name in self.instrument.name.split("+")] # all bands unmasked
         [self.select_band_flux_radius(band, "gtr", 1.5, make_cat_copy = False) for band in hot_pixel_bands if band in self.instrument.band_names] # LW NIRCam wideband Re>1.5 pix
         if not allow_lowz:
             self.perform_selection(Galaxy.phot_SNR_crop, 0, 2., "non_detect", make_cat_copy = False) # 2σ non-detected in first band

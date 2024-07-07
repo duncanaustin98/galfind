@@ -179,10 +179,14 @@ def main(in_bands, extract_code, save_loc, PSF_loc, PSF_name, plot_PSF, aper_dia
 
 if __name__ == "__main__":
     extract_code = "sep"
-    save_loc = f"{config['DEFAULT']['GALFIND_WORK']}/Aperture_corrections"
-    PSF_loc = config["DEFAULT"]["PSF_DIR"]
+    save_loc = f"{config['DEFAULT']['GALFIND_WORK']}/Aperture_corrections/MIRI"
+    os.makedirs(save_loc, exist_ok = True)
+    PSF_loc = "/raid/scratch/data/jwst/PSFs/MIRI_Original" #config["DEFAULT"]["PSF_DIR"]
     #PSF_name = "PSF_Resample_03_"
-    PSF_name = ["PSF_", "cen_G5V_fov299px_ISIM41"]
+    PSF_name = "PSF_MIRI_in_flight_opd_filter_"
+    #PSF_name = ["PSF_", "cen_G5V_fov299px_ISIM41"]
     plot_PSF = True
+    in_bands = ["F560W", "F770W", "F1000W", "F1065C", "F1130W", "F1140C", "F1280W", \
+       "F1500W", "F1550C", "F1800W", "F2100W", "F2300C", "F2550W"]
     
-    main(extract_code, save_loc, PSF_loc, PSF_name, plot_PSF)
+    main(in_bands, extract_code, save_loc, PSF_loc, PSF_name, plot_PSF)
