@@ -159,18 +159,22 @@ class PDF:
         save_tab = Table({self.property_name: save_arr.value})
         save_tab.meta = meta
         save_tab.write(save_path, overwrite = True)
+        funcs.change_file_permissions(save_path)
 
     def plot(self, ax, annotate = True, annotate_peak_loc = False, colour = "black"):
         
-        ax.plot(self.x, self.p_x, color = colour)
+        ax.plot(self.x, self.p_x/np.max(self.p_x), color = colour)
         
         # Set x and y plot limits
-        ax.set_xlim(self.get_percentile(1.), self.get_percentile(99.))
-        ax.set_ylim(0, 1.2 * np.max(self.p_x))
+        ax.set_xlim(self.get_percentile(3.)-0.2, self.get_percentile(97.)+0.2)
+        if abs(ax.get_xlim()[1]-ax.get_xlim()[0]) < 0.3:
+            ax.set_xlim(ax.get_xlim()[0]-0.5, ax.get_xlim()[1]+0.5)
+        ax.set_ylim(0, 1.2)
 
         # fill inside PDF with hatch
         x_lim = np.linspace(self.get_percentile(1.), self.get_percentile(99.)) #np.linspace(0.93 * float(self.get_peak(0)["value"]), 1.07 * float(self.get_peak(0)["value"]), 100)
-        pdf_lim = np.interp(x_lim, self.x, self.p_x)
+        
+        pdf_lim = np.interp(x_lim, self.x, self.p_x/np.max(self.p_x))
         ax.fill_between(x_lim, pdf_lim, color = colour, alpha = 0.2, hatch = '//')
 
         ax.grid(False)

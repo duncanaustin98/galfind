@@ -85,6 +85,7 @@ class SED:
             ax.legend(**legend_kwargs)
         if save:
             plt.savefig(f"{save_name}.png")
+            funcs.change_file_permissions(f"{save_name}.png")
         return plot
     
     def calc_bandpass_averaged_flux(self, filter_wavs, filter_trans):
@@ -119,7 +120,7 @@ class SED:
             plt.plot(wavs_AA[feature_mask], flux_lambda[feature_mask])
             plt.show()
         line_plus_cont_flux = np.trapz(flux_lambda[feature_mask], x = wavs_AA[feature_mask])
-        #breakpoint()
+        ##breakpoint()
         # calculate continuum flux and mean continuum level
         cont_mask = np.logical_or.reduce(np.array([((wavs_AA > lims[0].to(u.AA)) & \
                         (wavs_AA < lims[1].to(u.AA))) for lims in cont_lims]))
@@ -581,6 +582,7 @@ class Mock_SED_obs_template_set(Mock_SED_template_set):
         ax.scatter(colour_x[plot_indices], colour_y[plot_indices], color = line_kwargs["c"], marker = "s", s = 10., zorder = 999., path_effects = line_kwargs["path_effects"])
         if save:
             os.makedirs(save_dir, exist_ok = True)
-            plt.savefig(f"{save_dir}/{colour_x_name}_vs_{colour_y_name}.png", dvi = 400)
+            plt.savefig(f"{save_dir}/{colour_x_name}_vs_{colour_y_name}.png", dpi = 400)
+            funcs.change_file_permissions(f"{save_dir}/{colour_x_name}_vs_{colour_y_name}.png")
         if show:
             plt.show()

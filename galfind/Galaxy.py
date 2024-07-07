@@ -144,15 +144,21 @@ class Galaxy:
             for i, (label_i, data_i) in enumerate(data_dict.items()):
                 if i == 0 and label_i == "SCI":
                    sci_shape = data_i.shape
-                if not type(data_i) == type(None):
+                if type(data_i) == type(None):
+                    galfind_logger.warning(f"No data found for {label_i} in {band}!")
+                else:
                     if data_i.shape == sci_shape:
                         cutout = Cutout2D(data_i, self.sky_coord, size = (cutout_size_pix, cutout_size_pix), wcs = wcs)
                         im_header.update(cutout.wcs.to_header())
                         hdul.append(fits.ImageHDU(cutout.data, header = im_header, name = label_i))
+                        galfind_logger.info(f"Created cutout for {label_i} in {band}")
+                    else:
+                      galfind_logger.warning(f"Incorrect data shape. {data_i=} != {sci_shape=}, skipping extension!")
             #print(hdul)
             os.makedirs("/".join(out_path.split("/")[:-1]), exist_ok = True)
             fits_hdul = fits.HDUList(hdul)
             fits_hdul.writeto(out_path, overwrite = True)
+            funcs.change_file_permissions(out_path)
             galfind_logger.info(f"Saved fits cutout to: {out_path}")
         else:
             galfind_logger.info(f"Already made fits cutout for {survey} {version} {self.ID} {band}")
@@ -203,6 +209,8 @@ class Galaxy:
                     f.write("testfirst   0\n")
                     f.write("sampledx  0\n")
                     f.write("sampledy  0\n")
+                
+                funcs.change_file_permissions(in_path)
                 # Run trilogy
                 sys.path.insert(1, "/nvme/scratch/software/trilogy") # Not sure why this path doesn't work: config["Other"]["TRILOGY_DIR"]
                 from trilogy3 import Trilogy
@@ -211,76 +219,87 @@ class Galaxy:
             elif method == "lupton":
                 raise(NotImplementedError())
     
-    def plot_cutouts(self, ax_arr, data, SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}, \
+    def plot_cutouts(self, cutout_fig, data, SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}, \
             hide_masked_cutouts = True, cutout_size = 0.96 * u.arcsec, high_dyn_rng = False):
+    
+        # Delete everything on the figure
+        cutout_fig.clf()
+        # Work out how many bands we have to plot.
+        bands = self.phot.instrument.band_names
+        for i, band in enumerate(bands):
+            if self.phot.flux_Jy.mask[i] and hide_masked_cutouts:
+                bands.remove(band)
 
-        for i, band in enumerate(self.phot.instrument.band_names):
+        if len(bands) <= 8:
+            gridspec_cutout = cutout_fig.add_gridspec(1, len(bands))
+        else:
+            gridspec_cutout = cutout_fig.add_gridspec(2, int(np.ceil((len(bands) / 2))))
+        
+        cutout_ax_list = []
+        for i, band in enumerate(bands):
+            cutout_ax = cutout_fig.add_subplot(gridspec_cutout[i])
+            cutout_ax.set_aspect('equal', adjustable='box', anchor='N')
+            cutout_ax.set_xticks([])
+            cutout_ax.set_yticks([])
+            cutout_ax_list.append(cutout_ax)
+        ax_arr = np.array(cutout_ax_list, dtype=object).flatten()
+
+        for i, band in enumerate(bands):
                 
             # need to load sextractor flux_radius as a general function somewhere!
             radius = 0.16 * u.arcsec # need access to galfind cat_creator for this
             radius_pix = (radius / data.im_pixel_scales[band]).to(u.dimensionless_unscaled).value
             #flux_radius = None
             #radius_sextractor = flux_radius
-            if self.phot.flux_Jy.mask[i] and hide_masked_cutouts:
-                data_cutout = None
+        
+            # load cutout if already made, else produce one
+            cutout_hdul = self.make_cutout(band, data, pix_scale = data.im_pixel_scales[band], cutout_size = cutout_size)
+            data_cutout = cutout_hdul[1].data # should handle None in the case of NoOverlapError        
+        
+            cutout_size_pix = (cutout_size / data.im_pixel_scales[band]).to(u.dimensionless_unscaled).value
+            # Set top value based on central 10x10 pixel region
+            top = np.max(data_cutout[:20, 10:20])
+            top = np.max(data_cutout[int(cutout_size_pix // 2 - 0.3 * cutout_size_pix) : int(cutout_size_pix // 2 + 0.3 * cutout_size_pix), \
+                int(cutout_size_pix // 2 - 0.3 * cutout_size_pix) : int(cutout_size_pix // 2 + 0.3 * cutout_size_pix)])
+            bottom_val = top / 10 ** 5
+            
+            if high_dyn_rng:
+                a = 300
             else:
-                # load cutout if already made, else produce one
-                cutout_hdul = self.make_cutout(band, data, pix_scale = data.im_pixel_scales[band], cutout_size = cutout_size)
-                data_cutout = cutout_hdul[1].data # should handle None in the case of NoOverlapError        
+                a = 0.1
+            stretch = LogStretch(a = a)
 
-            if type(data_cutout) != type(None):
-                cutout_size_pix = (cutout_size / data.im_pixel_scales[band]).to(u.dimensionless_unscaled).value
-                # Set top value based on central 10x10 pixel region
-                top = np.max(data_cutout[:20, 10:20])
-                top = np.max(data_cutout[int(cutout_size_pix // 2 - 0.3 * cutout_size_pix) : int(cutout_size_pix // 2 + 0.3 * cutout_size_pix), \
-                    int(cutout_size_pix // 2 - 0.3 * cutout_size_pix) : int(cutout_size_pix // 2 + 0.3 * cutout_size_pix)])
-                bottom_val = top / 10 ** 5
+            n_sig_detect = self.phot.SNR[i]
+            if n_sig_detect < 100:
+                bottom_val = top * 1e-3
+                a = 100
+            if n_sig_detect <= 15:
+                bottom_val = top * 1e-2
+                a = 0.1
+            if n_sig_detect < 8:
+                bottom_val = top / 100_000
+                stretch = LinearStretch()
                 
-                if high_dyn_rng:
-                    a = 300
-                else:
-                    a = 0.1
-                stretch = LogStretch(a = a)
+            data_cutout = np.clip(data_cutout * 0.9999, bottom_val * 1.000001, top) # why?
+            norm = ImageNormalize(data_cutout, interval = ManualInterval(bottom_val, top), clip = True, stretch = stretch)
 
-                n_sig_detect = self.phot.SNR[i]
-                if n_sig_detect < 100:
-                    bottom_val = top / 10 ** 3
-                    a = 100
-                if n_sig_detect <= 15:
-                    bottom_val = top/10**2
-                    a = 0.1
-                if n_sig_detect < 8:
-                    bottom_val = top / 100000
-                    stretch = LinearStretch()
-                    
-                data_cutout = np.clip(data_cutout * 0.9999, bottom_val * 1.000001, top) # why?
-                norm = ImageNormalize(data_cutout, interval = ManualInterval(bottom_val, top), clip = True, stretch = stretch)
+            #ax_arr[i].cla()
 
-                #ax_arr[i].cla()
-                ax_arr[i].set_visible(True)
-                ax_arr[i].set_aspect('equal', adjustable = 'box', anchor = 'N')
-                ax_arr[i].set_xticks([])
-                ax_arr[i].set_yticks([])
+            ax_arr[i].imshow(data_cutout, norm = norm, cmap='magma', origin = "lower")
+            ax_arr[i].text(0.95, 0.95, band, fontsize = 'small', c = 'white', \
+                transform = ax_arr[i].transAxes, ha = 'right', va = 'top', zorder = 10, fontweight = 'bold')         
 
-                ax_arr[i].imshow(data_cutout, norm = norm, cmap='magma', origin = "lower")
-                ax_arr[i].text(0.95, 0.95, band, fontsize = 'small', c = 'white', \
-                    transform = ax_arr[i].transAxes, ha = 'right', va = 'top', zorder = 10, fontweight = 'bold')         
-
-                # add circles to show extraction aperture and sextractor FLUX_RADIUS
-                xpos = np.mean(ax_arr[i].get_xlim())
-                ypos = np.mean(ax_arr[i].get_ylim())
-                region = patches.Circle((xpos, ypos), radius_pix, fill = False, \
-                    linestyle = '--', lw = 1, color = 'white', zorder = 20)
-                ax_arr[i].add_patch(region)
-                galfind_logger.warning("Need to load in SExtractor FLUX_RADIUS")
-                # if radius_sextractor != 0:
-                #     region_sextractor = patches.Circle((xpos, ypos), radius_sextractor, \
-                #         fill = False, linestyle = '--', lw = 1, color = 'blue', zorder = 20)
-                #     ax_arr[i].add_patch(region_sextractor)
-                
-            else: # if the band is masked and this should not be shown
-                #ax_arr[i].cla()
-                ax_arr[i].set_visible(False)
+            # add circles to show extraction aperture and sextractor FLUX_RADIUS
+            xpos = np.mean(ax_arr[i].get_xlim())
+            ypos = np.mean(ax_arr[i].get_ylim())
+            region = patches.Circle((xpos, ypos), radius_pix, fill = False, \
+                linestyle = '--', lw = 1, color = 'white', zorder = 20)
+            ax_arr[i].add_patch(region)
+            galfind_logger.warning("Need to load in SExtractor FLUX_RADIUS")
+            # if radius_sextractor != 0:
+            #     region_sextractor = patches.Circle((xpos, ypos), radius_sextractor, \
+            #         fill = False, linestyle = '--', lw = 1, color = 'blue', zorder = 20)
+            #     ax_arr[i].add_patch(region_sextractor)
             
             # add scalebars to the last cutout
             if len(data.instrument) > 0:
@@ -300,11 +319,12 @@ class Galaxy:
                 scalebar = AnchoredSizeBar(ax_arr[-1].transData, re, f"{re_kpc:.1f}", \
                     'upper left', pad=0.3, color='white', frameon=False, size_vertical=1.5)
                 ax_arr[-1].add_artist(scalebar)
+
     
     def plot_phot_diagnostic(self, ax, data, SED_fit_params_arr, zPDF_plot_SED_fit_params_arr, wav_unit = u.um, flux_unit = u.ABmag, \
             hide_masked_cutouts = True, cutout_size = 0.96 * u.arcsec, high_dyn_rng = False, annotate_PDFs = True, plot_rejected_reasons = False, overwrite = True):
 
-        cutout_ax, phot_ax, PDF_ax = ax
+        cutout_fig, phot_ax, PDF_ax = ax
         # update SED_fit_params with appropriate lowz_zmax
         SED_fit_params_arr = [SED_fit_params["code"].update_lowz_zmax(SED_fit_params, self.phot.SED_results) for SED_fit_params in SED_fit_params_arr]
         zPDF_plot_SED_fit_params_arr = [SED_fit_params["code"].update_lowz_zmax(SED_fit_params, self.phot.SED_results) for SED_fit_params in zPDF_plot_SED_fit_params_arr] 
@@ -321,7 +341,7 @@ class Galaxy:
 
         if not Path(out_path).is_file() or overwrite:
             # plot cutouts (assuming reference SED_fit_params is at 0th index)
-            self.plot_cutouts(cutout_ax, data, SED_fit_params_arr[0], \
+            self.plot_cutouts(cutout_fig, data, SED_fit_params_arr[0], \
                 hide_masked_cutouts = hide_masked_cutouts, cutout_size = cutout_size, high_dyn_rng = high_dyn_rng)
                     
             # plot specified SEDs andd save colours
@@ -364,7 +384,8 @@ class Galaxy:
 
             # Save and clear axes
             plt.savefig(out_path, dpi = 300, bbox_inches = 'tight')
-            for ax in [phot_ax] + PDF_ax + cutout_ax:
+            funcs.change_file_permissions(out_path)
+            for ax in [phot_ax] + PDF_ax:
                 ax.cla()
             
         return out_path

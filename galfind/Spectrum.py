@@ -220,6 +220,7 @@ class Spectrum:
             img = fits.open(url_path, cache = False)
             if save:
                 img.writeto(loc_2D_path)
+                funcs.change_file_permissions(loc_2D_path)
         else:
             img = fits.open(loc_2D_path)
         # extract info from img header
@@ -236,7 +237,7 @@ class Spectrum:
         # extract 1D spectrum from 2D fits image using msaexp
         spectrum_1D = msaexp.spectrum.SpectrumSampler(loc_2D_path)
         flux_unit = u.Unit(str(header["BUNIT"].replace(" ", "")))
-        #breakpoint()
+        ##breakpoint()
         # could also extract resolution here
         mask = spectrum_1D.spec["valid"]
         wavs = spectrum_1D.spec["wave"] * u.um
@@ -245,7 +246,7 @@ class Spectrum:
         if version == "v2":
             msa_metafile = str(header["MSAMETFL"]).replace(" ", "")
             #if int(header["PROGRAM"]) == 2561:
-            #     breakpoint()
+            #     #breakpoint()
             # determine number of exposures
             N_exposures = int(header["NOUTPUTS"]) * int(header["NFRAMES"])
             full_flux_errs = spectrum_1D.spec["full_err"] * (N_exposures ** -0.25)
@@ -262,6 +263,7 @@ class Spectrum:
                 meta = fits.open(meta_in_path, cache = False)
                 funcs.make_dirs(meta_out_path)
                 meta.writeto(meta_out_path)
+                funcs.change_file_permissions(meta_out_path)
             MSA_metafile_name = meta_out_path
         except:
             MSA_metafile_name = None
@@ -354,7 +356,7 @@ class Spectral_Catalogue:
         unique_src_names = np.unique(orig_src_names)
         self.spectrum_arr = np.array([[spec for spec in spectrum_arr \
             if spec.src_name == src_name] for src_name in unique_src_names])
-        #breakpoint()
+        ##breakpoint()
         #self.sky_coords = np.array([spec[0].sky_coord for spec in self.spectrum_arr])
 
     def __len__(self):

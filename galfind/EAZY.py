@@ -38,7 +38,7 @@ from .decorators import run_in_dir, hour_timer, email_update
 
 EAZY_FILTER_CODES = {'NIRCam': {'F070W':36, 'F090W':1, 'F115W':2,'F140M':37, 'F150W':3,'F162M':38, 'F182M':39, 'F200W':4, 'F210M':40, 
                                 'F250M':41, 'F277W':5, 'F300M':42, 'F335M':43, 'F356W':6,'F360M':44, 'F410M':7, 'F430M':45, 'F444W':8, 'F460M':46, 'F480M':47},
-                    'ACS_WFC':{'F435W':22, 'F606W':23, 'F814W':24,'F105W':25,'F125W':26, 'F140W':27,'F150W':28}, 
+                    'ACS_WFC':{'F435W':22, 'F606W':23, 'F625W':48, 'F775W':49,'F850LP':50, 'F814W':24,'F105W':25,'F125W':26, 'F140W':27,'F150W':28}, 
                     'MIRI': {'F560W':13, 'F770W':14, 'F1000W':15, 'F1130W':16, 'F1280W':17, 'F1500W':18,'F1800W':19, 'F2100W':20, 'F2550W':21}}
 
 class EAZY(SED_code):
@@ -91,6 +91,7 @@ class EAZY(SED_code):
             in_tab = Table(in_data, dtype = in_types, names = in_names)
             funcs.make_dirs(eazy_in_path)
             in_tab.write(eazy_in_path, format = "ascii.commented_header", delimiter = " ", overwrite = True)
+            funcs.change_file_permissions(eazy_in_path)
         return eazy_in_path
     
     @run_in_dir(path = config['EAZY']['EAZY_DIR'])
@@ -242,6 +243,7 @@ class EAZY(SED_code):
                         table.rename_column(col_name, self.galaxy_property_labels(col_name, SED_fit_params, given_as_key = False))
                 # Write fits file
                 table.write(fits_out_path, overwrite = True)
+                funcs.change_file_permissions(fits_out_path)
                 galfind_logger.info(f'Written {self.__class__.__name__} {templates} {lowz_label} fits out file to: {fits_out_path}')
         else:
             table = Table.read(fits_out_path)
@@ -266,6 +268,7 @@ class EAZY(SED_code):
         # Write used parameters
         if fit != None:
             fit.param.write(fits_out_path.replace(".fits", "_params.csv"))
+            funcs.change_file_permissions(fits_out_path.replace(".fits", "_params.csv"))
             galfind_logger.info(f'Written output pararmeters for {self.__class__.__name__} {templates} {lowz_label}')
 
     #@staticmethod
@@ -340,6 +343,7 @@ class EAZY(SED_code):
         # ensure that for EAZY all the SED_paths are the same
         assert all(SED_path == SED_paths[0] for SED_path in SED_paths), galfind_logger.critical(f"SED_paths must all be the same for {__class__.__name__}")
         # open .h5 file
+        #return np.ones(len(IDs))
         hf = h5py.File(SED_paths[0], "r")
         z_arr = hf[f"z_arr"][IDs - 1]
         wav_flux_arr = hf[f"wav_flux_arr"][IDs - 1]

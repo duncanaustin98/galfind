@@ -160,24 +160,60 @@ class Data:
                 except AssertionError:
                     galfind_logger.info(f"No common directory for {key}")
 
-            # find other things in common between bands
-            self.common = {}
-            for label, item_dict in zip(["ZERO POINT", "PIXEL SCALE", "SCI SHAPE"], [self.im_zps, self.im_pixel_scales, self.im_shapes]):
-                try:
-                    for band in self.instrument.band_names:
-                        assert(item_dict[band] == item_dict[self.instrument.band_names[0]])
-                    self.common[label] = item_dict[self.instrument.band_names[0]]
-                    galfind_logger.info(f"Common {label} found")
-                except AssertionError:
-                    galfind_logger.info(f"No common {label}")
+        key_failed = {}
+        for paths, key in zip([im_paths, seg_paths, mask_paths, rms_err_paths, wht_paths], ["SCI", "SEG", "MASK", "ERR", "WHT"]):
+            try:
+                for band in self.instrument.band_names:
+                    key_failed[key] = []
+                    try:
+                        assert("/".join(paths[band].split("/")[:-1]) == "/".join(paths[self.instrument.band_names[-1]].split("/")[:-1]))
+                    except (AssertionError, KeyError):
+                        key_failed[key].append(band)
+                self.common_dirs[key] = "/".join(paths[self.instrument.band_names[-1]].split("/")[:-1])
+                galfind_logger.info(f"Common directory found for {key}: {self.common_dirs[key]}")
+            except AssertionError:
+                galfind_logger.info(f"No common directory for {key}")
 
-            # make RGB using the default method if the science images have a common shape
-            if "SCI SHAPE" in self.common.keys() and type(RGB_method) != type(None):
-                split_bands = np.split(self.instrument.band_names, \
-                    [int(np.round(len(self.instrument.band_names) / 3, 0)), -int(np.round(len(self.instrument.band_names) / 3, 0))])
-                self.make_RGB(list(split_bands[0]), list(split_bands[1]), list(split_bands[2]), RGB_method)
-                #split_bands = np.take(self.instrument.band_names, [0, int(len(self.instrument.band_names) / 2), -1])
-                #self.make_RGB([split_bands[0]], [split_bands[1]], [split_bands[2]], RGB_method)
+        # Check if we have either weight or error maps
+        # check any band in key_failed[ERR] is not in key_failed[WHT] and vice versa
+        if len(key_failed["ERR"]) != 0 and len(key_failed["WHT"]) != 0:
+            for band1 in key_failed["ERR"]:
+                if band in key_failed["WHT"]:
+                    galfind_logger.critical(f"No error or weight map found for band = {band}")
+                else:
+                    galfind_logger.warning(f"No error map found for band = {band}")
+            for band in key_failed["WHT"]:
+                if band in key_failed["ERR"]:
+                    galfind_logger.critical(f"No error or weight map found for band = {band}")
+                else:
+                    galfind_logger.warning(f"No weight map found for band = {band}")
+        
+        if len(key_failed["SCI"]) != 0:
+            galfind_logger.critical(f"No science image found for band = {key_failed['SCI']}")
+        if len(key_failed["SEG"]) != 0:
+            galfind_logger.critical(f"No segmentation map found for band = {key_failed['SEG']}")
+        if len(key_failed["MASK"]) != 0:
+            galfind_logger.critical(f"No mask found for band = {key_failed['MASK']}")
+ 
+        # find other things in common between bands
+        self.common = {}
+        for label, item_dict in zip(["ZERO POINT", "PIXEL SCALE", "SCI SHAPE"], [self.im_zps, self.im_pixel_scales, self.im_shapes]):
+            try:
+                for band in self.instrument.band_names:
+                    assert(item_dict[band] == item_dict[self.instrument.band_names[0]])
+                self.common[label] = item_dict[self.instrument.band_names[0]]
+                galfind_logger.info(f"Common {label} found")
+            except AssertionError:
+                galfind_logger.info(f"No common {label}")
+
+        # make RGB using the default method if the science images have a common shape
+        if "SCI SHAPE" in self.common.keys() and type(RGB_method) != type(None):
+            split_bands = np.split(self.instrument.band_names, \
+                [int(np.round(len(self.instrument.band_names) / 3, 0)), -int(np.round(len(self.instrument.band_names) / 3, 0))])
+            self.make_RGB(list(split_bands[0]), list(split_bands[1]), list(split_bands[2]), RGB_method)
+            #split_bands = np.take(self.instrument.band_names, [0, int(len(self.instrument.band_names) / 2), -1])
+            #self.make_RGB([split_bands[0]], [split_bands[1]], [split_bands[2]], RGB_method)
+
 
     @classmethod
     def from_pipeline(cls, survey, version, instrument_names = ["ACS_WFC", "WFC3_IR", "NIRCam", "MIRI"], excl_bands = [], \
@@ -506,11 +542,11 @@ class Data:
         except:
             pass
         try:
-            #breakpoint()
+            ##breakpoint()
             depths = []
             for aper_diam in json.loads(config.get("SExtractor", "APERTURE_DIAMS")) * u.arcsec:
                 depths.append(self.load_depths(aper_diam))
-            #breakpoint()
+            ##breakpoint()
             output_str += f"DEPTHS = {str(depths)}\n"
         except:
             pass
@@ -594,7 +630,7 @@ class Data:
 
     def load_mask(self, mask_band):
         if ".fits" in self.mask_paths[mask_band]:
-            mask = fits.open(self.mask_paths[mask_band])[1].data
+            mask = fits.open(self.mask_paths[mask_band], mode='readonly')[1].data
         else:
             galfind_logger.critical(f"Mask for {self.survey} {mask_band} at {self.mask_paths[mask_band]} is not a .fits mask!")
         return mask
@@ -701,6 +737,8 @@ class Data:
                     f.write("testfirst   0\n")
                     f.write("sampledx  0\n")
                     f.write("sampledy  0\n")
+                
+                funcs.change_file_permissions(in_path)
                 # Run trilogy
                 sys.path.insert(1, "/nvme/scratch/software/trilogy") # Not sure why this path doesn't work: config["Other"]["TRILOGY_DIR"]
                 from trilogy3 import Trilogy
@@ -737,7 +775,7 @@ class Data:
             star_mask_override = None, exclude_gaia_galaxies = True, angle = -70., edge_value = 0., 
             element = 'ELLIPSE', gaia_row_lim = 500, plot = False):
         
-        if 'NIRCam' not in self.instrument.name and mask_stars:
+        if 'NIRCam' not in self.instrument.name and mask_stars: # doesnt stop e.g. ACS_WFC+NIRCam from making star masks
             galfind_logger.critical(f"Mask making only implemented for NIRCam data!")
             raise(Exception("Star mask making only implemented for NIRCam data!"))
 
@@ -937,18 +975,19 @@ class Data:
         hdu = fits.HDUList(hdulist)
         hdu.writeto(output_mask_path, overwrite = True)
         # Change permission to read/write for all
-        os.chmod(output_mask_path, 0o777)
+        funcs.change_file_permissions(output_mask_path)
 
         if plot:
             # Save mask plot
             fig.savefig(f'{self.mask_dir}/{band}_mask.png', dpi=300)
+            funcs.change_file_permissions(f'{self.mask_dir}/{band}_mask.png')
 
         # Save ds9 region
         if mask_stars:
             with open(f'{self.mask_dir}/{band}_starmask.reg', 'w') as f:
                 for region in region_strings:
                     f.write(region + '\n')
-            os.chmod(f'{self.mask_dir}/{band}_starmask.reg', 0o777)
+            funcs.change_file_permissions(f'{self.mask_dir}/{band}_starmask.reg')
         return output_mask_path
     
     #@staticmethod
@@ -1085,6 +1124,7 @@ class Data:
             hdu_err = fits.ImageHDU(combined_err_or_wht, header = im_header, name = err_from)
             hdul = fits.HDUList([primary, hdu, hdu_err])
             hdul.writeto(self.im_paths[stack_band_name], overwrite = True)
+            funcs.change_file_permissions(self.im_paths[stack_band_name])
             galfind_logger.info(f"Finished stacking bands = {bands} for {self.survey} {self.version}")
         
         # save forced photometry band parameters
@@ -1106,11 +1146,14 @@ class Data:
         sex_cat_dir = f"{config['DEFAULT']['GALFIND_WORK']}/SExtractor/{self.instrument.instrument_from_band(band).name}/{self.version}/{self.survey}"
         sex_cat_name = f"{self.survey}_{band}_{forced_phot_band}_sel_cat_{self.version}.fits"
         sex_cat_path = f"{sex_cat_dir}/{sex_cat_name}"
+        funcs.change_file_permissions(sex_cat_path)
         return sex_cat_path
 
     def seg_path(self, band):
         # IF THIS IS CHANGED MUST ALSO CHANGE THE PATH IN __init__ AND make_seg_map.sh
-        return f"{config['DEFAULT']['GALFIND_WORK']}/SExtractor/{self.instrument.instrument_from_band(band).name}/{self.version}/{self.survey}/{self.survey}_{band}_{band}_sel_cat_{self.version}_seg.fits"
+        path = f"{config['DEFAULT']['GALFIND_WORK']}/SExtractor/{self.instrument.instrument_from_band(band).name}/{self.version}/{self.survey}/{self.survey}_{band}_{band}_sel_cat_{self.version}_seg.fits"
+        funcs.change_file_permissions(path)
+        return path
 
     @run_in_dir(path = config['DEFAULT']['GALFIND_DIR'])
     def make_sex_cats(self, forced_phot_band = "F444W", sex_config_path = config['SExtractor']['CONFIG_PATH'], params_path = config['SExtractor']['PARAMS_PATH'], forced_phot_code = "photutils"):
@@ -1376,8 +1419,8 @@ class Data:
         phot_table.remove_columns(colnames)
         phot_table.remove_columns(mag_colnames)
         phot_table.write(self.sex_cat_path(band, forced_phot_band), format='fits', overwrite=True)
-        
-        
+        funcs.change_file_permissions(self.sex_cat_path(band, forced_phot_band))
+
     def mask_reg_to_pix(self, band, mask_path):
         out_path = f"{'/'.join(mask_path.split('/')[:-1])}/fits_masks/{mask_path.split('/')[-1].replace('_clean', '').replace('.reg', '')}.fits"
         if not Path(out_path).is_file():
@@ -1392,7 +1435,10 @@ class Data:
             hdu = fits.HDUList([fits.PrimaryHDU(), mask_hdu])
             os.makedirs("/".join(out_path.split("/")[:-1]), exist_ok = True)
             hdu.writeto(out_path, overwrite = True)
+            funcs.change_file_permissions(out_path)
             galfind_logger.info(f"Created fits mask from manually created reg mask, saving as {out_path}")
+        else:
+            galfind_logger.info(f"fits mask at {out_path} already exists, skipping!")
         return out_path
     
     def combine_masks(self, bands):
@@ -1411,7 +1457,10 @@ class Data:
             hdu = fits.HDUList([fits.PrimaryHDU(), mask_hdu])
             os.makedirs("/".join(out_path.split("/")[:-1]), exist_ok = True)
             hdu.writeto(out_path, overwrite = True)
+            funcs.change_file_permissions(out_path)
             galfind_logger.info(f"Created combined mask for {bands}")
+        else:
+            galfind_logger.info(f"Combined mask for {bands} already exists at {out_path}")
         return out_path
 
     @staticmethod
@@ -1428,8 +1477,10 @@ class Data:
                         if i <= 2:
                             temp.write(line)
                         if not (line.endswith(',0)\n') and line.startswith('circle')):
-                            if (line.startswith('ellipse') and not line.endswith(',0)\n') and not (line.split(",")[3] == "0")) or line.startswith("box"):
+                            if (line.startswith('ellipse') and not (line.split(",")[2] == "0") and not (line.split(",")[3] == "0")) or line.startswith("box") or line.startswith("circle") or line.startswith("polygon"):
                                temp.write(line)
+            funcs.change_file_permissions(mask_path)
+            funcs.change_file_permissions(clean_mask_path)
             # insert original mask ds9 region file into an unclean folder
             os.makedirs(f"{funcs.split_dir_name(mask_path,'dir')}/unclean", exist_ok = True)
             os.rename(mask_path, f"{funcs.split_dir_name(mask_path,'dir')}/unclean/{funcs.split_dir_name(mask_path,'name')}")
@@ -1498,6 +1549,7 @@ class Data:
         # calculate areas using pixel scale of selection band
         pixel_scale = self.im_pixel_scales[self.combine_band_names(forced_phot_band)]
         unmasked_area_tot = (((full_mask.shape[0] * full_mask.shape[1]) - np.sum(full_mask)) * pixel_scale * pixel_scale).to(u.arcmin ** 2)
+        print('hello', unmasked_area_tot)
         unmasked_area_blank_modules = (((blank_mask.shape[0] * blank_mask.shape[1]) - np.sum(blank_mask)) * pixel_scale * pixel_scale).to(u.arcmin ** 2)
         unmasked_area_cluster_module = unmasked_area_tot - unmasked_area_blank_modules
         galfind_logger.info(f"Unmasked areas for {self.survey}, masking_instrument_or_band_name = {masking_instrument_or_band_name} - Total: {unmasked_area_tot}, Blank modules: {unmasked_area_blank_modules}, Cluster module: {unmasked_area_cluster_module}")
@@ -1526,6 +1578,7 @@ class Data:
                     areas_tab.remove_column(col)
 
         areas_tab.write(output_path, overwrite = True)
+        funcs.change_file_permissions(output_path)
         return areas_tab
 
     def perform_aper_corrs(self): # not general
@@ -1563,6 +1616,7 @@ class Data:
             cat.meta = {**cat.meta, **{"APERCORR": True}} #, **mag_aper_corrs}
             # overwrite original catalogue with local depth columns
             cat.write(self.sex_cat_master_path, overwrite = True)
+            funcs.change_file_permissions(self.sex_cat_master_path)
 
     def make_loc_depth_cat(self, cat_creator, depth_mode = "n_nearest"):
         overwrite = config["Depths"].getboolean("OVERWRITE_LOC_DEPTH_CAT")
@@ -1643,6 +1697,7 @@ class Data:
             #print(cat.meta)
             # overwrite original catalogue with local depth columns
             cat.write(self.sex_cat_master_path, overwrite = True)
+            funcs.change_file_permissions(self.sex_cat_master_path)
         
     def get_depth_dir(self, aper_diam):
         self.depth_dirs = {}
@@ -1679,7 +1734,8 @@ class Data:
         # Parallelise the calculation of depths for each band
         with tqdm_joblib(tqdm(desc = "Calculating depths", total = len(params))) as progress_bar:
             Parallel(n_jobs = n_jobs)(delayed(self.calc_band_depth)(param) for param in params)
-        #self.plot_area_depth(cat_creator, mode, aper_diam, show = False)
+        #for aper_diam in aper_diams:
+        #   self.plot_area_depth(cat_creator, mode, aper_diam, show = False)
     
     def calc_band_depth(self, params):
         # unpack parameters
@@ -1751,7 +1807,7 @@ class Data:
                 pass
     
 
-    def plot_area_depth(self, cat_creator, mode, aper_diam, show = False, use_area_per_band=True):     
+    def plot_area_depth(self, cat_creator, mode, aper_diam, show = False, use_area_per_band=True, save = True, return_array=False):     
         if type(cat_creator) == type(None):
             galfind_logger.warning("Could not plot depths as cat_creator == None in Data.plot_area_depth()")
         else:
@@ -1766,12 +1822,19 @@ class Data:
                 ax.set_xlabel("Area (arcmin$^{2}$)")
                 ax.set_ylabel("5$\sigma$ Depth (AB mag)")
                 area_row = area_tab[area_tab["masking_instrument_band"] == self.forced_phot_band]
-                area_master = float(area_row["unmasked_area_total"].to(u.arcmin ** 2).value)
-                bands = list(self.instrument.band_names)
+                if len(area_row) > 1:
+                    galfind_logger.warning(f"More than one row found in area_tab for {self.forced_phot_band}! Using the first row.")
+                    area_row = area_row[0]
+                area_master = area_row["unmasked_area_total"]
+                if type(area_master) == u.Quantity:
+                    area_master = area_master.value
+                area_master = float(area_master)
+                
+                bands = self.instrument.band_names.tolist()
                 if self.forced_phot_band not in bands:
                     bands.append(self.forced_phot_band)
                 colors = plt.cm.viridis(np.linspace(0, 1, len(bands)))
-
+                data = {}
                 for pos, band in enumerate(bands):
                     h5_path = f"{self.depth_dirs[band]}/{mode}/{band}.h5"
 
@@ -1806,7 +1869,8 @@ class Data:
 
                     # Plot
                     ax.plot(cum_dist, total_depths, label = band if '+' not in band else 'Detection', color = colors[pos], drawstyle='steps-post')
-
+                    if return_array:
+                        data[band] = [area, total_depths]
                     # Set ylim to 2nd / 98th percentile if depth is smaller than this number
                     ylim = ax.get_ylim()
                     
@@ -1831,10 +1895,12 @@ class Data:
                 # Invert y axis
                 #ax.invert_yaxis()
                 ax.grid(True)
-
-                fig.savefig(save_path, dpi = 300, bbox_inches = "tight")
+                if save:
+                    fig.savefig(save_path, dpi = 300, bbox_inches = "tight")
                 if show:
                     plt.show()
+                if return_array:
+                    return data
 
 
     def plot_depth(self, band, cat_creator, mode, aper_diam, show = False): #, **kwargs):

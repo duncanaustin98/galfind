@@ -27,6 +27,7 @@ from kneed import KneeLocator
 from mpl_toolkits.axes_grid1.axes_divider import make_axes_locatable
 # install cv2, skimage, sklearn 
 
+from . import useful_funcs_austind as funcs
 
 def do_photometry(image, xy_coords, radius_pixels):
     aper = CircularAperture(xy_coords, radius_pixels)
@@ -468,6 +469,7 @@ def show_depths(nmad_grid, num_grid, step_size, region_radius_used_pix, labels =
 
     if type(save_path) != type(None):
         plt.savefig(save_path, dpi=300, bbox_inches='tight')
+        funcs.change_file_permissions(save_path)
         print(f"Saved depths plot to {save_path}")
     if show:
         plt.show()
@@ -770,7 +772,7 @@ def make_ds9_region_file(coordinates, radius, filename, coordinate_type = 'sky',
         f.write(f'# Region file format: DS9 version 4.1\nglobal color=green dashlist=8 3 width=1 font="helvetica 10 normal roman" select=1 highlite=1 dash=0 fixed=0 edit=1 move=1 delete=1 include=1 source=1\n{coord_type}\n')
         for xi, yi in zip(x, y):
             f.write(f'circle({xi},{yi},{radius:.5f}{radius_unit})\n')
-
+    funcs.change_file_permissions(filename)
 
 def cluster_wht_map(wht_map, num_regions='auto', bin_factor=1, min_size=10000, plot=False):
     'Works best for 2 regions, but can be used for more than 2 regions - may need additional smoothing and cleaning'

@@ -28,12 +28,9 @@ def pipeline(surveys, version, instruments, aper_diams, min_flux_pc_errs, forced
                 excl_bands = excl_bands, loc_depth_min_flux_pc_errs = min_flux_pc_errs, crop_by = crop_by)
             cats.append(cat)
 
-        cat_combined = cats[0]
-        for i in range(1, len(cats)):
-            print(f'Doing {surveys[i]}')
-            cat_combined = cats[i] * cat_combined 
+    cat_combined = Multiple_Catalogue(cats, survey='NEP')
 
-    cat_combined.save_combined_cat('/nvme/scratch/work/tharvey/catalogs/COSMOSWeb_final.fits')
+    cat_combined.plot_combined_area_depth('/nvme/scratch/work/tharvey/catalogs/NEP_combined_area.pdf', save = True)
 
     return cat_combined
 
@@ -44,13 +41,10 @@ def make_EAZY_SED_fit_params_arr(SED_code_arr, templates_arr, lowz_zmax_arr):
         for code, templates, lowz_zmaxs in zip(SED_code_arr, templates_arr, lowz_zmax_arr) for lowz_zmax in lowz_zmaxs]
 
 if __name__ == "__main__":
-    version = "v11" #config["DEFAULT"]["VERSION"]
+    version = "v9" #config["DEFAULT"]["VERSION"]
     instruments = ["NIRCam"] #, 'ACS_WFC'] #, 'WFC3_IR']
     cat_type = "loc_depth"
-    surveys = ["COSMOS-Web-0A", "COSMOS-Web-0B", "COSMOS-Web-1A", "COSMOS-Web-1B",
-               "COSMOS-Web-2A", "COSMOS-Web-2B", "COSMOS-Web-3A", "COSMOS-Web-3B",
-               "COSMOS-Web-4A", "COSMOS-Web-4B", "COSMOS-Web-5A", "COSMOS-Web-5B",
-               "COSMOS-Web-6A", "COSMOS-Web-6B", "COSMOS-Web-7A", "COSMOS-Web-7B"]
+    surveys = ["NEP-4", "NEP-3", "NEP-2", "NEP-1"]
                
                #[config["DEFAULT"]["SURVEY"]]
     aper_diams = [0.32] * u.arcsec
@@ -58,7 +52,7 @@ if __name__ == "__main__":
     templates_arr = ["fsps_larson"] #["fsps", "fsps_larson", "fsps_jades"]
     lowz_zmax_arr = [[4., 6., None]]
     min_flux_pc_errs = [10]
-    forced_phot_band = ["F444W"] # ["F444W"]
+    forced_phot_band = ["F277W","F356W","F444W"] # ["F444W"]
     crop_by = None
 
     jems_bands = ["F182M", "F210M", "F430M", "F460M", "F480M"]

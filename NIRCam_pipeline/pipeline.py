@@ -37,7 +37,7 @@ def pipeline(surveys, version, instruments, aper_diams, min_flux_pc_errs, forced
 
             end = time.time()
             print(f"Time to load catalogue = {(end - start):.1f}s")
-
+            
             #cat.data.calc_unmasked_area("NIRCam", forced_phot_band = forced_phot_band)
             #cat.select_band_flux_radius("F277W", "gtr", 1.5)
 

@@ -145,7 +145,7 @@ class Catalogue(Catalogue_Base):
     # Spectroscopy
         
     def match_available_spectra(self):
-        breakpoint()
+        #breakpoint()
         # make catalogue consisting of spectra downloaded from the DJA
         DJA_cat = np.sum([Spectral_Catalogue.from_DJA(ra_range = self.ra_range, \
             dec_range = self.dec_range, version = version) for version in ["v1", "v2"]])
@@ -240,6 +240,7 @@ class Catalogue(Catalogue_Base):
                     fits_cat[f"unmasked_{band}"] = unmasked_band # assumes order of catalogue and galaxies in self is consistent
                     # update galaxy objects in catalogue - current bottleneck
                     [gal.mask_flags.update({band: unmasked_band_gal}) for gal, unmasked_band_gal in zip(self, unmasked_band)]
+
             # determine which cluster/blank masking columns are wanted
             mask_labels = []
             mask_paths = []
@@ -278,6 +279,7 @@ class Catalogue(Catalogue_Base):
                 "HIERARCH MASK_CLUSTER_CORE": config["Masking"].getboolean("MASK_CLUSTER_CORE")}}
             # save catalogue
             fits_cat.write(self.cat_path, overwrite = True)
+            funcs.change_file_permissions(self.cat_path)
             # update catalogue README
             galfind_logger.warning("REQUIRED UPDATE: Update README for catalogue masking columns")
             # update masking of galfind galaxy objects
@@ -294,6 +296,19 @@ class Catalogue(Catalogue_Base):
         if type(IDs) == int:
             IDs = [IDs]
         for band in tqdm(self.instrument.band_names, total = len(self.instrument), desc = "Making band cutouts"):
+#             rerun = False
+#             if config.getboolean("Cutouts", "OVERWRITE_CUTOUTS"):
+#                 rerun = True
+#             else:
+#                 for gal in self:
+#                     out_path = f"{config['Cutouts']['CUTOUT_DIR']}/{self.version}/{self.survey}/{band}/{gal.ID}.fits"
+#                     if Path(out_path).is_file():
+#                         size = fits.open(out_path)[0].header["size"]
+#                         if size != cutout_size:
+#                             rerun = True
+#                     else:
+#                         rerun = True
+#             if rerun:
             im_data, im_header, seg_data, seg_header = self.data.load_data(band, incl_mask = False)
             wht_data = self.data.load_wht(band)
             rms_err_data = self.data.load_rms_err(band)
@@ -303,6 +318,11 @@ class Catalogue(Catalogue_Base):
                     gal.make_cutout(band, data = {"SCI": im_data, "SEG": seg_data, 'WHT': wht_data, 'RMS_ERR':rms_err_data}, \
                         wcs = wcs, im_header = im_header, survey = self.survey, version = self.version, \
                         pix_scale = self.data.im_pixel_scales[band], cutout_size = cutout_size)
+#             else:
+#                 for gal in self:
+#                     if gal.ID in IDs:
+#                         gal.cutout_paths[band] = f"{config['Cutouts']['CUTOUT_DIR']}/{self.version}/{self.survey}/{band}/{gal.ID}.fits"
+#                 print(f"Cutouts for {band} already exist. Skipping.")
 
     def make_RGB_images(self, IDs, cutout_size = 0.96 * u.arcsec):
         return NotImplementedError
@@ -321,21 +341,9 @@ class Catalogue(Catalogue_Base):
 
         PDF_ax = [fig.add_subplot(gs[0, 3:]), fig.add_subplot(gs[1, 3:])]
         
-        if len(self.data.instrument) <= 8:
-            gridspec_cutout = cutout_fig.add_gridspec(1, len(self.data.instrument))
-        else:
-            gridspec_cutout = cutout_fig.add_gridspec(2, int(np.ceil(len(self.data.instrument) / 2)))
-        
-        cutout_ax_list = []
-        for i, band in enumerate(self.instrument):
-            cutout_ax = cutout_fig.add_subplot(gridspec_cutout[i])
-            cutout_ax.set_aspect('equal', adjustable='box', anchor='N')
-            cutout_ax.set_xticks([])
-            cutout_ax.set_yticks([])
-            cutout_ax_list.append(cutout_ax)
 
         # plot SEDs
-        out_paths = [gal.plot_phot_diagnostic([cutout_ax_list, phot_ax, PDF_ax], self.data, \
+        out_paths = [gal.plot_phot_diagnostic([cutout_fig, phot_ax, PDF_ax], self.data, \
             SED_fit_params_arr, zPDF_plot_SED_fit_params_arr, wav_unit, flux_unit) \
             for gal in tqdm(self, total = len(self), desc = "Plotting photometry diagnostic plots")]
 
@@ -478,7 +486,7 @@ class Catalogue(Catalogue_Base):
         # extract selection name from galaxy method output
         selection_name = selection_function(self[0], *args, update = False)[1]
         # open catalogue
-        #breakpoint()
+        ##breakpoint()
         # perform selection if not previously performed
         if selection_name not in self.selection_cols:
             # perform calculation for each galaxy and update galaxies in self
@@ -502,7 +510,7 @@ class Catalogue(Catalogue_Base):
         return cat_copy
 
     def _append_selection_to_fits(self, selection_name):
-        #breakpoint()
+        ##breakpoint()
         # append .fits table if not already done so for this selection
         if not selection_name in self.selection_cols:
             assert(all(getattr(self, selection_name) == True))
@@ -518,6 +526,7 @@ class Catalogue(Catalogue_Base):
             output_cat.meta = {**full_cat.meta, **{f"HIERARCH SELECTED_{selection_name}": True}}
             galfind_logger.info(f"Appending {selection_name} to {self.cat_path=}")
             output_cat.write(self.cat_path, overwrite = True)
+            funcs.change_file_permissions(self.cat_path)
             self.selection_cols.append(selection_name)
         else:
             galfind_logger.info(f"Already appended {selection_name} to {self.cat_path=}")
@@ -672,7 +681,7 @@ class Catalogue(Catalogue_Base):
             galfind_logger.info(f"{property_name} already calculated!")
             return
         if save_kwargs:
-            #breakpoint()
+            ##breakpoint()
             property_PDFs = self.__getattr__(property_name, phot_type = "rest", property_type = "PDFs")
             kwarg_names = np.unique(np.hstack([list(property_PDF.kwargs.keys()) for property_PDF in property_PDFs if type(property_PDF) != type(None)]))
             kwargs = {kwarg_name: [property_PDF.kwargs[kwarg_name] if type(property_PDF) != type(None) \

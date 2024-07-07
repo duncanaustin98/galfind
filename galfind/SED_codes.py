@@ -37,13 +37,13 @@ class SED_code(ABC):
     
     def load_photometry(self, cat, out_units, no_data_val, upper_sigma_lim = {}):
         # load in raw photometry from the galaxies in the catalogue and convert to appropriate units
-        phot = np.array([gal.phot.flux_Jy.to(out_units) for gal in cat]) #[:, :, 0]
+        phot = np.array([gal.phot.flux_Jy.to(out_units) for gal in cat], dtype=object) #[:, :, 0]
         phot_shape = phot.shape
         if out_units != u.ABmag:
-            phot_err = np.array([gal.phot.flux_Jy_errs.to(out_units) for gal in cat])#[:, :, 0]
+            phot_err = np.array([gal.phot.flux_Jy_errs.to(out_units) for gal in cat], dtype=object)#[:, :, 0]
         else:
             # Not correct in general! Only for high S/N! Fails to scale mag errors asymetrically from flux errors
-            phot_err = np.array([funcs.flux_pc_to_mag_err(gal.phot.flux_Jy_errs / gal.phot.flux_Jy) for gal in cat])#[:, :, 0]
+            phot_err = np.array([funcs.flux_pc_to_mag_err(gal.phot.flux_Jy_errs / gal.phot.flux_Jy) for gal in cat], dtype=object)#[:, :, 0]
 
         # include upper limits if wanted
         # MAY NEED TO UPDATE WHEN USING OTHER SED FITTING TOOLS OTHER THAN EAZY
@@ -61,8 +61,8 @@ class SED_code(ABC):
         phot_in = np.zeros((len(cat), len(cat.instrument))) #[]
         phot_err_in = np.zeros((len(cat), len(cat.instrument))) #[]
         for i, gal in tqdm(enumerate(cat), desc = "Making EAZY .in file", total = len(cat)):
-            for j, band_name in enumerate(cat.instrument.band_names):
-                if band_name in gal.phot.instrument.band_names:
+            for j, band_name in enumerate(cat.instrument.band_names): 
+                if band_name in gal.phot.instrument.band_names: # Check mask? 
                     index = np.where(band_name == gal.phot.instrument.band_names)[0][0]
                     phot_in[i, j] = np.array(phot[i].data)[index]
                     phot_err_in[i, j] = np.array(phot_err[i].data)[index]
@@ -113,6 +113,7 @@ class SED_code(ABC):
             combined_cat.remove_column("IDENT")
             combined_cat.meta = {**combined_cat.meta, **{self.galaxy_property_labels(f"RUN_{self.__class__.__name__}", SED_fit_params, given_as_key = False): True}}
             combined_cat.write(cat.cat_path, overwrite = True)
+            funcs.change_file_permissions(cat.cat_path)
 
     @staticmethod
     def update_lowz_zmax(SED_fit_params, SED_results):

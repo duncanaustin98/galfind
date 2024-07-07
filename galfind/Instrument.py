@@ -313,6 +313,7 @@ class Instrument:
             ax.set_ylim(0., np.max([trans for trans in band.trans for band in self]) + 0.1)
         if save:
             plt.savefig(f"{self.name}_filter_profiles.png")
+            funcs.change_file_permissions(f"{self.name}_filter_profiles.png")
         if show:
             plt.show()
 
