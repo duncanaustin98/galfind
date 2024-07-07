@@ -290,7 +290,7 @@ class Catalogue(Catalogue_Base):
         else:
             galfind_logger.info(f"Catalogue for {self.survey} {self.version} already masked. Skipping!")
 
-    def make_cutouts(self, IDs, cutout_size = 32):
+    def make_cutouts(self, IDs, cutout_size = 0.96 * u.arcsec):
         if type(IDs) == int:
             IDs = [IDs]
         for band in tqdm(self.instrument.band_names, total = len(self.instrument), desc = "Making band cutouts"):
@@ -301,9 +301,10 @@ class Catalogue(Catalogue_Base):
             for gal in self:
                 if gal.ID in IDs:
                     gal.make_cutout(band, data = {"SCI": im_data, "SEG": seg_data, 'WHT': wht_data, 'RMS_ERR':rms_err_data}, \
-                        wcs = wcs, im_header = im_header, survey = self.survey, version = self.version, cutout_size = cutout_size)
+                        wcs = wcs, im_header = im_header, survey = self.survey, version = self.version, \
+                        pix_scale = self.data.im_pixel_scales[band], cutout_size = cutout_size)
 
-    def make_RGB_images(self, IDs, cutout_size = 32):
+    def make_RGB_images(self, IDs, cutout_size = 0.96 * u.arcsec):
         return NotImplementedError
     
     def plot_phot_diagnostics(self, 

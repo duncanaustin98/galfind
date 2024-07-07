@@ -1576,8 +1576,10 @@ class Data:
             #median_depths = {}
             diagnostic_name = ""
             for i, band in enumerate(self.instrument.band_names):
-                galfind_logger.info(f"Finished making local depth columns for {band=}")
+                #breakpoint()
+                galfind_logger.info(f"Making local depth columns for {band=}")
                 for j, aper_diam in enumerate(json.loads(config.get("SExtractor", "APERTURE_DIAMS")) * u.arcsec):
+                    #breakpoint()
                     self.get_depth_dir(aper_diam)
                     #print(band, aper_diam)
                     h5_path = f"{self.depth_dirs[band]}/{depth_mode}/{band}.h5"
@@ -1626,8 +1628,8 @@ class Data:
                 # impose n_pc min flux error and convert to Jy where appropriate
                 if "APERCORR" in cat.meta.keys():
                     cat[f"FLUXERR_APER_{band}_loc_depth_{str(int(cat_creator.min_flux_pc_err))}pc_Jy"] = \
-                        [tuple([funcs.flux_image_to_Jy(flux, self.im_zps[band]).value * cat_creator.min_flux_pc_err / 100. \
-                        if err / flux < cat_creator.min_flux_pc_err / 100. and flux > 0. \
+                        [tuple([np.nan if flux == 0. else funcs.flux_image_to_Jy(flux, self.im_zps[band]).value * \
+                        cat_creator.min_flux_pc_err / 100. if err / flux < cat_creator.min_flux_pc_err / 100. and flux > 0. \
                         else funcs.flux_image_to_Jy(err, self.im_zps[band]).value for flux, err in zip(flux_tup, err_tup)]) \
                         for flux_tup, err_tup in zip(cat[f"FLUX_APER_{band}_aper_corr"], cat[f"FLUXERR_APER_{band}_loc_depth"])]
                 else:

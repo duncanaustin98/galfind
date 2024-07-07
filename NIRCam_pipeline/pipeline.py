@@ -68,10 +68,10 @@ def make_EAZY_SED_fit_params_arr(SED_code_arr, templates_arr, lowz_zmax_arr):
 
 if __name__ == "__main__":
 
-    version = "v11_degrade8" #config["DEFAULT"]["VERSION"]
-    instruments = ["NIRCam"] #, "ACS_WFC"] # "WFC3_IR"
+    version = "v9" #config["DEFAULT"]["VERSION"]
+    instruments = ["NIRCam", "MIRI"] #, "ACS_WFC"] # "WFC3_IR"
     cat_type = "loc_depth"
-    surveys = ["JOF"] #[config["DEFAULT"]["SURVEY"]]
+    surveys = ["JADES-Deep-GS+JEMS+SMILES"] #[config["DEFAULT"]["SURVEY"]]
     aper_diams = [0.32] * u.arcsec
     SED_code_arr = [EAZY()]
     templates_arr = ["fsps_larson"] #["fsps", "fsps_larson", "fsps_jades"]
@@ -90,9 +90,9 @@ if __name__ == "__main__":
 
     SED_fit_params_arr = make_EAZY_SED_fit_params_arr(SED_code_arr, templates_arr, lowz_zmax_arr)
 
-    delay_time = (8 * u.h).to(u.s).value
-    print(f"{surveys[0]} delayed by {delay_time}s")
-    time.sleep(delay_time)
+    # delay_time = (8 * u.h).to(u.s).value
+    # print(f"{surveys[0]} delayed by {delay_time}s")
+    # time.sleep(delay_time)
 
     pix_scales = {**{"ACS_WFC": 0.03 * u.arcsec, "WFC3_IR": 0.03 * u.arcsec, "NIRCam": 0.03 * u.arcsec}, **{"MIRI": MIRI_pix_scale}}
 

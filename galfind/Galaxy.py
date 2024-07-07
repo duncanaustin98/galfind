@@ -107,7 +107,8 @@ class Galaxy:
     def load_property(self, gal_property: Union[dict, u.Quantity], save_name: str):
         setattr(self, save_name, gal_property)
 
-    def make_cutout(self, band, data, wcs = None, im_header = None, survey = None, version = None, cutout_size = 32):
+    def make_cutout(self, band, data, wcs = None, im_header = None, survey = None, \
+            version = None, pix_scale = 0.03 * u.arcsec, cutout_size = 0.96 * u.arcsec):
         
         if type(data) == Data:
             survey = data.survey
@@ -115,13 +116,13 @@ class Galaxy:
         if survey == None or version == None:
             raise(Exception("'survey' and 'version' must both be given to construct save paths"))
         
-        out_path = f"{config['Cutouts']['CUTOUT_DIR']}/{version}/{survey}/{band}/{self.ID}.fits"
+        out_path = f"{config['Cutouts']['CUTOUT_DIR']}/{version}/{survey}/{cutout_size.to(u.arcsec).value:.2f}as/{band}/{self.ID}.fits"
         rerun = False
         
         if Path(out_path).is_file():
             
-            size = fits.open(out_path)[0].header["size"]
-            if size != cutout_size:
+            size = fits.open(out_path)[0].header["cutout_size_as"]
+            if size != cutout_size.to(u.arcsec).value:
                 galfind_logger.info("Cutout size does not match requested size, overwriting...")
                 print('Cutout size does not match requested size, overwriting...')
                 rerun = True
@@ -137,14 +138,15 @@ class Galaxy:
             else:
                 raise(Exception(""))
             hdul = [fits.PrimaryHDU(header = fits.Header({"ID": self.ID, "survey": survey, "version": version, \
-                        "RA": self.sky_coord.ra.value, "DEC": self.sky_coord.dec.value, "size": cutout_size}))]
+                        "RA": self.sky_coord.ra.value, "DEC": self.sky_coord.dec.value, "cutout_size_as": cutout_size.to(u.arcsec).value}))]
 
+            cutout_size_pix = (cutout_size / pix_scale).to(u.dimensionless_unscaled).value
             for i, (label_i, data_i) in enumerate(data_dict.items()):
                 if i == 0 and label_i == "SCI":
                    sci_shape = data_i.shape
                 if not type(data_i) == type(None):
                     if data_i.shape == sci_shape:
-                        cutout = Cutout2D(data_i, self.sky_coord, size = (cutout_size, cutout_size), wcs = wcs)
+                        cutout = Cutout2D(data_i, self.sky_coord, size = (cutout_size_pix, cutout_size_pix), wcs = wcs)
                         im_header.update(cutout.wcs.to_header())
                         hdul.append(fits.ImageHDU(cutout.data, header = im_header, name = label_i))
             #print(hdul)
@@ -158,7 +160,8 @@ class Galaxy:
         self.cutout_paths[band] = out_path
         return fits_hdul
 
-    def make_RGB(self, data, blue_bands = ["F090W"], green_bands = ["F200W"], red_bands = ["F444W"], version = None, survey = None, method = "trilogy", cutout_size = 32):
+    def make_RGB(self, data, blue_bands = ["F090W"], green_bands = ["F200W"], red_bands = ["F444W"], \
+            version = None, survey = None, method = "trilogy", cutout_size = 0.96 * u.arcsec):
         method = method.lower() # make method lowercase
         # ensure all blue, green and red bands are contained in the data object
         assert all(band in data.instrument.band_names for band in blue_bands + green_bands + red_bands), \
@@ -176,7 +179,7 @@ class Galaxy:
             # make cutouts for the required bands if they don't already exist, and load cutout paths
             RGB_cutout_paths = {}
             for colour, bands in zip(["B", "G", "R"], [blue_bands, green_bands, red_bands]):
-                [self.make_cutout(band, data, cutout_size = cutout_size) for band in bands]
+                [self.make_cutout(band, data, pix_scale = data.im_pixel_scales[band], cutout_size = cutout_size) for band in bands]
                 RGB_cutout_paths[colour] = [self.cutout_paths[band] for band in bands]
             if method == "trilogy":
                 # Write trilogy.in
@@ -209,7 +212,7 @@ class Galaxy:
                 raise(NotImplementedError())
     
     def plot_cutouts(self, ax_arr, data, SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}, \
-            hide_masked_cutouts = True, cutout_size = 32, high_dyn_rng = False):
+            hide_masked_cutouts = True, cutout_size = 0.96 * u.arcsec, high_dyn_rng = False):
 
         for i, band in enumerate(self.phot.instrument.band_names):
                 
@@ -222,14 +225,15 @@ class Galaxy:
                 data_cutout = None
             else:
                 # load cutout if already made, else produce one
-                cutout_hdul = self.make_cutout(band, data, cutout_size = cutout_size)
+                cutout_hdul = self.make_cutout(band, data, pix_scale = data.im_pixel_scales[band], cutout_size = cutout_size)
                 data_cutout = cutout_hdul[1].data # should handle None in the case of NoOverlapError        
 
             if type(data_cutout) != type(None):
+                cutout_size_pix = (cutout_size / data.im_pixel_scales[band]).to(u.dimensionless_unscaled).value
                 # Set top value based on central 10x10 pixel region
                 top = np.max(data_cutout[:20, 10:20])
-                top = np.max(data_cutout[int(cutout_size // 2 - 0.3 * cutout_size) : int(cutout_size // 2 + 0.3 * cutout_size), \
-                    int(cutout_size // 2 - 0.3 * cutout_size) : int(cutout_size // 2 + 0.3 * cutout_size)])
+                top = np.max(data_cutout[int(cutout_size_pix // 2 - 0.3 * cutout_size_pix) : int(cutout_size_pix // 2 + 0.3 * cutout_size_pix), \
+                    int(cutout_size_pix // 2 - 0.3 * cutout_size_pix) : int(cutout_size_pix // 2 + 0.3 * cutout_size_pix)])
                 bottom_val = top / 10 ** 5
                 
                 if high_dyn_rng:
@@ -298,7 +302,7 @@ class Galaxy:
                 ax_arr[-1].add_artist(scalebar)
     
     def plot_phot_diagnostic(self, ax, data, SED_fit_params_arr, zPDF_plot_SED_fit_params_arr, wav_unit = u.um, flux_unit = u.ABmag, \
-            hide_masked_cutouts = True, cutout_size = 32, high_dyn_rng = False, annotate_PDFs = True, plot_rejected_reasons = False, overwrite = True):
+            hide_masked_cutouts = True, cutout_size = 0.96 * u.arcsec, high_dyn_rng = False, annotate_PDFs = True, plot_rejected_reasons = False, overwrite = True):
 
         cutout_ax, phot_ax, PDF_ax = ax
         # update SED_fit_params with appropriate lowz_zmax
