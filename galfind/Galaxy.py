@@ -107,7 +107,8 @@ class Galaxy:
     def load_property(self, gal_property: Union[dict, u.Quantity], save_name: str):
         setattr(self, save_name, gal_property)
 
-    def make_cutout(self, band, data, wcs = None, im_header = None, survey = None, version = None, cutout_size = 32):
+    def make_cutout(self, band, data, wcs = None, im_header = None, survey = None, \
+            version = None, pix_scale = 0.03 * u.arcsec, cutout_size = 0.96 * u.arcsec):
         
         if type(data) == Data:
             survey = data.survey
@@ -115,12 +116,13 @@ class Galaxy:
         if survey == None or version == None:
             raise(Exception("'survey' and 'version' must both be given to construct save paths"))
         
-        out_path = f"{config['Cutouts']['CUTOUT_DIR']}/{version}/{survey}/{band}/{self.ID}.fits"
+        out_path = f"{config['Cutouts']['CUTOUT_DIR']}/{version}/{survey}/{cutout_size.to(u.arcsec).value:.2f}as/{band}/{self.ID}.fits"
         rerun = False
+        
         if Path(out_path).is_file():
             
-            size = fits.open(out_path)[0].header["size"]
-            if size != cutout_size:
+            size = fits.open(out_path)[0].header["cutout_size_as"]
+            if size != cutout_size.to(u.arcsec).value:
                 galfind_logger.info("Cutout size does not match requested size, overwriting...")
                 print('Cutout size does not match requested size, overwriting...')
                 rerun = True
@@ -130,20 +132,28 @@ class Galaxy:
                 wht_data = data.load_wht(band)
                 rms_err_data = data.load_rms_err(band)
                 wcs = data.load_wcs(band)
-                data = {"SCI": im_data, "SEG": seg_data, "WHT": wht_data, "RMS_ERR": rms_err_data}
+                data_dict = {"SCI": im_data, "SEG": seg_data, "WHT": wht_data, "RMS_ERR": rms_err_data}
             elif type(data) == dict and type(wcs) != type(None) and type(im_header) != type(None):
                 pass
             else:
                 raise(Exception(""))
             hdul = [fits.PrimaryHDU(header = fits.Header({"ID": self.ID, "survey": survey, "version": version, \
-                        "RA": self.sky_coord.ra.value, "DEC": self.sky_coord.dec.value, "size": cutout_size}))]
-            for i, (label_i, data_i) in enumerate(data.items()):
+                        "RA": self.sky_coord.ra.value, "DEC": self.sky_coord.dec.value, "cutout_size_as": cutout_size.to(u.arcsec).value}))]
+
+            cutout_size_pix = (cutout_size / pix_scale).to(u.dimensionless_unscaled).value
+            for i, (label_i, data_i) in enumerate(data_dict.items()):
+                if i == 0 and label_i == "SCI":
+                   sci_shape = data_i.shape
                 if type(data_i) == type(None):
                     galfind_logger.warning(f"No data found for {label_i} in {band}!")
-                    continue
-                cutout = Cutout2D(data_i, self.sky_coord, size = (cutout_size, cutout_size), wcs = wcs)
-                im_header.update(cutout.wcs.to_header())
-                hdul.append(fits.ImageHDU(cutout.data, header = im_header, name = label_i))
+                else:
+                    if data_i.shape == sci_shape:
+                        cutout = Cutout2D(data_i, self.sky_coord, size = (cutout_size_pix, cutout_size_pix), wcs = wcs)
+                        im_header.update(cutout.wcs.to_header())
+                        hdul.append(fits.ImageHDU(cutout.data, header = im_header, name = label_i))
+                        galfind_logger.info(f"Created cutout for {label_i} in {band}")
+                    else:
+                      galfind_logger.warning(f"Incorrect data shape. {data_i=} != {sci_shape=}, skipping extension!")
             #print(hdul)
             os.makedirs("/".join(out_path.split("/")[:-1]), exist_ok = True)
             fits_hdul = fits.HDUList(hdul)
@@ -156,7 +166,8 @@ class Galaxy:
         self.cutout_paths[band] = out_path
         return fits_hdul
 
-    def make_RGB(self, data, blue_bands = ["F090W"], green_bands = ["F200W"], red_bands = ["F444W"], version = None, survey = None, method = "trilogy", cutout_size = 32):
+    def make_RGB(self, data, blue_bands = ["F090W"], green_bands = ["F200W"], red_bands = ["F444W"], \
+            version = None, survey = None, method = "trilogy", cutout_size = 0.96 * u.arcsec):
         method = method.lower() # make method lowercase
         # ensure all blue, green and red bands are contained in the data object
         assert all(band in data.instrument.band_names for band in blue_bands + green_bands + red_bands), \
@@ -174,7 +185,7 @@ class Galaxy:
             # make cutouts for the required bands if they don't already exist, and load cutout paths
             RGB_cutout_paths = {}
             for colour, bands in zip(["B", "G", "R"], [blue_bands, green_bands, red_bands]):
-                [self.make_cutout(band, data, cutout_size = cutout_size) for band in bands]
+                [self.make_cutout(band, data, pix_scale = data.im_pixel_scales[band], cutout_size = cutout_size) for band in bands]
                 RGB_cutout_paths[colour] = [self.cutout_paths[band] for band in bands]
             if method == "trilogy":
                 # Write trilogy.in
@@ -209,8 +220,8 @@ class Galaxy:
                 raise(NotImplementedError())
     
     def plot_cutouts(self, cutout_fig, data, SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}, \
-            hide_masked_cutouts = True, cutout_size = 32, high_dyn_rng = False):
-        
+            hide_masked_cutouts = True, cutout_size = 0.96 * u.arcsec, high_dyn_rng = False):
+    
         # Delete everything on the figure
         cutout_fig.clf()
         # Work out how many bands we have to plot.
@@ -242,14 +253,14 @@ class Galaxy:
             #radius_sextractor = flux_radius
         
             # load cutout if already made, else produce one
-            cutout_hdul = self.make_cutout(band, data, cutout_size = cutout_size)
+            cutout_hdul = self.make_cutout(band, data, pix_scale = data.im_pixel_scales[band], cutout_size = cutout_size)
             data_cutout = cutout_hdul[1].data # should handle None in the case of NoOverlapError        
-
         
+            cutout_size_pix = (cutout_size / data.im_pixel_scales[band]).to(u.dimensionless_unscaled).value
             # Set top value based on central 10x10 pixel region
             top = np.max(data_cutout[:20, 10:20])
-            top = np.max(data_cutout[int(cutout_size // 2 - 0.3 * cutout_size) : int(cutout_size // 2 + 0.3 * cutout_size), \
-                int(cutout_size // 2 - 0.3 * cutout_size) : int(cutout_size // 2 + 0.3 * cutout_size)])
+            top = np.max(data_cutout[int(cutout_size_pix // 2 - 0.3 * cutout_size_pix) : int(cutout_size_pix // 2 + 0.3 * cutout_size_pix), \
+                int(cutout_size_pix // 2 - 0.3 * cutout_size_pix) : int(cutout_size_pix // 2 + 0.3 * cutout_size_pix)])
             bottom_val = top / 10 ** 5
             
             if high_dyn_rng:
@@ -260,13 +271,13 @@ class Galaxy:
 
             n_sig_detect = self.phot.SNR[i]
             if n_sig_detect < 100:
-                bottom_val = top / 10 ** 3
+                bottom_val = top * 1e-3
                 a = 100
             if n_sig_detect <= 15:
-                bottom_val = top/10**2
+                bottom_val = top * 1e-2
                 a = 0.1
             if n_sig_detect < 8:
-                bottom_val = top / 100000
+                bottom_val = top / 100_000
                 stretch = LinearStretch()
                 
             data_cutout = np.clip(data_cutout * 0.9999, bottom_val * 1.000001, top) # why?
@@ -311,7 +322,7 @@ class Galaxy:
 
     
     def plot_phot_diagnostic(self, ax, data, SED_fit_params_arr, zPDF_plot_SED_fit_params_arr, wav_unit = u.um, flux_unit = u.ABmag, \
-            hide_masked_cutouts = True, cutout_size = 32, high_dyn_rng = False, annotate_PDFs = True, plot_rejected_reasons = False, overwrite = True):
+            hide_masked_cutouts = True, cutout_size = 0.96 * u.arcsec, high_dyn_rng = False, annotate_PDFs = True, plot_rejected_reasons = False, overwrite = True):
 
         cutout_fig, phot_ax, PDF_ax = ax
         # update SED_fit_params with appropriate lowz_zmax
@@ -470,17 +481,17 @@ class Galaxy:
     def select_unmasked_instrument(self, instrument, update = True):
         assert(issubclass(instrument.__class__, Instrument))
         assert(instrument.__class__.__name__ in self.phot.instrument.name.split("+"))
-
         selection_name = f"unmasked_{instrument.__class__.__name__}"
+
         if selection_name in self.selection_flags.keys():
             galfind_logger.debug(f"{selection_name} already performed for galaxy ID = {self.ID}!")
         else:
-            if len(self.phot) == 0: # no data at all (not sure why sextractor does this)
+            # extract band IDs belonging to the input instrument name
+            band_indices = np.array([i for i, band in enumerate(self.phot.instrument.band_names) if band in instrument.band_names])
+            if len(band_indices) == 0: # no data to mask from the instrument
                 if update:
                     self.selection_flags[selection_name] = False
                 return self, selection_name
-            # extract band IDs belonging to the input instrument name
-            band_indices = np.array([i for i, band in enumerate(self.phot.instrument.band_names) if band in instrument.band_names])
             mask = self.phot.flux_Jy.mask[band_indices]
             if all(mask_band == False for mask_band in mask):
                 if update:
@@ -1055,7 +1066,7 @@ class Galaxy:
         return self, selection_name
     
     def select_EPOCHS(self, SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}, allow_lowz = False, \
-            hot_pixel_bands = ["F277W", "F356W", "F444W"], mask_instrument = NIRCam(), update = True):
+            hot_pixel_bands = ["F277W", "F356W", "F444W"], masked_instruments = [NIRCam()], update = True):
         
         selection_name = f"EPOCHS{'_lowz' if allow_lowz else ''}"
         if len(self.phot) == 0: # no data at all (not sure why sextractor does this)
@@ -1069,13 +1080,16 @@ class Galaxy:
             return self, selection_name
         
         selection_names = [
-            self.select_unmasked_instrument(mask_instrument)[1], # unmasked in all NIRCam bands
             self.phot_bluewards_Lya_non_detect(2., SED_fit_params)[1], # 2σ non-detected in all bands bluewards of Lyα
             self.phot_redwards_Lya_detect([5., 3.], SED_fit_params, widebands_only = True)[1], # 5σ/3σ detected in first/second band redwards of Lyα
             self.select_chi_sq_lim(3., SED_fit_params, reduced = True)[1], # χ^2_red < 3
             self.select_chi_sq_diff(9., SED_fit_params, delta_z_lowz = 0.5)[1], # Δχ^2 > 9 between redshift free and low redshift SED fits, with Δz=0.5 tolerance 
             self.select_robust_zPDF(0.6, 0.1, SED_fit_params)[1] # 60% of redshift PDF must lie within z ± z * 0.1
         ]
+
+        # ensure masked in all instruments
+        for instr in masked_instruments:
+            selection_names.append(self.select_unmasked_instrument(instr)[1]) # unmasked in all bands
 
         # hot pixel checks
         for band_name in hot_pixel_bands:
@@ -1085,11 +1099,6 @@ class Galaxy:
         if not allow_lowz:
             selection_names.append(self.phot_SNR_crop(0, 2., "non_detect")[1]) # 2σ non-detected in first band
 
-        try:
-            self.selection_flags["Re_F277W>1.5pix"]
-        except:
-            breakpoint()
-            
         # if the galaxy passes all criteria
         if all(self.selection_flags[name] for name in selection_names):
             if update:

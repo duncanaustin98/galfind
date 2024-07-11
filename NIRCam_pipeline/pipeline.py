@@ -17,7 +17,8 @@ from galfind import Catalogue, config, LePhare, EAZY, NIRCam
 from galfind.Catalogue_Creator import GALFIND_Catalogue_Creator
 
 def pipeline(surveys, version, instruments, aper_diams, min_flux_pc_errs, forced_phot_band, \
-        excl_bands, SED_fit_params_arr, cat_type = "loc_depth", crop_by = None, timed = True):
+        excl_bands, SED_fit_params_arr, cat_type = "loc_depth", crop_by = None, timed = True, mask_stars = True, \
+        pix_scales = {"ACS_WFC": 0.03 * u.arcsec, "WFC3_IR": 0.03 * u.arcsec, "NIRCam": 0.03 * u.arcsec, "MIRI": 0.09 * u.arcsec}):
     for pc_err in min_flux_pc_errs:
         # make appropriate galfind catalogue creator for each aperture diameter
         cat_creator = GALFIND_Catalogue_Creator(cat_type, aper_diams[0], pc_err)
@@ -25,14 +26,14 @@ def pipeline(surveys, version, instruments, aper_diams, min_flux_pc_errs, forced
             start = time.time()
             cat = Catalogue.from_pipeline(survey = survey, version = version, instruments = instruments, aper_diams = aper_diams, \
                 cat_creator = cat_creator, SED_fit_params_arr = SED_fit_params_arr, forced_phot_band = forced_phot_band, \
-                excl_bands = excl_bands, loc_depth_min_flux_pc_errs = min_flux_pc_errs, crop_by = crop_by, timed = timed)
-
-            
-            #cat = cat.select_EPOCHS(allow_lowz = False)
-            
-            cat.plot_phot_diagnostics(flux_unit = u.ABmag)
-            
-            print(str(cat))
+                excl_bands = excl_bands, loc_depth_min_flux_pc_errs = min_flux_pc_errs, crop_by = crop_by, timed = timed, \
+                mask_stars = mask_stars, pix_scales = pix_scales)
+            #breakpoint()
+            #cat_copy = cat.select_phot_galaxy_property("z", "<", 0.5)
+            #cat_copy = cat.select_phot_galaxy_property("z", ">", 0.3)
+            cat_copy = cat.select_EPOCHS(allow_lowz = False)
+            cat_copy.plot_phot_diagnostics(flux_unit = u.ABmag)
+            print(str(cat_copy))
 
             end = time.time()
             print(f"Time to load catalogue = {(end - start):.1f}s")
@@ -67,23 +68,24 @@ def make_EAZY_SED_fit_params_arr(SED_code_arr, templates_arr, lowz_zmax_arr):
 
 if __name__ == "__main__":
 
-    version = "v11" #config["DEFAULT"]["VERSION"]
-    instruments = ["NIRCam", "ACS_WFC"] #,"ACS_WFC",  'WFC3_IR'] # "ACS_WFC"
+    version = "v9" #config["DEFAULT"]["VERSION"]
+    instruments = ["NIRCam", "MIRI"] #, "ACS_WFC"] # "WFC3_IR"
     cat_type = "loc_depth"
-    surveys = ["JOF"] #[config["DEFAULT"]["SURVEY"]]
-    aper_diams = [0.32, 0.5] * u.arcsec
+    surveys = ["JADES-Deep-GS+JEMS+SMILES"] #[config["DEFAULT"]["SURVEY"]]
+    aper_diams = [0.32] * u.arcsec
     SED_code_arr = [EAZY()]
     templates_arr = ["fsps_larson"] #["fsps", "fsps_larson", "fsps_jades"]
     lowz_zmax_arr = [[4., 6., None]] #[[None]] # 
     min_flux_pc_errs = [10]
-    forced_phot_band = ["F277W", "F356W", "F444W"] #["F277W", "F356W", "F444W"] # ["F444W"] #
-    gal_ID = 6470
-    crop_by = f"ID={int(gal_ID)}" #'EPOCHS' #None #"bands>13+EPOCHS" #"EPOCHS_lowz+z>4.5"
+    forced_phot_band = ["F277W", "F356W", "F444W"] #["F444W"]
+    crop_by = None #{"ID": [1, 2, 3]} #"bands>13+EPOCHS" #"EPOCHS_lowz+z>4.5"
     timed = False
+    mask_stars = {"ACS_WFC": False, "NIRCam": True, "WFC3_IR": False, "MIRI": False}
+    MIRI_pix_scale = 0.06 * u.arcsec
 
     jems_bands = ["F182M", "F210M", "F430M", "F460M", "F480M"]
     ngdeep_excl_bands = ["F435W", "F775W", "F850LP"]
-    #jades_3215_excl_bands = ["f162M", "f115W", "f150W", "f200W", "f410M", "f182M", "f210M", "f250M", "f300M", "f335M", "f277W", "f356W", "f444W"] 
+    #jades_3215_excl_bands = ["f162M", "f115W", "f150W", "f200W", "f410M", "f182M", "f210M", "f250M", "f300M", "f335M", "f277W", "f356W", "f444W"]
     excl_bands = []
 
     SED_fit_params_arr = make_EAZY_SED_fit_params_arr(SED_code_arr, templates_arr, lowz_zmax_arr)
@@ -92,6 +94,9 @@ if __name__ == "__main__":
     # print(f"{surveys[0]} delayed by {delay_time}s")
     # time.sleep(delay_time)
 
+    pix_scales = {**{"ACS_WFC": 0.03 * u.arcsec, "WFC3_IR": 0.03 * u.arcsec, "NIRCam": 0.03 * u.arcsec}, **{"MIRI": MIRI_pix_scale}}
+
     for survey in surveys:
         pipeline([survey], version, instruments, aper_diams, min_flux_pc_errs, forced_phot_band, \
-        excl_bands, SED_fit_params_arr, cat_type = cat_type, crop_by = crop_by, timed = timed)
+        excl_bands, SED_fit_params_arr, cat_type = cat_type, crop_by = crop_by, timed = timed, \
+        mask_stars = mask_stars, pix_scales = pix_scales)

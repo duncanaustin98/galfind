@@ -249,6 +249,8 @@ class Instrument:
         return np.array([self[self.index_from_band_name(band_name)] for band_name in self.band_names if not band_name in unique_band_names])
     
     def get_aper_corrs(self, aper_diam, cache = True):
+        #print(self.name)
+        #breakpoint()
         # load aperture correction from object should it exist
         if hasattr(self, "aper_corrs"):
             assert type(self.aper_corrs) in [dict]
@@ -258,7 +260,7 @@ class Instrument:
             self.aper_corrs = {}
         if self.name in globals():
             assert globals()[self.name] in Instrument.__subclasses__()
-        aper_corr_path = f'{config["Other"]["GALFIND_DIR"]}/Aperture_corrections/{self.name}_aper_corr{".txt" if self.name == "NIRCam" else ".dat"}'
+        aper_corr_path = f'{config["Other"]["GALFIND_DIR"]}/Aperture_corrections/{self.name}_aper_corr{".txt" if self.name in ["NIRCam", "MIRI"] else ".dat"}'
         # if no aperture corrections in object, load from aperture corrections txt
         if Path(aper_corr_path).is_file():
             aper_corr_data = np.loadtxt(aper_corr_path, comments = "#", dtype = [('band', 'U10'), \
@@ -272,8 +274,11 @@ class Instrument:
                 return aper_corrs
             else:
                 raise(Exception())
-        # if no aperture corrections txt, create it
-        #NIRCam_aper_corr.main(NIRCam().band_names)
+        else:
+            # THIS CODE IS NOT AT ALL GENERAL!
+            # if no aperture corrections txt, create it
+            if "+" not in self.name:
+                NIRCam_aper_corr.main(self.new_instrument().band_names, instrument_name = self.name)
 
     @staticmethod
     def from_name(name, excl_bands = []):
