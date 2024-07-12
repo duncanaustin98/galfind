@@ -109,7 +109,7 @@ class Galaxy:
 
     def make_cutout(self, band, data, wcs = None, im_header = None, survey = None, \
             version = None, pix_scale = 0.03 * u.arcsec, cutout_size = 0.96 * u.arcsec):
-        
+
         if type(data) == Data:
             survey = data.survey
             version = data.version
@@ -117,16 +117,8 @@ class Galaxy:
             raise(Exception("'survey' and 'version' must both be given to construct save paths"))
         
         out_path = f"{config['Cutouts']['CUTOUT_DIR']}/{version}/{survey}/{cutout_size.to(u.arcsec).value:.2f}as/{band}/{self.ID}.fits"
-        rerun = False
-        
-        if Path(out_path).is_file():
-            
-            size = fits.open(out_path)[0].header["cutout_size_as"]
-            if size != cutout_size.to(u.arcsec).value:
-                galfind_logger.info("Cutout size does not match requested size, overwriting...")
-                print('Cutout size does not match requested size, overwriting...')
-                rerun = True
-        if config.getboolean("Cutouts", "OVERWRITE_CUTOUTS") or rerun or not Path(out_path).is_file():
+
+        if config.getboolean("Cutouts", "OVERWRITE_CUTOUTS") or not Path(out_path).is_file():
             if type(data) == Data:
                 im_data, im_header, seg_data, seg_header = data.load_data(band, incl_mask = False)
                 wht_data = data.load_wht(band)
@@ -134,11 +126,11 @@ class Galaxy:
                 wcs = data.load_wcs(band)
                 data_dict = {"SCI": im_data, "SEG": seg_data, "WHT": wht_data, "RMS_ERR": rms_err_data}
             elif type(data) == dict and type(wcs) != type(None) and type(im_header) != type(None):
-                pass
+                data_dict = data
             else:
                 raise(Exception(""))
             hdul = [fits.PrimaryHDU(header = fits.Header({"ID": self.ID, "survey": survey, "version": version, \
-                        "RA": self.sky_coord.ra.value, "DEC": self.sky_coord.dec.value, "cutout_size_as": cutout_size.to(u.arcsec).value}))]
+                "RA": self.sky_coord.ra.value, "DEC": self.sky_coord.dec.value, "cutout_size_as": cutout_size.to(u.arcsec).value}))]
 
             cutout_size_pix = (cutout_size / pix_scale).to(u.dimensionless_unscaled).value
             for i, (label_i, data_i) in enumerate(data_dict.items()):
@@ -155,7 +147,7 @@ class Galaxy:
                     else:
                       galfind_logger.warning(f"Incorrect data shape. {data_i=} != {sci_shape=}, skipping extension!")
             #print(hdul)
-            os.makedirs("/".join(out_path.split("/")[:-1]), exist_ok = True)
+            funcs.make_dirs(out_path)
             fits_hdul = fits.HDUList(hdul)
             fits_hdul.writeto(out_path, overwrite = True)
             funcs.change_file_permissions(out_path)
@@ -1029,7 +1021,7 @@ class Galaxy:
                 if update:
                     self.selection_flags[selection_name] = False
             else:
-                integral = self.phot.SED_results[SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)].property_PDFs["z"].integrate_between_lims(float(zbest * delta_z_over_z), float(zbest))
+                integral = self.phot.SED_results[SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)].property_PDFs["z"].integrate_between_lims(float(delta_z_over_z), float(zbest))
                 if integral > integral_lim:
                     if update:
                         self.selection_flags[selection_name] = True
@@ -1081,7 +1073,7 @@ class Galaxy:
         
         selection_names = [
             self.phot_bluewards_Lya_non_detect(2., SED_fit_params)[1], # 2σ non-detected in all bands bluewards of Lyα
-            self.phot_redwards_Lya_detect([5., 3.], SED_fit_params, widebands_only = True)[1], # 5σ/3σ detected in first/second band redwards of Lyα
+            self.phot_redwards_Lya_detect([5., 5.], SED_fit_params, widebands_only = True)[1], # 5σ/3σ detected in first/second band redwards of Lyα
             self.select_chi_sq_lim(3., SED_fit_params, reduced = True)[1], # χ^2_red < 3
             self.select_chi_sq_diff(9., SED_fit_params, delta_z_lowz = 0.5)[1], # Δχ^2 > 9 between redshift free and low redshift SED fits, with Δz=0.5 tolerance 
             self.select_robust_zPDF(0.6, 0.1, SED_fit_params)[1] # 60% of redshift PDF must lie within z ± z * 0.1
@@ -1113,9 +1105,24 @@ class Galaxy:
     
     # Rest-frame SED photometric properties
 
-    def _calc_SED_rest_property(self, SED_rest_property_function, SED_fit_params_label, *args):
-        # calculate and save parameter
-        SED_rest_property_function(self.phot.SED_results[SED_fit_params_label].phot_rest, *args)
+    def _calc_SED_rest_property(self, SED_rest_property_function, SED_fit_params_label, PDF_dir, iters, *args):
+        assert type(iters) in [int, np.int]
+        property_name = SED_rest_property_function(self.phot.SED_results[SED_fit_params_label].phot_rest, *args, extract_property_name = True)
+        phot_obj = self.phot.SED_results[SED_fit_params_label].phot_rest
+        if type(property_name) in [str]:
+            property_name = [property_name]
+        for name in property_name:
+            property_iters = iters
+            # if the property has already been loaded in (i.e. previously computed)
+            if name in phot_obj.property_PDFs.keys():
+                PDF_obj = phot_obj.property_PDFs[name]
+                # extend PDF to a specific number of iterations
+                if len(PDF_obj) != iters:
+                    property_iters = iters - len(PDF_obj)
+                else:
+                    property_iters = 0
+            # compute and save the property
+            SED_rest_property_function(self.phot.SED_results[SED_fit_params_label].phot_rest, iters = property_iters, *args)
         return self
     
     def _save_SED_rest_PDFs(self, property_name, save_dir, SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}):
@@ -1183,7 +1190,9 @@ class Multiple_Galaxy:
         # load the ID and Sky Coordinate from the source catalogue
         IDs = np.array(fits_cat[cat_creator.ID_label]).astype(int)
         # load sky co-ordinates
-        sky_coords = SkyCoord(fits_cat[cat_creator.ra_dec_labels["RA"]], fits_cat[cat_creator.ra_dec_labels["DEC"]], frame = "icrs")
+        RAs = np.array(fits_cat[cat_creator.ra_dec_labels["RA"]]) * cat_creator.ra_dec_units["RA"]
+        Decs = np.array(fits_cat[cat_creator.ra_dec_labels["DEC"]]) * cat_creator.ra_dec_units["DEC"]
+        sky_coords = SkyCoord(RAs, Decs, frame = "icrs")
         # mask flags should come from cat_creator
         #mask_flags_arr = [{f"unmasked_{band}": cat_creator.load_flag(fits_cat_row, f"unmasked_{band}") for band in instrument.band_names} for fits_cat_row in fits_cat]
         mask_flags_arr = [{} for fits_cat_row in fits_cat] #f"unmasked_{band}": None for band in instrument.band_names

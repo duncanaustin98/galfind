@@ -24,12 +24,13 @@ from . import config, galfind_logger, SED_code, LePhare, EAZY, Bagpipes
 
 class Catalogue_Creator(ABC):
     
-    def __init__(self, property_conv_dict, aper_diam_index, flux_or_mag, min_flux_pc_err, ra_dec_labels, ID_label, zero_point = u.Jy.to(u.ABmag), phot_fits_ext = 0):
+    def __init__(self, property_conv_dict, aper_diam_index, flux_or_mag, min_flux_pc_err, ra_dec_labels, ID_label, zero_point = u.Jy.to(u.ABmag), phot_fits_ext = 0, ra_dec_units = {"RA": u.deg, "DEC": u.deg}):
         self.property_conv_dict = property_conv_dict
         self.aper_diam_index = aper_diam_index # set to 'None' by default as very few people actually put arrays in catalogue columns
         self.flux_or_mag = flux_or_mag # either "flux" or "mag"
         self.min_flux_pc_err = min_flux_pc_err
         self.ra_dec_labels = ra_dec_labels
+        self.ra_dec_units = ra_dec_units
         self.ID_label = ID_label
         self.zero_point = zero_point # must be astropy units; can be either integer or dict of {band: zero_point}
         self.phot_fits_ext = phot_fits_ext # only compatible with .fits currently
@@ -107,10 +108,11 @@ class GALFIND_Catalogue_Creator(Catalogue_Creator):
         property_conv_dict = {sed_code: {**getattr(globals()[sed_code], sed_code)().galaxy_property_dict, **{element: element for element in same_key_value_properties}} for sed_code in json.loads(config["Other"]["CODES"])}
         
         ra_dec_labels = {"RA": "ALPHA_J2000", "DEC": "DELTA_J2000"}
+        ra_dec_units = {"RA": u.deg, "DEC": u.deg}
         ID_label = "NUMBER"
         phot_fits_ext = 0 # check whether this works!
         aper_diam_index = int(json.loads(config.get("SExtractor", "APERTURE_DIAMS")).index(aper_diam.value))
-        super().__init__(property_conv_dict, aper_diam_index, flux_or_mag, min_flux_pc_err, ra_dec_labels, ID_label, zero_point, phot_fits_ext)
+        super().__init__(property_conv_dict, aper_diam_index, flux_or_mag, min_flux_pc_err, ra_dec_labels, ID_label, zero_point, phot_fits_ext, ra_dec_units = ra_dec_units)
 
     def sex_phot_labels(self, bands):
         # Updated to take a list of bands as input

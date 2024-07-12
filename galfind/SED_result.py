@@ -174,7 +174,8 @@ class Catalogue_SED_results:
                 # construct PDF objects, type = array of len(fits_cat), each element a dict of {gal_property: PDF object} excluding None PDFs
                 cat_property_PDFs_ = {gal_property: SED_fit_params["code"].extract_PDFs(gal_property, IDs, \
                     PDF_paths[gal_property], SED_fit_params) for gal_property in PDF_paths.keys()}
-                cat_property_PDFs[:, i] = [{gal_property: PDF_arr[j] for gal_property, PDF_arr in cat_property_PDFs_.items() if PDF_arr[j] != None} for j in range(len(fits_cat))]
+                cat_property_PDFs[:, i] = [{gal_property: PDF_arr[j] for gal_property, PDF_arr \
+                    in cat_property_PDFs_.items() if PDF_arr[j] != None} for j in range(len(fits_cat))]
 
         # load in SEDs
         # make array of the correct shape for appropriate parsing

@@ -386,7 +386,7 @@ class EAZY(SED_code):
             pz_arr = hf["p_z_arr"][IDs - 1]
             if timed:
                 mid = time.time()
-            redshift_PDFs = [Redshift_PDF(hf_z, pz, SED_fit_params, normed = True) \
+            redshift_PDFs = [Redshift_PDF(hf_z, pz, SED_fit_params, normed = False) \
                 for ID, pz in tqdm(zip(IDs, pz_arr), total = len(IDs), desc = "Constructing redshift PDFs")]
             if timed:
                 end = time.time()

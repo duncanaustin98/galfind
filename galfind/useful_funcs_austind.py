@@ -114,16 +114,6 @@ def calc_flux_from_ra_dec(ra, dec, im_data, wcs, r, unit = "deg"):
     flux, fluxerr, flag = sep.sum_circle(im_data, x_pix, y_pix, r)
     return flux # image units
 
-def change_file_permissions(path, permissions = 0o777):
-    if type(path) != list:
-        path = [path]
-    for p in path:
-        try:
-            os.chmod(p, permissions)
-            galfind_logger.info(f"Changed permissions of {p} to {permissions}")
-        except (PermissionError, FileNotFoundError):
-            pass
-
 def calc_1sigma_flux(depth, zero_point):
     flux_1sigma = (10 ** ((depth - zero_point) / -2.5)) / 5
     return flux_1sigma # image units
@@ -498,12 +488,22 @@ class Jaguar(Simulation):
         if band in NIRCam().bands:
             return f"NRC_{band.replace('f', 'F')}_fnu"
 
-def make_dirs(path):
+def make_dirs(path, permissions = 0o777):
     os.makedirs(split_dir_name(path, "dir"), exist_ok = True)
     try:
-        os.chmod(split_dir_name(path, "dir"), 0o777)
+        os.chmod(split_dir_name(path, "dir"), permissions)
     except PermissionError:
-        galfind_logger.warning(f"Could not change permissions of {path} to 777.")
+        galfind_logger.warning(f"Could not change permissions of {path} to {oct(permissions)}.")
+
+def change_file_permissions(path, permissions = 0o777):
+    if type(path) != list:
+        path = [path]
+    for p in path:
+        try:
+            os.chmod(p, permissions)
+            galfind_logger.info(f"Changed permissions of {p} to {oct(permissions)}")
+        except (PermissionError, FileNotFoundError):
+            pass
 
 def calc_errs_from_cat(cat, col_name, instrument):
     if col_name in LePhare_col_names:

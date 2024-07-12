@@ -253,7 +253,7 @@ class Redshift_PDF(SED_fit_PDF):
         z, p_z = code.extract_z_PDF(data_path, ID)
         return cls(z, p_z)
     
-    def integrate_between_lims(self, delta_z, zbest = None, z_min = float(config["SEDFitting"].get("Z_MIN")), z_max = float(config["SEDFitting"].get("Z_MAX"))):
+    def integrate_between_lims(self, delta_z_over_z, zbest = None, z_min = float(config["SEDFitting"].get("Z_MIN")), z_max = float(config["SEDFitting"].get("Z_MAX"))):
         # find best fitting redshift from peak of the PDF distribution - not needed if peak is loaded in PDF object
         if type(zbest) == type(None):
             zbest = self.get_peak(0)["value"] # find first peak
@@ -262,10 +262,9 @@ class Redshift_PDF(SED_fit_PDF):
         else:
             galfind_logger.critical(f"zbest = {zbest} with type = {type(zbest)} is not in [int, float, None]!")
         # calculate redshift limits
-        lower_z_lim = np.clip(zbest * (1 - delta_z), z_min, z_max)
-        upper_z_lim = np.clip(zbest * (1 + delta_z), z_min, z_max)
+        lower_z_lim = np.clip(zbest * (1 - delta_z_over_z), z_min, z_max)
+        upper_z_lim = np.clip(zbest * (1 + delta_z_over_z), z_min, z_max)
         return super().integrate_between_lims(lower_z_lim, upper_z_lim)
-
 
 class PDF_nD:
 
