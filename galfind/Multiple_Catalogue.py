@@ -101,7 +101,7 @@ class Multiple_Catalogue:
             cum_dist = cum_dist * area_band[band]
 
             # Plot
-            ax.plot(cum_dist, total_depths, label = band if '+' not in band else 'Detection', color = colors[pos], drawstyle='steps-post')
+            ax.plot(cum_dist, total_depths, label = band if '+' not in band else 'Detection', color = colors[pos], drawstyle='steps-post', linestyle = '-' if '+' not in band else '--')
             
             # Set ylim to 2nd / 98th percentile if depth is smaller than this number
             ylim = ax.get_ylim()
@@ -120,7 +120,7 @@ class Multiple_Catalogue:
             if area_band[band] > max_area:
                 max_area = area_band[band]
 
-        ax.set_ylim(max_depth, min_depth)
+        ax.set_ylim(max_depth, min_depth-0.25)
         ax.legend(frameon = False, ncol = 2)
         ax.set_xlim(0, max_area)
         ax.grid(True)
