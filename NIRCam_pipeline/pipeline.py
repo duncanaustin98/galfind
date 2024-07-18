@@ -81,10 +81,10 @@ def make_EAZY_SED_fit_params_arr(SED_code_arr, templates_arr, lowz_zmax_arr):
 
 if __name__ == "__main__":
 
-    version = "v9" #config["DEFAULT"]["VERSION"]
-    instruments = ["ACS_WFC", "NIRCam", "MIRI"] #, "MIRI"] #, "ACS_WFC"] # "WFC3_IR"
+    version = "v11" #config["DEFAULT"]["VERSION"]
+    instruments = ["ACS_WFC", "NIRCam"] #, "MIRI"] #, "ACS_WFC"] # "WFC3_IR"
     cat_type = "loc_depth"
-    surveys = ["JADES-Deep-GS+JEMS+SMILES"] #[config["DEFAULT"]["SURVEY"]]
+    surveys = ["JOF"] #[config["DEFAULT"]["SURVEY"]]
     aper_diams = [0.32] * u.arcsec # , 0.5, 1.0, 1.5, 2.0
     SED_code_arr = [EAZY()]
     templates_arr = ["fsps_larson"] #["fsps", "fsps_larson", "fsps_jades"]

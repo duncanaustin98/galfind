@@ -384,6 +384,7 @@ class Data:
         if len(instrument_arr) == 1:
             comb_instrument = instrument_arr[0]
         else:
+            instrument_arr = np.array(instrument_arr, dtype = object)
             comb_instrument = np.sum(instrument_arr)
         
         # All seg maps and masks should be in same format, so load those last when we know what bands we have
@@ -1732,8 +1733,8 @@ class Data:
         # Parallelise the calculation of depths for each band
         with tqdm_joblib(tqdm(desc = "Calculating depths", total = len(params))) as progress_bar:
             Parallel(n_jobs = n_jobs)(delayed(self.calc_band_depth)(param) for param in params)
-        #for aper_diam in aper_diams:
-        #   self.plot_area_depth(cat_creator, mode, aper_diam, show = False)
+        for aper_diam in aper_diams:
+            self.plot_area_depth(cat_creator, mode, aper_diam, show = False)
     
     def calc_band_depth(self, params):
         # unpack parameters
@@ -1813,8 +1814,8 @@ class Data:
             save_path = f"{self.depth_dirs[self.forced_phot_band]}/{mode}/depth_areas.png" # not entirely general -> need to improve self.depth_dirs
             
             if not Path(save_path).is_file() or overwrite:
-                fig, ax = plt.subplots(1, 1, figsize = (5, 5))
-                ax.set_title(f"{self.survey} {self.version} {aper_diam}")
+                fig, ax = plt.subplots(1, 1, figsize = (4, 4))
+                #ax.set_title(f"{self.survey} {self.version} {aper_diam}")
                 ax.set_xlabel("Area (arcmin$^{2}$)")
                 ax.set_ylabel("5$\sigma$ Depth (AB mag)")
                 area_row = area_tab[area_tab["masking_instrument_band"] == self.forced_phot_band]
@@ -1829,7 +1830,10 @@ class Data:
                 bands = self.instrument.band_names.tolist()
                 if self.forced_phot_band not in bands:
                     bands.append(self.forced_phot_band)
-                colors = plt.cm.viridis(np.linspace(0, 1, len(bands)))
+                #cmap = plt.cm.get_cmap("nipy_spectral")
+                cmap = plt.cm.get_cmap("RdYlBu_r")
+                colors = cmap(np.linspace(0, 1, len(bands)))
+                #colors = plt.cm.viridis(np.linspace(0, 1, len(bands)))
                 data = {}
                 for pos, band in enumerate(bands):
                     h5_path = f"{self.depth_dirs[band]}/{mode}/{band}.h5"
@@ -1864,7 +1868,7 @@ class Data:
                     cum_dist = cum_dist * area
 
                     # Plot
-                    ax.plot(cum_dist, total_depths, label = band if '+' not in band else 'Detection', color = colors[pos], drawstyle='steps-post')
+                    ax.plot(cum_dist, total_depths, label = band if '+' not in band else 'Detection', color = colors[pos] if '+' not in band else 'black', drawstyle='steps-post', linestyle = 'solid' if '+' not in band else 'dashed')
                     if return_array:
                         data[band] = [area, total_depths]
                     # Set ylim to 2nd / 98th percentile if depth is smaller than this number
@@ -1882,10 +1886,23 @@ class Data:
                             max_depth = max_temp
 
                 ax.set_ylim(max_depth, min_depth)
-                ax.legend(frameon = False, ncol = 2)
-                ax.set_xlim(0, area_master)
+                # Place legend under plot
+                ax.legend(frameon = False, ncol = 4, bbox_to_anchor=(0.5, -0.14), loc='upper center', fontsize = 8, columnspacing = 1, handletextpad = 0.5)
+                #ax.legend(frameon = False, ncol = 2)
+                # Add inner ticks
+                from matplotlib.ticker import AutoMinorLocator
+                ax.xaxis.set_minor_locator(AutoMinorLocator())
+                ax.yaxis.set_minor_locator(AutoMinorLocator())
+                # Make ticks face inwards
+                ax.tick_params(direction='in', axis='both', which='both')
+                # Set minor ticks to face in
+                
+                ax.yaxis.set_ticks_position('both')
+                ax.xaxis.set_ticks_position('both')
+
+                ax.set_xlim(0, area_master*1.02)
                 # Add hlines at integer depths
-                depths = np.arange(20, 30, 1)
+                depths = np.arange(20, 35, 1)
                 #for depth in depths:
                 #    ax.hlines(depth, 0, area_master, color = "black", linestyle = "dotted", alpha = 0.5)
                 # Invert y axis
