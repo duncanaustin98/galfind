@@ -57,6 +57,7 @@ class Photometry_rest(Photometry):
         self.properties = properties
         self.property_errs = property_errs
         self.property_PDFs = property_PDFs
+        self.recently_updated = []
         super().__init__(instrument, flux_Jy, flux_Jy_errs, depths)
     
     # these class methods need updating!
@@ -180,10 +181,12 @@ class Photometry_rest(Photometry):
     # Rest-frame UV property calculations
 
     @ignore_warnings
-    def calc_beta_phot(self, rest_UV_wav_lims, iters = 10, maxfev = 100_000, beta_fit_func = None, extract_property_name = False, incl_errs = True):
-        assert iters >= 0, galfind_logger.critical(f"{iters=} < 1 in Photometry_rest.calc_beta_phot !!!")
+    def calc_beta_phot(self, rest_UV_wav_lims, iters = 10, maxfev = 100_000, beta_fit_func = None, extract_property_name = False, incl_errs = True, save_path = None):
+        assert iters >= 0, galfind_logger.critical(f"{iters=} < 0 in Photometry_rest.calc_beta_phot !!!")
         assert type(iters) == int, galfind_logger.critical(f"{type(iters)=} != 'int' in Photometry_rest.calc_beta_phot !!!")
-        # iters = 1 -> fit without errors, iters >> 1 -> fit with errors
+        # if iters == 1:
+        #     # iters = 1 -> fit without errors, iters >> 1 -> fit with errors
+        #     galfind_logger.warning("Cannot properly load from catalogue if iters == 1")
         property_name = f"beta_PL_{self.rest_UV_wavs_name(rest_UV_wav_lims)}"
         PL_amplitude_name = self.PL_amplitude_name(rest_UV_wav_lims)
         if extract_property_name:
@@ -192,182 +195,153 @@ class Photometry_rest(Photometry):
         property_stored = property_name in self.properties.keys() and property_name in self.property_errs.keys() \
                 and property_name in self.property_PDFs.keys() and PL_amplitude_name in self.properties.keys() \
                 and PL_amplitude_name in self.property_errs.keys() and PL_amplitude_name in self.property_PDFs.keys()
-        
-        if iters > 0: # calculate beta in the relevant rest-frame UV range
-            if self.is_correctly_UV_cropped(rest_UV_wav_lims):
-                rest_UV_phot = self
+        if property_stored:
+            if type(self.property_PDFs[property_name]) == type(None) or type(self.property_PDFs[PL_amplitude_name]) == type(None):
+                # run already and returned None for whatever reason (usually no rest-frame UV bands)
+                return [None, None], [PL_amplitude_name, property_name]
+            elif iters == 0:
+                # run already to the required length
+                return [{"vals": self.property_PDFs[PL_amplitude_name].input_arr, "PDF_kwargs": self.property_PDFs[PL_amplitude_name].kwargs}, \
+                    {"vals": self.property_PDFs[property_name].input_arr, "PDF_kwargs": self.property_PDFs[property_name].kwargs}], [PL_amplitude_name, property_name]
+        assert iters != 0 # iterations only zero when the property is stored already, no point in running this function otherwise
+        # if either not already stored or there are still iterations to run, run iterations
+        if self.is_correctly_UV_cropped(rest_UV_wav_lims):
+            rest_UV_phot = self
+        else:
+            rest_UV_phot = self.get_rest_UV_phot(rest_UV_wav_lims)
+        if iters == 1:
+            assert type(beta_fit_func) != type(None)
+            f_lambda = funcs.convert_mag_units([funcs.convert_wav_units(band.WavelengthCen, u.AA).value \
+                for band in rest_UV_phot.instrument] * u.AA, rest_UV_phot.flux_Jy, u.erg / (u.s * u.AA * u.cm ** 2))
+            if not incl_errs:
+                return curve_fit(beta_fit_func, None, f_lambda, maxfev = maxfev)[0], [PL_amplitude_name, property_name]
             else:
-                rest_UV_phot = self.get_rest_UV_phot(rest_UV_wav_lims)
-            if iters == 1:
-                assert type(beta_fit_func) != type(None)
-                f_lambda = funcs.convert_mag_units([funcs.convert_wav_units(band.WavelengthCen, u.AA).value \
-                    for band in rest_UV_phot.instrument] * u.AA, rest_UV_phot.flux_Jy, u.erg / (u.s * u.AA * u.cm ** 2))
-                if not incl_errs:
-                    return curve_fit(beta_fit_func, None, f_lambda, maxfev = maxfev)[0]
-                else:
-                    f_lambda_errs = funcs.convert_mag_err_units([funcs.convert_wav_units(band.WavelengthCen, u.AA).value \
-                        for band in rest_UV_phot.instrument] * u.AA, rest_UV_phot.flux_Jy, [rest_UV_phot.flux_Jy_errs.value, \
-                        rest_UV_phot.flux_Jy_errs.value] * rest_UV_phot.flux_Jy_errs.unit, u.erg / (u.s * u.AA * u.cm ** 2))
-                    return curve_fit(beta_fit_func, None, f_lambda, sigma = f_lambda_errs[0], maxfev = maxfev)[0]
+                f_lambda_errs = funcs.convert_mag_err_units([funcs.convert_wav_units(band.WavelengthCen, u.AA).value \
+                    for band in rest_UV_phot.instrument] * u.AA, rest_UV_phot.flux_Jy, [rest_UV_phot.flux_Jy_errs.value, \
+                    rest_UV_phot.flux_Jy_errs.value] * rest_UV_phot.flux_Jy_errs.unit, u.erg / (u.s * u.AA * u.cm ** 2))
+                return curve_fit(beta_fit_func, None, f_lambda, sigma = f_lambda_errs[0], maxfev = maxfev)[0], [PL_amplitude_name, property_name]
+        else:
+            if len(rest_UV_phot) == 0:
+                return [None, None], [PL_amplitude_name, property_name]
             else:
-                if len(rest_UV_phot) == 0:
-                    A_arr = None
-                    beta_arr = None
-                else:
-                    assert type(beta_fit_func) == type(None)
-                    scattered_rest_UV_phot_arr = rest_UV_phot.scatter_phot(iters)
-                    beta_fit_func = beta_fit(rest_UV_phot.z, rest_UV_phot.instrument.bands).beta_slope_power_law_func_conv_filt
-                    popt_arr = np.array([scattered_rest_UV_phot.calc_beta_phot(rest_UV_wav_lims, iters = 1, beta_fit_func = beta_fit_func) \
-                        for scattered_rest_UV_phot in tqdm(scattered_rest_UV_phot_arr, total = iters, desc = "Calculating beta_PL")])
-                    A_arr = (10 ** popt_arr[:, 0]) * u.erg / (u.s * u.AA * u.cm ** 2)
-                    beta_arr = popt_arr[:, 1] * u.dimensionless_unscaled
-                update_PDFs = True
-        else: # if already stored in object, do nothing
-            A_arr = None
-            beta_arr = None
-            galfind_logger.debug(f"{property_name=} and associated {PL_amplitude_name=} already calculated!")
-            if not property_stored:
-                update_PDFs = True
-            else:
-                update_PDFs = False
-        
-        # save amplitude and beta PDFs
-        if update_PDFs:
-            PDF_kwargs = {"rest_UV_band_names": "+".join(rest_UV_phot.instrument.band_names), "n_UV_bands": len(rest_UV_phot.instrument)}
-            self._update_properties_and_PDFs(PL_amplitude_name, A_arr, PDF_kwargs)
-            self._update_properties_and_PDFs(property_name, beta_arr, PDF_kwargs)
-        if not hasattr(self, "ampl_beta_joint_PDF") or (hasattr(self, "ampl_beta_joint_PDF") and update_PDFs):
-            if type(A_arr) == None and type(beta_arr == None):
-                self.ampl_beta_joint_PDF = None
-            else:
-                self.ampl_beta_joint_PDF = PDF_nD([self.property_PDFs[self.PL_amplitude_name(rest_UV_wav_lims)], self.property_PDFs[property_name]])
-        
-        return self, [PL_amplitude_name, property_name]
+                assert type(beta_fit_func) == type(None)
+                scattered_rest_UV_phot_arr = rest_UV_phot.scatter_phot(iters)
+                beta_fit_func = beta_fit(rest_UV_phot.z, rest_UV_phot.instrument.bands).beta_slope_power_law_func_conv_filt
+                popt_arr = np.array([scattered_rest_UV_phot.calc_beta_phot(rest_UV_wav_lims, iters = 1, beta_fit_func = beta_fit_func)[0] \
+                    for scattered_rest_UV_phot in tqdm(scattered_rest_UV_phot_arr, total = iters, desc = "Calculating beta_PL")])
+                A_arr = (10 ** popt_arr[:, 0]) * u.erg / (u.s * u.AA * u.cm ** 2)
+                beta_arr = popt_arr[:, 1] * u.dimensionless_unscaled
+                PDF_kwargs = {"rest_UV_band_names": "+".join(rest_UV_phot.instrument.band_names), "n_UV_bands": len(rest_UV_phot.instrument)}
+                return [{"vals": A_arr, "PDF_kwargs": PDF_kwargs}, {"vals": beta_arr, "PDF_kwargs": PDF_kwargs}], [PL_amplitude_name, property_name]
     
-    def calc_fesc_from_beta_phot(self, rest_UV_wav_lims, conv_author_year, extract_property_name = False):
+    def calc_fesc_from_beta_phot(self, rest_UV_wav_lims, conv_author_year, iters = 10, extract_property_name = False, save_path = None):
         assert conv_author_year in fesc_from_beta_conversions.keys()
         property_name = f"fesc_{conv_author_year}" #_{self.rest_UV_wavs_name(rest_UV_wav_lims)}"
         if extract_property_name:
-            return property_name
-        # if already stored in object, do nothing
-        if property_name in self.properties.keys() and property_name in self.property_errs.keys() \
-                and property_name in self.property_PDFs.keys():
-            galfind_logger.debug(f"{property_name=} already calculated!")
-        else: # calculate fesc in the relevant rest-frame UV range
-            beta_property_name = self.calc_beta_phot(rest_UV_wav_lims)[1]
-            # update PDF
-            if type(self.property_PDFs[beta_property_name]) == type(None):
-                self.property_PDFs[property_name] = None
-            else:
-                self.property_PDFs[property_name] = self.property_PDFs[beta_property_name].manipulate_PDF(property_name, fesc_from_beta_conversions[conv_author_year])
-            self._update_properties_from_PDF(property_name)
-        return self, property_name
+            return [property_name]
+        beta_property_name = self._calc_property(Photometry_rest.calc_beta_phot, iters, rest_UV_wav_lims, save_path = save_path)[1][1]
+        # update PDF
+        if type(self.property_PDFs[beta_property_name]) == type(None):
+            return [None], [property_name]
+        else:
+            return [{"PDF": self.property_PDFs[beta_property_name].manipulate_PDF(property_name, fesc_from_beta_conversions[conv_author_year], size = iters)}], [property_name]
     
-    def calc_AUV_from_beta_phot(self, rest_UV_wav_lims, ref_wav, conv_author_year, extract_property_name = False):
+    def calc_AUV_from_beta_phot(self, rest_UV_wav_lims, ref_wav, conv_author_year, iters = 10, extract_property_name = False, save_path = None):
         conv_author_year_cls = globals()[conv_author_year]
         assert issubclass(conv_author_year_cls, AUV_from_beta)
         UV_dust_label = self._get_UV_dust_label(conv_author_year)
         property_name = f"A{ref_wav.to(u.AA).value:.0f}{UV_dust_label}" #_{self.rest_UV_wavs_name(rest_UV_wav_lims)}"
         if extract_property_name:
-            return property_name
-        # if already stored in object, do nothing
-        if property_name in self.properties.keys() and property_name in self.property_errs.keys() \
-                and property_name in self.property_PDFs.keys():
-            galfind_logger.debug(f"{property_name=} already calculated!")
-        else: # calculate AUV in the relevant rest-frame UV range
-            beta_property_name = self.calc_beta_phot(rest_UV_wav_lims)[1]
-            # update PDF
-            if type(self.property_PDFs[beta_property_name]) == type(None):
-                self.property_PDFs[property_name] = None
-            else:
-                self.property_PDFs[property_name] = self.property_PDFs[beta_property_name].manipulate_PDF(property_name, conv_author_year_cls())
-            self._update_properties_from_PDF(property_name)
-        return self, property_name
+            return [property_name]
+        beta_property_name = self._calc_property(Photometry_rest.calc_beta_phot, iters, rest_UV_wav_lims, save_path = save_path)[1][1]
+        # update PDF
+        if type(self.property_PDFs[beta_property_name]) == type(None):
+            return [None], [property_name]
+        else:
+            return [{"PDF": self.property_PDFs[beta_property_name].manipulate_PDF(property_name, conv_author_year_cls(), size = iters)}], [property_name]
     
-    def calc_mUV_phot(self, rest_UV_wav_lims, ref_wav, top_hat_width = 100. * u.AA, resolution = 1. * u.AA, extract_property_name = False):
+    def calc_mUV_phot(self, rest_UV_wav_lims, ref_wav, top_hat_width = 100. * u.AA, resolution = 1. * u.AA, iters = 10, extract_property_name = False, save_path = None):
         property_name = f"m{ref_wav.to(u.AA).value:.0f}" #_{self.rest_UV_wavs_name(rest_UV_wav_lims)}"
         if extract_property_name:
-            return property_name
-        # if already stored in object, do nothing
-        if property_name in self.properties.keys() and property_name in self.property_errs.keys() \
-                and property_name in self.property_PDFs.keys():
-            galfind_logger.debug(f"{property_name=} already calculated!")
-        else: # calculate mUV in the relevant rest-frame UV range
-            beta_name = self.calc_beta_phot(rest_UV_wav_lims)[1]
+            return [property_name]
+        name_arr = self._calc_property(Photometry_rest.calc_beta_phot, iters, rest_UV_wav_lims, save_path = save_path)[1]
+        ampl_name, beta_name = name_arr[0], name_arr[1]
+        if type(self.property_PDFs[ampl_name]) == type(None) or type(self.property_PDFs[beta_name]) == type(None):
+            return [None], [property_name]
+        else:
+            assert(len(self.property_PDFs[ampl_name]) == len(self.property_PDFs[beta_name]))
             rest_wavelengths = funcs.convert_wav_units(np.linspace(ref_wav - top_hat_width / 2, ref_wav + top_hat_width / 2, \
                 int(np.round((top_hat_width / resolution).to(u.dimensionless_unscaled).value, 0))), u.AA)
-            power_law_chains = self.ampl_beta_joint_PDF(funcs.power_law_beta_func, rest_wavelengths.value)
+            ampl_beta_joint_PDF = PDF_nD([self.property_PDFs[ampl_name], self.property_PDFs[beta_name]])
+            power_law_chains = ampl_beta_joint_PDF(funcs.power_law_beta_func, rest_wavelengths.value, size = iters)
             # take the median of each chain to form a new chain
-            mUV_chain = [np.median(funcs.convert_mag_units(rest_wavelengths * (1. + self.z), \
-                chain * u.erg / (u.s * u.AA * u.cm ** 2), u.ABmag).value) for chain in power_law_chains] * u.ABmag
-            PDF_kwargs = self.property_PDFs[beta_name].kwargs
-            self._update_properties_and_PDFs(property_name, mUV_chain, PDF_kwargs)
-        return self, property_name
+            mUV_chain = np.array([np.median(funcs.convert_mag_units(rest_wavelengths * (1. + self.z), \
+                chain * u.erg / (u.s * u.AA * u.cm ** 2), u.ABmag).value) for chain in power_law_chains]) * u.ABmag
+            return [{"vals": mUV_chain, "PDF_kwargs": self.property_PDFs[beta_name].kwargs}], [property_name]
 
-    def calc_MUV_phot(self, rest_UV_wav_lims, ref_wav, extract_property_name = False):
+    def calc_MUV_phot(self, rest_UV_wav_lims, ref_wav, iters = 10, extract_property_name = False, save_path: Union[str, None] = None):
         property_name = f"M{ref_wav.to(u.AA).value:.0f}" #_{self.rest_UV_wavs_name(rest_UV_wav_lims)}"
         if extract_property_name:
-            return property_name
-        # if already stored in object, do nothing
-        if property_name in self.properties.keys() and property_name in self.property_errs.keys() \
-                and property_name in self.property_PDFs.keys():
-            galfind_logger.debug(f"{property_name=} already calculated!")
-        else: # calculate MUV in the relevant rest-frame UV range
-            mUV_property_name = self.calc_mUV_phot(rest_UV_wav_lims, ref_wav)[1]
-            self.property_PDFs[property_name] = self.property_PDFs[mUV_property_name] \
-                .manipulate_PDF(property_name, lambda mUV:  mUV.unit * (mUV.value - \
-                5. * np.log10(funcs.calc_lum_distance(self.z).to(u.pc).value / 10.) + 2.5 * np.log10(1. + self.z)))
-            self._update_properties_from_PDF(property_name)
-        return self, property_name
+            return [property_name]
+        mUV_property_name = self._calc_property(Photometry_rest.calc_mUV_phot, iters, rest_UV_wav_lims, ref_wav, save_path = save_path)[1][0]
+        if type(self.property_PDFs[mUV_property_name]) == type(None):
+            return [None], [property_name]
+        else:
+            return [{"PDF": self.property_PDFs[mUV_property_name].manipulate_PDF(property_name, lambda mUV:  mUV.unit * (mUV.value - \
+                5. * np.log10(funcs.calc_lum_distance(self.z).to(u.pc).value / 10.) + 2.5 * np.log10(1. + self.z)), size = iters)}], [property_name]
     
     def calc_LUV_phot(self, frame: str, rest_UV_wav_lims: u.Quantity = [1_250., 3_000.] * u.AA, \
-            ref_wav: u.Quantity = 1_500. * u.AA, dust_author_year: Union[str, None] = "M99", extract_property_name: bool = False):
+            ref_wav: u.Quantity = 1_500. * u.AA, dust_author_year: Union[str, None] = "M99", \
+            iters = 10, extract_property_name: bool = False, save_path: Union[str, None] = None):
         assert(frame in ["rest", "obs"])
-        UV_dust_label = self._get_UV_dust_label(dust_author_year)
+        if type(dust_author_year) == type(None):
+            UV_dust_label = ""
+        else:
+            UV_dust_label = self._get_UV_dust_label(dust_author_year)
         property_name = f"L{frame}_{ref_wav.to(u.AA).value:.0f}{UV_dust_label}" #_{self.rest_UV_wavs_name(rest_UV_wav_lims)}"
         if extract_property_name:
-            return property_name
-        # if already stored in object, do nothing
-        if property_name in self.properties.keys() and property_name in self.property_errs.keys() \
-                and property_name in self.property_PDFs.keys():
-            galfind_logger.debug(f"{property_name=} already calculated!")
-        else: # calculate observed LUV in the relevant rest-frame UV range
-            AUV_property_name = self.calc_AUV_from_beta_phot(rest_UV_wav_lims, ref_wav, dust_author_year)[1]
-            mUV_property_name = self.calc_mUV_phot(rest_UV_wav_lims, ref_wav)[1]
-            if frame == "rest":
-                z = 0.
-                wavs = np.full(len(self.property_PDFs[mUV_property_name]), ref_wav)
-            else: # frame == "obs"
-                z = self.z
-                wavs = np.full(len(self.property_PDFs[mUV_property_name]), ref_wav * (1. + self.z))
-            UV_lum = self.property_PDFs[mUV_property_name].manipulate_PDF(property_name, \
-                funcs.flux_to_luminosity, wavs = wavs, z = z, out_units = u.erg / (u.s * u.Hz))
-            if UV_dust_label == "":
-                self.property_PDFs[property_name] == UV_lum
-            else: # dust correct
-                self.property_PDFs[property_name] = UV_lum.manipulate_PDF(property_name, \
-                    funcs.dust_correct, dust_mag = self.property_PDFs[AUV_property_name].input_arr)
-            self._update_properties_from_PDF(property_name)
-        return self, property_name
+            return [property_name]
+        mUV_property_name = self._calc_property(Photometry_rest.calc_mUV_phot, iters, rest_UV_wav_lims, ref_wav, save_path = save_path)[1][0]
+        if type(dust_author_year) == type(None):
+            AUV_property_name = None
+        else:
+            AUV_property_name = self._calc_property(Photometry_rest.calc_AUV_from_beta_phot, iters, rest_UV_wav_lims, ref_wav, dust_author_year)[1][0]
 
-    def calc_SFR_UV_phot(self, frame, rest_UV_wav_lims, ref_wav, dust_author_year, kappa_UV_conv_author_year, extract_property_name = False):
+        if type(self.property_PDFs[mUV_property_name]) == type(None):
+            return [None], [property_name]
+        if AUV_property_name in self.property_PDFs.keys():
+            if type(self.property_PDFs[AUV_property_name]) == type(None):
+                return [None], [property_name]
+        
+        if frame == "rest":
+            z = 0.
+            wavs = np.full(len(self.property_PDFs[mUV_property_name]), ref_wav)
+        else:
+            z = self.z
+            wavs = np.full(len(self.property_PDFs[mUV_property_name]), ref_wav * (1. + self.z))
+        UV_lum = self.property_PDFs[mUV_property_name].manipulate_PDF(property_name, \
+            funcs.flux_to_luminosity, wavs = wavs, z = z, out_units = u.erg / (u.s * u.Hz), size = iters)
+        if type(dust_author_year) == type(None): # do not dust correct
+            PDF = UV_lum
+        else: # dust correct
+            PDF = UV_lum.manipulate_PDF(property_name, funcs.dust_correct, dust_mag = self.property_PDFs[AUV_property_name].input_arr[-iters:], size = iters)
+        return [{"PDF": PDF}], [property_name]
+
+    def calc_SFR_UV_phot(self, frame, rest_UV_wav_lims, ref_wav, dust_author_year, kappa_UV_conv_author_year, \
+            iters = 10, extract_property_name = False, save_path: Union[str, None] = None):
         assert kappa_UV_conv_author_year in SFR_conversions.keys()
         UV_dust_label = self._get_UV_dust_label(dust_author_year)
         property_name = f"SFR{frame}_{ref_wav.to(u.AA).value:.0f}{UV_dust_label}_{kappa_UV_conv_author_year}" #_{self.rest_UV_wavs_name(rest_UV_wav_lims)}"
         if extract_property_name:
-            return property_name
-        # if already stored in object, do nothing
-        if property_name in self.properties.keys() and property_name in self.property_errs.keys() \
-                and property_name in self.property_PDFs.keys():
-            galfind_logger.debug(f"{property_name=} already calculated!")
-        else: # calculate UV SFR in the relevant rest-frame UV range
-            LUV_property_name = self.calc_LUV_phot(frame, rest_UV_wav_lims, ref_wav, dust_author_year)[1]
-            self.property_PDFs[property_name] = self.property_PDFs[LUV_property_name] \
-                .manipulate_PDF(property_name, lambda LUV: LUV * SFR_conversions[kappa_UV_conv_author_year])
-            self._update_properties_from_PDF(property_name)
-        return self, property_name
+            return [property_name]
+        LUV_property_name = self._calc_property(Photometry_rest.calc_LUV_phot, iters, frame, rest_UV_wav_lims, ref_wav, dust_author_year, save_path = save_path)[1][0]
+        if type(self.property_PDFs[LUV_property_name]) == type(None):
+            return [None], [property_name]
+        else:
+            return [{"PDF": self.property_PDFs[LUV_property_name].manipulate_PDF(property_name, \
+                lambda LUV: LUV * SFR_conversions[kappa_UV_conv_author_year], size = iters)}], [property_name]
     
-    def calc_cont_rest_optical(self, line_names, rest_optical_wavs = [3_700., 7_000.] * u.AA, iters = 10, extract_property_name = False):
+    def calc_cont_rest_optical(self, line_names, rest_optical_wavs = [3_700., 7_000.] * u.AA, iters = 10, extract_property_name = False, save_path = None):
         assert all(line_name in line_diagnostics.keys() for line_name in line_names)
         included_bands = {}
         closest_band = {}
@@ -377,35 +351,28 @@ class Photometry_rest(Photometry):
             obs_frame_emission_line_wav = rest_frame_emission_line_wav * (1. + self.z)
             # determine the closest (medium) band to the emission line
             closest_band[line_name] = self.instrument.nearest_band_to_wavelength(obs_frame_emission_line_wav, medium_bands_only = False)
-        property_name = f"continuum_{'+'.join(line_names)}"
+        property_name = f"cont_{'+'.join(line_names)}"
         if extract_property_name:
-            return property_name
-        # if already stored in object, do nothing
-        if property_name in self.properties.keys() and property_name in self.property_errs.keys() and property_name in self.property_PDFs.keys():
-            galfind_logger.debug(f"{property_name=} already calculated!")
-        else:
-            # determine photometric band that traces the continuum - must avoid other strong lines
-            bands_avoiding_wavs = self.instrument.bands_avoiding_wavs([line["line_wav"] \
-                * (1. + self.z) for line in line_diagnostics.values()]) # \
-                #if line["line_wav"] > rest_optical_wavs[0] and line["line_wav"] < rest_optical_wavs[1])
-            if len(bands_avoiding_wavs) < 1 or not all(band == closest_band[line_names[0]] for band in closest_band.values()):
-                self._update_properties_and_PDFs(property_name, None)
-                return self, property_name
-            # find closest band to the band of interest
-            continuum_band = bands_avoiding_wavs[np.abs([band.WavelengthCen.to(u.AA).value for band in bands_avoiding_wavs] \
-                - (line_diagnostics[line_names[0]]["line_wav"] * (1. + self.z)).value).argmin()]
-            galfind_logger.debug(f"Continuum flux calculation assumes that the most prominent line in {line_names=} is {line_names[0]}")
-            #print(self.z, continuum_band.band_name)
-            continuum_band_index = self.instrument.index_from_band_name(continuum_band.band_name)
-            # determine continuum flux of this band in Jy
-            cont_flux_Jy = funcs.convert_mag_units(self.instrument[continuum_band_index].WavelengthCen, self.flux_Jy[continuum_band_index], u.nJy).value
-            # errors in Jy are symmetric, therefore take the mean
-            cont_flux_Jy_errs = np.mean([flux_err.value for flux_err in funcs.convert_mag_err_units(self.instrument[continuum_band_index].WavelengthCen, \
-                self.flux_Jy[continuum_band_index], [self.flux_Jy_errs[continuum_band_index], self.flux_Jy_errs[continuum_band_index]], u.nJy)])
-            cont_chain = np.random.normal(cont_flux_Jy, cont_flux_Jy_errs, iters) * u.nJy # funcs.convert_mag_units(self.instrument[continuum_band_index].WavelengthCen, , out_units)
-            PDF_kwargs = {f"{'+'.join(line_names)}_cont_band": continuum_band.band_name}
-            self._update_properties_and_PDFs(property_name, cont_chain, PDF_kwargs)
-        return self, property_name
+            return [property_name]
+        # determine photometric band that traces the continuum - must avoid other strong lines
+        bands_avoiding_wavs = self.instrument.bands_avoiding_wavs([line["line_wav"] \
+            * (1. + self.z) for line in line_diagnostics.values()]) # \
+            #if line["line_wav"] > rest_optical_wavs[0] and line["line_wav"] < rest_optical_wavs[1])
+        if len(bands_avoiding_wavs) < 1 or not all(band == closest_band[line_names[0]] for band in closest_band.values()):
+            return [None], [property_name]
+        # find closest band to the band of interest
+        continuum_band = bands_avoiding_wavs[np.abs([band.WavelengthCen.to(u.AA).value for band in bands_avoiding_wavs] \
+            - (line_diagnostics[line_names[0]]["line_wav"] * (1. + self.z)).value).argmin()]
+        galfind_logger.debug(f"Continuum flux calculation assumes that the most prominent line in {line_names=} is {line_names[0]}")
+        #print(self.z, continuum_band.band_name)
+        continuum_band_index = self.instrument.index_from_band_name(continuum_band.band_name)
+        # determine continuum flux of this band in Jy
+        cont_flux_Jy = funcs.convert_mag_units(self.instrument[continuum_band_index].WavelengthCen, self.flux_Jy[continuum_band_index], u.nJy).value
+        # errors in Jy are symmetric, therefore take the mean
+        cont_flux_Jy_errs = np.mean([flux_err.value for flux_err in funcs.convert_mag_err_units(self.instrument[continuum_band_index].WavelengthCen, \
+            self.flux_Jy[continuum_band_index], [self.flux_Jy_errs[continuum_band_index], self.flux_Jy_errs[continuum_band_index]], u.nJy)])
+        cont_chain = np.random.normal(cont_flux_Jy, cont_flux_Jy_errs, iters) * u.nJy # funcs.convert_mag_units(self.instrument[continuum_band_index].WavelengthCen, , out_units)
+        return [{"vals": cont_chain, "PDF_kwargs": {f"{'+'.join(line_names)}_cont_band": continuum_band.band_name}}], [property_name]
     
     def calc_EW_rest_optical(self, line_names: list, frame: str = "rest", flux_contamination_params: dict = {"mu": 0., "sigma": 0.}, \
             medium_bands_only: bool = True, rest_optical_wavs: u.Quantity = [3_700., 7_000.] * u.AA, iters: int = 10, out_units: u.Unit = u.AA, extract_property_name: bool = False):
@@ -640,22 +607,62 @@ class Photometry_rest(Photometry):
             return 1.
         else:
             raise NotImplementedError
-
-    # Function to update rest-frame UV properties and PDFs
-    def _update_properties_and_PDFs(self, property_name, property_vals, PDF_kwargs = {}):
-        #breakpoint()
-        if type(property_vals) == type(None):
-            self.property_PDFs[property_name] = None
-        else:
-            # construct PDF from property_vals chain
-            new_PDF = PDF.from_1D_arr(property_name, property_vals, PDF_kwargs)
+        
+    def _calc_property(self, SED_rest_property_function, iters, *args, save_path: Union[str, None] = None):
+        assert type(iters) in [int, np.int]
+        property_names = SED_rest_property_function(self, *args, extract_property_name = True)
+        # calculate number of new iterations that should be run
+        property_iters_arr = np.zeros(len(property_names))
+        for i, property_name in enumerate(property_names):
+            property_iters = iters
             if property_name in self.property_PDFs.keys():
-                old_PDF = self.property_PDFs[property_name]
-                PDF_obj = old_PDF + new_PDF
+                PDF_obj = self.property_PDFs[property_name]
+                if type(PDF_obj) == type(None):
+                    pass
+                elif len(PDF_obj) < iters:
+                    property_iters = iters - len(PDF_obj)
+                else:
+                    property_iters = 0
+            property_iters_arr[i] = property_iters
+        assert all(property_iters == property_iters_arr[0] for property_iters in property_iters_arr)
+        # do nothing if PDFs of the required length have already been loaded
+        if property_iters_arr[0] == 0:
+            return self, property_names
+        # compute the properties
+        properties = SED_rest_property_function(self, iters = property_iters, *args, save_path = save_path)[0]
+        #breakpoint()
+        for property, property_name in zip(properties, property_names):
+            # update property PDFs
+            if type(property) == type(None):
+                self.property_PDFs[property_name] = None
             else:
-                PDF_obj = new_PDF
-            self.property_PDFs[property_name] = PDF_obj
-        self._update_properties_from_PDF(property_name)
+                if type(property) not in [dict]:
+                    galfind_logger.critical(f"{type(property)=} not in [dict]!")
+                    breakpoint()
+                #breakpoint()
+                # construct PDF from property output if required
+                if "PDF" in property.keys():
+                    new_PDF = property["PDF"]
+                elif "vals" in property.keys() and "PDF_kwargs" in property.keys():
+                    new_PDF = PDF.from_1D_arr(property_name, property["vals"], property["PDF_kwargs"])
+                else:
+                    galfind_logger.critical(f"{property.keys()=} for {property_name} does not include either ['vals', 'PDF_kwargs'] or 'PDF'!")
+                if property_name in self.property_PDFs.keys():
+                    old_PDF = self.property_PDFs[property_name]
+                    PDF_obj = old_PDF + new_PDF
+                else:
+                    PDF_obj = new_PDF
+                self.recently_updated.append(property_name)
+                self.property_PDFs[property_name] = PDF_obj
+                self._update_properties_from_PDF(property_name)
+                if type(save_path) != type(None):
+                    self._save_SED_rest_PDF(property_name, save_path.replace("/property_name/", f"/{property_name}/"))
+        return self, property_names
+    
+    def _save_SED_rest_PDF(self, property_name, save_path):
+        funcs.make_dirs(save_path)
+        if type(self.property_PDFs[property_name]) != type(None):
+            self.property_PDFs[property_name].save_PDF(save_path)
     
     def _update_properties_from_PDF(self, property_name):
         if type(self.property_PDFs[property_name]) == type(None):

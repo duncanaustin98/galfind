@@ -22,6 +22,7 @@ import astropy.units as u
 from tqdm import tqdm
 import time
 import os
+import glob
 from typing import Union
 
 from .Data import Data
@@ -46,15 +47,15 @@ class Catalogue(Catalogue_Base):
             {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": 6.}, {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}], \
             instruments = ['NIRCam', 'ACS_WFC', 'WFC3_IR'], forced_phot_band = ["F277W", "F356W", "F444W"], excl_bands = [], \
             pix_scales = {"ACS_WFC": 0.03 * u.arcsec, "WFC3_IR": 0.03 * u.arcsec, "NIRCam": 0.03 * u.arcsec, "MIRI": 0.09 * u.arcsec}, \
-            loc_depth_min_flux_pc_errs = [5, 10], crop_by = None, timed = True, mask_stars = True):
+            loc_depth_min_flux_pc_errs = [5, 10], crop_by = None, timed = True, mask_stars = True, load_SED_rest_properties = True):
         # make 'Data' object
         data = Data.from_pipeline(survey, version, instruments, excl_bands = excl_bands, mask_stars = mask_stars, pix_scales = pix_scales)
         return cls.from_data(data, version, aper_diams, cat_creator, SED_fit_params_arr, \
-            forced_phot_band, loc_depth_min_flux_pc_errs, crop_by = crop_by, timed = timed)
+            forced_phot_band, loc_depth_min_flux_pc_errs, crop_by = crop_by, timed = timed, load_SED_rest_properties = load_SED_rest_properties)
     
     @classmethod
     def from_data(cls, data, version, aper_diams, cat_creator, SED_fit_params_arr, forced_phot_band = ["F277W", "F356W", "F444W"], \
-                loc_depth_min_flux_pc_errs = [10], mask = True, crop_by = None, timed = True):
+                loc_depth_min_flux_pc_errs = [10], mask = True, crop_by = None, timed = True, load_SED_rest_properties = True):
         # make masked local depth catalogue from the 'Data' object
         #breakpoint()
         data.combine_sex_cats(forced_phot_band)
@@ -63,11 +64,12 @@ class Catalogue(Catalogue_Base):
         data.perform_aper_corrs()
         data.make_loc_depth_cat(cat_creator, depth_mode = mode)
         return cls.from_fits_cat(data.sex_cat_master_path, version, data.instrument, cat_creator, data.survey, \
-            SED_fit_params_arr, data = data, mask = mask, crop_by = crop_by, timed = timed)
+            SED_fit_params_arr, data = data, mask = mask, crop_by = crop_by, timed = timed, load_SED_rest_properties = load_SED_rest_properties)
     
     @classmethod
     def from_fits_cat(cls, fits_cat_path, version, instrument, cat_creator, survey, \
-            SED_fit_params_arr, data = None, mask = False, excl_bands = [], crop_by = None, timed = True):
+            SED_fit_params_arr, data = None, mask = False, excl_bands = [], crop_by = None, \
+            timed = True, load_SED_rest_properties = True):
         # open the catalogue
         fits_cat = funcs.cat_from_path(fits_cat_path)
         for band_name in instrument.band_names:
@@ -120,7 +122,8 @@ class Catalogue(Catalogue_Base):
         # run SED fitting for the appropriate SED_fit_params
         for SED_fit_params in SED_fit_params_arr:
             cat_obj = SED_fit_params["code"].fit_cat(cat_obj, SED_fit_params, timed = timed)
-            cat_obj.load_SED_rest_properties(SED_fit_params, timed = timed) # load SED rest properties
+            if load_SED_rest_properties:
+                cat_obj.load_SED_rest_properties(SED_fit_params, timed = timed) # load SED rest properties
         return cat_obj
     
     def save_phot_PDF_paths(self, PDF_paths, SED_fit_params):
@@ -552,30 +555,34 @@ class Catalogue(Catalogue_Base):
 
     def calc_mUV_phot(self, rest_UV_wav_lims: u.Quantity = [1_250., 3_000.] * u.AA, ref_wav: u.Quantity = 1_500. * u.AA, \
             SED_fit_params: dict = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}, iters = 10_000):
+        self.calc_beta_phot(rest_UV_wav_lims, SED_fit_params, iters)
         self.calc_SED_rest_property(Photometry_rest.calc_mUV_phot, iters, SED_fit_params, rest_UV_wav_lims, ref_wav)
 
     def calc_MUV_phot(self, rest_UV_wav_lims: u.Quantity = [1_250., 3_000.] * u.AA, ref_wav: u.Quantity = 1_500. * u.AA, \
             SED_fit_params: dict = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}, iters = 10_000):
+        self.calc_mUV_phot(rest_UV_wav_lims, ref_wav, SED_fit_params, iters)
         self.calc_SED_rest_property(Photometry_rest.calc_MUV_phot, iters, SED_fit_params, rest_UV_wav_lims, ref_wav)
     
     def calc_LUV_phot(self, frame: str = "obs", rest_UV_wav_lims = [1_250., 3_000.] * u.AA, ref_wav = 1_500. * u.AA, \
             AUV_beta_conv_author_year = "M99", SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}, iters = 10_000):
+        if type(AUV_beta_conv_author_year) != type(None):
+            self.calc_AUV_from_beta_phot(rest_UV_wav_lims, ref_wav, AUV_beta_conv_author_year, SED_fit_params, iters)
+        self.calc_mUV_phot(rest_UV_wav_lims, ref_wav, SED_fit_params, iters)
         self.calc_SED_rest_property(Photometry_rest.calc_LUV_phot, iters, SED_fit_params, frame, rest_UV_wav_lims, ref_wav, AUV_beta_conv_author_year)
     
     def calc_SFR_UV_phot(self, frame: str = "obs", rest_UV_wav_lims: u.Quantity = [1_250., 3_000.] * u.AA, \
             ref_wav: u.Quantity = 1_500. * u.AA, AUV_beta_conv_author_year: Union[str, None] = "M99", kappa_UV_conv_author_year: str = "MD14", \
             SED_fit_params: dict = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}, iters = 10_000):
+        self.calc_LUV_phot(frame, rest_UV_wav_lims, ref_wav, AUV_beta_conv_author_year, SED_fit_params, iters)
         self.calc_SED_rest_property(Photometry_rest.calc_SFR_UV_phot, iters, SED_fit_params, frame, \
             rest_UV_wav_lims, ref_wav, AUV_beta_conv_author_year, kappa_UV_conv_author_year)
     
     def calc_rest_UV_properties(self, frame: str = "obs", rest_UV_wav_lims: u.Quantity = [1_250., 3_000.] * u.AA, \
-            ref_wav: u.Quantity = 1_500. * u.AA, AUV_beta_conv_author_year: Union[str, None] = "M99", kappa_UV_conv_author_year: str = "MD14", \
+            ref_wav: u.Quantity = 1_500. * u.AA, fesc_conv_author_year: Union[str, None] = "Chisholm22", \
+            AUV_beta_conv_author_year: Union[str, None] = "M99", kappa_UV_conv_author_year: str = "MD14", \
             SED_fit_params: dict = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}, iters = 10_000):
-        self.calc_beta_phot(rest_UV_wav_lims, SED_fit_params, iters)
-        self.calc_AUV_from_beta_phot(rest_UV_wav_lims, ref_wav, AUV_beta_conv_author_year, SED_fit_params, iters)
-        self.calc_mUV_phot(rest_UV_wav_lims, ref_wav, SED_fit_params, iters)
-        self.calc_MUV_phot(rest_UV_wav_lims, ref_wav, SED_fit_params, iters)
-        self.calc_LUV_phot(frame, rest_UV_wav_lims, ref_wav, AUV_beta_conv_author_year, SED_fit_params, iters)
+        if type(fesc_conv_author_year) != type(None):
+            self.calc_fesc_from_beta_phot(rest_UV_wav_lims, fesc_conv_author_year, SED_fit_params, iters)
         self.calc_SFR_UV_phot(frame, rest_UV_wav_lims, ref_wav, AUV_beta_conv_author_year, kappa_UV_conv_author_year, SED_fit_params, iters)
 
     # Emission line EWs from the rest frame UV photometry
@@ -635,83 +642,93 @@ class Catalogue(Catalogue_Base):
             self.SED_rest_properties[key] = []
 
         PDF_dir = f"{config['PhotProperties']['PDF_SAVE_DIR']}/{self.version}/{self.instrument.name}/{self.survey}"
-        funcs.make_dirs(f"{PDF_dir}/dummy_path.ecsv")
         # perform calculation for each galaxy and update galaxies in self
         if type(property_name) in [str]:
             property_name = [property_name]
         for name in property_name:
-            breakpoint()
             self.gals = [deepcopy(gal)._calc_SED_rest_property(SED_rest_property_function, key, PDF_dir, iters, *args) \
                 for gal in tqdm(self, total = len(self), desc = f"Calculating {name}")]
             galfind_logger.info(f"Calculated {name}")
-            if name not in self.SED_rest_properties[key]:
-                # save the property PDFs
-                self._save_SED_rest_PDFs(name, PDF_dir, SED_fit_params)
-                # save the property name
-                self.SED_rest_properties[key].append(name)
-                self._append_SED_rest_property_to_fits(name, key)
+            self._append_SED_rest_property_to_fits(name, key)
         
-    def _save_SED_rest_PDFs(self, property_name, save_dir, SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}):
-        [gal._save_SED_rest_PDFs(property_name, save_dir, SED_fit_params) for gal in self]
+    # def _save_SED_rest_PDFs(self, property_name, save_dir, SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}):
+    #     [gal._save_SED_rest_PDFs(property_name, save_dir, SED_fit_params) for gal in self]
     
-    def _append_SED_rest_property_to_fits(self, property_name: str, SED_fit_params_label: str, save_kwargs: bool = True):
+    def _append_SED_rest_property_to_fits(self, property_name: str, SED_fit_params_label: str, save_kwargs: bool = True, type_fill_vals: dict = {int: -99, float: None, str: ""}):
         try:
             SED_rest_property_tab = self.open_cat(cropped = False, hdu = SED_fit_params_label)
         except FileNotFoundError:
             SED_rest_property_tab = None
-        # if the table does not exist, make the table from scratch
-        if type(SED_rest_property_tab) == type(None):
-            properties = self.__getattr__(property_name, phot_type = "rest", property_type = "vals")
-            property_errs = self.__getattr__(property_name, phot_type = "rest", property_type = "errs")
-            out_tab = Table({self.cat_creator.ID_label: np.array(self.ID).astype(int), property_name: properties, \
-                f"{property_name}_l1": property_errs[:, 0], f"{property_name}_u1": property_errs[:, 1]}, dtype = [int, float, float, float])
-            out_tab.meta = {f"HIERARCH SED_REST_{property_name}": True}
-        # else if these properties have not already been calculated for this galaxy sample
-        elif f"SED_REST_{property_name}" not in SED_rest_property_tab.meta.keys():
-            # ensure this property has not been calculated for a different subset of galaxies in this field
-            assert(f"SED_REST_{property_name}" not in ["_".join(label.split("_")[:-(1 + "+".join(self.crops).count("_"))]) for label in SED_rest_property_tab.meta.keys()])
-            #galfind_logger.warning("Needs re-writing in the case of the same property being calculated for multiple samples of galaxies in the same field")
-            properties = self.__getattr__(property_name, phot_type = "rest", property_type = "vals")
-            property_errs = self.__getattr__(property_name, phot_type = "rest", property_type = "errs")
-            new_SED_rest_property_tab = Table({f"{self.cat_creator.ID_label}_temp": np.array(self.ID).astype(int), property_name: properties, \
-                f"{property_name}_l1": property_errs[:, 0], f"{property_name}_u1": property_errs[:, 1]}, dtype = [int, float, float, float])
-            new_SED_rest_property_tab.meta = {f"HIERARCH SED_REST_{property_name}": True}
-            out_tab = join(SED_rest_property_tab, new_SED_rest_property_tab, keys_left = \
-                self.cat_creator.ID_label, keys_right = f"{self.cat_creator.ID_label}_temp", join_type = "outer")
-            out_tab.remove_column(f"{self.cat_creator.ID_label}_temp")
-            out_tab.meta = {**SED_rest_property_tab.meta, **new_SED_rest_property_tab.meta}
-        else:
-            galfind_logger.info(f"{property_name} already calculated!")
-            return
-        if save_kwargs:
-            #breakpoint()
-            property_PDFs = self.__getattr__(property_name, phot_type = "rest", property_type = "PDFs")
-            kwarg_names = np.unique(np.hstack([list(property_PDF.kwargs.keys()) for property_PDF in property_PDFs if type(property_PDF) != type(None)]))
-            kwargs = {kwarg_name: [property_PDF.kwargs[kwarg_name] if type(property_PDF) != type(None) \
-                else np.nan for property_PDF in property_PDFs] for kwarg_name in kwarg_names}
-            if "Halpha_cont_lines" in kwarg_names:
-                breakpoint()
-            for kwarg_name, kwarg_vals in kwargs.items():
-                if kwarg_name not in out_tab.colnames:
-                    out_tab[kwarg_name] = kwarg_vals
+        # obtain full list of catalogue IDs
         fits_tab = self.open_cat(cropped = False)
-        self.write_cat([fits_tab, out_tab], ["OBJECTS", SED_fit_params_label])
-    
-    def _save_SED_rest_PDFs(self, property_name, SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}):
-        save_dir = f"{config['PhotProperties']['PDF_SAVE_DIR']}/{self.version}/{self.instrument.name}/{self.survey}"
-        funcs.make_dirs(f"{save_dir}/dummy_path.ecsv")
-        [gal._save_SED_rest_PDFs(property_name, save_dir, SED_fit_params) for gal in self]
+        IDs = np.array(fits_tab[self.cat_creator.ID_label]).astype(int)
+        if type(SED_rest_property_tab) == type(None):
+            SED_rest_property_tab = Table({self.cat_creator.ID_label: IDs}, dtype = [int])
+        # if the table does not include the required column names, instantiate blank columns
+        if property_name not in SED_rest_property_tab.colnames:
+            blank_floats = np.full(len(SED_rest_property_tab), type_fill_vals[float])
+            new_colname_tab = Table({f"{self.cat_creator.ID_label}_temp": IDs, property_name: blank_floats, f"{property_name}_l1": blank_floats, f"{property_name}_u1": blank_floats}, dtype = [int] + [float] * 3)
+            SED_rest_property_tab = join(SED_rest_property_tab, new_colname_tab, keys_left = self.cat_creator.ID_label, keys_right = f"{self.cat_creator.ID_label}_temp", join_type = "inner")
+            SED_rest_property_tab.remove_column(f"{self.cat_creator.ID_label}_temp")
+            new_cols = True
+        else:
+            new_cols = False
+        # extract names of properties that have been recently updated
+        if new_cols: # all columns that havn't previously existed are updates
+            is_property_updated = np.full(len(self), True)
+        else:
+            is_property_updated = self.__getattr__(property_name, phot_type = "rest", property_type = "recently_updated")
+        # update properties and kwargs for those galaxies that have been updated, or if the columns have just been made
+        if any(updated for updated in is_property_updated):
+            # extract the kwargs for this property
+            calculated_property_PDFs = self.__getattr__(property_name, phot_type = "rest", property_type = "PDFs")[is_property_updated]
+            kwarg_names = np.unique(np.hstack([list(property_PDF.kwargs.keys()) for property_PDF in calculated_property_PDFs if type(property_PDF) != type(None)]))
+            kwarg_types_arr = [[type(property_PDF.kwargs[kwarg_name]) for property_PDF in calculated_property_PDFs if type(property_PDF) != type(None)] for kwarg_name in kwarg_names]
+            for kwarg_types in kwarg_types_arr:
+                assert all(types == kwarg_types[0] for types in kwarg_types)
+            kwarg_types = [kwarg_types[0] for kwarg_types in kwarg_types_arr]
+            # make new columns for any kwarg names that have not previously been created
+            for kwarg_name, kwarg_type in zip(kwarg_names, kwarg_types):
+                assert kwarg_types[0] in type_fill_vals.keys()
+                if kwarg_name not in SED_rest_property_tab.colnames:
+                    blank_col = np.full(len(SED_rest_property_tab), type_fill_vals[kwarg_type])
+                    new_colname_tab = Table({f"{self.cat_creator.ID_label}_temp": IDs, kwarg_name: blank_col}, dtype = [int] + [kwarg_type])
+                    SED_rest_property_tab = join(SED_rest_property_tab, new_colname_tab, keys_left = self.cat_creator.ID_label, keys_right = f"{self.cat_creator.ID_label}_temp", join_type = "outer")
+                    SED_rest_property_tab.remove_column(f"{self.cat_creator.ID_label}_temp")
+            # create new columns of properties
+            calculated_IDs = np.array(self.__getattr__("ID")).astype(int)[is_property_updated]
+            non_calculated_IDs = np.array([ID for ID in IDs if ID not in calculated_IDs]).astype(int)
+            new_IDs = np.concatenate((calculated_IDs, non_calculated_IDs))
+            calculated_properties = self.__getattr__(property_name, phot_type = "rest", property_type = "vals")[is_property_updated]
+            # slice old catalogue to just those IDs which have not been updated
+            old_SED_rest_property_tab = SED_rest_property_tab[np.array([True if ID in non_calculated_IDs else False for ID in SED_rest_property_tab[self.cat_creator.ID_label]])]
+            new_properties = np.concatenate((calculated_properties, np.array(old_SED_rest_property_tab[property_name]).astype(float)))
+            calculated_property_errs = self.__getattr__(property_name, phot_type = "rest", property_type = "errs")
+            new_property_l1 = np.concatenate((np.array(calculated_property_errs[:, 0])[is_property_updated], np.array(old_SED_rest_property_tab[f"{property_name}_l1"]).astype(float)))
+            new_property_u1 = np.concatenate((np.array(calculated_property_errs[:, 1])[is_property_updated], np.array(old_SED_rest_property_tab[f"{property_name}_u1"]).astype(float)))
+            # create new columns of kwargs
+            new_kwargs = {kwarg_name: np.concatenate((np.array([property_PDF.kwargs[kwarg_name] \
+                if type(property_PDF) != type(None) else type_fill_vals[kwarg_type] for property_PDF in calculated_property_PDFs]), \
+                np.full(len(non_calculated_IDs), type_fill_vals[kwarg_type]))) for kwarg_name, kwarg_type in zip(kwarg_names, kwarg_types)}
+            # make new table of the same length as the global .fits catalogue to be joined
+            new_tab = Table({**{f"{self.cat_creator.ID_label}_temp": new_IDs, property_name: new_properties, f"{property_name}_l1": new_property_l1, f"{property_name}_u1": new_property_u1}, **new_kwargs}, dtype = [int] + [float] * 3 + kwarg_types)
+            # update .fits table
+            # remove old columns before appending the newer ones
+            for name in [property_name, f"{property_name}_l1", f"{property_name}_u1"] + list(new_kwargs.keys()):
+                SED_rest_property_tab.remove_column(name)
+            SED_rest_property_tab = join(SED_rest_property_tab, new_tab, keys_left = self.cat_creator.ID_label, keys_right = f"{self.cat_creator.ID_label}_temp", join_type = "outer")
+            SED_rest_property_tab.remove_column(f"{self.cat_creator.ID_label}_temp")
+            SED_rest_property_tab.sort(self.cat_creator.ID_label)
+            self.write_cat([fits_tab, SED_rest_property_tab], ["OBJECTS", SED_fit_params_label])
 
     def load_SED_rest_properties(self, SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}, timed = True):
         key = SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)
-        # save the names of properties that have been calculated for this sample of galaxies in the catalogue
-        SED_rest_properties_tab = self.open_cat(cropped = False, hdu = key)
-        if type(SED_rest_properties_tab) != type(None):
-            self.SED_rest_properties[key] = list(np.unique([label.replace("SED_REST_", "") \
-                for label in SED_rest_properties_tab.meta.keys() if "SED_REST" == "_".join(label.split("_")[:2])]))
-            # load SED rest properties that have previously been calculated
-            PDF_dir = f"{config['PhotProperties']['PDF_SAVE_DIR']}/{self.version}/{self.instrument.name}/{self.survey}/{key}"
-            self.gals = [deepcopy(gal)._load_SED_rest_properties(PDF_dir, self.SED_rest_properties[key], key) for gal in self]
+        PDF_dir = f"{config['PhotProperties']['PDF_SAVE_DIR']}/{self.version}/{self.instrument.name}/{self.survey}/{key}"
+        property_names = [property_PDFs_path.split("/")[-1] for property_PDFs_path in glob.glob(f"{PDF_dir}/*")]
+        self.gals = [deepcopy(gal)._load_SED_rest_properties(PDF_dir, property_names, key) \
+            for gal in tqdm(deepcopy(self), desc = f"Loading SED rest properties for {key}", total = len(self))]
+        for name in property_names:
+            self._append_SED_rest_property_to_fits(name, key)
 
     def del_SED_rest_property(self, property_name, SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}):
         key = SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)

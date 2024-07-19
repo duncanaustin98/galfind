@@ -419,60 +419,6 @@ class Data:
                     mask_paths[band] = ""
             else:
                 mask_paths[band] = paths_to_masks[0]
-
-            # # include just the masks corresponding to the correct bands
-            # fits_mask_paths_ = glob.glob(f"{config['DEFAULT']['GALFIND_WORK']}/Masks/{survey}/fits_masks/*{band.lower()}*")
-            # fits_mask_paths_ += glob.glob(f"{config['DEFAULT']['GALFIND_WORK']}/Masks/{survey}/fits_masks/*{band.upper()}*")
-            # fits_mask_paths_ += glob.glob(f"{config['DEFAULT']['GALFIND_WORK']}/Masks/{survey}/fits_masks/*{band.lower().replace('f', 'F')}*")
-            # fits_mask_paths_ += glob.glob(f"{config['DEFAULT']['GALFIND_WORK']}/Masks/{survey}/fits_masks/*{band.upper().replace('F', 'f')}*")
-            # fits_mask_paths_ = list(set(fits_mask_paths_))
-            # # Exclude mask path if it contains the phrase 'artifact'
-            # fits_mask_paths_ = [path for path in fits_mask_paths_ if 'artifact' not in path]
-
-            # mid = time.time()
-            # print(mid - start)
-            # # exclude masks that include other filters
-            # delete_indices = []
-            # # create a new combined instrument including all possible bands
-            # new_instrument = comb_instrument.new_instrument()
-            # new_instrument.remove_band(band)
-            # for j, path in enumerate(fits_mask_paths_):
-            #     for k, band_ in enumerate(new_instrument.band_names):
-            #         if band_.lower() in path or band_.upper() in path or band_.lower().replace('f', 'F') in path or band_.upper().replace('F', 'f') in path:
-            #             delete_indices.append(j)
-            #             break
-            # fits_mask_paths_ = np.delete(fits_mask_paths_, delete_indices)
-
-            # mid = time.time()
-            # print(mid - start)
-
-            # if len(fits_mask_paths_) == 1:
-            #     mask_paths[band] = fits_mask_paths_[0]
-            # elif len(fits_mask_paths_) == 0:
-            #     mask_paths_ = glob.glob(f"{config['DEFAULT']['GALFIND_WORK']}/Masks/{survey}/*{band.lower()}*")
-            #     mask_paths_ += glob.glob(f"{config['DEFAULT']['GALFIND_WORK']}/Masks/{survey}/*{band.upper()}*")
-            #     mask_paths_ += glob.glob(f"{config['DEFAULT']['GALFIND_WORK']}/Masks/{survey}/*{band.lower().replace('f', 'F')}*")
-            #     mask_paths_ += glob.glob(f"{config['DEFAULT']['GALFIND_WORK']}/Masks/{survey}/*{band.upper().replace('F', 'f')}*")
-            #     mask_paths_ = list(set(mask_paths_))
-            #     # Exclude mask path if it contains the phrase 'artifact'
-            #     mask_paths_ = [path for path in mask_paths_ if 'artifact' not in path]
-            #     # exclude masks that include other filters
-            #     delete_indices = []
-            #     for j, path in enumerate(mask_paths_):
-            #         for k, band_ in enumerate(np.delete(comb_instrument.band_names, i)):
-            #             if band_.lower() in path or band_.upper() in path or band_.lower().replace('f', 'F') \
-            #                     in path or band_.upper().replace('F', 'f') in path:
-            #                 delete_indices.append(j)
-            #                 break
-            #     mask_paths_ = np.delete(mask_paths_, delete_indices)
-            #     if len(mask_paths_) == 0:
-            #         mask_paths[band] = ""
-            #     elif len(mask_paths_) == 1:
-            #         mask_paths[band] = mask_paths_[0]
-            #     else:
-            #         raise(Exception(f"Too many region masks found for {survey} {band}! Masks are {mask_paths_}!"))
-            # else:
-            #     raise(Exception(f"Too many fits masks found for {survey} {band}! Masks are {fits_mask_paths_}!"))
         
             mid = time.time()
             print(mid - start)
@@ -1444,7 +1390,6 @@ class Data:
                 
                 # perform sextraction
                 if sextract:
-                    breakpoint()
                     # load relevant err map paths
                     err_map_path, err_map_ext, err_map_type = self.get_err_map(band, prefer = prefer)
                     # load relevant err map paths for the forced photometry band
