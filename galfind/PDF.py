@@ -6,6 +6,7 @@ import matplotlib.patheffects as pe
 from astropy.table import Table
 import astropy.units as u
 import time
+from copy import copy, deepcopy
 
 from . import config, galfind_logger
 from . import useful_funcs_austind as funcs
@@ -49,6 +50,28 @@ class PDF:
             return len(self.input_arr)
         else:
             return None
+        
+    def __add__(self, other):
+        try:
+            assert type(self) == type(other)
+            assert self.property_name == other.property_name
+            # update kwargs
+            new_kwargs = {**self.kwargs, **other.kwargs}
+            if hasattr(self, "input_arr") and hasattr(other, "input_arr"):
+                new_input_arr = np.concatenate((self.input_arr, other.input_arr))
+            else:
+                new_input_arr = np.concatenate((self.draw_sample(), other.draw_sample()))
+            return globals()[self.__class__.__name__].from_1D_arr(self.property_name, new_input_arr, kwargs = new_kwargs)
+        except:
+            breakpoint()
+
+    def __deepcopy__(self, memo):
+        cls = self.__class__
+        result = cls.__new__(cls)
+        memo[id(self)] = result
+        for key, value in self.__dict__.items():
+            setattr(result, key, deepcopy(value, memo))
+        return result
         
     @classmethod
     def from_ecsv(cls, path):
@@ -96,9 +119,9 @@ class PDF:
                     self.get_percentile(84.).value - self.median.value] * self.x.unit
             return self._errs
     
-    def draw_sample(self, size):
+    def draw_sample(self, size: int = 50):
         # draw a sample of specified size from the PDF
-        pass
+        raise NotImplementedError
 
     def integrate_between_lims(self, lower_x_lim, upper_x_lim):
         # find index of closest values in self.x to lower_x_lim and upper_x_lim
@@ -143,17 +166,19 @@ class PDF:
 
     def manipulate_PDF(self, new_property_name, update_func, PDF_kwargs = {}, size = 10_000, **kwargs):
         if hasattr(self, "input_arr"):
-            sample = self.input_arr
+            # take the last 'size' elements of the input array
+            sample = self.input_arr[-size:]
         else:
             sample = self.draw_sample(size)
+        assert len(sample) == size # ensures size > len(sample) throws an error
         updated_sample = update_func(sample, **kwargs) #[update_func(val, **kwargs) for val in sample]
         return self.__class__.from_1D_arr(new_property_name, updated_sample, {**self.kwargs, **PDF_kwargs})
     
-    def save_PDF(self, save_path, sample_size = 10_000):
+    def save_PDF(self, save_path, size = 10_000):
         if hasattr(self, "input_arr"):
             save_arr = self.input_arr
         else:
-            save_arr = self.draw_sample(sample_size)
+            save_arr = self.draw_sample(size)
         meta = {**self.kwargs, **{"units": self.x.unit, "size": len(save_arr), "median": np.round(self.median.value, 3), \
             "l1_err": np.round(self.errs.value[0], 3), "u1_err": np.round(self.errs.value[1], 3)}}
         save_tab = Table({self.property_name: save_arr.value})
@@ -270,7 +295,10 @@ class PDF_nD:
 
     def __init__(self, ordered_PDFs):
         # ensure all PDFs have input arr of values, all of which are the same length
-        assert all(hasattr(PDF_obj, "input_arr") for PDF_obj in ordered_PDFs)
+        try:
+            assert all(hasattr(PDF_obj, "input_arr") for PDF_obj in ordered_PDFs)
+        except:
+            breakpoint()
         assert all(len(PDF_obj.input_arr) == len(ordered_PDFs[0].input_arr) for PDF_obj in ordered_PDFs)
         self.dimensions = len(ordered_PDFs)
         self.PDFs = ordered_PDFs
@@ -284,12 +312,17 @@ class PDF_nD:
     def __len__(self):
         return len(self.PDFs[0])
 
-    def __call__(self, func, independent_var, output_type = "chains"):
+    def __call__(self, func, independent_var, size = None, output_type = "chains"):
         # need to provide additional assertions here too
         # assert that the dimensions of PDF_nD must be the same as the input arguments - 1 of func
         chains = np.array([func(independent_var, *vals) for vals in np.array([PDF_obj.input_arr for PDF_obj in self.PDFs]).T])
-        # function output should be of the same length as the independent variable
         assert chains.shape == (len(self), len(independent_var))
+        if type(size) == type(None):
+            pass
+        elif type(size) in [int, np.int]:
+            chains = chains[-size:]
+        else:
+            galfind_logger.critical(f"{type(size)=} not in [None, int, np.int]!")
         assert output_type in ["chains", "percentiles"]
         if output_type == "chains":
             return chains

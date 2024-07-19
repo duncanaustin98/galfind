@@ -495,13 +495,14 @@ def make_dirs(path, permissions = 0o777):
     except PermissionError:
         galfind_logger.warning(f"Could not change permissions of {path} to {oct(permissions)}.")
 
-def change_file_permissions(path, permissions = 0o777):
+def change_file_permissions(path, permissions = 0o777, log = False):
     if type(path) != list:
         path = [path]
     for p in path:
         try:
             os.chmod(p, permissions)
-            galfind_logger.info(f"Changed permissions of {p} to {oct(permissions)}")
+            if log:
+                galfind_logger.info(f"Changed permissions of {p} to {oct(permissions)}")
         except (PermissionError, FileNotFoundError):
             pass
 

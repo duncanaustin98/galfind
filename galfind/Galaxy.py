@@ -1105,37 +1105,20 @@ class Galaxy:
     
     # Rest-frame SED photometric properties
 
-    def _calc_SED_rest_property(self, SED_rest_property_function, SED_fit_params_label, PDF_dir, iters, *args):
-        assert type(iters) in [int, np.int]
-        property_name = SED_rest_property_function(self.phot.SED_results[SED_fit_params_label].phot_rest, *args, extract_property_name = True)
-        phot_obj = self.phot.SED_results[SED_fit_params_label].phot_rest
-        if type(property_name) in [str]:
-            property_name = [property_name]
-        for name in property_name:
-            property_iters = iters
-            # if the property has already been loaded in (i.e. previously computed)
-            if name in phot_obj.property_PDFs.keys():
-                PDF_obj = phot_obj.property_PDFs[name]
-                # extend PDF to a specific number of iterations
-                if len(PDF_obj) != iters:
-                    property_iters = iters - len(PDF_obj)
-                else:
-                    property_iters = 0
-            # compute and save the property
-            SED_rest_property_function(self.phot.SED_results[SED_fit_params_label].phot_rest, iters = property_iters, *args)
+    def _calc_SED_rest_property(self, SED_rest_property_function, SED_fit_params_label, save_dir, iters, *args):
+        phot_rest_obj = self.phot.SED_results[SED_fit_params_label].phot_rest
+        if type(save_dir) == type(None):
+            save_path = None
+        else: 
+            save_path = f"{save_dir}/{SED_fit_params_label}/property_name/{self.ID}.ecsv"
+        property_names = phot_rest_obj._calc_property(SED_rest_property_function, iters, *args, save_path = save_path)[1]
         return self
-    
-    def _save_SED_rest_PDFs(self, property_name, save_dir, SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}):
-        key = SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)
-        save_path = f"{save_dir}/{key}/{property_name}/{self.ID}.ecsv"
-        funcs.make_dirs(save_path)
-        if type(self.phot.SED_results[key].phot_rest.property_PDFs[property_name]) != type(None):
-            self.phot.SED_results[key].phot_rest.property_PDFs[property_name].save_PDF(save_path)
         
     def _load_SED_rest_properties(self, PDF_dir, property_names, SED_fit_params_label = EAZY().label_from_SED_fit_params({"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None})):
         # determine which properties have already been calculated
-        PDF_paths = [f"{PDF_dir}/{property_name}/{self.ID}.ecsv" for property_name in property_names]
-        for PDF_path, property_name in zip(PDF_paths, property_names):
+        property_names_to_load = [property_name for property_name in property_names if Path(f"{PDF_dir}/{property_name}/{self.ID}.ecsv").is_file()]
+        PDF_paths = [f"{PDF_dir}/{property_name}/{self.ID}.ecsv" for property_name in property_names_to_load]
+        for PDF_path, property_name in zip(PDF_paths, property_names_to_load):
             self.phot.SED_results[SED_fit_params_label].phot_rest.property_PDFs[property_name] = PDF.from_ecsv(PDF_path)
             self.phot.SED_results[SED_fit_params_label].phot_rest._update_properties_from_PDF(property_name)
         return self

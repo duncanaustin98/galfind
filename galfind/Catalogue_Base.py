@@ -144,8 +144,10 @@ class Catalogue_Base:
                 if name in getattr(gal.phot.SED_results[SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)].phot_rest, "property_errs").keys() else [np.nan, np.nan] for gal in self]
             return np.array([property_errs.value if type(property_errs) in [u.Quantity, u.Magnitude] else property_errs for property_errs in property_errs_arr])
         elif phot_type == "rest" and property_type == "PDFs" and name in self[0].phot.SED_results[SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)].phot_rest.property_errs.keys():
-            return [getattr(gal.phot.SED_results[SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)].phot_rest, "property_PDFs")[name] \
-                if name in getattr(gal.phot.SED_results[SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)].phot_rest, "property_PDFs").keys() else None for gal in self]
+            return np.array([getattr(gal.phot.SED_results[SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)].phot_rest, "property_PDFs")[name] \
+                if name in getattr(gal.phot.SED_results[SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)].phot_rest, "property_PDFs").keys() else None for gal in self])
+        elif phot_type == "rest" and property_type == "recently_updated" and name in self[0].phot.SED_results[SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)].phot_rest.property_errs.keys():
+            return np.array([True if name in getattr(gal.phot.SED_results[SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)].phot_rest, "recently_updated") else False for gal in self])
         else:
             galfind_logger.critical(f"Galaxies do not have attribute = {name}!")
     
@@ -453,13 +455,12 @@ class Catalogue_Base:
         galfind_logger.info(f"Writing table to {self.cat_path}")
 
     def del_hdu(self, hdu):
-        galfind_logger.info(f"Deleting {hdu.upper()=} from {self.cat_path=}!")
-        assert self.check_hdu_exists(hdu), \
-            galfind_logger.critical(f"Cannot delete {hdu=} as it does not exist in {self.cat_path=}")
-        tab_arr = [self.open_cat(cropped = False, hdu = hdu_.name) for hdu_ \
-            in fits.open(self.cat_path) if hdu_.name != hdu.upper() and hdu_.name != "PRIMARY"]
-        tab_names = [hdu_.name for hdu_ in fits.open(self.cat_path) if hdu_.name != hdu.upper() and hdu_.name != "PRIMARY"]
-        self.write_cat(tab_arr, tab_names)
+        if self.check_hdu_exists(hdu): # delete hdu if it exists
+            tab_arr = [self.open_cat(cropped = False, hdu = hdu_.name) for hdu_ \
+                in fits.open(self.cat_path) if hdu_.name != hdu.upper() and hdu_.name != "PRIMARY"]
+            tab_names = [hdu_.name for hdu_ in fits.open(self.cat_path) if hdu_.name != hdu.upper() and hdu_.name != "PRIMARY"]
+            self.write_cat(tab_arr, tab_names)
+        galfind_logger.info(f"Deleted {hdu.upper()=} from {self.cat_path=}!")
 
     def del_cols_hdrs_from_fits(self, col_names = [], hdr_names = [], hdu = None):
         # open up all fits extensions
