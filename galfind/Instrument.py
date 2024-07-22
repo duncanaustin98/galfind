@@ -236,7 +236,6 @@ class Instrument:
             search_bands = self.bands
         nearest_band = search_bands[np.abs([funcs.convert_wav_units(band.WavelengthCen, u.AA).value for band in search_bands] \
             - funcs.convert_wav_units(wavelength, u.AA).value).argmin()]
-        
         if check_wavelength_in_band and not nearest_band in self.bands_from_wavelength(wavelength):
             return None
         else:

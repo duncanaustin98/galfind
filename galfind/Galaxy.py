@@ -1111,7 +1111,7 @@ class Galaxy:
             save_path = None
         else: 
             save_path = f"{save_dir}/{SED_fit_params_label}/property_name/{self.ID}.ecsv"
-        property_names = phot_rest_obj._calc_property(SED_rest_property_function, iters, *args, save_path = save_path)[1]
+        phot_rest_obj._calc_property(SED_rest_property_function, iters, *args, save_path = save_path)[1]
         return self
         
     def _load_SED_rest_properties(self, PDF_dir, property_names, SED_fit_params_label = EAZY().label_from_SED_fit_params({"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None})):

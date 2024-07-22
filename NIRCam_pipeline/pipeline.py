@@ -67,15 +67,17 @@ def pipeline(surveys, version, instruments, aper_diams, min_flux_pc_errs, forced
             # cat_copy = cat.select_unmasked_instrument(NIRCam())
             #cat_copy = cat.select_all_bands()
             #cat_copy = cat.select_phot_galaxy_property("z", ">", 4.5)
-            #cat.select_rest_UV_line_emitters_sigma("CIV-1549", 2.)›=
+            #cat.select_rest_UV_line_emitters_sigma("CIV-1549", 2.)
             
-            # cat.del_hdu(SED_fit_params_arr[-1]["code"].label_from_SED_fit_params(SED_fit_params_arr[-1]))
-            # if load_SED_rest_properties:
-            #     iters = 100
-            #     #cat.calc_SFR_UV_phot(frame = "obs", AUV_beta_conv_author_year = "M99", iters = iters)
-            #     #cat.calc_SFR_UV_phot(frame = "obs", AUV_beta_conv_author_year = None, iters = iters)
-            #     cat.calc_rest_UV_properties(iters = iters)
-            #     #cat.calc_xi_ion(iters = iters) #dust_author_year = None
+            #cat.del_hdu(SED_fit_params_arr[-1]["code"].label_from_SED_fit_params(SED_fit_params_arr[-1]))
+            if load_SED_rest_properties:
+                iters = 1_000
+                #cat.calc_SFR_UV_phot(frame = "obs", AUV_beta_conv_author_year = "M99", iters = iters)
+                #cat.calc_SFR_UV_phot(frame = "obs", AUV_beta_conv_author_year = None, iters = iters)
+                #cat.calc_rest_UV_properties(iters = iters)
+                #cat.calc_cont_rest_optical(["Halpha"], iters = iters)
+                #cat.calc_EW_rest_optical(["Halpha"], frame = "obs", iters = iters)
+                cat.calc_xi_ion(iters = iters) #dust_author_year = None
 
 
 def make_EAZY_SED_fit_params_arr(SED_code_arr, templates_arr, lowz_zmax_arr):
