@@ -53,6 +53,7 @@ def pipeline(surveys, version, instruments, aper_diams, min_flux_pc_errs, forced
             end = time.time()
             print(f"Time to load catalogue = {(end - start):.1f}s")
             
+            cat.select_EPOCHS(allow_lowz = False)
             #cat.data.calc_unmasked_area("NIRCam", forced_phot_band = forced_phot_band)
             #cat.select_band_flux_radius("F277W", "gtr", 1.5)
 
@@ -77,7 +78,7 @@ def pipeline(surveys, version, instruments, aper_diams, min_flux_pc_errs, forced
                 #cat.calc_rest_UV_properties(iters = iters)
                 #cat.calc_cont_rest_optical(["Halpha"], iters = iters)
                 #cat.calc_EW_rest_optical(["Halpha"], frame = "obs", iters = iters)
-                cat.calc_xi_ion(iters = iters) #dust_author_year = None
+                #cat.calc_xi_ion(iters = iters) #dust_author_year = None
 
 
 def make_EAZY_SED_fit_params_arr(SED_code_arr, templates_arr, lowz_zmax_arr):
@@ -89,7 +90,7 @@ if __name__ == "__main__":
     version = "v11" #config["DEFAULT"]["VERSION"]
     instruments = ["ACS_WFC", "NIRCam"]#, "MIRI"] #, "ACS_WFC"] # "WFC3_IR"
     cat_type = "loc_depth"
-    surveys = ["JOF"]#["JADES-Deep-GS+JEMS+SMILES"] #[config["DEFAULT"]["SURVEY"]]
+    surveys = ["JOF_psfmatched"]#["JADES-Deep-GS+JEMS+SMILES"] #[config["DEFAULT"]["SURVEY"]]
     aper_diams = [0.32] * u.arcsec # , 0.5, 1.0, 1.5, 2.0
     SED_code_arr = [EAZY()]
     templates_arr = ["fsps_larson"] #["fsps", "fsps_larson", "fsps_jades"]
