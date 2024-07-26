@@ -1401,6 +1401,11 @@ class Data:
                     as_aper_diams = json.loads(config.get("SExtractor", "APERTURE_DIAMS"))
                     pix_aper_diams = str([np.round(pix_aper_diam, 2) for pix_aper_diam in as_aper_diams / self.im_pixel_scales[band].value]).replace("[", "").replace("]", "").replace(" ", "")
                     # SExtractor bash script python wrapper
+                    print(["./make_sex_cat.sh", config['DEFAULT']['GALFIND_WORK'], self.im_paths[band], str(self.im_pixel_scales[band].value), \
+                        str(self.im_zps[band]), self.instrument.instrument_from_band(band).name, self.survey, band, self.version, \
+                        self.forced_phot_band, forced_phot_image_path, err_map_path, err_map_ext, \
+                        str(self.im_exts[band]), forced_phot_band_err_map_path, str(self.im_exts[self.forced_phot_band]), err_map_type, 
+                        forced_phot_band_err_map_ext, sex_config_path, params_path, pix_aper_diams])
                     process = subprocess.Popen(["./make_sex_cat.sh", config['DEFAULT']['GALFIND_WORK'], self.im_paths[band], str(self.im_pixel_scales[band].value), \
                         str(self.im_zps[band]), self.instrument.instrument_from_band(band).name, self.survey, band, self.version, \
                         self.forced_phot_band, forced_phot_image_path, err_map_path, err_map_ext, \
@@ -1435,6 +1440,7 @@ class Data:
                 forced_phot_band_name = forced_phot_band
             print("Loading cat", self.sex_cats, forced_phot_band_name)
             for i, (band, path) in enumerate(self.sex_cats.items()):
+                print(path)
                 tab = Table.read(path, character_as_bytes = False)
                 if band == forced_phot_band_name:
                     ID_detect_band = tab["NUMBER"]
