@@ -259,6 +259,16 @@ class Instrument:
             self.aper_corrs = {}
         if self.name in globals():
             assert globals()[self.name] in Instrument.__subclasses__()
+
+        # TEMPORARY for F444W PSF-homogenized. 
+        if config.getboolean("DataReduction", "PSF_HOMOGENIZED"):
+            print('WARNING! Temporary aperture correction for F444W PSF-homogenized')
+            aper_corr = {0.32: 0.4691650961749638, 0.5: 0.31013820485999116, 1: 0.16205011984149864, 1.5: 0.10985494543655024, 2: 0.09046584834037462}
+            aper_corrs = [aper_corr[aper_diam.to(u.arcsec).value]] * len(self)
+            if cache:
+                self.aper_corrs[aper_diam] = aper_corrs
+            return aper_corrs
+
         aper_corr_path = f'{config["Other"]["GALFIND_DIR"]}/Aperture_corrections/{self.name}_aper_corr{".txt" if self.name in ["NIRCam", "MIRI"] else ".dat"}'
         # if no aperture corrections in object, load from aperture corrections txt
         if Path(aper_corr_path).is_file():

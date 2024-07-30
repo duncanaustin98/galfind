@@ -809,6 +809,7 @@ def cluster_wht_map(wht_map, num_regions='auto', bin_factor=1, min_size=10000, p
     weight_map_clipped = np.clip(weight_map_smoothed, percentiles[0], percentiles[1])
     weight_map_transformed = (weight_map_clipped  - percentiles[0]) / (percentiles[1] - percentiles[0]) * 255
     
+    weight_map_transformed[np.isnan(weight_map_transformed)] = 0
     labels_filled = []
     iterations = 0
     if num_regions == 'auto':

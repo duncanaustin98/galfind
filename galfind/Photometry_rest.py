@@ -256,7 +256,7 @@ class Photometry_rest(Photometry):
             popt, kwargs = self.calc_beta_phot(rest_UV_wav_lims, output_kwargs = True, single_iter = True)
             return fesc_from_beta_conversions[conv_author_year](popt[1]), kwargs
         else:
-            beta_property_name = self._calc_property(Photometry_rest.calc_beta_phot, iters, rest_UV_wav_lims, save_path = save_path)[1][1]
+            beta_property_name = self._calc_property(Photometry_rest.calc_beta_phot, iters = iters, rest_UV_wav_lims = rest_UV_wav_lims, save_path = save_path)[1][1]
             # update PDF
             if type(self.property_PDFs[beta_property_name]) == type(None):
                 return [None], [property_name]
@@ -276,7 +276,7 @@ class Photometry_rest(Photometry):
             popt, kwargs = self.calc_beta_phot(rest_UV_wav_lims, single_iter = True)
             return conv_author_year_cls()(popt[1] * u.dimensionless_unscaled), kwargs
         else:
-            beta_property_name = self._calc_property(Photometry_rest.calc_beta_phot, iters, rest_UV_wav_lims, save_path = save_path)[1][1]
+            beta_property_name = self._calc_property(Photometry_rest.calc_beta_phot, iters = iters, rest_UV_wav_lims = rest_UV_wav_lims, save_path = save_path)[1][1]
             if type(self.property_PDFs[beta_property_name]) == type(None):
                 return [None], [property_name]
             else:
@@ -315,7 +315,7 @@ class Photometry_rest(Photometry):
         property_name = f"M{ref_wav.to(u.AA).value:.0f}" #_{self.rest_UV_wavs_name(rest_UV_wav_lims)}"
         if extract_property_name:
             return [property_name]
-        mUV_property_name = self._calc_property(Photometry_rest.calc_mUV_phot, iters, rest_UV_wav_lims, ref_wav, save_path = save_path)[1][0]
+        mUV_property_name = self._calc_property(Photometry_rest.calc_mUV_phot, iters, rest_UV_wav_lims = rest_UV_wav_lims, ref_wav = ref_wav, save_path = save_path)[1][0]
         if type(self.property_PDFs[mUV_property_name]) == type(None):
             return [None], [property_name]
         else:
@@ -340,11 +340,11 @@ class Photometry_rest(Photometry):
                 AUV, AUV_kwargs = self.calc_AUV_from_beta_phot(rest_UV_wav_lims, ref_wav, dust_author_year, single_iter = True)
             wav_len = 1
         else:
-            mUV_property_name = self._calc_property(Photometry_rest.calc_mUV_phot, iters, rest_UV_wav_lims, ref_wav, save_path = save_path)[1][0]
+            mUV_property_name = self._calc_property(Photometry_rest.calc_mUV_phot, iters = iters, rest_UV_wav_lims = rest_UV_wav_lims, ref_wav = ref_wav, save_path = save_path)[1][0]
             if type(dust_author_year) == type(None):
                 AUV_property_name = None
             else:
-                AUV_property_name = self._calc_property(Photometry_rest.calc_AUV_from_beta_phot, iters, rest_UV_wav_lims, ref_wav, dust_author_year)[1][0]
+                AUV_property_name = self._calc_property(Photometry_rest.calc_AUV_from_beta_phot, iters = iters, rest_UV_wav_lims = rest_UV_wav_lims, ref_wav = ref_wav, dust_author_year = dust_author_year)[1][0]
             if type(self.property_PDFs[mUV_property_name]) == type(None):
                 return [None], [property_name]
             if AUV_property_name in self.property_PDFs.keys():
@@ -381,7 +381,7 @@ class Photometry_rest(Photometry):
         property_name = f"SFR{frame}_{ref_wav.to(u.AA).value:.0f}{UV_dust_label}_{kappa_UV_conv_author_year}" #_{self.rest_UV_wavs_name(rest_UV_wav_lims)}"
         if extract_property_name:
             return [property_name]
-        LUV_property_name = self._calc_property(Photometry_rest.calc_LUV_phot, iters, frame, rest_UV_wav_lims, ref_wav, dust_author_year, save_path = save_path)[1][0]
+        LUV_property_name = self._calc_property(Photometry_rest.calc_LUV_phot, iters = iters, frame = frame, rest_UV_wav_lims = rest_UV_wav_lims, ref_wav = ref_wav, dust_author_year = dust_author_year, save_path = save_path)[1][0]
         if type(self.property_PDFs[LUV_property_name]) == type(None):
             return [None], [property_name]
         else:
@@ -501,7 +501,7 @@ class Photometry_rest(Photometry):
                 return np.nan, {}
         else:
             cont_property_name = self._calc_property(Photometry_rest.calc_cont_rest_optical, \
-                iters, strong_line_names, rest_optical_wavs, save_path = save_path)[1][0]
+                iters = iters, strong_line_names = strong_line_names, rest_optical_wavs = rest_optical_wavs, save_path = save_path)[1][0]
             if type(self.property_PDFs[cont_property_name]) == type(None):
                 return [None], [property_name]
         # determine the band which contains the first line
@@ -552,7 +552,7 @@ class Photometry_rest(Photometry):
             else:
                 return np.array(A_ref_wav.to(u.ABmag).value * dust_law_cls.k_lambda(calc_wav.to(u.AA)) / dust_law_cls.k_lambda(ref_wav)) * u.ABmag
         else:
-            A_ref_wav_name = self._calc_property(Photometry_rest.calc_AUV_from_beta_phot, iters, rest_UV_wav_lims, ref_wav, dust_author_year, save_path = save_path)[1][0]
+            A_ref_wav_name = self._calc_property(Photometry_rest.calc_AUV_from_beta_phot, iters = iters, rest_UV_wav_lims = rest_UV_wav_lims, ref_wav = ref_wav, dust_author_year = dust_author_year, save_path = save_path)[1][0]
             if type(self.property_PDFs[A_ref_wav_name]) == type(None):
                 return [None], [property_name]
             dust_law_cls = dust_law_cls() # initialize dust_law_cls
@@ -581,15 +581,14 @@ class Photometry_rest(Photometry):
         property_name = f"flux_{'+'.join(strong_line_names)}_{frame}{dust_label}"
         if extract_property_name:
             return [property_name]
-        
         if single_iter:
             cont = self.calc_cont_rest_optical(strong_line_names, rest_optical_wavs, single_iter = True)[0]
             EW, EW_kwargs = self.calc_EW_rest_optical(strong_line_names, frame, rest_optical_wavs, single_iter = True)
             if any(np.isnan(name) for name in [cont, EW]):
                 return np.nan, {}
         else:
-            cont_name = self._calc_property(Photometry_rest.calc_cont_rest_optical, iters, strong_line_names, rest_optical_wavs, save_path = save_path)[1][0]
-            EW_name = self._calc_property(Photometry_rest.calc_EW_rest_optical, iters, strong_line_names, frame, rest_optical_wavs, save_path = save_path)[1][0]
+            cont_name = self._calc_property(Photometry_rest.calc_cont_rest_optical,iters = iters, strong_line_names = strong_line_names, rest_optical_wavs = rest_optical_wavs, save_path = save_path)[1][0]
+        EW_name = self._calc_property(Photometry_rest.calc_EW_rest_optical, iters = iters, strong_line_names = strong_line_names, frame = frame, rest_optical_wavs = rest_optical_wavs, save_path = save_path)[1][0]
             A_line_name = self._calc_property(Photometry_rest.calc_dust_atten, iters, line_diagnostics[strong_line_names[0]]["line_wav"], \
                 dust_author_year, dust_law, dust_origin, rest_UV_wav_lims, ref_wav, save_path = save_path)[1][0]
             if any(type(self.property_PDFs[name]) == type(None) for name in [A_line_name, EW_name, cont_name]):
@@ -641,8 +640,8 @@ class Photometry_rest(Photometry):
             if np.isnan(line_flux):
                 return np.nan, {}
         else:
-            line_flux_property_name = self._calc_property(Photometry_rest.calc_line_flux_rest_optical, iters, strong_line_names, frame, \
-                dust_author_year, dust_law, dust_origin, rest_optical_wavs, rest_UV_wav_lims, save_path = save_path)[1][0] 
+            line_flux_property_name = self._calc_property(Photometry_rest.calc_line_flux_rest_optical, iters = iters, strong_line_names = strong_line_names, frame = frame, \
+                dust_author_year = dust_author_year, dust_law = dust_law, dust_origin = dust_origin, rest_optical_wavs = rest_optical_wavs, rest_UV_wav_lims = rest_UV_wav_lims, save_path = save_path)[1][0] 
             if type(self.property_PDFs[line_flux_property_name]) == type(None):
                 return [None], [property_name]
         if frame == "rest":
@@ -681,7 +680,7 @@ class Photometry_rest(Photometry):
                     return np.nan, {}
             else:
                 fesc_property_name = self._calc_property(Photometry_rest.calc_fesc_from_beta_phot, \
-                    iters, rest_UV_wav_lims, fesc_author_year, save_path = save_path)[1][0]
+                    iters = iters, rest_UV_wav_lims = rest_UV_wav_lims, fesc_author_year = fesc_author_year, save_path = save_path)[1][0]
                 fesc_chain = self.property_PDFs[fesc_property_name]
                 if type(fesc_chain) == type(None):
                     return [None], [property_name]
@@ -694,7 +693,6 @@ class Photometry_rest(Photometry):
                 fesc_chain = np.full(iters, float(fesc_author_year.split("=")[-1]))
         else:
             raise NotImplementedError
-        
         if single_iter:
             line_lum, line_kwargs = self.calc_line_lum_rest_optical(strong_line_names, frame, dust_author_year, dust_law, \
                 dust_origin, rest_optical_wavs, rest_UV_wav_lims, ref_wav, single_iter = True)
@@ -704,11 +702,11 @@ class Photometry_rest(Photometry):
             else:
                 return (line_lum / (1.36e-12 * u.erg * (1. - fesc) * L_UV)).to(u.Hz / u.erg), {**line_kwargs, **L_UV_kwargs}
         else:
-            line_lum_property_name = self._calc_property(Photometry_rest.calc_line_lum_rest_optical, \
-                iters, strong_line_names, frame, dust_author_year, dust_law, dust_origin, \
-                rest_optical_wavs, rest_UV_wav_lims, ref_wav, save_path = save_path)[1][0]
+            line_lum_property_name = self._calc_property(SED_rest_property_function = Photometry_rest.calc_line_lum_rest_optical,
+                iters = iters, strong_line_names = strong_line_names, frame = frame, dust_author_year = dust_author_year, dust_law = dust_law, dust_origin = dust_origin,
+                rest_optical_wavs = rest_optical_wavs, rest_UV_wav_lims = rest_UV_wav_lims, ref_wav = ref_wav, save_path = save_path)[1][0]
             L_UV_property_name = self._calc_property(Photometry_rest.calc_LUV_phot, \
-                    iters, frame, rest_UV_wav_lims, ref_wav, dust_author_year, save_path = save_path)[1][0]
+                iters = iters, frame = frame, rest_UV_wav_lims = rest_UV_wav_lims, ref_wav = ref_wav, dust_author_year = dust_author_year, save_path = save_path)[1][0]
             if any(type(self.property_PDFs[name]) == type(None) for name in [line_lum_property_name, L_UV_property_name]):
                 return [None], [property_name]
             # calculate xi_ion from Halpha luminosity assuming some case (A/B) for ISM recombination
@@ -765,9 +763,11 @@ class Photometry_rest(Photometry):
         dlambda = dz * wav_rest / (1. + self.z)
         return dlambda
 
-    def _calc_property(self, SED_rest_property_function, iters, *args, save_path: Union[str, None] = None):
-        assert type(iters) in [int, np.int]
-        property_names = SED_rest_property_function(self, *args, extract_property_name = True)
+    def _calc_property(self, SED_rest_property_function, iters, save_path: Union[str, None] = None, **kwargs):
+        assert type(iters) in [int]
+        # Add iters to kwargs
+        kwargs["iters"] = iters
+        property_names = SED_rest_property_function(extract_property_name = True, **kwargs)
         # calculate number of new iterations that should be run
         property_iters_arr = np.zeros(len(property_names))
         for i, property_name in enumerate(property_names):
@@ -786,7 +786,8 @@ class Photometry_rest(Photometry):
         if property_iters_arr[0] == 0:
             return self, property_names
         # compute the properties
-        properties = SED_rest_property_function(self, iters = property_iters, *args, save_path = save_path)[0]
+        kwargs["iters"] = property_iters
+        properties = SED_rest_property_function(**kwargs, save_path = save_path)[0]
         #breakpoint()
         for property, property_name in zip(properties, property_names):
             # update property PDFs
