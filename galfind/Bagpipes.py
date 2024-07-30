@@ -41,3 +41,6 @@ class Bagpipes(SED_code):
     
     def SED_path_from_cat_path(self, cat_path, ID, low_z_run = False):
         pass
+
+    def make_templates(self, ):
+        pass
