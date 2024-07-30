@@ -574,8 +574,8 @@ class Catalogue(Catalogue_Base):
             ref_wav: u.Quantity = 1_500. * u.AA, AUV_beta_conv_author_year: Union[str, None] = "M99", kappa_UV_conv_author_year: str = "MD14", \
             SED_fit_params: dict = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}, iters = 10_000):
         self.calc_LUV_phot(frame, rest_UV_wav_lims, ref_wav, AUV_beta_conv_author_year, SED_fit_params, iters)
-        self.calc_SED_rest_property(SED_rest_property_function = Photometry_rest.calc_SFR_UV_phot, iters, SED_fit_params, frame, \
-            rest_UV_wav_lims, ref_wav, AUV_beta_conv_author_year, kappa_UV_conv_author_year)
+        self.calc_SED_rest_property(SED_rest_property_function = Photometry_rest.calc_SFR_UV_phot, iters = iters, SED_fit_params = SED_fit_params, frame = frame, \
+            rest_UV_wav_lims = rest_UV_wav_lims, ref_wav = ref_wav, AUV_beta_conv_author_year = AUV_beta_conv_author_year, kappa_UV_conv_author_year = kappa_UV_conv_author_year)
     
     def calc_rest_UV_properties(self, frame: str = "obs", rest_UV_wav_lims: u.Quantity = [1_250., 3_000.] * u.AA, \
             ref_wav: u.Quantity = 1_500. * u.AA, fesc_conv_author_year: Union[str, None] = "Chisholm22", \

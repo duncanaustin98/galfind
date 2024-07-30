@@ -1455,13 +1455,11 @@ class Data:
                 # combine the astropy tables
                 if i == 0:
                     master_tab = tab
+                    len_required = len(master_tab)
                 else:
-                    try:
-                        master_tab = hstack([master_tab, tab])
-                    except Exception as e:
-                        print(e)
-                        print(path)
-
+                    master_tab = hstack([master_tab, tab])
+                    assert len(tab) == len_required, f'Lengths of sextractor catalogues do not match! Check same detection image used {len(tab)} != {len_required} for {band}'
+                 
             # add the detection band parameters to the start of the catalogue
             master_tab.add_column(ID_detect_band, name = 'NUMBER', index = 0)
             master_tab.add_column(x_image_detect_band, name = 'X_IMAGE', index = 1)

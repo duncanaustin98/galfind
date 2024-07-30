@@ -94,10 +94,10 @@ if __name__ == "__main__":
     aper_diams = [0.32] * u.arcsec # , 0.5, 1.0, 1.5, 2.0
     SED_code_arr = [EAZY()]
     templates_arr = ["fsps_larson"] #["fsps", "fsps_larson", "fsps_jades"]
-    lowz_zmax_arr = [[None]] #[[4., 6., None]] #[[None]] # 
+    lowz_zmax_arr = [[4., 6., None]] #[[4., 6., None]] #[[None]] # 
     min_flux_pc_errs = [10]
     forced_phot_band = ["F277W", "F356W", "F444W"] #["F444W"]
-    crop_by = "EPOCHS" #{"ID": [1, 2, 3]} #"bands>13+EPOCHS" #"EPOCHS_lowz+z>4.5" # {"IDs": [30004, 26602, 2122, 28178, 17244, 23655, 1027]}
+    crop_by = None #{"ID": [1, 2, 3]} #"bands>13+EPOCHS" #"EPOCHS_lowz+z>4.5" # {"IDs": [30004, 26602, 2122, 28178, 17244, 23655, 1027]}
     timed = False
     mask_stars = {"ACS_WFC": False, "NIRCam": True, "WFC3_IR": False, "MIRI": False}
     MIRI_pix_scale = 0.06 * u.arcsec
