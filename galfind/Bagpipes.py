@@ -318,7 +318,7 @@ class Bagpipes(SED_code):
 
             dust['Av_prior'] = dust_prior
             if dust_prior == 'log_10':
-                dust["Av"] = (0.0001, 10.)
+                dust["Av"] = (1e-4, 10.)
             elif dust_prior == 'uniform':
                 dust["Av"] = (0., 6.)
             
