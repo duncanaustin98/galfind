@@ -589,21 +589,14 @@ class Photometry_rest(Photometry):
                 return np.nan, {}
         else:
             cont_name = self._calc_property(Photometry_rest.calc_cont_rest_optical,iters = iters, strong_line_names = strong_line_names, rest_optical_wavs = rest_optical_wavs, save_path = save_path)[1][0]
-        EW_name = self._calc_property(Photometry_rest.calc_EW_rest_optical, iters = iters, strong_line_names = strong_line_names, frame = frame, rest_optical_wavs = rest_optical_wavs, save_path = save_path)[1][0]
-        if type(self.property_PDFs[EW_name]) == type(None):
-            return [None], [property_name]
-        else:
-            band_wav = self.instrument[self.instrument.index_from_band_name(self.property_PDFs[EW_name].kwargs[f"{'+'.join(strong_line_names)}_emission_band"])].WavelengthCen
-            A_line_name = self._calc_property(Photometry_rest.calc_dust_atten, iters = iters, line_diagnostics = line_diagnostics[strong_line_names[0]]["line_wav"], \
+            EW_name = self._calc_property(Photometry_rest.calc_EW_rest_optical, iters = iters, strong_line_names = strong_line_names, frame = frame, rest_optical_wavs = rest_optical_wavs, save_path = save_path)[1][0]
+            A_line_name = self._calc_property(Photometry_rest.calc_dust_atten, iters = iters, calc_wav = line_diagnostics[strong_line_names[0]]["line_wav"], \
                 dust_author_year = dust_author_year, dust_law = dust_law, dust_origin = dust_origin, rest_UV_wav_lims = rest_UV_wav_lims, ref_wav = ref_wav, save_path = save_path)[1][0]
-            if any(type(self.property_PDFs[name]) == type(None) for name in [A_line_name, EW_bame, cont_name]):
+            if any(type(self.property_PDFs[name]) == type(None) for name in [A_line_name, EW_name, cont_name]):
                 return [None], [property_name]
             EW_kwargs = self.property_PDFs[EW_name].kwargs
         band_wav = self.instrument[self.instrument.index_from_band_name(EW_kwargs[f"{'+'.join(strong_line_names)}_emission_band"])].WavelengthCen
         
-        # if A_line_name in self.property_PDFs.keys():
-        #     if type(self.property_PDFs[A_line_name]) == type(None):
-        #         return [None], [property_name]
         # convert EW to line flux in appropriate frame
         if frame == "rest":
             band_wav /= (1. + self.z)

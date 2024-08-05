@@ -219,7 +219,7 @@ class Data:
     @classmethod
     def from_pipeline(cls, survey, version, instrument_names = ["ACS_WFC", "WFC3_IR", "NIRCam", "MIRI"], excl_bands = [], \
             pix_scales = {"ACS_WFC": 0.03 * u.arcsec, "WFC3_IR": 0.03 * u.arcsec, "NIRCam": 0.03 * u.arcsec, "MIRI": 0.09 * u.arcsec}, \
-            im_str = ["_sci", "_i2d", "_drz"], rms_err_str = ["_rms", "_err"], wht_str = ["_wht", "_weight"], mask_stars = True):
+            im_str = ["_sci", "_i2d", "_drz"], rms_err_str = ["_rms_err", "_rms", "_err"], wht_str = ["_wht", "_weight"], mask_stars = True):
         
         # may not require all of these inits
         im_paths = {} 
@@ -609,21 +609,33 @@ class Data:
         seg_header = seg_hdul[0].header
         return seg_data, seg_header
     
-    def load_wht(self, band):
+    def load_wht(self, band, output_hdr = False):
         try:
-            wht = fits.open(self.wht_paths[band])[self.wht_exts[band]].data
+            hdu = fits.open(self.wht_paths[band])[self.wht_exts[band]]
+            wht = hdu.data
+            hdr = hdu.header
         except Exception as e:
             print(e)
             wht = None
-        return wht
+            hdr = None
+        if output_hdr:
+            return wht, hdr
+        else:
+            return wht
 
       
     def load_rms_err(self, band):
         try:
-            rms_err = fits.open(self.rms_err_paths[band])[self.rms_err_exts[band]].data
+            hdu = fits.open(self.rms_err_paths[band])[self.rms_err_exts[band]]
+            rms_err = hdu.data 
+            hdr = hdu.header
         except:
             rms_err = None
-        return rms_err
+            hdr = None
+        if output_hdr:
+            return rms_err, hdr
+        else:
+            return rms_err
     
     
     def combine_seg_data_and_mask(self, band = None, seg_data = None, mask = None):
@@ -960,18 +972,28 @@ class Data:
             if band in self.rms_err_paths.keys():
                 err_map_type = "MAP_RMS"
             elif band in self.wht_paths.keys():
+                # make rms err map from wht map
                 err_map_type = "MAP_WEIGHT"
+                self.make_rms_err_from_wht(band)
+            else:
+                galfind_logger.critical(f"{band=} does not have {prefer=} err map type")
+                breakpoint()
+
         elif prefer == "wht":
             if band in self.wht_paths.keys():
                 err_map_type = "MAP_WEIGHT"
             elif band in self.rms_err_paths.keys():
-                err_map_type = "MAP_RMS"
+                # make wht map from rms err map
+                self.make_wht_from_rms_err(band)
+                pass
+            else:
+                galfind_logger.critical(f"{band=} does not have {prefer=} err map type")
+                breakpoint()
         else:
             galfind_logger.critical(f"prefer = {prefer} not in ['rms_err', 'wht'] in Data.get_err_map()")
         
         # extract relevant fits paths and extensions
-        print(band, self.rms_err_paths, self.wht_paths)
-        #breakpoint()
+        #print(band, self.rms_err_paths, self.wht_paths)
         if err_map_type == "MAP_RMS":
             err_map_path = str(self.rms_err_paths[band])
             err_map_ext = str(self.rms_err_exts[band])
@@ -982,6 +1004,48 @@ class Data:
             galfind_logger.critical(f"No rms_err or wht maps available for {band} {self.survey} {self.version}")
 
         return err_map_path, err_map_ext, err_map_type
+    
+    def make_rms_err_from_wht(self, band, wht_str = ["_wht", "_weight"]):
+        assert band in self.wht_paths.keys() and band in self.wht_exts.keys()
+        for i, string in enumerate(wht_str):
+            if string in self.wht_paths[band].split("/")[-1]:
+                rms_err_path = f"{'/'.join(self.wht_paths[band].split('/')[:-1])}/{self.wht_paths[band].split('/')[-1].replace(string, '_rms_err')}"
+                break
+            elif i == len(wht_str) - 1:
+                galfind_logger.critical("Appropriate rms_err path not created")
+                breakpoint()
+        funcs.make_dirs(rms_err_path)
+        wht, hdr = self.load_wht(band, output_hdr = True)
+        err = 1. / (wht ** 0.5)
+        primary = fits.PrimaryHDU(header = hdr)
+        hdu = fits.ImageHDU(err, header = hdr, name = "ERR")
+        hdul = fits.HDUList([primary, hdu])
+        hdul.writeto(rms_err_path, overwrite = True)
+        funcs.change_file_permissions(rms_err_path)
+        galfind_logger.info(f"Finished making rms_err map for {band} for {self.survey} {self.version}")
+        self.rms_err_paths[band] = rms_err_path
+        self.rms_err_exts[band] = 1
+
+    def make_wht_from_rms_err(self, band, rms_err_str = ["_rms_err", "_rms", "_err"]):
+        assert band in self.rms_err_paths.keys() and band in self.rms_err_exts.keys()
+        for i, string in enumerate(rms_err_str):
+            if string in self.rms_err_paths[band].split("/")[-1]:
+                wht_path = f"{'/'.join(self.rms_err_paths[band].split('/')[:-1])}/{self.rms_err_paths[band].split('/')[-1].replace(string, '_wht')}"
+                break
+            elif i == len(rms_err_str) - 1:
+                galfind_logger.critical("Appropriate wht path not created")
+                breakpoint()
+        funcs.make_dirs(wht_path)
+        err, hdr = self.load_rms_err(band, output_hdr = True)
+        wht = 1. / (err ** 2)
+        primary = fits.PrimaryHDU(header = hdr)
+        hdu = fits.ImageHDU(wht, header = hdr, name = "WHT")
+        hdul = fits.HDUList([primary, hdu])
+        hdul.writeto(wht_path, overwrite = True)
+        funcs.change_file_permissions(wht_path)
+        galfind_logger.info(f"Finished making wht map for {band} for {self.survey} {self.version}")
+        self.wht_paths[band] = wht_path
+        self.wht_exts[band] = 1
 
     @run_in_dir(path = config['DEFAULT']['GALFIND_DIR'])
     def make_seg_map(self, band, sex_config_path = config['SExtractor']['CONFIG_PATH'], params_path = config['SExtractor']['PARAMS_PATH']):
@@ -1222,7 +1286,6 @@ class Data:
         if psf_match:
             psf_matched_name = f"{stack_band_name}_psf_matched_{psf_match_band}"
             im_paths, wht_paths, rms_err_paths = self.convolve_images(psf_kernel_dir, match_band = psf_match_band, update_default_dictionaries = False, override_bands = ['F277W', 'F356W', 'F444W'])
-            
         else:
             psf_matched_name = stack_band_name
             im_paths = self.im_paths
@@ -1367,9 +1430,9 @@ class Data:
                 sextract = False
             # check whether the band and forced phot band have error maps with consistent types
             if sextract:
-                if band in self.rms_err_paths.keys() and self.forced_phot_band in self.rms_err_paths.keys():
+                if all(_band in self.rms_err_paths.keys() for _band in sextractor_bands) and self.forced_phot_band in self.rms_err_paths.keys():
                     prefer = "rms_err"
-                elif band in self.wht_paths.keys() and self.forced_phot_band in self.wht_paths.keys():
+                elif all(_band in self.wht_paths.keys() for _band in sextractor_bands) and self.forced_phot_band in self.wht_paths.keys():
                     prefer = "wht"
                 else: # do not perform sextraction
                     sextract = False
