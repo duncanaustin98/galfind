@@ -588,7 +588,7 @@ class Photometry_rest(Photometry):
                 return np.nan, {}
         else:
             cont_name = self._calc_property(Photometry_rest.calc_cont_rest_optical,iters = iters, strong_line_names = strong_line_names, rest_optical_wavs = rest_optical_wavs, save_path = save_path)[1][0]
-        EW_name = self._calc_property(Photometry_rest.calc_EW_rest_optical, iters = iters, strong_line_names = strong_line_names, frame = frame, rest_optical_wavs = rest_optical_wavs, save_path = save_path)[1][0]
+            EW_name = self._calc_property(Photometry_rest.calc_EW_rest_optical, iters = iters, strong_line_names = strong_line_names, frame = frame, rest_optical_wavs = rest_optical_wavs, save_path = save_path)[1][0]
             A_line_name = self._calc_property(Photometry_rest.calc_dust_atten, iters, line_diagnostics[strong_line_names[0]]["line_wav"], \
                 dust_author_year, dust_law, dust_origin, rest_UV_wav_lims, ref_wav, save_path = save_path)[1][0]
             if any(type(self.property_PDFs[name]) == type(None) for name in [A_line_name, EW_name, cont_name]):
