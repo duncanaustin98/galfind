@@ -8,4 +8,4 @@ galfind/IGM_attenuation/Inoue+14_IGM_grid.h5
 galfind/IGM_attenuation/Inoue14_IGM_grid.h5
 galfind/spectra/models/IGM_attenuation/Inoue+14_IGM_grid.h5
 remove_by_eye_local.py
-galfind/configs/EAZY_templates/templates/LarsonSEDTemplates
+galfind/configs/EAZY_templates/templates/LarsonSEDTemplates/*
