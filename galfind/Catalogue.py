@@ -464,11 +464,11 @@ class Catalogue(Catalogue_Base):
     
     # Morphology selection functions
 
-    def select_band_flux_radius(self, band, gtr_or_less, lim, make_cat_copy = False):
+    def select_band_flux_radius(self, band, gtr_or_less, lim):
         assert(band in self.instrument.band_names)
         # load in effective radii as calculated from SExtractor
         self.load_band_properties_from_cat("FLUX_RADIUS", "sex_Re", None)
-        return self.perform_selection(Galaxy.select_band_flux_radius, band, gtr_or_less, lim, make_cat_copy = make_cat_copy)
+        return self.perform_selection(Galaxy.select_band_flux_radius, band, gtr_or_less, lim)
 
     # Full sample selection functions - these chain the above functions
 
