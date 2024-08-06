@@ -47,20 +47,22 @@ class Catalogue(Catalogue_Base):
             {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": 6.}, {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}], \
             instruments = ['NIRCam', 'ACS_WFC', 'WFC3_IR'], forced_phot_band = ["F277W", "F356W", "F444W"], excl_bands = [], \
             pix_scales = {"ACS_WFC": 0.03 * u.arcsec, "WFC3_IR": 0.03 * u.arcsec, "NIRCam": 0.03 * u.arcsec, "MIRI": 0.09 * u.arcsec}, \
-            loc_depth_min_flux_pc_errs = [5, 10], crop_by = None, timed = True, mask_stars = True, load_SED_rest_properties = True):
+            loc_depth_min_flux_pc_errs = [5, 10], crop_by = None, timed = True, mask_stars = True, \
+            load_SED_rest_properties = True, sex_prefer = "rms_err", n_depth_reg = "auto"):
         # make 'Data' object
         data = Data.from_pipeline(survey, version, instruments, excl_bands = excl_bands, mask_stars = mask_stars, pix_scales = pix_scales)
         return cls.from_data(data, version, aper_diams, cat_creator, SED_fit_params_arr, \
-            forced_phot_band, loc_depth_min_flux_pc_errs, crop_by = crop_by, timed = timed, load_SED_rest_properties = load_SED_rest_properties)
+            forced_phot_band, loc_depth_min_flux_pc_errs, crop_by = crop_by, timed = timed, \
+            load_SED_rest_properties = load_SED_rest_properties, sex_prefer = sex_prefer, n_depth_reg = n_depth_reg)
     
     @classmethod
     def from_data(cls, data, version, aper_diams, cat_creator, SED_fit_params_arr, forced_phot_band = ["F277W", "F356W", "F444W"], \
-                loc_depth_min_flux_pc_errs = [10], mask = True, crop_by = None, timed = True, load_SED_rest_properties = True):
+                loc_depth_min_flux_pc_errs = [10], mask = True, crop_by = None, timed = True, \
+                load_SED_rest_properties = True, sex_prefer = "rms_err", n_depth_reg = "auto"):
         # make masked local depth catalogue from the 'Data' object
-        #breakpoint()
-        data.combine_sex_cats(forced_phot_band)
+        data.combine_sex_cats(forced_phot_band, prefer = sex_prefer)
         mode = str(config["Depths"]["MODE"]).lower() # mode to calculate depths (either "n_nearest" or "rolling")
-        data.calc_depths(aper_diams, mode = mode, cat_creator = cat_creator)
+        data.calc_depths(aper_diams, mode = mode, cat_creator = cat_creator, n_split = n_depth_reg)
         data.perform_aper_corrs()
         data.make_loc_depth_cat(cat_creator, depth_mode = mode)
         return cls.from_fits_cat(data.sex_cat_master_path, version, data.instrument, cat_creator, data.survey, \
@@ -148,7 +150,6 @@ class Catalogue(Catalogue_Base):
     # Spectroscopy
         
     def match_available_spectra(self):
-        #breakpoint()
         # make catalogue consisting of spectra downloaded from the DJA
         DJA_cat = np.sum([Spectral_Catalogue.from_DJA(ra_range = self.ra_range, \
             dec_range = self.dec_range, version = version) for version in ["v1", "v2"]])
@@ -688,6 +689,10 @@ class Catalogue(Catalogue_Base):
             is_property_updated = np.full(len(self), True)
         else:
             is_property_updated = self.__getattr__(property_name, phot_type = "rest", property_type = "recently_updated")
+        if type(is_property_updated) == type(None):
+            breakpoint()
+        if any(type(updated) == type(None) for updated in is_property_updated):
+            breakpoint()
         # update properties and kwargs for those galaxies that have been updated, or if the columns have just been made
         if any(updated for updated in is_property_updated):
             # extract the kwargs for this property

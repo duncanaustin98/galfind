@@ -10,9 +10,9 @@ fsps_full/tweak_fsps_QSF_12_v3_009.dat
 fsps_full/tweak_fsps_QSF_12_v3_010.dat
 fsps_full/tweak_fsps_QSF_12_v3_011.dat
 fsps_full/tweak_fsps_QSF_12_v3_012.dat
-LarsonSEDTemplates/binc100z001age6_cloudy.dat
-LarsonSEDTemplates/binc100z001age65_cloudy.dat
-LarsonSEDTemplates/binc100z001age7_cloudy.dat
-LarsonSEDTemplates/binc100z001age6.dat
-LarsonSEDTemplates/binc100z001age65.dat
-LarsonSEDTemplates/binc100z001age7.dat
+LarsonTemplates/binc100z001age6_cloudy.dat
+LarsonTemplates/binc100z001age65_cloudy.dat
+LarsonTemplates/binc100z001age7_cloudy.dat
+LarsonTemplates/binc100z001age6.dat
+LarsonTemplates/binc100z001age65.dat
+LarsonTemplates/binc100z001age7.dat

@@ -215,7 +215,6 @@ class Data:
             #split_bands = np.take(self.instrument.band_names, [0, int(len(self.instrument.band_names) / 2), -1])
             #self.make_RGB([split_bands[0]], [split_bands[1]], [split_bands[2]], RGB_method)
 
-
     @classmethod
     def from_pipeline(cls, survey, version, instrument_names = ["ACS_WFC", "WFC3_IR", "NIRCam", "MIRI"], excl_bands = [], \
             pix_scales = {"ACS_WFC": 0.03 * u.arcsec, "WFC3_IR": 0.03 * u.arcsec, "NIRCam": 0.03 * u.arcsec, "MIRI": 0.09 * u.arcsec}, \
@@ -342,7 +341,6 @@ class Data:
                                 assertion_len += 1
                             else:
                                 rms_err_exts[band] = int(j)
-                        #breakpoint()
                         #print(band, len(rms_err_hdul), [hdu.name for hdu in rms_err_hdul], assertion_len)
                         assert len(rms_err_hdul) == assertion_len
                     if band in wht_paths.keys():
@@ -371,8 +369,12 @@ class Data:
                             im_zps[band_name] = -2.5 * np.log10(imheader["PHOTFLAM"]) - 21.1 - 5 * np.log10(imheader["PHOTPLAM"]) + 18.6921
                         elif "ZEROPNT" in imheader:
                             im_zps[band_name] = imheader["ZEROPNT"]
+                        elif "BUNIT" in imheader:
+                            unit = imheader["BUNIT"].replace(" ", "")
+                            assert unit == "MJy/sr"
+                            im_zps[band_name] = -2.5 * np.log10((pix_scale.to(u.rad).value ** 2) * u.MJy.to(u.Jy)) + u.Jy.to(u.ABmag)
                         else:
-                            raise(Exception(f"ACS_WFC data for {survey} {version} {band_name} located at {im_paths[band_name]} must contain either 'ZEROPNT' or 'PHOTFLAM' and 'PHOTPLAM' in its header to calculate its ZP!"))
+                            raise(Exception(f"ACS_WFC data for {survey} {version} {band_name} located at {im_paths[band_name]} must contain either 'ZEROPNT' or 'PHOTFLAM' and 'PHOTPLAM' or 'BUNIT'=MJy/sr in its header to calculate its ZP!"))
                     elif instrument_name == "WFC3_IR":
                         # Taken from Appendix A of https://www.stsci.edu/files/live/sites/www/files/home/hst/instrumentation/wfc3/documentation/instrument-science-reports-isrs/_documents/2020/WFC3-ISR-2020-10.pdf
                         wfc3ir_zps = {'F098M': 25.661, 'F105W': 26.2637, 'F110W': 26.8185, 'F125W': 26.231, 'F140W': 26.4502, 'F160W': 25.9362}
@@ -1017,7 +1019,9 @@ class Data:
         funcs.make_dirs(rms_err_path)
         wht, hdr = self.load_wht(band, output_hdr = True)
         err = 1. / (wht ** 0.5)
-        primary = fits.PrimaryHDU(header = hdr)
+        primary_hdr = deepcopy(hdr)
+        primary_hdr["EXTNAME"] = "PRIMARY"
+        primary = fits.PrimaryHDU(header = primary_hdr)
         hdu = fits.ImageHDU(err, header = hdr, name = "ERR")
         hdul = fits.HDUList([primary, hdu])
         hdul.writeto(rms_err_path, overwrite = True)
@@ -1038,7 +1042,9 @@ class Data:
         funcs.make_dirs(wht_path)
         err, hdr = self.load_rms_err(band, output_hdr = True)
         wht = 1. / (err ** 2)
-        primary = fits.PrimaryHDU(header = hdr)
+        primary_hdr = deepcopy(hdr)
+        primary_hdr["EXTNAME"] = "PRIMARY"
+        primary = fits.PrimaryHDU(header = primary_hdr)
         hdu = fits.ImageHDU(wht, header = hdr, name = "WHT")
         hdul = fits.HDUList([primary, hdu])
         hdul.writeto(wht_path, overwrite = True)
@@ -1381,7 +1387,7 @@ class Data:
         return path
 
     @run_in_dir(path = config['DEFAULT']['GALFIND_DIR'])
-    def make_sex_cats(self, forced_phot_band = "F444W", sex_config_path = config['SExtractor']['CONFIG_PATH'], params_path = config['SExtractor']['PARAMS_PATH'], forced_phot_code = "photutils"):
+    def make_sex_cats(self, forced_phot_band = "F444W", sex_config_path = config['SExtractor']['CONFIG_PATH'], params_path = config['SExtractor']['PARAMS_PATH'], forced_phot_code = "photutils", prefer = "rms_err"):
         galfind_logger.info(f"Making SExtractor catalogues with: config file = {sex_config_path}; parameters file = {params_path}")
         #breakpoint()
         # make individual forced photometry catalogues
@@ -1426,20 +1432,9 @@ class Data:
             # check whether the image of the forced photometry band and sextraction band have the same shape
             if self.im_shapes[self.forced_phot_band] == self.im_shapes[band]:
                 sextract = True
-            else:
-                sextract = False
-            # check whether the band and forced phot band have error maps with consistent types
-            if sextract:
-                if all(_band in self.rms_err_paths.keys() for _band in sextractor_bands) and self.forced_phot_band in self.rms_err_paths.keys():
-                    prefer = "rms_err"
-                elif all(_band in self.wht_paths.keys() for _band in sextractor_bands) and self.forced_phot_band in self.wht_paths.keys():
-                    prefer = "wht"
-                else: # do not perform sextraction
-                    sextract = False
-            #breakpoint()
-            if sextract:
                 self.sex_cat_types[band] = subprocess.check_output("sex --version", shell = True).decode("utf-8").replace("\n", "")
             else:
+                sextract = False
                 self.sex_cat_types[band] = f"{forced_phot_code} v{globals()[forced_phot_code].__version__}"
 
             # overwrite = config["DEFAULT"].getboolean("OVERWRITE")
@@ -1482,8 +1477,8 @@ class Data:
             
             galfind_logger.info(f"Finished making SExtractor catalogue for {self.survey} {self.version} {band}!")
     
-    def combine_sex_cats(self, forced_phot_band = "F444W", readme_sep = "-" * 20):
-        self.make_sex_cats(forced_phot_band)
+    def combine_sex_cats(self, forced_phot_band = "F444W", readme_sep = "-" * 20, prefer = "rms_err"):
+        self.make_sex_cats(forced_phot_band, prefer = prefer)
 
         save_name = f"{self.survey}_MASTER_Sel-{self.combine_band_names(forced_phot_band)}_{self.version}.fits"
         save_dir = f"{config['DEFAULT']['GALFIND_WORK']}/Catalogues/{self.version}/{self.instrument.name}/{self.survey}"
@@ -1952,7 +1947,7 @@ class Data:
     
     def calc_depths(self, aper_diams = [0.32] * u.arcsec, cat_creator = None, mode = "n_nearest", scatter_size = 0.1, distance_to_mask = 30, \
             region_radius_used_pix = 300, n_nearest = 200, coord_type = "sky", split_depth_min_size = 100_000, \
-            split_depths_factor = 5, step_size = 100, excl_bands = [], n_jobs = 1, plot = False):
+            split_depths_factor = 5, step_size = 100, excl_bands = [], n_jobs = 1, plot = False, n_split = "auto"):
         params = []
         # Look over all aperture diameters and bands  
         for aper_diam in aper_diams:
@@ -1962,7 +1957,7 @@ class Data:
                 # Only run for non excluded bands
                 if band not in excl_bands:
                     params.append((band, aper_diam, self.depth_dirs[band], mode, scatter_size, distance_to_mask, region_radius_used_pix, n_nearest, \
-                    coord_type, split_depth_min_size, split_depths_factor, step_size, cat_creator, plot))
+                    coord_type, split_depth_min_size, split_depths_factor, step_size, cat_creator, plot, n_split))
         # Parallelise the calculation of depths for each band
         with tqdm_joblib(tqdm(desc = "Calculating depths", total = len(params))) as progress_bar:
             Parallel(n_jobs = n_jobs)(delayed(self.calc_band_depth)(param) for param in params)
@@ -1972,7 +1967,7 @@ class Data:
     def calc_band_depth(self, params):
         # unpack parameters
         band, aper_diam, depth_dir, mode, scatter_size, distance_to_mask, region_radius_used_pix, n_nearest, \
-            coord_type, split_depth_min_size, split_depths_factor, step_size, cat_creator, plot = params
+            coord_type, split_depth_min_size, split_depths_factor, step_size, cat_creator, plot, n_split = params
         # determine paths and whether to overwrite
         overwrite = config["Depths"].getboolean("OVERWRITE_DEPTHS")
         if overwrite:
@@ -1990,10 +1985,13 @@ class Data:
             # Load wht data if it has the correct type
             wht_data = self.load_wht(band)
             #print(f"wht_data = {wht_data}")
-            if type(wht_data) == type(None):
-                n_split = 1
+            if type(n_split) == type(None):
+                if type(wht_data) == type(None):
+                    n_split = 1
+                else:
+                    n_split = "auto"
             else:
-                n_split = "auto"
+                assert type(n_split) == int or n_split == "auto"
 
             # load catalogue of given type
             cat = Table.read(self.sex_cat_master_path)

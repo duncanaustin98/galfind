@@ -264,24 +264,24 @@ class Photometry_rest(Photometry):
             else:
                 return [{"PDF": self.property_PDFs[beta_property_name].manipulate_PDF(property_name, fesc_from_beta_conversions[conv_author_year], size = iters)}], [property_name]
     
-    def calc_AUV_from_beta_phot(self, rest_UV_wav_lims, ref_wav, conv_author_year, iters = 10, \
+    def calc_AUV_from_beta_phot(self, rest_UV_wav_lims, ref_wav, dust_author_year, iters = 10, \
             extract_property_name = False, save_path = None, single_iter: bool = False):
         assert type(single_iter) == bool
-        conv_author_year_cls = globals()[conv_author_year]
-        assert issubclass(conv_author_year_cls, AUV_from_beta)
-        UV_dust_label = self._get_UV_dust_label(conv_author_year)
+        dust_author_year_cls = globals()[dust_author_year]
+        assert issubclass(dust_author_year_cls, AUV_from_beta)
+        UV_dust_label = self._get_UV_dust_label(dust_author_year)
         property_name = f"A{ref_wav.to(u.AA).value:.0f}{UV_dust_label}" #_{self.rest_UV_wavs_name(rest_UV_wav_lims)}"
         if extract_property_name:
             return [property_name]
         if single_iter:
-            popt, kwargs = self.calc_beta_phot(rest_UV_wav_lims, single_iter = True)
-            return conv_author_year_cls()(popt[1] * u.dimensionless_unscaled), kwargs
+            popt, kwargs = self.calc_beta_phot(rest_UV_wav_lims = rest_UV_wav_lims, single_iter = True)
+            return dust_author_year_cls()(popt[1] * u.dimensionless_unscaled), kwargs
         else:
             beta_property_name = self._calc_property(Photometry_rest.calc_beta_phot, iters = iters, rest_UV_wav_lims = rest_UV_wav_lims, save_path = save_path)[1][1]
             if type(self.property_PDFs[beta_property_name]) == type(None):
                 return [None], [property_name]
             else:
-                return [{"PDF": self.property_PDFs[beta_property_name].manipulate_PDF(property_name, conv_author_year_cls(), size = iters)}], [property_name]
+                return [{"PDF": self.property_PDFs[beta_property_name].manipulate_PDF(property_name, dust_author_year_cls(), size = iters)}], [property_name]
     
     def calc_mUV_phot(self, rest_UV_wav_lims, ref_wav, top_hat_width = 100. * u.AA, resolution = 1. * u.AA, \
             iters = 10, extract_property_name = False, save_path = None, single_iter: bool = True):
@@ -480,7 +480,7 @@ class Photometry_rest(Photometry):
                     in zip(cont_flux_chains[cont_bands[0].band_name].value, cont_flux_chains[cont_bands[1].band_name].value)]) * u.nJy
                 return [{"vals": cont_chains, "PDF_kwargs": kwargs}], [property_name]
         else:
-            breakpoint()   
+            breakpoint()
     
     def calc_EW_rest_optical(self, strong_line_names: Union[str, list], frame: str = "rest", \
             rest_optical_wavs: u.Quantity = [3_700., 10_000.] * u.AA, iters: int = 10, \
