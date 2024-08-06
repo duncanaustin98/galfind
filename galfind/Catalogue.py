@@ -689,47 +689,49 @@ class Catalogue(Catalogue_Base):
         else:
             is_property_updated = self.__getattr__(property_name, phot_type = "rest", property_type = "recently_updated")
         # update properties and kwargs for those galaxies that have been updated, or if the columns have just been made
-        if any(updated for updated in is_property_updated):
-            # extract the kwargs for this property
-            calculated_property_PDFs = self.__getattr__(property_name, phot_type = "rest", property_type = "PDFs")[is_property_updated]
-            kwarg_names = np.unique(np.hstack([list(property_PDF.kwargs.keys()) for property_PDF in calculated_property_PDFs if type(property_PDF) != type(None)]))
-            kwarg_types_arr = [[type(property_PDF.kwargs[kwarg_name]) for property_PDF in calculated_property_PDFs if type(property_PDF) != type(None)] for kwarg_name in kwarg_names]
-            for kwarg_types in kwarg_types_arr:
-                assert all(types == kwarg_types[0] for types in kwarg_types)
-            kwarg_types = [kwarg_types[0] for kwarg_types in kwarg_types_arr]
-            # make new columns for any kwarg names that have not previously been created
-            for kwarg_name, kwarg_type in zip(kwarg_names, kwarg_types):
-                assert kwarg_types[0] in type_fill_vals.keys()
-                if kwarg_name not in SED_rest_property_tab.colnames:
-                    blank_col = np.full(len(SED_rest_property_tab), type_fill_vals[kwarg_type])
-                    new_colname_tab = Table({f"{self.cat_creator.ID_label}_temp": IDs, kwarg_name: blank_col}, dtype = [int] + [kwarg_type])
-                    SED_rest_property_tab = join(SED_rest_property_tab, new_colname_tab, keys_left = self.cat_creator.ID_label, keys_right = f"{self.cat_creator.ID_label}_temp", join_type = "outer")
-                    SED_rest_property_tab.remove_column(f"{self.cat_creator.ID_label}_temp")
-            # create new columns of properties
-            calculated_IDs = np.array(self.__getattr__("ID")).astype(int)[is_property_updated]
-            non_calculated_IDs = np.array([ID for ID in IDs if ID not in calculated_IDs]).astype(int)
-            new_IDs = np.concatenate((calculated_IDs, non_calculated_IDs))
-            calculated_properties = self.__getattr__(property_name, phot_type = "rest", property_type = "vals")[is_property_updated]
-            # slice old catalogue to just those IDs which have not been updated
-            old_SED_rest_property_tab = SED_rest_property_tab[np.array([True if ID in non_calculated_IDs else False for ID in SED_rest_property_tab[self.cat_creator.ID_label]])]
-            new_properties = np.concatenate((calculated_properties, np.array(old_SED_rest_property_tab[property_name]).astype(float)))
-            calculated_property_errs = self.__getattr__(property_name, phot_type = "rest", property_type = "errs")
-            new_property_l1 = np.concatenate((np.array(calculated_property_errs[:, 0])[is_property_updated], np.array(old_SED_rest_property_tab[f"{property_name}_l1"]).astype(float)))
-            new_property_u1 = np.concatenate((np.array(calculated_property_errs[:, 1])[is_property_updated], np.array(old_SED_rest_property_tab[f"{property_name}_u1"]).astype(float)))
-            # create new columns of kwargs
-            new_kwargs = {kwarg_name: np.concatenate((np.array([property_PDF.kwargs[kwarg_name] \
-                if type(property_PDF) != type(None) else type_fill_vals[kwarg_type] for property_PDF in calculated_property_PDFs]), \
-                np.full(len(non_calculated_IDs), type_fill_vals[kwarg_type]))) for kwarg_name, kwarg_type in zip(kwarg_names, kwarg_types)}
-            # make new table of the same length as the global .fits catalogue to be joined
-            new_tab = Table({**{f"{self.cat_creator.ID_label}_temp": new_IDs, property_name: new_properties, f"{property_name}_l1": new_property_l1, f"{property_name}_u1": new_property_u1}, **new_kwargs}, dtype = [int] + [float] * 3 + kwarg_types)
-            # update .fits table
-            # remove old columns before appending the newer ones
-            for name in [property_name, f"{property_name}_l1", f"{property_name}_u1"] + list(new_kwargs.keys()):
-                SED_rest_property_tab.remove_column(name)
-            SED_rest_property_tab = join(SED_rest_property_tab, new_tab, keys_left = self.cat_creator.ID_label, keys_right = f"{self.cat_creator.ID_label}_temp", join_type = "outer")
-            SED_rest_property_tab.remove_column(f"{self.cat_creator.ID_label}_temp")
-            SED_rest_property_tab.sort(self.cat_creator.ID_label)
-            self.write_cat([fits_tab, SED_rest_property_tab], ["OBJECTS", SED_fit_params_label])
+        
+        if is_property_updated is not None:
+            if any(updated for updated in is_property_updated):
+                # extract the kwargs for this property
+                calculated_property_PDFs = self.__getattr__(property_name, phot_type = "rest", property_type = "PDFs")[is_property_updated]
+                kwarg_names = np.unique(np.hstack([list(property_PDF.kwargs.keys()) for property_PDF in calculated_property_PDFs if type(property_PDF) != type(None)]))
+                kwarg_types_arr = [[type(property_PDF.kwargs[kwarg_name]) for property_PDF in calculated_property_PDFs if type(property_PDF) != type(None)] for kwarg_name in kwarg_names]
+                for kwarg_types in kwarg_types_arr:
+                    assert all(types == kwarg_types[0] for types in kwarg_types)
+                kwarg_types = [kwarg_types[0] for kwarg_types in kwarg_types_arr]
+                # make new columns for any kwarg names that have not previously been created
+                for kwarg_name, kwarg_type in zip(kwarg_names, kwarg_types):
+                    assert kwarg_types[0] in type_fill_vals.keys()
+                    if kwarg_name not in SED_rest_property_tab.colnames:
+                        blank_col = np.full(len(SED_rest_property_tab), type_fill_vals[kwarg_type])
+                        new_colname_tab = Table({f"{self.cat_creator.ID_label}_temp": IDs, kwarg_name: blank_col}, dtype = [int] + [kwarg_type])
+                        SED_rest_property_tab = join(SED_rest_property_tab, new_colname_tab, keys_left = self.cat_creator.ID_label, keys_right = f"{self.cat_creator.ID_label}_temp", join_type = "outer")
+                        SED_rest_property_tab.remove_column(f"{self.cat_creator.ID_label}_temp")
+                # create new columns of properties
+                calculated_IDs = np.array(self.__getattr__("ID")).astype(int)[is_property_updated]
+                non_calculated_IDs = np.array([ID for ID in IDs if ID not in calculated_IDs]).astype(int)
+                new_IDs = np.concatenate((calculated_IDs, non_calculated_IDs))
+                calculated_properties = self.__getattr__(property_name, phot_type = "rest", property_type = "vals")[is_property_updated]
+                # slice old catalogue to just those IDs which have not been updated
+                old_SED_rest_property_tab = SED_rest_property_tab[np.array([True if ID in non_calculated_IDs else False for ID in SED_rest_property_tab[self.cat_creator.ID_label]])]
+                new_properties = np.concatenate((calculated_properties, np.array(old_SED_rest_property_tab[property_name]).astype(float)))
+                calculated_property_errs = self.__getattr__(property_name, phot_type = "rest", property_type = "errs")
+                new_property_l1 = np.concatenate((np.array(calculated_property_errs[:, 0])[is_property_updated], np.array(old_SED_rest_property_tab[f"{property_name}_l1"]).astype(float)))
+                new_property_u1 = np.concatenate((np.array(calculated_property_errs[:, 1])[is_property_updated], np.array(old_SED_rest_property_tab[f"{property_name}_u1"]).astype(float)))
+                # create new columns of kwargs
+                new_kwargs = {kwarg_name: np.concatenate((np.array([property_PDF.kwargs[kwarg_name] \
+                    if type(property_PDF) != type(None) else type_fill_vals[kwarg_type] for property_PDF in calculated_property_PDFs]), \
+                    np.full(len(non_calculated_IDs), type_fill_vals[kwarg_type]))) for kwarg_name, kwarg_type in zip(kwarg_names, kwarg_types)}
+                # make new table of the same length as the global .fits catalogue to be joined
+                new_tab = Table({**{f"{self.cat_creator.ID_label}_temp": new_IDs, property_name: new_properties, f"{property_name}_l1": new_property_l1, f"{property_name}_u1": new_property_u1}, **new_kwargs}, dtype = [int] + [float] * 3 + kwarg_types)
+                # update .fits table
+                # remove old columns before appending the newer ones
+                for name in [property_name, f"{property_name}_l1", f"{property_name}_u1"] + list(new_kwargs.keys()):
+                    SED_rest_property_tab.remove_column(name)
+                SED_rest_property_tab = join(SED_rest_property_tab, new_tab, keys_left = self.cat_creator.ID_label, keys_right = f"{self.cat_creator.ID_label}_temp", join_type = "outer")
+                SED_rest_property_tab.remove_column(f"{self.cat_creator.ID_label}_temp")
+                SED_rest_property_tab.sort(self.cat_creator.ID_label)
+                self.write_cat([fits_tab, SED_rest_property_tab], ["OBJECTS", SED_fit_params_label])
 
     def load_SED_rest_properties(self, SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}, timed = True):
         key = SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)
