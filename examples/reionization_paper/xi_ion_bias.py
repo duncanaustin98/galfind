@@ -76,15 +76,16 @@ def plot_band_z_coverage(phot_rest_arr):
     plot_bands = []
     j = 0
     for i, band in enumerate(phot_rest_arr[0].instrument.band_names):
-        _cont_band_z_coverage_dict = np.array([z for i, z in enumerate(z_arr) if band in cont_bands_arr[i]])
-        if len(_cont_band_z_coverage_dict) > 1:
-            z_coverage = []
-            ax.broken_barh([(np.min(_cont_band_z_coverage_dict), np.max(_cont_band_z_coverage_dict) - np.min(_cont_band_z_coverage_dict))], (10 * (j + 1), 9), \
+        _cont_band_z_coverage = np.array([z for i, z in enumerate(z_arr) if band in cont_bands_arr[i]])
+        if len(_cont_band_z_coverage) > 1:
+            calc_z_coverage(_cont_band_z_coverage, z_arr)
+            ax.broken_barh([(np.min(_cont_band_z_coverage), np.max(_cont_band_z_coverage) - np.min(_cont_band_z_coverage))], (10 * (j + 1), 9), \
                         facecolors = colours[0], label = "Continuum" if not plotted_cont else None)
             plotted_cont = True
-        _em_band_z_coverage_dict = np.array([z for i, z in enumerate(z_arr) if band in em_bands_arr[i]])
-        if len(_em_band_z_coverage_dict) > 1:
-            ax.broken_barh([(np.min(_em_band_z_coverage_dict), np.max(_em_band_z_coverage_dict) - np.min(_em_band_z_coverage_dict))], (10 * (j + 1), 9), \
+        _em_band_z_coverage = np.array([z for i, z in enumerate(z_arr) if band in em_bands_arr[i]])
+        if len(_em_band_z_coverage) > 1:
+            calc_z_coverage(_em_band_z_coverage, z_arr)
+            ax.broken_barh([(np.min(_em_band_z_coverage), np.max(_em_band_z_coverage) - np.min(_em_band_z_coverage))], (10 * (j + 1), 9), \
                         facecolors = colours[1], label = "Emission" if not plotted_em else None)
             plotted_em = True
         if plotted_cont or plotted_em:
@@ -96,9 +97,15 @@ def plot_band_z_coverage(phot_rest_arr):
     plt.savefig("band_coverage_plot.png")
 
 def calc_z_coverage(z, orig_z_arr):
+    breakpoint()
     # find all instances of orig_z_arr that are not in z
-    np.searchsorted(z, orig_z_arr)
-    z_coverage = [(np.min(z), )]
+    matching_indices = np.searchsorted(orig_z_arr, z)
+    #non_matching_indices = np.array([i for i in range(len(orig_z_arr)) if i not in matching_indices])
+    missing_indices_from_z = sorted(set(range(0, len(z))).difference(matching_indices))
+    z_coverage = []
+    for index in missing_indices_from_z:
+        pass
+    #z_coverage = [(np.min(z), )]
 
 def main():
     z_arr = np.linspace(2., 9., 100)

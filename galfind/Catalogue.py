@@ -514,7 +514,6 @@ class Catalogue(Catalogue_Base):
         return cat_copy
 
     def _append_selection_to_fits(self, selection_name):
-        ##breakpoint()
         # append .fits table if not already done so for this selection
         if not selection_name in self.selection_cols:
             assert(all(getattr(self, selection_name) == True))
@@ -741,11 +740,13 @@ class Catalogue(Catalogue_Base):
     def load_SED_rest_properties(self, SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}, timed = True):
         key = SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)
         PDF_dir = f"{config['PhotProperties']['PDF_SAVE_DIR']}/{self.version}/{self.instrument.name}/{self.survey}/{key}"
-        property_names = [property_PDFs_path.split("/")[-1] for property_PDFs_path in glob.glob(f"{PDF_dir}/*")]
-        self.gals = [deepcopy(gal)._load_SED_rest_properties(PDF_dir, property_names, key) \
-            for gal in tqdm(deepcopy(self), desc = f"Loading SED rest properties for {key}", total = len(self))]
-        for name in property_names:
-            self._append_SED_rest_property_to_fits(name, key)
+        property_paths = glob.glob(f"{PDF_dir}/*")
+        if len(property_paths) != 0:
+            property_names = [property_path.split("/")[-1] for property_path in property_paths]
+            self.gals = [deepcopy(gal)._load_SED_rest_properties(PDF_dir, property_names, key) \
+                for gal in tqdm(deepcopy(self), desc = f"Loading SED rest properties for {key}", total = len(self))]
+            for name in property_names:
+                self._append_SED_rest_property_to_fits(name, key)
 
     def del_SED_rest_property(self, property_name, SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}):
         key = SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)

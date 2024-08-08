@@ -32,9 +32,9 @@ def pipeline(surveys, version, instruments, aper_diams, min_flux_pc_errs, forced
 
             cat.phot_SNR_crop(0, 2., "non_detect") # 2σ non-detected in first band
             cat.phot_bluewards_Lya_non_detect(2.) # 2σ non-detected in all bands bluewards of Lyα
-            cat.phot_redwards_Lya_detect([5., 5.], widebands_only = True) # 5σ/3σ detected in first/second band redwards of Lyα
+            cat.phot_redwards_Lya_detect([5., 5.], widebands_only = True) # 5σ/5σ detected in first/second band redwards of Lyα
             cat.select_chi_sq_lim(3., reduced = True) # χ^2_red < 3
-            cat.select_chi_sq_diff(9., delta_z_lowz = 0.5) # Δχ^2 > 9 between redshift free and low redshift SED fits, with Δz=0.5 tolerance 
+            cat.select_chi_sq_diff(4., delta_z_lowz = 0.5) # Δχ^2 > 4 between redshift free and low redshift SED fits, with Δz=0.5 tolerance 
             cat.select_robust_zPDF(0.6, 0.1) # 60% of redshift PDF must lie within z ± z * 0.1
             # ensure masked in all instruments
             cat.select_unmasked_instrument(NIRCam()) # unmasked in all NIRCam bands
@@ -43,7 +43,7 @@ def pipeline(surveys, version, instruments, aper_diams, min_flux_pc_errs, forced
                 cat.select_band_flux_radius(band_name, "gtr", 1.5) # LW NIRCam wideband Re>1.5 pix
             
             cat_copy = cat.select_EPOCHS(allow_lowz = False)
-            # #cat_copy.make_cutouts(IDs = crop_by["IDs"])
+            # # #cat_copy.make_cutouts(IDs = crop_by["IDs"])
             cat_copy.plot_phot_diagnostics(flux_unit = u.ABmag)
             print(str(cat_copy))
 
@@ -68,14 +68,14 @@ def pipeline(surveys, version, instruments, aper_diams, min_flux_pc_errs, forced
             # #cat.select_rest_UV_line_emitters_sigma("CIV-1549", 2.)
             
             #cat.del_hdu(SED_fit_params_arr[-1]["code"].label_from_SED_fit_params(SED_fit_params_arr[-1]))
-            # if load_SED_rest_properties:
-            #     iters = 100
-            #     #cat.calc_SFR_UV_phot(frame = "obs", AUV_beta_conv_author_year = "M99", iters = iters)
-            #     #cat.calc_SFR_UV_phot(frame = "obs", AUV_beta_conv_author_year = None, iters = iters)
-            #     #cat.calc_rest_UV_properties(iters = iters)
-            #     #cat.calc_cont_rest_optical(["Halpha"], iters = iters)
-            #     #cat.calc_EW_rest_optical(["Halpha"], frame = "obs", iters = iters)
-            #     cat.calc_xi_ion(iters = iters) #dust_author_year = None
+            if load_SED_rest_properties:
+                iters = 100
+                #cat.calc_SFR_UV_phot(frame = "obs", AUV_beta_conv_author_year = "M99", iters = iters)
+                #cat.calc_SFR_UV_phot(frame = "obs", AUV_beta_conv_author_year = None, iters = iters)
+                #cat.calc_rest_UV_properties(iters = iters)
+                #cat.calc_cont_rest_optical(["Halpha"], iters = iters)
+                #cat.calc_EW_rest_optical(["Halpha"], frame = "obs", iters = iters)
+                cat_copy.calc_xi_ion(iters = iters) #dust_author_year = None
 
 
 def make_EAZY_SED_fit_params_arr(SED_code_arr, templates_arr, lowz_zmax_arr):

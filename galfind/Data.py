@@ -492,11 +492,9 @@ class Data:
         except:
             pass
         try:
-            ##breakpoint()
             depths = []
             for aper_diam in json.loads(config.get("SExtractor", "APERTURE_DIAMS")) * u.arcsec:
                 depths.append(self.load_depths(aper_diam))
-            ##breakpoint()
             output_str += f"DEPTHS = {str(depths)}\n"
         except:
             pass
@@ -626,7 +624,7 @@ class Data:
             return wht
 
       
-    def load_rms_err(self, band):
+    def load_rms_err(self, band, output_hdr = False):
         try:
             hdu = fits.open(self.rms_err_paths[band])[self.rms_err_exts[band]]
             rms_err = hdu.data 
@@ -1860,10 +1858,9 @@ class Data:
                 #breakpoint()
                 galfind_logger.info(f"Making local depth columns for {band=}")
                 for j, aper_diam in enumerate(json.loads(config.get("SExtractor", "APERTURE_DIAMS")) * u.arcsec):
-                    #breakpoint()
-                    self.get_depth_dir(aper_diam)
                     #print(band, aper_diam)
-                    h5_path = f"{self.depth_dirs[band]}/{depth_mode}/{band}.h5"
+                    self.load_depth_dirs(aper_diam)
+                    h5_path = f"{self.depth_dirs[aper_diam][band]}/{depth_mode}/{band}.h5"
                     if Path(h5_path).is_file():
                         # open depth .h5
                         hf = h5py.File(h5_path, "r")
@@ -1925,20 +1922,22 @@ class Data:
             # overwrite original catalogue with local depth columns
             cat.write(self.sex_cat_master_path, overwrite = True)
             funcs.change_file_permissions(self.sex_cat_master_path)
-        
-    def get_depth_dir(self, aper_diam):
-        self.depth_dirs = {}
-        for band in self.im_paths.keys():
-            self.depth_dirs[band] = f"{config['Depths']['DEPTH_DIR']}/{self.instrument.instrument_from_band(band).name}/{self.version}/{self.survey}/{format(aper_diam.value, '.2f')}as"
-            funcs.make_dirs(f"{self.depth_dirs[band]}/_")
-        return self.depth_dirs
+    
+    def load_depth_dirs(self, aper_diam):
+        if not hasattr(self, "depth_dirs"):
+            self.depth_dirs = {}
+        if not aper_diam in self.depth_dirs.keys():
+            self.depth_dirs[aper_diam] = {}
+            for band in self.im_paths.keys():
+                self.depth_dirs[aper_diam][band] = f"{config['Depths']['DEPTH_DIR']}/{self.instrument.instrument_from_band(band).name}/{self.version}/{self.survey}/{format(aper_diam.value, '.2f')}as"
+                funcs.make_dirs(f"{self.depth_dirs[aper_diam][band]}/_")
             
     def load_depths(self, aper_diam):
-        self.get_depth_dir(aper_diam)
+        self.load_depth_dirs(aper_diam)
         self.depths = {}
         for band in self.instrument.band_names:
             # load depths from saved .txt file
-            depths = Table.read(f"{self.depth_dirs[band]}/{self.survey}_depths.txt", names = ["band", "depth"], format = "ascii")
+            depths = Table.read(f"{self.depth_dirs[aper_diam][band]}/{self.survey}_depths.txt", names = ["band", "depth"], format = "ascii")
             self.depths[band] = float(depths[depths["band"] == band]["depth"])
         return self.depths
     
@@ -1947,16 +1946,16 @@ class Data:
     
     def calc_depths(self, aper_diams = [0.32] * u.arcsec, cat_creator = None, mode = "n_nearest", scatter_size = 0.1, distance_to_mask = 30, \
             region_radius_used_pix = 300, n_nearest = 200, coord_type = "sky", split_depth_min_size = 100_000, \
-            split_depths_factor = 5, step_size = 100, excl_bands = [], n_jobs = 1, plot = False, n_split = "auto"):
+            split_depths_factor = 5, step_size = 100, excl_bands = [], n_jobs = 1, plot = True, n_split = "auto"):
         params = []
         # Look over all aperture diameters and bands  
         for aper_diam in aper_diams:
             # Generate folder for depths
-            self.get_depth_dir(aper_diam)
+            self.load_depth_dirs(aper_diam)
             for band in self.im_paths.keys():
                 # Only run for non excluded bands
                 if band not in excl_bands:
-                    params.append((band, aper_diam, self.depth_dirs[band], mode, scatter_size, distance_to_mask, region_radius_used_pix, n_nearest, \
+                    params.append((band, aper_diam, self.depth_dirs[aper_diam][band], mode, scatter_size, distance_to_mask, region_radius_used_pix, n_nearest, \
                     coord_type, split_depth_min_size, split_depths_factor, step_size, cat_creator, plot, n_split))
         # Parallelise the calculation of depths for each band
         with tqdm_joblib(tqdm(desc = "Calculating depths", total = len(params))) as progress_bar:
@@ -1974,7 +1973,6 @@ class Data:
             galfind_logger.info("OVERWRITE_DEPTHS = YES, re-doing depths should they exist.")
         grid_depth_path = f"{depth_dir}/{mode}/{band}.h5" # {str(int(n_split))}_region_grid_depths/
         funcs.make_dirs(grid_depth_path)
-        
         if not Path(grid_depth_path).is_file() or overwrite:
             # load the image/segmentation/mask data for the specific band
             im_data, im_header, seg_data, seg_header, mask = self.load_data(band, incl_mask = True)
@@ -2031,18 +2029,18 @@ class Data:
                 hf.create_dataset(name_i, data = data_i)
             hf.close()
 
-            if plot:
-                self.plot_depth(band, cat_creator, mode, aper_diam, show = False)
+        if plot:
+            self.plot_depth(band, cat_creator, mode, aper_diam, show = False)
     
 
     def plot_area_depth(self, cat_creator, mode, aper_diam, show = False, use_area_per_band=True, save = True, return_array=False):     
         if type(cat_creator) == type(None):
             galfind_logger.warning("Could not plot depths as cat_creator == None in Data.plot_area_depth()")
         else:
-            self.get_depth_dir(aper_diam)
+            self.load_depth_dirs(aper_diam)
             area_tab = self.calc_unmasked_area(masking_instrument_or_band_name = self.forced_phot_band, forced_phot_band = self.forced_phot_band)
             overwrite = config["Depths"].getboolean("OVERWRITE_DEPTH_PLOTS")
-            save_path = f"{self.depth_dirs[self.forced_phot_band]}/{mode}/depth_areas.png" # not entirely general -> need to improve self.depth_dirs
+            save_path = f"{self.depth_dirs[aper_diam][self.forced_phot_band]}/{mode}/depth_areas.png" # not entirely general -> need to improve self.depth_dirs
             
             if not Path(save_path).is_file() or overwrite:
                 fig, ax = plt.subplots(1, 1, figsize = (4, 4))
@@ -2067,7 +2065,7 @@ class Data:
                 #colors = plt.cm.viridis(np.linspace(0, 1, len(bands)))
                 data = {}
                 for pos, band in enumerate(bands):
-                    h5_path = f"{self.depth_dirs[band]}/{mode}/{band}.h5"
+                    h5_path = f"{self.depth_dirs[aper_diam][band]}/{mode}/{band}.h5"
 
                     if overwrite:
                         galfind_logger.info("OVERWRITE_DEPTH_PLOTS = YES, re-doing depth plots.")
@@ -2151,15 +2149,15 @@ class Data:
         if type(cat_creator) == type(None):
             galfind_logger.warning("Could not plot depths as cat_creator == None in Data.plot_depth()")
         else:
-            self.get_depth_dir(aper_diam)
-            save_path = f"{self.depth_dirs[band]}/{mode}/{band}_depths.png"
+            self.load_depth_dirs(aper_diam)
+            save_path = f"{self.depth_dirs[aper_diam][band]}/{mode}/{band}_depths.png"
             # determine paths and whether to overwrite
             overwrite = config["Depths"].getboolean("OVERWRITE_DEPTH_PLOTS")
             if overwrite:
                 galfind_logger.info("OVERWRITE_DEPTH_PLOTS = YES, re-doing depth plots.")
             if not Path(save_path).is_file() or overwrite:
                 # load depth data
-                h5_path = f"{self.depth_dirs[band]}/{mode}/{band}.h5"
+                h5_path = f"{self.depth_dirs[aper_diam][band]}/{mode}/{band}.h5"
                 if not Path(h5_path).is_file():
                     raise(Exception(f"Must first run depths for {self.survey} {self.version} {band} {mode} {aper_diam} before plotting!"))
                 hf = h5py.File(h5_path, "r")
