@@ -338,14 +338,14 @@ class Photometry_rest(Photometry):
         if single_iter:
             mUV, mUV_kwargs = self.calc_mUV_phot(rest_UV_wav_lims, ref_wav = ref_wav, single_iter = True)
             if type(dust_author_year) != type(None):
-                AUV, AUV_kwargs = self.calc_AUV_from_beta_phot(rest_UV_wav_lims, ref_wav = ref_wav, dust_author_year = dust_author_year, single_iter = True)
+                AUV, AUV_kwargs = self.calc_AUV_from_beta_phot(rest_UV_wav_lims, conv_author_year = dust_author_year, ref_wav = ref_wav, single_iter = True)
             wav_len = 1
         else:
             mUV_property_name = self._calc_property(Photometry_rest.calc_mUV_phot, iters = iters, rest_UV_wav_lims = rest_UV_wav_lims, ref_wav = ref_wav, save_path = save_path)[1][0]
             if type(dust_author_year) == type(None):
                 AUV_property_name = None
             else:
-                AUV_property_name = self._calc_property(Photometry_rest.calc_AUV_from_beta_phot, iters = iters, rest_UV_wav_lims = rest_UV_wav_lims, ref_wav = ref_wav, dust_author_year = dust_author_year)[1][0]
+                AUV_property_name = self._calc_property(Photometry_rest.calc_AUV_from_beta_phot, iters = iters, rest_UV_wav_lims = rest_UV_wav_lims, ref_wav = ref_wav, conv_author_year = dust_author_year)[1][0]
             if type(self.property_PDFs[mUV_property_name]) == type(None):
                 return [None], [property_name]
             if AUV_property_name in self.property_PDFs.keys():
@@ -799,6 +799,7 @@ class Photometry_rest(Photometry):
        
         properties = SED_rest_property_function(**kwargs)[0]
         #breakpoint()
+        #print(properties, property_name)
         for property, property_name in zip(properties, property_names):
             # update property PDFs
             if type(property) == type(None):

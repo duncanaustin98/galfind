@@ -624,7 +624,7 @@ class Data:
             return wht
 
       
-    def load_rms_err(self, band):
+    def load_rms_err(self, band, output_hdr = False):
         try:
             hdu = fits.open(self.rms_err_paths[band])[self.rms_err_exts[band]]
             rms_err = hdu.data 
