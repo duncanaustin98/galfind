@@ -1105,13 +1105,13 @@ class Galaxy:
     
     # Rest-frame SED photometric properties
 
-    def _calc_SED_rest_property(self, SED_rest_property_function, SED_fit_params_label, save_dir, iters, *args):
+    def _calc_SED_rest_property(self, SED_rest_property_function, SED_fit_params_label, save_dir, iters, **kwargs):
         phot_rest_obj = self.phot.SED_results[SED_fit_params_label].phot_rest
         if type(save_dir) == type(None):
             save_path = None
         else: 
             save_path = f"{save_dir}/{SED_fit_params_label}/property_name/{self.ID}.ecsv"
-        phot_rest_obj._calc_property(SED_rest_property_function, iters, *args, save_path = save_path)[1]
+        phot_rest_obj._calc_property(SED_rest_property_function, iters, save_path = save_path, **kwargs)[1]
         return self
         
     def _load_SED_rest_properties(self, PDF_dir, property_names, SED_fit_params_label = EAZY().label_from_SED_fit_params({"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None})):

@@ -215,11 +215,10 @@ class Data:
             #split_bands = np.take(self.instrument.band_names, [0, int(len(self.instrument.band_names) / 2), -1])
             #self.make_RGB([split_bands[0]], [split_bands[1]], [split_bands[2]], RGB_method)
 
-
     @classmethod
     def from_pipeline(cls, survey, version, instrument_names = ["ACS_WFC", "WFC3_IR", "NIRCam", "MIRI"], excl_bands = [], \
             pix_scales = {"ACS_WFC": 0.03 * u.arcsec, "WFC3_IR": 0.03 * u.arcsec, "NIRCam": 0.03 * u.arcsec, "MIRI": 0.09 * u.arcsec}, \
-            im_str = ["_sci", "_i2d", "_drz"], rms_err_str = ["_rms", "_err"], wht_str = ["_wht", "_weight"], mask_stars = True):
+            im_str = ["_sci", "_i2d", "_drz"], rms_err_str = ["_rms_err", "_rms", "_err"], wht_str = ["_wht", "_weight"], mask_stars = True):
         
         # may not require all of these inits
         im_paths = {} 
@@ -342,7 +341,6 @@ class Data:
                                 assertion_len += 1
                             else:
                                 rms_err_exts[band] = int(j)
-                        #breakpoint()
                         #print(band, len(rms_err_hdul), [hdu.name for hdu in rms_err_hdul], assertion_len)
                         assert len(rms_err_hdul) == assertion_len
                     if band in wht_paths.keys():
@@ -371,8 +369,12 @@ class Data:
                             im_zps[band_name] = -2.5 * np.log10(imheader["PHOTFLAM"]) - 21.1 - 5 * np.log10(imheader["PHOTPLAM"]) + 18.6921
                         elif "ZEROPNT" in imheader:
                             im_zps[band_name] = imheader["ZEROPNT"]
+                        elif "BUNIT" in imheader:
+                            unit = imheader["BUNIT"].replace(" ", "")
+                            assert unit == "MJy/sr"
+                            im_zps[band_name] = -2.5 * np.log10((pix_scale.to(u.rad).value ** 2) * u.MJy.to(u.Jy)) + u.Jy.to(u.ABmag)
                         else:
-                            raise(Exception(f"ACS_WFC data for {survey} {version} {band_name} located at {im_paths[band_name]} must contain either 'ZEROPNT' or 'PHOTFLAM' and 'PHOTPLAM' in its header to calculate its ZP!"))
+                            raise(Exception(f"ACS_WFC data for {survey} {version} {band_name} located at {im_paths[band_name]} must contain either 'ZEROPNT' or 'PHOTFLAM' and 'PHOTPLAM' or 'BUNIT'=MJy/sr in its header to calculate its ZP!"))
                     elif instrument_name == "WFC3_IR":
                         # Taken from Appendix A of https://www.stsci.edu/files/live/sites/www/files/home/hst/instrumentation/wfc3/documentation/instrument-science-reports-isrs/_documents/2020/WFC3-ISR-2020-10.pdf
                         wfc3ir_zps = {'F098M': 25.661, 'F105W': 26.2637, 'F110W': 26.8185, 'F125W': 26.231, 'F140W': 26.4502, 'F160W': 25.9362}
@@ -490,11 +492,9 @@ class Data:
         except:
             pass
         try:
-            ##breakpoint()
             depths = []
             for aper_diam in json.loads(config.get("SExtractor", "APERTURE_DIAMS")) * u.arcsec:
                 depths.append(self.load_depths(aper_diam))
-            ##breakpoint()
             output_str += f"DEPTHS = {str(depths)}\n"
         except:
             pass
@@ -609,21 +609,33 @@ class Data:
         seg_header = seg_hdul[0].header
         return seg_data, seg_header
     
-    def load_wht(self, band):
+    def load_wht(self, band, output_hdr = False):
         try:
-            wht = fits.open(self.wht_paths[band])[self.wht_exts[band]].data
+            hdu = fits.open(self.wht_paths[band])[self.wht_exts[band]]
+            wht = hdu.data
+            hdr = hdu.header
         except Exception as e:
             print(e)
             wht = None
-        return wht
+            hdr = None
+        if output_hdr:
+            return wht, hdr
+        else:
+            return wht
 
       
-    def load_rms_err(self, band):
+    def load_rms_err(self, band, output_hdr = False):
         try:
-            rms_err = fits.open(self.rms_err_paths[band])[self.rms_err_exts[band]].data
+            hdu = fits.open(self.rms_err_paths[band])[self.rms_err_exts[band]]
+            rms_err = hdu.data 
+            hdr = hdu.header
         except:
             rms_err = None
-        return rms_err
+            hdr = None
+        if output_hdr:
+            return rms_err, hdr
+        else:
+            return rms_err
     
     
     def combine_seg_data_and_mask(self, band = None, seg_data = None, mask = None):
@@ -960,18 +972,28 @@ class Data:
             if band in self.rms_err_paths.keys():
                 err_map_type = "MAP_RMS"
             elif band in self.wht_paths.keys():
+                # make rms err map from wht map
                 err_map_type = "MAP_WEIGHT"
+                self.make_rms_err_from_wht(band)
+            else:
+                galfind_logger.critical(f"{band=} does not have {prefer=} err map type")
+                breakpoint()
+
         elif prefer == "wht":
             if band in self.wht_paths.keys():
                 err_map_type = "MAP_WEIGHT"
             elif band in self.rms_err_paths.keys():
-                err_map_type = "MAP_RMS"
+                # make wht map from rms err map
+                self.make_wht_from_rms_err(band)
+                pass
+            else:
+                galfind_logger.critical(f"{band=} does not have {prefer=} err map type")
+                breakpoint()
         else:
             galfind_logger.critical(f"prefer = {prefer} not in ['rms_err', 'wht'] in Data.get_err_map()")
         
         # extract relevant fits paths and extensions
-        print(band, self.rms_err_paths, self.wht_paths)
-        #breakpoint()
+        #print(band, self.rms_err_paths, self.wht_paths)
         if err_map_type == "MAP_RMS":
             err_map_path = str(self.rms_err_paths[band])
             err_map_ext = str(self.rms_err_exts[band])
@@ -982,6 +1004,52 @@ class Data:
             galfind_logger.critical(f"No rms_err or wht maps available for {band} {self.survey} {self.version}")
 
         return err_map_path, err_map_ext, err_map_type
+    
+    def make_rms_err_from_wht(self, band, wht_str = ["_wht", "_weight"]):
+        assert band in self.wht_paths.keys() and band in self.wht_exts.keys()
+        for i, string in enumerate(wht_str):
+            if string in self.wht_paths[band].split("/")[-1]:
+                rms_err_path = f"{'/'.join(self.wht_paths[band].split('/')[:-1])}/{self.wht_paths[band].split('/')[-1].replace(string, '_rms_err')}"
+                break
+            elif i == len(wht_str) - 1:
+                galfind_logger.critical("Appropriate rms_err path not created")
+                breakpoint()
+        funcs.make_dirs(rms_err_path)
+        wht, hdr = self.load_wht(band, output_hdr = True)
+        err = 1. / (wht ** 0.5)
+        primary_hdr = deepcopy(hdr)
+        primary_hdr["EXTNAME"] = "PRIMARY"
+        primary = fits.PrimaryHDU(header = primary_hdr)
+        hdu = fits.ImageHDU(err, header = hdr, name = "ERR")
+        hdul = fits.HDUList([primary, hdu])
+        hdul.writeto(rms_err_path, overwrite = True)
+        funcs.change_file_permissions(rms_err_path)
+        galfind_logger.info(f"Finished making rms_err map for {band} for {self.survey} {self.version}")
+        self.rms_err_paths[band] = rms_err_path
+        self.rms_err_exts[band] = 1
+
+    def make_wht_from_rms_err(self, band, rms_err_str = ["_rms_err", "_rms", "_err"]):
+        assert band in self.rms_err_paths.keys() and band in self.rms_err_exts.keys()
+        for i, string in enumerate(rms_err_str):
+            if string in self.rms_err_paths[band].split("/")[-1]:
+                wht_path = f"{'/'.join(self.rms_err_paths[band].split('/')[:-1])}/{self.rms_err_paths[band].split('/')[-1].replace(string, '_wht')}"
+                break
+            elif i == len(rms_err_str) - 1:
+                galfind_logger.critical("Appropriate wht path not created")
+                breakpoint()
+        funcs.make_dirs(wht_path)
+        err, hdr = self.load_rms_err(band, output_hdr = True)
+        wht = 1. / (err ** 2)
+        primary_hdr = deepcopy(hdr)
+        primary_hdr["EXTNAME"] = "PRIMARY"
+        primary = fits.PrimaryHDU(header = primary_hdr)
+        hdu = fits.ImageHDU(wht, header = hdr, name = "WHT")
+        hdul = fits.HDUList([primary, hdu])
+        hdul.writeto(wht_path, overwrite = True)
+        funcs.change_file_permissions(wht_path)
+        galfind_logger.info(f"Finished making wht map for {band} for {self.survey} {self.version}")
+        self.wht_paths[band] = wht_path
+        self.wht_exts[band] = 1
 
     @run_in_dir(path = config['DEFAULT']['GALFIND_DIR'])
     def make_seg_map(self, band, sex_config_path = config['SExtractor']['CONFIG_PATH'], params_path = config['SExtractor']['PARAMS_PATH']):
@@ -1222,7 +1290,6 @@ class Data:
         if psf_match:
             psf_matched_name = f"{stack_band_name}_psf_matched_{psf_match_band}"
             im_paths, wht_paths, rms_err_paths = self.convolve_images(psf_kernel_dir, match_band = psf_match_band, update_default_dictionaries = False, override_bands = ['F277W', 'F356W', 'F444W'])
-            
         else:
             psf_matched_name = stack_band_name
             im_paths = self.im_paths
@@ -1318,7 +1385,7 @@ class Data:
         return path
 
     @run_in_dir(path = config['DEFAULT']['GALFIND_DIR'])
-    def make_sex_cats(self, forced_phot_band = "F444W", sex_config_path = config['SExtractor']['CONFIG_PATH'], params_path = config['SExtractor']['PARAMS_PATH'], forced_phot_code = "photutils"):
+    def make_sex_cats(self, forced_phot_band = "F444W", sex_config_path = config['SExtractor']['CONFIG_PATH'], params_path = config['SExtractor']['PARAMS_PATH'], forced_phot_code = "photutils", prefer = "rms_err"):
         galfind_logger.info(f"Making SExtractor catalogues with: config file = {sex_config_path}; parameters file = {params_path}")
         #breakpoint()
         # make individual forced photometry catalogues
@@ -1363,20 +1430,9 @@ class Data:
             # check whether the image of the forced photometry band and sextraction band have the same shape
             if self.im_shapes[self.forced_phot_band] == self.im_shapes[band]:
                 sextract = True
-            else:
-                sextract = False
-            # check whether the band and forced phot band have error maps with consistent types
-            if sextract:
-                if band in self.rms_err_paths.keys() and self.forced_phot_band in self.rms_err_paths.keys():
-                    prefer = "rms_err"
-                elif band in self.wht_paths.keys() and self.forced_phot_band in self.wht_paths.keys():
-                    prefer = "wht"
-                else: # do not perform sextraction
-                    sextract = False
-            #breakpoint()
-            if sextract:
                 self.sex_cat_types[band] = subprocess.check_output("sex --version", shell = True).decode("utf-8").replace("\n", "")
             else:
+                sextract = False
                 self.sex_cat_types[band] = f"{forced_phot_code} v{globals()[forced_phot_code].__version__}"
 
             # overwrite = config["DEFAULT"].getboolean("OVERWRITE")
@@ -1401,6 +1457,11 @@ class Data:
                     as_aper_diams = json.loads(config.get("SExtractor", "APERTURE_DIAMS"))
                     pix_aper_diams = str([np.round(pix_aper_diam, 2) for pix_aper_diam in as_aper_diams / self.im_pixel_scales[band].value]).replace("[", "").replace("]", "").replace(" ", "")
                     # SExtractor bash script python wrapper
+                    print(["./make_sex_cat.sh", config['DEFAULT']['GALFIND_WORK'], self.im_paths[band], str(self.im_pixel_scales[band].value), \
+                        str(self.im_zps[band]), self.instrument.instrument_from_band(band).name, self.survey, band, self.version, \
+                        self.forced_phot_band, forced_phot_image_path, err_map_path, err_map_ext, \
+                        str(self.im_exts[band]), forced_phot_band_err_map_path, str(self.im_exts[self.forced_phot_band]), err_map_type, 
+                        forced_phot_band_err_map_ext, sex_config_path, params_path, pix_aper_diams])
                     process = subprocess.Popen(["./make_sex_cat.sh", config['DEFAULT']['GALFIND_WORK'], self.im_paths[band], str(self.im_pixel_scales[band].value), \
                         str(self.im_zps[band]), self.instrument.instrument_from_band(band).name, self.survey, band, self.version, \
                         self.forced_phot_band, forced_phot_image_path, err_map_path, err_map_ext, \
@@ -1414,8 +1475,8 @@ class Data:
             
             galfind_logger.info(f"Finished making SExtractor catalogue for {self.survey} {self.version} {band}!")
     
-    def combine_sex_cats(self, forced_phot_band = "F444W", readme_sep = "-" * 20):
-        self.make_sex_cats(forced_phot_band)
+    def combine_sex_cats(self, forced_phot_band = "F444W", readme_sep = "-" * 20, prefer = "rms_err"):
+        self.make_sex_cats(forced_phot_band, prefer = prefer)
 
         save_name = f"{self.survey}_MASTER_Sel-{self.combine_band_names(forced_phot_band)}_{self.version}.fits"
         save_dir = f"{config['DEFAULT']['GALFIND_WORK']}/Catalogues/{self.version}/{self.instrument.name}/{self.survey}"
@@ -1435,6 +1496,7 @@ class Data:
                 forced_phot_band_name = forced_phot_band
             print("Loading cat", self.sex_cats, forced_phot_band_name)
             for i, (band, path) in enumerate(self.sex_cats.items()):
+                print(path)
                 tab = Table.read(path, character_as_bytes = False)
                 if band == forced_phot_band_name:
                     ID_detect_band = tab["NUMBER"]
@@ -1449,13 +1511,11 @@ class Data:
                 # combine the astropy tables
                 if i == 0:
                     master_tab = tab
+                    len_required = len(master_tab)
                 else:
-                    try:
-                        master_tab = hstack([master_tab, tab])
-                    except Exception as e:
-                        print(e)
-                        print(path)
-
+                    master_tab = hstack([master_tab, tab])
+                    assert len(tab) == len_required, f'Lengths of sextractor catalogues do not match! Check same detection image used {len(tab)} != {len_required} for {band}'
+                 
             # add the detection band parameters to the start of the catalogue
             master_tab.add_column(ID_detect_band, name = 'NUMBER', index = 0)
             master_tab.add_column(x_image_detect_band, name = 'X_IMAGE', index = 1)
@@ -1798,10 +1858,9 @@ class Data:
                 #breakpoint()
                 galfind_logger.info(f"Making local depth columns for {band=}")
                 for j, aper_diam in enumerate(json.loads(config.get("SExtractor", "APERTURE_DIAMS")) * u.arcsec):
-                    #breakpoint()
-                    self.get_depth_dir(aper_diam)
                     #print(band, aper_diam)
-                    h5_path = f"{self.depth_dirs[band]}/{depth_mode}/{band}.h5"
+                    self.load_depth_dirs(aper_diam)
+                    h5_path = f"{self.depth_dirs[aper_diam][band]}/{depth_mode}/{band}.h5"
                     if Path(h5_path).is_file():
                         # open depth .h5
                         hf = h5py.File(h5_path, "r")
@@ -1863,20 +1922,22 @@ class Data:
             # overwrite original catalogue with local depth columns
             cat.write(self.sex_cat_master_path, overwrite = True)
             funcs.change_file_permissions(self.sex_cat_master_path)
-        
-    def get_depth_dir(self, aper_diam):
-        self.depth_dirs = {}
-        for band in self.im_paths.keys():
-            self.depth_dirs[band] = f"{config['Depths']['DEPTH_DIR']}/{self.instrument.instrument_from_band(band).name}/{self.version}/{self.survey}/{format(aper_diam.value, '.2f')}as"
-            funcs.make_dirs(f"{self.depth_dirs[band]}/_")
-        return self.depth_dirs
+    
+    def load_depth_dirs(self, aper_diam):
+        if not hasattr(self, "depth_dirs"):
+            self.depth_dirs = {}
+        if not aper_diam in self.depth_dirs.keys():
+            self.depth_dirs[aper_diam] = {}
+            for band in self.im_paths.keys():
+                self.depth_dirs[aper_diam][band] = f"{config['Depths']['DEPTH_DIR']}/{self.instrument.instrument_from_band(band).name}/{self.version}/{self.survey}/{format(aper_diam.value, '.2f')}as"
+                funcs.make_dirs(f"{self.depth_dirs[aper_diam][band]}/_")
             
     def load_depths(self, aper_diam):
-        self.get_depth_dir(aper_diam)
+        self.load_depth_dirs(aper_diam)
         self.depths = {}
         for band in self.instrument.band_names:
             # load depths from saved .txt file
-            depths = Table.read(f"{self.depth_dirs[band]}/{self.survey}_depths.txt", names = ["band", "depth"], format = "ascii")
+            depths = Table.read(f"{self.depth_dirs[aper_diam][band]}/{self.survey}_depths.txt", names = ["band", "depth"], format = "ascii")
             self.depths[band] = float(depths[depths["band"] == band]["depth"])
         return self.depths
     
@@ -1885,17 +1946,17 @@ class Data:
     
     def calc_depths(self, aper_diams = [0.32] * u.arcsec, cat_creator = None, mode = "n_nearest", scatter_size = 0.1, distance_to_mask = 30, \
             region_radius_used_pix = 300, n_nearest = 200, coord_type = "sky", split_depth_min_size = 100_000, \
-            split_depths_factor = 5, step_size = 100, excl_bands = [], n_jobs = 1, plot = False):
+            split_depths_factor = 5, step_size = 100, excl_bands = [], n_jobs = 1, plot = True, n_split = "auto"):
         params = []
         # Look over all aperture diameters and bands  
         for aper_diam in aper_diams:
             # Generate folder for depths
-            self.get_depth_dir(aper_diam)
+            self.load_depth_dirs(aper_diam)
             for band in self.im_paths.keys():
                 # Only run for non excluded bands
                 if band not in excl_bands:
-                    params.append((band, aper_diam, self.depth_dirs[band], mode, scatter_size, distance_to_mask, region_radius_used_pix, n_nearest, \
-                    coord_type, split_depth_min_size, split_depths_factor, step_size, cat_creator, plot))
+                    params.append((band, aper_diam, self.depth_dirs[aper_diam][band], mode, scatter_size, distance_to_mask, region_radius_used_pix, n_nearest, \
+                    coord_type, split_depth_min_size, split_depths_factor, step_size, cat_creator, plot, n_split))
         # Parallelise the calculation of depths for each band
         with tqdm_joblib(tqdm(desc = "Calculating depths", total = len(params))) as progress_bar:
             Parallel(n_jobs = n_jobs)(delayed(self.calc_band_depth)(param) for param in params)
@@ -1905,14 +1966,13 @@ class Data:
     def calc_band_depth(self, params):
         # unpack parameters
         band, aper_diam, depth_dir, mode, scatter_size, distance_to_mask, region_radius_used_pix, n_nearest, \
-            coord_type, split_depth_min_size, split_depths_factor, step_size, cat_creator, plot = params
+            coord_type, split_depth_min_size, split_depths_factor, step_size, cat_creator, plot, n_split = params
         # determine paths and whether to overwrite
         overwrite = config["Depths"].getboolean("OVERWRITE_DEPTHS")
         if overwrite:
             galfind_logger.info("OVERWRITE_DEPTHS = YES, re-doing depths should they exist.")
         grid_depth_path = f"{depth_dir}/{mode}/{band}.h5" # {str(int(n_split))}_region_grid_depths/
         funcs.make_dirs(grid_depth_path)
-        
         if not Path(grid_depth_path).is_file() or overwrite:
             # load the image/segmentation/mask data for the specific band
             im_data, im_header, seg_data, seg_header, mask = self.load_data(band, incl_mask = True)
@@ -1923,10 +1983,13 @@ class Data:
             # Load wht data if it has the correct type
             wht_data = self.load_wht(band)
             #print(f"wht_data = {wht_data}")
-            if type(wht_data) == type(None):
-                n_split = 1
+            if type(n_split) == type(None):
+                if type(wht_data) == type(None):
+                    n_split = 1
+                else:
+                    n_split = "auto"
             else:
-                n_split = "auto"
+                assert type(n_split) == int or n_split == "auto"
 
             # load catalogue of given type
             cat = Table.read(self.sex_cat_master_path)
@@ -1966,18 +2029,18 @@ class Data:
                 hf.create_dataset(name_i, data = data_i)
             hf.close()
 
-            if plot:
-                self.plot_depth(band, cat_creator, mode, aper_diam, show = False)
+        if plot:
+            self.plot_depth(band, cat_creator, mode, aper_diam, show = False)
     
 
     def plot_area_depth(self, cat_creator, mode, aper_diam, show = False, use_area_per_band=True, save = True, return_array=False):     
         if type(cat_creator) == type(None):
             galfind_logger.warning("Could not plot depths as cat_creator == None in Data.plot_area_depth()")
         else:
-            self.get_depth_dir(aper_diam)
+            self.load_depth_dirs(aper_diam)
             area_tab = self.calc_unmasked_area(masking_instrument_or_band_name = self.forced_phot_band, forced_phot_band = self.forced_phot_band)
             overwrite = config["Depths"].getboolean("OVERWRITE_DEPTH_PLOTS")
-            save_path = f"{self.depth_dirs[self.forced_phot_band]}/{mode}/depth_areas.png" # not entirely general -> need to improve self.depth_dirs
+            save_path = f"{self.depth_dirs[aper_diam][self.forced_phot_band]}/{mode}/depth_areas.png" # not entirely general -> need to improve self.depth_dirs
             
             if not Path(save_path).is_file() or overwrite:
                 fig, ax = plt.subplots(1, 1, figsize = (4, 4))
@@ -2002,7 +2065,7 @@ class Data:
                 #colors = plt.cm.viridis(np.linspace(0, 1, len(bands)))
                 data = {}
                 for pos, band in enumerate(bands):
-                    h5_path = f"{self.depth_dirs[band]}/{mode}/{band}.h5"
+                    h5_path = f"{self.depth_dirs[aper_diam][band]}/{mode}/{band}.h5"
 
                     if overwrite:
                         galfind_logger.info("OVERWRITE_DEPTH_PLOTS = YES, re-doing depth plots.")
@@ -2086,15 +2149,15 @@ class Data:
         if type(cat_creator) == type(None):
             galfind_logger.warning("Could not plot depths as cat_creator == None in Data.plot_depth()")
         else:
-            self.get_depth_dir(aper_diam)
-            save_path = f"{self.depth_dirs[band]}/{mode}/{band}_depths.png"
+            self.load_depth_dirs(aper_diam)
+            save_path = f"{self.depth_dirs[aper_diam][band]}/{mode}/{band}_depths.png"
             # determine paths and whether to overwrite
             overwrite = config["Depths"].getboolean("OVERWRITE_DEPTH_PLOTS")
             if overwrite:
                 galfind_logger.info("OVERWRITE_DEPTH_PLOTS = YES, re-doing depth plots.")
             if not Path(save_path).is_file() or overwrite:
                 # load depth data
-                h5_path = f"{self.depth_dirs[band]}/{mode}/{band}.h5"
+                h5_path = f"{self.depth_dirs[aper_diam][band]}/{mode}/{band}.h5"
                 if not Path(h5_path).is_file():
                     raise(Exception(f"Must first run depths for {self.survey} {self.version} {band} {mode} {aper_diam} before plotting!"))
                 hf = h5py.File(h5_path, "r")

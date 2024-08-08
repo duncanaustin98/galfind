@@ -77,6 +77,9 @@ class SED:
         else:
             mags = mags.value
 
+        if type(label) == type(None) and hasattr(self, "template_name"):
+            label = self.template_name
+        
         plot = ax.plot(wavs.value, mags, label = label, **plot_kwargs)
         if annotate:
             ax.set_xlabel(funcs.label_wavelengths(wav_units, False, \
@@ -84,6 +87,7 @@ class SED:
             ax.set_ylabel(funcs.label_fluxes(mag_units, False if mag_units == u.ABmag else True))
             ax.legend(**legend_kwargs)
         if save:
+            funcs.make_dirs(save_name)
             plt.savefig(f"{save_name}.png")
             funcs.change_file_permissions(f"{save_name}.png")
         return plot
@@ -143,7 +147,7 @@ class SED:
             self.line_fluxes[line_name] = line_flux
             self.line_cont[line_name] = mean_cont
         return line_EW
-    
+
     def calc_UVJ_colours(self, resolution = 1. * u.AA):
         UVJ_filters = {
         "U": {"lam_eff": 3_650. * u.AA, "lam_fwhm": 660. * u.AA},
@@ -190,7 +194,6 @@ class SED_rest(SED):
             self.mags = mags
         return wavs, mags
     
-    
 class SED_obs(SED):
     # should include mag errors here
     def __init__(self, z, wavs, mags, wav_units, mag_units):
@@ -215,6 +218,18 @@ class SED_obs(SED):
         self.mock_phot = Mock_Photometry(instrument, bp_averaged_fluxes_Jy, depths, min_pc_err)
         return self.mock_phot
     
+    def calc_colour(self, filters, depths = [], min_pc_err = 10.):
+        assert type(filters) in [np.array, list]
+        assert len(filters) == 2
+        if type(depths) == dict:
+           depths = [depth for (band, depth) in depths.items()]
+        if depths == []: # if depths not given, expect the galaxy to be very well detected
+            depths = [99. for band in filters]
+        blue_flux = self.calc_bandpass_averaged_flux(filters[0].wav, filters[0].trans) * u.erg / (u.s * (u.cm ** 2) * u.AA)
+        blue_flux_mAB = funcs.convert_mag_units(np.array(filters[0].WavelengthCen.value) * u.AA, blue_flux, u.ABmag)
+        red_flux = self.calc_bandpass_averaged_flux(filters[1].wav, filters[1].trans) * u.erg / (u.s * (u.cm ** 2) * u.AA)
+        red_flux_mAB = funcs.convert_mag_units(np.array(filters[1].WavelengthCen.value) * u.AA, red_flux, u.ABmag)
+        return blue_flux_mAB - red_flux_mAB
 
 class Mock_SED_rest(SED_rest): #, Mock_SED):
     
@@ -260,7 +275,7 @@ class Mock_SED_rest(SED_rest): #, Mock_SED):
     def load_EAZY_in_template(cls, m_UV, template_set, template_filename):
         EAZY_template_units = {"fsps_larson": {"wavs": u.AA, "mags": u.erg / (u.s * (u.cm ** 2) * u.AA)}}
         if isinstance(template_filename, int):
-            template_labels = open(f"{config['EAZY']['EAZY_TEMPLATE_DIR']}/{template_set}.txt", "r")
+            template_labels = open(f"{config['EAZY']['EAZY_TEMPLATE_DIR'].replace('/templates', '')}/{template_set}.txt", "r")
             template_filename = template_labels.readlines()[template_filename].replace("\n", "")
             template_labels.close()
         template = Table.read(f"{config['EAZY']['EAZY_TEMPLATE_DIR']}/{template_filename}", names = ["Wavelength", "SED"], format = "ascii")
@@ -310,8 +325,14 @@ class Mock_SED_rest(SED_rest): #, Mock_SED):
                 funcs.convert_mag_units(self.wavs, self.mags, u.Jy).value[np.abs(self.wavs.to(u.AA).value - 1_500.).argmin()]
             self.mags = np.array([norm * mag for mag in self.mags.value]) * self.mags.unit
             
-    def renorm_at_wav(self, mag): # this mag can also be a flux, but must have astropy units
-        pass
+    def renorm_at_wav(self, wav, mag): # this mag can also be a flux, but must have astropy units
+        assert type(wav) in [u.Quantity]
+        assert type(mag) in [u.Quantity, u.Magnitude]
+        assert u.get_physical_type(wav.unit) == "length"
+        norm = funcs.convert_mag_units(wav, mag, u.Jy).value / \
+                funcs.convert_mag_units(self.wavs, self.mags, u.Jy).value\
+                [np.abs(self.wavs.to(u.AA).value - wav.to(u.AA).value).argmin()]
+        self.mags = np.array([norm * mag for mag in self.mags.value]) * self.mags.unit
     
     def calc_UV_slope(self, output_errs = False, method = "Calzetti+94"):
         if method == "Calzetti+94":
@@ -486,7 +507,7 @@ class Mock_SED_rest_template_set(Mock_SED_template_set):
     def load_EAZY_in_templates(cls, m_UV, template_set):
         mock_SED_rest_arr = []
         # read in .txt file if it exists
-        template_labels = open(f"{config['EAZY']['EAZY_DIR']}/{template_set}.txt", "r")
+        template_labels = open(f"{config['EAZY']['EAZY_TEMPLATE_DIR']}/{template_set}.txt", "r")
         for name in template_labels.readlines():
             mock_SED_rest_arr.append(Mock_SED_rest.load_EAZY_in_template(m_UV, template_set, name.replace("\n", "")))
         template_labels.close()

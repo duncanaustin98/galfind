@@ -727,7 +727,7 @@ def numba_distances(x=np.array([]), y=np.array([]), x_coords=1, y_coords=1):
     return distances
 
 @jit(nopython=True)
-def calculate_depth(values, sigma_level = 5, zero_point = 28.08, min_number_of_values = 100):
+def calculate_depth(values, sigma_level = 5, zero_point = 28.0865, min_number_of_values = 100):
     if len(values) < min_number_of_values:
         return np.nan
     median = np.nanmedian(values)
@@ -780,7 +780,6 @@ def cluster_wht_map(wht_map, num_regions='auto', bin_factor=1, min_size=10000, p
 
     # adjust min_size to be in terms of the bin_factor
     min_size = min_size // bin_factor**2
-    
     if type(wht_map) == str:
         # 
         weight_map = fits.open(wht_map)
@@ -809,6 +808,7 @@ def cluster_wht_map(wht_map, num_regions='auto', bin_factor=1, min_size=10000, p
     weight_map_clipped = np.clip(weight_map_smoothed, percentiles[0], percentiles[1])
     weight_map_transformed = (weight_map_clipped  - percentiles[0]) / (percentiles[1] - percentiles[0]) * 255
     
+    weight_map_transformed[np.isnan(weight_map_transformed)] = 0
     labels_filled = []
     iterations = 0
     if num_regions == 'auto':

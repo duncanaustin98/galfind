@@ -319,7 +319,7 @@ class PDF_nD:
         assert chains.shape == (len(self), len(independent_var))
         if type(size) == type(None):
             pass
-        elif type(size) in [int, np.int]:
+        elif type(size) in [int]:
             chains = chains[-size:]
         else:
             galfind_logger.critical(f"{type(size)=} not in [None, int, np.int]!")
