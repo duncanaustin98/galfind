@@ -1,0 +1,562 @@
+- Sped up load_SED_rest_properties and get_depth_dirs to make once and then load rather than remaking every call
+- Updated available EAZY templates
+- Updated gitignore
+- Merge branch 'main' of https://github.com/u92876da/galfind into main
+- General bug fixes
+- Merge branch 'main' of https://github.com/u92876da/galfind into main
+- small fix
+- Merge pull request #89 from duncanaustin98/main_new
+- Merge branch 'main' into main_new
+- non-existent rms/wht maps produced when only the other is available. SExtractor should now run without issues with changing rms/wht maps
+- Merge branch 'main' of https://github.com/u92876da/galfind into main
+- fix to photometry_rest
+- Merge pull request #88 from duncanaustin98/main_new
+- Merge branch 'main' into main_new
+- minor fixes
+- New reionization paper updates
+- config update
+- Update to photometry_rest to use kwargs. Temp option for PSF homogenized aperture corrections.
+- Rest frame properties now load appropriately
+- Merge pull request #87 from duncanaustin98/main_new
+- Merge branch 'main' into main_new
+- Now works appropriately for rest frame UV calculations. .fits extension is appropriately appended, and should be compatible with appending properties for multiple different samples one after another. PDF chains can now be extended to the required number of iterations.
+- Added image convolution with kernel. Not turned on as it is not fully implemented, but works in a limited fashion.
+- minor plotting changes
+- small change to depth plot
+- Merge branch 'main' of https://github.com/u92876da/galfind into main
+- Functionality to produce stacked image err AND wht maps, regardless which maps they come from. This allows sextraction from different instruments when e.g. wht map is available but err map is used to stack bands.
+- Merge branch 'main' of https://github.com/duncanaustin98/galfind into main
+- Merge pull request #86 from duncanaustin98/HST_data_load
+- Merge branch 'main' into HST_data_load
+- Adjusted cutout sizes to allow for multiple differently sized cutouts to be made.
+- Fixed angle changes in make_mask.
+- Fixed sextractor errors in cases of pixel scale not equal to 0.03 as
+- Updated sextractor nircam.sex input file
+- updated galfind work dir for Shay
+- Altered crop_by as in HST_data_load branch for Shay
+- Now allows for dict of crop_by for specific IDs
+- Updated masking to take into account masks created on images with different pixel scales. MIRI masking now works appropriately!
+- Started update to MIRI CEERSP4 nan masking issue
+- bug fix
+- New functionality for Multiple Catalogue
+- Finished aperture corrections for MIRI. Still appears to be some nan's in the depths
+- Updated galaxy.plot_cutouts to redefine the cutout axis for each galaxy.
+- Need to assign galaxy.cutout_paths even if they've already been made
+- Change to catalogue.make_cutouts to check if cutouts will be made before loading data in.
+- Sped up loading in of seg map paths and mask paths, although still could improve these speeds further.
+- Fixed Data.from_pipeline() not loading in appropriate im_paths for combined instruments.
+- Bug fixes for plotting, no background subtraction for soucex, and other fixes
+- Minor changes to run for Rogier's student
+- More fixes + fix for mask cleaning
+- Added permissions changes to many written files. Sextractor written files currently excluded.
+- Merge branch 'main' of https://github.com/u92876da/galfind into main
+- combining catalogues
+- Fixed error in stacking bands when only wht and not rms_err maps are given.
+- Further testing of Data.from_pipeline() in prep for Rogiers' MACS-0416 photo-z's
+- Finished updated Data.from_pipeline(). Should be semi-general but requires testing
+- Minor Data.from_pipeline() updates
+- Started update of Data.from_pipeline() to work for MIRI and in the more general case
+- Merge branch 'main' of https://github.com/u92876da/galfind into main
+- hot pixel selection now works
+- oops it works now
+- Merge branch 'main' of https://github.com/u92876da/galfind into main
+- Small changes to numpy array to stop crash
+- Catalogue/galaxy now loads in sextractor flux_radius and also have appropriate selection functions. EPOCHS selection updated with flux_radius hot pixel check in the LW NIRCam bands
+- Minor changes to prepare for catalogue READMEs
+- Minor fixes to loading in gal_band_mask and comments out calc_area_depth
+- Merge pull request #85 from duncanaustin98/gal_instr
+- Final minor update before merging
+- Updated masking parameters. Should now work for COSMOS-Web but not generalized to be band dependent yet.
+- Fixed issue with gal_band_mask being applied inappropriately when loading in cropped catalogue. Minor issues exist when catalogue IDs aren't integers starting from 1
+- Pipeline runs without errors now. JEMS plotting doesn't show medium bands - major error somewhere.
+- Updated EAZY .in templates to exclude bands without data from the SED fitting
+- Load in speed now significantly faster. Loading full JOF catalogue with 16,000 sources and 1 SED fitting run takes 23.5s (and around 3s per EAZY SED run to load extras). Setting timed = False reduces time by approx. 5s. All previous v11 EAZY runs need to be re-done to update PDF/SED .h5 structure.
+- Slight modification of EAZY PDF saving to halve the PDF load in speed. Could probably be improved even further by loading from .csv instead of a .h5 file.
+- Loads in galaxy objects (pre-SED fitting) at a rate of 6,000 per second
+- Merge pull request #84 from duncanaustin98/gal_instr-1
+- Merge branch 'gal_instr' into gal_instr-1
+- Loads in instruments correctly. Now problems with masking a dtype = object array in data.mask()
+- Minor corrections to make main run again
+- Minor update to Data.plot_area_depth()
+- Fix to Data.calc_unmasked_area(), and implementing new depth diagnostic plot.
+- Simple fix to aperture correction code
+- Now loads in aperture corrections for Combined_Instrument much quicker. Structure of where aper_corrs is loaded in from is a bit clunky though. Depths were taking a while as it was plotting the large JADES image each time - this will now only plot the first time depths are run. Tested and JADES-matched now takes very little time to load in.
+- Caching instrument aperture corrections
+- fix to data
+- Fix to aperture corrections
+- Fix to Data for ACS_WFC
+- Updated crop_by to allow for galaxy loading by "ID={galaxy_id}"
+- General updates to BPASS [NII]/Hα ratio calculations using Xiao+18 BPASS v2.1+CLOUDY models
+- Started updating cat_creator to include (and eventially save) gal_band_mask for the galaxies for speedy catalogue load in and instrument cropping.
+- loading in catalogue now works properly, although it takes 10s for 1500 galaxy photometry entries
+- Catalogue_creator.load_photometry updated to load photometry/errs for galaxies in the same catalogue with different available bands. Needs to propagate into galaxy specific instruments and loading input SED fitting catalogues.
+- Merge pull request #81 from duncanaustin98/EW_calc
+- Merge branch 'main' into EW_calc
+- xi ion calculations (and kwarg saving into fits ext) now works when calculating for a single sample. Should extend this to increase iters and to multiple samples.
+- Still need to sort out rest/obs frames for xi_ion calculations :( lol it's Friday so I'm pushing
+- Re-written photometry_rest rest frame optical xi_ion etc calculations
+- Updated pipeline to run COSMOS
+- Minor corrections to A_Halpha dust corrections (switched the k(lambda) ratio so that it is now correct).
+- Now allows for the deletion of a specific SED_rest_property from the catalogue without having to delete the entire extension. Useful for xi_ion testing!
+- Final tests on xi_ion calculations.
+- Works as long as you don't change the selection - needs a small overwrite in how this is run. Galaxy dependent kwargs should be written into the catalogue and SED_fit_params should be used to distinguish properties.
+- Updated loading functions. Still need to update fits extension appending when the same SED rest property for multiple samples is calculated.
+- Merge pull request #80 from duncanaustin98/excl_bands_fix
+- Now dynamically adds all the band names in __init__ rather than requiring them to be typed. Instrument.__add__ updated, but should also include functionality to add an array of filter objects as well as an instrument. Data.from_pipeline() requires overhaul to generalize adding more instruments (e.g. so that NIRISS/MIRI don't need to be written here but instead use "for instr in instruments" rather than if/else)
+- Beginning test of continuum measurements for EW calculations.
+- bug fixes for Combined_Instrument and Instrument.remove_band()
+- move msapexp imports to functions, to ensure package install is optional
+- More minor selection bug fixes. Now just need to test xi_ion calculation.
+- Fixed minor env dependent plotting issues to do with np.ndarray and list differences and EPOCHS_lowz sample selection
+- Significant update to EW calculations from the rest-frame UV photometry. Fixed selection issue by ensuring that Catalgoue.gals remains a np.array rather than a list in __getitem__.
+- EAZY/depth fixes should now be operational.
+- Merge pull request #77 from duncanaustin98/JOF_Halpha
+- Minor updates before merging
+- Merge pull request #76 from duncanaustin98/load_spectroscopy
+- Merge branch 'main' into load_spectroscopy
+- Fixed EAZY fits catalogue column naming. Spectroscopic cross-matching code complete - now requires testing (initial tests using JADES-Deep-GS+JEMS v9).
+- Made Spectrum and Spectral_Catalogue objects to cross-match and load in spectra into Galaxy objects contained within the Catalogue object.
+- plot fixed
+- undo print statement
+- fix depths code
+- Started spectrum class
+- Minor Galaxy change
+- Merge branch 'main' of https://github.com/u92876da/galfind into main
+- further fixes
+- Merge branch 'main' of https://github.com/u92876da/galfind into main
+- Started lowz_EPOCHS JOF testing.
+- single line fix
+- Speeding up masking using numba and jit
+- Almost finished UV line selection
+- Merge pull request #75 from duncanaustin98/main_new
+- Merge branch 'main' into main_new
+- Updating selection to include UV line emitters
+- Merge branch 'main' of https://github.com/u92876da/galfind into main
+- Updates to depth code and cutouts
+- Merge pull request #74 from duncanaustin98/SED_properties
+- Merge branch 'main' into SED_properties
+- Updated UV line emitter selection functions
+- Partway through writing select UV line emitters function.
+- Updated galaxy Kokorev24_LRDs
+- Added new colour selection criteria. Colour-colour, UVJ colour and Kokorev LRD selection half finished.
+- Loads in default SED_fit_params_arr into cat cls upon instantiation
+- Updated to pass default SED_fit_params_arr into cls upon instantiation.
+- Catalogue_Base now no longer a list
+- Loading in galaxy rest frame properties now works.
+- Update requirement.txt and remove seaborn
+- Minor changes
+- Seem to have broken this bit :(
+- Written loading functions but now this feature needs testing before continuing with photometric line EW calculations.
+- SED properties now works for single selection only (although currently updates to cat_path -> _test.fits suffix). Still need to test combining multiple selections!
+- Finished testing up to mUV calculation. This is too faint by about 4 mags, suspected unit issues.
+- Beta fitting unit issue now fixed.
+- Calculated beta is redder than it should be and takes too long to run, although the PDFs are now saving correctly.
+- Saving PDFs now works, although they are all being saved as the same PDF.
+- Minor comments
+- Power law fitting now works in Photometry_rest, although A_UV fails. Now need to save the created PDFs and append catalogue with these.
+- Fixed bandpass average flux calculations and minor ABmag SED plot autoscaling issues.
+- Minor updates to SED_rest_properties storage
+- Removed a couple of functions that were commented but are now deprecated.
+- Written n-dim PDF class called "PDF_nD". Have also filled in Catalogue and Photometry_rest rest-frame UV property conversion functions, including fesc. This needs to be tested and I'm certain the new convolving bandpass filters in broken - relevant for creating mock photometry and calculating beta.
+- Started re-write of Photometry_rest to allow for calculation of rest-frame UV properties.
+- Now makes symlinks to SED plots to store in a nice selection folder.
+- Fixed SED plotting unit labelling errors. Functions placed in useful_funcs_austind.py
+- Plotting generalized further including automated y axes scaling and SNR label positioning for different flux/mag units. There should still be the option to log scale the x axis and the x/y axis labels need re-doing. PDF plotting then needs small updates as well.
+- Unit conversion errors fixed and plotting now tested and working for f_nu flux units. Need to test f_lambda -> these flux units should be plotted in log space which will be fun to try and sort out :)
+- Upper limit and autoscaling for SED plotting finished and should be generalized. Length of arrow bars and SNR labelling require minor changes.
+- PDF annotations now work but plotting aesthetics can be improved. Should also limit PDF plotting to not show below 0 in x axis for z_PDFs
+- Merge pull request #73 from duncanaustin98/early_crop_v2
+- New early_crop updates (woopsy)
+- Merge pull request #71 from duncanaustin98/early_crop
+- Colours and legend entries now included and work in SED plotting
+- Updated function to convert units of photometric errors. Still remaining issues with plotting upper limits and re-scaling entire plot to appropriate range.
+- Plotting now works for ABmag units. Should allow option to plot band widths and errors in black, along with SNR annotations for the raw photometric data. Should also plot expected fluxes from best-fitting SED templates.
+- Now allows for PDF peaks to be loaded in appropriately from corresponding SED_results. This is very useful for annotating PDF plots.
+- Galaxy.plot_cutouts() now works. Next step is to fix unit plotting errors in SED class.
+- Loading in cropped cat now works fully, although need to be careful to not run depths/SED fitting on cropped catalogues if this is not what is intended.
+- Masking crop now fixed. Last thing to do before merging back into main is to update and test SED_codes.fit_cat()
+- Number of galaxies loaded now works correctly. Catalogue status should be updated with "selection" at some stage.
+- Fixed Data.load_wcs() error
+- Galaxy.py now loads in required astropy_cosmology
+- Updated with basic plotting code. Definitely doesn't work yet and there are still syntax issues to sort out.
+- EPOCHS selection sorted, other than minor changes required in Catalogue._append_selection_to_fits and Catalogue.perform_selection. Also need to put in brown dwarf and hot pixel selection, as well as a combined SNR/mask selection
+- Okay now it works. And so does the PDF selection without error messages.
+- Merge pull request #66 from duncanaustin98/epochs_selection
+- Merge pull request #65 from duncanaustin98/PDF_in_SED_result
+- Merge branch 'epochs_selection' into PDF_in_SED_result
+- PDFs/SEDs and selection all now loads and works correctly. Mask selection should be sped up and PDF selection should be re-written to sample from the stored PDFs
+- Everything now loads in appropriately, and this is tested. Improvements required: 1) units for SED fitting properties; 2) phot_rest should be derivable from SED; 3) improve load in speed - NGDEEP2 currently takes 2 mins for 6 bands, 3 SED fitting runs, 19,000 sources
+- Updated RGB saving upon Data.__init__. These images aren't turning out too well with the exception of JOF
+- When loaded in for the first time, the Data class now makes an RGB image using all the bands if the sci shape is the same for every band using trilogy by default. Galaxy.py also has the option to make RGB .png from created cutouts
+- Loads in Redshift_PDFs for 16,000 galaxies in 5 seconds
+- Catalogue load in works up to PDF loading. Normalization fixed upon PDF intialization.
+- Updated make_cutouts code
+- Loading in PDFs/SEDs fixed. Now going through rigorous testing!
+- Now saves redshift in SED.h5 file for easy (and EAZY lol) access
+- Minor SED_result.py changes
+- Written extract_PDFs and extract_SEDs for EAZY (and left as pass for LePhare currently), as well as fully written Catalogue_SED_results.from_fits_cat including PDF and SED loading. Still requires testing! Need to re-run EAZY now with the SEDs .h5 file saving the redshifts.
+- Updated EAZY.extract_PDFs
+- Updated Data.py to more generally accept different manually entered versions e.g. v11_degrade2 will automatically load from mosaic_1084_wispnathan_degrade2
+- Started PDF class construction from catalogue in Catalogue_SED_results.from_fits_cat
+- undo a testing change
+- Allow different star masks for different bands, and merging artifact masks
+- Updated Data.py to apply the n% minimum flux errors correctly. Running new JOF v11 now.
+- Updated SED_result class to better format. Next step is to load PDFs and SEDs, although these paths still need to be loaded into the function in a nice way somehow
+- Minor updates to reionization.py
+- Merge pull request #64 from duncanaustin98/epochs_selection_v2
+- Merge branch 'epochs_selection' of https://github.com/u92876da/galfind into epochs_selection
+- Merge branch 'main' of https://github.com/u92876da/galfind into epochs_selection
+- Merge pull request #63 from duncanaustin98/tom_changes
+- Added reionization code folder
+- Updated completeness_contamination for EPOCHS-III plots
+- MultipleCatalogue, demo, other fixes
+- Merge pull request #61 from duncanaustin98/fix_masks
+- fixed
+- fix
+- Should now work for v9! Tom checking now
+- Significantly re-written SED_result.from_gal().
+- Pipeline fixed and now running! __str__ PDF needs writing
+- Started editing loading in of SED results! This changes propagates to a lot of different places and currently breaks pipeline.py
+- New PDF class made. Each SED_result should contain one of these as a property such that it is only created when called and not on SED_result instantiation
+- chi squared selection runs and is fast
+- Started chi_sq selection functuions in Galaxy object
+- Basic EPOCHS SNR selection implemented, although masking takes a little while to run. Now need to make chi2 comparison and z-PDF selection functions.
+- Updating mask the first time to catalogue is run now works appropriately!
+- Need to fix mask load in. This is impacting the number of galaxies being selected by redwards Lya selection
+- Basic Lya bluewards and redwards SNR selection now working, although it takes approx 15s per 10,000 objects (6 bands) to run and these selection columns are not loaded into the galaxy object initially so this currently needs to be re-run each time.
+- EAZY SED fit saving now takes of the order 1/40s per galaxy. EAZY issue with loading in h5 when table/SED/zPDF not finished is still an ongoing EAZY problem. Also started Catalogue EPOCHS selection
+- Significant updates to readability (and in theory the speed of saving the PDFs/SEDs) of EAZY. Next step is to text this!
+- Fixed catalogues up to the point of SED fitting using new Filter class. Now need to re-write EAZY to run one lowz_zmax at a time, and save the outputs in a nicer way! Must update SED_codes load_photometry method to include the mask after updating the phot/err masked arrays in Catalogue.mask()!
+- SExtractor now makes initial catalogues with new Filter objects in Instrument
+- Updated all instances of self.instrument.bands to self.instrument.band_names. Beginning testing of pipeline now.
+- Mid Instrument class re-write. Hopefully should be able to neaten this up considerably.
+- Mid update of Instrument class to change self.bands to include an array of filter objects. Must now change all for loops including self.bands or self.instrument to self.band_names or self.instrument.band_names!
+- Removed load_SNR function from catalogue creator class.
+- SNRs now only in Photometry_obs (where they belong), and are computed (and shown in __str__) correctly except for order 0.01 differences when dealing with negative fluxes. Bang on for positive fluxes. May now proceed with further selection methods in the Catalogue class.
+- Now appropriately loads in Masked arrays for photometry/errors. Still need to propagate through SED code input properly. Photometry SNRs slightly different to those in the catalogue
+- Turned phot, phot_err in Catalogue_Creator.load_photometry() into np.ma.masked_array(), although need to update Galaxy and Multiple_Galaxy masking by new Catalogue_Creator masking methods. Also need to update the photometry/errors in all galaxy objects (propagating to all photometries contained within) in Catalogue.mask() after masking.
+- Catalogue cropping now works fully, including the __deepcopy__ overriding, although I'm not too sure how this actually works.
+- Updated EAZY to use one array of lowz_zmax and appropriately load SED fitting results. Also appended Catalogue_Base.py with updated getattr and crop functions.
+- Updated Catalogue.__str__() in prep. for selection diagnostics
+- Updated __str__ for galaxy, photometry, photometry_obs, and SED_result to see more clearly what is being loaded in when pipeline.py is being run.
+- Data.calc_unmasked_area() updated and now works in simple NIRCam masking cases. Not fully tested and should be improved to allow for HST masking in area calculations, as well as splitting areas by deep/shallow regions.
+- Finished automasking implementation, although it gets stuck on Regions.parse(sky_region) as it cannot convert string to float: '/'
+- Merge pull request #57 from u92876da/better_depths
+- Merge branch 'main' into better_depths
+- Started automasking process
+- Updated multiple_data
+- Started Multiple_Data and Multiple_Catalogue classes in prep for COSMOS-Web.
+- Removed exception line
+- Fixed EAZY to now only add in results to the catalogue from new template set should they not already have been added. Should also split the running of EAZY and subsequent addition into the catalogues by zmax_lowz as well.
+- Updated dust examples, and corrected Calzetti k(λ) calculation to extrapolate results for λ outside usual range.
+- Implemented Calzetti+00 dust attenuation law
+- Enabled the loading in of bpass v2.3 templates and subsequent calculation of colours (used in EPOCHS-I, Fig.4)
+- Fixed catalogues up to the point of SED fitting. Half written str() for instrument and data classes. EAZY now doesn't run properly.
+- Fixed make_sex_cats to work for different err maps
+- Fixed make_seg_map bug
+- Fixed wht_types error when making seg maps
+- Masking (including with cluster fields) finished and tested. Still need to update catalogue readme at each catalogue creation step.
+- Updated depths and local depth catalogue creation. This now works but paths not correct to run EAZY
+- Let galfind use an alternate config path, passed in by a GALFIND_CONFIG_PATH environment variable
+- spag
+- Updated requirements.txt and remove unused packages (pandas, lmfit).
+- Merge pull request #52 from u92876da/make_cutouts
+- Finished (and tested) the make_cutouts code
+- Finished implementing make_cutouts in catalogue. Need to check outputs now
+- Started code to generate cutouts
+- Started implementing Tom's new depths code!
+- Added 'RUN' option to config - if turned off it won't run a catalogue that doesn't already exist.
+- Change permissions of log file to avoid permissions issues
+- Added overwrite functionality to avoid having to manually delete files
+- Added Tom's depth codes to new file
+- quick fix to glob paths
+- General update of galfind including emission lines and SED creation
+- Updated to work with beta bias
+- Merge pull request #39 from u92876da/update
+- Merge branch 'main' into update
+- General update
+- Merge pull request #38 from u92876da/update
+- Added ability to add emission lines to mock spectra (EW calculation not quite correct as of yet)
+- Fixed depth code such that the dependence on (xoff, yoff) is removed. Added chunks that go all the way to the edge of the image.
+- Now cleans mask region files from all zero size circles and ellipses before running
+- General updates
+- Started adding functionality to compute beta taking filter wavelengths into account
+- Merge branch 'main' of https://github.com/u92876da/galfind
+- Works with yggdrasil models and also models both the lyman alpha damping wing and DLA systems
+- Minor WFC3IR -> WFC3_IR update
+- Merge pull request #37 from u92876da/updated_SED
+- Updated SED classes and examples so that the mock photometric beta template measurements can be saved.
+- Added ability to create mock photometry from rest frame UV templates for faster beta calculations
+- Updated .gitignore
+- Merge pull request #36 from u92876da/new_SED_loading
+- Merge branch 'main' into new_SED_loading
+- Updated .gitignore
+- Updated .gitignore to ignore the Inoue+14 IGM grid as it is too large for github
+- Updated examples and fixed IGM attenuation + BP averaged flux calculations
+- Now added an example to plot Inoue+14 IGM grid slices and started the delta beta plot at fixed z for my paper.
+- Full Inoue+14 implementation for IGM attenuation of mock SED now works and is tested. Can also now calculate beta in the 10 Calzetti+94 filters from the mock rest and observed frame templates without/with IGM attenuation (there is no theoretical difference here if at fixed redshift).
+- Added functionality to produce Inoue14 IGM attenuation grids
+- Now added .fits file storing LS_absorption from Inoue2014 in preparation to make grids with galfind
+- Added Lyman series absorption table from Inoue et al. 2014
+- Now has a Mock_Photometry and a hierarchy of SED classes. Loads and plots filter sets from SVO as well as SED templates together with bandpass averaged fluxes. Instrument unit testing (basic) has been added and there are now a couple of examples as to how to plot things for the new students. Preparing for a large re-write of the Photometry and its child classes. Included now is also a galfind_style.mplstyle sheet.
+- Added MIRI wavelengths and FWHMs to band
+- Improved beta calculation functionality! Can now calculate for a range of rest frame UV ranges. This functionality still needs to be propagated throughout the entire galfind framework but it currently works when the ranges are hard-coded!
+- Improved beta calculation functionality! Can now calculate for a range of rest frame UV ranges. This functionality still needs to be propagated throughout the entire galfind framework but it currently works when the ranges are hard-coded!
+- Attempting to calculate rest frame UV over different ranges and save the results separately!
+- Attempting to calculate rest frame UV over different ranges and save the results separately!
+- General improvements
+- General improvements
+- Added method to calculate M_UV quickly from rest frame photometry
+- Added method to calculate M_UV quickly from rest frame photometry
+- Fixed UV properties and local depth calculations
+- Fixed UV properties and local depth calculations
+- Merge pull request #34 from u92876da/load_sed_fits
+- Merge pull request #34 from u92876da/load_sed_fits
+- Merge branch 'main' into load_sed_fits
+- Merge branch 'main' into load_sed_fits
+- UV properties now working except for loading in the galaxy properties into galfind
+- UV properties now working except for loading in the galaxy properties into galfind
+- Fitting for UV properties now works, although the join_UV_cat function in Catalogue still requires fixing! Also have fixed an issue related to broken flux_lambda and flux_lambda_errs in Photometry_obs and Photometry_rest stemming from mis-ordered Instrument band_wavelengths and band_FWHMs. These are still mis-ordered (i.e. not blue to red), but the issue is bypassed by looping through the correctly ordered instrument.bands!
+- Fitting for UV properties now works, although the join_UV_cat function in Catalogue still requires fixing! Also have fixed an issue related to broken flux_lambda and flux_lambda_errs in Photometry_obs and Photometry_rest stemming from mis-ordered Instrument band_wavelengths and band_FWHMs. These are still mis-ordered (i.e. not blue to red), but the issue is bypassed by looping through the correctly ordered instrument.bands!
+- Now calculates extended source corrections correctly. Table creation works for UV properties although something is going wrong as there are NaN M_UV in the catalogues due to negative f_1500.
+- Now calculates extended source corrections correctly. Table creation works for UV properties although something is going wrong as there are NaN M_UV in the catalogues due to negative f_1500.
+- Prevents the code from overwriting the blank_module column when masking a cluster! Also put back in the unmasked_blank_{mask_instrument.name} column as this was not the issue within the masking code!
+- Prevents the code from overwriting the blank_module column when masking a cluster! Also put back in the unmasked_blank_{mask_instrument.name} column as this was not the issue within the masking code!
+- Removed unmasked_blank column from masking code
+- Removed unmasked_blank column from masking code
+- Should now load in everything properly from the catalogue including multiple sed paths
+- Should now load in everything properly from the catalogue including multiple sed paths
+- Fixed naming system for wht and rms files! Now fails if there is no wht or rms image identified with the band in the folder.
+- Fixed naming system for wht and rms files! Now fails if there is no wht or rms image identified with the band in the folder.
+- Updated ACS_WFC Data.from_pipeline to read in format of hlf catalogues more generally than having to individually rename all images!
+- Updated ACS_WFC Data.from_pipeline to read in format of hlf catalogues more generally than having to individually rename all images!
+- Fixed ZP issue for NGDEEP ACS_WFC data. ZPs can now be read in from ACS_WFC image headers from the keyword argument 'ZEROPNT'
+- Fixed ZP issue for NGDEEP ACS_WFC data. ZPs can now be read in from ACS_WFC image headers from the keyword argument 'ZEROPNT'
+- Changed the stack_bands function of Data class to remove bands that don't exist in the dataset
+- Changed the stack_bands function of Data class to remove bands that don't exist in the dataset
+- Now makes seg maps one at a time if they don't exist rather than having to re-do them all if stopped half way through making them. Still could include something to remake the seg map if stopped halfway through making that specific map
+- Now makes seg maps one at a time if they don't exist rather than having to re-do them all if stopped half way through making them. Still could include something to remake the seg map if stopped halfway through making that specific map
+- Updated sextractor .param file input and removed commented lines in Data.py
+- Updated sextractor .param file input and removed commented lines in Data.py
+- Merge pull request #33 from u92876da/sex_params
+- Merge pull request #33 from u92876da/sex_params
+- Added 3 new sextractor config files for testing
+- Added 3 new sextractor config files for testing
+- Modified .gitignore to now include SExtractor config files
+- Modified .gitignore to now include SExtractor config files
+- Added logging functionality to galfind which is implemented in the __init__.py file. Currently prints only the default config file parameters and saves to galfind_work/log_files. Should now add to the logging files more thoroughly throughout for ease of code use!
+- Added logging functionality to galfind which is implemented in the __init__.py file. Currently prints only the default config file parameters and saves to galfind_work/log_files. Should now add to the logging files more thoroughly throughout for ease of code use!
+- Loading in catalogue improved in SED_result.py
+- Loading in catalogue improved in SED_result.py
+- Fixed problems with running simulated data- NOTE - added excl_bands to Catalogue.from_fits_cat which may break other things
+- Fixed problems with running simulated data- NOTE - added excl_bands to Catalogue.from_fits_cat which may break other things
+- Merge pull request #32 from u92876da/simulated
+- Merge pull request #32 from u92876da/simulated
+- Merge branch 'main' into simulated
+- Merge branch 'main' into simulated
+- Started creating SNR_crop functions for selection
+- Started creating SNR_crop functions for selection
+- Re-written majority of SED_result.py to quickly load in SED fitting results from a catalogue. Still needs finalizing and testing. PDF and SED paths loaded instead of the raw data to save on RAM and CPU usage. These should open as and when they are required!
+- Re-written majority of SED_result.py to quickly load in SED fitting results from a catalogue. Still needs finalizing and testing. PDF and SED paths loaded instead of the raw data to save on RAM and CPU usage. These should open as and when they are required!
+- Merge pull request #29 from u92876da/fast_cat
+- Merge pull request #29 from u92876da/fast_cat
+- work with simulated catalogues
+- work with simulated catalogues
+- Catalogue now loads in approx 7 seconds for 17500 galaxies, and EAZY runs for multiple different templates.
+- Catalogue now loads in approx 7 seconds for 17500 galaxies, and EAZY runs for multiple different templates.
+- Improved catalogue load in speed - should work but may require bug fixing!
+- Improved catalogue load in speed - should work but may require bug fixing!
+- Allows EAZY to run different template sets in a loop with different low-z maximum redshifts. Still need to work on table concatenation.
+- Allows EAZY to run different template sets in a loop with different low-z maximum redshifts. Still need to work on table concatenation.
+- Loads in galaxies properly and runs pipeline fully (albeit with a significant galaxy catalogue load time)
+- Loads in galaxies properly and runs pipeline fully (albeit with a significant galaxy catalogue load time)
+- Galaxies now load SED properties appropriately!
+- Galaxies now load SED properties appropriately!
+- Updating SED_codes to allow appropriate loading of SEDs and PDFs
+- Updating SED_codes to allow appropriate loading of SEDs and PDFs
+- General bug fixing. Catalogue takes 100 secs per 10,000 galaxies to read in :( (to do with cropping photometric bands?). Now performs SED fitting and I'm now at the stage of testing that the PDFs/SEDs load in correctly. Not sure how long these will take to load in and how much RAM this will use up when loaded
+- General bug fixing. Catalogue takes 100 secs per 10,000 galaxies to read in :( (to do with cropping photometric bands?). Now performs SED fitting and I'm now at the stage of testing that the PDFs/SEDs load in correctly. Not sure how long these will take to load in and how much RAM this will use up when loaded
+- Added NIRCam aperture corrections for all Medium/Wide bands
+- Added NIRCam aperture corrections for all Medium/Wide bands
+- Added photometry classes
+- Added photometry classes
+- Started bug fixing
+- Started bug fixing
+- Updated EAZY filter configs
+- Updated EAZY filter configs
+- Circular import problem to fix when running
+- Circular import problem to fix when running
+- Updated from_fits_cat methods in classes that contain them. More work required in Photometry class still regarding these
+- Updated from_fits_cat methods in classes that contain them. More work required in Photometry class still regarding these
+- Minor changes in Galaxy from_photo_z_cat. This still needs more attention
+- Minor changes in Galaxy from_photo_z_cat. This still needs more attention
+- General improvements to from_photo_z_cat
+- General improvements to from_photo_z_cat
+- Updated extract_z_PDF function for the EAZY class
+- Updated extract_z_PDF function for the EAZY class
+- Updated SED_codes, Galaxy and Photometry classes to load in SED fitting parameters/redshift PDFs/SEDs. Still need to write the from catalogue class methods for Galaxy and Catalogue and which will require testing!
+- Updated SED_codes, Galaxy and Photometry classes to load in SED fitting parameters/redshift PDFs/SEDs. Still need to write the from catalogue class methods for Galaxy and Catalogue and which will require testing!
+- Updated Galaxy and Photometry classes to be in their own separate scripts. Also changed the location of galfind_config.ini
+- Updated Galaxy and Photometry classes to be in their own separate scripts. Also changed the location of galfind_config.ini
+- Updated GALFIND_WORK to be in raid dir
+- Updated GALFIND_WORK to be in raid dir
+- Merge pull request #27 from u92876da/UV_properties
+- Merge pull request #27 from u92876da/UV_properties
+- Merge branch 'main' into UV_properties
+- Merge branch 'main' into UV_properties
+- Merge pull request #25 from u92876da/UV_properties_2
+- Merge pull request #25 from u92876da/UV_properties_2
+- Merge branch 'UV_properties' into UV_properties_2
+- Merge branch 'UV_properties' into UV_properties_2
+- General bug fixes and SED fitting with EAZY now works with 5pc/10pc errors including the low-z run. Also now works for multiple instruments.
+- General bug fixes and SED fitting with EAZY now works with 5pc/10pc errors including the low-z run. Also now works for multiple instruments.
+- Oops I forgot to check this in
+- Oops I forgot to check this in
+- Merge pull request #23 from u92876da/updated_eazy
+- Merge pull request #23 from u92876da/updated_eazy
+- Merge branch 'main' into updated_eazy
+- Merge branch 'main' into updated_eazy
+- Added Stacked_Images into .gitignore
+- Added Stacked_Images into .gitignore
+- Merge pull request #22 from u92876da/multiple_instruments_NIRCam
+- Merge pull request #22 from u92876da/multiple_instruments_NIRCam
+- Merge pull request #21 from u92876da/combined_detection
+- Merge pull request #21 from u92876da/combined_detection
+- Merge branch 'multiple_instruments_NIRCam' into combined_detection
+- Merge branch 'multiple_instruments_NIRCam' into combined_detection
+- Included all NIRCam, ACS_WFC and WFC3IR bands which allows for correct running of LePhare
+- Included all NIRCam, ACS_WFC and WFC3IR bands which allows for correct running of LePhare
+- Improved pipeline to now work for LW stacked detection band for forced photometry
+- Improved pipeline to now work for LW stacked detection band for forced photometry
+- updated eazy
+- updated eazy
+- support combining detection bands
+- support combining detection bands
+- Added UV slope calculations to the pipeline
+- Added UV slope calculations to the pipeline
+- Updated NIRCam Instrument to include more bands (not yet finished) in an attempt to get LePhare working with the new templates from more filters
+- Updated NIRCam Instrument to include more bands (not yet finished) in an attempt to get LePhare working with the new templates from more filters
+- Improved the LePhare input bands to include a template change based on instrument name. Still need to include all the medium and wide bands in the individual instruments in order for this to work properly!
+- Improved the LePhare input bands to include a template change based on instrument name. Still need to include all the medium and wide bands in the individual instruments in order for this to work properly!
+- Updated cat-creator to load flags and ext_src_corr properties.
+- Updated cat-creator to load flags and ext_src_corr properties.
+- Pipeline to run SMACS and NGDEEP depths overnight.
+- Pipeline to run SMACS and NGDEEP depths overnight.
+- Set boolean in config as to whether or not to plot the PDFs
+- Set boolean in config as to whether or not to plot the PDFs
+- Now runs extended source corrections for our catalogues. Also runs UV properties on the catalogue to calculate (and plot) PDFs (slowly!). UV property catalogue creation has not yet been tested! Photometry and Galaxy classes still need to be restructured!
+- Now runs extended source corrections for our catalogues. Also runs UV properties on the catalogue to calculate (and plot) PDFs (slowly!). UV property catalogue creation has not yet been tested! Photometry and Galaxy classes still need to be restructured!
+- Saved UV and mass AUTO/APER extended source corrections to the galaxy objects within the catalogue. Naming has been improved slightly but could match the structure of Catalogue.make_UV_fit_cat() and the matching join function.
+- Saved UV and mass AUTO/APER extended source corrections to the galaxy objects within the catalogue. Naming has been improved slightly but could match the structure of Catalogue.make_UV_fit_cat() and the matching join function.
+- Should now calculate extended source corrections, although these are not yet loaded properly into the galaxy object as flags. Also the naming is not that concise.
+- Should now calculate extended source corrections, although these are not yet loaded properly into the galaxy object as flags. Also the naming is not that concise.
+- Fixed -99 mag to 99 mag
+- Fixed -99 mag to 99 mag
+- LePhare changed to work with NIRCam only - this is not general and requires improvements.
+- LePhare changed to work with NIRCam only - this is not general and requires improvements.
+- LePhare works only for f606W+f814W+standard NIRCam and not for pure NIRCam photometry.
+- LePhare works only for f606W+f814W+standard NIRCam and not for pure NIRCam photometry.
+- General bug fixes to make this branch work for the pipeline. LePhare currently only works for the standard NIRCam bands (i.e not F335M) and ACS_WFC f606W and f814W for CEERS. Run into Fortran integer overflow error when attempting to run with large contexts.
+- General bug fixes to make this branch work for the pipeline. LePhare currently only works for the standard NIRCam bands (i.e not F335M) and ACS_WFC f606W and f814W for CEERS. Run into Fortran integer overflow error when attempting to run with large contexts.
+- Now Data.from_pipeline works for v9
+- Now Data.from_pipeline works for v9
+- Fixed another zero point error bug. Local depth catalogues now run without error.
+- Fixed another zero point error bug. Local depth catalogues now run without error.
+- Fixed minor ZP issue
+- Fixed minor ZP issue
+- Fixed a naming issue when attempting to produce local depth catalogues from the depths.
+- Fixed a naming issue when attempting to produce local depth catalogues from the depths.
+- Pulled out fast depths in the functions. Also fixed a weight path mis-match from excl_bands
+- Pulled out fast depths in the functions. Also fixed a weight path mis-match from excl_bands
+- Fixed instruments merge
+- Fixed instruments merge
+- Merge pull request #18 from u92876da/multiple_instruments
+- Merge pull request #18 from u92876da/multiple_instruments
+- Merge branch 'main' into multiple_instruments
+- Merge branch 'main' into multiple_instruments
+- Update
+- Merge pull request #16 from u92876da/cat-creator
+- Merge pull request #16 from u92876da/cat-creator
+- LePhare now runs successfully with [n_pc]s min flux errors
+- LePhare now runs successfully with [n_pc]s min flux errors
+- Adds ability for NIRCam instruments to calculate aperture corrections if NIRCam_aper_corrs.txt does not already exist within the GALFIND_WORK/Aperture_corrections folder.
+- Adds ability for NIRCam instruments to calculate aperture corrections if NIRCam_aper_corrs.txt does not already exist within the GALFIND_WORK/Aperture_corrections folder.
+- Fixed local depth n percentage error columns.
+- Fixed local depth n percentage error columns.
+- Merge pull request #15 from u92876da/cat-creator
+- Merge pull request #15 from u92876da/cat-creator
+- Merge branch 'main' into cat-creator
+- Merge branch 'main' into cat-creator
+- Merge pull request #14 from u92876da/selection_criteria
+- Merge pull request #14 from u92876da/selection_criteria
+- Updated Galaxy object to not crash when properties = {} is passed in (as in Galaxy.from_sex_cat_row())
+- Updated galaxy class to save properties.
+- Naming bug for including n_pc local depth error catalogues now corrected.
+- Added fast mode for overlapping depths.
+- Added fast mode for overlapping depths.
+- main
+- Attempted to speed up depths by changing the type of r to np.float rather than astropy.Quantity, although depths still run at the same (slower) speed.
+- Attempted to speed up depths by changing the type of r to np.float rather than astropy.Quantity, although depths still run at the same (slower) speed.
+- speedy v2
+- I am speed
+- speedy
+- Working on adding SED properties to galfind galaxy properties.
+- Untested, but should now work for n_pc LePhare catalogues.
+- Configured to run the new v8b Robotham wisp reductions.
+- Configured to run the new v8b Robotham wisp reductions.
+- Bug fixes
+- Merge pull request #13 from u92876da/JADES-DR1
+- Merge pull request #13 from u92876da/JADES-DR1
+- Updated NIRCam class in Instrument.py to include float F335M values rather than int
+- Updated NIRCam class in Instrument.py to include float F335M values rather than int
+- Updated run_lephare.sh to run custom templates
+- Updated run_lephare.sh to run custom templates
+- LePhare.py updated to run JADES templates with F335M included
+- LePhare.py updated to run JADES templates with F335M included
+- Updated run_lephare.sh to include template library name
+- Updated run_lephare.sh to include template library name
+- more bug fixes
+- bug fixes
+- Merge pull request #12 from u92876da/main_austind
+- Merge pull request #12 from u92876da/main_austind
+- Spotted size 0 circle and ellipse ds9 mask error and made function to clean the circles (still needs more attention). Also can now plot the images and masks if required when running depths.
+- Spotted size 0 circle and ellipse ds9 mask error and made function to clean the circles (still needs more attention). Also can now plot the images and masks if required when running depths.
+- Made photutils used for aperture photometry when image sizes don't match
+- Updated Data to allow multiple instruments
+- Function added to plot data with plt.imshow
+- Function added to plot data with plt.imshow
+- Pipeline now allows you to exclude bands from the fitting.
+- Pipeline now allows you to exclude bands from the fitting.
+- Untested, but should now work for n_pc local depth catalogues + LePhare
+- Configured for CEERS P8 new wisp experiment!
+- Configured for CEERS P8 new wisp experiment!
+- Problem with z = np.argwhere() where running depths for images outside of our NIRCam reduction pipeline (line 592 in Data/place_blank_regions.py)
+- Problem with z = np.argwhere() where running depths for images outside of our NIRCam reduction pipeline (line 592 in Data/place_blank_regions.py)
+- Pipeline now works with cat-creator n_pc errors in LePhare, and saves .spec outputs in SEDs/n_pc. LePhare output to catalogue and EAZY SED fitting still requires testing EAZY testing.
+- Configured to now work with JADES-DR1 catalogues
+- Configured to now work with JADES-DR1 catalogues
+- Now configured to run CEERSP9 Robotham2023 wisp experiment
+- Now configured to run CEERSP9 Robotham2023 wisp experiment
+- Added ACS + WFC3IR classes + aperture corrections
+- Updated README.md to include installation instructions
+- Updated README.md to include installation instructions
+- Updated so that constructors now use catalogue creator. Also have renamed LePhare catalogues with '_{n}pc' minimum flux percentage errors. Still requires testing with the galfind pipeline.
+- Updated .gitignore
+- Updated .gitignore
+- Update README.md
+- Update README.md
+- Update README.md
+- Update README.md
+- Updated README.md to include instructions for repository cloning
+- Updated README.md to include instructions for repository cloning
+- Update README.md
+- Update README.md
+- Created README.md
+- Created README.md
+- Updated gitignore to include tharvey_worktree
+- Configured now to run the pipeline for NEP-4 and CEERS P1,2,3,6
+- Added v8a SMACS-0723 to NIRCam pipeline
+- Improvement of more general code to load in a general catalogue
+- Made galfind catalogue creator
+- First branch commit
+- First galfind commit. pipeline.py currently runs source extraction, depths, local depth catalogue creation, masking and runs through LePhare and EAZY SED fitting codes.
