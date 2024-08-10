@@ -174,7 +174,9 @@ class Catalogue(Catalogue_Base):
     #         gal.phot.instrument.band_names)[0][0]].value for i, gal in enumerate(cat)])
     #     return ext_src_corrs
 
-    # should also include errors here
+
+    def calc_new_property(self, func, arg_names: Union[list, np.array]):
+        pass
 
     def load_band_properties_from_cat(self, cat_colname: str, save_name: str, multiply_factor: \
             Union[dict, u.Quantity, u.Magnitude, None] = None):
@@ -344,7 +346,6 @@ class Catalogue(Catalogue_Base):
         phot_ax = fig.add_subplot(gs[:, 0:3])
 
         PDF_ax = [fig.add_subplot(gs[0, 3:]), fig.add_subplot(gs[1, 3:])]
-        
 
         # plot SEDs
         out_paths = [gal.plot_phot_diagnostic([cutout_fig, phot_ax, PDF_ax], self.data, \
@@ -362,6 +363,145 @@ class Catalogue(Catalogue_Base):
                 except FileExistsError: # replace existing file
                     os.remove(selection_path)
                     os.symlink(out_path, selection_path)
+
+
+    def plot(self, x_name: str, x_origin: Union[str, dict], y_name: str, y_origin: Union[str, dict], \
+            colour_by: Union[None, str] = None, c_origin: Union[str, dict, None] = None, incl_x_errs: bool = True, \
+            incl_y_errs: bool = True, log_x: bool = False, log_y: bool = False, log_c: bool = False, \
+            mean_err: bool = False, annotate: bool = True, save: bool = True, show: bool = False, legend_kwargs: dict = {}, \
+            plot_kwargs: dict = {}, cmap: str = "viridis", save_type: str = ".png", fig = None, ax = None):
+        
+        if type(x_origin) in [dict]:
+            assert "code" in x_origin.keys()
+            assert x_origin["code"].__class__.__name__ in [code.__name__ for code in SED_code.__subclasses__()]
+        x = self.__getattr__(x_name, SED_fit_params = x_origin, property_type = "vals")
+        if incl_x_errs:
+            x_err = self.__getattr__(x_name, SED_fit_params = x_origin, property_type = "errs")
+            x_err = np.array([x_err[:, 0], x_err[:, 1]])
+        else:
+            x_err = None
+        if type(x_origin) in [dict]:
+            x_label = x_origin["code"].gal_property_fmt_dict[x_name]
+        else:
+            NotImplementedError
+        if log_x or x_name in funcs.logged_properties:
+            if incl_x_errs:
+                x, x_err = funcs.errs_to_log(x, x_err)
+            else:
+                x = np.log10(x)
+            x_name = f"log({x_name})"
+            x_label = f"log({x_label})"
+        
+        if type(y_origin) in [dict]:
+            assert "code" in y_origin.keys()
+            assert y_origin["code"].__class__.__name__ in [code.__name__ for code in SED_code.__subclasses__()]
+        y = self.__getattr__(y_name, SED_fit_params = y_origin, property_type = "vals")
+        if incl_y_errs:
+            y_err = self.__getattr__(y_name, SED_fit_params = y_origin, property_type = "errs")
+            y_err = np.array([y_err[:, 0], y_err[:, 1]])
+        else:
+            y_err = None
+        if type(y_origin) in [dict]:
+            y_label = y_origin["code"].gal_property_fmt_dict[y_name]
+        else:
+            NotImplementedError
+        if log_y or y_name in funcs.logged_properties:
+            if incl_y_errs:
+                y, y_err = funcs.errs_to_log(y, y_err)
+            else:
+                y = np.log10(y)
+            y_name = f"log({y_name})"
+            y_label = f"log({y_label})"
+        
+        if type(colour_by) == type(None):
+            # plot all as a single colour
+            pass
+        else:
+            if type(c_origin) in [dict]:
+                assert "code" in c_origin.keys()
+                assert c_origin["code"].__class__.__name__ in [code.__name__ for code in SED_code.__subclasses__()]
+            c = getattr(self, colour_by, SED_fit_params = c_origin, property_type = "vals")
+            if type(c_origin) in [dict]:
+                cbar_label = c_origin["code"].gal_property_fmt_dict[colour_by]
+            else:
+                NotImplementedError
+            if log_c or c in funcs.logged_properties:
+                c = np.log10(c)
+                colour_by = f"log({colour_by})"
+                cbar_label = f"log({cbar_label})"
+        
+        # setup matplotlib figure/axis if not already given
+        plt.style.use(f"{config['DEFAULT']['GALFIND_DIR']}/galfind_style.mplstyle")
+        if type(fig) == type(None) or type(ax) == type(None):
+            fig, ax = plt.subplots()
+        
+        if not "label" in plot_kwargs.keys():
+            plot_kwargs["label"] =  "+".join(self.crops)
+
+        if mean_err:
+            # produce scatter plot
+            if type(colour_by) == type(None):
+                plot = ax.scatter(x, y, **plot_kwargs)
+            else:
+                if not "cmap" in plot_kwargs.keys():
+                    plot_kwargs["cmap"] = cmap
+                plot = ax.scatter(x, y, c = c, **plot_kwargs)
+            if incl_x_errs and incl_y_errs:
+                # plot the mean error
+                pass
+        else:
+            # produce errorbar plot
+            if "ls" not in plot_kwargs.keys():
+                plot_kwargs["ls"] = ""
+            if type(colour_by) == type(None):
+                plot = ax.errorbar(x, y, xerr = x_err, yerr = y_err, **plot_kwargs)
+            else:
+                if not "cmap" in plot_kwargs.keys():
+                    plot_kwargs["cmap"] = cmap
+                plot = ax.errorbar(x, y, xerr = x_err, yerr = y_err, c = c, **plot_kwargs)
+
+        # sort plot aesthetics
+        if annotate:
+            plot_label = f"{self.version}, {self.instrument.name}, {self.survey}"
+            ax.set_title(plot_label)
+            ax.set_xlabel(x_label)
+            ax.set_ylabel(y_label)
+            if type(colour_by) != type(None):
+                # make colourbar
+                pass
+            ax.legend(**legend_kwargs)
+        
+        if save:
+            # determine origin_str
+            origin_str = ""
+            if type(x_origin) in [str]:
+                origin_str += f"x={x_origin},"
+            else:
+                origin_str += f"x={x_origin['code'].label_from_SED_fit_params(x_origin)},"
+            if type(y_origin) in [str]:
+                origin_str += f"y={y_origin},"
+            else:
+                origin_str += f"y={y_origin['code'].label_from_SED_fit_params(y_origin)}"
+            if any(type(var) == type(None) for var in [colour_by, c_origin]):
+                pass
+            elif type(c_origin) in [str]:
+                origin_str += f",c={c_origin}"
+            else: # dict
+                origin_str += f",c={c_origin['code'].label_from_SED_fit_params(c_origin)}"
+
+            # determine appropriate save path
+            save_dir = f"{config['Other']['PLOT_DIR']}/{self.version}/{self.instrument.name}/{self.survey}/{origin_str}"
+            if type(colour_by) == type(None):
+                colour_label = f"_c={colour_by}"
+            else:
+                colour_label = ""
+            save_name = f"{y_name}_vs_{x_name}{colour_label}"
+            save_path = f"{save_dir}/{save_name}{save_type}"
+            funcs.make_dirs(save_path)
+            plt.savefig(save_path)
+        
+        if show:
+            plt.show()
 
     # Selection functions
                     
@@ -473,10 +613,11 @@ class Catalogue(Catalogue_Base):
 
     # Full sample selection functions - these chain the above functions
 
-    def select_EPOCHS(self, SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}, allow_lowz = False, hot_pixel_bands = ["F277W", "F356W", "F444W"]):
+    def select_EPOCHS(self, SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}, allow_lowz = False, hot_pixel_bands = ["F277W", "F356W", "F444W"], mask_instruments = ["NIRCam"]):
+        instruments_to_mask = [globals()[instr_name]() for instr_name in self.instrument.name.split("+") if instr_name in mask_instruments]
         self.perform_selection(Galaxy.select_min_bands, 4., make_cat_copy = False) # minimum 4 photometric bands
-        [self.perform_selection(Galaxy.select_unmasked_instrument, globals()[instr_name](), make_cat_copy = False) for instr_name in self.instrument.name.split("+")] # all bands unmasked
-        [self.select_band_flux_radius(band, "gtr", 1.5, make_cat_copy = False) for band in hot_pixel_bands if band in self.instrument.band_names] # LW NIRCam wideband Re>1.5 pix
+        [self.perform_selection(Galaxy.select_unmasked_instrument, instrument, make_cat_copy = False) for instrument in instruments_to_mask] # all bands unmasked
+        [self.perform_selection(Galaxy.select_band_flux_radius, band, "gtr", 1.5, make_cat_copy = False) for band in hot_pixel_bands if band in self.instrument.band_names] # LW NIRCam wideband Re>1.5 pix
         if not allow_lowz:
             self.perform_selection(Galaxy.phot_SNR_crop, 0, 2., "non_detect", make_cat_copy = False) # 2σ non-detected in first band
         self.perform_selection(Galaxy.phot_bluewards_Lya_non_detect, 2., SED_fit_params, make_cat_copy = False) # 2σ non-detected in all bands bluewards of Lyα
@@ -484,7 +625,7 @@ class Catalogue(Catalogue_Base):
         self.perform_selection(Galaxy.select_chi_sq_lim, 3., SED_fit_params, True, make_cat_copy = False) # χ^2_red < 3
         self.perform_selection(Galaxy.select_chi_sq_diff, 4., SED_fit_params, 0.5, make_cat_copy = False) # Δχ^2 < 9 between redshift free and low redshift SED fits, with Δz=0.5 tolerance 
         self.perform_selection(Galaxy.select_robust_zPDF, 0.6, 0.1, SED_fit_params, make_cat_copy = False) # 60% of redshift PDF must lie within z ± z * 0.1
-        return self.perform_selection(Galaxy.select_EPOCHS, SED_fit_params, allow_lowz, hot_pixel_bands)
+        return self.perform_selection(Galaxy.select_EPOCHS, SED_fit_params, allow_lowz, hot_pixel_bands, instruments_to_mask)
 
     def perform_selection(self, selection_function, *args, make_cat_copy = True):
         # extract selection name from galaxy method output
@@ -602,9 +743,9 @@ class Catalogue(Catalogue_Base):
         assert(all(type(name) != type(None) for name in [dust_law, dust_origin]))
         if type(dust_author_year) != type(None):
             self.calc_AUV_from_beta_phot(rest_UV_wav_lims, ref_wav, dust_author_year, SED_fit_params, iters)
-        self.calc_SED_rest_property(SED_rest_property_function = Photometry_rest.calc_dust_atten, iters = iters, SED_fit_params = SED_fit_params,
-                                                                calc_wav = calc_wav, dust_author_year = dust_author_year, dust_law = dust_law, dust_origin = dust_origin,
-                                                                rest_UV_wav_lims = rest_UV_wav_lims, ref_wav = ref_wav)
+        self.calc_SED_rest_property(SED_rest_property_function = Photometry_rest.calc_dust_atten, iters = iters, \
+            SED_fit_params = SED_fit_params, calc_wav = calc_wav, dust_author_year = dust_author_year, \
+            dust_law = dust_law, dust_origin = dust_origin, rest_UV_wav_lims = rest_UV_wav_lims, ref_wav = ref_wav)
 
     def calc_line_flux_rest_optical(self, strong_line_names: Union[str, list], frame: str, dust_author_year = "M99", \
             dust_law = "C00", dust_origin = "UV", rest_optical_wavs = [3_700., 10_000.] * u.AA, \
@@ -615,9 +756,8 @@ class Catalogue(Catalogue_Base):
             self.calc_dust_atten(line_diagnostics[strong_line_names[0]]["line_wav"], dust_author_year, \
                 dust_law, dust_origin, rest_UV_wav_lims, ref_wav, SED_fit_params, iters)
         self.calc_SED_rest_property(SED_rest_property_function = Photometry_rest.calc_line_flux_rest_optical, iters = iters, SED_fit_params = SED_fit_params,
-                                    frame = frame, strong_line_names = strong_line_names, fesc_author_year = fesc_author_year, 
-                                    dust_author_year = dust_author_year, dust_law = dust_law, dust_origin = dust_origin, 
-                                    rest_optical_wavs = rest_optical_wavs, rest_UV_wav_lims = rest_UV_wav_lims, ref_wav = ref_wav)
+            frame = frame, strong_line_names = strong_line_names, dust_author_year = dust_author_year, dust_law = dust_law, dust_origin = dust_origin, 
+            rest_optical_wavs = rest_optical_wavs, rest_UV_wav_lims = rest_UV_wav_lims, ref_wav = ref_wav)
 
 
     def calc_line_lum_rest_optical(self, strong_line_names: Union[str, list], frame: str, dust_author_year: Union[str, None] = "M99", \
@@ -761,15 +901,3 @@ class Catalogue(Catalogue_Base):
         # remove data from self, starting with catalogue, then gal for gal in self.gals
         self.SED_rest_properties[key].remove(property_name)
         self.gals = [deepcopy(gal)._del_SED_rest_properties([property_name], key) for gal in self]
-
-
-    def plot_SED_properties(self, x_name, y_name, SED_fit_params):
-        x_arr = []
-        y_arr = []
-        for i, gal in enumerate(self):
-            gal_properties = getattr(gal.phot.SED_results[SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)], properties)
-            if x_name in gal_properties and y_name in gal_properties:
-                x_arr[i] = gal_properties(x_name)
-                y_arr[i] = gal_properties(y_name)
-            else:
-                raise(Exception(f"{x_name} and {y_name} not available for all galaxies in this catalogue!"))

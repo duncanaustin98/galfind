@@ -33,7 +33,8 @@ class SED_result:
         #[setattr(self, f"{key}_l1", value[0]) for key, value in property_errs.items()]
         #[setattr(self, f"{key}_u1", value[1]) for key, value in property_errs.items()]
         # load in peaks
-        self.property_PDFs = {property: property_PDF.load_peaks_from_best_fit(properties[property], properties["chi_sq"]) for property, property_PDF in property_PDFs.items()}
+        self.property_PDFs = {property: property_PDF.load_peaks_from_best_fit(properties[property], \
+            properties["chi_sq"]) for property, property_PDF in property_PDFs.items()}
         #[setattr(self, f"{key}_PDF", value) for key, value in property_PDFs.items()]
         self.SED = SED
         self.phot_rest = Photometry_rest.from_phot(phot, self.z)
@@ -112,6 +113,7 @@ class Galaxy_SED_results:
 class Catalogue_SED_results:
 
     def __init__(self, SED_fit_params_arr, cat_SED_results):
+        #breakpoint()
         self.SED_results = [Galaxy_SED_results(SED_fit_params_arr, SED_result_arr).SED_results for SED_result_arr in cat_SED_results]
     
     def __len__(self):
@@ -144,18 +146,27 @@ class Catalogue_SED_results:
 
         if timed:
             start = time.time()
+
         IDs = np.array(fits_cat[cat_creator.ID_label]).astype(int)
         # IDs = list(np.full(len(SED_fit_params_arr), np.array(fits_cat[cat_creator.ID_label]).astype(int)))
         # convert cat_properties from array of len(SED_fit_params_arr), with each element a dict of galaxy properties for the entire catalogue with values of arrays of len(fits_cat)
         # to array of len(fits_cat), with each element an array of len(SED_fit_params_arr) containing a dict of properties for a single galaxy
-        labels_arr = [{key: SED_fit_params["code"].galaxy_property_labels(key, SED_fit_params) for key in SED_fit_params["code"].galaxy_property_dict.keys()} for SED_fit_params in SED_fit_params_arr]
+        labels_arr = [{key: SED_fit_params["code"].galaxy_property_labels(key, SED_fit_params) for key, val in SED_fit_params["code"].galaxy_property_dict.items()} for SED_fit_params in SED_fit_params_arr]
         cat_properties = [{gal_property: list(fits_cat[label]) for gal_property, label in labels.items()} for labels in labels_arr]
         cat_properties = [[{key: value[i] for key, value in SED_fitting_properties.items()} for SED_fitting_properties in cat_properties] for i in range(len(fits_cat))]
         # convert cat_property_errs from array of len(SED_fit_params_arr), with each element a dict of galaxy properties for the entire catalogue with values of arrays of len(fits_cat)
         # to array of len(fits_cat), with each element an array of len(SED_fit_params_arr) containing a dict of properties for a single galaxy
-        err_labels_arr = [{key: SED_fit_params["code"].galaxy_property_labels(key, SED_fit_params) for key in SED_fit_params["code"].galaxy_property_errs_dict.keys()} for SED_fit_params in SED_fit_params_arr]
-        cat_property_errs = [{gal_property: list(fits_cat[label]) for gal_property, label in err_labels.items()} for err_labels in err_labels_arr]
-        cat_property_errs = [[{key: value[i] for key, value in SED_fitting_property_errs.items()} for SED_fitting_property_errs in cat_property_errs] for i in range(len(fits_cat))]
+        err_labels_arr = [{key: SED_fit_params["code"].galaxy_property_labels(key, SED_fit_params, is_err = True) for key, val in SED_fit_params["code"].galaxy_property_errs_dict.items()} for SED_fit_params in SED_fit_params_arr]
+        # ensure that all errors have an associated property
+        assert all(err_key in labels.keys() for labels, SED_fit_params in zip(labels_arr, SED_fit_params_arr) for err_key in SED_fit_params["code"].galaxy_property_errs_dict.keys())
+        adjust_errs_arr = [SED_fit_params["code"].are_errs_percentiles for SED_fit_params in SED_fit_params_arr]
+        # adjust errors if required (i.e. if 16th and 84th percentiles rather than errors)
+        cat_property_errs = [{gal_property: list(funcs.adjust_errs(np.array(fits_cat[labels[gal_property]]), \
+            np.array([np.array(fits_cat[err_label[0]]), np.array(fits_cat[err_label[1]])]))[1]) if adjust_errs else \
+            [list(fits_cat[err_label[0]]), list(fits_cat[err_label[1]])] for gal_property, err_label in err_labels.items()} \
+            for adjust_errs, labels, err_labels in zip(adjust_errs_arr, labels_arr, err_labels_arr)]
+        cat_property_errs = [[{key: [value[0][i], value[1][i]] for key, value in SED_fitting_property_errs.items()} for SED_fitting_property_errs in cat_property_errs] for i in range(len(fits_cat))]
+        
         if timed:
             mid = time.time()
             print(f"Loading properties and associated errors took {(mid - start):.1f}s")
@@ -170,12 +181,14 @@ class Catalogue_SED_results:
             for i, (SED_fit_params, PDF_paths) in enumerate(zip(SED_fit_params_arr, cat_PDF_paths)): # tqdm(, \
                    # total = len(SED_fit_params_arr), desc = "Constructing galaxy property PDFs"):
                 # check that these paths correspond to the correct galaxies
-                assert(len(PDF_paths[gal_property]) == len(fits_cat) for gal_property in SED_fit_params["code"].galaxy_property_dict.keys())
+                assert(len(PDF_paths[gal_property]) == len(fits_cat) for gal_property in PDF_paths.keys())
                 # construct PDF objects, type = array of len(fits_cat), each element a dict of {gal_property: PDF object} excluding None PDFs
                 cat_property_PDFs_ = {gal_property: SED_fit_params["code"].extract_PDFs(gal_property, IDs, \
                     PDF_paths[gal_property], SED_fit_params) for gal_property in PDF_paths.keys()}
                 cat_property_PDFs[:, i] = [{gal_property: PDF_arr[j] for gal_property, PDF_arr \
                     in cat_property_PDFs_.items() if PDF_arr[j] != None} for j in range(len(fits_cat))]
+
+        # IDEA: create properties/errors based on these PDFs if not in the catalogue
 
         # load in SEDs
         # make array of the correct shape for appropriate parsing

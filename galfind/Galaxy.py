@@ -318,8 +318,8 @@ class Galaxy:
 
         cutout_fig, phot_ax, PDF_ax = ax
         # update SED_fit_params with appropriate lowz_zmax
-        SED_fit_params_arr = [SED_fit_params["code"].update_lowz_zmax(SED_fit_params, self.phot.SED_results) for SED_fit_params in SED_fit_params_arr]
-        zPDF_plot_SED_fit_params_arr = [SED_fit_params["code"].update_lowz_zmax(SED_fit_params, self.phot.SED_results) for SED_fit_params in zPDF_plot_SED_fit_params_arr] 
+        SED_fit_params_arr = [SED_fit_params["code"].update_lowz_zmax(SED_fit_params, self.phot.SED_results) for SED_fit_params in deepcopy(SED_fit_params_arr)]
+        zPDF_plot_SED_fit_params_arr = [SED_fit_params["code"].update_lowz_zmax(SED_fit_params, self.phot.SED_results) for SED_fit_params in deepcopy(zPDF_plot_SED_fit_params_arr)] 
 
         zPDF_labels = [f"{SED_fit_params['code'].label_from_SED_fit_params(SED_fit_params)} PDF" for SED_fit_params in zPDF_plot_SED_fit_params_arr]
         # reset parameters
@@ -336,7 +336,7 @@ class Galaxy:
             self.plot_cutouts(cutout_fig, data, SED_fit_params_arr[0], \
                 hide_masked_cutouts = hide_masked_cutouts, cutout_size = cutout_size, high_dyn_rng = high_dyn_rng)
                     
-            # plot specified SEDs andd save colours
+            # plot specified SEDs and save colours
             SED_colours = {}
             errorbar_kwargs = {"ls": "", "marker": "o", "ms": 8., "zorder": 100., "path_effects": [pe.withStroke(linewidth = 2., foreground = "white")]}
             for SED_fit_params in reversed(SED_fit_params_arr):
@@ -598,7 +598,8 @@ class Galaxy:
             selection_name = f"redwards_Lya_SNR>{','.join([str(np.round(SNR, 1)) for SNR in SNR_lims])}"
         else:
             galfind_logger.critical(f"SNR_lims = {SNR_lims} has type = {type(SNR_lims)} which is not in [int, float, list, np.array]")
-
+        if widebands_only:
+            selection_name += "_widebands"
         # only compute this if not already done so
         if selection_name in self.selection_flags.keys():
             galfind_logger.debug(f"Already performed {selection_name} for galaxy ID = {self.ID}, skipping!")
@@ -625,7 +626,6 @@ class Galaxy:
                 wide_band_detect_indices = [True if "W" in band.upper() or "LP" in band.upper() else False for band in bands_detect]
                 SNR_detect = SNR_detect[wide_band_detect_indices]
                 mask_detect = mask_detect[wide_band_detect_indices]
-                selection_name += "_widebands"
             # selection criteria
             if all(SNR > SNR_lim or mask for mask, SNR, SNR_lim in zip(mask_detect, SNR_detect, SNR_lims)):
                 if update:
@@ -640,7 +640,7 @@ class Galaxy:
         assert(type(SNR_lim) in [int, float])
         assert(detect_or_non_detect.lower() in ["detect", "non_detect"], \
             galfind_logger.critical(f"detect_or_non_detect = {detect_or_non_detect} must be either 'detect' or 'non_detect'!"))
-        selection_name = f"Lya_band_SNR{'>' if detect_or_non_detect == 'detect' else '<'}{SNR_lim:.1f}"
+        selection_name = f"Lya_band_SNR{'>' if detect_or_non_detect == 'detect' else '<'}{SNR_lim:.1f}{'_widebands' if widebands_only else ''}"
         if selection_name in self.selection_flags.keys():
             galfind_logger.debug(f"{selection_name} already performed for galaxy ID = {self.ID}!")
         else:
@@ -660,7 +660,6 @@ class Galaxy:
             if widebands_only:
                 wide_band_detect_indices = [True if "W" in band.upper() or "LP" in band.upper() else False for band in bands_detect]
                 SNRs = self.phot.SNR[first_Lya_detect_band : first_Lya_non_detect_index + 1][wide_band_detect_indices]
-                selection_name += "_widebands"
             else:
                 SNRs = self.phot.SNR[first_Lya_detect_band : first_Lya_non_detect_index + 1]
                 mask_bands = self.phot.flux_Jy.mask[first_Lya_detect_band : first_Lya_non_detect_index + 1]
@@ -972,27 +971,24 @@ class Galaxy:
                 if update:
                     self.selection_flags[selection_name] = False
                 return self, selection_name
-            lowz_zmax_arr = [SED_fit_params["lowz_zmax"] for SED_fit_params in self.phot.get_SED_fit_params_arr(SED_fit_params["code"])]
-            assert(lowz_zmax_arr[-1] == None and len(lowz_zmax_arr) > 1)
-            lowz_zmax_arr = sorted(lowz_zmax_arr[:-1])
             # extract redshift + chi_sq of zfree run
-            zfree = self.phot.SED_results[SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)].z
-            chi_sq_zfree = self.phot.SED_results[SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)].chi_sq
+            zfree_label = SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)
+            zfree = self.phot.SED_results[zfree_label].z
+            chi_sq_zfree = self.phot.SED_results[zfree_label].chi_sq
             # extract redshift and chi_sq of lowz runs
-            z_lowz_arr = []
-            chi_sq_lowz_arr = []
-            for lowz_zmax in lowz_zmax_arr:
-                SED_fit_params_ = deepcopy(SED_fit_params)
-                SED_fit_params_["lowz_zmax"] = lowz_zmax
-                z_lowz_arr.append(self.phot.SED_results[SED_fit_params_["code"].label_from_SED_fit_params(SED_fit_params_)].z)
-                chi_sq_lowz_arr.append(self.phot.SED_results[SED_fit_params_["code"].label_from_SED_fit_params(SED_fit_params_)].chi_sq)
-            # determine which lowz run to use for this galaxy
-            z_lowz = [z for z, lowz_zmax in zip(z_lowz_arr, lowz_zmax_arr) if zfree > lowz_zmax + delta_z_lowz]
-            chi_sq_lowz = [chi_sq for chi_sq, lowz_zmax in zip(chi_sq_lowz_arr, lowz_zmax_arr) if zfree > lowz_zmax + delta_z_lowz]
-            if len(chi_sq_lowz) == 0:
+            lowz_SED_fit_params = deepcopy(SED_fit_params)
+            lowz_SED_fit_params.pop("lowz_zmax")
+            lowz_SED_fit_params["dz"] = delta_z_lowz
+            lowz_SED_fit_params = lowz_SED_fit_params["code"].update_lowz_zmax(lowz_SED_fit_params, self.phot.SED_results)
+            # if there is no lowz_zmax run available
+            if type(lowz_SED_fit_params["lowz_zmax"]) == type(None):
                 if update:
-                    self.selection_flags[selection_name] = True
-            elif (chi_sq_lowz[-1] - chi_sq_zfree > chi_sq_diff) or (chi_sq_lowz[-1] == -1.) or (z_lowz[-1] < 0.):
+                    self.selection_flags[selection_name] = False
+                return self, selection_name
+            lowz_label = lowz_SED_fit_params["code"].label_from_SED_fit_params(lowz_SED_fit_params)
+            z_lowz = self.phot.SED_results[lowz_label].z
+            chi_sq_lowz = self.phot.SED_results[lowz_label].chi_sq
+            if (chi_sq_lowz - chi_sq_zfree > chi_sq_diff) or (chi_sq_lowz == -1.) or (z_lowz < 0.):
                 if update:
                     self.selection_flags[selection_name] = True
             else:
