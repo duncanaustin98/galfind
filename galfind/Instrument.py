@@ -260,10 +260,11 @@ class Instrument:
         if self.name in globals():
             assert globals()[self.name] in Instrument.__subclasses__()
 
-        # TEMPORARY for F444W PSF-homogenized. 
+        # TEMPORARY for F444W PSF-homogenized.
         if config.getboolean("DataReduction", "PSF_HOMOGENIZED"):
-            print('WARNING! Temporary aperture correction for F444W PSF-homogenized')
-            aper_corr = {0.32: 0.4691650961749638, 0.5: 0.31013820485999116, 1: 0.16205011984149864, 1.5: 0.10985494543655024, 2: 0.09046584834037462}
+            galfind_logger.warning('Temporary aperture correction for F444W PSF-homogenized')
+            aper_corr = {0.2: 0.6345, 0.32: 0.4691650961749638, 0.5: 0.31013820485999116, \
+                1.: 0.16205011984149864, 1.5: 0.10985494543655024, 2.: 0.09046584834037462}
             aper_corrs = [aper_corr[aper_diam.to(u.arcsec).value]] * len(self)
             if cache:
                 self.aper_corrs[aper_diam] = aper_corrs

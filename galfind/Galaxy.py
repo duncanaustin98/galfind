@@ -212,7 +212,7 @@ class Galaxy:
                 raise(NotImplementedError())
     
     def plot_cutouts(self, cutout_fig, data, SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}, \
-            hide_masked_cutouts = True, cutout_size = 0.96 * u.arcsec, high_dyn_rng = False):
+            hide_masked_cutouts = True, cutout_size = 0.96 * u.arcsec, high_dyn_rng = False, aper_diam = 0.32 * u.arcsec):
     
         # Delete everything on the figure
         cutout_fig.clf()
@@ -239,8 +239,7 @@ class Galaxy:
         for i, band in enumerate(bands):
                 
             # need to load sextractor flux_radius as a general function somewhere!
-            radius = 0.16 * u.arcsec # need access to galfind cat_creator for this
-            radius_pix = (radius / data.im_pixel_scales[band]).to(u.dimensionless_unscaled).value
+            radius_pix = (aper_diam / (2. * data.im_pixel_scales[band])).to(u.dimensionless_unscaled).value
             #flux_radius = None
             #radius_sextractor = flux_radius
         
@@ -313,8 +312,10 @@ class Galaxy:
                 ax_arr[-1].add_artist(scalebar)
 
     
-    def plot_phot_diagnostic(self, ax, data, SED_fit_params_arr, zPDF_plot_SED_fit_params_arr, wav_unit = u.um, flux_unit = u.ABmag, \
-            hide_masked_cutouts = True, cutout_size = 0.96 * u.arcsec, high_dyn_rng = False, annotate_PDFs = True, plot_rejected_reasons = False, overwrite = True):
+    def plot_phot_diagnostic(self, ax, data, SED_fit_params_arr, zPDF_plot_SED_fit_params_arr, \
+            wav_unit = u.um, flux_unit = u.ABmag, hide_masked_cutouts = True, \
+            cutout_size = 0.96 * u.arcsec, high_dyn_rng = False, annotate_PDFs = True, \
+            plot_rejected_reasons = False, aper_diam = 0.32 * u.arcsec, overwrite = True):
 
         cutout_fig, phot_ax, PDF_ax = ax
         # update SED_fit_params with appropriate lowz_zmax
@@ -334,7 +335,8 @@ class Galaxy:
         if not Path(out_path).is_file() or overwrite:
             # plot cutouts (assuming reference SED_fit_params is at 0th index)
             self.plot_cutouts(cutout_fig, data, SED_fit_params_arr[0], \
-                hide_masked_cutouts = hide_masked_cutouts, cutout_size = cutout_size, high_dyn_rng = high_dyn_rng)
+                hide_masked_cutouts = hide_masked_cutouts, cutout_size = cutout_size, \
+                high_dyn_rng = high_dyn_rng, aper_diam = aper_diam)
                     
             # plot specified SEDs andd save colours
             SED_colours = {}
@@ -1075,7 +1077,7 @@ class Galaxy:
             self.phot_bluewards_Lya_non_detect(2., SED_fit_params)[1], # 2σ non-detected in all bands bluewards of Lyα
             self.phot_redwards_Lya_detect([5., 5.], SED_fit_params, widebands_only = True)[1], # 5σ/3σ detected in first/second band redwards of Lyα
             self.select_chi_sq_lim(3., SED_fit_params, reduced = True)[1], # χ^2_red < 3
-            self.select_chi_sq_diff(9., SED_fit_params, delta_z_lowz = 0.5)[1], # Δχ^2 > 9 between redshift free and low redshift SED fits, with Δz=0.5 tolerance 
+            self.select_chi_sq_diff(4., SED_fit_params, delta_z_lowz = 0.5)[1], # Δχ^2 > 4 between redshift free and low redshift SED fits, with Δz=0.5 tolerance 
             self.select_robust_zPDF(0.6, 0.1, SED_fit_params)[1] # 60% of redshift PDF must lie within z ± z * 0.1
         ]
 
