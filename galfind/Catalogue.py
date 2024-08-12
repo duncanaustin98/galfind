@@ -354,11 +354,11 @@ class Catalogue(Catalogue_Base):
 
         PDF_ax = [fig.add_subplot(gs[0, 3:]), fig.add_subplot(gs[1, 3:])]
         
-
         # plot SEDs
         out_paths = [gal.plot_phot_diagnostic([cutout_fig, phot_ax, PDF_ax], self.data, \
-            SED_fit_params_arr, zPDF_plot_SED_fit_params_arr, wav_unit, flux_unit) \
-            for gal in tqdm(self, total = len(self), desc = "Plotting photometry diagnostic plots")]
+            SED_fit_params_arr, zPDF_plot_SED_fit_params_arr, wav_unit, flux_unit, \
+            aper_diam = self.cat_creator.aper_diam) for gal in tqdm(self, total = len(self), \
+            desc = "Plotting photometry diagnostic plots")]
 
         # make a folder to store symlinked photometric diagnostic plots for selected galaxies
         if self.crops != []:
@@ -485,13 +485,13 @@ class Catalogue(Catalogue_Base):
     def select_EPOCHS(self, SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}, allow_lowz = False, hot_pixel_bands = ["F277W", "F356W", "F444W"]):
         self.perform_selection(Galaxy.select_min_bands, 4., make_cat_copy = False) # minimum 4 photometric bands
         [self.perform_selection(Galaxy.select_unmasked_instrument, globals()[instr_name](), make_cat_copy = False) for instr_name in self.instrument.name.split("+")] # all bands unmasked
-        [self.select_band_flux_radius(band, "gtr", 1.5, make_cat_copy = False) for band in hot_pixel_bands if band in self.instrument.band_names] # LW NIRCam wideband Re>1.5 pix
+        [self.perform_selection(Galaxy.select_band_flux_radius, band, "gtr", 1.5, make_cat_copy = False) for band in hot_pixel_bands if band in self.instrument.band_names] # LW NIRCam wideband Re>1.5 pix
         if not allow_lowz:
             self.perform_selection(Galaxy.phot_SNR_crop, 0, 2., "non_detect", make_cat_copy = False) # 2σ non-detected in first band
         self.perform_selection(Galaxy.phot_bluewards_Lya_non_detect, 2., SED_fit_params, make_cat_copy = False) # 2σ non-detected in all bands bluewards of Lyα
         self.perform_selection(Galaxy.phot_redwards_Lya_detect, [5., 5.], SED_fit_params, True, make_cat_copy = False) # 5σ/3σ detected in first/second band redwards of Lyα
         self.perform_selection(Galaxy.select_chi_sq_lim, 3., SED_fit_params, True, make_cat_copy = False) # χ^2_red < 3
-        self.perform_selection(Galaxy.select_chi_sq_diff, 4., SED_fit_params, 0.5, make_cat_copy = False) # Δχ^2 < 9 between redshift free and low redshift SED fits, with Δz=0.5 tolerance 
+        self.perform_selection(Galaxy.select_chi_sq_diff, 4., SED_fit_params, 0.5, make_cat_copy = False) # Δχ^2 < 4 between redshift free and low redshift SED fits, with Δz=0.5 tolerance 
         self.perform_selection(Galaxy.select_robust_zPDF, 0.6, 0.1, SED_fit_params, make_cat_copy = False) # 60% of redshift PDF must lie within z ± z * 0.1
         return self.perform_selection(Galaxy.select_EPOCHS, SED_fit_params, allow_lowz, hot_pixel_bands)
 
@@ -499,7 +499,6 @@ class Catalogue(Catalogue_Base):
         # extract selection name from galaxy method output
         selection_name = selection_function(self[0], *args, update = False)[1]
         # open catalogue
-        ##breakpoint()
         # perform selection if not previously performed
         if selection_name not in self.selection_cols:
             # perform calculation for each galaxy and update galaxies in self

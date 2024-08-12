@@ -60,7 +60,7 @@ class Data:
     def __init__(self, instrument, im_paths, im_exts, im_pixel_scales, im_shapes, im_zps, wht_paths, wht_exts, rms_err_paths, rms_err_exts, \
         seg_paths, mask_paths, cluster_mask_path, blank_mask_path, survey, version, cat_path = "", is_blank = True, alignment_band = "F444W", \
         RGB_method = None, mask_stars = True): # trilogy
-        
+
         # sort dicts from blue -> red bands in ascending wavelength order
         self.im_paths = im_paths # not sure these need to be sorted
         self.im_exts = im_exts # not sure these need to be sorted
@@ -244,14 +244,12 @@ class Data:
             **{instrument_name: f"{int(np.round(pix_scales[instrument_name].to(u.mas).value, 0))}mas" \
             for instrument_name in ["ACS_WFC", "WFC3_IR", "MIRI"]}}
 
-        #breakpoint()
         for instrument_name in instrument_names:
             instrument = globals()[instrument_name](excl_bands = [band_name for band_name in excl_bands if band_name in globals()[instrument_name]().band_names])
             version_to_dir = instrument_version_to_dir[instrument_name]
             pix_scale = pix_scales[instrument_name]
             
             # determine directory where the data is stored for the version, survey and instrument
-            #breakpoint()
             if type(version_to_dir) == str:
                 survey_dir = f"{config['DEFAULT']['GALFIND_DATA']}/{instrument.facility.lower()}/{survey}/{instrument_name}/{version_to_dir}"
             elif type(version_to_dir) == dict:
@@ -266,8 +264,12 @@ class Data:
             else:
                 galfind_logger.critical(f"{version_to_dir=} with {type(version_to_dir)=} not in [str, dict]")
             
-            # extract all .fits files in this directory
-            fits_path_arr = np.array(glob.glob(f"{survey_dir}/*.fits"))
+            # quick fix for non-NIRCam PSF homogenized images
+            if "psfmatched" in version and config.getboolean("DataReduction", "PSF_HOMOGENIZED") and instrument_name != "NIRCam":
+                fits_path_arr = np.array(glob.glob(f"{survey_dir}/psf_matched/*.fits"))
+            else:
+                # extract all .fits files in this directory
+                fits_path_arr = np.array(glob.glob(f"{survey_dir}/*.fits"))
             if len(fits_path_arr) == 0:
                 continue
 
@@ -1064,6 +1066,8 @@ class Data:
         err_map_path, err_map_ext, err_map_type = self.get_err_map(band, prefer = "rms_err")
         # insert specified aperture diameters from config file
         as_aper_diams = json.loads(config.get("SExtractor", "APERTURE_DIAMS"))
+        if len(as_aper_diams) != 5:
+            galfind_logger.warning(f"{sex_config_path=} should be updated for {as_aper_diams=} at runtime!")
         pix_aper_diams = str([np.round(pix_aper_diam, 2) for pix_aper_diam in as_aper_diams / self.im_pixel_scales[band].value]).replace("[", "").replace("]", "").replace(" ", "")
         # SExtractor bash script python wrapper
         process = subprocess.Popen(["./make_seg_map.sh", config['DEFAULT']['GALFIND_WORK'], self.im_paths[band], str(self.im_pixel_scales[band].value), \
@@ -1456,6 +1460,8 @@ class Data:
                     # insert specified aperture diameters from config file
                     as_aper_diams = json.loads(config.get("SExtractor", "APERTURE_DIAMS"))
                     pix_aper_diams = str([np.round(pix_aper_diam, 2) for pix_aper_diam in as_aper_diams / self.im_pixel_scales[band].value]).replace("[", "").replace("]", "").replace(" ", "")
+                    if len(as_aper_diams) != 5:
+                        galfind_logger.warning(f"{sex_config_path=} should be updated for {as_aper_diams=} at runtime!")
                     # SExtractor bash script python wrapper
                     print(["./make_sex_cat.sh", config['DEFAULT']['GALFIND_WORK'], self.im_paths[band], str(self.im_pixel_scales[band].value), \
                         str(self.im_zps[band]), self.instrument.instrument_from_band(band).name, self.survey, band, self.version, \

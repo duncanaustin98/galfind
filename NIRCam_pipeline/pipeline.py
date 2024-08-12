@@ -30,22 +30,22 @@ def pipeline(surveys, version, instruments, aper_diams, min_flux_pc_errs, forced
                 excl_bands = excl_bands, loc_depth_min_flux_pc_errs = min_flux_pc_errs, crop_by = crop_by, timed = timed, \
                 mask_stars = mask_stars, pix_scales = pix_scales, load_SED_rest_properties = load_SED_rest_properties, n_depth_reg = n_depth_reg)
 
-            cat.phot_SNR_crop(0, 2., "non_detect") # 2σ non-detected in first band
-            cat.phot_bluewards_Lya_non_detect(2.) # 2σ non-detected in all bands bluewards of Lyα
-            cat.phot_redwards_Lya_detect([5., 5.], widebands_only = True) # 5σ/5σ detected in first/second band redwards of Lyα
-            cat.select_chi_sq_lim(3., reduced = True) # χ^2_red < 3
-            cat.select_chi_sq_diff(4., delta_z_lowz = 0.5) # Δχ^2 > 4 between redshift free and low redshift SED fits, with Δz=0.5 tolerance 
-            cat.select_robust_zPDF(0.6, 0.1) # 60% of redshift PDF must lie within z ± z * 0.1
-            # ensure masked in all instruments
-            cat.select_unmasked_instrument(NIRCam()) # unmasked in all NIRCam bands
-            # hot pixel checks
-            for band_name in ["F277W", "F356W", "F444W"]:
-                cat.select_band_flux_radius(band_name, "gtr", 1.5) # LW NIRCam wideband Re>1.5 pix
+            # cat.phot_SNR_crop(0, 2., "non_detect") # 2σ non-detected in first band
+            # cat.phot_bluewards_Lya_non_detect(2.) # 2σ non-detected in all bands bluewards of Lyα
+            # cat.phot_redwards_Lya_detect([5., 5.], widebands_only = True) # 5σ/5σ detected in first/second band redwards of Lyα
+            # cat.select_chi_sq_lim(3., reduced = True) # χ^2_red < 3
+            # cat.select_chi_sq_diff(4., delta_z_lowz = 0.5) # Δχ^2 > 4 between redshift free and low redshift SED fits, with Δz=0.5 tolerance 
+            # cat.select_robust_zPDF(0.6, 0.1) # 60% of redshift PDF must lie within z ± z * 0.1
+            # # ensure masked in all instruments
+            # cat.select_unmasked_instrument(NIRCam()) # unmasked in all NIRCam bands
+            # # hot pixel checks
+            # for band_name in ["F277W", "F356W", "F444W"]:
+            #     cat.select_band_flux_radius(band_name, "gtr", 1.5) # LW NIRCam wideband Re>1.5 pix
             
-            cat_copy = cat.select_EPOCHS(allow_lowz = False)
+            # cat_copy = cat.select_EPOCHS(allow_lowz = False)
             # # #cat_copy.make_cutouts(IDs = crop_by["IDs"])
-            cat_copy.plot_phot_diagnostics(flux_unit = u.ABmag)
-            print(str(cat_copy))
+            cat.plot_phot_diagnostics(flux_unit = u.ABmag)
+            print(str(cat))
 
             # end = time.time()
             # print(f"Time to load catalogue = {(end - start):.1f}s")
@@ -68,14 +68,14 @@ def pipeline(surveys, version, instruments, aper_diams, min_flux_pc_errs, forced
             # #cat.select_rest_UV_line_emitters_sigma("CIV-1549", 2.)
             
             #cat.del_hdu(SED_fit_params_arr[-1]["code"].label_from_SED_fit_params(SED_fit_params_arr[-1]))
-            if load_SED_rest_properties:
-                iters = 100
-                #cat.calc_SFR_UV_phot(frame = "obs", AUV_beta_conv_author_year = "M99", iters = iters)
-                #cat.calc_SFR_UV_phot(frame = "obs", AUV_beta_conv_author_year = None, iters = iters)
-                #cat.calc_rest_UV_properties(iters = iters)
-                #cat.calc_cont_rest_optical(["Halpha"], iters = iters)
-                #cat.calc_EW_rest_optical(["Halpha"], frame = "obs", iters = iters)
-                cat_copy.calc_xi_ion(iters = iters) #dust_author_year = None
+            # if load_SED_rest_properties:
+            #     iters = 100
+            #     #cat.calc_SFR_UV_phot(frame = "obs", AUV_beta_conv_author_year = "M99", iters = iters)
+            #     #cat.calc_SFR_UV_phot(frame = "obs", AUV_beta_conv_author_year = None, iters = iters)
+            #     #cat.calc_rest_UV_properties(iters = iters)
+            #     #cat.calc_cont_rest_optical(["Halpha"], iters = iters)
+            #     #cat.calc_EW_rest_optical(["Halpha"], frame = "obs", iters = iters)
+            #     cat_copy.calc_xi_ion(iters = iters) #dust_author_year = None
 
 
 def make_EAZY_SED_fit_params_arr(SED_code_arr, templates_arr, lowz_zmax_arr):
@@ -84,17 +84,17 @@ def make_EAZY_SED_fit_params_arr(SED_code_arr, templates_arr, lowz_zmax_arr):
 
 if __name__ == "__main__":
 
-    version = "v9" #config["DEFAULT"]["VERSION"]
+    version = "v11_psfmatched_0.2as" #config["DEFAULT"]["VERSION"]
     instruments = ["ACS_WFC", "NIRCam"] #, "MIRI"] #, "ACS_WFC"] # "WFC3_IR"
     cat_type = "loc_depth"
-    surveys = ["JADES-Deep-GS+JEMS"] #["JADES-Deep-GS+JEMS"]#+SMILES"] #[config["DEFAULT"]["SURVEY"]]
-    aper_diams = [0.32] * u.arcsec # , 0.5, 1.0, 1.5, 2.0
+    surveys = ["JOF"] #["JADES-Deep-GS+JEMS"]#+SMILES"] #[config["DEFAULT"]["SURVEY"]]
+    aper_diams = [0.2] * u.arcsec # 0.32, 0.5, 1.0, 1.5, 2.0
     SED_code_arr = [EAZY()]
     templates_arr = ["fsps_larson"] #["fsps", "fsps_larson", "fsps_jades"]
     lowz_zmax_arr = [[2., 4., 6., None]] #[[4., 6., None]] #[[None]] # 
     min_flux_pc_errs = [10]
     forced_phot_band = ["F277W", "F356W", "F444W"] # ["F444W"]
-    crop_by = None #{"ID": [893, 1685, 2171, 3400, 5532, 6492, 7389, 7540, 9036, 15476]} #"bands>13+EPOCHS" #"EPOCHS_lowz+z>4.5" # {"IDs": [30004, 26602, 2122, 28178, 17244, 23655, 1027]}
+    crop_by = "EPOCHS" #{"ID": [893, 1685, 2171, 3400, 5532, 6492, 7389, 7540, 9036, 15476]} #"bands>13+EPOCHS" #"EPOCHS_lowz+z>4.5" # {"IDs": [30004, 26602, 2122, 28178, 17244, 23655, 1027]}
     timed = False
     mask_stars = {"ACS_WFC": False, "NIRCam": True, "WFC3_IR": False, "MIRI": False}
     MIRI_pix_scale = 0.06 * u.arcsec
