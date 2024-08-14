@@ -313,11 +313,21 @@ class Catalogue(Catalogue_Base):
 #                     else:
 #                         rerun = True
 #             if rerun:
+            start = time.time()
             im_data, im_header, seg_data, seg_header = self.data.load_data(band, incl_mask = False)
+            end1 = time.time()
+            print('Time to load im/seg data:', end1 - start)
             wht_data = self.data.load_wht(band)
+            end2 = time.time()
+            print('Time to load wht data:', end2 - end1)
             rms_err_data = self.data.load_rms_err(band)
+            end3 = time.time()
+            print('Time to load rms_err data:', end3 - end2)
             wcs = WCS(im_header)
             pos = 0
+            end = time.time()
+            print('Time to load data:', end - start)
+
             for gal in self:
                 if gal.ID in IDs:
                     if type(cutout_size) in [dict]:
@@ -330,6 +340,9 @@ class Catalogue(Catalogue_Base):
                         wcs = wcs, im_header = im_header, survey = self.survey, version = self.version, \
                         pix_scale = self.data.im_pixel_scales[band], cutout_size = cutout_size_gal)
                     pos += 1
+
+            end2 = time.time()
+            print('Time to make cutouts:', end2 - end)
                 
 #             else:
 #                 for gal in self:
@@ -698,8 +711,9 @@ class Catalogue(Catalogue_Base):
             is_property_updated = self.__getattr__(property_name, phot_type = "rest", property_type = "recently_updated")
         if type(is_property_updated) == type(None):
             breakpoint()
-        if any(type(updated) == type(None) for updated in is_property_updated):
-            breakpoint()
+        else:
+            if any(type(updated) == type(None) for updated in is_property_updated):
+                breakpoint()
         # update properties and kwargs for those galaxies that have been updated, or if the columns have just been made
         
         if is_property_updated is not None:
