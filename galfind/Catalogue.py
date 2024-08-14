@@ -317,11 +317,20 @@ class Catalogue(Catalogue_Base):
             wht_data = self.data.load_wht(band)
             rms_err_data = self.data.load_rms_err(band)
             wcs = WCS(im_header)
+            pos = 0
             for gal in self:
                 if gal.ID in IDs:
+                    if type(cutout_size) in [dict]:
+                        cutout_size_gal = cutout_size[gal.ID]
+                    else:
+                        cutout_size_gal = cutout_size
+                    
+                    
                     gal.make_cutout(band, data = {"SCI": im_data, "SEG": seg_data, 'WHT': wht_data, 'RMS_ERR':rms_err_data}, \
                         wcs = wcs, im_header = im_header, survey = self.survey, version = self.version, \
-                        pix_scale = self.data.im_pixel_scales[band], cutout_size = cutout_size)
+                        pix_scale = self.data.im_pixel_scales[band], cutout_size = cutout_size_gal)
+                    pos += 1
+                
 #             else:
 #                 for gal in self:
 #                     if gal.ID in IDs:
