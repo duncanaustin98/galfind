@@ -29,7 +29,14 @@ def pipeline(surveys, version, instruments, aper_diams, min_flux_pc_errs, forced
                 cat_creator = cat_creator, SED_fit_params_arr = SED_fit_params_arr, forced_phot_band = forced_phot_band, \
                 excl_bands = excl_bands, loc_depth_min_flux_pc_errs = min_flux_pc_errs, crop_by = crop_by, timed = timed, \
                 mask_stars = mask_stars, pix_scales = pix_scales, load_SED_rest_properties = load_SED_rest_properties, n_depth_reg = n_depth_reg)
-
+            
+            #cat.calc_Vmax(cat.data, z_bin = [5.5, 6.5], timed = timed)
+            #cat.calc_Vmax(cat.data, z_bin = [11.5, 13.5], timed = timed)
+            #cat.calc_Vmax(cat.data, z_bin = [9.5, 11.5], timed = timed)
+            #cat.calc_Vmax(cat.data, z_bin = [8.5, 9.5], timed = timed)
+            #cat.calc_Vmax(cat.data, z_bin = [7.5, 8.5], timed = timed)
+            #cat.calc_Vmax(cat.data, z_bin = [6.5, 7.5], timed = timed)
+            
             # cat.phot_SNR_crop(0, 2., "non_detect") # 2σ non-detected in first band
             # cat.phot_bluewards_Lya_non_detect(2.) # 2σ non-detected in all bands bluewards of Lyα
             # cat.phot_redwards_Lya_detect([5., 5.], widebands_only = True) # 5σ/5σ detected in first/second band redwards of Lyα
@@ -44,8 +51,8 @@ def pipeline(surveys, version, instruments, aper_diams, min_flux_pc_errs, forced
             
             # cat_copy = cat.select_EPOCHS(allow_lowz = False)
             # # #cat_copy.make_cutouts(IDs = crop_by["IDs"])
-            cat.plot_phot_diagnostics(flux_unit = u.ABmag)
-            print(str(cat))
+            # cat.plot_phot_diagnostics(flux_unit = u.ABmag)
+            # print(str(cat))
 
             # end = time.time()
             # print(f"Time to load catalogue = {(end - start):.1f}s")
@@ -84,21 +91,21 @@ def make_EAZY_SED_fit_params_arr(SED_code_arr, templates_arr, lowz_zmax_arr):
 
 if __name__ == "__main__":
 
-    version = "v11_psfmatched_0.2as" #config["DEFAULT"]["VERSION"]
+    version = "v11" #config["DEFAULT"]["VERSION"]
     instruments = ["ACS_WFC", "NIRCam"] #, "MIRI"] #, "ACS_WFC"] # "WFC3_IR"
     cat_type = "loc_depth"
     surveys = ["JOF"] #["JADES-Deep-GS+JEMS"]#+SMILES"] #[config["DEFAULT"]["SURVEY"]]
-    aper_diams = [0.2] * u.arcsec # 0.32, 0.5, 1.0, 1.5, 2.0
+    aper_diams = [0.32] * u.arcsec # 0.32, 0.5, 1.0, 1.5, 2.0
     SED_code_arr = [EAZY()]
     templates_arr = ["fsps_larson"] #["fsps", "fsps_larson", "fsps_jades"]
-    lowz_zmax_arr = [[2., 4., 6., None]] #[[4., 6., None]] #[[None]] # 
+    lowz_zmax_arr = [[4., 6., None]] #[[4., 6., None]] #[[None]] # 
     min_flux_pc_errs = [10]
     forced_phot_band = ["F277W", "F356W", "F444W"] # ["F444W"]
     crop_by = "EPOCHS" #{"ID": [893, 1685, 2171, 3400, 5532, 6492, 7389, 7540, 9036, 15476]} #"bands>13+EPOCHS" #"EPOCHS_lowz+z>4.5" # {"IDs": [30004, 26602, 2122, 28178, 17244, 23655, 1027]}
     timed = False
     mask_stars = {"ACS_WFC": False, "NIRCam": True, "WFC3_IR": False, "MIRI": False}
     MIRI_pix_scale = 0.06 * u.arcsec
-    load_SED_rest_properties = True
+    load_SED_rest_properties = False #True
     n_depth_reg = "auto"
 
     jems_bands = ["F182M", "F210M", "F430M", "F460M", "F480M"]

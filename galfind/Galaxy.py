@@ -20,6 +20,7 @@ import time
 import glob
 from pathlib import Path
 from astropy.nddata import Cutout2D
+from astropy.utils.masked import Masked
 from tqdm import tqdm
 import matplotlib.patheffects as pe
 from astropy.wcs import WCS
@@ -31,14 +32,41 @@ from typing_extensions import Self
 from typing import Union
 
 from . import useful_funcs_austind as funcs
-from . import config, galfind_logger, astropy_cosmo
+from . import config, galfind_logger, astropy_cosmo, instr_to_name_dict
 from . import Photometry_rest, Photometry_obs, Multiple_Photometry_obs, Data, Instrument, NIRCam, ACS_WFC, WFC3_IR, PDF
-from .SED import SED, Mock_SED_rest, Mock_SED_obs
+from .SED import SED, SED_obs, Mock_SED_rest, Mock_SED_obs
 from .EAZY import EAZY
+from .SED_result import SED_result
 from .Emission_lines import line_diagnostics
 
+# should be exhaustive
+select_func_to_type = {
+    "select_min_bands": "data",
+    "select_min_unmasked_bands": "data",
+    "select_unmasked_instrument": "data",
+    "select_phot_galaxy_property_bin": "SED",
+    "select_phot_galaxy_property": "SED",
+    "phot_bluewards_Lya_non_detect": "phot_rest",
+    "phot_redwards_Lya_detect": "phot_rest",
+    "phot_Lya_band": "phot_rest",
+    "phot_SNR_crop": "phot_obs",
+    "select_rest_UV_line_emitters_dmag": "phot_rest",
+    "select_rest_UV_line_emitters_sigma": "phot_rest",
+    "select_colour": "phot_obs",
+    "select_colour_colour": "phot_obs",
+    "select_UVJ": "SED",
+    "select_Kokorev24_LRDs": "phot_obs",
+    "select_depth_region": "data",
+    "select_chi_sq_lim": "SED",
+    "select_chi_sq_diff": "SED",
+    "select_robust_zPDF": "SED",
+    "select_band_flux_radius": "morphology",
+    "select_EPOCHS": "combined",
+    "select_combined": "combined"
+}
+
 class Galaxy:
-    
+
     def __init__(self, sky_coord, ID, phot, mask_flags = {}, selection_flags = {}): # cat_path,
         self.sky_coord = sky_coord
         self.ID = int(ID) 
@@ -497,7 +525,8 @@ class Galaxy:
     
     # Galaxy photometry property selection
 
-    def select_phot_galaxy_property(self, property_name, gtr_or_less, property_lim, SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}, update = True):
+    def select_phot_galaxy_property(self, property_name, gtr_or_less, property_lim, \
+            SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}, update = True):
         key = SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)
         assert(property_name in self.phot.SED_results[key].properties.keys())
         galfind_logger.warning("Ideally need to include appropriate units for photometric galaxy property selection")
@@ -523,7 +552,8 @@ class Galaxy:
                     self.selection_flags[selection_name] = False
         return self, selection_name
 
-    def select_phot_galaxy_property_bin(self, property_name, property_lims, SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}, update = True):
+    def select_phot_galaxy_property_bin(self, property_name, property_lims, \
+            SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}, update = True):
         key = SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)
         assert(property_name in self.phot.SED_results[key].properties.keys())
         galfind_logger.warning("Ideally need to include appropriate units for photometric galaxy property selection")
@@ -550,7 +580,6 @@ class Galaxy:
     # Rest-frame photometry property selection
 
 
-
     # Photometric SNR selection
         
     def phot_bluewards_Lya_non_detect(self, SNR_lim, SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}, update = True):
@@ -570,7 +599,7 @@ class Galaxy:
             mask = self.phot.flux_Jy.mask
             assert(len(bands) == len(SNRs) == len(mask))
             first_Lya_non_detect_band = self.phot.SED_results[SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)].phot_rest.first_Lya_non_detect_band
-            if first_Lya_non_detect_band == None:
+            if type(first_Lya_non_detect_band) == type(None):
                 if update:
                     self.selection_flags[selection_name] = True
                 return self, selection_name
@@ -600,7 +629,8 @@ class Galaxy:
             selection_name = f"redwards_Lya_SNR>{','.join([str(np.round(SNR, 1)) for SNR in SNR_lims])}"
         else:
             galfind_logger.critical(f"SNR_lims = {SNR_lims} has type = {type(SNR_lims)} which is not in [int, float, list, np.array]")
-
+        if widebands_only:
+            selection_name += "_widebands"
         # only compute this if not already done so
         if selection_name in self.selection_flags.keys():
             galfind_logger.debug(f"Already performed {selection_name} for galaxy ID = {self.ID}, skipping!")
@@ -613,7 +643,7 @@ class Galaxy:
             # extract bands, SNRs, mask and first Lya non-detect band
             bands = self.phot.instrument.band_names
             first_Lya_detect_band = self.phot.SED_results[SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)].phot_rest.first_Lya_detect_band
-            if first_Lya_detect_band == None:
+            if type(first_Lya_detect_band) == type(None):
                 if update:
                     self.selection_flags[selection_name] = False
                 return self, selection_name
@@ -627,7 +657,6 @@ class Galaxy:
                 wide_band_detect_indices = [True if "W" in band.upper() or "LP" in band.upper() else False for band in bands_detect]
                 SNR_detect = SNR_detect[wide_band_detect_indices]
                 mask_detect = mask_detect[wide_band_detect_indices]
-                selection_name += "_widebands"
             # selection criteria
             if all(SNR > SNR_lim or mask for mask, SNR, SNR_lim in zip(mask_detect, SNR_detect, SNR_lims)):
                 if update:
@@ -643,6 +672,8 @@ class Galaxy:
         assert(detect_or_non_detect.lower() in ["detect", "non_detect"], \
             galfind_logger.critical(f"detect_or_non_detect = {detect_or_non_detect} must be either 'detect' or 'non_detect'!"))
         selection_name = f"Lya_band_SNR{'>' if detect_or_non_detect == 'detect' else '<'}{SNR_lim:.1f}"
+        if widebands_only:
+            selection_name += "_widebands"
         if selection_name in self.selection_flags.keys():
             galfind_logger.debug(f"{selection_name} already performed for galaxy ID = {self.ID}!")
         else:
@@ -662,7 +693,6 @@ class Galaxy:
             if widebands_only:
                 wide_band_detect_indices = [True if "W" in band.upper() or "LP" in band.upper() else False for band in bands_detect]
                 SNRs = self.phot.SNR[first_Lya_detect_band : first_Lya_non_detect_index + 1][wide_band_detect_indices]
-                selection_name += "_widebands"
             else:
                 SNRs = self.phot.SNR[first_Lya_detect_band : first_Lya_non_detect_index + 1]
                 mask_bands = self.phot.flux_Jy.mask[first_Lya_detect_band : first_Lya_non_detect_index + 1]
@@ -961,11 +991,12 @@ class Galaxy:
                     self.selection_flags[selection_name] = False
         return self, selection_name
 
-    def select_chi_sq_diff(self, chi_sq_diff, SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}, delta_z_lowz = 0.5, update = True):
+    def select_chi_sq_diff(self, chi_sq_diff, SED_fit_params = {"code": EAZY(), \
+            "templates": "fsps_larson", "lowz_zmax": None}, delta_z_lowz = 0.5, update = True):
         assert(type(chi_sq_diff) in [int, float])
         assert(type(delta_z_lowz) in [int, float])
         assert("lowz_zmax" in SED_fit_params.keys())
-        assert(SED_fit_params["lowz_zmax"] == None)
+        assert(type(SED_fit_params["lowz_zmax"]) == type(None))
         selection_name = f"chi_sq_diff>{chi_sq_diff:.1f},dz>{delta_z_lowz:.1f}"
         if selection_name in self.selection_flags.keys():
             galfind_logger.debug(f"{selection_name} already performed for galaxy ID = {self.ID}!")
@@ -975,7 +1006,7 @@ class Galaxy:
                     self.selection_flags[selection_name] = False
                 return self, selection_name
             lowz_zmax_arr = [SED_fit_params["lowz_zmax"] for SED_fit_params in self.phot.get_SED_fit_params_arr(SED_fit_params["code"])]
-            assert(lowz_zmax_arr[-1] == None and len(lowz_zmax_arr) > 1)
+            assert(type(lowz_zmax_arr[-1]) == type(None) and len(lowz_zmax_arr) > 1)
             lowz_zmax_arr = sorted(lowz_zmax_arr[:-1])
             # extract redshift + chi_sq of zfree run
             zfree = self.phot.SED_results[SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)].z
@@ -1075,7 +1106,7 @@ class Galaxy:
         
         selection_names = [
             self.phot_bluewards_Lya_non_detect(2., SED_fit_params)[1], # 2σ non-detected in all bands bluewards of Lyα
-            self.phot_redwards_Lya_detect([5., 5.], SED_fit_params, widebands_only = True)[1], # 5σ/3σ detected in first/second band redwards of Lyα
+            self.phot_redwards_Lya_detect([5., 5.], SED_fit_params, widebands_only = True)[1], # 5σ/5σ detected in first/second band redwards of Lyα
             self.select_chi_sq_lim(3., SED_fit_params, reduced = True)[1], # χ^2_red < 3
             self.select_chi_sq_diff(4., SED_fit_params, delta_z_lowz = 0.5)[1], # Δχ^2 > 4 between redshift free and low redshift SED fits, with Δz=0.5 tolerance 
             self.select_robust_zPDF(0.6, 0.1, SED_fit_params)[1] # 60% of redshift PDF must lie within z ± z * 0.1
@@ -1100,10 +1131,147 @@ class Galaxy:
         else:
             if update:
                 self.selection_flags[selection_name] = False
-        return self, selection_name
+        #combined_name = "+".join(selection_names)
+        return self, selection_name, #combined_name
     
     def select_combined(self):
         pass
+
+    def is_selected(self, crop_names: Union[str, np.array, list, dict], \
+            incl_selection_types: Union[str, list] = "All", timed: bool = False) -> bool:
+        # input assertions
+        assert type(crop_names) in [str, np.array, list, dict]
+        if type(crop_names) in [str]:
+            crop_names = [crop_names]
+        if type(incl_selection_types) in [str]:
+            incl_selection_types = [incl_selection_types]
+        if incl_selection_types != ["All"]:
+            assert all(fit_type in select_func_to_type.values() for fit_type in incl_selection_types)
+        # perform selections if required
+        selection_names = []
+        if timed:
+            start = time.time()
+        for i, crop_name in enumerate(crop_names):
+            func, kwargs, func_type = Galaxy._get_selection_func_from_output_name(crop_name)
+            if func_type in incl_selection_types or incl_selection_types == ["All"]:
+                selection_name = func(self, **kwargs)[1]
+                assert selection_name == crop_name
+                selection_names.append(selection_name)
+                run = True
+            else:
+                run = False
+            if timed:
+                print(f"{crop_name=} was {'run' if run else 'skipped'} and took:")
+                if i == 0:
+                    mid = time.time()
+                    print(f"{mid - start}s")
+                else:
+                    print(f"{time.time() - mid}s")
+                    mid = time.time()
+        #breakpoint()
+        # determine whether galaxy is selected
+        if all(self.selection_flags[name] for name in selection_names):
+            selected = True
+        else:
+            selected = False
+        # clear selection flags
+        #self.selection_flags = {}
+        return selected
+
+    @staticmethod
+    def _get_selection_func_from_output_name(name):
+        # only currently works for standard EPOCHS selection!
+        # simplest case
+        if hasattr(Galaxy, f"select_{name}"):
+            func = getattr(Galaxy, f"select_{name}")
+            # default arguments
+            kwargs = {}
+        # phot_SNR_crop
+        elif "bluest_band_SNR" in name or "reddest_band_SNR" in name:
+            # not yet exhaustive! - have not done band SNR cropping
+            func = Galaxy.phot_SNR_crop
+            split_name = name.split("_band_SNR")
+            sign = split_name[1][0]
+            assert sign in ["<", ">"]
+            detect_or_non_detect = "detect" if sign == ">" else "non_detect"
+            SNR_lim = float(name.split(sign)[1])
+            if split_name[0] == "bluest":
+                band_name_or_index = 0
+            elif split_name[0] == "reddest":
+                band_name_or_index = -1
+            else:
+                band_name_or_index = int(split_name[0].split("_")[0][:-2])
+                if "bluest" in split_name[0]:
+                    band_name_or_index -= 1
+                else: # reddest in split_name[0]
+                    band_name_or_index *= -1
+            kwargs = {"band_name_or_index": band_name_or_index, "SNR_lim": SNR_lim, "detect_or_non_detect": detect_or_non_detect}
+        # phot_bluewards_Lya_non_detect
+        elif "bluewards_Lya_SNR<" in name:
+            func = Galaxy.phot_bluewards_Lya_non_detect
+            kwargs = {"SNR_lim": float(name.split("bluewards_Lya_SNR<")[1])}
+        # phot_redwards_Lya_detect
+        elif "redwards_Lya_SNR>" in name:
+            func = Galaxy.phot_redwards_Lya_detect
+            SNR_str = name.split(">")[1].split("_")
+            if name.split("_") == "ALL":
+                SNR_lims = float(SNR_str[0])
+            else: # name.split("_") == "redwards"
+                SNR_lims = [float(SNR) for SNR in SNR_str[0].split(",")]
+            if len(SNR_str) == 1:
+                widebands_only = False
+            else:
+                assert len(SNR_str) == 2
+                assert SNR_str[1] == "widebands"
+                widebands_only = True
+            kwargs = {"SNR_lims": SNR_lims, "widebands_only": widebands_only}
+        # select_chi_sq_lim
+        elif "red_chi_sq<" in name:
+            func = Galaxy.select_chi_sq_lim
+            kwargs = {"chi_sq_lim": float(name.split("red_chi_sq<")[1])}
+        # select_chi_sq_diff
+        elif "chi_sq_diff" in name and ",dz>" in name:
+            func = Galaxy.select_chi_sq_diff
+            split_name = name.split(",dz>")
+            kwargs = {"chi_sq_diff": float(split_name[0].split(">")[1]), "delta_z_low_z": float(split_name[1])}
+        # select_robust_zPDF
+        elif "zPDF>" in name and "%,|dz|/z<" in name:
+            func = Galaxy.select_robust_zPDF
+            split_name = name.split("%,|dz|/z<")
+            kwargs = {"integral_lim": int(split_name[0].split(">")[1]) / 100, "delta_z_over_z": float(split_name[1])}
+        # select_min_unmasked_bands
+        elif "unmasked_bands>" in name:
+            func = Galaxy.select_min_unmasked_bands
+            kwargs = {"min_bands": int(name.split(">")[1]) + 1}
+        # select_unmasked_instrument
+        elif "unmasked_" in name:
+            func = Galaxy.select_unmasked_instrument
+            instrument_name = name.split("_")[1]
+            assert instrument_name in [subcls.__name__ for subcls in Instrument.__subclasses__() if subcls.__name__ != "Combined_Instrument"]
+            kwargs = {"instrument": instr_to_name_dict[instrument_name]}
+        # select_band_flux_radius
+        elif "Re_" in name:
+            func = Galaxy.select_band_flux_radius
+            split_name = name.split(">")
+            if len(split_name) == 1:
+                # no ">" exists
+                split_name = name.split("<")
+                gtr_or_less = "less"
+            else: # ">" exists
+                gtr_or_less = "gtr"
+            band = split_name[0].split("_")[1]
+            lim_str = split_name[1]
+            if "pix" in lim_str:
+                lim = float(lim_str.split("pix")[0]) * u.dimensionless_unscaled
+            else: # lim in as
+                lim = float(lim_str.split("as")[0]) * u.arcsec
+            kwargs = {"band": band, "gtr_or_less": gtr_or_less, "lim": lim}
+        else:
+            galfind_logger.critical(f"Galaxy._get_selection_func_from_output_name could not determine {name=}!")
+            raise NotImplementedError
+        assert func.__name__ in select_func_to_type.keys()
+        func_type = select_func_to_type[func.__name__]
+        return func, kwargs, func_type
     
     # Rest-frame SED photometric properties
 
@@ -1135,6 +1303,152 @@ class Galaxy:
     def _get_SED_rest_property_names(self, PDF_dir):
         PDF_paths = glob.glob(f"{PDF_dir}/*/{self.ID}.ecsv")
         return [path.split("/")[-2] for path in PDF_paths]
+
+    # Vmax calculation in a single field
+    def calc_Vmax(self, detect_cat_name: str, data, z_bin: Union[list, np.array], \
+            SED_fit_params_key: str = "EAZY_fsps_larson_zfree", z_step: float = 0.01, \
+            depth_mode = "n_nearest", depth_region = "all", timed: bool = False) -> None:
+        # input assertions
+        #breakpoint()
+        assert len(z_bin) == 2
+        assert z_bin[0] < z_bin[1]
+        z_obs = self.phot.SED_results[SED_fit_params_key].z
+        if z_obs > z_bin[1] or z_obs < z_bin[0]:
+            V_max_simple = -1.
+            V_max = -1.
+            z_min_used = -1.
+            z_max_used = -1.
+        else:
+            distance_detect = astropy_cosmo.luminosity_distance(z_obs)
+            sed_obs = self.phot.SED_results[SED_fit_params_key].SED
+            # load appropriate depths for each data object in data_arr
+            galfind_logger.warning("Should use local depth if the data.full_name is the same as the catalogue the galaxy is measured in!")
+            data.load_depths(self.phot.aper_diam, depth_mode)
+            data_depths = [band_depths[depth_region] for band_depths in data.depths.values()]
+            # create SED_fit_params
+            SED_fit_params = globals()[SED_fit_params_key.split("_")[0]]().SED_fit_params_from_label(SED_fit_params_key)
+            # calculate z_range
+            # z_test for other fields should be lower than starting z
+            z_detect = []
+            debug_arr = []
+            for z in tqdm(np.arange(z_bin[0], z_bin[1] + z_step, z_step), desc = f"Calculating z_max and z_min for ID={self.ID}"):
+                # could be cleaned up with new Galaxy method
+                if timed:
+                    start = time.time()
+                galfind_logger.debug("ΙGM attenuation is ignored when redshifting the best-fit galaxy SED!")
+                wav_z = sed_obs.wavs * ((1. + z) / (1. + sed_obs.z))
+                distance_test = astropy_cosmo.luminosity_distance(z)
+                mag_z = funcs.convert_mag_units(sed_obs.wavs, sed_obs.mags, u.ABmag).value \
+                    - (5 * np.log10((distance_detect / distance_test).to(u.dimensionless_unscaled).value)) \
+                    + (2.5 * np.log10((1. + sed_obs.z) / (1. + z)))
+                if timed:
+                    pre_mid = time.time()
+                    print(pre_mid - start)
+                # construct galaxy at new redshift with average depths of new field
+                test_sed_obs = SED_obs(z, wav_z.value, mag_z, wav_z.unit, u.ABmag)
+                test_mock_phot = test_sed_obs.create_mock_phot(data.instrument, \
+                    depths = data_depths, min_flux_pc_err = self.phot.min_flux_pc_err)
+                test_phot_obs = Photometry_obs(test_mock_phot.instrument, \
+                    Masked(test_mock_phot.flux_Jy, mask = np.full(len(data.instrument), False)), test_mock_phot.flux_Jy, \
+                    self.phot.aper_diam, test_mock_phot.min_flux_pc_err, test_mock_phot.depths)
+                sed_result = SED_result(SED_fit_params, test_phot_obs, \
+                    {"z": z}, property_errs = {}, property_PDFs = {}, SED = None)
+                test_phot_obs.SED_results = {SED_fit_params_key: sed_result}
+                galfind_logger.debug("empty selection_flags dict explicitly set here to alleviate (potential deepcopy?) issues when running from Catalogue.calc_Vmax")
+                test_gal = Galaxy(self.sky_coord, self.ID, test_phot_obs, selection_flags = {})
+                if timed:
+                    post_mid = time.time()
+                    print(post_mid - pre_mid)
+                # test whether galaxy would be selected with given crops - assuming redshift is fixed to new redshift
+                # assert all(self.selection_flags == cat[0].selection_flags for gal in cat) when running from catalogue
+                goodz = test_gal.is_selected(self.selection_flags, incl_selection_types = ["phot_obs", "phot_rest"], timed = timed)
+                debug_arr.append([key for key, val in test_gal.selection_flags.items() if not val])
+                if goodz:
+                    z_detect.append(z)
+                if timed:
+                    end = time.time()
+                    print(end - post_mid)
+                    print(f"Total time taken = {end - post_mid}s")
+            
+            if len(z_detect) < 2:   
+                z_max = -1.
+                z_min = -1.
+                V_max_simple = -1.
+                V_max = -1.
+            else:  
+                z_max = np.round(z_detect[-1], 3)
+                z_min = np.round(z_detect[0], 3)
+            
+            # don't worry about completeness and contamination for now
+            #completeness_field = detect_completeness[field] * jag_completeness[field]
+            #contamination_field = jag_contamination[field]
+            # Don't filter objects based on Jaguar sims with no objects in bin
+            #if contamination_field > vmax_contam_limit and contamination_field < 1:
+            #    continue
+            #if completeness_field < comp_limit and completeness_field > 0:
+            #    #print(f'Skipping {field} for {id} because completeness {completeness_field} < 0.5')
+            #    continue
+            #if z_max_field <= z_min_field:
+                #print(f'Skipping {field} for {id}')
+                # if (field == detect_field) and (detect_field != 'NGDEEP'): # Removes galaxies which aren't detected in their own field. Excludes NGDEEP because some are detected in NGDEEP-HST 
+                #     print(f'{id} detected in {field} is not found to be detectable.')
+                #     V_max = 0
+                #     V_max_new = 0
+                #     fields_used = -1
+                #     fields = []
+                #     break
+                # continue
+
+            #breakpoint()
+            unmasked_area_tab = data.calc_unmasked_area(masking_instrument_or_band_name = data.forced_phot_band, forced_phot_band = data.forced_phot_band) 
+            unmasked_area = unmasked_area_tab[unmasked_area_tab["masking_instrument_band"] == data.forced_phot_band]['unmasked_area_total'][0] * u.arcmin ** 2
+            z_min_used = np.max([z_min, z_bin[0]])
+            z_max_used = np.min([z_max, z_bin[1]])
+            V_max_simple = funcs.calc_Vmax(unmasked_area, z_bin[0], z_max_used)
+            V_max = funcs.calc_Vmax(unmasked_area, z_min_used, z_max_used)
+
+        # save outputs in galaxy object
+        if not hasattr(self, "obs_zrange"):
+            self.obs_zrange = {}
+        if not hasattr(self, "V_max_simple"):
+            self.V_max_simple = {}
+        if not hasattr(self, "V_max"):
+            self.V_max = {}
+        z_bin_name = f"{SED_fit_params_key}_{z_bin[0]:.1f}<z<{z_bin[1]:.1f}"
+        if not z_bin_name in self.obs_zrange.keys():
+            self.obs_zrange[z_bin_name] = {}
+        if not z_bin_name in self.V_max_simple.keys():
+            self.V_max_simple[z_bin_name] = {}
+        if not z_bin_name in self.V_max.keys():
+            self.V_max[z_bin_name] = {}
+        self.obs_zrange[z_bin_name][data.full_name] = [z_min_used, z_max_used]
+        self.V_max_simple[z_bin_name][data.full_name] = V_max_simple
+        self.V_max[z_bin_name][data.full_name] = V_max
+        return self
+    
+    def calc_Vmax_multifield(self, detect_cat_name: str, data_arr: Union[list, np.array], z_bin: Union[list, np.array], \
+            SED_fit_params_key: str = "EAZY_fsps_larson_zfree", z_step: float = 0.01) -> None:
+        z_bin_name = f"{SED_fit_params_key}_{z_bin[0]:.1f}<z<{z_bin[1]:.1f}"
+        joint_survey_name = "+".join([data.full_name for data in data_arr])
+        V_max = 0.
+        V_max_simple = 0.
+        fields_used = []
+        for data in data_arr:
+            # calculate Vmax in each field
+            self.calc_Vmax(detect_cat_name, data, z_bin, SED_fit_params_key, z_step)
+            if self.V_max[z_bin_name][data.full_name] >= 0.:
+                V_max += self.V_max[z_bin_name][data.full_name]
+                fields_used.append(data.full_name)
+            V_max_simple += self.V_max_simple[z_bin_name][data.full_name]
+        
+        if not hasattr(self, "V_max_fields_used"):
+            self.V_max_fields_used = {}
+        if not z_bin_name in self.V_max_fields_used.keys():
+            self.V_max_fields_used[z_bin_name] = {}
+        self.V_max_fields_used[z_bin_name][joint_survey_name] = fields_used
+        self.V_max_simple[z_bin_name][joint_survey_name] = V_max_simple
+        self.V_max[z_bin_name][joint_survey_name] = V_max
+        return self
 
 class Multiple_Galaxy:
     

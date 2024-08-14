@@ -108,6 +108,8 @@ all_bands = np.hstack([subcls().bands for subcls in Instrument.__subclasses__() 
 all_band_names = [band.band_name for band in sorted(all_bands, key = lambda band: band.WavelengthCen.to(u.AA).value)]
 config.set("Other", "ALL_BANDS", json.dumps(all_band_names))
 
+instr_to_name_dict = {instr_name: globals()[instr_name]() for instr_name in [subcls.__name__ for subcls in Instrument.__subclasses__() if subcls.__name__ != "Combined_Instrument"]}
+
 from .Data import Data
 from .Photometry import Photometry, Multiple_Photometry, Mock_Photometry
 from .Photometry_obs import Photometry_obs, Multiple_Photometry_obs

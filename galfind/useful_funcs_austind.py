@@ -300,6 +300,12 @@ def label_fluxes(unit, is_log_scaled):
 lower_Calzetti_filt = [1268., 1309., 1342., 1407., 1562., 1677., 1760., 1866., 1930., 2400.]
 upper_Calzetti_filt = [1284., 1316., 1371., 1515., 1583., 1740., 1833., 1890., 1950., 2580.]
 
+# Vmax calculation
+def calc_Vmax(area, zmin, zmax):
+    return ((4/3 * np.pi) * (area / (4. * np.pi * u.sr)) * \
+        (astropy_cosmo.comoving_distance(zmax) ** 3. \
+        - astropy_cosmo.comoving_distance(zmin) ** 3.)).to(u.Mpc ** 3)
+
 # general functions
 
 def adjust_errs(data, data_err):
@@ -443,10 +449,10 @@ def GALFIND_cat_path(SED_code_name, instrument_name, version, survey, forced_pho
     cat_name = f"{survey}_MASTER_Sel-{forced_phot_band_name}_{version}_{cat_type}{masked_name}_{str(min_flux_pc_err)}pc_{SED_code_name}.fits"
     return f"{cat_dir}/{cat_name}"
 
-def GALFIND_final_cat_path(survey, version, instrument_name, sel_band_name, min_pc_err, SED_code_name, masked = True):
+def GALFIND_final_cat_path(survey, version, instrument_name, sel_band_name, min_flux_pc_err, SED_code_name, masked = True):
     cat_dir = f"{config['DEFAULT']['GALFIND_WORK']}/Catalogues/{version}/{instrument_name}/{survey}"
     if masked:
-        cat_name = f"{survey}_MASTER_Sel-{sel_band_name}_{version}_loc_depth_masked_{str(min_pc_err)}pc_{SED_code_name}_matched_selection.fits"
+        cat_name = f"{survey}_MASTER_Sel-{sel_band_name}_{version}_loc_depth_masked_{str(min_flux_pc_err)}pc_{SED_code_name}_matched_selection.fits"
     else:
         raise(Exception("masked = False currently not implemented!"))
     return f"{cat_dir}/{cat_name}"
