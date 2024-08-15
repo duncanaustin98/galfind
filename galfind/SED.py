@@ -206,7 +206,7 @@ class SED_obs(SED):
         mag_obs = funcs.convert_mag_units(SED_rest.wavs, SED_rest.mags, u.ABmag)
         return cls(z_int, wav_obs.value, mag_obs.value, SED_rest.wavs.unit, u.ABmag)
     
-    def create_mock_phot(self, instrument, depths = [], min_pc_err = 10.):
+    def create_mock_phot(self, instrument, depths = [], min_flux_pc_err = 10.):
         if type(depths) == dict:
            depths = [depth for (band, depth) in depths.items()]
         if depths == []: # if depths not given, expect the galaxy to be very well detected
@@ -215,10 +215,10 @@ class SED_obs(SED):
         # convert bp_averaged_fluxes to Jy
         band_wavs = np.array([band.WavelengthCen.value for band in instrument]) * u.AA
         bp_averaged_fluxes_Jy = funcs.convert_mag_units(band_wavs, bp_averaged_fluxes, u.Jy)
-        self.mock_phot = Mock_Photometry(instrument, bp_averaged_fluxes_Jy, depths, min_pc_err)
+        self.mock_phot = Mock_Photometry(instrument, bp_averaged_fluxes_Jy, depths, min_flux_pc_err)
         return self.mock_phot
     
-    def calc_colour(self, filters, depths = [], min_pc_err = 10.):
+    def calc_colour(self, filters, depths = []):
         assert type(filters) in [np.array, list]
         assert len(filters) == 2
         if type(depths) == dict:
