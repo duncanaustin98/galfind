@@ -16,7 +16,9 @@ class PDF:
     def __init__(self, property_name, x, p_x, kwargs = {}, normed = False, timed = False):
         if timed:
             start = time.time()
-        assert type(x) in [u.Quantity, u.Magnitude]
+        if type(x) not in [u.Quantity, u.Magnitude]:
+            breakpoint()
+        #assert type(x) in [u.Quantity, u.Magnitude]
         self.property_name = property_name
         self.x = x
         self.kwargs = kwargs
@@ -28,7 +30,7 @@ class PDF:
         self.p_x = p_x
         if timed:
             end = time.time()
-            print(mid - start, end - mid)
+            #print(mid - start, end - mid)
 
     def __str__(self, print_peaks = False):
         line_sep = "*" * 40 + "\n"
@@ -87,11 +89,12 @@ class PDF:
             return None
 
     @classmethod
-    def from_1D_arr(cls, property_name, arr, kwargs = {}, Nbins = 50):
-        assert type(arr) in [u.Quantity, u.Magnitude]
+    def from_1D_arr(cls, property_name, arr, kwargs = {}, Nbins = 50, normed = False, timed = False):
+        assert type(arr) in [u.Quantity, u.Magnitude], galfind_logger.critical( \
+            f"{property_name=} 1D {arr=} with {type(arr)=} not in [u.Quantity, u.Magnitude]")
         p_x, x_bin_edges = np.histogram(arr.value, bins = Nbins, density = True)
         x = 0.5 * (x_bin_edges[1:] + x_bin_edges[:-1]) * arr.unit
-        PDF_obj = cls(property_name, x, p_x, kwargs)
+        PDF_obj = cls(property_name, x, p_x, kwargs, normed, timed)
         PDF_obj.input_arr = arr
         return PDF_obj
     
@@ -245,9 +248,17 @@ class PDF:
 
 class SED_fit_PDF(PDF):
 
-    def __init__(self, property_name, x, p_x, SED_fit_params, normed = True, timed = True):
+    def __init__(self, property_name, x, p_x, SED_fit_params, kwargs = {}, normed = False, timed = False):
         self.SED_fit_params = SED_fit_params
-        super().__init__(property_name, x, p_x, normed = normed, timed = timed)
+        super().__init__(property_name, x, p_x, kwargs, normed, timed)
+
+    @classmethod
+    def from_1D_arr(cls, property_name, arr, SED_fit_params, kwargs = {}, Nbins = 50, normed = False, timed = False):
+        # super doesn't work here due to argument differences between PDF().__init__ and SED_fit_PDF().__init__
+        PDF_obj = PDF.from_1D_arr(property_name, arr, kwargs, Nbins, normed, timed) # normalizes here if not already
+        sed_fit_PDF = cls(property_name, PDF_obj.x, PDF_obj.p_x, SED_fit_params, kwargs, True, timed)
+        sed_fit_PDF.input_arr = arr
+        return sed_fit_PDF
 
     def load_peaks_from_SED_result(self, SED_result, nth_peak = 0):
         assert type(nth_peak) == int, galfind_logger.critical(f"nth_peak with type = {type(nth_peak)} must be of type 'int'")
@@ -270,13 +281,20 @@ class SED_fit_PDF(PDF):
 
 class Redshift_PDF(SED_fit_PDF):
 
-    def __init__(self, z, p_z, SED_fit_params, normed = False, timed = False):
-        super().__init__("z", z, p_z, SED_fit_params, normed = normed, timed = timed)
+    def __init__(self, z, p_z, SED_fit_params, kwargs = {}, normed = False, timed = False):
+        super().__init__("z", z, p_z, SED_fit_params, kwargs, normed, timed)
 
     @classmethod
-    def from_SED_code_output(cls, data_path, ID, code):
-        z, p_z = code.extract_z_PDF(data_path, ID)
-        return cls(z, p_z)
+    def from_1D_arr(cls, z_arr, SED_fit_params, kwargs = {}, Nbins = 50, normed = False, timed = False):
+        SED_fit_PDF_obj = SED_fit_PDF.from_1D_arr("z", z_arr, SED_fit_params, kwargs, Nbins, normed, timed) # normalized here if not already
+        z_PDF = cls(SED_fit_PDF_obj.x, SED_fit_PDF_obj.p_x, SED_fit_params, kwargs, True, timed)
+        z_PDF.input_arr = z_arr
+        return z_PDF
+
+    # @classmethod
+    # def from_SED_code_output(cls, data_path, ID, code, SED_fit_params):
+    #     z, p_z = code.extract_z_PDF(data_path, ID)
+    #     return cls(z, p_z, SED_fit_params)
     
     def integrate_between_lims(self, delta_z_over_z, zbest = None, z_min = float(config["SEDFitting"].get("Z_MIN")), z_max = float(config["SEDFitting"].get("Z_MAX"))):
         # find best fitting redshift from peak of the PDF distribution - not needed if peak is loaded in PDF object

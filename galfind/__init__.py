@@ -95,7 +95,7 @@ wav_lyman_lim = 911.8 # * u.AA
 from . import useful_funcs_austind
 from . import NIRCam_aperture_corrections as NIRCam_aper_corr
 from . import Depths
-from .PDF import PDF, Redshift_PDF, PDF_nD
+from .PDF import PDF, SED_fit_PDF, Redshift_PDF, PDF_nD
 from .Filter import Filter
 from .Instrument import Instrument, ACS_WFC, WFC3_IR, NIRCam, MIRI, Combined_Instrument
 instr_to_name_dict = {instr_name: globals()[instr_name]() for instr_name in \

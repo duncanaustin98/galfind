@@ -26,9 +26,13 @@ class LePhare(SED_code):
     galaxy_property_dict = {"z": "Z_BEST", "mass": "MASS_BEST", "chi_sq": "CHI_BEST"}
     galaxy_property_errs_dict = {}
     available_templates = ["BC03"]
+    ID_label = "IDENT"
+    are_errs_percentiles = False # check this!
 
-    def __init__(self):
-        super().__init__(self.galaxy_property_dict, self.galaxy_property_errs_dict, self.available_templates)
+    def __init__(self, SED_fit_params = None):
+        # LePhare specific SED fit params assertions here
+        super().__init__(SED_fit_params, self.galaxy_property_dict, self.galaxy_property_errs_dict, \
+            self.available_templates, self.ID_label, self.are_errs_percentiles)
     
     def make_in(self, cat, units = u.ABmag, fix_z = False, *args, **kwargs): # from FITS_organiser.py
         lephare_in_path = f"{self.code_dir}/input/{cat.data.instrument.name}/{cat.data.version}/{cat.data.survey}/{cat.cat_name.replace('.fits', '')}_{cat.cat_creator.min_flux_pc_err}pc.in"

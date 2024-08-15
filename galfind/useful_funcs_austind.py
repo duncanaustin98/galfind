@@ -298,6 +298,9 @@ def label_fluxes(unit, is_log_scaled):
     else:
         return flux_label
 
+# properties that are by default logged
+logged_properties = ["stellar_mass", "formed_mass", "ssfr", "ssfr_10myr"]
+
 # Calzetti 1994 filters
 lower_Calzetti_filt = [1268., 1309., 1342., 1407., 1562., 1677., 1760., 1866., 1930., 2400.]
 upper_Calzetti_filt = [1284., 1316., 1371., 1515., 1583., 1740., 1833., 1890., 1950., 2580.]
@@ -501,66 +504,9 @@ def ordinal(n: int):
 def beta_slope_power_law_func(wav_rest, A, beta):
     return (10 ** A) * (wav_rest ** beta)
 
-# GALFIND specific functions
-def GALFIND_SED_column_labels(codes, lowz_zmaxs, templates_arr, gal_property):
-    return [code.galaxy_property_labels(gal_property, templates, lowz_zmax) for code, templates in zip(codes, templates_arr) for lowz_zmax in lowz_zmaxs]
-
-def GALFIND_cat_path(SED_code_name, instrument_name, version, survey, forced_phot_band_name, min_flux_pc_err, cat_type = "loc_depth", masked = True, templates = "fsps_larson"):
-    # should still include aper_diam here
-    if masked:
-        masked_name = "_masked"
-    else:
-        masked_name = ""
-    if SED_code_name == "EAZY":
-        SED_code_name = f"eazy_{templates}"
-    cat_dir = f"{config['DEFAULT']['GALFIND_WORK']}{SED_code_name}/output/{instrument_name}/{version}/{survey}"
-    cat_name = f"{survey}_MASTER_Sel-{forced_phot_band_name}_{version}_{cat_type}{masked_name}_{str(min_flux_pc_err)}pc_{SED_code_name}.fits"
-    return f"{cat_dir}/{cat_name}"
-
-def GALFIND_final_cat_path(survey, version, instrument_name, sel_band_name, min_flux_pc_err, SED_code_name, masked = True):
-    cat_dir = f"{config['DEFAULT']['GALFIND_WORK']}/Catalogues/{version}/{instrument_name}/{survey}"
-    if masked:
-        cat_name = f"{survey}_MASTER_Sel-{sel_band_name}_{version}_loc_depth_masked_{str(min_flux_pc_err)}pc_{SED_code_name}_matched_selection.fits"
-    else:
-        raise(Exception("masked = False currently not implemented!"))
-    return f"{cat_dir}/{cat_name}"
-
 def inspect_info():
   info = inspect.getframeinfo(inspect.stack()[1][0])
   return info.filename, info.function, info.lineno
-  
-# Simulations
-class Simulation(ABC):
-    
-    def __init__(self, sim_name, base_cat_path, survey_depth_name, flux_zero_point):
-        self.sim_name = sim_name
-        self.base_cat_path = base_cat_path
-        self.survey_depth_name = survey_depth_name
-        self.full_cat_path = self.make_err_cat()
-        
-    def make_err_cat(self):
-        # open base catalogue
-        base_cat = Catalogue.cat_from_path(self.base_cat_path)
-        
-        # load depths from specific survey
-        depths = Catalogue.load_depths(self.survey_depth_name)
-
-    
-    @abstractmethod
-    def flux_col_name(self, band):
-        pass
-    
-    def flux_err_name(self, band):
-        return f"{self.flux_col_name(band)}_err"
-
-class Jaguar(Simulation):
-    
-    def __init__(self, survey_depth_name):
-        super().__init__("Jaguar", "/nvme/scratch/work/tharvey/lightcone_models/jaguar/JADES_SF_mock_r1_v1.2.fits", survey_depth_name, 31.4)
-        
-    def flux_col_name(self, band):
-        if band in NIRCam().bands:
-            return f"NRC_{band.replace('f', 'F')}_fnu"
 
 def make_dirs(path, permissions = 0o777):
     os.makedirs(split_dir_name(path, "dir"), exist_ok = True)
@@ -580,17 +526,6 @@ def change_file_permissions(path, permissions = 0o777, log = False):
         except (PermissionError, FileNotFoundError):
             pass
 
-def calc_errs_from_cat(cat, col_name, instrument):
-    if col_name in LePhare_col_names:
-        errs = calc_LePhare_errs(cat, col_name)
-    elif col_name in EAZY_col_names:
-        errs = calc_EAZY_errs(cat, col_name)
-    elif col_name in instrument.band_names:
-        errs = [return_loc_depth_mags(cat, col_name, True)[1]]
-    else:
-        errs = np.array([cat[f"{col_name}_l1"], cat[f"{col_name}_u1"]])
-    return errs
-
 def source_separation(sky_coord_1, sky_coord_2, z):
     # calculate separation in arcmin
     arcmin_sep = sky_coord_1.separation(sky_coord_2).to(u.arcmin)
@@ -598,8 +533,6 @@ def source_separation(sky_coord_1, sky_coord_2, z):
     # calculate separation in transverse comoving distance
     kpc_sep = arcmin_sep * astropy_cosmo.kpc_proper_per_arcmin(z)
     return kpc_sep
-
-#source_separation(SkyCoord(ra = 53.26564 * u.deg, dec = -27.85555 * u.deg), SkyCoord(ra = 53.26556 * u.deg, dec = -27.85552 * u.deg), 8.0)
 
 def tex_to_fits(tex_path, col_names, col_errs, replace = {"&": "", "\\\\": "", "\dag": "", "\ddag": "", "\S": "", \
                                             "\P": "", "$": "", "}": "", "^{+": " ", "^{": "", "_{-": " "}, empty = ["-"], comment = "%"):
@@ -660,11 +593,6 @@ def tex_to_fits(tex_path, col_names, col_errs, replace = {"&": "", "\\\\": "", "
     fits_table.write(fits_path, overwrite = True)
     change_file_permissions(fits_path)
     print(f"Saved {tex_path} as .fits")
-
-#col_names = ["NAME", "RA", "DEC", "MAG_f444W", "MAG_f277W", "z_LePhare", "mass_LePhare", "Beta", "SFR", "M_UV", "References"]
-#col_errs = [False, False, False, True, True, True, False, True, True, True, False]
-#tex_to_fits("/nvme/scratch/work/austind/Arxiv_papers/matched_cats/HUDF-Par2/NGDEEP_paper_literature_tex.txt", col_names, col_errs)
-
         
 def ext_source_corr(data, corr_factor, is_log_data = True):
     if is_log_data:

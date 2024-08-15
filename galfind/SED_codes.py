@@ -30,11 +30,23 @@ from . import SED_result, Catalogue_SED_results
 
 class SED_code(ABC):
     
-    def __init__(self, galaxy_property_dict, galaxy_property_errs_dict, available_templates):
+    def __init__(self, SED_fit_params, galaxy_property_dict, galaxy_property_errs_dict, \
+            available_templates, ID_label, are_errs_percentiles):
+        if type(SED_fit_params) != type(None):
+            # General SED fit params assertions
+            assert type(SED_fit_params) in [dict]
+            assert "code" in SED_fit_params.keys()
+            self.SED_fit_params = SED_fit_params
         self.galaxy_property_dict = galaxy_property_dict
         self.galaxy_property_errs_dict = galaxy_property_errs_dict
         self.available_templates = available_templates
+        self.ID_label = ID_label
+        self.are_errs_percentiles = are_errs_percentiles
     
+    def load_SED_fit_params(self, SED_fit_params):
+        if not hasattr(self, SED_fit_params):
+            self.SED_fit_params = SED_fit_params
+
     def load_photometry(self, cat, out_units, no_data_val, upper_sigma_lim = {}):
         # load in raw photometry from the galaxies in the catalogue and convert to appropriate units
         phot = np.array([gal.phot.flux_Jy.to(out_units) for gal in cat], dtype=object) #[:, :, 0]
@@ -74,25 +86,24 @@ class SED_code(ABC):
     def fit_cat(self, cat, SED_fit_params, timed = True): # *args, **kwargs):
         if timed:
             start = time.time()
-        in_path = self.make_in(cat) #, *args, **kwargs)
-        #print(in_path)
-        out_folder = funcs.split_dir_name(in_path.replace("input", "output"), "dir")
-        out_path = f"{out_folder}/{funcs.split_dir_name(in_path, 'name').replace('.in', '.out')}"
-        #print(out_path)
+        self.make_in(cat) #, *args, **kwargs)
         overwrite = config[self.__class__.__name__].getboolean(f"OVERWRITE_{self.__class__.__name__}")
         
-        for key in ["code", "templates"]:
+        for key in ["code"]:
             assert key in SED_fit_params.keys(), galfind_logger.critical(f"{key} not in SED_fit_params keys = {SED_fit_params.keys()}")
-            assert SED_fit_params["templates"] in self.available_templates, \
-                galfind_logger.critical(f"'templates' not in {self.__class__.__name__}.available_templates = {self.available_templates}!")
+        #assert SED_fit_params["templates"] in self.available_templates, \
+        #    galfind_logger.critical(f"'templates' not in {self.__class__.__name__}.available_templates = {self.available_templates}!")
         
-        fits_out_path, PDF_paths, SED_paths = self.get_out_paths(out_path, SED_fit_params, IDs = np.array(cat.ID))
+        in_path, out_path, fits_out_path, PDF_paths, SED_paths = self.get_out_paths(cat, SED_fit_params, IDs = np.array(cat.ID))
         # run the SED fitting if not already done so or if wanted overwriting
         fits_cat_meta = cat.open_cat().meta # this may be quite slow to load in the catalogue
-        if self.galaxy_property_labels(f"RUN_{self.__class__.__name__}", SED_fit_params, given_as_key = False) not in fits_cat_meta.keys(): # or overwrite:
+        if self.galaxy_property_labels(f"RUN_{self.__class__.__name__}", SED_fit_params) not in fits_cat_meta.keys(): # or overwrite:
             self.run_fit(in_path, fits_out_path, cat.instrument.new_instrument(), SED_fit_params, overwrite = overwrite) #, *args, **kwargs)
             self.make_fits_from_out(out_path, SED_fit_params) #, *args, **kwargs)
+            #if not SED_fit_params["code"].__class__.__name__ == "Bagpipes":
             self.update_fits_cat(cat, fits_out_path, SED_fit_params) #, *args, **kwargs)
+            #else:
+            #    galfind_logger.warning("Bagpipes SED fits params not currently used to update galfind cat")
         # save PDF and SED paths in galfind catalogue object
         cat.save_phot_PDF_paths(PDF_paths, SED_fit_params)
         cat.save_phot_SED_paths(SED_paths, SED_fit_params)
@@ -109,9 +120,9 @@ class SED_code(ABC):
         orig_cat = cat.open_cat()
         # combine catalogues if not already run before
         if not self.galaxy_property_labels("z", SED_fit_params) in orig_cat.colnames:
-            combined_cat = join(orig_cat, Table.read(fits_out_path), keys_left = "NUMBER", keys_right = "IDENT")
-            combined_cat.remove_column("IDENT")
-            combined_cat.meta = {**combined_cat.meta, **{self.galaxy_property_labels(f"RUN_{self.__class__.__name__}", SED_fit_params, given_as_key = False): True}}
+            combined_cat = join(orig_cat, Table.read(fits_out_path), keys_left = "NUMBER", keys_right = SED_fit_params["code"].ID_label, join_type = "outer")
+            combined_cat.remove_column(SED_fit_params["code"].ID_label)
+            combined_cat.meta = {**combined_cat.meta, **{self.galaxy_property_labels(f"RUN_{self.__class__.__name__}", SED_fit_params): True}}
             combined_cat.write(cat.cat_path, overwrite = True)
             funcs.change_file_permissions(cat.cat_path)
 

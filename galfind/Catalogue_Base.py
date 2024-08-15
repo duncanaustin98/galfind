@@ -137,8 +137,10 @@ class Catalogue_Base:
             return np.array([getattr(gal, "phot").mask for gal in self])
         elif name in self[0].selection_flags.keys():
             return np.array([getattr(gal, "selection_flags")[name] for gal in self])
-        elif name in self[0].phot.SED_results[SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)].__dict__:
+        elif property_type == "vals" and name in self[0].phot.SED_results[SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)].__dict__:
             return np.array([getattr(gal.phot.SED_results[SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)], name) for gal in self])
+        elif property_type == "errs" and name in self[0].phot.SED_results[SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)].property_errs.keys():
+            return np.array([gal.phot.SED_results[SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)].property_errs[name] for gal in self])
         elif phot_type == "rest" and name in self[0].phot.SED_results[SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)].phot_rest.__dict__:
             return np.array([getattr(gal.phot.SED_results[SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)].phot_rest, name) for gal in self])
         elif phot_type == "rest" and property_type == "vals" and name in self[0].phot.SED_results[SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)].phot_rest.properties.keys():

@@ -13,7 +13,7 @@ import numpy as np
 import time
 
 from galfind import useful_funcs_austind as funcs
-from galfind import Catalogue, config, LePhare, EAZY, NIRCam, Number_Density_Function
+from galfind import Catalogue, config, LePhare, EAZY, Bagpipes, NIRCam, Number_Density_Function
 from galfind.Catalogue_Creator import GALFIND_Catalogue_Creator
 
 def pipeline(surveys, version, instruments, aper_diams, min_flux_pc_errs, forced_phot_band, \
@@ -30,6 +30,9 @@ def pipeline(surveys, version, instruments, aper_diams, min_flux_pc_errs, forced
                 cat_creator = cat_creator, SED_fit_params_arr = SED_fit_params_arr, forced_phot_band = forced_phot_band, \
                 excl_bands = excl_bands, loc_depth_min_flux_pc_errs = min_flux_pc_errs, crop_by = crop_by, timed = timed, \
                 mask_stars = mask_stars, pix_scales = pix_scales, load_SED_rest_properties = load_SED_rest_properties, n_depth_reg = n_depth_reg)
+
+            #pipes_origin = SED_fit_params_arr[-1] #["code"].label_from_SED_fit_params(SED_fit_params_arr[-1])
+            #cat.plot("beta_C94", pipes_origin, "M_UV", pipes_origin)
             
             M_UV_name = "M1500"
             UV_LF_z9 = Number_Density_Function.from_single_cat(cat, M_UV_name, np.arange(-21.25, -17.25, 0.5), \
@@ -118,7 +121,7 @@ if __name__ == "__main__":
     timed = False
     mask_stars = {"ACS_WFC": False, "NIRCam": True, "WFC3_IR": False, "MIRI": False}
     MIRI_pix_scale = 0.06 * u.arcsec
-    load_SED_rest_properties = True
+    load_SED_rest_properties = False #True
     n_depth_reg = "auto"
 
     jems_bands = ["F182M", "F210M", "F430M", "F460M", "F480M"]
@@ -126,8 +129,11 @@ if __name__ == "__main__":
     #jades_3215_excl_bands = ["f162M", "f115W", "f150W", "f200W", "f410M", "f182M", "f210M", "f250M", "f300M", "f335M", "f277W", "f356W", "f444W"]
     excl_bands = []
 
-    SED_fit_params_arr = make_EAZY_SED_fit_params_arr(SED_code_arr, templates_arr, lowz_zmax_arr)
-
+    EAZY_SED_fit_params_arr = make_EAZY_SED_fit_params_arr(SED_code_arr, templates_arr, lowz_zmax_arr)
+    pipes_fit_params_arr = [{"code": Bagpipes(), "dust": "Cal", "dust_prior": "log_10", \
+        "metallicity_prior": "log_10", "sps_model": "BPASS", "fix_z": False, "z_range": (0., 25.), \
+        "sfh": "continuity_bursty"}]
+    SED_fit_params_arr = EAZY_SED_fit_params_arr + pipes_fit_params_arr
     # delay_time = (8 * u.h).to(u.s).value
     # print(f"{surveys[0]} delayed by {delay_time}s")
     # time.sleep(delay_time)
