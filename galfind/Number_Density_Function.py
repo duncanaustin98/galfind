@@ -13,25 +13,113 @@ from . import Galaxy, Photometry_obs
 from .SED import SED_obs
 from .SED_codes import SED_code
 
-class Number_Density_Function:
+class Base_Number_Density_Function:
+
+    def __init__(self, x_name, x_mid_bins, z_ref, phi, phi_errs_cv, author_year):
+        self.x_name = x_name
+        self.x_mid_bins = x_mid_bins
+        self.z_ref = z_ref
+        self.phi = phi
+        self.phi_errs_cv = phi_errs_cv
+        self.author_year = author_year
+
+    @classmethod
+    def from_ecsv(cls, x_name: str, z_ref: Union[str, int, float], author_year: str) -> "Base_Number_Density_Function": # literature
+        if x_name in ["M1500", "M_UV", "MUV"]:
+            x_name = "UVLF"
+        if type(z_ref) in [str, int]:
+            z_ref = float(z_ref)
+        x_name_config_key = f'{x_name}_LIT_DIR'
+        ecsv_data_path = f"{config['NumberDensityFunctions'][x_name_config_key]}/z={z_ref:.1f}/{author_year}.ecsv"
+        tab = Table.read(ecsv_data_path)
+        x_mid_bins = np.array(tab["M_UV"])
+        phi = np.array(tab["phi"])
+        phi_errs_cv = np.array([tab["phi_l1"], tab["phi_u1"]])
+        return cls(x_name, x_mid_bins, z_ref, phi, phi_errs_cv, author_year)
+    
+    def get_z_bin_name(self) -> str:
+        return f"z={float(self.z_ref):.1f}"
+
+    def plot(self, fig = None, ax = None, log: bool = False, annotate: bool = True, \
+            save: bool = True, show: bool = False, plot_kwargs: dict = {}, \
+            legend_kwargs: dict = {}, x_lims: Union[list, np.array, str, None] = "default", \
+            use_galfind_style: bool = True) -> None:
+    
+        if use_galfind_style: # (oppan gangnam style)
+            plt.style.use(f"{config['DEFAULT']['GALFIND_DIR']}/galfind_style.mplstyle")
+
+        if all(type(i) == type(None) for i in [fig, ax]):
+            fig, ax = plt.subplots()
+        
+        # don't plot empty bins
+        x_mid_bins = np.array([_x for _x, _y in zip(self.x_mid_bins, self.phi) if _y != 0.])
+        phi = np.array([_y for _y in self.phi if _y != 0.])
+        phi_errs_cv = np.array([[_yerr for _yerr, _y in zip(self.phi_errs_cv[0], self.phi) if _y != 0.], \
+            [_yerr for _yerr, _y in zip(self.phi_errs_cv[1], self.phi) if _y != 0.]])
+        if log:
+            y = np.log10(phi)
+            y_errs = np.array([np.log10(_phi / (_phi - _phi_err)) for _phi, _phi_err in zip(phi, phi_errs_cv)], \
+                [np.log10(1. + (_phi_err / _phi)) for _phi, _phi_err in zip(phi, phi_errs_cv)])
+        else:
+            y = phi
+            y_errs = phi_errs_cv
+
+        # sort out plot_kwargs
+        default_plot_kwargs = {"ls": "", "marker": "o", "label": f"{self.author_year}, {self.get_z_bin_name()}"}
+        # overwrite default with input for duplicate kwargs
+        for key in plot_kwargs.keys():
+            if key in default_plot_kwargs.keys():
+                default_plot_kwargs.pop(key)
+        _plot_kwargs = {**plot_kwargs, **default_plot_kwargs}
+        ax.errorbar(x_mid_bins, y, yerr = y_errs, **_plot_kwargs)
+
+        if annotate:
+            y_label = r"$\Phi$ / N dex$^{-1}$Mpc$^{-3}$"
+            if log:
+                y_label = r"$\log_{10}($" + y_label + ")"
+            else:
+                ax.set_yscale("log")
+            ax.set_xlabel(self.x_name)
+            ax.set_ylabel(y_label)
+            if type(x_lims) != type(None):
+                if type(x_lims) in [str]:
+                    ax.set_xlim(*funcs.default_lims[x_lims])
+                else:
+                    assert len(x_lims) == 2
+                    ax.set_xlim(*x_lims)
+            # sort out legend_kwargs
+            default_legend_kwargs = {}
+            # overwrite default with input for duplicate kwargs
+            for key in plot_kwargs.keys():
+                if key in default_legend_kwargs.keys():
+                    default_legend_kwargs.pop(key)
+            _legend_kwargs = {**legend_kwargs, **default_legend_kwargs}
+            ax.legend(**_legend_kwargs)
+        if save:
+            plot_path = self.get_plot_path()
+            plt.savefig(plot_path)
+        if show:
+            plt.show()
+
+class Number_Density_Function(Base_Number_Density_Function):
 
     def __init__(self, x_name, x_bins, x_origin, z_bin, Ngals, \
-            phi, phi_errs, cv_errs, origin_surveys, cv_origin, \
-            author_year: str = "This work") -> "Number_Density_Function":
-        self.x_name = x_name
+            phi, phi_errs, cv_errs, origin_surveys, cv_origin) -> "Number_Density_Function":
         self.x_bins = x_bins
         self.x_origin = x_origin
         self.z_bin = z_bin
         self.Ngals = Ngals
-        self.phi = phi
-        self.phi_errs = phi_errs
-        self.cv_errs = cv_errs
+        self.phi_errs = phi_errs # poisson only
+        self.cv_errs = cv_errs # cosmic variance % errs / 100
         self.origin_surveys = origin_surveys
         self.cv_origin = cv_origin
-        self.author_year = author_year
+        x_mid_bins = np.array([(x_bin[1] + x_bin[0]) / 2. for x_bin in x_bins])
+        z_ref = float((z_bin[1] + z_bin[0]) / 2.)
+        phi_errs_cv = np.sqrt(phi_errs ** 2. + (cv_errs * phi) ** 2.)
+        super().__init__(x_name, x_mid_bins, z_ref, phi, phi_errs_cv, "This work")
 
     @classmethod
-    def from_save_path(cls, save_path: str):
+    def from_ecsv(cls, save_path: str):
         tab = Table.read(save_path)
         x_bins_up = np.array(tab["x_bins_up"])
         x_bins_low = np.array(tab["x_bins_low"])
@@ -46,7 +134,8 @@ class Number_Density_Function:
         x_name = tab.meta["x_name"]
         origin_surveys = tab.meta["origin_surveys"]
         z_bin = tab.meta["z_bin"]
-        return cls(x_name, x_bins, x_origin, z_bin, Ngals, phi, phi_errs, cv_errs, origin_surveys, cv_origin)
+        return cls(x_name, x_bins, x_origin, z_bin, Ngals, phi, \
+            np.array([phi_errs, phi_errs]), cv_errs, origin_surveys, cv_origin)
 
     @classmethod
     def from_multiple_cat(cls, multiple_cat, x_name: str, x_bin_edges: Union[list, np.array], \
@@ -147,7 +236,8 @@ class Number_Density_Function:
                     else:
                         raise NotImplementedError
             
-            number_density_func = cls(x_name, x_bins, x_origin, z_bin, Ngals, phi, phi_errs, cv_errs, origin_surveys, cv_origin)
+            number_density_func = cls(x_name, x_bins, x_origin, z_bin, Ngals, phi, \
+                np.array([phi_errs, phi_errs]), cv_errs, origin_surveys, cv_origin)
             
             if save and not Path(save_path).is_file():
                 number_density_func.save()
@@ -155,15 +245,7 @@ class Number_Density_Function:
             return number_density_func
         
         else: # load results
-            return cls.from_save_path(save_path)
-
-    @property
-    def x_mid_bins(self):
-        return np.array([(x_bin[1] + x_bin[0]) / 2. for x_bin in self.x_bins])
-
-    @property
-    def phi_errs_cv(self):
-        return np.sqrt(self.phi_errs ** 2. + (self.cv_errs * self.phi) ** 2.)
+            return cls.from_ecsv(save_path)
 
     @staticmethod
     def get_origin_surveys(data_arr) -> str:
@@ -186,6 +268,9 @@ class Number_Density_Function:
         z_bin = np.array([float(split_save_path[-1].split("<")[0]), float(split_save_path[-1].split("<")[2])])
         return SED_fit_params_key, x_name, origin_surveys, z_bin
     
+    def get_z_bin_name(self) -> str:
+        return f"{self.z_bin[0]:.1f}<z<{self.z_bin[1]:.1f}"
+
     def get_plot_path(self) -> str:
         plot_path = self.get_save_path(self.origin_surveys, self.x_origin.replace("_REST_PROPERTY", ""), \
             self.z_bin, self.x_name, ext = ".png").replace("/Data/", "/Plots/")
@@ -205,55 +290,19 @@ class Number_Density_Function:
 
     def plot(self, fig = None, ax = None, log: bool = False, annotate: bool = True, \
             save: bool = True, show: bool = False, plot_kwargs: dict = {}, \
-            x_lims: Union[list, np.array, str, None] = "default", use_galfind_style: bool = True) -> None:
-        
-        if use_galfind_style: # (oppan gangnam style)
-            plt.style.use(f"{config['DEFAULT']['GALFIND_DIR']}/galfind_style.mplstyle")
-
-        if all(type(i) == type(None) for i in [fig, ax]):
+            legend_kwargs: dict = {}, x_lims: Union[list, np.array, str, None] = "default", \
+            use_galfind_style: bool = True, author_year_dict: dict = {}) -> None:
+        if all(type(_x) == type(None) for _x in [fig, ax]):
             fig, ax = plt.subplots()
-        
-        # don't plot empty bins
-        x_mid_bins = np.array([_x for _x, _y in zip(self.x_mid_bins, self.phi) if _y != 0.])
-        phi = np.array([_y for _y in self.phi if _y != 0.])
-        phi_errs_cv = np.array([_yerr for _yerr, _y in zip(self.phi_errs_cv, self.phi) if _y != 0.])
-        if log:
-            y = np.log10(phi)
-            y_errs = np.array([np.log10(_phi / (_phi - _phi_err)) for _phi, _phi_err in zip(phi, phi_errs_cv)], \
-                [np.log10(1. + (_phi_err / _phi)) for _phi, _phi_err in zip(phi, phi_errs_cv)])
-        else:
-            y = phi
-            y_errs = phi_errs_cv
-
-        # sort out plot_kwargs
-        default_plot_kwargs = {"ls": "", "fmt": "o", "label": f"{self.author_year},{funcs.get_z_bin_name(self.z_bin)}"}
-        # overwrite default with input for duplicate kwargs
-        for key in plot_kwargs.keys():
-            if key in default_plot_kwargs.keys():
-                default_plot_kwargs.pop(key)
-        plot_kwargs = {**plot_kwargs, **default_plot_kwargs}
-
-        ax.errorbar(x_mid_bins, y, yerr = y_errs, **plot_kwargs)
-
-        if annotate:
-            y_label = r"$\Phi$ / N dex$^{-1}$Mpc$^{-3}$"
-            if log:
-                y_label = r"$\log_{10}($" + y_label + ")"
-            else:
-                ax.set_yscale("log")
-            ax.set_xlabel(self.x_name)
-            ax.set_ylabel(y_label)
-            if type(x_lims) != type(None):
-                if type(x_lims) in [str]:
-                    ax.set_xlim(*funcs.default_lims[x_lims])
-                else:
-                    assert len(x_lims) == 2
-                    ax.set_xlim(*x_lims)
-        if save:
-            plot_path = self.get_plot_path()
-            plt.savefig(plot_path)
-        if show:
-            plt.show()
+        for author_year, author_year_plot_dict in author_year_dict.items():
+            assert all(_x in author_year_plot_dict.keys() for _x in ["z_ref", "plot_kwargs"])
+            z_ref = author_year_plot_dict["z_ref"]
+            author_year_plot_kwargs = author_year_plot_dict["plot_kwargs"]
+            author_year_number_density_func = Base_Number_Density_Function.from_ecsv(self.x_name, z_ref, author_year)
+            author_year_number_density_func.plot(fig, ax, log, annotate = False, save = False, show = False, \
+                plot_kwargs = author_year_plot_kwargs, x_lims = None, use_galfind_style = use_galfind_style)
+        # plot this work
+        super().plot(fig, ax, log, annotate, save, show, plot_kwargs, legend_kwargs, x_lims, use_galfind_style)
 
 #         def mass_function(catalog, fields, z_bins, mass_bins, rerun=False, out_directory = '/nvme/scratch/work/tharvey/masses/',
 #  mass_keyword='MASS_BEST',mass_form='log', z_keyword='Z_BEST', sed_tool='LePhare', template='', z_step=0.01,

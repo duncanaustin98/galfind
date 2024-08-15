@@ -20,6 +20,7 @@ def pipeline(surveys, version, instruments, aper_diams, min_flux_pc_errs, forced
         excl_bands, SED_fit_params_arr, cat_type = "loc_depth", crop_by = None, timed = True, mask_stars = True, \
         pix_scales = {"ACS_WFC": 0.03 * u.arcsec, "WFC3_IR": 0.03 * u.arcsec, "NIRCam": 0.03 * u.arcsec, "MIRI": 0.09 * u.arcsec}, \
         load_SED_rest_properties = True, n_depth_reg = "auto"):
+    
     for pc_err in min_flux_pc_errs:
         # make appropriate galfind catalogue creator for each aperture diameter
         cat_creator = GALFIND_Catalogue_Creator(cat_type, aper_diams[0], pc_err)
