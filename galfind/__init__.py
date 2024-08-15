@@ -98,6 +98,8 @@ from . import Depths
 from .PDF import PDF, SED_fit_PDF, Redshift_PDF, PDF_nD
 from .Filter import Filter
 from .Instrument import Instrument, ACS_WFC, WFC3_IR, NIRCam, MIRI, Combined_Instrument
+instr_to_name_dict = {instr_name: globals()[instr_name]() for instr_name in \
+    [subcls.__name__ for subcls in Instrument.__subclasses__() if subcls.__name__ != "Combined_Instrument"]}
 
 # ordered band names from blue -> red
 #config.set("Other", "ALL_BANDS", json.dumps(["F435W","FR459M","F475W","F550M","F555W","F606W","F625W","FR647M","F070W","F775W","F814W","F850LP",
@@ -113,7 +115,16 @@ from .Photometry import Photometry, Multiple_Photometry, Mock_Photometry
 from .Photometry_obs import Photometry_obs, Multiple_Photometry_obs
 from .Photometry_rest import Photometry_rest
 from .SED_result import SED_result, Galaxy_SED_results, Catalogue_SED_results
+
 from .SED_codes import SED_code
+from .LePhare import LePhare
+from .EAZY import EAZY
+from .Bagpipes import Bagpipes
+# don't do Bagpipes or LePhare for now
+sed_code_to_name_dict = {sed_code_name: globals()[sed_code_name]() \
+    for sed_code_name in [subcls.__name__ for subcls in SED_code.__subclasses__()] \
+    if sed_code_name not in ["LePhare", "Bagpipes"]}
+
 from .Multiple_Catalogue import Multiple_Catalogue
 from .Multiple_Data import Multiple_Data
 from .Catalogue_Base import Catalogue_Base
@@ -121,9 +132,7 @@ from .Catalogue import Catalogue
 from .Catalogue_Creator import Catalogue_Creator, GALFIND_Catalogue_Creator
 from .SED import SED, SED_rest, SED_obs, Mock_SED_rest, Mock_SED_obs
 from .SED import Mock_SED_template_set, Mock_SED_rest_template_set, Mock_SED_obs_template_set
-from .LePhare import LePhare
-from .EAZY import EAZY
-from .Bagpipes import Bagpipes
+
 from .Galaxy import Galaxy, Multiple_Galaxy
 from .Simulated_Galaxy import Simulated_Galaxy
 from .Simulated_Catalogue import Simulated_Catalogue
@@ -134,6 +143,7 @@ from . import lyman_alpha_damping_wing
 from .DLA import DLA
 from .Dust_Attenuation import Dust_Attenuation, C00
 from .Spectrum import Spectral_Catalogue, Spectrum, NIRSpec, Spectral_Instrument, Spectral_Filter, Spectral_Grating
+from .Number_Density_Function import Number_Density_Function # UVLFs, mass functions, etc
 
 # dynamically add Galaxy selection methods to Catalogue class?
 

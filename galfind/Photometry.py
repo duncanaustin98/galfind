@@ -222,7 +222,7 @@ class Multiple_Photometry:
 
 class Mock_Photometry(Photometry):
     
-    def __init__(self, instrument, flux_Jy, depths, min_pc_err): # these depths should be 5σ and in units of ABmag
+    def __init__(self, instrument, flux_Jy, depths, min_flux_pc_err): # these depths should be 5σ and in units of ABmag
         assert(len(flux_Jy) == len(depths))
         # add astropy units of ABmag if depths are not already
         try:
@@ -230,16 +230,17 @@ class Mock_Photometry(Photometry):
         except:
             depths *= u.ABmag
         # calculate errors from ABmag depths
-        flux_Jy_errs = self.flux_errs_from_depths(flux_Jy, depths, min_pc_err)
-        self.min_pc_err = min_pc_err
+        flux_Jy_errs = self.flux_errs_from_depths(flux_Jy, depths, min_flux_pc_err)
+        self.min_flux_pc_err = min_flux_pc_err
         super().__init__(instrument, flux_Jy, flux_Jy_errs, depths)
         
     @staticmethod
-    def flux_errs_from_depths(flux_Jy, depths, min_pc_err):
+    def flux_errs_from_depths(flux_Jy, depths, min_flux_pc_err):
         # calculate 1σ depths to Jy
         one_sig_depths_Jy = depths.to(u.Jy) / 5
-        # apply min_pc_err criteria
-        flux_Jy_errs = np.array([depth if depth > flux * min_pc_err / 100 else flux * min_pc_err / 100 for flux, depth in zip(flux_Jy.value, one_sig_depths_Jy.value)]) * u.Jy
+        # apply min_flux_pc_err criteria
+        flux_Jy_errs = np.array([depth if depth > flux * min_flux_pc_err / 100 else \
+            flux * min_flux_pc_err / 100 for flux, depth in zip(flux_Jy.value, one_sig_depths_Jy.value)]) * u.Jy
         return flux_Jy_errs 
 
     def scatter_phot(self, size = 1):
@@ -248,7 +249,7 @@ class Mock_Photometry(Photometry):
             scattered_fluxes[i] = np.random.normal(flux.value, err.value, size = size)
         if size == 1:
             scattered_fluxes = scattered_fluxes.flatten()
-            self.scattered_phot = [Mock_Photometry(self.instrument, scattered_fluxes * u.Jy, self.depths, self.min_pc_err)]
+            self.scattered_phot = [Mock_Photometry(self.instrument, scattered_fluxes * u.Jy, self.depths, self.min_flux_pc_err)]
         else:
-            self.scattered_phot = [Mock_Photometry(self.instrument, scattered_fluxes.T[i] * u.Jy, self.depths, self.min_pc_err) for i in range(size)]   
+            self.scattered_phot = [Mock_Photometry(self.instrument, scattered_fluxes.T[i] * u.Jy, self.depths, self.min_flux_pc_err) for i in range(size)]   
             

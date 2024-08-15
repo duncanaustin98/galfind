@@ -9,7 +9,7 @@ Created on Mon May 22 13:27:47 2023
 # Catalogue.py
 import numpy as np
 import matplotlib.pyplot as plt
-from astropy.table import Table, join
+from astropy.table import Table, join, vstack
 import pyregion
 from copy import copy, deepcopy
 from astropy.io import fits
@@ -349,8 +349,9 @@ class Catalogue(Catalogue_Base):
 
         # plot SEDs
         out_paths = [gal.plot_phot_diagnostic([cutout_fig, phot_ax, PDF_ax], self.data, \
-            SED_fit_params_arr, zPDF_plot_SED_fit_params_arr, wav_unit, flux_unit) \
-            for gal in tqdm(self, total = len(self), desc = "Plotting photometry diagnostic plots")]
+            SED_fit_params_arr, zPDF_plot_SED_fit_params_arr, wav_unit, flux_unit, \
+            aper_diam = self.cat_creator.aper_diam) for gal in tqdm(self, total = len(self), \
+            desc = "Plotting photometry diagnostic plots")]
 
         # make a folder to store symlinked photometric diagnostic plots for selected galaxies
         if self.crops != []:
@@ -623,7 +624,7 @@ class Catalogue(Catalogue_Base):
         self.perform_selection(Galaxy.phot_bluewards_Lya_non_detect, 2., SED_fit_params, make_cat_copy = False) # 2σ non-detected in all bands bluewards of Lyα
         self.perform_selection(Galaxy.phot_redwards_Lya_detect, [5., 5.], SED_fit_params, True, make_cat_copy = False) # 5σ/3σ detected in first/second band redwards of Lyα
         self.perform_selection(Galaxy.select_chi_sq_lim, 3., SED_fit_params, True, make_cat_copy = False) # χ^2_red < 3
-        self.perform_selection(Galaxy.select_chi_sq_diff, 4., SED_fit_params, 0.5, make_cat_copy = False) # Δχ^2 < 9 between redshift free and low redshift SED fits, with Δz=0.5 tolerance 
+        self.perform_selection(Galaxy.select_chi_sq_diff, 4., SED_fit_params, 0.5, make_cat_copy = False) # Δχ^2 < 4 between redshift free and low redshift SED fits, with Δz=0.5 tolerance 
         self.perform_selection(Galaxy.select_robust_zPDF, 0.6, 0.1, SED_fit_params, make_cat_copy = False) # 60% of redshift PDF must lie within z ± z * 0.1
         return self.perform_selection(Galaxy.select_EPOCHS, SED_fit_params, allow_lowz, hot_pixel_bands, instruments_to_mask)
 
@@ -631,7 +632,6 @@ class Catalogue(Catalogue_Base):
         # extract selection name from galaxy method output
         selection_name = selection_function(self[0], *args, update = False)[1]
         # open catalogue
-        ##breakpoint()
         # perform selection if not previously performed
         if selection_name not in self.selection_cols:
             # perform calculation for each galaxy and update galaxies in self
@@ -679,7 +679,7 @@ class Catalogue(Catalogue_Base):
     # SED property functions 
             
     # Rest-frame UV property calculation functions - these are not independent of each other
-    
+
     # beta_phot tqdm bar not working appropriately!
     def calc_beta_phot(self, rest_UV_wav_lims = [1_250., 3_000.] * u.AA, SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}, iters = 10_000):
         self.calc_SED_rest_property(SED_rest_property_function = Photometry_rest.calc_beta_phot, iters = iters, SED_fit_params = SED_fit_params, rest_UV_wav_lims = rest_UV_wav_lims)
@@ -758,7 +758,6 @@ class Catalogue(Catalogue_Base):
         self.calc_SED_rest_property(SED_rest_property_function = Photometry_rest.calc_line_flux_rest_optical, iters = iters, SED_fit_params = SED_fit_params,
             frame = frame, strong_line_names = strong_line_names, dust_author_year = dust_author_year, dust_law = dust_law, dust_origin = dust_origin, 
             rest_optical_wavs = rest_optical_wavs, rest_UV_wav_lims = rest_UV_wav_lims, ref_wav = ref_wav)
-
 
     def calc_line_lum_rest_optical(self, strong_line_names: Union[str, list], frame: str, dust_author_year: Union[str, None] = "M99", \
             dust_law: str = "C00", dust_origin: str = "UV", rest_optical_wavs: u.Quantity = [3_700., 10_000.] * u.AA, \
@@ -901,3 +900,60 @@ class Catalogue(Catalogue_Base):
         # remove data from self, starting with catalogue, then gal for gal in self.gals
         self.SED_rest_properties[key].remove(property_name)
         self.gals = [deepcopy(gal)._del_SED_rest_properties([property_name], key) for gal in self]
+
+    # Number Density Function (e.g. UVLF and mass functions) methods
+
+    def calc_Vmax(self, data_arr: Union[list, np.array], z_bin: Union[list, np.array], \
+            SED_fit_params: Union[dict, str] = "EAZY_fsps_larson_zfree", \
+            z_step: float = 0.01, timed: bool = False) -> None:
+        assert len(z_bin) == 2
+        assert z_bin[0] < z_bin[1]
+        if type(SED_fit_params) == dict:
+            SED_fit_params_key = SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)
+        elif type(SED_fit_params) == str:
+            SED_fit_params_key = SED_fit_params
+        else:
+            galfind_logger.critical(f"{SED_fit_params=} with {type(SED_fit_params)=} is not in [dict, str]!")
+        z_bin_name = f"{SED_fit_params_key}_{z_bin[0]:.1f}<z<{z_bin[1]:.1f}"
+        for data in data_arr:
+            save_path = f"{config['NumberDensityFunctions']['VMAX_DIR']}/{self.version}/{self.instrument.name}/{self.survey}/{z_bin_name}/Vmax_field={data.full_name}.ecsv"
+            funcs.make_dirs(save_path)
+            # if this file already exists
+            if Path(save_path).is_file():
+                # open file
+                old_tab = Table.read(save_path)
+                update_IDs = np.array([gal.ID for gal in self if gal.ID not in old_tab["ID"]])
+            else:
+                update_IDs = self.ID
+            if len(update_IDs) > 0:
+                self.gals = [deepcopy(gal).calc_Vmax(self.data.full_name, [data], z_bin, SED_fit_params_key, z_step, timed = timed) for gal in \
+                    tqdm(self, total = len(self), desc = f"Calculating Vmax's for {self.data.full_name} in {z_bin_name} {data.full_name}")]
+                # table with uncalculated Vmax's
+                Vmax_arr = np.array([gal.V_max[z_bin_name][data.full_name].to(u.Mpc ** 3).value \
+                    if type(gal.V_max[z_bin_name][data.full_name]) in [u.Quantity] else \
+                    gal.V_max[z_bin_name][data.full_name] for gal in self if gal.ID in update_IDs])
+                #Vmax_simple_arr = np.array([gal.V_max_simple[z_bin_name][data.full_name].to(u.Mpc ** 3).value \
+                #    if type(gal.V_max_simple[z_bin_name][data.full_name]) in [u.Quantity] else \
+                #    gal.V_max_simple[z_bin_name][data.full_name] for gal in self if gal.ID in update_IDs])
+                obs_zmin = np.array([gal.obs_zrange[z_bin_name][data.full_name][0] for gal in self if gal.ID in update_IDs])
+                obs_zmax = np.array([gal.obs_zrange[z_bin_name][data.full_name][1] for gal in self if gal.ID in update_IDs])
+                # new_tab = Table({"ID": update_IDs, "Vmax": Vmax_arr, "Vmax_simple": Vmax_simple_arr, \
+                #     "obs_zmin": obs_zmin, "obs_zmax": obs_zmax}, dtype = [int, float, float, float, float])
+                new_tab = Table({"ID": update_IDs, "Vmax": Vmax_arr, "obs_zmin": obs_zmin, \
+                    "obs_zmax": obs_zmax}, dtype = [int, float, float, float])
+                new_tab.meta = {"Vmax_invalid_val": -1., "Vmax_unit": u.Mpc ** 3}
+                if Path(save_path).is_file(): # update and save table
+                    out_tab = vstack([old_tab, new_tab])
+                    out_tab.meta = {**old_tab.meta, **new_tab.meta}
+                else: # save table
+                    out_tab = new_tab
+                out_tab.sort("ID")
+                out_tab.write(save_path, overwrite = True)
+            else: # Vmax table already opened
+                Vmax_tab = old_tab[np.array([row["ID"] in self.ID for row in old_tab])]
+                Vmax_tab.sort("ID")
+                # save appropriate Vmax properties
+                self.gals = [deepcopy(gal).save_Vmax(Vmax, z_bin_name, data.full_name, is_simple_Vmax = False) \
+                    for gal, Vmax in zip(self, np.array(Vmax_tab["Vmax"]))]
+                #self.gals = [deepcopy(gal).save_Vmax(Vmax, z_bin_name, data.full_name, is_simple_Vmax = True) \
+                #    for gal, Vmax in zip(self, np.array(Vmax_tab["Vmax_simple"]))]

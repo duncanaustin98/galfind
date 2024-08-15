@@ -9,15 +9,16 @@ from astropy.coordinates import SkyCoord
 from astropy.io import fits
 import time
 import regions
-from . import useful_funcs_austind as useful_funcs
+from typing import Union
+from astropy.wcs import WCS
+
+from . import useful_funcs_austind as funcs
+from . import config, galfind_logger, sed_code_to_name_dict, SED_code
+from . import Multiple_Catalogue, Multiple_Data
 from .Data import Data
 from .Galaxy import Galaxy
-from . import useful_funcs_austind as funcs
 from .Catalogue_Creator import GALFIND_Catalogue_Creator
-from . import config, galfind_logger, SED_code
-from astropy.wcs import WCS
 from .EAZY import EAZY
-from . import Multiple_Catalogue, Multiple_Data
 
 class Catalogue_Base:
     # later on, the gal_arr should be calculated from the Instrument and sex_cat path, with SED codes already given
@@ -114,7 +115,12 @@ class Catalogue_Base:
             self.gals = np.array(self.gals)
         return self.gals[index]
     
-    def __getattr__(self, name, SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}, phot_type = "obs", property_type = "vals"): # only acts on attributes that don't already exist
+    # only acts on attributes that don't already exist in Catalogue
+    def __getattr__(self, name: str, SED_fit_params: Union[dict, str] = \
+            {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}, \
+            phot_type: str = "obs", property_type: str = "vals") -> np.array:
+        if type(SED_fit_params) in [str]:
+            SED_fit_params = sed_code_to_name_dict[SED_fit_params.split("_")[0]].SED_fit_params_from_label(SED_fit_params)
         if name in self[0].__dict__:
             return np.array([getattr(gal, name) for gal in self])
         elif name.upper() == "RA":
@@ -411,16 +417,18 @@ class Catalogue_Base:
         else:
             galfind_logger.critical("No index or ID provided to remove_gal!")
 
-    def crop(self, crop_limits, crop_property): # upper and lower limits on galaxy properties (e.g. ID, redshift, mass, SFR, SkyCoord)
+    def crop(self, crop_limits: Union[int, float, bool, list, np.array], crop_property: str, \
+            SED_fit_params: Union[dict, str] = "EAZY_fsps_larson_zfree", phot_type: str = "obs"): # -> self.__class__
         cat_copy = deepcopy(self)
         if type(crop_limits) in [int, float, bool]:
-            cat_copy.gals = cat_copy[getattr(cat_copy, crop_property) == crop_limits]
+            cat_copy.gals = cat_copy[cat_copy.__getattr__(crop_property, SED_fit_params, phot_type = phot_type) == crop_limits]
             if crop_limits == True:
                 cat_copy.crops.append(crop_property)
             else:
                 cat_copy.crops.append(f"{crop_property}={crop_limits}")
         elif type(crop_limits) in [list, np.array]:
-            cat_copy.gals = cat_copy[((getattr(cat_copy, crop_property) >= crop_limits[0]) & (getattr(cat_copy, crop_property) <= crop_limits[1]))]
+            cat_copy.gals = cat_copy[((cat_copy.__getattr__(crop_property, SED_fit_params, phot_type = phot_type) >= crop_limits[0]) \
+                & (cat_copy.__getattr__(crop_property, SED_fit_params, phot_type = phot_type) <= crop_limits[1]))]
             cat_copy.crops.append(f"{crop_limits[0]}<{crop_property}<{crop_limits[1]}")
         else:
             galfind_logger.critical(f"crop_limits={crop_limits} with type = {type(crop_limits)} not in [int, float, bool, list, np.array]")

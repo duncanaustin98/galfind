@@ -60,7 +60,7 @@ class Data:
     def __init__(self, instrument, im_paths, im_exts, im_pixel_scales, im_shapes, im_zps, wht_paths, wht_exts, rms_err_paths, rms_err_exts, \
         seg_paths, mask_paths, cluster_mask_path, blank_mask_path, survey, version, cat_path = "", is_blank = True, alignment_band = "F444W", \
         RGB_method = None, mask_stars = True): # trilogy
-        
+
         # sort dicts from blue -> red bands in ascending wavelength order
         self.im_paths = im_paths # not sure these need to be sorted
         self.im_exts = im_exts # not sure these need to be sorted
@@ -244,14 +244,12 @@ class Data:
             **{instrument_name: f"{int(np.round(pix_scales[instrument_name].to(u.mas).value, 0))}mas" \
             for instrument_name in ["ACS_WFC", "WFC3_IR", "MIRI"]}}
 
-        #breakpoint()
         for instrument_name in instrument_names:
             instrument = globals()[instrument_name](excl_bands = [band_name for band_name in excl_bands if band_name in globals()[instrument_name]().band_names])
             version_to_dir = instrument_version_to_dir[instrument_name]
             pix_scale = pix_scales[instrument_name]
             
             # determine directory where the data is stored for the version, survey and instrument
-            #breakpoint()
             if type(version_to_dir) == str:
                 survey_dir = f"{config['DEFAULT']['GALFIND_DATA']}/{instrument.facility.lower()}/{survey}/{instrument_name}/{version_to_dir}"
             elif type(version_to_dir) == dict:
@@ -266,8 +264,12 @@ class Data:
             else:
                 galfind_logger.critical(f"{version_to_dir=} with {type(version_to_dir)=} not in [str, dict]")
             
-            # extract all .fits files in this directory
-            fits_path_arr = np.array(glob.glob(f"{survey_dir}/*.fits"))
+            # quick fix for non-NIRCam PSF homogenized images
+            if "psfmatched" in version and config.getboolean("DataReduction", "PSF_HOMOGENIZED") and instrument_name != "NIRCam":
+                fits_path_arr = np.array(glob.glob(f"{survey_dir}/psf_matched/*.fits"))
+            else:
+                # extract all .fits files in this directory
+                fits_path_arr = np.array(glob.glob(f"{survey_dir}/*.fits"))
             if len(fits_path_arr) == 0:
                 continue
 
@@ -462,7 +464,7 @@ class Data:
 
 # %% Overloaded operators
 
-    def __str__(self):
+    def __str__(self, depth_mode = "n_nearest"):
         """ Function to print summary of Data class
 
         Returns:
@@ -494,7 +496,7 @@ class Data:
         try:
             depths = []
             for aper_diam in json.loads(config.get("SExtractor", "APERTURE_DIAMS")) * u.arcsec:
-                depths.append(self.load_depths(aper_diam))
+                depths.append(self.load_depths(aper_diam, depth_mode))
             output_str += f"DEPTHS = {str(depths)}\n"
         except:
             pass
@@ -557,6 +559,10 @@ class Data:
         self.__dict__ = {k: self.__dict__.get(k, 0) + data.__dict__.get(k, 0) for k in set(self.__dict__()) | set(data.__dict__())}
         galfind_logger.debug(self.__repr__)
         return self
+    
+    @property
+    def full_name(self):
+        return f"{self.version}_{self.survey}_{self.instrument.name}"
     
 # %% Methods
 
@@ -1064,6 +1070,8 @@ class Data:
         err_map_path, err_map_ext, err_map_type = self.get_err_map(band, prefer = "rms_err")
         # insert specified aperture diameters from config file
         as_aper_diams = json.loads(config.get("SExtractor", "APERTURE_DIAMS"))
+        if len(as_aper_diams) != 5:
+            galfind_logger.warning(f"{sex_config_path=} should be updated for {as_aper_diams=} at runtime!")
         pix_aper_diams = str([np.round(pix_aper_diam, 2) for pix_aper_diam in as_aper_diams / self.im_pixel_scales[band].value]).replace("[", "").replace("]", "").replace(" ", "")
         # SExtractor bash script python wrapper
         process = subprocess.Popen(["./make_seg_map.sh", config['DEFAULT']['GALFIND_WORK'], self.im_paths[band], str(self.im_pixel_scales[band].value), \
@@ -1456,6 +1464,8 @@ class Data:
                     # insert specified aperture diameters from config file
                     as_aper_diams = json.loads(config.get("SExtractor", "APERTURE_DIAMS"))
                     pix_aper_diams = str([np.round(pix_aper_diam, 2) for pix_aper_diam in as_aper_diams / self.im_pixel_scales[band].value]).replace("[", "").replace("]", "").replace(" ", "")
+                    if len(as_aper_diams) != 5:
+                        galfind_logger.warning(f"{sex_config_path=} should be updated for {as_aper_diams=} at runtime!")
                     # SExtractor bash script python wrapper
                     print(["./make_sex_cat.sh", config['DEFAULT']['GALFIND_WORK'], self.im_paths[band], str(self.im_pixel_scales[band].value), \
                         str(self.im_zps[band]), self.instrument.instrument_from_band(band).name, self.survey, band, self.version, \
@@ -1774,11 +1784,16 @@ class Data:
         # calculate areas using pixel scale of selection band
         pixel_scale = self.im_pixel_scales[self.combine_band_names(forced_phot_band)]
         unmasked_area_tot = (((full_mask.shape[0] * full_mask.shape[1]) - np.sum(full_mask)) * pixel_scale * pixel_scale).to(u.arcmin ** 2)
-        print('hello', unmasked_area_tot)
+        print(unmasked_area_tot)
         unmasked_area_blank_modules = (((blank_mask.shape[0] * blank_mask.shape[1]) - np.sum(blank_mask)) * pixel_scale * pixel_scale).to(u.arcmin ** 2)
         unmasked_area_cluster_module = unmasked_area_tot - unmasked_area_blank_modules
         galfind_logger.info(f"Unmasked areas for {self.survey}, masking_instrument_or_band_name = {masking_instrument_or_band_name} - Total: {unmasked_area_tot}, Blank modules: {unmasked_area_blank_modules}, Cluster module: {unmasked_area_cluster_module}")
         
+        # save in self
+        if not hasattr(self, "area"):
+            self.area = {}
+        self.area["all"] = unmasked_area_tot
+
         output_path = f"{config['DEFAULT']['GALFIND_WORK']}/Unmasked_areas.ecsv"
         funcs.make_dirs(output_path)
         areas_data = {"survey": [self.survey], "masking_instrument_band": [masking_instrument_or_band_name], \
@@ -1859,8 +1874,8 @@ class Data:
                 galfind_logger.info(f"Making local depth columns for {band=}")
                 for j, aper_diam in enumerate(json.loads(config.get("SExtractor", "APERTURE_DIAMS")) * u.arcsec):
                     #print(band, aper_diam)
-                    self.load_depth_dirs(aper_diam)
-                    h5_path = f"{self.depth_dirs[aper_diam][band]}/{depth_mode}/{band}.h5"
+                    self.load_depth_dirs(aper_diam, depth_mode)
+                    h5_path = f"{self.depth_dirs[aper_diam][depth_mode][band]}/{band}.h5"
                     if Path(h5_path).is_file():
                         # open depth .h5
                         hf = h5py.File(h5_path, "r")
@@ -1923,22 +1938,26 @@ class Data:
             cat.write(self.sex_cat_master_path, overwrite = True)
             funcs.change_file_permissions(self.sex_cat_master_path)
     
-    def load_depth_dirs(self, aper_diam):
+    def load_depth_dirs(self, aper_diam, depth_mode):
         if not hasattr(self, "depth_dirs"):
             self.depth_dirs = {}
         if not aper_diam in self.depth_dirs.keys():
             self.depth_dirs[aper_diam] = {}
+        if not depth_mode in self.depth_dirs[aper_diam].keys():
+            self.depth_dirs[aper_diam][depth_mode] = {}
             for band in self.im_paths.keys():
-                self.depth_dirs[aper_diam][band] = f"{config['Depths']['DEPTH_DIR']}/{self.instrument.instrument_from_band(band).name}/{self.version}/{self.survey}/{format(aper_diam.value, '.2f')}as"
-                funcs.make_dirs(f"{self.depth_dirs[aper_diam][band]}/_")
+                self.depth_dirs[aper_diam][depth_mode][band] = f"{config['Depths']['DEPTH_DIR']}/{self.instrument.instrument_from_band(band).name}/{self.version}/{self.survey}/{format(aper_diam.value, '.2f')}as/{depth_mode}"
+                funcs.make_dirs(f"{self.depth_dirs[aper_diam][depth_mode][band]}")
             
-    def load_depths(self, aper_diam):
-        self.load_depth_dirs(aper_diam)
+    def load_depths(self, aper_diam, depth_mode, depth_type = "median_depth"):
+        assert depth_type in ["median_depth", "mean_depth"]
+        self.load_depth_dirs(aper_diam, depth_mode)
         self.depths = {}
         for band in self.instrument.band_names:
             # load depths from saved .txt file
-            depths = Table.read(f"{self.depth_dirs[aper_diam][band]}/{self.survey}_depths.txt", names = ["band", "depth"], format = "ascii")
-            self.depths[band] = float(depths[depths["band"] == band]["depth"])
+            depths = Table.read(f"{self.depth_dirs[aper_diam][depth_mode][band]}/{self.survey}_depths.ecsv", \
+                names = ["band", "region", "median_depth", "mean_depth"], format = "ascii")
+            self.depths[band] = {str(row["region"]): float(row[depth_type]) for row in depths[depths["band"] == band]}
         return self.depths
     
     def calc_aper_radius_pix(self, aper_diam, band):
@@ -1951,17 +1970,21 @@ class Data:
         # Look over all aperture diameters and bands  
         for aper_diam in aper_diams:
             # Generate folder for depths
-            self.load_depth_dirs(aper_diam)
+            self.load_depth_dirs(aper_diam, mode)
             for band in self.im_paths.keys():
                 # Only run for non excluded bands
                 if band not in excl_bands:
-                    params.append((band, aper_diam, self.depth_dirs[aper_diam][band], mode, scatter_size, distance_to_mask, region_radius_used_pix, n_nearest, \
+                    params.append((band, aper_diam, self.depth_dirs[aper_diam][mode][band], mode, scatter_size, distance_to_mask, region_radius_used_pix, n_nearest, \
                     coord_type, split_depth_min_size, split_depths_factor, step_size, cat_creator, plot, n_split))
         # Parallelise the calculation of depths for each band
         with tqdm_joblib(tqdm(desc = "Calculating depths", total = len(params))) as progress_bar:
             Parallel(n_jobs = n_jobs)(delayed(self.calc_band_depth)(param) for param in params)
+
         for aper_diam in aper_diams:
+            # plot area/depth graph
             self.plot_area_depth(cat_creator, mode, aper_diam, show = False)
+            # make depth tables for each instrument
+            self.make_depth_tabs(aper_diam, mode)
     
     def calc_band_depth(self, params):
         # unpack parameters
@@ -1971,8 +1994,9 @@ class Data:
         overwrite = config["Depths"].getboolean("OVERWRITE_DEPTHS")
         if overwrite:
             galfind_logger.info("OVERWRITE_DEPTHS = YES, re-doing depths should they exist.")
-        grid_depth_path = f"{depth_dir}/{mode}/{band}.h5" # {str(int(n_split))}_region_grid_depths/
+        grid_depth_path = f"{depth_dir}/{band}.h5" # {str(int(n_split))}_region_grid_depths/
         funcs.make_dirs(grid_depth_path)
+
         if not Path(grid_depth_path).is_file() or overwrite:
             # load the image/segmentation/mask data for the specific band
             im_data, im_header, seg_data, seg_header, mask = self.load_data(band, incl_mask = True)
@@ -2000,7 +2024,7 @@ class Data:
             #print(f"{len(xy)} empty apertures placed in {band}")
             
             # Make ds9 region file of apertures for compatability and debugging
-            region_path = f"{depth_dir}/{mode}/{self.survey}_{self.version}_{band}.reg"
+            region_path = f"{depth_dir}/{self.survey}_{self.version}_{band}.reg"
             Depths.make_ds9_region_file(xy, radius_pix, region_path, coordinate_type = 'pixel', 
                 convert = False, wcs = wcs, pixel_scale = self.im_pixel_scales[band].value)
             
@@ -2031,16 +2055,15 @@ class Data:
 
         if plot:
             self.plot_depth(band, cat_creator, mode, aper_diam, show = False)
-    
 
     def plot_area_depth(self, cat_creator, mode, aper_diam, show = False, use_area_per_band=True, save = True, return_array=False):     
         if type(cat_creator) == type(None):
             galfind_logger.warning("Could not plot depths as cat_creator == None in Data.plot_area_depth()")
         else:
-            self.load_depth_dirs(aper_diam)
+            self.load_depth_dirs(aper_diam, mode)
             area_tab = self.calc_unmasked_area(masking_instrument_or_band_name = self.forced_phot_band, forced_phot_band = self.forced_phot_band)
             overwrite = config["Depths"].getboolean("OVERWRITE_DEPTH_PLOTS")
-            save_path = f"{self.depth_dirs[aper_diam][self.forced_phot_band]}/{mode}/depth_areas.png" # not entirely general -> need to improve self.depth_dirs
+            save_path = f"{self.depth_dirs[aper_diam][mode][self.forced_phot_band]}/depth_areas.png" # not entirely general -> need to improve self.depth_dirs
             
             if not Path(save_path).is_file() or overwrite:
                 fig, ax = plt.subplots(1, 1, figsize = (4, 4))
@@ -2065,7 +2088,7 @@ class Data:
                 #colors = plt.cm.viridis(np.linspace(0, 1, len(bands)))
                 data = {}
                 for pos, band in enumerate(bands):
-                    h5_path = f"{self.depth_dirs[aper_diam][band]}/{mode}/{band}.h5"
+                    h5_path = f"{self.depth_dirs[aper_diam][mode][band]}/{band}.h5"
 
                     if overwrite:
                         galfind_logger.info("OVERWRITE_DEPTH_PLOTS = YES, re-doing depth plots.")
@@ -2144,20 +2167,67 @@ class Data:
                 if return_array:
                     return data
 
+    def make_depth_tabs(self, aper_diam, depth_mode):
+        # create .ecsv holding all depths for an instrument if not already written
+        instr_bands = {instr_name: [band.band_name for band in self.instrument \
+            if band.instrument == instr_name] for instr_name in \
+            np.unique([band.instrument for band in self.instrument])}
+        self.load_depth_dirs(aper_diam, depth_mode)
+        for instr_name, band_names in instr_bands.items():
+            out_path = f"{self.depth_dirs[aper_diam][depth_mode][band_names[0]]}/{self.survey}_depths.ecsv"
+            if not Path(out_path).is_file():
+                recalculate = True
+            else:
+                # open file
+                depths_tab = Table.read(out_path)
+                calculated_bands = np.unique(band for band in depths_tab["band"])
+                if not all(band in calculated_bands for band in band_names):
+                    recalculate = True
+                else:
+                    recalculate = False
+            if recalculate:
+                band_reg_median_depths = {}
+                band_reg_mean_depths = {}
+                for band in band_names:
+                    # open .h5
+                    hf = h5py.File(f"{self.depth_dirs[aper_diam][depth_mode][band]}/{band}.h5", "r")
+                    cat_depths = np.array(hf.get("depths"))
+                    depth_labels = np.array(hf.get("depth_labels"))
+                    med_region_band_depths = {**{str(int(depth_label)): np.nanmedian([depth for depth, label in \
+                        zip(cat_depths, depth_labels) if label == depth_label]) \
+                        for depth_label in np.unique(depth_labels) if not np.isnan(depth_label)}, \
+                        **{"all": np.nanmedian(cat_depths)}}
+                    mean_region_band_depths = {**{str(int(depth_label)): np.nanmean([depth for depth, label in \
+                        zip(cat_depths, depth_labels) if label == depth_label]) \
+                        for depth_label in np.unique(depth_labels) if not np.isnan(depth_label)}, \
+                        **{"all": np.nanmean(cat_depths)}}
+                    hf.close()
+                    band_reg_median_depths = {**band_reg_median_depths, **{f"{band}_{key}": \
+                        value for key, value in med_region_band_depths.items()}}
+                    band_reg_mean_depths = {**band_reg_mean_depths, **{f"{band}_{key}": \
+                        value for key, value in mean_region_band_depths.items()}}
+                bands = np.array([key.split("_")[0] for key in band_reg_median_depths.keys()])
+                region_labels = np.array([key.split("_")[-1] for key in band_reg_median_depths.keys()])
+                median_depths = np.array([value for value in band_reg_median_depths.values()])
+                mean_depths = np.array([value for value in band_reg_mean_depths.values()])
+                tab = Table({"band": bands, "region": region_labels, "median_depth": median_depths, \
+                    "mean_depth": mean_depths}, dtype = [str, str, float, float])
+                funcs.make_dirs(out_path)
+                tab.write(out_path, overwrite = True)
 
     def plot_depth(self, band, cat_creator, mode, aper_diam, show = False): #, **kwargs):
         if type(cat_creator) == type(None):
             galfind_logger.warning("Could not plot depths as cat_creator == None in Data.plot_depth()")
         else:
-            self.load_depth_dirs(aper_diam)
-            save_path = f"{self.depth_dirs[aper_diam][band]}/{mode}/{band}_depths.png"
+            self.load_depth_dirs(aper_diam, mode)
+            save_path = f"{self.depth_dirs[aper_diam][mode][band]}/{band}_depths.png"
             # determine paths and whether to overwrite
             overwrite = config["Depths"].getboolean("OVERWRITE_DEPTH_PLOTS")
             if overwrite:
                 galfind_logger.info("OVERWRITE_DEPTH_PLOTS = YES, re-doing depth plots.")
             if not Path(save_path).is_file() or overwrite:
                 # load depth data
-                h5_path = f"{self.depth_dirs[aper_diam][band]}/{mode}/{band}.h5"
+                h5_path = f"{self.depth_dirs[aper_diam][mode][band]}/{band}.h5"
                 if not Path(h5_path).is_file():
                     raise(Exception(f"Must first run depths for {self.survey} {self.version} {band} {mode} {aper_diam} before plotting!"))
                 hf = h5py.File(h5_path, "r")

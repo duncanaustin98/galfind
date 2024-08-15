@@ -13,13 +13,14 @@ import numpy as np
 import time
 
 from galfind import useful_funcs_austind as funcs
-from galfind import Catalogue, config, LePhare, EAZY, NIRCam, Bagpipes
+from galfind import Catalogue, config, LePhare, EAZY, Bagpipes, NIRCam, Number_Density_Function
 from galfind.Catalogue_Creator import GALFIND_Catalogue_Creator
 
 def pipeline(surveys, version, instruments, aper_diams, min_flux_pc_errs, forced_phot_band, \
         excl_bands, SED_fit_params_arr, cat_type = "loc_depth", crop_by = None, timed = True, mask_stars = True, \
         pix_scales = {"ACS_WFC": 0.03 * u.arcsec, "WFC3_IR": 0.03 * u.arcsec, "NIRCam": 0.03 * u.arcsec, "MIRI": 0.09 * u.arcsec}, \
         load_SED_rest_properties = True, n_depth_reg = "auto"):
+    
     for pc_err in min_flux_pc_errs:
         # make appropriate galfind catalogue creator for each aperture diameter
         cat_creator = GALFIND_Catalogue_Creator(cat_type, aper_diams[0], pc_err)
@@ -30,9 +31,28 @@ def pipeline(surveys, version, instruments, aper_diams, min_flux_pc_errs, forced
                 excl_bands = excl_bands, loc_depth_min_flux_pc_errs = min_flux_pc_errs, crop_by = crop_by, timed = timed, \
                 mask_stars = mask_stars, pix_scales = pix_scales, load_SED_rest_properties = load_SED_rest_properties, n_depth_reg = n_depth_reg)
 
-            pipes_origin = SED_fit_params_arr[-1] #["code"].label_from_SED_fit_params(SED_fit_params_arr[-1])
-            cat.plot("beta_C94", pipes_origin, "M_UV", pipes_origin)
+            #pipes_origin = SED_fit_params_arr[-1] #["code"].label_from_SED_fit_params(SED_fit_params_arr[-1])
+            #cat.plot("beta_C94", pipes_origin, "M_UV", pipes_origin)
+            
+            M_UV_name = "M1500"
+            UV_LF_z9 = Number_Density_Function.from_single_cat(cat, M_UV_name, np.arange(-21.25, -17.25, 0.5), \
+                [8.5, 9.5], x_origin = "EAZY_fsps_larson_zfree_REST_PROPERTY")
+            UV_LF_z9.plot(M_UV_name)
+            UV_LF_z10_5 = Number_Density_Function.from_single_cat(cat, M_UV_name, np.arange(-21.25, -17.25, 0.5), \
+                [9.5, 11.5], x_origin = "EAZY_fsps_larson_zfree_REST_PROPERTY")
+            UV_LF_z10_5.plot(M_UV_name)
+            UV_LF_z12_5 = Number_Density_Function.from_single_cat(cat, M_UV_name, np.arange(-21.25, -17.25, 0.5), \
+                [11.5, 13.5], x_origin = "EAZY_fsps_larson_zfree_REST_PROPERTY")
+            UV_LF_z12_5.plot(M_UV_name)
+            breakpoint()
 
+            #cat.calc_Vmax(cat.data, z_bin = [5.5, 6.5], timed = timed)
+            #cat.calc_Vmax(cat.data, z_bin = [11.5, 13.5], timed = timed)
+            #cat.calc_Vmax(cat.data, z_bin = [9.5, 11.5], timed = timed)
+            #cat.calc_Vmax(cat.data, z_bin = [8.5, 9.5], timed = timed)
+            #cat.calc_Vmax(cat.data, z_bin = [7.5, 8.5], timed = timed)
+            #cat.calc_Vmax(cat.data, z_bin = [6.5, 7.5], timed = timed)
+            
             # cat.phot_SNR_crop(0, 2., "non_detect") # 2σ non-detected in first band
             # cat.phot_bluewards_Lya_non_detect(2.) # 2σ non-detected in all bands bluewards of Lyα
             # cat.phot_redwards_Lya_detect([5., 5.], widebands_only = True) # 5σ/5σ detected in first/second band redwards of Lyα
@@ -46,9 +66,9 @@ def pipeline(surveys, version, instruments, aper_diams, min_flux_pc_errs, forced
             #     cat.select_band_flux_radius(band_name, "gtr", 1.5) # LW NIRCam wideband Re>1.5 pix
             
             # cat_copy = cat.select_EPOCHS(allow_lowz = False)
-            # # # #cat_copy.make_cutouts(IDs = crop_by["IDs"])
+            # # #cat_copy.make_cutouts(IDs = crop_by["IDs"])
             # cat.plot_phot_diagnostics(flux_unit = u.ABmag)
-            # print(str(cat_copy))
+            # print(str(cat))
 
             # end = time.time()
             # print(f"Time to load catalogue = {(end - start):.1f}s")
@@ -91,10 +111,10 @@ if __name__ == "__main__":
     instruments = ["ACS_WFC", "NIRCam"] #, "MIRI"] #, "ACS_WFC"] # "WFC3_IR"
     cat_type = "loc_depth"
     surveys = ["JOF"] #["JADES-Deep-GS+JEMS"]#+SMILES"] #[config["DEFAULT"]["SURVEY"]]
-    aper_diams = [0.32] * u.arcsec # , 0.5, 1.0, 1.5, 2.0
+    aper_diams = [0.32] * u.arcsec # 0.32, 0.5, 1.0, 1.5, 2.0
     SED_code_arr = [EAZY()]
     templates_arr = ["fsps_larson"] #["fsps", "fsps_larson", "fsps_jades"]
-    lowz_zmax_arr = [[4., 6., None]] # 2.,  #[[4., 6., None]] #[[None]] # 
+    lowz_zmax_arr = [[4., 6., None]] #[[4., 6., None]] #[[None]] # 
     min_flux_pc_errs = [10]
     forced_phot_band = ["F277W", "F356W", "F444W"] # ["F444W"]
     crop_by = "EPOCHS" #{"ID": [893, 1685, 2171, 3400, 5532, 6492, 7389, 7540, 9036, 15476]} #"bands>13+EPOCHS" #"EPOCHS_lowz+z>4.5" # {"IDs": [30004, 26602, 2122, 28178, 17244, 23655, 1027]}

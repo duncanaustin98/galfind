@@ -26,6 +26,8 @@ import json
 from tqdm import tqdm
 from scipy.interpolate import interp1d
 import inspect
+from scipy.stats import chi2
+from typing import Union
 
 from . import config, galfind_logger, astropy_cosmo
 
@@ -303,8 +305,77 @@ logged_properties = ["stellar_mass", "formed_mass", "ssfr", "ssfr_10myr"]
 lower_Calzetti_filt = [1268., 1309., 1342., 1407., 1562., 1677., 1760., 1866., 1930., 2400.]
 upper_Calzetti_filt = [1284., 1316., 1371., 1515., 1583., 1740., 1833., 1890., 1950., 2580.]
 
-# unit formatting
+# General number density function tools
 
+default_lims = {"M1500": [-23., -16.], "stellar_mass": []}
+
+def get_z_bin_name(z_bin: Union[list, np.array]) -> str:
+    return f"{z_bin[0]:.1f}<z<{z_bin[1]:.1f}"
+
+def get_SED_fit_params_z_bin_name(SED_fit_params_key: str, z_bin: Union[list, np.array]):
+    return f"{SED_fit_params_key}_{get_z_bin_name(z_bin)}"
+
+def calc_Vmax(area, zmin, zmax):
+    return ((4/3 * np.pi) * (area / (4. * np.pi * u.sr)) * \
+        (astropy_cosmo.comoving_distance(zmax) ** 3. \
+        - astropy_cosmo.comoving_distance(zmin) ** 3.)).to(u.Mpc ** 3)
+
+def poisson_interval(k, alpha = 0.05): 
+    """
+    uses chisquared info to get the poisson interval. Uses scipy.stats
+    From https://stackoverflow.com/questions/14813530/poisson-confidence-interval-with-numpy
+    """
+    low, high = (chi2.ppf(alpha / 2., 2 * k) / 2, chi2.ppf(1. - alpha / 2., (2 * k) + 2) / 2)
+    if k == 0: 
+        low = 0.
+    return low, high
+
+def calc_cv_proper(z_bin: Union[list, np.array], data_arr: Union[list, np.array], \
+        rectangular_geometry_y_to_x: Union[int, float, list, np.array, dict] = 1., \
+        data_region: Union[str, int] = "all") -> float:
+    if type(data_region) in [int]:
+        data_region = str(data_region)
+    if type(rectangular_geometry_y_to_x) in [int]:
+        rectangular_geometry_y_to_x = float(rectangular_geometry_y_to_x)
+    if type(rectangular_geometry_y_to_x) in [float]:
+        rectangular_geometry_y_to_x = [rectangular_geometry_y_to_x for i in range(len(data_arr))]
+    elif type(rectangular_geometry_y_to_x) in [list, np.array]:
+        assert len(rectangular_geometry_y_to_x) == len(data_arr)
+    elif type(rectangular_geometry_y_to_x) in [dict]:
+        assert all(data.full_name in rectangular_geometry_y_to_x.keys() for data in data_arr)
+        rectangular_geometry_y_to_x = [float(rectangular_geometry_y_to_x[data.full_name]) for data in data_arr]
+    cos_var_tot = 0.
+    total_area = 0.
+    for data, y_to_x in zip(data_arr, rectangular_geometry_y_to_x):
+        # calculate area of field
+        area = data.area[data_region].to(u.arcmin ** 2)
+        # field is square if y_to_x == 1
+        dimensions_x = np.sqrt(area.value / y_to_x) * u.arcmin
+        dimensions_y = np.sqrt(area.value * y_to_x) * u.arcmin
+
+        volume = ((astropy_cosmo.comoving_volume(z_bin[1]) - astropy_cosmo.comoving_volume(z_bin[0])) \
+            * area / (4. * np.pi * u.sr)).to(u.Mpc ** 3)
+        
+        codist_low = astropy_cosmo.comoving_distance(z_bin[0]).to(u.Mpc)
+        codist_high = astropy_cosmo.comoving_distance(z_bin[1]).to(u.Mpc)
+        C = codist_high - codist_low
+        A = np.cos(dimensions_y.to(u.rad).value) * dimensions_x.to(u.deg).value / 360. * (codist_low + 0.5 * C)
+        B = dimensions_x.to(u.deg).value / 180. * (codist_low + 0.5 * C)
+        scale = np.sqrt((volume / (A * B * C)).to(u.dimensionless_unscaled)).decompose()
+        A *= scale
+        B *= scale
+        C *= scale
+        N = 1
+        cos_var = ((1. - 0.03 * np.sqrt(np.max([A / B, B / A]) - 1.)) * \
+            (219.7 - 52.4 * np.log10(A.value * B.value * 291.) + 3.21 * \
+            (np.log10(A.value * B.value * 291.)) ** 2.) / np.sqrt(N * C.value / 291.)) / 100.
+        total_area += area
+        cos_var_tot += (area ** 2) * (cos_var ** 2)
+    if total_area != 0.:
+        cosmic_variance = np.sqrt((cos_var_tot / (total_area ** 2.)).to(u.dimensionless_unscaled).value)
+    else:
+        cosmic_variance = 0.
+    return cosmic_variance
 
 # general functions
 
@@ -455,17 +526,6 @@ def change_file_permissions(path, permissions = 0o777, log = False):
         except (PermissionError, FileNotFoundError):
             pass
 
-# def calc_errs_from_cat(cat, col_name, instrument):
-#     if col_name in LePhare_col_names:
-#         errs = calc_LePhare_errs(cat, col_name)
-#     elif col_name in EAZY_col_names:
-#         errs = calc_EAZY_errs(cat, col_name)
-#     elif col_name in instrument.band_names:
-#         errs = [return_loc_depth_mags(cat, col_name, True)[1]]
-#     else:
-#         errs = np.array([cat[f"{col_name}_l1"], cat[f"{col_name}_u1"]])
-#     return errs
-
 def source_separation(sky_coord_1, sky_coord_2, z):
     # calculate separation in arcmin
     arcmin_sep = sky_coord_1.separation(sky_coord_2).to(u.arcmin)
@@ -473,8 +533,6 @@ def source_separation(sky_coord_1, sky_coord_2, z):
     # calculate separation in transverse comoving distance
     kpc_sep = arcmin_sep * astropy_cosmo.kpc_proper_per_arcmin(z)
     return kpc_sep
-
-#source_separation(SkyCoord(ra = 53.26564 * u.deg, dec = -27.85555 * u.deg), SkyCoord(ra = 53.26556 * u.deg, dec = -27.85552 * u.deg), 8.0)
 
 def tex_to_fits(tex_path, col_names, col_errs, replace = {"&": "", "\\\\": "", "\dag": "", "\ddag": "", "\S": "", \
                                             "\P": "", "$": "", "}": "", "^{+": " ", "^{": "", "_{-": " "}, empty = ["-"], comment = "%"):
@@ -535,11 +593,6 @@ def tex_to_fits(tex_path, col_names, col_errs, replace = {"&": "", "\\\\": "", "
     fits_table.write(fits_path, overwrite = True)
     change_file_permissions(fits_path)
     print(f"Saved {tex_path} as .fits")
-
-#col_names = ["NAME", "RA", "DEC", "MAG_f444W", "MAG_f277W", "z_LePhare", "mass_LePhare", "Beta", "SFR", "M_UV", "References"]
-#col_errs = [False, False, False, True, True, True, False, True, True, True, False]
-#tex_to_fits("/nvme/scratch/work/austind/Arxiv_papers/matched_cats/HUDF-Par2/NGDEEP_paper_literature_tex.txt", col_names, col_errs)
-
         
 def ext_source_corr(data, corr_factor, is_log_data = True):
     if is_log_data:
