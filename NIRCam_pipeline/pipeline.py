@@ -13,7 +13,7 @@ import numpy as np
 import time
 
 from galfind import useful_funcs_austind as funcs
-from galfind import Catalogue, config, LePhare, EAZY, NIRCam
+from galfind import Catalogue, config, LePhare, EAZY, NIRCam, Number_Density_Function
 from galfind.Catalogue_Creator import GALFIND_Catalogue_Creator
 
 def pipeline(surveys, version, instruments, aper_diams, min_flux_pc_errs, forced_phot_band, \
@@ -30,6 +30,18 @@ def pipeline(surveys, version, instruments, aper_diams, min_flux_pc_errs, forced
                 excl_bands = excl_bands, loc_depth_min_flux_pc_errs = min_flux_pc_errs, crop_by = crop_by, timed = timed, \
                 mask_stars = mask_stars, pix_scales = pix_scales, load_SED_rest_properties = load_SED_rest_properties, n_depth_reg = n_depth_reg)
             
+            M_UV_name = "M1500"
+            UV_LF_z9 = Number_Density_Function.from_single_cat(cat, M_UV_name, np.arange(-21.25, -17.25, 0.5), \
+                [8.5, 9.5], x_origin = "EAZY_fsps_larson_zfree_REST_PROPERTY")
+            UV_LF_z9.plot(M_UV_name)
+            UV_LF_z10_5 = Number_Density_Function.from_single_cat(cat, M_UV_name, np.arange(-21.25, -17.25, 0.5), \
+                [9.5, 11.5], x_origin = "EAZY_fsps_larson_zfree_REST_PROPERTY")
+            UV_LF_z10_5.plot(M_UV_name)
+            UV_LF_z12_5 = Number_Density_Function.from_single_cat(cat, M_UV_name, np.arange(-21.25, -17.25, 0.5), \
+                [11.5, 13.5], x_origin = "EAZY_fsps_larson_zfree_REST_PROPERTY")
+            UV_LF_z12_5.plot(M_UV_name)
+            breakpoint()
+
             #cat.calc_Vmax(cat.data, z_bin = [5.5, 6.5], timed = timed)
             #cat.calc_Vmax(cat.data, z_bin = [11.5, 13.5], timed = timed)
             #cat.calc_Vmax(cat.data, z_bin = [9.5, 11.5], timed = timed)
@@ -105,7 +117,7 @@ if __name__ == "__main__":
     timed = False
     mask_stars = {"ACS_WFC": False, "NIRCam": True, "WFC3_IR": False, "MIRI": False}
     MIRI_pix_scale = 0.06 * u.arcsec
-    load_SED_rest_properties = False #True
+    load_SED_rest_properties = True
     n_depth_reg = "auto"
 
     jems_bands = ["F182M", "F210M", "F430M", "F460M", "F480M"]

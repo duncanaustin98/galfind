@@ -762,7 +762,7 @@ class Catalogue(Catalogue_Base):
 
     # Number Density Function (e.g. UVLF and mass functions) methods
 
-    def calc_Vmax(self, data, z_bin: Union[list, np.array], \
+    def calc_Vmax(self, data_arr: Union[list, np.array], z_bin: Union[list, np.array], \
             SED_fit_params: Union[dict, str] = "EAZY_fsps_larson_zfree", \
             z_step: float = 0.01, timed: bool = False) -> None:
         assert len(z_bin) == 2
@@ -774,41 +774,48 @@ class Catalogue(Catalogue_Base):
         else:
             galfind_logger.critical(f"{SED_fit_params=} with {type(SED_fit_params)=} is not in [dict, str]!")
         z_bin_name = f"{SED_fit_params_key}_{z_bin[0]:.1f}<z<{z_bin[1]:.1f}"
-        save_path = f"{config['NumberDensityFunctions']['VMAX_DIR']}/{self.version}/{self.instrument.name}/{self.survey}/{z_bin_name}/Vmax_field={data.full_name}.ecsv"
-        funcs.make_dirs(save_path)
-        # if this file already exists
-        if Path(save_path).is_file():
-            # open file
-            old_tab = Table.read(save_path)
-            update_IDs = np.array([gal.ID for gal in self if gal.ID not in old_tab["ID"]])
-        else:
-            update_IDs = self.ID
-        if len(update_IDs) > 0:
-            self.gals = [deepcopy(gal).calc_Vmax(self.data.full_name, data, z_bin, SED_fit_params_key, z_step, timed = timed) for gal in \
-                tqdm(self, total = len(self), desc = f"Calculating Vmax's for {self.data.full_name} in {z_bin_name} {data.full_name}")]
-            # table with uncalculated Vmax's
-            Vmax_arr = np.array([gal.V_max[z_bin_name][data.full_name].to(u.Mpc ** 3).value \
-                if type(gal.V_max[z_bin_name][data.full_name]) in [u.Quantity] else \
-                gal.V_max[z_bin_name][data.full_name] for gal in self if gal.ID in update_IDs])
-            Vmax_simple_arr = np.array([gal.V_max_simple[z_bin_name][data.full_name].to(u.Mpc ** 3).value \
-                if type(gal.V_max_simple[z_bin_name][data.full_name]) in [u.Quantity] else \
-                gal.V_max_simple[z_bin_name][data.full_name] for gal in self if gal.ID in update_IDs])
-            obs_zmin = np.array([gal.obs_zrange[z_bin_name][data.full_name][0] for gal in self if gal.ID in update_IDs])
-            obs_zmax = np.array([gal.obs_zrange[z_bin_name][data.full_name][1] for gal in self if gal.ID in update_IDs])
-            new_tab = Table({"ID": update_IDs, "Vmax": Vmax_arr, "Vmax_simple": Vmax_simple_arr, \
-                "obs_zmin": obs_zmin, "obs_zmax": obs_zmax}, dtype = [int, float, float, float, float])
-            new_tab.meta = {"Vmax_invalid_val": -1., "Vmax_unit": u.Mpc ** 3}
-            if Path(save_path).is_file(): # update and save table
-                out_tab = vstack([old_tab, new_tab])
-                out_tab.meta = {**old_tab.meta, **new_tab.meta}
-            else: # save table
-                out_tab = new_tab
-            out_tab.sort("ID")
-            out_tab.write(save_path, overwrite = True)
-        else:
-            # load in appropriate Vmax properties
-            #self.gals = [gal.load_Vmax() for gal in deepcopy(self)]
-            raise NotImplementedError
+        for data in data_arr:
+            save_path = f"{config['NumberDensityFunctions']['VMAX_DIR']}/{self.version}/{self.instrument.name}/{self.survey}/{z_bin_name}/Vmax_field={data.full_name}.ecsv"
+            funcs.make_dirs(save_path)
+            # if this file already exists
+            if Path(save_path).is_file():
+                # open file
+                old_tab = Table.read(save_path)
+                update_IDs = np.array([gal.ID for gal in self if gal.ID not in old_tab["ID"]])
+            else:
+                update_IDs = self.ID
+            if len(update_IDs) > 0:
+                self.gals = [deepcopy(gal).calc_Vmax(self.data.full_name, [data], z_bin, SED_fit_params_key, z_step, timed = timed) for gal in \
+                    tqdm(self, total = len(self), desc = f"Calculating Vmax's for {self.data.full_name} in {z_bin_name} {data.full_name}")]
+                # table with uncalculated Vmax's
+                Vmax_arr = np.array([gal.V_max[z_bin_name][data.full_name].to(u.Mpc ** 3).value \
+                    if type(gal.V_max[z_bin_name][data.full_name]) in [u.Quantity] else \
+                    gal.V_max[z_bin_name][data.full_name] for gal in self if gal.ID in update_IDs])
+                #Vmax_simple_arr = np.array([gal.V_max_simple[z_bin_name][data.full_name].to(u.Mpc ** 3).value \
+                #    if type(gal.V_max_simple[z_bin_name][data.full_name]) in [u.Quantity] else \
+                #    gal.V_max_simple[z_bin_name][data.full_name] for gal in self if gal.ID in update_IDs])
+                obs_zmin = np.array([gal.obs_zrange[z_bin_name][data.full_name][0] for gal in self if gal.ID in update_IDs])
+                obs_zmax = np.array([gal.obs_zrange[z_bin_name][data.full_name][1] for gal in self if gal.ID in update_IDs])
+                # new_tab = Table({"ID": update_IDs, "Vmax": Vmax_arr, "Vmax_simple": Vmax_simple_arr, \
+                #     "obs_zmin": obs_zmin, "obs_zmax": obs_zmax}, dtype = [int, float, float, float, float])
+                new_tab = Table({"ID": update_IDs, "Vmax": Vmax_arr, "obs_zmin": obs_zmin, \
+                    "obs_zmax": obs_zmax}, dtype = [int, float, float, float])
+                new_tab.meta = {"Vmax_invalid_val": -1., "Vmax_unit": u.Mpc ** 3}
+                if Path(save_path).is_file(): # update and save table
+                    out_tab = vstack([old_tab, new_tab])
+                    out_tab.meta = {**old_tab.meta, **new_tab.meta}
+                else: # save table
+                    out_tab = new_tab
+                out_tab.sort("ID")
+                out_tab.write(save_path, overwrite = True)
+            else: # Vmax table already opened
+                Vmax_tab = old_tab[np.array([row["ID"] in self.ID for row in old_tab])]
+                Vmax_tab.sort("ID")
+                # save appropriate Vmax properties
+                self.gals = [deepcopy(gal).save_Vmax(Vmax, z_bin_name, data.full_name, is_simple_Vmax = False) \
+                    for gal, Vmax in zip(self, np.array(Vmax_tab["Vmax"]))]
+                #self.gals = [deepcopy(gal).save_Vmax(Vmax, z_bin_name, data.full_name, is_simple_Vmax = True) \
+                #    for gal, Vmax in zip(self, np.array(Vmax_tab["Vmax_simple"]))]
 
     # def plot_SED_properties(self, x_name, y_name, SED_fit_params):
     #     x_arr = []

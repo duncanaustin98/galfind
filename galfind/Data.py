@@ -1789,6 +1789,11 @@ class Data:
         unmasked_area_cluster_module = unmasked_area_tot - unmasked_area_blank_modules
         galfind_logger.info(f"Unmasked areas for {self.survey}, masking_instrument_or_band_name = {masking_instrument_or_band_name} - Total: {unmasked_area_tot}, Blank modules: {unmasked_area_blank_modules}, Cluster module: {unmasked_area_cluster_module}")
         
+        # save in self
+        if not hasattr(self, "area"):
+            self.area = {}
+        self.area["all"] = unmasked_area_tot
+
         output_path = f"{config['DEFAULT']['GALFIND_WORK']}/Unmasked_areas.ecsv"
         funcs.make_dirs(output_path)
         areas_data = {"survey": [self.survey], "masking_instrument_band": [masking_instrument_or_band_name], \
