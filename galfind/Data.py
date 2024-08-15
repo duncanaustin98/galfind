@@ -411,7 +411,7 @@ class Data:
             # load fits mask for band before searching for other existing masks
             paths_to_masks = [f"{config['DEFAULT']['GALFIND_WORK']}/Masks/{survey}/fits_masks/{path.split('/')[-1]}" for path in fits_mask_paths \
                 if path.split("/")[-1].split("_")[0] == band and "basemask" in path.split("/")[-1].split("_")[1]]
-            print(band)
+            #print(band)
             assert len(paths_to_masks) <= 1, galfind_logger.critical(f"{len(paths_to_masks)=} > 1")
             #breakpoint()
             if len(paths_to_masks) == 0:
@@ -425,7 +425,7 @@ class Data:
                 mask_paths[band] = paths_to_masks[0]
         
             mid = time.time()
-            print(mid - start)
+            #print(mid - start)
 
         if is_blank:
             cluster_mask_path = ""
@@ -1932,7 +1932,7 @@ class Data:
                 #median_depths[band] = band_median_depths
 
             # update catalogue metadata
-            cat.meta = {**cat.meta, **{"DEPTHS": True, "MINPCERR": cat_creator.min_flux_pc_err}} #, "Mean_depths": mean_depths, "Median_depths": median_depths}}
+            cat.meta = {**cat.meta, **{"DEPTHS": True, "MINPCERR": cat_creator.min_flux_pc_err, 'ZEROPNT':str(self.im_zps)}} #, "Mean_depths": mean_depths, "Median_depths": median_depths}}
             #print(cat.meta)
             # overwrite original catalogue with local depth columns
             cat.write(self.sex_cat_master_path, overwrite = True)

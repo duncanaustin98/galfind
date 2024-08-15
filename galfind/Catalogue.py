@@ -315,15 +315,37 @@ class Catalogue(Catalogue_Base):
 #                     else:
 #                         rerun = True
 #             if rerun:
+            start = time.time()
             im_data, im_header, seg_data, seg_header = self.data.load_data(band, incl_mask = False)
+            end1 = time.time()
+            print('Time to load im/seg data:', end1 - start)
             wht_data = self.data.load_wht(band)
+            end2 = time.time()
+            print('Time to load wht data:', end2 - end1)
             rms_err_data = self.data.load_rms_err(band)
+            end3 = time.time()
+            print('Time to load rms_err data:', end3 - end2)
             wcs = WCS(im_header)
+            pos = 0
+            end = time.time()
+            print('Time to load data:', end - start)
+
             for gal in self:
                 if gal.ID in IDs:
+                    if type(cutout_size) in [dict]:
+                        cutout_size_gal = cutout_size[gal.ID]
+                    else:
+                        cutout_size_gal = cutout_size
+                    
+                    
                     gal.make_cutout(band, data = {"SCI": im_data, "SEG": seg_data, 'WHT': wht_data, 'RMS_ERR':rms_err_data}, \
                         wcs = wcs, im_header = im_header, survey = self.survey, version = self.version, \
-                        pix_scale = self.data.im_pixel_scales[band], cutout_size = cutout_size)
+                        pix_scale = self.data.im_pixel_scales[band], cutout_size = cutout_size_gal)
+                    pos += 1
+
+            end2 = time.time()
+            print('Time to make cutouts:', end2 - end)
+                
 #             else:
 #                 for gal in self:
 #                     if gal.ID in IDs:
@@ -623,6 +645,7 @@ class Catalogue(Catalogue_Base):
             self.perform_selection(Galaxy.phot_SNR_crop, 0, 2., "non_detect", make_cat_copy = False) # 2σ non-detected in first band
         self.perform_selection(Galaxy.phot_bluewards_Lya_non_detect, 2., SED_fit_params, make_cat_copy = False) # 2σ non-detected in all bands bluewards of Lyα
         self.perform_selection(Galaxy.phot_redwards_Lya_detect, [5., 5.], SED_fit_params, True, make_cat_copy = False) # 5σ/3σ detected in first/second band redwards of Lyα
+        self.perform_selection(Galaxy.phot_redwards_Lya_detect, 2., SED_fit_params, False, make_cat_copy = False) # 2σ detected in all bands redwards of Lyα
         self.perform_selection(Galaxy.select_chi_sq_lim, 3., SED_fit_params, True, make_cat_copy = False) # χ^2_red < 3
         self.perform_selection(Galaxy.select_chi_sq_diff, 4., SED_fit_params, 0.5, make_cat_copy = False) # Δχ^2 < 4 between redshift free and low redshift SED fits, with Δz=0.5 tolerance 
         self.perform_selection(Galaxy.select_robust_zPDF, 0.6, 0.1, SED_fit_params, make_cat_copy = False) # 60% of redshift PDF must lie within z ± z * 0.1
@@ -829,8 +852,9 @@ class Catalogue(Catalogue_Base):
             is_property_updated = self.__getattr__(property_name, phot_type = "rest", property_type = "recently_updated")
         if type(is_property_updated) == type(None):
             breakpoint()
-        if any(type(updated) == type(None) for updated in is_property_updated):
-            breakpoint()
+        else:
+            if any(type(updated) == type(None) for updated in is_property_updated):
+                breakpoint()
         # update properties and kwargs for those galaxies that have been updated, or if the columns have just been made
         
         if is_property_updated is not None:
