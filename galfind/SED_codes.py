@@ -83,7 +83,8 @@ class SED_code(ABC):
                     phot_err_in[i, j] = no_data_val
         return phot_in, phot_err_in
     
-    def fit_cat(self, cat, SED_fit_params, timed = True): # *args, **kwargs):
+    def fit_cat(self, cat, SED_fit_params: dict, load_PDFs: bool = True, \
+            load_SEDs: bool = True, timed: bool = True): # -> "Catalogue" # *args, **kwargs):
         if timed:
             start = time.time()
         self.make_in(cat) #, *args, **kwargs)
@@ -111,7 +112,8 @@ class SED_code(ABC):
             mid = time.time()
             print(f"Running SED fitting took {(mid - start):.1f}s")
         # update galaxies within the catalogue with new SED fits
-        cat_SED_results = Catalogue_SED_results.from_cat(cat, SED_fit_params_arr = [SED_fit_params], timed = timed).SED_results
+        cat_SED_results = Catalogue_SED_results.from_cat(cat, SED_fit_params_arr = [SED_fit_params], \
+            load_PDFs = load_PDFs, load_SEDs = load_SEDs, timed = timed).SED_results
         cat.update_SED_results(cat_SED_results, timed = timed)
         return cat
     

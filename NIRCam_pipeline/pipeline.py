@@ -17,8 +17,9 @@ from galfind import Catalogue, config, LePhare, EAZY, Bagpipes, NIRCam, Number_D
 from galfind.Catalogue_Creator import GALFIND_Catalogue_Creator
 
 def pipeline(surveys, version, instruments, aper_diams, min_flux_pc_errs, forced_phot_band, \
-        excl_bands, SED_fit_params_arr, cat_type = "loc_depth", crop_by = None, timed = True, mask_stars = True, \
-        pix_scales = {"ACS_WFC": 0.03 * u.arcsec, "WFC3_IR": 0.03 * u.arcsec, "NIRCam": 0.03 * u.arcsec, "MIRI": 0.09 * u.arcsec}, \
+        excl_bands, SED_fit_params_arr, cat_type = "loc_depth", crop_by = None, load_PDFs = True, \
+        load_SEDs = True, timed = True, mask_stars = True, pix_scales = {"ACS_WFC": 0.03 * u.arcsec, \
+        "WFC3_IR": 0.03 * u.arcsec, "NIRCam": 0.03 * u.arcsec, "MIRI": 0.09 * u.arcsec}, \
         load_SED_rest_properties = True, n_depth_reg = "auto"):
     
     for pc_err in min_flux_pc_errs:
@@ -28,23 +29,24 @@ def pipeline(surveys, version, instruments, aper_diams, min_flux_pc_errs, forced
             start = time.time()
             cat = Catalogue.from_pipeline(survey = survey, version = version, instruments = instruments, aper_diams = aper_diams, \
                 cat_creator = cat_creator, SED_fit_params_arr = SED_fit_params_arr, forced_phot_band = forced_phot_band, \
-                excl_bands = excl_bands, loc_depth_min_flux_pc_errs = min_flux_pc_errs, crop_by = crop_by, timed = timed, \
-                mask_stars = mask_stars, pix_scales = pix_scales, load_SED_rest_properties = load_SED_rest_properties, n_depth_reg = n_depth_reg)
-            
+                excl_bands = excl_bands, loc_depth_min_flux_pc_errs = min_flux_pc_errs, crop_by = crop_by, load_SEDs = load_SEDs, \
+                load_PDFs = load_PDFs, timed = timed, mask_stars = mask_stars, pix_scales = pix_scales, \
+                load_SED_rest_properties = load_SED_rest_properties, n_depth_reg = n_depth_reg)
+            #breakpoint()
             #pipes_origin = SED_fit_params_arr[-1] #["code"].label_from_SED_fit_params(SED_fit_params_arr[-1])
             #cat.plot("beta_C94", pipes_origin, "M_UV", pipes_origin)
             
-#             M_UV_name = "M1500"
-#             UV_LF_z9 = Number_Density_Function.from_single_cat(cat, M_UV_name, np.arange(-21.25, -17.25, 0.5), \
-#                 [8.5, 9.5], x_origin = "EAZY_fsps_larson_zfree_REST_PROPERTY")
-#             UV_LF_z9.plot(M_UV_name)
-#             UV_LF_z10_5 = Number_Density_Function.from_single_cat(cat, M_UV_name, np.arange(-21.25, -17.25, 0.5), \
-#                 [9.5, 11.5], x_origin = "EAZY_fsps_larson_zfree_REST_PROPERTY")
-#             UV_LF_z10_5.plot(M_UV_name)
-#             UV_LF_z12_5 = Number_Density_Function.from_single_cat(cat, M_UV_name, np.arange(-21.25, -17.25, 0.5), \
-#                 [11.5, 13.5], x_origin = "EAZY_fsps_larson_zfree_REST_PROPERTY")
-#             UV_LF_z12_5.plot(M_UV_name)
-#             breakpoint()
+            # M_UV_name = "M1500"
+            # UV_LF_z9 = Number_Density_Function.from_single_cat(cat, M_UV_name, np.arange(-21.25, -17.25, 0.5), \
+            #     [8.5, 9.5], x_origin = "EAZY_fsps_larson_zfree_REST_PROPERTY")
+            # UV_LF_z9.plot(M_UV_name)
+            # UV_LF_z10_5 = Number_Density_Function.from_single_cat(cat, M_UV_name, np.arange(-21.25, -17.25, 0.5), \
+            #     [9.5, 11.5], x_origin = "EAZY_fsps_larson_zfree_REST_PROPERTY")
+            # UV_LF_z10_5.plot(M_UV_name)
+            # UV_LF_z12_5 = Number_Density_Function.from_single_cat(cat, M_UV_name, np.arange(-21.25, -17.25, 0.5), \
+            #     [11.5, 13.5], x_origin = "EAZY_fsps_larson_zfree_REST_PROPERTY")
+            # UV_LF_z12_5.plot(M_UV_name)
+            # breakpoint()
 
             #cat.calc_Vmax(cat.data, z_bin = [5.5, 6.5], timed = timed)
             #cat.calc_Vmax(cat.data, z_bin = [11.5, 13.5], timed = timed)
@@ -74,7 +76,6 @@ def pipeline(surveys, version, instruments, aper_diams, min_flux_pc_errs, forced
             # end = time.time()
             # print(f"Time to load catalogue = {(end - start):.1f}s")
             
-            # #cat.select_EPOCHS(allow_lowz = False)
             # #cat.data.calc_unmasked_area("NIRCam", forced_phot_band = forced_phot_band)
             # #cat.select_band_flux_radius("F277W", "gtr", 1.5)
 
@@ -108,22 +109,24 @@ def make_EAZY_SED_fit_params_arr(SED_code_arr, templates_arr, lowz_zmax_arr):
 
 if __name__ == "__main__":
 
-    version = "v11" #config["DEFAULT"]["VERSION"]
-    instruments = ["ACS_WFC", "NIRCam"] #, "MIRI"] #, "ACS_WFC"] # "WFC3_IR"
+    version = "v9" #config["DEFAULT"]["VERSION"]
+    instruments = ["ACS_WFC", "NIRCam", "MIRI"] #, "ACS_WFC"] # "WFC3_IR"
     cat_type = "loc_depth"
-    surveys = ["JOF"] #["JADES-Deep-GS+JEMS"]#+SMILES"] #[config["DEFAULT"]["SURVEY"]]
+    surveys = ["JADES-Deep-GS+JEMS+SMILES"] #["JADES-Deep-GS+JEMS"]#+SMILES"] #[config["DEFAULT"]["SURVEY"]]
     aper_diams = [0.32] * u.arcsec # 0.32, 0.5, 1.0, 1.5, 2.0
     SED_code_arr = [EAZY()]
     templates_arr = ["fsps_larson"] #["fsps", "fsps_larson", "fsps_jades"]
-    lowz_zmax_arr = [[4., 6., None]] #[[4., 6., None]] #[[None]] # 
+    lowz_zmax_arr = [[2., 4., 6., None]] #[[4., 6., None]] #[[None]] # 
     min_flux_pc_errs = [10]
     forced_phot_band = ["F277W", "F356W", "F444W"] # ["F444W"]
-    crop_by = "EPOCHS" #{"ID": [893, 1685, 2171, 3400, 5532, 6492, 7389, 7540, 9036, 15476]} #"bands>13+EPOCHS" #"EPOCHS_lowz+z>4.5"
+    crop_by = None #{"ID": [893, 1685, 2171, 3400, 5532, 6492, 7389, 7540, 9036, 15476]} #"bands>13+EPOCHS" #"EPOCHS_lowz+z>4.5"
     timed = False
     mask_stars = {"ACS_WFC": False, "NIRCam": True, "WFC3_IR": False, "MIRI": False}
     MIRI_pix_scale = 0.06 * u.arcsec
-    load_SED_rest_properties = False #True
+    load_SED_rest_properties = False
     n_depth_reg = "auto"
+    load_PDFs = {"EAZY": True, "Bagpipes": False}
+    load_SEDs = {"EAZY": True, "Bagpipes": False}
 
     jems_bands = ["F182M", "F210M", "F430M", "F460M", "F480M"]
     ngdeep_excl_bands = ["F435W", "F775W", "F850LP"]
@@ -132,9 +135,9 @@ if __name__ == "__main__":
 
     EAZY_SED_fit_params_arr = make_EAZY_SED_fit_params_arr(SED_code_arr, templates_arr, lowz_zmax_arr)
     pipes_fit_params_arr = [{"code": Bagpipes(), "dust": "Cal", "dust_prior": "log_10", \
-        "metallicity_prior": "log_10", "sps_model": "BPASS", "fix_z": False, "z_range": (0., 25.), \
+        "metallicity_prior": "log_10", "sps_model": "BC03", "fix_z": False, "z_range": (0., 25.), \
         "sfh": "continuity_bursty"}]
-    SED_fit_params_arr = EAZY_SED_fit_params_arr + pipes_fit_params_arr
+    SED_fit_params_arr = EAZY_SED_fit_params_arr #+ pipes_fit_params_arr
     # delay_time = (8 * u.h).to(u.s).value
     # print(f"{surveys[0]} delayed by {delay_time}s")
     # time.sleep(delay_time)
@@ -143,5 +146,6 @@ if __name__ == "__main__":
 
     for survey in surveys:
         pipeline([survey], version, instruments, aper_diams, min_flux_pc_errs, forced_phot_band, \
-        excl_bands, SED_fit_params_arr, cat_type = cat_type, crop_by = crop_by, timed = timed, \
-        mask_stars = mask_stars, pix_scales = pix_scales, load_SED_rest_properties = load_SED_rest_properties, n_depth_reg = n_depth_reg)
+            excl_bands, SED_fit_params_arr, cat_type = cat_type, crop_by = crop_by, load_PDFs = load_PDFs, \
+            load_SEDs = load_SEDs, timed = timed, mask_stars = mask_stars, pix_scales = pix_scales, \
+            load_SED_rest_properties = load_SED_rest_properties, n_depth_reg = n_depth_reg)

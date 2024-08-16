@@ -43,35 +43,44 @@ from .Spectrum import Spectral_Catalogue
 class Catalogue(Catalogue_Base):
     
     @classmethod
-    def from_pipeline(cls, survey, version, aper_diams, cat_creator, SED_fit_params_arr = [{"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": 4.}, \
+    def from_pipeline(cls, survey: str, version: str, aper_diams: u.Quantity, cat_creator, SED_fit_params_arr = [{"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": 4.}, \
             {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": 6.}, {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}], \
-            instruments = ['NIRCam', 'ACS_WFC', 'WFC3_IR'], forced_phot_band = ["F277W", "F356W", "F444W"], excl_bands = [], \
-            pix_scales = {"ACS_WFC": 0.03 * u.arcsec, "WFC3_IR": 0.03 * u.arcsec, "NIRCam": 0.03 * u.arcsec, "MIRI": 0.09 * u.arcsec}, \
-            loc_depth_min_flux_pc_errs = [5, 10], crop_by = None, timed = True, mask_stars = True, \
-            load_SED_rest_properties = True, sex_prefer = "rms_err", n_depth_reg = "auto"):
-        # make 'Data' object
+            instruments = ['NIRCam', 'ACS_WFC', 'WFC3_IR'], forced_phot_band: Union[list, np.array, str] = ["F277W", "F356W", "F444W"], \
+            excl_bands: Union[list, np.array] = [], pix_scales = {"ACS_WFC": 0.03 * u.arcsec, "WFC3_IR": 0.03 * u.arcsec, "NIRCam": 0.03 * u.arcsec, "MIRI": 0.09 * u.arcsec}, \
+            loc_depth_min_flux_pc_errs = [5, 10], crop_by = None, load_PDFs: Union[bool, dict] = True, load_SEDs: Union[bool, dict] = True, \
+            timed: bool = True, mask_stars: bool = True, load_SED_rest_properties: bool = True, sex_prefer: str = "rms_err", n_depth_reg = "auto"):
+        
         data = Data.from_pipeline(survey, version, instruments, excl_bands = excl_bands, mask_stars = mask_stars, pix_scales = pix_scales)
+        
         return cls.from_data(data, version, aper_diams, cat_creator, SED_fit_params_arr, \
-            forced_phot_band, loc_depth_min_flux_pc_errs, crop_by = crop_by, timed = timed, \
-            load_SED_rest_properties = load_SED_rest_properties, sex_prefer = sex_prefer, n_depth_reg = n_depth_reg)
+            forced_phot_band, loc_depth_min_flux_pc_errs, crop_by = crop_by, load_PDFs = load_PDFs, \
+            load_SEDs = load_SEDs, timed = timed, load_SED_rest_properties = load_SED_rest_properties, \
+            sex_prefer = sex_prefer, n_depth_reg = n_depth_reg)
     
     @classmethod
-    def from_data(cls, data, version, aper_diams, cat_creator, SED_fit_params_arr, forced_phot_band = ["F277W", "F356W", "F444W"], \
-                loc_depth_min_flux_pc_errs = [10], mask = True, crop_by = None, timed = True, \
-                load_SED_rest_properties = True, sex_prefer = "rms_err", n_depth_reg = "auto"):
+    def from_data(cls, data, version, aper_diams, cat_creator, SED_fit_params_arr, \
+                forced_phot_band = ["F277W", "F356W", "F444W"], loc_depth_min_flux_pc_errs = [10], \
+                mask: bool = True, crop_by = None, load_PDFs: Union[bool, dict] = True, \
+                load_SEDs: Union[bool, dict] = True, timed: bool = True, load_SED_rest_properties: bool = True, \
+                sex_prefer: str = "rms_err", n_depth_reg: str = "auto"):
+        
         # make masked local depth catalogue from the 'Data' object
         data.combine_sex_cats(forced_phot_band, prefer = sex_prefer)
         mode = str(config["Depths"]["MODE"]).lower() # mode to calculate depths (either "n_nearest" or "rolling")
         data.calc_depths(aper_diams, mode = mode, cat_creator = cat_creator, n_split = n_depth_reg)
         data.perform_aper_corrs()
         data.make_loc_depth_cat(cat_creator, depth_mode = mode)
-        return cls.from_fits_cat(data.sex_cat_master_path, version, data.instrument, cat_creator, data.survey, \
-            SED_fit_params_arr, data = data, mask = mask, crop_by = crop_by, timed = timed, load_SED_rest_properties = load_SED_rest_properties)
+        
+        return cls.from_fits_cat(data.sex_cat_master_path, version, data.instrument, \
+            cat_creator, data.survey, SED_fit_params_arr, data = data, mask = mask, \
+            crop_by = crop_by, load_PDFs = load_PDFs, load_SEDs = load_SEDs, \
+            timed = timed, load_SED_rest_properties = load_SED_rest_properties)
     
     @classmethod
-    def from_fits_cat(cls, fits_cat_path, version, instrument, cat_creator, survey, \
-            SED_fit_params_arr, data = None, mask = False, excl_bands = [], crop_by = None, \
-            timed = True, load_SED_rest_properties = True):
+    def from_fits_cat(cls, fits_cat_path, version, instrument, cat_creator, survey: str, \
+            SED_fit_params_arr: Union[list, np.array], data = None, mask: bool = False, \
+            excl_bands: Union[list, np.array] = [], crop_by = None, load_PDFs: Union[bool, dict] = True, \
+            load_SEDs: Union[bool, dict] = True, timed: bool = True, load_SED_rest_properties: bool = True):
         # open the catalogue
         fits_cat = funcs.cat_from_path(fits_cat_path)
         for band_name in instrument.band_names:
@@ -123,9 +132,18 @@ class Catalogue(Catalogue_Base):
             cat_obj.mask(timed = timed)
         # run SED fitting for the appropriate SED_fit_params
         for SED_fit_params in SED_fit_params_arr:
-            cat_obj = SED_fit_params["code"].fit_cat(cat_obj, SED_fit_params, timed = timed)
+            if type(load_PDFs) in [dict]:
+                assert SED_fit_params["code"].__class__.__name__ in load_PDFs.keys()
+                _load_PDFs = load_PDFs[SED_fit_params["code"].__class__.__name__]
+                assert type(_load_PDFs) in [bool]
+            if type(load_SEDs) in [dict]:
+                assert SED_fit_params["code"].__class__.__name__ in load_SEDs.keys()
+                _load_SEDs = load_SEDs[SED_fit_params["code"].__class__.__name__]
+                assert type(_load_SEDs) in [bool]
+            cat_obj = SED_fit_params["code"].fit_cat(cat_obj, SED_fit_params, \
+                load_PDFs = _load_PDFs, load_SEDs = _load_SEDs, timed = timed)
             if load_SED_rest_properties:
-                cat_obj.load_SED_rest_properties(SED_fit_params, timed = timed) # load SED rest properties
+                cat_obj.load_SED_rest_properties(SED_fit_params, timed = timed)
         return cat_obj
     
     def save_phot_PDF_paths(self, PDF_paths, SED_fit_params):
@@ -141,6 +159,7 @@ class Catalogue(Catalogue_Base):
     def update_SED_results(self, cat_SED_results, timed = True):
         assert(len(cat_SED_results) == len(self)) # if this is not the case then instead should cross match IDs between self and gal_SED_result
         galfind_logger.info("Updating SED results in galfind catalogue object")
+        # deepcopying here?
         if timed:
             [gal.update(gal_SED_result) for gal, gal_SED_result \
                 in tqdm(zip(self, cat_SED_results), desc = "Updating galaxy SED results", total = len(self))]
