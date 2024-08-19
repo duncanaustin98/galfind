@@ -711,10 +711,12 @@ class Catalogue(Catalogue_Base):
         else:
             is_property_updated = self.__getattr__(property_name, phot_type = "rest", property_type = "recently_updated")
         if type(is_property_updated) == type(None):
-            breakpoint()
+            #breakpoint()
+            pass
         else:
             if any(type(updated) == type(None) for updated in is_property_updated):
-                breakpoint()
+                #breakpoint()
+                pass
         # update properties and kwargs for those galaxies that have been updated, or if the columns have just been made
         
         if is_property_updated is not None:

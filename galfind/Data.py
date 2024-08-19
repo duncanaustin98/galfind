@@ -564,13 +564,21 @@ class Data:
 
     def load_data(self, band, incl_mask = True):
         #print(band)
+        start = time.time()
         if type(band) not in [str, np.str_]:
             galfind_logger.debug(f"band = {band}, type(band) = {type(band)} not in [str, np.str_] in Data.load_data")
             band = self.combine_band_names(band)
+        end1 = time.time()
+        print(f"Time taken to convert band to string = {end1 - start}")
         # load science image data and header (and hdul)
         im_data, im_header = self.load_im(band)
+        end2 = time.time()
+        print(f"Time taken to load im_data and im_header = {end2 - end1}")
         # load segmentation data and header
         seg_data, seg_header = self.load_seg(band)
+        end3 = time.time()
+        print(f"Time taken to load seg_data and seg_header = {end3 - end2}")
+
         if incl_mask:
             # load mask
             mask = self.load_mask(band)
@@ -589,7 +597,7 @@ class Data:
         # load image data and header
         im_hdul = fits.open(self.im_paths[band])
         im_data = im_hdul[self.im_exts[band]].data
-        im_data = im_data.byteswap().newbyteorder()
+        #im_data = im_data.byteswap().newbyteorder() slow
         im_header = im_hdul[self.im_exts[band]].header
         if return_hdul:
             return im_data, im_header, im_hdul
