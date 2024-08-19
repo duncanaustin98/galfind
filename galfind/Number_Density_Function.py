@@ -4,6 +4,7 @@ from tqdm import tqdm
 from typing import NoReturn, Union
 import astropy.units as u
 import os
+import sys
 from pathlib import Path
 from astropy.table import Table
 
@@ -36,6 +37,59 @@ class Base_Number_Density_Function:
         phi = np.array(tab["phi"])
         phi_errs_cv = np.array([tab["phi_l1"], tab["phi_u1"]])
         return cls(x_name, x_mid_bins, z_ref, phi, phi_errs_cv, author_year)
+    
+    @classmethod
+    def from_flags_repo(cls, x_name: str, z_bin: Union[list, np.array], \
+            author_year: str, obs_or_models: str = "obs") -> Union[None, "Base_Number_Density_Function"]:
+        
+        assert obs_or_models in ["obs", "models"]
+        sys.path.insert(1, config["NumberDensityFunctions"]["FLAGS_DATA_DIR"])
+        try:
+            from flags_data import distribution_functions
+        except:
+            galfind_logger.critical("Could not import flags_data.distribution_functions")
+
+        flags_property_name_conv = {"M1500": "LUV", "stellar_mass": "Mstar"}
+        datasets = distribution_functions.list_datasets(f'{flags_property_name_conv[x_name]}/{obs_or_models}')
+    
+        num_obs = np.linspace(0, 1, len(datasets))
+        z_ref = (z_bin[0] + z_bin[1]) / 2.
+        for pos, path in enumerate(datasets):
+            ds = distribution_functions.read(path)
+            if ds.name != author_year:
+                continue
+            else:
+                # choose closest redshift to bin centre
+                z = None
+                deltaz = 100
+                for z_i in ds.redshifts:
+                    delta_z_i = np.abs(z_i - z_ref)
+                    # must be within redshift bin
+                    if delta_z_i <= (z_bin[1] - z_bin[0]) / 2.:
+                        if delta_z_i < deltaz:
+                            deltaz = delta_z_i
+                            z = float(z_i)
+                if type(z) == type(None):
+                    galfind_logger.warning(f"No available redshift for {author_year=} in {z_bin=}! Available redshifts are {ds.redshifts}")
+                    return None
+                else:
+                    label = ds.slabel.replace(r'\rm', '').replace('$', '').replace('\\', '').replace(" ", "")
+
+                    label = f'{label},z={z}'
+                
+                    phi_err = np.array(ds.log10phi_err[z])
+                    log10phi = ds.log10phi[z]
+                    if len(np.shape(phi_err)) > 1:
+                        low = np.array(phi_err[0])
+                        high = np.array(phi_err[1])
+                    else:
+                        low = high = phi_err
+                    err_high = 10 ** (log10phi + high) - 10 ** log10phi
+                    err_low = (10 ** log10phi) - 10 ** (log10phi - low) 
+                    phi_err  =  np.array([err_low, err_high])
+                    #x = ds.log10X[z] - np.log10(1. / funcs.imf_mass_factor[ds.imf]) stellar mass only
+                    return cls(x_name, ds.log10X[z], z, 10 ** log10phi, phi_err, author_year)
+        return None # if no author_year in flags_data
     
     def get_z_bin_name(self) -> str:
         return f"z={float(self.z_ref):.1f}"
@@ -115,7 +169,7 @@ class Number_Density_Function(Base_Number_Density_Function):
         self.cv_origin = cv_origin
         x_mid_bins = np.array([(x_bin[1] + x_bin[0]) / 2. for x_bin in x_bins])
         z_ref = float((z_bin[1] + z_bin[0]) / 2.)
-        phi_errs_cv = np.sqrt(phi_errs ** 2. + (cv_errs * phi) ** 2.)
+        phi_errs_cv = np.array([np.sqrt(phi_errs[i] ** 2. + (cv_errs * phi) ** 2.) for i in range(2)])
         super().__init__(x_name, x_mid_bins, z_ref, phi, phi_errs_cv, "This work")
 
     @classmethod
@@ -126,7 +180,8 @@ class Number_Density_Function(Base_Number_Density_Function):
         x_bins = np.array([[x_bin_low, x_bin_up] for x_bin_low, x_bin_up in zip(x_bins_low, x_bins_up)])
         Ngals = np.array(tab["Ngals"])
         phi = np.array(tab["phi"])
-        phi_errs = np.array(tab["phi_errs"])
+        phi_l1 = np.array(tab["phi_l1"])
+        phi_u1 = np.array(tab["phi_u1"])
         cv_errs = np.array(tab["cv_errs"])
         #SED_fit_params_key, x_name, origin_surveys, z_bin = Number_Density_Function.extract_info_from_save_path(save_path)
         cv_origin = tab.meta["cv_origin"]
@@ -135,7 +190,7 @@ class Number_Density_Function(Base_Number_Density_Function):
         origin_surveys = tab.meta["origin_surveys"]
         z_bin = tab.meta["z_bin"]
         return cls(x_name, x_bins, x_origin, z_bin, Ngals, phi, \
-            np.array([phi_errs, phi_errs]), cv_errs, origin_surveys, cv_origin)
+            np.array([phi_l1, phi_u1]), cv_errs, origin_surveys, cv_origin)
 
     @classmethod
     def from_multiple_cat(cls, multiple_cat, x_name: str, x_bin_edges: Union[list, np.array], \
@@ -171,6 +226,7 @@ class Number_Density_Function(Base_Number_Density_Function):
             assert x_origin["code"].__class__.__name__ in [code.__name__ for code in SED_code.__subclasses__()]
             SED_fit_params = x_origin # redshifts must come from same SED fitting as x values
             SED_fit_params_key = x_origin["code"].label_from_SED_fit_params(SED_fit_params)
+            x_origin = SED_fit_params_key
         elif type(x_origin) in [str]:
             galfind_logger.debug("Won't work for rest frame properties currently")
             # convert to SED_fit_params
@@ -192,6 +248,7 @@ class Number_Density_Function(Base_Number_Density_Function):
             # crop catalogue to this redshift bin
             z_bin_cat = cat.crop(z_bin, "z", SED_fit_params)
 
+            breakpoint()
             # extract photometry type from x_origin
             phot_type = "rest" if x_origin.endswith("_REST_PROPERTY") else "obs"
             # create x_bins from x_bin_edges (must include start and end values here too)
@@ -283,7 +340,8 @@ class Number_Density_Function(Base_Number_Density_Function):
         x_bins_low = np.array([x_bin[0] for x_bin in self.x_bins])
         x_bins_up = np.array([x_bin[1] for x_bin in self.x_bins])
         tab = Table({"x_bins_low": x_bins_low, "x_bins_up": x_bins_up, "Ngals": self.Ngals, "phi": self.phi, \
-            "phi_errs": self.phi_errs, "cv_errs": self.cv_errs}, dtype = [float, float, int, float, float, float])
+            "phi_l1": self.phi_errs[0], "phi_u1": self.phi_errs[1], "cv_errs": self.cv_errs}, \
+            dtype = [float, float, int, float, float, float, float])
         tab.meta = {"x_origin": self.x_origin, "x_name": self.x_name, "origin_surveys": self.origin_surveys, \
             "z_bin": self.z_bin, "cv_origin": self.cv_origin}
         tab.write(save_path, overwrite = True)
@@ -291,16 +349,25 @@ class Number_Density_Function(Base_Number_Density_Function):
     def plot(self, fig = None, ax = None, log: bool = False, annotate: bool = True, \
             save: bool = True, show: bool = False, plot_kwargs: dict = {}, \
             legend_kwargs: dict = {}, x_lims: Union[list, np.array, str, None] = "default", \
-            use_galfind_style: bool = True, author_year_dict: dict = {}) -> None:
+            use_galfind_style: bool = True, obs_author_years: dict = {}, \
+            sim_author_years: dict = {}) -> None:
         if all(type(_x) == type(None) for _x in [fig, ax]):
             fig, ax = plt.subplots()
-        for author_year, author_year_plot_dict in author_year_dict.items():
-            assert all(_x in author_year_plot_dict.keys() for _x in ["z_ref", "plot_kwargs"])
-            z_ref = author_year_plot_dict["z_ref"]
-            author_year_plot_kwargs = author_year_plot_dict["plot_kwargs"]
-            author_year_number_density_func = Base_Number_Density_Function.from_ecsv(self.x_name, z_ref, author_year)
-            author_year_number_density_func.plot(fig, ax, log, annotate = False, save = False, show = False, \
-                plot_kwargs = author_year_plot_kwargs, x_lims = None, use_galfind_style = use_galfind_style)
+        # for author_year, author_year_plot_dict in author_year_dict.items():
+        #     assert all(_x in author_year_plot_dict.keys() for _x in ["z_ref", "plot_kwargs"])
+        #     z_ref = author_year_plot_dict["z_ref"]
+        #     author_year_plot_kwargs = author_year_plot_dict["plot_kwargs"]
+        #     author_year_number_density_func = Base_Number_Density_Function.from_ecsv(self.x_name, z_ref, author_year)
+        #     author_year_number_density_func.plot(fig, ax, log, annotate = False, save = False, show = False, \
+        #         plot_kwargs = author_year_plot_kwargs, x_lims = None, use_galfind_style = use_galfind_style)
+        for author_year, author_year_kwargs in obs_author_years.items():
+            author_year_func_from_flags_data = Base_Number_Density_Function.from_flags_repo(self.x_name, self.z_bin, author_year, "obs")
+            author_year_func_from_flags_data.plot(fig, ax, log, annotate = False, save = False, show = False, \
+                plot_kwargs = author_year_kwargs, x_lims = None, use_galfind_style = use_galfind_style)
+        for author_year, author_year_kwargs in sim_author_years.items():
+            author_year_func_from_flags_data = Base_Number_Density_Function.from_flags_repo(self.x_name, self.z_bin, author_year, "models")
+            author_year_func_from_flags_data.plot(fig, ax, log, annotate = False, save = False, show = False, \
+                plot_kwargs = author_year_kwargs, x_lims = None, use_galfind_style = use_galfind_style)
         # plot this work
         super().plot(fig, ax, log, annotate, save, show, plot_kwargs, legend_kwargs, x_lims, use_galfind_style)
 

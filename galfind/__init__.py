@@ -123,7 +123,7 @@ from .Bagpipes import Bagpipes
 # don't do Bagpipes or LePhare for now
 sed_code_to_name_dict = {sed_code_name: globals()[sed_code_name]() \
     for sed_code_name in [subcls.__name__ for subcls in SED_code.__subclasses__()] \
-    if sed_code_name not in ["LePhare", "Bagpipes"]}
+    if sed_code_name not in ["LePhare"]}
 
 from .Multiple_Catalogue import Multiple_Catalogue
 from .Multiple_Data import Multiple_Data
@@ -143,7 +143,7 @@ from . import lyman_alpha_damping_wing
 from .DLA import DLA
 from .Dust_Attenuation import Dust_Attenuation, C00
 from .Spectrum import Spectral_Catalogue, Spectrum, NIRSpec, Spectral_Instrument, Spectral_Filter, Spectral_Grating
-from .Number_Density_Function import Number_Density_Function # UVLFs, mass functions, etc
+from .Number_Density_Function import Base_Number_Density_Function, Number_Density_Function # UVLFs, mass functions, etc
 
 # dynamically add Galaxy selection methods to Catalogue class?
 

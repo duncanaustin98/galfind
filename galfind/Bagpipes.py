@@ -17,6 +17,7 @@ from copy import deepcopy
 import glob
 from pathlib import Path
 from tqdm import tqdm
+import itertools
 
 from . import useful_funcs_austind as funcs
 from . import galfind_logger, config, SED_code, SED_fit_PDF, Redshift_PDF
@@ -91,7 +92,7 @@ class Bagpipes(SED_code):
             # sort SPS label
             assert "sps_model" in SED_fit_params.keys()
             if SED_fit_params["sps_model"].upper() == "BC03":
-                sps_label = ""
+                sps_label = "" # should change this probably to read BC03
             elif SED_fit_params["sps_model"].upper() == "BPASS":
                 sps_label = f"_{SED_fit_params['sps_model'].lower()}"
             else:
@@ -104,14 +105,55 @@ class Bagpipes(SED_code):
             return "Bagpipes"
 
     def SED_fit_params_from_label(self, label):
-        return NotImplementedError
+        SED_fit_params = {"code": Bagpipes()}
+        SED_fit_params["sfh"] = label.split("_sfh_")[1].split("_dust_")[0]
+        dust_label = label.split("_dust_")[1].split("_Z_")[0]
+        if "log_10" in dust_label:
+            assert dust_label[-6:] == "log_10"
+            SED_fit_params["dust_prior"] = "log_10"
+            SED_fit_params["dust"] = dust_label[:-7]
+        elif "uniform" in dust_label:
+            assert dust_label[-7:] == "uniform"
+            SED_fit_params["dust_prior"] = "uniform"
+            SED_fit_params["dust"] = dust_label[:-8]
+        else:
+            galfind_logger.critical(f"Invalid dust prior from {dust_label=}! Must be in ['log_10', 'uniform']")
+            breakpoint()
+        split_metallicity_label = label.split("_Z_")[1].split("_")
+        if split_metallicity_label[0] == "log" and split_metallicity_label[1] == "10":
+            SED_fit_params["metallicity_prior"] = "log_10"
+        elif split_metallicity_label[0] == "uniform":
+            SED_fit_params["metallicity_prior"] = "uniform"
+        else:
+            galfind_logger.critical(f"Invalid metallicity prior from {split_metallicity_label=}! Must be in ['log_10', 'uniform']")
+            breakpoint()
+        # easier if BC03 read properly
+        if "BPASS" in label:
+            SED_fit_params["sps_model"] = "BPASS"
+            redshift_label = label.split(SED_fit_params["sps_model"])[1][1:]
+        else:
+            SED_fit_params["sps_model"] = "BC03"
+            redshift_label = label.split(SED_fit_params["metallicity_prior"])[-1][1:]
+        if redshift_label == "zfix":
+            SED_fit_params["fix_z"] = True
+        else:
+            split_zlabel = redshift_label.split("_z_")
+            SED_fit_params["z_range"] = (float(split_zlabel[0]), float(split_zlabel[1]))
+            SED_fit_params["fix_z"] = False
+        return SED_fit_params
 
     def galaxy_property_labels(self, gal_property, SED_fit_params, is_err = False, **kwargs):
         suffix = self.label_from_SED_fit_params(SED_fit_params, short = True)
         if gal_property in self.galaxy_property_dict.keys() and not is_err:
-            return f"{self.galaxy_property_dict[gal_property]}_{suffix}"
+            if gal_property == "z" and SED_fit_params["fix_z"]:
+                return f"input_redshift_{suffix}"
+            else:
+                return f"{self.galaxy_property_dict[gal_property]}_{suffix}"
         elif gal_property in self.galaxy_property_errs_dict.keys() and is_err:
-            return [f"{self.galaxy_property_errs_dict[gal_property][0]}_{suffix}", \
+            if gal_property == "z" and SED_fit_params["fix_z"]:
+                return list(itertools.repeat(None, 2)) # array of None's
+            else:
+                return [f"{self.galaxy_property_errs_dict[gal_property][0]}_{suffix}", \
                     f"{self.galaxy_property_errs_dict[gal_property][1]}_{suffix}"]
         else:
             return f"{gal_property}_{suffix}"

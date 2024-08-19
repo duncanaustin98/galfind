@@ -36,6 +36,7 @@ from . import config, galfind_logger, astropy_cosmo, instr_to_name_dict
 from . import Photometry_rest, Photometry_obs, Multiple_Photometry_obs, Data, Instrument, NIRCam, ACS_WFC, WFC3_IR, PDF
 from .SED import SED, SED_obs, Mock_SED_rest, Mock_SED_obs
 from .EAZY import EAZY
+from .Bagpipes import Bagpipes
 from .SED_result import SED_result
 from .Emission_lines import line_diagnostics
 
@@ -1151,7 +1152,9 @@ class Galaxy:
             func, kwargs, func_type = Galaxy._get_selection_func_from_output_name(crop_name)
             if func_type in incl_selection_types or incl_selection_types == ["All"]:
                 selection_name = func(self, **kwargs)[1]
-                assert selection_name == crop_name
+                if selection_name != crop_name:
+                    breakpoint() # see what's wrong
+                    assert selection_name == crop_name # break code
                 selection_names.append(selection_name)
                 run = True
             else:
@@ -1210,7 +1213,7 @@ class Galaxy:
         elif "redwards_Lya_SNR>" in name:
             func = Galaxy.phot_redwards_Lya_detect
             SNR_str = name.split(">")[1].split("_")
-            if name.split("_") == "ALL":
+            if name.split("_")[0] == "ALL":
                 SNR_lims = float(SNR_str[0])
             else: # name.split("_") == "redwards"
                 SNR_lims = [float(SNR) for SNR in SNR_str[0].split(",")]
@@ -1339,6 +1342,7 @@ class Galaxy:
                 data.load_depths(self.phot.aper_diam, depth_mode)
                 data_depths = [band_depths[depth_region] for band_depths in data.depths.values()]
                 # create SED_fit_params
+                breakpoint()
                 SED_fit_params = globals()[SED_fit_params_key.split("_")[0]]().SED_fit_params_from_label(SED_fit_params_key)
                 # calculate z_range
                 # z_test for other fields should be lower than starting z

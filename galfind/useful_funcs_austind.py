@@ -305,6 +305,9 @@ logged_properties = ["stellar_mass", "formed_mass", "ssfr", "ssfr_10myr"]
 lower_Calzetti_filt = [1268., 1309., 1342., 1407., 1562., 1677., 1760., 1866., 1930., 2400.]
 upper_Calzetti_filt = [1284., 1316., 1371., 1515., 1583., 1740., 1833., 1890., 1950., 2580.]
 
+# mass IMF conversion
+mass_IMF_factor = {}
+
 # General number density function tools
 
 default_lims = {"M1500": [-23., -16.], "stellar_mass": []}

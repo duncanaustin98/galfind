@@ -206,8 +206,9 @@ class Catalogue_SED_results:
                 # construct PDF objects, type = array of len(fits_cat), each element a dict of {gal_property: PDF object} excluding None PDFs
                 cat_property_PDFs_ = {gal_property: SED_fit_params["code"].extract_PDFs(gal_property, IDs, \
                     PDF_paths[gal_property], SED_fit_params) for gal_property in PDF_paths.keys()}
-                cat_property_PDFs[:, i] = [{gal_property: PDF_arr[j] for gal_property, PDF_arr \
-                    in cat_property_PDFs_.items() if PDF_arr[j] != None} for j in range(len(fits_cat))]
+                cat_property_PDFs_ = [{gal_property: PDF_arr[j] for gal_property, PDF_arr \
+                    in cat_property_PDFs_.items() if type(PDF_arr[j]) != type(None)} for j in range(len(fits_cat))]
+                cat_property_PDFs[:, i] = [None if len(cat_property_PDF_) == 0 else cat_property_PDF_ for cat_property_PDF_ in cat_property_PDFs_]
         else:
             galfind_logger.info("Not loading catalogue property PDFs")
             cat_property_PDFs = None
@@ -230,6 +231,7 @@ class Catalogue_SED_results:
         else:
             galfind_logger.info("Not loading catalogue SEDs")
             cat_SEDs = None
+            
         if timed:
             mid = time.time()
         cls_obj = cls.from_SED_result_inputs(SED_fit_params_arr, phot_arr, cat_properties, \
@@ -248,7 +250,7 @@ class Catalogue_SED_results:
         if type(cat_property_PDFs) == type(None):
             out_shape = np.array(cat_properties).shape
             cat_property_PDFs_ = np.array(list(itertools.repeat(list(itertools.repeat(None, out_shape[1])), out_shape[0])))
-            assert cat_property_PDFs_ == cat_property_PDFs_.shape
+            assert out_shape == cat_property_PDFs_.shape
         else:
             cat_property_PDFs_ = cat_property_PDFs
         if type(cat_SEDs) == type(None):
