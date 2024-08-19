@@ -231,7 +231,7 @@ class Catalogue_SED_results:
         else:
             galfind_logger.info("Not loading catalogue SEDs")
             cat_SEDs = None
-            
+
         if timed:
             mid = time.time()
         cls_obj = cls.from_SED_result_inputs(SED_fit_params_arr, phot_arr, cat_properties, \

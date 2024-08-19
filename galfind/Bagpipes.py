@@ -240,7 +240,7 @@ class Bagpipes(SED_code):
 
     @staticmethod
     def get_out_paths(cat, SED_fit_params, IDs, load_properties = \
-            ["redshift", "stellar_mass", "formed_mass", "dust:Av", \
+            ["stellar_mass", "formed_mass", "dust:Av", \
             "beta_C94", "m_UV", "M_UV", "Halpha_EWrest", "xi_ion_caseB"]):
         pipes_name = Bagpipes.label_from_SED_fit_params(SED_fit_params)
         in_path = None
@@ -248,18 +248,13 @@ class Bagpipes(SED_code):
         fits_out_path = Bagpipes.get_galfind_fits_path(out_path)
         PDF_dir = out_path.replace(".fits", "").replace("cats", "pdfs")
         SED_dir = out_path.replace(".fits", "").replace("cats", "seds")
-        # determine PDF paths
-        property_PDF_dirs = glob.glob(f"{PDF_dir}/*")
-        if load_properties == "All":
-            PDF_paths = {path.split("/")[-1]: [f"{path}/{str(int(ID))}_{cat.survey}.txt" \
-                if Path(f"{path}/{str(int(ID))}_{cat.survey}.txt").is_file() else None \
-                for ID in IDs] for path in property_PDF_dirs}
-        else:
-            PDF_paths = {path.split("/")[-1]: [f"{path}/{str(int(ID))}_{cat.survey}.txt" \
-                if Path(f"{path}/{str(int(ID))}_{cat.survey}.txt").is_file() else None \
-                for ID in IDs] for path in property_PDF_dirs if path.split("/")[-1] in load_properties}
-        if "redshift" in PDF_paths.keys():
-            PDF_paths["z"] = PDF_paths.pop("redshift")
+        # else:
+        if not SED_fit_params["fix_z"]:
+            load_properties += ["redshift"]
+        PDF_paths = {gal_property if "redshift" not in gal_property else "z": \
+            [f"{PDF_dir}/{gal_property}/{str(int(ID))}_{cat.survey}.txt" \
+            if Path(f"{PDF_dir}/{gal_property}/{str(int(ID))}_{cat.survey}.txt").is_file() \
+            else None for ID in IDs] for gal_property in load_properties}
         # determine SED paths
         SED_paths = [f"{SED_dir}/{str(int(ID))}_{cat.survey}.dat" \
             if Path(f"{SED_dir}/{str(int(ID))}_{cat.survey}.dat").is_file() \

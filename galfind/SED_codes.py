@@ -70,9 +70,9 @@ class SED_code(ABC):
                 for i, gal in enumerate(cat) for j, loc_depth in enumerate(gal.phot.loc_depths)]).reshape(phot_shape)
 
         # insert 'no_data_val' from SED_input_bands with no data in the catalogue
-        phot_in = np.zeros((len(cat), len(cat.instrument))) #[]
-        phot_err_in = np.zeros((len(cat), len(cat.instrument))) #[]
-        for i, gal in tqdm(enumerate(cat), desc = "Making EAZY .in file", total = len(cat)):
+        phot_in = np.zeros((len(cat), len(cat.instrument)))
+        phot_err_in = np.zeros((len(cat), len(cat.instrument)))
+        for i, gal in tqdm(enumerate(cat), desc = "Making .in file", total = len(cat)):
             for j, band_name in enumerate(cat.instrument.band_names): 
                 if band_name in gal.phot.instrument.band_names: # Check mask? 
                     index = np.where(band_name == gal.phot.instrument.band_names)[0][0]
