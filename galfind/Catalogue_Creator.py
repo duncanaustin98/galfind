@@ -105,7 +105,7 @@ class GALFIND_Catalogue_Creator(Catalogue_Creator):
         
         # only make these dicts once to speed up property loading
         same_key_value_properties = [] #["auto_corr_factor_UV", "auto_corr_factor_mass"]
-        property_conv_dict = {sed_code: {**getattr(globals()[sed_code], sed_code)().galaxy_property_dict, **{element: element for element in same_key_value_properties}} for sed_code in json.loads(config["Other"]["CODES"])}
+        property_conv_dict = {sed_code: {**globals()[sed_code]().galaxy_property_dict, **{element: element for element in same_key_value_properties}} for sed_code in json.loads(config["Other"]["CODES"])}
         
         ra_dec_labels = {"RA": "ALPHA_J2000", "DEC": "DELTA_J2000"}
         ra_dec_units = {"RA": u.deg, "DEC": u.deg}

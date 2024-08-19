@@ -22,6 +22,7 @@ import photutils
 import os
 import sys
 
+from . import useful_funcs_austind as funcs
 from . import config
 
 def log_transform(im): # function to transform fits image to log scaling
