@@ -24,6 +24,7 @@ class Base_Number_Density_Function:
         self.phi_errs_cv = phi_errs_cv
         self.author_year = author_year
 
+    # obsolete after Base_Number_Density_Function.from_flags_repo()
     @classmethod
     def from_ecsv(cls, x_name: str, z_ref: Union[str, int, float], author_year: str) -> "Base_Number_Density_Function": # literature
         if x_name in ["M1500", "M_UV", "MUV"]:
@@ -265,7 +266,8 @@ class Number_Density_Function(Base_Number_Density_Function):
 
             Ngals = np.zeros(len(x_bins))
             phi = np.zeros(len(x_bins))
-            phi_errs = np.zeros(len(x_bins))
+            phi_l1 = np.zeros(len(x_bins))
+            phi_u1 = np.zeros(len(x_bins))
             cv_errs = np.zeros(len(x_bins))
             phi_errs_cv = np.zeros(len(x_bins))
             # loop through each mass bin in the given redshift bin
@@ -288,10 +290,13 @@ class Number_Density_Function(Base_Number_Density_Function):
                     phi[i] = np.sum(V_max ** -1.) / dx
                     # use standard Poisson errors if number of galaxies in bin is not small
                     if len(V_max) >= 4:
-                        phi_errs[i] = np.sqrt(np.sum(V_max ** -2.)) / dx
+                        phi_errs = np.sqrt(np.sum(V_max ** -2.)) / dx
+                        phi_l1[i] = phi_errs
+                        phi_u1[i] = phi_errs
                     else:
-                        # using minimum is a minor cheat for symmetric errors?
-                        phi_errs[i] = phi[i] * np.min(np.abs((np.array(funcs.poisson_interval(len(V_max), 0.32)) - len(V_max))) / len(V_max))
+                        poisson_int = funcs.poisson_interval(len(V_max), 0.32)
+                        phi_l1[i] = phi[i] * np.min(np.abs((np.array(poisson_int[0]) - len(V_max))) / len(V_max))
+                        phi_u1[i] = phi[i] * np.min(np.abs((np.array(poisson_int[1]) - len(V_max))) / len(V_max))
                     if type(cv_origin) == type(None):
                         pass
                     elif cv_origin == "Driver2010": # could open this up to more cosmic variance calculators
@@ -300,7 +305,7 @@ class Number_Density_Function(Base_Number_Density_Function):
                         raise NotImplementedError
             
             number_density_func = cls(x_name, x_bins, x_origin, z_bin, Ngals, phi, \
-                np.array([phi_errs, phi_errs]), cv_errs, origin_surveys, cv_origin)
+                np.array([phi_l1, phi_u1]), cv_errs, origin_surveys, cv_origin)
             
             if save and not Path(save_path).is_file():
                 number_density_func.save()
