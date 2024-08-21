@@ -36,6 +36,7 @@ from . import config, galfind_logger, astropy_cosmo, instr_to_name_dict
 from . import Photometry_rest, Photometry_obs, Multiple_Photometry_obs, Data, Instrument, NIRCam, ACS_WFC, WFC3_IR, PDF
 from .SED import SED, SED_obs, Mock_SED_rest, Mock_SED_obs
 from .EAZY import EAZY
+from .Bagpipes import Bagpipes
 from .SED_result import SED_result
 from .Emission_lines import line_diagnostics
 
@@ -1134,7 +1135,9 @@ class Galaxy:
         pass
 
     def is_selected(self, crop_names: Union[str, np.array, list, dict], \
-            incl_selection_types: Union[str, list] = "All", timed: bool = False) -> bool:
+            incl_selection_types: Union[str, list] = "All", \
+            SED_fit_params: Union[str, dict] = "EAZY_fsps_larson_zfree", \
+            timed: bool = False) -> bool:
         # input assertions
         assert type(crop_names) in [str, np.array, list, dict]
         if type(crop_names) in [str]:
@@ -1148,10 +1151,12 @@ class Galaxy:
         if timed:
             start = time.time()
         for i, crop_name in enumerate(crop_names):
-            func, kwargs, func_type = Galaxy._get_selection_func_from_output_name(crop_name)
+            func, kwargs, func_type = Galaxy._get_selection_func_from_output_name(crop_name, SED_fit_params)
             if func_type in incl_selection_types or incl_selection_types == ["All"]:
                 selection_name = func(self, **kwargs)[1]
-                assert selection_name == crop_name
+                if selection_name != crop_name:
+                    breakpoint() # see what's wrong
+                    assert selection_name == crop_name # break code
                 selection_names.append(selection_name)
                 run = True
             else:
@@ -1175,8 +1180,14 @@ class Galaxy:
         return selected
 
     @staticmethod
-    def _get_selection_func_from_output_name(name):
+    def _get_selection_func_from_output_name(name: str, SED_fit_params: Union[str, dict]):
         # only currently works for standard EPOCHS selection!
+        if type(SED_fit_params) in [str]:
+            SED_fit_params_key = SED_fit_params
+            SED_fit_params = globals()[SED_fit_params_key.split("_")[0]]().SED_fit_params_from_label(SED_fit_params_key)
+            galfind_logger.warning(f"Galaxy._get_selection_func_from_output_name faster with {type(SED_fit_params)=} == 'dict'")
+        else:
+            SED_fit_params_key = SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)
         # simplest case
         if hasattr(Galaxy, f"select_{name}"):
             func = getattr(Galaxy, f"select_{name}")
@@ -1210,7 +1221,7 @@ class Galaxy:
         elif "redwards_Lya_SNR>" in name:
             func = Galaxy.phot_redwards_Lya_detect
             SNR_str = name.split(">")[1].split("_")
-            if name.split("_") == "ALL":
+            if name.split("_")[0] == "ALL":
                 SNR_lims = float(SNR_str[0])
             else: # name.split("_") == "redwards"
                 SNR_lims = [float(SNR) for SNR in SNR_str[0].split(",")]
@@ -1267,6 +1278,8 @@ class Galaxy:
             raise NotImplementedError
         assert func.__name__ in select_func_to_type.keys()
         func_type = select_func_to_type[func.__name__]
+        if func_type in ["SED", "phot_rest", "combined"]:
+            kwargs["SED_fit_params"] = SED_fit_params
         return func, kwargs, func_type
     
     # Rest-frame SED photometric properties
@@ -1373,7 +1386,8 @@ class Galaxy:
                         print(post_mid - pre_mid)
                     # test whether galaxy would be selected with given crops - assuming redshift is fixed to new redshift
                     # assert all(self.selection_flags == cat[0].selection_flags for gal in cat) when running from catalogue
-                    goodz = test_gal.is_selected(self.selection_flags, incl_selection_types = ["phot_obs", "phot_rest"], timed = timed)
+                    goodz = test_gal.is_selected(self.selection_flags, incl_selection_types = ["phot_obs", "phot_rest"], \
+                        SED_fit_params = SED_fit_params, timed = timed)
                     if goodz:
                         z_detect.append(z)
                     if timed:

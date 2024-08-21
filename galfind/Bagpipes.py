@@ -17,6 +17,7 @@ from copy import deepcopy
 import glob
 from pathlib import Path
 from tqdm import tqdm
+import itertools
 
 from . import useful_funcs_austind as funcs
 from . import galfind_logger, config, SED_code, SED_fit_PDF, Redshift_PDF
@@ -28,8 +29,8 @@ class Bagpipes(SED_code):
 
     # these should be made on runtime!
     galaxy_properties = ["redshift", "stellar_mass", "formed_mass", \
-        "dust:Av", "beta_C94", "m_UV", "M_UV", "Halpha_EWrest", "xi_ion_caseB", \
-        "sfr", "sfr_10myr", "ssfr", "ssfr_10myr"]
+        "dust:Av", "beta_C94", "m_UV", "M_UV", \
+        "sfr", "sfr_10myr", "ssfr", "ssfr_10myr"] # "Halpha_EWrest", "xi_ion_caseB",
     gal_property_fmt_dict = {
         "z": "Redshift, z",
         "stellar_mass": r"$M_{\star}$",
@@ -76,6 +77,7 @@ class Bagpipes(SED_code):
     def label_from_SED_fit_params(SED_fit_params, short = False):
         # should be generalized more here including e.g. SED_fit_params assertions
         if not short:
+            # sort redshift label
             if not "fix_z" in SED_fit_params.keys():
                 SED_fit_params["fix_z"] = False
             if SED_fit_params["fix_z"]:
@@ -87,21 +89,71 @@ class Bagpipes(SED_code):
                 else:
                     galfind_logger.critical(f"Bagpipes {SED_fit_params=} must include either 'z_range' if 'fix_z' == False or not included!")
                     breakpoint()
-            return f"sfh_{SED_fit_params['sfh']}_dust_{SED_fit_params['dust']}_" + \
-                f"{SED_fit_params['dust_prior']}_Z_{SED_fit_params['metallicity_prior']}_" + \
-                f"{SED_fit_params['sps_model'].lower()}_{redshift_label}"
+            # sort SPS label
+            assert "sps_model" in SED_fit_params.keys()
+            if SED_fit_params["sps_model"].upper() == "BC03":
+                sps_label = "" # should change this probably to read BC03
+            elif SED_fit_params["sps_model"].upper() == "BPASS":
+                sps_label = f"_{SED_fit_params['sps_model'].lower()}"
+            else:
+                galfind_logger.critical(f"Bagpipes {SED_fit_params=} must include 'sps_model' with .upper() in ['BC03', 'BPASS']")
+                breakpoint()
+            return f"Bagpipes_sfh_{SED_fit_params['sfh']}_dust_{SED_fit_params['dust']}_" + \
+                f"{SED_fit_params['dust_prior']}_Z_{SED_fit_params['metallicity_prior']}" + \
+                f"{sps_label}_{redshift_label}"
         else:
-            return "pipes"
+            return "Bagpipes"
 
     def SED_fit_params_from_label(self, label):
-        return NotImplementedError
+        SED_fit_params = {"code": Bagpipes()}
+        SED_fit_params["sfh"] = label.split("_sfh_")[1].split("_dust_")[0]
+        dust_label = label.split("_dust_")[1].split("_Z_")[0]
+        if "log_10" in dust_label:
+            assert dust_label[-6:] == "log_10"
+            SED_fit_params["dust_prior"] = "log_10"
+            SED_fit_params["dust"] = dust_label[:-7]
+        elif "uniform" in dust_label:
+            assert dust_label[-7:] == "uniform"
+            SED_fit_params["dust_prior"] = "uniform"
+            SED_fit_params["dust"] = dust_label[:-8]
+        else:
+            galfind_logger.critical(f"Invalid dust prior from {dust_label=}! Must be in ['log_10', 'uniform']")
+            breakpoint()
+        split_metallicity_label = label.split("_Z_")[1].split("_")
+        if split_metallicity_label[0] == "log" and split_metallicity_label[1] == "10":
+            SED_fit_params["metallicity_prior"] = "log_10"
+        elif split_metallicity_label[0] == "uniform":
+            SED_fit_params["metallicity_prior"] = "uniform"
+        else:
+            galfind_logger.critical(f"Invalid metallicity prior from {split_metallicity_label=}! Must be in ['log_10', 'uniform']")
+            breakpoint()
+        # easier if BC03 read properly
+        if "BPASS" in label:
+            SED_fit_params["sps_model"] = "BPASS"
+            redshift_label = label.split(SED_fit_params["sps_model"])[1][1:]
+        else:
+            SED_fit_params["sps_model"] = "BC03"
+            redshift_label = label.split(SED_fit_params["metallicity_prior"])[-1][1:]
+        if redshift_label == "zfix":
+            SED_fit_params["fix_z"] = True
+        else:
+            split_zlabel = redshift_label.split("_z_")
+            SED_fit_params["z_range"] = (float(split_zlabel[0]), float(split_zlabel[1]))
+            SED_fit_params["fix_z"] = False
+        return SED_fit_params
 
     def galaxy_property_labels(self, gal_property, SED_fit_params, is_err = False, **kwargs):
         suffix = self.label_from_SED_fit_params(SED_fit_params, short = True)
         if gal_property in self.galaxy_property_dict.keys() and not is_err:
-            return f"{self.galaxy_property_dict[gal_property]}_{suffix}"
+            if gal_property == "z" and SED_fit_params["fix_z"]:
+                return f"input_redshift_{suffix}"
+            else:
+                return f"{self.galaxy_property_dict[gal_property]}_{suffix}"
         elif gal_property in self.galaxy_property_errs_dict.keys() and is_err:
-            return [f"{self.galaxy_property_errs_dict[gal_property][0]}_{suffix}", \
+            if gal_property == "z" and SED_fit_params["fix_z"]:
+                return list(itertools.repeat(None, 2)) # array of None's
+            else:
+                return [f"{self.galaxy_property_errs_dict[gal_property][0]}_{suffix}", \
                     f"{self.galaxy_property_errs_dict[gal_property][1]}_{suffix}"]
         else:
             return f"{gal_property}_{suffix}"
@@ -141,20 +193,22 @@ class Bagpipes(SED_code):
         assert len(IDs) == len(SED_paths), galfind_logger.critical(f"len(IDs) = {len(IDs)} != len(data_paths) = {len(SED_paths)}!")
         z_arr = np.zeros(len(IDs))
         for i, path in enumerate(SED_paths):
-            f = open(path)
-            header = f.readline()
-            z_arr[i] = float(header.replace("\n", "").split("z=")[-1])
-            f.close()
-        data_arr = [np.loadtxt(path) for path in SED_paths]
-        wavs = [data[:, 0] for data in data_arr]
-        fluxes = [data[:, 2] for data in data_arr]
-        SED_obs_arr = [SED_obs(z, wav, flux, u.um, u.uJy) for z, wav, flux in \
+            if type(path) != type(None):
+                f = open(path)
+                header = f.readline()
+                z_arr[i] = float(header.replace("\n", "").split("z=")[-1])
+                f.close()
+        data_arr = [np.loadtxt(path) if type(path) != type(None) else None for path in SED_paths]
+        wavs = [data[:, 0] if type(data) != type(None) else None for data in data_arr]
+        fluxes = [data[:, 2] if type(data) != type(None) else None for data in data_arr]
+        SED_obs_arr = [SED_obs(z, wav, flux, u.um, u.uJy) if all(type(i) != type(None) \
+            for i in [z, wav, flux]) else None for z, wav, flux in \
             tqdm(zip(z_arr, wavs, fluxes), desc = "Constructing pipes SEDs", total = len(wavs))]
         return SED_obs_arr
 
     # should transition away from staticmethod
     @staticmethod
-    def extract_PDFs(gal_property, IDs, PDF_paths, SED_fit_params, timed = True):
+    def extract_PDFs(gal_property, IDs, PDF_paths, SED_fit_params, timed: bool = True):
         # ensure this works if only extracting 1 galaxy
         if type(IDs) in [str, int, float]:
             IDs = np.array([int(IDs)])
@@ -167,15 +221,18 @@ class Bagpipes(SED_code):
         if not gal_property in Bagpipes.gal_property_unit_dict.keys():
             Bagpipes.gal_property_unit_dict[gal_property] = u.dimensionless_unscaled
         pdf_arrs = [np.array(Table.read(path, format = "ascii.fast_no_header")["col1"]) \
-            for path in tqdm(PDF_paths, desc = f"Loading {gal_property} PDFs", total = len(PDF_paths))]
+            if type(path) != type(None) else None for path in \
+            tqdm(PDF_paths, desc = f"Loading {gal_property} PDFs", total = len(PDF_paths))]
         if gal_property in Bagpipes.requires_unlogging:
-            pdf_arrs = [10 ** pdf for pdf in pdf_arrs]
+            pdf_arrs = [10 ** pdf if type(pdf) != type(None) else None for pdf in pdf_arrs]
         if gal_property == "z":
-            pdfs = [Redshift_PDF.from_1D_arr(arr * Bagpipes.gal_property_unit_dict[gal_property], SED_fit_params, timed = timed) \
-                for arr in tqdm(pdf_arrs, desc = f"Constructing {gal_property} PDFs", total = len(pdf_arrs))]
+            pdfs = [Redshift_PDF.from_1D_arr(pdf * Bagpipes.gal_property_unit_dict[gal_property], \
+                SED_fit_params, timed = timed) if type(pdf) != type(None) else None \
+                for pdf in tqdm(pdf_arrs, desc = f"Constructing {gal_property} PDFs", total = len(pdf_arrs))]
         else:
-            pdfs = [SED_fit_PDF.from_1D_arr(gal_property, arr * Bagpipes.gal_property_unit_dict[gal_property], SED_fit_params, timed = timed) \
-                for arr in tqdm(pdf_arrs, desc = f"Constructing {gal_property} PDFs", total = len(pdf_arrs))]
+            pdfs = [SED_fit_PDF.from_1D_arr(gal_property, pdf * Bagpipes.gal_property_unit_dict[gal_property], \
+                SED_fit_params, timed = timed) if type(pdf) != type(None) else None \
+                for pdf in tqdm(pdf_arrs, desc = f"Constructing {gal_property} PDFs", total = len(pdf_arrs))]
         return pdfs
     
     def load_pipes_fit_obj(self):
@@ -183,26 +240,25 @@ class Bagpipes(SED_code):
 
     @staticmethod
     def get_out_paths(cat, SED_fit_params, IDs, load_properties = \
-            ["redshift", "stellar_mass", "formed_mass", "dust:Av", \
-            "beta_C94", "m_UV", "M_UV", "Halpha_EWrest", "xi_ion_caseB"]):
+            ["stellar_mass", "formed_mass", "dust:Av", \
+            "beta_C94", "m_UV", "M_UV"]): # , "Halpha_EWrest", "xi_ion_caseB"
         pipes_name = Bagpipes.label_from_SED_fit_params(SED_fit_params)
         in_path = None
-        out_path = f"{config['Bagpipes']['BAGPIPES_DIR']}/cats/{cat.survey}/{pipes_name}.fits"
+        out_path = f"{config['Bagpipes']['BAGPIPES_DIR']}/cats/{cat.survey}/{pipes_name.replace('Bagpipes_', '')}.fits"
         fits_out_path = Bagpipes.get_galfind_fits_path(out_path)
         PDF_dir = out_path.replace(".fits", "").replace("cats", "pdfs")
         SED_dir = out_path.replace(".fits", "").replace("cats", "seds")
-        # determine PDF paths
-        property_PDF_dirs = glob.glob(f"{PDF_dir}/*")
-        if load_properties == "All":
-            PDF_paths = {path.split("/")[-1]: [f"{path}/{str(int(ID))}_{cat.survey}.txt" for ID in IDs] for path in property_PDF_dirs}
-        else:
-            PDF_paths = {path.split("/")[-1]: [f"{path}/{str(int(ID))}_{cat.survey}.txt" for ID in IDs] for path in property_PDF_dirs if path.split("/")[-1] in load_properties}
-        if "redshift" in PDF_paths.keys():
-            PDF_paths["z"] = PDF_paths.pop("redshift")
-        assert all(Path(path).is_file() for key, paths in PDF_paths.items() for path in paths)
+        # else:
+        if not SED_fit_params["fix_z"]:
+            load_properties += ["redshift"]
+        PDF_paths = {gal_property if "redshift" not in gal_property else "z": \
+            [f"{PDF_dir}/{gal_property}/{str(int(ID))}_{cat.survey}.txt" \
+            if Path(f"{PDF_dir}/{gal_property}/{str(int(ID))}_{cat.survey}.txt").is_file() \
+            else None for ID in IDs] for gal_property in load_properties}
         # determine SED paths
-        SED_paths = [f"{SED_dir}/{str(int(ID))}_{cat.survey}.dat" for ID in IDs]
-        assert all(Path(path).is_file() for path in SED_paths)
+        SED_paths = [f"{SED_dir}/{str(int(ID))}_{cat.survey}.dat" \
+            if Path(f"{SED_dir}/{str(int(ID))}_{cat.survey}.dat").is_file() \
+            else None for ID in IDs]
         return in_path, out_path, fits_out_path, PDF_paths, SED_paths
 
     def make_templates(self):
