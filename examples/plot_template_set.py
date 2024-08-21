@@ -17,7 +17,7 @@ from galfind.Emission_lines import line_diagnostics
 
 plt.style.use(f"{config['DEFAULT']['GALFIND_DIR']}/galfind_style.mplstyle")
 
-instrument = NIRCam(excl_bands = ["f070W", "f140M", "f162M", "f182M", "f250M", "f300M", "f335M", "f360M", "f430M", "f460M", "f480M"])
+instrument = NIRCam(excl_bands = ["F070W", "F140M", "F162M", "F182M", "F250M", "F300M", "F335M", "F360M", "F430M", "F460M", "F480M"])
 depths = [30. for band_name in instrument.band_names]
 min_pc_err = 10
 z = 0.

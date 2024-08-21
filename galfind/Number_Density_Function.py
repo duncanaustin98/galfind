@@ -49,16 +49,14 @@ class Base_Number_Density_Function:
         except:
             galfind_logger.critical("Could not import flags_data.distribution_functions")
 
-        flags_property_name_conv = {"M1500": "LUV", "stellar_mass": "Mstar"}
+        flags_property_name_conv = {"M1500": "LUV", "M_UV": "LUV", "stellar_mass": "Mstar"}
         datasets = distribution_functions.list_datasets(f'{flags_property_name_conv[x_name]}/{obs_or_models}')
     
         num_obs = np.linspace(0, 1, len(datasets))
         z_ref = (z_bin[0] + z_bin[1]) / 2.
         for pos, path in enumerate(datasets):
-            ds = distribution_functions.read(path)
-            if ds.name != author_year:
-                continue
-            else:
+            ds = distribution_functions.read(path, verbose = False)
+            if ds.name == author_year:
                 # choose closest redshift to bin centre
                 z = None
                 deltaz = 100
@@ -87,20 +85,22 @@ class Base_Number_Density_Function:
                     err_high = 10 ** (log10phi + high) - 10 ** log10phi
                     err_low = (10 ** log10phi) - 10 ** (log10phi - low) 
                     phi_err  =  np.array([err_low, err_high])
+
+                    if x_name in ["M1500", "M_UV"]:
+                        x = ds.M[z]
+                    else:
+                        x = ds.log10X[z]
                     #x = ds.log10X[z] - np.log10(1. / funcs.imf_mass_factor[ds.imf]) stellar mass only
-                    return cls(x_name, ds.log10X[z], z, 10 ** log10phi, phi_err, author_year)
+                    return cls(x_name, x, z, 10 ** log10phi, phi_err, author_year)
         return None # if no author_year in flags_data
     
     def get_z_bin_name(self) -> str:
         return f"z={float(self.z_ref):.1f}"
 
-    def plot(self, fig = None, ax = None, log: bool = False, annotate: bool = True, \
-            save: bool = True, show: bool = False, plot_kwargs: dict = {}, \
+    def plot(self, fig = None, ax = None, log: bool = False, annotate: bool = False, \
+            save: bool = False, show: bool = False, plot_kwargs: dict = {}, \
             legend_kwargs: dict = {}, x_lims: Union[list, np.array, str, None] = "default", \
-            use_galfind_style: bool = True) -> None:
-    
-        if use_galfind_style: # (oppan gangnam style)
-            plt.style.use(f"{config['DEFAULT']['GALFIND_DIR']}/galfind_style.mplstyle")
+            save_name: Union[str, None] = None) -> None:
 
         if all(type(i) == type(None) for i in [fig, ax]):
             fig, ax = plt.subplots()
@@ -126,6 +126,7 @@ class Base_Number_Density_Function:
                 default_plot_kwargs.pop(key)
         _plot_kwargs = {**plot_kwargs, **default_plot_kwargs}
         ax.errorbar(x_mid_bins, y, yerr = y_errs, **_plot_kwargs)
+        galfind_logger.info(f"Plotting {default_plot_kwargs['label']}")
 
         if annotate:
             y_label = r"$\Phi$ / N dex$^{-1}$Mpc$^{-3}$"
@@ -142,7 +143,7 @@ class Base_Number_Density_Function:
                     assert len(x_lims) == 2
                     ax.set_xlim(*x_lims)
             # sort out legend_kwargs
-            default_legend_kwargs = {}
+            default_legend_kwargs = {"loc": "center left", "bbox_to_anchor": (1.05, 0.5)}
             # overwrite default with input for duplicate kwargs
             for key in plot_kwargs.keys():
                 if key in default_legend_kwargs.keys():
@@ -150,7 +151,12 @@ class Base_Number_Density_Function:
             _legend_kwargs = {**legend_kwargs, **default_legend_kwargs}
             ax.legend(**_legend_kwargs)
         if save:
-            plot_path = self.get_plot_path()
+            if self.__class__.__name__ != "Number_Density_Function":
+                assert type(save_name) != type(None)
+                plot_path = f"{config['NumberDensityFunctions']['NUMBER_DENSITY_FUNC_DIR']}/Plots/Literature/{save_name}"
+            else:
+                plot_path = self.get_plot_path()
+            funcs.make_dirs(plot_path)
             plt.savefig(plot_path)
         if show:
             plt.show()
@@ -248,7 +254,6 @@ class Number_Density_Function(Base_Number_Density_Function):
             # crop catalogue to this redshift bin
             z_bin_cat = cat.crop(z_bin, "z", SED_fit_params)
 
-            breakpoint()
             # extract photometry type from x_origin
             phot_type = "rest" if x_origin.endswith("_REST_PROPERTY") else "obs"
             # create x_bins from x_bin_edges (must include start and end values here too)
@@ -267,6 +272,7 @@ class Number_Density_Function(Base_Number_Density_Function):
             for i, x_bin in enumerate(x_bins):
                 # crop to galaxies in the x bin - not the bootstrapping method
                 z_bin_x_bin_cat = z_bin_cat.crop(x_bin, x_name, SED_fit_params, phot_type)
+
                 Ngals[i] = len(z_bin_x_bin_cat)
                 # if there are galaxies in the z,x bin
                 if int(Ngals[i]) != 0:
@@ -349,8 +355,7 @@ class Number_Density_Function(Base_Number_Density_Function):
     def plot(self, fig = None, ax = None, log: bool = False, annotate: bool = True, \
             save: bool = True, show: bool = False, plot_kwargs: dict = {}, \
             legend_kwargs: dict = {}, x_lims: Union[list, np.array, str, None] = "default", \
-            use_galfind_style: bool = True, obs_author_years: dict = {}, \
-            sim_author_years: dict = {}) -> None:
+            obs_author_years: dict = {}, sim_author_years: dict = {}) -> None:
         if all(type(_x) == type(None) for _x in [fig, ax]):
             fig, ax = plt.subplots()
         # for author_year, author_year_plot_dict in author_year_dict.items():
@@ -362,14 +367,16 @@ class Number_Density_Function(Base_Number_Density_Function):
         #         plot_kwargs = author_year_plot_kwargs, x_lims = None, use_galfind_style = use_galfind_style)
         for author_year, author_year_kwargs in obs_author_years.items():
             author_year_func_from_flags_data = Base_Number_Density_Function.from_flags_repo(self.x_name, self.z_bin, author_year, "obs")
-            author_year_func_from_flags_data.plot(fig, ax, log, annotate = False, save = False, show = False, \
-                plot_kwargs = author_year_kwargs, x_lims = None, use_galfind_style = use_galfind_style)
+            if type(author_year_func_from_flags_data) != type(None):
+                author_year_func_from_flags_data.plot(fig, ax, log, annotate = False, save = False, show = False, \
+                    plot_kwargs = author_year_kwargs, x_lims = None)
         for author_year, author_year_kwargs in sim_author_years.items():
             author_year_func_from_flags_data = Base_Number_Density_Function.from_flags_repo(self.x_name, self.z_bin, author_year, "models")
-            author_year_func_from_flags_data.plot(fig, ax, log, annotate = False, save = False, show = False, \
-                plot_kwargs = author_year_kwargs, x_lims = None, use_galfind_style = use_galfind_style)
+            if type(author_year_func_from_flags_data) != type(None):
+                author_year_func_from_flags_data.plot(fig, ax, log, annotate = False, save = False, show = False, \
+                    plot_kwargs = author_year_kwargs, x_lims = None)
         # plot this work
-        super().plot(fig, ax, log, annotate, save, show, plot_kwargs, legend_kwargs, x_lims, use_galfind_style)
+        super().plot(fig, ax, log, annotate, save, show, plot_kwargs, legend_kwargs, x_lims)
 
 #         def mass_function(catalog, fields, z_bins, mass_bins, rerun=False, out_directory = '/nvme/scratch/work/tharvey/masses/',
 #  mass_keyword='MASS_BEST',mass_form='log', z_keyword='Z_BEST', sed_tool='LePhare', template='', z_step=0.01,

@@ -32,7 +32,7 @@ def pipeline(surveys, version, instruments, aper_diams, min_flux_pc_errs, forced
                 excl_bands = excl_bands, loc_depth_min_flux_pc_errs = min_flux_pc_errs, crop_by = crop_by, load_SEDs = load_SEDs, \
                 load_PDFs = load_PDFs, timed = timed, mask_stars = mask_stars, pix_scales = pix_scales, \
                 load_SED_rest_properties = load_SED_rest_properties, n_depth_reg = n_depth_reg)
-            breakpoint()
+            #breakpoint()
             pipes_origin = SED_fit_params_arr[-1] #["code"].label_from_SED_fit_params(SED_fit_params_arr[-1])
             #cat.plot("beta_C94", pipes_origin, "M_UV", pipes_origin)
             
@@ -108,13 +108,12 @@ def pipeline(surveys, version, instruments, aper_diams, min_flux_pc_errs, forced
             #cat.del_hdu(SED_fit_params_arr[-1]["code"].label_from_SED_fit_params(SED_fit_params_arr[-1]))
             # if load_SED_rest_properties:
             #     iters = 100
-            #     #cat.calc_SFR_UV_phot(frame = "obs", AUV_beta_conv_author_year = "M99", iters = iters)
-            #     #cat.calc_SFR_UV_phot(frame = "obs", AUV_beta_conv_author_year = None, iters = iters)
-            #     #cat.calc_rest_UV_properties(iters = iters)
-            #     #cat.calc_cont_rest_optical(["Halpha"], iters = iters)
-            #     #cat.calc_EW_rest_optical(["Halpha"], frame = "obs", iters = iters)
-            #     cat_copy.calc_xi_ion(iters = iters) #dust_author_year = None
-
+            #     cat.calc_SFR_UV_phot(frame = "obs", AUV_beta_conv_author_year = "M99", iters = iters)
+                #cat.calc_SFR_UV_phot(frame = "obs", AUV_beta_conv_author_year = None, iters = iters)
+                #cat.calc_rest_UV_properties(iters = iters)
+                #cat.calc_cont_rest_optical(["Halpha"], iters = iters)
+                #cat.calc_EW_rest_optical(["Halpha"], frame = "obs", iters = iters)
+                #cat_copy.calc_xi_ion(iters = iters) #dust_author_year = None
 
 def make_EAZY_SED_fit_params_arr(SED_code_arr, templates_arr, lowz_zmax_arr):
     return [{"code": code, "templates": templates, "lowz_zmax": lowz_zmax} \
@@ -127,7 +126,7 @@ if __name__ == "__main__":
     cat_type = "loc_depth"
     surveys = ["JOF"] #["JADES-Deep-GS+JEMS"]#+SMILES"] #[config["DEFAULT"]["SURVEY"]]
     aper_diams = [0.32] * u.arcsec # 0.32, 0.5, 1.0, 1.5, 2.0
-    SED_code_arr = [EAZY()]
+    SED_code_arr = []#EAZY()]
     templates_arr = ["fsps_larson"] #["fsps", "fsps_larson", "fsps_jades"]
     lowz_zmax_arr = [[2., 4., 6., None]] #[[4., 6., None]] #[[None]] # 
     min_flux_pc_errs = [10]
@@ -136,7 +135,7 @@ if __name__ == "__main__":
     timed = False
     mask_stars = {"ACS_WFC": False, "NIRCam": True, "WFC3_IR": False, "MIRI": False}
     MIRI_pix_scale = 0.06 * u.arcsec
-    load_SED_rest_properties = False # True
+    load_SED_rest_properties = False #True
     n_depth_reg = "auto"
     load_PDFs = {"EAZY": True, "Bagpipes": True}
     load_SEDs = {"EAZY": True, "Bagpipes": True}
@@ -150,7 +149,7 @@ if __name__ == "__main__":
     pipes_fit_params_arr = [{"code": Bagpipes(), "dust": "Cal", "dust_prior": "log_10", \
         "metallicity_prior": "log_10", "sps_model": "BC03", "fix_z": False, \
         "z_range": (0., 25.), "sfh": "continuity_bursty"}]
-    SED_fit_params_arr = pipes_fit_params_arr #EAZY_SED_fit_params_arr + pipes_fit_params_arr
+    SED_fit_params_arr = EAZY_SED_fit_params_arr + pipes_fit_params_arr
     # delay_time = (8 * u.h).to(u.s).value
     # print(f"{surveys[0]} delayed by {delay_time}s")
     # time.sleep(delay_time)

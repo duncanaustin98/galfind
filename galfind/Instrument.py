@@ -427,7 +427,7 @@ def return_loc_depth_mags(cat, band, incl_err = True, mag_type = ["APER", 0], mi
     min_mag_err = funcs.flux_pc_to_mag_err(min_flux_err_pc)
     if "AUTO" in mag_type:
         #data = np.array(cat[f"MAG_AUTO_{band}"])
-        print("NOT YET IMPLEMENTED!")
+        raise NotImplementedError
     elif "APER" in mag_type:
         data = np.array(cat[f"MAG_{mag_type[0]}_{band}_aper_corr"].T[mag_type[1]])
         #data_l1 = np.array(cat[f"MAGERR_{mag_type[0]}_{band}_l1_loc_depth"][mag_type[1]] 

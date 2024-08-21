@@ -389,7 +389,7 @@ class Photometry_rest(Photometry):
             return [{"PDF": self.property_PDFs[LUV_property_name].manipulate_PDF(property_name, \
                 lambda LUV: LUV * SFR_conversions[kappa_UV_conv_author_year], size = iters)}], [property_name]
     
-    def calc_cont_rest_optical(self, strong_line_names: Union[str, list], rest_optical_wavs: u.Quantity = [3_700., 10_000.] * u.AA, \
+    def calc_cont_rest_optical(self, strong_line_names: Union[str, list], rest_optical_wavs: u.Quantity = [4_200., 10_000.] * u.AA, \
             iters: int = 10, extract_property_name: bool = False, save_path: Union[str, None] = None, single_iter: bool = False):
         assert type(single_iter) == bool
         if type(strong_line_names) in [str]:
@@ -413,34 +413,44 @@ class Photometry_rest(Photometry):
                 return [None], [property_name]
         # determine photometric bands that trace the continuum both bluewards and redwards of the line(s) - must avoid other strong optical lines and lie within the rest optical wavelength range
         emission_band_index = self.instrument.index_from_band_name(emission_band.band_name)
-        redwards_i = emission_band_index
-        bluewards_i = emission_band_index
+        #redwards_i = emission_band_index
+        #bluewards_i = emission_band_index
         cont_bands = []
-        while True:
-            bluewards_i -= 1
-            if bluewards_i >= 0:
-                bluewards_cont_band = self.instrument[bluewards_i]
-                if bluewards_cont_band.WavelengthUpper50 < rest_optical_wavs[1] * (1. + self.z) and bluewards_cont_band.WavelengthLower50 > rest_optical_wavs[0] * (1. + self.z) \
-                        and not any(line_diagnostics[line_name]["line_wav"] * (1. + self.z) < bluewards_cont_band.WavelengthUpper50 and \
-                        line_diagnostics[line_name]["line_wav"] * (1. + self.z) > bluewards_cont_band.WavelengthLower50 for line_name in strong_optical_lines):
-                    cont_bands.append(bluewards_cont_band)
-                    break
-            else:
-                break
-        while True:
-            redwards_i += 1
-            if redwards_i < len(self.instrument):
-                redwards_cont_band = self.instrument[redwards_i]
-                if redwards_cont_band.WavelengthUpper50 < rest_optical_wavs[1] * (1. + self.z) and redwards_cont_band.WavelengthLower50 > rest_optical_wavs[0] * (1. + self.z) \
-                        and not any(line_diagnostics[line_name]["line_wav"] * (1. + self.z) < redwards_cont_band.WavelengthUpper50 and \
-                        line_diagnostics[line_name]["line_wav"] * (1. + self.z) > redwards_cont_band.WavelengthLower50 for line_name in strong_optical_lines):
-                    cont_bands.append(redwards_cont_band)
-                    break
-            else:
-                break
+        for band in self.instrument:
+            if band.WavelengthUpper50 < rest_optical_wavs[1] * (1. + self.z) and band.WavelengthLower50 > rest_optical_wavs[0] * (1. + self.z) \
+                    and not any(line_diagnostics[line_name]["line_wav"] * (1. + self.z) < band.WavelengthUpper50 and \
+                    line_diagnostics[line_name]["line_wav"] * (1. + self.z) > band.WavelengthLower50 for line_name in strong_optical_lines):
+                cont_bands.append(band)
+        
+        # while True:
+        #     bluewards_i -= 1
+        #     if bluewards_i >= 0:
+        #         bluewards_cont_band = self.instrument[bluewards_i]
+        #         if bluewards_cont_band.WavelengthUpper50 < rest_optical_wavs[1] * (1. + self.z) and bluewards_cont_band.WavelengthLower50 > rest_optical_wavs[0] * (1. + self.z) \
+        #                 and not any(line_diagnostics[line_name]["line_wav"] * (1. + self.z) < bluewards_cont_band.WavelengthUpper50 and \
+        #                 line_diagnostics[line_name]["line_wav"] * (1. + self.z) > bluewards_cont_band.WavelengthLower50 for line_name in strong_optical_lines):
+        #             cont_bands.append(bluewards_cont_band)
+        #             break
+        #     else:
+        #         break
+        # while True:
+        #     redwards_i += 1
+        #     if redwards_i < len(self.instrument):
+        #         redwards_cont_band = self.instrument[redwards_i]
+        #         if redwards_cont_band.WavelengthUpper50 < rest_optical_wavs[1] * (1. + self.z) and redwards_cont_band.WavelengthLower50 > rest_optical_wavs[0] * (1. + self.z) \
+        #                 and not any(line_diagnostics[line_name]["line_wav"] * (1. + self.z) < redwards_cont_band.WavelengthUpper50 and \
+        #                 line_diagnostics[line_name]["line_wav"] * (1. + self.z) > redwards_cont_band.WavelengthLower50 for line_name in strong_optical_lines):
+        #             cont_bands.append(redwards_cont_band)
+        #             break
+        #     else:
+        #         break
+        
         # if there are no available continuum bands
         if len(cont_bands) == 0:
-            return [None], [property_name]
+            if single_iter:
+                return np.nan, {}
+            else:
+                return [None], [property_name]
         # compute nJy flux chains for each continuum band
         cont_flux_chains = {}
         for band in cont_bands:
@@ -468,22 +478,31 @@ class Photometry_rest(Photometry):
             else:
                 return [{"vals": cont_flux_chains[cont_bands[0].band_name], "PDF_kwargs": kwargs}], [property_name]
         # calculate continuum from interpolation to middle of the emission band if two continuum bands
-        elif len(cont_bands) == 2:
-            blue_wav = (cont_bands[0].WavelengthCen.to(u.AA) / (1. + self.z)).value
-            red_wav = (cont_bands[1].WavelengthCen.to(u.AA) / (1. + self.z)).value
+        elif len(cont_bands) >= 2:
+            cont_wavs = [(band.WavelengthCen.to(u.AA) / (1. + self.z)).value for band in cont_bands]
+            #blue_wav = (cont_bands[0].WavelengthCen.to(u.AA) / (1. + self.z)).value
+            #red_wav = (cont_bands[1].WavelengthCen.to(u.AA) / (1. + self.z)).value
             em_wav = (emission_band.WavelengthCen.to(u.AA) / (1. + self.z)).value
             if single_iter:
-                return np.interp(em_wav, [blue_wav, red_wav], [cont_flux_chains[cont_bands[0].band_name].value, \
-                    cont_flux_chains[cont_bands[1].band_name].value]) * u.nJy, kwargs
+                cont_fluxes = [cont_flux_chains[band.band_name].value for band in cont_bands]
+                popt, pcov = curve_fit(funcs.simple_power_law_func, cont_wavs, cont_fluxes)
+                return np.array(funcs.simple_power_law_func(em_wav, *popt)) * u.nJy, kwargs
+                # return np.interp(em_wav, cont_wavs, [cont_flux_chains[cont_bands[0].band_name].value, \
+                #     cont_flux_chains[cont_bands[1].band_name].value]) * u.nJy, kwargs
             else:
-                cont_chains = np.array([np.interp(em_wav, [blue_wav, red_wav], [blue_cont_flux, red_cont_flux]) for blue_cont_flux, red_cont_flux \
-                    in zip(cont_flux_chains[cont_bands[0].band_name].value, cont_flux_chains[cont_bands[1].band_name].value)]) * u.nJy
+                cont_fluxes = [[cont_flux_chains[band.band_name][i].value for band in cont_bands] \
+                    for i in range(len(cont_flux_chains[cont_bands[0].band_name]))]
+                cont_chains = np.array([funcs.simple_power_law(em_wav, \
+                    *curve_fit(funcs.simple_power_law_func, cont_wavs, cont_fluxes_)[0]) \
+                    for cont_fluxes_ in cont_fluxes]) * u.nJy
+                # cont_chains = np.array([np.interp(em_wav, cont_wavs, cont_fluxes) for cont_fluxes \
+                #     in zip(cont_flux_chains[cont_bands[0].band_name].value, cont_flux_chains[cont_bands[1].band_name].value)]) * u.nJy
                 return [{"vals": cont_chains, "PDF_kwargs": kwargs}], [property_name]
         else:
             breakpoint()
     
     def calc_EW_rest_optical(self, strong_line_names: Union[str, list], frame: str = "rest", \
-            rest_optical_wavs: u.Quantity = [3_700., 10_000.] * u.AA, iters: int = 10, \
+            rest_optical_wavs: u.Quantity = [4_200., 10_000.] * u.AA, iters: int = 10, \
             extract_property_name: bool = False, save_path: Union[str, None] = None, single_iter: bool = False):
         assert type(single_iter) == bool
         if type(strong_line_names) in [str]:
@@ -569,7 +588,7 @@ class Photometry_rest(Photometry):
 
     def calc_line_flux_rest_optical(self, strong_line_names: Union[str, list], frame: str = "obs", \
             dust_author_year: Union[str, None] = "M99", dust_law: str = "C00", dust_origin: str = "UV", \
-            rest_optical_wavs: u.Quantity = [3_700., 10_000.] * u.AA, rest_UV_wav_lims: u.Quantity = [1_250., 3_000.] * u.AA, \
+            rest_optical_wavs: u.Quantity = [4_200., 10_000.] * u.AA, rest_UV_wav_lims: u.Quantity = [1_250., 3_000.] * u.AA, \
             ref_wav: u.Quantity = 1_500. * u.AA, iters: int = 10, extract_property_name: bool = False, \
             save_path: Union[str, None] = None, single_iter: bool = False):
         assert type(single_iter) == bool
@@ -622,7 +641,7 @@ class Photometry_rest(Photometry):
     
     def calc_line_lum_rest_optical(self, strong_line_names: Union[str, list], \
             frame: str = "obs", dust_author_year: Union[str, None] = "M99", dust_law: str = "C00", \
-            dust_origin: str = "UV", rest_optical_wavs: u.Quantity = [3_700., 10_000.] * u.AA, \
+            dust_origin: str = "UV", rest_optical_wavs: u.Quantity = [4_200., 10_000.] * u.AA, \
             rest_UV_wav_lims: u.Quantity = [1_250., 3_000.] * u.AA, ref_wav: u.Quantity = 1_500. * u.AA, \
             iters: int = 10, extract_property_name = False, save_path: Union[str, None] = None, \
             single_iter: bool = False):
@@ -661,7 +680,7 @@ class Photometry_rest(Photometry):
 
     def calc_xi_ion(self, frame: str = "rest", strong_line_names: list = ["Halpha"], fesc_author_year: str = "fesc=0.0", \
             dust_author_year: Union[str, None] = "M99", dust_law: str = "C00", dust_origin: str = "UV", rest_optical_wavs: \
-            u.Quantity = [3_700., 10_000.] * u.AA, rest_UV_wav_lims: u.Quantity = [1_250., 3_000.] * u.AA, ref_wav: \
+            u.Quantity = [4_200., 10_000.] * u.AA, rest_UV_wav_lims: u.Quantity = [1_250., 3_000.] * u.AA, ref_wav: \
             u.Quantity = 1_500. * u.AA, iters: int = 10, extract_property_name: bool = False, \
             save_path: Union[str, None] = None, single_iter: bool = False):
         assert type(single_iter) == bool

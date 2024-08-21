@@ -310,7 +310,7 @@ mass_IMF_factor = {}
 
 # General number density function tools
 
-default_lims = {"M1500": [-23., -16.], "stellar_mass": []}
+default_lims = {"M1500": [-23., -16.], "M_UV": [-23., -16.], "stellar_mass": [7.5, 11.]}
 
 def get_z_bin_name(z_bin: Union[list, np.array]) -> str:
     return f"{z_bin[0]:.1f}<z<{z_bin[1]:.1f}"
@@ -445,6 +445,9 @@ def gauss_func(x, mu, sigma):
     
 def power_law_func(x, A, slope):
     return A * (x ** slope)
+
+def simple_power_law_func(x, c, m):
+    return (m * x) + c
 
 def cat_from_path(path, crop_names = None):
     cat = Table.read(path, character_as_bytes = False)

@@ -29,8 +29,8 @@ class Bagpipes(SED_code):
 
     # these should be made on runtime!
     galaxy_properties = ["redshift", "stellar_mass", "formed_mass", \
-        "dust:Av", "beta_C94", "m_UV", "M_UV", "Halpha_EWrest", "xi_ion_caseB", \
-        "sfr", "sfr_10myr", "ssfr", "ssfr_10myr"]
+        "dust:Av", "beta_C94", "m_UV", "M_UV", \
+        "sfr", "sfr_10myr", "ssfr", "ssfr_10myr"] # "Halpha_EWrest", "xi_ion_caseB",
     gal_property_fmt_dict = {
         "z": "Redshift, z",
         "stellar_mass": r"$M_{\star}$",
@@ -241,7 +241,7 @@ class Bagpipes(SED_code):
     @staticmethod
     def get_out_paths(cat, SED_fit_params, IDs, load_properties = \
             ["stellar_mass", "formed_mass", "dust:Av", \
-            "beta_C94", "m_UV", "M_UV", "Halpha_EWrest", "xi_ion_caseB"]):
+            "beta_C94", "m_UV", "M_UV"]): # , "Halpha_EWrest", "xi_ion_caseB"
         pipes_name = Bagpipes.label_from_SED_fit_params(SED_fit_params)
         in_path = None
         out_path = f"{config['Bagpipes']['BAGPIPES_DIR']}/cats/{cat.survey}/{pipes_name.replace('Bagpipes_', '')}.fits"

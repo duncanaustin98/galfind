@@ -136,10 +136,14 @@ class Catalogue(Catalogue_Base):
                 assert SED_fit_params["code"].__class__.__name__ in load_PDFs.keys()
                 _load_PDFs = load_PDFs[SED_fit_params["code"].__class__.__name__]
                 assert type(_load_PDFs) in [bool]
+            else:
+                _load_PDFs = load_PDFs
             if type(load_SEDs) in [dict]:
                 assert SED_fit_params["code"].__class__.__name__ in load_SEDs.keys()
                 _load_SEDs = load_SEDs[SED_fit_params["code"].__class__.__name__]
                 assert type(_load_SEDs) in [bool]
+            else:
+                _load_SEDs = load_SEDs
             cat_obj = SED_fit_params["code"].fit_cat(cat_obj, SED_fit_params, \
                 load_PDFs = _load_PDFs, load_SEDs = _load_SEDs, timed = timed)
             if load_SED_rest_properties:
@@ -770,11 +774,11 @@ class Catalogue(Catalogue_Base):
 
     # Emission line EWs from the rest frame UV photometry
         
-    def calc_cont_rest_optical(self, strong_line_names: Union[str, list], rest_optical_wavs: u.Quantity = [3_700., 10_000.] * u.AA, \
+    def calc_cont_rest_optical(self, strong_line_names: Union[str, list], rest_optical_wavs: u.Quantity = [4_200., 10_000.] * u.AA, \
             SED_fit_params: dict = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}, iters: int = 10_000):
         self.calc_SED_rest_property(SED_rest_property_function = Photometry_rest.calc_cont_rest_optical, iters = iters, SED_fit_params = SED_fit_params, strong_line_names = strong_line_names, rest_optical_wavs = rest_optical_wavs)
 
-    def calc_EW_rest_optical(self, strong_line_names: Union[str, list], frame: str, rest_optical_wavs: u.Quantity = [3_700., 10_000.] * u.AA, \
+    def calc_EW_rest_optical(self, strong_line_names: Union[str, list], frame: str, rest_optical_wavs: u.Quantity = [4_200., 10_000.] * u.AA, \
             SED_fit_params: dict = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}, iters: int = 10_000):
         self.calc_cont_rest_optical(strong_line_names, rest_optical_wavs, SED_fit_params, iters)
         self.calc_SED_rest_property(SED_rest_property_function = Photometry_rest.calc_EW_rest_optical, iters = iters, SED_fit_params = SED_fit_params, strong_line_names = strong_line_names, frame = frame,  rest_optical_wavs = rest_optical_wavs)
@@ -790,7 +794,7 @@ class Catalogue(Catalogue_Base):
             dust_law = dust_law, dust_origin = dust_origin, rest_UV_wav_lims = rest_UV_wav_lims, ref_wav = ref_wav)
 
     def calc_line_flux_rest_optical(self, strong_line_names: Union[str, list], frame: str, dust_author_year = "M99", \
-            dust_law = "C00", dust_origin = "UV", rest_optical_wavs = [3_700., 10_000.] * u.AA, \
+            dust_law = "C00", dust_origin = "UV", rest_optical_wavs = [4_200., 10_000.] * u.AA, \
             rest_UV_wav_lims = [1_250., 3_000.] * u.AA, ref_wav: u.Quantity = 1_500. * u.AA, SED_fit_params: \
             dict = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}, iters: int = 10_000):
         self.calc_EW_rest_optical(strong_line_names, frame, rest_optical_wavs, SED_fit_params, iters)
@@ -802,7 +806,7 @@ class Catalogue(Catalogue_Base):
             rest_optical_wavs = rest_optical_wavs, rest_UV_wav_lims = rest_UV_wav_lims, ref_wav = ref_wav)
 
     def calc_line_lum_rest_optical(self, strong_line_names: Union[str, list], frame: str, dust_author_year: Union[str, None] = "M99", \
-            dust_law: str = "C00", dust_origin: str = "UV", rest_optical_wavs: u.Quantity = [3_700., 10_000.] * u.AA, \
+            dust_law: str = "C00", dust_origin: str = "UV", rest_optical_wavs: u.Quantity = [4_200., 10_000.] * u.AA, \
             rest_UV_wav_lims: u.Quantity = [1_250., 3_000.] * u.AA, ref_wav: u.Quantity = 1_500. * u.AA, SED_fit_params: \
             dict = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}, iters: int = 10_000):
         self.calc_line_flux_rest_optical(strong_line_names, frame, dust_author_year, dust_law, \
@@ -813,7 +817,7 @@ class Catalogue(Catalogue_Base):
     # should be generalized slightly more
     def calc_xi_ion(self, frame: str = "rest", strong_line_names: Union[str, list] = ["Halpha"], \
             fesc_author_year: str = "fesc=0.0", dust_author_year: Union[str, None] = "M99", \
-            dust_law: str = "C00", dust_origin: str = "UV", rest_optical_wavs = [3_700., 10_000.] * u.AA, \
+            dust_law: str = "C00", dust_origin: str = "UV", rest_optical_wavs = [4_200., 10_000.] * u.AA, \
             rest_UV_wav_lims = [1_250., 3_000.] * u.AA, ref_wav = 1_500. * u.AA, \
             SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}, iters = 10_000):
         self.calc_line_lum_rest_optical(strong_line_names, frame, dust_author_year, dust_law, dust_origin, \
