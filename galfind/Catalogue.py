@@ -48,21 +48,22 @@ class Catalogue(Catalogue_Base):
             instruments = ['NIRCam', 'ACS_WFC', 'WFC3_IR'], forced_phot_band: Union[list, np.array, str] = ["F277W", "F356W", "F444W"], \
             excl_bands: Union[list, np.array] = [], pix_scales = {"ACS_WFC": 0.03 * u.arcsec, "WFC3_IR": 0.03 * u.arcsec, "NIRCam": 0.03 * u.arcsec, "MIRI": 0.09 * u.arcsec}, \
             loc_depth_min_flux_pc_errs = [5, 10], crop_by = None, load_PDFs: Union[bool, dict] = True, load_SEDs: Union[bool, dict] = True, \
-            timed: bool = True, mask_stars: bool = True, load_SED_rest_properties: bool = True, sex_prefer: str = "rms_err", n_depth_reg = "auto"):
+            timed: bool = True, mask_stars: bool = True, load_SED_rest_properties: bool = True, sex_prefer: str = "rms_err", n_depth_reg = "auto", \
+            load_ext_src_corrs: bool = True):
         
         data = Data.from_pipeline(survey, version, instruments, excl_bands = excl_bands, mask_stars = mask_stars, pix_scales = pix_scales)
         
         return cls.from_data(data, version, aper_diams, cat_creator, SED_fit_params_arr, \
             forced_phot_band, loc_depth_min_flux_pc_errs, crop_by = crop_by, load_PDFs = load_PDFs, \
             load_SEDs = load_SEDs, timed = timed, load_SED_rest_properties = load_SED_rest_properties, \
-            sex_prefer = sex_prefer, n_depth_reg = n_depth_reg)
+            sex_prefer = sex_prefer, n_depth_reg = n_depth_reg, load_ext_src_corrs = load_ext_src_corrs)
     
     @classmethod
     def from_data(cls, data, version, aper_diams, cat_creator, SED_fit_params_arr, \
                 forced_phot_band = ["F277W", "F356W", "F444W"], loc_depth_min_flux_pc_errs = [10], \
                 mask: bool = True, crop_by = None, load_PDFs: Union[bool, dict] = True, \
                 load_SEDs: Union[bool, dict] = True, timed: bool = True, load_SED_rest_properties: bool = True, \
-                sex_prefer: str = "rms_err", n_depth_reg: str = "auto"):
+                sex_prefer: str = "rms_err", n_depth_reg: str = "auto", load_ext_src_corrs: bool = True):
         
         # make masked local depth catalogue from the 'Data' object
         data.combine_sex_cats(forced_phot_band, prefer = sex_prefer)
@@ -74,13 +75,15 @@ class Catalogue(Catalogue_Base):
         return cls.from_fits_cat(data.sex_cat_master_path, version, data.instrument, \
             cat_creator, data.survey, SED_fit_params_arr, data = data, mask = mask, \
             crop_by = crop_by, load_PDFs = load_PDFs, load_SEDs = load_SEDs, \
-            timed = timed, load_SED_rest_properties = load_SED_rest_properties)
+            timed = timed, load_SED_rest_properties = load_SED_rest_properties, \
+            load_ext_src_corrs = load_ext_src_corrs)
     
     @classmethod
     def from_fits_cat(cls, fits_cat_path, version, instrument, cat_creator, survey: str, \
             SED_fit_params_arr: Union[list, np.array], data = None, mask: bool = False, \
             excl_bands: Union[list, np.array] = [], crop_by = None, load_PDFs: Union[bool, dict] = True, \
-            load_SEDs: Union[bool, dict] = True, timed: bool = True, load_SED_rest_properties: bool = True):
+            load_SEDs: Union[bool, dict] = True, timed: bool = True, load_SED_rest_properties: bool = True, \
+            load_ext_src_corrs: bool = True):
         # open the catalogue
         fits_cat = funcs.cat_from_path(fits_cat_path)
         for band_name in instrument.band_names:
@@ -148,6 +151,9 @@ class Catalogue(Catalogue_Base):
                 load_PDFs = _load_PDFs, load_SEDs = _load_SEDs, timed = timed)
             if load_SED_rest_properties:
                 cat_obj.load_SED_rest_properties(SED_fit_params, timed = timed)
+        # make extended source corrections for properties that require it
+        if load_ext_src_corrs:
+            cat_obj.make_all_ext_src_corrs()
         return cat_obj
     
     def save_phot_PDF_paths(self, PDF_paths, SED_fit_params):
@@ -191,12 +197,18 @@ class Catalogue(Catalogue_Base):
         else:
             aper_corrs = self.instrument.aper_corrs[self.cat_creator.aper_diam]
         assert len(aper_corrs) == len(self.instrument)
+        aper_corrs = {band_name: aper_corr for band_name, aper_corr in zip(self.instrument.band_names, aper_corrs)}
         # calculate and save dict of ext_src_corrs for each galaxy in self
-        [gal.phot.load_property({band_name: (gal.phot.FLUX_AUTO[band_name] / \
-            (gal.phot.flux_Jy[gal.phot.instrument.index_from_band_name(band_name)] * \
-            funcs.mag_to_flux_ratio(-aper_corr))).to(u.dimensionless_unscaled) \
-            for band_name, aper_corr in zip(self.instrument.band_names, aper_corrs) \
-            if band_name in gal.phot.FLUX_AUTO.keys()}, "ext_src_corrs") for gal in self]
+        [gal.phot.calc_ext_src_corrs(aper_corrs = aper_corrs) for gal in self]
+
+    def make_ext_src_corrs(self, gal_property: str, origin: Union[str, dict]) -> str:
+        self.calc_ext_src_corrs()
+        [gal.phot.make_ext_src_corrs(gal_property, origin) for gal in self]
+        return f"{gal_property}{funcs.ext_src_label}"
+
+    def make_all_ext_src_corrs(self) -> None:
+        self.calc_ext_src_corrs()
+        [gal.phot.make_all_ext_src_corrs() for gal in self]
 
     # def calc_new_property(self, func: Callable[..., float], arg_names: Union[list, np.array]):
     #     pass

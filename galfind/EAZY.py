@@ -57,6 +57,7 @@ class EAZY(SED_code):
     galaxy_property_errs_dict = {f"{ubvj_filt}_flux": [f"{ubvj_filt}_rf_flux_err", \
         f"{ubvj_filt}_rf_flux_err"] for ubvj_filt in ["U", "B", "V", "J"]}
     available_templates = ["fsps", "fsps_larson", "fsps_jades"]
+    ext_src_corr_properties = []
     ID_label = "IDENT"
     are_errs_percentiles = False
 

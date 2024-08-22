@@ -24,7 +24,7 @@ import time
 
 from . import useful_funcs_austind as funcs
 from . import config, galfind_logger
-from . import SED_result, Catalogue_SED_results
+from . import Catalogue_SED_results
 
 # %% SED_code class
 

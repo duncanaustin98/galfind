@@ -65,6 +65,7 @@ class Bagpipes(SED_code):
     galaxy_property_dict = {**{gal_property if "redshift" not in gal_property else "z": f"{gal_property}_50" for gal_property in galaxy_properties}, **{"chi_sq": "chisq_phot"}}
     galaxy_property_errs_dict = {gal_property if "redshift" not in gal_property else "z": [f"{gal_property}_16", f"{gal_property}_84"] for gal_property in galaxy_properties}
     available_templates = ["BC03", "BPASS"]
+    ext_src_corr_properties = ["stellar_mass", "formed_mass", "m_UV", "M_UV", "sfr", "sfr_10myr"]
     ID_label = "ID"
     are_errs_percentiles = True
     

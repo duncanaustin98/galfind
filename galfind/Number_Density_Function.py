@@ -216,8 +216,8 @@ class Number_Density_Function(Base_Number_Density_Function):
     @classmethod
     def from_cat(cls, cat, data_arr: Union[list, np.array], x_name: str, x_bin_edges: Union[list, np.array], \
             z_bin: Union[list, np.array], x_origin: Union[str, dict] = "EAZY_fsps_larson_zfree_REST_PROPERTY", \
-            z_step: float = 0.01, cv_origin: Union[str, None] = "Driver2010", save: bool = True, \
-            timed: bool = False) -> "Number_Density_Function":
+            z_step: float = 0.01, cv_origin: Union[str, None] = "Driver2010", ext_src_corrs: bool = True, \
+            save: bool = True, timed: bool = False) -> "Number_Density_Function":
         
         # input assertions
         assert len(z_bin) == 2
@@ -254,6 +254,9 @@ class Number_Density_Function(Base_Number_Density_Function):
             z_bin_name = funcs.get_SED_fit_params_z_bin_name(SED_fit_params_key, z_bin)
             # crop catalogue to this redshift bin
             z_bin_cat = cat.crop(z_bin, "z", SED_fit_params)
+            # correct x_name for extended source corrections if required
+            if ext_src_corrs:
+                x_name = z_bin_cat.make_ext_src_corrs(x_name)
 
             # extract photometry type from x_origin
             phot_type = "rest" if x_origin.endswith("_REST_PROPERTY") else "obs"
@@ -363,13 +366,6 @@ class Number_Density_Function(Base_Number_Density_Function):
             obs_author_years: dict = {}, sim_author_years: dict = {}) -> None:
         if all(type(_x) == type(None) for _x in [fig, ax]):
             fig, ax = plt.subplots()
-        # for author_year, author_year_plot_dict in author_year_dict.items():
-        #     assert all(_x in author_year_plot_dict.keys() for _x in ["z_ref", "plot_kwargs"])
-        #     z_ref = author_year_plot_dict["z_ref"]
-        #     author_year_plot_kwargs = author_year_plot_dict["plot_kwargs"]
-        #     author_year_number_density_func = Base_Number_Density_Function.from_ecsv(self.x_name, z_ref, author_year)
-        #     author_year_number_density_func.plot(fig, ax, log, annotate = False, save = False, show = False, \
-        #         plot_kwargs = author_year_plot_kwargs, x_lims = None, use_galfind_style = use_galfind_style)
         for author_year, author_year_kwargs in obs_author_years.items():
             author_year_func_from_flags_data = Base_Number_Density_Function.from_flags_repo(self.x_name, self.z_bin, author_year, "obs")
             if type(author_year_func_from_flags_data) != type(None):

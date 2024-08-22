@@ -123,7 +123,7 @@ class Galaxy:
             setattr(result, key, deepcopy(value, memo))
         return result
     
-    def update(self, gal_SED_results, index = 0): # for now just update the single photometry
+    def update(self, gal_SED_results, index: int = 0): # for now just update the single photometry
         self.phot.update(gal_SED_results)
     
     def update_mask(self, mask, update_phot_rest = False):
@@ -133,11 +133,12 @@ class Galaxy:
     # def update_mask_band(self, band, bool_value):
     #     self.mask_flags[band] = bool_value
 
-    def load_property(self, gal_property: Union[dict, u.Quantity], save_name: str):
+    def load_property(self, gal_property: Union[dict, u.Quantity], save_name: str) -> None:
         setattr(self, save_name, gal_property)
 
-    def make_cutout(self, band, data, wcs = None, im_header = None, survey = None, \
-            version = None, pix_scale = 0.03 * u.arcsec, cutout_size = 0.96 * u.arcsec):
+    def make_cutout(self, band, data, wcs = None, im_header = None, \
+            survey: Union[str, None] = None, version: Union[str, None] = None, \
+            pix_scale: u.Quantity = 0.03 * u.arcsec, cutout_size: u.Quantity = 0.96 * u.arcsec):
 
         if type(data) == Data:
             survey = data.survey
@@ -188,7 +189,8 @@ class Galaxy:
         return fits_hdul
 
     def make_RGB(self, data, blue_bands = ["F090W"], green_bands = ["F200W"], red_bands = ["F444W"], \
-            version = None, survey = None, method = "trilogy", cutout_size = 0.96 * u.arcsec):
+            version: Union[str, None] = None, survey: Union[str, None] = None, method: str = "trilogy", \
+            cutout_size: u.Quantity = 0.96 * u.arcsec):
         method = method.lower() # make method lowercase
         # ensure all blue, green and red bands are contained in the data object
         assert all(band in data.instrument.band_names for band in blue_bands + green_bands + red_bands), \

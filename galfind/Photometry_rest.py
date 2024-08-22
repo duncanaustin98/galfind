@@ -53,7 +53,8 @@ fesc_from_beta_conversions = \
 
 class Photometry_rest(Photometry):
     
-    def __init__(self, instrument, flux_Jy, flux_Jy_errs, depths, z, properties = {}, property_errs = {}, property_PDFs = {}):
+    def __init__(self, instrument, flux_Jy, flux_Jy_errs, depths, z, \
+            properties = {}, property_errs = {}, property_PDFs = {}):
         self.z = z
         self.properties = properties
         self.property_errs = property_errs
@@ -421,30 +422,6 @@ class Photometry_rest(Photometry):
                     and not any(line_diagnostics[line_name]["line_wav"] * (1. + self.z) < band.WavelengthUpper50 and \
                     line_diagnostics[line_name]["line_wav"] * (1. + self.z) > band.WavelengthLower50 for line_name in strong_optical_lines):
                 cont_bands.append(band)
-        
-        # while True:
-        #     bluewards_i -= 1
-        #     if bluewards_i >= 0:
-        #         bluewards_cont_band = self.instrument[bluewards_i]
-        #         if bluewards_cont_band.WavelengthUpper50 < rest_optical_wavs[1] * (1. + self.z) and bluewards_cont_band.WavelengthLower50 > rest_optical_wavs[0] * (1. + self.z) \
-        #                 and not any(line_diagnostics[line_name]["line_wav"] * (1. + self.z) < bluewards_cont_band.WavelengthUpper50 and \
-        #                 line_diagnostics[line_name]["line_wav"] * (1. + self.z) > bluewards_cont_band.WavelengthLower50 for line_name in strong_optical_lines):
-        #             cont_bands.append(bluewards_cont_band)
-        #             break
-        #     else:
-        #         break
-        # while True:
-        #     redwards_i += 1
-        #     if redwards_i < len(self.instrument):
-        #         redwards_cont_band = self.instrument[redwards_i]
-        #         if redwards_cont_band.WavelengthUpper50 < rest_optical_wavs[1] * (1. + self.z) and redwards_cont_band.WavelengthLower50 > rest_optical_wavs[0] * (1. + self.z) \
-        #                 and not any(line_diagnostics[line_name]["line_wav"] * (1. + self.z) < redwards_cont_band.WavelengthUpper50 and \
-        #                 line_diagnostics[line_name]["line_wav"] * (1. + self.z) > redwards_cont_band.WavelengthLower50 for line_name in strong_optical_lines):
-        #             cont_bands.append(redwards_cont_band)
-        #             break
-        #     else:
-        #         break
-        
         # if there are no available continuum bands
         if len(cont_bands) == 0:
             if single_iter:
@@ -480,23 +457,17 @@ class Photometry_rest(Photometry):
         # calculate continuum from interpolation to middle of the emission band if two continuum bands
         elif len(cont_bands) >= 2:
             cont_wavs = [(band.WavelengthCen.to(u.AA) / (1. + self.z)).value for band in cont_bands]
-            #blue_wav = (cont_bands[0].WavelengthCen.to(u.AA) / (1. + self.z)).value
-            #red_wav = (cont_bands[1].WavelengthCen.to(u.AA) / (1. + self.z)).value
             em_wav = (emission_band.WavelengthCen.to(u.AA) / (1. + self.z)).value
             if single_iter:
                 cont_fluxes = [cont_flux_chains[band.band_name].value for band in cont_bands]
                 popt, pcov = curve_fit(funcs.simple_power_law_func, cont_wavs, cont_fluxes)
                 return np.array(funcs.simple_power_law_func(em_wav, *popt)) * u.nJy, kwargs
-                # return np.interp(em_wav, cont_wavs, [cont_flux_chains[cont_bands[0].band_name].value, \
-                #     cont_flux_chains[cont_bands[1].band_name].value]) * u.nJy, kwargs
             else:
                 cont_fluxes = [[cont_flux_chains[band.band_name][i].value for band in cont_bands] \
                     for i in range(len(cont_flux_chains[cont_bands[0].band_name]))]
                 cont_chains = np.array([funcs.simple_power_law(em_wav, \
                     *curve_fit(funcs.simple_power_law_func, cont_wavs, cont_fluxes_)[0]) \
                     for cont_fluxes_ in cont_fluxes]) * u.nJy
-                # cont_chains = np.array([np.interp(em_wav, cont_wavs, cont_fluxes) for cont_fluxes \
-                #     in zip(cont_flux_chains[cont_bands[0].band_name].value, cont_flux_chains[cont_bands[1].band_name].value)]) * u.nJy
                 return [{"vals": cont_chains, "PDF_kwargs": kwargs}], [property_name]
         else:
             breakpoint()

@@ -7,18 +7,19 @@ from astropy.table import Table
 import astropy.units as u
 import time
 from copy import copy, deepcopy
+from typing import Union, Callable
 
 from . import config, galfind_logger
 from . import useful_funcs_austind as funcs
 
 class PDF:
 
-    def __init__(self, property_name, x, p_x, kwargs = {}, normed = False, timed = False):
+    def __init__(self, property_name, x, p_x, kwargs = {}, normed: bool = False, timed: bool = False):
         if timed:
             start = time.time()
-        if type(x) not in [u.Quantity, u.Magnitude]:
+        if type(x) not in [u.Quantity, u.Magnitude, u.Dex]:
             breakpoint()
-        #assert type(x) in [u.Quantity, u.Magnitude]
+        #assert type(x) in [u.Quantity, u.Magnitude, u.Dex]
         self.property_name = property_name
         self.x = x
         self.kwargs = kwargs
@@ -53,19 +54,70 @@ class PDF:
         else:
             return None
         
-    def __add__(self, other):
-        try:
+    def __add__(self, other: Union["PDF", int, float, u.Quantity, u.Magnitude, u.Dex], \
+            name_ext: Union[str, None] = None, add_kwargs: dict = {}, save: bool = False):
+        
+        if type(other) in [int, float, u.Quantity, u.Magnitude, u.Dex]:
+            # multiply input array by other
+            if hasattr(self, "input_arr"):
+                old_input_arr = self.input_arr
+            else:
+                old_input_arr = self.draw_sample()
+            new_input_arr = old_input_arr + other
+            new_kwargs = {**self.kwargs, **add_kwargs}
+        else: # PDF
+            # for extending length of PDF
             assert type(self) == type(other)
             assert self.property_name == other.property_name
             # update kwargs
-            new_kwargs = {**self.kwargs, **other.kwargs}
+            new_kwargs = {**self.kwargs, **other.kwargs, **add_kwargs}
             if hasattr(self, "input_arr") and hasattr(other, "input_arr"):
                 new_input_arr = np.concatenate((self.input_arr, other.input_arr))
             else:
                 new_input_arr = np.concatenate((self.draw_sample(), other.draw_sample()))
-            return globals()[self.__class__.__name__].from_1D_arr(self.property_name, new_input_arr, kwargs = new_kwargs)
-        except:
-            breakpoint()
+
+        if type(name_ext) == type(None):
+            new_property_name = self.property_name
+        else: # new_property_name == str
+            assert type(new_property_name) in [str]
+            if name_ext[0] != "_":
+                name_ext = f"_{name_ext}"
+            new_property_name = f"{self.property_name}{name_ext}"
+
+        PDF_obj = globals()[self.__class__.__name__].from_1D_arr(new_property_name, new_input_arr, kwargs = new_kwargs)
+        # if chosen to save and it has a different name, save the PDF
+        if save and hasattr(self, "save_path") and new_property_name != self.property_name:
+            PDF_obj.save_PDF(self.save_path.replace(self.property_name, new_property_name))
+        return PDF_obj
+
+    def __mul__(self, other: Union["PDF", int, float, u.Quantity, u.Magnitude, u.Dex], \
+            name_ext: Union[str, None] = None, add_kwargs: dict = {}, save: bool = False):
+        
+        if type(other) in [int, float, u.Quantity, u.Magnitude, u.Dex]:
+            # multiply input array by other
+            if hasattr(self, "input_arr"):
+                old_input_arr = self.input_arr
+            else:
+                old_input_arr = self.draw_sample()
+            new_input_arr = old_input_arr * other
+            new_kwargs = {**self.kwargs, **add_kwargs}
+        else: # PDF
+            # convolve the two PDFs with each other as done in Qiao's merger work
+            raise NotImplementedError
+        
+        if type(name_ext) == type(None):
+            new_property_name = self.property_name
+        else: # new_property_name == str
+            assert type(new_property_name) in [str]
+            if name_ext[0] != "_":
+                name_ext = f"_{name_ext}"
+            new_property_name = f"{self.property_name}{name_ext}"
+        
+        PDF_obj = globals()[self.__class__.__name__].from_1D_arr(new_property_name, new_input_arr, kwargs = new_kwargs)
+        # if chosen to save and it has a different name, save the PDF
+        if save and hasattr(self, "save_path") and new_property_name != self.property_name:
+            PDF_obj.save_PDF(self.save_path.replace(self.property_name, new_property_name))
+        return PDF_obj
 
     def __deepcopy__(self, memo):
         cls = self.__class__
@@ -84,14 +136,17 @@ class PDF:
             kwargs = tab.meta
             for key in ["units", "size", "median", "l1_err", "u1_err"]:
                 kwargs.pop(key)
-            return cls.from_1D_arr(property_name, arr, kwargs)
+            PDF_obj = cls.from_1D_arr(property_name, arr, kwargs)
+            PDF_obj.save_path = path
+            return PDF_obj
         except FileNotFoundError:
             return None
 
     @classmethod
-    def from_1D_arr(cls, property_name, arr, kwargs = {}, Nbins = 50, normed = False, timed = False):
-        assert type(arr) in [u.Quantity, u.Magnitude], galfind_logger.critical( \
-            f"{property_name=} 1D {arr=} with {type(arr)=} not in [u.Quantity, u.Magnitude]")
+    def from_1D_arr(cls, property_name: str, arr: Union[list, np.array], kwargs: dict = {}, \
+            Nbins: int = 50, normed: bool = False, timed: bool = False):
+        assert type(arr) in [u.Quantity, u.Magnitude, u.Dex], galfind_logger.critical( \
+            f"{property_name=} 1D {arr=} with {type(arr)=} not in [u.Quantity, u.Magnitude, u.Dex]")
         p_x, x_bin_edges = np.histogram(arr.value, bins = Nbins, density = True)
         x = 0.5 * (x_bin_edges[1:] + x_bin_edges[:-1]) * arr.unit
         PDF_obj = cls(property_name, x, p_x, kwargs, normed, timed)
@@ -126,7 +181,7 @@ class PDF:
         # draw a sample of specified size from the PDF
         raise NotImplementedError
 
-    def integrate_between_lims(self, lower_x_lim, upper_x_lim):
+    def integrate_between_lims(self, lower_x_lim: Union[int, float], upper_x_lim: Union[int, float]):
         # find index of closest values in self.x to lower_x_lim and upper_x_lim
         index_x_min = np.argmin(np.absolute(self.x - lower_x_lim))
         index_x_max = np.argmin(np.absolute(self.x - upper_x_lim))
@@ -136,7 +191,7 @@ class PDF:
         # integrate using trapezium rule between limits
         return np.trapz(p_x, x)
     
-    def get_peak(self, nth_peak):
+    def get_peak(self, nth_peak: int):
         # not properly implemented yet
         try:
             self.peaks[nth_peak]
@@ -153,7 +208,7 @@ class PDF:
         # pz_column, integral, peak_z, peak_loc, peak_second_loc, secondary_peak, ratio = useful_funcs_updated_new_galfind.robust_pdf([gal_id], [zbest], SED_code, field_name, rel_limits=True, z_fact=int_limit, use_custom_lephare_seds=custom_lephare, template=template, plot=False, version=catalog_version, custom_sex=custom_sex, min_percentage_err=min_percentage_err, custom_path=eazy_pdf_path, use_galfind=True)
         # print(integral, 'integral', peak_z, 'peak_z', peak_loc, 'peak_loc', peak_second_loc, 'peak_second_loc', secondary_peak, 'secondary_peak', ratio, 'ratio')
 
-    def get_percentile(self, percentile):
+    def get_percentile(self, percentile: float):
         assert type(percentile) in [float], \
             galfind_logger.critical(f"percentile = {percentile} with type(percentile) = {type(percentile)} is not in ['float']")
         try:
@@ -167,7 +222,8 @@ class PDF:
             self.percentiles[f"{percentile:.1f}"] = float(self.x.value[np.argmin(np.abs(cdf - percentile / 100.))]) * self.x.unit
             return self.percentiles[f"{percentile:.1f}"]
 
-    def manipulate_PDF(self, new_property_name, update_func, PDF_kwargs = {}, size = 10_000, **kwargs):
+    def manipulate_PDF(self, new_property_name: str, update_func: Callable[..., Union[list, np.array]], \
+            PDF_kwargs: dict = {}, size: int = 10_000, **kwargs):
         if hasattr(self, "input_arr"):
             # take the last 'size' elements of the input array
             sample = self.input_arr[-size:]
@@ -177,7 +233,7 @@ class PDF:
         updated_sample = update_func(sample, **kwargs) #[update_func(val, **kwargs) for val in sample]
         return self.__class__.from_1D_arr(new_property_name, updated_sample, {**self.kwargs, **PDF_kwargs})
     
-    def save_PDF(self, save_path, size = 10_000):
+    def save_PDF(self, save_path: str, size: int = 10_000) -> None:
         if hasattr(self, "input_arr"):
             save_arr = self.input_arr
         else:
@@ -188,8 +244,9 @@ class PDF:
         save_tab.meta = meta
         save_tab.write(save_path, overwrite = True)
         funcs.change_file_permissions(save_path)
+        self.save_path = save_path
 
-    def plot(self, ax, annotate = True, annotate_peak_loc = False, colour = "black"):
+    def plot(self, ax, annotate: bool = True, annotate_peak_loc: bool = False, colour: str = "black") -> None:
         
         ax.plot(self.x, self.p_x/np.max(self.p_x), color = colour)
         

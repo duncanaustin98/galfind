@@ -305,6 +305,10 @@ def label_fluxes(unit, is_log_scaled):
 # properties that are by default logged
 logged_properties = ["stellar_mass", "formed_mass", "ssfr", "ssfr_10myr"]
 
+# extended source corrections
+ext_src_label = "_ext_src_corr"
+ext_src_properties = ["Lrest", "Lobs", "m1500", "M1500", "SFRrest", "SFRobs"]
+
 # Calzetti 1994 filters
 lower_Calzetti_filt = [1268., 1309., 1342., 1407., 1562., 1677., 1760., 1866., 1930., 2400.]
 upper_Calzetti_filt = [1284., 1316., 1371., 1515., 1583., 1740., 1833., 1890., 1950., 2580.]
