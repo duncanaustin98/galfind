@@ -23,7 +23,7 @@ from tqdm import tqdm
 import time
 import os
 import glob
-from typing import Union
+from typing import Union, Callable
 
 from .Data import Data
 from .Galaxy import Galaxy, Multiple_Galaxy
@@ -183,26 +183,26 @@ class Catalogue(Catalogue_Base):
 
     # %%
     
-    # def calc_ext_src_corrs(self, band, ID = None):
-    #     # load the catalogue (for obtaining the FLUX_AUTOs; THIS SHOULD BE MORE GENERAL IN FUTURE TO GET THESE FROM THE GALAXY OBJECT!!!)
-    #     tab = self.open_full_cat()
-    #     if ID != None:
-    #         tab = tab[tab["NUMBER"] == ID]
-    #         cat = self[self["ID"] == ID]
-    #     else:
-    #         cat = self
-    #     # load the relevant FLUX_AUTO from SExtractor output
-    #     flux_autos = funcs.flux_image_to_Jy(np.array(tab[f"FLUX_AUTO_{band}"]), self.data.im_zps[band])
-    #     ext_src_corrs = self.cap_ext_src_corrs([flux_autos[i] / gal.phot.flux_Jy[np.where(band == \
-    #         gal.phot.instrument.band_names)[0][0]].value for i, gal in enumerate(cat)])
-    #     return ext_src_corrs
+    def calc_ext_src_corrs(self) -> None:
+        self.load_sex_flux_mag_autos()
+        # calculate aperture corrections if not already
+        if not hasattr(self.instrument, "aper_corrs"):
+            aper_corrs = self.instrument.get_aper_corrs(self.cat_creator.aper_diam)
+        else:
+            aper_corrs = self.instrument.aper_corrs[self.cat_creator.aper_diam]
+        assert len(aper_corrs) == len(self.instrument)
+        # calculate and save dict of ext_src_corrs for each galaxy in self
+        [gal.phot.load_property({band_name: (gal.phot.FLUX_AUTO[band_name] / \
+            (gal.phot.flux_Jy[gal.phot.instrument.index_from_band_name(band_name)] * \
+            funcs.mag_to_flux_ratio(-aper_corr))).to(u.dimensionless_unscaled) \
+            for band_name, aper_corr in zip(self.instrument.band_names, aper_corrs) \
+            if band_name in gal.phot.FLUX_AUTO.keys()}, "ext_src_corrs") for gal in self]
 
-
-    def calc_new_property(self, func, arg_names: Union[list, np.array]):
-        pass
+    # def calc_new_property(self, func: Callable[..., float], arg_names: Union[list, np.array]):
+    #     pass
 
     def load_band_properties_from_cat(self, cat_colname: str, save_name: str, multiply_factor: \
-            Union[dict, u.Quantity, u.Magnitude, None] = None):
+            Union[dict, u.Quantity, u.Magnitude, None] = None, dest: str = "gal") -> None:
         if not hasattr(self[0], save_name):
             # load the same property from every available band
             # open catalogue with astropy
@@ -214,19 +214,39 @@ class Catalogue(Catalogue_Base):
             # load in speed can be improved here!
             cat_band_properties = {band: np.array(fits_cat[f"{cat_colname}_{band}"]) * multiply_factor[band] \
                 for band in self.instrument.band_names if f"{cat_colname}_{band}" in fits_cat.colnames}
-            cat_band_properties = [{band: cat_band_properties[band][i] for band in cat_band_properties.keys()} for i in range(len(fits_cat))]
-            [gal.load_property(gal_properties, save_name) for gal, gal_properties in zip(self, cat_band_properties)]
-            galfind_logger.info(f"Loaded {cat_colname} from {self.cat_path} saved as {save_name} for bands = {cat_band_properties[0].keys()}")
+            if len(cat_band_properties) == 0:
+                galfind_logger.info(f"Could not load {cat_colname=} from {self.cat_path}, as no '{cat_colname}_band' exists for band in {self.instrument.band_names=}!")
+            else:
+                assert dest in ["gal", "phot"]
+                cat_band_properties = [{band: cat_band_properties[band][i] for band in cat_band_properties.keys()} for i in range(len(fits_cat))]
+                if dest == "gal":
+                    [gal.load_property(gal_properties, save_name) for gal, gal_properties in zip(self, cat_band_properties)]
+                else: # dest == "phot"
+                    [gal.phot.load_property(gal_properties, save_name) for gal, gal_properties in zip(self, cat_band_properties)]
+                galfind_logger.info(f"Loaded {cat_colname} from {self.cat_path} saved as {save_name} for bands = {cat_band_properties[0].keys()}")
 
     def load_property_from_cat(self, cat_colname: str, save_name: str, multiply_factor: \
-            Union[u.Quantity, u.Magnitude] = 1. * u.dimensionless_unscaled, unit: u.Unit = u.dimensionless_unscaled):
+            Union[u.Quantity, u.Magnitude] = 1. * u.dimensionless_unscaled, dest: str = "gal"):
         if not hasattr(self[0], save_name):
             # open catalogue with astropy
             fits_cat = self.open_cat(cropped = True)
-            cat_property = np.array(fits_cat[cat_colname])
-            assert len(cat_property) == len(self)
-            [gal.load_property(gal_property * multiply_factor * unit, save_name) for gal, gal_property in zip(self, cat_property)]
-            galfind_logger.info(f"Loaded {cat_colname} from {self.cat_path} saved as {save_name}")
+            if cat_colname in fits_cat.colnames:
+                cat_property = np.array(fits_cat[cat_colname])
+                assert len(cat_property) == len(self)
+                assert dest in ["gal", "phot"]
+                if dest == "gal":
+                    [gal.load_property(gal_property * multiply_factor, save_name) for gal, gal_property in zip(self, cat_property)]
+                else: # dest == "phot"
+                    [gal.phot.load_property(gal_property * multiply_factor, save_name) for gal, gal_property in zip(self, cat_property)]
+                galfind_logger.info(f"Loaded {cat_colname=} from {self.cat_path} saved as {save_name}!")
+            else:
+                galfind_logger.info(f"{cat_colname=} does not exist in {self.cat_path}, skipping!")
+
+    def load_sex_flux_mag_autos(self):
+        #sex_band_names = [band_name for band_name, cat_type in self.data.sex_cat_types.items() if "SExtractor" in cat_type]
+        flux_im_to_Jy_conv = {band_name: funcs.flux_image_to_Jy(1., self.data.im_zps[band_name]) for band_name in self.instrument.band_names}
+        self.load_band_properties_from_cat("FLUX_AUTO", "FLUX_AUTO", multiply_factor = flux_im_to_Jy_conv, dest = "phot")
+        self.load_band_properties_from_cat("MAG_AUTO", "MAG_AUTO", multiply_factor = u.ABmag, dest = "phot")
 
     def mask(self, timed: bool = True): #, mask_instrument = NIRCam()):
         galfind_logger.info(f"Running masking code for {self.cat_path}.")

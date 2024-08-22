@@ -247,9 +247,7 @@ class Instrument:
         # return an array of Filter objects corresponding to the band names
         return np.array([self[self.index_from_band_name(band_name)] for band_name in self.band_names if not band_name in unique_band_names])
     
-    def get_aper_corrs(self, aper_diam, cache = True):
-        #print(self.name)
-        #breakpoint()
+    def get_aper_corrs(self, aper_diam: u.Quantity, cache: bool = True):
         # load aperture correction from object should it exist
         if hasattr(self, "aper_corrs"):
             assert type(self.aper_corrs) in [dict]

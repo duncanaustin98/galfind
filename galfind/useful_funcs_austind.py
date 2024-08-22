@@ -141,6 +141,10 @@ def flux_to_mag_ratio(flux_ratio):
     mag_ratio = -2.5 * np.log10(flux_ratio)
     return mag_ratio
 
+def mag_to_flux_ratio(mag_ratio):
+    flux_ratio = 10 ** (mag_ratio / -2.5)
+    return flux_ratio
+
 def flux_pc_to_mag_err(flux_pc_err):
     mag_err = 2.5 * flux_pc_err / (np.log(10)) # divide by 100 here to convert into percentage?
     return mag_err

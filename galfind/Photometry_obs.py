@@ -14,6 +14,7 @@ from copy import copy, deepcopy
 import matplotlib.patheffects as pe
 from tqdm import tqdm
 import time
+from typing import Union
 
 from . import useful_funcs_austind as funcs
 from . import galfind_logger
@@ -83,6 +84,9 @@ class Photometry_obs(Photometry):
     
     def get_SED_fit_params_arr(self, code):
        return [code.SED_fit_params_from_label(label) for label in self.SED_results.keys()]
+    
+    def load_property(self, gal_property: Union[dict, u.Quantity], save_name: str):
+        setattr(self, save_name, gal_property)
 
     def plot_phot(self, ax, wav_units = u.AA, mag_units = u.Jy, plot_errs = {"x": True, "y": True}, \
             annotate = True, uplim_sigma = 2., auto_scale = True, label_SNRs = True, \
