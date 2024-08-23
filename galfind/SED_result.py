@@ -168,8 +168,10 @@ class Catalogue_SED_results:
             for key, val in SED_fit_params["code"].galaxy_property_dict.items()} for SED_fit_params in SED_fit_params_arr]
         cat_properties = [{gal_property: list(fits_cat[label]) \
             for gal_property, label in labels.items()} for labels in labels_arr]
-        cat_properties = [[{key: value[i] for key, value in SED_fitting_properties.items()} \
-            for SED_fitting_properties in cat_properties] for i in range(len(fits_cat))] # may include invalid values where SED fitting not performed
+        cat_properties = [[{key: value[i] * u.Unit(SED_fit_params["code"].gal_property_unit_dict[key]) \
+            if key in SED_fit_params["code"].gal_property_unit_dict.keys() else value[i] * u.dimensionless_unscaled \
+            for key, value in SED_fitting_properties.items()} for SED_fit_params, SED_fitting_properties \
+            in zip(SED_fit_params_arr, cat_properties)] for i in range(len(fits_cat))] # may include invalid values where SED fitting not performed
         
         # convert cat_property_errs from array of len(SED_fit_params_arr), with each element a dict of galaxy properties for the entire catalogue with values of arrays of len(fits_cat)
         # to array of len(fits_cat), with each element an array of len(SED_fit_params_arr) containing a dict of properties for a single galaxy
@@ -243,8 +245,9 @@ class Catalogue_SED_results:
     
     @classmethod
     def from_SED_result_inputs(cls, SED_fit_params_arr: Union[list, np.array], \
-            phot_arr: Union[list, np.array], cat_properties, cat_property_errs, \
-            cat_property_PDFs: Union[np.array, None], cat_SEDs: Union[np.array, None]):
+            phot_arr: Union[list, np.array], cat_properties: Union[list, np.array], \
+            cat_property_errs: Union[list, np.array], cat_property_PDFs: Union[np.array, None], \
+            cat_SEDs: Union[np.array, None]):
         
         # if not loaded, construct appropriately shaped None arrays
         if type(cat_property_PDFs) == type(None):

@@ -106,15 +106,13 @@ class Photometry_obs(Photometry):
                 if band_name in self.FLUX_AUTO.keys())
             # calculate extended source corrections in each band
             ext_src_corrs = {band_name: (self.FLUX_AUTO[band_name] / (self.flux_Jy[i] * \
-                funcs.mag_to_flux_ratio(-aper_corrs[band_name]))).to(u.dimensionless_unscaled) \
-                for i, band_name in enumerate(self.instrument.band_names) \
-                if band_name in self.FLUX_AUTO.keys()}
+                funcs.mag_to_flux_ratio(-aper_corrs[band_name]))).to(u.dimensionless_unscaled).unmasked \
+                for i, band_name in enumerate(self.instrument.band_names) if band_name in self.FLUX_AUTO.keys()}
             # load these into self
             self.load_property(ext_src_corrs, "ext_src_corrs")
     
     def make_ext_src_corrs(self, gal_property: str, origin: Union[str, dict], \
             ext_src_band: Union[str, list, np.array] = "F444W") -> None:
-        breakpoint()
         # determine correct SED fitting results to use
         if type(origin) in [dict]:
             origin_key = origin["code"].label_from_SED_fit_params(origin)
@@ -144,35 +142,35 @@ class Photometry_obs(Photometry):
             else:
                 orig_property = properties[gal_property]
                 orig_property_PDF = property_PDFs[gal_property]
-                gal_property_unit = orig_property.unit
-                assert orig_property_PDF.x.unit == gal_property_unit
+                assert orig_property_PDF.x.unit == orig_property.unit
                 # errors may not necessarily have the same unit
                 ext_src_corr = self.ext_src_corrs[ext_src_band]
                 PDF_add_kwargs = {"ext_src_band": ext_src_band}
-                if type(gal_property_unit) in [u.Magnitude]:
-                    correction = funcs.flux_to_mag_ratio(ext_src_corr.value) * gal_property_unit
+                if type(orig_property) in [u.Magnitude]:
+                    correction = funcs.flux_to_mag_ratio(ext_src_corr.value) * u.mag # units are incorrect
                     updated_property = orig_property + correction
+                    PDF_add_kwargs = {**PDF_add_kwargs, **{"ext_src_corr": correction}}
                     updated_property_PDF = orig_property_PDF.__add__(correction, \
                         name_ext = funcs.ext_src_label, add_kwargs = PDF_add_kwargs, save = True)
-                elif type(gal_property_unit) in [u.Dex]:
+                elif type(orig_property) in [u.Dex]:
                     correction = u.Dex(np.log10(ext_src_corr.value))
                     updated_property = orig_property + correction
+                    PDF_add_kwargs = {**PDF_add_kwargs, **{"ext_src_corr": correction}}
                     updated_property_PDF = orig_property_PDF.__add__(correction, \
                         name_ext = funcs.ext_src_label, add_kwargs = PDF_add_kwargs, save = True)
-                elif type(gal_property_unit) in [u.Quantity]:
+                elif type(orig_property) in [u.Quantity]:
                     updated_property = orig_property * ext_src_corr
+                    PDF_add_kwargs = {**PDF_add_kwargs, **{"ext_src_corr": ext_src_corr}}
                     updated_property_PDF = orig_property_PDF.__mul__(ext_src_corr, \
                         name_ext = funcs.ext_src_label, add_kwargs = PDF_add_kwargs, save = True)
                 else:
-                    galfind_logger.warning(f"{gal_property_unit=} for {gal_property=} at {origin=} not in [Magnitude, Dex, Quantity]")
+                    galfind_logger.warning(f"{gal_property}={orig_property} from {origin=} with {type(orig_property)=} not in [Magnitude, Dex, Quantity]")
                 # update properties and property_PDFs (assume property_errs remain unaffected)
-                properties[gal_property] = updated_property
-                property_PDFs[gal_property] = updated_property_PDF
-                setattr(data_obj, "properties", properties)
-                setattr(data_obj, "property_PDFs", property_PDFs)
-                # save rest_property attributes outside of dict as well
-                if rest_property:
-                    setattr(data_obj, gal_property, updated_property)
+                data_obj.properties[updated_property_PDF.property_name] = updated_property
+                data_obj.property_PDFs[updated_property_PDF.property_name] = updated_property_PDF
+                # save non rest_property attributes outside of dict as well
+                if not rest_property:
+                    setattr(data_obj, updated_property_PDF.property_name, updated_property)
 
     def make_all_ext_src_corrs(self, ext_src_band: Union[str, list, np.array] = "F444W"):
         # extract previously calculated galaxy properties and their origins

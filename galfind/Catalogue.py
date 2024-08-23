@@ -129,7 +129,7 @@ class Catalogue(Catalogue_Base):
         # make catalogue with no SED fitting information
         cat_obj = cls(gals, fits_cat_path, survey, cat_creator, instrument, SED_fit_params_arr, version = version, crops = crop_by)
         #print(cat_obj)
-        if cat_obj != None:
+        if type(cat_obj) != type(None):
             cat_obj.data = data
         if mask:
             cat_obj.mask(timed = timed)

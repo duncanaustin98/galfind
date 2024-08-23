@@ -56,7 +56,7 @@ class PDF:
         
     def __add__(self, other: Union["PDF", int, float, u.Quantity, u.Magnitude, u.Dex], \
             name_ext: Union[str, None] = None, add_kwargs: dict = {}, save: bool = False):
-        
+
         if type(other) in [int, float, u.Quantity, u.Magnitude, u.Dex]:
             # multiply input array by other
             if hasattr(self, "input_arr"):
@@ -67,8 +67,8 @@ class PDF:
             new_kwargs = {**self.kwargs, **add_kwargs}
         else: # PDF
             # for extending length of PDF
-            assert type(self) == type(other)
-            assert self.property_name == other.property_name
+            assert type(self) == type(other), galfind_logger.critical(f"{type(self)=}!={type(other)=}")
+            assert self.property_name == other.property_name, galfind_logger.critical(f"{self.property_name=}!={other.property_name=}")
             # update kwargs
             new_kwargs = {**self.kwargs, **other.kwargs, **add_kwargs}
             if hasattr(self, "input_arr") and hasattr(other, "input_arr"):
@@ -78,13 +78,21 @@ class PDF:
 
         if type(name_ext) == type(None):
             new_property_name = self.property_name
-        else: # new_property_name == str
-            assert type(new_property_name) in [str]
+        else: # type(name_ext) == str
+            assert type(name_ext) in [str], galfind_logger.critical(f"{name_ext=} with {type(name_ext)=} not in [str]!")
             if name_ext[0] != "_":
                 name_ext = f"_{name_ext}"
             new_property_name = f"{self.property_name}{name_ext}"
-
-        PDF_obj = globals()[self.__class__.__name__].from_1D_arr(new_property_name, new_input_arr, kwargs = new_kwargs)
+        
+        if self.__class__.__name__ == "PDF":
+            PDF_obj = globals()[self.__class__.__name__].from_1D_arr(new_property_name, new_input_arr, kwargs = new_kwargs)
+        elif self.__class__.__name__ == "SED_fit_PDF":
+            PDF_obj = globals()[self.__class__.__name__].from_1D_arr(new_property_name, new_input_arr, self.SED_fit_params, kwargs = new_kwargs)
+        elif self.__class__.__name__ == "Redshift_PDF":
+            PDF_obj = globals()[self.__class__.__name__].from_1D_arr(new_input_arr, self.SED_fit_params, kwargs = new_kwargs)
+        else:
+            galfind_logger.critical(f"{self.__class__.__name__=} not in [PDF, SED_fit_PDF, Redshift_PDF]!")
+            breakpoint()
         # if chosen to save and it has a different name, save the PDF
         if save and hasattr(self, "save_path") and new_property_name != self.property_name:
             PDF_obj.save_PDF(self.save_path.replace(self.property_name, new_property_name))
@@ -107,13 +115,21 @@ class PDF:
         
         if type(name_ext) == type(None):
             new_property_name = self.property_name
-        else: # new_property_name == str
-            assert type(new_property_name) in [str]
+        else: # type(name_ext) == str
+            assert type(name_ext) in [str], galfind_logger.critical(f"{name_ext=} with {type(name_ext)=} not in [str]!")
             if name_ext[0] != "_":
                 name_ext = f"_{name_ext}"
             new_property_name = f"{self.property_name}{name_ext}"
         
-        PDF_obj = globals()[self.__class__.__name__].from_1D_arr(new_property_name, new_input_arr, kwargs = new_kwargs)
+        if self.__class__.__name__ == "PDF":
+            PDF_obj = globals()[self.__class__.__name__].from_1D_arr(new_property_name, new_input_arr, kwargs = new_kwargs)
+        elif self.__class__.__name__ == "SED_fit_PDF":
+            PDF_obj = globals()[self.__class__.__name__].from_1D_arr(new_property_name, new_input_arr, self.SED_fit_params, kwargs = new_kwargs)
+        elif self.__class__.__name__ == "Redshift_PDF":
+            PDF_obj = globals()[self.__class__.__name__].from_1D_arr(new_input_arr, self.SED_fit_params, kwargs = new_kwargs)
+        else:
+            galfind_logger.critical(f"{self.__class__.__name__=} not in [PDF, SED_fit_PDF, Redshift_PDF]!")
+            breakpoint()
         # if chosen to save and it has a different name, save the PDF
         if save and hasattr(self, "save_path") and new_property_name != self.property_name:
             PDF_obj.save_PDF(self.save_path.replace(self.property_name, new_property_name))
@@ -233,7 +249,7 @@ class PDF:
         updated_sample = update_func(sample, **kwargs) #[update_func(val, **kwargs) for val in sample]
         return self.__class__.from_1D_arr(new_property_name, updated_sample, {**self.kwargs, **PDF_kwargs})
     
-    def save_PDF(self, save_path: str, size: int = 10_000) -> None:
+    def save_PDF(self, save_path: str, size: int = 10_000, fmt: str = ".ecsv") -> None:
         if hasattr(self, "input_arr"):
             save_arr = self.input_arr
         else:
@@ -242,9 +258,22 @@ class PDF:
             "l1_err": np.round(self.errs.value[0], 3), "u1_err": np.round(self.errs.value[1], 3)}}
         save_tab = Table({self.property_name: save_arr.value})
         save_tab.meta = meta
+        split_save_path = save_path.split(".")
+        if f".{split_save_path[-1]}" != fmt:
+            if len(split_save_path) == 1:
+                save_path = f"{save_path}{fmt}"
+            elif len(split_save_path) == 2:
+                save_path = f"{save_path[:-(len(split_save_path) + 1)]}{fmt}"
+            else:
+                galfind_logger.warning(f"{save_path=} with format=.{split_save_path[-1]} != {fmt=} and {len(split_save_path)=} not in [1, 2]!")
+        funcs.make_dirs(save_path)
         save_tab.write(save_path, overwrite = True)
         funcs.change_file_permissions(save_path)
         self.save_path = save_path
+
+    def add_save_path(self, path): # -> self
+        self.save_path = path
+        return self
 
     def plot(self, ax, annotate: bool = True, annotate_peak_loc: bool = False, colour: str = "black") -> None:
         

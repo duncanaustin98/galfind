@@ -48,8 +48,8 @@ class Bagpipes(SED_code):
     }
     gal_property_unit_dict = {
         "z": u.dimensionless_unscaled,
-        "stellar_mass": u.solMass, 
-        "formed_mass": u.solMass, 
+        "stellar_mass": "dex(solMass)", 
+        "formed_mass": "dex(solMass)", 
         "dust:Av": u.ABmag,
         "beta_C94": u.dimensionless_unscaled,
         "m_UV": u.ABmag, 
@@ -61,7 +61,6 @@ class Bagpipes(SED_code):
         "ssfr": u.yr ** -1, 
         "ssfr_10myr": u.yr ** -1
     }
-    requires_unlogging = ["stellar_mass", "formed_mass", "ssfr", "ssfr_10myr"] #, "nebular:logU"]
     galaxy_property_dict = {**{gal_property if "redshift" not in gal_property else "z": f"{gal_property}_50" for gal_property in galaxy_properties}, **{"chi_sq": "chisq_phot"}}
     galaxy_property_errs_dict = {gal_property if "redshift" not in gal_property else "z": [f"{gal_property}_16", f"{gal_property}_84"] for gal_property in galaxy_properties}
     available_templates = ["BC03", "BPASS"]
@@ -224,16 +223,16 @@ class Bagpipes(SED_code):
         pdf_arrs = [np.array(Table.read(path, format = "ascii.fast_no_header")["col1"]) \
             if type(path) != type(None) else None for path in \
             tqdm(PDF_paths, desc = f"Loading {gal_property} PDFs", total = len(PDF_paths))]
-        if gal_property in Bagpipes.requires_unlogging:
-            pdf_arrs = [10 ** pdf if type(pdf) != type(None) else None for pdf in pdf_arrs]
         if gal_property == "z":
-            pdfs = [Redshift_PDF.from_1D_arr(pdf * Bagpipes.gal_property_unit_dict[gal_property], \
+            pdfs = [Redshift_PDF.from_1D_arr(pdf * u.Unit(Bagpipes.gal_property_unit_dict[gal_property]), \
                 SED_fit_params, timed = timed) if type(pdf) != type(None) else None \
                 for pdf in tqdm(pdf_arrs, desc = f"Constructing {gal_property} PDFs", total = len(pdf_arrs))]
         else:
-            pdfs = [SED_fit_PDF.from_1D_arr(gal_property, pdf * Bagpipes.gal_property_unit_dict[gal_property], \
+            pdfs = [SED_fit_PDF.from_1D_arr(gal_property, pdf * u.Unit(Bagpipes.gal_property_unit_dict[gal_property]), \
                 SED_fit_params, timed = timed) if type(pdf) != type(None) else None \
                 for pdf in tqdm(pdf_arrs, desc = f"Constructing {gal_property} PDFs", total = len(pdf_arrs))]
+        # add save path to PDF
+        pdfs = [pdf.add_save_path(path) for path, pdf in zip(PDF_paths, pdfs)]
         return pdfs
     
     def load_pipes_fit_obj(self):
@@ -242,7 +241,7 @@ class Bagpipes(SED_code):
     @staticmethod
     def get_out_paths(cat, SED_fit_params, IDs, load_properties = \
             ["stellar_mass", "formed_mass", "dust:Av", \
-            "beta_C94", "m_UV", "M_UV"]): # , "Halpha_EWrest", "xi_ion_caseB"
+            "beta_C94", "m_UV", "M_UV", "sfr", "sfr_10myr"]): # , "Halpha_EWrest", "xi_ion_caseB"
         pipes_name = Bagpipes.label_from_SED_fit_params(SED_fit_params)
         in_path = None
         out_path = f"{config['Bagpipes']['BAGPIPES_DIR']}/cats/{cat.survey}/{pipes_name.replace('Bagpipes_', '')}.fits"
