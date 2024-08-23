@@ -15,6 +15,7 @@ import matplotlib.patheffects as pe
 from tqdm import tqdm
 import time
 from typing import Union
+import inspect
 
 from . import useful_funcs_austind as funcs
 from . import galfind_logger
@@ -95,7 +96,8 @@ class Photometry_obs(Photometry):
             galfind_logger.critical("Could not calculate ext_src_corrs as FLUX_AUTO not loaded in!")
             raise NotImplementedError
         # if not already calculated
-        if not hasattr(self, "ext_src_corrs"):
+        property_name = "_".join(inspect.stack()[0].function.split("_")[1:])
+        if not hasattr(self, property_name):
             # calculate aperture corrections if not given
             if type(aper_corrs) == type(None):
                 aper_corrs = self.instrument.get_aper_corrs(self.aper_diam)
@@ -109,7 +111,7 @@ class Photometry_obs(Photometry):
                 funcs.mag_to_flux_ratio(-aper_corrs[band_name]))).to(u.dimensionless_unscaled).unmasked \
                 for i, band_name in enumerate(self.instrument.band_names) if band_name in self.FLUX_AUTO.keys()}
             # load these into self
-            self.load_property(ext_src_corrs, "ext_src_corrs")
+            self.load_property(ext_src_corrs, property_name)
     
     def make_ext_src_corrs(self, gal_property: str, origin: Union[str, dict], \
             ext_src_band: Union[str, list, np.array] = "F444W") -> None:

@@ -23,6 +23,7 @@ from tqdm import tqdm
 import time
 import os
 import glob
+import inspect
 from typing import Union, Callable
 
 from .Data import Data
@@ -35,7 +36,7 @@ from .EAZY import EAZY
 from . import config
 from . import Catalogue_Base
 from . import Photometry_rest
-from . import galfind_logger
+from . import galfind_logger, sed_code_to_name_dict
 from .Instrument import NIRCam, MIRI, ACS_WFC, WFC3_IR, Instrument
 from .Emission_lines import line_diagnostics
 from .Spectrum import Spectral_Catalogue
@@ -200,15 +201,75 @@ class Catalogue(Catalogue_Base):
         aper_corrs = {band_name: aper_corr for band_name, aper_corr in zip(self.instrument.band_names, aper_corrs)}
         # calculate and save dict of ext_src_corrs for each galaxy in self
         [gal.phot.calc_ext_src_corrs(aper_corrs = aper_corrs) for gal in self]
+        # save the extended source corrections to catalogue
+        self._append_property_to_tab("_".join(inspect.stack()[0].function.split("_")[1:]), "phot")
 
     def make_ext_src_corrs(self, gal_property: str, origin: Union[str, dict]) -> str:
+        # calculate pre-requisites
         self.calc_ext_src_corrs()
+        # make extended source correction for given property
         [gal.phot.make_ext_src_corrs(gal_property, origin) for gal in self]
-        return f"{gal_property}{funcs.ext_src_label}"
+        # save properties to fits table
+        property_name = f"{gal_property}{funcs.ext_src_label}"
+        #self._append_property_to_tab(property_name, origin)
+        return property_name
 
     def make_all_ext_src_corrs(self) -> None:
         self.calc_ext_src_corrs()
         [gal.phot.make_all_ext_src_corrs() for gal in self]
+
+    def _append_property_to_tab(self, property_name: str, origin: Union[str, dict], overwrite: bool = False) -> None:
+        # extract catalogue to append to
+        if type(origin) in [dict]:
+            # convert SED_fit_params origin to str
+            assert "code" in origin.keys()
+            origin = origin["code"].label_from_SED_fit_params(origin)
+        if origin == "phot":
+            hdu = None
+            ID_label = self.cat_creator.ID_label
+        else:
+            hdu = origin.replace("_REST_PROPERTY", "")
+            ID_label = sed_code_to_name_dict[origin.split("_")[0]].ID_label
+        append_tab = self.open_cat(cropped = False, hdu = hdu) # this should really be cached in Catalogue_Base
+        # append to .fits table only if not already
+        if property_name in append_tab.colnames:
+            galfind_logger.info(f"{property_name=} already appended to {origin=} .fits table!")
+            return None
+        else:
+            galfind_logger.info(f"Appending {property_name=} to {origin=} .fits table!")
+            # make new table with calculated properties
+            gal_IDs = self.__getattr__("ID")
+            breakpoint()
+            gal_properties = self.__getattr__(property_name, origin = origin)
+            if all(type(gal_property) == dict for gal_property in gal_properties):
+                breakpoint()
+                all_keys = np.unique([key for gal_property in gal_properties for key in gal_property.keys()])
+                # skip if all columns already appended and overwrite == False
+                if all(key in append_tab.colnames for key in all_keys) and not overwrite:
+                    return None
+                property_dict = {f"{property_name}_{key}": np.array([gal_property[key] \
+                    if key in gal_property.keys() else None for gal_property in gal_properties]) for key in all_keys}
+                appended_keys = [key for key in property_dict.keys() if key in append_tab.colnames]
+                if overwrite:
+                    # remove old columns that already exist
+                    [append_tab.remove_column(key) for key in appended_keys]
+                else:
+                    # remove new columns that already exist
+                    [property_dict.pop(key) for key in appended_keys]
+                breakpoint()
+            elif any(type(gal_property) == dict for gal_property in gal_properties):
+                galfind_logger.critical(f"{property_name}={gal_properties} from {origin=} should not have mixed 'dict' + other element types!")
+                breakpoint()
+            else:
+                assert all(type(gal_property) in [u.Quantity, u.Magnitude, u.Dex] for gal_property in gal_properties)
+                property_dict = {property_name: gal_properties}
+            new_tab = Table({**{"ID_temp": gal_IDs}, **property_dict}, dtype = [int] + [float] * len(property_dict))
+            # join new and old tables
+            out_tab = join(append_tab, new_tab, keys_left = ID_label, keys_right = "ID_temp", join_type = "outer")
+            out_tab.remove_column("ID_temp")
+            # save multi-extension table
+            breakpoint()
+            self.write_hdu(out_tab, hdu = hdu)
 
     # def calc_new_property(self, func: Callable[..., float], arg_names: Union[list, np.array]):
     #     pass
@@ -353,7 +414,8 @@ class Catalogue(Catalogue_Base):
         else:
             galfind_logger.info(f"Catalogue for {self.survey} {self.version} already masked. Skipping!")
 
-    def make_cutouts(self, IDs, cutout_size = 0.96 * u.arcsec):
+    def make_cutouts(self, IDs: Union[list, np.array], cutout_size: \
+            Union[u.Quantity, dict] = 0.96 * u.arcsec) -> None:
         if type(IDs) == int:
             IDs = [IDs]
         for band in tqdm(self.instrument.band_names, total = len(self.instrument), desc = "Making band cutouts"):
@@ -391,8 +453,6 @@ class Catalogue(Catalogue_Base):
                         cutout_size_gal = cutout_size[gal.ID]
                     else:
                         cutout_size_gal = cutout_size
-                    
-                    
                     gal.make_cutout(band, data = {"SCI": im_data, "SEG": seg_data, 'WHT': wht_data, 'RMS_ERR':rms_err_data}, \
                         wcs = wcs, im_header = im_header, survey = self.survey, version = self.version, \
                         pix_scale = self.data.im_pixel_scales[band], cutout_size = cutout_size_gal)
@@ -955,6 +1015,7 @@ class Catalogue(Catalogue_Base):
                 SED_rest_property_tab = join(SED_rest_property_tab, new_tab, keys_left = self.cat_creator.ID_label, keys_right = f"{self.cat_creator.ID_label}_temp", join_type = "outer")
                 SED_rest_property_tab.remove_column(f"{self.cat_creator.ID_label}_temp")
                 SED_rest_property_tab.sort(self.cat_creator.ID_label)
+                # THIS IS NOT TOTALLY GENERAL (only does 2x tables!)
                 self.write_cat([fits_tab, SED_rest_property_tab], ["OBJECTS", SED_fit_params_label])
 
     def load_SED_rest_properties(self, SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}, timed = True):

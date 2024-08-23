@@ -28,4 +28,5 @@ kneed
 collections
 grizli
 msaexp
+inspect
 #reproject

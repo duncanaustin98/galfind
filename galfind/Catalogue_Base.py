@@ -464,13 +464,27 @@ class Catalogue_Base:
         funcs.change_file_permissions(self.cat_path)
         galfind_logger.info(f"Writing table to {self.cat_path}")
 
+    def write_hdu(self, tab: Table, hdu: str):
+        # if hdu exists, overwrite it
+        if self.check_hdu_exists(hdu):
+            tab_arr = [self.open_cat(cropped = False, hdu = hdu_.name) if hdu_.name != hdu.upper() \
+                else tab for hdu_ in fits.open(self.cat_path) if hdu_.name != "PRIMARY"]
+            tab_names = [hdu_.name for hdu_ in fits.open(self.cat_path) if hdu_.name != "PRIMARY"]
+        else: # make new hdu
+            tab_arr = [self.open_cat(cropped = False, hdu = hdu_.name) for hdu_ in \
+                fits.open(self.cat_path) if hdu_.name != "PRIMARY"] + [tab]
+            tab_names = [hdu_.name for hdu_ in fits.open(self.cat_path) if hdu_.name != "PRIMARY"] + [hdu]
+        self.write_cat(tab_arr, tab_names)
+
     def del_hdu(self, hdu):
         if self.check_hdu_exists(hdu): # delete hdu if it exists
             tab_arr = [self.open_cat(cropped = False, hdu = hdu_.name) for hdu_ \
                 in fits.open(self.cat_path) if hdu_.name != hdu.upper() and hdu_.name != "PRIMARY"]
             tab_names = [hdu_.name for hdu_ in fits.open(self.cat_path) if hdu_.name != hdu.upper() and hdu_.name != "PRIMARY"]
             self.write_cat(tab_arr, tab_names)
-        galfind_logger.info(f"Deleted {hdu.upper()=} from {self.cat_path=}!")
+            galfind_logger.info(f"Deleted {hdu.upper()=} from {self.cat_path=}!")
+        else:
+            galfind_logger.info(f"{hdu.upper()=} does not exist in {self.cat_path=}, could not delete!")
 
     def del_cols_hdrs_from_fits(self, col_names = [], hdr_names = [], hdu = None):
         # open up all fits extensions
