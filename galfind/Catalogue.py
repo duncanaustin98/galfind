@@ -65,10 +65,11 @@ class Catalogue(Catalogue_Base):
                 mask: bool = True, crop_by = None, load_PDFs: Union[bool, dict] = True, \
                 load_SEDs: Union[bool, dict] = True, timed: bool = True, load_SED_rest_properties: bool = True, \
                 sex_prefer: str = "rms_err", n_depth_reg: str = "auto", load_ext_src_corrs: bool = True):
+        
         # make masked local depth catalogue from the 'Data' object
-        data.combine_sex_cats(forced_phot_band, prefer = sex_prefer) # BOTTLENECK!
+        data.combine_sex_cats(forced_phot_band, prefer = sex_prefer, timed = timed)
         mode = str(config["Depths"]["MODE"]).lower() # mode to calculate depths (either "n_nearest" or "rolling")
-        data.calc_depths(aper_diams, mode = mode, cat_creator = cat_creator, n_split = n_depth_reg) # 2nd BOTTLENECK!
+        data.calc_depths(aper_diams, mode = mode, cat_creator = cat_creator, n_split = n_depth_reg, timed = timed) # 2nd BOTTLENECK!
         data.perform_aper_corrs()
         data.make_loc_depth_cat(cat_creator, depth_mode = mode)
         

@@ -74,7 +74,7 @@ class Instrument:
         output_str += f"FACILITY: {self.facility}\n"
         output_str += f"INSTRUMENT: {self.name}\n"
         # show individual bands used, ordered from blue to red
-        output_str += f"FILTER SET: {str([f'{self.instrument_from_band(band_name).facility}/{self.instrument_from_band(band_name).name}/{band_name}' for band_name in self.band_names])}\n"
+        output_str += f"FILTER SET: {str([f'{band.facility}/{band.instrument}/{band.band_name}' for band in self])}\n"
         # could also include PSF path and correction factors here
         output_str += line_sep
         return output_str

@@ -100,7 +100,7 @@ class EAZY(SED_code):
             # load photometry 
             phot, phot_err = self.load_photometry(cat, u.uJy, -99., None)
             # Get filter codes (referenced to GALFIND/EAZY/jwst_nircam_FILTER.RES.info) for the given instrument and bands
-            filt_codes = [EAZY_FILTER_CODES[cat.instrument.instrument_from_band(band).name][band] for band in cat.instrument.band_names]
+            filt_codes = [EAZY_FILTER_CODES[band.instrument][band.band_name] for band in cat.instrument]
             # Make input file
             in_data = np.array([np.concatenate(([IDs[i]], list(itertools.chain(*zip(phot[i], phot_err[i]))), [redshifts[i]]), axis = None) for i in range(len(IDs))])
             in_names = ["ID"] + list(itertools.chain(*zip([f'F{filt_code}' for filt_code in filt_codes], [f'E{filt_code}' for filt_code in filt_codes]))) + ["z_spec"]
