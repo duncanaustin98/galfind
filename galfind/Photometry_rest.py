@@ -91,6 +91,38 @@ class Photometry_rest(Photometry):
 
     def __len__(self):
         return len(self.flux_Jy)
+    
+    def __getattr__(self, property_name: str, origin: str = "phot_rest", property_type: Union[None, str] = None) -> Union[None, bool, u.Quantity, u.Magnitude, u.Dex]:
+        if origin == "phot_rest":
+            if type(property_type) == type(None):
+                return super().__getattr__(property_name, "phot")
+            assert property_type in ["val", "errs", "l1", "u1", "pdf", "recently_updated"], galfind_logger.critical(f"{property_type=} not in ['val', 'errs', 'l1', 'u1', 'pdf', 'recently_updated']!")
+            # boolean output to say whether property has been recently updated
+            if property_type == "recently_updated":
+                return True if property_name in self.recently_updated else False
+            else:
+                # extract relevant property if name in dict.keys()
+                if property_type == "val":
+                    access_dict = self.properties
+                elif property_type in ["errs", "l1", "u1"]:
+                    access_dict = self.property_errs
+                else:
+                    access_dict = self.property_PDFs
+                # return None if relevant property is not available
+                if property_name not in access_dict.keys():
+                    err_message = f"{property_name} {property_type} not available in Photometry_rest object!"
+                    galfind_logger.warning(err_message)
+                    raise AttributeError(err_message) # may be required here
+                else:
+                    if property_type == "l1":
+                        return access_dict[property_name][0]
+                    elif property_type == "u1":
+                        return access_dict[property_name][1]
+                    else:
+                        return access_dict[property_name]
+        else:
+            galfind_logger.critical(f"Photometry_rest.__getattr__ currently has no implementation of {origin=} != 'phot_rest'")
+            raise NotImplementedError
 
     def __deepcopy__(self, memo):
         cls = self.__class__

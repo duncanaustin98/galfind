@@ -73,7 +73,7 @@ class Galaxy:
         self.ID = int(ID) 
         self.phot = phot
         #self.cat_path = cat_path
-        self.mask_flags = mask_flags
+        self.mask_flags = mask_flags # deprecated?
         self.selection_flags = selection_flags
         self.cutout_paths = {}
         
@@ -114,6 +114,25 @@ class Galaxy:
     #             self.globals()[name[0]][name[1]] = value
     #     else:
     #         raise(Exception(f"obj = {obj} must be 'gal'!"))
+
+    def __getattr__(self, property_name: str, origin: Union[str, dict] = "gal") -> Union[None, bool, u.Quantity, u.Magnitude, u.Dex]:
+        if origin == "gal":
+            breakpoint()
+            if property_name in self.__dict__.keys():
+                return self.__getattribute__(property_name)
+            elif property_name.upper() == "RA":
+                return self.sky_coord.ra.degree * u.deg
+            elif property_name.upper() == "DEC":
+                return self.sky_coord.dec.degree * u.deg
+            elif property_name.endswith("_selected") and property_name in self.selection_flags.keys():
+                return self.selection_flags[property_name]
+            # could also insert cutout paths __getattr__ here, but it is a bit more complex
+            else:
+                err_message = f"Galaxy {self.ID=} has no {property_name=}!"
+                galfind_logger.critical(err_message)
+                raise AttributeError(err_message)
+        else:
+            return self.phot.__getattr__(property_name, origin)
     
     def __deepcopy__(self, memo):
         cls = self.__class__

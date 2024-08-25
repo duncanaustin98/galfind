@@ -18,7 +18,7 @@ from typing import Union
 import inspect
 
 from . import useful_funcs_austind as funcs
-from . import galfind_logger
+from . import galfind_logger, instr_to_name_dict
 from .Photometry import Photometry
 from .SED_result import Galaxy_SED_results, Catalogue_SED_results
 
@@ -55,6 +55,49 @@ class Photometry_obs(Photometry):
         output_str += f"SNR: {[np.round(snr, 2) for snr in self.SNR]}\n"
         output_str += line_sep
         return output_str
+    
+    def __getattr__(self, property_name: str, origin: Union[str, dict] = "phot_obs") -> Union[None, u.Quantity, u.Magnitude, u.Dex]:
+        assert type(origin) in [str, dict], galfind_logger.critical(f"{origin=} with {type(origin)=} not in [str, dict]!")
+        if "phot" in origin: # should have origin strings associated with Photometry.__getattr__ in list here!
+            if property_name in self.__dict__.keys():
+                return self.__getattribute__(property_name)
+            elif "aper_corr" in property_name and property_name.split("_")[-1] in self.instrument.band_names:
+                # return band aperture corrections
+                return self.aper_corrs[property_name.split("_")[-1]]
+            else:
+                return super().__getattr__(property_name, "phot" if origin == "phot_obs" else origin.replace("phot_", ""))
+        else:
+            # determine property type from name
+            property_type = property_name.split("_")[-1]
+            if any(string == property_type.lower() for string in ["val", "errs", "l1", "u1", "pdf"]):
+                property_name = property_name.replace(f"_{property_type}", "")
+                property_type = property_type.lower()
+            else:
+                property_type = "_".join(property_name.split("_")[-2:])
+                if property_type.lower() != "recently_updated":
+                    # no property type, defaulting to value
+                    galfind_logger.warning(f"No property_type given in suffix of {property_name=} for Photometry_rest.__getattr__. Defaulting to value")
+                    property_name = property_name.replace(f"_{property_type}", "")
+                    property_type = "val"
+                else:
+                    property_name = property_name.replace(f"_{property_type}", "")
+                    property_type = "recently_updated"
+            # determine relevant SED_result to use from origin keyword
+            if type(origin) in [str]:
+                if origin.endswith("_REST_PROPERTY"):
+                    SED_results_key = origin[:-14]
+                    origin = "phot_rest"
+                elif origin.endswith("_SED"):
+                    SED_results_key = origin[:-4]
+                    origin = "SED"
+                else:
+                    SED_results_key = origin
+                    origin = "SED_result"
+            else: #type(origin) in [dict]:
+                SED_results_key = origin["code"].label_from_SED_fit_params(origin)
+                origin = "SED_result"
+            assert SED_results_key in self.SED_results.keys(), galfind_logger.critical(f"{SED_results_key=} not in {self.SED_results.keys()=}!")
+            return self.SED_results[SED_results_key].__getattr__(property_name, origin, property_type)
 
     @property
     def SNR(self):

@@ -72,6 +72,35 @@ class SED_result:
         output_str += line_sep
         return output_str
     
+    def __getattr__(self, property_name: str, origin: str = "SED_result", property_type: str = "val") -> Union[None, u.Quantity, u.Magnitude, u.Dex]:
+        assert origin in ["SED_result", "phot_rest", "SED"], galfind_logger.critical(f"SED_result.__getattr__ {origin=} not in ['SED_result', 'phot_rest']!")
+        property_type = property_type.lower()
+        # extract relevant SED result properties
+        if origin == "SED_result":
+            assert property_type in ["val", "errs", "l1", "u1", "pdf"], galfind_logger.critical(f"{property_type=} not in ['val', 'errs', 'l1', 'u1', 'pdf']!")
+            if property_type == "val":
+                access_dict = self.properties
+            elif property_type in ["errs", "l1", "u1"]:
+                access_dict = self.property_errs
+            else: #property_type == "pdf"
+                access_dict = self.property_PDFs
+            if property_name not in access_dict.keys():
+                err_message = f"{property_name} {property_type} not available in SED_result object!"
+                galfind_logger.warning(err_message)
+                raise AttributeError(err_message)
+            else:
+                if property_type == "l1":
+                    return access_dict[property_name][0]
+                elif property_type == "u1":
+                    return access_dict[property_name][1]
+                else:
+                    return access_dict[property_name]
+        # extract relevant photometry rest properties
+        elif "phot_rest" in origin:
+            return self.phot_rest.__getattr__(property_name, origin.replace("phot_rest_", ""), property_type = property_type)
+        else: # origin == "SED"
+            return self.SED.__getattr__(property_name, origin)
+
     @classmethod
     def from_gal(cls, gal, SED_fit_params):
         assert("code" in SED_fit_params.keys())

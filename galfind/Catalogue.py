@@ -65,11 +65,10 @@ class Catalogue(Catalogue_Base):
                 mask: bool = True, crop_by = None, load_PDFs: Union[bool, dict] = True, \
                 load_SEDs: Union[bool, dict] = True, timed: bool = True, load_SED_rest_properties: bool = True, \
                 sex_prefer: str = "rms_err", n_depth_reg: str = "auto", load_ext_src_corrs: bool = True):
-        
         # make masked local depth catalogue from the 'Data' object
-        data.combine_sex_cats(forced_phot_band, prefer = sex_prefer)
+        data.combine_sex_cats(forced_phot_band, prefer = sex_prefer) # BOTTLENECK!
         mode = str(config["Depths"]["MODE"]).lower() # mode to calculate depths (either "n_nearest" or "rolling")
-        data.calc_depths(aper_diams, mode = mode, cat_creator = cat_creator, n_split = n_depth_reg)
+        data.calc_depths(aper_diams, mode = mode, cat_creator = cat_creator, n_split = n_depth_reg) # 2nd BOTTLENECK!
         data.perform_aper_corrs()
         data.make_loc_depth_cat(cat_creator, depth_mode = mode)
         
@@ -224,7 +223,7 @@ class Catalogue(Catalogue_Base):
             # convert SED_fit_params origin to str
             assert "code" in origin.keys()
             origin = origin["code"].label_from_SED_fit_params(origin)
-        if origin == "phot":
+        if origin == "phot_obs":
             hdu = None
             ID_label = self.cat_creator.ID_label
         else:
@@ -512,9 +511,9 @@ class Catalogue(Catalogue_Base):
         if type(x_origin) in [dict]:
             assert "code" in x_origin.keys()
             assert x_origin["code"].__class__.__name__ in [code.__name__ for code in SED_code.__subclasses__()]
-        x = self.__getattr__(x_name, SED_fit_params = x_origin, property_type = "vals")
+        x = self.__getattr__(x_name, origin = x_origin, property_type = "vals")
         if incl_x_errs:
-            x_err = self.__getattr__(x_name, SED_fit_params = x_origin, property_type = "errs")
+            x_err = self.__getattr__(x_name, origin = x_origin, property_type = "errs")
             x_err = np.array([x_err[:, 0], x_err[:, 1]])
         else:
             x_err = None
