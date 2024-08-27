@@ -85,6 +85,7 @@ class Catalogue(Catalogue_Base):
             excl_bands: Union[list, np.array] = [], crop_by = None, load_PDFs: Union[bool, dict] = True, \
             load_SEDs: Union[bool, dict] = True, timed: bool = True, load_SED_rest_properties: bool = True, \
             load_ext_src_corrs: bool = True):
+
         # open the catalogue
         fits_cat = funcs.cat_from_path(fits_cat_path)
         for band_name in instrument.band_names:
@@ -95,6 +96,7 @@ class Catalogue(Catalogue_Base):
                 instrument.remove_band(band_name)
                 print(f"{band_name} flux not loaded")
         print(f"instrument band names = {instrument.band_names}")
+
         # crop fits catalogue by the crop_by column name should it exist
         assert(type(crop_by) in [type(None), str, list, np.array, dict])
         if type(crop_by) in [str]:
@@ -119,6 +121,7 @@ class Catalogue(Catalogue_Base):
                         galfind_logger.warning(f"{type(fits_cat[name][0])=} not in [bool, np.bool_]")
                 else:
                     galfind_logger.warning(f"Invalid crop name == {name}! Skipping")
+
         # produce galaxy array from each row of the catalogue
         if timed:
             start_time = time.time()
@@ -127,13 +130,15 @@ class Catalogue(Catalogue_Base):
             end_time = time.time()
             elapsed_time = end_time - start_time
             print(f"Finished loading in {len(gals)} galaxies. This took {elapsed_time:.6f} seconds")
+
         # make catalogue with no SED fitting information
-        cat_obj = cls(gals, fits_cat_path, survey, cat_creator, instrument, SED_fit_params_arr, version = version, crops = crop_by)
-        #print(cat_obj)
+        cat_obj = cls(gals, fits_cat_path, survey, cat_creator, instrument, \
+            SED_fit_params_arr, version = version, crops = crop_by)
         if type(cat_obj) != type(None):
             cat_obj.data = data
         if mask:
             cat_obj.mask(timed = timed)
+
         # run SED fitting for the appropriate SED_fit_params
         for SED_fit_params in SED_fit_params_arr:
             if type(load_PDFs) in [dict]:
@@ -202,7 +207,7 @@ class Catalogue(Catalogue_Base):
         # calculate and save dict of ext_src_corrs for each galaxy in self
         [gal.phot.calc_ext_src_corrs(aper_corrs = aper_corrs) for gal in self]
         # save the extended source corrections to catalogue
-        self._append_property_to_tab("_".join(inspect.stack()[0].function.split("_")[1:]), "phot")
+        self._append_property_to_tab("_".join(inspect.stack()[0].function.split("_")[1:]), "phot_obs")
 
     def make_ext_src_corrs(self, gal_property: str, origin: Union[str, dict]) -> str:
         # calculate pre-requisites
@@ -211,27 +216,38 @@ class Catalogue(Catalogue_Base):
         [gal.phot.make_ext_src_corrs(gal_property, origin) for gal in self]
         # save properties to fits table
         property_name = f"{gal_property}{funcs.ext_src_label}"
-        #self._append_property_to_tab(property_name, origin)
+        self._append_property_to_tab(property_name, origin)
         return property_name
 
     def make_all_ext_src_corrs(self) -> None:
         self.calc_ext_src_corrs()
-        [gal.phot.make_all_ext_src_corrs() for gal in self]
+        properties_dict = [gal.phot.make_all_ext_src_corrs() for gal in self]
+        unique_origins = np.unique([property_dict.keys() for property_dict in properties_dict])[0]
+        unique_properties_origins_dict = {key: np.unique([property_dict[key] for property_dict in properties_dict]) for key in unique_origins}
+        unique_properties_origins_dict = {key: value for key, value in unique_properties_origins_dict.items() if len(value) > 0}
+        breakpoint()
+        [self._append_property_to_tab(property_name, origin) for origin, property_name in unique_properties_origins_dict.items()]
 
     def _append_property_to_tab(self, property_name: str, origin: Union[str, dict], overwrite: bool = False) -> None:
+        galfind_logger.info("Catalogue._append_property_to_tab doesn't work if trying to append newly updated galaxy properties YET!")
         # extract catalogue to append to
         if type(origin) in [dict]:
             # convert SED_fit_params origin to str
             assert "code" in origin.keys()
             origin = origin["code"].label_from_SED_fit_params(origin)
         if origin == "phot_obs":
-            hdu = None
+            hdu = "OBJECTS"
             ID_label = self.cat_creator.ID_label
         else:
             hdu = origin.replace("_REST_PROPERTY", "")
             ID_label = sed_code_to_name_dict[origin.split("_")[0]].ID_label
+
         append_tab = self.open_cat(cropped = False, hdu = hdu) # this should really be cached in Catalogue_Base
+        if type(append_tab) == type(None):
+            galfind_logger.critical(f"Skipping appending of {property_name=}, {origin=} as append_tab does not exist!")
+            return None
         # append to .fits table only if not already
+        #breakpoint()
         if property_name in append_tab.colnames:
             galfind_logger.info(f"{property_name=} already appended to {origin=} .fits table!")
             return None
@@ -239,11 +255,10 @@ class Catalogue(Catalogue_Base):
             galfind_logger.info(f"Appending {property_name=} to {origin=} .fits table!")
             # make new table with calculated properties
             gal_IDs = self.__getattr__("ID")
-            breakpoint()
             gal_properties = self.__getattr__(property_name, origin = origin)
             if all(type(gal_property) == dict for gal_property in gal_properties):
-                breakpoint()
-                all_keys = np.unique([key for gal_property in gal_properties for key in gal_property.keys()])
+                all_keys = np.unique([f"{property_name}_{key}" for gal_property in gal_properties for key in gal_property.keys()])
+                #breakpoint()
                 # skip if all columns already appended and overwrite == False
                 if all(key in append_tab.colnames for key in all_keys) and not overwrite:
                     return None
@@ -256,7 +271,6 @@ class Catalogue(Catalogue_Base):
                 else:
                     # remove new columns that already exist
                     [property_dict.pop(key) for key in appended_keys]
-                breakpoint()
             elif any(type(gal_property) == dict for gal_property in gal_properties):
                 galfind_logger.critical(f"{property_name}={gal_properties} from {origin=} should not have mixed 'dict' + other element types!")
                 breakpoint()
@@ -267,8 +281,8 @@ class Catalogue(Catalogue_Base):
             # join new and old tables
             out_tab = join(append_tab, new_tab, keys_left = ID_label, keys_right = "ID_temp", join_type = "outer")
             out_tab.remove_column("ID_temp")
-            # save multi-extension table
             breakpoint()
+            # save multi-extension table
             self.write_hdu(out_tab, hdu = hdu)
 
     # def calc_new_property(self, func: Callable[..., float], arg_names: Union[list, np.array]):
@@ -276,7 +290,12 @@ class Catalogue(Catalogue_Base):
 
     def load_band_properties_from_cat(self, cat_colname: str, save_name: str, multiply_factor: \
             Union[dict, u.Quantity, u.Magnitude, None] = None, dest: str = "gal") -> None:
-        if not hasattr(self[0], save_name):
+        assert dest in ["gal", "phot_obs"]
+        if dest == "gal":
+            has_attr = hasattr(self[0], save_name)
+        else: # dest == "phot_obs"
+            has_attr = hasattr(self[0].phot, save_name)
+        if not has_attr:
             # load the same property from every available band
             # open catalogue with astropy
             fits_cat = self.open_cat(cropped = True)
@@ -290,26 +309,29 @@ class Catalogue(Catalogue_Base):
             if len(cat_band_properties) == 0:
                 galfind_logger.info(f"Could not load {cat_colname=} from {self.cat_path}, as no '{cat_colname}_band' exists for band in {self.instrument.band_names=}!")
             else:
-                assert dest in ["gal", "phot"]
                 cat_band_properties = [{band: cat_band_properties[band][i] for band in cat_band_properties.keys()} for i in range(len(fits_cat))]
                 if dest == "gal":
                     [gal.load_property(gal_properties, save_name) for gal, gal_properties in zip(self, cat_band_properties)]
-                else: # dest == "phot"
+                else: # dest == "phot_obs"
                     [gal.phot.load_property(gal_properties, save_name) for gal, gal_properties in zip(self, cat_band_properties)]
                 galfind_logger.info(f"Loaded {cat_colname} from {self.cat_path} saved as {save_name} for bands = {cat_band_properties[0].keys()}")
 
     def load_property_from_cat(self, cat_colname: str, save_name: str, multiply_factor: \
             Union[u.Quantity, u.Magnitude] = 1. * u.dimensionless_unscaled, dest: str = "gal"):
-        if not hasattr(self[0], save_name):
+        assert dest in ["gal", "phot_obs"]
+        if dest == "gal":
+            has_attr = hasattr(self[0], save_name)
+        else: # dest == "phot_obs"
+            has_attr = hasattr(self[0].phot, save_name)
+        if not has_attr:
             # open catalogue with astropy
             fits_cat = self.open_cat(cropped = True)
             if cat_colname in fits_cat.colnames:
                 cat_property = np.array(fits_cat[cat_colname])
                 assert len(cat_property) == len(self)
-                assert dest in ["gal", "phot"]
                 if dest == "gal":
                     [gal.load_property(gal_property * multiply_factor, save_name) for gal, gal_property in zip(self, cat_property)]
-                else: # dest == "phot"
+                else: # dest == "phot_obs"
                     [gal.phot.load_property(gal_property * multiply_factor, save_name) for gal, gal_property in zip(self, cat_property)]
                 galfind_logger.info(f"Loaded {cat_colname=} from {self.cat_path} saved as {save_name}!")
             else:
@@ -318,8 +340,8 @@ class Catalogue(Catalogue_Base):
     def load_sex_flux_mag_autos(self):
         #sex_band_names = [band_name for band_name, cat_type in self.data.sex_cat_types.items() if "SExtractor" in cat_type]
         flux_im_to_Jy_conv = {band_name: funcs.flux_image_to_Jy(1., self.data.im_zps[band_name]) for band_name in self.instrument.band_names}
-        self.load_band_properties_from_cat("FLUX_AUTO", "FLUX_AUTO", multiply_factor = flux_im_to_Jy_conv, dest = "phot")
-        self.load_band_properties_from_cat("MAG_AUTO", "MAG_AUTO", multiply_factor = u.ABmag, dest = "phot")
+        self.load_band_properties_from_cat("FLUX_AUTO", "FLUX_AUTO", multiply_factor = flux_im_to_Jy_conv, dest = "phot_obs")
+        self.load_band_properties_from_cat("MAG_AUTO", "MAG_AUTO", multiply_factor = u.ABmag, dest = "phot_obs")
 
     def mask(self, timed: bool = True): #, mask_instrument = NIRCam()):
         galfind_logger.info(f"Running masking code for {self.cat_path}.")

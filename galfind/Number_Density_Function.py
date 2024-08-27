@@ -216,8 +216,7 @@ class Number_Density_Function(Base_Number_Density_Function):
     @classmethod
     def from_cat(cls, cat, data_arr: Union[list, np.array], x_name: str, x_bin_edges: Union[list, np.array], \
             z_bin: Union[list, np.array], x_origin: Union[str, dict] = "EAZY_fsps_larson_zfree_REST_PROPERTY", \
-            z_step: float = 0.01, cv_origin: Union[str, None] = "Driver2010", ext_src_corrs: bool = True, \
-            save: bool = True, timed: bool = False) -> "Number_Density_Function":
+            z_step: float = 0.01, cv_origin: Union[str, None] = "Driver2010", save: bool = True, timed: bool = False) -> "Number_Density_Function":
         
         # input assertions
         assert len(z_bin) == 2
@@ -254,9 +253,6 @@ class Number_Density_Function(Base_Number_Density_Function):
             z_bin_name = funcs.get_SED_fit_params_z_bin_name(SED_fit_params_key, z_bin)
             # crop catalogue to this redshift bin
             z_bin_cat = cat.crop(z_bin, "z", SED_fit_params)
-            # correct x_name for extended source corrections if required
-            if ext_src_corrs:
-                x_name = z_bin_cat.make_ext_src_corrs(x_name)
 
             # extract photometry type from x_origin
             phot_type = "rest" if x_origin.endswith("_REST_PROPERTY") else "obs"

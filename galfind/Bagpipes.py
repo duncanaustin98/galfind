@@ -232,7 +232,7 @@ class Bagpipes(SED_code):
                 SED_fit_params, timed = timed) if type(pdf) != type(None) else None \
                 for pdf in tqdm(pdf_arrs, desc = f"Constructing {gal_property} PDFs", total = len(pdf_arrs))]
         # add save path to PDF
-        pdfs = [pdf.add_save_path(path) for path, pdf in zip(PDF_paths, pdfs)]
+        pdfs = [pdf.add_save_path(path) if type(pdf) != type(None) else None for path, pdf in zip(PDF_paths, pdfs)]
         return pdfs
     
     def load_pipes_fit_obj(self):

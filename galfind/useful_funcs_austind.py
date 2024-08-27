@@ -318,7 +318,7 @@ mass_IMF_factor = {}
 
 # General number density function tools
 
-default_lims = {"M1500": [-23., -16.], "M_UV": [-23., -16.], "stellar_mass": [7.5, 11.]}
+default_lims = {"M1500": [-23., -16.], "M_UV": [-23., -16.], "M_UV_ext_src_corr": [-23., -16.], "stellar_mass": [7.5, 11.], "stellar_mass_ext_src_corr": [7.5, 11.]}
 
 def get_z_bin_name(z_bin: Union[list, np.array]) -> str:
     return f"{z_bin[0]:.1f}<z<{z_bin[1]:.1f}"

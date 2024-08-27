@@ -68,7 +68,6 @@ class Photometry:
     def __len__(self):
         return len(self.flux_Jy)
     
-    # FINISH WRITING THIS!
     def __getattr__(self, property_name: str, origin: Union[str, dict] = "phot") -> Union[None, u.Quantity, u.Magnitude, u.Dex]:
         assert origin in ["phot", "instrument"], galfind_logger.critical(f"{origin=} not in ['phot', 'instrument']")
         if origin == "phot":
@@ -105,7 +104,8 @@ class Photometry:
                     err_message = f"{property_name=} not available in Photometry object!"
                     galfind_logger.critical(err_message)
                     raise AttributeError(err_message)
-
+            else:
+                raise AttributeError
         else: # origin == "instrument":
             return self.instrument.__getattr__(property_name, origin)
             # elif name == "full_mask":

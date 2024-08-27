@@ -117,7 +117,6 @@ class Galaxy:
 
     def __getattr__(self, property_name: str, origin: Union[str, dict] = "gal") -> Union[None, bool, u.Quantity, u.Magnitude, u.Dex]:
         if origin == "gal":
-            breakpoint()
             if property_name in self.__dict__.keys():
                 return self.__getattribute__(property_name)
             elif property_name.upper() == "RA":
@@ -128,9 +127,9 @@ class Galaxy:
                 return self.selection_flags[property_name]
             # could also insert cutout paths __getattr__ here, but it is a bit more complex
             else:
-                err_message = f"Galaxy {self.ID=} has no {property_name=}!"
-                galfind_logger.critical(err_message)
-                raise AttributeError(err_message)
+                if property_name not in ["__array_struct__", "__array_interface__", "__array__"]:
+                    galfind_logger.critical(f"Galaxy {self.ID=} has no {property_name=}!")
+                raise AttributeError
         else:
             return self.phot.__getattr__(property_name, origin)
     

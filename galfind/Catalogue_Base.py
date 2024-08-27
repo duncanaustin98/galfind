@@ -118,15 +118,17 @@ class Catalogue_Base:
     # only acts on attributes that don't already exist in Catalogue
     def __getattr__(self, property_name: str, origin: Union[str, dict] = "gal") -> np.array:
         # get attributes from stored galaxy objects
-        breakpoint()
-        attr_arr = [gal.__getattr__(property_name, origin) for gal in self]
-        # sort the units
-        if all(type(attr) in [u.Quantity, u.Magnitude, u.Dex] for attr in attr_arr):
-            assert all(attr.unit == attr_arr[0].unit for attr in attr_arr) # ensure all units are the same
-            attr_arr = np.array([attr.value for attr in attr_arr]) * u.Unit(attr_arr[0].unit)
+        if property_name in self.__dict__.keys():
+            return self.__getattribute__(property_name)
         else:
-            attr_arr = np.array(attr_arr)
-        return attr_arr
+            attr_arr = [gal.__getattr__(property_name, origin) for gal in self]
+            # sort the units
+            if all(type(attr) in [u.Quantity, u.Magnitude, u.Dex] for attr in attr_arr):
+                assert all(attr.unit == attr_arr[0].unit for attr in attr_arr) # ensure all units are the same
+                attr_arr = np.array([attr.value for attr in attr_arr]) * u.Unit(attr_arr[0].unit)
+            else:
+                attr_arr = np.array(attr_arr)
+            return attr_arr
     
     def __setattr__(self, name, value, obj = "cat"):
         if obj == "cat":

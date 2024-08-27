@@ -153,6 +153,8 @@ class Photometry_obs(Photometry):
             ext_src_corrs = {band_name: (self.FLUX_AUTO[band_name] / (self.flux_Jy[i] * \
                 funcs.mag_to_flux_ratio(-aper_corrs[band_name]))).to(u.dimensionless_unscaled).unmasked \
                 for i, band_name in enumerate(self.instrument.band_names) if band_name in self.FLUX_AUTO.keys()}
+            ext_src_corrs = {band_name: ext_src_corr if ext_src_corr.value > 1 \
+                else 1. * u.dimensionless_unscaled for band_name, ext_src_corr in ext_src_corrs.items()}
             # load these into self
             self.load_property(ext_src_corrs, property_name)
     
@@ -217,7 +219,7 @@ class Photometry_obs(Photometry):
                 if not rest_property:
                     setattr(data_obj, updated_property_PDF.property_name, updated_property)
 
-    def make_all_ext_src_corrs(self, ext_src_band: Union[str, list, np.array] = "F444W"):
+    def make_all_ext_src_corrs(self, ext_src_band: Union[str, list, np.array] = "F444W") -> dict:
         # extract previously calculated galaxy properties and their origins
         code_ext_src_property_dict = {key: [gal_property for gal_property in \
             self.SED_results[key].SED_fit_params["code"].ext_src_corr_properties \
@@ -232,7 +234,9 @@ class Photometry_obs(Photometry):
         ext_src_property_dict = {**code_ext_src_property_dict, **sed_rest_ext_src_property_dict}
         # make the extended source corrections
         [self.make_ext_src_corrs(gal_property, origin) for origin, gal_properties \
-            in ext_src_property_dict.items() for gal_property in gal_properties] 
+            in ext_src_property_dict.items() for gal_property in gal_properties]
+        # return dict of {origin: [property for property in gal[origin]]}
+        return ext_src_property_dict
 
     def plot_phot(self, ax, wav_units: Union[str, u.Unit] = u.AA, mag_units: Union[str, u.Unit] = u.Jy, \
             plot_errs: dict = {"x": True, "y": True}, annotate: bool = True, uplim_sigma: float = 2., \
