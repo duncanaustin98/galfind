@@ -99,6 +99,18 @@ class Photometry_obs(Photometry):
             assert SED_results_key in self.SED_results.keys(), galfind_logger.critical(f"{SED_results_key=} not in {self.SED_results.keys()=}!")
             return self.SED_results[SED_results_key].__getattr__(property_name, origin, property_type)
 
+    def __deepcopy__(self, memo):
+        cls = self.__class__
+        result = cls.__new__(cls)
+        memo[id(self)] = result
+        for key, value in self.__dict__.items():
+            try:
+                setattr(result, key, deepcopy(value, memo))
+            except:
+                galfind_logger.critical(f"deepcopy({self.__class__.__name__}) {key}: {value} FAIL!")
+                breakpoint()
+        return result
+
     @property
     def SNR(self):
         return [(flux_Jy * 10 ** (aper_corr / -2.5)) * 5 / depth if flux_Jy > 0. else flux_Jy * 5 / depth \
@@ -106,6 +118,8 @@ class Photometry_obs(Photometry):
 
     @classmethod # not a gal object here, more like a catalogue row
     def from_fits_cat(cls, fits_cat_row, instrument, cat_creator, aper_diam, min_flux_pc_err, codes, lowz_zmaxs, templates):
+        galfind_logger.warning("SED_fit_params should be included in this function")
+        galfind_logger.warning("Problems with Photometry_obs.from_fits_cat when photometry and SED fitting properties are in different catalogue extensions")
         phot = Photometry.from_fits_cat(fits_cat_row, instrument, cat_creator)
         SED_results = Galaxy_SED_results.from_fits_cat(fits_cat_row, cat_creator, codes, lowz_zmaxs, templates, instrument = instrument)
         return cls.from_phot(phot, aper_diam, min_flux_pc_err, SED_results)

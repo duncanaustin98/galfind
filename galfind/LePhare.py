@@ -97,6 +97,10 @@ class LePhare(SED_code):
         # first write the code name and then the template name
         return f"{SED_fit_params['code'].__class__.__name__}_{SED_fit_params['templates']}"
     
+    @staticmethod
+    def hdu_from_SED_fit_params(SED_fit_params):
+        return LePhare.label_from_SED_fit_params(SED_fit_params)
+    
     def SED_fit_params_from_label(self, label):
         label_arr = label.split("_")
         assert(len(label_arr) == 2)

@@ -59,7 +59,7 @@ class Data:
     
     def __init__(self, instrument, im_paths, im_exts, im_pixel_scales, im_shapes, im_zps, wht_paths, wht_exts, rms_err_paths, rms_err_exts, \
         seg_paths, mask_paths, cluster_mask_path, blank_mask_path, survey, version, cat_path = "", is_blank = True, alignment_band = "F444W", \
-        RGB_method = None, mask_stars = True): # trilogy
+        RGB_method = None, mask_stars = True, sex_prefer = "rms_err"): # trilogy
 
         # sort dicts from blue -> red bands in ascending wavelength order
         self.im_paths = im_paths # not sure these need to be sorted
@@ -75,6 +75,8 @@ class Data:
         self.rms_err_exts = rms_err_exts
         self.im_pixel_scales = im_pixel_scales
         self.im_shapes = im_shapes
+        assert sex_prefer in ["rms_err", "wht"]
+        self.sex_prefer = sex_prefer
 
         # ensure alignment band exists
         if alignment_band not in self.instrument.band_names:
@@ -218,7 +220,8 @@ class Data:
     @classmethod
     def from_pipeline(cls, survey, version, instrument_names = ["ACS_WFC", "WFC3_IR", "NIRCam", "MIRI"], excl_bands = [], \
             pix_scales = {"ACS_WFC": 0.03 * u.arcsec, "WFC3_IR": 0.03 * u.arcsec, "NIRCam": 0.03 * u.arcsec, "MIRI": 0.09 * u.arcsec}, \
-            im_str = ["_sci", "_i2d", "_drz"], rms_err_str = ["_rms_err", "_rms", "_err"], wht_str = ["_wht", "_weight"], mask_stars = True):
+            im_str = ["_sci", "_i2d", "_drz"], rms_err_str = ["_rms_err", "_rms", "_err"], wht_str = ["_wht", "_weight"], \
+            mask_stars = True, sex_prefer = "rms_err"):
         
         # may not require all of these inits
         im_paths = {} 
@@ -454,7 +457,7 @@ class Data:
         #breakpoint()
 
         return cls(comb_instrument, im_paths, im_exts, im_pixel_scales, im_shapes, im_zps, wht_paths, wht_exts, rms_err_paths, rms_err_exts, \
-            seg_paths, mask_paths, cluster_mask_path, blank_mask_path, survey, version, is_blank = is_blank, mask_stars = mask_stars)
+            seg_paths, mask_paths, cluster_mask_path, blank_mask_path, survey, version, is_blank = is_blank, mask_stars = mask_stars, sex_prefer = sex_prefer)
 
 # %% Overloaded operators
 
@@ -630,7 +633,6 @@ class Data:
             return wht, hdr
         else:
             return wht
-
       
     def load_rms_err(self, band, output_hdr = False):
         try:
@@ -644,7 +646,6 @@ class Data:
             return rms_err, hdr
         else:
             return rms_err
-    
     
     def combine_seg_data_and_mask(self, band = None, seg_data = None, mask = None):
         if type(seg_data) != type(None) and type(mask) != type(None):
@@ -965,18 +966,17 @@ class Data:
         else:
             return '+'.join(bands)
     
-    def get_err_map(self, band, prefer = "rms_err"):
+    def get_err_map(self, band):
         """ Loads either the rms_err or wht map for use in SExtractor depending on the preferred map to use
 
         Args:
             band (str): Filter to extract the rms_err or wht maps from
-            prefer (str, optional): Preferred error map type to use. Either 'rms_err' or 'wht', anything else throws critical. Defaults to "rms_err".
         Returns:
             tuple(3): (Error map path, Error map fits extension, Error map type)
         """
         
         # determine which error map to use based on what is available or preferred
-        if prefer == "rms_err":
+        if self.sex_prefer == "rms_err":
             if band in self.rms_err_paths.keys():
                 err_map_type = "MAP_RMS"
             elif band in self.wht_paths.keys():
@@ -984,10 +984,9 @@ class Data:
                 err_map_type = "MAP_WEIGHT"
                 self.make_rms_err_from_wht(band)
             else:
-                galfind_logger.critical(f"{band=} does not have {prefer=} err map type")
+                galfind_logger.critical(f"{band=} does not have {self.sex_prefer=} err map type")
                 breakpoint()
-
-        elif prefer == "wht":
+        else: #self.sex_prefer == "wht"
             if band in self.wht_paths.keys():
                 err_map_type = "MAP_WEIGHT"
             elif band in self.rms_err_paths.keys():
@@ -995,10 +994,8 @@ class Data:
                 self.make_wht_from_rms_err(band)
                 pass
             else:
-                galfind_logger.critical(f"{band=} does not have {prefer=} err map type")
+                galfind_logger.critical(f"{band=} does not have {self.sex_prefer=} err map type")
                 breakpoint()
-        else:
-            galfind_logger.critical(f"prefer = {prefer} not in ['rms_err', 'wht'] in Data.get_err_map()")
         
         # extract relevant fits paths and extensions
         #print(band, self.rms_err_paths, self.wht_paths)
@@ -1070,13 +1067,18 @@ class Data:
             raise(Exception(f"Cannot make segmentation map for {band}! type(band) = {type(band)} must be either str, list, or np.array!"))
 
         # load relevant err map paths, preferring rms_err maps if available
-        err_map_path, err_map_ext, err_map_type = self.get_err_map(band, prefer = "rms_err")
+        err_map_path, err_map_ext, err_map_type = self.get_err_map(band)
         # insert specified aperture diameters from config file
         as_aper_diams = json.loads(config.get("SExtractor", "APERTURE_DIAMS"))
         if len(as_aper_diams) != 5:
             galfind_logger.warning(f"{sex_config_path=} should be updated for {as_aper_diams=} at runtime!")
         pix_aper_diams = str([np.round(pix_aper_diam, 2) for pix_aper_diam in as_aper_diams / self.im_pixel_scales[band].value]).replace("[", "").replace("]", "").replace(" ", "")
+
         # SExtractor bash script python wrapper
+        print(["./make_seg_map.sh", config['DEFAULT']['GALFIND_WORK'], self.im_paths[band], str(self.im_pixel_scales[band].value), \
+                                str(self.im_zps[band]), self.instrument.instrument_from_band(band).name, self.survey, band, self.version, err_map_path, \
+                                err_map_ext, err_map_type, str(self.im_exts[band]), sex_config_path, params_path, pix_aper_diams])
+        breakpoint()
         process = subprocess.Popen(["./make_seg_map.sh", config['DEFAULT']['GALFIND_WORK'], self.im_paths[band], str(self.im_pixel_scales[band].value), \
                                 str(self.im_zps[band]), self.instrument.instrument_from_band(band).name, self.survey, band, self.version, err_map_path, \
                                 err_map_ext, err_map_type, str(self.im_exts[band]), sex_config_path, params_path, pix_aper_diams])
@@ -1418,8 +1420,7 @@ class Data:
     def make_sex_cats(self, forced_phot_band: Union[str, list, np.array] = "F444W", \
             sex_config_path: str = config['SExtractor']['CONFIG_PATH'], \
             params_path: str = config['SExtractor']['PARAMS_PATH'], \
-            forced_phot_code: str = "photutils", prefer: str = "rms_err", \
-            timed: bool = True):
+            forced_phot_code: str = "photutils", timed: bool = True):
         
         galfind_logger.info(f"Making SExtractor catalogues with: config file = {sex_config_path}; parameters file = {params_path}")
         # make individual forced photometry catalogues
@@ -1442,7 +1443,6 @@ class Data:
                         galfind_logger.critical("RUN = YES, so running through sextractor. Returning Error.")
                         raise Exception(f"RUN = YES, and combination of {self.survey} {self.version} or {self.instrument.name} has not previously been run through sextractor.")
                     self.make_seg_map(forced_phot_band)
-                    
             else:
                 self.forced_phot_band = forced_phot_band[0]
         else:
@@ -1495,9 +1495,9 @@ class Data:
                 # perform sextraction
                 if sextract:
                     # load relevant err map paths
-                    err_map_path, err_map_ext, err_map_type = self.get_err_map(band_name, prefer = prefer)
+                    err_map_path, err_map_ext, err_map_type = self.get_err_map(band_name)
                     # load relevant err map paths for the forced photometry band
-                    forced_phot_band_err_map_path, forced_phot_band_err_map_ext, forced_phot_band_err_map_type = self.get_err_map(self.forced_phot_band, prefer = prefer)
+                    forced_phot_band_err_map_path, forced_phot_band_err_map_ext, forced_phot_band_err_map_type = self.get_err_map(self.forced_phot_band)
                     forced_phot_image_path = self.im_paths[self.forced_phot_band]
                     assert(err_map_type == forced_phot_band_err_map_type)
                 
@@ -1535,9 +1535,9 @@ class Data:
         galfind_logger.info(finish_message)
 
     def combine_sex_cats(self, forced_phot_band: Union[str, list, np.array] = "F444W", \
-            readme_sep: str = "-" * 20, prefer: str = "rms_err", timed: bool = True):
+            readme_sep: str = "-" * 20, timed: bool = True):
 
-        self.make_sex_cats(forced_phot_band, prefer = prefer, timed = timed)
+        self.make_sex_cats(forced_phot_band, timed = timed)
 
         save_name = f"{self.survey}_MASTER_Sel-{self.combine_band_names(forced_phot_band)}_{self.version}.fits"
         save_dir = f"{config['DEFAULT']['GALFIND_WORK']}/Catalogues/{self.version}/{self.instrument.name}/{self.survey}"

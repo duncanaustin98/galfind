@@ -353,7 +353,11 @@ class Catalogue_Base:
         result = cls.__new__(cls)
         memo[id(self)] = result
         for key, value in self.__dict__.items():
-            setattr(result, key, deepcopy(value, memo))
+            try:
+                setattr(result, key, deepcopy(value, memo))
+            except:
+                galfind_logger.critical(f"deepcopy({self.__class__.__name__}) {key}: {value} FAIL!")
+                breakpoint()
         return result
         
     @property
@@ -415,7 +419,13 @@ class Catalogue_Base:
             return None
         if cropped:
             ID_tab = Table({"IDs_temp": self.ID}, dtype = [int])
-            combined_tab = join(fits_cat, ID_tab, keys_left = self.cat_creator.ID_label, keys_right = "IDs_temp")
+            if type(hdu) == type(None):
+                keys_left = self.cat_creator.ID_label
+            elif hdu.upper() in ["OBJECTS"]: #, "GALFIND_CAT"]:
+                keys_left = self.cat_creator.ID_label
+            else:
+                keys_left = sed_code_to_name_dict[hdu.split("_")[0]].ID_label
+            combined_tab = join(fits_cat, ID_tab, keys_left = keys_left, keys_right = "IDs_temp")
             combined_tab.remove_column("IDs_temp")
             combined_tab.meta = fits_cat.meta
             return combined_tab

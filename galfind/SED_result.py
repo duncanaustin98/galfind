@@ -17,6 +17,7 @@ import h5py
 import time
 from typing import Union
 import itertools
+from copy import deepcopy
 
 from .Photometry import Photometry, Multiple_Photometry
 from .Photometry_rest import Photometry_rest
@@ -100,6 +101,14 @@ class SED_result:
             return self.phot_rest.__getattr__(property_name, origin.replace("phot_rest_", ""), property_type = property_type)
         else: # origin == "SED"
             return self.SED.__getattr__(property_name, origin)
+        
+    def __deepcopy__(self, memo):
+        cls = self.__class__
+        result = cls.__new__(cls)
+        memo[id(self)] = result
+        for key, value in self.__dict__.items():
+            setattr(result, key, deepcopy(value, memo))
+        return result
 
     @classmethod
     def from_gal(cls, gal, SED_fit_params):
@@ -172,35 +181,51 @@ class Catalogue_SED_results:
         else:
             cat_SED_paths = None
         # these arrays are have length == len(cat), and may in principle included None's where SED fitting has now been performed
-        return cls.from_fits_cat(cat.open_cat(cropped = True), cat.cat_creator, SED_fit_params_arr, cat_PDF_paths, \
-            cat_SED_paths, phot_arr = [gal.phot for gal in cat], timed = timed)
+        
+        SED_fit_cats = [cat.open_cat(hdu = SED_fit_params["code"].hdu_from_SED_fit_params(SED_fit_params), cropped = True) for SED_fit_params in SED_fit_params_arr]
+        return cls.from_fits_cat(SED_fit_cats, SED_fit_params_arr, cat_PDF_paths, cat_SED_paths, phot_arr = [gal.phot for gal in cat], timed = timed)
+
 
     @classmethod
-    def from_fits_cat(cls, fits_cat, cat_creator, SED_fit_params_arr, cat_PDF_paths = None, cat_SED_paths = None, \
-            phot_arr = None, instrument = None, timed: bool = True):
-        assert(all(True if "code" in SED_fit_params else False for SED_fit_params in SED_fit_params_arr))
+    def from_fits_cat(cls, SED_fit_cats: Union[Table, list, np.array], SED_fit_params_arr: Union[list, np.array], \
+            cat_PDF_paths: Union[list, np.array, None] = None, cat_SED_paths: Union[list, np.array, None] = None, \
+            phot_arr = None, instrument = None, phot_cat: Union[Table, None] = None, cat_creator = None, timed: bool = True):
+        # input assertions
+        assert all(True if "code" in SED_fit_params else False for SED_fit_params in SED_fit_params_arr)
+        assert len(SED_fit_cats) == len(SED_fit_params_arr)
+
         # calculate array of galaxy photometries if required
-        if type(phot_arr) == type(None) and type(instrument) != type(None):
-            phot_arr = Multiple_Photometry.from_fits_cat(fits_cat, instrument, cat_creator, timed = timed).phot_arr
-        elif type(phot_arr) != type(None) and type(instrument) == type(None):
+        if type(phot_arr) == type(None) and type(instrument) != type(None) and type(phot_cat) != type(None) and type(cat_creator) != type(None):
+            phot_arr = Multiple_Photometry.from_fits_cat(phot_cat, instrument, cat_creator, timed = timed).phot_arr
+        elif type(phot_arr) != type(None) and type(instrument) == type(None) and type(phot_cat) == type(None) and type(cat_creator) == type(None):
             pass
         else:
-            galfind_logger.critical("Must specify either phot or instrument in Galaxy_SED_results!")
+            galfind_logger.critical("Must specify either phot or instrument AND phot_cat AND cat_creator in Galaxy_SED_results!")
 
         if timed:
             start = time.time()
 
-        IDs = np.array(fits_cat[cat_creator.ID_label]).astype(int)
+        # assume properties all come from the same table if only a single catalogue is given
+        if type(SED_fit_cats) in [Table]:
+            SED_fit_cats = [SED_fit_cats for i in range(len(SED_fit_params_arr))]
+
+        # determine IDs
+        ID_labels = [SED_fit_params["code"].ID_label for SED_fit_params in SED_fit_params_arr]
+        IDs_arr = [np.array(fits_cat[ID_label]).astype(int) for fits_cat, ID_label in zip(SED_fit_cats, ID_labels)]
+        assert all(len(IDs) == len(phot_arr) for IDs in IDs_arr), galfind_logger.critical(f"Not all catalogues in {SED_fit_params_arr=} have the same length as phot_cat. {[len(IDs) for IDs in IDs_arr]=} != {len(phot_arr)=}")
+        assert all(all(IDs[i] == IDs_arr[0][i] for i in range(len(IDs))) for IDs in IDs_arr), galfind_logger.critical(f"Not all catalogues in {SED_fit_params_arr=} have the same IDs!")
+        IDs = IDs_arr[0]
+
         # convert cat_properties from array of len(SED_fit_params_arr), with each element a dict of galaxy properties for the entire catalogue with values of arrays of len(fits_cat)
         # to array of len(fits_cat), with each element an array of len(SED_fit_params_arr) containing a dict of properties for a single galaxy
         labels_arr = [{key: SED_fit_params["code"].galaxy_property_labels(key, SED_fit_params) \
             for key, val in SED_fit_params["code"].galaxy_property_dict.items()} for SED_fit_params in SED_fit_params_arr]
         cat_properties = [{gal_property: list(fits_cat[label]) \
-            for gal_property, label in labels.items()} for labels in labels_arr]
+            for gal_property, label in labels.items()} for labels, fits_cat in zip(labels_arr, SED_fit_cats)]
         cat_properties = [[{key: value[i] * u.Unit(SED_fit_params["code"].gal_property_unit_dict[key]) \
             if key in SED_fit_params["code"].gal_property_unit_dict.keys() else value[i] * u.dimensionless_unscaled \
             for key, value in SED_fitting_properties.items()} for SED_fit_params, SED_fitting_properties \
-            in zip(SED_fit_params_arr, cat_properties)] for i in range(len(fits_cat))] # may include invalid values where SED fitting not performed
+            in zip(SED_fit_params_arr, cat_properties)] for i in range(len(IDs))] # may include invalid values where SED fitting not performed
         
         # convert cat_property_errs from array of len(SED_fit_params_arr), with each element a dict of galaxy properties for the entire catalogue with values of arrays of len(fits_cat)
         # to array of len(fits_cat), with each element an array of len(SED_fit_params_arr) containing a dict of properties for a single galaxy
@@ -213,9 +238,9 @@ class Catalogue_SED_results:
         cat_property_errs = [{gal_property: list(funcs.adjust_errs(np.array(fits_cat[labels[gal_property]]), \
             np.array([np.array(fits_cat[err_label[0]]), np.array(fits_cat[err_label[1]])]))[1]) if adjust_errs else \
             [list(fits_cat[err_label[0]]), list(fits_cat[err_label[1]])] for gal_property, err_label in err_labels.items()} \
-            for adjust_errs, labels, err_labels in zip(adjust_errs_arr, labels_arr, err_labels_arr)]
+            for adjust_errs, labels, err_labels, fits_cat in zip(adjust_errs_arr, labels_arr, err_labels_arr, SED_fit_cats)]
         cat_property_errs = [[{key: [value[0][i], value[1][i]] for key, value in SED_fitting_property_errs.items()} \
-            for SED_fitting_property_errs in cat_property_errs] for i in range(len(fits_cat))] # may include invalid values where SED fitting not performed
+            for SED_fitting_property_errs in cat_property_errs] for i in range(len(IDs))] # may include invalid values where SED fitting not performed
         
         if timed:
             mid = time.time()
@@ -228,17 +253,17 @@ class Catalogue_SED_results:
 
         if type(cat_PDF_paths) != type(None):
             assert(len(SED_fit_params_arr) == len(cat_PDF_paths))
-            cat_property_PDFs = np.full((len(fits_cat), len(SED_fit_params_arr)), None)
+            cat_property_PDFs = np.full((len(IDs), len(SED_fit_params_arr)), None)
             # loop through SED_fit_params_arr and corresponding cat_PDF_paths
             for i, (SED_fit_params, PDF_paths) in enumerate(zip(SED_fit_params_arr, cat_PDF_paths)): # tqdm(, \
                 # total = len(SED_fit_params_arr), desc = "Constructing galaxy property PDFs"):
                 # check that these paths correspond to the correct galaxies
-                assert(len(PDF_paths[gal_property]) == len(fits_cat) for gal_property in PDF_paths.keys())
+                assert(len(PDF_paths[gal_property]) == len(IDs) for gal_property in PDF_paths.keys())
                 # construct PDF objects, type = array of len(fits_cat), each element a dict of {gal_property: PDF object} excluding None PDFs
                 cat_property_PDFs_ = {gal_property: SED_fit_params["code"].extract_PDFs(gal_property, IDs, \
                     PDF_paths[gal_property], SED_fit_params) for gal_property in PDF_paths.keys()}
                 cat_property_PDFs_ = [{gal_property: PDF_arr[j] for gal_property, PDF_arr \
-                    in cat_property_PDFs_.items() if type(PDF_arr[j]) != type(None)} for j in range(len(fits_cat))]
+                    in cat_property_PDFs_.items() if type(PDF_arr[j]) != type(None)} for j in range(len(IDs))]
                 cat_property_PDFs[:, i] = [None if len(cat_property_PDF_) == 0 else cat_property_PDF_ for cat_property_PDF_ in cat_property_PDFs_]
         else:
             galfind_logger.info("Not loading catalogue property PDFs")
@@ -251,12 +276,12 @@ class Catalogue_SED_results:
 
         if type(cat_SED_paths) != type(None):
             assert(len(SED_fit_params_arr) == len(cat_SED_paths))
-            cat_SEDs = np.full((len(fits_cat), len(SED_fit_params_arr)), None)
+            cat_SEDs = np.full((len(IDs), len(SED_fit_params_arr)), None)
             # loop through SED_fit_params_arr and corresponding cat_SED_paths
             for i, (SED_fit_params, SED_paths) in enumerate(zip(SED_fit_params_arr, cat_SED_paths)): # tqdm(, \
                    # total = len(SED_fit_params_arr), desc = "Constructing galaxy SEDs"):
                 # check that these paths correspond to the correct galaxies
-                assert(len(SED_paths) == len(fits_cat) for gal_property in SED_fit_params["code"].galaxy_property_dict.keys())
+                assert(len(SED_paths) == len(IDs) for gal_property in SED_fit_params["code"].galaxy_property_dict.keys())
                 # construct SED objects, type = array of len(fits_cat), each element containing an SED object
                 cat_SEDs[:, i] = SED_fit_params["code"].extract_SEDs(IDs, SED_paths)
         else:
@@ -299,3 +324,4 @@ class Catalogue_SED_results:
             in zip(phot_arr, cat_properties, cat_property_errs, cat_property_PDFs_, cat_SEDs_)]
         
         return cls(SED_fit_params_arr, cat_SED_results)
+    

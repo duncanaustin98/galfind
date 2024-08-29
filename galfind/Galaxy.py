@@ -13,6 +13,7 @@ from copy import copy, deepcopy
 import astropy.units as u
 from astropy.coordinates import SkyCoord
 from astropy.io import fits
+from astropy.table import Table
 import os
 import sys
 import json
@@ -81,8 +82,10 @@ class Galaxy:
     def from_pipeline(cls, ):
         pass
 
+    # REQUIRES FURTHER TESTING
     @classmethod
     def from_fits_cat(cls, fits_cat_row, instrument, cat_creator, codes, lowz_zmax, templates_arr):
+        galfind_logger.warning("Galaxy.from_fits_cat currently not working!")
         # load multiple photometries from the fits catalogue
         phot = Photometry_obs.from_fits_cat(fits_cat_row, instrument, cat_creator, cat_creator.aper_diam, cat_creator.min_flux_pc_err, codes, lowz_zmax, templates_arr) # \
                 # for min_flux_pc_err in cat_creator.min_flux_pc_err for aper_diam in cat_creator.aper_diam]
@@ -123,7 +126,7 @@ class Galaxy:
                 return self.sky_coord.ra.degree * u.deg
             elif property_name.upper() == "DEC":
                 return self.sky_coord.dec.degree * u.deg
-            elif property_name.endswith("_selected") and property_name in self.selection_flags.keys():
+            elif property_name in self.selection_flags:
                 return self.selection_flags[property_name]
             # could also insert cutout paths __getattr__ here, but it is a bit more complex
             else:
@@ -138,7 +141,11 @@ class Galaxy:
         result = cls.__new__(cls)
         memo[id(self)] = result
         for key, value in self.__dict__.items():
-            setattr(result, key, deepcopy(value, memo))
+            try:
+                setattr(result, key, deepcopy(value, memo))
+            except:
+                galfind_logger.critical(f"deepcopy({self.__class__.__name__}) {key}: {value} FAIL!")
+                breakpoint()
         return result
     
     def update(self, gal_SED_results, index: int = 0): # for now just update the single photometry
@@ -1547,7 +1554,7 @@ class Multiple_Galaxy:
         return self.gals[index]
     
     @classmethod
-    def from_fits_cat(cls, fits_cat, instrument, cat_creator, SED_fit_params_arr, timed = True):
+    def from_fits_cat(cls, fits_cat: Union[Table, list, np.array], instrument, cat_creator, SED_fit_params_arr, timed = True):
         # load photometries from catalogue
         phots = Multiple_Photometry_obs.from_fits_cat(fits_cat, instrument, cat_creator, SED_fit_params_arr, timed = timed).phot_obs_arr
         # load the ID and Sky Coordinate from the source catalogue

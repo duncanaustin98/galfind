@@ -103,6 +103,10 @@ class Bagpipes(SED_code):
                 f"{sps_label}_{redshift_label}"
         else:
             return "Bagpipes"
+        
+    @staticmethod
+    def hdu_from_SED_fit_params(SED_fit_params):
+        return Bagpipes.label_from_SED_fit_params(SED_fit_params)
 
     def SED_fit_params_from_label(self, label):
         SED_fit_params = {"code": Bagpipes()}

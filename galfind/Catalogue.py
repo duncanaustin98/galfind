@@ -49,25 +49,25 @@ class Catalogue(Catalogue_Base):
             instruments = ['NIRCam', 'ACS_WFC', 'WFC3_IR'], forced_phot_band: Union[list, np.array, str] = ["F277W", "F356W", "F444W"], \
             excl_bands: Union[list, np.array] = [], pix_scales = {"ACS_WFC": 0.03 * u.arcsec, "WFC3_IR": 0.03 * u.arcsec, "NIRCam": 0.03 * u.arcsec, "MIRI": 0.09 * u.arcsec}, \
             loc_depth_min_flux_pc_errs = [5, 10], crop_by = None, load_PDFs: Union[bool, dict] = True, load_SEDs: Union[bool, dict] = True, \
-            timed: bool = True, mask_stars: bool = True, load_SED_rest_properties: bool = True, sex_prefer: str = "rms_err", n_depth_reg = "auto", \
+            timed: bool = True, mask_stars: bool = True, load_SED_rest_properties: bool = True, sex_prefer: str = "wht", n_depth_reg = "auto", \
             load_ext_src_corrs: bool = True):
         
-        data = Data.from_pipeline(survey, version, instruments, excl_bands = excl_bands, mask_stars = mask_stars, pix_scales = pix_scales)
+        data = Data.from_pipeline(survey, version, instruments, excl_bands = excl_bands, mask_stars = mask_stars, pix_scales = pix_scales, sex_prefer = sex_prefer)
         
         return cls.from_data(data, version, aper_diams, cat_creator, SED_fit_params_arr, \
             forced_phot_band, loc_depth_min_flux_pc_errs, crop_by = crop_by, load_PDFs = load_PDFs, \
             load_SEDs = load_SEDs, timed = timed, load_SED_rest_properties = load_SED_rest_properties, \
-            sex_prefer = sex_prefer, n_depth_reg = n_depth_reg, load_ext_src_corrs = load_ext_src_corrs)
+            n_depth_reg = n_depth_reg, load_ext_src_corrs = load_ext_src_corrs)
     
     @classmethod
     def from_data(cls, data, version, aper_diams, cat_creator, SED_fit_params_arr, \
                 forced_phot_band = ["F277W", "F356W", "F444W"], loc_depth_min_flux_pc_errs = [10], \
                 mask: bool = True, crop_by = None, load_PDFs: Union[bool, dict] = True, \
                 load_SEDs: Union[bool, dict] = True, timed: bool = True, load_SED_rest_properties: bool = True, \
-                sex_prefer: str = "rms_err", n_depth_reg: str = "auto", load_ext_src_corrs: bool = True):
+                n_depth_reg: str = "auto", load_ext_src_corrs: bool = True):
         
         # make masked local depth catalogue from the 'Data' object
-        data.combine_sex_cats(forced_phot_band, prefer = sex_prefer, timed = timed)
+        data.combine_sex_cats(forced_phot_band, timed = timed)
         mode = str(config["Depths"]["MODE"]).lower() # mode to calculate depths (either "n_nearest" or "rolling")
         data.calc_depths(aper_diams, mode = mode, cat_creator = cat_creator, n_split = n_depth_reg, timed = timed) # 2nd BOTTLENECK!
         data.perform_aper_corrs()
@@ -205,7 +205,9 @@ class Catalogue(Catalogue_Base):
         assert len(aper_corrs) == len(self.instrument)
         aper_corrs = {band_name: aper_corr for band_name, aper_corr in zip(self.instrument.band_names, aper_corrs)}
         # calculate and save dict of ext_src_corrs for each galaxy in self
-        [gal.phot.calc_ext_src_corrs(aper_corrs = aper_corrs) for gal in self]
+        galfind_logger.debug("Photometry_obs.calc_ext_src_corrs takes 2min 20s for JOF with 16,000 galaxies. Fairly slow!")
+        [gal.phot.calc_ext_src_corrs(aper_corrs = aper_corrs) for gal in tqdm(self, \
+            desc = f"Calculating extended source corrections for {self.survey} {self.version}", total = len(self))]
         # save the extended source corrections to catalogue
         self._append_property_to_tab("_".join(inspect.stack()[0].function.split("_")[1:]), "phot_obs")
 
@@ -262,8 +264,9 @@ class Catalogue(Catalogue_Base):
                 # skip if all columns already appended and overwrite == False
                 if all(key in append_tab.colnames for key in all_keys) and not overwrite:
                     return None
-                property_dict = {f"{property_name}_{key}": np.array([gal_property[key] \
-                    if key in gal_property.keys() else None for gal_property in gal_properties]) for key in all_keys}
+                property_dict = {key: np.array([gal_property[key.replace(f"{property_name}_", "")] \
+                    if key.replace(f"{property_name}_", "") in gal_property.keys() else None \
+                    for gal_property in gal_properties]) for key in all_keys}
                 appended_keys = [key for key in property_dict.keys() if key in append_tab.colnames]
                 if overwrite:
                     # remove old columns that already exist

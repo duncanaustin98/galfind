@@ -331,6 +331,10 @@ class EAZY(SED_code):
         assert("code" in SED_fit_params.keys() and "templates" in SED_fit_params.keys() and "lowz_zmax" in SED_fit_params.keys())
         # first write the code name, next write the template name, finish off with lowz_zmax
         return f"{SED_fit_params['code'].__class__.__name__}_{SED_fit_params['templates']}_{funcs.lowz_label(SED_fit_params['lowz_zmax'])}"
+    
+    @staticmethod
+    def hdu_from_SED_fit_params(SED_fit_params):
+        return EAZY.label_from_SED_fit_params(SED_fit_params).replace(f"_{funcs.lowz_label(SED_fit_params['lowz_zmax'])}", "") # remove lowz_zmax label from suffix
 
     def SED_fit_params_from_label(self, label):
         label_arr = label.split("_")
