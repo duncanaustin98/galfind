@@ -237,7 +237,7 @@ class Catalogue(Catalogue_Base):
             # convert SED_fit_params origin to str
             assert "code" in origin.keys()
             origin = origin["code"].label_from_SED_fit_params(origin)
-        if origin == "phot_obs":
+        if origin in ["gal", "phot_obs"]:
             hdu = "OBJECTS"
             ID_label = self.cat_creator.ID_label
         else:
@@ -249,7 +249,6 @@ class Catalogue(Catalogue_Base):
             galfind_logger.critical(f"Skipping appending of {property_name=}, {origin=} as append_tab does not exist!")
             return None
         # append to .fits table only if not already
-        #breakpoint()
         if property_name in append_tab.colnames:
             galfind_logger.info(f"{property_name=} already appended to {origin=} .fits table!")
             return None
@@ -260,7 +259,6 @@ class Catalogue(Catalogue_Base):
             gal_properties = self.__getattr__(property_name, origin = origin)
             if all(type(gal_property) == dict for gal_property in gal_properties):
                 all_keys = np.unique([f"{property_name}_{key}" for gal_property in gal_properties for key in gal_property.keys()])
-                #breakpoint()
                 # skip if all columns already appended and overwrite == False
                 if all(key in append_tab.colnames for key in all_keys) and not overwrite:
                     return None
@@ -268,19 +266,25 @@ class Catalogue(Catalogue_Base):
                     if key.replace(f"{property_name}_", "") in gal_property.keys() else None \
                     for gal_property in gal_properties]) for key in all_keys}
                 appended_keys = [key for key in property_dict.keys() if key in append_tab.colnames]
+                # ensure the type of each element in the dict is the same
+                expected_type = type(gal_properties[0][gal_properties[0].keys()[0]])
+                assert all(type(value) == expected_type for gal_property in gal_properties for value in gal_property.values())
                 if overwrite:
                     # remove old columns that already exist
                     [append_tab.remove_column(key) for key in appended_keys]
                 else:
                     # remove new columns that already exist
                     [property_dict.pop(key) for key in appended_keys]
+                property_types = [bool if expected_type in [bool, np.bool_] else float] * len(appended_keys)
             elif any(type(gal_property) == dict for gal_property in gal_properties):
                 galfind_logger.critical(f"{property_name}={gal_properties} from {origin=} should not have mixed 'dict' + other element types!")
                 breakpoint()
             else:
-                assert all(type(gal_property) in [u.Quantity, u.Magnitude, u.Dex] for gal_property in gal_properties)
+                assert all(type(gal_property) in [bool, np.bool_, u.Quantity, u.Magnitude, u.Dex] for gal_property in gal_properties)
+                assert all(type(gal_property) == type(gal_properties[0]) for gal_property in gal_properties)
                 property_dict = {property_name: gal_properties}
-            new_tab = Table({**{"ID_temp": gal_IDs}, **property_dict}, dtype = [int] + [float] * len(property_dict))
+                property_types = [bool if type(gal_properties[0]) in [bool, np.bool_] else float]
+            new_tab = Table({**{"ID_temp": gal_IDs}, **property_dict}, dtype = [int] + property_types)
             # join new and old tables
             out_tab = join(append_tab, new_tab, keys_left = ID_label, keys_right = "ID_temp", join_type = "outer")
             out_tab.remove_column("ID_temp")
@@ -800,11 +804,14 @@ class Catalogue(Catalogue_Base):
             # perform calculation for each galaxy and update galaxies in self
             [selection_function(gal, *args, update = True)[0] for gal in \
                 tqdm(self, total = len(self), desc = f"Cropping {selection_name}")]
+            # work out origin of property from arguments
+            origin = "gal"
+            # append .fits table in extension 1
+            self._append_property_to_tab(selection_name, origin)
+            #self._append_selection_to_fits(selection_name)
         if make_cat_copy:
             # crop catalogue by the selection
             cat_copy = self._crop_by_selection(selection_name)
-            # append .fits table if not already done so
-            cat_copy._append_selection_to_fits(selection_name) # this should be written outside of make_cat_copy!
             return cat_copy
 
     def _crop_by_selection(self, selection_name):
@@ -817,26 +824,26 @@ class Catalogue(Catalogue_Base):
             cat_copy.crops.append(selection_name)
         return cat_copy
 
-    def _append_selection_to_fits(self, selection_name):
-        # append .fits table if not already done so for this selection
-        if not selection_name in self.selection_cols:
-            assert(all(getattr(self, selection_name) == True))
-            full_cat = self.open_cat()
-            selection_cat = Table({"ID_temp": self.ID, selection_name: np.full(len(self), True)})
-            output_cat = join(full_cat, selection_cat, keys_left = "NUMBER", keys_right = "ID_temp", join_type = "outer")
-            output_cat.remove_column("ID_temp")
-            # fill unselected columns with False rather than leaving as masked post-join
-            output_cat[selection_name].fill_value = False
-            output_cat = output_cat.filled()
-            # ensure no rows are lost during this column append
-            assert(len(output_cat) == len(full_cat))
-            output_cat.meta = {**full_cat.meta, **{f"HIERARCH SELECTED_{selection_name}": True}}
-            galfind_logger.info(f"Appending {selection_name} to {self.cat_path=}")
-            output_cat.write(self.cat_path, overwrite = True)
-            funcs.change_file_permissions(self.cat_path)
-            self.selection_cols.append(selection_name)
-        else:
-            galfind_logger.info(f"Already appended {selection_name} to {self.cat_path=}")
+    # def _append_selection_to_fits(self, selection_name):
+    #     # append .fits table if not already done so for this selection
+    #     if selection_name not in self.selection_cols:
+    #         assert(all(getattr(self, selection_name)))
+    #         full_cat = self.open_cat()
+    #         selection_cat = Table({"ID_temp": self.ID, selection_name: np.full(len(self), True)})
+    #         output_cat = join(full_cat, selection_cat, keys_left = "NUMBER", keys_right = "ID_temp", join_type = "outer")
+    #         output_cat.remove_column("ID_temp")
+    #         # fill unselected columns with False rather than leaving as masked post-join
+    #         output_cat[selection_name].fill_value = False
+    #         output_cat = output_cat.filled()
+    #         # ensure no rows are lost during this column append
+    #         assert(len(output_cat) == len(full_cat))
+    #         output_cat.meta = {**full_cat.meta, **{f"HIERARCH SELECTED_{selection_name}": True}}
+    #         galfind_logger.info(f"Appending {selection_name} to {self.cat_path=}")
+    #         output_cat.write(self.cat_path, overwrite = True)
+    #         funcs.change_file_permissions(self.cat_path)
+    #         self.selection_cols.append(selection_name)
+    #     else:
+    #         galfind_logger.info(f"Already appended {selection_name} to {self.cat_path=}")
 
     # %%
     # SED property functions 

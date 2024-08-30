@@ -197,6 +197,7 @@ class Catalogue_SED_results:
         # calculate array of galaxy photometries if required
         if type(phot_arr) == type(None) and type(instrument) != type(None) and type(phot_cat) != type(None) and type(cat_creator) != type(None):
             phot_arr = Multiple_Photometry.from_fits_cat(phot_cat, instrument, cat_creator, timed = timed).phot_arr
+            #phot_IDs = [] # should be included in Photometry_obs object
         elif type(phot_arr) != type(None) and type(instrument) == type(None) and type(phot_cat) == type(None) and type(cat_creator) == type(None):
             pass
         else:
@@ -204,6 +205,8 @@ class Catalogue_SED_results:
 
         if timed:
             start = time.time()
+        # print("Need to insert photometric IDs here!")
+        # breakpoint()
 
         # assume properties all come from the same table if only a single catalogue is given
         if type(SED_fit_cats) in [Table]:
@@ -212,6 +215,7 @@ class Catalogue_SED_results:
         # determine IDs
         ID_labels = [SED_fit_params["code"].ID_label for SED_fit_params in SED_fit_params_arr]
         IDs_arr = [np.array(fits_cat[ID_label]).astype(int) for fits_cat, ID_label in zip(SED_fit_cats, ID_labels)]
+        galfind_logger.warning("Photometric IDs required in SED_result.from_fits_cat()")
         assert all(len(IDs) == len(phot_arr) for IDs in IDs_arr), galfind_logger.critical(f"Not all catalogues in {SED_fit_params_arr=} have the same length as phot_cat. {[len(IDs) for IDs in IDs_arr]=} != {len(phot_arr)=}")
         assert all(all(IDs[i] == IDs_arr[0][i] for i in range(len(IDs))) for IDs in IDs_arr), galfind_logger.critical(f"Not all catalogues in {SED_fit_params_arr=} have the same IDs!")
         IDs = IDs_arr[0]

@@ -35,33 +35,33 @@ def pipeline(surveys, version, instruments, aper_diams, min_flux_pc_errs, forced
                 load_SED_rest_properties = load_SED_rest_properties, n_depth_reg = n_depth_reg, sex_prefer = sex_prefer, \
                 load_ext_src_corrs = load_ext_src_corrs)
             
-            #pipes_origin = SED_fit_params_arr[-1] #["code"].label_from_SED_fit_params(SED_fit_params_arr[-1])
+            pipes_origin = SED_fit_params_arr[-1] #["code"].label_from_SED_fit_params(SED_fit_params_arr[-1])
             #cat.plot("beta_C94", pipes_origin, "M_UV", pipes_origin)
             
-            # M_UV_name = "M_UV_ext_src_corr" #"M1500"
-            # M_UV_bins = np.arange(-21.25, -17.25, 0.5)
-            # UV_LF_z9 = Number_Density_Function.from_single_cat(cat, M_UV_name, M_UV_bins, \
-            #     [8.5, 9.5], x_origin = pipes_origin) #"EAZY_fsps_larson_zfree_REST_PROPERTY")
-            # UV_LF_z9.plot(x_lims = M_UV_name)
-            # UV_LF_z10_5 = Number_Density_Function.from_single_cat(cat, M_UV_name, M_UV_bins, \
-            #     [9.5, 11.5], x_origin = pipes_origin) #"EAZY_fsps_larson_zfree_REST_PROPERTY")
-            # UV_LF_z10_5.plot(x_lims = M_UV_name)
-            # UV_LF_z12_5 = Number_Density_Function.from_single_cat(cat, M_UV_name, M_UV_bins, \
-            #     [11.5, 13.5], x_origin = pipes_origin) #"EAZY_fsps_larson_zfree_REST_PROPERTY")
-            # UV_LF_z12_5.plot(x_lims = M_UV_name)
-            # breakpoint()
+            M_UV_name = "M_UV_ext_src_corr" #"M1500"
+            M_UV_bins = np.arange(-21.25, -17.25, 0.5)
+            UV_LF_z9 = Number_Density_Function.from_single_cat(cat, M_UV_name, M_UV_bins, \
+                [8.5, 9.5], x_origin = pipes_origin) #"EAZY_fsps_larson_zfree_REST_PROPERTY")
+            UV_LF_z9.plot(x_lims = M_UV_name)
+            UV_LF_z10_5 = Number_Density_Function.from_single_cat(cat, M_UV_name, M_UV_bins, \
+                [9.5, 11.5], x_origin = pipes_origin) #"EAZY_fsps_larson_zfree_REST_PROPERTY")
+            UV_LF_z10_5.plot(x_lims = M_UV_name)
+            UV_LF_z12_5 = Number_Density_Function.from_single_cat(cat, M_UV_name, M_UV_bins, \
+                [11.5, 13.5], x_origin = pipes_origin) #"EAZY_fsps_larson_zfree_REST_PROPERTY")
+            UV_LF_z12_5.plot(x_lims = M_UV_name)
+            #breakpoint()
 
-            # mass_name = "stellar_mass_ext_src_corr"
-            # mass_bins = np.arange(7.5, 11., 0.5)
-            # GSMF_z9 = Number_Density_Function.from_single_cat(cat, mass_name, mass_bins, \
-            #     [8.5, 9.5], x_origin = pipes_origin)
-            # GSMF_z9.plot(x_lims = mass_name)
-            # GSMF_z10_5 = Number_Density_Function.from_single_cat(cat, mass_name, mass_bins, \
-            #     [9.5, 11.5], x_origin = pipes_origin)
-            # GSMF_z10_5.plot(x_lims = mass_name)
-            # GSMF_z12_5 = Number_Density_Function.from_single_cat(cat, mass_name, mass_bins, \
-            #     [11.5, 13.5], x_origin = pipes_origin)
-            # GSMF_z12_5.plot(x_lims = mass_name)
+            mass_name = "stellar_mass_ext_src_corr"
+            mass_bins = np.arange(7.5, 11., 0.5)
+            GSMF_z9 = Number_Density_Function.from_single_cat(cat, mass_name, mass_bins, \
+                [8.5, 9.5], x_origin = pipes_origin)
+            GSMF_z9.plot(x_lims = mass_name)
+            GSMF_z10_5 = Number_Density_Function.from_single_cat(cat, mass_name, mass_bins, \
+                [9.5, 11.5], x_origin = pipes_origin)
+            GSMF_z10_5.plot(x_lims = mass_name)
+            GSMF_z12_5 = Number_Density_Function.from_single_cat(cat, mass_name, mass_bins, \
+                [11.5, 13.5], x_origin = pipes_origin)
+            GSMF_z12_5.plot(x_lims = mass_name)
 
             #cat.calc_Vmax(cat.data, z_bin = [5.5, 6.5], timed = timed)
             #cat.calc_Vmax(cat.data, z_bin = [11.5, 13.5], timed = timed)
@@ -133,7 +133,7 @@ if __name__ == "__main__":
     lowz_zmax_arr = [[2., 4., 6., None]] #[[4., 6., None]] #[[None]] # 
     min_flux_pc_errs = [10]
     forced_phot_band = ["F277W", "F356W", "F444W"] # ["F444W"]
-    crop_by = None #"EPOCHS" #{"ID": [893, 1685, 2171, 3400, 5532, 6492, 7389, 7540, 9036, 15476]} #"bands>13+EPOCHS" #"EPOCHS_lowz+z>4.5"
+    crop_by = "EPOCHS" #{"ID": [893, 1685, 2171, 3400, 5532, 6492, 7389, 7540, 9036, 15476]} #"bands>13+EPOCHS" #"EPOCHS_lowz+z>4.5"
     timed = True
     mask_stars = {"ACS_WFC": False, "NIRCam": True, "WFC3_IR": False, "MIRI": False}
     MIRI_pix_scale = 0.06 * u.arcsec
@@ -149,7 +149,7 @@ if __name__ == "__main__":
     pipes_fit_params_arr = [{"code": Bagpipes(), "dust": "Cal", "dust_prior": "log_10", \
         "metallicity_prior": "log_10", "sps_model": "BC03", "fix_z": False, \
         "z_range": (0., 25.), "sfh": "continuity_bursty"}]
-    SED_fit_params_arr = EAZY_SED_fit_params_arr #+ pipes_fit_params_arr
+    SED_fit_params_arr = EAZY_SED_fit_params_arr + pipes_fit_params_arr
     # delay_time = (8 * u.h).to(u.s).value
     # print(f"{surveys[0]} delayed by {delay_time}s")
     # time.sleep(delay_time)
