@@ -10,7 +10,6 @@ Created on Mon May 22 13:27:47 2023
 import numpy as np
 import matplotlib.pyplot as plt
 from astropy.table import Table, join, vstack
-import pyregion
 from copy import copy, deepcopy
 from astropy.io import fits
 from pathlib import Path

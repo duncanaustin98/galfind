@@ -11,11 +11,11 @@ from setuptools.command.install import install
 import os
 import shutil
 import atexit
-import matplotlib as mpl
 
 package_name = "galfind"
 
 def install_mplstyle():
+    import matplotlib as mpl
     stylefile = "galfind_style.mplstyle"
 
     mpl_stylelib_dir = os.path.join(mpl.matplotlib_fname().replace("/matplotlibrc", ""), "stylelib")
@@ -26,6 +26,13 @@ def install_mplstyle():
         os.path.join(os.getcwd(), f"{package_name}/{stylefile}"),
         os.path.join(mpl_stylelib_dir, stylefile))
 
+def load_requirements(path):
+    if os.path.isfile(path):
+        with open(path) as f:
+            return list(f.read().splitlines())
+    else:
+        raise Exception(f"No requirement path = {path}")
+
 class PostInstallMoveFile(install):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -33,11 +40,11 @@ class PostInstallMoveFile(install):
 
 setup(
       name=package_name,
-      version='1.0',
+      version='0.0',
       description='Module for catalogue creation of galaxies from photometric imaging',
       author='Duncan Austin',
       author_email='duncan.austin@postgrad.manchester.ac.uk',
       packages=find_packages(),
-      install_requires=['numpy', 'matplotlib'], #, #external packages as dependencies
+      install_requires=load_requirements("requirements.txt"), #, #external packages as dependencies
       cmdclass={'install': PostInstallMoveFile}
 )

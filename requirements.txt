@@ -1,31 +1,21 @@
-numpy
-matplotlib
-astropy
-tqdm
-pathlib
-h5py
-scipy
-configparser 
-json
-logging	
-pyregion
-sep
-timeit
-cv2
-joblib 
-contextlib
-astroquery
-trilogy3
-yagmail
-sklearn
-skimage
-eazy
-bagpipes
-photutils 
-regions
-typing
-kneed
-collections
-grizli
-msaexp
-#reproject
+#astropy==6.1.3
+#astroquery==0.4.7
+#eazy==0.6.8
+#h5py==3.11.0
+#joblib==1.4.2
+#kneed==0.8.5
+#matplotlib==3.9.2
+##msaexp==0.8.5
+#numba==0.60.0 # numba 0.60.0 depends on numpy<2.1 and >=1.22
+#numpy==2.0.0
+#photutils==1.13.0
+#pyregion==2.0 # changed from 2.2.0 - removed dependency here
+regions==0.9
+#scikit_learn==1.5.1
+#scipy==1.14.1
+#sep==1.2.1
+#setuptools==72.1.0
+#scikit-image==0.24.0 # this has been edited from pipreqs base output
+#tqdm==4.66.5
+#typing_extensions==4.12.2 # The next release of Numba --0.61 -- is likely to support Numpy 2.1 and is scheduled for release in September.
+#yagmail==0.15.293

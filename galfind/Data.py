@@ -26,7 +26,6 @@ import astropy.visualization as vis
 from matplotlib.colors import LogNorm
 from astropy.table import Table, hstack, vstack, Column
 from copy import copy, deepcopy
-import pyregion
 from regions import Regions
 import subprocess
 import time
@@ -738,12 +737,10 @@ class Data:
     def plot_mask_regions_from_band(self, ax, band):
         im_header = self.load_data(band, incl_mask = False)[1]
         mask_path = self.mask_paths[band]
-        mask_file = pyregion.open(mask_path).as_imagecoord(im_header)
-        patch_list, artist_list = mask_file.get_mpl_patches_texts()
+        mask_regions = Regions.read(mask_path)
+        patch_list = [reg.as_artist() for reg in mask_regions]
         for p in patch_list:
             ax.add_patch(p)
-        for t in artist_list:
-            ax.add_artist(t)
 
     def make_mask(self, band, edge_mask_distance = 50, mask_stars = True, scale_extra = 0.2,
             star_mask_override = None, exclude_gaia_galaxies = True, angle = -70., edge_value = 0., 
@@ -1670,11 +1667,16 @@ class Data:
             # open image corresponding to band
             im_data, im_header, seg_data, seg_header = self.load_data(band, incl_mask = False)
             # open .reg mask file
-            mask_regions = pyregion.open(mask_path).as_imagecoord(im_header)
-            # make 2D np.array boolean pixel mask
-            pix_mask = np.array(mask_regions.get_mask(header = im_header, shape = im_data.shape), dtype = bool)
+            mask_regions = Regions.read(mask_path)
+            wcs = self.load_wcs(band)
+            pix_mask = np.zeros(im_data.shape, dtype = bool)
+            for region in mask_regions:
+                region = region.to_pixel(wcs)
+                idx_large, idx_little = region.to_mask(mode = 'center').get_overlap_slices(im_data.shape)
+                if idx_large is not None:
+                    pix_mask[idx_large] = np.logical_or(region.to_mask().data[idx_little], full_mask[idx_large])
             # make .fits mask
-            mask_hdu = fits.ImageHDU(pix_mask.astype(np.uint8), header = WCS(im_header).to_header(), name = 'MASK')
+            mask_hdu = fits.ImageHDU(pix_mask.astype(np.uint8), header = wcs.to_header(), name = 'MASK')
             hdu = fits.HDUList([fits.PrimaryHDU(), mask_hdu])
             funcs.make_dirs(out_path)
             hdu.writeto(out_path, overwrite = True)
