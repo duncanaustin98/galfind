@@ -31,6 +31,7 @@ class Instrument:
         for band in excl_bands:
             self.remove_band(band)
         self.facility = facility
+        print(f"Instantiating {name} object")
 
     @classmethod
     def from_SVO(cls, facility, instrument, excl_bands = []):

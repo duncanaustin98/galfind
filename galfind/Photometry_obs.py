@@ -95,7 +95,7 @@ class Photometry_obs(Photometry):
 
         if label_SNRs:
             label_kwargs = {"ha": "center", "fontsize": "medium", "path_effects": [pe.withStroke(linewidth = 2., foreground = "white")], "zorder": 1_000.}
-            label_func = lambda SNR: f"{SNR:.1f}$\sigma$" if SNR < 100 else f"{SNR:.0f}$\sigma$"
+            label_func = lambda SNR: f"{SNR:.1f}" + r"$\sigma$" if SNR < 100 else f"{SNR:.0f}" + r"$\sigma$"
             if mag_units == u.ABmag:
                 offset = 0.15
                 [ax.annotate(label_func(SNR), (wav, mag - offset if is_uplim else mag + mag_u1 + offset), \

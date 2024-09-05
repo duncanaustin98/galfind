@@ -88,8 +88,8 @@ class Multiple_Catalogue:
         # Plot
         fig, ax = plt.subplots(1, 1, figsize = (5, 5))
         ax.set_title(f"{self.survey}")
-        ax.set_xlabel("Area (arcmin$^{2}$)")
-        ax.set_ylabel("5$\sigma$ Depth (AB mag)")
+        ax.set_xlabel(r"Area (arcmin$^{2}$)")
+        ax.set_ylabel(r"5$\sigma$ Depth (AB mag)")
           
         colors = cm.get_cmap(cmap)(np.linspace(0, 1, len(bands)))
         for pos, band in enumerate(bands):

@@ -38,13 +38,14 @@ class PostInstallMoveFile(install):
         super().__init__(*args, **kwargs)
         atexit.register(install_mplstyle)
 
+#setup()
 setup(
-      name=package_name,
-      version='0.0',
-      description='Module for catalogue creation of galaxies from photometric imaging',
-      author='Duncan Austin',
-      author_email='duncan.austin@postgrad.manchester.ac.uk',
-      packages=find_packages(),
-      install_requires=load_requirements("requirements.txt"), #, #external packages as dependencies
-      cmdclass={'install': PostInstallMoveFile}
+    name=package_name,
+    version='0.0',
+    description='Module for catalogue creation of galaxies from photometric imaging',
+    author='Duncan Austin',
+    author_email='duncan.austin@postgrad.manchester.ac.uk',
+    packages=find_packages(),
+    install_requires=load_requirements("requirements.txt"), #, #external packages as dependencies
+    cmdclass={'install': PostInstallMoveFile}
 )

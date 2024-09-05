@@ -1087,7 +1087,7 @@ class Galaxy:
         return self, selection_name
     
     def select_EPOCHS(self, SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}, allow_lowz = False, \
-            hot_pixel_bands = ["F277W", "F356W", "F444W"], masked_instruments = [NIRCam()], update = True):
+            hot_pixel_bands = ["F277W", "F356W", "F444W"], masked_instruments = [instr_to_name_dict["NIRCam"]], update = True):
         
         selection_name = f"EPOCHS{'_lowz' if allow_lowz else ''}"
         if len(self.phot) == 0: # no data at all (not sure why sextractor does this)

@@ -2079,7 +2079,7 @@ class Data:
                 fig, ax = plt.subplots(1, 1, figsize = (4, 4))
                 #ax.set_title(f"{self.survey} {self.version} {aper_diam}")
                 ax.set_xlabel("Area (arcmin$^{2}$)")
-                ax.set_ylabel("5$\sigma$ Depth (AB mag)")
+                ax.set_ylabel(r"5$\sigma$ Depth (AB mag)")
                 area_row = area_tab[area_tab["masking_instrument_band"] == self.forced_phot_band]
                 if len(area_row) > 1:
                     galfind_logger.warning(f"More than one row found in area_tab for {self.forced_phot_band}! Using the first row.")

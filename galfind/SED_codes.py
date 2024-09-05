@@ -42,6 +42,7 @@ class SED_code(ABC):
         self.available_templates = available_templates
         self.ID_label = ID_label
         self.are_errs_percentiles = are_errs_percentiles
+
     
     def load_SED_fit_params(self, SED_fit_params):
         if not hasattr(self, SED_fit_params):

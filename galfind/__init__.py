@@ -8,21 +8,27 @@ Created on Thu Jun  1 16:55:23 2023
 
 #__init__.py
 from __future__ import absolute_import
+
+import time
+start = time.time()
 import configparser
 import json
 import logging
-import time
 import os
-import astropy.units as u
+import astropy.units as u # takes ages and not sure why?
 import numpy as np
 from pathlib import Path
 from astropy.cosmology import FlatLambdaCDM
+end = time.time()
+print(f"__init__ imports took {end - start}s")
+#breakpoint()
+
+start = time.time()
 
 galfind_dir = "/".join(__file__.split("/")[:-1]) 
 
 try:
     config_path = os.environ['GALFIND_CONFIG_PATH']
-
 except KeyError:
     config_path = f"{galfind_dir}/configs/galfind_config.ini" # needs to be able to be changed by the user
 
@@ -60,31 +66,34 @@ if config.getboolean("DEFAULT", "USE_LOGGING"):
     except PermissionError:
         galfind_logger.warning(f"Could not change permissions of {log_file_path} to 777.")
     # print out the default galfind config file parameters
-    for i, (option, value) in enumerate(config["DEFAULT"].items()):
-        if i == 0:
-            # Temporarily remove the formatter
-            galfind_logger.handlers[0].setFormatter(logging.Formatter(''))
-            galfind_logger.info(f"{config_path.split('/')[-1]}: [DEFAULT]")
-            galfind_logger.info("------------------------------------------")
-            # Reattach the original formatter
-            galfind_logger.handlers[0].setFormatter(galfind_log_formatter)
-        galfind_logger.info(f"{option}: {value}")
-    for section in config.sections():
-        galfind_logger.handlers[0].setFormatter(logging.Formatter(''))
-        galfind_logger.info(f"{config_path.split('/')[-1]}: [{section}]")
-        galfind_logger.info("------------------------------------------")
-        galfind_logger.handlers[0].setFormatter(galfind_log_formatter)
-        for option in config.options(section):
-            if option not in config["DEFAULT"].keys():
-                value = config.get(section, option)
-                galfind_logger.info(f"{option}: {value}")
-    # Temporarily remove the formatter
-    galfind_logger.handlers[0].setFormatter(logging.Formatter(''))
-    galfind_logger.info("------------------------------------------")
+    # for i, (option, value) in enumerate(config["DEFAULT"].items()):
+    #     if i == 0:
+    #         # Temporarily remove the formatter
+    #         galfind_logger.handlers[0].setFormatter(logging.Formatter(''))
+    #         galfind_logger.info(f"{config_path.split('/')[-1]}: [DEFAULT]")
+    #         galfind_logger.info("------------------------------------------")
+    #         # Reattach the original formatter
+    #         galfind_logger.handlers[0].setFormatter(galfind_log_formatter)
+    #     galfind_logger.info(f"{option}: {value}")
+    # for section in config.sections():
+    #     galfind_logger.handlers[0].setFormatter(logging.Formatter(''))
+    #     galfind_logger.info(f"{config_path.split('/')[-1]}: [{section}]")
+    #     galfind_logger.info("------------------------------------------")
+    #     galfind_logger.handlers[0].setFormatter(galfind_log_formatter)
+    #     for option in config.options(section):
+    #         if option not in config["DEFAULT"].keys():
+    #             value = config.get(section, option)
+    #             galfind_logger.info(f"{option}: {value}")
+    # # Temporarily remove the formatter
+    # galfind_logger.handlers[0].setFormatter(logging.Formatter(''))
+    # galfind_logger.info("------------------------------------------")
     # Reattach the original formatter
     galfind_logger.handlers[0].setFormatter(galfind_log_formatter)
 else:
     raise(Exception("galfind currently not set up to allow users to ignore logging!"))
+
+end = time.time()
+print(f"Loading config took {end-start:.1e}s")
 
 # set cosmology
 astropy_cosmo = FlatLambdaCDM(H0 = 70, Om0 = 0.3, Ob0 = 0.05, Tcmb0 = 2.725)
@@ -98,14 +107,10 @@ from . import Depths
 from .PDF import PDF, SED_fit_PDF, Redshift_PDF, PDF_nD
 from .Filter import Filter
 from .Instrument import Instrument, ACS_WFC, WFC3_IR, NIRCam, MIRI, Combined_Instrument
-instr_to_name_dict = {instr_name: globals()[instr_name]() for instr_name in \
-    [subcls.__name__ for subcls in Instrument.__subclasses__() if subcls.__name__ != "Combined_Instrument"]}
+instr_to_name_dict = {subcls.__name__: subcls() for subcls in \
+    Instrument.__subclasses__() if subcls.__name__ in json.loads(config.get("Other", "INSTRUMENT_NAMES"))}
 
-# ordered band names from blue -> red
-#config.set("Other", "ALL_BANDS", json.dumps(["F435W","FR459M","F475W","F550M","F555W","F606W","F625W","FR647M","F070W","F775W","F814W","F850LP",
-#             "F090W","FR914M","F098M","F105W","F110W","F115W","F125W","F127M","F139M","F140W","F140M","F150W","F153M","F160W","F162M","F182M",
-#             "F200W","F210M","F250M","F277W","F300M","F335M","F356W","F360M","F410M","F430M","F444W","F460M","F480M","F560W","F770W","F1000W","F1130W","F1280W","F1500W","F1800W","F2100W","F2550W"]))
-all_bands = np.hstack([subcls().bands for subcls in Instrument.__subclasses__() if subcls.__name__ != "Combined_Instrument"])
+all_bands = np.hstack([subcls.bands for subcls in instr_to_name_dict.values()])
 # sort bands blue -> red based on central wavelength
 all_band_names = [band.band_name for band in sorted(all_bands, key = lambda band: band.WavelengthCen.to(u.AA).value)]
 config.set("Other", "ALL_BANDS", json.dumps(all_band_names))
@@ -118,7 +123,7 @@ from .SED_result import SED_result, Galaxy_SED_results, Catalogue_SED_results
 
 from .SED_codes import SED_code
 from .LePhare import LePhare
-from .EAZY import EAZY
+from .EAZY import EAZY # Failed to `import dust_attenuation`
 from .Bagpipes import Bagpipes
 # don't do Bagpipes or LePhare for now
 sed_code_to_name_dict = {sed_code_name: globals()[sed_code_name]() \

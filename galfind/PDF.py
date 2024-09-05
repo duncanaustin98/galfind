@@ -212,8 +212,8 @@ class PDF:
             ax.axvline(self.get_peak(0)["value"], color = colour, linestyle='--', alpha=0.5, lw=2)
             ax.axvline(self.get_percentile(16.), color = colour, linestyle=':', alpha=0.5, lw=2)
             ax.axvline(self.get_percentile(84.), color = colour, linestyle=':', alpha=0.5, lw=2)
-            ax.annotate('-1$\sigma$', (self.get_percentile(16.), 0.1), fontsize='small', ha='center', transform = ax.get_yaxis_transform(), va='bottom',  color = colour, path_effects = [pe.withStroke(linewidth=3, foreground='white')])
-            ax.annotate('+1$\sigma$', (self.get_percentile(84.), 0.1), fontsize='small', ha='center', transform = ax.get_yaxis_transform(), va='bottom', color = colour, path_effects = [pe.withStroke(linewidth=3, foreground='white')])
+            ax.annotate(r"-1$\sigma$", (self.get_percentile(16.), 0.1), fontsize='small', ha='center', transform = ax.get_yaxis_transform(), va='bottom',  color = colour, path_effects = [pe.withStroke(linewidth=3, foreground='white')])
+            ax.annotate(r"+1$\sigma$", (self.get_percentile(84.), 0.1), fontsize='small', ha='center', transform = ax.get_yaxis_transform(), va='bottom', color = colour, path_effects = [pe.withStroke(linewidth=3, foreground='white')])
             ax.annotate(r'$z_{\rm phot}=$'+f'{self.get_peak(0)["value"]:.1f}' + \
                 f'$^{{+{(self.get_percentile(84.) - self.get_peak(0)["value"]):.1f}}}_{{-{(self.get_peak(0)["value"] - self.get_percentile(16.)):.1f}}}$', (self.get_peak(0)["value"], 1.17), fontsize='medium', va='top', ha='center', color = colour, path_effects = [pe.withStroke(linewidth=3, foreground='white')])
             
