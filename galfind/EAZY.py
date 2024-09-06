@@ -67,7 +67,7 @@ class EAZY(SED_code):
         super().__init__(SED_fit_params, self.galaxy_property_dict, self.galaxy_property_errs_dict, \
             self.available_templates, self.ID_label, self.are_errs_percentiles)
         end = time.time()
-        print(f"Instantiating {self.__class__.__name__} took {end - start:.1e}s")
+        #print(f"Instantiating {self.__class__.__name__} took {end - start:.1e}s")
 
     def galaxy_property_labels(self, gal_property, SED_fit_params, is_err = False):
         
