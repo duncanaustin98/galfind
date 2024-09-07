@@ -8,14 +8,14 @@ scipy
 configparser 
 json
 logging	
-#pyregion
+#pyregion # removed dependency
 sep
-timeit
+#timeit
 cv2
 joblib 
-contextlib
+#contextlib # standard lib
 astroquery
-trilogy3
+trilogy
 yagmail
 sklearn
 skimage
@@ -25,7 +25,7 @@ photutils
 regions
 typing
 kneed
-collections
+#collections # standard lib
 grizli
 msaexp
 #reproject

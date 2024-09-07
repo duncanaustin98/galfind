@@ -17,7 +17,6 @@ import sep # sextractor for python
 import matplotlib.pyplot as plt
 import cv2
 import math
-import timeit
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 from astropy.wcs.utils import pixel_to_skycoord
 from astropy.coordinates import search_around_sky, SkyCoord

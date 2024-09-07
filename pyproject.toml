@@ -1,0 +1,227 @@
+# Set up the build system
+[build-system]
+
+# Use latest setuptools, setuptools_scm for git versioning and
+# numpy (numpy includes are needed for compilation of C extensions)
+requires = ["setuptools>=64", "setuptools_scm>=8"] # , "numpy>=1.23"
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "galfind"
+
+# Dynamic version numbers from git
+dynamic = ["version"]
+
+# Tagline for Galfind
+description = "A flexible pipeline for optical and infra-red photometric observations"
+
+# A longer description of Galfind
+readme = "README.md"
+
+# Minimum Python version
+requires-python = ">=3.9" # needed for latest configparser
+
+# The licence
+license = {file = "LICENSE.md"}
+
+# Project keywords
+keywords =[
+  "galaxy",
+  "galaxy formation",
+  "cosmology",
+  "galaxy evolution",
+  "survey",
+  "space telescope",
+  "SED",
+  "sed",
+  "spectral energy distribution",
+  "stellar population",
+]
+
+# Synthesizer authors
+authors = [
+  {name = "D. Austin", email = "duncan.austin@postgrad.manchester.ac.uk"},
+  {name = "T. Harvey", email = "thomas.harvey-3@manchester.ac.uk"}
+]
+
+# Synthesizer maintainers
+maintainers = [
+  {name = "D. Austin", email = "duncan.austin@postgrad.manchester.ac.uk"},
+  {name = "T. Harvey", email = "thomas.harvey-3@manchester.ac.uk"}
+]
+
+# Classifiers
+classifiers = [  # Optional
+  # How mature is this project? Common values are
+  #   3 - Alpha
+  #   4 - Beta
+  #   5 - Production/Stable
+  "Development Status :: 4 - Beta",  # 3 Alpha/4 Beta/5 Production/Stable
+  "Intended Audience :: Astronomers",
+  "Topic :: Flexible photometric pipeline",
+  "License :: GNU GENERAL PUBLIC LICENSE v3.0",
+
+  # Supported Python versions
+  "Programming Language :: Python :: 3.8",
+  "Programming Language :: Python :: 3.9",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3 :: Only",
+]
+
+# Dependencies
+dependencies = [
+  "setuptools",
+  "numpy<2.0",
+  "matplotlib",
+  "astropy",
+  "astroquery",
+  "tqdm",
+  "h5py",
+  "scipy",
+  "sep", # 1.2.1 
+  "photutils",
+  "opencv-python",
+  "joblib",
+  "trilogy",
+  "scikit-learn",
+  "scikit-image",
+  "eazy",
+  "regions",
+  "typing",
+  "kneed",
+  "yagmail",
+  "typing_extensions", # 4.12.2
+  "numba", # 0.60.0
+  "configparser"
+]
+# numpy<2.0 prevents import sep; ValueError: numpy.dtype size changed, may indicate binary incompatibility. Expected 96 from C header, got 88 from PyObject.
+#grizli
+#msaexp
+#"bagpipes", # need Tom's forked version
+#"pathlib",
+
+# Optional dependencies for specific use cases
+[project.optional-dependencies]
+# Development
+dev = [
+    "ruff==0.6.0",
+]
+# Testing
+#test = [
+#    "nbmake",
+#    "pytest",
+#    "ruff>=0.3.0",
+#    "mypy>=0.910",
+#]
+# Documentation building
+#docs = [
+#    "nbmake",
+#    "sphinx==7.4.7",
+#    "pandoc",
+#    "furo",
+#    "sphinx_autodoc_typehints",
+#    "ipython",
+#    "sphinx_gallery",
+#    "pillow",
+#    "sphinx-toolbox",
+#    "nbsphinx",
+#    "sphinx-copybutton",
+#]
+
+# Project urls
+[project.urls]
+"Homepage" = "https://github.com/duncanaustin98/galfind"
+"Bug Reports" = "https://github.com/duncanaustin98/galfind/issues"
+"Source" = "https://github.com/duncanaustin98/galfind"
+#"Documentation" = "https://flaresimulations.github.io/synthesizer/"
+
+# Entry points
+#[project.scripts]
+galfind-config-update = "galfind.change_config:main"
+#synthesizer-download="synthesizer.download_data:download"
+
+# Package data
+#[tool.setuptools.package-data]
+# data = []
+
+[tool.setuptools.packages.find]
+exclude = ["unit_testing*", "NIRCam_pipeline*"]
+
+[tool.setuptools_scm]
+
+# Make a version file at build time
+version_file = "galfind/_version.py"
+
+# Configure the linter and formatter
+[tool.ruff]
+
+# Exclude a variety of commonly ignored directories.
+exclude = [
+    ".bzr",
+    ".direnv",
+    ".eggs",
+    ".git",
+    ".git-rewrite",
+    ".hg",
+    ".ipynb_checkpoints",
+    ".mypy_cache",
+    ".nox",
+    ".pants.d",
+    ".pyenv",
+    ".pytest_cache",
+    ".pytype",
+    ".ruff_cache",
+    ".svn",
+    ".tox",
+    ".venv",
+    ".vscode",
+    "__pypackages__",
+    ".DS_Store",
+    "_build",
+    "buck-out",
+    "build",
+    "dist",
+    "node_modules",
+    "site-packages",
+    "venv",
+    "*__init__.py"  # ignore all init files
+]
+
+# PEP-8 line length
+line-length = 79
+indent-width = 4
+
+# Assume Python 3.8 by default regardless
+target-version = "py38"
+
+[tool.ruff.lint]
+# Enable Pyflakes (`F`) and pycodestyle (`E`)  codes by default.
+select = ["F", "E", "W"]
+ignore = [
+       "E402",  # "module level import not at top of file" (isolate C imports in case python alternatives exist)
+       "F811",  # "redefinition of unused name from line N" (breaks quantity objects)
+       ]
+
+# Sort imports alphabetically
+extend-select = ["I"]
+
+# Allow fix for all enabled rules (when `--fix`) is provided.
+fixable = ["ALL"]
+unfixable = []
+
+# Allow unused variables when underscore-prefixed.
+dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
+
+[tool.ruff.format]
+# Like Black, use double quotes for strings.
+quote-style = "double"
+
+# Like Black, indent with spaces, rather than tabs.
+indent-style = "space"
+
+# Like Black, respect magic trailing commas.
+skip-magic-trailing-comma = false
+
+# Like Black, automatically detect the appropriate line ending.
+line-ending = "auto"
