@@ -6,10 +6,8 @@ Created on Thu Jun  1 16:59:40 2023
 @author: austind
 """
 
-from setuptools import setup, find_packages
-from setuptools.command.install import install
-import os
-import shutil
+from setuptools import setup
+
 ##import atexit
 
 package_name = "galfind"
@@ -21,12 +19,12 @@ package_name = "galfind"
 #     mpl_stylelib_dir = os.path.join(mpl.matplotlib_fname().replace("/matplotlibrc", ""), "stylelib")
 #     if not os.path.exists(mpl_stylelib_dir):
 #         os.makedirs(mpl_stylelib_dir)
-    
+
 #     shutil.copy(
 #         os.path.join(os.getcwd(), f"{package_name}/{stylefile}"),
 #         os.path.join(mpl_stylelib_dir, stylefile))
 
-#install_mplstyle()
+# install_mplstyle()
 
 # def load_requirements(path):
 #     if os.path.isfile(path):

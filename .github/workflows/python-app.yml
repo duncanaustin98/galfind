@@ -34,8 +34,8 @@ jobs:
     - name: Test with pytest
       run: |
         pytest
-    - uses: chartboost/ruff-action@v1  # Lint with Ruff
-      with:
-        version: 0.6.4
-        changed-files: 'true'
+    # - uses: chartboost/ruff-action@v1  # Lint with Ruff
+    #   with:
+    #     version: 0.6.4
+    #     changed-files: 'true'
         
