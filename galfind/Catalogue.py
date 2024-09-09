@@ -227,8 +227,9 @@ class Catalogue(Catalogue_Base):
         unique_origins = np.unique([property_dict.keys() for property_dict in properties_dict])[0]
         unique_properties_origins_dict = {key: np.unique([property_dict[key] for property_dict in properties_dict]) for key in unique_origins}
         unique_properties_origins_dict = {key: value for key, value in unique_properties_origins_dict.items() if len(value) > 0}
-        breakpoint()
-        [self._append_property_to_tab(property_name, origin) for origin, property_name in unique_properties_origins_dict.items()]
+        #breakpoint()
+        [self._append_property_to_tab(property_name, origin) for origin, property_names in \
+            unique_properties_origins_dict.items() for property_name in property_names]
 
     def _append_property_to_tab(self, property_name: str, origin: Union[str, dict], overwrite: bool = False) -> None:
         galfind_logger.info("Catalogue._append_property_to_tab doesn't work if trying to append newly updated galaxy properties YET!")
