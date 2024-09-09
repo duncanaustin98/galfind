@@ -23,8 +23,6 @@ end = time.time()
 print(f"__init__ imports took {end - start}s")
 #breakpoint()
 
-start = time.time()
-
 galfind_dir = "/".join(__file__.split("/")[:-1])
 
 # note whether the __init__ is running in a workflow
@@ -57,6 +55,7 @@ if config.getboolean("DEFAULT", "USE_LOGGING"):
         'ERROR': logging.ERROR, 'CRITICAL': logging.CRITICAL}[config["DEFAULT"]["LOGGING_LEVEL"]])
     # Create a logger instance
     galfind_logger = logging.getLogger(__name__)
+    # don't add file handler to galfind_logger if in workflow
     if not in_workflow:
         current_timestamp = time.strftime("%Y-%m-%d", time.gmtime())
         log_file_name = f"{current_timestamp}.log"
@@ -98,9 +97,6 @@ if config.getboolean("DEFAULT", "USE_LOGGING"):
         galfind_logger.handlers[0].setFormatter(galfind_log_formatter)
 else:
     raise(Exception("galfind currently not set up to allow users to ignore logging!"))
-
-end = time.time()
-print(f"Loading config took {end-start:.1e}s")
 
 # set cosmology
 astropy_cosmo = FlatLambdaCDM(H0 = 70, Om0 = 0.3, Ob0 = 0.05, Tcmb0 = 2.725)
