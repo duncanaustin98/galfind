@@ -18,6 +18,7 @@ from pathlib import Path
 from astroquery.svo_fps import SvoFps
 import matplotlib.pyplot as plt
 from typing import NoReturn, Union
+import warnings
 
 from . import useful_funcs_austind as funcs
 from . import config, galfind_logger, NIRCam_aper_corr
@@ -37,7 +38,7 @@ class Instrument:
     def from_SVO(cls, facility, instrument, excl_bands = []):
         filter_list = SvoFps.get_filter_list(facility = facility, instrument = instrument.split("_")[0])
         filter_list = filter_list[np.array([filter_name.split("/")[-1].split(".")[0] for filter_name in np.array(filter_list["filterID"])]) == instrument]
-        bands = np.array([Filter.from_SVO(facility, instrument, filt_ID) for filt_ID in np.array(filter_list["filterID"])])
+        bands = np.array([Filter.from_SVO(facility, instrument, filt_ID.replace(f"{facility}/{instrument}.", "")) for filt_ID in np.array(filter_list["filterID"])])
         return cls(instrument, bands, excl_bands, facility)
 
     @property
@@ -121,32 +122,56 @@ class Instrument:
     #             excl_bands.append(band)
     #     return self.new_instrument(excl_bands)
     
-    def __add__(self, instrument):
+    def __add__(self, other):
         # cannot add multiple of the same bands together!!! (maybe could just ignore the problem \
         # in Instrument class and just handle it in Data, possibly stacking the two images)
-        for band in instrument.band_names:
-            if band in self.band_names:
-                raise(Exception("Cannot add multiple of the same band together in 'Instrument.__add__()'!"))
         
-        # add and sort bands from blue -> red
-        bands = [band for band in sorted(np.concatenate([self.bands, instrument.bands]), \
-            key = lambda band: band.WavelengthCen.to(u.AA).value)]
-
-        # always name instruments from blue -> red
-       
-        if self.name == instrument.name:
-            self.bands = bands
-            out_instrument = self
+        if type(other) in Instrument.__subclasses__():
+            new_bands = np.array([band for band in other if band.band_name not in self.band_names])
+        elif type(other) == Filter:
+            if other.band_name not in self.band_names:
+                new_bands = np.array([other])
+            else:
+                new_bands = np.array([])
         else:
+            galfind_logger.critical(f"{type(other)=} not in \
+                {[instr.__name__ for instr in Instrument.__subclasses__()] + ['Filter']}")
+            raise(Exception())
+
+        if len(new_bands) == 0:
+            # produce warning message
+            warning_message = "No new bands to add, returning self from Instrument.__add__"
+            galfind_logger.warning(warning_message)
+            warnings.warn(UserWarning(warning_message))
+            # nothing else to do
+            return deepcopy(self)
+        elif len(new_bands) < len(other):
+            # produce warning message
+            warning_message = f"Not all bands in {other.band_names=} in {self.band_names=}, adding only {new_bands=}"
+            galfind_logger.warning(warning_message)
+            warnings.warn(UserWarning(warning_message))
+            
+        # add and sort bands from blue -> red
+        bands = [band for band in sorted(np.concatenate([self.bands, new_bands]), \
+            key = lambda band: band.WavelengthCen.to(u.AA).value)]
+        
+        if type(other) in Instrument.__subclasses__():
+            other_instr_name = other.name
+        else: # type == Filter
+            other_instr_name = other.instrument
+            
+        if all(name in self.name for name in other_instr_name.split("+")):
+            self.bands = bands
+            out_instrument = deepcopy(self)
+        else: # re-compute blue -> red instrument_name and facility
             all_instruments = json.loads(config.get("Other", "INSTRUMENT_NAMES"))
             all_facilities = json.loads(config.get("Other", "TELESCOPE_NAMES"))
             # split self.name and instrument.name
-            names = list(set(self.name.split("+") + instrument.name.split("+")))
-            facilities = list(set(self.facility.split("+") + instrument.facility.split("+")))
+            names = list(set(self.name.split("+") + other_instr_name.split("+")))
+            facilities = list(set(self.facility.split("+") + other.facility.split("+")))
             name = "+".join([name for name in all_instruments if name in names])
             facility = "+".join([facility for facility in all_facilities if facility in facilities])
             out_instrument = Combined_Instrument(name, bands, excl_bands = [], facility = facility)
-            #self.__del__() # delete old self
         return out_instrument
     
     def __sub__(self, instrument):
@@ -157,6 +182,22 @@ class Instrument:
             else:
                 print(f"Cannot remove {band} from {self.name}!")
         return self
+    
+    def __eq__(self, other):
+        # ensure same type
+        if type(self) != type(other):
+            return False
+        # ensure same facility and instrument name
+        elif self.facility != other.facility \
+                or self.name != other.name:
+            return False
+        # ensure same bands are present in both instruments
+        else:
+            if len(self) == len(other) and all(self_band == other_band \
+                    for self_band, other_band in zip(self, other)):
+                return True
+            else:
+                return False
     
     # STILL NEED TO LOOK FURTHER INTO THIS
     def __copy__(self):

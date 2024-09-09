@@ -108,12 +108,12 @@ dev = [
     "ruff==0.6.0",
 ]
 # Testing
-#test = [
+test = [
+    "pytest"
+]
 #    "nbmake",
-#    "pytest",
 #    "ruff>=0.3.0",
 #    "mypy>=0.910",
-#]
 # Documentation building
 #docs = [
 #    "nbmake",

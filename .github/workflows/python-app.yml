@@ -5,9 +5,9 @@ name: Python application
 
 on:
   push:
-    branches: [ "main" ]
+    branches: ["main"]
   pull_request:
-    branches: [ "main" ]
+    branches: ["main"]
 
 permissions:
   contents: read
@@ -30,6 +30,9 @@ jobs:
         python -m pip install --upgrade pip
         pip install ruff pytest
         #if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+    - name: Test with pytest
+      run: |
+        pytest
     - name: List all dependencies
       run: |
         ls ${{ github.workspace }}
@@ -40,6 +43,3 @@ jobs:
         
     #     # exit-zero treats all errors as warnings. The GitHub editor is 127 chars wide
         
-    # - name: Test with pytest
-    #   run: |
-    #     pytest

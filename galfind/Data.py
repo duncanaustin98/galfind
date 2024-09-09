@@ -8,7 +8,8 @@ Created on Wed May 17 14:20:31 2023
 
 from __future__ import absolute_import
 import photutils
-from photutils import Background2D, MedianBackground, SkyCircularAperture, aperture_photometry
+from photutils.background import Background2D, MedianBackground
+from photutils.aperture import SkyCircularAperture, aperture_photometry
 import numpy as np
 from astropy.io import fits
 from random import randrange

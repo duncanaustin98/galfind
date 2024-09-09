@@ -670,8 +670,8 @@ class Galaxy:
     def phot_Lya_band(self, SNR_lim, detect_or_non_detect = "detect", SED_fit_params = \
             {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}, widebands_only = True, update = True):
         assert(type(SNR_lim) in [int, float])
-        assert(detect_or_non_detect.lower() in ["detect", "non_detect"], \
-            galfind_logger.critical(f"detect_or_non_detect = {detect_or_non_detect} must be either 'detect' or 'non_detect'!"))
+        assert detect_or_non_detect.lower() in ["detect", "non_detect"], \
+            galfind_logger.critical(f"detect_or_non_detect = {detect_or_non_detect} must be either 'detect' or 'non_detect'!")
         selection_name = f"Lya_band_SNR{'>' if detect_or_non_detect == 'detect' else '<'}{SNR_lim:.1f}{'_widebands' if widebands_only else ''}"
         if selection_name in self.selection_flags.keys():
             galfind_logger.debug(f"{selection_name} already performed for galaxy ID = {self.ID}!")
