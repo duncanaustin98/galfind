@@ -105,11 +105,13 @@ dependencies = [
 [project.optional-dependencies]
 # Development
 dev = [
-    "ruff==0.6.0",
+    "ruff==0.6.4",
 ]
 # Testing
 test = [
-    "pytest"
+    "pytest",
+    "mypy",
+    "ruff"
 ]
 #    "nbmake",
 #    "ruff>=0.3.0",

@@ -201,7 +201,8 @@ class SED_code(ABC):
         orig_cat = cat.open_cat()
         # combine catalogues if not already run before
         if (
-            self.galaxy_property_labels("z", SED_fit_params) not in orig_cat.colnames
+            self.galaxy_property_labels("z", SED_fit_params)
+            not in orig_cat.colnames
         ):
             combined_cat = join(
                 orig_cat,

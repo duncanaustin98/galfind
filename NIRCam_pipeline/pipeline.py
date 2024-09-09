@@ -80,7 +80,7 @@ def pipeline(surveys, version, instruments, aper_diams, min_flux_pc_errs, forced
             # # hot pixel checks
             # for band_name in ["F277W", "F356W", "F444W"]:
             #     cat.select_band_flux_radius(band_name, "gtr", 1.5) # LW NIRCam wideband Re>1.5 pix
-            
+
             # cat_copy = cat.select_EPOCHS(allow_lowz = False)
             # #cat_copy.make_cutouts(IDs = crop_by["IDs"])
             # cat_copy.plot_phot_diagnostics(flux_unit = u.ABmag)
@@ -88,7 +88,7 @@ def pipeline(surveys, version, instruments, aper_diams, min_flux_pc_errs, forced
 
             # end = time.time()
             # print(f"Time to load catalogue = {(end - start):.1f}s")
-            
+
             # #cat.data.calc_unmasked_area("NIRCam", forced_phot_band = forced_phot_band)
             # #cat.select_band_flux_radius("F277W", "gtr", 1.5)
 
