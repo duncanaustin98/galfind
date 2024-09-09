@@ -25,12 +25,19 @@ print(f"__init__ imports took {end - start}s")
 
 start = time.time()
 
-galfind_dir = "/".join(__file__.split("/")[:-1]) 
+galfind_dir = "/".join(__file__.split("/")[:-1])
 
+# note whether the __init__ is running in a workflow
+if "hostedtoolcache" in galfind_dir:
+    in_workflow = True
+else:
+    in_workflow = False
+
+# needs to be able to be changed by the user - should be import option
 try:
     config_path = os.environ['GALFIND_CONFIG_PATH']
 except KeyError:
-    config_path = f"{galfind_dir}/configs/galfind_config.ini" # needs to be able to be changed by the user
+    config_path = f"{galfind_dir}/configs/galfind_config.ini"
 
 print('Reading GALFIND config file from:', config_path)
 # configuration variables
@@ -50,21 +57,21 @@ if config.getboolean("DEFAULT", "USE_LOGGING"):
         'ERROR': logging.ERROR, 'CRITICAL': logging.CRITICAL}[config["DEFAULT"]["LOGGING_LEVEL"]])
     # Create a logger instance
     galfind_logger = logging.getLogger(__name__)
-    #current_timestamp = time.strftime("%Y-%m-%d_%H-%M-%S", time.localtime())
-    #log_file_name = f"{current_timestamp}.log"
-    log_file_name = f"{config['DEFAULT']['SURVEY']}_{config['DEFAULT']['VERSION']}.log"
-    os.makedirs(config['DEFAULT']['LOGGING_OUT_DIR'], exist_ok = True) # make directory if it doesnt already exist
-    log_file_path = f"{config['DEFAULT']['LOGGING_OUT_DIR']}/{log_file_name}"
-    # Create a file handler
-    file_handler = logging.FileHandler(log_file_path)
-    #file_handler.setLevel()
-    galfind_log_formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s', datefmt = '%Y-%m-%d %H:%M:%S')
-    file_handler.setFormatter(galfind_log_formatter)
-    galfind_logger.addHandler(file_handler)
-    try:
-        os.chmod(log_file_path, 0o777)
-    except PermissionError:
-        galfind_logger.warning(f"Could not change permissions of {log_file_path} to 777.")
+    if not in_workflow:
+        current_timestamp = time.strftime("%Y-%m-%d", time.gmtime())
+        log_file_name = f"{current_timestamp}.log"
+        os.makedirs(config['DEFAULT']['LOGGING_OUT_DIR'], exist_ok = True) # make directory if it doesnt already exist
+        log_file_path = f"{config['DEFAULT']['LOGGING_OUT_DIR']}/{log_file_name}"
+        # Create a file handler
+        file_handler = logging.FileHandler(log_file_path)
+        #file_handler.setLevel()
+        galfind_log_formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s', datefmt = '%Y-%m-%d %H:%M:%S')
+        file_handler.setFormatter(galfind_log_formatter)
+        galfind_logger.addHandler(file_handler)
+        try:
+            os.chmod(log_file_path, 0o777)
+        except PermissionError:
+            galfind_logger.warning(f"Could not change permissions of {log_file_path} to 777.")
     # print out the default galfind config file parameters
     # for i, (option, value) in enumerate(config["DEFAULT"].items()):
     #     if i == 0:
@@ -88,7 +95,7 @@ if config.getboolean("DEFAULT", "USE_LOGGING"):
     # galfind_logger.handlers[0].setFormatter(logging.Formatter(''))
     # galfind_logger.info("------------------------------------------")
     # Reattach the original formatter
-    galfind_logger.handlers[0].setFormatter(galfind_log_formatter)
+        galfind_logger.handlers[0].setFormatter(galfind_log_formatter)
 else:
     raise(Exception("galfind currently not set up to allow users to ignore logging!"))
 
