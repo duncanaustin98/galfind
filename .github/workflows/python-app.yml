@@ -34,9 +34,8 @@ jobs:
     - name: Test with pytest
       run: |
         pytest
-    # - name: Lint with ruff
-    #   run: |
-    #     # stop the build if there are Python syntax errors or undefined names
-        
-    #     # exit-zero treats all errors as warnings. The GitHub editor is 127 chars wide
+    - uses: chartboost/ruff-action@v1  # Lint with Ruff
+      with:
+        version: 0.6.4
+        changed-files: 'true'
         
