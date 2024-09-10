@@ -105,6 +105,7 @@ class NIRSpec(Spectral_Instrument):
             filter_name: str
             ) -> NoReturn:
         grating_filter_name = f"{grating_name}/{filter_name}"
+        self.grating_filter_name = grating_filter_name
         assert grating_filter_name in self.available_grating_filters, \
             galfind_logger.critical(f"{grating_filter_name=} not in {self.available_grating_filters=}")
         super().__init__(Spectral_Grating(grating_name), Spectral_Filter(filter_name))
@@ -353,7 +354,7 @@ class Spectrum:
         if src == "msaexp":
             import msaexp.spectrum
             fig, spec, data = msaexp.spectrum.plot_spectrum(self.origin, z = self.z)
-            save_path = f"{config['DEFAULT']['GALFIND_WORK']}/DJA_spec_plots/{self.src_name}_spec.png"
+            save_path = f"{config['DEFAULT']['GALFIND_WORK']}/DJA_spec_plots/{self.instrument.grating_filter_name}/{self.src_name}_spec.png"
             funcs.make_dirs(save_path)
             fig.savefig(save_path)
 
@@ -401,7 +402,7 @@ class Spectral_Catalogue:
     def from_DJA(cls, ra_range: Union[list, np.array, u.Quantity] = None, \
             dec_range: Union[list, np.array, u.Quantity] = None, PID: Union[int, None] = None, \
             z_cat_range: Union[list, np.array, None] = None, grating_filter: Union[str, None] = None, \
-            grade: int = 3, save: bool = True, z_from_cat: bool = False, version: str = "v2") -> Self:
+            grade: int = 3, save: bool = True, z_from_cat: bool = False, version: str = "v2"):
         if type(grating_filter) != type(None):
             assert grating_filter in NIRSpec.available_grating_filters
         assert version in ["v1", "v2"]
