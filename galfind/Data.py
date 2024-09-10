@@ -22,7 +22,10 @@ import astropy.visualization as vis
 from matplotlib.colors import LogNorm
 from astropy.table import Table, hstack, vstack, Column
 from copy import deepcopy
-import pyregion
+try:
+    import pyregion
+except:
+    pass
 from regions import Regions
 import subprocess
 import time

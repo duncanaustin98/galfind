@@ -376,6 +376,8 @@ class Spectrum:
         flux_errs = self.flux_errs[wav_mask]
         SNR_arr = [flux / err for flux, err in zip(fluxes, flux_errs)]
         mean_SNR = np.mean(SNR_arr)
+        # HACK: This is not general!
+        self.SNR = mean_SNR
         return mean_SNR
 
     def plot_spectrum(self, src="msaexp"):
@@ -383,6 +385,7 @@ class Spectrum:
             import msaexp.spectrum
 
             fig, spec, data = msaexp.spectrum.plot_spectrum(self.origin, z=self.z)
+            self.fit_data = data
             save_path = f"{config['DEFAULT']['GALFIND_WORK']}/DJA_spec_plots/{self.instrument.grating_filter_name}/{self.src_name}_spec.png"
             funcs.make_dirs(save_path)
             fig.savefig(save_path)
