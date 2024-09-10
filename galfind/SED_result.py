@@ -88,7 +88,7 @@ class SED_result:
             if property_name not in access_dict.keys():
                 err_message = f"{property_name} {property_type} not available in SED_result object!"
                 galfind_logger.warning(err_message)
-                raise AttributeError(err_message)
+                #raise AttributeError(err_message)
             else:
                 if property_type == "l1":
                     return access_dict[property_name][0]

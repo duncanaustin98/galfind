@@ -157,7 +157,11 @@ class Base_Number_Density_Function:
                 plot_path = f"{config['NumberDensityFunctions']['NUMBER_DENSITY_FUNC_DIR']}/Plots/Literature/{save_name}"
             else:
                 plot_path = self.get_plot_path()
-            funcs.make_dirs(plot_path)
+            if os.access(plot_path, os.W_OK):
+                funcs.make_dirs(plot_path)
+            else:
+                galfind_logger.warning(f"Cannot write to {plot_path}!")
+
             plt.savefig(plot_path)
         if show:
             plt.show()
@@ -322,7 +326,9 @@ class Number_Density_Function(Base_Number_Density_Function):
     @staticmethod
     def get_save_path(origin_surveys: str, SED_fit_params_key: str, z_bin: Union[list, np.array], x_name: str, ext: str = ".ecsv") -> str:
         save_path = f"{config['NumberDensityFunctions']['NUMBER_DENSITY_FUNC_DIR']}/Data/{SED_fit_params_key}/{x_name}/{origin_surveys}/{z_bin[0]}<z<{z_bin[1]}{ext}"
-        funcs.make_dirs(save_path)
+        
+        if os.access(save_path, os.W_OK):
+            funcs.make_dirs(save_path)
         return save_path
     
     # cv_origin == "Driver2010"
@@ -341,7 +347,10 @@ class Number_Density_Function(Base_Number_Density_Function):
     def get_plot_path(self) -> str:
         plot_path = self.get_save_path(self.origin_surveys, self.x_origin.replace("_REST_PROPERTY", ""), \
             self.z_bin, self.x_name, ext = ".png").replace("/Data/", "/Plots/")
-        funcs.make_dirs(plot_path)
+        if os.access(plot_path, os.W_OK):
+            funcs.make_dirs(plot_path)
+        else:
+            galfind_logger.warning(f"Cannot write to {plot_path}!")
         return plot_path
 
     def save(self, save_path: Union[str, None] = None) -> None:
@@ -354,7 +363,10 @@ class Number_Density_Function(Base_Number_Density_Function):
             dtype = [float, float, int, float, float, float, float])
         tab.meta = {"x_origin": self.x_origin, "x_name": self.x_name, "origin_surveys": self.origin_surveys, \
             "z_bin": self.z_bin, "cv_origin": self.cv_origin}
-        tab.write(save_path, overwrite = True)
+        if os.access(save_path, os.W_OK):
+            tab.write(save_path, overwrite = True)
+        else:
+            galfind_logger.warning(f"Cannot write to {save_path}!")
 
     def plot(self, fig = None, ax = None, log: bool = False, annotate: bool = True, \
             save: bool = True, show: bool = False, plot_kwargs: dict = {}, \

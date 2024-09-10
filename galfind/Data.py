@@ -2282,7 +2282,11 @@ class Data:
                 tab = Table({"band": bands, "region": region_labels, "median_depth": median_depths, \
                     "mean_depth": mean_depths}, dtype = [str, str, float, float])
                 funcs.make_dirs(out_path)
-                tab.write(out_path, overwrite = True)
+                # do I have permissions to write this
+                if os.access(out_path, os.W_OK):
+                    tab.write(out_path, overwrite = True)
+
+                
 
     def plot_depth(self, band, cat_creator, mode, aper_diam, show = False): #, **kwargs):
         if type(cat_creator) == type(None):
