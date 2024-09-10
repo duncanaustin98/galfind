@@ -63,7 +63,7 @@ class Simulated_Catalogue(Catalogue_Base):
         )
         # make catalogue with no SED fitting information
         cat_obj = cls(gals, fits_cat_path, survey, cat_creator)
-        if cat_obj != None:
+        if cat_obj is not None:
             cat_obj.data = data
         if mask:
             cat_obj.mask(data)

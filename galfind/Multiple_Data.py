@@ -11,20 +11,20 @@ class Multiple_Data:
     def from_pipeline(
         cls, surveys, versions, instrument_names_arr, excl_bands_arr
     ):
-        if type(versions) == str:
+        if isinstance(versions, str):
             versions = [versions for i in range(len(surveys))]
         assert len(versions) == len(surveys)
 
-        if type(instrument_names_arr) == str:
+        if isinstance(instrument_names_arr, str):
             instrument_names_arr = [
                 [instrument_names_arr] for i in range(len(surveys))
             ]
         elif type(instrument_names_arr) in [list, np.array]:
-            if type(instrument_names_arr[0]) == str:
+            if isinstance(instrument_names_arr[0], str):
                 instrument_names_arr = [
                     instrument_names_arr for i in range(len(surveys))
                 ]
-            elif type(instrument_names_arr[0]) in [list, np.array]:
+            elif isinstance(instrument_names_arr[0], (list, np.array)):
                 # already formatted correctly
                 pass
             else:
@@ -33,12 +33,12 @@ class Multiple_Data:
             raise (Exception())
         assert len(instrument_names_arr) == len(surveys)
 
-        if type(excl_bands_arr) == str:
+        if isinstance(excl_bands_arr, str):
             excl_bands_arr = [[excl_bands_arr] for i in range(len(surveys))]
-        elif type(excl_bands_arr) in [list, np.array]:
-            if type(excl_bands_arr[0]) == str:
+        elif isinstance(excl_bands_arr, (list, np.array)):
+            if isinstance(excl_bands_arr[0], str):
                 excl_bands_arr = [excl_bands_arr for i in range(len(surveys))]
-            elif type(excl_bands_arr[0]) in [list, np.array]:
+            elif isinstance(excl_bands_arr[0], (list, np.array)):
                 # already formatted correctly
                 pass
             else:

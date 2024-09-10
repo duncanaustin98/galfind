@@ -5,6 +5,9 @@ import matplotlib.pyplot as plt
 import numpy as np
 from astropy.table import vstack
 
+from . import Catalogue
+from . import useful_funcs_austind as funcs
+
 
 class Multiple_Catalogue:
     def __init__(self, cat_arr, survey):
@@ -60,13 +63,10 @@ class Multiple_Catalogue:
         combined_table.rename_column("NUMBER", "SOURCEX_NUMBER")
         combined_table["ID"] = np.arange(1, len(combined_table) + 1)
         # Move 'ID' to the first column
-        try:
-            new_order = ["ID"] + [
-                col for col in combined_table.colnames if col != "ID"
-            ]
-            combined_table = combined_table[new_order]
-        except:
-            pass
+        new_order = ["ID"] + [
+            col for col in combined_table.colnames if col != "ID"
+        ]
+        combined_table = combined_table[new_order]
 
         combined_table.write(filename, format="fits")
         funcs.change_file_permissions(filename)
@@ -153,7 +153,7 @@ class Multiple_Catalogue:
             )
 
             # Set ylim to 2nd / 98th percentile if depth is smaller than this number
-            ylim = ax.get_ylim()
+            # ylim = ax.get_ylim()
 
             if pos == 0:
                 min_depth = np.percentile(total_depths, 0.5)

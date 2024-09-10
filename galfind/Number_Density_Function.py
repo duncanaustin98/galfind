@@ -54,7 +54,7 @@ class Base_Number_Density_Function:
         sys.path.insert(1, config["NumberDensityFunctions"]["FLAGS_DATA_DIR"])
         try:
             from flags_data import distribution_functions
-        except:
+        except ImportError:
             galfind_logger.critical(
                 "Could not import flags_data.distribution_functions"
             )
@@ -83,7 +83,7 @@ class Base_Number_Density_Function:
                         if delta_z_i < deltaz:
                             deltaz = delta_z_i
                             z = float(z_i)
-                if type(z) == type(None):
+                if z is None:
                     galfind_logger.warning(
                         f"No available redshift for {author_year=} in {z_bin=}! Available redshifts are {ds.redshifts}"
                     )
@@ -135,7 +135,7 @@ class Base_Number_Density_Function:
         x_lims: Union[list, np.array, str, None] = "default",
         save_name: Union[str, None] = None,
     ) -> None:
-        if all(type(i) == type(None) for i in [fig, ax]):
+        if all(i is None for i in [fig, ax]):
             fig, ax = plt.subplots()
 
         # don't plot empty bins
@@ -195,7 +195,7 @@ class Base_Number_Density_Function:
                 ax.set_yscale("log")
             ax.set_xlabel(self.x_name)
             ax.set_ylabel(y_label)
-            if type(x_lims) != type(None):
+            if x_lims is not None:
                 if type(x_lims) in [str]:
                     ax.set_xlim(*funcs.default_lims[x_lims])
                 else:
@@ -214,7 +214,7 @@ class Base_Number_Density_Function:
             ax.legend(**_legend_kwargs)
         if save:
             if self.__class__.__name__ != "Number_Density_Function":
-                assert type(save_name) != type(None)
+                assert save_name is not None
                 plot_path = f"{config['NumberDensityFunctions']['NUMBER_DENSITY_FUNC_DIR']}/Plots/Literature/{save_name}"
             else:
                 plot_path = self.get_plot_path()
@@ -477,7 +477,7 @@ class Number_Density_Function(Base_Number_Density_Function):
                             )
                             / len(V_max)
                         )
-                    if type(cv_origin) == type(None):
+                    if cv_origin is None:
                         pass
                     elif (
                         cv_origin == "Driver2010"
@@ -556,7 +556,7 @@ class Number_Density_Function(Base_Number_Density_Function):
         return plot_path
 
     def save(self, save_path: Union[str, None] = None) -> None:
-        if type(save_path) == type(None):
+        if save_path is None:
             save_path = self.get_save_path(
                 self.origin_surveys,
                 self.x_origin.replace("_REST_PROPERTY", ""),
@@ -600,7 +600,7 @@ class Number_Density_Function(Base_Number_Density_Function):
         obs_author_years: dict = {},
         sim_author_years: dict = {},
     ) -> None:
-        if all(type(_x) == type(None) for _x in [fig, ax]):
+        if all(_x is None for _x in [fig, ax]):
             fig, ax = plt.subplots()
         # for author_year, author_year_plot_dict in author_year_dict.items():
         #     assert all(_x in author_year_plot_dict.keys() for _x in ["z_ref", "plot_kwargs"])
@@ -615,7 +615,7 @@ class Number_Density_Function(Base_Number_Density_Function):
                     self.x_name, self.z_bin, author_year, "obs"
                 )
             )
-            if type(author_year_func_from_flags_data) != type(None):
+            if author_year_func_from_flags_data is not None:
                 author_year_func_from_flags_data.plot(
                     fig,
                     ax,
@@ -632,7 +632,7 @@ class Number_Density_Function(Base_Number_Density_Function):
                     self.x_name, self.z_bin, author_year, "models"
                 )
             )
-            if type(author_year_func_from_flags_data) != type(None):
+            if author_year_func_from_flags_data is not None:
                 author_year_func_from_flags_data.plot(
                     fig,
                     ax,
@@ -747,7 +747,7 @@ class Multiple_Number_Density_Function:
                 if i != len(x_bin_edges) - 1
             ]
             # extract z_bin_name
-            assert type(x_origin) == str  # NOT GENERAL!
+            assert isinstance(x_origin, str)  # NOT GENERAL!
             z_bin_name = f"{x_origin}_{z_bin[0]:.1f}<z<{z_bin[1]:.1f}"
             # calculate Vmax for each galaxy in catalogue within z bin
             # in general call Vmax_multifield

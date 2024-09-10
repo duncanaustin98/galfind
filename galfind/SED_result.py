@@ -38,7 +38,7 @@ class SED_result:
         # [setattr(self, f"{key}_l1", value[0]) for key, value in property_errs.items()]
         # [setattr(self, f"{key}_u1", value[1]) for key, value in property_errs.items()]
         # load in peaks
-        if type(property_PDFs) == type(None):
+        if property_PDFs is None:
             self.property_PDFs = None
         else:
             self.property_PDFs = {
@@ -277,11 +277,11 @@ class Catalogue_SED_results:
             for SED_fit_params in SED_fit_params_arr
         )
         # calculate array of galaxy photometries if required
-        if type(phot_arr) == type(None) and type(instrument) != type(None):
+        if phot_arr is None and instrument is not None:
             phot_arr = Multiple_Photometry.from_fits_cat(
                 fits_cat, instrument, cat_creator, timed=timed
             ).phot_arr
-        elif type(phot_arr) != type(None) and type(instrument) == type(None):
+        elif phot_arr is not None and instrument is None:
             pass
         else:
             galfind_logger.critical(
@@ -395,7 +395,7 @@ class Catalogue_SED_results:
         if timed:
             start_1 = time.time()
 
-        if type(cat_PDF_paths) != type(None):
+        if cat_PDF_paths is not None:
             assert len(SED_fit_params_arr) == len(cat_PDF_paths)
             cat_property_PDFs = np.full(
                 (len(fits_cat), len(SED_fit_params_arr)), None
@@ -424,7 +424,7 @@ class Catalogue_SED_results:
                     {
                         gal_property: PDF_arr[j]
                         for gal_property, PDF_arr in cat_property_PDFs_.items()
-                        if type(PDF_arr[j]) != type(None)
+                        if PDF_arr[j] is not None
                     }
                     for j in range(len(fits_cat))
                 ]
@@ -441,7 +441,7 @@ class Catalogue_SED_results:
         if timed:
             start = time.time()
 
-        if type(cat_SED_paths) != type(None):
+        if cat_SED_paths is not None:
             assert len(SED_fit_params_arr) == len(cat_SED_paths)
             cat_SEDs = np.full((len(fits_cat), len(SED_fit_params_arr)), None)
             # loop through SED_fit_params_arr and corresponding cat_SED_paths
@@ -492,7 +492,7 @@ class Catalogue_SED_results:
         cat_SEDs: Union[np.array, None],
     ):
         # if not loaded, construct appropriately shaped None arrays
-        if type(cat_property_PDFs) == type(None):
+        if cat_property_PDFs is None:
             out_shape = np.array(cat_properties).shape
             cat_property_PDFs_ = np.array(
                 list(
@@ -505,7 +505,7 @@ class Catalogue_SED_results:
             assert out_shape == cat_property_PDFs_.shape
         else:
             cat_property_PDFs_ = cat_property_PDFs
-        if type(cat_SEDs) == type(None):
+        if cat_SEDs is None:
             out_shape = np.array(cat_properties).shape
             cat_SEDs_ = np.array(
                 list(

@@ -112,7 +112,6 @@ class EAZY(SED_code):
     are_errs_percentiles = False
 
     def __init__(self, SED_fit_params=None):
-        start = time.time()
         # EAZY specific SED fit params assertions here
         super().__init__(
             SED_fit_params,
@@ -122,8 +121,6 @@ class EAZY(SED_code):
             self.ID_label,
             self.are_errs_percentiles,
         )
-        end = time.time()
-        # print(f"Instantiating {self.__class__.__name__} took {end - start:.1e}s")
 
     def galaxy_property_labels(
         self, gal_property, SED_fit_params, is_err=False
@@ -344,7 +341,7 @@ class EAZY(SED_code):
         # Redshift limits
         params["Z_STEP"] = z_step  # Setting photo-z step
         params["Z_MIN"] = z_min  # Setting minimum Z
-        if lowz_zmax == None:
+        if lowz_zmax is None:
             params["Z_MAX"] = z_max  # Setting maximum Z
         else:
             params["Z_MAX"] = lowz_zmax  # Setting maximum Z
@@ -407,7 +404,7 @@ class EAZY(SED_code):
         else:
             fit = None
 
-        if not Path(fits_out_path).is_file() and fit != None:
+        if not Path(fits_out_path).is_file() and fit is not None:
             # If not using Fsps larson, use standard saving output. Otherwise generate own fits file.
             if templates == "HOT_45K" or templates == "HOT_60K":
                 fit.standard_output(
@@ -495,7 +492,7 @@ class EAZY(SED_code):
             )
 
         # Write used parameters
-        if fit != None:
+        if fit is not None:
             fit.param.write(fits_out_path.replace(".fits", "_params.csv"))
             funcs.change_file_permissions(
                 fits_out_path.replace(".fits", "_params.csv")
@@ -632,7 +629,7 @@ class EAZY(SED_code):
         # ensure this works if only extracting 1 galaxy
         if type(IDs) in [str, int, float]:
             IDs = np.array([int(IDs)])
-        if type(SED_paths) == str:
+        if isinstance(SED_paths, str):
             SED_paths = [SED_paths]
         assert len(IDs) == len(SED_paths), galfind_logger.critical(
             f"len(IDs) = {len(IDs)} != len(data_paths) = {len(SED_paths)}!"
@@ -669,7 +666,7 @@ class EAZY(SED_code):
         # ensure this works if only extracting 1 galaxy
         if type(IDs) in [str, int, float]:
             IDs = np.array([int(IDs)])
-        if type(PDF_paths) == str:
+        if isinstance(PDF_paths, str):
             PDF_paths = [PDF_paths]
 
         # EAZY only has redshift PDFs

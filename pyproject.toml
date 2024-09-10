@@ -114,8 +114,6 @@ test = [
     "ruff"
 ]
 #    "nbmake",
-#    "ruff>=0.3.0",
-#    "mypy>=0.910",
 # Documentation building
 #docs = [
 #    "nbmake",
@@ -203,6 +201,7 @@ select = ["F", "E", "W"]
 ignore = [
        "E402",  # "module level import not at top of file" (isolate C imports in case python alternatives exist)
        "F811",  # "redefinition of unused name from line N" (breaks quantity objects)
+       "E501",  # "Line too long (N > line-length)" (temporary fix while docstrings are being sorted out)
        ]
 
 # Sort imports alphabetically
@@ -227,3 +226,7 @@ skip-magic-trailing-comma = false
 
 # Like Black, automatically detect the appropriate line ending.
 line-ending = "auto"
+
+# Allow docstrings to be a dynamic line length
+docstring-code-format = true
+docstring-code-line-length = "dynamic"

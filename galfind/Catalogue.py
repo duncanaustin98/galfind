@@ -178,9 +178,9 @@ class Catalogue(Catalogue_Base):
         assert type(crop_by) in [type(None), str, list, np.array, dict]
         if type(crop_by) in [str]:
             crop_by = crop_by.split("+")
-        if type(crop_by) == type(None):
+        if crop_by is None:
             pass
-        elif type(crop_by) == dict:
+        elif isinstance(crop_by, dict):
             for key, values in crop_by.items():
                 # currently only crops by ID
                 if "ID" in key.upper():
@@ -241,7 +241,7 @@ class Catalogue(Catalogue_Base):
             crops=crop_by,
         )
         # print(cat_obj)
-        if cat_obj != None:
+        if cat_obj is not None:
             cat_obj.data = data
         if mask:
             cat_obj.mask(timed=timed)
@@ -363,13 +363,13 @@ class Catalogue(Catalogue_Base):
             # load the same property from every available band
             # open catalogue with astropy
             fits_cat = self.open_cat(cropped=True)
-            if type(multiply_factor) == type(None):
+            if multiply_factor is None:
                 multiply_factor = {
                     band: 1.0 * u.dimensionless_unscaled
                     for band in self.instrument.band_names
                     if f"{cat_colname}_{band}" in fits_cat.colnames
                 }
-            elif type(multiply_factor) != dict:
+            elif not isinstance(multiply_factor, dict):
                 multiply_factor = {
                     band: multiply_factor
                     for band in self.instrument.band_names
@@ -630,7 +630,7 @@ class Catalogue(Catalogue_Base):
             )
 
     def make_cutouts(self, IDs, cutout_size=0.96 * u.arcsec):
-        if type(IDs) == int:
+        if isinstance(IDs, int):
             IDs = [IDs]
         for band in tqdm(
             self.instrument.band_names,
@@ -840,11 +840,11 @@ class Catalogue(Catalogue_Base):
             y_name = f"log({y_name})"
             y_label = f"log({y_label})"
 
-        if type(colour_by) == type(None):
+        if colour_by is None:
             # plot all as a single colour
             pass
         else:
-            if type(c_origin) in [dict]:
+            if isinstance(c_origin, dict):
                 assert "code" in c_origin.keys()
                 assert c_origin["code"].__class__.__name__ in [
                     code.__name__ for code in SED_code.__subclasses__()
@@ -865,7 +865,7 @@ class Catalogue(Catalogue_Base):
         plt.style.use(
             f"{config['DEFAULT']['GALFIND_DIR']}/galfind_style.mplstyle"
         )
-        if type(fig) == type(None) or type(ax) == type(None):
+        if fig is None or ax is None:
             fig, ax = plt.subplots()
 
         if "label" not in plot_kwargs.keys():
@@ -873,7 +873,7 @@ class Catalogue(Catalogue_Base):
 
         if mean_err:
             # produce scatter plot
-            if type(colour_by) == type(None):
+            if colour_by is None:
                 plot = ax.scatter(x, y, **plot_kwargs)
             else:
                 if "cmap" not in plot_kwargs.keys():
@@ -886,7 +886,7 @@ class Catalogue(Catalogue_Base):
             # produce errorbar plot
             if "ls" not in plot_kwargs.keys():
                 plot_kwargs["ls"] = ""
-            if type(colour_by) == type(None):
+            if colour_by is None:
                 plot = ax.errorbar(x, y, xerr=x_err, yerr=y_err, **plot_kwargs)
             else:
                 if "cmap" not in plot_kwargs.keys():
@@ -903,7 +903,7 @@ class Catalogue(Catalogue_Base):
             ax.set_title(plot_label)
             ax.set_xlabel(x_label)
             ax.set_ylabel(y_label)
-            if type(colour_by) != type(None):
+            if colour_by is not None:
                 # make colourbar
                 pass
             ax.legend(**legend_kwargs)
@@ -921,16 +921,16 @@ class Catalogue(Catalogue_Base):
                 origin_str += (
                     f"y={y_origin['code'].label_from_SED_fit_params(y_origin)}"
                 )
-            if any(type(var) == type(None) for var in [colour_by, c_origin]):
+            if any(var is None for var in [colour_by, c_origin]):
                 pass
-            elif type(c_origin) in [str]:
+            elif isinstance(c_origin, str):
                 origin_str += f",c={c_origin}"
             else:  # dict
                 origin_str += f",c={c_origin['code'].label_from_SED_fit_params(c_origin)}"
 
             # determine appropriate save path
             save_dir = f"{config['Other']['PLOT_DIR']}/{self.version}/{self.instrument.name}/{self.survey}/{origin_str}"
-            if type(colour_by) == type(None):
+            if colour_by is None:
                 colour_label = f"_c={colour_by}"
             else:
                 colour_label = ""
@@ -1387,7 +1387,7 @@ class Catalogue(Catalogue_Base):
     def _append_selection_to_fits(self, selection_name):
         # append .fits table if not already done so for this selection
         if selection_name not in self.selection_cols:
-            assert all(getattr(self, selection_name) == True)
+            assert all(getattr(self, selection_name))
             full_cat = self.open_cat()
             selection_cat = Table(
                 {"ID_temp": self.ID, selection_name: np.full(len(self), True)}
@@ -1538,7 +1538,7 @@ class Catalogue(Catalogue_Base):
         },
         iters=10_000,
     ):
-        if type(AUV_beta_conv_author_year) != type(None):
+        if AUV_beta_conv_author_year is not None:
             self.calc_AUV_from_beta_phot(
                 rest_UV_wav_lims,
                 ref_wav,
@@ -1605,7 +1605,7 @@ class Catalogue(Catalogue_Base):
         },
         iters=10_000,
     ):
-        if type(fesc_conv_author_year) != type(None):
+        if fesc_conv_author_year is not None:
             self.calc_fesc_from_beta_phot(
                 rest_UV_wav_lims, fesc_conv_author_year, SED_fit_params, iters
             )
@@ -1679,10 +1679,8 @@ class Catalogue(Catalogue_Base):
         },
         iters: int = 10_000,
     ):
-        assert all(
-            type(name) != type(None) for name in [dust_law, dust_origin]
-        )
-        if type(dust_author_year) != type(None):
+        assert all(name is not None for name in [dust_law, dust_origin])
+        if dust_author_year is not None:
             self.calc_AUV_from_beta_phot(
                 rest_UV_wav_lims,
                 ref_wav,
@@ -1723,7 +1721,7 @@ class Catalogue(Catalogue_Base):
             strong_line_names, frame, rest_optical_wavs, SED_fit_params, iters
         )
         if all(
-            type(name) != type(None)
+            name is not None
             for name in [dust_author_year, dust_law, dust_origin]
         ):
             self.calc_dust_atten(
@@ -1909,7 +1907,7 @@ class Catalogue(Catalogue_Base):
         # obtain full list of catalogue IDs
         fits_tab = self.open_cat(cropped=False)
         IDs = np.array(fits_tab[self.cat_creator.ID_label]).astype(int)
-        if type(SED_rest_property_tab) == type(None):
+        if SED_rest_property_tab is None:
             SED_rest_property_tab = Table(
                 {self.cat_creator.ID_label: IDs}, dtype=[int]
             )
@@ -1949,13 +1947,11 @@ class Catalogue(Catalogue_Base):
                 phot_type="rest",
                 property_type="recently_updated",
             )
-        if type(is_property_updated) == type(None):
+        if is_property_updated is None:
             # breakpoint()
             pass
         else:
-            if any(
-                type(updated) == type(None) for updated in is_property_updated
-            ):
+            if any(updated is None for updated in is_property_updated):
                 # breakpoint()
                 pass
         # update properties and kwargs for those galaxies that have been updated, or if the columns have just been made
@@ -1971,7 +1967,7 @@ class Catalogue(Catalogue_Base):
                         [
                             list(property_PDF.kwargs.keys())
                             for property_PDF in calculated_property_PDFs
-                            if type(property_PDF) != type(None)
+                            if property_PDF is not None
                         ]
                     )
                 )
@@ -1979,7 +1975,7 @@ class Catalogue(Catalogue_Base):
                     [
                         type(property_PDF.kwargs[kwarg_name])
                         for property_PDF in calculated_property_PDFs
-                        if type(property_PDF) != type(None)
+                        if property_PDF is not None
                     ]
                     for kwarg_name in kwarg_names
                 ]
@@ -2075,7 +2071,7 @@ class Catalogue(Catalogue_Base):
                             np.array(
                                 [
                                     property_PDF.kwargs[kwarg_name]
-                                    if type(property_PDF) != type(None)
+                                    if property_PDF is not None
                                     else type_fill_vals[kwarg_type]
                                     for property_PDF in calculated_property_PDFs
                                 ]
@@ -2196,11 +2192,11 @@ class Catalogue(Catalogue_Base):
     ) -> None:
         assert len(z_bin) == 2
         assert z_bin[0] < z_bin[1]
-        if type(SED_fit_params) == dict:
+        if isinstance(SED_fit_params, dict):
             SED_fit_params_key = SED_fit_params[
                 "code"
             ].label_from_SED_fit_params(SED_fit_params)
-        elif type(SED_fit_params) == str:
+        elif isinstance(SED_fit_params, str):
             SED_fit_params_key = SED_fit_params
         else:
             galfind_logger.critical(

@@ -7,10 +7,15 @@ Created on Tue Jan 16 10:36:38 2024
 """
 
 # DLA.py
+import astropy.constants as const
 import astropy.units as u
+import numpy as np
 
 from .Emission_lines import line_diagnostics
-from .lyman_alpha_damping_wing import *
+from .lyman_alpha_damping_wing import (
+    Tepper_Garcia06_lyman_alpha_voigt_profile,
+    Tepper_Garcia06_voigt_profile,
+)
 
 
 class DLA:

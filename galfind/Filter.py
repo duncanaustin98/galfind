@@ -13,7 +13,9 @@ class Filter:
     def __init__(
         self, facility, instrument, band_name, wav, trans, properties={}
     ):
-        assert type(facility) == type(instrument) == type(band_name) == str
+        assert all(
+            isinstance(name, str) for name in [facility, instrument, band_name]
+        )
         assert len(wav) == len(trans)
         self.facility = facility
         self.instrument = instrument
@@ -38,9 +40,19 @@ class Filter:
     def __len__(self):
         return 1
 
+    def __add__(self, other):
+        # ensure other is a Filter object
+        assert isinstance(self, other)
+        # create an Instrument (in future a Multiple_Filter)
+        # HACK: for now the class needs to be discovered up-front
+        pass
+
+    # def __del__():
+    #     pass
+
     def __eq__(self, other):
         # ensure types are the same
-        if type(self) != type(other):
+        if not isinstance(self, other):
             return False
         # ensure both have the same attribute keys
         elif not all(
@@ -94,10 +106,8 @@ class Filter:
         full_name = f"{facility}/{instrument}.{filter_name}"
         try:
             filter_profile = SvoFps.get_transmission_data(full_name)
-        except:
-            galfind_logger.critical(
-                f"{full_name} is not a valid SvoFps filter!"
-            )
+        except IndexError:
+            galfind_logger.critical(f"No SVO filter found for {full_name}!")
         wav = np.array(filter_profile["Wavelength"])
         trans = np.array(filter_profile["Transmission"])
         properties = SvoFps.data_from_svo(

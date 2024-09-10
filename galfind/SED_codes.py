@@ -33,9 +33,9 @@ class SED_code(ABC):
         ID_label,
         are_errs_percentiles,
     ):
-        if type(SED_fit_params) != type(None):
+        if SED_fit_params is not None:
             # General SED fit params assertions
-            assert type(SED_fit_params) in [dict]
+            assert isinstance(SED_fit_params, dict)
             assert "code" in SED_fit_params.keys()
             self.SED_fit_params = SED_fit_params
         self.galaxy_property_dict = galaxy_property_dict
@@ -73,7 +73,7 @@ class SED_code(ABC):
 
         # include upper limits if wanted
         # MAY NEED TO UPDATE WHEN USING OTHER SED FITTING TOOLS OTHER THAN EAZY
-        if upper_sigma_lim != None and upper_sigma_lim != {}:
+        if upper_sigma_lim is not None and upper_sigma_lim != {}:
             # determine relevant indices
             upper_lim_indices = [
                 [i, j]

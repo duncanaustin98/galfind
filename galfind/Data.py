@@ -98,7 +98,7 @@ class Data:
 
         if cat_path == "":
             pass
-        elif type(cat_path) == str:
+        elif isinstance(cat_path, str):
             self.cat_path = cat_path
         else:
             raise (
@@ -137,9 +137,9 @@ class Data:
                 mask_paths[band] = self.mask_reg_to_pix(band, mask_path)
             else:
                 # make an pixel mask automatically for the band
-                if type(mask_stars) == bool:
+                if isinstance(mask_stars, bool):
                     mask = self.make_mask(band, mask_stars=mask_stars)
-                elif type(mask_stars) == dict:
+                elif isinstance(mask_stars, dict):
                     if band in mask_stars.keys():
                         mask = self.make_mask(
                             band, mask_stars=mask_stars[band]
@@ -294,9 +294,7 @@ class Data:
                 galfind_logger.info(f"No common {label}")
 
         # make RGB using the default method if the science images have a common shape
-        if "SCI SHAPE" in self.common.keys() and type(RGB_method) != type(
-            None
-        ):
+        if "SCI SHAPE" in self.common.keys() and RGB_method is not None:
             split_bands = np.split(
                 self.instrument.band_names,
                 [
@@ -377,9 +375,9 @@ class Data:
             pix_scale = pix_scales[instrument_name]
 
             # determine directory where the data is stored for the version, survey and instrument
-            if type(version_to_dir) == str:
+            if isinstance(version_to_dir, str):
                 survey_dir = f"{config['DEFAULT']['GALFIND_DATA']}/{instrument.facility.lower()}/{survey}/{instrument_name}/{version_to_dir}"
-            elif type(version_to_dir) == dict:
+            elif isinstance(version_to_dir, dict):
                 if version_to_dir == {}:
                     continue
                 elif version.split("_")[0] in version_to_dir.keys():
@@ -393,7 +391,7 @@ class Data:
                     f"{version_to_dir=} with {type(version_to_dir)=} not in [str, dict]"
                 )
 
-            # quick fix for non-NIRCam PSF homogenized images
+            # HACK: quick fix for non-NIRCam PSF homogenized images
             if (
                 "psfmatched" in version
                 and config.getboolean("DataReduction", "PSF_HOMOGENIZED")
@@ -949,7 +947,7 @@ class Data:
         try:
             self.wcs[band]
         except (AttributeError, KeyError) as e:
-            if type(e) == AttributeError:
+            if isinstance(e, AttributeError):
                 self.wcs = {}
             self.wcs[band] = WCS(self.load_im(band)[1])
         return self.wcs[band]
@@ -988,10 +986,10 @@ class Data:
             return rms_err
 
     def combine_seg_data_and_mask(self, band=None, seg_data=None, mask=None):
-        if type(seg_data) != type(None) and type(mask) != type(None):
+        if seg_data is not None and mask is not None:
             pass
-        elif type(band) != type(
-            None
+        elif (
+            band is not None
         ):  # at least one of seg_data or mask is not given, but band is given
             seg_data = self.load_seg(band)[0]
             mask = self.load_mask(band)
@@ -1159,16 +1157,18 @@ class Data:
             },
         }
 
-        if star_mask_override != None:
-            assert type(star_mask_override) == dict, galfind_logger.warning(
+        if star_mask_override is not None:
+            assert isinstance(
+                star_mask_override, dict
+            ), galfind_logger.warning(
                 f"Mask overridden, but {type(star_mask_override)=} != dict"
             )
             assert (
                 "central" in star_mask_override.keys()
                 and "spikes" in star_mask_override.keys()
             )
-            assert (
-                type(star_mask_override["central"]) == dict
+            assert isinstance(
+                star_mask_override["central"], dict
             ), galfind_logger.warning(
                 f"Mask overridden, but {type(star_mask_override['central'])=} != dict"
             )
@@ -1176,8 +1176,8 @@ class Data:
                 "a" in star_mask_override["central"].keys()
                 and "b" in star_mask_override["central"].keys()
             )
-            assert (
-                type(star_mask_override["spikes"]) == dict
+            assert isinstance(
+                star_mask_override["spikes"], dict
             ), galfind_logger.warning(
                 f"Mask overridden, but {type(star_mask_override['spikes'])=} != dict"
             )
@@ -1186,7 +1186,7 @@ class Data:
                 and "b" in star_mask_override["spikes"].keys()
             )
             assert all(
-                type(scale) in [float, int]
+                isinstance(scale, (float, int))
                 for mask_type in star_mask_override.values()
                 for scale in mask_type.values()
             )
@@ -1479,7 +1479,7 @@ class Data:
 
     # @staticmethod
     def combine_band_names(self, bands):
-        if type(bands) == str:
+        if isinstance(bands, str):
             return bands
         else:
             return "+".join(bands)
@@ -1602,9 +1602,9 @@ class Data:
         sex_config_path=config["SExtractor"]["CONFIG_PATH"],
         params_path=config["SExtractor"]["PARAMS_PATH"],
     ):
-        if type(band) == str or type(band) == np.str_:
+        if isinstance(band, (str, np.str_)):
             pass
-        elif type(band) == list or type(band) == np.array:
+        elif isinstance(band, (list, np.array)):
             band = self.combine_band_names(band)
         else:
             raise (
@@ -2079,7 +2079,7 @@ class Data:
         )
         # breakpoint()
         # make individual forced photometry catalogues
-        if type(forced_phot_band) == list:
+        if isinstance(forced_phot_band, list):
             if len(forced_phot_band) > 1:
                 # make the stacked image and save all appropriate parameters
                 galfind_logger.debug(f"forced_phot_band = {forced_phot_band}")
@@ -2287,10 +2287,7 @@ class Data:
                     f"RUN = YES, and combination of {self.survey} {self.version} or {self.instrument.name} has not previously been combined into a catalogue."
                 )
 
-            if (
-                type(forced_phot_band) == np.array
-                or type(forced_phot_band) == list
-            ):
+            if isinstance(forced_phot_band, (list, np.array)):
                 forced_phot_band_name = self.combine_band_names(
                     forced_phot_band
                 )
@@ -2370,11 +2367,11 @@ class Data:
     def make_readme(
         self, col_desc_dict, save_path, overwrite=False, readme_sep="-" * 20
     ):
-        assert type(col_desc_dict) == dict
+        assert isinstance(col_desc_dict, dict)
         assert "Photometry" in col_desc_dict.keys()
         intro_text = """
         
-        """
+        """  # noqa: W293
         # if not overwrite and README already exists, extract previous column labels to append col_desc_dict to
         f = open(save_path, "w")
         f.write(intro_text)
@@ -2441,8 +2438,8 @@ class Data:
             wcs = WCS(hdul[im_ext].header)
 
         # Check types
-        assert type(image) == np.ndarray
-        assert type(catalog) == Table
+        assert isinstance(image, np.ndarray)
+        assert isinstance(catalog, Table)
 
         # Get positions from sextractor catalog
         ra = catalog[ra_col]
@@ -2932,13 +2929,13 @@ class Data:
                             diagnostic_name = diagnostic_name_
                         assert diagnostic_name_ == diagnostic_name
                         # update depths with average depths in each region
-                        nmad_grid = np.array(hf["nmad_grid"])
-                        band_mean_depth = np.round(
-                            np.nanmean(nmad_grid), decimals=3
-                        )
-                        band_median_depth = np.round(
-                            np.nanmedian(nmad_grid), decimals=3
-                        )
+                        # nmad_grid = np.array(hf["nmad_grid"])
+                        # band_mean_depth = np.round(
+                        #     np.nanmean(nmad_grid), decimals=3
+                        # )
+                        # band_median_depth = np.round(
+                        #     np.nanmedian(nmad_grid), decimals=3
+                        # )
                         hf.close()
                     else:
                         depths = np.full(len(cat), np.nan)
@@ -3193,13 +3190,13 @@ class Data:
             # Load wht data if it has the correct type
             wht_data = self.load_wht(band)
             # print(f"wht_data = {wht_data}")
-            if type(n_split) == type(None):
-                if type(wht_data) == type(None):
+            if n_split is None:
+                if wht_data is None:
                     n_split = 1
                 else:
                     n_split = "auto"
             else:
-                assert type(n_split) == int or n_split == "auto"
+                assert isinstance(n_split, int) or n_split == "auto"
 
             # load catalogue of given type
             cat = Table.read(self.sex_cat_master_path)
@@ -3313,7 +3310,7 @@ class Data:
         save=True,
         return_array=False,
     ):
-        if type(cat_creator) == type(None):
+        if cat_creator is None:
             galfind_logger.warning(
                 "Could not plot depths as cat_creator == None in Data.plot_area_depth()"
             )
@@ -3341,7 +3338,7 @@ class Data:
                     )
                     area_row = area_row[0]
                 area_master = area_row["unmasked_area_total"]
-                if type(area_master) == u.Quantity:
+                if isinstance(area_master, u.Quantity):
                     area_master = area_master.value
                 area_master = float(area_master)
 
@@ -3415,7 +3412,7 @@ class Data:
                     if return_array:
                         data[band] = [area, total_depths]
                     # Set ylim to 2nd / 98th percentile if depth is smaller than this number
-                    ylim = ax.get_ylim()
+                    # ylim = ax.get_ylim()
 
                     if pos == 0:
                         min_depth = np.percentile(total_depths, 0.5)
@@ -3454,7 +3451,7 @@ class Data:
 
                 ax.set_xlim(0, area_master * 1.02)
                 # Add hlines at integer depths
-                depths = np.arange(20, 35, 1)
+                # depths = np.arange(20, 35, 1)
                 # for depth in depths:
                 #    ax.hlines(depth, 0, area_master, color = "black", linestyle = "dotted", alpha = 0.5)
                 # Invert y axis
@@ -3585,7 +3582,7 @@ class Data:
     def plot_depth(
         self, band, cat_creator, mode, aper_diam, show=False
     ):  # , **kwargs):
-        if type(cat_creator) == type(None):
+        if cat_creator is None:
             galfind_logger.warning(
                 "Could not plot depths as cat_creator == None in Data.plot_depth()"
             )

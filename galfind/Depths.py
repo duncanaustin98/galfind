@@ -103,7 +103,7 @@ def make_grid(
             )  # Add non-overlapping coordinates to the list
     # Plot the circles using matplotlib
     if plot:
-        if ax == None:
+        if ax is None:
             fig, ax = plt.subplots()
 
         stretch = vis.CompositeStretch(
@@ -187,8 +187,8 @@ def calc_depths(
     #     wht_data = weight_map
 
     # Determine the grid size
-    if type(wht_data) != type(None) and split_depths:
-        if type(provide_labels) == type(None):
+    if wht_data is not None and split_depths:
+        if provide_labels is None:
             print("Obtaining labels...")
             assert (
                 np.shape(wht_data) == np.shape(img_data)
@@ -210,7 +210,7 @@ def calc_depths(
     #  NOTE np.shape on a 2D array returns (y, x) not (x, y)
     # So references to an x, y coordinate in the array should be [y, x]
 
-    if type(catalogue) == type(None):
+    if catalogue is None:
         # If the catalogue is not provided, use the grid mode
         iterate_mode = "grid"
     else:
@@ -218,14 +218,14 @@ def calc_depths(
         iterate_mode = "catalogue"
         # Correct the coordinates if they are in sky coordinates
 
-        if coord_type == "sky" and wcs != None:
+        if coord_type == "sky" and wcs is not None:
             # This doesn't work because footprint of the image is not the same as the footprint of the catalogue
             cat_x_col, cat_y_col = "ALPHA_J2000", "DELTA_J2000"
             ra_pix, dec_pix = wcs.all_world2pix(
                 catalogue[cat_x_col], catalogue[cat_y_col], 0
             )
             cat_x, cat_y = ra_pix, dec_pix
-            if type(wht_data) != type(None):
+            if wht_data is not None:
                 assert np.shape(wht_data) == np.shape(img_data)
 
         elif coord_type == "pixel":
@@ -288,7 +288,7 @@ def calc_depths(
 
                 label = labels_final[int(j_label), int(i_label)]
                 label_name = label
-                if type(mask) != type(None):
+                if mask is not None:
                     # Don't calculate the depth if the coordinate is masked
                     try:
                         #  NOTE np.shape on a 2D array returns (y, x) not (x, y)
@@ -465,8 +465,8 @@ def show_depths(
     show=False,
 ):
     fig, axs = plt.subplots(
-        3 if type(labels) == type(None) else 4,
-        1 if type(cat_depths) == type(None) else 2,
+        3 if labels is None else 4,
+        1 if cat_depths is None else 2,
         facecolor="white",
         figsize=(16, 16),
         constrained_layout=True,
@@ -474,7 +474,7 @@ def show_depths(
 
     # move axis apart
     axs = axs.flatten()
-    if type(suptitle) != type(None):
+    if suptitle is not None:
         fig.suptitle(suptitle, fontsize="large", fontweight="bold")
     cmap = cm.get_cmap("plasma")
     cmap.set_bad(color="black")
@@ -524,7 +524,7 @@ def show_depths(
     fig.colorbar(mappable2, label=r"Number of Apertures Used", cax=cax2)
     axs[1].set_title("Rolling Average Diagnostic")
 
-    if type(labels) != type(None):
+    if labels is not None:
         cmap = cm.get_cmap("Set2")
 
         possible_labels = np.unique(labels)
@@ -542,7 +542,7 @@ def show_depths(
                 num_labels,
             )
 
-            pos = 5 if type(cat_depths) != type(None) else 2
+            pos = 5 if cat_depths is not None else 2
             mappable = axs[pos + 1].imshow(
                 labels, cmap=custom_cmap, origin="lower", interpolation="None"
             )
@@ -594,7 +594,7 @@ def show_depths(
             axs[-1].remove()
 
     # Histogram of depths
-    if type(cat_depths) != type(None):
+    if cat_depths is not None:
         # plt.scatter(x_pix, y_pix, s=1, zorder=5, c = depth, cmap='plasma')
 
         axs[2].set_title("Catalogue Depths")
@@ -731,7 +731,7 @@ def show_depths(
 
     fig.get_layout_engine().set(w_pad=0.1, h_pad=0.1, hspace=0.1, wspace=0.1)
 
-    if type(save_path) != type(None):
+    if save_path is not None:
         plt.savefig(save_path, dpi=300, bbox_inches="tight")
         funcs.change_file_permissions(save_path)
         print(f"Saved depths plot to {save_path}")
@@ -812,8 +812,8 @@ def calc_depths_numba(
     #     wht_data = weight_map
 
     # Determine the grid size
-    if type(wht_data) != type(None) and split_depths:
-        if type(provide_labels) == type(None):
+    if wht_data is not None and split_depths:
+        if provide_labels is None:
             print("Obtaining labels...")
             assert (
                 np.shape(wht_data) == np.shape(img_data)
@@ -835,7 +835,7 @@ def calc_depths_numba(
     #  NOTE np.shape on a 2D array returns (y, x) not (x, y)
     # So references to an x, y coordinate in the array should be [y, x]
 
-    if type(catalogue) == type(None):
+    if catalogue is None:
         # If the catalogue is not provided, use the grid mode
         iterate_mode = "grid"
     else:
@@ -843,14 +843,14 @@ def calc_depths_numba(
         iterate_mode = "catalogue"
         # Correct the coordinates if they are in sky coordinates
 
-        if coord_type == "sky" and wcs != None:
+        if coord_type == "sky" and wcs is not None:
             # This doesn't work because footprint of the image is not the same as the footprint of the catalogue
             cat_x_col, cat_y_col = "ALPHA_J2000", "DELTA_J2000"
             ra_pix, dec_pix = wcs.all_world2pix(
                 catalogue[cat_x_col], catalogue[cat_y_col], 0
             )
             cat_x, cat_y = ra_pix, dec_pix
-            if type(wht_data) != type(None):
+            if wht_data is not None:
                 assert np.shape(wht_data) == np.shape(img_data)
 
         elif coord_type == "pixel":
@@ -891,7 +891,7 @@ def calc_depths_numba(
         for i in tq(range(0, grid_size[0], step_size)):
             for j in range(0, grid_size[1], step_size):
                 setnan = False
-                if type(mask) != type(None):
+                if mask is not None:
                     # Don't calculate the depth if the coordinate is masked
                     try:
                         #  NOTE np.shape on a 2D array returns (y, x) not (x, y)
@@ -1146,16 +1146,14 @@ def cluster_wht_map(
 
     # adjust min_size to be in terms of the bin_factor
     min_size = min_size // bin_factor**2
-    if type(wht_map) == str:
-        #
+    if isinstance(wht_map, str):
         weight_map = fits.open(wht_map)
         # Check if we have multiple extensions
         if len(weight_map) > 1:
             weight_map = weight_map["WHT"].data
         else:
             weight_map = weight_map[0].data
-
-    elif type(wht_map) == np.ndarray:
+    elif isinstance(wht_map, np.ndarray):
         weight_map = wht_map
 
     # Remove NANs
@@ -1393,7 +1391,7 @@ if __name__ == "__main__":
     else:
         cat_path = None
 
-    if cat_path != None:
+    if cat_path is not None:
         cat = Table.read(cat_path)
     else:
         cat = None
@@ -1436,7 +1434,7 @@ if __name__ == "__main__":
     fluxes = do_photometry(img_data, xy, radius_pixels)
 
     # Calculate depths for catalogue
-    if cat_path != None:
+    if cat_path is not None:
         depths, diagnostic, depth_labels, final_labels = calc_depths(
             xy,
             fluxes,

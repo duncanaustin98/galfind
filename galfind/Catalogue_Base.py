@@ -51,7 +51,7 @@ class Catalogue_Base:
             if "SELECTED_" in key
         ]
 
-        if crops == None:
+        if crops is None:
             crops = []
         self.crops = crops
         self.SED_rest_properties = SED_rest_properties
@@ -133,7 +133,7 @@ class Catalogue_Base:
             return gal
 
     def __getitem__(self, index):
-        if type(self.gals) != np.ndarray:
+        if not isinstance(self.gals, np.ndarray):
             self.gals = np.array(self.gals)
         return self.gals[index]
 
@@ -418,7 +418,7 @@ class Catalogue_Base:
     def __add__(self, cat, out_survey=None):
         if not cat.__class__.__name__ == "Spectral_Catalogue":
             # concat catalogues
-            if out_survey == None:
+            if out_survey is None:
                 out_survey = "+".join([self.survey, cat.survey])
             return Multiple_Catalogue([self, cat], survey=out_survey)
 
@@ -486,12 +486,12 @@ class Catalogue_Base:
             # Check if likely to have any matches
             idx, _, _, _ = sky_coords_cat.search_around_sky(other_sky_coords, 5*u.arcsec)
 
-        
+
             if len(idx) == 0:
                 print('Skipping')
                 cat_matches = []
                 other_cat_matches = []
-                
+
                 continue
             """
             if match_type == "nearest":
@@ -734,7 +734,7 @@ class Catalogue_Base:
     def ra_range(self):
         try:
             return self._ra_range
-        except:
+        except AttributeError:
             self._ra_range = [np.min(self.RA), np.max(self.RA)]
             return self._ra_range
 
@@ -742,7 +742,7 @@ class Catalogue_Base:
     def dec_range(self):
         try:
             return self._dec_range
-        except:
+        except AttributeError:
             self._dec_range = [np.min(self.DEC), np.max(self.DEC)]
             return self._dec_range
 
@@ -769,7 +769,7 @@ class Catalogue_Base:
                 )
                 == crop_limits
             ]
-            if crop_limits == True:
+            if crop_limits:
                 cat_copy.crops.append(crop_property)
             else:
                 cat_copy.crops.append(f"{crop_property}={crop_limits}")
@@ -800,7 +800,7 @@ class Catalogue_Base:
         return cat_copy
 
     def open_cat(self, cropped=False, hdu=None):
-        if type(hdu) == type(None):
+        if hdu is None:
             fits_cat = Table.read(
                 self.cat_path, character_as_bytes=False, memmap=True
             )

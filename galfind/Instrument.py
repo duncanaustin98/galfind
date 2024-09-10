@@ -14,26 +14,165 @@ import warnings
 from abc import abstractmethod
 from copy import deepcopy
 from pathlib import Path
-from typing import NoReturn, Union
+from typing import NoReturn, Union, List
 
 import astropy.units as u
 import matplotlib.pyplot as plt
 import numpy as np
 from astroquery.svo_fps import SvoFps
 
+try:
+    from typing import Self, Type  # python 3.11+
+except ImportError:
+    from typing_extensions import Self, Type  # python > 3.7 AND python < 3.11
+
 from . import NIRCam_aper_corr, config, galfind_logger
 from . import useful_funcs_austind as funcs
 from .Filter import Filter
 
+# Instrument attributes
+
+ACS_WFC_bands = [
+    "FR388N",
+    "FR423N",
+    "F435W",
+    "FR459M",
+    "FR462N",
+    "F475W",
+    "F502N",
+    "FR505N",
+    "F555W",
+    "FR551N",
+    "F550M",
+    "FR601N",
+    "F606W",
+    "F625W",
+    "FR647M",
+    "FR656N",
+    "F658N",
+    "F660N",
+    "FR716N",
+    "POL_UV",
+    "POL_V",
+    "G800L",
+    "F775W",
+    "FR782N",
+    "F814W",
+    "FR853N",
+    "F892N",
+    "FR914M",
+    "F850LP",
+    "FR931N",
+    "FR1016N",
+]
+WFC3_IR_bands = [
+    "F098M",
+    "G102",
+    "F105W",
+    "F110W",
+    "F125W",
+    "F126N",
+    "F127M",
+    "F128N",
+    "F130N",
+    "F132N",
+    "F139M",
+    "F140W",
+    "G141",
+    "F153M",
+    "F160W",
+    "F164N",
+    "F167N",
+]
+NIRCam_bands = [
+    "F070W",
+    "F090W",
+    "F115W",
+    "F140M",
+    "F150W",
+    "F162M",
+    "F164N",
+    "F150W2",
+    "F182M",
+    "F187N",
+    "F200W",
+    "F210M",
+    "F212N",
+    "F250M",
+    "F277W",
+    "F300M",
+    "F323N",
+    "F322W2",
+    "F335M",
+    "F356W",
+    "F360M",
+    "F405N",
+    "F410M",
+    "F430M",
+    "F444W",
+    "F460M",
+    "F466N",
+    "F470N",
+    "F480M",
+]
+MIRI_bands = [
+    "F560W",
+    "F770W",
+    "F1000W",
+    "F1065C",
+    "F1140C",
+    "F1130W",
+    "F1280W",
+    "F1500W",
+    "F1550C",
+    "F1800W",
+    "F2100W",
+    "F2300C",
+    "F2550W",
+]
+expected_instr_bands = {
+    "ACS_WFC": ACS_WFC_bands,
+    "WFC3_IR": WFC3_IR_bands,
+    "NIRCam": NIRCam_bands,
+    "MIRI": MIRI_bands,
+}
+
+expected_instr_facilities = {
+    "ACS_WFC": "HST",
+    "WFC3_IR": "HST",
+    "NIRCam": "JWST",
+    "MIRI": "JWST",
+}
+
 
 class Instrument:
-    def __init__(self, name, bands, excl_bands, facility):
-        self.bands = np.array(bands)
+    def __init__(
+        self, name, bands, excl_bands, facility, band_order="ascending"
+    ):
+        self.bands = np.array(self.sort_bands(bands, order=band_order))
         self.name = name
         for band in excl_bands:
             self.remove_band(band)
         self.facility = facility
-        # print(f"Instantiating {name} object")
+        # TODO: calculate name and facility on the fly from band information (and overridden getattr)
+        # TODO: make this Instrument class a base for NIRCam/ACS_WFC/etc singletons containing PSF info./methods;
+        #       there should then be Multiple_Filter object which is the equivalent of this
+        # TODO: excl_bands instead included in 2 class methods (Multiple_Filter.from_instrument(str) AND Multiple_Filter.from_facility(str))
+
+    @staticmethod
+    def sort_bands(bands, order="ascending"):
+        if order == "ascending":
+            # sort bands from blue -> red
+            bands = [
+                band
+                for band in sorted(
+                    bands,
+                    key=lambda band: band.WavelengthCen.to(u.AA).value,
+                )
+            ]
+        else:
+            raise NotImplementedError
+        return bands
 
     @classmethod
     def from_SVO(cls, facility, instrument, excl_bands=[]):
@@ -60,6 +199,42 @@ class Instrument:
             ]
         )
         return cls(instrument, bands, excl_bands, facility)
+
+    @classmethod
+    def from_band_names(
+        cls: Type[Self], band_names: Union[list, np.array, str]
+    ) -> Self:
+        if isinstance(band_names, str):
+            band_names = "+".join(band_names)
+        # invert expected_instr_bands dict
+        expected_band_instr = {
+            band: instr
+            for instr, bands in expected_instr_bands.items()
+            for band in bands
+        }
+        band_instruments = [
+            expected_band_instr[band_name] for band_name in band_names
+        ]
+        band_facilities = [
+            expected_instr_facilities[band_instrument]
+            for band_instrument in band_instruments
+        ]
+        bands = [
+            Filter.from_SVO(band_facility, band_instr, band_name)
+            for band_facility, band_instr, band_name in zip(
+                band_facilities, band_instruments, band_names
+            )
+        ]
+        return cls.from_bands(bands)
+
+    @classmethod
+    def from_bands(cls: Type[Self], bands: List[Filter]) -> Self:
+        # sort bands from blue -> red
+        bands = cls.sort_bands(bands)
+        # extract instrument and facility name for each band and hence the class
+        name = "+".join(np.unique([band.instrument for band in bands]))
+        facility = "+".join(np.unique([band.facility for band in bands]))
+        return cls(name, bands, [], facility)
 
     @property
     def band_names(self):
@@ -108,7 +283,6 @@ class Instrument:
             str: Summary containing facility, instrument name and filter set included in the instrument
         """
         line_sep = "*" * 40 + "\n"
-        band_sep = "-" * 10 + "\n"
         output_str = line_sep
         output_str += f"FACILITY: {self.facility}\n"
         output_str += f"INSTRUMENT: {self.name}\n"
@@ -134,9 +308,9 @@ class Instrument:
             return band
 
     def __getitem__(self, i):
-        if type(i) in [int, np.int64, slice]:
+        if isinstance(i, (int, np.int64, slice)):
             return self.bands[i]
-        elif type(i) == str:
+        elif isinstance(i, str):
             return self.bands[self.index_from_band(i)]
         else:
             raise (
@@ -154,7 +328,7 @@ class Instrument:
             return self
         else:
             # This leads to confusing errors when passing in a bandname which doesn't exist
-            return False
+            return None
 
     # def __getitem__(self, get_index): # create a new instrument with only the indexed band
     #     excl_bands = []
@@ -167,7 +341,7 @@ class Instrument:
         # cannot add multiple of the same bands together!!! (maybe could just ignore the problem \
         # in Instrument class and just handle it in Data, possibly stacking the two images)
 
-        if type(other) in Instrument.__subclasses__():
+        if isinstance(other, tuple(Instrument.__subclasses__())):
             new_bands = np.array(
                 [
                     band
@@ -175,7 +349,7 @@ class Instrument:
                     if band.band_name not in self.band_names
                 ]
             )
-        elif type(other) == Filter:
+        elif isinstance(other, Filter):
             if other.band_name not in self.band_names:
                 new_bands = np.array([other])
             else:
@@ -257,7 +431,7 @@ class Instrument:
 
     def __eq__(self, other):
         # ensure same type
-        if type(self) != type(other):
+        if not isinstance(self, other):
             return False
         # ensure same facility and instrument name
         elif self.facility != other.facility or self.name != other.name:
@@ -326,12 +500,12 @@ class Instrument:
         return self
 
     def remove_index(self, remove_index: int) -> NoReturn:
-        if not type(remove_index) == type(None):
+        if remove_index is not None:
             self.bands = np.delete(self.bands, remove_index)
         return self
 
     def remove_indices(self, remove_indices: list) -> NoReturn:
-        if not type(remove_indices) == type(None):
+        if remove_indices is not None:
             self.bands = np.delete(self.bands, remove_indices)
         return self
 
@@ -417,7 +591,7 @@ class Instrument:
         if self.name in globals():
             assert globals()[self.name] in Instrument.__subclasses__()
 
-        # TEMPORARY for F444W PSF-homogenized.
+        # HACK: for F444W PSF-homogenized.
         if config.getboolean("DataReduction", "PSF_HOMOGENIZED"):
             galfind_logger.warning(
                 "Temporary aperture correction for F444W PSF-homogenized"
@@ -482,6 +656,7 @@ class Instrument:
                     self.new_instrument().band_names, instrument_name=self.name
                 )
 
+    # eww TODO
     @staticmethod
     def from_name(name, excl_bands=[]):
         if name == "NIRCam":
@@ -550,6 +725,12 @@ class NIRCam(Instrument):
     def new_instrument(self, excl_bands=[]):
         return NIRCam(excl_bands)
 
+    @classmethod
+    def from_bands(
+        cls: Type[Self], bands: List[Filter]
+    ) -> NotImplementedError:
+        raise NotImplementedError
+
 
 class MIRI(Instrument):
     def __init__(self, excl_bands=[]):
@@ -560,6 +741,12 @@ class MIRI(Instrument):
 
     def new_instrument(self, excl_bands=[]):
         return MIRI(excl_bands)
+
+    @classmethod
+    def from_bands(
+        cls: Type[Self], bands: List[Filter]
+    ) -> NotImplementedError:
+        raise NotImplementedError
 
 
 class ACS_WFC(Instrument):
@@ -572,6 +759,12 @@ class ACS_WFC(Instrument):
     def new_instrument(self, excl_bands=[]):
         return ACS_WFC(excl_bands)
 
+    @classmethod
+    def from_bands(
+        cls: Type[Self], bands: List[Filter]
+    ) -> NotImplementedError:
+        raise NotImplementedError
+
 
 class WFC3_IR(Instrument):
     def __init__(self, excl_bands=[]):
@@ -582,6 +775,12 @@ class WFC3_IR(Instrument):
 
     def new_instrument(self, excl_bands=[]):
         return WFC3_IR(excl_bands)
+
+    @classmethod
+    def from_bands(
+        cls: Type[Self], bands: List[Filter]
+    ) -> NotImplementedError:
+        raise NotImplementedError
 
 
 class Combined_Instrument(Instrument):
@@ -657,7 +856,7 @@ class Combined_Instrument(Instrument):
         names = self.name.split("+")
         for name in names:
             instrument = Instrument.from_name(name)
-            if instrument.instrument_from_band(band) != False:
+            if instrument.instrument_from_band(band) is not None:
                 return instrument
 
     def new_instrument(self, excl_bands=[]):

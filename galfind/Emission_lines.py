@@ -146,7 +146,7 @@ class Emission_line:
 
     @property
     def R(self):
-        if self.line_diagnostics["rel_lambda"] == None:
+        if self.line_diagnostics["rel_lambda"] is None:
             return 0.0
         else:
             return (
@@ -157,7 +157,7 @@ class Emission_line:
 
     @property
     def a(self):
-        if self.line_diagnostics["rel_lambda"] == None:
+        if self.line_diagnostics["rel_lambda"] is None:
             return 0.0
         else:
             return (
@@ -181,12 +181,13 @@ class Emission_line:
         profile["flux"] *= self.line_flux / line_flux
         return profile
 
-    @property
-    def line_width(self, lim=1e-4):
-        mask = self.line_profile["flux"] < lim * np.max(
-            self.line_profile["flux"]
-        )
-        cont_wavs = self.wavs[mask]
+    # @property
+    # def line_width(self, lim=1e-4):
+    #     mask = self.line_profile["flux"] < lim * np.max(
+    #         self.line_profile["flux"]
+    #     )
+    #     cont_wavs = self.wavs[mask]
+    #     # return something?
 
     def Tepper_Garcia06_profile(self, bins=1_000):
         line_profile = {}

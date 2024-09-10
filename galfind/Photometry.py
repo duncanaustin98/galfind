@@ -1,12 +1,7 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-"""
-Created on Thu Jul 13 14:14:30 2023
-
-@author: austind
-"""
-
 # Photometry_obs.py
+
+from __future__ import annotations
+
 from copy import deepcopy
 
 import astropy.units as u
@@ -23,10 +18,10 @@ class Photometry:
         # check that the fluxes and errors are in the correct units
         self.flux_Jy = flux_Jy
         self.flux_Jy_errs = flux_Jy_errs
-        self.loc_depths = (
-            depths  # not sure what problems renaming this will have
-        )
-        self.depths = depths  # stores exactly the same info as self.loc_depths, but it is a pain to propagate deletion of the above so it is left for now
+        # not sure what problems renaming this will have
+        self.loc_depths = depths
+        # stores exactly the same info as self.loc_depths, but it is a pain to propagate deletion of the above so it is left for now
+        self.depths = depths
         assert (
             len(self.instrument)
             == len(self.flux_Jy)
@@ -36,10 +31,10 @@ class Photometry:
 
     def __str__(
         self,
-        print_cls_name=True,
-        print_instrument=False,
-        print_fluxes=True,
-        print_depths=True,
+        print_cls_name: bool = True,
+        print_instrument: bool = False,
+        print_fluxes: bool = True,
+        print_depths: bool = True,
     ):
         line_sep = "*" * 40 + "\n"
         band_sep = "-" * 10 + "\n"
@@ -74,9 +69,9 @@ class Photometry:
         return output_str
 
     def __getitem__(self, i):
-        if type(i) == int:
+        if isinstance(i, int):
             return self.flux_Jy[i]
-        elif type(i) == str:
+        elif isinstance(i, str):
             return self.flux_Jy[self.instrument.index_from_band(i)]
         else:
             raise (
@@ -169,7 +164,7 @@ class Photometry:
             self.wav, self.flux_Jy, mag_units
         )
 
-        if uplim_sigma == None:
+        if uplim_sigma is None:
             uplims = list(np.full(len(self.flux_Jy), False))
         else:
             # work out optimal size of error bar in terms of sigma

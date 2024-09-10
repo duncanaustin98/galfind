@@ -187,10 +187,10 @@ class Galaxy:
         pix_scale=0.03 * u.arcsec,
         cutout_size=0.96 * u.arcsec,
     ):
-        if type(data) == Data:
+        if isinstance(data, Data):
             survey = data.survey
             version = data.version
-        if survey == None or version == None:
+        if any(i is None for i in [survey, version]):
             raise (
                 Exception(
                     "'survey' and 'version' must both be given to construct save paths"
@@ -203,7 +203,7 @@ class Galaxy:
             config.getboolean("Cutouts", "OVERWRITE_CUTOUTS")
             or not Path(out_path).is_file()
         ):
-            if type(data) == Data:
+            if isinstance(data, Data):
                 im_data, im_header, seg_data, seg_header = data.load_data(
                     band, incl_mask=False
                 )
@@ -217,9 +217,9 @@ class Galaxy:
                     "RMS_ERR": rms_err_data,
                 }
             elif (
-                type(data) == dict
-                and type(wcs) != type(None)
-                and type(im_header) != type(None)
+                isinstance(data, dict)
+                and wcs is not None
+                and im_header is not None
             ):
                 data_dict = data
             else:
@@ -245,7 +245,7 @@ class Galaxy:
             for i, (label_i, data_i) in enumerate(data_dict.items()):
                 if i == 0 and label_i == "SCI":
                     sci_shape = data_i.shape
-                if type(data_i) == type(None):
+                if data_i is None:
                     galfind_logger.warning(
                         f"No data found for {label_i} in {band}!"
                     )
@@ -304,10 +304,10 @@ class Galaxy:
             f"Cannot make galaxy RGB as not all {blue_bands + green_bands + red_bands} are in {data.instrument.band_names}"
         )
         # extract survey and version from data
-        if type(data) == Data:
+        if isinstance(data, Data):
             survey = data.survey
             version = data.version
-        if survey == None or version == None:
+        if survey is None or version is None:
             raise (
                 Exception(
                     "'survey' and 'version' must both be given to construct save paths"
@@ -364,7 +364,8 @@ class Galaxy:
                 funcs.change_file_permissions(in_path)
                 # Run trilogy
                 sys.path.insert(
-                    1, "/nvme/scratch/software/trilogy"
+                    1,
+                    "/nvme/scratch/software/trilogy",  # hard coded path here
                 )  # Not sure why this path doesn't work: config["Other"]["TRILOGY_DIR"]
                 from trilogy3 import Trilogy
 
@@ -716,7 +717,7 @@ class Galaxy:
     # %% Selection methods
 
     def select_min_bands(self, min_bands, update=True):
-        if type(min_bands) != int:
+        if not isinstance(min_bands, int):
             min_bands = int(min_bands)
 
         selection_name = f"bands>{min_bands - 1}"
@@ -734,7 +735,7 @@ class Galaxy:
         return self, selection_name
 
     def select_min_unmasked_bands(self, min_bands, update=True):
-        if type(min_bands) != int:
+        if not isinstance(min_bands, int):
             min_bands = int(min_bands)
 
         selection_name = f"unmasked_bands>{min_bands - 1}"
@@ -751,7 +752,7 @@ class Galaxy:
                 return self, selection_name
             # extract mask
             mask = self.phot.flux_Jy.mask
-            n_unmasked_bands = len([val for val in mask if val == False])
+            n_unmasked_bands = len([val for val in mask if not val])
             if n_unmasked_bands >= min_bands:
                 if update:
                     self.selection_flags[selection_name] = True
@@ -817,7 +818,7 @@ class Galaxy:
                     self.selection_flags[selection_name] = False
                 return self, selection_name
             mask = self.phot.flux_Jy.mask[band_indices]
-            if all(mask_band == False for mask_band in mask):
+            if any(mask_band for mask_band in mask):
                 if update:
                     self.selection_flags[selection_name] = True
             else:
@@ -957,7 +958,7 @@ class Galaxy:
                     SED_fit_params
                 )
             ].phot_rest.first_Lya_non_detect_band
-            if type(first_Lya_non_detect_band) == type(None):
+            if first_Lya_non_detect_band is None:
                 if update:
                     self.selection_flags[selection_name] = True
                 return self, selection_name
@@ -1027,7 +1028,7 @@ class Galaxy:
                     SED_fit_params
                 )
             ].phot_rest.first_Lya_detect_band
-            if type(first_Lya_detect_band) == type(None):
+            if first_Lya_detect_band is None:
                 if update:
                     self.selection_flags[selection_name] = False
                 return self, selection_name
@@ -1103,9 +1104,9 @@ class Galaxy:
                     SED_fit_params
                 )
             ].phot_rest.first_Lya_detect_band
-            first_Lya_detect_index = np.where(bands == first_Lya_detect_band)[
-                0
-            ][0]
+            # first_Lya_detect_index = np.where(bands == first_Lya_detect_band)[
+            #     0
+            # ][0]
             first_Lya_non_detect_band = self.phot.SED_results[
                 SED_fit_params["code"].label_from_SED_fit_params(
                     SED_fit_params
@@ -1170,9 +1171,9 @@ class Galaxy:
         assert detect_or_non_detect in ["detect", "non_detect"]
         if detect_or_non_detect == "detect":
             sign = ">"
-        else:  # "non_detect""
+        else:  # "non_detect"
             sign = "<"
-        if type(band_name_or_index) == str:  # band name given
+        if isinstance(band_name_or_index, str):  # band name given
             band_name = band_name_or_index
             # given str must be a valid band in the instrument, even if the galaxy does not have this data
             assert (
@@ -1183,8 +1184,8 @@ class Galaxy:
                 self.phot.instrument.band_names == band_name
             )[0][0]
             selection_name = f"{band_name}_SNR{sign}{SNR_lim:.1f}"
-        elif (
-            type(band_name_or_index) == int
+        elif isinstance(
+            band_name_or_index, int
         ):  # band index of galaxy specific data
             band_index = band_name_or_index
             galfind_logger.debug(
@@ -1399,7 +1400,7 @@ class Galaxy:
             closest_band = self.phot.instrument.nearest_band_to_wavelength(
                 obs_frame_emission_line_wav, medium_bands_only
             )
-            if type(closest_band) == type(None):
+            if closest_band is None:
                 if update:
                     self.selection_flags[selection_name] = False
                 return self, selection_name
@@ -1682,7 +1683,7 @@ class Galaxy:
         update=True,
     ):
         assert type(chi_sq_lim) in [int, float]
-        assert type(reduced) == bool
+        assert isinstance(reduced, bool)
         if reduced:
             selection_name = f"red_chi_sq<{chi_sq_lim:.1f}"
             n_bands = len(
@@ -1732,10 +1733,10 @@ class Galaxy:
         delta_z_lowz=0.5,
         update=True,
     ):
-        assert type(chi_sq_diff) in [int, float]
-        assert type(delta_z_lowz) in [int, float]
+        assert isinstance(chi_sq_diff, (int, float))
+        assert isinstance(delta_z_lowz, (int, float))
         assert "lowz_zmax" in SED_fit_params.keys()
-        assert type(SED_fit_params["lowz_zmax"]) == type(None)
+        assert SED_fit_params["lowz_zmax"] is None
         selection_name = f"chi_sq_diff>{chi_sq_diff:.1f},dz>{delta_z_lowz:.1f}"
         if selection_name in self.selection_flags.keys():
             galfind_logger.debug(
@@ -1752,7 +1753,7 @@ class Galaxy:
             zfree_label = SED_fit_params["code"].label_from_SED_fit_params(
                 SED_fit_params
             )
-            zfree = self.phot.SED_results[zfree_label].z
+            # zfree = self.phot.SED_results[zfree_label].z
             chi_sq_zfree = self.phot.SED_results[zfree_label].chi_sq
             # extract redshift and chi_sq of lowz runs
             lowz_SED_fit_params = deepcopy(SED_fit_params)
@@ -1762,7 +1763,7 @@ class Galaxy:
                 lowz_SED_fit_params, self.phot.SED_results
             )
             # if there is no lowz_zmax run available
-            if type(lowz_SED_fit_params["lowz_zmax"]) == type(None):
+            if lowz_SED_fit_params["lowz_zmax"] is None:
                 if update:
                     self.selection_flags[selection_name] = False
                 return self, selection_name
@@ -1797,11 +1798,12 @@ class Galaxy:
         update=True,
     ):
         assert (
-            type(integral_lim) == float and (integral_lim * 100).is_integer()
+            isinstance(integral_lim, float)
+            and (integral_lim * 100).is_integer()
         )
         assert type(delta_z_over_z) in [int, float]
         if "lowz_zmax" in SED_fit_params.keys():
-            assert SED_fit_params["lowz_zmax"] == None
+            assert SED_fit_params["lowz_zmax"] is None
         selection_name = (
             f"zPDF>{int(integral_lim * 100)}%,|dz|/z<{delta_z_over_z}"
         )
@@ -1854,11 +1856,11 @@ class Galaxy:
         lim: Union[int, float, u.Quantity],
         update: bool = True,
     ):
-        assert type(band) == str
+        assert isinstance(band, str)
         assert gtr_or_less in ["gtr", "less"]
-        if type(lim) != u.Quantity:
+        if not isinstance(lim, u.Quantity):
             lim_str = f"{lim:.1f}pix"
-        elif lim.unit in u.dimensionless_unscaled:
+        elif lim.unit == u.dimensionless_unscaled:
             lim_str = f"{lim.value:.1f}pix"
         else:
             lim_str = f"{lim.to(u.arcsec).value:.1f}as"
@@ -2164,7 +2166,7 @@ class Galaxy:
         **kwargs,
     ):
         phot_rest_obj = self.phot.SED_results[SED_fit_params_label].phot_rest
-        if type(save_dir) == type(None):
+        if save_dir is None:
             save_path = None
         else:
             save_path = f"{save_dir}/{SED_fit_params_label}/property_name/{self.ID}.ecsv"

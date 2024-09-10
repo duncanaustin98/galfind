@@ -271,11 +271,11 @@ class Photometry_rest(Photometry):
         single_iter: bool = False,
         output_kwargs: bool = True,
     ):
-        assert type(single_iter) == bool
+        assert isinstance(single_iter, bool)
         assert iters >= 0, galfind_logger.critical(
             f"{iters=} < 0 in Photometry_rest.calc_beta_phot !!!"
         )
-        assert type(iters) == int, galfind_logger.critical(
+        assert isinstance(iters, int), galfind_logger.critical(
             f"{type(iters)=} != 'int' in Photometry_rest.calc_beta_phot !!!"
         )
         # if iters == 1:
@@ -295,9 +295,10 @@ class Photometry_rest(Photometry):
             and PL_amplitude_name in self.property_PDFs.keys()
         )
         if property_stored:
-            if type(self.property_PDFs[property_name]) == type(None) or type(
-                self.property_PDFs[PL_amplitude_name]
-            ) == type(None):
+            if (
+                self.property_PDFs[property_name] is None
+                or self.property_PDFs[PL_amplitude_name] is None
+            ):
                 # run already and returned None for whatever reason (usually no rest-frame UV bands)
                 return [None, None], [PL_amplitude_name, property_name]
             elif iters == 0:
@@ -337,7 +338,7 @@ class Photometry_rest(Photometry):
             else:
                 kwargs = {}
             # ideally this is pre-computed
-            if type(beta_fit_func) == type(None):
+            if beta_fit_func is None:
                 beta_fit_func = beta_fit(
                     rest_UV_phot.z, rest_UV_phot.instrument.bands
                 ).beta_slope_power_law_func_conv_filt
@@ -380,7 +381,7 @@ class Photometry_rest(Photometry):
             if len(rest_UV_phot) == 0:
                 return [None, None], [PL_amplitude_name, property_name]
             else:
-                assert type(beta_fit_func) == type(None)
+                assert beta_fit_func is None
                 scattered_rest_UV_phot_arr = rest_UV_phot.scatter_phot(iters)
                 beta_fit_func = beta_fit(
                     rest_UV_phot.z, rest_UV_phot.instrument.bands
@@ -422,7 +423,7 @@ class Photometry_rest(Photometry):
         save_path=None,
         single_iter: bool = False,
     ):
-        assert type(single_iter) == bool
+        assert isinstance(single_iter, bool)
         assert conv_author_year in fesc_from_beta_conversions.keys()
         property_name = f"fesc_{conv_author_year}"  # _{self.rest_UV_wavs_name(rest_UV_wav_lims)}"
         if extract_property_name:
@@ -442,7 +443,7 @@ class Photometry_rest(Photometry):
                 save_path=save_path,
             )[1][1]
             # update PDF
-            if type(self.property_PDFs[beta_property_name]) == type(None):
+            if self.property_PDFs[beta_property_name] is None:
                 return [None], [property_name]
             else:
                 return [
@@ -467,7 +468,7 @@ class Photometry_rest(Photometry):
         save_path=None,
         single_iter: bool = False,
     ):
-        assert type(single_iter) == bool
+        assert isinstance(single_iter, bool)
         dust_author_year_cls = globals()[dust_author_year]
         assert issubclass(dust_author_year_cls, AUV_from_beta)
         UV_dust_label = self._get_UV_dust_label(dust_author_year)
@@ -488,7 +489,7 @@ class Photometry_rest(Photometry):
                 rest_UV_wav_lims=rest_UV_wav_lims,
                 save_path=save_path,
             )[1][1]
-            if type(self.property_PDFs[beta_property_name]) == type(None):
+            if self.property_PDFs[beta_property_name] is None:
                 return [None], [property_name]
             else:
                 return [
@@ -512,7 +513,7 @@ class Photometry_rest(Photometry):
         save_path=None,
         single_iter: bool = True,
     ):
-        assert type(single_iter) == bool
+        assert isinstance(single_iter, bool)
         property_name = f"m{ref_wav.to(u.AA).value:.0f}"  # _{self.rest_UV_wavs_name(rest_UV_wav_lims)}"
         if extract_property_name:
             return [property_name]
@@ -528,9 +529,10 @@ class Photometry_rest(Photometry):
                 save_path=save_path,
             )[1]
             ampl_name, beta_name = name_arr[0], name_arr[1]
-            if type(self.property_PDFs[ampl_name]) == type(None) or type(
-                self.property_PDFs[beta_name]
-            ) == type(None):
+            if (
+                self.property_PDFs[ampl_name] is None
+                or self.property_PDFs[beta_name] is None
+            ):
                 return [None], [property_name]
             assert len(self.property_PDFs[ampl_name]) == len(
                 self.property_PDFs[beta_name]
@@ -615,7 +617,7 @@ class Photometry_rest(Photometry):
             ref_wav=ref_wav,
             save_path=save_path,
         )[1][0]
-        if type(self.property_PDFs[mUV_property_name]) == type(None):
+        if self.property_PDFs[mUV_property_name] is None:
             return [None], [property_name]
         else:
             return [
@@ -650,9 +652,9 @@ class Photometry_rest(Photometry):
         save_path: Union[str, None] = None,
         single_iter: bool = False,
     ):
-        assert type(single_iter) == bool
+        assert isinstance(single_iter, bool)
         assert frame in ["rest", "obs"]
-        if type(dust_author_year) == type(None):
+        if dust_author_year is None:
             UV_dust_label = ""
         else:
             UV_dust_label = self._get_UV_dust_label(dust_author_year)
@@ -663,7 +665,7 @@ class Photometry_rest(Photometry):
             mUV, mUV_kwargs = self.calc_mUV_phot(
                 rest_UV_wav_lims, ref_wav=ref_wav, single_iter=True
             )
-            if type(dust_author_year) != type(None):
+            if dust_author_year is not None:
                 AUV, AUV_kwargs = self.calc_AUV_from_beta_phot(
                     rest_UV_wav_lims,
                     conv_author_year=dust_author_year,
@@ -679,7 +681,7 @@ class Photometry_rest(Photometry):
                 ref_wav=ref_wav,
                 save_path=save_path,
             )[1][0]
-            if type(dust_author_year) == type(None):
+            if dust_author_year is None:
                 AUV_property_name = None
             else:
                 AUV_property_name = self._calc_property(
@@ -689,10 +691,10 @@ class Photometry_rest(Photometry):
                     ref_wav=ref_wav,
                     conv_author_year=dust_author_year,
                 )[1][0]
-            if type(self.property_PDFs[mUV_property_name]) == type(None):
+            if self.property_PDFs[mUV_property_name] is None:
                 return [None], [property_name]
             if AUV_property_name in self.property_PDFs.keys():
-                if type(self.property_PDFs[AUV_property_name]) == type(None):
+                if self.property_PDFs[AUV_property_name] is None:
                     return [None], [property_name]
             wav_len = len(self.property_PDFs[mUV_property_name])
 
@@ -706,7 +708,7 @@ class Photometry_rest(Photometry):
             UV_lum = funcs.flux_to_luminosity(
                 mUV, wavs=wavs, z=z, out_units=u.erg / (u.s * u.Hz)
             )
-            if type(dust_author_year) == type(None):  # do not dust correct
+            if dust_author_year is None:  # do not dust correct
                 return UV_lum, mUV_kwargs
             else:
                 breakpoint()
@@ -722,7 +724,7 @@ class Photometry_rest(Photometry):
                 out_units=u.erg / (u.s * u.Hz),
                 size=iters,
             )
-            if type(dust_author_year) == type(None):  # do not dust correct
+            if dust_author_year is None:  # do not dust correct
                 PDF = UV_lum
             else:  # dust correct
                 PDF = UV_lum.manipulate_PDF(
@@ -760,7 +762,7 @@ class Photometry_rest(Photometry):
             dust_author_year=dust_author_year,
             save_path=save_path,
         )[1][0]
-        if type(self.property_PDFs[LUV_property_name]) == type(None):
+        if self.property_PDFs[LUV_property_name] is None:
             return [None], [property_name]
         else:
             return [
@@ -785,8 +787,8 @@ class Photometry_rest(Photometry):
         save_path: Union[str, None] = None,
         single_iter: bool = False,
     ):
-        assert type(single_iter) == bool
-        if type(strong_line_names) in [str]:
+        assert isinstance(single_iter, bool)
+        if isinstance(strong_line_names, str):
             strong_line_names = [strong_line_names]
         assert all(
             line_name in strong_optical_lines
@@ -824,9 +826,9 @@ class Photometry_rest(Photometry):
             else:
                 return [None], [property_name]
         # determine photometric bands that trace the continuum both bluewards and redwards of the line(s) - must avoid other strong optical lines and lie within the rest optical wavelength range
-        emission_band_index = self.instrument.index_from_band_name(
-            emission_band.band_name
-        )
+        # emission_band_index = self.instrument.index_from_band_name(
+        #     emission_band.band_name
+        # )
         # redwards_i = emission_band_index
         # bluewards_i = emission_band_index
         cont_bands = []
@@ -1019,7 +1021,7 @@ class Photometry_rest(Photometry):
         save_path: Union[str, None] = None,
         single_iter: bool = False,
     ):
-        assert type(single_iter) == bool
+        assert isinstance(single_iter, bool)
         if type(strong_line_names) in [str]:
             strong_line_names = [strong_line_names]
         assert frame in ["rest", "obs"]
@@ -1047,7 +1049,7 @@ class Photometry_rest(Photometry):
                 rest_optical_wavs=rest_optical_wavs,
                 save_path=save_path,
             )[1][0]
-            if type(self.property_PDFs[cont_property_name]) == type(None):
+            if self.property_PDFs[cont_property_name] is None:
                 return [None], [property_name]
         # determine the band which contains the first line
         emission_band = self.instrument.nearest_band_to_wavelength(
@@ -1149,11 +1151,11 @@ class Photometry_rest(Photometry):
         save_path: Union[str, None] = None,
         single_iter: bool = False,
     ):
-        assert type(single_iter) == bool
+        assert isinstance(single_iter, bool)
         assert u.get_physical_type(calc_wav.unit) == "length"
         if dust_origin != "UV":
             raise NotImplementedError
-        if type(dust_law) != type(None):
+        if dust_law is not None:
             dust_law_cls = globals()[dust_law]  # un-initialized
             assert issubclass(dust_law_cls, Dust_Attenuation)
 
@@ -1162,8 +1164,7 @@ class Photometry_rest(Photometry):
             return [property_name]
 
         if any(
-            type(name) == type(None)
-            for name in [dust_author_year, dust_law, dust_origin]
+            name is None for name in [dust_author_year, dust_law, dust_origin]
         ):
             return [None], [property_name]
         if single_iter:
@@ -1190,7 +1191,7 @@ class Photometry_rest(Photometry):
                 dust_author_year=dust_author_year,
                 save_path=save_path,
             )[1][0]
-            if type(self.property_PDFs[A_ref_wav_name]) == type(None):
+            if self.property_PDFs[A_ref_wav_name] is None:
                 return [None], [property_name]
             dust_law_cls = dust_law_cls()  # initialize dust_law_cls
             dust_PDF = self.property_PDFs[A_ref_wav_name].manipulate_PDF(
@@ -1226,7 +1227,7 @@ class Photometry_rest(Photometry):
         save_path: Union[str, None] = None,
         single_iter: bool = False,
     ):
-        assert type(single_iter) == bool
+        assert isinstance(single_iter, bool)
         if type(strong_line_names) in [str]:
             strong_line_names = [strong_line_names]
         assert frame in ["rest", "obs"]
@@ -1282,7 +1283,7 @@ class Photometry_rest(Photometry):
                 save_path=save_path,
             )[1][0]
             if any(
-                type(self.property_PDFs[name]) == type(None)
+                self.property_PDFs[name] is None
                 for name in [A_line_name, EW_name, cont_name]
             ):
                 return [None], [property_name]
@@ -1358,8 +1359,8 @@ class Photometry_rest(Photometry):
         save_path: Union[str, None] = None,
         single_iter: bool = False,
     ):
-        assert type(single_iter) == bool
-        if type(strong_line_names) in [str]:
+        assert isinstance(single_iter, bool)
+        if isinstance(strong_line_names, str):
             strong_line_names = [strong_line_names]
         assert frame in ["rest", "obs"]
 
@@ -1401,7 +1402,7 @@ class Photometry_rest(Photometry):
                 rest_UV_wav_lims=rest_UV_wav_lims,
                 save_path=save_path,
             )[1][0]
-            if type(self.property_PDFs[line_flux_property_name]) == type(None):
+            if self.property_PDFs[line_flux_property_name] is None:
                 return [None], [property_name]
         if frame == "rest":
             z = 0.0
@@ -1441,8 +1442,8 @@ class Photometry_rest(Photometry):
         save_path: Union[str, None] = None,
         single_iter: bool = False,
     ):
-        assert type(single_iter) == bool
-        if type(strong_line_names) in [str]:
+        assert isinstance(single_iter, bool)
+        if isinstance(strong_line_names, str):
             strong_line_names = [strong_line_names]
         assert frame in ["rest", "obs"]
         assert "Halpha" in strong_line_names
@@ -1472,7 +1473,7 @@ class Photometry_rest(Photometry):
                     save_path=save_path,
                 )[1][0]
                 fesc_chain = self.property_PDFs[fesc_property_name]
-                if type(fesc_chain) == type(None):
+                if fesc_chain is None:
                     return [None], [property_name]
                 else:
                     fesc_chain = fesc_chain.input_arr
@@ -1534,7 +1535,7 @@ class Photometry_rest(Photometry):
                 save_path=save_path,
             )[1][0]
             if any(
-                type(self.property_PDFs[name]) == type(None)
+                self.property_PDFs[name] is None
                 for name in [line_lum_property_name, L_UV_property_name]
             ):
                 return [None], [property_name]
@@ -1560,7 +1561,7 @@ class Photometry_rest(Photometry):
     # Rest optical line property naming functions
 
     def _get_UV_dust_label(self, dust_author_year: Union[str, None]):
-        if type(dust_author_year) == type(None):
+        if dust_author_year is None:
             return ""
         else:
             return f"_{dust_author_year}"
@@ -1574,8 +1575,7 @@ class Photometry_rest(Photometry):
         if dust_origin != "UV":
             raise NotImplementedError
         if any(
-            type(dust_name) == type(None)
-            for dust_name in [dust_author_year, dust_law]
+            dust_name is None for dust_name in [dust_author_year, dust_law]
         ):
             return ""
         else:
@@ -1587,7 +1587,7 @@ class Photometry_rest(Photometry):
         assert all(
             line_name in line_diagnostics.keys() for line_name in line_names
         )
-        assert type(flux_contamination_params) == dict
+        assert isinstance(flux_contamination_params, dict)
         flux_cont_keys = flux_contamination_params.keys()
         if "mu" in flux_cont_keys and "sigma" in flux_cont_keys:
             return f"{line_names[0]}_cont_G({flux_contamination_params['mu']:.1f},{flux_contamination_params['sigma']:.1f})"  # _{'+'.join(line_names[1:])}"
@@ -1601,7 +1601,7 @@ class Photometry_rest(Photometry):
     def _get_rest_optical_flux_contam_scaling(
         self, flux_contamination_params: dict, iters: int
     ):
-        assert type(flux_contamination_params) == dict
+        assert isinstance(flux_contamination_params, dict)
         flux_cont_keys = flux_contamination_params.keys()
         if "mu" in flux_cont_keys and "sigma" in flux_cont_keys:
             return np.random.normal(
@@ -1644,7 +1644,7 @@ class Photometry_rest(Photometry):
             property_iters = iters
             if property_name in self.property_PDFs.keys():
                 PDF_obj = self.property_PDFs[property_name]
-                if type(PDF_obj) == type(None):
+                if PDF_obj is None:
                     pass
                 elif len(PDF_obj) < iters:
                     property_iters = iters - len(PDF_obj)
@@ -1670,7 +1670,7 @@ class Photometry_rest(Photometry):
         # print(properties, property_name)
         for property, property_name in zip(properties, property_names):
             # update property PDFs
-            if type(property) == type(None):
+            if property is None:
                 self.property_PDFs[property_name] = None
             else:
                 if type(property) not in [dict]:
@@ -1701,7 +1701,7 @@ class Photometry_rest(Photometry):
                 self.recently_updated.append(property_name)
                 self.property_PDFs[property_name] = PDF_obj
                 self._update_properties_from_PDF(property_name)
-                if type(save_path) != type(None):
+                if save_path is not None:
                     self._save_SED_rest_PDF(
                         property_name,
                         save_path.replace(
@@ -1712,11 +1712,11 @@ class Photometry_rest(Photometry):
 
     def _save_SED_rest_PDF(self, property_name, save_path):
         funcs.make_dirs(save_path)
-        if type(self.property_PDFs[property_name]) != type(None):
+        if self.property_PDFs[property_name] is not None:
             self.property_PDFs[property_name].save_PDF(save_path)
 
     def _update_properties_from_PDF(self, property_name):
-        if type(self.property_PDFs[property_name]) == type(None):
+        if self.property_PDFs[property_name] is None:
             self.properties[property_name] = np.nan
             self.property_errs[property_name] = [np.nan, np.nan]
         else:

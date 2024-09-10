@@ -32,7 +32,7 @@ class PDF:
         self.p_x = p_x
         if timed:
             end = time.time()
-            # print(mid - start, end - mid)
+            print(mid - start, end - mid)
 
     def __str__(self, print_peaks=False):
         line_sep = "*" * 40 + "\n"
@@ -65,7 +65,7 @@ class PDF:
 
     def __add__(self, other):
         try:
-            assert type(self) == type(other)
+            assert isinstance(self, other)
             assert self.property_name == other.property_name
             # update kwargs
             new_kwargs = {**self.kwargs, **other.kwargs}
@@ -168,7 +168,7 @@ class PDF:
         try:
             self.peaks[nth_peak]
         except (AttributeError, IndexError) as e:
-            if type(e) == AttributeError:
+            if isinstance(e, AttributeError):
                 self.peaks = []
             # calculate the nth_peak - what if array isnt the correct length
             if nth_peak == 0:
@@ -181,13 +181,13 @@ class PDF:
         # print(integral, 'integral', peak_z, 'peak_z', peak_loc, 'peak_loc', peak_second_loc, 'peak_second_loc', secondary_peak, 'secondary_peak', ratio, 'ratio')
 
     def get_percentile(self, percentile):
-        assert type(percentile) in [float], galfind_logger.critical(
+        assert isinstance(percentile, float), galfind_logger.critical(
             f"percentile = {percentile} with type(percentile) = {type(percentile)} is not in ['float']"
         )
         try:
             return self.percentiles[f"{percentile:.1f}"]
         except (AttributeError, KeyError) as e:
-            if type(e) == AttributeError:
+            if isinstance(e, AttributeError):
                 self.percentiles = {}
             # calculate percentile
             cdf = np.cumsum(self.p_x)
@@ -322,7 +322,7 @@ class PDF:
             # Horizontal arrow at PDF peak going left or right depending on which side PDF is on, labelled with chi2
             # Check if highest peak is closer to xlim[0] or xlim[1]
             x_lim = ax.get_xlim()
-            y_lim = ax.get_ylim()
+            # y_lim = ax.get_ylim()
             amount = 0.3 * (x_lim[1] - x_lim[0])
             if (
                 self.get_peak(0)["value"] - x_lim[0]
@@ -407,7 +407,7 @@ class SED_fit_PDF(PDF):
         return sed_fit_PDF
 
     def load_peaks_from_SED_result(self, SED_result, nth_peak=0):
-        assert type(nth_peak) == int, galfind_logger.critical(
+        assert isinstance(nth_peak, int), galfind_logger.critical(
             f"nth_peak with type = {type(nth_peak)} must be of type 'int'"
         )
         assert nth_peak == 0, galfind_logger.critical(
@@ -479,7 +479,7 @@ class Redshift_PDF(SED_fit_PDF):
         z_max=float(config["SEDFitting"].get("Z_MAX")),
     ):
         # find best fitting redshift from peak of the PDF distribution - not needed if peak is loaded in PDF object
-        if type(zbest) == type(None):
+        if zbest is None:
             zbest = self.get_peak(0)["value"]  # find first peak
         elif type(zbest) in [int, float]:  # correct format
             pass
@@ -500,7 +500,7 @@ class PDF_nD:
             assert all(
                 hasattr(PDF_obj, "input_arr") for PDF_obj in ordered_PDFs
             )
-        except:
+        except AssertionError:
             breakpoint()
         assert all(
             len(PDF_obj.input_arr) == len(ordered_PDFs[0].input_arr)
@@ -533,9 +533,9 @@ class PDF_nD:
             ]
         )
         assert chains.shape == (len(self), len(independent_var))
-        if type(size) == type(None):
+        if size is None:
             pass
-        elif type(size) in [int]:
+        elif isinstance(size, int):
             chains = chains[-size:]
         else:
             galfind_logger.critical(
