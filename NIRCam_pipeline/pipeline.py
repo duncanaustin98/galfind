@@ -34,7 +34,7 @@ def pipeline(surveys, version, instruments, aper_diams, min_flux_pc_errs, forced
                 load_PDFs = load_PDFs, timed = timed, mask_stars = mask_stars, pix_scales = pix_scales, \
                 load_SED_rest_properties = load_SED_rest_properties, n_depth_reg = n_depth_reg, sex_prefer = sex_prefer, \
                 load_ext_src_corrs = load_ext_src_corrs)
-            
+
             pipes_origin = SED_fit_params_arr[-1] #["code"].label_from_SED_fit_params(SED_fit_params_arr[-1])
             #cat.plot("beta_C94", pipes_origin, "M_UV", pipes_origin)
             
