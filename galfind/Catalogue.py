@@ -456,7 +456,7 @@ class Catalogue(Catalogue_Base):
                     key for key in property_dict.keys() if key in append_tab.colnames
                 ]
                 # ensure the type of each element in the dict is the same
-                expected_type = type(gal_properties[0][gal_properties[0].keys()[0]])
+                expected_type = type(gal_properties[0][list(gal_properties[0].keys())[0]])
                 assert all(
                     type(value) == expected_type
                     for gal_property in gal_properties
