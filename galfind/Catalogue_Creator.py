@@ -11,17 +11,16 @@ Created on Wed Jun  7 13:59:59 2023
 import numpy as np
 from astropy.utils.masked import Masked
 import astropy.units as u
-from astropy.table import Table, Row
 import json
 from abc import ABC, abstractmethod
 import time
 from tqdm import tqdm
 from pathlib import Path
 import h5py
-from copy import copy, deepcopy
+from copy import deepcopy
 
 from . import useful_funcs_austind as funcs
-from . import config, galfind_logger, SED_code, LePhare, EAZY, Bagpipes
+from . import config, galfind_logger
 
 
 class Catalogue_Creator(ABC):

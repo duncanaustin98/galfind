@@ -8,23 +8,17 @@ Created on Mon Jul 17 15:04:24 2023
 
 # Photometry_rest.py
 import numpy as np
-import astropy.constants as const
 import astropy.units as u
-from copy import copy, deepcopy
-import traceback
+from copy import deepcopy
 from tqdm import tqdm
-import warnings
-import matplotlib.pyplot as plt
-from scipy.interpolate import interp1d
 from scipy.optimize import curve_fit
-from abc import ABC
 import inspect
 from typing import Union
 
-from . import config, galfind_logger, astropy_cosmo, Photometry, PDF, PDF_nD
+from . import galfind_logger, Photometry, PDF, PDF_nD
 from . import useful_funcs_austind as funcs
 from .Emission_lines import line_diagnostics, strong_optical_lines
-from .Dust_Attenuation import AUV_from_beta, M99, C00, Dust_Attenuation
+from .Dust_Attenuation import AUV_from_beta, Dust_Attenuation
 from .decorators import ignore_warnings
 
 

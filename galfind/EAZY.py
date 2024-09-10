@@ -12,27 +12,22 @@ import astropy.units as u
 import itertools
 from astropy.table import Table
 from pathlib import Path
-import matplotlib
-import matplotlib.pyplot as plt
 import eazy
 import os
 import time
 import warnings
-from astropy.utils.exceptions import AstropyWarning
 from tqdm import tqdm
 import h5py
-from eazy import hdf5, visualization
-from astropy.io import fits
-import warnings
+from eazy import hdf5
 from scipy.linalg import LinAlgWarning
 
 warnings.filterwarnings("ignore", category=LinAlgWarning)
 
-from . import SED_code, Instrument, Redshift_PDF
-from .SED import SED, SED_obs
+from . import SED_code, Redshift_PDF
+from .SED import SED_obs
 from . import useful_funcs_austind as funcs
 from . import config, galfind_logger
-from .decorators import run_in_dir, hour_timer, email_update
+from .decorators import run_in_dir
 
 # %% EAZY SED fitting code
 
@@ -498,7 +493,7 @@ class EAZY(SED_code):
                     [np.array(fit_pz[pos_obj][pos]) for pos, z in enumerate(fit_zgrid)]
                 )
                 for pos_obj, ID in tqdm(
-                    enumerate(fit.OBJID), total=len(fit.OBJID), desc=f"Saving z-PDFs"
+                    enumerate(fit.OBJID), total=len(fit.OBJID), desc="Saving z-PDFs"
                 )
             ]
         )
@@ -608,8 +603,8 @@ class EAZY(SED_code):
         # open .h5 file
         # return np.ones(len(IDs))
         hf = h5py.File(SED_paths[0], "r")
-        z_arr = hf[f"z_arr"][IDs - 1]
-        wav_flux_arr = hf[f"wav_flux_arr"][IDs - 1]
+        z_arr = hf["z_arr"][IDs - 1]
+        wav_flux_arr = hf["wav_flux_arr"][IDs - 1]
         wav_arr = wav_flux_arr[:, 0]
         flux_arr = wav_flux_arr[:, 1]
         wav_unit = u.Unit(hf["wav_unit"][()].decode())

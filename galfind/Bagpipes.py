@@ -8,13 +8,9 @@ Created on Tue Jun  6 14:55:57 2023
 
 # Bagpipes.py
 import astropy.units as u
-import os
 import numpy as np
-import time
 from astropy.table import Table
 from typing import Union
-from copy import deepcopy
-import glob
 from pathlib import Path
 from tqdm import tqdm
 import itertools
@@ -115,7 +111,7 @@ class Bagpipes(SED_code):
         # should be generalized more here including e.g. SED_fit_params assertions
         if not short:
             # sort redshift label
-            if not "fix_z" in SED_fit_params.keys():
+            if "fix_z" not in SED_fit_params.keys():
                 SED_fit_params["fix_z"] = False
             if SED_fit_params["fix_z"]:
                 redshift_label = "zfix"
@@ -296,7 +292,7 @@ class Bagpipes(SED_code):
         # if gal_property not in PDF_paths.keys():
         #     return list(np.full(len(IDs), None))
         # else:
-        if not gal_property in Bagpipes.gal_property_unit_dict.keys():
+        if gal_property not in Bagpipes.gal_property_unit_dict.keys():
             Bagpipes.gal_property_unit_dict[gal_property] = u.dimensionless_unscaled
         pdf_arrs = [
             np.array(Table.read(path, format="ascii.fast_no_header")["col1"])

@@ -1,7 +1,6 @@
 # Multiple_Catalogue.py
 import numpy as np
 from astropy.table import vstack
-from astropy.coordinates import SkyCoord
 import astropy.units as u
 import matplotlib.pyplot as plt
 import matplotlib.cm as cm

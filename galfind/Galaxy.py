@@ -9,14 +9,13 @@ Created on Thu Jul 13 14:11:23 2023
 # Galaxy.py
 import numpy as np
 import matplotlib.pyplot as plt
-from copy import copy, deepcopy
+from copy import deepcopy
 import astropy.units as u
 from astropy.coordinates import SkyCoord
 from astropy.io import fits
 from astropy.table import Table
 import os
 import sys
-import json
 import time
 import glob
 from pathlib import Path
@@ -24,8 +23,6 @@ from astropy.nddata import Cutout2D
 from astropy.utils.masked import Masked
 from tqdm import tqdm
 import matplotlib.patheffects as pe
-from astropy.wcs import WCS
-from astropy.wcs.utils import skycoord_to_pixel
 from astropy.visualization import (
     LogStretch,
     LinearStretch,
@@ -40,19 +37,15 @@ from typing import Union
 from . import useful_funcs_austind as funcs
 from . import config, galfind_logger, astropy_cosmo, instr_to_name_dict
 from . import (
-    Photometry_rest,
     Photometry_obs,
     Multiple_Photometry_obs,
     Data,
     Instrument,
     NIRCam,
-    ACS_WFC,
-    WFC3_IR,
     PDF,
 )
-from .SED import SED, SED_obs, Mock_SED_rest, Mock_SED_obs
+from .SED import SED_obs, Mock_SED_rest, Mock_SED_obs
 from .EAZY import EAZY
-from .Bagpipes import Bagpipes
 from .SED_result import SED_result
 from .Emission_lines import line_diagnostics
 
@@ -1748,7 +1741,7 @@ class Galaxy:
             if update:
                 self.selection_flags[selection_name] = False
             return self, selection_name
-        if not "NIRCam" in self.phot.instrument.name:
+        if "NIRCam" not in self.phot.instrument.name:
             galfind_logger.critical(
                 f"NIRCam data for galaxy ID = {self.ID} must be included for EPOCHS selection!"
             )
@@ -2086,11 +2079,11 @@ class Galaxy:
         if not hasattr(self, "V_max"):
             self.V_max = {}
         z_bin_name = f"{SED_fit_params_key}_{z_bin[0]:.1f}<z<{z_bin[1]:.1f}"
-        if not z_bin_name in self.obs_zrange.keys():
+        if z_bin_name not in self.obs_zrange.keys():
             self.obs_zrange[z_bin_name] = {}
         # if not z_bin_name in self.V_max_simple.keys():
         #    self.V_max_simple[z_bin_name] = {}
-        if not z_bin_name in self.V_max.keys():
+        if z_bin_name not in self.V_max.keys():
             self.V_max[z_bin_name] = {}
 
         for data in data_arr:
@@ -2310,7 +2303,7 @@ class Galaxy:
         # else:
         if not hasattr(self, "V_max"):
             self.V_max = {}
-        if not z_bin_name in self.V_max.keys():
+        if z_bin_name not in self.V_max.keys():
             self.V_max[z_bin_name] = {}
         self.V_max[z_bin_name][full_survey_name] = Vmax
         return self

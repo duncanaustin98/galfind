@@ -7,18 +7,11 @@ import astropy.units as u
 from tqdm import tqdm
 from astropy.coordinates import SkyCoord
 from astropy.io import fits
-import time
-import regions
 from typing import Union
-from astropy.wcs import WCS
 
 from . import useful_funcs_austind as funcs
-from . import config, galfind_logger, sed_code_to_name_dict, SED_code
-from . import Multiple_Catalogue, Multiple_Data
-from .Data import Data
-from .Galaxy import Galaxy
-from .Catalogue_Creator import GALFIND_Catalogue_Creator
-from .EAZY import EAZY
+from . import galfind_logger, sed_code_to_name_dict, SED_code
+from . import Multiple_Catalogue
 
 
 class Catalogue_Base:
@@ -112,7 +105,7 @@ class Catalogue_Base:
             if len(self.SED_rest_properties) >= 1:
                 output_str += band_sep
                 for key, properties in self.SED_rest_properties.items():
-                    output_str += f"Rest frame SED properties:\n"
+                    output_str += "Rest frame SED properties:\n"
                     output_str += f"{key}: {str(properties)}\n"
                     output_str += band_sep
         if print_cls_name:

@@ -11,8 +11,6 @@ import numpy as np
 import matplotlib.pyplot as plt
 import astropy.units as u
 import astropy.constants as const
-from scipy.interpolate import interp1d
-from scipy.integrate import quad
 
 wav_lyman_alpha = 1215.67  # u.AA
 line_diagnostics = {

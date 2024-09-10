@@ -10,8 +10,8 @@ Created on Fri Jun  2 12:56:53 2023
 from __future__ import absolute_import
 
 import numpy as np
-from copy import copy, deepcopy
-from abc import ABC, abstractmethod
+from copy import deepcopy
+from abc import abstractmethod
 import astropy.units as u
 import json
 from pathlib import Path
@@ -300,7 +300,7 @@ class Instrument:
                 - funcs.convert_wav_units(wavelength, u.AA).value
             ).argmin()
         ]
-        if check_wavelength_in_band and not nearest_band in self.bands_from_wavelength(
+        if check_wavelength_in_band and nearest_band not in self.bands_from_wavelength(
             wavelength
         ):
             return None
@@ -323,7 +323,7 @@ class Instrument:
             [
                 self[self.index_from_band_name(band_name)]
                 for band_name in self.band_names
-                if not band_name in unique_band_names
+                if band_name not in unique_band_names
             ]
         )
 

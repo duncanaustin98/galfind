@@ -8,9 +8,8 @@ Created on Mon Jul 17 15:03:20 2023
 
 # Photometry_obs.py
 import numpy as np
-import astropy.constants as const
 import astropy.units as u
-from copy import copy, deepcopy
+from copy import deepcopy
 import matplotlib.patheffects as pe
 from tqdm import tqdm
 import time
@@ -18,7 +17,7 @@ from typing import Union
 import inspect
 
 from . import useful_funcs_austind as funcs
-from . import galfind_logger, instr_to_name_dict
+from . import galfind_logger
 from .Photometry import Photometry
 from .SED_result import Galaxy_SED_results, Catalogue_SED_results
 

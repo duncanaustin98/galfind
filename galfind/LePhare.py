@@ -11,10 +11,9 @@ import numpy as np
 import astropy.units as u
 from pathlib import Path
 import itertools
-from astropy.table import Table, join
+from astropy.table import Table
 import subprocess
 from astropy.io import fits
-import json
 
 from . import config, galfind_logger, SED_code
 from . import useful_funcs_austind as funcs

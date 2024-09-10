@@ -9,32 +9,25 @@ Created on Tue Oct 10 13:30:14 2023
 # SED.py
 
 import astropy.units as u
-import astropy.constants as const
 import numpy as np
 import astropy.io.ascii as ascii
-from abc import ABC, abstractmethod
+from abc import ABC
 import matplotlib.pyplot as plt
 from astropy.table import Table
 from scipy.interpolate import interp1d
-from scipy.integrate import quad
 from scipy.optimize import curve_fit
 import os
-from copy import deepcopy
 import glob
 
 from . import (
     config,
     astropy_cosmo,
-    Photometry,
-    Photometry_obs,
     Mock_Photometry,
     IGM_attenuation,
-    wav_lyman_lim,
-    Emission_lines,
 )
 from . import useful_funcs_austind as funcs
 from . import galfind_logger
-from .Emission_lines import wav_lyman_alpha, line_diagnostics
+from .Emission_lines import line_diagnostics
 
 
 class SED:
@@ -855,7 +848,7 @@ class Mock_SED_rest_template_set(Mock_SED_template_set):
         bpass_Lsun = 3.848e26 * u.J / u.s
         bpass_version_dir_dict = {
             "2.3": f"BPASS_v2.3_release/bpass_v2.3.{alpha_enhancement}",
-            "2.2_cloudy": f"BPASS_v2.2_cloudy/spec",
+            "2.2_cloudy": "BPASS_v2.2_cloudy/spec",
         }
         bpass_version_name_dict = {
             "2.3": f"spectra-{model_type}-{imf}.{alpha_enhancement}.{metallicity}.dat",

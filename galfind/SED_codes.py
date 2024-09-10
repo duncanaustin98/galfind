@@ -9,16 +9,10 @@ Created on Wed May 31 00:17:39 2023
 # SED_codes.py
 # %% Imports
 
-import os
 import numpy as np
-import json
 from abc import ABC, abstractmethod
 import astropy.units as u
-import itertools
 from astropy.table import Table, join
-import subprocess
-from pathlib import Path
-from astropy.io import fits
 from tqdm import tqdm
 import time
 
@@ -152,7 +146,7 @@ class SED_code(ABC):
         )  # should be cached
         if type(fits_cat) == type(None):
             run = True
-        elif not self.galaxy_property_labels("z", SED_fit_params) in fits_cat.colnames:
+        elif self.galaxy_property_labels("z", SED_fit_params) not in fits_cat.colnames:
             run = True
         else:
             run = False

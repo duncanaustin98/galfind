@@ -7,7 +7,6 @@ Created on Tue Jan 16 10:36:38 2024
 """
 
 # DLA.py
-import matplotlib.pyplot as plt
 import astropy.units as u
 
 from .lyman_alpha_damping_wing import *

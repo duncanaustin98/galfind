@@ -7,23 +7,19 @@ Created on Mon Jul 17 16:50:27 2023
 """
 
 # SED_result.py
-import warnings
 import numpy as np
 import astropy.units as u
 from astropy.table import Table
-from glob import glob
 from tqdm import tqdm
-import h5py
 import time
 from typing import Union
 import itertools
 from copy import deepcopy
 
-from .Photometry import Photometry, Multiple_Photometry
+from .Photometry import Multiple_Photometry
 from .Photometry_rest import Photometry_rest
-from .PDF import PDF, Redshift_PDF
 from . import useful_funcs_austind as funcs
-from . import config, galfind_logger
+from . import galfind_logger
 
 
 class SED_result:

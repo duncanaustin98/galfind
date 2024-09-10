@@ -7,29 +7,20 @@ Created on Wed Apr 19 21:19:13 2023
 """
 
 # useful_funcs_austind.py
-import sys
-import warnings
 import sep
 import os
 import numpy as np
 import matplotlib.pyplot as plt
 import astropy.constants as const
-from astropy.cosmology import FlatLambdaCDM
 import astropy.units as u
-from astropy.table import Table, join
-from scipy.optimize import curve_fit
+from astropy.table import Table
 from astropy.wcs.utils import skycoord_to_pixel
 from astropy.coordinates import SkyCoord
-from abc import ABC, abstractmethod
-from copy import copy, deepcopy
-import json
-from tqdm import tqdm
-from scipy.interpolate import interp1d
 import inspect
 from scipy.stats import chi2
 from typing import Union
 
-from . import config, galfind_logger, astropy_cosmo
+from . import galfind_logger, astropy_cosmo
 
 # fluxes and magnitudes
 

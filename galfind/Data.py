@@ -7,30 +7,21 @@ Created on Wed May 17 14:20:31 2023
 """
 
 from __future__ import absolute_import
-import photutils
 from photutils import (
-    Background2D,
-    MedianBackground,
     SkyCircularAperture,
     aperture_photometry,
 )
 import numpy as np
 from astropy.io import fits
-from random import randrange
 from pathlib import Path
-import sep  # sextractor for python
 import matplotlib.pyplot as plt
 import cv2
-import math
-import timeit
-from mpl_toolkits.axes_grid1 import make_axes_locatable
-from astropy.wcs.utils import pixel_to_skycoord
-from astropy.coordinates import search_around_sky, SkyCoord
+from astropy.coordinates import SkyCoord
 from astropy.visualization.mpl_normalize import ImageNormalize
 import astropy.visualization as vis
 from matplotlib.colors import LogNorm
 from astropy.table import Table, hstack, vstack, Column
-from copy import copy, deepcopy
+from copy import deepcopy
 import pyregion
 from regions import Regions
 import subprocess
@@ -40,8 +31,6 @@ import astropy.units as u
 import os
 import sys
 from astropy.wcs import WCS
-import matplotlib.pyplot as plt
-from matplotlib import cm
 from tqdm import tqdm
 import json
 from joblib import Parallel, delayed
@@ -50,15 +39,14 @@ from joblib import Parallel, delayed
 import contextlib
 import joblib
 import h5py
-import logging
 from astroquery.gaia import Gaia
 from astropy.convolution import convolve, convolve_fft
 from typing import Union
 
-from .Instrument import Instrument, ACS_WFC, WFC3_IR, NIRCam, MIRI, Combined_Instrument
+from .Instrument import Instrument
 from . import config, galfind_logger, Depths
 from . import useful_funcs_austind as funcs
-from .decorators import run_in_dir, hour_timer, email_update
+from .decorators import run_in_dir
 
 
 # GALFIND data object
@@ -734,7 +722,7 @@ class Data:
         output_str += band_sep
         output_str += f"SURVEY: {self.survey}\n"
         output_str += f"VERSION: {self.version}\n"
-        output_str += f"FIELD TYPE: " + "BLANK\n" if self.is_blank else "CLUSTER\n"
+        output_str += "FIELD TYPE: " + "BLANK\n" if self.is_blank else "CLUSTER\n"
         # print instrument string representation
         output_str += str(
             self.instrument
@@ -1079,7 +1067,7 @@ class Data:
         if (
             "NIRCam" not in self.instrument.name and mask_stars
         ):  # doesnt stop e.g. ACS_WFC+NIRCam from making star masks
-            galfind_logger.critical(f"Mask making only implemented for NIRCam data!")
+            galfind_logger.critical("Mask making only implemented for NIRCam data!")
             raise (Exception("Star mask making only implemented for NIRCam data!"))
 
         # if "COSMOS-Web" in self.survey:
@@ -1490,7 +1478,7 @@ class Data:
         params_path=config["SExtractor"]["PARAMS_PATH"],
     ):
         galfind_logger.warning(
-            f"Data.make_seg_map easily sped up without the use of Instrument.instrument_from_band!"
+            "Data.make_seg_map easily sped up without the use of Instrument.instrument_from_band!"
         )
         if type(band) in [str, np.str_]:
             pass
@@ -1585,7 +1573,7 @@ class Data:
         update_default_dictionaries=True,
     ):
         galfind_logger.warning(
-            f"Data.convolve_images easily sped up without the use of Instrument.instrument_from_band!"
+            "Data.convolve_images easily sped up without the use of Instrument.instrument_from_band!"
         )
         """Adapted from aperpy - https://github.com/astrowhit/aperpy/"""
         if override_bands is not None:
@@ -1628,13 +1616,13 @@ class Data:
                 full_hdu = fits.open(im_filename)
             else:
                 outsciname = im_filename.replace(
-                    f".fits", f"_sci_{match_band}-matched.fits"
+                    ".fits", f"_sci_{match_band}-matched.fits"
                 ).replace(os.path.dirname(im_filename), outdir)
                 outwhtname = wht_filename.replace(
-                    f".fits", f"_wht_{match_band}-matched.fits"
+                    ".fits", f"_wht_{match_band}-matched.fits"
                 ).replace(os.path.dirname(wht_filename), outdir)
                 outerrname = err_filename.replace(
-                    f".fits", f"_err_{match_band}-matched.fits"
+                    ".fits", f"_err_{match_band}-matched.fits"
                 ).replace(os.path.dirname(err_filename), outdir)
                 outnames.append(outsciname)
                 outnames.append(outwhtname)
@@ -1648,7 +1636,7 @@ class Data:
             for outname in outnames:
                 if os.path.exists(outname) and not overwrite:
                     print(outsciname, outwhtname)
-                    print(f"Convolved images exist, I will not overwrite")
+                    print("Convolved images exist, I will not overwrite")
                     skip = True
 
             if not skip:
@@ -1796,16 +1784,16 @@ class Data:
                         print("Not writing empty HDU")
                 else:
                     outsciname = im_filename.replace(
-                        f".fits", f"_sci_{match_band}-matched.fits"
+                        ".fits", f"_sci_{match_band}-matched.fits"
                     ).replace(os.path.dirname(im_filename), outdir)
                     outwhtname = wht_filename.replace(
-                        f".fits", f"_wht_{match_band}-matched.fits"
+                        ".fits", f"_wht_{match_band}-matched.fits"
                     ).replace(os.path.dirname(wht_filename), outdir)
                     outerrname = err_filename.replace(
-                        f".fits", f"_err_{match_band}-matched.fits"
+                        ".fits", f"_err_{match_band}-matched.fits"
                     ).replace(os.path.dirname(err_filename), outdir)
                     outname = im_filename.replace(
-                        f".fits", f"_{match_band}-matched.fits"
+                        ".fits", f"_{match_band}-matched.fits"
                     ).replace(os.path.dirname(im_filename), outdir)
 
                     if same_file:
@@ -1843,7 +1831,7 @@ class Data:
         timed: bool = True,
     ):
         galfind_logger.warning(
-            f"Data.stack_bands easily sped up without the use of Instrument.instrument_from_band!"
+            "Data.stack_bands easily sped up without the use of Instrument.instrument_from_band!"
         )
         for band in bands:
             if band not in self.im_paths.keys():
@@ -2074,7 +2062,7 @@ class Data:
                 sextract = True
                 # of order 0.1s per call
                 galfind_logger.debug(
-                    f"'subprocess.check_output()' takes of order 0.1s per call!"
+                    "'subprocess.check_output()' takes of order 0.1s per call!"
                 )
                 self.sex_cat_types[band_name] = (
                     subprocess.check_output("sex --version", shell=True)
@@ -2305,7 +2293,7 @@ class Data:
     ):
         assert type(col_desc_dict) == dict
         assert "Photometry" in col_desc_dict.keys()
-        intro_text = f"""
+        intro_text = """
         
         """
         # if not overwrite and README already exists, extract previous column labels to append col_desc_dict to
@@ -2316,7 +2304,7 @@ class Data:
         for key, value in col_desc_dict.items():
             if key == "Photometry":
                 init_phot_text = (
-                    f"Photometry:\n"
+                    "Photometry:\n"
                     + "\n".join(
                         [
                             phot_code
@@ -2701,7 +2689,7 @@ class Data:
                 "OVERWRITE_LOC_DEPTH_CAT = YES, updating catalogue with aperture corrections."
             )
         cat = Table.read(self.sex_cat_master_path)
-        if not "APERCORR" in cat.meta.keys() or overwrite:
+        if "APERCORR" not in cat.meta.keys() or overwrite:
             for i, band in enumerate(self.instrument.band_names):
                 print(band)
                 mag_aper_corr_data = np.zeros(len(cat))
@@ -2927,9 +2915,9 @@ class Data:
     def load_depth_dirs(self, aper_diam, depth_mode):
         if not hasattr(self, "depth_dirs"):
             self.depth_dirs = {}
-        if not aper_diam in self.depth_dirs.keys():
+        if aper_diam not in self.depth_dirs.keys():
             self.depth_dirs[aper_diam] = {}
-        if not depth_mode in self.depth_dirs[aper_diam].keys():
+        if depth_mode not in self.depth_dirs[aper_diam].keys():
             self.depth_dirs[aper_diam][depth_mode] = {}
             for band in self.instrument:
                 self.depth_dirs[aper_diam][depth_mode][band.band_name] = (

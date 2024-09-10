@@ -14,14 +14,10 @@ import numpy as np
 from astropy.io import fits
 from astropy import units as u
 from matplotlib.patches import Circle
-import warnings
 from scipy import optimize
-from astropy.modeling import models, fitting
 import sep
 import json
 import photutils
-import os
-import sys
 
 from . import config
 

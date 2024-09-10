@@ -6,24 +6,18 @@ import matplotlib.pyplot as plt
 from astropy.visualization.mpl_normalize import ImageNormalize
 import astropy.visualization as vis
 from photutils.aperture import CircularAperture
-from scipy.ndimage import uniform_filter
 from tqdm import tqdm as tq
 from matplotlib import cm
 from astropy.table import Table
 import cv2 as cv2
 from galfind import Data
-from kneed import KneeLocator
 from astropy.io import fits
 from sklearn.cluster import KMeans
-from skimage.measure import label, regionprops
-from scipy import ndimage
 from skimage import morphology
 import matplotlib.patheffects as pe
 from scipy.stats import gaussian_kde
-from matplotlib.ticker import FuncFormatter
 from matplotlib.colors import LinearSegmentedColormap
 from numba import jit
-from kneed import KneeLocator
 from mpl_toolkits.axes_grid1.axes_divider import make_axes_locatable
 # install cv2, skimage, sklearn
 

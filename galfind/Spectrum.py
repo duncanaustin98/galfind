@@ -4,10 +4,9 @@ from __future__ import annotations
 
 import numpy as np
 import astropy.units as u
-from typing import NoReturn, Union, List, TYPE_CHECKING
+from typing import NoReturn, Union, TYPE_CHECKING
 from numpy.typing import NDArray
 from astropy.utils.masked import Masked
-from collections.abc import Callable
 from abc import abstractmethod, ABC
 from astropy.coordinates import SkyCoord
 from pathlib import Path
@@ -17,7 +16,7 @@ from astropy.table import Table
 import os
 
 if TYPE_CHECKING:
-    from . import Catalogue
+    pass
 from . import config, galfind_logger
 from . import useful_funcs_austind as funcs
 
@@ -253,7 +252,7 @@ class Spectrum:
             N_exposures = int(header["NOUTPUTS"]) * int(header["NFRAMES"])
             full_flux_errs = spectrum_1D.spec["full_err"] * (N_exposures**-0.25)
         else:
-            msa_metafile = str(header[f"MSAMET1"]).replace(" ", "")
+            msa_metafile = str(header["MSAMET1"]).replace(" ", "")
             full_flux_errs = spectrum_1D.spec["full_err"]
         meta_uri_dir = (
             "https://mast.stsci.edu/api/v0.1/Download/file?uri=mast:JWST/product"

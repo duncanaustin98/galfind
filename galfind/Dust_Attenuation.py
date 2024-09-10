@@ -1,7 +1,6 @@
 # Dust_Attenuation.py
 
 import numpy as np
-import matplotlib.pyplot as plt
 import astropy.units as u
 from scipy.optimize import curve_fit
 from scipy.interpolate import interp1d

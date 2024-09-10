@@ -10,12 +10,9 @@ Created on Mon May 22 13:27:47 2023
 import numpy as np
 import matplotlib.pyplot as plt
 from astropy.table import Table, join, vstack
-import pyregion
-from copy import copy, deepcopy
+from copy import deepcopy
 from astropy.io import fits
 from pathlib import Path
-import traceback
-import h5py
 from astropy.coordinates import SkyCoord
 from astropy.wcs import WCS
 import astropy.units as u
@@ -24,20 +21,17 @@ import time
 import os
 import glob
 import inspect
-from typing import Union, Callable
+from typing import Union
 
 from .Data import Data
 from .Galaxy import Galaxy, Multiple_Galaxy
 from . import useful_funcs_austind as funcs
-from .Catalogue_Creator import GALFIND_Catalogue_Creator
-from . import LePhare, Bagpipes
 from .SED_codes import SED_code
 from .EAZY import EAZY
 from . import config
 from . import Catalogue_Base
 from . import Photometry_rest
 from . import galfind_logger, sed_code_to_name_dict
-from .Instrument import NIRCam, MIRI, ACS_WFC, WFC3_IR, Instrument
 from .Emission_lines import line_diagnostics
 from .Spectrum import Spectral_Catalogue
 
@@ -648,7 +642,7 @@ class Catalogue(Catalogue_Base):
                 f"len(self) = {len(self)}, len(cat) = {len(fits_cat)} -> len(self) != len(cat). Skipping masking for {self.survey} {self.version}!"
             )
 
-        elif not "MASKED" in fits_cat.meta.keys() or overwrite:
+        elif "MASKED" not in fits_cat.meta.keys() or overwrite:
             galfind_logger.info(f"Masking catalogue for {self.survey} {self.version}")
 
             # calculate x,y for each galaxy in catalogue
@@ -1059,7 +1053,7 @@ class Catalogue(Catalogue_Base):
         if type(fig) == type(None) or type(ax) == type(None):
             fig, ax = plt.subplots()
 
-        if not "label" in plot_kwargs.keys():
+        if "label" not in plot_kwargs.keys():
             plot_kwargs["label"] = "+".join(self.crops)
 
         if mean_err:
@@ -1067,7 +1061,7 @@ class Catalogue(Catalogue_Base):
             if type(colour_by) == type(None):
                 plot = ax.scatter(x, y, **plot_kwargs)
             else:
-                if not "cmap" in plot_kwargs.keys():
+                if "cmap" not in plot_kwargs.keys():
                     plot_kwargs["cmap"] = cmap
                 plot = ax.scatter(x, y, c=c, **plot_kwargs)
             if incl_x_errs and incl_y_errs:
@@ -1080,7 +1074,7 @@ class Catalogue(Catalogue_Base):
             if type(colour_by) == type(None):
                 plot = ax.errorbar(x, y, xerr=x_err, yerr=y_err, **plot_kwargs)
             else:
-                if not "cmap" in plot_kwargs.keys():
+                if "cmap" not in plot_kwargs.keys():
                     plot_kwargs["cmap"] = cmap
                 plot = ax.errorbar(x, y, xerr=x_err, yerr=y_err, c=c, **plot_kwargs)
 

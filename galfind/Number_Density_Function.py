@@ -1,17 +1,12 @@
 import matplotlib.pyplot as plt
 import numpy as np
-from tqdm import tqdm
-from typing import NoReturn, Union
-import astropy.units as u
-import os
+from typing import Union
 import sys
 from pathlib import Path
 from astropy.table import Table
 
 from . import useful_funcs_austind as funcs
-from . import galfind_logger, config, astropy_cosmo, sed_code_to_name_dict
-from . import Galaxy, Photometry_obs
-from .SED import SED_obs
+from . import galfind_logger, config, sed_code_to_name_dict
 from .SED_codes import SED_code
 
 

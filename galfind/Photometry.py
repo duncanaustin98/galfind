@@ -8,18 +8,13 @@ Created on Thu Jul 13 14:14:30 2023
 
 # Photometry_obs.py
 import numpy as np
-import astropy.constants as const
 import astropy.units as u
-from copy import copy, deepcopy
-import warnings
-import matplotlib.pyplot as plt
-from scipy.interpolate import interp1d
-from scipy.optimize import curve_fit
+from copy import deepcopy
 import matplotlib.patheffects as pe
 from typing import Union
 
 from . import useful_funcs_austind as funcs
-from . import config, galfind_logger, astropy_cosmo
+from . import galfind_logger
 
 
 class Photometry:
