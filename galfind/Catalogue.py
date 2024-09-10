@@ -30,6 +30,7 @@ from . import (
     galfind_logger,
 )
 from . import useful_funcs_austind as funcs
+from .Catalogue_Base import Catalogue_Base
 from .Data import Data
 from .EAZY import EAZY
 from .Emission_lines import line_diagnostics
