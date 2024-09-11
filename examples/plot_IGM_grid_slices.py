@@ -7,23 +7,24 @@ Created on Thu Nov  2 01:10:50 2023
 """
 
 # plot_IGM_grid.py
+import astropy.units as u
 import matplotlib.pyplot as plt
 import numpy as np
-from astropy.table import Table
-import astropy.units as u
 
-from galfind import config, IGM_attenuation, wav_lyman_lim, wav_lyman_alpha
+from galfind import IGM_attenuation, config, wav_lyman_alpha, wav_lyman_lim
 
 plt.style.use(f"{config['DEFAULT']['GALFIND_DIR']}/galfind_style.mplstyle")
 
 igm_prescription = "Inoue+14"
-z_arr = [2.]
+z_arr = [2.0]
 wav_rest_arr = np.linspace(wav_lyman_lim, wav_lyman_alpha, 505) * u.AA
 frame = "obs"
 
-fig, ax = plt.subplots(figsize = (8, 8))
+fig, ax = plt.subplots(figsize=(8, 8))
 for z in z_arr:
-    igm_obj = IGM_attenuation.IGM(prescription = igm_prescription)
+    igm_obj = IGM_attenuation.IGM(prescription=igm_prescription)
     plot_kwargs = {"label": f"z = {z}"}
-    igm_obj.plot_slice(ax, z, wav_rest_arr, frame = frame, plot_kwargs = plot_kwargs, show = False)
+    igm_obj.plot_slice(
+        ax, z, wav_rest_arr, frame=frame, plot_kwargs=plot_kwargs, show=False
+    )
 plt.show()

@@ -9,8 +9,8 @@ Created on Tue Jan 16 10:36:38 2024
 # DLA.py
 import astropy.units as u
 
-from .lyman_alpha_damping_wing import *
 from .Emission_lines import line_diagnostics
+from .lyman_alpha_damping_wing import *
 
 
 class DLA:
@@ -83,5 +83,7 @@ class DLA:
     def plot_voigt_profile(self, ax, wav_rest):
         ax.plot(
             wav_rest,
-            Tepper_Garcia06_lyman_alpha_voigt_profile(wav_rest, self.delta_lambda),
+            Tepper_Garcia06_lyman_alpha_voigt_profile(
+                wav_rest, self.delta_lambda
+            ),
         )

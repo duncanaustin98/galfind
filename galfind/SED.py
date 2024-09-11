@@ -8,25 +8,26 @@ Created on Tue Oct 10 13:30:14 2023
 
 # SED.py
 
-import astropy.units as u
-import numpy as np
-import astropy.io.ascii as ascii
+import glob
+import os
 from abc import ABC
+
+import astropy.io.ascii as ascii
+import astropy.units as u
 import matplotlib.pyplot as plt
+import numpy as np
 from astropy.table import Table
 from scipy.interpolate import interp1d
 from scipy.optimize import curve_fit
-import os
-import glob
 
 from . import (
-    config,
-    astropy_cosmo,
-    Mock_Photometry,
     IGM_attenuation,
+    Mock_Photometry,
+    astropy_cosmo,
+    config,
+    galfind_logger,
 )
 from . import useful_funcs_austind as funcs
-from . import galfind_logger
 from .Emission_lines import line_diagnostics
 
 
@@ -71,14 +72,20 @@ class SED:
             elif (
                 u.get_physical_type(self.mags.unit)
                 == "power density/spectral flux density wav"
-                or u.get_physical_type(self.mags.unit) == "ABmag/spectral flux density"
+                or u.get_physical_type(self.mags.unit)
+                == "ABmag/spectral flux density"
             ):
-                mags = self.mags.to(units, equivalencies=u.spectral_density(self.wavs))
+                mags = self.mags.to(
+                    units, equivalencies=u.spectral_density(self.wavs)
+                )
         elif (
-            u.get_physical_type(units) == "power density/spectral flux density wav"
+            u.get_physical_type(units)
+            == "power density/spectral flux density wav"
         ):  # f_λ -> derivative of u.erg / (u.s * (u.cm ** 2) * u.AA):
             # if self.mags.unit == u.ABmag:
-            mags = self.mags.to(units, equivalencies=u.spectral_density(self.wavs))
+            mags = self.mags.to(
+                units, equivalencies=u.spectral_density(self.wavs)
+            )
             # elif u.get_physical_type(self.mags.unit) == "spectral flux density": # f_ν -> derivative of u.Jy
             # mags = self.mags.to(units, equivalencies = u.spectral_density(self.wavs))
         else:
@@ -127,7 +134,9 @@ class SED:
                 )
             )
             ax.set_ylabel(
-                funcs.label_fluxes(mag_units, False if mag_units == u.ABmag else True)
+                funcs.label_fluxes(
+                    mag_units, False if mag_units == u.ABmag else True
+                )
             )
             ax.legend(**legend_kwargs)
         if save:
@@ -166,7 +175,9 @@ class SED:
             line_lims = line_diagnostics[line_name]["feature_wavs"]
             cont_lims = line_diagnostics[line_name]["cont_wavs"]
         elif "obs" in type(self).__name__:
-            line_lims = line_diagnostics[line_name]["feature_wavs"] * (1 + self.z)
+            line_lims = line_diagnostics[line_name]["feature_wavs"] * (
+                1 + self.z
+            )
             cont_lims = line_diagnostics[line_name]["cont_wavs"] * (1 + self.z)
         else:
             raise (
@@ -189,7 +200,10 @@ class SED:
         cont_mask = np.logical_or.reduce(
             np.array(
                 [
-                    ((wavs_AA > lims[0].to(u.AA)) & (wavs_AA < lims[1].to(u.AA)))
+                    (
+                        (wavs_AA > lims[0].to(u.AA))
+                        & (wavs_AA < lims[1].to(u.AA))
+                    )
                     for lims in cont_lims
                 ]
             )
@@ -197,7 +211,9 @@ class SED:
         # mask everything but the line of interest
         cont_flux = (
             interp1d(
-                wavs_AA[cont_mask], flux_lambda[cont_mask], fill_value="extrapolate"
+                wavs_AA[cont_mask],
+                flux_lambda[cont_mask],
+                fill_value="extrapolate",
             )(wavs_AA[feature_mask])
             * u.erg
             / (u.s * u.cm**2 * u.AA)
@@ -211,7 +227,8 @@ class SED:
             np.array(
                 [
                     (flux_lambda[feature_mask][i] - cont_flux[i]).value
-                    if (flux_lambda[feature_mask][i] - cont_flux[i]).value > 0.0
+                    if (flux_lambda[feature_mask][i] - cont_flux[i]).value
+                    > 0.0
                     else 0.0
                     for i, x in enumerate(wavs_AA[feature_mask])
                 ]
@@ -223,7 +240,9 @@ class SED:
             line_flux_integrand, x=wavs_AA[feature_mask]
         )  # (line_plus_cont_flux - cont_flux) * feature_width # emission == positive EW
         # calculate line EW
-        line_EW = np.trapz(line_flux_integrand / cont_flux, x=wavs_AA[feature_mask])
+        line_EW = np.trapz(
+            line_flux_integrand / cont_flux, x=wavs_AA[feature_mask]
+        )
         # save result in self
         if not hasattr(self, "line_EWs"):
             self.line_EWs = {line_name: line_EW}
@@ -269,7 +288,9 @@ class SED:
                 "Wavelength": band_wavs,
                 "Transmission": np.ones(len(band_wavs)),
             }
-            bp_averaged_fluxes[i] = self.calc_bandpass_averaged_flux(filter_profile)
+            bp_averaged_fluxes[i] = self.calc_bandpass_averaged_flux(
+                filter_profile
+            )
         # convert bp_averaged_fluxes to Jy
         bp_averaged_fluxes_Jy = funcs.convert_mag_units(
             [UVJ_filters[band]["lam_eff"] for band in ["U", "V", "J"]],
@@ -282,14 +303,18 @@ class SED:
             for band, flux_Jy in zip(["U", "V", "J"], bp_averaged_fluxes_Jy)
         }
         self.UVJ_colours = {
-            "U-V": -2.5 * np.log10(self.UVJ_fluxes["U"] / self.UVJ_fluxes["V"]),
-            "V-J": -2.5 * np.log10(self.UVJ_fluxes["V"] / self.UVJ_fluxes["J"]),
+            "U-V": -2.5
+            * np.log10(self.UVJ_fluxes["U"] / self.UVJ_fluxes["V"]),
+            "V-J": -2.5
+            * np.log10(self.UVJ_fluxes["V"] / self.UVJ_fluxes["J"]),
         }
 
 
 class SED_rest(SED):
     # should include mag errors here
-    def __init__(self, wavs, mags, wav_units, mag_units, wav_range=[0, 10_000] * u.AA):
+    def __init__(
+        self, wavs, mags, wav_units, mag_units, wav_range=[0, 10_000] * u.AA
+    ):
         try:
             wavs = wavs.value  # if wavs is in Angstrom
         except:
@@ -332,8 +357,12 @@ class SED_obs(SED):
     @classmethod
     def from_SED_rest(cls, z_int, SED_rest):
         wav_obs = funcs.wav_rest_to_obs(SED_rest.wavs, z_int)
-        mag_obs = funcs.convert_mag_units(SED_rest.wavs, SED_rest.mags, u.ABmag)
-        return cls(z_int, wav_obs.value, mag_obs.value, SED_rest.wavs.unit, u.ABmag)
+        mag_obs = funcs.convert_mag_units(
+            SED_rest.wavs, SED_rest.mags, u.ABmag
+        )
+        return cls(
+            z_int, wav_obs.value, mag_obs.value, SED_rest.wavs.unit, u.ABmag
+        )
 
     def create_mock_phot(self, instrument, depths=[], min_flux_pc_err=10.0):
         if type(depths) == dict:
@@ -351,7 +380,9 @@ class SED_obs(SED):
             / (u.s * (u.cm**2) * u.AA)
         )
         # convert bp_averaged_fluxes to Jy
-        band_wavs = np.array([band.WavelengthCen.value for band in instrument]) * u.AA
+        band_wavs = (
+            np.array([band.WavelengthCen.value for band in instrument]) * u.AA
+        )
         bp_averaged_fluxes_Jy = funcs.convert_mag_units(
             band_wavs, bp_averaged_fluxes, u.Jy
         )
@@ -389,7 +420,9 @@ class SED_obs(SED):
 
 
 class Mock_SED_rest(SED_rest):  # , Mock_SED):
-    def __init__(self, wavs, mags, wav_units, mag_units, template_name=None, meta=None):
+    def __init__(
+        self, wavs, mags, wav_units, mag_units, template_name=None, meta=None
+    ):
         self.template_name = template_name
         self.meta = meta
         super().__init__(wavs, mags, wav_units, mag_units)
@@ -404,7 +437,11 @@ class Mock_SED_rest(SED_rest):  # , Mock_SED):
         mags = funcs.convert_mag_units(wavs, mock_SED_obs.mags, out_mag_units)
         # ensure IGM output is of the correct type
         mock_sed_rest_obj = cls(
-            wavs.value, mags.value, wavs.unit, mags.unit, mock_SED_obs.template_name
+            wavs.value,
+            mags.value,
+            wavs.unit,
+            mags.unit,
+            mock_SED_obs.template_name,
         )
         # if IGM_out == None:
         #     mock_sed_rest_obj.un_attenuate_IGM(mock_SED_obs.z, mock_SED_obs.IGM)
@@ -448,9 +485,13 @@ class Mock_SED_rest(SED_rest):  # , Mock_SED):
         return mock_sed
 
     @classmethod
-    def load_SED_in_template(cls, code_name, m_UV, template_set, template_number):
+    def load_SED_in_template(
+        cls, code_name, m_UV, template_set, template_number
+    ):
         if code_name == "EAZY":
-            return cls.load_EAZY_in_template(m_UV, template_set, template_number)
+            return cls.load_EAZY_in_template(
+                m_UV, template_set, template_number
+            )
         elif code_name == "Bagpipes":
             return cls.load_pipes_in_template()
         else:
@@ -463,16 +504,19 @@ class Mock_SED_rest(SED_rest):  # , Mock_SED):
     @classmethod
     def load_EAZY_in_template(cls, m_UV, template_set, template_filename):
         EAZY_template_units = {
-            "fsps_larson": {"wavs": u.AA, "mags": u.erg / (u.s * (u.cm**2) * u.AA)}
+            "fsps_larson": {
+                "wavs": u.AA,
+                "mags": u.erg / (u.s * (u.cm**2) * u.AA),
+            }
         }
         if isinstance(template_filename, int):
             template_labels = open(
                 f"{config['EAZY']['EAZY_TEMPLATE_DIR'].replace('/templates', '')}/{template_set}.txt",
                 "r",
             )
-            template_filename = template_labels.readlines()[template_filename].replace(
-                "\n", ""
-            )
+            template_filename = template_labels.readlines()[
+                template_filename
+            ].replace("\n", "")
             template_labels.close()
         template = Table.read(
             f"{config['EAZY']['EAZY_TEMPLATE_DIR']}/{template_filename}",
@@ -520,19 +564,25 @@ class Mock_SED_rest(SED_rest):  # , Mock_SED):
         return template_obj
 
     @classmethod
-    def load_Yggdrasil_popIII_in_template(cls, imf, fcov, sfh, template_filename):
+    def load_Yggdrasil_popIII_in_template(
+        cls, imf, fcov, sfh, template_filename
+    ):
         # print("Incorrect normalization for yggdrasil input templates!")
         yggdrasil_dir = f"/Users/user/Documents/PGR/yggdrasil_grids/{imf}_fcov_{str(fcov)}_SFR_{sfh}_Spectra"
         # if isinstance(template_filename, int):
         #     SED_arr = glob.glob(yggdrasil_dir)
         #     print(SED_arr)
-        template = Table.read(f"{yggdrasil_dir}/{template_filename}", format="ascii")
+        template = Table.read(
+            f"{yggdrasil_dir}/{template_filename}", format="ascii"
+        )
         # convert template fluxes to appropriate units
         #  * (astropy_cosmo.luminosity_distance(z) ** 2 / (1 + z))
         fluxes = (
-            (template["flux"] * (u.erg / (u.s * u.AA)) / (4 * np.pi * u.pc**2)).to(
-                u.erg / (u.s * (u.cm**2) * u.AA)
-            )
+            (
+                template["flux"]
+                * (u.erg / (u.s * u.AA))
+                / (4 * np.pi * u.pc**2)
+            ).to(u.erg / (u.s * (u.cm**2) * u.AA))
         ).value
         template_obj = cls(
             template["wav"],
@@ -556,7 +606,8 @@ class Mock_SED_rest(SED_rest):  # , Mock_SED):
                 ]
             )
             self.mags = (
-                np.array([norm * mag for mag in self.mags.value]) * self.mags.unit
+                np.array([norm * mag for mag in self.mags.value])
+                * self.mags.unit
             )
 
     def renorm_at_wav(
@@ -571,7 +622,9 @@ class Mock_SED_rest(SED_rest):  # , Mock_SED):
                 np.abs(self.wavs.to(u.AA).value - wav.to(u.AA).value).argmin()
             ]
         )
-        self.mags = np.array([norm * mag for mag in self.mags.value]) * self.mags.unit
+        self.mags = (
+            np.array([norm * mag for mag in self.mags.value]) * self.mags.unit
+        )
 
     def calc_UV_slope(self, output_errs=False, method="Calzetti+94"):
         if method == "Calzetti+94":
@@ -590,7 +643,10 @@ class Mock_SED_rest(SED_rest):  # , Mock_SED):
                     wavs, mags, u.erg / (u.s * (u.cm**2) * u.AA)
                 )
         popt, pcov = curve_fit(
-            funcs.beta_slope_power_law_func, wavs.value, mags.value, maxfev=1_000
+            funcs.beta_slope_power_law_func,
+            wavs.value,
+            mags.value,
+            maxfev=1_000,
         )
         A, beta = popt[0], popt[1]
         if output_errs:
@@ -606,8 +662,12 @@ class Mock_SED_rest(SED_rest):  # , Mock_SED):
             # update units
             orig_wav_unit = self.wavs.unit
             orig_mag_unit = self.mags.unit
-            self.convert_wav_units(emission_line.line_profile["wavs"].unit, update=True)
-            self.convert_mag_units(emission_line.line_profile["flux"].unit, update=True)
+            self.convert_wav_units(
+                emission_line.line_profile["wavs"].unit, update=True
+            )
+            self.convert_mag_units(
+                emission_line.line_profile["flux"].unit, update=True
+            )
             # interpolate emission line to be on the same wavelength grid as the spectrum
             interp_line_profile = interp1d(
                 emission_line.line_profile["wavs"],
@@ -673,7 +733,11 @@ class Mock_SED_obs(SED_obs):
         cls, z, beta, M_UV, template_name=None, IGM=IGM_attenuation.IGM()
     ):
         lum_distance = astropy_cosmo.luminosity_distance(z).to(u.pc)
-        m_UV = M_UV - 2.5 * np.log10(1 + z) + 5 * np.log10(lum_distance.value / 10)
+        m_UV = (
+            M_UV
+            - 2.5 * np.log10(1 + z)
+            + 5 * np.log10(lum_distance.value / 10)
+        )
         mock_SED_rest = Mock_SED_rest.power_law_from_beta_m_UV(
             beta, m_UV, template_name=template_name
         )
@@ -702,13 +766,17 @@ class Mock_SED_obs(SED_obs):
                 # print("SED has already been attenuated! Ignoring")
                 pass
         else:
-            raise (Exception(f"Could not attenuate by a non IGM object = {IGM}"))
+            raise (
+                Exception(f"Could not attenuate by a non IGM object = {IGM}")
+            )
 
     def calc_UV_slope(self, output_errs=False, method="Calzetti+94"):
         # create rest frame mock SED object
         mock_sed_rest = Mock_SED_rest.from_Mock_SED_obs(self)
         # calculate amplitude and beta of power law fit
-        A, beta = mock_sed_rest.calc_UV_slope(output_errs=output_errs, method=method)
+        A, beta = mock_sed_rest.calc_UV_slope(
+            output_errs=output_errs, method=method
+        )
         return A, beta
 
     def get_colour(self, colour_name):
@@ -752,7 +820,9 @@ class Mock_SED_obs(SED_obs):
         self.mags = funcs.convert_mag_units(self.wavs, self.mags, u.Jy)
         # attenuate flux in Jy (named self.mags)
         print(dust_attenuation)
-        self.mags *= 10 ** (-0.4 * dust_attenuation.attenuate(self.wavs, E_BminusV))
+        self.mags *= 10 ** (
+            -0.4 * dust_attenuation.attenuate(self.wavs, E_BminusV)
+        )
 
     def add_emission_lines(self, line_diagnostics):
         pass
@@ -871,7 +941,9 @@ class Mock_SED_rest_template_set(Mock_SED_template_set):
                 f"cloudyspec_{imf}_{metallicity}_{model_type}_v{v2_2_model_version}.sed"
             )
 
-        bpass_dir = f"/raid/scratch/data/BPASS/{bpass_version_dir_dict[bpass_version]}"
+        bpass_dir = (
+            f"/raid/scratch/data/BPASS/{bpass_version_dir_dict[bpass_version]}"
+        )
         bpass_name = bpass_version_name_dict[bpass_version]
         SED_file = f"{bpass_dir}/{bpass_name}"
         mock_SED_rest_arr = []
@@ -901,10 +973,15 @@ class Mock_SED_rest_template_set(Mock_SED_template_set):
                     spectrum_Jy.value,
                     u.AA,
                     u.Jy,
-                    template_name=bpass_name.replace(".dat", f"{age.value:.1f}Myr"),
+                    template_name=bpass_name.replace(
+                        ".dat", f"{age.value:.1f}Myr"
+                    ),
                     meta={
                         **meta,
-                        **{"age": age, "log_age_yr": np.log10(age.value) + 6.0},
+                        **{
+                            "age": age,
+                            "log_age_yr": np.log10(age.value) + 6.0,
+                        },
                     },
                 )
                 if type(m_UV_norm) != type(None):
@@ -921,7 +998,9 @@ class Mock_SED_obs_template_set(Mock_SED_template_set):
         super().__init__(mock_SED_obs_arr)
 
     @classmethod
-    def from_Mock_SED_rest_template_set(cls, Mock_SED_rest_template_set, z_arr):
+    def from_Mock_SED_rest_template_set(
+        cls, Mock_SED_rest_template_set, z_arr
+    ):
         if type(z_arr) in [float, int]:
             z_arr = np.full(len(Mock_SED_rest_template_set), z_arr)
         return cls(
@@ -933,7 +1012,9 @@ class Mock_SED_obs_template_set(Mock_SED_template_set):
 
     def get_colours(self, colour_names):
         return [
-            sed.get_colour(colour) for sed in self.SED_arr for colour in colour_names
+            sed.get_colour(colour)
+            for sed in self.SED_arr
+            for colour in colour_names
         ]
 
     def plot_colour_colour_tracks(
@@ -948,14 +1029,20 @@ class Mock_SED_obs_template_set(Mock_SED_template_set):
         save_dir="/nvme/scratch/work/austind/EPOCHS_I_plots",
     ):
         # assumes the SEDs are already sorted by age, starting with the youngest
-        colour_x = np.array([sed.colours[colour_x_name] for sed in self.SED_arr])
-        colour_y = np.array([sed.colours[colour_y_name] for sed in self.SED_arr])
+        colour_x = np.array(
+            [sed.colours[colour_x_name] for sed in self.SED_arr]
+        )
+        colour_y = np.array(
+            [sed.colours[colour_y_name] for sed in self.SED_arr]
+        )
         ax.plot(colour_x, colour_y, **line_kwargs)
 
         log_ages = [sed.meta["log_age_yr"] for sed in self.SED_arr]
         plot_indices = np.array(
             [
-                True if np.isclose(shown_log_ages, log_age).any() and i != 0 else False
+                True
+                if np.isclose(shown_log_ages, log_age).any() and i != 0
+                else False
                 for i, log_age in enumerate(log_ages)
             ]
         )
@@ -980,7 +1067,9 @@ class Mock_SED_obs_template_set(Mock_SED_template_set):
         )
         if save:
             os.makedirs(save_dir, exist_ok=True)
-            plt.savefig(f"{save_dir}/{colour_x_name}_vs_{colour_y_name}.png", dpi=400)
+            plt.savefig(
+                f"{save_dir}/{colour_x_name}_vs_{colour_y_name}.png", dpi=400
+            )
             funcs.change_file_permissions(
                 f"{save_dir}/{colour_x_name}_vs_{colour_y_name}.png"
             )

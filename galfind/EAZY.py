@@ -7,11 +7,10 @@ Created on Tue Jun  6 14:52:36 2023
 """
 
 # EAZY.py
-import numpy as np
-import astropy.units as u
 import itertools
 from astropy.table import Table
 from pathlib import Path
+import numpy as np
 import eazy
 import os
 import time
@@ -20,6 +19,7 @@ from tqdm import tqdm
 import h5py
 from eazy import hdf5
 from scipy.linalg import LinAlgWarning
+from tqdm import tqdm
 
 warnings.filterwarnings("ignore", category=LinAlgWarning)
 
@@ -83,7 +83,10 @@ EAZY_FILTER_CODES = {
 class EAZY(SED_code):
     gal_property_fmt_dict = {
         **{"z": "Redshift, z"},
-        **{f"{ubvj_filt}_flux": ubvj_filt for ubvj_filt in ["U", "B", "V", "J"]},
+        **{
+            f"{ubvj_filt}_flux": ubvj_filt
+            for ubvj_filt in ["U", "B", "V", "J"]
+        },
     }
     # still need to double check the UBVJ units
     gal_property_unit_dict = {
@@ -98,7 +101,10 @@ class EAZY(SED_code):
         },
     }
     galaxy_property_errs_dict = {
-        f"{ubvj_filt}_flux": [f"{ubvj_filt}_rf_flux_err", f"{ubvj_filt}_rf_flux_err"]
+        f"{ubvj_filt}_flux": [
+            f"{ubvj_filt}_rf_flux_err",
+            f"{ubvj_filt}_rf_flux_err",
+        ]
         for ubvj_filt in ["U", "B", "V", "J"]
     }
     available_templates = ["fsps", "fsps_larson", "fsps_jades"]
@@ -117,7 +123,9 @@ class EAZY(SED_code):
             self.are_errs_percentiles,
         )
 
-    def galaxy_property_labels(self, gal_property, SED_fit_params, is_err=False):
+    def galaxy_property_labels(
+        self, gal_property, SED_fit_params, is_err=False
+    ):
         assert (
             "templates" in SED_fit_params.keys()
             and "lowz_zmax" in SED_fit_params.keys()
@@ -283,7 +291,9 @@ class EAZY(SED_code):
             )
         elif templates == "BC03":
             # This path is broken
-            params["TEMPLATES_FILE"] = f"{eazy_templates_path}/bc03_chabrier_2003.param"
+            params["TEMPLATES_FILE"] = (
+                f"{eazy_templates_path}/bc03_chabrier_2003.param"
+            )
         elif templates == "fsps":
             params["TEMPLATES_FILE"] = (
                 f"{eazy_templates_path}/fsps_full/tweak_fsps_QSF_12_v3.param"
@@ -297,7 +307,9 @@ class EAZY(SED_code):
                 f"{eazy_templates_path}/Nakajima2022/tweak_fsps_QSF_12_v3_larson_nakajima_subset.param"
             )
         elif templates == "fsps_jades":
-            params["TEMPLATES_FILE"] = f"{eazy_templates_path}/jades/jades.param"
+            params["TEMPLATES_FILE"] = (
+                f"{eazy_templates_path}/jades/jades.param"
+            )
         elif templates == "HOT_45K":
             params["TEMPLATES_FILE"] = (
                 f"{eazy_templates_path}/fsps-hot/45k/fsps_45k.param"
@@ -404,7 +416,13 @@ class EAZY(SED_code):
                     simple=False,
                 )
             else:
-                colnames = ["IDENT", "zbest", "zbest_16", "zbest_84", "chi2_best"]
+                colnames = [
+                    "IDENT",
+                    "zbest",
+                    "zbest_16",
+                    "zbest_84",
+                    "chi2_best",
+                ]
                 data = [
                     fit.OBJID,
                     fit.zbest,
@@ -436,7 +454,9 @@ class EAZY(SED_code):
                     if col_name != "IDENT":
                         table.rename_column(
                             col_name,
-                            self.galaxy_property_labels(col_name, SED_fit_params),
+                            self.galaxy_property_labels(
+                                col_name, SED_fit_params
+                            ),
                         )
                 # Write fits file
                 table.write(fits_out_path, overwrite=True)
@@ -459,7 +479,9 @@ class EAZY(SED_code):
 
         # Save best-fitting SEDs
         if save_best_seds and not Path(SED_path).is_file():
-            z_arr = np.array(table[f"zbest_{templates}_{lowz_label}"]).astype(float)
+            z_arr = np.array(table[f"zbest_{templates}_{lowz_label}"]).astype(
+                float
+            )
             self.save_SEDs(SED_path, fit, z_arr, wav_unit, flux_unit)
             # [self.save_SED(ID, z, hf, fit, wav_unit = wav_unit, flux_unit = flux_unit) \
             #    for ID, z in tqdm(zip(fit.OBJID, np.array(table[f"zbest_{templates}_{lowz_label}"]).astype(float)), total = len(fit.OBJID), \
@@ -471,7 +493,9 @@ class EAZY(SED_code):
         # Write used parameters
         if fit != None:
             fit.param.write(fits_out_path.replace(".fits", "_params.csv"))
-            funcs.change_file_permissions(fits_out_path.replace(".fits", "_params.csv"))
+            funcs.change_file_permissions(
+                fits_out_path.replace(".fits", "_params.csv")
+            )
             galfind_logger.info(
                 f"Written output pararmeters for {self.__class__.__name__} {templates} {lowz_label}"
             )
@@ -490,10 +514,15 @@ class EAZY(SED_code):
         pz_arr = np.array(
             [
                 np.array(
-                    [np.array(fit_pz[pos_obj][pos]) for pos, z in enumerate(fit_zgrid)]
+                    [
+                        np.array(fit_pz[pos_obj][pos])
+                        for pos, z in enumerate(fit_zgrid)
+                    ]
                 )
                 for pos_obj, ID in tqdm(
-                    enumerate(fit.OBJID), total=len(fit.OBJID), desc="Saving z-PDFs"
+                    enumerate(fit.OBJID),
+                    total=len(fit.OBJID),
+                    desc="Saving z-PDFs",
                 )
             ]
         )
@@ -526,11 +555,17 @@ class EAZY(SED_code):
         ]
         wav_flux_arr = [
             [
-                (np.array(fit_data["templz"]) * fit_data["wave_unit"]).to(wav_unit),
-                (np.array(fit_data["templf"]) * fit_data["flux_unit"]).to(flux_unit),
+                (np.array(fit_data["templz"]) * fit_data["wave_unit"]).to(
+                    wav_unit
+                ),
+                (np.array(fit_data["templf"]) * fit_data["flux_unit"]).to(
+                    flux_unit
+                ),
             ]
             for fit_data in tqdm(
-                fit_data_arr, desc="Creating wav_flux_arr", total=len(fit_data_arr)
+                fit_data_arr,
+                desc="Creating wav_flux_arr",
+                total=len(fit_data_arr),
             )
         ]
         # flux_arr = [(np.array(fit_data['templf']) * fit_data['flux_unit']).to(flux_unit) for fit_data in fit_data_arr]
@@ -560,7 +595,9 @@ class EAZY(SED_code):
 
     def SED_fit_params_from_label(self, label):
         label_arr = label.split("_")
-        templates = "_".join(label_arr[1:-1])  # templates may contain underscore
+        templates = "_".join(
+            label_arr[1:-1]
+        )  # templates may contain underscore
         assert templates in self.available_templates
         return {
             "code": self,
@@ -568,20 +605,28 @@ class EAZY(SED_code):
             "lowz_zmax": funcs.zmax_from_lowz_label(label_arr[-1]),
         }
 
-    def make_fits_from_out(self, out_path, SED_fit_params):  # *args, **kwargs):
+    def make_fits_from_out(
+        self, out_path, SED_fit_params
+    ):  # *args, **kwargs):
         pass
 
     @staticmethod
     def get_out_paths(cat, SED_fit_params, IDs):  # *args, **kwargs):
         in_dir = f"{config['EAZY']['EAZY_DIR']}/input/{cat.instrument.name}/{cat.version}/{cat.survey}"
         in_path = f"{in_dir}/{cat.cat_name.replace('.fits', '.in')}"
-        out_folder = funcs.split_dir_name(in_path.replace("input", "output"), "dir")
+        out_folder = funcs.split_dir_name(
+            in_path.replace("input", "output"), "dir"
+        )
         out_path = f"{out_folder}/{funcs.split_dir_name(in_path, 'name').replace('.in', '.out')}"
         fits_out_path = f"{out_path.replace('.out', '')}_EAZY_{SED_fit_params['templates']}_{funcs.lowz_label(SED_fit_params['lowz_zmax'])}.fits"
         PDF_paths = {
-            "z": list(np.full(len(IDs), fits_out_path.replace(".fits", "_zPDFs.h5")))
+            "z": list(
+                np.full(len(IDs), fits_out_path.replace(".fits", "_zPDFs.h5"))
+            )
         }
-        SED_paths = list(np.full(len(IDs), fits_out_path.replace(".fits", "_SEDs.h5")))
+        SED_paths = list(
+            np.full(len(IDs), fits_out_path.replace(".fits", "_SEDs.h5"))
+        )
         return in_path, out_path, fits_out_path, PDF_paths, SED_paths
 
     @staticmethod
@@ -634,7 +679,10 @@ class EAZY(SED_code):
             return list(np.full(len(IDs), None))
         else:
             # ensure the correct type
-            assert type(PDF_paths) in [list, np.ndarray], galfind_logger.critical(
+            assert type(PDF_paths) in [
+                list,
+                np.ndarray,
+            ], galfind_logger.critical(
                 f"type(data_paths) = {type(PDF_paths)} not in [list, np.array]!"
             )
             assert type(IDs) in [list, np.ndarray], galfind_logger.critical(
@@ -663,7 +711,9 @@ class EAZY(SED_code):
             redshift_PDFs = [
                 Redshift_PDF(hf_z, pz, SED_fit_params, normed=False)
                 for ID, pz in tqdm(
-                    zip(IDs, pz_arr), total=len(IDs), desc="Constructing redshift PDFs"
+                    zip(IDs, pz_arr),
+                    total=len(IDs),
+                    desc="Constructing redshift PDFs",
                 )
             ]
             if timed:

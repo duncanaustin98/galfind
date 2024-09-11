@@ -8,19 +8,20 @@ Created on Thu Dec  1 12:47:06 2022
 
 # calc_aper_corr.py
 
-import matplotlib.pyplot as plt
-import numpy as np
-from astropy.io import fits
-from astropy import units as u
-from matplotlib.patches import Circle
-from scipy import optimize
-import sep
 import json
-import photutils
 import os
 
-from . import useful_funcs_austind as funcs
+import matplotlib.pyplot as plt
+import numpy as np
+import photutils
+import sep
+from astropy import units as u
+from astropy.io import fits
+from matplotlib.patches import Circle
+from scipy import optimize
+
 from . import config
+from . import useful_funcs_austind as funcs
 
 
 def log_transform(im):  # function to transform fits image to log scaling
@@ -79,10 +80,16 @@ def calc_aper_corr(
         )
         flux_aper = flux_aper[0]
     elif extract_code == "photutils":
-        aper = photutils.CircularAperture([x_cen, y_cen], r=aper_diam.value / 2)
-        out_tab = photutils.aperture.aperture_photometry(PSFdata, aper, method="exact")
+        aper = photutils.CircularAperture(
+            [x_cen, y_cen], r=aper_diam.value / 2
+        )
+        out_tab = photutils.aperture.aperture_photometry(
+            PSFdata, aper, method="exact"
+        )
         flux_aper = out_tab["aperture_sum"][0]
-    tot_flux = sep.sum_circle(PSFdata, [x_cen], [y_cen], tot_aper_size / 2)[0][0]
+    tot_flux = sep.sum_circle(PSFdata, [x_cen], [y_cen], tot_aper_size / 2)[0][
+        0
+    ]
     # print(tot_aper_size, len(PSFdata))
     # print("tot_flux =", tot_flux)
     flux_pc = flux_aper / tot_flux
@@ -124,7 +131,9 @@ def plot_flux_curve(
     tot_aper_size=None,
     aper_diams=[],
 ):
-    rlist = np.arange(0, tot_aper_size * pixel_scale.value / 2, 0.01) / pixel_scale
+    rlist = (
+        np.arange(0, tot_aper_size * pixel_scale.value / 2, 0.01) / pixel_scale
+    )
     print("pix_centre:", (x_cen, y_cen))
     flux, fluxerr, flag = sep.sum_circle(PSFdata, [x_cen], [y_cen], rlist)
     tot_flux = sep.sum_circle(
@@ -139,7 +148,12 @@ def plot_flux_curve(
     print(tot_flux_smaller_aper / tot_flux)
     print(tot_flux / np.sum(PSFdata))  # np.sum(PSFdata)
     rlist = rlist * pixel_scale
-    plt.plot(rlist, flux / tot_flux, c="red", label=PSF_name + band.replace("f", "F"))
+    plt.plot(
+        rlist,
+        flux / tot_flux,
+        c="red",
+        label=PSF_name + band.replace("f", "F"),
+    )
     plt.axvline(
         pixel_scale.value,
         0,
@@ -166,10 +180,15 @@ def plot_flux_curve(
     plt.legend(loc="lower right")
     plt.title(band.replace("f", "F"))
     print(
-        "Saved to: " + save_loc + PSF_name + band.replace("f", "F") + "_flux_curve.png"
+        "Saved to: "
+        + save_loc
+        + PSF_name
+        + band.replace("f", "F")
+        + "_flux_curve.png"
     )
     plt.savefig(
-        save_loc + PSF_name + band.replace("f", "F") + "_flux_curve.png", dpi=800
+        save_loc + PSF_name + band.replace("f", "F") + "_flux_curve.png",
+        dpi=800,
     )
     funcs.change_file_permissions(
         save_loc + PSF_name + band.replace("f", "F") + "_flux_curve.png"
@@ -201,7 +220,13 @@ def fit_2d_moffatt(PSFdata, maxfev=10000):
         # print(g)
         return g.ravel()
 
-    initial_guess = (np.max(PSFdata), 1, 1, len(PSFdata[0]) / 2, len(PSFdata[1]) / 2)
+    initial_guess = (
+        np.max(PSFdata),
+        1,
+        1,
+        len(PSFdata[0]) / 2,
+        len(PSFdata[1]) / 2,
+    )
     x = np.linspace(0, len(PSFdata[0]) - 1, len(PSFdata[0]), endpoint=True)
     y = np.linspace(0, len(PSFdata[1]) - 1, len(PSFdata[1]), endpoint=True)
     x, y = np.meshgrid(x, y)
@@ -218,11 +243,13 @@ def main(
     PSF_loc,
     PSF_name,
     plot_PSF,
-    aper_diams=json.loads(config.get("SExtractor", "APERTURE_DIAMS")) * u.arcsec,
+    aper_diams=json.loads(config.get("SExtractor", "APERTURE_DIAMS"))
+    * u.arcsec,
 ):
     print("extract code =", extract_code)
     print_line = [
-        ["# aper_diam / arcsec"] + [str(aper_diam.value) for aper_diam in aper_diams]
+        ["# aper_diam / arcsec"]
+        + [str(aper_diam.value) for aper_diam in aper_diams]
     ]
     for band in in_bands:
         print(band)
@@ -267,16 +294,16 @@ def main(
         aper_corr.insert(0, band)
         print_line.append(aper_corr)
         # print(print_line)
-    np.savetxt("aper_corr.txt", print_line, fmt="%s" + len(aper_diams) * " %.6s")
+    np.savetxt(
+        "aper_corr.txt", print_line, fmt="%s" + len(aper_diams) * " %.6s"
+    )
 
 
 if __name__ == "__main__":
     extract_code = "sep"
     save_loc = f"{config['DEFAULT']['GALFIND_WORK']}/Aperture_corrections/MIRI"
     os.makedirs(save_loc, exist_ok=True)
-    PSF_loc = (
-        "/raid/scratch/data/jwst/PSFs/MIRI_Original"  # config["DEFAULT"]["PSF_DIR"]
-    )
+    PSF_loc = "/raid/scratch/data/jwst/PSFs/MIRI_Original"  # config["DEFAULT"]["PSF_DIR"]
     # PSF_name = "PSF_Resample_03_"
     PSF_name = "PSF_MIRI_in_flight_opd_filter_"
     # PSF_name = ["PSF_", "cen_G5V_fov299px_ISIM41"]

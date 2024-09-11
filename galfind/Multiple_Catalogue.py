@@ -1,9 +1,9 @@
 # Multiple_Catalogue.py
+import astropy.units as u
+import matplotlib.cm as cm
+import matplotlib.pyplot as plt
 import numpy as np
 from astropy.table import vstack
-import astropy.units as u
-import matplotlib.pyplot as plt
-import matplotlib.cm as cm
 
 
 class Multiple_Catalogue:
@@ -61,7 +61,9 @@ class Multiple_Catalogue:
         combined_table["ID"] = np.arange(1, len(combined_table) + 1)
         # Move 'ID' to the first column
         try:
-            new_order = ["ID"] + [col for col in combined_table.colnames if col != "ID"]
+            new_order = ["ID"] + [
+                col for col in combined_table.colnames if col != "ID"
+            ]
             combined_table = combined_table[new_order]
         except:
             pass
@@ -102,13 +104,20 @@ class Multiple_Catalogue:
         for cat in self.cat_arr:
             cat_creator = cat.cat_creator
             array = cat.data.plot_area_depth(
-                cat_creator, mode, aper_diam, show=False, save=False, return_array=True
+                cat_creator,
+                mode,
+                aper_diam,
+                show=False,
+                save=False,
+                return_array=True,
             )
             # array is dict  {band: [area, depth]}
             all_array.append(array)
         # all_array is list of dicts
         # Get all bands
-        bands = np.unique([band for array in all_array for band in array.keys()])
+        bands = np.unique(
+            [band for array in all_array for band in array.keys()]
+        )
         area_band = {band: 0 for band in bands}
         depth_array_band = {band: [] for band in bands}
         for band in bands:
@@ -121,8 +130,8 @@ class Multiple_Catalogue:
         # Plot
         fig, ax = plt.subplots(1, 1, figsize=(5, 5))
         ax.set_title(f"{self.survey}")
-        ax.set_xlabel("Area (arcmin$^{2}$)")
-        ax.set_ylabel("5$\sigma$ Depth (AB mag)")
+        ax.set_xlabel(r"Area (arcmin$^{2}$)")
+        ax.set_ylabel(r"5$\sigma$ Depth (AB mag)")
 
         colors = cm.get_cmap(cmap)(np.linspace(0, 1, len(bands)))
         for pos, band in enumerate(bands):

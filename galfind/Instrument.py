@@ -14,13 +14,19 @@ from copy import deepcopy
 from abc import abstractmethod
 import astropy.units as u
 import json
+import warnings
+from abc import abstractmethod
+from copy import deepcopy
 from pathlib import Path
-from astroquery.svo_fps import SvoFps
-import matplotlib.pyplot as plt
 from typing import NoReturn, Union
 
+import astropy.units as u
+import matplotlib.pyplot as plt
+import numpy as np
+from astroquery.svo_fps import SvoFps
+
+from . import NIRCam_aper_corr, config, galfind_logger
 from . import useful_funcs_austind as funcs
-from . import config, galfind_logger, NIRCam_aper_corr
 from .Filter import Filter
 
 
@@ -31,6 +37,7 @@ class Instrument:
         for band in excl_bands:
             self.remove_band(band)
         self.facility = facility
+        # print(f"Instantiating {name} object")
 
     @classmethod
     def from_SVO(cls, facility, instrument, excl_bands=[]):
@@ -48,7 +55,11 @@ class Instrument:
         ]
         bands = np.array(
             [
-                Filter.from_SVO(facility, instrument, filt_ID)
+                Filter.from_SVO(
+                    facility,
+                    instrument,
+                    filt_ID.replace(f"{facility}/{instrument}.", ""),
+                )
                 for filt_ID in np.array(filter_list["filterID"])
             ]
         )
@@ -62,24 +73,33 @@ class Instrument:
     def band_wavelengths(self):
         # Central wavelengths
         return (
-            np.array([band.WavelengthCen.to(u.AA).value for band in self.bands]) * u.AA
+            np.array(
+                [band.WavelengthCen.to(u.AA).value for band in self.bands]
+            )
+            * u.AA
         )
 
     @property
     def band_FWHMs(self):
-        return np.array([band.FWHM.to(u.AA).value for band in self.bands]) * u.AA
+        return (
+            np.array([band.FWHM.to(u.AA).value for band in self.bands]) * u.AA
+        )
 
     @property
     def band_lower_wav_lims(self):
         return (
-            np.array([band.WavelengthLower50.to(u.AA).value for band in self.bands])
+            np.array(
+                [band.WavelengthLower50.to(u.AA).value for band in self.bands]
+            )
             * u.AA
         )
 
     @property
     def band_upper_wav_lims(self):
         return (
-            np.array([band.WavelengthUpper50.to(u.AA).value for band in self.bands])
+            np.array(
+                [band.WavelengthUpper50.to(u.AA).value for band in self.bands]
+            )
             * u.AA
         )
 
@@ -147,42 +167,81 @@ class Instrument:
     #             excl_bands.append(band)
     #     return self.new_instrument(excl_bands)
 
-    def __add__(self, instrument):
+    def __add__(self, other):
         # cannot add multiple of the same bands together!!! (maybe could just ignore the problem \
         # in Instrument class and just handle it in Data, possibly stacking the two images)
-        for band in instrument.band_names:
-            if band in self.band_names:
-                raise (
-                    Exception(
-                        "Cannot add multiple of the same band together in 'Instrument.__add__()'!"
-                    )
-                )
+
+        if type(other) in Instrument.__subclasses__():
+            new_bands = np.array(
+                [
+                    band
+                    for band in other
+                    if band.band_name not in self.band_names
+                ]
+            )
+        elif type(other) == Filter:
+            if other.band_name not in self.band_names:
+                new_bands = np.array([other])
+            else:
+                new_bands = np.array([])
+        else:
+            galfind_logger.critical(f"{type(other)=} not in \
+                {[instr.__name__ for instr in Instrument.__subclasses__()] + ['Filter']}")
+            raise (Exception())
+
+        if len(new_bands) == 0:
+            # produce warning message
+            warning_message = (
+                "No new bands to add, returning self from Instrument.__add__"
+            )
+            galfind_logger.warning(warning_message)
+            warnings.warn(UserWarning(warning_message))
+            # nothing else to do
+            return deepcopy(self)
+        elif len(new_bands) < len(other):
+            # produce warning message
+            warning_message = f"Not all bands in {other.band_names=} in {self.band_names=}, adding only {new_bands=}"
+            galfind_logger.warning(warning_message)
+            warnings.warn(UserWarning(warning_message))
 
         # add and sort bands from blue -> red
         bands = [
             band
             for band in sorted(
-                np.concatenate([self.bands, instrument.bands]),
+                np.concatenate([self.bands, new_bands]),
                 key=lambda band: band.WavelengthCen.to(u.AA).value,
             )
         ]
 
-        # always name instruments from blue -> red
+        if type(other) in Instrument.__subclasses__():
+            other_instr_name = other.name
+        else:  # type == Filter
+            other_instr_name = other.instrument
 
-        if self.name == instrument.name:
+        if all(name in self.name for name in other_instr_name.split("+")):
             self.bands = bands
-            out_instrument = self
-        else:
-            all_instruments = json.loads(config.get("Other", "INSTRUMENT_NAMES"))
+            out_instrument = deepcopy(self)
+        else:  # re-compute blue -> red instrument_name and facility
+            all_instruments = json.loads(
+                config.get("Other", "INSTRUMENT_NAMES")
+            )
             all_facilities = json.loads(config.get("Other", "TELESCOPE_NAMES"))
             # split self.name and instrument.name
-            names = list(set(self.name.split("+") + instrument.name.split("+")))
-            facilities = list(
-                set(self.facility.split("+") + instrument.facility.split("+"))
+            names = list(
+                set(self.name.split("+") + other_instr_name.split("+"))
             )
-            name = "+".join([name for name in all_instruments if name in names])
+            facilities = list(
+                set(self.facility.split("+") + other.facility.split("+"))
+            )
+            name = "+".join(
+                [name for name in all_instruments if name in names]
+            )
             facility = "+".join(
-                [facility for facility in all_facilities if facility in facilities]
+                [
+                    facility
+                    for facility in all_facilities
+                    if facility in facilities
+                ]
             )
             out_instrument = Combined_Instrument(
                 name, bands, excl_bands=[], facility=facility
@@ -200,6 +259,23 @@ class Instrument:
             else:
                 print(f"Cannot remove {band} from {self.name}!")
         return self
+
+    def __eq__(self, other):
+        # ensure same type
+        if type(self) != type(other):
+            return False
+        # ensure same facility and instrument name
+        elif self.facility != other.facility or self.name != other.name:
+            return False
+        # ensure same bands are present in both instruments
+        else:
+            if len(self) == len(other) and all(
+                self_band == other_band
+                for self_band, other_band in zip(self, other)
+            ):
+                return True
+            else:
+                return False
 
     # STILL NEED TO LOOK FURTHER INTO THIS
     def __copy__(self):
@@ -271,7 +347,9 @@ class Instrument:
             return None
 
     def indices_from_band_names(self, band_names: list) -> list:
-        return [self.index_from_band_name(band_name) for band_name in band_names]
+        return [
+            self.index_from_band_name(band_name) for band_name in band_names
+        ]
 
     def band_name_from_index(self, index) -> str:
         return self.band_names[index]
@@ -285,7 +363,10 @@ class Instrument:
         ]
 
     def nearest_band_to_wavelength(
-        self, wavelength, medium_bands_only=False, check_wavelength_in_band=True
+        self,
+        wavelength,
+        medium_bands_only=False,
+        check_wavelength_in_band=True,
     ) -> Union[Filter, None]:
         if medium_bands_only:
             search_bands = [band for band in self if "M" == band.band_name[-1]]
@@ -300,8 +381,9 @@ class Instrument:
                 - funcs.convert_wav_units(wavelength, u.AA).value
             ).argmin()
         ]
-        if check_wavelength_in_band and nearest_band not in self.bands_from_wavelength(
-            wavelength
+        if (
+            check_wavelength_in_band
+            and nearest_band not in self.bands_from_wavelength(wavelength)
         ):
             return None
         else:
@@ -378,14 +460,17 @@ class Instrument:
                         for band_name in self.band_names
                     ]
                 )
-                and str(aper_diam.to(u.arcsec).value) in aper_corr_data.dtype.names[1:]
+                and str(aper_diam.to(u.arcsec).value)
+                in aper_corr_data.dtype.names[1:]
             ):
                 band_indices = [
                     list(aper_corr_data["band"]).index(band_name)
                     for band_name in self.band_names
                 ]
                 aper_corrs = list(
-                    aper_corr_data[str(aper_diam.to(u.arcsec).value)][band_indices]
+                    aper_corr_data[str(aper_diam.to(u.arcsec).value)][
+                        band_indices
+                    ]
                 )
                 if cache:
                     self.aper_corrs[aper_diam] = aper_corrs
@@ -443,11 +528,13 @@ class Instrument:
         if annotate:
             ax.set_title(f"{self.name} filters")
             ax.set_xlabel(
-                r"$\lambda_{\mathrm{obs}}$ / " + funcs.unit_labels_dict[wav_units]
+                r"$\lambda_{\mathrm{obs}}$ / "
+                + funcs.unit_labels_dict[wav_units]
             )
             ax.set_ylabel("Transmission")
             ax.set_ylim(
-                0.0, np.max([trans for trans in band.trans for band in self]) + 0.1
+                0.0,
+                np.max([trans for trans in band.trans for band in self]) + 0.1,
             )
         if save:
             plt.savefig(f"{self.name}_filter_profiles.png")
@@ -458,7 +545,9 @@ class Instrument:
 
 class NIRCam(Instrument):
     def __init__(self, excl_bands=[]):
-        instr = Instrument.from_SVO("JWST", self.__class__.__name__, excl_bands=[])
+        instr = Instrument.from_SVO(
+            "JWST", self.__class__.__name__, excl_bands=[]
+        )
         super().__init__(instr.name, instr.bands, excl_bands, instr.facility)
 
     def new_instrument(self, excl_bands=[]):
@@ -467,7 +556,9 @@ class NIRCam(Instrument):
 
 class MIRI(Instrument):
     def __init__(self, excl_bands=[]):
-        instr = Instrument.from_SVO("JWST", self.__class__.__name__, excl_bands=[])
+        instr = Instrument.from_SVO(
+            "JWST", self.__class__.__name__, excl_bands=[]
+        )
         super().__init__(instr.name, instr.bands, excl_bands, instr.facility)
 
     def new_instrument(self, excl_bands=[]):
@@ -476,7 +567,9 @@ class MIRI(Instrument):
 
 class ACS_WFC(Instrument):
     def __init__(self, excl_bands=[]):
-        instr = Instrument.from_SVO("HST", self.__class__.__name__, excl_bands=[])
+        instr = Instrument.from_SVO(
+            "HST", self.__class__.__name__, excl_bands=[]
+        )
         super().__init__(instr.name, instr.bands, excl_bands, instr.facility)
 
     def new_instrument(self, excl_bands=[]):
@@ -485,7 +578,9 @@ class ACS_WFC(Instrument):
 
 class WFC3_IR(Instrument):
     def __init__(self, excl_bands=[]):
-        instr = Instrument.from_SVO("HST", self.__class__.__name__, excl_bands=[])
+        instr = Instrument.from_SVO(
+            "HST", self.__class__.__name__, excl_bands=[]
+        )
         super().__init__(instr.name, instr.bands, excl_bands, instr.facility)
 
     def new_instrument(self, excl_bands=[]):
@@ -532,7 +627,8 @@ class Combined_Instrument(Instrument):
                     for band_name in globals()[name]().band_names
                     if band_name
                     not in [
-                        band.band_name for band in self.get_bands_from_instrument(name)
+                        band.band_name
+                        for band in self.get_bands_from_instrument(name)
                     ]
                 ]
             )
@@ -552,7 +648,9 @@ class Combined_Instrument(Instrument):
             band_name: aper_corr
             for band_name, aper_corr in zip(instrument_band_names, aper_corrs)
         }
-        _aper_corrs = [band_aper_corr_dict[band_name] for band_name in self.band_names]
+        _aper_corrs = [
+            band_aper_corr_dict[band_name] for band_name in self.band_names
+        ]
         if cache:  # save in self
             self.aper_corrs[aper_diam] = _aper_corrs
         # breakpoint()
@@ -588,13 +686,17 @@ def return_loc_depth_mags(
         # data = np.array(cat[f"MAG_AUTO_{band}"])
         raise NotImplementedError
     elif "APER" in mag_type:
-        data = np.array(cat[f"MAG_{mag_type[0]}_{band}_aper_corr"].T[mag_type[1]])
+        data = np.array(
+            cat[f"MAG_{mag_type[0]}_{band}_aper_corr"].T[mag_type[1]]
+        )
         # data_l1 = np.array(cat[f"MAGERR_{mag_type[0]}_{band}_l1_loc_depth"][mag_type[1]]
         data_l1 = np.array(
             [
                 val if val > min_mag_err else min_mag_err
                 for val in [
-                    cat[f"MAGERR_{mag_type[0]}_{band}_l1_loc_depth"].T[mag_type[1]]
+                    cat[f"MAGERR_{mag_type[0]}_{band}_l1_loc_depth"].T[
+                        mag_type[1]
+                    ]
                 ]
             ]
         )
@@ -602,7 +704,9 @@ def return_loc_depth_mags(
             [
                 val if val > min_mag_err else min_mag_err
                 for val in [
-                    cat[f"MAGERR_{mag_type[0]}_{band}_u1_loc_depth"].T[mag_type[1]]
+                    cat[f"MAGERR_{mag_type[0]}_{band}_u1_loc_depth"].T[
+                        mag_type[1]
+                    ]
                 ]
             ]
         )

@@ -1,17 +1,23 @@
 # Catalogue_Base.py
 
-import numpy as np
-from astropy.table import Table, join
 from copy import deepcopy
-import astropy.units as u
-from tqdm import tqdm
-from astropy.coordinates import SkyCoord
-from astropy.io import fits
 from typing import Union
 
+import astropy.units as u
+import numpy as np
+from astropy.coordinates import SkyCoord
+from astropy.io import fits
+from astropy.table import Table, join
+from tqdm import tqdm
+
+from . import (
+    Multiple_Catalogue,
+    SED_code,
+    galfind_logger,
+    sed_code_to_name_dict,
+)
 from . import useful_funcs_austind as funcs
-from . import galfind_logger, sed_code_to_name_dict, SED_code
-from . import Multiple_Catalogue
+from .EAZY import EAZY
 
 
 class Catalogue_Base:
@@ -81,7 +87,8 @@ class Catalogue_Base:
         output_str += "CAT STATUS = SEXTRACTOR, "
         for i, (key, value) in enumerate(cat.meta.items()):
             if key in ["DEPTHS", "MASKED"] + [
-                f"RUN_{subclass.__name__}" for subclass in SED_code.__subclasses__()
+                f"RUN_{subclass.__name__}"
+                for subclass in SED_code.__subclasses__()
             ]:
                 output_str += f"{key.split('_')[-1]}, "
         for sel_criteria in display_selections:
@@ -92,9 +99,7 @@ class Catalogue_Base:
         if print_sel_criteria:
             for sel_criteria in display_selections:
                 if sel_criteria in cat.colnames:
-                    output_str += (
-                        f"N_GALS_{sel_criteria} = {len(cat[cat[sel_criteria]])}\n"
-                    )
+                    output_str += f"N_GALS_{sel_criteria} = {len(cat[cat[sel_criteria]])}\n"
         output_str += band_sep
         # display crops that have been performed on this specific object
         if self.crops != []:
@@ -142,13 +147,16 @@ class Catalogue_Base:
         else:
             attr_arr = [gal.__getattr__(property_name, origin) for gal in self]
             # sort the units
-            if all(type(attr) in [u.Quantity, u.Magnitude, u.Dex] for attr in attr_arr):
+            if all(
+                type(attr) in [u.Quantity, u.Magnitude, u.Dex]
+                for attr in attr_arr
+            ):
                 assert all(
                     attr.unit == attr_arr[0].unit for attr in attr_arr
                 )  # ensure all units are the same
-                attr_arr = np.array([attr.value for attr in attr_arr]) * u.Unit(
-                    attr_arr[0].unit
-                )
+                attr_arr = np.array(
+                    [attr.value for attr in attr_arr]
+                ) * u.Unit(attr_arr[0].unit)
             else:
                 attr_arr = np.array(attr_arr)
             return attr_arr
@@ -221,7 +229,10 @@ class Catalogue_Base:
                 self_copy.RA, self_copy.DEC, unit=(u.deg, u.deg), frame="icrs"
             )
             other_sky_coords = SkyCoord(
-                other_copy.RA, other_copy.DEC, unit=(u.deg, u.deg), frame="icrs"
+                other_copy.RA,
+                other_copy.DEC,
+                unit=(u.deg, u.deg),
+                frame="icrs",
             )
             """
             band = self_copy.data.forced_phot_band
@@ -246,7 +257,9 @@ class Catalogue_Base:
             """
             if match_type == "nearest":
                 # This just takes the nearest galaxy as the best match
-                idx, d2d, d3d = sky_coords_cat.match_to_catalog_sky(other_sky_coords)
+                idx, d2d, d3d = sky_coords_cat.match_to_catalog_sky(
+                    other_sky_coords
+                )
                 # Also check mask - don't keep masked galaxies where there is an unmasked match
                 sep_constraint = d2d < max_sep
                 # Get indexes of matches
@@ -259,7 +272,8 @@ class Catalogue_Base:
                 other_cat_matches = []
 
                 for pos, coord in tqdm(
-                    enumerate(self_copy.sky_coord), desc="Cross-matching galaxies"
+                    enumerate(self_copy.sky_coord),
+                    desc="Cross-matching galaxies",
                 ):
                     # Need to save index of match in other_sky_coords
 
@@ -279,20 +293,26 @@ class Catalogue_Base:
 
                         coord_gal = self_copy.gals[pos]
 
-                        other_gals = np.ndarray.flatten(other_copy.gals[indexes])
+                        other_gals = np.ndarray.flatten(
+                            other_copy.gals[indexes]
+                        )
                         # Save indexes of other_gals in other_sky_coords
-                        other_gals_indexes = np.arange(len(other_sky_coords))[indexes]
-
-                        bands_gal1 = np.array(coord_gal.phot.instrument.band_names)[
-                            coord_gal.phot.flux_Jy.mask
+                        other_gals_indexes = np.arange(len(other_sky_coords))[
+                            indexes
                         ]
+
+                        bands_gal1 = np.array(
+                            coord_gal.phot.instrument.band_names
+                        )[coord_gal.phot.flux_Jy.mask]
 
                         chi_squareds = []
                         for other_gal in other_gals:
-                            bands_gal2 = np.array(other_gal.phot.instrument.band_names)[
-                                other_gal.phot.flux_Jy.mask
-                            ]
-                            matched_bands = list(set(bands_gal1).union(set(bands_gal2)))
+                            bands_gal2 = np.array(
+                                other_gal.phot.instrument.band_names
+                            )[other_gal.phot.flux_Jy.mask]
+                            matched_bands = list(
+                                set(bands_gal1).union(set(bands_gal2))
+                            )
 
                             if len(matched_bands) == 0:
                                 continue
@@ -309,7 +329,9 @@ class Catalogue_Base:
                                     for band in other_gal.phot.instrument.band_names
                                 ]
                             )
-                            coord_gal_fluxes = coord_gal.phot.flux_Jy[indexes_bands]
+                            coord_gal_fluxes = coord_gal.phot.flux_Jy[
+                                indexes_bands
+                            ]
                             coord_gal_flux_errs = coord_gal.phot.flux_Jy_errs[
                                 indexes_bands
                             ]
@@ -330,10 +352,14 @@ class Catalogue_Base:
                             chi_squareds.append(chi_squared)
                         if len(chi_squareds) == 0:
                             continue
-                        best_match_index = int(np.squeeze(np.argmin(chi_squareds)))
+                        best_match_index = int(
+                            np.squeeze(np.argmin(chi_squareds))
+                        )
                         # pop empty dimensions
                         cat_matches.append(pos)
-                        other_cat_matches.append(other_gals_indexes[best_match_index])
+                        other_cat_matches.append(
+                            other_gals_indexes[best_match_index]
+                        )
 
             assert (
                 len(cat_matches) == len(other_cat_matches)
@@ -381,7 +407,9 @@ class Catalogue_Base:
                             gal2.phot.flux_Jy.mask
                         ]
 
-                        band_names_union = list(set(bands_gal1).union(set(bands_gal2)))
+                        band_names_union = list(
+                            set(bands_gal1).union(set(bands_gal2))
+                        )
 
                         if len(bands_gal2) > len(bands_gal1):
                             self_copy.remove_gal(id=gal1.ID)
@@ -427,11 +455,18 @@ class Catalogue_Base:
     # Need to save the cross-match distances
 
     def combine_and_remove_duplicates(
-        self, other, out_survey=None, max_sep=1.0 * u.arcsec, match_type="nearest"
+        self,
+        other,
+        out_survey=None,
+        max_sep=1.0 * u.arcsec,
+        match_type="nearest",
     ):
         "Alias for self * other"
         return self.__mul__(
-            other, out_survey=None, max_sep=1.0 * u.arcsec, match_type="nearest"
+            other,
+            out_survey=None,
+            max_sep=1.0 * u.arcsec,
+            match_type="nearest",
         )
 
     def __sub__(self):
@@ -507,16 +542,22 @@ class Catalogue_Base:
             cat_copy.gals = cat_copy[
                 (
                     (
-                        cat_copy.__getattr__(crop_property, origin=SED_fit_params)
+                        cat_copy.__getattr__(
+                            crop_property, origin=SED_fit_params
+                        )
                         >= crop_limits[0]
                     )
                     & (
-                        cat_copy.__getattr__(crop_property, origin=SED_fit_params)
+                        cat_copy.__getattr__(
+                            crop_property, origin=SED_fit_params
+                        )
                         <= crop_limits[1]
                     )
                 )
             ]
-            cat_copy.crops.append(f"{crop_limits[0]}<{crop_property}<{crop_limits[1]}")
+            cat_copy.crops.append(
+                f"{crop_limits[0]}<{crop_property}<{crop_limits[1]}"
+            )
         else:
             galfind_logger.critical(
                 f"crop_limits={crop_limits} with type = {type(crop_limits)} not in [int, float, bool, list, np.array]"
@@ -525,7 +566,9 @@ class Catalogue_Base:
 
     def open_cat(self, cropped=False, hdu=None):
         if type(hdu) == type(None):
-            fits_cat = Table.read(self.cat_path, character_as_bytes=False, memmap=True)
+            fits_cat = Table.read(
+                self.cat_path, character_as_bytes=False, memmap=True
+            )
         elif self.check_hdu_exists(hdu):
             fits_cat = Table.read(
                 self.cat_path, character_as_bytes=False, memmap=True, hdu=hdu
@@ -562,7 +605,9 @@ class Catalogue_Base:
         [
             hdu_list.append(
                 fits.BinTableHDU(
-                    data=tab.as_array(), header=fits.Header(tab.meta), name=name
+                    data=tab.as_array(),
+                    header=fits.Header(tab.meta),
+                    name=name,
                 )
             )
             for (tab, name) in zip(tab_arr, tab_names)
@@ -582,7 +627,9 @@ class Catalogue_Base:
                 if hdu_.name != "PRIMARY"
             ]
             tab_names = [
-                hdu_.name for hdu_ in fits.open(self.cat_path) if hdu_.name != "PRIMARY"
+                hdu_.name
+                for hdu_ in fits.open(self.cat_path)
+                if hdu_.name != "PRIMARY"
             ]
         else:  # make new hdu
             tab_arr = [
@@ -591,7 +638,9 @@ class Catalogue_Base:
                 if hdu_.name != "PRIMARY"
             ] + [tab]
             tab_names = [
-                hdu_.name for hdu_ in fits.open(self.cat_path) if hdu_.name != "PRIMARY"
+                hdu_.name
+                for hdu_ in fits.open(self.cat_path)
+                if hdu_.name != "PRIMARY"
             ] + [hdu]
         self.write_cat(tab_arr, tab_names)
 
@@ -608,7 +657,9 @@ class Catalogue_Base:
                 if hdu_.name != hdu.upper() and hdu_.name != "PRIMARY"
             ]
             self.write_cat(tab_arr, tab_names)
-            galfind_logger.info(f"Deleted {hdu.upper()=} from {self.cat_path=}!")
+            galfind_logger.info(
+                f"Deleted {hdu.upper()=} from {self.cat_path=}!"
+            )
         else:
             galfind_logger.info(
                 f"{hdu.upper()=} does not exist in {self.cat_path=}, could not delete!"

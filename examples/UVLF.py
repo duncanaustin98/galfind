@@ -1,100 +1,200 @@
-import astropy.units as u
-import numpy as np
-import time
-from astropy.table import Table
-import matplotlib.pyplot as plt
 import sys
+import time
 
+import astropy.units as u
+import matplotlib.pyplot as plt
+import numpy as np
+from astropy.table import Table
+
+from galfind import (
+    EAZY,
+    Catalogue,
+    Number_Density_Function,
+    config,
+    galfind_logger,
+)
 from galfind import useful_funcs_austind as funcs
-from galfind import Catalogue, config, galfind_logger, LePhare, EAZY, NIRCam, Number_Density_Function
 from galfind.Catalogue_Creator import GALFIND_Catalogue_Creator
 
 sys.path.insert(1, config["NumberDensityFunctions"]["FLAGS_DATA_DIR"])
 try:
-    from flags_data import distribution_functions
+    pass
 except:
-    galfind_logger.critical("Could not import flags_data.distribution_functions")
+    galfind_logger.critical(
+        "Could not import flags_data.distribution_functions"
+    )
 
 plt.style.use(f"{config['DEFAULT']['GALFIND_DIR']}/galfind_style.mplstyle")
 
-def conv_flags_UVLF(name, type = np.float64):
+
+def conv_flags_UVLF(name, type=np.float64):
     path = f"{config['NumberDensityFunctions']['FLAGS_DATA_DIR']}/flags_data/data/DistributionFunctions/LUV/obs/binned/{name}.ecsv"
     meta = Table.read(path).meta
     tab = {}
-    tab["z"] = np.array([9., 9., 9., 9., 12., 12.])
-    tab["M"] = np.array([-20.34, -19.34, -18.34, -17.34, -18.9, -17.9]).astype(type) * u.mag
-    tab["log10phi"] = u.Dex(10 ** np.array([-4.4, -3.87, -2.82, -3.08, -3.78, -3.7]).astype(type) * (u.mag * u.Mpc ** 3) ** -1)
-    tab["log10phi_err_low"] = u.Dex(np.array([0.94, 0.94, 0.5, 1.64, 0.94, 1.64]).astype(type))# * (u.mag * u.Mpc ** 3) ** -1
-    tab["log10phi_err_upp"] = u.Dex(np.array([0.57, 0.57, 0.37, 0.75, 0.57, 0.75]).astype(type))# * (u.mag * u.Mpc ** 3) ** -1
+    tab["z"] = np.array([9.0, 9.0, 9.0, 9.0, 12.0, 12.0])
+    tab["M"] = (
+        np.array([-20.34, -19.34, -18.34, -17.34, -18.9, -17.9]).astype(type)
+        * u.mag
+    )
+    tab["log10phi"] = u.Dex(
+        10 ** np.array([-4.4, -3.87, -2.82, -3.08, -3.78, -3.7]).astype(type)
+        * (u.mag * u.Mpc**3) ** -1
+    )
+    tab["log10phi_err_low"] = u.Dex(
+        np.array([0.94, 0.94, 0.5, 1.64, 0.94, 1.64]).astype(type)
+    )  # * (u.mag * u.Mpc ** 3) ** -1
+    tab["log10phi_err_upp"] = u.Dex(
+        np.array([0.57, 0.57, 0.37, 0.75, 0.57, 0.75]).astype(type)
+    )  # * (u.mag * u.Mpc ** 3) ** -1
     meta["references"] = ["2023ApJ...946L..35M"]
     meta["name"] = "Morishita et al. 2023"
     meta["y"] = "log10phi"
-    #breakpoint()
-    tab_ = Table(tab, dtype = [float, float, float, float, float])
+    # breakpoint()
+    tab_ = Table(tab, dtype=[float, float, float, float, float])
     tab_.meta = meta
-    tab_.write(path, overwrite = True)
+    tab_.write(path, overwrite=True)
 
-def UVLF(surveys, version, instruments, aper_diams, pc_err, forced_phot_band, \
-        excl_bands, SED_fit_params_arr, cat_type = "loc_depth", crop_by = None, timed = True, mask_stars = True, \
-        pix_scales = {"ACS_WFC": 0.03 * u.arcsec, "WFC3_IR": 0.03 * u.arcsec, "NIRCam": 0.03 * u.arcsec, "MIRI": 0.09 * u.arcsec}, \
-        load_SED_rest_properties = True, n_depth_reg = "auto"):
+
+def UVLF(
+    surveys,
+    version,
+    instruments,
+    aper_diams,
+    pc_err,
+    forced_phot_band,
+    excl_bands,
+    SED_fit_params_arr,
+    cat_type="loc_depth",
+    crop_by=None,
+    timed=True,
+    mask_stars=True,
+    pix_scales={
+        "ACS_WFC": 0.03 * u.arcsec,
+        "WFC3_IR": 0.03 * u.arcsec,
+        "NIRCam": 0.03 * u.arcsec,
+        "MIRI": 0.09 * u.arcsec,
+    },
+    load_SED_rest_properties=True,
+    n_depth_reg="auto",
+):
     # make appropriate galfind catalogue creator for each aperture diameter
     cat_creator = GALFIND_Catalogue_Creator(cat_type, aper_diams[0], pc_err)
     for survey in surveys:
         start = time.time()
-        cat = Catalogue.from_pipeline(survey = survey, version = version, instruments = instruments, aper_diams = aper_diams, \
-            cat_creator = cat_creator, SED_fit_params_arr = SED_fit_params_arr, forced_phot_band = forced_phot_band, \
-            excl_bands = excl_bands, loc_depth_min_flux_pc_errs = [pc_err], crop_by = crop_by, timed = timed, \
-            mask_stars = mask_stars, pix_scales = pix_scales, load_SED_rest_properties = load_SED_rest_properties, n_depth_reg = n_depth_reg)
-        
+        cat = Catalogue.from_pipeline(
+            survey=survey,
+            version=version,
+            instruments=instruments,
+            aper_diams=aper_diams,
+            cat_creator=cat_creator,
+            SED_fit_params_arr=SED_fit_params_arr,
+            forced_phot_band=forced_phot_band,
+            excl_bands=excl_bands,
+            loc_depth_min_flux_pc_errs=[pc_err],
+            crop_by=crop_by,
+            timed=timed,
+            mask_stars=mask_stars,
+            pix_scales=pix_scales,
+            load_SED_rest_properties=load_SED_rest_properties,
+            n_depth_reg=n_depth_reg,
+        )
+
         M_UV_name = "M1500"
-        this_work_plot_kwargs = {"mfc": "gray", "marker": "D", "ms": 8., \
-            "mew": 2., "mec": "black", "ecolor": "black", "elinewidth": 2.}
+        this_work_plot_kwargs = {
+            "mfc": "gray",
+            "marker": "D",
+            "ms": 8.0,
+            "mew": 2.0,
+            "mec": "black",
+            "ecolor": "black",
+            "elinewidth": 2.0,
+        }
 
-        UV_LF_z9 = Number_Density_Function.from_single_cat(cat, M_UV_name, np.arange(-21.25, -17.25, 0.5), \
-            [8.5, 9.5], x_origin = "EAZY_fsps_larson_zfree_REST_PROPERTY")
+        UV_LF_z9 = Number_Density_Function.from_single_cat(
+            cat,
+            M_UV_name,
+            np.arange(-21.25, -17.25, 0.5),
+            [8.5, 9.5],
+            x_origin="EAZY_fsps_larson_zfree_REST_PROPERTY",
+        )
         z9_author_years = {
-            "Bouwens+21": {"z_ref": 9., "plot_kwargs": {}}, 
-            "Harikane+22": {"z_ref": 9., "plot_kwargs": {}},
-            "Finkelstein+23": {"z_ref": 9., "plot_kwargs": {}},
-            "Leung+23": {"z_ref": 9., "plot_kwargs": {}},
-            "Perez-Gonzalez+23": {"z_ref": 9., "plot_kwargs": {}},
-            "Adams+24": {"z_ref": 9., "plot_kwargs": {}}
-        } # also Finkelstein+22, but wide z bin used
-        UV_LF_z9.plot(x_lims = M_UV_name, author_year_dict = z9_author_years, plot_kwargs = this_work_plot_kwargs)
-        
-        UV_LF_z10_5 = Number_Density_Function.from_single_cat(cat, M_UV_name, np.arange(-21.25, -17.25, 0.5), \
-            [9.5, 11.5], x_origin = "EAZY_fsps_larson_zfree_REST_PROPERTY")
+            "Bouwens+21": {"z_ref": 9.0, "plot_kwargs": {}},
+            "Harikane+22": {"z_ref": 9.0, "plot_kwargs": {}},
+            "Finkelstein+23": {"z_ref": 9.0, "plot_kwargs": {}},
+            "Leung+23": {"z_ref": 9.0, "plot_kwargs": {}},
+            "Perez-Gonzalez+23": {"z_ref": 9.0, "plot_kwargs": {}},
+            "Adams+24": {"z_ref": 9.0, "plot_kwargs": {}},
+        }  # also Finkelstein+22, but wide z bin used
+        UV_LF_z9.plot(
+            x_lims=M_UV_name,
+            author_year_dict=z9_author_years,
+            plot_kwargs=this_work_plot_kwargs,
+        )
+
+        UV_LF_z10_5 = Number_Density_Function.from_single_cat(
+            cat,
+            M_UV_name,
+            np.arange(-21.25, -17.25, 0.5),
+            [9.5, 11.5],
+            x_origin="EAZY_fsps_larson_zfree_REST_PROPERTY",
+        )
         z10_5_author_years = {
-            "Oesch+18": {"z_ref": 10., "plot_kwargs": {}}, 
-            "Bouwens+22": {"z_ref": 10., "plot_kwargs": {}},
-            "Donnan+22": {"z_ref": 10., "plot_kwargs": {}},
-            "Castellano+23": {"z_ref": 10., "plot_kwargs": {}},
-            "Adams+24": {"z_ref": 10., "plot_kwargs": {}},
-            "Finkelstein+22": {"z_ref": 11., "plot_kwargs": {"marker": "^"}},
-            "Finkelstein+23": {"z_ref": 11., "plot_kwargs": {"marker": "^"}},
-            "Leung+23": {"z_ref": 11., "plot_kwargs": {"marker": "^"}},
-            "McLeod+23": {"z_ref": 11., "plot_kwargs": {"marker": "^"}},
-            "Perez-Gonzalez+23": {"z_ref": 11., "plot_kwargs": {"marker": "^"}}
+            "Oesch+18": {"z_ref": 10.0, "plot_kwargs": {}},
+            "Bouwens+22": {"z_ref": 10.0, "plot_kwargs": {}},
+            "Donnan+22": {"z_ref": 10.0, "plot_kwargs": {}},
+            "Castellano+23": {"z_ref": 10.0, "plot_kwargs": {}},
+            "Adams+24": {"z_ref": 10.0, "plot_kwargs": {}},
+            "Finkelstein+22": {"z_ref": 11.0, "plot_kwargs": {"marker": "^"}},
+            "Finkelstein+23": {"z_ref": 11.0, "plot_kwargs": {"marker": "^"}},
+            "Leung+23": {"z_ref": 11.0, "plot_kwargs": {"marker": "^"}},
+            "McLeod+23": {"z_ref": 11.0, "plot_kwargs": {"marker": "^"}},
+            "Perez-Gonzalez+23": {
+                "z_ref": 11.0,
+                "plot_kwargs": {"marker": "^"},
+            },
         }
-        UV_LF_z10_5.plot(x_lims = M_UV_name, author_year_dict = z10_5_author_years, plot_kwargs = this_work_plot_kwargs)
+        UV_LF_z10_5.plot(
+            x_lims=M_UV_name,
+            author_year_dict=z10_5_author_years,
+            plot_kwargs=this_work_plot_kwargs,
+        )
 
-        UV_LF_z12_5 = Number_Density_Function.from_single_cat(cat, M_UV_name, np.arange(-21.25, -17.25, 0.5), \
-            [11.5, 13.5], x_origin = "EAZY_fsps_larson_zfree_REST_PROPERTY")
+        UV_LF_z12_5 = Number_Density_Function.from_single_cat(
+            cat,
+            M_UV_name,
+            np.arange(-21.25, -17.25, 0.5),
+            [11.5, 13.5],
+            x_origin="EAZY_fsps_larson_zfree_REST_PROPERTY",
+        )
         z12_5_author_years = {
-            "Bouwens+22": {"z_ref": 12., "plot_kwargs": {}},
-            "Harikane+22": {"z_ref": 12., "plot_kwargs": {}},
-            "Perez-Gonzalez+23": {"z_ref": 12., "plot_kwargs": {}},
-            "Adams+24": {"z_ref": 12., "plot_kwargs": {}},
-            "Robertson+24": {"z_ref": 12., "plot_kwargs": {}},
-            "Donnan+22": {"z_ref": 13., "plot_kwargs": {"marker": "^"}}
+            "Bouwens+22": {"z_ref": 12.0, "plot_kwargs": {}},
+            "Harikane+22": {"z_ref": 12.0, "plot_kwargs": {}},
+            "Perez-Gonzalez+23": {"z_ref": 12.0, "plot_kwargs": {}},
+            "Adams+24": {"z_ref": 12.0, "plot_kwargs": {}},
+            "Robertson+24": {"z_ref": 12.0, "plot_kwargs": {}},
+            "Donnan+22": {"z_ref": 13.0, "plot_kwargs": {"marker": "^"}},
         }
-        UV_LF_z12_5.plot(x_lims = M_UV_name, author_year_dict = z12_5_author_years, plot_kwargs = this_work_plot_kwargs)
+        UV_LF_z12_5.plot(
+            x_lims=M_UV_name,
+            author_year_dict=z12_5_author_years,
+            plot_kwargs=this_work_plot_kwargs,
+        )
 
-def compile_literature(z_arr, M_UV, phi, phi_l1, phi_u1, log_phi, name, meta, Ngals = None, dM_arr = None):
 
+def compile_literature(
+    z_arr,
+    M_UV,
+    phi,
+    phi_l1,
+    phi_u1,
+    log_phi,
+    name,
+    meta,
+    Ngals=None,
+    dM_arr=None,
+):
     out_path = f"{config['NumberDensityFunctions']['FLAGS_DATA_DIR']}/flags_data/data/DistributionFunctions/LUV/obs/binned/{name}_new.ecsv"
-    #out_path = f"{config['NumberDensityFunctions']['UVLF_LIT_DIR']}/z={float(z_ref):.1f}/{author_year}.ecsv"
+    # out_path = f"{config['NumberDensityFunctions']['UVLF_LIT_DIR']}/z={float(z_ref):.1f}/{author_year}.ecsv"
     funcs.make_dirs(out_path)
     input_dict = {"z": z_arr, "M": M_UV}
     if not log_phi:
@@ -111,15 +211,22 @@ def compile_literature(z_arr, M_UV, phi, phi_l1, phi_u1, log_phi, name, meta, Ng
     if type(dM_arr) != type(None):
         input_dict["deltaM"] = dM_arr
         dtypes += [float]
-    tab = Table(input_dict, dtype = dtypes)
+    tab = Table(input_dict, dtype=dtypes)
     out_meta = {"x": "M", "y": phi_meta}
     out_meta["type"] = "binned"
     tab.meta = {**out_meta, **meta}
-    tab.write(out_path, overwrite = True)
+    tab.write(out_path, overwrite=True)
+
 
 def make_EAZY_SED_fit_params_arr(SED_code_arr, templates_arr, lowz_zmax_arr):
-    return [{"code": code, "templates": templates, "lowz_zmax": lowz_zmax} \
-        for code, templates, lowz_zmaxs in zip(SED_code_arr, templates_arr, lowz_zmax_arr) for lowz_zmax in lowz_zmaxs]
+    return [
+        {"code": code, "templates": templates, "lowz_zmax": lowz_zmax}
+        for code, templates, lowz_zmaxs in zip(
+            SED_code_arr, templates_arr, lowz_zmax_arr
+        )
+        for lowz_zmax in lowz_zmaxs
+    ]
+
 
 def main():
     version = "v11"
@@ -129,36 +236,64 @@ def main():
     aper_diams = [0.32] * u.arcsec
     SED_code_arr = [EAZY()]
     templates_arr = ["fsps_larson"]
-    lowz_zmax_arr = [[4., 6., None]]
+    lowz_zmax_arr = [[4.0, 6.0, None]]
     min_flux_pc_errs = 10
     forced_phot_band = ["F277W", "F356W", "F444W"]
     crop_by = "EPOCHS"
     timed = False
-    mask_stars = {"ACS_WFC": False, "NIRCam": True, "WFC3_IR": False, "MIRI": False}
+    mask_stars = {
+        "ACS_WFC": False,
+        "NIRCam": True,
+        "WFC3_IR": False,
+        "MIRI": False,
+    }
     MIRI_pix_scale = 0.06 * u.arcsec
     load_SED_rest_properties = True
     n_depth_reg = "auto"
 
     jems_bands = ["F182M", "F210M", "F430M", "F460M", "F480M"]
     ngdeep_excl_bands = ["F435W", "F775W", "F850LP"]
-    #jades_3215_excl_bands = ["f162M", "f115W", "f150W", "f200W", "f410M", "f182M", "f210M", "f250M", "f300M", "f335M", "f277W", "f356W", "f444W"]
+    # jades_3215_excl_bands = ["f162M", "f115W", "f150W", "f200W", "f410M", "f182M", "f210M", "f250M", "f300M", "f335M", "f277W", "f356W", "f444W"]
     excl_bands = []
 
-    SED_fit_params_arr = make_EAZY_SED_fit_params_arr(SED_code_arr, templates_arr, lowz_zmax_arr)
+    SED_fit_params_arr = make_EAZY_SED_fit_params_arr(
+        SED_code_arr, templates_arr, lowz_zmax_arr
+    )
 
     # delay_time = (8 * u.h).to(u.s).value
     # print(f"{surveys[0]} delayed by {delay_time}s")
     # time.sleep(delay_time)
 
-    pix_scales = {**{"ACS_WFC": 0.03 * u.arcsec, "WFC3_IR": 0.03 * u.arcsec, "NIRCam": 0.03 * u.arcsec}, **{"MIRI": MIRI_pix_scale}}
+    pix_scales = {
+        **{
+            "ACS_WFC": 0.03 * u.arcsec,
+            "WFC3_IR": 0.03 * u.arcsec,
+            "NIRCam": 0.03 * u.arcsec,
+        },
+        **{"MIRI": MIRI_pix_scale},
+    }
 
     for survey in surveys:
-        UVLF([survey], version, instruments, aper_diams, min_flux_pc_errs, forced_phot_band, \
-        excl_bands, SED_fit_params_arr, cat_type = cat_type, crop_by = crop_by, timed = timed, \
-        mask_stars = mask_stars, pix_scales = pix_scales, load_SED_rest_properties = load_SED_rest_properties, n_depth_reg = n_depth_reg)
+        UVLF(
+            [survey],
+            version,
+            instruments,
+            aper_diams,
+            min_flux_pc_errs,
+            forced_phot_band,
+            excl_bands,
+            SED_fit_params_arr,
+            cat_type=cat_type,
+            crop_by=crop_by,
+            timed=timed,
+            mask_stars=mask_stars,
+            pix_scales=pix_scales,
+            load_SED_rest_properties=load_SED_rest_properties,
+            n_depth_reg=n_depth_reg,
+        )
+
 
 def convert_all_literature():
-
     # # Oesch 2018
 
     # Oesch2018_z_arr = [10.] * 5
@@ -172,25 +307,25 @@ def convert_all_literature():
     #      "year": year, "observatory": ["Hubble"], "references": ["2018ApJ...855..105O"]}
 
     # compile_literature(Oesch2018_z_arr, Oesch2018_10X, Oesch2018_10Y, Oesch2018_10Yl1, Oesch2018_10Yu1, False, "oesch18", meta)
-    
+
     # # # #Finkelstein2023
 
     # Fink23_z_arr = [9.] * 6 + [11.] * 3 + [14.] * 2
     # Ngals = [1, 2, 7, 7, 17, 10, 3, 8, 8, 1, 2]
 
     # Fink23_9X = [-22.0, -21.0, -20.5, -20.0, -19.5, -19.0]
-    # Fink23_9Y = [1.1e-5, 2.2e-5, 8.2e-5, 9.6e-5, 28.6e-5, 26.8e-5] 
-    # Fink23_9YerrUp = [0.7e-5, 1.3e-5, 4.0e-5, 4.6e-5, 11.5e-5, 12.4e-5] 
-    # Fink23_9YerrLo = [0.6e-5, 1.0e-5, 3.2e-5, 3.6e-5, 9.1e-5, 10.0e-5] 
+    # Fink23_9Y = [1.1e-5, 2.2e-5, 8.2e-5, 9.6e-5, 28.6e-5, 26.8e-5]
+    # Fink23_9YerrUp = [0.7e-5, 1.3e-5, 4.0e-5, 4.6e-5, 11.5e-5, 12.4e-5]
+    # Fink23_9YerrLo = [0.6e-5, 1.0e-5, 3.2e-5, 3.6e-5, 9.1e-5, 10.0e-5]
 
     # Fink23_11X = [-20.5, -20.0, -19.5]
-    # Fink23_11Y = [1.8e-5, 5.4e-5, 7.6e-5] 
-    # Fink23_11YerrUp = [1.2e-5, 2.7e-5, 3.9e-5] 
+    # Fink23_11Y = [1.8e-5, 5.4e-5, 7.6e-5]
+    # Fink23_11YerrUp = [1.2e-5, 2.7e-5, 3.9e-5]
     # Fink23_11YerrLo = [0.9e-5, 2.1e-5, 3.0e-5]
 
     # Fink23_14X = [-20.0, -19.5]
-    # Fink23_14Y = [2.6e-5, 5.3e-5] 
-    # Fink23_14YerrUp = [3.3e-5, 6.9e-5] 
+    # Fink23_14Y = [2.6e-5, 5.3e-5]
+    # Fink23_14YerrUp = [3.3e-5, 6.9e-5]
     # Fink23_14YerrLo = [1.8e-5, 4.4e-5]
 
     # Fink23_M_UV_arr = np.array(Fink23_9X + Fink23_11X + Fink23_14X) * u.mag
@@ -208,13 +343,13 @@ def convert_all_literature():
 
     # Stefanon19_z_arr = [8.] * 3 + [9.] * 4
     # Stefanon19_8X = [-22.55,-22.05,-21.55]
-    # Stefanon19_8Y = [0.76e-6, 1.38e-6, 4.87e-6] 
-    # Stefanon19_8YerrUp = [0.74e-6, 1.09e-6, 2.01e-6] 
+    # Stefanon19_8Y = [0.76e-6, 1.38e-6, 4.87e-6]
+    # Stefanon19_8YerrUp = [0.74e-6, 1.09e-6, 2.01e-6]
     # Stefanon19_8YerrLo = [0.41e-6, 0.66e-6, 1.41e-6]
 
     # Stefanon19_9X = [-22.35,-22.0,21.6,-21.2]
-    # Stefanon19_9Y = [0.43e-6,0.43e-6,1.14e-6,1.64e-6] 
-    # Stefanon19_9YerrUp = [0.99e-6,0.98e-6,1.5e-6,2.16e-6] 
+    # Stefanon19_9Y = [0.43e-6,0.43e-6,1.14e-6,1.64e-6]
+    # Stefanon19_9YerrUp = [0.99e-6,0.98e-6,1.5e-6,2.16e-6]
     # Stefanon19_9YerrLo = [0.36e-6,0.36e-6,0.73e-6,1.06e-6]
 
     # Stefanon19_M_UV_arr = np.array(Stefanon19_8X + Stefanon19_9X) * u.mag
@@ -334,12 +469,13 @@ def convert_all_literature():
     # year = 2024
     # meta = {"redshifts": [8., 9., 10.5, 12.5], "name": f"Adams et al. ({str(year)})", \
     #     "year": year, "observatory": ["Hubble", "Webb"], "references": ["2024ApJ...965..169A"]}
-    
+
     # compile_literature(Ada24_z_arr, Ada24_MUV_arr, Ada24_phi_arr, Ada24_phi_err_arr, \
     #     Ada24_phi_err_arr, log_phi = False, name = "adams24", meta = meta)
     pass
 
+
 if __name__ == "__main__":
     conv_flags_UVLF("morishita23")
-    #main()
-    #convert_all_literature()
+    # main()
+    # convert_all_literature()

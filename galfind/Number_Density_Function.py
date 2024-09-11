@@ -1,17 +1,24 @@
-import matplotlib.pyplot as plt
-import numpy as np
-from typing import Union
 import sys
 from pathlib import Path
+from typing import Union
+
+import matplotlib.pyplot as plt
+import numpy as np
 from astropy.table import Table
 
+from . import (
+    config,
+    galfind_logger,
+    sed_code_to_name_dict,
+)
 from . import useful_funcs_austind as funcs
-from . import galfind_logger, config, sed_code_to_name_dict
 from .SED_codes import SED_code
 
 
 class Base_Number_Density_Function:
-    def __init__(self, x_name, x_mid_bins, z_ref, phi, phi_errs_cv, author_year):
+    def __init__(
+        self, x_name, x_mid_bins, z_ref, phi, phi_errs_cv, author_year
+    ):
         self.x_name = x_name
         self.x_mid_bins = x_mid_bins
         self.z_ref = z_ref
@@ -108,7 +115,9 @@ class Base_Number_Density_Function:
                     else:
                         x = ds.log10X[z]
                     # x = ds.log10X[z] - np.log10(1. / funcs.imf_mass_factor[ds.imf]) stellar mass only
-                    return cls(x_name, x, z, 10**log10phi, phi_err, author_year)
+                    return cls(
+                        x_name, x, z, 10**log10phi, phi_err, author_year
+                    )
         return None  # if no author_year in flags_data
 
     def get_z_bin_name(self) -> str:
@@ -242,12 +251,19 @@ class Number_Density_Function(Base_Number_Density_Function):
         self.cv_errs = cv_errs  # cosmic variance % errs / 100
         self.origin_surveys = origin_surveys
         self.cv_origin = cv_origin
-        x_mid_bins = np.array([(x_bin[1] + x_bin[0]) / 2.0 for x_bin in x_bins])
+        x_mid_bins = np.array(
+            [(x_bin[1] + x_bin[0]) / 2.0 for x_bin in x_bins]
+        )
         z_ref = float((z_bin[1] + z_bin[0]) / 2.0)
         phi_errs_cv = np.array(
-            [np.sqrt(phi_errs[i] ** 2.0 + (cv_errs * phi) ** 2.0) for i in range(2)]
+            [
+                np.sqrt(phi_errs[i] ** 2.0 + (cv_errs * phi) ** 2.0)
+                for i in range(2)
+            ]
         )
-        super().__init__(x_name, x_mid_bins, z_ref, phi, phi_errs_cv, "This work")
+        super().__init__(
+            x_name, x_mid_bins, z_ref, phi, phi_errs_cv, "This work"
+        )
 
     @classmethod
     def from_ecsv(cls, save_path: str):
@@ -358,15 +374,15 @@ class Number_Density_Function(Base_Number_Density_Function):
             assert x_origin["code"].__class__.__name__ in [
                 code.__name__ for code in SED_code.__subclasses__()
             ]
-            SED_fit_params = (
-                x_origin  # redshifts must come from same SED fitting as x values
-            )
+            SED_fit_params = x_origin  # redshifts must come from same SED fitting as x values
             SED_fit_params_key = x_origin["code"].label_from_SED_fit_params(
                 SED_fit_params
             )
             x_origin = SED_fit_params_key
         elif type(x_origin) in [str]:
-            galfind_logger.debug("Won't work for rest frame properties currently")
+            galfind_logger.debug(
+                "Won't work for rest frame properties currently"
+            )
             # convert to SED_fit_params
             if x_origin.endswith("_REST_PROPERTY"):
                 SED_fit_params_key = x_origin.replace("_REST_PROPERTY", "")
@@ -390,12 +406,16 @@ class Number_Density_Function(Base_Number_Density_Function):
             save_path
         ).is_file():  # perform calculation if not previously computed
             # extract z_bin_name
-            z_bin_name = funcs.get_SED_fit_params_z_bin_name(SED_fit_params_key, z_bin)
+            z_bin_name = funcs.get_SED_fit_params_z_bin_name(
+                SED_fit_params_key, z_bin
+            )
             # crop catalogue to this redshift bin
             z_bin_cat = cat.crop(z_bin, "z", SED_fit_params)
 
             # extract photometry type from x_origin
-            phot_type = "rest" if x_origin.endswith("_REST_PROPERTY") else "obs"
+            phot_type = (
+                "rest" if x_origin.endswith("_REST_PROPERTY") else "obs"
+            )
             # create x_bins from x_bin_edges (must include start and end values here too)
             x_bins = [
                 [x_bin_edges[i], x_bin_edges[i + 1]]
@@ -431,12 +451,15 @@ class Number_Density_Function(Base_Number_Density_Function):
                         V_max += np.array(
                             [
                                 gal.V_max[z_bin_name][data.full_name]
-                                if gal.V_max[z_bin_name][data.full_name] != -1.0
+                                if gal.V_max[z_bin_name][data.full_name]
+                                != -1.0
                                 else 0.0
                                 for gal in z_bin_x_bin_cat
                             ]
                         )
-                    V_max = np.array([_V_max for _V_max in V_max if _V_max != 0.0])
+                    V_max = np.array(
+                        [_V_max for _V_max in V_max if _V_max != 0.0]
+                    )
                     if len(V_max) != Ngals[i]:
                         galfind_logger.warning(
                             f"{Ngals[i] - len(V_max)} galaxies not detected"
@@ -450,17 +473,21 @@ class Number_Density_Function(Base_Number_Density_Function):
                     else:
                         poisson_int = funcs.poisson_interval(len(V_max), 0.32)
                         phi_l1[i] = phi[i] * np.min(
-                            np.abs((np.array(poisson_int[0]) - len(V_max))) / len(V_max)
+                            np.abs((np.array(poisson_int[0]) - len(V_max)))
+                            / len(V_max)
                         )
                         phi_u1[i] = phi[i] * np.min(
-                            np.abs((np.array(poisson_int[1]) - len(V_max))) / len(V_max)
+                            np.abs((np.array(poisson_int[1]) - len(V_max)))
+                            / len(V_max)
                         )
                     if type(cv_origin) == type(None):
                         pass
                     elif (
                         cv_origin == "Driver2010"
                     ):  # could open this up to more cosmic variance calculators
-                        cv_errs[i] = funcs.calc_cv_proper(z_bin, data_arr=data_arr)
+                        cv_errs[i] = funcs.calc_cv_proper(
+                            z_bin, data_arr=data_arr
+                        )
                     else:
                         raise NotImplementedError
 
@@ -499,7 +526,7 @@ class Number_Density_Function(Base_Number_Density_Function):
         ext: str = ".ecsv",
     ) -> str:
         save_path = f"{config['NumberDensityFunctions']['NUMBER_DENSITY_FUNC_DIR']}/Data/{SED_fit_params_key}/{x_name}/{origin_surveys}/{z_bin[0]}<z<{z_bin[1]}{ext}"
-        
+
         if os.access(save_path, os.W_OK):
             funcs.make_dirs(save_path)
         return save_path
@@ -622,7 +649,15 @@ class Number_Density_Function(Base_Number_Density_Function):
                 )
         # plot this work
         super().plot(
-            fig, ax, log, annotate, save, show, plot_kwargs, legend_kwargs, x_lims
+            fig,
+            ax,
+            log,
+            annotate,
+            save,
+            show,
+            plot_kwargs,
+            legend_kwargs,
+            x_lims,
         )
 
 
@@ -662,7 +697,9 @@ class Number_Density_Function(Base_Number_Density_Function):
 
 
 class Multiple_Number_Density_Function:
-    def __init__(self, number_density_function_arr: Union[list, np.array]) -> None:
+    def __init__(
+        self, number_density_function_arr: Union[list, np.array]
+    ) -> None:
         self.number_density_function_arr = number_density_function_arr
 
     @classmethod
@@ -694,9 +731,7 @@ class Multiple_Number_Density_Function:
             assert x_origin["code"].__class__.__name__ in [
                 code.__name__ for code in SED_code.__subclasses__()
             ]
-            SED_fit_params = (
-                x_origin  # redshifts must come from same SED fitting as x values
-            )
+            SED_fit_params = x_origin  # redshifts must come from same SED fitting as x values
         elif type(x_origin) in [str]:
             # convert to SED_fit_params
             SED_fit_params = x_origin.split("_")[0]
@@ -739,7 +774,10 @@ class Multiple_Number_Density_Function:
                 if Ngals[j] != 0:
                     dx = x_bin[1] - x_bin[0]
                     V_max = np.array(
-                        [gal.V_max[z_bin_name][cat.data.full_name] for gal in cat]
+                        [
+                            gal.V_max[z_bin_name][cat.data.full_name]
+                            for gal in cat
+                        ]
                     )
                     phi[j] = (np.sum(V_max**-1.0) / dx).value
                     # use standard Poisson errors if number of galaxies in bin is not small
@@ -750,14 +788,20 @@ class Multiple_Number_Density_Function:
                         phi_errs[j] = phi[j] * np.min(
                             np.abs(
                                 (
-                                    np.array(funcs.poisson_interval(len(V_max), 0.32))
+                                    np.array(
+                                        funcs.poisson_interval(
+                                            len(V_max), 0.32
+                                        )
+                                    )
                                     - len(V_max)
                                 )
                             )
                             / len(V_max)
                         )
                     cv_errs[j] = funcs.calc_cv_proper(
-                        float(z_bin[0]), float(z_bin[1]), fields_used=fields_used
+                        float(z_bin[0]),
+                        float(z_bin[1]),
+                        fields_used=fields_used,
                     )
                     phi_errs_cv[j] = np.sqrt(
                         phi_errs[j] ** 2.0 + (cv_errs[j] * phi[j]) ** 2.0

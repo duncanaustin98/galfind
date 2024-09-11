@@ -1,6 +1,6 @@
+import matplotlib.pyplot as plt
 import numpy as np
 import scipy
-import matplotlib.pyplot as plt
 
 """
 Use the prior coeff file to extrapoate the eazy prior to arbitrarily high redshift and faint magnitudes.
@@ -82,7 +82,9 @@ def go(
     out_matrix[:, 0] = z_grid
 
     for i in range(NM):
-        pz = z_grid ** gamma_grid[i] * np.exp(-((z_grid / z0_grid[i]) ** gamma_grid[i]))
+        pz = z_grid ** gamma_grid[i] * np.exp(
+            -((z_grid / z0_grid[i]) ** gamma_grid[i])
+        )
         pz /= np.trapz(pz, z_grid)
         plt.plot(z_grid, pz, label=mag_grid[i])
         out_matrix[:, i + 1] = pz

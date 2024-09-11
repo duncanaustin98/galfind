@@ -24,7 +24,13 @@ from . import galfind_logger
 
 class SED_result:
     def __init__(
-        self, SED_fit_params, phot, properties, property_errs, property_PDFs, SED
+        self,
+        SED_fit_params,
+        phot,
+        properties,
+        property_errs,
+        property_PDFs,
+        SED,
     ):
         self.SED_fit_params = SED_fit_params
         # [setattr(self, key, value) for key, value in SED_fit_params.items()]
@@ -76,9 +82,16 @@ class SED_result:
         return output_str
 
     def __getattr__(
-        self, property_name: str, origin: str = "SED_result", property_type: str = "val"
+        self,
+        property_name: str,
+        origin: str = "SED_result",
+        property_type: str = "val",
     ) -> Union[None, u.Quantity, u.Magnitude, u.Dex]:
-        assert origin in ["SED_result", "phot_rest", "SED"], galfind_logger.critical(
+        assert origin in [
+            "SED_result",
+            "phot_rest",
+            "SED",
+        ], galfind_logger.critical(
             f"SED_result.__getattr__ {origin=} not in ['SED_result', 'phot_rest']!"
         )
         property_type = property_type.lower()
@@ -102,7 +115,7 @@ class SED_result:
             if property_name not in access_dict.keys():
                 err_message = f"{property_name} {property_type} not available in SED_result object!"
                 galfind_logger.warning(err_message)
-                #raise AttributeError(err_message)
+                # raise AttributeError(err_message)
             else:
                 if property_type == "l1":
                     return access_dict[property_name][0]
@@ -139,7 +152,9 @@ class SED_result:
                     fits_cat_row, gal_property, SED_fit_params
                 )
             )
-            for gal_property in SED_fit_params["code"].galaxy_property_dict.keys()
+            for gal_property in SED_fit_params[
+                "code"
+            ].galaxy_property_dict.keys()
         }
         # extract best fitting errors from galaxy given the SED_fit_params
         property_errs = {
@@ -148,7 +163,9 @@ class SED_result:
                     fits_cat_row, gal_property, SED_fit_params
                 )
             )
-            for gal_property in SED_fit_params["code"].galaxy_property_dict.keys()
+            for gal_property in SED_fit_params[
+                "code"
+            ].galaxy_property_dict.keys()
         }
         # create property PDFs from galaxy given the SED_fit_params
         property_PDFs = {}
@@ -161,8 +178,12 @@ class SED_result:
 class Galaxy_SED_results:
     def __init__(self, SED_fit_params_arr, SED_result_arr):
         self.SED_results = {
-            SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params): SED_result
-            for SED_fit_params, SED_result in zip(SED_fit_params_arr, SED_result_arr)
+            SED_fit_params["code"].label_from_SED_fit_params(
+                SED_fit_params
+            ): SED_result
+            for SED_fit_params, SED_result in zip(
+                SED_fit_params_arr, SED_result_arr
+            )
         }
 
     def __len__(self):
@@ -203,7 +224,12 @@ class Galaxy_SED_results:
     ):
         SED_result_arr = [
             SED_result(
-                SED_fit_params, phot, properties, property_errs, property_PDFs, SED
+                SED_fit_params,
+                phot,
+                properties,
+                property_errs,
+                property_PDFs,
+                SED,
             )
             for SED_fit_params, properties, property_errs, property_PDFs, SED in zip(
                 SED_fit_params_arr,
@@ -239,7 +265,9 @@ class Catalogue_SED_results:
             if timed:
                 cat_PDF_paths = [
                     cat.phot_PDF_paths[
-                        SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)
+                        SED_fit_params["code"].label_from_SED_fit_params(
+                            SED_fit_params
+                        )
                     ]
                     for SED_fit_params in tqdm(
                         SED_fit_params_arr,
@@ -250,7 +278,9 @@ class Catalogue_SED_results:
             else:
                 cat_PDF_paths = [
                     cat.phot_PDF_paths[
-                        SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)
+                        SED_fit_params["code"].label_from_SED_fit_params(
+                            SED_fit_params
+                        )
                     ]
                     for SED_fit_params in SED_fit_params_arr
                 ]
@@ -260,7 +290,9 @@ class Catalogue_SED_results:
             if timed:
                 cat_SED_paths = [
                     cat.phot_SED_paths[
-                        SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)
+                        SED_fit_params["code"].label_from_SED_fit_params(
+                            SED_fit_params
+                        )
                     ]
                     for SED_fit_params in tqdm(
                         SED_fit_params_arr,
@@ -271,7 +303,9 @@ class Catalogue_SED_results:
             else:
                 cat_SED_paths = [
                     cat.phot_SED_paths[
-                        SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)
+                        SED_fit_params["code"].label_from_SED_fit_params(
+                            SED_fit_params
+                        )
                     ]
                     for SED_fit_params in SED_fit_params_arr
                 ]
@@ -281,7 +315,9 @@ class Catalogue_SED_results:
 
         SED_fit_cats = [
             cat.open_cat(
-                hdu=SED_fit_params["code"].hdu_from_SED_fit_params(SED_fit_params),
+                hdu=SED_fit_params["code"].hdu_from_SED_fit_params(
+                    SED_fit_params
+                ),
                 cropped=True,
             )
             for SED_fit_params in SED_fit_params_arr
@@ -345,24 +381,30 @@ class Catalogue_SED_results:
 
         # assume properties all come from the same table if only a single catalogue is given
         if type(SED_fit_cats) in [Table]:
-            SED_fit_cats = [SED_fit_cats for i in range(len(SED_fit_params_arr))]
+            SED_fit_cats = [
+                SED_fit_cats for i in range(len(SED_fit_params_arr))
+            ]
 
         # determine IDs
         ID_labels = [
-            SED_fit_params["code"].ID_label for SED_fit_params in SED_fit_params_arr
+            SED_fit_params["code"].ID_label
+            for SED_fit_params in SED_fit_params_arr
         ]
         IDs_arr = [
             np.array(fits_cat[ID_label]).astype(int)
             for fits_cat, ID_label in zip(SED_fit_cats, ID_labels)
         ]
-        galfind_logger.warning("Photometric IDs required in SED_result.from_fits_cat()")
+        galfind_logger.warning(
+            "Photometric IDs required in SED_result.from_fits_cat()"
+        )
         assert all(
             len(IDs) == len(phot_arr) for IDs in IDs_arr
         ), galfind_logger.critical(
             f"Not all catalogues in {SED_fit_params_arr=} have the same length as phot_cat. {[len(IDs) for IDs in IDs_arr]=} != {len(phot_arr)=}"
         )
         assert all(
-            all(IDs[i] == IDs_arr[0][i] for i in range(len(IDs))) for IDs in IDs_arr
+            all(IDs[i] == IDs_arr[0][i] for i in range(len(IDs)))
+            for IDs in IDs_arr
         ), galfind_logger.critical(
             f"Not all catalogues in {SED_fit_params_arr=} have the same IDs!"
         )
@@ -372,8 +414,12 @@ class Catalogue_SED_results:
         # to array of len(fits_cat), with each element an array of len(SED_fit_params_arr) containing a dict of properties for a single galaxy
         labels_arr = [
             {
-                key: SED_fit_params["code"].galaxy_property_labels(key, SED_fit_params)
-                for key, val in SED_fit_params["code"].galaxy_property_dict.items()
+                key: SED_fit_params["code"].galaxy_property_labels(
+                    key, SED_fit_params
+                )
+                for key, val in SED_fit_params[
+                    "code"
+                ].galaxy_property_dict.items()
             }
             for SED_fit_params in SED_fit_params_arr
         ]
@@ -388,8 +434,11 @@ class Catalogue_SED_results:
             [
                 {
                     key: value[i]
-                    * u.Unit(SED_fit_params["code"].gal_property_unit_dict[key])
-                    if key in SED_fit_params["code"].gal_property_unit_dict.keys()
+                    * u.Unit(
+                        SED_fit_params["code"].gal_property_unit_dict[key]
+                    )
+                    if key
+                    in SED_fit_params["code"].gal_property_unit_dict.keys()
                     else value[i] * u.dimensionless_unscaled
                     for key, value in SED_fitting_properties.items()
                 }
@@ -407,7 +456,9 @@ class Catalogue_SED_results:
                 key: SED_fit_params["code"].galaxy_property_labels(
                     key, SED_fit_params, is_err=True
                 )
-                for key, val in SED_fit_params["code"].galaxy_property_errs_dict.items()
+                for key, val in SED_fit_params[
+                    "code"
+                ].galaxy_property_errs_dict.items()
             }
             for SED_fit_params in SED_fit_params_arr
         ]
@@ -415,7 +466,9 @@ class Catalogue_SED_results:
         assert all(
             err_key in labels.keys()
             for labels, SED_fit_params in zip(labels_arr, SED_fit_params_arr)
-            for err_key in SED_fit_params["code"].galaxy_property_errs_dict.keys()
+            for err_key in SED_fit_params[
+                "code"
+            ].galaxy_property_errs_dict.keys()
         )
         adjust_errs_arr = [
             SED_fit_params["code"].are_errs_percentiles
@@ -436,7 +489,10 @@ class Catalogue_SED_results:
                     )[1]
                 )
                 if adjust_errs
-                else [list(fits_cat[err_label[0]]), list(fits_cat[err_label[1]])]
+                else [
+                    list(fits_cat[err_label[0]]),
+                    list(fits_cat[err_label[1]]),
+                ]
                 for gal_property, err_label in err_labels.items()
             }
             for adjust_errs, labels, err_labels, fits_cat in zip(
@@ -456,7 +512,9 @@ class Catalogue_SED_results:
 
         if timed:
             mid = time.time()
-            print(f"Loading properties and associated errors took {(mid - start):.1f}s")
+            print(
+                f"Loading properties and associated errors took {(mid - start):.1f}s"
+            )
 
         # load in PDFs
         # make array of the correct shape for appropriate parsing
@@ -465,7 +523,9 @@ class Catalogue_SED_results:
 
         if type(cat_PDF_paths) != type(None):
             assert len(SED_fit_params_arr) == len(cat_PDF_paths)
-            cat_property_PDFs = np.full((len(IDs), len(SED_fit_params_arr)), None)
+            cat_property_PDFs = np.full(
+                (len(IDs), len(SED_fit_params_arr)), None
+            )
             # loop through SED_fit_params_arr and corresponding cat_PDF_paths
             for i, (SED_fit_params, PDF_paths) in enumerate(
                 zip(SED_fit_params_arr, cat_PDF_paths)
@@ -479,7 +539,10 @@ class Catalogue_SED_results:
                 # construct PDF objects, type = array of len(fits_cat), each element a dict of {gal_property: PDF object} excluding None PDFs
                 cat_property_PDFs_ = {
                     gal_property: SED_fit_params["code"].extract_PDFs(
-                        gal_property, IDs, PDF_paths[gal_property], SED_fit_params
+                        gal_property,
+                        IDs,
+                        PDF_paths[gal_property],
+                        SED_fit_params,
                     )
                     for gal_property in PDF_paths.keys()
                 }
@@ -520,7 +583,9 @@ class Catalogue_SED_results:
                     ].galaxy_property_dict.keys()
                 )
                 # construct SED objects, type = array of len(fits_cat), each element containing an SED object
-                cat_SEDs[:, i] = SED_fit_params["code"].extract_SEDs(IDs, SED_paths)
+                cat_SEDs[:, i] = SED_fit_params["code"].extract_SEDs(
+                    IDs, SED_paths
+                )
         else:
             galfind_logger.info("Not loading catalogue SEDs")
             cat_SEDs = None
@@ -537,7 +602,9 @@ class Catalogue_SED_results:
         )
         if timed:
             end = time.time()
-            print("Loading PDFs, SEDs: ", start - start_1, mid - start, end - mid)
+            print(
+                "Loading PDFs, SEDs: ", start - start_1, mid - start, end - mid
+            )
         return cls_obj
 
     @classmethod
@@ -556,7 +623,8 @@ class Catalogue_SED_results:
             cat_property_PDFs_ = np.array(
                 list(
                     itertools.repeat(
-                        list(itertools.repeat(None, out_shape[1])), out_shape[0]
+                        list(itertools.repeat(None, out_shape[1])),
+                        out_shape[0],
                     )
                 )
             )
@@ -568,7 +636,8 @@ class Catalogue_SED_results:
             cat_SEDs_ = np.array(
                 list(
                     itertools.repeat(
-                        list(itertools.repeat(None, out_shape[1])), out_shape[0]
+                        list(itertools.repeat(None, out_shape[1])),
+                        out_shape[0],
                     )
                 )
             )
@@ -579,7 +648,12 @@ class Catalogue_SED_results:
         cat_SED_results = [
             [
                 SED_result(
-                    SED_fit_params, phot, properties, property_errs, property_PDFs, SED
+                    SED_fit_params,
+                    phot,
+                    properties,
+                    property_errs,
+                    property_PDFs,
+                    SED,
                 )
                 for SED_fit_params, properties, property_errs, property_PDFs, SED in zip(
                     SED_fit_params_arr,

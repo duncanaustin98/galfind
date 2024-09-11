@@ -13,6 +13,7 @@ from copy import deepcopy
 from tqdm import tqdm
 from scipy.optimize import curve_fit
 import inspect
+from copy import deepcopy
 from typing import Union
 
 from . import galfind_logger, Photometry, PDF, PDF_nD
@@ -20,6 +21,8 @@ from . import useful_funcs_austind as funcs
 from .Emission_lines import line_diagnostics, strong_optical_lines
 from .Dust_Attenuation import AUV_from_beta, Dust_Attenuation
 from .decorators import ignore_warnings
+from .Dust_Attenuation import AUV_from_beta, Dust_Attenuation
+from .Emission_lines import line_diagnostics, strong_optical_lines
 
 
 class beta_fit:
@@ -53,7 +56,9 @@ class beta_fit:
         )
 
 
-SFR_conversions = {"MD14": 1.15e-28 * (u.solMass / u.yr) / (u.erg / (u.s * u.Hz))}
+SFR_conversions = {
+    "MD14": 1.15e-28 * (u.solMass / u.yr) / (u.erg / (u.s * u.Hz))
+}
 
 fesc_from_beta_conversions = {
     "Chisholm22": lambda beta: np.random.normal(1.3, 0.6, len(beta))
@@ -84,16 +89,24 @@ class Photometry_rest(Photometry):
     @classmethod
     def from_fits_cat(cls, fits_cat_row, instrument, cat_creator, code):
         phot = Photometry.from_fits_cat(fits_cat_row, instrument, cat_creator)
-        return cls.from_phot(phot, np.float(fits_cat_row[code.galaxy_properties["z"]]))
+        return cls.from_phot(
+            phot, np.float(fits_cat_row[code.galaxy_properties["z"]])
+        )
 
     @classmethod
     def from_phot(cls, phot, z):
-        return cls(phot.instrument, phot.flux_Jy, phot.flux_Jy_errs, phot.depths, z)
+        return cls(
+            phot.instrument, phot.flux_Jy, phot.flux_Jy_errs, phot.depths, z
+        )
 
     @classmethod
     def from_phot_obs(cls, phot):
         return cls(
-            phot.instrument, phot.flux_Jy, phot.flux_Jy_errs, phot.depths, phot.z
+            phot.instrument,
+            phot.flux_Jy,
+            phot.flux_Jy_errs,
+            phot.depths,
+            phot.z,
         )
 
     def __str__(self, print_PDFs=True):
@@ -133,7 +146,9 @@ class Photometry_rest(Photometry):
             )
             # boolean output to say whether property has been recently updated
             if property_type == "recently_updated":
-                return True if property_name in self.recently_updated else False
+                return (
+                    True if property_name in self.recently_updated else False
+                )
             else:
                 # extract relevant property if name in dict.keys()
                 if property_type == "val":
@@ -169,7 +184,9 @@ class Photometry_rest(Photometry):
         return result
 
     @property
-    def first_Lya_detect_band(self, Lya_wav=line_diagnostics["Lya"]["line_wav"]):
+    def first_Lya_detect_band(
+        self, Lya_wav=line_diagnostics["Lya"]["line_wav"]
+    ):
         try:
             return self._first_Lya_detect_band
         except AttributeError:
@@ -184,7 +201,9 @@ class Photometry_rest(Photometry):
             return self._first_Lya_detect_band
 
     @property
-    def first_Lya_non_detect_band(self, Lya_wav=line_diagnostics["Lya"]["line_wav"]):
+    def first_Lya_non_detect_band(
+        self, Lya_wav=line_diagnostics["Lya"]["line_wav"]
+    ):
         try:
             return self._first_Lya_non_detect_band
         except AttributeError:
@@ -226,7 +245,9 @@ class Photometry_rest(Photometry):
         phot_matrix = np.array(
             [
                 np.random.normal(flux, err, n_scatter)
-                for flux, err in zip(self.flux_Jy.value, self.flux_Jy_errs.value)
+                for flux, err in zip(
+                    self.flux_Jy.value, self.flux_Jy_errs.value
+                )
             ]
         )
         return [
@@ -269,7 +290,9 @@ class Photometry_rest(Photometry):
             > rest_UV_wav_lims.value[1] * (1.0 + self.z)
         ]
         phot_rest_copy.crop_phot(crop_indices)
-        phot_rest_copy.UV_wav_range = phot_rest_copy.rest_UV_wavs_name(rest_UV_wav_lims)
+        phot_rest_copy.UV_wav_range = phot_rest_copy.rest_UV_wavs_name(
+            rest_UV_wav_lims
+        )
         return phot_rest_copy
 
     def is_correctly_UV_cropped(self, rest_UV_wav_lims):
@@ -333,8 +356,12 @@ class Photometry_rest(Photometry):
                 # run already to the required length
                 return [
                     {
-                        "vals": self.property_PDFs[PL_amplitude_name].input_arr,
-                        "PDF_kwargs": self.property_PDFs[PL_amplitude_name].kwargs,
+                        "vals": self.property_PDFs[
+                            PL_amplitude_name
+                        ].input_arr,
+                        "PDF_kwargs": self.property_PDFs[
+                            PL_amplitude_name
+                        ].kwargs,
                     },
                     {
                         "vals": self.property_PDFs[property_name].input_arr,
@@ -354,7 +381,9 @@ class Photometry_rest(Photometry):
                 return [np.nan, np.nan], {}
             if output_kwargs:
                 kwargs = {
-                    "rest_UV_band_names": "+".join(rest_UV_phot.instrument.band_names),
+                    "rest_UV_band_names": "+".join(
+                        rest_UV_phot.instrument.band_names
+                    ),
                     "n_UV_bands": len(rest_UV_phot.instrument),
                 }
             else:
@@ -385,12 +414,19 @@ class Photometry_rest(Photometry):
                     ]
                     * u.AA,
                     rest_UV_phot.flux_Jy,
-                    [rest_UV_phot.flux_Jy_errs.value, rest_UV_phot.flux_Jy_errs.value]
+                    [
+                        rest_UV_phot.flux_Jy_errs.value,
+                        rest_UV_phot.flux_Jy_errs.value,
+                    ]
                     * rest_UV_phot.flux_Jy_errs.unit,
                     u.erg / (u.s * u.AA * u.cm**2),
                 )
                 return curve_fit(
-                    beta_fit_func, None, f_lambda, sigma=f_lambda_errs[0], maxfev=maxfev
+                    beta_fit_func,
+                    None,
+                    f_lambda,
+                    sigma=f_lambda_errs[0],
+                    maxfev=maxfev,
                 )[0], kwargs  # , [PL_amplitude_name, property_name]
         else:
             if len(rest_UV_phot) == 0:
@@ -419,7 +455,9 @@ class Photometry_rest(Photometry):
                 A_arr = (10 ** popt_arr[:, 0]) * u.erg / (u.s * u.AA * u.cm**2)
                 beta_arr = popt_arr[:, 1] * u.dimensionless_unscaled
                 PDF_kwargs = {
-                    "rest_UV_band_names": "+".join(rest_UV_phot.instrument.band_names),
+                    "rest_UV_band_names": "+".join(
+                        rest_UV_phot.instrument.band_names
+                    ),
                     "n_UV_bands": len(rest_UV_phot.instrument),
                 }
                 return [
@@ -438,16 +476,16 @@ class Photometry_rest(Photometry):
     ):
         assert type(single_iter) == bool
         assert conv_author_year in fesc_from_beta_conversions.keys()
-        property_name = (
-            f"fesc_{conv_author_year}"  # _{self.rest_UV_wavs_name(rest_UV_wav_lims)}"
-        )
+        property_name = f"fesc_{conv_author_year}"  # _{self.rest_UV_wavs_name(rest_UV_wav_lims)}"
         if extract_property_name:
             return [property_name]
         if single_iter:
             popt, kwargs = self.calc_beta_phot(
                 rest_UV_wav_lims, output_kwargs=True, single_iter=True
             )
-            return fesc_from_beta_conversions[conv_author_year](popt[1]), kwargs
+            return fesc_from_beta_conversions[conv_author_year](
+                popt[1]
+            ), kwargs
         else:
             beta_property_name = self._calc_property(
                 Photometry_rest.calc_beta_phot,
@@ -461,7 +499,9 @@ class Photometry_rest(Photometry):
             else:
                 return [
                     {
-                        "PDF": self.property_PDFs[beta_property_name].manipulate_PDF(
+                        "PDF": self.property_PDFs[
+                            beta_property_name
+                        ].manipulate_PDF(
                             property_name,
                             fesc_from_beta_conversions[conv_author_year],
                             size=iters,
@@ -490,7 +530,9 @@ class Photometry_rest(Photometry):
             popt, kwargs = self.calc_beta_phot(
                 rest_UV_wav_lims=rest_UV_wav_lims, single_iter=True
             )
-            return dust_author_year_cls()(popt[1] * u.dimensionless_unscaled), kwargs
+            return dust_author_year_cls()(
+                popt[1] * u.dimensionless_unscaled
+            ), kwargs
         else:
             beta_property_name = self._calc_property(
                 Photometry_rest.calc_beta_phot,
@@ -503,7 +545,9 @@ class Photometry_rest(Photometry):
             else:
                 return [
                     {
-                        "PDF": self.property_PDFs[beta_property_name].manipulate_PDF(
+                        "PDF": self.property_PDFs[
+                            beta_property_name
+                        ].manipulate_PDF(
                             property_name, dust_author_year_cls(), size=iters
                         )
                     }
@@ -525,7 +569,9 @@ class Photometry_rest(Photometry):
         if extract_property_name:
             return [property_name]
         if single_iter:
-            popt, kwargs = self.calc_beta_phot(rest_UV_wav_lims, single_iter=True)
+            popt, kwargs = self.calc_beta_phot(
+                rest_UV_wav_lims, single_iter=True
+            )
         else:
             name_arr = self._calc_property(
                 Photometry_rest.calc_beta_phot,
@@ -550,7 +596,9 @@ class Photometry_rest(Photometry):
                 ref_wav + top_hat_width / 2,
                 int(
                     np.round(
-                        (top_hat_width / resolution).to(u.dimensionless_unscaled).value,
+                        (top_hat_width / resolution)
+                        .to(u.dimensionless_unscaled)
+                        .value,
                         0,
                     )
                 ),
@@ -558,7 +606,9 @@ class Photometry_rest(Photometry):
             u.AA,
         )
         if single_iter:
-            chain = funcs.power_law_beta_func(rest_wavelengths.value, popt[0], popt[1])
+            chain = funcs.power_law_beta_func(
+                rest_wavelengths.value, popt[0], popt[1]
+            )
             mUV = (
                 np.array(
                     np.median(
@@ -593,7 +643,10 @@ class Photometry_rest(Photometry):
                 * u.ABmag
             )
             return [
-                {"vals": mUV_chain, "PDF_kwargs": self.property_PDFs[beta_name].kwargs}
+                {
+                    "vals": mUV_chain,
+                    "PDF_kwargs": self.property_PDFs[beta_name].kwargs,
+                }
             ], [property_name]
 
     def calc_MUV_phot(
@@ -619,14 +672,17 @@ class Photometry_rest(Photometry):
         else:
             return [
                 {
-                    "PDF": self.property_PDFs[mUV_property_name].manipulate_PDF(
+                    "PDF": self.property_PDFs[
+                        mUV_property_name
+                    ].manipulate_PDF(
                         property_name,
                         lambda mUV: mUV.unit
                         * (
                             mUV.value
                             - 5.0
                             * np.log10(
-                                funcs.calc_lum_distance(self.z).to(u.pc).value / 10.0
+                                funcs.calc_lum_distance(self.z).to(u.pc).value
+                                / 10.0
                             )
                             + 2.5 * np.log10(1.0 + self.z)
                         ),
@@ -706,10 +762,9 @@ class Photometry_rest(Photometry):
                 return UV_lum, mUV_kwargs
             else:
                 breakpoint()
-                return funcs.dust_correct(np.array(UV_lum), dust_mag=np.array(AUV)), {
-                    **mUV_kwargs,
-                    **AUV_kwargs,
-                }
+                return funcs.dust_correct(
+                    np.array(UV_lum), dust_mag=np.array(AUV)
+                ), {**mUV_kwargs, **AUV_kwargs}
         else:
             UV_lum = self.property_PDFs[mUV_property_name].manipulate_PDF(
                 property_name,
@@ -725,7 +780,9 @@ class Photometry_rest(Photometry):
                 PDF = UV_lum.manipulate_PDF(
                     property_name,
                     funcs.dust_correct,
-                    dust_mag=self.property_PDFs[AUV_property_name].input_arr[-iters:],
+                    dust_mag=self.property_PDFs[AUV_property_name].input_arr[
+                        -iters:
+                    ],
                     size=iters,
                 )
             return [{"PDF": PDF}], [property_name]
@@ -760,9 +817,12 @@ class Photometry_rest(Photometry):
         else:
             return [
                 {
-                    "PDF": self.property_PDFs[LUV_property_name].manipulate_PDF(
+                    "PDF": self.property_PDFs[
+                        LUV_property_name
+                    ].manipulate_PDF(
                         property_name,
-                        lambda LUV: LUV * SFR_conversions[kappa_UV_conv_author_year],
+                        lambda LUV: LUV
+                        * SFR_conversions[kappa_UV_conv_author_year],
                         size=iters,
                     )
                 }
@@ -780,7 +840,10 @@ class Photometry_rest(Photometry):
         assert type(single_iter) == bool
         if type(strong_line_names) in [str]:
             strong_line_names = [strong_line_names]
-        assert all(line_name in strong_optical_lines for line_name in strong_line_names)
+        assert all(
+            line_name in strong_optical_lines
+            for line_name in strong_line_names
+        )
         property_name = f"cont_{'+'.join(strong_line_names)}"
         if extract_property_name:
             return [property_name]
@@ -788,7 +851,8 @@ class Photometry_rest(Photometry):
         # dlambda = {line_name: self._get_wav_line_precision(line_name, dz) for line_name in strong_line_names}
         # determine the band which contains the first line
         emission_band = self.instrument.nearest_band_to_wavelength(
-            line_diagnostics[strong_line_names[0]]["line_wav"] * (1.0 + self.z),
+            line_diagnostics[strong_line_names[0]]["line_wav"]
+            * (1.0 + self.z),
             medium_bands_only=False,
             check_wavelength_in_band=False,
         )
@@ -821,11 +885,13 @@ class Photometry_rest(Photometry):
         for band in self.instrument:
             if (
                 band.WavelengthUpper50 < rest_optical_wavs[1] * (1.0 + self.z)
-                and band.WavelengthLower50 > rest_optical_wavs[0] * (1.0 + self.z)
+                and band.WavelengthLower50
+                > rest_optical_wavs[0] * (1.0 + self.z)
                 and not any(
                     line_diagnostics[line_name]["line_wav"] * (1.0 + self.z)
                     < band.WavelengthUpper50
-                    and line_diagnostics[line_name]["line_wav"] * (1.0 + self.z)
+                    and line_diagnostics[line_name]["line_wav"]
+                    * (1.0 + self.z)
                     > band.WavelengthLower50
                     for line_name in strong_optical_lines
                 )
@@ -847,7 +913,9 @@ class Photometry_rest(Photometry):
                 u.nJy,
             ).value
             if single_iter:
-                cont_flux_chains[band.band_name] = np.array(cont_flux_nJy) * u.nJy
+                cont_flux_chains[band.band_name] = (
+                    np.array(cont_flux_nJy) * u.nJy
+                )
             else:
                 # errors in Jy are symmetric, therefore take the mean
                 cont_flux_nJy_errs = np.mean(
@@ -865,19 +933,24 @@ class Photometry_rest(Photometry):
                     ]
                 )
                 cont_flux_chains[band.band_name] = (
-                    np.random.normal(cont_flux_nJy, cont_flux_nJy_errs, iters) * u.nJy
+                    np.random.normal(cont_flux_nJy, cont_flux_nJy_errs, iters)
+                    * u.nJy
                 )
         # calculate potential contaminant lines
         lims = [
             np.min(
                 [
-                    (emission_band.WavelengthLower50 / (1.0 + self.z)).to(u.AA).value
+                    (emission_band.WavelengthLower50 / (1.0 + self.z))
+                    .to(u.AA)
+                    .value
                     for name in strong_line_names
                 ]
             ),
             np.max(
                 [
-                    (emission_band.WavelengthUpper50 / (1.0 + self.z)).to(u.AA).value
+                    (emission_band.WavelengthUpper50 / (1.0 + self.z))
+                    .to(u.AA)
+                    .value
                     for name in strong_line_names
                 ]
             ),
@@ -912,10 +985,15 @@ class Photometry_rest(Photometry):
                 (band.WavelengthCen.to(u.AA) / (1.0 + self.z)).value
                 for band in cont_bands
             ]
-            em_wav = (emission_band.WavelengthCen.to(u.AA) / (1.0 + self.z)).value
+            # blue_wav = (cont_bands[0].WavelengthCen.to(u.AA) / (1. + self.z)).value
+            # red_wav = (cont_bands[1].WavelengthCen.to(u.AA) / (1. + self.z)).value
+            em_wav = (
+                emission_band.WavelengthCen.to(u.AA) / (1.0 + self.z)
+            ).value
             if single_iter:
                 cont_fluxes = [
-                    cont_flux_chains[band.band_name].value for band in cont_bands
+                    cont_flux_chains[band.band_name].value
+                    for band in cont_bands
                 ]
                 popt, pcov = curve_fit(
                     funcs.simple_power_law_func, cont_wavs, cont_fluxes
@@ -923,10 +1001,17 @@ class Photometry_rest(Photometry):
                 return np.array(
                     funcs.simple_power_law_func(em_wav, *popt)
                 ) * u.nJy, kwargs
+                # return np.interp(em_wav, cont_wavs, [cont_flux_chains[cont_bands[0].band_name].value, \
+                #     cont_flux_chains[cont_bands[1].band_name].value]) * u.nJy, kwargs
             else:
                 cont_fluxes = [
-                    [cont_flux_chains[band.band_name][i].value for band in cont_bands]
-                    for i in range(len(cont_flux_chains[cont_bands[0].band_name]))
+                    [
+                        cont_flux_chains[band.band_name][i].value
+                        for band in cont_bands
+                    ]
+                    for i in range(
+                        len(cont_flux_chains[cont_bands[0].band_name])
+                    )
                 ]
                 cont_chains = (
                     np.array(
@@ -934,7 +1019,9 @@ class Photometry_rest(Photometry):
                             funcs.simple_power_law(
                                 em_wav,
                                 *curve_fit(
-                                    funcs.simple_power_law_func, cont_wavs, cont_fluxes_
+                                    funcs.simple_power_law_func,
+                                    cont_wavs,
+                                    cont_fluxes_,
                                 )[0],
                             )
                             for cont_fluxes_ in cont_fluxes
@@ -942,7 +1029,9 @@ class Photometry_rest(Photometry):
                     )
                     * u.nJy
                 )
-                return [{"vals": cont_chains, "PDF_kwargs": kwargs}], [property_name]
+                return [{"vals": cont_chains, "PDF_kwargs": kwargs}], [
+                    property_name
+                ]
         else:
             breakpoint()
 
@@ -960,7 +1049,10 @@ class Photometry_rest(Photometry):
         if type(strong_line_names) in [str]:
             strong_line_names = [strong_line_names]
         assert frame in ["rest", "obs"]
-        assert all(line_name in strong_optical_lines for line_name in strong_line_names)
+        assert all(
+            line_name in strong_optical_lines
+            for line_name in strong_line_names
+        )
 
         property_name = f"EW{frame}_{'+'.join(strong_line_names)}"
         if extract_property_name:
@@ -985,7 +1077,8 @@ class Photometry_rest(Photometry):
                 return [None], [property_name]
         # determine the band which contains the first line
         emission_band = self.instrument.nearest_band_to_wavelength(
-            line_diagnostics[strong_line_names[0]]["line_wav"] * (1.0 + self.z),
+            line_diagnostics[strong_line_names[0]]["line_wav"]
+            * (1.0 + self.z),
             medium_bands_only=False,
             check_wavelength_in_band=False,
         )
@@ -993,7 +1086,9 @@ class Photometry_rest(Photometry):
             emission_band.band_name
         )
         line_flux_Jy = funcs.convert_mag_units(
-            emission_band.WavelengthCen, self.flux_Jy[emission_band_index], u.Jy
+            emission_band.WavelengthCen,
+            self.flux_Jy[emission_band_index],
+            u.Jy,
         ).value
         if single_iter:
             line_flux_Jy = np.array(line_flux_Jy) * u.Jy
@@ -1016,24 +1111,34 @@ class Photometry_rest(Photometry):
             line_flux_Jy_chain = (
                 np.random.normal(line_flux_Jy, line_flux_Jy_errs, iters) * u.Jy
             )
-        bandwidth = emission_band.WavelengthUpper50 - emission_band.WavelengthLower50
+        bandwidth = (
+            emission_band.WavelengthUpper50 - emission_band.WavelengthLower50
+        )
         if single_iter:
             if frame == "rest":
                 return (
-                    ((line_flux_Jy / cont_val).to(u.dimensionless_unscaled) - 1.0)
+                    (
+                        (line_flux_Jy / cont_val).to(u.dimensionless_unscaled)
+                        - 1.0
+                    )
                     * bandwidth
                     / (1.0 + self.z)
                 ).to(u.AA), cont_kwargs
             else:  # frame == "obs"
                 return (
-                    ((line_flux_Jy / cont_val).to(u.dimensionless_unscaled) - 1.0)
+                    (
+                        (line_flux_Jy / cont_val).to(u.dimensionless_unscaled)
+                        - 1.0
+                    )
                     * bandwidth
                 ).to(u.AA), cont_kwargs
         else:
             if frame == "rest":
                 calc_EW_func = lambda cont_flux_Jy: (
                     (
-                        (line_flux_Jy_chain / cont_flux_Jy).to(u.dimensionless_unscaled)
+                        (line_flux_Jy_chain / cont_flux_Jy).to(
+                            u.dimensionless_unscaled
+                        )
                         - 1.0
                     )
                     * bandwidth
@@ -1042,16 +1147,18 @@ class Photometry_rest(Photometry):
             else:  # frame == "obs"
                 calc_EW_func = lambda cont_flux_Jy: (
                     (
-                        (line_flux_Jy_chain / cont_flux_Jy).to(u.dimensionless_unscaled)
+                        (line_flux_Jy_chain / cont_flux_Jy).to(
+                            u.dimensionless_unscaled
+                        )
                         - 1.0
                     )
                     * bandwidth
                 ).to(u.AA)
             return [
                 {
-                    "PDF": self.property_PDFs[cont_property_name].manipulate_PDF(
-                        property_name, calc_EW_func, size=iters
-                    )
+                    "PDF": self.property_PDFs[
+                        cont_property_name
+                    ].manipulate_PDF(property_name, calc_EW_func, size=iters)
                 }
             ], [property_name]
 
@@ -1150,7 +1257,8 @@ class Photometry_rest(Photometry):
             strong_line_names = [strong_line_names]
         assert frame in ["rest", "obs"]
         assert all(
-            line_name in line_diagnostics.keys() for line_name in strong_line_names
+            line_name in line_diagnostics.keys()
+            for line_name in strong_line_names
         )
 
         dust_label = self._get_dust_corr_label(
@@ -1158,7 +1266,9 @@ class Photometry_rest(Photometry):
             dust_law=dust_law,
             dust_origin=dust_origin,
         )
-        property_name = f"flux_{'+'.join(strong_line_names)}_{frame}{dust_label}"
+        property_name = (
+            f"flux_{'+'.join(strong_line_names)}_{frame}{dust_label}"
+        )
         if extract_property_name:
             return [property_name]
         if single_iter:
@@ -1284,7 +1394,9 @@ class Photometry_rest(Photometry):
             dust_law=dust_law,
             dust_origin=dust_origin,
         )
-        property_name = f"lum_{'+'.join(strong_line_names)}_{frame}{dust_label}"
+        property_name = (
+            f"lum_{'+'.join(strong_line_names)}_{frame}{dust_label}"
+        )
         if extract_property_name:
             return [property_name]
 
@@ -1328,7 +1440,9 @@ class Photometry_rest(Photometry):
                 u.erg / u.s
             ), line_flux_kwargs
         else:
-            out_PDF = self.property_PDFs[line_flux_property_name].manipulate_PDF(
+            out_PDF = self.property_PDFs[
+                line_flux_property_name
+            ].manipulate_PDF(
                 property_name,
                 lambda line_flux: (4 * np.pi * line_flux * lum_distance**2).to(
                     u.erg / u.s
@@ -1392,7 +1506,9 @@ class Photometry_rest(Photometry):
             if single_iter:
                 fesc = np.array(float(fesc_author_year.split("=")[-1]))
             else:
-                fesc_chain = np.full(iters, float(fesc_author_year.split("=")[-1]))
+                fesc_chain = np.full(
+                    iters, float(fesc_author_year.split("=")[-1])
+                )
         else:
             raise NotImplementedError
         if single_iter:
@@ -1408,14 +1524,18 @@ class Photometry_rest(Photometry):
                 single_iter=True,
             )
             L_UV, L_UV_kwargs = self.calc_LUV_phot(
-                frame, rest_UV_wav_lims, ref_wav, dust_author_year, single_iter=True
+                frame,
+                rest_UV_wav_lims,
+                ref_wav,
+                dust_author_year,
+                single_iter=True,
             )
             if any(np.isnan(name) for name in [line_lum, L_UV]):
                 return np.nan, {}
             else:
-                return (line_lum / (1.36e-12 * u.erg * (1.0 - fesc) * L_UV)).to(
-                    u.Hz / u.erg
-                ), {**line_kwargs, **L_UV_kwargs}
+                return (
+                    line_lum / (1.36e-12 * u.erg * (1.0 - fesc) * L_UV)
+                ).to(u.Hz / u.erg), {**line_kwargs, **L_UV_kwargs}
         else:
             line_lum_property_name = self._calc_property(
                 SED_rest_property_function=Photometry_rest.calc_line_lum_rest_optical,
@@ -1445,7 +1565,9 @@ class Photometry_rest(Photometry):
             ):
                 return [None], [property_name]
             # calculate xi_ion from Halpha luminosity assuming some case (A/B) for ISM recombination
-            out_PDF = self.property_PDFs[line_lum_property_name].manipulate_PDF(
+            out_PDF = self.property_PDFs[
+                line_lum_property_name
+            ].manipulate_PDF(
                 property_name,
                 lambda int_line_lum: (
                     int_line_lum
@@ -1478,7 +1600,8 @@ class Photometry_rest(Photometry):
         if dust_origin != "UV":
             raise NotImplementedError
         if any(
-            type(dust_name) == type(None) for dust_name in [dust_author_year, dust_law]
+            type(dust_name) == type(None)
+            for dust_name in [dust_author_year, dust_law]
         ):
             return ""
         else:
@@ -1487,7 +1610,9 @@ class Photometry_rest(Photometry):
     def _get_rest_optical_flux_contam_label(
         self, line_names: list, flux_contamination_params: dict
     ):
-        assert all(line_name in line_diagnostics.keys() for line_name in line_names)
+        assert all(
+            line_name in line_diagnostics.keys() for line_name in line_names
+        )
         assert type(flux_contamination_params) == dict
         flux_cont_keys = flux_contamination_params.keys()
         if "mu" in flux_cont_keys and "sigma" in flux_cont_keys:
@@ -1575,13 +1700,18 @@ class Photometry_rest(Photometry):
                 self.property_PDFs[property_name] = None
             else:
                 if type(property) not in [dict]:
-                    galfind_logger.critical(f"{type(property)=} not in [dict]!")
+                    galfind_logger.critical(
+                        f"{type(property)=} not in [dict]!"
+                    )
                     breakpoint()
                 # breakpoint()
                 # construct PDF from property output if required
                 if "PDF" in property.keys():
                     new_PDF = property["PDF"]
-                elif "vals" in property.keys() and "PDF_kwargs" in property.keys():
+                elif (
+                    "vals" in property.keys()
+                    and "PDF_kwargs" in property.keys()
+                ):
                     new_PDF = PDF.from_1D_arr(
                         property_name, property["vals"], property["PDF_kwargs"]
                     )
@@ -1600,7 +1730,9 @@ class Photometry_rest(Photometry):
                 if type(save_path) != type(None):
                     self._save_SED_rest_PDF(
                         property_name,
-                        save_path.replace("/property_name/", f"/{property_name}/"),
+                        save_path.replace(
+                            "/property_name/", f"/{property_name}/"
+                        ),
                     )
         return self, property_names
 
@@ -1614,8 +1746,12 @@ class Photometry_rest(Photometry):
             self.properties[property_name] = np.nan
             self.property_errs[property_name] = [np.nan, np.nan]
         else:
-            self.properties[property_name] = self.property_PDFs[property_name].median
-            self.property_errs[property_name] = self.property_PDFs[property_name].errs
+            self.properties[property_name] = self.property_PDFs[
+                property_name
+            ].median
+            self.property_errs[property_name] = self.property_PDFs[
+                property_name
+            ].errs
 
     # def plot(self, save_dir, ID, plot_fit = True, iters = 10_000, save = True, show = False, n_interp = 100, conv_filt = False):
     #     self.make_rest_UV_phot()

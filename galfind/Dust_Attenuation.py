@@ -1,10 +1,11 @@
 # Dust_Attenuation.py
 
-import numpy as np
-import astropy.units as u
-from scipy.optimize import curve_fit
-from scipy.interpolate import interp1d
 from abc import ABC, abstractmethod
+
+import astropy.units as u
+import numpy as np
+from scipy.interpolate import interp1d
+from scipy.optimize import curve_fit
 
 
 class Dust_Attenuation(ABC):
@@ -87,7 +88,9 @@ class Dust_Attenuation(ABC):
         return slope[0]
 
     @property
-    def near_IR_slope(self, NIR_range=[0.9, 5.0] * u.um, resolution=0.1 * u.um):
+    def near_IR_slope(
+        self, NIR_range=[0.9, 5.0] * u.um, resolution=0.1 * u.um
+    ):
         """Property giving the near-IR slope of the dust attenuation curve, β_NIR
         The equation concerning this slope is as follows:
         A(λ)/A(V) = (λ / 5500 Angstrom)^-β_NIR, or equivalently
@@ -130,7 +133,8 @@ class Dust_Attenuation(ABC):
             bump (float): UV bump strength from carbonaceous dust at 2175 Angstrom
         """
         bump = 1.0 - (
-            0.33 * self.k_lambda(1_500 * u.AA) + 0.67 * self.k_lambda(3_000 * u.AA)
+            0.33 * self.k_lambda(1_500 * u.AA)
+            + 0.67 * self.k_lambda(3_000 * u.AA)
         ) / self.k_lambda(2_175 * u.AA)
         return bump[0]
 
@@ -181,14 +185,14 @@ class C00(Dust_Attenuation):
         k[mask_3] = 2.659 * (-1.857 + 1.040 / wavs[mask_3]) + self.R_V
         if len(wavs[mask_2]) > 1 and len(wavs[mask_1]) > 0:
             # extrapolate bluewards of 0.12 microns
-            k[mask_1] = interp1d(wavs[mask_2], k[mask_2], fill_value="extrapolate")(
-                wavs[mask_1]
-            )
+            k[mask_1] = interp1d(
+                wavs[mask_2], k[mask_2], fill_value="extrapolate"
+            )(wavs[mask_1])
         if len(wavs[mask_3]) > 1 and len(wavs[mask_4]) > 0:
             # extrapolate redwards of 2.2 microns
-            k[mask_4] = interp1d(wavs[mask_3], k[mask_3], fill_value="extrapolate")(
-                wavs[mask_4]
-            )
+            k[mask_4] = interp1d(
+                wavs[mask_3], k[mask_3], fill_value="extrapolate"
+            )(wavs[mask_4])
         return k
 
 
@@ -223,7 +227,9 @@ class M99(AUV_from_beta):
 
 class Reddy15(AUV_from_beta):
     def __init__(self):
-        super().__init__(-4.48 / 1.84, 1.0 / 1.84, Reddy15_dust_law(), 1_600.0 * u.AA)
+        super().__init__(
+            -4.48 / 1.84, 1.0 / 1.84, Reddy15_dust_law(), 1_600.0 * u.AA
+        )
 
 
 class Reddy18(AUV_from_beta):

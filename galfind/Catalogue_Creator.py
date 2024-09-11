@@ -8,6 +8,14 @@ Created on Wed Jun  7 13:59:59 2023
 
 #
 # Catalogue_Creator.py
+import json
+import time
+from abc import ABC, abstractmethod
+from copy import deepcopy
+from pathlib import Path
+
+import astropy.units as u
+import h5py
 import numpy as np
 from astropy.utils.masked import Masked
 import astropy.units as u
@@ -19,8 +27,8 @@ from pathlib import Path
 import h5py
 from copy import deepcopy
 
-from . import useful_funcs_austind as funcs
 from . import config, galfind_logger
+from . import useful_funcs_austind as funcs
 
 
 class Catalogue_Creator(ABC):
@@ -44,7 +52,9 @@ class Catalogue_Creator(ABC):
         self.ra_dec_units = ra_dec_units
         self.ID_label = ID_label
         self.zero_point = zero_point  # must be astropy units; can be either integer or dict of {band: zero_point}
-        self.phot_fits_ext = phot_fits_ext  # only compatible with .fits currently
+        self.phot_fits_ext = (
+            phot_fits_ext  # only compatible with .fits currently
+        )
 
     @abstractmethod
     def phot_labels(self, bands):
@@ -115,7 +125,8 @@ class Catalogue_Creator(ABC):
                 [
                     [
                         self.min_flux_pc_err * flux / 100
-                        if err / flux < self.min_flux_pc_err / 100 and flux > 0.0
+                        if err / flux < self.min_flux_pc_err / 100
+                        and flux > 0.0
                         else err
                         for flux, err in zip(gal_fluxes, gal_errs)
                     ]
@@ -203,7 +214,10 @@ class GALFIND_Catalogue_Creator(Catalogue_Creator):
             )  # "Beware that mag errors are asymmetric!")
             phot_labels = [f"MAG_APER_{band}_aper_corr" for band in bands]
             err_labels = [
-                [f"MAGERR_APER_{band}_l1_loc_depth", f"MAGERR_APER_{band}_u1_loc_depth"]
+                [
+                    f"MAGERR_APER_{band}_l1_loc_depth",
+                    f"MAGERR_APER_{band}_u1_loc_depth",
+                ]
                 for band in bands
             ]  # this doesn't currently work!
         else:
@@ -285,20 +299,28 @@ class GALFIND_Catalogue_Creator(Catalogue_Creator):
         unique_data_combinations = np.unique(gal_band_mask, axis=0)
         unique_instruments = [
             deepcopy(instrument).remove_indices(
-                [i for i, has_data in enumerate(data_combination) if not has_data]
+                [
+                    i
+                    for i, has_data in enumerate(data_combination)
+                    if not has_data
+                ]
             )
             for data_combination in unique_data_combinations
         ]
         instrument_arr = [
             unique_instruments[
-                np.where(np.all(unique_data_combinations == data_comb, axis=1))[0][0]
+                np.where(
+                    np.all(unique_data_combinations == data_comb, axis=1)
+                )[0][0]
             ]
             for data_comb in gal_band_mask
         ]
         return instrument_arr
 
     # overriding load_photometry from parent class to include .T[aper_diam_index]'s
-    def load_photometry(self, fits_cat, bands, gal_band_mask=None, timed=False):
+    def load_photometry(
+        self, fits_cat, bands, gal_band_mask=None, timed=False
+    ):
         if timed:
             start_time = time.time()
         zero_points = self.load_zero_points(bands)
@@ -338,7 +360,9 @@ class GALFIND_Catalogue_Creator(Catalogue_Creator):
             assert type(gal_band_mask) == type(None)
             # for each galaxy remove bands that have no data
             gal_band_mask_save_path = f"{config['DEFAULT']['GALFIND_WORK']}/Masks/{fits_cat.meta['SURVEY']}/has_data_mask/{fits_cat.meta['SURVEY']}_{fits_cat.meta['VERSION']}_{fits_cat.meta['INSTR']}.h5"
-            funcs.make_dirs(funcs.split_dir_name(gal_band_mask_save_path, "dir"))
+            funcs.make_dirs(
+                funcs.split_dir_name(gal_band_mask_save_path, "dir")
+            )
             keep_indices = np.array(fits_cat[self.ID_label]) - 1
             gal_band_mask = self.load_gal_instr_mask(
                 phot, keep_indices, gal_band_mask_save_path, timed=timed
@@ -380,13 +404,17 @@ class GALFIND_Catalogue_Creator(Catalogue_Creator):
             )
 
         # mask these arrays based on whether or not each band is masked for each galaxy
-        masked_arr = self.load_mask(fits_cat, bands, gal_band_mask, timed=timed)
+        masked_arr = self.load_mask(
+            fits_cat, bands, gal_band_mask, timed=timed
+        )
         # assert masked_arr.shape == phot.shape, galfind_logger.critical("Length of mask arr and photometry is inconsistent!")
         if timed:
             phot = [
                 Masked(gal_phot, mask=gal_mask)
                 for gal_phot, gal_mask in tqdm(
-                    zip(_phot, masked_arr), desc="Loading photometry", total=len(_phot)
+                    zip(_phot, masked_arr),
+                    desc="Loading photometry",
+                    total=len(_phot),
                 )
             ]  # Masked(_phot, mask = masked_arr)
             phot_err = [
@@ -434,7 +462,9 @@ class GALFIND_Catalogue_Creator(Catalogue_Creator):
                     [
                         [
                             mask
-                            for has_data, mask in zip(_gal_band_mask, _gal_mask)
+                            for has_data, mask in zip(
+                                _gal_band_mask, _gal_mask
+                            )
                             if has_data
                         ]
                         for _gal_band_mask, _gal_mask in tqdm(
@@ -450,10 +480,14 @@ class GALFIND_Catalogue_Creator(Catalogue_Creator):
                     [
                         [
                             mask
-                            for has_data, mask in zip(_gal_band_mask, _gal_mask)
+                            for has_data, mask in zip(
+                                _gal_band_mask, _gal_mask
+                            )
                             if has_data
                         ]
-                        for _gal_band_mask, _gal_mask in zip(gal_band_mask, masked_arr)
+                        for _gal_band_mask, _gal_mask in zip(
+                            gal_band_mask, masked_arr
+                        )
                     ],
                     dtype=object,
                 )
@@ -498,7 +532,9 @@ class GALFIND_Catalogue_Creator(Catalogue_Creator):
                         if has_data
                     ]
                     * u.ABmag
-                    for _gal_depths, _gal_band_mask in zip(depths_arr, gal_band_mask)
+                    for _gal_depths, _gal_band_mask in zip(
+                        depths_arr, gal_band_mask
+                    )
                 ]
         return depths_arr
 
@@ -508,7 +544,11 @@ class GALFIND_Catalogue_Creator(Catalogue_Creator):
 
 class JADES_DR1_Catalogue_Creator(Catalogue_Creator):
     def __init__(
-        self, aper_diam_index, phot_fits_ext, min_flux_pc_err=None, flux_or_mag="flux"
+        self,
+        aper_diam_index,
+        phot_fits_ext,
+        min_flux_pc_err=None,
+        flux_or_mag="flux",
     ):
         super().__init__(
             self.phot_conv,
@@ -523,7 +563,9 @@ class JADES_DR1_Catalogue_Creator(Catalogue_Creator):
     def phot_conv(self, band):
         if self.flux_or_mag == "flux":
             if self.phot_fits_ext == 4:  # CIRC
-                phot_label = f"{band.replace('f', 'F')}_CIRC{self.aper_diam_index}"
+                phot_label = (
+                    f"{band.replace('f', 'F')}_CIRC{self.aper_diam_index}"
+                )
                 err_label = f"{phot_label}_e"
         return phot_label, err_label
 

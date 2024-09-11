@@ -7,32 +7,33 @@ Created on Mon May 22 13:27:47 2023
 """
 
 # Catalogue.py
-import numpy as np
-import matplotlib.pyplot as plt
-from astropy.table import Table, join, vstack
-from copy import deepcopy
-from astropy.io import fits
-from pathlib import Path
-from astropy.coordinates import SkyCoord
-from astropy.wcs import WCS
-import astropy.units as u
-from tqdm import tqdm
-import time
-import os
 import glob
-import inspect
+import os
+import time
+from copy import deepcopy
+from pathlib import Path
 from typing import Union
+import astropy.units as u
+import matplotlib.pyplot as plt
+import numpy as np
+from astropy.coordinates import SkyCoord
+from astropy.io import fits
+from astropy.table import Table, join, vstack
+from astropy.wcs import WCS
+from tqdm import tqdm
 
-from .Data import Data
-from .Galaxy import Galaxy, Multiple_Galaxy
+from . import (
+    Catalogue_Base,
+    Photometry_rest,
+    config,
+    galfind_logger,
+)
 from . import useful_funcs_austind as funcs
-from .SED_codes import SED_code
+from .Data import Data
 from .EAZY import EAZY
-from . import config
-from . import Catalogue_Base
-from . import Photometry_rest
-from . import galfind_logger, sed_code_to_name_dict
 from .Emission_lines import line_diagnostics
+from .Galaxy import Galaxy, Multiple_Galaxy
+from .SED_codes import SED_code
 from .Spectrum import Spectral_Catalogue
 
 
@@ -50,7 +51,11 @@ class Catalogue(Catalogue_Base):
             {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None},
         ],
         instruments=["NIRCam", "ACS_WFC", "WFC3_IR"],
-        forced_phot_band: Union[list, np.array, str] = ["F277W", "F356W", "F444W"],
+        forced_phot_band: Union[list, np.array, str] = [
+            "F277W",
+            "F356W",
+            "F444W",
+        ],
         excl_bands: Union[list, np.array] = [],
         pix_scales={
             "ACS_WFC": 0.03 * u.arcsec,
@@ -94,6 +99,7 @@ class Catalogue(Catalogue_Base):
             load_SED_rest_properties=load_SED_rest_properties,
             n_depth_reg=n_depth_reg,
             load_ext_src_corrs=load_ext_src_corrs,
+            sex_prefer=sex_prefer,
         )
 
     @classmethod
@@ -112,11 +118,12 @@ class Catalogue(Catalogue_Base):
         load_SEDs: Union[bool, dict] = True,
         timed: bool = True,
         load_SED_rest_properties: bool = True,
+        sex_prefer: str = "rms_err",
         n_depth_reg: str = "auto",
         load_ext_src_corrs: bool = True,
     ):
         # make masked local depth catalogue from the 'Data' object
-        data.combine_sex_cats(forced_phot_band, timed=timed)
+        data.combine_sex_cats(forced_phot_band, prefer=sex_prefer, timed=timed)
         mode = str(
             config["Depths"]["MODE"]
         ).lower()  # mode to calculate depths (either "n_nearest" or "rolling")
@@ -126,7 +133,7 @@ class Catalogue(Catalogue_Base):
             cat_creator=cat_creator,
             n_split=n_depth_reg,
             timed=timed,
-        )  # 2nd BOTTLENECK!
+        )
         data.perform_aper_corrs()
         data.make_loc_depth_cat(cat_creator, depth_mode=mode)
 
@@ -190,7 +197,8 @@ class Catalogue(Catalogue_Base):
                     fits_cat = fits_cat[
                         np.logical_or.reduce(
                             [
-                                fits_cat[cat_creator.ID_label].astype(int) == int(value)
+                                fits_cat[cat_creator.ID_label].astype(int)
+                                == int(value)
                                 for value in values
                             ]
                         )
@@ -199,7 +207,8 @@ class Catalogue(Catalogue_Base):
             for name in crop_by:
                 if name[:3] == "ID=":
                     fits_cat = fits_cat[
-                        fits_cat[cat_creator.ID_label].astype(int) == int(name[3:])
+                        fits_cat[cat_creator.ID_label].astype(int)
+                        == int(name[3:])
                     ]
                     galfind_logger.info(f"Catalogue cropped to {name}")
                 elif (
@@ -215,8 +224,9 @@ class Catalogue(Catalogue_Base):
                             f"{type(fits_cat[name][0])=} not in [bool, np.bool_]"
                         )
                 else:
-                    galfind_logger.warning(f"Invalid crop name == {name}! Skipping")
-
+                    galfind_logger.warning(
+                        f"Invalid crop name == {name}! Skipping"
+                    )
         # produce galaxy array from each row of the catalogue
         if timed:
             start_time = time.time()
@@ -229,7 +239,6 @@ class Catalogue(Catalogue_Base):
             print(
                 f"Finished loading in {len(gals)} galaxies. This took {elapsed_time:.6f} seconds"
             )
-
         # make catalogue with no SED fitting information
         cat_obj = cls(
             gals,
@@ -241,7 +250,8 @@ class Catalogue(Catalogue_Base):
             version=version,
             crops=crop_by,
         )
-        if type(cat_obj) != type(None):
+
+        if cat_obj is not None:
             cat_obj.data = data
         if mask:
             cat_obj.mask(timed=timed)
@@ -249,14 +259,24 @@ class Catalogue(Catalogue_Base):
         # run SED fitting for the appropriate SED_fit_params
         for SED_fit_params in SED_fit_params_arr:
             if type(load_PDFs) in [dict]:
-                assert SED_fit_params["code"].__class__.__name__ in load_PDFs.keys()
-                _load_PDFs = load_PDFs[SED_fit_params["code"].__class__.__name__]
+                assert (
+                    SED_fit_params["code"].__class__.__name__
+                    in load_PDFs.keys()
+                )
+                _load_PDFs = load_PDFs[
+                    SED_fit_params["code"].__class__.__name__
+                ]
                 assert type(_load_PDFs) in [bool]
             else:
                 _load_PDFs = load_PDFs
             if type(load_SEDs) in [dict]:
-                assert SED_fit_params["code"].__class__.__name__ in load_SEDs.keys()
-                _load_SEDs = load_SEDs[SED_fit_params["code"].__class__.__name__]
+                assert (
+                    SED_fit_params["code"].__class__.__name__
+                    in load_SEDs.keys()
+                )
+                _load_SEDs = load_SEDs[
+                    SED_fit_params["code"].__class__.__name__
+                ]
                 assert type(_load_SEDs) in [bool]
             else:
                 _load_SEDs = load_SEDs
@@ -316,7 +336,9 @@ class Catalogue(Catalogue_Base):
         DJA_cat = np.sum(
             [
                 Spectral_Catalogue.from_DJA(
-                    ra_range=self.ra_range, dec_range=self.dec_range, version=version
+                    ra_range=self.ra_range,
+                    dec_range=self.dec_range,
+                    version=version,
                 )
                 for version in ["v1", "v2"]
             ]
@@ -332,13 +354,17 @@ class Catalogue(Catalogue_Base):
         self.load_sex_flux_mag_autos()
         # calculate aperture corrections if not already
         if not hasattr(self.instrument, "aper_corrs"):
-            aper_corrs = self.instrument.get_aper_corrs(self.cat_creator.aper_diam)
+            aper_corrs = self.instrument.get_aper_corrs(
+                self.cat_creator.aper_diam
+            )
         else:
             aper_corrs = self.instrument.aper_corrs[self.cat_creator.aper_diam]
         assert len(aper_corrs) == len(self.instrument)
         aper_corrs = {
             band_name: aper_corr
-            for band_name, aper_corr in zip(self.instrument.band_names, aper_corrs)
+            for band_name, aper_corr in zip(
+                self.instrument.band_names, aper_corrs
+            )
         }
         # calculate and save dict of ext_src_corrs for each galaxy in self
         galfind_logger.debug(
@@ -357,7 +383,9 @@ class Catalogue(Catalogue_Base):
             "_".join(inspect.stack()[0].function.split("_")[1:]), "phot_obs"
         )
 
-    def make_ext_src_corrs(self, gal_property: str, origin: Union[str, dict]) -> str:
+    def make_ext_src_corrs(
+        self, gal_property: str, origin: Union[str, dict]
+    ) -> str:
         # calculate pre-requisites
         self.calc_ext_src_corrs()
         # make extended source correction for given property
@@ -374,7 +402,9 @@ class Catalogue(Catalogue_Base):
             [property_dict.keys() for property_dict in properties_dict]
         )[0]
         unique_properties_origins_dict = {
-            key: np.unique([property_dict[key] for property_dict in properties_dict])
+            key: np.unique(
+                [property_dict[key] for property_dict in properties_dict]
+            )
             for key in unique_origins
         }
         unique_properties_origins_dict = {
@@ -390,7 +420,10 @@ class Catalogue(Catalogue_Base):
         ]
 
     def _append_property_to_tab(
-        self, property_name: str, origin: Union[str, dict], overwrite: bool = False
+        self,
+        property_name: str,
+        origin: Union[str, dict],
+        overwrite: bool = False,
     ) -> None:
         galfind_logger.info(
             "Catalogue._append_property_to_tab doesn't work if trying to append newly updated galaxy properties YET!"
@@ -422,11 +455,15 @@ class Catalogue(Catalogue_Base):
             )
             return None
         else:
-            galfind_logger.info(f"Appending {property_name=} to {origin=} .fits table!")
+            galfind_logger.info(
+                f"Appending {property_name=} to {origin=} .fits table!"
+            )
             # make new table with calculated properties
             gal_IDs = self.__getattr__("ID")
             gal_properties = self.__getattr__(property_name, origin=origin)
-            if all(type(gal_property) == dict for gal_property in gal_properties):
+            if all(
+                type(gal_property) == dict for gal_property in gal_properties
+            ):
                 all_keys = np.unique(
                     [
                         f"{property_name}_{key}"
@@ -453,10 +490,14 @@ class Catalogue(Catalogue_Base):
                     for key in all_keys
                 }
                 appended_keys = [
-                    key for key in property_dict.keys() if key in append_tab.colnames
+                    key
+                    for key in property_dict.keys()
+                    if key in append_tab.colnames
                 ]
                 # ensure the type of each element in the dict is the same
-                expected_type = type(gal_properties[0][list(gal_properties[0].keys())[0]])
+                expected_type = type(
+                    gal_properties[0][list(gal_properties[0].keys())[0]]
+                )
                 assert all(
                     type(value) == expected_type
                     for gal_property in gal_properties
@@ -471,7 +512,9 @@ class Catalogue(Catalogue_Base):
                 property_types = [
                     bool if expected_type in [bool, np.bool_] else float
                 ] * len(appended_keys)
-            elif any(type(gal_property) == dict for gal_property in gal_properties):
+            elif any(
+                type(gal_property) == dict for gal_property in gal_properties
+            ):
                 galfind_logger.critical(
                     f"{property_name}={gal_properties} from {origin=} should not have mixed 'dict' + other element types!"
                 )
@@ -488,10 +531,13 @@ class Catalogue(Catalogue_Base):
                 )
                 property_dict = {property_name: gal_properties}
                 property_types = [
-                    bool if type(gal_properties[0]) in [bool, np.bool_] else float
+                    bool
+                    if type(gal_properties[0]) in [bool, np.bool_]
+                    else float
                 ]
             new_tab = Table(
-                {**{"ID_temp": gal_IDs}, **property_dict}, dtype=[int] + property_types
+                {**{"ID_temp": gal_IDs}, **property_dict},
+                dtype=[int] + property_types,
             )
             # join new and old tables
             out_tab = join(
@@ -559,12 +605,16 @@ class Catalogue(Catalogue_Base):
                 if dest == "gal":
                     [
                         gal.load_property(gal_properties, save_name)
-                        for gal, gal_properties in zip(self, cat_band_properties)
+                        for gal, gal_properties in zip(
+                            self, cat_band_properties
+                        )
                     ]
                 else:  # dest == "phot_obs"
                     [
                         gal.phot.load_property(gal_properties, save_name)
-                        for gal, gal_properties in zip(self, cat_band_properties)
+                        for gal, gal_properties in zip(
+                            self, cat_band_properties
+                        )
                     ]
                 galfind_logger.info(
                     f"Loaded {cat_colname} from {self.cat_path} saved as {save_name} for bands = {cat_band_properties[0].keys()}"
@@ -591,7 +641,9 @@ class Catalogue(Catalogue_Base):
                 assert len(cat_property) == len(self)
                 if dest == "gal":
                     [
-                        gal.load_property(gal_property * multiply_factor, save_name)
+                        gal.load_property(
+                            gal_property * multiply_factor, save_name
+                        )
                         for gal, gal_property in zip(self, cat_property)
                     ]
                 else:  # dest == "phot_obs"
@@ -643,7 +695,9 @@ class Catalogue(Catalogue_Base):
             )
 
         elif "MASKED" not in fits_cat.meta.keys() or overwrite:
-            galfind_logger.info(f"Masking catalogue for {self.survey} {self.version}")
+            galfind_logger.info(
+                f"Masking catalogue for {self.survey} {self.version}"
+            )
 
             # calculate x,y for each galaxy in catalogue
             # cat_x, cat_y = self.data.load_wcs(self.data.alignment_band).world_to_pixel(cat_sky_coords)
@@ -656,7 +710,8 @@ class Catalogue(Catalogue_Base):
             if config["Masking"].getboolean("MASK_BANDS"):
                 unmasked_band_dict = {}
                 masks = [
-                    self.data.load_mask(band) for band in self.instrument.band_names
+                    self.data.load_mask(band)
+                    for band in self.instrument.band_names
                 ]
                 # if masks are all the same shape
                 if all(mask.shape == masks[0].shape for mask in masks):
@@ -725,15 +780,17 @@ class Catalogue(Catalogue_Base):
                 mask_labels.append("blank_module")
                 mask_paths.append(self.data.blank_mask_path)
                 default_blank_bool_arr.append(True)
-            if config["Masking"].getboolean("MASK_CLUSTER_CORE"):  # make cluster mask
+            if config["Masking"].getboolean(
+                "MASK_CLUSTER_CORE"
+            ):  # make cluster mask
                 mask_labels.append("cluster")
                 mask_paths.append(self.data.cluster_mask_path)
                 default_blank_bool_arr.append(False)
 
             # mask columns in catalogue + galfind galaxies
-            cat_x, cat_y = self.data.load_wcs(self.data.alignment_band).world_to_pixel(
-                cat_sky_coords
-            )
+            cat_x, cat_y = self.data.load_wcs(
+                self.data.alignment_band
+            ).world_to_pixel(cat_sky_coords)
             for mask_label, mask_path, default_blank_bool in zip(
                 mask_labels, mask_paths, default_blank_bool_arr
             ):
@@ -779,17 +836,21 @@ class Catalogue(Catalogue_Base):
                                 for x, y in zip(cat_x, cat_y)
                             ]
                         )
-                fits_cat[mask_label] = mask_data  # update catalogue with boolean column
+                fits_cat[mask_label] = (
+                    mask_data  # update catalogue with boolean column
+                )
 
             # update catalogue metadata
             fits_cat.meta = {
                 **fits_cat.meta,
                 **{
                     "MASKED": True,
-                    "HIERARCH MASK_BANDS": config["Masking"].getboolean("MASK_BANDS"),
-                    "HIERARCH MASK_CLUSTER_MODULE": config["Masking"].getboolean(
-                        "MASK_CLUSTER_MODULE"
+                    "HIERARCH MASK_BANDS": config["Masking"].getboolean(
+                        "MASK_BANDS"
                     ),
+                    "HIERARCH MASK_CLUSTER_MODULE": config[
+                        "Masking"
+                    ].getboolean("MASK_CLUSTER_MODULE"),
                     "HIERARCH MASK_CLUSTER_CORE": config["Masking"].getboolean(
                         "MASK_CLUSTER_CORE"
                     ),
@@ -921,7 +982,9 @@ class Catalogue(Catalogue_Base):
             2,
             1,
             hspace=-2,
-            height_ratios=[2, 1] if len(self.data.instrument) <= 8 else [1.8, 1],
+            height_ratios=[2, 1]
+            if len(self.data.instrument) <= 8
+            else [1.8, 1],
         )
 
         gs = fig.add_gridspec(2, 4)
@@ -941,7 +1004,9 @@ class Catalogue(Catalogue_Base):
                 aper_diam=self.cat_creator.aper_diam,
             )
             for gal in tqdm(
-                self, total=len(self), desc="Plotting photometry diagnostic plots"
+                self,
+                total=len(self),
+                desc="Plotting photometry diagnostic plots",
             )
         ]
 
@@ -986,9 +1051,13 @@ class Catalogue(Catalogue_Base):
             assert x_origin["code"].__class__.__name__ in [
                 code.__name__ for code in SED_code.__subclasses__()
             ]
-        x = self.__getattr__(x_name, origin=x_origin, property_type="vals")
+        x = self.__getattr__(
+            x_name, SED_fit_params=x_origin, property_type="vals"
+        )
         if incl_x_errs:
-            x_err = self.__getattr__(x_name, origin=x_origin, property_type="errs")
+            x_err = self.__getattr__(
+                x_name, SED_fit_params=x_origin, property_type="errs"
+            )
             x_err = np.array([x_err[:, 0], x_err[:, 1]])
         else:
             x_err = None
@@ -1009,7 +1078,9 @@ class Catalogue(Catalogue_Base):
             assert y_origin["code"].__class__.__name__ in [
                 code.__name__ for code in SED_code.__subclasses__()
             ]
-        y = self.__getattr__(y_name, SED_fit_params=y_origin, property_type="vals")
+        y = self.__getattr__(
+            y_name, SED_fit_params=y_origin, property_type="vals"
+        )
         if incl_y_errs:
             y_err = self.__getattr__(
                 y_name, SED_fit_params=y_origin, property_type="errs"
@@ -1038,7 +1109,9 @@ class Catalogue(Catalogue_Base):
                 assert c_origin["code"].__class__.__name__ in [
                     code.__name__ for code in SED_code.__subclasses__()
                 ]
-            c = getattr(self, colour_by, SED_fit_params=c_origin, property_type="vals")
+            c = getattr(
+                self, colour_by, SED_fit_params=c_origin, property_type="vals"
+            )
             if type(c_origin) in [dict]:
                 cbar_label = c_origin["code"].gal_property_fmt_dict[colour_by]
             else:
@@ -1049,7 +1122,9 @@ class Catalogue(Catalogue_Base):
                 cbar_label = f"log({cbar_label})"
 
         # setup matplotlib figure/axis if not already given
-        plt.style.use(f"{config['DEFAULT']['GALFIND_DIR']}/galfind_style.mplstyle")
+        plt.style.use(
+            f"{config['DEFAULT']['GALFIND_DIR']}/galfind_style.mplstyle"
+        )
         if type(fig) == type(None) or type(ax) == type(None):
             fig, ax = plt.subplots()
 
@@ -1076,11 +1151,15 @@ class Catalogue(Catalogue_Base):
             else:
                 if "cmap" not in plot_kwargs.keys():
                     plot_kwargs["cmap"] = cmap
-                plot = ax.errorbar(x, y, xerr=x_err, yerr=y_err, c=c, **plot_kwargs)
+                plot = ax.errorbar(
+                    x, y, xerr=x_err, yerr=y_err, c=c, **plot_kwargs
+                )
 
         # sort plot aesthetics
         if annotate:
-            plot_label = f"{self.version}, {self.instrument.name}, {self.survey}"
+            plot_label = (
+                f"{self.version}, {self.instrument.name}, {self.survey}"
+            )
             ax.set_title(plot_label)
             ax.set_xlabel(x_label)
             ax.set_ylabel(y_label)
@@ -1095,9 +1174,7 @@ class Catalogue(Catalogue_Base):
             if type(x_origin) in [str]:
                 origin_str += f"x={x_origin},"
             else:
-                origin_str += (
-                    f"x={x_origin['code'].label_from_SED_fit_params(x_origin)},"
-                )
+                origin_str += f"x={x_origin['code'].label_from_SED_fit_params(x_origin)},"
             if type(y_origin) in [str]:
                 origin_str += f"y={y_origin},"
             else:
@@ -1109,9 +1186,7 @@ class Catalogue(Catalogue_Base):
             elif type(c_origin) in [str]:
                 origin_str += f",c={c_origin}"
             else:  # dict
-                origin_str += (
-                    f",c={c_origin['code'].label_from_SED_fit_params(c_origin)}"
-                )
+                origin_str += f",c={c_origin['code'].label_from_SED_fit_params(c_origin)}"
 
             # determine appropriate save path
             save_dir = f"{config['Other']['PLOT_DIR']}/{self.version}/{self.instrument.name}/{self.survey}/{origin_str}"
@@ -1138,7 +1213,9 @@ class Catalogue(Catalogue_Base):
     # Masking selection
 
     def select_min_unmasked_bands(self, min_bands):
-        return self.perform_selection(Galaxy.select_min_unmasked_bands, min_bands)
+        return self.perform_selection(
+            Galaxy.select_min_unmasked_bands, min_bands
+        )
 
     #  already made these boolean columns in the catalogue
     def select_unmasked_bands(self, bands):
@@ -1156,7 +1233,11 @@ class Catalogue(Catalogue_Base):
         property_name,
         gtr_or_less,
         property_lim,
-        SED_fit_params={"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None},
+        SED_fit_params={
+            "code": EAZY(),
+            "templates": "fsps_larson",
+            "lowz_zmax": None,
+        },
     ):
         return self.perform_selection(
             Galaxy.select_phot_galaxy_property,
@@ -1170,7 +1251,11 @@ class Catalogue(Catalogue_Base):
         self,
         property_name,
         property_lims,
-        SED_fit_params={"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None},
+        SED_fit_params={
+            "code": EAZY(),
+            "templates": "fsps_larson",
+            "lowz_zmax": None,
+        },
     ):
         return self.perform_selection(
             Galaxy.select_phot_galaxy_property_bin,
@@ -1184,7 +1269,11 @@ class Catalogue(Catalogue_Base):
     def phot_bluewards_Lya_non_detect(
         self,
         SNR_lim,
-        SED_fit_params={"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None},
+        SED_fit_params={
+            "code": EAZY(),
+            "templates": "fsps_larson",
+            "lowz_zmax": None,
+        },
     ):
         return self.perform_selection(
             Galaxy.phot_bluewards_Lya_non_detect, SNR_lim, SED_fit_params
@@ -1193,18 +1282,29 @@ class Catalogue(Catalogue_Base):
     def phot_redwards_Lya_detect(
         self,
         SNR_lims,
-        SED_fit_params={"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None},
+        SED_fit_params={
+            "code": EAZY(),
+            "templates": "fsps_larson",
+            "lowz_zmax": None,
+        },
         widebands_only=True,
     ):
         return self.perform_selection(
-            Galaxy.phot_redwards_Lya_detect, SNR_lims, SED_fit_params, widebands_only
+            Galaxy.phot_redwards_Lya_detect,
+            SNR_lims,
+            SED_fit_params,
+            widebands_only,
         )
 
     def phot_Lya_band(
         self,
         SNR_lim,
         detect_or_non_detect="detect",
-        SED_fit_params={"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None},
+        SED_fit_params={
+            "code": EAZY(),
+            "templates": "fsps_larson",
+            "lowz_zmax": None,
+        },
         widebands_only=True,
     ):
         return self.perform_selection(
@@ -1215,9 +1315,14 @@ class Catalogue(Catalogue_Base):
             widebands_only,
         )
 
-    def phot_SNR_crop(self, band_name_or_index, SNR_lim, detect_or_non_detect="detect"):
+    def phot_SNR_crop(
+        self, band_name_or_index, SNR_lim, detect_or_non_detect="detect"
+    ):
         return self.perform_selection(
-            Galaxy.phot_SNR_crop, band_name_or_index, SNR_lim, detect_or_non_detect
+            Galaxy.phot_SNR_crop,
+            band_name_or_index,
+            SNR_lim,
+            detect_or_non_detect,
         )
 
     # Emission line selection functions
@@ -1228,7 +1333,11 @@ class Catalogue(Catalogue_Base):
         delta_m,
         rest_UV_wav_lims=[1_250.0, 3_000.0] * u.AA,
         medium_bands_only=True,
-        SED_fit_params={"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None},
+        SED_fit_params={
+            "code": EAZY(),
+            "templates": "fsps_larson",
+            "lowz_zmax": None,
+        },
         update=True,
     ):
         return self.perform_selection(
@@ -1246,7 +1355,11 @@ class Catalogue(Catalogue_Base):
         sigma,
         rest_UV_wav_lims=[1_250.0, 3_000.0] * u.AA,
         medium_bands_only=True,
-        SED_fit_params={"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None},
+        SED_fit_params={
+            "code": EAZY(),
+            "templates": "fsps_larson",
+            "lowz_zmax": None,
+        },
     ):
         return self.perform_selection(
             Galaxy.select_rest_UV_line_emitters_sigma,
@@ -1271,7 +1384,11 @@ class Catalogue(Catalogue_Base):
 
     def select_UVJ(
         self,
-        SED_fit_params={"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None},
+        SED_fit_params={
+            "code": EAZY(),
+            "templates": "fsps_larson",
+            "lowz_zmax": None,
+        },
         quiescent_or_star_forming="quiescent",
     ):
         return self.perform_selection(
@@ -1281,7 +1398,10 @@ class Catalogue(Catalogue_Base):
     def select_Kokorev24_LRDs(self):
         # only perform this selection if all relevant bands are present
         required_bands = ["F115W", "F150W", "F200W", "F277W", "F356W", "F444W"]
-        if all(band_name in self.instrument.band_names for band_name in required_bands):
+        if all(
+            band_name in self.instrument.band_names
+            for band_name in required_bands
+        ):
             # red1 selection (z<6 LRDs)
             self.perform_selection(
                 Galaxy.select_colour,
@@ -1342,7 +1462,11 @@ class Catalogue(Catalogue_Base):
     def select_chi_sq_lim(
         self,
         chi_sq_lim,
-        SED_fit_params={"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None},
+        SED_fit_params={
+            "code": EAZY(),
+            "templates": "fsps_larson",
+            "lowz_zmax": None,
+        },
         reduced=True,
     ):
         return self.perform_selection(
@@ -1352,11 +1476,18 @@ class Catalogue(Catalogue_Base):
     def select_chi_sq_diff(
         self,
         chi_sq_diff,
-        SED_fit_params={"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None},
+        SED_fit_params={
+            "code": EAZY(),
+            "templates": "fsps_larson",
+            "lowz_zmax": None,
+        },
         delta_z_lowz=0.5,
     ):
         return self.perform_selection(
-            Galaxy.select_chi_sq_diff, chi_sq_diff, SED_fit_params, delta_z_lowz
+            Galaxy.select_chi_sq_diff,
+            chi_sq_diff,
+            SED_fit_params,
+            delta_z_lowz,
         )
 
     # Redshift PDF selection functions
@@ -1365,10 +1496,17 @@ class Catalogue(Catalogue_Base):
         self,
         integral_lim,
         delta_z_over_z,
-        SED_fit_params={"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None},
+        SED_fit_params={
+            "code": EAZY(),
+            "templates": "fsps_larson",
+            "lowz_zmax": None,
+        },
     ):
         return self.perform_selection(
-            Galaxy.select_robust_zPDF, integral_lim, delta_z_over_z, SED_fit_params
+            Galaxy.select_robust_zPDF,
+            integral_lim,
+            delta_z_over_z,
+            SED_fit_params,
         )
 
     # Morphology selection functions
@@ -1385,7 +1523,11 @@ class Catalogue(Catalogue_Base):
 
     def select_EPOCHS(
         self,
-        SED_fit_params={"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None},
+        SED_fit_params={
+            "code": EAZY(),
+            "templates": "fsps_larson",
+            "lowz_zmax": None,
+        },
         allow_lowz=False,
         hot_pixel_bands=["F277W", "F356W", "F444W"],
         mask_instruments=["NIRCam"],
@@ -1400,13 +1542,19 @@ class Catalogue(Catalogue_Base):
         )  # minimum 4 photometric bands
         [
             self.perform_selection(
-                Galaxy.select_unmasked_instrument, instrument, make_cat_copy=False
+                Galaxy.select_unmasked_instrument,
+                instrument,
+                make_cat_copy=False,
             )
             for instrument in instruments_to_mask
         ]  # all bands unmasked
         [
             self.perform_selection(
-                Galaxy.select_band_flux_radius, band, "gtr", 1.5, make_cat_copy=False
+                Galaxy.select_band_flux_radius,
+                band,
+                "gtr",
+                1.5,
+                make_cat_copy=False,
             )
             for band in hot_pixel_bands
             if band in self.instrument.band_names
@@ -1436,13 +1584,25 @@ class Catalogue(Catalogue_Base):
             make_cat_copy=False,
         )  # 2σ detected in all bands redwards of Lyα
         self.perform_selection(
-            Galaxy.select_chi_sq_lim, 3.0, SED_fit_params, True, make_cat_copy=False
+            Galaxy.select_chi_sq_lim,
+            3.0,
+            SED_fit_params,
+            True,
+            make_cat_copy=False,
         )  # χ^2_red < 3
         self.perform_selection(
-            Galaxy.select_chi_sq_diff, 4.0, SED_fit_params, 0.5, make_cat_copy=False
+            Galaxy.select_chi_sq_diff,
+            4.0,
+            SED_fit_params,
+            0.5,
+            make_cat_copy=False,
         )  # Δχ^2 < 4 between redshift free and low redshift SED fits, with Δz=0.5 tolerance
         self.perform_selection(
-            Galaxy.select_robust_zPDF, 0.6, 0.1, SED_fit_params, make_cat_copy=False
+            Galaxy.select_robust_zPDF,
+            0.6,
+            0.1,
+            SED_fit_params,
+            make_cat_copy=False,
         )  # 60% of redshift PDF must lie within z ± z * 0.1
         return self.perform_selection(
             Galaxy.select_EPOCHS,
@@ -1515,7 +1675,11 @@ class Catalogue(Catalogue_Base):
     def calc_beta_phot(
         self,
         rest_UV_wav_lims=[1_250.0, 3_000.0] * u.AA,
-        SED_fit_params={"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None},
+        SED_fit_params={
+            "code": EAZY(),
+            "templates": "fsps_larson",
+            "lowz_zmax": None,
+        },
         iters=10_000,
     ):
         self.calc_SED_rest_property(
@@ -1529,7 +1693,11 @@ class Catalogue(Catalogue_Base):
         self,
         rest_UV_wav_lims=[1_250.0, 3_000.0] * u.AA,
         conv_author_year="Chisholm22",
-        SED_fit_params={"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None},
+        SED_fit_params={
+            "code": EAZY(),
+            "templates": "fsps_larson",
+            "lowz_zmax": None,
+        },
         iters=10_000,
     ):
         self.calc_beta_phot(rest_UV_wav_lims, SED_fit_params, iters)
@@ -1546,7 +1714,11 @@ class Catalogue(Catalogue_Base):
         rest_UV_wav_lims=[1_250.0, 3_000.0] * u.AA,
         ref_wav=1_500.0 * u.AA,
         conv_author_year="M99",
-        SED_fit_params={"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None},
+        SED_fit_params={
+            "code": EAZY(),
+            "templates": "fsps_larson",
+            "lowz_zmax": None,
+        },
         iters=10_000,
     ):
         self.calc_beta_phot(rest_UV_wav_lims, SED_fit_params, iters)
@@ -1605,7 +1777,11 @@ class Catalogue(Catalogue_Base):
         rest_UV_wav_lims=[1_250.0, 3_000.0] * u.AA,
         ref_wav=1_500.0 * u.AA,
         AUV_beta_conv_author_year="M99",
-        SED_fit_params={"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None},
+        SED_fit_params={
+            "code": EAZY(),
+            "templates": "fsps_larson",
+            "lowz_zmax": None,
+        },
         iters=10_000,
     ):
         if type(AUV_beta_conv_author_year) != type(None):
@@ -1749,10 +1925,16 @@ class Catalogue(Catalogue_Base):
         },
         iters: int = 10_000,
     ):
-        assert all(type(name) != type(None) for name in [dust_law, dust_origin])
+        assert all(
+            type(name) != type(None) for name in [dust_law, dust_origin]
+        )
         if type(dust_author_year) != type(None):
             self.calc_AUV_from_beta_phot(
-                rest_UV_wav_lims, ref_wav, dust_author_year, SED_fit_params, iters
+                rest_UV_wav_lims,
+                ref_wav,
+                dust_author_year,
+                SED_fit_params,
+                iters,
             )
         self.calc_SED_rest_property(
             SED_rest_property_function=Photometry_rest.calc_dust_atten,
@@ -1869,7 +2051,11 @@ class Catalogue(Catalogue_Base):
         rest_optical_wavs=[4_200.0, 10_000.0] * u.AA,
         rest_UV_wav_lims=[1_250.0, 3_000.0] * u.AA,
         ref_wav=1_500.0 * u.AA,
-        SED_fit_params={"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None},
+        SED_fit_params={
+            "code": EAZY(),
+            "templates": "fsps_larson",
+            "lowz_zmax": None,
+        },
         iters=10_000,
     ):
         self.calc_line_lum_rest_optical(
@@ -1913,7 +2099,11 @@ class Catalogue(Catalogue_Base):
         self,
         SED_rest_property_function,
         iters,
-        SED_fit_params={"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None},
+        SED_fit_params={
+            "code": EAZY(),
+            "templates": "fsps_larson",
+            "lowz_zmax": None,
+        },
         **kwargs,
     ):
         key = SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)
@@ -1939,7 +2129,9 @@ class Catalogue(Catalogue_Base):
                     iters=iters,
                     **kwargs,
                 )
-                for gal in tqdm(self, total=len(self), desc=f"Calculating {name}")
+                for gal in tqdm(
+                    self, total=len(self), desc=f"Calculating {name}"
+                )
             ]
             galfind_logger.info(f"Calculated {name}")
             self._append_SED_rest_property_to_fits(name, key)
@@ -1964,10 +2156,14 @@ class Catalogue(Catalogue_Base):
         fits_tab = self.open_cat(cropped=False)
         IDs = np.array(fits_tab[self.cat_creator.ID_label]).astype(int)
         if type(SED_rest_property_tab) == type(None):
-            SED_rest_property_tab = Table({self.cat_creator.ID_label: IDs}, dtype=[int])
+            SED_rest_property_tab = Table(
+                {self.cat_creator.ID_label: IDs}, dtype=[int]
+            )
         # if the table does not include the required column names, instantiate blank columns
         if property_name not in SED_rest_property_tab.colnames:
-            blank_floats = np.full(len(SED_rest_property_tab), type_fill_vals[float])
+            blank_floats = np.full(
+                len(SED_rest_property_tab), type_fill_vals[float]
+            )
             new_colname_tab = Table(
                 {
                     f"{self.cat_creator.ID_label}_temp": IDs,
@@ -1984,7 +2180,9 @@ class Catalogue(Catalogue_Base):
                 keys_right=f"{self.cat_creator.ID_label}_temp",
                 join_type="inner",
             )
-            SED_rest_property_tab.remove_column(f"{self.cat_creator.ID_label}_temp")
+            SED_rest_property_tab.remove_column(
+                f"{self.cat_creator.ID_label}_temp"
+            )
             new_cols = True
         else:
             new_cols = False
@@ -1993,13 +2191,17 @@ class Catalogue(Catalogue_Base):
             is_property_updated = np.full(len(self), True)
         else:
             is_property_updated = self.__getattr__(
-                property_name, phot_type="rest", property_type="recently_updated"
+                property_name,
+                phot_type="rest",
+                property_type="recently_updated",
             )
         if type(is_property_updated) == type(None):
             # breakpoint()
             pass
         else:
-            if any(type(updated) == type(None) for updated in is_property_updated):
+            if any(
+                type(updated) == type(None) for updated in is_property_updated
+            ):
                 # breakpoint()
                 pass
         # update properties and kwargs for those galaxies that have been updated, or if the columns have just been made
@@ -2028,14 +2230,19 @@ class Catalogue(Catalogue_Base):
                     for kwarg_name in kwarg_names
                 ]
                 for kwarg_types in kwarg_types_arr:
-                    assert all(types == kwarg_types[0] for types in kwarg_types)
-                kwarg_types = [kwarg_types[0] for kwarg_types in kwarg_types_arr]
+                    assert all(
+                        types == kwarg_types[0] for types in kwarg_types
+                    )
+                kwarg_types = [
+                    kwarg_types[0] for kwarg_types in kwarg_types_arr
+                ]
                 # make new columns for any kwarg names that have not previously been created
                 for kwarg_name, kwarg_type in zip(kwarg_names, kwarg_types):
                     assert kwarg_types[0] in type_fill_vals.keys()
                     if kwarg_name not in SED_rest_property_tab.colnames:
                         blank_col = np.full(
-                            len(SED_rest_property_tab), type_fill_vals[kwarg_type]
+                            len(SED_rest_property_tab),
+                            type_fill_vals[kwarg_type],
                         )
                         new_colname_tab = Table(
                             {
@@ -2070,16 +2277,18 @@ class Catalogue(Catalogue_Base):
                     np.array(
                         [
                             True if ID in non_calculated_IDs else False
-                            for ID in SED_rest_property_tab[self.cat_creator.ID_label]
+                            for ID in SED_rest_property_tab[
+                                self.cat_creator.ID_label
+                            ]
                         ]
                     )
                 ]
                 new_properties = np.concatenate(
                     (
                         calculated_properties,
-                        np.array(old_SED_rest_property_tab[property_name]).astype(
-                            float
-                        ),
+                        np.array(
+                            old_SED_rest_property_tab[property_name]
+                        ).astype(float),
                     )
                 )
                 calculated_property_errs = self.__getattr__(
@@ -2087,7 +2296,9 @@ class Catalogue(Catalogue_Base):
                 )
                 new_property_l1 = np.concatenate(
                     (
-                        np.array(calculated_property_errs[:, 0])[is_property_updated],
+                        np.array(calculated_property_errs[:, 0])[
+                            is_property_updated
+                        ],
                         np.array(
                             old_SED_rest_property_tab[f"{property_name}_l1"]
                         ).astype(float),
@@ -2095,7 +2306,9 @@ class Catalogue(Catalogue_Base):
                 )
                 new_property_u1 = np.concatenate(
                     (
-                        np.array(calculated_property_errs[:, 1])[is_property_updated],
+                        np.array(calculated_property_errs[:, 1])[
+                            is_property_updated
+                        ],
                         np.array(
                             old_SED_rest_property_tab[f"{property_name}_u1"]
                         ).astype(float),
@@ -2114,7 +2327,8 @@ class Catalogue(Catalogue_Base):
                                 ]
                             ),
                             np.full(
-                                len(non_calculated_IDs), type_fill_vals[kwarg_type]
+                                len(non_calculated_IDs),
+                                type_fill_vals[kwarg_type],
                             ),
                         )
                     )
@@ -2148,16 +2362,22 @@ class Catalogue(Catalogue_Base):
                     keys_right=f"{self.cat_creator.ID_label}_temp",
                     join_type="outer",
                 )
-                SED_rest_property_tab.remove_column(f"{self.cat_creator.ID_label}_temp")
+                SED_rest_property_tab.remove_column(
+                    f"{self.cat_creator.ID_label}_temp"
+                )
                 SED_rest_property_tab.sort(self.cat_creator.ID_label)
-                # THIS IS NOT TOTALLY GENERAL (only does 2x tables!)
                 self.write_cat(
-                    [fits_tab, SED_rest_property_tab], ["OBJECTS", SED_fit_params_label]
+                    [fits_tab, SED_rest_property_tab],
+                    ["OBJECTS", SED_fit_params_label],
                 )
 
     def load_SED_rest_properties(
         self,
-        SED_fit_params={"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None},
+        SED_fit_params={
+            "code": EAZY(),
+            "templates": "fsps_larson",
+            "lowz_zmax": None,
+        },
         timed=True,
     ):
         key = SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)
@@ -2165,10 +2385,13 @@ class Catalogue(Catalogue_Base):
         property_paths = glob.glob(f"{PDF_dir}/*")
         if len(property_paths) != 0:
             property_names = [
-                property_path.split("/")[-1] for property_path in property_paths
+                property_path.split("/")[-1]
+                for property_path in property_paths
             ]
             self.gals = [
-                deepcopy(gal)._load_SED_rest_properties(PDF_dir, property_names, key)
+                deepcopy(gal)._load_SED_rest_properties(
+                    PDF_dir, property_names, key
+                )
                 for gal in tqdm(
                     deepcopy(self),
                     desc=f"Loading SED rest properties for {key}",
@@ -2181,13 +2404,21 @@ class Catalogue(Catalogue_Base):
     def del_SED_rest_property(
         self,
         property_name,
-        SED_fit_params={"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None},
+        SED_fit_params={
+            "code": EAZY(),
+            "templates": "fsps_larson",
+            "lowz_zmax": None,
+        },
     ):
         key = SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)
         # SED rest property must exist for this sample
         assert property_name in self.SED_rest_properties[key]
         # delete data from fits
-        del_col_names = [property_name, f"{property_name}_l1", f"{property_name}_u1"]
+        del_col_names = [
+            property_name,
+            f"{property_name}_l1",
+            f"{property_name}_u1",
+        ]
         del_hdr_names = [f"SED_REST_{property_name}"]
         self.del_cols_hdrs_from_fits(del_col_names, del_hdr_names, key)
         # check whether the SED rest property kwargs are included in the catalogue, and if so delete these as well - Not Implemented Yet!
@@ -2195,7 +2426,8 @@ class Catalogue(Catalogue_Base):
         # remove data from self, starting with catalogue, then gal for gal in self.gals
         self.SED_rest_properties[key].remove(property_name)
         self.gals = [
-            deepcopy(gal)._del_SED_rest_properties([property_name], key) for gal in self
+            deepcopy(gal)._del_SED_rest_properties([property_name], key)
+            for gal in self
         ]
 
     # Number Density Function (e.g. UVLF and mass functions) methods
@@ -2211,9 +2443,9 @@ class Catalogue(Catalogue_Base):
         assert len(z_bin) == 2
         assert z_bin[0] < z_bin[1]
         if type(SED_fit_params) == dict:
-            SED_fit_params_key = SED_fit_params["code"].label_from_SED_fit_params(
-                SED_fit_params
-            )
+            SED_fit_params_key = SED_fit_params[
+                "code"
+            ].label_from_SED_fit_params(SED_fit_params)
         elif type(SED_fit_params) == str:
             SED_fit_params_key = SED_fit_params
         else:
@@ -2252,8 +2484,11 @@ class Catalogue(Catalogue_Base):
                 # table with uncalculated Vmax's
                 Vmax_arr = np.array(
                     [
-                        gal.V_max[z_bin_name][data.full_name].to(u.Mpc**3).value
-                        if type(gal.V_max[z_bin_name][data.full_name]) in [u.Quantity]
+                        gal.V_max[z_bin_name][data.full_name]
+                        .to(u.Mpc**3)
+                        .value
+                        if type(gal.V_max[z_bin_name][data.full_name])
+                        in [u.Quantity]
                         else gal.V_max[z_bin_name][data.full_name]
                         for gal in self
                         if gal.ID in update_IDs
@@ -2287,7 +2522,10 @@ class Catalogue(Catalogue_Base):
                     },
                     dtype=[int, float, float, float],
                 )
-                new_tab.meta = {"Vmax_invalid_val": -1.0, "Vmax_unit": u.Mpc**3}
+                new_tab.meta = {
+                    "Vmax_invalid_val": -1.0,
+                    "Vmax_unit": u.Mpc**3,
+                }
                 if Path(save_path).is_file():  # update and save table
                     out_tab = vstack([old_tab, new_tab])
                     out_tab.meta = {**old_tab.meta, **new_tab.meta}
@@ -2296,7 +2534,9 @@ class Catalogue(Catalogue_Base):
                 out_tab.sort("ID")
                 out_tab.write(save_path, overwrite=True)
             else:  # Vmax table already opened
-                Vmax_tab = old_tab[np.array([row["ID"] in self.ID for row in old_tab])]
+                Vmax_tab = old_tab[
+                    np.array([row["ID"] in self.ID for row in old_tab])
+                ]
                 Vmax_tab.sort("ID")
                 # save appropriate Vmax properties
                 self.gals = [

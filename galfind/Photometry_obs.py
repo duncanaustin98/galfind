@@ -7,19 +7,17 @@ Created on Mon Jul 17 15:03:20 2023
 """
 
 # Photometry_obs.py
-import numpy as np
-import astropy.units as u
-from copy import deepcopy
-import matplotlib.patheffects as pe
-from tqdm import tqdm
 import time
 from typing import Union
 import inspect
 
-from . import useful_funcs_austind as funcs
-from . import galfind_logger
+import astropy.units as u
+import matplotlib.patheffects as pe
+import numpy as np
+from tqdm import tqdm
+
 from .Photometry import Photometry
-from .SED_result import Galaxy_SED_results, Catalogue_SED_results
+from .SED_result import Catalogue_SED_results, Galaxy_SED_results
 
 
 class Photometry_obs(Photometry):
@@ -38,9 +36,7 @@ class Photometry_obs(Photometry):
             start = time.time()
         self.aper_diam = aper_diam
         self.min_flux_pc_err = min_flux_pc_err
-        self.SED_results = (
-            SED_results  # array of SED_result objects with different SED fitting runs
-        )
+        self.SED_results = SED_results  # array of SED_result objects with different SED fitting runs
         if timed:
             mid = time.time()
         self.aper_corrs = instrument.get_aper_corrs(self.aper_diam)
@@ -86,7 +82,9 @@ class Photometry_obs(Photometry):
             else:
                 return super().__getattr__(
                     property_name,
-                    "phot" if origin == "phot_obs" else origin.replace("phot_", ""),
+                    "phot"
+                    if origin == "phot_obs"
+                    else origin.replace("phot_", ""),
                 )
         else:
             # determine property type from name
@@ -104,10 +102,14 @@ class Photometry_obs(Photometry):
                     galfind_logger.warning(
                         f"No property_type given in suffix of {property_name=} for Photometry_rest.__getattr__. Defaulting to value"
                     )
-                    property_name = property_name.replace(f"_{property_type}", "")
+                    property_name = property_name.replace(
+                        f"_{property_type}", ""
+                    )
                     property_type = "val"
                 else:
-                    property_name = property_name.replace(f"_{property_type}", "")
+                    property_name = property_name.replace(
+                        f"_{property_type}", ""
+                    )
                     property_type = "recently_updated"
             # determine relevant SED_result to use from origin keyword
             if type(origin) in [str]:
@@ -121,9 +123,13 @@ class Photometry_obs(Photometry):
                     SED_results_key = origin
                     origin = "SED_result"
             else:  # type(origin) in [dict]:
-                SED_results_key = origin["code"].label_from_SED_fit_params(origin)
+                SED_results_key = origin["code"].label_from_SED_fit_params(
+                    origin
+                )
                 origin = "SED_result"
-            assert SED_results_key in self.SED_results.keys(), galfind_logger.critical(
+            assert (
+                SED_results_key in self.SED_results.keys()
+            ), galfind_logger.critical(
                 f"{SED_results_key=} not in {self.SED_results.keys()=}!"
             )
             return self.SED_results[SED_results_key].__getattr__(
@@ -169,7 +175,9 @@ class Photometry_obs(Photometry):
         lowz_zmaxs,
         templates,
     ):
-        galfind_logger.warning("SED_fit_params should be included in this function")
+        galfind_logger.warning(
+            "SED_fit_params should be included in this function"
+        )
         galfind_logger.warning(
             "Problems with Photometry_obs.from_fits_cat when photometry and SED fitting properties are in different catalogue extensions"
         )
@@ -217,7 +225,8 @@ class Photometry_obs(Photometry):
 
     def get_SED_fit_params_arr(self, code) -> list:
         return [
-            code.SED_fit_params_from_label(label) for label in self.SED_results.keys()
+            code.SED_fit_params_from_label(label)
+            for label in self.SED_results.keys()
         ]
 
     def load_property(
@@ -324,7 +333,10 @@ class Photometry_obs(Photometry):
                         funcs.flux_to_mag_ratio(ext_src_corr.value) * u.mag
                     )  # units are incorrect
                     updated_property = orig_property + correction
-                    PDF_add_kwargs = {**PDF_add_kwargs, **{"ext_src_corr": correction}}
+                    PDF_add_kwargs = {
+                        **PDF_add_kwargs,
+                        **{"ext_src_corr": correction},
+                    }
                     updated_property_PDF = orig_property_PDF.__add__(
                         correction,
                         name_ext=funcs.ext_src_label,
@@ -334,7 +346,10 @@ class Photometry_obs(Photometry):
                 elif type(orig_property) in [u.Dex]:
                     correction = u.Dex(np.log10(ext_src_corr.value))
                     updated_property = orig_property + correction
-                    PDF_add_kwargs = {**PDF_add_kwargs, **{"ext_src_corr": correction}}
+                    PDF_add_kwargs = {
+                        **PDF_add_kwargs,
+                        **{"ext_src_corr": correction},
+                    }
                     updated_property_PDF = orig_property_PDF.__add__(
                         correction,
                         name_ext=funcs.ext_src_label,
@@ -367,7 +382,9 @@ class Photometry_obs(Photometry):
                 # save non rest_property attributes outside of dict as well
                 if not rest_property:
                     setattr(
-                        data_obj, updated_property_PDF.property_name, updated_property
+                        data_obj,
+                        updated_property_PDF.property_name,
+                        updated_property,
                     )
 
     def make_all_ext_src_corrs(
@@ -388,9 +405,12 @@ class Photometry_obs(Photometry):
         sed_rest_ext_src_property_dict = {
             f"{key}_REST_PROPERTY": [
                 gal_property
-                for gal_property in self.SED_results[key].phot_rest.properties.keys()
+                for gal_property in self.SED_results[
+                    key
+                ].phot_rest.properties.keys()
                 if gal_property.split("_")[0] in funcs.ext_src_properties
-                and gal_property in self.SED_results[key].phot_rest.property_PDFs.keys()
+                and gal_property
+                in self.SED_results[key].phot_rest.property_PDFs.keys()
             ]
             for key in self.SED_results.keys()
         }
@@ -447,21 +467,37 @@ class Photometry_obs(Photometry):
             label_kwargs = {
                 "ha": "center",
                 "fontsize": "medium",
-                "path_effects": [pe.withStroke(linewidth=2.0, foreground="white")],
+                "path_effects": [
+                    pe.withStroke(linewidth=2.0, foreground="white")
+                ],
                 "zorder": 1_000.0,
             }
             label_func = (
-                lambda SNR: f"{SNR:.1f}$\sigma$" if SNR < 100 else f"{SNR:.0f}$\sigma$"
+                lambda SNR: f"{SNR:.1f}" + r"$\sigma$"
+                if SNR < 100
+                else f"{SNR:.0f}" + r"$\sigma$"
             )
             if mag_units == u.ABmag:
                 offset = 0.15
                 [
                     ax.annotate(
                         label_func(SNR),
-                        (wav, mag - offset if is_uplim else mag + mag_u1 + offset),
+                        (
+                            wav,
+                            mag - offset
+                            if is_uplim
+                            else mag + mag_u1 + offset,
+                        ),
                         **label_kwargs,
                     )
-                    for i, (SNR, wav, mag, mag_l1, mag_u1, is_uplim) in enumerate(
+                    for i, (
+                        SNR,
+                        wav,
+                        mag,
+                        mag_l1,
+                        mag_u1,
+                        is_uplim,
+                    ) in enumerate(
                         zip(
                             self.SNR,
                             wavs_to_plot,
@@ -481,10 +517,22 @@ class Photometry_obs(Photometry):
                 [
                     ax.annotate(
                         label_func(SNR),
-                        (wav, mag + offset if is_uplim else mag - mag_l1 - offset),
+                        (
+                            wav,
+                            mag + offset
+                            if is_uplim
+                            else mag - mag_l1 - offset,
+                        ),
                         **label_kwargs,
                     )
-                    for i, (SNR, wav, mag, mag_l1, mag_u1, is_uplim) in enumerate(
+                    for i, (
+                        SNR,
+                        wav,
+                        mag,
+                        mag_l1,
+                        mag_u1,
+                        is_uplim,
+                    ) in enumerate(
                         zip(
                             self.SNR,
                             wavs_to_plot,
@@ -604,16 +652,23 @@ class Multiple_Photometry_obs:
     def from_fits_cat(
         cls, fits_cat, instrument, cat_creator, SED_fit_params_arr, timed=False
     ):
-        flux_Jy_arr, flux_Jy_errs_arr, gal_band_mask = cat_creator.load_photometry(
-            fits_cat, instrument.band_names, timed=timed
+        flux_Jy_arr, flux_Jy_errs_arr, gal_band_mask = (
+            cat_creator.load_photometry(
+                fits_cat, instrument.band_names, timed=timed
+            )
         )
         depths_arr = cat_creator.load_depths(
             fits_cat, instrument.band_names, gal_band_mask, timed=timed
         )
-        instrument_arr = cat_creator.load_instruments(instrument, gal_band_mask)
+        instrument_arr = cat_creator.load_instruments(
+            instrument, gal_band_mask
+        )
         if SED_fit_params_arr != [{}]:
             SED_results_arr = Catalogue_SED_results.from_fits_cat(
-                fits_cat, cat_creator, SED_fit_params_arr, instrument=instrument
+                fits_cat,
+                cat_creator,
+                SED_fit_params_arr,
+                instrument=instrument,
             ).SED_results
         else:
             SED_results_arr = np.full(len(flux_Jy_arr), {})

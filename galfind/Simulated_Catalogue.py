@@ -10,14 +10,21 @@ Created on Wed Jun  7 00:16:05 2023
 
 import numpy as np
 from tqdm import tqdm
-from . import Simulated_Galaxy
-from . import Catalogue_Base
+
+from . import Catalogue_Base, Simulated_Galaxy
 from . import useful_funcs_austind as funcs
 
 
 class Simulated_Catalogue(Catalogue_Base):
     def __init__(
-        self, gals, cat_path, survey_name, cat_creator, sim, codes=[], version=""
+        self,
+        gals,
+        cat_path,
+        survey_name,
+        cat_creator,
+        sim,
+        codes=[],
+        version="",
     ):
         self.sim = sim
         super().__init__(gals, cat_path, survey_name, cat_creator, codes)

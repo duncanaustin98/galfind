@@ -7,20 +7,21 @@ Created on Wed Apr 19 21:19:13 2023
 """
 
 # useful_funcs_austind.py
-import sep
-import os
-import numpy as np
-import matplotlib.pyplot as plt
-import astropy.constants as const
-import astropy.units as u
-from astropy.table import Table
-from astropy.wcs.utils import skycoord_to_pixel
-from astropy.coordinates import SkyCoord
 import inspect
-from scipy.stats import chi2
+import os
 from typing import Union
 
-from . import galfind_logger, astropy_cosmo
+import astropy.constants as const
+import astropy.units as u
+import matplotlib.pyplot as plt
+import numpy as np
+import sep
+from astropy.coordinates import SkyCoord
+from astropy.table import Table
+from astropy.wcs.utils import skycoord_to_pixel
+from scipy.stats import chi2
+
+from . import astropy_cosmo, galfind_logger
 
 # fluxes and magnitudes
 
@@ -42,7 +43,8 @@ def convert_mag_units(wavs, mags, units):
         ]:  # f_ν -> derivative of u.Jy
             mags = mags.to(u.ABmag)
         elif (
-            u.get_physical_type(mags.unit) == "power density/spectral flux density wav"
+            u.get_physical_type(mags.unit)
+            == "power density/spectral flux density wav"
         ):  # f_λ -> derivative of u.erg / (u.s * (u.cm ** 2) * u.AA)
             mags = mags.to(u.ABmag, equivalencies=u.spectral_density(wavs))
     elif u.get_physical_type(units) in [
@@ -64,7 +66,8 @@ def convert_mag_units(wavs, mags, units):
         if mags.unit == u.ABmag:
             mags = mags.to(units, equivalencies=u.spectral_density(wavs))
         elif (
-            u.get_physical_type(mags.unit) == "power density/spectral flux density wav"
+            u.get_physical_type(mags.unit)
+            == "power density/spectral flux density wav"
         ):
             mags = mags.to(units)
         else:  # different phyiscal type that isn't ABmag
@@ -79,7 +82,9 @@ def convert_mag_units(wavs, mags, units):
 
 
 def convert_mag_err_units(wavs, mags, mag_errs, units):
-    assert mags.unit == mag_errs[0].unit == mag_errs[1].unit, galfind_logger.critical(
+    assert (
+        mags.unit == mag_errs[0].unit == mag_errs[1].unit
+    ), galfind_logger.critical(
         f"Could not convert mag error units as mags.unit = {mags.unit} != mag_errs.unit = ({mag_errs[0].unit}, {mag_errs[1].unit})"
     )
 
@@ -102,7 +107,8 @@ def convert_mag_err_units(wavs, mags, mag_errs, units):
             else:
                 swap_order = False
         elif (
-            u.get_physical_type(units) == "power density/spectral flux density wav"
+            u.get_physical_type(units)
+            == "power density/spectral flux density wav"
         ):  # f_λ -> derivative of u.erg / (u.s * (u.cm ** 2) * u.AA):
             if mags.unit == u.ABmag:
                 swap_order = True
@@ -142,8 +148,12 @@ def log_scale_flux_errors(fluxes, flux_errs):  # removes unit
     ), galfind_logger.warning(
         f"{fluxes.unit =} != flux_errs.unit = ({flux_errs[0].unit, flux_errs[1].unit})"
     )
-    log_flux_l1 = log_scale_fluxes(fluxes) - log_scale_fluxes(fluxes - flux_errs[0])
-    log_flux_u1 = log_scale_fluxes(fluxes + flux_errs[1]) - log_scale_fluxes(fluxes)
+    log_flux_l1 = log_scale_fluxes(fluxes) - log_scale_fluxes(
+        fluxes - flux_errs[0]
+    )
+    log_flux_u1 = log_scale_fluxes(fluxes + flux_errs[1]) - log_scale_fluxes(
+        fluxes
+    )
     return [log_flux_l1, log_flux_u1]
 
 
@@ -158,7 +168,9 @@ def calc_1sigma_flux(depth, zero_point):
     return flux_1sigma  # image units
 
 
-def n_sigma_detection(depth, mag, zero_point):  # mag here is non aperture corrected
+def n_sigma_detection(
+    depth, mag, zero_point
+):  # mag here is non aperture corrected
     flux_1sigma = calc_1sigma_flux(depth, zero_point)
     flux = 10 ** ((mag - zero_point) / -2.5)
     return flux / flux_1sigma
@@ -199,7 +211,12 @@ def flux_image_to_Jy(fluxes, zero_points):
     # convert flux from image units to Jy
     if type(fluxes) in [list, np.array]:
         return (
-            np.array([flux * (10 ** ((zero_points - 8.9) / -2.5)) for flux in fluxes])
+            np.array(
+                [
+                    flux * (10 ** ((zero_points - 8.9) / -2.5))
+                    for flux in fluxes
+                ]
+            )
             * u.Jy
         )
     else:
@@ -228,8 +245,12 @@ def loc_depth_to_flux_err(loc_depth, zero_point):
 #     return flux_lambda # observed frame
 
 
-def flux_Jy_to_lambda(flux_Jy, wav):  # must already have associated astropy units
-    return (flux_Jy * const.c / (wav**2)).to(u.erg / (u.s * (u.cm**2) * u.Angstrom))
+def flux_Jy_to_lambda(
+    flux_Jy, wav
+):  # must already have associated astropy units
+    return (flux_Jy * const.c / (wav**2)).to(
+        u.erg / (u.s * (u.cm**2) * u.Angstrom)
+    )
 
 
 def flux_lambda_to_Jy(flux_lambda, wav):
@@ -255,7 +276,9 @@ def wav_rest_to_obs(wav_rest, z):
 
 
 def flux_lambda_obs_to_rest(flux_lambda_obs, z):
-    flux_lambda_rest = flux_lambda_obs * ((1 + np.full(len(flux_lambda_obs), z)) ** 2)
+    flux_lambda_rest = flux_lambda_obs * (
+        (1 + np.full(len(flux_lambda_obs), z)) ** 2
+    )
     return flux_lambda_rest
 
 
@@ -267,16 +290,19 @@ def luminosity_to_flux(lum, wavs, z=None, cosmo=astropy_cosmo, out_units=u.Jy):
     else:
         lum_distance = cosmo.luminosity_distance(z)
     # sort out the units
-    if u.get_physical_type(lum.unit) == "yank":  # i.e. L_λ, Lsun / AA or equivalent
+    if (
+        u.get_physical_type(lum.unit) == "yank"
+    ):  # i.e. L_λ, Lsun / AA or equivalent
         if u.get_physical_type(out_units) in [
             "ABmag/spectral flux density",
             "spectral flux density",
         ]:  # f_ν
-            return (lum_lam_to_lum_nu(lum, wavs) / (4 * np.pi * lum_distance**2)).to(
-                out_units
-            )
+            return (
+                lum_lam_to_lum_nu(lum, wavs) / (4 * np.pi * lum_distance**2)
+            ).to(out_units)
         elif (
-            u.get_physical_type(out_units) == "power density/spectral flux density wav"
+            u.get_physical_type(out_units)
+            == "power density/spectral flux density wav"
         ):  # f_λ
             return (lum / (4 * np.pi * lum_distance**2)).to(out_units)
         else:
@@ -290,11 +316,12 @@ def luminosity_to_flux(lum, wavs, z=None, cosmo=astropy_cosmo, out_units=u.Jy):
         ]:  # f_ν
             return (lum / (4 * np.pi * lum_distance**2)).to(out_units)
         elif (
-            u.get_physical_type(out_units) == "power density/spectral flux density wav"
+            u.get_physical_type(out_units)
+            == "power density/spectral flux density wav"
         ):  # f_λ
-            return (lum_nu_to_lum_lam(lum, wavs) / (4 * np.pi * lum_distance**2)).to(
-                out_units
-            )
+            return (
+                lum_nu_to_lum_lam(lum, wavs) / (4 * np.pi * lum_distance**2)
+            ).to(out_units)
         else:
             raise (Exception(""))
 
@@ -314,7 +341,9 @@ def flux_to_luminosity(
             u.get_physical_type(out_units) == "yank"
         ):  # i.e. L_λ, Lsun / AA or equivalent
             # convert f_ν -> f_λ
-            flux = convert_mag_units(wavs, flux, u.erg / (u.s * u.AA * u.cm**2))
+            flux = convert_mag_units(
+                wavs, flux, u.erg / (u.s * u.AA * u.cm**2)
+            )
         elif (
             u.get_physical_type(out_units) == "energy/torque/work"
         ):  # i.e L_ν, Lsun / Hz or equivalent
@@ -324,7 +353,8 @@ def flux_to_luminosity(
                 f"{out_units=} not in ['yank', 'energy/torque/work']"
             )
     elif (
-        u.get_physical_type(flux.unit) == "power density/spectral flux density wav"
+        u.get_physical_type(flux.unit)
+        == "power density/spectral flux density wav"
     ):  # f_λ
         if (
             u.get_physical_type(out_units) == "yank"
@@ -371,7 +401,9 @@ unit_labels_dict = {
     u.AA: r"$\mathrm{\AA}$",
     u.um: r"$\mu\mathrm{m}$",
     u.erg
-    / (u.s * u.AA * u.cm**2): r"$\mathrm{erg s}^{-1}\mathrm{AA}^{-1}\mathrm{cm}^{-2}$",
+    / (
+        u.s * u.AA * u.cm**2
+    ): r"$\mathrm{erg s}^{-1}\mathrm{AA}^{-1}\mathrm{cm}^{-2}$",
     u.Jy: r"$\mathrm{Jy}$",
     u.nJy: r"$\mathrm{nJy}$",
     u.ABmag: r"$\mathrm{AB mag}$",
@@ -402,7 +434,9 @@ def label_fluxes(unit, is_log_scaled):
         "spectral flux density",
     ]:
         flux_label = r"$f_{\nu}$"
-    elif u.get_physical_type(unit) == "power density/spectral flux density wav":
+    elif (
+        u.get_physical_type(unit) == "power density/spectral flux density wav"
+    ):
         flux_label = r"$f_{\lambda}$"
     else:
         galfind_logger.critical(f"{unit=} not valid!")
@@ -513,10 +547,12 @@ def calc_cv_proper(
         assert len(rectangular_geometry_y_to_x) == len(data_arr)
     elif type(rectangular_geometry_y_to_x) in [dict]:
         assert all(
-            data.full_name in rectangular_geometry_y_to_x.keys() for data in data_arr
+            data.full_name in rectangular_geometry_y_to_x.keys()
+            for data in data_arr
         )
         rectangular_geometry_y_to_x = [
-            float(rectangular_geometry_y_to_x[data.full_name]) for data in data_arr
+            float(rectangular_geometry_y_to_x[data.full_name])
+            for data in data_arr
         ]
     cos_var_tot = 0.0
     total_area = 0.0
@@ -546,7 +582,9 @@ def calc_cv_proper(
             * (codist_low + 0.5 * C)
         )
         B = dimensions_x.to(u.deg).value / 180.0 * (codist_low + 0.5 * C)
-        scale = np.sqrt((volume / (A * B * C)).to(u.dimensionless_unscaled)).decompose()
+        scale = np.sqrt(
+            (volume / (A * B * C)).to(u.dimensionless_unscaled)
+        ).decompose()
         A *= scale
         B *= scale
         C *= scale
@@ -564,7 +602,9 @@ def calc_cv_proper(
         cos_var_tot += (area**2) * (cos_var**2)
     if total_area != 0.0:
         cosmic_variance = np.sqrt(
-            (cos_var_tot / (total_area**2.0)).to(u.dimensionless_unscaled).value
+            (cos_var_tot / (total_area**2.0))
+            .to(u.dimensionless_unscaled)
+            .value
         )
     else:
         cosmic_variance = 0.0
@@ -639,7 +679,9 @@ def percentiles_from_PDF(PDF):
         return -99.0, -99.0, -99.0
     else:
         try:
-            PDF = np.array([val.value for val in PDF.copy()])  # remove the units
+            PDF = np.array(
+                [val.value for val in PDF.copy()]
+            )  # remove the units
         except:
             pass
         PDF_median = np.median(PDF)
@@ -676,13 +718,13 @@ def fits_cat_to_np(fits_cat, column_labels, reshape_by_aper_diams=True):
         new_cat = new_cat.data
     if reshape_by_aper_diams:
         n_aper_diams = len(new_cat[0][0])
-        new_cat = np.lib.recfunctions.structured_to_unstructured(new_cat).reshape(
-            len(fits_cat), len(column_labels), n_aper_diams
-        )
+        new_cat = np.lib.recfunctions.structured_to_unstructured(
+            new_cat
+        ).reshape(len(fits_cat), len(column_labels), n_aper_diams)
     else:
-        new_cat = np.lib.recfunctions.structured_to_unstructured(new_cat).reshape(
-            len(fits_cat), len(column_labels)
-        )
+        new_cat = np.lib.recfunctions.structured_to_unstructured(
+            new_cat
+        ).reshape(len(fits_cat), len(column_labels))
     return new_cat
 
 
@@ -718,7 +760,9 @@ def get_z_PDF_paths(
     ]
 
 
-def get_SED_paths(fits_cat, IDs, codes, templates_arr, lowz_zmaxs, fits_cat_path=None):
+def get_SED_paths(
+    fits_cat, IDs, codes, templates_arr, lowz_zmaxs, fits_cat_path=None
+):
     try:
         fits_cat_path = fits_cat.meta["cat_path"]
     except:
@@ -767,7 +811,9 @@ def change_file_permissions(path, permissions=0o777, log=False):
         try:
             os.chmod(p, permissions)
             if log:
-                galfind_logger.info(f"Changed permissions of {p} to {oct(permissions)}")
+                galfind_logger.info(
+                    f"Changed permissions of {p} to {oct(permissions)}"
+                )
         except (PermissionError, FileNotFoundError):
             pass
 
@@ -788,10 +834,10 @@ def tex_to_fits(
     replace={
         "&": "",
         "\\\\": "",
-        "\dag": "",
-        "\ddag": "",
-        "\S": "",
-        "\P": "",
+        r"\dag": "",
+        r"\ddag": "",
+        r"\S": "",
+        r"\P": "",
         "$": "",
         "}": "",
         "^{+": " ",

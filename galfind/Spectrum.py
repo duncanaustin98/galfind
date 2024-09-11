@@ -2,18 +2,19 @@
 
 from __future__ import annotations
 
-import numpy as np
-import astropy.units as u
-from typing import NoReturn, Union, TYPE_CHECKING
-from numpy.typing import NDArray
-from astropy.utils.masked import Masked
-from abc import abstractmethod, ABC
-from astropy.coordinates import SkyCoord
-from pathlib import Path
-from astropy.io import fits
-from tqdm import tqdm
-from astropy.table import Table
 import os
+from abc import ABC, abstractmethod
+from pathlib import Path
+from typing import TYPE_CHECKING, NoReturn, Union
+
+import astropy.units as u
+import numpy as np
+from astropy.coordinates import SkyCoord
+from astropy.io import fits
+from astropy.table import Table
+from astropy.utils.masked import Masked
+from numpy.typing import NDArray
+from tqdm import tqdm
 
 if TYPE_CHECKING:
     pass
@@ -66,7 +67,9 @@ class Spectral_Filter:
 
 
 class Spectral_Instrument(ABC):
-    def __init__(self, grating: Spectral_Grating, filter: Spectral_Filter) -> NoReturn:
+    def __init__(
+        self, grating: Spectral_Grating, filter: Spectral_Filter
+    ) -> NoReturn:
         pass
 
     @abstractmethod
@@ -104,7 +107,9 @@ class NIRSpec(Spectral_Instrument):
         ), galfind_logger.critical(
             f"{grating_filter_name=} not in {self.available_grating_filters=}"
         )
-        super().__init__(Spectral_Grating(grating_name), Spectral_Filter(filter_name))
+        super().__init__(
+            Spectral_Grating(grating_name), Spectral_Filter(filter_name)
+        )
 
     def load_sensitivity(self):
         # load from pandeia
@@ -213,7 +218,8 @@ class Spectrum:
 
         # open 2D spectrum
         loc_2D_path = url_path.replace(
-            config["Spectra"]["DJA_WEB_DIR"], config["Spectra"]["DJA_2D_SPECTRA_DIR"]
+            config["Spectra"]["DJA_WEB_DIR"],
+            config["Spectra"]["DJA_2D_SPECTRA_DIR"],
         )
         if not Path(loc_2D_path).is_file():
             funcs.make_dirs(loc_2D_path)
@@ -226,13 +232,16 @@ class Spectrum:
         # extract info from img header
         header = img["SCI"].header
         sky_coord = SkyCoord(
-            ra=float(header["SRCRA"]) * u.deg, dec=float(header["SRCDEC"]) * u.deg
+            ra=float(header["SRCRA"]) * u.deg,
+            dec=float(header["SRCDEC"]) * u.deg,
         )
         # make Spectral_Instrument object
         grating_name = str(header["GRATING"]).replace(" ", "")
         filter_name = str(header["FILTER"]).replace(" ", "")
         try:
-            instrument = instrument_conv_dict[str(header["INSTRUME"]).replace(" ", "")]
+            instrument = instrument_conv_dict[
+                str(header["INSTRUME"]).replace(" ", "")
+            ]
         except:
             instrument = NIRSpec
         instrument = instrument(grating_name, filter_name)
@@ -250,13 +259,13 @@ class Spectrum:
             #     #breakpoint()
             # determine number of exposures
             N_exposures = int(header["NOUTPUTS"]) * int(header["NFRAMES"])
-            full_flux_errs = spectrum_1D.spec["full_err"] * (N_exposures**-0.25)
+            full_flux_errs = spectrum_1D.spec["full_err"] * (
+                N_exposures**-0.25
+            )
         else:
             msa_metafile = str(header["MSAMET1"]).replace(" ", "")
             full_flux_errs = spectrum_1D.spec["full_err"]
-        meta_uri_dir = (
-            "https://mast.stsci.edu/api/v0.1/Download/file?uri=mast:JWST/product"
-        )
+        meta_uri_dir = "https://mast.stsci.edu/api/v0.1/Download/file?uri=mast:JWST/product"
         meta_in_path = f"{meta_uri_dir}/{msa_metafile}"
 
         try:
@@ -384,7 +393,9 @@ class Spectrum:
         if src == "msaexp":
             import msaexp.spectrum
 
-            fig, spec, data = msaexp.spectrum.plot_spectrum(self.origin, z=self.z)
+            fig, spec, data = msaexp.spectrum.plot_spectrum(
+                self.origin, z=self.z
+            )
             self.fit_data = data
             save_path = f"{config['DEFAULT']['GALFIND_WORK']}/DJA_spec_plots/{self.instrument.grating_filter_name}/{self.src_name}_spec.png"
             funcs.make_dirs(save_path)
@@ -453,12 +464,16 @@ class Spectral_Catalogue:
         assert version in ["v1", "v2"]
         # open and crop catalogue
         # DJA_cat = utils.read_catalog(config['Spectra']['DJA_CAT_PATH'], format = "ascii.ecsv")
-        DJA_cat = Table.read(config["Spectra"]["DJA_CAT_PATH"].replace("v2", version))
+        DJA_cat = Table.read(
+            config["Spectra"]["DJA_CAT_PATH"].replace("v2", version)
+        )
         if type(ra_range) != type(None):
             assert len(ra_range) == 2
             if type(ra_range) in [list, np.array]:
                 assert ra_range[0].unit == ra_range[1].unit
-                ra_range = [ra_range[0].value, ra_range[1].value] * ra_range[0].unit
+                ra_range = [ra_range[0].value, ra_range[1].value] * ra_range[
+                    0
+                ].unit
             ra_range = sorted(ra_range.to(u.deg).value)
             DJA_cat = DJA_cat[
                 ((DJA_cat["ra"] > ra_range[0]) & (DJA_cat["ra"] < ra_range[1]))
@@ -467,22 +482,35 @@ class Spectral_Catalogue:
             assert len(dec_range) == 2
             if type(dec_range) in [list, np.array]:
                 assert dec_range[0].unit == dec_range[1].unit
-                dec_range = [dec_range[0].value, dec_range[1].value] * dec_range[0].unit
+                dec_range = [
+                    dec_range[0].value,
+                    dec_range[1].value,
+                ] * dec_range[0].unit
             dec_range = sorted(dec_range.to(u.deg).value)
             DJA_cat = DJA_cat[
-                ((DJA_cat["dec"] > dec_range[0]) & (DJA_cat["dec"] < dec_range[1]))
+                (
+                    (DJA_cat["dec"] > dec_range[0])
+                    & (DJA_cat["dec"] < dec_range[1])
+                )
             ]
         if type(grade) != type(None):
             DJA_cat = DJA_cat[DJA_cat["grade"] == grade]
         if type(grating_filter) != type(None):
             if "grating" in DJA_cat.colnames:
-                DJA_cat = DJA_cat[DJA_cat["grating"] == grating_filter.split("/")[0]]
+                DJA_cat = DJA_cat[
+                    DJA_cat["grating"] == grating_filter.split("/")[0]
+                ]
         if type(grating_filter) != type(None):
             if "filter" in DJA_cat.colnames:
-                DJA_cat = DJA_cat[DJA_cat["filter"] == grating_filter.split("/")[1]]
+                DJA_cat = DJA_cat[
+                    DJA_cat["filter"] == grating_filter.split("/")[1]
+                ]
         if type(z_cat_range) != type(None):
             DJA_cat = DJA_cat[
-                ((DJA_cat["z"] > z_cat_range[0]) & (DJA_cat["z"] < z_cat_range[1]))
+                (
+                    (DJA_cat["z"] > z_cat_range[0])
+                    & (DJA_cat["z"] < z_cat_range[1])
+                )
             ]
             z_from_cat = True
         if type(PID) != type(None):

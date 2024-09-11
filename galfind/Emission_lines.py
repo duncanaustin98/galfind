@@ -7,10 +7,10 @@ Created on Sat Dec 16 19:14:15 2023
 """
 
 # Emission_lines.py
-import numpy as np
-import matplotlib.pyplot as plt
-import astropy.units as u
 import astropy.constants as const
+import astropy.units as u
+import matplotlib.pyplot as plt
+import numpy as np
 
 wav_lyman_alpha = 1215.67  # u.AA
 line_diagnostics = {
@@ -183,7 +183,9 @@ class Emission_line:
 
     @property
     def line_width(self, lim=1e-4):
-        mask = self.line_profile["flux"] < lim * np.max(self.line_profile["flux"])
+        mask = self.line_profile["flux"] < lim * np.max(
+            self.line_profile["flux"]
+        )
         cont_wavs = self.wavs[mask]
 
     def Tepper_Garcia06_profile(self, bins=1_000):

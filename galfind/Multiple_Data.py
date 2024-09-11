@@ -8,13 +8,17 @@ class Multiple_Data:
         self.data_arr = data_arr
 
     @classmethod
-    def from_pipeline(cls, surveys, versions, instrument_names_arr, excl_bands_arr):
+    def from_pipeline(
+        cls, surveys, versions, instrument_names_arr, excl_bands_arr
+    ):
         if type(versions) == str:
             versions = [versions for i in range(len(surveys))]
         assert len(versions) == len(surveys)
 
         if type(instrument_names_arr) == str:
-            instrument_names_arr = [[instrument_names_arr] for i in range(len(surveys))]
+            instrument_names_arr = [
+                [instrument_names_arr] for i in range(len(surveys))
+            ]
         elif type(instrument_names_arr) in [list, np.array]:
             if type(instrument_names_arr[0]) == str:
                 instrument_names_arr = [

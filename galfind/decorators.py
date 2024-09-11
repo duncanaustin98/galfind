@@ -9,9 +9,10 @@ Created on Mon Jun  5 11:43:05 2023
 # decorators.py
 import os
 import time
-from astropy.units import u
-import yagmail
 import warnings
+
+import yagmail
+from astropy.units import u
 
 
 def run_in_dir(path):
@@ -35,7 +36,9 @@ def hour_timer(func):
         t1 = time.time()
         return_value = func(*args, **kwargs)
         t2 = time.time()
-        print(f"Function {func.__name__!r} executed in {((t2-t1) * u.s).to(u.h)}")
+        print(
+            f"Function {func.__name__!r} executed in {((t2-t1) * u.s).to(u.h)}"
+        )
         return return_value
 
     return wrapper
@@ -53,7 +56,9 @@ def ignore_warnings(func):
 # should also include the 'logged' output here!
 # REMEMBER TO PUT IN .gitignore
 def email_update(
-    to="duncan.austin@postgrad.manchester.ac.uk", send_start=False, send_end=True
+    to="duncan.austin@postgrad.manchester.ac.uk",
+    send_start=False,
+    send_end=True,
 ):
     def decorated(func):
         def wrapper(*args, **kwargs):

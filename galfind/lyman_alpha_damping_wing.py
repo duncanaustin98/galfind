@@ -7,10 +7,10 @@ Created on Tue Nov 21 14:03:59 2023
 """
 
 # lyman alpha damping wing and DLAs
-import numpy as np
 import astropy.constants as const
-import astropy.units as u
 import astropy.cosmology.units as cu
+import astropy.units as u
+import numpy as np
 from scipy.special import wofz
 
 from . import astropy_cosmo
@@ -71,17 +71,29 @@ def tau_GP(z, x_HI, helium_mass_frac, cosmo=astropy_cosmo):
 
 
 def tau_DW(
-    wav_rest, z_gal, R_b, x_HI, helium_mass_frac, z_re_end=6.0, cosmo=astropy_cosmo
+    wav_rest,
+    z_gal,
+    R_b,
+    x_HI,
+    helium_mass_frac,
+    z_re_end=6.0,
+    cosmo=astropy_cosmo,
 ):
     tau_0 = tau_GP(z_gal, x_HI, helium_mass_frac, cosmo=cosmo)
     z_bubble_near = (cosmo.comoving_distance(z_gal) - R_b.to(u.Mpc)).to(
         cu.redshift, cu.redshift_distance(cosmo, kind="comoving")
     )
     z_obs = (wav_rest * (1 + z_gal) / (wav_lyman_alpha * u.AA)) - 1
-    integral = integral_result((1 + z_bubble_near) / (1 + z_obs)) - integral_result(
-        (1 + z_re_end) / (1 + z_obs)
+    integral = integral_result(
+        (1 + z_bubble_near) / (1 + z_obs)
+    ) - integral_result((1 + z_re_end) / (1 + z_obs))
+    return (
+        tau_0
+        * R_alpha
+        * (((1 + z_obs) / (1 + z_gal)) ** (3 / 2))
+        * integral
+        / np.pi
     )
-    return tau_0 * R_alpha * (((1 + z_obs) / (1 + z_gal)) ** (3 / 2)) * integral / np.pi
 
 
 # proximate DLA system
@@ -133,9 +145,13 @@ def Tepper_Garcia06_lyman_alpha_voigt_profile(wav_rest, delta_lambda):
     return Tepper_Garcia06_voigt_profile(a, x)
 
 
-def tau_proximate_DLA(wav_rest, N_HI, delta_lambda, voigt_method="Tepper-Garcia+06"):
+def tau_proximate_DLA(
+    wav_rest, N_HI, delta_lambda, voigt_method="Tepper-Garcia+06"
+):
     if voigt_method == "Tepper-Garcia+06":
-        H_a_x = Tepper_Garcia06_lyman_alpha_voigt_profile(wav_rest, delta_lambda)
+        H_a_x = Tepper_Garcia06_lyman_alpha_voigt_profile(
+            wav_rest, delta_lambda
+        )
     tau = (
         N_HI
         * DLA_damping_param(delta_lambda)

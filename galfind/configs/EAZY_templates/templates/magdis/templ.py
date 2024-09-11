@@ -20,8 +20,8 @@ U8: 2.27-3.0
 
 
 def fit_gm():
-    import numpy as np
     import matplotlib.pyplot as plt
+    import numpy as np
     from scipy.optimize import nnls
 
     lnorm = 20
@@ -51,7 +51,6 @@ def fit_gm():
         # plt.plot(mag_wave, mag_flux[:,i], color='k', alpha=0.8)
 
     ### By hand, blackbodies following da Cunha + Magphys
-    from astropy.modeling.physical_models import BlackBody
     import astropy.units as u
     from astropy.constants import c
 
@@ -74,15 +73,21 @@ def fit_gm():
     # modified black-bodies, extra factor of 1 turns from Fnu to nu Fnu
     # cold
     for t in np.arange(20, 40):
-        comps.append(BlackBody(temperature=t * u.K)(wave_grid * u.um) * nu ** (1 + 2.0))
+        comps.append(
+            BlackBody(temperature=t * u.K)(wave_grid * u.um) * nu ** (1 + 2.0)
+        )
 
     # warm
     for t in np.arange(30, 80):
-        comps.append(BlackBody(temperature=t * u.K)(wave_grid * u.um) * nu ** (1 + 1.5))
+        comps.append(
+            BlackBody(temperature=t * u.K)(wave_grid * u.um) * nu ** (1 + 1.5)
+        )
 
     # Hot
     for t in [130, 250]:
-        comps.append(BlackBody(temperature=t * u.K)(wave_grid * u.um) * nu ** (1 + 1))
+        comps.append(
+            BlackBody(temperature=t * u.K)(wave_grid * u.um) * nu ** (1 + 1)
+        )
 
     _A = np.array(comps).T
 
@@ -115,7 +120,11 @@ def fit_gm():
 
         plt.plot(wave_grid, model / norm, linewidth=3, color="w", alpha=0.8)
         plt.plot(
-            wave_grid, model / norm, linewidth=1, color=pl[0].get_color(), alpha=0.8
+            wave_grid,
+            model / norm,
+            linewidth=1,
+            color=pl[0].get_color(),
+            alpha=0.8,
         )
 
         mflam = model / wave_grid

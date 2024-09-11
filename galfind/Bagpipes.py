@@ -14,9 +14,16 @@ from typing import Union
 from pathlib import Path
 from tqdm import tqdm
 import itertools
+from pathlib import Path
+from typing import Union
 
+import astropy.units as u
+import numpy as np
+from astropy.table import Table
+from tqdm import tqdm
+
+from . import Redshift_PDF, SED_code, SED_fit_PDF, config, galfind_logger
 from . import useful_funcs_austind as funcs
-from . import galfind_logger, config, SED_code, SED_fit_PDF, Redshift_PDF
 from .SED import SED_obs
 
 # %% Bagpipes SED fitting code
@@ -165,7 +172,10 @@ class Bagpipes(SED_code):
             )
             breakpoint()
         split_metallicity_label = label.split("_Z_")[1].split("_")
-        if split_metallicity_label[0] == "log" and split_metallicity_label[1] == "10":
+        if (
+            split_metallicity_label[0] == "log"
+            and split_metallicity_label[1] == "10"
+        ):
             SED_fit_params["metallicity_prior"] = "log_10"
         elif split_metallicity_label[0] == "uniform":
             SED_fit_params["metallicity_prior"] = "uniform"
@@ -180,12 +190,17 @@ class Bagpipes(SED_code):
             redshift_label = label.split(SED_fit_params["sps_model"])[1][1:]
         else:
             SED_fit_params["sps_model"] = "BC03"
-            redshift_label = label.split(SED_fit_params["metallicity_prior"])[-1][1:]
+            redshift_label = label.split(SED_fit_params["metallicity_prior"])[
+                -1
+            ][1:]
         if redshift_label == "zfix":
             SED_fit_params["fix_z"] = True
         else:
             split_zlabel = redshift_label.split("_z_")
-            SED_fit_params["z_range"] = (float(split_zlabel[0]), float(split_zlabel[1]))
+            SED_fit_params["z_range"] = (
+                float(split_zlabel[0]),
+                float(split_zlabel[1]),
+            )
             SED_fit_params["fix_z"] = False
         return SED_fit_params
 
@@ -224,7 +239,9 @@ class Bagpipes(SED_code):
     ):
         pass
 
-    def make_fits_from_out(self, out_path, SED_fit_params, overwrite: bool = True):
+    def make_fits_from_out(
+        self, out_path, SED_fit_params, overwrite: bool = True
+    ):
         fits_out_path = self.get_galfind_fits_path(out_path)
         if not Path(fits_out_path).is_file() or overwrite:
             tab = Table.read(out_path)
@@ -264,10 +281,17 @@ class Bagpipes(SED_code):
                 z_arr[i] = float(header.replace("\n", "").split("z=")[-1])
                 f.close()
         data_arr = [
-            np.loadtxt(path) if type(path) != type(None) else None for path in SED_paths
+            np.loadtxt(path) if type(path) != type(None) else None
+            for path in SED_paths
         ]
-        wavs = [data[:, 0] if type(data) != type(None) else None for data in data_arr]
-        fluxes = [data[:, 2] if type(data) != type(None) else None for data in data_arr]
+        wavs = [
+            data[:, 0] if type(data) != type(None) else None
+            for data in data_arr
+        ]
+        fluxes = [
+            data[:, 2] if type(data) != type(None) else None
+            for data in data_arr
+        ]
         SED_obs_arr = [
             SED_obs(z, wav, flux, u.um, u.uJy)
             if all(type(i) != type(None) for i in [z, wav, flux])
@@ -282,7 +306,9 @@ class Bagpipes(SED_code):
 
     # should transition away from staticmethod
     @staticmethod
-    def extract_PDFs(gal_property, IDs, PDF_paths, SED_fit_params, timed: bool = True):
+    def extract_PDFs(
+        gal_property, IDs, PDF_paths, SED_fit_params, timed: bool = True
+    ):
         # ensure this works if only extracting 1 galaxy
         if type(IDs) in [str, int, float]:
             IDs = np.array([int(IDs)])
@@ -293,19 +319,24 @@ class Bagpipes(SED_code):
         #     return list(np.full(len(IDs), None))
         # else:
         if gal_property not in Bagpipes.gal_property_unit_dict.keys():
-            Bagpipes.gal_property_unit_dict[gal_property] = u.dimensionless_unscaled
+            Bagpipes.gal_property_unit_dict[gal_property] = (
+                u.dimensionless_unscaled
+            )
         pdf_arrs = [
             np.array(Table.read(path, format="ascii.fast_no_header")["col1"])
             if type(path) != type(None)
             else None
             for path in tqdm(
-                PDF_paths, desc=f"Loading {gal_property} PDFs", total=len(PDF_paths)
+                PDF_paths,
+                desc=f"Loading {gal_property} PDFs",
+                total=len(PDF_paths),
             )
         ]
         if gal_property == "z":
             pdfs = [
                 Redshift_PDF.from_1D_arr(
-                    pdf * u.Unit(Bagpipes.gal_property_unit_dict[gal_property]),
+                    pdf
+                    * u.Unit(Bagpipes.gal_property_unit_dict[gal_property]),
                     SED_fit_params,
                     timed=timed,
                 )
@@ -321,7 +352,8 @@ class Bagpipes(SED_code):
             pdfs = [
                 SED_fit_PDF.from_1D_arr(
                     gal_property,
-                    pdf * u.Unit(Bagpipes.gal_property_unit_dict[gal_property]),
+                    pdf
+                    * u.Unit(Bagpipes.gal_property_unit_dict[gal_property]),
                     SED_fit_params,
                     timed=timed,
                 )
@@ -403,7 +435,9 @@ class Bagpipes(SED_code):
         # extract bands to be used
         bands = phot_obj.instrument.band_names
         # extract fluxes and errors in uJy
-        band_wavs = np.array([band.WavelengthCen for band in phot_obj.instrument])
+        band_wavs = np.array(
+            [band.WavelengthCen for band in phot_obj.instrument]
+        )
         flux = funcs.convert_mag_units(band_wavs, phot_obj.flux_Jy, u.uJy)
         flux_errs = funcs.convert_mag_err_units(
             band_wavs, phot_obj.flux_Jy, phot_obj.flux_Jy_errs, u.uJy
@@ -449,7 +483,10 @@ class Bagpipes(SED_code):
         lognorm = {}
 
         # exponential SF history
-        exp["age"] = (0.001, 15.0)  # Automatically adjusts for age of the universe
+        exp["age"] = (
+            0.001,
+            15.0,
+        )  # Automatically adjusts for age of the universe
         exp["age_prior"] = age_prior
         exp["tau"] = (0.01, 15.0)
         exp["massformed"] = (5.0, 12.0)  # Change this?
@@ -464,7 +501,10 @@ class Bagpipes(SED_code):
         const["age_max"] = (0.01, 15)  # Gyr
         const["age_min"] = 0.001  # Gyr
         const["age_prior"] = age_prior
-        const["massformed"] = (5.0, 12.0)  # Log_10 total stellar mass formed: M_Solar
+        const["massformed"] = (
+            5.0,
+            12.0,
+        )  # Log_10 total stellar mass formed: M_Solar
 
         const["metallicity_prior"] = metallicity_prior
         if metallicity_prior == "log_10":
@@ -473,7 +513,10 @@ class Bagpipes(SED_code):
             const["metallicity"] = (0, 3)
 
         delayed["tau"] = (0.01, 15)  # `Gyr`
-        delayed["massformed"] = (5.0, 12.0)  # Log_10 total stellar mass formed: M_Solar
+        delayed["massformed"] = (
+            5.0,
+            12.0,
+        )  # Log_10 total stellar mass formed: M_Solar
 
         delayed["age"] = (0.001, 15)  # Gyr
         delayed["age_prior"] = age_prior
@@ -485,7 +528,10 @@ class Bagpipes(SED_code):
 
         burst["age"] = (0.01, 15)  # Gyr time since burst
         burst["age_prior"] = age_prior
-        burst["massformed"] = (0.0, 12.0)  # Log_10 total stellar mass formed: M_Solar
+        burst["massformed"] = (
+            0.0,
+            12.0,
+        )  # Log_10 total stellar mass formed: M_Solar
 
         burst["metallicity_prior"] = metallicity_prior
         if metallicity_prior == "log_10":
@@ -496,9 +542,15 @@ class Bagpipes(SED_code):
         # 1e-4 1e1
         # lognorm["tstart"] = (0.001, 15) # Gyr THIS NEVER DID ANYTHING!
         # lognorm["tstart_prior"] = age_prior
-        lognorm["tmax"] = (0.01, 15)  # these will default to a flat prior probably
+        lognorm["tmax"] = (
+            0.01,
+            15,
+        )  # these will default to a flat prior probably
         lognorm["fwhm"] = (0.01, 15)
-        lognorm["massformed"] = (5.0, 12.0)  # Log_10 total stellar mass formed: M_Solar
+        lognorm["massformed"] = (
+            5.0,
+            12.0,
+        )  # Log_10 total stellar mass formed: M_Solar
 
         lognorm["metallicity_prior"] = metallicity_prior
 
@@ -510,7 +562,10 @@ class Bagpipes(SED_code):
         # DPL
 
         dblplaw = {}  # double-power-law
-        dblplaw["tau"] = (0.0, 15.0)  # Vary the time of peak star-formation between
+        dblplaw["tau"] = (
+            0.0,
+            15.0,
+        )  # Vary the time of peak star-formation between
         # the Big Bang at 0 Gyr and 15 Gyr later. In
         # practice the code automatically stops this
         # exceeding the age of the universe at the
@@ -598,12 +653,17 @@ class Bagpipes(SED_code):
         iyer["sfr"] = (1e-3, 1e3)
         iyer["sfr_prior"] = "uniform"  # Solar masses per year
         iyer["bins"] = nbins  # Integer
-        iyer["bins_prior"] = "dirichlet"  # This prior distribution must be used
+        iyer["bins_prior"] = (
+            "dirichlet"  # This prior distribution must be used
+        )
         iyer["alpha"] = (
             5.0  # The Dirichlet prior has a single tunable parameter α that specifies how correlated the values are. In our case, values of this parameter α<1 result in values that can be arbitrarily close, leading to extremely spiky SFHs because galaxies have to assemble a significant fraction of their mass in a very short period of time, while α>1 leads to smoother SFHs with more evenly spaced values that never- theless have considerable diversity. In practice, we use a value of α=5, which leads to a distribution of parameters that is similar to what we find in SAM and MUFASA.
         )
 
-        iyer["massformed"] = (5.0, 12.0)  # Log_10 total stellar mass formed: M_Solar
+        iyer["massformed"] = (
+            5.0,
+            12.0,
+        )  # Log_10 total stellar mass formed: M_Solar
 
         iyer["metallicity_prior"] = metallicity_prior
 
@@ -667,7 +727,9 @@ class Bagpipes(SED_code):
         # dust
         if all(type(name) != type(None) for name in [dust_prior, dust_type]):
             dust = {}
-            dust["eta"] = 1.0  # Multiplicative factor on Av for stars in birth clouds
+            dust["eta"] = (
+                1.0  # Multiplicative factor on Av for stars in birth clouds
+            )
             if dust_type.lower() == "salim":
                 dust["type"] = "Salim"  # Salim
                 dust["delta"] = (
@@ -681,7 +743,9 @@ class Bagpipes(SED_code):
                 dust["B_prior"] = "uniform"
             elif dust_type.lower() == "calzetti":
                 dust["type"] = "Calzetti"
-            elif dust_type.lower() == "cf00":  # Below taken from Tacchella+2022
+            elif (
+                dust_type.lower() == "cf00"
+            ):  # Below taken from Tacchella+2022
                 # This is taken from Example 5 in the bagpipes documentation
                 dust["type"] = "CF00"
                 # dust["eta"] = 2.

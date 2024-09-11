@@ -7,14 +7,15 @@ Created on Thu Jul 13 14:14:30 2023
 """
 
 # Photometry_obs.py
-import numpy as np
-import astropy.units as u
 from copy import deepcopy
+
+import astropy.units as u
 import matplotlib.patheffects as pe
+import numpy as np
 from typing import Union
 
-from . import useful_funcs_austind as funcs
 from . import galfind_logger
+from . import useful_funcs_austind as funcs
 
 
 class Photometry:
@@ -23,7 +24,9 @@ class Photometry:
         # check that the fluxes and errors are in the correct units
         self.flux_Jy = flux_Jy
         self.flux_Jy_errs = flux_Jy_errs
-        self.loc_depths = depths  # not sure what problems renaming this will have
+        self.loc_depths = (
+            depths  # not sure what problems renaming this will have
+        )
         self.depths = depths  # stores exactly the same info as self.loc_depths, but it is a pain to propagate deletion of the above so it is left for now
         assert (
             len(self.instrument)
@@ -53,7 +56,8 @@ class Photometry:
 
         # if print_fluxes:
         fluxes_str = [
-            "%.1f ± %.1f nJy" % (flux_Jy.to(u.nJy).value, flux_Jy_err.to(u.nJy).value)
+            "%.1f ± %.1f nJy"
+            % (flux_Jy.to(u.nJy).value, flux_Jy_err.to(u.nJy).value)
             for flux_Jy, flux_Jy_err in zip(
                 self.flux_Jy.filled(fill_value=np.nan),
                 self.flux_Jy_errs.filled(fill_value=np.nan),
@@ -62,7 +66,9 @@ class Photometry:
         output_str += f"FLUXES: {fluxes_str}\n"
         output_str += f"MAGS: {[np.round(mag, 2) for mag in self.flux_Jy.filled(fill_value = np.nan).to(u.ABmag).value]}\n"
         # if print_depths:
-        output_str += f"DEPTHS: {[np.round(depth, 2) for depth in self.depths.value]}\n"
+        output_str += (
+            f"DEPTHS: {[np.round(depth, 2) for depth in self.depths.value]}\n"
+        )
 
         if print_cls_name:
             output_str += line_sep
@@ -125,17 +131,34 @@ class Photometry:
                     ]:
                         flux = self.flux_Jy[index]
                         return funcs.convert_mag_err_units(
-                            wav, flux, self.flux_Jy_errs[index], units[property_name]
+                            wav,
+                            flux,
+                            self.flux_Jy_errs[index],
+                            units[property_name],
                         )
-                    elif property_name in ["flux_nu_l1", "flux_lambda_l1", "mag_l1"]:
+                    elif property_name in [
+                        "flux_nu_l1",
+                        "flux_lambda_l1",
+                        "mag_l1",
+                    ]:
                         flux = self.flux_Jy[index]
                         return funcs.convert_mag_err_units(
-                            wav, flux, self.flux_Jy_errs[index], units[property_name]
+                            wav,
+                            flux,
+                            self.flux_Jy_errs[index],
+                            units[property_name],
                         )[0]
-                    elif property_name in ["flux_nu_u1", "flux_lambda_u1", "mag_u1"]:
+                    elif property_name in [
+                        "flux_nu_u1",
+                        "flux_lambda_u1",
+                        "mag_u1",
+                    ]:
                         flux = self.flux_Jy[index]
                         return funcs.convert_mag_err_units(
-                            wav, flux, self.flux_Jy_errs[index], units[property_name]
+                            wav,
+                            flux,
+                            self.flux_Jy_errs[index],
+                            units[property_name],
                         )[1]
                     else:
                         depth = self.depths[index]
@@ -192,7 +215,9 @@ class Photometry:
         phot_matrix = np.array(
             [
                 np.random.normal(flux, err, n_scatter)
-                for flux, err in zip(self.flux_Jy.value, self.flux_Jy_errs.value)
+                for flux, err in zip(
+                    self.flux_Jy.value, self.flux_Jy_errs.value
+                )
             ]
         )
         return [
@@ -235,7 +260,9 @@ class Photometry:
         return_extra=False,
     ):
         wavs_to_plot = funcs.convert_wav_units(self.wav, wav_units).value
-        mags_to_plot = funcs.convert_mag_units(self.wav, self.flux_Jy, mag_units)
+        mags_to_plot = funcs.convert_mag_units(
+            self.wav, self.flux_Jy, mag_units
+        )
 
         if uplim_sigma == None:
             uplims = list(np.full(len(self.flux_Jy), False))
@@ -258,7 +285,9 @@ class Photometry:
             )
             uplims = [True if SNR < uplim_sigma else False for SNR in self.SNR]
             # set photometry to uplim_sigma for the data to be plotted as upper limits
-            uplim_indices = [i for i, is_uplim in enumerate(uplims) if is_uplim]
+            uplim_indices = [
+                i for i, is_uplim in enumerate(uplims) if is_uplim
+            ]
             uplim_vals = [
                 funcs.convert_mag_units(
                     self.wav,
@@ -312,7 +341,9 @@ class Photometry:
         # log scale y axis if not in units of ABmag
         if mag_units != u.ABmag:
             if plot_errs["y"]:
-                yerr = np.array(funcs.log_scale_flux_errors(mags_to_plot, yerr))
+                yerr = np.array(
+                    funcs.log_scale_flux_errors(mags_to_plot, yerr)
+                )
             mags_to_plot = np.array(
                 funcs.log_scale_fluxes(mags_to_plot)
             )  # called 'mags_to_plot' but in this case are fluxes
@@ -326,13 +357,15 @@ class Photometry:
                 [
                     [
                         funcs.convert_wav_units(
-                            filter.WavelengthCen - filter.WavelengthLower50, wav_units
+                            filter.WavelengthCen - filter.WavelengthLower50,
+                            wav_units,
                         ).value
                         for filter in self.instrument
                     ],
                     [
                         funcs.convert_wav_units(
-                            filter.WavelengthUpper50 - filter.WavelengthCen, wav_units
+                            filter.WavelengthUpper50 - filter.WavelengthCen,
+                            wav_units,
                         ).value
                         for filter in self.instrument
                     ],
@@ -392,7 +425,9 @@ class Photometry:
 
 
 class Multiple_Photometry:
-    def __init__(self, instrument_arr, flux_Jy_arr, flux_Jy_errs_arr, loc_depths_arr):
+    def __init__(
+        self, instrument_arr, flux_Jy_arr, flux_Jy_errs_arr, loc_depths_arr
+    ):
         self.phot_arr = [
             Photometry(instrument, flux_Jy, flux_Jy_errs, loc_depths)
             for instrument, flux_Jy, flux_Jy_errs, loc_depths in zip(
@@ -406,7 +441,9 @@ class Multiple_Photometry:
             fits_cat, instrument.band_names
         )
         # local depths not yet loaded in
-        depths_arr = cat_creator.load_depths(fits_cat, instrument.band_names, gal_bands)
+        depths_arr = cat_creator.load_depths(
+            fits_cat, instrument.band_names, gal_bands
+        )
         instrument_arr = [
             deepcopy(instrument).remove_bands(
                 [band for band in instrument.band_names if band not in bands]
@@ -427,7 +464,9 @@ class Mock_Photometry(Photometry):
         except:
             depths *= u.ABmag
         # calculate errors from ABmag depths
-        flux_Jy_errs = self.flux_errs_from_depths(flux_Jy, depths, min_flux_pc_err)
+        flux_Jy_errs = self.flux_errs_from_depths(
+            flux_Jy, depths, min_flux_pc_err
+        )
         self.min_flux_pc_err = min_flux_pc_err
         super().__init__(instrument, flux_Jy, flux_Jy_errs, depths)
 
@@ -442,7 +481,9 @@ class Mock_Photometry(Photometry):
                     depth
                     if depth > flux * min_flux_pc_err / 100
                     else flux * min_flux_pc_err / 100
-                    for flux, depth in zip(flux_Jy.value, one_sig_depths_Jy.value)
+                    for flux, depth in zip(
+                        flux_Jy.value, one_sig_depths_Jy.value
+                    )
                 ]
             )
             * u.Jy
@@ -452,7 +493,9 @@ class Mock_Photometry(Photometry):
     def scatter_phot(self, size=1):
         scattered_fluxes = np.zeros((len(self.flux_Jy), size))
         for i, (flux, err) in enumerate(zip(self.flux_Jy, self.flux_Jy_errs)):
-            scattered_fluxes[i] = np.random.normal(flux.value, err.value, size=size)
+            scattered_fluxes[i] = np.random.normal(
+                flux.value, err.value, size=size
+            )
         if size == 1:
             scattered_fluxes = scattered_fluxes.flatten()
             self.scattered_phot = [

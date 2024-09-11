@@ -9,16 +9,16 @@ Created on Wed May 31 00:17:39 2023
 # SED_codes.py
 # %% Imports
 
-import numpy as np
+import time
 from abc import ABC, abstractmethod
+
 import astropy.units as u
+import numpy as np
 from astropy.table import Table, join
 from tqdm import tqdm
-import time
 
+from . import Catalogue_SED_results, config, galfind_logger
 from . import useful_funcs_austind as funcs
-from . import config, galfind_logger
-from . import Catalogue_SED_results
 
 # %% SED_code class
 
@@ -56,13 +56,16 @@ class SED_code(ABC):
         phot_shape = phot.shape
         if out_units != u.ABmag:
             phot_err = np.array(
-                [gal.phot.flux_Jy_errs.to(out_units) for gal in cat], dtype=object
+                [gal.phot.flux_Jy_errs.to(out_units) for gal in cat],
+                dtype=object,
             )  # [:, :, 0]
         else:
             # Not correct in general! Only for high S/N! Fails to scale mag errors asymetrically from flux errors
             phot_err = np.array(
                 [
-                    funcs.flux_pc_to_mag_err(gal.phot.flux_Jy_errs / gal.phot.flux_Jy)
+                    funcs.flux_pc_to_mag_err(
+                        gal.phot.flux_Jy_errs / gal.phot.flux_Jy
+                    )
                     for gal in cat
                 ],
                 dtype=object,
@@ -79,14 +82,18 @@ class SED_code(ABC):
                 if funcs.n_sigma_detection(
                     depth,
                     (phot[i][j] * out_units).to(u.ABmag).value
-                    + gal.phot.instrument.get_aper_corrs(gal.phot.aper_diam)[j],
+                    + gal.phot.instrument.get_aper_corrs(gal.phot.aper_diam)[
+                        j
+                    ],
                     u.Jy.to(u.ABmag),
                 )
                 < upper_sigma_lim["threshold"]
             ]
             phot = np.array(
                 [
-                    funcs.five_to_n_sigma_mag(loc_depth, upper_sigma_lim["value"])
+                    funcs.five_to_n_sigma_mag(
+                        loc_depth, upper_sigma_lim["value"]
+                    )
                     if [i, j] in upper_lim_indices
                     else phot[i][j]
                     for i, gal in enumerate(cat)
@@ -104,10 +111,14 @@ class SED_code(ABC):
         # insert 'no_data_val' from SED_input_bands with no data in the catalogue
         phot_in = np.zeros((len(cat), len(cat.instrument)))
         phot_err_in = np.zeros((len(cat), len(cat.instrument)))
-        for i, gal in tqdm(enumerate(cat), desc="Making .in file", total=len(cat)):
+        for i, gal in tqdm(
+            enumerate(cat), desc="Making .in file", total=len(cat)
+        ):
             for j, band_name in enumerate(cat.instrument.band_names):
                 if band_name in gal.phot.instrument.band_names:  # Check mask?
-                    index = np.where(band_name == gal.phot.instrument.band_names)[0][0]
+                    index = np.where(
+                        band_name == gal.phot.instrument.band_names
+                    )[0][0]
                     phot_in[i, j] = np.array(phot[i].data)[index]
                     phot_err_in[i, j] = np.array(phot_err[i].data)[index]
                 else:
@@ -137,8 +148,8 @@ class SED_code(ABC):
         # assert SED_fit_params["templates"] in self.available_templates, \
         #    galfind_logger.critical(f"'templates' not in {self.__class__.__name__}.available_templates = {self.available_templates}!")
 
-        in_path, out_path, fits_out_path, PDF_paths, SED_paths = self.get_out_paths(
-            cat, SED_fit_params, IDs=np.array(cat.ID)
+        in_path, out_path, fits_out_path, PDF_paths, SED_paths = (
+            self.get_out_paths(cat, SED_fit_params, IDs=np.array(cat.ID))
         )
         # run the SED fitting if not already done so or if wanted overwriting
         fits_cat = cat.open_cat(
@@ -146,7 +157,10 @@ class SED_code(ABC):
         )  # should be cached
         if type(fits_cat) == type(None):
             run = True
-        elif self.galaxy_property_labels("z", SED_fit_params) not in fits_cat.colnames:
+        elif (
+            self.galaxy_property_labels("z", SED_fit_params)
+            not in fits_cat.colnames
+        ):
             run = True
         else:
             run = False
@@ -158,7 +172,9 @@ class SED_code(ABC):
                 SED_fit_params,
                 overwrite=overwrite,
             )  # , *args, **kwargs)
-            self.make_fits_from_out(out_path, SED_fit_params)  # , *args, **kwargs)
+            self.make_fits_from_out(
+                out_path, SED_fit_params
+            )  # , *args, **kwargs)
             self.update_fits_cat(
                 cat, fits_out_path, SED_fit_params
             )  # , *args, **kwargs)
@@ -183,7 +199,10 @@ class SED_code(ABC):
     def update_fits_cat(
         self, cat, fits_out_path: str, SED_fit_params: dict
     ) -> None:  # *args, **kwargs):
-        assert SED_fit_params["code"].__class__.__name__ == self.__class__.__name__
+        assert (
+            SED_fit_params["code"].__class__.__name__
+            == self.__class__.__name__
+        )
         hdu_label = self.hdu_from_SED_fit_params(SED_fit_params)
         # open relevant catalogue hdu extension
         orig_tab = cat.open_cat(hdu=hdu_label)
@@ -194,20 +213,26 @@ class SED_code(ABC):
         else:
             # combine catalogues
             combined_tab = join(
-                orig_tab, SED_fitting_tab, keys=self.ID_label, join_type="outer"
+                orig_tab,
+                SED_fitting_tab,
+                keys=self.ID_label,
+                join_type="outer",
             )
             cat.write_hdu(combined_tab, hdu=hdu_label)
 
     @staticmethod
     def update_lowz_zmax(SED_fit_params, SED_results):
         if "dz" in SED_fit_params.keys():
-            assert "lowz_zmax" not in SED_fit_params.keys(), galfind_logger.critical(
+            assert (
+                "lowz_zmax" not in SED_fit_params.keys()
+            ), galfind_logger.critical(
                 "Cannot have both 'dz' and 'lowz_zmax' in SED_fit_params"
             )
             available_SED_fit_params = [
                 SED_fit_params["code"].SED_fit_params_from_label(label)
                 for label in SED_results.keys()
-                if label.split("_")[0] == SED_fit_params["code"].__class__.__name__
+                if label.split("_")[0]
+                == SED_fit_params["code"].__class__.__name__
             ]
             # extract sorted (low -> high) lowz_zmax's (excluding 'None') from available SED_fit_params
             available_lowz_zmax = sorted(
@@ -266,7 +291,9 @@ class SED_code(ABC):
         pass
 
     @abstractmethod
-    def run_fit(self, in_path, fits_out_path, instrument, SED_fit_params, overwrite):
+    def run_fit(
+        self, in_path, fits_out_path, instrument, SED_fit_params, overwrite
+    ):
         pass
 
     @abstractmethod

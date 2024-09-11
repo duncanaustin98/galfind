@@ -7,22 +7,27 @@ Created on Tue Jun  6 14:44:23 2023
 """
 
 # LePhare.py
-import numpy as np
-import astropy.units as u
-from pathlib import Path
 import itertools
-from astropy.table import Table
 import subprocess
-from astropy.io import fits
+from pathlib import Path
 
-from . import config, galfind_logger, SED_code
+import astropy.units as u
+import numpy as np
+from astropy.io import fits
+from astropy.table import Table
+
+from . import SED_code, config, galfind_logger
 from . import useful_funcs_austind as funcs
 
 # %% LePhare SED fitting code
 
 
 class LePhare(SED_code):
-    galaxy_property_dict = {"z": "Z_BEST", "mass": "MASS_BEST", "chi_sq": "CHI_BEST"}
+    galaxy_property_dict = {
+        "z": "Z_BEST",
+        "mass": "MASS_BEST",
+        "chi_sq": "CHI_BEST",
+    }
     galaxy_property_errs_dict = {}
     available_templates = ["BC03"]
     ext_src_corr_properties = ["MASS_BEST", "SFR_BEST"]
@@ -74,7 +79,11 @@ class LePhare(SED_code):
             print("FIX LePhare SED_input_bands!")
             SED_input_bands = cat.data.instrument.new_instrument().bands
             phot, phot_err = self.load_photometry(
-                cat, SED_input_bands, units, -99.0, {"threshold": 2.0, "value": 3.0}
+                cat,
+                SED_input_bands,
+                units,
+                -99.0,
+                {"threshold": 2.0, "value": 3.0},
             )
             # calculate context
             contexts = self.calc_context(cat, SED_input_bands)
@@ -99,19 +108,25 @@ class LePhare(SED_code):
                 + list(
                     itertools.chain(
                         *zip(
-                            SED_input_bands, [band + "_err" for band in SED_input_bands]
+                            SED_input_bands,
+                            [band + "_err" for band in SED_input_bands],
                         )
                     )
                 )
                 + ["context", "z"]
             )
             in_types = (
-                [int] + list(np.full(len(SED_input_bands) * 2, float)) + [int, float]
+                [int]
+                + list(np.full(len(SED_input_bands) * 2, float))
+                + [int, float]
             )
             in_tab = Table(in_data, dtype=in_types, names=in_names)
             funcs.make_dirs(lephare_in_path)
             in_tab.write(
-                lephare_in_path, format="ascii.no_header", delimiter=" ", overwrite=True
+                lephare_in_path,
+                format="ascii.no_header",
+                delimiter=" ",
+                overwrite=True,
             )
             # print(in_tab)
         return lephare_in_path
@@ -150,15 +165,12 @@ class LePhare(SED_code):
 
     @staticmethod
     def label_from_SED_fit_params(self, SED_fit_params):
-        assert "code" in SED_fit_params.keys() and "templates" in SED_fit_params.keys()
-        # first write the code name and then the template name
-        return (
-            f"{SED_fit_params['code'].__class__.__name__}_{SED_fit_params['templates']}"
+        assert (
+            "code" in SED_fit_params.keys()
+            and "templates" in SED_fit_params.keys()
         )
-
-    @staticmethod
-    def hdu_from_SED_fit_params(SED_fit_params):
-        return LePhare.label_from_SED_fit_params(SED_fit_params)
+        # first write the code name and then the template name
+        return f"{SED_fit_params['code'].__class__.__name__}_{SED_fit_params['templates']}"
 
     def SED_fit_params_from_label(self, label):
         label_arr = label.split("_")
@@ -209,7 +221,9 @@ class LePhare(SED_code):
         fits_columns = []
         for i in range(len(column_labels)):
             loc_col = fits.Column(
-                name=column_labels[i], array=np.array((txt_in.T)[i]), format="D"
+                name=column_labels[i],
+                array=np.array((txt_in.T)[i]),
+                format="D",
             )
             fits_columns.append(loc_col)
         fits_table = fits.BinTableHDU.from_columns(fits_columns)

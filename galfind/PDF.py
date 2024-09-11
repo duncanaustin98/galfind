@@ -52,9 +52,10 @@ class PDF:
         )
         output_str += f"PDF PROPERTY: {self.property_name}; UNIT: {unit_str}\n"
         output_str += band_sep
-        output_str += f"MEDIAN = {self.median.value:.3f}" + r"$_{-%.3f}^{+%.3f}$\n" % (
-            self.errs.value[0],
-            self.errs.value[1],
+        output_str += (
+            f"MEDIAN = {self.median.value:.3f}"
+            + r"$_{-%.3f}^{+%.3f}$\n"
+            % (self.errs.value[0], self.errs.value[1])
         )
         if print_peaks:
             for i, peak in enumerate(self.peaks):
@@ -88,13 +89,17 @@ class PDF:
             assert type(self) == type(other), galfind_logger.critical(
                 f"{type(self)=}!={type(other)=}"
             )
-            assert self.property_name == other.property_name, galfind_logger.critical(
+            assert (
+                self.property_name == other.property_name
+            ), galfind_logger.critical(
                 f"{self.property_name=}!={other.property_name=}"
             )
             # update kwargs
             new_kwargs = {**self.kwargs, **other.kwargs, **add_kwargs}
             if hasattr(self, "input_arr") and hasattr(other, "input_arr"):
-                new_input_arr = np.concatenate((self.input_arr, other.input_arr))
+                new_input_arr = np.concatenate(
+                    (self.input_arr, other.input_arr)
+                )
             else:
                 new_input_arr = np.concatenate(
                     (self.draw_sample(), other.draw_sample())
@@ -116,7 +121,10 @@ class PDF:
             )
         elif self.__class__.__name__ == "SED_fit_PDF":
             PDF_obj = globals()[self.__class__.__name__].from_1D_arr(
-                new_property_name, new_input_arr, self.SED_fit_params, kwargs=new_kwargs
+                new_property_name,
+                new_input_arr,
+                self.SED_fit_params,
+                kwargs=new_kwargs,
             )
         elif self.__class__.__name__ == "Redshift_PDF":
             PDF_obj = globals()[self.__class__.__name__].from_1D_arr(
@@ -173,7 +181,10 @@ class PDF:
             )
         elif self.__class__.__name__ == "SED_fit_PDF":
             PDF_obj = globals()[self.__class__.__name__].from_1D_arr(
-                new_property_name, new_input_arr, self.SED_fit_params, kwargs=new_kwargs
+                new_property_name,
+                new_input_arr,
+                self.SED_fit_params,
+                kwargs=new_kwargs,
             )
         elif self.__class__.__name__ == "Redshift_PDF":
             PDF_obj = globals()[self.__class__.__name__].from_1D_arr(
@@ -228,7 +239,11 @@ class PDF:
         normed: bool = False,
         timed: bool = False,
     ):
-        assert type(arr) in [u.Quantity, u.Magnitude, u.Dex], galfind_logger.critical(
+        assert type(arr) in [
+            u.Quantity,
+            u.Magnitude,
+            u.Dex,
+        ], galfind_logger.critical(
             f"{property_name=} 1D {arr=} with {type(arr)=} not in [u.Quantity, u.Magnitude, u.Dex]"
         )
         p_x, x_bin_edges = np.histogram(arr.value, bins=Nbins, density=True)
@@ -243,7 +258,9 @@ class PDF:
             return self._median
         except AttributeError:
             if hasattr(self, "input_arr"):
-                self._median = np.median(self.input_arr.value) * self.input_arr.unit
+                self._median = (
+                    np.median(self.input_arr.value) * self.input_arr.unit
+                )
             else:
                 self._median = self.get_percentile(50.0)
             return self._median
@@ -255,8 +272,10 @@ class PDF:
         except AttributeError:
             if hasattr(self, "input_arr"):
                 self._errs = [
-                    self.median.value - np.percentile(self.input_arr.value, 16.0),
-                    np.percentile(self.input_arr.value, 84.0) - self.median.value,
+                    self.median.value
+                    - np.percentile(self.input_arr.value, 16.0),
+                    np.percentile(self.input_arr.value, 84.0)
+                    - self.median.value,
                 ] * self.input_arr.unit
             else:
                 self._errs = [
@@ -311,7 +330,9 @@ class PDF:
             cdf = np.cumsum(self.p_x)
             cdf /= np.max(cdf)
             self.percentiles[f"{percentile:.1f}"] = (
-                float(self.x.value[np.argmin(np.abs(cdf - percentile / 100.0))])
+                float(
+                    self.x.value[np.argmin(np.abs(cdf - percentile / 100.0))]
+                )
                 * self.x.unit
             )
             return self.percentiles[f"{percentile:.1f}"]
@@ -329,7 +350,9 @@ class PDF:
             sample = self.input_arr[-size:]
         else:
             sample = self.draw_sample(size)
-        assert len(sample) == size  # ensures size > len(sample) throws an error
+        assert (
+            len(sample) == size
+        )  # ensures size > len(sample) throws an error
         updated_sample = update_func(
             sample, **kwargs
         )  # [update_func(val, **kwargs) for val in sample]
@@ -337,7 +360,9 @@ class PDF:
             new_property_name, updated_sample, {**self.kwargs, **PDF_kwargs}
         )
 
-    def save_PDF(self, save_path: str, size: int = 10_000, fmt: str = ".ecsv") -> None:
+    def save_PDF(
+        self, save_path: str, size: int = 10_000, fmt: str = ".ecsv"
+    ) -> None:
         if hasattr(self, "input_arr"):
             save_arr = self.input_arr
         else:
@@ -383,7 +408,9 @@ class PDF:
         ax.plot(self.x, self.p_x / np.max(self.p_x), color=colour)
 
         # Set x and y plot limits
-        ax.set_xlim(self.get_percentile(3.0) - 0.2, self.get_percentile(97.0) + 0.2)
+        ax.set_xlim(
+            self.get_percentile(3.0) - 0.2, self.get_percentile(97.0) + 0.2
+        )
         if abs(ax.get_xlim()[1] - ax.get_xlim()[0]) < 0.3:
             ax.set_xlim(ax.get_xlim()[0] - 0.5, ax.get_xlim()[1] + 0.5)
         ax.set_ylim(0, 1.2)
@@ -401,16 +428,28 @@ class PDF:
         if annotate:
             # Draw vertical line at zbest
             ax.axvline(
-                self.get_peak(0)["value"], color=colour, linestyle="--", alpha=0.5, lw=2
+                self.get_peak(0)["value"],
+                color=colour,
+                linestyle="--",
+                alpha=0.5,
+                lw=2,
             )
             ax.axvline(
-                self.get_percentile(16.0), color=colour, linestyle=":", alpha=0.5, lw=2
+                self.get_percentile(16.0),
+                color=colour,
+                linestyle=":",
+                alpha=0.5,
+                lw=2,
             )
             ax.axvline(
-                self.get_percentile(84.0), color=colour, linestyle=":", alpha=0.5, lw=2
+                self.get_percentile(84.0),
+                color=colour,
+                linestyle=":",
+                alpha=0.5,
+                lw=2,
             )
             ax.annotate(
-                "-1$\sigma$",
+                r"-1$\sigma$",
                 (self.get_percentile(16.0), 0.1),
                 fontsize="small",
                 ha="center",
@@ -420,7 +459,7 @@ class PDF:
                 path_effects=[pe.withStroke(linewidth=3, foreground="white")],
             )
             ax.annotate(
-                "+1$\sigma$",
+                r"+1$\sigma$",
                 (self.get_percentile(84.0), 0.1),
                 fontsize="small",
                 ha="center",
@@ -467,7 +506,9 @@ class PDF:
                     edgecolor=colour,
                     arrowstyle="-|>",
                     lw=1.5,
-                    path_effects=[pe.withStroke(linewidth=1, foreground="white")],
+                    path_effects=[
+                        pe.withStroke(linewidth=1, foreground="white")
+                    ],
                 ),
             )
 
@@ -515,7 +556,13 @@ class SED_fit_PDF(PDF):
             property_name, arr, kwargs, Nbins, normed, timed
         )  # normalizes here if not already
         sed_fit_PDF = cls(
-            property_name, PDF_obj.x, PDF_obj.p_x, SED_fit_params, kwargs, True, timed
+            property_name,
+            PDF_obj.x,
+            PDF_obj.p_x,
+            SED_fit_params,
+            kwargs,
+            True,
+            timed,
         )
         sed_fit_PDF.input_arr = arr
         return sed_fit_PDF
@@ -534,7 +581,8 @@ class SED_fit_PDF(PDF):
         )
         # load peak value and peak chi_sq
         self.load_peaks_from_best_fit(
-            SED_result.properties[self.property_name], SED_result.properties["chi_sq"]
+            SED_result.properties[self.property_name],
+            SED_result.properties["chi_sq"],
         )
         return self
 
@@ -550,18 +598,31 @@ class SED_fit_PDF(PDF):
 
 
 class Redshift_PDF(SED_fit_PDF):
-    def __init__(self, z, p_z, SED_fit_params, kwargs={}, normed=False, timed=False):
+    def __init__(
+        self, z, p_z, SED_fit_params, kwargs={}, normed=False, timed=False
+    ):
         super().__init__("z", z, p_z, SED_fit_params, kwargs, normed, timed)
 
     @classmethod
     def from_1D_arr(
-        cls, z_arr, SED_fit_params, kwargs={}, Nbins=50, normed=False, timed=False
+        cls,
+        z_arr,
+        SED_fit_params,
+        kwargs={},
+        Nbins=50,
+        normed=False,
+        timed=False,
     ):
         SED_fit_PDF_obj = SED_fit_PDF.from_1D_arr(
             "z", z_arr, SED_fit_params, kwargs, Nbins, normed, timed
         )  # normalized here if not already
         z_PDF = cls(
-            SED_fit_PDF_obj.x, SED_fit_PDF_obj.p_x, SED_fit_params, kwargs, True, timed
+            SED_fit_PDF_obj.x,
+            SED_fit_PDF_obj.p_x,
+            SED_fit_params,
+            kwargs,
+            True,
+            timed,
         )
         z_PDF.input_arr = z_arr
         return z_PDF
@@ -597,7 +658,9 @@ class PDF_nD:
     def __init__(self, ordered_PDFs):
         # ensure all PDFs have input arr of values, all of which are the same length
         try:
-            assert all(hasattr(PDF_obj, "input_arr") for PDF_obj in ordered_PDFs)
+            assert all(
+                hasattr(PDF_obj, "input_arr") for PDF_obj in ordered_PDFs
+            )
         except:
             breakpoint()
         assert all(
@@ -625,7 +688,9 @@ class PDF_nD:
         chains = np.array(
             [
                 func(independent_var, *vals)
-                for vals in np.array([PDF_obj.input_arr for PDF_obj in self.PDFs]).T
+                for vals in np.array(
+                    [PDF_obj.input_arr for PDF_obj in self.PDFs]
+                ).T
             ]
         )
         assert chains.shape == (len(self), len(independent_var))
@@ -634,7 +699,9 @@ class PDF_nD:
         elif type(size) in [int]:
             chains = chains[-size:]
         else:
-            galfind_logger.critical(f"{type(size)=} not in [None, int, np.int]!")
+            galfind_logger.critical(
+                f"{type(size)=} not in [None, int, np.int]!"
+            )
         assert output_type in ["chains", "percentiles"]
         if output_type == "chains":
             return chains
@@ -643,7 +710,11 @@ class PDF_nD:
                 np.percentile(chains[:, i], [16.0, 50.0, 84.0])
                 for i in range(len(independent_var))
             ]
-            return [func_l1_med_u1[:, 0], func_l1_med_u1[:, 1], func_l1_med_u1[:, 2]]
+            return [
+                func_l1_med_u1[:, 0],
+                func_l1_med_u1[:, 1],
+                func_l1_med_u1[:, 2],
+            ]
 
     def plot_corner(self):
         pass

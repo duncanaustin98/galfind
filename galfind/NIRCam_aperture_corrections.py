@@ -8,16 +8,17 @@ Created on Thu Dec  1 12:47:06 2022
 
 # calc_aper_corr.py
 
-import matplotlib.pyplot as plt
+import json
+
 import matplotlib as mpl
+import matplotlib.pyplot as plt
 import numpy as np
-from astropy.io import fits
+import photutils
+import sep
 from astropy import units as u
+from astropy.io import fits
 from matplotlib.patches import Circle
 from scipy import optimize
-import sep
-import json
-import photutils
 
 from . import config
 
@@ -82,10 +83,16 @@ def calc_aper_corr(
         )
         flux_aper = flux_aper[0]
     elif extract_code == "photutils":
-        aper = photutils.CircularAperture([x_cen, y_cen], r=aper_diam.value / 2)
-        out_tab = photutils.aperture.aperture_photometry(PSFdata, aper, method="exact")
+        aper = photutils.CircularAperture(
+            [x_cen, y_cen], r=aper_diam.value / 2
+        )
+        out_tab = photutils.aperture.aperture_photometry(
+            PSFdata, aper, method="exact"
+        )
         flux_aper = out_tab["aperture_sum"][0]
-    tot_flux = sep.sum_circle(PSFdata, [x_cen], [y_cen], tot_aper_size / 2)[0][0]
+    tot_flux = sep.sum_circle(PSFdata, [x_cen], [y_cen], tot_aper_size / 2)[0][
+        0
+    ]
     # print(tot_aper_size, len(PSFdata))
     # print("tot_flux =", tot_flux)
     flux_pc = flux_aper / tot_flux
@@ -128,7 +135,9 @@ def plot_flux_curve(
     aper_diams=[],
 ):
     mpl.rcParams.update(mpl.rcParamsDefault)
-    rlist = np.arange(0, tot_aper_size * pixel_scale.value / 2, 0.01) / pixel_scale
+    rlist = (
+        np.arange(0, tot_aper_size * pixel_scale.value / 2, 0.01) / pixel_scale
+    )
     print("pix_centre:", (x_cen, y_cen))
     flux, fluxerr, flag = sep.sum_circle(PSFdata, [x_cen], [y_cen], rlist)
     tot_flux = sep.sum_circle(
@@ -199,7 +208,13 @@ def fit_2d_moffatt(PSFdata, maxfev=10000):
         # print(g)
         return g.ravel()
 
-    initial_guess = (np.max(PSFdata), 1, 1, len(PSFdata[0]) / 2, len(PSFdata[1]) / 2)
+    initial_guess = (
+        np.max(PSFdata),
+        1,
+        1,
+        len(PSFdata[0]) / 2,
+        len(PSFdata[1]) / 2,
+    )
     x = np.linspace(0, len(PSFdata[0]) - 1, len(PSFdata[0]), endpoint=True)
     y = np.linspace(0, len(PSFdata[1]) - 1, len(PSFdata[1]), endpoint=True)
     x, y = np.meshgrid(x, y)
@@ -216,12 +231,14 @@ def main(
     PSF_loc=config["DEFAULT"]["PSF_DIR"],
     PSF_name="PSF_MIRI_in_flight_opd_filter_",
     plot_PSF=True,
-    aper_diams=json.loads(config.get("SExtractor", "APERTURE_DIAMS")) * u.arcsec,
+    aper_diams=json.loads(config.get("SExtractor", "APERTURE_DIAMS"))
+    * u.arcsec,
     instrument_name="NIRCam",
 ):
     print("extract code =", extract_code)
     print_line = [
-        ["# aper_diam / arcsec"] + [str(aper_diam.value) for aper_diam in aper_diams]
+        ["# aper_diam / arcsec"]
+        + [str(aper_diam.value) for aper_diam in aper_diams]
     ]
     for band in in_bands:
         print(band)
