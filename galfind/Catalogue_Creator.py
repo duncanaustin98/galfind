@@ -22,6 +22,8 @@ from tqdm import tqdm
 
 from . import (
     LePhare,  # noqa F501
+    EAZY,     # noqa F501
+    Bagpipes, # noqa F501
     config,
     galfind_logger,
 )
