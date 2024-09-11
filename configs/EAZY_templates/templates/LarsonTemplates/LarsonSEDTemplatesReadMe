@@ -1,0 +1,88 @@
+Larson SED Templates Read Me
+-------------------------------------
+
+Here are a set of bluer SED templates. Please reference my paper, Larson et al. (2022) when using these templates in your work (PDF copy included) which you can find here: https://arxiv.org/abs/2211.10035. Contact me at saturnswings@gmail.com if you have any questions or refer to the webpage at ceers.github.io/LarsonSEDTemplates  
+
+Initial Comments
+------------------------------------- 
+  - These are all in a format that EAZY can read, so the wavelength is in Angstroms and Flux is in Flambda.
+  - These were made to be used with the 'old' version of EAZY (i.e, not EAZY-py), which can be downloaded at Github here: github.com/gbrammer/eazy-photoz
+  - We use version v2.2.1 of BPASS which can be found online here: bpass.auckland.ac.nz
+  - We model the emission line spectra using Cloudy v17.0 described in Ferland et al 2017
+
+
+Set 1: BPASS ONLY
+-------------------------------------
+binc100z001age6.dat
+binc100z001age65.dat
+binc100z001age7.dat
+-------------------------------------
+These are BPASS models that have:
+  - NO emission lines added
+  - binary stars included
+  - Chabrier IMF of 100 Msun
+  - metallicity Z=0.001 (5% Zsun)
+  - log stellar age of 6, 6.5, and 7
+
+   
+Set 2: BPASS + CLOUDY - Full Lyα
+-------------------------------------
+binc100z001age6_cloudy_Lya.dat
+binc100z001age65_cloudy_Lya.dat
+binc100z001age7_cloudy_Lya.dat
+-------------------------------------
+These are BPASS models from Set 1 that have Cloudy Emission Lines added with following parameters:
+  - Ionization parameter = -2
+  - Gas-phase metallicity = 0.05 Zsun (i.e., fixed to stellar Z)
+  - Hydrogen density = 300 cm^-3
+  - Spherical geometry
+  - Covering factor = 1.0
+  - Note: Nebular continuum IS included so these models tend to be redder because of this!
+
+
+Set 3: BPASS + CLOUDY - Reduced Lyα
+-------------------------------------
+binc100z001age6_cloudy_LyaReduced.dat
+binc100z001age65_cloudy_LyaReduced.dat
+binc100z001age7_cloudy_LyaReduced.dat
+-------------------------------------
+These are BPASS models that have Cloudy Emission Lines added from Set 2 with following changes
+  - Lyα has been reduced to 1/10 of that produced by Cloudy - this is more akin to a 10% esc fraction
+  - Note: Useful for typical galaxies we would expect in the z~4-7 range
+
+Set 3.5: BPASS + CLOUDY - Reduced Lyα (Narrowband-Selected)
+-------------------------------------
+binc100z001age6_cloudy_LyaReducedNarrowband.dat
+binc100z001age65_cloudy_LyaReducedNarrowband.dat
+binc100z001age7_cloudy_LyaReducedNarrowband.dat
+-------------------------------------
+These are BPASS models that have Cloudy Emission Lines added from Set 2 with following changes
+  - Lyα has been reduced to 1/3 of that produced by Cloudy - this is akin to a 33% escape fraction
+  - Note: Useful for galaxies we would expect in the z~4-7 range with high EW_Lyα (Narrowband-selected)
+
+
+Set 4: BPASS + CLOUDY - No Lyα
+------------------------------------- 
+binc100z001age6_cloudy.dat
+binc100z001age65_cloudy.dat
+binc100z001age7_cloudy.dat
+-------------------------------------  
+These are BPASS models that have Cloudy Emission Lines added from Set 2 with following changes
+  - Lyα has been fully removed
+  - Note: Useful for galaxies at highz where Lyα is attenuated by neutral IGM 
+  - Note: I also use these for simulations where Lyα is not included
+  
+
+Suggestions for Use
+-------------------------------------
+Most of you will probably want to use 6 of these SEDs total: Set 1 + Set 3 or 4. The templates with the Full Lyα line (Set 2) are likely not applicable; these are mostly for reference. The set used for the high-redshift galaxy selection by Larson et al 2022 with the CEERS SAM catalog was Set 1 + Set 4, and those are aslo the ones included in the plots above. None of the new templates used for the tests in Larson et al 2022 included Lyα, not just due to the expected IGM attenuation but because the SAM galaxies also do not include Lyα emission.  
+
+
+Included parameter files for EAZY: 
+-------------------------------------
+I am also including my parameter files where I still use the tweak_fsps_QSF_12_v3_001-012 templates that come with EAZY but add in 6 new ones. Please edit the directory structure to reflect your own location for the template files.
+-------------------------------------
+tweak_fsps_QSF_12_v3_newtemplates.param - includes fsps + Set 1 + Set 4 (useful for z>8 galaxies) 
+tweak_fsps_QSF_12_v3_newtemplates_Lyα.param - includes fsps + Set 1 + Set 2 (probably do not want to use)
+tweak_fsps_QSF_12_v3_newtemplates_LyαReduced.param - includes fsps + Set 1 + Set 3 (useful for lower redshift (z~4-7) galaxies) 
+tweak_fsps_QSF_12_v3_newtemplates_LyαReducedNarrowband.param - includes fsps + Set 1 + Set 3.5 (useful for galaxies with high EW_Lyα) 
