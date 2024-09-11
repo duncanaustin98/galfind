@@ -20,7 +20,11 @@ import numpy as np
 from astropy.utils.masked import Masked
 from tqdm import tqdm
 
-from . import config, galfind_logger
+from . import (
+    LePhare,  # noqa F501
+    config,
+    galfind_logger,
+)
 from . import useful_funcs_austind as funcs
 
 
