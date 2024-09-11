@@ -7,6 +7,7 @@ from astropy.visualization.mpl_normalize import ImageNormalize
 import astropy.visualization as vis
 from photutils.aperture import CircularAperture
 from tqdm import tqdm as tq
+import tqdm_joblib
 from matplotlib import cm
 from astropy.table import Table
 import cv2 as cv2
