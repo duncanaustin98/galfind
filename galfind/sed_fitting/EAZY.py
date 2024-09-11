@@ -24,10 +24,10 @@ from tqdm import tqdm
 
 warnings.filterwarnings("ignore", category=LinAlgWarning)
 
-from . import Redshift_PDF, SED_code, config, galfind_logger
-from . import useful_funcs_austind as funcs
-from .decorators import run_in_dir
-from .SED import SED_obs
+from .. import Redshift_PDF, SED_code, config, galfind_logger
+from .. import useful_funcs_austind as funcs
+from ..decorators import run_in_dir
+from ..SED import SED_obs
 
 # %% EAZY SED fitting code
 
