@@ -7,46 +7,46 @@ Created on Wed May 17 14:20:31 2023
 """
 
 from __future__ import absolute_import
+
+# from reproject import reproject_adaptive
+import contextlib
+import glob
+import json
+import os
+import subprocess
+import sys
+import time
+from copy import deepcopy
+from pathlib import Path
+from typing import Union
+
+import astropy.units as u
+import astropy.visualization as vis
+import cv2
+import h5py
+import joblib
+import matplotlib.pyplot as plt
+import numpy as np
+from astropy.convolution import convolve, convolve_fft
+from astropy.coordinates import SkyCoord
+from astropy.io import fits
+from astropy.table import Column, Table, hstack, vstack
+from astropy.visualization.mpl_normalize import ImageNormalize
+from astropy.wcs import WCS
+from astroquery.gaia import Gaia
+from joblib import Parallel, delayed
+from matplotlib.colors import LogNorm
 from photutils import (
     SkyCircularAperture,
     aperture_photometry,
 )
-import numpy as np
-from astropy.io import fits
-from pathlib import Path
-import matplotlib.pyplot as plt
-import cv2
-import tqdm_joblib
-from astropy.coordinates import SkyCoord
-from astropy.visualization.mpl_normalize import ImageNormalize
-import astropy.visualization as vis
-from matplotlib.colors import LogNorm
-from astropy.table import Table, hstack, vstack, Column
-from copy import deepcopy
 from regions import Regions
-import subprocess
-import time
-import glob
-import astropy.units as u
-import os
-import sys
-from astropy.wcs import WCS
 from tqdm import tqdm
-import json
-from joblib import Parallel, delayed
 
-# from reproject import reproject_adaptive
-import contextlib
-import joblib
-import h5py
-from astroquery.gaia import Gaia
-from astropy.convolution import convolve, convolve_fft
-from typing import Union
-
-from .Instrument import Instrument
-from . import config, galfind_logger, Depths
+from . import Depths, config, galfind_logger
 from . import useful_funcs_austind as funcs
 from .decorators import run_in_dir
+from .Instrument import Instrument
 
 
 # GALFIND data object
@@ -1945,7 +1945,11 @@ class Data:
         return im_paths_matched, wht_paths_matched, rms_err_paths_matched
 
     @staticmethod
-    def mosaic_images(image_paths, extract_ext_names = {"data": "SCI", "err": "RMS_ERR"}, pix_scale_hdr_name = "PIXSCALE"):
+    def mosaic_images(
+        image_paths,
+        extract_ext_names={"data": "SCI", "err": "RMS_ERR"},
+        pix_scale_hdr_name="PIXSCALE",
+    ):
         # ensure images are .fits images
         assert all(".fits" in path for path in image_paths)
         # open all images
@@ -1954,20 +1958,50 @@ class Data:
         assert all(len(hdul_arr[0]) == hdul for hdul in hdul_arr)
         # ensure images have all of the relevant extensions - NOT IMPLEMENTED YET
         # extract the header files for each extension for each fits image
-        headers_arr = np.array([[hdu.header for hdu in hdul] for hdul in hdul_arr])
+        headers_arr = np.array(
+            [[hdu.header for hdu in hdul] for hdul in hdul_arr]
+        )
         # ensure they have been taken using the same filter - NOT IMPLEMENTED YET (assume this comes from the header files)
-        ext_names_arr = [[header["EXTNAME"] for header in hdul_headers] for hdul_headers in headers_arr]
+        ext_names_arr = [
+            [header["EXTNAME"] for header in hdul_headers]
+            for hdul_headers in headers_arr
+        ]
         # extract the raw data for each extension for each fits image
-        data_arr = np.array([[hdu.data for hdu, ext_name in zip(hdul, ext_names) \
-            if ext_name == extract_ext_names["data"]][0] for hdul, ext_names in zip(hdul_arr, ext_names_arr)])
-        err_arr = np.array([[hdu.data for hdu, ext_name in zip(hdul, ext_names) \
-            if ext_name == extract_ext_names["err"]][0] for hdul, ext_names in zip(hdul_arr, ext_names_arr)])
+        data_arr = np.array(
+            [
+                [
+                    hdu.data
+                    for hdu, ext_name in zip(hdul, ext_names)
+                    if ext_name == extract_ext_names["data"]
+                ][0]
+                for hdul, ext_names in zip(hdul_arr, ext_names_arr)
+            ]
+        )
+        err_arr = np.array(
+            [
+                [
+                    hdu.data
+                    for hdu, ext_name in zip(hdul, ext_names)
+                    if ext_name == extract_ext_names["err"]
+                ][0]
+                for hdul, ext_names in zip(hdul_arr, ext_names_arr)
+            ]
+        )
         # if the files have the same wcs, the same x/y dimensions, and the same pixel scale
-        same_wcs = all(WCS(header) == WCS(headers_arr[0][0]) for hdul_headers in headers_arr for header in hdul_headers)
-        same_dimensions = ((all(data.shape == data_arr[0].shape for data in data_arr)) \
-            & (all(err.shape == err_arr[0].shape for err in err_arr)))
-        same_pix_scale = all(float(header[pix_scale_hdr_name]) == float(headers_arr[0][0][pix_scale_hdr_name]) \
-            for hdul_headers in headers_arr for header in hdul_headers)
+        same_wcs = all(
+            WCS(header) == WCS(headers_arr[0][0])
+            for hdul_headers in headers_arr
+            for header in hdul_headers
+        )
+        same_dimensions = (
+            all(data.shape == data_arr[0].shape for data in data_arr)
+        ) & (all(err.shape == err_arr[0].shape for err in err_arr))
+        same_pix_scale = all(
+            float(header[pix_scale_hdr_name])
+            == float(headers_arr[0][0][pix_scale_hdr_name])
+            for hdul_headers in headers_arr
+            for header in hdul_headers
+        )
         if same_wcs and same_dimensions and same_pix_scale:
             # ensure images are PSF homogenized to the same filter
             for i, (data, err) in enumerate(zip(data_arr, err_arr)):
@@ -1976,32 +2010,47 @@ class Data:
                     sum_err = err
                 else:
                     # convert np.nans to zeros in both science and error maps so as to allow data only covered by one image
-                    data[data == np.nan] = 0.
-                    err[err == np.nan] = 0.
-                    sum_data += data / err ** 2
-                    sum_err += 1 / err ** 2   
-            weighted_array = sum_data / sum_err # output sci map
-            combined_err = np.sqrt(1 / sum_err) # output err map
-            
+                    data[data == np.nan] = 0.0
+                    err[err == np.nan] = 0.0
+                    sum_data += data / err**2
+                    sum_err += 1 / err**2
+            weighted_array = sum_data / sum_err  # output sci map
+            combined_err = np.sqrt(1 / sum_err)  # output err map
+
             # determine new combined image path
-            combined_image_path = image_paths[0].replace(".fits", "_stack.fits")
+            combined_image_path = image_paths[0].replace(
+                ".fits", "_stack.fits"
+            )
             # save combined image at this path
-            primary = fits.PrimaryHDU(header = prime_hdu)
-            hdu = fits.ImageHDU(weighted_array, header = im_header, name = 'SCI')
-            hdu_err = fits.ImageHDU(combined_err, header = im_header, name = 'ERR')
+            primary = fits.PrimaryHDU(header=prime_hdu)
+            hdu = fits.ImageHDU(weighted_array, header=im_header, name="SCI")
+            hdu_err = fits.ImageHDU(combined_err, header=im_header, name="ERR")
             hdul = fits.HDUList([primary, hdu, hdu_err])
-            hdul.writeto(combined_image_path, overwrite = True)
-            galfind_logger.info(f"Finished mosaicing images at {image_paths=}, saved to {combined_image_path}")
-            hdul.writeto(combined_image_path, overwrite = True)
+            hdul.writeto(combined_image_path, overwrite=True)
+            galfind_logger.info(
+                f"Finished mosaicing images at {image_paths=}, saved to {combined_image_path}"
+            )
+            hdul.writeto(combined_image_path, overwrite=True)
             # move the individual images into a "stacked" folder
             for path in image_paths:
-                os.makedirs(f"{funcs.split_dir_name(path, 'dir')}/stacked", exist_ok = True)
-                os.rename(path, f"{funcs.split_dir_name(path, 'dir')}/stacked/{funcs.split_dir_name(path, 'name')}")
+                os.makedirs(
+                    f"{funcs.split_dir_name(path, 'dir')}/stacked",
+                    exist_ok=True,
+                )
+                os.rename(
+                    path,
+                    f"{funcs.split_dir_name(path, 'dir')}/stacked/{funcs.split_dir_name(path, 'name')}",
+                )
             return combined_image_path
 
-        else: # else convert all of the images to the required wcs, x/y dimensions, and pixel scale
-            raise(NotImplementedError(galfind_logger.critical( \
-                f"Cannot convert images as all of {same_wcs=}, {same_dimensions=}, {same_pix_scale=} != True")))
+        else:  # else convert all of the images to the required wcs, x/y dimensions, and pixel scale
+            raise (
+                NotImplementedError(
+                    galfind_logger.critical(
+                        f"Cannot convert images as all of {same_wcs=}, {same_dimensions=}, {same_pix_scale=} != True"
+                    )
+                )
+            )
 
     def stack_bands(
         self,

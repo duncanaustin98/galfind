@@ -1,12 +1,13 @@
 # PDF.py
 
-import numpy as np
-import matplotlib.patheffects as pe
-from astropy.table import Table
-import astropy.units as u
 import time
 from copy import deepcopy
-from typing import Union, Callable
+from typing import Callable, Union
+
+import astropy.units as u
+import matplotlib.patheffects as pe
+import numpy as np
+from astropy.table import Table
 
 from . import config, galfind_logger
 from . import useful_funcs_austind as funcs

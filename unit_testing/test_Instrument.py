@@ -5,7 +5,12 @@ import astropy.units as u
 import numpy as np
 import pytest
 
-from galfind import Filter, NIRCam, config
+from galfind import (
+    ACS_WFC,  # noqa F501
+    Filter,
+    NIRCam,
+    config,
+)
 
 # Expected instrument attributes
 expected_instr_facilities = {

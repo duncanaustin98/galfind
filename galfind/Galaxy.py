@@ -7,31 +7,11 @@ Created on Thu Jul 13 14:11:23 2023
 """
 
 # Galaxy.py
-import numpy as np
-import matplotlib.pyplot as plt
-from copy import deepcopy
-import astropy.units as u
-from astropy.coordinates import SkyCoord
-from astropy.io import fits
-from astropy.table import Table
 import os
 import sys
 import time
 from copy import deepcopy
 from pathlib import Path
-from astropy.nddata import Cutout2D
-from astropy.utils.masked import Masked
-from tqdm import tqdm
-import matplotlib.patheffects as pe
-from astropy.visualization import (
-    LogStretch,
-    LinearStretch,
-    ImageNormalize,
-    ManualInterval,
-)
-import matplotlib.patches as patches
-from mpl_toolkits.axes_grid1.anchored_artists import AnchoredSizeBar
-from typing_extensions import Self
 from typing import Union
 
 import astropy.units as u
@@ -42,6 +22,7 @@ import numpy as np
 from astropy.coordinates import SkyCoord
 from astropy.io import fits
 from astropy.nddata import Cutout2D
+from astropy.table import Table
 from astropy.utils.masked import Masked
 from astropy.visualization import (
     ImageNormalize,
@@ -65,18 +46,7 @@ from . import (
     instr_to_name_dict,
 )
 from . import useful_funcs_austind as funcs
-from . import config, galfind_logger, astropy_cosmo, instr_to_name_dict
-from . import (
-    Photometry_obs,
-    Multiple_Photometry_obs,
-    Data,
-    Instrument,
-    NIRCam,
-    PDF,
-)
-from .SED import SED_obs, Mock_SED_rest, Mock_SED_obs
 from .EAZY import EAZY
-from .SED_result import SED_result
 from .Emission_lines import line_diagnostics
 from .SED import Mock_SED_obs, Mock_SED_rest, SED_obs
 from .SED_result import SED_result

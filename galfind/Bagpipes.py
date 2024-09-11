@@ -7,12 +7,6 @@ Created on Tue Jun  6 14:55:57 2023
 """
 
 # Bagpipes.py
-import astropy.units as u
-import numpy as np
-from astropy.table import Table
-from typing import Union
-from pathlib import Path
-from tqdm import tqdm
 import itertools
 from pathlib import Path
 from typing import Union

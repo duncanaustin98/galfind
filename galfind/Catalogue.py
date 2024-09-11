@@ -13,6 +13,7 @@ import time
 from copy import deepcopy
 from pathlib import Path
 from typing import Union
+
 import astropy.units as u
 import matplotlib.pyplot as plt
 import numpy as np

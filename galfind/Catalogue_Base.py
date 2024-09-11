@@ -17,7 +17,6 @@ from . import (
     sed_code_to_name_dict,
 )
 from . import useful_funcs_austind as funcs
-from .EAZY import EAZY
 
 
 class Catalogue_Base:

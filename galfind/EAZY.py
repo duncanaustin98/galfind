@@ -8,26 +8,26 @@ Created on Tue Jun  6 14:52:36 2023
 
 # EAZY.py
 import itertools
-from astropy.table import Table
-from pathlib import Path
-import numpy as np
-import eazy
 import os
 import time
 import warnings
-from tqdm import tqdm
+from pathlib import Path
+
+import astropy.units as u
+import eazy
 import h5py
+import numpy as np
+from astropy.table import Table
 from eazy import hdf5
 from scipy.linalg import LinAlgWarning
 from tqdm import tqdm
 
 warnings.filterwarnings("ignore", category=LinAlgWarning)
 
-from . import SED_code, Redshift_PDF
-from .SED import SED_obs
+from . import Redshift_PDF, SED_code, config, galfind_logger
 from . import useful_funcs_austind as funcs
-from . import config, galfind_logger
 from .decorators import run_in_dir
+from .SED import SED_obs
 
 # %% EAZY SED fitting code
 

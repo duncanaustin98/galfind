@@ -9,10 +9,6 @@ Created on Fri Jun  2 12:56:53 2023
 # Instrument.py
 from __future__ import absolute_import
 
-import numpy as np
-from copy import deepcopy
-from abc import abstractmethod
-import astropy.units as u
 import json
 import warnings
 from abc import abstractmethod

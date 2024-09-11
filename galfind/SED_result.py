@@ -7,19 +7,20 @@ Created on Mon Jul 17 16:50:27 2023
 """
 
 # SED_result.py
-import numpy as np
+import itertools
+import time
+from copy import deepcopy
+from typing import Union
+
 import astropy.units as u
+import numpy as np
 from astropy.table import Table
 from tqdm import tqdm
-import time
-from typing import Union
-import itertools
-from copy import deepcopy
 
+from . import galfind_logger
+from . import useful_funcs_austind as funcs
 from .Photometry import Multiple_Photometry
 from .Photometry_rest import Photometry_rest
-from . import useful_funcs_austind as funcs
-from . import galfind_logger
 
 
 class SED_result:

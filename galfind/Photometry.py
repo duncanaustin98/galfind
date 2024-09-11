@@ -8,11 +8,11 @@ Created on Thu Jul 13 14:14:30 2023
 
 # Photometry_obs.py
 from copy import deepcopy
+from typing import Union
 
 import astropy.units as u
 import matplotlib.patheffects as pe
 import numpy as np
-from typing import Union
 
 from . import galfind_logger
 from . import useful_funcs_austind as funcs

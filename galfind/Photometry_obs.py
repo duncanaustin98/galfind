@@ -7,9 +7,9 @@ Created on Mon Jul 17 15:03:20 2023
 """
 
 # Photometry_obs.py
+import inspect
 import time
 from typing import Union
-import inspect
 
 import astropy.units as u
 import matplotlib.patheffects as pe
