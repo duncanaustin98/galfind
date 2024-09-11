@@ -21,9 +21,9 @@ from astropy.utils.masked import Masked
 from tqdm import tqdm
 
 from . import (
+    EAZY,  # noqa F501
+    Bagpipes,  # noqa F501
     LePhare,  # noqa F501
-    EAZY,     # noqa F501
-    Bagpipes, # noqa F501
     config,
     galfind_logger,
 )
