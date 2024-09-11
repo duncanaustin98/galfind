@@ -1944,6 +1944,65 @@ class Data:
 
         return im_paths_matched, wht_paths_matched, rms_err_paths_matched
 
+    @staticmethod
+    def mosaic_images(image_paths, extract_ext_names = {"data": "SCI", "err": "RMS_ERR"}, pix_scale_hdr_name = "PIXSCALE"):
+        # ensure images are .fits images
+        assert all(".fits" in path for path in image_paths)
+        # open all images
+        hdul_arr = [fits.open(path) for path in image_paths]
+        # ensure images have the same number of extensions
+        assert all(len(hdul_arr[0]) == hdul for hdul in hdul_arr)
+        # ensure images have all of the relevant extensions - NOT IMPLEMENTED YET
+        # extract the header files for each extension for each fits image
+        headers_arr = np.array([[hdu.header for hdu in hdul] for hdul in hdul_arr])
+        # ensure they have been taken using the same filter - NOT IMPLEMENTED YET (assume this comes from the header files)
+        ext_names_arr = [[header["EXTNAME"] for header in hdul_headers] for hdul_headers in headers_arr]
+        # extract the raw data for each extension for each fits image
+        data_arr = np.array([[hdu.data for hdu, ext_name in zip(hdul, ext_names) \
+            if ext_name == extract_ext_names["data"]][0] for hdul, ext_names in zip(hdul_arr, ext_names_arr)])
+        err_arr = np.array([[hdu.data for hdu, ext_name in zip(hdul, ext_names) \
+            if ext_name == extract_ext_names["err"]][0] for hdul, ext_names in zip(hdul_arr, ext_names_arr)])
+        # if the files have the same wcs, the same x/y dimensions, and the same pixel scale
+        same_wcs = all(WCS(header) == WCS(headers_arr[0][0]) for hdul_headers in headers_arr for header in hdul_headers)
+        same_dimensions = ((all(data.shape == data_arr[0].shape for data in data_arr)) \
+            & (all(err.shape == err_arr[0].shape for err in err_arr)))
+        same_pix_scale = all(float(header[pix_scale_hdr_name]) == float(headers_arr[0][0][pix_scale_hdr_name]) \
+            for hdul_headers in headers_arr for header in hdul_headers)
+        if same_wcs and same_dimensions and same_pix_scale:
+            # ensure images are PSF homogenized to the same filter
+            for i, (data, err) in enumerate(zip(data_arr, err_arr)):
+                if i == 0:
+                    sum_data = data
+                    sum_err = err
+                else:
+                    # convert np.nans to zeros in both science and error maps so as to allow data only covered by one image
+                    data[data == np.nan] = 0.
+                    err[err == np.nan] = 0.
+                    sum_data += data / err ** 2
+                    sum_err += 1 / err ** 2   
+            weighted_array = sum_data / sum_err # output sci map
+            combined_err = np.sqrt(1 / sum_err) # output err map
+            
+            # determine new combined image path
+            combined_image_path = image_paths[0].replace(".fits", "_stack.fits")
+            # save combined image at this path
+            primary = fits.PrimaryHDU(header = prime_hdu)
+            hdu = fits.ImageHDU(weighted_array, header = im_header, name = 'SCI')
+            hdu_err = fits.ImageHDU(combined_err, header = im_header, name = 'ERR')
+            hdul = fits.HDUList([primary, hdu, hdu_err])
+            hdul.writeto(combined_image_path, overwrite = True)
+            galfind_logger.info(f"Finished mosaicing images at {image_paths=}, saved to {combined_image_path}")
+            hdul.writeto(combined_image_path, overwrite = True)
+            # move the individual images into a "stacked" folder
+            for path in image_paths:
+                os.makedirs(f"{funcs.split_dir_name(path, 'dir')}/stacked", exist_ok = True)
+                os.rename(path, f"{funcs.split_dir_name(path, 'dir')}/stacked/{funcs.split_dir_name(path, 'name')}")
+            return combined_image_path
+
+        else: # else convert all of the images to the required wcs, x/y dimensions, and pixel scale
+            raise(NotImplementedError(galfind_logger.critical( \
+                f"Cannot convert images as all of {same_wcs=}, {same_dimensions=}, {same_pix_scale=} != True")))
+
     def stack_bands(
         self,
         bands,
