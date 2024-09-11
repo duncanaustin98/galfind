@@ -6,7 +6,7 @@ Created on Thu Jun  1 16:55:23 2023
 @author: austind
 """
 
-#__init__.py
+# __init__.py
 from __future__ import absolute_import
 
 import time
@@ -33,16 +33,17 @@ else:
 
 # needs to be able to be changed by the user - should be import option
 try:
-    config_path = os.environ['GALFIND_CONFIG_PATH']
-except KeyError:
-    config_path = f"{galfind_dir}/configs/galfind_config.ini"
+    config_path = os.environ["GALFIND_CONFIG_PATH"]
 
-print('Reading GALFIND config file from:', config_path)
+except KeyError:
+    config_path = f"{galfind_dir}/configs/galfind_config.ini"  # needs to be able to be changed by the user
+
+print("Reading GALFIND config file from:", config_path)
 # configuration variables
 config = configparser.ConfigParser()
 config.read(config_path)
 config.set("DEFAULT", "GALFIND_DIR", galfind_dir)
-    
+
 # Make IS_CLUSTER variable from the config parameters
 if config["DEFAULT"]["SURVEY"] in json.loads(config.get("Other", "CLUSTER_FIELDS")):
     config.set("DEFAULT", "IS_CLUSTER", "YES")
@@ -51,8 +52,16 @@ else:
 
 # set up logging
 if config.getboolean("DEFAULT", "USE_LOGGING"):
-    logging.basicConfig(level = {'NOTSET': logging.NOTSET, 'DEBUG': logging.DEBUG, 'INFO': logging.INFO, 'WARNING': logging.WARNING, \
-        'ERROR': logging.ERROR, 'CRITICAL': logging.CRITICAL}[config["DEFAULT"]["LOGGING_LEVEL"]])
+    logging.basicConfig(
+        level={
+            "NOTSET": logging.NOTSET,
+            "DEBUG": logging.DEBUG,
+            "INFO": logging.INFO,
+            "WARNING": logging.WARNING,
+            "ERROR": logging.ERROR,
+            "CRITICAL": logging.CRITICAL,
+        }[config["DEFAULT"]["LOGGING_LEVEL"]]
+    )
     # Create a logger instance
     galfind_logger = logging.getLogger(__name__)
     # don't add file handler to galfind_logger if in workflow
@@ -96,13 +105,13 @@ if config.getboolean("DEFAULT", "USE_LOGGING"):
     # Reattach the original formatter
         galfind_logger.handlers[0].setFormatter(galfind_log_formatter)
 else:
-    raise(Exception("galfind currently not set up to allow users to ignore logging!"))
+    raise (Exception("galfind currently not set up to allow users to ignore logging!"))
 
 # set cosmology
-astropy_cosmo = FlatLambdaCDM(H0 = 70, Om0 = 0.3, Ob0 = 0.05, Tcmb0 = 2.725)
+astropy_cosmo = FlatLambdaCDM(H0=70, Om0=0.3, Ob0=0.05, Tcmb0=2.725)
 
 # set lyman limit and lyman alpha wavelengths
-wav_lyman_lim = 911.8 # * u.AA
+wav_lyman_lim = 911.8  # * u.AA
 
 from . import useful_funcs_austind
 from . import NIRCam_aperture_corrections as NIRCam_aper_corr
@@ -110,12 +119,32 @@ from . import Depths
 from .PDF import PDF, SED_fit_PDF, Redshift_PDF, PDF_nD
 from .Filter import Filter
 from .Instrument import Instrument, ACS_WFC, WFC3_IR, NIRCam, MIRI, Combined_Instrument
-instr_to_name_dict = {subcls.__name__: subcls() for subcls in \
-    Instrument.__subclasses__() if subcls.__name__ in json.loads(config.get("Other", "INSTRUMENT_NAMES"))}
 
-all_bands = np.hstack([subcls.bands for subcls in instr_to_name_dict.values()])
+instr_to_name_dict = {
+    instr_name: globals()[instr_name]()
+    for instr_name in [
+        subcls.__name__
+        for subcls in Instrument.__subclasses__()
+        if subcls.__name__ != "Combined_Instrument"
+    ]
+}
+
+# ordered band names from blue -> red
+# config.set("Other", "ALL_BANDS", json.dumps(["F435W","FR459M","F475W","F550M","F555W","F606W","F625W","FR647M","F070W","F775W","F814W","F850LP",
+#             "F090W","FR914M","F098M","F105W","F110W","F115W","F125W","F127M","F139M","F140W","F140M","F150W","F153M","F160W","F162M","F182M",
+#             "F200W","F210M","F250M","F277W","F300M","F335M","F356W","F360M","F410M","F430M","F444W","F460M","F480M","F560W","F770W","F1000W","F1130W","F1280W","F1500W","F1800W","F2100W","F2550W"]))
+all_bands = np.hstack(
+    [
+        subcls().bands
+        for subcls in Instrument.__subclasses__()
+        if subcls.__name__ != "Combined_Instrument"
+    ]
+)
 # sort bands blue -> red based on central wavelength
-all_band_names = [band.band_name for band in sorted(all_bands, key = lambda band: band.WavelengthCen.to(u.AA).value)]
+all_band_names = [
+    band.band_name
+    for band in sorted(all_bands, key=lambda band: band.WavelengthCen.to(u.AA).value)
+]
 config.set("Other", "ALL_BANDS", json.dumps(all_band_names))
 
 from .Data import Data
@@ -128,10 +157,13 @@ from .SED_codes import SED_code
 from .LePhare import LePhare
 from .EAZY import EAZY # Failed to `import dust_attenuation`
 from .Bagpipes import Bagpipes
+
 # don't do Bagpipes or LePhare for now
-sed_code_to_name_dict = {sed_code_name: globals()[sed_code_name]() \
-    for sed_code_name in [subcls.__name__ for subcls in SED_code.__subclasses__()] \
-    if sed_code_name not in ["LePhare"]}
+sed_code_to_name_dict = {
+    sed_code_name: globals()[sed_code_name]()
+    for sed_code_name in [subcls.__name__ for subcls in SED_code.__subclasses__()]
+    if sed_code_name not in ["LePhare"]
+}
 
 from .Multiple_Catalogue import Multiple_Catalogue
 from .Multiple_Data import Multiple_Data
@@ -139,7 +171,11 @@ from .Catalogue_Base import Catalogue_Base
 from .Catalogue import Catalogue
 from .Catalogue_Creator import Catalogue_Creator, GALFIND_Catalogue_Creator
 from .SED import SED, SED_rest, SED_obs, Mock_SED_rest, Mock_SED_obs
-from .SED import Mock_SED_template_set, Mock_SED_rest_template_set, Mock_SED_obs_template_set
+from .SED import (
+    Mock_SED_template_set,
+    Mock_SED_rest_template_set,
+    Mock_SED_obs_template_set,
+)
 
 from .Galaxy import Galaxy, Multiple_Galaxy
 from .Simulated_Galaxy import Simulated_Galaxy
@@ -150,8 +186,17 @@ from . import IGM_attenuation
 from . import lyman_alpha_damping_wing
 from .DLA import DLA
 from .Dust_Attenuation import Dust_Attenuation, C00
-from .Spectrum import Spectral_Catalogue, Spectrum, NIRSpec, Spectral_Instrument, Spectral_Filter, Spectral_Grating
-from .Number_Density_Function import Base_Number_Density_Function, Number_Density_Function # UVLFs, mass functions, etc
+from .Spectrum import (
+    Spectral_Catalogue,
+    Spectrum,
+    NIRSpec,
+    Spectral_Instrument,
+    Spectral_Filter,
+    Spectral_Grating,
+)
+from .Number_Density_Function import (
+    Base_Number_Density_Function,
+    Number_Density_Function,
+)  # UVLFs, mass functions, etc
 
 # dynamically add Galaxy selection methods to Catalogue class?
-

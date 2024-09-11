@@ -101,6 +101,7 @@ class NIRSpec(Spectral_Instrument):
 
     def __init__(self, grating_name: str, filter_name: str) -> NoReturn:
         grating_filter_name = f"{grating_name}/{filter_name}"
+        self.grating_filter_name = grating_filter_name
         assert (
             grating_filter_name in self.available_grating_filters
         ), galfind_logger.critical(
@@ -127,7 +128,7 @@ class Spectrum:
         self,
         wavs: u.Quantity,
         fluxes: Union[u.Quantity, u.Magnitude],
-        fluxe_errs: Union[u.Quantity, u.Magnitude],
+        flux_errs: Union[u.Quantity, u.Magnitude],
         sky_coord: SkyCoord,
         z: float,
         z_method: str,
@@ -139,7 +140,7 @@ class Spectrum:
     ) -> NoReturn:
         self.wavs = wavs
         self.fluxes = fluxes
-        self.flux_errs = fluxe_errs
+        self.flux_errs = flux_errs
         self.sky_coord = sky_coord
         self.z = z
         self.z_method = z_method
@@ -157,7 +158,7 @@ class Spectrum:
             if "PROGRAM" in self.meta.keys():
                 self._PID = int(self.meta["PROGRAM"])
             elif "SRCNAM1" in self.meta.keys():
-                self._PID = int(self.meta["SRCNAM1"].split("_")[0])
+                self._PID = str(self.meta["SRCNAM1"].split("_")[0])
             else:
                 raise (Exception())
             return self._PID
@@ -205,17 +206,13 @@ class Spectrum:
         #    "nod_type": str(header["NOD_TYPE"]).replace(" ", ""), "src_slit_pos": [float(header["SRCXPOS"]), float(header["SRCYPOS"])]}
         #    str(header["READPATT"]).replace(" ", ""), "n_integrations": int(header["NINTS"]), "n_groups": int(header["NGROUPS"]), \
 
-    # def __getattr__(self, name):
-    #     if name.upper() == "RA":
-    #         return self.sky_coord.ra.deg
-    #     elif name.upper() == "DEC":
-    #         return self.sky_coord.dec.deg
-    #     else:
-    #         raise(Exception())#galfind_logger.critical(f"{self.__class__.__name__=} has no attribute = {name}")))
-
     @classmethod
     def from_DJA(
-        cls, url_path: str, save: bool = True, version: str = "v2"
+        cls,
+        url_path: str,
+        save: bool = True,
+        version: str = "v2",
+        z: Union[float, None] = None,
     ) -> Self:
         import msaexp.spectrum
 
@@ -251,9 +248,8 @@ class Spectrum:
         # extract 1D spectrum from 2D fits image using msaexp
         spectrum_1D = msaexp.spectrum.SpectrumSampler(loc_2D_path)
         flux_unit = u.Unit(str(header["BUNIT"].replace(" ", "")))
-        ##breakpoint()
         # could also extract resolution here
-        mask = spectrum_1D.spec["valid"]
+        mask = ~spectrum_1D.spec["valid"]
         wavs = spectrum_1D.spec["wave"] * u.um
         fluxes = Masked(spectrum_1D.spec["flux"] * flux_unit, mask=mask)
 
@@ -276,7 +272,7 @@ class Spectrum:
             out_dir = config["Spectra"]["DJA_2D_SPECTRA_DIR"].replace(
                 "2D", "MSA_metafiles"
             )
-            meta_out_path = f"{out_dir}/{msa_metafiles[0]}"
+            meta_out_path = f"{out_dir}/{msa_metafile}"
             if not Path(meta_out_path).is_file():
                 meta = fits.open(meta_in_path, cache=False)
                 funcs.make_dirs(meta_out_path)
@@ -286,24 +282,29 @@ class Spectrum:
         except:
             MSA_metafile_name = None
 
-        flux_errs = Masked(full_flux_errs, mask=mask) * flux_unit
+        flux_errs = Masked(np.array(full_flux_errs) * flux_unit, mask=mask)
 
-        z = None
-        z_method = None
+        if type(z) != type(None):
+            z_method = "cat"
+        else:
+            z = None
+            z_method = None
         reduction_name = f"DJA_{version}"
 
-        return cls(
+        spec_obj = cls(
             wavs,
             fluxes,
             flux_errs,
+            sky_coord,
             z,
             z_method,
-            sky_coord,
             instrument,
             reduction_name,
             MSA_metafile_name,
             meta={name: header[name] for name in header},
         )
+        spec_obj.origin = loc_2D_path
+        return spec_obj
 
     def load_MSA_metafile(self):
         from msaexp import msa
@@ -373,6 +374,33 @@ class Spectrum:
             #     fontsize = 8,
             # )
 
+    def calc_SNR_cont(
+        self, rest_cont_wav: u.Quantity, delta_wav: u.Quantity = 100 * u.AA
+    ):
+        rest_wavs = self.wavs / (1.0 + self.z)
+        wav_mask = (rest_wavs > rest_cont_wav - delta_wav / 2.0) & (
+            rest_wavs < rest_cont_wav + delta_wav / 2.0
+        )
+        fluxes = self.fluxes[wav_mask]
+        flux_errs = self.flux_errs[wav_mask]
+        SNR_arr = [flux / err for flux, err in zip(fluxes, flux_errs)]
+        mean_SNR = np.mean(SNR_arr)
+        # HACK: This is not general!
+        self.SNR = mean_SNR
+        return mean_SNR
+
+    def plot_spectrum(self, src="msaexp"):
+        if src == "msaexp":
+            import msaexp.spectrum
+
+            fig, spec, data = msaexp.spectrum.plot_spectrum(
+                self.origin, z=self.z
+            )
+            self.fit_data = data
+            save_path = f"{config['DEFAULT']['GALFIND_WORK']}/DJA_spec_plots/{self.instrument.grating_filter_name}/{self.src_name}_spec.png"
+            funcs.make_dirs(save_path)
+            fig.savefig(save_path)
+
 
 # should inherit from Catalogue_Base
 class Spectral_Catalogue:
@@ -386,7 +414,6 @@ class Spectral_Catalogue:
                 for src_name in unique_src_names
             ]
         )
-        ##breakpoint()
         # self.sky_coords = np.array([spec[0].sky_coord for spec in self.spectrum_arr])
 
     def __len__(self):
@@ -422,14 +449,16 @@ class Spectral_Catalogue:
     @classmethod
     def from_DJA(
         cls,
-        ra_range: u.Quantity = None,
-        dec_range: u.Quantity = None,
-        PID: int = None,
-        grating_filter: str = None,
+        ra_range: Union[list, np.array, u.Quantity] = None,
+        dec_range: Union[list, np.array, u.Quantity] = None,
+        PID: Union[int, None] = None,
+        z_cat_range: Union[list, np.array, None] = None,
+        grating_filter: Union[str, None] = None,
         grade: int = 3,
         save: bool = True,
+        z_from_cat: bool = False,
         version: str = "v2",
-    ) -> Self:
+    ):
         if type(grating_filter) != type(None):
             assert grating_filter in NIRSpec.available_grating_filters
         assert version in ["v1", "v2"]
@@ -440,13 +469,24 @@ class Spectral_Catalogue:
         )
         if type(ra_range) != type(None):
             assert len(ra_range) == 2
+            if type(ra_range) in [list, np.array]:
+                assert ra_range[0].unit == ra_range[1].unit
+                ra_range = [ra_range[0].value, ra_range[1].value] * ra_range[
+                    0
+                ].unit
             ra_range = sorted(ra_range.to(u.deg).value)
             DJA_cat = DJA_cat[
                 ((DJA_cat["ra"] > ra_range[0]) & (DJA_cat["ra"] < ra_range[1]))
             ]
         if type(dec_range) != type(None):
             assert len(dec_range) == 2
-            dec_range = sorted(ra_range.to(u.deg).value)
+            if type(dec_range) in [list, np.array]:
+                assert dec_range[0].unit == dec_range[1].unit
+                dec_range = [
+                    dec_range[0].value,
+                    dec_range[1].value,
+                ] * dec_range[0].unit
+            dec_range = sorted(dec_range.to(u.deg).value)
             DJA_cat = DJA_cat[
                 (
                     (DJA_cat["dec"] > dec_range[0])
@@ -456,26 +496,57 @@ class Spectral_Catalogue:
         if type(grade) != type(None):
             DJA_cat = DJA_cat[DJA_cat["grade"] == grade]
         if type(grating_filter) != type(None):
-            DJA_cat = DJA_cat[
-                DJA_cat["grating"] == grating_filter.split("/")[0]
-            ]
+            if "grating" in DJA_cat.colnames:
+                DJA_cat = DJA_cat[
+                    DJA_cat["grating"] == grating_filter.split("/")[0]
+                ]
         if type(grating_filter) != type(None):
+            if "filter" in DJA_cat.colnames:
+                DJA_cat = DJA_cat[
+                    DJA_cat["filter"] == grating_filter.split("/")[1]
+                ]
+        if type(z_cat_range) != type(None):
             DJA_cat = DJA_cat[
-                DJA_cat["filter"] == grating_filter.split("/")[1]
+                (
+                    (DJA_cat["z"] > z_cat_range[0])
+                    & (DJA_cat["z"] < z_cat_range[1])
+                )
             ]
+            z_from_cat = True
         if type(PID) != type(None):
-            DJA_cat = DJA_cat[DJA_cat["PID"] == PID]
-        return cls(
-            [
-                Spectrum.from_DJA(
-                    f"{config['Spectra']['DJA_WEB_DIR']}/{root}/{file}",
-                    save=save,
-                    version=version,
-                )
-                for root, file in tqdm(
-                    zip(DJA_cat["root"], DJA_cat["file"]),
-                    total=len(DJA_cat),
-                    desc=f"Loading DJA_{version} catalogue",
-                )
-            ]
-        )
+            if "PID" in DJA_cat.colnames:
+                DJA_cat = DJA_cat[DJA_cat["PID"] == PID]
+
+        if z_from_cat:
+            return cls(
+                [
+                    Spectrum.from_DJA(
+                        f"{config['Spectra']['DJA_WEB_DIR']}/{root}/{file}",
+                        save=save,
+                        version=version,
+                        z=z,
+                    )
+                    for root, file, z in tqdm(
+                        zip(DJA_cat["root"], DJA_cat["file"], DJA_cat["z"]),
+                        total=len(DJA_cat),
+                        desc=f"Loading DJA_{version} catalogue",
+                    )
+                ]
+            )
+        else:
+            return cls(
+                [
+                    Spectrum.from_DJA(
+                        f"{config['Spectra']['DJA_WEB_DIR']}/{root}/{file}",
+                        save=save,
+                        version=version,
+                    )
+                    for root, file in tqdm(
+                        zip(DJA_cat["root"], DJA_cat["file"]),
+                        total=len(DJA_cat),
+                        desc=f"Loading DJA_{version} catalogue",
+                    )
+                ]
+            )
+
+    # def crop_to_grating(self, name = "G395H/F290LP"):

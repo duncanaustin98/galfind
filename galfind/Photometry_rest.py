@@ -7,17 +7,19 @@ Created on Mon Jul 17 15:04:24 2023
 """
 
 # Photometry_rest.py
+import numpy as np
+import astropy.units as u
+from copy import deepcopy
+from tqdm import tqdm
+from scipy.optimize import curve_fit
 import inspect
 from copy import deepcopy
 from typing import Union
 
-import astropy.units as u
-import numpy as np
-from scipy.optimize import curve_fit
-from tqdm import tqdm
-
-from . import PDF, PDF_nD, Photometry, galfind_logger
+from . import galfind_logger, Photometry, PDF, PDF_nD
 from . import useful_funcs_austind as funcs
+from .Emission_lines import line_diagnostics, strong_optical_lines
+from .Dust_Attenuation import AUV_from_beta, Dust_Attenuation
 from .decorators import ignore_warnings
 from .Dust_Attenuation import AUV_from_beta, Dust_Attenuation
 from .Emission_lines import line_diagnostics, strong_optical_lines
@@ -122,6 +124,56 @@ class Photometry_rest(Photometry):
 
     def __len__(self):
         return len(self.flux_Jy)
+
+    def __getattr__(
+        self,
+        property_name: str,
+        origin: str = "phot_rest",
+        property_type: Union[None, str] = None,
+    ) -> Union[None, bool, u.Quantity, u.Magnitude, u.Dex]:
+        if origin == "phot_rest":
+            if type(property_type) == type(None):
+                return super().__getattr__(property_name, "phot")
+            assert property_type in [
+                "val",
+                "errs",
+                "l1",
+                "u1",
+                "pdf",
+                "recently_updated",
+            ], galfind_logger.critical(
+                f"{property_type=} not in ['val', 'errs', 'l1', 'u1', 'pdf', 'recently_updated']!"
+            )
+            # boolean output to say whether property has been recently updated
+            if property_type == "recently_updated":
+                return (
+                    True if property_name in self.recently_updated else False
+                )
+            else:
+                # extract relevant property if name in dict.keys()
+                if property_type == "val":
+                    access_dict = self.properties
+                elif property_type in ["errs", "l1", "u1"]:
+                    access_dict = self.property_errs
+                else:
+                    access_dict = self.property_PDFs
+                # return None if relevant property is not available
+                if property_name not in access_dict.keys():
+                    err_message = f"{property_name} {property_type} not available in Photometry_rest object!"
+                    galfind_logger.warning(err_message)
+                    raise AttributeError(err_message)  # may be required here
+                else:
+                    if property_type == "l1":
+                        return access_dict[property_name][0]
+                    elif property_type == "u1":
+                        return access_dict[property_name][1]
+                    else:
+                        return access_dict[property_name]
+        else:
+            galfind_logger.critical(
+                f"Photometry_rest.__getattr__ currently has no implementation of {origin=} != 'phot_rest'"
+            )
+            raise NotImplementedError
 
     def __deepcopy__(self, memo):
         cls = self.__class__
@@ -845,30 +897,6 @@ class Photometry_rest(Photometry):
                 )
             ):
                 cont_bands.append(band)
-
-        # while True:
-        #     bluewards_i -= 1
-        #     if bluewards_i >= 0:
-        #         bluewards_cont_band = self.instrument[bluewards_i]
-        #         if bluewards_cont_band.WavelengthUpper50 < rest_optical_wavs[1] * (1. + self.z) and bluewards_cont_band.WavelengthLower50 > rest_optical_wavs[0] * (1. + self.z) \
-        #                 and not any(line_diagnostics[line_name]["line_wav"] * (1. + self.z) < bluewards_cont_band.WavelengthUpper50 and \
-        #                 line_diagnostics[line_name]["line_wav"] * (1. + self.z) > bluewards_cont_band.WavelengthLower50 for line_name in strong_optical_lines):
-        #             cont_bands.append(bluewards_cont_band)
-        #             break
-        #     else:
-        #         break
-        # while True:
-        #     redwards_i += 1
-        #     if redwards_i < len(self.instrument):
-        #         redwards_cont_band = self.instrument[redwards_i]
-        #         if redwards_cont_band.WavelengthUpper50 < rest_optical_wavs[1] * (1. + self.z) and redwards_cont_band.WavelengthLower50 > rest_optical_wavs[0] * (1. + self.z) \
-        #                 and not any(line_diagnostics[line_name]["line_wav"] * (1. + self.z) < redwards_cont_band.WavelengthUpper50 and \
-        #                 line_diagnostics[line_name]["line_wav"] * (1. + self.z) > redwards_cont_band.WavelengthLower50 for line_name in strong_optical_lines):
-        #             cont_bands.append(redwards_cont_band)
-        #             break
-        #     else:
-        #         break
-
         # if there are no available continuum bands
         if len(cont_bands) == 0:
             if single_iter:
@@ -1001,8 +1029,6 @@ class Photometry_rest(Photometry):
                     )
                     * u.nJy
                 )
-                # cont_chains = np.array([np.interp(em_wav, cont_wavs, cont_fluxes) for cont_fluxes \
-                #     in zip(cont_flux_chains[cont_bands[0].band_name].value, cont_flux_chains[cont_bands[1].band_name].value)]) * u.nJy
                 return [{"vals": cont_chains, "PDF_kwargs": kwargs}], [
                     property_name
                 ]

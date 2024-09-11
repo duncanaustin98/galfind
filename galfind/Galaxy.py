@@ -7,12 +7,31 @@ Created on Thu Jul 13 14:11:23 2023
 """
 
 # Galaxy.py
-import glob
+import numpy as np
+import matplotlib.pyplot as plt
+from copy import deepcopy
+import astropy.units as u
+from astropy.coordinates import SkyCoord
+from astropy.io import fits
+from astropy.table import Table
 import os
 import sys
 import time
 from copy import deepcopy
 from pathlib import Path
+from astropy.nddata import Cutout2D
+from astropy.utils.masked import Masked
+from tqdm import tqdm
+import matplotlib.patheffects as pe
+from astropy.visualization import (
+    LogStretch,
+    LinearStretch,
+    ImageNormalize,
+    ManualInterval,
+)
+import matplotlib.patches as patches
+from mpl_toolkits.axes_grid1.anchored_artists import AnchoredSizeBar
+from typing_extensions import Self
 from typing import Union
 
 import astropy.units as u
@@ -46,7 +65,18 @@ from . import (
     instr_to_name_dict,
 )
 from . import useful_funcs_austind as funcs
+from . import config, galfind_logger, astropy_cosmo, instr_to_name_dict
+from . import (
+    Photometry_obs,
+    Multiple_Photometry_obs,
+    Data,
+    Instrument,
+    NIRCam,
+    PDF,
+)
+from .SED import SED_obs, Mock_SED_rest, Mock_SED_obs
 from .EAZY import EAZY
+from .SED_result import SED_result
 from .Emission_lines import line_diagnostics
 from .SED import Mock_SED_obs, Mock_SED_rest, SED_obs
 from .SED_result import SED_result
@@ -151,16 +181,48 @@ class Galaxy:
     #     else:
     #         raise(Exception(f"obj = {obj} must be 'gal'!"))
 
+    def __getattr__(
+        self, property_name: str, origin: Union[str, dict] = "gal"
+    ) -> Union[None, bool, u.Quantity, u.Magnitude, u.Dex]:
+        if origin == "gal":
+            if property_name in self.__dict__.keys():
+                return self.__getattribute__(property_name)
+            elif property_name.upper() == "RA":
+                return self.sky_coord.ra.degree * u.deg
+            elif property_name.upper() == "DEC":
+                return self.sky_coord.dec.degree * u.deg
+            elif property_name in self.selection_flags:
+                return self.selection_flags[property_name]
+            # could also insert cutout paths __getattr__ here, but it is a bit more complex
+            else:
+                if property_name not in [
+                    "__array_struct__",
+                    "__array_interface__",
+                    "__array__",
+                ]:
+                    galfind_logger.critical(
+                        f"Galaxy {self.ID=} has no {property_name=}!"
+                    )
+                raise AttributeError
+        else:
+            return self.phot.__getattr__(property_name, origin)
+
     def __deepcopy__(self, memo):
         cls = self.__class__
         result = cls.__new__(cls)
         memo[id(self)] = result
         for key, value in self.__dict__.items():
-            setattr(result, key, deepcopy(value, memo))
+            try:
+                setattr(result, key, deepcopy(value, memo))
+            except:
+                galfind_logger.critical(
+                    f"deepcopy({self.__class__.__name__}) {key}: {value} FAIL!"
+                )
+                breakpoint()
         return result
 
     def update(
-        self, gal_SED_results, index=0
+        self, gal_SED_results, index: int = 0
     ):  # for now just update the single photometry
         self.phot.update(gal_SED_results)
 
@@ -173,7 +235,7 @@ class Galaxy:
 
     def load_property(
         self, gal_property: Union[dict, u.Quantity], save_name: str
-    ):
+    ) -> None:
         setattr(self, save_name, gal_property)
 
     def make_cutout(
@@ -182,10 +244,10 @@ class Galaxy:
         data,
         wcs=None,
         im_header=None,
-        survey=None,
-        version=None,
-        pix_scale=0.03 * u.arcsec,
-        cutout_size=0.96 * u.arcsec,
+        survey: Union[str, None] = None,
+        version: Union[str, None] = None,
+        pix_scale: u.Quantity = 0.03 * u.arcsec,
+        cutout_size: u.Quantity = 0.96 * u.arcsec,
     ):
         if type(data) == Data:
             survey = data.survey
@@ -290,10 +352,10 @@ class Galaxy:
         blue_bands=["F090W"],
         green_bands=["F200W"],
         red_bands=["F444W"],
-        version=None,
-        survey=None,
-        method="trilogy",
-        cutout_size=0.96 * u.arcsec,
+        version: Union[str, None] = None,
+        survey: Union[str, None] = None,
+        method: str = "trilogy",
+        cutout_size: u.Quantity = 0.96 * u.arcsec,
     ):
         method = method.lower()  # make method lowercase
         # ensure all blue, green and red bands are contained in the data object
@@ -2546,7 +2608,12 @@ class Multiple_Galaxy:
 
     @classmethod
     def from_fits_cat(
-        cls, fits_cat, instrument, cat_creator, SED_fit_params_arr, timed=True
+        cls,
+        fits_cat: Union[Table, list, np.array],
+        instrument,
+        cat_creator,
+        SED_fit_params_arr,
+        timed=True,
     ):
         # load photometries from catalogue
         phots = Multiple_Photometry_obs.from_fits_cat(

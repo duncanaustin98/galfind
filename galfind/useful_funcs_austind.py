@@ -195,6 +195,11 @@ def flux_to_mag_ratio(flux_ratio):
     return mag_ratio
 
 
+def mag_to_flux_ratio(mag_ratio):
+    flux_ratio = 10 ** (mag_ratio / -2.5)
+    return flux_ratio
+
+
 def flux_pc_to_mag_err(flux_pc_err):
     mag_err = (
         2.5 * flux_pc_err / (np.log(10))
@@ -445,6 +450,10 @@ def label_fluxes(unit, is_log_scaled):
 # properties that are by default logged
 logged_properties = ["stellar_mass", "formed_mass", "ssfr", "ssfr_10myr"]
 
+# extended source corrections
+ext_src_label = "_ext_src_corr"
+ext_src_properties = ["Lrest", "Lobs", "m1500", "M1500", "SFRrest", "SFRobs"]
+
 # Calzetti 1994 filters
 lower_Calzetti_filt = [
     1268.0,
@@ -479,7 +488,9 @@ mass_IMF_factor = {}
 default_lims = {
     "M1500": [-23.0, -16.0],
     "M_UV": [-23.0, -16.0],
+    "M_UV_ext_src_corr": [-23.0, -16.0],
     "stellar_mass": [7.5, 11.0],
+    "stellar_mass_ext_src_corr": [7.5, 11.0],
 }
 
 

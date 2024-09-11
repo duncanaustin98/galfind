@@ -53,7 +53,6 @@ def fit_gm():
     ### By hand, blackbodies following da Cunha + Magphys
     import astropy.units as u
     from astropy.constants import c
-    from astropy.modeling.physical_models import BlackBody
 
     # Eazy for wavelength grid
     ez = np.loadtxt("templates/fsps_full/fsps_QSF_12_v3_001.dat")

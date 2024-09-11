@@ -44,6 +44,8 @@ def pipeline(
     },
     load_SED_rest_properties=True,
     n_depth_reg="auto",
+    sex_prefer: str = "rms_err",
+    load_ext_src_corrs=True,
 ):
     for pc_err in min_flux_pc_errs:
         # make appropriate galfind catalogue creator for each aperture diameter
@@ -70,27 +72,32 @@ def pipeline(
                 pix_scales=pix_scales,
                 load_SED_rest_properties=load_SED_rest_properties,
                 n_depth_reg=n_depth_reg,
+                sex_prefer=sex_prefer,
+                load_ext_src_corrs=load_ext_src_corrs,
             )
-            # breakpoint()
+
             pipes_origin = SED_fit_params_arr[
                 -1
             ]  # ["code"].label_from_SED_fit_params(SED_fit_params_arr[-1])
             # cat.plot("beta_C94", pipes_origin, "M_UV", pipes_origin)
 
-            # M_UV_name = "M1500"
-            # M_UV_bins = np.arange(-21.25, -17.25, 0.5)
-            # UV_LF_z9 = Number_Density_Function.from_single_cat(cat, M_UV_name, M_UV_bins, \
-            #     [8.5, 9.5], x_origin = "EAZY_fsps_larson_zfree_REST_PROPERTY")
-            # UV_LF_z9.plot(x_lims = M_UV_name)
-            # UV_LF_z10_5 = Number_Density_Function.from_single_cat(cat, M_UV_name, M_UV_bins, \
-            #     [9.5, 11.5], x_origin = "EAZY_fsps_larson_zfree_REST_PROPERTY")
-            # UV_LF_z10_5.plot(x_lims = M_UV_name)
-            # UV_LF_z12_5 = Number_Density_Function.from_single_cat(cat, M_UV_name, M_UV_bins, \
-            #     [11.5, 13.5], x_origin = "EAZY_fsps_larson_zfree_REST_PROPERTY")
-            # UV_LF_z12_5.plot(x_lims = M_UV_name)
+            M_UV_name = "M_UV_ext_src_corr"  # "M1500"
+            M_UV_bins = np.arange(-21.25, -17.25, 0.5)
+            UV_LF_z9 = Number_Density_Function.from_single_cat(
+                cat, M_UV_name, M_UV_bins, [8.5, 9.5], x_origin=pipes_origin
+            )  # "EAZY_fsps_larson_zfree_REST_PROPERTY")
+            UV_LF_z9.plot(x_lims=M_UV_name)
+            UV_LF_z10_5 = Number_Density_Function.from_single_cat(
+                cat, M_UV_name, M_UV_bins, [9.5, 11.5], x_origin=pipes_origin
+            )  # "EAZY_fsps_larson_zfree_REST_PROPERTY")
+            UV_LF_z10_5.plot(x_lims=M_UV_name)
+            UV_LF_z12_5 = Number_Density_Function.from_single_cat(
+                cat, M_UV_name, M_UV_bins, [11.5, 13.5], x_origin=pipes_origin
+            )  # "EAZY_fsps_larson_zfree_REST_PROPERTY")
+            UV_LF_z12_5.plot(x_lims=M_UV_name)
             # breakpoint()
 
-            mass_name = "stellar_mass"
+            mass_name = "stellar_mass_ext_src_corr"
             mass_bins = np.arange(7.5, 11.0, 0.5)
             GSMF_z9 = Number_Density_Function.from_single_cat(
                 cat, mass_name, mass_bins, [8.5, 9.5], x_origin=pipes_origin
@@ -104,13 +111,6 @@ def pipeline(
                 cat, mass_name, mass_bins, [11.5, 13.5], x_origin=pipes_origin
             )
             GSMF_z12_5.plot(x_lims=mass_name)
-
-            # cat.calc_Vmax(cat.data, z_bin = [5.5, 6.5], timed = timed)
-            # cat.calc_Vmax(cat.data, z_bin = [11.5, 13.5], timed = timed)
-            # cat.calc_Vmax(cat.data, z_bin = [9.5, 11.5], timed = timed)
-            # cat.calc_Vmax(cat.data, z_bin = [8.5, 9.5], timed = timed)
-            # cat.calc_Vmax(cat.data, z_bin = [7.5, 8.5], timed = timed)
-            # cat.calc_Vmax(cat.data, z_bin = [6.5, 7.5], timed = timed)
 
             # cat.phot_SNR_crop(0, 2., "non_detect") # 2σ non-detected in first band
             # cat.phot_bluewards_Lya_non_detect(2.) # 2σ non-detected in all bands bluewards of Lyα
@@ -127,7 +127,7 @@ def pipeline(
 
             # cat_copy = cat.select_EPOCHS(allow_lowz = False)
             # #cat_copy.make_cutouts(IDs = crop_by["IDs"])
-            # cat_copy.plot_phot_diagnostics(flux_unit = u.ABmag)
+            # #cat_copy.plot_phot_diagnostics(flux_unit = u.ABmag)
             # print(str(cat_copy))
 
             # end = time.time()
@@ -174,9 +174,8 @@ if __name__ == "__main__":
     version = "v11"  # config["DEFAULT"]["VERSION"]
     instruments = ["ACS_WFC", "NIRCam"]  # , "MIRI"] #, "ACS_WFC"] # "WFC3_IR"
     cat_type = "loc_depth"
-    surveys = [
-        "JOF"
-    ]  # ["JADES-Deep-GS+JEMS"]#+SMILES"] #[config["DEFAULT"]["SURVEY"]]
+    surveys = ["JOF"]
+    # ["JADES-Deep-GS+JEMS"]#+SMILES"] #[config["DEFAULT"]["SURVEY"]]
     aper_diams = [0.32] * u.arcsec  # 0.32, 0.5, 1.0, 1.5, 2.0
     SED_code_arr = []  # EAZY()]
     templates_arr = ["fsps_larson"]  # ["fsps", "fsps_larson", "fsps_jades"]
@@ -194,6 +193,9 @@ if __name__ == "__main__":
     MIRI_pix_scale = 0.06 * u.arcsec
     load_SED_rest_properties = False  # True
     n_depth_reg = "auto"
+    excl_bands = []
+    sex_prefer = "rms_err"
+    load_ext_src_corrs = True
     load_PDFs = {"EAZY": True, "Bagpipes": True}
     load_SEDs = {"EAZY": True, "Bagpipes": True}
 

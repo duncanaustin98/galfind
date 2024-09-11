@@ -1,23 +1,25 @@
 # Depths.py
 
 # import automask as am
-import astropy.visualization as vis
-import cv2 as cv2
-import matplotlib.patheffects as pe
-import matplotlib.pyplot as plt
 import numpy as np
-from astropy.io import fits
-from astropy.table import Table
+import matplotlib.pyplot as plt
 from astropy.visualization.mpl_normalize import ImageNormalize
-from matplotlib import cm
-from matplotlib.colors import LinearSegmentedColormap
-from mpl_toolkits.axes_grid1.axes_divider import make_axes_locatable
-from numba import jit
+import astropy.visualization as vis
 from photutils.aperture import CircularAperture
-from scipy.stats import gaussian_kde
-from skimage import morphology
-from sklearn.cluster import KMeans
 from tqdm import tqdm as tq
+from matplotlib import cm
+from astropy.table import Table
+import cv2 as cv2
+from galfind import Data
+from astropy.io import fits
+from sklearn.cluster import KMeans
+from skimage import morphology
+import matplotlib.patheffects as pe
+from scipy.stats import gaussian_kde
+from matplotlib.colors import LinearSegmentedColormap
+from numba import jit
+from mpl_toolkits.axes_grid1.axes_divider import make_axes_locatable
+# install cv2, skimage, sklearn
 
 from galfind import Data
 

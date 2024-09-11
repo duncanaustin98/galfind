@@ -13,7 +13,6 @@ import time
 from copy import deepcopy
 from pathlib import Path
 from typing import Union
-
 import astropy.units as u
 import matplotlib.pyplot as plt
 import numpy as np
@@ -71,8 +70,9 @@ class Catalogue(Catalogue_Base):
         timed: bool = True,
         mask_stars: bool = True,
         load_SED_rest_properties: bool = True,
-        sex_prefer: str = "rms_err",
+        sex_prefer: str = "wht",
         n_depth_reg="auto",
+        load_ext_src_corrs: bool = True,
     ):
         data = Data.from_pipeline(
             survey,
@@ -81,6 +81,7 @@ class Catalogue(Catalogue_Base):
             excl_bands=excl_bands,
             mask_stars=mask_stars,
             pix_scales=pix_scales,
+            sex_prefer=sex_prefer,
         )
 
         return cls.from_data(
@@ -96,8 +97,9 @@ class Catalogue(Catalogue_Base):
             load_SEDs=load_SEDs,
             timed=timed,
             load_SED_rest_properties=load_SED_rest_properties,
-            sex_prefer=sex_prefer,
             n_depth_reg=n_depth_reg,
+            load_ext_src_corrs=load_ext_src_corrs,
+            sex_prefer=sex_prefer,
         )
 
     @classmethod
@@ -118,14 +120,19 @@ class Catalogue(Catalogue_Base):
         load_SED_rest_properties: bool = True,
         sex_prefer: str = "rms_err",
         n_depth_reg: str = "auto",
+        load_ext_src_corrs: bool = True,
     ):
         # make masked local depth catalogue from the 'Data' object
-        data.combine_sex_cats(forced_phot_band, prefer=sex_prefer)
+        data.combine_sex_cats(forced_phot_band, prefer=sex_prefer, timed=timed)
         mode = str(
             config["Depths"]["MODE"]
         ).lower()  # mode to calculate depths (either "n_nearest" or "rolling")
         data.calc_depths(
-            aper_diams, mode=mode, cat_creator=cat_creator, n_split=n_depth_reg
+            aper_diams,
+            mode=mode,
+            cat_creator=cat_creator,
+            n_split=n_depth_reg,
+            timed=timed,
         )
         data.perform_aper_corrs()
         data.make_loc_depth_cat(cat_creator, depth_mode=mode)
@@ -144,6 +151,7 @@ class Catalogue(Catalogue_Base):
             load_SEDs=load_SEDs,
             timed=timed,
             load_SED_rest_properties=load_SED_rest_properties,
+            load_ext_src_corrs=load_ext_src_corrs,
         )
 
     @classmethod
@@ -163,6 +171,7 @@ class Catalogue(Catalogue_Base):
         load_SEDs: Union[bool, dict] = True,
         timed: bool = True,
         load_SED_rest_properties: bool = True,
+        load_ext_src_corrs: bool = True,
     ):
         # open the catalogue
         fits_cat = funcs.cat_from_path(fits_cat_path)
@@ -174,6 +183,7 @@ class Catalogue(Catalogue_Base):
                 instrument.remove_band(band_name)
                 print(f"{band_name} flux not loaded")
         print(f"instrument band names = {instrument.band_names}")
+
         # crop fits catalogue by the crop_by column name should it exist
         assert type(crop_by) in [type(None), str, list, np.array, dict]
         if type(crop_by) in [str]:
@@ -240,11 +250,12 @@ class Catalogue(Catalogue_Base):
             version=version,
             crops=crop_by,
         )
-        # print(cat_obj)
-        if cat_obj != None:
+
+        if cat_obj is not None:
             cat_obj.data = data
         if mask:
             cat_obj.mask(timed=timed)
+
         # run SED fitting for the appropriate SED_fit_params
         for SED_fit_params in SED_fit_params_arr:
             if type(load_PDFs) in [dict]:
@@ -278,6 +289,9 @@ class Catalogue(Catalogue_Base):
             )
             if load_SED_rest_properties:
                 cat_obj.load_SED_rest_properties(SED_fit_params, timed=timed)
+        # make extended source corrections for properties that require it
+        if load_ext_src_corrs:
+            cat_obj.make_all_ext_src_corrs()
         return cat_obj
 
     def save_phot_PDF_paths(self, PDF_paths, SED_fit_params):
@@ -336,30 +350,224 @@ class Catalogue(Catalogue_Base):
 
     # %%
 
-    # def calc_ext_src_corrs(self, band, ID = None):
-    #     # load the catalogue (for obtaining the FLUX_AUTOs; THIS SHOULD BE MORE GENERAL IN FUTURE TO GET THESE FROM THE GALAXY OBJECT!!!)
-    #     tab = self.open_full_cat()
-    #     if ID != None:
-    #         tab = tab[tab["NUMBER"] == ID]
-    #         cat = self[self["ID"] == ID]
-    #     else:
-    #         cat = self
-    #     # load the relevant FLUX_AUTO from SExtractor output
-    #     flux_autos = funcs.flux_image_to_Jy(np.array(tab[f"FLUX_AUTO_{band}"]), self.data.im_zps[band])
-    #     ext_src_corrs = self.cap_ext_src_corrs([flux_autos[i] / gal.phot.flux_Jy[np.where(band == \
-    #         gal.phot.instrument.band_names)[0][0]].value for i, gal in enumerate(cat)])
-    #     return ext_src_corrs
+    def calc_ext_src_corrs(self) -> None:
+        self.load_sex_flux_mag_autos()
+        # calculate aperture corrections if not already
+        if not hasattr(self.instrument, "aper_corrs"):
+            aper_corrs = self.instrument.get_aper_corrs(
+                self.cat_creator.aper_diam
+            )
+        else:
+            aper_corrs = self.instrument.aper_corrs[self.cat_creator.aper_diam]
+        assert len(aper_corrs) == len(self.instrument)
+        aper_corrs = {
+            band_name: aper_corr
+            for band_name, aper_corr in zip(
+                self.instrument.band_names, aper_corrs
+            )
+        }
+        # calculate and save dict of ext_src_corrs for each galaxy in self
+        galfind_logger.debug(
+            "Photometry_obs.calc_ext_src_corrs takes 2min 20s for JOF with 16,000 galaxies. Fairly slow!"
+        )
+        [
+            gal.phot.calc_ext_src_corrs(aper_corrs=aper_corrs)
+            for gal in tqdm(
+                self,
+                desc=f"Calculating extended source corrections for {self.survey} {self.version}",
+                total=len(self),
+            )
+        ]
+        # save the extended source corrections to catalogue
+        self._append_property_to_tab(
+            "_".join(inspect.stack()[0].function.split("_")[1:]), "phot_obs"
+        )
 
-    def calc_new_property(self, func, arg_names: Union[list, np.array]):
-        pass
+    def make_ext_src_corrs(
+        self, gal_property: str, origin: Union[str, dict]
+    ) -> str:
+        # calculate pre-requisites
+        self.calc_ext_src_corrs()
+        # make extended source correction for given property
+        [gal.phot.make_ext_src_corrs(gal_property, origin) for gal in self]
+        # save properties to fits table
+        property_name = f"{gal_property}{funcs.ext_src_label}"
+        self._append_property_to_tab(property_name, origin)
+        return property_name
+
+    def make_all_ext_src_corrs(self) -> None:
+        self.calc_ext_src_corrs()
+        properties_dict = [gal.phot.make_all_ext_src_corrs() for gal in self]
+        unique_origins = np.unique(
+            [property_dict.keys() for property_dict in properties_dict]
+        )[0]
+        unique_properties_origins_dict = {
+            key: np.unique(
+                [property_dict[key] for property_dict in properties_dict]
+            )
+            for key in unique_origins
+        }
+        unique_properties_origins_dict = {
+            key: value
+            for key, value in unique_properties_origins_dict.items()
+            if len(value) > 0
+        }
+        # breakpoint()
+        [
+            self._append_property_to_tab(property_name, origin)
+            for origin, property_names in unique_properties_origins_dict.items()
+            for property_name in property_names
+        ]
+
+    def _append_property_to_tab(
+        self,
+        property_name: str,
+        origin: Union[str, dict],
+        overwrite: bool = False,
+    ) -> None:
+        galfind_logger.info(
+            "Catalogue._append_property_to_tab doesn't work if trying to append newly updated galaxy properties YET!"
+        )
+        # extract catalogue to append to
+        if type(origin) in [dict]:
+            # convert SED_fit_params origin to str
+            assert "code" in origin.keys()
+            origin = origin["code"].label_from_SED_fit_params(origin)
+        if origin in ["gal", "phot_obs"]:
+            hdu = "OBJECTS"
+            ID_label = self.cat_creator.ID_label
+        else:
+            hdu = origin.replace("_REST_PROPERTY", "")
+            ID_label = sed_code_to_name_dict[origin.split("_")[0]].ID_label
+
+        append_tab = self.open_cat(
+            cropped=False, hdu=hdu
+        )  # this should really be cached in Catalogue_Base
+        if type(append_tab) == type(None):
+            galfind_logger.critical(
+                f"Skipping appending of {property_name=}, {origin=} as append_tab does not exist!"
+            )
+            return None
+        # append to .fits table only if not already
+        if property_name in append_tab.colnames:
+            galfind_logger.info(
+                f"{property_name=} already appended to {origin=} .fits table!"
+            )
+            return None
+        else:
+            galfind_logger.info(
+                f"Appending {property_name=} to {origin=} .fits table!"
+            )
+            # make new table with calculated properties
+            gal_IDs = self.__getattr__("ID")
+            gal_properties = self.__getattr__(property_name, origin=origin)
+            if all(
+                type(gal_property) == dict for gal_property in gal_properties
+            ):
+                all_keys = np.unique(
+                    [
+                        f"{property_name}_{key}"
+                        for gal_property in gal_properties
+                        for key in gal_property.keys()
+                    ]
+                )
+                # skip if all columns already appended and overwrite == False
+                if (
+                    all(key in append_tab.colnames for key in all_keys)
+                    and not overwrite
+                ):
+                    return None
+                property_dict = {
+                    key: np.array(
+                        [
+                            gal_property[key.replace(f"{property_name}_", "")]
+                            if key.replace(f"{property_name}_", "")
+                            in gal_property.keys()
+                            else None
+                            for gal_property in gal_properties
+                        ]
+                    )
+                    for key in all_keys
+                }
+                appended_keys = [
+                    key
+                    for key in property_dict.keys()
+                    if key in append_tab.colnames
+                ]
+                # ensure the type of each element in the dict is the same
+                expected_type = type(
+                    gal_properties[0][list(gal_properties[0].keys())[0]]
+                )
+                assert all(
+                    type(value) == expected_type
+                    for gal_property in gal_properties
+                    for value in gal_property.values()
+                )
+                if overwrite:
+                    # remove old columns that already exist
+                    [append_tab.remove_column(key) for key in appended_keys]
+                else:
+                    # remove new columns that already exist
+                    [property_dict.pop(key) for key in appended_keys]
+                property_types = [
+                    bool if expected_type in [bool, np.bool_] else float
+                ] * len(appended_keys)
+            elif any(
+                type(gal_property) == dict for gal_property in gal_properties
+            ):
+                galfind_logger.critical(
+                    f"{property_name}={gal_properties} from {origin=} should not have mixed 'dict' + other element types!"
+                )
+                breakpoint()
+            else:
+                assert all(
+                    type(gal_property)
+                    in [bool, np.bool_, u.Quantity, u.Magnitude, u.Dex]
+                    for gal_property in gal_properties
+                )
+                assert all(
+                    type(gal_property) == type(gal_properties[0])
+                    for gal_property in gal_properties
+                )
+                property_dict = {property_name: gal_properties}
+                property_types = [
+                    bool
+                    if type(gal_properties[0]) in [bool, np.bool_]
+                    else float
+                ]
+            new_tab = Table(
+                {**{"ID_temp": gal_IDs}, **property_dict},
+                dtype=[int] + property_types,
+            )
+            # join new and old tables
+            out_tab = join(
+                append_tab,
+                new_tab,
+                keys_left=ID_label,
+                keys_right="ID_temp",
+                join_type="outer",
+            )
+            out_tab.remove_column("ID_temp")
+            breakpoint()
+            # save multi-extension table
+            self.write_hdu(out_tab, hdu=hdu)
+
+    # def calc_new_property(self, func: Callable[..., float], arg_names: Union[list, np.array]):
+    #     pass
 
     def load_band_properties_from_cat(
         self,
         cat_colname: str,
         save_name: str,
         multiply_factor: Union[dict, u.Quantity, u.Magnitude, None] = None,
-    ):
-        if not hasattr(self[0], save_name):
+        dest: str = "gal",
+    ) -> None:
+        assert dest in ["gal", "phot_obs"]
+        if dest == "gal":
+            has_attr = hasattr(self[0], save_name)
+        else:  # dest == "phot_obs"
+            has_attr = hasattr(self[0].phot, save_name)
+        if not has_attr:
             # load the same property from every available band
             # open catalogue with astropy
             fits_cat = self.open_cat(cropped=True)
@@ -382,20 +590,35 @@ class Catalogue(Catalogue_Base):
                 for band in self.instrument.band_names
                 if f"{cat_colname}_{band}" in fits_cat.colnames
             }
-            cat_band_properties = [
-                {
-                    band: cat_band_properties[band][i]
-                    for band in cat_band_properties.keys()
-                }
-                for i in range(len(fits_cat))
-            ]
-            [
-                gal.load_property(gal_properties, save_name)
-                for gal, gal_properties in zip(self, cat_band_properties)
-            ]
-            galfind_logger.info(
-                f"Loaded {cat_colname} from {self.cat_path} saved as {save_name} for bands = {cat_band_properties[0].keys()}"
-            )
+            if len(cat_band_properties) == 0:
+                galfind_logger.info(
+                    f"Could not load {cat_colname=} from {self.cat_path}, as no '{cat_colname}_band' exists for band in {self.instrument.band_names=}!"
+                )
+            else:
+                cat_band_properties = [
+                    {
+                        band: cat_band_properties[band][i]
+                        for band in cat_band_properties.keys()
+                    }
+                    for i in range(len(fits_cat))
+                ]
+                if dest == "gal":
+                    [
+                        gal.load_property(gal_properties, save_name)
+                        for gal, gal_properties in zip(
+                            self, cat_band_properties
+                        )
+                    ]
+                else:  # dest == "phot_obs"
+                    [
+                        gal.phot.load_property(gal_properties, save_name)
+                        for gal, gal_properties in zip(
+                            self, cat_band_properties
+                        )
+                    ]
+                galfind_logger.info(
+                    f"Loaded {cat_colname} from {self.cat_path} saved as {save_name} for bands = {cat_band_properties[0].keys()}"
+                )
 
     def load_property_from_cat(
         self,
@@ -403,22 +626,56 @@ class Catalogue(Catalogue_Base):
         save_name: str,
         multiply_factor: Union[u.Quantity, u.Magnitude] = 1.0
         * u.dimensionless_unscaled,
-        unit: u.Unit = u.dimensionless_unscaled,
+        dest: str = "gal",
     ):
-        if not hasattr(self[0], save_name):
+        assert dest in ["gal", "phot_obs"]
+        if dest == "gal":
+            has_attr = hasattr(self[0], save_name)
+        else:  # dest == "phot_obs"
+            has_attr = hasattr(self[0].phot, save_name)
+        if not has_attr:
             # open catalogue with astropy
             fits_cat = self.open_cat(cropped=True)
-            cat_property = np.array(fits_cat[cat_colname])
-            assert len(cat_property) == len(self)
-            [
-                gal.load_property(
-                    gal_property * multiply_factor * unit, save_name
+            if cat_colname in fits_cat.colnames:
+                cat_property = np.array(fits_cat[cat_colname])
+                assert len(cat_property) == len(self)
+                if dest == "gal":
+                    [
+                        gal.load_property(
+                            gal_property * multiply_factor, save_name
+                        )
+                        for gal, gal_property in zip(self, cat_property)
+                    ]
+                else:  # dest == "phot_obs"
+                    [
+                        gal.phot.load_property(
+                            gal_property * multiply_factor, save_name
+                        )
+                        for gal, gal_property in zip(self, cat_property)
+                    ]
+                galfind_logger.info(
+                    f"Loaded {cat_colname=} from {self.cat_path} saved as {save_name}!"
                 )
-                for gal, gal_property in zip(self, cat_property)
-            ]
-            galfind_logger.info(
-                f"Loaded {cat_colname} from {self.cat_path} saved as {save_name}"
-            )
+            else:
+                galfind_logger.info(
+                    f"{cat_colname=} does not exist in {self.cat_path}, skipping!"
+                )
+
+    def load_sex_flux_mag_autos(self):
+        # sex_band_names = [band_name for band_name, cat_type in self.data.sex_cat_types.items() if "SExtractor" in cat_type]
+        flux_im_to_Jy_conv = {
+            band_name: funcs.flux_image_to_Jy(1.0, self.data.im_zps[band_name])
+            for band_name in self.instrument.band_names
+        }
+        self.load_band_properties_from_cat(
+            "FLUX_AUTO",
+            "FLUX_AUTO",
+            multiply_factor=flux_im_to_Jy_conv,
+            dest="phot_obs",
+        )
+        self.load_band_properties_from_cat(
+            "MAG_AUTO", "MAG_AUTO", multiply_factor=u.ABmag, dest="phot_obs"
+        )
 
     def mask(self, timed: bool = True):  # , mask_instrument = NIRCam()):
         galfind_logger.info(f"Running masking code for {self.cat_path}.")
@@ -629,7 +886,11 @@ class Catalogue(Catalogue_Base):
                 f"Catalogue for {self.survey} {self.version} already masked. Skipping!"
             )
 
-    def make_cutouts(self, IDs, cutout_size=0.96 * u.arcsec):
+    def make_cutouts(
+        self,
+        IDs: Union[list, np.array],
+        cutout_size: Union[u.Quantity, dict] = 0.96 * u.arcsec,
+    ) -> None:
         if type(IDs) == int:
             IDs = [IDs]
         for band in tqdm(
@@ -673,7 +934,6 @@ class Catalogue(Catalogue_Base):
                         cutout_size_gal = cutout_size[gal.ID]
                     else:
                         cutout_size_gal = cutout_size
-
                     gal.make_cutout(
                         band,
                         data={
@@ -1365,13 +1625,14 @@ class Catalogue(Catalogue_Base):
                     self, total=len(self), desc=f"Cropping {selection_name}"
                 )
             ]
+            # work out origin of property from arguments
+            origin = "gal"
+            # append .fits table in extension 1
+            self._append_property_to_tab(selection_name, origin)
+            # self._append_selection_to_fits(selection_name)
         if make_cat_copy:
             # crop catalogue by the selection
             cat_copy = self._crop_by_selection(selection_name)
-            # append .fits table if not already done so
-            cat_copy._append_selection_to_fits(
-                selection_name
-            )  # this should be written outside of make_cat_copy!
             return cat_copy
 
     def _crop_by_selection(self, selection_name):
@@ -1384,41 +1645,26 @@ class Catalogue(Catalogue_Base):
             cat_copy.crops.append(selection_name)
         return cat_copy
 
-    def _append_selection_to_fits(self, selection_name):
-        # append .fits table if not already done so for this selection
-        if selection_name not in self.selection_cols:
-            assert all(getattr(self, selection_name) == True)
-            full_cat = self.open_cat()
-            selection_cat = Table(
-                {"ID_temp": self.ID, selection_name: np.full(len(self), True)}
-            )
-            output_cat = join(
-                full_cat,
-                selection_cat,
-                keys_left="NUMBER",
-                keys_right="ID_temp",
-                join_type="outer",
-            )
-            output_cat.remove_column("ID_temp")
-            # fill unselected columns with False rather than leaving as masked post-join
-            output_cat[selection_name].fill_value = False
-            output_cat = output_cat.filled()
-            # ensure no rows are lost during this column append
-            assert len(output_cat) == len(full_cat)
-            output_cat.meta = {
-                **full_cat.meta,
-                **{f"HIERARCH SELECTED_{selection_name}": True},
-            }
-            galfind_logger.info(
-                f"Appending {selection_name} to {self.cat_path=}"
-            )
-            output_cat.write(self.cat_path, overwrite=True)
-            funcs.change_file_permissions(self.cat_path)
-            self.selection_cols.append(selection_name)
-        else:
-            galfind_logger.info(
-                f"Already appended {selection_name} to {self.cat_path=}"
-            )
+    # def _append_selection_to_fits(self, selection_name):
+    #     # append .fits table if not already done so for this selection
+    #     if selection_name not in self.selection_cols:
+    #         assert(all(getattr(self, selection_name)))
+    #         full_cat = self.open_cat()
+    #         selection_cat = Table({"ID_temp": self.ID, selection_name: np.full(len(self), True)})
+    #         output_cat = join(full_cat, selection_cat, keys_left = "NUMBER", keys_right = "ID_temp", join_type = "outer")
+    #         output_cat.remove_column("ID_temp")
+    #         # fill unselected columns with False rather than leaving as masked post-join
+    #         output_cat[selection_name].fill_value = False
+    #         output_cat = output_cat.filled()
+    #         # ensure no rows are lost during this column append
+    #         assert(len(output_cat) == len(full_cat))
+    #         output_cat.meta = {**full_cat.meta, **{f"HIERARCH SELECTED_{selection_name}": True}}
+    #         galfind_logger.info(f"Appending {selection_name} to {self.cat_path=}")
+    #         output_cat.write(self.cat_path, overwrite = True)
+    #         funcs.change_file_permissions(self.cat_path)
+    #         self.selection_cols.append(selection_name)
+    #     else:
+    #         galfind_logger.info(f"Already appended {selection_name} to {self.cat_path=}")
 
     # %%
     # SED property functions

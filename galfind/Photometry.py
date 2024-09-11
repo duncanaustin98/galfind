@@ -12,6 +12,7 @@ from copy import deepcopy
 import astropy.units as u
 import matplotlib.patheffects as pe
 import numpy as np
+from typing import Union
 
 from . import galfind_logger
 from . import useful_funcs_austind as funcs
@@ -87,6 +88,100 @@ class Photometry:
 
     def __len__(self):
         return len(self.flux_Jy)
+
+    def __getattr__(
+        self, property_name: str, origin: Union[str, dict] = "phot"
+    ) -> Union[None, u.Quantity, u.Magnitude, u.Dex]:
+        assert origin in ["phot", "instrument"], galfind_logger.critical(
+            f"{origin=} not in ['phot', 'instrument']"
+        )
+        if origin == "phot":
+            split_property_name = property_name.split("_")
+            if split_property_name[0] in self.instrument.band_names:
+                band = split_property_name[0]
+                property_name = "_".join(split_property_name[1:])
+                if property_name in [
+                    "flux_nu",
+                    "flux_lambda",
+                    "mag",
+                    "flux_nu_errs",
+                    "flux_nu_l1",
+                    "flux_nu_u1",
+                    "flux_lambda_l1",
+                    "flux_lambda_errs",
+                    "mag_l1",
+                    "mag_u1",
+                    "mag_errs",
+                ] or ("depth" == property_name.split("_")[0]):
+                    index = self.instrument.index_from_band_name(band)
+                    wav = self.instrument[index].WavelengthCen
+                    units = {
+                        "flux_nu": u.Jy,
+                        "flux_lambda": u.erg / (u.s * (u.cm**2) * u.AA),
+                        "mag": u.ABmag,
+                    }
+                    if property_name in ["flux_nu", "flux_lambda", "mag"]:
+                        return funcs.convert_mag_units(
+                            wav, self.flux_Jy[index], units[property_name]
+                        )
+                    elif property_name in [
+                        "flux_nu_errs",
+                        "flux_lambda_errs",
+                        "mag_errs",
+                    ]:
+                        flux = self.flux_Jy[index]
+                        return funcs.convert_mag_err_units(
+                            wav,
+                            flux,
+                            self.flux_Jy_errs[index],
+                            units[property_name],
+                        )
+                    elif property_name in [
+                        "flux_nu_l1",
+                        "flux_lambda_l1",
+                        "mag_l1",
+                    ]:
+                        flux = self.flux_Jy[index]
+                        return funcs.convert_mag_err_units(
+                            wav,
+                            flux,
+                            self.flux_Jy_errs[index],
+                            units[property_name],
+                        )[0]
+                    elif property_name in [
+                        "flux_nu_u1",
+                        "flux_lambda_u1",
+                        "mag_u1",
+                    ]:
+                        flux = self.flux_Jy[index]
+                        return funcs.convert_mag_err_units(
+                            wav,
+                            flux,
+                            self.flux_Jy_errs[index],
+                            units[property_name],
+                        )[1]
+                    else:
+                        depth = self.depths[index]
+                        if property_name[-5:] == "sigma":
+                            # calculate n sigma depths in ABmag
+                            return funcs.five_to_n_sigma_mag(
+                                depth, int(property_name[:-5].split("_")[-1])
+                            )
+                        else:
+                            # return standard 5 sigma depths in ABmag
+                            return self.depths[index]
+                else:
+                    err_message = (
+                        f"{property_name=} not available in Photometry object!"
+                    )
+                    galfind_logger.critical(err_message)
+                    raise AttributeError(err_message)
+            else:
+                raise AttributeError
+        else:  # origin == "instrument":
+            return self.instrument.__getattr__(property_name, origin)
+            # elif name == "full_mask":
+            #     return np.array([getattr(gal, "phot").mask for gal in self])
 
     @property
     def wav(self):

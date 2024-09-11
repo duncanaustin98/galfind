@@ -9,6 +9,10 @@ Created on Fri Jun  2 12:56:53 2023
 # Instrument.py
 from __future__ import absolute_import
 
+import numpy as np
+from copy import deepcopy
+from abc import abstractmethod
+import astropy.units as u
 import json
 import warnings
 from abc import abstractmethod
@@ -113,7 +117,7 @@ class Instrument:
         output_str += f"FACILITY: {self.facility}\n"
         output_str += f"INSTRUMENT: {self.name}\n"
         # show individual bands used, ordered from blue to red
-        output_str += f"FILTER SET: {str([f'{self.instrument_from_band(band_name).facility}/{self.instrument_from_band(band_name).name}/{band_name}' for band_name in self.band_names])}\n"
+        output_str += f"FILTER SET: {str([f'{band.facility}/{band.instrument}/{band.band_name}' for band in self])}\n"
         # could also include PSF path and correction factors here
         output_str += line_sep
         return output_str
@@ -242,6 +246,7 @@ class Instrument:
             out_instrument = Combined_Instrument(
                 name, bands, excl_bands=[], facility=facility
             )
+            # self.__del__() # delete old self
         return out_instrument
 
     def __sub__(self, instrument):
@@ -404,9 +409,7 @@ class Instrument:
             ]
         )
 
-    def get_aper_corrs(self, aper_diam, cache=True):
-        # print(self.name)
-        # breakpoint()
+    def get_aper_corrs(self, aper_diam: u.Quantity, cache: bool = True):
         # load aperture correction from object should it exist
         if hasattr(self, "aper_corrs"):
             assert type(self.aper_corrs) in [dict]

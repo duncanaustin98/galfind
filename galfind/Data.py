@@ -7,44 +7,46 @@ Created on Wed May 17 14:20:31 2023
 """
 
 from __future__ import absolute_import
+from photutils import (
+    SkyCircularAperture,
+    aperture_photometry,
+)
+import numpy as np
+from astropy.io import fits
+from pathlib import Path
+import matplotlib.pyplot as plt
+import cv2
+import tqdm_joblib
+from astropy.coordinates import SkyCoord
+from astropy.visualization.mpl_normalize import ImageNormalize
+import astropy.visualization as vis
+from matplotlib.colors import LogNorm
+from astropy.table import Table, hstack, vstack, Column
+from copy import deepcopy
+from regions import Regions
+import subprocess
+import time
+import glob
+import astropy.units as u
+import os
+import sys
+from astropy.wcs import WCS
+from tqdm import tqdm
+import json
+from joblib import Parallel, delayed
 
 # from reproject import reproject_adaptive
 import contextlib
-import glob
-import json
-import os
-import subprocess
-import sys
-import time
-from copy import deepcopy
-from pathlib import Path
-
-import astropy.units as u
-import astropy.visualization as vis
-import cv2
-import h5py
 import joblib
-import matplotlib.pyplot as plt
-import numpy as np
-from astropy.convolution import convolve, convolve_fft
-from astropy.coordinates import SkyCoord
-from astropy.io import fits
-from astropy.table import Column, Table, hstack, vstack
-from astropy.visualization.mpl_normalize import ImageNormalize
-from astropy.wcs import WCS
+import h5py
 from astroquery.gaia import Gaia
-from joblib import Parallel, delayed
-from matplotlib.colors import LogNorm
-from photutils.aperture import SkyCircularAperture, aperture_photometry
-from regions import Regions
-from tqdm import tqdm
+from astropy.convolution import convolve, convolve_fft
+from typing import Union
 
-from . import Depths, config, galfind_logger
+from .Instrument import Instrument
+from . import config, galfind_logger, Depths
 from . import useful_funcs_austind as funcs
 from .decorators import run_in_dir
-from .Instrument import (
-    Instrument,
-)
 
 
 # GALFIND data object
@@ -72,6 +74,7 @@ class Data:
         alignment_band="F444W",
         RGB_method=None,
         mask_stars=True,
+        sex_prefer="rms_err",
     ):  # trilogy
         # sort dicts from blue -> red bands in ascending wavelength order
         self.im_paths = im_paths  # not sure these need to be sorted
@@ -87,6 +90,8 @@ class Data:
         self.rms_err_exts = rms_err_exts
         self.im_pixel_scales = im_pixel_scales
         self.im_shapes = im_shapes
+        assert sex_prefer in ["rms_err", "wht"]
+        self.sex_prefer = sex_prefer
 
         # ensure alignment band exists
         if alignment_band not in self.instrument.band_names:
@@ -330,6 +335,7 @@ class Data:
         rms_err_str=["_rms_err", "_rms", "_err"],
         wht_str=["_wht", "_weight"],
         mask_stars=True,
+        sex_prefer="rms_err",
     ):
         # may not require all of these inits
         im_paths = {}
@@ -647,23 +653,17 @@ class Data:
             f"{config['DEFAULT']['GALFIND_WORK']}/Masks/{survey}/fits_masks/*.fits"
         )
         # breakpoint()
-        for i, band in enumerate(comb_instrument.band_names):
+        for i, band in enumerate(comb_instrument):
             # load path to segmentation map
-            seg_paths[band] = (
-                f"{config['DEFAULT']['GALFIND_WORK']}/SExtractor/{comb_instrument.instrument_from_band(band).name}/{version}/{survey}/{survey}_{band}_{band}_sel_cat_{version}_seg.fits"
+            seg_paths[band.band_name] = (
+                f"{config['DEFAULT']['GALFIND_WORK']}/SExtractor/{band.instrument}/{version}/{survey}/{survey}_{band.band_name}_{band.band_name}_sel_cat_{version}_seg.fits"
             )
-
-            # try:
-            #     #print(f"{config['DEFAULT']['GALFIND_WORK']}/SExtractor/{comb_instrument.instrument_from_band(band)}/{version}/{survey}/{survey}*{band}_{band}*{version}*seg.fits")
-            #     seg_paths[band] = glob.glob(f"{config['DEFAULT']['GALFIND_WORK']}/SExtractor/{comb_instrument.instrument_from_band(band).name}/{version}/{survey}/{survey}*{band}_{band}*{version}*seg.fits")[0]
-            # except IndexError:
-            #     seg_paths[band] = ""
 
             # load fits mask for band before searching for other existing masks
             paths_to_masks = [
                 f"{config['DEFAULT']['GALFIND_WORK']}/Masks/{survey}/fits_masks/{path.split('/')[-1]}"
                 for path in fits_mask_paths
-                if path.split("/")[-1].split("_")[0] == band
+                if path.split("/")[-1].split("_")[0] == band.band_name
                 and "basemask" in path.split("/")[-1].split("_")[1]
             ]
             # print(band)
@@ -673,13 +673,13 @@ class Data:
             # breakpoint()
             if len(paths_to_masks) == 0:
                 # search for manually created mask
-                manual_mask_path = f"{config['DEFAULT']['GALFIND_WORK']}/Masks/{survey}/manual/{survey}_{band}_clean.reg"
+                manual_mask_path = f"{config['DEFAULT']['GALFIND_WORK']}/Masks/{survey}/manual/{survey}_{band.band_name}_clean.reg"
                 if Path(manual_mask_path).is_file():
-                    mask_paths[band] = manual_mask_path
+                    mask_paths[band.band_name] = manual_mask_path
                 else:  # if no manually created mask, leave blank
-                    mask_paths[band] = ""
+                    mask_paths[band.band_name] = ""
             else:
-                mask_paths[band] = paths_to_masks[0]
+                mask_paths[band.band_name] = paths_to_masks[0]
 
             mid = time.time()
             # print(mid - start)
@@ -751,6 +751,7 @@ class Data:
             version,
             is_blank=is_blank,
             mask_stars=mask_stars,
+            sex_prefer=sex_prefer,
         )
 
     # %% Overloaded operators
@@ -1484,18 +1485,17 @@ class Data:
         else:
             return "+".join(bands)
 
-    def get_err_map(self, band, prefer="rms_err"):
+    def get_err_map(self, band):
         """Loads either the rms_err or wht map for use in SExtractor depending on the preferred map to use
 
         Args:
             band (str): Filter to extract the rms_err or wht maps from
-            prefer (str, optional): Preferred error map type to use. Either 'rms_err' or 'wht', anything else throws critical. Defaults to "rms_err".
         Returns:
             tuple(3): (Error map path, Error map fits extension, Error map type)
         """
 
         # determine which error map to use based on what is available or preferred
-        if prefer == "rms_err":
+        if self.sex_prefer == "rms_err":
             if band in self.rms_err_paths.keys():
                 err_map_type = "MAP_RMS"
             elif band in self.wht_paths.keys():
@@ -1504,11 +1504,10 @@ class Data:
                 self.make_rms_err_from_wht(band)
             else:
                 galfind_logger.critical(
-                    f"{band=} does not have {prefer=} err map type"
+                    f"{band=} does not have {self.sex_prefer=} err map type"
                 )
                 breakpoint()
-
-        elif prefer == "wht":
+        else:  # self.sex_prefer == "wht"
             if band in self.wht_paths.keys():
                 err_map_type = "MAP_WEIGHT"
             elif band in self.rms_err_paths.keys():
@@ -1517,13 +1516,9 @@ class Data:
                 pass
             else:
                 galfind_logger.critical(
-                    f"{band=} does not have {prefer=} err map type"
+                    f"{band=} does not have {self.sex_prefer=} err map type"
                 )
                 breakpoint()
-        else:
-            galfind_logger.critical(
-                f"prefer = {prefer} not in ['rms_err', 'wht'] in Data.get_err_map()"
-            )
 
         # extract relevant fits paths and extensions
         # print(band, self.rms_err_paths, self.wht_paths)
@@ -1602,9 +1597,12 @@ class Data:
         sex_config_path=config["SExtractor"]["CONFIG_PATH"],
         params_path=config["SExtractor"]["PARAMS_PATH"],
     ):
-        if type(band) == str or type(band) == np.str_:
+        galfind_logger.warning(
+            "Data.make_seg_map easily sped up without the use of Instrument.instrument_from_band!"
+        )
+        if type(band) in [str, np.str_]:
             pass
-        elif type(band) == list or type(band) == np.array:
+        elif type(band) in [list, np.array]:
             band = self.combine_band_names(band)
         else:
             raise (
@@ -1614,9 +1612,7 @@ class Data:
             )
 
         # load relevant err map paths, preferring rms_err maps if available
-        err_map_path, err_map_ext, err_map_type = self.get_err_map(
-            band, prefer="rms_err"
-        )
+        err_map_path, err_map_ext, err_map_type = self.get_err_map(band)
         # insert specified aperture diameters from config file
         as_aper_diams = json.loads(config.get("SExtractor", "APERTURE_DIAMS"))
         if len(as_aper_diams) != 5:
@@ -1635,7 +1631,29 @@ class Data:
             .replace("]", "")
             .replace(" ", "")
         )
+
         # SExtractor bash script python wrapper
+        print(
+            [
+                "./make_seg_map.sh",
+                config["DEFAULT"]["GALFIND_WORK"],
+                self.im_paths[band],
+                str(self.im_pixel_scales[band].value),
+                str(self.im_zps[band]),
+                self.instrument.instrument_from_band(band).name,
+                self.survey,
+                band,
+                self.version,
+                err_map_path,
+                err_map_ext,
+                err_map_type,
+                str(self.im_exts[band]),
+                sex_config_path,
+                params_path,
+                pix_aper_diams,
+            ]
+        )
+        breakpoint()
         process = subprocess.Popen(
             [
                 "./make_seg_map.sh",
@@ -1674,6 +1692,9 @@ class Data:
         overwrite=False,
         update_default_dictionaries=True,
     ):
+        galfind_logger.warning(
+            "Data.convolve_images easily sped up without the use of Instrument.instrument_from_band!"
+        )
         """Adapted from aperpy - https://github.com/astrowhit/aperpy/"""
         if override_bands is not None:
             bands = override_bands
@@ -1924,8 +1945,16 @@ class Data:
         return im_paths_matched, wht_paths_matched, rms_err_paths_matched
 
     def stack_bands(
-        self, bands, psf_match=False, psf_match_band=None, psf_kernel_dir=None
+        self,
+        bands,
+        psf_match=False,
+        psf_match_band=None,
+        psf_kernel_dir=None,
+        timed: bool = True,
     ):
+        galfind_logger.warning(
+            "Data.stack_bands easily sped up without the use of Instrument.instrument_from_band!"
+        )
         for band in bands:
             if band not in self.im_paths.keys():
                 bands.remove(band)
@@ -1965,26 +1994,23 @@ class Data:
         else:
             self.mask_paths[stack_band_name] = self.combine_masks(bands)
 
-        if all(
-            band in self.rms_err_paths.keys()
-            and band in self.rms_err_exts.keys()
-            for band in bands
-        ):
-            err_from = "ERR"
-        elif all(
-            band in self.wht_paths.keys() and band in self.wht_exts.keys()
-            for band in bands
-        ):
-            # determine error map from wht map
-            err_from = "WHT"
-        else:
-            raise (Exception("Inconsistent error maps for stacking bands"))
-
         if not Path(self.im_paths[stack_band_name]).is_file():  # or overwrite
-            # if not config["DEFAULT"].getboolean("RUN"):
-            #     galfind_logger.critical("RUN = YES, so not stacking detection bands. Returning Error.")
-            #     raise Exception(f"RUN = YES, and combination of {self.survey} {self.version} or {self.instrument.name} has not previously been stacked.")
             funcs.make_dirs(self.im_paths[stack_band_name])
+
+            if all(
+                band in self.rms_err_paths.keys()
+                and band in self.rms_err_exts.keys()
+                for band in bands
+            ):
+                err_from = "ERR"
+            elif all(
+                band in self.wht_paths.keys() and band in self.wht_exts.keys()
+                for band in bands
+            ):
+                # determine error map from wht map
+                err_from = "WHT"
+            else:
+                raise (Exception("Inconsistent error maps for stacking bands"))
 
             for pos, band in enumerate(bands):
                 if (
@@ -2051,34 +2077,57 @@ class Data:
         self.wht_paths[stack_band_name] = self.im_paths[stack_band_name]
         self.wht_exts[stack_band_name] = 3
 
-    def sex_cat_path(self, band, forced_phot_band):
+    def sex_cat_path(
+        self,
+        band: Union[str, "Filter"],
+        forced_phot_band: str,
+        timed: bool = False,
+    ):
+        if timed:
+            start = time.time()
+        if type(band) == str:
+            instr_name = self.instrument.instrument_from_band(band).name
+            band_name = band
+        else:
+            instr_name = band.instrument
+            band_name = band.band_name
         # forced phot band here is the string version
-        sex_cat_dir = f"{config['DEFAULT']['GALFIND_WORK']}/SExtractor/{self.instrument.instrument_from_band(band).name}/{self.version}/{self.survey}"
-        sex_cat_name = f"{self.survey}_{band}_{forced_phot_band}_sel_cat_{self.version}.fits"
+        sex_cat_dir = f"{config['DEFAULT']['GALFIND_WORK']}/SExtractor/{instr_name}/{self.version}/{self.survey}"
+        sex_cat_name = f"{self.survey}_{band_name}_{forced_phot_band}_sel_cat_{self.version}.fits"
         sex_cat_path = f"{sex_cat_dir}/{sex_cat_name}"
         funcs.change_file_permissions(sex_cat_path)
+        if timed:
+            end = time.time()
+            print(f"Data.sex_cat_path took {end - start:.1e}s")
         return sex_cat_path
 
-    def seg_path(self, band):
+    def seg_path(self, band: "Filter"):
         # IF THIS IS CHANGED MUST ALSO CHANGE THE PATH IN __init__ AND make_seg_map.sh
-        path = f"{config['DEFAULT']['GALFIND_WORK']}/SExtractor/{self.instrument.instrument_from_band(band).name}/{self.version}/{self.survey}/{self.survey}_{band}_{band}_sel_cat_{self.version}_seg.fits"
+        if type(band) in [str]:
+            instr_name = self.instrument.instrument_from_band(band).name
+            band_name = band
+        else:
+            instr_name = band.instrument
+            band_name = band.band_name
+        path = f"{config['DEFAULT']['GALFIND_WORK']}/SExtractor/{instr_name}/{self.version}/{self.survey}/{self.survey}_{band_name}_{band_name}_sel_cat_{self.version}_seg.fits"
         funcs.change_file_permissions(path)
         return path
 
     @run_in_dir(path=config["DEFAULT"]["GALFIND_DIR"])
     def make_sex_cats(
         self,
-        forced_phot_band="F444W",
-        sex_config_path=config["SExtractor"]["CONFIG_PATH"],
-        params_path=config["SExtractor"]["PARAMS_PATH"],
-        forced_phot_code="photutils",
-        prefer="rms_err",
+        forced_phot_band: Union[str, list, np.array] = "F444W",
+        sex_config_path: str = config["SExtractor"]["CONFIG_PATH"],
+        params_path: str = config["SExtractor"]["PARAMS_PATH"],
+        forced_phot_code: str = "photutils",
+        timed: bool = True,
     ):
         galfind_logger.info(
             f"Making SExtractor catalogues with: config file = {sex_config_path}; parameters file = {params_path}"
         )
-        # breakpoint()
         # make individual forced photometry catalogues
+        if timed:
+            start = time.time()
         if type(forced_phot_band) == list:
             if len(forced_phot_band) > 1:
                 # make the stacked image and save all appropriate parameters
@@ -2101,7 +2150,6 @@ class Data:
                     galfind_logger.info(
                         "OVERWRITE = YES, so overwriting segmentation map if it exists."
                     )
-
                 if (
                     not Path(self.seg_paths[self.forced_phot_band]).is_file()
                     or overwrite
@@ -2114,18 +2162,21 @@ class Data:
                             f"RUN = YES, and combination of {self.survey} {self.version} or {self.instrument.name} has not previously been run through sextractor."
                         )
                     self.make_seg_map(forced_phot_band)
-
             else:
                 self.forced_phot_band = forced_phot_band[0]
         else:
             self.forced_phot_band = forced_phot_band
 
+        if timed:
+            mid = time.time()
+            print(f"{mid - start:.1f}s")
+
         if self.forced_phot_band not in self.instrument.band_names:
-            sextractor_bands = np.append(
-                self.instrument.band_names, self.forced_phot_band
-            )
+            sextractor_bands = [band for band in self.instrument] + [
+                self.forced_phot_band
+            ]
         else:
-            sextractor_bands = self.instrument.band_names
+            sextractor_bands = [band for band in self.instrument]
 
         if not hasattr(self, "sex_cats"):
             self.sex_cats = {}
@@ -2133,23 +2184,34 @@ class Data:
             self.sex_cat_types = {}
 
         for band in sextractor_bands:
+            if type(band) == str:
+                band_name = band
+            else:
+                band_name = band.band_name
             sex_cat_path = self.sex_cat_path(band, self.forced_phot_band)
-            self.sex_cats[band] = sex_cat_path
+            self.sex_cats[band_name] = sex_cat_path
             galfind_logger.debug(
-                f"band = {band}, sex_cat_path = {sex_cat_path} in Data.make_sex_cats"
+                f"band = {band_name}, sex_cat_path = {sex_cat_path} in Data.make_sex_cats"
             )
 
             # check whether the image of the forced photometry band and sextraction band have the same shape
-            if self.im_shapes[self.forced_phot_band] == self.im_shapes[band]:
+            if (
+                self.im_shapes[self.forced_phot_band]
+                == self.im_shapes[band_name]
+            ):
                 sextract = True
-                self.sex_cat_types[band] = (
+                # of order 0.1s per call
+                galfind_logger.debug(
+                    "'subprocess.check_output()' takes of order 0.1s per call!"
+                )
+                self.sex_cat_types[band_name] = (
                     subprocess.check_output("sex --version", shell=True)
                     .decode("utf-8")
                     .replace("\n", "")
                 )
             else:
                 sextract = False
-                self.sex_cat_types[band] = (
+                self.sex_cat_types[band_name] = (
                     f"{forced_phot_code} v{globals()[forced_phot_code].__version__}"
                 )
 
@@ -2158,22 +2220,25 @@ class Data:
             #         galfind_logger.info("OVERWRITE = YES, so overwriting sextractor output if it exists.")
             # if not run before
             if not Path(sex_cat_path).is_file():  # or overwrite
-                # if not config["DEFAULT"].getboolean("RUN"):
-                #     galfind_logger.critical("RUN = YES, so not running sextractor. Returning Error.")
-                #     raise Exception(f"RUN = YES, and combination of {self.survey} {self.version} or {self.instrument.name} has not previously been run through sextractor.")
+                if type(band) == str:
+                    instr_name = self.instrument.instrument_from_band(
+                        band
+                    ).name
+                else:
+                    instr_name = band.instrument
 
                 # perform sextraction
                 if sextract:
                     # load relevant err map paths
                     err_map_path, err_map_ext, err_map_type = self.get_err_map(
-                        band, prefer=prefer
+                        band_name
                     )
                     # load relevant err map paths for the forced photometry band
                     (
                         forced_phot_band_err_map_path,
                         forced_phot_band_err_map_ext,
                         forced_phot_band_err_map_type,
-                    ) = self.get_err_map(self.forced_phot_band, prefer=prefer)
+                    ) = self.get_err_map(self.forced_phot_band)
                     forced_phot_image_path = self.im_paths[
                         self.forced_phot_band
                     ]
@@ -2204,18 +2269,18 @@ class Data:
                         [
                             "./make_sex_cat.sh",
                             config["DEFAULT"]["GALFIND_WORK"],
-                            self.im_paths[band],
-                            str(self.im_pixel_scales[band].value),
-                            str(self.im_zps[band]),
-                            self.instrument.instrument_from_band(band).name,
+                            self.im_paths[band_name],
+                            str(self.im_pixel_scales[band_name].value),
+                            str(self.im_zps[band_name]),
+                            instr_name,
                             self.survey,
-                            band,
+                            band_name,
                             self.version,
                             self.forced_phot_band,
                             forced_phot_image_path,
                             err_map_path,
                             err_map_ext,
-                            str(self.im_exts[band]),
+                            str(self.im_exts[band_name]),
                             forced_phot_band_err_map_path,
                             str(self.im_exts[self.forced_phot_band]),
                             err_map_type,
@@ -2229,18 +2294,18 @@ class Data:
                         [
                             "./make_sex_cat.sh",
                             config["DEFAULT"]["GALFIND_WORK"],
-                            self.im_paths[band],
-                            str(self.im_pixel_scales[band].value),
-                            str(self.im_zps[band]),
-                            self.instrument.instrument_from_band(band).name,
+                            self.im_paths[band_name],
+                            str(self.im_pixel_scales[band_name].value),
+                            str(self.im_zps[band_name]),
+                            instr_name,
                             self.survey,
-                            band,
+                            band_name,
                             self.version,
                             self.forced_phot_band,
                             forced_phot_image_path,
                             err_map_path,
                             err_map_ext,
-                            str(self.im_exts[band]),
+                            str(self.im_exts[band_name]),
                             forced_phot_band_err_map_path,
                             str(self.im_exts[self.forced_phot_band]),
                             err_map_type,
@@ -2251,23 +2316,32 @@ class Data:
                         ]
                     )
                     process.wait()
-
                 else:  # use photutils
-                    # breakpoint()
                     self.forced_photometry(
                         band,
                         self.forced_phot_band,
                         forced_phot_code=forced_phot_code,
                     )
 
-            galfind_logger.info(
-                f"Finished making SExtractor catalogue for {self.survey} {self.version} {band}!"
-            )
+                galfind_logger.info(
+                    f"Made SExtractor catalogue for {self.survey} {self.version} {band_name}!"
+                )
+
+        if timed:
+            end = time.time()
+
+        finish_message = f"Loaded SExtractor catalogue for {self.survey} {self.version} {self.instrument.name}!"
+        if timed:
+            finish_message += f" ({end - start:.1f}s)"
+        galfind_logger.info(finish_message)
 
     def combine_sex_cats(
-        self, forced_phot_band="F444W", readme_sep="-" * 20, prefer="rms_err"
+        self,
+        forced_phot_band: Union[str, list, np.array] = "F444W",
+        readme_sep: str = "-" * 20,
+        timed: bool = True,
     ):
-        self.make_sex_cats(forced_phot_band, prefer=prefer)
+        self.make_sex_cats(forced_phot_band, timed=timed)
 
         save_name = f"{self.survey}_MASTER_Sel-{self.combine_band_names(forced_phot_band)}_{self.version}.fits"
         save_dir = f"{config['DEFAULT']['GALFIND_WORK']}/Catalogues/{self.version}/{self.instrument.name}/{self.survey}"
@@ -3062,13 +3136,27 @@ class Data:
             self.depth_dirs[aper_diam] = {}
         if depth_mode not in self.depth_dirs[aper_diam].keys():
             self.depth_dirs[aper_diam][depth_mode] = {}
-            for band in self.im_paths.keys():
-                self.depth_dirs[aper_diam][depth_mode][band] = (
-                    f"{config['Depths']['DEPTH_DIR']}/{self.instrument.instrument_from_band(band).name}/{self.version}/{self.survey}/{format(aper_diam.value, '.2f')}as/{depth_mode}"
+            for band in self.instrument:
+                self.depth_dirs[aper_diam][depth_mode][band.band_name] = (
+                    f"{config['Depths']['DEPTH_DIR']}/{band.instrument}/{self.version}/{self.survey}/{format(aper_diam.value, '.2f')}as/{depth_mode}"
                 )
                 funcs.make_dirs(
-                    f"{self.depth_dirs[aper_diam][depth_mode][band]}"
+                    f"{self.depth_dirs[aper_diam][depth_mode][band.band_name]}"
                 )
+            for band_name in self.im_paths.keys():
+                if (
+                    band_name
+                    not in self.depth_dirs[aper_diam][depth_mode].keys()
+                ):
+                    galfind_logger.warning(
+                        f"Slow Instrument.instrument_from_band run for {band_name} in Data.load_depth_dirs!"
+                    )
+                    self.depth_dirs[aper_diam][depth_mode][band_name] = (
+                        f"{config['Depths']['DEPTH_DIR']}/{self.instrument.instrument_from_band(band_name).name}/{self.version}/{self.survey}/{format(aper_diam.value, '.2f')}as/{depth_mode}"
+                    )
+                    funcs.make_dirs(
+                        f"{self.depth_dirs[aper_diam][depth_mode][band_name]}"
+                    )
 
     def load_depths(self, aper_diam, depth_mode, depth_type="median_depth"):
         assert depth_type in ["median_depth", "mean_depth"]
@@ -3092,22 +3180,26 @@ class Data:
 
     def calc_depths(
         self,
-        aper_diams=[0.32] * u.arcsec,
+        aper_diams: u.Quantity = [0.32] * u.arcsec,
         cat_creator=None,
-        mode="n_nearest",
-        scatter_size=0.1,
-        distance_to_mask=30,
-        region_radius_used_pix=300,
-        n_nearest=200,
-        coord_type="sky",
-        split_depth_min_size=100_000,
-        split_depths_factor=5,
-        step_size=100,
-        excl_bands=[],
-        n_jobs=1,
-        plot=True,
-        n_split="auto",
+        mode: str = "n_nearest",
+        scatter_size: float = 0.1,
+        distance_to_mask: Union[int, float] = 30,
+        region_radius_used_pix: Union[int, float] = 300,
+        n_nearest: int = 200,
+        coord_type: str = "sky",
+        split_depth_min_size: int = 100_000,
+        split_depths_factor: int = 5,
+        step_size: int = 100,
+        excl_bands: Union[list, np.array] = [],
+        n_jobs: int = 1,
+        plot: bool = True,
+        n_split: str = "auto",
+        timed: bool = False,
     ):
+        if timed:
+            start = time.time()
+
         params = []
         # Look over all aperture diameters and bands
         for aper_diam in aper_diams:
@@ -3148,6 +3240,12 @@ class Data:
             self.plot_area_depth(cat_creator, mode, aper_diam, show=False)
             # make depth tables for each instrument
             self.make_depth_tabs(aper_diam, mode)
+
+        finishing_message = f"Calculated/loaded depths for {self.survey} {self.version} {self.instrument.name}"
+        if timed:
+            end = time.time()
+            finishing_message += f" ({end - start:.1f}s)"
+        galfind_logger.info(finishing_message)
 
     def calc_band_depth(self, params):
         # unpack parameters
@@ -3580,7 +3678,9 @@ class Data:
                     dtype=[str, str, float, float],
                 )
                 funcs.make_dirs(out_path)
-                tab.write(out_path, overwrite=True)
+                # do I have permissions to write this
+                if os.access(out_path, os.W_OK):
+                    tab.write(out_path, overwrite=True)
 
     def plot_depth(
         self, band, cat_creator, mode, aper_diam, show=False

@@ -8,6 +8,8 @@ Created on Mon Jul 17 15:03:20 2023
 
 # Photometry_obs.py
 import time
+from typing import Union
+import inspect
 
 import astropy.units as u
 import matplotlib.patheffects as pe
@@ -24,11 +26,11 @@ class Photometry_obs(Photometry):
         instrument,
         flux_Jy,
         flux_Jy_errs,
-        aper_diam,
-        min_flux_pc_err,
+        aper_diam: u.Quantity,
+        min_flux_pc_err: Union[int, float],
         loc_depths,
-        SED_results={},
-        timed=False,
+        SED_results: dict = {},
+        timed: bool = False,
     ):
         if timed:
             start = time.time()
@@ -60,6 +62,94 @@ class Photometry_obs(Photometry):
         output_str += line_sep
         return output_str
 
+    def __getattr__(
+        self, property_name: str, origin: Union[str, dict] = "phot_obs"
+    ) -> Union[None, u.Quantity, u.Magnitude, u.Dex]:
+        assert type(origin) in [str, dict], galfind_logger.critical(
+            f"{origin=} with {type(origin)=} not in [str, dict]!"
+        )
+        if (
+            "phot" in origin
+        ):  # should have origin strings associated with Photometry.__getattr__ in list here!
+            if property_name in self.__dict__.keys():
+                return self.__getattribute__(property_name)
+            elif (
+                "aper_corr" in property_name
+                and property_name.split("_")[-1] in self.instrument.band_names
+            ):
+                # return band aperture corrections
+                return self.aper_corrs[property_name.split("_")[-1]]
+            else:
+                return super().__getattr__(
+                    property_name,
+                    "phot"
+                    if origin == "phot_obs"
+                    else origin.replace("phot_", ""),
+                )
+        else:
+            # determine property type from name
+            property_type = property_name.split("_")[-1]
+            if any(
+                string == property_type.lower()
+                for string in ["val", "errs", "l1", "u1", "pdf"]
+            ):
+                property_name = property_name.replace(f"_{property_type}", "")
+                property_type = property_type.lower()
+            else:
+                property_type = "_".join(property_name.split("_")[-2:])
+                if property_type.lower() != "recently_updated":
+                    # no property type, defaulting to value
+                    galfind_logger.warning(
+                        f"No property_type given in suffix of {property_name=} for Photometry_rest.__getattr__. Defaulting to value"
+                    )
+                    property_name = property_name.replace(
+                        f"_{property_type}", ""
+                    )
+                    property_type = "val"
+                else:
+                    property_name = property_name.replace(
+                        f"_{property_type}", ""
+                    )
+                    property_type = "recently_updated"
+            # determine relevant SED_result to use from origin keyword
+            if type(origin) in [str]:
+                if origin.endswith("_REST_PROPERTY"):
+                    SED_results_key = origin[:-14]
+                    origin = "phot_rest"
+                elif origin.endswith("_SED"):
+                    SED_results_key = origin[:-4]
+                    origin = "SED"
+                else:
+                    SED_results_key = origin
+                    origin = "SED_result"
+            else:  # type(origin) in [dict]:
+                SED_results_key = origin["code"].label_from_SED_fit_params(
+                    origin
+                )
+                origin = "SED_result"
+            assert (
+                SED_results_key in self.SED_results.keys()
+            ), galfind_logger.critical(
+                f"{SED_results_key=} not in {self.SED_results.keys()=}!"
+            )
+            return self.SED_results[SED_results_key].__getattr__(
+                property_name, origin, property_type
+            )
+
+    def __deepcopy__(self, memo):
+        cls = self.__class__
+        result = cls.__new__(cls)
+        memo[id(self)] = result
+        for key, value in self.__dict__.items():
+            try:
+                setattr(result, key, deepcopy(value, memo))
+            except:
+                galfind_logger.critical(
+                    f"deepcopy({self.__class__.__name__}) {key}: {value} FAIL!"
+                )
+                breakpoint()
+        return result
+
     @property
     def SNR(self):
         return [
@@ -85,6 +175,12 @@ class Photometry_obs(Photometry):
         lowz_zmaxs,
         templates,
     ):
+        galfind_logger.warning(
+            "SED_fit_params should be included in this function"
+        )
+        galfind_logger.warning(
+            "Problems with Photometry_obs.from_fits_cat when photometry and SED fitting properties are in different catalogue extensions"
+        )
         phot = Photometry.from_fits_cat(fits_cat_row, instrument, cat_creator)
         SED_results = Galaxy_SED_results.from_fits_cat(
             fits_cat_row,
@@ -97,7 +193,13 @@ class Photometry_obs(Photometry):
         return cls.from_phot(phot, aper_diam, min_flux_pc_err, SED_results)
 
     @classmethod
-    def from_phot(cls, phot, aper_diam, min_flux_pc_err, SED_results={}):
+    def from_phot(
+        cls,
+        phot,
+        aper_diam: u.Quantity,
+        min_flux_pc_err: Union[int, float],
+        SED_results: dict = {},
+    ):
         return cls(
             phot.instrument,
             phot.flux_Jy,
@@ -114,39 +216,237 @@ class Photometry_obs(Photometry):
         else:
             self.SED_results = gal_SED_results
 
-    def update_mask(self, mask, update_phot_rest=False):
+    def update_mask(self, mask, update_phot_rest: bool = False):
         assert len(self.flux_Jy) == len(mask)
         assert len(self.flux_Jy_errs) == len(mask)
         self.flux_Jy.mask = mask
         self.flux_Jy_errs.mask = mask
         return self
 
-    def get_SED_fit_params_arr(self, code):
+    def get_SED_fit_params_arr(self, code) -> list:
         return [
             code.SED_fit_params_from_label(label)
             for label in self.SED_results.keys()
         ]
 
+    def load_property(
+        self, gal_property: Union[dict, u.Quantity], save_name: str
+    ) -> None:
+        setattr(self, save_name, gal_property)
+
+    def calc_ext_src_corrs(self, aper_corrs: Union[dict, None]) -> None:
+        # FLUX_AUTO must already be loaded
+        if not hasattr(self, "FLUX_AUTO"):
+            galfind_logger.critical(
+                "Could not calculate ext_src_corrs as FLUX_AUTO not loaded in!"
+            )
+            raise NotImplementedError
+        # if not already calculated
+        property_name = "_".join(inspect.stack()[0].function.split("_")[1:])
+        if not hasattr(self, property_name):
+            # calculate aperture corrections if not given
+            if type(aper_corrs) == type(None):
+                aper_corrs = self.instrument.get_aper_corrs(self.aper_diam)
+                aper_corrs = {
+                    band_name: aper_corr
+                    for band_name, aper_corr in zip(
+                        self.instrument.band_names, aper_corrs
+                    )
+                }
+            # ensure all bands in self.instrument which have FLUX_AUTO's have aperture corrections calculated
+            assert all(
+                band_name in aper_corrs.keys()
+                for band_name in self.instrument.band_names
+                if band_name in self.FLUX_AUTO.keys()
+            )
+            # calculate extended source corrections in each band
+            ext_src_corrs = {
+                band_name: (
+                    self.FLUX_AUTO[band_name]
+                    / (
+                        self.flux_Jy[i]
+                        * funcs.mag_to_flux_ratio(-aper_corrs[band_name])
+                    )
+                )
+                .to(u.dimensionless_unscaled)
+                .unmasked
+                for i, band_name in enumerate(self.instrument.band_names)
+                if band_name in self.FLUX_AUTO.keys()
+            }
+            ext_src_corrs = {
+                band_name: ext_src_corr
+                if ext_src_corr.value > 1
+                else 1.0 * u.dimensionless_unscaled
+                for band_name, ext_src_corr in ext_src_corrs.items()
+            }
+            # load these into self
+            self.load_property(ext_src_corrs, property_name)
+
+    def make_ext_src_corrs(
+        self,
+        gal_property: str,
+        origin: Union[str, dict],
+        ext_src_band: Union[str, list, np.array] = "F444W",
+    ) -> None:
+        # determine correct SED fitting results to use
+        if type(origin) in [dict]:
+            origin_key = origin["code"].label_from_SED_fit_params(origin)
+            rest_property = False
+        elif type(origin) in [str]:
+            if "_REST_PROPERTY" in origin:
+                rest_property = True
+            else:
+                rest_property = False
+            origin_key = origin.replace("_REST_PROPERTY", "")
+        else:
+            galfind_logger.critical(f"{type(origin)=} not in [str, dict]!")
+        # skip if key not available
+        if origin_key not in self.SED_results.keys():
+            galfind_logger.warning(
+                f"Could not compute ext_src_corrs for {gal_property=} as {origin_key=} not in {self.SED_results.keys()=}!"
+            )
+        else:
+            if rest_property:
+                data_obj = self.SED_results[origin_key].phot_rest
+            else:
+                data_obj = self.SED_results[origin_key]
+            properties = data_obj.properties
+            property_errs = data_obj.property_errs
+            property_PDFs = data_obj.property_PDFs
+            # skip if galaxy property not in properties + property_errs + property_PDFs dicts
+            if any(
+                gal_property not in property_dict.keys()
+                for property_dict in [properties, property_errs, property_PDFs]
+            ):
+                galfind_logger.warning(
+                    f"{gal_property=},{origin_key=},{rest_property=} not in all of [{properties.keys()=},{property_errs.keys()=},{property_PDFs.keys()=}]!"
+                )
+            else:
+                orig_property = properties[gal_property]
+                orig_property_PDF = property_PDFs[gal_property]
+                assert orig_property_PDF.x.unit == orig_property.unit
+                # errors may not necessarily have the same unit
+                ext_src_corr = self.ext_src_corrs[ext_src_band]
+                PDF_add_kwargs = {"ext_src_band": ext_src_band}
+                if type(orig_property) in [u.Magnitude]:
+                    correction = (
+                        funcs.flux_to_mag_ratio(ext_src_corr.value) * u.mag
+                    )  # units are incorrect
+                    updated_property = orig_property + correction
+                    PDF_add_kwargs = {
+                        **PDF_add_kwargs,
+                        **{"ext_src_corr": correction},
+                    }
+                    updated_property_PDF = orig_property_PDF.__add__(
+                        correction,
+                        name_ext=funcs.ext_src_label,
+                        add_kwargs=PDF_add_kwargs,
+                        save=True,
+                    )
+                elif type(orig_property) in [u.Dex]:
+                    correction = u.Dex(np.log10(ext_src_corr.value))
+                    updated_property = orig_property + correction
+                    PDF_add_kwargs = {
+                        **PDF_add_kwargs,
+                        **{"ext_src_corr": correction},
+                    }
+                    updated_property_PDF = orig_property_PDF.__add__(
+                        correction,
+                        name_ext=funcs.ext_src_label,
+                        add_kwargs=PDF_add_kwargs,
+                        save=True,
+                    )
+                elif type(orig_property) in [u.Quantity]:
+                    updated_property = orig_property * ext_src_corr
+                    PDF_add_kwargs = {
+                        **PDF_add_kwargs,
+                        **{"ext_src_corr": ext_src_corr},
+                    }
+                    updated_property_PDF = orig_property_PDF.__mul__(
+                        ext_src_corr,
+                        name_ext=funcs.ext_src_label,
+                        add_kwargs=PDF_add_kwargs,
+                        save=True,
+                    )
+                else:
+                    galfind_logger.warning(
+                        f"{gal_property}={orig_property} from {origin=} with {type(orig_property)=} not in [Magnitude, Dex, Quantity]"
+                    )
+                # update properties and property_PDFs (assume property_errs remain unaffected)
+                data_obj.properties[updated_property_PDF.property_name] = (
+                    updated_property
+                )
+                data_obj.property_PDFs[updated_property_PDF.property_name] = (
+                    updated_property_PDF
+                )
+                # save non rest_property attributes outside of dict as well
+                if not rest_property:
+                    setattr(
+                        data_obj,
+                        updated_property_PDF.property_name,
+                        updated_property,
+                    )
+
+    def make_all_ext_src_corrs(
+        self, ext_src_band: Union[str, list, np.array] = "F444W"
+    ) -> dict:
+        # extract previously calculated galaxy properties and their origins
+        code_ext_src_property_dict = {
+            key: [
+                gal_property
+                for gal_property in self.SED_results[key]
+                .SED_fit_params["code"]
+                .ext_src_corr_properties
+                if gal_property in self.SED_results[key].properties.keys()
+                and gal_property in self.SED_results[key].property_PDFs.keys()
+            ]
+            for key in self.SED_results.keys()
+        }
+        sed_rest_ext_src_property_dict = {
+            f"{key}_REST_PROPERTY": [
+                gal_property
+                for gal_property in self.SED_results[
+                    key
+                ].phot_rest.properties.keys()
+                if gal_property.split("_")[0] in funcs.ext_src_properties
+                and gal_property
+                in self.SED_results[key].phot_rest.property_PDFs.keys()
+            ]
+            for key in self.SED_results.keys()
+        }
+        ext_src_property_dict = {
+            **code_ext_src_property_dict,
+            **sed_rest_ext_src_property_dict,
+        }
+        # make the extended source corrections
+        [
+            self.make_ext_src_corrs(gal_property, origin)
+            for origin, gal_properties in ext_src_property_dict.items()
+            for gal_property in gal_properties
+        ]
+        # return dict of {origin: [property for property in gal[origin]]}
+        return ext_src_property_dict
+
     def plot_phot(
         self,
         ax,
-        wav_units=u.AA,
-        mag_units=u.Jy,
-        plot_errs={"x": True, "y": True},
-        annotate=True,
-        uplim_sigma=2.0,
-        auto_scale=True,
-        label_SNRs=True,
-        errorbar_kwargs={
+        wav_units: Union[str, u.Unit] = u.AA,
+        mag_units: Union[str, u.Unit] = u.Jy,
+        plot_errs: dict = {"x": True, "y": True},
+        annotate: bool = True,
+        uplim_sigma: float = 2.0,
+        auto_scale: bool = True,
+        label_SNRs: bool = True,
+        errorbar_kwargs: dict = {
             "ls": "",
             "marker": "o",
             "ms": 4.0,
             "zorder": 100.0,
             "path_effects": [pe.withStroke(linewidth=2.0, foreground="white")],
         },
-        filled=True,
-        colour="black",
-        label="Photometry",
+        filled: bool = True,
+        colour: str = "black",
+        label: str = "Photometry",
     ):
         plot, wavs_to_plot, mags_to_plot, yerr, uplims = super().plot_phot(
             ax,

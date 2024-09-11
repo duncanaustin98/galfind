@@ -30,6 +30,7 @@ class LePhare(SED_code):
     }
     galaxy_property_errs_dict = {}
     available_templates = ["BC03"]
+    ext_src_corr_properties = ["MASS_BEST", "SFR_BEST"]
     ID_label = "IDENT"
     are_errs_percentiles = False  # check this!
 

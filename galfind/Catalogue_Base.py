@@ -139,266 +139,27 @@ class Catalogue_Base:
 
     # only acts on attributes that don't already exist in Catalogue
     def __getattr__(
-        self,
-        name: str,
-        SED_fit_params: Union[dict, str] = {
-            "code": EAZY(),
-            "templates": "fsps_larson",
-            "lowz_zmax": None,
-        },
-        phot_type: str = "obs",
-        property_type: str = "vals",
+        self, property_name: str, origin: Union[str, dict] = "gal"
     ) -> np.array:
-        if type(SED_fit_params) in [str]:
-            SED_fit_params = sed_code_to_name_dict[
-                SED_fit_params.split("_")[0]
-            ].SED_fit_params_from_label(SED_fit_params)
-        if name in self[0].__dict__:
-            return np.array([getattr(gal, name) for gal in self])
-        elif name.upper() == "RA":
-            return (
-                np.array([getattr(gal, "sky_coord").ra.degree for gal in self])
-                * u.deg
-            )
-        elif name.upper() == "DEC":
-            return (
-                np.array(
-                    [getattr(gal, "sky_coord").dec.degree for gal in self]
-                )
-                * u.deg
-            )
-        elif name in self[0].phot.instrument.__dict__:
-            return np.array(
-                [getattr(gal.phot.instrument, name) for gal in self]
-            )
-        elif phot_type == "obs" and name in self[0].phot.__dict__:
-            return np.array([getattr(gal.phot, name) for gal in self])
-        elif name in self[0].mask_flags.keys():
-            return np.array([getattr(gal.mask_flags, name) for gal in self])
-        elif name == "full_mask":
-            return np.array([getattr(gal, "phot").mask for gal in self])
-        elif name in self[0].selection_flags.keys():
-            return np.array(
-                [getattr(gal, "selection_flags")[name] for gal in self]
-            )
-        elif (
-            property_type == "vals"
-            and name
-            in self[0]
-            .phot.SED_results[
-                SED_fit_params["code"].label_from_SED_fit_params(
-                    SED_fit_params
-                )
-            ]
-            .__dict__
-        ):
-            return np.array(
-                [
-                    getattr(
-                        gal.phot.SED_results[
-                            SED_fit_params["code"].label_from_SED_fit_params(
-                                SED_fit_params
-                            )
-                        ],
-                        name,
-                    )
-                    for gal in self
-                ]
-            )
-        elif (
-            property_type == "errs"
-            and name
-            in self[0]
-            .phot.SED_results[
-                SED_fit_params["code"].label_from_SED_fit_params(
-                    SED_fit_params
-                )
-            ]
-            .property_errs.keys()
-        ):
-            return np.array(
-                [
-                    gal.phot.SED_results[
-                        SED_fit_params["code"].label_from_SED_fit_params(
-                            SED_fit_params
-                        )
-                    ].property_errs[name]
-                    for gal in self
-                ]
-            )
-        elif (
-            phot_type == "rest"
-            and name
-            in self[0]
-            .phot.SED_results[
-                SED_fit_params["code"].label_from_SED_fit_params(
-                    SED_fit_params
-                )
-            ]
-            .phot_rest.__dict__
-        ):
-            return np.array(
-                [
-                    getattr(
-                        gal.phot.SED_results[
-                            SED_fit_params["code"].label_from_SED_fit_params(
-                                SED_fit_params
-                            )
-                        ].phot_rest,
-                        name,
-                    )
-                    for gal in self
-                ]
-            )
-        elif (
-            phot_type == "rest"
-            and property_type == "vals"
-            and name
-            in self[0]
-            .phot.SED_results[
-                SED_fit_params["code"].label_from_SED_fit_params(
-                    SED_fit_params
-                )
-            ]
-            .phot_rest.properties.keys()
-        ):
-            properties = [
-                getattr(
-                    gal.phot.SED_results[
-                        SED_fit_params["code"].label_from_SED_fit_params(
-                            SED_fit_params
-                        )
-                    ].phot_rest,
-                    "properties",
-                )[name]
-                if name
-                in getattr(
-                    gal.phot.SED_results[
-                        SED_fit_params["code"].label_from_SED_fit_params(
-                            SED_fit_params
-                        )
-                    ].phot_rest,
-                    "properties",
-                ).keys()
-                else np.nan
-                for gal in self
-            ]
-            return np.array(
-                [
-                    property.value
-                    if type(property) in [u.Quantity, u.Magnitude]
-                    else property
-                    for property in properties
-                ]
-            )
-        elif (
-            phot_type == "rest"
-            and property_type == "errs"
-            and name
-            in self[0]
-            .phot.SED_results[
-                SED_fit_params["code"].label_from_SED_fit_params(
-                    SED_fit_params
-                )
-            ]
-            .phot_rest.property_errs.keys()
-        ):
-            property_errs_arr = [
-                getattr(
-                    gal.phot.SED_results[
-                        SED_fit_params["code"].label_from_SED_fit_params(
-                            SED_fit_params
-                        )
-                    ].phot_rest,
-                    "property_errs",
-                )[name]
-                if name
-                in getattr(
-                    gal.phot.SED_results[
-                        SED_fit_params["code"].label_from_SED_fit_params(
-                            SED_fit_params
-                        )
-                    ].phot_rest,
-                    "property_errs",
-                ).keys()
-                else [np.nan, np.nan]
-                for gal in self
-            ]
-            return np.array(
-                [
-                    property_errs.value
-                    if type(property_errs) in [u.Quantity, u.Magnitude]
-                    else property_errs
-                    for property_errs in property_errs_arr
-                ]
-            )
-        elif (
-            phot_type == "rest"
-            and property_type == "PDFs"
-            and name
-            in self[0]
-            .phot.SED_results[
-                SED_fit_params["code"].label_from_SED_fit_params(
-                    SED_fit_params
-                )
-            ]
-            .phot_rest.property_errs.keys()
-        ):
-            return np.array(
-                [
-                    getattr(
-                        gal.phot.SED_results[
-                            SED_fit_params["code"].label_from_SED_fit_params(
-                                SED_fit_params
-                            )
-                        ].phot_rest,
-                        "property_PDFs",
-                    )[name]
-                    if name
-                    in getattr(
-                        gal.phot.SED_results[
-                            SED_fit_params["code"].label_from_SED_fit_params(
-                                SED_fit_params
-                            )
-                        ].phot_rest,
-                        "property_PDFs",
-                    ).keys()
-                    else None
-                    for gal in self
-                ]
-            )
-        elif (
-            phot_type == "rest"
-            and property_type == "recently_updated"
-            and name
-            in self[0]
-            .phot.SED_results[
-                SED_fit_params["code"].label_from_SED_fit_params(
-                    SED_fit_params
-                )
-            ]
-            .phot_rest.property_errs.keys()
-        ):
-            return np.array(
-                [
-                    True
-                    if name
-                    in getattr(
-                        gal.phot.SED_results[
-                            SED_fit_params["code"].label_from_SED_fit_params(
-                                SED_fit_params
-                            )
-                        ].phot_rest,
-                        "recently_updated",
-                    )
-                    else False
-                    for gal in self
-                ]
-            )
+        # get attributes from stored galaxy objects
+        if property_name in self.__dict__.keys():
+            return self.__getattribute__(property_name)
         else:
-            galfind_logger.critical(
-                f"Galaxies do not have attribute = {name}!"
-            )
+            attr_arr = [gal.__getattr__(property_name, origin) for gal in self]
+            # sort the units
+            if all(
+                type(attr) in [u.Quantity, u.Magnitude, u.Dex]
+                for attr in attr_arr
+            ):
+                assert all(
+                    attr.unit == attr_arr[0].unit for attr in attr_arr
+                )  # ensure all units are the same
+                attr_arr = np.array(
+                    [attr.value for attr in attr_arr]
+                ) * u.Unit(attr_arr[0].unit)
+            else:
+                attr_arr = np.array(attr_arr)
+            return attr_arr
 
     def __setattr__(self, name, value, obj="cat"):
         if obj == "cat":
@@ -719,7 +480,13 @@ class Catalogue_Base:
         result = cls.__new__(cls)
         memo[id(self)] = result
         for key, value in self.__dict__.items():
-            setattr(result, key, deepcopy(value, memo))
+            try:
+                setattr(result, key, deepcopy(value, memo))
+            except:
+                galfind_logger.critical(
+                    f"deepcopy({self.__class__.__name__}) {key}: {value} FAIL!"
+                )
+                breakpoint()
         return result
 
     @property
@@ -764,9 +531,7 @@ class Catalogue_Base:
         cat_copy = deepcopy(self)
         if type(crop_limits) in [int, float, bool]:
             cat_copy.gals = cat_copy[
-                cat_copy.__getattr__(
-                    crop_property, SED_fit_params, phot_type=phot_type
-                )
+                cat_copy.__getattr__(crop_property, origin=SED_fit_params)
                 == crop_limits
             ]
             if crop_limits == True:
@@ -778,13 +543,13 @@ class Catalogue_Base:
                 (
                     (
                         cat_copy.__getattr__(
-                            crop_property, SED_fit_params, phot_type=phot_type
+                            crop_property, origin=SED_fit_params
                         )
                         >= crop_limits[0]
                     )
                     & (
                         cat_copy.__getattr__(
-                            crop_property, SED_fit_params, phot_type=phot_type
+                            crop_property, origin=SED_fit_params
                         )
                         <= crop_limits[1]
                     )
@@ -815,11 +580,14 @@ class Catalogue_Base:
             return None
         if cropped:
             ID_tab = Table({"IDs_temp": self.ID}, dtype=[int])
+            if type(hdu) == type(None):
+                keys_left = self.cat_creator.ID_label
+            elif hdu.upper() in ["OBJECTS"]:  # , "GALFIND_CAT"]:
+                keys_left = self.cat_creator.ID_label
+            else:
+                keys_left = sed_code_to_name_dict[hdu.split("_")[0]].ID_label
             combined_tab = join(
-                fits_cat,
-                ID_tab,
-                keys_left=self.cat_creator.ID_label,
-                keys_right="IDs_temp",
+                fits_cat, ID_tab, keys_left=keys_left, keys_right="IDs_temp"
             )
             combined_tab.remove_column("IDs_temp")
             combined_tab.meta = fits_cat.meta
@@ -848,6 +616,34 @@ class Catalogue_Base:
         funcs.change_file_permissions(self.cat_path)
         galfind_logger.info(f"Writing table to {self.cat_path}")
 
+    def write_hdu(self, tab: Table, hdu: str):
+        # if hdu exists, overwrite it
+        if self.check_hdu_exists(hdu):
+            tab_arr = [
+                self.open_cat(cropped=False, hdu=hdu_.name)
+                if hdu_.name != hdu.upper()
+                else tab
+                for hdu_ in fits.open(self.cat_path)
+                if hdu_.name != "PRIMARY"
+            ]
+            tab_names = [
+                hdu_.name
+                for hdu_ in fits.open(self.cat_path)
+                if hdu_.name != "PRIMARY"
+            ]
+        else:  # make new hdu
+            tab_arr = [
+                self.open_cat(cropped=False, hdu=hdu_.name)
+                for hdu_ in fits.open(self.cat_path)
+                if hdu_.name != "PRIMARY"
+            ] + [tab]
+            tab_names = [
+                hdu_.name
+                for hdu_ in fits.open(self.cat_path)
+                if hdu_.name != "PRIMARY"
+            ] + [hdu]
+        self.write_cat(tab_arr, tab_names)
+
     def del_hdu(self, hdu):
         if self.check_hdu_exists(hdu):  # delete hdu if it exists
             tab_arr = [
@@ -861,7 +657,13 @@ class Catalogue_Base:
                 if hdu_.name != hdu.upper() and hdu_.name != "PRIMARY"
             ]
             self.write_cat(tab_arr, tab_names)
-        galfind_logger.info(f"Deleted {hdu.upper()=} from {self.cat_path=}!")
+            galfind_logger.info(
+                f"Deleted {hdu.upper()=} from {self.cat_path=}!"
+            )
+        else:
+            galfind_logger.info(
+                f"{hdu.upper()=} does not exist in {self.cat_path=}, could not delete!"
+            )
 
     def del_cols_hdrs_from_fits(self, col_names=[], hdr_names=[], hdu=None):
         # open up all fits extensions

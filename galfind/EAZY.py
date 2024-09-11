@@ -8,26 +8,26 @@ Created on Tue Jun  6 14:52:36 2023
 
 # EAZY.py
 import itertools
+from astropy.table import Table
+from pathlib import Path
+import numpy as np
+import eazy
 import os
 import time
 import warnings
-from pathlib import Path
-
-import astropy.units as u
-import eazy
+from tqdm import tqdm
 import h5py
-import numpy as np
-from astropy.table import Table
 from eazy import hdf5
 from scipy.linalg import LinAlgWarning
 from tqdm import tqdm
 
 warnings.filterwarnings("ignore", category=LinAlgWarning)
 
-from . import Redshift_PDF, SED_code, config, galfind_logger
-from . import useful_funcs_austind as funcs
-from .decorators import run_in_dir
+from . import SED_code, Redshift_PDF
 from .SED import SED_obs
+from . import useful_funcs_austind as funcs
+from . import config, galfind_logger
+from .decorators import run_in_dir
 
 # %% EAZY SED fitting code
 
@@ -108,11 +108,11 @@ class EAZY(SED_code):
         for ubvj_filt in ["U", "B", "V", "J"]
     }
     available_templates = ["fsps", "fsps_larson", "fsps_jades"]
+    ext_src_corr_properties = []
     ID_label = "IDENT"
     are_errs_percentiles = False
 
     def __init__(self, SED_fit_params=None):
-        start = time.time()
         # EAZY specific SED fit params assertions here
         super().__init__(
             SED_fit_params,
@@ -122,8 +122,6 @@ class EAZY(SED_code):
             self.ID_label,
             self.are_errs_percentiles,
         )
-        end = time.time()
-        # print(f"Instantiating {self.__class__.__name__} took {end - start:.1e}s")
 
     def galaxy_property_labels(
         self, gal_property, SED_fit_params, is_err=False
@@ -169,10 +167,8 @@ class EAZY(SED_code):
             phot, phot_err = self.load_photometry(cat, u.uJy, -99.0, None)
             # Get filter codes (referenced to GALFIND/EAZY/jwst_nircam_FILTER.RES.info) for the given instrument and bands
             filt_codes = [
-                EAZY_FILTER_CODES[
-                    cat.instrument.instrument_from_band(band).name
-                ][band]
-                for band in cat.instrument.band_names
+                EAZY_FILTER_CODES[band.instrument][band.band_name]
+                for band in cat.instrument
             ]
             # Make input file
             in_data = np.array(
@@ -590,6 +586,12 @@ class EAZY(SED_code):
         )
         # first write the code name, next write the template name, finish off with lowz_zmax
         return f"{SED_fit_params['code'].__class__.__name__}_{SED_fit_params['templates']}_{funcs.lowz_label(SED_fit_params['lowz_zmax'])}"
+
+    @staticmethod
+    def hdu_from_SED_fit_params(SED_fit_params):
+        return EAZY.label_from_SED_fit_params(SED_fit_params).replace(
+            f"_{funcs.lowz_label(SED_fit_params['lowz_zmax'])}", ""
+        )  # remove lowz_zmax label from suffix
 
     def SED_fit_params_from_label(self, label):
         label_arr = label.split("_")

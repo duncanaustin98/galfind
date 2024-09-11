@@ -7,6 +7,12 @@ Created on Tue Jun  6 14:55:57 2023
 """
 
 # Bagpipes.py
+import astropy.units as u
+import numpy as np
+from astropy.table import Table
+from typing import Union
+from pathlib import Path
+from tqdm import tqdm
 import itertools
 from pathlib import Path
 from typing import Union
@@ -55,8 +61,8 @@ class Bagpipes(SED_code):
     }
     gal_property_unit_dict = {
         "z": u.dimensionless_unscaled,
-        "stellar_mass": u.solMass,
-        "formed_mass": u.solMass,
+        "stellar_mass": "dex(solMass)",
+        "formed_mass": "dex(solMass)",
         "dust:Av": u.ABmag,
         "beta_C94": u.dimensionless_unscaled,
         "m_UV": u.ABmag,
@@ -68,12 +74,6 @@ class Bagpipes(SED_code):
         "ssfr": u.yr**-1,
         "ssfr_10myr": u.yr**-1,
     }
-    requires_unlogging = [
-        "stellar_mass",
-        "formed_mass",
-        "ssfr",
-        "ssfr_10myr",
-    ]  # , "nebular:logU"]
     galaxy_property_dict = {
         **{
             gal_property
@@ -91,6 +91,14 @@ class Bagpipes(SED_code):
         for gal_property in galaxy_properties
     }
     available_templates = ["BC03", "BPASS"]
+    ext_src_corr_properties = [
+        "stellar_mass",
+        "formed_mass",
+        "m_UV",
+        "M_UV",
+        "sfr",
+        "sfr_10myr",
+    ]
     ID_label = "ID"
     are_errs_percentiles = True
 
@@ -141,6 +149,10 @@ class Bagpipes(SED_code):
             )
         else:
             return "Bagpipes"
+
+    @staticmethod
+    def hdu_from_SED_fit_params(SED_fit_params):
+        return Bagpipes.label_from_SED_fit_params(SED_fit_params)
 
     def SED_fit_params_from_label(self, label):
         SED_fit_params = {"code": Bagpipes()}
@@ -320,15 +332,11 @@ class Bagpipes(SED_code):
                 total=len(PDF_paths),
             )
         ]
-        if gal_property in Bagpipes.requires_unlogging:
-            pdf_arrs = [
-                10**pdf if type(pdf) != type(None) else None
-                for pdf in pdf_arrs
-            ]
         if gal_property == "z":
             pdfs = [
                 Redshift_PDF.from_1D_arr(
-                    pdf * Bagpipes.gal_property_unit_dict[gal_property],
+                    pdf
+                    * u.Unit(Bagpipes.gal_property_unit_dict[gal_property]),
                     SED_fit_params,
                     timed=timed,
                 )
@@ -344,7 +352,8 @@ class Bagpipes(SED_code):
             pdfs = [
                 SED_fit_PDF.from_1D_arr(
                     gal_property,
-                    pdf * Bagpipes.gal_property_unit_dict[gal_property],
+                    pdf
+                    * u.Unit(Bagpipes.gal_property_unit_dict[gal_property]),
                     SED_fit_params,
                     timed=timed,
                 )
@@ -356,6 +365,11 @@ class Bagpipes(SED_code):
                     total=len(pdf_arrs),
                 )
             ]
+        # add save path to PDF
+        pdfs = [
+            pdf.add_save_path(path) if type(pdf) != type(None) else None
+            for path, pdf in zip(PDF_paths, pdfs)
+        ]
         return pdfs
 
     def load_pipes_fit_obj(self):
@@ -373,6 +387,8 @@ class Bagpipes(SED_code):
             "beta_C94",
             "m_UV",
             "M_UV",
+            "sfr",
+            "sfr_10myr",
         ],
     ):  # , "Halpha_EWrest", "xi_ion_caseB"
         pipes_name = Bagpipes.label_from_SED_fit_params(SED_fit_params)

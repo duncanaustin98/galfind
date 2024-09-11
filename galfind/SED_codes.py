@@ -152,15 +152,19 @@ class SED_code(ABC):
             self.get_out_paths(cat, SED_fit_params, IDs=np.array(cat.ID))
         )
         # run the SED fitting if not already done so or if wanted overwriting
-        fits_cat_meta = (
-            cat.open_cat().meta
-        )  # this may be quite slow to load in the catalogue
-        if (
-            self.galaxy_property_labels(
-                f"RUN_{self.__class__.__name__}", SED_fit_params
-            )
-            not in fits_cat_meta.keys()
-        ):  # or overwrite:
+        fits_cat = cat.open_cat(
+            hdu=self.hdu_from_SED_fit_params(SED_fit_params)
+        )  # should be cached
+        if type(fits_cat) == type(None):
+            run = True
+        elif (
+            self.galaxy_property_labels("z", SED_fit_params)
+            not in fits_cat.colnames
+        ):
+            run = True
+        else:
+            run = False
+        if run:  # or overwrite:
             self.run_fit(
                 in_path,
                 fits_out_path,
@@ -171,12 +175,9 @@ class SED_code(ABC):
             self.make_fits_from_out(
                 out_path, SED_fit_params
             )  # , *args, **kwargs)
-            # if not SED_fit_params["code"].__class__.__name__ == "Bagpipes":
             self.update_fits_cat(
                 cat, fits_out_path, SED_fit_params
             )  # , *args, **kwargs)
-            # else:
-            #    galfind_logger.warning("Bagpipes SED fits params not currently used to update galfind cat")
         # save PDF and SED paths in galfind catalogue object
         cat.save_phot_PDF_paths(PDF_paths, SED_fit_params)
         cat.save_phot_SED_paths(SED_paths, SED_fit_params)
@@ -194,34 +195,30 @@ class SED_code(ABC):
         cat.update_SED_results(cat_SED_results, timed=timed)
         return cat
 
+    # should be catalogue method
     def update_fits_cat(
-        self, cat, fits_out_path, SED_fit_params
-    ):  # *args, **kwargs):
-        # open original catalogue
-        orig_cat = cat.open_cat()
-        # combine catalogues if not already run before
-        if (
-            self.galaxy_property_labels("z", SED_fit_params)
-            not in orig_cat.colnames
-        ):
-            combined_cat = join(
-                orig_cat,
-                Table.read(fits_out_path),
-                keys_left="NUMBER",
-                keys_right=SED_fit_params["code"].ID_label,
+        self, cat, fits_out_path: str, SED_fit_params: dict
+    ) -> None:  # *args, **kwargs):
+        assert (
+            SED_fit_params["code"].__class__.__name__
+            == self.__class__.__name__
+        )
+        hdu_label = self.hdu_from_SED_fit_params(SED_fit_params)
+        # open relevant catalogue hdu extension
+        orig_tab = cat.open_cat(hdu=hdu_label)
+        SED_fitting_tab = Table.read(fits_out_path)
+        # if table has not already been made
+        if type(orig_tab) == type(None):
+            cat.write_hdu(SED_fitting_tab, hdu=hdu_label)
+        else:
+            # combine catalogues
+            combined_tab = join(
+                orig_tab,
+                SED_fitting_tab,
+                keys=self.ID_label,
                 join_type="outer",
             )
-            combined_cat.remove_column(SED_fit_params["code"].ID_label)
-            combined_cat.meta = {
-                **combined_cat.meta,
-                **{
-                    self.galaxy_property_labels(
-                        f"RUN_{self.__class__.__name__}", SED_fit_params
-                    ): True
-                },
-            }
-            combined_cat.write(cat.cat_path, overwrite=True)
-            funcs.change_file_permissions(cat.cat_path)
+            cat.write_hdu(combined_tab, hdu=hdu_label)
 
     @staticmethod
     def update_lowz_zmax(SED_fit_params, SED_results):
@@ -274,6 +271,11 @@ class SED_code(ABC):
     @staticmethod
     @abstractmethod
     def label_from_SED_fit_params(SED_fit_params):
+        pass
+
+    @staticmethod
+    @abstractmethod
+    def hdu_from_SED_fit_params(SED_fit_params):
         pass
 
     @abstractmethod

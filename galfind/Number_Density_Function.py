@@ -26,6 +26,7 @@ class Base_Number_Density_Function:
         self.phi_errs_cv = phi_errs_cv
         self.author_year = author_year
 
+    # obsolete after Base_Number_Density_Function.from_flags_repo()
     @classmethod
     def from_ecsv(
         cls, x_name: str, z_ref: Union[str, int, float], author_year: str
@@ -218,7 +219,11 @@ class Base_Number_Density_Function:
                 plot_path = f"{config['NumberDensityFunctions']['NUMBER_DENSITY_FUNC_DIR']}/Plots/Literature/{save_name}"
             else:
                 plot_path = self.get_plot_path()
-            funcs.make_dirs(plot_path)
+            if os.access(plot_path, os.W_OK):
+                funcs.make_dirs(plot_path)
+            else:
+                galfind_logger.warning(f"Cannot write to {plot_path}!")
+
             plt.savefig(plot_path)
         if show:
             plt.show()
@@ -425,7 +430,8 @@ class Number_Density_Function(Base_Number_Density_Function):
 
             Ngals = np.zeros(len(x_bins))
             phi = np.zeros(len(x_bins))
-            phi_errs = np.zeros(len(x_bins))
+            phi_l1 = np.zeros(len(x_bins))
+            phi_u1 = np.zeros(len(x_bins))
             cv_errs = np.zeros(len(x_bins))
             phi_errs_cv = np.zeros(len(x_bins))
             # loop through each mass bin in the given redshift bin
@@ -461,20 +467,17 @@ class Number_Density_Function(Base_Number_Density_Function):
                     phi[i] = np.sum(V_max**-1.0) / dx
                     # use standard Poisson errors if number of galaxies in bin is not small
                     if len(V_max) >= 4:
-                        phi_errs[i] = np.sqrt(np.sum(V_max**-2.0)) / dx
+                        phi_errs = np.sqrt(np.sum(V_max**-2.0)) / dx
+                        phi_l1[i] = phi_errs
+                        phi_u1[i] = phi_errs
                     else:
-                        # using minimum is a minor cheat for symmetric errors?
-                        phi_errs[i] = phi[i] * np.min(
-                            np.abs(
-                                (
-                                    np.array(
-                                        funcs.poisson_interval(
-                                            len(V_max), 0.32
-                                        )
-                                    )
-                                    - len(V_max)
-                                )
-                            )
+                        poisson_int = funcs.poisson_interval(len(V_max), 0.32)
+                        phi_l1[i] = phi[i] * np.min(
+                            np.abs((np.array(poisson_int[0]) - len(V_max)))
+                            / len(V_max)
+                        )
+                        phi_u1[i] = phi[i] * np.min(
+                            np.abs((np.array(poisson_int[1]) - len(V_max)))
                             / len(V_max)
                         )
                     if type(cv_origin) == type(None):
@@ -495,7 +498,7 @@ class Number_Density_Function(Base_Number_Density_Function):
                 z_bin,
                 Ngals,
                 phi,
-                np.array([phi_errs, phi_errs]),
+                np.array([phi_l1, phi_u1]),
                 cv_errs,
                 origin_surveys,
                 cv_origin,
@@ -523,7 +526,9 @@ class Number_Density_Function(Base_Number_Density_Function):
         ext: str = ".ecsv",
     ) -> str:
         save_path = f"{config['NumberDensityFunctions']['NUMBER_DENSITY_FUNC_DIR']}/Data/{SED_fit_params_key}/{x_name}/{origin_surveys}/{z_bin[0]}<z<{z_bin[1]}{ext}"
-        funcs.make_dirs(save_path)
+
+        if os.access(save_path, os.W_OK):
+            funcs.make_dirs(save_path)
         return save_path
 
     # cv_origin == "Driver2010"
@@ -552,7 +557,10 @@ class Number_Density_Function(Base_Number_Density_Function):
             self.x_name,
             ext=".png",
         ).replace("/Data/", "/Plots/")
-        funcs.make_dirs(plot_path)
+        if os.access(plot_path, os.W_OK):
+            funcs.make_dirs(plot_path)
+        else:
+            galfind_logger.warning(f"Cannot write to {plot_path}!")
         return plot_path
 
     def save(self, save_path: Union[str, None] = None) -> None:
@@ -584,7 +592,10 @@ class Number_Density_Function(Base_Number_Density_Function):
             "z_bin": self.z_bin,
             "cv_origin": self.cv_origin,
         }
-        tab.write(save_path, overwrite=True)
+        if os.access(save_path, os.W_OK):
+            tab.write(save_path, overwrite=True)
+        else:
+            galfind_logger.warning(f"Cannot write to {save_path}!")
 
     def plot(
         self,
@@ -602,13 +613,6 @@ class Number_Density_Function(Base_Number_Density_Function):
     ) -> None:
         if all(type(_x) == type(None) for _x in [fig, ax]):
             fig, ax = plt.subplots()
-        # for author_year, author_year_plot_dict in author_year_dict.items():
-        #     assert all(_x in author_year_plot_dict.keys() for _x in ["z_ref", "plot_kwargs"])
-        #     z_ref = author_year_plot_dict["z_ref"]
-        #     author_year_plot_kwargs = author_year_plot_dict["plot_kwargs"]
-        #     author_year_number_density_func = Base_Number_Density_Function.from_ecsv(self.x_name, z_ref, author_year)
-        #     author_year_number_density_func.plot(fig, ax, log, annotate = False, save = False, show = False, \
-        #         plot_kwargs = author_year_plot_kwargs, x_lims = None, use_galfind_style = use_galfind_style)
         for author_year, author_year_kwargs in obs_author_years.items():
             author_year_func_from_flags_data = (
                 Base_Number_Density_Function.from_flags_repo(
