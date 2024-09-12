@@ -50,7 +50,7 @@ data_test_output = {
 
 @pytest.fixture(
     scope="session",
-    param=[
+    params=[
         pytest.param(param, marks=pytest.mark.requires_data)
         for param in test_surveys
     ],
@@ -61,7 +61,7 @@ def survey(request):
 
 @pytest.fixture(
     scope="session",
-    param=[
+    params=[
         pytest.param(param, marks=pytest.mark.requires_data)
         for param in test_versions
     ],
@@ -72,7 +72,7 @@ def version(request):
 
 @pytest.fixture(
     scope="session",
-    param=[
+    params=[
         pytest.param(param, marks=pytest.mark.requires_data)
         for param in test_instrument_names
     ],

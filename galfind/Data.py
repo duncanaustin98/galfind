@@ -53,29 +53,62 @@ from .Instrument import ACS_WFC, MIRI, WFC3_IR, Instrument, NIRCam  # noqa F501
 class Data:
     def __init__(
         self,
-        instrument,
-        im_paths,
-        im_exts,
-        im_pixel_scales,
-        im_shapes,
-        im_zps,
-        wht_paths,
-        wht_exts,
-        rms_err_paths,
-        rms_err_exts,
-        seg_paths,
-        mask_paths,
-        cluster_mask_path,
-        blank_mask_path,
-        survey,
-        version,
-        cat_path="",
-        is_blank=True,
-        alignment_band="F444W",
-        RGB_method=None,
-        mask_stars=True,
-        sex_prefer="rms_err",
-    ):  # trilogy
+        instrument: Instrument,
+        im_paths: dict[str, str],
+        im_exts: dict[str, int],
+        im_pixel_scales: dict[str, u.Quantity],
+        im_shapes: dict[str, tuple[int, int]],
+        im_zps: dict[str, float],
+        wht_paths: dict[str, str],
+        wht_exts: dict[str, int],
+        rms_err_paths: dict[str, str],
+        rms_err_exts: dict[str, int],
+        seg_paths: dict[str, str],
+        mask_paths: dict[str, str],
+        cluster_mask_path: str,
+        blank_mask_path: str,
+        survey: str,
+        version: str,
+        cat_path: str = "",
+        is_blank: bool = True,
+        alignment_band: str = "F444W",
+        RGB_method: Union[None, str] = None,
+        mask_stars: Union[bool, dict[str, bool]] = True,
+        sex_prefer: str = "rms_err",
+    ):
+        """
+        Data object to store all relevant data for a given survey.
+
+        Searches for segmentation maps in the SExtractor directory, and makes these if not already present.
+        Searches for fits masks in the Masks directory, if not present searches for manually created .reg masks and cleans these if necessary.
+        If neither .fits or .reg masks are found, automatically produces .fits mask either with or without stars masked depending on 'mask_stars'.
+
+
+        Args:
+            instrument (Instrument): galfind.Instrument object containing all bands used in the survey
+            im_paths (dict[str, str]): Paths to science images for each band
+            im_exts (dict[str, int]): Extensions of science images for each band
+            im_pixel_scales (dict[str, u.Quantity]): Pixel scales of science images for each band
+            im_shapes (dict[str, tuple[int, int]]): Shapes of science images for each band
+            im_zps (dict[str, float]): Zero points (ZPs) of science images for each band
+            wht_paths (dict[str, str]): Paths to weight maps for each band
+            wht_exts (dict[str, int]): Extensions of weight maps for each band
+            rms_err_paths (dict[str, str]): Paths to rms_err maps for each band
+            rms_err_exts (dict[str, int]): Extensions of rms_err maps for each band
+            seg_paths (dict[str, str]): Paths to segmentation maps for each band
+            mask_paths (dict[str, str]): Paths to masks for each band
+            cluster_mask_path (str): Path to cluser mask for the survey if not a blank field, else ""
+            blank_mask_path (str): Path to blank mask for the survey
+            survey (str): Survey name
+            version (str): Survey version
+            cat_path (str, optional): Path to catalogue for the survey. Defaults to "".
+            is_blank (bool, optional): Whether the survey is a blank field. Defaults to True.
+            alignment_band (str, optional): Band that all imagtes are aligned to. Defaults to "F444W".
+            RGB_method (Union[None, str], optional): Method to use when making RGB images. Defaults to None (no RGB images made).
+            mask_stars (Union[bool, dict[str, bool]], optional): Whether to mask stars in the mask when automasking.
+                Can also be a dictionary of {band: mask_stars} pairs. Defaults to True.
+            sex_prefer (str, optional): Whether to prefer rms_err or wht maps when making segmentation maps. Defaults to "rms_err".
+        """
         # sort dicts from blue -> red bands in ascending wavelength order
         self.im_paths = im_paths  # not sure these need to be sorted
         self.im_exts = im_exts  # not sure these need to be sorted
