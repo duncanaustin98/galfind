@@ -2,7 +2,7 @@
 
 # -- Project information
 
-from galfind._version import __version__
+#from galfind._version import __version__
 
 project = 'galfind'
 copyright = '2024, Austin'

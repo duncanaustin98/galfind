@@ -1,2 +1,3 @@
-sphinx==7.1.2
+galfind
+sphinx
 sphinx-rtd-theme
