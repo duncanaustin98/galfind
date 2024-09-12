@@ -36,7 +36,7 @@ from astropy.wcs import WCS
 from astroquery.gaia import Gaia
 from joblib import Parallel, delayed
 from matplotlib.colors import LogNorm
-from photutils import (
+from photutils.aperture import (
     SkyCircularAperture,
     aperture_photometry,
 )
@@ -46,7 +46,7 @@ from tqdm import tqdm
 from . import Depths, config, galfind_logger
 from . import useful_funcs_austind as funcs
 from .decorators import run_in_dir
-from .Instrument import Instrument
+from .Instrument import ACS_WFC, MIRI, WFC3_IR, Instrument, NIRCam  # noqa F501
 
 
 # GALFIND data object
@@ -430,7 +430,6 @@ class Data:
                 "Should check more thoroughly to ensure there are not multiple band names in an image path!"
             )
 
-            # breakpoint()
             # if there are multiple images per band, separate into im/wht/rms_err
             unique_bands, band_indices, n_images = np.unique(
                 bands, return_inverse=True, return_counts=True
@@ -556,7 +555,7 @@ class Data:
                         else:
                             im_exts[band] = int(j)
                             im_shapes[band] = im_hdul[0].data.shape
-                    # breakpoint()
+
                     # print(band, len(im_hdul), [hdu.name for hdu in im_hdul], assertion_len)
                     assert len(im_hdul) == assertion_len
                     if band in rms_err_paths.keys():
@@ -580,63 +579,25 @@ class Data:
                                 assertion_len += 1
                             else:
                                 wht_exts[band] = int(j)
-                        # breakpoint()
                         # print(band, len(wht_hdul), [hdu.name for hdu in wht_hdul], assertion_len)
                         assert len(wht_hdul) == assertion_len
 
-            # breakpoint()
             # if band not used in instrument remove it, else save pixel scale and zero point
-            for band_name in deepcopy(instrument).band_names:
+            for band in deepcopy(instrument):
+                band_name = band.band_name
                 if band_name not in unique_bands:
-                    instrument.remove_band(band_name)
+                    instrument -= band
                 else:
-                    im_pixel_scales[band_name] = pix_scale
-                    # calculate ZP given image units
-                    if instrument_name == "ACS_WFC":
-                        imheader = fits.open(str(im_paths[band_name]))[
-                            im_exts[band_name]
-                        ].header
-                        if "PHOTFLAM" in imheader and "PHOTPLAM" in imheader:
-                            im_zps[band_name] = (
-                                -2.5 * np.log10(imheader["PHOTFLAM"])
-                                - 21.1
-                                - 5 * np.log10(imheader["PHOTPLAM"])
-                                + 18.6921
-                            )
-                        elif "ZEROPNT" in imheader:
-                            im_zps[band_name] = imheader["ZEROPNT"]
-                        elif "BUNIT" in imheader:
-                            unit = imheader["BUNIT"].replace(" ", "")
-                            assert unit == "MJy/sr"
-                            im_zps[band_name] = -2.5 * np.log10(
-                                (pix_scale.to(u.rad).value ** 2)
-                                * u.MJy.to(u.Jy)
-                            ) + u.Jy.to(u.ABmag)
-                        else:
-                            raise (
-                                Exception(
-                                    f"ACS_WFC data for {survey} {version} {band_name} located at {im_paths[band_name]} must contain either 'ZEROPNT' or 'PHOTFLAM' and 'PHOTPLAM' or 'BUNIT'=MJy/sr in its header to calculate its ZP!"
-                                )
-                            )
-                    elif instrument_name == "WFC3_IR":
-                        # Taken from Appendix A of https://www.stsci.edu/files/live/sites/www/files/home/hst/instrumentation/wfc3/documentation/instrument-science-reports-isrs/_documents/2020/WFC3-ISR-2020-10.pdf
-                        wfc3ir_zps = {
-                            "F098M": 25.661,
-                            "F105W": 26.2637,
-                            "F110W": 26.8185,
-                            "F125W": 26.231,
-                            "F140W": 26.4502,
-                            "F160W": 25.9362,
-                        }
-                        im_zps[band_name] = wfc3ir_zps[band_name]
-                    elif (
-                        instrument_name == "NIRCam"
-                        or instrument_name == "MIRI"
-                    ):
-                        # assume flux units of MJy/sr and calculate corresponding ZP
-                        im_zps[band_name] = -2.5 * np.log10(
-                            (pix_scale.to(u.rad).value ** 2) * u.MJy.to(u.Jy)
-                        ) + u.Jy.to(u.ABmag)
+                    im_header = fits.open(str(im_paths[band_name]))[
+                        im_exts[band_name]
+                    ].header
+                    im_pixel_scales[band_name] = Data.load_pix_scale(
+                        im_header, band_name, instrument_name
+                    )
+                    im_zps[band_name] = Data.load_ZP(
+                        im_header, band_name, instrument_name
+                    )
+                    assert im_pixel_scales[band_name] == pix_scale
             instrument_arr.append(instrument)
         # breakpoint()
         if len(instrument_arr) == 1:
@@ -753,6 +714,61 @@ class Data:
             mask_stars=mask_stars,
             sex_prefer=sex_prefer,
         )
+
+    @staticmethod
+    def load_ZP(im_header, band_name, instrument_name):
+        # calculate ZP given image units
+        if instrument_name == "ACS_WFC":
+            if "PHOTFLAM" in im_header and "PHOTPLAM" in im_header:
+                ZP = (
+                    -2.5 * np.log10(im_header["PHOTFLAM"])
+                    - 21.1
+                    - 5 * np.log10(im_header["PHOTPLAM"])
+                    + 18.6921
+                )
+            elif "ZEROPNT" in im_header:
+                ZP = im_header["ZEROPNT"]
+            elif "BUNIT" in im_header:
+                unit = im_header["BUNIT"].replace(" ", "")
+                assert unit == "MJy/sr"
+                pix_scale = Data.load_pix_scale(
+                    im_header, band_name, instrument_name
+                )
+                ZP = -2.5 * np.log10(
+                    (pix_scale.to(u.rad).value ** 2) * u.MJy.to(u.Jy)
+                ) + u.Jy.to(u.ABmag)
+            else:
+                raise (
+                    Exception(
+                        f"ACS_WFC data for {band_name} must contain either 'ZEROPNT' or 'PHOTFLAM' and 'PHOTPLAM' or 'BUNIT'=MJy/sr in its header to calculate its ZP!"
+                    )
+                )
+        elif instrument_name == "WFC3_IR":
+            # Taken from Appendix A of https://www.stsci.edu/files/live/sites/www/files/home/hst/instrumentation/wfc3/documentation/instrument-science-reports-isrs/_documents/2020/WFC3-ISR-2020-10.pdf
+            wfc3ir_zps = {
+                "F098M": 25.661,
+                "F105W": 26.2637,
+                "F110W": 26.8185,
+                "F125W": 26.231,
+                "F140W": 26.4502,
+                "F160W": 25.9362,
+            }
+            ZP = wfc3ir_zps[band_name]
+        elif instrument_name == "NIRCam" or instrument_name == "MIRI":
+            pix_scale = Data.load_pix_scale(
+                im_header, band_name, instrument_name
+            )
+            # assume flux units of MJy/sr and calculate corresponding ZP
+            ZP = -2.5 * np.log10(
+                (pix_scale.to(u.rad).value ** 2) * u.MJy.to(u.Jy)
+            ) + u.Jy.to(u.ABmag)
+        else:
+            raise (Exception())
+        return ZP
+
+    @staticmethod
+    def load_pix_scale(im_header, band_name, instrument_name):
+        pass
 
     # %% Overloaded operators
 
@@ -1636,11 +1652,11 @@ class Data:
         print(
             [
                 "./make_seg_map.sh",
-                config["DEFAULT"]["GALFIND_WORK"],
+                config["SExtractor"]["SEX_DIR"],
                 self.im_paths[band],
                 str(self.im_pixel_scales[band].value),
                 str(self.im_zps[band]),
-                self.instrument.instrument_from_band(band).name,
+                self.instrument.instrument_from_band(band).name,  # slow
                 self.survey,
                 band,
                 self.version,
@@ -1657,7 +1673,7 @@ class Data:
         process = subprocess.Popen(
             [
                 "./make_seg_map.sh",
-                config["DEFAULT"]["GALFIND_WORK"],
+                config["Sextractor"]["SEX_DIR"],
                 self.im_paths[band],
                 str(self.im_pixel_scales[band].value),
                 str(self.im_zps[band]),
@@ -2543,11 +2559,6 @@ class Data:
             galfind_logger.info(
                 f"Saved combined SExtractor catalogue as {self.sex_cat_master_path}"
             )
-
-    def produce_readme(
-        self,
-    ):
-        pass
 
     def make_readme(
         self, col_desc_dict, save_path, overwrite=False, readme_sep="-" * 20

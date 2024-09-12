@@ -24,6 +24,7 @@ print(f"__init__ imports took {end - start}s")
 #breakpoint()
 
 galfind_dir = "/".join(__file__.split("/")[:-1])
+config_dir = f"{galfind_dir}/../configs"
 
 # note whether the __init__ is running in a workflow
 if "hostedtoolcache" in galfind_dir:
@@ -33,16 +34,16 @@ else:
 
 # needs to be able to be changed by the user - should be import option
 try:
-    config_path = os.environ["GALFIND_CONFIG_PATH"]
-
+    config_path = f"{config_dir}/{os.environ['GALFIND_CONFIG_NAME']}"
 except KeyError:
-    config_path = f"{galfind_dir}/configs/galfind_config.ini"  # needs to be able to be changed by the user
+    config_path = f"{config_dir}/galfind_config.ini"  # needs to be able to be changed by the user
 
 print("Reading GALFIND config file from:", config_path)
 # configuration variables
 config = configparser.ConfigParser()
 config.read(config_path)
 config.set("DEFAULT", "GALFIND_DIR", galfind_dir)
+config.set("DEFAULT", "CONFIG_DIR", config_dir)
 
 # Make IS_CLUSTER variable from the config parameters
 if config["DEFAULT"]["SURVEY"] in json.loads(config.get("Other", "CLUSTER_FIELDS")):

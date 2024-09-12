@@ -8,6 +8,7 @@ Created on Mon May 22 13:27:47 2023
 
 # Catalogue.py
 import glob
+import json
 import os
 import time
 from copy import deepcopy
@@ -44,7 +45,6 @@ class Catalogue(Catalogue_Base):
         cls,
         survey: str,
         version: str,
-        aper_diams: u.Quantity,
         cat_creator,
         SED_fit_params_arr=[
             {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": 4.0},
@@ -88,7 +88,6 @@ class Catalogue(Catalogue_Base):
         return cls.from_data(
             data,
             version,
-            aper_diams,
             cat_creator,
             SED_fit_params_arr,
             forced_phot_band,
@@ -108,7 +107,6 @@ class Catalogue(Catalogue_Base):
         cls,
         data,
         version,
-        aper_diams,
         cat_creator,
         SED_fit_params_arr,
         forced_phot_band=["F277W", "F356W", "F444W"],
@@ -128,15 +126,16 @@ class Catalogue(Catalogue_Base):
         mode = str(
             config["Depths"]["MODE"]
         ).lower()  # mode to calculate depths (either "n_nearest" or "rolling")
-        data.calc_depths(
-            aper_diams,
-            mode=mode,
-            cat_creator=cat_creator,
-            n_split=n_depth_reg,
-            timed=timed,
-        )
-        data.perform_aper_corrs()
-        data.make_loc_depth_cat(cat_creator, depth_mode=mode)
+        for aper_diam in json.loads(config.get("SExtractor", "APER_DIAMS")):
+            data.calc_depths(
+                aper_diam * u.arcsec,
+                mode=mode,
+                cat_creator=cat_creator,
+                n_split=n_depth_reg,
+                timed=timed,
+            )
+            data.perform_aper_corrs()
+            data.make_loc_depth_cat(cat_creator, depth_mode=mode)
 
         return cls.from_fits_cat(
             data.sex_cat_master_path,
