@@ -12,3 +12,4 @@ remove_by_eye_local.py
 galfind/configs/EAZY_templates/templates/LarsonSEDTemplates/*
 examples/reionization_paper/test_plots
 galfind/configs
+pre-commit-config.yaml
