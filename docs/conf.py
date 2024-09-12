@@ -2,6 +2,8 @@
 
 # -- Project information
 
+from galfind._version import __version__
+
 project = 'galfind'
 copyright = '2024, Austin'
 author = 'Duncan Austin'
@@ -17,6 +19,7 @@ extensions = [
     'sphinx.ext.autodoc',
     'sphinx.ext.autosummary',
     'sphinx.ext.intersphinx',
+    
 ]
 
 intersphinx_mapping = {
@@ -29,7 +32,7 @@ templates_path = ['_templates']
 
 # -- Options for HTML output
 
-html_theme = 'sphinx_rtd_theme'
+html_theme = 'sphinx-rtd-theme'
 
 # -- Options for EPUB output
 epub_show_urls = 'footnote'
