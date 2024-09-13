@@ -23,6 +23,11 @@ from astropy.io import fits
 from astropy.table import Table, join, vstack
 from astropy.wcs import WCS
 from tqdm import tqdm
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from . import Catalogue_Creator
+    from . import Instrument
 
 from . import (
     Catalogue_Base,
@@ -45,40 +50,43 @@ class Catalogue(Catalogue_Base):
         cls,
         survey: str,
         version: str,
-        cat_creator,
-        SED_fit_params_arr=[
+        cat_creator: type[Catalogue_Creator],
+        SED_fit_params_arr: Union[list, np.array] = [
             {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": 4.0},
             {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": 6.0},
             {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None},
         ],
-        instruments=["NIRCam", "ACS_WFC", "WFC3_IR"],
+        instrument_name: Union[list, np.array] = [
+            "NIRCam",
+            "ACS_WFC",
+            "WFC3_IR",
+        ],
         forced_phot_band: Union[list, np.array, str] = [
             "F277W",
             "F356W",
             "F444W",
         ],
         excl_bands: Union[list, np.array] = [],
-        pix_scales={
+        pix_scales: dict = {
             "ACS_WFC": 0.03 * u.arcsec,
             "WFC3_IR": 0.03 * u.arcsec,
             "NIRCam": 0.03 * u.arcsec,
             "MIRI": 0.09 * u.arcsec,
         },
-        loc_depth_min_flux_pc_errs=[5, 10],
-        crop_by=None,
+        crop_by: Union[None, str, dict, list, np.array] = None,
         load_PDFs: Union[bool, dict] = True,
         load_SEDs: Union[bool, dict] = True,
         timed: bool = True,
         mask_stars: bool = True,
         load_SED_rest_properties: bool = True,
         sex_prefer: str = "wht",
-        n_depth_reg="auto",
+        n_depth_reg: Union[str, int] = "auto",
         load_ext_src_corrs: bool = True,
     ):
         data = Data.from_pipeline(
             survey,
             version,
-            instruments,
+            instrument_name,
             excl_bands=excl_bands,
             mask_stars=mask_stars,
             pix_scales=pix_scales,
@@ -91,7 +99,6 @@ class Catalogue(Catalogue_Base):
             cat_creator,
             SED_fit_params_arr,
             forced_phot_band,
-            loc_depth_min_flux_pc_errs,
             crop_by=crop_by,
             load_PDFs=load_PDFs,
             load_SEDs=load_SEDs,
@@ -105,20 +112,23 @@ class Catalogue(Catalogue_Base):
     @classmethod
     def from_data(
         cls,
-        data,
-        version,
-        cat_creator,
-        SED_fit_params_arr,
-        forced_phot_band=["F277W", "F356W", "F444W"],
-        loc_depth_min_flux_pc_errs=[10],
+        data: Data,
+        version: str,
+        cat_creator: type[Catalogue_Creator],
+        SED_fit_params_arr: Union[list, np.array],
+        forced_phot_band: Union[str, list, np.array] = [
+            "F277W",
+            "F356W",
+            "F444W",
+        ],
         mask: bool = True,
-        crop_by=None,
+        crop_by: Union[None, str, dict, list, np.array] = None,
         load_PDFs: Union[bool, dict] = True,
         load_SEDs: Union[bool, dict] = True,
         timed: bool = True,
         load_SED_rest_properties: bool = True,
         sex_prefer: str = "rms_err",
-        n_depth_reg: str = "auto",
+        n_depth_reg: Union[str, int] = "auto",
         load_ext_src_corrs: bool = True,
     ):
         # make masked local depth catalogue from the 'Data' object
@@ -157,16 +167,16 @@ class Catalogue(Catalogue_Base):
     @classmethod
     def from_fits_cat(
         cls,
-        fits_cat_path,
-        version,
-        instrument,
-        cat_creator,
+        fits_cat_path: str,
+        version: str,
+        instrument: type[Instrument],
+        cat_creator: type[Catalogue_Creator],
         survey: str,
         SED_fit_params_arr: Union[list, np.array],
-        data=None,
+        data: Union[None, Data] = None,
         mask: bool = False,
         excl_bands: Union[list, np.array] = [],
-        crop_by=None,
+        crop_by: Union[None, str, dict, list, np.array] = None,
         load_PDFs: Union[bool, dict] = True,
         load_SEDs: Union[bool, dict] = True,
         timed: bool = True,
@@ -175,13 +185,15 @@ class Catalogue(Catalogue_Base):
     ):
         # open the catalogue
         fits_cat = funcs.cat_from_path(fits_cat_path)
-        for band_name in instrument.band_names:
+        for band in deepcopy(instrument):
             try:
-                cat_creator.load_photometry(Table(fits_cat[0]), [band_name])
+                cat_creator.load_photometry(
+                    Table(fits_cat[0]), [band.band_name]
+                )
             except:
                 # no data for the relevant band within the catalogue
-                instrument.remove_band(band_name)
-                print(f"{band_name} flux not loaded")
+                instrument -= band
+                print(f"{band.band_name} flux not loaded")
         print(f"instrument band names = {instrument.band_names}")
 
         # crop fits catalogue by the crop_by column name should it exist

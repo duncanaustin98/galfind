@@ -8,7 +8,11 @@ Created on Thu Jul 13 14:14:30 2023
 
 # Photometry_obs.py
 from copy import deepcopy
-from typing import Union
+from typing import Union, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from . import Instrument
+    from astropy.utils.masked import Masked
 
 import astropy.units as u
 import matplotlib.patheffects as pe
@@ -19,15 +23,18 @@ from . import useful_funcs_austind as funcs
 
 
 class Photometry:
-    def __init__(self, instrument, flux_Jy, flux_Jy_errs, depths):
+    def __init__(
+        self,
+        instrument: type[Instrument],
+        flux_Jy: Masked,
+        flux_Jy_errs,
+        depths,
+    ):
         self.instrument = instrument
         # check that the fluxes and errors are in the correct units
         self.flux_Jy = flux_Jy
         self.flux_Jy_errs = flux_Jy_errs
-        self.loc_depths = (
-            depths  # not sure what problems renaming this will have
-        )
-        self.depths = depths  # stores exactly the same info as self.loc_depths, but it is a pain to propagate deletion of the above so it is left for now
+        self.depths = depths
         assert (
             len(self.instrument)
             == len(self.flux_Jy)

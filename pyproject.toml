@@ -93,7 +93,7 @@ dependencies = [
   "yagmail",
   "typing_extensions", # 4.12.2
   "numba", # 0.60.0
-  "configparser"
+  "configparser",
 ]
 # numpy<2.0 prevents import sep; ValueError: numpy.dtype size changed, may indicate binary incompatibility. Expected 96 from C header, got 88 from PyObject.
 #grizli
@@ -113,6 +113,13 @@ test = [
     "mypy",
     "ruff"
 ]
+
+# Downloading data
+data = [
+    "click",
+    "dropbox"
+]
+
 #    "nbmake",
 #    "ruff>=0.3.0",
 #    "mypy>=0.910",
