@@ -14,5 +14,6 @@ examples/reionization_paper/test_plots
 galfind/configs
 pre-commit-config.yaml
 docs/build
-docs/_build
+docs/
+source/_autosummary
 .readthedocs.yaml
