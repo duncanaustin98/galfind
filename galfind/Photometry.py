@@ -6,7 +6,8 @@ Created on Thu Jul 13 14:14:30 2023
 @author: austind
 """
 
-# Photometry_obs.py
+from __future__ import annotations
+
 from copy import deepcopy
 from typing import Union, TYPE_CHECKING
 
@@ -240,7 +241,7 @@ class Photometry:
     def crop_phot(self, indices) -> None:
         indices = np.array(indices).astype(int)
         for index in reversed(indices):
-            self.instrument.remove_band(self.instrument[index].band_name)
+            self.instrument -= self.instrument[index]
         self.flux_Jy = np.delete(self.flux_Jy, indices)
         self.flux_Jy_errs = np.delete(self.flux_Jy_errs, indices)
         self.depths = np.delete(self.depths, indices)
@@ -453,7 +454,7 @@ class Multiple_Photometry:
         )
         instrument_arr = [
             deepcopy(instrument).remove_bands(
-                [band for band in instrument.band_names if band not in bands]
+                [band for band in instrument if band.band_name not in bands]
             )
             for bands in gal_bands
         ]

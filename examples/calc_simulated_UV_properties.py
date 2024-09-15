@@ -47,11 +47,11 @@ def main(
     obs_redshifts = np.array(tab[f"zbest_{templates}"])
 
     instrument = Instrument.from_name(instrument_name)
-    for band in instrument.band:
+    for band in instrument:
         try:
             tab[f"MAG_APER_{band.band_name}"]
         except:
-            instrument.remove_band(band)
+            instrument -= band
             pass
     print(instrument.band_names)
 

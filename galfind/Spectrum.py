@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import TYPE_CHECKING, NoReturn, Union
+from typing import NoReturn, Union
 
 import astropy.units as u
 import numpy as np
@@ -16,8 +16,6 @@ from astropy.utils.masked import Masked
 from numpy.typing import NDArray
 from tqdm import tqdm
 
-if TYPE_CHECKING:
-    pass
 from . import config, galfind_logger
 from . import useful_funcs_austind as funcs
 

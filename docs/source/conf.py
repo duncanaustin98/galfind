@@ -14,12 +14,18 @@ version = "0.1.0"
 # -- General configuration
 
 extensions = [
+    "nbsphinx",
     "sphinx.ext.duration",
-    "sphinx.ext.doctest",
     "sphinx.ext.autodoc",
+    "sphinx.ext.doctest",
     "sphinx.ext.autosummary",
     "sphinx.ext.intersphinx",
+    "sphinx.ext.napoleon",
 ]
+
+numpydoc_show_class_members = False
+class_members_toctree = False
+nbsphinx_allow_errors = True
 
 intersphinx_mapping = {
     "python": ("https://docs.python.org/3/", None),

@@ -6,7 +6,8 @@ Created on Mon May 22 13:27:47 2023
 @author: austind
 """
 
-# Catalogue.py
+from __future__ import annotations
+
 import glob
 import json
 import os

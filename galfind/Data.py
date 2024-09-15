@@ -53,28 +53,25 @@ from .Instrument import ACS_WFC, MIRI, WFC3_IR, Instrument, NIRCam  # noqa F501
 class Data:
     def __init__(
         self,
+        survey: str,
+        version: str,
         instrument: Instrument,
         im_paths: dict[str, str],
         im_exts: dict[str, int],
-        im_pixel_scales: dict[str, u.Quantity],
-        im_shapes: dict[str, tuple[int, int]],
-        im_zps: dict[str, float],
-        wht_paths: dict[str, str],
-        wht_exts: dict[str, int],
         rms_err_paths: dict[str, str],
         rms_err_exts: dict[str, int],
-        seg_paths: dict[str, str],
-        mask_paths: dict[str, str],
-        cluster_mask_path: str,
-        blank_mask_path: str,
-        survey: str,
-        version: str,
+        wht_paths: dict[str, str],
+        wht_exts: dict[str, int],
+        seg_paths: dict[str, str] = {},
+        mask_paths: dict[str, str] = {},
+        cluster_mask_path: str = "",
+        blank_mask_path: str = "",
         cat_path: str = "",
-        is_blank: bool = True,
         alignment_band: str = "F444W",
         RGB_method: Union[None, str] = None,
         mask_stars: Union[bool, dict[str, bool]] = True,
         sex_prefer: str = "rms_err",
+        pix_scale: Union[dict[str, u.Quantity], u.Quantity] = 0.03 * u.arcsec,
     ):
         """
         Data object to store all relevant data for a given survey.
@@ -83,46 +80,38 @@ class Data:
         Searches for fits masks in the Masks directory, if not present searches for manually created .reg masks and cleans these if necessary.
         If neither .fits or .reg masks are found, automatically produces .fits mask either with or without stars masked depending on 'mask_stars'.
 
-
         Args:
+            survey (str): Survey name
+            version (str): Survey version
             instrument (Instrument): galfind.Instrument object containing all bands used in the survey
             im_paths (dict[str, str]): Paths to science images for each band
             im_exts (dict[str, int]): Extensions of science images for each band
-            im_pixel_scales (dict[str, u.Quantity]): Pixel scales of science images for each band
-            im_shapes (dict[str, tuple[int, int]]): Shapes of science images for each band
-            im_zps (dict[str, float]): Zero points (ZPs) of science images for each band
-            wht_paths (dict[str, str]): Paths to weight maps for each band
-            wht_exts (dict[str, int]): Extensions of weight maps for each band
             rms_err_paths (dict[str, str]): Paths to rms_err maps for each band
             rms_err_exts (dict[str, int]): Extensions of rms_err maps for each band
+            wht_paths (dict[str, str]): Paths to weight maps for each band
+            wht_exts (dict[str, int]): Extensions of weight maps for each band
             seg_paths (dict[str, str]): Paths to segmentation maps for each band
             mask_paths (dict[str, str]): Paths to masks for each band
             cluster_mask_path (str): Path to cluser mask for the survey if not a blank field, else ""
             blank_mask_path (str): Path to blank mask for the survey
-            survey (str): Survey name
-            version (str): Survey version
             cat_path (str, optional): Path to catalogue for the survey. Defaults to "".
-            is_blank (bool, optional): Whether the survey is a blank field. Defaults to True.
             alignment_band (str, optional): Band that all imagtes are aligned to. Defaults to "F444W".
             RGB_method (Union[None, str], optional): Method to use when making RGB images. Defaults to None (no RGB images made).
             mask_stars (Union[bool, dict[str, bool]], optional): Whether to mask stars in the mask when automasking.
                 Can also be a dictionary of {band: mask_stars} pairs. Defaults to True.
             sex_prefer (str, optional): Whether to prefer rms_err or wht maps when making segmentation maps. Defaults to "rms_err".
+            pix_scale (Union[dict[str, u.Quantity], u.Quantity], optional): Pixel scale of the images.
+                Can also be a dictionary of {band: pix_scale} pairs. Defaults to 0.03*u.arcsec.
         """
-        # sort dicts from blue -> red bands in ascending wavelength order
-        self.im_paths = im_paths  # not sure these need to be sorted
-        self.im_exts = im_exts  # not sure these need to be sorted
         self.survey = survey
         self.version = version
         self.instrument = instrument
-        self.is_blank = is_blank
-        self.im_zps = im_zps
+        self.im_paths = im_paths
+        self.im_exts = im_exts
         self.wht_paths = wht_paths
         self.wht_exts = wht_exts
         self.rms_err_paths = rms_err_paths
         self.rms_err_exts = rms_err_exts
-        self.im_pixel_scales = im_pixel_scales
-        self.im_shapes = im_shapes
         assert sex_prefer in ["rms_err", "wht"]
         self.sex_prefer = sex_prefer
 
@@ -145,6 +134,31 @@ class Data:
                 )
             )
 
+        # calculate ZPs, pixel scales and shapes for all bands
+        self.im_zps = {}
+        self.im_pixel_scales = {}
+        self.im_shapes = {}
+        for band in instrument:
+            band_name = band.band_name
+            im_hdul = fits.open(str(im_paths[band_name]))
+            im_hdu = im_hdul[im_exts[band_name]]
+            im_header = im_hdu.header
+            if (
+                self.im_paths[band_name]
+                == self.wht_paths[band_name]
+                == self.rms_err_paths[band_name]
+            ):
+                self.im_shapes[band_name] = im_hdu.data.shape
+            else:
+                self.im_shapes[band_name] = im_hdul[0].data.shape
+            self.im_pixel_scales[band_name] = Data.load_pix_scale(
+                im_header, band_name, band.instrument
+            )
+            self.im_zps[band_name] = Data.load_ZP(
+                im_header, band_name, band.instrument
+            )
+            assert self.im_pixel_scales[band_name] == pix_scale
+
         # make segmentation maps from image paths if they don't already exist
         existing_seg_paths = glob.glob(
             f"{config['DEFAULT']['GALFIND_WORK']}/SExtractor/*/{version}/{survey}/{survey}_*_*_sel_cat_{version}_seg.fits"
@@ -154,16 +168,9 @@ class Data:
             for band, path in seg_paths.items()
             if path not in existing_seg_paths
         ]
-        # for i, (band, seg_path) in enumerate(seg_paths.items()):
-        #     #print(band, seg_path)
-        #     if (seg_path == "" or seg_path == []):
-        #         self.make_seg_map(band)
-        #     # load segmentation map
-        #     seg_paths[band] = glob.glob(f"{config['DEFAULT']['GALFIND_WORK']}/SExtractor/{self.instrument.instrument_from_band(band).name}/{version}/{survey}/{survey}_{band}_{band}_sel_cat_{version}_seg.fits")[0]
         self.seg_paths = seg_paths  # dict(sorted(seg_paths.items()))
         # make masks from image paths if they don't already exist
         self.mask_dir = f"{config['DEFAULT']['GALFIND_WORK']}/Masks/{survey}"
-        # print(mask_paths)
         for i, (band, mask_path) in enumerate(mask_paths.items()):
             # the input mask path is a pixel mask
             if ".fits" in mask_path:
@@ -197,10 +204,13 @@ class Data:
                         f"{mask_stars=} with {type(mask_stars)=} not in [bool, dict]"
                     )
                 mask_paths[band] = mask
-
         self.mask_paths = dict(sorted(mask_paths.items()))
 
-        if is_blank:
+        # determine whether the survey is a blank field or cluster field
+        if all(path == "" for path in [blank_mask_path, cluster_mask_path]):
+            self.is_blank = True
+
+        if self.is_blank:
             galfind_logger.info(f"{survey} is a BLANK field!")
             self.blank_mask_path = ""
             self.cluster_mask_path = ""
@@ -352,7 +362,7 @@ class Data:
             # self.make_RGB([split_bands[0]], [split_bands[1]], [split_bands[2]], RGB_method)
 
     @classmethod
-    def from_pipeline(
+    def from_survey_version(
         cls,
         survey,
         version,
@@ -373,14 +383,11 @@ class Data:
         # may not require all of these inits
         im_paths = {}
         im_exts = {}
-        im_shapes = {}
         seg_paths = {}
         wht_paths = {}
         wht_exts = {}
         rms_err_paths = {}
         rms_err_exts = {}
-        im_pixel_scales = {}
-        im_zps = {}
         mask_paths = {}
         depth_dir = {}
         is_blank = is_blank_survey(survey)
@@ -489,11 +496,8 @@ class Data:
                 ):
                     im_hdul = fits.open(im_paths[band])
                     for j, im_hdu in enumerate(im_hdul):
-                        if instrument_name == "WFC3_IR":
-                            breakpoint()
                         if im_hdu.name == "SCI":
                             im_exts[band] = int(j)
-                            im_shapes[band] = im_hdu.data.shape
                         if im_hdu.name == "WHT":
                             wht_exts[band] = int(j)
                             wht_paths[band] = str(im_paths[band])
@@ -577,8 +581,6 @@ class Data:
                     },
                 }
                 # extract sci/rms_err/wht extensions from single band image
-
-                # breakpoint()
                 for band in bands:
                     im_hdul = fits.open(im_paths[band])
                     assertion_len = 1
@@ -587,7 +589,6 @@ class Data:
                             assertion_len += 1
                         else:
                             im_exts[band] = int(j)
-                            im_shapes[band] = im_hdul[0].data.shape
 
                     # print(band, len(im_hdul), [hdu.name for hdu in im_hdul], assertion_len)
                     assert len(im_hdul) == assertion_len
@@ -617,20 +618,8 @@ class Data:
 
             # if band not used in instrument remove it, else save pixel scale and zero point
             for band in deepcopy(instrument):
-                band_name = band.band_name
-                if band_name not in unique_bands:
+                if band.band_name not in unique_bands:
                     instrument -= band
-                else:
-                    im_header = fits.open(str(im_paths[band_name]))[
-                        im_exts[band_name]
-                    ].header
-                    im_pixel_scales[band_name] = Data.load_pix_scale(
-                        im_header, band_name, instrument_name
-                    )
-                    im_zps[band_name] = Data.load_ZP(
-                        im_header, band_name, instrument_name
-                    )
-                    assert im_pixel_scales[band_name] == pix_scale
             instrument_arr.append(instrument)
         # breakpoint()
         if len(instrument_arr) == 1:
@@ -727,26 +716,30 @@ class Data:
         # breakpoint()
 
         return cls(
+            survey,
+            version,
             comb_instrument,
             im_paths,
             im_exts,
-            im_pixel_scales,
-            im_shapes,
-            im_zps,
-            wht_paths,
-            wht_exts,
             rms_err_paths,
             rms_err_exts,
+            wht_paths,
+            wht_exts,
             seg_paths,
             mask_paths,
             cluster_mask_path,
             blank_mask_path,
-            survey,
-            version,
-            is_blank=is_blank,
             mask_stars=mask_stars,
             sex_prefer=sex_prefer,
         )
+
+    @classmethod
+    def pipeline(
+        cls,
+        survey: str,
+        version: str,
+    ):
+        pass
 
     @staticmethod
     def load_ZP(im_header, band_name, instrument_name):

@@ -111,8 +111,11 @@ dev = [
 test = [
     "pytest",
     "mypy",
-    "ruff"
+    "ruff",
+    "nbmake"
 ]
+#    "ruff>=0.3.0",
+#    "mypy>=0.910",
 
 # Downloading data
 data = [
@@ -120,23 +123,19 @@ data = [
     "dropbox"
 ]
 
-#    "nbmake",
-#    "ruff>=0.3.0",
-#    "mypy>=0.910",
 # Documentation building
-#docs = [
-#    "nbmake",
-#    "sphinx==7.4.7",
-#    "pandoc",
-#    "furo",
-#    "sphinx_autodoc_typehints",
-#    "ipython",
-#    "sphinx_gallery",
-#    "pillow",
-#    "sphinx-toolbox",
-#    "nbsphinx",
-#    "sphinx-copybutton",
-#]
+docs = [
+    "sphinx==7.4.7",
+    "pandoc",
+    "nbsphinx",
+]
+#"nbmake",
+#"sphinx_autodoc_typehints",
+#"ipython",
+#"sphinx_gallery",
+#"pillow",
+#"sphinx-toolbox",
+#"sphinx-copybutton",
 
 # Project urls
 [project.urls]

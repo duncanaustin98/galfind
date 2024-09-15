@@ -14,7 +14,8 @@ import warnings
 from abc import abstractmethod
 from copy import deepcopy
 from pathlib import Path
-from typing import NoReturn, Union
+from typing import NoReturn, Union, List
+from typing_extensions import Self
 
 import astropy.units as u
 import matplotlib.pyplot as plt
@@ -28,10 +29,10 @@ from .Filter import Filter
 
 class Instrument:
     def __init__(self, name, bands, excl_bands, facility):
-        self.bands = np.array(bands)
+        self.bands = bands
         self.name = name
         for band in excl_bands:
-            self.remove_band(band)
+            self -= band
         self.facility = facility
         # print(f"Instantiating {name} object")
 
@@ -245,15 +246,51 @@ class Instrument:
             # self.__del__() # delete old self
         return out_instrument
 
-    def __sub__(self, instrument):
-        print(
-            "Note that 'Instrument.__sub__()' only removes common bands between the two 'instrument' classes"
-        )
-        for band in instrument.band_names:
-            if band in self.band_names:
-                self.remove_band(band)
+    def __sub__(
+        self, other: Union[type[Self], Filter, List[Filter], str, List[str]]
+    ) -> Self:
+        # If other is a subclass of Instrument, remove bands in other from self
+        if isinstance(other, tuple(Instrument.__subclasses__())):
+            other_band_names = other.band_names
+        else:
+            # Make a list if required
+            if not isinstance(other, list):
+                other = [other]
             else:
-                print(f"Cannot remove {band} from {self.name}!")
+                # Ensure all elements are either an instance of Filter or str
+                assert all(
+                    isinstance(band, (Filter, str)) for band in other
+                ), galfind_logger.critical(
+                    f"Not all elements in {other} have the type (Filter, str)!"
+                )
+            # Work out which bands need to be removed from the instrument
+            other_band_names = [
+                band if isinstance(band, str) else band.band_name
+                for band in other
+            ]
+        # Ensure all bands in other_band_names are included in the instrument already
+        assert all(band in self.band_names for band in other_band_names)
+        # Remove the bands from the instrument
+        self.bands = [
+            band for band in self if band.band_name not in other_band_names
+        ]
+        # Work out the modified instrument name
+        all_instruments = json.loads(config.get("Other", "INSTRUMENT_NAMES"))
+        instrument_names = np.unique([band.instrument for band in self])
+        self.name = "+".join(
+            [name for name in all_instruments if name in instrument_names]
+        )
+        # Work out the modified instrument facility
+        all_facilities = json.loads(config.get("Other", "TELESCOPE_NAMES"))
+        facility_names = np.unique([band.facility for band in self])
+        self.facility = "+".join(
+            [
+                facility
+                for facility in all_facilities
+                if facility in facility_names
+            ]
+        )
+        # Return the modified instrument
         return self
 
     def __eq__(self, other):
@@ -273,14 +310,12 @@ class Instrument:
             else:
                 return False
 
-    # STILL NEED TO LOOK FURTHER INTO THIS
     def __copy__(self):
         cls = self.__class__
         result = cls.__new__(cls)
         result.__dict__.update(self.__dict__)
         return result
 
-    # STILL NEED TO LOOK FURTHER INTO THIS
     def __deepcopy__(self, memo):
         cls = self.__class__
         result = cls.__new__(cls)
@@ -319,7 +354,7 @@ class Instrument:
         self.remove_index(self.index_from_band_name(band_name))
         return self
 
-    def remove_bands(self, band_names: str) -> "Instrument":
+    def remove_bands(self, band_names: str) -> type[Self]:
         assert all(band in self.band_names for band in band_names)
         remove_indices = self.indices_from_band_names(band_names)
         if remove_indices != []:

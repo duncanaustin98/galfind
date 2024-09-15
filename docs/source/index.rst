@@ -1,13 +1,10 @@
 Welcome to Galfind's documentation!
 ===================================
 
-**Galfind** is a Python library for cooks and food lovers
-that creates recipes mixing random ingredients.
-It pulls data from the `Open Food Facts database <https://world.openfoodfacts.org/>`_
-and offers a *simple* and *intuitive* API.
+**Galfind** is a Python library for analyzing and modeling astronomical data, 
+with a focus on galaxy evolution studies. It provides tools for working with multi-wavelength data, 
+fitting spectral energy distributions (SEDs), and analyzing galaxy properties.
 
-Check out the :doc:`usage` section for further information, including
-how to :ref:`installation` the project.
 
 .. note::
 
@@ -17,5 +14,18 @@ Contents
 --------
 
 .. toctree::
+   :maxdepth: 2
+   :caption: Contents
 
-   usage
+   getting_started/getting_started
+   instrument/instrument
+   data/data
+   catalogue/catalogue
+   galaxy/galaxy
+   photometry/photometry
+   sed_fitting/sed_fitting
+   seds/seds
+   multiple_surveys/multiple_surveys
+   spectra/spectra
+   misc/misc
+   API
