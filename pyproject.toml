@@ -128,6 +128,7 @@ docs = [
     "sphinx==7.4.7",
     "pandoc",
     "nbsphinx",
+    "sphinx-copybutton",
 ]
 #"nbmake",
 #"sphinx_autodoc_typehints",
@@ -135,7 +136,6 @@ docs = [
 #"sphinx_gallery",
 #"pillow",
 #"sphinx-toolbox",
-#"sphinx-copybutton",
 
 # Project urls
 [project.urls]

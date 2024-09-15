@@ -15,4 +15,5 @@ galfind/configs
 pre-commit-config.yaml
 docs/build
 docs/source/_autosummary
+docs/API.rst
 .readthedocs.yaml

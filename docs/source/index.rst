@@ -28,4 +28,5 @@ Contents
    multiple_surveys/multiple_surveys
    spectra/spectra
    misc/misc
-   API
+   
+.. API
