@@ -191,6 +191,7 @@ class JWST(Facility, funcs.Singleton):
 
 
 class Instrument(ABC):
+
     def __init__(self: Type[Self], facility: Union[str, Facility]) -> None:
         self.name = self.__class__.__name__
         if isinstance(facility, str):
@@ -261,6 +262,7 @@ class Instrument(ABC):
 
 
 class NIRCam(Instrument, funcs.Singleton):
+
     def __init__(self) -> None:
         super().__init__("JWST")
 
@@ -272,6 +274,7 @@ class NIRCam(Instrument, funcs.Singleton):
 
 
 class MIRI(Instrument, funcs.Singleton):
+
     def __init__(self) -> None:
         super().__init__("JWST")
 
@@ -283,6 +286,7 @@ class MIRI(Instrument, funcs.Singleton):
 
 
 class ACS_WFC(Instrument, funcs.Singleton):
+
     def __init__(self) -> None:
         super().__init__("HST")
 
@@ -294,6 +298,7 @@ class ACS_WFC(Instrument, funcs.Singleton):
 
 
 class WFC3_IR(Instrument, funcs.Singleton):
+
     def __init__(self) -> None:
         super().__init__("HST")
 
@@ -369,135 +374,6 @@ class WFC3_IR(Instrument, funcs.Singleton):
 #     else:
 #         # This leads to confusing errors when passing in a bandname which doesn't exist
 #         return False
-
-# def __add__(self, other):
-#     # cannot add multiple of the same bands together!!! (maybe could just ignore the problem \
-#     # in Instrument class and just handle it in Data, possibly stacking the two images)
-
-#     if type(other) in Instrument.__subclasses__():
-#         new_bands = np.array(
-#             [
-#                 band
-#                 for band in other
-#                 if band.band_name not in self.band_names
-#             ]
-#         )
-#     elif type(other) == Filter:
-#         if other.band_name not in self.band_names:
-#             new_bands = np.array([other])
-#         else:
-#             new_bands = np.array([])
-#     else:
-#         galfind_logger.critical(f"{type(other)=} not in \
-#             {[instr.__name__ for instr in Instrument.__subclasses__()] + ['Filter']}")
-#         raise (Exception())
-
-#     if len(new_bands) == 0:
-#         # produce warning message
-#         warning_message = (
-#             "No new bands to add, returning self from Instrument.__add__"
-#         )
-#         galfind_logger.warning(warning_message)
-#         warnings.warn(UserWarning(warning_message))
-#         # nothing else to do
-#         return deepcopy(self)
-#     elif len(new_bands) < len(other):
-#         # produce warning message
-#         warning_message = f"Not all bands in {other.band_names=} in {self.band_names=}, adding only {new_bands=}"
-#         galfind_logger.warning(warning_message)
-#         warnings.warn(UserWarning(warning_message))
-
-#     # add and sort bands from blue -> red
-#     bands = [
-#         band
-#         for band in sorted(
-#             np.concatenate([self.bands, new_bands]),
-#             key=lambda band: band.WavelengthCen.to(u.AA).value,
-#         )
-#     ]
-
-#     if type(other) in Instrument.__subclasses__():
-#         other_instr_name = other.name
-#     else:  # type == Filter
-#         other_instr_name = other.instrument
-
-#     if all(name in self.name for name in other_instr_name.split("+")):
-#         self.bands = bands
-#         out_instrument = deepcopy(self)
-#     else:  # re-compute blue -> red instrument_name and facility
-#         all_instruments = json.loads(
-#             config.get("Other", "INSTRUMENT_NAMES")
-#         )
-#         all_facilities = json.loads(config.get("Other", "FACILITY_NAMES"))
-#         # split self.name and instrument.name
-#         names = list(
-#             set(self.name.split("+") + other_instr_name.split("+"))
-#         )
-#         facilities = list(
-#             set(self.facility.split("+") + other.facility.split("+"))
-#         )
-#         name = "+".join(
-#             [name for name in all_instruments if name in names]
-#         )
-#         facility = "+".join(
-#             [
-#                 facility
-#                 for facility in all_facilities
-#                 if facility in facilities
-#             ]
-#         )
-#         out_instrument = Combined_Instrument(
-#             name, bands, excl_bands=[], facility=facility
-#         )
-#         # self.__del__() # delete old self
-#     return out_instrument
-
-# def __sub__(
-#     self, other: Union[type[Self], Filter, List[Filter], str, List[str]]
-# ) -> Self:
-#     # If other is a subclass of Instrument, remove bands in other from self
-#     if isinstance(other, tuple(Instrument.__subclasses__())):
-#         other_band_names = other.band_names
-#     else:
-#         # Make a list if required
-#         if not isinstance(other, list):
-#             other = [other]
-#         else:
-#             # Ensure all elements are either an instance of Filter or str
-#             assert all(
-#                 isinstance(band, (Filter, str)) for band in other
-#             ), galfind_logger.critical(
-#                 f"Not all elements in {other} have the type (Filter, str)!"
-#             )
-#         # Work out which bands need to be removed from the instrument
-#         other_band_names = [
-#             band if isinstance(band, str) else band.band_name
-#             for band in other
-#         ]
-#     # Ensure all bands in other_band_names are included in the instrument already
-#     assert all(band in self.band_names for band in other_band_names)
-#     # Remove the bands from the instrument
-#     self.bands = [
-#         band for band in self if band.band_name not in other_band_names
-#     ]
-#     # Work out the modified instrument name
-#     all_instruments = json.loads(config.get("Other", "INSTRUMENT_NAMES"))
-#     instrument_names = np.unique([band.instrument for band in self])
-#     self.name = "+".join(
-#         [name for name in all_instruments if name in instrument_names]
-#     )
-#     # Work out the modified instrument facility
-#     all_facilities = json.loads(config.get("Other", "FACILITY_NAMES"))
-#     facility_names = np.unique([band.facility for band in self])
-#     self.facility = "+".join(
-#         [
-#             facility
-#             for facility in all_facilities
-#             if facility in facility_names
-#         ]
-#     )
-#     # Return the modified instrument
-#     return self
 
 # def __eq__(self, other):
 #     # ensure same type

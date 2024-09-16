@@ -7,7 +7,9 @@ from astroquery.svo_fps import SvoFps
 from copy import deepcopy
 import json
 import matplotlib.pyplot as plt
+from matplotlib.colors import Normalize
 from typing import List, Union, NoReturn, TYPE_CHECKING
+import warnings
 
 if TYPE_CHECKING:
     from . import Facility, Instrument, Data
@@ -16,7 +18,7 @@ try:
 except ImportError:
     from typing_extensions import Self, Type  # python > 3.7 AND python < 3.11
 
-from . import galfind_logger, config
+from . import galfind_logger, config, instr_to_name_dict
 from . import useful_funcs_austind as funcs
 from . import Facility, Instrument
 from . import ACS_WFC, WFC3_IR, NIRCam, MIRI, JWST, HST  # noqa: F401
@@ -33,7 +35,7 @@ class Filter:
     ):
         assert len(wav) == len(trans)
         if isinstance(instrument, str):
-            instrument = globals()[instrument]()
+            instrument = instr_to_name_dict[instrument]
         self.instrument = instrument
         self.band_name = band_name
         self.wav = wav
@@ -165,15 +167,20 @@ class Filter:
     def plot(
         self, ax, wav_units: u.Quantity = u.um, colour: str = "black", save_dir: str = "", label: bool = True, save: bool = False, show: bool = False
     ):
+        # convert wavelength units
         wavs = funcs.convert_wav_units(self.wav, wav_units).value
-        ax.fill_between(wavs, 0., self.trans, color=colour, alpha=0.6)
+        # add extra points to ensure the plot is closed
+        wavs = list(np.concatenate(([wavs[0]], wavs, [wavs[-1]])))
+        trans = list(np.concatenate(([0.], self.trans, [0.])))
+        # plot the filter profile
+        ax.fill_between(wavs, 0., trans, color=colour, alpha=0.6)
         ax.plot(
-            wavs, self.trans, color="black", lw=2, label = self.band_name
+            wavs, trans, color="black", lw=2, label = self.band_name
         )  # cmap[np.where(self.bands == band)])
         if label:
             ax.text(
             funcs.convert_wav_units(self.WavelengthCen, wav_units).value,
-            np.max(self.trans) + 0.03,
+            np.max(trans) + 0.03,
             self.band_name,
             ha="center",
             fontsize=8,
@@ -193,7 +200,7 @@ class Filter:
             ax.set_ylabel("Transmission")
             ax.set_ylim(
                 0.0,
-                np.max(self.trans) + 0.1,
+                np.max(trans) + 0.1,
             )
         if save:
             save_path = f"{save_dir}/{title.replace(' ', '_')}.png"
@@ -237,12 +244,50 @@ class Multiple_Filter:
         self.sort_bands()
 
     @classmethod
+    def from_facility(
+        cls: Type[Self],
+        facility: Union[str, Facility],
+        excl_bands: Union[List[str], List[Filter]] = [],
+        origin: str = "SVO",
+        sort_order: str = "ascending",
+        keep_suffix: str = "All",
+    ) -> Self:
+        if isinstance(facility, Facility):
+            facility = facility.name
+        instruments_from_facility = [name for name, instr in instr_to_name_dict.items() if instr.facility.name == facility]
+        return cls.from_instruments(instruments_from_facility, excl_bands, origin, sort_order, keep_suffix)
+
+    @classmethod
+    def from_instruments(
+        cls: Type[Self],
+        instruments: List[Union[str, Instrument]],
+        excl_bands: Union[List[str], List[Filter]] = [],
+        origin: str = "SVO",
+        sort_order: str = "ascending",
+        keep_suffix: str = "All",
+    ) -> Self:
+        assert len(instruments) > 0
+        for i, instrument in enumerate(instruments):
+            # convert instrument object to string
+            if isinstance(instrument, tuple(instr.__class__ for instr in instr_to_name_dict.values())):
+                instrument = instrument.name
+            # ensure the instrument is a valid instrument
+            assert instrument in json.loads(config.get("Other", "INSTRUMENT_NAMES"))
+            new_multi_filt = cls.from_instrument(instrument, excl_bands, origin, sort_order, keep_suffix)
+            if i == 0:
+                multi_filt = new_multi_filt
+            else:
+                multi_filt += new_multi_filt
+        return multi_filt
+
+    @classmethod
     def from_instrument(
         cls: Type[Self],
         instrument: Union[str, Instrument],
         excl_bands: Union[List[str], List[Filter]] = [],
         origin: str = "SVO",
         sort_order: str = "ascending",
+        keep_suffix: str = "All",
     ) -> Self:
         if not isinstance(instrument, Instrument):
             # construct instrument object from string
@@ -274,34 +319,12 @@ class Multiple_Filter:
                     if filt_ID.replace(
                         f"{instrument}.", ""
                     )
-                    not in excl_bands
+                    not in excl_bands and (filt_ID.endswith(keep_suffix) or keep_suffix == "All")
                 ]
             )
         else:
             raise NotImplementedError
         return cls(filters, sort_order=sort_order)
-
-    @classmethod
-    def from_facility(
-        cls: Type[Self],
-        facility: Union[str, Facility],
-        excl_bands: Union[List[str], List[Filter]],
-        origin: str = "SVO",
-    ) -> Self:
-        if isinstance(facility, Facility):
-            facility = facility.name
-        # TODO: determine the name of all instruments associated with the facility
-        pass
-
-    @classmethod
-    def from_instruments(
-        cls: Type[Self],
-        instruments: List[Union[str, Instrument]],
-        excl_bands: Union[List[str], List[Filter]],
-        origin: str = "SVO",
-    ) -> Self:
-        # TODO: call from_instrument for each instrument in instruments and add the results together
-        pass
 
     def __len__(self) -> int:
         return len(self.filters)
@@ -328,27 +351,148 @@ class Multiple_Filter:
                 )
             )
 
-    def __add__(self, other: Union[Filter, Type[Self]]) -> Type[Self]:
-        if isinstance(other, Filter):
-            return Multiple_Filter(self.filters + [other])
-        elif isinstance(other, Multiple_Filter):
-            return Multiple_Filter(self.filters + other.filters)
-        else:
-            raise TypeError(
-                f"Cannot add {type(other)} to {self.__class__.__name__}"
-            )
+    # def __add__(self, other: Union[Filter, Type[Self]]) -> Type[Self]:
+    #     if isinstance(other, Filter):
+    #         return Multiple_Filter(self.filters + [other])
+    #     elif isinstance(other, Multiple_Filter):
+    #         return Multiple_Filter(self.filters + other.filters)
+    #     else:
+    #         raise TypeError(
+    #             f"Cannot add {type(other)} to {self.__class__.__name__}"
+    #         )
 
-    def __sub__(self, other: Union[Filter, Type[Self]]) -> Type[Self]:
-        if isinstance(other, Filter):
-            return Multiple_Filter([band for band in self if band != other])
-        elif isinstance(other, Multiple_Filter):
-            return Multiple_Filter(
-                [band for band in self if band not in other]
+    # def __sub__(self, other: Union[Filter, Type[Self]]) -> Type[Self]:
+    #     if isinstance(other, Filter):
+    #         return Multiple_Filter([band for band in self if band != other])
+    #     elif isinstance(other, Multiple_Filter):
+    #         return Multiple_Filter(
+    #             [band for band in self if band not in other]
+    #         )
+    #     else:
+    #         raise TypeError(
+    #             f"Cannot subtract {type(other)} from {self.__class__.__name__}"
+    #         )
+        
+    def __add__(self, other: Union[str, Filter, Multiple_Filter, List[Union[str, Filter, Multiple_Filter]]]) -> Self:
+
+        if type(other) in instr_to_name_dict.keys():
+            new_bands = np.array(
+                [
+                    band
+                    for band in other
+                    if band.band_name not in self.band_names
+                ]
             )
+        elif type(other) == Filter:
+            if other.band_name not in self.band_names:
+                new_bands = np.array([other])
+            else:
+                new_bands = np.array([])
         else:
-            raise TypeError(
-                f"Cannot subtract {type(other)} from {self.__class__.__name__}"
+            galfind_logger.critical(f"{type(other)=} not in \
+                {[instr.__name__ for instr in Instrument.__subclasses__()] + ['Filter']}")
+            raise (Exception())
+
+        if len(new_bands) == 0:
+            # produce warning message
+            warning_message = (
+                "No new bands to add, returning self from Instrument.__add__"
             )
+            galfind_logger.warning(warning_message)
+            warnings.warn(UserWarning(warning_message))
+            # nothing else to do
+            return deepcopy(self)
+        elif len(new_bands) < len(other):
+            # produce warning message
+            warning_message = f"Not all bands in {other.band_names=} in {self.band_names=}, adding only {new_bands=}"
+            galfind_logger.warning(warning_message)
+            warnings.warn(UserWarning(warning_message))
+
+        # add and sort bands from blue -> red
+        bands = [
+            band
+            for band in sorted(
+                np.concatenate([self.bands, new_bands]),
+                key=lambda band: band.WavelengthCen.to(u.AA).value,
+            )
+        ]
+
+        if type(other) in Instrument.__subclasses__():
+            other_instr_name = other.name
+        else:  # type == Filter
+            other_instr_name = other.instrument
+
+        if all(name in self.name for name in other_instr_name.split("+")):
+            self.bands = bands
+            out_instrument = deepcopy(self)
+        else:  # re-compute blue -> red instrument_name and facility
+            all_instruments = json.loads(
+                config.get("Other", "INSTRUMENT_NAMES")
+            )
+            all_facilities = json.loads(config.get("Other", "FACILITY_NAMES"))
+            # split self.name and instrument.name
+            names = list(
+                set(self.name.split("+") + other_instr_name.split("+"))
+            )
+            facilities = list(
+                set(self.facility.split("+") + other.facility.split("+"))
+            )
+            name = "+".join(
+                [name for name in all_instruments if name in names]
+            )
+            facility = "+".join(
+                [
+                    facility
+                    for facility in all_facilities
+                    if facility in facilities
+                ]
+            )
+        return out_instrument
+
+    def __sub__(self, other: Union[str, Filter, Multiple_Filter, List[Union[str, Filter, Multiple_Filter]]]) -> Self:
+        # If other is a subclass of Instrument, remove bands in other from self
+        if isinstance(other, tuple(Instrument.__subclasses__())):
+            other_band_names = other.band_names
+        else:
+            # Make a list if required
+            if not isinstance(other, list):
+                other = [other]
+            else:
+                # Ensure all elements are either an instance of Filter or str
+                assert all(
+                    isinstance(band, (Filter, str)) for band in other
+                ), galfind_logger.critical(
+                    f"Not all elements in {other} have the type (Filter, str)!"
+                )
+            # Work out which bands need to be removed from the instrument
+            other_band_names = [
+                band if isinstance(band, str) else band.band_name
+                for band in other
+            ]
+        # Ensure all bands in other_band_names are included in the instrument already
+        assert all(band in self.band_names for band in other_band_names)
+        # Remove the bands from the instrument
+        self.bands = [
+            band for band in self if band.band_name not in other_band_names
+        ]
+        # Work out the modified instrument name
+        all_instruments = json.loads(config.get("Other", "INSTRUMENT_NAMES"))
+        instrument_names = np.unique([band.instrument for band in self])
+        self.name = "+".join(
+            [name for name in all_instruments if name in instrument_names]
+        )
+        # Work out the modified instrument facility
+        all_facilities = json.loads(config.get("Other", "FACILITY_NAMES"))
+        facility_names = np.unique([band.facility for band in self])
+        self.facility = "+".join(
+            [
+                facility
+                for facility in all_facilities
+                if facility in facility_names
+            ]
+        )
+        # Return the modified instrument
+        return self
 
     def __eq__(self, other: Type[Self]) -> bool:
         if isinstance(other, Multiple_Filter):
@@ -487,17 +631,23 @@ class Multiple_Filter:
     def plot(
         self,
         ax,
-        wav_units=u.um,
-        cmap_name="Spectral_r",
-        annotate=True,
-        show=True,
-        save=False,
+        wav_units: u.Unit = u.um,
+        cmap_name: str = "Spectral_r",
+        save_dir: str = "",
+        label: bool = True,
+        show: bool = False,
+        save: bool = False,
     ) -> NoReturn:
+        # determine appropriate colours from the colour map
         cmap = plt.get_cmap(cmap_name, len(self))
-        for i, band in enumerate(self):
-            band.plot(ax, color=cmap[i], label = True)
-        if annotate:
-            ax.set_title(f"{self.name} filters")
+        norm = Normalize(vmin=0, vmax=len(self) - 1)
+        colours = [cmap(norm(i)) for i in range(len(self))]
+        # plot each filter profile
+        for i, (band, colour) in enumerate(zip(self, colours)):
+            band.plot(ax, colour=colour, label = label, show = False, save = False)
+        # annotate plot if needed
+        if save or show:
+            ax.set_title(f"{self.instrument_name} filters")
             ax.set_xlabel(
                 r"$\lambda_{\mathrm{obs}}$ / "
                 + funcs.unit_labels_dict[wav_units]
@@ -505,10 +655,11 @@ class Multiple_Filter:
             ax.set_ylabel("Transmission")
             ax.set_ylim(
                 0.0,
-                np.max([trans for trans in band.trans for band in self]) + 0.1,
+                np.max([trans for band in self for trans in band.trans]) + 0.1,
             )
+            print(np.max([trans for band in self for trans in band.trans]))
         if save:
-            save_path = f"{self.name}_filter_profiles.png"
+            save_path = f"{save_dir}/{self.instrument_name}_filter_profiles.png"
             funcs.make_dirs(save_path)
             plt.savefig(save_path)
             funcs.change_file_permissions(save_path)

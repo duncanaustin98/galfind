@@ -109,14 +109,17 @@ from . import useful_funcs_austind
 from . import NIRCam_aperture_corrections as NIRCam_aper_corr
 from . import Depths
 from .PDF import PDF, SED_fit_PDF, Redshift_PDF, PDF_nD
-from .PSF import PSF
 from .Instrument import Facility, JWST, HST, Instrument, ACS_WFC, WFC3_IR, NIRCam, MIRI
+
+instr_to_name_dict = {name: globals()[name]() for name in json.loads(config.get("Other", "INSTRUMENT_NAMES"))}
+
+from .PSF import PSF
 from .Filter import Filter, Multiple_Filter, Tophat_Filter, U, V, J
 
-instr_to_name_dict = {
-    instr_name: Multiple_Filter.from_instrument(instr_name)
-    for instr_name in json.loads(config.get("Other", "INSTRUMENT_NAMES"))
-}
+# instr_to_name_dict = {
+#     instr_name: Multiple_Filter.from_instrument(instr_name)
+#     for instr_name in json.loads(config.get("Other", "INSTRUMENT_NAMES"))
+# }
 
 # all_bands = np.hstack(
 #     [
