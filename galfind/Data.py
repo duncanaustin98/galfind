@@ -6,7 +6,7 @@ Created on Wed May 17 14:20:31 2023
 @author: austind
 """
 
-from __future__ import absolute_import
+from __future__ import annotations
 
 # from reproject import reproject_adaptive
 import contextlib
@@ -18,7 +18,10 @@ import sys
 import time
 from copy import deepcopy
 from pathlib import Path
-from typing import Union
+from typing import Union, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from . import Filter
 
 import astropy.units as u
 import astropy.visualization as vis
@@ -46,7 +49,7 @@ from tqdm import tqdm
 from . import Depths, config, galfind_logger
 from . import useful_funcs_austind as funcs
 from .decorators import run_in_dir
-from .Instrument import ACS_WFC, MIRI, WFC3_IR, Instrument, NIRCam  # noqa F501
+from .Instrument import ACS_WFC, WFC3_IR, NIRCam, MIRI, Instrument  # noqa F501
 
 
 # GALFIND data object
@@ -2229,7 +2232,7 @@ class Data:
 
     def sex_cat_path(
         self,
-        band: Union[str, "Filter"],
+        band: Union[str, Filter],
         forced_phot_band: str,
         timed: bool = False,
     ):
@@ -2251,7 +2254,7 @@ class Data:
             print(f"Data.sex_cat_path took {end - start:.1e}s")
         return sex_cat_path
 
-    def seg_path(self, band: "Filter"):
+    def seg_path(self, band: Filter):
         # IF THIS IS CHANGED MUST ALSO CHANGE THE PATH IN __init__ AND make_seg_map.sh
         if type(band) in [str]:
             instr_name = self.instrument.instrument_from_band(band).name

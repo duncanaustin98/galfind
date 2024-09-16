@@ -170,7 +170,7 @@ def make_EAZY_SED_fit_params_arr(SED_code_arr, templates_arr, lowz_zmax_arr):
     ]
 
 
-if __name__ == "__main__":
+def main():
     version = "v11"  # config["DEFAULT"]["VERSION"]
     instruments = ["ACS_WFC", "NIRCam"]  # , "MIRI"] #, "ACS_WFC"] # "WFC3_IR"
     cat_type = "loc_depth"
@@ -253,3 +253,12 @@ if __name__ == "__main__":
             load_SED_rest_properties=load_SED_rest_properties,
             n_depth_reg=n_depth_reg,
         )
+
+
+def do_nothing():
+    breakpoint()
+
+
+if __name__ == "__main__":
+    # main()
+    do_nothing()

@@ -20,9 +20,6 @@ from sklearn.cluster import KMeans
 from tqdm import tqdm as tq
 
 # install cv2, skimage, sklearn
-from galfind import Data
-
-# install cv2, skimage, sklearn
 from . import useful_funcs_austind as funcs
 
 
@@ -1300,233 +1297,233 @@ def cluster_wht_map(
     return labels_filled, weight_map_transformed
 
 
-if __name__ == "__main__":
-    plt.rcParams["figure.dpi"] = 300
+# if __name__ == "__main__":
+#     plt.rcParams["figure.dpi"] = 300
 
-    # General info
-    survey = "COSMOS-Web-0A"
-    instruments = ["NIRCam"]
-    version = "v11"
-    filter = "F277W"
-    save_path = "/nvme/scratch/work/tharvey/scripts/automask/"
+#     # General info
+#     survey = "COSMOS-Web-0A"
+#     instruments = ["NIRCam"]
+#     version = "v11"
+#     filter = "F277W"
+#     save_path = "/nvme/scratch/work/tharvey/scripts/automask/"
 
-    depth_region_radius = 0.16  # arcseconds
-    sigma_level = 5  # sigma level for depth calculation
+#     depth_region_radius = 0.16  # arcseconds
+#     sigma_level = 5  # sigma level for depth calculation
 
-    # Catalogue Info
-    cat_x_col = "ALPHA_J2000"
-    cat_y_col = "DELTA_J2000"
-    coord_type = "sky"
+#     # Catalogue Info
+#     cat_x_col = "ALPHA_J2000"
+#     cat_y_col = "DELTA_J2000"
+#     coord_type = "sky"
 
-    # Mask Options
-    star_mask_mode = "simple"  # 'simple' or 'sophisticated' - whether diffraction spikes are rotated
-    custom_mask = None  # Path to custom mask (optional)
-    write_mask = False  # Whether to write out the mask to a fits file
-    edge_mask_distance = (
-        50  # distance to mask around the edge of the image (pixels)
-    )
+#     # Mask Options
+#     star_mask_mode = "simple"  # 'simple' or 'sophisticated' - whether diffraction spikes are rotated
+#     custom_mask = None  # Path to custom mask (optional)
+#     write_mask = False  # Whether to write out the mask to a fits file
+#     edge_mask_distance = (
+#         50  # distance to mask around the edge of the image (pixels)
+#     )
 
-    # Aperture Grid Options
-    distance_to_mask = (
-        30  # minimum distance to mask for aperture placement (pixels)
-    )
-    scatter_size = (
-        0.1  # distance to scatter positions of apertures in grid (arcsec)
-    )
-    plot = True  # plot the grid of apertures
+#     # Aperture Grid Options
+#     distance_to_mask = (
+#         30  # minimum distance to mask for aperture placement (pixels)
+#     )
+#     scatter_size = (
+#         0.1  # distance to scatter positions of apertures in grid (arcsec)
+#     )
+#     plot = True  # plot the grid of apertures
 
-    # Split Depths Options
-    split_depths = False  # whether to split the depths into regions using KMeans clustering
-    split_depth_regions = 2  # the number of regions to split the depths into
-    split_depth_min_size = 100_000  # the minimum size of the regions
-    split_depths_factor = 5  # the factor to use for the binning of the weight map - lower is more accurate but slower
+#     # Split Depths Options
+#     split_depths = False  # whether to split the depths into regions using KMeans clustering
+#     split_depth_regions = 2  # the number of regions to split the depths into
+#     split_depth_min_size = 100_000  # the minimum size of the regions
+#     split_depths_factor = 5  # the factor to use for the binning of the weight map - lower is more accurate but slower
 
-    diagnostic_id = None  # the position of a glaaxy in the catalogue to show the diagnostic plot
+#     diagnostic_id = None  # the position of a glaaxy in the catalogue to show the diagnostic plot
 
-    # Depth Options
-    step_size = 100  # 2D step size for depth plot
-    # For rolling mode
-    region_radius_used_pix = (
-        300  # pixel radius for depth calculation when using the rolling mode
-    )
-    min_number_of_values = 100  # minimum number of values within region_radius_used_pix required to calculate the depth when using the rolling mode
-    # For n_nearest mode
-    n_nearest = 200  # number of nearest neighbors to use for depth calculation when using the n_nearest mode
+#     # Depth Options
+#     step_size = 100  # 2D step size for depth plot
+#     # For rolling mode
+#     region_radius_used_pix = (
+#         300  # pixel radius for depth calculation when using the rolling mode
+#     )
+#     min_number_of_values = 100  # minimum number of values within region_radius_used_pix required to calculate the depth when using the rolling mode
+#     # For n_nearest mode
+#     n_nearest = 200  # number of nearest neighbors to use for depth calculation when using the n_nearest mode
 
-    data = Data.from_pipeline(
-        survey,
-        version=version,
-        instruments=instruments,
-        excl_bands=["f435W", "f775W", "f850LP"],
-    )
+#     data = Data.from_pipeline(
+#         survey,
+#         version=version,
+#         instruments=instruments,
+#         excl_bands=["f435W", "f775W", "f850LP"],
+#     )
 
-    image_path = data.im_paths[filter]
-    wht_path = data.wht_paths[filter]
-    seg_path = data.seg_paths[filter]
-    zero_point = data.im_zps[filter]
-    pixel_size = data.im_pixel_scales[filter]
-    image_ext = data.im_exts[filter]
+#     image_path = data.im_paths[filter]
+#     wht_path = data.wht_paths[filter]
+#     seg_path = data.seg_paths[filter]
+#     zero_point = data.im_zps[filter]
+#     pixel_size = data.im_pixel_scales[filter]
+#     image_ext = data.im_exts[filter]
 
-    print("Image path:", image_path)
-    print("WHT path:", wht_path)
-    print("SEG path:", seg_path)
+#     print("Image path:", image_path)
+#     print("WHT path:", wht_path)
+#     print("SEG path:", seg_path)
 
-    if version == "v9":
-        if survey in ["El-Gordo", "CLIO", "SMACS-0723", "GLASS", "MACS-0416"]:
-            cat_path = f"/raid/scratch/work/austind/GALFIND_WORK/Catalogues/{version}/NIRCam/{survey}/{survey}_MASTER_Sel-f277W+f356W+f444W_v9_loc_depth_masked_10pc_EAZY_matched_selection.fits"
-        elif survey in ["CEERS"]:
-            cat_path = f"/raid/scratch/work/austind/GALFIND_WORK/Catalogues/{version}/ACS_WFC+NIRCam/Combined/CEERS_MASTER_Sel-f277W+f356W+f444W_v9_loc_depth_masked_10pc_EAZY_matched_selection_ext_src_UV_updated.fits"
-        elif survey in [
-            "NEP-1",
-            "NEP-2",
-            "NEP-3",
-            "NEP-4",
-            "NGDEEP",
-            "JADES-Deep-GS",
-        ]:
-            cat_path = f"/raid/scratch/work/austind/GALFIND_WORK/Catalogues/{version}/ACS_WFC+NIRCam/{survey}/{survey}_MASTER_Sel-f277W+f356W+f444W_v9_loc_depth_masked_10pc_EAZY_matched_selection.fits"
-        elif survey in ["JADES-3215"]:
-            cat_path = "/raid/scratch/work/austind/GALFIND_WORK/Catalogues/v11/NIRCam/JADES-3215/JADES-3215_MASTER_Sel-f277W+f356W+f444W_v11_loc_depth_masked_10pc_eazy_fsps_larson_matched_selection.fits"
-        elif "COSMOS" in survey:
-            cat_path = f"/raid/scratch/work/austind/GALFIND_WORK/Catalogues/v11/NIRCam/{survey}/{survey}_MASTER_Sel-F277W+F444W_v11.fits"
-        else:
-            cat_path = None
-    else:
-        cat_path = None
+#     if version == "v9":
+#         if survey in ["El-Gordo", "CLIO", "SMACS-0723", "GLASS", "MACS-0416"]:
+#             cat_path = f"/raid/scratch/work/austind/GALFIND_WORK/Catalogues/{version}/NIRCam/{survey}/{survey}_MASTER_Sel-f277W+f356W+f444W_v9_loc_depth_masked_10pc_EAZY_matched_selection.fits"
+#         elif survey in ["CEERS"]:
+#             cat_path = f"/raid/scratch/work/austind/GALFIND_WORK/Catalogues/{version}/ACS_WFC+NIRCam/Combined/CEERS_MASTER_Sel-f277W+f356W+f444W_v9_loc_depth_masked_10pc_EAZY_matched_selection_ext_src_UV_updated.fits"
+#         elif survey in [
+#             "NEP-1",
+#             "NEP-2",
+#             "NEP-3",
+#             "NEP-4",
+#             "NGDEEP",
+#             "JADES-Deep-GS",
+#         ]:
+#             cat_path = f"/raid/scratch/work/austind/GALFIND_WORK/Catalogues/{version}/ACS_WFC+NIRCam/{survey}/{survey}_MASTER_Sel-f277W+f356W+f444W_v9_loc_depth_masked_10pc_EAZY_matched_selection.fits"
+#         elif survey in ["JADES-3215"]:
+#             cat_path = "/raid/scratch/work/austind/GALFIND_WORK/Catalogues/v11/NIRCam/JADES-3215/JADES-3215_MASTER_Sel-f277W+f356W+f444W_v11_loc_depth_masked_10pc_eazy_fsps_larson_matched_selection.fits"
+#         elif "COSMOS" in survey:
+#             cat_path = f"/raid/scratch/work/austind/GALFIND_WORK/Catalogues/v11/NIRCam/{survey}/{survey}_MASTER_Sel-F277W+F444W_v11.fits"
+#         else:
+#             cat_path = None
+#     else:
+#         cat_path = None
 
-    if cat_path != None:
-        cat = Table.read(cat_path)
-    else:
-        cat = None
+#     if cat_path != None:
+#         cat = Table.read(cat_path)
+#     else:
+#         cat = None
 
-    radius_pixels = depth_region_radius / pixel_size
+#     radius_pixels = depth_region_radius / pixel_size
 
-    # Generate mask
-    img_data, img_mask, img_wcs = mask_image(
-        image_path,
-        seg_path=seg_path,
-        write=write_mask,
-        image_ext=image_ext,
-        edge_mask_distance=edge_mask_distance,
-    )
+#     # Generate mask
+#     img_data, img_mask, img_wcs = mask_image(
+#         image_path,
+#         seg_path=seg_path,
+#         write=write_mask,
+#         image_ext=image_ext,
+#         edge_mask_distance=edge_mask_distance,
+#     )
 
-    # Generate regions
-    xy = make_grid(
-        img_data,
-        img_mask,
-        radius=depth_region_radius,
-        scatter_size=scatter_size,
-        distance_to_mask=distance_to_mask,
-        plot=plot,
-    )
-    print(f"{len(xy)} apertures placed")
+#     # Generate regions
+#     xy = make_grid(
+#         img_data,
+#         img_mask,
+#         radius=depth_region_radius,
+#         scatter_size=scatter_size,
+#         distance_to_mask=distance_to_mask,
+#         plot=plot,
+#     )
+#     print(f"{len(xy)} apertures placed")
 
-    # Make ds9 region file of apertures for compatability and debugging
+#     # Make ds9 region file of apertures for compatability and debugging
 
-    make_ds9_region_file(
-        xy,
-        radius_pixels,
-        f"{save_path}/{survey}_{version}_{filter}.reg",
-        coordinate_type="pixel",
-        convert=False,
-        wcs=img_wcs,
-        pixel_scale=pixel_size,
-    )
+#     make_ds9_region_file(
+#         xy,
+#         radius_pixels,
+#         f"{save_path}/{survey}_{version}_{filter}.reg",
+#         coordinate_type="pixel",
+#         convert=False,
+#         wcs=img_wcs,
+#         pixel_scale=pixel_size,
+#     )
 
-    # Get fluxes in regions
-    fluxes = do_photometry(img_data, xy, radius_pixels)
+#     # Get fluxes in regions
+#     fluxes = do_photometry(img_data, xy, radius_pixels)
 
-    # Calculate depths for catalogue
-    if cat_path != None:
-        depths, diagnostic, depth_labels, final_labels = calc_depths(
-            xy,
-            fluxes,
-            img_data,
-            img_mask,
-            region_radius_used_pix=region_radius_used_pix,
-            step_size=step_size,
-            catalogue=cat,
-            wcs=img_wcs,
-            cat_x_col=cat_x_col,
-            cat_y_col=cat_y_col,
-            coord_type=coord_type,
-            mode="n_nearest",
-            n_nearest=n_nearest,
-            zero_point=zero_point,
-            split_depths=split_depths,
-            split_depth_regions=split_depth_regions,
-            split_depth_min_size=split_depth_min_size,
-            split_depths_factor=split_depths_factor,
-            wht_data=wht_path,
-            diagnostic_id=diagnostic_id,
-        )
-        # Diagnostic plot comparing depths to previous depths
-        fig, ax = plt.subplots()
-        x = cat[f"loc_depth_{filter}"][:, 0]
-        y = depths
-        masknans = np.logical_and(np.isfinite(x), np.isfinite(y))
-        x = x[masknans]
-        y = y[masknans]
+#     # Calculate depths for catalogue
+#     if cat_path != None:
+#         depths, diagnostic, depth_labels, final_labels = calc_depths(
+#             xy,
+#             fluxes,
+#             img_data,
+#             img_mask,
+#             region_radius_used_pix=region_radius_used_pix,
+#             step_size=step_size,
+#             catalogue=cat,
+#             wcs=img_wcs,
+#             cat_x_col=cat_x_col,
+#             cat_y_col=cat_y_col,
+#             coord_type=coord_type,
+#             mode="n_nearest",
+#             n_nearest=n_nearest,
+#             zero_point=zero_point,
+#             split_depths=split_depths,
+#             split_depth_regions=split_depth_regions,
+#             split_depth_min_size=split_depth_min_size,
+#             split_depths_factor=split_depths_factor,
+#             wht_data=wht_path,
+#             diagnostic_id=diagnostic_id,
+#         )
+#         # Diagnostic plot comparing depths to previous depths
+#         fig, ax = plt.subplots()
+#         x = cat[f"loc_depth_{filter}"][:, 0]
+#         y = depths
+#         masknans = np.logical_and(np.isfinite(x), np.isfinite(y))
+#         x = x[masknans]
+#         y = y[masknans]
 
-        print("Median depth difference:", np.nanmedian(y - x))
-        z = np.vstack([x, y])
+#         print("Median depth difference:", np.nanmedian(y - x))
+#         z = np.vstack([x, y])
 
-        z = gaussian_kde(z)(z)
-        ax.scatter(x, y, s=1, c=z, cmap="plasma")
-        ax.set_xlabel(f"loc_depth_{filter} (current)")
-        ax.set_ylabel(f"loc_depth_{filter} (new)")
-        # plot 1:1 line
-        ax.set_xlim(ax.get_xlim())
-        ax.set_ylim(ax.get_ylim())
-        ax.plot([0, 40], [0, 40], "k--")
-        plt.show()
-    else:
-        final_labels = None
+#         z = gaussian_kde(z)(z)
+#         ax.scatter(x, y, s=1, c=z, cmap="plasma")
+#         ax.set_xlabel(f"loc_depth_{filter} (current)")
+#         ax.set_ylabel(f"loc_depth_{filter} (new)")
+#         # plot 1:1 line
+#         ax.set_xlim(ax.get_xlim())
+#         ax.set_ylim(ax.get_ylim())
+#         ax.plot([0, 40], [0, 40], "k--")
+#         plt.show()
+#     else:
+#         final_labels = None
 
-    print("Final labels:", final_labels)
-    # Calculate depth plot
-    nmad_grid, num_grid, labels_grid, final_labels = calc_depths(
-        xy,
-        fluxes,
-        img_data,
-        img_mask,
-        region_radius_used_pix=region_radius_used_pix,
-        step_size=step_size,
-        mode="rolling",
-        min_number_of_values=min_number_of_values,
-        zero_point=zero_point,
-        split_depths=split_depths,
-        split_depth_regions=split_depth_regions,
-        split_depth_min_size=split_depth_min_size,
-        split_depths_factor=split_depths_factor,
-        wht_data=wht_path,
-        provide_labels=final_labels,
-    )
+#     print("Final labels:", final_labels)
+#     # Calculate depth plot
+#     nmad_grid, num_grid, labels_grid, final_labels = calc_depths(
+#         xy,
+#         fluxes,
+#         img_data,
+#         img_mask,
+#         region_radius_used_pix=region_radius_used_pix,
+#         step_size=step_size,
+#         mode="rolling",
+#         min_number_of_values=min_number_of_values,
+#         zero_point=zero_point,
+#         split_depths=split_depths,
+#         split_depth_regions=split_depth_regions,
+#         split_depth_min_size=split_depth_min_size,
+#         split_depths_factor=split_depths_factor,
+#         wht_data=wht_path,
+#         provide_labels=final_labels,
+#     )
 
-    # Show depth plot
-    if cat_path is not None:
-        cat_x, cat_y = cat[cat_x_col], cat[cat_y_col]
-        x_pix, y_pix = img_wcs.all_world2pix(cat_x, cat_y, 0)
-    else:
-        x_pix, y_pix = None, None
-        depth_labels = None
-        depths = None
-        diagnostic = None
+#     # Show depth plot
+#     if cat_path is not None:
+#         cat_x, cat_y = cat[cat_x_col], cat[cat_y_col]
+#         x_pix, y_pix = img_wcs.all_world2pix(cat_x, cat_y, 0)
+#     else:
+#         x_pix, y_pix = None, None
+#         depth_labels = None
+#         depths = None
+#         diagnostic = None
 
-    depths_fig, depths_ax = show_depths(
-        nmad_grid,
-        num_grid,
-        step_size,
-        region_radius_used_pix,
-        labels_grid,
-        depth_labels,
-        depths,
-        diagnostic,
-        x_pix,
-        y_pix,
-        img_mask,
-        final_labels,
-        suptitle=f"{survey} {version} {filter} Depths",
-    )
-    # depths_fig.show()
-    # depths_fig.savefig(f'{save_path}/{survey}_{version}_{filter}_depths.png')
+#     depths_fig, depths_ax = show_depths(
+#         nmad_grid,
+#         num_grid,
+#         step_size,
+#         region_radius_used_pix,
+#         labels_grid,
+#         depth_labels,
+#         depths,
+#         diagnostic,
+#         x_pix,
+#         y_pix,
+#         img_mask,
+#         final_labels,
+#         suptitle=f"{survey} {version} {filter} Depths",
+#     )
+#     # depths_fig.show()
+#     # depths_fig.savefig(f'{save_path}/{survey}_{version}_{filter}_depths.png')

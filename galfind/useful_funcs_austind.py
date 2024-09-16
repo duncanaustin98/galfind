@@ -915,3 +915,17 @@ def ext_source_corr(data, corr_factor, is_log_data=True):
 
 def power_law_beta_func(wav, A, beta):
     return A * (wav**beta)
+
+
+class Singleton(object):
+    _instance = None
+
+    def __new__(cls, *args, **kwargs):
+        if cls._instance is None:
+            cls._instance = super(Singleton, cls).__new__(cls, *args, **kwargs)
+        return cls._instance
+
+
+# for __str__ methods # (and __repr__?)
+line_sep = "*" * 40 + "\n"
+band_sep = "-" * 10 + "\n"
