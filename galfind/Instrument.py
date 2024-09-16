@@ -428,7 +428,7 @@ class WFC3_IR(Instrument, funcs.Singleton):
 #         all_instruments = json.loads(
 #             config.get("Other", "INSTRUMENT_NAMES")
 #         )
-#         all_facilities = json.loads(config.get("Other", "TELESCOPE_NAMES"))
+#         all_facilities = json.loads(config.get("Other", "FACILITY_NAMES"))
 #         # split self.name and instrument.name
 #         names = list(
 #             set(self.name.split("+") + other_instr_name.split("+"))
@@ -487,7 +487,7 @@ class WFC3_IR(Instrument, funcs.Singleton):
 #         [name for name in all_instruments if name in instrument_names]
 #     )
 #     # Work out the modified instrument facility
-#     all_facilities = json.loads(config.get("Other", "TELESCOPE_NAMES"))
+#     all_facilities = json.loads(config.get("Other", "FACILITY_NAMES"))
 #     facility_names = np.unique([band.facility for band in self])
 #     self.facility = "+".join(
 #         [

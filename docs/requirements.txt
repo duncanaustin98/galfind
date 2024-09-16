@@ -4,3 +4,7 @@ nbsphinx
 pandoc
 ipykernel
 sphinx_copybutton
+galfind
+astropy
+numpy
+matplotlib

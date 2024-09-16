@@ -6,7 +6,7 @@ import numpy as np
 from astroquery.svo_fps import SvoFps
 from copy import deepcopy
 import json
-import matplotlib as plt
+import matplotlib.pyplot as plt
 from typing import List, Union, NoReturn, TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -25,7 +25,6 @@ from . import ACS_WFC, WFC3_IR, NIRCam, MIRI, JWST, HST  # noqa: F401
 class Filter:
     def __init__(
         self,
-        facility: Union[None, str, Facility],
         instrument: Union[None, str, Instrument],
         band_name: str,
         wav: u.Quantity,
@@ -33,10 +32,6 @@ class Filter:
         properties: dict = {},
     ):
         assert len(wav) == len(trans)
-        if isinstance(facility, str):
-            facility = globals()[facility]()
-            assert isinstance(facility, tuple(Facility.__subclasses__()))
-        self.facility = facility
         if isinstance(instrument, str):
             instrument = globals()[instrument]()
         self.instrument = instrument
@@ -46,6 +41,10 @@ class Filter:
         for key, value in properties.items():
             self.__setattr__(key, value)
         self.properties = properties  # currently just used in __str__ only
+
+        # create WavelengthCen if required
+        if "WavelengthCen" not in properties.keys():
+            self.WavelengthCen = np.mean(self.wav.value) * self.wav.unit
 
     @classmethod
     def from_SVO(cls, facility, instrument, filter_name):
@@ -89,11 +88,14 @@ class Filter:
         output_prop["WavelengthLower50"] = (
             output_prop["WavelengthCen"] - output_prop["FWHM"] / 2.0
         )
-        return cls(facility, instrument, filter_name, wav, trans, output_prop)
+        return cls(instrument, filter_name, wav, trans, output_prop)
 
     def __str__(self):
         output_str = funcs.line_sep
-        output_str += f"{self.facility}/{self.instrument}/{self.band_name}\n"
+        if self.instrument is not None:
+            output_str += f"{self.instrument}/{self.band_name}\n"
+        else:
+            output_str += f"{self.band_name}\n"
         output_str += funcs.band_sep
         for key, value in self.properties.items():
             output_str += f"{key}: {value}\n"
@@ -160,32 +162,71 @@ class Filter:
     def make_PSF(self, data: Data, method: str):
         self.instrument.make_PSF(self, method)
 
-    def plot_filter_profile(
-        self, ax, wav_units=u.um, from_SVO=True, color="black"
+    def plot(
+        self, ax, wav_units: u.Quantity = u.um, colour: str = "black", save_dir: str = "", label: bool = True, save: bool = False, show: bool = False
     ):
         wavs = funcs.convert_wav_units(self.wav, wav_units).value
-        ax.fill_between(wavs, 0.0, self.trans, color=color, alpha=0.6)
+        ax.fill_between(wavs, 0., self.trans, color=colour, alpha=0.6)
         ax.plot(
-            wavs, self.trans, color="black", lw=2
+            wavs, self.trans, color="black", lw=2, label = self.band_name
         )  # cmap[np.where(self.bands == band)])
-        ax.text(
+        if label:
+            ax.text(
             funcs.convert_wav_units(self.WavelengthCen, wav_units).value,
             np.max(self.trans) + 0.03,
             self.band_name,
             ha="center",
             fontsize=8,
         )
+        if save or show:
+            leg_labels = ax.get_legend_handles_labels()[1]
+            if len(leg_labels) == 1:
+                title = f"{leg_labels[0]} filter"
+            else:
+                title = f"{'+'.join(leg_labels)} filters"
+            # annotate plot
+            ax.set_title(title)
+            ax.set_xlabel(
+                r"$\lambda_{\mathrm{obs}}$ / "
+                + funcs.unit_labels_dict[wav_units]
+            )
+            ax.set_ylabel("Transmission")
+            ax.set_ylim(
+                0.0,
+                np.max(self.trans) + 0.1,
+            )
+        if save:
+            save_path = f"{save_dir}/{title.replace(' ', '_')}.png"
+            funcs.make_dirs(save_path)
+            plt.savefig(save_path)
+            funcs.change_file_permissions(save_path)
+        if show:
+            plt.show()
 
-
-class U(Filter):
+class Tophat_Filter(Filter):
+    def __init__(self, band_name: str, lower_wav: u.Quantity, upper_wav: u.Quantity, throughput: float = 1., resolution: u.Quantity = 1. * u.AA, properties: dict = {}):
+        # construct the top hat filter profile
+        n_elements = int(((upper_wav - lower_wav) / resolution).to(u.dimensionless_unscaled).value)
+        wav = list(np.linspace(lower_wav, upper_wav, n_elements)) * u.AA
+        trans = list(np.full(len(wav), throughput))
+        properties = {**properties, **{"WavelengthCen": (lower_wav + upper_wav) / 2., "FWHM": upper_wav - lower_wav}}
+        super().__init__(None, band_name, wav, trans, properties=properties)
+                               
+class U(Tophat_Filter):
     def __init__(
         self,
+        throughput: float = 1.,
+        resolution: u.Quantity = 1. * u.AA
     ):
-        # construct the top hat filter profile
-        wav = [] * u.AA
-        trans = [1.0 for _ in range(len(wav))]
-        # super().__init__(
+        super().__init__(self.__class__.__name__, 3_320. * u.AA, 3_980. * u.AA, throughput = throughput, resolution = resolution)
 
+class V(Tophat_Filter):
+    def __init__(self, throughput: float = 1., resolution: u.Quantity = 1. * u.AA):
+        super().__init__(self.__class__.__name__, 5_070. * u.AA, 5_950. * u.AA, throughput = throughput, resolution = resolution)
+
+class J(Tophat_Filter):
+    def __init__(self, throughput: float = 1., resolution: u.Quantity = 1. * u.AA):
+        super().__init__(self.__class__.__name__, 11_135. * u.AA, 13_265. * u.AA, throughput = throughput, resolution = resolution)
 
 class Multiple_Filter:
     def __init__(
@@ -206,12 +247,10 @@ class Multiple_Filter:
         if not isinstance(instrument, Instrument):
             # construct instrument object from string
             instrument = globals()[instrument]()
-        # determine facility from instrument
-        facility = instrument.facility
 
         if origin == "SVO":
             filter_list = SvoFps.get_filter_list(
-                facility=facility, instrument=instrument.name.split("_")[0]
+                facility=instrument.facility.name, instrument=instrument.name.split("_")[0]
             )
             filter_list = filter_list[
                 np.array(
@@ -225,15 +264,15 @@ class Multiple_Filter:
             filters = np.array(
                 [
                     Filter.from_SVO(
-                        facility.name,
+                        instrument.facility.name,
                         instrument.name,
                         filt_ID.replace(
-                            f"{facility.name}/{instrument.name}.", ""
+                            f"{instrument}.", ""
                         ),
                     )
                     for filt_ID in np.array(filter_list["filterID"])
                     if filt_ID.replace(
-                        f"{facility.name}/{instrument.name}.", ""
+                        f"{instrument}.", ""
                     )
                     not in excl_bands
                 ]
@@ -329,7 +368,6 @@ class Multiple_Filter:
             str: Summary containing facility, instrument name and filter set included in the instrument
         """
         output_str = funcs.line_sep
-        output_str += f"FACILITY: {self.facility}\n"
         output_str += f"INSTRUMENT: {self.name}\n"
         # show individual bands used, ordered from blue to red
         output_str += f"FILTER SET: {str([f'{band.facility}/{band.instrument}/{band.band_name}' for band in self])}\n"
@@ -404,9 +442,9 @@ class Multiple_Filter:
         Raises:
             NotImplementedError: If the sort order is not "ascending".
         """
-        all_facility_names = json.loads(config.get("Other", "TELESCOPE_NAMES"))
+        all_facility_names = json.loads(config.get("Other", "FACILITY_NAMES"))
         unique_facility_names = np.unique(
-            [band.facility.name for band in self if band is not None]
+            [band.instrument.facility.name for band in self if band is not None]
         )
         if self.sort_order == "ascending":
             return "+".join(
@@ -446,11 +484,10 @@ class Multiple_Filter:
         else:
             raise NotImplementedError
 
-    def plot_filter_profiles(
+    def plot(
         self,
         ax,
         wav_units=u.um,
-        from_SVO=True,
         cmap_name="Spectral_r",
         annotate=True,
         show=True,
@@ -458,7 +495,7 @@ class Multiple_Filter:
     ) -> NoReturn:
         cmap = plt.get_cmap(cmap_name, len(self))
         for i, band in enumerate(self):
-            band.plot_filter_profile(ax, from_SVO=from_SVO, color=cmap[i])
+            band.plot(ax, color=cmap[i], label = True)
         if annotate:
             ax.set_title(f"{self.name} filters")
             ax.set_xlabel(
@@ -471,7 +508,9 @@ class Multiple_Filter:
                 np.max([trans for trans in band.trans for band in self]) + 0.1,
             )
         if save:
-            plt.savefig(f"{self.name}_filter_profiles.png")
-            funcs.change_file_permissions(f"{self.name}_filter_profiles.png")
+            save_path = f"{self.name}_filter_profiles.png"
+            funcs.make_dirs(save_path)
+            plt.savefig(save_path)
+            funcs.change_file_permissions(save_path)
         if show:
             plt.show()

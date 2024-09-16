@@ -10,6 +10,8 @@ Created on Tue May 30 16:36:34 2023
 
 import time
 
+start_pipeline = time.time()
+
 import astropy.units as u
 import numpy as np
 
@@ -20,6 +22,8 @@ from galfind import (
 )
 from galfind.Catalogue_Creator import GALFIND_Catalogue_Creator
 
+end_pipeline = time.time()
+print(f"Pipeline imports took {end_pipeline - start_pipeline}s")
 
 def pipeline(
     surveys,
@@ -257,7 +261,6 @@ def main():
 
 def do_nothing():
     breakpoint()
-
 
 if __name__ == "__main__":
     # main()
