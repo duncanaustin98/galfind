@@ -15,9 +15,12 @@ import astropy.units as u
 import matplotlib.patheffects as pe
 import numpy as np
 from tqdm import tqdm
+from copy import deepcopy
 
 from .Photometry import Photometry
 from .SED_result import Catalogue_SED_results, Galaxy_SED_results
+from . import useful_funcs_austind as funcs
+from . import galfind_logger
 
 
 class Photometry_obs(Photometry):
@@ -48,18 +51,16 @@ class Photometry_obs(Photometry):
             print(mid - start, mid_end - mid, end - mid_end)
 
     def __str__(self):
-        line_sep = "*" * 40 + "\n"
-        band_sep = "-" * 10 + "\n"
-        output_str = line_sep
+        output_str = funcs.line_sep
         output_str += "PHOTOMETRY OBS:\n"
-        output_str += band_sep
+        output_str += funcs.band_sep
         output_str += f"APERTURE DIAMETER: {self.aper_diam}\n"
         output_str += f"MIN FLUX PC ERR: {self.min_flux_pc_err}%\n"
         output_str += super().__str__(print_cls_name=False)
         for result in self.SED_results.values():
             output_str += str(result)
         output_str += f"SNR: {[np.round(snr, 2) for snr in self.SNR]}\n"
-        output_str += line_sep
+        output_str += funcs.line_sep
         return output_str
 
     def __getattr__(
