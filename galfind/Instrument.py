@@ -24,121 +24,6 @@ except ImportError:
 from . import NIRCam_aper_corr, config, galfind_logger
 from . import useful_funcs_austind as funcs
 
-# Instrument attributes
-
-ACS_WFC_bands = [
-    "FR388N",
-    "FR423N",
-    "F435W",
-    "FR459M",
-    "FR462N",
-    "F475W",
-    "F502N",
-    "FR505N",
-    "F555W",
-    "FR551N",
-    "F550M",
-    "FR601N",
-    "F606W",
-    "F625W",
-    "FR647M",
-    "FR656N",
-    "F658N",
-    "F660N",
-    "FR716N",
-    "POL_UV",
-    "POL_V",
-    "G800L",
-    "F775W",
-    "FR782N",
-    "F814W",
-    "FR853N",
-    "F892N",
-    "FR914M",
-    "F850LP",
-    "FR931N",
-    "FR1016N",
-]
-WFC3_IR_bands = [
-    "F098M",
-    "G102",
-    "F105W",
-    "F110W",
-    "F125W",
-    "F126N",
-    "F127M",
-    "F128N",
-    "F130N",
-    "F132N",
-    "F139M",
-    "F140W",
-    "G141",
-    "F153M",
-    "F160W",
-    "F164N",
-    "F167N",
-]
-NIRCam_bands = [
-    "F070W",
-    "F090W",
-    "F115W",
-    "F140M",
-    "F150W",
-    "F162M",
-    "F164N",
-    "F150W2",
-    "F182M",
-    "F187N",
-    "F200W",
-    "F210M",
-    "F212N",
-    "F250M",
-    "F277W",
-    "F300M",
-    "F323N",
-    "F322W2",
-    "F335M",
-    "F356W",
-    "F360M",
-    "F405N",
-    "F410M",
-    "F430M",
-    "F444W",
-    "F460M",
-    "F466N",
-    "F470N",
-    "F480M",
-]
-MIRI_bands = [
-    "F560W",
-    "F770W",
-    "F1000W",
-    "F1065C",
-    "F1140C",
-    "F1130W",
-    "F1280W",
-    "F1500W",
-    "F1550C",
-    "F1800W",
-    "F2100W",
-    "F2300C",
-    "F2550W",
-]
-expected_instr_bands = {
-    "ACS_WFC": ACS_WFC_bands,
-    "WFC3_IR": WFC3_IR_bands,
-    "NIRCam": NIRCam_bands,
-    "MIRI": MIRI_bands,
-}
-
-expected_instr_facilities = {
-    "ACS_WFC": "HST",
-    "WFC3_IR": "HST",
-    "NIRCam": "JWST",
-    "MIRI": "JWST",
-}
-
-
 class Facility(ABC):
     # Facility class to store the name of the facility
     # and other facility-specific attributes/methods
@@ -192,13 +77,14 @@ class JWST(Facility, funcs.Singleton):
 
 class Instrument(ABC):
 
-    def __init__(self: Type[Self], facility: Union[str, Facility]) -> None:
+    def __init__(self: Type[Self], facility: Union[str, Facility], filter_names: List[str]) -> None:
         self.name = self.__class__.__name__
         if isinstance(facility, str):
             self.facility = globals()[facility]()
             assert isinstance(self.facility, tuple(Facility.__subclasses__()))
         else:
             self.facility = facility
+        self.filter_names = filter_names
 
     def __str__(self) -> str:
         return f"{self.facility.name}/{self.name}"
@@ -264,7 +150,13 @@ class Instrument(ABC):
 class NIRCam(Instrument, funcs.Singleton):
 
     def __init__(self) -> None:
-        super().__init__("JWST")
+        NIRCam_band_names = [
+            "F070W", "F090W", "F115W", "F140M", "F150W", "F162M", "F164N", "F150W2",
+            "F182M", "F187N", "F200W", "F210M", "F212N", "F250M", "F277W", "F300M",
+            "F323N", "F322W2","F335M", "F356W", "F360M", "F405N", "F410M", "F430M",
+            "F444W", "F460M", "F466N", "F470N", "F480M",
+        ]
+        super().__init__("JWST", NIRCam_band_names)
 
     def calc_ZP(self, data: Data, band: Union[str, Filter]) -> u.Quantity:
         pass
@@ -276,7 +168,11 @@ class NIRCam(Instrument, funcs.Singleton):
 class MIRI(Instrument, funcs.Singleton):
 
     def __init__(self) -> None:
-        super().__init__("JWST")
+        MIRI_band_names = [
+            "F560W", "F770W", "F1000W", "F1065C", "F1140C", "F1130W", "F1280W",
+            "F1500W", "F1550C", "F1800W", "F2100W", "F2300C", "F2550W",
+        ]
+        super().__init__("JWST", MIRI_band_names)
 
     def calc_ZP(self, data: Data, band: Union[str, Filter]) -> u.Quantity:
         pass
@@ -288,7 +184,14 @@ class MIRI(Instrument, funcs.Singleton):
 class ACS_WFC(Instrument, funcs.Singleton):
 
     def __init__(self) -> None:
-        super().__init__("HST")
+        ACS_WFC_band_names = [
+            'FR388N', 'FR423N', 'F435W', 'FR459M', 'FR462N', 'F475W', 
+            'F502N', 'FR505N', 'F555W', 'FR551N', 'F550M', 'F606W', 
+            'FR601N', 'F625W', 'FR647M', 'FR656N', 'F658N', 'F660N', 
+            'FR716N', 'POL_UV', 'G800L', 'POL_V', 'F775W', 'FR782N', 
+            'F814W', 'FR853N', 'F892N', 'F850LP', 'FR914M', 'FR931N', 'FR1016N'
+        ]
+        super().__init__("HST", ACS_WFC_band_names)
 
     def calc_ZP(self, data: Data, band: Union[str, Filter]) -> u.Quantity:
         pass
@@ -300,7 +203,12 @@ class ACS_WFC(Instrument, funcs.Singleton):
 class WFC3_IR(Instrument, funcs.Singleton):
 
     def __init__(self) -> None:
-        super().__init__("HST")
+        WFC3_IR_band_names = [
+            'F098M', 'G102', 'F105W', 'F110W', 'F125W', 'F126N', 
+            'F127M', 'F128N', 'F130N', 'F132N', 'F139M', 'F140W', 
+            'G141', 'F153M', 'F160W', 'F164N', 'F167N'
+        ]
+        super().__init__("HST", WFC3_IR_band_names)
 
     def calc_ZP(self, data: Data, band: Union[str, Filter]) -> u.Quantity:
         pass
@@ -308,6 +216,21 @@ class WFC3_IR(Instrument, funcs.Singleton):
     def make_empirical_PSF(self, data: Data, band: Union[str, Filter]) -> PSF:
         pass
 
+# Instrument attributes
+
+expected_instr_bands = {
+    "ACS_WFC": ACS_WFC().filter_names,
+    "WFC3_IR": WFC3_IR().filter_names,
+    "NIRCam": NIRCam().filter_names,
+    "MIRI": MIRI().filter_names,
+}
+
+expected_instr_facilities = {
+    "ACS_WFC": "HST",
+    "WFC3_IR": "HST",
+    "NIRCam": "JWST",
+    "MIRI": "JWST",
+}
 
 # class Instrument_:
 
