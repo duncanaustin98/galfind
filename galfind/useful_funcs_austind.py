@@ -240,8 +240,8 @@ def loc_depth_to_flux_err(loc_depth, zero_point):
 
 # now in Photometry class!
 # def flux_image_to_lambda(wav, flux, zero_point):
-#     flux_Jy = flux_image_to_Jy(flux, zero_point)
-#     flux_lambda = flux_Jy_to_lambda(wav, flux_Jy)
+#     flux = flux_image_to_Jy(flux, zero_point)
+#     flux_lambda = flux_to_lambda(wav, flux)
 #     return flux_lambda # observed frame
 
 
@@ -926,6 +926,6 @@ class Singleton(object):
         return cls._instance
 
 
-# for __str__ methods # (and __repr__?)
+# for __str__ methods
 line_sep = "*" * 40 + "\n"
 band_sep = "-" * 10 + "\n"

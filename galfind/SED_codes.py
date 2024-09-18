@@ -51,12 +51,12 @@ class SED_code(ABC):
     def load_photometry(self, cat, out_units, no_data_val, upper_sigma_lim={}):
         # load in raw photometry from the galaxies in the catalogue and convert to appropriate units
         phot = np.array(
-            [gal.phot.flux_Jy.to(out_units) for gal in cat], dtype=object
+            [gal.phot.flux.to(out_units) for gal in cat], dtype=object
         )  # [:, :, 0]
         phot_shape = phot.shape
         if out_units != u.ABmag:
             phot_err = np.array(
-                [gal.phot.flux_Jy_errs.to(out_units) for gal in cat],
+                [gal.phot.flux_errs.to(out_units) for gal in cat],
                 dtype=object,
             )  # [:, :, 0]
         else:
@@ -64,7 +64,7 @@ class SED_code(ABC):
             phot_err = np.array(
                 [
                     funcs.flux_pc_to_mag_err(
-                        gal.phot.flux_Jy_errs / gal.phot.flux_Jy
+                        gal.phot.flux_errs / gal.phot.flux
                     )
                     for gal in cat
                 ],

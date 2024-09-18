@@ -302,13 +302,13 @@ class Catalogue_Base:
 
                         bands_gal1 = np.array(
                             coord_gal.phot.instrument.band_names
-                        )[coord_gal.phot.flux_Jy.mask]
+                        )[coord_gal.phot.flux.mask]
 
                         chi_squareds = []
                         for other_gal in other_gals:
                             bands_gal2 = np.array(
                                 other_gal.phot.instrument.band_names
-                            )[other_gal.phot.flux_Jy.mask]
+                            )[other_gal.phot.flux.mask]
                             matched_bands = list(
                                 set(bands_gal1).union(set(bands_gal2))
                             )
@@ -328,13 +328,13 @@ class Catalogue_Base:
                                     for band in other_gal.phot.instrument.band_names
                                 ]
                             )
-                            coord_gal_fluxes = coord_gal.phot.flux_Jy[
+                            coord_gal_fluxes = coord_gal.phot.flux[
                                 indexes_bands
                             ]
-                            coord_gal_flux_errs = coord_gal.phot.flux_Jy_errs[
+                            coord_gal_flux_errs = coord_gal.phot.flux_errs[
                                 indexes_bands
                             ]
-                            other_gal_fluxes = other_gal.phot.flux_Jy[
+                            other_gal_fluxes = other_gal.phot.flux[
                                 indexes_other_bands
                             ]
 
@@ -400,10 +400,10 @@ class Catalogue_Base:
                     ):
                         # Compare the two galaxies and choose the better one
                         bands_gal1 = np.array(gal1.phot.instrument.band_names)[
-                            gal1.phot.flux_Jy.mask
+                            gal1.phot.flux.mask
                         ]
                         bands_gal2 = np.array(gal2.phot.instrument.band_names)[
-                            gal2.phot.flux_Jy.mask
+                            gal2.phot.flux.mask
                         ]
 
                         band_names_union = list(

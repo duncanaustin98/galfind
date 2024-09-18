@@ -68,8 +68,8 @@ class Photometry_rest(Photometry):
     def __init__(
         self,
         instrument,
-        flux_Jy,
-        flux_Jy_errs,
+        flux,
+        flux_errs,
         depths,
         z,
         properties={},
@@ -81,28 +81,27 @@ class Photometry_rest(Photometry):
         self.property_errs = property_errs
         self.property_PDFs = property_PDFs
         self.recently_updated = []
-        super().__init__(instrument, flux_Jy, flux_Jy_errs, depths)
+        super().__init__(instrument, flux, flux_errs, depths)
 
     # these class methods need updating!
     @classmethod
     def from_fits_cat(cls, fits_cat_row, instrument, cat_creator, code):
         phot = Photometry.from_fits_cat(fits_cat_row, instrument, cat_creator)
+        # TODO: mask the photometry object
         return cls.from_phot(
             phot, np.float(fits_cat_row[code.galaxy_properties["z"]])
         )
 
     @classmethod
     def from_phot(cls, phot, z):
-        return cls(
-            phot.instrument, phot.flux_Jy, phot.flux_Jy_errs, phot.depths, z
-        )
+        return cls(phot.instrument, phot.flux, phot.flux_errs, phot.depths, z)
 
     @classmethod
     def from_phot_obs(cls, phot):
         return cls(
             phot.instrument,
-            phot.flux_Jy,
-            phot.flux_Jy_errs,
+            phot.flux,
+            phot.flux_errs,
             phot.depths,
             phot.z,
         )
@@ -121,7 +120,7 @@ class Photometry_rest(Photometry):
         return output_str
 
     def __len__(self):
-        return len(self.flux_Jy)
+        return len(self.flux)
 
     def __getattr__(
         self,
@@ -233,31 +232,32 @@ class Photometry_rest(Photometry):
     #     return self.instrument[self.rest_UV_band_index]
 
     # @property
-    # def rest_UV_band_flux_Jy(self):
-    #     return self.flux_Jy[self.rest_UV_band_index]
+    # def rest_UV_band_flux(self):
+    #     return self.flux[self.rest_UV_band_index]
 
-    def scatter_phot(self, n_scatter=1):
-        assert self.flux_Jy.unit != u.ABmag, galfind_logger.critical(
-            f"{self.flux_Jy.unit=} == 'ABmag'"
-        )
-        phot_matrix = np.array(
-            [
-                np.random.normal(flux, err, n_scatter)
-                for flux, err in zip(
-                    self.flux_Jy.value, self.flux_Jy_errs.value
-                )
-            ]
-        )
-        return [
-            self.__class__(
-                self.instrument,
-                phot_matrix[:, i] * self.flux_Jy.unit,
-                self.flux_Jy_errs,
-                self.depths,
-                self.z,
-            )
-            for i in range(n_scatter)
-        ]
+    # Should already exist in Photometry object
+    # def scatter(self, n_scatter=1):
+    #     assert self.flux.unit != u.ABmag, galfind_logger.critical(
+    #         f"{self.flux.unit=} == 'ABmag'"
+    #     )
+    #     phot_matrix = np.array(
+    #         [
+    #             np.random.normal(flux, err, n_scatter)
+    #             for flux, err in zip(
+    #                 self.flux.value, self.flux_errs.value
+    #             )
+    #         ]
+    #     )
+    #     return [
+    #         self.__class__(
+    #             self.instrument,
+    #             phot_matrix[:, i] * self.flux.unit,
+    #             self.flux_errs,
+    #             self.depths,
+    #             self.z,
+    #         )
+    #         for i in range(n_scatter)
+    #     ]
 
     @staticmethod
     def rest_UV_wavs_name(rest_UV_wav_lims):
@@ -297,7 +297,7 @@ class Photometry_rest(Photometry):
         if hasattr(self, "UV_wav_range"):
             if self.UV_wav_range == self.rest_UV_wavs_name(rest_UV_wav_lims):
                 assert (
-                    u.get_physical_type(self.flux_Jy.unit)
+                    u.get_physical_type(self.flux.unit)
                     == "power density/spectral flux density wav"
                 )
                 return True
@@ -397,7 +397,7 @@ class Photometry_rest(Photometry):
                     for band in rest_UV_phot.instrument
                 ]
                 * u.AA,
-                rest_UV_phot.flux_Jy,
+                rest_UV_phot.flux,
                 u.erg / (u.s * u.AA * u.cm**2),
             )
             if not incl_errs:
@@ -411,12 +411,12 @@ class Photometry_rest(Photometry):
                         for band in rest_UV_phot.instrument
                     ]
                     * u.AA,
-                    rest_UV_phot.flux_Jy,
+                    rest_UV_phot.flux,
                     [
-                        rest_UV_phot.flux_Jy_errs.value,
-                        rest_UV_phot.flux_Jy_errs.value,
+                        rest_UV_phot.flux_errs.value,
+                        rest_UV_phot.flux_errs.value,
                     ]
-                    * rest_UV_phot.flux_Jy_errs.unit,
+                    * rest_UV_phot.flux_errs.unit,
                     u.erg / (u.s * u.AA * u.cm**2),
                 )
                 return curve_fit(
@@ -431,7 +431,7 @@ class Photometry_rest(Photometry):
                 return [None, None], [PL_amplitude_name, property_name]
             else:
                 assert type(beta_fit_func) == type(None)
-                scattered_rest_UV_phot_arr = rest_UV_phot.scatter_phot(iters)
+                scattered_rest_UV_phot_arr = rest_UV_phot.scatter(iters)
                 beta_fit_func = beta_fit(
                     rest_UV_phot.z, rest_UV_phot.instrument.bands
                 ).beta_slope_power_law_func_conv_filt
@@ -907,7 +907,7 @@ class Photometry_rest(Photometry):
             band_index = self.instrument.index_from_band_name(band.band_name)
             cont_flux_nJy = funcs.convert_mag_units(
                 self.instrument[band_index].WavelengthCen,
-                self.flux_Jy[band_index],
+                self.flux[band_index],
                 u.nJy,
             ).value
             if single_iter:
@@ -921,10 +921,10 @@ class Photometry_rest(Photometry):
                         flux_err.value
                         for flux_err in funcs.convert_mag_err_units(
                             self.instrument[band_index].WavelengthCen,
-                            self.flux_Jy[band_index],
+                            self.flux[band_index],
                             [
-                                self.flux_Jy_errs[band_index],
-                                self.flux_Jy_errs[band_index],
+                                self.flux_errs[band_index],
+                                self.flux_errs[band_index],
                             ],
                             u.nJy,
                         )
@@ -1083,31 +1083,31 @@ class Photometry_rest(Photometry):
         emission_band_index = self.instrument.index_from_band_name(
             emission_band.band_name
         )
-        line_flux_Jy = funcs.convert_mag_units(
+        line_flux = funcs.convert_mag_units(
             emission_band.WavelengthCen,
-            self.flux_Jy[emission_band_index],
+            self.flux[emission_band_index],
             u.Jy,
         ).value
         if single_iter:
-            line_flux_Jy = np.array(line_flux_Jy) * u.Jy
+            line_flux = np.array(line_flux) * u.Jy
         else:
             # errors in Jy are symmetric, therefore take the mean
-            line_flux_Jy_errs = np.mean(
+            line_flux_errs = np.mean(
                 [
                     flux_err.value
                     for flux_err in funcs.convert_mag_err_units(
                         emission_band.WavelengthCen,
-                        self.flux_Jy[emission_band_index],
+                        self.flux[emission_band_index],
                         [
-                            self.flux_Jy_errs[emission_band_index],
-                            self.flux_Jy_errs[emission_band_index],
+                            self.flux_errs[emission_band_index],
+                            self.flux_errs[emission_band_index],
                         ],
                         u.Jy,
                     )
                 ]
             )
-            line_flux_Jy_chain = (
-                np.random.normal(line_flux_Jy, line_flux_Jy_errs, iters) * u.Jy
+            line_flux_chain = (
+                np.random.normal(line_flux, line_flux_errs, iters) * u.Jy
             )
         bandwidth = (
             emission_band.WavelengthUpper50 - emission_band.WavelengthLower50
@@ -1115,26 +1115,20 @@ class Photometry_rest(Photometry):
         if single_iter:
             if frame == "rest":
                 return (
-                    (
-                        (line_flux_Jy / cont_val).to(u.dimensionless_unscaled)
-                        - 1.0
-                    )
+                    ((line_flux / cont_val).to(u.dimensionless_unscaled) - 1.0)
                     * bandwidth
                     / (1.0 + self.z)
                 ).to(u.AA), cont_kwargs
             else:  # frame == "obs"
                 return (
-                    (
-                        (line_flux_Jy / cont_val).to(u.dimensionless_unscaled)
-                        - 1.0
-                    )
+                    ((line_flux / cont_val).to(u.dimensionless_unscaled) - 1.0)
                     * bandwidth
                 ).to(u.AA), cont_kwargs
         else:
             if frame == "rest":
-                calc_EW_func = lambda cont_flux_Jy: (
+                calc_EW_func = lambda cont_flux: (
                     (
-                        (line_flux_Jy_chain / cont_flux_Jy).to(
+                        (line_flux_chain / cont_flux).to(
                             u.dimensionless_unscaled
                         )
                         - 1.0
@@ -1143,9 +1137,9 @@ class Photometry_rest(Photometry):
                     / (1.0 + self.z)
                 ).to(u.AA)
             else:  # frame == "obs"
-                calc_EW_func = lambda cont_flux_Jy: (
+                calc_EW_func = lambda cont_flux: (
                     (
-                        (line_flux_Jy_chain / cont_flux_Jy).to(
+                        (line_flux_chain / cont_flux).to(
                             u.dimensionless_unscaled
                         )
                         - 1.0

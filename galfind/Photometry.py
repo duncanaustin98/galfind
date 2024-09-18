@@ -9,42 +9,48 @@ Created on Thu Jul 13 14:14:30 2023
 from __future__ import annotations
 
 from copy import deepcopy
-from typing import Union, TYPE_CHECKING
+from typing import Union, List, Dict, TYPE_CHECKING
+
+try:
+    from typing import Self, Type  # python 3.11+
+except ImportError:
+    from typing_extensions import Self, Type  # python > 3.7 AND python < 3.11
 
 if TYPE_CHECKING:
     from . import Instrument
     from astropy.utils.masked import Masked
 
+from abc import ABC
 import astropy.units as u
 import matplotlib.patheffects as pe
 import numpy as np
 
 from . import galfind_logger
 from . import useful_funcs_austind as funcs
+from . import Filter, Multiple_Filter
 
 
-class Photometry:
+class Photometry(ABC):
     def __init__(
-        self,
-        instrument: type[Instrument],
-        flux_Jy: Masked,
-        flux_Jy_errs,
-        depths,
+        self: Self,
+        instrument: Type[Instrument],
+        flux: Union[Masked, u.Quantity],
+        flux_errs: Union[Masked, u.Quantity],
+        depths: Union[Dict[str, float], List[float]],
     ):
         self.instrument = instrument
-        # check that the fluxes and errors are in the correct units
-        self.flux_Jy = flux_Jy
-        self.flux_Jy_errs = flux_Jy_errs
+        self.flux = flux
+        self.flux_errs = flux_errs
         self.depths = depths
         assert (
             len(self.instrument)
-            == len(self.flux_Jy)
-            == len(self.flux_Jy_errs)
+            == len(self.flux)
+            == len(self.flux_errs)
             == len(self.depths)
         )
 
     def __str__(
-        self,
+        self: Self,
         print_cls_name=True,
         print_instrument=False,
         print_fluxes=True,
@@ -65,14 +71,14 @@ class Photometry:
         # if print_fluxes:
         fluxes_str = [
             "%.1f ± %.1f nJy"
-            % (flux_Jy.to(u.nJy).value, flux_Jy_err.to(u.nJy).value)
-            for flux_Jy, flux_Jy_err in zip(
-                self.flux_Jy.filled(fill_value=np.nan),
-                self.flux_Jy_errs.filled(fill_value=np.nan),
+            % (flux.to(u.nJy).value, flux_err.to(u.nJy).value)
+            for flux, flux_err in zip(
+                self.flux.filled(fill_value=np.nan),
+                self.flux_errs.filled(fill_value=np.nan),
             )
         ]
         output_str += f"FLUXES: {fluxes_str}\n"
-        output_str += f"MAGS: {[np.round(mag, 2) for mag in self.flux_Jy.filled(fill_value = np.nan).to(u.ABmag).value]}\n"
+        output_str += f"MAGS: {[np.round(mag, 2) for mag in self.flux.filled(fill_value = np.nan).to(u.ABmag).value]}\n"
         # if print_depths:
         output_str += (
             f"DEPTHS: {[np.round(depth, 2) for depth in self.depths.value]}\n"
@@ -84,9 +90,9 @@ class Photometry:
 
     def __getitem__(self, i):
         if type(i) == int:
-            return self.flux_Jy[i]
+            return self.flux[i]
         elif type(i) == str:
-            return self.flux_Jy[self.instrument.index_from_band(i)]
+            return self.flux[self.instrument.index_from_band(i)]
         else:
             raise (
                 TypeError(
@@ -95,7 +101,7 @@ class Photometry:
             )
 
     def __len__(self):
-        return len(self.flux_Jy)
+        return len(self.flux)
 
     def __getattr__(
         self, property_name: str, origin: Union[str, dict] = "phot"
@@ -130,18 +136,18 @@ class Photometry:
                     }
                     if property_name in ["flux_nu", "flux_lambda", "mag"]:
                         return funcs.convert_mag_units(
-                            wav, self.flux_Jy[index], units[property_name]
+                            wav, self.flux[index], units[property_name]
                         )
                     elif property_name in [
                         "flux_nu_errs",
                         "flux_lambda_errs",
                         "mag_errs",
                     ]:
-                        flux = self.flux_Jy[index]
+                        flux = self.flux[index]
                         return funcs.convert_mag_err_units(
                             wav,
                             flux,
-                            self.flux_Jy_errs[index],
+                            self.flux_errs[index],
                             units[property_name],
                         )
                     elif property_name in [
@@ -149,11 +155,11 @@ class Photometry:
                         "flux_lambda_l1",
                         "mag_l1",
                     ]:
-                        flux = self.flux_Jy[index]
+                        flux = self.flux[index]
                         return funcs.convert_mag_err_units(
                             wav,
                             flux,
-                            self.flux_Jy_errs[index],
+                            self.flux_errs[index],
                             units[property_name],
                         )[0]
                     elif property_name in [
@@ -161,11 +167,11 @@ class Photometry:
                         "flux_lambda_u1",
                         "mag_u1",
                     ]:
-                        flux = self.flux_Jy[index]
+                        flux = self.flux[index]
                         return funcs.convert_mag_err_units(
                             wav,
                             flux,
-                            self.flux_Jy_errs[index],
+                            self.flux_errs[index],
                             units[property_name],
                         )[1]
                     else:
@@ -194,63 +200,64 @@ class Photometry:
     @property
     def wav(self):
         return self.instrument.band_wavelengths
-        # return np.array([self.instrument.band_wavelengths[band].value for band in self.instrument.band_names]) * u.Angstrom
 
-    @classmethod
-    def from_fits_cat(cls, fits_cat_row, instrument, cat_creator):
-        fluxes, flux_errs = cat_creator.load_photometry(
-            fits_cat_row, instrument.band_names
-        )
-        try:
-            # local depths only currently works for one aperture diameter
-            loc_depths = np.array(
-                [
-                    fits_cat_row[f"loc_depth_{band_name}"].T[
-                        cat_creator.aper_diam_index
-                    ]
-                    for band_name in instrument.band_names
-                ]
-            )
-        except:
-            # print("local depths not loaded")
-            loc_depths = None
-        return cls(instrument, fluxes[0], flux_errs[0], loc_depths)
+    # @classmethod
+    # def from_fits_cat(cls, fits_cat_row, instrument, cat_creator):
+    #     fluxes, flux_errs = cat_creator.load_photometry(
+    #         fits_cat_row, instrument.band_names
+    #     )
+    #     try:
+    #         # local depths only currently works for one aperture diameter
+    #         loc_depths = np.array(
+    #             [
+    #                 fits_cat_row[f"loc_depth_{band_name}"].T[
+    #                     cat_creator.aper_diam_index
+    #                 ]
+    #                 for band_name in instrument.band_names
+    #             ]
+    #         )
+    #     except:
+    #         # print("local depths not loaded")
+    #         loc_depths = None
+    #     return cls(instrument, fluxes[0], flux_errs[0], loc_depths)
 
-    def scatter_phot(self, n_scatter=1):
-        assert self.flux_Jy.unit != u.ABmag, galfind_logger.critical(
-            f"{self.flux_Jy.unit=} == 'ABmag'"
-        )
-        phot_matrix = np.array(
-            [
-                np.random.normal(flux, err, n_scatter)
-                for flux, err in zip(
-                    self.flux_Jy.value, self.flux_Jy_errs.value
-                )
-            ]
-        )
-        return [
-            self.__class__(
-                self.instrument,
-                phot_matrix[:, i] * self.flux_Jy.unit,
-                self.flux_Jy_errs,
-                self.depths,
-            )
-            for i in range(n_scatter)
-        ]
+    def __add__(
+        self: Self,
+        other: Union[
+            str,
+            Filter,
+            Multiple_Filter,
+            Self,
+            List[Union[str, Filter, Multiple_Filter, Self]],
+        ],
+    ) -> Self:
+        pass
 
-    def crop_phot(self, indices) -> None:
-        indices = np.array(indices).astype(int)
-        for index in reversed(indices):
-            self.instrument -= self.instrument[index]
-        self.flux_Jy = np.delete(self.flux_Jy, indices)
-        self.flux_Jy_errs = np.delete(self.flux_Jy_errs, indices)
-        self.depths = np.delete(self.depths, indices)
+    def __sub__(
+        self: Self,
+        other: Union[
+            str,
+            Filter,
+            Multiple_Filter,
+            Self,
+            List[Union[str, Filter, Multiple_Filter, Self]],
+        ],
+    ) -> Self:
+        pass
 
-    def plot_phot(
-        self,
+    # def crop_phot(self, indices) -> None:
+    #     indices = np.array(indices).astype(int)
+    #     for index in reversed(indices):
+    #         self.instrument -= self.instrument[index]
+    #     self.flux = np.delete(self.flux, indices)
+    #     self.flux_errs = np.delete(self.flux_errs, indices)
+    #     self.depths = np.delete(self.depths, indices)
+
+    def plot(
+        self: Self,
         ax,
-        wav_units=u.AA,
-        mag_units=u.Jy,
+        wav_units: u.Quantity = u.AA,
+        mag_units: Union[u.Quantity, u.Magnitude] = u.Jy,
         plot_errs={"x": True, "y": True},
         annotate=True,
         uplim_sigma=2.0,
@@ -268,12 +275,10 @@ class Photometry:
         return_extra=False,
     ):
         wavs_to_plot = funcs.convert_wav_units(self.wav, wav_units).value
-        mags_to_plot = funcs.convert_mag_units(
-            self.wav, self.flux_Jy, mag_units
-        )
+        mags_to_plot = funcs.convert_mag_units(self.wav, self.flux, mag_units)
 
         if uplim_sigma == None:
-            uplims = list(np.full(len(self.flux_Jy), False))
+            uplims = list(np.full(len(self.flux), False))
         else:
             # work out optimal size of error bar in terms of sigma
             if mag_units == u.ABmag:
@@ -315,8 +320,8 @@ class Photometry:
         if plot_errs["y"]:
             mag_errs_new_units = funcs.convert_mag_err_units(
                 self.wav,
-                self.flux_Jy,
-                [self.flux_Jy_errs, self.flux_Jy_errs],
+                self.flux,
+                self.flux_errs,
                 mag_units,
             )
             # update with upper limit errors
@@ -432,20 +437,20 @@ class Photometry:
             return plot
 
 
-class Multiple_Photometry:
+class Multiple_Photometry(ABC):
     def __init__(
-        self, instrument_arr, flux_Jy_arr, flux_Jy_errs_arr, loc_depths_arr
+        self, instrument_arr, flux_arr, flux_errs_arr, loc_depths_arr
     ):
         self.phot_arr = [
-            Photometry(instrument, flux_Jy, flux_Jy_errs, loc_depths)
-            for instrument, flux_Jy, flux_Jy_errs, loc_depths in zip(
-                instrument_arr, flux_Jy_arr, flux_Jy_errs_arr, loc_depths_arr
+            Photometry(instrument, flux, flux_errs, loc_depths)
+            for instrument, flux, flux_errs, loc_depths in zip(
+                instrument_arr, flux_arr, flux_errs_arr, loc_depths_arr
             )
         ]
 
     @classmethod
     def from_fits_cat(cls, fits_cat, instrument, cat_creator):
-        flux_Jy_arr, flux_Jy_errs_arr, gal_bands = cat_creator.load_photometry(
+        flux_arr, flux_errs_arr, gal_bands = cat_creator.load_photometry(
             fits_cat, instrument.band_names
         )
         # local depths not yet loaded in
@@ -458,69 +463,85 @@ class Multiple_Photometry:
             )
             for bands in gal_bands
         ]
-        return cls(instrument_arr, flux_Jy_arr, flux_Jy_errs_arr, depths_arr)
+        return cls(instrument_arr, flux_arr, flux_errs_arr, depths_arr)
 
 
 class Mock_Photometry(Photometry):
     def __init__(
-        self, instrument, flux_Jy, depths, min_flux_pc_err
+        self, instrument, flux, depths, min_flux_pc_err
     ):  # these depths should be 5σ and in units of ABmag
-        assert len(flux_Jy) == len(depths)
+        assert len(flux) == len(depths)
         # add astropy units of ABmag if depths are not already
         try:
             assert depths.unit == u.ABmag
         except:
             depths *= u.ABmag
         # calculate errors from ABmag depths
-        flux_Jy_errs = self.flux_errs_from_depths(
-            flux_Jy, depths, min_flux_pc_err
-        )
+        flux_errs = self.flux_errs_from_depths(flux, depths, min_flux_pc_err)
         self.min_flux_pc_err = min_flux_pc_err
-        super().__init__(instrument, flux_Jy, flux_Jy_errs, depths)
+        super().__init__(instrument, flux, flux_errs, depths)
 
     @staticmethod
-    def flux_errs_from_depths(flux_Jy, depths, min_flux_pc_err):
+    def flux_errs_from_depths(flux, depths, min_flux_pc_err):
         # calculate 1σ depths to Jy
         one_sig_depths_Jy = depths.to(u.Jy) / 5
         # apply min_flux_pc_err criteria
-        flux_Jy_errs = (
+        flux_errs = (
             np.array(
                 [
                     depth
                     if depth > flux * min_flux_pc_err / 100
                     else flux * min_flux_pc_err / 100
-                    for flux, depth in zip(
-                        flux_Jy.value, one_sig_depths_Jy.value
-                    )
+                    for flux, depth in zip(flux.value, one_sig_depths_Jy.value)
                 ]
             )
             * u.Jy
         )
-        return flux_Jy_errs
+        return flux_errs
 
-    def scatter_phot(self, size=1):
-        scattered_fluxes = np.zeros((len(self.flux_Jy), size))
-        for i, (flux, err) in enumerate(zip(self.flux_Jy, self.flux_Jy_errs)):
-            scattered_fluxes[i] = np.random.normal(
-                flux.value, err.value, size=size
+    def scatter(self, n_scatter: int = 1):
+        assert self.flux.unit != u.ABmag, galfind_logger.critical(
+            f"{self.flux.unit=} == 'ABmag'"
+        )
+        phot_matrix = np.array(
+            [
+                np.random.normal(flux, err, n_scatter)
+                for flux, err in zip(self.flux.value, self.flux_errs.value)
+            ]
+        )
+        return [
+            self.__class__(
+                self.instrument,
+                phot_matrix[:, i] * self.flux.unit,
+                self.flux_errs,
+                self.depths,
             )
-        if size == 1:
-            scattered_fluxes = scattered_fluxes.flatten()
-            self.scattered_phot = [
-                Mock_Photometry(
-                    self.instrument,
-                    scattered_fluxes * u.Jy,
-                    self.depths,
-                    self.min_flux_pc_err,
-                )
-            ]
-        else:
-            self.scattered_phot = [
-                Mock_Photometry(
-                    self.instrument,
-                    scattered_fluxes.T[i] * u.Jy,
-                    self.depths,
-                    self.min_flux_pc_err,
-                )
-                for i in range(size)
-            ]
+            for i in range(n_scatter)
+        ]
+
+    # def scatter(self, size=1):
+    #     scattered_fluxes = np.zeros((len(self.flux), size))
+    #     for i, (flux, err) in enumerate(zip(self.flux, self.flux_errs)):
+    #         scattered_fluxes[i] = np.random.normal(
+    #             flux.value, err.value, size=size
+    #         )
+    #     if size == 1:
+    #         scattered_fluxes = scattered_fluxes.flatten()
+    #         self.scattered_phot = [
+    #             Mock_Photometry(
+    #                 self.instrument,
+    #                 scattered_fluxes * u.Jy,
+    #                 self.depths,
+    #                 self.min_flux_pc_err,
+    #             )
+    #         ]
+    #     else:
+    #         self.scattered_phot = [
+    #             Mock_Photometry(
+    #                 self.instrument,
+    #                 scattered_fluxes.T[i] * u.Jy,
+    #                 self.depths,
+    #                 self.min_flux_pc_err,
+    #             )
+    #             for i in range(size)
+    #         ]

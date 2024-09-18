@@ -32,7 +32,11 @@ from astropy.visualization import (
 )
 from mpl_toolkits.axes_grid1.anchored_artists import AnchoredSizeBar
 from tqdm import tqdm
-from typing_extensions import Self
+
+try:
+    from typing import Self, Type  # python 3.11+
+except ImportError:
+    from typing_extensions import Self, Type  # python > 3.7 AND python < 3.11
 
 from . import (
     PDF,
@@ -424,7 +428,7 @@ class Galaxy:
         # Work out how many bands we have to plot.
         bands = self.phot.instrument.band_names
         for i, band in enumerate(bands):
-            if self.phot.flux_Jy.mask[i] and hide_masked_cutouts:
+            if self.phot.flux.mask[i] and hide_masked_cutouts:
                 bands.remove(band)
 
         if len(bands) <= 8:
@@ -666,7 +670,7 @@ class Galaxy:
                 self.phot.SED_results[key].SED.create_mock_phot(
                     self.phot.instrument, depths=self.phot.depths
                 )
-                self.phot.SED_results[key].SED.mock_phot.plot_phot(
+                self.phot.SED_results[key].SED.mock_phot.plot(
                     phot_ax,
                     wav_unit,
                     flux_unit,
@@ -679,7 +683,7 @@ class Galaxy:
                     colour=SED_colours[key],
                 )
                 # ax_photo.scatter(band_wavs_lowz, band_mags_lowz, edgecolors=eazy_color_lowz, marker='o', facecolor='none', s=80, zorder=4.5)
-            self.phot.plot_phot(
+            self.phot.plot(
                 phot_ax,
                 wav_unit,
                 flux_unit,
@@ -782,7 +786,7 @@ class Galaxy:
                     self.selection_flags[selection_name] = False
                 return self, selection_name
             # extract mask
-            mask = self.phot.flux_Jy.mask
+            mask = self.phot.flux.mask
             n_unmasked_bands = len([val for val in mask if val == False])
             if n_unmasked_bands >= min_bands:
                 if update:
@@ -812,7 +816,7 @@ class Galaxy:
     #     else:
     #         # extract band IDs belonging to the input instrument name
     #         band_indices = np.array([i for i, band_name in enumerate(self.phot.instrument.band_names) if band_name in band_names])
-    #         mask = self.phot.flux_Jy.mask[band_indices]
+    #         mask = self.phot.flux.mask[band_indices]
     #         if all(mask_band == False for mask_band in mask):
     #             if update:
     #                 self.selection_flags[selection_name] = True
@@ -848,7 +852,7 @@ class Galaxy:
                 if update:
                     self.selection_flags[selection_name] = False
                 return self, selection_name
-            mask = self.phot.flux_Jy.mask[band_indices]
+            mask = self.phot.flux.mask[band_indices]
             if all(mask_band == False for mask_band in mask):
                 if update:
                     self.selection_flags[selection_name] = True
@@ -982,7 +986,7 @@ class Galaxy:
             # extract bands, SNRs, mask and first Lya non-detect band
             bands = self.phot.instrument.band_names
             SNRs = self.phot.SNR
-            mask = self.phot.flux_Jy.mask
+            mask = self.phot.flux.mask
             assert len(bands) == len(SNRs) == len(mask)
             first_Lya_non_detect_band = self.phot.SED_results[
                 SED_fit_params["code"].label_from_SED_fit_params(
@@ -1070,7 +1074,7 @@ class Galaxy:
             bands_detect = np.array(bands[first_Lya_detect_index:])
             SNR_detect = np.array(self.phot.SNR[first_Lya_detect_index:])
             mask_detect = np.array(
-                self.phot.flux_Jy.mask[first_Lya_detect_index:]
+                self.phot.flux.mask[first_Lya_detect_index:]
             )
             # option as to whether to exclude potentially shallower medium/narrow bands in this calculation
             if widebands_only:
@@ -1164,7 +1168,7 @@ class Galaxy:
                 SNRs = self.phot.SNR[
                     first_Lya_detect_band : first_Lya_non_detect_index + 1
                 ]
-                mask_bands = self.phot.flux_Jy.mask[
+                mask_bands = self.phot.flux.mask[
                     first_Lya_detect_band : first_Lya_non_detect_index + 1
                 ]
             if len(SNRs) == 0:
@@ -1247,7 +1251,7 @@ class Galaxy:
                     self.selection_flags[selection_name] = False
                 return self, selection_name
             SNR = self.phot.SNR[band_index]
-            mask = self.phot.flux_Jy.mask[band_index]
+            mask = self.phot.flux.mask[band_index]
             # passes if masked
             if (
                 mask
@@ -1323,7 +1327,7 @@ class Galaxy:
             # if there are no included bands or the closest band is masked
             if (
                 len(included_bands) == 0
-                or self.phot.flux_Jy.mask[closest_band_index]
+                or self.phot.flux.mask[closest_band_index]
             ):
                 if update:
                     self.selection_flags[selection_name] = False
@@ -1444,7 +1448,7 @@ class Galaxy:
             # if there are no included bands or the closest band is masked
             if (
                 len(included_bands) == 0
-                or self.phot.flux_Jy.mask[closest_band_index]
+                or self.phot.flux.mask[closest_band_index]
             ):
                 if update:
                     self.selection_flags[selection_name] = False
@@ -1492,16 +1496,16 @@ class Galaxy:
             # determine observed magnitude
             flux_obs_err = funcs.convert_mag_err_units(
                 central_wav,
-                self.phot.flux_Jy[closest_band_index],
+                self.phot.flux[closest_band_index],
                 [
-                    self.phot.flux_Jy_errs[closest_band_index].value,
-                    self.phot.flux_Jy_errs[closest_band_index].value,
+                    self.phot.flux_errs[closest_band_index].value,
+                    self.phot.flux_errs[closest_band_index].value,
                 ]
-                * self.phot.flux_Jy_errs.unit,
+                * self.phot.flux_errs.unit,
                 u.Jy,
             )
             flux_obs = funcs.convert_mag_units(
-                central_wav, self.phot.flux_Jy[closest_band_index], u.Jy
+                central_wav, self.phot.flux[closest_band_index], u.Jy
             )
             snr_band = abs((flux_obs - flux_cont).value) / np.mean(
                 flux_obs_err.value
@@ -1570,12 +1574,12 @@ class Galaxy:
             colour = (
                 funcs.convert_mag_errs(
                     self.phot.instrument[band_indices[0]].WavelengthCen,
-                    self.phot.flux_Jy[band_indices[0]],
+                    self.phot.flux[band_indices[0]],
                     u.ABmag,
                 )
                 - funcs.convert_mag_errs(
                     self.phot.instrument[band_indices[1]].WavelengthCen,
-                    self.phot.flux_Jy[band_indices[1]],
+                    self.phot.flux[band_indices[1]],
                     u.ABmag,
                 )
             ).value
@@ -1720,7 +1724,7 @@ class Galaxy:
             n_bands = len(
                 [
                     mask_band
-                    for mask_band in self.phot.flux_Jy.mask
+                    for mask_band in self.phot.flux.mask
                     if not mask_band
                 ]
             )  # number of unmasked bands for galaxy
@@ -2353,10 +2357,10 @@ class Galaxy:
                     test_phot_obs = Photometry_obs(
                         test_mock_phot.instrument,
                         Masked(
-                            test_mock_phot.flux_Jy,
+                            test_mock_phot.flux,
                             mask=np.full(len(data.instrument), False),
                         ),
-                        test_mock_phot.flux_Jy,
+                        test_mock_phot.flux,
                         self.phot.aper_diam,
                         test_mock_phot.min_flux_pc_err,
                         test_mock_phot.depths,

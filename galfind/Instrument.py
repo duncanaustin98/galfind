@@ -24,22 +24,23 @@ except ImportError:
 from . import NIRCam_aper_corr, config, galfind_logger
 from . import useful_funcs_austind as funcs
 
+
 class Facility(ABC):
     # Facility class to store the name of the facility
     # and other facility-specific attributes/methods
 
     def __init__(self) -> None:
-        self.name = self.__class__.__name__
+        pass
 
     def __str__(self) -> str:
-        return self.name
+        return self.__class__.__name__
 
     def __repr__(self) -> str:
-        return f"{self.__class__.__name__}({self.name})"
+        return f"{self.__class__.__name__}()"
 
     def __eq__(self, other: Type[Self]) -> bool:
         if isinstance(other, Facility):
-            return self.name == other.name
+            return self.__class__.__name__ == other.__class__.__name__
         else:
             return False
 
@@ -56,9 +57,6 @@ class Facility(ABC):
         for key, value in self.__dict__.items():
             setattr(result, key, deepcopy(value, memo))
         return result
-
-    def __del__(self) -> None:
-        self.name = None
 
     @abstractmethod
     def make_PSF_model(self, band: Union[str, Filter]) -> PSF:
@@ -76,9 +74,11 @@ class JWST(Facility, funcs.Singleton):
 
 
 class Instrument(ABC):
-
-    def __init__(self: Type[Self], facility: Union[str, Facility], filter_names: List[str]) -> None:
-        self.name = self.__class__.__name__
+    def __init__(
+        self: Type[Self],
+        facility: Union[str, Facility],
+        filter_names: List[str],
+    ) -> None:
         if isinstance(facility, str):
             self.facility = globals()[facility]()
             assert isinstance(self.facility, tuple(Facility.__subclasses__()))
@@ -87,14 +87,34 @@ class Instrument(ABC):
         self.filter_names = filter_names
 
     def __str__(self) -> str:
-        return f"{self.facility.name}/{self.name}"
+        # print filter_names?
+        output_str = funcs.line_sep
+        output_str += (
+            f"{self.facility.__class__.__name__}/{self.__class__.__name__}\n"
+        )
+        if len(self.facility.__dict__) > 0 or len(self.__dict__) > 0:
+            output_str += funcs.line_sep
+        if len(self.__dict__) > 0:
+            for key, value in self.facility.__dict__.items():
+                output_str += f"{key}: {value}\n"
+            output_str += funcs.band_sep
+        if len(self.facility.__dict__) > 0:
+            output_str += f"FACILITY:\n"
+            output_str += funcs.band_sep
+            for key, value in self.facility.__dict__.items():
+                output_str += f"{key}: {value}\n"
+        output_str += funcs.line_sep
+        return output_str
 
     def __repr__(self) -> str:
-        return f"{self.__class__.__name__}({self.name}, {self.facility.name})"
+        return f"{self.__class__.__name__}()"
 
     def __eq__(self, other: Type[Self]) -> bool:
         if isinstance(other, Instrument):
-            return self.name == other.name and self.facility == other.facility
+            return (
+                self.facility == other.facility
+                and self.__class__.__name__ == other.__class__.__name__
+            )
         else:
             return False
 
@@ -111,10 +131,6 @@ class Instrument(ABC):
         for key, value in self.__dict__.items():
             setattr(result, key, deepcopy(value, memo))
         return result
-
-    def __del__(self) -> None:
-        self.name = None
-        self.facility = None
 
     def make_PSF(
         self, data: Data, band: Union[str, Filter], method: str
@@ -148,13 +164,37 @@ class Instrument(ABC):
 
 
 class NIRCam(Instrument, funcs.Singleton):
-
     def __init__(self) -> None:
         NIRCam_band_names = [
-            "F070W", "F090W", "F115W", "F140M", "F150W", "F162M", "F164N", "F150W2",
-            "F182M", "F187N", "F200W", "F210M", "F212N", "F250M", "F277W", "F300M",
-            "F323N", "F322W2","F335M", "F356W", "F360M", "F405N", "F410M", "F430M",
-            "F444W", "F460M", "F466N", "F470N", "F480M",
+            "F070W",
+            "F090W",
+            "F115W",
+            "F140M",
+            "F150W",
+            "F162M",
+            "F164N",
+            "F150W2",
+            "F182M",
+            "F187N",
+            "F200W",
+            "F210M",
+            "F212N",
+            "F250M",
+            "F277W",
+            "F300M",
+            "F323N",
+            "F322W2",
+            "F335M",
+            "F356W",
+            "F360M",
+            "F405N",
+            "F410M",
+            "F430M",
+            "F444W",
+            "F460M",
+            "F466N",
+            "F470N",
+            "F480M",
         ]
         super().__init__("JWST", NIRCam_band_names)
 
@@ -166,11 +206,21 @@ class NIRCam(Instrument, funcs.Singleton):
 
 
 class MIRI(Instrument, funcs.Singleton):
-
     def __init__(self) -> None:
         MIRI_band_names = [
-            "F560W", "F770W", "F1000W", "F1065C", "F1140C", "F1130W", "F1280W",
-            "F1500W", "F1550C", "F1800W", "F2100W", "F2300C", "F2550W",
+            "F560W",
+            "F770W",
+            "F1000W",
+            "F1065C",
+            "F1140C",
+            "F1130W",
+            "F1280W",
+            "F1500W",
+            "F1550C",
+            "F1800W",
+            "F2100W",
+            "F2300C",
+            "F2550W",
         ]
         super().__init__("JWST", MIRI_band_names)
 
@@ -182,14 +232,39 @@ class MIRI(Instrument, funcs.Singleton):
 
 
 class ACS_WFC(Instrument, funcs.Singleton):
-
     def __init__(self) -> None:
         ACS_WFC_band_names = [
-            'FR388N', 'FR423N', 'F435W', 'FR459M', 'FR462N', 'F475W', 
-            'F502N', 'FR505N', 'F555W', 'FR551N', 'F550M', 'F606W', 
-            'FR601N', 'F625W', 'FR647M', 'FR656N', 'F658N', 'F660N', 
-            'FR716N', 'POL_UV', 'G800L', 'POL_V', 'F775W', 'FR782N', 
-            'F814W', 'FR853N', 'F892N', 'F850LP', 'FR914M', 'FR931N', 'FR1016N'
+            "FR388N",
+            "FR423N",
+            "F435W",
+            "FR459M",
+            "FR462N",
+            "F475W",
+            "F502N",
+            "FR505N",
+            "F555W",
+            "FR551N",
+            "F550M",
+            "F606W",
+            "FR601N",
+            "F625W",
+            "FR647M",
+            "FR656N",
+            "F658N",
+            "F660N",
+            "FR716N",
+            "POL_UV",
+            "G800L",
+            "POL_V",
+            "F775W",
+            "FR782N",
+            "F814W",
+            "FR853N",
+            "F892N",
+            "F850LP",
+            "FR914M",
+            "FR931N",
+            "FR1016N",
         ]
         super().__init__("HST", ACS_WFC_band_names)
 
@@ -201,12 +276,25 @@ class ACS_WFC(Instrument, funcs.Singleton):
 
 
 class WFC3_IR(Instrument, funcs.Singleton):
-
     def __init__(self) -> None:
         WFC3_IR_band_names = [
-            'F098M', 'G102', 'F105W', 'F110W', 'F125W', 'F126N', 
-            'F127M', 'F128N', 'F130N', 'F132N', 'F139M', 'F140W', 
-            'G141', 'F153M', 'F160W', 'F164N', 'F167N'
+            "F098M",
+            "G102",
+            "F105W",
+            "F110W",
+            "F125W",
+            "F126N",
+            "F127M",
+            "F128N",
+            "F130N",
+            "F132N",
+            "F139M",
+            "F140W",
+            "G141",
+            "F153M",
+            "F160W",
+            "F164N",
+            "F167N",
         ]
         super().__init__("HST", WFC3_IR_band_names)
 
@@ -215,6 +303,7 @@ class WFC3_IR(Instrument, funcs.Singleton):
 
     def make_empirical_PSF(self, data: Data, band: Union[str, Filter]) -> PSF:
         pass
+
 
 # Instrument attributes
 

@@ -9,7 +9,16 @@ Created on Mon Jul 17 15:03:20 2023
 # Photometry_obs.py
 import inspect
 import time
-from typing import Union
+
+try:
+    from typing import Self, Type  # python 3.11+
+except ImportError:
+    from typing_extensions import Self, Type  # python > 3.7 AND python < 3.11
+from typing import Union, List, Dict, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from . import Instrument
+    from astropy.utils.masked import Masked
 
 import astropy.units as u
 import matplotlib.patheffects as pe
@@ -25,13 +34,13 @@ from . import galfind_logger
 
 class Photometry_obs(Photometry):
     def __init__(
-        self,
-        instrument,
-        flux_Jy,
-        flux_Jy_errs,
+        self: Self,
+        instrument: type[Instrument],
+        flux: Union[Masked, u.Quantity],
+        flux_errs: Union[Masked, u.Quantity],
         aper_diam: u.Quantity,
         min_flux_pc_err: Union[int, float],
-        loc_depths,
+        loc_depths: Union[Dict[str, float], List[float]],
         SED_results: dict = {},
         timed: bool = False,
     ):
@@ -45,7 +54,7 @@ class Photometry_obs(Photometry):
         self.aper_corrs = instrument.get_aper_corrs(self.aper_diam)
         if timed:
             mid_end = time.time()
-        super().__init__(instrument, flux_Jy, flux_Jy_errs, loc_depths)
+        super().__init__(instrument, flux, flux_errs, loc_depths)
         if timed:
             end = time.time()
             print(mid - start, mid_end - mid, end - mid_end)
@@ -154,12 +163,12 @@ class Photometry_obs(Photometry):
     @property
     def SNR(self):
         return [
-            (flux_Jy * 10 ** (aper_corr / -2.5)) * 5 / depth
-            if flux_Jy > 0.0
-            else flux_Jy * 5 / depth
-            for aper_corr, flux_Jy, depth in zip(
+            (flux * 10 ** (aper_corr / -2.5)) * 5 / depth
+            if flux > 0.0
+            else flux * 5 / depth
+            for aper_corr, flux, depth in zip(
                 self.aper_corrs,
-                self.flux_Jy.filled(fill_value=np.nan).to(u.Jy).value,
+                self.flux.filled(fill_value=np.nan).to(u.Jy).value,
                 self.depths.to(u.Jy).value,
             )
         ]
@@ -203,8 +212,8 @@ class Photometry_obs(Photometry):
     ):
         return cls(
             phot.instrument,
-            phot.flux_Jy,
-            phot.flux_Jy_errs,
+            phot.flux,
+            phot.flux_errs,
             aper_diam,
             min_flux_pc_err,
             phot.depths,
@@ -218,10 +227,10 @@ class Photometry_obs(Photometry):
             self.SED_results = gal_SED_results
 
     def update_mask(self, mask, update_phot_rest: bool = False):
-        assert len(self.flux_Jy) == len(mask)
-        assert len(self.flux_Jy_errs) == len(mask)
-        self.flux_Jy.mask = mask
-        self.flux_Jy_errs.mask = mask
+        assert len(self.flux) == len(mask)
+        assert len(self.flux_errs) == len(mask)
+        self.flux.mask = mask
+        self.flux_errs.mask = mask
         return self
 
     def get_SED_fit_params_arr(self, code) -> list:
@@ -265,7 +274,7 @@ class Photometry_obs(Photometry):
                 band_name: (
                     self.FLUX_AUTO[band_name]
                     / (
-                        self.flux_Jy[i]
+                        self.flux[i]
                         * funcs.mag_to_flux_ratio(-aper_corrs[band_name])
                     )
                 )
@@ -428,7 +437,7 @@ class Photometry_obs(Photometry):
         # return dict of {origin: [property for property in gal[origin]]}
         return ext_src_property_dict
 
-    def plot_phot(
+    def plot(
         self,
         ax,
         wav_units: Union[str, u.Unit] = u.AA,
@@ -449,7 +458,7 @@ class Photometry_obs(Photometry):
         colour: str = "black",
         label: str = "Photometry",
     ):
-        plot, wavs_to_plot, mags_to_plot, yerr, uplims = super().plot_phot(
+        plot, wavs_to_plot, mags_to_plot, yerr, uplims = super().plot(
             ax,
             wav_units,
             mag_units,
@@ -558,7 +567,7 @@ class Photometry_obs(Photometry):
     #     index = self.instrument.band_from_index(band)
     #     # local depth in units of Jy
     #     loc_depth_Jy = self.depths[index].to(u.Jy) / 5
-    #     detection_Jy = self.flux_Jy[index].to(u.Jy)
+    #     detection_Jy = self.flux[index].to(u.Jy)
     #     sigma_detection = (detection_Jy / loc_depth_Jy).value
     #     if sigma_detection >= sigma_detect_thresh:
     #         return True
@@ -573,8 +582,8 @@ class Multiple_Photometry_obs:
     def __init__(
         self,
         instrument_arr,
-        flux_Jy_arr,
-        flux_Jy_errs_arr,
+        flux_arr,
+        flux_errs_arr,
         aper_diam,
         min_flux_pc_err,
         loc_depths_arr,
@@ -583,23 +592,23 @@ class Multiple_Photometry_obs:
     ):
         # force SED_results_arr to have the same len as the number of input fluxes
         if SED_results_arr == []:
-            SED_results_arr = np.full(len(flux_Jy_arr), {})
+            SED_results_arr = np.full(len(flux_arr), {})
         if timed:
             self.phot_obs_arr = [
                 Photometry_obs(
                     instrument,
-                    flux_Jy,
-                    flux_Jy_errs,
+                    flux,
+                    flux_errs,
                     aper_diam,
                     min_flux_pc_err,
                     loc_depths,
                     SED_results,
                 )
-                for instrument, flux_Jy, flux_Jy_errs, loc_depths, SED_results in tqdm(
+                for instrument, flux, flux_errs, loc_depths, SED_results in tqdm(
                     zip(
                         instrument_arr,
-                        flux_Jy_arr,
-                        flux_Jy_errs_arr,
+                        flux_arr,
+                        flux_errs_arr,
                         loc_depths_arr,
                         SED_results_arr,
                     ),
@@ -611,17 +620,17 @@ class Multiple_Photometry_obs:
             self.phot_obs_arr = [
                 Photometry_obs(
                     instrument,
-                    flux_Jy,
-                    flux_Jy_errs,
+                    flux,
+                    flux_errs,
                     aper_diam,
                     min_flux_pc_err,
                     loc_depths,
                     SED_results,
                 )
-                for instrument, flux_Jy, flux_Jy_errs, loc_depths, SED_results in zip(
+                for instrument, flux, flux_errs, loc_depths, SED_results in zip(
                     instrument_arr,
-                    flux_Jy_arr,
-                    flux_Jy_errs_arr,
+                    flux_arr,
+                    flux_errs_arr,
                     loc_depths_arr,
                     SED_results_arr,
                 )
@@ -653,10 +662,8 @@ class Multiple_Photometry_obs:
     def from_fits_cat(
         cls, fits_cat, instrument, cat_creator, SED_fit_params_arr, timed=False
     ):
-        flux_Jy_arr, flux_Jy_errs_arr, gal_band_mask = (
-            cat_creator.load_photometry(
-                fits_cat, instrument.band_names, timed=timed
-            )
+        flux_arr, flux_errs_arr, gal_band_mask = cat_creator.load_photometry(
+            fits_cat, instrument.band_names, timed=timed
         )
         depths_arr = cat_creator.load_depths(
             fits_cat, instrument.band_names, gal_band_mask, timed=timed
@@ -672,11 +679,11 @@ class Multiple_Photometry_obs:
                 instrument=instrument,
             ).SED_results
         else:
-            SED_results_arr = np.full(len(flux_Jy_arr), {})
+            SED_results_arr = np.full(len(flux_arr), {})
         return cls(
             instrument_arr,
-            flux_Jy_arr,
-            flux_Jy_errs_arr,
+            flux_arr,
+            flux_errs_arr,
             cat_creator.aper_diam,
             cat_creator.min_flux_pc_err,
             depths_arr,

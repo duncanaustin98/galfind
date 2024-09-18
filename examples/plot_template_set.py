@@ -64,7 +64,7 @@ for i in range(12, 15):
         },
     )
     sed_obj_obs.create_mock_phot(instrument, depths, min_pc_err)
-    sed_obj_obs.mock_photometry.plot_phot(
+    sed_obj_obs.mock_photometry.plot(
         ax,
         u.um,
         u.Jy,
