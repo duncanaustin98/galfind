@@ -4,7 +4,7 @@ from __future__ import annotations
 from typing import NoReturn, Union, List, TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from . import Data
+    from . import Band_Data, Band_Data_Base, Data
     from . import PSF
     from . import Filter
 
@@ -77,14 +77,14 @@ class Instrument(ABC):
     def __init__(
         self: Type[Self],
         facility: Union[str, Facility],
-        filter_names: List[str],
+        filt_names: List[str],
     ) -> None:
         if isinstance(facility, str):
             self.facility = globals()[facility]()
             assert isinstance(self.facility, tuple(Facility.__subclasses__()))
         else:
             self.facility = facility
-        self.filter_names = filter_names
+        self.filt_names = filt_names
 
     def __str__(self) -> str:
         # print filter_names?
@@ -132,14 +132,12 @@ class Instrument(ABC):
             setattr(result, key, deepcopy(value, memo))
         return result
 
-    def make_PSF(
-        self, data: Data, band: Union[str, Filter], method: str
-    ) -> PSF:
+    def make_PSF(self, band_data: Band_Data, method: str) -> PSF:
         if method == "model":
             # no real data needed for model PSF
-            return self.facility.make_PSF_model(band)
+            return self.facility.make_PSF_model(band_data.filt)
         elif method == "empirical":
-            return self.make_empirical_PSF(data, band)
+            return self.make_empirical_PSF(band_data)
         else:
             raise NotImplementedError
 
@@ -147,16 +145,14 @@ class Instrument(ABC):
         return [self.make_PSF(data, band, method) for band in self]
 
     @abstractmethod
-    def calc_ZP(self, data: Data, band: Union[str, Filter]) -> u.Quantity:
+    def calc_ZP(self, band_data: Type[Band_Data_Base]) -> u.Quantity:
         pass
 
-    def calc_pix_scale(
-        self, data: Data, band: Union[str, Filter]
-    ) -> u.Quantity:
+    def calc_pix_scale(self, band_data: Type[Band_Data_Base]) -> u.Quantity:
         pass
 
     @abstractmethod
-    def make_empirical_PSF(self, data: Data, band: Union[str, Filter]) -> PSF:
+    def make_empirical_PSF(self, band_data: Band_Data) -> PSF:
         pass
 
     def make_empirical_PSFs(self, data: Data) -> List[PSF]:
@@ -198,10 +194,14 @@ class NIRCam(Instrument, funcs.Singleton):
         ]
         super().__init__("JWST", NIRCam_band_names)
 
-    def calc_ZP(self, data: Data, band: Union[str, Filter]) -> u.Quantity:
-        pass
+    def calc_ZP(self, band_data: Type[Band_Data_Base]) -> u.Quantity:
+        # assume flux units of MJy/sr and calculate corresponding ZP
+        ZP = -2.5 * np.log10(
+            (band_data.pix_scale.to(u.rad).value ** 2) * u.MJy.to(u.Jy)
+        ) + u.Jy.to(u.ABmag)
+        return ZP
 
-    def make_empirical_PSF(self, data: Data, band: Union[str, Filter]) -> PSF:
+    def make_empirical_PSF(self, band_data: Band_Data) -> PSF:
         pass
 
 
@@ -224,8 +224,12 @@ class MIRI(Instrument, funcs.Singleton):
         ]
         super().__init__("JWST", MIRI_band_names)
 
-    def calc_ZP(self, data: Data, band: Union[str, Filter]) -> u.Quantity:
-        pass
+    def calc_ZP(self, band_data: Type[Band_Data_Base]) -> u.Quantity:
+        # assume flux units of MJy/sr and calculate corresponding ZP
+        ZP = -2.5 * np.log10(
+            (band_data.pix_scale.to(u.rad).value ** 2) * u.MJy.to(u.Jy)
+        ) + u.Jy.to(u.ABmag)
+        return ZP
 
     def make_empirical_PSF(self, data: Data, band: Union[str, Filter]) -> PSF:
         pass
@@ -268,10 +272,34 @@ class ACS_WFC(Instrument, funcs.Singleton):
         ]
         super().__init__("HST", ACS_WFC_band_names)
 
-    def calc_ZP(self, data: Data, band: Union[str, Filter]) -> u.Quantity:
-        pass
+    def calc_ZP(self, band_data: Type[Band_Data_Base]) -> u.Quantity:
+        im_header = band_data.load_im()[1]
+        if "PHOTFLAM" in im_header and "PHOTPLAM" in im_header:
+            ZP = (
+                -2.5 * np.log10(im_header["PHOTFLAM"])
+                - 21.1
+                - 5.0 * np.log10(im_header["PHOTPLAM"])
+                + 18.6921
+            )
+        elif "ZEROPNT" in im_header:
+            ZP = im_header["ZEROPNT"]
+        elif "BUNIT" in im_header:
+            unit = im_header["BUNIT"].replace(" ", "")
+            assert unit == "MJy/sr"
+            ZP = -2.5 * np.log10(
+                (band_data.pix_scale.to(u.rad).value ** 2) * u.MJy.to(u.Jy)
+            ) + u.Jy.to(u.ABmag)
+        else:
+            raise (
+                Exception(
+                    f"ACS_WFC data for {band_data.filt.filt_name}"
+                    + " must contain either 'ZEROPNT' or 'PHOTFLAM' and 'PHOTPLAM' "
+                    + "or 'BUNIT'=MJy/sr in its header to calculate its ZP!"
+                )
+            )
+        return ZP
 
-    def make_empirical_PSF(self, data: Data, band: Union[str, Filter]) -> PSF:
+    def make_empirical_PSF(self, band_data: Band_Data) -> PSF:
         pass
 
 
@@ -298,20 +326,30 @@ class WFC3_IR(Instrument, funcs.Singleton):
         ]
         super().__init__("HST", WFC3_IR_band_names)
 
-    def calc_ZP(self, data: Data, band: Union[str, Filter]) -> u.Quantity:
-        pass
+    def calc_ZP(self, band_data: Type[Band_Data_Base]) -> u.Quantity:
+        # Taken from Appendix A of
+        # https://www.stsci.edu/files/live/sites/www/files/home/hst/instrumentation/wfc3/documentation/instrument-science-reports-isrs/_documents/2020/WFC3-ISR-2020-10.pdf
+        wfc3ir_zps = {
+            "F098M": 25.661,
+            "F105W": 26.2637,
+            "F110W": 26.8185,
+            "F125W": 26.231,
+            "F140W": 26.4502,
+            "F160W": 25.9362,
+        }
+        return wfc3ir_zps[band_data.filt.filt_name]
 
-    def make_empirical_PSF(self, data: Data, band: Union[str, Filter]) -> PSF:
+    def make_empirical_PSF(self, band_data: Band_Data) -> PSF:
         pass
 
 
 # Instrument attributes
 
 expected_instr_bands = {
-    "ACS_WFC": ACS_WFC().filter_names,
-    "WFC3_IR": WFC3_IR().filter_names,
-    "NIRCam": NIRCam().filter_names,
-    "MIRI": MIRI().filter_names,
+    "ACS_WFC": ACS_WFC().filt_names,
+    "WFC3_IR": WFC3_IR().filt_names,
+    "NIRCam": NIRCam().filt_names,
+    "MIRI": MIRI().filt_names,
 }
 
 expected_instr_facilities = {

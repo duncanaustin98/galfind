@@ -37,6 +37,10 @@ try:
     from typing import Self, Type  # python 3.11+
 except ImportError:
     from typing_extensions import Self, Type  # python > 3.7 AND python < 3.11
+from typing import List, NoReturn, Optional, Dict, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from . import Filter
 
 from . import (
     PDF,
@@ -50,6 +54,7 @@ from . import (
     instr_to_name_dict,
 )
 from . import useful_funcs_austind as funcs
+from .Cutout import RGB, Multiple_Band_Cutout
 from .EAZY import EAZY
 from .Emission_lines import line_diagnostics
 from .SED import Mock_SED_obs, Mock_SED_rest, SED_obs
@@ -212,390 +217,161 @@ class Galaxy:
     ) -> None:
         setattr(self, save_name, gal_property)
 
-    def make_cutout(
-        self,
-        band,
-        data,
-        wcs=None,
-        im_header=None,
-        survey: Union[str, None] = None,
-        version: Union[str, None] = None,
-        pix_scale: u.Quantity = 0.03 * u.arcsec,
-        cutout_size: u.Quantity = 0.96 * u.arcsec,
-    ):
-        if type(data) == Data:
-            survey = data.survey
-            version = data.version
-        if survey == None or version == None:
-            raise (
-                Exception(
-                    "'survey' and 'version' must both be given to construct save paths"
-                )
-            )
-
-        out_path = f"{config['Cutouts']['CUTOUT_DIR']}/{version}/{survey}/{cutout_size.to(u.arcsec).value:.2f}as/{band}/{self.ID}.fits"
-
-        if (
-            config.getboolean("Cutouts", "OVERWRITE_CUTOUTS")
-            or not Path(out_path).is_file()
-        ):
-            if type(data) == Data:
-                im_data, im_header, seg_data, seg_header = data.load_data(
-                    band, incl_mask=False
-                )
-                wht_data = data.load_wht(band)
-                rms_err_data = data.load_rms_err(band)
-                wcs = data.load_wcs(band)
-                data_dict = {
-                    "SCI": im_data,
-                    "SEG": seg_data,
-                    "WHT": wht_data,
-                    "RMS_ERR": rms_err_data,
-                }
-            elif (
-                type(data) == dict
-                and type(wcs) != type(None)
-                and type(im_header) != type(None)
-            ):
-                data_dict = data
-            else:
-                raise (Exception(""))
-            hdul = [
-                fits.PrimaryHDU(
-                    header=fits.Header(
-                        {
-                            "ID": self.ID,
-                            "survey": survey,
-                            "version": version,
-                            "RA": self.sky_coord.ra.value,
-                            "DEC": self.sky_coord.dec.value,
-                            "cutout_size_as": cutout_size.to(u.arcsec).value,
-                        }
-                    )
-                )
-            ]
-
-            cutout_size_pix = (
-                (cutout_size / pix_scale).to(u.dimensionless_unscaled).value
-            )
-            for i, (label_i, data_i) in enumerate(data_dict.items()):
-                if i == 0 and label_i == "SCI":
-                    sci_shape = data_i.shape
-                if type(data_i) == type(None):
-                    galfind_logger.warning(
-                        f"No data found for {label_i} in {band}!"
-                    )
-                else:
-                    if data_i.shape == sci_shape:
-                        cutout = Cutout2D(
-                            data_i,
-                            self.sky_coord,
-                            size=(cutout_size_pix, cutout_size_pix),
-                            wcs=wcs,
-                        )
-                        im_header.update(cutout.wcs.to_header())
-                        hdul.append(
-                            fits.ImageHDU(
-                                cutout.data, header=im_header, name=label_i
-                            )
-                        )
-                        galfind_logger.info(
-                            f"Created cutout for {label_i} in {band}"
-                        )
-                    else:
-                        galfind_logger.warning(
-                            f"Incorrect data shape. {data_i=} != {sci_shape=}, skipping extension!"
-                        )
-            # print(hdul)
-            funcs.make_dirs(out_path)
-            fits_hdul = fits.HDUList(hdul)
-            fits_hdul.writeto(out_path, overwrite=True)
-            funcs.change_file_permissions(out_path)
-            galfind_logger.info(f"Saved fits cutout to: {out_path}")
-        else:
-            galfind_logger.info(
-                f"Already made fits cutout for {survey} {version} {self.ID} {band}"
-            )
-            fits_hdul = fits.open(out_path)
-        self.cutout_paths[band] = out_path
-        return fits_hdul
-
     def make_RGB(
-        self,
-        data,
-        blue_bands=["F090W"],
-        green_bands=["F200W"],
-        red_bands=["F444W"],
-        version: Union[str, None] = None,
-        survey: Union[str, None] = None,
-        method: str = "trilogy",
+        self: Type[Self],
+        data: Data,
+        rgb_bands: Dict[str, List[str]] = {
+            "B": ["F090W"],
+            "G": ["F200W"],
+            "R": ["F444W"],
+        },
         cutout_size: u.Quantity = 0.96 * u.arcsec,
-    ):
-        method = method.lower()  # make method lowercase
-        # ensure all blue, green and red bands are contained in the data object
-        assert all(
-            band in data.instrument.band_names
-            for band in blue_bands + green_bands + red_bands
-        ), galfind_logger.warning(
-            f"Cannot make galaxy RGB as not all {blue_bands + green_bands + red_bands} are in {data.instrument.band_names}"
+    ) -> RGB:
+        if not hasattr(self, "RGBs"):
+            self.RGBs = {}
+        cutout_size_str = f"{cutout_size.to(u.arcsec).value:.2f}as"
+        if cutout_size_str not in self.RGBs.keys():
+            self.RGBs[cutout_size_str] = {}
+        rgb_key = ",".join(
+            f"{colour}={'+'.join(self.get_colour_band_names[colour])}"
+            for colour in ["B", "G", "R"]
         )
-        # extract survey and version from data
-        if type(data) == Data:
-            survey = data.survey
-            version = data.version
-        if survey == None or version == None:
-            raise (
-                Exception(
-                    "'survey' and 'version' must both be given to construct save paths"
-                )
+        if (
+            rgb_key
+            not in self.RGBs[f"{cutout_size.to(u.arcsec).value:.2f}as"].keys()
+        ):
+            RGB_obj = RGB.from_gal(data, self, rgb_bands)
+            assert RGB_obj.name == rgb_key
+            self.RGBs[cutout_size_str][rgb_key] = RGB_obj
+        return self.RGBs[cutout_size_str][rgb_key]
+
+    def plot_RGB(
+        self,
+        ax: Optional[plt.Axes],
+        rgb_bands: Dict[str, List[str]],
+        cutout_size: u.Quantity = 0.96 * u.arcsec,
+        method: str = "trilogy",
+    ) -> NoReturn:
+        cutout_size_str = f"{cutout_size.to(u.arcsec).value:.2f}as"
+        rgb_key = ",".join(
+            f"{colour}={'+'.join(self.get_colour_band_names[colour])}"
+            for colour in ["B", "G", "R"]
+        )
+        RGB_obj = self.RGBs[cutout_size_str][rgb_key]
+        RGB_obj.plot(ax, method)
+
+    def make_cutouts(
+        self: Type[Self], data: Data, cutout_size: u.Quantity = 0.96 * u.arcsec
+    ) -> Multiple_Band_Cutout:
+        if not hasattr(self, "cutouts"):
+            self.cutouts = {}
+        cutout_size_str = f"{cutout_size.to(u.arcsec).value:.2f}as"
+        if cutout_size_str not in self.cutouts.keys():
+            self.cutouts[cutout_size_str] = Multiple_Band_Cutout.from_gal(
+                data, self, cutout_size
             )
-        # construct out_path
-        out_path = f"{config['Cutouts']['CUTOUT_DIR']}/{version}/{survey}/B={'+'.join(blue_bands)},G={'+'.join(green_bands)},R={'+'.join(red_bands)}/{method}/{self.ID}.png"
-        funcs.make_dirs(out_path)
-        if not os.path.exists(out_path):
-            # make cutouts for the required bands if they don't already exist, and load cutout paths
-            RGB_cutout_paths = {}
-            for colour, bands in zip(
-                ["B", "G", "R"], [blue_bands, green_bands, red_bands]
-            ):
-                [
-                    self.make_cutout(
-                        band,
-                        data,
-                        pix_scale=data.im_pixel_scales[band],
-                        cutout_size=cutout_size,
-                    )
-                    for band in bands
-                ]
-                RGB_cutout_paths[colour] = [
-                    self.cutout_paths[band] for band in bands
-                ]
-            if method == "trilogy":
-                # Write trilogy.in
-                in_path = out_path.replace(".png", "_trilogy.in")
-                with open(in_path, "w") as f:
-                    for colour, cutout_paths in RGB_cutout_paths.items():
-                        f.write(f"{colour}\n")
-                        for path in cutout_paths:
-                            f.write(f"{path}[1]\n")
-                        f.write("\n")
-                    f.write("indir  /\n")
-                    f.write(
-                        f"outname  {funcs.split_dir_name(out_path, 'name').replace('.png', '')}\n"
-                    )
-                    f.write(
-                        f"outdir  {funcs.split_dir_name(out_path, 'dir')}\n"
-                    )
-                    f.write("samplesize 20000\n")
-                    f.write("stampsize  2000\n")
-                    f.write("showstamps  0\n")
-                    f.write("satpercent  0.001\n")
-                    f.write("noiselum    0.10\n")
-                    f.write("colorsatfac  1\n")
-                    f.write("deletetests  1\n")
-                    f.write("testfirst   0\n")
-                    f.write("sampledx  0\n")
-                    f.write("sampledy  0\n")
-
-                funcs.change_file_permissions(in_path)
-                # Run trilogy
-                sys.path.insert(
-                    1, "/nvme/scratch/software/trilogy"
-                )  # Not sure why this path doesn't work: config["Other"]["TRILOGY_DIR"]
-                from trilogy3 import Trilogy
-
-                galfind_logger.info(f"Making trilogy cutout RGB at {out_path}")
-                Trilogy(in_path, images=None).run()
-            elif method == "lupton":
-                raise (NotImplementedError())
+        return self.cutouts[cutout_size_str]
 
     def plot_cutouts(
-        self,
-        cutout_fig,
-        data,
-        SED_fit_params={
+        self: Type[Self],
+        fig: plt.Figure,
+        data: Data,
+        SED_fit_params: dict = {
             "code": EAZY(),
             "templates": "fsps_larson",
             "lowz_zmax": None,
         },
-        hide_masked_cutouts=True,
-        cutout_size=0.96 * u.arcsec,
-        high_dyn_rng=False,
-        aper_diam=0.32 * u.arcsec,
+        hide_masked_cutouts: bool = True,
+        cutout_size: u.Quantity = 0.96 * u.arcsec,
+        high_dyn_rng: bool = False,
+        aper_diam: u.Quantity = 0.32 * u.arcsec,
+        cmap: str = "magma",
+        ax_ratio: Union[float, int] = 1,
     ):
-        # Delete everything on the figure
-        cutout_fig.clf()
-        # Work out how many bands we have to plot.
-        bands = self.phot.instrument.band_names
-        for i, band in enumerate(bands):
-            if self.phot.flux.mask[i] and hide_masked_cutouts:
-                bands.remove(band)
+        cutouts_obj = self.cutouts[f"{cutout_size.to(u.arcsec).value:.2f}as"]
 
-        if len(bands) <= 8:
-            gridspec_cutout = cutout_fig.add_gridspec(1, len(bands))
+        # make intructions for radii to plot
+        galfind_logger.warning("Need to load in SExtractor FLUX_RADIUS")
+        sex_radius = None
+        aper_kwargs = {
+            "fill": False,
+            "linestyle": "--",
+            "lw": 1,
+            "color": "white",
+            "zorder": 20,
+        }
+        sex_rad_kwargs = {
+            "fill": False,
+            "linestyle": "--",
+            "lw": 1,
+            "color": "blue",
+            "zorder": 20,
+        }
+        if sex_radius is None:
+            plot_radii = [
+                [{"radius": aper_diam, "kwargs": aper_kwargs}]
+                for cutout in cutouts_obj
+            ]
         else:
-            gridspec_cutout = cutout_fig.add_gridspec(
-                2, int(np.ceil((len(bands) / 2)))
-            )
-
-        cutout_ax_list = []
-        for i, band in enumerate(bands):
-            cutout_ax = cutout_fig.add_subplot(gridspec_cutout[i])
-            cutout_ax.set_aspect("equal", adjustable="box", anchor="N")
-            cutout_ax.set_xticks([])
-            cutout_ax.set_yticks([])
-            cutout_ax_list.append(cutout_ax)
-        ax_arr = np.array(cutout_ax_list, dtype=object).flatten()
-
-        for i, band in enumerate(bands):
-            # need to load sextractor flux_radius as a general function somewhere!
-            radius_pix = (
-                (aper_diam / (2.0 * data.im_pixel_scales[band]))
-                .to(u.dimensionless_unscaled)
-                .value
-            )
-            # flux_radius = None
-            # radius_sextractor = flux_radius
-
-            # load cutout if already made, else produce one
-            cutout_hdul = self.make_cutout(
-                band,
-                data,
-                pix_scale=data.im_pixel_scales[band],
-                cutout_size=cutout_size,
-            )
-            data_cutout = cutout_hdul[
-                1
-            ].data  # should handle None in the case of NoOverlapError
-
-            cutout_size_pix = (
-                (cutout_size / data.im_pixel_scales[band])
-                .to(u.dimensionless_unscaled)
-                .value
-            )
-            # Set top value based on central 10x10 pixel region
-            top = np.max(data_cutout[:20, 10:20])
-            top = np.max(
-                data_cutout[
-                    int(cutout_size_pix // 2 - 0.3 * cutout_size_pix) : int(
-                        cutout_size_pix // 2 + 0.3 * cutout_size_pix
-                    ),
-                    int(cutout_size_pix // 2 - 0.3 * cutout_size_pix) : int(
-                        cutout_size_pix // 2 + 0.3 * cutout_size_pix
-                    ),
+            plot_radii = [
+                [
+                    {"radius": aper_diam, "kwargs": aper_kwargs},
+                    {
+                        "radius": self.sex_radius[cutout.filt.band_name],
+                        "kwargs": sex_rad_kwargs,
+                    },
                 ]
-            )
-            bottom_val = top / 10**5
+                for cutout in cutouts_obj
+            ]
 
-            if high_dyn_rng:
-                a = 300
-            else:
-                a = 0.1
-            stretch = LogStretch(a=a)
+        # make instructions for scalebars to plot
+        physical_scalebar_kwargs = {
+            "loc": "upper left",
+            "pad": 0.3,
+            "color": "white",
+            "frameon": False,
+            "size_vertical": 1.5,
+        }
+        angular_scalebar_kwargs = {
+            "loc": "lower right",
+            "pad": 0.3,
+            "color": "white",
+            "frameon": False,
+            "size_vertical": 2,
+        }
+        z = self.phot.SED_results[
+            SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)
+        ].z
+        scalebars = [
+            {
+                "physical": {
+                    **physical_scalebar_kwargs,
+                    "z": z,
+                    "pix_length": 10,
+                }
+            }
+            if i == 0
+            else {"angular": {**angular_scalebar_kwargs, "as_length": 0.3}}
+            if i == len(cutouts_obj) - 1
+            else {}
+            for i, cutout in enumerate(cutouts_obj)
+        ]
 
-            n_sig_detect = self.phot.SNR[i]
-            if n_sig_detect < 100:
-                bottom_val = top * 1e-3
-                a = 100
-            if n_sig_detect <= 15:
-                bottom_val = top * 1e-2
-                a = 0.1
-            if n_sig_detect < 8:
-                bottom_val = top / 100_000
-                stretch = LinearStretch()
-
-            data_cutout = np.clip(
-                data_cutout * 0.9999, bottom_val * 1.000001, top
-            )  # why?
-            norm = ImageNormalize(
-                data_cutout,
-                interval=ManualInterval(bottom_val, top),
-                clip=True,
-                stretch=stretch,
-            )
-
-            # ax_arr[i].cla()
-
-            ax_arr[i].imshow(
-                data_cutout, norm=norm, cmap="magma", origin="lower"
-            )
-            ax_arr[i].text(
-                0.95,
-                0.95,
-                band,
-                fontsize="small",
-                c="white",
-                transform=ax_arr[i].transAxes,
-                ha="right",
-                va="top",
-                zorder=10,
-                fontweight="bold",
-            )
-
-            # add circles to show extraction aperture and sextractor FLUX_RADIUS
-            xpos = np.mean(ax_arr[i].get_xlim())
-            ypos = np.mean(ax_arr[i].get_ylim())
-            region = patches.Circle(
-                (xpos, ypos),
-                radius_pix,
-                fill=False,
-                linestyle="--",
-                lw=1,
-                color="white",
-                zorder=20,
-            )
-            ax_arr[i].add_patch(region)
-            galfind_logger.warning("Need to load in SExtractor FLUX_RADIUS")
-            # if radius_sextractor != 0:
-            #     region_sextractor = patches.Circle((xpos, ypos), radius_sextractor, \
-            #         fill = False, linestyle = '--', lw = 1, color = 'blue', zorder = 20)
-            #     ax_arr[i].add_patch(region_sextractor)
-
-            # add scalebars to the last cutout
-            if len(data.instrument) > 0:
-                # re in pixels
-                re = 10  # pixels
-                d_A = astropy_cosmo.angular_diameter_distance(
-                    self.phot.SED_results[
-                        SED_fit_params["code"].label_from_SED_fit_params(
-                            SED_fit_params
-                        )
-                    ].z
-                )
-                pix_scal = u.pixel_scale(0.03 * u.arcsec / u.pixel)
-                re_as = (re * u.pixel).to(u.arcsec, pix_scal)
-                re_kpc = (re_as * d_A).to(u.kpc, u.dimensionless_angles())
-
-                # First scalebar
-                scalebar = AnchoredSizeBar(
-                    ax_arr[i].transData,
-                    0.3 / data.im_pixel_scales[band].value,
-                    '0.3"',
-                    "lower right",
-                    pad=0.3,
-                    color="white",
-                    frameon=False,
-                    size_vertical=2,
-                )
-                ax_arr[-1].add_artist(scalebar)
-                # Plot scalebar with physical size
-                scalebar = AnchoredSizeBar(
-                    ax_arr[-1].transData,
-                    re,
-                    f"{re_kpc:.1f}",
-                    "upper left",
-                    pad=0.3,
-                    color="white",
-                    frameon=False,
-                    size_vertical=1.5,
-                )
-                ax_arr[-1].add_artist(scalebar)
+        ax_arr = cutouts_obj.plot(
+            fig,
+            ax_ratio,
+            high_dyn_range=high_dyn_rng,
+            cutout_band_cmap=cmap,
+            plot_radii=plot_radii,
+            scalebars=scalebars,
+        )
+        return ax_arr
 
     def plot_phot_diagnostic(
-        self,
-        ax,
-        data,
-        SED_fit_params_arr,
+        self: Type[Self],
+        ax: plt.Axes,
+        data: Data,
+        SED_fit_params_arr: List[dict],
         zPDF_plot_SED_fit_params_arr,
         wav_unit=u.um,
         flux_unit=u.ABmag,

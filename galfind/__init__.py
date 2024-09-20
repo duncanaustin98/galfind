@@ -106,6 +106,8 @@ astropy_cosmo = FlatLambdaCDM(H0=70, Om0=0.3, Ob0=0.05, Tcmb0=2.725)
 wav_lyman_lim = 911.8  # * u.AA
 
 from . import useful_funcs_austind
+from . import figs
+from .Cutout import Band_Cutout, Stacked_Band_Cutout, RGB, Stacked_RGB, Multiple_Band_Cutout, Multiple_RGB
 from . import NIRCam_aperture_corrections as NIRCam_aper_corr
 from . import Depths
 from .PDF import PDF, SED_fit_PDF, Redshift_PDF, PDF_nD
@@ -134,7 +136,7 @@ from .Filter import Filter, Multiple_Filter, Tophat_Filter, U, V, J
 # ]
 # config.set("Other", "ALL_BANDS", json.dumps(all_band_names))
 
-from .Data import Data
+from .Data import Band_Data_Base, Band_Data, Stacked_Band_Data, Data
 from .Photometry import Photometry, Multiple_Photometry, Mock_Photometry
 from .Photometry_obs import Photometry_obs, Multiple_Photometry_obs
 from .Photometry_rest import Photometry_rest

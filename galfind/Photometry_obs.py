@@ -146,6 +146,19 @@ class Photometry_obs(Photometry):
                 property_name, origin, property_type
             )
 
+    def __copy__(self):
+        cls = self.__class__
+        result = cls.__new__(cls)
+        for key, value in self.__dict__.items():
+            try:
+                setattr(result, key, value)
+            except:
+                galfind_logger.critical(
+                    f"copy({self.__class__.__name__}) {key}: {value} FAIL!"
+                )
+                breakpoint()
+        return result
+
     def __deepcopy__(self, memo):
         cls = self.__class__
         result = cls.__new__(cls)

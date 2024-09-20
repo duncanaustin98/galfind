@@ -92,6 +92,10 @@ class Filter:
         )
         return cls(instrument, filter_name, wav, trans, output_prop)
 
+    @classmethod
+    def from_filt_name(cls, filt_name: str):
+        return cls.from_SVO(cls._get_facility_instrument_filt(filt_name))
+
     def __str__(self):
         output_str = funcs.line_sep
         output_str += "FILTER: "
@@ -104,14 +108,22 @@ class Filter:
             output_str += f"{key}: {value}\n"
         output_str += funcs.line_sep
         return output_str
-    
+
     def __repr__(self):
         return f"{self.__class__.__name__}({self.band_name})"
 
     def __len__(self):
         return 1
-    
-    def __add__(self: Self, other: Union[str, Filter, Multiple_Filter, List[Union[str, Filter, Multiple_Filter]]]) -> Union[Self, Multiple_Filter]:
+
+    def __add__(
+        self: Self,
+        other: Union[
+            str,
+            Filter,
+            Multiple_Filter,
+            List[Union[str, Filter, Multiple_Filter]],
+        ],
+    ) -> Union[Self, Multiple_Filter]:
         # make relevant new filters from other that aren't in [self]
         new_filters = Multiple_Filter._make_new_filt([self], other)
         if new_filters is None:
@@ -188,25 +200,33 @@ class Filter:
             # formatted as e.g. F444W
             # try to determine facility and instrument from band name alone
             filt = split_str[0].upper()
-            instruments_with_filt = [instr_name for instr_name, instrument in instr_to_name_dict.items() if filt in instrument.filter_names]
-            assert len(instruments_with_filt) == 1, galfind_logger.critical(f"Could not determine instrument from band name {filt}")
+            instruments_with_filt = [
+                instr_name
+                for instr_name, instrument in instr_to_name_dict.items()
+                if filt in instrument.filter_names
+            ]
+            assert len(instruments_with_filt) == 1, galfind_logger.critical(
+                f"Could not determine instrument from band name {filt}"
+            )
             instrument = instruments_with_filt[0]
             facility = instr_to_name_dict[instrument].facility.name
         filt = filt.upper()
         return facility, instrument, filt
 
     @staticmethod
-    def _make_new_filt(current_filt_names: List[str], filt_or_name: Union[str, Filter]) -> Union[Filter, None]:
+    def _make_new_filt(
+        current_filt_names: List[str], filt_or_name: Union[str, Filter]
+    ) -> Union[Filter, None]:
         already_included = False
         if isinstance(filt_or_name, str):
             # extract facility, instrument and filter name from string
-            facility, instrument, filt = Filter._get_facility_instrument_filt(filt_or_name)
+            facility, instrument, filt = Filter._get_facility_instrument_filt(
+                filt_or_name
+            )
             if filt_or_name in current_filt_names:
                 already_included = True
             else:
-                new_filt = Filter.from_SVO(
-                    facility, instrument, filt
-                )
+                new_filt = Filter.from_SVO(facility, instrument, filt)
         elif isinstance(filt_or_name, Filter):
             if filt_or_name.band_name in current_filt_names:
                 already_included = True
@@ -214,9 +234,11 @@ class Filter:
                 new_filt = filt_or_name
         # print warning if filter already included
         if already_included:
-            already_included_warning = f"{repr(filt_or_name)} duplicated, not adding"
+            already_included_warning = (
+                f"{repr(filt_or_name)} duplicated, not adding"
+            )
             galfind_logger.warning(already_included_warning)
-            #warnings.warn(UserWarning(already_included_warning))
+            # warnings.warn(UserWarning(already_included_warning))
             return None
         else:
             return new_filt
@@ -228,26 +250,33 @@ class Filter:
         self.instrument.make_PSF(self, method)
 
     def plot(
-        self, ax, wav_units: u.Quantity = u.um, colour: str = "black", save_dir: str = "", label: bool = True, save: bool = False, show: bool = False
+        self,
+        ax,
+        wav_units: u.Quantity = u.um,
+        colour: str = "black",
+        save_dir: str = "",
+        label: bool = True,
+        save: bool = False,
+        show: bool = False,
     ):
         # convert wavelength units
         wavs = funcs.convert_wav_units(self.wav, wav_units).value
         # add extra points to ensure the plot is closed
         wavs = list(np.concatenate(([wavs[0]], wavs, [wavs[-1]])))
-        trans = list(np.concatenate(([0.], self.trans, [0.])))
+        trans = list(np.concatenate(([0.0], self.trans, [0.0])))
         # plot the filter profile
-        ax.fill_between(wavs, 0., trans, color=colour, alpha=0.6)
+        ax.fill_between(wavs, 0.0, trans, color=colour, alpha=0.6)
         ax.plot(
-            wavs, trans, color="black", lw=2, label = self.band_name
+            wavs, trans, color="black", lw=2, label=self.band_name
         )  # cmap[np.where(self.bands == band)])
         if label:
             ax.text(
-            funcs.convert_wav_units(self.WavelengthCen, wav_units).value,
-            np.max(trans) + 0.03,
-            self.band_name,
-            ha="center",
-            fontsize=8,
-        )
+                funcs.convert_wav_units(self.WavelengthCen, wav_units).value,
+                np.max(trans) + 0.03,
+                self.band_name,
+                ha="center",
+                fontsize=8,
+            )
         if save or show:
             leg_labels = ax.get_legend_handles_labels()[1]
             if len(leg_labels) == 1:
@@ -273,30 +302,73 @@ class Filter:
         if show:
             plt.show()
 
+
 class Tophat_Filter(Filter):
-    def __init__(self, band_name: str, lower_wav: u.Quantity, upper_wav: u.Quantity, throughput: float = 1., resolution: u.Quantity = 1. * u.AA, properties: dict = {}):
-        # construct the top hat filter profile
-        n_elements = int(((upper_wav - lower_wav) / resolution).to(u.dimensionless_unscaled).value)
-        wav = list(np.linspace(lower_wav, upper_wav, n_elements)) * u.AA
-        trans = list(np.full(len(wav), throughput))
-        properties = {**properties, **{"WavelengthCen": (lower_wav + upper_wav) / 2., "FWHM": upper_wav - lower_wav}}
-        super().__init__(None, band_name, wav, trans, properties=properties)
-                               
-class U(Tophat_Filter):
     def __init__(
         self,
-        throughput: float = 1.,
-        resolution: u.Quantity = 1. * u.AA
+        band_name: str,
+        lower_wav: u.Quantity,
+        upper_wav: u.Quantity,
+        throughput: float = 1.0,
+        resolution: u.Quantity = 1.0 * u.AA,
+        properties: dict = {},
     ):
-        super().__init__(self.__class__.__name__, 3_320. * u.AA, 3_980. * u.AA, throughput = throughput, resolution = resolution)
+        # construct the top hat filter profile
+        n_elements = int(
+            ((upper_wav - lower_wav) / resolution)
+            .to(u.dimensionless_unscaled)
+            .value
+        )
+        wav = list(np.linspace(lower_wav, upper_wav, n_elements)) * u.AA
+        trans = list(np.full(len(wav), throughput))
+        properties = {
+            **properties,
+            **{
+                "WavelengthCen": (lower_wav + upper_wav) / 2.0,
+                "FWHM": upper_wav - lower_wav,
+            },
+        }
+        super().__init__(None, band_name, wav, trans, properties=properties)
+
+
+class U(Tophat_Filter):
+    def __init__(
+        self, throughput: float = 1.0, resolution: u.Quantity = 1.0 * u.AA
+    ):
+        super().__init__(
+            self.__class__.__name__,
+            3_320.0 * u.AA,
+            3_980.0 * u.AA,
+            throughput=throughput,
+            resolution=resolution,
+        )
+
 
 class V(Tophat_Filter):
-    def __init__(self, throughput: float = 1., resolution: u.Quantity = 1. * u.AA):
-        super().__init__(self.__class__.__name__, 5_070. * u.AA, 5_950. * u.AA, throughput = throughput, resolution = resolution)
+    def __init__(
+        self, throughput: float = 1.0, resolution: u.Quantity = 1.0 * u.AA
+    ):
+        super().__init__(
+            self.__class__.__name__,
+            5_070.0 * u.AA,
+            5_950.0 * u.AA,
+            throughput=throughput,
+            resolution=resolution,
+        )
+
 
 class J(Tophat_Filter):
-    def __init__(self, throughput: float = 1., resolution: u.Quantity = 1. * u.AA):
-        super().__init__(self.__class__.__name__, 11_135. * u.AA, 13_265. * u.AA, throughput = throughput, resolution = resolution)
+    def __init__(
+        self, throughput: float = 1.0, resolution: u.Quantity = 1.0 * u.AA
+    ):
+        super().__init__(
+            self.__class__.__name__,
+            11_135.0 * u.AA,
+            13_265.0 * u.AA,
+            throughput=throughput,
+            resolution=resolution,
+        )
+
 
 class Multiple_Filter:
     def __init__(
@@ -310,21 +382,41 @@ class Multiple_Filter:
     def from_facility(
         cls: Type[Self],
         facility: Union[str, Facility],
-        excl_bands: Union[str, Filter, Multiple_Filter, List[Union[str, Filter, Multiple_Filter]]] = [],
+        excl_bands: Union[
+            str,
+            Filter,
+            Multiple_Filter,
+            List[Union[str, Filter, Multiple_Filter]],
+        ] = [],
         origin: str = "SVO",
         sort_order: str = "ascending",
         keep_suffix: str = "All",
     ) -> Self:
         if isinstance(facility, Facility):
             facility = facility.name
-        instruments_from_facility = [name for name, instr in instr_to_name_dict.items() if instr.facility.name == facility]
-        return cls.from_instruments(instruments_from_facility, excl_bands, origin, sort_order, keep_suffix)
+        instruments_from_facility = [
+            name
+            for name, instr in instr_to_name_dict.items()
+            if instr.facility.name == facility
+        ]
+        return cls.from_instruments(
+            instruments_from_facility,
+            excl_bands,
+            origin,
+            sort_order,
+            keep_suffix,
+        )
 
     @classmethod
     def from_instruments(
         cls: Type[Self],
         instruments: List[Union[str, Instrument]],
-        excl_bands: Union[str, Filter, Multiple_Filter, List[Union[str, Filter, Multiple_Filter]]] = [],
+        excl_bands: Union[
+            str,
+            Filter,
+            Multiple_Filter,
+            List[Union[str, Filter, Multiple_Filter]],
+        ] = [],
         origin: str = "SVO",
         sort_order: str = "ascending",
         keep_suffix: str = "All",
@@ -332,11 +424,20 @@ class Multiple_Filter:
         assert len(instruments) > 0
         for i, instrument in enumerate(instruments):
             # convert instrument object to string
-            if isinstance(instrument, tuple(instr.__class__ for instr in instr_to_name_dict.values())):
+            if isinstance(
+                instrument,
+                tuple(
+                    instr.__class__ for instr in instr_to_name_dict.values()
+                ),
+            ):
                 instrument = instrument.name
             # ensure the instrument is a valid instrument
-            assert instrument in json.loads(config.get("Other", "INSTRUMENT_NAMES"))
-            new_multi_filt = cls.from_instrument(instrument, excl_bands, origin, sort_order, keep_suffix)
+            assert instrument in json.loads(
+                config.get("Other", "INSTRUMENT_NAMES")
+            )
+            new_multi_filt = cls.from_instrument(
+                instrument, excl_bands, origin, sort_order, keep_suffix
+            )
             if i == 0:
                 multi_filt = new_multi_filt
             else:
@@ -347,7 +448,12 @@ class Multiple_Filter:
     def from_instrument(
         cls: Type[Self],
         instrument: Union[str, Instrument],
-        excl_bands: Union[str, Filter, Multiple_Filter, List[Union[str, Filter, Multiple_Filter]]] = [],
+        excl_bands: Union[
+            str,
+            Filter,
+            Multiple_Filter,
+            List[Union[str, Filter, Multiple_Filter]],
+        ] = [],
         origin: str = "SVO",
         sort_order: str = "ascending",
         keep_suffix: Union[str, List[str]] = "All",
@@ -357,14 +463,18 @@ class Multiple_Filter:
             instrument = instr_to_name_dict[instrument]
         # make excl_bands a list of string filter names if not already
         excl_bands = cls._get_name_from_filt(excl_bands)
-        excl_bands = [Filter._get_facility_instrument_filt(filt)[2] for filt in excl_bands]
+        excl_bands = [
+            Filter._get_facility_instrument_filt(filt)[2]
+            for filt in excl_bands
+        ]
         # make keep_suffix a list of strings if not already
         if isinstance(keep_suffix, str):
             keep_suffix = [keep_suffix]
         # get filter list from "origin" source
         if origin == "SVO":
             filter_list = SvoFps.get_filter_list(
-                facility=instrument.facility.name, instrument=instrument.name.split("_")[0]
+                facility=instrument.facility.name,
+                instrument=instrument.name.split("_")[0],
             )
             filter_list = filter_list[
                 np.array(
@@ -380,15 +490,15 @@ class Multiple_Filter:
                     Filter.from_SVO(
                         instrument.facility.name,
                         instrument.name,
-                        filt_ID.replace(
-                            f"{instrument}.", ""
-                        ),
+                        filt_ID.replace(f"{instrument}.", ""),
                     )
                     for filt_ID in np.array(filter_list["filterID"])
-                    if filt_ID.replace(
-                        f"{instrument}.", ""
+                    if filt_ID.replace(f"{instrument}.", "") not in excl_bands
+                    and (
+                        any(filt_ID.endswith(suffix) for suffix in keep_suffix)
+                        or "All" in keep_suffix
+                        and len(keep_suffix) == 1
                     )
-                    not in excl_bands and (any(filt_ID.endswith(suffix) for suffix in keep_suffix) or "All" in keep_suffix and len(keep_suffix) == 1)
                 ]
             )
         else:
@@ -419,20 +529,36 @@ class Multiple_Filter:
                     f"i={i} in {self.__class__.__name__}.__getitem__ has type={type(i)} which is not in [int, slice]"
                 )
             )
-        
-    def __add__(self, other: Union[str, Filter, Multiple_Filter, List[Union[str, Filter, Multiple_Filter]]]) -> Self:
+
+    def __add__(
+        self,
+        other: Union[
+            str,
+            Filter,
+            Multiple_Filter,
+            List[Union[str, Filter, Multiple_Filter]],
+        ],
+    ) -> Self:
         # make relevant new filters from other that aren't in [self]
         new_filters = Multiple_Filter._make_new_filt(self.filters, other)
         if new_filters is not None:
             # add new filters to existing filters
             self.filters += new_filters
         return self
-        
-    def __sub__(self, other: Union[str, Filter, Multiple_Filter, List[Union[str, Filter, Multiple_Filter]]]) -> Self:
+
+    def __sub__(
+        self,
+        other: Union[
+            str,
+            Filter,
+            Multiple_Filter,
+            List[Union[str, Filter, Multiple_Filter]],
+        ],
+    ) -> Self:
         # make a list if not already
         if not isinstance(other, list):
             other = [other]
-        # if list elements include Multiple_Filter objects, 
+        # if list elements include Multiple_Filter objects,
         # flatten the Multiple_Filter objects to make a list of types (Filter, str)
         other = self._flatten_multi_filters(other)
         # populate array of filters to remove
@@ -441,7 +567,9 @@ class Multiple_Filter:
             remove = True
             if isinstance(filt, str):
                 # extract facility, instrument and filter name from string
-                facility, instrument, filt = Filter._get_facility_instrument_filt(filt)
+                facility, instrument, filt = (
+                    Filter._get_facility_instrument_filt(filt)
+                )
                 if filt not in self.band_names or filt in remove_filt_names:
                     remove = False
                 else:
@@ -455,17 +583,25 @@ class Multiple_Filter:
                     remove_filt_names.extend([filt])
             # print warning if filter already included
             if not remove:
-                already_included_warning = f"{repr(filt)} not in {self.band_names}, not removing"
+                already_included_warning = (
+                    f"{repr(filt)} not in {self.band_names}, not removing"
+                )
                 galfind_logger.warning(already_included_warning)
-                #warnings.warn(UserWarning(already_included_warning))
+                # warnings.warn(UserWarning(already_included_warning))
         # print warning if no new filters to add
         if len(remove_filt_names) == 0:
-            warning_message = "No filters to remove, returning self from Instrument.__sub__"
+            warning_message = (
+                "No filters to remove, returning self from Instrument.__sub__"
+            )
             galfind_logger.warning(warning_message)
-            #warnings.warn(UserWarning(warning_message))
+            # warnings.warn(UserWarning(warning_message))
         else:
             # add new filters to existing filters
-            self.filters = [filt for filt in self if filt.band_name not in remove_filt_names]
+            self.filters = [
+                filt
+                for filt in self
+                if filt.band_name not in remove_filt_names
+            ]
         return self
 
     def __eq__(self, other: Type[Self]) -> bool:
@@ -549,17 +685,29 @@ class Multiple_Filter:
             config.get("Other", "INSTRUMENT_NAMES")
         )
         unique_instrument_names = np.unique(
-            [band.instrument.name if band.instrument is not None else "UserDefined" for band in self]
+            [
+                band.instrument.name
+                if band.instrument is not None
+                else "UserDefined"
+                for band in self
+            ]
         )
         if self.sort_order == "ascending":
-            name = "+".join([name
-                for name in all_instrument_names
-                if name in unique_instrument_names
-            ])
+            name = "+".join(
+                [
+                    name
+                    for name in all_instrument_names
+                    if name in unique_instrument_names
+                ]
+            )
             if name == "" and "UserDefined" in unique_instrument_names:
                 name = "UserDefined"
             else:
-                name += "+UserDefined" if "UserDefined" in unique_instrument_names else ""
+                name += (
+                    "+UserDefined"
+                    if "UserDefined" in unique_instrument_names
+                    else ""
+                )
             return name
         else:
             raise NotImplementedError
@@ -581,17 +729,29 @@ class Multiple_Filter:
         """
         all_facility_names = json.loads(config.get("Other", "FACILITY_NAMES"))
         unique_facility_names = np.unique(
-            [band.instrument.facility.name if band.instrument is not None else "UserDefined" for band in self]
+            [
+                band.instrument.facility.name
+                if band.instrument is not None
+                else "UserDefined"
+                for band in self
+            ]
         )
         if self.sort_order == "ascending":
-            name = "+".join([name
-                for name in all_facility_names
-                if name in unique_facility_names
-            ])
+            name = "+".join(
+                [
+                    name
+                    for name in all_facility_names
+                    if name in unique_facility_names
+                ]
+            )
             if name == "" and "UserDefined" in unique_facility_names:
                 name = "UserDefined"
             else:
-                name += "+UserDefined" if "UserDefined" in unique_facility_names else ""
+                name += (
+                    "+UserDefined"
+                    if "UserDefined" in unique_facility_names
+                    else ""
+                )
             return name
         else:
             raise NotImplementedError
@@ -609,44 +769,71 @@ class Multiple_Filter:
             )
             * u.AA
         )
-    
+
     @staticmethod
-    def _get_name_from_filt(filters: Union[str, Filter, Multiple_Filter, List[Union[str, Filter, Multiple_Filter]]]) -> List[str]:
+    def _get_name_from_filt(
+        filters: Union[
+            str,
+            Filter,
+            Multiple_Filter,
+            List[Union[str, Filter, Multiple_Filter]],
+        ],
+    ) -> List[str]:
         # make a list if not already
         if not isinstance(filters, list):
             filters = [filters]
         # if list elements include Multiple_Filter objects, flatten the Multiple_Filter objects to make a list of str
-        _filters = [filt if isinstance(filt, str) else filt.band_name for filt in filters if not isinstance(filt, Multiple_Filter)]
-        [_filters.extend(filt.band_names) for filt in filters if isinstance(filt, Multiple_Filter)]
+        _filters = [
+            filt if isinstance(filt, str) else filt.band_name
+            for filt in filters
+            if not isinstance(filt, Multiple_Filter)
+        ]
+        [
+            _filters.extend(filt.band_names)
+            for filt in filters
+            if isinstance(filt, Multiple_Filter)
+        ]
         return _filters
 
     @staticmethod
-    def _flatten_multi_filters(filters: List[Union[str, Filter, Multiple_Filter]]) -> List[Filter]:
+    def _flatten_multi_filters(
+        filters: List[Union[str, Filter, Multiple_Filter]],
+    ) -> List[Filter]:
         # if list elements include Multiple_Filter objects, flatten the Multiple_Filter objects to make a list of (Filter, str)
-        _other = [filt for filt in filters if not isinstance(filt, Multiple_Filter)]
-        [_other.extend(filt.filters) for filt in filters if isinstance(filt, Multiple_Filter)]
+        _other = [
+            filt for filt in filters if not isinstance(filt, Multiple_Filter)
+        ]
+        [
+            _other.extend(filt.filters)
+            for filt in filters
+            if isinstance(filt, Multiple_Filter)
+        ]
         return _other
-    
+
     @staticmethod
     def _make_new_filt(current_band_names, other) -> Union[Filter, None]:
         # turn other into a list if not already
         if not isinstance(other, list):
             other = [other]
-        # if list elements include Multiple_Filter objects, 
+        # if list elements include Multiple_Filter objects,
         # flatten the Multiple_Filter objects to make a list of types (Filter, str)
         other = Multiple_Filter._flatten_multi_filters(other)
         # populate array of new filters
         new_filters = []
         for i, val in enumerate(other):
             new_filt_names = [filt.band_name for filt in new_filters]
-            new_filt = Filter._make_new_filt(current_band_names + new_filt_names, val)
+            new_filt = Filter._make_new_filt(
+                current_band_names + new_filt_names, val
+            )
             if new_filt is not None:
                 new_filters.extend([new_filt])
         # print warning if no new filters to add
         if len(new_filters) == 0:
-            warning_message = "No new bands to add, returning self from __add__"
+            warning_message = (
+                "No new bands to add, returning self from __add__"
+            )
             galfind_logger.warning(warning_message)
-            #warnings.warn(UserWarning(warning_message))
+            # warnings.warn(UserWarning(warning_message))
             return None
         else:
             return new_filters
@@ -680,7 +867,7 @@ class Multiple_Filter:
         colours = [cmap(norm(i)) for i in range(len(self))]
         # plot each filter profile
         for i, (band, colour) in enumerate(zip(self, colours)):
-            band.plot(ax, colour=colour, label = label, show = False, save = False)
+            band.plot(ax, colour=colour, label=label, show=False, save=False)
         # annotate plot if needed
         if save or show:
             ax.set_title(f"{self.instrument_name} filters")
@@ -694,12 +881,15 @@ class Multiple_Filter:
                 np.max([trans for band in self for trans in band.trans]) + 0.1,
             )
         if save:
-            save_path = f"{save_dir}/{self.instrument_name}_filter_profiles.png"
+            save_path = (
+                f"{save_dir}/{self.instrument_name}_filter_profiles.png"
+            )
             funcs.make_dirs(save_path)
             plt.savefig(save_path)
             funcs.change_file_permissions(save_path)
         if show:
             plt.show()
+
 
 class UVJ(Multiple_Filter):
     def __init__(self, sort_order: str = "ascending"):
