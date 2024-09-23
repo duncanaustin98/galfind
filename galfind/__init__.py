@@ -167,8 +167,6 @@ from .SED import (
 )
 
 from .Galaxy import Galaxy, Multiple_Galaxy
-from .Simulated_Galaxy import Simulated_Galaxy
-from .Simulated_Catalogue import Simulated_Catalogue
 from . import decorators
 from .Emission_lines import Emission_line, wav_lyman_alpha, line_diagnostics
 from . import IGM_attenuation

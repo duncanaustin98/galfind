@@ -47,20 +47,14 @@ from . import useful_funcs_austind as funcs
 
 
 class Cutout_Base(ABC):
-    @staticmethod
-    def _get_ID(meta):
-        if "ID" in meta:
-            ID = meta["ID"]
-        else:
-            ID = f"({meta['RA']:.5f},{meta['DEC']:.5f})"
-        return ID
 
     @property
-    def ID(self) -> str:
-        return self._get_ID(self.meta)
-
     @abstractmethod
+    def ID(self) -> str:
+        pass
+
     @property
+    @abstractmethod
     def meta(self) -> dict:
         pass
 
@@ -94,6 +88,13 @@ class Band_Cutout_Base(Cutout_Base, ABC):
         for key, value in self.__dict__.items():
             setattr(result, key, deepcopy(value, memo))
         return result
+
+    @property
+    def ID(self) -> str:
+        if "ID" in self.meta:
+            return self.meta["ID"]
+        else:
+            return f"({self.meta['RA']:.5f},{self.meta['DEC']:.5f})"
 
     @property
     def meta(self) -> dict:
@@ -271,7 +272,7 @@ class Band_Cutout_Base(Cutout_Base, ABC):
         return cutout_data, norm
 
 
-class Band_Cutout(Cutout_Base):
+class Band_Cutout(Band_Cutout_Base):
     @classmethod
     def from_gal(
         cls: Type[Self],
@@ -522,6 +523,19 @@ class RGB_Base(Cutout_Base, ABC):
 
     def __sub__(self):
         pass
+
+    @property
+    def ID(self) -> str:
+        ID_list = [cutout.ID for cutout in self.cutouts]
+        assert all([ID == ID_list[0] for ID in ID_list])
+        return ID_list[0]
+
+    @property
+    def meta(self) -> dict:
+        meta_list = [cutout.meta for cutout in self.cutouts]
+        # ensure the same meta for all cutouts
+        assert all(meta[key] == val for meta in meta_list for key, val in meta_list[0].items())
+        return meta_list[0]
 
     @property
     def name(self):

@@ -1,12 +1,5 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-"""
-Created on Mon Jul 17 15:03:20 2023
+from __future__ import annotations
 
-@author: austind
-"""
-
-# Photometry_obs.py
 import inspect
 import time
 
@@ -35,7 +28,7 @@ from . import galfind_logger
 class Photometry_obs(Photometry):
     def __init__(
         self: Self,
-        instrument: type[Instrument],
+        instrument: Type[Instrument],
         flux: Union[Masked, u.Quantity],
         flux_errs: Union[Masked, u.Quantity],
         aper_diam: u.Quantity,

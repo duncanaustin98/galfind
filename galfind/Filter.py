@@ -53,9 +53,9 @@ class Filter:
         full_name = f"{facility}/{instrument}.{filter_name}"
         try:
             filter_profile = SvoFps.get_transmission_data(full_name)
-        except:
+        except Exception as e:
             galfind_logger.critical(
-                f"{full_name} is not a valid SvoFps filter!"
+                f"{full_name} is not a valid SvoFps filter! Exception={e}"
             )
         wav = np.array(filter_profile["Wavelength"])
         trans = np.array(filter_profile["Transmission"])
@@ -94,7 +94,7 @@ class Filter:
 
     @classmethod
     def from_filt_name(cls, filt_name: str):
-        return cls.from_SVO(cls._get_facility_instrument_filt(filt_name))
+        return cls.from_SVO(*cls._get_facility_instrument_filt(filt_name))
 
     def __str__(self):
         output_str = funcs.line_sep
@@ -203,13 +203,13 @@ class Filter:
             instruments_with_filt = [
                 instr_name
                 for instr_name, instrument in instr_to_name_dict.items()
-                if filt in instrument.filter_names
+                if filt in instrument.filt_names
             ]
             assert len(instruments_with_filt) == 1, galfind_logger.critical(
                 f"Could not determine instrument from band name {filt}"
             )
             instrument = instruments_with_filt[0]
-            facility = instr_to_name_dict[instrument].facility.name
+            facility = instr_to_name_dict[instrument].facility.__class__.__name__
         filt = filt.upper()
         return facility, instrument, filt
 
@@ -393,11 +393,11 @@ class Multiple_Filter:
         keep_suffix: str = "All",
     ) -> Self:
         if isinstance(facility, Facility):
-            facility = facility.name
+            facility = facility.__class__.__name__
         instruments_from_facility = [
             name
             for name, instr in instr_to_name_dict.items()
-            if instr.facility.name == facility
+            if instr.facility.__class__.__name__ == facility
         ]
         return cls.from_instruments(
             instruments_from_facility,
@@ -430,7 +430,7 @@ class Multiple_Filter:
                     instr.__class__ for instr in instr_to_name_dict.values()
                 ),
             ):
-                instrument = instrument.name
+                instrument = instrument.__class__.__name__
             # ensure the instrument is a valid instrument
             assert instrument in json.loads(
                 config.get("Other", "INSTRUMENT_NAMES")
@@ -473,8 +473,8 @@ class Multiple_Filter:
         # get filter list from "origin" source
         if origin == "SVO":
             filter_list = SvoFps.get_filter_list(
-                facility=instrument.facility.name,
-                instrument=instrument.name.split("_")[0],
+                facility=instrument.facility.__class__.__name__,
+                instrument=instrument.__class__.__name__.split("_")[0],
             )
             filter_list = filter_list[
                 np.array(
@@ -483,17 +483,17 @@ class Multiple_Filter:
                         for filter_name in np.array(filter_list["filterID"])
                     ]
                 )
-                == instrument.name
+                == instrument.__class__.__name__
             ]
             filters = np.array(
                 [
                     Filter.from_SVO(
-                        instrument.facility.name,
-                        instrument.name,
-                        filt_ID.replace(f"{instrument}.", ""),
+                        instrument.facility.__class__.__name__,
+                        instrument.__class__.__name__,
+                        filt_ID.replace(f"{instrument.facility.__class__.__name__}/{instrument.__class__.__name__}.", ""),
                     )
                     for filt_ID in np.array(filter_list["filterID"])
-                    if filt_ID.replace(f"{instrument}.", "") not in excl_bands
+                    if filt_ID.replace(f"{instrument.facility.__class__.__name__}/{instrument.__class__.__name__}.", "") not in excl_bands
                     and (
                         any(filt_ID.endswith(suffix) for suffix in keep_suffix)
                         or "All" in keep_suffix
@@ -523,10 +523,12 @@ class Multiple_Filter:
     def __getitem__(self, i: Union[int, slice]) -> Union[Filter, List[Filter]]:
         if isinstance(i, (int, slice)):
             return self.filters[i]
+        elif isinstance(i, str):
+            return list(np.array(self.filters)[[index for index, filt in enumerate(self) if filt.band_name == i]])[0]
         else:
             raise (
                 TypeError(
-                    f"i={i} in {self.__class__.__name__}.__getitem__ has type={type(i)} which is not in [int, slice]"
+                    f"i={i} in {self.__class__.__name__}.__getitem__ has type={type(i)} which is not in [int, slice, str]"
                 )
             )
 
@@ -623,12 +625,12 @@ class Multiple_Filter:
         """
         output_str = funcs.line_sep
         output_str += "MULTIPLE_FILTER\n"
-        output_str += funcs.line_sep
+        output_str += funcs.band_sep
         for i, instrument in enumerate(self.instrument_name.split("+")):
             if i != 0:
                 output_str += funcs.band_sep
             if instrument != "UserDefined":
-                output_str += f"FACILITY: {instr_to_name_dict[instrument].facility.name}\n"
+                output_str += f"FACILITY: {instr_to_name_dict[instrument].facility.__class__.__name__}\n"
             else:
                 output_str += f"FACILITY: UserDefined\n"
             output_str += f"INSTRUMENT: {instrument}\n"
@@ -639,7 +641,7 @@ class Multiple_Filter:
                         instr_filt.extend([filt])
                     else:
                         continue
-                elif filt.instrument.name == instrument:
+                elif filt.instrument.__class__.__name__ == instrument:
                     instr_filt.extend([filt])
             output_str += f"FILTERS: {str([f'{band.band_name}' for band in instr_filt])}\n"
         # could also include PSF path and correction factors here
@@ -686,7 +688,7 @@ class Multiple_Filter:
         )
         unique_instrument_names = np.unique(
             [
-                band.instrument.name
+                band.instrument.__class__.__name__
                 if band.instrument is not None
                 else "UserDefined"
                 for band in self
@@ -730,7 +732,7 @@ class Multiple_Filter:
         all_facility_names = json.loads(config.get("Other", "FACILITY_NAMES"))
         unique_facility_names = np.unique(
             [
-                band.instrument.facility.name
+                band.instrument.facility.__class__.__name__
                 if band.instrument is not None
                 else "UserDefined"
                 for band in self
@@ -881,9 +883,12 @@ class Multiple_Filter:
                 np.max([trans for band in self for trans in band.trans]) + 0.1,
             )
         if save:
-            save_path = (
-                f"{save_dir}/{self.instrument_name}_filter_profiles.png"
-            )
+            if save_dir == "":
+                save_path = f"{self.instrument_name}_filter_profiles.png"
+            else:
+                save_path = (
+                    f"{save_dir}/{self.instrument_name}_filter_profiles.png"
+                )
             funcs.make_dirs(save_path)
             plt.savefig(save_path)
             funcs.change_file_permissions(save_path)

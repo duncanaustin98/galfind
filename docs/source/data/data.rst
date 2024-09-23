@@ -6,9 +6,9 @@ The `Data` object in Galfind is a core component designed to handle and process 
 .. toctree::
     :maxdepth: 1
 
-    psf_homogenization
+    data_intro
+    PSF_homogenization
     segmentation
-    forced_photometry
-    automasking
+    masking
     running_depths
-    from_pipeline
+    cataloguing_the_data

@@ -55,22 +55,24 @@ from tqdm import tqdm
 from . import Depths, config, galfind_logger
 from . import useful_funcs_austind as funcs
 from .decorators import run_in_dir
-from . import Filter
+from . import Filter, Multiple_Filter
 from .Instrument import ACS_WFC, WFC3_IR, NIRCam, MIRI, Instrument  # noqa F501
 
-#     morgan_version_to_dir = {
-#         "v8b": "mosaic_1084_wispfix",
-#         "v8c": "mosaic_1084_wispfix2",
-#         "v8d": "mosaic_1084_wispfix3",
-#         "v9": "mosaic_1084_wisptemp2",
-#         "v10": "mosaic_1084_wispscale",
-#         "v11": "mosaic_1084_wispnathan",
-#     }
+morgan_version_to_dir = {
+    "v8b": "mosaic_1084_wispfix",
+    "v8c": "mosaic_1084_wispfix2",
+    "v8d": "mosaic_1084_wispfix3",
+    "v9": "mosaic_1084_wisptemp2",
+    "v10": "mosaic_1084_wispscale",
+    "v11": "mosaic_1084_wispnathan",
+}
 
 
 class Band_Data_Base:
     def __init__(
         self,
+        survey: str,
+        version: str,
         im_path: str,
         im_ext: int,
         rms_err_path: str,
@@ -78,33 +80,43 @@ class Band_Data_Base:
         wht_path: str,
         wht_ext: int,
         pix_scale: u.Quantity = 0.03 * u.arcsec,
+        im_ext_name: Union[str, List[str]] = "SCI",
+        rms_err_ext_name: Union[str, List[str]] = "ERR",
+        wht_ext_name: Union[str, List[str]] = "WHT",
     ):
+        self.survey = survey
+        self.version = version
         self.im_path = im_path
         self.im_ext = im_ext
+        self.im_ext_name = im_ext_name
         self.rms_err_path = rms_err_path
         self.rms_err_ext = rms_err_ext
+        self.rms_err_ext_name = rms_err_ext_name
         self.wht_path = wht_path
         self.wht_ext = wht_ext
+        self.wht_ext_name = wht_ext_name
         self.pix_scale = pix_scale
         self._psf_match = None
         self._seg_method = None
         self._mask_method = None
         self._depth_method = None
+        self._check_data()
 
-    def __add__(
+    # stacking/mosaicing
+    def __mul__(
         self, other: Union[Type[Band_Data_Base], List[Type[Band_Data_Base]]]
     ) -> Type[Band_Data_Base]:
         # if other is not a list, make it one
         if not isinstance(other, list):
             other = [other]
         assert all(
-            isinstance(_other, Band_Data_Base.__subclasses__)
+            isinstance(_other, tuple(Band_Data_Base.__subclasses__()))
             for _other in other
         )
         band_data = deepcopy(self)
         for _other in other:
             # if element of other has the same filter as self, stack and update
-            if isinstance(_other, Band_Data_Base.__subclasses__):
+            if isinstance(_other, tuple(Band_Data_Base.__subclasses__())):
                 if self.filt == _other.filt:
                     band_data += Band_Data.from_band_data_arr([self, _other])
                 else:
@@ -112,6 +124,56 @@ class Band_Data_Base:
                         [self, _other]
                     )
         return band_data
+    
+    def __eq__(self, other: Type[Band_Data_Base]) -> bool:
+        if not isinstance(other, tuple(Band_Data_Base.__subclasses__())):
+            return False
+        else:
+            # check if all attributes are the same
+            return (
+                self.survey == other.survey
+                and self.version == other.version
+                and self.im_path == other.im_path
+                and self.im_ext == other.im_ext
+                and self.rms_err_path == other.rms_err_path
+                and self.rms_err_ext == other.rms_err_ext
+                and self.wht_path == other.wht_path
+                and self.wht_ext == other.wht_ext
+                and self.pix_scale == other.pix_scale
+                and self.im_ext_name == other.im_ext_name
+                and self.rms_err_ext_name == other.rms_err_ext_name
+                and self.wht_ext_name == other.wht_ext_name
+            )
+
+    def _check_data(self):
+        # make im_ext_name lists if not already
+        if isinstance(self.im_ext_name, str):
+            self.im_ext_name = [self.im_ext_name]
+        if isinstance(self.rms_err_ext_name, str):
+            self.rms_err_ext_name = [self.rms_err_ext_name]
+        if isinstance(self.wht_ext_name, str):
+            self.wht_ext_name = [self.wht_ext_name]
+        # load image header
+        im_hdr = self.load_im()[1]
+        assert im_hdr["EXTNAME"] in self.im_ext_name, \
+            galfind_logger.critical(
+                f"Image extension name {im_hdr['EXTNAME']} " \
+                + f"not in {str(self.im_ext_name)} for {self.filt.band_name}"
+            )
+        # load rms error header
+        rms_err_hdr = self.load_rms_err(output_hdr = True)[1]
+        assert rms_err_hdr["EXTNAME"] in self.rms_err_ext_name, \
+            galfind_logger.critical(
+                f"RMS error extension name {rms_err_hdr['EXTNAME']} " \
+                + f"not in {str(self.rms_err_ext_name)} for {self.filt.band_name}"
+            )
+        # load weight header
+        wht_hdr = self.load_wht(output_hdr = True)[1]
+        assert wht_hdr["EXTNAME"] in self.wht_ext_name, \
+            galfind_logger.critical(
+                f"Weight extension name {wht_hdr['EXTNAME']} " \
+                + f"not in {str(self.wht_ext_name)} for {self.filt.band_name}"
+            )
 
     # %% Loading methods
 
@@ -135,6 +197,11 @@ class Band_Data_Base:
         Tuple[np.ndarray, fits.Header, fits.HDUList],
     ]:
         # load image data and header
+        if not Path(self.im_path).is_file():
+            err_message = f"Image for {self.survey} {self.filt.band_name}" \
+                + f" at {self.im_path} is not a .fits image!"
+            galfind_logger.critical(err_message)
+            raise(Exception(err_message))
         im_hdul = fits.open(self.im_path)
         im_data = im_hdul[self.im_ext].data
         # im_data = im_data.byteswap().newbyteorder() slow
@@ -156,12 +223,14 @@ class Band_Data_Base:
     def load_wht(
         self, output_hdr: bool = False
     ) -> Union[Tuple[np.ndarray, fits.Header], np.ndarray]:
-        try:
+        if Path(self.wht_path).is_file():
             hdu = fits.open(self.wht_path)[self.wht_ext]
             wht = hdu.data
             hdr = hdu.header
-        except Exception as e:
-            print(e)
+        else:
+            err_message = f"Weight image for {self.survey} {self.filt.band_name}" \
+                + f" at {self.wht_path} is not a .fits image!"
+            galfind_logger.critical(err_message)
             wht = None
             hdr = None
         if output_hdr:
@@ -172,11 +241,14 @@ class Band_Data_Base:
     def load_rms_err(
         self, output_hdr: bool = False
     ) -> Union[Tuple[np.ndarray, fits.Header], np.ndarray]:
-        try:
+        if Path(self.rms_err_path).is_file():
             hdu = fits.open(self.rms_err_path)[self.rms_err_ext]
             rms_err = hdu.data
             hdr = hdu.header
-        except:
+        else:
+            err_message = f"RMS error for {self.survey} {self.filt.band_name}" \
+                + f" at {self.rms_err_path} is not a .fits image!"
+            galfind_logger.critical(err_message)
             rms_err = None
             hdr = None
         if output_hdr:
@@ -186,6 +258,11 @@ class Band_Data_Base:
 
     def load_seg(self) -> Tuple[np.ndarray, fits.Header]:
         assert self._seg_method is not None
+        if not Path(self.seg_path).is_file():
+            err_message = f"Segmentation map for {self.survey} " \
+                f"{self.filt.band_name} at {self.seg_path} is not a .fits image!"
+            galfind_logger.critical(err_message)
+            raise(Exception(err_message))
         seg_hdul = fits.open(self.seg_path)
         seg_data = seg_hdul[0].data
         seg_header = seg_hdul[0].header
@@ -328,7 +405,7 @@ class Band_Data_Base:
 
     @staticmethod
     def _pix_scale_to_str(pix_scale: u.Quantity):
-        return f"{pix_scale.to(u.arcsec).value:.2f}as"
+        return f"{round(pix_scale.to(u.marcsec).value)}mas"
 
     # def get_err_map(self, band):
     #     """Loads either the rms_err or wht map for use in SExtractor depending on the preferred map to use
@@ -440,6 +517,8 @@ class Band_Data(Band_Data_Base):
     def __init__(
         self,
         filt: Type[Filter],
+        survey: str,
+        version: str,
         im_path: str,
         im_ext: int,
         rms_err_path: str,
@@ -447,9 +526,14 @@ class Band_Data(Band_Data_Base):
         wht_path: str,
         wht_ext: int,
         pix_scale: u.Quantity = 0.03 * u.arcsec,
+        im_ext_name: Union[str, List[str]] = "SCI",
+        rms_err_ext_name: Union[str, List[str]] = "ERR",
+        wht_ext_name: Union[str, List[str]] = "WHT", 
     ):
         self.filt = filt
         super().__init__(
+            survey,
+            version,
             im_path,
             im_ext,
             rms_err_path,
@@ -457,19 +541,50 @@ class Band_Data(Band_Data_Base):
             wht_path,
             wht_ext,
             pix_scale,
+            im_ext_name,
+            rms_err_ext_name,
+            wht_ext_name,
         )
 
     @classmethod
     def from_band_data_arr(cls, band_data_arr: List[Type[Band_Data_Base]]):
         # make sure all filters are the same
-        # stack bands
+        # stack bands by multiplication
         pass
 
+    def __add__(
+        self, other: Union[Band_Data, List[Band_Data], Data, List[Data]]
+    ) -> Data:
+        # if other is not a list, make it one
+        if not isinstance(other, list):
+            other = [other]
+        # if other is an array of data objects, make a list of band_data objects
+        if isinstance(other[0], Data):
+            assert all(isinstance(_other, Data) for _other in other)
+            other_band_data = []
+            for _other in other:
+                other_band_data.extend(_other.band_data_arr)
+            other = other_band_data
+        new_band_data_arr = [self] + other
+        # ensure all bands come from the same survey and version
+        if all([band_data.survey == self.survey and band_data.version == self.version for band_data in new_band_data_arr]):
+            # if all bands being added are different
+            if len(np.unique([band_data.filt.band_name for band_data in new_band_data_arr])) == len(new_band_data_arr):
+                return Data(new_band_data_arr)
+            else:
+                raise(Exception("Cannot add Data/Band_Data objects with the same filters." \
+                    + " You may want to use Band_Data.__mul__() to stack!"))
+        else:
+            raise(Exception(
+                "Cannot add Data/Band_Data objects from different surveys or versions."
+            ))
 
 class Stacked_Band_Data(Band_Data_Base):
     def __init__(
         self,
         filterset: Union[List[Filter], Multiple_Filter],
+        survey: str,
+        version: str,
         im_path: str,
         im_ext: int,
         rms_err_path: str,
@@ -477,9 +592,14 @@ class Stacked_Band_Data(Band_Data_Base):
         wht_path: str,
         wht_ext: int,
         pix_scale: u.Quantity = 0.03 * u.arcsec,
+        im_ext_name: Union[str, List[str]] = "SCI",
+        rms_err_ext_name: Union[str, List[str]] = "ERR",
+        wht_ext_name: Union[str, List[str]] = "WHT",
     ):
         self.filterset = filterset
         super().__init__(
+            survey,
+            version,
             im_path,
             im_ext,
             rms_err_path,
@@ -487,6 +607,9 @@ class Stacked_Band_Data(Band_Data_Base):
             wht_path,
             wht_ext,
             pix_scale,
+            im_ext_name,
+            rms_err_ext_name,
+            wht_ext_name,
         )
 
     @classmethod
@@ -501,8 +624,8 @@ class Data:
     def __init__(
         self,
         band_data_arr: List[Type[Band_Data]],
-        alignment_band: str = "F444W",
     ):
+        # save and sort band_arr by central wavelength
         self.band_data_arr = [
             band_data
             for band_data in sorted(
@@ -512,16 +635,6 @@ class Data:
                 ).value,
             )
         ]
-        # TODO: ensure alignment band exists and
-        # that all images are aligned to it
-        if alignment_band not in [
-            band_data.filt.band_name for band_data in self.band_data_arr
-        ]:
-            galfind_logger.critical(
-                f"Alignment band = {alignment_band} does not exist in Data filterset!"
-            )
-        else:
-            self.alignment_band = alignment_band
 
     @classmethod
     def from_survey_version(
@@ -541,15 +654,24 @@ class Data:
         rms_err_str: List[str] = ["_rms_err", "_rms", "_err"],
         wht_str: List[str] = ["_wht", "_weight"],
         version_to_dir_dict: Optional[Dict[str, str]] = None,
-        alignment_band: Union[str, List[str]] = "F444W",
+        im_ext_name: Union[str, List[str]] = "SCI",
+        rms_err_ext_name: Union[str, List[str]] = "ERR",
+        wht_ext_name: Union[str, List[str]] = "WHT",
     ):
-        band_data_arr = []
+        # make im/rms_err/wht extension names lists if not already
+        if isinstance(im_ext_name, str):
+            im_ext_name = [im_ext_name]
+        if isinstance(rms_err_ext_name, str):
+            rms_err_ext_name = [rms_err_ext_name]
+        if isinstance(wht_ext_name, str):
+            wht_ext_name = [wht_ext_name]
         # search on an instrument-by-instrument basis
         instr_to_name_dict = {
             name: globals()[name]()
             for name in instrument_names
             if name in json.loads(config.get("Other", "INSTRUMENT_NAMES"))
         }
+        band_data_arr = []
         for instr_name, instrument in instr_to_name_dict.items():
             if isinstance(pix_scales, dict):
                 pix_scale = pix_scales[instr_name]
@@ -562,30 +684,29 @@ class Data:
                 pix_scales[instr_name],
                 version_to_dir_dict,
             )
+            galfind_logger.debug(f"Searching for {survey} {version} {instr_name} data in {search_dir}")
             # determine which filters have data
             fits_paths = list(glob.glob(f"{search_dir}/*.fits"))
             filt_names_paths = {
                 filt: [
                     path
                     for path in fits_paths
-                    if (
-                        filt.upper() in path
-                        or filt.lower() in path
-                        or filt.lower().replace("f", "F") in path
-                        or filt.upper().replace("F", "f") in path
-                    )
-                    and not any(
-                        other_filt.upper() in path
-                        or other_filt.lower() in path
-                        or other_filt.lower().replace("f", "F") in path
-                        or other_filt.upper().replace("F", "f") in path
-                        for other_filt in instrument.filt_names
-                        if other_filt != filt
-                    )
-                    in path
+                    if any(path.find(substr) != -1 for substr in [filt.upper(), filt.lower(), filt.lower().replace("f", "F"), filt.upper().replace("F", "f")])
+                    and not any(path.find(substr) != -1 for other_filt in instrument.filt_names if other_filt != filt 
+                        for substr in [other_filt.upper(), other_filt.lower(), other_filt.lower().replace("f", "F"), other_filt.upper().replace("F", "f")])
                 ]
                 for filt in instrument.filt_names
             }
+            if len(filt_names_paths) == 0:
+                galfind_logger.warning(
+                    f"No data found for {survey} {version} {instr_name} in {search_dir}"
+                )
+                continue
+            else:
+                bands_found = [key for key, val in filt_names_paths.items() if len(val) != 0]
+                galfind_logger.debug(
+                    f"Found {'+'.join(bands_found)} filters for {survey} {version} {instr_name}"
+                )
             # sort into paths and extensions for each image type
             (
                 im_paths,
@@ -594,9 +715,10 @@ class Data:
                 rms_err_exts,
                 wht_paths,
                 wht_exts,
-            ) = cls._sort_paths(filt_names_paths, im_str, rms_err_str, wht_str)
+            ) = cls._sort_paths(filt_names_paths, im_str, rms_err_str, wht_str, im_ext_name, rms_err_ext_name, wht_ext_name)
+
             # stack all images that have multiple images in the same band
-            for filt_name in filt_names_paths.keys():
+            for filt_name in im_paths.keys():
                 if len(im_paths[filt_name]) > 1:
                     # stack sci/rms_err/wht images together and move the old ones to a new directory
                     err_message = (
@@ -607,6 +729,8 @@ class Data:
                 else:
                     band_data = Band_Data(
                         Filter.from_filt_name(filt_name),
+                        survey,
+                        version,
                         im_paths[filt_name][0],
                         im_exts[filt_name][0],
                         rms_err_paths[filt_name][0],
@@ -614,6 +738,9 @@ class Data:
                         wht_paths[filt_name][0],
                         wht_exts[filt_name][0],
                         pix_scale,
+                        im_ext_name,
+                        rms_err_ext_name,
+                        wht_ext_name,
                     )
                 band_data_arr.extend([band_data])
         return cls(band_data_arr)
@@ -635,8 +762,8 @@ class Data:
         return (
             f"{config['DEFAULT']['GALFIND_DATA']}/"
             + f"{instrument.facility.__class__.__name__.lower()}/{survey}/"
-            + f"{instrument.__class__.__name__}/"
-            + f"{Band_Data_Base._pix_scale_to_str(pix_scale)}/{version_substr}"
+            + f"{instrument.__class__.__name__}/{version_substr}/"
+            + f"{Band_Data_Base._pix_scale_to_str(pix_scale)}"
         )
 
     @staticmethod
@@ -645,6 +772,9 @@ class Data:
         im_str: List[str] = ["_sci", "_i2d", "_drz"],
         rms_err_str: List[str] = ["_rms_err", "_rms", "_err"],
         wht_str: List[str] = ["_wht", "_weight"],
+        im_ext_name: Union[str, List[str]] = "SCI",
+        rms_err_ext_name: Union[str, List[str]] = "ERR",
+        wht_ext_name: Union[str, List[str]] = "WHT"
     ) -> Tuple[
         Dict[str, List[str]],
         Dict[str, List[int]],
@@ -661,6 +791,9 @@ class Data:
         wht_paths = {}
         wht_exts = {}
         for filt_name, paths in filt_names_paths.items():
+            if len(paths) == 0:
+                galfind_logger.debug(f"No data found for {filt_name}")
+                continue
             if filt_name not in im_paths.keys():
                 im_paths[filt_name] = []
                 im_exts[filt_name] = []
@@ -670,32 +803,38 @@ class Data:
             if filt_name not in wht_paths.keys():
                 wht_paths[filt_name] = []
                 wht_exts[filt_name] = []
+            # make arrays to determine where the data is stored for each band
+            is_sci = {path: [str in path for str in im_str] for path in paths}
+            is_rms_err = {path: [str in path for str in rms_err_str] for path in paths}
+            is_wht = {path: [str in path for str in wht_str] for path in paths}
             for path in paths:
-                is_sci = any(str in path for str in im_str)
-                is_rms_err = any(str in path for str in rms_err_str)
-                is_wht = any(str in path for str in wht_str)
-                # ensure the path only belongs to one (or none) of the image types
-                assert all(
-                    not all(i for i in pair)
-                    for pair in itertools.combinations(
-                        (is_sci, is_rms_err, is_wht), 2
-                    )
-                )
-                single_path = False
-                if is_sci:
-                    im_paths[filt_name].extend([path])
-                    im_exts[filt_name].extend([path])
-                elif is_rms_err:
-                    rms_err_paths[filt_name].extend([path])
-                    rms_err_exts[filt_name].extend([path])
-                elif is_wht:
-                    wht_paths[filt_name].extend([path])
-                else:
+                # if all paths are science images
+                if all(path_is_sci for path_is_sci in is_sci.values()):
                     # all extensions must be within the same image
                     single_path = True
                     im_paths[filt_name].extend([path])
                     rms_err_paths[filt_name].extend([path])
                     wht_paths[filt_name].extend([path])
+                else:
+                    # ensure the path only belongs to one (or none) of the image types
+                    assert all(
+                        not all(i for i in pair)
+                        for pair in itertools.combinations(
+                            (is_sci, is_rms_err, is_wht), 2
+                        )
+                    )
+                    single_path = False
+                    if is_sci[path] and not is_rms_err[path] and not is_wht[path]:
+                        im_paths[filt_name].extend([path])
+                    elif not is_sci[path] and is_rms_err[path] and not is_wht[path]:
+                        rms_err_paths[filt_name].extend([path])
+                    elif not is_sci[path] and not is_rms_err[path] and is_wht[path]:
+                        wht_paths[filt_name].extend([path])
+                    else:
+                        galfind_logger.critical(
+                            f"{filt_name}, {path} not recognised as im, rms_err, or wht!" \
+                            + "Consider updating 'im_str', ''rms_err_str', and 'wht_str'!"
+                        )
                 # extract sci/rms_err/wht extensions
                 hdul = fits.open(path)
                 if not single_path:
@@ -706,21 +845,21 @@ class Data:
                             assertion_len += 1
                         else:
                             if is_sci:
-                                im_exts[filt_name] = int(j)
+                                im_exts[filt_name].extend([int(j)])
                             elif is_rms_err:
-                                rms_err_exts[filt_name] = int(j)
+                                rms_err_exts[filt_name].extend([int(j)])
                             elif is_wht:
-                                wht_exts[filt_name] = int(j)
+                                wht_exts[filt_name].extend([int(j)])
                     assert len(hdul) == assertion_len
                 else:
                     hdul = fits.open(path)
                     for j, hdu in enumerate(hdul):
-                        if hdu.name == "SCI":
-                            im_exts[filt_name] = int(j)
-                        if hdu.name == "WHT":
-                            wht_exts[filt_name] = int(j)
-                        if hdu.name == "ERR":
-                            rms_err_exts[filt_name] = int(j)
+                        if hdu.name in im_ext_name:
+                            im_exts[filt_name].extend([int(j)])
+                        if hdu.name in rms_err_ext_name:
+                            rms_err_exts[filt_name].extend([int(j)])
+                        if hdu.name in wht_ext_name:
+                            wht_exts[filt_name].extend([int(j)])
         return (
             im_paths,
             im_exts,
@@ -729,6 +868,16 @@ class Data:
             wht_paths,
             wht_exts,
         )
+
+    @property
+    def survey(self):
+        assert all(band_data.survey == self[0].survey for band_data in self)
+        return self[0].survey
+
+    @property
+    def version(self):
+        assert all(band_data.version == self[0].version for band_data in self)
+        return self[0].version
 
     @property
     def filterset(self):
@@ -886,13 +1035,12 @@ class Data:
     ):
         pass
 
-    @staticmethod
-    def load_pix_scale(im_header, band_name, instrument_name):
-        pass
-
     # %% Overloaded operators
 
-    def __str__(self, depth_mode="n_nearest"):
+    def __repr__(self):
+        return f"{self.__class__.__name__}({self.survey}, {self.version})"
+
+    def __str__(self):
         """Function to print summary of Data class
 
         Returns:
@@ -902,90 +1050,86 @@ class Data:
                 Masked/unmasked areas are also quoted here.
                 Also includes paths/extensions to SCI/SEG/ERR/WHT/MASK in each band, pixel scales, zero points and fits shapes.
         """
-        line_sep = "*" * 40 + "\n"
-        band_sep = "-" * 10 + "\n"
-        output_str = line_sep
+        output_str = funcs.line_sep
         output_str += "DATA OBJECT:\n"
-        output_str += band_sep
+        output_str += funcs.band_sep
         output_str += f"SURVEY: {self.survey}\n"
         output_str += f"VERSION: {self.version}\n"
-        output_str += (
-            "FIELD TYPE: " + "BLANK\n" if self.is_blank else "CLUSTER\n"
-        )
-        # print instrument string representation
-        output_str += str(
-            self.instrument
-        )  # should include aperture sizes + aperture corrections + paths to WebbPSF models
+        # output_str += (
+        #     "FIELD TYPE: " + "BLANK\n" if self.is_blank else "CLUSTER\n"
+        # )
+        # print filterset string representation
+        output_str += str(self.filterset)
         # print basic data quantities: common ZPs, pixel scales, and SCI image shapes, as well as unmasked sky area and depths should they exist
-        for key, item in self.common.items():
-            output_str += f"{key}: {item}\n"
-        try:
-            unmasked_area_tab = self.calc_unmasked_area(
-                masking_instrument_or_band_name=self.forced_phot_band,
-                forced_phot_band=self.forced_phot_band,
-            )
-            unmasked_area = unmasked_area_tab[
-                unmasked_area_tab["masking_instrument_band"] == "NIRCam"
-            ]["unmasked_area_total"][0]
-            output_str += f"UNMASKED AREA = {unmasked_area}\n"
-        except:
-            pass
-        try:
-            depths = []
-            for aper_diam in (
-                json.loads(config.get("SExtractor", "APERTURE_DIAMS"))
-                * u.arcsec
-            ):
-                depths.append(self.load_depths(aper_diam, depth_mode))
-            output_str += f"DEPTHS = {str(depths)}\n"
-        except:
-            pass
-        # if there are common directories for data, print these
-        if self.common_dirs != {}:
-            output_str += line_sep
-            output_str += "SHARED DIRECTORIES:\n"
-            for key, value in self.common_dirs.items():
-                output_str += f"{key}: {value}\n"
-            output_str += line_sep
-        # loop through available bands, printing paths, exts, ZPs, fits shapes
-        output_str += "BAND DATA:\n"
-        for band in self.instrument.band_names:
-            output_str += band_sep
-            output_str += f"{band}\n"
-            if hasattr(self, "sex_cat_types"):
-                if band in self.sex_cat_types.keys():
-                    output_str += (
-                        f"PHOTOMETRY BY: {self.sex_cat_types[band]}\n"
-                    )
-            band_data_paths = [
-                self.im_paths[band],
-                self.seg_paths[band],
-                self.mask_paths[band],
-            ]
-            band_data_exts = [self.im_exts[band], 0, 0]
-            band_data_labels = ["SCI", "SEG", "MASK"]
-            for paths, exts, label in zip(
-                [self.rms_err_paths, self.wht_paths],
-                [self.rms_err_exts, self.wht_exts],
-                ["ERR", "WHT"],
-            ):
-                if band in self.rms_err_paths.keys():
-                    band_data_paths.append(paths[band])
-                    band_data_exts.append(exts[band])
-                    band_data_labels.append(label)
-            for path, ext, label in zip(
-                band_data_paths, band_data_exts, band_data_labels
-            ):
-                if label in self.common_dirs:
-                    path = path.split("/")[-1]
-                output_str += f"{label} path = {path}[{str(ext)}]\n"
-            for label, data in zip(
-                ["ZERO POINT", "PIXEL SCALE", "SCI SHAPE"],
-                [self.im_zps, self.im_pixel_scales, self.im_shapes],
-            ):
-                if label not in self.common.keys():
-                    output_str += f"{label} = {data[band]}\n"
-        output_str += line_sep
+        # for key, item in self.common.items():
+        #     output_str += f"{key}: {item}\n"
+        # try:
+        #     unmasked_area_tab = self.calc_unmasked_area(
+        #         masking_instrument_or_band_name=self.forced_phot_band,
+        #         forced_phot_band=self.forced_phot_band,
+        #     )
+        #     unmasked_area = unmasked_area_tab[
+        #         unmasked_area_tab["masking_instrument_band"] == "NIRCam"
+        #     ]["unmasked_area_total"][0]
+        #     output_str += f"UNMASKED AREA = {unmasked_area}\n"
+        # except:
+        #     pass
+        # try:
+        #     depths = []
+        #     for aper_diam in (
+        #         json.loads(config.get("SExtractor", "APERTURE_DIAMS"))
+        #         * u.arcsec
+        #     ):
+        #         depths.append(self.load_depths(aper_diam, depth_mode))
+        #     output_str += f"DEPTHS = {str(depths)}\n"
+        # except:
+        #     pass
+        # # if there are common directories for data, print these
+        # if self.common_dirs != {}:
+        #     output_str += line_sep
+        #     output_str += "SHARED DIRECTORIES:\n"
+        #     for key, value in self.common_dirs.items():
+        #         output_str += f"{key}: {value}\n"
+        #     output_str += line_sep
+        # # loop through available bands, printing paths, exts, ZPs, fits shapes
+        # output_str += "BAND DATA:\n"
+        # for band in self.instrument.band_names:
+        #     output_str += band_sep
+        #     output_str += f"{band}\n"
+        #     if hasattr(self, "sex_cat_types"):
+        #         if band in self.sex_cat_types.keys():
+        #             output_str += (
+        #                 f"PHOTOMETRY BY: {self.sex_cat_types[band]}\n"
+        #             )
+        #     band_data_paths = [
+        #         self.im_paths[band],
+        #         self.seg_paths[band],
+        #         self.mask_paths[band],
+        #     ]
+        #     band_data_exts = [self.im_exts[band], 0, 0]
+        #     band_data_labels = ["SCI", "SEG", "MASK"]
+        #     for paths, exts, label in zip(
+        #         [self.rms_err_paths, self.wht_paths],
+        #         [self.rms_err_exts, self.wht_exts],
+        #         ["ERR", "WHT"],
+        #     ):
+        #         if band in self.rms_err_paths.keys():
+        #             band_data_paths.append(paths[band])
+        #             band_data_exts.append(exts[band])
+        #             band_data_labels.append(label)
+        #     for path, ext, label in zip(
+        #         band_data_paths, band_data_exts, band_data_labels
+        #     ):
+        #         if label in self.common_dirs:
+        #             path = path.split("/")[-1]
+        #         output_str += f"{label} path = {path}[{str(ext)}]\n"
+        #     for label, data in zip(
+        #         ["ZERO POINT", "PIXEL SCALE", "SCI SHAPE"],
+        #         [self.im_zps, self.im_pixel_scales, self.im_shapes],
+        #     ):
+        #         if label not in self.common.keys():
+        #             output_str += f"{label} = {data[band]}\n"
+        output_str += funcs.line_sep
         return output_str
 
     def __len__(self):
@@ -995,7 +1139,7 @@ class Data:
         self.iter = 0
         return self
 
-    def __next__(self):
+    def __next__(self) -> Band_Data:
         if self.iter > len(self) - 1:
             raise StopIteration
         else:
@@ -1003,28 +1147,48 @@ class Data:
             self.iter += 1
             return band_data
 
-    def __getitem__(self, index: Union[int, slice, List[bool]]):
+    def __getitem__(self, index: Union[int, slice, List[bool]]) -> Band_Data:
         return self.band_data_arr[index]
 
-    def __add__(self, data):
-        common_bands = [
-            band
-            for band in data.instrument.band_names
-            if band in self.instrument.band_names
-        ]
-        if len(common_bands) != 0:
-            raise (
-                Exception(
-                    f"Cannot add two of the same bands from different instruments together! Culprits: {common_bands}"
-                )
+    def __add__(self, other: Union[Band_Data, List[Band_Data], Data, List[Data]]) -> Data:
+        # if other is not a list, make it one
+        if not isinstance(other, list):
+            other = [other]
+        # if other is an array of data objects, make a list of band_data objects
+        if isinstance(other[0], Data):
+            assert all(isinstance(_other, Data) for _other in other)
+            other_band_data = []
+            for _other in other:
+                other_band_data.extend(_other.band_data_arr)
+            other = other_band_data
+        assert all(isinstance(_other, Band_Data) for _other in other)
+        new_band_data_arr = self.band_data_arr + other
+        # ensure all bands come from the same survey and version
+        if all([band_data.survey == self.survey and band_data.version == self.version for band_data in new_band_data_arr]):
+            # if all bands being added are different
+            if len(np.unique([band_data.filt.band_name for band_data in new_band_data_arr])) == len(new_band_data_arr):
+                return Data(new_band_data_arr)
+            else:
+                raise(Exception("Cannot add Data objects with the same filters." \
+                    + " You may want to use Data.__mul__() to stack!"))
+        else:
+            raise(Exception(
+                "Cannot add Data objects from different surveys or versions."
+            ))
+
+    def __eq__(self, other: Data) -> bool:
+        if not isinstance(other, Data):
+            return False
+        elif len(self) != len(other):
+            return False
+        else:
+            return all(
+                [
+                    self_band == other_band
+                    for self_band, other_band in zip(self, other)
+                ]
             )
-        # add all dictionaries together
-        self.__dict__ = {
-            k: self.__dict__.get(k, 0) + data.__dict__.get(k, 0)
-            for k in set(self.__dict__()) | set(data.__dict__())
-        }
-        galfind_logger.debug(self.__repr__)
-        return self
+
 
     @property
     def full_name(self):
