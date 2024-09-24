@@ -65,6 +65,7 @@ from tqdm import tqdm
 
 from . import Depths, config, galfind_logger
 from . import useful_funcs_austind as funcs
+from . import Segmentation
 from .decorators import run_in_dir
 from . import Filter, Multiple_Filter
 from .Instrument import ACS_WFC, WFC3_IR, NIRCam, MIRI, Instrument  # noqa F501
@@ -188,6 +189,23 @@ class Band_Data_Base(ABC):
                 and self.rms_err_ext_name == other.rms_err_ext_name
                 and self.wht_ext_name == other.wht_ext_name
             )
+    
+    def __copy__(self) -> Type[Band_Data_Base]:
+        # copy the object
+        cls = self.__class__
+        result = cls.__new__(cls)
+        for k, v in self.__dict__.items():
+            setattr(result, k, v)
+        return result
+
+    def __deepcopy__(self, memo: Dict) -> Type[Band_Data_Base]:
+        # deepcopy the object
+        cls = self.__class__
+        result = cls.__new__(cls)
+        memo[id(self)] = result
+        for k, v in self.__dict__.items():
+            setattr(result, k, deepcopy(v, memo))
+        return result
 
     def _check_data(self, incl_rms_err: bool = True, incl_wht: bool = True):
         # make im_ext_name lists if not already
@@ -310,7 +328,10 @@ class Band_Data_Base(ABC):
             return rms_err
 
     def load_seg(self) -> Tuple[np.ndarray, fits.Header]:
-        assert self._seg_method is not None
+        assert self._seg_method is not None, \
+            galfind_logger.critical(
+                f"Segmentation path not set for {self.survey} {self.filt.band_name}"
+            )
         if not Path(self.seg_path).is_file():
             err_message = (
                 f"Segmentation map for {self.survey} "
@@ -333,6 +354,7 @@ class Band_Data_Base(ABC):
                     f"Mask for {self.survey} {self.band.band_name} at {self.mask_path} is not a .fits mask!"
                 )
         else:
+            galfind_logger.critical(f"Mask for {self.survey} {self.band.band_name} not set!")
             mask = None
         return mask
 
@@ -602,134 +624,32 @@ class Band_Data_Base(ABC):
 
     #     return im_paths_matched, wht_paths_matched, rms_err_paths_matched
 
-    def segment(self, method: str = "sextractor"):  # sex_prefer="rms_err",
+    def segment(self, err_type: str = "rms_err", method: str = "sextractor") -> NoReturn:
+        """
+        Segments the data using the specified method and error type.
+
+        Parameters:
+        -----------
+        err_type : str, optional
+            The type of error to use for segmentation. Default is "rms_err".
+        method : str, optional
+            The segmentation method to use. Default is "sextractor".
+
+        Returns:
+        --------
+        NoReturn
+            This method does not return any value.
+
+        Notes:
+        ------
+        - If the method is "sextractor", it uses the Segmentation.segment_sextractor function.
+        - The segmentation method used is stored in the `_seg_method` attribute.
+        """
         if method == "sextractor":
-            self._segment_sextractor()
-        #     # load path to segmentation map
-        #     seg_paths[band.band_name] = (
-        #         f"{config['DEFAULT']['GALFIND_WORK']}/SExtractor/{band.instrument}/{version}/{survey}/{survey}_{band.band_name}_{band.band_name}_sel_cat_{version}_seg.fits"
-        #     )    #     # make segmentation maps from image paths if they don't already exist
-        # [
-        #     self.make_seg_map(band)
-        #     for band, path in seg_paths.items()
-        #     if path not in existing_seg_paths
-        # ]
-        # self.seg_paths = seg_paths
-        # self._seg_method = method
+            self.seg_path = Segmentation.segment_sextractor(self, err_type)
+        breakpoint()
+        self._seg_method = method
 
-    # @run_in_dir(path=config["DEFAULT"]["GALFIND_DIR"])
-    # def _segment_sextractor(
-    #     self,
-    #     sex_config_path=config["SExtractor"]["CONFIG_PATH"],
-    #     params_path=config["SExtractor"]["PARAMS_PATH"],
-    # ):
-    #     galfind_logger.warning(
-    #         "Data.make_seg_map easily sped up without the use of Instrument.instrument_from_band!"
-    #     )
-
-    #     # load relevant err map paths, preferring rms_err maps if available
-    #     err_map_path, err_map_ext, err_map_type = self.get_err_map(band)
-    #     # insert specified aperture diameters from config file
-    #     as_aper_diams = json.loads(config.get("SExtractor", "APERTURE_DIAMS"))
-    #     if len(as_aper_diams) != 5:
-    #         galfind_logger.warning(
-    #             f"{sex_config_path=} should be updated for {as_aper_diams=} at runtime!"
-    #         )
-    #     pix_aper_diams = (
-    #         str(
-    #             [
-    #                 np.round(pix_aper_diam, 2)
-    #                 for pix_aper_diam in as_aper_diams
-    #                 / self.im_pixel_scales[band].value
-    #             ]
-    #         )
-    #         .replace("[", "")
-    #         .replace("]", "")
-    #         .replace(" ", "")
-    #     )
-
-    #     # SExtractor bash script python wrapper
-    #     print(
-    #         [
-    #             "./make_seg_map.sh",
-    #             config["SExtractor"]["SEX_DIR"],
-    #             self.im_paths[band],
-    #             str(self.im_pixel_scales[band].value),
-    #             str(self.im_zps[band]),
-    #             self.instrument.instrument_from_band(band).name,  # slow
-    #             self.survey,
-    #             band,
-    #             self.version,
-    #             err_map_path,
-    #             err_map_ext,
-    #             err_map_type,
-    #             str(self.im_exts[band]),
-    #             sex_config_path,
-    #             params_path,
-    #             pix_aper_diams,
-    #         ]
-    #     )
-    #     process = subprocess.Popen(
-    #         [
-    #             "./make_seg_map.sh",
-    #             config["Sextractor"]["SEX_DIR"],
-    #             self.im_paths[band],
-    #             str(self.im_pixel_scales[band].value),
-    #             str(self.im_zps[band]),
-    #             self.instrument.instrument_from_band(band).name,
-    #             self.survey,
-    #             band,
-    #             self.version,
-    #             err_map_path,
-    #             err_map_ext,
-    #             err_map_type,
-    #             str(self.im_exts[band]),
-    #             sex_config_path,
-    #             params_path,
-    #             pix_aper_diams,
-    #         ]
-    #     )
-    #     process.wait()
-    #     galfind_logger.info(
-    #         f"Made segmentation map for {self.survey} {self.version} {band} using config = {sex_config_path} and {err_map_type}"
-    #     )
-    #     pass
-
-    # def sex_cat_path(
-    #     self,
-    #     band: Union[str, Filter],
-    #     forced_phot_band: str,
-    #     timed: bool = False,
-    # ):
-    #     if timed:
-    #         start = time.time()
-    #     if type(band) == str:
-    #         instr_name = self.instrument.instrument_from_band(band).name
-    #         band_name = band
-    #     else:
-    #         instr_name = band.instrument
-    #         band_name = band.band_name
-    #     # forced phot band here is the string version
-    #     sex_cat_dir = f"{config['DEFAULT']['GALFIND_WORK']}/SExtractor/{instr_name}/{self.version}/{self.survey}"
-    #     sex_cat_name = f"{self.survey}_{band_name}_{forced_phot_band}_sel_cat_{self.version}.fits"
-    #     sex_cat_path = f"{sex_cat_dir}/{sex_cat_name}"
-    #     funcs.change_file_permissions(sex_cat_path)
-    #     if timed:
-    #         end = time.time()
-    #         print(f"Data.sex_cat_path took {end - start:.1e}s")
-    #     return sex_cat_path
-
-    # def seg_path(self, band: Filter):
-    #     # IF THIS IS CHANGED MUST ALSO CHANGE THE PATH IN __init__ AND make_seg_map.sh
-    #     if type(band) in [str]:
-    #         instr_name = self.instrument.instrument_from_band(band).name
-    #         band_name = band
-    #     else:
-    #         instr_name = band.instrument
-    #         band_name = band.band_name
-    #     path = f"{config['DEFAULT']['GALFIND_WORK']}/SExtractor/{instr_name}/{self.version}/{self.survey}/{self.survey}_{band_name}_{band_name}_sel_cat_{self.version}_seg.fits"
-    #     funcs.change_file_permissions(path)
-    #     return path
 
     def mask(
         self,
@@ -1138,6 +1058,10 @@ class Band_Data(Band_Data_Base):
     @property
     def filt_name(self):
         return self.filt.band_name
+    
+    @property
+    def ZP(self) -> Dict[str, float]:
+        return self.filt.instrument.calc_ZP(self)
 
     def __add__(
         self, other: Union[Band_Data, List[Band_Data], Data, List[Data]]
@@ -1235,6 +1159,11 @@ class Stacked_Band_Data(Band_Data_Base):
     @property
     def filt_name(self) -> str:
         return "+".join([filt.band_name for filt in self.filterset])
+    
+    @property
+    def ZP(self) -> Dict[str, float]:
+        assert all(filt.instrument.calc_ZP(self) == self.filterset[0].instrument.calc_ZP(self) for filt in self.filterset)
+        return self.filterset[0].instrument.calc_ZP(self)
 
 
 class Data:
@@ -1595,18 +1524,11 @@ class Data:
 
     @property
     def ZPs(self) -> Dict[str, float]:
-        return {
-            band_data.filt.filt_name: band_data.filt.instrument.calc_ZP(
-                band_data
-            )
-            for band_data in self
-        }
+        return {band_data.filt_name: band_data.ZP for band_data in self}
 
     @property
-    def im_pixel_scales(self) -> Dict[str, u.Quantity]:
-        return {
-            band_data.filt.filt_name: band_data.pix_scale for band_data in self
-        }
+    def pixel_scales(self) -> Dict[str, u.Quantity]:
+        return {band_data.filt_name: band_data.pix_scale for band_data in self}
 
     def load_cluster_blank_mask_paths(self):
         # load in cluster core / blank field fits/reg masks
@@ -1857,7 +1779,9 @@ class Data:
             self.iter += 1
             return band_data
 
-    def __getitem__(self, index: Union[int, slice, List[bool]]) -> Band_Data:
+    def __getitem__(self, index: Union[int, slice, List[bool], str]) -> Band_Data:
+        if isinstance(index, str):
+            index = self._index_from_str(index)
         return self.band_data_arr[index]
 
     def __add__(
@@ -1920,6 +1844,13 @@ class Data:
                 ]
             )
 
+    def _index_from_str(self, filt_name: str) -> int:
+        assert filt_name in [band.filt_name for band in self], \
+            galfind_logger.warning(
+                f"Filter {filt_name} not found in {self.filterset.band_names}"
+            )
+        return [i for i in range(len(self)) if self[i].filt_name == filt_name][0]
+
     @property
     def full_name(self):
         return f"{self.version}_{self.survey}_{self.instrument.name}"
@@ -1968,6 +1899,19 @@ class Data:
         self, band: Union[int, str, Filter, List[Filter], Multiple_Filter]
     ):
         return self[band].load_data()
+    
+    def segment(self, err_type: str = "rms_err", method: str = "sextractor") -> NoReturn:
+        """
+        Segments the data using the specified error type and method.
+
+        Args:
+            err_type (str): The type of error map to use for segmentation. Default is "rms_err".
+            method (str): The method to use for segmentation. Default is "sextractor".
+
+        Returns:
+            NoReturn: This method does not return any value.
+        """
+        [band_data.make_seg_map(err_type, method) for band_data in self]
 
     def plot(
         self,
@@ -2047,10 +1991,6 @@ class Data:
                 Trilogy(in_path, images=None).run()
             elif method == "lupton":
                 raise (NotImplementedError())
-
-    def make_seg_maps(self):
-        for band in self.instrument.band_names:
-            self.make_seg_map(band)
 
     @staticmethod
     def mosaic_images(
