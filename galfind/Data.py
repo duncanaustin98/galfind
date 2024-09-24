@@ -9,6 +9,7 @@ Created on Wed May 17 14:20:31 2023
 from __future__ import annotations
 
 # from reproject import reproject_adaptive
+from abc import ABC, abstractmethod
 import contextlib
 import glob
 import json
@@ -19,15 +20,25 @@ import time
 import itertools
 from copy import deepcopy
 from pathlib import Path
-from typing import List, Type, Dict, Union, Tuple, Optional, TYPE_CHECKING
+from typing import (
+    List,
+    Type,
+    Dict,
+    Union,
+    Tuple,
+    Optional,
+    NoReturn,
+    TYPE_CHECKING,
+)
 
-if TYPE_CHECKING:
-    from . import Multiple_Filter
-    from .PSF import PSF
 try:
     from typing import Self, Type  # python 3.11+
 except ImportError:
     from typing_extensions import Self, Type  # python > 3.7 AND python < 3.11
+
+if TYPE_CHECKING:
+    from . import Multiple_Filter
+    from .PSF import PSF
 
 import astropy.units as u
 import astropy.visualization as vis
@@ -68,7 +79,7 @@ morgan_version_to_dir = {
 }
 
 
-class Band_Data_Base:
+class Band_Data_Base(ABC):
     def __init__(
         self,
         survey: str,
@@ -83,6 +94,7 @@ class Band_Data_Base:
         im_ext_name: Union[str, List[str]] = "SCI",
         rms_err_ext_name: Union[str, List[str]] = "ERR",
         wht_ext_name: Union[str, List[str]] = "WHT",
+        use_galfind_err: bool = False,
     ):
         self.survey = survey
         self.version = version
@@ -96,11 +108,43 @@ class Band_Data_Base:
         self.wht_ext = wht_ext
         self.wht_ext_name = wht_ext_name
         self.pix_scale = pix_scale
+        self._use_galfind_err = use_galfind_err
         self._psf_match = None
         self._seg_method = None
         self._mask_method = None
         self._depth_method = None
-        self._check_data()
+        # make rms error / wht maps using galfind if required
+        if self._use_galfind_err:
+            if (
+                (self.rms_err_path is None or self.rms_err_ext is None)
+                and self.wht_path is not None
+                and self.wht_ext is not None
+            ):
+                # make rms_err from wht if rms_err is not available
+                self._make_rms_err_from_wht()
+            elif (
+                (self.wht_path is None or self.wht_ext is None)
+                and self.rms_err_path is not None
+                and self.rms_err_ext is not None
+            ):
+                # make wht from rms_err if wht is not available
+                self._make_wht_from_rms_err()
+        self._check_data(
+            incl_rms_err=(
+                self.rms_err_path is not None and self.rms_err_ext is not None
+            ),
+            incl_wht=(self.wht_path is not None and self.wht_ext is not None),
+        )
+
+    @property
+    @abstractmethod
+    def instr_name(self) -> str:
+        pass
+
+    @property
+    @abstractmethod
+    def filt_name(self) -> str:
+        pass
 
     # stacking/mosaicing
     def __mul__(
@@ -124,7 +168,7 @@ class Band_Data_Base:
                         [self, _other]
                     )
         return band_data
-    
+
     def __eq__(self, other: Type[Band_Data_Base]) -> bool:
         if not isinstance(other, tuple(Band_Data_Base.__subclasses__())):
             return False
@@ -145,7 +189,7 @@ class Band_Data_Base:
                 and self.wht_ext_name == other.wht_ext_name
             )
 
-    def _check_data(self):
+    def _check_data(self, incl_rms_err: bool = True, incl_wht: bool = True):
         # make im_ext_name lists if not already
         if isinstance(self.im_ext_name, str):
             self.im_ext_name = [self.im_ext_name]
@@ -155,23 +199,26 @@ class Band_Data_Base:
             self.wht_ext_name = [self.wht_ext_name]
         # load image header
         im_hdr = self.load_im()[1]
-        assert im_hdr["EXTNAME"] in self.im_ext_name, \
-            galfind_logger.critical(
-                f"Image extension name {im_hdr['EXTNAME']} " \
-                + f"not in {str(self.im_ext_name)} for {self.filt.band_name}"
-            )
-        # load rms error header
-        rms_err_hdr = self.load_rms_err(output_hdr = True)[1]
-        assert rms_err_hdr["EXTNAME"] in self.rms_err_ext_name, \
-            galfind_logger.critical(
-                f"RMS error extension name {rms_err_hdr['EXTNAME']} " \
+        assert im_hdr["EXTNAME"] in self.im_ext_name, galfind_logger.critical(
+            f"Image extension name {im_hdr['EXTNAME']} "
+            + f"not in {str(self.im_ext_name)} for {self.filt.band_name}"
+        )
+        if incl_rms_err:
+            # load rms error header
+            rms_err_hdr = self.load_rms_err(output_hdr=True)[1]
+            assert (
+                rms_err_hdr["EXTNAME"] in self.rms_err_ext_name
+            ), galfind_logger.critical(
+                f"RMS error extension name {rms_err_hdr['EXTNAME']} "
                 + f"not in {str(self.rms_err_ext_name)} for {self.filt.band_name}"
             )
-        # load weight header
-        wht_hdr = self.load_wht(output_hdr = True)[1]
-        assert wht_hdr["EXTNAME"] in self.wht_ext_name, \
-            galfind_logger.critical(
-                f"Weight extension name {wht_hdr['EXTNAME']} " \
+        if incl_wht:
+            # load weight header
+            wht_hdr = self.load_wht(output_hdr=True)[1]
+            assert (
+                wht_hdr["EXTNAME"] in self.wht_ext_name
+            ), galfind_logger.critical(
+                f"Weight extension name {wht_hdr['EXTNAME']} "
                 + f"not in {str(self.wht_ext_name)} for {self.filt.band_name}"
             )
 
@@ -198,10 +245,12 @@ class Band_Data_Base:
     ]:
         # load image data and header
         if not Path(self.im_path).is_file():
-            err_message = f"Image for {self.survey} {self.filt.band_name}" \
+            err_message = (
+                f"Image for {self.survey} {self.filt.band_name}"
                 + f" at {self.im_path} is not a .fits image!"
+            )
             galfind_logger.critical(err_message)
-            raise(Exception(err_message))
+            raise (Exception(err_message))
         im_hdul = fits.open(self.im_path)
         im_data = im_hdul[self.im_ext].data
         # im_data = im_data.byteswap().newbyteorder() slow
@@ -228,8 +277,10 @@ class Band_Data_Base:
             wht = hdu.data
             hdr = hdu.header
         else:
-            err_message = f"Weight image for {self.survey} {self.filt.band_name}" \
+            err_message = (
+                f"Weight image for {self.survey} {self.filt.band_name}"
                 + f" at {self.wht_path} is not a .fits image!"
+            )
             galfind_logger.critical(err_message)
             wht = None
             hdr = None
@@ -246,8 +297,10 @@ class Band_Data_Base:
             rms_err = hdu.data
             hdr = hdu.header
         else:
-            err_message = f"RMS error for {self.survey} {self.filt.band_name}" \
+            err_message = (
+                f"RMS error for {self.survey} {self.filt.band_name}"
                 + f" at {self.rms_err_path} is not a .fits image!"
+            )
             galfind_logger.critical(err_message)
             rms_err = None
             hdr = None
@@ -259,10 +312,12 @@ class Band_Data_Base:
     def load_seg(self) -> Tuple[np.ndarray, fits.Header]:
         assert self._seg_method is not None
         if not Path(self.seg_path).is_file():
-            err_message = f"Segmentation map for {self.survey} " \
+            err_message = (
+                f"Segmentation map for {self.survey} "
                 f"{self.filt.band_name} at {self.seg_path} is not a .fits image!"
+            )
             galfind_logger.critical(err_message)
-            raise(Exception(err_message))
+            raise (Exception(err_message))
         seg_hdul = fits.open(self.seg_path)
         seg_data = seg_hdul[0].data
         seg_header = seg_hdul[0].header
@@ -284,88 +339,577 @@ class Band_Data_Base:
     # %% Complex methods
 
     def psf_homogenize(self, psf: PSF):
+        """Homogenize the SCI/RMS_ERR/WHT images to the given PSF"""
         raise NotImplementedError
         self._psf_match = psf
 
+    #     kernel_dir,
+    #     match_band="F444W",
+    #     override_bands=None,
+    #     use_fft_conv=True,
+    #     overwrite=False,
+    #     update_default_dictionaries=True,
+    # ):
+    #     galfind_logger.warning(
+    #         "Data.convolve_images easily sped up without the use of Instrument.instrument_from_band!"
+    #     )
+    #     """Adapted from aperpy - https://github.com/astrowhit/aperpy/"""
+    #     if override_bands is not None:
+    #         bands = override_bands
+    #     else:
+    #         bands = self.instrument.band_names
+    #     outdir = f"{config['DEFAULT']['GALFIND_WORK']}/PSF_Matched_Images/{self.version}/{self.instrument.instrument_from_band(bands[0]).name}/{self.survey}"
+    #     self.im_psf_matched_dir = outdir
+    #     if use_fft_conv:
+    #         convolve_func = convolve_fft
+    #         convolve_kwargs = {"allow_huge": True}
+    #     else:
+    #         convolve_func = convolve
+    #         convolve_kwargs = {}
+
+    #     # for filename in sci_paths:
+    #     im_paths_matched = {}
+    #     wht_paths_matched = {}
+    #     rms_err_paths_matched = {}
+
+    #     for band in bands:
+    #         im_filename = self.im_paths[band]
+    #         wht_filename = self.wht_paths[band]
+    #         err_filename = self.rms_err_paths[band]
+    #         same_file = im_filename == wht_filename == err_filename
+    #         outnames = []
+
+    #         if not os.path.exists(outdir):
+    #             os.makedirs(outdir)
+
+    #         if same_file:
+    #             print(
+    #                 "WHT, SCI, and ERR are the same file!. Output will be written to the same file."
+    #             )
+    #             outname = im_filename.replace(
+    #                 ".fits", f"_{match_band}-matched.fits"
+    #             ).replace(os.path.dirname(im_filename), outdir)
+    #             outnames.append(outname)
+    #             outsciname = outwhtname = outerrname = outname
+    #             full_hdu = fits.open(im_filename)
+    #         else:
+    #             outsciname = im_filename.replace(
+    #                 ".fits", f"_sci_{match_band}-matched.fits"
+    #             ).replace(os.path.dirname(im_filename), outdir)
+    #             outwhtname = wht_filename.replace(
+    #                 ".fits", f"_wht_{match_band}-matched.fits"
+    #             ).replace(os.path.dirname(wht_filename), outdir)
+    #             outerrname = err_filename.replace(
+    #                 ".fits", f"_err_{match_band}-matched.fits"
+    #             ).replace(os.path.dirname(err_filename), outdir)
+    #             outnames.append(outsciname)
+    #             outnames.append(outwhtname)
+    #             outnames.append(outerrname)
+
+    #         im_paths_matched[band] = outsciname
+    #         wht_paths_matched[band] = outwhtname
+    #         rms_err_paths_matched[band] = outerrname
+
+    #         skip = False
+    #         for outname in outnames:
+    #             if os.path.exists(outname) and not overwrite:
+    #                 print(outsciname, outwhtname)
+    #                 print("Convolved images exist, I will not overwrite")
+    #                 skip = True
+
+    #         if not skip:
+    #             print("  science image: ", im_filename)
+    #             print("  weight image: ", wht_filename)
+    #             print("  error image: ", err_filename)
+    #             hdul = fits.open(im_filename)
+    #             hdul_wht = fits.open(wht_filename)
+
+    #             if err_filename != "":
+    #                 hdul_err = fits.open(err_filename)
+
+    #             if band != match_band:
+    #                 print(f"  PSF-matching sci {band} to {match_band}")
+    #                 tstart = time.time()
+    #                 fn_kernel = os.path.join(kernel_dir, f"{band}_kernel.fits")
+    #                 print("  using kernel ", fn_kernel.split("/")[-1])
+    #                 kernel = fits.getdata(fn_kernel)
+    #                 kernel /= np.sum(kernel)
+
+    #                 if same_file:
+    #                     wht_ext = "WHT"
+    #                 else:
+    #                     wht_ext = 0
+    #                 weight = hdul_wht[wht_ext].data
+    #                 if not same_file:
+    #                     out_hdul = fits.HDUList([])
+    #                 else:
+    #                     out_hdul = full_hdu.copy()
+    #                 if overwrite or not os.path.exists(outsciname):
+    #                     print("Running science image convolution...")
+    #                     if same_file:
+    #                         sci_ext = "SCI"
+    #                     else:
+    #                         sci_ext = 0
+
+    #                     sci = hdul[sci_ext].data
+    #                     data = convolve_func(
+    #                         sci, kernel, **convolve_kwargs
+    #                     ).astype(np.float32)
+    #                     data[weight == 0] = 0.0
+    #                     print("convolved...")
+
+    #                     out_hdu = fits.PrimaryHDU(
+    #                         data, header=hdul[sci_ext].header
+    #                     )
+    #                     out_hdu.name = "SCI"
+    #                     out_hdu.header["HISTORY"] = (
+    #                         f"Convolved with {match_band} kernel"
+    #                     )
+    #                     out_hdu.header["HISTORY2"] = (
+    #                         f"Convolution kernel path: {fn_kernel}"
+    #                     )
+    #                     if same_file:
+    #                         out_hdul[sci_ext].data = out_hdu.data
+    #                         out_hdul[sci_ext].header["HISTORY"] = (
+    #                             f"Convolved with {match_band} kernel"
+    #                         )
+    #                         out_hdul[sci_ext].header["HISTORY2"] = (
+    #                             f"Convolution kernel path: {fn_kernel}"
+    #                         )
+    #                     else:
+    #                         out_hdul.append(out_hdu)
+    #                         out_hdul.writeto(outsciname, overwrite=True)
+    #                         print("Wrote file to ", outsciname)
+    #                         out_hdul = fits.HDUList([])
+
+    #                 else:
+    #                     print(outsciname)
+    #                     print(
+    #                         f"{band.upper()} convolved science image exists, I will not overwrite"
+    #                     )
+
+    #                 hdul.close()
+
+    #                 if overwrite or not os.path.exists(outwhtname):
+    #                     print("Running weight image convolution...")
+    #                     err = np.where(weight == 0, 0, 1 / np.sqrt(weight))
+    #                     err_conv = convolve_func(
+    #                         err, kernel, **convolve_kwargs
+    #                     ).astype(np.float32)
+    #                     data = np.where(err_conv == 0, 0, 1.0 / (err_conv**2))
+    #                     data[weight == 0] = 0.0
+
+    #                     out_hdu_wht = fits.PrimaryHDU(
+    #                         data, header=hdul_wht[wht_ext].header
+    #                     )
+    #                     out_hdu_wht.name = "WHT"
+    #                     out_hdu_wht.header["HISTORY"] = (
+    #                         f"Convolved with {match_band} kernel"
+    #                     )
+
+    #                     if same_file:
+    #                         out_hdul[wht_ext].data = out_hdu_wht.data
+    #                         out_hdul[wht_ext].header["HISTORY"] = (
+    #                             f"Convolved with {match_band} kernel"
+    #                         )
+    #                     else:
+    #                         out_hdul.append(out_hdu_wht)
+    #                         out_hdul.writeto(outwhtname, overwrite=True)
+    #                         print("Wrote file to ", outwhtname)
+    #                         out_hdul = fits.HDUList([])
+
+    #                 else:
+    #                     print(outwhtname)
+    #                     print(
+    #                         f"{band.upper()} convolved weight image exists, I will not overwrite"
+    #                     )
+
+    #                 hdul_wht.close()
+
+    #                 if outerrname != "" and (
+    #                     overwrite or not os.path.exists(outerrname)
+    #                 ):
+    #                     print("Running error image convolution...")
+
+    #                     data = convolve_func(
+    #                         hdul_err["ERR"].data, kernel, **convolve_kwargs
+    #                     ).astype(np.float32)
+    #                     data[weight == 0] = 0.0
+
+    #                     out_hdu_err = fits.PrimaryHDU(
+    #                         data, header=hdul_err["ERR"].header
+    #                     )
+    #                     out_hdu_err.name = "ERR"
+    #                     out_hdu_err.header["HISTORY"] = (
+    #                         f"Convolved with {match_band} kernel"
+    #                     )
+    #                     if same_file:
+    #                         out_hdul["ERR"].data = out_hdu_err.data
+    #                         out_hdul["ERR"].header["HISTORY"] = (
+    #                             f"Convolved with {match_band} kernel"
+    #                         )
+    #                     else:
+    #                         out_hdul.append(out_hdu_err)
+    #                         out_hdul.writeto(outerrname, overwrite=True)
+    #                         print("Wrote file to ", outerrname)
+    #                         out_hdul = fits.HDUList([])
+
+    #                     hdul_err.close()
+
+    #                 print(f"Finished in {time.time()-tstart:2.2f}s")
+
+    #                 if same_file and len(out_hdul) > 1:
+    #                     out_hdul.writeto(outname, overwrite=True)
+    #                 else:
+    #                     print("Not writing empty HDU")
+    #             else:
+    #                 outsciname = im_filename.replace(
+    #                     ".fits", f"_sci_{match_band}-matched.fits"
+    #                 ).replace(os.path.dirname(im_filename), outdir)
+    #                 outwhtname = wht_filename.replace(
+    #                     ".fits", f"_wht_{match_band}-matched.fits"
+    #                 ).replace(os.path.dirname(wht_filename), outdir)
+    #                 outerrname = err_filename.replace(
+    #                     ".fits", f"_err_{match_band}-matched.fits"
+    #                 ).replace(os.path.dirname(err_filename), outdir)
+    #                 outname = im_filename.replace(
+    #                     ".fits", f"_{match_band}-matched.fits"
+    #                 ).replace(os.path.dirname(im_filename), outdir)
+
+    #                 if same_file:
+    #                     hdul.writeto(outname, overwrite=True)
+    #                     print(hdul.info())
+    #                 else:
+    #                     hdul.writeto(outsciname, overwrite=True)
+    #                     hdul_wht.writeto(outwhtname, overwrite=True)
+    #                     hdul_wht.close()
+    #                     if err_filename != "":
+    #                         hdul_err.writeto(outerrname, overwrite=True)
+    #                         hdul_err.close()
+    #                 print("Written files to ", outname)
+    #                 hdul.close()
+
+    #         # Update paths in self
+    #         if update_default_dictionaries:
+    #             if same_file:
+    #                 self.im_paths[band] = outname
+    #                 self.wht_paths[band] = outname
+    #                 self.rms_err_paths[band] = outname
+    #             else:
+    #                 self.im_paths[band] = outsciname
+    #                 self.wht_paths[band] = outwhtname
+    #                 self.rms_err_paths[band] = outerrname
+
+    #     return im_paths_matched, wht_paths_matched, rms_err_paths_matched
+
     def segment(self, method: str = "sextractor"):  # sex_prefer="rms_err",
-        #         # load path to segmentation map
-        #         seg_paths[band.band_name] = (
-        #             f"{config['DEFAULT']['GALFIND_WORK']}/SExtractor/{band.instrument}/{version}/{survey}/{survey}_{band.band_name}_{band.band_name}_sel_cat_{version}_seg.fits"
-        #         )    #     # make segmentation maps from image paths if they don't already exist
-        #     [
-        #         self.make_seg_map(band)
-        #         for band, path in seg_paths.items()
-        #         if path not in existing_seg_paths
-        #     ]
-        #     self.seg_paths = seg_paths
-        raise NotImplementedError
-        self._seg_method = method
+        if method == "sextractor":
+            self._segment_sextractor()
+        #     # load path to segmentation map
+        #     seg_paths[band.band_name] = (
+        #         f"{config['DEFAULT']['GALFIND_WORK']}/SExtractor/{band.instrument}/{version}/{survey}/{survey}_{band.band_name}_{band.band_name}_sel_cat_{version}_seg.fits"
+        #     )    #     # make segmentation maps from image paths if they don't already exist
+        # [
+        #     self.make_seg_map(band)
+        #     for band, path in seg_paths.items()
+        #     if path not in existing_seg_paths
+        # ]
+        # self.seg_paths = seg_paths
+        # self._seg_method = method
 
-    def mask(self, method: str = ""):  # mask_stars=True,
-        #     fits_mask_paths = glob.glob(
-        #         f"{config['DEFAULT']['GALFIND_WORK']}/Masks/{survey}/fits_masks/*.fits"
-        #     )
-        #         # load fits mask for band before searching for other existing masks
-        #         paths_to_masks = [
-        #             f"{config['DEFAULT']['GALFIND_WORK']}/Masks/{survey}/fits_masks/{path.split('/')[-1]}"
-        #             for path in fits_mask_paths
-        #             if path.split("/")[-1].split("_")[0] == band.band_name
-        #             and "basemask" in path.split("/")[-1].split("_")[1]
-        #         ]
-        #         # print(band)
-        #         assert len(paths_to_masks) <= 1, galfind_logger.critical(
-        #             f"{len(paths_to_masks)=} > 1"
-        #         )
-        #         if len(paths_to_masks) == 0:
-        #             # search for manually created mask
-        #             manual_mask_path = f"{config['DEFAULT']['GALFIND_WORK']}/Masks/{survey}/manual/{survey}_{band.band_name}_clean.reg"
-        #             if Path(manual_mask_path).is_file():
-        #                 mask_paths[band.band_name] = manual_mask_path
-        #             else:  # if no manually created mask, leave blank
-        #                 mask_paths[band.band_name] = ""
-        #         else:
-        #             mask_paths[band.band_name] = paths_to_masks[0]
+    # @run_in_dir(path=config["DEFAULT"]["GALFIND_DIR"])
+    # def _segment_sextractor(
+    #     self,
+    #     sex_config_path=config["SExtractor"]["CONFIG_PATH"],
+    #     params_path=config["SExtractor"]["PARAMS_PATH"],
+    # ):
+    #     galfind_logger.warning(
+    #         "Data.make_seg_map easily sped up without the use of Instrument.instrument_from_band!"
+    #     )
 
-        # make masks from image paths if they don't already exist
-        #     self.mask_dir = f"{config['DEFAULT']['GALFIND_WORK']}/Masks/{survey}"
-        #     for i, (band, mask_path) in enumerate(mask_paths.items()):
-        #         # the input mask path is a pixel mask
-        #         if ".fits" in mask_path:
-        #             pass
-        #         # convert region mask to pixel mask
-        #         elif ".reg" in mask_path:
-        #             # clean region mask of any zero size regions
-        #             mask_path = self.clean_mask_regions(mask_path)
-        #             mask_paths[band] = self.mask_reg_to_pix(band, mask_path)
-        #         else:
-        #             # make an pixel mask automatically for the band
-        #             if type(mask_stars) == bool:
-        #                 mask = self.make_mask(band, mask_stars=mask_stars)
-        #             elif type(mask_stars) == dict:
-        #                 if band in mask_stars.keys():
-        #                     mask = self.make_mask(
-        #                         band, mask_stars=mask_stars[band]
-        #                     )
-        #                 else:
-        #                     band_instrument = instrument[
-        #                         np.where(band == instrument.band_names)[0][0]
-        #                     ].instrument
-        #                     if band_instrument in mask_stars.keys():
-        #                         mask = self.make_mask(
-        #                             band, mask_stars=mask_stars[band_instrument]
-        #                         )
-        #                     else:
-        #                         mask = self.make_mask(band)  # default behaviour
-        #             else:
-        #                 galfind_logger.critical(
-        #                     f"{mask_stars=} with {type(mask_stars)=} not in [bool, dict]"
-        #                 )
-        #             mask_paths[band] = mask
-        #     self.mask_paths = dict(sorted(mask_paths.items()))
+    #     # load relevant err map paths, preferring rms_err maps if available
+    #     err_map_path, err_map_ext, err_map_type = self.get_err_map(band)
+    #     # insert specified aperture diameters from config file
+    #     as_aper_diams = json.loads(config.get("SExtractor", "APERTURE_DIAMS"))
+    #     if len(as_aper_diams) != 5:
+    #         galfind_logger.warning(
+    #             f"{sex_config_path=} should be updated for {as_aper_diams=} at runtime!"
+    #         )
+    #     pix_aper_diams = (
+    #         str(
+    #             [
+    #                 np.round(pix_aper_diam, 2)
+    #                 for pix_aper_diam in as_aper_diams
+    #                 / self.im_pixel_scales[band].value
+    #             ]
+    #         )
+    #         .replace("[", "")
+    #         .replace("]", "")
+    #         .replace(" ", "")
+    #     )
 
-        raise NotImplementedError
+    #     # SExtractor bash script python wrapper
+    #     print(
+    #         [
+    #             "./make_seg_map.sh",
+    #             config["SExtractor"]["SEX_DIR"],
+    #             self.im_paths[band],
+    #             str(self.im_pixel_scales[band].value),
+    #             str(self.im_zps[band]),
+    #             self.instrument.instrument_from_band(band).name,  # slow
+    #             self.survey,
+    #             band,
+    #             self.version,
+    #             err_map_path,
+    #             err_map_ext,
+    #             err_map_type,
+    #             str(self.im_exts[band]),
+    #             sex_config_path,
+    #             params_path,
+    #             pix_aper_diams,
+    #         ]
+    #     )
+    #     process = subprocess.Popen(
+    #         [
+    #             "./make_seg_map.sh",
+    #             config["Sextractor"]["SEX_DIR"],
+    #             self.im_paths[band],
+    #             str(self.im_pixel_scales[band].value),
+    #             str(self.im_zps[band]),
+    #             self.instrument.instrument_from_band(band).name,
+    #             self.survey,
+    #             band,
+    #             self.version,
+    #             err_map_path,
+    #             err_map_ext,
+    #             err_map_type,
+    #             str(self.im_exts[band]),
+    #             sex_config_path,
+    #             params_path,
+    #             pix_aper_diams,
+    #         ]
+    #     )
+    #     process.wait()
+    #     galfind_logger.info(
+    #         f"Made segmentation map for {self.survey} {self.version} {band} using config = {sex_config_path} and {err_map_type}"
+    #     )
+    #     pass
+
+    # def sex_cat_path(
+    #     self,
+    #     band: Union[str, Filter],
+    #     forced_phot_band: str,
+    #     timed: bool = False,
+    # ):
+    #     if timed:
+    #         start = time.time()
+    #     if type(band) == str:
+    #         instr_name = self.instrument.instrument_from_band(band).name
+    #         band_name = band
+    #     else:
+    #         instr_name = band.instrument
+    #         band_name = band.band_name
+    #     # forced phot band here is the string version
+    #     sex_cat_dir = f"{config['DEFAULT']['GALFIND_WORK']}/SExtractor/{instr_name}/{self.version}/{self.survey}"
+    #     sex_cat_name = f"{self.survey}_{band_name}_{forced_phot_band}_sel_cat_{self.version}.fits"
+    #     sex_cat_path = f"{sex_cat_dir}/{sex_cat_name}"
+    #     funcs.change_file_permissions(sex_cat_path)
+    #     if timed:
+    #         end = time.time()
+    #         print(f"Data.sex_cat_path took {end - start:.1e}s")
+    #     return sex_cat_path
+
+    # def seg_path(self, band: Filter):
+    #     # IF THIS IS CHANGED MUST ALSO CHANGE THE PATH IN __init__ AND make_seg_map.sh
+    #     if type(band) in [str]:
+    #         instr_name = self.instrument.instrument_from_band(band).name
+    #         band_name = band
+    #     else:
+    #         instr_name = band.instrument
+    #         band_name = band.band_name
+    #     path = f"{config['DEFAULT']['GALFIND_WORK']}/SExtractor/{instr_name}/{self.version}/{self.survey}/{self.survey}_{band_name}_{band_name}_sel_cat_{self.version}_seg.fits"
+    #     funcs.change_file_permissions(path)
+    #     return path
+
+    def mask(
+        self,
+        method: str = "auto",
+        fits_mask_path: Optional[str] = None,
+        mask_stars: bool = True,
+        edge_mask_distance: Union[int, float] = 50,
+        scale_extra: float = 0.2,
+        star_mask_override: Optional[bool] = None,
+        exclude_gaia_galaxies: bool = True,
+        angle: float = -70.0,
+        edge_value: float = 0.0,
+        element="ELLIPSE",
+        gaia_row_lim: int = 500,
+    ):
+        if method.lower() == "manual":
+            self._manual_mask(fits_mask_path)
+        elif method.lower() == "auto":
+            self._auto_mask(
+                mask_stars,
+                edge_mask_distance,
+                scale_extra,
+                star_mask_override,
+                exclude_gaia_galaxies,
+                angle,
+                edge_value,
+                element,
+                gaia_row_lim,
+            )
+        else:
+            raise (
+                Exception(
+                    f"Invalid masking method {method} (not in ['auto', 'manual'])"
+                )
+            )
         self._mask_method = method
-        self.mask_path = ""
+
+    def _manual_mask(
+        self, fits_mask_path: Optional[str] = None
+    ) -> Union[None, NoReturn]:
+        # determine whether path needs to be searched for
+        if fits_mask_path is None:
+            search_for_path = True
+        elif not Path(fits_mask_path).is_file():
+            search_for_path = True
+        else:
+            search_for_path = False
+            self.mask_path = fits_mask_path
+
+        # search for fits mask in the appropriate folder
+        if search_for_path:
+            fits_mask_paths = []
+            fits_mask_dir = (
+                f"{config['Masking']['MASK_DIR']}/{self.survey}/fits_masks"
+            )
+            for filt_ext in [
+                self.filt_name.upper(),
+                self.filt_name.lower(),
+                self.filt_name.lower().replace("f", "F"),
+                self.filt_name.upper().replace("F", "f"),
+            ]:
+                fits_mask_paths.extend(
+                    list(glob.glob(f"{fits_mask_dir}/*{filt_ext}*.fits"))
+                )
+            assert len(fits_mask_paths) <= 1, galfind_logger.critical(
+                f"{len(fits_mask_paths)=} > 1"
+            )
+            if len(fits_mask_paths) == 1:
+                fits_mask_path = fits_mask_paths[0]
+            else:
+                fits_mask_path = None
+
+            if fits_mask_path is None:
+                # if no fits mask found, search for region mask
+                reg_mask_dir = f"{config['Masking']['MASK_DIR']}/{self.survey}"
+                reg_mask_paths = []
+                for filt_ext in [
+                    self.filt_name.upper(),
+                    self.filt_name.lower(),
+                    self.filt_name.lower().replace("f", "F"),
+                    self.filt_name.upper().replace("F", "f"),
+                ]:
+                    reg_mask_paths.extend(
+                        list(glob.glob(f"{reg_mask_dir}/*{filt_ext}*.reg"))
+                    )
+                assert len(reg_mask_paths) <= 1, galfind_logger.critical(
+                    f"{len(reg_mask_paths)=} > 1"
+                )
+                if len(reg_mask_paths) == 1:
+                    reg_mask_path = reg_mask_paths[0]
+                else:
+                    raise (
+                        Exception(
+                            "Neither .fits or .reg mask path found "
+                            + f"for {self.survey} {self.version} {self.filt_name}"
+                        )
+                    )
+                # clean region mask of any zero size regions
+                # if not "clean" in the .reg filename
+                if not "_clean" in reg_mask_path:
+                    # update reg_mask_path to cleaned version
+                    reg_mask_path = self._clean_manual_mask()
+                # convert to fits mask
+                fits_mask_path = self._convert_mask_to_fits(reg_mask_path)
+            # save fits mask path
+            self.mask_path = fits_mask_path
+
+    @staticmethod
+    def _clean_manual_mask(mask_path):
+        # open region file
+        with open(mask_path, "r") as f:
+            lines = f.readlines()
+            clean_mask_path = mask_path.replace(".reg", "_clean.reg")
+            with open(clean_mask_path, "w") as temp:
+                for i, line in enumerate(lines):
+                    # if line.startswith('physical'):
+                    #     lines[i] = line.replace('physical', 'image')
+                    if i <= 2:
+                        temp.write(line)
+                    if not (
+                        line.endswith(",0)\n") and line.startswith("circle")
+                    ):
+                        if (
+                            (
+                                line.startswith("ellipse")
+                                and not (line.split(",")[2] == "0")
+                                and not (line.split(",")[3] == "0")
+                            )
+                            or line.startswith("box")
+                            or line.startswith("circle")
+                            or line.startswith("polygon")
+                        ):
+                            temp.write(line)
+        funcs.change_file_permissions(mask_path)
+        funcs.change_file_permissions(clean_mask_path)
+        # insert original mask ds9 region file into an unclean folder
+        unclean_path = f"{funcs.split_dir_name(mask_path,'dir')}/unclean/{funcs.split_dir_name(mask_path,'name')}"
+        funcs.make_dirs(unclean_path)
+        os.rename(mask_path, unclean_path)
+        return clean_mask_path
+
+    def _convert_mask_to_fits(self, mask_path):
+        out_path = (
+            f"{'/'.join(mask_path.split('/')[:-1])}/fits_masks/"
+            + f"{mask_path.split('/')[-1].replace('_clean', '').replace('.reg', '.fits')}"
+        )
+        if not Path(out_path).is_file():
+            # open image corresponding to band
+            im_data, im_header, seg_data, seg_header = self.load_data(
+                incl_mask=False
+            )
+            # open .reg mask file
+            mask_regions = Regions.read(mask_path)
+            wcs = self.load_wcs()
+            pix_mask = np.zeros(im_data.shape, dtype=bool)
+            for region in mask_regions:
+                region = region.to_pixel(wcs)
+                idx_large, idx_little = region.to_mask(
+                    mode="center"
+                ).get_overlap_slices(im_data.shape)
+                if idx_large is not None:
+                    pix_mask[idx_large] = np.logical_or(
+                        region.to_mask().data[idx_little], pix_mask[idx_large]
+                    )
+            # make .fits mask
+            mask_hdu = fits.ImageHDU(
+                pix_mask.astype(np.uint8), header=wcs.to_header(), name="MASK"
+            )
+            hdu = fits.HDUList([fits.PrimaryHDU(), mask_hdu])
+            funcs.make_dirs(out_path)
+            hdu.writeto(out_path, overwrite=True)
+            funcs.change_file_permissions(out_path)
+            galfind_logger.info(
+                f"Created fits mask from manually created reg mask, saving as {out_path}"
+            )
+        else:
+            galfind_logger.info(
+                f"fits mask at {out_path} already exists, skipping!"
+            )
+        return out_path
 
     def perform_forced_phot(
         self, method: str = "sextractor"
@@ -402,6 +946,48 @@ class Band_Data_Base:
             # plt.savefig(label)
         if show:
             plt.show()
+
+    # NOTE: Mask plotting
+
+    # def plot_mask_from_band(self, ax, band, show=True):
+    #     mask = self.load_data(band, incl_mask=True)[4]
+    #     self.plot_mask_from_data(ax, mask, band, show)
+
+    # @staticmethod
+    # def plot_mask_from_data(ax, mask, label, show=True):
+    #     cbar_in = ax.imshow(mask, origin="lower")
+    #     plt.title(f"{label} mask")
+    #     plt.xlabel("X / pix")
+    #     plt.ylabel("Y / pix")
+    #     plt.colorbar(cbar_in)
+    #     if show:
+    #         plt.show()
+
+    # def plot_mask_regions_from_band(self, ax, band):
+    #     im_header = self.load_data(band, incl_mask=False)[1]
+    #     mask_path = self.mask_paths[band]
+    #     mask_regions = Regions.read(mask_path)
+    #     patch_list = [reg.as_artist() for reg in mask_regions]
+    #     for p in patch_list:
+    #         ax.add_patch(p)
+
+    # def _combine_seg_data_and_mask(self, band=None, seg_data=None, mask=None):
+    #     if type(seg_data) != type(None) and type(mask) != type(None):
+    #         pass
+    #     elif type(band) != type(
+    #         None
+    #     ):  # at least one of seg_data or mask is not given, but band is given
+    #         seg_data = self.load_seg(band)[0]
+    #         mask = self.load_mask(band)
+    #     else:
+    #         raise (
+    #             Exception(
+    #                 "Either band must be given or both seg_data and mask should be given in Data.combine_seg_data_and_mask()!"
+    #             )
+    #         )
+    #     assert seg_data.shape == mask.shape
+    #     combined_mask = np.logical_or(seg_data > 0, mask == 1).astype(int)
+    #     return combined_mask
 
     @staticmethod
     def _pix_scale_to_str(pix_scale: u.Quantity):
@@ -457,60 +1043,51 @@ class Band_Data_Base:
 
     #     return err_map_path, err_map_ext, err_map_type
 
-    # def make_rms_err_from_wht(self, band, wht_str=["_wht", "_weight"]):
-    #     assert band in self.wht_paths.keys() and band in self.wht_exts.keys()
-    #     for i, string in enumerate(wht_str):
-    #         if string in self.wht_paths[band].split("/")[-1]:
-    #             rms_err_path = f"{'/'.join(self.wht_paths[band].split('/')[:-1])}/{self.wht_paths[band].split('/')[-1].replace(string, '_rms_err')}"
-    #             break
-    #         elif i == len(wht_str) - 1:
-    #             galfind_logger.critical("Appropriate rms_err path not created")
-    #             breakpoint()
-    #     funcs.make_dirs(rms_err_path)
-    #     wht, hdr = self.load_wht(band, output_hdr=True)
-    #     err = 1.0 / (wht**0.5)
-    #     primary_hdr = deepcopy(hdr)
-    #     primary_hdr["EXTNAME"] = "PRIMARY"
-    #     primary = fits.PrimaryHDU(header=primary_hdr)
-    #     hdu = fits.ImageHDU(err, header=hdr, name="ERR")
-    #     hdul = fits.HDUList([primary, hdu])
-    #     hdul.writeto(rms_err_path, overwrite=True)
-    #     funcs.change_file_permissions(rms_err_path)
-    #     galfind_logger.info(
-    #         f"Finished making rms_err map for {band} for {self.survey} {self.version}"
-    #     )
-    #     self.rms_err_paths[band] = rms_err_path
-    #     self.rms_err_exts[band] = 1
+    def _make_rms_err_from_wht(self):
+        # make rms_err map from wht map
+        wht, hdr = self.load_wht(output_hdr=True)
+        err = 1.0 / (wht**0.5)
+        primary_hdr = deepcopy(hdr)
+        primary_hdr["EXTNAME"] = "PRIMARY"
+        primary = fits.PrimaryHDU(header=primary_hdr)
+        hdu = fits.ImageHDU(err, header=hdr, name="ERR")
+        hdul = fits.HDUList([primary, hdu])
+        # save and overwrite object attributes
+        save_path = self.im_path.replace(
+            self.im_path.split("/")[-1],
+            f"rms_err/{self.filt.band_name}_rms_err.fits",
+        )
+        funcs.make_dirs(save_path)
+        hdul.writeto(save_path, overwrite=True)
+        funcs.change_file_permissions(save_path)
+        galfind_logger.info(
+            f"Finished making {self.survey} {self.version} {self.filt} rms_err map"
+        )
+        self.rms_err_path = save_path
+        self.rms_err_ext = 1
+        self.rms_err_ext_name = ["ERR"]
 
-    # def make_wht_from_rms_err(
-    #     self, band, rms_err_str=["_rms_err", "_rms", "_err"]
-    # ):
-    #     assert (
-    #         band in self.rms_err_paths.keys()
-    #         and band in self.rms_err_exts.keys()
-    #     )
-    #     for i, string in enumerate(rms_err_str):
-    #         if string in self.rms_err_paths[band].split("/")[-1]:
-    #             wht_path = f"{'/'.join(self.rms_err_paths[band].split('/')[:-1])}/{self.rms_err_paths[band].split('/')[-1].replace(string, '_wht')}"
-    #             break
-    #         elif i == len(rms_err_str) - 1:
-    #             galfind_logger.critical("Appropriate wht path not created")
-    #             breakpoint()
-    #     funcs.make_dirs(wht_path)
-    #     err, hdr = self.load_rms_err(band, output_hdr=True)
-    #     wht = 1.0 / (err**2)
-    #     primary_hdr = deepcopy(hdr)
-    #     primary_hdr["EXTNAME"] = "PRIMARY"
-    #     primary = fits.PrimaryHDU(header=primary_hdr)
-    #     hdu = fits.ImageHDU(wht, header=hdr, name="WHT")
-    #     hdul = fits.HDUList([primary, hdu])
-    #     hdul.writeto(wht_path, overwrite=True)
-    #     funcs.change_file_permissions(wht_path)
-    #     galfind_logger.info(
-    #         f"Finished making wht map for {band} for {self.survey} {self.version}"
-    #     )
-    #     self.wht_paths[band] = wht_path
-    #     self.wht_exts[band] = 1
+    def _make_wht_from_rms_err(self):
+        err, hdr = self.load_rms_err(output_hdr=True)
+        wht = 1.0 / (err**2)
+        primary_hdr = deepcopy(hdr)
+        primary_hdr["EXTNAME"] = "PRIMARY"
+        primary = fits.PrimaryHDU(header=primary_hdr)
+        hdu = fits.ImageHDU(wht, header=hdr, name="WHT")
+        hdul = fits.HDUList([primary, hdu])
+        # save and overwrite object attributes
+        save_path = self.im_path.replace(
+            self.im_path.split("/")[-1], f"wht/{self.filt.band_name}_wht.fits"
+        )
+        funcs.make_dirs(save_path)
+        hdul.writeto(save_path, overwrite=True)
+        funcs.change_file_permissions(save_path)
+        galfind_logger.info(
+            f"Finished making {self.survey} {self.version} {self.filt} wht map"
+        )
+        self.wht_path = save_path
+        self.wht_ext = 1
+        self.rms_err_ext_name = ["WHT"]
 
 
 class Band_Data(Band_Data_Base):
@@ -521,14 +1098,15 @@ class Band_Data(Band_Data_Base):
         version: str,
         im_path: str,
         im_ext: int,
-        rms_err_path: str,
-        rms_err_ext: int,
-        wht_path: str,
-        wht_ext: int,
+        rms_err_path: Optional[str] = None,
+        rms_err_ext: Optional[int] = None,
+        wht_path: Optional[str] = None,
+        wht_ext: Optional[int] = None,
         pix_scale: u.Quantity = 0.03 * u.arcsec,
         im_ext_name: Union[str, List[str]] = "SCI",
         rms_err_ext_name: Union[str, List[str]] = "ERR",
-        wht_ext_name: Union[str, List[str]] = "WHT", 
+        wht_ext_name: Union[str, List[str]] = "WHT",
+        use_galfind_err: bool = False,
     ):
         self.filt = filt
         super().__init__(
@@ -544,6 +1122,7 @@ class Band_Data(Band_Data_Base):
             im_ext_name,
             rms_err_ext_name,
             wht_ext_name,
+            use_galfind_err,
         )
 
     @classmethod
@@ -551,6 +1130,14 @@ class Band_Data(Band_Data_Base):
         # make sure all filters are the same
         # stack bands by multiplication
         pass
+
+    @property
+    def instr_name(self):
+        return self.filt.instrument.__class__.__name__
+
+    @property
+    def filt_name(self):
+        return self.filt.band_name
 
     def __add__(
         self, other: Union[Band_Data, List[Band_Data], Data, List[Data]]
@@ -567,17 +1154,37 @@ class Band_Data(Band_Data_Base):
             other = other_band_data
         new_band_data_arr = [self] + other
         # ensure all bands come from the same survey and version
-        if all([band_data.survey == self.survey and band_data.version == self.version for band_data in new_band_data_arr]):
+        if all(
+            [
+                band_data.survey == self.survey
+                and band_data.version == self.version
+                for band_data in new_band_data_arr
+            ]
+        ):
             # if all bands being added are different
-            if len(np.unique([band_data.filt.band_name for band_data in new_band_data_arr])) == len(new_band_data_arr):
+            if len(
+                np.unique(
+                    [
+                        band_data.filt.band_name
+                        for band_data in new_band_data_arr
+                    ]
+                )
+            ) == len(new_band_data_arr):
                 return Data(new_band_data_arr)
             else:
-                raise(Exception("Cannot add Data/Band_Data objects with the same filters." \
-                    + " You may want to use Band_Data.__mul__() to stack!"))
+                raise (
+                    Exception(
+                        "Cannot add Data/Band_Data objects with the same filters."
+                        + " You may want to use Band_Data.__mul__() to stack!"
+                    )
+                )
         else:
-            raise(Exception(
-                "Cannot add Data/Band_Data objects from different surveys or versions."
-            ))
+            raise (
+                Exception(
+                    "Cannot add Data/Band_Data objects from different surveys or versions."
+                )
+            )
+
 
 class Stacked_Band_Data(Band_Data_Base):
     def __init__(
@@ -587,14 +1194,15 @@ class Stacked_Band_Data(Band_Data_Base):
         version: str,
         im_path: str,
         im_ext: int,
-        rms_err_path: str,
-        rms_err_ext: int,
-        wht_path: str,
-        wht_ext: int,
+        rms_err_path: Optional[str] = None,
+        rms_err_ext: Optional[int] = None,
+        wht_path: Optional[str] = None,
+        wht_ext: Optional[int] = None,
         pix_scale: u.Quantity = 0.03 * u.arcsec,
         im_ext_name: Union[str, List[str]] = "SCI",
         rms_err_ext_name: Union[str, List[str]] = "ERR",
         wht_ext_name: Union[str, List[str]] = "WHT",
+        use_galfind_err: bool = False,
     ):
         self.filterset = filterset
         super().__init__(
@@ -610,6 +1218,7 @@ class Stacked_Band_Data(Band_Data_Base):
             im_ext_name,
             rms_err_ext_name,
             wht_ext_name,
+            use_galfind_err,
         )
 
     @classmethod
@@ -618,6 +1227,14 @@ class Stacked_Band_Data(Band_Data_Base):
         # make filterset from filters
         # stack bands
         pass
+
+    @property
+    def instr_name(self) -> str:
+        return self.filterset.instrument_name
+
+    @property
+    def filt_name(self) -> str:
+        return "+".join([filt.band_name for filt in self.filterset])
 
 
 class Data:
@@ -658,7 +1275,7 @@ class Data:
         rms_err_ext_name: Union[str, List[str]] = "ERR",
         wht_ext_name: Union[str, List[str]] = "WHT",
     ):
-        # make im/rms_err/wht extension names lists if not already
+        # make im/rms_err/wht extension names lists if not already
         if isinstance(im_ext_name, str):
             im_ext_name = [im_ext_name]
         if isinstance(rms_err_ext_name, str):
@@ -684,16 +1301,35 @@ class Data:
                 pix_scales[instr_name],
                 version_to_dir_dict,
             )
-            galfind_logger.debug(f"Searching for {survey} {version} {instr_name} data in {search_dir}")
+            galfind_logger.debug(
+                f"Searching for {survey} {version} {instr_name} data in {search_dir}"
+            )
             # determine which filters have data
             fits_paths = list(glob.glob(f"{search_dir}/*.fits"))
             filt_names_paths = {
                 filt: [
                     path
                     for path in fits_paths
-                    if any(path.find(substr) != -1 for substr in [filt.upper(), filt.lower(), filt.lower().replace("f", "F"), filt.upper().replace("F", "f")])
-                    and not any(path.find(substr) != -1 for other_filt in instrument.filt_names if other_filt != filt 
-                        for substr in [other_filt.upper(), other_filt.lower(), other_filt.lower().replace("f", "F"), other_filt.upper().replace("F", "f")])
+                    if any(
+                        path.find(substr) != -1
+                        for substr in [
+                            filt.upper(),
+                            filt.lower(),
+                            filt.lower().replace("f", "F"),
+                            filt.upper().replace("F", "f"),
+                        ]
+                    )
+                    and not any(
+                        path.find(substr) != -1
+                        for other_filt in instrument.filt_names
+                        if other_filt != filt
+                        for substr in [
+                            other_filt.upper(),
+                            other_filt.lower(),
+                            other_filt.lower().replace("f", "F"),
+                            other_filt.upper().replace("F", "f"),
+                        ]
+                    )
                 ]
                 for filt in instrument.filt_names
             }
@@ -703,7 +1339,11 @@ class Data:
                 )
                 continue
             else:
-                bands_found = [key for key, val in filt_names_paths.items() if len(val) != 0]
+                bands_found = [
+                    key
+                    for key, val in filt_names_paths.items()
+                    if len(val) != 0
+                ]
                 galfind_logger.debug(
                     f"Found {'+'.join(bands_found)} filters for {survey} {version} {instr_name}"
                 )
@@ -715,9 +1355,16 @@ class Data:
                 rms_err_exts,
                 wht_paths,
                 wht_exts,
-            ) = cls._sort_paths(filt_names_paths, im_str, rms_err_str, wht_str, im_ext_name, rms_err_ext_name, wht_ext_name)
+            ) = cls._sort_paths(
+                filt_names_paths,
+                im_str,
+                rms_err_str,
+                wht_str,
+                im_ext_name,
+                rms_err_ext_name,
+                wht_ext_name,
+            )
 
-            # stack all images that have multiple images in the same band
             for filt_name in im_paths.keys():
                 if len(im_paths[filt_name]) > 1:
                     # stack sci/rms_err/wht images together and move the old ones to a new directory
@@ -725,6 +1372,8 @@ class Data:
                         f"Multiple images found for {filt_name}."
                         + "Stacking multiple images in the same band not yet implemented"
                     )
+                    # NOTE: This can only be done when the images are
+                    # in the same fits file but different extensions.
                     raise NotImplementedError(err_message)
                 else:
                     band_data = Band_Data(
@@ -774,7 +1423,7 @@ class Data:
         wht_str: List[str] = ["_wht", "_weight"],
         im_ext_name: Union[str, List[str]] = "SCI",
         rms_err_ext_name: Union[str, List[str]] = "ERR",
-        wht_ext_name: Union[str, List[str]] = "WHT"
+        wht_ext_name: Union[str, List[str]] = "WHT",
     ) -> Tuple[
         Dict[str, List[str]],
         Dict[str, List[int]],
@@ -805,7 +1454,9 @@ class Data:
                 wht_exts[filt_name] = []
             # make arrays to determine where the data is stored for each band
             is_sci = {path: [str in path for str in im_str] for path in paths}
-            is_rms_err = {path: [str in path for str in rms_err_str] for path in paths}
+            is_rms_err = {
+                path: [str in path for str in rms_err_str] for path in paths
+            }
             is_wht = {path: [str in path for str in wht_str] for path in paths}
             for path in paths:
                 # if all paths are science images
@@ -824,17 +1475,30 @@ class Data:
                         )
                     )
                     single_path = False
-                    if is_sci[path] and not is_rms_err[path] and not is_wht[path]:
+                    if (
+                        is_sci[path]
+                        and not is_rms_err[path]
+                        and not is_wht[path]
+                    ):
                         im_paths[filt_name].extend([path])
-                    elif not is_sci[path] and is_rms_err[path] and not is_wht[path]:
+                    elif (
+                        not is_sci[path]
+                        and is_rms_err[path]
+                        and not is_wht[path]
+                    ):
                         rms_err_paths[filt_name].extend([path])
-                    elif not is_sci[path] and not is_rms_err[path] and is_wht[path]:
+                    elif (
+                        not is_sci[path]
+                        and not is_rms_err[path]
+                        and is_wht[path]
+                    ):
                         wht_paths[filt_name].extend([path])
                     else:
                         galfind_logger.critical(
-                            f"{filt_name}, {path} not recognised as im, rms_err, or wht!" \
+                            f"{filt_name}, {path} not recognised as im, rms_err, or wht!"
                             + "Consider updating 'im_str', ''rms_err_str', and 'wht_str'!"
                         )
+
                 # extract sci/rms_err/wht extensions
                 hdul = fits.open(path)
                 if not single_path:
@@ -852,7 +1516,6 @@ class Data:
                                 wht_exts[filt_name].extend([int(j)])
                     assert len(hdul) == assertion_len
                 else:
-                    hdul = fits.open(path)
                     for j, hdu in enumerate(hdul):
                         if hdu.name in im_ext_name:
                             im_exts[filt_name].extend([int(j)])
@@ -860,6 +1523,53 @@ class Data:
                             rms_err_exts[filt_name].extend([int(j)])
                         if hdu.name in wht_ext_name:
                             wht_exts[filt_name].extend([int(j)])
+
+            # ensure a None is inserted if either rms_err/wht path/ext is missing
+            # compared to im path length
+            n_rms_err_path_missing = len(im_paths[filt_name]) - len(
+                rms_err_paths[filt_name]
+            )
+            if n_rms_err_path_missing > 0:
+                rms_err_paths[filt_name].extend(
+                    list(itertools.repeat(None, n_rms_err_path_missing))
+                )
+            n_wht_path_missing = len(im_paths[filt_name]) - len(
+                wht_paths[filt_name]
+            )
+            if n_wht_path_missing > 0:
+                wht_paths[filt_name].extend(
+                    list(itertools.repeat(None, n_wht_path_missing))
+                )
+            n_im_ext_missing = len(im_paths[filt_name]) - len(
+                im_exts[filt_name]
+            )
+            if n_im_ext_missing != 0:
+                err_message = f"SCI image extension not found for {filt_name}"
+                galfind_logger.critical(err_message)
+                raise (Exception(err_message))
+            n_rms_err_ext_missing = len(im_paths[filt_name]) - len(
+                rms_err_exts[filt_name]
+            )
+            if n_rms_err_ext_missing > 0:
+                rms_err_exts[filt_name].extend(
+                    list(itertools.repeat(None, n_rms_err_ext_missing))
+                )
+            n_wht_ext_missing = len(im_paths[filt_name]) - len(
+                wht_exts[filt_name]
+            )
+            if n_wht_ext_missing > 0:
+                wht_exts[filt_name].extend(
+                    list(itertools.repeat(None, n_wht_ext_missing))
+                )
+            assert (
+                len(im_paths[filt_name])
+                == len(im_exts[filt_name])
+                == len(rms_err_paths[filt_name])
+                == len(rms_err_exts[filt_name])
+                == len(wht_paths[filt_name])
+                == len(wht_exts[filt_name])
+            )
+
         return (
             im_paths,
             im_exts,
@@ -1150,7 +1860,9 @@ class Data:
     def __getitem__(self, index: Union[int, slice, List[bool]]) -> Band_Data:
         return self.band_data_arr[index]
 
-    def __add__(self, other: Union[Band_Data, List[Band_Data], Data, List[Data]]) -> Data:
+    def __add__(
+        self, other: Union[Band_Data, List[Band_Data], Data, List[Data]]
+    ) -> Data:
         # if other is not a list, make it one
         if not isinstance(other, list):
             other = [other]
@@ -1164,17 +1876,36 @@ class Data:
         assert all(isinstance(_other, Band_Data) for _other in other)
         new_band_data_arr = self.band_data_arr + other
         # ensure all bands come from the same survey and version
-        if all([band_data.survey == self.survey and band_data.version == self.version for band_data in new_band_data_arr]):
+        if all(
+            [
+                band_data.survey == self.survey
+                and band_data.version == self.version
+                for band_data in new_band_data_arr
+            ]
+        ):
             # if all bands being added are different
-            if len(np.unique([band_data.filt.band_name for band_data in new_band_data_arr])) == len(new_band_data_arr):
+            if len(
+                np.unique(
+                    [
+                        band_data.filt.band_name
+                        for band_data in new_band_data_arr
+                    ]
+                )
+            ) == len(new_band_data_arr):
                 return Data(new_band_data_arr)
             else:
-                raise(Exception("Cannot add Data objects with the same filters." \
-                    + " You may want to use Data.__mul__() to stack!"))
+                raise (
+                    Exception(
+                        "Cannot add Data objects with the same filters."
+                        + " You may want to use Data.__mul__() to stack!"
+                    )
+                )
         else:
-            raise(Exception(
-                "Cannot add Data objects from different surveys or versions."
-            ))
+            raise (
+                Exception(
+                    "Cannot add Data objects from different surveys or versions."
+                )
+            )
 
     def __eq__(self, other: Data) -> bool:
         if not isinstance(other, Data):
@@ -1188,7 +1919,6 @@ class Data:
                     for self_band, other_band in zip(self, other)
                 ]
             )
-
 
     @property
     def full_name(self):
@@ -1238,24 +1968,6 @@ class Data:
         self, band: Union[int, str, Filter, List[Filter], Multiple_Filter]
     ):
         return self[band].load_data()
-
-    def combine_seg_data_and_mask(self, band=None, seg_data=None, mask=None):
-        if type(seg_data) != type(None) and type(mask) != type(None):
-            pass
-        elif type(band) != type(
-            None
-        ):  # at least one of seg_data or mask is not given, but band is given
-            seg_data = self.load_seg(band)[0]
-            mask = self.load_mask(band)
-        else:
-            raise (
-                Exception(
-                    "Either band must be given or both seg_data and mask should be given in Data.combine_seg_data_and_mask()!"
-                )
-            )
-        assert seg_data.shape == mask.shape
-        combined_mask = np.logical_or(seg_data > 0, mask == 1).astype(int)
-        return combined_mask
 
     def plot(
         self,
@@ -1336,753 +2048,9 @@ class Data:
             elif method == "lupton":
                 raise (NotImplementedError())
 
-    def plot_mask_from_band(self, ax, band, show=True):
-        mask = self.load_data(band, incl_mask=True)[4]
-        self.plot_mask_from_data(ax, mask, band, show)
-
-    @staticmethod
-    def plot_mask_from_data(ax, mask, label, show=True):
-        cbar_in = ax.imshow(mask, origin="lower")
-        plt.title(f"{label} mask")
-        plt.xlabel("X / pix")
-        plt.ylabel("Y / pix")
-        plt.colorbar(cbar_in)
-        if show:
-            plt.show()
-
-    def plot_mask_regions_from_band(self, ax, band):
-        im_header = self.load_data(band, incl_mask=False)[1]
-        mask_path = self.mask_paths[band]
-        mask_regions = Regions.read(mask_path)
-        patch_list = [reg.as_artist() for reg in mask_regions]
-        for p in patch_list:
-            ax.add_patch(p)
-
-    def make_mask(
-        self,
-        band,
-        edge_mask_distance=50,
-        mask_stars=True,
-        scale_extra=0.2,
-        star_mask_override=None,
-        exclude_gaia_galaxies=True,
-        angle=-70.0,
-        edge_value=0.0,
-        element="ELLIPSE",
-        gaia_row_lim=500,
-        plot=False,
-    ):
-        if (
-            "NIRCam" not in self.instrument.name and mask_stars
-        ):  # doesnt stop e.g. ACS_WFC+NIRCam from making star masks
-            galfind_logger.critical(
-                "Mask making only implemented for NIRCam data!"
-            )
-            raise (
-                Exception("Star mask making only implemented for NIRCam data!")
-            )
-
-        # if "COSMOS-Web" in self.survey:
-        #     # stellar masks the same for all bands
-        #     star_mask_params = { # mask_a * exp(-mag / mask_b) is the form
-        #         9000 * u.AA: {'mask_a': 700, 'mask_b': 3.7}}
-        # else:
-        #     star_mask_params = { # mask_a * exp(-mag / mask_b) is the form
-        #         9000 * u.AA: {'mask_a': 1300, 'mask_b': 4},
-        #         11500 * u.AA: {'mask_a': 1300, 'mask_b': 4},
-        #         15000 * u.AA: {'mask_a': 1300, 'mask_b': 4},
-        #         20000 * u.AA: {'mask_a': 1300, 'mask_b': 4},
-        #         27700 * u.AA: {'mask_a': 1000, 'mask_b': 3.7},
-        #         35600 * u.AA: {'mask_a': 800, 'mask_b': 3.7},
-        #         44000 * u.AA: {'mask_a': 800, 'mask_b': 3.7},
-        #     }
-
-        # update to change scaling of central circle independently of spikes
-        star_mask_params_dict = {  # a * exp(-mag / b) in arcsec
-            11500 * u.AA: {
-                "central": {"a": 300.0, "b": 4.25},
-                "spikes": {"a": 400.0, "b": 4.5},
-            },
-        }
-
-        if star_mask_override != None:
-            assert type(star_mask_override) == dict, galfind_logger.warning(
-                f"Mask overridden, but {type(star_mask_override)=} != dict"
-            )
-            assert (
-                "central" in star_mask_override.keys()
-                and "spikes" in star_mask_override.keys()
-            )
-            assert (
-                type(star_mask_override["central"]) == dict
-            ), galfind_logger.warning(
-                f"Mask overridden, but {type(star_mask_override['central'])=} != dict"
-            )
-            assert (
-                "a" in star_mask_override["central"].keys()
-                and "b" in star_mask_override["central"].keys()
-            )
-            assert (
-                type(star_mask_override["spikes"]) == dict
-            ), galfind_logger.warning(
-                f"Mask overridden, but {type(star_mask_override['spikes'])=} != dict"
-            )
-            assert (
-                "a" in star_mask_override["spikes"].keys()
-                and "b" in star_mask_override["spikes"].keys()
-            )
-            assert all(
-                type(scale) in [float, int]
-                for mask_type in star_mask_override.values()
-                for scale in mask_type.values()
-            )
-            star_mask_params = star_mask_override
-        else:
-            band_wavelength = self.instrument.band_wavelengths[
-                band == self.instrument.band_names
-            ]
-            # Get closest wavelength parameters
-            closest_wavelength = min(
-                star_mask_params_dict.keys(),
-                key=lambda x: abs(x - band_wavelength),
-            )
-            print(band, closest_wavelength)
-            star_mask_params = star_mask_params_dict[closest_wavelength]
-
-        galfind_logger.info(f"Automasking {self.survey} {band}.")
-
-        # angle rotation is anti-clockwise for positive angles
-        composite = (
-            lambda x_coord,
-            y_coord,
-            central_scale,
-            spike_scale,
-            angle: f"""# Region file format: DS9 version 4.1
-            global color=green dashlist=8 3 width=1 font="helvetica 10 normal roman" select=1 highlite=1 dash=0 fixed=0 edit=1 move=1 delete=1 include=1 source=1
-            image
-            composite({x_coord},{y_coord},0.00) || composite=1
-                circle({x_coord},{y_coord},{163*central_scale}) ||
-                ellipse({x_coord},{y_coord},{29*spike_scale**(2/3)},{730*spike_scale},{str(np.round(300.15 + angle, 2))}) ||
-                ellipse({x_coord},{y_coord},{29*spike_scale**(2/3)},{730*spike_scale},{str(np.round(240. + angle, 2))}) ||
-                ellipse({x_coord},{y_coord},{29*spike_scale**(2/3)},{730*spike_scale},{str(np.round(360. + angle, 2))}) ||
-                ellipse({x_coord},{y_coord},{29*spike_scale**(2/3)},{300*spike_scale},{str(np.round(269.48 + angle, 2))}) ||"""
-        )
-
-        # Load data
-        im_data, im_header, seg_data, seg_header = self.load_data(
-            band, incl_mask=False
-        )
-        pixel_scale = self.im_pixel_scales[band]
-        wcs = WCS(im_header)
-
-        # Scale up the image by boundary by scale_extra factor to include diffraction spikes from stars outside image footprint
-        scale_factor = scale_extra * np.array(
-            [im_data.shape[1], im_data.shape[0]]
-        )
-        vertices_pix = [
-            (-scale_factor[0], -scale_factor[1]),
-            (-scale_factor[0], im_data.shape[0] + scale_factor[1]),
-            (
-                im_data.shape[1] + scale_factor[0],
-                im_data.shape[0] + scale_factor[1],
-            ),
-            (im_data.shape[1] + scale_factor[0], -scale_factor[1]),
-        ]
-        # Convert to sky coordinates
-        vertices_sky = wcs.all_pix2world(vertices_pix, 0)
-
-        # Diagnostic plot
-        if plot:
-            fig = plt.figure(figsize=(10, 10))
-            ax = fig.add_subplot(111, projection=wcs)
-            stretch = vis.CompositeStretch(
-                vis.LogStretch(),
-                vis.ContrastBiasStretch(contrast=30, bias=0.08),
-            )
-            norm = ImageNormalize(stretch=stretch, vmin=0.001, vmax=10)
-
-            ax.imshow(
-                im_data,
-                cmap="Greys",
-                origin="lower",
-                interpolation="None",
-                norm=norm,
-            )
-
-        if mask_stars:
-            print(f"Making stellar mask for {band}")
-            # Get list of Gaia stars in the polygon region
-            Gaia.ROW_LIMIT = gaia_row_lim
-            # Construct the ADQL query string
-            adql_query = f"""
-                SELECT source_id, ra, dec, phot_g_mean_mag, radius_sersic, classlabel_dsc_joint, vari_best_class_name
-                FROM gaiadr3.gaia_source 
-                LEFT OUTER JOIN gaiadr3.galaxy_candidates USING (source_id) 
-                WHERE 1 = CONTAINS(
-                    POINT('ICRS', ra, dec), 
-                    POLYGON('ICRS', 
-                        POINT('ICRS', {vertices_sky[0][0]}, {vertices_sky[0][1]}), 
-                        POINT('ICRS', {vertices_sky[1][0]}, {vertices_sky[1][1]}), 
-                        POINT('ICRS', {vertices_sky[2][0]}, {vertices_sky[2][1]}), 
-                        POINT('ICRS', {vertices_sky[3][0]}, {vertices_sky[3][1]})))"""
-
-            # Execute the query asynchronously
-            job = Gaia.launch_job_async(adql_query)
-            gaia_stars = job.get_results()
-            print(f"Found {len(gaia_stars)} stars in the region.")
-            if exclude_gaia_galaxies:
-                gaia_stars = gaia_stars[
-                    gaia_stars["vari_best_class_name"] != "GALAXY"
-                ]
-                gaia_stars = gaia_stars[
-                    gaia_stars["classlabel_dsc_joint"] != "galaxy"
-                ]
-                # Remove masked flux values
-                gaia_stars = gaia_stars[
-                    ~np.isnan(gaia_stars["phot_g_mean_mag"])
-                ]
-
-            ra_gaia = np.asarray(gaia_stars["ra"])
-            dec_gaia = np.asarray(gaia_stars["dec"])
-            x_gaia, y_gaia = wcs.all_world2pix(ra_gaia, dec_gaia, 0)
-
-            # Generate mask scale for each star
-            central_scale_stars = (
-                2.0
-                * star_mask_params["central"]["a"]
-                / (730.0 * pixel_scale.to(u.arcsec).value)
-            ) * np.exp(
-                -gaia_stars["phot_g_mean_mag"]
-                / star_mask_params["central"]["b"]
-            )
-            spike_scale_stars = (
-                2.0
-                * star_mask_params["spikes"]["a"]
-                / (730.0 * pixel_scale.to(u.arcsec).value)
-            ) * np.exp(
-                -gaia_stars["phot_g_mean_mag"]
-                / star_mask_params["spikes"]["b"]
-            )
-            # Update the catalog
-            gaia_stars.add_column(Column(data=x_gaia, name="x_pix"))
-            gaia_stars.add_column(Column(data=y_gaia, name="y_pix"))
-
-            diffraction_regions = []
-            region_strings = []
-            for pos, (row, central_scale, spike_scale) in tqdm(
-                enumerate(
-                    zip(gaia_stars, central_scale_stars, spike_scale_stars)
-                )
-            ):
-                # Plot circle
-                # if plot:
-                #     ax.add_patch(Circle((row['x_pix'], row['y_pix']), 2 * row['rmask_arcsec'] / pixel_scale, color = 'r', fill = False, lw = 2))
-                sky_region = composite(
-                    row["x_pix"],
-                    row["y_pix"],
-                    central_scale,
-                    spike_scale,
-                    angle,
-                )
-                region_obj = Regions.parse(sky_region, format="ds9")
-                diffraction_regions.append(region_obj)
-                region_strings.append(region_obj.serialize(format="ds9"))
-
-            stellar_mask = np.zeros(im_data.shape, dtype=bool)
-            for regions in tqdm(diffraction_regions):
-                for region in regions:
-                    idx_large, idx_little = region.to_mask(
-                        mode="center"
-                    ).get_overlap_slices(im_data.shape)
-                    # idx_large is x,y box containing bounds of region in image
-                    if idx_large is not None:
-                        stellar_mask[idx_large] = np.logical_or(
-                            region.to_mask().data[idx_little],
-                            stellar_mask[idx_large],
-                        )
-                    if plot:
-                        artist = region.as_artist()
-                        ax.add_patch(artist)
-
-        # Mask image edges
-        fill = np.logical_or(
-            (im_data == edge_value), np.isnan(im_data)
-        )  # true false array of where 0's are
-        # also fill in nans
-        edges = fill * 1  # convert to 1 for true and 0 for false
-        edges = edges.astype(np.uint8)  # dtype for cv2
-        print("Masking edges")
-        if element == "RECT":
-            kernel = cv2.getStructuringElement(
-                cv2.MORPH_RECT, (edge_mask_distance, edge_mask_distance)
-            )
-        elif element == "ELLIPSE":
-            kernel = cv2.getStructuringElement(
-                cv2.MORPH_ELLIPSE, (edge_mask_distance, edge_mask_distance)
-            )
-        else:
-            raise ValueError(
-                f"element = {element} must be 'RECT' or 'ELLIPSE'"
-            )
-
-        edge_mask = cv2.dilate(
-            edges, kernel, iterations=1
-        )  # dilate mask using the circle
-        # edge_mask = 1 - dilate # invert mask, so it is 1 where it is not masked and 0 where it is masked
-        # mask = 1 - edge_mask
-
-        # Mask up to 50 pixels from all edges - so edge is still masked if it as at edge of array
-        edge_mask[:edge_mask_distance, :] = edge_mask[
-            -edge_mask_distance:, :
-        ] = edge_mask[:, :edge_mask_distance] = edge_mask[
-            :, -edge_mask_distance:
-        ] = 1
-
-        if mask_stars:
-            full_mask = np.logical_or(
-                edge_mask.astype(np.uint8), stellar_mask.astype(np.uint8)
-            )
-        else:
-            full_mask = edge_mask.astype(np.uint8)
-
-        if plot:
-            ax.imshow(
-                full_mask, cmap="Reds", origin="lower", interpolation="None"
-            )
-
-        # Check for artefacts mask to combine with exisitng mask
-        files = glob.glob(f"{self.mask_dir}/{band}*.reg")
-        # Check for 'artifact' in file name
-        files = [file for file in files if "artifact" in file]
-        artifact_mask = None
-        if len(files) > 0:
-            artifact_mask = np.zeros(im_data.shape, dtype=bool)
-            print(f"Found {len(files)} artifact masks")
-            for file in files:
-                print(f"Adding mask {file}")
-                mask = Regions.read(file)
-
-                for region in mask:
-                    region = region.to_pixel(wcs)
-                    idx_large, idx_little = region.to_mask(
-                        mode="center"
-                    ).get_overlap_slices(im_data.shape)
-                    if idx_large is not None:
-                        full_mask[idx_large] = np.logical_or(
-                            region.to_mask().data[idx_little],
-                            full_mask[idx_large],
-                        )
-                        artifact_mask[idx_large] = np.logical_or(
-                            region.to_mask().data[idx_little],
-                            artifact_mask[idx_large],
-                        )
-
-        # Save mask - could save independent layers as well e.g. stars vs edges vs manual mask etc
-        output_mask_path = f"{self.mask_dir}/fits_masks/{band}_basemask.fits"
-
-        funcs.make_dirs(output_mask_path)
-        full_mask_hdu = fits.ImageHDU(
-            full_mask.astype(np.uint8), header=wcs.to_header(), name="MASK"
-        )
-        edge_mask_hdu = fits.ImageHDU(
-            edge_mask.astype(np.uint8), header=wcs.to_header(), name="EDGE"
-        )
-        hdulist = [fits.PrimaryHDU(), full_mask_hdu, edge_mask_hdu]
-        if mask_stars:
-            stellar_mask_hdu = fits.ImageHDU(
-                stellar_mask.astype(np.uint8),
-                header=wcs.to_header(),
-                name="STELLAR",
-            )
-            hdulist.append(stellar_mask_hdu)
-        if artifact_mask is not None:
-            artifact_mask_hdu = fits.ImageHDU(
-                artifact_mask.astype(np.uint8),
-                header=wcs.to_header(),
-                name="ARTIFACT",
-            )
-            hdulist.append(artifact_mask_hdu)
-
-        hdu = fits.HDUList(hdulist)
-        hdu.writeto(output_mask_path, overwrite=True)
-        # Change permission to read/write for all
-        funcs.change_file_permissions(output_mask_path)
-
-        if plot:
-            # Save mask plot
-            fig.savefig(f"{self.mask_dir}/{band}_mask.png", dpi=300)
-            funcs.change_file_permissions(f"{self.mask_dir}/{band}_mask.png")
-
-        # Save ds9 region
-        if mask_stars:
-            with open(f"{self.mask_dir}/{band}_starmask.reg", "w") as f:
-                for region in region_strings:
-                    f.write(region + "\n")
-            funcs.change_file_permissions(
-                f"{self.mask_dir}/{band}_starmask.reg"
-            )
-        return output_mask_path
-
-    # @staticmethod
-    def combine_band_names(self, bands):
-        if type(bands) == str:
-            return bands
-        else:
-            return "+".join(bands)
-
-    @run_in_dir(path=config["DEFAULT"]["GALFIND_DIR"])
-    def make_seg_map(
-        self,
-        band,
-        sex_config_path=config["SExtractor"]["CONFIG_PATH"],
-        params_path=config["SExtractor"]["PARAMS_PATH"],
-    ):
-        galfind_logger.warning(
-            "Data.make_seg_map easily sped up without the use of Instrument.instrument_from_band!"
-        )
-        if type(band) in [str, np.str_]:
-            pass
-        elif type(band) in [list, np.array]:
-            band = self.combine_band_names(band)
-        else:
-            raise (
-                Exception(
-                    f"Cannot make segmentation map for {band}! type(band) = {type(band)} must be either str, list, or np.array!"
-                )
-            )
-
-        # load relevant err map paths, preferring rms_err maps if available
-        err_map_path, err_map_ext, err_map_type = self.get_err_map(band)
-        # insert specified aperture diameters from config file
-        as_aper_diams = json.loads(config.get("SExtractor", "APERTURE_DIAMS"))
-        if len(as_aper_diams) != 5:
-            galfind_logger.warning(
-                f"{sex_config_path=} should be updated for {as_aper_diams=} at runtime!"
-            )
-        pix_aper_diams = (
-            str(
-                [
-                    np.round(pix_aper_diam, 2)
-                    for pix_aper_diam in as_aper_diams
-                    / self.im_pixel_scales[band].value
-                ]
-            )
-            .replace("[", "")
-            .replace("]", "")
-            .replace(" ", "")
-        )
-
-        # SExtractor bash script python wrapper
-        print(
-            [
-                "./make_seg_map.sh",
-                config["SExtractor"]["SEX_DIR"],
-                self.im_paths[band],
-                str(self.im_pixel_scales[band].value),
-                str(self.im_zps[band]),
-                self.instrument.instrument_from_band(band).name,  # slow
-                self.survey,
-                band,
-                self.version,
-                err_map_path,
-                err_map_ext,
-                err_map_type,
-                str(self.im_exts[band]),
-                sex_config_path,
-                params_path,
-                pix_aper_diams,
-            ]
-        )
-        breakpoint()
-        process = subprocess.Popen(
-            [
-                "./make_seg_map.sh",
-                config["Sextractor"]["SEX_DIR"],
-                self.im_paths[band],
-                str(self.im_pixel_scales[band].value),
-                str(self.im_zps[band]),
-                self.instrument.instrument_from_band(band).name,
-                self.survey,
-                band,
-                self.version,
-                err_map_path,
-                err_map_ext,
-                err_map_type,
-                str(self.im_exts[band]),
-                sex_config_path,
-                params_path,
-                pix_aper_diams,
-            ]
-        )
-        process.wait()
-        galfind_logger.info(
-            f"Made segmentation map for {self.survey} {self.version} {band} using config = {sex_config_path} and {err_map_type}"
-        )
-
     def make_seg_maps(self):
         for band in self.instrument.band_names:
             self.make_seg_map(band)
-
-    def convolve_images(
-        self,
-        kernel_dir,
-        match_band="F444W",
-        override_bands=None,
-        use_fft_conv=True,
-        overwrite=False,
-        update_default_dictionaries=True,
-    ):
-        galfind_logger.warning(
-            "Data.convolve_images easily sped up without the use of Instrument.instrument_from_band!"
-        )
-        """Adapted from aperpy - https://github.com/astrowhit/aperpy/"""
-        if override_bands is not None:
-            bands = override_bands
-        else:
-            bands = self.instrument.band_names
-        outdir = f"{config['DEFAULT']['GALFIND_WORK']}/PSF_Matched_Images/{self.version}/{self.instrument.instrument_from_band(bands[0]).name}/{self.survey}"
-        self.im_psf_matched_dir = outdir
-        if use_fft_conv:
-            convolve_func = convolve_fft
-            convolve_kwargs = {"allow_huge": True}
-        else:
-            convolve_func = convolve
-            convolve_kwargs = {}
-
-        # for filename in sci_paths:
-        im_paths_matched = {}
-        wht_paths_matched = {}
-        rms_err_paths_matched = {}
-
-        for band in bands:
-            im_filename = self.im_paths[band]
-            wht_filename = self.wht_paths[band]
-            err_filename = self.rms_err_paths[band]
-            same_file = im_filename == wht_filename == err_filename
-            outnames = []
-
-            if not os.path.exists(outdir):
-                os.makedirs(outdir)
-
-            if same_file:
-                print(
-                    "WHT, SCI, and ERR are the same file!. Output will be written to the same file."
-                )
-                outname = im_filename.replace(
-                    ".fits", f"_{match_band}-matched.fits"
-                ).replace(os.path.dirname(im_filename), outdir)
-                outnames.append(outname)
-                outsciname = outwhtname = outerrname = outname
-                full_hdu = fits.open(im_filename)
-            else:
-                outsciname = im_filename.replace(
-                    ".fits", f"_sci_{match_band}-matched.fits"
-                ).replace(os.path.dirname(im_filename), outdir)
-                outwhtname = wht_filename.replace(
-                    ".fits", f"_wht_{match_band}-matched.fits"
-                ).replace(os.path.dirname(wht_filename), outdir)
-                outerrname = err_filename.replace(
-                    ".fits", f"_err_{match_band}-matched.fits"
-                ).replace(os.path.dirname(err_filename), outdir)
-                outnames.append(outsciname)
-                outnames.append(outwhtname)
-                outnames.append(outerrname)
-
-            im_paths_matched[band] = outsciname
-            wht_paths_matched[band] = outwhtname
-            rms_err_paths_matched[band] = outerrname
-
-            skip = False
-            for outname in outnames:
-                if os.path.exists(outname) and not overwrite:
-                    print(outsciname, outwhtname)
-                    print("Convolved images exist, I will not overwrite")
-                    skip = True
-
-            if not skip:
-                print("  science image: ", im_filename)
-                print("  weight image: ", wht_filename)
-                print("  error image: ", err_filename)
-                hdul = fits.open(im_filename)
-                hdul_wht = fits.open(wht_filename)
-
-                if err_filename != "":
-                    hdul_err = fits.open(err_filename)
-
-                if band != match_band:
-                    print(f"  PSF-matching sci {band} to {match_band}")
-                    tstart = time.time()
-                    fn_kernel = os.path.join(kernel_dir, f"{band}_kernel.fits")
-                    print("  using kernel ", fn_kernel.split("/")[-1])
-                    kernel = fits.getdata(fn_kernel)
-                    kernel /= np.sum(kernel)
-
-                    if same_file:
-                        wht_ext = "WHT"
-                    else:
-                        wht_ext = 0
-                    weight = hdul_wht[wht_ext].data
-                    if not same_file:
-                        out_hdul = fits.HDUList([])
-                    else:
-                        out_hdul = full_hdu.copy()
-                    if overwrite or not os.path.exists(outsciname):
-                        print("Running science image convolution...")
-                        if same_file:
-                            sci_ext = "SCI"
-                        else:
-                            sci_ext = 0
-
-                        sci = hdul[sci_ext].data
-                        data = convolve_func(
-                            sci, kernel, **convolve_kwargs
-                        ).astype(np.float32)
-                        data[weight == 0] = 0.0
-                        print("convolved...")
-
-                        out_hdu = fits.PrimaryHDU(
-                            data, header=hdul[sci_ext].header
-                        )
-                        out_hdu.name = "SCI"
-                        out_hdu.header["HISTORY"] = (
-                            f"Convolved with {match_band} kernel"
-                        )
-                        out_hdu.header["HISTORY2"] = (
-                            f"Convolution kernel path: {fn_kernel}"
-                        )
-                        if same_file:
-                            out_hdul[sci_ext].data = out_hdu.data
-                            out_hdul[sci_ext].header["HISTORY"] = (
-                                f"Convolved with {match_band} kernel"
-                            )
-                            out_hdul[sci_ext].header["HISTORY2"] = (
-                                f"Convolution kernel path: {fn_kernel}"
-                            )
-                        else:
-                            out_hdul.append(out_hdu)
-                            out_hdul.writeto(outsciname, overwrite=True)
-                            print("Wrote file to ", outsciname)
-                            out_hdul = fits.HDUList([])
-
-                    else:
-                        print(outsciname)
-                        print(
-                            f"{band.upper()} convolved science image exists, I will not overwrite"
-                        )
-
-                    hdul.close()
-
-                    if overwrite or not os.path.exists(outwhtname):
-                        print("Running weight image convolution...")
-                        err = np.where(weight == 0, 0, 1 / np.sqrt(weight))
-                        err_conv = convolve_func(
-                            err, kernel, **convolve_kwargs
-                        ).astype(np.float32)
-                        data = np.where(err_conv == 0, 0, 1.0 / (err_conv**2))
-                        data[weight == 0] = 0.0
-
-                        out_hdu_wht = fits.PrimaryHDU(
-                            data, header=hdul_wht[wht_ext].header
-                        )
-                        out_hdu_wht.name = "WHT"
-                        out_hdu_wht.header["HISTORY"] = (
-                            f"Convolved with {match_band} kernel"
-                        )
-
-                        if same_file:
-                            out_hdul[wht_ext].data = out_hdu_wht.data
-                            out_hdul[wht_ext].header["HISTORY"] = (
-                                f"Convolved with {match_band} kernel"
-                            )
-                        else:
-                            out_hdul.append(out_hdu_wht)
-                            out_hdul.writeto(outwhtname, overwrite=True)
-                            print("Wrote file to ", outwhtname)
-                            out_hdul = fits.HDUList([])
-
-                    else:
-                        print(outwhtname)
-                        print(
-                            f"{band.upper()} convolved weight image exists, I will not overwrite"
-                        )
-
-                    hdul_wht.close()
-
-                    if outerrname != "" and (
-                        overwrite or not os.path.exists(outerrname)
-                    ):
-                        print("Running error image convolution...")
-
-                        data = convolve_func(
-                            hdul_err["ERR"].data, kernel, **convolve_kwargs
-                        ).astype(np.float32)
-                        data[weight == 0] = 0.0
-
-                        out_hdu_err = fits.PrimaryHDU(
-                            data, header=hdul_err["ERR"].header
-                        )
-                        out_hdu_err.name = "ERR"
-                        out_hdu_err.header["HISTORY"] = (
-                            f"Convolved with {match_band} kernel"
-                        )
-                        if same_file:
-                            out_hdul["ERR"].data = out_hdu_err.data
-                            out_hdul["ERR"].header["HISTORY"] = (
-                                f"Convolved with {match_band} kernel"
-                            )
-                        else:
-                            out_hdul.append(out_hdu_err)
-                            out_hdul.writeto(outerrname, overwrite=True)
-                            print("Wrote file to ", outerrname)
-                            out_hdul = fits.HDUList([])
-
-                        hdul_err.close()
-
-                    print(f"Finished in {time.time()-tstart:2.2f}s")
-
-                    if same_file and len(out_hdul) > 1:
-                        out_hdul.writeto(outname, overwrite=True)
-                    else:
-                        print("Not writing empty HDU")
-                else:
-                    outsciname = im_filename.replace(
-                        ".fits", f"_sci_{match_band}-matched.fits"
-                    ).replace(os.path.dirname(im_filename), outdir)
-                    outwhtname = wht_filename.replace(
-                        ".fits", f"_wht_{match_band}-matched.fits"
-                    ).replace(os.path.dirname(wht_filename), outdir)
-                    outerrname = err_filename.replace(
-                        ".fits", f"_err_{match_band}-matched.fits"
-                    ).replace(os.path.dirname(err_filename), outdir)
-                    outname = im_filename.replace(
-                        ".fits", f"_{match_band}-matched.fits"
-                    ).replace(os.path.dirname(im_filename), outdir)
-
-                    if same_file:
-                        hdul.writeto(outname, overwrite=True)
-                        print(hdul.info())
-                    else:
-                        hdul.writeto(outsciname, overwrite=True)
-                        hdul_wht.writeto(outwhtname, overwrite=True)
-                        hdul_wht.close()
-                        if err_filename != "":
-                            hdul_err.writeto(outerrname, overwrite=True)
-                            hdul_err.close()
-                    print("Written files to ", outname)
-                    hdul.close()
-
-            # Update paths in self
-            if update_default_dictionaries:
-                if same_file:
-                    self.im_paths[band] = outname
-                    self.wht_paths[band] = outname
-                    self.rms_err_paths[band] = outname
-                else:
-                    self.im_paths[band] = outsciname
-                    self.wht_paths[band] = outwhtname
-                    self.rms_err_paths[band] = outerrname
-
-        return im_paths_matched, wht_paths_matched, rms_err_paths_matched
 
     @staticmethod
     def mosaic_images(
@@ -2324,42 +2292,6 @@ class Data:
         self.rms_err_exts[stack_band_name] = 2
         self.wht_paths[stack_band_name] = self.im_paths[stack_band_name]
         self.wht_exts[stack_band_name] = 3
-
-    def sex_cat_path(
-        self,
-        band: Union[str, Filter],
-        forced_phot_band: str,
-        timed: bool = False,
-    ):
-        if timed:
-            start = time.time()
-        if type(band) == str:
-            instr_name = self.instrument.instrument_from_band(band).name
-            band_name = band
-        else:
-            instr_name = band.instrument
-            band_name = band.band_name
-        # forced phot band here is the string version
-        sex_cat_dir = f"{config['DEFAULT']['GALFIND_WORK']}/SExtractor/{instr_name}/{self.version}/{self.survey}"
-        sex_cat_name = f"{self.survey}_{band_name}_{forced_phot_band}_sel_cat_{self.version}.fits"
-        sex_cat_path = f"{sex_cat_dir}/{sex_cat_name}"
-        funcs.change_file_permissions(sex_cat_path)
-        if timed:
-            end = time.time()
-            print(f"Data.sex_cat_path took {end - start:.1e}s")
-        return sex_cat_path
-
-    def seg_path(self, band: Filter):
-        # IF THIS IS CHANGED MUST ALSO CHANGE THE PATH IN __init__ AND make_seg_map.sh
-        if type(band) in [str]:
-            instr_name = self.instrument.instrument_from_band(band).name
-            band_name = band
-        else:
-            instr_name = band.instrument
-            band_name = band.band_name
-        path = f"{config['DEFAULT']['GALFIND_WORK']}/SExtractor/{instr_name}/{self.version}/{self.survey}/{self.survey}_{band_name}_{band_name}_sel_cat_{self.version}_seg.fits"
-        funcs.change_file_permissions(path)
-        return path
 
     @run_in_dir(path=config["DEFAULT"]["GALFIND_DIR"])
     def make_sex_cats(
@@ -2727,9 +2659,6 @@ class Data:
             f.write(readme_sep + "\n")
         f.close()
 
-    def make_sex_plusplus_cat(self):
-        pass
-
     def forced_photometry(
         self,
         band,
@@ -2831,43 +2760,6 @@ class Data:
             self.sex_cat_path(band, forced_phot_band)
         )
 
-    def mask_reg_to_pix(self, band, mask_path):
-        out_path = f"{'/'.join(mask_path.split('/')[:-1])}/fits_masks/{mask_path.split('/')[-1].replace('_clean', '').replace('.reg', '')}.fits"
-        if not Path(out_path).is_file():
-            # open image corresponding to band
-            im_data, im_header, seg_data, seg_header = self.load_data(
-                band, incl_mask=False
-            )
-            # open .reg mask file
-            mask_regions = Regions.read(mask_path)
-            wcs = self.load_wcs(band)
-            pix_mask = np.zeros(im_data.shape, dtype=bool)
-            for region in mask_regions:
-                region = region.to_pixel(wcs)
-                idx_large, idx_little = region.to_mask(
-                    mode="center"
-                ).get_overlap_slices(im_data.shape)
-                if idx_large is not None:
-                    pix_mask[idx_large] = np.logical_or(
-                        region.to_mask().data[idx_little], full_mask[idx_large]
-                    )
-            # make .fits mask
-            mask_hdu = fits.ImageHDU(
-                pix_mask.astype(np.uint8), header=wcs.to_header(), name="MASK"
-            )
-            hdu = fits.HDUList([fits.PrimaryHDU(), mask_hdu])
-            funcs.make_dirs(out_path)
-            hdu.writeto(out_path, overwrite=True)
-            funcs.change_file_permissions(out_path)
-            galfind_logger.info(
-                f"Created fits mask from manually created reg mask, saving as {out_path}"
-            )
-        else:
-            galfind_logger.info(
-                f"fits mask at {out_path} already exists, skipping!"
-            )
-        return out_path
-
     def combine_masks(self, bands):
         out_path = f"{self.mask_dir}/combined_masks/{self.survey}_{self.combine_band_names(bands)}.fits"
         if not Path(out_path).is_file():
@@ -2897,48 +2789,6 @@ class Data:
                 f"Combined mask for {bands} already exists at {out_path}"
             )
         return out_path
-
-    @staticmethod
-    def clean_mask_regions(mask_path):
-        # open region file
-        if "_clean" not in mask_path:
-            with open(mask_path, "r") as f:
-                lines = f.readlines()
-                clean_mask_path = mask_path.replace(".reg", "_clean.reg")
-                with open(clean_mask_path, "w") as temp:
-                    for i, line in enumerate(lines):
-                        # if line.startswith('physical'):
-                        #     lines[i] = line.replace('physical', 'image')
-                        if i <= 2:
-                            temp.write(line)
-                        if not (
-                            line.endswith(",0)\n")
-                            and line.startswith("circle")
-                        ):
-                            if (
-                                (
-                                    line.startswith("ellipse")
-                                    and not (line.split(",")[2] == "0")
-                                    and not (line.split(",")[3] == "0")
-                                )
-                                or line.startswith("box")
-                                or line.startswith("circle")
-                                or line.startswith("polygon")
-                            ):
-                                temp.write(line)
-            funcs.change_file_permissions(mask_path)
-            funcs.change_file_permissions(clean_mask_path)
-            # insert original mask ds9 region file into an unclean folder
-            funcs.make_dirs(
-                f"{funcs.split_dir_name(mask_path,'dir')}/unclean/_"
-            )
-            os.rename(
-                mask_path,
-                f"{funcs.split_dir_name(mask_path,'dir')}/unclean/{funcs.split_dir_name(mask_path,'name')}",
-            )
-            return clean_mask_path
-        else:
-            return mask_path
 
     # can be simplified with new masks
     def calc_unmasked_area(
