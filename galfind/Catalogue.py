@@ -367,8 +367,6 @@ class Catalogue(Catalogue_Base):
         print(str(cross_matched_cat))
         return cross_matched_cat
 
-    # %%
-
     def calc_ext_src_corrs(self) -> None:
         self.load_sex_flux_mag_autos()
         # calculate aperture corrections if not already
