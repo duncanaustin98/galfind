@@ -256,3 +256,17 @@
 #                 self.rms_err_paths[band] = outerrname
 
 #     return im_paths_matched, wht_paths_matched, rms_err_paths_matched
+
+
+        # if psf_match:
+        #     psf_matched_name = (
+        #         f"{stack_band_name}_psf_matched_{psf_match_band}"
+        #     )
+        #     im_paths, wht_paths, rms_err_paths = self.convolve_images(
+        #         psf_kernel_dir,
+        #         match_band=psf_match_band,
+        #         update_default_dictionaries=False,
+        #         override_bands=["F277W", "F356W", "F444W"],
+        #     )
+        # else:
+        #     psf_matched_name = stack_band_name

@@ -88,10 +88,10 @@ class Band_Data_Base(ABC):
         version: str,
         im_path: str,
         im_ext: int,
-        rms_err_path: str,
-        rms_err_ext: int,
-        wht_path: str,
-        wht_ext: int,
+        rms_err_path: Optional[str] = None,
+        rms_err_ext: Optional[int] = None,
+        wht_path: Optional[str] = None,
+        wht_ext: Optional[int] = None,
         pix_scale: u.Quantity = 0.03 * u.arcsec,
         im_ext_name: Union[str, List[str]] = "SCI",
         rms_err_ext_name: Union[str, List[str]] = "ERR",
@@ -110,13 +110,12 @@ class Band_Data_Base(ABC):
         self.wht_ext = wht_ext
         self.wht_ext_name = wht_ext_name
         self.pix_scale = pix_scale
-        self._use_galfind_err = use_galfind_err
         self._psf_match = None
         self._seg_method = None
         self._mask_method = None
         self._depth_method = None
         # make rms error / wht maps using galfind if required
-        if self._use_galfind_err:
+        if use_galfind_err:
             if (
                 (self.rms_err_path is None or self.rms_err_ext is None)
                 and self.wht_path is not None
@@ -131,6 +130,9 @@ class Band_Data_Base(ABC):
             ):
                 # make wht from rms_err if wht is not available
                 self._make_wht_from_rms_err()
+        else:
+            self._use_galfind_err = False
+        # ensure all paths/exts link to valid data
         self._check_data(
             incl_rms_err=(
                 self.rms_err_path is not None and self.rms_err_ext is not None
@@ -488,22 +490,30 @@ class Band_Data_Base(ABC):
                 len(tab) == len_required
             ), f"Lengths of sextractor catalogues do not match! Check same detection image used {len(tab)} != {len_required} for {band}"
 
+    
     def mask(
         self,
-        method: str = "auto",
-        fits_mask_path: Optional[str] = None,
-        star_mask_params: Dict[str, Dict[str, float]] = {
+        method: Union[str, List[str], Dict[str, str]] = "auto",
+        fits_mask_path: Optional[Union[str, List[str], Dict[str, str]]] = None,
+        star_mask_params: Optional[
+            Union[
+                Dict[str, Dict[str, float]],
+                Dict[u.Quantity, Dict[str, Dict[str, float]]],
+            ]
+        ] = {
             "central": {"a": 300.0, "b": 4.25},
             "spikes": {"a": 400.0, "b": 4.5},
         },
-        edge_mask_distance: Union[int, float] = 50,
-        scale_extra: float = 0.2,
-        exclude_gaia_galaxies: bool = True,
-        angle: float = -70.0,
-        edge_value: float = 0.0,
-        element: str = "ELLIPSE",
-        gaia_row_lim: int = 500,
-        overwrite: bool = False,
+        edge_mask_distance: Union[
+            int, float, List[Union[int, float]], Dict[str, Union[int, float]]
+        ] = 50,
+        scale_extra: Union[float, List[float], Dict[str, float]] = 0.2,
+        exclude_gaia_galaxies: Union[bool, List[bool], Dict[str, bool]] = True,
+        angle: Union[float, List[float], Dict[str, float]] = -70.0,
+        edge_value: Union[float, List[float], Dict[str, float]] = 0.0,
+        element: Union[str, List[str], Dict[str, str]] = "ELLIPSE",
+        gaia_row_lim: Union[int, List[int], Dict[str, int]] = 500,
+        overwrite: Union[bool, List[bool], Dict[str, bool]] = False,
     ) -> Union[None, NoReturn]:
         if not (hasattr(self, "mask_args") and hasattr(self, "mask_path")):
             # load in already made fits mask
@@ -520,7 +530,8 @@ class Band_Data_Base(ABC):
                 )
                 self.mask_args = {"method": method}
             elif method.lower() == "auto":
-                self.mask_path, self.mask_args = self._auto_mask(
+                self.mask_path, self.mask_args = \
+                Masking.auto_mask(
                     star_mask_params,
                     edge_mask_distance,
                     scale_extra,
@@ -537,24 +548,6 @@ class Band_Data_Base(ABC):
                         f"Invalid masking method {method} (not in ['auto', 'manual'])"
                     )
                 )
-
-    @abstractmethod
-    def _auto_mask(
-        self,
-        star_mask_params: Dict[str, Dict[str, float]] = {
-            "central": {"a": 300.0, "b": 4.25},
-            "spikes": {"a": 400.0, "b": 4.5},
-        },
-        edge_mask_distance: Union[int, float] = 50,
-        scale_extra: float = 0.2,
-        exclude_gaia_galaxies: bool = True,
-        angle: float = -70.0,
-        edge_value: float = 0.0,
-        element: str = "ELLIPSE",
-        gaia_row_lim: int = 500,
-        overwrite: bool = False,
-    ):
-        pass
 
     def run_depths(self, method: str):
         raise NotImplementedError
@@ -673,6 +666,7 @@ class Band_Data_Base(ABC):
         self.rms_err_path = save_path
         self.rms_err_ext = 1
         self.rms_err_ext_name = ["ERR"]
+        self._use_galfind_err = True
 
     def _make_wht_from_rms_err(self):
         err, hdr = self.load_rms_err(output_hdr=True)
@@ -695,6 +689,7 @@ class Band_Data_Base(ABC):
         self.wht_path = save_path
         self.wht_ext = 1
         self.rms_err_ext_name = ["WHT"]
+        self._use_galfind_err = True
 
 
 class Band_Data(Band_Data_Base):
@@ -796,34 +791,6 @@ class Band_Data(Band_Data_Base):
                 )
             )
 
-    def _auto_mask(
-        self,
-        star_mask_params: Dict[str, Dict[str, float]] = {
-            "central": {"a": 300.0, "b": 4.25},
-            "spikes": {"a": 400.0, "b": 4.5},
-        },
-        edge_mask_distance: Union[int, float] = 50,
-        scale_extra: float = 0.2,
-        exclude_gaia_galaxies: bool = True,
-        angle: float = -70.0,
-        edge_value: float = 0.0,
-        element: str = "ELLIPSE",
-        gaia_row_lim: int = 500,
-        overwrite: bool = False,
-    ):
-        return Masking.auto_mask(
-            self,
-            star_mask_params,
-            edge_mask_distance,
-            scale_extra,
-            exclude_gaia_galaxies,
-            angle,
-            edge_value,
-            element,
-            gaia_row_lim,
-            overwrite=overwrite,
-        )
-
 
 class Stacked_Band_Data(Band_Data_Base):
     def __init__(
@@ -863,19 +830,43 @@ class Stacked_Band_Data(Band_Data_Base):
         )
 
     @classmethod
-    def from_band_data_arr(cls, band_data_arr: List[Type[Band_Data_Base]]):
+    def from_band_data_arr(cls, band_data_arr: List[Band_Data], err_type: str = "rms_err") -> Stacked_Band_Data:
         # make sure all filters are different
-        # make filterset from filters
+        assert all(band_data.filt_name != band_data_arr[0].filt_name 
+            for i, band_data in enumerate(band_data_arr) if i != 0)
+        
+        # TODO: if all band_data in band_data_arr have been PSF homogenized, update the stacking path names
+
         # stack bands
-        # self.stack_bands(
-        #     forced_phot_band,
-        #     psf_match=False,
-        #     psf_match_band="F444W",
-        #     psf_kernel_dir="/nvme/scratch/work/tharvey/PSFs/kernels/JOF",
-        # )
-        raise (NotImplementedError)
-        cls.band_data_arr = band_data_arr
-        return cls
+        input_data = Stacked_Band_Data._stack_band_data(band_data_arr, err_type=err_type)
+        # make filterset from filters
+        filterset = Multiple_Filter([band_data.filt for band_data in band_data_arr])
+        # instantiate the stacked band data object
+        stacked_band_data = cls(filterset, **input_data)
+
+        # if all band_data in band_data_arr have been segmented, segment the stacked band data
+        if all(hasattr(band_data, "seg_args") for band_data in band_data_arr):
+            stacked_band_data.segment()
+
+        # if all band_data in band_data_arr have been masked, mask the stacked band data
+        if all(hasattr(band_data, "mask_args") for band_data in band_data_arr):
+            # if all mask arguments are the same, use the same mask method
+            # as for the individual bands
+            if all(band_data.mask_args == band_data_arr[0].mask_args for band_data in band_data_arr):
+                stacked_band_data.mask(**band_data_arr[0].mask_args)
+            else:
+                # perform default masking
+                stacked_band_data.mask()
+
+        # TODO: if all band_data in band_data_arr have run depths, 
+        # run depths for the stacked band data
+
+        # TODO: if all band_data in band_data_arr have performed 
+        # forced photometry, perform forced photometry for the stacked band data
+
+        # save original band_data inputs in the class
+        stacked_band_data.band_data_arr = band_data_arr
+        return stacked_band_data
 
     @property
     def instr_name(self) -> str:
@@ -883,7 +874,7 @@ class Stacked_Band_Data(Band_Data_Base):
 
     @property
     def filt_name(self) -> str:
-        return "+".join([filt.band_name for filt in self.filterset])
+        return self._get_stacked_band_data_name(self.filterset)
 
     @property
     def ZP(self) -> Dict[str, float]:
@@ -894,40 +885,152 @@ class Stacked_Band_Data(Band_Data_Base):
         )
         return self.filterset[0].instrument.calc_ZP(self)
 
-    def _auto_mask(
+    @staticmethod
+    def _get_stacked_band_data_name(filterset: Union[List[Filter], Multiple_Filter]) -> str:
+        return "+".join([filt.band_name for filt in filterset])
+
+    @staticmethod
+    def _get_stacked_band_data_path(band_data_arr: List[Band_Data], err_type: str = "rms_err") -> str:
+        assert all(getattr(band_data, name) == getattr(band_data_arr[0], name)
+             for name in ["survey", "version", "pix_scale"] for band_data in band_data_arr)
+        # make stacked band data path, creating directory if it does not exist
+        stacked_band_data_dir = f"{config['DEFAULT']['GALFIND_WORK']}/Stacked_Images/" + \
+            f"{band_data_arr[0].version}/{band_data_arr[0].instr_name}/{band_data_arr[0].survey}/{err_type.lower()}"
+        stacked_band_data_name = f"{band_data_arr[0].survey}_" + \
+            Stacked_Band_Data._get_stacked_band_data_name(
+            [band_data.filt for band_data in band_data_arr]) + \
+            f"_{band_data_arr[0].version}_stack.fits"
+        stacked_band_data_path = f"{stacked_band_data_dir}/{stacked_band_data_name}"
+        funcs.make_dirs(stacked_band_data_path)
+        return stacked_band_data_path
+
+    @staticmethod
+    def _stack_band_data(
+        band_data_arr: List[Band_Data],
+        err_type: str = "rms_err",
+        overwrite: bool = False
+    ) -> Tuple[str, Dict[str, Union[str, int]]]:
+
+        assert err_type.lower() in ["rms_err", "wht"], \
+            galfind_logger.critical(f"{err_type=} not in ['rms_err', 'wht']")
+        
+        # make rms_err/wht maps if they do not exist and are required
+        used_galfind_err = False
+        if err_type.lower() == "rms_err":
+            if not all(Path(band_data.rms_err_path).is_file() for band_data in band_data_arr):
+                for band_data in band_data_arr:
+                    band_data._make_rms_err_from_wht()
+                used_galfind_err = True
+        else: # err_type.lower() == "wht"
+            if not all(Path(band_data.wht_path).is_file() for band_data in band_data_arr):
+                for band_data in band_data_arr:
+                    band_data._make_wht_from_rms_err()
+                used_galfind_err = True
+        # load output path and perform stacking if required
+        stacked_band_data_path = Stacked_Band_Data._get_stacked_band_data_path(band_data_arr, err_type)
+        if not Path(stacked_band_data_path).is_file() or overwrite:
+            # ensure all shapes are the same for the band data images
+            assert all(band_data.data_shape == band_data_arr[0].data_shape for band_data in band_data_arr), \
+                galfind_logger.critical("All band data images must have the same shape!")
+            # ensure all band data images have the same ZP
+            assert all(band_data.ZP == band_data_arr[0].ZP for band_data in band_data_arr), \
+                galfind_logger.critical("All image ZPs must have the same shape!")
+            # ensure all band data images have the same pixel scale
+            assert all(band_data.pix_scale == band_data_arr[0].pix_scale for band_data in band_data_arr), \
+                galfind_logger.critical("All image pixel scales must be the same!")
+            # stack band data SCI/ERR/WHT images (inverse variance weighted)
+            galfind_logger.info(
+                f"Stacking {[band_data.filt_name for band_data in band_data_arr]}" + \
+                f" for {band_data_arr[0].survey} {band_data_arr[0].version}"
+            )
+            for i, band_data in enumerate(band_data_arr):
+                if i == 0:
+                    im_data, im_header, im_hdul = band_data.load_im(return_hdul = True)
+                    prime_hdu = im_hdul[0].header
+                else:
+                    im_data, im_header = band_data.load_im()
+                if err_type.lower() == "rms_err":
+                    rms_err_data = band_data.load_rms_err()
+                    wht_data = 1.0 / (rms_err_data**2)
+                else: # err_type.lower() == "wht"
+                    wht_data = band_data.load_wht()
+                    rms_err_data = np.sqrt(1.0 / wht)
+                if i == 0:
+                    sum = im_data * wht_data
+                    sum_wht = wht_data
+                else:
+                    sum += im_data * wht_data
+                    sum_wht += wht_data
+
+            sci = sum / sum_wht
+            err = np.sqrt(1.0 / sum_wht)
+            wht = sum_wht
+
+            primary = fits.PrimaryHDU(header=prime_hdu)
+            hdu = fits.ImageHDU(sci, header=im_header, name="SCI")
+            hdu_err = fits.ImageHDU(err, header=im_header, name="ERR")
+            hdu_wht = fits.ImageHDU(wht, header=im_header, name="WHT")
+            hdul = fits.HDUList([primary, hdu, hdu_err, hdu_wht])
+            hdul.writeto(stacked_band_data_path, overwrite=True)
+            funcs.change_file_permissions(stacked_band_data_path)
+
+        output_dict = {
+            "survey": band_data_arr[0].survey,
+            "version": band_data_arr[0].version,
+            "pix_scale": band_data_arr[0].pix_scale,
+            "im_path": stacked_band_data_path, 
+            "im_ext": 1, 
+            "im_ext_name": "SCI",
+            "rms_err_path": stacked_band_data_path,
+            "rms_err_ext": 2,
+            "rms_err_ext_name": "ERR",
+            "wht_path": stacked_band_data_path,
+            "wht_ext": 3,
+            "wht_ext_name": "WHT",
+        }
+        return output_dict
+
+    def mask(
         self,
-        star_mask_params: Dict[str, Dict[str, float]] = {
+        method: Union[str, List[str], Dict[str, str]] = "auto",
+        fits_mask_path: Optional[Union[str, List[str], Dict[str, str]]] = None,
+        star_mask_params: Optional[
+            Union[
+                Dict[str, Dict[str, float]],
+                Dict[u.Quantity, Dict[str, Dict[str, float]]],
+            ]
+        ] = {
             "central": {"a": 300.0, "b": 4.25},
             "spikes": {"a": 400.0, "b": 4.5},
         },
-        edge_mask_distance: Union[int, float] = 50,
-        scale_extra: float = 0.2,
-        exclude_gaia_galaxies: bool = True,
-        angle: float = -70.0,
-        edge_value: float = 0.0,
-        element: str = "ELLIPSE",
-        gaia_row_lim: int = 500,
-        overwrite: bool = False,
-    ):
+        edge_mask_distance: Union[
+            int, float, List[Union[int, float]], Dict[str, Union[int, float]]
+        ] = 50,
+        scale_extra: Union[float, List[float], Dict[str, float]] = 0.2,
+        exclude_gaia_galaxies: Union[bool, List[bool], Dict[str, bool]] = True,
+        angle: Union[float, List[float], Dict[str, float]] = -70.0,
+        edge_value: Union[float, List[float], Dict[str, float]] = 0.0,
+        element: Union[str, List[str], Dict[str, str]] = "ELLIPSE",
+        gaia_row_lim: Union[int, List[int], Dict[str, int]] = 500,
+        overwrite: Union[bool, List[bool], Dict[str, bool]] = False,
+    ) -> Union[None, NoReturn]:
+        # if the individual bands have not been loaded, mask the stacked band data
         if not hasattr(self, "band_data_arr"):
-            # mask entire field in one go
-            return Masking.auto_mask(
-                self,
-                star_mask_params,
-                edge_mask_distance,
-                scale_extra,
-                exclude_gaia_galaxies,
-                angle,
-                edge_value,
-                element,
-                gaia_row_lim,
+            super().mask(
+                method=method,
+                fits_mask_path=fits_mask_path,
+                star_mask_params=star_mask_params,
+                edge_mask_distance=edge_mask_distance,
+                scale_extra=scale_extra,
+                exclude_gaia_galaxies=exclude_gaia_galaxies,
+                angle=angle,
+                edge_value=edge_value,
+                element=element,
+                gaia_row_lim=gaia_row_lim,
                 overwrite=overwrite,
             )
-        else:
-            # combine masks from all bands
-
-            raise (NotImplementedError)
-
+        else: # combine masks from individual bands
+            Masking.combine_masks(self)
 
 class Data:
     def __init__(
@@ -1529,11 +1632,20 @@ class Data:
             return band_data
 
     def __getitem__(
-        self, index: Union[int, slice, List[bool], str]
+        self, other: Union[int, slice, str, List[int], List[bool]]
     ) -> Band_Data:
-        if isinstance(index, str):
-            index = self._index_from_str(index)
-        return self.band_data_arr[index]
+        # convert other to integer indices if string
+        # or a list of filter names are given
+        if isinstance(other, str):
+            other_split = other.split("+")
+            other = self._indices_from_filt_names(other_split)
+        elif isinstance(other, list):
+            if isinstance(other[0], str):
+                other = self._indices_from_filt_names(other)
+        if isinstance(other, list):
+            return list(np.array(self.band_data_arr)[other])
+        else:
+            return self.band_data_arr[other]
 
     def __getattr__(self, attr: str) -> Any:
         # attr inserted here must be pluralised with 's' suffix
@@ -1607,15 +1719,15 @@ class Data:
                 ]
             )
 
-    def _index_from_str(self, filt_name: str) -> int:
-        assert filt_name in [
-            band.filt_name for band in self
-        ], galfind_logger.warning(
-            f"Filter {filt_name} not found in {self.filterset.band_names}"
+    def _indices_from_filt_names(self, filt_names: Union[str, List[str]]) -> int:
+        if isinstance(filt_names, str):
+            filt_names = filt_names.split("+")
+        # make sure all names are filters in the filterset
+        assert all(name in [band.filt_name for band in self] 
+            for name in filt_names), galfind_logger.warning(
+            f"Not all {filt_names} in {self.filterset.band_names}"
         )
-        return [i for i in range(len(self)) if self[i].filt_name == filt_name][
-            0
-        ]
+        return [i for i in range(len(self)) if self[i].filt_name in filt_names]
 
     def _sort_band_dependent_params(
         self, filt_name: str, params: Union[Any, List[Any], Dict[str, Any]]
@@ -1623,7 +1735,7 @@ class Data:
         if isinstance(params, list):
             # ensure params is the same length as the bands
             assert len(params) == len(self)
-            return params[self._index_from_str(filt_name)]
+            return params[self._indices_from_filt_names(filt_name)]
         elif isinstance(params, dict):
             assert filt_name in params.keys()
             return params[filt_name]
@@ -1852,7 +1964,7 @@ class Data:
         element: Union[str, List[str], Dict[str, str]] = "ELLIPSE",
         gaia_row_lim: Union[int, List[int], Dict[str, int]] = 500,
         overwrite: Union[bool, List[bool], Dict[str, bool]] = False,
-    ):
+    ) -> Union[None, NoReturn]:
         assert method in ["auto", "manual"], galfind_logger.warning(
             f"Method {method} not recognised. Must be 'auto' or 'manual'"
         )
@@ -2083,139 +2195,6 @@ class Data:
     #             )
     #         )
 
-    # def stack_bands(
-    #     self,
-    #     bands,
-    #     psf_match=False,
-    #     psf_match_band=None,
-    #     psf_kernel_dir=None,
-    #     timed: bool = True,
-    # ):
-    #     galfind_logger.warning(
-    #         "Data.stack_bands easily sped up without the use of Instrument.instrument_from_band!"
-    #     )
-    #     for band in bands:
-    #         if band not in self.im_paths.keys():
-    #             bands.remove(band)
-    #             galfind_logger.warning(
-    #                 f"{band} not available for {self.survey} {self.version}"
-    #             )
-    #     stack_band_name = self.combine_band_names(bands)
-    #     if psf_match:
-    #         psf_matched_name = (
-    #             f"{stack_band_name}_psf_matched_{psf_match_band}"
-    #         )
-    #         im_paths, wht_paths, rms_err_paths = self.convolve_images(
-    #             psf_kernel_dir,
-    #             match_band=psf_match_band,
-    #             update_default_dictionaries=False,
-    #             override_bands=["F277W", "F356W", "F444W"],
-    #         )
-    #     else:
-    #         psf_matched_name = stack_band_name
-    #         im_paths = self.im_paths
-    #         wht_paths = self.wht_paths
-    #         rms_err_paths = self.rms_err_paths
-
-    #     detection_image_dir = f"{config['DEFAULT']['GALFIND_WORK']}/Stacked_Images/{self.version}/{self.instrument.instrument_from_band(bands[0]).name}/{self.survey}"
-    #     detection_image_name = (
-    #         f"{self.survey}_{psf_matched_name}_{self.version}_stack.fits"
-    #     )
-    #     self.im_paths[stack_band_name] = (
-    #         f"{detection_image_dir}/{detection_image_name}"
-    #     )
-    #     self.rms_err_paths[stack_band_name] = (
-    #         f"{detection_image_dir}/{detection_image_name}"
-    #     )
-    #     combined_mask_name = f"{self.mask_dir}/combined_masks/{self.survey}_{self.combine_band_names(bands)}.fits"
-    #     if Path(combined_mask_name).is_file():
-    #         self.mask_paths[stack_band_name] = combined_mask_name
-    #     else:
-    #         self.mask_paths[stack_band_name] = self.combine_masks(bands)
-
-    #     if not Path(self.im_paths[stack_band_name]).is_file():  # or overwrite
-    #         funcs.make_dirs(self.im_paths[stack_band_name])
-
-    #         if all(
-    #             band in self.rms_err_paths.keys()
-    #             and band in self.rms_err_exts.keys()
-    #             for band in bands
-    #         ):
-    #             err_from = "ERR"
-    #         elif all(
-    #             band in self.wht_paths.keys() and band in self.wht_exts.keys()
-    #             for band in bands
-    #         ):
-    #             # determine error map from wht map
-    #             err_from = "WHT"
-    #         else:
-    #             raise (Exception("Inconsistent error maps for stacking bands"))
-
-    #         for pos, band in enumerate(bands):
-    #             if (
-    #                 self.im_shapes[band] != self.im_shapes[bands[0]]
-    #                 or self.im_zps[band] != self.im_zps[bands[0]]
-    #                 or self.im_pixel_scales[band]
-    #                 != self.im_pixel_scales[bands[0]]
-    #             ):
-    #                 raise Exception(
-    #                     "All bands used in forced photometry stack must have the same shape, ZP and pixel scale!"
-    #                 )
-
-    #             prime_hdu = fits.open(im_paths[band])[0].header
-    #             print(f"Opened {im_paths[band]}[{self.im_exts[band]}]")
-    #             im_data = fits.open(im_paths[band])[self.im_exts[band]].data
-    #             im_header = fits.open(im_paths[band])[
-    #                 self.im_exts[band]
-    #             ].header
-    #             print(err_from, self.rms_err_exts[band], self.wht_exts[band])
-    #             if err_from == "ERR":
-    #                 err = fits.open(rms_err_paths[band])[
-    #                     self.rms_err_exts[band]
-    #                 ].data
-    #                 wht = 1.0 / (err**2)
-    #             elif err_from == "WHT":
-    #                 # determine error map from wht map
-    #                 wht = fits.open(wht_paths[band])[self.wht_exts[band]].data
-    #                 err = np.sqrt(1.0 / wht)
-    #             else:
-    #                 galfind_logger.critical(
-    #                     f"{err_from=} not in ['ERR', 'WHT']"
-    #                 )
-    #             if pos == 0:
-    #                 sum = im_data * wht
-    #                 sum_wht = wht
-    #             else:
-    #                 sum += im_data * wht
-    #                 sum_wht += wht
-
-    #         sci = sum / sum_wht
-    #         err = np.sqrt(1.0 / sum_wht)
-    #         wht = sum_wht
-
-    #         # https://en.wikipedia.org/wiki/Inverse-variance_weighting
-
-    #         primary = fits.PrimaryHDU(header=prime_hdu)
-    #         hdu = fits.ImageHDU(sci, header=im_header, name="SCI")
-    #         hdu_err = fits.ImageHDU(err, header=im_header, name="ERR")
-    #         hdu_wht = fits.ImageHDU(wht, header=im_header, name="WHT")
-    #         hdul = fits.HDUList([primary, hdu, hdu_err, hdu_wht])
-    #         hdul.writeto(self.im_paths[stack_band_name], overwrite=True)
-    #         funcs.change_file_permissions(self.im_paths[stack_band_name])
-    #         galfind_logger.info(
-    #             f"Finished stacking bands = {bands} for {self.survey} {self.version}"
-    #         )
-
-    #     # save forced photometry band parameters
-    #     self.im_shapes[stack_band_name] = self.im_shapes[bands[0]]
-    #     self.im_zps[stack_band_name] = self.im_zps[bands[0]]
-    #     self.im_pixel_scales[stack_band_name] = self.im_pixel_scales[bands[0]]
-    #     self.im_exts[stack_band_name] = 1
-    #     self.rms_err_paths[stack_band_name] = self.im_paths[stack_band_name]
-    #     self.rms_err_exts[stack_band_name] = 2
-    #     self.wht_paths[stack_band_name] = self.im_paths[stack_band_name]
-    #     self.wht_exts[stack_band_name] = 3
-
     # def make_readme(
     #     self, col_desc_dict, save_path, overwrite=False, readme_sep="-" * 20
     # ):
@@ -2359,36 +2338,6 @@ class Data:
         funcs.change_file_permissions(
             self.sex_cat_path(band, forced_phot_band)
         )
-
-    def combine_masks(self, bands):
-        out_path = f"{self.mask_dir}/combined_masks/{self.survey}_{self.combine_band_names(bands)}.fits"
-        if not Path(out_path).is_file():
-            # require pixel scales to be the same across all bands
-            for i, band in enumerate(bands):
-                if i == 0:
-                    pix_scale = self.im_pixel_scales[band]
-                else:
-                    assert self.im_pixel_scales[band] == pix_scale
-            combined_mask = np.logical_or.reduce(
-                tuple([self.load_mask(band) for band in bands])
-            )
-            assert combined_mask.shape == self.load_mask(bands[-1]).shape
-            # wcs taken from the reddest band
-            mask_hdu = fits.ImageHDU(
-                combined_mask.astype(np.uint8),
-                header=WCS(self.load_im(bands[-1])[1]).to_header(),
-                name="MASK",
-            )
-            hdu = fits.HDUList([fits.PrimaryHDU(), mask_hdu])
-            funcs.make_dirs(out_path)
-            hdu.writeto(out_path, overwrite=True)
-            funcs.change_file_permissions(out_path)
-            galfind_logger.info(f"Created combined mask for {bands}")
-        else:
-            galfind_logger.info(
-                f"Combined mask for {bands} already exists at {out_path}"
-            )
-        return out_path
 
     # can be simplified with new masks
     def calc_unmasked_area(

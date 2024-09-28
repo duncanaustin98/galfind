@@ -19,7 +19,7 @@ try:
 except ImportError:
     from typing_extensions import Self, Type  # python > 3.7 AND python < 3.11
 if TYPE_CHECKING:
-    from . import Band_Data, Band_Data_Base, Filter
+    from . import Band_Data_Base, Stacked_Band_Data, Filter
 
 from . import config, galfind_logger
 from . import useful_funcs_austind as funcs
@@ -98,6 +98,8 @@ def manually_mask(
     if not Path(fits_mask_path).is_file() or overwrite:
         # if no fits mask found, search for region mask
         reg_mask_dir = f"{config['Masking']['MASK_DIR']}/{self.survey}/reg"
+        if self.__class__.__name__ == "Stacked_Band_Data":
+            reg_mask_dir += "/stacked"
         reg_mask_paths = []
         for filt_ext in [
             self.filt_name.upper(),
@@ -291,7 +293,7 @@ def auto_mask(
         reg_mask_dir = f"{config['Masking']['MASK_DIR']}/{self.survey}/reg"
         if star_mask_params is not None:
             galfind_logger.debug(
-                f"Making stellar mask for {self.survey} {self.version} {self.filt.band_name}"
+                f"Making stellar mask for {self.survey} {self.version} {self.filt_name}"
             )
             # Get list of Gaia stars in the polygon region
             Gaia.ROW_LIMIT = gaia_row_lim
@@ -396,7 +398,7 @@ def auto_mask(
         edges = fill * 1  # convert to 1 for true and 0 for false
         edges = edges.astype(np.uint8)  # dtype for cv2
         galfind_logger.debug(
-            f"Masking edges for {self.survey} {self.filt.band_name}."
+            f"Masking edges for {self.survey} {self.filt_name}."
         )
         if element == "RECT":
             kernel = cv2.getStructuringElement(
@@ -586,6 +588,38 @@ def sort_band_dependent_star_mask_params(
     star_mask_params = star_mask_params[closest_wavelength]
     return star_mask_params
 
+def combine_masks(self: Stacked_Band_Data) -> str:
+    out_dir = f"{config['Masking']['MASK_DIR']}/{self.survey}/combined"
+    out_name = ""#f"{self.survey}_{}.fits"
+    out_path = f"{out_dir}/{out_name}"
+    # if not Path(out_path).is_file():
+    #     # require pixel scales to be the same across all bands
+    #     for i, band in enumerate(bands):
+    #         if i == 0:
+    #             pix_scale = self.im_pixel_scales[band]
+    #         else:
+    #             assert self.im_pixel_scales[band] == pix_scale
+    #     combined_mask = np.logical_or.reduce(
+    #         tuple([self.load_mask(band) for band in bands])
+    #     )
+    #     assert combined_mask.shape == self.load_mask(bands[-1]).shape
+    #     # wcs taken from the reddest band
+    #     mask_hdu = fits.ImageHDU(
+    #         combined_mask.astype(np.uint8),
+    #         header=WCS(self.load_im(bands[-1])[1]).to_header(),
+    #         name="MASK",
+    #     )
+    #     hdu = fits.HDUList([fits.PrimaryHDU(), mask_hdu])
+    #     funcs.make_dirs(out_path)
+    #     hdu.writeto(out_path, overwrite=True)
+    #     funcs.change_file_permissions(out_path)
+    #     galfind_logger.info(f"Created combined mask for {bands}")
+    # else:
+    #     galfind_logger.info(
+    #         f"Combined mask for {bands} already exists at {out_path}"
+    #     )
+    # return out_path
+    pass
 
 # # if "COSMOS-Web" in self.survey:
 # #     # stellar masks the same for all bands
