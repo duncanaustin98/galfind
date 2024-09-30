@@ -97,6 +97,8 @@ class Band_Data_Base(ABC):
         rms_err_ext_name: Union[str, List[str]] = "ERR",
         wht_ext_name: Union[str, List[str]] = "WHT",
         use_galfind_err: bool = False,
+        aper_diams: Optional[u.Quantity] = [0.32, 0.5, 1.0, 1.5, 2.0]
+        * u.arcsec,
     ):
         self.survey = survey
         self.version = version
@@ -110,10 +112,9 @@ class Band_Data_Base(ABC):
         self.wht_ext = wht_ext
         self.wht_ext_name = wht_ext_name
         self.pix_scale = pix_scale
+        if aper_diams is not None:
+            self.aper_diams = aper_diams
         self._psf_match = None
-        self._seg_method = None
-        self._mask_method = None
-        self._depth_method = None
         # make rms error / wht maps using galfind if required
         if use_galfind_err:
             if (
@@ -249,6 +250,16 @@ class Band_Data_Base(ABC):
 
     # %% Loading methods
 
+    def load_aper_diams(self, aper_diams: u.Quantity) -> NoReturn:
+        if hasattr(self, "aper_diams"):
+            galfind_logger.warning(
+                f"{self.aper_diams=} already loaded for {self.filt_name},"
+                + f" skipping {aper_diams=} load-in"
+            )
+        else:
+            self.aper_diams = aper_diams
+            galfind_logger.info(f"Loaded {aper_diams=} for {self.filt_name}")
+
     def load_data(self, incl_mask: bool = True):
         assert self._seg_method is not None
         # load science image data and header (and hdul)
@@ -350,18 +361,39 @@ class Band_Data_Base(ABC):
         seg_header = seg_hdul[0].header
         return seg_data, seg_header
 
-    def load_mask(self) -> np.ndarray:
-        if self._mask_method is not None:
+    def load_mask(
+        self, ext: Optional[str] = None
+    ) -> Optional[Union[np.ndarray, Dict[str, np.ndarray]]]:
+        if hasattr(self, "mask_args"):
             # load mask
             if ".fits" in self.mask_path:
-                mask = fits.open(self.mask_path, mode="readonly")[1].data
+                hdul = fits.open(self.mask_path, mode="readonly")
+                hdu_names_indices = {
+                    hdu.name.upper(): i
+                    for i, hdu in enumerate(hdul)
+                    if hdu.name != "PRIMARY"
+                }
+                if ext is not None:
+                    ext = ext.upper()
+                    assert (
+                        ext in hdu_names_indices.keys()
+                    ), galfind_logger.critical(
+                        f"{ext=} not in mask extensions: {list(hdu_names_indices.keys())}"
+                    )
+                    mask = hdul[hdu_names_indices[ext]].data
+                else:
+                    mask = {
+                        hdu_name: hdul[index].data
+                        for hdu_name, index in hdu_names_indices.items()
+                    }
             else:
                 galfind_logger.critical(
-                    f"Mask for {self.survey} {self.band.band_name} at {self.mask_path} is not a .fits mask!"
+                    f"Mask for {self.survey} {self.filt_name}"
+                    + f" at {self.mask_path} is not a .fits mask!"
                 )
         else:
             galfind_logger.critical(
-                f"Mask for {self.survey} {self.band.band_name} not set!"
+                f"Mask for {self.survey} {self.filt_name} not set!"
             )
             mask = None
         return mask
@@ -490,7 +522,6 @@ class Band_Data_Base(ABC):
                 len(tab) == len_required
             ), f"Lengths of sextractor catalogues do not match! Check same detection image used {len(tab)} != {len_required} for {band}"
 
-    
     def mask(
         self,
         method: Union[str, List[str], Dict[str, str]] = "auto",
@@ -530,8 +561,7 @@ class Band_Data_Base(ABC):
                 )
                 self.mask_args = {"method": method}
             elif method.lower() == "auto":
-                self.mask_path, self.mask_args = \
-                Masking.auto_mask(
+                self.mask_path, self.mask_args = Masking.auto_mask(
                     star_mask_params,
                     edge_mask_distance,
                     scale_extra,
@@ -549,9 +579,113 @@ class Band_Data_Base(ABC):
                     )
                 )
 
-    def run_depths(self, method: str):
-        raise NotImplementedError
-        self._depth_method = method
+    def run_depths(
+        self,
+        mode: str = "n_nearest",
+        scatter_size: float = 0.1,
+        distance_to_mask: Union[int, float] = 30,
+        region_radius_used_pix: Union[int, float] = 300,
+        n_nearest: int = 200,
+        coord_type: str = "sky",
+        split_depth_min_size: int = 100_000,
+        split_depths_factor: int = 5,
+        step_size: int = 100,
+        n_split: Union[str, int] = "auto",
+        overwrite: bool = False,
+    ) -> NoReturn:
+        if not hasattr(self, "depth_args"):
+            # load parameters (i.e. for each aper_diams in self)
+            params = self._sort_run_depth_params(
+                mode,
+                scatter_size,
+                distance_to_mask,
+                region_radius_used_pix,
+                n_nearest,
+                coord_type,
+                split_depth_min_size,
+                split_depths_factor,
+                step_size,
+                n_split,
+                overwrite,
+            )
+            # run depths
+            Depths.calc_band_depth(params)
+            # load depths into object
+            self._load_depths(params)
+        else:
+            galfind_logger.warning(
+                f"Depths loaded for {self.filt_name}, skipping!"
+            )
+
+    def _sort_run_depth_params(
+        self,
+        mode: str = "n_nearest",
+        scatter_size: float = 0.1,
+        distance_to_mask: Union[int, float] = 30,
+        region_radius_used_pix: Union[int, float] = 300,
+        n_nearest: int = 200,
+        coord_type: str = "sky",
+        split_depth_min_size: int = 100_000,
+        split_depths_factor: int = 5,
+        step_size: int = 100,
+        n_split: Union[str, int] = "auto",
+        overwrite: bool = False,
+    ) -> List[Tuple[Any, ...]]:
+        params = []
+        for aper_diam in self.aper_diams:
+            params.extend(
+                [
+                    (
+                        self,
+                        aper_diam,
+                        mode,
+                        scatter_size,
+                        distance_to_mask,
+                        region_radius_used_pix,
+                        n_nearest,
+                        coord_type,
+                        split_depth_min_size,
+                        split_depths_factor,
+                        step_size,
+                        n_split,
+                        overwrite,
+                    )
+                ]
+            )
+        return params
+
+    def _load_depths(self, params: List[Tuple[Any, ...]]) -> NoReturn:
+        if hasattr(self, "depth_args"):
+            if all(param[1] in self.depth_args.keys() for param in params):
+                galfind_logger.warning(
+                    f"Depth data already loaded for {self.filt_name}, skipping load-in"
+                )
+        else:
+            self.depth_path = {
+                param[1]: Depths.get_grid_depth_path(self, param[1], param[2])
+                for param in params
+            }
+            depths = [
+                Depths.get_depths_from_h5(self, param[1], param[2])
+                for param in params
+            ]
+            self.med_depth = {
+                param[1]: depth[0] for depth, param in zip(depths, params)
+            }
+            self.mean_depth = {
+                param[1]: depth[1] for depth, param in zip(depths, params)
+            }
+            self.depth_args = {
+                param[1]: Depths.get_depth_args(param) for param in params
+            }
+
+    def plot_depths(self) -> NoReturn:
+        Depths.plot_band_data_depth(self)
+
+    def plot_area_depth(
+        self,
+    ) -> NoReturn:
+        Depths.plot_band_data_area_depth(self)
 
     def plot(
         self,
@@ -709,6 +843,8 @@ class Band_Data(Band_Data_Base):
         rms_err_ext_name: Union[str, List[str]] = "ERR",
         wht_ext_name: Union[str, List[str]] = "WHT",
         use_galfind_err: bool = False,
+        aper_diams: Optional[u.Quantity] = [0.32, 0.5, 1.0, 1.5, 2.0]
+        * u.arcsec,
     ):
         self.filt = filt
         super().__init__(
@@ -725,6 +861,7 @@ class Band_Data(Band_Data_Base):
             rms_err_ext_name,
             wht_ext_name,
             use_galfind_err,
+            aper_diams,
         )
 
     @classmethod
@@ -770,10 +907,7 @@ class Band_Data(Band_Data_Base):
             # if all bands being added are different
             if len(
                 np.unique(
-                    [
-                        band_data.filt.band_name
-                        for band_data in new_band_data_arr
-                    ]
+                    [band_data.filt_name for band_data in new_band_data_arr]
                 )
             ) == len(new_band_data_arr):
                 return Data(new_band_data_arr)
@@ -809,6 +943,8 @@ class Stacked_Band_Data(Band_Data_Base):
         rms_err_ext_name: Union[str, List[str]] = "ERR",
         wht_ext_name: Union[str, List[str]] = "WHT",
         use_galfind_err: bool = False,
+        aper_diams: Optional[u.Quantity] = [0.32, 0.5, 1.0, 1.5, 2.0]
+        * u.arcsec,
     ):
         # ensure every band_data is from the same survey and version,
         # have the same pixel scale and are from different filters
@@ -827,20 +963,30 @@ class Stacked_Band_Data(Band_Data_Base):
             rms_err_ext_name,
             wht_ext_name,
             use_galfind_err,
+            aper_diams,
         )
 
     @classmethod
-    def from_band_data_arr(cls, band_data_arr: List[Band_Data], err_type: str = "rms_err") -> Stacked_Band_Data:
+    def from_band_data_arr(
+        cls, band_data_arr: List[Band_Data], err_type: str = "rms_err"
+    ) -> Stacked_Band_Data:
         # make sure all filters are different
-        assert all(band_data.filt_name != band_data_arr[0].filt_name 
-            for i, band_data in enumerate(band_data_arr) if i != 0)
-        
+        assert all(
+            band_data.filt_name != band_data_arr[0].filt_name
+            for i, band_data in enumerate(band_data_arr)
+            if i != 0
+        )
+
         # TODO: if all band_data in band_data_arr have been PSF homogenized, update the stacking path names
 
         # stack bands
-        input_data = Stacked_Band_Data._stack_band_data(band_data_arr, err_type=err_type)
+        input_data = Stacked_Band_Data._stack_band_data(
+            band_data_arr, err_type=err_type
+        )
         # make filterset from filters
-        filterset = Multiple_Filter([band_data.filt for band_data in band_data_arr])
+        filterset = Multiple_Filter(
+            [band_data.filt for band_data in band_data_arr]
+        )
         # instantiate the stacked band data object
         stacked_band_data = cls(filterset, **input_data)
 
@@ -852,20 +998,25 @@ class Stacked_Band_Data(Band_Data_Base):
         if all(hasattr(band_data, "mask_args") for band_data in band_data_arr):
             # if all mask arguments are the same, use the same mask method
             # as for the individual bands
-            if all(band_data.mask_args == band_data_arr[0].mask_args for band_data in band_data_arr):
+            if all(
+                band_data.mask_args == band_data_arr[0].mask_args
+                for band_data in band_data_arr
+            ):
                 stacked_band_data.mask(**band_data_arr[0].mask_args)
             else:
                 # perform default masking
                 stacked_band_data.mask()
 
-        # TODO: if all band_data in band_data_arr have run depths, 
+        # TODO: if all band_data in band_data_arr have run depths,
         # run depths for the stacked band data
 
-        # TODO: if all band_data in band_data_arr have performed 
+        # TODO: if all band_data in band_data_arr have performed
         # forced photometry, perform forced photometry for the stacked band data
 
-        # save original band_data inputs in the class
-        stacked_band_data.band_data_arr = band_data_arr
+        # save original band_data inputs in the class, sorted blue -> red
+        stacked_band_data.band_data_arr = funcs.sort_band_data_arr(
+            band_data_arr
+        )
         return stacked_band_data
 
     @property
@@ -886,21 +1037,35 @@ class Stacked_Band_Data(Band_Data_Base):
         return self.filterset[0].instrument.calc_ZP(self)
 
     @staticmethod
-    def _get_stacked_band_data_name(filterset: Union[List[Filter], Multiple_Filter]) -> str:
+    def _get_stacked_band_data_name(
+        filterset: Union[List[Filter], Multiple_Filter],
+    ) -> str:
         return "+".join([filt.band_name for filt in filterset])
 
     @staticmethod
-    def _get_stacked_band_data_path(band_data_arr: List[Band_Data], err_type: str = "rms_err") -> str:
-        assert all(getattr(band_data, name) == getattr(band_data_arr[0], name)
-             for name in ["survey", "version", "pix_scale"] for band_data in band_data_arr)
+    def _get_stacked_band_data_path(
+        band_data_arr: List[Band_Data], err_type: str = "rms_err"
+    ) -> str:
+        assert all(
+            getattr(band_data, name) == getattr(band_data_arr[0], name)
+            for name in ["survey", "version", "pix_scale"]
+            for band_data in band_data_arr
+        )
         # make stacked band data path, creating directory if it does not exist
-        stacked_band_data_dir = f"{config['DEFAULT']['GALFIND_WORK']}/Stacked_Images/" + \
-            f"{band_data_arr[0].version}/{band_data_arr[0].instr_name}/{band_data_arr[0].survey}/{err_type.lower()}"
-        stacked_band_data_name = f"{band_data_arr[0].survey}_" + \
-            Stacked_Band_Data._get_stacked_band_data_name(
-            [band_data.filt for band_data in band_data_arr]) + \
-            f"_{band_data_arr[0].version}_stack.fits"
-        stacked_band_data_path = f"{stacked_band_data_dir}/{stacked_band_data_name}"
+        stacked_band_data_dir = (
+            f"{config['DEFAULT']['GALFIND_WORK']}/Stacked_Images/"
+            + f"{band_data_arr[0].version}/{band_data_arr[0].instr_name}/{band_data_arr[0].survey}/{err_type.lower()}"
+        )
+        stacked_band_data_name = (
+            f"{band_data_arr[0].survey}_"
+            + Stacked_Band_Data._get_stacked_band_data_name(
+                [band_data.filt for band_data in band_data_arr]
+            )
+            + f"_{band_data_arr[0].version}_stack.fits"
+        )
+        stacked_band_data_path = (
+            f"{stacked_band_data_dir}/{stacked_band_data_name}"
+        )
         funcs.make_dirs(stacked_band_data_path)
         return stacked_band_data_path
 
@@ -908,51 +1073,73 @@ class Stacked_Band_Data(Band_Data_Base):
     def _stack_band_data(
         band_data_arr: List[Band_Data],
         err_type: str = "rms_err",
-        overwrite: bool = False
+        overwrite: bool = False,
     ) -> Tuple[str, Dict[str, Union[str, int]]]:
+        assert err_type.lower() in ["rms_err", "wht"], galfind_logger.critical(
+            f"{err_type=} not in ['rms_err', 'wht']"
+        )
 
-        assert err_type.lower() in ["rms_err", "wht"], \
-            galfind_logger.critical(f"{err_type=} not in ['rms_err', 'wht']")
-        
         # make rms_err/wht maps if they do not exist and are required
         used_galfind_err = False
         if err_type.lower() == "rms_err":
-            if not all(Path(band_data.rms_err_path).is_file() for band_data in band_data_arr):
+            if not all(
+                Path(band_data.rms_err_path).is_file()
+                for band_data in band_data_arr
+            ):
                 for band_data in band_data_arr:
                     band_data._make_rms_err_from_wht()
                 used_galfind_err = True
-        else: # err_type.lower() == "wht"
-            if not all(Path(band_data.wht_path).is_file() for band_data in band_data_arr):
+        else:  # err_type.lower() == "wht"
+            if not all(
+                Path(band_data.wht_path).is_file()
+                for band_data in band_data_arr
+            ):
                 for band_data in band_data_arr:
                     band_data._make_wht_from_rms_err()
                 used_galfind_err = True
         # load output path and perform stacking if required
-        stacked_band_data_path = Stacked_Band_Data._get_stacked_band_data_path(band_data_arr, err_type)
+        stacked_band_data_path = Stacked_Band_Data._get_stacked_band_data_path(
+            band_data_arr, err_type
+        )
         if not Path(stacked_band_data_path).is_file() or overwrite:
             # ensure all shapes are the same for the band data images
-            assert all(band_data.data_shape == band_data_arr[0].data_shape for band_data in band_data_arr), \
-                galfind_logger.critical("All band data images must have the same shape!")
+            assert all(
+                band_data.data_shape == band_data_arr[0].data_shape
+                for band_data in band_data_arr
+            ), galfind_logger.critical(
+                "All band data images must have the same shape!"
+            )
             # ensure all band data images have the same ZP
-            assert all(band_data.ZP == band_data_arr[0].ZP for band_data in band_data_arr), \
-                galfind_logger.critical("All image ZPs must have the same shape!")
+            assert all(
+                band_data.ZP == band_data_arr[0].ZP
+                for band_data in band_data_arr
+            ), galfind_logger.critical(
+                "All image ZPs must have the same shape!"
+            )
             # ensure all band data images have the same pixel scale
-            assert all(band_data.pix_scale == band_data_arr[0].pix_scale for band_data in band_data_arr), \
-                galfind_logger.critical("All image pixel scales must be the same!")
+            assert all(
+                band_data.pix_scale == band_data_arr[0].pix_scale
+                for band_data in band_data_arr
+            ), galfind_logger.critical(
+                "All image pixel scales must be the same!"
+            )
             # stack band data SCI/ERR/WHT images (inverse variance weighted)
             galfind_logger.info(
-                f"Stacking {[band_data.filt_name for band_data in band_data_arr]}" + \
-                f" for {band_data_arr[0].survey} {band_data_arr[0].version}"
+                f"Stacking {[band_data.filt_name for band_data in band_data_arr]}"
+                + f" for {band_data_arr[0].survey} {band_data_arr[0].version}"
             )
             for i, band_data in enumerate(band_data_arr):
                 if i == 0:
-                    im_data, im_header, im_hdul = band_data.load_im(return_hdul = True)
+                    im_data, im_header, im_hdul = band_data.load_im(
+                        return_hdul=True
+                    )
                     prime_hdu = im_hdul[0].header
                 else:
                     im_data, im_header = band_data.load_im()
                 if err_type.lower() == "rms_err":
                     rms_err_data = band_data.load_rms_err()
                     wht_data = 1.0 / (rms_err_data**2)
-                else: # err_type.lower() == "wht"
+                else:  # err_type.lower() == "wht"
                     wht_data = band_data.load_wht()
                     rms_err_data = np.sqrt(1.0 / wht)
                 if i == 0:
@@ -978,8 +1165,8 @@ class Stacked_Band_Data(Band_Data_Base):
             "survey": band_data_arr[0].survey,
             "version": band_data_arr[0].version,
             "pix_scale": band_data_arr[0].pix_scale,
-            "im_path": stacked_band_data_path, 
-            "im_ext": 1, 
+            "im_path": stacked_band_data_path,
+            "im_ext": 1,
             "im_ext_name": "SCI",
             "rms_err_path": stacked_band_data_path,
             "rms_err_ext": 2,
@@ -1014,8 +1201,9 @@ class Stacked_Band_Data(Band_Data_Base):
         gaia_row_lim: Union[int, List[int], Dict[str, int]] = 500,
         overwrite: Union[bool, List[bool], Dict[str, bool]] = False,
     ) -> Union[None, NoReturn]:
-        # if the individual bands have not been loaded, mask the stacked band data
+        # if the individual bands have not been loaded
         if not hasattr(self, "band_data_arr"):
+            # mask the stacked band data
             super().mask(
                 method=method,
                 fits_mask_path=fits_mask_path,
@@ -1029,24 +1217,40 @@ class Stacked_Band_Data(Band_Data_Base):
                 gaia_row_lim=gaia_row_lim,
                 overwrite=overwrite,
             )
-        else: # combine masks from individual bands
+        else:
+            # make these masks if they do not exist
+            for band_data in self.band_data_arr:
+                if not Path(band_data.mask_path).is_file():
+                    band_data.mask(
+                        method=method,
+                        fits_mask_path=fits_mask_path,
+                        star_mask_params=star_mask_params,
+                        edge_mask_distance=edge_mask_distance,
+                        scale_extra=scale_extra,
+                        exclude_gaia_galaxies=exclude_gaia_galaxies,
+                        angle=angle,
+                        edge_value=edge_value,
+                        element=element,
+                        gaia_row_lim=gaia_row_lim,
+                        overwrite=overwrite,
+                    )
+            # combine masks from individual bands
             Masking.combine_masks(self)
+
 
 class Data:
     def __init__(
         self,
         band_data_arr: List[Type[Band_Data]],
+        forced_phot_band: Optional[
+            Union[str, List[str], Type[Band_Data_Base]]
+        ] = None,
     ):
         # save and sort band_arr by central wavelength
-        self.band_data_arr = [
-            band_data
-            for band_data in sorted(
-                band_data_arr,
-                key=lambda band_data: band_data.filt.WavelengthCen.to(
-                    u.AA
-                ).value,
-            )
-        ]
+        self.band_data_arr = funcs.sort_band_data_arr(band_data_arr)
+        # load forced photometry band
+        if forced_phot_band is not None:
+            self.load_forced_phot_band(forced_phot_band)
 
     @classmethod
     def from_survey_version(
@@ -1069,6 +1273,13 @@ class Data:
         im_ext_name: Union[str, List[str]] = "SCI",
         rms_err_ext_name: Union[str, List[str]] = "ERR",
         wht_ext_name: Union[str, List[str]] = "WHT",
+        aper_diams: Optional[u.Quantity] = [0.32, 0.5, 1.0, 1.5, 2.0]
+        * u.arcsec,
+        forced_phot_band: Union[str, List[str], Type[Band_Data_Base]] = [
+            "F277W",
+            "F356W",
+            "F444W",
+        ],
     ):
         # make im/rms_err/wht extension names lists if not already
         if isinstance(im_ext_name, str):
@@ -1185,9 +1396,10 @@ class Data:
                         im_ext_name,
                         rms_err_ext_name,
                         wht_ext_name,
+                        aper_diams=aper_diams,
                     )
                 band_data_arr.extend([band_data])
-        return cls(band_data_arr)
+        return cls(band_data_arr, forced_phot_band=forced_phot_band)
 
     @staticmethod
     def _get_data_dir(
@@ -1719,18 +1931,23 @@ class Data:
                 ]
             )
 
-    def _indices_from_filt_names(self, filt_names: Union[str, List[str]]) -> int:
+    def _indices_from_filt_names(
+        self, filt_names: Union[str, List[str]]
+    ) -> int:
         if isinstance(filt_names, str):
             filt_names = filt_names.split("+")
         # make sure all names are filters in the filterset
-        assert all(name in [band.filt_name for band in self] 
-            for name in filt_names), galfind_logger.warning(
+        assert all(
+            name in [band.filt_name for band in self] for name in filt_names
+        ), galfind_logger.warning(
             f"Not all {filt_names} in {self.filterset.band_names}"
         )
         return [i for i in range(len(self)) if self[i].filt_name in filt_names]
 
     def _sort_band_dependent_params(
-        self, filt_name: str, params: Union[Any, List[Any], Dict[str, Any]]
+        self,
+        filt_name: str,
+        params: Union[Any, List[Any], Dict[str, Any]],
     ):
         if isinstance(params, list):
             # ensure params is the same length as the bands
@@ -1783,9 +2000,11 @@ class Data:
         return self[band].load_seg()
 
     def load_mask(
-        self, band: Union[int, str, Filter, List[Filter], Multiple_Filter]
+        self,
+        band: Union[int, str, Filter, List[Filter], Multiple_Filter],
+        ext: Optional[str] = None,
     ):
-        return self[band].load_data()
+        return self[band].load_mask(ext)
 
     def psf_homogenize(self):
         pass
@@ -1807,7 +2026,7 @@ class Data:
 
     def perform_forced_phot(
         self,
-        forced_phot_band: Union[str, Type[Band_Data_Base]],
+        forced_phot_band: Union[str, List[str], Type[Band_Data_Base]],
         err_type: str = "rms_err",
         method: Union[str, List[str], Dict[str, str]] = "sextractor",
         overwrite: bool = False,
@@ -1815,9 +2034,7 @@ class Data:
         if hasattr(self, "phot_cat_path"):
             raise (Exception("MASTER Photometric catalogue already exists!"))
         # create a forced_phot_band object from given string
-        self.forced_phot_band = self._make_forced_phot_band_from_str(
-            forced_phot_band
-        )
+        self.load_forced_phot_band(forced_phot_band)
         if isinstance(method, str):
             method = {band_data.filt.band_name: method for band_data in self}
         elif isinstance(method, list):
@@ -1857,23 +2074,35 @@ class Data:
             method[self.forced_phot_band.filt_name.split("+")[0]],
             overwrite=overwrite,
         )
-        # TODO: run for all Stacked_Band_Data objects stored in Data
         # combined forced photometry catalogues into a single photometric catalogue
         self._combine_forced_phot_cats(overwrite=overwrite)
 
-    def _make_forced_phot_band_from_str(
-        self, forced_phot_band: str
+    def load_forced_phot_band(
+        self,
+        forced_phot_band: Union[str, List[str], Type[Band_Data_Base]],
     ) -> Type[Band_Data_Base]:
         # create a forced_phot_band object from given string
         if isinstance(forced_phot_band, str):
             filt_names = forced_phot_band.split("+")
+        elif isinstance(forced_phot_band, list):
+            filt_names = forced_phot_band
+        if isinstance(forced_phot_band, tuple(str, list)):
             if len(filt_names) == 0:
                 forced_phot_band = self[filt_names[0]]
             else:
                 forced_phot_band = Stacked_Band_Data.from_band_data_arr(
                     self[filt_names]
                 )
-        return forced_phot_band
+        # save forced phot band in self
+        if hasattr(self, "forced_phot_band"):
+            assert (
+                forced_phot_band == self.forced_phot_band
+            ), galfind_logger.critical(
+                f"{self.forced_phot_band=} already loaded"
+            )
+        else:
+            self.forced_phot_band = forced_phot_band
+        return self.forced_phot_band
 
     def _get_phot_cat_path(
         self, forced_phot_band: Type[Band_Data_Base]
@@ -1968,45 +2197,197 @@ class Data:
         assert method in ["auto", "manual"], galfind_logger.warning(
             f"Method {method} not recognised. Must be 'auto' or 'manual'"
         )
+
+        if hasattr(self, "forced_phot_band"):
+            if (
+                self.forced_phot_band.filt_name
+                not in self.filterset.band_names
+            ):
+                self_ = deepcopy(self) + deepcopy(self.forced_phot_band)
+                self_band_data_arr = self.band_data_arr + [
+                    self.forced_phot_band
+                ]
+                no_forced_phot_band = False
+            else:
+                no_forced_phot_band = True
+        else:
+            no_forced_phot_band = True
+        if no_forced_phot_band:
+            self_ = deepcopy(self)
+            self_band_data_arr = self.band_data_arr
+
         # mask each band, sorting the potentially band dependent input parameters
         [
             band_data.mask(
                 method,
-                self._sort_band_dependent_params(
+                self_._sort_band_dependent_params(
                     band_data.filt_name, fits_mask_path
                 ),
-                self._sort_band_dependent_params(
+                self_._sort_band_dependent_params(
                     band_data.filt_name,
                     Masking.sort_band_dependent_star_mask_params(
                         band_data.filt, star_mask_params
                     ),
                 ),
-                self._sort_band_dependent_params(
+                self_._sort_band_dependent_params(
                     band_data.filt_name, edge_mask_distance
                 ),
-                self._sort_band_dependent_params(
+                self_._sort_band_dependent_params(
                     band_data.filt_name, scale_extra
                 ),
-                self._sort_band_dependent_params(
+                self_._sort_band_dependent_params(
                     band_data.filt_name, exclude_gaia_galaxies
                 ),
-                self._sort_band_dependent_params(band_data.filt_name, angle),
-                self._sort_band_dependent_params(
+                self_._sort_band_dependent_params(band_data.filt_name, angle),
+                self_._sort_band_dependent_params(
                     band_data.filt_name, edge_value
                 ),
-                self._sort_band_dependent_params(band_data.filt_name, element),
-                self._sort_band_dependent_params(
+                self_._sort_band_dependent_params(
+                    band_data.filt_name, element
+                ),
+                self_._sort_band_dependent_params(
                     band_data.filt_name, gaia_row_lim
                 ),
-                self._sort_band_dependent_params(
+                self_._sort_band_dependent_params(
                     band_data.filt_name, overwrite
                 ),
             )
-            for band_data in self
+            for band_data in self_band_data_arr
         ]
 
-    def run_depths(self):
-        pass
+    def run_depths(
+        self,
+        mode: Union[str, List[str], Dict[str, str]] = "n_nearest",
+        scatter_size: Union[float, List[float], Dict[str, float]] = 0.1,
+        distance_to_mask: Union[
+            int, float, List[Union[int, float]], Dict[str, Union[int, float]]
+        ] = 30,
+        region_radius_used_pix: Union[
+            int, float, List[Union[int, float]], Dict[str, Union[int, float]]
+        ] = 300,
+        n_nearest: Union[int, List[int], Dict[str, int]] = 200,
+        coord_type: Union[str, List[str], Dict[str, str]] = "sky",
+        split_depth_min_size: Union[int, List[int], Dict[str, int]] = 100_000,
+        split_depths_factor: Union[int, List[int], Dict[str, int]] = 5,
+        step_size: Union[int, List[int], Dict[str, int]] = 100,
+        n_jobs: int = 1,
+        n_split: Union[
+            str, int, List[Union[str, int]], Dict[str, Union[str, int]]
+        ] = "auto",
+        overwrite: Union[bool, List[bool], Dict[str, bool]] = False,
+        timed: bool = False,
+    ) -> NoReturn:
+        if timed:
+            start = time.time()
+
+        if hasattr(self, "forced_phot_band"):
+            if (
+                self.forced_phot_band.filt_name
+                not in self.filterset.band_names
+            ):
+                self_ = deepcopy(self) + deepcopy(self.forced_phot_band)
+                self_band_data_arr = self.band_data_arr + [
+                    self.forced_phot_band
+                ]
+                no_forced_phot_band = False
+            else:
+                no_forced_phot_band = True
+        else:
+            no_forced_phot_band = True
+        if no_forced_phot_band:
+            self_ = deepcopy(self)
+            self_band_data_arr = self.band_data_arr
+
+        params = []
+        # Look over all aperture diameters and bands
+        for band_data in self_band_data_arr:
+            if not hasattr(band_data, "depth_args"):
+                params.extend(
+                    band_data._sort_run_depth_params(
+                        self_._sort_band_dependent_params(
+                            band_data.filt_name, mode
+                        ),
+                        self_._sort_band_dependent_params(
+                            band_data.filt_name, scatter_size
+                        ),
+                        self_._sort_band_dependent_params(
+                            band_data.filt_name, distance_to_mask
+                        ),
+                        self_._sort_band_dependent_params(
+                            band_data.filt_name, region_radius_used_pix
+                        ),
+                        self_._sort_band_dependent_params(
+                            band_data.filt_name, n_nearest
+                        ),
+                        self_._sort_band_dependent_params(
+                            band_data.filt_name, coord_type
+                        ),
+                        self_._sort_band_dependent_params(
+                            band_data.filt_name, split_depth_min_size
+                        ),
+                        self_._sort_band_dependent_params(
+                            band_data.filt_name, split_depths_factor
+                        ),
+                        self_._sort_band_dependent_params(
+                            band_data.filt_name, step_size
+                        ),
+                        self_._sort_band_dependent_params(
+                            band_data.filt_name, n_split
+                        ),
+                        self_._sort_band_dependent_params(
+                            band_data.filt_name, overwrite
+                        ),
+                    )
+                )
+            else:
+                galfind_logger.warning(
+                    f"Depths for {band_data.filt_name} already run, skipping!"
+                )
+        if len(params) > 0:
+            # Parallelise the calculation of depths for each band
+            with tqdm_joblib(
+                tqdm(desc="Calculating depths", total=len(params))
+            ) as progress_bar:
+                Parallel(n_jobs=n_jobs)(
+                    delayed(Depths.calc_band_depth)(param) for param in params
+                )
+
+            # save properties to individual band_data objects
+            for band_data in self.band_data_arr + [self.forced_phot_band]:
+                [
+                    band_data._load_depths(params)
+                    for _params in params
+                    if _params[0] == band_data
+                ]
+
+            # make depth table
+            modes = np.unique([param[2] for param in params])
+            [Depths.make_depth_tab(self, mode) for mode in modes]
+
+            finishing_message = (
+                "Calculated/loaded depths for "
+                + f"{self.survey} {self.version} {self.filterset.instrument_name}"
+            )
+            if timed:
+                end = time.time()
+                finishing_message += f" ({end - start:.1f}s)"
+            galfind_logger.info(finishing_message)
+        else:
+            galfind_logger.warning(
+                f"Depths run for {self.survey} {self.version}"
+                + f" {self.filterset.instrument_name}, skipping!"
+            )
+
+    def plot_depths(
+        self, band: Union[int, str, Filter, List[Filter], Multiple_Filter]
+    ) -> NoReturn:
+        self[band].plot_depths()
+
+    def plot_area_depth(
+        self,
+    ) -> NoReturn:
+        Depths.plot_data_area_depth(self)
+        # Depths.plot_area_depth(self, cat_creator, mode, aper_diam, show=False)
 
     def plot(
         self,
@@ -2016,7 +2397,7 @@ class Data:
         norm: Type[Normalize] = LogNorm(vmin=0.0, vmax=10.0),
         save: bool = False,
         show: bool = True,
-    ):
+    ) -> NoReturn:
         self[band].plot(ax, ext, norm, save, show)
 
     def make_RGB(
@@ -2770,645 +3151,6 @@ class Data:
             # overwrite original catalogue with local depth columns
             cat.write(self.sex_cat_master_path, overwrite=True)
             funcs.change_file_permissions(self.sex_cat_master_path)
-
-    def load_depth_dirs(self, aper_diam, depth_mode):
-        if not hasattr(self, "depth_dirs"):
-            self.depth_dirs = {}
-        if aper_diam not in self.depth_dirs.keys():
-            self.depth_dirs[aper_diam] = {}
-        if depth_mode not in self.depth_dirs[aper_diam].keys():
-            self.depth_dirs[aper_diam][depth_mode] = {}
-            for band in self.instrument:
-                self.depth_dirs[aper_diam][depth_mode][band.band_name] = (
-                    f"{config['Depths']['DEPTH_DIR']}/{band.instrument}/{self.version}/{self.survey}/{format(aper_diam.value, '.2f')}as/{depth_mode}"
-                )
-                funcs.make_dirs(
-                    f"{self.depth_dirs[aper_diam][depth_mode][band.band_name]}"
-                )
-            for band_name in self.im_paths.keys():
-                if (
-                    band_name
-                    not in self.depth_dirs[aper_diam][depth_mode].keys()
-                ):
-                    galfind_logger.warning(
-                        f"Slow Instrument.instrument_from_band run for {band_name} in Data.load_depth_dirs!"
-                    )
-                    self.depth_dirs[aper_diam][depth_mode][band_name] = (
-                        f"{config['Depths']['DEPTH_DIR']}/{self.instrument.instrument_from_band(band_name).name}/{self.version}/{self.survey}/{format(aper_diam.value, '.2f')}as/{depth_mode}"
-                    )
-                    funcs.make_dirs(
-                        f"{self.depth_dirs[aper_diam][depth_mode][band_name]}"
-                    )
-
-    def load_depths(self, aper_diam, depth_mode, depth_type="median_depth"):
-        assert depth_type in ["median_depth", "mean_depth"]
-        self.load_depth_dirs(aper_diam, depth_mode)
-        self.depths = {}
-        for band in self.instrument.band_names:
-            # load depths from saved .txt file
-            depths = Table.read(
-                f"{self.depth_dirs[aper_diam][depth_mode][band]}/{self.survey}_depths.ecsv",
-                names=["band", "region", "median_depth", "mean_depth"],
-                format="ascii",
-            )
-            self.depths[band] = {
-                str(row["region"]): float(row[depth_type])
-                for row in depths[depths["band"] == band]
-            }
-        return self.depths
-
-    def calc_aper_radius_pix(self, aper_diam, band):
-        return (aper_diam / (2 * self.im_pixel_scales[band])).value
-
-    def calc_depths(
-        self,
-        aper_diams: u.Quantity = [0.32] * u.arcsec,
-        cat_creator=None,
-        mode: str = "n_nearest",
-        scatter_size: float = 0.1,
-        distance_to_mask: Union[int, float] = 30,
-        region_radius_used_pix: Union[int, float] = 300,
-        n_nearest: int = 200,
-        coord_type: str = "sky",
-        split_depth_min_size: int = 100_000,
-        split_depths_factor: int = 5,
-        step_size: int = 100,
-        excl_bands: Union[list, np.array] = [],
-        n_jobs: int = 1,
-        plot: bool = True,
-        n_split: str = "auto",
-        timed: bool = False,
-    ):
-        if timed:
-            start = time.time()
-
-        params = []
-        # Look over all aperture diameters and bands
-        for aper_diam in aper_diams:
-            # Generate folder for depths
-            self.load_depth_dirs(aper_diam, mode)
-            for band in self.im_paths.keys():
-                # Only run for non excluded bands
-                if band not in excl_bands:
-                    params.append(
-                        (
-                            band,
-                            aper_diam,
-                            self.depth_dirs[aper_diam][mode][band],
-                            mode,
-                            scatter_size,
-                            distance_to_mask,
-                            region_radius_used_pix,
-                            n_nearest,
-                            coord_type,
-                            split_depth_min_size,
-                            split_depths_factor,
-                            step_size,
-                            cat_creator,
-                            plot,
-                            n_split,
-                        )
-                    )
-        # Parallelise the calculation of depths for each band
-        with tqdm_joblib(
-            tqdm(desc="Calculating depths", total=len(params))
-        ) as progress_bar:
-            Parallel(n_jobs=n_jobs)(
-                delayed(self.calc_band_depth)(param) for param in params
-            )
-
-        for aper_diam in aper_diams:
-            # plot area/depth graph
-            self.plot_area_depth(cat_creator, mode, aper_diam, show=False)
-            # make depth tables for each instrument
-            self.make_depth_tabs(aper_diam, mode)
-
-        finishing_message = f"Calculated/loaded depths for {self.survey} {self.version} {self.instrument.name}"
-        if timed:
-            end = time.time()
-            finishing_message += f" ({end - start:.1f}s)"
-        galfind_logger.info(finishing_message)
-
-    def calc_band_depth(self, params):
-        # unpack parameters
-        (
-            band,
-            aper_diam,
-            depth_dir,
-            mode,
-            scatter_size,
-            distance_to_mask,
-            region_radius_used_pix,
-            n_nearest,
-            coord_type,
-            split_depth_min_size,
-            split_depths_factor,
-            step_size,
-            cat_creator,
-            plot,
-            n_split,
-        ) = params
-        # determine paths and whether to overwrite
-        overwrite = config["Depths"].getboolean("OVERWRITE_DEPTHS")
-        if overwrite:
-            galfind_logger.info(
-                "OVERWRITE_DEPTHS = YES, re-doing depths should they exist."
-            )
-        grid_depth_path = (
-            f"{depth_dir}/{band}.h5"  # {str(int(n_split))}_region_grid_depths/
-        )
-        funcs.make_dirs(grid_depth_path)
-
-        if not Path(grid_depth_path).is_file() or overwrite:
-            # load the image/segmentation/mask data for the specific band
-            im_data, im_header, seg_data, seg_header, mask = self.load_data(
-                band, incl_mask=True
-            )
-            combined_mask = self.combine_seg_data_and_mask(
-                seg_data=seg_data, mask=mask
-            )
-            wcs = WCS(im_header)
-            radius_pix = self.calc_aper_radius_pix(aper_diam, band)
-
-            # Load wht data if it has the correct type
-            wht_data = self.load_wht(band)
-            # print(f"wht_data = {wht_data}")
-            if type(n_split) == type(None):
-                if type(wht_data) == type(None):
-                    n_split = 1
-                else:
-                    n_split = "auto"
-            else:
-                assert type(n_split) == int or n_split == "auto"
-
-            # load catalogue of given type
-            cat = Table.read(self.sex_cat_master_path)
-
-            # Place apertures in empty regions in the image
-            xy = Depths.make_grid(
-                im_data,
-                combined_mask,
-                radius=(aper_diam / 2.0).value,
-                scatter_size=scatter_size,
-                distance_to_mask=distance_to_mask,
-                plot=False,
-            )
-            # print(f"{len(xy)} empty apertures placed in {band}")
-
-            # Make ds9 region file of apertures for compatability and debugging
-            region_path = (
-                f"{depth_dir}/{self.survey}_{self.version}_{band}.reg"
-            )
-            Depths.make_ds9_region_file(
-                xy,
-                radius_pix,
-                region_path,
-                coordinate_type="pixel",
-                convert=False,
-                wcs=wcs,
-                pixel_scale=self.im_pixel_scales[band].value,
-            )
-
-            # Get fluxes in regions
-            fluxes = Depths.do_photometry(im_data, xy, radius_pix)
-            depths, diagnostic, depth_labels, final_labels = (
-                Depths.calc_depths_numba(
-                    xy,
-                    fluxes,
-                    im_data,
-                    combined_mask,
-                    region_radius_used_pix=region_radius_used_pix,
-                    step_size=step_size,
-                    catalogue=cat,
-                    wcs=wcs,
-                    coord_type=coord_type,
-                    mode=mode,
-                    n_nearest=n_nearest,
-                    zero_point=self.im_zps[band],
-                    n_split=n_split,
-                    split_depth_min_size=split_depth_min_size,
-                    split_depths_factor=split_depths_factor,
-                    wht_data=wht_data,
-                )
-            )
-
-            # calculate the depths for plotting purposes
-            nmad_grid, num_grid, labels_grid, final_labels = (
-                Depths.calc_depths_numba(
-                    xy,
-                    fluxes,
-                    im_data,
-                    combined_mask,
-                    region_radius_used_pix=region_radius_used_pix,
-                    step_size=step_size,
-                    wcs=wcs,
-                    coord_type=coord_type,
-                    mode=mode,
-                    n_nearest=n_nearest,
-                    zero_point=self.im_zps[band],
-                    n_split=n_split,
-                    split_depth_min_size=split_depth_min_size,
-                    split_depths_factor=split_depths_factor,
-                    wht_data=wht_data,
-                    provide_labels=final_labels,
-                )
-            )
-
-            # write to .h5
-            hf_save_names = self.get_depth_h5_labels()
-            hf_save_data = [
-                mode,
-                aper_diam,
-                scatter_size,
-                distance_to_mask,
-                region_radius_used_pix,
-                n_nearest,
-                split_depth_min_size,
-                split_depths_factor,
-                step_size,
-                depths,
-                diagnostic,
-                depth_labels,
-                final_labels,
-                nmad_grid,
-                num_grid,
-                labels_grid,
-            ]
-            hf = h5py.File(grid_depth_path, "w")
-            for name_i, data_i in zip(hf_save_names, hf_save_data):
-                # print(name_i, data_i)
-                hf.create_dataset(name_i, data=data_i)
-            hf.close()
-
-        if plot:
-            self.plot_depth(band, cat_creator, mode, aper_diam, show=False)
-
-    def plot_area_depth(
-        self,
-        cat_creator,
-        mode,
-        aper_diam,
-        show=False,
-        use_area_per_band=True,
-        save=True,
-        return_array=False,
-    ):
-        if type(cat_creator) == type(None):
-            galfind_logger.warning(
-                "Could not plot depths as cat_creator == None in Data.plot_area_depth()"
-            )
-        else:
-            self.load_depth_dirs(aper_diam, mode)
-            area_tab = self.calc_unmasked_area(
-                masking_instrument_or_band_name=self.forced_phot_band,
-                forced_phot_band=self.forced_phot_band,
-            )
-            overwrite = config["Depths"].getboolean("OVERWRITE_DEPTH_PLOTS")
-            save_path = f"{self.depth_dirs[aper_diam][mode][self.forced_phot_band]}/depth_areas.png"  # not entirely general -> need to improve self.depth_dirs
-
-            if not Path(save_path).is_file() or overwrite:
-                fig, ax = plt.subplots(1, 1, figsize=(4, 4))
-                # ax.set_title(f"{self.survey} {self.version} {aper_diam}")
-                ax.set_xlabel("Area (arcmin$^{2}$)")
-                ax.set_ylabel(r"5$\sigma$ Depth (AB mag)")
-                area_row = area_tab[
-                    area_tab["masking_instrument_band"]
-                    == self.forced_phot_band
-                ]
-                if len(area_row) > 1:
-                    galfind_logger.warning(
-                        f"More than one row found in area_tab for {self.forced_phot_band}! Using the first row."
-                    )
-                    area_row = area_row[0]
-                area_master = area_row["unmasked_area_total"]
-                if type(area_master) == u.Quantity:
-                    area_master = area_master.value
-                area_master = float(area_master)
-
-                bands = self.instrument.band_names.tolist()
-                if self.forced_phot_band not in bands:
-                    bands.append(self.forced_phot_band)
-                # cmap = plt.cm.get_cmap("nipy_spectral")
-                cmap = plt.cm.get_cmap("RdYlBu_r")
-                colors = cmap(np.linspace(0, 1, len(bands)))
-                # colors = plt.cm.viridis(np.linspace(0, 1, len(bands)))
-                data = {}
-                for pos, band in enumerate(bands):
-                    h5_path = (
-                        f"{self.depth_dirs[aper_diam][mode][band]}/{band}.h5"
-                    )
-
-                    if overwrite:
-                        galfind_logger.info(
-                            "OVERWRITE_DEPTH_PLOTS = YES, re-doing depth plots."
-                        )
-
-                    if not Path(h5_path).is_file():
-                        raise (
-                            Exception(
-                                f"Must first run depths for {self.survey} {self.version} {band} {mode} {aper_diam} before plotting!"
-                            )
-                        )
-                    hf = h5py.File(h5_path, "r")
-                    hf_output = {
-                        label: np.array(hf[label])
-                        for label in self.get_depth_h5_labels()
-                    }
-                    hf.close()
-                    # Need unmasked area for each band
-                    if use_area_per_band:
-                        area_tab = self.calc_unmasked_area(
-                            masking_instrument_or_band_name=band,
-                            forced_phot_band=self.forced_phot_band,
-                        )
-                        area_row = area_tab[
-                            area_tab["masking_instrument_band"] == band
-                        ]
-
-                    area = (
-                        area_row["unmasked_area_total"].to(u.arcmin**2).value
-                    )
-
-                    total_depths = hf_output["nmad_grid"].flatten()
-                    total_depths = total_depths[~np.isnan(total_depths)]
-                    total_depths = total_depths[total_depths != 0]
-                    total_depths = total_depths[total_depths != np.inf]
-
-                    # Round to 0.01 mag and sort
-                    # total_depths = np.round(total_depths, 2)
-                    total_depths = np.flip(np.sort(total_depths))
-
-                    # Calculate the cumulative distribution scaled to area of band
-                    n = len(total_depths)
-                    cum_dist = np.arange(1, n + 1) / n
-                    cum_dist = cum_dist * area
-
-                    # Plot
-                    ax.plot(
-                        cum_dist,
-                        total_depths,
-                        label=band if "+" not in band else "Detection",
-                        color=colors[pos] if "+" not in band else "black",
-                        drawstyle="steps-post",
-                        linestyle="solid" if "+" not in band else "dashed",
-                    )
-                    if return_array:
-                        data[band] = [area, total_depths]
-                    # Set ylim to 2nd / 98th percentile if depth is smaller than this number
-                    ylim = ax.get_ylim()
-
-                    if pos == 0:
-                        min_depth = np.percentile(total_depths, 0.5)
-                        max_depth = np.percentile(total_depths, 99.5)
-                    else:
-                        min_temp = np.percentile(total_depths, 0.5)
-                        max_temp = np.percentile(total_depths, 99.5)
-                        if min_temp < min_depth:
-                            min_depth = min_temp
-                        if max_temp > max_depth:
-                            max_depth = max_temp
-
-                ax.set_ylim(max_depth, min_depth)
-                # Place legend under plot
-                ax.legend(
-                    frameon=False,
-                    ncol=4,
-                    bbox_to_anchor=(0.5, -0.14),
-                    loc="upper center",
-                    fontsize=8,
-                    columnspacing=1,
-                    handletextpad=0.5,
-                )
-                # ax.legend(frameon = False, ncol = 2)
-                # Add inner ticks
-                from matplotlib.ticker import AutoMinorLocator
-
-                ax.xaxis.set_minor_locator(AutoMinorLocator())
-                ax.yaxis.set_minor_locator(AutoMinorLocator())
-                # Make ticks face inwards
-                ax.tick_params(direction="in", axis="both", which="both")
-                # Set minor ticks to face in
-
-                ax.yaxis.set_ticks_position("both")
-                ax.xaxis.set_ticks_position("both")
-
-                ax.set_xlim(0, area_master * 1.02)
-                # Add hlines at integer depths
-                depths = np.arange(20, 35, 1)
-                # for depth in depths:
-                #    ax.hlines(depth, 0, area_master, color = "black", linestyle = "dotted", alpha = 0.5)
-                # Invert y axis
-                # ax.invert_yaxis()
-                ax.grid(True)
-                if save:
-                    fig.savefig(save_path, dpi=300, bbox_inches="tight")
-                if show:
-                    plt.show()
-                if return_array:
-                    return data
-
-    def make_depth_tabs(self, aper_diam, depth_mode):
-        # create .ecsv holding all depths for an instrument if not already written
-        instr_bands = {
-            instr_name: [
-                band.band_name
-                for band in self.instrument
-                if band.instrument == instr_name
-            ]
-            for instr_name in np.unique(
-                [band.instrument for band in self.instrument]
-            )
-        }
-        self.load_depth_dirs(aper_diam, depth_mode)
-        for instr_name, band_names in instr_bands.items():
-            out_path = f"{self.depth_dirs[aper_diam][depth_mode][band_names[0]]}/{self.survey}_depths.ecsv"
-            if not Path(out_path).is_file():
-                recalculate = True
-            else:
-                # open file
-                depths_tab = Table.read(out_path)
-                calculated_bands = np.unique(
-                    band for band in depths_tab["band"]
-                )
-                if not all(band in calculated_bands for band in band_names):
-                    recalculate = True
-                else:
-                    recalculate = False
-            if recalculate:
-                band_reg_median_depths = {}
-                band_reg_mean_depths = {}
-                for band in band_names:
-                    # open .h5
-                    hf = h5py.File(
-                        f"{self.depth_dirs[aper_diam][depth_mode][band]}/{band}.h5",
-                        "r",
-                    )
-                    cat_depths = np.array(hf.get("depths"))
-                    depth_labels = np.array(hf.get("depth_labels"))
-                    med_region_band_depths = {
-                        **{
-                            str(int(depth_label)): np.nanmedian(
-                                [
-                                    depth
-                                    for depth, label in zip(
-                                        cat_depths, depth_labels
-                                    )
-                                    if label == depth_label
-                                ]
-                            )
-                            for depth_label in np.unique(depth_labels)
-                            if not np.isnan(depth_label)
-                        },
-                        **{"all": np.nanmedian(cat_depths)},
-                    }
-                    mean_region_band_depths = {
-                        **{
-                            str(int(depth_label)): np.nanmean(
-                                [
-                                    depth
-                                    for depth, label in zip(
-                                        cat_depths, depth_labels
-                                    )
-                                    if label == depth_label
-                                ]
-                            )
-                            for depth_label in np.unique(depth_labels)
-                            if not np.isnan(depth_label)
-                        },
-                        **{"all": np.nanmean(cat_depths)},
-                    }
-                    hf.close()
-                    band_reg_median_depths = {
-                        **band_reg_median_depths,
-                        **{
-                            f"{band}_{key}": value
-                            for key, value in med_region_band_depths.items()
-                        },
-                    }
-                    band_reg_mean_depths = {
-                        **band_reg_mean_depths,
-                        **{
-                            f"{band}_{key}": value
-                            for key, value in mean_region_band_depths.items()
-                        },
-                    }
-                bands = np.array(
-                    [
-                        key.split("_")[0]
-                        for key in band_reg_median_depths.keys()
-                    ]
-                )
-                region_labels = np.array(
-                    [
-                        key.split("_")[-1]
-                        for key in band_reg_median_depths.keys()
-                    ]
-                )
-                median_depths = np.array(
-                    [value for value in band_reg_median_depths.values()]
-                )
-                mean_depths = np.array(
-                    [value for value in band_reg_mean_depths.values()]
-                )
-                tab = Table(
-                    {
-                        "band": bands,
-                        "region": region_labels,
-                        "median_depth": median_depths,
-                        "mean_depth": mean_depths,
-                    },
-                    dtype=[str, str, float, float],
-                )
-                funcs.make_dirs(out_path)
-                # do I have permissions to write this
-                if os.access(out_path, os.W_OK):
-                    tab.write(out_path, overwrite=True)
-
-    def plot_depth(
-        self, band, cat_creator, mode, aper_diam, show=False
-    ):  # , **kwargs):
-        if type(cat_creator) == type(None):
-            galfind_logger.warning(
-                "Could not plot depths as cat_creator == None in Data.plot_depth()"
-            )
-        else:
-            self.load_depth_dirs(aper_diam, mode)
-            save_path = (
-                f"{self.depth_dirs[aper_diam][mode][band]}/{band}_depths.png"
-            )
-            # determine paths and whether to overwrite
-            overwrite = config["Depths"].getboolean("OVERWRITE_DEPTH_PLOTS")
-            if overwrite:
-                galfind_logger.info(
-                    "OVERWRITE_DEPTH_PLOTS = YES, re-doing depth plots."
-                )
-            if not Path(save_path).is_file() or overwrite:
-                # load depth data
-                h5_path = f"{self.depth_dirs[aper_diam][mode][band]}/{band}.h5"
-                if not Path(h5_path).is_file():
-                    raise (
-                        Exception(
-                            f"Must first run depths for {self.survey} {self.version} {band} {mode} {aper_diam} before plotting!"
-                        )
-                    )
-                hf = h5py.File(h5_path, "r")
-                hf_output = {
-                    label: np.array(hf[label])
-                    for label in self.get_depth_h5_labels()
-                }
-                hf.close()
-                # load image and wcs
-                im_data, im_header = self.load_im(band)
-                wcs = WCS(im_header)
-                # make combined mask
-                combined_mask = self.combine_seg_data_and_mask(band)
-                # load catalogue to calculate x/y image coordinates
-                cat = Table.read(self.sex_cat_master_path)
-                cat_x, cat_y = wcs.world_to_pixel(
-                    SkyCoord(
-                        cat[cat_creator.ra_dec_labels["RA"]],
-                        cat[cat_creator.ra_dec_labels["DEC"]],
-                    )
-                )
-
-                Depths.show_depths(
-                    hf_output["nmad_grid"],
-                    hf_output["num_grid"],
-                    hf_output["step_size"],
-                    hf_output["region_radius_used_pix"],
-                    hf_output["labels_grid"],
-                    hf_output["depth_labels"],
-                    hf_output["depths"],
-                    hf_output["diagnostic"],
-                    cat_x,
-                    cat_y,
-                    combined_mask,
-                    hf_output["final_labels"],
-                    suptitle=f"{self.survey} {self.version} {band} Depths",
-                    save_path=save_path,
-                    show=show,
-                )
-
-    @staticmethod
-    def get_depth_h5_labels():
-        return [
-            "mode",
-            "aper_diam",
-            "scatter_size",
-            "distance_to_mask",
-            "region_radius_used_pix",
-            "n_nearest",
-            "split_depth_min_size",
-            "split_depths_factor",
-            "step_size",
-            "depths",
-            "diagnostic",
-            "depth_labels",
-            "final_labels",
-            "nmad_grid",
-            "num_grid",
-            "labels_grid",
-        ]
 
 
 # The below makes TQDM work with joblib

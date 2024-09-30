@@ -14,7 +14,6 @@ import os
 import time
 from copy import deepcopy
 from pathlib import Path
-from typing import Union
 
 import astropy.units as u
 import matplotlib.pyplot as plt
@@ -24,7 +23,7 @@ from astropy.io import fits
 from astropy.table import Table, join, vstack
 from astropy.wcs import WCS
 from tqdm import tqdm
-from typing import List, Dict, Optional, NoReturn, TYPE_CHECKING
+from typing import Union, List, Dict, Optional, NoReturn, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from . import Catalogue_Creator

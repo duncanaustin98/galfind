@@ -77,16 +77,14 @@ def segment_sextractor(
             f"{self.survey} {self.version} {self.filt.band_name}"
         )
 
-        # insert specified aperture diameters from config file
-        as_aper_diams = json.loads(config.get("SExtractor", "APERTURE_DIAMS"))
         # update the SExtractor params file at runtime
         # to include the correct number of aperture diameters
-        update_sex_params_aper_diam_len(len(as_aper_diams))
+        update_sex_params_aper_diam_len(len(self.aper_diams))
         pix_aper_diams = (
             str(
                 [
                     np.round(pix_aper_diam, 2)
-                    for pix_aper_diam in as_aper_diams / self.pix_scale.value
+                    for pix_aper_diam in self.aper_diams / self.pix_scale.value
                 ]
             )
             .replace("[", "")
@@ -174,16 +172,14 @@ def perform_forced_phot(
         ), galfind_logger.critical(
             f"{self.data_shape=}!={forced_phot_band.data_shape=}"
         )
-        # insert specified aperture diameters from config file
-        as_aper_diams = json.loads(config.get("SExtractor", "APERTURE_DIAMS"))
         # update the SExtractor params file at runtime
         # to include the correct number of aperture diameters
-        update_sex_params_aper_diam_len(len(as_aper_diams))
+        update_sex_params_aper_diam_len(len(self.aper_diams))
         pix_aper_diams = (
             str(
                 [
                     np.round(pix_aper_diam, 2)
-                    for pix_aper_diam in as_aper_diams / self.pix_scale.value
+                    for pix_aper_diam in self.aper_diams / self.pix_scale.value
                 ]
             )
             .replace("[", "")

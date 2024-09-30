@@ -496,16 +496,18 @@ def auto_mask(
                     artefact_pix_masks[ext_name].extend([pix_mask])
         # combine masks for each extension
         artefact_pix_masks[ext_name] = np.logical_or.reduce(
-            [mask.astype(np.uint8) for mask in pix_masks[ext_name]]
+            tuple([mask.astype(np.uint8) for mask in pix_masks[ext_name]])
         )
         # update full mask to include all artefacts
         full_mask = np.logical_or(
             full_mask.astype(np.uint8),
             np.logical_or.reduce(
-                [
-                    pix_mask.astype(np.uint8)
-                    for pix_mask in artefact_pix_masks.values()
-                ]
+                tuple(
+                    [
+                        pix_mask.astype(np.uint8)
+                        for pix_mask in artefact_pix_masks.values()
+                    ]
+                )
             ),
         )
 
@@ -588,38 +590,73 @@ def sort_band_dependent_star_mask_params(
     star_mask_params = star_mask_params[closest_wavelength]
     return star_mask_params
 
-def combine_masks(self: Stacked_Band_Data) -> str:
+
+def get_combined_path_name(self: Stacked_Band_Data) -> str:
     out_dir = f"{config['Masking']['MASK_DIR']}/{self.survey}/combined"
-    out_name = ""#f"{self.survey}_{}.fits"
+    filt_name_mask_method = "+".join(
+        [
+            f"{band_data.filt_name}-{self.mask_args['method']}"
+            for band_data in self.band_data_arr
+        ]
+    )
+    out_name = f"{self.survey}_{filt_name_mask_method}.fits"
     out_path = f"{out_dir}/{out_name}"
-    # if not Path(out_path).is_file():
-    #     # require pixel scales to be the same across all bands
-    #     for i, band in enumerate(bands):
-    #         if i == 0:
-    #             pix_scale = self.im_pixel_scales[band]
-    #         else:
-    #             assert self.im_pixel_scales[band] == pix_scale
-    #     combined_mask = np.logical_or.reduce(
-    #         tuple([self.load_mask(band) for band in bands])
-    #     )
-    #     assert combined_mask.shape == self.load_mask(bands[-1]).shape
-    #     # wcs taken from the reddest band
-    #     mask_hdu = fits.ImageHDU(
-    #         combined_mask.astype(np.uint8),
-    #         header=WCS(self.load_im(bands[-1])[1]).to_header(),
-    #         name="MASK",
-    #     )
-    #     hdu = fits.HDUList([fits.PrimaryHDU(), mask_hdu])
-    #     funcs.make_dirs(out_path)
-    #     hdu.writeto(out_path, overwrite=True)
-    #     funcs.change_file_permissions(out_path)
-    #     galfind_logger.info(f"Created combined mask for {bands}")
-    # else:
-    #     galfind_logger.info(
-    #         f"Combined mask for {bands} already exists at {out_path}"
-    #     )
-    # return out_path
-    pass
+    funcs.make_dirs(out_path)
+    return out_path
+
+
+def combine_masks(self: Stacked_Band_Data) -> str:
+    out_path = get_combined_path_name(self)
+    if not Path(out_path).is_file():
+        assert all(
+            band_data.pix_scale == self.band_data_arr[0].pix_scale
+            for band_data in self.band_data_arr
+        ), galfind_logger.critical("All bands must have the same pixel scale")
+        assert all(
+            band_data.data_shape == self.band_data_arr[0].data_shape
+            for band_data in self.band_data_arr
+        ), galfind_logger.critical("All bands must have the same data shape")
+        band_mask_exts = [
+            band_data.load_mask() for band_data in self.band_data_arr
+        ]
+        all_exts = list(
+            np.unique([mask_ext.keys() for mask_ext in band_mask_exts])
+        )
+        print(all_exts)
+        assert all(
+            "MASK" in band_mask_ext.keys() for band_mask_ext in band_mask_exts
+        ), galfind_logger.critical("All bands must have a 'MASK' extension")
+        # load wcs from the reddest band
+        wcs = self.band_data_arr[-1].load_wcs()
+        # combine masks for each valid extension contained in all masks
+        combined_mask_hdul = [fits.PrimaryHDU()]
+        for ext in all_exts:
+            band_masks = [
+                band_mask_ext[ext]
+                for band_mask_ext in band_mask_exts
+                if ext in band_mask_ext.keys()
+            ]
+            assert (
+                mask.shape == band_masks[0].shape for mask in band_masks
+            ), galfind_logger.critical("All masks must have the same shape")
+            combined_mask = np.logical_or.reduce(tuple(band_masks))
+            combined_mask_hdul.extend[
+                fits.ImageHDU(
+                    combined_mask.astype(np.uint8),
+                    header=wcs.to_header(),
+                    name=ext,
+                )
+            ]
+        hdul = fits.HDUList(combined_mask_hdul)
+        hdul.writeto(out_path, overwrite=True)
+        funcs.change_file_permissions(out_path)
+        galfind_logger.info(f"Created combined mask for {repr(self)}")
+    else:
+        galfind_logger.info(
+            f"Combined mask for {repr(self)} already exists at {out_path}"
+        )
+    return out_path
+
 
 # # if "COSMOS-Web" in self.survey:
 # #     # stellar masks the same for all bands
