@@ -20,10 +20,10 @@ def run_in_dir(path):
         def wrapper(*args, **kwargs):
             cwd = os.getcwd()
             os.chdir(path)
-            print(f"Changed directory to {path}")
+            #print(f"Changed directory to {path}")
             return_value = func(*args, **kwargs)
             os.chdir(cwd)
-            print(f"Changed directory back to {cwd}")
+            #print(f"Changed directory back to {cwd}")
             return return_value
 
         return wrapper

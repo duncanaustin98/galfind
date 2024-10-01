@@ -64,10 +64,15 @@ def get_err_map(
 def segment_sextractor(
     self: Type[Band_Data_Base],
     err_type: str = "rms_err",
-    sex_config_path: str = config["SExtractor"]["CONFIG_PATH"],
-    params_path: str = config["SExtractor"]["PARAMS_PATH"],
+    config_name: str = "default.sex",
+    params_name: str = "default.param",
     overwrite: bool = False,
 ) -> str:
+    
+    sex_config_path = f"{config['SExtractor']['CONFIG_DIR']}/{config_name}"
+    params_path = f"{config['SExtractor']['CONFIG_DIR']}/{params_name}"
+
+    print(sex_config_path, params_path)
     err_map_path, err_map_ext, err_map_type = get_err_map(self, err_type)
     seg_path = get_sextractor_path(self, err_map_type)
 
@@ -79,7 +84,7 @@ def segment_sextractor(
 
         # update the SExtractor params file at runtime
         # to include the correct number of aperture diameters
-        update_sex_params_aper_diam_len(len(self.aper_diams))
+        update_sex_params_aper_diam_len(len(self.aper_diams), params_path)
         pix_aper_diams = (
             str(
                 [
@@ -117,8 +122,8 @@ def segment_sextractor(
     return seg_path
 
 
-def update_sex_params_aper_diam_len(aper_diam_length: int):
-    with open(config["SExtractor"]["PARAMS_PATH"], "r") as f:
+def update_sex_params_aper_diam_len(aper_diam_length: int, params_path: str) -> None:
+    with open(params_path, "r") as f:
         lines = f.readlines()
         f.close()
     new_lines = [
@@ -138,7 +143,7 @@ def update_sex_params_aper_diam_len(aper_diam_length: int):
             new_lines.insert(aper_loc[0] + 1, f"{name}({str(n)})\n")
             for n in reversed(range(2, aper_diam_length + 1))
         ]
-    with open(config["SExtractor"]["PARAMS_PATH"], "w") as f:
+    with open(params_path, "w") as f:
         f.writelines(new_lines)
         f.close()
 
@@ -148,11 +153,15 @@ def perform_forced_phot(
     self: Type[Band_Data_Base],
     forced_phot_band: Type[Band_Data_Base],
     err_type: str = "rms_err",
-    sex_config_path: str = config["SExtractor"]["CONFIG_PATH"],
-    params_path: str = config["SExtractor"]["PARAMS_PATH"],
+    config_name: str = "default.sex",
+    params_name: str = "default.param",
     timed: bool = True,
     overwrite: bool = False,
 ) -> str:
+
+    sex_config_path = f"{config['SExtractor']['CONFIG_DIR']}/{config_name}"
+    params_path = f"{config['SExtractor']['CONFIG_DIR']}/{params_name}"
+
     # make forced photometry catalogue
     start = time.time()
     err_map_path, err_map_ext, err_map_type = get_err_map(self, err_type)
@@ -174,7 +183,7 @@ def perform_forced_phot(
         )
         # update the SExtractor params file at runtime
         # to include the correct number of aperture diameters
-        update_sex_params_aper_diam_len(len(self.aper_diams))
+        update_sex_params_aper_diam_len(len(self.aper_diams), params_path)
         pix_aper_diams = (
             str(
                 [

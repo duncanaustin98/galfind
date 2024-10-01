@@ -97,8 +97,7 @@ class Band_Data_Base(ABC):
         rms_err_ext_name: Union[str, List[str]] = "ERR",
         wht_ext_name: Union[str, List[str]] = "WHT",
         use_galfind_err: bool = False,
-        aper_diams: Optional[u.Quantity] = [0.32, 0.5, 1.0, 1.5, 2.0]
-        * u.arcsec,
+        aper_diams: Optional[u.Quantity] = None,
     ):
         self.survey = survey
         self.version = version
@@ -155,28 +154,6 @@ class Band_Data_Base(ABC):
     def data_shape(self) -> Tuple[int, int]:
         return self.load_im()[0].shape
 
-    # stacking/mosaicing
-    def __mul__(
-        self, other: Union[Type[Band_Data_Base], List[Type[Band_Data_Base]]]
-    ) -> Type[Band_Data_Base]:
-        # if other is not a list, make it one
-        if not isinstance(other, list):
-            other = [other]
-        assert all(
-            isinstance(_other, tuple(Band_Data_Base.__subclasses__()))
-            for _other in other
-        )
-        band_data = deepcopy(self)
-        for _other in other:
-            # if element of other has the same filter as self, stack and update
-            if isinstance(_other, tuple(Band_Data_Base.__subclasses__())):
-                if self.filt == _other.filt:
-                    band_data += Band_Data.from_band_data_arr([self, _other])
-                else:
-                    band_data += Stacked_Band_Data.from_band_data_arr(
-                        [self, _other]
-                    )
-        return band_data
 
     def __eq__(self, other: Type[Band_Data_Base]) -> bool:
         if not isinstance(other, tuple(Band_Data_Base.__subclasses__())):
@@ -206,13 +183,18 @@ class Band_Data_Base(ABC):
             setattr(result, k, v)
         return result
 
-    def __deepcopy__(self, memo: Dict) -> Type[Band_Data_Base]:
-        # deepcopy the object
+    def __deepcopy__(self, memo):
         cls = self.__class__
         result = cls.__new__(cls)
         memo[id(self)] = result
-        for k, v in self.__dict__.items():
-            setattr(result, k, deepcopy(v, memo))
+        for key, value in self.__dict__.items():
+            try:
+                setattr(result, key, deepcopy(value, memo))
+            except:
+                galfind_logger.critical(
+                    f"deepcopy({self.__class__.__name__}) {key}: {value} FAIL!"
+                )
+                breakpoint()
         return result
 
     def _check_data(self, incl_rms_err: bool = True, incl_wht: bool = True):
@@ -345,10 +327,7 @@ class Band_Data_Base(ABC):
         else:
             return rms_err
 
-    def load_seg(self) -> Tuple[np.ndarray, fits.Header]:
-        assert self._seg_method is not None, galfind_logger.critical(
-            f"Segmentation path not set for {self.survey} {self.filt.band_name}"
-        )
+    def load_seg(self, incl_hdr: bool = True) -> Tuple[np.ndarray, fits.Header]:
         if not Path(self.seg_path).is_file():
             err_message = (
                 f"Segmentation map for {self.survey} "
@@ -359,7 +338,10 @@ class Band_Data_Base(ABC):
         seg_hdul = fits.open(self.seg_path)
         seg_data = seg_hdul[0].data
         seg_header = seg_hdul[0].header
-        return seg_data, seg_header
+        if incl_hdr:
+            return seg_data, seg_header
+        else:
+            return seg_data
 
     def load_mask(
         self, ext: Optional[str] = None
@@ -410,6 +392,8 @@ class Band_Data_Base(ABC):
         self,
         err_type: str = "rms_err",
         method: str = "sextractor",
+        config_name: str = "default.sex",
+        params_name: str = "default.param",
         overwrite: bool = False,
     ) -> NoReturn:
         """
@@ -442,19 +426,21 @@ class Band_Data_Base(ABC):
             # segment the data
             if method == "sextractor":
                 self.seg_path = SExtractor.segment_sextractor(
-                    self, err_type, overwrite=overwrite
+                    self, err_type, config_name=config_name, params_name=params_name, overwrite=overwrite
                 )
             else:
                 raise (
                     Exception(f"segmentation {method=} not in ['sextractor']")
                 )
-            self.seg_args = {"err_type": err_type, "method": method}
+            self.seg_args = {"err_type": err_type, "method": method, "config_name": config_name, "params_name": params_name}
 
     def perform_forced_phot(
         self,
         forced_phot_band: Type[Band_Data_Base],
         err_type: str = "rms_err",
         method: str = "sextractor",
+        config_name: str = "default.sex",
+        params_name: str = "default.param",
         overwrite: bool = False,
     ) -> NoReturn:
         # do not re-perform forced photometry if already done
@@ -464,7 +450,7 @@ class Band_Data_Base(ABC):
         ):
             if method == "sextractor":
                 self.forced_phot_path = SExtractor.perform_forced_phot(
-                    self, forced_phot_band, err_type, overwrite=overwrite
+                    self, forced_phot_band, err_type, config_name=config_name, params_name=params_name, overwrite=overwrite
                 )
             else:
                 raise (Exception(f"{method=} not in ['sextractor']"))
@@ -472,6 +458,8 @@ class Band_Data_Base(ABC):
                 "forced_phot_band": forced_phot_band,
                 "err_type": err_type,
                 "method": method,
+                "config_name": config_name,
+                "params_name": params_name
             }
 
     def _get_master_tab(
@@ -843,8 +831,7 @@ class Band_Data(Band_Data_Base):
         rms_err_ext_name: Union[str, List[str]] = "ERR",
         wht_ext_name: Union[str, List[str]] = "WHT",
         use_galfind_err: bool = False,
-        aper_diams: Optional[u.Quantity] = [0.32, 0.5, 1.0, 1.5, 2.0]
-        * u.arcsec,
+        aper_diams: Optional[u.Quantity] = None,
     ):
         self.filt = filt
         super().__init__(
@@ -866,9 +853,9 @@ class Band_Data(Band_Data_Base):
 
     @classmethod
     def from_band_data_arr(cls, band_data_arr: List[Type[Band_Data_Base]]):
+        raise(NotImplementedError)
         # make sure all filters are the same
         # stack bands by multiplication
-        pass
 
     @property
     def instr_name(self):
@@ -926,6 +913,33 @@ class Band_Data(Band_Data_Base):
             )
 
 
+    # stacking/mosaicing
+    def __mul__(
+        self, other: Union[Type[Band_Data_Base], List[Type[Band_Data_Base]]]
+    ) -> Type[Band_Data_Base]:
+        # if other is not a list, make it one
+        if not isinstance(other, list):
+            other = [other]
+        assert all(
+            isinstance(_other, tuple(Band_Data_Base.__subclasses__()))
+            for _other in other
+        )
+        # flatten array of other band_data objects
+        band_data_arr = []
+        for _other in other:
+            if isinstance(_other, Band_Data):
+                band_data_arr.extend([_other])
+            elif isinstance(_other, Stacked_Band_Data):
+                assert hasattr(other, "band_data_arr")
+                band_data_arr.extend(_other.band_data_arr)
+        # stack/mosaic bands
+        if all(band_data.filt == self.filt for band_data in band_data_arr):
+            return Band_Data.from_band_data_arr([deepcopy(self), *band_data_arr])
+        else:
+            return Stacked_Band_Data.from_band_data_arr(
+                [deepcopy(self), *band_data_arr]
+            )
+
 class Stacked_Band_Data(Band_Data_Base):
     def __init__(
         self,
@@ -943,8 +957,7 @@ class Stacked_Band_Data(Band_Data_Base):
         rms_err_ext_name: Union[str, List[str]] = "ERR",
         wht_ext_name: Union[str, List[str]] = "WHT",
         use_galfind_err: bool = False,
-        aper_diams: Optional[u.Quantity] = [0.32, 0.5, 1.0, 1.5, 2.0]
-        * u.arcsec,
+        aper_diams: Optional[u.Quantity] = None,
     ):
         # ensure every band_data is from the same survey and version,
         # have the same pixel scale and are from different filters
@@ -1035,6 +1048,30 @@ class Stacked_Band_Data(Band_Data_Base):
             for filt in self.filterset
         )
         return self.filterset[0].instrument.calc_ZP(self)
+
+    # stacking/mosaicing
+    def __mul__(
+        self, other: Union[Type[Band_Data_Base], List[Type[Band_Data_Base]]]
+    ) -> Type[Band_Data_Base]:
+        # if other is not a list, make it one
+        if not isinstance(other, list):
+            other = [other]
+        assert all(
+            isinstance(_other, tuple(Band_Data_Base.__subclasses__()))
+            for _other in other
+        )
+        # flatten array of other band_data objects
+        band_data_arr = []
+        for _other in other:
+            if isinstance(_other, Band_Data):
+                band_data_arr.extend([_other])
+            elif isinstance(_other, Stacked_Band_Data):
+                assert hasattr(other, "band_data_arr")
+                band_data_arr.extend(_other.band_data_arr)
+
+        return Stacked_Band_Data.from_band_data_arr(
+            [*deepcopy(self).band_data_arr, *band_data_arr]
+        )
 
     @staticmethod
     def _get_stacked_band_data_name(
@@ -1273,13 +1310,8 @@ class Data:
         im_ext_name: Union[str, List[str]] = "SCI",
         rms_err_ext_name: Union[str, List[str]] = "ERR",
         wht_ext_name: Union[str, List[str]] = "WHT",
-        aper_diams: Optional[u.Quantity] = [0.32, 0.5, 1.0, 1.5, 2.0]
-        * u.arcsec,
-        forced_phot_band: Union[str, List[str], Type[Band_Data_Base]] = [
-            "F277W",
-            "F356W",
-            "F444W",
-        ],
+        aper_diams: Optional[u.Quantity] = None,
+        forced_phot_band: Optional[Union[str, List[str], Type[Band_Data_Base]]] = None,
     ):
         # make im/rms_err/wht extension names lists if not already
         if isinstance(im_ext_name, str):
@@ -1409,16 +1441,16 @@ class Data:
         pix_scale: u.Quantity = 0.03 * u.arcsec,
         version_to_dir_dict: Optional[Dict[str, str]] = None,
     ) -> Self:
-        if version_to_dir_dict is not None:
-            version_substr = version_to_dir_dict[version]
-        else:
-            version_substr = version
-        if len(version.split("_")) > 1:
-            version_substr += f"_{'_'.join(version.split('_')[1:])}"
+        #if version_to_dir_dict is not None:
+        version = version_to_dir_dict[version.split("_")[0]]
+        # else:
+        #     version_substr = version
+        # if len(version.split("_")) > 1:
+        #     version_substr += f"_{'_'.join(version.split('_')[1:])}"
         return (
             f"{config['DEFAULT']['GALFIND_DATA']}/"
             + f"{instrument.facility.__class__.__name__.lower()}/{survey}/"
-            + f"{instrument.__class__.__name__}/{version_substr}/"
+            + f"{instrument.__class__.__name__}/{version}/"
             + f"{Band_Data_Base._pix_scale_to_str(pix_scale)}"
         )
 
@@ -1855,9 +1887,16 @@ class Data:
             if isinstance(other[0], str):
                 other = self._indices_from_filt_names(other)
         if isinstance(other, list):
-            return list(np.array(self.band_data_arr)[other])
+            item = list(np.array(self.band_data_arr)[other])
         else:
-            return self.band_data_arr[other]
+            item = self.band_data_arr[other]
+        if isinstance(item, Band_Data):
+            return item
+        else:
+            if len(item) == 1:
+                return item[0]
+            else:
+                return item
 
     def __getattr__(self, attr: str) -> Any:
         # attr inserted here must be pluralised with 's' suffix
@@ -1867,10 +1906,16 @@ class Data:
                 for band_data in self
             }
         else:
-            raise AttributeError(
-                f"Attribute {attr[:-1]} not found in {self.__class__.__name__}"
-            )
-
+            if attr not in [
+                "__array_struct__",
+                "__array_interface__",
+                "__array__",
+            ]:
+                galfind_logger.debug(
+                    f"Data has no {attr=}!"
+                )
+            raise AttributeError
+    
     def __add__(
         self, other: Union[Band_Data, List[Band_Data], Data, List[Data]]
     ) -> Data:
@@ -1930,6 +1975,20 @@ class Data:
                     for self_band, other_band in zip(self, other)
                 ]
             )
+        
+    def __deepcopy__(self, memo):
+        cls = self.__class__
+        result = cls.__new__(cls)
+        memo[id(self)] = result
+        for key, value in self.__dict__.items():
+            try:
+                setattr(result, key, deepcopy(value, memo))
+            except:
+                galfind_logger.critical(
+                    f"deepcopy({self.__class__.__name__}) {key}: {value} FAIL!"
+                )
+                breakpoint()
+        return result
 
     def _indices_from_filt_names(
         self, filt_names: Union[str, List[str]]
@@ -2006,11 +2065,21 @@ class Data:
     ):
         return self[band].load_mask(ext)
 
+    def load_aper_diams(self, aper_diams: u.Quantity) -> NoReturn:
+        if hasattr(self, "forced_phot_band"):
+            self.forced_phot_band.load_aper_diams(aper_diams)
+        [band_data.load_aper_diams(aper_diams) for band_data in self]
+
     def psf_homogenize(self):
         pass
 
     def segment(
-        self, err_type: str = "rms_err", method: str = "sextractor"
+        self,
+        err_type: str = "rms_err",
+        method: str = "sextractor",
+        config_name: str = "default.sex",
+        params_name: str = "default.param",
+        overwrite: bool = False,
     ) -> NoReturn:
         """
         Segments the data using the specified error type and method.
@@ -2022,13 +2091,15 @@ class Data:
         Returns:
             NoReturn: This method does not return any value.
         """
-        [band_data.segment(err_type, method) for band_data in self]
+        [band_data.segment(err_type, method, config_name, params_name, overwrite) for band_data in self]
 
     def perform_forced_phot(
         self,
         forced_phot_band: Union[str, List[str], Type[Band_Data_Base]],
         err_type: str = "rms_err",
         method: Union[str, List[str], Dict[str, str]] = "sextractor",
+        config_name: str = "default.sex",
+        params_name: str = "default.param",
         overwrite: bool = False,
     ) -> NoReturn:
         if hasattr(self, "phot_cat_path"):
@@ -2054,6 +2125,8 @@ class Data:
                 forced_phot_band,
                 err_type,
                 method[band_data.filt.band_name],
+                config_name,
+                params_name,
                 overwrite,
             )
             for band_data in self
@@ -2067,11 +2140,13 @@ class Data:
             )
         )
         # segment and run for the forced_phot_band too
-        self.forced_phot_band.segment(err_type, method)
+        self.forced_phot_band.segment(err_type, method, config_name, params_name, overwrite)
         self.forced_phot_band.perform_forced_phot(
             self.forced_phot_band,
             err_type,
             method[self.forced_phot_band.filt_name.split("+")[0]],
+            config_name,
+            params_name,
             overwrite=overwrite,
         )
         # combined forced photometry catalogues into a single photometric catalogue
@@ -2086,7 +2161,7 @@ class Data:
             filt_names = forced_phot_band.split("+")
         elif isinstance(forced_phot_band, list):
             filt_names = forced_phot_band
-        if isinstance(forced_phot_band, tuple(str, list)):
+        if isinstance(forced_phot_band, tuple([str, list])):
             if len(filt_names) == 0:
                 forced_phot_band = self[filt_names[0]]
             else:
@@ -2199,6 +2274,7 @@ class Data:
         )
 
         if hasattr(self, "forced_phot_band"):
+            print(self, self.forced_phot_band)
             if (
                 self.forced_phot_band.filt_name
                 not in self.filterset.band_names
@@ -2279,7 +2355,7 @@ class Data:
     ) -> NoReturn:
         if timed:
             start = time.time()
-
+        print(getattr(self, "forced_phot_band"))
         if hasattr(self, "forced_phot_band"):
             if (
                 self.forced_phot_band.filt_name

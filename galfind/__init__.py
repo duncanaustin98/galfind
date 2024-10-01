@@ -108,10 +108,9 @@ wav_lyman_lim = 911.8  # * u.AA
 from . import useful_funcs_austind
 from . import figs
 from . import decorators
-from . import SExtractor, Masking
+from . import SExtractor, Masking, Depths
 from .Cutout import Band_Cutout, Stacked_Band_Cutout, RGB, Stacked_RGB, Multiple_Band_Cutout, Multiple_RGB
 from . import NIRCam_aperture_corrections as NIRCam_aper_corr
-from . import Depths
 from .PDF import PDF, SED_fit_PDF, Redshift_PDF, PDF_nD
 from .Instrument import Facility, JWST, HST, Instrument, ACS_WFC, WFC3_IR, NIRCam, MIRI
 

@@ -15,7 +15,7 @@ DETECT_THRESH   1.8             # <sigmas> or <threshold>,<ZP> in mag.arcsec-2
 ANALYSIS_THRESH 1.8             # <sigmas> or <threshold>,<ZP> in mag.arcsec-2
 
 FILTER          Y               # apply filter for detection ("Y" or "N")?
-FILTER_NAME    /nvme/scratch/work/nadams/SExtractor/gauss_2.5_5x5.conv # name of the file containing the filter
+FILTER_NAME    /nvme/scratch/work/austind/GALFIND/configs/SExtractor/gauss_2.5_5x5.conv # name of the file containing the filter
 
 DEBLEND_NTHRESH 32              # Number of deblending sub-thresholds
 DEBLEND_MINCONT 0.005          # Minimum contrast parameter for deblending

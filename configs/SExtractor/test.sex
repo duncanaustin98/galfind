@@ -10,18 +10,18 @@ PARAMETERS_NAME /nvme/scratch/work/nadams/SExtractor/uvista_dr3.param   # name o
 
 DETECT_TYPE     CCD             # "CCD" or "PHOTO" (*)
 FLAG_IMAGE      flag.fits       # filename for an input FLAG-image
-DETECT_MINAREA  9               # minimum number of pixels above threshold
-DETECT_THRESH   1.8             # <sigmas> or <threshold>,<ZP> in mag.arcsec-2
-ANALYSIS_THRESH 1.8             # <sigmas> or <threshold>,<ZP> in mag.arcsec-2
+DETECT_MINAREA  15               # minimum number of pixels above threshold
+DETECT_THRESH   2.5             # <sigmas> or <threshold>,<ZP> in mag.arcsec-2
+ANALYSIS_THRESH 2.5             # <sigmas> or <threshold>,<ZP> in mag.arcsec-2
 
 FILTER          Y               # apply filter for detection ("Y" or "N")?
-FILTER_NAME    /nvme/scratch/work/nadams/SExtractor/gauss_2.5_5x5.conv # name of the file containing the filter
+FILTER_NAME    /nvme/scratch/work/austind/GALFIND/configs/SExtractor/gauss_2.5_5x5.conv # name of the file containing the filter
 
 DEBLEND_NTHRESH 32              # Number of deblending sub-thresholds
 DEBLEND_MINCONT 0.005          # Minimum contrast parameter for deblending
 
 CLEAN           Y               # Clean spurious detections? (Y or N)?
-CLEAN_PARAM     2.5             # Cleaning efficiency
+CLEAN_PARAM     1.0             # Cleaning efficiency
 
 MASK_TYPE       CORRECT         # type of detection MASKing: can be one of
                                 # "NONE", "BLANK" or "CORRECT"
@@ -44,14 +44,14 @@ SEEING_FWHM     0.05             # stellar FWHM in arcsec
 STARNNW_NAME    /nvme/scratch/work/nadams/SExtractor/default.nnw       # Neural-Network_Weight table filename
 
 #------------------------------ Background -----------------------------------
-BACK_SIZE       64              # Background mesh: <size> or <width>,<height>
-BACK_FILTERSIZE 3               # Background filter: <size> or <width>,<height>
+#BACK_SIZE       64              # Background mesh: <size> or <width>,<height>
+#BACK_FILTERSIZE 3               # Background filter: <size> or <width>,<height>
 
-BACKPHOTO_TYPE  LOCAL           # can be "GLOBAL" or "LOCAL" (*)
-BACKPHOTO_THICK 24              # thickness of the background LOCAL annulus (*)
+#BACKPHOTO_TYPE  LOCAL           # can be "GLOBAL" or "LOCAL" (*)
+#BACKPHOTO_THICK 24              # thickness of the background LOCAL annulus (*)
 
-#BACK_TYPE       MANUAL
-#BACK_VALUE      0.0
+BACK_TYPE       MANUAL
+BACK_VALUE      0.0
 #------------------------------ Check Image ----------------------------------
 
 CHECKIMAGE_TYPE NONE     # can be one of "NONE", "BACKGROUND",

@@ -1,4 +1,5 @@
 # Depths.py
+from __future__ import annotations
 
 # import automask as am
 import astropy.visualization as vis
@@ -27,7 +28,7 @@ from tqdm import tqdm
 from typing import Union, Tuple, Dict, List, Any, NoReturn, TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from . import Band_Data, Band_Data_Base, Data
+    from . import Band_Data_Base, Data
 
 try:
     from typing import Type  # python 3.11+

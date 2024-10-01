@@ -1,18 +1,12 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-"""
-Created on Wed Apr 19 21:19:13 2023
-
-@author: austind
-"""
-
 # useful_funcs_austind.py
+from __future__ import annotations
+
 import inspect
 import os
 from typing import Union, List, TYPE_CHECKING
 
-if TYPE_CHECKING:
-    from . import Band_Data
+# if TYPE_CHECKING:
+#     from .Data import Band_Data
 
 import astropy.constants as const
 import astropy.units as u
@@ -934,7 +928,7 @@ line_sep = "*" * 40 + "\n"
 band_sep = "-" * 10 + "\n"
 
 
-def sort_band_data_arr(band_data_arr: List[Band_Data]):
+def sort_band_data_arr(band_data_arr):#: List[Band_Data]):
     return [
         band_data
         for band_data in sorted(
