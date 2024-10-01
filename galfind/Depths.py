@@ -442,7 +442,7 @@ def calc_depths(
     img_data,
     mask=None,
     catalogue=None,
-    mode="rolling",
+    mode="n_nearest",
     sigma_level=5,
     step_size=100,
     region_radius_used_pix=300,

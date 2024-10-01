@@ -154,7 +154,6 @@ class Band_Data_Base(ABC):
     def data_shape(self) -> Tuple[int, int]:
         return self.load_im()[0].shape
 
-
     def __eq__(self, other: Type[Band_Data_Base]) -> bool:
         if not isinstance(other, tuple(Band_Data_Base.__subclasses__())):
             return False
@@ -327,7 +326,9 @@ class Band_Data_Base(ABC):
         else:
             return rms_err
 
-    def load_seg(self, incl_hdr: bool = True) -> Tuple[np.ndarray, fits.Header]:
+    def load_seg(
+        self, incl_hdr: bool = True
+    ) -> Tuple[np.ndarray, fits.Header]:
         if not Path(self.seg_path).is_file():
             err_message = (
                 f"Segmentation map for {self.survey} "
@@ -426,13 +427,22 @@ class Band_Data_Base(ABC):
             # segment the data
             if method == "sextractor":
                 self.seg_path = SExtractor.segment_sextractor(
-                    self, err_type, config_name=config_name, params_name=params_name, overwrite=overwrite
+                    self,
+                    err_type,
+                    config_name=config_name,
+                    params_name=params_name,
+                    overwrite=overwrite,
                 )
             else:
                 raise (
                     Exception(f"segmentation {method=} not in ['sextractor']")
                 )
-            self.seg_args = {"err_type": err_type, "method": method, "config_name": config_name, "params_name": params_name}
+            self.seg_args = {
+                "err_type": err_type,
+                "method": method,
+                "config_name": config_name,
+                "params_name": params_name,
+            }
 
     def perform_forced_phot(
         self,
@@ -450,7 +460,12 @@ class Band_Data_Base(ABC):
         ):
             if method == "sextractor":
                 self.forced_phot_path = SExtractor.perform_forced_phot(
-                    self, forced_phot_band, err_type, config_name=config_name, params_name=params_name, overwrite=overwrite
+                    self,
+                    forced_phot_band,
+                    err_type,
+                    config_name=config_name,
+                    params_name=params_name,
+                    overwrite=overwrite,
                 )
             else:
                 raise (Exception(f"{method=} not in ['sextractor']"))
@@ -459,7 +474,7 @@ class Band_Data_Base(ABC):
                 "err_type": err_type,
                 "method": method,
                 "config_name": config_name,
-                "params_name": params_name
+                "params_name": params_name,
             }
 
     def _get_master_tab(
@@ -853,7 +868,7 @@ class Band_Data(Band_Data_Base):
 
     @classmethod
     def from_band_data_arr(cls, band_data_arr: List[Type[Band_Data_Base]]):
-        raise(NotImplementedError)
+        raise (NotImplementedError)
         # make sure all filters are the same
         # stack bands by multiplication
 
@@ -912,7 +927,6 @@ class Band_Data(Band_Data_Base):
                 )
             )
 
-
     # stacking/mosaicing
     def __mul__(
         self, other: Union[Type[Band_Data_Base], List[Type[Band_Data_Base]]]
@@ -934,11 +948,14 @@ class Band_Data(Band_Data_Base):
                 band_data_arr.extend(_other.band_data_arr)
         # stack/mosaic bands
         if all(band_data.filt == self.filt for band_data in band_data_arr):
-            return Band_Data.from_band_data_arr([deepcopy(self), *band_data_arr])
+            return Band_Data.from_band_data_arr(
+                [deepcopy(self), *band_data_arr]
+            )
         else:
             return Stacked_Band_Data.from_band_data_arr(
                 [deepcopy(self), *band_data_arr]
             )
+
 
 class Stacked_Band_Data(Band_Data_Base):
     def __init__(
@@ -1311,7 +1328,9 @@ class Data:
         rms_err_ext_name: Union[str, List[str]] = "ERR",
         wht_ext_name: Union[str, List[str]] = "WHT",
         aper_diams: Optional[u.Quantity] = None,
-        forced_phot_band: Optional[Union[str, List[str], Type[Band_Data_Base]]] = None,
+        forced_phot_band: Optional[
+            Union[str, List[str], Type[Band_Data_Base]]
+        ] = None,
     ):
         # make im/rms_err/wht extension names lists if not already
         if isinstance(im_ext_name, str):
@@ -1441,7 +1460,7 @@ class Data:
         pix_scale: u.Quantity = 0.03 * u.arcsec,
         version_to_dir_dict: Optional[Dict[str, str]] = None,
     ) -> Self:
-        #if version_to_dir_dict is not None:
+        # if version_to_dir_dict is not None:
         version = version_to_dir_dict[version.split("_")[0]]
         # else:
         #     version_substr = version
@@ -1911,11 +1930,9 @@ class Data:
                 "__array_interface__",
                 "__array__",
             ]:
-                galfind_logger.debug(
-                    f"Data has no {attr=}!"
-                )
+                galfind_logger.debug(f"Data has no {attr=}!")
             raise AttributeError
-    
+
     def __add__(
         self, other: Union[Band_Data, List[Band_Data], Data, List[Data]]
     ) -> Data:
@@ -1975,7 +1992,7 @@ class Data:
                     for self_band, other_band in zip(self, other)
                 ]
             )
-        
+
     def __deepcopy__(self, memo):
         cls = self.__class__
         result = cls.__new__(cls)
@@ -2091,7 +2108,12 @@ class Data:
         Returns:
             NoReturn: This method does not return any value.
         """
-        [band_data.segment(err_type, method, config_name, params_name, overwrite) for band_data in self]
+        [
+            band_data.segment(
+                err_type, method, config_name, params_name, overwrite
+            )
+            for band_data in self
+        ]
 
     def perform_forced_phot(
         self,
@@ -2140,7 +2162,9 @@ class Data:
             )
         )
         # segment and run for the forced_phot_band too
-        self.forced_phot_band.segment(err_type, method, config_name, params_name, overwrite)
+        self.forced_phot_band.segment(
+            err_type, method, config_name, params_name, overwrite
+        )
         self.forced_phot_band.perform_forced_phot(
             self.forced_phot_band,
             err_type,
@@ -2476,12 +2500,13 @@ class Data:
     ) -> NoReturn:
         self[band].plot(ax, ext, norm, save, show)
 
-    def make_RGB(
+    def plot_RGB(
         self,
-        blue_bands=["F090W"],
-        green_bands=["F200W"],
-        red_bands=["F444W"],
-        method="trilogy",
+        ax: Optional[plt.Axes] = None,
+        blue_bands: List[Union[str, Filter]] = ["F090W"],
+        green_bands: List[Union[str, Filter]] = ["F200W"],
+        red_bands: List[Union[str, Filter]] = ["F444W"],
+        method: str = "trilogy",
     ):
         # ensure all blue, green and red bands are contained in the data object
         assert all(
