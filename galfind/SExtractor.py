@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import numpy as np
 import json
+import astropy.units as u
 import subprocess
 from pathlib import Path
 import time
@@ -20,20 +21,31 @@ from . import useful_funcs_austind as funcs
 from .decorators import run_in_dir
 
 
-def get_sextractor_path(
+def get_segmentation_path(
+    self: Type[Band_Data_Base],
+    err_map_type: str,
+) -> str:
+    seg_dir = f"{config['SExtractor']['SEX_DIR']}/{self.instr_name}/{self.version}/{self.survey}/{err_map_type}/segmentation"
+    seg_path = f"{seg_dir}/{self.survey}_{self.filt_name}_{self.filt_name}_sel_cat_{self.version}_seg.fits"
+    funcs.make_dirs(seg_path)
+    return seg_path
+
+def get_forced_phot_path(
     self: Type[Band_Data_Base],
     err_map_type: str,
     forced_phot_band: Optional[Type[Band_Data_Base]] = None,
 ) -> str:
-    seg_dir = f"{config['SExtractor']['SEX_DIR']}/{self.instr_name}/{self.version}/{self.survey}/{err_map_type}"
+    forced_phot_dir = f"{config['SExtractor']['SEX_DIR']}/{self.instr_name}/{self.version}/{self.survey}/{err_map_type}/forced_phot/{aper_diams_to_str(self.aper_diams)}"
     if forced_phot_band is None:
         select_band_name = self.filt_name
     else:
-        select_band_name = forced_phot_band.band_name
-    seg_path = f"{seg_dir}/{self.survey}_{self.filt_name}_{select_band_name}_sel_cat_{self.version}_seg.fits"
-    funcs.make_dirs(seg_path)
-    return seg_path
+        select_band_name = forced_phot_band.filt_name
+    forced_phot_path = f"{forced_phot_dir}/{self.survey}_{self.filt_name}_{select_band_name}_sel_cat_{self.version}.fits"
+    funcs.make_dirs(forced_phot_path)
+    return forced_phot_path
 
+def aper_diams_to_str(aper_diams: u.Quantity):
+    return f"[{'-'.join([f'{aper_diam:.2f}' for aper_diam in aper_diams.value])}]as"
 
 def get_err_map(
     self: Type[Band_Data_Base], err_type: str
@@ -72,16 +84,14 @@ def segment_sextractor(
     sex_config_path = f"{config['SExtractor']['CONFIG_DIR']}/{config_name}"
     params_path = f"{config['SExtractor']['CONFIG_DIR']}/{params_name}"
 
-    print(sex_config_path, params_path)
     err_map_path, err_map_ext, err_map_type = get_err_map(self, err_type)
-    seg_path = get_sextractor_path(self, err_map_type)
-
+    seg_path = get_segmentation_path(self, err_map_type)
+    
     if not Path(seg_path).is_file() or overwrite:
         galfind_logger.info(
             "Making SExtractor seg/bkg maps for "
             f"{self.survey} {self.version} {self.filt.band_name}"
         )
-
         # update the SExtractor params file at runtime
         # to include the correct number of aperture diameters
         update_sex_params_aper_diam_len(len(self.aper_diams), params_path)
@@ -89,7 +99,7 @@ def segment_sextractor(
             str(
                 [
                     np.round(pix_aper_diam, 2)
-                    for pix_aper_diam in self.aper_diams / self.pix_scale.value
+                    for pix_aper_diam in (self.aper_diams / self.pix_scale).to(u.dimensionless_unscaled).value
                 ]
             )
             .replace("[", "")
@@ -118,7 +128,7 @@ def segment_sextractor(
         galfind_logger.debug(input)
         process = subprocess.Popen(input)
         process.wait()
-    funcs.change_file_permissions(seg_path)
+        funcs.change_file_permissions(seg_path)
     return seg_path
 
 
@@ -171,7 +181,7 @@ def perform_forced_phot(
     assert err_map_type == select_band_map_type, galfind_logger.critical(
         f"{err_map_type=}!={select_band_map_type=}"
     )
-    forced_phot_path = get_sextractor_path(
+    forced_phot_path = get_forced_phot_path(
         self, err_map_type, forced_phot_band
     )
     if not Path(forced_phot_path).is_file() or overwrite:
@@ -188,7 +198,7 @@ def perform_forced_phot(
             str(
                 [
                     np.round(pix_aper_diam, 2)
-                    for pix_aper_diam in self.aper_diams / self.pix_scale.value
+                    for pix_aper_diam in (self.aper_diams / self.pix_scale).to(u.dimensionless_unscaled).value
                 ]
             )
             .replace("[", "")
@@ -213,10 +223,11 @@ def perform_forced_phot(
             select_band_err_map_path,
             str(forced_phot_band.im_ext),
             err_map_type,
-            select_band_map_ext,
+            str(select_band_map_ext),
             sex_config_path,
             params_path,
             pix_aper_diams,
+            aper_diams_to_str(forced_phot_band.aper_diams),
         ]
         # SExtractor bash script python wrapper
         galfind_logger.debug(input)
@@ -235,6 +246,8 @@ def perform_forced_phot(
         end = time.time()
         finish_message += f" ({end - start:.1f}s)"
     galfind_logger.debug(finish_message)
+
+    return forced_phot_path
 
     # if self.forced_phot_band not in self.instrument.band_names:
     #     sextractor_bands = [band for band in self.instrument] + [

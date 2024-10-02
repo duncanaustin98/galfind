@@ -5,8 +5,13 @@ import inspect
 import os
 from typing import Union, List, TYPE_CHECKING
 
-# if TYPE_CHECKING:
-#     from .Data import Band_Data
+try:
+    from typing import Self, Type  # python 3.11+
+except ImportError:
+    from typing_extensions import Self, Type  # python > 3.7 AND python < 3.11
+
+if TYPE_CHECKING:
+    from .Data import Band_Data_Base, Band_Data, Stacked_Band_Data
 
 import astropy.constants as const
 import astropy.units as u
@@ -928,11 +933,15 @@ line_sep = "*" * 40 + "\n"
 band_sep = "-" * 10 + "\n"
 
 
-def sort_band_data_arr(band_data_arr):#: List[Band_Data]):
-    return [
+def sort_band_data_arr(band_data_arr: List[Type[Band_Data_Base]]):
+    stacked_band_data_arr = [band_data for band_data in band_data_arr if band_data.__class__.__name__ == "Stacked_Band_Data"]
+    sorted_band_data_arr = [
         band_data
         for band_data in sorted(
-            band_data_arr,
+            [band_data for band_data in band_data_arr if band_data.__class__.__name__ == "Band_Data"],
             key=lambda band_data: band_data.filt.WavelengthCen.to(u.AA).value,
         )
     ]
+    sorted_band_data_arr.extend(stacked_band_data_arr)
+    print(sorted_band_data_arr)
+    return sorted_band_data_arr

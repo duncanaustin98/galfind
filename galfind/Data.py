@@ -444,7 +444,7 @@ class Band_Data_Base(ABC):
                 "params_name": params_name,
             }
 
-    def perform_forced_phot(
+    def _perform_forced_phot(
         self,
         forced_phot_band: Type[Band_Data_Base],
         err_type: str = "rms_err",
@@ -478,9 +478,9 @@ class Band_Data_Base(ABC):
             }
 
     def _get_master_tab(
-        self, output_ids_loc: bool = False
-    ) -> Tuple[Table, List[int]]:
-        tab = Table.read(self.forced_phot_path, character_as_bytes=False)
+        self, output_ids_locs: bool = False
+    ) -> Table:
+        tab = Table.read(self.forced_phot_path, character_as_bytes=False, format="fits")
         if self.forced_phot_args["method"] == "sextractor":
             id_loc_params = [
                 "NUMBER",
@@ -495,35 +495,28 @@ class Band_Data_Base(ABC):
                     f"{self.forced_phot_args['method']} not in ['sextractor']"
                 )
             )
-        if output_ids_loc:
+        if output_ids_locs:
             if self.forced_phot_args["method"] == "sextractor":
                 append_ids_loc = {
                     "ID": tab["NUMBER"],
-                    "X_IMAGE": tab["X_IMAGE"],
-                    "Y_IMAGE": tab["Y_IMAGE"],
-                    "RA": tab["ALPHA_J2000"],
-                    "DEC": tab["DELTA_J2000"],
+                    "X_IMAGE": tab["X_IMAGE"].value,
+                    "Y_IMAGE": tab["Y_IMAGE"].value,
+                    "RA": tab["ALPHA_J2000"].value,
+                    "DEC": tab["DELTA_J2000"].value,
                 }
         else:
             append_ids_loc = {}
 
         # remove non band-dependent forced photometry parameters
-        for i, param in enumerate(id_loc_params):
-            if not output_ids_loc:
+        for param in id_loc_params:
+            if not output_ids_locs:
                 tab.remove_column(param)
         # add band suffix to columns
-        for i, name in enumerate(tab.columns.copy()):
+        for name in tab.columns.copy():
             if name not in id_loc_params:
                 tab.rename_column(name, name + "_" + self.filt_name)
-        # combine the astropy tables
-        if i == 0:
-            master_tab = tab
-            len_required = len(master_tab)
-        else:
-            master_tab = hstack([master_tab, tab])
-            assert (
-                len(tab) == len_required
-            ), f"Lengths of sextractor catalogues do not match! Check same detection image used {len(tab)} != {len_required} for {band}"
+        return tab
+
 
     def mask(
         self,
@@ -1019,6 +1012,11 @@ class Stacked_Band_Data(Band_Data_Base):
         )
         # instantiate the stacked band data object
         stacked_band_data = cls(filterset, **input_data)
+
+        # if all band_data in band_data_arr have aper_diams included
+        if all(hasattr(band_data, "aper_diams") for band_data in band_data_arr):
+            if all(all(diam == diam_0 for diam, diam_0 in zip(band_data.aper_diams, band_data_arr[0].aper_diams)) for band_data in band_data_arr):
+                stacked_band_data.load_aper_diams(band_data_arr[0].aper_diams)
 
         # if all band_data in band_data_arr have been segmented, segment the stacked band data
         if all(hasattr(band_data, "seg_args") for band_data in band_data_arr):
@@ -1657,7 +1655,7 @@ class Data:
 
     @property
     def filterset(self):
-        return Multiple_Filter(band_data.filt for band_data in self)
+        return Multiple_Filter(band_data.filt for band_data in self if isinstance(band_data, Band_Data))
 
     @property
     def ZPs(self) -> Dict[str, float]:
@@ -1934,7 +1932,7 @@ class Data:
             raise AttributeError
 
     def __add__(
-        self, other: Union[Band_Data, List[Band_Data], Data, List[Data]]
+        self, other: Union[Type[Band_Data_Base], List[Type[Band_Data_Base]], Data, List[Data]]
     ) -> Data:
         # if other is not a list, make it one
         if not isinstance(other, list):
@@ -1946,7 +1944,7 @@ class Data:
             for _other in other:
                 other_band_data.extend(_other.band_data_arr)
             other = other_band_data
-        assert all(isinstance(_other, Band_Data) for _other in other)
+        assert all(isinstance(_other, tuple(Band_Data_Base.__subclasses__())) for _other in other)
         new_band_data_arr = self.band_data_arr + other
         # ensure all bands come from the same survey and version
         if all(
@@ -1960,7 +1958,7 @@ class Data:
             if len(
                 np.unique(
                     [
-                        band_data.filt.band_name
+                        band_data.filt_name
                         for band_data in new_band_data_arr
                     ]
                 )
@@ -2117,8 +2115,8 @@ class Data:
 
     def perform_forced_phot(
         self,
-        forced_phot_band: Union[str, List[str], Type[Band_Data_Base]],
-        err_type: str = "rms_err",
+        forced_phot_band: Optional[Union[str, List[str], Type[Band_Data_Base]]] = None,
+        err_type: Union[str, List[str], Dict[str, str]] = "rms_err",
         method: Union[str, List[str], Dict[str, str]] = "sextractor",
         config_name: str = "default.sex",
         params_name: str = "default.param",
@@ -2128,88 +2126,83 @@ class Data:
             raise (Exception("MASTER Photometric catalogue already exists!"))
         # create a forced_phot_band object from given string
         self.load_forced_phot_band(forced_phot_band)
-        if isinstance(method, str):
-            method = {band_data.filt.band_name: method for band_data in self}
-        elif isinstance(method, list):
-            assert len(method) == len(self)
-            method = {
-                band_data.filt.band_name: method[i]
-                for i, band_data in enumerate(self)
-            }
-        else:
-            assert isinstance(method, dict)
-            assert all(
-                band_data.filt.band_name in method.keys() for band_data in self
-            )
+
+        if hasattr(self, "forced_phot_band"):
+            if (
+                self.forced_phot_band.filt_name
+                not in self.filterset.band_names
+            ):
+                self_ = deepcopy(self) + deepcopy(self.forced_phot_band)
+                self_band_data_arr = self.band_data_arr + [
+                    self.forced_phot_band
+                ]
+            else:
+                self_ = deepcopy(self)
+                self_band_data_arr = self.band_data_arr
+
         # run for every band in the Data object
         [
-            band_data.perform_forced_phot(
-                forced_phot_band,
-                err_type,
-                method[band_data.filt.band_name],
+            band_data._perform_forced_phot(
+                self.forced_phot_band,
+                self_._sort_band_dependent_params(band_data.filt_name, err_type),
+                self_._sort_band_dependent_params(band_data.filt_name, method),
                 config_name,
                 params_name,
                 overwrite,
             )
-            for band_data in self
+            for band_data in self_band_data_arr
         ]
-        # ensure method for all bands in the forced phot band are the same
-        assert all(
-            method[filt_name]
-            == method[self.forced_phot_band.filt_name.split("+")[0]]
-            for i, filt_name in enumerate(
-                self.forced_phot_band.filt_name.split("+")
-            )
-        )
-        # segment and run for the forced_phot_band too
-        self.forced_phot_band.segment(
-            err_type, method, config_name, params_name, overwrite
-        )
-        self.forced_phot_band.perform_forced_phot(
-            self.forced_phot_band,
-            err_type,
-            method[self.forced_phot_band.filt_name.split("+")[0]],
-            config_name,
-            params_name,
-            overwrite=overwrite,
-        )
+
         # combined forced photometry catalogues into a single photometric catalogue
         self._combine_forced_phot_cats(overwrite=overwrite)
 
     def load_forced_phot_band(
         self,
         forced_phot_band: Union[str, List[str], Type[Band_Data_Base]],
-    ) -> Type[Band_Data_Base]:
-        # create a forced_phot_band object from given string
-        if isinstance(forced_phot_band, str):
-            filt_names = forced_phot_band.split("+")
-        elif isinstance(forced_phot_band, list):
-            filt_names = forced_phot_band
-        if isinstance(forced_phot_band, tuple([str, list])):
-            if len(filt_names) == 0:
-                forced_phot_band = self[filt_names[0]]
-            else:
-                forced_phot_band = Stacked_Band_Data.from_band_data_arr(
-                    self[filt_names]
+    ) -> Optional[Type[Band_Data_Base]]:
+        if forced_phot_band is not None:
+            # create a forced_phot_band object from given string
+            if isinstance(forced_phot_band, str):
+                filt_names = forced_phot_band.split("+")
+            elif isinstance(forced_phot_band, list):
+                filt_names = forced_phot_band
+            if isinstance(forced_phot_band, tuple([str, list])):
+                assert all(name in self.filterset.band_names for name in filt_names)
+                if len(filt_names) == 1:
+                    forced_phot_band = self[filt_names[0]]
+                else:
+                    forced_phot_band = Stacked_Band_Data.from_band_data_arr(
+                        self[filt_names]
+                    )
+            # save forced phot band in self
+            if hasattr(self, "forced_phot_band"):
+                assert (
+                    forced_phot_band == self.forced_phot_band
+                ), galfind_logger.critical(
+                    f"{self.forced_phot_band=} already loaded"
                 )
-        # save forced phot band in self
-        if hasattr(self, "forced_phot_band"):
-            assert (
-                forced_phot_band == self.forced_phot_band
-            ), galfind_logger.critical(
-                f"{self.forced_phot_band=} already loaded"
-            )
+            else:
+                self.forced_phot_band = forced_phot_band
+            return self.forced_phot_band
         else:
-            self.forced_phot_band = forced_phot_band
-        return self.forced_phot_band
+            return None
 
-    def _get_phot_cat_path(
-        self, forced_phot_band: Type[Band_Data_Base]
-    ) -> str:
+    def _get_phot_cat_path(self) -> str:
+        # ensure aperture diamters are the same for all bands
+        assert all(all(diam == diam_0 for diam, diam_0 in zip(band_data.aper_diams, self[0].aper_diams)) for band_data in self)
+        assert all(diam == diam_0 for diam, diam_0 in zip(self.forced_phot_band.aper_diams, self[0].aper_diams))
+        # ensure all bands have the same forced photometry band
+        assert all(band_data.forced_phot_args["forced_phot_band"] == self.forced_phot_band for band_data in self)
+        assert self.forced_phot_band.forced_phot_args["forced_phot_band"] == self.forced_phot_band # points to itself?
+        # ensure all bands are made using the same err map
+        assert all(band_data.forced_phot_args["err_type"] == self[0].forced_phot_args["err_type"] for band_data in self)
+        assert self.forced_phot_band.forced_phot_args["method"] == self[0].forced_phot_args["method"]
+
         # determine photometric catalogue path
         save_dir = (
             f"{config['DEFAULT']['GALFIND_WORK']}/Catalogues/"
-            + f"{self.version}/{self.instrument.name}/{self.survey}"
+            + f"{self.version}/{self.filterset.instrument_name}/{self.survey}/"
+            + f"{SExtractor.aper_diams_to_str(self[0].aper_diams)}"
         )
         save_name = (
             f"{self.survey}_MASTER_Sel-"
@@ -2221,30 +2214,36 @@ class Data:
 
     def _combine_forced_phot_cats(self, overwrite: bool = False) -> NoReturn:
         # readme_sep: str = "-" * 20,
-        phot_cat_path = self._get_phot_cat_path(self.forced_phot_band)
+        phot_cat_path = self._get_phot_cat_path()
         funcs.make_dirs(phot_cat_path)
         if not hasattr(self, "phot_cat_path"):
             self.phot_cat_path = phot_cat_path
         else:
             raise (Exception("MASTER Photometric catalogue already exists!"))
+        
         if not Path(phot_cat_path).is_file() or overwrite:
-            master_tab = self.forced_phot_band._get_master_tab(
+
+            master_tab_arr = [self.forced_phot_band._get_master_tab(
                 output_ids_locs=True
-            )
-            for i, band_data in enumerate(self):
-                master_tab.extend(
-                    band_data._get_master_tab(output_ids_locs=False)[0]
-                )
+            )]
+            for band_data in self:
+                master_tab_arr.extend(
+                    [band_data._get_master_tab(output_ids_locs=False)])
+            master_tab = hstack(master_tab_arr)
             # update table header
-            master_tab.meta = {
-                **master_tab.meta,
-                **{
-                    "INSTR": self.filterset.instrument_name,
-                    "SURVEY": self.survey,
-                    "VERSION": self.version,
-                    "BANDS": str(self.filterset.band_names),
-                },
-            }
+            self_band_data_arr = self.band_data_arr + [self.forced_phot_band]
+            # master_tab.meta = {
+            #     **master_tab.meta,
+            #     **{
+            #         "INSTR": self.filterset.instrument_name,
+            #         "SURVEY": self.survey,
+            #         "VERSION": self.version,
+            #         "BANDS": str(self.filterset.band_names),
+            #         "APERS": SExtractor.aper_diams_to_str(self.forced_phot_band.aper_diams),
+            #         "ERR_TYPE": "+".join(np.unique(band_data.forced_phot_args["err_type"] for band_data in self_band_data_arr)[0]),
+            #         "METHODS": "+".join(np.unique(band_data.forced_phot_args["method"] for band_data in self_band_data_arr)[0]),
+            #     },
+            # }
             # save master table
             master_tab.write(self.phot_cat_path, format="fits", overwrite=True)
             galfind_logger.info(
@@ -2298,7 +2297,6 @@ class Data:
         )
 
         if hasattr(self, "forced_phot_band"):
-            print(self, self.forced_phot_band)
             if (
                 self.forced_phot_band.filt_name
                 not in self.filterset.band_names
@@ -2379,7 +2377,6 @@ class Data:
     ) -> NoReturn:
         if timed:
             start = time.time()
-        print(getattr(self, "forced_phot_band"))
         if hasattr(self, "forced_phot_band"):
             if (
                 self.forced_phot_band.filt_name

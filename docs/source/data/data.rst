@@ -8,7 +8,7 @@ The `Data` object in Galfind is a core component designed to handle and process 
 
     data_intro
     PSF_homogenization
-    segmentation
+    source_extraction
     masking
     running_depths
     cataloguing_the_data
