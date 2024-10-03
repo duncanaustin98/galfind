@@ -6,6 +6,7 @@ import astropy.units as u
 import subprocess
 from pathlib import Path
 import time
+import os
 
 try:
     from typing import Self, Type  # python 3.11+
@@ -45,7 +46,7 @@ def get_forced_phot_path(
     return forced_phot_path
 
 def aper_diams_to_str(aper_diams: u.Quantity):
-    return f"[{'-'.join([f'{aper_diam:.2f}' for aper_diam in aper_diams.value])}]as"
+    return f"({','.join([f'{aper_diam:.2f}' for aper_diam in aper_diams.value])})as"
 
 def get_err_map(
     self: Type[Band_Data_Base], err_type: str
@@ -227,12 +228,13 @@ def perform_forced_phot(
             sex_config_path,
             params_path,
             pix_aper_diams,
-            aper_diams_to_str(forced_phot_band.aper_diams),
         ]
+        # aper_diams_to_str(self.aper_diams)
         # SExtractor bash script python wrapper
         galfind_logger.debug(input)
         process = subprocess.Popen(input)
         process.wait()
+        os.rename(forced_phot_path.replace(f"/{aper_diams_to_str(self.aper_diams)}", ""), forced_phot_path)
         finish_message_prefix = "Made"
     else:
         finish_message_prefix = "Loaded"

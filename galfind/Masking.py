@@ -177,15 +177,14 @@ def convert_mask_to_fits(
         convert = False
     if convert:
         # open image corresponding to band
-        im_data, im_header, seg_data, seg_header = self.load_data(
-            incl_mask=False
-        )
+        im_data = self.load_im()[0]
         # open .reg mask file
         mask_regions = Regions.read(mask_path)
         wcs = self.load_wcs()
         pix_mask = np.zeros(im_data.shape, dtype=bool)
         for region in mask_regions:
-            region = region.to_pixel(wcs)
+            if "Region" not in region.__class__.__name__:
+                region = region.to_pixel(wcs)
             idx_large, idx_little = region.to_mask(
                 mode="center"
             ).get_overlap_slices(im_data.shape)
@@ -237,6 +236,8 @@ def auto_mask(
     output_mask_path = f"{config['Masking']['MASK_DIR']}/{self.survey}/auto/{self.filt_name}_auto.fits"
     funcs.make_dirs(output_mask_path)
 
+    print("auto_mask:", self, star_mask_params)
+
     if not Path(output_mask_path).is_file() or overwrite:
         check_star_mask_params(star_mask_params)
         galfind_logger.info(f"Automasking {self.survey} {self.filt_name}")
@@ -269,9 +270,7 @@ def auto_mask(
         )
 
         # Load data
-        im_data, im_header, seg_data, seg_header = self.load_data(
-            incl_mask=False
-        )
+        im_data = self.load_im()[0]
         wcs = self.load_wcs()
 
         # Scale up the image by boundary by scale_extra factor to include diffraction spikes from stars outside image footprint
@@ -334,7 +333,7 @@ def auto_mask(
             central_scale_stars = (
                 2.0
                 * star_mask_params["central"]["a"]
-                / (730.0 * self.im_pixel_scale.to(u.arcsec).value)
+                / (730.0 * self.pix_scale.to(u.arcsec).value)
             ) * np.exp(
                 -gaia_stars["phot_g_mean_mag"]
                 / star_mask_params["central"]["b"]
@@ -342,7 +341,7 @@ def auto_mask(
             spike_scale_stars = (
                 2.0
                 * star_mask_params["spikes"]["a"]
-                / (730.0 * self.im_pixel_scale.to(u.arcsec).value)
+                / (730.0 * self.pix_scale.to(u.arcsec).value)
             ) * np.exp(
                 -gaia_stars["phot_g_mean_mag"]
                 / star_mask_params["spikes"]["b"]
@@ -429,15 +428,15 @@ def auto_mask(
                 edge_mask.astype(np.uint8), stellar_mask.astype(np.uint8)
             )
             # Save ds9 region for stars
-            starmask_path = (
-                f"{reg_mask_dir}/stellar/{self.filt_name}_stellar.reg"
-            )
-            funcs.make_dirs(starmask_path)
-            with open(starmask_path, "w") as f:
-                for region in stellar_region_strings:
-                    f.write(region + "\n")
-                f.close()
-            funcs.change_file_permissions(starmask_path)
+            # starmask_path = (
+            #     f"{reg_mask_dir}/stellar/{self.filt_name}_stellar.reg"
+            # )
+            # funcs.make_dirs(starmask_path)
+            # with open(starmask_path, "w") as f:
+            #     for region in stellar_region_strings:
+            #         f.write(region + "\n")
+            #     f.close()
+            # funcs.change_file_permissions(starmask_path)
         else:
             full_mask = edge_mask.astype(np.uint8)
 
@@ -465,12 +464,13 @@ def auto_mask(
             ]
             for name in artefact_mask_dir_names
         }
+
         assert not any(
             key in ["MASK", "EDGE"] for key in artefact_mask_dir_names
         ), galfind_logger.critical(
             f"{artefact_mask_dir_names=} cannot contain any of ['MASK', 'EDGE']"
         )
-        if star_mask_params is not None:
+        if star_mask_params is None:
             assert not any(
                 key in ["STELLAR"] for key in artefact_mask_dir_names
             ), galfind_logger.critical(
@@ -479,7 +479,7 @@ def auto_mask(
         # make pixel masks from the paths
         artefact_pix_masks = {}
         for ext_name, mask_paths in artefact_mask_dict.items():
-            artefact_mask = np.zeros(im_data.shape, dtype=bool)
+            #artefact_mask = np.zeros(im_data.shape, dtype=bool)
             galfind_logger.debug(f"Found {len(mask_paths)} {ext_name} masks")
             for i, path in enumerate(mask_paths):
                 galfind_logger.debug(
@@ -496,8 +496,9 @@ def auto_mask(
                     artefact_pix_masks[ext_name].extend([pix_mask])
         # combine masks for each extension
         artefact_pix_masks[ext_name] = np.logical_or.reduce(
-            tuple([mask.astype(np.uint8) for mask in pix_masks[ext_name]])
+            tuple([mask.astype(np.uint8) for mask in artefact_pix_masks[ext_name]])
         )
+        print(full_mask)
         # update full mask to include all artefacts
         full_mask = np.logical_or(
             full_mask.astype(np.uint8),
@@ -582,12 +583,13 @@ def sort_band_dependent_star_mask_params(
         ]
     ],
 ) -> Optional[Dict[str, Dict[str, float]]]:
-    # get closest wavelength to the filter in question
-    closest_wavelength = min(
-        star_mask_params.keys(),
-        key=lambda x: abs(x - filt.WavelengthCen),
-    )
-    star_mask_params = star_mask_params[closest_wavelength]
+    if not all(isinstance(key, str) for key in star_mask_params.keys()):
+        # get closest wavelength to the filter in question
+        closest_wavelength = min(
+            star_mask_params.keys(),
+            key=lambda x: abs(x - filt.WavelengthCen),
+        )
+        star_mask_params = star_mask_params[closest_wavelength]
     return star_mask_params
 
 
@@ -595,7 +597,7 @@ def get_combined_path_name(self: Stacked_Band_Data) -> str:
     out_dir = f"{config['Masking']['MASK_DIR']}/{self.survey}/combined"
     filt_name_mask_method = "+".join(
         [
-            f"{band_data.filt_name}-{self.mask_args['method']}"
+            f"{band_data.filt_name}-{band_data.mask_args['method']}"
             for band_data in self.band_data_arr
         ]
     )
@@ -620,7 +622,7 @@ def combine_masks(self: Stacked_Band_Data) -> str:
             band_data.load_mask() for band_data in self.band_data_arr
         ]
         all_exts = list(
-            np.unique([mask_ext.keys() for mask_ext in band_mask_exts])
+            np.unique([list(mask_ext.keys()) for mask_ext in band_mask_exts])
         )
         print(all_exts)
         assert all(
@@ -631,6 +633,7 @@ def combine_masks(self: Stacked_Band_Data) -> str:
         # combine masks for each valid extension contained in all masks
         combined_mask_hdul = [fits.PrimaryHDU()]
         for ext in all_exts:
+            print([list(band_mask_ext.keys()) for band_mask_ext in band_mask_exts])
             band_masks = [
                 band_mask_ext[ext]
                 for band_mask_ext in band_mask_exts
@@ -640,13 +643,13 @@ def combine_masks(self: Stacked_Band_Data) -> str:
                 mask.shape == band_masks[0].shape for mask in band_masks
             ), galfind_logger.critical("All masks must have the same shape")
             combined_mask = np.logical_or.reduce(tuple(band_masks))
-            combined_mask_hdul.extend[
+            combined_mask_hdul.extend([
                 fits.ImageHDU(
                     combined_mask.astype(np.uint8),
                     header=wcs.to_header(),
                     name=ext,
                 )
-            ]
+            ])
         hdul = fits.HDUList(combined_mask_hdul)
         hdul.writeto(out_path, overwrite=True)
         funcs.change_file_permissions(out_path)

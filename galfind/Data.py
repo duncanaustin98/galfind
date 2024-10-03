@@ -242,7 +242,7 @@ class Band_Data_Base(ABC):
             galfind_logger.info(f"Loaded {aper_diams=} for {self.filt_name}")
 
     def load_data(self, incl_mask: bool = True):
-        assert self._seg_method is not None
+        assert hasattr(self, "seg_args")
         # load science image data and header (and hdul)
         im_data, im_header = self.load_im()
         # load segmentation data and header
@@ -558,6 +558,7 @@ class Band_Data_Base(ABC):
                 self.mask_args = {"method": method}
             elif method.lower() == "auto":
                 self.mask_path, self.mask_args = Masking.auto_mask(
+                    self,
                     star_mask_params,
                     edge_mask_distance,
                     scale_extra,
@@ -1023,6 +1024,7 @@ class Stacked_Band_Data(Band_Data_Base):
             stacked_band_data.segment()
 
         # if all band_data in band_data_arr have been masked, mask the stacked band data
+        print("stacked_band_data.__init__()", all(hasattr(band_data, "mask_args") for band_data in band_data_arr))
         if all(hasattr(band_data, "mask_args") for band_data in band_data_arr):
             # if all mask arguments are the same, use the same mask method
             # as for the individual bands
@@ -1272,20 +1274,19 @@ class Stacked_Band_Data(Band_Data_Base):
         else:
             # make these masks if they do not exist
             for band_data in self.band_data_arr:
-                if not Path(band_data.mask_path).is_file():
-                    band_data.mask(
-                        method=method,
-                        fits_mask_path=fits_mask_path,
-                        star_mask_params=star_mask_params,
-                        edge_mask_distance=edge_mask_distance,
-                        scale_extra=scale_extra,
-                        exclude_gaia_galaxies=exclude_gaia_galaxies,
-                        angle=angle,
-                        edge_value=edge_value,
-                        element=element,
-                        gaia_row_lim=gaia_row_lim,
-                        overwrite=overwrite,
-                    )
+                band_data.mask(
+                    method=method,
+                    fits_mask_path=fits_mask_path,
+                    star_mask_params=star_mask_params,
+                    edge_mask_distance=edge_mask_distance,
+                    scale_extra=scale_extra,
+                    exclude_gaia_galaxies=exclude_gaia_galaxies,
+                    angle=angle,
+                    edge_value=edge_value,
+                    element=element,
+                    gaia_row_lim=gaia_row_lim,
+                    overwrite=overwrite,
+                )
             # combine masks from individual bands
             Masking.combine_masks(self)
 
@@ -2321,11 +2322,8 @@ class Data:
                 self_._sort_band_dependent_params(
                     band_data.filt_name, fits_mask_path
                 ),
-                self_._sort_band_dependent_params(
-                    band_data.filt_name,
-                    Masking.sort_band_dependent_star_mask_params(
-                        band_data.filt, star_mask_params
-                    ),
+                Masking.sort_band_dependent_star_mask_params(
+                    band_data.filt if isinstance(band_data, Band_Data) else band_data.filterset[0], star_mask_params
                 ),
                 self_._sort_band_dependent_params(
                     band_data.filt_name, edge_mask_distance
