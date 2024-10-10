@@ -91,7 +91,7 @@ def segment_sextractor(
     if not Path(seg_path).is_file() or overwrite:
         galfind_logger.info(
             "Making SExtractor seg/bkg maps for "
-            f"{self.survey} {self.version} {self.filt.band_name}"
+            f"{self.survey} {self.version} {self.filt_name}"
         )
         # update the SExtractor params file at runtime
         # to include the correct number of aperture diameters
@@ -249,7 +249,17 @@ def perform_forced_phot(
         finish_message += f" ({end - start:.1f}s)"
     galfind_logger.debug(finish_message)
 
-    return forced_phot_path
+    forced_phot_args = \
+    {
+        "forced_phot_band": forced_phot_band,
+        "err_type": err_type,
+        "method": "sextractor",
+        "config_name": config_name,
+        "params_name": params_name,
+        "ra_label": "ALPHA_J2000",
+        "dec_label": "DELTA_J2000",
+    }
+    return forced_phot_path, forced_phot_args
 
     # if self.forced_phot_band not in self.instrument.band_names:
     #     sextractor_bands = [band for band in self.instrument] + [

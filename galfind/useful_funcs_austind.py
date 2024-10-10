@@ -943,5 +943,4 @@ def sort_band_data_arr(band_data_arr: List[Type[Band_Data_Base]]):
         )
     ]
     sorted_band_data_arr.extend(stacked_band_data_arr)
-    print(sorted_band_data_arr)
     return sorted_band_data_arr

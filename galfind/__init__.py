@@ -11,8 +11,7 @@ import numpy as np
 from pathlib import Path
 from astropy.cosmology import FlatLambdaCDM
 end = time.time()
-print(f"__init__ imports took {end - start}s")
-#breakpoint()
+#print(f"__init__ imports took {end - start}s")
 
 galfind_dir = "/".join(__file__.split("/")[:-1])
 config_dir = f"{galfind_dir}/../configs"
@@ -110,13 +109,12 @@ from . import figs
 from . import decorators
 from . import SExtractor, Masking, Depths
 from .Cutout import Band_Cutout, Stacked_Band_Cutout, RGB, Stacked_RGB, Multiple_Band_Cutout, Multiple_RGB
-from . import NIRCam_aperture_corrections as NIRCam_aper_corr
 from .PDF import PDF, SED_fit_PDF, Redshift_PDF, PDF_nD
 from .Instrument import Facility, JWST, HST, Instrument, ACS_WFC, WFC3_IR, NIRCam, MIRI
 
 instr_to_name_dict = {name: globals()[name]() for name in json.loads(config.get("Other", "INSTRUMENT_NAMES"))}
 
-from .PSF import PSF
+from .PSF import PSF_Base, PSF_Cutout
 from .Filter import Filter, Multiple_Filter, Tophat_Filter, U, V, J
 
 # instr_to_name_dict = {

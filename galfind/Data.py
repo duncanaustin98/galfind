@@ -16,8 +16,10 @@ import json
 import os
 import subprocess
 import sys
+from matplotlib.colors import LinearSegmentedColormap
 import time
 import itertools
+from matplotlib import cm
 from copy import deepcopy
 from pathlib import Path
 from typing import (
@@ -248,7 +250,6 @@ class Band_Data_Base(ABC):
         # load segmentation data and header
         seg_data, seg_header = self.load_seg()
         if incl_mask:
-            assert self._mask_method is not None
             mask = self.load_mask()
             return im_data, im_header, seg_data, seg_header, mask
         else:
@@ -364,9 +365,14 @@ class Band_Data_Base(ABC):
                         f"{ext=} not in mask extensions: {list(hdu_names_indices.keys())}"
                     )
                     mask = hdul[hdu_names_indices[ext]].data
+                    hdr = hdul[hdu_names_indices[ext]].header
                 else:
                     mask = {
                         hdu_name: hdul[index].data
+                        for hdu_name, index in hdu_names_indices.items()
+                    }
+                    hdr = {
+                        hdu_name: hdul[index].header
                         for hdu_name, index in hdu_names_indices.items()
                     }
             else:
@@ -379,7 +385,8 @@ class Band_Data_Base(ABC):
                 f"Mask for {self.survey} {self.filt_name} not set!"
             )
             mask = None
-        return mask
+            hdr = None
+        return mask, hdr
 
     # %% Complex methods
 
@@ -459,7 +466,8 @@ class Band_Data_Base(ABC):
             and hasattr(self, "forced_phot_path")
         ):
             if method == "sextractor":
-                self.forced_phot_path = SExtractor.perform_forced_phot(
+                self.forced_phot_path, self.forced_phot_args = \
+                SExtractor.perform_forced_phot(
                     self,
                     forced_phot_band,
                     err_type,
@@ -469,13 +477,6 @@ class Band_Data_Base(ABC):
                 )
             else:
                 raise (Exception(f"{method=} not in ['sextractor']"))
-            self.forced_phot_args = {
-                "forced_phot_band": forced_phot_band,
-                "err_type": err_type,
-                "method": method,
-                "config_name": config_name,
-                "params_name": params_name,
-            }
 
     def _get_master_tab(
         self, output_ids_locs: bool = False
@@ -548,7 +549,7 @@ class Band_Data_Base(ABC):
                 mask_args = Masking.get_mask_method(fits_mask_path)
                 if mask_args is not None:
                     self.mask_path = fits_mask_path
-                    self.mask_args = mask_args
+                    self.mask_args = {"method": mask_args}
                     return
             # create fits mask
             if method.lower() == "manual":
@@ -592,7 +593,7 @@ class Band_Data_Base(ABC):
     ) -> NoReturn:
         if not hasattr(self, "depth_args"):
             # load parameters (i.e. for each aper_diams in self)
-            params = self._sort_run_depth_params(
+            params_arr = self._sort_run_depth_params(
                 mode,
                 scatter_size,
                 distance_to_mask,
@@ -606,13 +607,17 @@ class Band_Data_Base(ABC):
                 overwrite,
             )
             # run depths
-            Depths.calc_band_depth(params)
+            for params in params_arr:
+                Depths.calc_band_depth(params)
             # load depths into object
-            self._load_depths(params)
+            self._load_depths(params_arr)
         else:
             galfind_logger.warning(
                 f"Depths loaded for {self.filt_name}, skipping!"
             )
+    
+    def get_hf_output(self, aper_diam: u.Quantity) -> Dict[str, Any]:
+        return Depths.get_hf_output(self, aper_diam)
 
     def _sort_run_depth_params(
         self,
@@ -676,8 +681,94 @@ class Band_Data_Base(ABC):
                 param[1]: Depths.get_depth_args(param) for param in params
             }
 
-    def plot_depths(self) -> NoReturn:
-        Depths.plot_band_data_depth(self)
+    def plot_depths(
+        self,
+        aper_diam: u.Quantity,
+        plot_type: str,
+        fig: Optional[plt.Figure] = None,
+        ax: Optional[plt.Axes] = None,
+        save: bool = False,
+        show: bool = True,
+        cmap_name: str = "plasma",
+        label_suffix: Optional[str] = None,
+        title: Optional[str] = None,
+    ) -> NoReturn:
+        assert aper_diam in self.aper_diams, \
+            galfind_logger.critical(
+                f"{aper_diam=} not in {self.aper_diams} for {self.filt_name}"
+            )
+        assert plot_type in [
+            "rolling_average", 
+            "rolling_average_diag", 
+            "labels", 
+            "hist", 
+            "cat_depths", 
+            "cat_diag"
+            ], galfind_logger.critical(
+                f"{plot_type=} not valid!"
+            )
+        if fig is None or ax is None:
+            fig, ax = plt.subplots()
+        hf_output = Depths.get_hf_output(self, aper_diam)
+        if plot_type.lower() == "rolling_average":
+            Depths._plot_rolling_average(fig, ax, hf_output, cm.get_cmap(cmap_name))
+        elif plot_type.lower() == "rolling_average_diag":
+            Depths._plot_rolling_average_diagnostic(fig, ax, hf_output, cm.get_cmap(cmap_name))
+        elif plot_type.lower() in ["labels", "hist"]:
+            num_labels = len(np.unique(hf_output["labels_grid"]))
+            labels_cmap = LinearSegmentedColormap.from_list
+            (
+                "custom",
+                [cm.get_cmap("Set2")(i / num_labels) for i in range(num_labels)],
+                num_labels,
+            )
+            if plot_type.lower() == "labels":
+                Depths._plot_labels(fig, ax, hf_output, labels_cmap)
+            else:
+                labels_arr, possible_labels, colours = \
+                    Depths._get_labels(hf_output, cmap = labels_cmap, cmap_name = cmap_name)
+                Depths._plot_depth_hist(fig, ax, hf_output, labels_arr, 
+                    possible_labels, colours, annotate = True if show or save else False,
+                    label_suffix = label_suffix, title = title)
+        elif plot_type.lower() in ["cat_depths", "cat_diag"]:
+            cmap = cm.get_cmap(cmap_name)
+            cmap.set_bad(color="black")
+            cat_x, cat_y = Depths.get_cat_xy(hf_output)
+            combined_mask = Depths._combine_seg_data_and_mask(self)
+            if plot_type.lower() == "cat_depths":
+                Depths._plot_cat_depths(fig, ax, hf_output, cmap, cat_x, cat_y, combined_mask)
+            else:
+                Depths._plot_cat_diagnostic(fig, ax, hf_output, cmap, cat_x, cat_y, combined_mask)
+    
+        if save:
+            label = Depths.get_depth_dir(self, aper_diam, self.depth_args[aper_diam]['mode']) \
+                + f"/{plot_type.lower()}/{self.filt_name}.png"
+            funcs.make_dirs(label)
+            plt.savefig(label)
+            galfind_logger.info(f"Saved plot to {label}")
+        if show:
+            plt.show()
+
+
+    def plot_depth_diagnostic(
+        self,
+        aper_diam: u.Quantity,
+        save: bool = False,
+        show: bool = False,
+    ) -> NoReturn:
+        Depths.plot_depth_diagnostic(
+            self, 
+            aper_diam,
+            save = save,
+            show = show,
+            )
+    
+    def plot_depth_diagnostics(
+        self,
+        save: bool = False,
+    ) -> NoReturn:
+        for aper_diam in self.aper_diams:
+            self.plot_depth_diagnostic(aper_diam, save = save)
 
     def plot_area_depth(
         self,
@@ -689,6 +780,7 @@ class Band_Data_Base(ABC):
         ax: Optional[plt.Axes] = None,
         ext: str = "SCI",
         norm: Type[Normalize] = LogNorm(vmin=0.0, vmax=10.0),
+        cmap: str = "plasma",
         save: bool = False,
         show: bool = True,
     ) -> NoReturn:
@@ -718,6 +810,7 @@ class Band_Data_Base(ABC):
         --------
         NoReturn
         """
+        normalize = True
         if ext.lower() in ["sci", "im"]:
             data = self.load_im()[0]
         elif ext.lower() == "rms_err":
@@ -727,7 +820,9 @@ class Band_Data_Base(ABC):
         elif ext.lower() == "seg":
             data = self.load_seg()[0]
         elif ext.lower() == "mask":
-            data = self.load_mask()
+            # TODO: plot different masks in different colours
+            data = self.load_mask()[0]["MASK"]
+            normalize = False
         else:
             raise (
                 Exception(
@@ -739,11 +834,13 @@ class Band_Data_Base(ABC):
         if ax is None:
             fig, ax = plt.subplots()
         # plot the image data
-        ax.imshow(data, norm=norm, origin="lower")
+        if normalize:
+            ax.imshow(data, norm=norm, cmap=cmap, origin="lower")
+        else:
+            ax.imshow(data, cmap=cmap, origin="lower")
         # annotate if required
         if show or save:
-            label = ""
-            plt.title(f"{label} image")
+            plt.title(ext.upper())
             ax.set_xlabel("X / pix")
             ax.set_ylabel("Y / pix")
         if save:
@@ -752,23 +849,12 @@ class Band_Data_Base(ABC):
         if show:
             plt.show()
 
-    # def _combine_seg_data_and_mask(self, band=None, seg_data=None, mask=None):
-    #     if type(seg_data) != type(None) and type(mask) != type(None):
-    #         pass
-    #     elif type(band) != type(
-    #         None
-    #     ):  # at least one of seg_data or mask is not given, but band is given
-    #         seg_data = self.load_seg(band)[0]
-    #         mask = self.load_mask(band)
-    #     else:
-    #         raise (
-    #             Exception(
-    #                 "Either band must be given or both seg_data and mask should be given in Data.combine_seg_data_and_mask()!"
-    #             )
-    #         )
-    #     assert seg_data.shape == mask.shape
-    #     combined_mask = np.logical_or(seg_data > 0, mask == 1).astype(int)
-    #     return combined_mask
+    def _combine_seg_data_and_mask(self) -> np.ndarray:
+        seg_data = self.load_seg()[0]
+        mask = self.load_mask()[0]["MASK"]
+        assert seg_data.shape == mask.shape
+        combined_mask = np.logical_or(seg_data > 0, mask == 1).astype(int)
+        return combined_mask
 
     @staticmethod
     def _pix_scale_to_str(pix_scale: u.Quantity):
@@ -1024,7 +1110,6 @@ class Stacked_Band_Data(Band_Data_Base):
             stacked_band_data.segment()
 
         # if all band_data in band_data_arr have been masked, mask the stacked band data
-        print("stacked_band_data.__init__()", all(hasattr(band_data, "mask_args") for band_data in band_data_arr))
         if all(hasattr(band_data, "mask_args") for band_data in band_data_arr):
             # if all mask arguments are the same, use the same mask method
             # as for the individual bands
@@ -1288,7 +1373,7 @@ class Stacked_Band_Data(Band_Data_Base):
                     overwrite=overwrite,
                 )
             # combine masks from individual bands
-            Masking.combine_masks(self)
+            self.mask_path, self.mask_args = Masking.combine_masks(self)
 
 
 class Data:
@@ -1304,6 +1389,56 @@ class Data:
         # load forced photometry band
         if forced_phot_band is not None:
             self.load_forced_phot_band(forced_phot_band)
+
+    @classmethod
+    def pipeline(
+        cls,
+        survey: str,
+        version: str,
+        instrument_names: List[str] = json.loads(
+            config.get("Other", "INSTRUMENT_NAMES")
+        ),
+        pix_scales: Union[u.Quantity, Dict[str, u.Quantity]] = {
+            "ACS_WFC": 0.03 * u.arcsec,
+            "WFC3_IR": 0.03 * u.arcsec,
+            "NIRCam": 0.03 * u.arcsec,
+            "MIRI": 0.09 * u.arcsec,
+        },
+        im_str: List[str] = ["_sci", "_i2d", "_drz"],
+        rms_err_str: List[str] = ["_rms_err", "_rms", "_err"],
+        wht_str: List[str] = ["_wht", "_weight"],
+        version_to_dir_dict: Optional[Dict[str, str]] = None,
+        im_ext_name: Union[str, List[str]] = "SCI",
+        rms_err_ext_name: Union[str, List[str]] = "ERR",
+        wht_ext_name: Union[str, List[str]] = "WHT",
+        aper_diams: Optional[u.Quantity] = None,
+        forced_phot_band: Optional[
+            Union[str, List[str], Type[Band_Data_Base]]
+        ] = None,
+        min_flux_pc_err: Union[int, float] = 10.
+    ) -> Type[Data]:
+        data = cls.from_survey_version( \
+            survey,
+            version,
+            instrument_names,
+            pix_scales,
+            im_str,
+            rms_err_str,
+            wht_str,
+            version_to_dir_dict,
+            im_ext_name,
+            rms_err_ext_name,
+            wht_ext_name,
+            aper_diams,
+            forced_phot_band,
+        )
+        data.mask()
+        data.segment()
+        data.perform_forced_phot()
+        data.append_aper_corr_cols()
+        data.run_depths()
+        data.append_loc_depth_cols(min_flux_pc_err = min_flux_pc_err)
+        return data
 
     @classmethod
     def from_survey_version(
@@ -1636,14 +1771,6 @@ class Data:
             wht_exts,
         )
 
-    @classmethod
-    def pipeline(
-        cls,
-        survey: str,
-        version: str,
-    ):
-        pass
-
     @property
     def survey(self):
         assert all(band_data.survey == self[0].survey for band_data in self)
@@ -1918,10 +2045,18 @@ class Data:
 
     def __getattr__(self, attr: str) -> Any:
         # attr inserted here must be pluralised with 's' suffix
+        
         if all(attr[:-1] in band_data.__dict__.keys() for band_data in self):
+            if hasattr(self, "forced_phot_band"):
+                if attr[:-1] in self.forced_phot_band.__dict__.keys():
+                    self_band_data_arr = self.band_data_arr + [self.forced_phot_band]
+                else:
+                    self_band_data_arr = self.band_data_arr
+            else:
+                self_band_data_arr = self.band_data_arr
             return {
                 band_data.filt_name: getattr(band_data, attr[:-1])
-                for band_data in self
+                for band_data in self_band_data_arr
             }
         else:
             if attr not in [
@@ -2029,8 +2164,29 @@ class Data:
             assert len(params) == len(self)
             return params[self._indices_from_filt_names(filt_name)]
         elif isinstance(params, dict):
-            assert filt_name in params.keys()
-            return params[filt_name]
+            # if filter name is the name of a Stacked_Band_Data object
+            if filt_name not in params.keys():
+                galfind_logger.debug(
+                    f"{filt_name} not in {params.keys()}!"
+                )
+                split_filt_names = filt_name.split("+")
+                # ensure all filters are included in the object
+                assert all(name in params.keys() for name in split_filt_names), \
+                    galfind_logger.critical(
+                        f"Not all {filt_name} in {params.keys()}"
+                    )
+                # ensure all parameters are the same
+                assert all(params[name] == params[split_filt_names[0]] for i, name in enumerate(split_filt_names)), \
+                    galfind_logger.critical(
+                        f"Not all {params} are the same for {filt_name}"
+                    )
+                return params[split_filt_names[0]]
+            else:
+                assert filt_name in params.keys(), \
+                    galfind_logger.critical(
+                        f"{filt_name} not in {params.keys()}"
+                    )
+                return params[filt_name]
         else:
             return params
 
@@ -2107,11 +2263,23 @@ class Data:
         Returns:
             NoReturn: This method does not return any value.
         """
+
+        if hasattr(self, "forced_phot_band"):
+            if (
+                self.forced_phot_band.filt_name
+                not in self.filterset.band_names
+            ):
+                self_band_data_arr = self.band_data_arr + [self.forced_phot_band]
+            else:
+                self_band_data_arr = self.band_data_arr
+        else:
+            self_band_data_arr = self.band_data_arr
+
         [
             band_data.segment(
                 err_type, method, config_name, params_name, overwrite
             )
-            for band_data in self
+            for band_data in self_band_data_arr
         ]
 
     def perform_forced_phot(
@@ -2124,7 +2292,8 @@ class Data:
         overwrite: bool = False,
     ) -> NoReturn:
         if hasattr(self, "phot_cat_path"):
-            raise (Exception("MASTER Photometric catalogue already exists!"))
+            galfind_logger.critical("MASTER Photometric catalogue already exists!")
+            return
         # create a forced_phot_band object from given string
         self.load_forced_phot_band(forced_phot_band)
 
@@ -2448,7 +2617,7 @@ class Data:
                 )
 
             # save properties to individual band_data objects
-            for band_data in self.band_data_arr + [self.forced_phot_band]:
+            for band_data in self_band_data_arr:
                 [
                     band_data._load_depths(params)
                     for _params in params
@@ -2456,8 +2625,7 @@ class Data:
                 ]
 
             # make depth table
-            modes = np.unique([param[2] for param in params])
-            [Depths.make_depth_tab(self, mode) for mode in modes]
+            Depths.make_depth_tab(self)
 
             finishing_message = (
                 "Calculated/loaded depths for "
@@ -2473,10 +2641,22 @@ class Data:
                 + f" {self.filterset.instrument_name}, skipping!"
             )
 
-    def plot_depths(
-        self, band: Union[int, str, Filter, List[Filter], Multiple_Filter]
+
+    def plot_depth_diagnostic(
+        self,
+        band: Union[int, str, Filter, List[Filter], Multiple_Filter],
+        aper_diam: u.Quantity,
+        save: bool = False, 
+        show: bool = False,
     ) -> NoReturn:
-        self[band].plot_depths()
+        self[band].plot_depth_diagnostic(aper_diam, save = save, show = show)
+
+    def plot_depth_diagnostics(
+        self,
+        save: bool = False,
+    ) -> NoReturn:
+        for band_data in self:
+            band_data.plot_depth_diagnostics(save = save)
 
     def plot_area_depth(
         self,
@@ -2563,6 +2743,135 @@ class Data:
                 Trilogy(in_path, images=None).run()
             elif method == "lupton":
                 raise (NotImplementedError())
+
+    def append_loc_depth_cols(
+        self,
+        min_flux_pc_err: Union[int, float],
+        overwrite: bool = False
+    ) -> NoReturn:
+        Depths.append_loc_depth_cols(self, min_flux_pc_err, overwrite)
+
+    def append_aper_corr_cols(
+        self,
+        overwrite: bool = False,
+        psf_wanted: str = "model"
+    ) -> NoReturn:
+        assert psf_wanted in ["model", "empirical"], \
+            galfind_logger.critical(
+                f"PSF '{psf_wanted}' not in ['model', 'empirical']"
+            )
+        # not general
+        cat = Table.read(self.phot_cat_path)
+        if f"MAG_APER_{self[0].filt_name}_aper_corr" not in cat.colnames or overwrite:
+            # ensure aperture diameters are the same for all bands
+            assert all(all(diam == diam_0 for diam, diam_0 
+                in zip(band_data.aper_diams, self[0].aper_diams)) 
+                for band_data in self.band_data_arr + 
+                [self.forced_phot_band]), galfind_logger.critical(
+                "Aperture diameters are not the same for all bands!"
+                )
+            if overwrite:
+                # TODO: Delete already existing columns
+                raise(Exception())
+            aper_diams = self[0].aper_diams.to(u.arcsec).value
+            for i, band_data in tqdm(enumerate(self), \
+                    total=len(self), desc="Appending aperture correction columns"):
+                mag_aper_corr_data = np.zeros(len(cat))
+                flux_aper_corr_data = np.zeros(len(cat))
+                if len(aper_diams) == 1:
+                    mag_aper_corr_factor = band_data.filt.instrument.\
+                        aper_corrs[band_data.filt_name][aper_diams[0] * u.arcsec]
+                    flux_aper_corr_factor = 10 ** (mag_aper_corr_factor / 2.5)
+                    # only aperture correct if flux is positive
+                    mag_aper_corr_data = [
+                        mag_aper - mag_aper_corr_factor
+                        if flux_aper > 0.0 else mag_aper
+                        for mag_aper, flux_aper in zip(
+                            cat[f"MAG_APER_{band_data.filt_name}"],
+                            cat[f"FLUX_APER_{band_data.filt_name}"],
+                        )
+                    ]
+                    flux_aper_corr_data = [
+                        flux_aper * flux_aper_corr_factor
+                        if flux_aper > 0.0 else flux_aper
+                        for flux_aper in cat[f"FLUX_APER_{band_data.filt_name}"]
+                    ]
+                else:
+                    for j, aper_diam in enumerate(aper_diams):
+                        # assumes these have already been calculated for each band
+                        mag_aper_corr_factor = band_data.filt.instrument.\
+                            aper_corrs[band_data.filt_name][aper_diam * u.arcsec]
+                        flux_aper_corr_factor = 10 ** (mag_aper_corr_factor / 2.5)
+                        
+                        if j == 0:
+                            # only aperture correct if flux is positive
+                            mag_aper_corr_data = [
+                                (mag_aper[0] - mag_aper_corr_factor,)
+                                if flux_aper[0] > 0.0
+                                else (mag_aper[0],)
+                                for mag_aper, flux_aper in zip(
+                                    cat[f"MAG_APER_{band_data.filt_name}"],
+                                    cat[f"FLUX_APER_{band_data.filt_name}"],
+                                )
+                            ]
+                            flux_aper_corr_data = [
+                                (flux_aper[0] * flux_aper_corr_factor,)
+                                if flux_aper[0] > 0.0
+                                else (flux_aper[0],)
+                                for flux_aper in cat[f"FLUX_APER_{band_data.filt_name}"]
+                            ]
+                        else:
+                            mag_aper_corr_data = [
+                                mag_aper_corr
+                                + (mag_aper[j] - mag_aper_corr_factor,)
+                                if flux_aper[j] > 0.0
+                                else mag_aper_corr + (mag_aper[j],)
+                                for mag_aper_corr, mag_aper, flux_aper in zip(
+                                    mag_aper_corr_data,
+                                    cat[f"MAG_APER_{band_data.filt_name}"],
+                                    cat[f"FLUX_APER_{band_data.filt_name}"],
+                                )
+                            ]
+                            flux_aper_corr_data = [
+                                flux_aper_corr
+                                + (flux_aper[j] * flux_aper_corr_factor,)
+                                if flux_aper[j] > 0.0
+                                else flux_aper_corr + (flux_aper[j],)
+                                for flux_aper_corr, flux_aper in zip(
+                                    flux_aper_corr_data, cat[f"FLUX_APER_{band_data.filt_name}"]
+                                )
+                            ]
+                cat[f"MAG_APER_{band_data.filt_name}_aper_corr"] = mag_aper_corr_data
+                cat[f"FLUX_APER_{band_data.filt_name}_aper_corr"] = flux_aper_corr_data
+                if len(aper_diams) == 1:
+                    cat[f"FLUX_APER_{band_data.filt_name}_aper_corr_Jy"] = [
+                        funcs.flux_image_to_Jy(element, band_data.ZP).value
+                        for element in cat[f"FLUX_APER_{band_data.filt_name}_aper_corr"]
+                    ]
+                else:
+                    cat[f"FLUX_APER_{band_data.filt_name}_aper_corr_Jy"] = [
+                        tuple(
+                            [
+                                funcs.flux_image_to_Jy(
+                                    val, band_data.ZP
+                                ).value
+                                for val in element
+                            ]
+                        )
+                        for element in cat[f"FLUX_APER_{band_data.filt_name}_aper_corr"]
+                    ]
+            # TODO: update catalogue metadata with PSF representation
+            
+            # overwrite original catalogue with local depth columns
+            cat.write(self.phot_cat_path, overwrite=True)
+            funcs.change_file_permissions(self.phot_cat_path)
+            galfind_logger.info(
+                f"Appended aperture correction columns to {self.phot_cat_path}"
+            )
+        else:
+            galfind_logger.warning(
+                f"Aperture correction columns already in {self.phot_cat_path}"
+            )
 
     # @staticmethod
     # def mosaic_images(
@@ -2715,106 +3024,106 @@ class Data:
     #         f.write(readme_sep + "\n")
     #     f.close()
 
-    def forced_photometry(
-        self,
-        band,
-        forced_phot_band,
-        radii=list(
-            np.array(json.loads(config["SExtractor"]["APERTURE_DIAMS"])) / 2.0
-        )
-        * u.arcsec,
-        ra_col="ALPHA_J2000",
-        dec_col="DELTA_J2000",
-        coord_unit=u.deg,
-        id_col="NUMBER",
-        x_col="X_IMAGE",
-        y_col="Y_IMAGE",
-        forced_phot_code="photutils",
-    ):
-        # Read in sextractor catalogue
-        catalog = Table.read(
-            self.sex_cat_path(forced_phot_band, forced_phot_band),
-            character_as_bytes=False,
-        )
-        # Open image with correct extension and get WCS
-        with fits.open(self.im_paths[band]) as hdul:
-            im_ext = self.im_exts[band]
-            image = hdul[im_ext].data
-            wcs = WCS(hdul[im_ext].header)
+    # def forced_photometry(
+    #     self,
+    #     band,
+    #     forced_phot_band,
+    #     radii=list(
+    #         np.array(json.loads(config["SExtractor"]["APERTURE_DIAMS"])) / 2.0
+    #     )
+    #     * u.arcsec,
+    #     ra_col="ALPHA_J2000",
+    #     dec_col="DELTA_J2000",
+    #     coord_unit=u.deg,
+    #     id_col="NUMBER",
+    #     x_col="X_IMAGE",
+    #     y_col="Y_IMAGE",
+    #     forced_phot_code="photutils",
+    # ):
+    #     # Read in sextractor catalogue
+    #     catalog = Table.read(
+    #         self.sex_cat_path(forced_phot_band, forced_phot_band),
+    #         character_as_bytes=False,
+    #     )
+    #     # Open image with correct extension and get WCS
+    #     with fits.open(self.im_paths[band]) as hdul:
+    #         im_ext = self.im_exts[band]
+    #         image = hdul[im_ext].data
+    #         wcs = WCS(hdul[im_ext].header)
 
-        # Check types
-        assert type(image) == np.ndarray
-        assert type(catalog) == Table
+    #     # Check types
+    #     assert type(image) == np.ndarray
+    #     assert type(catalog) == Table
 
-        # Get positions from sextractor catalog
-        ra = catalog[ra_col]
-        dec = catalog[dec_col]
-        # Make SkyCoord from catlog
-        positions = SkyCoord(ra, dec, unit=coord_unit)
-        # print('positions', positions)
-        # Define radii in sky units
-        # This checks if radii is iterable and if not makes it a list
-        try:
-            iter(radii)
-        except TypeError:
-            radii = [radii]
-        apertures = []
+    #     # Get positions from sextractor catalog
+    #     ra = catalog[ra_col]
+    #     dec = catalog[dec_col]
+    #     # Make SkyCoord from catlog
+    #     positions = SkyCoord(ra, dec, unit=coord_unit)
+    #     # print('positions', positions)
+    #     # Define radii in sky units
+    #     # This checks if radii is iterable and if not makes it a list
+    #     try:
+    #         iter(radii)
+    #     except TypeError:
+    #         radii = [radii]
+    #     apertures = []
 
-        for rad in radii:
-            aperture = SkyCircularAperture(positions, r=rad)
-            apertures.append(aperture)
-            # Convert to pixel using image WCS
+    #     for rad in radii:
+    #         aperture = SkyCircularAperture(positions, r=rad)
+    #         apertures.append(aperture)
+    #         # Convert to pixel using image WCS
 
-        # Do aperture photometry
-        # print(image, apertures, wcs)
-        phot_table = aperture_photometry(image, apertures, wcs=wcs)
-        assert len(phot_table) == len(catalog)
-        # Replace detection ID with catalog ID
-        sky = SkyCoord(phot_table["sky_center"])
-        phot_table["id"] = catalog[id_col]
-        # Rename columns
-        phot_table.rename_column("id", id_col)
-        phot_table.rename_column("xcenter", x_col)
-        phot_table.rename_column("ycenter", y_col)
+    #     # Do aperture photometry
+    #     # print(image, apertures, wcs)
+    #     phot_table = aperture_photometry(image, apertures, wcs=wcs)
+    #     assert len(phot_table) == len(catalog)
+    #     # Replace detection ID with catalog ID
+    #     sky = SkyCoord(phot_table["sky_center"])
+    #     phot_table["id"] = catalog[id_col]
+    #     # Rename columns
+    #     phot_table.rename_column("id", id_col)
+    #     phot_table.rename_column("xcenter", x_col)
+    #     phot_table.rename_column("ycenter", y_col)
 
-        phot_table[ra_col] = sky.ra.to("deg")
-        phot_table[dec_col] = sky.dec.to("deg")
-        phot_table.remove_column("sky_center")
+    #     phot_table[ra_col] = sky.ra.to("deg")
+    #     phot_table[dec_col] = sky.dec.to("deg")
+    #     phot_table.remove_column("sky_center")
 
-        colnames = [f"aperture_sum_{i}" for i in range(len(radii))]
-        aper_tab = Column(
-            np.array(phot_table[colnames].as_array().tolist()),
-            name=f"FLUX_APER_{band}",
-        )
-        phot_table["FLUX_APER"] = aper_tab
-        phot_table["FLUXERR_APER"] = phot_table["FLUX_APER"] * -99
-        phot_table["MAGERR_APER"] = phot_table["FLUX_APER"] * 99
+    #     colnames = [f"aperture_sum_{i}" for i in range(len(radii))]
+    #     aper_tab = Column(
+    #         np.array(phot_table[colnames].as_array().tolist()),
+    #         name=f"FLUX_APER_{band}",
+    #     )
+    #     phot_table["FLUX_APER"] = aper_tab
+    #     phot_table["FLUXERR_APER"] = phot_table["FLUX_APER"] * -99
+    #     phot_table["MAGERR_APER"] = phot_table["FLUX_APER"] * 99
 
-        # This converts the fluxes to magnitudes using the correct zp, and puts them in the same format as the sextractor catalogue
-        mag_colnames = []
-        for pos, col in enumerate(colnames):
-            name = f"MAG_APER_{pos}"
-            phot_table[name] = (
-                -2.5 * np.log10(phot_table[col]) + self.im_zps[band]
-            )
-            phot_table[name][np.isnan(phot_table[name])] = 99.0
-            mag_colnames.append(name)
-        aper_tab = Column(
-            np.array(phot_table[mag_colnames].as_array().tolist()),
-            name=f"MAG_APER_{band}",
-        )
-        phot_table["MAG_APER"] = aper_tab
-        # Remove old columns
-        phot_table.remove_columns(colnames)
-        phot_table.remove_columns(mag_colnames)
-        phot_table.write(
-            self.sex_cat_path(band, forced_phot_band),
-            format="fits",
-            overwrite=True,
-        )
-        funcs.change_file_permissions(
-            self.sex_cat_path(band, forced_phot_band)
-        )
+    #     # This converts the fluxes to magnitudes using the correct zp, and puts them in the same format as the sextractor catalogue
+    #     mag_colnames = []
+    #     for pos, col in enumerate(colnames):
+    #         name = f"MAG_APER_{pos}"
+    #         phot_table[name] = (
+    #             -2.5 * np.log10(phot_table[col]) + self.im_zps[band]
+    #         )
+    #         phot_table[name][np.isnan(phot_table[name])] = 99.0
+    #         mag_colnames.append(name)
+    #     aper_tab = Column(
+    #         np.array(phot_table[mag_colnames].as_array().tolist()),
+    #         name=f"MAG_APER_{band}",
+    #     )
+    #     phot_table["MAG_APER"] = aper_tab
+    #     # Remove old columns
+    #     phot_table.remove_columns(colnames)
+    #     phot_table.remove_columns(mag_colnames)
+    #     phot_table.write(
+    #         self.sex_cat_path(band, forced_phot_band),
+    #         format="fits",
+    #         overwrite=True,
+    #     )
+    #     funcs.change_file_permissions(
+    #         self.sex_cat_path(band, forced_phot_band)
+    #     )
 
     # can be simplified with new masks
     def calc_unmasked_area(
@@ -2998,255 +3307,6 @@ class Data:
         areas_tab.write(output_path, overwrite=True)
         funcs.change_file_permissions(output_path)
         return areas_tab
-
-    def perform_aper_corrs(self):  # not general
-        overwrite = config["Depths"].getboolean("OVERWRITE_LOC_DEPTH_CAT")
-        if overwrite:
-            galfind_logger.info(
-                "OVERWRITE_LOC_DEPTH_CAT = YES, updating catalogue with aperture corrections."
-            )
-        cat = Table.read(self.sex_cat_master_path)
-        if "APERCORR" not in cat.meta.keys() or overwrite:
-            for i, band in enumerate(self.instrument.band_names):
-                print(band)
-                mag_aper_corr_data = np.zeros(len(cat))
-                flux_aper_corr_data = np.zeros(len(cat))
-                for j, aper_diam in enumerate(
-                    json.loads(config.get("SExtractor", "APERTURE_DIAMS"))
-                    * u.arcsec
-                ):
-                    # assumes these have already been calculated for each band
-                    mag_aper_corr_factor = self.instrument.get_aper_corrs(
-                        aper_diam
-                    )[i]
-                    flux_aper_corr_factor = 10 ** (mag_aper_corr_factor / 2.5)
-                    # print(band, aper_diam, mag_aper_corr_factor, flux_aper_corr_factor)
-                    if j == 0:
-                        # only aperture correct if flux is positive
-                        mag_aper_corr_data = [
-                            (mag_aper[0] - mag_aper_corr_factor,)
-                            if flux_aper[0] > 0.0
-                            else (mag_aper[0],)
-                            for mag_aper, flux_aper in zip(
-                                cat[f"MAG_APER_{band}"],
-                                cat[f"FLUX_APER_{band}"],
-                            )
-                        ]
-                        flux_aper_corr_data = [
-                            (flux_aper[0] * flux_aper_corr_factor,)
-                            if flux_aper[0] > 0.0
-                            else (flux_aper[0],)
-                            for flux_aper in cat[f"FLUX_APER_{band}"]
-                        ]
-                    else:
-                        mag_aper_corr_data = [
-                            mag_aper_corr
-                            + (mag_aper[j] - mag_aper_corr_factor,)
-                            if flux_aper[j] > 0.0
-                            else mag_aper_corr + (mag_aper[j],)
-                            for mag_aper_corr, mag_aper, flux_aper in zip(
-                                mag_aper_corr_data,
-                                cat[f"MAG_APER_{band}"],
-                                cat[f"FLUX_APER_{band}"],
-                            )
-                        ]
-                        flux_aper_corr_data = [
-                            flux_aper_corr
-                            + (flux_aper[j] * flux_aper_corr_factor,)
-                            if flux_aper[j] > 0.0
-                            else flux_aper_corr + (flux_aper[j],)
-                            for flux_aper_corr, flux_aper in zip(
-                                flux_aper_corr_data, cat[f"FLUX_APER_{band}"]
-                            )
-                        ]
-                cat[f"MAG_APER_{band}_aper_corr"] = mag_aper_corr_data
-                cat[f"FLUX_APER_{band}_aper_corr"] = flux_aper_corr_data
-                cat[f"FLUX_APER_{band}_aper_corr_Jy"] = [
-                    tuple(
-                        [
-                            funcs.flux_image_to_Jy(
-                                val, self.im_zps[band]
-                            ).value
-                            for val in element
-                        ]
-                    )
-                    for element in cat[f"FLUX_APER_{band}_aper_corr"]
-                ]
-            # update catalogue metadata
-            # mag_aper_corrs = {f"HIERARCH Mag_aper_corrs_{aper_diam.value}as": tuple([np.round(self.instrument.aper_corr(aper_diam, band), decimals = 4) \
-            #    for band in self.instrument.band_names]) for aper_diam in json.loads(config.get("SExtractor", "APERTURE_DIAMS")) * u.arcsec}
-            cat.meta = {
-                **cat.meta,
-                **{"APERCORR": True},
-            }  # , **mag_aper_corrs}
-            # overwrite original catalogue with local depth columns
-            cat.write(self.sex_cat_master_path, overwrite=True)
-            funcs.change_file_permissions(self.sex_cat_master_path)
-
-    def make_loc_depth_cat(self, cat_creator, depth_mode="n_nearest"):
-        overwrite = config["Depths"].getboolean("OVERWRITE_LOC_DEPTH_CAT")
-        if overwrite:
-            galfind_logger.info(
-                "OVERWRITE_LOC_DEPTH_CAT = YES, updating catalogue with local depths."
-            )
-
-        cat = Table.read(self.sex_cat_master_path)
-        # update catalogue with local depths if not already done so
-        if "DEPTHS" not in cat.meta.keys() or overwrite:
-            # mean_depths = {}
-            # median_depths = {}
-            diagnostic_name = ""
-            for i, band in enumerate(self.instrument.band_names):
-                # breakpoint()
-                galfind_logger.info(f"Making local depth columns for {band=}")
-                for j, aper_diam in enumerate(
-                    json.loads(config.get("SExtractor", "APERTURE_DIAMS"))
-                    * u.arcsec
-                ):
-                    # print(band, aper_diam)
-                    self.load_depth_dirs(aper_diam, depth_mode)
-                    h5_path = f"{self.depth_dirs[aper_diam][depth_mode][band]}/{band}.h5"
-                    if Path(h5_path).is_file():
-                        # open depth .h5
-                        hf = h5py.File(h5_path, "r")
-                        depths = np.array(hf["depths"])
-                        diagnostics = np.array(hf["diagnostic"])
-                        diagnostic_name_ = (
-                            f"d_{int(np.array(hf['n_nearest']))}"
-                            if depth_mode == "n_nearest"
-                            else f"n_aper_{float(np.array(hf['region_radius_used_pix'])):.1f}"
-                            if depth_mode == "rolling"
-                            else None
-                        )
-                        if diagnostic_name_ == None:
-                            raise (Exception("Invalid mode!"))
-                        # make sure the same depth setup has been run in each band
-                        if i == 0 and j == 0:
-                            diagnostic_name = diagnostic_name_
-                        assert diagnostic_name_ == diagnostic_name
-                        # update depths with average depths in each region
-                        nmad_grid = np.array(hf["nmad_grid"])
-                        band_mean_depth = np.round(
-                            np.nanmean(nmad_grid), decimals=3
-                        )
-                        band_median_depth = np.round(
-                            np.nanmedian(nmad_grid), decimals=3
-                        )
-                        hf.close()
-                    else:
-                        depths = np.full(len(cat), np.nan)
-                        diagnostics = np.full(len(cat), np.nan)
-                        # band_mean_depth = np.nan
-                        # band_median_depth = np.nan
-                    if j == 0:
-                        band_depths = [(depth,) for depth in depths]
-                        band_diagnostics = [
-                            (diagnostic,) for diagnostic in diagnostics
-                        ]
-                        band_sigmas = [
-                            (
-                                funcs.n_sigma_detection(
-                                    depth, mag_aper[0], self.im_zps[band]
-                                ),
-                            )
-                            for depth, mag_aper in zip(
-                                depths, cat[f"MAG_APER_{band}"]
-                            )
-                        ]
-                        # band_mean_depths = (band_mean_depth,)
-                        # band_median_depths = (band_median_depth,)
-                    else:
-                        band_depths = [
-                            band_depth + (aper_diam_depth,)
-                            for band_depth, aper_diam_depth in zip(
-                                band_depths, depths
-                            )
-                        ]
-                        band_diagnostics = [
-                            band_diagnostic + (aper_diam_diagnostic,)
-                            for band_diagnostic, aper_diam_diagnostic in zip(
-                                band_diagnostics, diagnostics
-                            )
-                        ]
-                        band_sigmas = [
-                            band_sigma
-                            + (
-                                funcs.n_sigma_detection(
-                                    depth, mag_aper[j], self.im_zps[band]
-                                ),
-                            )
-                            for band_sigma, depth, mag_aper in zip(
-                                band_sigmas, depths, cat[f"MAG_APER_{band}"]
-                            )
-                        ]
-                        # band_mean_depths = band_mean_depths + (band_mean_depth,)
-                        # band_median_depths = band_median_depths + (band_median_depth,)
-
-                # update band with depths and diagnostics
-                cat[f"loc_depth_{band}"] = band_depths
-                cat[f"{diagnostic_name}_{band}"] = band_diagnostics
-                cat[f"sigma_{band}"] = band_sigmas
-                # make local depth error columns in image units
-                cat[f"FLUXERR_APER_{band}_loc_depth"] = [
-                    tuple(
-                        [
-                            funcs.mag_to_flux(val, self.im_zps[band]) / 5.0
-                            for val in element
-                        ]
-                    )
-                    for element in band_depths
-                ]
-                # impose n_pc min flux error and convert to Jy where appropriate
-                if "APERCORR" in cat.meta.keys():
-                    cat[
-                        f"FLUXERR_APER_{band}_loc_depth_{str(int(cat_creator.min_flux_pc_err))}pc_Jy"
-                    ] = [
-                        tuple(
-                            [
-                                np.nan
-                                if flux == 0.0
-                                else funcs.flux_image_to_Jy(
-                                    flux, self.im_zps[band]
-                                ).value
-                                * cat_creator.min_flux_pc_err
-                                / 100.0
-                                if err / flux
-                                < cat_creator.min_flux_pc_err / 100.0
-                                and flux > 0.0
-                                else funcs.flux_image_to_Jy(
-                                    err, self.im_zps[band]
-                                ).value
-                                for flux, err in zip(flux_tup, err_tup)
-                            ]
-                        )
-                        for flux_tup, err_tup in zip(
-                            cat[f"FLUX_APER_{band}_aper_corr"],
-                            cat[f"FLUXERR_APER_{band}_loc_depth"],
-                        )
-                    ]
-                else:
-                    raise (
-                        Exception(
-                            f"Couldn't make 'FLUXERR_APER_{band}_loc_depth_{str(int(cat_creator.min_flux_pc_err))}Jy' columns!"
-                        )
-                    )
-                # magnitude and magnitude error columns
-                # mean_depths[band] = band_mean_depths
-                # median_depths[band] = band_median_depths
-
-            # update catalogue metadata
-            cat.meta = {
-                **cat.meta,
-                **{
-                    "DEPTHS": True,
-                    "MINPCERR": cat_creator.min_flux_pc_err,
-                    "ZEROPNT": str(self.im_zps),
-                },
-            }  # , "Mean_depths": mean_depths, "Median_depths": median_depths}}
-            # print(cat.meta)
-            # overwrite original catalogue with local depth columns
-            cat.write(self.sex_cat_master_path, overwrite=True)
-            funcs.change_file_permissions(self.sex_cat_master_path)
 
 
 # The below makes TQDM work with joblib

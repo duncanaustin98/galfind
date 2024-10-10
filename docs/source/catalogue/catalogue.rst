@@ -1,7 +1,12 @@
 Catalogue Object
 ================
 
-The catalogue object is a core component of the galfind environment. It is designed to handle and process astronomical catalogues, providing functionalities to read from various formats, loop through galaxy data, and integrate with pipelines.
+This `Catalogue` class forms the basis of survey analysis within galfind. It can be instantiated in two different ways:
+
+1. From a .fits photometric catalogue given a `Catalogue_Creator` object
+2. From an input galfind `Data` object
+
+The most major component stored in a `Catalogue` object is a list of galfind `Galaxy` objects, from which galaxy properties can be extracted and analysed.
 
 .. toctree::
     :maxdepth: 1

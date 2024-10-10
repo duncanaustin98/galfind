@@ -26,6 +26,20 @@ from . import useful_funcs_austind as funcs
 
 # Manual masking
 
+auto_mask_keys = [
+    "METHOD",
+    "CENTRAL_A",
+    "CENTRAL_B",
+    "SPIKES_A",
+    "SPIKES_B",
+    "EDGE_DIST",
+    "SCALE_EXTRA",
+    "EXCLUDE_GAIA",
+    "ANGLE",
+    "EDGE_VALUE",
+    "ELEMENT",
+    "GAIA_ROW_LIM",
+]
 
 def get_mask_args(
     fits_mask_path: str,
@@ -44,20 +58,7 @@ def get_mask_args(
         mask_hdr = fits.open(fits_mask_path, mode="readonly")[1].header
         if all(
             key in mask_hdr.keys()
-            for key in [
-                "METHOD",
-                "CENTRAL_A",
-                "CENTRAL_B",
-                "SPIKES_A",
-                "SPIKES_B",
-                "EDGE_DIST",
-                "SCALE_EXTRA",
-                "EXCLUDE_GAIA",
-                "ANGLE",
-                "EDGE_VALUE",
-                "ELEMENT",
-                "GAIA_ROW_LIM",
-            ]
+            for key in auto_mask_keys
         ):
             mask_method = str(mask_hdr["METHOD"]).lower()
             assert mask_method.lower() == "auto", galfind_logger.critical(
@@ -89,6 +90,12 @@ def get_mask_args(
             mask_args = {"method": "manual"}
         return mask_args
 
+def get_mask_method(fits_mask_path: str) -> str:
+    mask_args = get_mask_args(fits_mask_path)
+    if mask_args is not None:
+        return mask_args["method"]
+    else:
+        return "manual"
 
 def manually_mask(
     self: Type[Band_Data_Base],
@@ -181,6 +188,7 @@ def convert_mask_to_fits(
         # open .reg mask file
         mask_regions = Regions.read(mask_path)
         wcs = self.load_wcs()
+
         pix_mask = np.zeros(im_data.shape, dtype=bool)
         for region in mask_regions:
             if "Region" not in region.__class__.__name__:
@@ -193,9 +201,11 @@ def convert_mask_to_fits(
                     region.to_mask().data[idx_little], pix_mask[idx_large]
                 )
         if not out_path is None:
+            hdr = wcs.to_header()
+            hdr["METHOD"] = "manual"
             # make .fits mask
             mask_hdu = fits.ImageHDU(
-                pix_mask.astype(np.uint8), header=wcs.to_header(), name="MASK"
+                pix_mask.astype(np.uint8), header=hdr, name="MASK"
             )
             hdu = fits.HDUList([fits.PrimaryHDU(), mask_hdu])
             hdu.writeto(out_path, overwrite=True)
@@ -236,7 +246,7 @@ def auto_mask(
     output_mask_path = f"{config['Masking']['MASK_DIR']}/{self.survey}/auto/{self.filt_name}_auto.fits"
     funcs.make_dirs(output_mask_path)
 
-    print("auto_mask:", self, star_mask_params)
+    #print("auto_mask:", self, star_mask_params)
 
     if not Path(output_mask_path).is_file() or overwrite:
         check_star_mask_params(star_mask_params)
@@ -312,7 +322,7 @@ def auto_mask(
             # Execute the query asynchronously
             job = Gaia.launch_job_async(adql_query)
             gaia_stars = job.get_results()
-            print(f"Found {len(gaia_stars)} stars in the region.")
+            #print(f"Found {len(gaia_stars)} stars in the region.")
             if exclude_gaia_galaxies:
                 gaia_stars = gaia_stars[
                     gaia_stars["vari_best_class_name"] != "GALAXY"
@@ -428,15 +438,15 @@ def auto_mask(
                 edge_mask.astype(np.uint8), stellar_mask.astype(np.uint8)
             )
             # Save ds9 region for stars
-            # starmask_path = (
-            #     f"{reg_mask_dir}/stellar/{self.filt_name}_stellar.reg"
-            # )
-            # funcs.make_dirs(starmask_path)
-            # with open(starmask_path, "w") as f:
-            #     for region in stellar_region_strings:
-            #         f.write(region + "\n")
-            #     f.close()
-            # funcs.change_file_permissions(starmask_path)
+            starmask_path = (
+                f"{reg_mask_dir}/stellar/{self.filt_name}_stellar.reg"
+            )
+            funcs.make_dirs(starmask_path)
+            with open(starmask_path, "w") as f:
+                for region in stellar_region_strings:
+                    f.write(region + "\n")
+                f.close()
+            funcs.change_file_permissions(starmask_path)
         else:
             full_mask = edge_mask.astype(np.uint8)
 
@@ -449,7 +459,7 @@ def auto_mask(
             self.filt_name.upper().replace("F", "f"),
         ]:
             artefact_mask_paths.extend(
-                list(glob.glob(f"{reg_mask_dir}/*/*{filt_ext}*.reg"))
+                list(glob.glob(f"{reg_mask_dir}/artefact/*/*{filt_ext}*.reg"))
             )
         # make a dictionary of existing paths and their
         # corresponding (capitalized) host directories
@@ -498,7 +508,6 @@ def auto_mask(
         artefact_pix_masks[ext_name] = np.logical_or.reduce(
             tuple([mask.astype(np.uint8) for mask in artefact_pix_masks[ext_name]])
         )
-        print(full_mask)
         # update full mask to include all artefacts
         full_mask = np.logical_or(
             full_mask.astype(np.uint8),
@@ -511,26 +520,43 @@ def auto_mask(
                 )
             ),
         )
-
+        # make header
+        hdr = wcs.to_header()
+        hdr_args = {
+            "METHOD": "auto", 
+            "CENTRAL_A": star_mask_params["central"]["a"], 
+            "CENTRAL_B": star_mask_params["central"]["b"],
+            "SPIKES_A": star_mask_params["spikes"]["a"],
+            "SPIKES_B": star_mask_params["spikes"]["b"],
+            "EDGE_DIST": edge_mask_distance,
+            "SCALE_EXTRA": scale_extra,
+            "EXCLUDE_GAIA": exclude_gaia_galaxies,
+            "ANGLE": angle,
+            "EDGE_VALUE": edge_value,
+            "ELEMENT": element,
+            "GAIA_ROW_LIM": gaia_row_lim,
+        }
+        for key, value in hdr_args.items():
+            hdr[key] = value
         # Save mask
         full_mask_hdu = fits.ImageHDU(
-            full_mask.astype(np.uint8), header=wcs.to_header(), name="MASK"
+            full_mask.astype(np.uint8), header=hdr, name="MASK"
         )
         edge_mask_hdu = fits.ImageHDU(
-            edge_mask.astype(np.uint8), header=wcs.to_header(), name="EDGE"
+            edge_mask.astype(np.uint8), header=hdr, name="EDGE"
         )
         hdulist = [fits.PrimaryHDU(), full_mask_hdu, edge_mask_hdu]
         if star_mask_params is not None:
             stellar_mask_hdu = fits.ImageHDU(
                 stellar_mask.astype(np.uint8),
-                header=wcs.to_header(),
+                header=hdr,
                 name="STELLAR",
             )
             hdulist.append(stellar_mask_hdu)
         for artefact_ext_name, artefact_pix_mask in artefact_pix_masks.items():
             artefact_mask_hdu = fits.ImageHDU(
                 artefact_pix_mask.astype(np.uint8),
-                header=wcs.to_header(),
+                header=hdr,
                 name=artefact_ext_name,
             )
             hdulist.append(artefact_mask_hdu)
@@ -595,12 +621,16 @@ def sort_band_dependent_star_mask_params(
 
 def get_combined_path_name(self: Stacked_Band_Data) -> str:
     out_dir = f"{config['Masking']['MASK_DIR']}/{self.survey}/combined"
-    filt_name_mask_method = "+".join(
-        [
-            f"{band_data.filt_name}-{band_data.mask_args['method']}"
-            for band_data in self.band_data_arr
-        ]
-    )
+    if all(band_data.mask_args["method"] == self.band_data_arr[0].mask_args["method"] for band_data in self.band_data_arr):
+        filt_name_mask_method = '+'.join([band_data.filt_name for band_data in self.band_data_arr]) + \
+            f"_{self.band_data_arr[0].mask_args['method']}"
+    else:
+        filt_name_mask_method = "+".join(
+            [
+                f"{band_data.filt_name}-{band_data.mask_args['method']}"
+                for band_data in self.band_data_arr
+            ]
+        )
     out_name = f"{self.survey}_{filt_name_mask_method}.fits"
     out_path = f"{out_dir}/{out_name}"
     funcs.make_dirs(out_path)
@@ -619,21 +649,28 @@ def combine_masks(self: Stacked_Band_Data) -> str:
             for band_data in self.band_data_arr
         ), galfind_logger.critical("All bands must have the same data shape")
         band_mask_exts = [
-            band_data.load_mask() for band_data in self.band_data_arr
+            band_data.load_mask()[0] for band_data in self.band_data_arr
         ]
         all_exts = list(
             np.unique([list(mask_ext.keys()) for mask_ext in band_mask_exts])
         )
-        print(all_exts)
         assert all(
             "MASK" in band_mask_ext.keys() for band_mask_ext in band_mask_exts
         ), galfind_logger.critical("All bands must have a 'MASK' extension")
         # load wcs from the reddest band
-        wcs = self.band_data_arr[-1].load_wcs()
+        hdr = self.band_data_arr[-1].load_mask()[1]["MASK"]
+        for key in auto_mask_keys:
+            if key in hdr.keys():
+                hdr.remove(key)
+        hdr_dict = {band_data.filt_name: band_data.load_mask()[1]["MASK"] for band_data in self.band_data_arr}
+        for band_name, band_hdr in hdr_dict.items():
+            for key, value in band_hdr.items():
+                if key in auto_mask_keys:
+                    hdr[f"{key}_{band_name}"] = value
+        print(list(dict(hdr).keys()))
         # combine masks for each valid extension contained in all masks
         combined_mask_hdul = [fits.PrimaryHDU()]
         for ext in all_exts:
-            print([list(band_mask_ext.keys()) for band_mask_ext in band_mask_exts])
             band_masks = [
                 band_mask_ext[ext]
                 for band_mask_ext in band_mask_exts
@@ -646,7 +683,7 @@ def combine_masks(self: Stacked_Band_Data) -> str:
             combined_mask_hdul.extend([
                 fits.ImageHDU(
                     combined_mask.astype(np.uint8),
-                    header=wcs.to_header(),
+                    header=hdr,
                     name=ext,
                 )
             ])
@@ -658,7 +695,8 @@ def combine_masks(self: Stacked_Band_Data) -> str:
         galfind_logger.info(
             f"Combined mask for {repr(self)} already exists at {out_path}"
         )
-    return out_path
+    mask_args = {band_data.filt_name: band_data.mask_args for band_data in self.band_data_arr}
+    return out_path, mask_args
 
 
 # # if "COSMOS-Web" in self.survey:
