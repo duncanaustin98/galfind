@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>The Multiple_Filter object &mdash; galfind 0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=80d5e7a1" />
+      <link rel="stylesheet" type="text/css" href="../_static/css/theme.css?v=19f00094" />
+      <link rel="stylesheet" type="text/css" href="../_static/copybutton.css?v=76b2166b" />
+      <link rel="stylesheet" type="text/css" href="../_static/nbsphinx-code-cells.css?v=2aa19091" />
+
+  
+  <!--[if lt IE 9]>
+    <script src="../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+        <script src="../_static/jquery.js?v=5d32c60e"></script>
+        <script src="../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+        <script src="../_static/documentation_options.js?v=2709fde1"></script>
+        <script src="../_static/doctools.js?v=9a2dae69"></script>
+        <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
+        <script src="../_static/clipboard.min.js?v=a7894cd8"></script>
+        <script src="../_static/copybutton.js?v=f281be69"></script>
+        <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+        <script>window.MathJax = {"tex": {"inlineMath": [["$", "$"], ["\\(", "\\)"]], "processEscapes": true}, "options": {"ignoreHtmlClass": "tex2jax_ignore|mathjax_ignore|document", "processHtmlClass": "tex2jax_process|mathjax_process|math|output_area"}}</script>
+        <script defer="defer" src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+    <script src="../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+    <link rel="next" title="The Instrument object" href="instrument_object.html" />
+    <link rel="prev" title="Handling filter objects" href="filter.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../index.html" class="icon icon-home">
+            galfind
+          </a>
+              <div class="version">
+                0.1.0
+              </div>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="../getting_started/getting_started.html">Welcome to Galfind!</a></li>
+<li class="toctree-l1 current"><a class="reference internal" href="instrument.html">Photometric Instruments</a><ul class="current">
+<li class="toctree-l2"><a class="reference internal" href="filter.html">Handling filter objects</a></li>
+<li class="toctree-l2 current"><a class="current reference internal" href="#">The Multiple_Filter object</a></li>
+<li class="toctree-l2"><a class="reference internal" href="instrument_object.html">The Instrument object</a></li>
+<li class="toctree-l2"><a class="reference internal" href="PSF.html">The PSF object</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="../data/data.html">Galfind Data Object</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../catalogue/catalogue.html">Catalogue Object</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../galaxy/galaxy.html">Galaxy Object</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../photometry/photometry.html">Handling Source Photometry</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../sed_fitting/sed_fitting.html">SED Fitting</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../seds/seds.html">Spectral Energy Distribution (SED) Fitting</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../multiple_surveys/multiple_surveys.html">Multiple Surveys and Datasets</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../spectra/spectra.html">Spectral Fitting Overview</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../misc/misc.html">Miscellaneous Functionality</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../index.html">galfind</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="instrument.html">Photometric Instruments</a></li>
+      <li class="breadcrumb-item active">The Multiple_Filter object</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="../_sources/instrument/multiple_filter.ipynb.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="The-Multiple_Filter-object">
+<h1>The Multiple_Filter object<a class="headerlink" href="#The-Multiple_Filter-object" title="Link to this heading"></a></h1>
+<p>In the <a class="reference internal" href="filter.html"><span class="doc">previous notebook</span></a> we looked at using the <code class="docutils literal notranslate"><span class="pre">Filter</span></code> object; now we will extend this to our <code class="docutils literal notranslate"><span class="pre">Multiple_Filter</span></code> object. This class simply holds a list of Filter objects, but makes loading these in via SVO much easier via its class methods. In addition, these filters are by default sorted from bluest to reddest based on their central wavelength, which reduces potential errors arising from manually ordering these.</p>
+<p>We start by loading in all of the JWST filters in two different ways: 1. By looping through all band names for each of the NIRCam and MIRI instruments, making an array of <code class="docutils literal notranslate"><span class="pre">Filter</span></code> objects pulled from the SVO individually. 1. Pull all bands from each JWST imaging instrument in one go and add these together.</p>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[1]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="c1"># imports</span>
+<span class="kn">import</span> <span class="nn">time</span>
+<span class="kn">import</span> <span class="nn">matplotlib.pyplot</span> <span class="k">as</span> <span class="nn">plt</span>
+<span class="kn">from</span> <span class="nn">galfind</span> <span class="kn">import</span> <span class="n">Filter</span><span class="p">,</span> <span class="n">Multiple_Filter</span> <span class="c1">#, UVJ_Filters</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+__init__ imports took 0.6955788135528564s
+Reading GALFIND config file from: /nvme/scratch/work/austind/GALFIND/galfind/../configs/galfind_config.ini
+</pre></div></div>
+</div>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[2]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="c1"># Load in the filter objects</span>
+
+<span class="c1"># time the load-in</span>
+<span class="n">start</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span>
+
+<span class="n">NIRCam_band_names</span> <span class="o">=</span> <span class="p">[</span>
+    <span class="s2">&quot;F070W&quot;</span><span class="p">,</span> <span class="s2">&quot;F090W&quot;</span><span class="p">,</span> <span class="s2">&quot;F115W&quot;</span><span class="p">,</span> <span class="s2">&quot;F140M&quot;</span><span class="p">,</span> <span class="s2">&quot;F150W&quot;</span><span class="p">,</span> <span class="s2">&quot;F162M&quot;</span><span class="p">,</span> <span class="s2">&quot;F164N&quot;</span><span class="p">,</span> <span class="s2">&quot;F150W2&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;F182M&quot;</span><span class="p">,</span> <span class="s2">&quot;F187N&quot;</span><span class="p">,</span> <span class="s2">&quot;F200W&quot;</span><span class="p">,</span> <span class="s2">&quot;F210M&quot;</span><span class="p">,</span> <span class="s2">&quot;F212N&quot;</span><span class="p">,</span> <span class="s2">&quot;F250M&quot;</span><span class="p">,</span> <span class="s2">&quot;F277W&quot;</span><span class="p">,</span> <span class="s2">&quot;F300M&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;F323N&quot;</span><span class="p">,</span> <span class="s2">&quot;F322W2&quot;</span><span class="p">,</span><span class="s2">&quot;F335M&quot;</span><span class="p">,</span> <span class="s2">&quot;F356W&quot;</span><span class="p">,</span> <span class="s2">&quot;F360M&quot;</span><span class="p">,</span> <span class="s2">&quot;F405N&quot;</span><span class="p">,</span> <span class="s2">&quot;F410M&quot;</span><span class="p">,</span> <span class="s2">&quot;F430M&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;F444W&quot;</span><span class="p">,</span> <span class="s2">&quot;F460M&quot;</span><span class="p">,</span> <span class="s2">&quot;F466N&quot;</span><span class="p">,</span> <span class="s2">&quot;F470N&quot;</span><span class="p">,</span> <span class="s2">&quot;F480M&quot;</span><span class="p">,</span>
+<span class="p">]</span>
+<span class="n">MIRI_band_names</span> <span class="o">=</span> <span class="p">[</span>
+    <span class="s2">&quot;F560W&quot;</span><span class="p">,</span> <span class="s2">&quot;F770W&quot;</span><span class="p">,</span> <span class="s2">&quot;F1000W&quot;</span><span class="p">,</span> <span class="s2">&quot;F1065C&quot;</span><span class="p">,</span> <span class="s2">&quot;F1140C&quot;</span><span class="p">,</span> <span class="s2">&quot;F1130W&quot;</span><span class="p">,</span> <span class="s2">&quot;F1280W&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;F1500W&quot;</span><span class="p">,</span> <span class="s2">&quot;F1550C&quot;</span><span class="p">,</span> <span class="s2">&quot;F1800W&quot;</span><span class="p">,</span> <span class="s2">&quot;F2100W&quot;</span><span class="p">,</span> <span class="s2">&quot;F2300C&quot;</span><span class="p">,</span> <span class="s2">&quot;F2550W&quot;</span><span class="p">,</span>
+<span class="p">]</span>
+
+<span class="n">JWST_filters</span> <span class="o">=</span> <span class="p">[</span><span class="n">Filter</span><span class="o">.</span><span class="n">from_SVO</span><span class="p">(</span><span class="s2">&quot;JWST&quot;</span><span class="p">,</span> <span class="s2">&quot;NIRCam&quot;</span><span class="p">,</span> <span class="n">band_name</span><span class="p">)</span> <span class="k">for</span> <span class="n">band_name</span> <span class="ow">in</span> <span class="n">NIRCam_band_names</span><span class="p">]</span> <span class="o">+</span> <span class="p">[</span><span class="n">Filter</span><span class="o">.</span><span class="n">from_SVO</span><span class="p">(</span><span class="s2">&quot;JWST&quot;</span><span class="p">,</span> <span class="s2">&quot;MIRI&quot;</span><span class="p">,</span> <span class="n">band_name</span><span class="p">)</span> <span class="k">for</span> <span class="n">band_name</span> <span class="ow">in</span> <span class="n">MIRI_band_names</span><span class="p">]</span>
+<span class="n">JWST_multi_filter_obj_1</span> <span class="o">=</span> <span class="n">Multiple_Filter</span><span class="p">(</span><span class="n">JWST_filters</span><span class="p">)</span>
+<span class="n">end</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Time to load in JWST filters using method 1: </span><span class="si">{</span><span class="n">end</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="n">start</span><span class="si">}</span><span class="s2">s&quot;</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+Time to load in JWST filters using method 1: 1.0311617851257324s
+</pre></div></div>
+</div>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[3]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="c1"># load all JWST filters</span>
+<span class="n">start</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span>
+<span class="n">JWST_multi_filter_obj_2</span> <span class="o">=</span> <span class="n">Multiple_Filter</span><span class="o">.</span><span class="n">from_facility</span><span class="p">(</span><span class="s2">&quot;JWST&quot;</span><span class="p">)</span>
+<span class="n">end</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Time to load in JWST filters using method 2: </span><span class="si">{</span><span class="n">end</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="n">start</span><span class="si">}</span><span class="s2">s&quot;</span><span class="p">)</span>
+<span class="c1"># confirm that these two methods are equivalent</span>
+<span class="k">assert</span> <span class="n">JWST_multi_filter_obj_1</span> <span class="o">==</span> <span class="n">JWST_multi_filter_obj_2</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+Time to load in JWST filters using method 2: 0.9306149482727051s
+</pre></div></div>
+</div>
+<p>Apart from (hopefully) being slightly faster, the major advantage of method 2 is that it requires no prior knowledge of which bands are included in each imaging instrument. As with the <code class="docutils literal notranslate"><span class="pre">Filter</span></code> object, the <code class="docutils literal notranslate"><span class="pre">Multiple_Filter</span></code> class also has a <code class="docutils literal notranslate"><span class="pre">plot()</span></code> method which iteratively calls the <code class="docutils literal notranslate"><span class="pre">Filter.plot()</span></code> method. Let’s try using this now.</p>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[4]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="c1"># plot the filters</span>
+<span class="n">fig</span><span class="p">,</span> <span class="n">ax</span> <span class="o">=</span> <span class="n">plt</span><span class="o">.</span><span class="n">subplots</span><span class="p">()</span>
+<span class="n">JWST_multi_filter_obj_1</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">ax</span><span class="p">,</span> <span class="n">show</span> <span class="o">=</span> <span class="kc">True</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<img alt="../_images/instrument_multiple_filter_5_0.png" src="../_images/instrument_multiple_filter_5_0.png" />
+</div>
+</div>
+<p>It is pretty obvious from the above plot that this can get busy pretty quickly. Let’s try plotting just the NIRCam bands.</p>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[5]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="c1"># load and plot the NIRCam filters</span>
+<span class="n">NIRCam_filt</span> <span class="o">=</span> <span class="n">Multiple_Filter</span><span class="o">.</span><span class="n">from_instrument</span><span class="p">(</span><span class="s2">&quot;NIRCam&quot;</span><span class="p">)</span>
+<span class="c1"># plot the filters</span>
+<span class="n">fig</span><span class="p">,</span> <span class="n">ax</span> <span class="o">=</span> <span class="n">plt</span><span class="o">.</span><span class="n">subplots</span><span class="p">()</span>
+<span class="n">NIRCam_filt</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">ax</span><span class="p">,</span> <span class="n">show</span> <span class="o">=</span> <span class="kc">True</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<img alt="../_images/instrument_multiple_filter_7_0.png" src="../_images/instrument_multiple_filter_7_0.png" />
+</div>
+</div>
+<p>This is probably still a little too busy. We could try plotting just the JWST/NIRCam wide bands.</p>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[6]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="c1"># load and plot the NIRCam wideband filters</span>
+<span class="n">NIRCam_widebands</span> <span class="o">=</span> <span class="n">Multiple_Filter</span><span class="o">.</span><span class="n">from_instrument</span><span class="p">(</span><span class="s2">&quot;NIRCam&quot;</span><span class="p">,</span> <span class="n">keep_suffix</span> <span class="o">=</span> <span class="s2">&quot;W&quot;</span><span class="p">)</span>
+<span class="n">fig</span><span class="p">,</span> <span class="n">ax</span> <span class="o">=</span> <span class="n">plt</span><span class="o">.</span><span class="n">subplots</span><span class="p">()</span>
+<span class="n">NIRCam_widebands</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">ax</span><span class="p">,</span> <span class="n">show</span> <span class="o">=</span> <span class="kc">True</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<img alt="../_images/instrument_multiple_filter_9_0.png" src="../_images/instrument_multiple_filter_9_0.png" />
+</div>
+</div>
+<p>This definitely looks neater. Here we have made use of the ‘keep_suffix’ argument of <code class="docutils literal notranslate"><span class="pre">Multiple_Filter.from_instrument()</span></code> which keeps only those bands with a name ending with this string. This can also be useful to, for example, load in only the available medium bands for a particular instrument/facility.</p>
+<p>Let’s now plot the standard 8 JWST/NIRCam filters used in many cycle 1 large programs e.g. in the <a class="reference external" href="https://sites.google.com/view/jwstpearls">PEARLS</a> imaging dataset. To do this we could create a brand new <code class="docutils literal notranslate"><span class="pre">Multiple_Filter</span></code> object as before, but since we have already loaded in most of the <code class="docutils literal notranslate"><span class="pre">Filter</span></code> objects from SVO, we will simply use the overloaded <code class="docutils literal notranslate"><span class="pre">-</span></code> operator to remove the less sensitive F070W filter and the overloaded <code class="docutils literal notranslate"><span class="pre">+</span></code> operator to load the F410M filter. When adding or removing
+bands from the <code class="docutils literal notranslate"><span class="pre">Multiple_Filter</span></code> object, either a string representation or a <code class="docutils literal notranslate"><span class="pre">Filter</span></code> object can be used.</p>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[7]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">f410m</span> <span class="o">=</span> <span class="n">Filter</span><span class="o">.</span><span class="n">from_SVO</span><span class="p">(</span><span class="s2">&quot;JWST&quot;</span><span class="p">,</span> <span class="s2">&quot;NIRCam&quot;</span><span class="p">,</span> <span class="s2">&quot;F410M&quot;</span><span class="p">)</span>
+
+<span class="n">NIRCam_widebands_plus_f410m</span> <span class="o">=</span> <span class="n">NIRCam_widebands</span> <span class="o">+</span> <span class="n">f410m</span>
+<span class="n">PEARLS_filters</span> <span class="o">=</span> <span class="n">NIRCam_widebands_plus_f410m</span> <span class="o">-</span> <span class="s2">&quot;F070W&quot;</span>
+
+<span class="n">fig</span><span class="p">,</span> <span class="n">ax</span> <span class="o">=</span> <span class="n">plt</span><span class="o">.</span><span class="n">subplots</span><span class="p">()</span>
+<span class="n">PEARLS_filters</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">ax</span><span class="p">,</span> <span class="n">show</span> <span class="o">=</span> <span class="kc">True</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<img alt="../_images/instrument_multiple_filter_11_0.png" src="../_images/instrument_multiple_filter_11_0.png" />
+</div>
+</div>
+<p>In the JOF example given for this documentation, we have an instrument that includes filters from HST/ACS_WFC (Hubble’s Advanced Camera for Surveys Wide Field Camera). Let’s have a look at using the final available class method to load these in, as well as have a little play with the multiple different ways that this filterset can be generated. To do this, we will again make use of the overloaded <code class="docutils literal notranslate"><span class="pre">+</span></code>/<code class="docutils literal notranslate"><span class="pre">-</span></code> operators, showing their full range of functionality.</p>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[8]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="c1"># Method 1: Load in the filters showcasing features</span>
+<span class="n">ACS_WFC_NIRCam_wideband_filters</span> <span class="o">=</span> <span class="n">Multiple_Filter</span><span class="o">.</span><span class="n">from_instruments</span><span class="p">([</span><span class="s2">&quot;ACS_WFC&quot;</span><span class="p">,</span> <span class="s2">&quot;NIRCam&quot;</span><span class="p">],</span> <span class="n">excl_bands</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;HST/ACS_WFC.F475W&quot;</span><span class="p">,</span> <span class="s2">&quot;f070W&quot;</span><span class="p">],</span> <span class="n">keep_suffix</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;W&quot;</span><span class="p">])</span>
+<span class="n">NIRCam_medium_bands</span> <span class="o">=</span> <span class="n">Multiple_Filter</span><span class="o">.</span><span class="n">from_instrument</span><span class="p">(</span><span class="s2">&quot;NIRCam&quot;</span><span class="p">,</span> <span class="n">excl_bands</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;f140M&quot;</span><span class="p">,</span> <span class="s2">&quot;JWST/NIRCam.F360M&quot;</span><span class="p">,</span> <span class="s2">&quot;F430m&quot;</span><span class="p">,</span> <span class="n">Filter</span><span class="o">.</span><span class="n">from_SVO</span><span class="p">(</span><span class="s2">&quot;JWST&quot;</span><span class="p">,</span> <span class="s2">&quot;NIRCam&quot;</span><span class="p">,</span> <span class="s2">&quot;F460M&quot;</span><span class="p">),</span> <span class="s2">&quot;JWST/NIRCam/F480M&quot;</span><span class="p">],</span> <span class="n">keep_suffix</span> <span class="o">=</span> <span class="s2">&quot;M&quot;</span><span class="p">)</span>
+<span class="n">JOF_filters_1</span> <span class="o">=</span> <span class="n">ACS_WFC_NIRCam_wideband_filters</span> <span class="o">+</span> <span class="p">[</span><span class="n">NIRCam_medium_bands</span><span class="p">,</span> <span class="s2">&quot;F850LP&quot;</span><span class="p">]</span> <span class="o">-</span> <span class="p">[</span><span class="s2">&quot;f555W&quot;</span><span class="p">,</span> <span class="n">Filter</span><span class="o">.</span><span class="n">from_SVO</span><span class="p">(</span><span class="s2">&quot;HST&quot;</span><span class="p">,</span> <span class="s2">&quot;ACS_WFC&quot;</span><span class="p">,</span> <span class="s2">&quot;F625W&quot;</span><span class="p">)]</span>
+
+<span class="c1"># Method 2: Load in the filters more directly</span>
+<span class="n">JOF_ACS_WFC_band_names</span> <span class="o">=</span> <span class="p">[</span>
+    <span class="s2">&quot;F435W&quot;</span><span class="p">,</span> <span class="s2">&quot;F606W&quot;</span><span class="p">,</span> <span class="s2">&quot;F775W&quot;</span><span class="p">,</span> <span class="s2">&quot;F814W&quot;</span><span class="p">,</span> <span class="s2">&quot;F850LP&quot;</span>
+<span class="p">]</span>
+<span class="n">JOF_NIRCam_band_names</span> <span class="o">=</span> <span class="p">[</span>
+    <span class="s2">&quot;F090W&quot;</span><span class="p">,</span> <span class="s2">&quot;F115W&quot;</span><span class="p">,</span> <span class="s2">&quot;F150W&quot;</span><span class="p">,</span> <span class="s2">&quot;F162M&quot;</span><span class="p">,</span> <span class="s2">&quot;F182M&quot;</span><span class="p">,</span> <span class="s2">&quot;F200W&quot;</span><span class="p">,</span> <span class="s2">&quot;F210M&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;F250M&quot;</span><span class="p">,</span> <span class="s2">&quot;F277W&quot;</span><span class="p">,</span> <span class="s2">&quot;F300M&quot;</span><span class="p">,</span> <span class="s2">&quot;F335M&quot;</span><span class="p">,</span> <span class="s2">&quot;F356W&quot;</span><span class="p">,</span> <span class="s2">&quot;F410M&quot;</span><span class="p">,</span> <span class="s2">&quot;F444W&quot;</span>
+<span class="p">]</span>
+<span class="n">JOF_filters_2</span> <span class="o">=</span> <span class="n">Multiple_Filter</span><span class="p">([</span><span class="n">Filter</span><span class="o">.</span><span class="n">from_SVO</span><span class="p">(</span><span class="s2">&quot;HST&quot;</span><span class="p">,</span> <span class="s2">&quot;ACS_WFC&quot;</span><span class="p">,</span> <span class="n">band_name</span><span class="p">)</span> <span class="k">for</span> <span class="n">band_name</span> <span class="ow">in</span> <span class="n">JOF_ACS_WFC_band_names</span><span class="p">]</span> \
+    <span class="o">+</span> <span class="p">[</span><span class="n">Filter</span><span class="o">.</span><span class="n">from_SVO</span><span class="p">(</span><span class="s2">&quot;JWST&quot;</span><span class="p">,</span> <span class="s2">&quot;NIRCam&quot;</span><span class="p">,</span> <span class="n">band_name</span><span class="p">)</span> <span class="k">for</span> <span class="n">band_name</span> <span class="ow">in</span> <span class="n">JOF_NIRCam_band_names</span><span class="p">])</span>
+
+<span class="c1"># prove that these two methods are equivalent</span>
+<span class="k">if</span> <span class="n">JOF_filters_1</span> <span class="o">==</span> <span class="n">JOF_filters_2</span><span class="p">:</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;The two methods of loading in the JOF filters are equivalent.</span><span class="se">\n</span><span class="s2">&quot;</span><span class="p">)</span>
+<span class="k">else</span><span class="p">:</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;The two methods of loading in the JOF filters are not equivalent.</span><span class="se">\n</span><span class="s2">&quot;</span><span class="p">)</span>
+
+<span class="c1"># print the Multiple_Filter object</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">JOF_filters_1</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+The two methods of loading in the JOF filters are not equivalent.
+
+****************************************
+MULTIPLE_FILTER
+****************************************
+FACILITY: HST
+INSTRUMENT: ACS_WFC
+FILTERS: [&#39;F435W&#39;, &#39;F606W&#39;, &#39;F775W&#39;, &#39;F814W&#39;, &#39;F850LP&#39;]
+----------
+FACILITY: JWST
+INSTRUMENT: NIRCam
+FILTERS: [&#39;F090W&#39;, &#39;F115W&#39;, &#39;F150W&#39;, &#39;F200W&#39;, &#39;F277W&#39;, &#39;F356W&#39;, &#39;F444W&#39;, &#39;F162M&#39;, &#39;F182M&#39;, &#39;F210M&#39;, &#39;F250M&#39;, &#39;F300M&#39;, &#39;F335M&#39;, &#39;F410M&#39;]
+****************************************
+
+</pre></div></div>
+</div>
+<p>Excellent! The above shows the functionality of both <code class="docutils literal notranslate"><span class="pre">excl_bands</span></code> and <code class="docutils literal notranslate"><span class="pre">keep_suffix</span></code> which can be used in any <code class="docutils literal notranslate"><span class="pre">Multiple_Filter</span></code> class method. These accept types including <code class="docutils literal notranslate"><span class="pre">str</span></code>, <code class="docutils literal notranslate"><span class="pre">Filter</span></code>, <code class="docutils literal notranslate"><span class="pre">Multiple_Filter</span></code> as well as any mixed type list containing these. Strings denoting filter names can either include the facility and instrument or not, where the facility and instrument must be separated by a <code class="docutils literal notranslate"><span class="pre">/</span></code> and the instrument and filter name separated by either a <code class="docutils literal notranslate"><span class="pre">/</span></code> or <code class="docutils literal notranslate"><span class="pre">.</span></code>. In addition,
+each string input band will be recognized if either lower, upper, or mixed case.</p>
+<p>In the <a class="reference internal" href="instrument_object.html"><span class="doc">next notebook</span></a>, we will have a look at the <code class="docutils literal notranslate"><span class="pre">Instrument</span></code> and <code class="docutils literal notranslate"><span class="pre">Facility</span></code> objects stored inside each <code class="docutils literal notranslate"><span class="pre">Filter</span></code> object. These are being using behind the scenes in this notebook but now we will look explicitly at their functionality.</p>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="filter.html" class="btn btn-neutral float-left" title="Handling filter objects" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="instrument_object.html" class="btn btn-neutral float-right" title="The Instrument object" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2024, Duncan Austin.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

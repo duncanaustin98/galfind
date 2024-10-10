@@ -1,0 +1,681 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Producing and loading survey masks &mdash; galfind 0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=80d5e7a1" />
+      <link rel="stylesheet" type="text/css" href="../_static/css/theme.css?v=19f00094" />
+      <link rel="stylesheet" type="text/css" href="../_static/copybutton.css?v=76b2166b" />
+      <link rel="stylesheet" type="text/css" href="../_static/nbsphinx-code-cells.css?v=2aa19091" />
+
+  
+  <!--[if lt IE 9]>
+    <script src="../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+        <script src="../_static/jquery.js?v=5d32c60e"></script>
+        <script src="../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+        <script src="../_static/documentation_options.js?v=2709fde1"></script>
+        <script src="../_static/doctools.js?v=9a2dae69"></script>
+        <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
+        <script src="../_static/clipboard.min.js?v=a7894cd8"></script>
+        <script src="../_static/copybutton.js?v=f281be69"></script>
+        <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+        <script>window.MathJax = {"tex": {"inlineMath": [["$", "$"], ["\\(", "\\)"]], "processEscapes": true}, "options": {"ignoreHtmlClass": "tex2jax_ignore|mathjax_ignore|document", "processHtmlClass": "tex2jax_process|mathjax_process|math|output_area"}}</script>
+        <script defer="defer" src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+    <script src="../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+    <link rel="next" title="Running depths" href="running_depths.html" />
+    <link rel="prev" title="Image segmentation and forced photometry" href="source_extraction.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../index.html" class="icon icon-home">
+            galfind
+          </a>
+              <div class="version">
+                0.1.0
+              </div>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="../getting_started/getting_started.html">Welcome to Galfind!</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../instrument/instrument.html">Photometric Instruments</a></li>
+<li class="toctree-l1 current"><a class="reference internal" href="data.html">Galfind Data Object</a><ul class="current">
+<li class="toctree-l2"><a class="reference internal" href="data_intro.html">Introduction to the Data class</a></li>
+<li class="toctree-l2"><a class="reference internal" href="PSF_homogenization.html">PSF homogenization</a></li>
+<li class="toctree-l2"><a class="reference internal" href="source_extraction.html">Image segmentation and forced photometry</a></li>
+<li class="toctree-l2 current"><a class="current reference internal" href="#">Producing and loading survey masks</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#Example-1:-Manually-masking-the-data">Example 1: Manually masking the data</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#Example-2:-Plotting-the-mask-for-a-Stacked_Band_Data-object">Example 2: Plotting the mask for a Stacked_Band_Data object</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#Example-3:-Automated-masking-of-the-data">Example 3: Automated masking of the data</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#Example-4:-Loading-fits-masks-directly">Example 4: Loading fits masks directly</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="running_depths.html">Running depths</a></li>
+<li class="toctree-l2"><a class="reference internal" href="cataloguing_the_data.html">Cataloguing the data</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="../catalogue/catalogue.html">Catalogue Object</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../galaxy/galaxy.html">Galaxy Object</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../photometry/photometry.html">Handling Source Photometry</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../sed_fitting/sed_fitting.html">SED Fitting</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../seds/seds.html">Spectral Energy Distribution (SED) Fitting</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../multiple_surveys/multiple_surveys.html">Multiple Surveys and Datasets</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../spectra/spectra.html">Spectral Fitting Overview</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../misc/misc.html">Miscellaneous Functionality</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../index.html">galfind</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="data.html">Galfind Data Object</a></li>
+      <li class="breadcrumb-item active">Producing and loading survey masks</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="../_sources/data/masking.ipynb.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="Producing-and-loading-survey-masks">
+<h1>Producing and loading survey masks<a class="headerlink" href="#Producing-and-loading-survey-masks" title="Link to this heading"></a></h1>
+<p>It is never the case in optical and NIR imaging that data exists without any abnormalities; there are always regions where the output flux is not necessarily reliable. The primary culprits of these are image edges and stellar diffraction spikes, however there may well be other image artefacts present. Over the first few years of JWST/NIRCam operations, which observational astrophysics have been using extensively, these artefacts consist of wisps, claws, and snowballs which are not always
+properly accounted for in data reduction pipelines. For more information on these types of artefacts, please visit the official JWST user documentation following the hyperlinks for <a class="reference external" href="https://jwst-docs.stsci.edu/depreciated-jdox-articles/nircam-claws-and-wisps#gsc.tab=0">wisps, claws</a>, and <a class="reference external" href="https://jwst-docs.stsci.edu/depreciated-jdox-articles/data-artifacts-and-features/snowballs-and-shower-artifacts#gsc.tab=0">snowballs</a>. In the segmentation process, these artefacts may be picked up they
+can often be bright, however we choose to also mask these specific areas just to make sure.</p>
+<p>Galfind utilizes two different masking methods which we will cover in the following examples. As usual, our first code block will be to instantiate our Data object with the JOF data.</p>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[1]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">pathlib</span> <span class="kn">import</span> <span class="n">Path</span>
+<span class="kn">from</span> <span class="nn">copy</span> <span class="kn">import</span> <span class="n">deepcopy</span>
+<span class="kn">import</span> <span class="nn">shutil</span>
+<span class="kn">import</span> <span class="nn">astropy.units</span> <span class="k">as</span> <span class="nn">u</span>
+<span class="kn">from</span> <span class="nn">galfind</span> <span class="kn">import</span> <span class="n">Stacked_Band_Data</span><span class="p">,</span> <span class="n">Data</span><span class="p">,</span> <span class="n">config</span>
+<span class="kn">from</span> <span class="nn">galfind.Data</span> <span class="kn">import</span> <span class="n">morgan_version_to_dir</span>
+<span class="kn">from</span> <span class="nn">galfind</span> <span class="kn">import</span> <span class="n">useful_funcs_austind</span> <span class="k">as</span> <span class="n">funcs</span>
+
+<span class="n">survey</span> <span class="o">=</span> <span class="s2">&quot;JOF&quot;</span>
+<span class="n">version</span> <span class="o">=</span> <span class="s2">&quot;v11&quot;</span>
+<span class="n">instrument_names</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;NIRCam&quot;</span><span class="p">]</span>
+<span class="n">aper_diams</span> <span class="o">=</span> <span class="p">[</span><span class="mf">0.32</span><span class="p">,</span> <span class="mf">0.5</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">,</span> <span class="mf">1.5</span><span class="p">,</span> <span class="mf">2.0</span><span class="p">]</span> <span class="o">*</span> <span class="n">u</span><span class="o">.</span><span class="n">arcsec</span>
+<span class="n">forced_phot_band</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;F277W&quot;</span><span class="p">,</span> <span class="s2">&quot;F356W&quot;</span><span class="p">,</span> <span class="s2">&quot;F444W&quot;</span><span class="p">]</span>
+
+<span class="n">JOF_data</span> <span class="o">=</span> <span class="n">Data</span><span class="o">.</span><span class="n">from_survey_version</span><span class="p">(</span>
+    <span class="n">survey</span> <span class="o">=</span> <span class="n">survey</span><span class="p">,</span>
+    <span class="n">version</span> <span class="o">=</span> <span class="n">version</span><span class="p">,</span>
+    <span class="n">instrument_names</span> <span class="o">=</span> <span class="n">instrument_names</span><span class="p">,</span>
+    <span class="n">version_to_dir_dict</span> <span class="o">=</span> <span class="n">morgan_version_to_dir</span><span class="p">,</span>
+    <span class="n">aper_diams</span> <span class="o">=</span> <span class="n">aper_diams</span><span class="p">,</span>
+    <span class="n">forced_phot_band</span> <span class="o">=</span> <span class="n">forced_phot_band</span><span class="p">,</span>
+<span class="p">)</span>
+<span class="n">JOF_data_2</span> <span class="o">=</span> <span class="n">deepcopy</span><span class="p">(</span><span class="n">JOF_data</span><span class="p">)</span>
+<span class="n">JOF_data_3</span> <span class="o">=</span> <span class="n">deepcopy</span><span class="p">(</span><span class="n">JOF_data</span><span class="p">)</span>
+<span class="n">JOF_data_4</span> <span class="o">=</span> <span class="n">deepcopy</span><span class="p">(</span><span class="n">JOF_data</span><span class="p">)</span>
+<span class="n">JOF_data_5</span> <span class="o">=</span> <span class="n">deepcopy</span><span class="p">(</span><span class="n">JOF_data</span><span class="p">)</span>
+<span class="n">JOF_data_6</span> <span class="o">=</span> <span class="n">deepcopy</span><span class="p">(</span><span class="n">JOF_data</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+Reading GALFIND config file from: /nvme/scratch/work/austind/GALFIND/galfind/../configs/galfind_config.ini
+</pre></div></div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area stderr docutils container">
+<div class="highlight"><pre>
+INFO:galfind:Aperture corrections for ACS_WFC loaded from /nvme/scratch/work/austind/GALFIND/galfind/Aperture_corrections/ACS_WFC_aper_corr.txt
+INFO:galfind:Aperture corrections for WFC3_IR loaded from /nvme/scratch/work/austind/GALFIND/galfind/Aperture_corrections/WFC3_IR_aper_corr.txt
+INFO:galfind:Aperture corrections for NIRCam loaded from /nvme/scratch/work/austind/GALFIND/galfind/Aperture_corrections/NIRCam_aper_corr.txt
+INFO:galfind:Aperture corrections for MIRI loaded from /nvme/scratch/work/austind/GALFIND/galfind/Aperture_corrections/MIRI_aper_corr.txt
+INFO:galfind:Aperture corrections for ACS_WFC loaded from /nvme/scratch/work/austind/GALFIND/galfind/Aperture_corrections/ACS_WFC_aper_corr.txt
+INFO:galfind:Aperture corrections for WFC3_IR loaded from /nvme/scratch/work/austind/GALFIND/galfind/Aperture_corrections/WFC3_IR_aper_corr.txt
+INFO:galfind:Aperture corrections for NIRCam loaded from /nvme/scratch/work/austind/GALFIND/galfind/Aperture_corrections/NIRCam_aper_corr.txt
+INFO:galfind:Aperture corrections for MIRI loaded from /nvme/scratch/work/austind/GALFIND/galfind/Aperture_corrections/MIRI_aper_corr.txt
+INFO:galfind:Aperture corrections for NIRCam loaded from /nvme/scratch/work/austind/GALFIND/galfind/Aperture_corrections/NIRCam_aper_corr.txt
+INFO:galfind:Loaded aper_diams=&lt;Quantity [0.32, 0.5 , 1.  , 1.5 , 2.  ] arcsec&gt; for F277W+F356W+F444W
+</pre></div></div>
+</div>
+<section id="Example-1:-Manually-masking-the-data">
+<h2>Example 1: Manually masking the data<a class="headerlink" href="#Example-1:-Manually-masking-the-data" title="Link to this heading"></a></h2>
+<p>In this example, we will convert our pre-created .reg mask paths made in ds9 (or other image analysis package which produces an identical .reg output) to pixel masks using the <code class="docutils literal notranslate"><span class="pre">Data.mask()</span></code> method. We explicitly passing in <code class="docutils literal notranslate"><span class="pre">manual</span></code> as our preferred method. This requires masks to the relevant filters to be included in the following sub-directory:</p>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[2]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">config</span><span class="p">[</span><span class="s1">&#39;Masking&#39;</span><span class="p">][</span><span class="s1">&#39;MASK_DIR&#39;</span><span class="p">]</span><span class="si">}</span><span class="s2">/</span><span class="si">{</span><span class="n">JOF_data</span><span class="o">.</span><span class="n">survey</span><span class="si">}</span><span class="s2">/reg&quot;</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+/raid/scratch/work/austind/GALFIND_WORK/Masks/JOF/reg
+</pre></div></div>
+</div>
+<p>The internal code uses glob.glob to extract the required paths which contain the band name labelled in 1 of 4 ways. For example, the F444W filter could be written as either: 1. F444W (obviously) 2. f444w (lower case) 3. F444w (capitalized) 4. f444W (upper case with lowered F) It is worth noting that including more than 1 mask path per filter in this directory will cause the code to crash.</p>
+<p>The first thing the code will do post path extraction will be to ‘clean’ these mask paths for regions with zero size. This may sound a little odd but for certain versions of ds9 (don’t ask me which as I don’t know), it is possible to accidentally create these regions, which then cause the entire region to be masked. Obviously this is not the expected behaviour, and so to get rid of these explicit cleaning of these .reg files is required. Following cleaning, these .reg masks will be converted to
+a pixel mask on the same scale as the SCI/ERR/WHT imaging and saved as a .fits mask.</p>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[3]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">JOF_data</span><span class="o">.</span><span class="n">mask</span><span class="p">(</span><span class="n">method</span> <span class="o">=</span> <span class="s2">&quot;manual&quot;</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area stderr docutils container">
+<div class="highlight"><pre>
+INFO:galfind:Combined mask for &lt;galfind.Data.Stacked_Band_Data object at 0x7fcef92b02b0&gt; already exists at /raid/scratch/work/austind/GALFIND_WORK/Masks/JOF/combined/JOF_F277W+F356W+F444W_manual.fits
+</pre></div></div>
+</div>
+<p>Let’s have a look to see if we can find the newly created fits maps.</p>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[4]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="nb">print</span><span class="p">(</span><span class="n">JOF_data</span><span class="o">.</span><span class="n">mask_paths</span><span class="p">)</span>
+
+<span class="k">for</span> <span class="n">filt_name</span><span class="p">,</span> <span class="n">path</span> <span class="ow">in</span> <span class="n">JOF_data</span><span class="o">.</span><span class="n">mask_paths</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+    <span class="k">if</span> <span class="n">Path</span><span class="p">(</span><span class="n">path</span><span class="p">)</span><span class="o">.</span><span class="n">is_file</span><span class="p">():</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">filt_name</span><span class="si">}</span><span class="s2"> mask exists&quot;</span><span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">filt_name</span><span class="si">}</span><span class="s2"> mask does not exist&quot;</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+{&#39;F090W&#39;: &#39;/raid/scratch/work/austind/GALFIND_WORK/Masks/JOF/manual/F090W_v11_manual.fits&#39;, &#39;F115W&#39;: &#39;/raid/scratch/work/austind/GALFIND_WORK/Masks/JOF/manual/F115W_v11_manual.fits&#39;, &#39;F150W&#39;: &#39;/raid/scratch/work/austind/GALFIND_WORK/Masks/JOF/manual/F150W_v11_manual.fits&#39;, &#39;F162M&#39;: &#39;/raid/scratch/work/austind/GALFIND_WORK/Masks/JOF/manual/F162M_v11_manual.fits&#39;, &#39;F182M&#39;: &#39;/raid/scratch/work/austind/GALFIND_WORK/Masks/JOF/manual/F182M_v11_manual.fits&#39;, &#39;F200W&#39;: &#39;/raid/scratch/work/austind/GALFIND_WORK/Masks/JOF/manual/F200W_v11_manual.fits&#39;, &#39;F210M&#39;: &#39;/raid/scratch/work/austind/GALFIND_WORK/Masks/JOF/manual/F210M_v11_manual.fits&#39;, &#39;F250M&#39;: &#39;/raid/scratch/work/austind/GALFIND_WORK/Masks/JOF/manual/F250M_v11_manual.fits&#39;, &#39;F277W&#39;: &#39;/raid/scratch/work/austind/GALFIND_WORK/Masks/JOF/manual/F277W_v11_manual.fits&#39;, &#39;F300M&#39;: &#39;/raid/scratch/work/austind/GALFIND_WORK/Masks/JOF/manual/F300M_v11_manual.fits&#39;, &#39;F335M&#39;: &#39;/raid/scratch/work/austind/GALFIND_WORK/Masks/JOF/manual/F335M_v11_manual.fits&#39;, &#39;F356W&#39;: &#39;/raid/scratch/work/austind/GALFIND_WORK/Masks/JOF/manual/F356W_v11_manual.fits&#39;, &#39;F410M&#39;: &#39;/raid/scratch/work/austind/GALFIND_WORK/Masks/JOF/manual/F410M_v11_manual.fits&#39;, &#39;F444W&#39;: &#39;/raid/scratch/work/austind/GALFIND_WORK/Masks/JOF/manual/F444W_v11_manual.fits&#39;, &#39;F277W+F356W+F444W&#39;: &#39;/raid/scratch/work/austind/GALFIND_WORK/Masks/JOF/combined/JOF_F277W+F356W+F444W_manual.fits&#39;}
+F090W mask exists
+F115W mask exists
+F150W mask exists
+F162M mask exists
+F182M mask exists
+F200W mask exists
+F210M mask exists
+F250M mask exists
+F277W mask exists
+F300M mask exists
+F335M mask exists
+F356W mask exists
+F410M mask exists
+F444W mask exists
+F277W+F356W+F444W mask exists
+</pre></div></div>
+</div>
+<p>And also see how this impacts the print statement.</p>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[5]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="nb">print</span><span class="p">(</span><span class="n">JOF_data</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+****************************************
+DATA OBJECT:
+----------
+SURVEY: JOF
+VERSION: v11
+****************************************
+MULTIPLE_FILTER
+----------
+FACILITY: JWST
+INSTRUMENT: NIRCam
+FILTERS: [&#39;F090W&#39;, &#39;F115W&#39;, &#39;F150W&#39;, &#39;F162M&#39;, &#39;F182M&#39;, &#39;F200W&#39;, &#39;F210M&#39;, &#39;F250M&#39;, &#39;F277W&#39;, &#39;F300M&#39;, &#39;F335M&#39;, &#39;F356W&#39;, &#39;F410M&#39;, &#39;F444W&#39;]
+****************************************
+****************************************
+
+</pre></div></div>
+</div>
+<p>As with other examples we’ve seen, for example with the <a class="reference external" href="segmentation.ipynb">segmentation maps</a>, attempting to load masks into an object which already contains them will not work. The original mask paths will remain. This is to prevent confusion with which masks have been used to create any products that require these mask paths, for example the band <a class="reference internal" href="running_depths.html"><span class="doc">depths</span></a>.</p>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[6]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">JOF_data</span><span class="o">.</span><span class="n">mask</span><span class="p">(</span><span class="n">method</span> <span class="o">=</span> <span class="s2">&quot;auto&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">JOF_data</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area stderr docutils container">
+<div class="highlight"><pre>
+INFO:galfind:Combined mask for &lt;galfind.Data.Stacked_Band_Data object at 0x7fcef92b02b0&gt; already exists at /raid/scratch/work/austind/GALFIND_WORK/Masks/JOF/combined/JOF_F277W+F356W+F444W_manual.fits
+</pre></div></div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+****************************************
+DATA OBJECT:
+----------
+SURVEY: JOF
+VERSION: v11
+****************************************
+MULTIPLE_FILTER
+----------
+FACILITY: JWST
+INSTRUMENT: NIRCam
+FILTERS: [&#39;F090W&#39;, &#39;F115W&#39;, &#39;F150W&#39;, &#39;F162M&#39;, &#39;F182M&#39;, &#39;F200W&#39;, &#39;F210M&#39;, &#39;F250M&#39;, &#39;F277W&#39;, &#39;F300M&#39;, &#39;F335M&#39;, &#39;F356W&#39;, &#39;F410M&#39;, &#39;F444W&#39;]
+****************************************
+****************************************
+
+</pre></div></div>
+</div>
+</section>
+<section id="Example-2:-Plotting-the-mask-for-a-Stacked_Band_Data-object">
+<h2>Example 2: Plotting the mask for a Stacked_Band_Data object<a class="headerlink" href="#Example-2:-Plotting-the-mask-for-a-Stacked_Band_Data-object" title="Link to this heading"></a></h2>
+<p>To be clear, the <code class="docutils literal notranslate"><span class="pre">Data.mask()</span></code> function we have used in example 1 loops through the stored <code class="docutils literal notranslate"><span class="pre">Band_Data</span></code> objects and individually masks each one of them. But what if we want to make a mask for a <code class="docutils literal notranslate"><span class="pre">Stacked_Band_Data</span></code> object? To have a look at this we’ll instantiate a couple of fresh new JOF <code class="docutils literal notranslate"><span class="pre">Data</span></code> objects and produce a <code class="docutils literal notranslate"><span class="pre">Stacked_Band_Data</span></code> object for the F277W, F356W, and F444W filters commonly used for selection when performing forced photometry (as we will do in the notebook on
+<a class="reference internal" href="cataloguing_the_data.html"><span class="doc">cataloguing the data</span></a>).</p>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[7]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">LW_nircam_stack</span> <span class="o">=</span> <span class="n">Stacked_Band_Data</span><span class="o">.</span><span class="n">from_band_data_arr</span><span class="p">(</span>
+    <span class="p">[</span><span class="n">band_data</span> <span class="k">for</span> <span class="n">band_data</span> <span class="ow">in</span> <span class="n">JOF_data_2</span><span class="p">[</span><span class="s2">&quot;F277W+F356W+F444W&quot;</span><span class="p">]])</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">LW_nircam_stack</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area stderr docutils container">
+<div class="highlight"><pre>
+INFO:galfind:Loaded aper_diams=&lt;Quantity [0.32, 0.5 , 1.  , 1.5 , 2.  ] arcsec&gt; for F277W+F356W+F444W
+</pre></div></div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+&lt;galfind.Data.Stacked_Band_Data object at 0x7fcfc02dbac0&gt;
+</pre></div></div>
+</div>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[8]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">LW_nircam_stack</span><span class="o">.</span><span class="n">mask</span><span class="p">(</span><span class="n">method</span> <span class="o">=</span> <span class="s2">&quot;manual&quot;</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area stderr docutils container">
+<div class="highlight"><pre>
+INFO:galfind:Combined mask for &lt;galfind.Data.Stacked_Band_Data object at 0x7fcfc02dbac0&gt; already exists at /raid/scratch/work/austind/GALFIND_WORK/Masks/JOF/combined/JOF_F277W+F356W+F444W_manual.fits
+</pre></div></div>
+</div>
+<p>To conclude this example, we will plot the mask for the stacked data. We explicitly write the input arguments used by default here for clarity.</p>
+<div class="nbinput nblast docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[9]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="c1">#LW_nircam_stack.plot(ext = &quot;mask&quot;)</span>
+</pre></div>
+</div>
+</div>
+<p>Above we have implemented the default mask plotting which is used for both <code class="docutils literal notranslate"><span class="pre">Band_Data</span></code> and <code class="docutils literal notranslate"><span class="pre">Stacked_Band_Data</span></code> objects. Let’s have a peek at some of the plotting options which we can implement here.</p>
+</section>
+<section id="Example-3:-Automated-masking-of-the-data">
+<h2>Example 3: Automated masking of the data<a class="headerlink" href="#Example-3:-Automated-masking-of-the-data" title="Link to this heading"></a></h2>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[10]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">JOF_data_3</span><span class="o">.</span><span class="n">mask</span><span class="p">(</span><span class="n">method</span> <span class="o">=</span> <span class="s2">&quot;auto&quot;</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area stderr docutils container">
+<div class="highlight"><pre>
+INFO:galfind:Combined mask for &lt;galfind.Data.Stacked_Band_Data object at 0x7fcef92d8400&gt; already exists at /raid/scratch/work/austind/GALFIND_WORK/Masks/JOF/combined/JOF_F277W+F356W+F444W_auto.fits
+</pre></div></div>
+</div>
+<p>Once again, let us have a look at the masks paths that have been produced here and plot the mask for the F444W filter.</p>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[11]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="nb">print</span><span class="p">(</span><span class="n">JOF_data_3</span><span class="p">)</span>
+<span class="n">JOF_data_3</span><span class="p">[</span><span class="s2">&quot;F444W&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">ext</span> <span class="o">=</span> <span class="s2">&quot;mask&quot;</span><span class="p">,</span> <span class="n">show</span> <span class="o">=</span> <span class="kc">True</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+****************************************
+DATA OBJECT:
+----------
+SURVEY: JOF
+VERSION: v11
+****************************************
+MULTIPLE_FILTER
+----------
+FACILITY: JWST
+INSTRUMENT: NIRCam
+FILTERS: [&#39;F090W&#39;, &#39;F115W&#39;, &#39;F150W&#39;, &#39;F162M&#39;, &#39;F182M&#39;, &#39;F200W&#39;, &#39;F210M&#39;, &#39;F250M&#39;, &#39;F277W&#39;, &#39;F300M&#39;, &#39;F335M&#39;, &#39;F356W&#39;, &#39;F410M&#39;, &#39;F444W&#39;]
+****************************************
+****************************************
+
+</pre></div></div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<img alt="../_images/data_masking_22_1.png" src="../_images/data_masking_22_1.png" />
+</div>
+</div>
+<p>There are plenty of arguments that can be passed into the <code class="docutils literal notranslate"><span class="pre">Data.mask</span></code> method which impact the automated masking process. These can either be passed in as: 1. A single value, which will then be used for all <code class="docutils literal notranslate"><span class="pre">Band_Data</span></code> objects within <code class="docutils literal notranslate"><span class="pre">Data</span></code> 2. A list of values with length equal to the length of the <code class="docutils literal notranslate"><span class="pre">Data</span></code> object, which will be passed to <code class="docutils literal notranslate"><span class="pre">Band_Data.mask</span></code> elementwise 3. A dict of {filt_name: value} containing all filter names in the <code class="docutils literal notranslate"><span class="pre">Data</span></code> object, which will be passed to
+<code class="docutils literal notranslate"><span class="pre">Band_Data.mask</span></code> explicitly by filter name</p>
+<p>Below we explicitly produce dictionaries of the default values for each filter that are used in the masking process. These can be changed on a band-by-band basis for additional mask personalisation.</p>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[12]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">default_star_mask_params</span> <span class="o">=</span> \
+<span class="p">{</span>
+    <span class="s2">&quot;central&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;a&quot;</span><span class="p">:</span> <span class="mf">300.0</span><span class="p">,</span> <span class="s2">&quot;b&quot;</span><span class="p">:</span> <span class="mf">4.25</span><span class="p">},</span>
+    <span class="s2">&quot;spikes&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;a&quot;</span><span class="p">:</span> <span class="mf">400.0</span><span class="p">,</span> <span class="s2">&quot;b&quot;</span><span class="p">:</span> <span class="mf">4.5</span><span class="p">},</span>
+<span class="p">}</span>
+<span class="n">star_mask_params_dict</span> <span class="o">=</span> <span class="p">{</span><span class="n">band_data</span><span class="o">.</span><span class="n">filt_name</span><span class="p">:</span> <span class="n">default_star_mask_params</span> <span class="k">for</span> <span class="n">band_data</span> <span class="ow">in</span> <span class="n">JOF_data_4</span><span class="p">}</span>
+<span class="n">edge_mask_distance_dict</span> <span class="o">=</span> <span class="p">{</span><span class="n">band_data</span><span class="o">.</span><span class="n">filt_name</span><span class="p">:</span> <span class="mi">50</span> <span class="k">for</span> <span class="n">band_data</span> <span class="ow">in</span> <span class="n">JOF_data_4</span><span class="p">}</span>
+<span class="n">scale_extra_dict</span> <span class="o">=</span> <span class="p">{</span><span class="n">band_data</span><span class="o">.</span><span class="n">filt_name</span><span class="p">:</span> <span class="mf">0.2</span> <span class="k">for</span> <span class="n">band_data</span> <span class="ow">in</span> <span class="n">JOF_data_4</span><span class="p">}</span>
+<span class="n">exclude_gaia_galaxies_dict</span> <span class="o">=</span> <span class="p">{</span><span class="n">band_data</span><span class="o">.</span><span class="n">filt_name</span><span class="p">:</span> <span class="kc">True</span> <span class="k">for</span> <span class="n">band_data</span> <span class="ow">in</span> <span class="n">JOF_data_4</span><span class="p">}</span>
+<span class="n">angle_dict</span> <span class="o">=</span> <span class="p">{</span><span class="n">band_data</span><span class="o">.</span><span class="n">filt_name</span><span class="p">:</span> <span class="o">-</span><span class="mf">70.0</span> <span class="k">for</span> <span class="n">band_data</span> <span class="ow">in</span> <span class="n">JOF_data_4</span><span class="p">}</span>
+<span class="n">edge_value_dict</span> <span class="o">=</span> <span class="p">{</span><span class="n">band_data</span><span class="o">.</span><span class="n">filt_name</span><span class="p">:</span> <span class="mf">0.0</span> <span class="k">for</span> <span class="n">band_data</span> <span class="ow">in</span> <span class="n">JOF_data_4</span><span class="p">}</span>
+<span class="n">element_dict</span> <span class="o">=</span> <span class="p">{</span><span class="n">band_data</span><span class="o">.</span><span class="n">filt_name</span><span class="p">:</span> <span class="s2">&quot;ELLIPSE&quot;</span> <span class="k">for</span> <span class="n">band_data</span> <span class="ow">in</span> <span class="n">JOF_data_4</span><span class="p">}</span>
+<span class="n">gaia_row_lim_dict</span> <span class="o">=</span> <span class="p">{</span><span class="n">band_data</span><span class="o">.</span><span class="n">filt_name</span><span class="p">:</span> <span class="mi">500</span> <span class="k">for</span> <span class="n">band_data</span> <span class="ow">in</span> <span class="n">JOF_data_4</span><span class="p">}</span>
+<span class="n">overwrite_dict</span> <span class="o">=</span> <span class="p">{</span><span class="n">band_data</span><span class="o">.</span><span class="n">filt_name</span><span class="p">:</span> <span class="kc">False</span> <span class="k">for</span> <span class="n">band_data</span> <span class="ow">in</span> <span class="n">JOF_data_4</span><span class="p">}</span>
+
+<span class="n">JOF_data_4</span><span class="o">.</span><span class="n">mask</span><span class="p">(</span>
+    <span class="s2">&quot;auto&quot;</span><span class="p">,</span>
+    <span class="n">star_mask_params</span> <span class="o">=</span> <span class="n">star_mask_params_dict</span><span class="p">,</span>
+    <span class="n">edge_mask_distance</span> <span class="o">=</span> <span class="n">edge_mask_distance_dict</span><span class="p">,</span>
+    <span class="n">scale_extra</span> <span class="o">=</span> <span class="n">scale_extra_dict</span><span class="p">,</span>
+    <span class="n">exclude_gaia_galaxies</span> <span class="o">=</span> <span class="n">exclude_gaia_galaxies_dict</span><span class="p">,</span>
+    <span class="n">angle</span> <span class="o">=</span> <span class="n">angle_dict</span><span class="p">,</span>
+    <span class="n">edge_value</span> <span class="o">=</span> <span class="n">edge_value_dict</span><span class="p">,</span>
+    <span class="n">element</span> <span class="o">=</span> <span class="n">element_dict</span><span class="p">,</span>
+    <span class="n">gaia_row_lim</span> <span class="o">=</span> <span class="n">gaia_row_lim_dict</span><span class="p">,</span>
+    <span class="n">overwrite</span> <span class="o">=</span> <span class="n">overwrite_dict</span>
+<span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area stderr docutils container">
+<div class="highlight"><pre>
+INFO:galfind:Combined mask for &lt;galfind.Data.Stacked_Band_Data object at 0x7fce5d2c8f10&gt; already exists at /raid/scratch/work/austind/GALFIND_WORK/Masks/JOF/combined/JOF_F277W+F356W+F444W_auto.fits
+</pre></div></div>
+</div>
+<p>We can see that the second time these masks are made automatically is much faster since they are simply loaded from the masks produced from the <code class="docutils literal notranslate"><span class="pre">JOF_data_3</span></code> object. Let us now check that these two implementations are the same.</p>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[13]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="k">if</span> <span class="n">JOF_data_3</span> <span class="o">==</span> <span class="n">JOF_data_4</span><span class="p">:</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Data objects are the same&quot;</span><span class="p">)</span>
+<span class="k">else</span><span class="p">:</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Data objects are different&quot;</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+Data objects are the same
+</pre></div></div>
+</div>
+<p>Since this metadata does not change the path that the mask for each band is saved in, should we attempt to load in the mask again using a different set of input parameters, the previously created mask will be loaded in instead of the one that would be implemented using the input arguments. Should you wish to overwrite the mask with the new implementation, you must pass <code class="docutils literal notranslate"><span class="pre">overwrite=True</span></code> into the <code class="docutils literal notranslate"><span class="pre">Data.mask</span></code> method. In either case, the saved mask arguments will match those that were used to
+create the mask the object points at if the ones the user inputs are different.</p>
+<p>As an example of this, we will change the <code class="docutils literal notranslate"><span class="pre">edge_mask_distance</span></code> for the F444W band and reload the mask for a previously unmasked JOF <code class="docutils literal notranslate"><span class="pre">Data</span></code> object. When masking the JOF_data_4 object, the code populated the dictionary value for the F277W+F356W+F444W stacked band, although this becomes an issue when attempting to update one or more of the automasking parameters in one of the bands used for stacking. We therefore explicitly include F277W+F356W+F444W into our dictionary below</p>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[14]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">edge_mask_distance_dict</span> <span class="o">=</span> <span class="p">{</span><span class="o">**</span><span class="p">{</span><span class="n">band_data</span><span class="o">.</span><span class="n">filt_name</span><span class="p">:</span> <span class="mi">50</span> <span class="k">if</span> <span class="n">band_data</span><span class="o">.</span><span class="n">filt_name</span> <span class="o">!=</span> <span class="s2">&quot;F444W&quot;</span> <span class="k">else</span> <span class="mi">100</span> <span class="k">for</span> <span class="n">band_data</span> <span class="ow">in</span> <span class="n">JOF_data_5</span><span class="p">},</span> <span class="o">**</span><span class="p">{</span><span class="s2">&quot;F277W+F356W+F444W&quot;</span><span class="p">:</span> <span class="mi">50</span><span class="p">}}</span>
+<span class="n">JOF_data_5</span><span class="o">.</span><span class="n">mask</span><span class="p">(</span>
+    <span class="s2">&quot;auto&quot;</span><span class="p">,</span>
+    <span class="n">star_mask_params</span> <span class="o">=</span> <span class="n">star_mask_params_dict</span><span class="p">,</span>
+    <span class="n">edge_mask_distance</span> <span class="o">=</span> <span class="n">edge_mask_distance_dict</span><span class="p">,</span>
+    <span class="n">scale_extra</span> <span class="o">=</span> <span class="n">scale_extra_dict</span><span class="p">,</span>
+    <span class="n">exclude_gaia_galaxies</span> <span class="o">=</span> <span class="n">exclude_gaia_galaxies_dict</span><span class="p">,</span>
+    <span class="n">angle</span> <span class="o">=</span> <span class="n">angle_dict</span><span class="p">,</span>
+    <span class="n">edge_value</span> <span class="o">=</span> <span class="n">edge_value_dict</span><span class="p">,</span>
+    <span class="n">element</span> <span class="o">=</span> <span class="n">element_dict</span><span class="p">,</span>
+    <span class="n">gaia_row_lim</span> <span class="o">=</span> <span class="n">gaia_row_lim_dict</span><span class="p">,</span>
+    <span class="n">overwrite</span> <span class="o">=</span> <span class="kc">False</span>
+<span class="p">)</span>
+<span class="k">if</span> <span class="n">JOF_data_5</span><span class="p">[</span><span class="s2">&quot;F444W&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">mask_args</span><span class="p">[</span><span class="s2">&quot;edge_mask_distance&quot;</span><span class="p">]</span> <span class="o">==</span> <span class="n">edge_mask_distance_dict</span><span class="p">[</span><span class="s2">&quot;F444W&quot;</span><span class="p">]:</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">JOF_data_5</span><span class="p">[</span><span class="s1">&#39;F444W&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">mask_args</span><span class="p">[</span><span class="s1">&#39;edge_mask_distance&#39;</span><span class="p">]</span><span class="si">}</span><span class="s2"> = </span><span class="si">{</span><span class="n">edge_mask_distance_dict</span><span class="p">[</span><span class="s1">&#39;F444W&#39;</span><span class="p">]</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<span class="k">else</span><span class="p">:</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">JOF_data_5</span><span class="p">[</span><span class="s1">&#39;F444W&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">mask_args</span><span class="p">[</span><span class="s1">&#39;edge_mask_distance&#39;</span><span class="p">]</span><span class="si">}</span><span class="s2"> != </span><span class="si">{</span><span class="n">edge_mask_distance_dict</span><span class="p">[</span><span class="s1">&#39;F444W&#39;</span><span class="p">]</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area stderr docutils container">
+<div class="highlight"><pre>
+INFO:galfind:Combined mask for &lt;galfind.Data.Stacked_Band_Data object at 0x7fcef92bfd00&gt; already exists at /raid/scratch/work/austind/GALFIND_WORK/Masks/JOF/combined/JOF_F277W+F356W+F444W_auto.fits
+</pre></div></div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+50 != 100
+</pre></div></div>
+</div>
+<p>We can see that the saved mask arguments are not the same as those input by the user since the mask has not been made using the user inputs.</p>
+</section>
+<section id="Example-4:-Loading-fits-masks-directly">
+<h2>Example 4: Loading fits masks directly<a class="headerlink" href="#Example-4:-Loading-fits-masks-directly" title="Link to this heading"></a></h2>
+<p>In this final masking example, instead of producing the masks by using the <code class="docutils literal notranslate"><span class="pre">method</span> <span class="pre">=</span> <span class="pre">&quot;auto&quot;</span></code> or <code class="docutils literal notranslate"><span class="pre">method</span> <span class="pre">=</span> <span class="pre">&quot;manual&quot;</span></code> arguments, we will explicitly load them using the <code class="docutils literal notranslate"><span class="pre">fits_mask_path</span></code> argument. This is useful if you have masks saved in other locations outside of the <code class="docutils literal notranslate"><span class="pre">GALFIND_WORK</span></code> directory set in the config file. We will first copy our manually created masks from the default paths into a directory one step up from <code class="docutils literal notranslate"><span class="pre">GALFIND_WORK</span></code> and rename them for the sake of it.</p>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[15]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="c1"># create directory for new masks</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">JOF_data_5</span><span class="o">.</span><span class="n">forced_phot_band</span><span class="o">.</span><span class="n">mask_path</span><span class="p">)</span>
+<span class="n">new_dir</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">config</span><span class="p">[</span><span class="s1">&#39;DEFAULT&#39;</span><span class="p">][</span><span class="s1">&#39;GALFIND_WORK&#39;</span><span class="p">]</span><span class="si">}</span><span class="s2">/new_masks&quot;</span>
+<span class="n">new_mask_paths</span> <span class="o">=</span> <span class="p">{</span><span class="o">**</span><span class="p">{</span><span class="n">band_data</span><span class="o">.</span><span class="n">filt_name</span><span class="p">:</span>
+    <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">new_dir</span><span class="si">}</span><span class="s2">/confusing_name_</span><span class="si">{</span><span class="nb">str</span><span class="p">(</span><span class="n">i</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="mi">1</span><span class="p">)</span><span class="si">}</span><span class="s2">.fits&quot;</span>
+    <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">band_data</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">JOF_data_5</span><span class="p">)},</span>
+    <span class="n">JOF_data_5</span><span class="o">.</span><span class="n">forced_phot_band</span><span class="o">.</span><span class="n">filt_name</span><span class="p">:</span>
+    <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">new_dir</span><span class="si">}</span><span class="s2">/confusing_name_</span><span class="si">{</span><span class="nb">str</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">JOF_data_5</span><span class="p">)</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="mi">1</span><span class="p">)</span><span class="si">}</span><span class="s2">.fits&quot;</span><span class="p">}</span>
+<span class="n">funcs</span><span class="o">.</span><span class="n">make_dirs</span><span class="p">(</span><span class="nb">list</span><span class="p">(</span><span class="n">new_mask_paths</span><span class="o">.</span><span class="n">values</span><span class="p">())[</span><span class="mi">0</span><span class="p">])</span>
+<span class="c1"># recursively copy masks across to new directory</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">JOF_data_5</span><span class="o">.</span><span class="n">mask_paths</span><span class="o">.</span><span class="n">values</span><span class="p">(),</span> <span class="n">new_mask_paths</span><span class="o">.</span><span class="n">values</span><span class="p">())</span>
+<span class="p">[</span><span class="n">shutil</span><span class="o">.</span><span class="n">copyfile</span><span class="p">(</span><span class="n">src</span><span class="p">,</span> <span class="n">dst</span><span class="p">)</span> <span class="k">for</span> <span class="n">src</span><span class="p">,</span> <span class="n">dst</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">JOF_data_5</span><span class="o">.</span><span class="n">mask_paths</span><span class="o">.</span><span class="n">values</span><span class="p">(),</span> <span class="n">new_mask_paths</span><span class="o">.</span><span class="n">values</span><span class="p">())]</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+/raid/scratch/work/austind/GALFIND_WORK/Masks/JOF/combined/JOF_F277W+F356W+F444W_auto.fits
+dict_values([&#39;/raid/scratch/work/austind/GALFIND_WORK/Masks/JOF/auto/F090W_auto.fits&#39;, &#39;/raid/scratch/work/austind/GALFIND_WORK/Masks/JOF/auto/F115W_auto.fits&#39;, &#39;/raid/scratch/work/austind/GALFIND_WORK/Masks/JOF/auto/F150W_auto.fits&#39;, &#39;/raid/scratch/work/austind/GALFIND_WORK/Masks/JOF/auto/F162M_auto.fits&#39;, &#39;/raid/scratch/work/austind/GALFIND_WORK/Masks/JOF/auto/F182M_auto.fits&#39;, &#39;/raid/scratch/work/austind/GALFIND_WORK/Masks/JOF/auto/F200W_auto.fits&#39;, &#39;/raid/scratch/work/austind/GALFIND_WORK/Masks/JOF/auto/F210M_auto.fits&#39;, &#39;/raid/scratch/work/austind/GALFIND_WORK/Masks/JOF/auto/F250M_auto.fits&#39;, &#39;/raid/scratch/work/austind/GALFIND_WORK/Masks/JOF/auto/F277W_auto.fits&#39;, &#39;/raid/scratch/work/austind/GALFIND_WORK/Masks/JOF/auto/F300M_auto.fits&#39;, &#39;/raid/scratch/work/austind/GALFIND_WORK/Masks/JOF/auto/F335M_auto.fits&#39;, &#39;/raid/scratch/work/austind/GALFIND_WORK/Masks/JOF/auto/F356W_auto.fits&#39;, &#39;/raid/scratch/work/austind/GALFIND_WORK/Masks/JOF/auto/F410M_auto.fits&#39;, &#39;/raid/scratch/work/austind/GALFIND_WORK/Masks/JOF/auto/F444W_auto.fits&#39;, &#39;/raid/scratch/work/austind/GALFIND_WORK/Masks/JOF/combined/JOF_F277W+F356W+F444W_auto.fits&#39;]) dict_values([&#39;/raid/scratch/work/austind/GALFIND_WORK/new_masks/confusing_name_1.fits&#39;, &#39;/raid/scratch/work/austind/GALFIND_WORK/new_masks/confusing_name_2.fits&#39;, &#39;/raid/scratch/work/austind/GALFIND_WORK/new_masks/confusing_name_3.fits&#39;, &#39;/raid/scratch/work/austind/GALFIND_WORK/new_masks/confusing_name_4.fits&#39;, &#39;/raid/scratch/work/austind/GALFIND_WORK/new_masks/confusing_name_5.fits&#39;, &#39;/raid/scratch/work/austind/GALFIND_WORK/new_masks/confusing_name_6.fits&#39;, &#39;/raid/scratch/work/austind/GALFIND_WORK/new_masks/confusing_name_7.fits&#39;, &#39;/raid/scratch/work/austind/GALFIND_WORK/new_masks/confusing_name_8.fits&#39;, &#39;/raid/scratch/work/austind/GALFIND_WORK/new_masks/confusing_name_9.fits&#39;, &#39;/raid/scratch/work/austind/GALFIND_WORK/new_masks/confusing_name_10.fits&#39;, &#39;/raid/scratch/work/austind/GALFIND_WORK/new_masks/confusing_name_11.fits&#39;, &#39;/raid/scratch/work/austind/GALFIND_WORK/new_masks/confusing_name_12.fits&#39;, &#39;/raid/scratch/work/austind/GALFIND_WORK/new_masks/confusing_name_13.fits&#39;, &#39;/raid/scratch/work/austind/GALFIND_WORK/new_masks/confusing_name_14.fits&#39;, &#39;/raid/scratch/work/austind/GALFIND_WORK/new_masks/confusing_name_15.fits&#39;])
+</pre></div></div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[15]:
+</pre></div>
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+[&#39;/raid/scratch/work/austind/GALFIND_WORK/new_masks/confusing_name_1.fits&#39;,
+ &#39;/raid/scratch/work/austind/GALFIND_WORK/new_masks/confusing_name_2.fits&#39;,
+ &#39;/raid/scratch/work/austind/GALFIND_WORK/new_masks/confusing_name_3.fits&#39;,
+ &#39;/raid/scratch/work/austind/GALFIND_WORK/new_masks/confusing_name_4.fits&#39;,
+ &#39;/raid/scratch/work/austind/GALFIND_WORK/new_masks/confusing_name_5.fits&#39;,
+ &#39;/raid/scratch/work/austind/GALFIND_WORK/new_masks/confusing_name_6.fits&#39;,
+ &#39;/raid/scratch/work/austind/GALFIND_WORK/new_masks/confusing_name_7.fits&#39;,
+ &#39;/raid/scratch/work/austind/GALFIND_WORK/new_masks/confusing_name_8.fits&#39;,
+ &#39;/raid/scratch/work/austind/GALFIND_WORK/new_masks/confusing_name_9.fits&#39;,
+ &#39;/raid/scratch/work/austind/GALFIND_WORK/new_masks/confusing_name_10.fits&#39;,
+ &#39;/raid/scratch/work/austind/GALFIND_WORK/new_masks/confusing_name_11.fits&#39;,
+ &#39;/raid/scratch/work/austind/GALFIND_WORK/new_masks/confusing_name_12.fits&#39;,
+ &#39;/raid/scratch/work/austind/GALFIND_WORK/new_masks/confusing_name_13.fits&#39;,
+ &#39;/raid/scratch/work/austind/GALFIND_WORK/new_masks/confusing_name_14.fits&#39;,
+ &#39;/raid/scratch/work/austind/GALFIND_WORK/new_masks/confusing_name_15.fits&#39;]
+</pre></div></div>
+</div>
+<p>Now we shall load them into our <code class="docutils literal notranslate"><span class="pre">Data</span></code> object using <code class="docutils literal notranslate"><span class="pre">Data.mask()</span></code> as before.</p>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[16]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">JOF_data_6</span><span class="o">.</span><span class="n">mask</span><span class="p">(</span><span class="n">fits_mask_path</span> <span class="o">=</span> <span class="n">new_mask_paths</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">JOF_data_6</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area stderr docutils container">
+<div class="highlight"><pre>
+INFO:galfind:Combined mask for &lt;galfind.Data.Stacked_Band_Data object at 0x7fcef92d3bb0&gt; already exists at /raid/scratch/work/austind/GALFIND_WORK/Masks/JOF/combined/JOF_F277W+F356W+F444W_auto.fits
+</pre></div></div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+****************************************
+DATA OBJECT:
+----------
+SURVEY: JOF
+VERSION: v11
+****************************************
+MULTIPLE_FILTER
+----------
+FACILITY: JWST
+INSTRUMENT: NIRCam
+FILTERS: [&#39;F090W&#39;, &#39;F115W&#39;, &#39;F150W&#39;, &#39;F162M&#39;, &#39;F182M&#39;, &#39;F200W&#39;, &#39;F210M&#39;, &#39;F250M&#39;, &#39;F277W&#39;, &#39;F300M&#39;, &#39;F335M&#39;, &#39;F356W&#39;, &#39;F410M&#39;, &#39;F444W&#39;]
+****************************************
+****************************************
+
+</pre></div></div>
+</div>
+<p>Here we can see that the paths to our masks match the confusingly named paths set previously. Let’s now delete the copied directory to clean up what we have done in this example.</p>
+<div class="nbinput nblast docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[17]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">shutil</span><span class="o">.</span><span class="n">rmtree</span><span class="p">(</span><span class="n">new_dir</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+</section>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="source_extraction.html" class="btn btn-neutral float-left" title="Image segmentation and forced photometry" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="running_depths.html" class="btn btn-neutral float-right" title="Running depths" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2024, Duncan Austin.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

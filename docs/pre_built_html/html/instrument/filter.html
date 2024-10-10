@@ -1,0 +1,398 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Handling filter objects &mdash; galfind 0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=80d5e7a1" />
+      <link rel="stylesheet" type="text/css" href="../_static/css/theme.css?v=19f00094" />
+      <link rel="stylesheet" type="text/css" href="../_static/copybutton.css?v=76b2166b" />
+      <link rel="stylesheet" type="text/css" href="../_static/nbsphinx-code-cells.css?v=2aa19091" />
+
+  
+  <!--[if lt IE 9]>
+    <script src="../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+        <script src="../_static/jquery.js?v=5d32c60e"></script>
+        <script src="../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+        <script src="../_static/documentation_options.js?v=2709fde1"></script>
+        <script src="../_static/doctools.js?v=9a2dae69"></script>
+        <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
+        <script src="../_static/clipboard.min.js?v=a7894cd8"></script>
+        <script src="../_static/copybutton.js?v=f281be69"></script>
+        <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+        <script>window.MathJax = {"tex": {"inlineMath": [["$", "$"], ["\\(", "\\)"]], "processEscapes": true}, "options": {"ignoreHtmlClass": "tex2jax_ignore|mathjax_ignore|document", "processHtmlClass": "tex2jax_process|mathjax_process|math|output_area"}}</script>
+        <script defer="defer" src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+    <script src="../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+    <link rel="next" title="The Multiple_Filter object" href="multiple_filter.html" />
+    <link rel="prev" title="Photometric Instruments" href="instrument.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../index.html" class="icon icon-home">
+            galfind
+          </a>
+              <div class="version">
+                0.1.0
+              </div>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="../getting_started/getting_started.html">Welcome to Galfind!</a></li>
+<li class="toctree-l1 current"><a class="reference internal" href="instrument.html">Photometric Instruments</a><ul class="current">
+<li class="toctree-l2 current"><a class="current reference internal" href="#">Handling filter objects</a></li>
+<li class="toctree-l2"><a class="reference internal" href="multiple_filter.html">The Multiple_Filter object</a></li>
+<li class="toctree-l2"><a class="reference internal" href="instrument_object.html">The Instrument object</a></li>
+<li class="toctree-l2"><a class="reference internal" href="PSF.html">The PSF object</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="../data/data.html">Galfind Data Object</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../catalogue/catalogue.html">Catalogue Object</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../galaxy/galaxy.html">Galaxy Object</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../photometry/photometry.html">Handling Source Photometry</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../sed_fitting/sed_fitting.html">SED Fitting</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../seds/seds.html">Spectral Energy Distribution (SED) Fitting</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../multiple_surveys/multiple_surveys.html">Multiple Surveys and Datasets</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../spectra/spectra.html">Spectral Fitting Overview</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../misc/misc.html">Miscellaneous Functionality</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../index.html">galfind</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="instrument.html">Photometric Instruments</a></li>
+      <li class="breadcrumb-item active">Handling filter objects</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="../_sources/instrument/filter.ipynb.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="Handling-filter-objects">
+<h1>Handling filter objects<a class="headerlink" href="#Handling-filter-objects" title="Link to this heading"></a></h1>
+<p>The most fundamental building block of photometric surveys lies in the bandpass filters used to conduct them. In this example we will learn how to use the <code class="docutils literal notranslate"><span class="pre">Filter</span></code> class which is used in (nearly) every use-case of the <code class="docutils literal notranslate"><span class="pre">galfind</span></code> code. We start by looking at the JWST/NIRCam/F444W band, which is very commonly used in both blank field and cluster surveys.</p>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[1]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="c1"># imports</span>
+<span class="kn">import</span> <span class="nn">numpy</span> <span class="k">as</span> <span class="nn">np</span>
+<span class="kn">import</span> <span class="nn">matplotlib.pyplot</span> <span class="k">as</span> <span class="nn">plt</span>
+<span class="kn">import</span> <span class="nn">astropy.units</span> <span class="k">as</span> <span class="nn">u</span>
+<span class="kn">from</span> <span class="nn">copy</span> <span class="kn">import</span> <span class="n">copy</span><span class="p">,</span> <span class="n">deepcopy</span>
+
+<span class="kn">from</span> <span class="nn">galfind</span> <span class="kn">import</span> <span class="n">Filter</span>
+<span class="kn">from</span> <span class="nn">galfind</span> <span class="kn">import</span> <span class="n">U</span><span class="p">,</span> <span class="n">V</span><span class="p">,</span> <span class="n">J</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+__init__ imports took 0.5126409530639648s
+Reading GALFIND config file from: /nvme/scratch/work/austind/GALFIND/galfind/../configs/galfind_config.ini
+</pre></div></div>
+</div>
+<div class="nbinput nblast docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[2]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="c1"># Example 1: Create a filter object from a filter name</span>
+<span class="n">facility</span> <span class="o">=</span> <span class="s2">&quot;JWST&quot;</span>
+<span class="n">instrument</span> <span class="o">=</span> <span class="s2">&quot;NIRCam&quot;</span>
+<span class="n">filter_name</span> <span class="o">=</span> <span class="s2">&quot;F444W&quot;</span>
+<span class="n">f444w</span> <span class="o">=</span> <span class="n">Filter</span><span class="o">.</span><span class="n">from_SVO</span><span class="p">(</span><span class="n">facility</span><span class="p">,</span> <span class="n">instrument</span><span class="p">,</span> <span class="n">filter_name</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<p>We can also very simply plot this filter profile so we can check that it looks correct. This in-built function also allows the user to choose the filter colour; we choose to plot this filter in red since it is the reddest wideband available for JWST/NIRCam.</p>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[3]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="c1"># Example 2: Display filter and metadata</span>
+<span class="c1"># Construct the axis to plot this filter on using matplotlib</span>
+<span class="n">fig</span><span class="p">,</span> <span class="n">ax</span> <span class="o">=</span> <span class="n">plt</span><span class="o">.</span><span class="n">subplots</span><span class="p">()</span>
+<span class="n">f444w</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">ax</span><span class="p">,</span> <span class="n">colour</span> <span class="o">=</span> <span class="s2">&quot;red&quot;</span><span class="p">,</span> <span class="n">show</span> <span class="o">=</span> <span class="kc">True</span><span class="p">)</span>
+
+<span class="c1"># Have a look at the meta properties of the filter</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">f444w</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<img alt="../_images/instrument_filter_4_0.png" src="../_images/instrument_filter_4_0.png" />
+</div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+****************************************
+FILTER: JWST/NIRCam/F444W
+****************************************
+DetectorType: photon counter
+Description: NIRCam F444W filter
+Comments: includes NIRCam optics, DBS, QE and JWST Optical Telescope Element
+WavelengthRef: 44043.150837738 Angstrom
+WavelengthMean: 44393.515120525 Angstrom
+WavelengthEff: 43504.264673627 Angstrom
+WavelengthMin: 38039.572043804 Angstrom
+WavelengthMax: 50995.5 Angstrom
+WidthEff: 10676.002928393 Angstrom
+WavelengthCen: 44405.491515008 Angstrom
+WavelengthPivot: 44043.150837738 Angstrom
+WavelengthPeak: 43523.2 Angstrom
+WavelengthPhot: 43732.035994545 Angstrom
+FWHM: 11144.052434142 Angstrom
+WavelengthUpper50: 49977.517732078995 Angstrom
+WavelengthLower50: 38833.465297937 Angstrom
+****************************************
+
+</pre></div></div>
+</div>
+<p>In the above example, we have taken the filter profile (and associated properties) directly from the <a class="reference external" href="%22http://svo2.cab.inta-csic.es/theory/fps/%22">SVO Filter Profile service</a>. In addition to those available via SVO, <code class="docutils literal notranslate"><span class="pre">galfind</span></code> also provides a set of top-hat UVJ filters useful for the identification of passive galaxies at <span class="math notranslate nohighlight">\(z&lt;4\)</span> or so. When plotting these UVJ filters, we utilize the option to change the wavelength units that are plotted on the x axis. For more information on how
+<code class="docutils literal notranslate"><span class="pre">galfind</span></code> handles standard unit conversions, please see <a class="reference internal" href="../misc/units.html"><span class="doc">Galfind unit conversions</span></a>.</p>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[4]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="c1"># Example 3: Create UVJ filters</span>
+<span class="c1"># initialize the UVJ filters</span>
+<span class="n">U_filter</span> <span class="o">=</span> <span class="n">U</span><span class="p">()</span>
+<span class="n">V_filter</span> <span class="o">=</span> <span class="n">V</span><span class="p">()</span>
+<span class="n">J_filter</span> <span class="o">=</span> <span class="n">J</span><span class="p">()</span>
+<span class="n">filters_to_plot</span> <span class="o">=</span> <span class="p">[</span><span class="n">U_filter</span><span class="p">,</span> <span class="n">V_filter</span><span class="p">,</span> <span class="n">J_filter</span><span class="p">]</span>
+
+<span class="c1"># plot the UVJ filters</span>
+<span class="n">fig</span><span class="p">,</span> <span class="n">ax</span> <span class="o">=</span> <span class="n">plt</span><span class="o">.</span><span class="n">subplots</span><span class="p">()</span>
+<span class="c1"># plotting meta</span>
+<span class="n">wav_units</span> <span class="o">=</span> <span class="n">u</span><span class="o">.</span><span class="n">AA</span>
+<span class="n">colours_to_plot</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;blue&quot;</span><span class="p">,</span> <span class="s2">&quot;green&quot;</span><span class="p">,</span> <span class="s2">&quot;red&quot;</span><span class="p">]</span>
+<span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="p">(</span><span class="n">filt</span><span class="p">,</span> <span class="n">colour</span><span class="p">)</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="nb">zip</span><span class="p">(</span><span class="n">filters_to_plot</span><span class="p">,</span> <span class="n">colours_to_plot</span><span class="p">)):</span>
+    <span class="c1"># print string representation of the filter</span>
+    <span class="nb">print</span><span class="p">(</span><span class="n">filt</span><span class="p">)</span>
+    <span class="c1"># plot the filter on the axis</span>
+    <span class="n">filt</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">ax</span><span class="p">,</span> <span class="n">wav_units</span> <span class="o">=</span> <span class="n">wav_units</span><span class="p">,</span> <span class="n">show</span> <span class="o">=</span> <span class="kc">True</span> <span class="k">if</span> <span class="n">i</span> <span class="o">==</span> <span class="nb">len</span><span class="p">(</span><span class="n">filters_to_plot</span><span class="p">)</span> <span class="o">-</span> <span class="mi">1</span> <span class="k">else</span> <span class="kc">False</span><span class="p">,</span> <span class="n">colour</span> <span class="o">=</span> <span class="n">colour</span><span class="p">)</span>
+<br/></pre></div>
+</div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+****************************************
+FILTER: U
+****************************************
+WavelengthCen: 3650.0 Angstrom
+FWHM: 660.0 Angstrom
+****************************************
+
+****************************************
+FILTER: V
+****************************************
+WavelengthCen: 5510.0 Angstrom
+FWHM: 880.0 Angstrom
+****************************************
+
+****************************************
+FILTER: J
+****************************************
+WavelengthCen: 12200.0 Angstrom
+FWHM: 2130.0 Angstrom
+****************************************
+
+</pre></div></div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<img alt="../_images/instrument_filter_6_1.png" src="../_images/instrument_filter_6_1.png" />
+</div>
+</div>
+<p>We have now learnt how to both load in filters directly from the SVO as well as access the UVJ filters built into <code class="docutils literal notranslate"><span class="pre">galfind</span></code> itself, but what if we have some strange filter not included in either. Maybe we want to test out some future instrument (for instance the ELT MICADO filterset), or maybe we want to procrastinate? Let’s have a little fun shall we.</p>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[5]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="c1"># Example 3: Create a custom filter</span>
+<span class="c1"># define a sin function for the filter throughput about a 0.5 midpoint</span>
+<span class="k">def</span> <span class="nf">sin_func</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">wavelength</span><span class="p">,</span> <span class="n">amplitude</span> <span class="o">=</span> <span class="mf">0.3</span><span class="p">,</span> <span class="n">const</span> <span class="o">=</span> <span class="mf">0.5</span><span class="p">):</span>
+    <span class="k">return</span> <span class="n">amplitude</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">x</span> <span class="o">*</span> <span class="mi">2</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">pi</span> <span class="o">/</span> <span class="n">wavelength</span><span class="p">)</span> <span class="o">+</span> <span class="n">const</span>
+
+<span class="c1"># create a filter object from the custom function</span>
+<span class="n">wav</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">linspace</span><span class="p">(</span><span class="mf">3_000.</span><span class="p">,</span> <span class="mf">3_800.</span><span class="p">,</span> <span class="mi">800</span><span class="p">))</span> <span class="o">*</span> <span class="n">u</span><span class="o">.</span><span class="n">AA</span>
+<span class="n">trans</span> <span class="o">=</span> <span class="n">sin_func</span><span class="p">(</span><span class="n">wav</span><span class="o">.</span><span class="n">value</span> <span class="o">-</span> <span class="n">wav</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">value</span><span class="p">,</span> <span class="mi">800</span><span class="p">)</span>
+<span class="n">properties</span> <span class="o">=</span> <span class="p">{}</span>
+<span class="n">sin_filt</span> <span class="o">=</span> <span class="n">Filter</span><span class="p">(</span><span class="kc">None</span><span class="p">,</span> <span class="s2">&quot;sin&quot;</span><span class="p">,</span> <span class="n">wav</span><span class="p">,</span> <span class="n">trans</span><span class="p">,</span> <span class="n">properties</span> <span class="o">=</span> <span class="n">properties</span><span class="p">)</span>
+<span class="c1"># plot the filter</span>
+<span class="n">fig</span><span class="p">,</span> <span class="n">ax</span> <span class="o">=</span> <span class="n">plt</span><span class="o">.</span><span class="n">subplots</span><span class="p">()</span>
+<span class="n">sin_filt</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">ax</span><span class="p">,</span> <span class="n">colour</span> <span class="o">=</span> <span class="s2">&quot;grey&quot;</span><span class="p">,</span> <span class="n">label</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span> <span class="n">show</span> <span class="o">=</span> <span class="kc">True</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<img alt="../_images/instrument_filter_8_0.png" src="../_images/instrument_filter_8_0.png" />
+</div>
+</div>
+<p>Looks beautiful, although maybe not particularly realistic. Maybe we were attempting to re-create the F444W filter from JWST/NIRCam and want to check this without explicitly plotting it. In this case we use the overridden <code class="docutils literal notranslate"><span class="pre">==</span></code> operator which can be helpful for checking whether your <code class="docutils literal notranslate"><span class="pre">Filter</span></code> objects are identical or not.</p>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[6]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="c1"># Example 4: Checking whether the sin and F444W filters are identical</span>
+<span class="k">if</span> <span class="n">sin_filt</span> <span class="o">==</span> <span class="n">f444w</span><span class="p">:</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="nb">repr</span><span class="p">(</span><span class="n">sin_filt</span><span class="p">)</span><span class="si">}</span><span class="s2"> and </span><span class="si">{</span><span class="nb">repr</span><span class="p">(</span><span class="n">f444w</span><span class="p">)</span><span class="si">}</span><span class="s2"> are identical&quot;</span><span class="p">)</span>
+<span class="k">else</span><span class="p">:</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="nb">repr</span><span class="p">(</span><span class="n">sin_filt</span><span class="p">)</span><span class="si">}</span><span class="s2"> and </span><span class="si">{</span><span class="nb">repr</span><span class="p">(</span><span class="n">f444w</span><span class="p">)</span><span class="si">}</span><span class="s2"> are different&quot;</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+Filter(sin) and Filter(F444W) are different
+</pre></div></div>
+</div>
+<p>Finally, we ask the question about what to do if we want to use many of these filters at one time, as in photometric surveys. Since the <span class="math notranslate nohighlight">\(\sin\)</span> and F444W filters are different, let’s try collating their information together into a single object using the <code class="docutils literal notranslate"><span class="pre">+</span></code> operator.Be careful though, as the reserve operation will not yield the same object. We can see from the example below that the type of this is a <code class="docutils literal notranslate"><span class="pre">Multiple_Filter</span></code> class, which we cover in the <a class="reference internal" href="multiple_filter.html"><span class="doc">next
+notebook</span></a>.</p>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[7]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="c1"># Example 5: Adding filters together</span>
+
+<span class="c1"># add the sin and F444W filters together</span>
+<span class="n">combined_filt</span> <span class="o">=</span> <span class="n">sin_filt</span> <span class="o">+</span> <span class="n">f444w</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;The type of the combined filter is </span><span class="si">{</span><span class="nb">type</span><span class="p">(</span><span class="n">combined_filt</span><span class="p">)</span><span class="si">}</span><span class="se">\n</span><span class="s2">&quot;</span><span class="p">)</span>
+
+<span class="c1"># print the combined filter</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">combined_filt</span><span class="p">)</span>
+
+<span class="c1"># attempt the reverse operation to regain the original sin filter</span>
+<span class="n">combined_filt</span> <span class="o">-=</span> <span class="n">f444w</span>
+<span class="k">if</span> <span class="n">combined_filt</span> <span class="o">==</span> <span class="n">sin_filt</span><span class="p">:</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="nb">repr</span><span class="p">(</span><span class="n">combined_filt</span><span class="p">)</span><span class="si">}</span><span class="s2"> and </span><span class="si">{</span><span class="nb">repr</span><span class="p">(</span><span class="n">sin_filt</span><span class="p">)</span><span class="si">}</span><span class="s2"> are identical</span><span class="se">\n</span><span class="s2">&quot;</span><span class="p">)</span>
+<span class="k">else</span><span class="p">:</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="nb">repr</span><span class="p">(</span><span class="n">combined_filt</span><span class="p">)</span><span class="si">}</span><span class="s2"> and </span><span class="si">{</span><span class="nb">repr</span><span class="p">(</span><span class="n">sin_filt</span><span class="p">)</span><span class="si">}</span><span class="s2"> are different</span><span class="se">\n</span><span class="s2">&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">combined_filt</span><span class="p">)</span>
+
+<span class="c1"># show the difference between the two</span>
+<span class="k">if</span> <span class="n">combined_filt</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">==</span> <span class="n">sin_filt</span><span class="p">:</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;combined_filt[0] == sin_filt&quot;</span><span class="p">)</span>
+<span class="k">else</span><span class="p">:</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;combined_filt[0] != sin_filt&quot;</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+The type of the combined filter is &lt;class &#39;galfind.Filter.Multiple_Filter&#39;&gt;
+
+****************************************
+MULTIPLE_FILTER
+****************************************
+FACILITY: JWST
+INSTRUMENT: NIRCam
+FILTERS: [&#39;F444W&#39;]
+----------
+FACILITY: UserDefined
+INSTRUMENT: UserDefined
+FILTERS: [&#39;sin&#39;]
+****************************************
+
+Multiple_Filter(UserDefined) and Filter(sin) are different
+
+****************************************
+MULTIPLE_FILTER
+****************************************
+FACILITY: UserDefined
+INSTRUMENT: UserDefined
+FILTERS: [&#39;sin&#39;]
+****************************************
+
+combined_filt[0] == sin_filt
+</pre></div></div>
+</div>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="instrument.html" class="btn btn-neutral float-left" title="Photometric Instruments" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="multiple_filter.html" class="btn btn-neutral float-right" title="The Multiple_Filter object" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2024, Duncan Austin.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

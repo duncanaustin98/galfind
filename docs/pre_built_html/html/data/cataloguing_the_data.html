@@ -1,0 +1,387 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Cataloguing the data &mdash; galfind 0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=80d5e7a1" />
+      <link rel="stylesheet" type="text/css" href="../_static/css/theme.css?v=19f00094" />
+      <link rel="stylesheet" type="text/css" href="../_static/copybutton.css?v=76b2166b" />
+      <link rel="stylesheet" type="text/css" href="../_static/nbsphinx-code-cells.css?v=2aa19091" />
+
+  
+  <!--[if lt IE 9]>
+    <script src="../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+        <script src="../_static/jquery.js?v=5d32c60e"></script>
+        <script src="../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+        <script src="../_static/documentation_options.js?v=2709fde1"></script>
+        <script src="../_static/doctools.js?v=9a2dae69"></script>
+        <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
+        <script src="../_static/clipboard.min.js?v=a7894cd8"></script>
+        <script src="../_static/copybutton.js?v=f281be69"></script>
+        <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+        <script>window.MathJax = {"tex": {"inlineMath": [["$", "$"], ["\\(", "\\)"]], "processEscapes": true}, "options": {"ignoreHtmlClass": "tex2jax_ignore|mathjax_ignore|document", "processHtmlClass": "tex2jax_process|mathjax_process|math|output_area"}}</script>
+        <script defer="defer" src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+    <script src="../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+    <link rel="next" title="Catalogue Object" href="../catalogue/catalogue.html" />
+    <link rel="prev" title="Running depths" href="running_depths.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../index.html" class="icon icon-home">
+            galfind
+          </a>
+              <div class="version">
+                0.1.0
+              </div>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="../getting_started/getting_started.html">Welcome to Galfind!</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../instrument/instrument.html">Photometric Instruments</a></li>
+<li class="toctree-l1 current"><a class="reference internal" href="data.html">Galfind Data Object</a><ul class="current">
+<li class="toctree-l2"><a class="reference internal" href="data_intro.html">Introduction to the Data class</a></li>
+<li class="toctree-l2"><a class="reference internal" href="PSF_homogenization.html">PSF homogenization</a></li>
+<li class="toctree-l2"><a class="reference internal" href="source_extraction.html">Image segmentation and forced photometry</a></li>
+<li class="toctree-l2"><a class="reference internal" href="masking.html">Producing and loading survey masks</a></li>
+<li class="toctree-l2"><a class="reference internal" href="running_depths.html">Running depths</a></li>
+<li class="toctree-l2 current"><a class="current reference internal" href="#">Cataloguing the data</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#Example-1:-Producing-photometric-catalogues">Example 1: Producing photometric catalogues</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#Example-2:-Running-the-Data-pipeline">Example 2: Running the Data pipeline</a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="../catalogue/catalogue.html">Catalogue Object</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../galaxy/galaxy.html">Galaxy Object</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../photometry/photometry.html">Handling Source Photometry</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../sed_fitting/sed_fitting.html">SED Fitting</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../seds/seds.html">Spectral Energy Distribution (SED) Fitting</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../multiple_surveys/multiple_surveys.html">Multiple Surveys and Datasets</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../spectra/spectra.html">Spectral Fitting Overview</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../misc/misc.html">Miscellaneous Functionality</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../index.html">galfind</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="data.html">Galfind Data Object</a></li>
+      <li class="breadcrumb-item active">Cataloguing the data</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="../_sources/data/cataloguing_the_data.ipynb.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="Cataloguing-the-data">
+<h1>Cataloguing the data<a class="headerlink" href="#Cataloguing-the-data" title="Link to this heading"></a></h1>
+<p>The primary use for the galfind <code class="docutils literal notranslate"><span class="pre">Data</span></code> object is the creation of photometric catalogues for public and personal use. Once produced, these catalogues can be loaded into the <code class="docutils literal notranslate"><span class="pre">Catalogue</span></code> class to derive specific properties, which we cover in the <a class="reference internal" href="../catalogue/catalogue.html"><span class="doc">next section</span></a>. In this first galfind release, we implement the ability to produce these using SExtractor only, although we aim to include other codes to perform forced photometry in the near future.</p>
+<p>The cataloguing procedure involves many different steps that have been explained in previous notebooks in this section. We outline the steps here.</p>
+<ol class="arabic simple">
+<li><p>Instantiate a blank <code class="docutils literal notranslate"><span class="pre">Data</span></code> object from the reduced imaging</p></li>
+<li><p>Produce segmentation maps for each band using SExtractor</p></li>
+<li><p>Mask the data (i.e. image edges, stars, artefacts) either manually or automatically</p></li>
+<li><p>Perform forced photometry in a set of given apertures in either a single band or an inverse-variance weighted stack of bands.</p></li>
+<li><p>Aperture correct the fluxes based on a given model or empirical PSF</p></li>
+<li><p>Calculate local depths for each source</p></li>
+<li><p>Determine appropriate flux errors based on these depths, accounting for the correlated image noise</p></li>
+</ol>
+<p>We will create a <code class="docutils literal notranslate"><span class="pre">Data</span></code> object and associated .fits catalogue following these 7 steps in two ways, long (example 1) and short (example 2).</p>
+<section id="Example-1:-Producing-photometric-catalogues">
+<h2>Example 1: Producing photometric catalogues<a class="headerlink" href="#Example-1:-Producing-photometric-catalogues" title="Link to this heading"></a></h2>
+<p>To start with, we will load the same JOF <code class="docutils literal notranslate"><span class="pre">Data</span></code> object we have seen in previous examples.</p>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[1]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">pathlib</span> <span class="kn">import</span> <span class="n">Path</span>
+<span class="kn">from</span> <span class="nn">astropy.table</span> <span class="kn">import</span> <span class="n">Table</span>
+<span class="kn">from</span> <span class="nn">copy</span> <span class="kn">import</span> <span class="n">deepcopy</span>
+<span class="kn">import</span> <span class="nn">astropy.units</span> <span class="k">as</span> <span class="nn">u</span>
+
+<span class="kn">from</span> <span class="nn">galfind</span> <span class="kn">import</span> <span class="n">Stacked_Band_Data</span><span class="p">,</span> <span class="n">Data</span>
+<span class="kn">from</span> <span class="nn">galfind.Data</span> <span class="kn">import</span> <span class="n">morgan_version_to_dir</span>
+
+<span class="n">survey</span> <span class="o">=</span> <span class="s2">&quot;JOF&quot;</span>
+<span class="n">version</span> <span class="o">=</span> <span class="s2">&quot;v11&quot;</span>
+<span class="n">instrument_names</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;NIRCam&quot;</span><span class="p">]</span>
+<span class="n">aper_diams</span> <span class="o">=</span> <span class="p">[</span><span class="mf">0.32</span><span class="p">]</span> <span class="o">*</span> <span class="n">u</span><span class="o">.</span><span class="n">arcsec</span>
+<span class="n">forced_phot_band</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;F277W&quot;</span><span class="p">,</span> <span class="s2">&quot;F356W&quot;</span><span class="p">,</span> <span class="s2">&quot;F444W&quot;</span><span class="p">]</span>
+<span class="n">min_flux_pc_err</span> <span class="o">=</span> <span class="mf">10.</span>
+<span class="c1"># 1</span>
+<span class="n">JOF_data_long</span> <span class="o">=</span> <span class="n">Data</span><span class="o">.</span><span class="n">from_survey_version</span><span class="p">(</span>
+    <span class="n">survey</span><span class="p">,</span>
+    <span class="n">version</span><span class="p">,</span>
+    <span class="n">instrument_names</span> <span class="o">=</span> <span class="n">instrument_names</span><span class="p">,</span>
+    <span class="n">version_to_dir_dict</span> <span class="o">=</span> <span class="n">morgan_version_to_dir</span><span class="p">,</span>
+    <span class="n">aper_diams</span> <span class="o">=</span> <span class="n">aper_diams</span><span class="p">,</span>
+    <span class="n">forced_phot_band</span> <span class="o">=</span> <span class="n">forced_phot_band</span>
+<span class="p">)</span>
+<span class="c1"># 2</span>
+<span class="n">JOF_data_long</span><span class="o">.</span><span class="n">mask</span><span class="p">()</span>
+<span class="c1"># 3</span>
+<span class="n">JOF_data_long</span><span class="o">.</span><span class="n">segment</span><span class="p">()</span>
+<span class="c1"># 4</span>
+<span class="n">JOF_data_long</span><span class="o">.</span><span class="n">perform_forced_phot</span><span class="p">()</span>
+<span class="c1"># 5</span>
+<span class="n">JOF_data_long</span><span class="o">.</span><span class="n">append_aper_corr_cols</span><span class="p">()</span>
+<span class="c1"># 6</span>
+<span class="n">JOF_data_long</span><span class="o">.</span><span class="n">run_depths</span><span class="p">()</span>
+<span class="c1"># 7</span>
+<span class="n">JOF_data_long</span><span class="o">.</span><span class="n">append_loc_depth_cols</span><span class="p">(</span><span class="n">min_flux_pc_err</span> <span class="o">=</span> <span class="n">min_flux_pc_err</span><span class="p">)</span>
+<br/></pre></div>
+</div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+Reading GALFIND config file from: /nvme/scratch/work/austind/GALFIND/galfind/../configs/galfind_config.ini
+</pre></div></div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area stderr docutils container">
+<div class="highlight"><pre>
+INFO:galfind:Aperture corrections for ACS_WFC loaded from /nvme/scratch/work/austind/GALFIND/galfind/Aperture_corrections/ACS_WFC_aper_corr.txt
+INFO:galfind:Aperture corrections for WFC3_IR loaded from /nvme/scratch/work/austind/GALFIND/galfind/Aperture_corrections/WFC3_IR_aper_corr.txt
+INFO:galfind:Aperture corrections for NIRCam loaded from /nvme/scratch/work/austind/GALFIND/galfind/Aperture_corrections/NIRCam_aper_corr.txt
+INFO:galfind:Aperture corrections for MIRI loaded from /nvme/scratch/work/austind/GALFIND/galfind/Aperture_corrections/MIRI_aper_corr.txt
+INFO:galfind:Aperture corrections for ACS_WFC loaded from /nvme/scratch/work/austind/GALFIND/galfind/Aperture_corrections/ACS_WFC_aper_corr.txt
+INFO:galfind:Aperture corrections for WFC3_IR loaded from /nvme/scratch/work/austind/GALFIND/galfind/Aperture_corrections/WFC3_IR_aper_corr.txt
+INFO:galfind:Aperture corrections for NIRCam loaded from /nvme/scratch/work/austind/GALFIND/galfind/Aperture_corrections/NIRCam_aper_corr.txt
+INFO:galfind:Aperture corrections for MIRI loaded from /nvme/scratch/work/austind/GALFIND/galfind/Aperture_corrections/MIRI_aper_corr.txt
+INFO:galfind:Aperture corrections for NIRCam loaded from /nvme/scratch/work/austind/GALFIND/galfind/Aperture_corrections/NIRCam_aper_corr.txt
+INFO:galfind:Loaded aper_diams=&lt;Quantity [0.32] arcsec&gt; for F277W+F356W+F444W
+INFO:galfind:Combined mask for &lt;galfind.Data.Stacked_Band_Data object at 0x7f67f51c0d30&gt; already exists at /raid/scratch/work/austind/GALFIND_WORK/Masks/JOF/combined/JOF_F277W+F356W+F444W_auto.fits
+WARNING:galfind:Aperture correction columns already in /raid/scratch/work/austind/GALFIND_WORK/Catalogues/v11/NIRCam/JOF/(0.32)as/JOF_MASTER_Sel-F277W+F356W+F444W_v11.fits
+Calculating depths:   0%|          | 0/15 [00:00&lt;?, ?it/s]
+INFO:galfind:Calculated/loaded depths for JOF v11 NIRCam
+INFO:galfind:Local depth columns already exist in /raid/scratch/work/austind/GALFIND_WORK/Catalogues/v11/NIRCam/JOF/(0.32)as/JOF_MASTER_Sel-F277W+F356W+F444W_v11.fits
+</pre></div></div>
+</div>
+<p>Now we will search the GALFIND_WORK directory for the individual forced photometry catalogues for each band and the resulting catalogue/README to ensure they exist and have been created correctly.</p>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[2]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="c1"># search for photometric catalogue</span>
+<span class="k">if</span> <span class="n">Path</span><span class="p">(</span><span class="n">JOF_data_long</span><span class="o">.</span><span class="n">phot_cat_path</span><span class="p">)</span><span class="o">.</span><span class="n">is_file</span><span class="p">():</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Photometric catalogue exists at the expected path.&quot;</span><span class="p">)</span>
+    <span class="c1"># open the photometric catalogue</span>
+    <span class="n">phot_cat</span> <span class="o">=</span> <span class="n">Table</span><span class="o">.</span><span class="n">read</span><span class="p">(</span><span class="n">JOF_data_long</span><span class="o">.</span><span class="n">phot_cat_path</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="n">phot_cat</span><span class="p">)</span>
+<span class="k">else</span><span class="p">:</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Photometric catalogue does not exist at the expected path.&quot;</span><span class="p">)</span>
+
+<span class="c1"># # search for README</span>
+<span class="c1"># readme_path = JOF_data_long.phot_cat_path.replace(&quot;.fits&quot;, &quot;_README.txt&quot;)</span>
+<span class="c1"># if Path(readme_path).is_file():</span>
+<span class="c1">#     print(&quot;README exists at the expected path.&quot;)</span>
+<span class="c1">#     # print the README</span>
+<span class="c1">#     with open(readme_path, &quot;r&quot;) as f:</span>
+<span class="c1">#         print(f.read())</span>
+<span class="c1">#         f.close()</span>
+<span class="c1"># else:</span>
+<span class="c1">#     print(&quot;README does not exist at the expected path.&quot;)</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+Photometric catalogue exists at the expected path.
+  NUMBER     X_IMAGE   ... FLUXERR_APER_F444W_loc_depth_10pc_Jy
+               pix     ...
+---------- ----------- ... ------------------------------------
+         1   9219.8145 ...                9.334392262202193e-07
+         2   6108.1621 ...                7.172339419546474e-07
+         3   7386.6421 ...               3.1515218602729543e-07
+         4   8138.5957 ...                3.234000112590365e-07
+         5   8047.3140 ...               1.1086978875416937e-07
+         6   9006.2188 ...                4.827971234428365e-08
+         7    765.8052 ...                5.650294316943437e-07
+         8   1647.3230 ...                1.901099027593121e-07
+         9   6701.1450 ...               1.7682059984292007e-07
+        10     82.3648 ...                2.371577141482952e-08
+       ...         ... ...                                  ...
+     16326  10042.8691 ...                 7.28102017387155e-10
+     16327   9314.2891 ...                4.697087374899504e-10
+     16328   2892.7561 ...                5.128462010110903e-10
+     16329   1918.4792 ...                4.895995960910137e-10
+     16330   9603.0967 ...                6.038842945552168e-10
+     16331   3401.8242 ...                5.944864637670069e-10
+     16332    203.1676 ...                6.378315604719358e-10
+     16333   8055.8330 ...                6.638494393320452e-10
+     16334    924.1203 ...                6.757014476461435e-10
+     16335   2663.6299 ...                8.274179840640633e-10
+Length = 16335 rows
+</pre></div></div>
+</div>
+<p>Let’s have a look at how this changes the <code class="docutils literal notranslate"><span class="pre">Data</span></code> print statement.</p>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[3]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="nb">print</span><span class="p">(</span><span class="n">JOF_data_long</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+****************************************
+DATA OBJECT:
+----------
+SURVEY: JOF
+VERSION: v11
+****************************************
+MULTIPLE_FILTER
+----------
+FACILITY: JWST
+INSTRUMENT: NIRCam
+FILTERS: [&#39;F090W&#39;, &#39;F115W&#39;, &#39;F150W&#39;, &#39;F162M&#39;, &#39;F182M&#39;, &#39;F200W&#39;, &#39;F210M&#39;, &#39;F250M&#39;, &#39;F277W&#39;, &#39;F300M&#39;, &#39;F335M&#39;, &#39;F356W&#39;, &#39;F410M&#39;, &#39;F444W&#39;]
+****************************************
+****************************************
+
+</pre></div></div>
+</div>
+<p>For safety reasons, once the (path to the) photometric catalogue has been loaded into the Data object, it is not possible to re-run it. This is so that, for example, you don’t get confused between the products stemming from the previous catalogue and your newly loaded in one. To be clear, the <code class="docutils literal notranslate"><span class="pre">overwrite</span></code> parameter that we have been using simply states whether the pre-existing paths should be overwritten with the new data and NOT whether the data stored in the object should be updated.
+Preventing stored paths from being overwritten in a particular object, however, does not entirely prevent you from changing the outputs of any methods run from those stored paths as the information is not cached in a single object, rather extracted from the data products when required. Let’s try re-producing this SExtractor forced photometric catalogue but instead using the F356W filter for selection in the same object to see what error message we get out of galfind.</p>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[4]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">JOF_data_long</span><span class="o">.</span><span class="n">perform_forced_phot</span><span class="p">(</span><span class="n">forced_phot_band</span> <span class="o">=</span> <span class="s2">&quot;F356W&quot;</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area stderr docutils container">
+<div class="highlight"><pre>
+CRITICAL:galfind:MASTER Photometric catalogue already exists!
+</pre></div></div>
+</div>
+</section>
+<section id="Example-2:-Running-the-Data-pipeline">
+<h2>Example 2: Running the Data pipeline<a class="headerlink" href="#Example-2:-Running-the-Data-pipeline" title="Link to this heading"></a></h2>
+<p>There is one last class method for the Data object that we havn’t quite covered yet, <code class="docutils literal notranslate"><span class="pre">Data.pipeline()</span></code> which again just takes <code class="docutils literal notranslate"><span class="pre">survey</span></code> and <code class="docutils literal notranslate"><span class="pre">version</span></code> inputs. This class method is what is used in the EPOCHS pipeline and essentially just chains the cataloguing steps in the previous notebooks together elegantly, skipping those that have already been executed in the past. For further details, please read the previous notebooks in this section if you have not already done so.</p>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[5]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="c1"># load the data object (short version)</span>
+<span class="n">JOF_data_short</span> <span class="o">=</span> <span class="n">Data</span><span class="o">.</span><span class="n">pipeline</span><span class="p">(</span>
+    <span class="n">survey</span><span class="p">,</span>
+    <span class="n">version</span><span class="p">,</span>
+    <span class="n">instrument_names</span> <span class="o">=</span> <span class="n">instrument_names</span><span class="p">,</span>
+    <span class="n">version_to_dir_dict</span> <span class="o">=</span> <span class="n">morgan_version_to_dir</span><span class="p">,</span>
+    <span class="n">aper_diams</span> <span class="o">=</span> <span class="n">aper_diams</span><span class="p">,</span>
+    <span class="n">forced_phot_band</span> <span class="o">=</span> <span class="n">forced_phot_band</span><span class="p">,</span>
+    <span class="n">min_flux_pc_err</span> <span class="o">=</span> <span class="n">min_flux_pc_err</span>
+<span class="p">)</span>
+
+<span class="c1"># ensure the two data objects are the same</span>
+<span class="k">assert</span> <span class="n">JOF_data_short</span> <span class="o">==</span> <span class="n">JOF_data_long</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area stderr docutils container">
+<div class="highlight"><pre>
+INFO:galfind:Aperture corrections for NIRCam loaded from /nvme/scratch/work/austind/GALFIND/galfind/Aperture_corrections/NIRCam_aper_corr.txt
+</pre></div></div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area stderr docutils container">
+<div class="highlight"><pre>
+INFO:galfind:Loaded aper_diams=&lt;Quantity [0.32] arcsec&gt; for F277W+F356W+F444W
+INFO:galfind:Combined mask for &lt;galfind.Data.Stacked_Band_Data object at 0x7f67f5128730&gt; already exists at /raid/scratch/work/austind/GALFIND_WORK/Masks/JOF/combined/JOF_F277W+F356W+F444W_auto.fits
+WARNING:galfind:Aperture correction columns already in /raid/scratch/work/austind/GALFIND_WORK/Catalogues/v11/NIRCam/JOF/(0.32)as/JOF_MASTER_Sel-F277W+F356W+F444W_v11.fits
+Calculating depths:   0%|          | 0/15 [00:00&lt;?, ?it/s]
+INFO:galfind:Calculated/loaded depths for JOF v11 NIRCam
+INFO:galfind:Local depth columns already exist in /raid/scratch/work/austind/GALFIND_WORK/Catalogues/v11/NIRCam/JOF/(0.32)as/JOF_MASTER_Sel-F277W+F356W+F444W_v11.fits
+</pre></div></div>
+</div>
+<p>Note that the two implementations are the same only if the default galfind pipeline parameters are used. Any deviation in masking, segmentation, performing forced photometry, running depths, or choice of PSF will produce differences between these two <code class="docutils literal notranslate"><span class="pre">Data</span></code> objects.</p>
+<p>Fantastic! You’ve stuck it out through to the end of the <code class="docutils literal notranslate"><span class="pre">Data</span></code> class documentation. Feel free to now explore the next section which explores the galfind <a class="reference internal" href="../catalogue/catalogue.html"><span class="doc">Catalogue</span></a> class.</p>
+</section>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="running_depths.html" class="btn btn-neutral float-left" title="Running depths" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="../catalogue/catalogue.html" class="btn btn-neutral float-right" title="Catalogue Object" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2024, Duncan Austin.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>
