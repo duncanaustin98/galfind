@@ -41,12 +41,12 @@ def plot_DLA_mag_diff(
             mock_sed_obs.create_mock_phot(instrument, depths)
             orig_phot = mock_sed_obs.mock_photometry
             # mock_sed_obs.plot_SED(ax, mag_units = u.Jy)
-            # orig_phot.plot_phot(ax)
+            # orig_phot.plot(ax)
             mock_sed_obs.add_DLA(DLA_obj)
             mock_sed_obs.create_mock_phot(instrument, depths)
             new_phot = mock_sed_obs.mock_photometry
             # mock_sed_obs.plot_SED(ax, mag_units = u.Jy)
-            # new_phot.plot_phot(ax)
+            # new_phot.plot(ax)
             mag_diff[j] = (
                 -2.5 * np.log10(new_phot[band].value / orig_phot[band].value)
                 if funcs.calc_1sigma_flux(30.0, 8.9) * n_sig_detection

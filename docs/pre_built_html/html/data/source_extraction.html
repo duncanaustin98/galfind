@@ -1,0 +1,520 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Image segmentation and forced photometry &mdash; galfind 0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=80d5e7a1" />
+      <link rel="stylesheet" type="text/css" href="../_static/css/theme.css?v=19f00094" />
+      <link rel="stylesheet" type="text/css" href="../_static/copybutton.css?v=76b2166b" />
+      <link rel="stylesheet" type="text/css" href="../_static/nbsphinx-code-cells.css?v=2aa19091" />
+
+  
+  <!--[if lt IE 9]>
+    <script src="../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+        <script src="../_static/jquery.js?v=5d32c60e"></script>
+        <script src="../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+        <script src="../_static/documentation_options.js?v=2709fde1"></script>
+        <script src="../_static/doctools.js?v=9a2dae69"></script>
+        <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
+        <script src="../_static/clipboard.min.js?v=a7894cd8"></script>
+        <script src="../_static/copybutton.js?v=f281be69"></script>
+        <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+        <script>window.MathJax = {"tex": {"inlineMath": [["$", "$"], ["\\(", "\\)"]], "processEscapes": true}, "options": {"ignoreHtmlClass": "tex2jax_ignore|mathjax_ignore|document", "processHtmlClass": "tex2jax_process|mathjax_process|math|output_area"}}</script>
+        <script defer="defer" src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+    <script src="../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+    <link rel="next" title="Producing and loading survey masks" href="masking.html" />
+    <link rel="prev" title="PSF homogenization" href="PSF_homogenization.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../index.html" class="icon icon-home">
+            galfind
+          </a>
+              <div class="version">
+                0.1.0
+              </div>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="../getting_started/getting_started.html">Welcome to Galfind!</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../instrument/instrument.html">Photometric Instruments</a></li>
+<li class="toctree-l1 current"><a class="reference internal" href="data.html">Galfind Data Object</a><ul class="current">
+<li class="toctree-l2"><a class="reference internal" href="data_intro.html">Introduction to the Data class</a></li>
+<li class="toctree-l2"><a class="reference internal" href="PSF_homogenization.html">PSF homogenization</a></li>
+<li class="toctree-l2 current"><a class="current reference internal" href="#">Image segmentation and forced photometry</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#Example-1:-Making-segmentation-maps-with-SExtractor">Example 1: Making segmentation maps with SExtractor</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#Example-2:-Plotting-the-segmentation-maps">Example 2: Plotting the segmentation maps</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#Example-3:-Running-forced-photometry-using-SExtractor">Example 3: Running forced photometry using SExtractor</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#Example-4:-Re-configuring-SExtractor">Example 4: Re-configuring SExtractor</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="masking.html">Producing and loading survey masks</a></li>
+<li class="toctree-l2"><a class="reference internal" href="running_depths.html">Running depths</a></li>
+<li class="toctree-l2"><a class="reference internal" href="cataloguing_the_data.html">Cataloguing the data</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="../catalogue/catalogue.html">Catalogue Object</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../galaxy/galaxy.html">Galaxy Object</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../photometry/photometry.html">Handling Source Photometry</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../sed_fitting/sed_fitting.html">SED Fitting</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../seds/seds.html">Spectral Energy Distribution (SED) Fitting</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../multiple_surveys/multiple_surveys.html">Multiple Surveys and Datasets</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../spectra/spectra.html">Spectral Fitting Overview</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../misc/misc.html">Miscellaneous Functionality</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../index.html">galfind</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="data.html">Galfind Data Object</a></li>
+      <li class="breadcrumb-item active">Image segmentation and forced photometry</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="../_sources/data/source_extraction.ipynb.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="Image-segmentation-and-forced-photometry">
+<h1>Image segmentation and forced photometry<a class="headerlink" href="#Image-segmentation-and-forced-photometry" title="Link to this heading"></a></h1>
+<p>Since the primary aim of the <code class="docutils literal notranslate"><span class="pre">Band_Data</span></code> and <code class="docutils literal notranslate"><span class="pre">Data</span></code> classes we have recently been looking at is to produce a <a class="reference external" href="../catalogue.rst">Catalogue</a> of sources, we will also need to be able to identify one object from another. This is done in a process known as segmentation, and in principle is quite challenging to do well, although we will have a go here.</p>
+<section id="Example-1:-Making-segmentation-maps-with-SExtractor">
+<h2>Example 1: Making segmentation maps with SExtractor<a class="headerlink" href="#Example-1:-Making-segmentation-maps-with-SExtractor" title="Link to this heading"></a></h2>
+<p>The first technique we will use to segment the data into different sources, which is the default in galfind, is to use the SExtractor parameters from Adams et al. 2023. Before starting this example please ensure that this is installed appropriately on your computer; an explanation of how to install SExtractor can be found <a class="reference internal" href="../getting_started/installation.html"><span class="doc">here</span></a>. Let’s start by instantiating our JOF data object as before.</p>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[1]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">copy</span> <span class="kn">import</span> <span class="n">deepcopy</span>
+<span class="kn">import</span> <span class="nn">matplotlib.pyplot</span> <span class="k">as</span> <span class="nn">plt</span>
+<span class="kn">import</span> <span class="nn">astropy.units</span> <span class="k">as</span> <span class="nn">u</span>
+<span class="kn">from</span> <span class="nn">astropy.table</span> <span class="kn">import</span> <span class="n">Table</span>
+<span class="kn">from</span> <span class="nn">galfind</span> <span class="kn">import</span> <span class="n">config</span><span class="p">,</span> <span class="n">Data</span>
+<span class="kn">from</span> <span class="nn">galfind.Data</span> <span class="kn">import</span> <span class="n">morgan_version_to_dir</span>
+
+<span class="n">survey</span> <span class="o">=</span> <span class="s2">&quot;JOF&quot;</span>
+<span class="n">version</span> <span class="o">=</span> <span class="s2">&quot;v11&quot;</span>
+<span class="n">instrument_names</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;NIRCam&quot;</span><span class="p">]</span>
+
+<span class="n">JOF_data</span> <span class="o">=</span> <span class="n">Data</span><span class="o">.</span><span class="n">from_survey_version</span><span class="p">(</span>
+    <span class="n">survey</span> <span class="o">=</span> <span class="n">survey</span><span class="p">,</span>
+    <span class="n">version</span> <span class="o">=</span> <span class="n">version</span><span class="p">,</span>
+    <span class="n">instrument_names</span> <span class="o">=</span> <span class="n">instrument_names</span><span class="p">,</span>
+    <span class="n">version_to_dir_dict</span> <span class="o">=</span> <span class="n">morgan_version_to_dir</span><span class="p">,</span>
+<span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+Reading GALFIND config file from: /nvme/scratch/work/austind/GALFIND/galfind/../configs/galfind_config.ini
+</pre></div></div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area stderr docutils container">
+<div class="highlight"><pre>
+INFO:galfind:Aperture corrections for ACS_WFC loaded from /nvme/scratch/work/austind/GALFIND/galfind/Aperture_corrections/ACS_WFC_aper_corr.txt
+INFO:galfind:Aperture corrections for WFC3_IR loaded from /nvme/scratch/work/austind/GALFIND/galfind/Aperture_corrections/WFC3_IR_aper_corr.txt
+INFO:galfind:Aperture corrections for NIRCam loaded from /nvme/scratch/work/austind/GALFIND/galfind/Aperture_corrections/NIRCam_aper_corr.txt
+INFO:galfind:Aperture corrections for MIRI loaded from /nvme/scratch/work/austind/GALFIND/galfind/Aperture_corrections/MIRI_aper_corr.txt
+INFO:galfind:Aperture corrections for ACS_WFC loaded from /nvme/scratch/work/austind/GALFIND/galfind/Aperture_corrections/ACS_WFC_aper_corr.txt
+INFO:galfind:Aperture corrections for WFC3_IR loaded from /nvme/scratch/work/austind/GALFIND/galfind/Aperture_corrections/WFC3_IR_aper_corr.txt
+INFO:galfind:Aperture corrections for NIRCam loaded from /nvme/scratch/work/austind/GALFIND/galfind/Aperture_corrections/NIRCam_aper_corr.txt
+INFO:galfind:Aperture corrections for MIRI loaded from /nvme/scratch/work/austind/GALFIND/galfind/Aperture_corrections/MIRI_aper_corr.txt
+INFO:galfind:Aperture corrections for NIRCam loaded from /nvme/scratch/work/austind/GALFIND/galfind/Aperture_corrections/NIRCam_aper_corr.txt
+</pre></div></div>
+</div>
+<p>To look at what exactly the segmentation process is doing, we will try it on the F444W band only. To do this, we will first have to load in the aperture diameters.</p>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[2]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">aper_diams</span> <span class="o">=</span> <span class="p">[</span><span class="mf">0.32</span><span class="p">,</span> <span class="mf">0.5</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">,</span> <span class="mf">1.5</span><span class="p">,</span> <span class="mf">2.0</span><span class="p">]</span> <span class="o">*</span> <span class="n">u</span><span class="o">.</span><span class="n">arcsec</span>
+<span class="n">JOF_data</span><span class="o">.</span><span class="n">load_aper_diams</span><span class="p">(</span><span class="n">aper_diams</span><span class="p">)</span>
+
+<span class="n">F444W_JOF</span> <span class="o">=</span> <span class="n">JOF_data</span><span class="p">[</span><span class="s2">&quot;F444W&quot;</span><span class="p">]</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area stderr docutils container">
+<div class="highlight"><pre>
+INFO:galfind:Loaded aper_diams=&lt;Quantity [0.32, 0.5 , 1.  , 1.5 , 2.  ] arcsec&gt; for F090W
+INFO:galfind:Loaded aper_diams=&lt;Quantity [0.32, 0.5 , 1.  , 1.5 , 2.  ] arcsec&gt; for F115W
+INFO:galfind:Loaded aper_diams=&lt;Quantity [0.32, 0.5 , 1.  , 1.5 , 2.  ] arcsec&gt; for F150W
+INFO:galfind:Loaded aper_diams=&lt;Quantity [0.32, 0.5 , 1.  , 1.5 , 2.  ] arcsec&gt; for F162M
+INFO:galfind:Loaded aper_diams=&lt;Quantity [0.32, 0.5 , 1.  , 1.5 , 2.  ] arcsec&gt; for F182M
+INFO:galfind:Loaded aper_diams=&lt;Quantity [0.32, 0.5 , 1.  , 1.5 , 2.  ] arcsec&gt; for F200W
+INFO:galfind:Loaded aper_diams=&lt;Quantity [0.32, 0.5 , 1.  , 1.5 , 2.  ] arcsec&gt; for F210M
+INFO:galfind:Loaded aper_diams=&lt;Quantity [0.32, 0.5 , 1.  , 1.5 , 2.  ] arcsec&gt; for F250M
+INFO:galfind:Loaded aper_diams=&lt;Quantity [0.32, 0.5 , 1.  , 1.5 , 2.  ] arcsec&gt; for F277W
+INFO:galfind:Loaded aper_diams=&lt;Quantity [0.32, 0.5 , 1.  , 1.5 , 2.  ] arcsec&gt; for F300M
+INFO:galfind:Loaded aper_diams=&lt;Quantity [0.32, 0.5 , 1.  , 1.5 , 2.  ] arcsec&gt; for F335M
+INFO:galfind:Loaded aper_diams=&lt;Quantity [0.32, 0.5 , 1.  , 1.5 , 2.  ] arcsec&gt; for F356W
+INFO:galfind:Loaded aper_diams=&lt;Quantity [0.32, 0.5 , 1.  , 1.5 , 2.  ] arcsec&gt; for F410M
+INFO:galfind:Loaded aper_diams=&lt;Quantity [0.32, 0.5 , 1.  , 1.5 , 2.  ] arcsec&gt; for F444W
+</pre></div></div>
+</div>
+<p>We will now segment the F444W JOF imaging. This will take a little while as SExtractor is running; the output will be stored in the config <code class="docutils literal notranslate"><span class="pre">SExtractor/SEX_DIR</span></code> directory when it has finished under the appropriate survey/version/instrument sub-directories (which in this case this is JOF/v11/NIRCam).</p>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[3]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">F444W_JOF_2</span> <span class="o">=</span> <span class="n">deepcopy</span><span class="p">(</span><span class="n">F444W_JOF</span><span class="p">)</span>
+<span class="n">F444W_JOF_3</span> <span class="o">=</span> <span class="n">deepcopy</span><span class="p">(</span><span class="n">F444W_JOF</span><span class="p">)</span>
+<span class="n">F444W_JOF_4</span> <span class="o">=</span> <span class="n">deepcopy</span><span class="p">(</span><span class="n">F444W_JOF</span><span class="p">)</span>
+<span class="n">F444W_JOF_5</span> <span class="o">=</span> <span class="n">deepcopy</span><span class="p">(</span><span class="n">F444W_JOF</span><span class="p">)</span>
+
+<span class="n">F444W_JOF</span><span class="o">.</span><span class="n">segment</span><span class="p">()</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">F444W_JOF</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+&lt;galfind.Data.Band_Data object at 0x7f80a87f7430&gt;
+</pre></div></div>
+</div>
+<p>In addition to the segmentation map, this function will additionally produce a background map and photometric catalogue with fluxes (from sources selected in the same band) in apertures set by the <code class="docutils literal notranslate"><span class="pre">SExtractor/APER_DIAMS</span></code> parameter in the config file. The <code class="docutils literal notranslate"><span class="pre">seg_path</span></code> and the method used to measure this will be saved inside the <code class="docutils literal notranslate"><span class="pre">Band_Data</span></code> class for future access.</p>
+<p>Now let’s say we wanted to load the path to the segmentation map rather than making it. We can simply run this function again on a fresh <code class="docutils literal notranslate"><span class="pre">Band_Data</span></code> object, and if the required file already exists it will load the path to it.</p>
+<div class="nbinput nblast docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[4]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">F444W_JOF_2</span><span class="o">.</span><span class="n">segment</span><span class="p">()</span>
+</pre></div>
+</div>
+</div>
+<p>We see from above that SExtractor is not called here. If we wanted to re-run this segmentation map for whatever reason, there are two possible actions we could take:</p>
+<ol class="arabic simple">
+<li><p>Delete or move the saved segmentation map manually</p></li>
+<li><p>Pass <code class="docutils literal notranslate"><span class="pre">overwrite=True</span></code> into the <code class="docutils literal notranslate"><span class="pre">segment</span></code> function on a pre-segmented object</p></li>
+</ol>
+<p>Option 2 is the preferred, and probably more straight forward, choice to make here. Below is its implementation.</p>
+<div class="nbinput nblast docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[5]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="c1"># re-segment using SExtractor</span>
+<span class="n">F444W_JOF_3</span><span class="o">.</span><span class="n">segment</span><span class="p">(</span><span class="n">overwrite</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span> <span class="c1"># True</span>
+</pre></div>
+</div>
+</div>
+<p>Excellent! We have overwritten the original segmentation map, albeit with the exact same SExtractor output. Next we will produce a segmentation map using the stored <code class="docutils literal notranslate"><span class="pre">wht</span></code> map rather than the <code class="docutils literal notranslate"><span class="pre">rms_err</span></code> map by changing the <code class="docutils literal notranslate"><span class="pre">err_type</span></code> attribute from the default <code class="docutils literal notranslate"><span class="pre">rms_err</span></code> to <code class="docutils literal notranslate"><span class="pre">wht</span></code>.</p>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[6]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">F444W_JOF_4</span><span class="o">.</span><span class="n">segment</span><span class="p">(</span><span class="s2">&quot;wht&quot;</span><span class="p">,</span> <span class="n">overwrite</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span> <span class="c1"># True</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">F444W_JOF_4</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+&lt;galfind.Data.Band_Data object at 0x7f816877d850&gt;
+</pre></div></div>
+</div>
+<p>This will update the segmentation map path in the <code class="docutils literal notranslate"><span class="pre">Band_Data</span></code> object for F444W and make a new segmentation map using the <code class="docutils literal notranslate"><span class="pre">wht</span></code> path, although will not actually overwrite the previously run <code class="docutils literal notranslate"><span class="pre">rms_err</span></code> map. The difference between the two maps can be seen by comparing the segmentation maps generated from the two separate weight maps.</p>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[7]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="c1"># load the segmentation maps</span>
+<span class="n">rms_err_seg</span> <span class="o">=</span> <span class="n">F444W_JOF</span><span class="o">.</span><span class="n">load_seg</span><span class="p">(</span><span class="n">incl_hdr</span> <span class="o">=</span> <span class="kc">False</span><span class="p">)</span>
+<span class="n">wht_seg</span> <span class="o">=</span> <span class="n">F444W_JOF_4</span><span class="o">.</span><span class="n">load_seg</span><span class="p">(</span><span class="n">incl_hdr</span> <span class="o">=</span> <span class="kc">False</span><span class="p">)</span>
+<span class="c1"># plot the difference</span>
+<span class="n">fig</span><span class="p">,</span> <span class="n">ax</span> <span class="o">=</span> <span class="n">plt</span><span class="o">.</span><span class="n">subplots</span><span class="p">()</span>
+<span class="n">ax</span><span class="o">.</span><span class="n">imshow</span><span class="p">(</span><span class="n">wht_seg</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="nb">bool</span><span class="p">)</span> <span class="o">&amp;</span> <span class="o">~</span><span class="n">rms_err_seg</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="nb">bool</span><span class="p">),</span> <span class="n">origin</span> <span class="o">=</span> <span class="s2">&quot;lower&quot;</span><span class="p">)</span>
+<span class="n">ax</span><span class="o">.</span><span class="n">set_title</span><span class="p">(</span><span class="s2">&quot;bool(WHT SEG) AND NOT bool(ERR SEG)&quot;</span><span class="p">)</span>
+<span class="n">ax</span><span class="o">.</span><span class="n">set_xlabel</span><span class="p">(</span><span class="s2">&quot;x [pix]&quot;</span><span class="p">)</span>
+<span class="n">ax</span><span class="o">.</span><span class="n">set_ylabel</span><span class="p">(</span><span class="s2">&quot;y [pix]&quot;</span><span class="p">)</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">show</span><span class="p">()</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<img alt="../_images/data_source_extraction_14_0.png" src="../_images/data_source_extraction_14_0.png" />
+</div>
+</div>
+<p>Here we can see there is a minor difference between SExtractor segmentation using the ERR and WHT maps in that the WHT maps segments more of the outskirts surrounding bright objects in the wisp affected modules.</p>
+<p>Lastly, we will regularly want to produce segmentation maps for every band used in a particular survey, for instance when running a cataloguing pipeline. As before, this takes in <code class="docutils literal notranslate"><span class="pre">err_type</span></code>, <code class="docutils literal notranslate"><span class="pre">method</span></code>, and <code class="docutils literal notranslate"><span class="pre">overwrite</span></code> arguments; we will implement the default functionality of this below.</p>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[8]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">JOF_data</span><span class="o">.</span><span class="n">segment</span><span class="p">(</span><span class="n">err_type</span><span class="o">=</span><span class="s2">&quot;rms_err&quot;</span><span class="p">,</span> <span class="n">method</span><span class="o">=</span><span class="s2">&quot;sextractor&quot;</span><span class="p">,</span> <span class="n">overwrite</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">JOF_data</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+****************************************
+DATA OBJECT:
+----------
+SURVEY: JOF
+VERSION: v11
+****************************************
+MULTIPLE_FILTER
+----------
+FACILITY: JWST
+INSTRUMENT: NIRCam
+FILTERS: [&#39;F090W&#39;, &#39;F115W&#39;, &#39;F150W&#39;, &#39;F162M&#39;, &#39;F182M&#39;, &#39;F200W&#39;, &#39;F210M&#39;, &#39;F250M&#39;, &#39;F277W&#39;, &#39;F300M&#39;, &#39;F335M&#39;, &#39;F356W&#39;, &#39;F410M&#39;, &#39;F444W&#39;]
+****************************************
+****************************************
+
+</pre></div></div>
+</div>
+</section>
+<section id="Example-2:-Plotting-the-segmentation-maps">
+<h2>Example 2: Plotting the segmentation maps<a class="headerlink" href="#Example-2:-Plotting-the-segmentation-maps" title="Link to this heading"></a></h2>
+<p>Once the segmentation map has been created, the next step is to plot it. We use the <code class="docutils literal notranslate"><span class="pre">Data.plot()</span></code> function using the <code class="docutils literal notranslate"><span class="pre">ext</span> <span class="pre">=</span> <span class="pre">&quot;SEG&quot;</span></code> argument. There are a few more arguments that we write explicitly for clarity, although we note that for now we will keep these as the galfind defaults.</p>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[9]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">JOF_data</span><span class="p">[</span><span class="s2">&quot;F444W&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">ext</span> <span class="o">=</span> <span class="s2">&quot;SEG&quot;</span><span class="p">,</span> <span class="n">cmap</span> <span class="o">=</span> <span class="s2">&quot;plasma&quot;</span><span class="p">,</span> <span class="n">show</span> <span class="o">=</span> <span class="kc">True</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<img alt="../_images/data_source_extraction_18_0.png" src="../_images/data_source_extraction_18_0.png" />
+</div>
+</div>
+<p>Maybe we also want to zoom into a specific region of the segmentation map as well to have a closer look at some specific sources. Let’s change some of the default arguments now to see how this changes the output plot.</p>
+</section>
+<section id="Example-3:-Running-forced-photometry-using-SExtractor">
+<h2>Example 3: Running forced photometry using SExtractor<a class="headerlink" href="#Example-3:-Running-forced-photometry-using-SExtractor" title="Link to this heading"></a></h2>
+<p>In previous notebooks and examples 1 and 2 we have seen how to load a photometric <code class="docutils literal notranslate"><span class="pre">Data</span></code> class and produce segmentation maps using SExtractor. Now we will produce a catalogue of forced photometry, required for producing photometric source catalogues.</p>
+<p>The <code class="docutils literal notranslate"><span class="pre">perform_forced_phot()</span></code> method in <code class="docutils literal notranslate"><span class="pre">Data</span></code> and <code class="docutils literal notranslate"><span class="pre">Band_Data_Base</span></code> is used to: 1. Perform forced photometry using a specific selection band, including the possibility of using stacked data 2. Produce a photometric catalogue with aperture (and Kron) fluxes in a range of chosen aperture sizes, and other associated (currently just SExtractor) derived properties 3. Create a README for the catalogue which is updated at runtime to describe what is included (TO DO)</p>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[10]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">JOF_data_2</span> <span class="o">=</span> <span class="n">Data</span><span class="o">.</span><span class="n">from_survey_version</span><span class="p">(</span>
+    <span class="n">survey</span> <span class="o">=</span> <span class="n">survey</span><span class="p">,</span>
+    <span class="n">version</span> <span class="o">=</span> <span class="n">version</span><span class="p">,</span>
+    <span class="n">instrument_names</span> <span class="o">=</span> <span class="n">instrument_names</span><span class="p">,</span>
+    <span class="n">version_to_dir_dict</span> <span class="o">=</span> <span class="n">morgan_version_to_dir</span><span class="p">,</span>
+    <span class="n">aper_diams</span> <span class="o">=</span> <span class="n">aper_diams</span><span class="p">,</span>
+    <span class="n">forced_phot_band</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;F277W&quot;</span><span class="p">,</span> <span class="s2">&quot;F356W&quot;</span><span class="p">,</span> <span class="s2">&quot;F444W&quot;</span><span class="p">],</span>
+<span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area stderr docutils container">
+<div class="highlight"><pre>
+INFO:galfind:Aperture corrections for NIRCam loaded from /nvme/scratch/work/austind/GALFIND/galfind/Aperture_corrections/NIRCam_aper_corr.txt
+INFO:galfind:Loaded aper_diams=&lt;Quantity [0.32, 0.5 , 1.  , 1.5 , 2.  ] arcsec&gt; for F277W+F356W+F444W
+</pre></div></div>
+</div>
+<div class="nbinput nblast docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[11]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">JOF_data_2</span><span class="o">.</span><span class="n">segment</span><span class="p">(</span><span class="n">err_type</span><span class="o">=</span><span class="s2">&quot;rms_err&quot;</span><span class="p">,</span> <span class="n">method</span><span class="o">=</span><span class="s2">&quot;sextractor&quot;</span><span class="p">,</span> <span class="n">overwrite</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+<span class="n">JOF_data_2</span><span class="o">.</span><span class="n">perform_forced_phot</span><span class="p">()</span>
+</pre></div>
+</div>
+</div>
+<p>Now let’s have a look at the catalogue this has produced.</p>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[12]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">tab</span> <span class="o">=</span> <span class="n">Table</span><span class="o">.</span><span class="n">read</span><span class="p">(</span><span class="n">JOF_data_2</span><span class="o">.</span><span class="n">phot_cat_path</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">tab</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+  NUMBER     X_IMAGE     Y_IMAGE   ... FLAGS_F444W ISOAREA_IMAGE_F444W
+               pix         pix     ...                     pix2
+---------- ----------- ----------- ... ----------- -------------------
+         1   9219.8145    743.6143 ...           2               24934
+         2   6108.1621    543.1823 ...           0               15250
+         3   7386.6421    518.4732 ...           2               11853
+         4   8138.5957    472.6456 ...           2               21621
+         5   8047.3140    369.3903 ...           3                4953
+         6   9006.2188    330.5024 ...           3               10204
+         7    765.8052    389.6784 ...           3               10175
+         8   1647.3230    381.3969 ...           3                8131
+         9   6701.1450    368.3413 ...           2                6157
+        10     82.3648    355.8787 ...          18                3895
+       ...         ...         ... ...         ...                 ...
+     16326    165.1400   4290.8848 ...           2                   7
+     16327   1572.5746   3880.5979 ...           0                  43
+     16328    519.1140   3818.2654 ...           0                   4
+     16329   2450.3884   4210.3047 ...           0                  24
+     16330   1747.7365   3890.1292 ...           1                  13
+     16331    358.0430   3908.7808 ...           0                  55
+     16332    210.6940   3880.5181 ...           0                 289
+     16333   1042.0570   3963.1199 ...           0                   6
+     16334    801.5937   3915.8589 ...           3                   2
+     16335   9108.6465   3653.9946 ...           0                 274
+Length = 16335 rows
+</pre></div></div>
+</div>
+</section>
+<section id="Example-4:-Re-configuring-SExtractor">
+<h2>Example 4: Re-configuring SExtractor<a class="headerlink" href="#Example-4:-Re-configuring-SExtractor" title="Link to this heading"></a></h2>
+<p>We have shown how running SExtractor can work using the default configuration, but what if we want to change this? This is rather straightforwards, as we can simply use the <code class="docutils literal notranslate"><span class="pre">config_path</span></code> argument of the <code class="docutils literal notranslate"><span class="pre">Band_Data/Stacked_Band_Data/Data</span></code> segment function. Let’s have a go at this now, again for the F444W filter, also showing explicitly how the default output parameters can be changed with <code class="docutils literal notranslate"><span class="pre">params_name</span></code>. The default <code class="docutils literal notranslate"><span class="pre">params_name</span></code> is still used here, although more information regarding
+which output parameters are saved can be found in <a class="reference external" href="https://sextractor.readthedocs.io/_/downloads/en/stable/pdf/">the official SExtractor documentation</a>.</p>
+<div class="nbinput nblast docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[13]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">F444W_JOF_5</span><span class="o">.</span><span class="n">segment</span><span class="p">(</span><span class="s2">&quot;rms_err&quot;</span><span class="p">,</span> <span class="n">config_name</span><span class="o">=</span><span class="s2">&quot;test1.sex&quot;</span><span class="p">,</span> <span class="n">params_name</span><span class="o">=</span><span class="s2">&quot;default.param&quot;</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<p>Hmm, looks like the already run default segmentation maps are loaded in here instead of the ones we wanted to use with the updated config file. Of course we could have set <code class="docutils literal notranslate"><span class="pre">overwrite=True</span></code> in the above code block, but should we wish to compare the two SExtractor outputs we will need to keep the original data too. To get around this, we will use a new version name called <code class="docutils literal notranslate"><span class="pre">v11_test</span></code>. This will load in the <code class="docutils literal notranslate"><span class="pre">v11</span></code> data but save all of the products in <code class="docutils literal notranslate"><span class="pre">v11_test</span></code> folders. Due to this
+functionality, we caution the reader to not include underscores in their version names.</p>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[14]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">JOF_data_test</span> <span class="o">=</span> <span class="n">Data</span><span class="o">.</span><span class="n">from_survey_version</span><span class="p">(</span>
+    <span class="n">survey</span> <span class="o">=</span> <span class="n">survey</span><span class="p">,</span>
+    <span class="n">version</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">version</span><span class="si">}</span><span class="s2">_test&quot;</span><span class="p">,</span>
+    <span class="n">instrument_names</span> <span class="o">=</span> <span class="n">instrument_names</span><span class="p">,</span>
+    <span class="n">version_to_dir_dict</span> <span class="o">=</span> <span class="n">morgan_version_to_dir</span><span class="p">,</span>
+    <span class="n">aper_diams</span> <span class="o">=</span> <span class="n">aper_diams</span><span class="p">,</span>
+<span class="p">)</span>
+<span class="n">F444W_JOF_test</span> <span class="o">=</span> <span class="n">JOF_data_test</span><span class="p">[</span><span class="s2">&quot;F444W&quot;</span><span class="p">]</span>
+<span class="n">F444W_JOF_test</span><span class="o">.</span><span class="n">segment</span><span class="p">(</span><span class="s2">&quot;rms_err&quot;</span><span class="p">,</span> <span class="n">config_name</span><span class="o">=</span><span class="s2">&quot;test.sex&quot;</span><span class="p">,</span> <span class="n">params_name</span><span class="o">=</span><span class="s2">&quot;default.param&quot;</span><span class="p">,</span> <span class="n">overwrite</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span> <span class="c1"># True</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area stderr docutils container">
+<div class="highlight"><pre>
+INFO:galfind:Aperture corrections for NIRCam loaded from /nvme/scratch/work/austind/GALFIND/galfind/Aperture_corrections/NIRCam_aper_corr.txt
+</pre></div></div>
+</div>
+<p>That’s all well and good, but what is the difference between these outputs? The difference between <code class="docutils literal notranslate"><span class="pre">default.sex</span></code> and <code class="docutils literal notranslate"><span class="pre">test.sex</span></code> is that the parameters DETECT_MINAREA, DETECT_THRESH, and ANALYSIS_THRESH have been changed. We should plot the difference to see how this impacts things.</p>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[15]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="c1"># load the segmentation maps</span>
+<span class="n">default_seg</span> <span class="o">=</span> <span class="n">F444W_JOF</span><span class="o">.</span><span class="n">load_seg</span><span class="p">(</span><span class="n">incl_hdr</span> <span class="o">=</span> <span class="kc">False</span><span class="p">)</span>
+<span class="n">test_seg</span> <span class="o">=</span> <span class="n">F444W_JOF_test</span><span class="o">.</span><span class="n">load_seg</span><span class="p">(</span><span class="n">incl_hdr</span> <span class="o">=</span> <span class="kc">False</span><span class="p">)</span>
+<span class="c1"># plot the difference</span>
+<span class="n">fig</span><span class="p">,</span> <span class="n">ax</span> <span class="o">=</span> <span class="n">plt</span><span class="o">.</span><span class="n">subplots</span><span class="p">()</span>
+<span class="n">ax</span><span class="o">.</span><span class="n">imshow</span><span class="p">(</span><span class="n">default_seg</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="nb">bool</span><span class="p">)</span> <span class="o">&amp;</span> <span class="o">~</span><span class="n">test_seg</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="nb">bool</span><span class="p">),</span> <span class="n">origin</span> <span class="o">=</span> <span class="s2">&quot;lower&quot;</span><span class="p">)</span>
+<span class="n">ax</span><span class="o">.</span><span class="n">set_title</span><span class="p">(</span><span class="s2">&quot;bool(DEFAULT) AND NOT bool(TEST)&quot;</span><span class="p">)</span>
+<span class="n">ax</span><span class="o">.</span><span class="n">set_xlabel</span><span class="p">(</span><span class="s2">&quot;x [pix]&quot;</span><span class="p">)</span>
+<span class="n">ax</span><span class="o">.</span><span class="n">set_ylabel</span><span class="p">(</span><span class="s2">&quot;y [pix]&quot;</span><span class="p">)</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">show</span><span class="p">()</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<img alt="../_images/data_source_extraction_30_0.png" src="../_images/data_source_extraction_30_0.png" />
+</div>
+</div>
+<p>It should be easy to now test different SExtractor configurations iteratively until you find the parameters ideal for your specific science goals.</p>
+</section>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="PSF_homogenization.html" class="btn btn-neutral float-left" title="PSF homogenization" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="masking.html" class="btn btn-neutral float-right" title="Producing and loading survey masks" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2024, Duncan Austin.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

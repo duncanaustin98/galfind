@@ -14,7 +14,6 @@ import os
 import time
 from copy import deepcopy
 from pathlib import Path
-from typing import Union
 
 import astropy.units as u
 import matplotlib.pyplot as plt
@@ -24,11 +23,16 @@ from astropy.io import fits
 from astropy.table import Table, join, vstack
 from astropy.wcs import WCS
 from tqdm import tqdm
-from typing import TYPE_CHECKING
+from typing import Union, List, Dict, Optional, NoReturn, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from . import Catalogue_Creator
     from . import Instrument
+
+try:
+    from typing import Self, Type  # python 3.11+
+except ImportError:
+    from typing_extensions import Self, Type  # python > 3.7 AND python < 3.11
 
 from . import (
     Catalogue_Base,
@@ -37,6 +41,7 @@ from . import (
     galfind_logger,
 )
 from . import useful_funcs_austind as funcs
+from .Cutout import Multiple_Band_Cutout, Multiple_RGB, Stacked_RGB
 from .Data import Data
 from .EAZY import EAZY
 from .Emission_lines import line_diagnostics
@@ -360,8 +365,6 @@ class Catalogue(Catalogue_Base):
         cross_matched_cat = self * DJA_cat
         print(str(cross_matched_cat))
         return cross_matched_cat
-
-    # %%
 
     def calc_ext_src_corrs(self) -> None:
         self.load_sex_flux_mag_autos()
@@ -904,6 +907,7 @@ class Catalogue(Catalogue_Base):
         IDs: Union[list, np.array],
         cutout_size: Union[u.Quantity, dict] = 0.96 * u.arcsec,
     ) -> None:
+        # loop over galaxies, making a cutout of each one
         if type(IDs) == int:
             IDs = [IDs]
         for band in tqdm(
@@ -911,19 +915,7 @@ class Catalogue(Catalogue_Base):
             total=len(self.instrument),
             desc="Making band cutouts",
         ):
-            #             rerun = False
-            #             if config.getboolean("Cutouts", "OVERWRITE_CUTOUTS"):
-            #                 rerun = True
-            #             else:
-            #                 for gal in self:
-            #                     out_path = f"{config['Cutouts']['CUTOUT_DIR']}/{self.version}/{self.survey}/{band}/{gal.ID}.fits"
-            #                     if Path(out_path).is_file():
-            #                         size = fits.open(out_path)[0].header["size"]
-            #                         if size != cutout_size:
-            #                             rerun = True
-            #                     else:
-            #                         rerun = True
-            #             if rerun:
+            # TODO: Requires update to use new Cutout class
             start = time.time()
             im_data, im_header, seg_data, seg_header = self.data.load_data(
                 band, incl_mask=False
@@ -973,8 +965,85 @@ class Catalogue(Catalogue_Base):
     #                         gal.cutout_paths[band] = f"{config['Cutouts']['CUTOUT_DIR']}/{self.version}/{self.survey}/{band}/{gal.ID}.fits"
     #                 print(f"Cutouts for {band} already exist. Skipping.")
 
-    def make_RGB_images(self, IDs, cutout_size=0.96 * u.arcsec):
-        return NotImplementedError
+    def stack_gals(
+        self, cutout_size: u.Quantity = 0.96 * u.arcsec
+    ) -> Multiple_Band_Cutout:
+        # stack all galaxies in catalogue for a given band
+        if not hasattr(self, "stacked_cutouts"):
+            self.stacked_cutouts = {}
+        cutout_size_str = f"{cutout_size.to(u.arcsec).value:.2f}as"
+        if cutout_size_str not in self.stacked_cutouts.keys():
+            self.stacked_cutouts[cutout_size_str] = (
+                Multiple_Band_Cutout.from_cat(self, cutout_size=cutout_size)
+            )
+        return self.stacked_cutouts[cutout_size_str]
+
+    def plot_stacked_gals(
+        self,
+        cutout_size: u.Quantity = 0.96 * u.arcsec,
+        save_name: Optional[str] = None,
+    ) -> NoReturn:
+        stacked_cutouts = self.stack_gals(cutout_size=cutout_size)
+        stacked_cutouts.plot(save_name=save_name)
+
+    def make_RGBs(
+        self,
+        cutout_size: u.Quantity = 0.96 * u.arcsec,
+        rgb_bands: Dict[str, List[str]] = {
+            "B": ["F090W"],
+            "G": ["F200W"],
+            "R": ["F444W"],
+        },
+    ) -> Multiple_RGB:
+        if not hasattr(self, "RGBs"):
+            self.RGBs = {}
+        cutout_size_str = f"{cutout_size.to(u.arcsec).value:.2f}as"
+        if cutout_size_str not in self.RGBs.keys():
+            self.RGBs[cutout_size_str] = {}
+        rgb_key = ",".join(
+            f"{colour}={'+'.join(self.get_colour_band_names[colour])}"
+            for colour in ["B", "G", "R"]
+        )
+        if (
+            rgb_key
+            not in self.RGBs[f"{cutout_size.to(u.arcsec).value:.2f}as"].keys()
+        ):
+            self.RGBs[cutout_size_str][rgb_key] = Multiple_RGB.from_cat(
+                self, cutout_size=cutout_size
+            )
+        return self.RGBs[cutout_size_str][rgb_key]
+
+    def plot_RGBs(
+        self,
+        cutout_size: u.Quantity = 0.96 * u.arcsec,
+        rgb_bands: Dict[str, List[str]] = {
+            "B": ["F090W"],
+            "G": ["F200W"],
+            "R": ["F444W"],
+        },
+        method: str = "trilogy",
+        save_name: Optional[str] = None,
+    ) -> NoReturn:
+        RGBs = self.make_RGBs(cutout_size=cutout_size, rgb_bands=rgb_bands)
+        RGBs.plot(save_name=save_name)
+
+    def make_stacked_RGB(
+        self,
+        cutout_size: u.Quantity = 0.96 * u.arcsec,
+        rgb_bands: Dict[str, List[str]] = {
+            "B": ["F090W"],
+            "G": ["F200W"],
+            "R": ["F444W"],
+        },
+    ) -> Stacked_RGB:
+        if not hasattr(self, "stacked_RGB"):
+            self.stacked_RGB = {}
+        cutout_size_str = f"{cutout_size.to(u.arcsec).value:.2f}as"
+        if cutout_size_str not in self.stacked_RGB.keys():
+            self.stacked_RGB[cutout_size_str] = Stacked_RGB.from_cat(
+                self, cutout_size=cutout_size, rgb_bands=rgb_bands
+            )
+        return self.stacked_RGB[cutout_size_str]
 
     def plot_phot_diagnostics(
         self,
@@ -989,13 +1058,14 @@ class Catalogue(Catalogue_Base):
         wav_unit=u.um,
         flux_unit=u.ABmag,
     ):
+        # loop over galaxies and plot photometry diagnostic plots for each one
         # figure size may well depend on how many bands there are
         overall_fig = plt.figure(figsize=(8, 7), constrained_layout=True)
         fig, cutout_fig = overall_fig.subfigures(
             2,
             1,
             hspace=-2,
-            height_ratios=[2, 1]
+            height_ratios=[2.0, 1.0]
             if len(self.data.instrument) <= 8
             else [1.8, 1],
         )
@@ -1036,7 +1106,7 @@ class Catalogue(Catalogue_Base):
                     os.symlink(out_path, selection_path)
 
     def plot(
-        self,
+        self: Type[Self],
         x_name: str,
         x_origin: Union[str, dict],
         y_name: str,
@@ -1056,8 +1126,8 @@ class Catalogue(Catalogue_Base):
         plot_kwargs: dict = {},
         cmap: str = "viridis",
         save_type: str = ".png",
-        fig=None,
-        ax=None,
+        fig: Optional[plt.Figure] = None,
+        ax: Optional[plt.Axes] = None,
     ):
         if type(x_origin) in [dict]:
             assert "code" in x_origin.keys()

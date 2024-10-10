@@ -432,9 +432,9 @@ class Bagpipes(SED_code):
         band_wavs = np.array(
             [band.WavelengthCen for band in phot_obj.instrument]
         )
-        flux = funcs.convert_mag_units(band_wavs, phot_obj.flux_Jy, u.uJy)
+        flux = funcs.convert_mag_units(band_wavs, phot_obj.flux, u.uJy)
         flux_errs = funcs.convert_mag_err_units(
-            band_wavs, phot_obj.flux_Jy, phot_obj.flux_Jy_errs, u.uJy
+            band_wavs, phot_obj.flux, phot_obj.flux_errs, u.uJy
         )
         assert len(flux_errs) == len(phot_obj)
         # if flux < 1e19 and flux != -99 and flux != 0:

@@ -299,8 +299,8 @@ class SED:
         )
 
         self.UVJ_fluxes = {
-            band: flux_Jy
-            for band, flux_Jy in zip(["U", "V", "J"], bp_averaged_fluxes_Jy)
+            band: flux
+            for band, flux in zip(["U", "V", "J"], bp_averaged_fluxes_Jy)
         }
         self.UVJ_colours = {
             "U-V": -2.5

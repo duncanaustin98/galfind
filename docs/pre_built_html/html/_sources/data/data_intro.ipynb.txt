@@ -1,0 +1,412 @@
+{
+ "cells": [
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "# Introduction to the Data class\n",
+    "\n",
+    "In this notebook, we will have a first look at the `galfind.Data` object. The `Data` object is made up of an array of `Band_Data` objects which store all the information pertaining to the photometric imaging in a specific photometric filter, including the paths/extensions to the SCI/WHT/ERR maps as well as a `galfind.Filter` (see the [Instrument](../instrument/instrument.rst) section, and specifically the [Filter](../instrument/filter.ipynb) notebook for more information).\n",
+    "\n",
+    "We will begin by first loading the reduced JADES Origins Field (JOF) JWST/NIRCam imaging from Adams et al. 2024. This data must first be loaded from the EPOCHS dropbox, instructions for which can be found in [Getting started / Downloading observational data](../getting_started/downloading_observational_data.rst). If these data products are not currently downloaded and stored in the relevant locations, please take the time to do this now before continuuing.\n",
+    "\n",
+    "## Example 1: Initializing Band_Data and Data objects\n",
+    "\n",
+    "To start off, we will practice initializing both `Band_Data` and `Data` objects. To do this we require the paths/extensions to each of the SCI/WHT/RMS_ERR images."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 1,
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "Reading GALFIND config file from: /nvme/scratch/work/austind/GALFIND/galfind/../configs/galfind_config.ini\n"
+     ]
+    },
+    {
+     "name": "stderr",
+     "output_type": "stream",
+     "text": [
+      "INFO:galfind:Aperture corrections for ACS_WFC loaded from /nvme/scratch/work/austind/GALFIND/galfind/Aperture_corrections/ACS_WFC_aper_corr.txt\n",
+      "INFO:galfind:Aperture corrections for WFC3_IR loaded from /nvme/scratch/work/austind/GALFIND/galfind/Aperture_corrections/WFC3_IR_aper_corr.txt\n",
+      "INFO:galfind:Aperture corrections for NIRCam loaded from /nvme/scratch/work/austind/GALFIND/galfind/Aperture_corrections/NIRCam_aper_corr.txt\n",
+      "INFO:galfind:Aperture corrections for MIRI loaded from /nvme/scratch/work/austind/GALFIND/galfind/Aperture_corrections/MIRI_aper_corr.txt\n",
+      "INFO:galfind:Aperture corrections for ACS_WFC loaded from /nvme/scratch/work/austind/GALFIND/galfind/Aperture_corrections/ACS_WFC_aper_corr.txt\n",
+      "INFO:galfind:Aperture corrections for WFC3_IR loaded from /nvme/scratch/work/austind/GALFIND/galfind/Aperture_corrections/WFC3_IR_aper_corr.txt\n",
+      "INFO:galfind:Aperture corrections for NIRCam loaded from /nvme/scratch/work/austind/GALFIND/galfind/Aperture_corrections/NIRCam_aper_corr.txt\n",
+      "INFO:galfind:Aperture corrections for MIRI loaded from /nvme/scratch/work/austind/GALFIND/galfind/Aperture_corrections/MIRI_aper_corr.txt\n"
+     ]
+    }
+   ],
+   "source": [
+    "# imports\n",
+    "import astropy.units as u\n",
+    "import matplotlib.pyplot as plt\n",
+    "from galfind import config, Band_Data, Stacked_Band_Data, Data, Filter, Multiple_Filter\n",
+    "from galfind.Data import morgan_version_to_dir"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "Investigate with 30mas pixel scale imaging from the F090W filter to start off with."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 2,
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "<galfind.Data.Band_Data object at 0x7f80fe511670>\n"
+     ]
+    }
+   ],
+   "source": [
+    "survey = \"JOF\"\n",
+    "version = \"v11\"\n",
+    "facility_name = \"JWST\"\n",
+    "instrument_name = \"NIRCam\"\n",
+    "filt_name = \"F090W\"\n",
+    "pix_scale_name = \"30mas\"\n",
+    "im_dir = f\"{config['DEFAULT']['GALFIND_DATA']}/{facility_name.lower()}/{survey}/{instrument_name}/{morgan_version_to_dir[version]}/{pix_scale_name}\"\n",
+    "im_path = f\"{im_dir}/jw01210-o001_t002_nircam_clear-{filt_name.lower()}_i2dnobg.fits\"\n",
+    "im_ext = 1\n",
+    "rms_err_path = im_path\n",
+    "rms_err_ext = 2\n",
+    "wht_path = im_path\n",
+    "wht_ext = 4\n",
+    "pix_scale = 0.03 * u.arcsec\n",
+    "\n",
+    "band_data = Band_Data(\n",
+    "    Filter.from_SVO(facility_name, instrument_name, filt_name),\n",
+    "    survey,\n",
+    "    version,\n",
+    "    im_path,\n",
+    "    im_ext,\n",
+    "    rms_err_path,\n",
+    "    rms_err_ext,\n",
+    "    wht_path,\n",
+    "    wht_ext,\n",
+    "    pix_scale,\n",
+    "    im_ext_name=\"SCI\",\n",
+    "    rms_err_ext_name=\"ERR\",\n",
+    "    wht_ext_name=\"WHT\"\n",
+    ")\n",
+    "print(band_data)"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "This above implementation, however, requires the sci/rms_err/wht extensions to be named `SCI`/`ERR`/`WHT` in the image header \"EXTNAME\" by default, although an array of possible \"EXTNAME\" for each may be passed in if required. This is demonstrated by the `im_ext_name`, `rms_err_ext_name`, and `wht_ext_name` parameters respectively. Now that we have seen how to load in a `Band_Data` object by itself, we will now create a `Data` object. We will see that initializing many `Band_Data` objects and adding them together does the same thing as initializing a `Data` object by itself. Let's have a go at this now."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 3,
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "****************************************\n",
+      "MULTIPLE_FILTER\n",
+      "----------\n",
+      "FACILITY: JWST\n",
+      "INSTRUMENT: NIRCam\n",
+      "FILTERS: ['F090W', 'F115W', 'F150W', 'F162M', 'F182M', 'F200W', 'F210M', 'F250M', 'F277W', 'F300M', 'F335M', 'F356W', 'F410M', 'F444W']\n",
+      "****************************************\n",
+      "\n"
+     ]
+    }
+   ],
+   "source": [
+    "# Array storing all NIRCam bands used in the pipeline for JOF\n",
+    "JOF_nircam_filt_names = [\"F090W\", \"F115W\", \"F150W\", \"F162M\", \"F182M\", \"F200W\", \"F210M\", \"F250M\", \"F277W\", \"F300M\", \"F335M\", \"F356W\", \"F410M\", \"F444W\"]\n",
+    "# Create an instrument object for NIRCam incorporating all the NIRCam bands\n",
+    "JOF_nircam_filters = Multiple_Filter([Filter.from_filt_name(filt_name) for filt_name in JOF_nircam_filt_names])\n",
+    "print(JOF_nircam_filters)\n",
+    "\n",
+    "# Proposal IDs for the NIRCam bands\n",
+    "PIDs = {filt_name: \"4210\" if filt_name == \"F444W\" else \"1210\" if filt_name.endswith(\"W\") or filt_name == \"F410M\" else \"3215\" for filt_name in JOF_nircam_filt_names}\n",
+    "# Paths to the sci images for the NIRCam bands\n",
+    "sci_paths = {filt_name: f\"{im_dir}/jw0{PIDs[filt_name]}-o001_t002_nircam_clear-{filt_name.lower()}_i2dnobg.fits\" for filt_name in JOF_nircam_filt_names}\n",
+    "# Paths to the rms error/weight maps are the same as the sci images, just with a different extension\n",
+    "rms_err_paths = sci_paths\n",
+    "wht_paths = sci_paths\n",
+    "\n",
+    "# sci, wht, and rms_err extensions for the NIRCam bands\n",
+    "sci_exts = {filt_name: 1 for filt_name in JOF_nircam_filt_names}\n",
+    "rms_err_exts = {filt_name: 2 for filt_name in JOF_nircam_filt_names}\n",
+    "wht_exts = {filt_name: 4 for filt_name in JOF_nircam_filt_names}\n",
+    "\n",
+    "band_data_arr = [Band_Data(JOF_nircam_filters[filt_name], survey, version, sci_paths[filt_name], sci_exts[filt_name], \n",
+    "    rms_err_paths[filt_name], rms_err_exts[filt_name], wht_paths[filt_name], wht_exts[filt_name], pix_scale) for filt_name in JOF_nircam_filt_names]\n",
+    "# Create a data object for the NIRCam bands\n",
+    "for i, band_data in enumerate(band_data_arr):\n",
+    "    if i == 0:\n",
+    "        JOF_data_1 = band_data\n",
+    "    else:\n",
+    "        JOF_data_1 += band_data\n",
+    "\n",
+    "JOF_data_2 = Data(band_data_arr)"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "Our data objects are identical here. It is worth noting that adding together `Band_Data` or `Data` objects containing the same filters from the same survey and version will throw an error; if stacking is wanted this is implemented in `Band_Data.__mul__()` and `Data.__mul__()`. Adding together `Band_Data` or `Data` objects from different surveys and versions will instead create a `Multiple_Data` object which contains an array of `Data` objects from different surveys/versions. For more information on the `Multiple_Data` class, please see the [Multiple_Data](../multiple_surveys/multiple_data.ipynb) notebook."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 4,
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "Data objects are identical\n",
+      "****************************************\n",
+      "DATA OBJECT:\n",
+      "----------\n",
+      "SURVEY: JOF\n",
+      "VERSION: v11\n",
+      "****************************************\n",
+      "MULTIPLE_FILTER\n",
+      "----------\n",
+      "FACILITY: JWST\n",
+      "INSTRUMENT: NIRCam\n",
+      "FILTERS: ['F090W', 'F115W', 'F150W', 'F162M', 'F182M', 'F200W', 'F210M', 'F250M', 'F277W', 'F300M', 'F335M', 'F356W', 'F410M', 'F444W']\n",
+      "****************************************\n",
+      "****************************************\n",
+      "\n"
+     ]
+    }
+   ],
+   "source": [
+    "# check that the two initilization methods produce the same data object\n",
+    "if JOF_data_1 == JOF_data_2:\n",
+    "    print(\"Data objects are identical\")\n",
+    "else:\n",
+    "    print(\"Data objects are different\")\n",
+    "# print the data object\n",
+    "print(JOF_data_1)"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "As you can see from the number of dictionaries required to create an array of `Band_Data` objects or initialize a `Data` object using the standard `Data.__init__()`, this can get confusing relatively quickly. In addition, to build these from dictionaties we require prior knowledge of the available bands for each field as well as the paths/extensions to each SCI/ERR/WHT map. Luckily there is a useful class method to instantiate the `Data` class, `Data.from_survey_version()`, which simplifies things for us a bit. As with `Band_Data`, `Data` additionally accepts `im_ext_name`, `rms_err_ext_name`, and `wht_ext_name` arguments in case . We demonstrate its use with JWST/NIRCam below."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 5,
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stderr",
+     "output_type": "stream",
+     "text": [
+      "INFO:galfind:Aperture corrections for NIRCam loaded from /nvme/scratch/work/austind/GALFIND/galfind/Aperture_corrections/NIRCam_aper_corr.txt\n"
+     ]
+    },
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "Data objects are identical\n"
+     ]
+    }
+   ],
+   "source": [
+    "# create a Data object directly from the given survey and version\n",
+    "JOF_data_3 = Data.from_survey_version(\n",
+    "    survey, \n",
+    "    version, \n",
+    "    instrument_names = [\"NIRCam\"], \n",
+    "    version_to_dir_dict = morgan_version_to_dir,\n",
+    "    im_ext_name = \"SCI\",\n",
+    "    rms_err_ext_name = \"ERR\",\n",
+    "    wht_ext_name = \"WHT\"\n",
+    ")\n",
+    "\n",
+    "# ensure that this object is the same as the one created above\n",
+    "if JOF_data_1 == JOF_data_3:\n",
+    "    print(\"Data objects are identical\")\n",
+    "else:\n",
+    "    print(\"Data objects are different\")"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## Example 2: Mosaicing together multiple data from the same band\n",
+    "\n",
+    "Should there be multiple SCI/WHT/RMS_ERR images located in the relevant folders this class method will mosaic these together and move the older images into an `/old` sub-directory. This will only occur if these images have the same shape and pixel scale, otherwise galfind will fail. It is our wish to implement a solution to this in the near future. This problem will also be encountered when attempting to multiply (i.e. mosaic/stack) together `Band_Data` or `Data` objects from the same survey/version with another that contains the same Filter with different image dimensions/pixel scales.\n",
+    "\n",
+    ">[!WARNING]\n",
+    ">Mosaicing multiple data from the same band has not yet been implemented!"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## Example 3: Making a Stacked_Band_Data object\n",
+    "\n",
+    "The `Band_Data` class which we have looked at in examples 1 and 2 is one of two child classes of the abstract `Band_Data_Base` class, `Band_Data` and `Stacked_Band_Data`. Both of these classes store the same basic information regarding the SCI/ERR/WHT paths/extensions, as well as the ability to make/load segmentation maps, masks, forced photometry catalogues, etc. The major difference between these two classes is that `Band_Data` stores a `Filter` object whereas `Stacked_Band_Data` stores a `Multiple_Filter`; various abstract methods are overridden to account for this.\n",
+    "\n",
+    "We shall start by instantiating a `Stacked_Band_Data` object for the SW NIRCam widebands via the `Stacked_Band_Data.from_band_data_arr()` class method. Because I can't be bothered to look up and type in the paths/extensions to the JOF data, we shall obtain the array of `Band_Data` objects using the `Data.from_survey_version()` method as we have done previously in our creation of the `JOF_data_3` object."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 6,
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "<galfind.Data.Stacked_Band_Data object at 0x7f80fe0aca60>\n"
+     ]
+    }
+   ],
+   "source": [
+    "blue_nircam_band_names = [\"F090W\", \"F115W\", \"F150W\", \"F200W\"]\n",
+    "blue_nircam_band_data_arr = JOF_data_3[blue_nircam_band_names]\n",
+    "stacked_SW_nircam_obj = Stacked_Band_Data.from_band_data_arr(blue_nircam_band_data_arr)\n",
+    "print(stacked_SW_nircam_obj)"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "Rather than instantiating this via the `Stacked_Band_Data` class method, we can also stack `Band_Data` and/or `Stacked_Band_Data` objects by using the `*` (multiplication) operator. This will work so long as these objects contain different reference filters, otherwise the data will instead be mosaiced. Simply adding each band together will instead produce a `Data` object."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 7,
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "Stacked_Band_Data objects are identical\n"
+     ]
+    }
+   ],
+   "source": [
+    "stacked_SW_nircam_obj_2 = blue_nircam_band_data_arr[0]\n",
+    "for band_data in blue_nircam_band_data_arr[1:]:\n",
+    "    stacked_SW_nircam_obj_2 *= band_data\n",
+    "\n",
+    "if stacked_SW_nircam_obj == stacked_SW_nircam_obj_2:\n",
+    "    print(\"Stacked_Band_Data objects are identical\")\n",
+    "else:\n",
+    "    print(\"Stacked_Band_Data objects are different\")"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "These two code blocks clearly produce the same result, although the second method recursively adds these bands together, producing intermediate stage [F090W, F115W] and [F115W, F150W, F200W] stacked images as well. For this reason, we usually recommend using method 1 in an analysis."
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## Example 4: Plotting an RGB of the data\n",
+    "\n",
+    "Now we have seen how to instantiate a `Data` object, we will now attempt to plot an RGB for the JOF field using both the `trilogy` package and `astropy.visualization.lupton_rgb`. First we have to decide which photometric bands we wish to use for this RGB, and below we explicitly use the default bands used in the `Data.plot_RGB` method."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 8,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "blue_bands = [\"F090W\"]\n",
+    "green_bands = [\"F200W\"]\n",
+    "red_bands = [\"F444W\"]"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "Now let's actually plot the RGB, starting with the trilogy method. Depending on the data used, trilogy can sometimes produce messy results, therefore we allow the flexibility to adjust all input parameters, as covered by the [official trilogy documentation](https://pypi.org/project/trilogy/)."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 9,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "#JOF_data_1.plot_RGB(blue_bands=blue_bands, green_bands=green_bands, red_bands=red_bands, method=\"trilogy\")"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 10,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "#fig, ax = plt.subplots()\n",
+    "#JOF_data_1.plot_RGB(ax, blue_bands=blue_bands, green_bands=green_bands, red_bands=red_bands, method=\"lupton\")"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "Please feel free to now move onto the [next notebook](PSF_homogenization.ipynb) which looks at PSF homogenizing each band in your data to the same PSF."
+   ]
+  }
+ ],
+ "metadata": {
+  "kernelspec": {
+   "display_name": "galfind_test",
+   "language": "python",
+   "name": "python3"
+  },
+  "language_info": {
+   "codemirror_mode": {
+    "name": "ipython",
+    "version": 3
+   },
+   "file_extension": ".py",
+   "mimetype": "text/x-python",
+   "name": "python",
+   "nbconvert_exporter": "python",
+   "pygments_lexer": "ipython3",
+   "version": "3.9.0"
+  }
+ },
+ "nbformat": 4,
+ "nbformat_minor": 2
+}

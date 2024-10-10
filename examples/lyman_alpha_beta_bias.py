@@ -99,7 +99,7 @@ def plot_bias(beta=-3.0, m_UV=26.0):
                         wav_units=u.AA,
                         mag_units=u.erg / (u.s * u.cm**2 * u.AA),
                     )
-                    # mock_sed_obs.mock_photometry.plot_phot(ax, wav_units = u.AA, mag_units = u.Jy, label = f"z = {redshift}")
+                    # mock_sed_obs.mock_photometry.plot(ax, wav_units = u.AA, mag_units = u.Jy, label = f"z = {redshift}")
                 # print(mock_sed_obs.mock_photometry.z)
                 beta_new = Photometry_rest.from_phot_obs(
                     mock_sed_obs.mock_photometry

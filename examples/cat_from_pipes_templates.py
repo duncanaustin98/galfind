@@ -110,7 +110,7 @@ def main():
         except:
             pass
     if plot:
-        sed_obs.mock_photometry.plot_phot(ax, mag_units=u.Jy)
+        sed_obs.mock_photometry.plot(ax, mag_units=u.Jy)
         ax.set_xlim(9_000, 50_000)
         ax.set_ylim(0.0, 0.5e-8)
 

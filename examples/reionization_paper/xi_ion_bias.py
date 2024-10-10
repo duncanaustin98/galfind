@@ -111,7 +111,7 @@ def calc_xi_ion_bias(
         # for i in range(len(sed_obs_arr)):
         #     fig, ax = plt.subplots()
         #     sed_obs_arr[i].plot_SED(ax)
-        #     sed_obs_arr[i].mock_phot.plot_phot(ax, mag_units = u.ABmag, \
+        #     sed_obs_arr[i].mock_phot.plot(ax, mag_units = u.ABmag, \
         #         uplim_sigma = None, plot_errs = {"x": False, "y": False}, auto_scale = False)
         #     ax.set_ylim(34., 22.)
         #     plt.savefig(f"test_plots/Test_plot_{sed_rest.template_name}.png")

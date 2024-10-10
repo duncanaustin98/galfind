@@ -1,0 +1,74 @@
+#-------------------------------- Catalog ------------------------------------
+
+CATALOG_NAME    COSMOS_J_T6.cat # name of the output catalog
+CATALOG_TYPE    FITS_1.0      # "NONE","ASCII_HEAD","ASCII","FITS_1.0"
+                                # or "FITS_LDAC"
+
+PARAMETERS_NAME /nvme/scratch/work/nadams/SExtractor/uvista_dr3.param   # name of the file containing catalog
+
+#------------------------------- Extraction ----------------------------------
+
+DETECT_TYPE     CCD             # "CCD" or "PHOTO" (*)
+FLAG_IMAGE      flag.fits       # filename for an input FLAG-image
+DETECT_MINAREA  9               # minimum number of pixels above threshold
+DETECT_THRESH   1.8             # <sigmas> or <threshold>,<ZP> in mag.arcsec-2
+ANALYSIS_THRESH 1.8             # <sigmas> or <threshold>,<ZP> in mag.arcsec-2
+
+FILTER          Y               # apply filter for detection ("Y" or "N")?
+FILTER_NAME    /nvme/scratch/work/austind/GALFIND/configs/SExtractor/gauss_2.5_5x5.conv # name of the file containing the filter
+
+DEBLEND_NTHRESH 32              # Number of deblending sub-thresholds
+DEBLEND_MINCONT 0.005          # Minimum contrast parameter for deblending
+
+CLEAN           Y               # Clean spurious detections? (Y or N)?
+CLEAN_PARAM     1.0             # Cleaning efficiency
+
+MASK_TYPE       CORRECT         # type of detection MASKing: can be one of
+                                # "NONE", "BLANK" or "CORRECT"
+
+#------------------------------ Photometry -----------------------------------
+
+PHOT_APERTURES  10.67, 16.67, 33.33, 50, 66.67, 83.33              # MAG_APER aperture diameter(s) in pixels, this is
+PHOT_AUTOPARAMS 2.5, 4.0            # MAG_AUTO parameters: <Kron_fact>,<min_radius>
+PHOT_AUTOAPERS  3.5, 3.5             # MAG_AUTO minimum diameters for detection,estimation
+PHOT_FLUXFRAC   0.5                   # CALCULATE RADII CONTAINING 20,50,80% OF TOTAL FLUX
+SATUR_LEVEL     500000           # level (in ADUs) at which arises saturation
+MAG_ZEROPOINT   30.0         # magnitude zero-point, THIS IS K-BAND IN AB SYSTEM
+MAG_GAMMA       4.0             # gamma of emulsion (for photographic scans)
+GAIN            0       # detector gain in e-/ADU.2.460669879E+02
+PIXEL_SCALE     0               # size of pixel in arcsec (0=use FITS WCS info).
+
+#------------------------- Star/Galaxy Separation ----------------------------
+
+SEEING_FWHM     0.05             # stellar FWHM in arcsec
+STARNNW_NAME    /nvme/scratch/work/nadams/SExtractor/default.nnw       # Neural-Network_Weight table filename
+
+#------------------------------ Background -----------------------------------
+#BACK_SIZE       64              # Background mesh: <size> or <width>,<height>
+#BACK_FILTERSIZE 3               # Background filter: <size> or <width>,<height>
+
+#BACKPHOTO_TYPE  LOCAL           # can be "GLOBAL" or "LOCAL" (*)
+#BACKPHOTO_THICK 24              # thickness of the background LOCAL annulus (*)
+
+BACK_TYPE       MANUAL
+BACK_VALUE      0
+#------------------------------ Check Image ----------------------------------
+
+CHECKIMAGE_TYPE NONE     # can be one of "NONE", "BACKGROUND",
+                                # "MINIBACKGROUND", "-BACKGROUND", "OBJECTS",
+                                # "-OBJECTS", "SEGMENTATION", "APERTURES",
+                                # or "FILTERED" (*)
+CHECKIMAGE_NAME COSMOS_J500_Test.fits    # Filename
+
+#--------------------- Memory (change with caution!) -------------------------
+
+MEMORY_OBJSTACK 65000           # number of objects in stack
+MEMORY_PIXSTACK 5000000         # number of pixels in stack
+MEMORY_BUFSIZE  1024            # number of lines in buffer
+
+#----------------------------- Miscellaneous ---------------------------------
+
+VERBOSE_TYPE    NORMAL          # can be "QUIET", "NORMAL" or "FULL" (*)
+WEIGHT_TYPE     MAP_RMS    # variance map derived from external weight map.
+WEIGHT_IMAGE    /local/scratch1/SExtractor/UVISTA_J_dr3_v5_wht.fits
+

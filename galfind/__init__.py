@@ -11,8 +11,7 @@ import numpy as np
 from pathlib import Path
 from astropy.cosmology import FlatLambdaCDM
 end = time.time()
-print(f"__init__ imports took {end - start}s")
-#breakpoint()
+#print(f"__init__ imports took {end - start}s")
 
 galfind_dir = "/".join(__file__.split("/")[:-1])
 config_dir = f"{galfind_dir}/../configs"
@@ -106,39 +105,37 @@ astropy_cosmo = FlatLambdaCDM(H0=70, Om0=0.3, Ob0=0.05, Tcmb0=2.725)
 wav_lyman_lim = 911.8  # * u.AA
 
 from . import useful_funcs_austind
-from . import NIRCam_aperture_corrections as NIRCam_aper_corr
-from . import Depths
+from . import figs
+from . import decorators
+from . import SExtractor, Masking, Depths
+from .Cutout import Band_Cutout, Stacked_Band_Cutout, RGB, Stacked_RGB, Multiple_Band_Cutout, Multiple_RGB
 from .PDF import PDF, SED_fit_PDF, Redshift_PDF, PDF_nD
-from .PSF import PSF
 from .Instrument import Facility, JWST, HST, Instrument, ACS_WFC, WFC3_IR, NIRCam, MIRI
-from .Filter import Filter, Multiple_Filter
 
-instr_to_name_dict = {
-    instr_name: Multiple_Filter.from_instrument(instr_name)
-    for instr_name in [
-        subcls.__name__
-        for subcls in Instrument.__subclasses__()
-    ]
-}
-breakpoint()
-# ordered band names from blue -> red
-# config.set("Other", "ALL_BANDS", json.dumps(["F435W","FR459M","F475W","F550M","F555W","F606W","F625W","FR647M","F070W","F775W","F814W","F850LP",
-#             "F090W","FR914M","F098M","F105W","F110W","F115W","F125W","F127M","F139M","F140W","F140M","F150W","F153M","F160W","F162M","F182M",
-#             "F200W","F210M","F250M","F277W","F300M","F335M","F356W","F360M","F410M","F430M","F444W","F460M","F480M","F560W","F770W","F1000W","F1130W","F1280W","F1500W","F1800W","F2100W","F2550W"]))
-all_bands = np.hstack(
-    [
-        instr_to_name_dict[subcls.__name__].band_names
-        for subcls in Instrument.__subclasses__
-    ]
-)
-# sort bands blue -> red based on central wavelength
-all_band_names = [
-    band.band_name
-    for band in sorted(all_bands, key=lambda band: band.WavelengthCen.to(u.AA).value)
-]
-config.set("Other", "ALL_BANDS", json.dumps(all_band_names))
+instr_to_name_dict = {name: globals()[name]() for name in json.loads(config.get("Other", "INSTRUMENT_NAMES"))}
 
-from .Data import Data
+from .PSF import PSF_Base, PSF_Cutout
+from .Filter import Filter, Multiple_Filter, Tophat_Filter, U, V, J
+
+# instr_to_name_dict = {
+#     instr_name: Multiple_Filter.from_instrument(instr_name)
+#     for instr_name in json.loads(config.get("Other", "INSTRUMENT_NAMES"))
+# }
+
+# all_bands = np.hstack(
+#     [
+#         instr_to_name_dict[subcls.__name__]
+#         for subcls in Instrument.__subclasses__()
+#     ]
+# )
+# # sort bands blue -> red based on central wavelength
+# all_band_names = [
+#     band.band_name
+#     for band in sorted(all_bands, key=lambda band: band.WavelengthCen.to(u.AA).value)
+# ]
+# config.set("Other", "ALL_BANDS", json.dumps(all_band_names))
+
+from .Data import Band_Data_Base, Band_Data, Stacked_Band_Data, Data
 from .Photometry import Photometry, Multiple_Photometry, Mock_Photometry
 from .Photometry_obs import Photometry_obs, Multiple_Photometry_obs
 from .Photometry_rest import Photometry_rest
@@ -169,9 +166,6 @@ from .SED import (
 )
 
 from .Galaxy import Galaxy, Multiple_Galaxy
-from .Simulated_Galaxy import Simulated_Galaxy
-from .Simulated_Catalogue import Simulated_Catalogue
-from . import decorators
 from .Emission_lines import Emission_line, wav_lyman_alpha, line_diagnostics
 from . import IGM_attenuation
 from . import lyman_alpha_damping_wing

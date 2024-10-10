@@ -9,19 +9,39 @@ Created on Wed May 17 14:20:31 2023
 from __future__ import annotations
 
 # from reproject import reproject_adaptive
+from abc import ABC, abstractmethod
 import contextlib
 import glob
 import json
 import os
 import subprocess
 import sys
+from matplotlib.colors import LinearSegmentedColormap
 import time
+import itertools
+from matplotlib import cm
 from copy import deepcopy
 from pathlib import Path
-from typing import Union, TYPE_CHECKING
+from typing import (
+    Any,
+    List,
+    Type,
+    Dict,
+    Union,
+    Tuple,
+    Optional,
+    NoReturn,
+    TYPE_CHECKING,
+)
+
+try:
+    from typing import Self, Type  # python 3.11+
+except ImportError:
+    from typing_extensions import Self, Type  # python > 3.7 AND python < 3.11
 
 if TYPE_CHECKING:
-    from . import Filter
+    from . import Multiple_Filter
+    from .PSF import PSF
 
 import astropy.units as u
 import astropy.visualization as vis
@@ -38,7 +58,7 @@ from astropy.visualization.mpl_normalize import ImageNormalize
 from astropy.wcs import WCS
 from astroquery.gaia import Gaia
 from joblib import Parallel, delayed
-from matplotlib.colors import LogNorm
+from matplotlib.colors import LogNorm, Normalize
 from photutils.aperture import (
     SkyCircularAperture,
     aperture_photometry,
@@ -46,762 +66,1854 @@ from photutils.aperture import (
 from regions import Regions
 from tqdm import tqdm
 
-from . import Depths, config, galfind_logger
+from . import Depths, SExtractor, config, galfind_logger
 from . import useful_funcs_austind as funcs
+from . import Masking
 from .decorators import run_in_dir
+from . import Filter, Multiple_Filter
 from .Instrument import ACS_WFC, WFC3_IR, NIRCam, MIRI, Instrument  # noqa F501
 
+morgan_version_to_dir = {
+    "v8b": "mosaic_1084_wispfix",
+    "v8c": "mosaic_1084_wispfix2",
+    "v8d": "mosaic_1084_wispfix3",
+    "v9": "mosaic_1084_wisptemp2",
+    "v10": "mosaic_1084_wispscale",
+    "v11": "mosaic_1084_wispnathan",
+}
 
-# GALFIND data object
-class Data:
+
+class Band_Data_Base(ABC):
     def __init__(
         self,
         survey: str,
         version: str,
-        instrument: Instrument,
-        im_paths: dict[str, str],
-        im_exts: dict[str, int],
-        rms_err_paths: dict[str, str],
-        rms_err_exts: dict[str, int],
-        wht_paths: dict[str, str],
-        wht_exts: dict[str, int],
-        seg_paths: dict[str, str] = {},
-        mask_paths: dict[str, str] = {},
-        cluster_mask_path: str = "",
-        blank_mask_path: str = "",
-        cat_path: str = "",
-        alignment_band: str = "F444W",
-        RGB_method: Union[None, str] = None,
-        mask_stars: Union[bool, dict[str, bool]] = True,
-        sex_prefer: str = "rms_err",
-        pix_scale: Union[dict[str, u.Quantity], u.Quantity] = 0.03 * u.arcsec,
+        im_path: str,
+        im_ext: int,
+        rms_err_path: Optional[str] = None,
+        rms_err_ext: Optional[int] = None,
+        wht_path: Optional[str] = None,
+        wht_ext: Optional[int] = None,
+        pix_scale: u.Quantity = 0.03 * u.arcsec,
+        im_ext_name: Union[str, List[str]] = "SCI",
+        rms_err_ext_name: Union[str, List[str]] = "ERR",
+        wht_ext_name: Union[str, List[str]] = "WHT",
+        use_galfind_err: bool = False,
+        aper_diams: Optional[u.Quantity] = None,
     ):
-        """
-        Data object to store all relevant data for a given survey.
-
-        Searches for segmentation maps in the SExtractor directory, and makes these if not already present.
-        Searches for fits masks in the Masks directory, if not present searches for manually created .reg masks and cleans these if necessary.
-        If neither .fits or .reg masks are found, automatically produces .fits mask either with or without stars masked depending on 'mask_stars'.
-
-        Args:
-            survey (str): Survey name
-            version (str): Survey version
-            instrument (Instrument): galfind.Instrument object containing all bands used in the survey
-            im_paths (dict[str, str]): Paths to science images for each band
-            im_exts (dict[str, int]): Extensions of science images for each band
-            rms_err_paths (dict[str, str]): Paths to rms_err maps for each band
-            rms_err_exts (dict[str, int]): Extensions of rms_err maps for each band
-            wht_paths (dict[str, str]): Paths to weight maps for each band
-            wht_exts (dict[str, int]): Extensions of weight maps for each band
-            seg_paths (dict[str, str]): Paths to segmentation maps for each band
-            mask_paths (dict[str, str]): Paths to masks for each band
-            cluster_mask_path (str): Path to cluser mask for the survey if not a blank field, else ""
-            blank_mask_path (str): Path to blank mask for the survey
-            cat_path (str, optional): Path to catalogue for the survey. Defaults to "".
-            alignment_band (str, optional): Band that all imagtes are aligned to. Defaults to "F444W".
-            RGB_method (Union[None, str], optional): Method to use when making RGB images. Defaults to None (no RGB images made).
-            mask_stars (Union[bool, dict[str, bool]], optional): Whether to mask stars in the mask when automasking.
-                Can also be a dictionary of {band: mask_stars} pairs. Defaults to True.
-            sex_prefer (str, optional): Whether to prefer rms_err or wht maps when making segmentation maps. Defaults to "rms_err".
-            pix_scale (Union[dict[str, u.Quantity], u.Quantity], optional): Pixel scale of the images.
-                Can also be a dictionary of {band: pix_scale} pairs. Defaults to 0.03*u.arcsec.
-        """
         self.survey = survey
         self.version = version
-        self.instrument = instrument
-        self.im_paths = im_paths
-        self.im_exts = im_exts
-        self.wht_paths = wht_paths
-        self.wht_exts = wht_exts
-        self.rms_err_paths = rms_err_paths
-        self.rms_err_exts = rms_err_exts
-        assert sex_prefer in ["rms_err", "wht"]
-        self.sex_prefer = sex_prefer
+        self.im_path = im_path
+        self.im_ext = im_ext
+        self.im_ext_name = im_ext_name
+        self.rms_err_path = rms_err_path
+        self.rms_err_ext = rms_err_ext
+        self.rms_err_ext_name = rms_err_ext_name
+        self.wht_path = wht_path
+        self.wht_ext = wht_ext
+        self.wht_ext_name = wht_ext_name
+        self.pix_scale = pix_scale
+        if aper_diams is not None:
+            self.aper_diams = aper_diams
+        self._psf_match = None
+        # make rms error / wht maps using galfind if required
+        if use_galfind_err:
+            if (
+                (self.rms_err_path is None or self.rms_err_ext is None)
+                and self.wht_path is not None
+                and self.wht_ext is not None
+            ):
+                # make rms_err from wht if rms_err is not available
+                self._make_rms_err_from_wht()
+            elif (
+                (self.wht_path is None or self.wht_ext is None)
+                and self.rms_err_path is not None
+                and self.rms_err_ext is not None
+            ):
+                # make wht from rms_err if wht is not available
+                self._make_wht_from_rms_err()
+        else:
+            self._use_galfind_err = False
+        # ensure all paths/exts link to valid data
+        self._check_data(
+            incl_rms_err=(
+                self.rms_err_path is not None and self.rms_err_ext is not None
+            ),
+            incl_wht=(self.wht_path is not None and self.wht_ext is not None),
+        )
 
-        # ensure alignment band exists
-        if alignment_band not in self.instrument.band_names:
-            galfind_logger.critical(
-                f"Alignment band = {alignment_band} does not exist in instrument!"
+    @property
+    @abstractmethod
+    def instr_name(self) -> str:
+        pass
+
+    @property
+    @abstractmethod
+    def filt_name(self) -> str:
+        pass
+
+    @property
+    def data_shape(self) -> Tuple[int, int]:
+        return self.load_im()[0].shape
+
+    def __eq__(self, other: Type[Band_Data_Base]) -> bool:
+        if not isinstance(other, tuple(Band_Data_Base.__subclasses__())):
+            return False
+        else:
+            # check if all attributes are the same
+            return (
+                self.survey == other.survey
+                and self.version == other.version
+                and self.im_path == other.im_path
+                and self.im_ext == other.im_ext
+                and self.rms_err_path == other.rms_err_path
+                and self.rms_err_ext == other.rms_err_ext
+                and self.wht_path == other.wht_path
+                and self.wht_ext == other.wht_ext
+                and self.pix_scale == other.pix_scale
+                and self.im_ext_name == other.im_ext_name
+                and self.rms_err_ext_name == other.rms_err_ext_name
+                and self.wht_ext_name == other.wht_ext_name
+            )
+
+    def __copy__(self) -> Type[Band_Data_Base]:
+        # copy the object
+        cls = self.__class__
+        result = cls.__new__(cls)
+        for k, v in self.__dict__.items():
+            setattr(result, k, v)
+        return result
+
+    def __deepcopy__(self, memo):
+        cls = self.__class__
+        result = cls.__new__(cls)
+        memo[id(self)] = result
+        for key, value in self.__dict__.items():
+            try:
+                setattr(result, key, deepcopy(value, memo))
+            except:
+                galfind_logger.critical(
+                    f"deepcopy({self.__class__.__name__}) {key}: {value} FAIL!"
+                )
+                breakpoint()
+        return result
+
+    def _check_data(self, incl_rms_err: bool = True, incl_wht: bool = True):
+        # make im_ext_name lists if not already
+        if isinstance(self.im_ext_name, str):
+            self.im_ext_name = [self.im_ext_name]
+        if isinstance(self.rms_err_ext_name, str):
+            self.rms_err_ext_name = [self.rms_err_ext_name]
+        if isinstance(self.wht_ext_name, str):
+            self.wht_ext_name = [self.wht_ext_name]
+        # load image header
+        im_hdr = self.load_im()[1]
+        assert im_hdr["EXTNAME"] in self.im_ext_name, galfind_logger.critical(
+            f"Image extension name {im_hdr['EXTNAME']} "
+            + f"not in {str(self.im_ext_name)} for {self.filt.band_name}"
+        )
+        if incl_rms_err:
+            # load rms error header
+            rms_err_hdr = self.load_rms_err(output_hdr=True)[1]
+            assert (
+                rms_err_hdr["EXTNAME"] in self.rms_err_ext_name
+            ), galfind_logger.critical(
+                f"RMS error extension name {rms_err_hdr['EXTNAME']} "
+                + f"not in {str(self.rms_err_ext_name)} for {self.filt.band_name}"
+            )
+        if incl_wht:
+            # load weight header
+            wht_hdr = self.load_wht(output_hdr=True)[1]
+            assert (
+                wht_hdr["EXTNAME"] in self.wht_ext_name
+            ), galfind_logger.critical(
+                f"Weight extension name {wht_hdr['EXTNAME']} "
+                + f"not in {str(self.wht_ext_name)} for {self.filt.band_name}"
+            )
+
+    # %% Loading methods
+
+    def load_aper_diams(self, aper_diams: u.Quantity) -> NoReturn:
+        if hasattr(self, "aper_diams"):
+            galfind_logger.warning(
+                f"{self.aper_diams=} already loaded for {self.filt_name},"
+                + f" skipping {aper_diams=} load-in"
             )
         else:
-            self.alignment_band = alignment_band
+            self.aper_diams = aper_diams
+            galfind_logger.info(f"Loaded {aper_diams=} for {self.filt_name}")
 
-        if cat_path == "":
-            pass
-        elif type(cat_path) == str:
-            self.cat_path = cat_path
+    def load_data(self, incl_mask: bool = True):
+        assert hasattr(self, "seg_args")
+        # load science image data and header (and hdul)
+        im_data, im_header = self.load_im()
+        # load segmentation data and header
+        seg_data, seg_header = self.load_seg()
+        if incl_mask:
+            mask = self.load_mask()
+            return im_data, im_header, seg_data, seg_header, mask
+        else:
+            return im_data, im_header, seg_data, seg_header
+
+    def load_im(
+        self, return_hdul: bool = False
+    ) -> Union[
+        Tuple[np.ndarray, fits.Header],
+        Tuple[np.ndarray, fits.Header, fits.HDUList],
+    ]:
+        # load image data and header
+        if not Path(self.im_path).is_file():
+            err_message = (
+                f"Image for {self.survey} {self.filt.band_name}"
+                + f" at {self.im_path} is not a .fits image!"
+            )
+            galfind_logger.critical(err_message)
+            raise (Exception(err_message))
+        im_hdul = fits.open(self.im_path)
+        im_data = im_hdul[self.im_ext].data
+        # im_data = im_data.byteswap().newbyteorder() slow
+        im_header = im_hdul[self.im_ext].header
+        if return_hdul:
+            return im_data, im_header, im_hdul
+        else:
+            return im_data, im_header
+
+    def load_wcs(self) -> WCS:
+        try:
+            self.wcs
+        except (AttributeError, KeyError) as e:
+            if type(e) == AttributeError:
+                self.wcs = {}
+            self.wcs = WCS(self.load_im()[1])
+        return self.wcs
+
+    def load_wht(
+        self, output_hdr: bool = False
+    ) -> Union[Tuple[np.ndarray, fits.Header], np.ndarray]:
+        if Path(self.wht_path).is_file():
+            hdu = fits.open(self.wht_path)[self.wht_ext]
+            wht = hdu.data
+            hdr = hdu.header
+        else:
+            err_message = (
+                f"Weight image for {self.survey} {self.filt.band_name}"
+                + f" at {self.wht_path} is not a .fits image!"
+            )
+            galfind_logger.critical(err_message)
+            wht = None
+            hdr = None
+        if output_hdr:
+            return wht, hdr
+        else:
+            return wht
+
+    def load_rms_err(
+        self, output_hdr: bool = False
+    ) -> Union[Tuple[np.ndarray, fits.Header], np.ndarray]:
+        if Path(self.rms_err_path).is_file():
+            hdu = fits.open(self.rms_err_path)[self.rms_err_ext]
+            rms_err = hdu.data
+            hdr = hdu.header
+        else:
+            err_message = (
+                f"RMS error for {self.survey} {self.filt.band_name}"
+                + f" at {self.rms_err_path} is not a .fits image!"
+            )
+            galfind_logger.critical(err_message)
+            rms_err = None
+            hdr = None
+        if output_hdr:
+            return rms_err, hdr
+        else:
+            return rms_err
+
+    def load_seg(
+        self, incl_hdr: bool = True
+    ) -> Tuple[np.ndarray, fits.Header]:
+        if not Path(self.seg_path).is_file():
+            err_message = (
+                f"Segmentation map for {self.survey} "
+                f"{self.filt.band_name} at {self.seg_path} is not a .fits image!"
+            )
+            galfind_logger.critical(err_message)
+            raise (Exception(err_message))
+        seg_hdul = fits.open(self.seg_path)
+        seg_data = seg_hdul[0].data
+        seg_header = seg_hdul[0].header
+        if incl_hdr:
+            return seg_data, seg_header
+        else:
+            return seg_data
+
+    def load_mask(
+        self, ext: Optional[str] = None
+    ) -> Optional[Union[np.ndarray, Dict[str, np.ndarray]]]:
+        if hasattr(self, "mask_args"):
+            # load mask
+            if ".fits" in self.mask_path:
+                hdul = fits.open(self.mask_path, mode="readonly")
+                hdu_names_indices = {
+                    hdu.name.upper(): i
+                    for i, hdu in enumerate(hdul)
+                    if hdu.name != "PRIMARY"
+                }
+                if ext is not None:
+                    ext = ext.upper()
+                    assert (
+                        ext in hdu_names_indices.keys()
+                    ), galfind_logger.critical(
+                        f"{ext=} not in mask extensions: {list(hdu_names_indices.keys())}"
+                    )
+                    mask = hdul[hdu_names_indices[ext]].data
+                    hdr = hdul[hdu_names_indices[ext]].header
+                else:
+                    mask = {
+                        hdu_name: hdul[index].data
+                        for hdu_name, index in hdu_names_indices.items()
+                    }
+                    hdr = {
+                        hdu_name: hdul[index].header
+                        for hdu_name, index in hdu_names_indices.items()
+                    }
+            else:
+                galfind_logger.critical(
+                    f"Mask for {self.survey} {self.filt_name}"
+                    + f" at {self.mask_path} is not a .fits mask!"
+                )
+        else:
+            galfind_logger.critical(
+                f"Mask for {self.survey} {self.filt_name} not set!"
+            )
+            mask = None
+            hdr = None
+        return mask, hdr
+
+    # %% Complex methods
+
+    def psf_homogenize(self, psf: PSF):
+        """Homogenize the SCI/RMS_ERR/WHT images to the given PSF"""
+        raise NotImplementedError
+        self._psf_match = psf
+        # Functionality in PSF_homogenization.py
+
+    def segment(
+        self,
+        err_type: str = "rms_err",
+        method: str = "sextractor",
+        config_name: str = "default.sex",
+        params_name: str = "default.param",
+        overwrite: bool = False,
+    ) -> NoReturn:
+        """
+        Segment the image using the specified method and error type
+        if it has not already been done.
+
+        Parameters:
+        -----------
+        err_type : str, optional
+            The type of error to use for segmentation. Default is "rms_err".
+        method : str, optional
+            The segmentation method to use. Default is "sextractor".
+        overwrite : bool, optional
+            Whether to overwrite existing segmentation data. Default is False.
+
+        Returns:
+        --------
+        NoReturn
+            This method does not return any value.
+
+        Notes:
+        ------
+        - If the method is "sextractor", it uses the Segmentation.segment_sextractor function.
+        - The segmentation arguments used here stored in the `seg_args` attribute.
+        - The `overwrite` parameter determines if existing segmentation data should be replaced.
+            Segments the data using the specified method and error type.
+        """
+        # do not re-segment if already done
+        if not (hasattr(self, "seg_args") and hasattr(self, "seg_path")):
+            # segment the data
+            if method == "sextractor":
+                self.seg_path = SExtractor.segment_sextractor(
+                    self,
+                    err_type,
+                    config_name=config_name,
+                    params_name=params_name,
+                    overwrite=overwrite,
+                )
+            else:
+                raise (
+                    Exception(f"segmentation {method=} not in ['sextractor']")
+                )
+            self.seg_args = {
+                "err_type": err_type,
+                "method": method,
+                "config_name": config_name,
+                "params_name": params_name,
+            }
+
+    def _perform_forced_phot(
+        self,
+        forced_phot_band: Type[Band_Data_Base],
+        err_type: str = "rms_err",
+        method: str = "sextractor",
+        config_name: str = "default.sex",
+        params_name: str = "default.param",
+        overwrite: bool = False,
+    ) -> NoReturn:
+        # do not re-perform forced photometry if already done
+        if not (
+            hasattr(self, "forced_phot_args")
+            and hasattr(self, "forced_phot_path")
+        ):
+            if method == "sextractor":
+                self.forced_phot_path, self.forced_phot_args = \
+                SExtractor.perform_forced_phot(
+                    self,
+                    forced_phot_band,
+                    err_type,
+                    config_name=config_name,
+                    params_name=params_name,
+                    overwrite=overwrite,
+                )
+            else:
+                raise (Exception(f"{method=} not in ['sextractor']"))
+
+    def _get_master_tab(
+        self, output_ids_locs: bool = False
+    ) -> Table:
+        tab = Table.read(self.forced_phot_path, character_as_bytes=False, format="fits")
+        if self.forced_phot_args["method"] == "sextractor":
+            id_loc_params = [
+                "NUMBER",
+                "X_IMAGE",
+                "Y_IMAGE",
+                "ALPHA_J2000",
+                "DELTA_J2000",
+            ]
         else:
             raise (
                 Exception(
-                    f"cat_path = {cat_path} has type = '{type(cat_path)}', which is not 'str'!"
+                    f"{self.forced_phot_args['method']} not in ['sextractor']"
                 )
             )
-
-        # calculate ZPs, pixel scales and shapes for all bands
-        self.im_zps = {}
-        self.im_pixel_scales = {}
-        self.im_shapes = {}
-        for band in instrument:
-            band_name = band.band_name
-            im_hdul = fits.open(str(im_paths[band_name]))
-            im_hdu = im_hdul[im_exts[band_name]]
-            im_header = im_hdu.header
-            if (
-                self.im_paths[band_name]
-                == self.wht_paths[band_name]
-                == self.rms_err_paths[band_name]
-            ):
-                self.im_shapes[band_name] = im_hdu.data.shape
-            else:
-                self.im_shapes[band_name] = im_hdul[0].data.shape
-            self.im_pixel_scales[band_name] = Data.load_pix_scale(
-                im_header, band_name, band.instrument
-            )
-            self.im_zps[band_name] = Data.load_ZP(
-                im_header, band_name, band.instrument
-            )
-            assert self.im_pixel_scales[band_name] == pix_scale
-
-        # make segmentation maps from image paths if they don't already exist
-        existing_seg_paths = glob.glob(
-            f"{config['DEFAULT']['GALFIND_WORK']}/SExtractor/*/{version}/{survey}/{survey}_*_*_sel_cat_{version}_seg.fits"
-        )
-        [
-            self.make_seg_map(band)
-            for band, path in seg_paths.items()
-            if path not in existing_seg_paths
-        ]
-        self.seg_paths = seg_paths  # dict(sorted(seg_paths.items()))
-        # make masks from image paths if they don't already exist
-        self.mask_dir = f"{config['DEFAULT']['GALFIND_WORK']}/Masks/{survey}"
-        for i, (band, mask_path) in enumerate(mask_paths.items()):
-            # the input mask path is a pixel mask
-            if ".fits" in mask_path:
-                pass
-            # convert region mask to pixel mask
-            elif ".reg" in mask_path:
-                # clean region mask of any zero size regions
-                mask_path = self.clean_mask_regions(mask_path)
-                mask_paths[band] = self.mask_reg_to_pix(band, mask_path)
-            else:
-                # make an pixel mask automatically for the band
-                if type(mask_stars) == bool:
-                    mask = self.make_mask(band, mask_stars=mask_stars)
-                elif type(mask_stars) == dict:
-                    if band in mask_stars.keys():
-                        mask = self.make_mask(
-                            band, mask_stars=mask_stars[band]
-                        )
-                    else:
-                        band_instrument = instrument[
-                            np.where(band == instrument.band_names)[0][0]
-                        ].instrument
-                        if band_instrument in mask_stars.keys():
-                            mask = self.make_mask(
-                                band, mask_stars=mask_stars[band_instrument]
-                            )
-                        else:
-                            mask = self.make_mask(band)  # default behaviour
-                else:
-                    galfind_logger.critical(
-                        f"{mask_stars=} with {type(mask_stars)=} not in [bool, dict]"
-                    )
-                mask_paths[band] = mask
-        self.mask_paths = dict(sorted(mask_paths.items()))
-
-        # determine whether the survey is a blank field or cluster field
-        if all(path == "" for path in [blank_mask_path, cluster_mask_path]):
-            self.is_blank = True
-
-        if self.is_blank:
-            galfind_logger.info(f"{survey} is a BLANK field!")
-            self.blank_mask_path = ""
-            self.cluster_mask_path = ""
+        if output_ids_locs:
+            if self.forced_phot_args["method"] == "sextractor":
+                append_ids_loc = {
+                    "ID": tab["NUMBER"],
+                    "X_IMAGE": tab["X_IMAGE"].value,
+                    "Y_IMAGE": tab["Y_IMAGE"].value,
+                    "RA": tab["ALPHA_J2000"].value,
+                    "DEC": tab["DELTA_J2000"].value,
+                }
         else:
-            galfind_logger.info(f"{survey} is a CLUSTER field!")
-            for mask_path, mask_type in zip(
-                [blank_mask_path, cluster_mask_path], ["blank", "cluster"]
-            ):
-                if ".fits" in mask_path:
-                    pass
-                elif ".reg" in mask_path:
-                    # breakpoint()
-                    mask_path = self.clean_mask_regions(mask_path)
-                    mask_path = self.mask_reg_to_pix(
-                        self.alignment_band, mask_path
-                    )
-                else:
-                    galfind_logger.critical(
-                        f"{mask_type.capitalize()} mask does not exist for {survey} and no blank field/cluster auto-masking has yet been implemented!"
-                    )
-            self.blank_mask_path = blank_mask_path
-            self.cluster_mask_path = cluster_mask_path
+            append_ids_loc = {}
 
-        # find common directories for im/seg/rms_err/wht maps
-        self.common_dirs = {}
-        galfind_logger.warning(
-            f"self.common_dirs has errors when the len(rms_err_paths) = {len(self.rms_err_paths)} != len(wht_paths) = {len(self.wht_paths)}"
-        )
-        if len(self.rms_err_paths) == len(self.wht_paths):
-            for paths, key in zip(
-                [im_paths, seg_paths, mask_paths, rms_err_paths, wht_paths],
-                ["SCI", "SEG", "MASK", "ERR", "WHT"],
-            ):
-                try:
-                    for band in self.instrument.band_names:
-                        assert "/".join(
-                            paths[band].split("/")[:-1]
-                        ) == "/".join(
-                            paths[self.instrument.band_names[0]].split("/")[
-                                :-1
-                            ]
-                        )
-                    self.common_dirs[key] = "/".join(
-                        paths[self.instrument.band_names[0]].split("/")[:-1]
-                    )
-                    galfind_logger.info(
-                        f"Common directory found for {key}: {self.common_dirs[key]}"
-                    )
-                except AssertionError:
-                    galfind_logger.info(f"No common directory for {key}")
+        # remove non band-dependent forced photometry parameters
+        for param in id_loc_params:
+            if not output_ids_locs:
+                tab.remove_column(param)
+        # add band suffix to columns
+        for name in tab.columns.copy():
+            if name not in id_loc_params:
+                tab.rename_column(name, name + "_" + self.filt_name)
+        return tab
 
-        key_failed = {}
-        for paths, key in zip(
-            [im_paths, seg_paths, mask_paths, rms_err_paths, wht_paths],
-            ["SCI", "SEG", "MASK", "ERR", "WHT"],
-        ):
-            try:
-                for band in self.instrument.band_names:
-                    key_failed[key] = []
-                    try:
-                        assert "/".join(
-                            paths[band].split("/")[:-1]
-                        ) == "/".join(
-                            paths[self.instrument.band_names[-1]].split("/")[
-                                :-1
-                            ]
-                        )
-                    except (AssertionError, KeyError):
-                        key_failed[key].append(band)
-                self.common_dirs[key] = "/".join(
-                    paths[self.instrument.band_names[-1]].split("/")[:-1]
-                )
-                galfind_logger.info(
-                    f"Common directory found for {key}: {self.common_dirs[key]}"
-                )
-            except AssertionError:
-                galfind_logger.info(f"No common directory for {key}")
 
-        # Check if we have either weight or error maps
-        # check any band in key_failed[ERR] is not in key_failed[WHT] and vice versa
-        if len(key_failed["ERR"]) != 0 and len(key_failed["WHT"]) != 0:
-            for band1 in key_failed["ERR"]:
-                if band in key_failed["WHT"]:
-                    galfind_logger.critical(
-                        f"No error or weight map found for band = {band}"
-                    )
-                else:
-                    galfind_logger.warning(
-                        f"No error map found for band = {band}"
-                    )
-            for band in key_failed["WHT"]:
-                if band in key_failed["ERR"]:
-                    galfind_logger.critical(
-                        f"No error or weight map found for band = {band}"
-                    )
-                else:
-                    galfind_logger.warning(
-                        f"No weight map found for band = {band}"
-                    )
-
-        if len(key_failed["SCI"]) != 0:
-            galfind_logger.critical(
-                f"No science image found for band = {key_failed['SCI']}"
-            )
-        if len(key_failed["SEG"]) != 0:
-            galfind_logger.critical(
-                f"No segmentation map found for band = {key_failed['SEG']}"
-            )
-        if len(key_failed["MASK"]) != 0:
-            galfind_logger.critical(
-                f"No mask found for band = {key_failed['MASK']}"
-            )
-
-        # find other things in common between bands
-        self.common = {}
-        for label, item_dict in zip(
-            ["ZERO POINT", "PIXEL SCALE", "SCI SHAPE"],
-            [self.im_zps, self.im_pixel_scales, self.im_shapes],
-        ):
-            try:
-                for band in self.instrument.band_names:
-                    assert (
-                        item_dict[band]
-                        == item_dict[self.instrument.band_names[0]]
-                    )
-                self.common[label] = item_dict[self.instrument.band_names[0]]
-                galfind_logger.info(f"Common {label} found")
-            except AssertionError:
-                galfind_logger.info(f"No common {label}")
-
-        # make RGB using the default method if the science images have a common shape
-        if "SCI SHAPE" in self.common.keys() and type(RGB_method) != type(
-            None
-        ):
-            split_bands = np.split(
-                self.instrument.band_names,
-                [
-                    int(np.round(len(self.instrument.band_names) / 3, 0)),
-                    -int(np.round(len(self.instrument.band_names) / 3, 0)),
-                ],
-            )
-            self.make_RGB(
-                list(split_bands[0]),
-                list(split_bands[1]),
-                list(split_bands[2]),
-                RGB_method,
-            )
-            # split_bands = np.take(self.instrument.band_names, [0, int(len(self.instrument.band_names) / 2), -1])
-            # self.make_RGB([split_bands[0]], [split_bands[1]], [split_bands[2]], RGB_method)
-
-    @classmethod
-    def from_survey_version(
-        cls,
-        survey,
-        version,
-        instrument_names=["ACS_WFC", "WFC3_IR", "NIRCam", "MIRI"],
-        excl_bands=[],
-        pix_scales={
-            "ACS_WFC": 0.03 * u.arcsec,
-            "WFC3_IR": 0.03 * u.arcsec,
-            "NIRCam": 0.03 * u.arcsec,
-            "MIRI": 0.09 * u.arcsec,
-        },
-        im_str=["_sci", "_i2d", "_drz"],
-        rms_err_str=["_rms_err", "_rms", "_err"],
-        wht_str=["_wht", "_weight"],
-        mask_stars=True,
-        sex_prefer="rms_err",
-    ):
-        # may not require all of these inits
-        im_paths = {}
-        im_exts = {}
-        seg_paths = {}
-        wht_paths = {}
-        wht_exts = {}
-        rms_err_paths = {}
-        rms_err_exts = {}
-        mask_paths = {}
-        depth_dir = {}
-        is_blank = is_blank_survey(survey)
-        instrument_arr = []
-
-        # construct dict containing appropriate directories for the given version, survey etc
-        NIRCam_version_to_dir = {
-            "v8b": "mosaic_1084_wispfix",
-            "v8c": "mosaic_1084_wispfix2",
-            "v8d": "mosaic_1084_wispfix3",
-            "v9": "mosaic_1084_wisptemp2",
-            "v10": "mosaic_1084_wispscale",
-            "v11": "mosaic_1084_wispnathan",
-        }
-        # MIRI_version_to_dir = "60mas"
-        instrument_version_to_dir = {
-            **{"NIRCam": NIRCam_version_to_dir},
-            **{
-                instrument_name: f"{int(np.round(pix_scales[instrument_name].to(u.mas).value, 0))}mas"
-                for instrument_name in ["ACS_WFC", "WFC3_IR", "MIRI"]
-            },
-        }
-
-        for instrument_name in instrument_names:
-            instrument = globals()[instrument_name](
-                excl_bands=[
-                    band_name
-                    for band_name in excl_bands
-                    if band_name in globals()[instrument_name]().band_names
-                ]
-            )
-            version_to_dir = instrument_version_to_dir[instrument_name]
-            pix_scale = pix_scales[instrument_name]
-
-            # determine directory where the data is stored for the version, survey and instrument
-            if type(version_to_dir) == str:
-                survey_dir = f"{config['DEFAULT']['GALFIND_DATA']}/{instrument.facility.lower()}/{survey}/{instrument_name}/{version_to_dir}"
-            elif type(version_to_dir) == dict:
-                if version_to_dir == {}:
-                    continue
-                elif version.split("_")[0] in version_to_dir.keys():
-                    survey_dir = f"{config['DEFAULT']['GALFIND_DATA']}/{instrument.facility.lower()}/{survey}/{instrument_name}/{version_to_dir[version.split('_')[0]]}"
-                else:
-                    survey_dir = f"{config['DEFAULT']['GALFIND_DATA']}/{instrument.facility.lower()}/{survey}/{instrument_name}/{version}"
-                if len(version.split("_")) > 1:
-                    survey_dir += f"_{'_'.join(version.split('_')[1:])}"
-            else:
-                galfind_logger.critical(
-                    f"{version_to_dir=} with {type(version_to_dir)=} not in [str, dict]"
-                )
-
-            # quick fix for non-NIRCam PSF homogenized images
-            if (
-                "psfmatched" in version
-                and config.getboolean("DataReduction", "PSF_HOMOGENIZED")
-                and instrument_name != "NIRCam"
-            ):
-                fits_path_arr = np.array(
-                    glob.glob(f"{survey_dir}/psf_matched/*.fits")
-                )
-            else:
-                # extract all .fits files in this directory
-                fits_path_arr = np.array(glob.glob(f"{survey_dir}/*.fits"))
-            if len(fits_path_arr) == 0:
-                continue
-
-            # obtain available bands from image paths
-            bands = np.array(
-                [
-                    band
-                    for path in fits_path_arr
-                    for band in instrument.band_names
-                    if band.upper() in path
-                    or band.lower() in path
-                    or band.lower().replace("f", "F") in path
-                    or band.upper().replace("F", "f") in path
-                ]
-            )
-            galfind_logger.warning(
-                "Should check more thoroughly to ensure there are not multiple band names in an image path!"
-            )
-
-            # if there are multiple images per band, separate into im/wht/rms_err
-            unique_bands, band_indices, n_images = np.unique(
-                bands, return_inverse=True, return_counts=True
-            )
-            galfind_logger.debug(
-                "These assertions may need to change in the case of e.g. stacking multiple images of same band"
-            )
-            assert all(
-                n == n_images[0] for n in n_images
-            )  # throw more appropriate warnings here
-            assert n_images[0] in [1, 2, 3]
-            if n_images[0] == 1:
-                im_path_arr = fits_path_arr
-                assert len(bands) == len(im_path_arr)
-                instr_im_paths = {
-                    band: path for band, path in zip(bands, im_path_arr)
-                }
-                im_paths = {**im_paths, **instr_im_paths}
-                # extract sci/rms_err/wht extensions from single band image
-                for band in tqdm(
-                    bands,
-                    total=len(bands),
-                    desc=f"Extracting SCI/WHT/ERR extensions/shapes for {survey} {version} {instrument_name}",
-                ):
-                    im_hdul = fits.open(im_paths[band])
-                    for j, im_hdu in enumerate(im_hdul):
-                        if im_hdu.name == "SCI":
-                            im_exts[band] = int(j)
-                        if im_hdu.name == "WHT":
-                            wht_exts[band] = int(j)
-                            wht_paths[band] = str(im_paths[band])
-                        if im_hdu.name == "ERR":
-                            rms_err_exts[band] = int(j)
-                            rms_err_paths[band] = str(im_paths[band])
-            else:
-                im_path_arr = np.array(
-                    [
-                        fits_path
-                        for band_index in np.unique(band_indices)
-                        for fits_path in fits_path_arr[
-                            band_indices == band_index
-                        ]
-                        if any(str in fits_path for str in im_str)
-                        and not any(str in fits_path for str in rms_err_str)
-                        and not any(str in fits_path for str in wht_str)
-                    ]
-                )
-                rms_err_path_arr = np.array(
-                    [
-                        fits_path
-                        for band_index in np.unique(band_indices)
-                        for fits_path in fits_path_arr[
-                            band_indices == band_index
-                        ]
-                        if any(str in fits_path for str in rms_err_str)
-                        and not any(str in fits_path for str in wht_str)
-                    ]
-                )
-                wht_path_arr = np.array(
-                    [
-                        fits_path
-                        for band_index in np.unique(band_indices)
-                        for fits_path in fits_path_arr[
-                            band_indices == band_index
-                        ]
-                        if any(str in fits_path for str in wht_str)
-                    ]
-                )
-                # stack bands if there are more than 1 im_path for each band - NOT YET IMPLEMENTED
-                assert (
-                    len(
-                        np.array(
-                            [
-                                path
-                                for path in fits_path_arr
-                                if path
-                                not in np.concatenate(
-                                    (
-                                        im_path_arr,
-                                        rms_err_path_arr,
-                                        wht_path_arr,
-                                    )
-                                )
-                            ]
-                        )
-                    )
-                    == 0
-                )
-                # save paths to sci, rms_err, and wht maps
-                im_paths = {
-                    **im_paths,
-                    **{
-                        band: path
-                        for band, path in zip(unique_bands, im_path_arr)
-                    },
-                }
-                rms_err_paths = {
-                    **rms_err_paths,
-                    **{
-                        band: path
-                        for band, path in zip(unique_bands, rms_err_path_arr)
-                    },
-                }
-                wht_paths = {
-                    **wht_paths,
-                    **{
-                        band: path
-                        for band, path in zip(unique_bands, wht_path_arr)
-                    },
-                }
-                # extract sci/rms_err/wht extensions from single band image
-                for band in bands:
-                    im_hdul = fits.open(im_paths[band])
-                    assertion_len = 1
-                    for j, im_hdu in enumerate(im_hdul):
-                        if im_hdu.name == "PRIMARY" and len(im_hdul) > 1:
-                            assertion_len += 1
-                        else:
-                            im_exts[band] = int(j)
-
-                    # print(band, len(im_hdul), [hdu.name for hdu in im_hdul], assertion_len)
-                    assert len(im_hdul) == assertion_len
-                    if band in rms_err_paths.keys():
-                        rms_err_hdul = fits.open(rms_err_paths[band])
-                        assertion_len = 1
-                        for j, rms_err_hdu in enumerate(rms_err_hdul):
-                            if (
-                                rms_err_hdu.name == "PRIMARY"
-                                and len(rms_err_hdul) > 1
-                            ):
-                                assertion_len += 1
-                            else:
-                                rms_err_exts[band] = int(j)
-                        # print(band, len(rms_err_hdul), [hdu.name for hdu in rms_err_hdul], assertion_len)
-                        assert len(rms_err_hdul) == assertion_len
-                    if band in wht_paths.keys():
-                        wht_hdul = fits.open(wht_paths[band])
-                        assertion_len = 1
-                        for j, wht_hdu in enumerate(wht_hdul):
-                            if wht_hdu.name == "PRIMARY" and len(wht_hdul) > 1:
-                                assertion_len += 1
-                            else:
-                                wht_exts[band] = int(j)
-                        # print(band, len(wht_hdul), [hdu.name for hdu in wht_hdul], assertion_len)
-                        assert len(wht_hdul) == assertion_len
-
-            # if band not used in instrument remove it, else save pixel scale and zero point
-            for band in deepcopy(instrument):
-                if band.band_name not in unique_bands:
-                    instrument -= band
-            instrument_arr.append(instrument)
-        # breakpoint()
-        if len(instrument_arr) == 1:
-            comb_instrument = instrument_arr[0]
-        else:
-            instrument_arr = np.array(instrument_arr, dtype=object)
-            comb_instrument = np.sum(instrument_arr)
-
-        # All seg maps and masks should be in same format, so load those last when we know what bands we have
-        start = time.time()
-
-        # re-write to avoid using glob.glob more than absolutely necessary
-        fits_mask_paths = glob.glob(
-            f"{config['DEFAULT']['GALFIND_WORK']}/Masks/{survey}/fits_masks/*.fits"
-        )
-        # breakpoint()
-        for i, band in enumerate(comb_instrument):
-            # load path to segmentation map
-            seg_paths[band.band_name] = (
-                f"{config['DEFAULT']['GALFIND_WORK']}/SExtractor/{band.instrument}/{version}/{survey}/{survey}_{band.band_name}_{band.band_name}_sel_cat_{version}_seg.fits"
-            )
-
-            # load fits mask for band before searching for other existing masks
-            paths_to_masks = [
-                f"{config['DEFAULT']['GALFIND_WORK']}/Masks/{survey}/fits_masks/{path.split('/')[-1]}"
-                for path in fits_mask_paths
-                if path.split("/")[-1].split("_")[0] == band.band_name
-                and "basemask" in path.split("/")[-1].split("_")[1]
+    def mask(
+        self,
+        method: Union[str, List[str], Dict[str, str]] = "auto",
+        fits_mask_path: Optional[Union[str, List[str], Dict[str, str]]] = None,
+        star_mask_params: Optional[
+            Union[
+                Dict[str, Dict[str, float]],
+                Dict[u.Quantity, Dict[str, Dict[str, float]]],
             ]
-            # print(band)
-            assert len(paths_to_masks) <= 1, galfind_logger.critical(
-                f"{len(paths_to_masks)=} > 1"
-            )
-            # breakpoint()
-            if len(paths_to_masks) == 0:
-                # search for manually created mask
-                manual_mask_path = f"{config['DEFAULT']['GALFIND_WORK']}/Masks/{survey}/manual/{survey}_{band.band_name}_clean.reg"
-                if Path(manual_mask_path).is_file():
-                    mask_paths[band.band_name] = manual_mask_path
-                else:  # if no manually created mask, leave blank
-                    mask_paths[band.band_name] = ""
+        ] = {
+            "central": {"a": 300.0, "b": 4.25},
+            "spikes": {"a": 400.0, "b": 4.5},
+        },
+        edge_mask_distance: Union[
+            int, float, List[Union[int, float]], Dict[str, Union[int, float]]
+        ] = 50,
+        scale_extra: Union[float, List[float], Dict[str, float]] = 0.2,
+        exclude_gaia_galaxies: Union[bool, List[bool], Dict[str, bool]] = True,
+        angle: Union[float, List[float], Dict[str, float]] = -70.0,
+        edge_value: Union[float, List[float], Dict[str, float]] = 0.0,
+        element: Union[str, List[str], Dict[str, str]] = "ELLIPSE",
+        gaia_row_lim: Union[int, List[int], Dict[str, int]] = 500,
+        overwrite: Union[bool, List[bool], Dict[str, bool]] = False,
+    ) -> Union[None, NoReturn]:
+        if not (hasattr(self, "mask_args") and hasattr(self, "mask_path")):
+            # load in already made fits mask
+            if fits_mask_path is not None:
+                mask_args = Masking.get_mask_method(fits_mask_path)
+                if mask_args is not None:
+                    self.mask_path = fits_mask_path
+                    self.mask_args = {"method": mask_args}
+                    return
+            # create fits mask
+            if method.lower() == "manual":
+                self.mask_path = Masking.manually_mask(
+                    self, overwrite=overwrite
+                )
+                self.mask_args = {"method": method}
+            elif method.lower() == "auto":
+                self.mask_path, self.mask_args = Masking.auto_mask(
+                    self,
+                    star_mask_params,
+                    edge_mask_distance,
+                    scale_extra,
+                    exclude_gaia_galaxies,
+                    angle,
+                    edge_value,
+                    element,
+                    gaia_row_lim,
+                    overwrite,
+                )
             else:
-                mask_paths[band.band_name] = paths_to_masks[0]
-
-            mid = time.time()
-            # print(mid - start)
-
-        if is_blank:
-            cluster_mask_path = ""
-            blank_mask_path = ""
-        else:  # load in cluster core / blank field fits/reg masks
-            mask_path_dict = {}
-            for mask_type in ["cluster", "blank"]:
-                fits_masks = glob.glob(
-                    f"{config['DEFAULT']['GALFIND_WORK']}/Masks/{survey}/fits_masks/*_{mask_type}*.fits"
+                raise (
+                    Exception(
+                        f"Invalid masking method {method} (not in ['auto', 'manual'])"
+                    )
                 )
-                galfind_logger.debug(
-                    f"Available {mask_type} .fits masks for {survey} = {fits_masks}"
+
+    def run_depths(
+        self,
+        mode: str = "n_nearest",
+        scatter_size: float = 0.1,
+        distance_to_mask: Union[int, float] = 30,
+        region_radius_used_pix: Union[int, float] = 300,
+        n_nearest: int = 200,
+        coord_type: str = "sky",
+        split_depth_min_size: int = 100_000,
+        split_depths_factor: int = 5,
+        step_size: int = 100,
+        n_split: Union[str, int] = "auto",
+        overwrite: bool = False,
+    ) -> NoReturn:
+        if not hasattr(self, "depth_args"):
+            # load parameters (i.e. for each aper_diams in self)
+            params_arr = self._sort_run_depth_params(
+                mode,
+                scatter_size,
+                distance_to_mask,
+                region_radius_used_pix,
+                n_nearest,
+                coord_type,
+                split_depth_min_size,
+                split_depths_factor,
+                step_size,
+                n_split,
+                overwrite,
+            )
+            # run depths
+            for params in params_arr:
+                Depths.calc_band_depth(params)
+            # load depths into object
+            self._load_depths(params_arr)
+        else:
+            galfind_logger.warning(
+                f"Depths loaded for {self.filt_name}, skipping!"
+            )
+    
+    def get_hf_output(self, aper_diam: u.Quantity) -> Dict[str, Any]:
+        return Depths.get_hf_output(self, aper_diam)
+
+    def _sort_run_depth_params(
+        self,
+        mode: str = "n_nearest",
+        scatter_size: float = 0.1,
+        distance_to_mask: Union[int, float] = 30,
+        region_radius_used_pix: Union[int, float] = 300,
+        n_nearest: int = 200,
+        coord_type: str = "sky",
+        split_depth_min_size: int = 100_000,
+        split_depths_factor: int = 5,
+        step_size: int = 100,
+        n_split: Union[str, int] = "auto",
+        overwrite: bool = False,
+    ) -> List[Tuple[Any, ...]]:
+        params = []
+        for aper_diam in self.aper_diams:
+            params.extend(
+                [
+                    (
+                        self,
+                        aper_diam,
+                        mode,
+                        scatter_size,
+                        distance_to_mask,
+                        region_radius_used_pix,
+                        n_nearest,
+                        coord_type,
+                        split_depth_min_size,
+                        split_depths_factor,
+                        step_size,
+                        n_split,
+                        overwrite,
+                    )
+                ]
+            )
+        return params
+
+    def _load_depths(self, params: List[Tuple[Any, ...]]) -> NoReturn:
+        if hasattr(self, "depth_args"):
+            if all(param[1] in self.depth_args.keys() for param in params):
+                galfind_logger.warning(
+                    f"Depth data already loaded for {self.filt_name}, skipping load-in"
                 )
-                if len(fits_masks) == 1:
-                    mask_path = fits_masks[0]
-                elif len(fits_masks) > 1:
-                    galfind_logger.critical(
-                        f"Multiple .fits {mask_type} masks exist for {survey}!"
-                    )
-                else:  # no .fits masks, now look for .reg masks
-                    galfind_logger.info(
-                        f"No .fits {mask_type} masks exist for {survey}. Searching for .reg masks"
-                    )
-                    reg_masks = glob.glob(
-                        f"{config['DEFAULT']['GALFIND_WORK']}/Masks/{survey}/*_{mask_type}*.reg"
-                    )
-                    galfind_logger.debug(
-                        f"Available {mask_type} .reg masks for {survey} = {reg_masks}"
-                    )
-                    if len(reg_masks) == 1:
-                        mask_path = reg_masks[0]
-                    elif len(reg_masks) > 1:
-                        galfind_logger.critical(
-                            f"Multiple .reg {mask_type} masks exist for {survey}!"
-                        )
-                    else:  # no .reg masks
-                        galfind_logger.warning(
-                            f"No .fits or .reg {mask_type} masks exist for {survey}. May cause catalogue masking issues!"
-                        )
-                mask_path_dict[mask_type] = mask_path
-            cluster_mask_path = mask_path_dict["cluster"]
-            galfind_logger.debug(f"cluster_mask_path = {cluster_mask_path}")
-            blank_mask_path = mask_path_dict["blank"]
-            galfind_logger.debug(f"blank_mask_path = {blank_mask_path}")
+        else:
+            self.depth_path = {
+                param[1]: Depths.get_grid_depth_path(self, param[1], param[2])
+                for param in params
+            }
+            depths = [
+                Depths.get_depths_from_h5(self, param[1], param[2])
+                for param in params
+            ]
+            self.med_depth = {
+                param[1]: depth[0] for depth, param in zip(depths, params)
+            }
+            self.mean_depth = {
+                param[1]: depth[1] for depth, param in zip(depths, params)
+            }
+            self.depth_args = {
+                param[1]: Depths.get_depth_args(param) for param in params
+            }
 
-        end = time.time()
-        print(f"Loading mask paths took {end - start}s")
-        # breakpoint()
+    def plot_depths(
+        self,
+        aper_diam: u.Quantity,
+        plot_type: str,
+        fig: Optional[plt.Figure] = None,
+        ax: Optional[plt.Axes] = None,
+        save: bool = False,
+        show: bool = True,
+        cmap_name: str = "plasma",
+        label_suffix: Optional[str] = None,
+        title: Optional[str] = None,
+    ) -> NoReturn:
+        assert aper_diam in self.aper_diams, \
+            galfind_logger.critical(
+                f"{aper_diam=} not in {self.aper_diams} for {self.filt_name}"
+            )
+        assert plot_type in [
+            "rolling_average", 
+            "rolling_average_diag", 
+            "labels", 
+            "hist", 
+            "cat_depths", 
+            "cat_diag"
+            ], galfind_logger.critical(
+                f"{plot_type=} not valid!"
+            )
+        if fig is None or ax is None:
+            fig, ax = plt.subplots()
+        hf_output = Depths.get_hf_output(self, aper_diam)
+        if plot_type.lower() == "rolling_average":
+            Depths._plot_rolling_average(fig, ax, hf_output, cm.get_cmap(cmap_name))
+        elif plot_type.lower() == "rolling_average_diag":
+            Depths._plot_rolling_average_diagnostic(fig, ax, hf_output, cm.get_cmap(cmap_name))
+        elif plot_type.lower() in ["labels", "hist"]:
+            num_labels = len(np.unique(hf_output["labels_grid"]))
+            labels_cmap = LinearSegmentedColormap.from_list
+            (
+                "custom",
+                [cm.get_cmap("Set2")(i / num_labels) for i in range(num_labels)],
+                num_labels,
+            )
+            if plot_type.lower() == "labels":
+                Depths._plot_labels(fig, ax, hf_output, labels_cmap)
+            else:
+                labels_arr, possible_labels, colours = \
+                    Depths._get_labels(hf_output, cmap = labels_cmap, cmap_name = cmap_name)
+                Depths._plot_depth_hist(fig, ax, hf_output, labels_arr, 
+                    possible_labels, colours, annotate = True if show or save else False,
+                    label_suffix = label_suffix, title = title)
+        elif plot_type.lower() in ["cat_depths", "cat_diag"]:
+            cmap = cm.get_cmap(cmap_name)
+            cmap.set_bad(color="black")
+            cat_x, cat_y = Depths.get_cat_xy(hf_output)
+            combined_mask = Depths._combine_seg_data_and_mask(self)
+            if plot_type.lower() == "cat_depths":
+                Depths._plot_cat_depths(fig, ax, hf_output, cmap, cat_x, cat_y, combined_mask)
+            else:
+                Depths._plot_cat_diagnostic(fig, ax, hf_output, cmap, cat_x, cat_y, combined_mask)
+    
+        if save:
+            label = Depths.get_depth_dir(self, aper_diam, self.depth_args[aper_diam]['mode']) \
+                + f"/{plot_type.lower()}/{self.filt_name}.png"
+            funcs.make_dirs(label)
+            plt.savefig(label)
+            galfind_logger.info(f"Saved plot to {label}")
+        if show:
+            plt.show()
 
-        return cls(
+
+    def plot_depth_diagnostic(
+        self,
+        aper_diam: u.Quantity,
+        save: bool = False,
+        show: bool = False,
+    ) -> NoReturn:
+        Depths.plot_depth_diagnostic(
+            self, 
+            aper_diam,
+            save = save,
+            show = show,
+            )
+    
+    def plot_depth_diagnostics(
+        self,
+        save: bool = False,
+    ) -> NoReturn:
+        for aper_diam in self.aper_diams:
+            self.plot_depth_diagnostic(aper_diam, save = save)
+
+    def plot_area_depth(
+        self,
+    ) -> NoReturn:
+        Depths.plot_band_data_area_depth(self)
+
+    def plot(
+        self,
+        ax: Optional[plt.Axes] = None,
+        ext: str = "SCI",
+        norm: Type[Normalize] = LogNorm(vmin=0.0, vmax=10.0),
+        cmap: str = "plasma",
+        save: bool = False,
+        show: bool = True,
+    ) -> NoReturn:
+        """
+        Plots the specified image data on the given matplotlib Axes.
+
+        Parameters:
+        -----------
+        ax : plt.Axes
+            The matplotlib Axes object where the image will be plotted.
+        ext : str, optional
+            The type of image data to plot. Must be one of ['SCI', 'RMS_ERR', 'WHT', 'SEG', 'MASK'].
+            Default is 'SCI'.
+        norm : Type[Normalize], optional
+            The normalization for the image data. Default is LogNorm(vmin=0.0, vmax=10.0).
+        save : bool, optional
+            If True, the plot will be saved to a file. Default is False.
+        show : bool, optional
+            If True, the plot will be displayed. Default is True.
+
+        Raises:
+        -------
+        Exception
+            If the provided extension `ext` is not one of the allowed values.
+
+        Returns:
+        --------
+        NoReturn
+        """
+        normalize = True
+        if ext.lower() in ["sci", "im"]:
+            data = self.load_im()[0]
+        elif ext.lower() == "rms_err":
+            data = self.load_rms_err()[0]
+        elif ext.lower() == "wht":
+            data = self.load_wht()[0]
+        elif ext.lower() == "seg":
+            data = self.load_seg()[0]
+        elif ext.lower() == "mask":
+            # TODO: plot different masks in different colours
+            data = self.load_mask()[0]["MASK"]
+            normalize = False
+        else:
+            raise (
+                Exception(
+                    f"Invalid extension {ext}. "
+                    + "Must be one of ['SCI', 'RMS_ERR', 'WHT', 'SEG', 'MASK']"
+                )
+            )
+        # make a fresh axis if one is not provided
+        if ax is None:
+            fig, ax = plt.subplots()
+        # plot the image data
+        if normalize:
+            ax.imshow(data, norm=norm, cmap=cmap, origin="lower")
+        else:
+            ax.imshow(data, cmap=cmap, origin="lower")
+        # annotate if required
+        if show or save:
+            plt.title(ext.upper())
+            ax.set_xlabel("X / pix")
+            ax.set_ylabel("Y / pix")
+        if save:
+            label = None
+            # plt.savefig(label)
+        if show:
+            plt.show()
+
+    def _combine_seg_data_and_mask(self) -> np.ndarray:
+        seg_data = self.load_seg()[0]
+        mask = self.load_mask()[0]["MASK"]
+        assert seg_data.shape == mask.shape
+        combined_mask = np.logical_or(seg_data > 0, mask == 1).astype(int)
+        return combined_mask
+
+    @staticmethod
+    def _pix_scale_to_str(pix_scale: u.Quantity):
+        return f"{round(pix_scale.to(u.marcsec).value)}mas"
+
+    def _make_rms_err_from_wht(self):
+        # make rms_err map from wht map
+        wht, hdr = self.load_wht(output_hdr=True)
+        err = 1.0 / (wht**0.5)
+        primary_hdr = deepcopy(hdr)
+        primary_hdr["EXTNAME"] = "PRIMARY"
+        primary = fits.PrimaryHDU(header=primary_hdr)
+        hdu = fits.ImageHDU(err, header=hdr, name="ERR")
+        hdul = fits.HDUList([primary, hdu])
+        # save and overwrite object attributes
+        save_path = self.im_path.replace(
+            self.im_path.split("/")[-1],
+            f"rms_err/{self.filt.band_name}_rms_err.fits",
+        )
+        funcs.make_dirs(save_path)
+        hdul.writeto(save_path, overwrite=True)
+        funcs.change_file_permissions(save_path)
+        galfind_logger.info(
+            f"Finished making {self.survey} {self.version} {self.filt} rms_err map"
+        )
+        self.rms_err_path = save_path
+        self.rms_err_ext = 1
+        self.rms_err_ext_name = ["ERR"]
+        self._use_galfind_err = True
+
+    def _make_wht_from_rms_err(self):
+        err, hdr = self.load_rms_err(output_hdr=True)
+        wht = 1.0 / (err**2)
+        primary_hdr = deepcopy(hdr)
+        primary_hdr["EXTNAME"] = "PRIMARY"
+        primary = fits.PrimaryHDU(header=primary_hdr)
+        hdu = fits.ImageHDU(wht, header=hdr, name="WHT")
+        hdul = fits.HDUList([primary, hdu])
+        # save and overwrite object attributes
+        save_path = self.im_path.replace(
+            self.im_path.split("/")[-1], f"wht/{self.filt.band_name}_wht.fits"
+        )
+        funcs.make_dirs(save_path)
+        hdul.writeto(save_path, overwrite=True)
+        funcs.change_file_permissions(save_path)
+        galfind_logger.info(
+            f"Finished making {self.survey} {self.version} {self.filt} wht map"
+        )
+        self.wht_path = save_path
+        self.wht_ext = 1
+        self.rms_err_ext_name = ["WHT"]
+        self._use_galfind_err = True
+
+
+class Band_Data(Band_Data_Base):
+    def __init__(
+        self,
+        filt: Type[Filter],
+        survey: str,
+        version: str,
+        im_path: str,
+        im_ext: int,
+        rms_err_path: Optional[str] = None,
+        rms_err_ext: Optional[int] = None,
+        wht_path: Optional[str] = None,
+        wht_ext: Optional[int] = None,
+        pix_scale: u.Quantity = 0.03 * u.arcsec,
+        im_ext_name: Union[str, List[str]] = "SCI",
+        rms_err_ext_name: Union[str, List[str]] = "ERR",
+        wht_ext_name: Union[str, List[str]] = "WHT",
+        use_galfind_err: bool = False,
+        aper_diams: Optional[u.Quantity] = None,
+    ):
+        self.filt = filt
+        super().__init__(
             survey,
             version,
-            comb_instrument,
-            im_paths,
-            im_exts,
-            rms_err_paths,
-            rms_err_exts,
-            wht_paths,
-            wht_exts,
-            seg_paths,
-            mask_paths,
-            cluster_mask_path,
-            blank_mask_path,
-            mask_stars=mask_stars,
-            sex_prefer=sex_prefer,
+            im_path,
+            im_ext,
+            rms_err_path,
+            rms_err_ext,
+            wht_path,
+            wht_ext,
+            pix_scale,
+            im_ext_name,
+            rms_err_ext_name,
+            wht_ext_name,
+            use_galfind_err,
+            aper_diams,
         )
+
+    @classmethod
+    def from_band_data_arr(cls, band_data_arr: List[Type[Band_Data_Base]]):
+        raise (NotImplementedError)
+        # make sure all filters are the same
+        # stack bands by multiplication
+
+    @property
+    def instr_name(self):
+        return self.filt.instrument.__class__.__name__
+
+    @property
+    def filt_name(self):
+        return self.filt.band_name
+
+    @property
+    def ZP(self) -> Dict[str, float]:
+        return self.filt.instrument.calc_ZP(self)
+
+    def __add__(
+        self, other: Union[Band_Data, List[Band_Data], Data, List[Data]]
+    ) -> Data:
+        # if other is not a list, make it one
+        if not isinstance(other, list):
+            other = [other]
+        # if other is an array of data objects, make a list of band_data objects
+        if isinstance(other[0], Data):
+            assert all(isinstance(_other, Data) for _other in other)
+            other_band_data = []
+            for _other in other:
+                other_band_data.extend(_other.band_data_arr)
+            other = other_band_data
+        new_band_data_arr = [self] + other
+        # ensure all bands come from the same survey and version
+        if all(
+            [
+                band_data.survey == self.survey
+                and band_data.version == self.version
+                for band_data in new_band_data_arr
+            ]
+        ):
+            # if all bands being added are different
+            if len(
+                np.unique(
+                    [band_data.filt_name for band_data in new_band_data_arr]
+                )
+            ) == len(new_band_data_arr):
+                return Data(new_band_data_arr)
+            else:
+                raise (
+                    Exception(
+                        "Cannot add Data/Band_Data objects with the same filters."
+                        + " You may want to use Band_Data.__mul__() to stack!"
+                    )
+                )
+        else:
+            raise (
+                Exception(
+                    "Cannot add Data/Band_Data objects from different surveys or versions."
+                )
+            )
+
+    # stacking/mosaicing
+    def __mul__(
+        self, other: Union[Type[Band_Data_Base], List[Type[Band_Data_Base]]]
+    ) -> Type[Band_Data_Base]:
+        # if other is not a list, make it one
+        if not isinstance(other, list):
+            other = [other]
+        assert all(
+            isinstance(_other, tuple(Band_Data_Base.__subclasses__()))
+            for _other in other
+        )
+        # flatten array of other band_data objects
+        band_data_arr = []
+        for _other in other:
+            if isinstance(_other, Band_Data):
+                band_data_arr.extend([_other])
+            elif isinstance(_other, Stacked_Band_Data):
+                assert hasattr(other, "band_data_arr")
+                band_data_arr.extend(_other.band_data_arr)
+        # stack/mosaic bands
+        if all(band_data.filt == self.filt for band_data in band_data_arr):
+            return Band_Data.from_band_data_arr(
+                [deepcopy(self), *band_data_arr]
+            )
+        else:
+            return Stacked_Band_Data.from_band_data_arr(
+                [deepcopy(self), *band_data_arr]
+            )
+
+
+class Stacked_Band_Data(Band_Data_Base):
+    def __init__(
+        self,
+        filterset: Union[List[Filter], Multiple_Filter],
+        survey: str,
+        version: str,
+        im_path: str,
+        im_ext: int,
+        rms_err_path: Optional[str] = None,
+        rms_err_ext: Optional[int] = None,
+        wht_path: Optional[str] = None,
+        wht_ext: Optional[int] = None,
+        pix_scale: u.Quantity = 0.03 * u.arcsec,
+        im_ext_name: Union[str, List[str]] = "SCI",
+        rms_err_ext_name: Union[str, List[str]] = "ERR",
+        wht_ext_name: Union[str, List[str]] = "WHT",
+        use_galfind_err: bool = False,
+        aper_diams: Optional[u.Quantity] = None,
+    ):
+        # ensure every band_data is from the same survey and version,
+        # have the same pixel scale and are from different filters
+        self.filterset = filterset
+        super().__init__(
+            survey,
+            version,
+            im_path,
+            im_ext,
+            rms_err_path,
+            rms_err_ext,
+            wht_path,
+            wht_ext,
+            pix_scale,
+            im_ext_name,
+            rms_err_ext_name,
+            wht_ext_name,
+            use_galfind_err,
+            aper_diams,
+        )
+
+    @classmethod
+    def from_band_data_arr(
+        cls, band_data_arr: List[Band_Data], err_type: str = "rms_err"
+    ) -> Stacked_Band_Data:
+        # make sure all filters are different
+        assert all(
+            band_data.filt_name != band_data_arr[0].filt_name
+            for i, band_data in enumerate(band_data_arr)
+            if i != 0
+        )
+
+        # TODO: if all band_data in band_data_arr have been PSF homogenized, update the stacking path names
+
+        # stack bands
+        input_data = Stacked_Band_Data._stack_band_data(
+            band_data_arr, err_type=err_type
+        )
+        # make filterset from filters
+        filterset = Multiple_Filter(
+            [band_data.filt for band_data in band_data_arr]
+        )
+        # instantiate the stacked band data object
+        stacked_band_data = cls(filterset, **input_data)
+
+        # if all band_data in band_data_arr have aper_diams included
+        if all(hasattr(band_data, "aper_diams") for band_data in band_data_arr):
+            if all(all(diam == diam_0 for diam, diam_0 in zip(band_data.aper_diams, band_data_arr[0].aper_diams)) for band_data in band_data_arr):
+                stacked_band_data.load_aper_diams(band_data_arr[0].aper_diams)
+
+        # if all band_data in band_data_arr have been segmented, segment the stacked band data
+        if all(hasattr(band_data, "seg_args") for band_data in band_data_arr):
+            stacked_band_data.segment()
+
+        # if all band_data in band_data_arr have been masked, mask the stacked band data
+        if all(hasattr(band_data, "mask_args") for band_data in band_data_arr):
+            # if all mask arguments are the same, use the same mask method
+            # as for the individual bands
+            if all(
+                band_data.mask_args == band_data_arr[0].mask_args
+                for band_data in band_data_arr
+            ):
+                stacked_band_data.mask(**band_data_arr[0].mask_args)
+            else:
+                # perform default masking
+                stacked_band_data.mask()
+
+        # TODO: if all band_data in band_data_arr have run depths,
+        # run depths for the stacked band data
+
+        # TODO: if all band_data in band_data_arr have performed
+        # forced photometry, perform forced photometry for the stacked band data
+
+        # save original band_data inputs in the class, sorted blue -> red
+        stacked_band_data.band_data_arr = funcs.sort_band_data_arr(
+            band_data_arr
+        )
+        return stacked_band_data
+
+    @property
+    def instr_name(self) -> str:
+        return self.filterset.instrument_name
+
+    @property
+    def filt_name(self) -> str:
+        return self._get_stacked_band_data_name(self.filterset)
+
+    @property
+    def ZP(self) -> Dict[str, float]:
+        assert all(
+            filt.instrument.calc_ZP(self)
+            == self.filterset[0].instrument.calc_ZP(self)
+            for filt in self.filterset
+        )
+        return self.filterset[0].instrument.calc_ZP(self)
+
+    # stacking/mosaicing
+    def __mul__(
+        self, other: Union[Type[Band_Data_Base], List[Type[Band_Data_Base]]]
+    ) -> Type[Band_Data_Base]:
+        # if other is not a list, make it one
+        if not isinstance(other, list):
+            other = [other]
+        assert all(
+            isinstance(_other, tuple(Band_Data_Base.__subclasses__()))
+            for _other in other
+        )
+        # flatten array of other band_data objects
+        band_data_arr = []
+        for _other in other:
+            if isinstance(_other, Band_Data):
+                band_data_arr.extend([_other])
+            elif isinstance(_other, Stacked_Band_Data):
+                assert hasattr(other, "band_data_arr")
+                band_data_arr.extend(_other.band_data_arr)
+
+        return Stacked_Band_Data.from_band_data_arr(
+            [*deepcopy(self).band_data_arr, *band_data_arr]
+        )
+
+    @staticmethod
+    def _get_stacked_band_data_name(
+        filterset: Union[List[Filter], Multiple_Filter],
+    ) -> str:
+        return "+".join([filt.band_name for filt in filterset])
+
+    @staticmethod
+    def _get_stacked_band_data_path(
+        band_data_arr: List[Band_Data], err_type: str = "rms_err"
+    ) -> str:
+        assert all(
+            getattr(band_data, name) == getattr(band_data_arr[0], name)
+            for name in ["survey", "version", "pix_scale"]
+            for band_data in band_data_arr
+        )
+        # make stacked band data path, creating directory if it does not exist
+        stacked_band_data_dir = (
+            f"{config['DEFAULT']['GALFIND_WORK']}/Stacked_Images/"
+            + f"{band_data_arr[0].version}/{band_data_arr[0].instr_name}/{band_data_arr[0].survey}/{err_type.lower()}"
+        )
+        stacked_band_data_name = (
+            f"{band_data_arr[0].survey}_"
+            + Stacked_Band_Data._get_stacked_band_data_name(
+                [band_data.filt for band_data in band_data_arr]
+            )
+            + f"_{band_data_arr[0].version}_stack.fits"
+        )
+        stacked_band_data_path = (
+            f"{stacked_band_data_dir}/{stacked_band_data_name}"
+        )
+        funcs.make_dirs(stacked_band_data_path)
+        return stacked_band_data_path
+
+    @staticmethod
+    def _stack_band_data(
+        band_data_arr: List[Band_Data],
+        err_type: str = "rms_err",
+        overwrite: bool = False,
+    ) -> Tuple[str, Dict[str, Union[str, int]]]:
+        assert err_type.lower() in ["rms_err", "wht"], galfind_logger.critical(
+            f"{err_type=} not in ['rms_err', 'wht']"
+        )
+
+        # make rms_err/wht maps if they do not exist and are required
+        used_galfind_err = False
+        if err_type.lower() == "rms_err":
+            if not all(
+                Path(band_data.rms_err_path).is_file()
+                for band_data in band_data_arr
+            ):
+                for band_data in band_data_arr:
+                    band_data._make_rms_err_from_wht()
+                used_galfind_err = True
+        else:  # err_type.lower() == "wht"
+            if not all(
+                Path(band_data.wht_path).is_file()
+                for band_data in band_data_arr
+            ):
+                for band_data in band_data_arr:
+                    band_data._make_wht_from_rms_err()
+                used_galfind_err = True
+        # load output path and perform stacking if required
+        stacked_band_data_path = Stacked_Band_Data._get_stacked_band_data_path(
+            band_data_arr, err_type
+        )
+        if not Path(stacked_band_data_path).is_file() or overwrite:
+            # ensure all shapes are the same for the band data images
+            assert all(
+                band_data.data_shape == band_data_arr[0].data_shape
+                for band_data in band_data_arr
+            ), galfind_logger.critical(
+                "All band data images must have the same shape!"
+            )
+            # ensure all band data images have the same ZP
+            assert all(
+                band_data.ZP == band_data_arr[0].ZP
+                for band_data in band_data_arr
+            ), galfind_logger.critical(
+                "All image ZPs must have the same shape!"
+            )
+            # ensure all band data images have the same pixel scale
+            assert all(
+                band_data.pix_scale == band_data_arr[0].pix_scale
+                for band_data in band_data_arr
+            ), galfind_logger.critical(
+                "All image pixel scales must be the same!"
+            )
+            # stack band data SCI/ERR/WHT images (inverse variance weighted)
+            galfind_logger.info(
+                f"Stacking {[band_data.filt_name for band_data in band_data_arr]}"
+                + f" for {band_data_arr[0].survey} {band_data_arr[0].version}"
+            )
+            for i, band_data in enumerate(band_data_arr):
+                if i == 0:
+                    im_data, im_header, im_hdul = band_data.load_im(
+                        return_hdul=True
+                    )
+                    prime_hdu = im_hdul[0].header
+                else:
+                    im_data, im_header = band_data.load_im()
+                if err_type.lower() == "rms_err":
+                    rms_err_data = band_data.load_rms_err()
+                    wht_data = 1.0 / (rms_err_data**2)
+                else:  # err_type.lower() == "wht"
+                    wht_data = band_data.load_wht()
+                    rms_err_data = np.sqrt(1.0 / wht)
+                if i == 0:
+                    sum = im_data * wht_data
+                    sum_wht = wht_data
+                else:
+                    sum += im_data * wht_data
+                    sum_wht += wht_data
+
+            sci = sum / sum_wht
+            err = np.sqrt(1.0 / sum_wht)
+            wht = sum_wht
+
+            primary = fits.PrimaryHDU(header=prime_hdu)
+            hdu = fits.ImageHDU(sci, header=im_header, name="SCI")
+            hdu_err = fits.ImageHDU(err, header=im_header, name="ERR")
+            hdu_wht = fits.ImageHDU(wht, header=im_header, name="WHT")
+            hdul = fits.HDUList([primary, hdu, hdu_err, hdu_wht])
+            hdul.writeto(stacked_band_data_path, overwrite=True)
+            funcs.change_file_permissions(stacked_band_data_path)
+
+        output_dict = {
+            "survey": band_data_arr[0].survey,
+            "version": band_data_arr[0].version,
+            "pix_scale": band_data_arr[0].pix_scale,
+            "im_path": stacked_band_data_path,
+            "im_ext": 1,
+            "im_ext_name": "SCI",
+            "rms_err_path": stacked_band_data_path,
+            "rms_err_ext": 2,
+            "rms_err_ext_name": "ERR",
+            "wht_path": stacked_band_data_path,
+            "wht_ext": 3,
+            "wht_ext_name": "WHT",
+        }
+        return output_dict
+
+    def mask(
+        self,
+        method: Union[str, List[str], Dict[str, str]] = "auto",
+        fits_mask_path: Optional[Union[str, List[str], Dict[str, str]]] = None,
+        star_mask_params: Optional[
+            Union[
+                Dict[str, Dict[str, float]],
+                Dict[u.Quantity, Dict[str, Dict[str, float]]],
+            ]
+        ] = {
+            "central": {"a": 300.0, "b": 4.25},
+            "spikes": {"a": 400.0, "b": 4.5},
+        },
+        edge_mask_distance: Union[
+            int, float, List[Union[int, float]], Dict[str, Union[int, float]]
+        ] = 50,
+        scale_extra: Union[float, List[float], Dict[str, float]] = 0.2,
+        exclude_gaia_galaxies: Union[bool, List[bool], Dict[str, bool]] = True,
+        angle: Union[float, List[float], Dict[str, float]] = -70.0,
+        edge_value: Union[float, List[float], Dict[str, float]] = 0.0,
+        element: Union[str, List[str], Dict[str, str]] = "ELLIPSE",
+        gaia_row_lim: Union[int, List[int], Dict[str, int]] = 500,
+        overwrite: Union[bool, List[bool], Dict[str, bool]] = False,
+    ) -> Union[None, NoReturn]:
+        # if the individual bands have not been loaded
+        if not hasattr(self, "band_data_arr"):
+            # mask the stacked band data
+            super().mask(
+                method=method,
+                fits_mask_path=fits_mask_path,
+                star_mask_params=star_mask_params,
+                edge_mask_distance=edge_mask_distance,
+                scale_extra=scale_extra,
+                exclude_gaia_galaxies=exclude_gaia_galaxies,
+                angle=angle,
+                edge_value=edge_value,
+                element=element,
+                gaia_row_lim=gaia_row_lim,
+                overwrite=overwrite,
+            )
+        else:
+            # make these masks if they do not exist
+            for band_data in self.band_data_arr:
+                band_data.mask(
+                    method=method,
+                    fits_mask_path=fits_mask_path,
+                    star_mask_params=star_mask_params,
+                    edge_mask_distance=edge_mask_distance,
+                    scale_extra=scale_extra,
+                    exclude_gaia_galaxies=exclude_gaia_galaxies,
+                    angle=angle,
+                    edge_value=edge_value,
+                    element=element,
+                    gaia_row_lim=gaia_row_lim,
+                    overwrite=overwrite,
+                )
+            # combine masks from individual bands
+            self.mask_path, self.mask_args = Masking.combine_masks(self)
+
+
+class Data:
+    def __init__(
+        self,
+        band_data_arr: List[Type[Band_Data]],
+        forced_phot_band: Optional[
+            Union[str, List[str], Type[Band_Data_Base]]
+        ] = None,
+    ):
+        # save and sort band_arr by central wavelength
+        self.band_data_arr = funcs.sort_band_data_arr(band_data_arr)
+        # load forced photometry band
+        if forced_phot_band is not None:
+            self.load_forced_phot_band(forced_phot_band)
 
     @classmethod
     def pipeline(
         cls,
         survey: str,
         version: str,
+        instrument_names: List[str] = json.loads(
+            config.get("Other", "INSTRUMENT_NAMES")
+        ),
+        pix_scales: Union[u.Quantity, Dict[str, u.Quantity]] = {
+            "ACS_WFC": 0.03 * u.arcsec,
+            "WFC3_IR": 0.03 * u.arcsec,
+            "NIRCam": 0.03 * u.arcsec,
+            "MIRI": 0.09 * u.arcsec,
+        },
+        im_str: List[str] = ["_sci", "_i2d", "_drz"],
+        rms_err_str: List[str] = ["_rms_err", "_rms", "_err"],
+        wht_str: List[str] = ["_wht", "_weight"],
+        version_to_dir_dict: Optional[Dict[str, str]] = None,
+        im_ext_name: Union[str, List[str]] = "SCI",
+        rms_err_ext_name: Union[str, List[str]] = "ERR",
+        wht_ext_name: Union[str, List[str]] = "WHT",
+        aper_diams: Optional[u.Quantity] = None,
+        forced_phot_band: Optional[
+            Union[str, List[str], Type[Band_Data_Base]]
+        ] = None,
+        min_flux_pc_err: Union[int, float] = 10.
+    ) -> Type[Data]:
+        data = cls.from_survey_version( \
+            survey,
+            version,
+            instrument_names,
+            pix_scales,
+            im_str,
+            rms_err_str,
+            wht_str,
+            version_to_dir_dict,
+            im_ext_name,
+            rms_err_ext_name,
+            wht_ext_name,
+            aper_diams,
+            forced_phot_band,
+        )
+        data.mask()
+        data.segment()
+        data.perform_forced_phot()
+        data.append_aper_corr_cols()
+        data.run_depths()
+        data.append_loc_depth_cols(min_flux_pc_err = min_flux_pc_err)
+        return data
+
+    @classmethod
+    def from_survey_version(
+        cls,
+        survey: str,
+        version: str,
+        instrument_names: List[str] = json.loads(
+            config.get("Other", "INSTRUMENT_NAMES")
+        ),
+        pix_scales: Union[u.Quantity, Dict[str, u.Quantity]] = {
+            "ACS_WFC": 0.03 * u.arcsec,
+            "WFC3_IR": 0.03 * u.arcsec,
+            "NIRCam": 0.03 * u.arcsec,
+            "MIRI": 0.09 * u.arcsec,
+        },
+        im_str: List[str] = ["_sci", "_i2d", "_drz"],
+        rms_err_str: List[str] = ["_rms_err", "_rms", "_err"],
+        wht_str: List[str] = ["_wht", "_weight"],
+        version_to_dir_dict: Optional[Dict[str, str]] = None,
+        im_ext_name: Union[str, List[str]] = "SCI",
+        rms_err_ext_name: Union[str, List[str]] = "ERR",
+        wht_ext_name: Union[str, List[str]] = "WHT",
+        aper_diams: Optional[u.Quantity] = None,
+        forced_phot_band: Optional[
+            Union[str, List[str], Type[Band_Data_Base]]
+        ] = None,
     ):
-        pass
-
-    @staticmethod
-    def load_ZP(im_header, band_name, instrument_name):
-        # calculate ZP given image units
-        if instrument_name == "ACS_WFC":
-            if "PHOTFLAM" in im_header and "PHOTPLAM" in im_header:
-                ZP = (
-                    -2.5 * np.log10(im_header["PHOTFLAM"])
-                    - 21.1
-                    - 5 * np.log10(im_header["PHOTPLAM"])
-                    + 18.6921
-                )
-            elif "ZEROPNT" in im_header:
-                ZP = im_header["ZEROPNT"]
-            elif "BUNIT" in im_header:
-                unit = im_header["BUNIT"].replace(" ", "")
-                assert unit == "MJy/sr"
-                pix_scale = Data.load_pix_scale(
-                    im_header, band_name, instrument_name
-                )
-                ZP = -2.5 * np.log10(
-                    (pix_scale.to(u.rad).value ** 2) * u.MJy.to(u.Jy)
-                ) + u.Jy.to(u.ABmag)
+        # make im/rms_err/wht extension names lists if not already
+        if isinstance(im_ext_name, str):
+            im_ext_name = [im_ext_name]
+        if isinstance(rms_err_ext_name, str):
+            rms_err_ext_name = [rms_err_ext_name]
+        if isinstance(wht_ext_name, str):
+            wht_ext_name = [wht_ext_name]
+        # search on an instrument-by-instrument basis
+        instr_to_name_dict = {
+            name: globals()[name]()
+            for name in instrument_names
+            if name in json.loads(config.get("Other", "INSTRUMENT_NAMES"))
+        }
+        band_data_arr = []
+        for instr_name, instrument in instr_to_name_dict.items():
+            if isinstance(pix_scales, dict):
+                pix_scale = pix_scales[instr_name]
             else:
-                raise (
-                    Exception(
-                        f"ACS_WFC data for {band_name} must contain either 'ZEROPNT' or 'PHOTFLAM' and 'PHOTPLAM' or 'BUNIT'=MJy/sr in its header to calculate its ZP!"
-                    )
-                )
-        elif instrument_name == "WFC3_IR":
-            # Taken from Appendix A of https://www.stsci.edu/files/live/sites/www/files/home/hst/instrumentation/wfc3/documentation/instrument-science-reports-isrs/_documents/2020/WFC3-ISR-2020-10.pdf
-            wfc3ir_zps = {
-                "F098M": 25.661,
-                "F105W": 26.2637,
-                "F110W": 26.8185,
-                "F125W": 26.231,
-                "F140W": 26.4502,
-                "F160W": 25.9362,
-            }
-            ZP = wfc3ir_zps[band_name]
-        elif instrument_name == "NIRCam" or instrument_name == "MIRI":
-            pix_scale = Data.load_pix_scale(
-                im_header, band_name, instrument_name
+                pix_scale = pix_scales
+            search_dir = cls._get_data_dir(
+                survey,
+                version,
+                instrument,
+                pix_scales[instr_name],
+                version_to_dir_dict,
             )
-            # assume flux units of MJy/sr and calculate corresponding ZP
-            ZP = -2.5 * np.log10(
-                (pix_scale.to(u.rad).value ** 2) * u.MJy.to(u.Jy)
-            ) + u.Jy.to(u.ABmag)
-        else:
-            raise (Exception())
-        return ZP
+            galfind_logger.debug(
+                f"Searching for {survey} {version} {instr_name} data in {search_dir}"
+            )
+            # determine which filters have data
+            fits_paths = list(glob.glob(f"{search_dir}/*.fits"))
+            filt_names_paths = {
+                filt: [
+                    path
+                    for path in fits_paths
+                    if any(
+                        path.find(substr) != -1
+                        for substr in [
+                            filt.upper(),
+                            filt.lower(),
+                            filt.lower().replace("f", "F"),
+                            filt.upper().replace("F", "f"),
+                        ]
+                    )
+                    and not any(
+                        path.find(substr) != -1
+                        for other_filt in instrument.filt_names
+                        if other_filt != filt
+                        for substr in [
+                            other_filt.upper(),
+                            other_filt.lower(),
+                            other_filt.lower().replace("f", "F"),
+                            other_filt.upper().replace("F", "f"),
+                        ]
+                    )
+                ]
+                for filt in instrument.filt_names
+            }
+            if len(filt_names_paths) == 0:
+                galfind_logger.warning(
+                    f"No data found for {survey} {version} {instr_name} in {search_dir}"
+                )
+                continue
+            else:
+                bands_found = [
+                    key
+                    for key, val in filt_names_paths.items()
+                    if len(val) != 0
+                ]
+                galfind_logger.debug(
+                    f"Found {'+'.join(bands_found)} filters for {survey} {version} {instr_name}"
+                )
+            # sort into paths and extensions for each image type
+            (
+                im_paths,
+                im_exts,
+                rms_err_paths,
+                rms_err_exts,
+                wht_paths,
+                wht_exts,
+            ) = cls._sort_paths(
+                filt_names_paths,
+                im_str,
+                rms_err_str,
+                wht_str,
+                im_ext_name,
+                rms_err_ext_name,
+                wht_ext_name,
+            )
+
+            for filt_name in im_paths.keys():
+                if len(im_paths[filt_name]) > 1:
+                    # stack sci/rms_err/wht images together and move the old ones to a new directory
+                    err_message = (
+                        f"Multiple images found for {filt_name}."
+                        + "Stacking multiple images in the same band not yet implemented"
+                    )
+                    # NOTE: This can only be done when the images are
+                    # in the same fits file but different extensions.
+                    raise NotImplementedError(err_message)
+                else:
+                    band_data = Band_Data(
+                        Filter.from_filt_name(filt_name),
+                        survey,
+                        version,
+                        im_paths[filt_name][0],
+                        im_exts[filt_name][0],
+                        rms_err_paths[filt_name][0],
+                        rms_err_exts[filt_name][0],
+                        wht_paths[filt_name][0],
+                        wht_exts[filt_name][0],
+                        pix_scale,
+                        im_ext_name,
+                        rms_err_ext_name,
+                        wht_ext_name,
+                        aper_diams=aper_diams,
+                    )
+                band_data_arr.extend([band_data])
+        return cls(band_data_arr, forced_phot_band=forced_phot_band)
 
     @staticmethod
-    def load_pix_scale(im_header, band_name, instrument_name):
-        pass
+    def _get_data_dir(
+        survey: str,
+        version: str,
+        instrument: Type[Instrument],
+        pix_scale: u.Quantity = 0.03 * u.arcsec,
+        version_to_dir_dict: Optional[Dict[str, str]] = None,
+    ) -> Self:
+        # if version_to_dir_dict is not None:
+        version = version_to_dir_dict[version.split("_")[0]]
+        # else:
+        #     version_substr = version
+        # if len(version.split("_")) > 1:
+        #     version_substr += f"_{'_'.join(version.split('_')[1:])}"
+        return (
+            f"{config['DEFAULT']['GALFIND_DATA']}/"
+            + f"{instrument.facility.__class__.__name__.lower()}/{survey}/"
+            + f"{instrument.__class__.__name__}/{version}/"
+            + f"{Band_Data_Base._pix_scale_to_str(pix_scale)}"
+        )
+
+    @staticmethod
+    def _sort_paths(
+        filt_names_paths: Dict[str, List[str]],
+        im_str: List[str] = ["_sci", "_i2d", "_drz"],
+        rms_err_str: List[str] = ["_rms_err", "_rms", "_err"],
+        wht_str: List[str] = ["_wht", "_weight"],
+        im_ext_name: Union[str, List[str]] = "SCI",
+        rms_err_ext_name: Union[str, List[str]] = "ERR",
+        wht_ext_name: Union[str, List[str]] = "WHT",
+    ) -> Tuple[
+        Dict[str, List[str]],
+        Dict[str, List[int]],
+        Dict[str, List[str]],
+        Dict[str, List[int]],
+        Dict[str, List[str]],
+        Dict[str, List[int]],
+    ]:
+        # determine which bands/image types correspond to which paths
+        im_paths = {}
+        im_exts = {}
+        rms_err_paths = {}
+        rms_err_exts = {}
+        wht_paths = {}
+        wht_exts = {}
+        for filt_name, paths in filt_names_paths.items():
+            if len(paths) == 0:
+                galfind_logger.debug(f"No data found for {filt_name}")
+                continue
+            if filt_name not in im_paths.keys():
+                im_paths[filt_name] = []
+                im_exts[filt_name] = []
+            if filt_name not in rms_err_paths.keys():
+                rms_err_paths[filt_name] = []
+                rms_err_exts[filt_name] = []
+            if filt_name not in wht_paths.keys():
+                wht_paths[filt_name] = []
+                wht_exts[filt_name] = []
+            # make arrays to determine where the data is stored for each band
+            is_sci = {path: [str in path for str in im_str] for path in paths}
+            is_rms_err = {
+                path: [str in path for str in rms_err_str] for path in paths
+            }
+            is_wht = {path: [str in path for str in wht_str] for path in paths}
+            for path in paths:
+                # if all paths are science images
+                if all(path_is_sci for path_is_sci in is_sci.values()):
+                    # all extensions must be within the same image
+                    single_path = True
+                    im_paths[filt_name].extend([path])
+                    rms_err_paths[filt_name].extend([path])
+                    wht_paths[filt_name].extend([path])
+                else:
+                    # ensure the path only belongs to one (or none) of the image types
+                    assert all(
+                        not all(i for i in pair)
+                        for pair in itertools.combinations(
+                            (is_sci, is_rms_err, is_wht), 2
+                        )
+                    )
+                    single_path = False
+                    if (
+                        is_sci[path]
+                        and not is_rms_err[path]
+                        and not is_wht[path]
+                    ):
+                        im_paths[filt_name].extend([path])
+                    elif (
+                        not is_sci[path]
+                        and is_rms_err[path]
+                        and not is_wht[path]
+                    ):
+                        rms_err_paths[filt_name].extend([path])
+                    elif (
+                        not is_sci[path]
+                        and not is_rms_err[path]
+                        and is_wht[path]
+                    ):
+                        wht_paths[filt_name].extend([path])
+                    else:
+                        galfind_logger.critical(
+                            f"{filt_name}, {path} not recognised as im, rms_err, or wht!"
+                            + "Consider updating 'im_str', ''rms_err_str', and 'wht_str'!"
+                        )
+
+                # extract sci/rms_err/wht extensions
+                hdul = fits.open(path)
+                if not single_path:
+                    assertion_len = 1
+                    for j, hdu in enumerate(hdul):
+                        # skip primary if there are multiple extensions
+                        if hdu.name == "PRIMARY" and len(hdul) > 1:
+                            assertion_len += 1
+                        else:
+                            if is_sci:
+                                im_exts[filt_name].extend([int(j)])
+                            elif is_rms_err:
+                                rms_err_exts[filt_name].extend([int(j)])
+                            elif is_wht:
+                                wht_exts[filt_name].extend([int(j)])
+                    assert len(hdul) == assertion_len
+                else:
+                    for j, hdu in enumerate(hdul):
+                        if hdu.name in im_ext_name:
+                            im_exts[filt_name].extend([int(j)])
+                        if hdu.name in rms_err_ext_name:
+                            rms_err_exts[filt_name].extend([int(j)])
+                        if hdu.name in wht_ext_name:
+                            wht_exts[filt_name].extend([int(j)])
+
+            # ensure a None is inserted if either rms_err/wht path/ext is missing
+            # compared to im path length
+            n_rms_err_path_missing = len(im_paths[filt_name]) - len(
+                rms_err_paths[filt_name]
+            )
+            if n_rms_err_path_missing > 0:
+                rms_err_paths[filt_name].extend(
+                    list(itertools.repeat(None, n_rms_err_path_missing))
+                )
+            n_wht_path_missing = len(im_paths[filt_name]) - len(
+                wht_paths[filt_name]
+            )
+            if n_wht_path_missing > 0:
+                wht_paths[filt_name].extend(
+                    list(itertools.repeat(None, n_wht_path_missing))
+                )
+            n_im_ext_missing = len(im_paths[filt_name]) - len(
+                im_exts[filt_name]
+            )
+            if n_im_ext_missing != 0:
+                err_message = f"SCI image extension not found for {filt_name}"
+                galfind_logger.critical(err_message)
+                raise (Exception(err_message))
+            n_rms_err_ext_missing = len(im_paths[filt_name]) - len(
+                rms_err_exts[filt_name]
+            )
+            if n_rms_err_ext_missing > 0:
+                rms_err_exts[filt_name].extend(
+                    list(itertools.repeat(None, n_rms_err_ext_missing))
+                )
+            n_wht_ext_missing = len(im_paths[filt_name]) - len(
+                wht_exts[filt_name]
+            )
+            if n_wht_ext_missing > 0:
+                wht_exts[filt_name].extend(
+                    list(itertools.repeat(None, n_wht_ext_missing))
+                )
+            assert (
+                len(im_paths[filt_name])
+                == len(im_exts[filt_name])
+                == len(rms_err_paths[filt_name])
+                == len(rms_err_exts[filt_name])
+                == len(wht_paths[filt_name])
+                == len(wht_exts[filt_name])
+            )
+
+        return (
+            im_paths,
+            im_exts,
+            rms_err_paths,
+            rms_err_exts,
+            wht_paths,
+            wht_exts,
+        )
+
+    @property
+    def survey(self):
+        assert all(band_data.survey == self[0].survey for band_data in self)
+        return self[0].survey
+
+    @property
+    def version(self):
+        assert all(band_data.version == self[0].version for band_data in self)
+        return self[0].version
+
+    @property
+    def filterset(self):
+        return Multiple_Filter(band_data.filt for band_data in self if isinstance(band_data, Band_Data))
+
+    @property
+    def ZPs(self) -> Dict[str, float]:
+        return {band_data.filt_name: band_data.ZP for band_data in self}
+
+    @property
+    def pixel_scales(self) -> Dict[str, u.Quantity]:
+        return {band_data.filt_name: band_data.pix_scale for band_data in self}
+
+    @property
+    def full_name(self):
+        return f"{self.survey}_{self.version}_{self.instrument.name}"
+
+    def load_cluster_blank_mask_paths(self):
+        # load in cluster core / blank field fits/reg masks
+        mask_path_dict = {}
+        for mask_type in ["cluster", "blank"]:
+            # look for .fits masks first
+            fits_masks = glob.glob(
+                f"{config['DEFAULT']['GALFIND_WORK']}/Masks/{self.survey}/fits_masks/*_{mask_type}*.fits"
+            )
+            if len(fits_masks) == 1:
+                mask_path = fits_masks[0]
+            elif len(fits_masks) > 1:
+                galfind_logger.critical(
+                    f"Multiple .fits {mask_type} masks exist for {self.survey}!"
+                )
+            else:
+                # no .fits masks, now look for .reg masks
+                reg_masks = glob.glob(
+                    f"{config['DEFAULT']['GALFIND_WORK']}/Masks/{self.survey}/*_{mask_type}*.reg"
+                )
+                if len(reg_masks) == 1:
+                    mask_path = reg_masks[0]
+                elif len(reg_masks) > 1:
+                    galfind_logger.critical(
+                        f"Multiple .reg {mask_type} masks exist for {self.survey}!"
+                    )
+                else:
+                    # no .reg masks
+                    mask_path = None
+                    galfind_logger.info(
+                        f"No {mask_type} mask found for {self.survey}"
+                    )
+            mask_path_dict[mask_type] = mask_path
+        self.cluster_mask_path = mask_path_dict["cluster"]
+        galfind_logger.debug(f"cluster_mask_path = {self.cluster_mask_path}")
+        self.blank_mask_path = mask_path_dict["blank"]
+        galfind_logger.debug(f"blank_mask_path = {self.blank_mask_path}")
+
+    #     # find common directories for im/seg/rms_err/wht maps
+    #     self.common_dirs = {}
+    #     galfind_logger.warning(
+    #         f"self.common_dirs has errors when the len(rms_err_paths) = {len(self.rms_err_paths)} != len(wht_paths) = {len(self.wht_paths)}"
+    #     )
+    #     if len(self.rms_err_paths) == len(self.wht_paths):
+    #         for paths, key in zip(
+    #             [im_paths, seg_paths, mask_paths, rms_err_paths, wht_paths],
+    #             ["SCI", "SEG", "MASK", "ERR", "WHT"],
+    #         ):
+    #             try:
+    #                 for band in self.instrument.band_names:
+    #                     assert "/".join(
+    #                         paths[band].split("/")[:-1]
+    #                     ) == "/".join(
+    #                         paths[self.instrument.band_names[0]].split("/")[
+    #                             :-1
+    #                         ]
+    #                     )
+    #                 self.common_dirs[key] = "/".join(
+    #                     paths[self.instrument.band_names[0]].split("/")[:-1]
+    #                 )
+    #                 galfind_logger.info(
+    #                     f"Common directory found for {key}: {self.common_dirs[key]}"
+    #                 )
+    #             except AssertionError:
+    #                 galfind_logger.info(f"No common directory for {key}")
+
+    #     key_failed = {}
+    #     for paths, key in zip(
+    #         [im_paths, seg_paths, mask_paths, rms_err_paths, wht_paths],
+    #         ["SCI", "SEG", "MASK", "ERR", "WHT"],
+    #     ):
+    #         try:
+    #             for band in self.instrument.band_names:
+    #                 key_failed[key] = []
+    #                 try:
+    #                     assert "/".join(
+    #                         paths[band].split("/")[:-1]
+    #                     ) == "/".join(
+    #                         paths[self.instrument.band_names[-1]].split("/")[
+    #                             :-1
+    #                         ]
+    #                     )
+    #                 except (AssertionError, KeyError):
+    #                     key_failed[key].append(band)
+    #             self.common_dirs[key] = "/".join(
+    #                 paths[self.instrument.band_names[-1]].split("/")[:-1]
+    #             )
+    #             galfind_logger.info(
+    #                 f"Common directory found for {key}: {self.common_dirs[key]}"
+    #             )
+    #         except AssertionError:
+    #             galfind_logger.info(f"No common directory for {key}")
+
+    #     # find other things in common between bands
+    #     self.common = {}
+    #     for label, item_dict in zip(
+    #         ["ZERO POINT", "PIXEL SCALE", "SCI SHAPE"],
+    #         [self.im_zps, self.im_pixel_scales, self.im_shapes],
+    #     ):
+    #         try:
+    #             for band in self.instrument.band_names:
+    #                 assert (
+    #                     item_dict[band]
+    #                     == item_dict[self.instrument.band_names[0]]
+    #                 )
+    #             self.common[label] = item_dict[self.instrument.band_names[0]]
+    #             galfind_logger.info(f"Common {label} found")
+    #         except AssertionError:
+    #             galfind_logger.info(f"No common {label}")
 
     # %% Overloaded operators
 
-    def __str__(self, depth_mode="n_nearest"):
+    def __repr__(self):
+        return (
+            f"{self.__class__.__name__}({self.full_name.replace('_', ', ')})"
+        )
+
+    def __str__(self):
         """Function to print summary of Data class
 
         Returns:
@@ -811,100 +1923,96 @@ class Data:
                 Masked/unmasked areas are also quoted here.
                 Also includes paths/extensions to SCI/SEG/ERR/WHT/MASK in each band, pixel scales, zero points and fits shapes.
         """
-        line_sep = "*" * 40 + "\n"
-        band_sep = "-" * 10 + "\n"
-        output_str = line_sep
+        output_str = funcs.line_sep
         output_str += "DATA OBJECT:\n"
-        output_str += band_sep
+        output_str += funcs.band_sep
         output_str += f"SURVEY: {self.survey}\n"
         output_str += f"VERSION: {self.version}\n"
-        output_str += (
-            "FIELD TYPE: " + "BLANK\n" if self.is_blank else "CLUSTER\n"
-        )
-        # print instrument string representation
-        output_str += str(
-            self.instrument
-        )  # should include aperture sizes + aperture corrections + paths to WebbPSF models
+        # output_str += (
+        #     "FIELD TYPE: " + "BLANK\n" if self.is_blank else "CLUSTER\n"
+        # )
+        # print filterset string representation
+        output_str += str(self.filterset)
         # print basic data quantities: common ZPs, pixel scales, and SCI image shapes, as well as unmasked sky area and depths should they exist
-        for key, item in self.common.items():
-            output_str += f"{key}: {item}\n"
-        try:
-            unmasked_area_tab = self.calc_unmasked_area(
-                masking_instrument_or_band_name=self.forced_phot_band,
-                forced_phot_band=self.forced_phot_band,
-            )
-            unmasked_area = unmasked_area_tab[
-                unmasked_area_tab["masking_instrument_band"] == "NIRCam"
-            ]["unmasked_area_total"][0]
-            output_str += f"UNMASKED AREA = {unmasked_area}\n"
-        except:
-            pass
-        try:
-            depths = []
-            for aper_diam in (
-                json.loads(config.get("SExtractor", "APERTURE_DIAMS"))
-                * u.arcsec
-            ):
-                depths.append(self.load_depths(aper_diam, depth_mode))
-            output_str += f"DEPTHS = {str(depths)}\n"
-        except:
-            pass
-        # if there are common directories for data, print these
-        if self.common_dirs != {}:
-            output_str += line_sep
-            output_str += "SHARED DIRECTORIES:\n"
-            for key, value in self.common_dirs.items():
-                output_str += f"{key}: {value}\n"
-            output_str += line_sep
-        # loop through available bands, printing paths, exts, ZPs, fits shapes
-        output_str += "BAND DATA:\n"
-        for band in self.instrument.band_names:
-            output_str += band_sep
-            output_str += f"{band}\n"
-            if hasattr(self, "sex_cat_types"):
-                if band in self.sex_cat_types.keys():
-                    output_str += (
-                        f"PHOTOMETRY BY: {self.sex_cat_types[band]}\n"
-                    )
-            band_data_paths = [
-                self.im_paths[band],
-                self.seg_paths[band],
-                self.mask_paths[band],
-            ]
-            band_data_exts = [self.im_exts[band], 0, 0]
-            band_data_labels = ["SCI", "SEG", "MASK"]
-            for paths, exts, label in zip(
-                [self.rms_err_paths, self.wht_paths],
-                [self.rms_err_exts, self.wht_exts],
-                ["ERR", "WHT"],
-            ):
-                if band in self.rms_err_paths.keys():
-                    band_data_paths.append(paths[band])
-                    band_data_exts.append(exts[band])
-                    band_data_labels.append(label)
-            for path, ext, label in zip(
-                band_data_paths, band_data_exts, band_data_labels
-            ):
-                if label in self.common_dirs:
-                    path = path.split("/")[-1]
-                output_str += f"{label} path = {path}[{str(ext)}]\n"
-            for label, data in zip(
-                ["ZERO POINT", "PIXEL SCALE", "SCI SHAPE"],
-                [self.im_zps, self.im_pixel_scales, self.im_shapes],
-            ):
-                if label not in self.common.keys():
-                    output_str += f"{label} = {data[band]}\n"
-        output_str += line_sep
+        # for key, item in self.common.items():
+        #     output_str += f"{key}: {item}\n"
+        # try:
+        #     unmasked_area_tab = self.calc_unmasked_area(
+        #         masking_instrument_or_band_name=self.forced_phot_band,
+        #         forced_phot_band=self.forced_phot_band,
+        #     )
+        #     unmasked_area = unmasked_area_tab[
+        #         unmasked_area_tab["masking_instrument_band"] == "NIRCam"
+        #     ]["unmasked_area_total"][0]
+        #     output_str += f"UNMASKED AREA = {unmasked_area}\n"
+        # except:
+        #     pass
+        # try:
+        #     depths = []
+        #     for aper_diam in (
+        #         json.loads(config.get("SExtractor", "APERTURE_DIAMS"))
+        #         * u.arcsec
+        #     ):
+        #         depths.append(self.load_depths(aper_diam, depth_mode))
+        #     output_str += f"DEPTHS = {str(depths)}\n"
+        # except:
+        #     pass
+        # # if there are common directories for data, print these
+        # if self.common_dirs != {}:
+        #     output_str += line_sep
+        #     output_str += "SHARED DIRECTORIES:\n"
+        #     for key, value in self.common_dirs.items():
+        #         output_str += f"{key}: {value}\n"
+        #     output_str += line_sep
+        # # loop through available bands, printing paths, exts, ZPs, fits shapes
+        # output_str += "BAND DATA:\n"
+        # for band in self.instrument.band_names:
+        #     output_str += band_sep
+        #     output_str += f"{band}\n"
+        #     if hasattr(self, "sex_cat_types"):
+        #         if band in self.sex_cat_types.keys():
+        #             output_str += (
+        #                 f"PHOTOMETRY BY: {self.sex_cat_types[band]}\n"
+        #             )
+        #     band_data_paths = [
+        #         self.im_paths[band],
+        #         self.seg_paths[band],
+        #         self.mask_paths[band],
+        #     ]
+        #     band_data_exts = [self.im_exts[band], 0, 0]
+        #     band_data_labels = ["SCI", "SEG", "MASK"]
+        #     for paths, exts, label in zip(
+        #         [self.rms_err_paths, self.wht_paths],
+        #         [self.rms_err_exts, self.wht_exts],
+        #         ["ERR", "WHT"],
+        #     ):
+        #         if band in self.rms_err_paths.keys():
+        #             band_data_paths.append(paths[band])
+        #             band_data_exts.append(exts[band])
+        #             band_data_labels.append(label)
+        #     for path, ext, label in zip(
+        #         band_data_paths, band_data_exts, band_data_labels
+        #     ):
+        #         if label in self.common_dirs:
+        #             path = path.split("/")[-1]
+        #         output_str += f"{label} path = {path}[{str(ext)}]\n"
+        #     for label, data in zip(
+        #         ["ZERO POINT", "PIXEL SCALE", "SCI SHAPE"],
+        #         [self.im_zps, self.im_pixel_scales, self.im_shapes],
+        #     ):
+        #         if label not in self.common.keys():
+        #             output_str += f"{label} = {data[band]}\n"
+        output_str += funcs.line_sep
         return output_str
 
     def __len__(self):
-        return len(self.instrument)
+        return len(self.band_data_arr)
 
     def __iter__(self):
         self.iter = 0
         return self
 
-    def __next__(self):
+    def __next__(self) -> Band_Data:
         if self.iter > len(self) - 1:
             raise StopIteration
         else:
@@ -912,168 +2020,668 @@ class Data:
             self.iter += 1
             return band_data
 
-    def __getitem__(self, index):
-        return self.load_data(
-            self.instrument.band_names[index], incl_mask=True
-        )
+    def __getitem__(
+        self, other: Union[int, slice, str, List[int], List[bool]]
+    ) -> Band_Data:
+        # convert other to integer indices if string
+        # or a list of filter names are given
+        if isinstance(other, str):
+            other_split = other.split("+")
+            other = self._indices_from_filt_names(other_split)
+        elif isinstance(other, list):
+            if isinstance(other[0], str):
+                other = self._indices_from_filt_names(other)
+        if isinstance(other, list):
+            item = list(np.array(self.band_data_arr)[other])
+        else:
+            item = self.band_data_arr[other]
+        if isinstance(item, Band_Data):
+            return item
+        else:
+            if len(item) == 1:
+                return item[0]
+            else:
+                return item
 
-    def __add__(self, data):
-        common_bands = [
-            band
-            for band in data.instrument.band_names
-            if band in self.instrument.band_names
-        ]
-        if len(common_bands) != 0:
+    def __getattr__(self, attr: str) -> Any:
+        # attr inserted here must be pluralised with 's' suffix
+        
+        if all(attr[:-1] in band_data.__dict__.keys() for band_data in self):
+            if hasattr(self, "forced_phot_band"):
+                if attr[:-1] in self.forced_phot_band.__dict__.keys():
+                    self_band_data_arr = self.band_data_arr + [self.forced_phot_band]
+                else:
+                    self_band_data_arr = self.band_data_arr
+            else:
+                self_band_data_arr = self.band_data_arr
+            return {
+                band_data.filt_name: getattr(band_data, attr[:-1])
+                for band_data in self_band_data_arr
+            }
+        else:
+            if attr not in [
+                "__array_struct__",
+                "__array_interface__",
+                "__array__",
+            ]:
+                galfind_logger.debug(f"Data has no {attr=}!")
+            raise AttributeError
+
+    def __add__(
+        self, other: Union[Type[Band_Data_Base], List[Type[Band_Data_Base]], Data, List[Data]]
+    ) -> Data:
+        # if other is not a list, make it one
+        if not isinstance(other, list):
+            other = [other]
+        # if other is an array of data objects, make a list of band_data objects
+        if isinstance(other[0], Data):
+            assert all(isinstance(_other, Data) for _other in other)
+            other_band_data = []
+            for _other in other:
+                other_band_data.extend(_other.band_data_arr)
+            other = other_band_data
+        assert all(isinstance(_other, tuple(Band_Data_Base.__subclasses__())) for _other in other)
+        new_band_data_arr = self.band_data_arr + other
+        # ensure all bands come from the same survey and version
+        if all(
+            [
+                band_data.survey == self.survey
+                and band_data.version == self.version
+                for band_data in new_band_data_arr
+            ]
+        ):
+            # if all bands being added are different
+            if len(
+                np.unique(
+                    [
+                        band_data.filt_name
+                        for band_data in new_band_data_arr
+                    ]
+                )
+            ) == len(new_band_data_arr):
+                return Data(new_band_data_arr)
+            else:
+                raise (
+                    Exception(
+                        "Cannot add Data objects with the same filters."
+                        + " You may want to use Data.__mul__() to stack!"
+                    )
+                )
+        else:
             raise (
                 Exception(
-                    f"Cannot add two of the same bands from different instruments together! Culprits: {common_bands}"
+                    "Cannot add Data objects from different surveys or versions."
                 )
             )
-        # add all dictionaries together
-        self.__dict__ = {
-            k: self.__dict__.get(k, 0) + data.__dict__.get(k, 0)
-            for k in set(self.__dict__()) | set(data.__dict__())
-        }
-        galfind_logger.debug(self.__repr__)
-        return self
 
-    @property
-    def full_name(self):
-        return f"{self.version}_{self.survey}_{self.instrument.name}"
+    def __eq__(self, other: Data) -> bool:
+        if not isinstance(other, Data):
+            return False
+        elif len(self) != len(other):
+            return False
+        else:
+            return all(
+                [
+                    self_band == other_band
+                    for self_band, other_band in zip(self, other)
+                ]
+            )
+
+    def __deepcopy__(self, memo):
+        cls = self.__class__
+        result = cls.__new__(cls)
+        memo[id(self)] = result
+        for key, value in self.__dict__.items():
+            try:
+                setattr(result, key, deepcopy(value, memo))
+            except:
+                galfind_logger.critical(
+                    f"deepcopy({self.__class__.__name__}) {key}: {value} FAIL!"
+                )
+                breakpoint()
+        return result
+
+    def _indices_from_filt_names(
+        self, filt_names: Union[str, List[str]]
+    ) -> int:
+        if isinstance(filt_names, str):
+            filt_names = filt_names.split("+")
+        # make sure all names are filters in the filterset
+        assert all(
+            name in [band.filt_name for band in self] for name in filt_names
+        ), galfind_logger.warning(
+            f"Not all {filt_names} in {self.filterset.band_names}"
+        )
+        return [i for i in range(len(self)) if self[i].filt_name in filt_names]
+
+    def _sort_band_dependent_params(
+        self,
+        filt_name: str,
+        params: Union[Any, List[Any], Dict[str, Any]],
+    ):
+        if isinstance(params, list):
+            # ensure params is the same length as the bands
+            assert len(params) == len(self)
+            return params[self._indices_from_filt_names(filt_name)]
+        elif isinstance(params, dict):
+            # if filter name is the name of a Stacked_Band_Data object
+            if filt_name not in params.keys():
+                galfind_logger.debug(
+                    f"{filt_name} not in {params.keys()}!"
+                )
+                split_filt_names = filt_name.split("+")
+                # ensure all filters are included in the object
+                assert all(name in params.keys() for name in split_filt_names), \
+                    galfind_logger.critical(
+                        f"Not all {filt_name} in {params.keys()}"
+                    )
+                # ensure all parameters are the same
+                assert all(params[name] == params[split_filt_names[0]] for i, name in enumerate(split_filt_names)), \
+                    galfind_logger.critical(
+                        f"Not all {params} are the same for {filt_name}"
+                    )
+                return params[split_filt_names[0]]
+            else:
+                assert filt_name in params.keys(), \
+                    galfind_logger.critical(
+                        f"{filt_name} not in {params.keys()}"
+                    )
+                return params[filt_name]
+        else:
+            return params
 
     # %% Methods
 
-    def load_data(self, band, incl_mask=True):
-        # print(band)
-        start = time.time()
-        if type(band) not in [str, np.str_]:
-            galfind_logger.debug(
-                f"band = {band}, type(band) = {type(band)} not in [str, np.str_] in Data.load_data"
-            )
-            band = self.combine_band_names(band)
-        end1 = time.time()
-        print(f"Time taken to convert band to string = {end1 - start}")
-        # load science image data and header (and hdul)
-        im_data, im_header = self.load_im(band)
-        end2 = time.time()
-        print(f"Time taken to load im_data and im_header = {end2 - end1}")
-        # load segmentation data and header
-        seg_data, seg_header = self.load_seg(band)
-        end3 = time.time()
-        print(f"Time taken to load seg_data and seg_header = {end3 - end2}")
-
-        if incl_mask:
-            # load mask
-            mask = self.load_mask(band)
-            return im_data, im_header, seg_data, seg_header, mask
-        else:
-            return im_data, im_header, seg_data, seg_header
-
-    def load_mask(self, mask_band):
-        if ".fits" in self.mask_paths[mask_band]:
-            mask = fits.open(self.mask_paths[mask_band], mode="readonly")[
-                1
-            ].data
-        else:
-            galfind_logger.critical(
-                f"Mask for {self.survey} {mask_band} at {self.mask_paths[mask_band]} is not a .fits mask!"
-            )
-        return mask
-
-    def load_im(self, band, return_hdul=False):
-        # load image data and header
-        im_hdul = fits.open(self.im_paths[band])
-        im_data = im_hdul[self.im_exts[band]].data
-        # im_data = im_data.byteswap().newbyteorder() slow
-        im_header = im_hdul[self.im_exts[band]].header
-        if return_hdul:
-            return im_data, im_header, im_hdul
-        else:
-            return im_data, im_header
-
-    def load_wcs(self, band, save_attr=True):
-        try:
-            self.wcs[band]
-        except (AttributeError, KeyError) as e:
-            if type(e) == AttributeError:
-                self.wcs = {}
-            self.wcs[band] = WCS(self.load_im(band)[1])
-        return self.wcs[band]
-
-    def load_seg(self, band):
-        seg_hdul = fits.open(self.seg_paths[band])
-        seg_data = seg_hdul[0].data
-        seg_header = seg_hdul[0].header
-        return seg_data, seg_header
-
-    def load_wht(self, band, output_hdr=False):
-        try:
-            hdu = fits.open(self.wht_paths[band])[self.wht_exts[band]]
-            wht = hdu.data
-            hdr = hdu.header
-        except Exception as e:
-            print(e)
-            wht = None
-            hdr = None
-        if output_hdr:
-            return wht, hdr
-        else:
-            return wht
-
-    def load_rms_err(self, band, output_hdr=False):
-        try:
-            hdu = fits.open(self.rms_err_paths[band])[self.rms_err_exts[band]]
-            rms_err = hdu.data
-            hdr = hdu.header
-        except:
-            rms_err = None
-            hdr = None
-        if output_hdr:
-            return rms_err, hdr
-        else:
-            return rms_err
-
-    def combine_seg_data_and_mask(self, band=None, seg_data=None, mask=None):
-        if type(seg_data) != type(None) and type(mask) != type(None):
-            pass
-        elif type(band) != type(
-            None
-        ):  # at least one of seg_data or mask is not given, but band is given
-            seg_data = self.load_seg(band)[0]
-            mask = self.load_mask(band)
-        else:
-            raise (
-                Exception(
-                    "Either band must be given or both seg_data and mask should be given in Data.combine_seg_data_and_mask()!"
-                )
-            )
-        assert seg_data.shape == mask.shape
-        combined_mask = np.logical_or(seg_data > 0, mask == 1).astype(int)
-        return combined_mask
-
-    def plot_image_from_band(
-        self, ax, band, norm=LogNorm(vmin=0.0, vmax=10.0), show=True
-    ):
-        im_data = self.load_data(band, incl_mask=False)[0]
-        self.plot_image_from_data(ax, im_data, band, norm, show)
-
-    @staticmethod
-    def plot_image_from_data(
-        ax, im_data, label, norm=LogNorm(vmin=0.0, vmax=10.0), show=True
-    ):
-        ax.imshow(im_data, norm=norm, origin="lower")
-        plt.title(f"{label} image")
-        plt.xlabel("X / pix")
-        plt.ylabel("Y / pix")
-        if show:
-            plt.show()
-
-    def make_RGB(
+    def load_data(
         self,
-        blue_bands=["F090W"],
-        green_bands=["F200W"],
-        red_bands=["F444W"],
-        method="trilogy",
+        band: Union[int, str, Filter, List[Filter], Multiple_Filter],
+        incl_mask: bool = True,
+    ):
+        return self[band].load_data(incl_mask)
+
+    def load_im(
+        self,
+        band: Union[int, str, Filter, List[Filter], Multiple_Filter],
+        return_hdul: bool = False,
+    ):
+        return self[band].load_im(return_hdul)
+
+    def load_wcs(
+        self, band: Union[int, str, Filter, List[Filter], Multiple_Filter]
+    ):
+        return self[band].load_wcs()
+
+    def load_wht(
+        self,
+        band: Union[int, str, Filter, List[Filter], Multiple_Filter],
+        output_hdr: bool = False,
+    ):
+        return self[band].load_wht(output_hdr)
+
+    def load_rms_err(
+        self,
+        band: Union[int, str, Filter, List[Filter], Multiple_Filter],
+        output_hdr: bool = False,
+    ):
+        return self[band].load_rms_err(output_hdr)
+
+    def load_seg(
+        self, band: Union[int, str, Filter, List[Filter], Multiple_Filter]
+    ):
+        return self[band].load_seg()
+
+    def load_mask(
+        self,
+        band: Union[int, str, Filter, List[Filter], Multiple_Filter],
+        ext: Optional[str] = None,
+    ):
+        return self[band].load_mask(ext)
+
+    def load_aper_diams(self, aper_diams: u.Quantity) -> NoReturn:
+        if hasattr(self, "forced_phot_band"):
+            self.forced_phot_band.load_aper_diams(aper_diams)
+        [band_data.load_aper_diams(aper_diams) for band_data in self]
+
+    def psf_homogenize(self):
+        pass
+
+    def segment(
+        self,
+        err_type: str = "rms_err",
+        method: str = "sextractor",
+        config_name: str = "default.sex",
+        params_name: str = "default.param",
+        overwrite: bool = False,
+    ) -> NoReturn:
+        """
+        Segments the data using the specified error type and method.
+
+        Args:
+            err_type (str): The type of error map to use for segmentation. Default is "rms_err".
+            method (str): The method to use for segmentation. Default is "sextractor".
+
+        Returns:
+            NoReturn: This method does not return any value.
+        """
+
+        if hasattr(self, "forced_phot_band"):
+            if (
+                self.forced_phot_band.filt_name
+                not in self.filterset.band_names
+            ):
+                self_band_data_arr = self.band_data_arr + [self.forced_phot_band]
+            else:
+                self_band_data_arr = self.band_data_arr
+        else:
+            self_band_data_arr = self.band_data_arr
+
+        [
+            band_data.segment(
+                err_type, method, config_name, params_name, overwrite
+            )
+            for band_data in self_band_data_arr
+        ]
+
+    def perform_forced_phot(
+        self,
+        forced_phot_band: Optional[Union[str, List[str], Type[Band_Data_Base]]] = None,
+        err_type: Union[str, List[str], Dict[str, str]] = "rms_err",
+        method: Union[str, List[str], Dict[str, str]] = "sextractor",
+        config_name: str = "default.sex",
+        params_name: str = "default.param",
+        overwrite: bool = False,
+    ) -> NoReturn:
+        if hasattr(self, "phot_cat_path"):
+            galfind_logger.critical("MASTER Photometric catalogue already exists!")
+            return
+        # create a forced_phot_band object from given string
+        self.load_forced_phot_band(forced_phot_band)
+
+        if hasattr(self, "forced_phot_band"):
+            if (
+                self.forced_phot_band.filt_name
+                not in self.filterset.band_names
+            ):
+                self_ = deepcopy(self) + deepcopy(self.forced_phot_band)
+                self_band_data_arr = self.band_data_arr + [
+                    self.forced_phot_band
+                ]
+            else:
+                self_ = deepcopy(self)
+                self_band_data_arr = self.band_data_arr
+
+        # run for every band in the Data object
+        [
+            band_data._perform_forced_phot(
+                self.forced_phot_band,
+                self_._sort_band_dependent_params(band_data.filt_name, err_type),
+                self_._sort_band_dependent_params(band_data.filt_name, method),
+                config_name,
+                params_name,
+                overwrite,
+            )
+            for band_data in self_band_data_arr
+        ]
+
+        # combined forced photometry catalogues into a single photometric catalogue
+        self._combine_forced_phot_cats(overwrite=overwrite)
+
+    def load_forced_phot_band(
+        self,
+        forced_phot_band: Union[str, List[str], Type[Band_Data_Base]],
+    ) -> Optional[Type[Band_Data_Base]]:
+        if forced_phot_band is not None:
+            # create a forced_phot_band object from given string
+            if isinstance(forced_phot_band, str):
+                filt_names = forced_phot_band.split("+")
+            elif isinstance(forced_phot_band, list):
+                filt_names = forced_phot_band
+            if isinstance(forced_phot_band, tuple([str, list])):
+                assert all(name in self.filterset.band_names for name in filt_names)
+                if len(filt_names) == 1:
+                    forced_phot_band = self[filt_names[0]]
+                else:
+                    forced_phot_band = Stacked_Band_Data.from_band_data_arr(
+                        self[filt_names]
+                    )
+            # save forced phot band in self
+            if hasattr(self, "forced_phot_band"):
+                assert (
+                    forced_phot_band == self.forced_phot_band
+                ), galfind_logger.critical(
+                    f"{self.forced_phot_band=} already loaded"
+                )
+            else:
+                self.forced_phot_band = forced_phot_band
+            return self.forced_phot_band
+        else:
+            return None
+
+    def _get_phot_cat_path(self) -> str:
+        # ensure aperture diamters are the same for all bands
+        assert all(all(diam == diam_0 for diam, diam_0 in zip(band_data.aper_diams, self[0].aper_diams)) for band_data in self)
+        assert all(diam == diam_0 for diam, diam_0 in zip(self.forced_phot_band.aper_diams, self[0].aper_diams))
+        # ensure all bands have the same forced photometry band
+        assert all(band_data.forced_phot_args["forced_phot_band"] == self.forced_phot_band for band_data in self)
+        assert self.forced_phot_band.forced_phot_args["forced_phot_band"] == self.forced_phot_band # points to itself?
+        # ensure all bands are made using the same err map
+        assert all(band_data.forced_phot_args["err_type"] == self[0].forced_phot_args["err_type"] for band_data in self)
+        assert self.forced_phot_band.forced_phot_args["method"] == self[0].forced_phot_args["method"]
+
+        # determine photometric catalogue path
+        save_dir = (
+            f"{config['DEFAULT']['GALFIND_WORK']}/Catalogues/"
+            + f"{self.version}/{self.filterset.instrument_name}/{self.survey}/"
+            + f"{SExtractor.aper_diams_to_str(self[0].aper_diams)}"
+        )
+        save_name = (
+            f"{self.survey}_MASTER_Sel-"
+            + f"{self.forced_phot_band.filt_name}_{self.version}.fits"
+        )
+        phot_cat_path = f"{save_dir}/{save_name}"
+        funcs.make_dirs(phot_cat_path)
+        return phot_cat_path
+
+    def _combine_forced_phot_cats(self, overwrite: bool = False) -> NoReturn:
+        # readme_sep: str = "-" * 20,
+        phot_cat_path = self._get_phot_cat_path()
+        funcs.make_dirs(phot_cat_path)
+        if not hasattr(self, "phot_cat_path"):
+            self.phot_cat_path = phot_cat_path
+        else:
+            raise (Exception("MASTER Photometric catalogue already exists!"))
+        
+        if not Path(phot_cat_path).is_file() or overwrite:
+
+            master_tab_arr = [self.forced_phot_band._get_master_tab(
+                output_ids_locs=True
+            )]
+            for band_data in self:
+                master_tab_arr.extend(
+                    [band_data._get_master_tab(output_ids_locs=False)])
+            master_tab = hstack(master_tab_arr)
+            # update table header
+            self_band_data_arr = self.band_data_arr + [self.forced_phot_band]
+            # master_tab.meta = {
+            #     **master_tab.meta,
+            #     **{
+            #         "INSTR": self.filterset.instrument_name,
+            #         "SURVEY": self.survey,
+            #         "VERSION": self.version,
+            #         "BANDS": str(self.filterset.band_names),
+            #         "APERS": SExtractor.aper_diams_to_str(self.forced_phot_band.aper_diams),
+            #         "ERR_TYPE": "+".join(np.unique(band_data.forced_phot_args["err_type"] for band_data in self_band_data_arr)[0]),
+            #         "METHODS": "+".join(np.unique(band_data.forced_phot_args["method"] for band_data in self_band_data_arr)[0]),
+            #     },
+            # }
+            # save master table
+            master_tab.write(self.phot_cat_path, format="fits", overwrite=True)
+            galfind_logger.info(
+                f"Saved combined SExtractor catalogue as {self.phot_cat_path}"
+            )
+            self._create_phot_cat_readme()
+
+    def _create_phot_cat_readme(self):
+        pass
+        # create galfind catalogue README
+        # sex_aper_diams = json.loads(config.get("SExtractor", "APERTURE_DIAMS")) * u.arcsec
+        # text = f"""
+        #     NUMBER: Galaxy ID
+        #     X/Y_IMAGE: X/Y image co-ordinates in
+        #     ALPHA/DELTA_J2000: RA/Dec (J2000 co-ordinates)
+        #     FLUX(ERR)_APER_'band': Aperture flux/flux errors in {str(sex_aper_diams.to(u.arcsec).value) + 'as'} diameter apertures, image units with ZPs as explained below
+        #     MAG_APER_'band': Aperture magnitudes in {str(sex_aper_diams.to(u.arcsec).value) + 'as'} diameter apertures, AB mag units, defaults to 99. if flux < 0.
+        #     MAGERR_APER_'band': Aperture magnitude errors in {str(sex_aper_diams.to(u.arcsec).value) + 'as'} diameter apertures, AB mag units, negative if mag == 99.
+        # """
+        # if 'sextractor' in [cat_type.lower() for cat_type in self.sex_cat_types.values()]:
+        #     text += f"See SExtractor documentation () for descriptions of other columns. These are only available for {'+'.join([band_name for band_name, sex_cat_type in self.sex_cat_types.items() if 'sextractor' in sex_cat_type.lower()])}\n"
+        # text += readme_sep + "\n"
+        # self.make_sex_readme({"Photometry": text}, self.sex_cat_master_path.replace(".fits", "_README.txt"))
+
+    def mask(
+        self,
+        method: Union[str, List[str], Dict[str, str]] = "auto",
+        fits_mask_path: Optional[Union[str, List[str], Dict[str, str]]] = None,
+        star_mask_params: Optional[
+            Union[
+                Dict[str, Dict[str, float]],
+                Dict[u.Quantity, Dict[str, Dict[str, float]]],
+            ]
+        ] = {
+            "central": {"a": 300.0, "b": 4.25},
+            "spikes": {"a": 400.0, "b": 4.5},
+        },
+        edge_mask_distance: Union[
+            int, float, List[Union[int, float]], Dict[str, Union[int, float]]
+        ] = 50,
+        scale_extra: Union[float, List[float], Dict[str, float]] = 0.2,
+        exclude_gaia_galaxies: Union[bool, List[bool], Dict[str, bool]] = True,
+        angle: Union[float, List[float], Dict[str, float]] = -70.0,
+        edge_value: Union[float, List[float], Dict[str, float]] = 0.0,
+        element: Union[str, List[str], Dict[str, str]] = "ELLIPSE",
+        gaia_row_lim: Union[int, List[int], Dict[str, int]] = 500,
+        overwrite: Union[bool, List[bool], Dict[str, bool]] = False,
+    ) -> Union[None, NoReturn]:
+        assert method in ["auto", "manual"], galfind_logger.warning(
+            f"Method {method} not recognised. Must be 'auto' or 'manual'"
+        )
+
+        if hasattr(self, "forced_phot_band"):
+            if (
+                self.forced_phot_band.filt_name
+                not in self.filterset.band_names
+            ):
+                self_ = deepcopy(self) + deepcopy(self.forced_phot_band)
+                self_band_data_arr = self.band_data_arr + [
+                    self.forced_phot_band
+                ]
+                no_forced_phot_band = False
+            else:
+                no_forced_phot_band = True
+        else:
+            no_forced_phot_band = True
+        if no_forced_phot_band:
+            self_ = deepcopy(self)
+            self_band_data_arr = self.band_data_arr
+
+        # mask each band, sorting the potentially band dependent input parameters
+        [
+            band_data.mask(
+                method,
+                self_._sort_band_dependent_params(
+                    band_data.filt_name, fits_mask_path
+                ),
+                Masking.sort_band_dependent_star_mask_params(
+                    band_data.filt if isinstance(band_data, Band_Data) else band_data.filterset[0], star_mask_params
+                ),
+                self_._sort_band_dependent_params(
+                    band_data.filt_name, edge_mask_distance
+                ),
+                self_._sort_band_dependent_params(
+                    band_data.filt_name, scale_extra
+                ),
+                self_._sort_band_dependent_params(
+                    band_data.filt_name, exclude_gaia_galaxies
+                ),
+                self_._sort_band_dependent_params(band_data.filt_name, angle),
+                self_._sort_band_dependent_params(
+                    band_data.filt_name, edge_value
+                ),
+                self_._sort_band_dependent_params(
+                    band_data.filt_name, element
+                ),
+                self_._sort_band_dependent_params(
+                    band_data.filt_name, gaia_row_lim
+                ),
+                self_._sort_band_dependent_params(
+                    band_data.filt_name, overwrite
+                ),
+            )
+            for band_data in self_band_data_arr
+        ]
+
+    def run_depths(
+        self,
+        mode: Union[str, List[str], Dict[str, str]] = "n_nearest",
+        scatter_size: Union[float, List[float], Dict[str, float]] = 0.1,
+        distance_to_mask: Union[
+            int, float, List[Union[int, float]], Dict[str, Union[int, float]]
+        ] = 30,
+        region_radius_used_pix: Union[
+            int, float, List[Union[int, float]], Dict[str, Union[int, float]]
+        ] = 300,
+        n_nearest: Union[int, List[int], Dict[str, int]] = 200,
+        coord_type: Union[str, List[str], Dict[str, str]] = "sky",
+        split_depth_min_size: Union[int, List[int], Dict[str, int]] = 100_000,
+        split_depths_factor: Union[int, List[int], Dict[str, int]] = 5,
+        step_size: Union[int, List[int], Dict[str, int]] = 100,
+        n_jobs: int = 1,
+        n_split: Union[
+            str, int, List[Union[str, int]], Dict[str, Union[str, int]]
+        ] = "auto",
+        overwrite: Union[bool, List[bool], Dict[str, bool]] = False,
+        timed: bool = False,
+    ) -> NoReturn:
+        if timed:
+            start = time.time()
+        if hasattr(self, "forced_phot_band"):
+            if (
+                self.forced_phot_band.filt_name
+                not in self.filterset.band_names
+            ):
+                self_ = deepcopy(self) + deepcopy(self.forced_phot_band)
+                self_band_data_arr = self.band_data_arr + [
+                    self.forced_phot_band
+                ]
+                no_forced_phot_band = False
+            else:
+                no_forced_phot_band = True
+        else:
+            no_forced_phot_band = True
+        if no_forced_phot_band:
+            self_ = deepcopy(self)
+            self_band_data_arr = self.band_data_arr
+
+        params = []
+        # Look over all aperture diameters and bands
+        for band_data in self_band_data_arr:
+            if not hasattr(band_data, "depth_args"):
+                params.extend(
+                    band_data._sort_run_depth_params(
+                        self_._sort_band_dependent_params(
+                            band_data.filt_name, mode
+                        ),
+                        self_._sort_band_dependent_params(
+                            band_data.filt_name, scatter_size
+                        ),
+                        self_._sort_band_dependent_params(
+                            band_data.filt_name, distance_to_mask
+                        ),
+                        self_._sort_band_dependent_params(
+                            band_data.filt_name, region_radius_used_pix
+                        ),
+                        self_._sort_band_dependent_params(
+                            band_data.filt_name, n_nearest
+                        ),
+                        self_._sort_band_dependent_params(
+                            band_data.filt_name, coord_type
+                        ),
+                        self_._sort_band_dependent_params(
+                            band_data.filt_name, split_depth_min_size
+                        ),
+                        self_._sort_band_dependent_params(
+                            band_data.filt_name, split_depths_factor
+                        ),
+                        self_._sort_band_dependent_params(
+                            band_data.filt_name, step_size
+                        ),
+                        self_._sort_band_dependent_params(
+                            band_data.filt_name, n_split
+                        ),
+                        self_._sort_band_dependent_params(
+                            band_data.filt_name, overwrite
+                        ),
+                    )
+                )
+            else:
+                galfind_logger.warning(
+                    f"Depths for {band_data.filt_name} already run, skipping!"
+                )
+        if len(params) > 0:
+            # Parallelise the calculation of depths for each band
+            with tqdm_joblib(
+                tqdm(desc="Calculating depths", total=len(params))
+            ) as progress_bar:
+                Parallel(n_jobs=n_jobs)(
+                    delayed(Depths.calc_band_depth)(param) for param in params
+                )
+
+            # save properties to individual band_data objects
+            for band_data in self_band_data_arr:
+                [
+                    band_data._load_depths(params)
+                    for _params in params
+                    if _params[0] == band_data
+                ]
+
+            # make depth table
+            Depths.make_depth_tab(self)
+
+            finishing_message = (
+                "Calculated/loaded depths for "
+                + f"{self.survey} {self.version} {self.filterset.instrument_name}"
+            )
+            if timed:
+                end = time.time()
+                finishing_message += f" ({end - start:.1f}s)"
+            galfind_logger.info(finishing_message)
+        else:
+            galfind_logger.warning(
+                f"Depths run for {self.survey} {self.version}"
+                + f" {self.filterset.instrument_name}, skipping!"
+            )
+
+
+    def plot_depth_diagnostic(
+        self,
+        band: Union[int, str, Filter, List[Filter], Multiple_Filter],
+        aper_diam: u.Quantity,
+        save: bool = False, 
+        show: bool = False,
+    ) -> NoReturn:
+        self[band].plot_depth_diagnostic(aper_diam, save = save, show = show)
+
+    def plot_depth_diagnostics(
+        self,
+        save: bool = False,
+    ) -> NoReturn:
+        for band_data in self:
+            band_data.plot_depth_diagnostics(save = save)
+
+    def plot_area_depth(
+        self,
+    ) -> NoReturn:
+        Depths.plot_data_area_depth(self)
+        # Depths.plot_area_depth(self, cat_creator, mode, aper_diam, show=False)
+
+    def plot(
+        self,
+        band: Union[int, str, Filter, List[Filter], Multiple_Filter],
+        ax: Optional[plt.Axes] = None,
+        ext: str = "SCI",
+        norm: Type[Normalize] = LogNorm(vmin=0.0, vmax=10.0),
+        save: bool = False,
+        show: bool = True,
+    ) -> NoReturn:
+        self[band].plot(ax, ext, norm, save, show)
+
+    def plot_RGB(
+        self,
+        ax: Optional[plt.Axes] = None,
+        blue_bands: List[Union[str, Filter]] = ["F090W"],
+        green_bands: List[Union[str, Filter]] = ["F200W"],
+        red_bands: List[Union[str, Filter]] = ["F444W"],
+        method: str = "trilogy",
     ):
         # ensure all blue, green and red bands are contained in the data object
         assert all(
@@ -1136,1714 +2744,386 @@ class Data:
             elif method == "lupton":
                 raise (NotImplementedError())
 
-    def plot_mask_from_band(self, ax, band, show=True):
-        mask = self.load_data(band, incl_mask=True)[4]
-        self.plot_mask_from_data(ax, mask, band, show)
-
-    @staticmethod
-    def plot_mask_from_data(ax, mask, label, show=True):
-        cbar_in = ax.imshow(mask, origin="lower")
-        plt.title(f"{label} mask")
-        plt.xlabel("X / pix")
-        plt.ylabel("Y / pix")
-        plt.colorbar(cbar_in)
-        if show:
-            plt.show()
-
-    def plot_mask_regions_from_band(self, ax, band):
-        im_header = self.load_data(band, incl_mask=False)[1]
-        mask_path = self.mask_paths[band]
-        mask_regions = Regions.read(mask_path)
-        patch_list = [reg.as_artist() for reg in mask_regions]
-        for p in patch_list:
-            ax.add_patch(p)
-
-    def make_mask(
+    def append_loc_depth_cols(
         self,
-        band,
-        edge_mask_distance=50,
-        mask_stars=True,
-        scale_extra=0.2,
-        star_mask_override=None,
-        exclude_gaia_galaxies=True,
-        angle=-70.0,
-        edge_value=0.0,
-        element="ELLIPSE",
-        gaia_row_lim=500,
-        plot=False,
-    ):
-        if (
-            "NIRCam" not in self.instrument.name and mask_stars
-        ):  # doesnt stop e.g. ACS_WFC+NIRCam from making star masks
+        min_flux_pc_err: Union[int, float],
+        overwrite: bool = False
+    ) -> NoReturn:
+        Depths.append_loc_depth_cols(self, min_flux_pc_err, overwrite)
+
+    def append_aper_corr_cols(
+        self,
+        overwrite: bool = False,
+        psf_wanted: str = "model"
+    ) -> NoReturn:
+        assert psf_wanted in ["model", "empirical"], \
             galfind_logger.critical(
-                "Mask making only implemented for NIRCam data!"
+                f"PSF '{psf_wanted}' not in ['model', 'empirical']"
             )
-            raise (
-                Exception("Star mask making only implemented for NIRCam data!")
-            )
-
-        # if "COSMOS-Web" in self.survey:
-        #     # stellar masks the same for all bands
-        #     star_mask_params = { # mask_a * exp(-mag / mask_b) is the form
-        #         9000 * u.AA: {'mask_a': 700, 'mask_b': 3.7}}
-        # else:
-        #     star_mask_params = { # mask_a * exp(-mag / mask_b) is the form
-        #         9000 * u.AA: {'mask_a': 1300, 'mask_b': 4},
-        #         11500 * u.AA: {'mask_a': 1300, 'mask_b': 4},
-        #         15000 * u.AA: {'mask_a': 1300, 'mask_b': 4},
-        #         20000 * u.AA: {'mask_a': 1300, 'mask_b': 4},
-        #         27700 * u.AA: {'mask_a': 1000, 'mask_b': 3.7},
-        #         35600 * u.AA: {'mask_a': 800, 'mask_b': 3.7},
-        #         44000 * u.AA: {'mask_a': 800, 'mask_b': 3.7},
-        #     }
-
-        # update to change scaling of central circle independently of spikes
-        star_mask_params_dict = {  # a * exp(-mag / b) in arcsec
-            11500 * u.AA: {
-                "central": {"a": 300.0, "b": 4.25},
-                "spikes": {"a": 400.0, "b": 4.5},
-            },
-        }
-
-        if star_mask_override != None:
-            assert type(star_mask_override) == dict, galfind_logger.warning(
-                f"Mask overridden, but {type(star_mask_override)=} != dict"
-            )
-            assert (
-                "central" in star_mask_override.keys()
-                and "spikes" in star_mask_override.keys()
-            )
-            assert (
-                type(star_mask_override["central"]) == dict
-            ), galfind_logger.warning(
-                f"Mask overridden, but {type(star_mask_override['central'])=} != dict"
-            )
-            assert (
-                "a" in star_mask_override["central"].keys()
-                and "b" in star_mask_override["central"].keys()
-            )
-            assert (
-                type(star_mask_override["spikes"]) == dict
-            ), galfind_logger.warning(
-                f"Mask overridden, but {type(star_mask_override['spikes'])=} != dict"
-            )
-            assert (
-                "a" in star_mask_override["spikes"].keys()
-                and "b" in star_mask_override["spikes"].keys()
-            )
-            assert all(
-                type(scale) in [float, int]
-                for mask_type in star_mask_override.values()
-                for scale in mask_type.values()
-            )
-            star_mask_params = star_mask_override
-        else:
-            band_wavelength = self.instrument.band_wavelengths[
-                band == self.instrument.band_names
-            ]
-            # Get closest wavelength parameters
-            closest_wavelength = min(
-                star_mask_params_dict.keys(),
-                key=lambda x: abs(x - band_wavelength),
-            )
-            print(band, closest_wavelength)
-            star_mask_params = star_mask_params_dict[closest_wavelength]
-
-        galfind_logger.info(f"Automasking {self.survey} {band}.")
-
-        # angle rotation is anti-clockwise for positive angles
-        composite = (
-            lambda x_coord,
-            y_coord,
-            central_scale,
-            spike_scale,
-            angle: f"""# Region file format: DS9 version 4.1
-            global color=green dashlist=8 3 width=1 font="helvetica 10 normal roman" select=1 highlite=1 dash=0 fixed=0 edit=1 move=1 delete=1 include=1 source=1
-            image
-            composite({x_coord},{y_coord},0.00) || composite=1
-                circle({x_coord},{y_coord},{163*central_scale}) ||
-                ellipse({x_coord},{y_coord},{29*spike_scale**(2/3)},{730*spike_scale},{str(np.round(300.15 + angle, 2))}) ||
-                ellipse({x_coord},{y_coord},{29*spike_scale**(2/3)},{730*spike_scale},{str(np.round(240. + angle, 2))}) ||
-                ellipse({x_coord},{y_coord},{29*spike_scale**(2/3)},{730*spike_scale},{str(np.round(360. + angle, 2))}) ||
-                ellipse({x_coord},{y_coord},{29*spike_scale**(2/3)},{300*spike_scale},{str(np.round(269.48 + angle, 2))}) ||"""
-        )
-
-        # Load data
-        im_data, im_header, seg_data, seg_header = self.load_data(
-            band, incl_mask=False
-        )
-        pixel_scale = self.im_pixel_scales[band]
-        wcs = WCS(im_header)
-
-        # Scale up the image by boundary by scale_extra factor to include diffraction spikes from stars outside image footprint
-        scale_factor = scale_extra * np.array(
-            [im_data.shape[1], im_data.shape[0]]
-        )
-        vertices_pix = [
-            (-scale_factor[0], -scale_factor[1]),
-            (-scale_factor[0], im_data.shape[0] + scale_factor[1]),
-            (
-                im_data.shape[1] + scale_factor[0],
-                im_data.shape[0] + scale_factor[1],
-            ),
-            (im_data.shape[1] + scale_factor[0], -scale_factor[1]),
-        ]
-        # Convert to sky coordinates
-        vertices_sky = wcs.all_pix2world(vertices_pix, 0)
-
-        # Diagnostic plot
-        if plot:
-            fig = plt.figure(figsize=(10, 10))
-            ax = fig.add_subplot(111, projection=wcs)
-            stretch = vis.CompositeStretch(
-                vis.LogStretch(),
-                vis.ContrastBiasStretch(contrast=30, bias=0.08),
-            )
-            norm = ImageNormalize(stretch=stretch, vmin=0.001, vmax=10)
-
-            ax.imshow(
-                im_data,
-                cmap="Greys",
-                origin="lower",
-                interpolation="None",
-                norm=norm,
-            )
-
-        if mask_stars:
-            print(f"Making stellar mask for {band}")
-            # Get list of Gaia stars in the polygon region
-            Gaia.ROW_LIMIT = gaia_row_lim
-            # Construct the ADQL query string
-            adql_query = f"""
-                SELECT source_id, ra, dec, phot_g_mean_mag, radius_sersic, classlabel_dsc_joint, vari_best_class_name
-                FROM gaiadr3.gaia_source 
-                LEFT OUTER JOIN gaiadr3.galaxy_candidates USING (source_id) 
-                WHERE 1 = CONTAINS(
-                    POINT('ICRS', ra, dec), 
-                    POLYGON('ICRS', 
-                        POINT('ICRS', {vertices_sky[0][0]}, {vertices_sky[0][1]}), 
-                        POINT('ICRS', {vertices_sky[1][0]}, {vertices_sky[1][1]}), 
-                        POINT('ICRS', {vertices_sky[2][0]}, {vertices_sky[2][1]}), 
-                        POINT('ICRS', {vertices_sky[3][0]}, {vertices_sky[3][1]})))"""
-
-            # Execute the query asynchronously
-            job = Gaia.launch_job_async(adql_query)
-            gaia_stars = job.get_results()
-            print(f"Found {len(gaia_stars)} stars in the region.")
-            if exclude_gaia_galaxies:
-                gaia_stars = gaia_stars[
-                    gaia_stars["vari_best_class_name"] != "GALAXY"
-                ]
-                gaia_stars = gaia_stars[
-                    gaia_stars["classlabel_dsc_joint"] != "galaxy"
-                ]
-                # Remove masked flux values
-                gaia_stars = gaia_stars[
-                    ~np.isnan(gaia_stars["phot_g_mean_mag"])
-                ]
-
-            ra_gaia = np.asarray(gaia_stars["ra"])
-            dec_gaia = np.asarray(gaia_stars["dec"])
-            x_gaia, y_gaia = wcs.all_world2pix(ra_gaia, dec_gaia, 0)
-
-            # Generate mask scale for each star
-            central_scale_stars = (
-                2.0
-                * star_mask_params["central"]["a"]
-                / (730.0 * pixel_scale.to(u.arcsec).value)
-            ) * np.exp(
-                -gaia_stars["phot_g_mean_mag"]
-                / star_mask_params["central"]["b"]
-            )
-            spike_scale_stars = (
-                2.0
-                * star_mask_params["spikes"]["a"]
-                / (730.0 * pixel_scale.to(u.arcsec).value)
-            ) * np.exp(
-                -gaia_stars["phot_g_mean_mag"]
-                / star_mask_params["spikes"]["b"]
-            )
-            # Update the catalog
-            gaia_stars.add_column(Column(data=x_gaia, name="x_pix"))
-            gaia_stars.add_column(Column(data=y_gaia, name="y_pix"))
-
-            diffraction_regions = []
-            region_strings = []
-            for pos, (row, central_scale, spike_scale) in tqdm(
-                enumerate(
-                    zip(gaia_stars, central_scale_stars, spike_scale_stars)
+        # not general
+        cat = Table.read(self.phot_cat_path)
+        if f"MAG_APER_{self[0].filt_name}_aper_corr" not in cat.colnames or overwrite:
+            # ensure aperture diameters are the same for all bands
+            assert all(all(diam == diam_0 for diam, diam_0 
+                in zip(band_data.aper_diams, self[0].aper_diams)) 
+                for band_data in self.band_data_arr + 
+                [self.forced_phot_band]), galfind_logger.critical(
+                "Aperture diameters are not the same for all bands!"
                 )
-            ):
-                # Plot circle
-                # if plot:
-                #     ax.add_patch(Circle((row['x_pix'], row['y_pix']), 2 * row['rmask_arcsec'] / pixel_scale, color = 'r', fill = False, lw = 2))
-                sky_region = composite(
-                    row["x_pix"],
-                    row["y_pix"],
-                    central_scale,
-                    spike_scale,
-                    angle,
-                )
-                region_obj = Regions.parse(sky_region, format="ds9")
-                diffraction_regions.append(region_obj)
-                region_strings.append(region_obj.serialize(format="ds9"))
-
-            stellar_mask = np.zeros(im_data.shape, dtype=bool)
-            for regions in tqdm(diffraction_regions):
-                for region in regions:
-                    idx_large, idx_little = region.to_mask(
-                        mode="center"
-                    ).get_overlap_slices(im_data.shape)
-                    # idx_large is x,y box containing bounds of region in image
-                    if idx_large is not None:
-                        stellar_mask[idx_large] = np.logical_or(
-                            region.to_mask().data[idx_little],
-                            stellar_mask[idx_large],
+            if overwrite:
+                # TODO: Delete already existing columns
+                raise(Exception())
+            aper_diams = self[0].aper_diams.to(u.arcsec).value
+            for i, band_data in tqdm(enumerate(self), \
+                    total=len(self), desc="Appending aperture correction columns"):
+                mag_aper_corr_data = np.zeros(len(cat))
+                flux_aper_corr_data = np.zeros(len(cat))
+                if len(aper_diams) == 1:
+                    mag_aper_corr_factor = band_data.filt.instrument.\
+                        aper_corrs[band_data.filt_name][aper_diams[0] * u.arcsec]
+                    flux_aper_corr_factor = 10 ** (mag_aper_corr_factor / 2.5)
+                    # only aperture correct if flux is positive
+                    mag_aper_corr_data = [
+                        mag_aper - mag_aper_corr_factor
+                        if flux_aper > 0.0 else mag_aper
+                        for mag_aper, flux_aper in zip(
+                            cat[f"MAG_APER_{band_data.filt_name}"],
+                            cat[f"FLUX_APER_{band_data.filt_name}"],
                         )
-                    if plot:
-                        artist = region.as_artist()
-                        ax.add_patch(artist)
-
-        # Mask image edges
-        fill = np.logical_or(
-            (im_data == edge_value), np.isnan(im_data)
-        )  # true false array of where 0's are
-        # also fill in nans
-        edges = fill * 1  # convert to 1 for true and 0 for false
-        edges = edges.astype(np.uint8)  # dtype for cv2
-        print("Masking edges")
-        if element == "RECT":
-            kernel = cv2.getStructuringElement(
-                cv2.MORPH_RECT, (edge_mask_distance, edge_mask_distance)
-            )
-        elif element == "ELLIPSE":
-            kernel = cv2.getStructuringElement(
-                cv2.MORPH_ELLIPSE, (edge_mask_distance, edge_mask_distance)
-            )
-        else:
-            raise ValueError(
-                f"element = {element} must be 'RECT' or 'ELLIPSE'"
-            )
-
-        edge_mask = cv2.dilate(
-            edges, kernel, iterations=1
-        )  # dilate mask using the circle
-        # edge_mask = 1 - dilate # invert mask, so it is 1 where it is not masked and 0 where it is masked
-        # mask = 1 - edge_mask
-
-        # Mask up to 50 pixels from all edges - so edge is still masked if it as at edge of array
-        edge_mask[:edge_mask_distance, :] = edge_mask[
-            -edge_mask_distance:, :
-        ] = edge_mask[:, :edge_mask_distance] = edge_mask[
-            :, -edge_mask_distance:
-        ] = 1
-
-        if mask_stars:
-            full_mask = np.logical_or(
-                edge_mask.astype(np.uint8), stellar_mask.astype(np.uint8)
-            )
-        else:
-            full_mask = edge_mask.astype(np.uint8)
-
-        if plot:
-            ax.imshow(
-                full_mask, cmap="Reds", origin="lower", interpolation="None"
-            )
-
-        # Check for artefacts mask to combine with exisitng mask
-        files = glob.glob(f"{self.mask_dir}/{band}*.reg")
-        # Check for 'artifact' in file name
-        files = [file for file in files if "artifact" in file]
-        artifact_mask = None
-        if len(files) > 0:
-            artifact_mask = np.zeros(im_data.shape, dtype=bool)
-            print(f"Found {len(files)} artifact masks")
-            for file in files:
-                print(f"Adding mask {file}")
-                mask = Regions.read(file)
-
-                for region in mask:
-                    region = region.to_pixel(wcs)
-                    idx_large, idx_little = region.to_mask(
-                        mode="center"
-                    ).get_overlap_slices(im_data.shape)
-                    if idx_large is not None:
-                        full_mask[idx_large] = np.logical_or(
-                            region.to_mask().data[idx_little],
-                            full_mask[idx_large],
-                        )
-                        artifact_mask[idx_large] = np.logical_or(
-                            region.to_mask().data[idx_little],
-                            artifact_mask[idx_large],
-                        )
-
-        # Save mask - could save independent layers as well e.g. stars vs edges vs manual mask etc
-        output_mask_path = f"{self.mask_dir}/fits_masks/{band}_basemask.fits"
-
-        funcs.make_dirs(output_mask_path)
-        full_mask_hdu = fits.ImageHDU(
-            full_mask.astype(np.uint8), header=wcs.to_header(), name="MASK"
-        )
-        edge_mask_hdu = fits.ImageHDU(
-            edge_mask.astype(np.uint8), header=wcs.to_header(), name="EDGE"
-        )
-        hdulist = [fits.PrimaryHDU(), full_mask_hdu, edge_mask_hdu]
-        if mask_stars:
-            stellar_mask_hdu = fits.ImageHDU(
-                stellar_mask.astype(np.uint8),
-                header=wcs.to_header(),
-                name="STELLAR",
-            )
-            hdulist.append(stellar_mask_hdu)
-        if artifact_mask is not None:
-            artifact_mask_hdu = fits.ImageHDU(
-                artifact_mask.astype(np.uint8),
-                header=wcs.to_header(),
-                name="ARTIFACT",
-            )
-            hdulist.append(artifact_mask_hdu)
-
-        hdu = fits.HDUList(hdulist)
-        hdu.writeto(output_mask_path, overwrite=True)
-        # Change permission to read/write for all
-        funcs.change_file_permissions(output_mask_path)
-
-        if plot:
-            # Save mask plot
-            fig.savefig(f"{self.mask_dir}/{band}_mask.png", dpi=300)
-            funcs.change_file_permissions(f"{self.mask_dir}/{band}_mask.png")
-
-        # Save ds9 region
-        if mask_stars:
-            with open(f"{self.mask_dir}/{band}_starmask.reg", "w") as f:
-                for region in region_strings:
-                    f.write(region + "\n")
-            funcs.change_file_permissions(
-                f"{self.mask_dir}/{band}_starmask.reg"
-            )
-        return output_mask_path
-
-    # @staticmethod
-    def combine_band_names(self, bands):
-        if type(bands) == str:
-            return bands
-        else:
-            return "+".join(bands)
-
-    def get_err_map(self, band):
-        """Loads either the rms_err or wht map for use in SExtractor depending on the preferred map to use
-
-        Args:
-            band (str): Filter to extract the rms_err or wht maps from
-        Returns:
-            tuple(3): (Error map path, Error map fits extension, Error map type)
-        """
-
-        # determine which error map to use based on what is available or preferred
-        if self.sex_prefer == "rms_err":
-            if band in self.rms_err_paths.keys():
-                err_map_type = "MAP_RMS"
-            elif band in self.wht_paths.keys():
-                # make rms err map from wht map
-                err_map_type = "MAP_WEIGHT"
-                self.make_rms_err_from_wht(band)
-            else:
-                galfind_logger.critical(
-                    f"{band=} does not have {self.sex_prefer=} err map type"
-                )
-                breakpoint()
-        else:  # self.sex_prefer == "wht"
-            if band in self.wht_paths.keys():
-                err_map_type = "MAP_WEIGHT"
-            elif band in self.rms_err_paths.keys():
-                # make wht map from rms err map
-                self.make_wht_from_rms_err(band)
-                pass
-            else:
-                galfind_logger.critical(
-                    f"{band=} does not have {self.sex_prefer=} err map type"
-                )
-                breakpoint()
-
-        # extract relevant fits paths and extensions
-        # print(band, self.rms_err_paths, self.wht_paths)
-        if err_map_type == "MAP_RMS":
-            err_map_path = str(self.rms_err_paths[band])
-            err_map_ext = str(self.rms_err_exts[band])
-        elif err_map_type == "MAP_WEIGHT":
-            err_map_path = str(self.wht_paths[band])
-            err_map_ext = str(self.wht_exts[band])
-        else:
-            galfind_logger.critical(
-                f"No rms_err or wht maps available for {band} {self.survey} {self.version}"
-            )
-
-        return err_map_path, err_map_ext, err_map_type
-
-    def make_rms_err_from_wht(self, band, wht_str=["_wht", "_weight"]):
-        assert band in self.wht_paths.keys() and band in self.wht_exts.keys()
-        for i, string in enumerate(wht_str):
-            if string in self.wht_paths[band].split("/")[-1]:
-                rms_err_path = f"{'/'.join(self.wht_paths[band].split('/')[:-1])}/{self.wht_paths[band].split('/')[-1].replace(string, '_rms_err')}"
-                break
-            elif i == len(wht_str) - 1:
-                galfind_logger.critical("Appropriate rms_err path not created")
-                breakpoint()
-        funcs.make_dirs(rms_err_path)
-        wht, hdr = self.load_wht(band, output_hdr=True)
-        err = 1.0 / (wht**0.5)
-        primary_hdr = deepcopy(hdr)
-        primary_hdr["EXTNAME"] = "PRIMARY"
-        primary = fits.PrimaryHDU(header=primary_hdr)
-        hdu = fits.ImageHDU(err, header=hdr, name="ERR")
-        hdul = fits.HDUList([primary, hdu])
-        hdul.writeto(rms_err_path, overwrite=True)
-        funcs.change_file_permissions(rms_err_path)
-        galfind_logger.info(
-            f"Finished making rms_err map for {band} for {self.survey} {self.version}"
-        )
-        self.rms_err_paths[band] = rms_err_path
-        self.rms_err_exts[band] = 1
-
-    def make_wht_from_rms_err(
-        self, band, rms_err_str=["_rms_err", "_rms", "_err"]
-    ):
-        assert (
-            band in self.rms_err_paths.keys()
-            and band in self.rms_err_exts.keys()
-        )
-        for i, string in enumerate(rms_err_str):
-            if string in self.rms_err_paths[band].split("/")[-1]:
-                wht_path = f"{'/'.join(self.rms_err_paths[band].split('/')[:-1])}/{self.rms_err_paths[band].split('/')[-1].replace(string, '_wht')}"
-                break
-            elif i == len(rms_err_str) - 1:
-                galfind_logger.critical("Appropriate wht path not created")
-                breakpoint()
-        funcs.make_dirs(wht_path)
-        err, hdr = self.load_rms_err(band, output_hdr=True)
-        wht = 1.0 / (err**2)
-        primary_hdr = deepcopy(hdr)
-        primary_hdr["EXTNAME"] = "PRIMARY"
-        primary = fits.PrimaryHDU(header=primary_hdr)
-        hdu = fits.ImageHDU(wht, header=hdr, name="WHT")
-        hdul = fits.HDUList([primary, hdu])
-        hdul.writeto(wht_path, overwrite=True)
-        funcs.change_file_permissions(wht_path)
-        galfind_logger.info(
-            f"Finished making wht map for {band} for {self.survey} {self.version}"
-        )
-        self.wht_paths[band] = wht_path
-        self.wht_exts[band] = 1
-
-    @run_in_dir(path=config["DEFAULT"]["GALFIND_DIR"])
-    def make_seg_map(
-        self,
-        band,
-        sex_config_path=config["SExtractor"]["CONFIG_PATH"],
-        params_path=config["SExtractor"]["PARAMS_PATH"],
-    ):
-        galfind_logger.warning(
-            "Data.make_seg_map easily sped up without the use of Instrument.instrument_from_band!"
-        )
-        if type(band) in [str, np.str_]:
-            pass
-        elif type(band) in [list, np.array]:
-            band = self.combine_band_names(band)
-        else:
-            raise (
-                Exception(
-                    f"Cannot make segmentation map for {band}! type(band) = {type(band)} must be either str, list, or np.array!"
-                )
-            )
-
-        # load relevant err map paths, preferring rms_err maps if available
-        err_map_path, err_map_ext, err_map_type = self.get_err_map(band)
-        # insert specified aperture diameters from config file
-        as_aper_diams = json.loads(config.get("SExtractor", "APERTURE_DIAMS"))
-        if len(as_aper_diams) != 5:
-            galfind_logger.warning(
-                f"{sex_config_path=} should be updated for {as_aper_diams=} at runtime!"
-            )
-        pix_aper_diams = (
-            str(
-                [
-                    np.round(pix_aper_diam, 2)
-                    for pix_aper_diam in as_aper_diams
-                    / self.im_pixel_scales[band].value
-                ]
-            )
-            .replace("[", "")
-            .replace("]", "")
-            .replace(" ", "")
-        )
-
-        # SExtractor bash script python wrapper
-        print(
-            [
-                "./make_seg_map.sh",
-                config["SExtractor"]["SEX_DIR"],
-                self.im_paths[band],
-                str(self.im_pixel_scales[band].value),
-                str(self.im_zps[band]),
-                self.instrument.instrument_from_band(band).name,  # slow
-                self.survey,
-                band,
-                self.version,
-                err_map_path,
-                err_map_ext,
-                err_map_type,
-                str(self.im_exts[band]),
-                sex_config_path,
-                params_path,
-                pix_aper_diams,
-            ]
-        )
-        breakpoint()
-        process = subprocess.Popen(
-            [
-                "./make_seg_map.sh",
-                config["Sextractor"]["SEX_DIR"],
-                self.im_paths[band],
-                str(self.im_pixel_scales[band].value),
-                str(self.im_zps[band]),
-                self.instrument.instrument_from_band(band).name,
-                self.survey,
-                band,
-                self.version,
-                err_map_path,
-                err_map_ext,
-                err_map_type,
-                str(self.im_exts[band]),
-                sex_config_path,
-                params_path,
-                pix_aper_diams,
-            ]
-        )
-        process.wait()
-        galfind_logger.info(
-            f"Made segmentation map for {self.survey} {self.version} {band} using config = {sex_config_path} and {err_map_type}"
-        )
-
-    def make_seg_maps(self):
-        for band in self.instrument.band_names:
-            self.make_seg_map(band)
-
-    def convolve_images(
-        self,
-        kernel_dir,
-        match_band="F444W",
-        override_bands=None,
-        use_fft_conv=True,
-        overwrite=False,
-        update_default_dictionaries=True,
-    ):
-        galfind_logger.warning(
-            "Data.convolve_images easily sped up without the use of Instrument.instrument_from_band!"
-        )
-        """Adapted from aperpy - https://github.com/astrowhit/aperpy/"""
-        if override_bands is not None:
-            bands = override_bands
-        else:
-            bands = self.instrument.band_names
-        outdir = f"{config['DEFAULT']['GALFIND_WORK']}/PSF_Matched_Images/{self.version}/{self.instrument.instrument_from_band(bands[0]).name}/{self.survey}"
-        self.im_psf_matched_dir = outdir
-        if use_fft_conv:
-            convolve_func = convolve_fft
-            convolve_kwargs = {"allow_huge": True}
-        else:
-            convolve_func = convolve
-            convolve_kwargs = {}
-
-        # for filename in sci_paths:
-        im_paths_matched = {}
-        wht_paths_matched = {}
-        rms_err_paths_matched = {}
-
-        for band in bands:
-            im_filename = self.im_paths[band]
-            wht_filename = self.wht_paths[band]
-            err_filename = self.rms_err_paths[band]
-            same_file = im_filename == wht_filename == err_filename
-            outnames = []
-
-            if not os.path.exists(outdir):
-                os.makedirs(outdir)
-
-            if same_file:
-                print(
-                    "WHT, SCI, and ERR are the same file!. Output will be written to the same file."
-                )
-                outname = im_filename.replace(
-                    ".fits", f"_{match_band}-matched.fits"
-                ).replace(os.path.dirname(im_filename), outdir)
-                outnames.append(outname)
-                outsciname = outwhtname = outerrname = outname
-                full_hdu = fits.open(im_filename)
-            else:
-                outsciname = im_filename.replace(
-                    ".fits", f"_sci_{match_band}-matched.fits"
-                ).replace(os.path.dirname(im_filename), outdir)
-                outwhtname = wht_filename.replace(
-                    ".fits", f"_wht_{match_band}-matched.fits"
-                ).replace(os.path.dirname(wht_filename), outdir)
-                outerrname = err_filename.replace(
-                    ".fits", f"_err_{match_band}-matched.fits"
-                ).replace(os.path.dirname(err_filename), outdir)
-                outnames.append(outsciname)
-                outnames.append(outwhtname)
-                outnames.append(outerrname)
-
-            im_paths_matched[band] = outsciname
-            wht_paths_matched[band] = outwhtname
-            rms_err_paths_matched[band] = outerrname
-
-            skip = False
-            for outname in outnames:
-                if os.path.exists(outname) and not overwrite:
-                    print(outsciname, outwhtname)
-                    print("Convolved images exist, I will not overwrite")
-                    skip = True
-
-            if not skip:
-                print("  science image: ", im_filename)
-                print("  weight image: ", wht_filename)
-                print("  error image: ", err_filename)
-                hdul = fits.open(im_filename)
-                hdul_wht = fits.open(wht_filename)
-
-                if err_filename != "":
-                    hdul_err = fits.open(err_filename)
-
-                if band != match_band:
-                    print(f"  PSF-matching sci {band} to {match_band}")
-                    tstart = time.time()
-                    fn_kernel = os.path.join(kernel_dir, f"{band}_kernel.fits")
-                    print("  using kernel ", fn_kernel.split("/")[-1])
-                    kernel = fits.getdata(fn_kernel)
-                    kernel /= np.sum(kernel)
-
-                    if same_file:
-                        wht_ext = "WHT"
-                    else:
-                        wht_ext = 0
-                    weight = hdul_wht[wht_ext].data
-                    if not same_file:
-                        out_hdul = fits.HDUList([])
-                    else:
-                        out_hdul = full_hdu.copy()
-                    if overwrite or not os.path.exists(outsciname):
-                        print("Running science image convolution...")
-                        if same_file:
-                            sci_ext = "SCI"
-                        else:
-                            sci_ext = 0
-
-                        sci = hdul[sci_ext].data
-                        data = convolve_func(
-                            sci, kernel, **convolve_kwargs
-                        ).astype(np.float32)
-                        data[weight == 0] = 0.0
-                        print("convolved...")
-
-                        out_hdu = fits.PrimaryHDU(
-                            data, header=hdul[sci_ext].header
-                        )
-                        out_hdu.name = "SCI"
-                        out_hdu.header["HISTORY"] = (
-                            f"Convolved with {match_band} kernel"
-                        )
-                        out_hdu.header["HISTORY2"] = (
-                            f"Convolution kernel path: {fn_kernel}"
-                        )
-                        if same_file:
-                            out_hdul[sci_ext].data = out_hdu.data
-                            out_hdul[sci_ext].header["HISTORY"] = (
-                                f"Convolved with {match_band} kernel"
-                            )
-                            out_hdul[sci_ext].header["HISTORY2"] = (
-                                f"Convolution kernel path: {fn_kernel}"
-                            )
-                        else:
-                            out_hdul.append(out_hdu)
-                            out_hdul.writeto(outsciname, overwrite=True)
-                            print("Wrote file to ", outsciname)
-                            out_hdul = fits.HDUList([])
-
-                    else:
-                        print(outsciname)
-                        print(
-                            f"{band.upper()} convolved science image exists, I will not overwrite"
-                        )
-
-                    hdul.close()
-
-                    if overwrite or not os.path.exists(outwhtname):
-                        print("Running weight image convolution...")
-                        err = np.where(weight == 0, 0, 1 / np.sqrt(weight))
-                        err_conv = convolve_func(
-                            err, kernel, **convolve_kwargs
-                        ).astype(np.float32)
-                        data = np.where(err_conv == 0, 0, 1.0 / (err_conv**2))
-                        data[weight == 0] = 0.0
-
-                        out_hdu_wht = fits.PrimaryHDU(
-                            data, header=hdul_wht[wht_ext].header
-                        )
-                        out_hdu_wht.name = "WHT"
-                        out_hdu_wht.header["HISTORY"] = (
-                            f"Convolved with {match_band} kernel"
-                        )
-
-                        if same_file:
-                            out_hdul[wht_ext].data = out_hdu_wht.data
-                            out_hdul[wht_ext].header["HISTORY"] = (
-                                f"Convolved with {match_band} kernel"
-                            )
-                        else:
-                            out_hdul.append(out_hdu_wht)
-                            out_hdul.writeto(outwhtname, overwrite=True)
-                            print("Wrote file to ", outwhtname)
-                            out_hdul = fits.HDUList([])
-
-                    else:
-                        print(outwhtname)
-                        print(
-                            f"{band.upper()} convolved weight image exists, I will not overwrite"
-                        )
-
-                    hdul_wht.close()
-
-                    if outerrname != "" and (
-                        overwrite or not os.path.exists(outerrname)
-                    ):
-                        print("Running error image convolution...")
-
-                        data = convolve_func(
-                            hdul_err["ERR"].data, kernel, **convolve_kwargs
-                        ).astype(np.float32)
-                        data[weight == 0] = 0.0
-
-                        out_hdu_err = fits.PrimaryHDU(
-                            data, header=hdul_err["ERR"].header
-                        )
-                        out_hdu_err.name = "ERR"
-                        out_hdu_err.header["HISTORY"] = (
-                            f"Convolved with {match_band} kernel"
-                        )
-                        if same_file:
-                            out_hdul["ERR"].data = out_hdu_err.data
-                            out_hdul["ERR"].header["HISTORY"] = (
-                                f"Convolved with {match_band} kernel"
-                            )
-                        else:
-                            out_hdul.append(out_hdu_err)
-                            out_hdul.writeto(outerrname, overwrite=True)
-                            print("Wrote file to ", outerrname)
-                            out_hdul = fits.HDUList([])
-
-                        hdul_err.close()
-
-                    print(f"Finished in {time.time()-tstart:2.2f}s")
-
-                    if same_file and len(out_hdul) > 1:
-                        out_hdul.writeto(outname, overwrite=True)
-                    else:
-                        print("Not writing empty HDU")
-                else:
-                    outsciname = im_filename.replace(
-                        ".fits", f"_sci_{match_band}-matched.fits"
-                    ).replace(os.path.dirname(im_filename), outdir)
-                    outwhtname = wht_filename.replace(
-                        ".fits", f"_wht_{match_band}-matched.fits"
-                    ).replace(os.path.dirname(wht_filename), outdir)
-                    outerrname = err_filename.replace(
-                        ".fits", f"_err_{match_band}-matched.fits"
-                    ).replace(os.path.dirname(err_filename), outdir)
-                    outname = im_filename.replace(
-                        ".fits", f"_{match_band}-matched.fits"
-                    ).replace(os.path.dirname(im_filename), outdir)
-
-                    if same_file:
-                        hdul.writeto(outname, overwrite=True)
-                        print(hdul.info())
-                    else:
-                        hdul.writeto(outsciname, overwrite=True)
-                        hdul_wht.writeto(outwhtname, overwrite=True)
-                        hdul_wht.close()
-                        if err_filename != "":
-                            hdul_err.writeto(outerrname, overwrite=True)
-                            hdul_err.close()
-                    print("Written files to ", outname)
-                    hdul.close()
-
-            # Update paths in self
-            if update_default_dictionaries:
-                if same_file:
-                    self.im_paths[band] = outname
-                    self.wht_paths[band] = outname
-                    self.rms_err_paths[band] = outname
-                else:
-                    self.im_paths[band] = outsciname
-                    self.wht_paths[band] = outwhtname
-                    self.rms_err_paths[band] = outerrname
-
-        return im_paths_matched, wht_paths_matched, rms_err_paths_matched
-
-    @staticmethod
-    def mosaic_images(
-        image_paths,
-        extract_ext_names={"data": "SCI", "err": "RMS_ERR"},
-        pix_scale_hdr_name="PIXSCALE",
-    ):
-        # ensure images are .fits images
-        assert all(".fits" in path for path in image_paths)
-        # open all images
-        hdul_arr = [fits.open(path) for path in image_paths]
-        # ensure images have the same number of extensions
-        assert all(len(hdul_arr[0]) == hdul for hdul in hdul_arr)
-        # ensure images have all of the relevant extensions - NOT IMPLEMENTED YET
-        # extract the header files for each extension for each fits image
-        headers_arr = np.array(
-            [[hdu.header for hdu in hdul] for hdul in hdul_arr]
-        )
-        # ensure they have been taken using the same filter - NOT IMPLEMENTED YET (assume this comes from the header files)
-        ext_names_arr = [
-            [header["EXTNAME"] for header in hdul_headers]
-            for hdul_headers in headers_arr
-        ]
-        # extract the raw data for each extension for each fits image
-        data_arr = np.array(
-            [
-                [
-                    hdu.data
-                    for hdu, ext_name in zip(hdul, ext_names)
-                    if ext_name == extract_ext_names["data"]
-                ][0]
-                for hdul, ext_names in zip(hdul_arr, ext_names_arr)
-            ]
-        )
-        err_arr = np.array(
-            [
-                [
-                    hdu.data
-                    for hdu, ext_name in zip(hdul, ext_names)
-                    if ext_name == extract_ext_names["err"]
-                ][0]
-                for hdul, ext_names in zip(hdul_arr, ext_names_arr)
-            ]
-        )
-        # if the files have the same wcs, the same x/y dimensions, and the same pixel scale
-        same_wcs = all(
-            WCS(header) == WCS(headers_arr[0][0])
-            for hdul_headers in headers_arr
-            for header in hdul_headers
-        )
-        same_dimensions = (
-            all(data.shape == data_arr[0].shape for data in data_arr)
-        ) & (all(err.shape == err_arr[0].shape for err in err_arr))
-        same_pix_scale = all(
-            float(header[pix_scale_hdr_name])
-            == float(headers_arr[0][0][pix_scale_hdr_name])
-            for hdul_headers in headers_arr
-            for header in hdul_headers
-        )
-        if same_wcs and same_dimensions and same_pix_scale:
-            # ensure images are PSF homogenized to the same filter
-            for i, (data, err) in enumerate(zip(data_arr, err_arr)):
-                if i == 0:
-                    sum_data = data
-                    sum_err = err
-                else:
-                    # convert np.nans to zeros in both science and error maps so as to allow data only covered by one image
-                    data[data == np.nan] = 0.0
-                    err[err == np.nan] = 0.0
-                    sum_data += data / err**2
-                    sum_err += 1 / err**2
-            weighted_array = sum_data / sum_err  # output sci map
-            combined_err = np.sqrt(1 / sum_err)  # output err map
-
-            # determine new combined image path
-            combined_image_path = image_paths[0].replace(
-                ".fits", "_stack.fits"
-            )
-            # save combined image at this path
-            primary = fits.PrimaryHDU(header=prime_hdu)
-            hdu = fits.ImageHDU(weighted_array, header=im_header, name="SCI")
-            hdu_err = fits.ImageHDU(combined_err, header=im_header, name="ERR")
-            hdul = fits.HDUList([primary, hdu, hdu_err])
-            hdul.writeto(combined_image_path, overwrite=True)
-            galfind_logger.info(
-                f"Finished mosaicing images at {image_paths=}, saved to {combined_image_path}"
-            )
-            hdul.writeto(combined_image_path, overwrite=True)
-            # move the individual images into a "stacked" folder
-            for path in image_paths:
-                os.makedirs(
-                    f"{funcs.split_dir_name(path, 'dir')}/stacked",
-                    exist_ok=True,
-                )
-                os.rename(
-                    path,
-                    f"{funcs.split_dir_name(path, 'dir')}/stacked/{funcs.split_dir_name(path, 'name')}",
-                )
-            return combined_image_path
-
-        else:  # else convert all of the images to the required wcs, x/y dimensions, and pixel scale
-            raise (
-                NotImplementedError(
-                    galfind_logger.critical(
-                        f"Cannot convert images as all of {same_wcs=}, {same_dimensions=}, {same_pix_scale=} != True"
-                    )
-                )
-            )
-
-    def stack_bands(
-        self,
-        bands,
-        psf_match=False,
-        psf_match_band=None,
-        psf_kernel_dir=None,
-        timed: bool = True,
-    ):
-        galfind_logger.warning(
-            "Data.stack_bands easily sped up without the use of Instrument.instrument_from_band!"
-        )
-        for band in bands:
-            if band not in self.im_paths.keys():
-                bands.remove(band)
-                galfind_logger.warning(
-                    f"{band} not available for {self.survey} {self.version}"
-                )
-        stack_band_name = self.combine_band_names(bands)
-        if psf_match:
-            psf_matched_name = (
-                f"{stack_band_name}_psf_matched_{psf_match_band}"
-            )
-            im_paths, wht_paths, rms_err_paths = self.convolve_images(
-                psf_kernel_dir,
-                match_band=psf_match_band,
-                update_default_dictionaries=False,
-                override_bands=["F277W", "F356W", "F444W"],
-            )
-        else:
-            psf_matched_name = stack_band_name
-            im_paths = self.im_paths
-            wht_paths = self.wht_paths
-            rms_err_paths = self.rms_err_paths
-
-        detection_image_dir = f"{config['DEFAULT']['GALFIND_WORK']}/Stacked_Images/{self.version}/{self.instrument.instrument_from_band(bands[0]).name}/{self.survey}"
-        detection_image_name = (
-            f"{self.survey}_{psf_matched_name}_{self.version}_stack.fits"
-        )
-        self.im_paths[stack_band_name] = (
-            f"{detection_image_dir}/{detection_image_name}"
-        )
-        self.rms_err_paths[stack_band_name] = (
-            f"{detection_image_dir}/{detection_image_name}"
-        )
-        combined_mask_name = f"{self.mask_dir}/combined_masks/{self.survey}_{self.combine_band_names(bands)}.fits"
-        if Path(combined_mask_name).is_file():
-            self.mask_paths[stack_band_name] = combined_mask_name
-        else:
-            self.mask_paths[stack_band_name] = self.combine_masks(bands)
-
-        if not Path(self.im_paths[stack_band_name]).is_file():  # or overwrite
-            funcs.make_dirs(self.im_paths[stack_band_name])
-
-            if all(
-                band in self.rms_err_paths.keys()
-                and band in self.rms_err_exts.keys()
-                for band in bands
-            ):
-                err_from = "ERR"
-            elif all(
-                band in self.wht_paths.keys() and band in self.wht_exts.keys()
-                for band in bands
-            ):
-                # determine error map from wht map
-                err_from = "WHT"
-            else:
-                raise (Exception("Inconsistent error maps for stacking bands"))
-
-            for pos, band in enumerate(bands):
-                if (
-                    self.im_shapes[band] != self.im_shapes[bands[0]]
-                    or self.im_zps[band] != self.im_zps[bands[0]]
-                    or self.im_pixel_scales[band]
-                    != self.im_pixel_scales[bands[0]]
-                ):
-                    raise Exception(
-                        "All bands used in forced photometry stack must have the same shape, ZP and pixel scale!"
-                    )
-
-                prime_hdu = fits.open(im_paths[band])[0].header
-                print(f"Opened {im_paths[band]}[{self.im_exts[band]}]")
-                im_data = fits.open(im_paths[band])[self.im_exts[band]].data
-                im_header = fits.open(im_paths[band])[
-                    self.im_exts[band]
-                ].header
-                print(err_from, self.rms_err_exts[band], self.wht_exts[band])
-                if err_from == "ERR":
-                    err = fits.open(rms_err_paths[band])[
-                        self.rms_err_exts[band]
-                    ].data
-                    wht = 1.0 / (err**2)
-                elif err_from == "WHT":
-                    # determine error map from wht map
-                    wht = fits.open(wht_paths[band])[self.wht_exts[band]].data
-                    err = np.sqrt(1.0 / wht)
-                else:
-                    galfind_logger.critical(
-                        f"{err_from=} not in ['ERR', 'WHT']"
-                    )
-                if pos == 0:
-                    sum = im_data * wht
-                    sum_wht = wht
-                else:
-                    sum += im_data * wht
-                    sum_wht += wht
-
-            sci = sum / sum_wht
-            err = np.sqrt(1.0 / sum_wht)
-            wht = sum_wht
-
-            # https://en.wikipedia.org/wiki/Inverse-variance_weighting
-
-            primary = fits.PrimaryHDU(header=prime_hdu)
-            hdu = fits.ImageHDU(sci, header=im_header, name="SCI")
-            hdu_err = fits.ImageHDU(err, header=im_header, name="ERR")
-            hdu_wht = fits.ImageHDU(wht, header=im_header, name="WHT")
-            hdul = fits.HDUList([primary, hdu, hdu_err, hdu_wht])
-            hdul.writeto(self.im_paths[stack_band_name], overwrite=True)
-            funcs.change_file_permissions(self.im_paths[stack_band_name])
-            galfind_logger.info(
-                f"Finished stacking bands = {bands} for {self.survey} {self.version}"
-            )
-
-        # save forced photometry band parameters
-        self.im_shapes[stack_band_name] = self.im_shapes[bands[0]]
-        self.im_zps[stack_band_name] = self.im_zps[bands[0]]
-        self.im_pixel_scales[stack_band_name] = self.im_pixel_scales[bands[0]]
-        self.im_exts[stack_band_name] = 1
-        self.rms_err_paths[stack_band_name] = self.im_paths[stack_band_name]
-        self.rms_err_exts[stack_band_name] = 2
-        self.wht_paths[stack_band_name] = self.im_paths[stack_band_name]
-        self.wht_exts[stack_band_name] = 3
-
-    def sex_cat_path(
-        self,
-        band: Union[str, Filter],
-        forced_phot_band: str,
-        timed: bool = False,
-    ):
-        if timed:
-            start = time.time()
-        if type(band) == str:
-            instr_name = self.instrument.instrument_from_band(band).name
-            band_name = band
-        else:
-            instr_name = band.instrument
-            band_name = band.band_name
-        # forced phot band here is the string version
-        sex_cat_dir = f"{config['DEFAULT']['GALFIND_WORK']}/SExtractor/{instr_name}/{self.version}/{self.survey}"
-        sex_cat_name = f"{self.survey}_{band_name}_{forced_phot_band}_sel_cat_{self.version}.fits"
-        sex_cat_path = f"{sex_cat_dir}/{sex_cat_name}"
-        funcs.change_file_permissions(sex_cat_path)
-        if timed:
-            end = time.time()
-            print(f"Data.sex_cat_path took {end - start:.1e}s")
-        return sex_cat_path
-
-    def seg_path(self, band: Filter):
-        # IF THIS IS CHANGED MUST ALSO CHANGE THE PATH IN __init__ AND make_seg_map.sh
-        if type(band) in [str]:
-            instr_name = self.instrument.instrument_from_band(band).name
-            band_name = band
-        else:
-            instr_name = band.instrument
-            band_name = band.band_name
-        path = f"{config['DEFAULT']['GALFIND_WORK']}/SExtractor/{instr_name}/{self.version}/{self.survey}/{self.survey}_{band_name}_{band_name}_sel_cat_{self.version}_seg.fits"
-        funcs.change_file_permissions(path)
-        return path
-
-    @run_in_dir(path=config["DEFAULT"]["GALFIND_DIR"])
-    def make_sex_cats(
-        self,
-        forced_phot_band: Union[str, list, np.array] = "F444W",
-        sex_config_path: str = config["SExtractor"]["CONFIG_PATH"],
-        params_path: str = config["SExtractor"]["PARAMS_PATH"],
-        forced_phot_code: str = "photutils",
-        timed: bool = True,
-    ):
-        galfind_logger.info(
-            f"Making SExtractor catalogues with: config file = {sex_config_path}; parameters file = {params_path}"
-        )
-        # make individual forced photometry catalogues
-        if timed:
-            start = time.time()
-        if type(forced_phot_band) == list:
-            if len(forced_phot_band) > 1:
-                # make the stacked image and save all appropriate parameters
-                galfind_logger.debug(f"forced_phot_band = {forced_phot_band}")
-                # print('WARNING! NOT DEFAULT BEHAVIOUR')
-                self.stack_bands(
-                    forced_phot_band,
-                    psf_match=False,
-                    psf_match_band="F444W",
-                    psf_kernel_dir="/nvme/scratch/work/tharvey/PSFs/kernels/JOF",
-                )
-                self.forced_phot_band = self.combine_band_names(
-                    forced_phot_band
-                )
-                self.seg_paths[self.forced_phot_band] = self.seg_path(
-                    self.forced_phot_band
-                )
-                overwrite = config["DEFAULT"].getboolean("OVERWRITE")
-                if overwrite:
-                    galfind_logger.info(
-                        "OVERWRITE = YES, so overwriting segmentation map if it exists."
-                    )
-                if (
-                    not Path(self.seg_paths[self.forced_phot_band]).is_file()
-                    or overwrite
-                ):
-                    if not config["DEFAULT"].getboolean("RUN"):
-                        galfind_logger.critical(
-                            "RUN = YES, so running through sextractor. Returning Error."
-                        )
-                        raise Exception(
-                            f"RUN = YES, and combination of {self.survey} {self.version} or {self.instrument.name} has not previously been run through sextractor."
-                        )
-                    self.make_seg_map(forced_phot_band)
-            else:
-                self.forced_phot_band = forced_phot_band[0]
-        else:
-            self.forced_phot_band = forced_phot_band
-
-        if timed:
-            mid = time.time()
-            print(f"{mid - start:.1f}s")
-
-        if self.forced_phot_band not in self.instrument.band_names:
-            sextractor_bands = [band for band in self.instrument] + [
-                self.forced_phot_band
-            ]
-        else:
-            sextractor_bands = [band for band in self.instrument]
-
-        if not hasattr(self, "sex_cats"):
-            self.sex_cats = {}
-        if not hasattr(self, "sex_cat_types"):
-            self.sex_cat_types = {}
-
-        for band in sextractor_bands:
-            if type(band) == str:
-                band_name = band
-            else:
-                band_name = band.band_name
-            sex_cat_path = self.sex_cat_path(band, self.forced_phot_band)
-            self.sex_cats[band_name] = sex_cat_path
-            galfind_logger.debug(
-                f"band = {band_name}, sex_cat_path = {sex_cat_path} in Data.make_sex_cats"
-            )
-
-            # check whether the image of the forced photometry band and sextraction band have the same shape
-            if (
-                self.im_shapes[self.forced_phot_band]
-                == self.im_shapes[band_name]
-            ):
-                sextract = True
-                # of order 0.1s per call
-                galfind_logger.debug(
-                    "'subprocess.check_output()' takes of order 0.1s per call!"
-                )
-                self.sex_cat_types[band_name] = (
-                    subprocess.check_output("sex --version", shell=True)
-                    .decode("utf-8")
-                    .replace("\n", "")
-                )
-            else:
-                sextract = False
-                self.sex_cat_types[band_name] = (
-                    f"{forced_phot_code} v{globals()[forced_phot_code].__version__}"
-                )
-
-            # overwrite = config["DEFAULT"].getboolean("OVERWRITE")
-            # if overwrite:
-            #         galfind_logger.info("OVERWRITE = YES, so overwriting sextractor output if it exists.")
-            # if not run before
-            if not Path(sex_cat_path).is_file():  # or overwrite
-                if type(band) == str:
-                    instr_name = self.instrument.instrument_from_band(
-                        band
-                    ).name
-                else:
-                    instr_name = band.instrument
-
-                # perform sextraction
-                if sextract:
-                    # load relevant err map paths
-                    err_map_path, err_map_ext, err_map_type = self.get_err_map(
-                        band_name
-                    )
-                    # load relevant err map paths for the forced photometry band
-                    (
-                        forced_phot_band_err_map_path,
-                        forced_phot_band_err_map_ext,
-                        forced_phot_band_err_map_type,
-                    ) = self.get_err_map(self.forced_phot_band)
-                    forced_phot_image_path = self.im_paths[
-                        self.forced_phot_band
                     ]
-                    assert err_map_type == forced_phot_band_err_map_type
-
-                    # insert specified aperture diameters from config file
-                    as_aper_diams = json.loads(
-                        config.get("SExtractor", "APERTURE_DIAMS")
-                    )
-                    pix_aper_diams = (
-                        str(
+                    flux_aper_corr_data = [
+                        flux_aper * flux_aper_corr_factor
+                        if flux_aper > 0.0 else flux_aper
+                        for flux_aper in cat[f"FLUX_APER_{band_data.filt_name}"]
+                    ]
+                else:
+                    for j, aper_diam in enumerate(aper_diams):
+                        # assumes these have already been calculated for each band
+                        mag_aper_corr_factor = band_data.filt.instrument.\
+                            aper_corrs[band_data.filt_name][aper_diam * u.arcsec]
+                        flux_aper_corr_factor = 10 ** (mag_aper_corr_factor / 2.5)
+                        
+                        if j == 0:
+                            # only aperture correct if flux is positive
+                            mag_aper_corr_data = [
+                                (mag_aper[0] - mag_aper_corr_factor,)
+                                if flux_aper[0] > 0.0
+                                else (mag_aper[0],)
+                                for mag_aper, flux_aper in zip(
+                                    cat[f"MAG_APER_{band_data.filt_name}"],
+                                    cat[f"FLUX_APER_{band_data.filt_name}"],
+                                )
+                            ]
+                            flux_aper_corr_data = [
+                                (flux_aper[0] * flux_aper_corr_factor,)
+                                if flux_aper[0] > 0.0
+                                else (flux_aper[0],)
+                                for flux_aper in cat[f"FLUX_APER_{band_data.filt_name}"]
+                            ]
+                        else:
+                            mag_aper_corr_data = [
+                                mag_aper_corr
+                                + (mag_aper[j] - mag_aper_corr_factor,)
+                                if flux_aper[j] > 0.0
+                                else mag_aper_corr + (mag_aper[j],)
+                                for mag_aper_corr, mag_aper, flux_aper in zip(
+                                    mag_aper_corr_data,
+                                    cat[f"MAG_APER_{band_data.filt_name}"],
+                                    cat[f"FLUX_APER_{band_data.filt_name}"],
+                                )
+                            ]
+                            flux_aper_corr_data = [
+                                flux_aper_corr
+                                + (flux_aper[j] * flux_aper_corr_factor,)
+                                if flux_aper[j] > 0.0
+                                else flux_aper_corr + (flux_aper[j],)
+                                for flux_aper_corr, flux_aper in zip(
+                                    flux_aper_corr_data, cat[f"FLUX_APER_{band_data.filt_name}"]
+                                )
+                            ]
+                cat[f"MAG_APER_{band_data.filt_name}_aper_corr"] = mag_aper_corr_data
+                cat[f"FLUX_APER_{band_data.filt_name}_aper_corr"] = flux_aper_corr_data
+                if len(aper_diams) == 1:
+                    cat[f"FLUX_APER_{band_data.filt_name}_aper_corr_Jy"] = [
+                        funcs.flux_image_to_Jy(element, band_data.ZP).value
+                        for element in cat[f"FLUX_APER_{band_data.filt_name}_aper_corr"]
+                    ]
+                else:
+                    cat[f"FLUX_APER_{band_data.filt_name}_aper_corr_Jy"] = [
+                        tuple(
                             [
-                                np.round(pix_aper_diam, 2)
-                                for pix_aper_diam in as_aper_diams
-                                / self.im_pixel_scales[band].value
+                                funcs.flux_image_to_Jy(
+                                    val, band_data.ZP
+                                ).value
+                                for val in element
                             ]
                         )
-                        .replace("[", "")
-                        .replace("]", "")
-                        .replace(" ", "")
-                    )
-                    if len(as_aper_diams) != 5:
-                        galfind_logger.warning(
-                            f"{sex_config_path=} should be updated for {as_aper_diams=} at runtime!"
-                        )
-                    # SExtractor bash script python wrapper
-                    print(
-                        [
-                            "./make_sex_cat.sh",
-                            config["DEFAULT"]["GALFIND_WORK"],
-                            self.im_paths[band_name],
-                            str(self.im_pixel_scales[band_name].value),
-                            str(self.im_zps[band_name]),
-                            instr_name,
-                            self.survey,
-                            band_name,
-                            self.version,
-                            self.forced_phot_band,
-                            forced_phot_image_path,
-                            err_map_path,
-                            err_map_ext,
-                            str(self.im_exts[band_name]),
-                            forced_phot_band_err_map_path,
-                            str(self.im_exts[self.forced_phot_band]),
-                            err_map_type,
-                            forced_phot_band_err_map_ext,
-                            sex_config_path,
-                            params_path,
-                            pix_aper_diams,
-                        ]
-                    )
-                    process = subprocess.Popen(
-                        [
-                            "./make_sex_cat.sh",
-                            config["DEFAULT"]["GALFIND_WORK"],
-                            self.im_paths[band_name],
-                            str(self.im_pixel_scales[band_name].value),
-                            str(self.im_zps[band_name]),
-                            instr_name,
-                            self.survey,
-                            band_name,
-                            self.version,
-                            self.forced_phot_band,
-                            forced_phot_image_path,
-                            err_map_path,
-                            err_map_ext,
-                            str(self.im_exts[band_name]),
-                            forced_phot_band_err_map_path,
-                            str(self.im_exts[self.forced_phot_band]),
-                            err_map_type,
-                            forced_phot_band_err_map_ext,
-                            sex_config_path,
-                            params_path,
-                            pix_aper_diams,
-                        ]
-                    )
-                    process.wait()
-                else:  # use photutils
-                    self.forced_photometry(
-                        band,
-                        self.forced_phot_band,
-                        forced_phot_code=forced_phot_code,
-                    )
-
-                galfind_logger.info(
-                    f"Made SExtractor catalogue for {self.survey} {self.version} {band_name}!"
-                )
-
-        if timed:
-            end = time.time()
-
-        finish_message = f"Loaded SExtractor catalogue for {self.survey} {self.version} {self.instrument.name}!"
-        if timed:
-            finish_message += f" ({end - start:.1f}s)"
-        galfind_logger.info(finish_message)
-
-    def combine_sex_cats(
-        self,
-        forced_phot_band: Union[str, list, np.array] = "F444W",
-        readme_sep: str = "-" * 20,
-        timed: bool = True,
-    ):
-        self.make_sex_cats(forced_phot_band, timed=timed)
-
-        save_name = f"{self.survey}_MASTER_Sel-{self.combine_band_names(forced_phot_band)}_{self.version}.fits"
-        save_dir = f"{config['DEFAULT']['GALFIND_WORK']}/Catalogues/{self.version}/{self.instrument.name}/{self.survey}"
-        self.sex_cat_master_path = f"{save_dir}/{save_name}"
-        overwrite = config["DEFAULT"].getboolean("OVERWRITE")
-        if overwrite:
+                        for element in cat[f"FLUX_APER_{band_data.filt_name}_aper_corr"]
+                    ]
+            # TODO: update catalogue metadata with PSF representation
+            
+            # overwrite original catalogue with local depth columns
+            cat.write(self.phot_cat_path, overwrite=True)
+            funcs.change_file_permissions(self.phot_cat_path)
             galfind_logger.info(
-                "OVERWRITE = YES, so overwriting combined catalogue if it exists."
-            )
-
-        if not Path(self.sex_cat_master_path).is_file() or overwrite:
-            if not config["DEFAULT"].getboolean("RUN"):
-                galfind_logger.critical(
-                    "RUN = YES, so not combining catalogues. Returning Error."
-                )
-                raise Exception(
-                    f"RUN = YES, and combination of {self.survey} {self.version} or {self.instrument.name} has not previously been combined into a catalogue."
-                )
-
-            if (
-                type(forced_phot_band) == np.array
-                or type(forced_phot_band) == list
-            ):
-                forced_phot_band_name = self.combine_band_names(
-                    forced_phot_band
-                )
-            else:
-                forced_phot_band_name = forced_phot_band
-            print("Loading cat", self.sex_cats, forced_phot_band_name)
-            for i, (band, path) in enumerate(self.sex_cats.items()):
-                print(path)
-                tab = Table.read(path, character_as_bytes=False)
-                if band == forced_phot_band_name:
-                    ID_detect_band = tab["NUMBER"]
-                    x_image_detect_band = tab["X_IMAGE"]
-                    y_image_detect_band = tab["Y_IMAGE"]
-                    ra_detect_band = tab["ALPHA_J2000"]
-                    dec_detect_band = tab["DELTA_J2000"]
-                # remove the duplicated IDs, X_IMAGE/Y_IMAGE and RA/DECs
-                tab = remove_non_band_dependent_sex_params(tab)
-                # load each one into an astropy table and update the column names by adding an "_FILT" suffix
-                tab = add_band_suffix_to_cols(tab, band)
-                # combine the astropy tables
-                if i == 0:
-                    master_tab = tab
-                    len_required = len(master_tab)
-                else:
-                    master_tab = hstack([master_tab, tab])
-                    assert (
-                        len(tab) == len_required
-                    ), f"Lengths of sextractor catalogues do not match! Check same detection image used {len(tab)} != {len_required} for {band}"
-
-            # add the detection band parameters to the start of the catalogue
-            master_tab.add_column(ID_detect_band, name="NUMBER", index=0)
-            master_tab.add_column(x_image_detect_band, name="X_IMAGE", index=1)
-            master_tab.add_column(y_image_detect_band, name="Y_IMAGE", index=2)
-            master_tab.add_column(ra_detect_band, name="ALPHA_J2000", index=3)
-            master_tab.add_column(dec_detect_band, name="DELTA_J2000", index=4)
-
-            # update table header
-            master_tab.meta = {
-                **master_tab.meta,
-                **{
-                    "INSTR": self.instrument.name,
-                    "SURVEY": self.survey,
-                    "VERSION": self.version,
-                    "BANDS": str(self.instrument.band_names),
-                },
-            }
-
-            # create galfind catalogue README
-            # sex_aper_diams = json.loads(config.get("SExtractor", "APERTURE_DIAMS")) * u.arcsec
-            # text = f"""
-            #     NUMBER: Galaxy ID
-            #     X/Y_IMAGE: X/Y image co-ordinates in
-            #     ALPHA/DELTA_J2000: RA/Dec (J2000 co-ordinates)
-            #     FLUX(ERR)_APER_'band': Aperture flux/flux errors in {str(sex_aper_diams.to(u.arcsec).value) + 'as'} diameter apertures, image units with ZPs as explained below
-            #     MAG_APER_'band': Aperture magnitudes in {str(sex_aper_diams.to(u.arcsec).value) + 'as'} diameter apertures, AB mag units, defaults to 99. if flux < 0.
-            #     MAGERR_APER_'band': Aperture magnitude errors in {str(sex_aper_diams.to(u.arcsec).value) + 'as'} diameter apertures, AB mag units, negative if mag == 99.
-            # """
-            # if 'sextractor' in [cat_type.lower() for cat_type in self.sex_cat_types.values()]:
-            #     text += f"See SExtractor documentation () for descriptions of other columns. These are only available for {'+'.join([band_name for band_name, sex_cat_type in self.sex_cat_types.items() if 'sextractor' in sex_cat_type.lower()])}\n"
-            # text += readme_sep + "\n"
-            # self.make_sex_readme({"Photometry": text}, self.sex_cat_master_path.replace(".fits", "_README.txt"))
-
-            # save table
-            funcs.make_dirs(self.sex_cat_master_path)
-            master_tab.write(
-                self.sex_cat_master_path, format="fits", overwrite=True
-            )
-            galfind_logger.info(
-                f"Saved combined SExtractor catalogue as {self.sex_cat_master_path}"
-            )
-
-    def make_readme(
-        self, col_desc_dict, save_path, overwrite=False, readme_sep="-" * 20
-    ):
-        assert type(col_desc_dict) == dict
-        assert "Photometry" in col_desc_dict.keys()
-        intro_text = """
-        
-        """
-        # if not overwrite and README already exists, extract previous column labels to append col_desc_dict to
-        f = open(save_path, "w")
-        f.write(intro_text)
-        f.write(readme_sep + "\n\n")
-        f.write(str(self) + "\n")
-        for key, value in col_desc_dict.items():
-            if key == "Photometry":
-                init_phot_text = (
-                    "Photometry:\n"
-                    + "\n".join(
-                        [
-                            phot_code
-                            + "= "
-                            + "+".join(
-                                [
-                                    band_name
-                                    for band_name, sex_cat_type in self.sex_cat_types.items()
-                                    if sex_cat_type == phot_code
-                                ]
-                            )
-                            for phot_code in np.unique(
-                                self.sex_cat_types.values()
-                            )
-                        ]
-                    )
-                    + "\n"
-                )
-                f.write(init_phot_text)
-            else:
-                f.write(key + "\n")
-            f.write(readme_sep + "\n")
-            f.write(value)
-            f.write(readme_sep + "\n")
-        f.close()
-
-    def make_sex_plusplus_cat(self):
-        pass
-
-    def forced_photometry(
-        self,
-        band,
-        forced_phot_band,
-        radii=list(
-            np.array(json.loads(config["SExtractor"]["APERTURE_DIAMS"])) / 2.0
-        )
-        * u.arcsec,
-        ra_col="ALPHA_J2000",
-        dec_col="DELTA_J2000",
-        coord_unit=u.deg,
-        id_col="NUMBER",
-        x_col="X_IMAGE",
-        y_col="Y_IMAGE",
-        forced_phot_code="photutils",
-    ):
-        # Read in sextractor catalogue
-        catalog = Table.read(
-            self.sex_cat_path(forced_phot_band, forced_phot_band),
-            character_as_bytes=False,
-        )
-        # Open image with correct extension and get WCS
-        with fits.open(self.im_paths[band]) as hdul:
-            im_ext = self.im_exts[band]
-            image = hdul[im_ext].data
-            wcs = WCS(hdul[im_ext].header)
-
-        # Check types
-        assert type(image) == np.ndarray
-        assert type(catalog) == Table
-
-        # Get positions from sextractor catalog
-        ra = catalog[ra_col]
-        dec = catalog[dec_col]
-        # Make SkyCoord from catlog
-        positions = SkyCoord(ra, dec, unit=coord_unit)
-        # print('positions', positions)
-        # Define radii in sky units
-        # This checks if radii is iterable and if not makes it a list
-        try:
-            iter(radii)
-        except TypeError:
-            radii = [radii]
-        apertures = []
-
-        for rad in radii:
-            aperture = SkyCircularAperture(positions, r=rad)
-            apertures.append(aperture)
-            # Convert to pixel using image WCS
-
-        # Do aperture photometry
-        # print(image, apertures, wcs)
-        phot_table = aperture_photometry(image, apertures, wcs=wcs)
-        assert len(phot_table) == len(catalog)
-        # Replace detection ID with catalog ID
-        sky = SkyCoord(phot_table["sky_center"])
-        phot_table["id"] = catalog[id_col]
-        # Rename columns
-        phot_table.rename_column("id", id_col)
-        phot_table.rename_column("xcenter", x_col)
-        phot_table.rename_column("ycenter", y_col)
-
-        phot_table[ra_col] = sky.ra.to("deg")
-        phot_table[dec_col] = sky.dec.to("deg")
-        phot_table.remove_column("sky_center")
-
-        colnames = [f"aperture_sum_{i}" for i in range(len(radii))]
-        aper_tab = Column(
-            np.array(phot_table[colnames].as_array().tolist()),
-            name=f"FLUX_APER_{band}",
-        )
-        phot_table["FLUX_APER"] = aper_tab
-        phot_table["FLUXERR_APER"] = phot_table["FLUX_APER"] * -99
-        phot_table["MAGERR_APER"] = phot_table["FLUX_APER"] * 99
-
-        # This converts the fluxes to magnitudes using the correct zp, and puts them in the same format as the sextractor catalogue
-        mag_colnames = []
-        for pos, col in enumerate(colnames):
-            name = f"MAG_APER_{pos}"
-            phot_table[name] = (
-                -2.5 * np.log10(phot_table[col]) + self.im_zps[band]
-            )
-            phot_table[name][np.isnan(phot_table[name])] = 99.0
-            mag_colnames.append(name)
-        aper_tab = Column(
-            np.array(phot_table[mag_colnames].as_array().tolist()),
-            name=f"MAG_APER_{band}",
-        )
-        phot_table["MAG_APER"] = aper_tab
-        # Remove old columns
-        phot_table.remove_columns(colnames)
-        phot_table.remove_columns(mag_colnames)
-        phot_table.write(
-            self.sex_cat_path(band, forced_phot_band),
-            format="fits",
-            overwrite=True,
-        )
-        funcs.change_file_permissions(
-            self.sex_cat_path(band, forced_phot_band)
-        )
-
-    def mask_reg_to_pix(self, band, mask_path):
-        out_path = f"{'/'.join(mask_path.split('/')[:-1])}/fits_masks/{mask_path.split('/')[-1].replace('_clean', '').replace('.reg', '')}.fits"
-        if not Path(out_path).is_file():
-            # open image corresponding to band
-            im_data, im_header, seg_data, seg_header = self.load_data(
-                band, incl_mask=False
-            )
-            # open .reg mask file
-            mask_regions = Regions.read(mask_path)
-            wcs = self.load_wcs(band)
-            pix_mask = np.zeros(im_data.shape, dtype=bool)
-            for region in mask_regions:
-                region = region.to_pixel(wcs)
-                idx_large, idx_little = region.to_mask(
-                    mode="center"
-                ).get_overlap_slices(im_data.shape)
-                if idx_large is not None:
-                    pix_mask[idx_large] = np.logical_or(
-                        region.to_mask().data[idx_little], full_mask[idx_large]
-                    )
-            # make .fits mask
-            mask_hdu = fits.ImageHDU(
-                pix_mask.astype(np.uint8), header=wcs.to_header(), name="MASK"
-            )
-            hdu = fits.HDUList([fits.PrimaryHDU(), mask_hdu])
-            funcs.make_dirs(out_path)
-            hdu.writeto(out_path, overwrite=True)
-            funcs.change_file_permissions(out_path)
-            galfind_logger.info(
-                f"Created fits mask from manually created reg mask, saving as {out_path}"
+                f"Appended aperture correction columns to {self.phot_cat_path}"
             )
         else:
-            galfind_logger.info(
-                f"fits mask at {out_path} already exists, skipping!"
+            galfind_logger.warning(
+                f"Aperture correction columns already in {self.phot_cat_path}"
             )
-        return out_path
 
-    def combine_masks(self, bands):
-        out_path = f"{self.mask_dir}/combined_masks/{self.survey}_{self.combine_band_names(bands)}.fits"
-        if not Path(out_path).is_file():
-            # require pixel scales to be the same across all bands
-            for i, band in enumerate(bands):
-                if i == 0:
-                    pix_scale = self.im_pixel_scales[band]
-                else:
-                    assert self.im_pixel_scales[band] == pix_scale
-            combined_mask = np.logical_or.reduce(
-                tuple([self.load_mask(band) for band in bands])
-            )
-            assert combined_mask.shape == self.load_mask(bands[-1]).shape
-            # wcs taken from the reddest band
-            mask_hdu = fits.ImageHDU(
-                combined_mask.astype(np.uint8),
-                header=WCS(self.load_im(bands[-1])[1]).to_header(),
-                name="MASK",
-            )
-            hdu = fits.HDUList([fits.PrimaryHDU(), mask_hdu])
-            funcs.make_dirs(out_path)
-            hdu.writeto(out_path, overwrite=True)
-            funcs.change_file_permissions(out_path)
-            galfind_logger.info(f"Created combined mask for {bands}")
-        else:
-            galfind_logger.info(
-                f"Combined mask for {bands} already exists at {out_path}"
-            )
-        return out_path
+    # @staticmethod
+    # def mosaic_images(
+    #     image_paths,
+    #     extract_ext_names={"data": "SCI", "err": "RMS_ERR"},
+    #     pix_scale_hdr_name="PIXSCALE",
+    # ):
+    #     # ensure images are .fits images
+    #     assert all(".fits" in path for path in image_paths)
+    #     # open all images
+    #     hdul_arr = [fits.open(path) for path in image_paths]
+    #     # ensure images have the same number of extensions
+    #     assert all(len(hdul_arr[0]) == hdul for hdul in hdul_arr)
+    #     # ensure images have all of the relevant extensions - NOT IMPLEMENTED YET
+    #     # extract the header files for each extension for each fits image
+    #     headers_arr = np.array(
+    #         [[hdu.header for hdu in hdul] for hdul in hdul_arr]
+    #     )
+    #     # ensure they have been taken using the same filter - NOT IMPLEMENTED YET (assume this comes from the header files)
+    #     ext_names_arr = [
+    #         [header["EXTNAME"] for header in hdul_headers]
+    #         for hdul_headers in headers_arr
+    #     ]
+    #     # extract the raw data for each extension for each fits image
+    #     data_arr = np.array(
+    #         [
+    #             [
+    #                 hdu.data
+    #                 for hdu, ext_name in zip(hdul, ext_names)
+    #                 if ext_name == extract_ext_names["data"]
+    #             ][0]
+    #             for hdul, ext_names in zip(hdul_arr, ext_names_arr)
+    #         ]
+    #     )
+    #     err_arr = np.array(
+    #         [
+    #             [
+    #                 hdu.data
+    #                 for hdu, ext_name in zip(hdul, ext_names)
+    #                 if ext_name == extract_ext_names["err"]
+    #             ][0]
+    #             for hdul, ext_names in zip(hdul_arr, ext_names_arr)
+    #         ]
+    #     )
+    #     # if the files have the same wcs, the same x/y dimensions, and the same pixel scale
+    #     same_wcs = all(
+    #         WCS(header) == WCS(headers_arr[0][0])
+    #         for hdul_headers in headers_arr
+    #         for header in hdul_headers
+    #     )
+    #     same_dimensions = (
+    #         all(data.shape == data_arr[0].shape for data in data_arr)
+    #     ) & (all(err.shape == err_arr[0].shape for err in err_arr))
+    #     same_pix_scale = all(
+    #         float(header[pix_scale_hdr_name])
+    #         == float(headers_arr[0][0][pix_scale_hdr_name])
+    #         for hdul_headers in headers_arr
+    #         for header in hdul_headers
+    #     )
+    #     if same_wcs and same_dimensions and same_pix_scale:
+    #         # ensure images are PSF homogenized to the same filter
+    #         for i, (data, err) in enumerate(zip(data_arr, err_arr)):
+    #             if i == 0:
+    #                 sum_data = data
+    #                 sum_err = err
+    #             else:
+    #                 # convert np.nans to zeros in both science and error maps so as to allow data only covered by one image
+    #                 data[data == np.nan] = 0.0
+    #                 err[err == np.nan] = 0.0
+    #                 sum_data += data / err**2
+    #                 sum_err += 1 / err**2
+    #         weighted_array = sum_data / sum_err  # output sci map
+    #         combined_err = np.sqrt(1 / sum_err)  # output err map
 
-    @staticmethod
-    def clean_mask_regions(mask_path):
-        # open region file
-        if "_clean" not in mask_path:
-            with open(mask_path, "r") as f:
-                lines = f.readlines()
-                clean_mask_path = mask_path.replace(".reg", "_clean.reg")
-                with open(clean_mask_path, "w") as temp:
-                    for i, line in enumerate(lines):
-                        # if line.startswith('physical'):
-                        #     lines[i] = line.replace('physical', 'image')
-                        if i <= 2:
-                            temp.write(line)
-                        if not (
-                            line.endswith(",0)\n")
-                            and line.startswith("circle")
-                        ):
-                            if (
-                                (
-                                    line.startswith("ellipse")
-                                    and not (line.split(",")[2] == "0")
-                                    and not (line.split(",")[3] == "0")
-                                )
-                                or line.startswith("box")
-                                or line.startswith("circle")
-                                or line.startswith("polygon")
-                            ):
-                                temp.write(line)
-            funcs.change_file_permissions(mask_path)
-            funcs.change_file_permissions(clean_mask_path)
-            # insert original mask ds9 region file into an unclean folder
-            funcs.make_dirs(
-                f"{funcs.split_dir_name(mask_path,'dir')}/unclean/_"
-            )
-            os.rename(
-                mask_path,
-                f"{funcs.split_dir_name(mask_path,'dir')}/unclean/{funcs.split_dir_name(mask_path,'name')}",
-            )
-            return clean_mask_path
-        else:
-            return mask_path
+    #         # determine new combined image path
+    #         combined_image_path = image_paths[0].replace(
+    #             ".fits", "_stack.fits"
+    #         )
+    #         # save combined image at this path
+    #         primary = fits.PrimaryHDU(header=prime_hdu)
+    #         hdu = fits.ImageHDU(weighted_array, header=im_header, name="SCI")
+    #         hdu_err = fits.ImageHDU(combined_err, header=im_header, name="ERR")
+    #         hdul = fits.HDUList([primary, hdu, hdu_err])
+    #         hdul.writeto(combined_image_path, overwrite=True)
+    #         galfind_logger.info(
+    #             f"Finished mosaicing images at {image_paths=}, saved to {combined_image_path}"
+    #         )
+    #         hdul.writeto(combined_image_path, overwrite=True)
+    #         # move the individual images into a "stacked" folder
+    #         for path in image_paths:
+    #             os.makedirs(
+    #                 f"{funcs.split_dir_name(path, 'dir')}/stacked",
+    #                 exist_ok=True,
+    #             )
+    #             os.rename(
+    #                 path,
+    #                 f"{funcs.split_dir_name(path, 'dir')}/stacked/{funcs.split_dir_name(path, 'name')}",
+    #             )
+    #         return combined_image_path
+
+    #     else:  # else convert all of the images to the required wcs, x/y dimensions, and pixel scale
+    #         raise (
+    #             NotImplementedError(
+    #                 galfind_logger.critical(
+    #                     f"Cannot convert images as all of {same_wcs=}, {same_dimensions=}, {same_pix_scale=} != True"
+    #                 )
+    #             )
+    #         )
+
+    # def make_readme(
+    #     self, col_desc_dict, save_path, overwrite=False, readme_sep="-" * 20
+    # ):
+    #     assert type(col_desc_dict) == dict
+    #     assert "Photometry" in col_desc_dict.keys()
+    #     intro_text = """
+
+    #     """
+    #     # if not overwrite and README already exists, extract previous column labels to append col_desc_dict to
+    #     f = open(save_path, "w")
+    #     f.write(intro_text)
+    #     f.write(readme_sep + "\n\n")
+    #     f.write(str(self) + "\n")
+    #     for key, value in col_desc_dict.items():
+    #         if key == "Photometry":
+    #             init_phot_text = (
+    #                 "Photometry:\n"
+    #                 + "\n".join(
+    #                     [
+    #                         phot_code
+    #                         + "= "
+    #                         + "+".join(
+    #                             [
+    #                                 band_name
+    #                                 for band_name, sex_cat_type in self.sex_cat_types.items()
+    #                                 if sex_cat_type == phot_code
+    #                             ]
+    #                         )
+    #                         for phot_code in np.unique(
+    #                             self.sex_cat_types.values()
+    #                         )
+    #                     ]
+    #                 )
+    #                 + "\n"
+    #             )
+    #             f.write(init_phot_text)
+    #         else:
+    #             f.write(key + "\n")
+    #         f.write(readme_sep + "\n")
+    #         f.write(value)
+    #         f.write(readme_sep + "\n")
+    #     f.close()
+
+    # def forced_photometry(
+    #     self,
+    #     band,
+    #     forced_phot_band,
+    #     radii=list(
+    #         np.array(json.loads(config["SExtractor"]["APERTURE_DIAMS"])) / 2.0
+    #     )
+    #     * u.arcsec,
+    #     ra_col="ALPHA_J2000",
+    #     dec_col="DELTA_J2000",
+    #     coord_unit=u.deg,
+    #     id_col="NUMBER",
+    #     x_col="X_IMAGE",
+    #     y_col="Y_IMAGE",
+    #     forced_phot_code="photutils",
+    # ):
+    #     # Read in sextractor catalogue
+    #     catalog = Table.read(
+    #         self.sex_cat_path(forced_phot_band, forced_phot_band),
+    #         character_as_bytes=False,
+    #     )
+    #     # Open image with correct extension and get WCS
+    #     with fits.open(self.im_paths[band]) as hdul:
+    #         im_ext = self.im_exts[band]
+    #         image = hdul[im_ext].data
+    #         wcs = WCS(hdul[im_ext].header)
+
+    #     # Check types
+    #     assert type(image) == np.ndarray
+    #     assert type(catalog) == Table
+
+    #     # Get positions from sextractor catalog
+    #     ra = catalog[ra_col]
+    #     dec = catalog[dec_col]
+    #     # Make SkyCoord from catlog
+    #     positions = SkyCoord(ra, dec, unit=coord_unit)
+    #     # print('positions', positions)
+    #     # Define radii in sky units
+    #     # This checks if radii is iterable and if not makes it a list
+    #     try:
+    #         iter(radii)
+    #     except TypeError:
+    #         radii = [radii]
+    #     apertures = []
+
+    #     for rad in radii:
+    #         aperture = SkyCircularAperture(positions, r=rad)
+    #         apertures.append(aperture)
+    #         # Convert to pixel using image WCS
+
+    #     # Do aperture photometry
+    #     # print(image, apertures, wcs)
+    #     phot_table = aperture_photometry(image, apertures, wcs=wcs)
+    #     assert len(phot_table) == len(catalog)
+    #     # Replace detection ID with catalog ID
+    #     sky = SkyCoord(phot_table["sky_center"])
+    #     phot_table["id"] = catalog[id_col]
+    #     # Rename columns
+    #     phot_table.rename_column("id", id_col)
+    #     phot_table.rename_column("xcenter", x_col)
+    #     phot_table.rename_column("ycenter", y_col)
+
+    #     phot_table[ra_col] = sky.ra.to("deg")
+    #     phot_table[dec_col] = sky.dec.to("deg")
+    #     phot_table.remove_column("sky_center")
+
+    #     colnames = [f"aperture_sum_{i}" for i in range(len(radii))]
+    #     aper_tab = Column(
+    #         np.array(phot_table[colnames].as_array().tolist()),
+    #         name=f"FLUX_APER_{band}",
+    #     )
+    #     phot_table["FLUX_APER"] = aper_tab
+    #     phot_table["FLUXERR_APER"] = phot_table["FLUX_APER"] * -99
+    #     phot_table["MAGERR_APER"] = phot_table["FLUX_APER"] * 99
+
+    #     # This converts the fluxes to magnitudes using the correct zp, and puts them in the same format as the sextractor catalogue
+    #     mag_colnames = []
+    #     for pos, col in enumerate(colnames):
+    #         name = f"MAG_APER_{pos}"
+    #         phot_table[name] = (
+    #             -2.5 * np.log10(phot_table[col]) + self.im_zps[band]
+    #         )
+    #         phot_table[name][np.isnan(phot_table[name])] = 99.0
+    #         mag_colnames.append(name)
+    #     aper_tab = Column(
+    #         np.array(phot_table[mag_colnames].as_array().tolist()),
+    #         name=f"MAG_APER_{band}",
+    #     )
+    #     phot_table["MAG_APER"] = aper_tab
+    #     # Remove old columns
+    #     phot_table.remove_columns(colnames)
+    #     phot_table.remove_columns(mag_colnames)
+    #     phot_table.write(
+    #         self.sex_cat_path(band, forced_phot_band),
+    #         format="fits",
+    #         overwrite=True,
+    #     )
+    #     funcs.change_file_permissions(
+    #         self.sex_cat_path(band, forced_phot_band)
+    #     )
 
     # can be simplified with new masks
     def calc_unmasked_area(
@@ -3028,927 +3308,6 @@ class Data:
         funcs.change_file_permissions(output_path)
         return areas_tab
 
-    def perform_aper_corrs(self):  # not general
-        overwrite = config["Depths"].getboolean("OVERWRITE_LOC_DEPTH_CAT")
-        if overwrite:
-            galfind_logger.info(
-                "OVERWRITE_LOC_DEPTH_CAT = YES, updating catalogue with aperture corrections."
-            )
-        cat = Table.read(self.sex_cat_master_path)
-        if "APERCORR" not in cat.meta.keys() or overwrite:
-            for i, band in enumerate(self.instrument.band_names):
-                print(band)
-                mag_aper_corr_data = np.zeros(len(cat))
-                flux_aper_corr_data = np.zeros(len(cat))
-                for j, aper_diam in enumerate(
-                    json.loads(config.get("SExtractor", "APERTURE_DIAMS"))
-                    * u.arcsec
-                ):
-                    # assumes these have already been calculated for each band
-                    mag_aper_corr_factor = self.instrument.get_aper_corrs(
-                        aper_diam
-                    )[i]
-                    flux_aper_corr_factor = 10 ** (mag_aper_corr_factor / 2.5)
-                    # print(band, aper_diam, mag_aper_corr_factor, flux_aper_corr_factor)
-                    if j == 0:
-                        # only aperture correct if flux is positive
-                        mag_aper_corr_data = [
-                            (mag_aper[0] - mag_aper_corr_factor,)
-                            if flux_aper[0] > 0.0
-                            else (mag_aper[0],)
-                            for mag_aper, flux_aper in zip(
-                                cat[f"MAG_APER_{band}"],
-                                cat[f"FLUX_APER_{band}"],
-                            )
-                        ]
-                        flux_aper_corr_data = [
-                            (flux_aper[0] * flux_aper_corr_factor,)
-                            if flux_aper[0] > 0.0
-                            else (flux_aper[0],)
-                            for flux_aper in cat[f"FLUX_APER_{band}"]
-                        ]
-                    else:
-                        mag_aper_corr_data = [
-                            mag_aper_corr
-                            + (mag_aper[j] - mag_aper_corr_factor,)
-                            if flux_aper[j] > 0.0
-                            else mag_aper_corr + (mag_aper[j],)
-                            for mag_aper_corr, mag_aper, flux_aper in zip(
-                                mag_aper_corr_data,
-                                cat[f"MAG_APER_{band}"],
-                                cat[f"FLUX_APER_{band}"],
-                            )
-                        ]
-                        flux_aper_corr_data = [
-                            flux_aper_corr
-                            + (flux_aper[j] * flux_aper_corr_factor,)
-                            if flux_aper[j] > 0.0
-                            else flux_aper_corr + (flux_aper[j],)
-                            for flux_aper_corr, flux_aper in zip(
-                                flux_aper_corr_data, cat[f"FLUX_APER_{band}"]
-                            )
-                        ]
-                cat[f"MAG_APER_{band}_aper_corr"] = mag_aper_corr_data
-                cat[f"FLUX_APER_{band}_aper_corr"] = flux_aper_corr_data
-                cat[f"FLUX_APER_{band}_aper_corr_Jy"] = [
-                    tuple(
-                        [
-                            funcs.flux_image_to_Jy(
-                                val, self.im_zps[band]
-                            ).value
-                            for val in element
-                        ]
-                    )
-                    for element in cat[f"FLUX_APER_{band}_aper_corr"]
-                ]
-            # update catalogue metadata
-            # mag_aper_corrs = {f"HIERARCH Mag_aper_corrs_{aper_diam.value}as": tuple([np.round(self.instrument.aper_corr(aper_diam, band), decimals = 4) \
-            #    for band in self.instrument.band_names]) for aper_diam in json.loads(config.get("SExtractor", "APERTURE_DIAMS")) * u.arcsec}
-            cat.meta = {
-                **cat.meta,
-                **{"APERCORR": True},
-            }  # , **mag_aper_corrs}
-            # overwrite original catalogue with local depth columns
-            cat.write(self.sex_cat_master_path, overwrite=True)
-            funcs.change_file_permissions(self.sex_cat_master_path)
-
-    def make_loc_depth_cat(self, cat_creator, depth_mode="n_nearest"):
-        overwrite = config["Depths"].getboolean("OVERWRITE_LOC_DEPTH_CAT")
-        if overwrite:
-            galfind_logger.info(
-                "OVERWRITE_LOC_DEPTH_CAT = YES, updating catalogue with local depths."
-            )
-
-        cat = Table.read(self.sex_cat_master_path)
-        # update catalogue with local depths if not already done so
-        if "DEPTHS" not in cat.meta.keys() or overwrite:
-            # mean_depths = {}
-            # median_depths = {}
-            diagnostic_name = ""
-            for i, band in enumerate(self.instrument.band_names):
-                # breakpoint()
-                galfind_logger.info(f"Making local depth columns for {band=}")
-                for j, aper_diam in enumerate(
-                    json.loads(config.get("SExtractor", "APERTURE_DIAMS"))
-                    * u.arcsec
-                ):
-                    # print(band, aper_diam)
-                    self.load_depth_dirs(aper_diam, depth_mode)
-                    h5_path = f"{self.depth_dirs[aper_diam][depth_mode][band]}/{band}.h5"
-                    if Path(h5_path).is_file():
-                        # open depth .h5
-                        hf = h5py.File(h5_path, "r")
-                        depths = np.array(hf["depths"])
-                        diagnostics = np.array(hf["diagnostic"])
-                        diagnostic_name_ = (
-                            f"d_{int(np.array(hf['n_nearest']))}"
-                            if depth_mode == "n_nearest"
-                            else f"n_aper_{float(np.array(hf['region_radius_used_pix'])):.1f}"
-                            if depth_mode == "rolling"
-                            else None
-                        )
-                        if diagnostic_name_ == None:
-                            raise (Exception("Invalid mode!"))
-                        # make sure the same depth setup has been run in each band
-                        if i == 0 and j == 0:
-                            diagnostic_name = diagnostic_name_
-                        assert diagnostic_name_ == diagnostic_name
-                        # update depths with average depths in each region
-                        nmad_grid = np.array(hf["nmad_grid"])
-                        band_mean_depth = np.round(
-                            np.nanmean(nmad_grid), decimals=3
-                        )
-                        band_median_depth = np.round(
-                            np.nanmedian(nmad_grid), decimals=3
-                        )
-                        hf.close()
-                    else:
-                        depths = np.full(len(cat), np.nan)
-                        diagnostics = np.full(len(cat), np.nan)
-                        # band_mean_depth = np.nan
-                        # band_median_depth = np.nan
-                    if j == 0:
-                        band_depths = [(depth,) for depth in depths]
-                        band_diagnostics = [
-                            (diagnostic,) for diagnostic in diagnostics
-                        ]
-                        band_sigmas = [
-                            (
-                                funcs.n_sigma_detection(
-                                    depth, mag_aper[0], self.im_zps[band]
-                                ),
-                            )
-                            for depth, mag_aper in zip(
-                                depths, cat[f"MAG_APER_{band}"]
-                            )
-                        ]
-                        # band_mean_depths = (band_mean_depth,)
-                        # band_median_depths = (band_median_depth,)
-                    else:
-                        band_depths = [
-                            band_depth + (aper_diam_depth,)
-                            for band_depth, aper_diam_depth in zip(
-                                band_depths, depths
-                            )
-                        ]
-                        band_diagnostics = [
-                            band_diagnostic + (aper_diam_diagnostic,)
-                            for band_diagnostic, aper_diam_diagnostic in zip(
-                                band_diagnostics, diagnostics
-                            )
-                        ]
-                        band_sigmas = [
-                            band_sigma
-                            + (
-                                funcs.n_sigma_detection(
-                                    depth, mag_aper[j], self.im_zps[band]
-                                ),
-                            )
-                            for band_sigma, depth, mag_aper in zip(
-                                band_sigmas, depths, cat[f"MAG_APER_{band}"]
-                            )
-                        ]
-                        # band_mean_depths = band_mean_depths + (band_mean_depth,)
-                        # band_median_depths = band_median_depths + (band_median_depth,)
-
-                # update band with depths and diagnostics
-                cat[f"loc_depth_{band}"] = band_depths
-                cat[f"{diagnostic_name}_{band}"] = band_diagnostics
-                cat[f"sigma_{band}"] = band_sigmas
-                # make local depth error columns in image units
-                cat[f"FLUXERR_APER_{band}_loc_depth"] = [
-                    tuple(
-                        [
-                            funcs.mag_to_flux(val, self.im_zps[band]) / 5.0
-                            for val in element
-                        ]
-                    )
-                    for element in band_depths
-                ]
-                # impose n_pc min flux error and convert to Jy where appropriate
-                if "APERCORR" in cat.meta.keys():
-                    cat[
-                        f"FLUXERR_APER_{band}_loc_depth_{str(int(cat_creator.min_flux_pc_err))}pc_Jy"
-                    ] = [
-                        tuple(
-                            [
-                                np.nan
-                                if flux == 0.0
-                                else funcs.flux_image_to_Jy(
-                                    flux, self.im_zps[band]
-                                ).value
-                                * cat_creator.min_flux_pc_err
-                                / 100.0
-                                if err / flux
-                                < cat_creator.min_flux_pc_err / 100.0
-                                and flux > 0.0
-                                else funcs.flux_image_to_Jy(
-                                    err, self.im_zps[band]
-                                ).value
-                                for flux, err in zip(flux_tup, err_tup)
-                            ]
-                        )
-                        for flux_tup, err_tup in zip(
-                            cat[f"FLUX_APER_{band}_aper_corr"],
-                            cat[f"FLUXERR_APER_{band}_loc_depth"],
-                        )
-                    ]
-                else:
-                    raise (
-                        Exception(
-                            f"Couldn't make 'FLUXERR_APER_{band}_loc_depth_{str(int(cat_creator.min_flux_pc_err))}Jy' columns!"
-                        )
-                    )
-                # magnitude and magnitude error columns
-                # mean_depths[band] = band_mean_depths
-                # median_depths[band] = band_median_depths
-
-            # update catalogue metadata
-            cat.meta = {
-                **cat.meta,
-                **{
-                    "DEPTHS": True,
-                    "MINPCERR": cat_creator.min_flux_pc_err,
-                    "ZEROPNT": str(self.im_zps),
-                },
-            }  # , "Mean_depths": mean_depths, "Median_depths": median_depths}}
-            # print(cat.meta)
-            # overwrite original catalogue with local depth columns
-            cat.write(self.sex_cat_master_path, overwrite=True)
-            funcs.change_file_permissions(self.sex_cat_master_path)
-
-    def load_depth_dirs(self, aper_diam, depth_mode):
-        if not hasattr(self, "depth_dirs"):
-            self.depth_dirs = {}
-        if aper_diam not in self.depth_dirs.keys():
-            self.depth_dirs[aper_diam] = {}
-        if depth_mode not in self.depth_dirs[aper_diam].keys():
-            self.depth_dirs[aper_diam][depth_mode] = {}
-            for band in self.instrument:
-                self.depth_dirs[aper_diam][depth_mode][band.band_name] = (
-                    f"{config['Depths']['DEPTH_DIR']}/{band.instrument}/{self.version}/{self.survey}/{format(aper_diam.value, '.2f')}as/{depth_mode}"
-                )
-                funcs.make_dirs(
-                    f"{self.depth_dirs[aper_diam][depth_mode][band.band_name]}"
-                )
-            for band_name in self.im_paths.keys():
-                if (
-                    band_name
-                    not in self.depth_dirs[aper_diam][depth_mode].keys()
-                ):
-                    galfind_logger.warning(
-                        f"Slow Instrument.instrument_from_band run for {band_name} in Data.load_depth_dirs!"
-                    )
-                    self.depth_dirs[aper_diam][depth_mode][band_name] = (
-                        f"{config['Depths']['DEPTH_DIR']}/{self.instrument.instrument_from_band(band_name).name}/{self.version}/{self.survey}/{format(aper_diam.value, '.2f')}as/{depth_mode}"
-                    )
-                    funcs.make_dirs(
-                        f"{self.depth_dirs[aper_diam][depth_mode][band_name]}"
-                    )
-
-    def load_depths(self, aper_diam, depth_mode, depth_type="median_depth"):
-        assert depth_type in ["median_depth", "mean_depth"]
-        self.load_depth_dirs(aper_diam, depth_mode)
-        self.depths = {}
-        for band in self.instrument.band_names:
-            # load depths from saved .txt file
-            depths = Table.read(
-                f"{self.depth_dirs[aper_diam][depth_mode][band]}/{self.survey}_depths.ecsv",
-                names=["band", "region", "median_depth", "mean_depth"],
-                format="ascii",
-            )
-            self.depths[band] = {
-                str(row["region"]): float(row[depth_type])
-                for row in depths[depths["band"] == band]
-            }
-        return self.depths
-
-    def calc_aper_radius_pix(self, aper_diam, band):
-        return (aper_diam / (2 * self.im_pixel_scales[band])).value
-
-    def calc_depths(
-        self,
-        aper_diams: u.Quantity = [0.32] * u.arcsec,
-        cat_creator=None,
-        mode: str = "n_nearest",
-        scatter_size: float = 0.1,
-        distance_to_mask: Union[int, float] = 30,
-        region_radius_used_pix: Union[int, float] = 300,
-        n_nearest: int = 200,
-        coord_type: str = "sky",
-        split_depth_min_size: int = 100_000,
-        split_depths_factor: int = 5,
-        step_size: int = 100,
-        excl_bands: Union[list, np.array] = [],
-        n_jobs: int = 1,
-        plot: bool = True,
-        n_split: str = "auto",
-        timed: bool = False,
-    ):
-        if timed:
-            start = time.time()
-
-        params = []
-        # Look over all aperture diameters and bands
-        for aper_diam in aper_diams:
-            # Generate folder for depths
-            self.load_depth_dirs(aper_diam, mode)
-            for band in self.im_paths.keys():
-                # Only run for non excluded bands
-                if band not in excl_bands:
-                    params.append(
-                        (
-                            band,
-                            aper_diam,
-                            self.depth_dirs[aper_diam][mode][band],
-                            mode,
-                            scatter_size,
-                            distance_to_mask,
-                            region_radius_used_pix,
-                            n_nearest,
-                            coord_type,
-                            split_depth_min_size,
-                            split_depths_factor,
-                            step_size,
-                            cat_creator,
-                            plot,
-                            n_split,
-                        )
-                    )
-        # Parallelise the calculation of depths for each band
-        with tqdm_joblib(
-            tqdm(desc="Calculating depths", total=len(params))
-        ) as progress_bar:
-            Parallel(n_jobs=n_jobs)(
-                delayed(self.calc_band_depth)(param) for param in params
-            )
-
-        for aper_diam in aper_diams:
-            # plot area/depth graph
-            self.plot_area_depth(cat_creator, mode, aper_diam, show=False)
-            # make depth tables for each instrument
-            self.make_depth_tabs(aper_diam, mode)
-
-        finishing_message = f"Calculated/loaded depths for {self.survey} {self.version} {self.instrument.name}"
-        if timed:
-            end = time.time()
-            finishing_message += f" ({end - start:.1f}s)"
-        galfind_logger.info(finishing_message)
-
-    def calc_band_depth(self, params):
-        # unpack parameters
-        (
-            band,
-            aper_diam,
-            depth_dir,
-            mode,
-            scatter_size,
-            distance_to_mask,
-            region_radius_used_pix,
-            n_nearest,
-            coord_type,
-            split_depth_min_size,
-            split_depths_factor,
-            step_size,
-            cat_creator,
-            plot,
-            n_split,
-        ) = params
-        # determine paths and whether to overwrite
-        overwrite = config["Depths"].getboolean("OVERWRITE_DEPTHS")
-        if overwrite:
-            galfind_logger.info(
-                "OVERWRITE_DEPTHS = YES, re-doing depths should they exist."
-            )
-        grid_depth_path = (
-            f"{depth_dir}/{band}.h5"  # {str(int(n_split))}_region_grid_depths/
-        )
-        funcs.make_dirs(grid_depth_path)
-
-        if not Path(grid_depth_path).is_file() or overwrite:
-            # load the image/segmentation/mask data for the specific band
-            im_data, im_header, seg_data, seg_header, mask = self.load_data(
-                band, incl_mask=True
-            )
-            combined_mask = self.combine_seg_data_and_mask(
-                seg_data=seg_data, mask=mask
-            )
-            wcs = WCS(im_header)
-            radius_pix = self.calc_aper_radius_pix(aper_diam, band)
-
-            # Load wht data if it has the correct type
-            wht_data = self.load_wht(band)
-            # print(f"wht_data = {wht_data}")
-            if type(n_split) == type(None):
-                if type(wht_data) == type(None):
-                    n_split = 1
-                else:
-                    n_split = "auto"
-            else:
-                assert type(n_split) == int or n_split == "auto"
-
-            # load catalogue of given type
-            cat = Table.read(self.sex_cat_master_path)
-
-            # Place apertures in empty regions in the image
-            xy = Depths.make_grid(
-                im_data,
-                combined_mask,
-                radius=(aper_diam / 2.0).value,
-                scatter_size=scatter_size,
-                distance_to_mask=distance_to_mask,
-                plot=False,
-            )
-            # print(f"{len(xy)} empty apertures placed in {band}")
-
-            # Make ds9 region file of apertures for compatability and debugging
-            region_path = (
-                f"{depth_dir}/{self.survey}_{self.version}_{band}.reg"
-            )
-            Depths.make_ds9_region_file(
-                xy,
-                radius_pix,
-                region_path,
-                coordinate_type="pixel",
-                convert=False,
-                wcs=wcs,
-                pixel_scale=self.im_pixel_scales[band].value,
-            )
-
-            # Get fluxes in regions
-            fluxes = Depths.do_photometry(im_data, xy, radius_pix)
-            depths, diagnostic, depth_labels, final_labels = (
-                Depths.calc_depths_numba(
-                    xy,
-                    fluxes,
-                    im_data,
-                    combined_mask,
-                    region_radius_used_pix=region_radius_used_pix,
-                    step_size=step_size,
-                    catalogue=cat,
-                    wcs=wcs,
-                    coord_type=coord_type,
-                    mode=mode,
-                    n_nearest=n_nearest,
-                    zero_point=self.im_zps[band],
-                    n_split=n_split,
-                    split_depth_min_size=split_depth_min_size,
-                    split_depths_factor=split_depths_factor,
-                    wht_data=wht_data,
-                )
-            )
-
-            # calculate the depths for plotting purposes
-            nmad_grid, num_grid, labels_grid, final_labels = (
-                Depths.calc_depths_numba(
-                    xy,
-                    fluxes,
-                    im_data,
-                    combined_mask,
-                    region_radius_used_pix=region_radius_used_pix,
-                    step_size=step_size,
-                    wcs=wcs,
-                    coord_type=coord_type,
-                    mode=mode,
-                    n_nearest=n_nearest,
-                    zero_point=self.im_zps[band],
-                    n_split=n_split,
-                    split_depth_min_size=split_depth_min_size,
-                    split_depths_factor=split_depths_factor,
-                    wht_data=wht_data,
-                    provide_labels=final_labels,
-                )
-            )
-
-            # write to .h5
-            hf_save_names = self.get_depth_h5_labels()
-            hf_save_data = [
-                mode,
-                aper_diam,
-                scatter_size,
-                distance_to_mask,
-                region_radius_used_pix,
-                n_nearest,
-                split_depth_min_size,
-                split_depths_factor,
-                step_size,
-                depths,
-                diagnostic,
-                depth_labels,
-                final_labels,
-                nmad_grid,
-                num_grid,
-                labels_grid,
-            ]
-            hf = h5py.File(grid_depth_path, "w")
-            for name_i, data_i in zip(hf_save_names, hf_save_data):
-                # print(name_i, data_i)
-                hf.create_dataset(name_i, data=data_i)
-            hf.close()
-
-        if plot:
-            self.plot_depth(band, cat_creator, mode, aper_diam, show=False)
-
-    def plot_area_depth(
-        self,
-        cat_creator,
-        mode,
-        aper_diam,
-        show=False,
-        use_area_per_band=True,
-        save=True,
-        return_array=False,
-    ):
-        if type(cat_creator) == type(None):
-            galfind_logger.warning(
-                "Could not plot depths as cat_creator == None in Data.plot_area_depth()"
-            )
-        else:
-            self.load_depth_dirs(aper_diam, mode)
-            area_tab = self.calc_unmasked_area(
-                masking_instrument_or_band_name=self.forced_phot_band,
-                forced_phot_band=self.forced_phot_band,
-            )
-            overwrite = config["Depths"].getboolean("OVERWRITE_DEPTH_PLOTS")
-            save_path = f"{self.depth_dirs[aper_diam][mode][self.forced_phot_band]}/depth_areas.png"  # not entirely general -> need to improve self.depth_dirs
-
-            if not Path(save_path).is_file() or overwrite:
-                fig, ax = plt.subplots(1, 1, figsize=(4, 4))
-                # ax.set_title(f"{self.survey} {self.version} {aper_diam}")
-                ax.set_xlabel("Area (arcmin$^{2}$)")
-                ax.set_ylabel(r"5$\sigma$ Depth (AB mag)")
-                area_row = area_tab[
-                    area_tab["masking_instrument_band"]
-                    == self.forced_phot_band
-                ]
-                if len(area_row) > 1:
-                    galfind_logger.warning(
-                        f"More than one row found in area_tab for {self.forced_phot_band}! Using the first row."
-                    )
-                    area_row = area_row[0]
-                area_master = area_row["unmasked_area_total"]
-                if type(area_master) == u.Quantity:
-                    area_master = area_master.value
-                area_master = float(area_master)
-
-                bands = self.instrument.band_names.tolist()
-                if self.forced_phot_band not in bands:
-                    bands.append(self.forced_phot_band)
-                # cmap = plt.cm.get_cmap("nipy_spectral")
-                cmap = plt.cm.get_cmap("RdYlBu_r")
-                colors = cmap(np.linspace(0, 1, len(bands)))
-                # colors = plt.cm.viridis(np.linspace(0, 1, len(bands)))
-                data = {}
-                for pos, band in enumerate(bands):
-                    h5_path = (
-                        f"{self.depth_dirs[aper_diam][mode][band]}/{band}.h5"
-                    )
-
-                    if overwrite:
-                        galfind_logger.info(
-                            "OVERWRITE_DEPTH_PLOTS = YES, re-doing depth plots."
-                        )
-
-                    if not Path(h5_path).is_file():
-                        raise (
-                            Exception(
-                                f"Must first run depths for {self.survey} {self.version} {band} {mode} {aper_diam} before plotting!"
-                            )
-                        )
-                    hf = h5py.File(h5_path, "r")
-                    hf_output = {
-                        label: np.array(hf[label])
-                        for label in self.get_depth_h5_labels()
-                    }
-                    hf.close()
-                    # Need unmasked area for each band
-                    if use_area_per_band:
-                        area_tab = self.calc_unmasked_area(
-                            masking_instrument_or_band_name=band,
-                            forced_phot_band=self.forced_phot_band,
-                        )
-                        area_row = area_tab[
-                            area_tab["masking_instrument_band"] == band
-                        ]
-
-                    area = (
-                        area_row["unmasked_area_total"].to(u.arcmin**2).value
-                    )
-
-                    total_depths = hf_output["nmad_grid"].flatten()
-                    total_depths = total_depths[~np.isnan(total_depths)]
-                    total_depths = total_depths[total_depths != 0]
-                    total_depths = total_depths[total_depths != np.inf]
-
-                    # Round to 0.01 mag and sort
-                    # total_depths = np.round(total_depths, 2)
-                    total_depths = np.flip(np.sort(total_depths))
-
-                    # Calculate the cumulative distribution scaled to area of band
-                    n = len(total_depths)
-                    cum_dist = np.arange(1, n + 1) / n
-                    cum_dist = cum_dist * area
-
-                    # Plot
-                    ax.plot(
-                        cum_dist,
-                        total_depths,
-                        label=band if "+" not in band else "Detection",
-                        color=colors[pos] if "+" not in band else "black",
-                        drawstyle="steps-post",
-                        linestyle="solid" if "+" not in band else "dashed",
-                    )
-                    if return_array:
-                        data[band] = [area, total_depths]
-                    # Set ylim to 2nd / 98th percentile if depth is smaller than this number
-                    ylim = ax.get_ylim()
-
-                    if pos == 0:
-                        min_depth = np.percentile(total_depths, 0.5)
-                        max_depth = np.percentile(total_depths, 99.5)
-                    else:
-                        min_temp = np.percentile(total_depths, 0.5)
-                        max_temp = np.percentile(total_depths, 99.5)
-                        if min_temp < min_depth:
-                            min_depth = min_temp
-                        if max_temp > max_depth:
-                            max_depth = max_temp
-
-                ax.set_ylim(max_depth, min_depth)
-                # Place legend under plot
-                ax.legend(
-                    frameon=False,
-                    ncol=4,
-                    bbox_to_anchor=(0.5, -0.14),
-                    loc="upper center",
-                    fontsize=8,
-                    columnspacing=1,
-                    handletextpad=0.5,
-                )
-                # ax.legend(frameon = False, ncol = 2)
-                # Add inner ticks
-                from matplotlib.ticker import AutoMinorLocator
-
-                ax.xaxis.set_minor_locator(AutoMinorLocator())
-                ax.yaxis.set_minor_locator(AutoMinorLocator())
-                # Make ticks face inwards
-                ax.tick_params(direction="in", axis="both", which="both")
-                # Set minor ticks to face in
-
-                ax.yaxis.set_ticks_position("both")
-                ax.xaxis.set_ticks_position("both")
-
-                ax.set_xlim(0, area_master * 1.02)
-                # Add hlines at integer depths
-                depths = np.arange(20, 35, 1)
-                # for depth in depths:
-                #    ax.hlines(depth, 0, area_master, color = "black", linestyle = "dotted", alpha = 0.5)
-                # Invert y axis
-                # ax.invert_yaxis()
-                ax.grid(True)
-                if save:
-                    fig.savefig(save_path, dpi=300, bbox_inches="tight")
-                if show:
-                    plt.show()
-                if return_array:
-                    return data
-
-    def make_depth_tabs(self, aper_diam, depth_mode):
-        # create .ecsv holding all depths for an instrument if not already written
-        instr_bands = {
-            instr_name: [
-                band.band_name
-                for band in self.instrument
-                if band.instrument == instr_name
-            ]
-            for instr_name in np.unique(
-                [band.instrument for band in self.instrument]
-            )
-        }
-        self.load_depth_dirs(aper_diam, depth_mode)
-        for instr_name, band_names in instr_bands.items():
-            out_path = f"{self.depth_dirs[aper_diam][depth_mode][band_names[0]]}/{self.survey}_depths.ecsv"
-            if not Path(out_path).is_file():
-                recalculate = True
-            else:
-                # open file
-                depths_tab = Table.read(out_path)
-                calculated_bands = np.unique(
-                    band for band in depths_tab["band"]
-                )
-                if not all(band in calculated_bands for band in band_names):
-                    recalculate = True
-                else:
-                    recalculate = False
-            if recalculate:
-                band_reg_median_depths = {}
-                band_reg_mean_depths = {}
-                for band in band_names:
-                    # open .h5
-                    hf = h5py.File(
-                        f"{self.depth_dirs[aper_diam][depth_mode][band]}/{band}.h5",
-                        "r",
-                    )
-                    cat_depths = np.array(hf.get("depths"))
-                    depth_labels = np.array(hf.get("depth_labels"))
-                    med_region_band_depths = {
-                        **{
-                            str(int(depth_label)): np.nanmedian(
-                                [
-                                    depth
-                                    for depth, label in zip(
-                                        cat_depths, depth_labels
-                                    )
-                                    if label == depth_label
-                                ]
-                            )
-                            for depth_label in np.unique(depth_labels)
-                            if not np.isnan(depth_label)
-                        },
-                        **{"all": np.nanmedian(cat_depths)},
-                    }
-                    mean_region_band_depths = {
-                        **{
-                            str(int(depth_label)): np.nanmean(
-                                [
-                                    depth
-                                    for depth, label in zip(
-                                        cat_depths, depth_labels
-                                    )
-                                    if label == depth_label
-                                ]
-                            )
-                            for depth_label in np.unique(depth_labels)
-                            if not np.isnan(depth_label)
-                        },
-                        **{"all": np.nanmean(cat_depths)},
-                    }
-                    hf.close()
-                    band_reg_median_depths = {
-                        **band_reg_median_depths,
-                        **{
-                            f"{band}_{key}": value
-                            for key, value in med_region_band_depths.items()
-                        },
-                    }
-                    band_reg_mean_depths = {
-                        **band_reg_mean_depths,
-                        **{
-                            f"{band}_{key}": value
-                            for key, value in mean_region_band_depths.items()
-                        },
-                    }
-                bands = np.array(
-                    [
-                        key.split("_")[0]
-                        for key in band_reg_median_depths.keys()
-                    ]
-                )
-                region_labels = np.array(
-                    [
-                        key.split("_")[-1]
-                        for key in band_reg_median_depths.keys()
-                    ]
-                )
-                median_depths = np.array(
-                    [value for value in band_reg_median_depths.values()]
-                )
-                mean_depths = np.array(
-                    [value for value in band_reg_mean_depths.values()]
-                )
-                tab = Table(
-                    {
-                        "band": bands,
-                        "region": region_labels,
-                        "median_depth": median_depths,
-                        "mean_depth": mean_depths,
-                    },
-                    dtype=[str, str, float, float],
-                )
-                funcs.make_dirs(out_path)
-                # do I have permissions to write this
-                if os.access(out_path, os.W_OK):
-                    tab.write(out_path, overwrite=True)
-
-    def plot_depth(
-        self, band, cat_creator, mode, aper_diam, show=False
-    ):  # , **kwargs):
-        if type(cat_creator) == type(None):
-            galfind_logger.warning(
-                "Could not plot depths as cat_creator == None in Data.plot_depth()"
-            )
-        else:
-            self.load_depth_dirs(aper_diam, mode)
-            save_path = (
-                f"{self.depth_dirs[aper_diam][mode][band]}/{band}_depths.png"
-            )
-            # determine paths and whether to overwrite
-            overwrite = config["Depths"].getboolean("OVERWRITE_DEPTH_PLOTS")
-            if overwrite:
-                galfind_logger.info(
-                    "OVERWRITE_DEPTH_PLOTS = YES, re-doing depth plots."
-                )
-            if not Path(save_path).is_file() or overwrite:
-                # load depth data
-                h5_path = f"{self.depth_dirs[aper_diam][mode][band]}/{band}.h5"
-                if not Path(h5_path).is_file():
-                    raise (
-                        Exception(
-                            f"Must first run depths for {self.survey} {self.version} {band} {mode} {aper_diam} before plotting!"
-                        )
-                    )
-                hf = h5py.File(h5_path, "r")
-                hf_output = {
-                    label: np.array(hf[label])
-                    for label in self.get_depth_h5_labels()
-                }
-                hf.close()
-                # load image and wcs
-                im_data, im_header = self.load_im(band)
-                wcs = WCS(im_header)
-                # make combined mask
-                combined_mask = self.combine_seg_data_and_mask(band)
-                # load catalogue to calculate x/y image coordinates
-                cat = Table.read(self.sex_cat_master_path)
-                cat_x, cat_y = wcs.world_to_pixel(
-                    SkyCoord(
-                        cat[cat_creator.ra_dec_labels["RA"]],
-                        cat[cat_creator.ra_dec_labels["DEC"]],
-                    )
-                )
-
-                Depths.show_depths(
-                    hf_output["nmad_grid"],
-                    hf_output["num_grid"],
-                    hf_output["step_size"],
-                    hf_output["region_radius_used_pix"],
-                    hf_output["labels_grid"],
-                    hf_output["depth_labels"],
-                    hf_output["depths"],
-                    hf_output["diagnostic"],
-                    cat_x,
-                    cat_y,
-                    combined_mask,
-                    hf_output["final_labels"],
-                    suptitle=f"{self.survey} {self.version} {band} Depths",
-                    save_path=save_path,
-                    show=show,
-                )
-
-    @staticmethod
-    def get_depth_h5_labels():
-        return [
-            "mode",
-            "aper_diam",
-            "scatter_size",
-            "distance_to_mask",
-            "region_radius_used_pix",
-            "n_nearest",
-            "split_depth_min_size",
-            "split_depths_factor",
-            "step_size",
-            "depths",
-            "diagnostic",
-            "depth_labels",
-            "final_labels",
-            "nmad_grid",
-            "num_grid",
-            "labels_grid",
-        ]
-
-
-# match sextractor catalogue codes
-sex_id_params = ["NUMBER", "X_IMAGE", "Y_IMAGE", "ALPHA_J2000", "DELTA_J2000"]
-
-
-def remove_non_band_dependent_sex_params(tab, sex_id_params=sex_id_params):
-    for i, param in enumerate(sex_id_params):
-        tab.remove_column(param)
-    return tab
-
-
-def add_band_suffix_to_cols(tab, band, sex_id_params=sex_id_params):
-    for i, name in enumerate(tab.columns.copy()):
-        if name not in sex_id_params:
-            tab.rename_column(name, name + "_" + band)
-    return tab
-
-
-# depth codes (taken from background_calc.py)
-
-
-def log_transform(im):  # function to transform fits image to log scaling
-    """returns log(image) scaled to the interval [0,1]"""
-    try:
-        (min, max) = (im[im > 0].min(), im.max())
-        if (max > min) and (max > 0):
-            return (np.log(im.clip(min, max)) - np.log(min)) / (
-                np.log(max) - np.log(min)
-            )
-    except:
-        pass
-    return im
-
 
 # The below makes TQDM work with joblib
 @contextlib.contextmanager
@@ -3967,11 +3326,3 @@ def tqdm_joblib(tqdm_object):
     finally:
         joblib.parallel.BatchCompletionCallBack = old_batch_callback
         tqdm_object.close()
-
-
-def is_blank_survey(survey):
-    cluster_surveys = ["El-Gordo", "MACS-0416", "CLIO", "SMACS-0723"]
-    if survey in cluster_surveys:
-        return False
-    else:
-        return True

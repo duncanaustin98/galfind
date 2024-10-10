@@ -143,14 +143,14 @@ def make_mock_galfind_cat(
             sed_obs = Mock_SED_obs.power_law_from_beta_M_UV(z, beta, M_UV)
             sed_obs.create_mock_phot(instrument, survey_depths)
             # fig, ax = plt.subplots()
-            # sed_obs.mock_photometry.plot_phot(ax, mag_units = u.Jy)
+            # sed_obs.mock_photometry.plot(ax, mag_units = u.Jy)
             # sed_obs.plot_SED(ax, mag_units = u.Jy)
             sed_obs.mock_photometry.scatter(size=scatter_size)
             for j, scattered_phot in enumerate(
                 sed_obs.mock_photometry.scattered_phot
             ):
                 phot_arr[i, j] = scattered_phot
-                # phot.plot_phot(ax, mag_units = u.Jy)
+                # phot.plot(ax, mag_units = u.Jy)
         phot_arr = np.array(phot_arr).flatten()
         if scatter_size != 1:
             z_in = np.array([np.full(scatter_size, z) for z in z_in]).flatten()
@@ -166,14 +166,14 @@ def make_mock_galfind_cat(
         # make catalogue out of array of scattered photometries
         output_fluxes = {
             f"FLUX_APER_{band}_aper_corr_Jy": [
-                np.concatenate(([phot.flux_Jy[i].value], np.zeros(4)))
+                np.concatenate(([phot.flux[i].value], np.zeros(4)))
                 for phot in phot_arr
             ]
             for i, band in enumerate(instrument)
         }
         output_flux_errs = {
             f"FLUXERR_APER_{band}_loc_depth_10pc_Jy": [
-                np.concatenate(([phot.flux_Jy_errs[i].value], np.zeros(4)))
+                np.concatenate(([phot.flux_errs[i].value], np.zeros(4)))
                 for phot in phot_arr
             ]
             for i, band in enumerate(instrument)
@@ -249,14 +249,14 @@ def make_mock_line_bias_galfind_cat(
         # make catalogue out of array of scattered photometries
         output_fluxes = {
             f"FLUX_APER_{band}_aper_corr_Jy": [
-                np.concatenate(([phot.flux_Jy[i].value], np.zeros(4)))
+                np.concatenate(([phot.flux[i].value], np.zeros(4)))
                 for phot in phot_arr
             ]
             for i, band in enumerate(instrument)
         }
         output_flux_errs = {
             f"FLUXERR_APER_{band}_loc_depth_10pc_Jy": [
-                np.concatenate(([phot.flux_Jy_errs[i].value], np.zeros(4)))
+                np.concatenate(([phot.flux_errs[i].value], np.zeros(4)))
                 for phot in phot_arr
             ]
             for i, band in enumerate(instrument)
@@ -332,7 +332,7 @@ def make_mock_DLA_bias_galfind_cat(
             if i == 0 and plot:
                 mock_sed_obs.plot_SED(ax, mag_units=u.Jy)
                 mock_sed_obs.create_mock_phot(instrument, survey_depths)
-                mock_sed_obs.mock_photometry.plot_phot(ax, mag_units=u.Jy)
+                mock_sed_obs.mock_photometry.plot(ax, mag_units=u.Jy)
                 ax.set_xlim(1200.0 * (1 + z), 3000.0 * (1 + z))
                 ax.axvline(1250.0 * (1 + z), c="blue", ls="--")
                 plt.show()
@@ -341,14 +341,14 @@ def make_mock_DLA_bias_galfind_cat(
         # make catalogue out of array of scattered photometries
         output_fluxes = {
             f"FLUX_APER_{band}_aper_corr_Jy": [
-                np.concatenate(([phot.flux_Jy[i].value], np.zeros(4)))
+                np.concatenate(([phot.flux[i].value], np.zeros(4)))
                 for phot in phot_arr
             ]
             for i, band in enumerate(instrument)
         }
         output_flux_errs = {
             f"FLUXERR_APER_{band}_loc_depth_10pc_Jy": [
-                np.concatenate(([phot.flux_Jy_errs[i].value], np.zeros(4)))
+                np.concatenate(([phot.flux_errs[i].value], np.zeros(4)))
                 for phot in phot_arr
             ]
             for i, band in enumerate(instrument)

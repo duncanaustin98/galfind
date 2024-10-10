@@ -1,15 +1,17 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-"""
-Created on Wed Apr 19 21:19:13 2023
-
-@author: austind
-"""
-
 # useful_funcs_austind.py
+from __future__ import annotations
+
 import inspect
 import os
-from typing import Union
+from typing import Union, List, TYPE_CHECKING
+
+try:
+    from typing import Self, Type  # python 3.11+
+except ImportError:
+    from typing_extensions import Self, Type  # python > 3.7 AND python < 3.11
+
+if TYPE_CHECKING:
+    from .Data import Band_Data_Base, Band_Data, Stacked_Band_Data
 
 import astropy.constants as const
 import astropy.units as u
@@ -240,8 +242,8 @@ def loc_depth_to_flux_err(loc_depth, zero_point):
 
 # now in Photometry class!
 # def flux_image_to_lambda(wav, flux, zero_point):
-#     flux_Jy = flux_image_to_Jy(flux, zero_point)
-#     flux_lambda = flux_Jy_to_lambda(wav, flux_Jy)
+#     flux = flux_image_to_Jy(flux, zero_point)
+#     flux_lambda = flux_to_lambda(wav, flux)
 #     return flux_lambda # observed frame
 
 
@@ -926,6 +928,19 @@ class Singleton(object):
         return cls._instance
 
 
-# for __str__ methods # (and __repr__?)
+# for __str__ methods
 line_sep = "*" * 40 + "\n"
 band_sep = "-" * 10 + "\n"
+
+
+def sort_band_data_arr(band_data_arr: List[Type[Band_Data_Base]]):
+    stacked_band_data_arr = [band_data for band_data in band_data_arr if band_data.__class__.__name__ == "Stacked_Band_Data"]
+    sorted_band_data_arr = [
+        band_data
+        for band_data in sorted(
+            [band_data for band_data in band_data_arr if band_data.__class__.__name__ == "Band_Data"],
+            key=lambda band_data: band_data.filt.WavelengthCen.to(u.AA).value,
+        )
+    ]
+    sorted_band_data_arr.extend(stacked_band_data_arr)
+    return sorted_band_data_arr

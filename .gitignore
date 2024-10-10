@@ -17,3 +17,5 @@ docs/build
 docs/source/_autosummary
 docs/API.rst
 .readthedocs.yaml
+dist
+galfind-0.1.dev658+ge85f12d
