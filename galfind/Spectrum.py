@@ -68,7 +68,8 @@ class Spectral_Instrument(ABC):
     def __init__(
         self, grating: Spectral_Grating, filter: Spectral_Filter
     ) -> NoReturn:
-        pass
+        self.grating = grating
+        self.filter = filter
 
     @abstractmethod
     def load_sensitivity(self):
@@ -209,7 +210,7 @@ class Spectrum:
         cls,
         url_path: str,
         save: bool = True,
-        version: str = "v2",
+        version: str = "v3",
         z: Union[float, None] = None,
     ) -> Self:
         import msaexp.spectrum
@@ -253,13 +254,14 @@ class Spectrum:
 
         if version == "v2":
             msa_metafile = str(header["MSAMETFL"]).replace(" ", "")
-            # if int(header["PROGRAM"]) == 2561:
-            #     #breakpoint()
             # determine number of exposures
             N_exposures = int(header["NOUTPUTS"]) * int(header["NFRAMES"])
             full_flux_errs = spectrum_1D.spec["full_err"] * (
                 N_exposures**-0.25
             )
+        elif version == "v3":
+            msa_metafile = str(header["MSAMETFL"]).replace(" ", "")
+            full_flux_errs = spectrum_1D.spec["full_err"]
         else:
             msa_metafile = str(header["MSAMET1"]).replace(" ", "")
             full_flux_errs = spectrum_1D.spec["full_err"]
@@ -459,7 +461,7 @@ class Spectral_Catalogue:
     ):
         if type(grating_filter) != type(None):
             assert grating_filter in NIRSpec.available_grating_filters
-        assert version in ["v1", "v2"]
+        assert version in ["v1", "v2", "v3"]
         # open and crop catalogue
         # DJA_cat = utils.read_catalog(config['Spectra']['DJA_CAT_PATH'], format = "ascii.ecsv")
         DJA_cat = Table.read(

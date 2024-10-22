@@ -636,7 +636,6 @@ def get_combined_path_name(self: Stacked_Band_Data) -> str:
     funcs.make_dirs(out_path)
     return out_path
 
-
 def combine_masks(self: Stacked_Band_Data) -> str:
     out_path = get_combined_path_name(self)
     if not Path(out_path).is_file():

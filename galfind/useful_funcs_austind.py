@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import inspect
 import os
-from typing import Union, List, TYPE_CHECKING
+from typing import Union, List, Tuple, TYPE_CHECKING
 
 try:
     from typing import Self, Type  # python 3.11+
@@ -931,6 +931,17 @@ class Singleton(object):
 # for __str__ methods
 line_sep = "*" * 40 + "\n"
 band_sep = "-" * 10 + "\n"
+
+def aper_diams_to_str(aper_diams: u.Quantity):
+    return f"({','.join([f'{aper_diam:.2f}' for aper_diam in aper_diams.value])})as"
+
+def calc_unmasked_area(mask: Union[np.ndarray, Tuple[np.ndarray]], pixel_scale: u.Quantity):
+    if isinstance(mask, tuple):
+        mask = np.logical_or.reduce(mask)
+    return (
+        ((mask.shape[0] * mask.shape[1]) - np.sum(mask))
+        * (pixel_scale ** 2)
+    ).to(u.arcmin**2)
 
 
 def sort_band_data_arr(band_data_arr: List[Type[Band_Data_Base]]):

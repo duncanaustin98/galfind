@@ -179,7 +179,7 @@ class Instrument(ABC):
                     ]
                 self.aper_corrs[filt_name] = {aper_diam: float(aper_corr_row[f"col{str(i + 2)}"]) \
                     for i, aper_diam in enumerate(aper_diams)}
-            galfind_logger.info(
+            galfind_logger.debug(
                 f"Aperture corrections for {self.__class__.__name__} loaded from {aper_corr_path}"
             )
         else:
