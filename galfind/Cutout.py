@@ -306,7 +306,7 @@ class Band_Cutout(Band_Cutout_Base):
             "DEC": sky_coord.dec.value,
             "cutout_size_as": cutout_size.to(u.arcsec).value,
             "cutout_size_pix": (
-                cutout_size / data.im_pixel_scales[filt.band_name]
+                cutout_size / data.pix_scales[filt.band_name]
             )
             .to(u.dimensionless_unscaled)
             .value,
@@ -333,7 +333,7 @@ class Band_Cutout(Band_Cutout_Base):
             im_data, im_header, seg_data, seg_header = data.load_data(
                 filt, incl_mask=False
             )
-            pix_scale = data.im_pixel_scales[filt.band_name]
+            pix_scale = data.pix_scales[filt.band_name]
             wht_data = data.load_wht(filt.band_name)
             rms_err_data = data.load_rms_err(filt.band_name)
             wcs = data.load_wcs(filt.band_name)

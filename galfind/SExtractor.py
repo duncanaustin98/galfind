@@ -22,6 +22,14 @@ from . import useful_funcs_austind as funcs
 from .decorators import run_in_dir
 
 
+def get_code() -> str:
+    # of order 0.1s per call
+    return (
+        subprocess.check_output("sex --version", shell=True)
+        .decode("utf-8")
+        .replace("\n", "")
+    )
+
 def get_segmentation_path(
     self: Type[Band_Data_Base],
     err_map_type: str,
@@ -36,7 +44,7 @@ def get_forced_phot_path(
     err_map_type: str,
     forced_phot_band: Optional[Type[Band_Data_Base]] = None,
 ) -> str:
-    forced_phot_dir = f"{config['SExtractor']['SEX_DIR']}/{self.instr_name}/{self.version}/{self.survey}/{err_map_type}/forced_phot/{aper_diams_to_str(self.aper_diams)}"
+    forced_phot_dir = f"{config['SExtractor']['SEX_DIR']}/{self.instr_name}/{self.version}/{self.survey}/{err_map_type}/forced_phot/{funcs.aper_diams_to_str(self.aper_diams)}"
     if forced_phot_band is None:
         select_band_name = self.filt_name
     else:
@@ -44,9 +52,6 @@ def get_forced_phot_path(
     forced_phot_path = f"{forced_phot_dir}/{self.survey}_{self.filt_name}_{select_band_name}_sel_cat_{self.version}.fits"
     funcs.make_dirs(forced_phot_path)
     return forced_phot_path
-
-def aper_diams_to_str(aper_diams: u.Quantity):
-    return f"({','.join([f'{aper_diam:.2f}' for aper_diam in aper_diams.value])})as"
 
 def get_err_map(
     self: Type[Band_Data_Base], err_type: str
@@ -229,12 +234,11 @@ def perform_forced_phot(
             params_path,
             pix_aper_diams,
         ]
-        # aper_diams_to_str(self.aper_diams)
         # SExtractor bash script python wrapper
         galfind_logger.debug(input)
         process = subprocess.Popen(input)
         process.wait()
-        os.rename(forced_phot_path.replace(f"/{aper_diams_to_str(self.aper_diams)}", ""), forced_phot_path)
+        os.rename(forced_phot_path.replace(f"/{funcs.aper_diams_to_str(self.aper_diams)}", ""), forced_phot_path)
         finish_message_prefix = "Made"
     else:
         finish_message_prefix = "Loaded"
@@ -253,9 +257,10 @@ def perform_forced_phot(
     {
         "forced_phot_band": forced_phot_band,
         "err_type": err_type,
-        "method": "sextractor",
+        "method": get_code(),
         "config_name": config_name,
         "params_name": params_name,
+        "id_label": "NUMBER",
         "ra_label": "ALPHA_J2000",
         "dec_label": "DELTA_J2000",
     }

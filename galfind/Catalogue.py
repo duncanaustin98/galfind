@@ -951,7 +951,7 @@ class Catalogue(Catalogue_Base):
                         im_header=im_header,
                         survey=self.survey,
                         version=self.version,
-                        pix_scale=self.data.im_pixel_scales[band],
+                        pix_scale=self.data.pix_scales[band],
                         cutout_size=cutout_size_gal,
                     )
                     pos += 1

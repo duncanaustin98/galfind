@@ -9,7 +9,7 @@ Created on Mon Jul 17 15:04:24 2023
 # Photometry_rest.py
 import inspect
 from copy import deepcopy
-from typing import Union
+from typing import Union, Optional
 
 import astropy.units as u
 import numpy as np
@@ -787,11 +787,11 @@ class Photometry_rest(Photometry):
 
     def calc_SFR_UV_phot(
         self,
-        frame,
-        rest_UV_wav_lims,
-        ref_wav,
-        dust_author_year,
-        kappa_UV_conv_author_year,
+        frame: str = "obs",
+        rest_UV_wav_lims: u.Quantity = [1_250.0, 3_000.0] * u.AA,
+        ref_wav: u.Quantity = 1_500.0 * u.AA,
+        dust_author_year: Optional[str] = "M99",
+        kappa_UV_conv_author_year: str = "MD14",
         iters=10,
         extract_property_name=False,
         save_path: Union[str, None] = None,
@@ -1644,7 +1644,7 @@ class Photometry_rest(Photometry):
         self,
         SED_rest_property_function,
         iters,
-        save_path: Union[str, None] = None,
+        save_path: Optional[str] = None,
         **kwargs,
     ):
         assert type(iters) in [int]

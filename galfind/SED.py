@@ -364,30 +364,30 @@ class SED_obs(SED):
             z_int, wav_obs.value, mag_obs.value, SED_rest.wavs.unit, u.ABmag
         )
 
-    def create_mock_phot(self, instrument, depths=[], min_flux_pc_err=10.0):
+    def create_mock_phot(self, filterset, depths=[], min_flux_pc_err=10.0):
         if type(depths) == dict:
             depths = [depth for (band, depth) in depths.items()]
         if (
             depths == []
         ):  # if depths not given, expect the galaxy to be very well detected
-            depths = [99.0 for band in instrument.band_names]
+            depths = [99.0 for filt in filterset.band_names]
         bp_averaged_fluxes = (
             [
-                self.calc_bandpass_averaged_flux(band.wav, band.trans)
-                for band in instrument
+                self.calc_bandpass_averaged_flux(filt.wav, filt.trans)
+                for filt in filterset
             ]
             * u.erg
             / (u.s * (u.cm**2) * u.AA)
         )
         # convert bp_averaged_fluxes to Jy
         band_wavs = (
-            np.array([band.WavelengthCen.value for band in instrument]) * u.AA
+            np.array([filt.WavelengthCen.value for filt in filterset]) * u.AA
         )
         bp_averaged_fluxes_Jy = funcs.convert_mag_units(
             band_wavs, bp_averaged_fluxes, u.Jy
         )
         self.mock_phot = Mock_Photometry(
-            instrument, bp_averaged_fluxes_Jy, depths, min_flux_pc_err
+            filterset, bp_averaged_fluxes_Jy, depths, min_flux_pc_err
         )
         return self.mock_phot
 

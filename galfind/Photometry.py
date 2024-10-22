@@ -509,8 +509,8 @@ class Mock_Photometry(Photometry):
                 for flux, err in zip(self.flux.value, self.flux_errs.value)
             ]
         )
-        return [
-            self.__class__(
+        scattered_phot = [
+            Photometry(
                 self.instrument,
                 phot_matrix[:, i] * self.flux.unit,
                 self.flux_errs,
@@ -518,6 +518,10 @@ class Mock_Photometry(Photometry):
             )
             for i in range(n_scatter)
         ]
+        if len(scattered_phot) == 1:
+            return scattered_phot[0]
+        else:
+            return scattered_phot
 
     # def scatter(self, size=1):
     #     scattered_fluxes = np.zeros((len(self.flux), size))
