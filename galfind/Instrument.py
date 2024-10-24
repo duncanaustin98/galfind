@@ -409,10 +409,7 @@ class VISTA(Instrument, funcs.Singleton):
         super().__init__("Paranal", VISTA_band_names)
 
     def calc_ZP(self, band_data: Type[Band_Data_Base]) -> u.Quantity:
-        # assume flux units of MJy/sr and calculate corresponding ZP
-        ZP = -2.5 * np.log10(
-            (band_data.pix_scale.to(u.rad).value ** 2) * u.MJy.to(u.Jy)
-        ) + u.Jy.to(u.ABmag)
+        ZP = band_data.load_im()[1]["PHOTZP"]
         return ZP
 
     def make_model_PSF(self, band: Union[str, Filter]) -> Type[PSF_Base]:
