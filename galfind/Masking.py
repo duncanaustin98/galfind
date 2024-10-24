@@ -504,10 +504,10 @@ def auto_mask(
                     artefact_pix_masks[ext_name] = [pix_mask]
                 else:
                     artefact_pix_masks[ext_name].extend([pix_mask])
-        # combine masks for each extension
-        artefact_pix_masks[ext_name] = np.logical_or.reduce(
-            tuple([mask.astype(np.uint8) for mask in artefact_pix_masks[ext_name]])
-        )
+            # combine masks for each extension
+            artefact_pix_masks[ext_name] = np.logical_or.reduce(
+                tuple([mask.astype(np.uint8) for mask in artefact_pix_masks[ext_name]])
+            )
         # update full mask to include all artefacts
         full_mask = np.logical_or(
             full_mask.astype(np.uint8),
