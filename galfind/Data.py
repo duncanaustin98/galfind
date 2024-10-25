@@ -476,7 +476,7 @@ class Band_Data_Base(ABC):
         # do not re-segment if already done
         if not (hasattr(self, "seg_args") and hasattr(self, "seg_path")):
             # segment the data
-            if method == "sextractor":
+            if "sextractor" in method.lower():
                 self.seg_path = SExtractor.segment_sextractor(
                     self,
                     err_type,
@@ -486,7 +486,7 @@ class Band_Data_Base(ABC):
                 )
             else:
                 raise (
-                    Exception(f"segmentation {method=} not in ['sextractor']")
+                    Exception(f"segmentation {method.lower()=} does not contain 'sextractor'")
                 )
             self.seg_args = {
                 "err_type": err_type,
@@ -509,7 +509,7 @@ class Band_Data_Base(ABC):
             hasattr(self, "forced_phot_args")
             and hasattr(self, "forced_phot_path")
         ):
-            if method == "sextractor":
+            if "sextractor" in method.lower():
                 self.forced_phot_path, self.forced_phot_args = \
                 SExtractor.perform_forced_phot(
                     self,
@@ -520,13 +520,13 @@ class Band_Data_Base(ABC):
                     overwrite=overwrite,
                 )
             else:
-                raise (Exception(f"{method=} not in ['sextractor']"))
+                raise (Exception(f"{method.lower()=} does not contain 'sextractor'"))
 
     def _get_master_tab(
         self, output_ids_locs: bool = False
     ) -> Table:
         tab = Table.read(self.forced_phot_path, character_as_bytes=False, format="fits")
-        if self.forced_phot_args["method"] == "sextractor":
+        if "sextractor" in self.forced_phot_args["method"].lower():
             id_loc_params = [
                 "NUMBER",
                 "X_IMAGE",
@@ -537,11 +537,11 @@ class Band_Data_Base(ABC):
         else:
             raise (
                 Exception(
-                    f"{self.forced_phot_args['method']} not in ['sextractor']"
+                    f"{self.forced_phot_args['method'].lower()} does not contain 'sextractor'"
                 )
             )
         if output_ids_locs:
-            if self.forced_phot_args["method"] == "sextractor":
+            if "sextractor" in self.forced_phot_args["method"].lower():
                 append_ids_loc = {
                     "ID": tab["NUMBER"],
                     "X_IMAGE": tab["X_IMAGE"].value,
