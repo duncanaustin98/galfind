@@ -32,7 +32,8 @@ class Facility(ABC):
     # and other facility-specific attributes/methods
 
     def __init__(self) -> None:
-        pass
+        if not hasattr(self, "SVO_name"):
+            self.SVO_name = self.__class__.__name__
 
     def __str__(self) -> str:
         return self.__class__.__name__
@@ -85,6 +86,10 @@ class Instrument(ABC):
             self.facility = facility
         self.filt_names = filt_names
         self._load_aper_corrs()
+
+        if not hasattr(self, "SVO_name"):
+            self.SVO_name = self.__class__.__name__
+
 
     def __str__(self) -> str:
         # print filter_names?
@@ -308,6 +313,7 @@ class ACS_WFC(Instrument, funcs.Singleton):
             "FR931N",
             "FR1016N",
         ]
+        self.SVO_name = "ACS"
         super().__init__("HST", ACS_WFC_band_names)
 
     def calc_ZP(self, band_data: Type[Band_Data_Base]) -> u.Quantity:
@@ -365,6 +371,7 @@ class WFC3_IR(Instrument, funcs.Singleton):
             "F164N",
             "F167N",
         ]
+        self.SVO_name = "WFC3"
         super().__init__("HST", WFC3_IR_band_names)
 
     def calc_ZP(self, band_data: Type[Band_Data_Base]) -> u.Quantity:
@@ -406,6 +413,7 @@ class VISTA(Instrument, funcs.Singleton):
             "Ks_filter",
             "Ks",
         ]
+        self.SVO_name = "VIRCam"
         super().__init__("Paranal", VISTA_band_names)
 
     def calc_ZP(self, band_data: Type[Band_Data_Base]) -> u.Quantity:

@@ -110,7 +110,7 @@ from . import decorators
 from . import SExtractor, Masking, Depths
 from .Cutout import Band_Cutout, Stacked_Band_Cutout, RGB, Stacked_RGB, Multiple_Band_Cutout, Multiple_RGB
 from .PDF import PDF, SED_fit_PDF, Redshift_PDF, PDF_nD
-from .Instrument import Facility, JWST, HST, Instrument, ACS_WFC, WFC3_IR, NIRCam, MIRI
+from .Instrument import Facility, JWST, HST, Paranal, Instrument, ACS_WFC, WFC3_IR, NIRCam, MIRI, VISTA
 
 instr_to_name_dict = {name: globals()[name]() for name in json.loads(config.get("Other", "INSTRUMENT_NAMES"))}
 
