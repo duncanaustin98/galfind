@@ -2437,11 +2437,12 @@ class Data:
                 output_ids_locs=True
             )]
             for band_data in self:
-                master_tab_arr.extend(
-                    [band_data._get_master_tab(output_ids_locs=False)])
+                if band_data.filt_name != self.forced_phot_band.filt_name: 
+                    master_tab_arr.extend(
+                        [band_data._get_master_tab(output_ids_locs=False)])
             master_tab = hstack(master_tab_arr)
             # update table header
-            self_band_data_arr = self.band_data_arr + [self.forced_phot_band]
+            #self_band_data_arr = self.band_data_arr + [self.forced_phot_band]
             # master_tab.meta = {
             #     **master_tab.meta,
             #     **{
