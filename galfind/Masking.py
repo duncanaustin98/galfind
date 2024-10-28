@@ -237,7 +237,7 @@ def auto_mask(
     edge_mask_distance: Union[int, float] = 50,
     scale_extra: float = 0.2,
     exclude_gaia_galaxies: bool = True,
-    angle: float = -70.0,
+    angle: float = -0.0,
     edge_value: float = 0.0,
     element: str = "ELLIPSE",
     gaia_row_lim: int = 500,
@@ -254,13 +254,15 @@ def auto_mask(
 
         if (
             "NIRCam" not in self.instr_name and star_mask_params is not None
-        ):  # doesnt stop e.g. ACS_WFC+NIRCam from making star masks
-            galfind_logger.critical(
-                "Mask making only implemented for NIRCam data!"
+        ):  
+            star_mask_params = None
+            # doesnt stop e.g. ACS_WFC+NIRCam from making star masks
+            galfind_logger.warning(
+                f"Stellar mask wanted for {self.filt_name} only implemented for NIRCam data!"
             )
-            raise (
-                Exception("Star mask making only implemented for NIRCam data!")
-            )
+            # raise (
+            #     Exception("Star mask making only implemented for NIRCam data!")
+            # )
 
         # angle rotation is anti-clockwise for positive angles
         composite = (

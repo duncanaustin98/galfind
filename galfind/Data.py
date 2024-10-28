@@ -581,7 +581,7 @@ class Band_Data_Base(ABC):
         ] = 50,
         scale_extra: Union[float, List[float], Dict[str, float]] = 0.2,
         exclude_gaia_galaxies: Union[bool, List[bool], Dict[str, bool]] = True,
-        angle: Union[float, List[float], Dict[str, float]] = -70.0,
+        angle: Union[float, List[float], Dict[str, float]] = 0.0,
         edge_value: Union[float, List[float], Dict[str, float]] = 0.0,
         element: Union[str, List[str], Dict[str, str]] = "ELLIPSE",
         gaia_row_lim: Union[int, List[int], Dict[str, int]] = 500,
@@ -1416,7 +1416,7 @@ class Stacked_Band_Data(Band_Data_Base):
         ] = 50,
         scale_extra: Union[float, List[float], Dict[str, float]] = 0.2,
         exclude_gaia_galaxies: Union[bool, List[bool], Dict[str, bool]] = True,
-        angle: Union[float, List[float], Dict[str, float]] = -70.0,
+        angle: Union[float, List[float], Dict[str, float]] = 0.0,
         edge_value: Union[float, List[float], Dict[str, float]] = 0.0,
         element: Union[str, List[str], Dict[str, str]] = "ELLIPSE",
         gaia_row_lim: Union[int, List[int], Dict[str, int]] = 500,
@@ -1637,7 +1637,6 @@ class Data:
                 rms_err_ext_name,
                 wht_ext_name,
             )
-
             for filt_name in im_paths.keys():
                 if len(im_paths[filt_name]) > 1:
                     # stack sci/rms_err/wht images together and move the old ones to a new directory
@@ -1727,14 +1726,19 @@ class Data:
                 wht_paths[filt_name] = []
                 wht_exts[filt_name] = []
             # make arrays to determine where the data is stored for each band
-            is_sci = {path: [str in path for str in im_str] for path in paths}
+            is_sci = {path: any([str in path for str in im_str]) for path in paths}
             is_rms_err = {
-                path: [str in path for str in rms_err_str] for path in paths
+                path: any([str in path for str in rms_err_str]) for path in paths
             }
-            is_wht = {path: [str in path for str in wht_str] for path in paths}
+            is_wht = {path: any([str in path for str in wht_str]) for path in paths}
+            # check to see if all paths are science images
+            if all(is_sci_ext for is_sci_ext in is_sci.values()):
+                all_sci = True
+            else:
+                all_sci = False
             for path in paths:
                 # if all paths are science images
-                if all(path_is_sci for path_is_sci in is_sci.values()):
+                if all_sci:
                     # all extensions must be within the same image
                     single_path = True
                     im_paths[filt_name].extend([path])
@@ -1742,11 +1746,9 @@ class Data:
                     wht_paths[filt_name].extend([path])
                 else:
                     # ensure the path only belongs to one (or none) of the image types
-                    assert all(
-                        not all(i for i in pair)
-                        for pair in itertools.combinations(
-                            (is_sci, is_rms_err, is_wht), 2
-                        )
+                    n_unique_types = ([is_sci[path]] + [is_rms_err[path]] + [is_wht[path]]).count(True)
+                    assert n_unique_types < 2, galfind_logger.critical(
+                        f"Multiple image types found for {filt_name}, {path}"
                     )
                     single_path = False
                     if (
@@ -1772,7 +1774,6 @@ class Data:
                             f"{filt_name}, {path} not recognised as im, rms_err, or wht!"
                             + "Consider updating 'im_str', ''rms_err_str', and 'wht_str'!"
                         )
-
                 # extract sci/rms_err/wht extensions
                 hdul = fits.open(path)
                 if not single_path:
@@ -1782,11 +1783,11 @@ class Data:
                         if hdu.name == "PRIMARY" and len(hdul) > 1:
                             assertion_len += 1
                         else:
-                            if is_sci:
+                            if is_sci[path]:
                                 im_exts[filt_name].extend([int(j)])
-                            elif is_rms_err:
+                            elif is_rms_err[path]:
                                 rms_err_exts[filt_name].extend([int(j)])
-                            elif is_wht:
+                            elif is_wht[path]:
                                 wht_exts[filt_name].extend([int(j)])
                     assert len(hdul) == assertion_len
                 else:
@@ -1797,7 +1798,6 @@ class Data:
                             rms_err_exts[filt_name].extend([int(j)])
                         if hdu.name in wht_ext_name:
                             wht_exts[filt_name].extend([int(j)])
-
             # ensure a None is inserted if either rms_err/wht path/ext is missing
             # compared to im path length
             n_rms_err_path_missing = len(im_paths[filt_name]) - len(
@@ -2497,7 +2497,7 @@ class Data:
         ] = 50,
         scale_extra: Union[float, List[float], Dict[str, float]] = 0.2,
         exclude_gaia_galaxies: Union[bool, List[bool], Dict[str, bool]] = True,
-        angle: Union[float, List[float], Dict[str, float]] = -70.0,
+        angle: Union[float, List[float], Dict[str, float]] = 0.0,
         edge_value: Union[float, List[float], Dict[str, float]] = 0.0,
         element: Union[str, List[str], Dict[str, str]] = "ELLIPSE",
         gaia_row_lim: Union[int, List[int], Dict[str, int]] = 500,

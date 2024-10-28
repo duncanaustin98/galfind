@@ -8,7 +8,7 @@ from copy import deepcopy
 import json
 import matplotlib.pyplot as plt
 from matplotlib.colors import Normalize
-from typing import List, Union, Optional, NoReturn, TYPE_CHECKING
+from typing import List, Tuple, Union, Optional, NoReturn, TYPE_CHECKING
 import warnings
 
 if TYPE_CHECKING:
@@ -61,9 +61,9 @@ class Filter:
         wav = np.array(filter_profile["Wavelength"])
         trans = np.array(filter_profile["Transmission"])
         if SVO_facility_name is None:
-            SVO_facility_name = facility
+            SVO_facility_name = instr_to_name_dict[instrument].facility.SVO_name
         if SVO_instr_name is None:
-            SVO_instr_name = instrument
+            SVO_instr_name = instr_to_name_dict[instrument].SVO_name
         try:
             properties = SvoFps.data_from_svo(
                 query={
@@ -194,7 +194,7 @@ class Filter:
         super().__setattr__(key, value)
 
     @staticmethod
-    def _get_facility_instrument_filt(filt_name: str) -> str:
+    def _get_facility_instrument_filt(filt_name: str) -> Tuple[str, str, str, str, str]:
         # determine facility and instrument names of filter string
         split_str = filt_name.split("/")
         if len(split_str) == 3:
@@ -221,7 +221,10 @@ class Filter:
             instrument = instruments_with_filt[0]
             facility = instr_to_name_dict[instrument].facility.__class__.__name__
         filt = filt.upper()
-        return facility, instrument, filt
+        # determine instrument and facility SVO names
+        SVO_facility_name = instr_to_name_dict[instrument].facility.SVO_name
+        SVO_instr_name = instr_to_name_dict[instrument].SVO_name
+        return facility, instrument, filt, SVO_facility_name, SVO_instr_name
 
     @staticmethod
     def _make_new_filt(
@@ -230,13 +233,13 @@ class Filter:
         already_included = False
         if isinstance(filt_or_name, str):
             # extract facility, instrument and filter name from string
-            facility, instrument, filt = Filter._get_facility_instrument_filt(
-                filt_or_name
-            )
+            facility, instrument, filt, SVO_facility_name, SVO_instr_name = \
+                Filter._get_facility_instrument_filt(filt_or_name)
             if filt_or_name in current_filt_names:
                 already_included = True
             else:
-                new_filt = Filter.from_SVO(facility, instrument, filt)
+                new_filt = Filter.from_SVO(facility, instrument, filt, \
+                    SVO_facility_name = SVO_facility_name, SVO_instr_name = SVO_instr_name)
         elif isinstance(filt_or_name, Filter):
             if filt_or_name.band_name in current_filt_names:
                 already_included = True
@@ -590,7 +593,7 @@ class Multiple_Filter:
             remove = True
             if isinstance(filt, str):
                 # extract facility, instrument and filter name from string
-                facility, instrument, filt = (
+                facility, instrument, filt, SVO_facility_name, SVO_instr_name = (
                     Filter._get_facility_instrument_filt(filt)
                 )
                 if filt not in self.band_names or filt in remove_filt_names:
