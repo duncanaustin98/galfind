@@ -76,6 +76,7 @@ morgan_version_to_dir = {
     "v9": "mosaic_1084_wisptemp2",
     "v10": "mosaic_1084_wispscale",
     "v11": "mosaic_1084_wispnathan",
+    "v12": "mosaic_1210_wispnathan"
 }
 
 
