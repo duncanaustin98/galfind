@@ -904,48 +904,56 @@ class Band_Data_Base(ABC):
     def _pix_scale_to_str(pix_scale: u.Quantity):
         return f"{round(pix_scale.to(u.marcsec).value)}mas"
 
-    def _make_rms_err_from_wht(self):
-        # make rms_err map from wht map
-        wht, hdr = self.load_wht(output_hdr=True)
-        err = 1.0 / (wht**0.5)
-        primary_hdr = deepcopy(hdr)
-        primary_hdr["EXTNAME"] = "PRIMARY"
-        primary = fits.PrimaryHDU(header=primary_hdr)
-        hdu = fits.ImageHDU(err, header=hdr, name="ERR")
-        hdul = fits.HDUList([primary, hdu])
-        # save and overwrite object attributes
+    def _make_rms_err_from_wht(self, overwrite: bool = False) -> NoReturn:
         save_path = self.im_path.replace(
             self.im_path.split("/")[-1],
             f"rms_err/{self.filt.band_name}_rms_err.fits",
         )
-        funcs.make_dirs(save_path)
-        hdul.writeto(save_path, overwrite=True)
-        funcs.change_file_permissions(save_path)
+        if not Path(save_path).is_file() or overwrite:
+            # make rms_err map from wht map
+            wht, hdr = self.load_wht(output_hdr=True)
+            err = 1.0 / (wht**0.5)
+            primary_hdr = deepcopy(hdr)
+            primary_hdr["EXTNAME"] = "PRIMARY"
+            primary = fits.PrimaryHDU(header=primary_hdr)
+            hdu = fits.ImageHDU(err, header=hdr, name="ERR")
+            hdul = fits.HDUList([primary, hdu])
+            # save and overwrite object attributes
+            funcs.make_dirs(save_path)
+            hdul.writeto(save_path, overwrite=True)
+            funcs.change_file_permissions(save_path)
+            galfind_logger.info(
+                f"Finished making {self.survey} {self.version} {self.filt} rms_err map"
+            )
         galfind_logger.info(
-            f"Finished making {self.survey} {self.version} {self.filt} rms_err map"
+            f"Loading galfind created rms_err for {self.filt_name}"
         )
         self.rms_err_path = save_path
         self.rms_err_ext = 1
         self.rms_err_ext_name = ["ERR"]
         self._use_galfind_err = True
 
-    def _make_wht_from_rms_err(self):
-        err, hdr = self.load_rms_err(output_hdr=True)
-        wht = 1.0 / (err**2)
-        primary_hdr = deepcopy(hdr)
-        primary_hdr["EXTNAME"] = "PRIMARY"
-        primary = fits.PrimaryHDU(header=primary_hdr)
-        hdu = fits.ImageHDU(wht, header=hdr, name="WHT")
-        hdul = fits.HDUList([primary, hdu])
-        # save and overwrite object attributes
+    def _make_wht_from_rms_err(self, overwrite: bool = False) -> NoReturn:
         save_path = self.im_path.replace(
             self.im_path.split("/")[-1], f"wht/{self.filt.band_name}_wht.fits"
         )
-        funcs.make_dirs(save_path)
-        hdul.writeto(save_path, overwrite=True)
-        funcs.change_file_permissions(save_path)
+        if not Path(save_path).is_file() or overwrite:
+            err, hdr = self.load_rms_err(output_hdr=True)
+            wht = 1.0 / (err**2)
+            primary_hdr = deepcopy(hdr)
+            primary_hdr["EXTNAME"] = "PRIMARY"
+            primary = fits.PrimaryHDU(header=primary_hdr)
+            hdu = fits.ImageHDU(wht, header=hdr, name="WHT")
+            hdul = fits.HDUList([primary, hdu])
+            # save and overwrite object attributes
+            funcs.make_dirs(save_path)
+            hdul.writeto(save_path, overwrite=True)
+            funcs.change_file_permissions(save_path)
+            galfind_logger.info(
+                f"Finished making {self.survey} {self.version} {self.filt} wht map"
+            )
         galfind_logger.info(
-            f"Finished making {self.survey} {self.version} {self.filt} wht map"
+            f"Loading galfind created wht for {self.filt_name}"
         )
         self.wht_path = save_path
         self.wht_ext = 1

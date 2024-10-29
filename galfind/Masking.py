@@ -526,10 +526,6 @@ def auto_mask(
         hdr = wcs.to_header()
         hdr_args = {
             "METHOD": "auto", 
-            "CENTRAL_A": star_mask_params["central"]["a"], 
-            "CENTRAL_B": star_mask_params["central"]["b"],
-            "SPIKES_A": star_mask_params["spikes"]["a"],
-            "SPIKES_B": star_mask_params["spikes"]["b"],
             "EDGE_DIST": edge_mask_distance,
             "SCALE_EXTRA": scale_extra,
             "EXCLUDE_GAIA": exclude_gaia_galaxies,
@@ -538,6 +534,23 @@ def auto_mask(
             "ELEMENT": element,
             "GAIA_ROW_LIM": gaia_row_lim,
         }
+        if star_mask_params is not None:
+            # add star mask parameters to header arguments
+            stellar_mask_hdr_args = {
+                "CENTRAL_A": star_mask_params["central"]["a"], 
+                "CENTRAL_B": star_mask_params["central"]["b"],
+                "SPIKES_A": star_mask_params["spikes"]["a"],
+                "SPIKES_B": star_mask_params["spikes"]["b"],
+            }
+            hdr_args = {**hdr_args, **stellar_mask_hdr_args}
+        # else:
+        #     stellar_mask_hdr_args = {
+        #         "CENTRAL_A": None, 
+        #         "CENTRAL_B": None, 
+        #         "SPIKES_A": None, 
+        #         "SPIKES_B": None
+        #     }
+
         for key, value in hdr_args.items():
             hdr[key] = value
         # Save mask
