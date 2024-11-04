@@ -76,7 +76,8 @@ morgan_version_to_dir = {
     "v9": "mosaic_1084_wisptemp2",
     "v10": "mosaic_1084_wispscale",
     "v11": "mosaic_1084_wispnathan",
-    "v12": "mosaic_1210_wispnathan"
+    "v12": "mosaic_1210_wispnathan",
+    "v12test": "mosaic_1210_wispnathan_test"
 }
 
 
@@ -2061,7 +2062,7 @@ class Data:
 
     def __getattr__(self, attr: str) -> Any:
         # attr inserted here must be pluralised with 's' suffix
-        
+        print(attr)
         if all(attr[:-1] in band_data.__dict__.keys() for band_data in self):
             if hasattr(self, "forced_phot_band"):
                 if attr[:-1] in self.forced_phot_band.__dict__.keys():
