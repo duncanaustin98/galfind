@@ -153,11 +153,13 @@ sed_code_to_name_dict = {
     if sed_code_name not in ["LePhare"]
 }
 
+from .Galaxy import Galaxy, Multiple_Galaxy
+
 from .Multiple_Catalogue import Multiple_Catalogue
 from .Multiple_Data import Multiple_Data
 from .Catalogue_Base import Catalogue_Base
 from .Catalogue import Catalogue
-from .Catalogue_Creator import Catalogue_Creator, GALFIND_Catalogue_Creator
+from .Catalogue_Creator import Catalogue_Creator
 from .SED import SED, SED_rest, SED_obs, Mock_SED_rest, Mock_SED_obs
 from .SED import (
     Mock_SED_template_set,
@@ -165,7 +167,6 @@ from .SED import (
     Mock_SED_obs_template_set,
 )
 
-from .Galaxy import Galaxy, Multiple_Galaxy
 from .Emission_lines import Emission_line, wav_lyman_alpha, line_diagnostics
 from . import IGM_attenuation
 from . import lyman_alpha_damping_wing

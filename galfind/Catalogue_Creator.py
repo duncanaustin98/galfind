@@ -6,13 +6,24 @@ Created on Wed Jun  7 13:59:59 2023
 @author: austind
 """
 
-#
+from __future__ import annotations
+
 # Catalogue_Creator.py
 import json
 import time
 from abc import ABC, abstractmethod
+from astropy.table import Table
+from astropy.coordinates import SkyCoord
+from astropy.io import fits
 from copy import deepcopy
 from pathlib import Path
+from typing import TYPE_CHECKING, Any, NoReturn, Tuple, Optional, List, Callable, Union, Dict
+if TYPE_CHECKING:
+    from . import Multiple_Filter, SED_code, Data
+try:
+    from typing import Self, Type  # python 3.11+
+except ImportError:
+    from typing_extensions import Self, Type  # python > 3.7 AND python < 3.11
 
 import astropy.units as u
 import h5py
@@ -26,242 +37,388 @@ from . import (
     LePhare,  # noqa F501
     config,
     galfind_logger,
+    Photometry_obs,
+    Galaxy,
+    Catalogue,
+    Catalogue_Base, # noqa F501
 )
 from . import useful_funcs_austind as funcs
 
 
-class Catalogue_Creator(ABC):
-    def __init__(
-        self,
-        property_conv_dict,
-        aper_diam_index,
-        flux_or_mag,
-        min_flux_pc_err,
-        ra_dec_labels,
-        ID_label,
-        zero_point=u.Jy.to(u.ABmag),
-        phot_fits_ext=0,
-        ra_dec_units={"RA": u.deg, "DEC": u.deg},
+def load_IDs_Table(
+    cat: Table, 
+    ID_label: str, 
+    **kwargs
+) -> List[int]:
+    return list(cat[ID_label])
+
+def load_skycoords_Table(
+    cat: Table, 
+    skycoords_labels: Dict[str, str], 
+    skycoords_units: Dict[str, u.Unit], 
+    **kwargs
+) -> SkyCoord:
+    ra = cat[skycoords_labels["RA"]]
+    dec = cat[skycoords_labels["DEC"]]
+    ra_unit = skycoords_units["RA"]
+    dec_unit = skycoords_units["DEC"]
+    return SkyCoord(ra=ra, dec=dec, unit=(ra_unit, dec_unit))
+
+# def load_phot_Table(
+#     cat: Table, 
+#     phot_labels: List[str], 
+#     err_labels: List[str], 
+#     **kwargs
+# ) -> Tuple[np.ndarray, np.ndarray]:
+#     assert "ZP" in kwargs.keys(), \
+#         galfind_logger.critical("ZP not in kwargs!")
+#     phot_cat = load_cols_Table(cat, phot_labels, **kwargs)
+#     err_cat = load_cols_Table(cat, err_labels, **kwargs)
+#     phot = funcs.flux_image_to_Jy(phot_cat, kwargs["ZP"])
+#     phot_err = funcs.flux_image_to_Jy(err_cat, kwargs["ZP"])
+#     return phot, phot_err
+
+def phot_property_from_galfind_tab(
+    cat: Table,
+    labels: Dict[u.Quantity, List[str]],
+    **kwargs
+) -> np.ndarray:
+    aper_diams = [label.value for label in labels.keys()] * list(labels.keys())[0].unit
+    if "cat_aper_diams" not in kwargs.keys():
+        galfind_logger.warning(
+            f"cat_aper_diams not in {kwargs.keys()=}! " + \
+            f"Setting to {aper_diams=}"
+        )
+        kwargs["cat_aper_diams"] = aper_diams
+    else:
+        assert isinstance(kwargs["cat_aper_diams"], u.Quantity), \
+            galfind_logger.critical(f"{type(kwargs['cat_aper_diams'])=} != u.Quantity!")
+        assert isinstance(kwargs["cat_aper_diams"].value, (list, np.ndarray)), \
+            galfind_logger.critical(f"{type(kwargs['cat_aper_diams'])=} != list!")
+    # load aperture diameter indices
+    aper_diam_indices = [i for i, aper_diam in enumerate(
+        kwargs["cat_aper_diams"]) if aper_diam in aper_diams]
+    assert len(aper_diam_indices) > 0, \
+        galfind_logger.critical("len(aper_diam_indices) <= 0")
+    # ensure labels are formatted properly
+    assert all(label == labels[aper_diams[0]] for label in labels.values()), \
+        galfind_logger.critical("All phot_labels not equal!")
+    properties = {}
+    _properties = funcs.fits_cat_to_np(cat, labels[aper_diams[0]])
+    for aper_diam_index in aper_diam_indices:
+        aper_diam = kwargs["cat_aper_diams"][aper_diam_index]
+        properties[aper_diam] = _properties[:, :, aper_diam_index]
+    return properties
+
+def load_galfind_phot(
+    cat: Table,
+    phot_labels: Dict[u.Quantity, List[str]],
+    err_labels: Dict[u.Quantity, List[str]],
+    **kwargs
+) -> Tuple[Dict[u.Quantity, np.ndarray], Dict[u.Quantity, np.ndarray]]:
+    assert phot_labels.keys() == err_labels.keys(), \
+        galfind_logger.critical(f"{phot_labels.keys()=} != {err_labels.keys()=}!")
+    assert "ZP" in kwargs.keys(), \
+        galfind_logger.critical("ZP not in kwargs!")
+    phot = {aper_diam: funcs.flux_image_to_Jy(_phot, kwargs["ZP"]) for aper_diam, _phot \
+        in phot_property_from_galfind_tab(cat, phot_labels, **kwargs).items()}
+    phot_err = {aper_diam: funcs.flux_image_to_Jy(_phot_err, kwargs["ZP"]) for aper_diam, _phot_err \
+        in phot_property_from_galfind_tab(cat, err_labels, **kwargs).items()}
+    return phot, phot_err
+
+def load_galfind_mask(
+    cat: Table,
+    mask_labels: List[str], 
+    **kwargs
+) -> np.ndarray:
+    mask = np.invert(
+        funcs.fits_cat_to_np(
+            cat, mask_labels, reshape_by_aper_diams=False
+        )
+    )
+    return mask
+
+def load_galfind_depths(
+    cat: Table,
+    depth_labels: Dict[u.Quantity, List[str]],
+    **kwargs
+) -> Dict[u.Quantity, np.ndarray]:
+    return {aper_diam: depth for aper_diam, depth in \
+        phot_property_from_galfind_tab(cat, depth_labels, **kwargs).items()}
+
+# def load_cols_Table(
+#     cat: Table, 
+#     labels: List[str], 
+#     **kwargs
+# ) -> np.ndarray:
+#     return funcs.fits_cat_to_np(cat, labels)
+
+def check_hdu_exists(cat_path: str, hdu: str) -> bool:
+    # check whether the hdu extension exists
+    hdul = fits.open(cat_path)
+    return any(hdu_.name == hdu.upper() for hdu_ in hdul)
+
+def open_galfind_cat(cat_path: str, cat_type: str) -> Table:
+    if cat_type in ["ID", "sky_coord", "phot", "mask", "depths", "selection"]:
+        cat = Table.read(
+            cat_path, character_as_bytes=False, memmap=True
+        )
+    elif check_hdu_exists(cat_path, cat_type):
+        cat = Table.read(
+            cat_path, character_as_bytes=False, memmap=True, hdu=cat_type
+        )
+    else:
+        err_message = f"cat_type = {cat_type} not in " + \
+            "['ID', 'sky_coord', 'phot', 'mask', 'depths', 'selection'] and " + \
+            f"not a valid HDU extension in {cat_path}!"
+        galfind_logger.critical(err_message)
+        raise Exception(err_message)
+    return cat
+
+def open_galfind_hdr(cat_path: str, cat_type: str) -> Dict[str, str]:
+    return open_galfind_cat(cat_path, cat_type).meta
+
+def galfind_phot_labels(
+    filterset: Multiple_Filter, 
+    aper_diams: u.Quantity, 
+    **kwargs
+) -> Tuple[Dict[str, str], Dict[str, str]]:
+    assert "min_flux_pc_err" in kwargs.keys(), \
+        galfind_logger.critical("min_flux_pc_err not in kwargs!")
+    phot_labels = {aper_diam * aper_diams.unit: [f"FLUX_APER_{filt_name}_aper_corr_Jy" for filt_name in filterset.band_names] for aper_diam in aper_diams.value}
+    err_labels = {aper_diam * aper_diams.unit: [f"FLUXERR_APER_{filt_name}_loc_depth_{str(int(kwargs['min_flux_pc_err']))}pc_Jy" for filt_name in filterset.band_names] for aper_diam in aper_diams.value}
+    return phot_labels, err_labels
+
+def galfind_mask_labels(
+    filterset: Multiple_Filter, 
+    **kwargs
+) -> Dict[str, str]:
+    return [f"unmasked_{filt_name}" for filt_name in filterset.band_names]
+
+def galfind_depth_labels(
+    filterset: Multiple_Filter, 
+    aper_diams: u.Quantity, 
+    **kwargs
+) -> Dict[str, str]:
+    return {aper_diam * aper_diams.unit: [f"loc_depth_{filt_name}" for filt_name in filterset.band_names] for aper_diam in aper_diams.value}
+
+class Catalogue_Creator:
+
+    def __init__(self,
+        survey: str,
+        version: str, 
+        cat_path: str,
+        filterset: Multiple_Filter,
+        aper_diams: u.Quantity,
+        open_cat: Callable[[str, str], Any] = open_galfind_cat,
+        open_hdr: Callable[[Any], Dict[str, str]] = open_galfind_hdr,
+        load_ID_func: Optional[Callable] = load_IDs_Table,
+        ID_label: str = "NUMBER",
+        load_ID_kwargs: Dict[str, Any] = {},
+        load_skycoords_func: Optional[Callable] = load_skycoords_Table,
+        skycoords_labels: Dict[str, str] = {"RA": "ALPHA_J2000", "DEC": "DELTA_J2000"},
+        skycoords_units: Dict[str, u.Unit] = {"RA": u.deg, "DEC": u.deg},
+        load_skycoords_kwargs: Dict[str, Any] = {},
+        load_phot_func: Callable = load_galfind_phot,
+        get_phot_labels: Callable[[Multiple_Filter], Dict[str, str]] = galfind_phot_labels,
+        load_phot_kwargs: Dict[str, Any] = {"ZP": u.Jy.to(u.ABmag), "min_flux_pc_err": 10.},
+        load_mask_func: Optional[Callable] = load_galfind_mask,
+        get_mask_labels: Callable[[Multiple_Filter], Dict[str, str]] = galfind_mask_labels,
+        load_mask_kwargs: Dict[str, Any] = {},
+        load_depths_func: Optional[Callable] = load_galfind_depths,
+        get_depth_labels: Callable[[Multiple_Filter], Dict[str, str]] = galfind_depth_labels,
+        load_depths_kwargs: Dict[str, Any] = {},
+        load_selection_func: Optional[Callable] = None,
+        load_selection_kwargs: Dict[str, Any] = {},
+        load_SED_result_func: Optional[Callable] = None,
     ):
-        self.property_conv_dict = property_conv_dict
-        self.aper_diam_index = aper_diam_index  # set to 'None' by default as very few people actually put arrays in catalogue columns
-        self.flux_or_mag = flux_or_mag  # either "flux" or "mag"
-        self.min_flux_pc_err = min_flux_pc_err
-        self.ra_dec_labels = ra_dec_labels
-        self.ra_dec_units = ra_dec_units
+        self.survey = survey
+        self.version = version
+        self.cat_path = cat_path
+        self.filterset = filterset
+        assert isinstance(aper_diams, u.Quantity), \
+            galfind_logger.critical(f"{type(aper_diams)=} != u.Quantity!")
+        assert isinstance(aper_diams.value, (list, np.ndarray)), \
+            galfind_logger.critical(f"{type(aper_diams.value)=} != list!")
+        self.aper_diams = aper_diams
+        self.open_cat = open_cat
+        self.open_hdr = open_hdr
         self.ID_label = ID_label
-        self.zero_point = zero_point  # must be astropy units; can be either integer or dict of {band: zero_point}
-        self.phot_fits_ext = (
-            phot_fits_ext  # only compatible with .fits currently
-        )
+        self.skycoords_labels = skycoords_labels
+        self.load_ID_func = load_ID_func
+        self.load_ID_kwargs = load_ID_kwargs
+        self.load_skycoords_func = load_skycoords_func
+        self.skycoords_units = skycoords_units
+        self.load_skycoords_kwargs = load_skycoords_kwargs
+        self.load_phot_func = load_phot_func
+        self.get_phot_labels = get_phot_labels
+        self.load_phot_kwargs = load_phot_kwargs
+        self.load_mask_func = load_mask_func
+        self.get_mask_labels = get_mask_labels
+        self.load_mask_kwargs = load_mask_kwargs
+        self.load_depth_func = load_depths_func
+        self.get_depth_labels = get_depth_labels
+        self.load_depth_kwargs = load_depths_kwargs
+        self.load_selection_func = load_selection_func
+        self.load_selection_kwargs = load_selection_kwargs
+        self.load_SED_result_func = load_SED_result_func
 
-    @abstractmethod
-    def phot_labels(self, bands):
-        pass
-
-    @abstractmethod
-    def mask_labels(self, bands):
-        pass
-
-    @abstractmethod
-    def depth_labels(self, bands):
-        pass
-
-    def load_zero_points(self, bands):
-        if isinstance(self.zero_point, dict):
-            if all(band in self.zero_point.keys() for band in bands):
-                zero_points = [self.zero_point[band] for band in bands]
-            else:
-                raise (
-                    Exception(
-                        f"Not all bands in self.zero_points = {self.zero_point_dict} in {self.__name__} !"
-                    )
+        # ensure survey/version is correct
+        # in primary header which stores the IDs
+        hdr = self.open_hdr(self.cat_path, "ID")
+        if "SURVEY" in hdr.keys():
+            assert hdr["SURVEY"] == self.survey, \
+                galfind_logger.critical(
+                    f"{hdr['SURVEY']=} != {self.survey=}"
                 )
-        elif isinstance(self.zero_point, float):
-            zero_points = list(np.full(len(bands), self.zero_point))
-        else:
-            raise (
-                Exception(
-                    f"self.zero_point of type {type(self.zero_point)} in {__name__} must be of type 'dict' or 'int' !"
+        if "VERSION" in hdr.keys():
+            assert hdr["VERSION"] == self.version, \
+                galfind_logger.critical(
+                    f"{hdr['VERSION']=} != {self.version=}"
                 )
-            )
-        return np.array(zero_points)
 
-    # @abstractmethod
-    # def load_photometry(self, fits_cat, band):
-    #     if isinstance(self.arr_index, int):
-    #         zero_point = self.load_zero_point(band) # check that self.zero_point is saved in the correct format and extract ZP for this band
-    #         phot_label, err_label = self.phot_conv(band, self.aper_diam_index)
-    #         if self.flux_or_mag == "flux":
-    #             phot = funcs.flux_image_to_Jy(fits_cat[phot_label], zero_point)
-    #             phot_err = funcs.flux_image_to_Jy(fits_cat[err_label], zero_point)
-    #             #phot, phot_err = self.apply_min_flux_pc_err(phot, phot_err)
-    #         elif self.flux_or_mag == "mag":
-    #             phot = funcs.mag_to_flux(fits_cat[phot_label], u.Jy.to(u.ABmag))
-    #             phot_err = funcs.mag_to_flux
-    #     else:
-    #         raise(Exception(f"'arr_index' = {self.arr_index} is not valid in {__name__}! Must be either 'None' or type() = int !"))
-    #     return phot, phot_err
-
-    @abstractmethod
-    def load_mask(self, fits_cat, bands):
-        pass
-
-    # def load_property(self, fits_cat, gal_property, code):
-    #     return fits_cat[self.property_conv_dict[code.__class__.__name__][gal_property]]
-
-    def load_flag(self, fits_cat, gal_flag):
-        flag_label = self.flag_conv(gal_flag)
-        try:
-            return fits_cat[flag_label]
-        except:
-            return {}  # None
-
-    def apply_min_flux_pc_err(self, fluxes, errs):
-        assert fluxes.unit == errs.unit
-        errs = (
-            np.array(
-                [
-                    [
-                        self.min_flux_pc_err * flux / 100
-                        if err / flux < self.min_flux_pc_err / 100
-                        and flux > 0.0
-                        else err
-                        for flux, err in zip(gal_fluxes, gal_errs)
-                    ]
-                    for gal_fluxes, gal_errs in zip(fluxes.value, errs.value)
-                ]
-            )
-            * fluxes.unit
+    def __call__(self) -> Catalogue:
+        galfind_logger.info(
+            f"Making {self.survey} {self.version} {self.cat_name} catalogue!"
         )
-        return fluxes, errs
-
-
-# %% GALFIND conversion from photometry .fits catalogue row to Photometry_obs class
-
-
-class GALFIND_Catalogue_Creator(Catalogue_Creator):
-    def __init__(
-        self,
-        cat_type,
-        aper_diam,
-        min_flux_pc_err,
-        zero_point=u.Jy.to(u.ABmag),
-        flux_or_mag="flux",
-    ):
-        self.cat_type = cat_type
-        self.aper_diam = aper_diam
-
-        # only make these dicts once to speed up property loading
-        same_key_value_properties = []  # ["auto_corr_factor_UV", "auto_corr_factor_mass"]
-        property_conv_dict = {
-            sed_code: {
-                **globals()[sed_code]().galaxy_property_dict,
-                **{element: element for element in same_key_value_properties},
-            }
-            for sed_code in json.loads(config["Other"]["CODES"])
-        }
-
-        ra_dec_labels = {"RA": "ALPHA_J2000", "DEC": "DELTA_J2000"}
-        ra_dec_units = {"RA": u.deg, "DEC": u.deg}
-        ID_label = "NUMBER"
-        phot_fits_ext = 0  # check whether this works!
-        aper_diam_index = int(
-            json.loads(config.get("SExtractor", "APERTURE_DIAMS")).index(
-                aper_diam.value
-            )
+        galfind_logger.debug(
+            f"Loading {self.survey} {self.version} {self.cat_name} photometry!"
         )
-        super().__init__(
-            property_conv_dict,
-            aper_diam_index,
-            flux_or_mag,
-            min_flux_pc_err,
-            ra_dec_labels,
-            ID_label,
-            zero_point,
-            phot_fits_ext,
-            ra_dec_units=ra_dec_units,
-        )
-
-    def sex_phot_labels(self, bands):
-        # Updated to take a list of bands as input
-        if self.flux_or_mag == "flux":
-            phot_label = [f"FLUX_APER_{band}" for band in bands]
-            err_label = [f"FLUXERR_APER_{band}" for band in bands]
-        elif self.flux_or_mag == "mag":
-            phot_label = [f"MAG_APER_{band}" for band in bands]
-            err_label = [f"MAGERR_APER_{band}" for band in bands]
-        else:
-            raise (
-                Exception(
-                    "self.flux_or_mag = {self.flux_or_mag} is invalid! It should be either 'flux' or 'mag' !"
-                )
-            )
-        return phot_label, err_label
-
-    def loc_depth_phot_labels(self, bands):
-        # outputs catalogue column names for photometric fluxes + errors
-        if self.flux_or_mag == "flux":
-            phot_labels = [f"FLUX_APER_{band}_aper_corr_Jy" for band in bands]
-            err_labels = [
-                f"FLUXERR_APER_{band}_loc_depth_{str(int(self.min_flux_pc_err))}pc_Jy"
-                for band in bands
-            ]
-        elif self.flux_or_mag == "mag":
-            raise (
-                Exception("Not implemented mag local depth errors yet!")
-            )  # "Beware that mag errors are asymmetric!")
-            phot_labels = [f"MAG_APER_{band}_aper_corr" for band in bands]
-            err_labels = [
-                [
-                    f"MAGERR_APER_{band}_l1_loc_depth",
-                    f"MAGERR_APER_{band}_u1_loc_depth",
-                ]
-                for band in bands
-            ]  # this doesn't currently work!
-        else:
-            raise (
-                Exception(
-                    "self.flux_or_mag = {self.flux_or_mag} is invalid! It should be either 'flux' or 'mag' !"
-                )
-            )
-        return phot_labels, err_labels
-
-    def phot_labels(self, bands):
-        if self.cat_type == "sex":
-            return self.sex_phot_labels(bands)
-        elif self.cat_type == "loc_depth":
-            return self.loc_depth_phot_labels(bands)
-        else:
+        # make array of Photometry_obs for each aperture diameter
+        phot, phot_err = self.load_phot()
+        depths = self.load_depths()
+        filterset_arr = self.load_gal_filtersets()
+        SED_results = None
+        phot_obs_arr = [{aper_diam: Photometry_obs(filterset_arr[i], \
+            phot[aper_diam][i], phot_err[aper_diam][i], depths[aper_diam][i], \
+            aper_diam, SED_results=SED_results) for aper_diam in self.aper_diams} \
+            for i in range(len(filterset_arr))]
+        # make an array of galaxy objects to be stored in the catalogue
+        IDs = self.load_IDs()
+        sky_coords = self.load_skycoords()
+        assert len(IDs) == len(sky_coords) == len(phot_obs_arr), \
             galfind_logger.critical(
-                f"self.cat_type = {self.cat_type} not in ['sex', 'loc_depth']!"
+                f"{len(IDs)=} != {len(sky_coords)=} != {len(phot_obs_arr)=}!"
             )
+        galfind_logger.debug(
+            f"Loading {self.survey} {self.version} {self.cat_name} galaxies!"
+        )
+        gals = [Galaxy(ID, sky_coord, phot_obs) \
+            for ID, sky_coord, phot_obs in zip(IDs, sky_coords, phot_obs_arr)]
+        cat = Catalogue(gals, self)
+        galfind_logger.info(f"Made {self.cat_path} catalogue!")
+        return cat
 
-    def mask_labels(self, bands):
-        return [f"unmasked_{band}" for band in bands]
+    @property
+    def cat_name(self) -> str:
+        #f"{meta['SURVEY']}_{meta['VERSION']}_{meta['INSTR']}"
+        return ".".join(self.cat_path.split("/")[-1].split(".")[:-1])
 
-    def depth_labels(self, bands):
-        return [f"loc_depth_{band}" for band in bands]
+    def load_IDs(self) -> List[int]:
+        cat = self.open_cat(self.cat_path, "ID")
+        return self.load_ID_func(cat, self.ID_label, **self.load_ID_kwargs)
 
-    def selection_labels(self, fits_cat):
-        labels = [
-            key.replace("SELECTED_", "")
-            for key, value in fits_cat.meta.items()
-            if value == True and "SELECTED_" in key
-        ]
-        return labels
+    def load_skycoords(self) -> SkyCoord:
+        cat = self.open_cat(self.cat_path, "sky_coord")
+        return self.load_skycoords_func(cat, self.skycoords_labels, self.skycoords_units, **self.load_skycoords_kwargs)
+
+    def load_phot(self) -> Tuple[np.ndarray, np.ndarray]:
+        cat = self.open_cat(self.cat_path, "phot")
+        # load the photometric fluxes and errors in units of Jy
+        phot_labels, err_labels = self.get_phot_labels(self.filterset, self.aper_diams, **self.load_phot_kwargs)
+        phot, phot_err = self.load_phot_func(cat, phot_labels, err_labels, **self.load_phot_kwargs)
+        self.make_gal_instr_mask(list(phot.values())[0])
+        #keep_indices = np.array(self.load_IDs()) - 1
+        gal_instr_mask = self.gal_instr_mask #[keep_indices]
+        phot = {aper_diam: self._apply_gal_instr_mask(_phot, gal_instr_mask) for aper_diam, _phot in phot.items()}
+        phot_err = {aper_diam: self._apply_gal_instr_mask(_phot_err, gal_instr_mask) for aper_diam, _phot_err in phot_err.items()}
+
+        mask = self.load_mask()
+        if mask is not None:
+            phot = {aper_diam: [Masked(gal_phot, mask=gal_mask)
+                for gal_phot, gal_mask in zip(_phot, mask)]
+                for aper_diam, _phot in phot.items()}
+            phot_err = {aper_diam: [Masked(gal_phot_err, mask=gal_mask)
+                for gal_phot_err, gal_mask in zip(_phot_err, mask)]
+                for aper_diam, _phot_err in phot_err.items()}
+        return phot, phot_err
+    
+    def load_mask(self) -> np.ndarray:
+        cat = self.open_cat(self.cat_path, "mask")
+        if self.load_mask_func is not None:
+            mask_labels = self.get_mask_labels(self.filterset)
+            try:
+                mask = self.load_mask_func(cat, mask_labels, **self.load_mask_kwargs)
+            except Exception as e:
+                err_message = f"Error loading mask: {e}"
+                galfind_logger.critical(err_message)
+                raise(Exception(err_message))
+            #keep_indices = np.array(self.load_IDs(cat)) - 1
+            gal_instr_mask = self.gal_instr_mask #[keep_indices]
+            mask = self._apply_gal_instr_mask(mask, gal_instr_mask)
+            return mask
+        else:
+            galfind_logger.warning(
+                "Either load mask or mask label function not provided!"
+            )
+            return None
+
+    def load_depths(self) -> np.ndarray:
+        cat = self.open_cat(self.cat_path, "depths")
+        if self.load_depth_func is not None and self.get_depth_labels is not None:
+            depth_labels = self.get_depth_labels(self.filterset, self.aper_diams)
+            try:
+                depths = self.load_depth_func(cat, depth_labels, **self.load_depth_kwargs)
+            except Exception as e:
+                err_message = f"Error loading depths: {e}"
+                galfind_logger.critical(err_message)
+                raise(Exception(err_message))
+            #keep_indices = np.array(self.load_IDs(cat)) - 1
+            gal_instr_mask = self.gal_instr_mask #[keep_indices]
+            depths = {aper_diam: self._apply_gal_instr_mask(_depths, gal_instr_mask) for aper_diam, _depths in depths.items()}
+            return depths
+        else:
+            galfind_logger.warning(
+                "Either load depth or depth label function not provided!"
+            )
+            return None
+        
+    # def load_selection(self, cat: Any, selection_names: List[str]) -> List[str]:
+    #     if isinstance(cat, str):
+    #         cat = self.open_cat(cat, "selection")
+    #     if self.load_selection_func is not None:
+    #         return self.load_selection_func(cat, selection_names)
+    #     else:
+    #         galfind_logger.warning("No selection function provided!")
+    #         return None
 
     # current bottleneck
-    @staticmethod
-    def load_gal_instr_mask(
-        phot, keep_indices, save_path, null_data_vals=[0.0, np.nan], timed=True
-    ):
-        if Path(save_path).is_file():
+    def make_gal_instr_mask(
+        self,
+        phot: np.ndarray,
+        null_data_vals: List[Union[float, np.nan]] = [0.0, np.nan],
+        survey: Optional[str] = None,
+        overwrite: bool = False,
+        timed: bool = True
+    ) -> NoReturn:
+        meta = self.open_hdr(self.cat_path, "ID")
+        if 'SURVEY' in meta.keys():
+            save_dir = f"{config['DEFAULT']['GALFIND_WORK']}/Masks/{meta['SURVEY']}/has_data_mask"
+        elif survey is not None:
+            save_dir = f"{config['DEFAULT']['GALFIND_WORK']}/Masks/{survey}/has_data_mask"
+        else:
+            err_message = f"Neither 'SURVEY' in {self.cat_path} nor 'survey' provided!"
+            galfind_logger.critical(err_message)
+            raise Exception(err_message)
+        save_path = f"{save_dir}/{self.cat_name}.h5"
+        funcs.make_dirs(save_path)
+        if Path(save_path).is_file() or overwrite:
             # load in gal_instr_mask from .h5
             hf = h5py.File(save_path, "r")
             gal_instr_mask = np.array(hf["has_data_mask"])
             galfind_logger.info(f"Loaded 'has_data_mask' from {save_path}")
         else:
+            galfind_logger.info(f"Making 'has_data_mask' for {self.cat_name}!")
             # calculate the mask that is used to crop photometry to only bands including data
             if timed:
                 gal_instr_mask = np.array(
@@ -271,7 +428,7 @@ class GALFIND_Catalogue_Creator(Catalogue_Creator):
                             for val in gal_phot
                         ]
                         for gal_phot in tqdm(
-                            phot, desc="Making gal_instr_mask", total=len(phot)
+                            phot, desc="Making has_data_mask", total=len(phot)
                         )
                     ]
                 )
@@ -290,304 +447,31 @@ class GALFIND_Catalogue_Creator(Catalogue_Creator):
             hf.create_dataset("has_data_mask", data=gal_instr_mask)
             galfind_logger.info(f"Saved 'has_data_mask' to {save_path}")
         hf.close()
-        return gal_instr_mask[keep_indices]
-
+        if not hasattr(self, "gal_instr_mask"):
+            self.gal_instr_mask = gal_instr_mask
+    
     @staticmethod
-    def load_instruments(instrument, gal_band_mask):
-        # create set of instruments to be pointed to by sources with these bands available
-        unique_data_combinations = np.unique(gal_band_mask, axis=0)
-        unique_instruments = [
-            deepcopy(instrument).remove_indices(
-                [
-                    i
-                    for i, has_data in enumerate(data_combination)
-                    if not has_data
-                ]
-            )
-            for data_combination in unique_data_combinations
-        ]
-        instrument_arr = [
-            unique_instruments[
+    def _apply_gal_instr_mask(
+        arr: np.ndarray,
+        gal_instr_mask: np.ndarray,
+    ) -> np.ndarray:
+        assert len(gal_instr_mask) == len(arr), \
+            galfind_logger.critical(f"{len(gal_instr_mask)} != {len(arr)}!")
+        return [ele[mask] for ele, mask in zip(arr, gal_instr_mask)]
+
+    def load_gal_filtersets(self):
+        # create set of filtersets to be pointed to by sources with these bands available
+        galfind_logger.debug(f"Making {self.cat_name} unique filtersets!")
+        unique_filt_comb = np.unique(self.gal_instr_mask, axis=0)
+        unique_filtersets = [deepcopy(self.filterset)[data_comb] for data_comb in unique_filt_comb]
+        filterset_arr = [
+            unique_filtersets[
                 np.where(
-                    np.all(unique_data_combinations == data_comb, axis=1)
+                    np.all(unique_filt_comb == data_comb, axis=1)
                 )[0][0]
             ]
-            for data_comb in gal_band_mask
+            for data_comb in self.gal_instr_mask
         ]
-        return instrument_arr
+        galfind_logger.debug(f"Made {self.cat_name} unique filtersets!")
+        return filterset_arr
 
-    # overriding load_photometry from parent class to include .T[aper_diam_index]'s
-    def load_photometry(
-        self, fits_cat, bands, gal_band_mask=None, timed=False
-    ):
-        if timed:
-            start_time = time.time()
-        zero_points = self.load_zero_points(bands)
-        phot_labels, err_labels = self.phot_labels(bands)
-        assert len(phot_labels) == len(err_labels), galfind_logger.critical(
-            "Length of photometry and error labels inconsistent!"
-        )
-
-        phot_cat = funcs.fits_cat_to_np(fits_cat, phot_labels)
-        err_cat = funcs.fits_cat_to_np(fits_cat, err_labels)
-
-        if self.flux_or_mag == "flux":
-            phot = funcs.flux_image_to_Jy(
-                phot_cat[:, :, self.aper_diam_index], zero_points
-            )
-            phot_err = funcs.flux_image_to_Jy(
-                err_cat[:, :, self.aper_diam_index], zero_points
-            )
-            phot, phot_err = self.apply_min_flux_pc_err(phot, phot_err)
-        elif self.flux_or_mag == "mag":
-            raise (
-                Exception(
-                    "Beware that mag errors are asymmetric! FUNCTIONALITY NOT YET INCORPORATED!"
-                )
-            )
-            phot = funcs.mag_to_flux(fits_cat[phot_labels], u.Jy.to(u.ABmag))
-            phot_err = funcs.mag_to_flux  # this doesn't currently work!
-        assert len(phot[0]) == len(bands)
-        if timed:
-            end_time = time.time()
-            galfind_logger.info(
-                f"Extracting photometry from fits took {(end_time - start_time):.1f}s"
-            )
-
-        if len(bands) > 1:
-            # breakpoint()
-            assert type(gal_band_mask) == type(None)
-            # for each galaxy remove bands that have no data
-            gal_band_mask_save_path = f"{config['DEFAULT']['GALFIND_WORK']}/Masks/{fits_cat.meta['SURVEY']}/has_data_mask/{fits_cat.meta['SURVEY']}_{fits_cat.meta['VERSION']}_{fits_cat.meta['INSTR']}.h5"
-            funcs.make_dirs(
-                funcs.split_dir_name(gal_band_mask_save_path, "dir")
-            )
-            keep_indices = np.array(fits_cat[self.ID_label]) - 1
-            gal_band_mask = self.load_gal_instr_mask(
-                phot, keep_indices, gal_band_mask_save_path, timed=timed
-            )
-            assert len(gal_band_mask) == len(phot) == len(phot_err)
-            if timed:
-                _phot = [
-                    gal_phot[band_mask]
-                    for gal_phot, band_mask in tqdm(
-                        zip(phot, gal_band_mask),
-                        desc="Removing photometric bands without data",
-                        total=len(phot),
-                    )
-                ]
-                _phot_err = [
-                    gal_phot_err[band_mask]
-                    for gal_phot_err, band_mask in tqdm(
-                        zip(phot_err, gal_band_mask),
-                        desc="Removing photometric errors from bands without data",
-                        total=len(phot_err),
-                    )
-                ]
-            else:
-                _phot = [
-                    gal_phot[band_mask]
-                    for gal_phot, band_mask in zip(phot, gal_band_mask)
-                ]
-                _phot_err = [
-                    gal_phot_err[band_mask]
-                    for gal_phot_err, band_mask in zip(phot_err, gal_band_mask)
-                ]
-        elif len(bands) == 1:
-            gal_band_mask = [[True] for i in range(len(phot))]
-            _phot = phot
-            _phot_err = phot_err
-        else:
-            galfind_logger.critical(
-                "len(bands)==0 in GALFIND_Catalogue_Creator.load_photometry()"
-            )
-
-        # mask these arrays based on whether or not each band is masked for each galaxy
-        masked_arr = self.load_mask(
-            fits_cat, bands, gal_band_mask, timed=timed
-        )
-        # assert masked_arr.shape == phot.shape, galfind_logger.critical("Length of mask arr and photometry is inconsistent!")
-        if timed:
-            phot = [
-                Masked(gal_phot, mask=gal_mask)
-                for gal_phot, gal_mask in tqdm(
-                    zip(_phot, masked_arr),
-                    desc="Loading photometry",
-                    total=len(_phot),
-                )
-            ]  # Masked(_phot, mask = masked_arr)
-            phot_err = [
-                Masked(gal_phot_err, mask=gal_mask)
-                for gal_phot_err, gal_mask in tqdm(
-                    zip(_phot_err, masked_arr),
-                    desc="Loading photometric errors",
-                    total=len(_phot_err),
-                )
-            ]  # Masked(_phot_err, mask = masked_arr)
-        else:
-            phot = [
-                Masked(gal_phot, mask=gal_mask)
-                for gal_phot, gal_mask in zip(_phot, masked_arr)
-            ]
-            phot_err = [
-                Masked(gal_phot_err, mask=gal_mask)
-                for gal_phot_err, gal_mask in zip(_phot_err, masked_arr)
-            ]
-        return phot, phot_err, gal_band_mask
-
-    def load_mask(self, fits_cat, bands, gal_band_mask=None, timed=False):
-        if len(bands) == 0:
-            return np.array([])
-        band_mask_labels = self.mask_labels(bands)
-        self.is_masked = True
-        for label in band_mask_labels:
-            if label not in fits_cat.colnames:
-                galfind_logger.warning(
-                    "Catalogue not yet masked in Catalogue_Creator.load_photometry()!"
-                )
-                self.is_masked = False
-                break
-        if self.is_masked:
-            masked_arr = np.invert(
-                funcs.fits_cat_to_np(
-                    fits_cat, band_mask_labels, reshape_by_aper_diams=False
-                )
-            )
-        else:  # nothing is masked
-            masked_arr = np.full((len(fits_cat), len(bands)), False)
-        if type(gal_band_mask) != type(None):
-            if timed:
-                masked_arr = np.array(
-                    [
-                        [
-                            mask
-                            for has_data, mask in zip(
-                                _gal_band_mask, _gal_mask
-                            )
-                            if has_data
-                        ]
-                        for _gal_band_mask, _gal_mask in tqdm(
-                            zip(gal_band_mask, masked_arr),
-                            desc="Loading mask",
-                            total=len(gal_band_mask),
-                        )
-                    ],
-                    dtype=object,
-                )
-            else:
-                masked_arr = np.array(
-                    [
-                        [
-                            mask
-                            for has_data, mask in zip(
-                                _gal_band_mask, _gal_mask
-                            )
-                            if has_data
-                        ]
-                        for _gal_band_mask, _gal_mask in zip(
-                            gal_band_mask, masked_arr
-                        )
-                    ],
-                    dtype=object,
-                )
-        return masked_arr
-
-    def load_depths(self, fits_cat, bands, gal_band_mask=None, timed=False):
-        depth_labels = self.depth_labels(bands)
-        self.has_depths = True
-        for label in depth_labels:
-            if label not in fits_cat.colnames:
-                galfind_logger.warning(
-                    "Catalogue not yet had depth calculations performed in Catalogue_Creator.load_photometry()!"
-                )
-                self.has_depths = False
-                break
-        if self.has_depths:
-            depths_arr = funcs.fits_cat_to_np(fits_cat, depth_labels)[
-                :, :, self.aper_diam_index
-            ]
-        else:  # depths given as np.nan
-            depths_arr = np.full((len(fits_cat), len(bands)), np.nan)
-        if type(gal_band_mask) != type(None):
-            if timed:
-                depths_arr = [
-                    [
-                        depth
-                        for depth, has_data in zip(_gal_depths, _gal_band_mask)
-                        if has_data
-                    ]
-                    * u.ABmag
-                    for _gal_depths, _gal_band_mask in tqdm(
-                        zip(depths_arr, gal_band_mask),
-                        desc="Loading depths",
-                        total=len(depths_arr),
-                    )
-                ]
-            else:
-                depths_arr = [
-                    [
-                        depth
-                        for depth, has_data in zip(_gal_depths, _gal_band_mask)
-                        if has_data
-                    ]
-                    * u.ABmag
-                    for _gal_depths, _gal_band_mask in zip(
-                        depths_arr, gal_band_mask
-                    )
-                ]
-        return depths_arr
-
-
-# %% Common catalogue converters
-
-
-class JADES_DR1_Catalogue_Creator(Catalogue_Creator):
-    def __init__(
-        self,
-        aper_diam_index,
-        phot_fits_ext,
-        min_flux_pc_err=None,
-        flux_or_mag="flux",
-    ):
-        super().__init__(
-            self.phot_conv,
-            self.property_conv,
-            aper_diam_index,
-            flux_or_mag,
-            min_flux_pc_err,
-            u.nJy.to(u.ABmag),
-            phot_fits_ext,
-        )
-
-    def phot_conv(self, band):
-        if self.flux_or_mag == "flux":
-            if self.phot_fits_ext == 4:  # CIRC
-                phot_label = (
-                    f"{band.replace('f', 'F')}_CIRC{self.aper_diam_index}"
-                )
-                err_label = f"{phot_label}_e"
-        return phot_label, err_label
-
-    def property_conv(self, gal_property):
-        property_conv_dict = {"z": ""}
-        return property_conv_dict[gal_property]
-
-    # overriding load_photometry from parent class to include .T[aper_diam_index]'s
-    def load_photometry(self, fits_cat, band):
-        zero_point = self.load_zero_point(
-            band
-        )  # check that self.zero_point is saved in the correct format and extract ZP for this band
-        phot_label, err_label = self.phot_conv(band)
-        if self.flux_or_mag == "flux":
-            phot = funcs.flux_image_to_Jy(fits_cat[phot_label], zero_point)
-            phot_err = funcs.flux_image_to_Jy(fits_cat[err_label], zero_point)
-        elif self.flux_or_mag == "mag":
-            print("Beware that mag errors are asymmetric!")
-            phot = funcs.mag_to_flux(fits_cat[phot_label], u.Jy.to(u.ABmag))
-            phot_err = funcs.mag_to_flux  # this doesn't currently work!
-        return phot, phot_err
-
-
-# JADES_DR1_cat_creator = JADES_DR1_Catalogue_Creator(2, 4) # 0.15 arcsec radius apertures; CIRC .fits table extension
-
-# JAGUAR

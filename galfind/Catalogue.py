@@ -51,6 +51,7 @@ from .Spectrum import Spectral_Catalogue
 
 
 class Catalogue(Catalogue_Base):
+
     @classmethod
     def from_pipeline(
         cls,
@@ -312,6 +313,12 @@ class Catalogue(Catalogue_Base):
             cat_obj.make_all_ext_src_corrs()
         return cat_obj
 
+    def __repr__(self):
+        return super().__repr__()
+    
+    def __str__(self) -> str:
+        return super().__str__()
+
     def save_phot_PDF_paths(self, PDF_paths, SED_fit_params):
         if "phot_PDF_paths" not in self.__dict__.keys():
             self.phot_PDF_paths = {}
@@ -459,7 +466,7 @@ class Catalogue(Catalogue_Base):
         append_tab = self.open_cat(
             cropped=False, hdu=hdu
         )  # this should really be cached in Catalogue_Base
-        if type(append_tab) == type(None):
+        if append_tab is None:
             galfind_logger.critical(
                 f"Skipping appending of {property_name=}, {origin=} as append_tab does not exist!"
             )
@@ -693,214 +700,214 @@ class Catalogue(Catalogue_Base):
             "MAG_AUTO", "MAG_AUTO", multiply_factor=u.ABmag, dest="phot_obs"
         )
 
-    def mask(self, timed: bool = True):  # , mask_instrument = NIRCam()):
-        galfind_logger.info(f"Running masking code for {self.cat_path}.")
-        # determine whether to overwrite catalogue or not
-        overwrite = config["Masking"].getboolean("OVERWRITE_MASK_COLS")
-        if overwrite:
-            galfind_logger.info(
-                "OVERWRITE_MASK_COLS = YES, updating catalogue with masking columns."
-            )
-        # open catalogue with astropy
-        fits_cat = self.open_cat(cropped=True)
+    # def mask(self, timed: bool = True):  # , mask_instrument = NIRCam()):
+    #     galfind_logger.info(f"Running masking code for {self.cat_path}.")
+    #     # determine whether to overwrite catalogue or not
+    #     overwrite = config["Masking"].getboolean("OVERWRITE_MASK_COLS")
+    #     if overwrite:
+    #         galfind_logger.info(
+    #             "OVERWRITE_MASK_COLS = YES, updating catalogue with masking columns."
+    #         )
+    #     # open catalogue with astropy
+    #     fits_cat = self.open_cat(cropped=True)
 
-        # update input catalogue if it hasnt already been masked or if wanted ONLY if len(self) == len(cat)
-        if len(self) != len(fits_cat):
-            galfind_logger.warning(
-                f"len(self) = {len(self)}, len(cat) = {len(fits_cat)} -> len(self) != len(cat). Skipping masking for {self.survey} {self.version}!"
-            )
+    #     # update input catalogue if it hasnt already been masked or if wanted ONLY if len(self) == len(cat)
+    #     if len(self) != len(fits_cat):
+    #         galfind_logger.warning(
+    #             f"len(self) = {len(self)}, len(cat) = {len(fits_cat)} -> len(self) != len(cat). Skipping masking for {self.survey} {self.version}!"
+    #         )
 
-        elif "MASKED" not in fits_cat.meta.keys() or overwrite:
-            galfind_logger.info(
-                f"Masking catalogue for {self.survey} {self.version}"
-            )
+    #     elif "MASKED" not in fits_cat.meta.keys() or overwrite:
+    #         galfind_logger.info(
+    #             f"Masking catalogue for {self.survey} {self.version}"
+    #         )
 
-            # calculate x,y for each galaxy in catalogue
-            # cat_x, cat_y = self.data.load_wcs(self.data.alignment_band).world_to_pixel(cat_sky_coords)
-            cat_sky_coords = SkyCoord(
-                fits_cat[self.cat_creator.ra_dec_labels["RA"]],
-                fits_cat[self.cat_creator.ra_dec_labels["DEC"]],
-            )
+    #         # calculate x,y for each galaxy in catalogue
+    #         # cat_x, cat_y = self.data.load_wcs(self.data.alignment_band).world_to_pixel(cat_sky_coords)
+    #         cat_sky_coords = SkyCoord(
+    #             fits_cat[self.cat_creator.ra_dec_labels["RA"]],
+    #             fits_cat[self.cat_creator.ra_dec_labels["DEC"]],
+    #         )
 
-            # make columns for individual band masking
-            if config["Masking"].getboolean("MASK_BANDS"):
-                unmasked_band_dict = {}
-                masks = [
-                    self.data.load_mask(band)
-                    for band in self.instrument.band_names
-                ]
-                # if masks are all the same shape
-                if all(mask.shape == masks[0].shape for mask in masks):
-                    cat_x, cat_y = self.data.load_wcs(
-                        self.data.alignment_band
-                    ).world_to_pixel(cat_sky_coords)
-                    unmasked_band_dict = {
-                        band: np.array(
-                            [
-                                False
-                                if x < 0.0
-                                or x >= mask.shape[1]
-                                or y < 0.0
-                                or y >= mask.shape[0]
-                                else not bool(mask[int(y)][int(x)])
-                                for x, y in zip(cat_x, cat_y)
-                            ]
-                        )
-                        for band, mask in tqdm(
-                            zip(self.instrument.band_names, masks),
-                            desc="Masking galfind catalogue object",
-                            total=len(self.instrument),
-                        )
-                    }
-                else:
-                    unmasked_band_dict = {}
-                    for band, mask in tqdm(
-                        zip(self.instrument.band_names, masks),
-                        desc="Masking galfind catalogue object",
-                        total=len(self.instrument),
-                    ):
-                        # convert catalogue RA/Dec to mask X/Y co-ordinates using image wcs
-                        cat_x, cat_y = self.data.load_wcs(band).world_to_pixel(
-                            cat_sky_coords
-                        )
-                        # determine whether a galaxy is unmasked
-                        unmasked_band_dict[band] = np.array(
-                            [
-                                False
-                                if x < 0.0
-                                or x >= mask.shape[1]
-                                or y < 0.0
-                                or y >= mask.shape[0]
-                                else not bool(mask[int(y)][int(x)])
-                                for x, y in zip(cat_x, cat_y)
-                            ]
-                        )
-                # update catalogue with new columns
-                for band, unmasked_band in unmasked_band_dict.items():
-                    fits_cat[f"unmasked_{band}"] = (
-                        unmasked_band  # assumes order of catalogue and galaxies in self is consistent
-                    )
-                    # update galaxy objects in catalogue - current bottleneck
-                    [
-                        gal.mask_flags.update({band: unmasked_band_gal})
-                        for gal, unmasked_band_gal in zip(self, unmasked_band)
-                    ]
+    #         # make columns for individual band masking
+    #         if config["Masking"].getboolean("MASK_BANDS"):
+    #             unmasked_band_dict = {}
+    #             masks = [
+    #                 self.data.load_mask(band)
+    #                 for band in self.instrument.band_names
+    #             ]
+    #             # if masks are all the same shape
+    #             if all(mask.shape == masks[0].shape for mask in masks):
+    #                 cat_x, cat_y = self.data.load_wcs(
+    #                     self.data.alignment_band
+    #                 ).world_to_pixel(cat_sky_coords)
+    #                 unmasked_band_dict = {
+    #                     band: np.array(
+    #                         [
+    #                             False
+    #                             if x < 0.0
+    #                             or x >= mask.shape[1]
+    #                             or y < 0.0
+    #                             or y >= mask.shape[0]
+    #                             else not bool(mask[int(y)][int(x)])
+    #                             for x, y in zip(cat_x, cat_y)
+    #                         ]
+    #                     )
+    #                     for band, mask in tqdm(
+    #                         zip(self.instrument.band_names, masks),
+    #                         desc="Masking galfind catalogue object",
+    #                         total=len(self.instrument),
+    #                     )
+    #                 }
+    #             else:
+    #                 unmasked_band_dict = {}
+    #                 for band, mask in tqdm(
+    #                     zip(self.instrument.band_names, masks),
+    #                     desc="Masking galfind catalogue object",
+    #                     total=len(self.instrument),
+    #                 ):
+    #                     # convert catalogue RA/Dec to mask X/Y co-ordinates using image wcs
+    #                     cat_x, cat_y = self.data.load_wcs(band).world_to_pixel(
+    #                         cat_sky_coords
+    #                     )
+    #                     # determine whether a galaxy is unmasked
+    #                     unmasked_band_dict[band] = np.array(
+    #                         [
+    #                             False
+    #                             if x < 0.0
+    #                             or x >= mask.shape[1]
+    #                             or y < 0.0
+    #                             or y >= mask.shape[0]
+    #                             else not bool(mask[int(y)][int(x)])
+    #                             for x, y in zip(cat_x, cat_y)
+    #                         ]
+    #                     )
+    #             # update catalogue with new columns
+    #             for band, unmasked_band in unmasked_band_dict.items():
+    #                 fits_cat[f"unmasked_{band}"] = (
+    #                     unmasked_band  # assumes order of catalogue and galaxies in self is consistent
+    #                 )
+    #                 # update galaxy objects in catalogue - current bottleneck
+    #                 [
+    #                     gal.mask_flags.update({band: unmasked_band_gal})
+    #                     for gal, unmasked_band_gal in zip(self, unmasked_band)
+    #                 ]
 
-            # determine which cluster/blank masking columns are wanted
-            mask_labels = []
-            mask_paths = []
-            default_blank_bool_arr = []
-            if config["Masking"].getboolean(
-                "MASK_CLUSTER_MODULE"
-            ):  # make blank field mask
-                mask_labels.append("blank_module")
-                mask_paths.append(self.data.blank_mask_path)
-                default_blank_bool_arr.append(True)
-            if config["Masking"].getboolean(
-                "MASK_CLUSTER_CORE"
-            ):  # make cluster mask
-                mask_labels.append("cluster")
-                mask_paths.append(self.data.cluster_mask_path)
-                default_blank_bool_arr.append(False)
+    #         # determine which cluster/blank masking columns are wanted
+    #         mask_labels = []
+    #         mask_paths = []
+    #         default_blank_bool_arr = []
+    #         if config["Masking"].getboolean(
+    #             "MASK_CLUSTER_MODULE"
+    #         ):  # make blank field mask
+    #             mask_labels.append("blank_module")
+    #             mask_paths.append(self.data.blank_mask_path)
+    #             default_blank_bool_arr.append(True)
+    #         if config["Masking"].getboolean(
+    #             "MASK_CLUSTER_CORE"
+    #         ):  # make cluster mask
+    #             mask_labels.append("cluster")
+    #             mask_paths.append(self.data.cluster_mask_path)
+    #             default_blank_bool_arr.append(False)
 
-            # mask columns in catalogue + galfind galaxies
-            cat_x, cat_y = self.data.load_wcs(
-                self.data.alignment_band
-            ).world_to_pixel(cat_sky_coords)
-            for mask_label, mask_path, default_blank_bool in zip(
-                mask_labels, mask_paths, default_blank_bool_arr
-            ):
-                # if using a blank field
-                if self.data.is_blank:
-                    galfind_logger.info(
-                        f"{self.survey} {self.version} is blank. Making '{mask_label}' boolean columns"
-                    )
-                    mask_data = [
-                        default_blank_bool for i in range(len(fits_cat))
-                    ]  # default behaviour
-                else:
-                    galfind_logger.info(
-                        f"{self.survey} {self.version} contains a cluster. Making '{mask_label}' boolean columns"
-                    )
-                    # open relevant .fits mask
-                    mask = fits.open(mask_path)[1].data
-                    # determine whether a galaxy is in a blank module
-                    if default_blank_bool:  # True if outside the mask
-                        galfind_logger.warning(
-                            "This masking assumes that the blank mask covers the cluster module and then invokes negatives."
-                        )
-                        mask_data = np.array(
-                            [
-                                False
-                                if x < 0.0
-                                or x >= mask.shape[1]
-                                or y < 0.0
-                                or y >= mask.shape[0]
-                                else not bool(mask[int(y)][int(x)])
-                                for x, y in zip(cat_x, cat_y)
-                            ]
-                        )
-                    else:  # True if within the mask
-                        mask_data = np.array(
-                            [
-                                False
-                                if x < 0.0
-                                or x >= mask.shape[1]
-                                or y < 0.0
-                                or y >= mask.shape[0]
-                                else bool(mask[int(y)][int(x)])
-                                for x, y in zip(cat_x, cat_y)
-                            ]
-                        )
-                fits_cat[mask_label] = (
-                    mask_data  # update catalogue with boolean column
-                )
+    #         # mask columns in catalogue + galfind galaxies
+    #         cat_x, cat_y = self.data.load_wcs(
+    #             self.data.alignment_band
+    #         ).world_to_pixel(cat_sky_coords)
+    #         for mask_label, mask_path, default_blank_bool in zip(
+    #             mask_labels, mask_paths, default_blank_bool_arr
+    #         ):
+    #             # if using a blank field
+    #             if self.data.is_blank:
+    #                 galfind_logger.info(
+    #                     f"{self.survey} {self.version} is blank. Making '{mask_label}' boolean columns"
+    #                 )
+    #                 mask_data = [
+    #                     default_blank_bool for i in range(len(fits_cat))
+    #                 ]  # default behaviour
+    #             else:
+    #                 galfind_logger.info(
+    #                     f"{self.survey} {self.version} contains a cluster. Making '{mask_label}' boolean columns"
+    #                 )
+    #                 # open relevant .fits mask
+    #                 mask = fits.open(mask_path)[1].data
+    #                 # determine whether a galaxy is in a blank module
+    #                 if default_blank_bool:  # True if outside the mask
+    #                     galfind_logger.warning(
+    #                         "This masking assumes that the blank mask covers the cluster module and then invokes negatives."
+    #                     )
+    #                     mask_data = np.array(
+    #                         [
+    #                             False
+    #                             if x < 0.0
+    #                             or x >= mask.shape[1]
+    #                             or y < 0.0
+    #                             or y >= mask.shape[0]
+    #                             else not bool(mask[int(y)][int(x)])
+    #                             for x, y in zip(cat_x, cat_y)
+    #                         ]
+    #                     )
+    #                 else:  # True if within the mask
+    #                     mask_data = np.array(
+    #                         [
+    #                             False
+    #                             if x < 0.0
+    #                             or x >= mask.shape[1]
+    #                             or y < 0.0
+    #                             or y >= mask.shape[0]
+    #                             else bool(mask[int(y)][int(x)])
+    #                             for x, y in zip(cat_x, cat_y)
+    #                         ]
+    #                     )
+    #             fits_cat[mask_label] = (
+    #                 mask_data  # update catalogue with boolean column
+    #             )
 
-            # update catalogue metadata
-            fits_cat.meta = {
-                **fits_cat.meta,
-                **{
-                    "MASKED": True,
-                    "HIERARCH MASK_BANDS": config["Masking"].getboolean(
-                        "MASK_BANDS"
-                    ),
-                    "HIERARCH MASK_CLUSTER_MODULE": config[
-                        "Masking"
-                    ].getboolean("MASK_CLUSTER_MODULE"),
-                    "HIERARCH MASK_CLUSTER_CORE": config["Masking"].getboolean(
-                        "MASK_CLUSTER_CORE"
-                    ),
-                },
-            }
-            # save catalogue
-            fits_cat.write(self.cat_path, overwrite=True)
-            funcs.change_file_permissions(self.cat_path)
-            # update catalogue README
-            galfind_logger.warning(
-                "REQUIRED UPDATE: Update README for catalogue masking columns"
-            )
-            # update masking of galfind galaxy objects
-            galfind_logger.info("Masking galfind galaxy objects in catalogue")
-            assert len(fits_cat) == len(self)
-            mask_arr = self.cat_creator.load_mask(
-                fits_cat,
-                self.instrument.band_names,
-                gal_band_mask=self.cat_creator.load_photometry(
-                    fits_cat, self.instrument.band_names
-                )[2],
-            )
-            [
-                gal.update_mask(mask, update_phot_rest=False)
-                for gal, mask in tqdm(
-                    zip(self, mask_arr),
-                    total=len(self),
-                    desc="Masking galfind galaxy objects",
-                )
-            ]
-        else:
-            galfind_logger.info(
-                f"Catalogue for {self.survey} {self.version} already masked. Skipping!"
-            )
+    #         # update catalogue metadata
+    #         fits_cat.meta = {
+    #             **fits_cat.meta,
+    #             **{
+    #                 "MASKED": True,
+    #                 "HIERARCH MASK_BANDS": config["Masking"].getboolean(
+    #                     "MASK_BANDS"
+    #                 ),
+    #                 "HIERARCH MASK_CLUSTER_MODULE": config[
+    #                     "Masking"
+    #                 ].getboolean("MASK_CLUSTER_MODULE"),
+    #                 "HIERARCH MASK_CLUSTER_CORE": config["Masking"].getboolean(
+    #                     "MASK_CLUSTER_CORE"
+    #                 ),
+    #             },
+    #         }
+    #         # save catalogue
+    #         fits_cat.write(self.cat_path, overwrite=True)
+    #         funcs.change_file_permissions(self.cat_path)
+    #         # update catalogue README
+    #         galfind_logger.warning(
+    #             "REQUIRED UPDATE: Update README for catalogue masking columns"
+    #         )
+    #         # update masking of galfind galaxy objects
+    #         galfind_logger.info("Masking galfind galaxy objects in catalogue")
+    #         assert len(fits_cat) == len(self)
+    #         mask_arr = self.cat_creator.load_mask(
+    #             fits_cat,
+    #             self.instrument.band_names,
+    #             gal_band_mask=self.cat_creator.load_photometry(
+    #                 fits_cat, self.instrument.band_names
+    #             )[2],
+    #         )
+    #         [
+    #             gal.update_mask(mask, update_phot_rest=False)
+    #             for gal, mask in tqdm(
+    #                 zip(self, mask_arr),
+    #                 total=len(self),
+    #                 desc="Masking galfind galaxy objects",
+    #             )
+    #         ]
+    #     else:
+    #         galfind_logger.info(
+    #             f"Catalogue for {self.survey} {self.version} already masked. Skipping!"
+    #         )
 
     def make_cutouts(
         self,

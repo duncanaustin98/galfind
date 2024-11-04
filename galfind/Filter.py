@@ -525,10 +525,22 @@ class Multiple_Filter:
             return self.filters[i]
         elif isinstance(i, str):
             return list(np.array(self.filters)[[index for index, filt in enumerate(self) if filt.band_name == i]])[0]
+        elif isinstance(i, (list, np.ndarray)):
+            if not all(isinstance(j, (np.bool_, bool)) for j in i):
+                raise TypeError(
+                    f"{i=} in {self.__class__.__name__}.__getitem__" + \
+                    " is not all bool"
+                )
+            if isinstance(i, list):
+                return list(np.array(self.filters)[np.array(i)])
+            else:
+                return list(np.array(self.filters)[i])
         else:
             raise (
                 TypeError(
-                    f"i={i} in {self.__class__.__name__}.__getitem__ has type={type(i)} which is not in [int, slice, str]"
+                    f"i={i} in {self.__class__.__name__}.__getitem__" + \
+                    f" has type={type(i)} which is not in " + \
+                    "[int, slice, str, list, np.ndarray]"
                 )
             )
 

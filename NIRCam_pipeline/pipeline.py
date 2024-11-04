@@ -20,7 +20,7 @@ from galfind import (
     Catalogue,
     Number_Density_Function,
 )
-from galfind.Catalogue_Creator import GALFIND_Catalogue_Creator
+from galfind.Catalogue_Creator import Galfind_Catalogue_Creator
 
 end_pipeline = time.time()
 print(f"Pipeline imports took {end_pipeline - start_pipeline}s")
@@ -53,7 +53,7 @@ def pipeline(
 ):
     for pc_err in min_flux_pc_errs:
         # make appropriate galfind catalogue creator for each aperture diameter
-        cat_creator = GALFIND_Catalogue_Creator(
+        cat_creator = Galfind_Catalogue_Creator(
             cat_type, aper_diams[0], pc_err
         )
         for survey in surveys:

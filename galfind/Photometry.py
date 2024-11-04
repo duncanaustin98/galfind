@@ -33,40 +33,41 @@ from . import Filter, Multiple_Filter
 class Photometry(ABC):
     def __init__(
         self: Self,
-        instrument: Type[Instrument],
+        filterset: Multiple_Filter,
         flux: Union[Masked, u.Quantity],
         flux_errs: Union[Masked, u.Quantity],
         depths: Union[Dict[str, float], List[float]],
     ):
-        self.instrument = instrument
+        self.filterset = filterset
         self.flux = flux
         self.flux_errs = flux_errs
+        if isinstance(depths, dict):
+            assert all(filt_name in depths.keys() for filt_name in filterset.band_names), \
+                galfind_logger.critical(
+                    f"not all {filterset.band_names} in {depths.keys()=}"
+                )
+            depths = [depths[filt.filt_name] for filt in filterset]
         self.depths = depths
+
         assert (
-            len(self.instrument)
+            len(self.filterset)
             == len(self.flux)
             == len(self.flux_errs)
             == len(self.depths)
         )
 
-    def __str__(
-        self: Self,
-        print_cls_name=True,
-        print_instrument=False,
-        print_fluxes=True,
-        print_depths=True,
-    ):
+    def __str__(self) -> str:
         line_sep = "*" * 40 + "\n"
         band_sep = "-" * 10 + "\n"
         output_str = ""
 
-        if print_cls_name:
-            output_str += line_sep
-            output_str += f"{self.__class__.__name__.upper()}:\n"
-            output_str += band_sep
+        #if print_cls_name:
+        output_str += line_sep
+        output_str += f"{self.__class__.__name__.upper()}:\n"
+        output_str += band_sep
 
-        if print_instrument:
-            output_str += str(self.instrument)
+        #if print_instrument:
+        output_str += str(self.instrument)
 
         # if print_fluxes:
         fluxes_str = [
@@ -84,8 +85,8 @@ class Photometry(ABC):
             f"DEPTHS: {[np.round(depth, 2) for depth in self.depths.value]}\n"
         )
 
-        if print_cls_name:
-            output_str += line_sep
+        #if print_cls_name:
+        output_str += line_sep
         return output_str
 
     def __getitem__(self, i):

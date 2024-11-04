@@ -1,14 +1,17 @@
 # Catalogue_Base.py
 
-from copy import deepcopy
-from typing import Union
+from __future__ import annotations
 
+from copy import deepcopy
 import astropy.units as u
 import numpy as np
 from astropy.coordinates import SkyCoord
 from astropy.io import fits
 from astropy.table import Table, join
 from tqdm import tqdm
+from typing import TYPE_CHECKING, List, Dict, Union
+if TYPE_CHECKING:
+    from . import Galaxy, Catalogue_Creator
 
 from . import (
     Multiple_Catalogue,
@@ -23,36 +26,23 @@ class Catalogue_Base:
     # later on, the gal_arr should be calculated from the Instrument and sex_cat path, with SED codes already given
     def __init__(
         self,
-        gals,
-        cat_path,
-        survey,
-        cat_creator,
-        instrument,
-        SED_fit_params_arr={},
-        version="",
-        crops=[],
-        SED_rest_properties={},
+        gals: List[Galaxy],
+        cat_creator: Catalogue_Creator,
+        SED_rest_properties: Dict[str, Union[u.Quantity, u.Magnitude, u.Dex]] = {},
     ):
-        self.survey = survey
-        self.cat_path = cat_path
+        self.gals = gals
         self.cat_creator = cat_creator
-        self.instrument = instrument
-        self.SED_fit_params_arr = SED_fit_params_arr
-        self.gals = np.array(gals)
-        if version == "":
-            galfind_logger.critical("Version must be specified")
-        self.version = version
 
         # keep a record of the crops that have been made to the catalogue
-        self.selection_cols = [
-            key.replace("SELECTED_", "")
-            for key in self.open_cat().meta.keys()
-            if "SELECTED_" in key
-        ]
-
-        if crops == None:
-            crops = []
-        self.crops = crops
+        # TODO: Ensure this is updated appropriately after Data class rewrite
+        # self.selection_cols = [
+        #     key.replace("SELECTED_", "")
+        #     for key in self.open_cat().meta.keys()
+        #     if "SELECTED_" in key
+        # ]
+        # if crops is None:
+        #     crops = []
+        # self.crops = crops
         self.SED_rest_properties = SED_rest_properties
 
         # concat is commutative for catalogues
@@ -62,58 +52,57 @@ class Catalogue_Base:
 
     # %% Overloaded operators
 
+    def __repr__(self) -> str:
+        return f"{self.__class__.__name__.upper()}({self.survey}," + \
+            f"{self.version},{self.filterset.instrument_name})"
+
     def __str__(
         self,
-        print_cls_name=True,
-        print_data=True,
-        print_sel_criteria=True,
-        display_selections=["EPOCHS", "BROWN_DWARF"],
-    ):
-        line_sep = "*" * 40 + "\n"
-        band_sep = "-" * 10 + "\n"
-        output_str = ""
-        if print_cls_name:
-            output_str += line_sep
-            output_str += f"CATALOGUE: {self.survey} {self.version}\n"  # could also show median RA/DEC from the array of galaxy sky coords
-            output_str += band_sep
-        if print_data and "data" in self.__dict__.keys():
-            output_str += str(self.data)
-        output_str += f"FITS CAT PATH = {self.cat_path}\n"
+    ) -> str:
+        #display_selections = ["EPOCHS", "BROWN_DWARF"]
+        output_str = funcs.line_sep
+        output_str += f"{repr(self)}:\n"
+        output_str += funcs.band_sep
+        output_str += f"CAT PATH = {self.cat_path}\n"
         # access table header to display what has been run for this catalogue
-        cat = self.open_cat()
-        output_str += f"N_GALS_TOTAL = {len(cat)}\n"
+        cat = self.cat_creator.open_cat(self.cat_path, "ID")
+        output_str += f"TOTAL GALAXIES = {len(cat)}\n"
+        output_str += f"RA RANGE = {self.ra_range}\n"
+        output_str += f"DEC RANGE = {self.dec_range}\n"
+        output_str += funcs.band_sep
+        output_str += str(self.filterset)
         # display what other things have previously been calculated for this catalogue, including templates and zmax_lowz
-        output_str += "CAT STATUS = SEXTRACTOR, "
-        for i, (key, value) in enumerate(cat.meta.items()):
-            if key in ["DEPTHS", "MASKED"] + [
-                f"RUN_{subclass.__name__}"
-                for subclass in SED_code.__subclasses__()
-            ]:
-                output_str += f"{key.split('_')[-1]}, "
-        for sel_criteria in display_selections:
-            if sel_criteria in cat.colnames:
-                output_str += f"{sel_criteria} SELECTION, "
-        output_str += "\n"
+        # output_str += "CAT STATUS = SEXTRACTOR, "
+        # for i, (key, value) in enumerate(cat.meta.items()):
+        #     if key in ["DEPTHS", "MASKED"] + [
+        #         f"RUN_{subclass.__name__}"
+        #         for subclass in SED_code.__subclasses__()
+        #     ]:
+        #         output_str += f"{key.split('_')[-1]}, "
+        # for sel_criteria in display_selections:
+        #     if sel_criteria in cat.colnames:
+        #         output_str += f"{sel_criteria} SELECTION, "
+        # output_str += "\n"
         # display total number of galaxies that satisfy the selection criteria previously performed
-        if print_sel_criteria:
-            for sel_criteria in display_selections:
-                if sel_criteria in cat.colnames:
-                    output_str += f"N_GALS_{sel_criteria} = {len(cat[cat[sel_criteria]])}\n"
-        output_str += band_sep
-        # display crops that have been performed on this specific object
-        if self.crops != []:
-            output_str += f"N_GALS_OBJECT = {len(self)}\n"
-            output_str += f"CROPS = {' + '.join(self.crops)}\n"
-        ##breakpoint()
-        if hasattr(self, "SED_rest_properties"):
-            if len(self.SED_rest_properties) >= 1:
-                output_str += band_sep
-                for key, properties in self.SED_rest_properties.items():
-                    output_str += "Rest frame SED properties:\n"
-                    output_str += f"{key}: {str(properties)}\n"
-                    output_str += band_sep
-        if print_cls_name:
-            output_str += line_sep
+        #if print_sel_criteria:
+        # for sel_criteria in display_selections:
+        #     if sel_criteria in cat.colnames:
+        #         output_str += f"N_GALS_{sel_criteria} = {len(cat[cat[sel_criteria]])}\n"
+        # output_str += funcs.band_sep
+        # # display crops that have been performed on this specific object
+        # if self.crops != []:
+        #     output_str += f"N_GALS_OBJECT = {len(self)}\n"
+        #     output_str += f"CROPS = {' + '.join(self.crops)}\n"
+
+        # if hasattr(self, "SED_rest_properties"):
+        #     if len(self.SED_rest_properties) >= 1:
+        #         output_str += funcs.band_sep
+        #         for key, properties in self.SED_rest_properties.items():
+        #             output_str += "Rest frame SED properties:\n"
+        #             output_str += f"{key}: {str(properties)}\n"
+        #             output_str += funcs.band_sep
+        #if print_cls_name:
+        #output_str += funcs.line_sep
         return output_str
 
     def __len__(self):
@@ -132,8 +121,8 @@ class Catalogue_Base:
             return gal
 
     def __getitem__(self, index):
-        if type(self.gals) != np.ndarray:
-            self.gals = np.array(self.gals)
+        # if type(self.gals) != np.ndarray:
+        #     self.gals = np.array(self.gals)
         return self.gals[index]
 
     # only acts on attributes that don't already exist in Catalogue
@@ -143,6 +132,8 @@ class Catalogue_Base:
         # get attributes from stored galaxy objects
         if property_name in self.__dict__.keys():
             return self.__getattribute__(property_name)
+        elif property_name in self.cat_creator.__dict__.keys():
+            return self.cat_creator.__getattribute__(property_name)
         else:
             attr_arr = [gal.__getattr__(property_name, origin) for gal in self]
             # sort the units
@@ -175,12 +166,29 @@ class Catalogue_Base:
     def __setitem__(self, index, gal):
         self.gals[index] = gal
 
+    def __deepcopy__(self, memo):
+        cls = self.__class__
+        result = cls.__new__(cls)
+        memo[id(self)] = result
+        for key, value in self.__dict__.items():
+            try:
+                setattr(result, key, deepcopy(value, memo))
+            except:
+                galfind_logger.critical(
+                    f"deepcopy({self.__class__.__name__}) {key}: {value} FAIL!"
+                )
+                breakpoint()
+        return result
+
     def __add__(self, cat, out_survey=None):
         if not cat.__class__.__name__ == "Spectral_Catalogue":
             # concat catalogues
             if out_survey == None:
                 out_survey = "+".join([self.survey, cat.survey])
             return Multiple_Catalogue([self, cat], survey=out_survey)
+    
+    def __sub__(self):
+        pass
 
     def __mul__(
         self,
@@ -463,30 +471,10 @@ class Catalogue_Base:
         "Alias for self * other"
         return self.__mul__(
             other,
-            out_survey=None,
-            max_sep=1.0 * u.arcsec,
-            match_type="nearest",
+            out_survey=out_survey,
+            max_sep=max_sep,
+            match_type=match_type,
         )
-
-    def __sub__(self):
-        pass
-
-    def __repr__(self):
-        return str(self.__dict__)
-
-    def __deepcopy__(self, memo):
-        cls = self.__class__
-        result = cls.__new__(cls)
-        memo[id(self)] = result
-        for key, value in self.__dict__.items():
-            try:
-                setattr(result, key, deepcopy(value, memo))
-            except:
-                galfind_logger.critical(
-                    f"deepcopy({self.__class__.__name__}) {key}: {value} FAIL!"
-                )
-                breakpoint()
-        return result
 
     @property
     def cat_dir(self):
@@ -501,7 +489,7 @@ class Catalogue_Base:
         try:
             return self._ra_range
         except:
-            self._ra_range = [np.min(self.RA), np.max(self.RA)]
+            self._ra_range = [np.min(self.RA.value), np.max(self.RA.value)] * self.RA.unit
             return self._ra_range
 
     @property
@@ -509,9 +497,10 @@ class Catalogue_Base:
         try:
             return self._dec_range
         except:
-            self._dec_range = [np.min(self.DEC), np.max(self.DEC)]
+            self._dec_range = [np.min(self.DEC.value), np.max(self.DEC.value)] * self.DEC.unit
             return self._dec_range
 
+    # TODO: should be __sub__ instead
     def remove_gal(self, index=None, id=None):
         if index is not None:
             self.gals = np.delete(self.gals, index)

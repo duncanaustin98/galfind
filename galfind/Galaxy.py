@@ -89,13 +89,11 @@ select_func_to_type = {
 
 class Galaxy:
     def __init__(
-        self, sky_coord, ID, phot, mask_flags={}, selection_flags={}
-    ):  # cat_path,
-        self.sky_coord = sky_coord
+        self, ID, sky_coord, aper_phot, selection_flags={}
+    ):
         self.ID = int(ID)
-        self.phot = phot
-        # self.cat_path = cat_path
-        self.mask_flags = mask_flags
+        self.sky_coord = sky_coord
+        self.aper_phot = aper_phot
         self.selection_flags = selection_flags
         self.cutout_paths = {}
 
@@ -144,7 +142,6 @@ class Galaxy:
         output_str = line_sep
         output_str += f"GALAXY {self.ID}: (RA, DEC) = ({np.round(self.sky_coord.ra, 5)}, {np.round(self.sky_coord.dec, 5)})\n"
         output_str += band_sep
-        output_str += f"MASK FLAGS: {self.mask_flags}\n"
         output_str += f"SELECTION FLAGS: {self.selection_flags}\n"
         output_str += str(self.phot)
         output_str += line_sep
@@ -179,9 +176,10 @@ class Galaxy:
                     "__array_interface__",
                     "__array__",
                 ]:
-                    galfind_logger.critical(
-                        f"Galaxy {self.ID=} has no {property_name=}!"
-                    )
+                    pass
+                    # galfind_logger.critical(
+                    #     f"Galaxy {self.ID=} has no {property_name=}!"
+                    # )
                 raise AttributeError
         else:
             return self.phot.__getattr__(property_name, origin)
