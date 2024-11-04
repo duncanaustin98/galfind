@@ -1313,18 +1313,30 @@ class Stacked_Band_Data(Band_Data_Base):
         # make rms_err/wht maps if they do not exist and are required
         used_galfind_err = False
         if err_type.lower() == "rms_err":
-            if not all(
+            if any(band_data.rms_err_path is None for band_data in band_data_arr):
+                run = True
+            elif not all(
                 Path(band_data.rms_err_path).is_file()
                 for band_data in band_data_arr
             ):
+                run = True
+            else:
+                run = False
+            if run:
                 for band_data in band_data_arr:
                     band_data._make_rms_err_from_wht()
                 used_galfind_err = True
         else:  # err_type.lower() == "wht"
-            if not all(
+            if any(band_data.wht_path is None for band_data in band_data_arr):
+                run = True
+            elif not all(
                 Path(band_data.wht_path).is_file()
                 for band_data in band_data_arr
             ):
+                run = True
+            else:
+                run = False
+            if run:
                 for band_data in band_data_arr:
                     band_data._make_wht_from_rms_err()
                 used_galfind_err = True
@@ -1345,7 +1357,7 @@ class Stacked_Band_Data(Band_Data_Base):
                 band_data.ZP == band_data_arr[0].ZP
                 for band_data in band_data_arr
             ), galfind_logger.critical(
-                "All image ZPs must have the same shape!"
+                "All image ZPs must be the same!"
             )
             # ensure all band data images have the same pixel scale
             assert all(
@@ -1787,19 +1799,16 @@ class Data:
                 # extract sci/rms_err/wht extensions
                 hdul = fits.open(path)
                 if not single_path:
-                    assertion_len = 1
                     for j, hdu in enumerate(hdul):
-                        # skip primary if there are multiple extensions
-                        if hdu.name == "PRIMARY" and len(hdul) > 1:
-                            assertion_len += 1
-                        else:
-                            if is_sci[path]:
-                                im_exts[filt_name].extend([int(j)])
-                            elif is_rms_err[path]:
-                                rms_err_exts[filt_name].extend([int(j)])
-                            elif is_wht[path]:
-                                wht_exts[filt_name].extend([int(j)])
-                    assert len(hdul) == assertion_len
+                        if is_sci[path] and hdu.name in list(im_ext_name):
+                            im_exts[filt_name].extend([int(j)])
+                            break
+                        elif is_rms_err[path] and hdu.name in list(rms_err_ext_name):
+                            rms_err_exts[filt_name].extend([int(j)])
+                            break
+                        elif is_wht[path] and hdu.name in list(wht_ext_name):
+                            wht_exts[filt_name].extend([int(j)])
+                            break
                 else:
                     for j, hdu in enumerate(hdul):
                         if hdu.name in im_ext_name:
