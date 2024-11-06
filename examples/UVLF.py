@@ -14,7 +14,7 @@ from galfind import (
     galfind_logger,
 )
 from galfind import useful_funcs_austind as funcs
-from galfind.Catalogue_Creator import GALFIND_Catalogue_Creator
+from galfind.Catalogue_Creator import Galfind_Catalogue_Creator
 
 sys.path.insert(1, config["NumberDensityFunctions"]["FLAGS_DATA_DIR"])
 try:
@@ -78,7 +78,7 @@ def UVLF(
     n_depth_reg="auto",
 ):
     # make appropriate galfind catalogue creator for each aperture diameter
-    cat_creator = GALFIND_Catalogue_Creator(cat_type, aper_diams[0], pc_err)
+    cat_creator = Galfind_Catalogue_Creator(cat_type, aper_diams[0], pc_err)
     for survey in surveys:
         start = time.time()
         cat = Catalogue.from_pipeline(

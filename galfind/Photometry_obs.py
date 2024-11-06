@@ -10,10 +10,10 @@ except ImportError:
 from typing import Union, List, Dict, TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from . import Instrument
-    from astropy.utils.masked import Masked
+    from . import Multiple_Filter
 
 import astropy.units as u
+from astropy.utils.masked import Masked
 import matplotlib.patheffects as pe
 import numpy as np
 from tqdm import tqdm
@@ -28,36 +28,28 @@ from . import galfind_logger
 class Photometry_obs(Photometry):
     def __init__(
         self: Self,
-        instrument: Type[Instrument],
+        filterset: Multiple_Filter,
         flux: Union[Masked, u.Quantity],
         flux_errs: Union[Masked, u.Quantity],
+        depths: Union[Dict[str, float], List[float]],
         aper_diam: u.Quantity,
-        min_flux_pc_err: Union[int, float],
-        loc_depths: Union[Dict[str, float], List[float]],
         SED_results: dict = {},
         timed: bool = False,
     ):
         if timed:
             start = time.time()
         self.aper_diam = aper_diam
-        self.min_flux_pc_err = min_flux_pc_err
-        self.SED_results = SED_results  # array of SED_result objects with different SED fitting runs
-        if timed:
-            mid = time.time()
-        self.aper_corrs = instrument.get_aper_corrs(self.aper_diam)
-        if timed:
-            mid_end = time.time()
-        super().__init__(instrument, flux, flux_errs, loc_depths)
+        self.SED_results = SED_results
+        super().__init__(filterset, flux, flux_errs, depths)
         if timed:
             end = time.time()
-            print(mid - start, mid_end - mid, end - mid_end)
+            print(end - start)
 
     def __str__(self):
         output_str = funcs.line_sep
         output_str += "PHOTOMETRY OBS:\n"
         output_str += funcs.band_sep
         output_str += f"APERTURE DIAMETER: {self.aper_diam}\n"
-        output_str += f"MIN FLUX PC ERR: {self.min_flux_pc_err}%\n"
         output_str += super().__str__(print_cls_name=False)
         for result in self.SED_results.values():
             output_str += str(result)
@@ -76,12 +68,12 @@ class Photometry_obs(Photometry):
         ):  # should have origin strings associated with Photometry.__getattr__ in list here!
             if property_name in self.__dict__.keys():
                 return self.__getattribute__(property_name)
-            elif (
-                "aper_corr" in property_name
-                and property_name.split("_")[-1] in self.instrument.band_names
-            ):
-                # return band aperture corrections
-                return self.aper_corrs[property_name.split("_")[-1]]
+            # elif (
+            #     "aper_corr" in property_name
+            #     and property_name.split("_")[-1] in self.instrument.band_names
+            # ):
+            #     # return band aperture corrections
+            #     return self.aper_corrs[property_name.split("_")[-1]]
             else:
                 return super().__getattr__(
                     property_name,
@@ -168,6 +160,7 @@ class Photometry_obs(Photometry):
 
     @property
     def SNR(self):
+        
         return [
             (flux * 10 ** (aper_corr / -2.5)) * 5 / depth
             if flux > 0.0
@@ -178,6 +171,11 @@ class Photometry_obs(Photometry):
                 self.depths.to(u.Jy).value,
             )
         ]
+
+    @property
+    def aper_corrs(self):
+        return [band_data.filt.instrument.aper_corrs[band_data.filt_name] \
+            [self.aper_diam] for band_data in self.filterset]
 
     @classmethod  # not a gal object here, more like a catalogue row
     def from_fits_cat(
@@ -261,8 +259,8 @@ class Photometry_obs(Photometry):
         property_name = "_".join(inspect.stack()[0].function.split("_")[1:])
         if not hasattr(self, property_name):
             # calculate aperture corrections if not given
-            if type(aper_corrs) == type(None):
-                aper_corrs = self.instrument.get_aper_corrs(self.aper_diam)
+            if aper_corrs is None:
+                aper_corrs = self.filterset.get_aper_corrs(self.aper_diam)
                 aper_corrs = {
                     band_name: aper_corr
                     for band_name, aper_corr in zip(

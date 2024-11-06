@@ -193,6 +193,10 @@ class Filter:
     def __setattr__(self, key, value):
         super().__setattr__(key, value)
 
+    @property
+    def instrument_name(self) -> str:
+        return self.instrument.__class__.__name__
+
     @staticmethod
     def _get_facility_instrument_filt(filt_name: str) -> Tuple[str, str, str, str, str]:
         # determine facility and instrument names of filter string
@@ -544,15 +548,27 @@ class Multiple_Filter:
             self.iter += 1
             return band
 
-    def __getitem__(self, i: Union[int, slice]) -> Union[Filter, List[Filter]]:
+    def __getitem__(self, i: Union[int, slice, str, list, np.ndarray]) -> Union[Filter, List[Filter]]:
         if isinstance(i, (int, slice)):
             return self.filters[i]
         elif isinstance(i, str):
             return list(np.array(self.filters)[[index for index, filt in enumerate(self) if filt.band_name == i]])[0]
+        elif isinstance(i, (list, np.ndarray)):
+            if not all(isinstance(j, (np.bool_, bool)) for j in i):
+                raise TypeError(
+                    f"{i=} in {self.__class__.__name__}.__getitem__" + \
+                    " is not all bool"
+                )
+            if isinstance(i, list):
+                return Multiple_Filter(list(np.array(self.filters)[np.array(i)]))
+            else:
+                return Multiple_Filter(list(np.array(self.filters)[i]))
         else:
             raise (
                 TypeError(
-                    f"i={i} in {self.__class__.__name__}.__getitem__ has type={type(i)} which is not in [int, slice, str]"
+                    f"i={i} in {self.__class__.__name__}.__getitem__" + \
+                    f" has type={type(i)} which is not in " + \
+                    "[int, slice, str, list, np.ndarray]"
                 )
             )
 

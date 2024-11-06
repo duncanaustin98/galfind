@@ -91,8 +91,8 @@ def segment_sextractor(
     overwrite: bool = False,
 ) -> str:
     
-    sex_config_path = f"{config['SExtractor']['CONFIG_DIR']}/{config_name}"
-    params_path = f"{config['SExtractor']['CONFIG_DIR']}/{params_name}"
+    sex_config_path = f"{config['SExtractor']['SEX_CONFIG_DIR']}/{config_name}"
+    params_path = f"{config['SExtractor']['SEX_CONFIG_DIR']}/{params_name}"
 
     err_map_path, err_map_ext, err_map_type = get_err_map(self, err_type)
     seg_path = get_segmentation_path(self, err_map_type)
@@ -179,8 +179,8 @@ def perform_forced_phot(
     overwrite: bool = False,
 ) -> str:
 
-    sex_config_path = f"{config['SExtractor']['CONFIG_DIR']}/{config_name}"
-    params_path = f"{config['SExtractor']['CONFIG_DIR']}/{params_name}"
+    sex_config_path = f"{config['SExtractor']['SEX_CONFIG_DIR']}/{config_name}"
+    params_path = f"{config['SExtractor']['SEX_CONFIG_DIR']}/{params_name}"
 
     # make forced photometry catalogue
     start = time.time()

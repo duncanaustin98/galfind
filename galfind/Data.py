@@ -164,7 +164,7 @@ class Band_Data_Base(ABC):
         # for attr in ["mask", "seg", "forced_phot", "depth"]:
         #     if hasattr(self, f"{attr}_args"):
         #         included += f"{attr},"
-        return f"{self.instr_name}/{self.filt_name}"#({included})"
+        return f"{self.instr_name}/{self.filt_name}" #({included})"
     
     def __str__(self) -> str:
         output_str = funcs.line_sep
@@ -1540,6 +1540,7 @@ class Data:
         data.segment()
         data.perform_forced_phot()
         data.append_aper_corr_cols()
+        data.append_mask_cols()
         data.run_depths()
         data.append_loc_depth_cols(min_flux_pc_err = min_flux_pc_err)
         return data
@@ -2461,19 +2462,19 @@ class Data:
                         [band_data._get_master_tab(output_ids_locs=False)])
             master_tab = hstack(master_tab_arr)
             # update table header
-            #self_band_data_arr = self.band_data_arr + [self.forced_phot_band]
-            # master_tab.meta = {
-            #     **master_tab.meta,
-            #     **{
-            #         "INSTR": self.filterset.instrument_name,
-            #         "SURVEY": self.survey,
-            #         "VERSION": self.version,
-            #         "BANDS": str(self.filterset.band_names),
-            #         "APERS": SExtractor.aper_diams_to_str(self.forced_phot_band.aper_diams),
-            #         "ERR_TYPE": "+".join(np.unique(band_data.forced_phot_args["err_type"] for band_data in self_band_data_arr)[0]),
-            #         "METHODS": "+".join(np.unique(band_data.forced_phot_args["method"] for band_data in self_band_data_arr)[0]),
-            #     },
-            # }
+            self_band_data_arr = self.band_data_arr + [self.forced_phot_band]
+            master_tab.meta = {
+                **master_tab.meta,
+                **{
+                    "INSTR": self.filterset.instrument_name,
+                    "SURVEY": self.survey,
+                    "VERSION": self.version,
+                    "BANDS": str(self.filterset.band_names),
+                    "APERDIAM": funcs.aper_diams_to_str(self.forced_phot_band.aper_diams),
+                    "ERR_TYPE": "+".join(np.unique(band_data.forced_phot_args["err_type"] for band_data in self_band_data_arr)[0]),
+                    "METHODS": "+".join(np.unique(band_data.forced_phot_args["method"] for band_data in self_band_data_arr)[0]),
+                },
+            }
             # save master table
             master_tab.write(self.phot_cat_path, format="fits", overwrite=True)
             galfind_logger.info(
@@ -2932,6 +2933,61 @@ class Data:
             galfind_logger.warning(
                 f"Aperture correction columns already in {self.phot_cat_path}"
             )
+    
+    def append_mask_cols(
+        self, 
+        overwrite: bool = False
+    ) -> NoReturn:
+        # ensure forced photometry has been run on every band in catalogue
+        assert all(hasattr(band_data, "forced_phot_args") for band_data in self), \
+            galfind_logger.critical(
+                "Forced photometry not performed on all bands!"
+            )
+        assert all(band_data.forced_phot_args["ra_label"] == \
+                self[0].forced_phot_args["ra_label"] for band_data in self) \
+                and all(band_data.forced_phot_args["dec_label"] == \
+                self[0].forced_phot_args["dec_label"] for band_data in self), \
+            galfind_logger.critical(
+                "RA/DEC labels not the same for all bands!"
+            )
+        cat = Table.read(self.phot_cat_path)
+        if f"unmasked_{self[0].filt_name}" not in cat.colnames or overwrite:
+            if overwrite:
+                # TODO: Delete already existing columns
+                raise(NotImplementedError())
+                galfind_logger.info(
+                    f"Deleting {self.phot_cat_path} mask columns!"
+                )
+            # make sky_coords
+            ra = cat[self[0].forced_phot_args["ra_label"]]
+            dec = cat[self[0].forced_phot_args["dec_label"]]
+            sky_coords = SkyCoord(ra=ra, dec=dec, unit=(u.deg, u.deg))
+            # append mask columns to catalogue
+            for band_data in self:
+                galfind_logger.info(
+                    f"Appending {band_data.filt_name} mask" + \
+                    f" columns to {self.phot_cat_path}"
+                )
+                wcs = band_data.load_wcs()
+                cat_x, cat_y = wcs.world_to_pixel(sky_coords)
+                mask = band_data.load_mask()[0]["MASK"]
+                cat[f"unmasked_{band_data.filt_name}"] = \
+                    np.array(
+                        [
+                            False if x < 0.0
+                            or x >= mask.shape[1]
+                            or y < 0.0 or y >= mask.shape[0]
+                            else not bool(mask[int(y)][int(x)])
+                            for x, y in zip(cat_x, cat_y)
+                        ]
+                    )
+            cat.write(self.phot_cat_path, overwrite=True)
+            funcs.change_file_permissions(self.phot_cat_path)
+            galfind_logger.info(
+                f"Appended mask columns to {self.phot_cat_path}"
+            )
+            # TODO: update README
+            galfind_logger.debug(f"Updating README for mask not implemented!")
 
     # @staticmethod
     # def mosaic_images(

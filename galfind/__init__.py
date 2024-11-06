@@ -147,17 +147,19 @@ from .EAZY import EAZY # Failed to `import dust_attenuation`
 from .Bagpipes import Bagpipes
 
 # don't do Bagpipes or LePhare for now
-sed_code_to_name_dict = {
-    sed_code_name: globals()[sed_code_name]()
-    for sed_code_name in [subcls.__name__ for subcls in SED_code.__subclasses__()]
-    if sed_code_name not in ["LePhare"]
-}
+# sed_code_to_name_dict = {
+#     sed_code_name: globals()[sed_code_name]()
+#     for sed_code_name in [subcls.__name__ for subcls in SED_code.__subclasses__()]
+#     if sed_code_name not in ["LePhare", "Bagpipes"]
+# }
+
+from .Galaxy import Galaxy, Multiple_Galaxy
 
 from .Multiple_Catalogue import Multiple_Catalogue
 from .Multiple_Data import Multiple_Data
 from .Catalogue_Base import Catalogue_Base
 from .Catalogue import Catalogue
-from .Catalogue_Creator import Catalogue_Creator, GALFIND_Catalogue_Creator
+from .Catalogue_Creator import Catalogue_Creator
 from .SED import SED, SED_rest, SED_obs, Mock_SED_rest, Mock_SED_obs
 from .SED import (
     Mock_SED_template_set,
@@ -165,7 +167,6 @@ from .SED import (
     Mock_SED_obs_template_set,
 )
 
-from .Galaxy import Galaxy, Multiple_Galaxy
 from .Emission_lines import Emission_line, wav_lyman_alpha, line_diagnostics
 from . import IGM_attenuation
 from . import lyman_alpha_damping_wing

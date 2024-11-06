@@ -2,7 +2,7 @@
 import astropy.units as u
 
 from galfind import Catalogue  # , LePhare, EAZY,
-from galfind.Catalogue_Creator import GALFIND_Catalogue_Creator
+from galfind.Catalogue_Creator import Galfind_Catalogue_Creator
 
 
 def Trussler2024_smouldering_IDs(survey):
@@ -40,7 +40,7 @@ if __name__ == "__main__":
     # fixed parameters (for now)
     forced_phot_band = ["F277W", "F356W", "F444W"]
     aper_diams = [0.32] * u.arcsec
-    cat_creator = GALFIND_Catalogue_Creator("loc_depth", aper_diams[0], 10)
+    cat_creator = Galfind_Catalogue_Creator("loc_depth", aper_diams[0], 10)
     for survey, IDs in zip(surveys, IDs_arr):
         cat = Catalogue.from_pipeline(
             survey=survey,

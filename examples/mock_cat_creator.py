@@ -35,7 +35,7 @@ from galfind import (
     Catalogue,
     Data,
     Emission_line,
-    GALFIND_Catalogue_Creator,
+    Galfind_Catalogue_Creator,
     Mock_Photometry,
     Mock_SED_obs,
     Mock_SED_rest,
@@ -445,7 +445,7 @@ def run_beta_bias_through_EAZY(
     min_pc_err=10.0,
     version="beta_bias_v9",
 ):
-    cat_creator = GALFIND_Catalogue_Creator("loc_depth", aper_diam, min_pc_err)
+    cat_creator = Galfind_Catalogue_Creator("loc_depth", aper_diam, min_pc_err)
     code_names = ["EAZY"]
     eazy_templates = ["fsps_larson"]
     eazy_lowz_zmax = [[6.0]]
@@ -488,7 +488,7 @@ def calc_obs_UV_properties(
     ],
 ):
     # load galfind catalogue from fits_cat_path
-    cat_creator = GALFIND_Catalogue_Creator("loc_depth", aper_diam, min_pc_err)
+    cat_creator = Galfind_Catalogue_Creator("loc_depth", aper_diam, min_pc_err)
     if instrument_name == "NIRCam":
         instrument = NIRCam()
     elif instrument_name == "ACS_WFC+NIRCam":

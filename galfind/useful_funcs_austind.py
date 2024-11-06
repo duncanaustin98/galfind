@@ -211,7 +211,7 @@ def flux_pc_to_mag_err(flux_pc_err):
 
 def flux_image_to_Jy(fluxes, zero_points):
     # convert flux from image units to Jy
-    if type(fluxes) in [list, np.array]:
+    if isinstance(fluxes, (list, np.ndarray,)):
         return (
             np.array(
                 [
@@ -410,6 +410,15 @@ unit_labels_dict = {
     u.nJy: r"$\mathrm{nJy}$",
     u.ABmag: r"$\mathrm{AB mag}$",
 }
+
+# property labelling 
+# {
+#     **{"z": "Redshift, z"},
+#     **{
+#         f"{ubvj_filt}_flux": ubvj_filt
+#         for ubvj_filt in ["U", "B", "V", "J"]
+#     },
+# }
 
 
 def label_log(label):
@@ -716,10 +725,13 @@ def cat_from_path(path, crop_names=None):
 
 def fits_cat_to_np(fits_cat, column_labels, reshape_by_aper_diams=True):
     new_cat = fits_cat[column_labels].as_array()
-    if type(new_cat) == np.ma.core.MaskedArray:
+    if isinstance(new_cat, np.ma.core.MaskedArray):
         new_cat = new_cat.data
     if reshape_by_aper_diams:
-        n_aper_diams = len(new_cat[0][0])
+        if isinstance(new_cat[0][0], (float, int)):
+            n_aper_diams = 1
+        else:
+            n_aper_diams = len(new_cat[0][0])
         new_cat = np.lib.recfunctions.structured_to_unstructured(
             new_cat
         ).reshape(len(fits_cat), len(column_labels), n_aper_diams)

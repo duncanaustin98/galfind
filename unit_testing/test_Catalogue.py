@@ -3,7 +3,7 @@ import json
 import astropy.units as u
 
 from galfind import config
-from galfind.Catalogue_Creator import GALFIND_Catalogue_Creator
+from galfind.Catalogue_Creator import Galfind_Catalogue_Creator
 from galfind.Catalogue import Catalogue
 
 
@@ -47,7 +47,7 @@ def flux_or_mag(request):
 @pytest.fixture(scope="session")
 def galfind_cat_creator(cat_type, aper_diam, min_flux_pc_err, flux_or_mag):
     # Set up
-    cat_creator = GALFIND_Catalogue_Creator(
+    cat_creator = Galfind_Catalogue_Creator(
         cat_type, aper_diam, min_flux_pc_err, flux_or_mag
     )
     yield cat_creator

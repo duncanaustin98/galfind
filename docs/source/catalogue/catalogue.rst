@@ -11,7 +11,7 @@ The most major component stored in a `Catalogue` object is a list of galfind `Ga
 .. toctree::
     :maxdepth: 1
 
-    from_fits_cat
+    load_catalogue
     plotting
     number_density_function
     from_pipeline

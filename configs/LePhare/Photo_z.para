@@ -23,7 +23,7 @@ GAL_LIB		LIB_COSMOS  				# Bin. GAL LIBRARY ->
 							# $LEPHAREWORK/lib_bin
 #SEL_AGE   $LEPHAREDIR/sed/GAL/HYPERZ/AGE_GISSEL_ALL.dat # Age list(full path)
 							# (def=NONE)	
-AGE_RANGE  0.,13.e9                                     # Age Min-Max in yr
+#AGE_RANGE  0.,13.e9                                     # Age Min-Max in yr
 #
 #############################################################################
 #                           FILTERS                                         #

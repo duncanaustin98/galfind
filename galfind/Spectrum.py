@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import NoReturn, Union
+from typing import NoReturn, Union, Optional
 
 import astropy.units as u
 import numpy as np
@@ -389,7 +389,7 @@ class Spectrum:
         self.SNR = mean_SNR
         return mean_SNR
 
-    def plot_spectrum(self, src="msaexp"):
+    def plot(self, src: str = "msaexp", out_dir: Optional[str] = f"{config['DEFAULT']['GALFIND_WORK']}/DJA_spec_plots/") -> NoReturn:
         if src == "msaexp":
             import msaexp.spectrum
 
@@ -397,7 +397,9 @@ class Spectrum:
                 self.origin, z=self.z
             )
             self.fit_data = data
-            save_path = f"{config['DEFAULT']['GALFIND_WORK']}/DJA_spec_plots/{self.instrument.grating_filter_name}/{self.src_name}_spec.png"
+            if out_dir is None:
+                out_dir = ""
+            save_path = f"{out_dir}{self.instrument.grating_filter_name}/{self.src_name}_spec.png"
             funcs.make_dirs(save_path)
             fig.savefig(save_path)
 

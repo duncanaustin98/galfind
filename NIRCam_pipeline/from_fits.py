@@ -1,6 +1,6 @@
 import astropy.units as u
 
-from galfind import EAZY, Catalogue, GALFIND_Catalogue_Creator, config
+from galfind import EAZY, Catalogue, Galfind_Catalogue_Creator, config
 
 
 def nadams_jaguar_path(
@@ -33,7 +33,7 @@ def main():
     lowz_zmax_arr = [[4.0, 6.0, None]]
     fits_cat_path = nadams_jaguar_path(version, survey)
 
-    cat_creator = GALFIND_Catalogue_Creator("loc_depth", aper_diam, min_pc_err)
+    cat_creator = Galfind_Catalogue_Creator("loc_depth", aper_diam, min_pc_err)
     SED_fit_params_arr = make_EAZY_SED_fit_params_arr(
         SED_code_arr, templates_arr, lowz_zmax_arr
     )

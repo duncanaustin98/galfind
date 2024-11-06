@@ -12,7 +12,7 @@ import astropy.units as u
 import numpy as np
 
 from galfind import Catalogue, config
-from galfind.Catalogue_Creator import GALFIND_Catalogue_Creator
+from galfind.Catalogue_Creator import Galfind_Catalogue_Creator
 
 
 def calc_UV_properties(
@@ -36,7 +36,7 @@ def calc_UV_properties(
     # crop_key = f"final_sample_highz_{templates}"
     for pc_err in min_flux_pc_errs:
         # make appropriate galfind catalogue creator for each aperture diameter
-        cat_creator = GALFIND_Catalogue_Creator(
+        cat_creator = Galfind_Catalogue_Creator(
             cat_type, aper_diams[0], pc_err
         )
         for survey, xy_offset in zip(surveys, xy_offsets):

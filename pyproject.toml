@@ -71,6 +71,7 @@ classifiers = [  # Optional
 
 # Dependencies
 dependencies = [
+  "asdf-astropy",
   "setuptools",
   "numpy<2.0",
   "matplotlib",
