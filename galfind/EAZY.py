@@ -6,6 +6,8 @@ Created on Tue Jun  6 14:52:36 2023
 @author: austind
 """
 
+from __future__ import annotations
+
 # EAZY.py
 import itertools
 import os
@@ -21,6 +23,9 @@ from astropy.table import Table
 from eazy import hdf5
 from scipy.linalg import LinAlgWarning
 from tqdm import tqdm
+from typing import TYPE_CHECKING, List, Any, Dict, Optional, NoReturn, Type, Union, Tuple
+if TYPE_CHECKING:
+    from . import Catalogue
 
 warnings.filterwarnings("ignore", category=LinAlgWarning)
 
@@ -81,94 +86,110 @@ EAZY_FILTER_CODES = {
 
 
 class EAZY(SED_code):
-    gal_property_fmt_dict = {
-        **{"z": "Redshift, z"},
-        **{
-            f"{ubvj_filt}_flux": ubvj_filt
-            for ubvj_filt in ["U", "B", "V", "J"]
-        },
-    }
-    # still need to double check the UBVJ units
-    gal_property_unit_dict = {
-        **{"z": u.dimensionless_unscaled},
-        **{f"{ubvj_filt}_flux": u.nJy for ubvj_filt in ["U", "B", "V", "J"]},
-    }
-    galaxy_property_dict = {
-        **{"z": "zbest", "chi_sq": "chi2_best"},
-        **{
-            f"{ubvj_filt}_flux": f"{ubvj_filt}_rf_flux"
-            for ubvj_filt in ["U", "B", "V", "J"]
-        },
-    }
-    galaxy_property_errs_dict = {
-        f"{ubvj_filt}_flux": [
-            f"{ubvj_filt}_rf_flux_err",
-            f"{ubvj_filt}_rf_flux_err",
-        ]
-        for ubvj_filt in ["U", "B", "V", "J"]
-    }
-    available_templates = ["fsps", "fsps_larson", "fsps_jades"]
-    ext_src_corr_properties = []
-    ID_label = "IDENT"
-    are_errs_percentiles = False
+    #ext_src_corr_properties = []
+    def __init__(self, SED_fit_params: Dict[str, Any]):
+        super().__init__(SED_fit_params)
 
-    def __init__(self, SED_fit_params=None):
-        # EAZY specific SED fit params assertions here
-        super().__init__(
-            SED_fit_params,
-            self.galaxy_property_dict,
-            self.galaxy_property_errs_dict,
-            self.available_templates,
-            self.ID_label,
-            self.are_errs_percentiles,
-        )
+    @classmethod
+    def from_label(cls, label: str) -> Type[SED_code]:
+        label_arr = label.split("_")
+        templates = "_".join(
+            label_arr[1:-1]
+        )  # templates may contain underscore
+        SED_fit_params = {"templates": templates,
+            "lowz_zmax": funcs.zmax_from_lowz_label(label_arr[-1])}
+        return cls(SED_fit_params)
 
-    def galaxy_property_labels(
-        self, gal_property, SED_fit_params, is_err=False
-    ):
-        assert (
-            "templates" in SED_fit_params.keys()
-            and "lowz_zmax" in SED_fit_params.keys()
-        )
-        if SED_fit_params["templates"] not in self.available_templates:
-            raise (
-                Exception(
-                    f"templates = {SED_fit_params['templates']} are not in {self.available_templates}, and hence are not yet encorporated for galfind EAZY SED fitting"
-                )
-            )
+    @property
+    def ID_label(self) -> str:
+        return "IDENT"
 
-        return_suffix = f"{SED_fit_params['templates']}_{funcs.lowz_label(SED_fit_params['lowz_zmax'])}"
-        if gal_property in self.galaxy_property_dict.keys() and not is_err:
-            return f"{self.galaxy_property_dict[gal_property]}_{return_suffix}"
-        elif gal_property in self.galaxy_property_errs_dict.keys() and is_err:
-            return [
-                f"{self.galaxy_property_errs_dict[gal_property][0]}_{return_suffix}",
-                f"{self.galaxy_property_errs_dict[gal_property][1]}_{return_suffix}",
+    @property
+    def label(self) -> str:
+        # first write the code name, next write the template name, finish off with lowz_zmax
+        return f"{self.__class__.__name__}_{self.SED_fit_params['templates']}" + \
+            f"_{funcs.lowz_label(self.SED_fit_params['lowz_zmax'])}"
+
+    @property
+    def hdu_name(self) -> str:
+        return f"{self.__class__.__name__}_{self.SED_fit_params['templates']}"
+    
+    @property
+    def tab_suffix(self) -> str:
+        return f"{self.SED_fit_params['templates']}_" + \
+            f"{funcs.lowz_label(self.SED_fit_params['lowz_zmax'])}"
+    
+    @property
+    def required_SED_fit_params(self) -> List[str]:
+        return ["templates", "lowz_zmax"]
+    
+    @property
+    def are_errs_percentiles(self) -> bool:
+        return False
+
+    def _load_gal_property_labels(self):
+        self.gal_property_labels = {
+            **{"z": "zbest", "chi_sq": "chi2_best"},
+            **{
+                f"{ubvj_filt}_flux": f"{ubvj_filt}_rf_flux"
+                for ubvj_filt in ["U", "B", "V", "J"]
+            },
+        }
+
+    def _load_gal_property_err_labels(self):
+        self.gal_property_err_labels = {
+            f"{ubvj_filt}_flux": [
+                f"{ubvj_filt}_rf_flux_err",
+                f"{ubvj_filt}_rf_flux_err",
             ]
-            # if gal_property in property_dict.keys():
-            #     return f"{property_dict[gal_property]}_{return_suffix}"
-            # else:
-            #    raise(Exception(f"{self.__class__.__name__}.galaxy_property_{'errs_' if is_err else ''}dict = {property_dict} does not include key for gal_property = {gal_property}!"))
-        else:
-            return f"{gal_property}_{return_suffix}"
+            for ubvj_filt in ["U", "B", "V", "J"]
+        }
 
-    def make_in(self, cat, fix_z=False):  # , *args, **kwargs):
-        eazy_in_dir = f"{config['EAZY']['EAZY_DIR']}/input/{cat.instrument.name}/{cat.version}/{cat.survey}"
-        eazy_in_path = f"{eazy_in_dir}/{cat.cat_name.replace('.fits', '.in')}"
-        if not Path(eazy_in_path).is_file():
+    def _load_gal_property_units(self) -> NoReturn:
+        # still need to double check the UBVJ units
+        self.gal_property_units = {
+            **{gal_property: u.dimensionless_unscaled for gal_property in ["z", "chi_sq"]},
+            **{f"{ubvj_filt}_flux": u.nJy for ubvj_filt in ["U", "B", "V", "J"]},
+        }
+
+    def _assert_SED_fit_params(self):
+        default_strings = ["N_PROC", "Z_STEP", "Z_MIN", "Z_MAX", "SAVE_UBVJ"]
+        default_types = [int, float, float, float, bool]
+        for default_str, default_type in zip(default_strings, default_types):
+            if default_str == "Z_MAX":
+                if self.SED_fit_params["lowz_zmax"] is None:
+                    self.SED_fit_params["Z_MAX"] = config.getfloat("EAZY", "Z_MAX")
+                else:
+                    self.SED_fit_params["Z_MAX"] = self.SED_fit_params["lowz_zmax"]
+            else:
+                if default_str not in self.SED_fit_params.keys():
+                    if default_type == bool:
+                        self.SED_fit_params[default_str] = config.getboolean("EAZY", default_str)
+                    elif default_type == int:
+                        self.SED_fit_params[default_str] = config.getint("EAZY", default_str)
+                    elif default_type == float:
+                        self.SED_fit_params[default_str] = config.getfloat("EAZY", default_str)
+        return super()._assert_SED_fit_params()
+
+    def make_in(
+        self, 
+        cat: Catalogue, 
+        aper_diam: u.Quantity, 
+        overwrite: bool = False
+    ) -> str:
+        in_dir = f"{config['EAZY']['EAZY_DIR']}/input/{cat.filterset.instrument_name}/{cat.version}/{cat.survey}"
+        in_name = cat.cat_name.replace('.fits', f"_{aper_diam.to(u.arcsec).value:.2f}as.in")
+        in_path = f"{in_dir}/{in_name}"
+        if not Path(in_path).is_file() or overwrite:
             # 1) obtain input data
             IDs = np.array([gal.ID for gal in cat.gals])  # load IDs
-            # load redshifts
-            if not fix_z:
-                redshifts = np.array([-99.0 for gal in cat.gals])
-            else:
-                redshifts = None
+            redshifts = np.array([-99.0 for i in range(len(cat))]) # TODO: Load spec-z's
             # load photometry
-            phot, phot_err = self.load_photometry(cat, u.uJy, -99.0, None)
+            phot, phot_err = self._load_phot(cat, aper_diam, u.uJy, -99.0, None)
             # Get filter codes (referenced to GALFIND/EAZY/jwst_nircam_FILTER.RES.info) for the given instrument and bands
             filt_codes = [
-                EAZY_FILTER_CODES[band.instrument][band.band_name]
-                for band in cat.instrument
+                EAZY_FILTER_CODES[band.instrument_name][band.band_name]
+                for band in cat.filterset
             ]
             # Make input file
             in_data = np.array(
@@ -198,62 +219,38 @@ class EAZY(SED_code):
             )
             in_types = (
                 [int]
-                + list(np.full(len(cat.instrument.band_names) * 2, float))
+                + list(np.full(len(cat.filterset.band_names) * 2, float))
                 + [float]
             )
             in_tab = Table(in_data, dtype=in_types, names=in_names)
-            funcs.make_dirs(eazy_in_path)
+            funcs.make_dirs(in_path)
             in_tab.write(
-                eazy_in_path,
+                in_path,
                 format="ascii.commented_header",
                 delimiter=" ",
                 overwrite=True,
             )
-            funcs.change_file_permissions(eazy_in_path)
+            funcs.change_file_permissions(in_path)
+        return in_path
 
     @run_in_dir(path=config["EAZY"]["EAZY_DIR"])
-    def run_fit(
+    def fit(
         self,
-        in_path,
-        fits_out_path,
-        instrument,
-        SED_fit_params,
-        fix_z=False,
-        n_proc=1,
-        z_step=0.01,
-        z_min=0,
-        z_max=25,
-        save_best_seds=config.getboolean("EAZY", "SAVE_SEDS"),
-        save_PDFs=config.getboolean("EAZY", "SAVE_PDFS"),
-        write_hdf=True,
-        save_plots=False,
-        plot_ids=None,
-        plot_all=False,
-        save_ubvj=True,
-        run_lowz=True,
-        wav_unit=u.AA,
-        flux_unit=u.nJy,
-        overwrite=False,
-        *args,
-        **kwargs,
+        cat: Catalogue,
+        aper_diam: u.Quantity,
+        save_SEDs: bool = True,
+        save_PDFs: bool = True,
+        overwrite: bool = False,
+        **kwargs: Dict[str, Any],
     ):
         """
-        in_path - input EAZY catalogue path
-        fits_out_path - output EAZY catalogue path
-        template - which EAZY template to use - see below for list
-        fix_z - whether to fix photo-z or not
         z_step  - redshift step size - default 0.01
         z_min - minimum redshift to fit - default 0
         z_max - maximum redshift to fit - default 25.
-        save_best_seds - whether to write out best-fitting SEDs. Default True.
+        save_SEDs - whether to write out best-fitting SEDs. Default True.
         save_PDFs - Whether to write out redshift PDF. Default True.
-        write_hdf - whether to backup output to hdf5 - default True
         save_plots - whether to save SED plots - default False. Use in conjunction with plot_ids to plot SEDS of specific ids.
-        plot_ids - list of ids to plot if save_plots is True.
-        plot_all - whether to plot all SEDs. Default False.
         save_ubvj - whether to save restframe UBVJ fluxes -default True.
-        run_lowz - whether to run low-z fit. Default True.
-        lowz_zmax_arr - maximum redshifts to fit in low-z fits. Default [4., 6., None]
         **kwargs - additional arguments to pass to EAZY to overide defaults
         """
         # Change this to config file path
@@ -264,27 +261,27 @@ class EAZY(SED_code):
         # HOT_60K - modified IMF high-z templates for use at z > 12
         # Nakajima - unobscured AGN templates
 
-        assert "lowz_zmax" in SED_fit_params.keys(), galfind_logger.critical(
-            f"'lowz_zmax' not in SED_fit_params keys = {np.array(SED_fit_params.keys())}"
-        )
+        in_path, out_path, fits_out_path, PDF_paths, SED_paths = self._get_out_paths(cat, aper_diam)
 
-        templates = SED_fit_params["templates"]
-        lowz_zmax = SED_fit_params["lowz_zmax"]
+        templates = self.SED_fit_params["templates"]
 
         os.makedirs("/".join(fits_out_path.split("/")[:-1]), exist_ok=True)
         h5_path = fits_out_path.replace(".fits", ".h5")
         zPDF_path = h5_path.replace(".h5", "_zPDFs.h5")
         SED_path = h5_path.replace(".h5", "_SEDs.h5")
-        lowz_label = funcs.lowz_label(lowz_zmax)
+        lowz_label = funcs.lowz_label(self.SED_fit_params["lowz_zmax"])
 
         eazy_templates_path = config["EAZY"]["EAZY_TEMPLATE_DIR"]
         default_param_path = (
-            f"{config['DEFAULT']['GALFIND_DIR']}/configs/zphot.param.default"
+            f"{config['EAZY']['EAZY_CONFIG_DIR']}/zphot.param.default"
         )
         translate_file = (
-            f"{config['DEFAULT']['GALFIND_DIR']}/configs/zphot_jwst.translate"
+            f"{config['EAZY']['EAZY_CONFIG_DIR']}/zphot_jwst.translate"
         )
+
         params = {}
+        z_min = self.SED_fit_params["Z_MIN"]
+        z_max = self.SED_fit_params["Z_MAX"]
         if templates == "fsps_larson":
             params["TEMPLATES_FILE"] = (
                 f"{eazy_templates_path}/LarsonTemplates/tweak_fsps_QSF_12_v3_newtemplates.param"
@@ -316,34 +313,22 @@ class EAZY(SED_code):
             )
             z_min = 8
             z_max = 12
-            # print(f'Running HOT 45K with fixed redshift = {fix_z}')
-            if not fix_z:
-                # print('Fixing 8<z<12')
-                pass
         elif templates == "HOT_60K":
             params["TEMPLATES_FILE"] = (
                 f"{eazy_templates_path}/fsps-hot/60k/fsps_60k.param"
             )
             z_min = 12
             z_max = 25
-            # print(f'Running HOT 45K with fixed redshift = {fix_z}')
-            if not fix_z:
-                # print('Fixing 12<z<25')
-                pass
+        # Redshift limits
+        params["Z_MIN"] = z_min # Setting minimum Z
+        params["Z_MAX"] = z_max # Setting maximum Z
+        params["Z_STEP"] = self.SED_fit_params["Z_STEP"] # Setting photo-z step
 
         # Next section deals with passing config parameters into EAZY config dictionary
         # JWST filter_file
         params["FILTERS_RES"] = (
-            f"{config['DEFAULT']['GALFIND_DIR']}/configs/jwst_nircam_FILTER.RES"
+            f"{config['EAZY']['EAZY_CONFIG_DIR']}/jwst_nircam_FILTER.RES"
         )
-
-        # Redshift limits
-        params["Z_STEP"] = z_step  # Setting photo-z step
-        params["Z_MIN"] = z_min  # Setting minimum Z
-        if lowz_zmax == None:
-            params["Z_MAX"] = z_max  # Setting maximum Z
-        else:
-            params["Z_MAX"] = lowz_zmax  # Setting maximum Z
 
         # Errors
         params["WAVELENGTH_FILE"] = (
@@ -354,7 +339,8 @@ class EAZY(SED_code):
         )
 
         # Priors
-        params["FIX_ZSPEC"] = fix_z  # Fix redshift to catalog zspec
+        # TODO: Load in and fix specific galaxies to spec-z's
+        #params["FIX_ZSPEC"] = fix_z
 
         # Input files
         # -------------------------------------------------------------------------------------------------------------
@@ -372,6 +358,7 @@ class EAZY(SED_code):
             galfind_logger.info(
                 f"Running {self.__class__.__name__} {templates} {lowz_label}"
             )
+            print(default_param_path)
             fit = eazy.photoz.PhotoZ(
                 param_file=default_param_path,
                 zeropoint_file=None,
@@ -379,9 +366,9 @@ class EAZY(SED_code):
                 load_prior=False,
                 load_products=False,
                 translate_file=translate_file,
-                n_proc=n_proc,
+                n_proc=self.SED_fit_params["N_PROC"],
             )
-            fit.fit_catalog(n_proc=n_proc, get_best_fit=True)
+            fit.fit_catalog(n_proc=self.SED_fit_params["N_PROC"], get_best_fit=True)
             # Save backup of fit in hdf5 file
             hdf5.write_hdf5(
                 fit,
@@ -403,14 +390,14 @@ class EAZY(SED_code):
         else:
             fit = None
 
-        if not Path(fits_out_path).is_file() and fit != None:
+        if not Path(fits_out_path).is_file() and fit is not None:
             # If not using Fsps larson, use standard saving output. Otherwise generate own fits file.
             if templates == "HOT_45K" or templates == "HOT_60K":
                 fit.standard_output(
                     UBVJ=(9, 10, 11, 12),
                     absmag_filters=[9, 10, 11, 12],
                     extra_rf_filters=[9, 10, 11, 12],
-                    n_proc=n_proc,
+                    n_proc=self.SED_fit_params["N_PROC"],
                     save_fits=1,
                     get_err=True,
                     simple=False,
@@ -434,10 +421,10 @@ class EAZY(SED_code):
                 table = Table(data=data, names=colnames)
 
                 # Get rest frame colors
-                if save_ubvj:
+                if self.SED_fit_params["SAVE_UBVJ"]:
                     # This is all duplicated from base code.
                     rf_tempfilt, lc_rest, ubvj = fit.rest_frame_fluxes(
-                        f_numbers=[9, 10, 11, 12], simple=False, n_proc=n_proc
+                        f_numbers=[9, 10, 11, 12], simple=False, n_proc=self.SED_fit_params["N_PROC"]
                     )
                     for i, ubvj_filt in enumerate(["U", "B", "V", "J"]):
                         table[f"{ubvj_filt}_rf_flux"] = ubvj[:, i, 2]
@@ -451,12 +438,10 @@ class EAZY(SED_code):
 
                 # add the template name to the column labels except for IDENT
                 for col_name in table.colnames:
-                    if col_name != "IDENT":
+                    if col_name != self.ID_label:
                         table.rename_column(
                             col_name,
-                            self.galaxy_property_labels(
-                                col_name, SED_fit_params
-                            ),
+                            f"{col_name}_{self.tab_suffix}",
                         )
                 # Write fits file
                 table.write(fits_out_path, overwrite=True)
@@ -470,28 +455,22 @@ class EAZY(SED_code):
         # save PDFs in .h5 file
         if save_PDFs and not Path(zPDF_path).is_file():
             self.save_zPDFs(zPDF_path, fit)
-            # [self.save_zPDF(pos_obj, ID, hf, fit.zgrid, pz) for pos_obj, ID in \
-            #    tqdm(enumerate(fit.OBJID), total = len(fit.OBJID), \
-            #    desc = f"Saving z-PDFs for {self.__class__.__name__} {templates} {lowz_label}")]
             galfind_logger.info(
                 f"Finished saving z-PDFs for {self.__class__.__name__} {templates} {lowz_label}"
             )
 
         # Save best-fitting SEDs
-        if save_best_seds and not Path(SED_path).is_file():
+        if save_SEDs and not Path(SED_path).is_file():
             z_arr = np.array(table[f"zbest_{templates}_{lowz_label}"]).astype(
                 float
             )
-            self.save_SEDs(SED_path, fit, z_arr, wav_unit, flux_unit)
-            # [self.save_SED(ID, z, hf, fit, wav_unit = wav_unit, flux_unit = flux_unit) \
-            #    for ID, z in tqdm(zip(fit.OBJID, np.array(table[f"zbest_{templates}_{lowz_label}"]).astype(float)), total = len(fit.OBJID), \
-            #    desc = f"Saving best-fit template SEDs for {self.__class__.__name__} {templates} {lowz_label}")]
+            self.save_SEDs(SED_path, fit, z_arr, u.AA, u.nJy)
             galfind_logger.info(
                 f"Finished saving SEDs for {self.__class__.__name__} {templates} {lowz_label}"
             )
 
         # Write used parameters
-        if fit != None:
+        if fit is not None:
             fit.param.write(fits_out_path.replace(".fits", "_params.csv"))
             funcs.change_file_permissions(
                 fits_out_path.replace(".fits", "_params.csv")
@@ -500,13 +479,8 @@ class EAZY(SED_code):
                 f"Written output pararmeters for {self.__class__.__name__} {templates} {lowz_label}"
             )
 
-    # @staticmethod
-    # def save_zPDF(pos_obj, ID, hf, fit_zgrid, fit_pz):
-    #    #hf.create_dataset(f"ID={int(ID)}_p(z)", data = np.array([fit_pz[pos_obj][pos] for pos, z in enumerate(fit_zgrid)]))
-    #    hf.create_dataset(f"ID={int(ID)}_p(z)", data = np.array([np.array(fit_pz[pos_obj][pos]) for pos, z in enumerate(fit_zgrid)]))
-
     @staticmethod
-    def save_zPDFs(zPDF_path, fit):
+    def save_zPDFs(zPDF_path: str, fit) -> NoReturn:
         fit_pz = 10 ** (fit.lnp)
         fit_zgrid = fit.zgrid
         hf = h5py.File(zPDF_path, "w")
@@ -530,12 +504,11 @@ class EAZY(SED_code):
         hf.close()
 
     @staticmethod
-    def save_SEDs(SED_path, fit, z_arr, wav_unit=u.AA, flux_unit=u.nJy):
+    def save_SEDs(SED_path: str, fit, z_arr: List[float], wav_unit: u.Unit = u.AA, flux_unit: u.Unit = u.nJy) -> NoReturn:
         hf = h5py.File(SED_path, "w")
         hf.create_dataset("wav_unit", data=str(wav_unit))
         hf.create_dataset("flux_unit", data=str(flux_unit))
         hf.create_dataset("z_arr", data=z_arr)
-        # assert(fit.OBJID == np.sort(fit.OBJID))
         # Load best-fitting SEDs
         fit_data_arr = [
             fit.show_fit(
@@ -568,57 +541,22 @@ class EAZY(SED_code):
                 total=len(fit_data_arr),
             )
         ]
-        # flux_arr = [(np.array(fit_data['templf']) * fit_data['flux_unit']).to(flux_unit) for fit_data in fit_data_arr]
-        # wav_flux_arr = [[wav, flux] for wav, flux in zip(wav_arr, flux_arr)]
         hf.create_dataset("wav_flux_arr", data=wav_flux_arr)
-        # gal_SED = hf.create_group(f"ID={int(fit_data['id'])}")
-        # gal_SED.create_dataset("z", data = z)
-        # gal_SED.create_dataset("wav", data = wav)
-        # gal_SED.create_dataset("flux", data = flux)
         hf.close()
 
-    @staticmethod
-    def label_from_SED_fit_params(SED_fit_params):
-        assert (
-            "code" in SED_fit_params.keys()
-            and "templates" in SED_fit_params.keys()
-            and "lowz_zmax" in SED_fit_params.keys()
-        )
-        # first write the code name, next write the template name, finish off with lowz_zmax
-        return f"{SED_fit_params['code'].__class__.__name__}_{SED_fit_params['templates']}_{funcs.lowz_label(SED_fit_params['lowz_zmax'])}"
-
-    @staticmethod
-    def hdu_from_SED_fit_params(SED_fit_params):
-        return EAZY.label_from_SED_fit_params(SED_fit_params).replace(
-            f"_{funcs.lowz_label(SED_fit_params['lowz_zmax'])}", ""
-        )  # remove lowz_zmax label from suffix
-
-    def SED_fit_params_from_label(self, label):
-        label_arr = label.split("_")
-        templates = "_".join(
-            label_arr[1:-1]
-        )  # templates may contain underscore
-        assert templates in self.available_templates
-        return {
-            "code": self,
-            "templates": templates,
-            "lowz_zmax": funcs.zmax_from_lowz_label(label_arr[-1]),
-        }
-
-    def make_fits_from_out(
-        self, out_path, SED_fit_params
-    ):  # *args, **kwargs):
+    def make_fits_from_out(self, out_path: str) -> NoReturn:
         pass
 
-    @staticmethod
-    def get_out_paths(cat, SED_fit_params, IDs):  # *args, **kwargs):
-        in_dir = f"{config['EAZY']['EAZY_DIR']}/input/{cat.instrument.name}/{cat.version}/{cat.survey}"
-        in_path = f"{in_dir}/{cat.cat_name.replace('.fits', '.in')}"
+    def _get_out_paths(self, cat: Catalogue, aper_diam: u.Quantity) -> Tuple[str, str, str, Dict[str, List[str]], List[str]]:
+        in_dir = f"{config['EAZY']['EAZY_DIR']}/input/{cat.filterset.instrument_name}/{cat.version}/{cat.survey}"
+        in_name = cat.cat_name.replace('.fits', f"_{aper_diam.to(u.arcsec).value:.2f}as.in")
+        in_path = f"{in_dir}/{in_name}"
         out_folder = funcs.split_dir_name(
             in_path.replace("input", "output"), "dir"
         )
         out_path = f"{out_folder}/{funcs.split_dir_name(in_path, 'name').replace('.in', '.out')}"
-        fits_out_path = f"{out_path.replace('.out', '')}_EAZY_{SED_fit_params['templates']}_{funcs.lowz_label(SED_fit_params['lowz_zmax'])}.fits"
+        fits_out_path = f"{out_path.replace('.out', '')}_EAZY_{self.SED_fit_params['templates']}_{funcs.lowz_label(self.SED_fit_params['lowz_zmax'])}.fits"
+        IDs = [gal.ID for gal in cat.gals]
         PDF_paths = {
             "z": list(
                 np.full(len(IDs), fits_out_path.replace(".fits", "_zPDFs.h5"))
@@ -632,7 +570,7 @@ class EAZY(SED_code):
     @staticmethod
     def extract_SEDs(IDs, SED_paths):
         # ensure this works if only extracting 1 galaxy
-        if type(IDs) in [str, int, float]:
+        if isinstance(IDs, (str, int, float)):
             IDs = np.array([int(IDs)])
         if type(SED_paths) == str:
             SED_paths = [SED_paths]
@@ -667,11 +605,11 @@ class EAZY(SED_code):
         return SED_obs_arr
 
     @staticmethod
-    def extract_PDFs(gal_property, IDs, PDF_paths, SED_fit_params, timed=True):
+    def extract_PDFs(gal_property, IDs, PDF_paths, timed: bool = True):
         # ensure this works if only extracting 1 galaxy
-        if type(IDs) in [str, int, float]:
+        if isinstance(IDs, (str, int, float)):
             IDs = np.array([int(IDs)])
-        if type(PDF_paths) == str:
+        if isinstance(PDF_paths, str):
             PDF_paths = [PDF_paths]
 
         # EAZY only has redshift PDFs
@@ -709,7 +647,7 @@ class EAZY(SED_code):
             if timed:
                 mid = time.time()
             redshift_PDFs = [
-                Redshift_PDF(hf_z, pz, SED_fit_params, normed=False)
+                Redshift_PDF(hf_z, pz, self.SED_fit_params, normed=False)
                 for ID, pz in tqdm(
                     zip(IDs, pz_arr),
                     total=len(IDs),

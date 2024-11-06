@@ -17,7 +17,7 @@ from . import (
     Multiple_Catalogue,
     SED_code,
     galfind_logger,
-    sed_code_to_name_dict,
+    #sed_code_to_name_dict,
 )
 from . import useful_funcs_austind as funcs
 
@@ -568,7 +568,7 @@ class Catalogue_Base:
             return None
         if cropped:
             ID_tab = Table({"IDs_temp": self.ID}, dtype=[int])
-            if type(hdu) == type(None):
+            if hdu is None:
                 keys_left = self.cat_creator.ID_label
             elif hdu.upper() in ["OBJECTS"]:  # , "GALFIND_CAT"]:
                 keys_left = self.cat_creator.ID_label

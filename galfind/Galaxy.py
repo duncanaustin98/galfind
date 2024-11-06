@@ -37,7 +37,7 @@ try:
     from typing import Self, Type  # python 3.11+
 except ImportError:
     from typing_extensions import Self, Type  # python > 3.7 AND python < 3.11
-from typing import List, NoReturn, Optional, Dict, TYPE_CHECKING
+from typing import List, NoReturn, Optional, Dict, Any, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from . import Filter
@@ -274,11 +274,7 @@ class Galaxy:
         self: Type[Self],
         fig: plt.Figure,
         data: Data,
-        SED_fit_params: dict = {
-            "code": EAZY(),
-            "templates": "fsps_larson",
-            "lowz_zmax": None,
-        },
+        SED_fit_params: Dict[str, Any],
         hide_masked_cutouts: bool = True,
         cutout_size: u.Quantity = 0.96 * u.arcsec,
         high_dyn_rng: bool = False,
@@ -642,11 +638,7 @@ class Galaxy:
         property_name,
         gtr_or_less,
         property_lim,
-        SED_fit_params={
-            "code": EAZY(),
-            "templates": "fsps_larson",
-            "lowz_zmax": None,
-        },
+        SED_fit_params,
         update=True,
     ):
         key = SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)
@@ -688,11 +680,7 @@ class Galaxy:
         self,
         property_name,
         property_lims,
-        SED_fit_params={
-            "code": EAZY(),
-            "templates": "fsps_larson",
-            "lowz_zmax": None,
-        },
+        SED_fit_params,
         update=True,
     ):
         key = SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)
@@ -736,11 +724,7 @@ class Galaxy:
     def phot_bluewards_Lya_non_detect(
         self,
         SNR_lim,
-        SED_fit_params={
-            "code": EAZY(),
-            "templates": "fsps_larson",
-            "lowz_zmax": None,
-        },
+        SED_fit_params,
         update=True,
     ):
         assert type(SNR_lim) in [int, float]
@@ -792,11 +776,7 @@ class Galaxy:
     def phot_redwards_Lya_detect(
         self,
         SNR_lims,
-        SED_fit_params={
-            "code": EAZY(),
-            "templates": "fsps_larson",
-            "lowz_zmax": None,
-        },
+        SED_fit_params,
         widebands_only=True,
         update=True,
     ):
@@ -878,11 +858,7 @@ class Galaxy:
         self,
         SNR_lim,
         detect_or_non_detect="detect",
-        SED_fit_params={
-            "code": EAZY(),
-            "templates": "fsps_larson",
-            "lowz_zmax": None,
-        },
+        SED_fit_params=EAZY({"templates": "fsps_larson", "lowz_zmax": None}),
         widebands_only=True,
         update=True,
     ):
@@ -1047,11 +1023,7 @@ class Galaxy:
         delta_m,
         rest_UV_wav_lims=[1_250.0, 3_000.0] * u.AA,
         medium_bands_only=True,
-        SED_fit_params={
-            "code": EAZY(),
-            "templates": "fsps_larson",
-            "lowz_zmax": None,
-        },
+        SED_fit_params=EAZY({"templates": "fsps_larson", "lowz_zmax": None}),
         update=True,
     ):
         assert (
@@ -1160,11 +1132,7 @@ class Galaxy:
         sigma,
         rest_UV_wav_lims=[1_250.0, 3_000.0] * u.AA,
         medium_bands_only=True,
-        SED_fit_params={
-            "code": EAZY(),
-            "templates": "fsps_larson",
-            "lowz_zmax": None,
-        },
+        SED_fit_params=EAZY({"templates": "fsps_larson", "lowz_zmax": None}),
         update=True,
     ) -> tuple[Self, str]:
         assert (
@@ -1372,11 +1340,7 @@ class Galaxy:
 
     def select_UVJ(
         self,
-        SED_fit_params={
-            "code": EAZY(),
-            "templates": "fsps_larson",
-            "lowz_zmax": None,
-        },
+        SED_fit_params,
         quiescent_or_star_forming="quiescent",
         update=True,
     ):
@@ -1483,11 +1447,7 @@ class Galaxy:
     def select_chi_sq_lim(
         self,
         chi_sq_lim,
-        SED_fit_params={
-            "code": EAZY(),
-            "templates": "fsps_larson",
-            "lowz_zmax": None,
-        },
+        SED_fit_params,
         reduced=True,
         update=True,
     ):
@@ -1534,11 +1494,7 @@ class Galaxy:
     def select_chi_sq_diff(
         self,
         chi_sq_diff,
-        SED_fit_params={
-            "code": EAZY(),
-            "templates": "fsps_larson",
-            "lowz_zmax": None,
-        },
+        SED_fit_params,
         delta_z_lowz=0.5,
         update=True,
     ):
@@ -1599,11 +1555,7 @@ class Galaxy:
         self,
         integral_lim,
         delta_z_over_z,
-        SED_fit_params={
-            "code": EAZY(),
-            "templates": "fsps_larson",
-            "lowz_zmax": None,
-        },
+        SED_fit_params,
         update=True,
     ):
         assert (
@@ -1697,11 +1649,7 @@ class Galaxy:
 
     def select_EPOCHS(
         self,
-        SED_fit_params={
-            "code": EAZY(),
-            "templates": "fsps_larson",
-            "lowz_zmax": None,
-        },
+        SED_fit_params,
         allow_lowz=False,
         hot_pixel_bands=["F277W", "F356W", "F444W"],
         masked_instruments=[instr_to_name_dict["NIRCam"]],
@@ -1987,9 +1935,7 @@ class Galaxy:
         self,
         PDF_dir,
         property_names,
-        SED_fit_params_label=EAZY().label_from_SED_fit_params(
-            {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}
-        ),
+        SED_fit_params_label=EAZY({"templates": "fsps_larson", "lowz_zmax": None}).label,
     ):
         # determine which properties have already been calculated
         property_names_to_load = [
@@ -2013,9 +1959,7 @@ class Galaxy:
     def _del_SED_rest_properties(
         self,
         property_names,
-        SED_fit_params_label=EAZY().label_from_SED_fit_params(
-            {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}
-        ),
+        SED_fit_params_label=EAZY({"templates": "fsps_larson", "lowz_zmax": None}).label,
     ):
         for property_name in property_names:
             self.phot.SED_results[

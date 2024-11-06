@@ -6,7 +6,8 @@ Created on Tue Jun  6 14:44:23 2023
 @author: austind
 """
 
-# LePhare.py
+from __future__ import annotations
+
 import itertools
 import subprocess
 from pathlib import Path
@@ -15,78 +16,99 @@ import astropy.units as u
 import numpy as np
 from astropy.io import fits
 from astropy.table import Table
+from typing import Any, Dict, List, NoReturn, TYPE_CHECKING
+if TYPE_CHECKING:
+    from . import Catalogue
 
-from . import SED_code, config, galfind_logger
+from . import Multiple_Filter, SED_code, config, galfind_logger
 from . import useful_funcs_austind as funcs
 
-# %% LePhare SED fitting code
-
-
 class LePhare(SED_code):
-    galaxy_property_dict = {
-        "z": "Z_BEST",
-        "mass": "MASS_BEST",
-        "chi_sq": "CHI_BEST",
-    }
-    galaxy_property_errs_dict = {}
     available_templates = ["BC03"]
     ext_src_corr_properties = ["MASS_BEST", "SFR_BEST"]
-    ID_label = "IDENT"
-    are_errs_percentiles = False  # check this!
 
-    def __init__(self, SED_fit_params=None):
-        # LePhare specific SED fit params assertions here
-        super().__init__(
-            SED_fit_params,
-            self.galaxy_property_dict,
-            self.galaxy_property_errs_dict,
-            self.available_templates,
-            self.ID_label,
-            self.are_errs_percentiles,
-        )
+    def __init__(self, SED_fit_params: Dict[str, Any]):
+        super().__init__(SED_fit_params)
 
+    @property
+    def ID_label(self) -> str:
+        return "IDENT"
+    
+    @property
+    def label(self) -> str:
+        # TODO: Full name should probably be different to this, depending on template set used
+        return f"{self.__class__.__name__}_{self.SED_fit_params['templates']}"
+    
+    @property
+    def hdu_name(self) -> str:
+        return f"{self.__class__.__name__}_{self.SED_fit_params['templates']}"
+    
+    @property
+    def tab_suffix(self) -> str:
+        return f"{self.SED_fit_params['templates']}"
+    
+    @property
+    def required_SED_fit_params(self) -> List[str]:
+        return ["templates"]
+    
+    @property
+    def are_errs_percentiles(self) -> bool:
+        # TODO: Check this is correct!
+        return False
+    
+    def _load_gal_property_labels(self) -> NoReturn:
+        self.gal_property_labels = {
+            "z": "Z_BEST",
+            "Mstar": "MASS_BEST",
+            "chi_sq": "CHI_BEST",
+        }
+    
+    def _load_gal_property_err_labels(self) -> NoReturn:
+        self.gal_property_err_labels = {}
+
+    def _load_gal_property_units(self) -> NoReturn:
+        # still need to double check the UBVJ units
+        self.gal_property_units = {
+            **{gal_property: u.dimensionless_unscaled 
+               for gal_property in ["z", "chi_sq"]},
+            **{"Mstar": u.solMass},
+        }
+
+    def _assert_SED_fit_params(self) -> NoReturn:
+        return super()._assert_SED_fit_params()
+    
     def make_in(
-        self, cat, units=u.ABmag, fix_z=False, *args, **kwargs
-    ):  # from FITS_organiser.py
-        lephare_in_path = f"{self.code_dir}/input/{cat.data.instrument.name}/{cat.data.version}/{cat.data.survey}/{cat.cat_name.replace('.fits', '')}_{cat.cat_creator.min_flux_pc_err}pc.in"
-        overwrite = config["DEFAULT"].getboolean("OVERWRITE")
-        if overwrite:
-            galfind_logger.info(
-                "OVERWRITE = YES, so overwriting LePhare input if it exists."
-            )
-
-        if not Path(lephare_in_path).is_file() or overwrite:
-            if not config["DEFAULT"].getboolean("RUN"):
-                galfind_logger.critical(
-                    "RUN = YES, so not running LePhare. Returning Error."
-                )
-                raise Exception(
-                    f"RUN = YES, and combination of {self.survey} {self.version} or {self.instrument.name} has not previously been run through LePhare."
-                )
-
+        self,
+        cat: Catalogue, 
+        aper_diam: u.Quantity,
+        overwrite: bool = False,
+    ) -> str:  # from FITS_organiser.py
+        
+        in_dir = f"{config['LEPHARE']['LEPHARE_DIR']}/input/{cat.filterset.instrument_name}/{cat.version}/{cat.survey}"
+        in_name = cat.cat_name.replace('.fits', f"_{aper_diam.to(u.arcsec).value:.2f}as.in")
+        in_path = f"{in_dir}/{in_name}"
+        if not Path(in_path).is_file() or overwrite:
             # 1) obtain input data
-            IDs = np.array([gal.ID for gal in cat.gals])  # load IDs
-            # load redshifts
-            if not fix_z:
-                redshifts = np.array([-99.0 for gal in cat.gals])
-            else:
-                raise (
-                    Exception(
-                        "The 'fix_z' functionality still requires some work in 'LePhare.convert_fits_to_in'"
-                    )
-                )
+            IDs = np.array([gal.ID for gal in cat.gals])
+            redshifts = np.array([-99.0 for i in range(len(cat))]) # TODO: Load spec-z's
             # load photometry (STILL SHOULD BE MORE GENERAL!!!)
-            print("FIX LePhare SED_input_bands!")
-            SED_input_bands = cat.data.instrument.new_instrument().bands
-            phot, phot_err = self.load_photometry(
+            if self.SED_fit_params["survey_in_filt"]:
+                input_filterset = cat.filterset
+            else:
+                instr_name = cat.filterset.instrument_name
+                input_filterset = Multiple_Filter.from_instruments(instr_name.split("+"))
+            
+            phot, phot_err = self._load_phot(
                 cat,
-                SED_input_bands,
-                units,
+                aper_diam,
+                u.ABmag,
                 -99.0,
                 {"threshold": 2.0, "value": 3.0},
+                input_filterset,
             )
+
             # calculate context
-            contexts = self.calc_context(cat, SED_input_bands)
+            contexts = self._calc_context(phot)
 
             # 2) make and save LePhare .in catalogue
             in_data = np.array(
@@ -108,8 +130,8 @@ class LePhare(SED_code):
                 + list(
                     itertools.chain(
                         *zip(
-                            SED_input_bands,
-                            [band + "_err" for band in SED_input_bands],
+                            input_filterset.band_names,
+                            [f"{filt.band_name}_err" for filt in input_filterset],
                         )
                     )
                 )
@@ -117,36 +139,43 @@ class LePhare(SED_code):
             )
             in_types = (
                 [int]
-                + list(np.full(len(SED_input_bands) * 2, float))
+                + list(np.full(len(input_filterset) * 2, float))
                 + [int, float]
             )
             in_tab = Table(in_data, dtype=in_types, names=in_names)
-            funcs.make_dirs(lephare_in_path)
+            funcs.make_dirs(in_path)
             in_tab.write(
-                lephare_in_path,
+                in_path,
                 format="ascii.no_header",
                 delimiter=" ",
                 overwrite=True,
             )
-            # print(in_tab)
-        return lephare_in_path
+        return in_path
+    
+    def _get_bin_path(self, cat: Catalogue) -> str:
+        return f"{config['LEPHARE']['LEPHARE_DIR']}/templates/{self.SED_fit_params['templates']}.bin"
 
-    def calc_context(self, cat, SED_input_bands):
-        print(
-            "May need to update 'calc_context' in 'LePhare' for the case where some galaxies have no data for a specific band!"
-        )
+    def _get_filt_path(self, cat: Catalogue) -> str:
+        if self.SED_fit_params["survey_in_filt"]:
+            unique_filterset_name = f"{cat.survey}_{cat.filterset.instrument_name}"
+            return f"{config['LEPHARE']['LEPHARE_DIR']}/filt/{unique_filterset_name}.bin"
+        else:
+            return f"{config['LEPHARE']['LEPHARE_DIR']}/filt/"
+
+    def _calc_context(self, phot: np.ndarray) -> List[int]:
+        # TODO: Update for the case where some galaxies have no data for a specific band!
         contexts = []
         for i, gal in enumerate(cat):
             gal_context = 2 * (2 ** (len(SED_input_bands) - 1)) - 1
             for j, band in enumerate(SED_input_bands):
-                if band not in gal.phot_obs.instrument.band_names:
+                if band not in gal.aper_phot[aper_diam].instrument.band_names:
                     band_context = 2**j
                     gal_context = gal_context - band_context
             contexts.append(gal_context)
         return np.array(contexts).astype(int)
 
     # Currently black box fitting from the lephare config path. Need to make this function more general
-    def run_fit(self, in_path, out_path, SED_folder, instrument):
+    def fit(self, in_path, out_path, SED_folder, instrument):
         template_name = f"{instrument.name}_MedWide"
         lephare_config_path = f"{self.code_dir}/Photo_z.para"
         # LePhare bash script python wrapper
@@ -163,23 +192,11 @@ class LePhare(SED_code):
         )
         process.wait()
 
-    @staticmethod
-    def label_from_SED_fit_params(self, SED_fit_params):
-        assert (
-            "code" in SED_fit_params.keys()
-            and "templates" in SED_fit_params.keys()
-        )
-        # first write the code name and then the template name
-        return f"{SED_fit_params['code'].__class__.__name__}_{SED_fit_params['templates']}"
-
     def SED_fit_params_from_label(self, label):
         label_arr = label.split("_")
         assert len(label_arr) == 2
         assert label_arr[1] in self.available_templates
         return {"code": self, "templates": label_arr[1]}
-
-    def galaxy_property_labels(self, gal_property, SED_fit_params):
-        pass
 
     def make_fits_from_out(
         self, out_path, *args, **kwargs
@@ -267,3 +284,10 @@ class LePhare(SED_code):
         #             break
         #     open_file.close()
         # return z, PDF
+
+# def calc_LePhare_errs(cat, col_name):
+#     if col_name == "Z_BEST":
+#         data = np.array(cat[col_name])
+#         data_err = np.array([np.array(cat[col_name + "68_LOW"]), np.array(cat[col_name + "68_HIGH"])])
+#         data, data_err = adjust_errs(data, data_err)
+#         return data_err

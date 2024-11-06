@@ -183,6 +183,10 @@ class Filter:
     def __setattr__(self, key, value):
         super().__setattr__(key, value)
 
+    @property
+    def instrument_name(self) -> str:
+        return self.instrument.__class__.__name__
+
     @staticmethod
     def _get_facility_instrument_filt(filt_name: str) -> str:
         # determine facility and instrument names of filter string
@@ -520,7 +524,7 @@ class Multiple_Filter:
             self.iter += 1
             return band
 
-    def __getitem__(self, i: Union[int, slice]) -> Union[Filter, List[Filter]]:
+    def __getitem__(self, i: Union[int, slice, str, list, np.ndarray]) -> Union[Filter, List[Filter]]:
         if isinstance(i, (int, slice)):
             return self.filters[i]
         elif isinstance(i, str):
@@ -532,9 +536,9 @@ class Multiple_Filter:
                     " is not all bool"
                 )
             if isinstance(i, list):
-                return list(np.array(self.filters)[np.array(i)])
+                return Multiple_Filter(list(np.array(self.filters)[np.array(i)]))
             else:
-                return list(np.array(self.filters)[i])
+                return Multiple_Filter(list(np.array(self.filters)[i]))
         else:
             raise (
                 TypeError(

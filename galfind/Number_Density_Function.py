@@ -9,7 +9,7 @@ from astropy.table import Table
 from . import (
     config,
     galfind_logger,
-    sed_code_to_name_dict,
+    #sed_code_to_name_dict,
 )
 from . import useful_funcs_austind as funcs
 from .SED_codes import SED_code

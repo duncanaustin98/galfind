@@ -58,11 +58,7 @@ class Catalogue(Catalogue_Base):
         survey: str,
         version: str,
         cat_creator: type[Catalogue_Creator],
-        SED_fit_params_arr: Union[list, np.array] = [
-            {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": 4.0},
-            {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": 6.0},
-            {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None},
-        ],
+        SED_fit_params_arr: Union[list, np.array],
         instrument_name: Union[list, np.array] = [
             "NIRCam",
             "ACS_WFC",
@@ -452,7 +448,7 @@ class Catalogue(Catalogue_Base):
             "Catalogue._append_property_to_tab doesn't work if trying to append newly updated galaxy properties YET!"
         )
         # extract catalogue to append to
-        if type(origin) in [dict]:
+        if isinstance(origin, dict):
             # convert SED_fit_params origin to str
             assert "code" in origin.keys()
             origin = origin["code"].label_from_SED_fit_params(origin)
@@ -1054,14 +1050,14 @@ class Catalogue(Catalogue_Base):
 
     def plot_phot_diagnostics(
         self,
-        SED_fit_params_arr=[
-            {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None},
-            {"code": EAZY(), "templates": "fsps_larson", "dz": 0.5},
-        ],
-        zPDF_plot_SED_fit_params_arr=[
-            {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None},
-            {"code": EAZY(), "templates": "fsps_larson", "dz": 0.5},
-        ],
+        SED_fit_params_arr,#=[
+        #     EAZY({"templates": "fsps_larson", "lowz_zmax": None}),
+        #     EAZY({"templates": "fsps_larson", "dz": 0.5, "lowz_zma"}),
+        # ],
+        zPDF_plot_SED_fit_params_arr,#=[
+        #     EAZY({"templates": "fsps_larson", "lowz_zmax": None}),
+        #     EAZY({"templates": "fsps_larson", "dz": 0.5}),
+        # ],
         wav_unit=u.um,
         flux_unit=u.ABmag,
     ):
@@ -1323,11 +1319,7 @@ class Catalogue(Catalogue_Base):
         property_name,
         gtr_or_less,
         property_lim,
-        SED_fit_params={
-            "code": EAZY(),
-            "templates": "fsps_larson",
-            "lowz_zmax": None,
-        },
+        SED_fit_params,
     ):
         return self.perform_selection(
             Galaxy.select_phot_galaxy_property,
@@ -1341,11 +1333,7 @@ class Catalogue(Catalogue_Base):
         self,
         property_name,
         property_lims,
-        SED_fit_params={
-            "code": EAZY(),
-            "templates": "fsps_larson",
-            "lowz_zmax": None,
-        },
+        SED_fit_params,
     ):
         return self.perform_selection(
             Galaxy.select_phot_galaxy_property_bin,
@@ -1359,11 +1347,7 @@ class Catalogue(Catalogue_Base):
     def phot_bluewards_Lya_non_detect(
         self,
         SNR_lim,
-        SED_fit_params={
-            "code": EAZY(),
-            "templates": "fsps_larson",
-            "lowz_zmax": None,
-        },
+        SED_fit_params,
     ):
         return self.perform_selection(
             Galaxy.phot_bluewards_Lya_non_detect, SNR_lim, SED_fit_params
@@ -1372,11 +1356,7 @@ class Catalogue(Catalogue_Base):
     def phot_redwards_Lya_detect(
         self,
         SNR_lims,
-        SED_fit_params={
-            "code": EAZY(),
-            "templates": "fsps_larson",
-            "lowz_zmax": None,
-        },
+        SED_fit_params,
         widebands_only=True,
     ):
         return self.perform_selection(
@@ -1390,11 +1370,7 @@ class Catalogue(Catalogue_Base):
         self,
         SNR_lim,
         detect_or_non_detect="detect",
-        SED_fit_params={
-            "code": EAZY(),
-            "templates": "fsps_larson",
-            "lowz_zmax": None,
-        },
+        SED_fit_params = EAZY({"templates": "fsps_larson", "lowz_zmax": None}),
         widebands_only=True,
     ):
         return self.perform_selection(
@@ -1423,11 +1399,7 @@ class Catalogue(Catalogue_Base):
         delta_m,
         rest_UV_wav_lims=[1_250.0, 3_000.0] * u.AA,
         medium_bands_only=True,
-        SED_fit_params={
-            "code": EAZY(),
-            "templates": "fsps_larson",
-            "lowz_zmax": None,
-        },
+        SED_fit_params=EAZY({"templates": "fsps_larson", "lowz_zmax": None}),
         update=True,
     ):
         return self.perform_selection(
@@ -1445,11 +1417,7 @@ class Catalogue(Catalogue_Base):
         sigma,
         rest_UV_wav_lims=[1_250.0, 3_000.0] * u.AA,
         medium_bands_only=True,
-        SED_fit_params={
-            "code": EAZY(),
-            "templates": "fsps_larson",
-            "lowz_zmax": None,
-        },
+        SED_fit_params=EAZY({"templates": "fsps_larson", "lowz_zmax": None}),
     ):
         return self.perform_selection(
             Galaxy.select_rest_UV_line_emitters_sigma,
@@ -1474,11 +1442,7 @@ class Catalogue(Catalogue_Base):
 
     def select_UVJ(
         self,
-        SED_fit_params={
-            "code": EAZY(),
-            "templates": "fsps_larson",
-            "lowz_zmax": None,
-        },
+        SED_fit_params,
         quiescent_or_star_forming="quiescent",
     ):
         return self.perform_selection(
@@ -1552,11 +1516,7 @@ class Catalogue(Catalogue_Base):
     def select_chi_sq_lim(
         self,
         chi_sq_lim,
-        SED_fit_params={
-            "code": EAZY(),
-            "templates": "fsps_larson",
-            "lowz_zmax": None,
-        },
+        SED_fit_params,
         reduced=True,
     ):
         return self.perform_selection(
@@ -1566,11 +1526,7 @@ class Catalogue(Catalogue_Base):
     def select_chi_sq_diff(
         self,
         chi_sq_diff,
-        SED_fit_params={
-            "code": EAZY(),
-            "templates": "fsps_larson",
-            "lowz_zmax": None,
-        },
+        SED_fit_params,
         delta_z_lowz=0.5,
     ):
         return self.perform_selection(
@@ -1586,11 +1542,7 @@ class Catalogue(Catalogue_Base):
         self,
         integral_lim,
         delta_z_over_z,
-        SED_fit_params={
-            "code": EAZY(),
-            "templates": "fsps_larson",
-            "lowz_zmax": None,
-        },
+        SED_fit_params,
     ):
         return self.perform_selection(
             Galaxy.select_robust_zPDF,
@@ -1613,11 +1565,7 @@ class Catalogue(Catalogue_Base):
 
     def select_EPOCHS(
         self,
-        SED_fit_params={
-            "code": EAZY(),
-            "templates": "fsps_larson",
-            "lowz_zmax": None,
-        },
+        SED_fit_params,
         allow_lowz=False,
         hot_pixel_bands=["F277W", "F356W", "F444W"],
         mask_instruments=["NIRCam"],
@@ -1765,11 +1713,7 @@ class Catalogue(Catalogue_Base):
     def calc_beta_phot(
         self,
         rest_UV_wav_lims=[1_250.0, 3_000.0] * u.AA,
-        SED_fit_params={
-            "code": EAZY(),
-            "templates": "fsps_larson",
-            "lowz_zmax": None,
-        },
+        SED_fit_params=EAZY({"templates": "fsps_larson", "lowz_zmax": None}),
         iters=10_000,
     ):
         self.calc_SED_rest_property(
@@ -1783,11 +1727,7 @@ class Catalogue(Catalogue_Base):
         self,
         rest_UV_wav_lims=[1_250.0, 3_000.0] * u.AA,
         conv_author_year="Chisholm22",
-        SED_fit_params={
-            "code": EAZY(),
-            "templates": "fsps_larson",
-            "lowz_zmax": None,
-        },
+        SED_fit_params=EAZY({"templates": "fsps_larson", "lowz_zmax": None}),
         iters=10_000,
     ):
         self.calc_beta_phot(rest_UV_wav_lims, SED_fit_params, iters)
@@ -1804,11 +1744,7 @@ class Catalogue(Catalogue_Base):
         rest_UV_wav_lims=[1_250.0, 3_000.0] * u.AA,
         ref_wav=1_500.0 * u.AA,
         conv_author_year="M99",
-        SED_fit_params={
-            "code": EAZY(),
-            "templates": "fsps_larson",
-            "lowz_zmax": None,
-        },
+        SED_fit_params=EAZY({"templates": "fsps_larson", "lowz_zmax": None}),
         iters=10_000,
     ):
         self.calc_beta_phot(rest_UV_wav_lims, SED_fit_params, iters)
@@ -1825,11 +1761,7 @@ class Catalogue(Catalogue_Base):
         self,
         rest_UV_wav_lims: u.Quantity = [1_250.0, 3_000.0] * u.AA,
         ref_wav: u.Quantity = 1_500.0 * u.AA,
-        SED_fit_params: dict = {
-            "code": EAZY(),
-            "templates": "fsps_larson",
-            "lowz_zmax": None,
-        },
+        SED_fit_params = EAZY({"templates": "fsps_larson", "lowz_zmax": None}),
         iters=10_000,
     ):
         self.calc_beta_phot(rest_UV_wav_lims, SED_fit_params, iters)
@@ -1845,11 +1777,7 @@ class Catalogue(Catalogue_Base):
         self,
         rest_UV_wav_lims: u.Quantity = [1_250.0, 3_000.0] * u.AA,
         ref_wav: u.Quantity = 1_500.0 * u.AA,
-        SED_fit_params: dict = {
-            "code": EAZY(),
-            "templates": "fsps_larson",
-            "lowz_zmax": None,
-        },
+        SED_fit_params = EAZY({"templates": "fsps_larson", "lowz_zmax": None}),
         iters=10_000,
     ):
         self.calc_mUV_phot(rest_UV_wav_lims, ref_wav, SED_fit_params, iters)
@@ -1867,11 +1795,7 @@ class Catalogue(Catalogue_Base):
         rest_UV_wav_lims=[1_250.0, 3_000.0] * u.AA,
         ref_wav=1_500.0 * u.AA,
         AUV_beta_conv_author_year="M99",
-        SED_fit_params={
-            "code": EAZY(),
-            "templates": "fsps_larson",
-            "lowz_zmax": None,
-        },
+        SED_fit_params=EAZY({"templates": "fsps_larson", "lowz_zmax": None}),
         iters=10_000,
     ):
         if type(AUV_beta_conv_author_year) != type(None):
@@ -1900,11 +1824,7 @@ class Catalogue(Catalogue_Base):
         ref_wav: u.Quantity = 1_500.0 * u.AA,
         AUV_beta_conv_author_year: Union[str, None] = "M99",
         kappa_UV_conv_author_year: str = "MD14",
-        SED_fit_params: dict = {
-            "code": EAZY(),
-            "templates": "fsps_larson",
-            "lowz_zmax": None,
-        },
+        SED_fit_params = EAZY({"templates": "fsps_larson", "lowz_zmax": None}),
         iters=10_000,
     ):
         self.calc_LUV_phot(
@@ -1934,11 +1854,7 @@ class Catalogue(Catalogue_Base):
         fesc_conv_author_year: Union[str, None] = "Chisholm22",
         AUV_beta_conv_author_year: Union[str, None] = "M99",
         kappa_UV_conv_author_year: str = "MD14",
-        SED_fit_params: dict = {
-            "code": EAZY(),
-            "templates": "fsps_larson",
-            "lowz_zmax": None,
-        },
+        SED_fit_params = EAZY({"templates": "fsps_larson", "lowz_zmax": None}),
         iters=10_000,
     ):
         if type(fesc_conv_author_year) != type(None):
@@ -1961,11 +1877,7 @@ class Catalogue(Catalogue_Base):
         self,
         strong_line_names: Union[str, list],
         rest_optical_wavs: u.Quantity = [4_200.0, 10_000.0] * u.AA,
-        SED_fit_params: dict = {
-            "code": EAZY(),
-            "templates": "fsps_larson",
-            "lowz_zmax": None,
-        },
+        SED_fit_params = EAZY({"templates": "fsps_larson", "lowz_zmax": None}),
         iters: int = 10_000,
     ):
         self.calc_SED_rest_property(
@@ -1981,11 +1893,7 @@ class Catalogue(Catalogue_Base):
         strong_line_names: Union[str, list],
         frame: str,
         rest_optical_wavs: u.Quantity = [4_200.0, 10_000.0] * u.AA,
-        SED_fit_params: dict = {
-            "code": EAZY(),
-            "templates": "fsps_larson",
-            "lowz_zmax": None,
-        },
+        SED_fit_params = EAZY({"templates": "fsps_larson", "lowz_zmax": None}),
         iters: int = 10_000,
     ):
         self.calc_cont_rest_optical(
@@ -2008,11 +1916,7 @@ class Catalogue(Catalogue_Base):
         dust_origin: str = "UV",
         rest_UV_wav_lims: u.Quantity = [1_250.0, 3_000.0] * u.AA,
         ref_wav: u.Quantity = 1_500.0 * u.AA,
-        SED_fit_params: dict = {
-            "code": EAZY(),
-            "templates": "fsps_larson",
-            "lowz_zmax": None,
-        },
+        SED_fit_params = EAZY({"templates": "fsps_larson", "lowz_zmax": None}),
         iters: int = 10_000,
     ):
         assert all(
@@ -2048,11 +1952,7 @@ class Catalogue(Catalogue_Base):
         rest_optical_wavs=[4_200.0, 10_000.0] * u.AA,
         rest_UV_wav_lims=[1_250.0, 3_000.0] * u.AA,
         ref_wav: u.Quantity = 1_500.0 * u.AA,
-        SED_fit_params: dict = {
-            "code": EAZY(),
-            "templates": "fsps_larson",
-            "lowz_zmax": None,
-        },
+        SED_fit_params = EAZY({"templates": "fsps_larson", "lowz_zmax": None}),
         iters: int = 10_000,
     ):
         self.calc_EW_rest_optical(
@@ -2096,11 +1996,7 @@ class Catalogue(Catalogue_Base):
         rest_optical_wavs: u.Quantity = [4_200.0, 10_000.0] * u.AA,
         rest_UV_wav_lims: u.Quantity = [1_250.0, 3_000.0] * u.AA,
         ref_wav: u.Quantity = 1_500.0 * u.AA,
-        SED_fit_params: dict = {
-            "code": EAZY(),
-            "templates": "fsps_larson",
-            "lowz_zmax": None,
-        },
+        SED_fit_params = EAZY({"templates": "fsps_larson", "lowz_zmax": None}),
         iters: int = 10_000,
     ):
         self.calc_line_flux_rest_optical(
@@ -2141,11 +2037,7 @@ class Catalogue(Catalogue_Base):
         rest_optical_wavs=[4_200.0, 10_000.0] * u.AA,
         rest_UV_wav_lims=[1_250.0, 3_000.0] * u.AA,
         ref_wav=1_500.0 * u.AA,
-        SED_fit_params={
-            "code": EAZY(),
-            "templates": "fsps_larson",
-            "lowz_zmax": None,
-        },
+        SED_fit_params=EAZY({"templates": "fsps_larson", "lowz_zmax": None}),
         iters=10_000,
     ):
         self.calc_line_lum_rest_optical(
@@ -2189,11 +2081,7 @@ class Catalogue(Catalogue_Base):
         self,
         SED_rest_property_function,
         iters,
-        SED_fit_params={
-            "code": EAZY(),
-            "templates": "fsps_larson",
-            "lowz_zmax": None,
-        },
+        SED_fit_params,
         **kwargs,
     ):
         key = SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)
@@ -2226,7 +2114,7 @@ class Catalogue(Catalogue_Base):
             galfind_logger.info(f"Calculated {name}")
             self._append_SED_rest_property_to_fits(name, key)
 
-    # def _save_SED_rest_PDFs(self, property_name, save_dir, SED_fit_params = {"code": EAZY(), "templates": "fsps_larson", "lowz_zmax": None}):
+    # def _save_SED_rest_PDFs(self, property_name, save_dir, SED_fit_params = EAZY({"templates": "fsps_larson", "lowz_zmax": None})):
     #     [gal._save_SED_rest_PDFs(property_name, save_dir, SED_fit_params) for gal in self]
 
     def _append_SED_rest_property_to_fits(
@@ -2463,11 +2351,7 @@ class Catalogue(Catalogue_Base):
 
     def load_SED_rest_properties(
         self,
-        SED_fit_params={
-            "code": EAZY(),
-            "templates": "fsps_larson",
-            "lowz_zmax": None,
-        },
+        SED_fit_params,
         timed=True,
     ):
         key = SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)
@@ -2494,11 +2378,7 @@ class Catalogue(Catalogue_Base):
     def del_SED_rest_property(
         self,
         property_name,
-        SED_fit_params={
-            "code": EAZY(),
-            "templates": "fsps_larson",
-            "lowz_zmax": None,
-        },
+        SED_fit_params,
     ):
         key = SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)
         # SED rest property must exist for this sample

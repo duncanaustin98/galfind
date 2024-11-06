@@ -147,11 +147,11 @@ from .EAZY import EAZY # Failed to `import dust_attenuation`
 from .Bagpipes import Bagpipes
 
 # don't do Bagpipes or LePhare for now
-sed_code_to_name_dict = {
-    sed_code_name: globals()[sed_code_name]()
-    for sed_code_name in [subcls.__name__ for subcls in SED_code.__subclasses__()]
-    if sed_code_name not in ["LePhare"]
-}
+# sed_code_to_name_dict = {
+#     sed_code_name: globals()[sed_code_name]()
+#     for sed_code_name in [subcls.__name__ for subcls in SED_code.__subclasses__()]
+#     if sed_code_name not in ["LePhare", "Bagpipes"]
+# }
 
 from .Galaxy import Galaxy, Multiple_Galaxy
 

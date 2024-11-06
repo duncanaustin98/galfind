@@ -26,22 +26,19 @@ from .Photometry_rest import Photometry_rest
 class SED_result:
     def __init__(
         self,
-        SED_fit_params,
+        SED_code,
         phot,
         properties,
         property_errs,
         property_PDFs,
         SED,
     ):
-        self.SED_fit_params = SED_fit_params
-        # [setattr(self, key, value) for key, value in SED_fit_params.items()]
+        self.SED_code = SED_code
         self.properties = properties
-        [setattr(self, key, value) for key, value in properties.items()]
+        #[setattr(self, key, value) for key, value in properties.items()]
         self.property_errs = property_errs
-        # [setattr(self, f"{key}_l1", value[0]) for key, value in property_errs.items()]
-        # [setattr(self, f"{key}_u1", value[1]) for key, value in property_errs.items()]
         # load in peaks
-        if type(property_PDFs) == type(None):
+        if property_PDFs is None:
             self.property_PDFs = None
         else:
             self.property_PDFs = {
@@ -50,89 +47,87 @@ class SED_result:
                 )
                 for property, property_PDF in property_PDFs.items()
             }
-        # [setattr(self, f"{key}_PDF", value) for key, value in property_PDFs.items()]
         self.SED = SED
+        # should really be contained in self.SED
         self.phot_rest = Photometry_rest.from_phot(phot, self.z)
 
-    def __str__(self, print_phot_rest=True, print_PDFs=True, print_SED=True):
-        line_sep = "*" * 40 + "\n"
-        band_sep = "-" * 10 + "\n"
-        output_str = line_sep
-        output_str += "SED FITTING RESULT:\n"
-        output_str += band_sep
+    def __repr__(self):
+        return f"SED_result({self.SED_code.label})"
+
+    def __str__(self) -> str:
+        output_str = funcs.line_sep
+        output_str += f"{repr(self)}:\n"
         for key, value in self.SED_fit_params.items():
-            if key == "code":
-                output_str += f"{key.upper()}: {value.__class__.__name__}\n"
-            else:
-                output_str += f"{key.upper()}: {value}\n"
-        output_str += band_sep
-        # print property errors and units here too
+            output_str += f"{key.upper()}: {value}\n"
+        output_str += funcs.band_sep
+        output_str += f"PROPERTIES:\n"
+        # print property errors here too
         for key, value in self.properties.items():
-            output_str += f"{key} = {str(value)}\n"
-        if print_PDFs:
+            output_str += f"{key} = {value:.2f}\n"
+        if len(self.property_PDFs) > 0:
+            output_str += funcs.band_sep
+            output_str += f"PROPERTY PDFs:\n"
             for PDF_obj in self.property_PDFs.values():
-                output_str += str(PDF_obj)
+                output_str += f"{repr(PDF_obj)}\n"
         else:
-            output_str += f"PDFs LOADED: {', '.join([key for key in self.property_PDFs.keys()])}\n"
-        if print_SED:
-            output_str += str(self.SED)
-        # phot rest should really be contained in self.SED
-        if print_phot_rest:
-            output_str += self.phot_rest.__str__(print_PDFs)
-        output_str += line_sep
+            output_str += f"NO PROPERTY PDFs LOADED\n"
+        output_str += funcs.band_sep
+        output_str += f"{repr(self.SED)}\n"
+        output_str += f"{repr(self.phot_rest)}\n"
+        output_str += funcs.line_sep
         return output_str
 
-    def __getattr__(
-        self,
-        property_name: str,
-        origin: str = "SED_result",
-        property_type: str = "val",
-    ) -> Union[None, u.Quantity, u.Magnitude, u.Dex]:
-        assert origin in [
-            "SED_result",
-            "phot_rest",
-            "SED",
-        ], galfind_logger.critical(
-            f"SED_result.__getattr__ {origin=} not in ['SED_result', 'phot_rest']!"
-        )
-        property_type = property_type.lower()
-        # extract relevant SED result properties
-        if origin == "SED_result":
-            assert property_type in [
-                "val",
-                "errs",
-                "l1",
-                "u1",
-                "pdf",
-            ], galfind_logger.critical(
-                f"{property_type=} not in ['val', 'errs', 'l1', 'u1', 'pdf']!"
-            )
-            if property_type == "val":
-                access_dict = self.properties
-            elif property_type in ["errs", "l1", "u1"]:
-                access_dict = self.property_errs
-            else:  # property_type == "pdf"
-                access_dict = self.property_PDFs
-            if property_name not in access_dict.keys():
-                err_message = f"{property_name} {property_type} not available in SED_result object!"
-                galfind_logger.warning(err_message)
-                # raise AttributeError(err_message)
-            else:
-                if property_type == "l1":
-                    return access_dict[property_name][0]
-                elif property_type == "u1":
-                    return access_dict[property_name][1]
-                else:
-                    return access_dict[property_name]
-        # extract relevant photometry rest properties
-        elif "phot_rest" in origin:
-            return self.phot_rest.__getattr__(
-                property_name,
-                origin.replace("phot_rest_", ""),
-                property_type=property_type,
-            )
-        else:  # origin == "SED"
-            return self.SED.__getattr__(property_name, origin)
+    # def __getattr__(
+    #     self,
+    #     property_name: str,
+    #     origin: str = "SED_result",
+    #     property_type: str = "val",
+    # ) -> Union[None, u.Quantity, u.Magnitude, u.Dex]:
+    #     assert origin in [
+    #         "SED_result",
+    #         "phot_rest",
+    #         "SED",
+    #     ], galfind_logger.critical(
+    #         f"SED_result.__getattr__ {origin=} not in ['SED_result', 'phot_rest']!"
+    #     )
+    #     property_type = property_type.lower()
+    #     # extract relevant SED result properties
+    #     if origin == "SED_result":
+    #         assert property_type in [
+    #             "val",
+    #             "errs",
+    #             "l1",
+    #             "u1",
+    #             "pdf",
+    #         ], galfind_logger.critical(
+    #             f"{property_type=} not in ['val', 'errs', 'l1', 'u1', 'pdf']!"
+    #         )
+    #         if property_type == "val":
+    #             access_dict = self.properties
+    #         elif property_type in ["errs", "l1", "u1"]:
+    #             access_dict = self.property_errs
+    #         else:  # property_type == "pdf"
+    #             access_dict = self.property_PDFs
+    #         if property_name not in access_dict.keys():
+    #             err_message = f"{property_name} {property_type} not available in SED_result object!"
+    #             galfind_logger.warning(err_message)
+    #             # raise AttributeError(err_message)
+    #         else:
+    #             if property_type == "l1":
+    #                 return access_dict[property_name][0]
+    #             elif property_type == "u1":
+    #                 return access_dict[property_name][1]
+    #             else:
+    #                 return access_dict[property_name]
+    #     # extract relevant photometry rest properties
+    #     elif "phot_rest" in origin:
+    #         return self.phot_rest.__getattr__(
+    #             property_name,
+    #             origin.replace("phot_rest_", ""),
+    #             property_type=property_type,
+    #         )
+    #     else:  # origin == "SED"
+    #         return self.SED.__getattr__(property_name, origin)
 
     def __deepcopy__(self, memo):
         cls = self.__class__
@@ -142,38 +137,38 @@ class SED_result:
             setattr(result, key, deepcopy(value, memo))
         return result
 
-    @classmethod
-    def from_gal(cls, gal, SED_fit_params):
-        assert "code" in SED_fit_params.keys()
-        fits_cat_row = gal.open_cat_row()  # row of fits catalogue
-        # extract best fitting properties from galaxy given the SED_fit_params
-        properties = {
-            gal_property: float(
-                SED_fit_params["code"].get_gal_property(
-                    fits_cat_row, gal_property, SED_fit_params
-                )
-            )
-            for gal_property in SED_fit_params[
-                "code"
-            ].galaxy_property_dict.keys()
-        }
-        # extract best fitting errors from galaxy given the SED_fit_params
-        property_errs = {
-            gal_property: float(
-                SED_fit_params["code"].get_gal_property_errs(
-                    fits_cat_row, gal_property, SED_fit_params
-                )
-            )
-            for gal_property in SED_fit_params[
-                "code"
-            ].galaxy_property_dict.keys()
-        }
-        # create property PDFs from galaxy given the SED_fit_params
-        property_PDFs = {}
-        # load SED from galaxy given the SED_fit_params
-        SED = None
-        return NotImplementedError  # need to load in PDFs and SED
-        # return cls(SED_fit_params, gal.phot, properties, property_errs, property_PDFs, SED)
+    # @classmethod
+    # def from_gal(cls, gal, SED_fit_params):
+    #     assert "code" in SED_fit_params.keys()
+    #     fits_cat_row = gal.open_cat_row()  # row of fits catalogue
+    #     # extract best fitting properties from galaxy given the SED_fit_params
+    #     properties = {
+    #         gal_property: float(
+    #             SED_fit_params["code"].get_gal_property(
+    #                 fits_cat_row, gal_property, SED_fit_params
+    #             )
+    #         )
+    #         for gal_property in SED_fit_params[
+    #             "code"
+    #         ].galaxy_property_dict.keys()
+    #     }
+    #     # extract best fitting errors from galaxy given the SED_fit_params
+    #     property_errs = {
+    #         gal_property: float(
+    #             SED_fit_params["code"].get_gal_property_errs(
+    #                 fits_cat_row, gal_property, SED_fit_params
+    #             )
+    #         )
+    #         for gal_property in SED_fit_params[
+    #             "code"
+    #         ].galaxy_property_dict.keys()
+    #     }
+    #     # create property PDFs from galaxy given the SED_fit_params
+    #     property_PDFs = {}
+    #     # load SED from galaxy given the SED_fit_params
+    #     SED = None
+    #     return NotImplementedError  # need to load in PDFs and SED
+    #     # return cls(SED_fit_params, gal.phot, properties, property_errs, property_PDFs, SED)
 
 
 class Galaxy_SED_results:
@@ -203,15 +198,15 @@ class Galaxy_SED_results:
             ]
         )
 
-    @classmethod
-    def from_gal(cls, gal, SED_fit_params_arr):
-        return cls(
-            SED_fit_params_arr,
-            [
-                SED_result.from_gal(gal, SED_fit_params)
-                for SED_fit_params in SED_fit_params_arr
-            ],
-        )
+    # @classmethod
+    # def from_gal(cls, gal, SED_fit_params_arr):
+    #     return cls(
+    #         SED_fit_params_arr,
+    #         [
+    #             SED_result.from_gal(gal, SED_fit_params)
+    #             for SED_fit_params in SED_fit_params_arr
+    #         ],
+    #     )
 
     @classmethod
     def from_SED_result_inputs(

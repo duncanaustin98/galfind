@@ -411,6 +411,15 @@ unit_labels_dict = {
     u.ABmag: r"$\mathrm{AB mag}$",
 }
 
+# property labelling 
+# {
+#     **{"z": "Redshift, z"},
+#     **{
+#         f"{ubvj_filt}_flux": ubvj_filt
+#         for ubvj_filt in ["U", "B", "V", "J"]
+#     },
+# }
+
 
 def label_log(label):
     return r"$\log_{10}($" + label + r"$)$"
