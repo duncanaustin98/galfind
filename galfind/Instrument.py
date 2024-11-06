@@ -32,7 +32,8 @@ class Facility(ABC):
     # and other facility-specific attributes/methods
 
     def __init__(self) -> None:
-        pass
+        if not hasattr(self, "SVO_name"):
+            self.SVO_name = self.__class__.__name__
 
     def __str__(self) -> str:
         return self.__class__.__name__
@@ -68,6 +69,9 @@ class HST(Facility, funcs.Singleton):
 class JWST(Facility, funcs.Singleton):
     pass
 
+class Paranal(Facility, funcs.Singleton):
+    pass
+
 
 class Instrument(ABC):
     def __init__(
@@ -82,6 +86,10 @@ class Instrument(ABC):
             self.facility = facility
         self.filt_names = filt_names
         self._load_aper_corrs()
+
+        if not hasattr(self, "SVO_name"):
+            self.SVO_name = self.__class__.__name__
+
 
     def __str__(self) -> str:
         # print filter_names?
@@ -305,6 +313,7 @@ class ACS_WFC(Instrument, funcs.Singleton):
             "FR931N",
             "FR1016N",
         ]
+        self.SVO_name = "ACS"
         super().__init__("HST", ACS_WFC_band_names)
 
     def calc_ZP(self, band_data: Type[Band_Data_Base]) -> u.Quantity:
@@ -362,6 +371,7 @@ class WFC3_IR(Instrument, funcs.Singleton):
             "F164N",
             "F167N",
         ]
+        self.SVO_name = "WFC3"
         super().__init__("HST", WFC3_IR_band_names)
 
     def calc_ZP(self, band_data: Type[Band_Data_Base]) -> u.Quantity:
@@ -383,6 +393,39 @@ class WFC3_IR(Instrument, funcs.Singleton):
     def make_empirical_PSF(self, band_data: Band_Data) -> Type[PSF_Base]:
         pass
 
+class VISTA(Instrument, funcs.Singleton):
+    def __init__(self) -> None:
+        VISTA_band_names = [
+            "Z_filter",
+            "Z",
+            "NB980_filter",
+            "NB980",
+            "NB990_filter",
+            "NB990",
+            "Y_filter",
+            "Y",
+            "NB118_filter",
+            "NB118",
+            "J",
+            "J_filter",
+            "H",
+            "H_filter",
+            "Ks_filter",
+            "Ks",
+        ]
+        self.SVO_name = "VIRCam"
+        super().__init__("Paranal", VISTA_band_names)
+
+    def calc_ZP(self, band_data: Type[Band_Data_Base]) -> u.Quantity:
+        ZP = band_data.load_im()[1]["PHOTZP"]
+        return ZP
+
+    def make_model_PSF(self, band: Union[str, Filter]) -> Type[PSF_Base]:
+        pass
+
+    def make_empirical_PSF(self, data: Data, band: Union[str, Filter]) -> Type[PSF_Base]:
+        pass
+
 
 # Instrument attributes
 
@@ -391,6 +434,7 @@ expected_instr_bands = {
     "WFC3_IR": WFC3_IR().filt_names,
     "NIRCam": NIRCam().filt_names,
     "MIRI": MIRI().filt_names,
+    "VISTA": VISTA().filt_names,
 }
 
 expected_instr_facilities = {
@@ -398,5 +442,6 @@ expected_instr_facilities = {
     "WFC3_IR": "HST",
     "NIRCam": "JWST",
     "MIRI": "JWST",
+    "VISTA": "Paranal",
 }
 

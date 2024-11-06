@@ -58,20 +58,24 @@ def get_err_map(
 ) -> Union[Tuple[str, int, str], NoReturn]:
     if err_type == "rms_err":
         if self.rms_err_path is not None and self.rms_err_ext is not None:
-            return self.rms_err_path, self.rms_err_ext, "MAP_RMS"
+            pass
         else:
-            raise (
-                Exception(
-                    f"No rms_err map available for {self.filt.band_name}"
-                )
-            )
+            self._make_rms_err_from_wht()
+        return self.rms_err_path, self.rms_err_ext, "MAP_RMS"
+            # raise (
+            #     Exception(
+            #         f"No rms_err map available for {self.filt.band_name}"
+            #     )
+            # )
     elif err_type == "wht":
         if self.wht_path is not None and self.wht_ext is not None:
-            return self.wht_path, self.wht_ext, "MAP_WEIGHT"
+            pass
         else:
-            raise (
-                Exception(f"No wht map available for {self.filt.band_name}")
-            )
+            self._make_wht_from_rms_err()
+            # raise (
+            #     Exception(f"No wht map available for {self.filt.band_name}")
+            # )
+        return self.wht_path, self.wht_ext, "MAP_WEIGHT"
     else:
         raise (
             Exception(f"err_type must be 'rms_err' or 'wht', not {err_type}")

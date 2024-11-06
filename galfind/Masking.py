@@ -237,7 +237,7 @@ def auto_mask(
     edge_mask_distance: Union[int, float] = 50,
     scale_extra: float = 0.2,
     exclude_gaia_galaxies: bool = True,
-    angle: float = -70.0,
+    angle: float = -0.0,
     edge_value: float = 0.0,
     element: str = "ELLIPSE",
     gaia_row_lim: int = 500,
@@ -254,13 +254,15 @@ def auto_mask(
 
         if (
             "NIRCam" not in self.instr_name and star_mask_params is not None
-        ):  # doesnt stop e.g. ACS_WFC+NIRCam from making star masks
-            galfind_logger.critical(
-                "Mask making only implemented for NIRCam data!"
+        ):  
+            star_mask_params = None
+            # doesnt stop e.g. ACS_WFC+NIRCam from making star masks
+            galfind_logger.warning(
+                f"Stellar mask wanted for {self.filt_name} only implemented for NIRCam data!"
             )
-            raise (
-                Exception("Star mask making only implemented for NIRCam data!")
-            )
+            # raise (
+            #     Exception("Star mask making only implemented for NIRCam data!")
+            # )
 
         # angle rotation is anti-clockwise for positive angles
         composite = (
@@ -504,10 +506,10 @@ def auto_mask(
                     artefact_pix_masks[ext_name] = [pix_mask]
                 else:
                     artefact_pix_masks[ext_name].extend([pix_mask])
-        # combine masks for each extension
-        artefact_pix_masks[ext_name] = np.logical_or.reduce(
-            tuple([mask.astype(np.uint8) for mask in artefact_pix_masks[ext_name]])
-        )
+            # combine masks for each extension
+            artefact_pix_masks[ext_name] = np.logical_or.reduce(
+                tuple([mask.astype(np.uint8) for mask in artefact_pix_masks[ext_name]])
+            )
         # update full mask to include all artefacts
         full_mask = np.logical_or(
             full_mask.astype(np.uint8),
@@ -524,10 +526,6 @@ def auto_mask(
         hdr = wcs.to_header()
         hdr_args = {
             "METHOD": "auto", 
-            "CENTRAL_A": star_mask_params["central"]["a"], 
-            "CENTRAL_B": star_mask_params["central"]["b"],
-            "SPIKES_A": star_mask_params["spikes"]["a"],
-            "SPIKES_B": star_mask_params["spikes"]["b"],
             "EDGE_DIST": edge_mask_distance,
             "SCALE_EXTRA": scale_extra,
             "EXCLUDE_GAIA": exclude_gaia_galaxies,
@@ -536,6 +534,23 @@ def auto_mask(
             "ELEMENT": element,
             "GAIA_ROW_LIM": gaia_row_lim,
         }
+        if star_mask_params is not None:
+            # add star mask parameters to header arguments
+            stellar_mask_hdr_args = {
+                "CENTRAL_A": star_mask_params["central"]["a"], 
+                "CENTRAL_B": star_mask_params["central"]["b"],
+                "SPIKES_A": star_mask_params["spikes"]["a"],
+                "SPIKES_B": star_mask_params["spikes"]["b"],
+            }
+            hdr_args = {**hdr_args, **stellar_mask_hdr_args}
+        # else:
+        #     stellar_mask_hdr_args = {
+        #         "CENTRAL_A": None, 
+        #         "CENTRAL_B": None, 
+        #         "SPIKES_A": None, 
+        #         "SPIKES_B": None
+        #     }
+
         for key, value in hdr_args.items():
             hdr[key] = value
         # Save mask

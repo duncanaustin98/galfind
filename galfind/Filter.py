@@ -8,7 +8,7 @@ from copy import deepcopy
 import json
 import matplotlib.pyplot as plt
 from matplotlib.colors import Normalize
-from typing import List, Union, NoReturn, TYPE_CHECKING
+from typing import List, Tuple, Union, Optional, NoReturn, TYPE_CHECKING
 import warnings
 
 if TYPE_CHECKING:
@@ -49,23 +49,33 @@ class Filter:
             self.WavelengthCen = np.mean(self.wav.value) * self.wav.unit
 
     @classmethod
-    def from_SVO(cls, facility, instrument, filter_name):
+    def from_SVO(cls, facility: str, instrument: str, filter_name: str, \
+            SVO_facility_name: Optional[str] = None, SVO_instr_name: Optional[str] = None):
         full_name = f"{facility}/{instrument}.{filter_name}"
         try:
             filter_profile = SvoFps.get_transmission_data(full_name)
         except Exception as e:
-            galfind_logger.critical(
-                f"{full_name} is not a valid SvoFps filter! Exception={e}"
-            )
+            err_message = f"{full_name} is not a valid SvoFps filter! Exception={e}"
+            galfind_logger.critical(err_message)
+            raise(Exception(err_message))
         wav = np.array(filter_profile["Wavelength"])
         trans = np.array(filter_profile["Transmission"])
-        properties = SvoFps.data_from_svo(
-            query={
-                "Facility": facility,
-                "Instrument": instrument.split("_")[0],
-            },
-            error_msg=f"'{facility}/{instrument.split('_')[0]}' is not a valid facility/instrument combination!",
-        )
+        if SVO_facility_name is None:
+            SVO_facility_name = instr_to_name_dict[instrument].facility.SVO_name
+        if SVO_instr_name is None:
+            SVO_instr_name = instr_to_name_dict[instrument].SVO_name
+        try:
+            properties = SvoFps.data_from_svo(
+                query={
+                    "Facility": SVO_facility_name,
+                    "Instrument": SVO_instr_name,
+                },
+                error_msg=f"'{SVO_facility_name}/{SVO_instr_name}' is not a valid facility/instrument combination!",
+            )
+        except Exception as e:
+            err_message = f"Could not retrieve properties for {SVO_facility_name}/{SVO_instr_name}! Exception={e}"
+            galfind_logger.critical(err_message)
+            raise(Exception(err_message))
         properties = properties[properties["filterID"] == full_name]
         wav *= u.Unit(str(np.array(properties["WavelengthUnit"])[0]))
 
@@ -188,7 +198,7 @@ class Filter:
         return self.instrument.__class__.__name__
 
     @staticmethod
-    def _get_facility_instrument_filt(filt_name: str) -> str:
+    def _get_facility_instrument_filt(filt_name: str) -> Tuple[str, str, str, str, str]:
         # determine facility and instrument names of filter string
         split_str = filt_name.split("/")
         if len(split_str) == 3:
@@ -215,7 +225,10 @@ class Filter:
             instrument = instruments_with_filt[0]
             facility = instr_to_name_dict[instrument].facility.__class__.__name__
         filt = filt.upper()
-        return facility, instrument, filt
+        # determine instrument and facility SVO names
+        SVO_facility_name = instr_to_name_dict[instrument].facility.SVO_name
+        SVO_instr_name = instr_to_name_dict[instrument].SVO_name
+        return facility, instrument, filt, SVO_facility_name, SVO_instr_name
 
     @staticmethod
     def _make_new_filt(
@@ -224,13 +237,13 @@ class Filter:
         already_included = False
         if isinstance(filt_or_name, str):
             # extract facility, instrument and filter name from string
-            facility, instrument, filt = Filter._get_facility_instrument_filt(
-                filt_or_name
-            )
+            facility, instrument, filt, SVO_facility_name, SVO_instr_name = \
+                Filter._get_facility_instrument_filt(filt_or_name)
             if filt_or_name in current_filt_names:
                 already_included = True
             else:
-                new_filt = Filter.from_SVO(facility, instrument, filt)
+                new_filt = Filter.from_SVO(facility, instrument, filt, \
+                    SVO_facility_name = SVO_facility_name, SVO_instr_name = SVO_instr_name)
         elif isinstance(filt_or_name, Filter):
             if filt_or_name.band_name in current_filt_names:
                 already_included = True
@@ -476,10 +489,17 @@ class Multiple_Filter:
             keep_suffix = [keep_suffix]
         # get filter list from "origin" source
         if origin == "SVO":
-            filter_list = SvoFps.get_filter_list(
-                facility=instrument.facility.__class__.__name__,
-                instrument=instrument.__class__.__name__.split("_")[0],
-            )
+            try:
+                filter_list = SvoFps.get_filter_list(
+                    facility=instrument.facility.SVO_name,
+                    instrument=instrument.SVO_name,
+                )
+            except:
+                err_message = "Could not retrieve filter list from SVO for " + \
+                    f"{instrument.facility.SVO_name}/{instrument.SVO_name}!"
+                galfind_logger.critical(err_message)
+                raise(Exception(err_message))
+            # only include filters from the requested instrument
             filter_list = filter_list[
                 np.array(
                     [
@@ -489,12 +509,16 @@ class Multiple_Filter:
                 )
                 == instrument.__class__.__name__
             ]
+            # only include filters without an underscore in the name
+            filter_list = filter_list[~np.array(["_" in filt_name.split("/")[-1].split(".")[-1] for filt_name in filter_list["filterID"]])]
             filters = np.array(
                 [
                     Filter.from_SVO(
                         instrument.facility.__class__.__name__,
                         instrument.__class__.__name__,
                         filt_ID.replace(f"{instrument.facility.__class__.__name__}/{instrument.__class__.__name__}.", ""),
+                        SVO_facility_name = instrument.facility.SVO_name,
+                        SVO_instr_name = instrument.SVO_name,
                     )
                     for filt_ID in np.array(filter_list["filterID"])
                     if filt_ID.replace(f"{instrument.facility.__class__.__name__}/{instrument.__class__.__name__}.", "") not in excl_bands
@@ -585,7 +609,7 @@ class Multiple_Filter:
             remove = True
             if isinstance(filt, str):
                 # extract facility, instrument and filter name from string
-                facility, instrument, filt = (
+                facility, instrument, filt, SVO_facility_name, SVO_instr_name = (
                     Filter._get_facility_instrument_filt(filt)
                 )
                 if filt not in self.band_names or filt in remove_filt_names:

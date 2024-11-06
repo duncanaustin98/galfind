@@ -604,6 +604,9 @@ def cluster_wht_map(
         num_regions = kneedle.elbow
         print(f"Detected {num_regions} regions as best.")
 
+        if num_regions is None:
+            num_regions = 1
+
         # if plot:
         #     plt.plot(num_regions_list, sse)
         #     plt.xlabel("Number of Regions")
@@ -611,6 +614,8 @@ def cluster_wht_map(
         #     plt.axvline(num_regions, color="red", linestyle="--")
         #     plt.show()
         #     plt.close()
+    
+
     # Find best of doing it 15x
     kmeans = KMeans(n_clusters=num_regions, n_init=15)
     kmeans.fit(weight_map_transformed.flatten().reshape(-1, 1))

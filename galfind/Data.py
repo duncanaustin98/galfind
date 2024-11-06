@@ -76,6 +76,8 @@ morgan_version_to_dir = {
     "v9": "mosaic_1084_wisptemp2",
     "v10": "mosaic_1084_wispscale",
     "v11": "mosaic_1084_wispnathan",
+    "v12": "mosaic_1210_wispnathan",
+    "v12test": "mosaic_1210_wispnathan_test"
 }
 
 
@@ -476,7 +478,7 @@ class Band_Data_Base(ABC):
         # do not re-segment if already done
         if not (hasattr(self, "seg_args") and hasattr(self, "seg_path")):
             # segment the data
-            if method == "sextractor":
+            if "sextractor" in method.lower():
                 self.seg_path = SExtractor.segment_sextractor(
                     self,
                     err_type,
@@ -486,7 +488,7 @@ class Band_Data_Base(ABC):
                 )
             else:
                 raise (
-                    Exception(f"segmentation {method=} not in ['sextractor']")
+                    Exception(f"segmentation {method.lower()=} does not contain 'sextractor'")
                 )
             self.seg_args = {
                 "err_type": err_type,
@@ -509,7 +511,7 @@ class Band_Data_Base(ABC):
             hasattr(self, "forced_phot_args")
             and hasattr(self, "forced_phot_path")
         ):
-            if method == "sextractor":
+            if "sextractor" in method.lower():
                 self.forced_phot_path, self.forced_phot_args = \
                 SExtractor.perform_forced_phot(
                     self,
@@ -520,7 +522,7 @@ class Band_Data_Base(ABC):
                     overwrite=overwrite,
                 )
             else:
-                raise (Exception(f"{method=} not in ['sextractor']"))
+                raise (Exception(f"{method.lower()=} does not contain 'sextractor'"))
 
     def _get_master_tab(
         self, output_ids_locs: bool = False
@@ -581,7 +583,7 @@ class Band_Data_Base(ABC):
         ] = 50,
         scale_extra: Union[float, List[float], Dict[str, float]] = 0.2,
         exclude_gaia_galaxies: Union[bool, List[bool], Dict[str, bool]] = True,
-        angle: Union[float, List[float], Dict[str, float]] = -70.0,
+        angle: Union[float, List[float], Dict[str, float]] = 0.0,
         edge_value: Union[float, List[float], Dict[str, float]] = 0.0,
         element: Union[str, List[str], Dict[str, str]] = "ELLIPSE",
         gaia_row_lim: Union[int, List[int], Dict[str, int]] = 500,
@@ -904,48 +906,56 @@ class Band_Data_Base(ABC):
     def _pix_scale_to_str(pix_scale: u.Quantity):
         return f"{round(pix_scale.to(u.marcsec).value)}mas"
 
-    def _make_rms_err_from_wht(self):
-        # make rms_err map from wht map
-        wht, hdr = self.load_wht(output_hdr=True)
-        err = 1.0 / (wht**0.5)
-        primary_hdr = deepcopy(hdr)
-        primary_hdr["EXTNAME"] = "PRIMARY"
-        primary = fits.PrimaryHDU(header=primary_hdr)
-        hdu = fits.ImageHDU(err, header=hdr, name="ERR")
-        hdul = fits.HDUList([primary, hdu])
-        # save and overwrite object attributes
+    def _make_rms_err_from_wht(self, overwrite: bool = False) -> NoReturn:
         save_path = self.im_path.replace(
             self.im_path.split("/")[-1],
             f"rms_err/{self.filt.band_name}_rms_err.fits",
         )
-        funcs.make_dirs(save_path)
-        hdul.writeto(save_path, overwrite=True)
-        funcs.change_file_permissions(save_path)
+        if not Path(save_path).is_file() or overwrite:
+            # make rms_err map from wht map
+            wht, hdr = self.load_wht(output_hdr=True)
+            err = 1.0 / (wht**0.5)
+            primary_hdr = deepcopy(hdr)
+            primary_hdr["EXTNAME"] = "PRIMARY"
+            primary = fits.PrimaryHDU(header=primary_hdr)
+            hdu = fits.ImageHDU(err, header=hdr, name="ERR")
+            hdul = fits.HDUList([primary, hdu])
+            # save and overwrite object attributes
+            funcs.make_dirs(save_path)
+            hdul.writeto(save_path, overwrite=True)
+            funcs.change_file_permissions(save_path)
+            galfind_logger.info(
+                f"Finished making {self.survey} {self.version} {self.filt} rms_err map"
+            )
         galfind_logger.info(
-            f"Finished making {self.survey} {self.version} {self.filt} rms_err map"
+            f"Loading galfind created rms_err for {self.filt_name}"
         )
         self.rms_err_path = save_path
         self.rms_err_ext = 1
         self.rms_err_ext_name = ["ERR"]
         self._use_galfind_err = True
 
-    def _make_wht_from_rms_err(self):
-        err, hdr = self.load_rms_err(output_hdr=True)
-        wht = 1.0 / (err**2)
-        primary_hdr = deepcopy(hdr)
-        primary_hdr["EXTNAME"] = "PRIMARY"
-        primary = fits.PrimaryHDU(header=primary_hdr)
-        hdu = fits.ImageHDU(wht, header=hdr, name="WHT")
-        hdul = fits.HDUList([primary, hdu])
-        # save and overwrite object attributes
+    def _make_wht_from_rms_err(self, overwrite: bool = False) -> NoReturn:
         save_path = self.im_path.replace(
             self.im_path.split("/")[-1], f"wht/{self.filt.band_name}_wht.fits"
         )
-        funcs.make_dirs(save_path)
-        hdul.writeto(save_path, overwrite=True)
-        funcs.change_file_permissions(save_path)
+        if not Path(save_path).is_file() or overwrite:
+            err, hdr = self.load_rms_err(output_hdr=True)
+            wht = 1.0 / (err**2)
+            primary_hdr = deepcopy(hdr)
+            primary_hdr["EXTNAME"] = "PRIMARY"
+            primary = fits.PrimaryHDU(header=primary_hdr)
+            hdu = fits.ImageHDU(wht, header=hdr, name="WHT")
+            hdul = fits.HDUList([primary, hdu])
+            # save and overwrite object attributes
+            funcs.make_dirs(save_path)
+            hdul.writeto(save_path, overwrite=True)
+            funcs.change_file_permissions(save_path)
+            galfind_logger.info(
+                f"Finished making {self.survey} {self.version} {self.filt} wht map"
+            )
         galfind_logger.info(
-            f"Finished making {self.survey} {self.version} {self.filt} wht map"
+            f"Loading galfind created wht for {self.filt_name}"
         )
         self.wht_path = save_path
         self.wht_ext = 1
@@ -1303,18 +1313,30 @@ class Stacked_Band_Data(Band_Data_Base):
         # make rms_err/wht maps if they do not exist and are required
         used_galfind_err = False
         if err_type.lower() == "rms_err":
-            if not all(
+            if any(band_data.rms_err_path is None for band_data in band_data_arr):
+                run = True
+            elif not all(
                 Path(band_data.rms_err_path).is_file()
                 for band_data in band_data_arr
             ):
+                run = True
+            else:
+                run = False
+            if run:
                 for band_data in band_data_arr:
                     band_data._make_rms_err_from_wht()
                 used_galfind_err = True
         else:  # err_type.lower() == "wht"
-            if not all(
+            if any(band_data.wht_path is None for band_data in band_data_arr):
+                run = True
+            elif not all(
                 Path(band_data.wht_path).is_file()
                 for band_data in band_data_arr
             ):
+                run = True
+            else:
+                run = False
+            if run:
                 for band_data in band_data_arr:
                     band_data._make_wht_from_rms_err()
                 used_galfind_err = True
@@ -1335,7 +1357,7 @@ class Stacked_Band_Data(Band_Data_Base):
                 band_data.ZP == band_data_arr[0].ZP
                 for band_data in band_data_arr
             ), galfind_logger.critical(
-                "All image ZPs must have the same shape!"
+                "All image ZPs must be the same!"
             )
             # ensure all band data images have the same pixel scale
             assert all(
@@ -1416,7 +1438,7 @@ class Stacked_Band_Data(Band_Data_Base):
         ] = 50,
         scale_extra: Union[float, List[float], Dict[str, float]] = 0.2,
         exclude_gaia_galaxies: Union[bool, List[bool], Dict[str, bool]] = True,
-        angle: Union[float, List[float], Dict[str, float]] = -70.0,
+        angle: Union[float, List[float], Dict[str, float]] = 0.0,
         edge_value: Union[float, List[float], Dict[str, float]] = 0.0,
         element: Union[str, List[str], Dict[str, str]] = "ELLIPSE",
         gaia_row_lim: Union[int, List[int], Dict[str, int]] = 500,
@@ -1638,7 +1660,6 @@ class Data:
                 rms_err_ext_name,
                 wht_ext_name,
             )
-
             for filt_name in im_paths.keys():
                 if len(im_paths[filt_name]) > 1:
                     # stack sci/rms_err/wht images together and move the old ones to a new directory
@@ -1728,14 +1749,19 @@ class Data:
                 wht_paths[filt_name] = []
                 wht_exts[filt_name] = []
             # make arrays to determine where the data is stored for each band
-            is_sci = {path: [str in path for str in im_str] for path in paths}
+            is_sci = {path: any([str in path for str in im_str]) for path in paths}
             is_rms_err = {
-                path: [str in path for str in rms_err_str] for path in paths
+                path: any([str in path for str in rms_err_str]) for path in paths
             }
-            is_wht = {path: [str in path for str in wht_str] for path in paths}
+            is_wht = {path: any([str in path for str in wht_str]) for path in paths}
+            # check to see if all paths are science images
+            if all(is_sci_ext for is_sci_ext in is_sci.values()):
+                all_sci = True
+            else:
+                all_sci = False
             for path in paths:
                 # if all paths are science images
-                if all(path_is_sci for path_is_sci in is_sci.values()):
+                if all_sci:
                     # all extensions must be within the same image
                     single_path = True
                     im_paths[filt_name].extend([path])
@@ -1743,11 +1769,9 @@ class Data:
                     wht_paths[filt_name].extend([path])
                 else:
                     # ensure the path only belongs to one (or none) of the image types
-                    assert all(
-                        not all(i for i in pair)
-                        for pair in itertools.combinations(
-                            (is_sci, is_rms_err, is_wht), 2
-                        )
+                    n_unique_types = ([is_sci[path]] + [is_rms_err[path]] + [is_wht[path]]).count(True)
+                    assert n_unique_types < 2, galfind_logger.critical(
+                        f"Multiple image types found for {filt_name}, {path}"
                     )
                     single_path = False
                     if (
@@ -1773,23 +1797,19 @@ class Data:
                             f"{filt_name}, {path} not recognised as im, rms_err, or wht!"
                             + "Consider updating 'im_str', ''rms_err_str', and 'wht_str'!"
                         )
-
                 # extract sci/rms_err/wht extensions
                 hdul = fits.open(path)
                 if not single_path:
-                    assertion_len = 1
                     for j, hdu in enumerate(hdul):
-                        # skip primary if there are multiple extensions
-                        if hdu.name == "PRIMARY" and len(hdul) > 1:
-                            assertion_len += 1
-                        else:
-                            if is_sci:
-                                im_exts[filt_name].extend([int(j)])
-                            elif is_rms_err:
-                                rms_err_exts[filt_name].extend([int(j)])
-                            elif is_wht:
-                                wht_exts[filt_name].extend([int(j)])
-                    assert len(hdul) == assertion_len
+                        if is_sci[path] and hdu.name in list(im_ext_name):
+                            im_exts[filt_name].extend([int(j)])
+                            break
+                        elif is_rms_err[path] and hdu.name in list(rms_err_ext_name):
+                            rms_err_exts[filt_name].extend([int(j)])
+                            break
+                        elif is_wht[path] and hdu.name in list(wht_ext_name):
+                            wht_exts[filt_name].extend([int(j)])
+                            break
                 else:
                     for j, hdu in enumerate(hdul):
                         if hdu.name in im_ext_name:
@@ -1798,7 +1818,6 @@ class Data:
                             rms_err_exts[filt_name].extend([int(j)])
                         if hdu.name in wht_ext_name:
                             wht_exts[filt_name].extend([int(j)])
-
             # ensure a None is inserted if either rms_err/wht path/ext is missing
             # compared to im path length
             n_rms_err_path_missing = len(im_paths[filt_name]) - len(
@@ -2053,7 +2072,7 @@ class Data:
 
     def __getattr__(self, attr: str) -> Any:
         # attr inserted here must be pluralised with 's' suffix
-        
+        print(attr)
         if all(attr[:-1] in band_data.__dict__.keys() for band_data in self):
             if hasattr(self, "forced_phot_band"):
                 if attr[:-1] in self.forced_phot_band.__dict__.keys():
@@ -2438,8 +2457,9 @@ class Data:
                 output_ids_locs=True
             )]
             for band_data in self:
-                master_tab_arr.extend(
-                    [band_data._get_master_tab(output_ids_locs=False)])
+                if band_data.filt_name != self.forced_phot_band.filt_name: 
+                    master_tab_arr.extend(
+                        [band_data._get_master_tab(output_ids_locs=False)])
             master_tab = hstack(master_tab_arr)
             # update table header
             self_band_data_arr = self.band_data_arr + [self.forced_phot_band]
@@ -2497,7 +2517,7 @@ class Data:
         ] = 50,
         scale_extra: Union[float, List[float], Dict[str, float]] = 0.2,
         exclude_gaia_galaxies: Union[bool, List[bool], Dict[str, bool]] = True,
-        angle: Union[float, List[float], Dict[str, float]] = -70.0,
+        angle: Union[float, List[float], Dict[str, float]] = 0.0,
         edge_value: Union[float, List[float], Dict[str, float]] = 0.0,
         element: Union[str, List[str], Dict[str, str]] = "ELLIPSE",
         gaia_row_lim: Union[int, List[int], Dict[str, int]] = 500,
