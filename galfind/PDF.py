@@ -2,7 +2,7 @@
 
 import time
 from copy import deepcopy
-from typing import Callable, Union
+from typing import Callable, Union, Optional
 
 import astropy.units as u
 import matplotlib.patheffects as pe
@@ -636,9 +636,9 @@ class Redshift_PDF(SED_fit_PDF):
     def integrate_between_lims(
         self,
         delta_z_over_z,
-        zbest=None,
-        z_min=float(config["SEDFitting"].get("Z_MIN")),
-        z_max=float(config["SEDFitting"].get("Z_MAX")),
+        zbest: Optional[float] = None,
+        z_min: float = 0.,
+        z_max: float = 25.,
     ):
         # find best fitting redshift from peak of the PDF distribution - not needed if peak is loaded in PDF object
         if type(zbest) == type(None):
