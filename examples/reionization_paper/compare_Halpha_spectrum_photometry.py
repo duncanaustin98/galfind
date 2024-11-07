@@ -189,7 +189,6 @@ def Halpha_residual(params, x, y, y_err):
 def Halpha_EW(x, A, sigma, c):
     return (Halpha_gauss(x, A, sigma, c) - c) / c
 
-
 def fit_Halpha_manual(z, spec_filepath, wav_range_AA = [6_200., 6_900.] * u.AA):
     spec = galfind.Spectrum.from_DJA(spec_filepath, z = z)
     wavs = spec.wavs.to(u.AA) / (1. + z)

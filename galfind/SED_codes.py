@@ -76,13 +76,15 @@ class SED_code(ABC):
     def are_errs_percentiles(self) -> bool:
         pass
 
-    @abstractmethod
-    def _load_gal_property_labels(self) -> NoReturn:
-        pass
+    #@abstractmethod
+    def _load_gal_property_labels(self, gal_property_labels: Dict[str, str]) -> NoReturn:
+        self.gal_property_labels = {key: f"{item}_{self.tab_suffix}" 
+            for key, item in gal_property_labels.items()}
 
-    @abstractmethod
-    def _load_gal_property_err_labels(self) -> NoReturn:
-        pass
+    #@abstractmethod
+    def _load_gal_property_err_labels(self, gal_property_err_labels: Dict[str, List[str, str]]) -> NoReturn:
+        self.gal_property_err_labels = {key: [f"{item[0]}_{self.tab_suffix}", f"{item[1]}_{self.tab_suffix}"]
+            for key, item in gal_property_err_labels.items()}
 
     @abstractmethod
     def _load_gal_property_units(self) -> NoReturn:
@@ -105,11 +107,11 @@ class SED_code(ABC):
         pass
 
     @abstractmethod
-    def extract_SEDs(IDs, data_paths):
+    def extract_SEDs(self, IDs, data_paths):
         pass
 
     @abstractmethod
-    def extract_PDFs(gal_property, IDs, data_paths):
+    def extract_PDFs(self, gal_property, IDs, data_paths):
         pass
 
     def _assert_SED_fit_params(self) -> NoReturn:
@@ -122,8 +124,8 @@ class SED_code(ABC):
         self,
         cat: Catalogue,
         aper_diam: u.Quantity,
-        save_SEDs: bool = True,
         save_PDFs: bool = True,
+        save_SEDs: bool = True,
         load_PDFs: bool = True,
         load_SEDs: bool = True,
         timed: bool = True,
@@ -147,9 +149,8 @@ class SED_code(ABC):
 
         in_path, out_path, fits_out_path, PDF_paths, SED_paths = self._get_out_paths(cat, aper_diam)
         # run the SED fitting if not already done so or if wanted overwriting
-        fits_cat = cat.open_cat(hdu=self.hdu_name) # should be cached
-        breakpoint()
-        if fits_cat is None or self.gal_property_labels["z"] \
+        fits_cat = cat.open_cat(hdu=self) # should be cached
+        if fits_cat is None or self.gal_property_labels['z'] \
                 not in fits_cat.colnames:
             self.fit(
                 cat,
@@ -160,8 +161,8 @@ class SED_code(ABC):
                 **fit_kwargs
             )
             self.make_fits_from_out(out_path)
-            breakpoint()
             self.update_fits_cat(cat, fits_out_path)
+
         # save PDF and SED paths in galfind catalogue object
         #cat.save_phot_PDF_paths(PDF_paths)
         #cat.save_phot_SED_paths(SED_paths)
@@ -169,10 +170,7 @@ class SED_code(ABC):
         if timed:
             mid = time.time()
             print(f"Running SED fitting took {(mid - start):.1f}s")
-
-        SED_fit_cat = cat.open_cat(
-            hdu=self.hdu_name, cropped=True,
-        )
+        SED_fit_cat = cat.open_cat(cropped=True, hdu=self)
         aper_phot_IDs = [gal.ID for gal in cat]
         phot_arr = [gal.aper_phot[aper_diam] for gal in cat]
         # assume properties all come from the same table if only a single catalogue is given
@@ -186,8 +184,8 @@ class SED_code(ABC):
             self.gal_property_units[gal_property] if gal_property in \
             self.gal_property_units.keys() else SED_fit_cat[label][i] * \
             u.dimensionless_unscaled for gal_property, label in \
-            self.galaxy_property_labels.items()} for i in range(len(aper_phot_IDs))]
-        # 
+            self.gal_property_labels.items()} for i in range(len(aper_phot_IDs))]
+        
         # TODO: ensure that all errors have an associated property - when instantiating the class
         # assert all(
         #     err_key in self.galaxy_property_dict.keys()
@@ -197,7 +195,7 @@ class SED_code(ABC):
         cat_property_errs = {
             gal_property: list(
                 funcs.adjust_errs(
-                    np.array(SED_fit_cat[self.galaxy_property_labels[gal_property]]),
+                    np.array(SED_fit_cat[self.gal_property_labels[gal_property]]),
                     np.array(
                         [
                             np.array(SED_fit_cat[err_labels[0]]),
@@ -207,11 +205,8 @@ class SED_code(ABC):
                 )[1]
             )
             if self.are_errs_percentiles
-            else [
-                list(SED_fit_cat[err_labels[0]]),
-                list(SED_fit_cat[err_labels[1]]),
-            ]
-            for gal_property, err_labels in self.galaxy_property_err_labels.items()
+            else [list(SED_fit_cat[err_labels[0]]), list(SED_fit_cat[err_labels[1]])]
+            for gal_property, err_labels in self.gal_property_err_labels.items()
         }
         cat_property_errs = [
             {
@@ -230,10 +225,11 @@ class SED_code(ABC):
         if load_PDFs:
             galfind_logger.info(
                 f"Loading {self.hdu_name} property PDFs into " + \
-                f"{cat.survey} {cat.version} {cat.instrument_name}"
+                f"{cat.survey} {cat.version} {cat.filterset.instrument_name}"
             )
             # construct PDF objects, type = array of len(fits_cat), 
             # each element a dict of {gal_property: PDF object} excluding None PDFs
+            breakpoint()
             cat_property_PDFs_ = {
                 gal_property: self.extract_PDFs(
                     gal_property,
@@ -257,14 +253,15 @@ class SED_code(ABC):
             ]
             galfind_logger.info(
                 f"Finished loading {self.hdu_name} property PDFs into " + \
-                f"{cat.survey} {cat.version} {cat.instrument_name}"
+                f"{cat.survey} {cat.version} {cat.filterset.instrument_name}"
             )
         else:
             galfind_logger.info(
                 f"Not loading {self.hdu_name} property PDFs into " + \
-                f"{cat.survey} {cat.version} {cat.instrument_name}"
+                f"{cat.survey} {cat.version} {cat.filterset.instrument_name}"
             )
             out_shape = np.array(cat_properties).shape
+            breakpoint()
             cat_property_PDFs = np.array(
                 list(
                     itertools.repeat(
@@ -277,17 +274,17 @@ class SED_code(ABC):
         if load_SEDs:
             galfind_logger.info(
                 f"Loading {self.hdu_name} SEDs into " + \
-                f"{cat.survey} {cat.version} {cat.instrument_name}"
+                f"{cat.survey} {cat.version} {cat.filterset.instrument_name}"
             )
             cat_SEDs = self.extract_SEDs(aper_phot_IDs, SED_paths)
             galfind_logger.info(
                 f"Finished loading {self.hdu_name} SEDs into " + \
-                f"{cat.survey} {cat.version} {cat.instrument_name}"
+                f"{cat.survey} {cat.version} {cat.filterset.instrument_name}"
             )
         else:
             galfind_logger.info(
                 f"Not loading {self.hdu_name} SEDs into " + \
-                f"{cat.survey} {cat.version} {cat.instrument_name}"
+                f"{cat.survey} {cat.version} {cat.filterset.instrument_name}"
             )
             out_shape = np.array(cat_properties).shape
             cat_SEDs = np.array(
@@ -395,9 +392,9 @@ class SED_code(ABC):
     # should be catalogue method
     def update_fits_cat(
         self, cat: Catalogue, fits_out_path: str
-    ) -> None:  # *args, **kwargs):
+    ) -> None:
         # open relevant catalogue hdu extension
-        orig_tab = cat.open_cat(hdu=self.hdu_name)
+        orig_tab = cat.open_cat(hdu=self)
         SED_fitting_tab = Table.read(fits_out_path)
         # if table has not already been made
         if orig_tab is None:

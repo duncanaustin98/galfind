@@ -9,7 +9,8 @@ from astropy.coordinates import SkyCoord
 from astropy.io import fits
 from astropy.table import Table, join
 from tqdm import tqdm
-from typing import TYPE_CHECKING, List, Dict, Union
+import inspect
+from typing import TYPE_CHECKING, List, Dict, Union, Type, Optional
 if TYPE_CHECKING:
     from . import Galaxy, Catalogue_Creator
 
@@ -17,7 +18,6 @@ from . import (
     Multiple_Catalogue,
     SED_code,
     galfind_logger,
-    #sed_code_to_name_dict,
 )
 from . import useful_funcs_austind as funcs
 
@@ -552,28 +552,39 @@ class Catalogue_Base:
             )
         return cat_copy
 
-    def open_cat(self, cropped=False, hdu=None):
-        if type(hdu) == type(None):
+    def open_cat(self, cropped: bool = False, hdu: Optional[str, Type[SED_code]] = None):
+        if hdu is None:
             fits_cat = Table.read(
                 self.cat_path, character_as_bytes=False, memmap=True
             )
-        elif self.check_hdu_exists(hdu):
-            fits_cat = Table.read(
-                self.cat_path, character_as_bytes=False, memmap=True, hdu=hdu
-            )
         else:
-            galfind_logger.warning(
-                f"{hdu.upper()=} does not exist in {self.cat_path=}!"
-            )
-            return None
+            if isinstance(hdu, SED_code):
+                hdu_name = hdu.hdu_name
+            elif isinstance(hdu, str):
+                hdu_name = hdu
+            else:
+                err_message = f"{hdu=} is not a valid input!"
+                galfind_logger.critical(err_message)
+                raise ValueError(err_message)
+            if self.check_hdu_exists(hdu_name):
+                fits_cat = Table.read(
+                    self.cat_path, character_as_bytes=False, memmap=True, hdu=hdu_name
+                )
+            else:
+                galfind_logger.warning(
+                    f"{hdu=} does not exist in {self.cat_path=}!"
+                )
+                return None
         if cropped:
             ID_tab = Table({"IDs_temp": self.ID}, dtype=[int])
             if hdu is None:
                 keys_left = self.cat_creator.ID_label
-            elif hdu.upper() in ["OBJECTS"]:  # , "GALFIND_CAT"]:
+            elif hdu_name.upper() in ["OBJECTS"]:  # , "GALFIND_CAT"]:
                 keys_left = self.cat_creator.ID_label
+            elif isinstance(hdu, SED_code):
+                keys_left = hdu.ID_label
             else:
-                keys_left = sed_code_to_name_dict[hdu.split("_")[0]].ID_label
+                raise NotImplementedError()
             combined_tab = join(
                 fits_cat, ID_tab, keys_left=keys_left, keys_right="IDs_temp"
             )
@@ -583,10 +594,10 @@ class Catalogue_Base:
         else:
             return fits_cat
 
-    def check_hdu_exists(self, hdu):
+    def check_hdu_exists(self, hdu_name: str):
         # check whether the hdu extension exists
         hdul = fits.open(self.cat_path)
-        return any(hdu_.name == hdu.upper() for hdu_ in hdul)
+        return any(hdu_.name == hdu_name.upper() for hdu_ in hdul)
 
     def write_cat(self, tab_arr, tab_names):
         hdu_list = fits.HDUList()

@@ -128,22 +128,24 @@ class EAZY(SED_code):
         return False
 
     def _load_gal_property_labels(self):
-        self.gal_property_labels = {
+        gal_property_labels = {
             **{"z": "zbest", "chi_sq": "chi2_best"},
             **{
                 f"{ubvj_filt}_flux": f"{ubvj_filt}_rf_flux"
                 for ubvj_filt in ["U", "B", "V", "J"]
             },
         }
+        super()._load_gal_property_labels(gal_property_labels)
 
     def _load_gal_property_err_labels(self):
-        self.gal_property_err_labels = {
+        gal_property_err_labels = {
             f"{ubvj_filt}_flux": [
                 f"{ubvj_filt}_rf_flux_err",
                 f"{ubvj_filt}_rf_flux_err",
             ]
             for ubvj_filt in ["U", "B", "V", "J"]
         }
+        super()._load_gal_property_err_labels(gal_property_err_labels)
 
     def _load_gal_property_units(self) -> NoReturn:
         # still need to double check the UBVJ units
@@ -358,7 +360,6 @@ class EAZY(SED_code):
             galfind_logger.info(
                 f"Running {self.__class__.__name__} {templates} {lowz_label}"
             )
-            print(default_param_path)
             fit = eazy.photoz.PhotoZ(
                 param_file=default_param_path,
                 zeropoint_file=None,
@@ -567,8 +568,7 @@ class EAZY(SED_code):
         )
         return in_path, out_path, fits_out_path, PDF_paths, SED_paths
 
-    @staticmethod
-    def extract_SEDs(IDs, SED_paths):
+    def extract_SEDs(self, IDs, SED_paths):
         # ensure this works if only extracting 1 galaxy
         if isinstance(IDs, (str, int, float)):
             IDs = np.array([int(IDs)])
@@ -604,8 +604,7 @@ class EAZY(SED_code):
         # close .h5 file
         return SED_obs_arr
 
-    @staticmethod
-    def extract_PDFs(gal_property, IDs, PDF_paths, timed: bool = True):
+    def extract_PDFs(self, gal_property, IDs, PDF_paths, timed: bool = True):
         # ensure this works if only extracting 1 galaxy
         if isinstance(IDs, (str, int, float)):
             IDs = np.array([int(IDs)])
