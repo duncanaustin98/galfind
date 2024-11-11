@@ -1,0 +1,13 @@
+#########################################################################
+#               Spectro-Photometric standards                           #
+#              (ftp://ftp.eso.org/pub/stecf/standards/ctiostan)         #
+#        Hamuy et al. 1992, PASP 104, 533  and  1994,  PASP 106, 566    #
+#  *  The files with prefix 'm' list wavelength (A), AB magnitude       #
+#        and the bandpass used in measurement.                          #
+#  *  The files with prefix 'f' list wavelength (A), flux               #
+#        (ergs/cm/cm/s/A * 10**16), flux (milli-Jy) and the bandpass    #
+#        used  in measurement.                                          #
+#  *  Wavelengthes from  ~3300A to ~11000A                              #
+#########################################################################
+
+

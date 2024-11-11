@@ -22,4 +22,4 @@ examples/reionization_paper
 build
 configs/galfind_config_goolsby.ini
 galfind/configs
-configs
+#configs
