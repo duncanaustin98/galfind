@@ -119,6 +119,32 @@ class SED_code(ABC):
             assert key in self.SED_fit_params.keys(), galfind_logger.critical(
                 f"'{key}' not in SED_fit_params keys = {list(self.SED_fit_params.keys())}"
             )
+    
+    def __str__(self) -> str:
+        output_str = funcs.line_sep
+        output_str += f"{self.__class__.__name__.upper()}\n"
+        output_str += funcs.band_sep
+        output_str += f"LABEL: {self.label}\n"
+        output_str += f"HDU_NAME: {self.hdu_name}\n"
+        output_str += f"TAB_SUFFIX: {self.tab_suffix}\n"
+        output_str += funcs.band_sep
+        output_str += "SED_FIT_PARAMS:\n"
+        for key, value in self.SED_fit_params.items():
+            output_str += f"{key}: {value}\n"
+        output_str += funcs.band_sep
+        output_str += "GAL_PROPERTY_LABELS:\n"
+        for key, label in self.gal_property_labels.items():
+            output_str += f"{key}: {label}\n"
+        output_str += funcs.band_sep
+        output_str += "GAL_PROPERTY_ERR_LABELS:\n"
+        for key, labels in self.gal_property_err_labels.items():
+            output_str += f"{key}: {labels}\n"
+        output_str += funcs.band_sep
+        output_str += "GAL_PROPERTY_UNITS:\n"
+        for key, unit in self.gal_property_units.items():
+            output_str += f"{key}: {unit}\n"
+        output_str += funcs.line_sep
+        return output_str
 
     def __call__(
         self,

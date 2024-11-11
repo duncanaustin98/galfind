@@ -369,6 +369,7 @@ class EAZY(SED_code):
                 translate_file=translate_file,
                 n_proc=self.SED_fit_params["N_PROC"],
             )
+            
             fit.fit_catalog(n_proc=self.SED_fit_params["N_PROC"], get_best_fit=True)
             # Save backup of fit in hdf5 file
             hdf5.write_hdf5(

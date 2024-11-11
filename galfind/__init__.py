@@ -2,10 +2,13 @@
 
 import time
 start = time.time()
+import os
+os.environ["MKL_NUM_THREADS"] = "1" 
+os.environ["NUMEXPR_NUM_THREADS"] = "1" 
+os.environ["OMP_NUM_THREADS"] = "1" 
 import configparser
 import json
 import logging
-import os
 import astropy.units as u # takes ages and not sure why?
 import numpy as np
 from pathlib import Path

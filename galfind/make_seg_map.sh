@@ -1,6 +1,5 @@
 #!/bin/bash
 
-
 OUTPUT_DIR=$1
 INPUT_IMAGE_PATH=$2
 PIXEL_SCALE=$3

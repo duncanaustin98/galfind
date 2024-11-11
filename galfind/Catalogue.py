@@ -907,12 +907,9 @@ class Catalogue(Catalogue_Base):
 
     def make_cutouts(
         self,
-        IDs: Union[list, np.array],
         cutout_size: Union[u.Quantity, dict] = 0.96 * u.arcsec,
     ) -> None:
         # loop over galaxies, making a cutout of each one
-        if type(IDs) == int:
-            IDs = [IDs]
         for band in tqdm(
             self.instrument.band_names,
             total=len(self.instrument),
@@ -937,27 +934,26 @@ class Catalogue(Catalogue_Base):
             print("Time to load data:", end - start)
 
             for gal in self:
-                if gal.ID in IDs:
-                    if type(cutout_size) in [dict]:
-                        cutout_size_gal = cutout_size[gal.ID]
-                    else:
-                        cutout_size_gal = cutout_size
-                    gal.make_cutout(
-                        band,
-                        data={
-                            "SCI": im_data,
-                            "SEG": seg_data,
-                            "WHT": wht_data,
-                            "RMS_ERR": rms_err_data,
-                        },
-                        wcs=wcs,
-                        im_header=im_header,
-                        survey=self.survey,
-                        version=self.version,
-                        pix_scale=self.data.pix_scales[band],
-                        cutout_size=cutout_size_gal,
-                    )
-                    pos += 1
+                if isinstance(cutout_size, dict):
+                    cutout_size_gal = cutout_size[gal.ID]
+                else:
+                    cutout_size_gal = cutout_size
+                gal.make_cutout(
+                    band,
+                    data={
+                        "SCI": im_data,
+                        "SEG": seg_data,
+                        "WHT": wht_data,
+                        "RMS_ERR": rms_err_data,
+                    },
+                    wcs=wcs,
+                    im_header=im_header,
+                    survey=self.survey,
+                    version=self.version,
+                    pix_scale=self.data.pix_scales[band],
+                    cutout_size=cutout_size_gal,
+                )
+                pos += 1
 
             end2 = time.time()
             print("Time to make cutouts:", end2 - end)
