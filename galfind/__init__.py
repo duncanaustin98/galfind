@@ -3,15 +3,9 @@
 import time
 start = time.time()
 import os
-os.environ["MKL_NUM_THREADS"] = "1" 
-os.environ["NUMEXPR_NUM_THREADS"] = "1" 
-os.environ["OMP_NUM_THREADS"] = "1" 
 import configparser
 import json
 import logging
-import astropy.units as u # takes ages and not sure why?
-import numpy as np
-from pathlib import Path
 from astropy.cosmology import FlatLambdaCDM
 end = time.time()
 #print(f"__init__ imports took {end - start}s")
@@ -100,6 +94,18 @@ if config.getboolean("DEFAULT", "USE_LOGGING"):
         galfind_logger.handlers[0].setFormatter(galfind_log_formatter)
 else:
     raise (Exception("galfind currently not set up to allow users to ignore logging!"))
+
+# limit number of threads to N_CORES
+n_threads = str(config.getint("DEFAULT", "N_CORES"))
+os.environ["MKL_NUM_THREADS"] = n_threads
+os.environ["NUMEXPR_NUM_THREADS"] = n_threads
+os.environ["OMP_NUM_THREADS"] = n_threads
+
+try:
+    import mkl
+    mkl.set_num_threads(int(n_threads))
+except:
+    galfind_logger.warning(f"Failed to set mkl.set_num_threads to {n_threads}.")
 
 # set cosmology
 astropy_cosmo = FlatLambdaCDM(H0=70, Om0=0.3, Ob0=0.05, Tcmb0=2.725)

@@ -22,8 +22,8 @@ def main():
     cat_path = JOF_data.phot_cat_path
     filterset = JOF_data.filterset
     # [0.32] * u.arcsec hardcoded for now
-    cat_creator = Catalogue_Creator(survey, version, cat_path, filterset, aper_diams)
-    cat = cat_creator()
+    cat_creator = Catalogue_Creator(survey, version, cat_path, filterset, aper_diams, crops = {"RA": []})
+    cat = cat_creator(cropped = True)
 
     LePhare_SED_fit_params = {"GAL_TEMPLATES": "BC03_Chabrier2003_Z(m42_m62)"}
     LePhare_fitter = LePhare(LePhare_SED_fit_params)
@@ -36,10 +36,10 @@ def main():
 
 if __name__ == "__main__":
     main()
-    LePhare_SED_fit_params = {"GAL_TEMPLATES": "BC03_Chabrier2003_Z(m42_m62)"}
-    EAZY_SED_fit_params = {"templates": "fsps_larson", "lowz_zmax": None}
-    LePhare_fitter = LePhare(LePhare_SED_fit_params)
-    LePhare_fitter.compile()
-    print(LePhare_fitter.SED_fit_params)
+    # LePhare_SED_fit_params = {"GAL_TEMPLATES": "BC03_Chabrier2003_Z(m42_m62)"}
+    # EAZY_SED_fit_params = {"templates": "fsps_larson", "lowz_zmax": None}
+    # LePhare_fitter = LePhare(LePhare_SED_fit_params)
+    # LePhare_fitter.compile()
+    # print(LePhare_fitter.SED_fit_params)
     #EAZY_fitter = EAZY(EAZYSED_fit_params)
-    breakpoint()
+    #breakpoint()
