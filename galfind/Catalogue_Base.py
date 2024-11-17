@@ -10,7 +10,7 @@ from astropy.io import fits
 from astropy.table import Table, join
 from tqdm import tqdm
 import inspect
-from typing import TYPE_CHECKING, List, Dict, Union, Type, Optional
+from typing import TYPE_CHECKING, Any, List, Dict, Union, Type, Optional
 if TYPE_CHECKING:
     from . import Galaxy, Catalogue_Creator
 
@@ -120,36 +120,42 @@ class Catalogue_Base:
             self.iter += 1
             return gal
 
-    def __getitem__(self, index):
-        # if type(self.gals) != np.ndarray:
-        #     self.gals = np.array(self.gals)
-        return self.gals[index]
+    def __getitem__(self, index: Any) -> Union[Galaxy, List[Galaxy]]:
+        if isinstance(index, (slice, np.ndarray)):
+            return list(np.array(self.gals)[index])
+        elif isinstance(index, list):
+            return list(np.array(self.gals)[np.array(index)])
+        else:
+            return self.gals[index]
 
     # only acts on attributes that don't already exist in Catalogue
     def __getattr__(
-        self, property_name: str, origin: Union[str, dict] = "gal"
-    ) -> np.array:
+        self, property_name: str #, origin: Union[str, dict] = "gal"
+    ) -> np.ndarray:
         # get attributes from stored galaxy objects
-        if property_name in self.__dict__.keys():
-            return self.__getattribute__(property_name)
-        elif property_name in self.cat_creator.__dict__.keys():
-            return self.cat_creator.__getattribute__(property_name)
-        else:
-            attr_arr = [gal.__getattr__(property_name, origin) for gal in self]
-            # sort the units
+        # if property_name in self.__dict__.keys():
+        #     return self.__getattribute__(property_name)
+        # elif property_name in self.cat_creator.__dict__.keys():
+        #     return self.cat_creator.__getattribute__(property_name)
+        # else:
+        if property_name in self.cat_creator.__dict__.keys():
+            return getattr(self.cat_creator, property_name)
+        elif all(hasattr(gal, property_name) for gal in self):
+            attr_arr = [getattr(gal, property_name) for gal in self]
+            #attr_arr = [gal.__getattr__(property_name, origin) for gal in self]
+            # ensure all units are the same
             if all(
-                type(attr) in [u.Quantity, u.Magnitude, u.Dex]
+                isinstance(attr, (u.Quantity, u.Magnitude, u.Dex))
                 for attr in attr_arr
             ):
                 assert all(
                     attr.unit == attr_arr[0].unit for attr in attr_arr
-                )  # ensure all units are the same
-                attr_arr = np.array(
-                    [attr.value for attr in attr_arr]
-                ) * u.Unit(attr_arr[0].unit)
-            else:
-                attr_arr = np.array(attr_arr)
+                )
+                attr_arr = [attr.value for attr in attr_arr] \
+                    * u.Unit(attr_arr[0].unit)
             return attr_arr
+        else:
+            raise AttributeError
 
     def __setattr__(self, name, value, obj="cat"):
         if obj == "cat":
@@ -499,6 +505,14 @@ class Catalogue_Base:
         except:
             self._dec_range = [np.min(self.DEC.value), np.max(self.DEC.value)] * self.DEC.unit
             return self._dec_range
+        
+    @property
+    def select_colnames(self) -> List[str]:
+        tab = self.cat_creator.open_cat(self.cat_path, "selection")
+        if tab is None:
+            return []
+        else:
+            return self.cat_creator.get_selection_labels(tab)
 
     # TODO: should be __sub__ instead
     def remove_gal(self, index=None, id=None):

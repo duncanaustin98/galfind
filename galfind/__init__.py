@@ -6,6 +6,7 @@ import os
 import configparser
 import json
 import logging
+import astropy.units as u
 from astropy.cosmology import FlatLambdaCDM
 end = time.time()
 #print(f"__init__ imports took {end - start}s")
@@ -126,23 +127,11 @@ instr_to_name_dict = {name: globals()[name]() for name in json.loads(config.get(
 from .PSF import PSF_Base, PSF_Cutout
 from .Filter import Filter, Multiple_Filter, Tophat_Filter, U, V, J
 
-# instr_to_name_dict = {
-#     instr_name: Multiple_Filter.from_instrument(instr_name)
-#     for instr_name in json.loads(config.get("Other", "INSTRUMENT_NAMES"))
-# }
-
-# all_bands = np.hstack(
-#     [
-#         instr_to_name_dict[subcls.__name__]
-#         for subcls in Instrument.__subclasses__()
-#     ]
-# )
-# # sort bands blue -> red based on central wavelength
-# all_band_names = [
-#     band.band_name
-#     for band in sorted(all_bands, key=lambda band: band.WavelengthCen.to(u.AA).value)
-# ]
-# config.set("Other", "ALL_BANDS", json.dumps(all_band_names))
+# sort bands blue -> red based on central wavelength
+all_band_names = [filt.band_name for filt in sorted(Multiple_Filter.from_instruments \
+    (list(json.loads(config.get("Other", "INSTRUMENT_NAMES")))), \
+    key=lambda band: band.WavelengthCen.to(u.AA).value)]
+config.set("Other", "ALL_BANDS", json.dumps(all_band_names))
 
 from .Data import Band_Data_Base, Band_Data, Stacked_Band_Data, Data
 from .Photometry import Photometry, Multiple_Photometry, Mock_Photometry
@@ -167,13 +156,23 @@ from .Galaxy import Galaxy, Multiple_Galaxy
 from .Multiple_Catalogue import Multiple_Catalogue
 from .Multiple_Data import Multiple_Data
 from .Catalogue_Base import Catalogue_Base
-from .Catalogue import Catalogue
-from .Catalogue_Creator import Catalogue_Creator
+from .Catalogue import Catalogue, Catalogue_Creator
 from .SED import SED, SED_rest, SED_obs, Mock_SED_rest, Mock_SED_obs
 from .SED import (
     Mock_SED_template_set,
     Mock_SED_rest_template_set,
     Mock_SED_obs_template_set,
+)
+
+from .Selector import (
+    Selector, 
+    Colour_Selector, 
+    Kokorev24_LRD_red1, 
+    Kokorev24_LRD_red2, 
+    Kokorev24_LRD, 
+    Unmasked_Band_Selector, 
+    Unmasked_Bands_Selector, 
+    Unmasked_Instrument_Selector
 )
 
 from .Emission_lines import Emission_line, wav_lyman_alpha, line_diagnostics

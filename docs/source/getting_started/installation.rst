@@ -14,7 +14,7 @@ You will now need to activate your conda/virtual environment:
 source activate galfind_env # Activate the virtual environment
 conda activate galfind_env # Activate the conda environment
 
-Then run pip install . in the galfind root directory
+Then run pip install -e . in the galfind root directory to install in editable mode.
 
 To download SExtractor: `brew install sextractor`
 You will need homebrew installed: To do this follow instructions at https://brew.sh/
