@@ -1887,17 +1887,22 @@ class Data:
     def filterset(self):
         return Multiple_Filter(band_data.filt for band_data in self if isinstance(band_data, Band_Data))
 
-    @property
-    def ZPs(self) -> Dict[str, float]:
-        return {band_data.filt_name: band_data.ZP for band_data in self}
+    # @property
+    # def ZPs(self) -> Dict[str, float]:
+    #     return {band_data.filt_name: band_data.ZP for band_data in self}
 
-    @property
-    def pix_scales(self) -> Dict[str, u.Quantity]:
-        return {band_data.filt_name: band_data.pix_scale for band_data in self}
+    # @property
+    # def pix_scales(self) -> Dict[str, u.Quantity]:
+    #     return {band_data.filt_name: band_data.pix_scale for band_data in self}
 
     @property
     def full_name(self):
         return f"{self.survey}_{self.version}_{self.filterset.instrument_name}"
+    
+    @property
+    def aper_diams(self) -> u.Quantity:
+        all_aper_diams, aper_diam_counts = np.unique(np.concatenate([values for values in self.aper_diamss.values()]), return_counts = True)
+        return [aper_diam.to(u.arcsec) for aper_diam, counts in zip(all_aper_diams, aper_diam_counts) if counts == len(self.aper_diamss)] * u.arcsec
 
     # def load_cluster_blank_mask_paths(self):
     #     # load in cluster core / blank field fits/reg masks
@@ -2072,7 +2077,6 @@ class Data:
 
     def __getattr__(self, attr: str) -> Any:
         # attr inserted here must be pluralised with 's' suffix
-        print(attr)
         if all(attr[:-1] in band_data.__dict__.keys() for band_data in self):
             if hasattr(self, "forced_phot_band"):
                 if attr[:-1] in self.forced_phot_band.__dict__.keys():
@@ -2987,7 +2991,9 @@ class Data:
                 f"Appended mask columns to {self.phot_cat_path}"
             )
             # TODO: update README
-            galfind_logger.debug(f"Updating README for mask not implemented!")
+            galfind_logger.debug(
+                f"Updating README for mask not implemented!"
+            )
 
     # @staticmethod
     # def mosaic_images(

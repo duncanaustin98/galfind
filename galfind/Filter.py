@@ -196,6 +196,10 @@ class Filter:
     @property
     def instrument_name(self) -> str:
         return self.instrument.__class__.__name__
+    
+    @property
+    def facility_name(self) -> str:
+        return self.instrument.facility.__class__.__name__
 
     @staticmethod
     def _get_facility_instrument_filt(filt_name: str) -> Tuple[str, str, str, str, str]:
@@ -396,6 +400,31 @@ class Multiple_Filter:
         self.sort_bands()
 
     @classmethod
+    def from_facilities(
+        cls: Type[Self],
+        facility_arr = List[Union[str, Facility]],
+        excl_bands: Union[
+            str,
+            Filter,
+            Multiple_Filter,
+            List[Union[str, Filter, Multiple_Filter]],
+        ] = [],
+        origin: str = "SVO",
+        sort_order: str = "ascending",
+        keep_suffix: str = "All",
+    ) -> Self:
+        for i, facility in enumerate(facility_arr):
+            filterset_ = cls.from_facility(
+                facility, excl_bands, origin, sort_order, keep_suffix
+            )
+            if i == 0:
+                filterset = filterset_
+            else:
+                filterset += filterset_
+        return filterset
+        
+
+    @classmethod
     def from_facility(
         cls: Type[Self],
         facility: Union[str, Facility],
@@ -586,6 +615,7 @@ class Multiple_Filter:
         if new_filters is not None:
             # add new filters to existing filters
             self.filters += new_filters
+        self.sort_bands()
         return self
 
     def __sub__(
@@ -772,10 +802,10 @@ class Multiple_Filter:
         all_facility_names = json.loads(config.get("Other", "FACILITY_NAMES"))
         unique_facility_names = np.unique(
             [
-                band.instrument.facility.__class__.__name__
-                if band.instrument is not None
+                filt.facility_name
+                if filt.instrument is not None
                 else "UserDefined"
-                for band in self
+                for filt in self
             ]
         )
         if self.sort_order == "ascending":

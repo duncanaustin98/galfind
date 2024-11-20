@@ -429,6 +429,8 @@ class VISTA(Instrument, funcs.Singleton):
 
 # Instrument attributes
 
+# TODO: Generalize this so the user does not 
+# have to update upon the addition of a new instrument
 expected_instr_bands = {
     "ACS_WFC": ACS_WFC().filt_names,
     "WFC3_IR": WFC3_IR().filt_names,

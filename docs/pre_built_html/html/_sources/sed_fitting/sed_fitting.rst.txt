@@ -1,10 +1,9 @@
 SED Fitting
 ===========
 
-Overview
---------
+.. note::
 
-Spectral Energy Distribution (SED) fitting is a technique used in astrophysics to model the energy output of astronomical objects across a range of wavelengths. By fitting observed data to theoretical models, researchers can infer physical properties such as temperature, mass, and composition of stars, galaxies, and other celestial bodies.
+   While EAZY SED fitting is now fully available, LePhare and Bagpipes are still under development.
 
 .. toctree::
     :maxdepth: 1

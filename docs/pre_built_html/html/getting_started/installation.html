@@ -1,3 +1,5 @@
+
+
 <!DOCTYPE html>
 <html class="writer-html5" lang="en" data-content_root="../">
 <head>
@@ -6,22 +8,18 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Installation Guide &mdash; galfind 0.1 documentation</title>
       <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=80d5e7a1" />
-      <link rel="stylesheet" type="text/css" href="../_static/css/theme.css?v=19f00094" />
+      <link rel="stylesheet" type="text/css" href="../_static/css/theme.css?v=e59714d7" />
       <link rel="stylesheet" type="text/css" href="../_static/copybutton.css?v=76b2166b" />
 
   
-  <!--[if lt IE 9]>
-    <script src="../_static/js/html5shiv.min.js"></script>
-  <![endif]-->
-  
-        <script src="../_static/jquery.js?v=5d32c60e"></script>
-        <script src="../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
-        <script src="../_static/documentation_options.js?v=2709fde1"></script>
-        <script src="../_static/doctools.js?v=9a2dae69"></script>
-        <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
-        <script src="../_static/clipboard.min.js?v=a7894cd8"></script>
-        <script src="../_static/copybutton.js?v=f281be69"></script>
-        <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+      <script src="../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../_static/documentation_options.js?v=2709fde1"></script>
+      <script src="../_static/doctools.js?v=9a2dae69"></script>
+      <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
+      <script src="../_static/clipboard.min.js?v=a7894cd8"></script>
+      <script src="../_static/copybutton.js?v=f281be69"></script>
+      <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
     <script src="../_static/js/theme.js"></script>
     <link rel="index" title="Index" href="../genindex.html" />
     <link rel="search" title="Search" href="../search.html" />
@@ -40,9 +38,6 @@
           <a href="../index.html" class="icon icon-home">
             galfind
           </a>
-              <div class="version">
-                0.1.0
-              </div>
 <div role="search">
   <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
     <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
@@ -54,7 +49,16 @@
               <p class="caption" role="heading"><span class="caption-text">Contents</span></p>
 <ul class="current">
 <li class="toctree-l1 current"><a class="reference internal" href="getting_started.html">Welcome to Galfind!</a><ul class="current">
-<li class="toctree-l2 current"><a class="current reference internal" href="#">Installation Guide</a></li>
+<li class="toctree-l2 current"><a class="current reference internal" href="#">Installation Guide</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#installation-with-venv">Installation with venv</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#installation-with-conda">Installation with conda</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#required-packages">Required packages</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#on-linux-based-systems">On linux based systems: ??</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#on-macos">On MacOS:</a></li>
+</ul>
+</li>
+</ul>
+</li>
 <li class="toctree-l2"><a class="reference internal" href="downloading_observational_data.html">Downloading Observational Data</a></li>
 <li class="toctree-l2"><a class="reference internal" href="quickstart.html">Quickstart</a></li>
 <li class="toctree-l2"><a class="reference internal" href="overview.html">Overview</a></li>
@@ -64,13 +68,10 @@
 <li class="toctree-l1"><a class="reference internal" href="../instrument/instrument.html">Photometric Instruments</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../data/data.html">Galfind Data Object</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../catalogue/catalogue.html">Catalogue Object</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../galaxy/galaxy.html">Galaxy Object</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../galaxy/galaxy.html">Galaxy Objects</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../photometry/photometry.html">Handling Source Photometry</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../sed_fitting/sed_fitting.html">SED Fitting</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../seds/seds.html">Spectral Energy Distribution (SED) Fitting</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../multiple_surveys/multiple_surveys.html">Multiple Surveys and Datasets</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../spectra/spectra.html">Spectral Fitting Overview</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../misc/misc.html">Miscellaneous Functionality</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../selection/selection.html">Selection Methods</a></li>
 </ul>
 
         </div>
@@ -100,7 +101,49 @@
              
   <section id="installation-guide">
 <h1>Installation Guide<a class="headerlink" href="#installation-guide" title="Link to this heading"></a></h1>
-<p>To download SExtractor on linux systems: <cite>apt-get sextractor</cite></p>
+<section id="installation-with-venv">
+<h2>Installation with venv<a class="headerlink" href="#installation-with-venv" title="Link to this heading"></a></h2>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>python<span class="w"> </span>-m<span class="w"> </span>venv<span class="w"> </span>/path_to_dir/<span class="o">{</span>env_name<span class="o">}</span><span class="w"> </span><span class="c1"># Create a virtual environment</span>
+<span class="nb">cd</span><span class="w"> </span>/path_to_dir/<span class="o">{</span>env_name<span class="o">}</span><span class="w"> </span><span class="c1"># Navigate to the venv directory</span>
+<span class="nb">source</span><span class="w"> </span>/path_to_dir/<span class="o">{</span>env_name<span class="o">}</span>/bin/activate<span class="w"> </span><span class="c1"># Activate the virtual environment</span>
+git<span class="w"> </span>clone<span class="w"> </span>https://github.com/duncanaustin98/galfind.git
+<span class="nb">cd</span><span class="w"> </span>galfind
+pip<span class="w"> </span>install<span class="w"> </span>-e<span class="w"> </span>.<span class="w"> </span><span class="c1"># Install galfind in editable mode.</span>
+</pre></div>
+</div>
+</section>
+<section id="installation-with-conda">
+<h2>Installation with conda<a class="headerlink" href="#installation-with-conda" title="Link to this heading"></a></h2>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>conda<span class="w"> </span>create<span class="w"> </span>-n<span class="w"> </span><span class="o">{</span>env_name<span class="o">}</span><span class="w"> </span><span class="nv">python</span><span class="o">==</span><span class="m">3</span>.9<span class="w"> </span><span class="c1"># Create a virtual environment with conda</span>
+conda<span class="w"> </span>activate<span class="w"> </span><span class="o">{</span>env_name<span class="o">}</span><span class="w"> </span><span class="c1"># Activate the conda environment</span>
+git<span class="w"> </span>clone<span class="w"> </span>https://github.com/duncanaustin98/galfind.git
+<span class="nb">cd</span><span class="w"> </span>galfind
+pip<span class="w"> </span>install<span class="w"> </span>-e<span class="w"> </span>.<span class="w"> </span><span class="c1"># Install galfind in editable mode.</span>
+</pre></div>
+</div>
+</section>
+<section id="required-packages">
+<h2>Required packages<a class="headerlink" href="#required-packages" title="Link to this heading"></a></h2>
+<p>The following commonly used packages are required to install galfind:</p>
+<ul class="simple">
+<li><p>pip</p></li>
+<li><p>git (<a class="reference external" href="https://git-scm.com/book/en/v2/Getting-Started-Installing-Git">https://git-scm.com/book/en/v2/Getting-Started-Installing-Git</a>)</p></li>
+</ul>
+<p>It is also helpful to have SExtractor installed:</p>
+<section id="on-linux-based-systems">
+<h3>On linux based systems: ??<a class="headerlink" href="#on-linux-based-systems" title="Link to this heading"></a></h3>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>sudo<span class="w"> </span>apt-get<span class="w"> </span>install<span class="w"> </span>sextractor
+</pre></div>
+</div>
+</section>
+<section id="on-macos">
+<h3>On MacOS:<a class="headerlink" href="#on-macos" title="Link to this heading"></a></h3>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>brew<span class="w"> </span>install<span class="w"> </span>sextractor
+</pre></div>
+</div>
+<p>For this, you will need homebrew installed. Follow instructions at <a class="reference external" href="https://brew.sh/">https://brew.sh/</a></p>
+</section>
+</section>
 </section>
 
 

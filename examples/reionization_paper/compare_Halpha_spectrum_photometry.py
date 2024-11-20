@@ -58,7 +58,7 @@ def get_prism_cat_path(z_label, survey, version):
 def get_zlabel(z_range):
     return f"{str(z_range[0]).replace('.', '_')}<z<{str(z_range[1]).replace('.', '_')}"
 
-def make_prism_cat(survey = "JOF", version = "v11",depth_region = "all", z_range = [5.6, 6.5]):
+def make_prism_cat(survey = "JOF", version = "v11", depth_region = "all", z_range = [5.6, 6.5]):
     z_label = get_zlabel(z_range)
     filterset = make_nircam_filterset(survey)
     #filterset = galfind.Filter.from_filt_name("JWST/NIRCam.F410M") + galfind.Filter.from_filt_name("JWST/NIRCam.F444W")
@@ -87,7 +87,6 @@ def plot_prism_data(z_range):
         version = "v3", z_cat_range = z_range, grade = 3
     )
     [spec.plot(out_dir = f"{get_zlabel(z_range)}_plots/") for spec_arr in spec_cat for spec in spec_arr if spec.instrument.grating.name == "PRISM"]
-
 
 def fit_cat_Halpha(survey, version, z_range, fit_type):
     zlabel = get_zlabel(z_range)
@@ -203,8 +202,8 @@ def fit_Halpha_manual(z, spec_filepath, wav_range_AA = [6_200., 6_900.] * u.AA):
         return None
     fluxes = funcs.convert_mag_units(wavs, fluxes, u.erg / u.s / u.cm**2 / u.AA)
     norm_factor = 1.
-    fluxes *= (1. + z) ** 2
-    flux_errs *= (1. + z) ** 2
+    #fluxes *= (1. + z) ** 2
+    #flux_errs *= (1. + z) ** 2
     
     params = Parameters()
     params.add('A', value=np.max(fluxes.value) - np.median(fluxes.value), min=0., max=1e-12)
@@ -228,7 +227,8 @@ def fit_Halpha_manual(z, spec_filepath, wav_range_AA = [6_200., 6_900.] * u.AA):
     Halpha_fit.get_cont_percentiles()
     Halpha_fit.get_flux_percentiles()
     Halpha_fit.get_line_SNR(wavs.value, fluxes.value, flux_errs.value)
-
+    #breakpoint()
+    print(Halpha_fit.__dict__["Halpha_flux"]["Halpha_flux_50"])
     plt.plot(wavs.value, fluxes.value, c = "black", label = "NIRSpec/PRISM")
     plt.fill_between(wavs.value, fluxes.value - flux_errs.value, fluxes.value + flux_errs.value, alpha = 0.5, color = "black")
     plt.plot(wavs.value, Halpha_fit.get_chains_median(wavs.value), c = "red", label = "Halpha model")
@@ -285,10 +285,14 @@ class Halpha_storage:
         return [np.percentile(chain, percentiles) for chain in chains]
     
     def get_Halpha_flux_arr(self):
-        return [self._Halpha_flux(A, sigma) * self.norm_factor for A, sigma, c in zip(self.A_arr, self.sigma_arr, self.c_arr)]
+        return [self._Halpha_flux(A, sigma, c) * self.norm_factor \
+            for A, sigma, c in zip(self.A_arr, self.sigma_arr, self.c_arr)]
     
     @staticmethod
-    def _Halpha_flux(A, sigma):
+    def _Halpha_flux(A, sigma, c):
+        # wav = np.linspace(6562.8 - 10. * sigma, 6562.8 + 10. * sigma, 10_000)
+        # f_lambda = Halpha_gauss(wav, A, sigma, c)
+        # return np.trapz(f_lambda, wav)
         return A * sigma * np.sqrt(2 * np.pi)
     
     def get_cont_arr(self):
@@ -330,7 +334,7 @@ class Halpha_storage:
     
     def get_line_SNR(self, wavs, flux, flux_errs):
         # determine wavelength range outside of 5σ from the gaussian
-        feature_mask = (wavs > self.Halpha_wav - 3. * self.sigma) & (wavs < self.Halpha_wav + 3. * self.sigma)
+        feature_mask = (wavs > self.Halpha_wav - 5. * self.sigma) & (wavs < self.Halpha_wav + 5. * self.sigma)
         SNRs = (flux[feature_mask] - self.c * self.norm_factor) / flux_errs[feature_mask]
         integrated_SNR = np.sum(SNRs) / np.sqrt(len(SNRs))
         print(f"Integrated SNR: {integrated_SNR}")
@@ -409,8 +413,8 @@ def fit_MUV(z, spec_filepath, wav_range_AA = [1_450., 1_550.] * u.AA, size = 10_
         print(f"No valid data for {spec_filepath.split('/')[-1]}")
         return None
     fluxes = funcs.convert_mag_units(wavs, fluxes, u.erg / u.s / u.cm**2 / u.AA)
-    fluxes *= (1. + z) ** 2
-    flux_errs *= (1. + z) ** 2
+    # fluxes *= (1. + z) ** 2
+    # flux_errs *= (1. + z) ** 2
     # weighted mean
     weights = flux_errs ** -2.
     flambda_1500 = np.sum(fluxes * weights) / (np.sum(weights) * len(fluxes))
@@ -481,11 +485,12 @@ def load_phot_errs():
 def main():
     fit_cat_MUV("JOF", "v11", [5.6, 6.5], add_to_Halpha = True)
     #fit_cat_Halpha("JOF", "v11", [5.6, 6.5], "manual")
+
     #plot("JOF", "v11", [5.6, 6.5])
     
     #make_prism_cat()
     #plot_prism_data("JOF", "v11", [5.6, 6.5])
-    #write_high_res_Halpha_tab()
+    write_high_res_Halpha_tab()
     
 
 if __name__ == "__main__":

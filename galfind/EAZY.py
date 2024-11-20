@@ -26,6 +26,10 @@ from tqdm import tqdm
 from typing import TYPE_CHECKING, List, Any, Dict, Optional, NoReturn, Type, Union, Tuple
 if TYPE_CHECKING:
     from . import Catalogue
+try:
+    from typing import Self, Type  # python 3.11+
+except ImportError:
+    from typing_extensions import Self, Type  # python > 3.7 AND python < 3.11
 
 warnings.filterwarnings("ignore", category=LinAlgWarning)
 
@@ -369,6 +373,7 @@ class EAZY(SED_code):
                 translate_file=translate_file,
                 n_proc=self.SED_fit_params["N_PROC"],
             )
+            
             fit.fit_catalog(n_proc=self.SED_fit_params["N_PROC"], get_best_fit=True)
             # Save backup of fit in hdf5 file
             hdf5.write_hdf5(
@@ -568,15 +573,20 @@ class EAZY(SED_code):
         )
         return in_path, out_path, fits_out_path, PDF_paths, SED_paths
 
-    def extract_SEDs(self, IDs, SED_paths):
+    def extract_SEDs(
+        self: Self, 
+        IDs: List[int], 
+        SED_paths: Union[str, List[str]]
+    ) -> List[SED_obs]:
         # ensure this works if only extracting 1 galaxy
         if isinstance(IDs, (str, int, float)):
             IDs = np.array([int(IDs)])
-        if type(SED_paths) == str:
+        if isinstance(SED_paths, str):
             SED_paths = [SED_paths]
-        assert len(IDs) == len(SED_paths), galfind_logger.critical(
-            f"len(IDs) = {len(IDs)} != len(data_paths) = {len(SED_paths)}!"
-        )
+        assert len(IDs) == len(SED_paths), \
+            galfind_logger.critical(
+                f"{len(IDs)=} != {len(SED_paths)=}"
+            )
         # ensure that for EAZY all the SED_paths are the same
         assert all(
             SED_path == SED_paths[0] for SED_path in SED_paths
@@ -586,8 +596,9 @@ class EAZY(SED_code):
         # open .h5 file
         # return np.ones(len(IDs))
         hf = h5py.File(SED_paths[0], "r")
-        z_arr = hf["z_arr"][IDs - 1]
-        wav_flux_arr = hf["wav_flux_arr"][IDs - 1]
+        IDs_np = np.array(IDs)
+        z_arr = hf["z_arr"][IDs_np - 1]
+        wav_flux_arr = hf["wav_flux_arr"][IDs_np - 1]
         wav_arr = wav_flux_arr[:, 0]
         flux_arr = wav_flux_arr[:, 1]
         wav_unit = u.Unit(hf["wav_unit"][()].decode())
@@ -604,7 +615,12 @@ class EAZY(SED_code):
         # close .h5 file
         return SED_obs_arr
 
-    def extract_PDFs(self, gal_property, IDs, PDF_paths, timed: bool = True):
+    def extract_PDFs(
+        self: Self, 
+        gal_property: str, 
+        IDs: List[int], 
+        PDF_paths: Union[str, List[str]], 
+    ) -> List[Redshift_PDF]:
         # ensure this works if only extracting 1 galaxy
         if isinstance(IDs, (str, int, float)):
             IDs = np.array([int(IDs)])
@@ -613,22 +629,22 @@ class EAZY(SED_code):
 
         # EAZY only has redshift PDFs
         if gal_property != "z":
-            return list(np.full(len(IDs), None))
+            return np.array(list(itertools.repeat(None, len(IDs))))
         else:
             # ensure the correct type
-            assert type(PDF_paths) in [
-                list,
-                np.ndarray,
-            ], galfind_logger.critical(
-                f"type(data_paths) = {type(PDF_paths)} not in [list, np.array]!"
-            )
-            assert type(IDs) in [list, np.ndarray], galfind_logger.critical(
-                f"type(IDs) = {type(IDs)} not in [list, np.array]!"
-            )
+            assert isinstance(PDF_paths, (list, np.ndarray)), \
+                galfind_logger.critical(
+                    f"type(data_paths) = {type(PDF_paths)} not in [list, np.array]!"
+                )
+            assert isinstance(IDs, (list, np.ndarray)), \
+                galfind_logger.critical(
+                    f"type(IDs) = {type(IDs)} not in [list, np.array]!"
+                )
             # ensure the correct array size
-            assert len(IDs) == len(PDF_paths), galfind_logger.critical(
-                f"len(IDs) = {len(IDs)} != len(data_paths) = {len(PDF_paths)}!"
-            )
+            assert len(IDs) == len(PDF_paths), \
+                galfind_logger.critical(
+                    f"len(IDs) = {len(IDs)} != len(data_paths) = {len(PDF_paths)}!"
+                )
             # ensure all data_paths are the same and are of .h5 type
             assert all(
                 PDF_path == PDF_paths[0] for PDF_path in PDF_paths
@@ -639,12 +655,8 @@ class EAZY(SED_code):
             # open .h5 file
             hf = h5py.File(PDF_paths[0], "r")
             hf_z = np.array(hf["z"]) * u.dimensionless_unscaled
+            pz_arr = hf["p_z_arr"][np.array(IDs) - 1]
             # extract redshift PDF for each ID
-            if timed:
-                start = time.time()
-            pz_arr = hf["p_z_arr"][IDs - 1]
-            if timed:
-                mid = time.time()
             redshift_PDFs = [
                 Redshift_PDF(hf_z, pz, self.SED_fit_params, normed=False)
                 for ID, pz in tqdm(
@@ -653,9 +665,6 @@ class EAZY(SED_code):
                     desc="Constructing redshift PDFs",
                 )
             ]
-            if timed:
-                end = time.time()
-                print(mid - start, end - mid)
             # close .h5 file
             hf.close()
             return redshift_PDFs

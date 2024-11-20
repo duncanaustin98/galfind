@@ -2,13 +2,11 @@
 
 import time
 start = time.time()
+import os
 import configparser
 import json
 import logging
-import os
-import astropy.units as u # takes ages and not sure why?
-import numpy as np
-from pathlib import Path
+import astropy.units as u
 from astropy.cosmology import FlatLambdaCDM
 end = time.time()
 #print(f"__init__ imports took {end - start}s")
@@ -98,6 +96,18 @@ if config.getboolean("DEFAULT", "USE_LOGGING"):
 else:
     raise (Exception("galfind currently not set up to allow users to ignore logging!"))
 
+# limit number of threads to N_CORES
+n_threads = str(config.getint("DEFAULT", "N_CORES"))
+os.environ["MKL_NUM_THREADS"] = n_threads
+os.environ["NUMEXPR_NUM_THREADS"] = n_threads
+os.environ["OMP_NUM_THREADS"] = n_threads
+
+try:
+    import mkl
+    mkl.set_num_threads(int(n_threads))
+except:
+    galfind_logger.warning(f"Failed to set mkl.set_num_threads to {n_threads}.")
+
 # set cosmology
 astropy_cosmo = FlatLambdaCDM(H0=70, Om0=0.3, Ob0=0.05, Tcmb0=2.725)
 
@@ -117,23 +127,11 @@ instr_to_name_dict = {name: globals()[name]() for name in json.loads(config.get(
 from .PSF import PSF_Base, PSF_Cutout
 from .Filter import Filter, Multiple_Filter, Tophat_Filter, U, V, J
 
-# instr_to_name_dict = {
-#     instr_name: Multiple_Filter.from_instrument(instr_name)
-#     for instr_name in json.loads(config.get("Other", "INSTRUMENT_NAMES"))
-# }
-
-# all_bands = np.hstack(
-#     [
-#         instr_to_name_dict[subcls.__name__]
-#         for subcls in Instrument.__subclasses__()
-#     ]
-# )
-# # sort bands blue -> red based on central wavelength
-# all_band_names = [
-#     band.band_name
-#     for band in sorted(all_bands, key=lambda band: band.WavelengthCen.to(u.AA).value)
-# ]
-# config.set("Other", "ALL_BANDS", json.dumps(all_band_names))
+# sort bands blue -> red based on central wavelength
+all_band_names = [filt.band_name for filt in sorted(Multiple_Filter.from_instruments \
+    (list(json.loads(config.get("Other", "INSTRUMENT_NAMES")))), \
+    key=lambda band: band.WavelengthCen.to(u.AA).value)]
+config.set("Other", "ALL_BANDS", json.dumps(all_band_names))
 
 from .Data import Band_Data_Base, Band_Data, Stacked_Band_Data, Data
 from .Photometry import Photometry, Multiple_Photometry, Mock_Photometry
@@ -153,18 +151,42 @@ from .Bagpipes import Bagpipes
 #     if sed_code_name not in ["LePhare", "Bagpipes"]
 # }
 
-from .Galaxy import Galaxy, Multiple_Galaxy
+from .Galaxy import Galaxy
 
 from .Multiple_Catalogue import Multiple_Catalogue
 from .Multiple_Data import Multiple_Data
 from .Catalogue_Base import Catalogue_Base
-from .Catalogue import Catalogue
-from .Catalogue_Creator import Catalogue_Creator
+from .Catalogue import Catalogue, Catalogue_Creator
 from .SED import SED, SED_rest, SED_obs, Mock_SED_rest, Mock_SED_obs
 from .SED import (
     Mock_SED_template_set,
     Mock_SED_rest_template_set,
     Mock_SED_obs_template_set,
+)
+
+from .Selector import (
+    Selector, 
+    Multiple_Selector,
+    Unmasked_Band_Selector, 
+    Unmasked_Bands_Selector, 
+    Unmasked_Instrument_Selector,
+    Min_Band_Selector,
+    Min_Unmasked_Band_Selector,
+    Sextractor_Band_Radius_Selector,
+    Sextractor_Bands_Radius_Selector,
+    Sextractor_Instrument_Radius_Selector,
+    Band_SNR_Selector,
+    Colour_Selector, 
+    Kokorev24_LRD_red1_Selector, 
+    Kokorev24_LRD_red2_Selector, 
+    Kokorev24_LRD_Selector,
+    Bluewards_Lya_Non_Detect_Selector,
+    Redwards_Lya_Detect_Selector,
+    Lya_Band_Selector,
+    Chi_Sq_Lim_Selector,
+    Chi_Sq_Diff_Selector,
+    Robust_zPDF_Selector,
+    EPOCHS_Selector,
 )
 
 from .Emission_lines import Emission_line, wav_lyman_alpha, line_diagnostics

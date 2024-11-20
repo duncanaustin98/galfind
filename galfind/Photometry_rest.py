@@ -6,15 +6,22 @@ Created on Mon Jul 17 15:04:24 2023
 @author: austind
 """
 
+from __future__ import annotations
+
 # Photometry_rest.py
 import inspect
 from copy import deepcopy
-from typing import Union, Optional
-
 import astropy.units as u
 import numpy as np
 from scipy.optimize import curve_fit
 from tqdm import tqdm
+from typing import TYPE_CHECKING, Union, Dict, Optional
+if TYPE_CHECKING:
+    from . import Multiple_Filter, PDF
+try:
+    from typing import Self, Type  # python 3.11+
+except ImportError:
+    from typing_extensions import Self, Type  # python > 3.7 AND python < 3.11
 
 from . import PDF, PDF_nD, Photometry, galfind_logger
 from . import useful_funcs_austind as funcs
@@ -66,27 +73,27 @@ fesc_from_beta_conversions = {
 
 class Photometry_rest(Photometry):
     def __init__(
-        self,
-        instrument,
-        flux,
-        flux_errs,
-        depths,
-        z,
-        properties={},
-        property_errs={},
-        property_PDFs={},
+        self: Self,
+        filterset: Multiple_Filter,
+        flux: u.Quantity,
+        flux_errs: u.Quantity,
+        depths: u.Quantity,
+        z: float,
+        properties: Dict[str, float] = {},
+        property_errs: Dict = {},
+        property_PDFs: Dict[str, Type[PDF]] = {},
     ):
         self.z = z
         self.properties = properties
         self.property_errs = property_errs
         self.property_PDFs = property_PDFs
         self.recently_updated = []
-        super().__init__(instrument, flux, flux_errs, depths)
+        super().__init__(filterset, flux, flux_errs, depths)
 
     # these class methods need updating!
     @classmethod
-    def from_fits_cat(cls, fits_cat_row, instrument, cat_creator, code):
-        phot = Photometry.from_fits_cat(fits_cat_row, instrument, cat_creator)
+    def from_fits_cat(cls, fits_cat_row, filterset, cat_creator, code):
+        phot = Photometry.from_fits_cat(fits_cat_row, filterset, cat_creator)
         # TODO: mask the photometry object
         return cls.from_phot(
             phot, np.float(fits_cat_row[code.galaxy_properties["z"]])
@@ -94,12 +101,12 @@ class Photometry_rest(Photometry):
 
     @classmethod
     def from_phot(cls, phot, z):
-        return cls(phot.instrument, phot.flux, phot.flux_errs, phot.depths, z)
+        return cls(phot.filterset, phot.flux, phot.flux_errs, phot.depths, z)
 
     @classmethod
     def from_phot_obs(cls, phot):
         return cls(
-            phot.instrument,
+            phot.filterset,
             phot.flux,
             phot.flux_errs,
             phot.depths,
@@ -122,55 +129,55 @@ class Photometry_rest(Photometry):
     def __len__(self):
         return len(self.flux)
 
-    def __getattr__(
-        self,
-        property_name: str,
-        origin: str = "phot_rest",
-        property_type: Union[None, str] = None,
-    ) -> Union[None, bool, u.Quantity, u.Magnitude, u.Dex]:
-        if origin == "phot_rest":
-            if type(property_type) == type(None):
-                return super().__getattr__(property_name, "phot")
-            assert property_type in [
-                "val",
-                "errs",
-                "l1",
-                "u1",
-                "pdf",
-                "recently_updated",
-            ], galfind_logger.critical(
-                f"{property_type=} not in ['val', 'errs', 'l1', 'u1', 'pdf', 'recently_updated']!"
-            )
-            # boolean output to say whether property has been recently updated
-            if property_type == "recently_updated":
-                return (
-                    True if property_name in self.recently_updated else False
-                )
-            else:
-                # extract relevant property if name in dict.keys()
-                if property_type == "val":
-                    access_dict = self.properties
-                elif property_type in ["errs", "l1", "u1"]:
-                    access_dict = self.property_errs
-                else:
-                    access_dict = self.property_PDFs
-                # return None if relevant property is not available
-                if property_name not in access_dict.keys():
-                    err_message = f"{property_name} {property_type} not available in Photometry_rest object!"
-                    galfind_logger.warning(err_message)
-                    raise AttributeError(err_message)  # may be required here
-                else:
-                    if property_type == "l1":
-                        return access_dict[property_name][0]
-                    elif property_type == "u1":
-                        return access_dict[property_name][1]
-                    else:
-                        return access_dict[property_name]
-        else:
-            galfind_logger.critical(
-                f"Photometry_rest.__getattr__ currently has no implementation of {origin=} != 'phot_rest'"
-            )
-            raise NotImplementedError
+    # def __getattr__(
+    #     self,
+    #     property_name: str,
+    #     origin: str = "phot_rest",
+    #     property_type: Union[None, str] = None,
+    # ) -> Union[None, bool, u.Quantity, u.Magnitude, u.Dex]:
+    #     if origin == "phot_rest":
+    #         if type(property_type) == type(None):
+    #             return super().__getattr__(property_name, "phot")
+    #         assert property_type in [
+    #             "val",
+    #             "errs",
+    #             "l1",
+    #             "u1",
+    #             "pdf",
+    #             "recently_updated",
+    #         ], galfind_logger.critical(
+    #             f"{property_type=} not in ['val', 'errs', 'l1', 'u1', 'pdf', 'recently_updated']!"
+    #         )
+    #         # boolean output to say whether property has been recently updated
+    #         if property_type == "recently_updated":
+    #             return (
+    #                 True if property_name in self.recently_updated else False
+    #             )
+    #         else:
+    #             # extract relevant property if name in dict.keys()
+    #             if property_type == "val":
+    #                 access_dict = self.properties
+    #             elif property_type in ["errs", "l1", "u1"]:
+    #                 access_dict = self.property_errs
+    #             else:
+    #                 access_dict = self.property_PDFs
+    #             # return None if relevant property is not available
+    #             if property_name not in access_dict.keys():
+    #                 err_message = f"{property_name} {property_type} not available in Photometry_rest object!"
+    #                 galfind_logger.warning(err_message)
+    #                 raise AttributeError(err_message)  # may be required here
+    #             else:
+    #                 if property_type == "l1":
+    #                     return access_dict[property_name][0]
+    #                 elif property_type == "u1":
+    #                     return access_dict[property_name][1]
+    #                 else:
+    #                     return access_dict[property_name]
+    #     else:
+    #         galfind_logger.critical(
+    #             f"Photometry_rest.__getattr__ currently has no implementation of {origin=} != 'phot_rest'"
+    #         )
+    #         raise NotImplementedError
 
     def __deepcopy__(self, memo):
         cls = self.__class__
@@ -188,11 +195,10 @@ class Photometry_rest(Photometry):
             return self._first_Lya_detect_band
         except AttributeError:
             first_band = None
-            for band, lower_wav in zip(
-                self.instrument.band_names, self.instrument.band_lower_wav_lims
-            ):
+            for band in self.filterset:
+                lower_wav = band.WavelengthLower50
                 if lower_wav > Lya_wav * (1 + self.z):
-                    first_band = band
+                    first_band = band.band_name
                     break
             self._first_Lya_detect_band = first_band
             return self._first_Lya_detect_band
@@ -206,11 +212,10 @@ class Photometry_rest(Photometry):
         except AttributeError:
             first_band = None
             # bands already ordered from blue -> red
-            for band, upper_wav in zip(
-                self.instrument.band_names, self.instrument.band_upper_wav_lims
-            ):
+            for band in self.filterset:
+                upper_wav = band.WavelengthUpper50
                 if upper_wav < Lya_wav * (1 + self.z):
-                    first_band = band
+                    first_band = band.band_name
                     break
             self._first_Lya_non_detect_band = first_band
         return self._first_Lya_non_detect_band

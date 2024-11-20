@@ -1,6 +1,6 @@
 .. _seds:
 
-Spectral Energy Distribution (SED) Fitting
+SED storage and basic modelling
 ==========================================
 
 Overview

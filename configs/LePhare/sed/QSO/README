@@ -1,0 +1,18 @@
+
+
+  VARIOUS SEDs for QSOs   from :
+
+  -1- Synthetic QSO spectra : see SYNTH/README 
+  -2- Mari Polletta templates from SWIRE : see POLETTA/README
+  -3- Mara Salvatto Hybrid model from COSMOS : MARA/
+  -4- Various set of composite SEDs : VARIOUS/
+      QSO_Cristiani.sed: Cristiani & Vio (2004, ApJ 600, L119)   
+      QSO_SDSS*.sed    :  ?
+      QSO_VVDS.sed     : VVDS composite  
+      MRR_QSO*.sed     : Rowan-Robinson et al. 2008, MNRAS 386, 697
+      *Netzer*.sed     : Netzer et al., 2007
+      Abel2690_75.sed, BPM16274_69.sed,  : Grazian 2008
+      IRAS09104_4109.sed, NGC6240.sed
+    
+   
+     

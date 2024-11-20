@@ -11,7 +11,6 @@ galfind/spectra/models/IGM_attenuation/Inoue+14_IGM_grid.h5
 remove_by_eye_local.py
 galfind/configs/EAZY_templates/templates/LarsonSEDTemplates/*
 examples/reionization_paper/test_plots
-galfind/configs
 pre-commit-config.yaml
 docs/build
 docs/source/_autosummary
@@ -22,3 +21,5 @@ galfind-0.1.dev658+ge85f12d
 examples/reionization_paper
 build
 configs/galfind_config_goolsby.ini
+galfind/configs
+#configs

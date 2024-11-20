@@ -131,9 +131,10 @@ docs = [
     "pandoc",
     "nbsphinx",
     "sphinx-copybutton",
+    "sphinx_autodoc_typehints",
 ]
 #"nbmake",
-#"sphinx_autodoc_typehints",
+
 #"ipython",
 #"sphinx_gallery",
 #"pillow",

@@ -21,7 +21,9 @@ fitting spectral energy distributions (SEDs), and analyzing galaxy properties.
    galaxy/galaxy
    photometry/photometry
    sed_fitting/sed_fitting
-   seds/seds
+   selection/selection
+
+.. seds/seds
    multiple_surveys/multiple_surveys
    spectra/spectra
    misc/misc

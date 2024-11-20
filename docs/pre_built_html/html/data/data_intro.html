@@ -1,3 +1,5 @@
+
+
 <!DOCTYPE html>
 <html class="writer-html5" lang="en" data-content_root="../">
 <head>
@@ -6,25 +8,21 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Introduction to the Data class &mdash; galfind 0.1 documentation</title>
       <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=80d5e7a1" />
-      <link rel="stylesheet" type="text/css" href="../_static/css/theme.css?v=19f00094" />
+      <link rel="stylesheet" type="text/css" href="../_static/css/theme.css?v=e59714d7" />
       <link rel="stylesheet" type="text/css" href="../_static/copybutton.css?v=76b2166b" />
       <link rel="stylesheet" type="text/css" href="../_static/nbsphinx-code-cells.css?v=2aa19091" />
 
   
-  <!--[if lt IE 9]>
-    <script src="../_static/js/html5shiv.min.js"></script>
-  <![endif]-->
-  
-        <script src="../_static/jquery.js?v=5d32c60e"></script>
-        <script src="../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
-        <script src="../_static/documentation_options.js?v=2709fde1"></script>
-        <script src="../_static/doctools.js?v=9a2dae69"></script>
-        <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
-        <script src="../_static/clipboard.min.js?v=a7894cd8"></script>
-        <script src="../_static/copybutton.js?v=f281be69"></script>
-        <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
-        <script>window.MathJax = {"tex": {"inlineMath": [["$", "$"], ["\\(", "\\)"]], "processEscapes": true}, "options": {"ignoreHtmlClass": "tex2jax_ignore|mathjax_ignore|document", "processHtmlClass": "tex2jax_process|mathjax_process|math|output_area"}}</script>
-        <script defer="defer" src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+      <script src="../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../_static/documentation_options.js?v=2709fde1"></script>
+      <script src="../_static/doctools.js?v=9a2dae69"></script>
+      <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
+      <script src="../_static/clipboard.min.js?v=a7894cd8"></script>
+      <script src="../_static/copybutton.js?v=f281be69"></script>
+      <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+      <script>window.MathJax = {"tex": {"inlineMath": [["$", "$"], ["\\(", "\\)"]], "processEscapes": true}, "options": {"ignoreHtmlClass": "tex2jax_ignore|mathjax_ignore|document", "processHtmlClass": "tex2jax_process|mathjax_process|math|output_area"}}</script>
+      <script defer="defer" src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
     <script src="../_static/js/theme.js"></script>
     <link rel="index" title="Index" href="../genindex.html" />
     <link rel="search" title="Search" href="../search.html" />
@@ -43,9 +41,6 @@
           <a href="../index.html" class="icon icon-home">
             galfind
           </a>
-              <div class="version">
-                0.1.0
-              </div>
 <div role="search">
   <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
     <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
@@ -74,13 +69,10 @@
 </ul>
 </li>
 <li class="toctree-l1"><a class="reference internal" href="../catalogue/catalogue.html">Catalogue Object</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../galaxy/galaxy.html">Galaxy Object</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../galaxy/galaxy.html">Galaxy Objects</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../photometry/photometry.html">Handling Source Photometry</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../sed_fitting/sed_fitting.html">SED Fitting</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../seds/seds.html">Spectral Energy Distribution (SED) Fitting</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../multiple_surveys/multiple_surveys.html">Multiple Surveys and Datasets</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../spectra/spectra.html">Spectral Fitting Overview</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../misc/misc.html">Miscellaneous Functionality</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../selection/selection.html">Selection Methods</a></li>
 </ul>
 
         </div>
@@ -127,27 +119,13 @@
 </pre></div>
 </div>
 </div>
-<div class="nboutput docutils container">
+<div class="nboutput nblast docutils container">
 <div class="prompt empty docutils container">
 </div>
 <div class="output_area docutils container">
 <div class="highlight"><pre>
 Reading GALFIND config file from: /nvme/scratch/work/austind/GALFIND/galfind/../configs/galfind_config.ini
-</pre></div></div>
-</div>
-<div class="nboutput nblast docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area stderr docutils container">
-<div class="highlight"><pre>
-INFO:galfind:Aperture corrections for ACS_WFC loaded from /nvme/scratch/work/austind/GALFIND/galfind/Aperture_corrections/ACS_WFC_aper_corr.txt
-INFO:galfind:Aperture corrections for WFC3_IR loaded from /nvme/scratch/work/austind/GALFIND/galfind/Aperture_corrections/WFC3_IR_aper_corr.txt
-INFO:galfind:Aperture corrections for NIRCam loaded from /nvme/scratch/work/austind/GALFIND/galfind/Aperture_corrections/NIRCam_aper_corr.txt
-INFO:galfind:Aperture corrections for MIRI loaded from /nvme/scratch/work/austind/GALFIND/galfind/Aperture_corrections/MIRI_aper_corr.txt
-INFO:galfind:Aperture corrections for ACS_WFC loaded from /nvme/scratch/work/austind/GALFIND/galfind/Aperture_corrections/ACS_WFC_aper_corr.txt
-INFO:galfind:Aperture corrections for WFC3_IR loaded from /nvme/scratch/work/austind/GALFIND/galfind/Aperture_corrections/WFC3_IR_aper_corr.txt
-INFO:galfind:Aperture corrections for NIRCam loaded from /nvme/scratch/work/austind/GALFIND/galfind/Aperture_corrections/NIRCam_aper_corr.txt
-INFO:galfind:Aperture corrections for MIRI loaded from /nvme/scratch/work/austind/GALFIND/galfind/Aperture_corrections/MIRI_aper_corr.txt
+Important:  Gaia archive will be intermittently unavailable due to scheduled maintenance on 14-10-2024 from 10:30 to 12:30 (CEST)
 </pre></div></div>
 </div>
 <p>Investigate with 30mas pixel scale imaging from the F090W filter to start off with.</p>
@@ -194,7 +172,19 @@ INFO:galfind:Aperture corrections for MIRI loaded from /nvme/scratch/work/austin
 </div>
 <div class="output_area docutils container">
 <div class="highlight"><pre>
-&lt;galfind.Data.Band_Data object at 0x7f80fe511670&gt;
+****************************************
+NIRCam/F090W
+SURVEY: JOF
+VERSION: v11
+PIX SCALE: 0.03 arcsec
+ZP: 28.086519392283982
+SHAPE: (4464, 10244)
+****************************************
+IM PATH: /raid/scratch/data/jwst/JOF/NIRCam/mosaic_1084_wispnathan/30mas/jw01210-o001_t002_nircam_clear-f090w_i2dnobg.fits[1]
+RMS ERR PATH: /raid/scratch/data/jwst/JOF/NIRCam/mosaic_1084_wispnathan/30mas/jw01210-o001_t002_nircam_clear-f090w_i2dnobg.fits[2]
+WHT PATH: /raid/scratch/data/jwst/JOF/NIRCam/mosaic_1084_wispnathan/30mas/jw01210-o001_t002_nircam_clear-f090w_i2dnobg.fits[4]
+****************************************
+
 </pre></div></div>
 </div>
 <p>This above implementation, however, requires the sci/rms_err/wht extensions to be named <code class="docutils literal notranslate"><span class="pre">SCI</span></code>/<code class="docutils literal notranslate"><span class="pre">ERR</span></code>/<code class="docutils literal notranslate"><span class="pre">WHT</span></code> in the image header “EXTNAME” by default, although an array of possible “EXTNAME” for each may be passed in if required. This is demonstrated by the <code class="docutils literal notranslate"><span class="pre">im_ext_name</span></code>, <code class="docutils literal notranslate"><span class="pre">rms_err_ext_name</span></code>, and <code class="docutils literal notranslate"><span class="pre">wht_ext_name</span></code> parameters respectively. Now that we have seen how to load in a <code class="docutils literal notranslate"><span class="pre">Band_Data</span></code> object by itself, we will now create a <code class="docutils literal notranslate"><span class="pre">Data</span></code> object. We will see that initializing many
@@ -284,6 +274,103 @@ FACILITY: JWST
 INSTRUMENT: NIRCam
 FILTERS: [&#39;F090W&#39;, &#39;F115W&#39;, &#39;F150W&#39;, &#39;F162M&#39;, &#39;F182M&#39;, &#39;F200W&#39;, &#39;F210M&#39;, &#39;F250M&#39;, &#39;F277W&#39;, &#39;F300M&#39;, &#39;F335M&#39;, &#39;F356W&#39;, &#39;F410M&#39;, &#39;F444W&#39;]
 ****************************************
+NIRCam COMMON ATTRIBUTES:
+----------
+IM DIR: /raid/scratch/data/jwst/JOF/NIRCam/mosaic_1084_wispnathan/30mas
+RMS ERR DIR: /raid/scratch/data/jwst/JOF/NIRCam/mosaic_1084_wispnathan/30mas
+WHT DIR: /raid/scratch/data/jwst/JOF/NIRCam/mosaic_1084_wispnathan/30mas
+IM EXT: 1
+RMS ERR EXT: 2
+WHT EXT: 4
+ZP: 28.0865
+PIX SCALE: 0.03 arcsec
+DATA SHAPE: (4464, 10244)
+----------
+****************************************
+NIRCam/F090W
+----------
+IM NAME: jw01210-o001_t002_nircam_clear-f090w_i2dnobg.fits[1]
+RMS ERR NAME: jw01210-o001_t002_nircam_clear-f090w_i2dnobg.fits[2]
+WHT NAME: jw01210-o001_t002_nircam_clear-f090w_i2dnobg.fits[4]
+****************************************
+NIRCam/F115W
+----------
+IM NAME: jw01210-o001_t002_nircam_clear-f115w_i2dnobg.fits[1]
+RMS ERR NAME: jw01210-o001_t002_nircam_clear-f115w_i2dnobg.fits[2]
+WHT NAME: jw01210-o001_t002_nircam_clear-f115w_i2dnobg.fits[4]
+****************************************
+NIRCam/F150W
+----------
+IM NAME: jw01210-o001_t002_nircam_clear-f150w_i2dnobg.fits[1]
+RMS ERR NAME: jw01210-o001_t002_nircam_clear-f150w_i2dnobg.fits[2]
+WHT NAME: jw01210-o001_t002_nircam_clear-f150w_i2dnobg.fits[4]
+****************************************
+NIRCam/F162M
+----------
+IM NAME: jw03215-o001_t002_nircam_clear-f162m_i2dnobg.fits[1]
+RMS ERR NAME: jw03215-o001_t002_nircam_clear-f162m_i2dnobg.fits[2]
+WHT NAME: jw03215-o001_t002_nircam_clear-f162m_i2dnobg.fits[4]
+****************************************
+NIRCam/F182M
+----------
+IM NAME: jw03215-o001_t002_nircam_clear-f182m_i2dnobg.fits[1]
+RMS ERR NAME: jw03215-o001_t002_nircam_clear-f182m_i2dnobg.fits[2]
+WHT NAME: jw03215-o001_t002_nircam_clear-f182m_i2dnobg.fits[4]
+****************************************
+NIRCam/F200W
+----------
+IM NAME: jw01210-o001_t002_nircam_clear-f200w_i2dnobg.fits[1]
+RMS ERR NAME: jw01210-o001_t002_nircam_clear-f200w_i2dnobg.fits[2]
+WHT NAME: jw01210-o001_t002_nircam_clear-f200w_i2dnobg.fits[4]
+****************************************
+NIRCam/F210M
+----------
+IM NAME: jw03215-o001_t002_nircam_clear-f210m_i2dnobg.fits[1]
+RMS ERR NAME: jw03215-o001_t002_nircam_clear-f210m_i2dnobg.fits[2]
+WHT NAME: jw03215-o001_t002_nircam_clear-f210m_i2dnobg.fits[4]
+****************************************
+NIRCam/F250M
+----------
+IM NAME: jw03215-o001_t002_nircam_clear-f250m_i2dnobg.fits[1]
+RMS ERR NAME: jw03215-o001_t002_nircam_clear-f250m_i2dnobg.fits[2]
+WHT NAME: jw03215-o001_t002_nircam_clear-f250m_i2dnobg.fits[4]
+****************************************
+NIRCam/F277W
+----------
+IM NAME: jw01210-o001_t002_nircam_clear-f277w_i2dnobg.fits[1]
+RMS ERR NAME: jw01210-o001_t002_nircam_clear-f277w_i2dnobg.fits[2]
+WHT NAME: jw01210-o001_t002_nircam_clear-f277w_i2dnobg.fits[4]
+****************************************
+NIRCam/F300M
+----------
+IM NAME: jw03215-o001_t002_nircam_clear-f300m_i2dnobg.fits[1]
+RMS ERR NAME: jw03215-o001_t002_nircam_clear-f300m_i2dnobg.fits[2]
+WHT NAME: jw03215-o001_t002_nircam_clear-f300m_i2dnobg.fits[4]
+****************************************
+NIRCam/F335M
+----------
+IM NAME: jw03215-o001_t002_nircam_clear-f335m_i2dnobg.fits[1]
+RMS ERR NAME: jw03215-o001_t002_nircam_clear-f335m_i2dnobg.fits[2]
+WHT NAME: jw03215-o001_t002_nircam_clear-f335m_i2dnobg.fits[4]
+****************************************
+NIRCam/F356W
+----------
+IM NAME: jw01210-o001_t002_nircam_clear-f356w_i2dnobg.fits[1]
+RMS ERR NAME: jw01210-o001_t002_nircam_clear-f356w_i2dnobg.fits[2]
+WHT NAME: jw01210-o001_t002_nircam_clear-f356w_i2dnobg.fits[4]
+****************************************
+NIRCam/F410M
+----------
+IM NAME: jw01210-o001_t002_nircam_clear-f410m_i2dnobg.fits[1]
+RMS ERR NAME: jw01210-o001_t002_nircam_clear-f410m_i2dnobg.fits[2]
+WHT NAME: jw01210-o001_t002_nircam_clear-f410m_i2dnobg.fits[4]
+****************************************
+NIRCam/F444W
+----------
+IM NAME: jw04210-o001_t002_nircam_clear-f444w_i2dnobg.fits[1]
+RMS ERR NAME: jw04210-o001_t002_nircam_clear-f444w_i2dnobg.fits[2]
+WHT NAME: jw04210-o001_t002_nircam_clear-f444w_i2dnobg.fits[4]
+****************************************
 ****************************************
 
 </pre></div></div>
@@ -312,14 +399,6 @@ simplifies things for us a bit. As with <code class="docutils literal notranslat
     <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Data objects are different&quot;</span><span class="p">)</span>
 </pre></div>
 </div>
-</div>
-<div class="nboutput docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area stderr docutils container">
-<div class="highlight"><pre>
-INFO:galfind:Aperture corrections for NIRCam loaded from /nvme/scratch/work/austind/GALFIND/galfind/Aperture_corrections/NIRCam_aper_corr.txt
-</pre></div></div>
 </div>
 <div class="nboutput nblast docutils container">
 <div class="prompt empty docutils container">
@@ -359,7 +438,19 @@ stores a <code class="docutils literal notranslate"><span class="pre">Multiple_F
 </div>
 <div class="output_area docutils container">
 <div class="highlight"><pre>
-&lt;galfind.Data.Stacked_Band_Data object at 0x7f80fe0aca60&gt;
+****************************************
+NIRCam/F090W+F115W+F150W+F200W
+SURVEY: JOF
+VERSION: v11
+PIX SCALE: 0.03 arcsec
+ZP: 28.086519392283982
+SHAPE: (4464, 10244)
+****************************************
+IM PATH: /raid/scratch/work/austind/GALFIND_WORK/Stacked_Images/v11/NIRCam/JOF/rms_err/JOF_F090W+F115W+F150W+F200W_v11_stack.fits[1]
+RMS ERR PATH: /raid/scratch/work/austind/GALFIND_WORK/Stacked_Images/v11/NIRCam/JOF/rms_err/JOF_F090W+F115W+F150W+F200W_v11_stack.fits[2]
+WHT PATH: /raid/scratch/work/austind/GALFIND_WORK/Stacked_Images/v11/NIRCam/JOF/rms_err/JOF_F090W+F115W+F150W+F200W_v11_stack.fits[3]
+****************************************
+
 </pre></div></div>
 </div>
 <p>Rather than instantiating this via the <code class="docutils literal notranslate"><span class="pre">Stacked_Band_Data</span></code> class method, we can also stack <code class="docutils literal notranslate"><span class="pre">Band_Data</span></code> and/or <code class="docutils literal notranslate"><span class="pre">Stacked_Band_Data</span></code> objects by using the <code class="docutils literal notranslate"><span class="pre">*</span></code> (multiplication) operator. This will work so long as these objects contain different reference filters, otherwise the data will instead be mosaiced. Simply adding each band together will instead produce a <code class="docutils literal notranslate"><span class="pre">Data</span></code> object.</p>
