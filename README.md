@@ -1,7 +1,7 @@
 # Galfind
 
 [![workflow](https://github.com/duncanaustin98/galfind/actions/workflows/python-app.yml/badge.svg)](https://github.com/duncanaustin98/galfind/actions)
-[![Documentation Status](https://github.com/duncanaustin98/galfind/actions/workflows/publish_docs.yml/badge.svg)](https://galfind.readthedocs.io/en/main/index.html)
+[![Documentation Status](https://github.com/duncanaustin98/galfind/actions/workflows/publish_docs.yml/badge.svg)](https://galfind.readthedocs.io/en/latest/index.html)
 [![Contributions welcome](https://img.shields.io/badge/contributions-welcome-brightgreen.svg?style=flat)](https://github.com/flaresimulations/synthesizer/blob/main/docs/CONTRIBUTING.md)
 [![pre-commit](https://img.shields.io/badge/pre--commit-enabled-brightgreen?logo=pre-commit&logoColor=white)](https://github.com/pre-commit/pre-commit)
 [![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
