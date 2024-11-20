@@ -1,0 +1,1071 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Galaxy selection methods &mdash; galfind 0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=80d5e7a1" />
+      <link rel="stylesheet" type="text/css" href="../_static/css/theme.css?v=e59714d7" />
+      <link rel="stylesheet" type="text/css" href="../_static/copybutton.css?v=76b2166b" />
+      <link rel="stylesheet" type="text/css" href="../_static/nbsphinx-code-cells.css?v=2aa19091" />
+
+  
+      <script src="../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../_static/documentation_options.js?v=2709fde1"></script>
+      <script src="../_static/doctools.js?v=9a2dae69"></script>
+      <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
+      <script src="../_static/clipboard.min.js?v=a7894cd8"></script>
+      <script src="../_static/copybutton.js?v=f281be69"></script>
+      <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+      <script>window.MathJax = {"tex": {"inlineMath": [["$", "$"], ["\\(", "\\)"]], "processEscapes": true}, "options": {"ignoreHtmlClass": "tex2jax_ignore|mathjax_ignore|document", "processHtmlClass": "tex2jax_process|mathjax_process|math|output_area"}}</script>
+      <script defer="defer" src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+    <script src="../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+    <link rel="next" title="Catalogue selection methods" href="catalogue_selection.html" />
+    <link rel="prev" title="Selection Methods" href="selection.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../index.html" class="icon icon-home">
+            galfind
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="../getting_started/getting_started.html">Welcome to Galfind!</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../instrument/instrument.html">Photometric Instruments</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../data/data.html">Galfind Data Object</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../catalogue/catalogue.html">Catalogue Object</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../galaxy/galaxy.html">Galaxy Objects</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../photometry/photometry.html">Handling Source Photometry</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../sed_fitting/sed_fitting.html">SED Fitting</a></li>
+<li class="toctree-l1 current"><a class="reference internal" href="selection.html">Selection Methods</a><ul class="current">
+<li class="toctree-l2 current"><a class="current reference internal" href="#">Galaxy selection methods</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#Example-1:-Selecting-unmasked-galaxies-and-basic-morphological-selection">Example 1: Selecting unmasked galaxies and basic morphological selection</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#Example-2:-SNRs-and-colours">Example 2: SNRs and colours</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#Example-3:-Robust-redshift-selection-criteria">Example 3: Robust redshift selection criteria</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#Example-4:-EPOCHS-selection-in-galfind">Example 4: EPOCHS selection in galfind</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#Example-5:-Selecting-based-on-SED-fitting-properties">Example 5: Selecting based on SED fitting properties</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="catalogue_selection.html">Catalogue selection methods</a></li>
+<li class="toctree-l2"><a class="reference internal" href="custom_selection.html">Custom selection</a></li>
+</ul>
+</li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../index.html">galfind</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="selection.html">Selection Methods</a></li>
+      <li class="breadcrumb-item active">Galaxy selection methods</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="../_sources/selection/galaxy_selection.ipynb.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="Galaxy-selection-methods">
+<h1>Galaxy selection methods<a class="headerlink" href="#Galaxy-selection-methods" title="Link to this heading"></a></h1>
+<p>As is well known, any photometric study requires some sample of galaxy candidates selected from the photometric catalogue. In this notebook, we will use a myriad of examples to showcase the available selection methods in galfind. The future aim of this code is to implement plug-in architecture here so that the user can provide and use additional selection functions that will be recognized by the galfind <code class="docutils literal notranslate"><span class="pre">Catalogue</span></code> class.</p>
+<p>Let’s first create a <code class="docutils literal notranslate"><span class="pre">Galaxy</span></code> object for the highest redshift photometric galaxy candidate in JOF identified by Robertson et al. 2023 at z=14.63, which has NIRCam ID=718 in our galfind produced catalogue.</p>
+<div class="nbinput nblast docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[25]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="c1"># imports</span>
+<span class="kn">import</span> <span class="nn">astropy.units</span> <span class="k">as</span> <span class="nn">u</span>
+<span class="kn">from</span> <span class="nn">copy</span> <span class="kn">import</span> <span class="n">deepcopy</span>
+<span class="kn">from</span> <span class="nn">galfind</span> <span class="kn">import</span> <span class="n">Catalogue</span><span class="p">,</span> <span class="n">Multiple_Selector</span>
+<span class="kn">from</span> <span class="nn">galfind.Data</span> <span class="kn">import</span> <span class="n">morgan_version_to_dir</span>
+</pre></div>
+</div>
+</div>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[2]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">survey</span> <span class="o">=</span> <span class="s2">&quot;JOF&quot;</span>
+<span class="n">version</span> <span class="o">=</span> <span class="s2">&quot;v11&quot;</span>
+<span class="n">instrument_names</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;NIRCam&quot;</span><span class="p">]</span>
+<span class="n">aper_diams</span> <span class="o">=</span> <span class="p">[</span><span class="mf">0.32</span><span class="p">]</span> <span class="o">*</span> <span class="n">u</span><span class="o">.</span><span class="n">arcsec</span>
+<span class="n">forced_phot_band</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;F277W&quot;</span><span class="p">,</span> <span class="s2">&quot;F356W&quot;</span><span class="p">,</span> <span class="s2">&quot;F444W&quot;</span><span class="p">]</span>
+<span class="n">min_flux_pc_err</span> <span class="o">=</span> <span class="mf">10.</span>
+
+<span class="n">cat</span> <span class="o">=</span> <span class="n">Catalogue</span><span class="o">.</span><span class="n">pipeline</span><span class="p">(</span>
+    <span class="n">survey</span><span class="p">,</span>
+    <span class="n">version</span><span class="p">,</span>
+    <span class="n">instrument_names</span> <span class="o">=</span> <span class="n">instrument_names</span><span class="p">,</span>
+    <span class="n">version_to_dir_dict</span> <span class="o">=</span> <span class="n">morgan_version_to_dir</span><span class="p">,</span>
+    <span class="n">aper_diams</span> <span class="o">=</span> <span class="n">aper_diams</span><span class="p">,</span>
+    <span class="n">forced_phot_band</span> <span class="o">=</span> <span class="n">forced_phot_band</span><span class="p">,</span>
+    <span class="n">min_flux_pc_err</span> <span class="o">=</span> <span class="n">min_flux_pc_err</span>
+<span class="p">)</span>
+<span class="c1"># TODO: Smooth galaxy load-in</span>
+<span class="c1"># from Robertson et al. 2023</span>
+<span class="n">gal</span> <span class="o">=</span> <span class="n">cat</span><span class="p">[</span><span class="mi">717</span><span class="p">]</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">gal</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area stderr docutils container">
+<div class="highlight"><pre>
+INFO:galfind:Loaded aper_diams=&lt;Quantity [0.32] arcsec&gt; for F277W+F356W+F444W
+INFO:galfind:Combined mask for NIRCam/F277W+F356W+F444W already exists at /raid/scratch/work/austind/GALFIND_WORK/Masks/JOF/combined/JOF_F277W+F356W+F444W_auto.fits
+WARNING: hdu= was not specified but multiple tables are present, reading in first available table (hdu=1) [astropy.io.fits.connect]
+WARNING:astroquery:hdu= was not specified but multiple tables are present, reading in first available table (hdu=1)
+WARNING:galfind:Aperture correction columns already in /raid/scratch/work/austind/GALFIND_WORK/Catalogues/v11/NIRCam/JOF/(0.32)as/JOF_MASTER_Sel-F277W+F356W+F444W_v11.fits
+Calculating depths:   0%|          | 0/15 [00:00&lt;?, ?it/s]
+INFO:galfind:Calculated/loaded depths for JOF v11 NIRCam
+INFO:galfind:Local depth columns already exist in /raid/scratch/work/austind/GALFIND_WORK/Catalogues/v11/NIRCam/JOF/(0.32)as/JOF_MASTER_Sel-F277W+F356W+F444W_v11.fits
+INFO:galfind:Loaded &#39;has_data_mask&#39; from /raid/scratch/work/austind/GALFIND_WORK/Masks/JOF/has_data_mask/JOF_MASTER_Sel-F277W+F356W+F444W_v11.h5
+INFO:galfind:Making JOF v11 JOF_MASTER_Sel-F277W+F356W+F444W_v11 catalogue!
+WARNING:galfind:cat_aper_diams not in kwargs.keys()=dict_keys([&#39;ZP&#39;, &#39;min_flux_pc_err&#39;])! Setting to aper_diams=&lt;Quantity [0.32] arcsec&gt;
+WARNING:galfind:cat_aper_diams not in kwargs.keys()=dict_keys([&#39;ZP&#39;, &#39;min_flux_pc_err&#39;])! Setting to aper_diams=&lt;Quantity [0.32] arcsec&gt;
+WARNING:galfind:cat_aper_diams not in kwargs.keys()=dict_keys([])! Setting to aper_diams=&lt;Quantity [0.32] arcsec&gt;
+WARNING:galfind:cat_type = cat_type=&#39;selection&#39; not in [&#39;ID&#39;, &#39;sky_coord&#39;, &#39;phot&#39;, &#39;mask&#39;, &#39;depths&#39;] and not a valid HDU extension in /raid/scratch/work/austind/GALFIND_WORK/Catalogues/v11/NIRCam/JOF/(0.32)as/JOF_MASTER_Sel-F277W+F356W+F444W_v11.fits!
+WARNING:galfind:selection tab is None!
+INFO:galfind:Made /raid/scratch/work/austind/GALFIND_WORK/Catalogues/v11/NIRCam/JOF/(0.32)as/JOF_MASTER_Sel-F277W+F356W+F444W_v11.fits catalogue!
+</pre></div></div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+****************************************
+Galaxy(718, [53.10763,-27.86013]deg)
+****************************************
+PHOTOMETRY:
+----------
+Photometry_obs(NIRCam, 0.32 arcsec)
+----------
+SELECTION FLAGS:
+----------
+****************************************
+
+</pre></div></div>
+</div>
+<section id="Example-1:-Selecting-unmasked-galaxies-and-basic-morphological-selection">
+<h2>Example 1: Selecting unmasked galaxies and basic morphological selection<a class="headerlink" href="#Example-1:-Selecting-unmasked-galaxies-and-basic-morphological-selection" title="Link to this heading"></a></h2>
+<p>In this example, we will first have a look at selecting a galaxy based on whether it is unmasked in a particular band/bands/instrument. Following this, we will have a look at selecting a galaxy from its SExtractor measured half light radius. Basically, we are selecting galaxies independently of both the aperture diameter used to construct the photometry and any SED fitting properties derived from the SED fitting procedure.</p>
+<p>This first example is probably the most important in this notebook as it highlights both the general syntax used as a basis for galfind sample selection as well as the properties which are stored in an individual <code class="docutils literal notranslate"><span class="pre">Galaxy</span></code> object as a result of the fitting procedure.</p>
+<p>We start off by simply asserting that the galaxy is masked in the F444W band.</p>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[3]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">galfind</span> <span class="kn">import</span> <span class="n">Unmasked_Band_Selector</span>
+
+<span class="n">unmasked_f444w_selector</span> <span class="o">=</span> <span class="n">Unmasked_Band_Selector</span><span class="p">(</span><span class="s2">&quot;F444W&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">unmasked_f444w_selector</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+****************************************
+Unmasked_Band_Selector:
+****************************************
+band_name: F444W
+****************************************
+
+</pre></div></div>
+</div>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[4]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">gal_1a</span> <span class="o">=</span> <span class="n">unmasked_f444w_selector</span><span class="p">(</span><span class="n">gal</span><span class="p">,</span> <span class="n">return_copy</span> <span class="o">=</span> <span class="kc">True</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">gal_1a</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+****************************************
+Galaxy(718, [53.10763,-27.86013]deg)
+****************************************
+PHOTOMETRY:
+----------
+Photometry_obs(NIRCam, 0.32 arcsec)
+----------
+SELECTION FLAGS:
+----------
+unmasked_F444W: True
+----------
+****************************************
+
+</pre></div></div>
+</div>
+<p>From the two comparative <code class="docutils literal notranslate"><span class="pre">Galaxy</span></code> print statements, we see that the <code class="docutils literal notranslate"><span class="pre">gal_1a</span></code> object now has an <code class="docutils literal notranslate"><span class="pre">Dict[str,</span> <span class="pre">bool]</span></code> type selection_flags attribute stored, which can be extended with further selection criteria.</p>
+<p>Now let’s have a go at selecting based on all selection bands being unmasked, those being the NIRCam LW widebands (F277W, F356W, F444W).</p>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[5]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">galfind</span> <span class="kn">import</span> <span class="n">Unmasked_Bands_Selector</span>
+
+<span class="n">unmasked_selection_band_selector</span> <span class="o">=</span> <span class="n">Unmasked_Bands_Selector</span><span class="p">(</span><span class="n">forced_phot_band</span><span class="p">)</span>
+<span class="n">gal_1b</span> <span class="o">=</span> <span class="n">unmasked_selection_band_selector</span><span class="p">(</span><span class="n">gal_1a</span><span class="p">,</span> <span class="n">return_copy</span> <span class="o">=</span> <span class="kc">True</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">gal_1b</span><span class="p">)</span>
+
+<span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">unmasked_selection_band_selector</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">Multiple_Selector</span><span class="o">.</span><span class="n">__subclasses__</span><span class="p">())):</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="nb">repr</span><span class="p">(</span><span class="n">unmasked_selection_band_selector</span><span class="p">)</span><span class="si">}</span><span class="s2"> is a subclass of Multiple_Selector&quot;</span><span class="p">)</span>
+<span class="k">else</span><span class="p">:</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="nb">repr</span><span class="p">(</span><span class="n">unmasked_selection_band_selector</span><span class="p">)</span><span class="si">}</span><span class="s2"> is not a subclass of Multiple_Selector&quot;</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+****************************************
+Galaxy(718, [53.10763,-27.86013]deg)
+****************************************
+PHOTOMETRY:
+----------
+Photometry_obs(NIRCam, 0.32 arcsec)
+----------
+SELECTION FLAGS:
+----------
+unmasked_F444W: True
+unmasked_F277W: True
+unmasked_F356W: True
+unmasked_F277W+F356W+F444W: True
+----------
+****************************************
+
+Unmasked_Bands_Selector() is a subclass of Multiple_Selector
+</pre></div></div>
+</div>
+<p>The selection object above is a child class of the base <code class="docutils literal notranslate"><span class="pre">Multiple_Selector</span></code>. This class, which itself inherits from the <code class="docutils literal notranslate"><span class="pre">Selector</span></code> class contains an array of <code class="docutils literal notranslate"><span class="pre">Selector</span></code> objects with assertion/failure/selection criteria defined by the relevant boolean logic to select only galaxies that pass all of the individual selection criteria. When calling the <code class="docutils literal notranslate"><span class="pre">Multiple_Selector</span></code> object, selection is performed and saved from each individual <code class="docutils literal notranslate"><span class="pre">Selector</span></code> object stored in the list before finally
+running the combined selection. It is for this reason why the <code class="docutils literal notranslate"><span class="pre">gal_1b</span></code> object above contains 4 entries in its selection_flags dictionary attribute (unmasked in F277W, F356W, F444W, and F277W+F356W+F444W).</p>
+<p>We see that this is identical to the implementation where instead of inserting an array of band names to mask, we insert a single string with band names seperated by <code class="docutils literal notranslate"><span class="pre">+</span></code>s.</p>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[6]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">unmasked_selection_band_selector_2</span> <span class="o">=</span> <span class="n">Unmasked_Bands_Selector</span><span class="p">(</span><span class="s2">&quot;+&quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">forced_phot_band</span><span class="p">))</span>
+<span class="n">gal_1c</span> <span class="o">=</span> <span class="n">unmasked_selection_band_selector_2</span><span class="p">(</span><span class="n">gal_1a</span><span class="p">,</span> <span class="n">return_copy</span> <span class="o">=</span> <span class="kc">True</span><span class="p">)</span>
+<span class="k">if</span> <span class="n">gal_1b</span> <span class="o">==</span> <span class="n">gal_1c</span><span class="p">:</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Identical implementation!&quot;</span><span class="p">)</span>
+<span class="k">else</span><span class="p">:</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Different implementation!&quot;</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+Different implementation!
+</pre></div></div>
+</div>
+<p>Finally, we will ensure that all NIRCam bands contained within the JOF survey are unmasked.</p>
+<p>We note that the implementation here is slightly different to the one performed on a catalogue level. Here we have to first insert a <code class="docutils literal notranslate"><span class="pre">Multiple_Filter</span></code> object to reduce the relevant bands from all available bandpass filters on the instrument to just those available in our survey. We cannot simply use the filterset on the galaxy object itself as this may already have been trimmed to include just bands that include data at the specific sky position of the galaxy itself, rather than all those
+available in the field. If we were to instead ask for every band contained in the galaxy object to be included, then when running on a catalogue level this selection function would return True even when there may not be data available in the band we wish to be masked.</p>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[7]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">galfind</span> <span class="kn">import</span> <span class="n">Unmasked_Instrument_Selector</span>
+
+<span class="n">unmasked_nircam_selector</span> <span class="o">=</span> <span class="n">Unmasked_Instrument_Selector</span><span class="p">(</span><span class="s2">&quot;NIRCam&quot;</span><span class="p">)</span>
+<span class="n">unmasked_nircam_selector</span><span class="o">.</span><span class="n">crop_to_filterset</span><span class="p">(</span><span class="n">cat</span><span class="o">.</span><span class="n">filterset</span><span class="p">)</span>
+<span class="n">gal_1d</span> <span class="o">=</span> <span class="n">unmasked_nircam_selector</span><span class="p">(</span><span class="n">gal_1b</span><span class="p">,</span> <span class="n">return_copy</span> <span class="o">=</span> <span class="kc">True</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">gal_1d</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+****************************************
+Galaxy(718, [53.10763,-27.86013]deg)
+****************************************
+PHOTOMETRY:
+----------
+Photometry_obs(NIRCam, 0.32 arcsec)
+----------
+SELECTION FLAGS:
+----------
+unmasked_F444W: True
+unmasked_F277W: True
+unmasked_F356W: True
+unmasked_F277W+F356W+F444W: True
+unmasked_F090W: True
+unmasked_F115W: True
+unmasked_F150W: True
+unmasked_F162M: True
+unmasked_F182M: True
+unmasked_F200W: True
+unmasked_F210M: True
+unmasked_F250M: True
+unmasked_F300M: True
+unmasked_F335M: True
+unmasked_F410M: True
+unmasked_NIRCam: True
+----------
+****************************************
+
+</pre></div></div>
+</div>
+<p>The above object now contains selection_flags entries for each band in the JOF field as well as one for the forced photometry band (F277W+F356W+F444W) and one for the NIRCam instrument, all reading True. It seems that this galaxy has data in all NIRCam bands that the survey is constructed from and is not masked by our manual mask in any band.</p>
+<p>As well as selecting a galaxy based on (an) unmasked band/bands/instrument, there is one more aperture diameter independent selection method that we implement in galfind: SExtractor half-light radius selection. This is mainly used to remove hot pixels that survive the data reduction process from our galaxy samples, although in theory it can be used to exclude larger and point like galaxies from a sample should you wish. In the future, we aim to include more advanced morphological fitting and
+selection in SExtractor from commonly used Sersic profile fitting codes such as GALFIT, Imfit, Morphometryka (currently private), etc used by e.g. Ormerod+23, Westcott+24.</p>
+<p>To do this, we will first have to load the galaxy half-light radius from the fits catalogue, which we will do on the catalogue level.</p>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[8]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">cat</span><span class="o">.</span><span class="n">load_sextractor_Re</span><span class="p">()</span>
+<span class="n">gal</span> <span class="o">=</span> <span class="n">cat</span><span class="p">[</span><span class="mi">717</span><span class="p">]</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area stderr docutils container">
+<div class="highlight"><pre>
+INFO:galfind:Loaded FLUX_RADIUS from /raid/scratch/work/austind/GALFIND_WORK/Catalogues/v11/NIRCam/JOF/(0.32)as/JOF_MASTER_Sel-F277W+F356W+F444W_v11.fits saved as sex_Re for cat_band_properties[0].keys()=dict_keys([&#39;F090W&#39;, &#39;F115W&#39;, &#39;F150W&#39;, &#39;F162M&#39;, &#39;F182M&#39;, &#39;F200W&#39;, &#39;F210M&#39;, &#39;F250M&#39;, &#39;F277W&#39;, &#39;F300M&#39;, &#39;F335M&#39;, &#39;F356W&#39;, &#39;F410M&#39;, &#39;F444W&#39;])
+</pre></div></div>
+</div>
+<p>Now that the new galaxy properties have been loaded, let’s have a go at excluding F444W hot pixels with R_e &lt; 1.5 pix (i.e. selecting objects with &gt; 1.5 pix SExtractor half light radii). Since our pixel scale is 0.03as/pix, we select &gt; 45mas objects.</p>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[9]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">galfind</span> <span class="kn">import</span> <span class="n">Sextractor_Band_Radius_Selector</span>
+
+<span class="n">Re_gtr_45mas_f444w_selector</span> <span class="o">=</span> <span class="n">Sextractor_Band_Radius_Selector</span><span class="p">(</span><span class="s2">&quot;F444W&quot;</span><span class="p">,</span> <span class="s2">&quot;gtr&quot;</span><span class="p">,</span> <span class="mf">45.</span> <span class="o">*</span> <span class="n">u</span><span class="o">.</span><span class="n">marcsec</span><span class="p">)</span>
+<span class="n">gal_1e</span> <span class="o">=</span> <span class="n">Re_gtr_45mas_f444w_selector</span><span class="p">(</span><span class="n">gal</span><span class="p">,</span> <span class="n">return_copy</span> <span class="o">=</span> <span class="kc">True</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">gal_1e</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+****************************************
+Galaxy(718, [53.10763,-27.86013]deg)
+****************************************
+PHOTOMETRY:
+----------
+Photometry_obs(NIRCam, 0.32 arcsec)
+----------
+SELECTION FLAGS:
+----------
+sex_Re_F444W&gt;45.0mas: True
+----------
+****************************************
+
+</pre></div></div>
+</div>
+<p>We can also perform this selection to select objects with smaller half-light radii.</p>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[10]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">Re_less_50mas_f444w_selector</span> <span class="o">=</span> <span class="n">Sextractor_Band_Radius_Selector</span><span class="p">(</span><span class="s2">&quot;F444W&quot;</span><span class="p">,</span> <span class="s2">&quot;less&quot;</span><span class="p">,</span> <span class="mf">50.</span> <span class="o">*</span> <span class="n">u</span><span class="o">.</span><span class="n">marcsec</span><span class="p">)</span>
+<span class="n">gal_1f</span> <span class="o">=</span> <span class="n">Re_less_50mas_f444w_selector</span><span class="p">(</span><span class="n">gal_1e</span><span class="p">,</span> <span class="n">return_copy</span> <span class="o">=</span> <span class="kc">True</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">gal_1f</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+****************************************
+Galaxy(718, [53.10763,-27.86013]deg)
+****************************************
+PHOTOMETRY:
+----------
+Photometry_obs(NIRCam, 0.32 arcsec)
+----------
+SELECTION FLAGS:
+----------
+sex_Re_F444W&gt;45.0mas: True
+sex_Re_F444W&lt;50.0mas: False
+----------
+****************************************
+
+</pre></div></div>
+</div>
+<p>As before, we can also run the <code class="docutils literal notranslate"><span class="pre">Multiple_Selector</span></code> version of this same selection method by instead inserting a list (or single string separated by <code class="docutils literal notranslate"><span class="pre">+</span></code>s) of filter names.</p>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[11]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">galfind</span> <span class="kn">import</span> <span class="n">Sextractor_Bands_Radius_Selector</span>
+
+<span class="n">Re_gtr_45mas_forced_phot_band_selector</span> <span class="o">=</span> <span class="n">Sextractor_Bands_Radius_Selector</span><span class="p">(</span><span class="n">forced_phot_band</span><span class="p">,</span> <span class="s2">&quot;gtr&quot;</span><span class="p">,</span> <span class="mf">45.</span> <span class="o">*</span> <span class="n">u</span><span class="o">.</span><span class="n">marcsec</span><span class="p">)</span>
+<span class="n">gal_1g</span> <span class="o">=</span> <span class="n">Re_gtr_45mas_forced_phot_band_selector</span><span class="p">(</span><span class="n">gal_1f</span><span class="p">,</span> <span class="n">return_copy</span> <span class="o">=</span> <span class="kc">True</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">gal_1g</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+****************************************
+Galaxy(718, [53.10763,-27.86013]deg)
+****************************************
+PHOTOMETRY:
+----------
+Photometry_obs(NIRCam, 0.32 arcsec)
+----------
+SELECTION FLAGS:
+----------
+sex_Re_F444W&gt;45.0mas: True
+sex_Re_F444W&lt;50.0mas: False
+sex_Re_F277W&gt;45.0mas: True
+sex_Re_F356W&gt;45.0mas: True
+sex_Re_F277W+F356W+F444W&gt;45.0mas: True
+----------
+****************************************
+
+</pre></div></div>
+</div>
+<p>And again we can run the selection on all bands from a single instrument, which in this case is NIRCam.</p>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[12]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">galfind</span> <span class="kn">import</span> <span class="n">Sextractor_Instrument_Radius_Selector</span>
+
+<span class="n">Re_gtr_45mas_nircam_selector</span> <span class="o">=</span> <span class="n">Sextractor_Instrument_Radius_Selector</span><span class="p">(</span><span class="s2">&quot;NIRCam&quot;</span><span class="p">,</span> <span class="s2">&quot;gtr&quot;</span><span class="p">,</span> <span class="mf">45.</span> <span class="o">*</span> <span class="n">u</span><span class="o">.</span><span class="n">marcsec</span><span class="p">)</span>
+<span class="n">Re_gtr_45mas_nircam_selector</span><span class="o">.</span><span class="n">crop_to_filterset</span><span class="p">(</span><span class="n">cat</span><span class="o">.</span><span class="n">filterset</span><span class="p">)</span>
+<span class="n">gal_1h</span> <span class="o">=</span> <span class="n">Re_gtr_45mas_nircam_selector</span><span class="p">(</span><span class="n">gal_1g</span><span class="p">,</span> <span class="n">return_copy</span> <span class="o">=</span> <span class="kc">True</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">gal_1h</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+****************************************
+Galaxy(718, [53.10763,-27.86013]deg)
+****************************************
+PHOTOMETRY:
+----------
+Photometry_obs(NIRCam, 0.32 arcsec)
+----------
+SELECTION FLAGS:
+----------
+sex_Re_F444W&gt;45.0mas: True
+sex_Re_F444W&lt;50.0mas: False
+sex_Re_F277W&gt;45.0mas: True
+sex_Re_F356W&gt;45.0mas: True
+sex_Re_F277W+F356W+F444W&gt;45.0mas: True
+sex_Re_F090W&gt;45.0mas: True
+sex_Re_F115W&gt;45.0mas: False
+sex_Re_F150W&gt;45.0mas: False
+sex_Re_F162M&gt;45.0mas: False
+sex_Re_F182M&gt;45.0mas: False
+sex_Re_F200W&gt;45.0mas: True
+sex_Re_F210M&gt;45.0mas: False
+sex_Re_F250M&gt;45.0mas: True
+sex_Re_F300M&gt;45.0mas: True
+sex_Re_F335M&gt;45.0mas: True
+sex_Re_F410M&gt;45.0mas: True
+sex_Re_NIRCam&gt;45.0mas: False
+----------
+****************************************
+
+</pre></div></div>
+</div>
+<p>We caution the user that instrument half-light radii selection may not be a smart idea in photometric bands with low SNR detections. In this case, our high redshift galaxy candidate fails this selection as it is not detected in the bluer dropout NIRCam bands where SExtractor struggles to fit the galaxy with an appropriate Kron radius.</p>
+<p>In this example, we kept on making copies of the galaxy in question, which is the default implementation when running on a galaxy rather than catalogue level. From now on, we will explicitly insert return_copy = False, so that the galaxy object itself is updated, rather than its deepcopy.</p>
+<div class="nbinput nblast docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[13]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="c1"># TODO: Update documentation here!</span>
+<span class="c1">#from galfind import Min_Band_Selector, Min_Unmasked_Band_Selector</span>
+</pre></div>
+</div>
+</div>
+</section>
+<section id="Example-2:-SNRs-and-colours">
+<h2>Example 2: SNRs and colours<a class="headerlink" href="#Example-2:-SNRs-and-colours" title="Link to this heading"></a></h2>
+<p>Now let’s try a simple extension of the previous example by implementating SNR and colour selections. This requires knowledge of which aperture photometry this is being run on, so we must explicitly insert the aperture diameter we wish to perform the selection on here when calling the <code class="docutils literal notranslate"><span class="pre">Selector</span></code> object. This adds a small amount of additional complexity to this selection method.</p>
+<div class="nbinput nblast docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[14]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">galfind</span> <span class="kn">import</span> <span class="n">Band_SNR_Selector</span><span class="p">,</span> <span class="n">Colour_Selector</span><span class="p">,</span> <span class="n">Kokorev24_LRD_Selector</span>
+</pre></div>
+</div>
+</div>
+<p>We will start with a single band SNR selection, based on whether a galaxy is detected/undetected at a specific significance. This significance is set by the ratio of aperture measured flux compared to the local background level determined by the depth measurements performed by <code class="docutils literal notranslate"><span class="pre">Data</span></code>. We will start by performing selection for 5 sigma F444W detections, which has the following syntax.</p>
+<div class="nbinput nblast docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[15]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">f444w_gtr_5sigma_selector</span> <span class="o">=</span> <span class="n">Band_SNR_Selector</span><span class="p">(</span><span class="s2">&quot;F444W&quot;</span><span class="p">,</span> <span class="s2">&quot;detect&quot;</span><span class="p">,</span> <span class="mf">5.</span><span class="p">)</span>
+<span class="n">f444w_gtr_5sigma_selector</span><span class="p">(</span><span class="n">gal</span><span class="p">,</span> <span class="n">aper_diams</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">return_copy</span> <span class="o">=</span> <span class="kc">False</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<p>As well as inserting the band name directly, we can instead require that the n^th photometric filter that the galaxy has data for be (non-)detected to a specific significance level by inserting an integer, rather than band name. For instance, should we require that the second reddest band be selected at greater than, say 8 sigma, and the second bluest be non detected to 2 sigma, we can write…</p>
+<div class="nbinput nblast docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[16]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">second_reddest_gtr_8sigma_selector</span> <span class="o">=</span> <span class="n">Band_SNR_Selector</span><span class="p">(</span><span class="o">-</span><span class="mi">2</span><span class="p">,</span> <span class="s2">&quot;detect&quot;</span><span class="p">,</span> <span class="mf">8.</span><span class="p">)</span>
+<span class="n">second_reddest_gtr_8sigma_selector</span><span class="p">(</span><span class="n">gal</span><span class="p">,</span> <span class="n">aper_diams</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">return_copy</span> <span class="o">=</span> <span class="kc">False</span><span class="p">)</span>
+
+<span class="n">bluest_less_2sigma_selector</span> <span class="o">=</span> <span class="n">Band_SNR_Selector</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="s2">&quot;non_detect&quot;</span><span class="p">,</span> <span class="mf">2.</span><span class="p">)</span>
+<span class="n">bluest_less_2sigma_selector</span><span class="p">(</span><span class="n">gal</span><span class="p">,</span> <span class="n">aper_diams</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">return_copy</span> <span class="o">=</span> <span class="kc">False</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<p>Fantastic! But what about colour selection? This is also very straightforwards in galfind. A couple of random examples are given below. Note that the filter names defining the colour to be calculated can be given either as a list of length 2 or a single string separated by a <code class="docutils literal notranslate"><span class="pre">-</span></code> sign. In both cases these should be ordered blue -&gt; red!</p>
+<div class="nbinput nblast docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[17]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">f200w_f277w_bluer_0_3sigma_selector</span> <span class="o">=</span> <span class="n">Colour_Selector</span><span class="p">([</span><span class="s2">&quot;F200W&quot;</span><span class="p">,</span> <span class="s2">&quot;F277W&quot;</span><span class="p">],</span> <span class="s2">&quot;bluer&quot;</span><span class="p">,</span> <span class="mf">0.3</span><span class="p">)</span>
+<span class="n">f200w_f277w_bluer_0_3sigma_selector</span><span class="p">(</span><span class="n">gal</span><span class="p">,</span> <span class="n">aper_diams</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">return_copy</span> <span class="o">=</span> <span class="kc">False</span><span class="p">)</span>
+
+<span class="n">f356w_f444w_redder_0_5sigma_selector</span> <span class="o">=</span> <span class="n">Colour_Selector</span><span class="p">(</span><span class="s2">&quot;F356W-F444W&quot;</span><span class="p">,</span> <span class="s2">&quot;redder&quot;</span><span class="p">,</span> <span class="mf">0.5</span><span class="p">)</span>
+<span class="n">f356w_f444w_redder_0_5sigma_selector</span><span class="p">(</span><span class="n">gal</span><span class="p">,</span> <span class="n">aper_diams</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">return_copy</span> <span class="o">=</span> <span class="kc">False</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<p>As well as basic colour selection, it is common to select galaxy samples based on multiple colour criteria. Here we will use the example of the LRD selection from Kokorev et al. 2024, which combines multiple photometric colour criteria.</p>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[18]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">Kokorev24_selector</span> <span class="o">=</span> <span class="n">Kokorev24_LRD_Selector</span><span class="p">()</span>
+<span class="n">Kokorev24_selector</span><span class="p">(</span><span class="n">gal</span><span class="p">,</span> <span class="n">aper_diams</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">return_copy</span> <span class="o">=</span> <span class="kc">False</span><span class="p">)</span>
+
+<span class="nb">print</span><span class="p">(</span><span class="n">gal</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+****************************************
+Galaxy(718, [53.10763,-27.86013]deg)
+****************************************
+PHOTOMETRY:
+----------
+Photometry_obs(NIRCam, 0.32 arcsec)
+----------
+SELECTION FLAGS:
+----------
+F444W_SNR&gt;5.0_0.32as: True
+2nd_reddest_band_SNR&gt;8.0_0.32as: False
+bluest_band_SNR&lt;2.0_0.32as: True
+F200W-F277W&lt;0.30_0.32as: False
+F356W-F444W&gt;0.50_0.32as: False
+F115W-F150W&lt;0.80_0.32as: False
+F200W-F277W&gt;0.70_0.32as: True
+F200W-F356W&gt;1.00_0.32as: False
+Kokorev+24_LRD_red1_0.32as: False
+F150W-F200W&lt;0.80_0.32as: False
+F277W-F356W&gt;0.60_0.32as: False
+F277W-F444W&gt;0.70_0.32as: False
+Kokorev+24_LRD_red2_0.32as: False
+Kokorev+24_LRD_0.32as: False
+----------
+****************************************
+
+</pre></div></div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area stderr docutils container">
+<div class="highlight"><pre>
+/nvme/scratch/software/anaconda3/envs/more_and_more_galfind/lib/python3.9/site-packages/astropy/utils/masked/core.py:855: RuntimeWarning: invalid value encountered in log10
+  result = getattr(ufunc, method)(*unmasked, **kwargs)
+</pre></div></div>
+</div>
+<p>It is worth noting that a general colour-colour selection criteria object has not been implemented in galfind, although this can easily be done using the custom selector object explained in example 6.</p>
+</section>
+<section id="Example-3:-Robust-redshift-selection-criteria">
+<h2>Example 3: Robust redshift selection criteria<a class="headerlink" href="#Example-3:-Robust-redshift-selection-criteria" title="Link to this heading"></a></h2>
+<p>In this next example, we will add one more layer of complexity in that we will now select galaxies based on the output of previously performed SED fitting, assuming that PDFs and/or SEDs have already been loaded in the <code class="docutils literal notranslate"><span class="pre">Galaxy</span></code> object. There are a few different in-built selector classes which specifically focus on photometric redshift robustness, which we will outline here.</p>
+<p>First of all, we should load in the results of the <code class="docutils literal notranslate"><span class="pre">EAZY_fsps_larson</span></code> SED fitting with <code class="docutils literal notranslate"><span class="pre">lowz_zmax={4.,</span> <span class="pre">6.,</span> <span class="pre">None}</span></code>. Instead of loading in the specific redshift PDF, best-fitting SED, and properties/errors for the individual galaxy, here we will load these in for the entire JOF catalogue before cropping back down to the same ID=718 high-z candidate again. Please note that the code-block below will perform the SED fitting if not already performed, although in our case it will simply load the
+results into the catalogue.</p>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[19]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">galfind</span> <span class="kn">import</span> <span class="n">EAZY</span>
+
+<span class="n">SED_fit_params_arr</span> <span class="o">=</span> <span class="p">[</span>
+    <span class="p">{</span><span class="s2">&quot;templates&quot;</span><span class="p">:</span> <span class="s2">&quot;fsps_larson&quot;</span><span class="p">,</span> <span class="s2">&quot;lowz_zmax&quot;</span><span class="p">:</span> <span class="mf">4.0</span><span class="p">},</span>
+    <span class="p">{</span><span class="s2">&quot;templates&quot;</span><span class="p">:</span> <span class="s2">&quot;fsps_larson&quot;</span><span class="p">,</span> <span class="s2">&quot;lowz_zmax&quot;</span><span class="p">:</span> <span class="mf">6.0</span><span class="p">},</span>
+    <span class="p">{</span><span class="s2">&quot;templates&quot;</span><span class="p">:</span> <span class="s2">&quot;fsps_larson&quot;</span><span class="p">,</span> <span class="s2">&quot;lowz_zmax&quot;</span><span class="p">:</span> <span class="kc">None</span><span class="p">}</span>
+<span class="p">]</span>
+<span class="k">for</span> <span class="n">SED_fit_params</span> <span class="ow">in</span> <span class="n">SED_fit_params_arr</span><span class="p">:</span>
+    <span class="n">EAZY_fitter</span> <span class="o">=</span> <span class="n">EAZY</span><span class="p">(</span><span class="n">SED_fit_params</span><span class="p">)</span>
+    <span class="n">EAZY_fitter</span><span class="p">(</span><span class="n">cat</span><span class="p">,</span> <span class="n">aper_diams</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">load_PDFs</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span> <span class="n">load_SEDs</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span> <span class="n">update</span> <span class="o">=</span> <span class="kc">True</span><span class="p">)</span>
+
+<span class="n">gal</span> <span class="o">=</span> <span class="n">cat</span><span class="p">[</span><span class="mi">717</span><span class="p">]</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">gal</span><span class="p">)</span>
+
+<span class="n">gal_copy</span> <span class="o">=</span> <span class="n">deepcopy</span><span class="p">(</span><span class="n">gal</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area stderr docutils container">
+<div class="highlight"><pre>
+INFO:galfind:Making .in file for EAZY_fsps_larson_zmax=4.0 SED fitting for JOF v11 NIRCam
+INFO:galfind:Made .in file for EAZY_fsps_larson_zmax=4.0 SED fitting for JOF v11 NIRCam.
+</pre></div></div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+Running SED fitting took 0.1s
+</pre></div></div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area stderr docutils container">
+<div class="highlight"><pre>
+INFO:galfind:Loading EAZY_fsps_larson property PDFs into JOF v11 NIRCam
+</pre></div></div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+Loading properties and associated errors took 1.4s
+</pre></div></div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area stderr docutils container">
+<div class="highlight"><pre>
+Constructing redshift PDFs: 100%|██████████| 16335/16335 [00:00&lt;00:00, 63809.47it/s]
+INFO:galfind:Finished loading EAZY_fsps_larson property PDFs into JOF v11 NIRCam
+INFO:galfind:Loading EAZY_fsps_larson SEDs into JOF v11 NIRCam
+Constructing SEDs: 100%|██████████| 16335/16335 [00:02&lt;00:00, 7135.45it/s]
+INFO:galfind:Finished loading EAZY_fsps_larson SEDs into JOF v11 NIRCam
+INFO:galfind:Updating SED results in galfind catalogue object
+Updating galaxy SED results: 100%|██████████| 16335/16335 [00:00&lt;00:00, 120088.68it/s]
+INFO:galfind:Making .in file for EAZY_fsps_larson_zmax=6.0 SED fitting for JOF v11 NIRCam
+INFO:galfind:Made .in file for EAZY_fsps_larson_zmax=6.0 SED fitting for JOF v11 NIRCam.
+</pre></div></div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+Running SED fitting took 0.1s
+</pre></div></div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area stderr docutils container">
+<div class="highlight"><pre>
+INFO:galfind:Loading EAZY_fsps_larson property PDFs into JOF v11 NIRCam
+</pre></div></div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+Loading properties and associated errors took 1.6s
+</pre></div></div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area stderr docutils container">
+<div class="highlight"><pre>
+Constructing redshift PDFs: 100%|██████████| 16335/16335 [00:00&lt;00:00, 64527.69it/s]
+INFO:galfind:Finished loading EAZY_fsps_larson property PDFs into JOF v11 NIRCam
+INFO:galfind:Loading EAZY_fsps_larson SEDs into JOF v11 NIRCam
+Constructing SEDs: 100%|██████████| 16335/16335 [00:01&lt;00:00, 11359.15it/s]
+INFO:galfind:Finished loading EAZY_fsps_larson SEDs into JOF v11 NIRCam
+INFO:galfind:Updating SED results in galfind catalogue object
+Updating galaxy SED results: 100%|██████████| 16335/16335 [00:00&lt;00:00, 146391.40it/s]
+INFO:galfind:Making .in file for EAZY_fsps_larson_zfree SED fitting for JOF v11 NIRCam
+INFO:galfind:Made .in file for EAZY_fsps_larson_zfree SED fitting for JOF v11 NIRCam.
+</pre></div></div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+Running SED fitting took 0.1s
+</pre></div></div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area stderr docutils container">
+<div class="highlight"><pre>
+INFO:galfind:Loading EAZY_fsps_larson property PDFs into JOF v11 NIRCam
+</pre></div></div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+Loading properties and associated errors took 2.0s
+</pre></div></div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area stderr docutils container">
+<div class="highlight"><pre>
+Constructing redshift PDFs: 100%|██████████| 16335/16335 [00:00&lt;00:00, 58898.23it/s]
+INFO:galfind:Finished loading EAZY_fsps_larson property PDFs into JOF v11 NIRCam
+INFO:galfind:Loading EAZY_fsps_larson SEDs into JOF v11 NIRCam
+Constructing SEDs: 100%|██████████| 16335/16335 [00:01&lt;00:00, 10815.80it/s]
+INFO:galfind:Finished loading EAZY_fsps_larson SEDs into JOF v11 NIRCam
+INFO:galfind:Updating SED results in galfind catalogue object
+Updating galaxy SED results: 100%|██████████| 16335/16335 [00:00&lt;00:00, 160069.24it/s]
+</pre></div></div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+****************************************
+Galaxy(718, [53.10763,-27.86013]deg)
+****************************************
+PHOTOMETRY:
+----------
+Photometry_obs(NIRCam, 0.32 arcsec, EAZY_fsps_larson_zmax=4.0,EAZY_fsps_larson_zmax=6.0,EAZY_fsps_larson_zfree)
+----------
+SELECTION FLAGS:
+----------
+F444W_SNR&gt;5.0_0.32as: True
+2nd_reddest_band_SNR&gt;8.0_0.32as: False
+bluest_band_SNR&lt;2.0_0.32as: True
+F200W-F277W&lt;0.30_0.32as: False
+F356W-F444W&gt;0.50_0.32as: False
+F115W-F150W&lt;0.80_0.32as: False
+F200W-F277W&gt;0.70_0.32as: True
+F200W-F356W&gt;1.00_0.32as: False
+Kokorev+24_LRD_red1_0.32as: False
+F150W-F200W&lt;0.80_0.32as: False
+F277W-F356W&gt;0.60_0.32as: False
+F277W-F444W&gt;0.70_0.32as: False
+Kokorev+24_LRD_red2_0.32as: False
+Kokorev+24_LRD_0.32as: False
+----------
+****************************************
+
+</pre></div></div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area stderr docutils container">
+<div class="highlight"><pre>
+
+</pre></div></div>
+</div>
+<div class="nbinput nblast docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[20]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">galfind</span> <span class="kn">import</span> <span class="p">(</span>
+    <span class="n">Bluewards_Lya_Non_Detect_Selector</span><span class="p">,</span>
+    <span class="n">Redwards_Lya_Detect_Selector</span><span class="p">,</span>
+    <span class="n">Lya_Band_Selector</span><span class="p">,</span>
+    <span class="n">Chi_Sq_Lim_Selector</span><span class="p">,</span>
+    <span class="n">Chi_Sq_Diff_Selector</span><span class="p">,</span>
+    <span class="n">Robust_zPDF_Selector</span><span class="p">,</span>
+<span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<p>Let’s start by going over SNR-based selection either side of the Lyman break involving the <code class="docutils literal notranslate"><span class="pre">Bluewards_Lya_Non_Detect_Selector</span></code>, <code class="docutils literal notranslate"><span class="pre">Redwards_Lya_Detect_Selector</span></code>, and <code class="docutils literal notranslate"><span class="pre">Lya_Band_Selector</span></code>.</p>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[21]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">two_sig_non_detect_bluewards_Lya_selector</span> <span class="o">=</span> <span class="n">Bluewards_Lya_Non_Detect_Selector</span><span class="p">(</span><span class="n">SNR_lim</span> <span class="o">=</span> <span class="mf">2.0</span><span class="p">)</span>
+<span class="n">two_sig_non_detect_bluewards_Lya_selector</span><span class="p">(</span><span class="n">gal</span><span class="p">,</span> <span class="n">aper_diams</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">EAZY_fitter</span><span class="p">,</span> <span class="n">return_copy</span> <span class="o">=</span> <span class="kc">False</span><span class="p">)</span>
+
+<span class="n">two_sigma_detect_all_redwards_Lya_selector</span> <span class="o">=</span> <span class="n">Redwards_Lya_Detect_Selector</span><span class="p">(</span><span class="n">SNR_lims</span> <span class="o">=</span> <span class="mf">2.0</span><span class="p">,</span> <span class="n">widebands_only</span> <span class="o">=</span> <span class="kc">False</span><span class="p">)</span>
+<span class="n">two_sigma_detect_all_redwards_Lya_selector</span><span class="p">(</span><span class="n">gal</span><span class="p">,</span> <span class="n">aper_diams</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">EAZY_fitter</span><span class="p">,</span> <span class="n">return_copy</span> <span class="o">=</span> <span class="kc">False</span><span class="p">)</span>
+
+<span class="n">five_sigma_detect_two_redwards_Lya_selector</span> <span class="o">=</span> <span class="n">Redwards_Lya_Detect_Selector</span><span class="p">(</span><span class="n">SNR_lims</span> <span class="o">=</span> <span class="p">[</span><span class="mf">5.0</span><span class="p">,</span> <span class="mf">5.0</span><span class="p">],</span> <span class="n">widebands_only</span> <span class="o">=</span> <span class="kc">True</span><span class="p">)</span>
+<span class="n">five_sigma_detect_two_redwards_Lya_selector</span><span class="p">(</span><span class="n">gal</span><span class="p">,</span> <span class="n">aper_diams</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">EAZY_fitter</span><span class="p">,</span> <span class="n">return_copy</span> <span class="o">=</span> <span class="kc">False</span><span class="p">)</span>
+
+<span class="nb">print</span><span class="p">(</span><span class="n">gal</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+****************************************
+Galaxy(718, [53.10763,-27.86013]deg)
+****************************************
+PHOTOMETRY:
+----------
+Photometry_obs(NIRCam, 0.32 arcsec, EAZY_fsps_larson_zmax=4.0,EAZY_fsps_larson_zmax=6.0,EAZY_fsps_larson_zfree)
+----------
+SELECTION FLAGS:
+----------
+F444W_SNR&gt;5.0_0.32as: True
+2nd_reddest_band_SNR&gt;8.0_0.32as: False
+bluest_band_SNR&lt;2.0_0.32as: True
+F200W-F277W&lt;0.30_0.32as: False
+F356W-F444W&gt;0.50_0.32as: False
+F115W-F150W&lt;0.80_0.32as: False
+F200W-F277W&gt;0.70_0.32as: True
+F200W-F356W&gt;1.00_0.32as: False
+Kokorev+24_LRD_red1_0.32as: False
+F150W-F200W&lt;0.80_0.32as: False
+F277W-F356W&gt;0.60_0.32as: False
+F277W-F444W&gt;0.70_0.32as: False
+Kokorev+24_LRD_red2_0.32as: False
+Kokorev+24_LRD_0.32as: False
+bluewards_Lya_SNR&lt;2.0_EAZY_fsps_larson_zfree_0.32as: True
+ALL_redwards_Lya_SNR&gt;2.0_EAZY_fsps_larson_zfree_0.32as: True
+redwards_Lya_SNR&gt;5.0,5.0_widebands_EAZY_fsps_larson_zfree_0.32as: True
+----------
+****************************************
+
+</pre></div></div>
+</div>
+<p>The above are some of the selection criteria used by the EPOCHS paper series. The first is the requirement of 2 sigma non-detections in all bands bluer than the Lyman alpha break at 1216 Angstrom. The second is the requirement that ALL bands redwards of Lyman-alpha have 2 sigma detections. Finally, the first two widebands redwards of the Lyman-alpha break must be detected to at least 5 sigma significance. These SNRs are, of course, determined by the depth measurements performed by <code class="docutils literal notranslate"><span class="pre">Data</span></code>,
+which are explained in the <a class="reference internal" href="../data/running_depths.html"><span class="doc">Depths notebook</span></a>.</p>
+<p>As explained in Adams et al. 2025, the high-z JOF galaxy used in this example notebook is selected by these SNR criteria, which impose a strong Lya break strength.</p>
+<p>Let’s now have a little play around with the options available in the <code class="docutils literal notranslate"><span class="pre">Lya_Band_Selector</span></code> class and the corresponding selection_flags dictionary keys that are created.</p>
+<div class="nbinput nblast docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[22]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">lya_band_2sig_detect_selector</span> <span class="o">=</span> <span class="n">Lya_Band_Selector</span><span class="p">(</span><span class="n">SNR_lim</span> <span class="o">=</span> <span class="mf">2.0</span><span class="p">,</span> <span class="n">detect_or_non_detect</span> <span class="o">=</span> <span class="s2">&quot;detect&quot;</span><span class="p">,</span> <span class="n">widebands_only</span> <span class="o">=</span> <span class="kc">False</span><span class="p">)</span>
+<span class="n">lya_band_2sig_detect_selector</span><span class="p">(</span><span class="n">gal</span><span class="p">,</span> <span class="n">aper_diams</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">EAZY_fitter</span><span class="p">,</span> <span class="n">return_copy</span> <span class="o">=</span> <span class="kc">False</span><span class="p">)</span>
+
+<span class="n">lya_wideband_3sig_non_detect_selector</span> <span class="o">=</span> <span class="n">Lya_Band_Selector</span><span class="p">(</span><span class="n">SNR_lim</span> <span class="o">=</span> <span class="mf">3.0</span><span class="p">,</span> <span class="n">detect_or_non_detect</span> <span class="o">=</span> <span class="s2">&quot;non_detect&quot;</span><span class="p">,</span> <span class="n">widebands_only</span> <span class="o">=</span> <span class="kc">True</span><span class="p">)</span>
+<span class="n">lya_wideband_3sig_non_detect_selector</span><span class="p">(</span><span class="n">gal</span><span class="p">,</span> <span class="n">aper_diams</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">EAZY_fitter</span><span class="p">,</span> <span class="n">return_copy</span> <span class="o">=</span> <span class="kc">False</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<p>As well as various SNR criteria in bands determined by the position of the Lyman-alpha break at the SED fitting redshift, the EPOCHS criteria also imposes that the best-fit redshifts are robust, with low chi-square dominating the best-fit chi square of the low-redshift interloper runs, and a narrow redshift PDF peak surrounding the best-fit solution.</p>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[23]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">red_chi_sq_less_3_selector</span> <span class="o">=</span> <span class="n">Chi_Sq_Lim_Selector</span><span class="p">(</span><span class="n">chi_sq_lim</span> <span class="o">=</span> <span class="mf">3.0</span><span class="p">,</span> <span class="n">reduced</span> <span class="o">=</span> <span class="kc">True</span><span class="p">)</span>
+<span class="n">red_chi_sq_less_3_selector</span><span class="p">(</span><span class="n">gal</span><span class="p">,</span> <span class="n">aper_diams</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">EAZY_fitter</span><span class="p">,</span> <span class="n">return_copy</span> <span class="o">=</span> <span class="kc">False</span><span class="p">)</span>
+
+<span class="n">red_chi_sq_diff_less_4_dz_0_5_selector</span> <span class="o">=</span> <span class="n">Chi_Sq_Diff_Selector</span><span class="p">(</span><span class="n">chi_sq_diff</span> <span class="o">=</span> <span class="mf">4.0</span><span class="p">,</span> <span class="n">dz</span> <span class="o">=</span> <span class="mf">0.5</span><span class="p">)</span>
+<span class="n">red_chi_sq_diff_less_4_dz_0_5_selector</span><span class="p">(</span><span class="n">gal</span><span class="p">,</span> <span class="n">aper_diams</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">EAZY_fitter</span><span class="p">,</span> <span class="n">return_copy</span> <span class="o">=</span> <span class="kc">False</span><span class="p">)</span>
+
+<span class="n">robust_zpdf_gtr0_6_dz_0_1_z_selector</span> <span class="o">=</span> <span class="n">Robust_zPDF_Selector</span><span class="p">(</span><span class="n">integral_lim</span> <span class="o">=</span> <span class="mf">0.6</span><span class="p">,</span> <span class="n">dz_over_z</span> <span class="o">=</span> <span class="mf">0.1</span><span class="p">)</span>
+<span class="n">robust_zpdf_gtr0_6_dz_0_1_z_selector</span><span class="p">(</span><span class="n">gal</span><span class="p">,</span> <span class="n">aper_diams</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">EAZY_fitter</span><span class="p">,</span> <span class="n">return_copy</span> <span class="o">=</span> <span class="kc">False</span><span class="p">)</span>
+
+<span class="nb">print</span><span class="p">(</span><span class="n">gal</span><span class="o">.</span><span class="n">selection_flags</span><span class="o">.</span><span class="n">keys</span><span class="p">())</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+dict_keys([&#39;F444W_SNR&gt;5.0_0.32as&#39;, &#39;2nd_reddest_band_SNR&gt;8.0_0.32as&#39;, &#39;bluest_band_SNR&lt;2.0_0.32as&#39;, &#39;F200W-F277W&lt;0.30_0.32as&#39;, &#39;F356W-F444W&gt;0.50_0.32as&#39;, &#39;F115W-F150W&lt;0.80_0.32as&#39;, &#39;F200W-F277W&gt;0.70_0.32as&#39;, &#39;F200W-F356W&gt;1.00_0.32as&#39;, &#39;Kokorev+24_LRD_red1_0.32as&#39;, &#39;F150W-F200W&lt;0.80_0.32as&#39;, &#39;F277W-F356W&gt;0.60_0.32as&#39;, &#39;F277W-F444W&gt;0.70_0.32as&#39;, &#39;Kokorev+24_LRD_red2_0.32as&#39;, &#39;Kokorev+24_LRD_0.32as&#39;, &#39;bluewards_Lya_SNR&lt;2.0_EAZY_fsps_larson_zfree_0.32as&#39;, &#39;ALL_redwards_Lya_SNR&gt;2.0_EAZY_fsps_larson_zfree_0.32as&#39;, &#39;redwards_Lya_SNR&gt;5.0,5.0_widebands_EAZY_fsps_larson_zfree_0.32as&#39;, &#39;Lya_band_SNR&gt;2.0_EAZY_fsps_larson_zfree_0.32as&#39;, &#39;Lya_band_SNR&lt;3.0_widebands_EAZY_fsps_larson_zfree_0.32as&#39;, &#39;red_chi_sq&lt;3.0_EAZY_fsps_larson_zfree_0.32as&#39;, &#39;chi_sq_diff&gt;4.0,dz&gt;0.5_EAZY_fsps_larson_zfree_0.32as&#39;, &#39;zPDF&gt;60%,|dz|/z&lt;0.1_EAZY_fsps_larson_zfree_0.32as&#39;])
+</pre></div></div>
+</div>
+</section>
+<section id="Example-4:-EPOCHS-selection-in-galfind">
+<h2>Example 4: EPOCHS selection in galfind<a class="headerlink" href="#Example-4:-EPOCHS-selection-in-galfind" title="Link to this heading"></a></h2>
+<p>After learning all the individual selection criteria that can be implemented in the above examples, we will now put these all together and re-produce the EPOCHS criteria from the EPOCHS paper series. Here we must explicitly insert the catalogue filterset so that the unmasked instrument criteria can be appropriately applied to the single <code class="docutils literal notranslate"><span class="pre">Galaxy</span></code> object that selection is being run for.</p>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[24]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">galfind</span> <span class="kn">import</span> <span class="n">EPOCHS_Selector</span>
+
+<span class="n">epochs_selector</span> <span class="o">=</span> <span class="n">EPOCHS_Selector</span><span class="p">(</span><span class="n">allow_lowz</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span> <span class="n">unmasked_instruments</span> <span class="o">=</span> <span class="s2">&quot;NIRCam&quot;</span><span class="p">,</span> <span class="n">cat_filterset</span> <span class="o">=</span> <span class="n">cat</span><span class="o">.</span><span class="n">filterset</span><span class="p">)</span>
+<span class="n">epochs_selected_gal</span> <span class="o">=</span> <span class="n">epochs_selector</span><span class="p">(</span><span class="n">gal_copy</span><span class="p">,</span> <span class="n">aper_diams</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">EAZY_fitter</span><span class="p">,</span> <span class="n">return_copy</span> <span class="o">=</span> <span class="kc">True</span><span class="p">)</span>
+
+<span class="nb">print</span><span class="p">(</span><span class="n">epochs_selected_gal</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+****************************************
+Galaxy(718, [53.10763,-27.86013]deg)
+****************************************
+PHOTOMETRY:
+----------
+Photometry_obs(NIRCam, 0.32 arcsec, EAZY_fsps_larson_zmax=4.0,EAZY_fsps_larson_zmax=6.0,EAZY_fsps_larson_zfree)
+----------
+SELECTION FLAGS:
+----------
+F444W_SNR&gt;5.0_0.32as: True
+2nd_reddest_band_SNR&gt;8.0_0.32as: False
+bluest_band_SNR&lt;2.0_0.32as: True
+F200W-F277W&lt;0.30_0.32as: False
+F356W-F444W&gt;0.50_0.32as: False
+F115W-F150W&lt;0.80_0.32as: False
+F200W-F277W&gt;0.70_0.32as: True
+F200W-F356W&gt;1.00_0.32as: False
+Kokorev+24_LRD_red1_0.32as: False
+F150W-F200W&lt;0.80_0.32as: False
+F277W-F356W&gt;0.60_0.32as: False
+F277W-F444W&gt;0.70_0.32as: False
+Kokorev+24_LRD_red2_0.32as: False
+Kokorev+24_LRD_0.32as: False
+bluewards_Lya_SNR&lt;2.0_EAZY_fsps_larson_zfree_0.32as: True
+redwards_Lya_SNR&gt;5.0,5.0_widebands_EAZY_fsps_larson_zfree_0.32as: True
+ALL_redwards_Lya_SNR&gt;2.0_EAZY_fsps_larson_zfree_0.32as: True
+red_chi_sq&lt;3.0_EAZY_fsps_larson_zfree_0.32as: True
+chi_sq_diff&gt;4.0,dz&gt;0.5_EAZY_fsps_larson_zfree_0.32as: True
+zPDF&gt;60%,|dz|/z&lt;0.1_EAZY_fsps_larson_zfree_0.32as: True
+unmasked_F090W: True
+unmasked_F115W: True
+unmasked_F150W: True
+unmasked_F162M: True
+unmasked_F182M: True
+unmasked_F200W: True
+unmasked_F210M: True
+unmasked_F250M: True
+unmasked_F277W: True
+unmasked_F300M: True
+unmasked_F335M: True
+unmasked_F356W: True
+unmasked_F410M: True
+unmasked_F444W: True
+unmasked_NIRCam: True
+sex_Re_F277W&gt;45.0mas: True
+sex_Re_F356W&gt;45.0mas: True
+sex_Re_F444W&gt;45.0mas: True
+sex_Re_F277W+F356W+F444W&gt;45.0mas: True
+EPOCHS_NIRCam_EAZY_fsps_larson_zfree_0.32as: True
+----------
+****************************************
+
+</pre></div></div>
+</div>
+<p>In the above cell, we have run the default EPOCHS implementation. We can, however, tweak a couple of options to allow lower redshift galaxies into the sample (by not enforcing a 2 sigma non-detection in the bluest band for every galaxy), or mask in a different instrument other than NIRCam (i.e. mask in “ACS_WFC+NIRCam”, for example).</p>
+</section>
+<section id="Example-5:-Selecting-based-on-SED-fitting-properties">
+<h2>Example 5: Selecting based on SED fitting properties<a class="headerlink" href="#Example-5:-Selecting-based-on-SED-fitting-properties" title="Link to this heading"></a></h2>
+<p>Not yet implemented!</p>
+<p>We may wish to extract, for example, a stellar mass complete sample from the stellar masses of our galaxies as calculated by {insert your favourite SED fitting code here}.</p>
+</section>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="selection.html" class="btn btn-neutral float-left" title="Selection Methods" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="catalogue_selection.html" class="btn btn-neutral float-right" title="Catalogue selection methods" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2024, Duncan Austin.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

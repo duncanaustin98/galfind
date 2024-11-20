@@ -19,12 +19,13 @@ from tqdm import tqdm
 from typing import TYPE_CHECKING, NoReturn, Tuple, Union, List, Dict, Any, Optional, Type
 if TYPE_CHECKING:
     from . import Catalogue, Multiple_Filter
+try:
+    from typing import Self, Type  # python 3.11+
+except ImportError:
+    from typing_extensions import Self, Type  # python > 3.7 AND python < 3.11
 
 from . import SED_result, config, galfind_logger
 from . import useful_funcs_austind as funcs
-
-# %% SED_code class
-
 
 class SED_code(ABC):
     def __init__(
@@ -147,7 +148,7 @@ class SED_code(ABC):
         return output_str
 
     def __call__(
-        self,
+        self: Self,
         cat: Catalogue,
         aper_diam: u.Quantity,
         save_PDFs: bool = True,
@@ -189,10 +190,6 @@ class SED_code(ABC):
             self.make_fits_from_out(out_path)
             self.update_fits_cat(cat, fits_out_path)
 
-        # save PDF and SED paths in galfind catalogue object
-        #cat.save_phot_PDF_paths(PDF_paths)
-        #cat.save_phot_SED_paths(SED_paths)
-
         if timed:
             mid = time.time()
             print(f"Running SED fitting took {(mid - start):.1f}s")
@@ -213,10 +210,10 @@ class SED_code(ABC):
             self.gal_property_labels.items()} for i in range(len(aper_phot_IDs))]
         
         # TODO: ensure that all errors have an associated property - when instantiating the class
-        # assert all(
-        #     err_key in self.galaxy_property_dict.keys()
-        #     for err_key in self.galaxy_property_errs_dict.keys()
-        # )
+        assert all(
+            err_key in self.gal_property_labels.keys()
+            for err_key in self.gal_property_err_labels.keys()
+        )
         # adjust errors if required (i.e. if 16th and 84th percentiles rather than errors)
         cat_property_errs = {
             gal_property: list(
@@ -248,6 +245,10 @@ class SED_code(ABC):
                 f"Loading properties and associated errors took {(mid - start):.1f}s"
             )
 
+        # save PDF and SED paths in galfind catalogue object
+        #cat.save_phot_PDF_paths(PDF_paths)
+        #cat.save_phot_SED_paths(SED_paths)
+
         if load_PDFs:
             galfind_logger.info(
                 f"Loading {self.hdu_name} property PDFs into " + \
@@ -255,14 +256,13 @@ class SED_code(ABC):
             )
             # construct PDF objects, type = array of len(fits_cat), 
             # each element a dict of {gal_property: PDF object} excluding None PDFs
-            breakpoint()
             cat_property_PDFs_ = {
                 gal_property: self.extract_PDFs(
                     gal_property,
                     aper_phot_IDs,
-                    PDF_paths[gal_property],
+                    PDF_path,
                 )
-                for gal_property in PDF_paths.keys()
+                for gal_property, PDF_path in PDF_paths.items()
             }
             cat_property_PDFs_ = [
                 {
@@ -286,15 +286,8 @@ class SED_code(ABC):
                 f"Not loading {self.hdu_name} property PDFs into " + \
                 f"{cat.survey} {cat.version} {cat.filterset.instrument_name}"
             )
-            out_shape = np.array(cat_properties).shape
-            breakpoint()
             cat_property_PDFs = np.array(
-                list(
-                    itertools.repeat(
-                        list(itertools.repeat(None, out_shape[1])),
-                        out_shape[0],
-                    )
-                )
+                list(itertools.repeat(None, len(cat_properties)))
             )
 
         if load_SEDs:
@@ -312,20 +305,14 @@ class SED_code(ABC):
                 f"Not loading {self.hdu_name} SEDs into " + \
                 f"{cat.survey} {cat.version} {cat.filterset.instrument_name}"
             )
-            out_shape = np.array(cat_properties).shape
             cat_SEDs = np.array(
-                list(
-                    itertools.repeat(
-                        list(itertools.repeat(None, out_shape[1])),
-                        out_shape[0],
-                    )
-                )
+                list(itertools.repeat(None, len(cat_properties)))
             )
         
         cat_SED_results = [SED_result(self, phot, properties, property_errs, property_PDFs, SED) \
             for phot, properties, property_errs, property_PDFs, SED in \
             zip(phot_arr, cat_properties, cat_property_errs, cat_property_PDFs, cat_SEDs)]
-        
+
         if update:
             cat.update_SED_results(cat_SED_results, timed=timed)
 

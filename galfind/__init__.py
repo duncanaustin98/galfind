@@ -151,7 +151,7 @@ from .Bagpipes import Bagpipes
 #     if sed_code_name not in ["LePhare", "Bagpipes"]
 # }
 
-from .Galaxy import Galaxy, Multiple_Galaxy
+from .Galaxy import Galaxy
 
 from .Multiple_Catalogue import Multiple_Catalogue
 from .Multiple_Data import Multiple_Data
@@ -166,13 +166,27 @@ from .SED import (
 
 from .Selector import (
     Selector, 
-    Colour_Selector, 
-    Kokorev24_LRD_red1, 
-    Kokorev24_LRD_red2, 
-    Kokorev24_LRD, 
+    Multiple_Selector,
     Unmasked_Band_Selector, 
     Unmasked_Bands_Selector, 
-    Unmasked_Instrument_Selector
+    Unmasked_Instrument_Selector,
+    Min_Band_Selector,
+    Min_Unmasked_Band_Selector,
+    Sextractor_Band_Radius_Selector,
+    Sextractor_Bands_Radius_Selector,
+    Sextractor_Instrument_Radius_Selector,
+    Band_SNR_Selector,
+    Colour_Selector, 
+    Kokorev24_LRD_red1_Selector, 
+    Kokorev24_LRD_red2_Selector, 
+    Kokorev24_LRD_Selector,
+    Bluewards_Lya_Non_Detect_Selector,
+    Redwards_Lya_Detect_Selector,
+    Lya_Band_Selector,
+    Chi_Sq_Lim_Selector,
+    Chi_Sq_Diff_Selector,
+    Robust_zPDF_Selector,
+    EPOCHS_Selector,
 )
 
 from .Emission_lines import Emission_line, wav_lyman_alpha, line_diagnostics

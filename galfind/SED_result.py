@@ -6,12 +6,12 @@ Created on Mon Jul 17 16:50:27 2023
 @author: austind
 """
 
-# SED_result.py
+from __future__ import annotations
+
 import itertools
 import time
 from copy import deepcopy
 from typing import Union
-
 import astropy.units as u
 import numpy as np
 from astropy.table import Table
@@ -35,7 +35,7 @@ class SED_result:
     ):
         self.SED_code = SED_code
         self.properties = properties
-        #[setattr(self, key, value) for key, value in properties.items()]
+        [setattr(self, key, value) for key, value in properties.items()]
         self.property_errs = property_errs
         # load in peaks
         if property_PDFs is None:
@@ -50,6 +50,7 @@ class SED_result:
         self.SED = SED
         # should really be contained in self.SED
         self.phot_rest = Photometry_rest.from_phot(phot, self.z)
+        self.aper_diam = phot.aper_diam
 
     def __repr__(self):
         return f"SED_result({self.SED_code.label})"

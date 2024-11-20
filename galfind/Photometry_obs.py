@@ -2,16 +2,6 @@ from __future__ import annotations
 
 import inspect
 import time
-
-try:
-    from typing import Self, Type  # python 3.11+
-except ImportError:
-    from typing_extensions import Self, Type  # python > 3.7 AND python < 3.11
-from typing import Union, List, Dict, TYPE_CHECKING
-
-if TYPE_CHECKING:
-    from . import Multiple_Filter
-
 import astropy.units as u
 from astropy.utils.masked import Masked
 import matplotlib.patheffects as pe
@@ -19,11 +9,18 @@ import numpy as np
 from tqdm import tqdm
 from copy import deepcopy
 
+from typing import TYPE_CHECKING, Union, List, Dict, NoReturn
+if TYPE_CHECKING:
+    from . import Multiple_Filter, SED_result
+try:
+    from typing import Self, Type  # python 3.11+
+except ImportError:
+    from typing_extensions import Self, Type  # python > 3.7 AND python < 3.11
+
 from .Photometry import Photometry
 from .SED_result import Catalogue_SED_results, Galaxy_SED_results
 from . import useful_funcs_austind as funcs
 from . import galfind_logger
-
 
 class Photometry_obs(Photometry):
     def __init__(
@@ -33,7 +30,7 @@ class Photometry_obs(Photometry):
         flux_errs: Union[Masked, u.Quantity],
         depths: Union[Dict[str, float], List[float]],
         aper_diam: u.Quantity,
-        SED_results: dict = {},
+        SED_results: Dict[str, SED_result] = {},
         timed: bool = False,
     ):
         if timed:
@@ -44,6 +41,13 @@ class Photometry_obs(Photometry):
         if timed:
             end = time.time()
             print(end - start)
+
+    def __repr__(self):
+        sed_result_str = ','.join(list(self.SED_results.keys()))
+        if sed_result_str != "":
+            sed_result_str = f", {sed_result_str}"
+        return f"{self.__class__.__name__}({self.filterset.instrument_name}," + \
+            f" {self.aper_diam}{sed_result_str})"
 
     def __str__(self):
         output_str = funcs.line_sep
@@ -57,79 +61,79 @@ class Photometry_obs(Photometry):
         output_str += funcs.line_sep
         return output_str
 
-    def __getattr__(
-        self, property_name: str, origin: Union[str, dict] = "phot_obs"
-    ) -> Union[None, u.Quantity, u.Magnitude, u.Dex]:
-        assert type(origin) in [str, dict], galfind_logger.critical(
-            f"{origin=} with {type(origin)=} not in [str, dict]!"
-        )
-        if (
-            "phot" in origin
-        ):  # should have origin strings associated with Photometry.__getattr__ in list here!
-            if property_name in self.__dict__.keys():
-                return self.__getattribute__(property_name)
-            # elif (
-            #     "aper_corr" in property_name
-            #     and property_name.split("_")[-1] in self.instrument.band_names
-            # ):
-            #     # return band aperture corrections
-            #     return self.aper_corrs[property_name.split("_")[-1]]
-            else:
-                return super().__getattr__(
-                    property_name,
-                    "phot"
-                    if origin == "phot_obs"
-                    else origin.replace("phot_", ""),
-                )
-        else:
-            # determine property type from name
-            property_type = property_name.split("_")[-1]
-            if any(
-                string == property_type.lower()
-                for string in ["val", "errs", "l1", "u1", "pdf"]
-            ):
-                property_name = property_name.replace(f"_{property_type}", "")
-                property_type = property_type.lower()
-            else:
-                property_type = "_".join(property_name.split("_")[-2:])
-                if property_type.lower() != "recently_updated":
-                    # no property type, defaulting to value
-                    galfind_logger.warning(
-                        f"No property_type given in suffix of {property_name=} for Photometry_rest.__getattr__. Defaulting to value"
-                    )
-                    property_name = property_name.replace(
-                        f"_{property_type}", ""
-                    )
-                    property_type = "val"
-                else:
-                    property_name = property_name.replace(
-                        f"_{property_type}", ""
-                    )
-                    property_type = "recently_updated"
-            # determine relevant SED_result to use from origin keyword
-            if type(origin) in [str]:
-                if origin.endswith("_REST_PROPERTY"):
-                    SED_results_key = origin[:-14]
-                    origin = "phot_rest"
-                elif origin.endswith("_SED"):
-                    SED_results_key = origin[:-4]
-                    origin = "SED"
-                else:
-                    SED_results_key = origin
-                    origin = "SED_result"
-            else:  # type(origin) in [dict]:
-                SED_results_key = origin["code"].label_from_SED_fit_params(
-                    origin
-                )
-                origin = "SED_result"
-            assert (
-                SED_results_key in self.SED_results.keys()
-            ), galfind_logger.critical(
-                f"{SED_results_key=} not in {self.SED_results.keys()=}!"
-            )
-            return self.SED_results[SED_results_key].__getattr__(
-                property_name, origin, property_type
-            )
+    # def __getattr__(
+    #     self, property_name: str, origin: Union[str, dict] = "phot_obs"
+    # ) -> Union[None, u.Quantity, u.Magnitude, u.Dex]:
+    #     assert type(origin) in [str, dict], galfind_logger.critical(
+    #         f"{origin=} with {type(origin)=} not in [str, dict]!"
+    #     )
+    #     if (
+    #         "phot" in origin
+    #     ):  # should have origin strings associated with Photometry.__getattr__ in list here!
+    #         if property_name in self.__dict__.keys():
+    #             return self.__getattribute__(property_name)
+    #         # elif (
+    #         #     "aper_corr" in property_name
+    #         #     and property_name.split("_")[-1] in self.instrument.band_names
+    #         # ):
+    #         #     # return band aperture corrections
+    #         #     return self.aper_corrs[property_name.split("_")[-1]]
+    #         else:
+    #             return super().__getattr__(
+    #                 property_name,
+    #                 "phot"
+    #                 if origin == "phot_obs"
+    #                 else origin.replace("phot_", ""),
+    #             )
+    #     else:
+    #         # determine property type from name
+    #         property_type = property_name.split("_")[-1]
+    #         if any(
+    #             string == property_type.lower()
+    #             for string in ["val", "errs", "l1", "u1", "pdf"]
+    #         ):
+    #             property_name = property_name.replace(f"_{property_type}", "")
+    #             property_type = property_type.lower()
+    #         else:
+    #             property_type = "_".join(property_name.split("_")[-2:])
+    #             if property_type.lower() != "recently_updated":
+    #                 # no property type, defaulting to value
+    #                 galfind_logger.warning(
+    #                     f"No property_type given in suffix of {property_name=} for Photometry_rest.__getattr__. Defaulting to value"
+    #                 )
+    #                 property_name = property_name.replace(
+    #                     f"_{property_type}", ""
+    #                 )
+    #                 property_type = "val"
+    #             else:
+    #                 property_name = property_name.replace(
+    #                     f"_{property_type}", ""
+    #                 )
+    #                 property_type = "recently_updated"
+    #         # determine relevant SED_result to use from origin keyword
+    #         if type(origin) in [str]:
+    #             if origin.endswith("_REST_PROPERTY"):
+    #                 SED_results_key = origin[:-14]
+    #                 origin = "phot_rest"
+    #             elif origin.endswith("_SED"):
+    #                 SED_results_key = origin[:-4]
+    #                 origin = "SED"
+    #             else:
+    #                 SED_results_key = origin
+    #                 origin = "SED_result"
+    #         else:  # type(origin) in [dict]:
+    #             SED_results_key = origin["code"].label_from_SED_fit_params(
+    #                 origin
+    #             )
+    #             origin = "SED_result"
+    #         assert (
+    #             SED_results_key in self.SED_results.keys()
+    #         ), galfind_logger.critical(
+    #             f"{SED_results_key=} not in {self.SED_results.keys()=}!"
+    #         )
+    #         return self.SED_results[SED_results_key].__getattr__(
+    #             property_name, origin, property_type
+    #         )
 
     def __copy__(self):
         cls = self.__class__
@@ -160,7 +164,6 @@ class Photometry_obs(Photometry):
 
     @property
     def SNR(self):
-        
         return [
             (flux * 10 ** (aper_corr / -2.5)) * 5 / depth
             if flux > 0.0
@@ -174,8 +177,8 @@ class Photometry_obs(Photometry):
 
     @property
     def aper_corrs(self):
-        return [band_data.filt.instrument.aper_corrs[band_data.filt_name] \
-            [self.aper_diam] for band_data in self.filterset]
+        return [filt.instrument.aper_corrs[filt.band_name] \
+            [self.aper_diam] for filt in self.filterset]
 
     @classmethod  # not a gal object here, more like a catalogue row
     def from_fits_cat(
@@ -224,18 +227,15 @@ class Photometry_obs(Photometry):
             SED_results,
         )
 
-    def update(self, gal_SED_results):
+    def update_SED_result(
+        self: Self, 
+        gal_SED_result: SED_result
+    ) -> NoReturn:
+        gal_SED_result_dict = {gal_SED_result.SED_code.label: gal_SED_result}
         if hasattr(self, "SED_results"):
-            self.SED_results = {**self.SED_results, **gal_SED_results}
+            self.SED_results = {**self.SED_results, **gal_SED_result_dict}
         else:
-            self.SED_results = gal_SED_results
-
-    def update_mask(self, mask, update_phot_rest: bool = False):
-        assert len(self.flux) == len(mask)
-        assert len(self.flux_errs) == len(mask)
-        self.flux.mask = mask
-        self.flux_errs.mask = mask
-        return self
+            self.SED_results = gal_SED_result_dict
 
     def get_SED_fit_params_arr(self, code) -> list:
         return [

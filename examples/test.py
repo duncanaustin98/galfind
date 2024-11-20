@@ -1,6 +1,6 @@
 import astropy.units as u
 from galfind import Catalogue, Catalogue_Creator, Data, EAZY, LePhare
-from galfind import Colour_Selector, Kokorev24_LRD_red1, Kokorev24_LRD_red2, Kokorev24_LRD, Unmasked_Instrument_Selector
+from galfind import Colour_Selector, Unmasked_Instrument_Selector, EPOCHS_Selector
 from galfind.Data import morgan_version_to_dir
 # Load in a JOF data object
 survey = "JOF"
@@ -21,9 +21,18 @@ def test_selection():
         forced_phot_band = forced_phot_band,
         min_flux_pc_err = min_flux_pc_err
     )
-    #print(JOF_cat)
-    selector = Unmasked_Instrument_Selector("NIRCam")
-    selector(JOF_cat, aper_diams[0])
+    JOF_cat.load_sextractor_Re()
+    SED_fit_params_arr = [{"templates": "fsps_larson", "lowz_zmax": 4.0}, {"templates": "fsps_larson", "lowz_zmax": 6.0}, {"templates": "fsps_larson", "lowz_zmax": None}]
+    for SED_fit_params in SED_fit_params_arr:
+        EAZY_fitter = EAZY(SED_fit_params)
+        EAZY_fitter(JOF_cat, aper_diams[0], load_PDFs = True, load_SEDs = True, update = True)
+
+    from galfind import EPOCHS_Selector
+    epochs_selector = EPOCHS_Selector(allow_lowz = False, unmasked_instruments = "NIRCam")
+    epochs_selected_cat = epochs_selector(JOF_cat, aper_diams[0], EAZY_fitter, return_copy = True)
+    print(epochs_selected_cat)
+    breakpoint()
+    
     # Kokorev_red1_selector = Kokorev24_LRD_red1()
     # Kokorev_red2_selector = Kokorev24_LRD_red2()
     # Kokorev_LRD_selector = Kokorev24_LRD()
@@ -46,20 +55,24 @@ def main():
     cat_path = JOF_data.phot_cat_path
     filterset = JOF_data.filterset
     # [0.32] * u.arcsec hardcoded for now
-    cat_creator = Catalogue_Creator(survey, version, cat_path, filterset, aper_diams, crops = {"RA": []})
-    cat = cat_creator(cropped = True)
+    cat_creator = Catalogue_Creator(survey, version, cat_path, filterset, aper_diams)
+    cat = cat_creator(cropped = False)
 
-    LePhare_SED_fit_params = {"GAL_TEMPLATES": "BC03_Chabrier2003_Z(m42_m62)"}
-    LePhare_fitter = LePhare(LePhare_SED_fit_params)
-    LePhare_fitter.compile(filterset)
+    # LePhare_SED_fit_params = {"GAL_TEMPLATES": "BC03_Chabrier2003_Z(m42_m62)"}
+    # LePhare_fitter = LePhare(LePhare_SED_fit_params)
+    # LePhare_fitter.compile(filterset)
 
-    # SED_fit_params_arr = [{"templates": "fsps_larson", "lowz_zmax": 4.0}, {"templates": "fsps_larson", "lowz_zmax": 6.0}, {"templates": "fsps_larson", "lowz_zmax": None}]
-    # for SED_fit_params in SED_fit_params_arr:
-    #     EAZY_fitter = EAZY(SED_fit_params)
-    #     EAZY_SED_results_arr = EAZY_fitter(cat, aper_diams[0], load_PDFs = False, load_SEDs = False)
+    #SED_fit_params_arr = [{"templates": "fsps_larson", "lowz_zmax": None}]
+    SED_fit_params_arr = [{"templates": "fsps_larson", "lowz_zmax": 4.0}, {"templates": "fsps_larson", "lowz_zmax": 6.0}, {"templates": "fsps_larson", "lowz_zmax": None}]
+    for SED_fit_params in SED_fit_params_arr:
+        EAZY_fitter = EAZY(SED_fit_params)
+        EAZY_fitter(cat, aper_diams[0], load_PDFs = True, load_SEDs = True, update = True)
+    EPOCHS_Selector()(cat, aper_diams[0], EAZY_fitter)
 
 if __name__ == "__main__":
+    #main()
     test_selection()
+
     # LePhare_SED_fit_params = {"GAL_TEMPLATES": "BC03_Chabrier2003_Z(m42_m62)"}
     # EAZY_SED_fit_params = {"templates": "fsps_larson", "lowz_zmax": None}
     # LePhare_fitter = LePhare(LePhare_SED_fit_params)

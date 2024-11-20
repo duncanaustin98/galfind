@@ -2991,7 +2991,9 @@ class Data:
                 f"Appended mask columns to {self.phot_cat_path}"
             )
             # TODO: update README
-            galfind_logger.debug(f"Updating README for mask not implemented!")
+            galfind_logger.debug(
+                f"Updating README for mask not implemented!"
+            )
 
     # @staticmethod
     # def mosaic_images(

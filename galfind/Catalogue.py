@@ -154,7 +154,7 @@ def load_galfind_depths(
     depth_labels: Dict[u.Quantity, List[str]],
     **kwargs
 ) -> Dict[u.Quantity, np.ndarray]:
-    return {aper_diam: depth for aper_diam, depth in \
+    return {aper_diam: depth * u.ABmag for aper_diam, depth in \
         phot_property_from_galfind_tab(cat, depth_labels, **kwargs).items()}
 
 # def load_cols_Table(
@@ -212,7 +212,9 @@ def galfind_depth_labels(
     aper_diams: u.Quantity, 
     **kwargs
 ) -> Dict[str, str]:
-    return {aper_diam * aper_diams.unit: [f"loc_depth_{filt_name}" for filt_name in filterset.band_names] for aper_diam in aper_diams.value}
+    return {aper_diam * aper_diams.unit: [f"loc_depth_{filt_name}" \
+        for filt_name in filterset.band_names] \
+        for aper_diam in aper_diams.value}
 
 def load_bool_Table(
     tab: Table,
@@ -340,7 +342,7 @@ class Catalogue_Creator:
         depths = self.load_depths(cropped)
         selection_flags = self.load_selection_flags(cropped)
         filterset_arr = self.load_gal_filtersets(cropped)
-        SED_results = None
+        SED_results = {}
         phot_obs_arr = [{aper_diam: Photometry_obs(filterset_arr[i], \
             phot[aper_diam][i], phot_err[aper_diam][i], depths[aper_diam][i], \
             aper_diam, SED_results=SED_results) for aper_diam in self.aper_diams} \
@@ -723,24 +725,17 @@ class Catalogue(Catalogue_Base):
         assert (
             len(cat_SED_results) == len(self)
         )  # if this is not the case then instead should cross match IDs between self and gal_SED_result
-        galfind_logger.info("Updating SED results in galfind catalogue object")
-        # deepcopying here?
-        if timed:
-            [
-                gal.update(gal_SED_result)
-                for gal, gal_SED_result in tqdm(
-                    zip(self, cat_SED_results),
-                    desc="Updating galaxy SED results",
-                    total=len(self),
-                )
-            ]
-        else:
-            [
-                gal.update(gal_SED_result)
-                for gal, gal_SED_result in zip(self, cat_SED_results)
-            ]
-
-    # Spectroscopy
+        galfind_logger.info(
+            "Updating SED results in galfind catalogue object"
+        )
+        [
+            gal.update_SED_results(gal_SED_result)
+            for gal, gal_SED_result in tqdm(
+                zip(self, cat_SED_results),
+                desc="Updating galaxy SED results",
+                total=len(self),
+            )
+        ]
 
     def match_available_spectra(self):
         # make catalogue consisting of spectra downloaded from the DJA
@@ -893,6 +888,17 @@ class Catalogue(Catalogue_Base):
     # def calc_new_property(self, func: Callable[..., float], arg_names: Union[list, np.array]):
     #     pass
 
+    def load_sextractor_Re(self):
+        if hasattr(self, "data"):
+            # load Re from SExtractor
+            pix_to_as_dict = {band_data.filt_name: band_data.pix_scale for band_data in self.data}
+            self.load_band_properties_from_cat("FLUX_RADIUS", "sex_Re", multiply_factor = pix_to_as_dict)
+        else:
+            err_message = "Loading SExtractor Re from catalogue " + \
+                f"only works when hasattr({repr(self)}, data)!"
+            galfind_logger.critical(err_message)
+            raise Exception(err_message)
+
     def load_band_properties_from_cat(
         self,
         cat_colname: str,
@@ -909,28 +915,29 @@ class Catalogue(Catalogue_Base):
             # load the same property from every available band
             # open catalogue with astropy
             fits_cat = self.open_cat(cropped=True)
-            if type(multiply_factor) == type(None):
+            if multiply_factor is None:
                 multiply_factor = {
-                    band: 1.0 * u.dimensionless_unscaled
-                    for band in self.instrument.band_names
-                    if f"{cat_colname}_{band}" in fits_cat.colnames
+                    filt.band_name: 1.0 * u.dimensionless_unscaled
+                    for filt in self.filterset
+                    if f"{cat_colname}_{filt.band_name}" in fits_cat.colnames
                 }
-            elif type(multiply_factor) != dict:
+            elif not isinstance(multiply_factor, dict):
                 multiply_factor = {
-                    band: multiply_factor
-                    for band in self.instrument.band_names
-                    if f"{cat_colname}_{band}" in fits_cat.colnames
+                    filt.band_name: multiply_factor
+                    for filt in self.filterset
+                    if f"{cat_colname}_{filt.band_name}" in fits_cat.colnames
                 }
             # load in speed can be improved here!
             cat_band_properties = {
-                band: np.array(fits_cat[f"{cat_colname}_{band}"])
-                * multiply_factor[band]
-                for band in self.instrument.band_names
-                if f"{cat_colname}_{band}" in fits_cat.colnames
+                filt.band_name: np.array(fits_cat[f"{cat_colname}_{filt.band_name}"])
+                * multiply_factor[filt.band_name]
+                for filt in self.filterset
+                if f"{cat_colname}_{filt.band_name}" in fits_cat.colnames
             }
             if len(cat_band_properties) == 0:
                 galfind_logger.info(
-                    f"Could not load {cat_colname=} from {self.cat_path}, as no '{cat_colname}_band' exists for band in {self.instrument.band_names=}!"
+                    f"Could not load {cat_colname=} from {self.cat_path}," + \
+                    f" as no '{cat_colname}_band' exists for band in {self.instrument.band_names=}!"
                 )
             else:
                 cat_band_properties = [
@@ -948,6 +955,7 @@ class Catalogue(Catalogue_Base):
                         )
                     ]
                 else:  # dest == "phot_obs"
+                    raise NotImplementedError
                     [
                         gal.phot.load_property(gal_properties, save_name)
                         for gal, gal_properties in zip(
@@ -955,7 +963,8 @@ class Catalogue(Catalogue_Base):
                         )
                     ]
                 galfind_logger.info(
-                    f"Loaded {cat_colname} from {self.cat_path} saved as {save_name} for bands = {cat_band_properties[0].keys()}"
+                    f"Loaded {cat_colname} from {self.cat_path} " + \
+                    f"saved as {save_name} for {cat_band_properties[0].keys()=}"
                 )
 
     def load_property_from_cat(

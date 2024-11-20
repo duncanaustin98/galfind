@@ -102,54 +102,66 @@ class Galaxy:
         self.selection_flags = selection_flags
         #{aper_diam: {} for aper_diam in self.aper_phot.keys()}
 
-    @classmethod
-    def from_pipeline(
-        cls,
-    ):
-        pass
+    # @classmethod
+    # def from_pipeline(
+    #     cls,
+    # ):
+    #     pass
 
-    @classmethod
-    def from_fits_cat(
-        cls,
-        fits_cat_row,
-        instrument,
-        cat_creator,
-        codes,
-        lowz_zmax,
-        templates_arr,
-    ):
-        # load multiple photometries from the fits catalogue
-        phot = Photometry_obs.from_fits_cat(
-            fits_cat_row,
-            instrument,
-            cat_creator,
-            cat_creator.aper_diam,
-            cat_creator.min_flux_pc_err,
-            codes,
-            lowz_zmax,
-            templates_arr,
-        )  # \
-        # for min_flux_pc_err in cat_creator.min_flux_pc_err for aper_diam in cat_creator.aper_diam]
-        # load the ID and Sky Coordinate from the source catalogue
-        ID = int(fits_cat_row[cat_creator.ID_label])
-        sky_coord = SkyCoord(
-            fits_cat_row[cat_creator.ra_dec_labels["RA"]] * u.deg,
-            fits_cat_row[cat_creator.ra_dec_labels["DEC"]] * u.deg,
-            frame="icrs",
-        )
-        # mask flags should come from cat_creator
-        mask_flags = {}  # {f"unmasked_{band}": cat_creator.load_flag(fits_cat_row, f"unmasked_{band}") for band in instrument.band_names}
-        return cls(sky_coord, ID, phot, mask_flags)
+    # @classmethod
+    # def from_fits_cat(
+    #     cls,
+    #     fits_cat_row,
+    #     instrument,
+    #     cat_creator,
+    #     codes,
+    #     lowz_zmax,
+    #     templates_arr,
+    # ):
+    #     # load multiple photometries from the fits catalogue
+    #     phot = Photometry_obs.from_fits_cat(
+    #         fits_cat_row,
+    #         instrument,
+    #         cat_creator,
+    #         cat_creator.aper_diam,
+    #         cat_creator.min_flux_pc_err,
+    #         codes,
+    #         lowz_zmax,
+    #         templates_arr,
+    #     )  # \
+    #     # for min_flux_pc_err in cat_creator.min_flux_pc_err for aper_diam in cat_creator.aper_diam]
+    #     # load the ID and Sky Coordinate from the source catalogue
+    #     ID = int(fits_cat_row[cat_creator.ID_label])
+    #     sky_coord = SkyCoord(
+    #         fits_cat_row[cat_creator.ra_dec_labels["RA"]] * u.deg,
+    #         fits_cat_row[cat_creator.ra_dec_labels["DEC"]] * u.deg,
+    #         frame="icrs",
+    #     )
+    #     # mask flags should come from cat_creator
+    #     mask_flags = {}  # {f"unmasked_{band}": cat_creator.load_flag(fits_cat_row, f"unmasked_{band}") for band in instrument.band_names}
+    #     return cls(sky_coord, ID, phot, mask_flags)
+
+    def __repr__(self):
+        return f"{self.__class__.__name__}({self.ID}, " + \
+            f"[{self.RA.to(u.deg).value:.5f}," + \
+            f"{self.DEC.to(u.deg).value:.5f}]deg)"
 
     def __str__(self):
-        line_sep = "*" * 40 + "\n"
-        band_sep = "-" * 10 + "\n"
-        output_str = line_sep
-        output_str += f"GALAXY {self.ID}: (RA, DEC) = ({np.round(self.sky_coord.ra, 5)}, {np.round(self.sky_coord.dec, 5)})\n"
-        output_str += band_sep
-        output_str += f"SELECTION FLAGS: {self.selection_flags}\n"
-        output_str += str(self.phot)
-        output_str += line_sep
+        output_str = funcs.line_sep
+        output_str += f"{repr(self)}\n"
+        output_str += funcs.line_sep
+        output_str += "PHOTOMETRY:\n"
+        output_str += funcs.band_sep
+        for phot_obs in self.aper_phot.values():
+            output_str += f"{repr(phot_obs)}\n"
+        output_str += funcs.band_sep
+        output_str += f"SELECTION FLAGS:\n"
+        output_str += funcs.band_sep
+        for i, (select_name, is_selected) in enumerate(self.selection_flags.items()):
+            output_str += f"{select_name}: {is_selected}\n"
+            if i == len(self.selection_flags) - 1:
+                output_str += funcs.band_sep
+        output_str += funcs.line_sep
         return output_str
 
     # def __setattr__(self, name, value, obj = "gal"):
@@ -199,17 +211,23 @@ class Galaxy:
                 breakpoint()
         return result
 
-    def update(
-        self, gal_SED_results, index: int = 0
-    ):  # for now just update the single photometry
-        self.phot.update(gal_SED_results)
-
-    def update_mask(self, mask, update_phot_rest=False):
-        self.phot.update_mask(mask, update_phot_rest=update_phot_rest)
-        return self
-
-    # def update_mask_band(self, band, bool_value):
-    #     self.mask_flags[band] = bool_value
+    def update_SED_results(
+        self: Self,
+        gal_SED_results: Union[SED_result, List[SED_result]]
+    ) -> NoReturn:
+        if not isinstance(gal_SED_results, list):
+            gal_SED_results = [gal_SED_results]
+        missing_aper_diams = [gal_SED_result.aper_diam \
+            for gal_SED_result in gal_SED_results \
+            if gal_SED_result.aper_diam not in self.aper_phot.keys()]
+        assert len(missing_aper_diams) == 0, \
+            galfind_logger.critical(
+                f"Galaxy {self.ID=} missing " + \
+                f"{missing_aper_diams} aperture photometry."
+            )
+        [self.aper_phot[gal_SED_result.aper_diam]. \
+            update_SED_result(gal_SED_result) \
+            for gal_SED_result in gal_SED_results]
 
     def load_property(
         self, gal_property: Union[dict, u.Quantity], save_name: str
@@ -1072,10 +1090,6 @@ class Galaxy:
 #                     sky_coords, IDs, phots, mask_flags_arr, selection_flags_arr
 #                 )
 #             ]
-
-#     def __repr__(self):
-#         # string representation of what is stored in this class
-#         return str(self.__dict__)
 
 #     def __len__(self):
 #         return len(self.gals)

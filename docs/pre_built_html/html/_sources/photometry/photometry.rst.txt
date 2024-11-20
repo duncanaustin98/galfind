@@ -18,10 +18,13 @@ The ``Photometry`` class is an abstract base class which is parent to 3 child cl
 
 In many circumstances it is advantageous to instantiate many ``Photometry`` objects at once, for example when reading in a large photometric catalogue. This can be done using the ``Multiple_Photometry`` object. Like ``Photometry``, ``Multiple_Photometry`` is also an abstract base class which is parent to ``Multiple_Mock_Photometry`` and ``Multiple_Photometry_obs``, which contain class methods to load the data in bulk. We do not require a ``Multiple_Photometry_rest`` class since it is not common to store rest frame fluxes in photometric catalogues.
 
+.. note::
+
+   Photometry documentation not complete!
+
 .. toctree::
     :maxdepth: 1
 
     basic_photometry
     photometry_obs
     photometry_rest
-    multiple_photometry

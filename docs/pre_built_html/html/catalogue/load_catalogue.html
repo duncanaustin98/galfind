@@ -1,0 +1,375 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Making a catalogue object &mdash; galfind 0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=80d5e7a1" />
+      <link rel="stylesheet" type="text/css" href="../_static/css/theme.css?v=e59714d7" />
+      <link rel="stylesheet" type="text/css" href="../_static/copybutton.css?v=76b2166b" />
+      <link rel="stylesheet" type="text/css" href="../_static/nbsphinx-code-cells.css?v=2aa19091" />
+
+  
+      <script src="../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../_static/documentation_options.js?v=2709fde1"></script>
+      <script src="../_static/doctools.js?v=9a2dae69"></script>
+      <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
+      <script src="../_static/clipboard.min.js?v=a7894cd8"></script>
+      <script src="../_static/copybutton.js?v=f281be69"></script>
+      <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+      <script>window.MathJax = {"tex": {"inlineMath": [["$", "$"], ["\\(", "\\)"]], "processEscapes": true}, "options": {"ignoreHtmlClass": "tex2jax_ignore|mathjax_ignore|document", "processHtmlClass": "tex2jax_process|mathjax_process|math|output_area"}}</script>
+      <script defer="defer" src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+    <script src="../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+    <link rel="next" title="Cutouts" href="cutouts.html" />
+    <link rel="prev" title="Catalogue Object" href="catalogue.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../index.html" class="icon icon-home">
+            galfind
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="../getting_started/getting_started.html">Welcome to Galfind!</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../instrument/instrument.html">Photometric Instruments</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../data/data.html">Galfind Data Object</a></li>
+<li class="toctree-l1 current"><a class="reference internal" href="catalogue.html">Catalogue Object</a><ul class="current">
+<li class="toctree-l2 current"><a class="current reference internal" href="#">Making a catalogue object</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#Example-1:-Loading-in-a-galfind-catalogue-from-a-Galfind-Data-object">Example 1: Loading in a galfind catalogue from a Galfind Data object</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#Example-2:-Loading-a-Galfind-Catalogue-object-explicitly">Example 2: Loading a Galfind Catalogue object explicitly</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="cutouts.html">Cutouts</a></li>
+<li class="toctree-l2"><a class="reference internal" href="plotting.html">Plotting scaling relations</a></li>
+<li class="toctree-l2"><a class="reference internal" href="number_density_function.html">Creating UV LFs and mass functions</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="../galaxy/galaxy.html">Galaxy Objects</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../photometry/photometry.html">Handling Source Photometry</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../sed_fitting/sed_fitting.html">SED Fitting</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../selection/selection.html">Selection Methods</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../index.html">galfind</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="catalogue.html">Catalogue Object</a></li>
+      <li class="breadcrumb-item active">Making a catalogue object</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="../_sources/catalogue/load_catalogue.ipynb.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="Making-a-catalogue-object">
+<h1>Making a catalogue object<a class="headerlink" href="#Making-a-catalogue-object" title="Link to this heading"></a></h1>
+<p>In order to construct a catalogue, we first require a <code class="docutils literal notranslate"><span class="pre">Catalogue_Creator</span></code> object which the user needs to create in order to appropriately load in the required data from a .fits catalogue. To load in a catalogue produced by galfind, we make use of the <code class="docutils literal notranslate"><span class="pre">Galfind_Catalogue_Creator</span></code> class in example 1. In example 2, we will scramble up our previously created JOF catalogue, changing the flux and flux error names, before making a custom <code class="docutils literal notranslate"><span class="pre">Catalogue_Creator</span></code> object which stores all the same
+information as in example 1.</p>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[ ]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="c1"># imports</span>
+<span class="kn">import</span> <span class="nn">astropy.units</span> <span class="k">as</span> <span class="nn">u</span>
+<span class="kn">from</span> <span class="nn">galfind</span> <span class="kn">import</span> <span class="n">Data</span><span class="p">,</span> <span class="n">Multiple_Filter</span><span class="p">,</span> <span class="n">Catalogue_Creator</span><span class="p">,</span> <span class="n">Catalogue</span>
+<span class="kn">from</span> <span class="nn">galfind.Data</span> <span class="kn">import</span> <span class="n">morgan_version_to_dir</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+Reading GALFIND config file from: /nvme/scratch/work/austind/GALFIND/galfind/../configs/galfind_config.ini
+</pre></div></div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area stderr docutils container">
+<div class="highlight"><pre>
+WARNING:galfind:Aperture corrections for VISTA not found in /nvme/scratch/work/austind/GALFIND/galfind/Aperture_corrections/VISTA_aper_corr.txt
+WARNING:galfind:Aperture corrections for VISTA not found in /nvme/scratch/work/austind/GALFIND/galfind/Aperture_corrections/VISTA_aper_corr.txt
+</pre></div></div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+Failed to `import dust_attenuation`
+Install from the repo with $ pip install git+https://github.com/karllark/dust_attenuation.git
+</pre></div></div>
+</div>
+<section id="Example-1:-Loading-in-a-galfind-catalogue-from-a-Galfind-Data-object">
+<h2>Example 1: Loading in a galfind catalogue from a Galfind Data object<a class="headerlink" href="#Example-1:-Loading-in-a-galfind-catalogue-from-a-Galfind-Data-object" title="Link to this heading"></a></h2>
+<p>In this example, we will first produce a <code class="docutils literal notranslate"><span class="pre">Galfind_Catalogue_Creator</span></code> class before loading in the information stored in the JOF catalogue produced by the <code class="docutils literal notranslate"><span class="pre">Data</span></code> class in the <a class="reference internal" href="../data/data.html"><span class="doc">Data object notebooks</span></a>. To start with, we shall load a JOF <code class="docutils literal notranslate"><span class="pre">Data</span></code> object as in previous notebooks.</p>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[ ]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">survey</span> <span class="o">=</span> <span class="s2">&quot;JOF&quot;</span>
+<span class="n">version</span> <span class="o">=</span> <span class="s2">&quot;v11&quot;</span>
+<span class="n">instrument_names</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;NIRCam&quot;</span><span class="p">]</span>
+<span class="n">aper_diams</span> <span class="o">=</span> <span class="p">[</span><span class="mf">0.32</span><span class="p">]</span> <span class="o">*</span> <span class="n">u</span><span class="o">.</span><span class="n">arcsec</span>
+<span class="n">forced_phot_band</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;F277W&quot;</span><span class="p">,</span> <span class="s2">&quot;F356W&quot;</span><span class="p">,</span> <span class="s2">&quot;F444W&quot;</span><span class="p">]</span>
+<span class="n">min_flux_pc_err</span> <span class="o">=</span> <span class="mf">10.</span>
+
+<span class="n">JOF_data</span> <span class="o">=</span> <span class="n">Data</span><span class="o">.</span><span class="n">pipeline</span><span class="p">(</span>
+    <span class="n">survey</span><span class="p">,</span>
+    <span class="n">version</span><span class="p">,</span>
+    <span class="n">instrument_names</span> <span class="o">=</span> <span class="n">instrument_names</span><span class="p">,</span>
+    <span class="n">version_to_dir_dict</span> <span class="o">=</span> <span class="n">morgan_version_to_dir</span><span class="p">,</span>
+    <span class="n">aper_diams</span> <span class="o">=</span> <span class="n">aper_diams</span><span class="p">,</span>
+    <span class="n">forced_phot_band</span> <span class="o">=</span> <span class="n">forced_phot_band</span><span class="p">,</span>
+    <span class="n">min_flux_pc_err</span> <span class="o">=</span> <span class="n">min_flux_pc_err</span>
+<span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area stderr docutils container">
+<div class="highlight"><pre>
+INFO:galfind:Loaded aper_diams=&lt;Quantity [0.32] arcsec&gt; for F277W+F356W+F444W
+INFO:galfind:Combined mask for NIRCam/F277W+F356W+F444W already exists at /raid/scratch/work/austind/GALFIND_WORK/Masks/JOF/combined/JOF_F277W+F356W+F444W_auto.fits
+</pre></div></div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+forced_phot_band
+phot_cat_path
+</pre></div></div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area stderr docutils container">
+<div class="highlight"><pre>
+WARNING: hdu= was not specified but multiple tables are present, reading in first available table (hdu=1) [astropy.io.fits.connect]
+WARNING:astroquery:hdu= was not specified but multiple tables are present, reading in first available table (hdu=1)
+</pre></div></div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+phot_cat_path
+</pre></div></div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area stderr docutils container">
+<div class="highlight"><pre>
+WARNING:galfind:Aperture correction columns already in /raid/scratch/work/austind/GALFIND_WORK/Catalogues/v11/NIRCam/JOF/(0.32)as/JOF_MASTER_Sel-F277W+F356W+F444W_v11.fits
+Calculating depths:   0%|          | 0/15 [00:00&lt;?, ?it/s]
+INFO:galfind:Calculated/loaded depths for JOF v11 NIRCam
+INFO:galfind:Local depth columns already exist in /raid/scratch/work/austind/GALFIND_WORK/Catalogues/v11/NIRCam/JOF/(0.32)as/JOF_MASTER_Sel-F277W+F356W+F444W_v11.fits
+</pre></div></div>
+</div>
+<p>Now that we have loaded in the data, we shall create a basic <code class="docutils literal notranslate"><span class="pre">Catalogue_Creator</span></code> object using the handy <code class="docutils literal notranslate"><span class="pre">from_data</span></code> classmethod. As per the other galfind classes, we have overloaded the <strong>repr</strong> and <strong>str</strong> operators.</p>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[ ]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">cat_creator_1</span> <span class="o">=</span> <span class="n">Catalogue_Creator</span><span class="o">.</span><span class="n">from_data</span><span class="p">(</span><span class="n">JOF_data</span><span class="p">)</span>
+<span class="nb">repr</span><span class="p">(</span><span class="n">cat_creator_1</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">cat_creator_1</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area stderr docutils container">
+<div class="highlight"><pre>
+INFO:galfind:Catalogue cropped by &#39;ID&#39; to [1]
+INFO:galfind:Loaded &#39;has_data_mask&#39; from /raid/scratch/work/austind/GALFIND_WORK/Masks/JOF/has_data_mask/JOF_MASTER_Sel-F277W+F356W+F444W_v11.h5
+INFO:galfind:Making JOF v11 JOF_MASTER_Sel-F277W+F356W+F444W_v11 catalogue!
+WARNING:galfind:cat_aper_diams not in kwargs.keys()=dict_keys([&#39;ZP&#39;, &#39;min_flux_pc_err&#39;])! Setting to aper_diams=&lt;Quantity [0.32] arcsec&gt;
+WARNING:galfind:cat_aper_diams not in kwargs.keys()=dict_keys([&#39;ZP&#39;, &#39;min_flux_pc_err&#39;])! Setting to aper_diams=&lt;Quantity [0.32] arcsec&gt;
+WARNING:galfind:cat_aper_diams not in kwargs.keys()=dict_keys([])! Setting to aper_diams=&lt;Quantity [0.32] arcsec&gt;
+</pre></div></div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+<span class="ansi-red-fg">---------------------------------------------------------------------------</span>
+<span class="ansi-red-fg">UnboundLocalError</span>                         Traceback (most recent call last)
+Cell <span class="ansi-green-fg">In[3], line 5</span>
+<span class="ansi-green-intense-fg ansi-bold">      3</span> aper_diams <span style="color: rgb(98,98,98)">=</span> [<span style="color: rgb(98,98,98)">0.32</span>] <span style="color: rgb(98,98,98)">*</span> u<span style="color: rgb(98,98,98)">.</span>arcsec
+<span class="ansi-green-intense-fg ansi-bold">      4</span> cat_creator <span style="color: rgb(98,98,98)">=</span> Catalogue_Creator(survey, version, cat_path, filterset, aper_diams, crops <span style="color: rgb(98,98,98)">=</span> {<span style="color: rgb(175,0,0)">&#34;</span><span style="color: rgb(175,0,0)">ID</span><span style="color: rgb(175,0,0)">&#34;</span>: <span style="color: rgb(98,98,98)">1</span>})
+<span class="ansi-green-fg">----&gt; 5</span> cat <span style="color: rgb(98,98,98)">=</span> <span class="ansi-yellow-bg">cat_creator</span><span class="ansi-yellow-bg">(</span><span class="ansi-yellow-bg">)</span>
+<span class="ansi-green-intense-fg ansi-bold">      6</span> <span style="color: rgb(0,135,0)">repr</span>(cat)
+<span class="ansi-green-intense-fg ansi-bold">      7</span> <span style="color: rgb(0,135,0)">print</span>(cat)
+
+File <span class="ansi-green-fg">/nvme/scratch/work/austind/GALFIND/galfind/Catalogue_Creator.py:298</span>, in <span class="ansi-cyan-fg">Catalogue_Creator.__call__</span><span class="ansi-blue-fg">(self, cropped)</span>
+<span class="ansi-green-intense-fg ansi-bold">    296</span> filterset_arr <span style="color: rgb(98,98,98)">=</span> <span style="color: rgb(0,135,0)">self</span><span style="color: rgb(98,98,98)">.</span>load_gal_filtersets(cropped)
+<span class="ansi-green-intense-fg ansi-bold">    297</span> SED_results <span style="color: rgb(98,98,98)">=</span> <span class="ansi-bold" style="color: rgb(0,135,0)">None</span>
+<span class="ansi-green-fg">--&gt; 298</span> <span class="ansi-bold" style="color: rgb(0,135,0)">assert</span> <span style="color: rgb(0,135,0)">len</span>(IDs) <span style="color: rgb(98,98,98)">==</span> <span style="color: rgb(0,135,0)">len</span>(sky_coords) <span style="color: rgb(98,98,98)">==</span> <span style="color: rgb(0,135,0)">len</span>(<span class="ansi-yellow-bg">phot_obs_arr</span>), \
+<span class="ansi-green-intense-fg ansi-bold">    299</span>     galfind_logger<span style="color: rgb(98,98,98)">.</span>critical(
+<span class="ansi-green-intense-fg ansi-bold">    300</span>         <span style="color: rgb(175,0,0)">f</span><span style="color: rgb(175,0,0)">&#34;</span><span class="ansi-bold" style="color: rgb(175,95,135)">{</span><span style="color: rgb(0,135,0)">len</span>(IDs)<span class="ansi-bold" style="color: rgb(175,95,135)">=}</span><span style="color: rgb(175,0,0)"> != </span><span class="ansi-bold" style="color: rgb(175,95,135)">{</span><span style="color: rgb(0,135,0)">len</span>(sky_coords)<span class="ansi-bold" style="color: rgb(175,95,135)">=}</span><span style="color: rgb(175,0,0)"> != </span><span class="ansi-bold" style="color: rgb(175,95,135)">{</span><span style="color: rgb(0,135,0)">len</span>(phot_obs_arr)<span class="ansi-bold" style="color: rgb(175,95,135)">=}</span><span style="color: rgb(175,0,0)">!</span><span style="color: rgb(175,0,0)">&#34;</span>
+<span class="ansi-green-intense-fg ansi-bold">    301</span>     )
+<span class="ansi-green-intense-fg ansi-bold">    302</span> phot_obs_arr <span style="color: rgb(98,98,98)">=</span> [{aper_diam: Photometry_obs(filterset_arr[i], \
+<span class="ansi-green-intense-fg ansi-bold">    303</span>     phot[aper_diam][i], phot_err[aper_diam][i], depths[aper_diam][i], \
+<span class="ansi-green-intense-fg ansi-bold">    304</span>     aper_diam, SED_results<span style="color: rgb(98,98,98)">=</span>SED_results) <span class="ansi-bold" style="color: rgb(0,135,0)">for</span> aper_diam <span class="ansi-bold" style="color: rgb(175,0,255)">in</span> <span style="color: rgb(0,135,0)">self</span><span style="color: rgb(98,98,98)">.</span>aper_diams} \
+<span class="ansi-green-intense-fg ansi-bold">    305</span>     <span class="ansi-bold" style="color: rgb(0,135,0)">for</span> i <span class="ansi-bold" style="color: rgb(175,0,255)">in</span> <span style="color: rgb(0,135,0)">range</span>(<span style="color: rgb(0,135,0)">len</span>(filterset_arr))]
+<span class="ansi-green-intense-fg ansi-bold">    306</span> <span style="color: rgb(95,135,135)"># make an array of galaxy objects to be stored in the catalogue</span>
+
+<span class="ansi-red-fg">UnboundLocalError</span>: local variable &#39;phot_obs_arr&#39; referenced before assignment
+</pre></div></div>
+</div>
+<p>We see that it is straightforwards to produce a <code class="docutils literal notranslate"><span class="pre">Catalogue</span></code> object simply by calling the <code class="docutils literal notranslate"><span class="pre">Catalogue_Creator</span></code> object. By default, the full catalogue is loaded, although we will see in example 3 that this can be updated.</p>
+<div class="nbinput nblast docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[ ]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">cat_1a</span> <span class="o">=</span> <span class="n">cat_creator_1</span><span class="p">(</span><span class="n">cropped</span> <span class="o">=</span> <span class="kc">False</span><span class="p">)</span>
+<span class="nb">repr</span><span class="p">(</span><span class="n">cat_1a</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">cat_1a</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<p>This catalogue can instead be explicitly created using the <code class="docutils literal notranslate"><span class="pre">Catalogue.pipeline</span></code> classmethod, done below.</p>
+<div class="nbinput nblast docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[ ]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">cat_1b</span> <span class="o">=</span> <span class="n">Catalogue</span><span class="o">.</span><span class="n">pipeline</span><span class="p">(</span>
+    <span class="n">survey</span><span class="p">,</span>
+    <span class="n">version</span><span class="p">,</span>
+    <span class="n">instrument_names</span> <span class="o">=</span> <span class="n">instrument_names</span><span class="p">,</span>
+    <span class="n">version_to_dir_dict</span> <span class="o">=</span> <span class="n">morgan_version_to_dir</span><span class="p">,</span>
+    <span class="n">aper_diams</span> <span class="o">=</span> <span class="n">aper_diams</span><span class="p">,</span>
+    <span class="n">forced_phot_band</span> <span class="o">=</span> <span class="n">forced_phot_band</span><span class="p">,</span>
+    <span class="n">min_flux_pc_err</span> <span class="o">=</span> <span class="n">min_flux_pc_err</span>
+<span class="p">)</span>
+<span class="c1"># ensure that the two implementations of catalogue loading are the same</span>
+<span class="k">if</span> <span class="n">cat_1a</span> <span class="o">==</span> <span class="n">cat_1b</span><span class="p">:</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Catalogue 1a and 1b are the same&quot;</span><span class="p">)</span>
+<span class="k">else</span><span class="p">:</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Catalogue 1a and 1b are different&quot;</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+</section>
+<section id="Example-2:-Loading-a-Galfind-Catalogue-object-explicitly">
+<h2>Example 2: Loading a Galfind Catalogue object explicitly<a class="headerlink" href="#Example-2:-Loading-a-Galfind-Catalogue-object-explicitly" title="Link to this heading"></a></h2>
+<p>We note that the implementation in the above example can also be explicitly written instead using Catalogue_Creator.__init__. This <strong>init</strong> method allows the user to also load in a catalogue created outside of galfind, so long as methods to load in the IDs, sky coordinates, and aperture photometry are given. In addition, if methods to load the depths and SED fitting properties are given, these can be loaded too. The <strong>init</strong> arguments are extensive and we explicitly write these options below.</p>
+<div class="nbinput nblast docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[ ]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="c1"># TODO: add more arguments to the __init__ here!</span>
+<span class="n">cat_creator_2</span> <span class="o">=</span> <span class="n">Catalogue_Creator</span><span class="p">(</span>
+    <span class="n">survey</span><span class="p">,</span>
+    <span class="n">version</span><span class="p">,</span>
+    <span class="n">JOF_data</span><span class="o">.</span><span class="n">cat_path</span><span class="p">,</span>
+    <span class="n">JOF_data</span><span class="o">.</span><span class="n">filterset</span><span class="p">,</span>
+    <span class="n">aper_diams</span><span class="p">,</span>
+<span class="p">)</span>
+<span class="k">if</span> <span class="n">cat_creator_1</span> <span class="o">==</span> <span class="n">cat_creator_2</span><span class="p">:</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Load-in methods are identical&quot;</span><span class="p">)</span>
+<span class="k">else</span><span class="p">:</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Load-in methods are not identical&quot;</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<p>We see that both the <code class="docutils literal notranslate"><span class="pre">Catalogue_Creator</span></code> and output cropped/uncropped <code class="docutils literal notranslate"><span class="pre">Catalogue</span></code> objects using the default arguments are exactly identical to those created by the <code class="docutils literal notranslate"><span class="pre">Catalogue_Creator.from_data()</span></code> classmethod.</p>
+<div class="nbinput nblast docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[ ]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">cat_2</span> <span class="o">=</span> <span class="n">cat_creator_2</span><span class="p">(</span><span class="n">cropped</span> <span class="o">=</span> <span class="kc">False</span><span class="p">)</span>
+<span class="k">if</span> <span class="n">cat_1a</span> <span class="o">==</span> <span class="n">cat_2</span><span class="p">:</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Uncropped catalogues are identical&quot;</span><span class="p">)</span>
+<span class="k">else</span><span class="p">:</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Uncropped catalogues are not identical&quot;</span><span class="p">)</span>
+
+<span class="n">cat_3</span> <span class="o">=</span> <span class="n">cat_creator_2</span><span class="p">(</span><span class="n">cropped</span> <span class="o">=</span> <span class="kc">True</span><span class="p">)</span>
+<span class="k">if</span> <span class="n">cat_1a</span> <span class="o">==</span> <span class="n">cat_3</span><span class="p">:</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Cropped catalogues are identical&quot;</span><span class="p">)</span>
+<span class="k">else</span><span class="p">:</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Cropped catalogues are not identical&quot;</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+</section>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="catalogue.html" class="btn btn-neutral float-left" title="Catalogue Object" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="cutouts.html" class="btn btn-neutral float-right" title="Cutouts" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2024, Duncan Austin.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>
