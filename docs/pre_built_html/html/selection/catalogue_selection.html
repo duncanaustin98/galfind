@@ -64,6 +64,7 @@
 <li class="toctree-l2"><a class="reference internal" href="custom_selection.html">Custom selection</a></li>
 </ul>
 </li>
+<li class="toctree-l1"><a class="reference internal" href="../cutouts/cutouts.html">Cutouts and Stacking</a></li>
 </ul>
 
         </div>
@@ -95,16 +96,22 @@
 <h1>Catalogue selection methods<a class="headerlink" href="#Catalogue-selection-methods" title="Link to this heading"></a></h1>
 <p>In this notebook, we will utilize the <code class="docutils literal notranslate"><span class="pre">Galaxy</span></code> class selection methods of galaxies stored in the <code class="docutils literal notranslate"><span class="pre">Catalogue</span></code> object to create boolean selection columns in the outputted fits table. These boolean columns can be loaded back in to new <code class="docutils literal notranslate"><span class="pre">Catalogue</span></code> objects directly from the fits catalogue upon load-in, handy for any subsequent plotting of cutouts, scaling relations, and UV LF / mass function generation. While the details on the available galaxy selection techniques are outlined in the <a class="reference internal" href="galaxy_selection.html"><span class="doc">Galaxy
 selection notebook</span></a>, we will show the catalogue level implementation of the EPOCHS selection here. It is worth noting that all other galaxy selection options are also available on a catalogue scale.</p>
-<div class="nbinput docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[1]:
+<div class="nbinput nblast docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[ ]:
 </pre></div>
 </div>
 <div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="c1"># imports</span>
 <span class="kn">import</span> <span class="nn">astropy.units</span> <span class="k">as</span> <span class="nn">u</span>
 <span class="kn">from</span> <span class="nn">galfind</span> <span class="kn">import</span> <span class="n">EAZY</span><span class="p">,</span> <span class="n">Catalogue</span><span class="p">,</span> <span class="n">EPOCHS_Selector</span>
 <span class="kn">from</span> <span class="nn">galfind.Data</span> <span class="kn">import</span> <span class="n">morgan_version_to_dir</span>
-
-<span class="n">survey</span> <span class="o">=</span> <span class="s2">&quot;JOF&quot;</span>
+</pre></div>
+</div>
+</div>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[ ]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">survey</span> <span class="o">=</span> <span class="s2">&quot;JOF&quot;</span>
 <span class="n">version</span> <span class="o">=</span> <span class="s2">&quot;v11&quot;</span>
 <span class="n">instrument_names</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;NIRCam&quot;</span><span class="p">]</span>
 <span class="n">aper_diams</span> <span class="o">=</span> <span class="p">[</span><span class="mf">0.32</span><span class="p">]</span> <span class="o">*</span> <span class="n">u</span><span class="o">.</span><span class="n">arcsec</span>

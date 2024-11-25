@@ -8,10 +8,13 @@ import matplotlib.patheffects as pe
 import numpy as np
 from tqdm import tqdm
 from copy import deepcopy
-
+from photutils.aperture import (
+    CircularAperture,
+    aperture_photometry,
+)
 from typing import TYPE_CHECKING, Union, List, Dict, NoReturn
 if TYPE_CHECKING:
-    from . import Multiple_Filter, SED_result
+    from . import Multiple_Filter, SED_result, Multiple_Band_Cutout
 try:
     from typing import Self, Type  # python 3.11+
 except ImportError:
@@ -26,8 +29,8 @@ class Photometry_obs(Photometry):
     def __init__(
         self: Self,
         filterset: Multiple_Filter,
-        flux: Union[Masked, u.Quantity],
-        flux_errs: Union[Masked, u.Quantity],
+        flux: Masked[u.Quantity],
+        flux_errs: Masked[u.Quantity],
         depths: Union[Dict[str, float], List[float]],
         aper_diam: u.Quantity,
         SED_results: Dict[str, SED_result] = {},
@@ -226,6 +229,23 @@ class Photometry_obs(Photometry):
             phot.depths,
             SED_results,
         )
+    
+    @classmethod
+    def from_multiple_band_cutout(
+        cls: Type[Self],
+        multi_band_cutout: Multiple_Band_Cutout,
+        aper_diam: u.Quantity,
+    ) -> Self:
+        # run photutils on every band_data in stacked_band_cutout
+        xpos = multi_band_cutout[0].meta["SIZE_PIX"] / 2
+        ypos = multi_band_cutout[0].meta["SIZE_PIX"] / 2
+        pix_scale = multi_band_cutout[0].meta["SIZE_AS"] / multi_band_cutout[0].meta["SIZE_PIX"]
+        aperture = CircularAperture((xpos, ypos), r = aper_diam / (2. * pix_scale))
+        for cutout in multi_band_cutout:
+            data = cutout.band_data.load_im()[0]
+            rms_err = cutout.band_data.load_rms_err(output_hdr = False)
+            aper_phot_filt = aperture_photometry(data, aperture, error = rms_err)
+            breakpoint()
 
     def update_SED_result(
         self: Self, 

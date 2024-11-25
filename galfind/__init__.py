@@ -118,13 +118,10 @@ from . import useful_funcs_austind
 from . import figs
 from . import decorators
 from . import SExtractor, Masking, Depths
-from .Cutout import Band_Cutout, Stacked_Band_Cutout, RGB, Stacked_RGB, Multiple_Band_Cutout, Multiple_RGB
-from .PDF import PDF, SED_fit_PDF, Redshift_PDF, PDF_nD
-from .Instrument import Facility, JWST, HST, Paranal, Instrument, ACS_WFC, WFC3_IR, NIRCam, MIRI, VISTA
-
-instr_to_name_dict = {name: globals()[name]() for name in json.loads(config.get("Other", "INSTRUMENT_NAMES"))}
 
 from .PSF import PSF_Base, PSF_Cutout
+from .Instrument import Facility, JWST, HST, Paranal, Instrument, ACS_WFC, WFC3_IR, NIRCam, MIRI, VISTA
+instr_to_name_dict = {name: globals()[name]() for name in json.loads(config.get("Other", "INSTRUMENT_NAMES"))}
 from .Filter import Filter, Multiple_Filter, Tophat_Filter, U, V, J
 
 # sort bands blue -> red based on central wavelength
@@ -133,7 +130,11 @@ all_band_names = [filt.band_name for filt in sorted(Multiple_Filter.from_instrum
     key=lambda band: band.WavelengthCen.to(u.AA).value)]
 config.set("Other", "ALL_BANDS", json.dumps(all_band_names))
 
+from .PDF import PDF, SED_fit_PDF, Redshift_PDF, PDF_nD
+
 from .Data import Band_Data_Base, Band_Data, Stacked_Band_Data, Data
+from .Cutout import Band_Cutout, Stacked_Band_Cutout, RGB, Stacked_RGB, Multiple_Band_Cutout, Multiple_RGB, Catalogue_Cutouts
+
 from .Photometry import Photometry, Multiple_Photometry, Mock_Photometry
 from .Photometry_obs import Photometry_obs, Multiple_Photometry_obs
 from .Photometry_rest import Photometry_rest
