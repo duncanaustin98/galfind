@@ -635,6 +635,8 @@ class Band_Data_Base(ABC):
         split_depths_factor: int = 5,
         step_size: int = 100,
         n_split: Union[str, int] = "auto",
+        n_retry_box: int = 5,
+        grid_offset_times: int = 4,
         overwrite: bool = False,
     ) -> NoReturn:
         if not hasattr(self, "depth_args"):
@@ -650,6 +652,8 @@ class Band_Data_Base(ABC):
                 split_depths_factor,
                 step_size,
                 n_split,
+                n_retry_box,
+                grid_offset_times,
                 overwrite,
             )
             # run depths
@@ -677,6 +681,8 @@ class Band_Data_Base(ABC):
         split_depths_factor: int = 5,
         step_size: int = 100,
         n_split: Union[str, int] = "auto",
+        n_retry_box: int = 5,
+        grid_offset_times: int = 4,
         overwrite: bool = False,
     ) -> List[Tuple[Any, ...]]:
         params = []
@@ -696,6 +702,8 @@ class Band_Data_Base(ABC):
                         split_depths_factor,
                         step_size,
                         n_split,
+                        n_retry_box,
+                        grid_offset_times,
                         overwrite,
                     )
                 ]
@@ -2604,6 +2612,8 @@ class Data:
         n_split: Union[
             str, int, List[Union[str, int]], Dict[str, Union[str, int]]
         ] = "auto",
+        n_retry_box: Union[int, List[int], Dict[str, int]] = 5,
+        grid_offset_times: Union[int, List[int], Dict[str, int]] = 4,
         overwrite: Union[bool, List[bool], Dict[str, bool]] = False,
         timed: bool = False,
     ) -> NoReturn:
@@ -2662,6 +2672,12 @@ class Data:
                         ),
                         self_._sort_band_dependent_params(
                             band_data.filt_name, n_split
+                        ),
+                        self_._sort_band_dependent_params(
+                            band_data.filt_name, n_retry_box
+                        ),
+                        self_._sort_band_dependent_params(
+                            band_data.filt_name, grid_offset_times
                         ),
                         self_._sort_band_dependent_params(
                             band_data.filt_name, overwrite
