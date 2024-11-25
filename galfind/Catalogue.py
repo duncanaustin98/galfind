@@ -370,6 +370,15 @@ class Catalogue_Creator:
         #f"{meta['SURVEY']}_{meta['VERSION']}_{meta['INSTR']}"
         return ".".join(self.cat_path.split("/")[-1].split(".")[:-1])
 
+    @property
+    def crop_name(self) -> List[str]:
+        if self.crops is not None:
+            return "+".join([f"{key}={value}" \
+                if not isinstance(value, bool) else key \
+                for key, value in self.crops.items()])
+        else:
+            return ""
+
     def load_tab(self, cat_type: str, cropped: bool = True) -> Table:
         tab = self.open_cat(self.cat_path, cat_type)
         if tab is None:
@@ -381,7 +390,9 @@ class Catalogue_Creator:
                 return tab
     
     @staticmethod
-    def _convert_crops_to_dict(crops: Optional[Union[Dict[str, Any], str, int, List[str], List[int]]]) -> Dict[str, Any]:
+    def _convert_crops_to_dict(
+        crops: Optional[Union[Dict[str, Any], str, int, List[str], List[int]]]
+    ) -> Dict[str, Any]:
         # TODO: update this function to be more general
         if crops is not None:
             # make this a list of crops
@@ -397,8 +408,8 @@ class Catalogue_Creator:
                     # TODO: ensure all elements are strings
                     crops_ = {crop: True for crop in crops}
             elif isinstance(crops, dict):
-                crops_ = {key: [value] if isinstance(value, int) \
-                    else value for key, value in crops.items()}
+                crops_ = crops #{key: [value] if isinstance(value, int) \
+                    #else value for key, value in crops.items()}
             else:
                 err_message = f"{type(crops)=} is invalid!"
                 galfind_logger.critical(err_message)
@@ -407,7 +418,10 @@ class Catalogue_Creator:
             crops_ = None
         return crops_
 
-    def set_crops(self, crops: Optional[Union[Dict[str, Any], str, int, List[str], List[int]]]) -> NoReturn:
+    def set_crops(
+        self: Self,
+        crops: Optional[Union[Dict[str, Any], str, int, List[str], List[int]]]
+    ) -> NoReturn:
         crops = self._convert_crops_to_dict(crops)
         self.crops = crops
         self._get_crop_mask()
@@ -700,6 +714,10 @@ class Catalogue(Catalogue_Base):
     ) -> Catalogue:
         cat_creator = Catalogue_Creator.from_data(data, crops=crops)
         return cat_creator(cropped = True)
+
+    @property
+    def crop_name(self) -> List[str]:
+        return self.cat_creator.crop_name
 
     def __repr__(self):
         return super().__repr__()

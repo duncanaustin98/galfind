@@ -8,5 +8,4 @@ Galaxy Objects
 .. toctree::
     :maxdepth: 1
 
-    cutouts_and_RGBs
     diagnostic_plots

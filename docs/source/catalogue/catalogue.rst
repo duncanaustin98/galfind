@@ -16,6 +16,5 @@ The most major component stored in a `Catalogue` object is a list of galfind `Ga
     :maxdepth: 1
 
     load_catalogue
-    cutouts
     plotting
     number_density_function

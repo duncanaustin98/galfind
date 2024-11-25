@@ -45,7 +45,7 @@ On linux based systems: ??
     sudo apt-get install sextractor
 
 On MacOS:
-""""""""
+"""""""""
 .. code-block:: bash
 
     brew install sextractor

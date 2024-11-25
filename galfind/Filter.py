@@ -202,7 +202,9 @@ class Filter:
         return self.instrument.facility.__class__.__name__
 
     @staticmethod
-    def _get_facility_instrument_filt(filt_name: str) -> Tuple[str, str, str, str, str]:
+    def _get_facility_instrument_filt(
+        filt_name: str
+    ) -> Tuple[str, str, str, str, str]:
         # determine facility and instrument names of filter string
         split_str = filt_name.split("/")
         if len(split_str) == 3:
@@ -223,9 +225,10 @@ class Filter:
                 for instr_name, instrument in instr_to_name_dict.items()
                 if filt in instrument.filt_names
             ]
-            assert len(instruments_with_filt) == 1, galfind_logger.critical(
-                f"Could not determine instrument from band name {filt}"
-            )
+            assert len(instruments_with_filt) == 1, \
+                galfind_logger.critical(
+                    f"Could not determine instrument from band name {filt}"
+                )
             instrument = instruments_with_filt[0]
             facility = instr_to_name_dict[instrument].facility.__class__.__name__
         filt = filt.upper()
