@@ -57,7 +57,7 @@ from astropy.table import Column, Table, hstack, vstack
 from astropy.visualization.mpl_normalize import ImageNormalize
 from astropy.wcs import WCS
 from astroquery.gaia import Gaia
-from joblib import Parallel, delayed
+from joblib import Parallel, delayed, parallel_config
 from matplotlib.colors import LogNorm, Normalize
 from regions import Regions
 from tqdm import tqdm
@@ -2674,7 +2674,7 @@ class Data:
                 )
         if len(params) > 0:
             # Parallelise the calculation of depths for each band
-            with tqdm_joblib(
+            with funcs.tqdm_joblib(
                 tqdm(desc="Calculating depths", total=len(params))
             ) as progress_bar:
                 Parallel(n_jobs=n_jobs)(
@@ -3238,22 +3238,3 @@ class Data:
                 area_tab
             area_tab.write(area_tab_path, overwrite=True)
             funcs.change_file_permissions(area_tab_path)
-
-
-# The below makes TQDM work with joblib
-@contextlib.contextmanager
-def tqdm_joblib(tqdm_object):
-    """Context manager to patch joblib to report into tqdm progress bar given as argument"""
-
-    class TqdmBatchCompletionCallback(joblib.parallel.BatchCompletionCallBack):
-        def __call__(self, *args, **kwargs):
-            tqdm_object.update(n=self.batch_size)
-            return super().__call__(*args, **kwargs)
-
-    old_batch_callback = joblib.parallel.BatchCompletionCallBack
-    joblib.parallel.BatchCompletionCallBack = TqdmBatchCompletionCallback
-    try:
-        yield tqdm_object
-    finally:
-        joblib.parallel.BatchCompletionCallBack = old_batch_callback
-        tqdm_object.close()

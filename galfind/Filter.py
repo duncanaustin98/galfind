@@ -586,11 +586,9 @@ class Multiple_Filter:
         elif isinstance(i, str):
             return list(np.array(self.filters)[[index for index, filt in enumerate(self) if filt.band_name == i]])[0]
         elif isinstance(i, (list, np.ndarray)):
-            if not all(isinstance(j, (np.bool_, bool)) for j in i):
-                raise TypeError(
-                    f"{i=} in {self.__class__.__name__}.__getitem__" + \
-                    " is not all bool"
-                )
+            # if all(isinstance(j, int) for j in i):
+            #     # convert to boolean array
+
             if isinstance(i, list):
                 return Multiple_Filter(list(np.array(self.filters)[np.array(i)]))
             else:

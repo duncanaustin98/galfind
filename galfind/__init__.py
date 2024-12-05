@@ -194,7 +194,7 @@ from .Emission_lines import Emission_line, wav_lyman_alpha, line_diagnostics
 from . import IGM_attenuation
 from . import lyman_alpha_damping_wing
 from .DLA import DLA
-from .Dust_Attenuation import Dust_Attenuation, C00
+from .Dust_Attenuation import Dust_Law, C00, M99
 from .Spectrum import (
     Spectral_Catalogue,
     Spectrum,
@@ -208,4 +208,19 @@ from .Number_Density_Function import (
     Number_Density_Function,
 )  # UVLFs, mass functions, etc
 
-# dynamically add Galaxy selection methods to Catalogue class?
+from .Rest_frame_properties import (
+    Rest_Frame_Property_Calculator,
+    UV_Beta_Calculator,
+    UV_Dust_Attenuation_Calculator,
+    mUV_Calculator,
+    MUV_Calculator,
+    LUV_Calculator,
+    SFR_UV_Calculator,
+    Optical_Continuum_Calculator,
+    Optical_Line_EW_Calculator,
+    Dust_Attenuation_From_UV_Calculator,
+    Line_Dust_Attenuation_From_UV_Calculator,
+    Optical_Line_Flux_Calculator,
+    Optical_Line_Luminosity_Calculator,
+    Xi_Ion_Calculator,
+)

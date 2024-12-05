@@ -1,18 +1,6 @@
 # useful_funcs_austind.py
 from __future__ import annotations
 
-import inspect
-import os
-from typing import Union, List, Tuple, TYPE_CHECKING
-
-try:
-    from typing import Self, Type  # python 3.11+
-except ImportError:
-    from typing_extensions import Self, Type  # python > 3.7 AND python < 3.11
-
-if TYPE_CHECKING:
-    from .Data import Band_Data_Base, Band_Data, Stacked_Band_Data
-
 import astropy.constants as const
 import astropy.units as u
 import matplotlib.pyplot as plt
@@ -22,11 +10,23 @@ from astropy.coordinates import SkyCoord
 from astropy.table import Table
 from astropy.wcs.utils import skycoord_to_pixel
 from scipy.stats import chi2
+import inspect
+import os
+import contextlib
+import joblib
+from numba import njit
+from numpy.typing import NDArray
+from typing import Union, List, Tuple, TYPE_CHECKING
+if TYPE_CHECKING:
+    from .Data import Band_Data_Base, Band_Data, Stacked_Band_Data
+try:
+    from typing import Self, Type  # python 3.11+
+except ImportError:
+    from typing_extensions import Self, Type  # python > 3.7 AND python < 3.11
 
 from . import astropy_cosmo, galfind_logger
 
 # fluxes and magnitudes
-
 
 def convert_wav_units(wavs, units):
     if units == wavs.unit:
@@ -396,6 +396,10 @@ def dust_correct(lum, dust_mag):
         for lum_i, dust_mag_i in zip(lum.value, dust_mag.value)
     ] * lum.unit
 
+SFR_conversions = {
+    "MD14": 1.15e-28 * (u.solMass / u.yr) / (u.erg / (u.s * u.Hz))
+}
+
 
 # unit labelling
 
@@ -671,35 +675,7 @@ def split_dir_name(save_path, output):
         return "/".join(np.array(save_path.split("/")[:-1])) + "/"
     elif output == "name":
         return save_path.split("/")[-1]
-
-
-def save_PDF(PDF, header, path):
-    if not all(value == -99.0 for value in PDF):
-        path = f"{path}.txt"
-        make_dirs(path)
-        # print(f"Saving PDF: {path}")
-        np.savetxt(path, PDF, header=header)
-
-
-def PDF_path(save_dir, obs_name, ID, rest_UV_wavs, conv_filt):
-    return f"{save_dir}/{obs_name}/{ID}"
-
-
-def percentiles_from_PDF(PDF):
-    if all(val == -99.0 for val in PDF):
-        return -99.0, -99.0, -99.0
-    else:
-        try:
-            PDF = np.array(
-                [val.value for val in PDF.copy()]
-            )  # remove the units
-        except:
-            pass
-        PDF_median = np.median(PDF)
-        PDF_l1 = PDF_median - np.percentile(PDF, 16)
-        PDF_u1 = np.percentile(PDF, 84) - PDF_median
-        return PDF_median, PDF_l1, PDF_u1
-
+    
 
 def gauss_func(x, mu, sigma):
     return (np.pi * sigma) * np.exp(-0.5 * ((x - mu) / sigma) ** 2)
@@ -967,3 +943,92 @@ def sort_band_data_arr(band_data_arr: List[Type[Band_Data_Base]]):
     ]
     sorted_band_data_arr.extend(stacked_band_data_arr)
     return sorted_band_data_arr
+
+# The below makes TQDM work with joblib
+@contextlib.contextmanager
+def tqdm_joblib(tqdm_object):
+    """Context manager to patch joblib to report into tqdm progress bar given as argument"""
+
+    class TqdmBatchCompletionCallback(joblib.parallel.BatchCompletionCallBack):
+        def __call__(self, *args, **kwargs):
+            tqdm_object.update(n=self.batch_size)
+            return super().__call__(*args, **kwargs)
+
+    old_batch_callback = joblib.parallel.BatchCompletionCallBack
+    joblib.parallel.BatchCompletionCallBack = TqdmBatchCompletionCallback
+    try:
+        yield tqdm_object
+    finally:
+        joblib.parallel.BatchCompletionCallBack = old_batch_callback
+        tqdm_object.close()
+
+# useful for rest frame SED property calculations
+
+@njit
+def linear_fit(x: NDArray[np.float64], y: NDArray[np.float64]) -> Tuple[float, float]:
+    """
+    Performs linear least-squares fitting: y = slope * x + intercept.
+    
+    Parameters:
+        x (ndarray): The independent variable (1D array).
+        y (ndarray): The dependent variable (1D array).
+        
+    Returns:
+        slope (float): The slope of the best-fit line.
+        intercept (float): The intercept of the best-fit line.
+    """
+    n = len(x)
+    
+    # Compute sums for least squares
+    sum_x = 0.0
+    sum_y = 0.0
+    sum_x2 = 0.0
+    sum_xy = 0.0
+    for i in range(n):
+        sum_x += x[i]
+        sum_y += y[i]
+        sum_x2 += x[i] * x[i]
+        sum_xy += x[i] * y[i]
+    
+    # Calculate slope and intercept
+    slope = (n * sum_xy - sum_x * sum_y) / (n * sum_x2 - sum_x ** 2)
+    intercept = (sum_y - slope * sum_x) / n
+    return slope, intercept
+
+@njit
+def interpolate_linear_fit(x: NDArray[np.float64], y: NDArray[np.float64], x_out: float) -> float:
+    slope, intercept = linear_fit(x, y)
+    return slope * x_out + intercept
+
+@njit
+def residual_sum_of_squares(params, x, y):
+    """
+    Calculate the residual sum of squares for a linear model y = mx + b.
+    """
+    m, c = params
+    residuals = y - (m * x + c)
+    return np.sum(residuals ** 2)
+
+@njit
+def gradient_descent_beta_fit(x, y, initial_params, learning_rate=0.01, max_iter=1000, tol=1e-6):
+    """
+    Perform gradient descent to minimize the residual sum of squares.
+    """
+    params = np.array(initial_params, dtype=np.float64)
+    for i in range(max_iter):
+        m, c = params
+        residuals = y - (m * x + c)
+        
+        # Compute gradients
+        grad_m = -2 * np.sum(x * residuals)
+        grad_c = -2 * np.sum(residuals)
+        
+        # Update parameters
+        params[0] -= learning_rate * grad_m
+        params[1] -= learning_rate * grad_c
+        
+        # Check for convergence
+        if np.sqrt(grad_m ** 2 + grad_c ** 2) < tol:
+            break
+            
+    return params, i  # Return optimized parameters and iterations taken

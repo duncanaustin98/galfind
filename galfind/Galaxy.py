@@ -177,23 +177,28 @@ class Galaxy:
     def __getattr__(self, property_name: str) -> Any:
         #if property_name in self.__dict__.keys():
         #    return self.__getattribute__(property_name)
+
+        # Avoid recursion for pickling-related attributes
+        if property_name in {"__getstate__", "__setstate__"}:
+            raise AttributeError(property_name)
+
         if property_name.upper() == "RA":
-            return self.sky_coord.ra.degree * u.deg
+           return self.sky_coord.ra.degree * u.deg
         elif property_name.upper() == "DEC":
-            return self.sky_coord.dec.degree * u.deg
-        elif property_name in self.selection_flags:
+           return self.sky_coord.dec.degree * u.deg
+        if property_name in self.selection_flags:
             return self.selection_flags[property_name]
         else:
-            if property_name not in [
-                "__array_struct__",
-                "__array_interface__",
-                "__array__",
-            ]:
-                pass
+            # if property_name not in [
+            #     "__array_struct__",
+            #     "__array_interface__",
+            #     "__array__",
+            # ]:
+            #     pass
                 # galfind_logger.critical(
                 #     f"Galaxy {self.ID=} has no {property_name=}!"
                 # )
-            raise AttributeError
+            raise AttributeError(property_name)
         #else:
         #    return self.phot.__getattr__(property_name, origin)
 
