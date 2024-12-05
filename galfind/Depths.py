@@ -45,6 +45,110 @@ def do_photometry(image, xy_coords, radius_pixels):
     aper_sums, _ = aper.do_photometry(image, error=None)
     return aper_sums
 
+def make_grid_force(data, mask, radius, scatter_size, pixel_scale=0.03, plot=False, ax=None, distance_to_mask=50, n_retry_box=5, grid_offset_times=4):
+    radius_pixels = radius / pixel_scale
+    scatter_size_pixels = scatter_size / pixel_scale
+    
+    mask = mask.astype(np.uint8)
+    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (distance_to_mask, distance_to_mask))
+    mask = cv2.dilate(mask, kernel, iterations=1)
+    mask = mask.astype(bool)
+    
+    placed_apertures_mask = np.zeros_like(mask)
+    
+    shifts = [(0, 0), (0, scatter_size_pixels/2), (scatter_size_pixels/2, 0), (scatter_size_pixels/2, scatter_size_pixels/2)]
+    shift = lambda i: shifts[i % 4] if i < 4 else (shifts[i % 4][0] * (i // 4), shifts[i % 4][1] * (i // 4))
+    
+    non_overlapping_xy = []
+
+    for i in range(grid_offset_times):
+        x_shift, y_shift = shift(i)
+        
+        xy = np.mgrid[radius_pixels + scatter_size_pixels+x_shift:data.shape[1]-(radius_pixels + scatter_size_pixels):2*(radius_pixels + scatter_size_pixels),
+                     radius_pixels + scatter_size_pixels:data.shape[0]-(radius_pixels + scatter_size_pixels)+y_shift:2*(radius_pixels+scatter_size_pixels)]
+        
+        xy = xy.reshape(2, -1).T
+        scatter = np.random.uniform(low=-scatter_size_pixels, high=scatter_size_pixels, size=(xy.shape[0], 2))
+        xy_scatter = xy + scatter
+        
+        for pos, (x, y) in tqdm(enumerate(xy_scatter)):
+            count = 0
+            done = False
+            
+            while count < n_retry_box and not done:
+                y_min = int(np.floor(y-radius_pixels))
+                y_max = int(np.ceil(y+radius_pixels))
+                x_min = int(np.floor(x-radius_pixels))
+                x_max = int(np.ceil(x+radius_pixels))
+                
+                if y_min < 0 or x_min < 0 or y_max > mask.shape[0] or x_max > mask.shape[1]:
+                    break
+                    
+                mask_cutout = mask[y_min:y_max, x_min:x_max]
+                placed_cutout = placed_apertures_mask[y_min:y_max, x_min:x_max]
+                
+                y_center_internal = mask_cutout.shape[0] // 2
+                x_center_internal = mask_cutout.shape[1] // 2
+                
+                delta_shape = mask_cutout.shape[0] - mask_cutout.shape[1]
+                if delta_shape != 0 and abs(delta_shape) >= scatter_size_pixels:
+                    break
+                    
+                y_temp, x_temp = np.ogrid[-y_center_internal:mask_cutout.shape[0]-y_center_internal, 
+                                        -x_center_internal:mask_cutout.shape[1]-x_center_internal]
+                inside_pixels = x_temp**2 + y_temp**2 <= radius_pixels**2
+                
+                if not np.any(mask_cutout[inside_pixels]) and not np.any(placed_cutout[inside_pixels]):
+                    non_overlapping_xy.append((x, y))
+                    
+                    # Create circle mask with exact dimensions
+                    size = int(2 * radius_pixels + 1)
+                    y_grid, x_grid = np.ogrid[-radius_pixels:radius_pixels+1, -radius_pixels:radius_pixels+1]
+                    circle_mask = x_grid**2 + y_grid**2 <= radius_pixels**2
+                    
+                    # Calculate exact region to update
+                    y_center, x_center = int(y), int(x)
+                    y_start = max(0, y_center - int(radius_pixels))
+                    y_end = min(placed_apertures_mask.shape[0], y_center + int(radius_pixels) + 1)
+                    x_start = max(0, x_center - int(radius_pixels))
+                    x_end = min(placed_apertures_mask.shape[1], x_center + int(radius_pixels) + 1)
+                    
+                    # Extract the exact portion of circle_mask needed
+                    mask_y_start = int(radius_pixels - (y_center - y_start))
+                    mask_y_end = int(radius_pixels + (y_end - y_center))
+                    mask_x_start = int(radius_pixels - (x_center - x_start))
+                    mask_x_end = int(radius_pixels + (x_end - x_center))
+                    
+                    placed_apertures_mask[y_start:y_end, x_start:x_end] |= \
+                        circle_mask[mask_y_start:mask_y_end, mask_x_start:mask_x_end]
+                    done = True
+                else:
+                    x, y = xy_scatter[pos] + np.random.uniform(low=-scatter_size_pixels, high=scatter_size_pixels, size=2)
+                    count += 1
+    
+    if plot:
+        if ax is None:
+            fig, ax = plt.subplots()
+            
+        stretch = vis.CompositeStretch(vis.LogStretch(), vis.ContrastBiasStretch(contrast=30, bias=0.08))    
+        norm = ImageNormalize(stretch=stretch, vmin=0.001, vmax=10)
+        
+        ax.imshow(data, cmap='Greys', origin='lower', interpolation='None', norm=norm)
+        ax.imshow(mask, cmap='Reds', alpha=0.5, origin='lower', interpolation='None')
+        ax.imshow(placed_apertures_mask, cmap='Blues', alpha=0.5, origin='lower', interpolation='None')
+        
+        for x, y in non_overlapping_xy:
+            circle = plt.Circle((x, y), radius_pixels, color='r', fill=False)
+            ax.add_artist(circle)   
+            
+        plt.show()
+        
+    possible_pos = ((data.shape[0] * data.shape[1]) - np.sum(mask)) / (np.pi * radius_pixels ** 2)
+    placing_efficiency = len(non_overlapping_xy) / possible_pos
+    galfind_logger.info(f"Placing efficiency = {100 * placing_efficiency:.2f}%")
+    
+    return non_overlapping_xy, placing_efficiency
+
 
 def make_grid(
     data,
@@ -119,6 +223,28 @@ def make_grid(
         ((data.shape[0] * data.shape[1]) - np.sum(mask)) / \
         (np.pi * radius_pixels ** 2)
     placing_efficiency = len(non_overlapping_xy) / possible_pos
+
+    plot=True
+    # Plot the circles using matplotlib
+    if plot:
+        if ax == None:
+            fig, ax = plt.subplots()
+
+        stretch = vis.CompositeStretch(vis.LogStretch(), vis.ContrastBiasStretch(contrast=30, bias=0.08))    
+        norm = ImageNormalize(stretch=stretch, vmin=0.001, vmax=10)
+
+        ax.imshow(data, cmap='Greys', origin='lower', interpolation='None',
+        norm=norm)
+
+        # imshow mask
+        ax.imshow(mask, cmap='Reds', alpha=0.5, origin='lower', interpolation='None')
+
+        for x, y in non_overlapping_xy:
+            circle = plt.Circle((x, y), radius_pixels, color='r', fill=False)
+            ax.add_artist(circle)   
+
+        plt.show()
+
 
     #print(scatter_size_pixels, distance_to_mask)
     galfind_logger.info(f"Placing efficiency = {100 * placing_efficiency:.2f}%")
@@ -731,6 +857,8 @@ def calc_band_depth(params: Tuple[Any]) -> NoReturn:
         split_depths_factor,
         step_size,
         n_split,
+        n_retry_box,
+        grid_offset_times,
         overwrite,
     ) = params
 
@@ -753,12 +881,15 @@ def calc_band_depth(params: Tuple[Any]) -> NoReturn:
             assert isinstance(n_split, int) or n_split == "auto"
 
         # Place apertures in empty regions in the image
-        xy, placing_efficiency = make_grid(
+        xy, placing_efficiency = make_grid_force(
             im_data,
             combined_mask,
             radius=(aper_diam / 2.0).value,
             scatter_size=scatter_size,
             distance_to_mask=distance_to_mask,
+            pixel_scale=pixel_scale,
+            n_retry_box=n_retry_box,
+            grid_offset_times=grid_offset_times,
             plot=False,
         )
 
@@ -1490,6 +1621,8 @@ def get_depth_args(params: List[Tuple[Any, ...]]) -> Dict[str, Any]:
         "split_depths_factor": params[9],
         "step_size": params[10],
         "n_split": params[11],
+        "n_retry_box": params[12],
+        "grid_offset_times": params[13],
     }
 
 
@@ -1511,7 +1644,9 @@ def get_depth_h5_labels():
         "nmad_grid",
         "num_grid",
         "labels_grid",
-        "placing_efficiency"
+        "placing_efficiency",
+        "n_retry_box",
+        "grid_offset_times",
     ]
 
 def append_loc_depth_cols(
