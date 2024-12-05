@@ -135,7 +135,7 @@ Install from the repo with $ pip install git+https://github.com/karllark/dust_at
 </pre></div></div>
 </div>
 <div class="nbinput docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[ ]:
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[2]:
 </pre></div>
 </div>
 <div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">survey</span> <span class="o">=</span> <span class="s2">&quot;JOF&quot;</span>
@@ -299,7 +299,7 @@ INFO:galfind:Loading EAZY_fsps_larson property PDFs into JOF v11 NIRCam
 Loading properties and associated errors took 1.5s
 </pre></div></div>
 </div>
-<div class="nboutput nblast docutils container">
+<div class="nboutput docutils container">
 <div class="prompt empty docutils container">
 </div>
 <div class="output_area stderr docutils container">
@@ -307,10 +307,39 @@ Loading properties and associated errors took 1.5s
 Constructing redshift PDFs: 100%|██████████| 16335/16335 [00:00&lt;00:00, 62918.14it/s]
 INFO:galfind:Finished loading EAZY_fsps_larson property PDFs into JOF v11 NIRCam
 INFO:galfind:Loading EAZY_fsps_larson SEDs into JOF v11 NIRCam
+Constructing SEDs: 100%|██████████| 16335/16335 [00:01&lt;00:00, 11562.38it/s]
+INFO:galfind:Finished loading EAZY_fsps_larson SEDs into JOF v11 NIRCam
+INFO:galfind:Updating SED results in galfind catalogue object
+Updating galaxy SED results: 100%|██████████| 16335/16335 [00:00&lt;00:00, 120412.44it/s]
+WARNING: hdu= was not specified but multiple tables are present, reading in first available table (hdu=1) [astropy.io.fits.connect]
+WARNING:astroquery:hdu= was not specified but multiple tables are present, reading in first available table (hdu=1)
+</pre></div></div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+****************************************
+CATALOGUE(JOF,v11,NIRCam):
+----------
+CAT PATH = /raid/scratch/work/austind/GALFIND_WORK/Catalogues/v11/NIRCam/JOF/(0.32)as/JOF_MASTER_Sel-F277W+F356W+F444W_v11.fits
+TOTAL GALAXIES = 16335
+RA RANGE = [53.01070689 53.11059594] deg
+DEC RANGE = [-27.91226173 -27.83206063] deg
+----------
+****************************************
+MULTIPLE_FILTER
+----------
+FACILITY: JWST
+INSTRUMENT: NIRCam
+FILTERS: [&#39;F090W&#39;, &#39;F115W&#39;, &#39;F150W&#39;, &#39;F162M&#39;, &#39;F182M&#39;, &#39;F200W&#39;, &#39;F210M&#39;, &#39;F250M&#39;, &#39;F277W&#39;, &#39;F300M&#39;, &#39;F335M&#39;, &#39;F356W&#39;, &#39;F410M&#39;, &#39;F444W&#39;]
+****************************************
+
 </pre></div></div>
 </div>
 <div class="nbinput docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[ ]:
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[3]:
 </pre></div>
 </div>
 <div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="c1"># perform EPOCHS selection</span>
@@ -324,66 +353,66 @@ INFO:galfind:Loading EAZY_fsps_larson SEDs into JOF v11 NIRCam
 </div>
 <div class="output_area stderr docutils container">
 <div class="highlight"><pre>
-Selecting bluewards_Lya_SNR&lt;2.0_EAZY_fsps_larson_zfree_0.32as: 100%|██████████| 16335/16335 [00:00&lt;00:00, 103847.73it/s]
+Selecting bluewards_Lya_SNR&lt;2.0_EAZY_fsps_larson_zfree_0.32as:   0%|          | 0/16335 [00:00&lt;?, ?it/s]Selecting bluewards_Lya_SNR&lt;2.0_EAZY_fsps_larson_zfree_0.32as: 100%|██████████| 16335/16335 [00:00&lt;00:00, 104705.05it/s]
 WARNING:galfind:property_name=&#39;bluewards_Lya_SNR&lt;2.0_EAZY_fsps_larson_zfree_0.32as&#39; already appended to hdu=&#39;SELECTION&#39; .fits table, not overwriting!
-Selecting redwards_Lya_SNR&gt;5.0,5.0_widebands_EAZY_fsps_larson_zfree_0.32as: 100%|██████████| 16335/16335 [00:00&lt;00:00, 39871.18it/s]
+Selecting redwards_Lya_SNR&gt;5.0,5.0_widebands_EAZY_fsps_larson_zfree_0.32as: 100%|██████████| 16335/16335 [00:00&lt;00:00, 43036.81it/s]
 WARNING:galfind:property_name=&#39;redwards_Lya_SNR&gt;5.0,5.0_widebands_EAZY_fsps_larson_zfree_0.32as&#39; already appended to hdu=&#39;SELECTION&#39; .fits table, not overwriting!
-Selecting ALL_redwards_Lya_SNR&gt;2.0_EAZY_fsps_larson_zfree_0.32as: 100%|██████████| 16335/16335 [00:00&lt;00:00, 117714.70it/s]
+Selecting ALL_redwards_Lya_SNR&gt;2.0_EAZY_fsps_larson_zfree_0.32as: 100%|██████████| 16335/16335 [00:00&lt;00:00, 105034.75it/s]
 WARNING:galfind:property_name=&#39;ALL_redwards_Lya_SNR&gt;2.0_EAZY_fsps_larson_zfree_0.32as&#39; already appended to hdu=&#39;SELECTION&#39; .fits table, not overwriting!
-Selecting red_chi_sq&lt;3.0_EAZY_fsps_larson_zfree_0.32as: 100%|██████████| 16335/16335 [00:00&lt;00:00, 119269.00it/s]
+Selecting red_chi_sq&lt;3.0_EAZY_fsps_larson_zfree_0.32as: 100%|██████████| 16335/16335 [00:00&lt;00:00, 98664.56it/s]
 WARNING:galfind:property_name=&#39;red_chi_sq&lt;3.0_EAZY_fsps_larson_zfree_0.32as&#39; already appended to hdu=&#39;SELECTION&#39; .fits table, not overwriting!
-Selecting chi_sq_diff&gt;4.0,dz&gt;0.5_EAZY_fsps_larson_zfree_0.32as: 100%|██████████| 16335/16335 [00:00&lt;00:00, 100785.31it/s]
+Selecting chi_sq_diff&gt;4.0,dz&gt;0.5_EAZY_fsps_larson_zfree_0.32as: 100%|██████████| 16335/16335 [00:00&lt;00:00, 106662.90it/s]
 WARNING:galfind:property_name=&#39;chi_sq_diff&gt;4.0,dz&gt;0.5_EAZY_fsps_larson_zfree_0.32as&#39; already appended to hdu=&#39;SELECTION&#39; .fits table, not overwriting!
-Selecting zPDF&gt;60%,|dz|/z&lt;0.1_EAZY_fsps_larson_zfree_0.32as: 100%|██████████| 16335/16335 [00:00&lt;00:00, 94003.34it/s]
+Selecting zPDF&gt;60%,|dz|/z&lt;0.1_EAZY_fsps_larson_zfree_0.32as: 100%|██████████| 16335/16335 [00:00&lt;00:00, 112722.84it/s]
 WARNING:galfind:property_name=&#39;zPDF&gt;60%,|dz|/z&lt;0.1_EAZY_fsps_larson_zfree_0.32as&#39; already appended to hdu=&#39;SELECTION&#39; .fits table, not overwriting!
-Selecting unmasked_F090W: 100%|██████████| 16335/16335 [00:00&lt;00:00, 463238.87it/s]
+Selecting unmasked_F090W: 100%|██████████| 16335/16335 [00:00&lt;00:00, 483091.41it/s]
 WARNING:galfind:property_name=&#39;unmasked_F090W&#39; already appended to hdu=&#39;SELECTION&#39; .fits table, not overwriting!
-Selecting unmasked_F115W: 100%|██████████| 16335/16335 [00:00&lt;00:00, 271025.76it/s]
+Selecting unmasked_F115W: 100%|██████████| 16335/16335 [00:00&lt;00:00, 507525.82it/s]
 WARNING:galfind:property_name=&#39;unmasked_F115W&#39; already appended to hdu=&#39;SELECTION&#39; .fits table, not overwriting!
-Selecting unmasked_F150W: 100%|██████████| 16335/16335 [00:00&lt;00:00, 514079.58it/s]
+Selecting unmasked_F150W: 100%|██████████| 16335/16335 [00:00&lt;00:00, 364017.70it/s]
 WARNING:galfind:property_name=&#39;unmasked_F150W&#39; already appended to hdu=&#39;SELECTION&#39; .fits table, not overwriting!
-Selecting unmasked_F162M: 100%|██████████| 16335/16335 [00:00&lt;00:00, 514125.87it/s]
+Selecting unmasked_F162M: 100%|██████████| 16335/16335 [00:00&lt;00:00, 282851.37it/s]
 WARNING:galfind:property_name=&#39;unmasked_F162M&#39; already appended to hdu=&#39;SELECTION&#39; .fits table, not overwriting!
-Selecting unmasked_F182M: 100%|██████████| 16335/16335 [00:00&lt;00:00, 451189.03it/s]
+Selecting unmasked_F182M: 100%|██████████| 16335/16335 [00:00&lt;00:00, 508101.69it/s]
 WARNING:galfind:property_name=&#39;unmasked_F182M&#39; already appended to hdu=&#39;SELECTION&#39; .fits table, not overwriting!
-Selecting unmasked_F200W: 100%|██████████| 16335/16335 [00:00&lt;00:00, 501834.48it/s]
+Selecting unmasked_F200W: 100%|██████████| 16335/16335 [00:00&lt;00:00, 477565.65it/s]
 WARNING:galfind:property_name=&#39;unmasked_F200W&#39; already appended to hdu=&#39;SELECTION&#39; .fits table, not overwriting!
-Selecting unmasked_F210M: 100%|██████████| 16335/16335 [00:00&lt;00:00, 513378.51it/s]
+Selecting unmasked_F210M: 100%|██████████| 16335/16335 [00:00&lt;00:00, 327127.72it/s]
 WARNING:galfind:property_name=&#39;unmasked_F210M&#39; already appended to hdu=&#39;SELECTION&#39; .fits table, not overwriting!
-Selecting unmasked_F250M: 100%|██████████| 16335/16335 [00:00&lt;00:00, 513547.82it/s]
+Selecting unmasked_F250M: 100%|██████████| 16335/16335 [00:00&lt;00:00, 384219.13it/s]
 WARNING:galfind:property_name=&#39;unmasked_F250M&#39; already appended to hdu=&#39;SELECTION&#39; .fits table, not overwriting!
-Selecting unmasked_F277W: 100%|██████████| 16335/16335 [00:00&lt;00:00, 463709.16it/s]
+Selecting unmasked_F277W: 100%|██████████| 16335/16335 [00:00&lt;00:00, 517543.46it/s]
 WARNING:galfind:property_name=&#39;unmasked_F277W&#39; already appended to hdu=&#39;SELECTION&#39; .fits table, not overwriting!
-Selecting unmasked_F300M: 100%|██████████| 16335/16335 [00:00&lt;00:00, 316012.12it/s]
+Selecting unmasked_F300M: 100%|██████████| 16335/16335 [00:00&lt;00:00, 358454.70it/s]
 WARNING:galfind:property_name=&#39;unmasked_F300M&#39; already appended to hdu=&#39;SELECTION&#39; .fits table, not overwriting!
-Selecting unmasked_F335M: 100%|██████████| 16335/16335 [00:00&lt;00:00, 391030.15it/s]
+Selecting unmasked_F335M: 100%|██████████| 16335/16335 [00:00&lt;00:00, 333381.78it/s]
 WARNING:galfind:property_name=&#39;unmasked_F335M&#39; already appended to hdu=&#39;SELECTION&#39; .fits table, not overwriting!
-Selecting unmasked_F356W: 100%|██████████| 16335/16335 [00:00&lt;00:00, 518687.54it/s]
+Selecting unmasked_F356W: 100%|██████████| 16335/16335 [00:00&lt;00:00, 417943.87it/s]
 WARNING:galfind:property_name=&#39;unmasked_F356W&#39; already appended to hdu=&#39;SELECTION&#39; .fits table, not overwriting!
-Selecting unmasked_F410M: 100%|██████████| 16335/16335 [00:00&lt;00:00, 521776.54it/s]
+Selecting unmasked_F410M: 100%|██████████| 16335/16335 [00:00&lt;00:00, 435365.83it/s]
 WARNING:galfind:property_name=&#39;unmasked_F410M&#39; already appended to hdu=&#39;SELECTION&#39; .fits table, not overwriting!
-Selecting unmasked_F444W: 100%|██████████| 16335/16335 [00:00&lt;00:00, 511871.17it/s]
+Selecting unmasked_F444W: 100%|██████████| 16335/16335 [00:00&lt;00:00, 244953.40it/s]
 WARNING:galfind:property_name=&#39;unmasked_F444W&#39; already appended to hdu=&#39;SELECTION&#39; .fits table, not overwriting!
-Selecting unmasked_NIRCam: 100%|██████████| 16335/16335 [00:00&lt;00:00, 493694.65it/s]
+Selecting unmasked_NIRCam: 100%|██████████| 16335/16335 [00:00&lt;00:00, 272159.42it/s]
 WARNING:galfind:property_name=&#39;unmasked_NIRCam&#39; already appended to hdu=&#39;SELECTION&#39; .fits table, not overwriting!
-Selecting bluest_band_SNR&lt;2.0_0.32as: 100%|██████████| 16335/16335 [00:00&lt;00:00, 96272.09it/s]
+Selecting bluest_band_SNR&lt;2.0_0.32as: 100%|██████████| 16335/16335 [00:00&lt;00:00, 83317.17it/s]
 WARNING:galfind:property_name=&#39;bluest_band_SNR&lt;2.0_0.32as&#39; already appended to hdu=&#39;SELECTION&#39; .fits table, not overwriting!
-Selecting sex_Re_F277W&gt;45.0mas: 100%|██████████| 16335/16335 [00:00&lt;00:00, 108278.81it/s]
+Selecting sex_Re_F277W&gt;45.0mas: 100%|██████████| 16335/16335 [00:00&lt;00:00, 98452.32it/s]
 WARNING:galfind:property_name=&#39;sex_Re_F277W&gt;45.0mas&#39; already appended to hdu=&#39;SELECTION&#39; .fits table, not overwriting!
-Selecting sex_Re_F356W&gt;45.0mas: 100%|██████████| 16335/16335 [00:00&lt;00:00, 114075.66it/s]
+Selecting sex_Re_F356W&gt;45.0mas: 100%|██████████| 16335/16335 [00:00&lt;00:00, 113194.19it/s]
 WARNING:galfind:property_name=&#39;sex_Re_F356W&gt;45.0mas&#39; already appended to hdu=&#39;SELECTION&#39; .fits table, not overwriting!
-Selecting sex_Re_F444W&gt;45.0mas: 100%|██████████| 16335/16335 [00:00&lt;00:00, 123555.21it/s]
+Selecting sex_Re_F444W&gt;45.0mas: 100%|██████████| 16335/16335 [00:00&lt;00:00, 117559.37it/s]
 WARNING:galfind:property_name=&#39;sex_Re_F444W&gt;45.0mas&#39; already appended to hdu=&#39;SELECTION&#39; .fits table, not overwriting!
-Selecting sex_Re_F277W+F356W+F444W&gt;45.0mas: 100%|██████████| 16335/16335 [00:00&lt;00:00, 524987.02it/s]
+Selecting sex_Re_F277W+F356W+F444W&gt;45.0mas: 100%|██████████| 16335/16335 [00:00&lt;00:00, 489165.27it/s]
 WARNING:galfind:property_name=&#39;sex_Re_F277W+F356W+F444W&gt;45.0mas&#39; already appended to hdu=&#39;SELECTION&#39; .fits table, not overwriting!
-Selecting EPOCHS_NIRCam_EAZY_fsps_larson_zfree_0.32as: 100%|██████████| 16335/16335 [00:00&lt;00:00, 127838.14it/s]
+Selecting EPOCHS_NIRCam_EAZY_fsps_larson_zfree_0.32as: 100%|██████████| 16335/16335 [00:00&lt;00:00, 121097.96it/s]
 WARNING:galfind:property_name=&#39;EPOCHS_NIRCam_EAZY_fsps_larson_zfree_0.32as&#39; already appended to hdu=&#39;SELECTION&#39; .fits table, not overwriting!
 </pre></div></div>
 </div>
 <section id="Example-1:-Plotting-a-catalogue-of-cutouts-in-a-single-band">
 <h2>Example 1: Plotting a catalogue of cutouts in a single band<a class="headerlink" href="#Example-1:-Plotting-a-catalogue-of-cutouts-in-a-single-band" title="Link to this heading"></a></h2>
 <div class="nbinput docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[ ]:
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[4]:
 </pre></div>
 </div>
 <div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">f444w_cat_cutouts</span> <span class="o">=</span> <span class="n">Catalogue_Cutouts</span><span class="o">.</span><span class="n">from_cat_filt</span><span class="p">(</span><span class="n">EPOCHS_JOF_cat</span><span class="p">,</span> <span class="s2">&quot;F444W&quot;</span><span class="p">,</span> <span class="mf">0.96</span> <span class="o">*</span> <span class="n">u</span><span class="o">.</span><span class="n">arcsec</span><span class="p">,</span> <span class="n">overwrite</span> <span class="o">=</span> <span class="kc">False</span><span class="p">)</span>
@@ -484,11 +513,11 @@ INFO:galfind:Already made fits cutout for JOF v11 15874 F444W
 </div>
 <div class="output_area docutils container">
 <div class="highlight"><pre>
-&lt;galfind.Cutout.Catalogue_Cutouts object at 0x7fd92018d310&gt;
+&lt;galfind.Cutout.Catalogue_Cutouts object at 0x7f7e4c954190&gt;
 </pre></div></div>
 </div>
 <div class="nbinput docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[ ]:
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[5]:
 </pre></div>
 </div>
 <div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">f444w_cat_cutouts</span><span class="o">.</span><span class="n">plot</span><span class="p">()</span>

@@ -308,7 +308,7 @@ class SED_code(ABC):
             cat_SEDs = np.array(
                 list(itertools.repeat(None, len(cat_properties)))
             )
-        
+
         cat_SED_results = [SED_result(self, phot, properties, property_errs, property_PDFs, SED) \
             for phot, properties, property_errs, property_PDFs, SED in \
             zip(phot_arr, cat_properties, cat_property_errs, cat_property_PDFs, cat_SEDs)]

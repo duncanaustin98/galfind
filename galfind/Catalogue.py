@@ -1888,12 +1888,12 @@ class Catalogue(Catalogue_Base):
                 phot_type="rest",
                 property_type="recently_updated",
             )
-        if type(is_property_updated) == type(None):
+        if is_property_updated is None:
             # breakpoint()
             pass
         else:
             if any(
-                type(updated) == type(None) for updated in is_property_updated
+                updated is None for updated in is_property_updated
             ):
                 # breakpoint()
                 pass
@@ -1910,7 +1910,7 @@ class Catalogue(Catalogue_Base):
                         [
                             list(property_PDF.kwargs.keys())
                             for property_PDF in calculated_property_PDFs
-                            if type(property_PDF) != type(None)
+                            if property_PDF is not None
                         ]
                     )
                 )
@@ -1918,7 +1918,7 @@ class Catalogue(Catalogue_Base):
                     [
                         type(property_PDF.kwargs[kwarg_name])
                         for property_PDF in calculated_property_PDFs
-                        if type(property_PDF) != type(None)
+                        if property_PDF is not None
                     ]
                     for kwarg_name in kwarg_names
                 ]
@@ -2104,8 +2104,8 @@ class Catalogue(Catalogue_Base):
             f"{property_name}_l1",
             f"{property_name}_u1",
         ]
-        del_hdr_names = [f"SED_REST_{property_name}"]
-        self.del_cols_hdrs_from_fits(del_col_names, del_hdr_names, key)
+        #del_hdr_names = [f"SED_REST_{property_name}"]
+        #self.del_cols_hdrs_from_fits(del_col_names, del_hdr_names, key)
         # check whether the SED rest property kwargs are included in the catalogue, and if so delete these as well - Not Implemented Yet!
 
         # remove data from self, starting with catalogue, then gal for gal in self.gals

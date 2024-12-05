@@ -9,28 +9,27 @@ Created on Thu Jul 13 14:14:30 2023
 from __future__ import annotations
 
 from copy import deepcopy
-from typing import Union, List, Dict, TYPE_CHECKING
-
-try:
-    from typing import Self, Type  # python 3.11+
-except ImportError:
-    from typing_extensions import Self, Type  # python > 3.7 AND python < 3.11
-
-if TYPE_CHECKING:
-    from . import Instrument
-    from astropy.utils.masked import Masked
-
+import time
 from abc import ABC
 import astropy.units as u
 import matplotlib.patheffects as pe
 import numpy as np
+from numpy.typing import NDArray
+from typing import Union, List, Dict, Any, TYPE_CHECKING
+if TYPE_CHECKING:
+    from . import Instrument
+    from astropy.utils.masked import Masked
+try:
+    from typing import Self, Type  # python 3.11+
+except ImportError:
+    from typing_extensions import Self, Type  # python > 3.7 AND python < 3.11
 
 from . import galfind_logger
 from . import useful_funcs_austind as funcs
 from . import Filter, Multiple_Filter
 
 
-class Photometry(ABC):
+class Photometry:
     def __init__(
         self: Self,
         filterset: Multiple_Filter,
@@ -57,18 +56,11 @@ class Photometry(ABC):
         )
 
     def __str__(self) -> str:
-        line_sep = "*" * 40 + "\n"
-        band_sep = "-" * 10 + "\n"
-        output_str = ""
-
-        #if print_cls_name:
-        output_str += line_sep
+        output_str = funcs.line_sep
         output_str += f"{self.__class__.__name__.upper()}:\n"
-        output_str += band_sep
-
+        output_str += funcs.band_sep
         #if print_instrument:
         output_str += str(self.instrument)
-
         # if print_fluxes:
         fluxes_str = [
             "%.1f ± %.1f nJy"
@@ -84,22 +76,33 @@ class Photometry(ABC):
         output_str += (
             f"DEPTHS: {[np.round(depth, 2) for depth in self.depths.value]}\n"
         )
-
-        #if print_cls_name:
-        output_str += line_sep
+        output_str += funcs.line_sep
         return output_str
 
-    def __getitem__(self, i):
-        if type(i) == int:
-            return self.flux[i]
-        elif type(i) == str:
-            return self.flux[self.instrument.index_from_band(i)]
+    def __getitem__(self: Self, i: Any):
+        if isinstance(i, int):
+            indices = np.array([i])
+        elif isinstance(i, (np.ndarray, slice)):
+            indices = i
+        elif isinstance(i, list):
+            indices = np.array(i)
+        elif isinstance(i, str):
+            i = i.split("+")
+            indices = np.sort(np.array([np.where( \
+                np.array(self.filterset.band_names) \
+                == i_)[0][0] for i_ in i]))
         else:
             raise (
                 TypeError(
-                    f"i={i} in {__class__.__name__}.__getitem__ has type={type(i)} which is not in [int, str]"
+                    f"{i=} in {__class__.__name__}.__getitem__ has invalid {type(i)=}"
                 )
             )
+        copy = deepcopy(self)
+        copy.filterset = copy.filterset[indices]
+        copy.flux = copy.flux[indices]
+        copy.flux_errs = copy.flux_errs[indices]
+        copy.depths = copy.depths[indices]
+        return copy
 
     def __len__(self):
         return len(self.flux)
@@ -246,13 +249,15 @@ class Photometry(ABC):
     ) -> Self:
         pass
 
-    # def crop_phot(self, indices) -> None:
-    #     indices = np.array(indices).astype(int)
-    #     for index in reversed(indices):
-    #         self.instrument -= self.instrument[index]
-    #     self.flux = np.delete(self.flux, indices)
-    #     self.flux_errs = np.delete(self.flux_errs, indices)
-    #     self.depths = np.delete(self.depths, indices)
+    def crop(self: Type[Self], indices: Union[List[int], NDArray[int]]) -> Self:
+        copy = deepcopy(self)
+        indices = np.array(indices).astype(int)
+        copy.filterset = copy.filterset[indices]
+        for index in reversed(indices):
+            self.instrument -= self.instrument[index]
+        self.flux = np.delete(self.flux, indices)
+        self.flux_errs = np.delete(self.flux_errs, indices)
+        self.depths = np.delete(self.depths, indices)
 
     def plot(
         self: Self,
@@ -436,7 +441,51 @@ class Photometry(ABC):
             return plot, wavs_to_plot, mags_to_plot, yerr, uplims
         else:
             return plot
+    
+    def scatter_fluxes(
+        self: Self, 
+        n_scatter: int = 1
+    ) -> Union[u.Quantity, Masked[u.Quantity]]:
+        assert self.flux.unit != u.ABmag, \
+            galfind_logger.critical(
+                f"{self.flux.unit=} == 'ABmag'"
+            )
+        galfind_logger.debug("Finished assertion")
+        scattered_fluxes = np.array(
+            [
+                np.random.normal(flux, err, n_scatter)
+                for flux, err in zip(self.flux.value, self.flux_errs.value)
+            ]
+        ).T * self.flux.unit
+        return scattered_fluxes
 
+    def scatter(
+        self: Self, 
+        n_scatter: int = 1
+    ) -> List[Photometry]:
+        scattered_fluxes = self.scatter_fluxes(n_scatter)
+        galfind_logger.debug("Made phot matrix")
+        scattered_phot = self._make_phot_from_scattered_fluxes(scattered_fluxes, n_scatter)
+        galfind_logger.debug("Constructed Photometry objects")
+        if len(scattered_phot) == 1:
+            return scattered_phot[0]
+        else:
+            return scattered_phot
+
+    def _make_phot_from_scattered_fluxes(
+        self: Self,
+        scattered_fluxes: Masked[NDArray[float]], 
+        n_scatter: int
+    ) -> List[Photometry]:
+        return [
+            Photometry(
+                self.filterset,
+                scattered_fluxes[:, i],
+                self.flux_errs,
+                self.depths,
+            )
+            for i in range(n_scatter)
+        ]
 
 class Multiple_Photometry(ABC):
     def __init__(
@@ -499,54 +548,3 @@ class Mock_Photometry(Photometry):
             * u.Jy
         )
         return flux_errs
-
-    def scatter(self, n_scatter: int = 1):
-        assert self.flux.unit != u.ABmag, galfind_logger.critical(
-            f"{self.flux.unit=} == 'ABmag'"
-        )
-        phot_matrix = np.array(
-            [
-                np.random.normal(flux, err, n_scatter)
-                for flux, err in zip(self.flux.value, self.flux_errs.value)
-            ]
-        )
-        scattered_phot = [
-            Photometry(
-                self.instrument,
-                phot_matrix[:, i] * self.flux.unit,
-                self.flux_errs,
-                self.depths,
-            )
-            for i in range(n_scatter)
-        ]
-        if len(scattered_phot) == 1:
-            return scattered_phot[0]
-        else:
-            return scattered_phot
-
-    # def scatter(self, size=1):
-    #     scattered_fluxes = np.zeros((len(self.flux), size))
-    #     for i, (flux, err) in enumerate(zip(self.flux, self.flux_errs)):
-    #         scattered_fluxes[i] = np.random.normal(
-    #             flux.value, err.value, size=size
-    #         )
-    #     if size == 1:
-    #         scattered_fluxes = scattered_fluxes.flatten()
-    #         self.scattered_phot = [
-    #             Mock_Photometry(
-    #                 self.instrument,
-    #                 scattered_fluxes * u.Jy,
-    #                 self.depths,
-    #                 self.min_flux_pc_err,
-    #             )
-    #         ]
-    #     else:
-    #         self.scattered_phot = [
-    #             Mock_Photometry(
-    #                 self.instrument,
-    #                 scattered_fluxes.T[i] * u.Jy,
-    #                 self.depths,
-    #                 self.min_flux_pc_err,
-    #             )
-    #             for i in range(size)
-    #         ]

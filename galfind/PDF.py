@@ -1,13 +1,16 @@
-# PDF.py
+from __future__ import annotations
 
 import time
 from copy import deepcopy
-from typing import Callable, Union, Optional
-
 import astropy.units as u
 import matplotlib.patheffects as pe
 import numpy as np
 from astropy.table import Table
+from typing import Callable, Union, Optional, TYPE_CHECKING
+try:
+    from typing import Self, Type  # python 3.11+
+except ImportError:
+    from typing_extensions import Self, Type  # python > 3.7 AND python < 3.11
 
 from . import config, galfind_logger
 from . import useful_funcs_austind as funcs
@@ -142,7 +145,7 @@ class PDF:
             and hasattr(self, "save_path")
             and new_property_name != self.property_name
         ):
-            PDF_obj.save_PDF(
+            PDF_obj.save(
                 self.save_path.replace(self.property_name, new_property_name)
             )
         return PDF_obj
@@ -202,7 +205,7 @@ class PDF:
             and hasattr(self, "save_path")
             and new_property_name != self.property_name
         ):
-            PDF_obj.save_PDF(
+            PDF_obj.save(
                 self.save_path.replace(self.property_name, new_property_name)
             )
         return PDF_obj
@@ -215,40 +218,60 @@ class PDF:
             setattr(result, key, deepcopy(value, memo))
         return result
 
+    # @classmethod
+    # def from_ecsv(cls, path):
+    #     try:
+    #         tab = Table.read(path)
+    #         property_name = tab.colnames[0]
+    #         arr = np.array(tab[tab.colnames[0]]) * tab.meta["units"]
+    #         kwargs = tab.meta
+    #         for key in ["units", "size", "median", "l1_err", "u1_err"]:
+    #             kwargs.pop(key)
+    #         PDF_obj = cls.from_1D_arr(property_name, arr, kwargs)
+    #         PDF_obj.save_path = path
+    #         return PDF_obj
+    #     except FileNotFoundError:
+    #         return None
+        
     @classmethod
-    def from_ecsv(cls, path):
-        try:
-            tab = Table.read(path)
-            property_name = tab.colnames[0]
-            arr = np.array(tab[tab.colnames[0]]) * tab.meta["units"]
-            kwargs = tab.meta
-            for key in ["units", "size", "median", "l1_err", "u1_err"]:
-                kwargs.pop(key)
-            PDF_obj = cls.from_1D_arr(property_name, arr, kwargs)
-            PDF_obj.save_path = path
-            return PDF_obj
-        except FileNotFoundError:
-            return None
+    def from_npy(cls, path: str):
+        arr = np.load(path)
+        meta = np.load(path.replace(".npy", ".meta.npy"), allow_pickle=True).item()
+        property_name = meta["name"]
+        units = meta["units"]
+        [meta.pop(name) for name in ["name", "units"]]
+        PDF_obj = cls.from_1D_arr(property_name, arr * units, meta)
+        PDF_obj.save_path = path
+        return PDF_obj
 
     @classmethod
     def from_1D_arr(
         cls,
         property_name: str,
-        arr: Union[list, np.array],
+        arr: Union[u.Quantity, u.Magnitude, u.Dex],
         kwargs: dict = {},
         Nbins: int = 50,
         normed: bool = False,
+        ignore_nans: bool = True,
         timed: bool = False,
     ):
-        assert type(arr) in [
-            u.Quantity,
-            u.Magnitude,
-            u.Dex,
-        ], galfind_logger.critical(
-            f"{property_name=} 1D {arr=} with {type(arr)=} not in [u.Quantity, u.Magnitude, u.Dex]"
+        assert isinstance(arr, (u.Quantity, u.Magnitude, u.Dex)), \
+            galfind_logger.critical(
+                f"{property_name=} 1D {arr=} with {type(arr)=}" + \
+                " not in [u.Quantity, u.Magnitude, u.Dex]"
+            )
+        if ignore_nans:
+            arr_ = arr[~np.isnan(arr)]
+        else:
+            arr_ = arr
+        assert len(arr_) > 0, galfind_logger.critical(
+            f"{property_name=} 1D {arr_=} with {len(arr_)=} == 0"
         )
-        p_x, x_bin_edges = np.histogram(arr.value, bins=Nbins, density=True)
-        x = 0.5 * (x_bin_edges[1:] + x_bin_edges[:-1]) * arr.unit
+        try:
+            p_x, x_bin_edges = np.histogram(arr_.value, bins=Nbins, density=True)
+        except:
+            breakpoint()
+        x = 0.5 * (x_bin_edges[1:] + x_bin_edges[:-1]) * arr_.unit
         PDF_obj = cls(property_name, x, p_x, kwargs, normed, timed)
         PDF_obj.input_arr = arr
         return PDF_obj
@@ -260,7 +283,7 @@ class PDF:
         except AttributeError:
             if hasattr(self, "input_arr"):
                 self._median = (
-                    np.median(self.input_arr.value) * self.input_arr.unit
+                    np.nanmedian(self.input_arr.value) * self.input_arr.unit
                 )
             else:
                 self._median = self.get_percentile(50.0)
@@ -274,8 +297,8 @@ class PDF:
             if hasattr(self, "input_arr"):
                 self._errs = [
                     self.median.value
-                    - np.percentile(self.input_arr.value, 16.0),
-                    np.percentile(self.input_arr.value, 84.0)
+                    - np.nanpercentile(self.input_arr.value, 16.0),
+                    np.nanpercentile(self.input_arr.value, 84.0)
                     - self.median.value,
                 ] * self.input_arr.unit
             else:
@@ -319,23 +342,28 @@ class PDF:
         # print(integral, 'integral', peak_z, 'peak_z', peak_loc, 'peak_loc', peak_second_loc, 'peak_second_loc', secondary_peak, 'secondary_peak', ratio, 'ratio')
 
     def get_percentile(self, percentile: float):
-        assert type(percentile) in [float], galfind_logger.critical(
-            f"percentile = {percentile} with type(percentile) = {type(percentile)} is not in ['float']"
-        )
+        assert isinstance(percentile, float), \
+            galfind_logger.critical(
+                f"{percentile=} with {type(percentile)=} != float"
+            )
         try:
             return self.percentiles[f"{percentile:.1f}"]
         except (AttributeError, KeyError) as e:
-            if type(e) == AttributeError:
+            if isinstance(e, AttributeError):
                 self.percentiles = {}
-            # calculate percentile
-            cdf = np.cumsum(self.p_x)
-            cdf /= np.max(cdf)
-            self.percentiles[f"{percentile:.1f}"] = (
-                float(
-                    self.x.value[np.argmin(np.abs(cdf - percentile / 100.0))]
+            if hasattr(self, "input_arr"):
+                self.percentiles[f"{percentile:.1f}"] = np.nanpercentile( \
+                    self.input_arr.value, percentile) * self.input_arr.unit
+            else:
+                # calculate percentile
+                cdf = np.cumsum(self.p_x)
+                cdf /= np.max(cdf)
+                self.percentiles[f"{percentile:.1f}"] = (
+                    float(
+                        self.x.value[np.argmin(np.abs(cdf - percentile / 100.0))]
+                    )
+                    * self.x.unit
                 )
-                * self.x.unit
-            )
             return self.percentiles[f"{percentile:.1f}"]
 
     def manipulate_PDF(
@@ -361,8 +389,10 @@ class PDF:
             new_property_name, updated_sample, {**self.kwargs, **PDF_kwargs}
         )
 
-    def save_PDF(
-        self, save_path: str, size: int = 10_000, fmt: str = ".ecsv"
+    def save(
+        self: Self, 
+        save_path: str, 
+        size: int = 10_000, 
     ) -> None:
         if hasattr(self, "input_arr"):
             save_arr = self.input_arr
@@ -371,29 +401,20 @@ class PDF:
         meta = {
             **self.kwargs,
             **{
+                "name": self.property_name,
                 "units": self.x.unit,
-                "size": len(save_arr),
-                "median": np.round(self.median.value, 3),
-                "l1_err": np.round(self.errs.value[0], 3),
-                "u1_err": np.round(self.errs.value[1], 3),
             },
         }
-        save_tab = Table({self.property_name: save_arr.value})
-        save_tab.meta = meta
-        split_save_path = save_path.split(".")
-        if f".{split_save_path[-1]}" != fmt:
-            if len(split_save_path) == 1:
-                save_path = f"{save_path}{fmt}"
-            elif len(split_save_path) == 2:
-                save_path = f"{save_path[:-(len(split_save_path) + 1)]}{fmt}"
-            else:
-                galfind_logger.warning(
-                    f"{save_path=} with format=.{split_save_path[-1]} != {fmt=} and {len(split_save_path)=} not in [1, 2]!"
-                )
-        funcs.make_dirs(save_path)
-        save_tab.write(save_path, overwrite=True)
-        funcs.change_file_permissions(save_path)
+        save_arr = np.array(save_arr.value)
+        if save_path[-4:] != ".npy":
+            save_path += ".npy"
         self.save_path = save_path
+        funcs.make_dirs(save_path)
+        np.save(save_path, save_arr)
+        meta_path = save_path.replace(".npy", ".meta.npy")
+        np.save(meta_path, meta)
+        funcs.change_file_permissions(save_path)
+        funcs.change_file_permissions(meta_path)
 
     def add_save_path(self, path):  # -> self
         self.save_path = path
@@ -695,9 +716,9 @@ class PDF_nD:
             ]
         )
         assert chains.shape == (len(self), len(independent_var))
-        if type(size) == type(None):
+        if size is None:
             pass
-        elif type(size) in [int]:
+        elif isinstance(size, int):
             chains = chains[-size:]
         else:
             galfind_logger.critical(

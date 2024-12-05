@@ -1,15 +1,25 @@
-# Dust_Attenuation.py
+from __future__ import annotations
 
 from abc import ABC, abstractmethod
-
 import astropy.units as u
 import numpy as np
 from scipy.interpolate import interp1d
 from scipy.optimize import curve_fit
+from typing import TYPE_CHECKING, Dict, Any, List, Union, Optional, NoReturn
+try:
+    from typing import Self, Type  # python 3.11+
+except ImportError:
+    from typing_extensions import Self, Type  # python > 3.7 AND python < 3.11
+
+from . import useful_funcs_austind as funcs
 
 
-class Dust_Attenuation(ABC):
-    def __init__(self, R_V, description=""):
+class Dust_Law(ABC):
+    def __init__(
+        self: Self, 
+        R_V: float, 
+        description: Optional[str] = None
+    ) -> NoReturn:
         """Abstract class to contain the dust attenuation curve and related properties
 
         Args:
@@ -20,11 +30,9 @@ class Dust_Attenuation(ABC):
         self.description = description
 
     def __str__(self):
-        line_sep = "*" * 40 + "\n"
-        band_sep = "-" * 10 + "\n"
-        output_str = line_sep
+        output_str = funcs.line_sep
         output_str += f"DUST ATTENUATION LAW: {self.__class__.__name__}\n"
-        output_str += band_sep
+        output_str += funcs.band_sep
         output_str += f"Description: {self.description}\n"
         output_str += f"R_V: {self.R_V}\n"
         output_str += f"UV-optical slope: {self.UV_optical_slope:.3f}\n"
@@ -32,7 +40,7 @@ class Dust_Attenuation(ABC):
         output_str += f"Optical slope: {self.optical_slope:.3f}\n"
         output_str += f"Near-IR slope: {self.near_IR_slope:.3f}\n"
         output_str += f"UV-bump strength: {self.UV_bump_strength:.3f}\n"
-        output_str += line_sep
+        output_str += funcs.line_sep
         return output_str
 
     @abstractmethod
@@ -144,7 +152,7 @@ class Dust_Attenuation(ABC):
         ax.set_ylabel(r"$k(\lambda)$")
 
 
-class C00(Dust_Attenuation):
+class C00(Dust_Law):
     def __init__(self):
         R_V = 4.05
         description = "Calzetti+00 attenuation curve with fixed R_V = 4.05"
@@ -196,12 +204,12 @@ class C00(Dust_Attenuation):
         return k
 
 
-class Reddy15_dust_law(Dust_Attenuation):
+class Reddy15_dust_law(Dust_Law):
     def __init__(self):
         pass
 
     def k_lambda(self):
-        pass
+        raise NotImplementedError
 
 
 class AUV_from_beta(ABC):
@@ -218,6 +226,7 @@ class AUV_from_beta(ABC):
     def change_ref_wav(self, ref_wav):
         if not ref_wav == self.ref_wav:
             pass
+        raise NotImplementedError
 
 
 class M99(AUV_from_beta):
@@ -233,7 +242,11 @@ class Reddy15(AUV_from_beta):
 
 
 class Reddy18(AUV_from_beta):
-    def __init__(self, dust_law=Reddy15_dust_law(), BPASS_age=100 * u.Myr):
+    def __init__(
+        self: Self, 
+        dust_law: Type[Dust_Law] = Reddy15_dust_law(), 
+        BPASS_age: u.Quantity = 100 * u.Myr
+    ) -> NoReturn:
         assert dust_law.__class__.__name__ in ["SMC", "C00", "Reddy15"]
         assert BPASS_age in [100 * u.Myr, 300 * u.Myr]
         beta_int = {100 * u.Myr: -2.520, 300 * u.Myr: -2.616}

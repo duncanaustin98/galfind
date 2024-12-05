@@ -10,6 +10,7 @@
       <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=80d5e7a1" />
       <link rel="stylesheet" type="text/css" href="../_static/css/theme.css?v=e59714d7" />
       <link rel="stylesheet" type="text/css" href="../_static/copybutton.css?v=76b2166b" />
+      <link rel="stylesheet" type="text/css" href="../_static/nbsphinx-code-cells.css?v=2aa19091" />
 
   
       <script src="../_static/jquery.js?v=5d32c60e"></script>
@@ -58,7 +59,16 @@
 <li class="toctree-l1 current"><a class="reference internal" href="photometry.html">Handling Source Photometry</a><ul class="current">
 <li class="toctree-l2"><a class="reference internal" href="basic_photometry.html">Photometry basics</a></li>
 <li class="toctree-l2"><a class="reference internal" href="photometry_obs.html">Loading observed photometry</a></li>
-<li class="toctree-l2 current"><a class="current reference internal" href="#">Calculating rest-frame photometric properties</a></li>
+<li class="toctree-l2 current"><a class="current reference internal" href="#">Calculating rest-frame photometric properties</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#Example-1:-Photometry_rest,-Galaxy,-and-Catalogue-level-calculations">Example 1: Photometry_rest, Galaxy, and Catalogue level calculations</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#Example-2:-Running-Monte-Carlo-to-produce-PDFs">Example 2: Running Monte Carlo to produce PDFs</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#Example-3:-Rest-frame-UV-continuum-properties">Example 3: Rest-frame UV continuum properties</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#Example-4:-Rest-frame-optical-emission-lines">Example 4: Rest-frame optical emission lines</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#Example-5:-Dust-measurements">Example 5: Dust measurements</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#Example-6:-Multi-processing-with-joblib-for-faster-computation">Example 6: Multi-processing with joblib for faster computation</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#Example-7:-Custom-rest-frame-property-calculators">Example 7: Custom rest-frame property calculators</a></li>
+</ul>
+</li>
 </ul>
 </li>
 <li class="toctree-l1"><a class="reference internal" href="../sed_fitting/sed_fitting.html">SED Fitting</a></li>
@@ -93,6 +103,722 @@
              
   <section id="Calculating-rest-frame-photometric-properties">
 <h1>Calculating rest-frame photometric properties<a class="headerlink" href="#Calculating-rest-frame-photometric-properties" title="Link to this heading"></a></h1>
+<p>While SED fitting offers a fantastic avenue to explore galaxy properties, there are often significant assumptions required. For example, the IMF, SFH, metallicity, dust content/geometry, all must be assumed even though we do not have the appropriate photometric data to properly constrain them at this point. This may lead to inaccurate measurements of galaxy properties, and the associated errors are nearly always underestimated.</p>
+<p>As seen in Austin et al 2024 and Cullen et al 2024, UV continuum slope measurements of blue SFGs identified by JWST are biased red by SED fitting, making it more appropriate to measure these directly from the photometric data without the assumptions that are required by the template inputs to Bayesian SED fitting.</p>
+<p>In this notebook, we will demonstrate the available <code class="docutils literal notranslate"><span class="pre">Rest_Frame_Property_Calculator</span></code> classes that are available in galfind. These calculate galaxy properties in the rest-frame UV and optical directly from the photometric data and can be applied on either a <code class="docutils literal notranslate"><span class="pre">Catalogue</span></code>, <code class="docutils literal notranslate"><span class="pre">Galaxy</span></code>, or <code class="docutils literal notranslate"><span class="pre">Photometry_rest</span></code> level.</p>
+<p>Of course, and as always, we start by instantiating our JOF NIRCam v11 <code class="docutils literal notranslate"><span class="pre">Catalogue</span></code> object. This time we only need to load in the SED results of interest; we use the redshift free EAZY run as an example.</p>
+<div class="nbinput nblast docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[10]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span> <span class="nn">astropy.units</span> <span class="k">as</span> <span class="nn">u</span>
+<span class="kn">from</span> <span class="nn">copy</span> <span class="kn">import</span> <span class="n">deepcopy</span>
+<span class="kn">from</span> <span class="nn">galfind</span> <span class="kn">import</span> <span class="n">Catalogue</span><span class="p">,</span> <span class="n">EAZY</span>
+<span class="kn">from</span> <span class="nn">galfind.Data</span> <span class="kn">import</span> <span class="n">morgan_version_to_dir</span>
+</pre></div>
+</div>
+</div>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[11]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">survey</span> <span class="o">=</span> <span class="s2">&quot;JOF&quot;</span>
+<span class="n">version</span> <span class="o">=</span> <span class="s2">&quot;v11&quot;</span>
+<span class="n">instrument_names</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;NIRCam&quot;</span><span class="p">]</span>
+<span class="n">aper_diams</span> <span class="o">=</span> <span class="p">[</span><span class="mf">0.32</span><span class="p">]</span> <span class="o">*</span> <span class="n">u</span><span class="o">.</span><span class="n">arcsec</span>
+<span class="n">forced_phot_band</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;F277W&quot;</span><span class="p">,</span> <span class="s2">&quot;F356W&quot;</span><span class="p">,</span> <span class="s2">&quot;F444W&quot;</span><span class="p">]</span>
+<span class="n">min_flux_pc_err</span> <span class="o">=</span> <span class="mf">10.</span>
+
+<span class="n">JOF_cat</span> <span class="o">=</span> <span class="n">Catalogue</span><span class="o">.</span><span class="n">pipeline</span><span class="p">(</span>
+    <span class="n">survey</span><span class="p">,</span>
+    <span class="n">version</span><span class="p">,</span>
+    <span class="n">instrument_names</span> <span class="o">=</span> <span class="n">instrument_names</span><span class="p">,</span>
+    <span class="n">version_to_dir_dict</span> <span class="o">=</span> <span class="n">morgan_version_to_dir</span><span class="p">,</span>
+    <span class="n">aper_diams</span> <span class="o">=</span> <span class="n">aper_diams</span><span class="p">,</span>
+    <span class="n">forced_phot_band</span> <span class="o">=</span> <span class="n">forced_phot_band</span><span class="p">,</span>
+    <span class="n">min_flux_pc_err</span> <span class="o">=</span> <span class="n">min_flux_pc_err</span>
+<span class="p">)</span>
+
+<span class="n">SED_fit_params_arr</span> <span class="o">=</span> <span class="p">[{</span><span class="s2">&quot;templates&quot;</span><span class="p">:</span> <span class="s2">&quot;fsps_larson&quot;</span><span class="p">,</span> <span class="s2">&quot;lowz_zmax&quot;</span><span class="p">:</span> <span class="kc">None</span><span class="p">}]</span>
+<span class="k">for</span> <span class="n">SED_fit_params</span> <span class="ow">in</span> <span class="n">SED_fit_params_arr</span><span class="p">:</span>
+    <span class="n">EAZY_fitter</span> <span class="o">=</span> <span class="n">EAZY</span><span class="p">(</span><span class="n">SED_fit_params</span><span class="p">)</span>
+    <span class="n">EAZY_fitter</span><span class="p">(</span><span class="n">JOF_cat</span><span class="p">,</span> <span class="n">aper_diams</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">load_PDFs</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span> <span class="n">load_SEDs</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span> <span class="n">update</span> <span class="o">=</span> <span class="kc">True</span><span class="p">)</span>
+<span class="n">SED_fit_label</span> <span class="o">=</span> <span class="n">EAZY_fitter</span><span class="o">.</span><span class="n">label</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area stderr docutils container">
+<div class="highlight"><pre>
+INFO:galfind:Loaded aper_diams=&lt;Quantity [0.32] arcsec&gt; for F277W+F356W+F444W
+INFO:galfind:Combined mask for NIRCam/F277W+F356W+F444W already exists at /raid/scratch/work/austind/GALFIND_WORK/Masks/JOF/combined/JOF_F277W+F356W+F444W_auto.fits
+WARNING: hdu= was not specified but multiple tables are present, reading in first available table (hdu=1) [astropy.io.fits.connect]
+WARNING:astroquery:hdu= was not specified but multiple tables are present, reading in first available table (hdu=1)
+WARNING:galfind:Aperture correction columns already in /raid/scratch/work/austind/GALFIND_WORK/Catalogues/v11/NIRCam/JOF/(0.32)as/JOF_MASTER_Sel-F277W+F356W+F444W_v11.fits
+Calculating depths:   0%|          | 0/15 [00:00&lt;?, ?it/s]
+INFO:galfind:Calculated/loaded depths for JOF v11 NIRCam
+INFO:galfind:Local depth columns already exist in /raid/scratch/work/austind/GALFIND_WORK/Catalogues/v11/NIRCam/JOF/(0.32)as/JOF_MASTER_Sel-F277W+F356W+F444W_v11.fits
+INFO:galfind:Loaded &#39;has_data_mask&#39; from /raid/scratch/work/austind/GALFIND_WORK/Masks/JOF/has_data_mask/JOF_MASTER_Sel-F277W+F356W+F444W_v11.h5
+INFO:galfind:Making JOF v11 JOF_MASTER_Sel-F277W+F356W+F444W_v11 catalogue!
+WARNING:galfind:cat_aper_diams not in kwargs.keys()=dict_keys([&#39;ZP&#39;, &#39;min_flux_pc_err&#39;])! Setting to aper_diams=&lt;Quantity [0.32] arcsec&gt;
+WARNING:galfind:cat_aper_diams not in kwargs.keys()=dict_keys([&#39;ZP&#39;, &#39;min_flux_pc_err&#39;])! Setting to aper_diams=&lt;Quantity [0.32] arcsec&gt;
+WARNING:galfind:cat_aper_diams not in kwargs.keys()=dict_keys([])! Setting to aper_diams=&lt;Quantity [0.32] arcsec&gt;
+INFO:galfind:Made /raid/scratch/work/austind/GALFIND_WORK/Catalogues/v11/NIRCam/JOF/(0.32)as/JOF_MASTER_Sel-F277W+F356W+F444W_v11.fits catalogue!
+INFO:galfind:Making .in file for EAZY_fsps_larson_zfree SED fitting for JOF v11 NIRCam
+INFO:galfind:Made .in file for EAZY_fsps_larson_zfree SED fitting for JOF v11 NIRCam.
+</pre></div></div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+Running SED fitting took 0.2s
+</pre></div></div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area stderr docutils container">
+<div class="highlight"><pre>
+INFO:galfind:Loading EAZY_fsps_larson property PDFs into JOF v11 NIRCam
+</pre></div></div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+Loading properties and associated errors took 1.3s
+</pre></div></div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area stderr docutils container">
+<div class="highlight"><pre>
+Constructing redshift PDFs: 100%|██████████| 16335/16335 [00:00&lt;00:00, 49483.96it/s]
+INFO:galfind:Finished loading EAZY_fsps_larson property PDFs into JOF v11 NIRCam
+INFO:galfind:Loading EAZY_fsps_larson SEDs into JOF v11 NIRCam
+Constructing SEDs: 100%|██████████| 16335/16335 [00:01&lt;00:00, 15520.82it/s]
+INFO:galfind:Finished loading EAZY_fsps_larson SEDs into JOF v11 NIRCam
+INFO:galfind:Updating SED results in galfind catalogue object
+Updating galaxy SED results: 100%|██████████| 16335/16335 [00:00&lt;00:00, 180660.73it/s]
+</pre></div></div>
+</div>
+<section id="Example-1:-Photometry_rest,-Galaxy,-and-Catalogue-level-calculations">
+<h2>Example 1: Photometry_rest, Galaxy, and Catalogue level calculations<a class="headerlink" href="#Example-1:-Photometry_rest,-Galaxy,-and-Catalogue-level-calculations" title="Link to this heading"></a></h2>
+<p>In this example, we will work through the calculation of these properties excluding any associated errors. The main advantage of this is that it will quickly produce results for large surveys or simulations to, for example, determine sample completeness/contamination. Firstly, we need an example <code class="docutils literal notranslate"><span class="pre">Rest_Frame_Property_Calculator</span></code> object; we will create an <code class="docutils literal notranslate"><span class="pre">UV_Beta_Calculator</span></code> object in this instance, although in principle any of the other <code class="docutils literal notranslate"><span class="pre">Rest_Frame_Property_Calculator</span></code> child classes will
+do the trick. The <code class="docutils literal notranslate"><span class="pre">UV_Beta_Calculator</span></code> class is a subclass of <code class="docutils literal notranslate"><span class="pre">Rest_Frame_Property_Calculator</span></code> and, as with all <code class="docutils literal notranslate"><span class="pre">Rest_Frame_Property_Calculator</span></code> objects, must be instantiated with an explicit <code class="docutils literal notranslate"><span class="pre">aper_diam</span></code> and <code class="docutils literal notranslate"><span class="pre">SED_fit_label</span></code>. The <code class="docutils literal notranslate"><span class="pre">rest_UV_wav_lims</span></code> given here are the default values.</p>
+<div class="nbinput nblast docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[12]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">galfind</span> <span class="kn">import</span> <span class="n">UV_Beta_Calculator</span>
+<span class="n">beta_calculator</span> <span class="o">=</span> <span class="n">UV_Beta_Calculator</span><span class="p">(</span>
+    <span class="n">aper_diam</span> <span class="o">=</span> <span class="n">aper_diams</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span>
+    <span class="n">SED_fit_label</span> <span class="o">=</span> <span class="n">SED_fit_label</span><span class="p">,</span>
+    <span class="n">rest_UV_wav_lims</span> <span class="o">=</span> <span class="p">[</span><span class="mf">1_250.</span><span class="p">,</span> <span class="mf">3_000.</span><span class="p">]</span> <span class="o">*</span> <span class="n">u</span><span class="o">.</span><span class="n">AA</span>
+<span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<p>Calling this object while inserting either a <code class="docutils literal notranslate"><span class="pre">Photometry_rest</span></code>, <code class="docutils literal notranslate"><span class="pre">Galaxy</span></code>, or <code class="docutils literal notranslate"><span class="pre">Catalogue</span></code> as the first argument will perform the calculation. Let’s first create a <code class="docutils literal notranslate"><span class="pre">Photometry_rest</span></code> object corresponding to the z=14.63 photometric candidate from Robertson et al. 2023.</p>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[13]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">phot_rest_z14</span> <span class="o">=</span> <span class="n">deepcopy</span><span class="p">(</span><span class="n">JOF_cat</span><span class="p">[</span><span class="mi">717</span><span class="p">]</span><span class="o">.</span><span class="n">aper_phot</span><span class="p">[</span><span class="n">aper_diams</span><span class="p">[</span><span class="mi">0</span><span class="p">]]</span><span class="o">.</span><span class="n">SED_results</span><span class="p">[</span><span class="n">SED_fit_label</span><span class="p">]</span><span class="o">.</span><span class="n">phot_rest</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">phot_rest_z14</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+****************************************
+PHOTOMETRY_REST: z = 14.662217140197754
+----------
+****************************************
+
+</pre></div></div>
+</div>
+<p>In this example, we will run with <code class="docutils literal notranslate"><span class="pre">n_chains=1</span></code> (i.e. without the Monte Carlo). In the codeblock below this <code class="docutils literal notranslate"><span class="pre">n_chains</span></code> parameter is the only argument that is changed from the default value, which is 10,000.</p>
+<div class="nbinput nblast docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[14]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">beta_calculator</span><span class="p">(</span>
+    <span class="n">phot_rest_z14</span><span class="p">,</span>
+    <span class="n">n_chains</span> <span class="o">=</span> <span class="mi">1</span><span class="p">,</span>
+    <span class="n">output</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
+    <span class="n">overwrite</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
+    <span class="n">n_jobs</span> <span class="o">=</span> <span class="mi">1</span>
+<span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<p>Using the overloaded <strong>str</strong> operator, we can see the impact on the properties stored in the <code class="docutils literal notranslate"><span class="pre">phot_rest_z14</span></code> object.</p>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[15]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="nb">print</span><span class="p">(</span><span class="n">phot_rest_z14</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">phot_rest_z14</span><span class="o">.</span><span class="n">properties</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+****************************************
+PHOTOMETRY_REST: z = 14.662217140197754
+----------
+****************************************
+
+{&#39;beta_[1250,3000]AA&#39;: &lt;Quantity -2.07955873&gt;}
+</pre></div></div>
+</div>
+<p>Now let’s pass the entire galaxy through and see what happens.</p>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[16]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">gal_z14</span> <span class="o">=</span> <span class="n">deepcopy</span><span class="p">(</span><span class="n">JOF_cat</span><span class="p">[</span><span class="mi">717</span><span class="p">])</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">gal_z14</span><span class="p">)</span>
+<span class="n">beta_calculator</span><span class="p">(</span>
+    <span class="n">gal_z14</span><span class="p">,</span>
+    <span class="n">n_chains</span> <span class="o">=</span> <span class="mi">1</span>
+<span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">gal_z14</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+****************************************
+Galaxy(718, [53.10763,-27.86013]deg)
+****************************************
+PHOTOMETRY:
+----------
+Photometry_obs(NIRCam, 0.32 arcsec, EAZY_fsps_larson_zfree)
+----------
+SELECTION FLAGS:
+----------
+bluewards_Lya_SNR&lt;2.0_EAZY_fsps_larson_zfree_0.32as: True
+redwards_Lya_SNR&gt;5.0,5.0_widebands_EAZY_fsps_larson_zfree_0.32as: True
+ALL_redwards_Lya_SNR&gt;2.0_EAZY_fsps_larson_zfree_0.32as: True
+red_chi_sq&lt;3.0_EAZY_fsps_larson_zfree_0.32as: True
+chi_sq_diff&gt;4.0,dz&gt;0.5_EAZY_fsps_larson_zfree_0.32as: True
+zPDF&gt;60%,|dz|/z&lt;0.1_EAZY_fsps_larson_zfree_0.32as: True
+unmasked_F090W: True
+unmasked_F115W: True
+unmasked_F150W: True
+unmasked_F162M: True
+unmasked_F182M: True
+unmasked_F200W: True
+unmasked_F210M: True
+unmasked_F250M: True
+unmasked_F277W: True
+unmasked_F300M: True
+unmasked_F335M: True
+unmasked_F356W: True
+unmasked_F410M: True
+unmasked_F444W: True
+unmasked_NIRCam: True
+bluest_band_SNR&lt;2.0_0.32as: True
+sex_Re_F277W&gt;45.0mas: True
+sex_Re_F356W&gt;45.0mas: True
+sex_Re_F444W&gt;45.0mas: True
+sex_Re_F277W+F356W+F444W&gt;45.0mas: True
+EPOCHS_NIRCam_EAZY_fsps_larson_zfree_0.32as: True
+EPOCHS_lowz_NIRCam_EAZY_fsps_larson_zfree_0.32as: True
+----------
+****************************************
+
+****************************************
+Galaxy(718, [53.10763,-27.86013]deg)
+****************************************
+PHOTOMETRY:
+----------
+Photometry_obs(NIRCam, 0.32 arcsec, EAZY_fsps_larson_zfree)
+----------
+SELECTION FLAGS:
+----------
+bluewards_Lya_SNR&lt;2.0_EAZY_fsps_larson_zfree_0.32as: True
+redwards_Lya_SNR&gt;5.0,5.0_widebands_EAZY_fsps_larson_zfree_0.32as: True
+ALL_redwards_Lya_SNR&gt;2.0_EAZY_fsps_larson_zfree_0.32as: True
+red_chi_sq&lt;3.0_EAZY_fsps_larson_zfree_0.32as: True
+chi_sq_diff&gt;4.0,dz&gt;0.5_EAZY_fsps_larson_zfree_0.32as: True
+zPDF&gt;60%,|dz|/z&lt;0.1_EAZY_fsps_larson_zfree_0.32as: True
+unmasked_F090W: True
+unmasked_F115W: True
+unmasked_F150W: True
+unmasked_F162M: True
+unmasked_F182M: True
+unmasked_F200W: True
+unmasked_F210M: True
+unmasked_F250M: True
+unmasked_F277W: True
+unmasked_F300M: True
+unmasked_F335M: True
+unmasked_F356W: True
+unmasked_F410M: True
+unmasked_F444W: True
+unmasked_NIRCam: True
+bluest_band_SNR&lt;2.0_0.32as: True
+sex_Re_F277W&gt;45.0mas: True
+sex_Re_F356W&gt;45.0mas: True
+sex_Re_F444W&gt;45.0mas: True
+sex_Re_F277W+F356W+F444W&gt;45.0mas: True
+EPOCHS_NIRCam_EAZY_fsps_larson_zfree_0.32as: True
+EPOCHS_lowz_NIRCam_EAZY_fsps_larson_zfree_0.32as: True
+----------
+****************************************
+
+</pre></div></div>
+</div>
+<p>Of course we can loop through these galaxies to update the catalogue, or we can simply pass the entire catalogue in to calculate these properties.</p>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[17]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="nb">print</span><span class="p">(</span><span class="n">JOF_cat</span><span class="p">)</span>
+<span class="n">JOF_cat_copy</span> <span class="o">=</span> <span class="n">deepcopy</span><span class="p">(</span><span class="n">JOF_cat</span><span class="p">)</span>
+<span class="n">beta_calculator</span><span class="p">(</span>
+    <span class="n">JOF_cat_copy</span><span class="p">,</span>
+    <span class="n">n_chains</span> <span class="o">=</span> <span class="mi">1</span>
+<span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">JOF_cat_copy</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area stderr docutils container">
+<div class="highlight"><pre>
+WARNING: hdu= was not specified but multiple tables are present, reading in first available table (hdu=1) [astropy.io.fits.connect]
+WARNING:astroquery:hdu= was not specified but multiple tables are present, reading in first available table (hdu=1)
+</pre></div></div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+****************************************
+CATALOGUE(JOF,v11,NIRCam):
+----------
+CAT PATH = /raid/scratch/work/austind/GALFIND_WORK/Catalogues/v11/NIRCam/JOF/(0.32)as/JOF_MASTER_Sel-F277W+F356W+F444W_v11.fits
+TOTAL GALAXIES = 16335
+RA RANGE = [53.01070689 53.11059594] deg
+DEC RANGE = [-27.91226173 -27.83206063] deg
+----------
+****************************************
+MULTIPLE_FILTER
+----------
+FACILITY: JWST
+INSTRUMENT: NIRCam
+FILTERS: [&#39;F090W&#39;, &#39;F115W&#39;, &#39;F150W&#39;, &#39;F162M&#39;, &#39;F182M&#39;, &#39;F200W&#39;, &#39;F210M&#39;, &#39;F250M&#39;, &#39;F277W&#39;, &#39;F300M&#39;, &#39;F335M&#39;, &#39;F356W&#39;, &#39;F410M&#39;, &#39;F444W&#39;]
+****************************************
+
+</pre></div></div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area stderr docutils container">
+<div class="highlight"><pre>
+Calculating beta_[1250,3000]AA: 100%|██████████| 16335/16335 [00:35&lt;00:00, 461.02it/s]
+WARNING: hdu= was not specified but multiple tables are present, reading in first available table (hdu=1) [astropy.io.fits.connect]
+WARNING:astroquery:hdu= was not specified but multiple tables are present, reading in first available table (hdu=1)
+</pre></div></div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+****************************************
+CATALOGUE(JOF,v11,NIRCam):
+----------
+CAT PATH = /raid/scratch/work/austind/GALFIND_WORK/Catalogues/v11/NIRCam/JOF/(0.32)as/JOF_MASTER_Sel-F277W+F356W+F444W_v11.fits
+TOTAL GALAXIES = 16335
+RA RANGE = [53.01070689 53.11059594] deg
+DEC RANGE = [-27.91226173 -27.83206063] deg
+----------
+****************************************
+MULTIPLE_FILTER
+----------
+FACILITY: JWST
+INSTRUMENT: NIRCam
+FILTERS: [&#39;F090W&#39;, &#39;F115W&#39;, &#39;F150W&#39;, &#39;F162M&#39;, &#39;F182M&#39;, &#39;F200W&#39;, &#39;F210M&#39;, &#39;F250M&#39;, &#39;F277W&#39;, &#39;F300M&#39;, &#39;F335M&#39;, &#39;F356W&#39;, &#39;F410M&#39;, &#39;F444W&#39;]
+****************************************
+
+</pre></div></div>
+</div>
+<p>Fantastic! We have now computed the UV beta slopes for every galaxy in our JOF catalogue. Some, of course, will fail and produce NaN’s, namely when there are fewer than 2 photometric filters entirely within the rest frame UV wavelength range used. This will mean that depending on the filterset used, some redshift ranges will have more/less precise UV continuum slope measurements, and in some ranges it will be impossible to calculate this quantity.</p>
+</section>
+<section id="Example-2:-Running-Monte-Carlo-to-produce-PDFs">
+<h2>Example 2: Running Monte Carlo to produce PDFs<a class="headerlink" href="#Example-2:-Running-Monte-Carlo-to-produce-PDFs" title="Link to this heading"></a></h2>
+<p>Instead of a single chain, as done in the previous example, we will now compute the UV continuum slope using a Monte Carlo technique to incorporate the photometric errors. We scatter each photometric data point about its error profile, which is assumed to be Gaussian, before re-computing the beta slope for each scattered photometry. This creates an array of beta slopes from which we extract the median, and upper and lower 1σ errors.</p>
+<p>In the below codeblock, we calculate this Monte Carlo using 10,000 chains, which is the default.</p>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[18]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">beta_calculator</span><span class="p">(</span>
+    <span class="n">JOF_cat</span><span class="p">,</span>
+    <span class="n">n_chains</span> <span class="o">=</span> <span class="mi">10_000</span>
+<span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">JOF_cat</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area stderr docutils container">
+<div class="highlight"><pre>
+Calculating beta_[1250,3000]AA:   0%|          | 0/16335 [00:00&lt;?, ?it/s]Calculating beta_[1250,3000]AA: 100%|██████████| 16335/16335 [00:18&lt;00:00, 890.59it/s]
+</pre></div></div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+****************************************
+CATALOGUE(JOF,v11,NIRCam):
+----------
+CAT PATH = /raid/scratch/work/austind/GALFIND_WORK/Catalogues/v11/NIRCam/JOF/(0.32)as/JOF_MASTER_Sel-F277W+F356W+F444W_v11.fits
+TOTAL GALAXIES = 16335
+RA RANGE = [53.01070689 53.11059594] deg
+DEC RANGE = [-27.91226173 -27.83206063] deg
+----------
+****************************************
+MULTIPLE_FILTER
+----------
+FACILITY: JWST
+INSTRUMENT: NIRCam
+FILTERS: [&#39;F090W&#39;, &#39;F115W&#39;, &#39;F150W&#39;, &#39;F162M&#39;, &#39;F182M&#39;, &#39;F200W&#39;, &#39;F210M&#39;, &#39;F250M&#39;, &#39;F277W&#39;, &#39;F300M&#39;, &#39;F335M&#39;, &#39;F356W&#39;, &#39;F410M&#39;, &#39;F444W&#39;]
+****************************************
+
+</pre></div></div>
+</div>
+<div class="nbinput nblast docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[19]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="c1"># TODO: Showing where the PDFs are stored, and a little about the stored PDF objects/kwargs etc</span>
+</pre></div>
+</div>
+</div>
+</section>
+<section id="Example-3:-Rest-frame-UV-continuum-properties">
+<h2>Example 3: Rest-frame UV continuum properties<a class="headerlink" href="#Example-3:-Rest-frame-UV-continuum-properties" title="Link to this heading"></a></h2>
+<p>In examples 1 and 2 we have looked at calculating UV continuum slopes only, however galfind also has the ability to calculate many more rest frame properties. In this example, we will go through all calculable properties in the rest-frame UV.</p>
+<div class="nbinput nblast docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[20]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">galfind</span> <span class="kn">import</span> <span class="p">(</span>
+    <span class="n">mUV_Calculator</span><span class="p">,</span>
+    <span class="n">MUV_Calculator</span><span class="p">,</span>
+    <span class="n">UV_Dust_Attenuation_Calculator</span><span class="p">,</span>
+    <span class="n">LUV_Calculator</span><span class="p">,</span>
+    <span class="n">SFR_UV_Calculator</span><span class="p">,</span>
+    <span class="n">M99</span><span class="p">,</span> <span class="c1"># dust conversion from beta</span>
+<span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[21]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">AUV_calculator</span> <span class="o">=</span> <span class="n">UV_Dust_Attenuation_Calculator</span><span class="p">(</span>
+    <span class="n">aper_diam</span> <span class="o">=</span> <span class="n">aper_diams</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span>
+    <span class="n">SED_fit_label</span> <span class="o">=</span> <span class="n">SED_fit_label</span><span class="p">,</span>
+    <span class="n">rest_UV_wav_lims</span> <span class="o">=</span> <span class="p">[</span><span class="mf">1_250.0</span><span class="p">,</span> <span class="mf">3_000.0</span><span class="p">]</span> <span class="o">*</span> <span class="n">u</span><span class="o">.</span><span class="n">AA</span><span class="p">,</span>
+    <span class="n">beta_dust_conv</span> <span class="o">=</span> <span class="n">M99</span><span class="p">,</span>
+    <span class="n">ref_wav</span> <span class="o">=</span> <span class="mf">1_500.0</span> <span class="o">*</span> <span class="n">u</span><span class="o">.</span><span class="n">AA</span>
+<span class="p">)</span>
+<span class="n">AUV_calculator</span><span class="p">(</span><span class="n">JOF_cat</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">JOF_cat</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area stderr docutils container">
+<div class="highlight"><pre>
+Calculating beta_[1250,3000]AA: 100%|██████████| 16335/16335 [00:01&lt;00:00, 15486.38it/s]
+Calculating A1500_M99_[1250,3000]AA: 100%|██████████| 16335/16335 [00:09&lt;00:00, 1797.22it/s]
+</pre></div></div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+****************************************
+CATALOGUE(JOF,v11,NIRCam):
+----------
+CAT PATH = /raid/scratch/work/austind/GALFIND_WORK/Catalogues/v11/NIRCam/JOF/(0.32)as/JOF_MASTER_Sel-F277W+F356W+F444W_v11.fits
+TOTAL GALAXIES = 16335
+RA RANGE = [53.01070689 53.11059594] deg
+DEC RANGE = [-27.91226173 -27.83206063] deg
+----------
+****************************************
+MULTIPLE_FILTER
+----------
+FACILITY: JWST
+INSTRUMENT: NIRCam
+FILTERS: [&#39;F090W&#39;, &#39;F115W&#39;, &#39;F150W&#39;, &#39;F162M&#39;, &#39;F182M&#39;, &#39;F200W&#39;, &#39;F210M&#39;, &#39;F250M&#39;, &#39;F277W&#39;, &#39;F300M&#39;, &#39;F335M&#39;, &#39;F356W&#39;, &#39;F410M&#39;, &#39;F444W&#39;]
+****************************************
+
+</pre></div></div>
+</div>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[22]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">mUV_calculator</span> <span class="o">=</span> <span class="n">mUV_Calculator</span><span class="p">(</span>
+    <span class="n">aper_diam</span> <span class="o">=</span> <span class="n">aper_diams</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span>
+    <span class="n">SED_fit_label</span> <span class="o">=</span> <span class="n">SED_fit_label</span><span class="p">,</span>
+    <span class="n">rest_UV_wav_lims</span> <span class="o">=</span> <span class="p">[</span><span class="mf">1_250.</span><span class="p">,</span> <span class="mf">3_000.</span><span class="p">]</span> <span class="o">*</span> <span class="n">u</span><span class="o">.</span><span class="n">AA</span><span class="p">,</span>
+    <span class="n">ref_wav</span> <span class="o">=</span> <span class="mf">1_500.0</span> <span class="o">*</span> <span class="n">u</span><span class="o">.</span><span class="n">AA</span><span class="p">,</span>
+    <span class="n">top_hat_width</span> <span class="o">=</span> <span class="mf">100.0</span> <span class="o">*</span> <span class="n">u</span><span class="o">.</span><span class="n">AA</span><span class="p">,</span>
+    <span class="n">resolution</span> <span class="o">=</span> <span class="mf">1.0</span> <span class="o">*</span> <span class="n">u</span><span class="o">.</span><span class="n">AA</span>
+<span class="p">)</span>
+<span class="n">mUV_calculator</span><span class="p">(</span><span class="n">JOF_cat</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">JOF_cat</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area stderr docutils container">
+<div class="highlight"><pre>
+Calculating beta_[1250,3000]AA: 100%|██████████| 16335/16335 [00:01&lt;00:00, 15296.49it/s]
+Calculating m1500_[1250,3000]AA: 100%|██████████| 16335/16335 [00:12&lt;00:00, 1321.43it/s]
+</pre></div></div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+****************************************
+CATALOGUE(JOF,v11,NIRCam):
+----------
+CAT PATH = /raid/scratch/work/austind/GALFIND_WORK/Catalogues/v11/NIRCam/JOF/(0.32)as/JOF_MASTER_Sel-F277W+F356W+F444W_v11.fits
+TOTAL GALAXIES = 16335
+RA RANGE = [53.01070689 53.11059594] deg
+DEC RANGE = [-27.91226173 -27.83206063] deg
+----------
+****************************************
+MULTIPLE_FILTER
+----------
+FACILITY: JWST
+INSTRUMENT: NIRCam
+FILTERS: [&#39;F090W&#39;, &#39;F115W&#39;, &#39;F150W&#39;, &#39;F162M&#39;, &#39;F182M&#39;, &#39;F200W&#39;, &#39;F210M&#39;, &#39;F250M&#39;, &#39;F277W&#39;, &#39;F300M&#39;, &#39;F335M&#39;, &#39;F356W&#39;, &#39;F410M&#39;, &#39;F444W&#39;]
+****************************************
+
+</pre></div></div>
+</div>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[23]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">MUV_calculator</span> <span class="o">=</span> <span class="n">MUV_Calculator</span><span class="p">(</span>
+    <span class="n">aper_diam</span> <span class="o">=</span> <span class="n">aper_diams</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span>
+    <span class="n">SED_fit_label</span> <span class="o">=</span> <span class="n">SED_fit_label</span><span class="p">,</span>
+    <span class="n">rest_UV_wav_lims</span> <span class="o">=</span> <span class="p">[</span><span class="mf">1_250.</span><span class="p">,</span> <span class="mf">3_000.</span><span class="p">]</span> <span class="o">*</span> <span class="n">u</span><span class="o">.</span><span class="n">AA</span><span class="p">,</span>
+    <span class="n">ref_wav</span> <span class="o">=</span> <span class="mf">1_500.0</span> <span class="o">*</span> <span class="n">u</span><span class="o">.</span><span class="n">AA</span><span class="p">,</span>
+    <span class="n">top_hat_width</span> <span class="o">=</span> <span class="mf">100.0</span> <span class="o">*</span> <span class="n">u</span><span class="o">.</span><span class="n">AA</span><span class="p">,</span>
+    <span class="n">resolution</span> <span class="o">=</span> <span class="mf">1.0</span> <span class="o">*</span> <span class="n">u</span><span class="o">.</span><span class="n">AA</span>
+<span class="p">)</span>
+<span class="n">MUV_calculator</span><span class="p">(</span><span class="n">JOF_cat</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">JOF_cat</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area stderr docutils container">
+<div class="highlight"><pre>
+Calculating beta_[1250,3000]AA: 100%|██████████| 16335/16335 [00:01&lt;00:00, 15375.34it/s]
+Calculating m1500_[1250,3000]AA: 100%|██████████| 16335/16335 [00:01&lt;00:00, 10677.77it/s]
+Calculating M1500_[1250,3000]AA: 100%|██████████| 16335/16335 [00:26&lt;00:00, 616.43it/s]
+</pre></div></div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+****************************************
+CATALOGUE(JOF,v11,NIRCam):
+----------
+CAT PATH = /raid/scratch/work/austind/GALFIND_WORK/Catalogues/v11/NIRCam/JOF/(0.32)as/JOF_MASTER_Sel-F277W+F356W+F444W_v11.fits
+TOTAL GALAXIES = 16335
+RA RANGE = [53.01070689 53.11059594] deg
+DEC RANGE = [-27.91226173 -27.83206063] deg
+----------
+****************************************
+MULTIPLE_FILTER
+----------
+FACILITY: JWST
+INSTRUMENT: NIRCam
+FILTERS: [&#39;F090W&#39;, &#39;F115W&#39;, &#39;F150W&#39;, &#39;F162M&#39;, &#39;F182M&#39;, &#39;F200W&#39;, &#39;F210M&#39;, &#39;F250M&#39;, &#39;F277W&#39;, &#39;F300M&#39;, &#39;F335M&#39;, &#39;F356W&#39;, &#39;F410M&#39;, &#39;F444W&#39;]
+****************************************
+
+</pre></div></div>
+</div>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[24]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">frame</span> <span class="o">=</span> <span class="s2">&quot;obs&quot;</span>
+<span class="n">LUV_calculator</span> <span class="o">=</span> <span class="n">LUV_Calculator</span><span class="p">(</span>
+    <span class="n">aper_diam</span> <span class="o">=</span> <span class="n">aper_diams</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span>
+    <span class="n">SED_fit_label</span> <span class="o">=</span> <span class="n">SED_fit_label</span><span class="p">,</span>
+    <span class="n">frame</span> <span class="o">=</span> <span class="n">frame</span><span class="p">,</span>
+    <span class="n">rest_UV_wav_lims</span> <span class="o">=</span> <span class="p">[</span><span class="mf">1_250.0</span><span class="p">,</span> <span class="mf">3_000.0</span><span class="p">]</span> <span class="o">*</span> <span class="n">u</span><span class="o">.</span><span class="n">AA</span><span class="p">,</span>
+    <span class="n">ref_wav</span> <span class="o">=</span> <span class="mf">1_500.0</span> <span class="o">*</span> <span class="n">u</span><span class="o">.</span><span class="n">AA</span><span class="p">,</span>
+    <span class="n">beta_dust_conv</span> <span class="o">=</span> <span class="n">M99</span><span class="p">,</span>
+    <span class="n">top_hat_width</span> <span class="o">=</span> <span class="mf">100.0</span> <span class="o">*</span> <span class="n">u</span><span class="o">.</span><span class="n">AA</span><span class="p">,</span>
+    <span class="n">resolution</span> <span class="o">=</span> <span class="mf">1.0</span> <span class="o">*</span> <span class="n">u</span><span class="o">.</span><span class="n">AA</span>
+<span class="p">)</span>
+<span class="n">LUV_calculator</span><span class="p">(</span><span class="n">JOF_cat</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">JOF_cat</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area stderr docutils container">
+<div class="highlight"><pre>
+Calculating beta_[1250,3000]AA: 100%|██████████| 16335/16335 [00:01&lt;00:00, 16017.81it/s]
+Calculating m1500_[1250,3000]AA: 100%|██████████| 16335/16335 [00:01&lt;00:00, 10623.91it/s]
+Calculating beta_[1250,3000]AA: 100%|██████████| 16335/16335 [00:00&lt;00:00, 16943.50it/s]
+Calculating A1500_M99_[1250,3000]AA: 100%|██████████| 16335/16335 [00:01&lt;00:00, 9733.46it/s]
+Calculating L1500_obs_M99dust_[1250,3000]AA: 100%|██████████| 16335/16335 [00:29&lt;00:00, 554.53it/s]
+INFO:galfind:Writing table to /raid/scratch/work/austind/GALFIND_WORK/Catalogues/v11/NIRCam/JOF/(0.32)as/JOF_MASTER_Sel-F277W+F356W+F444W_v11.fits
+WARNING: hdu= was not specified but multiple tables are present, reading in first available table (hdu=1) [astropy.io.fits.connect]
+WARNING:astroquery:hdu= was not specified but multiple tables are present, reading in first available table (hdu=1)
+</pre></div></div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+****************************************
+CATALOGUE(JOF,v11,NIRCam):
+----------
+CAT PATH = /raid/scratch/work/austind/GALFIND_WORK/Catalogues/v11/NIRCam/JOF/(0.32)as/JOF_MASTER_Sel-F277W+F356W+F444W_v11.fits
+TOTAL GALAXIES = 16335
+RA RANGE = [53.01070689 53.11059594] deg
+DEC RANGE = [-27.91226173 -27.83206063] deg
+----------
+****************************************
+MULTIPLE_FILTER
+----------
+FACILITY: JWST
+INSTRUMENT: NIRCam
+FILTERS: [&#39;F090W&#39;, &#39;F115W&#39;, &#39;F150W&#39;, &#39;F162M&#39;, &#39;F182M&#39;, &#39;F200W&#39;, &#39;F210M&#39;, &#39;F250M&#39;, &#39;F277W&#39;, &#39;F300M&#39;, &#39;F335M&#39;, &#39;F356W&#39;, &#39;F410M&#39;, &#39;F444W&#39;]
+****************************************
+
+</pre></div></div>
+</div>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[26]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">sfr_100myr_calculator</span> <span class="o">=</span> <span class="n">SFR_UV_Calculator</span><span class="p">(</span>
+    <span class="n">aper_diam</span> <span class="o">=</span> <span class="n">aper_diams</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span>
+    <span class="n">SED_fit_label</span> <span class="o">=</span> <span class="n">SED_fit_label</span><span class="p">,</span>
+    <span class="n">rest_UV_wav_lims</span> <span class="o">=</span> <span class="p">[</span><span class="mf">1_250.0</span><span class="p">,</span> <span class="mf">3_000.0</span><span class="p">]</span> <span class="o">*</span> <span class="n">u</span><span class="o">.</span><span class="n">AA</span><span class="p">,</span>
+    <span class="n">ref_wav</span> <span class="o">=</span> <span class="mf">1_500.0</span> <span class="o">*</span> <span class="n">u</span><span class="o">.</span><span class="n">AA</span><span class="p">,</span>
+    <span class="n">beta_dust_conv</span> <span class="o">=</span> <span class="n">M99</span><span class="p">,</span>
+    <span class="n">SFR_conv</span> <span class="o">=</span> <span class="s2">&quot;MD14&quot;</span><span class="p">,</span>
+    <span class="n">top_hat_width</span> <span class="o">=</span> <span class="mf">100.0</span> <span class="o">*</span> <span class="n">u</span><span class="o">.</span><span class="n">AA</span><span class="p">,</span>
+    <span class="n">resolution</span> <span class="o">=</span> <span class="mf">1.0</span> <span class="o">*</span> <span class="n">u</span><span class="o">.</span><span class="n">AA</span>
+<span class="p">)</span>
+<span class="n">sfr_100myr_calculator</span><span class="p">(</span><span class="n">JOF_cat</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">JOF_cat</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area stderr docutils container">
+<div class="highlight"><pre>
+Calculating beta_[1250,3000]AA: 100%|██████████| 16335/16335 [00:01&lt;00:00, 14145.45it/s]
+Calculating m1500_[1250,3000]AA: 100%|██████████| 16335/16335 [00:01&lt;00:00, 9481.30it/s]
+Calculating beta_[1250,3000]AA: 100%|██████████| 16335/16335 [00:01&lt;00:00, 12218.15it/s]
+Calculating A1500_M99_[1250,3000]AA: 100%|██████████| 16335/16335 [00:02&lt;00:00, 7680.52it/s]
+Calculating L1500_obs_M99dust_[1250,3000]AA: 100%|██████████| 16335/16335 [00:03&lt;00:00, 4878.75it/s]
+Calculating SFR1500_M99dust_[1250,3000]AA_MD14: 100%|██████████| 16335/16335 [00:40&lt;00:00, 400.97it/s]
+INFO:galfind:Writing table to /raid/scratch/work/austind/GALFIND_WORK/Catalogues/v11/NIRCam/JOF/(0.32)as/JOF_MASTER_Sel-F277W+F356W+F444W_v11.fits
+WARNING: hdu= was not specified but multiple tables are present, reading in first available table (hdu=1) [astropy.io.fits.connect]
+WARNING:astroquery:hdu= was not specified but multiple tables are present, reading in first available table (hdu=1)
+</pre></div></div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+****************************************
+CATALOGUE(JOF,v11,NIRCam):
+----------
+CAT PATH = /raid/scratch/work/austind/GALFIND_WORK/Catalogues/v11/NIRCam/JOF/(0.32)as/JOF_MASTER_Sel-F277W+F356W+F444W_v11.fits
+TOTAL GALAXIES = 16335
+RA RANGE = [53.01070689 53.11059594] deg
+DEC RANGE = [-27.91226173 -27.83206063] deg
+----------
+****************************************
+MULTIPLE_FILTER
+----------
+FACILITY: JWST
+INSTRUMENT: NIRCam
+FILTERS: [&#39;F090W&#39;, &#39;F115W&#39;, &#39;F150W&#39;, &#39;F162M&#39;, &#39;F182M&#39;, &#39;F200W&#39;, &#39;F210M&#39;, &#39;F250M&#39;, &#39;F277W&#39;, &#39;F300M&#39;, &#39;F335M&#39;, &#39;F356W&#39;, &#39;F410M&#39;, &#39;F444W&#39;]
+****************************************
+
+</pre></div></div>
+</div>
+</section>
+<section id="Example-4:-Rest-frame-optical-emission-lines">
+<h2>Example 4: Rest-frame optical emission lines<a class="headerlink" href="#Example-4:-Rest-frame-optical-emission-lines" title="Link to this heading"></a></h2>
+</section>
+<section id="Example-5:-Dust-measurements">
+<h2>Example 5: Dust measurements<a class="headerlink" href="#Example-5:-Dust-measurements" title="Link to this heading"></a></h2>
+</section>
+<section id="Example-6:-Multi-processing-with-joblib-for-faster-computation">
+<h2>Example 6: Multi-processing with joblib for faster computation<a class="headerlink" href="#Example-6:-Multi-processing-with-joblib-for-faster-computation" title="Link to this heading"></a></h2>
+</section>
+<section id="Example-7:-Custom-rest-frame-property-calculators">
+<h2>Example 7: Custom rest-frame property calculators<a class="headerlink" href="#Example-7:-Custom-rest-frame-property-calculators" title="Link to this heading"></a></h2>
+</section>
 </section>
 
 
