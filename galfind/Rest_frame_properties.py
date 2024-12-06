@@ -1897,7 +1897,7 @@ class Xi_Ion_Calculator(Rest_Frame_Property_Calculator):
         xi_ion_arr = (line_lum_arr / (1.36e-12 * u.erg * \
             (1.0 - fesc_arr) * LUV_arr)).to(u.Hz / u.erg)
         finite_xi_ion_arr = xi_ion_arr[np.isfinite(xi_ion_arr)]
-        if len(fluxes_arr > 1):
+        if len(fluxes_arr) > 1:
             self.obj_kwargs["negative_xi_ion_pc"] = 100.0 * (1 - len(finite_xi_ion_arr) / len(xi_ion_arr))
             if len(finite_xi_ion_arr) < 50 or self.obj_kwargs["negative_xi_ion_pc"] > 99.0:
                 return None
