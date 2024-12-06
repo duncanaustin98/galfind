@@ -606,7 +606,7 @@ class UV_Beta_Calculator(Rest_Frame_Property_Calculator):
         phot_rest: Photometry_rest,
     ) -> bool:
         if any(value is None for value in self.obj_kwargs.values()) or \
-                self.obj_kwargs["negative_flux_pc"] > 99.:
+                self.obj_kwargs["negative_flux_pc"] > 99.0:
             return True
         else:
             return False
@@ -661,12 +661,13 @@ class UV_Beta_Calculator(Rest_Frame_Property_Calculator):
 class UV_Dust_Attenuation_Calculator(Rest_Frame_Property_Calculator):
     
     def __init__(
-        self: Self, 
+        self: Self,
         aper_diam: u.Quantity, 
         SED_fit_label: Union[str, Type[SED_code]], 
         rest_UV_wav_lims: u.Quantity = [1_250.0, 3_000.0] * u.AA,
         beta_dust_conv: Union[str, Type[AUV_from_beta]] = M99,
         ref_wav: u.Quantity = 1_500.0 * u.AA,
+        keep_valid: bool = True,
     ) -> NoReturn:
         pre_req_properties = [UV_Beta_Calculator(aper_diam, SED_fit_label, rest_UV_wav_lims)]
         if isinstance(beta_dust_conv, str):
@@ -675,20 +676,24 @@ class UV_Dust_Attenuation_Calculator(Rest_Frame_Property_Calculator):
                 if beta_dust_conv_cls.__name__ == beta_dust_conv][0]
         elif not isinstance(beta_dust_conv, AUV_from_beta):
             beta_dust_conv = beta_dust_conv()
-        global_kwargs = {"ref_wav": ref_wav, "beta_dust_conv": beta_dust_conv}
+        global_kwargs = {"ref_wav": ref_wav, "beta_dust_conv": beta_dust_conv, "keep_valid": keep_valid}
         super().__init__(aper_diam, SED_fit_label, pre_req_properties, **global_kwargs)
 
     @property
     def name(self: Self) -> str:
-        return f"A{self.global_kwargs['ref_wav'].to(u.AA).value:.0f}" + \
+        label = f"A{self.global_kwargs['ref_wav'].to(u.AA).value:.0f}" + \
             f"_{self.global_kwargs['beta_dust_conv'].__class__.__name__}" + \
             f"_{rest_UV_wavs_name(self.pre_req_properties[0].global_kwargs['rest_UV_wav_lims'])}"
+        if self.global_kwargs["keep_valid"]:
+            label += "_A>0"
+        return label
     
     def _kwarg_assertions(self: Self) -> None:
         assert u.get_physical_type(self.global_kwargs["ref_wav"]) == "length"
         assert self.global_kwargs["ref_wav"] > self.pre_req_properties[0].global_kwargs["rest_UV_wav_lims"][0]
         assert self.global_kwargs["ref_wav"] < self.pre_req_properties[0].global_kwargs["rest_UV_wav_lims"][1]
         assert self.global_kwargs["beta_dust_conv"].__class__ in AUV_from_beta.__subclasses__()
+        assert isinstance(self.global_kwargs["keep_valid"], bool)
     
     def _calc_obj_kwargs(
         self: Self,
@@ -717,7 +722,8 @@ class UV_Dust_Attenuation_Calculator(Rest_Frame_Property_Calculator):
         # calculate A_UV
         A_UV_arr = self.global_kwargs["beta_dust_conv"](beta_arr)
         # limit to A_UV > 0
-        A_UV_arr[A_UV_arr < 0.0] = 0.0
+        if self.global_kwargs["keep_valid"]:
+            A_UV_arr[A_UV_arr < 0.0] = 0.0
         return A_UV_arr
     
     def _get_output_kwargs(
@@ -735,18 +741,22 @@ class Fesc_From_Beta_Calculator(Rest_Frame_Property_Calculator):
         SED_fit_label: Union[str, Type[SED_code]], 
         rest_UV_wav_lims: u.Quantity = [1_250.0, 3_000.0] * u.AA,
         fesc_conv: str = "Chisholm22",
+        keep_valid: bool = False,
     ) -> NoReturn:
         pre_req_properties = [UV_Beta_Calculator(aper_diam, SED_fit_label, rest_UV_wav_lims)]
-        global_kwargs = {"fesc_conv": fesc_conv}
+        global_kwargs = {"fesc_conv": fesc_conv, "keep_valid": keep_valid}
         super().__init__(aper_diam, SED_fit_label, pre_req_properties, **global_kwargs)
 
     @property
     def name(self: Self) -> str:
         #if isinstance(self.global_kwargs["fesc_conv"], str):
-        return f"fesc={self.global_kwargs['fesc_conv']}_" + \
+        label = f"fesc={self.global_kwargs['fesc_conv']}_" + \
             rest_UV_wavs_name(self.pre_req_properties[0].global_kwargs["rest_UV_wav_lims"])
         #else: # float
-        #    return f"fesc={self.global_kwargs['fesc_conv']:.2f}"
+        #    label = f"fesc={self.global_kwargs['fesc_conv']:.2f}"
+        if self.global_kwargs["keep_valid"]:
+            label += "_0<fesc<1"
+        return label
     
     def _kwarg_assertions(self: Self) -> None:
         #if isinstance(self.global_kwargs["fesc_conv"], str):
@@ -756,6 +766,7 @@ class Fesc_From_Beta_Calculator(Rest_Frame_Property_Calculator):
         #     assert self.global_kwargs["fesc_conv"] <= 1.0
         # else:
         #     raise ValueError("fesc_conv must be a string or float")
+        assert isinstance(self.global_kwargs["keep_valid"], bool)
     
     def _calc_obj_kwargs(
         self: Self,
@@ -785,6 +796,9 @@ class Fesc_From_Beta_Calculator(Rest_Frame_Property_Calculator):
         fesc_arr = funcs.fesc_from_beta_conversions[self.global_kwargs["fesc_conv"]](beta_arr)
         #else:
         #    fesc_arr = np.full_like(beta_arr, self.global_kwargs["fesc_conv"])
+        if self.global_kwargs["keep_valid"]:
+            fesc_arr[fesc_arr < 0.0] = 0.0
+            fesc_arr[fesc_arr > 1.0] = 1.0
         return fesc_arr
     
     def _get_output_kwargs(
@@ -993,7 +1007,8 @@ class LUV_Calculator(Rest_Frame_Property_Calculator):
                 SED_fit_label, 
                 rest_UV_wav_lims,
                 beta_dust_conv,
-                ref_wav
+                ref_wav,
+                keep_valid = True
             )
             pre_req_properties.append(self.dust_calculator)
         global_kwargs = {"frame": frame}
@@ -1278,13 +1293,16 @@ class Optical_Continuum_Calculator(Rest_Frame_Property_Calculator):
                 np.array(cont_wavs, dtype=np.float64), cont_fluxes_, em_wav) \
                 for cont_fluxes_ in cont_fluxes])
         # set negative fluxes to NaNs
-        self.obj_kwargs["negative_flux_pc"] = len(cont_chains[cont_chains < 0.0]) / len(cont_chains)
-        # return None if there are no positive fluxes
-        if self.obj_kwargs["negative_flux_pc"] > 0.99:
-            return None
+        valid_chains = cont_chains[cont_chains > 0.0]
+        if len(fluxes_arr) > 1:
+            self.obj_kwargs["negative_flux_pc"] = 100.0 * (1 - len(valid_chains) / len(cont_chains))
+            if len(valid_chains) < 50 or self.obj_kwargs["negative_flux_pc"] > 99.0:
+                return None
         else:
-            cont_chains[cont_chains < 0.0] = np.nan
-            return (cont_chains * flux_unit).to(u.nJy)
+            if len(valid_chains) < 1:
+                return None
+        cont_chains[cont_chains < 0.0] = np.nan
+        return (cont_chains * flux_unit).to(u.nJy)
     
     def _get_output_kwargs(
         self: Self,
@@ -1440,6 +1458,7 @@ class Dust_Attenuation_From_UV_Calculator(Rest_Frame_Property_Calculator):
         beta_dust_conv: Union[str, Type[AUV_from_beta]] = M99,
         UV_ref_wav: u.Quantity = 1_500.0 * u.AA,
         UV_wav_lims: u.Quantity = [1_250.0, 3_000.0] * u.AA,
+        keep_valid: bool = False,
     ) -> NoReturn:
         dust_atten_calculator = \
             UV_Dust_Attenuation_Calculator(
@@ -1459,18 +1478,23 @@ class Dust_Attenuation_From_UV_Calculator(Rest_Frame_Property_Calculator):
         global_kwargs = {
             "calc_wav": calc_wav, 
             "dust_law": dust_law,
+            "keep_valid": keep_valid
         }
         super().__init__(aper_diam, SED_fit_label, pre_req_properties, **global_kwargs)
 
     @property
     def name(self: Self) -> str:
-        return f"A{self.global_kwargs['calc_wav'].to(u.AA).value:.0f}" + \
+        label = f"A{self.global_kwargs['calc_wav'].to(u.AA).value:.0f}" + \
             f"_{self.pre_req_properties[0].global_kwargs['beta_dust_conv'].__class__.__name__}" + \
             f"_{self.global_kwargs['dust_law'].__class__.__name__}"
+        if self.global_kwargs["keep_valid"]:
+            label += "_A>0"
+        return label
     
     def _kwarg_assertions(self: Self) -> None:
         assert u.get_physical_type(self.global_kwargs["calc_wav"]) == "length"
         assert self.global_kwargs["dust_law"].__class__ in Dust_Law.__subclasses__()
+        assert isinstance(self.global_kwargs["keep_valid"], bool)
     
     def _calc_obj_kwargs(
         self: Self,
@@ -1503,6 +1527,8 @@ class Dust_Attenuation_From_UV_Calculator(Rest_Frame_Property_Calculator):
         A_lambda = (AUV_arr * self.global_kwargs["dust_law"].k_lambda \
             (self.global_kwargs["calc_wav"].to(u.AA)) / self.global_kwargs["dust_law"] \
             .k_lambda(self.pre_req_properties[0].global_kwargs["ref_wav"].to(u.AA))) * u.ABmag
+        if self.global_kwargs["keep_valid"]:
+            A_lambda[A_lambda < 0.0] = 0.0
         return A_lambda
     
     def _get_output_kwargs(
@@ -1523,6 +1549,7 @@ class Line_Dust_Attenuation_From_UV_Calculator(Dust_Attenuation_From_UV_Calculat
         beta_dust_conv: Union[str, Type[AUV_from_beta]] = M99,
         UV_ref_wav: u.Quantity = 1_500.0 * u.AA,
         UV_wav_lims: u.Quantity = [1_250.0, 3_000.0] * u.AA,
+        keep_valid: bool = False
     ) -> NoReturn:
         assert line_name in line_diagnostics.keys(), \
             galfind_logger.critical(
@@ -1535,7 +1562,8 @@ class Line_Dust_Attenuation_From_UV_Calculator(Dust_Attenuation_From_UV_Calculat
             dust_law,
             beta_dust_conv,
             UV_ref_wav,
-            UV_wav_lims
+            UV_wav_lims,
+            keep_valid
         )
 
 
@@ -1574,9 +1602,17 @@ class Optical_Line_Flux_Calculator(Rest_Frame_Property_Calculator):
         else:
             if isinstance(strong_line_names, str):
                 strong_line_names = strong_line_names.split("+")
-            self.dust_calculator = Line_Dust_Attenuation_From_UV_Calculator( \
-                aper_diam, SED_fit_label, strong_line_names[0], dust_law,\
-                beta_dust_conv, UV_ref_wav, UV_wav_lims)
+            self.dust_calculator = \
+                Line_Dust_Attenuation_From_UV_Calculator(
+                    aper_diam, 
+                    SED_fit_label,
+                    strong_line_names[0], 
+                    dust_law,
+                    beta_dust_conv, 
+                    UV_ref_wav, 
+                    UV_wav_lims,
+                    keep_valid = True
+                )
             pre_req_properties.append(self.dust_calculator)
         super().__init__(aper_diam, SED_fit_label, pre_req_properties)
 
@@ -1780,7 +1816,8 @@ class Xi_Ion_Calculator(Rest_Frame_Property_Calculator):
                 aper_diam,
                 SED_fit_label,
                 UV_wav_lims,
-                fesc_conv
+                fesc_conv,
+                keep_valid = True
             )
             pre_req_properties.append(self.fesc_calculator)
         else: # float
@@ -1811,6 +1848,9 @@ class Xi_Ion_Calculator(Rest_Frame_Property_Calculator):
     def _kwarg_assertions(self: Self) -> NoReturn:
         if self.fesc_calculator is not None:
             assert isinstance(self.fesc_calculator, (Fesc_From_Beta_Calculator, float))
+        if isinstance(self.fesc_calculator, float):
+            assert self.fesc_calculator.global_kwargs["fesc_conv"] >= 0.0
+            assert self.fesc_calculator.global_kwargs["fesc_conv"] <= 1.0
     
     def _calc_obj_kwargs(
         self: Self,
@@ -1856,6 +1896,15 @@ class Xi_Ion_Calculator(Rest_Frame_Property_Calculator):
         # under assumption of Case B recombination
         xi_ion_arr = (line_lum_arr / (1.36e-12 * u.erg * \
             (1.0 - fesc_arr) * LUV_arr)).to(u.Hz / u.erg)
+        finite_xi_ion_arr = xi_ion_arr[np.isfinite(xi_ion_arr)]
+        if len(fluxes_arr > 1):
+            self.obj_kwargs["negative_xi_ion_pc"] = 100.0 * (1 - len(finite_xi_ion_arr) / len(xi_ion_arr))
+            if len(finite_xi_ion_arr) < 50 or self.obj_kwargs["negative_xi_ion_pc"] > 99.0:
+                return None
+        else:
+            if len(finite_xi_ion_arr) < 1:
+                return None
+        xi_ion_arr[~np.isfinite(xi_ion_arr)] = np.nan
         return xi_ion_arr
     
     def _get_output_kwargs(

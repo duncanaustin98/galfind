@@ -37,11 +37,13 @@ def test_selection():
     # epochs_selected_cat_lowz = epochs_selector_lowz(JOF_cat, aper_diams[0], EAZY_fitter, return_copy = True)
 
     SED_fit_label = "EAZY_fsps_larson_zfree"
-    from galfind import Xi_Ion_Calculator, M99, Reddy18, C00
+    from galfind import MUV_Calculator, Xi_Ion_Calculator, M99
     for beta_dust_conv in [None, M99]: #, Reddy18(C00(), 100 * u.Myr), Reddy18(C00(), 300 * u.Myr)]:
         for fesc_conv in [None, 0.1, 0.2, 0.5, "Chisholm22"]:
             calculator = Xi_Ion_Calculator(aper_diams[0], SED_fit_label, beta_dust_conv = beta_dust_conv, fesc_conv = fesc_conv)
             calculator(JOF_cat, n_chains = 10_000, output = False, n_jobs = 1)
+    MUV_calculator = MUV_Calculator(aper_diams[0], SED_fit_label)
+    MUV_calculator(JOF_cat, n_chains = 10_000, output = False, n_jobs = 1)
     breakpoint()
 
 def main():
