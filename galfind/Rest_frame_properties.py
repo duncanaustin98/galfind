@@ -1849,8 +1849,8 @@ class Xi_Ion_Calculator(Rest_Frame_Property_Calculator):
         if self.fesc_calculator is not None:
             assert isinstance(self.fesc_calculator, (Fesc_From_Beta_Calculator, float))
         if isinstance(self.fesc_calculator, float):
-            assert self.fesc_calculator.global_kwargs["fesc_conv"] >= 0.0
-            assert self.fesc_calculator.global_kwargs["fesc_conv"] <= 1.0
+            assert self.fesc_calculator >= 0.0
+            assert self.fesc_calculator <= 1.0
     
     def _calc_obj_kwargs(
         self: Self,
