@@ -728,7 +728,70 @@ class UV_Dust_Attenuation_Calculator(Rest_Frame_Property_Calculator):
     
 
 class Fesc_From_Beta_Calculator(Rest_Frame_Property_Calculator):
-    pass
+    
+    def __init__(
+        self: Self, 
+        aper_diam: u.Quantity, 
+        SED_fit_label: Union[str, Type[SED_code]], 
+        rest_UV_wav_lims: u.Quantity = [1_250.0, 3_000.0] * u.AA,
+        fesc_conv: str = "Chisholm22",
+    ) -> NoReturn:
+        pre_req_properties = [UV_Beta_Calculator(aper_diam, SED_fit_label, rest_UV_wav_lims)]
+        global_kwargs = {"fesc_conv": fesc_conv}
+        super().__init__(aper_diam, SED_fit_label, pre_req_properties, **global_kwargs)
+
+    @property
+    def name(self: Self) -> str:
+        #if isinstance(self.global_kwargs["fesc_conv"], str):
+        return f"fesc={self.global_kwargs['fesc_conv']}_" + \
+            rest_UV_wavs_name(self.pre_req_properties[0].global_kwargs["rest_UV_wav_lims"])
+        #else: # float
+        #    return f"fesc={self.global_kwargs['fesc_conv']:.2f}"
+    
+    def _kwarg_assertions(self: Self) -> None:
+        #if isinstance(self.global_kwargs["fesc_conv"], str):
+        assert self.global_kwargs["fesc_conv"] in funcs.fesc_from_beta_conversions.keys()
+        # elif isinstance(self.global_kwargs["fesc_conv"], float):
+        #     assert self.global_kwargs["fesc_conv"] >= 0.0
+        #     assert self.global_kwargs["fesc_conv"] <= 1.0
+        # else:
+        #     raise ValueError("fesc_conv must be a string or float")
+    
+    def _calc_obj_kwargs(
+        self: Self,
+        phot_rest: Photometry_rest
+    ) -> Dict[str, Any]:
+        return {}
+
+    def _fail_criteria(
+        self: Self,
+        phot_rest: Photometry_rest,
+    ) -> bool:
+        # always pass
+        return False
+    
+    def _calculate(
+        self: Self,
+        fluxes_arr: u.Quantity,
+        phot_rest: Photometry_rest,
+    ) -> Optional[Union[u.Quantity, u.Magnitude, u.Dex]]:
+        # calculate beta
+        if len(fluxes_arr) > 1:
+            beta_arr = phot_rest.property_PDFs[self.pre_req_properties[0].name].input_arr
+            assert len(fluxes_arr) == len(beta_arr)
+        else:
+            beta_arr = phot_rest.properties[self.pre_req_properties[0].name]
+        #if isinstance(self.global_kwargs["fesc_conv"], str):
+        fesc_arr = funcs.fesc_from_beta_conversions[self.global_kwargs["fesc_conv"]](beta_arr)
+        #else:
+        #    fesc_arr = np.full_like(beta_arr, self.global_kwargs["fesc_conv"])
+        return fesc_arr
+    
+    def _get_output_kwargs(
+        self: Self,
+        phot_rest: Photometry_rest
+    ) -> Dict[str, Any]:
+        return {}
 
 
 class mUV_Calculator(Rest_Frame_Property_Calculator):
@@ -1685,7 +1748,7 @@ class Xi_Ion_Calculator(Rest_Frame_Property_Calculator):
         UV_wav_lims: Optional[u.Quantity] = [1_250.0, 3_000.0] * u.AA,
         top_hat_width: u.Quantity = 100.0 * u.AA,
         resolution: u.Quantity = 1.0 * u.AA,
-        fesc_author_year: Optional[str] = None,
+        fesc_conv: Optional[Union[str, float]] = None,
     ) -> NoReturn:
         line_lum_calculator = \
             Optical_Line_Luminosity_Calculator(
@@ -1710,12 +1773,18 @@ class Xi_Ion_Calculator(Rest_Frame_Property_Calculator):
             resolution
         )
         pre_req_properties = [line_lum_calculator, LUV_calculator]
-        if fesc_author_year is None:
+        if fesc_conv is None:
             self.fesc_calculator = None
-        else:
-            NotImplementedError()
-            #self.fesc_calculator =
-            #pre_req_properties.append(self.fesc_calculator)
+        elif isinstance(fesc_conv, str):
+            self.fesc_calculator = Fesc_From_Beta_Calculator(
+                aper_diam,
+                SED_fit_label,
+                UV_wav_lims,
+                fesc_conv
+            )
+            pre_req_properties.append(self.fesc_calculator)
+        else: # float
+            self.fesc_calculator = fesc_conv
         super().__init__(aper_diam, SED_fit_label, pre_req_properties)
 
     @property
@@ -1726,17 +1795,22 @@ class Xi_Ion_Calculator(Rest_Frame_Property_Calculator):
                 pre_req_properties[0].dust_calculator.name.split("_")[1:2]) + "dust"
         else:
             dust_label = ""
-        if self.fesc_calculator is not None:
-            fesc_label = self.fesc_calculator.name
-        else:
-            fesc_label = "fesc=0.0"
+        if self.fesc_calculator is None:
+            fesc_label = "fesc=0"
+        elif isinstance(self.fesc_calculator, Fesc_From_Beta_Calculator):
+            fesc_label = self.fesc_calculator.name.split("_")[0]
+            if dust_label == "":
+                fesc_label += "_".join(fesc_label.split("_")[1:])
+        else: # isinstance(fesc_conv, float)
+            fesc_label = f"fesc={self.fesc_calculator:.2f}"
         line_label = "+".join(self.pre_req_properties[0]. \
             pre_req_properties[0].pre_req_properties[1]. \
             global_kwargs["strong_line_names"])
         return f"xi_ion_{line_label}{dust_label}_{fesc_label}"
     
     def _kwarg_assertions(self: Self) -> NoReturn:
-        pass
+        if self.fesc_calculator is not None:
+            assert isinstance(self.fesc_calculator, (Fesc_From_Beta_Calculator, float))
     
     def _calc_obj_kwargs(
         self: Self,
@@ -1763,16 +1837,20 @@ class Xi_Ion_Calculator(Rest_Frame_Property_Calculator):
             assert len(fluxes_arr) == len(line_lum_arr) == len(LUV_arr)
             if self.fesc_calculator is None:
                 fesc_arr = np.full(len(fluxes_arr), 0.0)
-            else:
-                pass
+            elif isinstance(self.fesc_calculator, Fesc_From_Beta_Calculator):
+                fesc_arr = phot_rest.property_PDFs[self.fesc_calculator.name].input_arr
+            else: # isinstance(fesc_conv, float)
+                fesc_arr = np.full(len(fluxes_arr), self.fesc_calculator)
             assert len(fluxes_arr) == len(fesc_arr)
         else:
             line_lum_arr = phot_rest.properties[self.pre_req_properties[0].name]
             LUV_arr = phot_rest.properties[self.pre_req_properties[1].name]
             if self.fesc_calculator is None:
                 fesc_arr = 0.0
-            else:
+            elif isinstance(self.fesc_calculator, Fesc_From_Beta_Calculator):
                 fesc_arr = phot_rest.properties[self.fesc_calculator.name]
+            else: # isinstance(fesc_conv, float)
+                fesc_arr = self.fesc_calculator
 
         # calculate xi_ion values 
         # under assumption of Case B recombination
@@ -1785,18 +1863,3 @@ class Xi_Ion_Calculator(Rest_Frame_Property_Calculator):
         phot_rest: Photometry_rest
     ) -> Dict[str, Any]:
         return {}
-
-#         if fesc_author_year in fesc_from_beta_conversions.keys():
-#                 fesc_property_name = self._calc_property(
-#                     Photometry_rest.calc_fesc_from_beta_phot,
-#                     iters=iters,
-#                     rest_UV_wav_lims=rest_UV_wav_lims,
-#                     fesc_author_year=fesc_author_year,
-#                     save_path=save_path,
-#                 )[1][0]
-#         elif "fesc=" in fesc_author_year:
-#                 fesc_chain = np.full(
-#                     iters, float(fesc_author_year.split("=")[-1])
-#                 )
-#         else:
-#             raise NotImplementedError

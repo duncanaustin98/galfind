@@ -37,54 +37,12 @@ def test_selection():
     # epochs_selected_cat_lowz = epochs_selector_lowz(JOF_cat, aper_diams[0], EAZY_fitter, return_copy = True)
 
     SED_fit_label = "EAZY_fsps_larson_zfree"
-    from galfind import Xi_Ion_Calculator
-    calculator = Xi_Ion_Calculator(aper_diams[0], SED_fit_label)
-    calculator(JOF_cat, n_chains = 10_000, output = False, n_jobs = 1)
+    from galfind import Xi_Ion_Calculator, M99, Reddy18, C00
+    for beta_dust_conv in [None, M99]: #, Reddy18(C00(), 100 * u.Myr), Reddy18(C00(), 300 * u.Myr)]:
+        for fesc_conv in [None, 0.1, 0.2, 0.5, "Chisholm22"]:
+            calculator = Xi_Ion_Calculator(aper_diams[0], SED_fit_label, beta_dust_conv = beta_dust_conv, fesc_conv = fesc_conv)
+            calculator(JOF_cat, n_chains = 10_000, output = False, n_jobs = 1)
     breakpoint()
-
-def test_docs():
-    import astropy.units as u
-    from copy import deepcopy
-    from galfind import Catalogue, EAZY
-    from galfind.Data import morgan_version_to_dir
-    survey = "JOF"
-    version = "v11"
-    instrument_names = ["NIRCam"]
-    aper_diams = [0.32] * u.arcsec
-    forced_phot_band = ["F277W", "F356W", "F444W"]
-    min_flux_pc_err = 10.
-
-    JOF_cat = Catalogue.pipeline(
-        survey,
-        version,
-        instrument_names = instrument_names, 
-        version_to_dir_dict = morgan_version_to_dir,
-        aper_diams = aper_diams,
-        forced_phot_band = forced_phot_band,
-        min_flux_pc_err = min_flux_pc_err
-    )
-
-    SED_fit_params_arr = [{"templates": "fsps_larson", "lowz_zmax": None}]
-    for SED_fit_params in SED_fit_params_arr:
-        EAZY_fitter = EAZY(SED_fit_params)
-        EAZY_fitter(JOF_cat, aper_diams[0], load_PDFs = True, load_SEDs = True, update = True)
-    SED_fit_label = EAZY_fitter.label
-    from galfind import UV_Beta_Calculator
-    beta_calculator = UV_Beta_Calculator(
-        aper_diam = aper_diams[0],
-        SED_fit_label = SED_fit_label,
-        rest_UV_wav_lims = [1_250., 3_000.] * u.AA
-    )
-    phot_rest_z14 = deepcopy(JOF_cat[717].aper_phot[aper_diams[0]].SED_results[SED_fit_label].phot_rest)
-    print(phot_rest_z14)
-    print(phot_rest_z14.__dict__)
-    beta_calculator(
-        phot_rest_z14,
-        n_chains = 1, 
-        output = False,
-        overwrite = False,
-        n_jobs = 1
-    )
 
 def main():
     JOF_data = Data.pipeline(
@@ -117,8 +75,8 @@ def main():
 if __name__ == "__main__":
     #test_load()
     #main()
-    #test_selection()
-    test_docs()
+    test_selection()
+    #test_docs()
 
     # LePhare_SED_fit_params = {"GAL_TEMPLATES": "BC03_Chabrier2003_Z(m42_m62)"}
     # EAZY_SED_fit_params = {"templates": "fsps_larson", "lowz_zmax": None}

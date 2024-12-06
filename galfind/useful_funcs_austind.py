@@ -400,6 +400,10 @@ SFR_conversions = {
     "MD14": 1.15e-28 * (u.solMass / u.yr) / (u.erg / (u.s * u.Hz))
 }
 
+fesc_from_beta_conversions = {
+    "Chisholm22": lambda beta: np.random.normal(1.3, 0.6, len(beta))
+    * 10 ** (-4.0 - np.random.normal(1.22, 0.1, len(beta)) * beta)
+}
 
 # unit labelling
 
