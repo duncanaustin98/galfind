@@ -303,7 +303,7 @@ class Rest_Frame_Property_Calculator(ABC):
             else:
                 # if PDF does not already exist in the object 
                 # but has been run before, load it if not wanting to overwrite
-                if Path(save_path).is_file():
+                if save_path is not None and Path(save_path).is_file():
                     if property_name not in phot_rest.property_PDFs.keys() \
                             and not overwrite:
                         PDF_obj = PDF.from_npy(save_path)
@@ -366,13 +366,14 @@ class Rest_Frame_Property_Calculator(ABC):
                             phot_rest.properties[property_name] = PDF_obj.median
                             phot_rest.property_errs[property_name] = PDF_obj.errs
                             # update saved PDF
-                            funcs.make_dirs(save_path)
-                            if phot_rest.property_PDFs[property_name] is not None and save_path is not None:
-                                if save_scattered_fluxes:
-                                    np.save(save_path.replace(".npy", "_scattered_fluxes.npy"), scattered_fluxes.value)
-                                    galfind_logger.debug("Scattered fluxes saved")
-                                phot_rest.property_PDFs[property_name].save(save_path)
-                                galfind_logger.debug(f"PDF saved for {save_path.split('/')[-1].replace('.npy', '')}")
+                            if save_path is not None:
+                                funcs.make_dirs(save_path)
+                                if phot_rest.property_PDFs[property_name] is not None and save_path is not None:
+                                    if save_scattered_fluxes:
+                                        np.save(save_path.replace(".npy", "_scattered_fluxes.npy"), scattered_fluxes.value)
+                                        galfind_logger.debug("Scattered fluxes saved")
+                                    phot_rest.property_PDFs[property_name].save(save_path)
+                                    galfind_logger.debug(f"PDF saved for {save_path.split('/')[-1].replace('.npy', '')}")
                             calculated = True
             if calculated:
                 phot_rest.property_kwargs[property_name] = self._get_output_kwargs(phot_rest)
