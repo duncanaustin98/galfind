@@ -1572,7 +1572,7 @@ class EPOCHS_Selector(Multiple_SED_fit_Selector):
         selectors = [
             Bluewards_Lya_Non_Detect_Selector(SNR_lim = 2.0),
             Redwards_Lya_Detect_Selector(SNR_lims = [5.0, 5.0], widebands_only = True),
-            Redwards_Lya_Detect_Selector(SNR_lims = 2.0, widebands_only = False),
+            Redwards_Lya_Detect_Selector(SNR_lims = 2.0, widebands_only = True),
             Chi_Sq_Lim_Selector(chi_sq_lim = 3.0, reduced = True),
             Chi_Sq_Diff_Selector(chi_sq_diff = 4.0, dz = 0.5),
             Robust_zPDF_Selector(integral_lim = 0.6, dz_over_z = 0.1)

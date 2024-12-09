@@ -31,12 +31,6 @@ from .decorators import ignore_warnings
 from .Dust_Attenuation import AUV_from_beta
 from .Emission_lines import line_diagnostics, strong_optical_lines
 
-fesc_from_beta_conversions = {
-    "Chisholm22": lambda beta: np.random.normal(1.3, 0.6, len(beta))
-    * 10 ** (-4.0 - np.random.normal(1.22, 0.1, len(beta)) * beta)
-}
-
-
 class Photometry_rest(Photometry):
     def __init__(
         self: Self,
@@ -271,52 +265,6 @@ class Photometry_rest(Photometry):
 
     def PL_amplitude_name(self, rest_UV_wav_lims):
         return f"A_PL_{self.rest_UV_wavs_name(rest_UV_wav_lims)}"
-
-    # Rest-frame UV property calculations
-
-    def calc_fesc_from_beta_phot(
-        self,
-        rest_UV_wav_lims,
-        conv_author_year,
-        iters=10,
-        extract_property_name=False,
-        save_path=None,
-        single_iter: bool = False,
-    ):
-        assert type(single_iter) == bool
-        assert conv_author_year in fesc_from_beta_conversions.keys()
-        property_name = f"fesc_{conv_author_year}"  # _{self.rest_UV_wavs_name(rest_UV_wav_lims)}"
-        if extract_property_name:
-            return [property_name]
-        if single_iter:
-            popt, kwargs = self.calc_beta_phot(
-                rest_UV_wav_lims, output_kwargs=True, single_iter=True
-            )
-            return fesc_from_beta_conversions[conv_author_year](
-                popt[1]
-            ), kwargs
-        else:
-            beta_property_name = self._calc_property(
-                Photometry_rest.calc_beta_phot,
-                iters=iters,
-                rest_UV_wav_lims=rest_UV_wav_lims,
-                save_path=save_path,
-            )[1][1]
-            # update PDF
-            if type(self.property_PDFs[beta_property_name]) == type(None):
-                return [None], [property_name]
-            else:
-                return [
-                    {
-                        "PDF": self.property_PDFs[
-                            beta_property_name
-                        ].manipulate_PDF(
-                            property_name,
-                            fesc_from_beta_conversions[conv_author_year],
-                            size=iters,
-                        )
-                    }
-                ], [property_name]
 
     def _calc_property(
         self,
