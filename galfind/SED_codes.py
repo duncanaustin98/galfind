@@ -16,9 +16,9 @@ import itertools
 import numpy as np
 from astropy.table import Table, join
 from tqdm import tqdm
-from typing import TYPE_CHECKING, NoReturn, Tuple, Union, List, Dict, Any, Optional, Type
+from typing import TYPE_CHECKING, NoReturn, Tuple, Union, List, Dict, Any, Optional
 if TYPE_CHECKING:
-    from . import Catalogue, Multiple_Filter
+    from . import Catalogue, Multiple_Filter, SED_obs, PDF
 try:
     from typing import Self, Type  # python 3.11+
 except ImportError:
@@ -92,11 +92,24 @@ class SED_code(ABC):
         pass
 
     @abstractmethod
-    def make_in(self, cat: Catalogue):
+    def make_in(
+        self, 
+        cat: Catalogue, 
+        aper_diam: u.Quantity, 
+        overwrite: bool = False
+    ) -> str:
         pass
 
     @abstractmethod
-    def fit(self, cat: Catalogue, overwrite: bool = False):
+    def fit(
+        self: Self,
+        cat: Catalogue,
+        aper_diam: u.Quantity,
+        save_SEDs: bool = True,
+        save_PDFs: bool = True,
+        overwrite: bool = False,
+        **kwargs: Dict[str, Any],
+    ) -> NoReturn:
         pass
 
     @abstractmethod
@@ -104,15 +117,28 @@ class SED_code(ABC):
         pass
 
     @abstractmethod
-    def _get_out_paths(out_path, IDs):
+    def _get_out_paths(
+        self: Self, 
+        cat: Catalogue, 
+        aper_diam: u.Quantity
+    ) -> Tuple[str, str, str, Dict[str, List[str]], List[str]]:
         pass
 
     @abstractmethod
-    def extract_SEDs(self, IDs, data_paths):
+    def extract_SEDs(
+        self: Self, 
+        IDs: List[int], 
+        SED_paths: Union[str, List[str]]
+    ) -> List[SED_obs]:
         pass
 
     @abstractmethod
-    def extract_PDFs(self, gal_property, IDs, data_paths):
+    def extract_PDFs(
+        self: Self, 
+        gal_property: str, 
+        IDs: List[int], 
+        PDF_paths: Union[str, List[str]], 
+    ) -> List[Type[PDF]]:
         pass
 
     def _assert_SED_fit_params(self) -> NoReturn:
@@ -176,7 +202,7 @@ class SED_code(ABC):
 
         in_path, out_path, fits_out_path, PDF_paths, SED_paths = self._get_out_paths(cat, aper_diam)
         # run the SED fitting if not already done so or if wanted overwriting
-        fits_cat = cat.open_cat(hdu=self) # should be cached
+        fits_cat = cat.open_cat(hdu=self) # could be cached
         if fits_cat is None or self.gal_property_labels['z'] \
                 not in fits_cat.colnames:
             self.fit(

@@ -439,21 +439,21 @@ class Catalogue_Creator:
     def _get_crop_mask(self) -> NoReturn:
         # crop table
         # TODO: implement more general catalogue loading
-        tab = self.open_cat(self.cat_path, "ID")
         if self.crops is not None:
             # crop table using crop dict
             keep_arr = []
-            for key, values in self.crops.items():
+            for key, value in self.crops.items():
+                tab = self.open_cat(self.cat_path, key)
                 # currently only crops by ID
                 if "ID" in key.upper():
-                    keep_arr.extend([np.array([True if ID in values else False \
+                    keep_arr.extend([np.array([True if ID in value else False \
                         for ID in self.load_IDs(cropped = False)])])
                     # galfind_logger.info(
                     #     f"Catalogue cropped by 'ID' to {values}"
                     # )
-                elif key in tab.colnames:
-                    if isinstance(tab[key][0], (bool, np.bool_)):
-                        keep_arr.extend([np.array(tab[key]).astype(bool)])
+                elif value in tab.colnames:
+                    if isinstance(tab[value][0], (bool, np.bool_)):
+                        keep_arr.extend([np.array(tab[value]).astype(bool)])
                         # galfind_logger.info(
                         #     f"Catalogue cropped by {key}"
                         # )
@@ -468,9 +468,10 @@ class Catalogue_Creator:
                     #     f"Invalid crop name == {key}! Skipping"
                     # )
             # crop table
-            self.crop_mask = np.array(np.logical_and.reduce(keep_arr)).astype(bool)
-        else:
-            self.crop_mask = np.full(len(tab), True)
+            if len(keep_arr) > 0:
+                self.crop_mask = np.array(np.logical_or.reduce(keep_arr)).astype(bool)
+                return
+        self.crop_mask = np.full(len(tab), True)
 
 
     def load_IDs(self, cropped: bool = True) -> List[int]:
@@ -549,7 +550,7 @@ class Catalogue_Creator:
             return None
         
     def load_selection_flags(self, cropped: bool = True) -> List[Dict[str, bool]]:
-        tab = self.load_tab("selection", cropped)
+        tab = self.load_tab("SELECTION", cropped)
         if self.load_selection_func is not None and self.get_selection_labels is not None and tab is not None:
             select_labels = self.get_selection_labels(tab, **self.load_selection_kwargs)
             select_dict = self.load_selection_func(tab, select_labels, **self.load_selection_kwargs)

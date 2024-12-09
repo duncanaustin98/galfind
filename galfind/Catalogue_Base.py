@@ -125,6 +125,35 @@ class Catalogue_Base:
             return list(np.array(self.gals)[index])
         elif isinstance(index, list):
             return list(np.array(self.gals)[np.array(index)])
+        elif isinstance(index, dict):
+            # make this more general
+            keep_arr = []
+            for key, values in index.items():
+                if key == "ID":
+                    if not isinstance(values, (list, np.ndarray)):
+                        values = [int(values)]
+                        singular = True
+                    else:
+                        singular = False
+                    values = np.array(values).astype(int)
+                    keep_arr.extend(
+                        [np.array(
+                            [
+                                True if getattr(gal, key) in values else False
+                                for i, gal in enumerate(self)
+                                
+                            ]
+                        )]
+                    )
+            if len(keep_arr) > 0:
+                cropped_gals_arr = list(np.array(self.gals)[np.array( \
+                    np.logical_and.reduce(keep_arr)).astype(bool)])
+                if singular:
+                    return cropped_gals_arr[0]
+                else:
+                    return cropped_gals_arr
+            else:
+                return None
         else:
             return self.gals[index]
 

@@ -1,6 +1,6 @@
 import astropy.units as u
 from tqdm import tqdm
-from galfind import Filter, Catalogue, Catalogue_Creator, Data, EAZY, LePhare
+from galfind import Filter, Catalogue, Catalogue_Creator, Data, EAZY, LePhare, Bagpipes
 from galfind import Colour_Selector, Unmasked_Instrument_Selector, EPOCHS_Selector
 from galfind.Data import morgan_version_to_dir
 # Load in a JOF data object
@@ -39,12 +39,41 @@ def test_selection():
     SED_fit_label = "EAZY_fsps_larson_zfree"
     from galfind import MUV_Calculator, Xi_Ion_Calculator, M99
     for beta_dust_conv in [None, M99]: #, Reddy18(C00(), 100 * u.Myr), Reddy18(C00(), 300 * u.Myr)]:
-        for fesc_conv in [None, 0.1, 0.2, 0.5, "Chisholm22"]:
+        for fesc_conv in ["Chisholm22"]: # None, 0.1, 0.2, 0.5, 
             calculator = Xi_Ion_Calculator(aper_diams[0], SED_fit_label, beta_dust_conv = beta_dust_conv, fesc_conv = fesc_conv)
             calculator(JOF_cat, n_chains = 10_000, output = False, n_jobs = 1)
     MUV_calculator = MUV_Calculator(aper_diams[0], SED_fit_label)
     MUV_calculator(JOF_cat, n_chains = 10_000, output = False, n_jobs = 1)
     breakpoint()
+
+def test_pipes():
+    
+    JOF_cat = Catalogue.pipeline(
+        survey,
+        version,
+        instrument_names = instrument_names, 
+        version_to_dir_dict = morgan_version_to_dir,
+        aper_diams = aper_diams,
+        forced_phot_band = forced_phot_band,
+        min_flux_pc_err = min_flux_pc_err,
+        crops = {"SELECTION": EPOCHS_Selector(allow_lowz=True). \
+            _get_selection_name(aper_diams[0], \
+            EAZY({"templates": "fsps_larson", "lowz_zmax": None}).label)}
+    )
+
+    #JOF_cat.load_sextractor_Re()
+    # {"templates": "fsps_larson", "lowz_zmax": 4.0}, {"templates": "fsps_larson", "lowz_zmax": 6.0}, 
+
+    SED_fit_params_arr = [{"templates": "fsps_larson", "lowz_zmax": None}]
+    for SED_fit_params in SED_fit_params_arr:
+        EAZY_fitter = EAZY(SED_fit_params)
+        EAZY_fitter(JOF_cat, aper_diams[0], load_PDFs = False, load_SEDs = False, update = True)
+
+    # EPOCHS_JOF_cat = EPOCHS_Selector()(JOF_cat, aper_diams[0], EAZY_fitter, return_copy = True)
+
+    pipes_SED_fit_params = {"fix_z": EAZY_fitter.label, "fesc": None}
+    pipes_fitter = Bagpipes(pipes_SED_fit_params)
+    pipes_fitter(JOF_cat, aper_diams[0], save_PDFs = False, load_SEDs = False, load_PDFs = False, overwrite = False)
 
 def main():
     JOF_data = Data.pipeline(
@@ -73,12 +102,15 @@ def main():
         EAZY_fitter(cat, aper_diams[0], load_PDFs = True, load_SEDs = True, update = True)
     EPOCHS_Selector()(cat, aper_diams[0], EAZY_fitter)
 
+def check_multinest():
+    import pymultinest as pmn
 
 if __name__ == "__main__":
     #test_load()
     #main()
-    test_selection()
-    #test_docs()
+    #test_selection()
+    test_pipes()
+    #check_multinest()
 
     # LePhare_SED_fit_params = {"GAL_TEMPLATES": "BC03_Chabrier2003_Z(m42_m62)"}
     # EAZY_SED_fit_params = {"templates": "fsps_larson", "lowz_zmax": None}

@@ -13,7 +13,6 @@ import subprocess
 from pathlib import Path
 import os
 import json
-
 import astropy.units as u
 import numpy as np
 from astropy.io import fits
@@ -21,7 +20,10 @@ from astropy.table import Table
 from typing import Any, Dict, List, NoReturn, TYPE_CHECKING
 if TYPE_CHECKING:
     from . import Catalogue, Filter, Multiple_Filter
-
+try:
+    from typing import Self, Type  # python 3.11+
+except ImportError:
+    from typing_extensions import Self, Type  # python > 3.7 AND python < 3.11
 from . import Multiple_Filter, SED_code, config, galfind_logger
 from . import useful_funcs_austind as funcs
 from .decorators import run_in_dir
@@ -491,7 +493,11 @@ class LePhare(SED_code):
         funcs.change_file_permissions(fits_out_path)
         return fits_out_path
 
-    def _get_out_paths(self, out_path, SED_fit_params, IDs):
+    def _get_out_paths(
+        self: Self, 
+        cat: Catalogue, 
+        aper_diam: u.Quantity
+    ) -> Tuple[str, str, str, Dict[str, List[str]], List[str]]:
         return NotImplementedError
         # return out_path.replace(".out", "_LePhare.fits")
 
