@@ -30,7 +30,6 @@ from tqdm import tqdm
 from typing import Union, Tuple, Any, List, Dict, Callable, Optional, NoReturn, TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from . import SED_code
     from . import Band_Data_Base
     from . import Multiple_Filter, Data
 
@@ -48,9 +47,9 @@ from . import (
     galfind_logger,
 )
 from . import useful_funcs_austind as funcs
+from . import SED_code
 from .Cutout import Multiple_Band_Cutout, Multiple_RGB, Stacked_RGB
 from .Data import Data
-from .EAZY import EAZY
 from .Emission_lines import line_diagnostics
 from .Galaxy import Galaxy
 from .Spectrum import Spectral_Catalogue
@@ -471,6 +470,8 @@ class Catalogue_Creator:
             if len(keep_arr) > 0:
                 self.crop_mask = np.array(np.logical_or.reduce(keep_arr)).astype(bool)
                 return
+        else:
+            tab = self.open_cat(self.cat_path, "ID")
         self.crop_mask = np.full(len(tab), True)
 
 
@@ -812,11 +813,11 @@ class Catalogue(Catalogue_Base):
         # calculate pre-requisites
         self.calc_ext_src_corrs()
         # make extended source correction for given property
-        [gal.phot.make_ext_src_corrs(gal_property, origin) for gal in self]
+        [aper_phot_.make_ext_src_corrs(gal_property, origin) for gal in self for aper_phot_ in gal.aper_phot.values()]
         # save properties to fits table
-        property_name = f"{gal_property}{funcs.ext_src_label}"
-        self._append_property_to_tab(property_name, origin)
-        return property_name
+        #property_name = f"{gal_property}{funcs.ext_src_label}"
+        #self._append_property_to_tab(property_name, origin)
+        #return property_name
 
     def make_all_ext_src_corrs(self) -> None:
         self.calc_ext_src_corrs()
@@ -1040,7 +1041,10 @@ class Catalogue(Catalogue_Base):
             dest="phot_obs",
         )
         self.load_band_properties_from_cat(
-            "MAG_AUTO", "MAG_AUTO", multiply_factor=u.ABmag, dest="phot_obs"
+            "MAG_AUTO", 
+            "MAG_AUTO", 
+            multiply_factor=u.ABmag, 
+            dest="phot_obs",
         )
 
     def make_cutouts(
@@ -1422,725 +1426,27 @@ class Catalogue(Catalogue_Base):
         if show:
             plt.show()
 
-    # %% SED property functions
-    # Rest-frame UV property calculation functions - these are not independent of each other
-
-    # beta_phot tqdm bar not working appropriately!
-    def calc_beta_phot(
-        self,
-        rest_UV_wav_lims=[1_250.0, 3_000.0] * u.AA,
-        SED_fit_params=EAZY({"templates": "fsps_larson", "lowz_zmax": None}),
-        iters=10_000,
-    ):
-        self.calc_SED_rest_property(
-            SED_rest_property_function=Photometry_rest.calc_beta_phot,
-            iters=iters,
-            SED_fit_params=SED_fit_params,
-            rest_UV_wav_lims=rest_UV_wav_lims,
-        )
-
-    def calc_fesc_from_beta_phot(
-        self,
-        rest_UV_wav_lims=[1_250.0, 3_000.0] * u.AA,
-        conv_author_year="Chisholm22",
-        SED_fit_params=EAZY({"templates": "fsps_larson", "lowz_zmax": None}),
-        iters=10_000,
-    ):
-        self.calc_beta_phot(rest_UV_wav_lims, SED_fit_params, iters)
-        self.calc_SED_rest_property(
-            SED_rest_property_function=Photometry_rest.calc_fesc_from_beta_phot,
-            iters=iters,
-            SED_fit_params=SED_fit_params,
-            rest_UV_wav_lims=rest_UV_wav_lims,
-            conv_author_year=conv_author_year,
-        )
-
-    def calc_AUV_from_beta_phot(
-        self,
-        rest_UV_wav_lims=[1_250.0, 3_000.0] * u.AA,
-        ref_wav=1_500.0 * u.AA,
-        conv_author_year="M99",
-        SED_fit_params=EAZY({"templates": "fsps_larson", "lowz_zmax": None}),
-        iters=10_000,
-    ):
-        self.calc_beta_phot(rest_UV_wav_lims, SED_fit_params, iters)
-        self.calc_SED_rest_property(
-            SED_rest_property_function=Photometry_rest.calc_AUV_from_beta_phot,
-            iters=iters,
-            SED_fit_params=SED_fit_params,
-            rest_UV_wav_lims=rest_UV_wav_lims,
-            ref_wav=ref_wav,
-            conv_author_year=conv_author_year,
-        )
-
-    def calc_mUV_phot(
-        self,
-        rest_UV_wav_lims: u.Quantity = [1_250.0, 3_000.0] * u.AA,
-        ref_wav: u.Quantity = 1_500.0 * u.AA,
-        SED_fit_params = EAZY({"templates": "fsps_larson", "lowz_zmax": None}),
-        iters=10_000,
-    ):
-        self.calc_beta_phot(rest_UV_wav_lims, SED_fit_params, iters)
-        self.calc_SED_rest_property(
-            SED_rest_property_function=Photometry_rest.calc_mUV_phot,
-            iters=iters,
-            SED_fit_params=SED_fit_params,
-            rest_UV_wav_lims=rest_UV_wav_lims,
-            ref_wav=ref_wav,
-        )
-
-    def calc_MUV_phot(
-        self,
-        rest_UV_wav_lims: u.Quantity = [1_250.0, 3_000.0] * u.AA,
-        ref_wav: u.Quantity = 1_500.0 * u.AA,
-        SED_fit_params = EAZY({"templates": "fsps_larson", "lowz_zmax": None}),
-        iters=10_000,
-    ):
-        self.calc_mUV_phot(rest_UV_wav_lims, ref_wav, SED_fit_params, iters)
-        self.calc_SED_rest_property(
-            SED_rest_property_function=Photometry_rest.calc_MUV_phot,
-            iters=iters,
-            SED_fit_params=SED_fit_params,
-            rest_UV_wav_lims=rest_UV_wav_lims,
-            ref_wav=ref_wav,
-        )
-
-    def calc_LUV_phot(
-        self,
-        frame: str = "obs",
-        rest_UV_wav_lims=[1_250.0, 3_000.0] * u.AA,
-        ref_wav=1_500.0 * u.AA,
-        AUV_beta_conv_author_year="M99",
-        SED_fit_params=EAZY({"templates": "fsps_larson", "lowz_zmax": None}),
-        iters=10_000,
-    ):
-        if type(AUV_beta_conv_author_year) != type(None):
-            self.calc_AUV_from_beta_phot(
-                rest_UV_wav_lims,
-                ref_wav,
-                AUV_beta_conv_author_year,
-                SED_fit_params,
-                iters,
-            )
-        self.calc_mUV_phot(rest_UV_wav_lims, ref_wav, SED_fit_params, iters)
-        self.calc_SED_rest_property(
-            SED_rest_property_function=Photometry_rest.calc_LUV_phot,
-            iters=iters,
-            SED_fit_params=SED_fit_params,
-            frame=frame,
-            rest_UV_wav_lims=rest_UV_wav_lims,
-            ref_wav=ref_wav,
-            AUV_beta_conv_author_year=AUV_beta_conv_author_year,
-        )
-
-    def calc_SFR_UV_phot(
-        self,
-        frame: str = "obs",
-        rest_UV_wav_lims: u.Quantity = [1_250.0, 3_000.0] * u.AA,
-        ref_wav: u.Quantity = 1_500.0 * u.AA,
-        AUV_beta_conv_author_year: Union[str, None] = "M99",
-        kappa_UV_conv_author_year: str = "MD14",
-        SED_fit_params = EAZY({"templates": "fsps_larson", "lowz_zmax": None}),
-        iters=10_000,
-    ):
-        self.calc_LUV_phot(
-            frame,
-            rest_UV_wav_lims,
-            ref_wav,
-            AUV_beta_conv_author_year,
-            SED_fit_params,
-            iters,
-        )
-        self.calc_SED_rest_property(
-            SED_rest_property_function=Photometry_rest.calc_SFR_UV_phot,
-            iters=iters,
-            SED_fit_params=SED_fit_params,
-            frame=frame,
-            rest_UV_wav_lims=rest_UV_wav_lims,
-            ref_wav=ref_wav,
-            AUV_beta_conv_author_year=AUV_beta_conv_author_year,
-            kappa_UV_conv_author_year=kappa_UV_conv_author_year,
-        )
-
-    def calc_rest_UV_properties(
-        self,
-        frame: str = "obs",
-        rest_UV_wav_lims: u.Quantity = [1_250.0, 3_000.0] * u.AA,
-        ref_wav: u.Quantity = 1_500.0 * u.AA,
-        fesc_conv_author_year: Union[str, None] = "Chisholm22",
-        AUV_beta_conv_author_year: Union[str, None] = "M99",
-        kappa_UV_conv_author_year: str = "MD14",
-        SED_fit_params = EAZY({"templates": "fsps_larson", "lowz_zmax": None}),
-        iters=10_000,
-    ):
-        if type(fesc_conv_author_year) != type(None):
-            self.calc_fesc_from_beta_phot(
-                rest_UV_wav_lims, fesc_conv_author_year, SED_fit_params, iters
-            )
-        self.calc_SFR_UV_phot(
-            frame,
-            rest_UV_wav_lims,
-            ref_wav,
-            AUV_beta_conv_author_year,
-            kappa_UV_conv_author_year,
-            SED_fit_params,
-            iters,
-        )
-
-    # Emission line EWs from the rest frame UV photometry
-
-    def calc_cont_rest_optical(
-        self,
-        strong_line_names: Union[str, list],
-        rest_optical_wavs: u.Quantity = [4_200.0, 10_000.0] * u.AA,
-        SED_fit_params = EAZY({"templates": "fsps_larson", "lowz_zmax": None}),
-        iters: int = 10_000,
-    ):
-        self.calc_SED_rest_property(
-            SED_rest_property_function=Photometry_rest.calc_cont_rest_optical,
-            iters=iters,
-            SED_fit_params=SED_fit_params,
-            strong_line_names=strong_line_names,
-            rest_optical_wavs=rest_optical_wavs,
-        )
-
-    def calc_EW_rest_optical(
-        self,
-        strong_line_names: Union[str, list],
-        frame: str,
-        rest_optical_wavs: u.Quantity = [4_200.0, 10_000.0] * u.AA,
-        SED_fit_params = EAZY({"templates": "fsps_larson", "lowz_zmax": None}),
-        iters: int = 10_000,
-    ):
-        self.calc_cont_rest_optical(
-            strong_line_names, rest_optical_wavs, SED_fit_params, iters
-        )
-        self.calc_SED_rest_property(
-            SED_rest_property_function=Photometry_rest.calc_EW_rest_optical,
-            iters=iters,
-            SED_fit_params=SED_fit_params,
-            strong_line_names=strong_line_names,
-            frame=frame,
-            rest_optical_wavs=rest_optical_wavs,
-        )
-
-    def calc_dust_atten(
-        self,
-        calc_wav: u.Quantity,
-        dust_author_year: Union[None, str] = "M99",
-        dust_law: str = "C00",
-        dust_origin: str = "UV",
-        rest_UV_wav_lims: u.Quantity = [1_250.0, 3_000.0] * u.AA,
-        ref_wav: u.Quantity = 1_500.0 * u.AA,
-        SED_fit_params = EAZY({"templates": "fsps_larson", "lowz_zmax": None}),
-        iters: int = 10_000,
-    ):
-        assert all(
-            type(name) != type(None) for name in [dust_law, dust_origin]
-        )
-        if type(dust_author_year) != type(None):
-            self.calc_AUV_from_beta_phot(
-                rest_UV_wav_lims,
-                ref_wav,
-                dust_author_year,
-                SED_fit_params,
-                iters,
-            )
-        self.calc_SED_rest_property(
-            SED_rest_property_function=Photometry_rest.calc_dust_atten,
-            iters=iters,
-            SED_fit_params=SED_fit_params,
-            calc_wav=calc_wav,
-            dust_author_year=dust_author_year,
-            dust_law=dust_law,
-            dust_origin=dust_origin,
-            rest_UV_wav_lims=rest_UV_wav_lims,
-            ref_wav=ref_wav,
-        )
-
-    def calc_line_flux_rest_optical(
-        self,
-        strong_line_names: Union[str, list],
-        frame: str,
-        dust_author_year="M99",
-        dust_law="C00",
-        dust_origin="UV",
-        rest_optical_wavs=[4_200.0, 10_000.0] * u.AA,
-        rest_UV_wav_lims=[1_250.0, 3_000.0] * u.AA,
-        ref_wav: u.Quantity = 1_500.0 * u.AA,
-        SED_fit_params = EAZY({"templates": "fsps_larson", "lowz_zmax": None}),
-        iters: int = 10_000,
-    ):
-        self.calc_EW_rest_optical(
-            strong_line_names, frame, rest_optical_wavs, SED_fit_params, iters
-        )
-        if all(
-            type(name) != type(None)
-            for name in [dust_author_year, dust_law, dust_origin]
-        ):
-            self.calc_dust_atten(
-                line_diagnostics[strong_line_names[0]]["line_wav"],
-                dust_author_year,
-                dust_law,
-                dust_origin,
-                rest_UV_wav_lims,
-                ref_wav,
-                SED_fit_params,
-                iters,
-            )
-        self.calc_SED_rest_property(
-            SED_rest_property_function=Photometry_rest.calc_line_flux_rest_optical,
-            iters=iters,
-            SED_fit_params=SED_fit_params,
-            frame=frame,
-            strong_line_names=strong_line_names,
-            dust_author_year=dust_author_year,
-            dust_law=dust_law,
-            dust_origin=dust_origin,
-            rest_optical_wavs=rest_optical_wavs,
-            rest_UV_wav_lims=rest_UV_wav_lims,
-            ref_wav=ref_wav,
-        )
-
-    def calc_line_lum_rest_optical(
-        self,
-        strong_line_names: Union[str, list],
-        frame: str,
-        dust_author_year: Union[str, None] = "M99",
-        dust_law: str = "C00",
-        dust_origin: str = "UV",
-        rest_optical_wavs: u.Quantity = [4_200.0, 10_000.0] * u.AA,
-        rest_UV_wav_lims: u.Quantity = [1_250.0, 3_000.0] * u.AA,
-        ref_wav: u.Quantity = 1_500.0 * u.AA,
-        SED_fit_params = EAZY({"templates": "fsps_larson", "lowz_zmax": None}),
-        iters: int = 10_000,
-    ):
-        self.calc_line_flux_rest_optical(
-            strong_line_names,
-            frame,
-            dust_author_year,
-            dust_law,
-            dust_origin,
-            rest_optical_wavs,
-            rest_UV_wav_lims,
-            ref_wav,
-            SED_fit_params,
-            iters,
-        )
-        self.calc_SED_rest_property(
-            SED_rest_property_function=Photometry_rest.calc_line_lum_rest_optical,
-            iters=iters,
-            SED_fit_params=SED_fit_params,
-            strong_line_names=strong_line_names,
-            frame=frame,
-            dust_author_year=dust_author_year,
-            dust_law=dust_law,
-            dust_origin=dust_origin,
-            rest_optical_wavs=rest_optical_wavs,
-            rest_UV_wav_lims=rest_UV_wav_lims,
-            ref_wav=ref_wav,
-        )
-
-    # should be generalized slightly more
-    def calc_xi_ion(
-        self,
-        frame: str = "rest",
-        strong_line_names: Union[str, list] = ["Halpha"],
-        fesc_author_year: str = "fesc=0.0",
-        dust_author_year: Union[str, None] = "M99",
-        dust_law: str = "C00",
-        dust_origin: str = "UV",
-        rest_optical_wavs=[4_200.0, 10_000.0] * u.AA,
-        rest_UV_wav_lims=[1_250.0, 3_000.0] * u.AA,
-        ref_wav=1_500.0 * u.AA,
-        SED_fit_params=EAZY({"templates": "fsps_larson", "lowz_zmax": None}),
-        iters=10_000,
-    ):
-        self.calc_line_lum_rest_optical(
-            strong_line_names,
-            frame,
-            dust_author_year,
-            dust_law,
-            dust_origin,
-            rest_optical_wavs,
-            rest_UV_wav_lims,
-            ref_wav,
-            SED_fit_params,
-            iters,
-        )
-        if "fesc" not in fesc_author_year:
-            self.calc_SED_rest_property(
-                SED_rest_property_function=Photometry_rest.calc_fesc_from_beta_phot,
-                iters=iters,
-                SED_fit_params=SED_fit_params,
-                rest_UV_wav_lims=rest_UV_wav_lims,
-                fesc_author_year=fesc_author_year,
-            )
-        self.calc_SED_rest_property(
-            SED_rest_property_function=Photometry_rest.calc_xi_ion,
-            iters=iters,
-            SED_fit_params=SED_fit_params,
-            frame=frame,
-            strong_line_names=strong_line_names,
-            fesc_author_year=fesc_author_year,
-            dust_author_year=dust_author_year,
-            dust_law=dust_law,
-            dust_origin=dust_origin,
-            rest_optical_wavs=rest_optical_wavs,
-            rest_UV_wav_lims=rest_UV_wav_lims,
-            ref_wav=ref_wav,
-        )
-
-    # Global SED rest-frame photometry calculations
-
-    def calc_SED_rest_property(
-        self,
-        SED_rest_property_function,
-        iters,
-        SED_fit_params,
-        **kwargs,
-    ):
-        key = SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)
-        property_name = SED_rest_property_function(
-            self[0].phot.SED_results[key].phot_rest,
-            **kwargs,
-            extract_property_name=True,
-        )
-        # self.SED_rest_properties should contain the selections these properties have been calculated for
-        if key not in self.SED_rest_properties.keys():
-            self.SED_rest_properties[key] = []
-
-        PDF_dir = f"{config['PhotProperties']['PDF_SAVE_DIR']}/{self.version}/{self.instrument.name}/{self.survey}"
-        # perform calculation for each galaxy and update galaxies in self
-        if type(property_name) in [str]:
-            property_name = [property_name]
-        for name in property_name:
-            self.gals = [
-                deepcopy(gal)._calc_SED_rest_property(
-                    SED_rest_property_function=SED_rest_property_function,
-                    SED_fit_params_label=key,
-                    save_dir=PDF_dir,
-                    iters=iters,
-                    **kwargs,
-                )
-                for gal in tqdm(
-                    self, total=len(self), desc=f"Calculating {name}"
-                )
-            ]
-            galfind_logger.info(f"Calculated {name}")
-            self._append_SED_rest_property_to_fits(name, key)
-
-    # def _save_SED_rest_PDFs(self, property_name, save_dir, SED_fit_params = EAZY({"templates": "fsps_larson", "lowz_zmax": None})):
-    #     [gal._save_SED_rest_PDFs(property_name, save_dir, SED_fit_params) for gal in self]
-
-    def _append_SED_rest_property_to_fits(
-        self,
-        property_name: str,
-        SED_fit_params_label: str,
-        save_kwargs: bool = True,
-        type_fill_vals: dict = {int: -99, float: None, str: ""},
-    ):
-        try:
-            SED_rest_property_tab = self.open_cat(
-                cropped=False, hdu=SED_fit_params_label
-            )
-        except FileNotFoundError:
-            SED_rest_property_tab = None
-        # obtain full list of catalogue IDs
-        fits_tab = self.open_cat(cropped=False)
-        IDs = np.array(fits_tab[self.cat_creator.ID_label]).astype(int)
-        if type(SED_rest_property_tab) == type(None):
-            SED_rest_property_tab = Table(
-                {self.cat_creator.ID_label: IDs}, dtype=[int]
-            )
-        # if the table does not include the required column names, instantiate blank columns
-        if property_name not in SED_rest_property_tab.colnames:
-            blank_floats = np.full(
-                len(SED_rest_property_tab), type_fill_vals[float]
-            )
-            new_colname_tab = Table(
-                {
-                    f"{self.cat_creator.ID_label}_temp": IDs,
-                    property_name: blank_floats,
-                    f"{property_name}_l1": blank_floats,
-                    f"{property_name}_u1": blank_floats,
-                },
-                dtype=[int] + [float] * 3,
-            )
-            SED_rest_property_tab = join(
-                SED_rest_property_tab,
-                new_colname_tab,
-                keys_left=self.cat_creator.ID_label,
-                keys_right=f"{self.cat_creator.ID_label}_temp",
-                join_type="inner",
-            )
-            SED_rest_property_tab.remove_column(
-                f"{self.cat_creator.ID_label}_temp"
-            )
-            new_cols = True
-        else:
-            new_cols = False
-        # extract names of properties that have been recently updated
-        if new_cols:  # all columns that havn't previously existed are updates
-            is_property_updated = np.full(len(self), True)
-        else:
-            is_property_updated = self.__getattr__(
-                property_name,
-                phot_type="rest",
-                property_type="recently_updated",
-            )
-        if is_property_updated is None:
-            # breakpoint()
-            pass
-        else:
-            if any(
-                updated is None for updated in is_property_updated
-            ):
-                # breakpoint()
-                pass
-        # update properties and kwargs for those galaxies that have been updated, or if the columns have just been made
-
-        if is_property_updated is not None:
-            if any(updated for updated in is_property_updated):
-                # extract the kwargs for this property
-                calculated_property_PDFs = self.__getattr__(
-                    property_name, phot_type="rest", property_type="PDFs"
-                )[is_property_updated]
-                kwarg_names = np.unique(
-                    np.hstack(
-                        [
-                            list(property_PDF.kwargs.keys())
-                            for property_PDF in calculated_property_PDFs
-                            if property_PDF is not None
-                        ]
-                    )
-                )
-                kwarg_types_arr = [
-                    [
-                        type(property_PDF.kwargs[kwarg_name])
-                        for property_PDF in calculated_property_PDFs
-                        if property_PDF is not None
-                    ]
-                    for kwarg_name in kwarg_names
-                ]
-                for kwarg_types in kwarg_types_arr:
-                    assert all(
-                        types == kwarg_types[0] for types in kwarg_types
-                    )
-                kwarg_types = [
-                    kwarg_types[0] for kwarg_types in kwarg_types_arr
-                ]
-                # make new columns for any kwarg names that have not previously been created
-                for kwarg_name, kwarg_type in zip(kwarg_names, kwarg_types):
-                    assert kwarg_types[0] in type_fill_vals.keys()
-                    if kwarg_name not in SED_rest_property_tab.colnames:
-                        blank_col = np.full(
-                            len(SED_rest_property_tab),
-                            type_fill_vals[kwarg_type],
-                        )
-                        new_colname_tab = Table(
-                            {
-                                f"{self.cat_creator.ID_label}_temp": IDs,
-                                kwarg_name: blank_col,
-                            },
-                            dtype=[int] + [kwarg_type],
-                        )
-                        SED_rest_property_tab = join(
-                            SED_rest_property_tab,
-                            new_colname_tab,
-                            keys_left=self.cat_creator.ID_label,
-                            keys_right=f"{self.cat_creator.ID_label}_temp",
-                            join_type="outer",
-                        )
-                        SED_rest_property_tab.remove_column(
-                            f"{self.cat_creator.ID_label}_temp"
-                        )
-                # create new columns of properties
-                calculated_IDs = np.array(self.__getattr__("ID")).astype(int)[
-                    is_property_updated
-                ]
-                non_calculated_IDs = np.array(
-                    [ID for ID in IDs if ID not in calculated_IDs]
-                ).astype(int)
-                new_IDs = np.concatenate((calculated_IDs, non_calculated_IDs))
-                calculated_properties = self.__getattr__(
-                    property_name, phot_type="rest", property_type="vals"
-                )[is_property_updated]
-                # slice old catalogue to just those IDs which have not been updated
-                old_SED_rest_property_tab = SED_rest_property_tab[
-                    np.array(
-                        [
-                            True if ID in non_calculated_IDs else False
-                            for ID in SED_rest_property_tab[
-                                self.cat_creator.ID_label
-                            ]
-                        ]
-                    )
-                ]
-                new_properties = np.concatenate(
-                    (
-                        calculated_properties,
-                        np.array(
-                            old_SED_rest_property_tab[property_name]
-                        ).astype(float),
-                    )
-                )
-                calculated_property_errs = self.__getattr__(
-                    property_name, phot_type="rest", property_type="errs"
-                )
-                new_property_l1 = np.concatenate(
-                    (
-                        np.array(calculated_property_errs[:, 0])[
-                            is_property_updated
-                        ],
-                        np.array(
-                            old_SED_rest_property_tab[f"{property_name}_l1"]
-                        ).astype(float),
-                    )
-                )
-                new_property_u1 = np.concatenate(
-                    (
-                        np.array(calculated_property_errs[:, 1])[
-                            is_property_updated
-                        ],
-                        np.array(
-                            old_SED_rest_property_tab[f"{property_name}_u1"]
-                        ).astype(float),
-                    )
-                )
-                # create new columns of kwargs
-                new_kwargs = {
-                    kwarg_name: np.concatenate(
-                        (
-                            np.array(
-                                [
-                                    property_PDF.kwargs[kwarg_name]
-                                    if type(property_PDF) != type(None)
-                                    else type_fill_vals[kwarg_type]
-                                    for property_PDF in calculated_property_PDFs
-                                ]
-                            ),
-                            np.full(
-                                len(non_calculated_IDs),
-                                type_fill_vals[kwarg_type],
-                            ),
-                        )
-                    )
-                    for kwarg_name, kwarg_type in zip(kwarg_names, kwarg_types)
-                }
-                # make new table of the same length as the global .fits catalogue to be joined
-                new_tab = Table(
-                    {
-                        **{
-                            f"{self.cat_creator.ID_label}_temp": new_IDs,
-                            property_name: new_properties,
-                            f"{property_name}_l1": new_property_l1,
-                            f"{property_name}_u1": new_property_u1,
-                        },
-                        **new_kwargs,
-                    },
-                    dtype=[int] + [float] * 3 + kwarg_types,
-                )
-                # update .fits table
-                # remove old columns before appending the newer ones
-                for name in [
-                    property_name,
-                    f"{property_name}_l1",
-                    f"{property_name}_u1",
-                ] + list(new_kwargs.keys()):
-                    SED_rest_property_tab.remove_column(name)
-                SED_rest_property_tab = join(
-                    SED_rest_property_tab,
-                    new_tab,
-                    keys_left=self.cat_creator.ID_label,
-                    keys_right=f"{self.cat_creator.ID_label}_temp",
-                    join_type="outer",
-                )
-                SED_rest_property_tab.remove_column(
-                    f"{self.cat_creator.ID_label}_temp"
-                )
-                SED_rest_property_tab.sort(self.cat_creator.ID_label)
-                self.write_cat(
-                    [fits_tab, SED_rest_property_tab],
-                    ["OBJECTS", SED_fit_params_label],
-                )
-
-    def load_SED_rest_properties(
-        self,
-        SED_fit_params,
-        timed=True,
-    ):
-        key = SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)
-        PDF_dir = f"{config['PhotProperties']['PDF_SAVE_DIR']}/{self.version}/{self.instrument.name}/{self.survey}/{key}"
-        property_paths = glob.glob(f"{PDF_dir}/*")
-        if len(property_paths) != 0:
-            property_names = [
-                property_path.split("/")[-1]
-                for property_path in property_paths
-            ]
-            self.gals = [
-                deepcopy(gal)._load_SED_rest_properties(
-                    PDF_dir, property_names, key
-                )
-                for gal in tqdm(
-                    deepcopy(self),
-                    desc=f"Loading SED rest properties for {key}",
-                    total=len(self),
-                )
-            ]
-            for name in property_names:
-                self._append_SED_rest_property_to_fits(name, key)
-
-    def del_SED_rest_property(
-        self,
-        property_name,
-        SED_fit_params,
-    ):
-        key = SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)
-        # SED rest property must exist for this sample
-        assert property_name in self.SED_rest_properties[key]
-        # delete data from fits
-        del_col_names = [
-            property_name,
-            f"{property_name}_l1",
-            f"{property_name}_u1",
-        ]
-        #del_hdr_names = [f"SED_REST_{property_name}"]
-        #self.del_cols_hdrs_from_fits(del_col_names, del_hdr_names, key)
-        # check whether the SED rest property kwargs are included in the catalogue, and if so delete these as well - Not Implemented Yet!
-
-        # remove data from self, starting with catalogue, then gal for gal in self.gals
-        self.SED_rest_properties[key].remove(property_name)
-        self.gals = [
-            deepcopy(gal)._del_SED_rest_properties([property_name], key)
-            for gal in self
-        ]
-
     # Number Density Function (e.g. UVLF and mass functions) methods
 
     def calc_Vmax(
-        self,
+        self: Self,
         data_arr: Union[list, np.array],
         z_bin: Union[list, np.array],
-        SED_fit_params: Union[dict, str] = "EAZY_fsps_larson_zfree",
+        aper_diam: u.Quantity,
+        SED_fit_code: SED_code,
         z_step: float = 0.01,
         timed: bool = False,
     ) -> None:
         assert len(z_bin) == 2
         assert z_bin[0] < z_bin[1]
-        if type(SED_fit_params) == dict:
-            SED_fit_params_key = SED_fit_params[
-                "code"
-            ].label_from_SED_fit_params(SED_fit_params)
-        elif type(SED_fit_params) == str:
-            SED_fit_params_key = SED_fit_params
-        else:
-            galfind_logger.critical(
-                f"{SED_fit_params=} with {type(SED_fit_params)=} is not in [dict, str]!"
-            )
-        z_bin_name = f"{SED_fit_params_key}_{z_bin[0]:.1f}<z<{z_bin[1]:.1f}"
+        assert isinstance(SED_fit_code, tuple(SED_code.__subclasses__()))
+        assert all(SED_fit_code.label in gal.aper_phot[aper_diam].SED_results.keys() for gal in self)
+
+        z_bin_name = funcs.get_SED_fit_label_aper_diam_z_bin_name(SED_fit_code.label, aper_diam, z_bin)
         for data in data_arr:
-            save_path = f"{config['NumberDensityFunctions']['VMAX_DIR']}/{self.version}/{self.instrument.name}/{self.survey}/{z_bin_name}/Vmax_field={data.full_name}.ecsv"
+            save_path = f"{config['NumberDensityFunctions']['VMAX_DIR']}/" + \
+                f"{self.version}/{self.filterset.instrument_name}/{self.survey}/" + \
+                f"{z_bin_name}/Vmax_field={data.full_name}.ecsv"
             funcs.make_dirs(save_path)
             # if this file already exists
             if Path(save_path).is_file():
@@ -2152,37 +1458,32 @@ class Catalogue(Catalogue_Base):
             else:
                 update_IDs = self.ID
             if len(update_IDs) > 0:
-                self.gals = [
-                    deepcopy(gal).calc_Vmax(
+                [
+                    gal.calc_Vmax(
                         self.data.full_name,
                         [data],
                         z_bin,
-                        SED_fit_params_key,
+                        aper_diam,
+                        SED_fit_code,
                         z_step,
                         timed=timed,
                     )
                     for gal in tqdm(
                         self,
                         total=len(self),
-                        desc=f"Calculating Vmax's for {self.data.full_name} in {z_bin_name} {data.full_name}",
+                        desc=f"Calculating Vmax's for {self.data.full_name}" + \
+                            f" in {z_bin_name} {data.full_name}",
                     )
                 ]
                 # table with uncalculated Vmax's
                 Vmax_arr = np.array(
                     [
-                        gal.V_max[z_bin_name][data.full_name]
-                        .to(u.Mpc**3)
-                        .value
-                        if type(gal.V_max[z_bin_name][data.full_name])
-                        in [u.Quantity]
+                        gal.V_max[z_bin_name][data.full_name].to(u.Mpc**3).value
+                        if isinstance(gal.V_max[z_bin_name][data.full_name], u.Quantity)
                         else gal.V_max[z_bin_name][data.full_name]
-                        for gal in self
-                        if gal.ID in update_IDs
+                        for gal in self if gal.ID in update_IDs
                     ]
                 )
-                # Vmax_simple_arr = np.array([gal.V_max_simple[z_bin_name][data.full_name].to(u.Mpc ** 3).value \
-                #    if type(gal.V_max_simple[z_bin_name][data.full_name]) in [u.Quantity] else \
-                #    gal.V_max_simple[z_bin_name][data.full_name] for gal in self if gal.ID in update_IDs])
                 obs_zmin = np.array(
                     [
                         gal.obs_zrange[z_bin_name][data.full_name][0]
@@ -2197,8 +1498,6 @@ class Catalogue(Catalogue_Base):
                         if gal.ID in update_IDs
                     ]
                 )
-                # new_tab = Table({"ID": update_IDs, "Vmax": Vmax_arr, "Vmax_simple": Vmax_simple_arr, \
-                #     "obs_zmin": obs_zmin, "obs_zmax": obs_zmax}, dtype = [int, float, float, float, float])
                 new_tab = Table(
                     {
                         "ID": update_IDs,
@@ -2225,11 +1524,9 @@ class Catalogue(Catalogue_Base):
                 ]
                 Vmax_tab.sort("ID")
                 # save appropriate Vmax properties
-                self.gals = [
-                    deepcopy(gal).save_Vmax(
+                [
+                    gal.save_Vmax(
                         Vmax, z_bin_name, data.full_name, is_simple_Vmax=False
                     )
                     for gal, Vmax in zip(self, np.array(Vmax_tab["Vmax"]))
                 ]
-                # self.gals = [deepcopy(gal).save_Vmax(Vmax, z_bin_name, data.full_name, is_simple_Vmax = True) \
-                #    for gal, Vmax in zip(self, np.array(Vmax_tab["Vmax_simple"]))]

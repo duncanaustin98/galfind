@@ -1,4 +1,5 @@
 import astropy.units as u
+import numpy as np
 from tqdm import tqdm
 from galfind import Filter, Catalogue, Catalogue_Creator, Data, EAZY, LePhare, Bagpipes
 from galfind import Colour_Selector, Unmasked_Instrument_Selector, EPOCHS_Selector
@@ -75,6 +76,42 @@ def test_pipes():
     pipes_fitter = Bagpipes(pipes_SED_fit_params)
     pipes_fitter(JOF_cat, aper_diams[0], save_PDFs = False, load_SEDs = False, load_PDFs = False, overwrite = False)
 
+def test_UVLF():
+
+    JOF_cat = Catalogue.pipeline(
+        survey,
+        version,
+        instrument_names = instrument_names, 
+        version_to_dir_dict = morgan_version_to_dir,
+        aper_diams = aper_diams,
+        forced_phot_band = forced_phot_band,
+        min_flux_pc_err = min_flux_pc_err,
+        crops = {"SELECTION": EPOCHS_Selector(allow_lowz=True). \
+            _get_selection_name(aper_diams[0], \
+            EAZY({"templates": "fsps_larson", "lowz_zmax": None}).label)}
+    )
+    #JOF_cat.load_sextractor_Re()
+    # {"templates": "fsps_larson", "lowz_zmax": 4.0}, {"templates": "fsps_larson", "lowz_zmax": 6.0}, 
+    SED_fit_params_arr = [{"templates": "fsps_larson", "lowz_zmax": None}]
+    for SED_fit_params in SED_fit_params_arr:
+        EAZY_fitter = EAZY(SED_fit_params)
+        EAZY_fitter(JOF_cat, aper_diams[0], load_PDFs = True, load_SEDs = True, update = True)
+
+    from galfind import MUV_Calculator
+    MUV_calculator = MUV_Calculator(aper_diams[0], EAZY_fitter.label)
+    MUV_calculator(JOF_cat, n_chains = 10_000, output = False, n_jobs = 1)
+
+    from galfind import Number_Density_Function
+    UV_LF_z9 = Number_Density_Function.from_single_cat(
+        JOF_cat,
+        MUV_calculator.name,
+        np.arange(-21.25, -17.25, 0.5),
+        [8.5, 9.5],
+        aper_diam = aper_diams[0],
+        SED_fit_code = EAZY_fitter,
+        x_origin = "phot_rest",
+    )
+
 def main():
     JOF_data = Data.pipeline(
         survey, 
@@ -109,7 +146,8 @@ if __name__ == "__main__":
     #test_load()
     #main()
     #test_selection()
-    test_pipes()
+    test_UVLF()
+    #test_pipes()
     #check_multinest()
 
     # LePhare_SED_fit_params = {"GAL_TEMPLATES": "BC03_Chabrier2003_Z(m42_m62)"}

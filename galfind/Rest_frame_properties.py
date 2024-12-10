@@ -923,7 +923,7 @@ class MUV_Calculator(Rest_Frame_Property_Calculator):
             top_hat_width,
             resolution
         )
-        super().__init__(aper_diam, SED_fit_label, [mUV_calculator], **{})
+        super().__init__(aper_diam, SED_fit_label, [mUV_calculator])
 
     @property
     def name(self: Self) -> str:

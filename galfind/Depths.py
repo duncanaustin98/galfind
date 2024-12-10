@@ -1683,6 +1683,8 @@ def append_loc_depth_cols(
                         cat[f"FLUXERR_APER_{band_data.filt_name}_loc_depth"],
                     )
                 ]
+        # update meta
+        cat.meta = {**cat.meta, "MINPCERR": min_flux_pc_err}
 
         # overwrite original catalogue with local depth columns
         cat.write(self.phot_cat_path, overwrite=True)

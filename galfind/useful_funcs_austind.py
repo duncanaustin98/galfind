@@ -517,10 +517,12 @@ def get_z_bin_name(z_bin: Union[list, np.array]) -> str:
     return f"{z_bin[0]:.1f}<z<{z_bin[1]:.1f}"
 
 
-def get_SED_fit_params_z_bin_name(
-    SED_fit_params_key: str, z_bin: Union[list, np.array]
-):
-    return f"{SED_fit_params_key}_{get_z_bin_name(z_bin)}"
+def get_SED_fit_label_aper_diam_z_bin_name(
+    SED_fit_params_key: str,
+    aper_diam: u.Quantity,
+    z_bin: Union[list, np.array]
+) -> str:
+    return f"{SED_fit_params_key}_{aper_diam.to(u.arcsec).value:.2f}as_{get_z_bin_name(z_bin)}"
 
 
 def calc_Vmax(area, zmin, zmax):

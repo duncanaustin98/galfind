@@ -656,7 +656,7 @@ class Band_Data_Base(ABC):
             for params in params_arr:
                 Depths.calc_band_depth(params)
             # load depths into object
-            self._load_depths(params_arr)
+            self._load_depths_from_params(params_arr)
         else:
             galfind_logger.warning(
                 f"Depths loaded for {self.filt_name}, skipping!"
@@ -702,7 +702,10 @@ class Band_Data_Base(ABC):
             )
         return params
 
-    def _load_depths(self, params: List[Tuple[Any, ...]]) -> NoReturn:
+    def _load_depths_from_params(
+        self: Self, 
+        params: List[Tuple[Any, ...]]
+    ) -> NoReturn:
         if hasattr(self, "depth_args"):
             if all(param[1] in self.depth_args.keys() for param in params):
                 galfind_logger.warning(
@@ -726,6 +729,14 @@ class Band_Data_Base(ABC):
             self.depth_args = {
                 param[1]: Depths.get_depth_args(param) for param in params
             }
+
+    def _load_depths(
+        self: Self,
+        aper_diam: u.Quantity,
+        mode: str
+    ) -> NoReturn:
+        params = (aper_diam, mode)
+        return self._load_depths_from_params([params])
 
     def plot_depths(
         self,
@@ -2305,6 +2316,14 @@ class Data:
         if hasattr(self, "forced_phot_band"):
             self.forced_phot_band.load_aper_diams(aper_diams)
         [band_data.load_aper_diams(aper_diams) for band_data in self]
+    
+    def _load_depths(
+        self: Self,
+        aper_diam: u.Quantity,
+        mode: str
+    ) -> NoReturn:
+        [band_data._load_depths(aper_diam, mode) for band_data in self]
+        
 
     def psf_homogenize(self):
         raise(NotImplementedError())
@@ -2684,7 +2703,7 @@ class Data:
             # save properties to individual band_data objects
             for band_data in self_band_data_arr:
                 [
-                    band_data._load_depths(params)
+                    band_data._load_depths_from_params(params)
                     for _params in params
                     if _params[0] == band_data
                 ]

@@ -1,17 +1,23 @@
+from __future__ import annotations
+
+import os
 import sys
 from pathlib import Path
 from typing import Union
-
+import astropy.units as u
 import matplotlib.pyplot as plt
 import numpy as np
 from astropy.table import Table
+from typing import NoReturn, Optional, TYPE_CHECKING
+if TYPE_CHECKING:
+    from . import Catalogue, Multiple_Catalogue
+try:
+    from typing import Self, Type  # python 3.11+
+except ImportError:
+    from typing_extensions import Self, Type  # python > 3.7 AND python < 3.11
 
-from . import (
-    config,
-    galfind_logger,
-    #sed_code_to_name_dict,
-)
 from . import useful_funcs_austind as funcs
+from . import config, galfind_logger
 from .SED_codes import SED_code
 
 
@@ -29,8 +35,11 @@ class Base_Number_Density_Function:
     # obsolete after Base_Number_Density_Function.from_flags_repo()
     @classmethod
     def from_ecsv(
-        cls, x_name: str, z_ref: Union[str, int, float], author_year: str
-    ) -> "Base_Number_Density_Function":  # literature
+        cls, 
+        x_name: str, 
+        z_ref: Union[str, int, float], 
+        author_year: str
+    ) -> Self:
         if x_name in ["M1500", "M_UV", "MUV"]:
             x_name = "UVLF"
         if type(z_ref) in [str, int]:
@@ -50,7 +59,7 @@ class Base_Number_Density_Function:
         z_bin: Union[list, np.array],
         author_year: str,
         obs_or_models: str = "obs",
-    ) -> Union[None, "Base_Number_Density_Function"]:
+    ) -> Optional[Self]:
         assert obs_or_models in ["obs", "models"]
         sys.path.insert(1, config["NumberDensityFunctions"]["FLAGS_DATA_DIR"])
         try:
@@ -242,7 +251,7 @@ class Number_Density_Function(Base_Number_Density_Function):
         cv_errs,
         origin_surveys,
         cv_origin,
-    ) -> "Number_Density_Function":
+    ) -> Self:
         self.x_bins = x_bins
         self.x_origin = x_origin
         self.z_bin = z_bin
@@ -312,28 +321,32 @@ class Number_Density_Function(Base_Number_Density_Function):
         cv_origin: Union[str, None] = "Driver2010",
         save: bool = True,
         timed: bool = False,
-    ) -> "Number_Density_Function":
+    ) -> Self:
         pass
 
     @classmethod
     def from_single_cat(
         cls,
-        cat,
+        cat: Catalogue,
         x_name: str,
         x_bin_edges: Union[list, np.array],
         z_bin: Union[list, np.array],
-        x_origin: Union[str, dict] = "EAZY_fsps_larson_zfree",
+        aper_diam: u.Quantity,
+        SED_fit_code: SED_code,
+        x_origin: str = "phot_rest",
         z_step: float = 0.01,
         cv_origin: Union[str, None] = "Driver2010",
         save: bool = True,
         timed: bool = False,
-    ) -> "Number_Density_Function":
+    ) -> Self:
         return cls.from_cat(
             cat,
             [cat.data],
             x_name,
             x_bin_edges,
             z_bin,
+            aper_diam,
+            SED_fit_code,
             x_origin,
             z_step,
             cv_origin,
@@ -344,17 +357,19 @@ class Number_Density_Function(Base_Number_Density_Function):
     @classmethod
     def from_cat(
         cls,
-        cat,
+        cat: Union[Catalogue, Multiple_Catalogue],
         data_arr: Union[list, np.array],
         x_name: str,
         x_bin_edges: Union[list, np.array],
         z_bin: Union[list, np.array],
-        x_origin: Union[str, dict] = "EAZY_fsps_larson_zfree_REST_PROPERTY",
+        aper_diam: u.Quantity,
+        SED_fit_code: SED_code,
+        x_origin: str = "phot_rest",
         z_step: float = 0.01,
         cv_origin: Union[str, None] = "Driver2010",
         save: bool = True,
         timed: bool = False,
-    ) -> "Number_Density_Function":
+    ) -> Self:
         # input assertions
         assert len(z_bin) == 2
         assert z_bin[0] < z_bin[1]
@@ -366,68 +381,50 @@ class Number_Density_Function(Base_Number_Density_Function):
                 np.sort(np.array(x_bin_edges)), np.array(x_bin_edges)
             )
         )
-        # ensure x_bin_edges are evenly spaced?
-        assert cv_origin in ["Driver2010"]
+        # TODO: ensure x_bin_edges are evenly spaced?
 
-        if type(x_origin) in [dict]:
-            assert "code" in x_origin.keys()
-            assert x_origin["code"].__class__.__name__ in [
-                code.__name__ for code in SED_code.__subclasses__()
-            ]
-            SED_fit_params = x_origin  # redshifts must come from same SED fitting as x values
-            SED_fit_params_key = x_origin["code"].label_from_SED_fit_params(
-                SED_fit_params
-            )
-            x_origin = SED_fit_params_key
-        elif type(x_origin) in [str]:
-            galfind_logger.debug(
-                "Won't work for rest frame properties currently"
-            )
-            # convert to SED_fit_params
-            if x_origin.endswith("_REST_PROPERTY"):
-                SED_fit_params_key = x_origin.replace("_REST_PROPERTY", "")
-            else:
-                SED_fit_params_key = x_origin
-            SED_fit_params = sed_code_to_name_dict[
-                SED_fit_params_key.split("_")[0]
-            ].SED_fit_params_from_label(SED_fit_params_key)
-        else:
-            galfind_logger.critical(
-                f"{x_origin=} with {type(x_origin)=} not in [dict, str]!"
-            )
+        assert cv_origin in ["Driver2010"]
+        # SED fit label assertions
+        assert isinstance(SED_fit_code, tuple(SED_code.__subclasses__()))
+        assert all(SED_fit_code.label in gal.aper_phot[aper_diam].SED_results.keys() for gal in cat)
+
+        # extract x values
+        assert x_origin in ["phot_rest", "SED_result"]
+        if x_origin == "phot_rest":
+            x = [gal.aper_phot[aper_diam].SED_results[SED_fit_code.label].phot_rest.properties[x_name] for gal in cat]
+        else: # x_origin == "SED_result":
+            x = [gal.aper_phot[aper_diam].SED_results[SED_fit_code.label].properties[x_name] for gal in cat]
+        assert all(x_.unit == x[0].unit for x_ in x)
+        x = np.array([x_.value for x_ in x]) * x[0].unit
 
         # determine save_path
         origin_surveys = Number_Density_Function.get_origin_surveys(data_arr)
         save_path = Number_Density_Function.get_save_path(
-            origin_surveys, SED_fit_params_key, z_bin, x_name
+            origin_surveys, SED_fit_code.label, z_bin, x_name
         )
 
-        if not Path(
-            save_path
-        ).is_file():  # perform calculation if not previously computed
+        if not Path(save_path).is_file():
             # extract z_bin_name
-            z_bin_name = funcs.get_SED_fit_params_z_bin_name(
-                SED_fit_params_key, z_bin
-            )
+            z_bin_name = funcs.get_SED_fit_label_aper_diam_z_bin_name(SED_fit_code.label, aper_diam, z_bin)
             # crop catalogue to this redshift bin
-            z_bin_cat = cat.crop(z_bin, "z", SED_fit_params)
+            z_bin_cat = cat.crop(z_bin, "z", aper_diam, SED_fit_code.label, origin = "SED_result")
 
-            # extract photometry type from x_origin
-            phot_type = (
-                "rest" if x_origin.endswith("_REST_PROPERTY") else "obs"
-            )
             # create x_bins from x_bin_edges (must include start and end values here too)
             x_bins = [
                 [x_bin_edges[i], x_bin_edges[i + 1]]
                 for i in range(len(x_bin_edges) - 1)
                 if i != len(x_bin_edges) - 1
             ]
-
             # calculate Vmax for each galaxy in catalogue within z bin
             z_bin_cat.calc_Vmax(
-                data_arr, z_bin, SED_fit_params_key, z_step, timed=timed
+                data_arr, 
+                z_bin, 
+                aper_diam, 
+                SED_fit_code, 
+                z_step, 
+                timed=timed
             )
-
+            breakpoint()
             Ngals = np.zeros(len(x_bins))
             phi = np.zeros(len(x_bins))
             phi_l1 = np.zeros(len(x_bins))
@@ -438,7 +435,11 @@ class Number_Density_Function(Base_Number_Density_Function):
             for i, x_bin in enumerate(x_bins):
                 # crop to galaxies in the x bin - not the bootstrapping method
                 z_bin_x_bin_cat = z_bin_cat.crop(
-                    x_bin, x_name, SED_fit_params, phot_type
+                    x_bin, 
+                    x_name, 
+                    aper_diam,
+                    SED_fit_code.label,
+                    x_origin
                 )
 
                 Ngals[i] = len(z_bin_x_bin_cat)
@@ -480,11 +481,9 @@ class Number_Density_Function(Base_Number_Density_Function):
                             np.abs((np.array(poisson_int[1]) - len(V_max)))
                             / len(V_max)
                         )
-                    if type(cv_origin) == type(None):
+                    if cv_origin is None:
                         pass
-                    elif (
-                        cv_origin == "Driver2010"
-                    ):  # could open this up to more cosmic variance calculators
+                    elif cv_origin == "Driver2010":
                         cv_errs[i] = funcs.calc_cv_proper(
                             z_bin, data_arr=data_arr
                         )
@@ -525,7 +524,9 @@ class Number_Density_Function(Base_Number_Density_Function):
         x_name: str,
         ext: str = ".ecsv",
     ) -> str:
-        save_path = f"{config['NumberDensityFunctions']['NUMBER_DENSITY_FUNC_DIR']}/Data/{SED_fit_params_key}/{x_name}/{origin_surveys}/{z_bin[0]}<z<{z_bin[1]}{ext}"
+        save_path = config['NumberDensityFunctions']['NUMBER_DENSITY_FUNC_DIR'] + \
+            f"/Data/{SED_fit_params_key}/{x_name}/{origin_surveys}" + \
+            f"/{z_bin[0]}<z<{z_bin[1]}{ext}"
 
         if os.access(save_path, os.W_OK):
             funcs.make_dirs(save_path)
@@ -563,8 +564,8 @@ class Number_Density_Function(Base_Number_Density_Function):
             galfind_logger.warning(f"Cannot write to {plot_path}!")
         return plot_path
 
-    def save(self, save_path: Union[str, None] = None) -> None:
-        if type(save_path) == type(None):
+    def save(self, save_path: Optional[str] = None) -> NoReturn:
+        if save_path is None:
             save_path = self.get_save_path(
                 self.origin_surveys,
                 self.x_origin.replace("_REST_PROPERTY", ""),
@@ -698,8 +699,9 @@ class Number_Density_Function(Base_Number_Density_Function):
 
 class Multiple_Number_Density_Function:
     def __init__(
-        self, number_density_function_arr: Union[list, np.array]
-    ) -> None:
+        self, 
+        number_density_function_arr: Union[list, np.array]
+    ):
         self.number_density_function_arr = number_density_function_arr
 
     @classmethod

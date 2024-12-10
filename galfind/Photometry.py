@@ -47,13 +47,15 @@ class Photometry:
                 )
             depths = [depths[filt.filt_name] for filt in filterset]
         self.depths = depths
-
-        assert (
-            len(self.filterset)
-            == len(self.flux)
-            == len(self.flux_errs)
-            == len(self.depths)
-        )
+        try:
+            assert (
+                len(self.filterset)
+                == len(self.flux)
+                == len(self.flux_errs)
+                == len(self.depths)
+            )
+        except:
+            breakpoint()
 
     def __str__(self) -> str:
         output_str = funcs.line_sep

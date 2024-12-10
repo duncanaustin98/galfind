@@ -269,15 +269,16 @@ class Bagpipes(SED_code):
         update: bool = False,
         **fit_kwargs
     ):
-        try:
-            from mpi4py import MPI
-            self.rank = MPI.COMM_WORLD.Get_rank()
-            self.size = MPI.COMM_WORLD.Get_size()
-            from mpi4py.futures import MPIPoolExecutor
-        except ImportError:
-            self.rank = 0
-            self.size = 1
-        breakpoint
+        # try:
+        #     from mpi4py import MPI
+        #     self.rank = MPI.COMM_WORLD.Get_rank()
+        #     self.size = MPI.COMM_WORLD.Get_size()
+        #     from mpi4py.futures import MPIPoolExecutor
+        # except ImportError:
+        #     self.rank = 0
+        #     self.size = 1
+        self.rank = 0
+        self.size = 1
         return super().__call__(
             cat,
             aper_diam,
@@ -486,7 +487,7 @@ class Bagpipes(SED_code):
         galfind_logger.info(f"Fitting bagpipes with {fit_instructions=}")
         try:
             run_parallel = False
-            fit_cat.fit(verbose = True, mpi_serial = run_parallel, sampler = self.sampler)
+            fit_cat.fit(verbose = False, mpi_serial = run_parallel, sampler = self.sampler)
         except Exception as e:
             raise e
         

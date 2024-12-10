@@ -10,9 +10,14 @@ from astropy.io import fits
 from astropy.table import Table, join
 from tqdm import tqdm
 import inspect
+from numpy.typing import NDArray
 from typing import TYPE_CHECKING, Any, List, Dict, Union, Type, Optional
 if TYPE_CHECKING:
     from . import Galaxy, Catalogue_Creator
+try:
+    from typing import Self, Type  # python 3.11+
+except ImportError:
+    from typing_extensions import Self, Type  # python > 3.7 AND python < 3.11
 
 from . import (
     Multiple_Catalogue,
@@ -120,11 +125,15 @@ class Catalogue_Base:
             self.iter += 1
             return gal
 
-    def __getitem__(self, index: Any) -> Union[Galaxy, List[Galaxy]]:
+    def __getitem__(self, index: Any) -> Optional[Union[Galaxy, Type[Self]]]:
+        from . import Selector
+        self_copy = deepcopy(self)
         if isinstance(index, (slice, np.ndarray)):
-            return list(np.array(self.gals)[index])
+            self_copy.gals = list(np.array(self.gals)[index])
+            return self_copy
         elif isinstance(index, list):
-            return list(np.array(self.gals)[np.array(index)])
+            self_copy.gals = list(np.array(self.gals)[np.array(index)])
+            return self_copy
         elif isinstance(index, dict):
             # make this more general
             keep_arr = []
@@ -146,16 +155,23 @@ class Catalogue_Base:
                         )]
                     )
             if len(keep_arr) > 0:
-                cropped_gals_arr = list(np.array(self.gals)[np.array( \
+                self_copy.gals = list(np.array(self.gals)[np.array( \
                     np.logical_and.reduce(keep_arr)).astype(bool)])
-                if singular:
-                    return cropped_gals_arr[0]
+                if len(self_copy.gals) == 1:
+                    return self_copy.gals[0]
                 else:
-                    return cropped_gals_arr
+                    return self_copy
             else:
                 return None
+        elif isinstance(index, tuple(Selector.__subclasses__())):
+            keep_arr = np.array([index(gal) for gal in self]).astype(bool)
+            self_copy.gals = self.gals[keep_arr]
+            self_copy.crops.append(index)
+            return self_copy
         else:
-            return self.gals[index]
+            gal = self_copy.gals[index]
+            assert isinstance(gal, Galaxy)
+            return gal
 
     # only acts on attributes that don't already exist in Catalogue
     def __getattr__(
@@ -553,45 +569,46 @@ class Catalogue_Base:
             galfind_logger.critical("No index or ID provided to remove_gal!")
 
     def crop(
-        self,
-        crop_limits: Union[int, float, bool, list, np.array],
+        self: Self,
+        crop_limits: Union[int, float, bool, list, NDArray],
         crop_property: str,
-        SED_fit_params: Union[dict, str] = "EAZY_fsps_larson_zfree",
-        phot_type: str = "obs",
-    ):  # -> self.__class__
+        aper_diam: u.Quantity,
+        SED_fit_label: Union[str, SED_code],
+        origin: str,
+    ) -> Self:
+        
+        assert origin in ["phot_rest", "SED_result"]
+        if isinstance(SED_fit_label, tuple(SED_code.__subclasses__())):
+            SED_fit_label = SED_fit_label.label
+
+        # extract appropriate properties
+        if origin == "phot_rest":
+            property_arr = [gal.aper_phot[aper_diam].SED_results[SED_fit_label].phot_rest.properties[crop_property] for gal in self]
+        elif origin == "SED_result":
+            property_arr = [gal.aper_phot[aper_diam].SED_results[SED_fit_label].properties[crop_property] for gal in self]
+        assert all(prop.unit == property_arr[0].unit for prop in property_arr)
+        property_arr = np.array([prop.value for prop in property_arr]) * property_arr[0].unit
+
         cat_copy = deepcopy(self)
-        if type(crop_limits) in [int, float, bool]:
+        if isinstance(crop_limits, (int, float, bool)):
             cat_copy.gals = cat_copy[
-                cat_copy.__getattr__(crop_property, origin=SED_fit_params)
-                == crop_limits
+                property_arr == crop_limits
             ]
-            if crop_limits == True:
-                cat_copy.crops.append(crop_property)
-            else:
-                cat_copy.crops.append(f"{crop_property}={crop_limits}")
-        elif type(crop_limits) in [list, np.array]:
+            # if crop_limits:
+            #     cat_copy.cat_creator.crops.append(crop_property)
+            # else:
+            #     cat_copy.cat_creator.crops.append(f"{crop_property}={crop_limits}")
+        elif isinstance(crop_limits, (list, np.array)):
             cat_copy.gals = cat_copy[
-                (
-                    (
-                        cat_copy.__getattr__(
-                            crop_property, origin=SED_fit_params
-                        )
-                        >= crop_limits[0]
-                    )
-                    & (
-                        cat_copy.__getattr__(
-                            crop_property, origin=SED_fit_params
-                        )
-                        <= crop_limits[1]
-                    )
-                )
+                ((property_arr >= crop_limits[0]) & (property_arr <= crop_limits[1]))
             ]
-            cat_copy.crops.append(
-                f"{crop_limits[0]}<{crop_property}<{crop_limits[1]}"
-            )
+            # cat_copy.cat_creator.crops.append(
+            #     f"{crop_limits[0]}<{crop_property}<{crop_limits[1]}"
+            # )
         else:
-            galfind_logger.critical(
-                f"crop_limits={crop_limits} with type = {type(crop_limits)} not in [int, float, bool, list, np.array]"
+            galfind_logger.warning(
+                f"{crop_limits=} with {type(crop_limits)=}" + \
+                f" not in [int, float, bool, list, np.array]"
             )
         return cat_copy
 
