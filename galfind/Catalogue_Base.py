@@ -13,7 +13,7 @@ import inspect
 from numpy.typing import NDArray
 from typing import TYPE_CHECKING, Any, List, Dict, Union, Type, Optional
 if TYPE_CHECKING:
-    from . import Galaxy, Catalogue_Creator
+    from . import Galaxy, Catalogue_Creator, Selector
 try:
     from typing import Self, Type  # python 3.11+
 except ImportError:
@@ -125,53 +125,56 @@ class Catalogue_Base:
             self.iter += 1
             return gal
 
-    def __getitem__(self, index: Any) -> Optional[Union[Galaxy, Type[Self]]]:
+    def __getitem__(self, index: Any) -> Optional[Union[Galaxy, List[Galaxy]]]:
+        if isinstance(index, int):
+            return self.gals[index]
+        elif isinstance(index, (list, np.ndarray)):
+            if len(index) == 1:
+                return self.gals[index[0]]
         from . import Selector
-        self_copy = deepcopy(self)
         if isinstance(index, (slice, np.ndarray)):
-            self_copy.gals = list(np.array(self.gals)[index])
-            return self_copy
+            return list(np.array(self.gals)[index])
         elif isinstance(index, list):
-            self_copy.gals = list(np.array(self.gals)[np.array(index)])
-            return self_copy
-        elif isinstance(index, dict):
-            # make this more general
-            keep_arr = []
-            for key, values in index.items():
-                if key == "ID":
-                    if not isinstance(values, (list, np.ndarray)):
-                        values = [int(values)]
-                        singular = True
-                    else:
-                        singular = False
-                    values = np.array(values).astype(int)
-                    keep_arr.extend(
-                        [np.array(
-                            [
-                                True if getattr(gal, key) in values else False
-                                for i, gal in enumerate(self)
+            return list(np.array(self.gals)[np.array(index)])
+        # elif isinstance(index, dict):
+        #     # make this more general
+        #     keep_arr = []
+        #     for key, values in index.items():
+        #         if key == "ID":
+        #             if not isinstance(values, (list, np.ndarray)):
+        #                 values = [int(values)]
+        #             values = np.array(values).astype(int)
+        #             keep_arr.extend(
+        #                 [np.array(
+        #                     [
+        #                         True if getattr(gal, key) in values else False
+        #                         for i, gal in enumerate(self)
                                 
-                            ]
-                        )]
-                    )
-            if len(keep_arr) > 0:
-                self_copy.gals = list(np.array(self.gals)[np.array( \
-                    np.logical_and.reduce(keep_arr)).astype(bool)])
-                if len(self_copy.gals) == 1:
-                    return self_copy.gals[0]
-                else:
-                    return self_copy
-            else:
-                return None
+        #                     ]
+        #                 )]
+        #             )
+        #     if len(keep_arr) > 0:
+        #         self_copy.gals = list(np.array(self.gals)[np.array( \
+        #             np.logical_and.reduce(keep_arr)).astype(bool)])
+        #         if len(self_copy.gals) == 1:
+        #             return self_copy.gals[0]
+        #     else:
+        #         return None
         elif isinstance(index, tuple(Selector.__subclasses__())):
-            keep_arr = np.array([index(gal) for gal in self]).astype(bool)
-            self_copy.gals = self.gals[keep_arr]
-            self_copy.crops.append(index)
-            return self_copy
-        else:
-            gal = self_copy.gals[index]
-            assert isinstance(gal, Galaxy)
-            return gal
+            assert all(index.name in gal.selection_flags for gal in self), \
+                galfind_logger.critical(
+                    f"{index.name} not in {self.survey} selection flags!"
+                )
+            keep_arr = [gal.selection_flags[index.name] for gal in self]
+            return list(np.array(self.gals)[np.array(keep_arr)])
+    
+    def crop(
+        self: Self,
+        index: Type[Selector],
+    ) -> Self:
+        self.gals = self[index]
+        self.cat_creator.crops.append(index)
+        return self
 
     # only acts on attributes that don't already exist in Catalogue
     def __getattr__(
@@ -218,6 +221,7 @@ class Catalogue_Base:
         self.gals[index] = gal
 
     def __deepcopy__(self, memo):
+        galfind_logger.info(f"deepcopy({self.__class__.__name__})")
         cls = self.__class__
         result = cls.__new__(cls)
         memo[id(self)] = result
@@ -568,49 +572,49 @@ class Catalogue_Base:
         else:
             galfind_logger.critical("No index or ID provided to remove_gal!")
 
-    def crop(
-        self: Self,
-        crop_limits: Union[int, float, bool, list, NDArray],
-        crop_property: str,
-        aper_diam: u.Quantity,
-        SED_fit_label: Union[str, SED_code],
-        origin: str,
-    ) -> Self:
+    # def crop(
+    #     self: Self,
+    #     crop_limits: Union[int, float, bool, list, NDArray],
+    #     crop_property: str,
+    #     aper_diam: u.Quantity,
+    #     SED_fit_label: Union[str, SED_code],
+    #     origin: str,
+    # ) -> Self:
         
-        assert origin in ["phot_rest", "SED_result"]
-        if isinstance(SED_fit_label, tuple(SED_code.__subclasses__())):
-            SED_fit_label = SED_fit_label.label
+    #     assert origin in ["phot_rest", "SED_result"]
+    #     if isinstance(SED_fit_label, tuple(SED_code.__subclasses__())):
+    #         SED_fit_label = SED_fit_label.label
 
-        # extract appropriate properties
-        if origin == "phot_rest":
-            property_arr = [gal.aper_phot[aper_diam].SED_results[SED_fit_label].phot_rest.properties[crop_property] for gal in self]
-        elif origin == "SED_result":
-            property_arr = [gal.aper_phot[aper_diam].SED_results[SED_fit_label].properties[crop_property] for gal in self]
-        assert all(prop.unit == property_arr[0].unit for prop in property_arr)
-        property_arr = np.array([prop.value for prop in property_arr]) * property_arr[0].unit
+    #     # extract appropriate properties
+    #     if origin == "phot_rest":
+    #         property_arr = [gal.aper_phot[aper_diam].SED_results[SED_fit_label].phot_rest.properties[crop_property] for gal in self]
+    #     elif origin == "SED_result":
+    #         property_arr = [gal.aper_phot[aper_diam].SED_results[SED_fit_label].properties[crop_property] for gal in self]
+    #     assert all(prop.unit == property_arr[0].unit for prop in property_arr)
+    #     property_arr = np.array([prop.value for prop in property_arr]) * property_arr[0].unit
 
-        cat_copy = deepcopy(self)
-        if isinstance(crop_limits, (int, float, bool)):
-            cat_copy.gals = cat_copy[
-                property_arr == crop_limits
-            ]
-            # if crop_limits:
-            #     cat_copy.cat_creator.crops.append(crop_property)
-            # else:
-            #     cat_copy.cat_creator.crops.append(f"{crop_property}={crop_limits}")
-        elif isinstance(crop_limits, (list, np.array)):
-            cat_copy.gals = cat_copy[
-                ((property_arr >= crop_limits[0]) & (property_arr <= crop_limits[1]))
-            ]
-            # cat_copy.cat_creator.crops.append(
-            #     f"{crop_limits[0]}<{crop_property}<{crop_limits[1]}"
-            # )
-        else:
-            galfind_logger.warning(
-                f"{crop_limits=} with {type(crop_limits)=}" + \
-                f" not in [int, float, bool, list, np.array]"
-            )
-        return cat_copy
+    #     cat_copy = deepcopy(self)
+    #     if isinstance(crop_limits, (int, float, bool)):
+    #         cat_copy.gals = cat_copy[
+    #             property_arr == crop_limits
+    #         ]
+    #         # if crop_limits:
+    #         #     cat_copy.cat_creator.crops.append(crop_property)
+    #         # else:
+    #         #     cat_copy.cat_creator.crops.append(f"{crop_property}={crop_limits}")
+    #     elif isinstance(crop_limits, (list, np.array)):
+    #         cat_copy.gals = cat_copy[
+    #             ((property_arr >= crop_limits[0]) & (property_arr <= crop_limits[1]))
+    #         ]
+    #         # cat_copy.cat_creator.crops.append(
+    #         #     f"{crop_limits[0]}<{crop_property}<{crop_limits[1]}"
+    #         # )
+    #     else:
+    #         galfind_logger.warning(
+    #             f"{crop_limits=} with {type(crop_limits)=}" + \
+    #             f" not in [int, float, bool, list, np.array]"
+    #         )
+    #     return cat_copy
 
     def open_cat(self, cropped: bool = False, hdu: Optional[str, Type[SED_code]] = None):
         if hdu is None:

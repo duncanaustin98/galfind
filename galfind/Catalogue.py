@@ -28,11 +28,8 @@ import itertools
 from astropy.utils.masked import Masked
 from tqdm import tqdm
 from typing import Union, Tuple, Any, List, Dict, Callable, Optional, NoReturn, TYPE_CHECKING
-
 if TYPE_CHECKING:
-    from . import Band_Data_Base
-    from . import Multiple_Filter, Data
-
+    from . import Band_Data_Base, Selector, Multiple_Filter, Data
 try:
     from typing import Self, Type  # python 3.11+
 except ImportError:
@@ -238,7 +235,7 @@ class Catalogue_Creator:
         cat_path: str,
         filterset: Multiple_Filter,
         aper_diams: u.Quantity,
-        crops: Optional[Dict[str, Any], str, int, List[str], List[int]] = None,
+        crops: Optional[Union[Type[Selector], List[Type[Selector]]]] = None,
         open_cat: Callable[[str, str], Any] = open_galfind_cat,
         open_hdr: Callable[[Any], Dict[str, str]] = open_galfind_hdr,
         load_ID_func: Optional[Callable] = load_IDs_Table,
@@ -312,9 +309,9 @@ class Catalogue_Creator:
     
     @classmethod
     def from_data(
-        cls, 
-        data: Data, 
-        crops: Optional[Dict[str, Any], str, int, List[str], List[int]] = None,
+        cls,
+        data: Data,
+        crops: Optional[Union[Type[Selector], List[Type[Selector]]]] = None,
     ) -> Catalogue_Creator:
         cat_creator = cls(
             data.survey,
@@ -372,9 +369,7 @@ class Catalogue_Creator:
     @property
     def crop_name(self) -> List[str]:
         if self.crops is not None:
-            return "+".join([f"{key}={value}" \
-                if not isinstance(value, bool) else key \
-                for key, value in self.crops.items()])
+            return "+".join([selector.name for selector in self.crops])
         else:
             return ""
 
@@ -388,90 +383,34 @@ class Catalogue_Creator:
             else:
                 return tab
     
-    @staticmethod
-    def _convert_crops_to_dict(
-        crops: Optional[Union[Dict[str, Any], str, int, List[str], List[int]]]
-    ) -> Dict[str, Any]:
-        # TODO: update this function to be more general
-        if crops is not None:
-            # make this a list of crops
-            if isinstance(crops, str):
-                crops_ = {crop: True for crop in crops.split("+")}
-            elif isinstance(crops, int):
-                crops_ = {"ID": crops}
-            elif isinstance(crops, list):
-                if isinstance(crops[0], int):
-                    # TODO: ensure all elements are integers
-                    crops_ = {"ID": crops}
-                elif isinstance(crops[0], str):
-                    # TODO: ensure all elements are strings
-                    crops_ = {crop: True for crop in crops}
-            elif isinstance(crops, dict):
-                crops_ = crops #{key: [value] if isinstance(value, int) \
-                    #else value for key, value in crops.items()}
-            else:
-                err_message = f"{type(crops)=} is invalid!"
-                galfind_logger.critical(err_message)
-                raise Exception(err_message)
+    def set_crops(self, crops: Optional[Union[Type[Selector], List[Type[Selector]]]]) -> NoReturn:
+        if crops is None:
+            self.crops = []
+        elif not isinstance(crops, tuple([list, np.ndarray])):
+            self.crops = [crops]
         else:
-            crops_ = None
-        return crops_
-
-    def set_crops(
-        self: Self,
-        crops: Optional[Union[Dict[str, Any], str, int, List[str], List[int]]]
-    ) -> NoReturn:
-        crops = self._convert_crops_to_dict(crops)
-        self.crops = crops
+            self.crops = crops
         self._get_crop_mask()
-    
-    def update_crops(self, crops: Optional[Union[Dict[str, Any], str, int, List[str], List[int]]]) -> NoReturn:
-        new_crops = self._convert_crops_to_dict(crops)
-        if new_crops is None:
-            crops = self.crops
-        elif self.crops is None:
-            crops = new_crops
-        else:
-            crops = {**self.crops, **new_crops}
-        self.set_crops(crops)
 
     def _get_crop_mask(self) -> NoReturn:
-        # crop table
-        # TODO: implement more general catalogue loading
-        if self.crops is not None:
+        tab = self.open_cat(self.cat_path, "SELECTION")
+        if len(self.crops) > 0:
             # crop table using crop dict
             keep_arr = []
-            for key, value in self.crops.items():
-                tab = self.open_cat(self.cat_path, key)
-                # currently only crops by ID
-                if "ID" in key.upper():
-                    keep_arr.extend([np.array([True if ID in value else False \
-                        for ID in self.load_IDs(cropped = False)])])
-                    # galfind_logger.info(
-                    #     f"Catalogue cropped by 'ID' to {values}"
-                    # )
-                elif value in tab.colnames:
-                    if isinstance(tab[value][0], (bool, np.bool_)):
-                        keep_arr.extend([np.array(tab[value]).astype(bool)])
-                        # galfind_logger.info(
-                        #     f"Catalogue cropped by {key}"
-                        # )
-                    else:
-                        pass
-                        # galfind_logger.warning(
-                        #     f"{type(tab[key][0])=} not in [bool, np.bool_]"
-                        # )
+            for selector in self.crops:
+                if selector.name in tab.colnames:
+                    keep_arr.extend([np.array(tab[selector.name]).astype(bool)])
+                    galfind_logger.info(
+                        f"Catalogue cropped by {selector.name}"
+                    )
                 else:
-                    pass
-                    # galfind_logger.warning(
-                    #     f"Invalid crop name == {key}! Skipping"
-                    # )
+                    galfind_logger.warning(
+                        f"{selector.name} selection not yet performed!"
+                    )
             # crop table
             if len(keep_arr) > 0:
                 self.crop_mask = np.array(np.logical_or.reduce(keep_arr)).astype(bool)
                 return
-        else:
-            tab = self.open_cat(self.cat_path, "ID")
         self.crop_mask = np.full(len(tab), True)
 
 
@@ -688,7 +627,7 @@ class Catalogue(Catalogue_Base):
             Union[str, List[str], Type[Band_Data_Base]]
         ] = None,
         min_flux_pc_err: Union[int, float] = 10.,
-        crops: Optional[Union[str, Dict[str, Union[str, List[str]]]]] = None,
+        crops: Optional[Union[Type[Selector], List[Type[Selector]]]] = None,
     ) -> Catalogue:
         data = Data.pipeline(
             survey,
@@ -712,7 +651,7 @@ class Catalogue(Catalogue_Base):
     def from_data(
         cls, 
         data: Data,
-        crops: Optional[Union[str, Dict[str, Union[str, List[str]]]]] = None,
+        crops: Optional[Union[Type[Selector], List[Type[Selector]]]] = None,
     ) -> Catalogue:
         cat_creator = Catalogue_Creator.from_data(data, crops=crops)
         return cat_creator(cropped = True)

@@ -13,7 +13,12 @@ forced_phot_band = ["F277W", "F356W", "F444W"]
 min_flux_pc_err = 10.
 
 def test_selection():
-    # imports
+    SED_fit_params_arr = [
+        {"templates": "fsps_larson", "lowz_zmax": 4.0},
+        {"templates": "fsps_larson", "lowz_zmax": 6.0},
+        {"templates": "fsps_larson", "lowz_zmax": None}
+    ]
+
     JOF_cat = Catalogue.pipeline(
         survey,
         version,
@@ -23,14 +28,19 @@ def test_selection():
         forced_phot_band = forced_phot_band,
         min_flux_pc_err = min_flux_pc_err
     )
+    # load sextractor half-light radii
+    JOF_cat.load_sextractor_Re()
 
-    # JOF_cat.load_sextractor_Re()
-    # {"templates": "fsps_larson", "lowz_zmax": 4.0}, {"templates": "fsps_larson", "lowz_zmax": 6.0}, 
-    SED_fit_params_arr = [{"templates": "fsps_larson", "lowz_zmax": None}]
+    # load EAZY SED fitting results
     for SED_fit_params in SED_fit_params_arr:
         EAZY_fitter = EAZY(SED_fit_params)
         EAZY_fitter(JOF_cat, aper_diams[0], load_PDFs = True, load_SEDs = True, update = True)
 
+    # perform EPOCHS selection
+    epochs_selector = EPOCHS_Selector(aper_diams[0], EAZY_fitter, allow_lowz = False, unmasked_instruments = "NIRCam")
+    EPOCHS_JOF_cat = epochs_selector(JOF_cat, return_copy = True)
+    breakpoint()
+    
     # from galfind import EPOCHS_Selector
     # epochs_selector = EPOCHS_Selector(allow_lowz = False, unmasked_instruments = "NIRCam")
     # epochs_selected_cat = epochs_selector(JOF_cat, aper_diams[0], EAZY_fitter, return_copy = True)
@@ -145,8 +155,8 @@ def check_multinest():
 if __name__ == "__main__":
     #test_load()
     #main()
-    #test_selection()
-    test_UVLF()
+    test_selection()
+    #test_UVLF()
     #test_pipes()
     #check_multinest()
 
