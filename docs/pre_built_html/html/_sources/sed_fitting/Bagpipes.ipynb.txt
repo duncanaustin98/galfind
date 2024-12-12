@@ -4,26 +4,163 @@
    "cell_type": "markdown",
    "metadata": {},
    "source": [
-    "# Bagpipes"
+    "# SED fitting with Bagpipes\n",
+    "\n",
+    "While we have previously used the `EAZY` and `LePhare` classes (more details found in the [EAZY](EAZY.ipynb) and [LePhare](LePhare.ipynb) notebooks) to perform SED fitting for redshifts (and basic stellar masses/SFRs in the case of LePhare), we will now use the well-known SED fitting tool `Bagpipes` to recover galaxy properties using a Bayesian framework.\n",
+    "\n",
+    "The first thing that must be done is to ensure bagpipes is downloaded and installed appropriately. At Manchester, we have slightly altered the Bagpipes basecode to include additional functionality, e.g. to directly output UV continuum slopes, $M_{\\mathrm{UV}}$s, etc, as well as the option to include Gaussian redshift priors on an object by object basis. To use this functionality, you must first clone the forked bagpipes repository from Thomas Harvey's github. In an appropriate directory (i.e. outside of the galfind directory!), simply run:\n",
+    "\n",
+    "git clone https://github.com/tHarvey303/bagpipes.git\n",
+    "cd bagpipes\n",
+    "pip install -e .\n",
+    "\n",
+    "You will now need to ensure that the appropriate stellar, nebular, and dust emission grids are placed within the bagpipes/models/grids. Some default templates will be made available at will be made available at ...\n",
+    "\n",
+    "By default, since `PyMultiNest` is not available without additional installation, bagpipes will perform the sampling using `Nautilus`, which is slower.\n",
+    "\n",
+    "Should you wish to fit using `PyMultiNest`, follow the installation instructions given here:\n",
+    "https://johannesbuchner.github.io/PyMultiNest/"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "As per usual, we will first import the required modules as well as our example JOF NIRCam v11 catalogue."
    ]
   },
   {
    "cell_type": "code",
    "execution_count": null,
    "metadata": {},
-   "outputs": [
-    {
-     "ename": "",
-     "evalue": "",
-     "output_type": "error",
-     "traceback": [
-      "\u001b[1;31mFailed to start the Kernel. \n",
-      "\u001b[1;31mUnhandled error. \n",
-      "\u001b[1;31mView Jupyter <a href='command:jupyter.viewOutput'>log</a> for further details."
-     ]
-    }
-   ],
+   "outputs": [],
+   "source": [
+    "import astropy.units as u\n",
+    "from copy import deepcopy\n",
+    "from galfind import Catalogue, EPOCHS_Selector, Bagpipes, EAZY\n",
+    "from galfind.Data import morgan_version_to_dir"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "survey = \"JOF\"\n",
+    "version = \"v11\"\n",
+    "instrument_names = [\"NIRCam\"]\n",
+    "aper_diams = [0.32] * u.arcsec\n",
+    "forced_phot_band = [\"F277W\", \"F356W\", \"F444W\"]\n",
+    "min_flux_pc_err = 10.\n",
+    "\n",
+    "JOF_cat = Catalogue.pipeline(\n",
+    "    survey,\n",
+    "    version,\n",
+    "    instrument_names = instrument_names, \n",
+    "    version_to_dir_dict = morgan_version_to_dir,\n",
+    "    aper_diams = aper_diams,\n",
+    "    forced_phot_band = forced_phot_band,\n",
+    "    min_flux_pc_err = min_flux_pc_err,\n",
+    "    crops = {\"SELECTION\": EPOCHS_Selector(allow_lowz=True). \\\n",
+    "        _get_selection_name(aper_diams[0], \\\n",
+    "        EAZY({\"templates\": \"fsps_larson\", \"lowz_zmax\": None}).label)}\n",
+    ")"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "SED_fit_params_arr = [{\"templates\": \"fsps_larson\", \"lowz_zmax\": None}]\n",
+    "for SED_fit_params in SED_fit_params_arr:\n",
+    "    EAZY_fitter = EAZY(SED_fit_params)\n",
+    "    EAZY_fitter(JOF_cat, aper_diams[0], load_PDFs = False, load_SEDs = False, update = True)"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## Example 1: Running for a single Galaxy/Photometry_obs object"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "# TODO: More complicated than running on the full catalogue"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## Example 2: Running an entire Catalogue"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "SED_fit_params = {\"fix_z\": EAZY_fitter().label}\n",
+    "pipes_fitter = Bagpipes(SED_fit_params)\n",
+    "pipes_fitter(JOF_cat, aper_diams[0], save_PDFs = False, load_SEDs = False, update = True)"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## Example 3: Running with different priors"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
    "source": []
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## Example 4: Multi-processing Catalogue SED fitting"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "# TODO: Have a look at pymultinest"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## Example 4: Running with different input grids\n",
+    "\n",
+    "Since Bagpipes only samples from a given set of input stellar and nebular grids created under a set of assumptions about the IMF, as well as the SPS model and CLOUDY nebular physics assumptions used, the user may wish to change these to determine whether their results are sensitive to these choices."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "# TODO: A bit more complicated to do this"
+   ]
   }
  ],
  "metadata": {
@@ -33,7 +170,15 @@
    "name": "python3"
   },
   "language_info": {
+   "codemirror_mode": {
+    "name": "ipython",
+    "version": 3
+   },
+   "file_extension": ".py",
+   "mimetype": "text/x-python",
    "name": "python",
+   "nbconvert_exporter": "python",
+   "pygments_lexer": "ipython3",
    "version": "3.9.20"
   }
  },
