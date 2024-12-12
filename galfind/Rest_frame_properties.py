@@ -293,7 +293,7 @@ class Rest_Frame_Property_Calculator(ABC):
                         if value is None:
                             phot_rest.properties[property_name] = np.nan
                         else:
-                                phot_rest.properties[property_name] = value
+                            phot_rest.properties[property_name] = value
                         calculated = True
                 else:
                     galfind_logger.debug(
@@ -924,7 +924,7 @@ class MUV_Calculator(Rest_Frame_Property_Calculator):
             top_hat_width,
             resolution
         )
-        super().__init__(aper_diam, SED_fit_label, [mUV_calculator], **{})
+        super().__init__(aper_diam, SED_fit_label, [mUV_calculator])
 
     @property
     def name(self: Self) -> str:

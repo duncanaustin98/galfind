@@ -507,6 +507,7 @@ mass_IMF_factor = {}
 default_lims = {
     "M1500": [-23.0, -16.0],
     "M_UV": [-23.0, -16.0],
+    "M1500_[1250,3000]AA": [-23.0, -16.0],
     "M_UV_ext_src_corr": [-23.0, -16.0],
     "stellar_mass": [7.5, 11.0],
     "stellar_mass_ext_src_corr": [7.5, 11.0],
@@ -517,10 +518,12 @@ def get_z_bin_name(z_bin: Union[list, np.array]) -> str:
     return f"{z_bin[0]:.1f}<z<{z_bin[1]:.1f}"
 
 
-def get_SED_fit_params_z_bin_name(
-    SED_fit_params_key: str, z_bin: Union[list, np.array]
-):
-    return f"{SED_fit_params_key}_{get_z_bin_name(z_bin)}"
+def get_SED_fit_label_aper_diam_z_bin_name(
+    SED_fit_params_key: str,
+    aper_diam: u.Quantity,
+    z_bin: Union[list, np.array]
+) -> str:
+    return f"{SED_fit_params_key}_{aper_diam.to(u.arcsec).value:.2f}as_{get_z_bin_name(z_bin)}"
 
 
 def calc_Vmax(area, zmin, zmax):
@@ -562,9 +565,9 @@ def calc_cv_proper(
         rectangular_geometry_y_to_x = [
             rectangular_geometry_y_to_x for i in range(len(data_arr))
         ]
-    elif type(rectangular_geometry_y_to_x) in [list, np.array]:
+    elif isinstance(rectangular_geometry_y_to_x, (list, np.ndarray)):
         assert len(rectangular_geometry_y_to_x) == len(data_arr)
-    elif type(rectangular_geometry_y_to_x) in [dict]:
+    elif isinstance(rectangular_geometry_y_to_x, dict):
         assert all(
             data.full_name in rectangular_geometry_y_to_x.keys()
             for data in data_arr
@@ -577,7 +580,8 @@ def calc_cv_proper(
     total_area = 0.0
     for data, y_to_x in zip(data_arr, rectangular_geometry_y_to_x):
         # calculate area of field
-        area = data.area[data_region].to(u.arcmin**2)
+        breakpoint()
+        area = data.calc_unmasked_area(data.forced_phot_band.filt_name)
         # field is square if y_to_x == 1
         dimensions_x = np.sqrt(area.value / y_to_x) * u.arcmin
         dimensions_y = np.sqrt(area.value * y_to_x) * u.arcmin

@@ -39,8 +39,7 @@ except ImportError:
 from typing import  Union, Callable, Tuple, List, NoReturn, Optional, Dict, Any, TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from . import Filter
-    from . import SED_code
+    from . import Filter, SED_code, Selector
 
 from . import (
     PDF,
@@ -545,64 +544,66 @@ class Galaxy:
 
     # %% Selection methods
 
-    def is_selected(
-        self,
-        crop_names: Union[str, np.array, list, dict],
-        incl_selection_types: Union[str, list] = "All",
-        SED_fit_params: Union[str, dict] = "EAZY_fsps_larson_zfree",
-        timed: bool = False,
-    ) -> bool:
-        # input assertions
-        assert type(crop_names) in [str, np.array, list, dict]
-        if type(crop_names) in [str]:
-            crop_names = [crop_names]
-        if type(incl_selection_types) in [str]:
-            incl_selection_types = [incl_selection_types]
-        if incl_selection_types != ["All"]:
-            assert all(
-                fit_type in select_func_to_type.values()
-                for fit_type in incl_selection_types
-            )
-        # perform selections if required
-        selection_names = []
-        if timed:
-            start = time.time()
-        for i, crop_name in enumerate(crop_names):
-            func, kwargs, func_type = (
-                Galaxy._get_selection_func_from_output_name(
-                    crop_name, SED_fit_params
-                )
-            )
-            if func_type in incl_selection_types or incl_selection_types == [
-                "All"
-            ]:
-                selection_name = func(self, **kwargs)[1]
-                if selection_name != crop_name:
-                    breakpoint()  # see what's wrong
-                    assert selection_name == crop_name  # break code
-                selection_names.append(selection_name)
-                run = True
-            else:
-                run = False
-            if timed:
-                print(
-                    f"{crop_name=} was {'run' if run else 'skipped'} and took:"
-                )
-                if i == 0:
-                    mid = time.time()
-                    print(f"{mid - start}s")
-                else:
-                    print(f"{time.time() - mid}s")
-                    mid = time.time()
-        # breakpoint()
-        # determine whether galaxy is selected
-        if all(self.selection_flags[name] for name in selection_names):
-            selected = True
-        else:
-            selected = False
-        # clear selection flags
-        # self.selection_flags = {}
-        return selected
+    # def is_selected(
+    #     self,
+    #     selectors: List[Type[Selector]],
+    #     aper_diam: u.Quantity,
+    #     SED_fit_label: str,
+    #     timed: bool = False,
+    # ) -> bool:
+    #     # # input assertions
+    #     # assert type(crop_names) in [str, np.array, list, dict]
+    #     # if type(crop_names) in [str]:
+    #     #     crop_names = [crop_names]
+    #     # if type(incl_selection_types) in [str]:
+    #     #     incl_selection_types = [incl_selection_types]
+    #     # if incl_selection_types != ["All"]:
+    #     #     assert all(
+    #     #         fit_type in select_func_to_type.values()
+    #     #         for fit_type in incl_selection_types
+    #     #     )
+    #     # # perform selections if required
+    #     # selection_names = []
+    #     # if timed:
+    #     #     start = time.time()
+    #     # for i, crop_name in enumerate(crop_names):
+    #     #     func, kwargs, func_type = (
+    #     #         Galaxy._get_selection_func_from_output_name(
+    #     #             crop_name, SED_fit_params
+    #     #         )
+    #     #     )
+    #     #     if func_type in incl_selection_types or incl_selection_types == [
+    #     #         "All"
+    #     #     ]:
+    #     #         selection_name = func(self, **kwargs)[1]
+    #     #         if selection_name != crop_name:
+    #     #             breakpoint()  # see what's wrong
+    #     #             assert selection_name == crop_name  # break code
+    #     #         selection_names.append(selection_name)
+    #     #         run = True
+    #     #     else:
+    #     #         run = False
+    #     #     if timed:
+    #     #         print(
+    #     #             f"{crop_name=} was {'run' if run else 'skipped'} and took:"
+    #     #         )
+    #     #         if i == 0:
+    #     #             mid = time.time()
+    #     #             print(f"{mid - start}s")
+    #     #         else:
+    #     #             print(f"{time.time() - mid}s")
+    #     #             mid = time.time()
+    #     # breakpoint()
+    #     breakpoint()
+    #     [selector(self, aper_diam, SED_fit_label, return_copy = False) for selector in selectors]
+    #     # determine whether galaxy is selected
+    #     if all(self.selection_flags[name] for name in selectors):
+    #         selected = True
+    #     else:
+    #         selected = False
+    #     # clear selection flags
+    #     # self.selection_flags = {}
+    #     return selected
 
     @staticmethod
     def _get_selection_func_from_output_name(
@@ -803,16 +804,22 @@ class Galaxy:
         detect_cat_name: str,
         data_arr: Union[list, np.array],
         z_bin: Union[list, np.array],
-        SED_fit_params_key: str = "EAZY_fsps_larson_zfree",
+        aper_diam: u.Quantity,
+        SED_fit_code: SED_code,
+        crops: List[Type[Selector]],
         z_step: float = 0.01,
-        depth_mode="n_nearest",
-        depth_region="all",
+        depth_mode: str = "n_nearest",
+        depth_region: str = "all",
         timed: bool = False,
-    ) -> None:
+    ) -> NoReturn:
         # input assertions
         assert len(z_bin) == 2
         assert z_bin[0] < z_bin[1]
-        z_obs = self.phot.SED_results[SED_fit_params_key].z
+        from . import SED_fit_Selector
+        # remove SED_fit_params from crops
+        crops = [crop for crop in crops if not isinstance(crop, SED_fit_Selector)]
+
+        z_obs = self.aper_phot[aper_diam].SED_results[SED_fit_code.label].z
 
         # name appropriate empty output dicts if not already made
         if not hasattr(self, "obs_zrange"):
@@ -821,7 +828,9 @@ class Galaxy:
         #    self.V_max_simple = {}
         if not hasattr(self, "V_max"):
             self.V_max = {}
-        z_bin_name = f"{SED_fit_params_key}_{z_bin[0]:.1f}<z<{z_bin[1]:.1f}"
+        z_bin_name = funcs.get_SED_fit_label_aper_diam_z_bin_name(
+            SED_fit_code.label, aper_diam, z_bin
+        )
         if z_bin_name not in self.obs_zrange.keys():
             self.obs_zrange[z_bin_name] = {}
         # if not z_bin_name in self.V_max_simple.keys():
@@ -837,20 +846,14 @@ class Galaxy:
                 z_max_used = -1.0
             else:
                 distance_detect = astropy_cosmo.luminosity_distance(z_obs)
-                sed_obs = self.phot.SED_results[SED_fit_params_key].SED
+                sed_obs = self.aper_phot[aper_diam].SED_results[SED_fit_code.label].SED
                 # load appropriate depths for each data object in data_arr
-                galfind_logger.warning(
-                    "Should use local depth if the data.full_name is the same as the catalogue the galaxy is measured in!"
+                galfind_logger.debug(
+                    "Should use local depth if the data.full_name " + \
+                    "is the same as the catalogue the galaxy is measured in!"
                 )
-                data.load_depths(self.phot.aper_diam, depth_mode)
-                data_depths = [
-                    band_depths[depth_region]
-                    for band_depths in data.depths.values()
-                ]
-                # create SED_fit_params
-                SED_fit_params = globals()[
-                    SED_fit_params_key.split("_")[0]
-                ]().SED_fit_params_from_label(SED_fit_params_key)
+                data._load_depths(aper_diam, depth_mode)
+                data_depths = [band_data.med_depth[aper_diam][depth_region] for band_data in data]
                 # calculate z_range
                 # z_test for other fields should be lower than starting z
                 z_detect = []
@@ -858,9 +861,6 @@ class Galaxy:
                     np.arange(z_bin[0], z_bin[1] + z_step, z_step),
                     desc=f"Calculating z_max and z_min for ID={self.ID}",
                 ):
-                    # could be cleaned up with new Galaxy method
-                    if timed:
-                        start = time.time()
                     galfind_logger.debug(
                         "ΙGM attenuation is ignored when redshifting the best-fit galaxy SED!"
                     )
@@ -880,31 +880,32 @@ class Galaxy:
                         )
                         + (2.5 * np.log10((1.0 + sed_obs.z) / (1.0 + z)))
                     )
-                    if timed:
-                        pre_mid = time.time()
-                        print(pre_mid - start)
+
                     # construct galaxy at new redshift with average depths of new field
                     test_sed_obs = SED_obs(
                         z, wav_z.value, mag_z, wav_z.unit, u.ABmag
                     )
+                    galfind_logger.debug("Not propagating min_flux_pc_err!")
                     test_mock_phot = test_sed_obs.create_mock_phot(
-                        data.instrument,
+                        data.filterset,
                         depths=data_depths,
-                        min_flux_pc_err=self.phot.min_flux_pc_err,
+                        min_flux_pc_err=10.0,
                     )
                     test_phot_obs = Photometry_obs(
-                        test_mock_phot.instrument,
+                        test_mock_phot.filterset,
                         Masked(
                             test_mock_phot.flux,
-                            mask=np.full(len(data.instrument), False),
+                            mask=np.full(len(data.filterset), False),
                         ),
-                        test_mock_phot.flux,
-                        self.phot.aper_diam,
-                        test_mock_phot.min_flux_pc_err,
+                        Masked(
+                            test_mock_phot.flux_errs,
+                            mask=np.full(len(data.filterset), False),
+                        ),
                         test_mock_phot.depths,
+                        aper_diam,
                     )
                     sed_result = SED_result(
-                        SED_fit_params,
+                        SED_fit_code,
                         test_phot_obs,
                         {"z": z},
                         property_errs={},
@@ -912,34 +913,22 @@ class Galaxy:
                         SED=None,
                     )
                     test_phot_obs.SED_results = {
-                        SED_fit_params_key: sed_result
+                        SED_fit_code.label: sed_result
                     }
-                    galfind_logger.debug(
-                        "empty selection_flags dict explicitly set here to alleviate (potential deepcopy?) issues when running from Catalogue.calc_Vmax"
-                    )
                     test_gal = Galaxy(
-                        self.sky_coord,
                         self.ID,
-                        test_phot_obs,
+                        self.sky_coord,
+                        {aper_diam: test_phot_obs},
                         selection_flags={},
                     )
-                    if timed:
-                        post_mid = time.time()
-                        print(post_mid - pre_mid)
-                    # test whether galaxy would be selected with given crops - assuming redshift is fixed to new redshift
-                    # assert all(self.selection_flags == cat[0].selection_flags for gal in cat) when running from catalogue
-                    goodz = test_gal.is_selected(
-                        self.selection_flags,
-                        incl_selection_types=["phot_obs", "phot_rest"],
-                        SED_fit_params=SED_fit_params,
-                        timed=timed,
+                    # run selection methods on new galaxy
+                    [selector(test_gal) for selector in crops]
+                    goodz = all(
+                        test_gal.selection_flags[selector.name]
+                        for selector in crops
                     )
                     if goodz:
                         z_detect.append(z)
-                    if timed:
-                        end = time.time()
-                        print(end - post_mid)
-                        print(f"Total time taken = {end - post_mid}s")
 
                 if len(z_detect) < 2:
                     z_max = -1.0
@@ -970,17 +959,9 @@ class Galaxy:
                 #     break
                 # continue
 
-                # breakpoint()
-                unmasked_area_tab = data.calc_unmasked_area(
-                    masking_instrument_or_band_name=data.forced_phot_band,
-                    forced_phot_band=data.forced_phot_band,
-                )
-                unmasked_area = (
-                    unmasked_area_tab[
-                        unmasked_area_tab["masking_instrument_band"]
-                        == data.forced_phot_band
-                    ]["unmasked_area_total"][0]
-                    * u.arcmin**2
+                # calculate/load unmasked area of forced photometry band
+                unmasked_area = data.calc_unmasked_area(
+                    instr_or_band_name=data.forced_phot_band.filt_name,
                 )
                 z_min_used = np.max([z_min, z_bin[0]])
                 z_max_used = np.min([z_max, z_bin[1]])
@@ -994,7 +975,8 @@ class Galaxy:
                         .value
                     )
 
-            self.obs_zrange[z_bin_name][data.full_name] = [
+            self.obs_zrange[z_bin_name][data.full_name] = \
+            [
                 z_min_used,
                 z_max_used,
             ]
@@ -1019,8 +1001,6 @@ class Galaxy:
         #     #self.V_max_simple[z_bin_name][joint_survey_name] = V_max_simple
         #     self.V_max[z_bin_name][joint_survey_name] = V_max_combined
 
-        return self
-
     # def calc_Vmax_multifield(self, detect_cat_name: str, data_arr: Union[list, np.array], z_bin: Union[list, np.array], \
     #         SED_fit_params_key: str = "EAZY_fsps_larson_zfree", z_step: float = 0.01) -> None:
     #     z_bin_name = f"{SED_fit_params_key}_{z_bin[0]:.1f}<z<{z_bin[1]:.1f}"
@@ -1042,12 +1022,12 @@ class Galaxy:
     #     return self
 
     def save_Vmax(
-        self,
+        self: Self,
         Vmax: float,
         z_bin_name: str,
         full_survey_name: str,
         is_simple_Vmax: bool = False,
-    ) -> None:
+    ) -> NoReturn:
         # if is_simple_Vmax:
         #     if not hasattr(self, "V_max_simple"):
         #         self.V_max_simple = {}
@@ -1060,7 +1040,6 @@ class Galaxy:
         if z_bin_name not in self.V_max.keys():
             self.V_max[z_bin_name] = {}
         self.V_max[z_bin_name][full_survey_name] = Vmax
-        return self
 
 
 # class Multiple_Galaxy:

@@ -40,6 +40,7 @@ from .SED import SED_obs
 
 # %% EAZY SED fitting code
 
+# TODO: update these at runtime
 EAZY_FILTER_CODES = {
     "NIRCam": {
         "F070W": 36,
@@ -91,7 +92,7 @@ EAZY_FILTER_CODES = {
 
 class EAZY(SED_code):
     #ext_src_corr_properties = []
-    def __init__(self, SED_fit_params: Dict[str, Any]):
+    def __init__(self: Self, SED_fit_params: Dict[str, Any]):
         super().__init__(SED_fit_params)
 
     @classmethod
@@ -241,14 +242,14 @@ class EAZY(SED_code):
 
     @run_in_dir(path=config["EAZY"]["EAZY_DIR"])
     def fit(
-        self,
+        self: Self,
         cat: Catalogue,
         aper_diam: u.Quantity,
         save_SEDs: bool = True,
         save_PDFs: bool = True,
         overwrite: bool = False,
         **kwargs: Dict[str, Any],
-    ):
+    ) -> NoReturn:
         """
         z_step  - redshift step size - default 0.01
         z_min - minimum redshift to fit - default 0
@@ -553,7 +554,11 @@ class EAZY(SED_code):
     def make_fits_from_out(self, out_path: str) -> NoReturn:
         pass
 
-    def _get_out_paths(self, cat: Catalogue, aper_diam: u.Quantity) -> Tuple[str, str, str, Dict[str, List[str]], List[str]]:
+    def _get_out_paths(
+        self: Self, 
+        cat: Catalogue, 
+        aper_diam: u.Quantity
+    ) -> Tuple[str, str, str, Dict[str, List[str]], List[str]]:
         in_dir = f"{config['EAZY']['EAZY_DIR']}/input/{cat.filterset.instrument_name}/{cat.version}/{cat.survey}"
         in_name = cat.cat_name.replace('.fits', f"_{aper_diam.to(u.arcsec).value:.2f}as.in")
         in_path = f"{in_dir}/{in_name}"

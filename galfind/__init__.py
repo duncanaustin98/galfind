@@ -168,6 +168,12 @@ from .SED import (
 from .Selector import (
     Selector, 
     Multiple_Selector,
+    Data_Selector,
+    Photometry_Selector,
+    SED_fit_Selector,
+    Multiple_Data_Selector,
+    Multiple_Photometry_Selector,
+    Multiple_SED_fit_Selector,
     Unmasked_Band_Selector, 
     Unmasked_Bands_Selector, 
     Unmasked_Instrument_Selector,
@@ -188,6 +194,10 @@ from .Selector import (
     Chi_Sq_Diff_Selector,
     Robust_zPDF_Selector,
     EPOCHS_Selector,
+    Redshift_Limit_Selector,
+    Redshift_Bin_Selector,
+    Rest_Frame_Property_Limit_Selector,
+    Rest_Frame_Property_Bin_Selector,
 )
 
 from .Emission_lines import Emission_line, wav_lyman_alpha, line_diagnostics
