@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import sys
+from copy import deepcopy
 from pathlib import Path
 from typing import Union
 import astropy.units as u
@@ -10,7 +11,7 @@ import numpy as np
 from astropy.table import Table
 from typing import NoReturn, Optional, TYPE_CHECKING
 if TYPE_CHECKING:
-    from . import Catalogue, Multiple_Catalogue
+    from . import Catalogue, Multiple_Catalogue, Rest_Frame_Property_Calculator
 try:
     from typing import Self, Type  # python 3.11+
 except ImportError:
@@ -145,7 +146,7 @@ class Base_Number_Density_Function:
         x_lims: Union[list, np.array, str, None] = "default",
         save_name: Union[str, None] = None,
     ) -> None:
-        if all(type(i) == type(None) for i in [fig, ax]):
+        if all(i is None for i in [fig, ax]):
             fig, ax = plt.subplots()
 
         # don't plot empty bins
@@ -205,8 +206,8 @@ class Base_Number_Density_Function:
                 ax.set_yscale("log")
             ax.set_xlabel(self.x_name)
             ax.set_ylabel(y_label)
-            if type(x_lims) != type(None):
-                if type(x_lims) in [str]:
+            if x_lims is not None:
+                if isinstance(x_lims, str):
                     ax.set_xlim(*funcs.default_lims[x_lims])
                 else:
                     assert len(x_lims) == 2
@@ -224,7 +225,7 @@ class Base_Number_Density_Function:
             ax.legend(**_legend_kwargs)
         if save:
             if self.__class__.__name__ != "Number_Density_Function":
-                assert type(save_name) != type(None)
+                assert save_name is not None
                 plot_path = f"{config['NumberDensityFunctions']['NUMBER_DENSITY_FUNC_DIR']}/Plots/Literature/{save_name}"
             else:
                 plot_path = self.get_plot_path()
@@ -232,7 +233,6 @@ class Base_Number_Density_Function:
                 funcs.make_dirs(plot_path)
             else:
                 galfind_logger.warning(f"Cannot write to {plot_path}!")
-
             plt.savefig(plot_path)
         if show:
             plt.show()
@@ -261,8 +261,8 @@ class Number_Density_Function(Base_Number_Density_Function):
         self.origin_surveys = origin_surveys
         self.cv_origin = cv_origin
         x_mid_bins = np.array(
-            [(x_bin[1] + x_bin[0]) / 2.0 for x_bin in x_bins]
-        )
+            [(x_bin[1].value + x_bin[0].value) / 2.0 for x_bin in x_bins]
+        ) * x_bins[0].unit
         z_ref = float((z_bin[1] + z_bin[0]) / 2.0)
         phi_errs_cv = np.array(
             [
@@ -328,7 +328,7 @@ class Number_Density_Function(Base_Number_Density_Function):
     def from_single_cat(
         cls,
         cat: Catalogue,
-        x_name: str,
+        x_calculator: Type[Rest_Frame_Property_Calculator],
         x_bin_edges: Union[list, np.array],
         z_bin: Union[list, np.array],
         aper_diam: u.Quantity,
@@ -342,7 +342,7 @@ class Number_Density_Function(Base_Number_Density_Function):
         return cls.from_cat(
             cat,
             [cat.data],
-            x_name,
+            x_calculator,
             x_bin_edges,
             z_bin,
             aper_diam,
@@ -359,7 +359,7 @@ class Number_Density_Function(Base_Number_Density_Function):
         cls,
         cat: Union[Catalogue, Multiple_Catalogue],
         data_arr: Union[list, np.array],
-        x_name: str,
+        x_calculator: Type[Rest_Frame_Property_Calculator],
         x_bin_edges: Union[list, np.array],
         z_bin: Union[list, np.array],
         aper_diam: u.Quantity,
@@ -391,27 +391,30 @@ class Number_Density_Function(Base_Number_Density_Function):
         # extract x values
         assert x_origin in ["phot_rest", "SED_result"]
         if x_origin == "phot_rest":
-            x = [gal.aper_phot[aper_diam].SED_results[SED_fit_code.label].phot_rest.properties[x_name] for gal in cat]
+            x = [gal.aper_phot[aper_diam].SED_results[SED_fit_code.label].phot_rest.properties[x_calculator.name] for gal in cat]
         else: # x_origin == "SED_result":
-            x = [gal.aper_phot[aper_diam].SED_results[SED_fit_code.label].properties[x_name] for gal in cat]
+            x = [gal.aper_phot[aper_diam].SED_results[SED_fit_code.label].properties[x_calculator.name] for gal in cat]
         assert all(x_.unit == x[0].unit for x_ in x)
         x = np.array([x_.value for x_ in x]) * x[0].unit
 
         # determine save_path
         origin_surveys = Number_Density_Function.get_origin_surveys(data_arr)
         save_path = Number_Density_Function.get_save_path(
-            origin_surveys, SED_fit_code.label, z_bin, x_name
+            origin_surveys, SED_fit_code.label, z_bin, x_calculator.name
         )
 
         if not Path(save_path).is_file():
             # extract z_bin_name
             z_bin_name = funcs.get_SED_fit_label_aper_diam_z_bin_name(SED_fit_code.label, aper_diam, z_bin)
             # crop catalogue to this redshift bin
-            z_bin_cat = cat.crop(z_bin, "z", aper_diam, SED_fit_code.label, origin = "SED_result")
+            from . import Redshift_Limit_Selector, Redshift_Bin_Selector
+            # TODO: Implement Redshift_Limit_Selector in case of np.nan z_bin entry
+            z_bin_selector = Redshift_Bin_Selector(aper_diam, SED_fit_code.label, z_bin)
+            z_bin_cat = deepcopy(cat).crop(z_bin_selector)
 
             # create x_bins from x_bin_edges (must include start and end values here too)
             x_bins = [
-                [x_bin_edges[i], x_bin_edges[i + 1]]
+                [x_bin_edges[i].value, x_bin_edges[i + 1].value] * x_bin_edges.unit
                 for i in range(len(x_bin_edges) - 1)
                 if i != len(x_bin_edges) - 1
             ]
@@ -424,7 +427,6 @@ class Number_Density_Function(Base_Number_Density_Function):
                 z_step, 
                 timed=timed
             )
-            breakpoint()
             Ngals = np.zeros(len(x_bins))
             phi = np.zeros(len(x_bins))
             phi_l1 = np.zeros(len(x_bins))
@@ -433,19 +435,18 @@ class Number_Density_Function(Base_Number_Density_Function):
             phi_errs_cv = np.zeros(len(x_bins))
             # loop through each mass bin in the given redshift bin
             for i, x_bin in enumerate(x_bins):
-                # crop to galaxies in the x bin - not the bootstrapping method
-                z_bin_x_bin_cat = z_bin_cat.crop(
-                    x_bin, 
-                    x_name, 
-                    aper_diam,
-                    SED_fit_code.label,
-                    x_origin
-                )
-
-                Ngals[i] = len(z_bin_x_bin_cat)
+                if len(z_bin_cat) == 0:
+                    Ngals[i] = 0
+                else:
+                    # crop to galaxies in the x bin - not the bootstrapping method
+                    from . import Rest_Frame_Property_Limit_Selector, Rest_Frame_Property_Bin_Selector
+                    # TODO: Implement Rest_Frame_Property_Limit_Selector in case of np.nan x_bin entry
+                    x_bin_selector = Rest_Frame_Property_Bin_Selector(aper_diam, SED_fit_code.label, x_calculator, x_bin)
+                    z_bin_x_bin_cat = deepcopy(z_bin_cat).crop(x_bin_selector)
+                    Ngals[i] = len(z_bin_x_bin_cat)
                 # if there are galaxies in the z,x bin
                 if int(Ngals[i]) != 0:
-                    dx = x_bin[1] - x_bin[0]
+                    dx = x_bin[1].value - x_bin[0].value
                     # calculate Vmax's
                     V_max = np.zeros(int(Ngals[i])).astype(float)
                     for data in data_arr:
@@ -491,7 +492,7 @@ class Number_Density_Function(Base_Number_Density_Function):
                         raise NotImplementedError
 
             number_density_func = cls(
-                x_name,
+                x_calculator.name,
                 x_bins,
                 x_origin,
                 z_bin,
@@ -572,8 +573,8 @@ class Number_Density_Function(Base_Number_Density_Function):
                 self.z_bin,
                 self.x_name,
             )
-        x_bins_low = np.array([x_bin[0] for x_bin in self.x_bins])
-        x_bins_up = np.array([x_bin[1] for x_bin in self.x_bins])
+        x_bins_low = np.array([x_bin[0].value for x_bin in self.x_bins])
+        x_bins_up = np.array([x_bin[1].value for x_bin in self.x_bins])
         tab = Table(
             {
                 "x_bins_low": x_bins_low,
@@ -593,10 +594,12 @@ class Number_Density_Function(Base_Number_Density_Function):
             "z_bin": self.z_bin,
             "cv_origin": self.cv_origin,
         }
-        if os.access(save_path, os.W_OK):
-            tab.write(save_path, overwrite=True)
-        else:
-            galfind_logger.warning(f"Cannot write to {save_path}!")
+        funcs.make_dirs(save_path)
+        tab.write(save_path, overwrite=True)
+        galfind_logger.info(
+            f"Saved {self.x_name} {self.z_bin} " + \
+            f"{self.origin_surveys} to {save_path}"
+        )
 
     def plot(
         self,

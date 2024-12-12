@@ -293,7 +293,7 @@ class Rest_Frame_Property_Calculator(ABC):
                         if value is None:
                             phot_rest.properties[property_name] = np.nan
                         else:
-                                phot_rest.properties[property_name] = value
+                            phot_rest.properties[property_name] = value
                         calculated = True
                 else:
                     galfind_logger.debug(

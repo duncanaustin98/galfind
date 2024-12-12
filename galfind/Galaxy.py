@@ -544,66 +544,66 @@ class Galaxy:
 
     # %% Selection methods
 
-    def is_selected(
-        self,
-        selectors: List[Type[Selector]],
-        aper_diam: u.Quantity,
-        SED_fit_label: str,
-        timed: bool = False,
-    ) -> bool:
-        # # input assertions
-        # assert type(crop_names) in [str, np.array, list, dict]
-        # if type(crop_names) in [str]:
-        #     crop_names = [crop_names]
-        # if type(incl_selection_types) in [str]:
-        #     incl_selection_types = [incl_selection_types]
-        # if incl_selection_types != ["All"]:
-        #     assert all(
-        #         fit_type in select_func_to_type.values()
-        #         for fit_type in incl_selection_types
-        #     )
-        # # perform selections if required
-        # selection_names = []
-        # if timed:
-        #     start = time.time()
-        # for i, crop_name in enumerate(crop_names):
-        #     func, kwargs, func_type = (
-        #         Galaxy._get_selection_func_from_output_name(
-        #             crop_name, SED_fit_params
-        #         )
-        #     )
-        #     if func_type in incl_selection_types or incl_selection_types == [
-        #         "All"
-        #     ]:
-        #         selection_name = func(self, **kwargs)[1]
-        #         if selection_name != crop_name:
-        #             breakpoint()  # see what's wrong
-        #             assert selection_name == crop_name  # break code
-        #         selection_names.append(selection_name)
-        #         run = True
-        #     else:
-        #         run = False
-        #     if timed:
-        #         print(
-        #             f"{crop_name=} was {'run' if run else 'skipped'} and took:"
-        #         )
-        #         if i == 0:
-        #             mid = time.time()
-        #             print(f"{mid - start}s")
-        #         else:
-        #             print(f"{time.time() - mid}s")
-        #             mid = time.time()
-        # breakpoint()
-        breakpoint()
-        [selector(self, aper_diam, SED_fit_label, return_copy = False) for selector in selectors]
-        # determine whether galaxy is selected
-        if all(self.selection_flags[name] for name in selection_names):
-            selected = True
-        else:
-            selected = False
-        # clear selection flags
-        # self.selection_flags = {}
-        return selected
+    # def is_selected(
+    #     self,
+    #     selectors: List[Type[Selector]],
+    #     aper_diam: u.Quantity,
+    #     SED_fit_label: str,
+    #     timed: bool = False,
+    # ) -> bool:
+    #     # # input assertions
+    #     # assert type(crop_names) in [str, np.array, list, dict]
+    #     # if type(crop_names) in [str]:
+    #     #     crop_names = [crop_names]
+    #     # if type(incl_selection_types) in [str]:
+    #     #     incl_selection_types = [incl_selection_types]
+    #     # if incl_selection_types != ["All"]:
+    #     #     assert all(
+    #     #         fit_type in select_func_to_type.values()
+    #     #         for fit_type in incl_selection_types
+    #     #     )
+    #     # # perform selections if required
+    #     # selection_names = []
+    #     # if timed:
+    #     #     start = time.time()
+    #     # for i, crop_name in enumerate(crop_names):
+    #     #     func, kwargs, func_type = (
+    #     #         Galaxy._get_selection_func_from_output_name(
+    #     #             crop_name, SED_fit_params
+    #     #         )
+    #     #     )
+    #     #     if func_type in incl_selection_types or incl_selection_types == [
+    #     #         "All"
+    #     #     ]:
+    #     #         selection_name = func(self, **kwargs)[1]
+    #     #         if selection_name != crop_name:
+    #     #             breakpoint()  # see what's wrong
+    #     #             assert selection_name == crop_name  # break code
+    #     #         selection_names.append(selection_name)
+    #     #         run = True
+    #     #     else:
+    #     #         run = False
+    #     #     if timed:
+    #     #         print(
+    #     #             f"{crop_name=} was {'run' if run else 'skipped'} and took:"
+    #     #         )
+    #     #         if i == 0:
+    #     #             mid = time.time()
+    #     #             print(f"{mid - start}s")
+    #     #         else:
+    #     #             print(f"{time.time() - mid}s")
+    #     #             mid = time.time()
+    #     # breakpoint()
+    #     breakpoint()
+    #     [selector(self, aper_diam, SED_fit_label, return_copy = False) for selector in selectors]
+    #     # determine whether galaxy is selected
+    #     if all(self.selection_flags[name] for name in selectors):
+    #         selected = True
+    #     else:
+    #         selected = False
+    #     # clear selection flags
+    #     # self.selection_flags = {}
+    #     return selected
 
     @staticmethod
     def _get_selection_func_from_output_name(
@@ -806,6 +806,7 @@ class Galaxy:
         z_bin: Union[list, np.array],
         aper_diam: u.Quantity,
         SED_fit_code: SED_code,
+        crops: List[Type[Selector]],
         z_step: float = 0.01,
         depth_mode: str = "n_nearest",
         depth_region: str = "all",
@@ -814,6 +815,10 @@ class Galaxy:
         # input assertions
         assert len(z_bin) == 2
         assert z_bin[0] < z_bin[1]
+        from . import SED_fit_Selector
+        # remove SED_fit_params from crops
+        crops = [crop for crop in crops if not isinstance(crop, SED_fit_Selector)]
+
         z_obs = self.aper_phot[aper_diam].SED_results[SED_fit_code.label].z
 
         # name appropriate empty output dicts if not already made
@@ -916,12 +921,11 @@ class Galaxy:
                         {aper_diam: test_phot_obs},
                         selection_flags={},
                     )
-                    # test whether galaxy would be selected with given crops - assuming redshift is fixed to new redshift
-                    # assert all(self.selection_flags == cat[0].selection_flags for gal in cat) when running from catalogue
-                    goodz = test_gal.is_selected(
-                        self.selection_flags,
-                        aper_diam,
-                        SED_fit_code.label,
+                    # run selection methods on new galaxy
+                    [selector(test_gal) for selector in crops]
+                    goodz = all(
+                        test_gal.selection_flags[selector.name]
+                        for selector in crops
                     )
                     if goodz:
                         z_detect.append(z)
@@ -955,17 +959,9 @@ class Galaxy:
                 #     break
                 # continue
 
-                # breakpoint()
-                unmasked_area_tab = data.calc_unmasked_area(
-                    masking_instrument_or_band_name=data.forced_phot_band,
-                    forced_phot_band=data.forced_phot_band,
-                )
-                unmasked_area = (
-                    unmasked_area_tab[
-                        unmasked_area_tab["masking_instrument_band"]
-                        == data.forced_phot_band
-                    ]["unmasked_area_total"][0]
-                    * u.arcmin**2
+                # calculate/load unmasked area of forced photometry band
+                unmasked_area = data.calc_unmasked_area(
+                    instr_or_band_name=data.forced_phot_band.filt_name,
                 )
                 z_min_used = np.max([z_min, z_bin[0]])
                 z_max_used = np.min([z_max, z_bin[1]])

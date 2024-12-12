@@ -26,10 +26,11 @@ def test_selection():
         version_to_dir_dict = morgan_version_to_dir,
         aper_diams = aper_diams,
         forced_phot_band = forced_phot_band,
-        min_flux_pc_err = min_flux_pc_err
+        min_flux_pc_err = min_flux_pc_err,
+        #crops = EPOCHS_Selector(aper_diams[0], EAZY(SED_fit_params_arr[-1]), allow_lowz=True)
     )
     # load sextractor half-light radii
-    JOF_cat.load_sextractor_Re()
+    # JOF_cat.load_sextractor_Re()
 
     # load EAZY SED fitting results
     for SED_fit_params in SED_fit_params_arr:
@@ -37,10 +38,9 @@ def test_selection():
         EAZY_fitter(JOF_cat, aper_diams[0], load_PDFs = True, load_SEDs = True, update = True)
 
     # perform EPOCHS selection
-    epochs_selector = EPOCHS_Selector(aper_diams[0], EAZY_fitter, allow_lowz = False, unmasked_instruments = "NIRCam")
-    EPOCHS_JOF_cat = epochs_selector(JOF_cat, return_copy = True)
-    breakpoint()
-    
+    # epochs_selector = EPOCHS_Selector(aper_diams[0], EAZY_fitter, allow_lowz = False, unmasked_instruments = "NIRCam")
+    # EPOCHS_JOF_cat = epochs_selector(JOF_cat, return_copy = True)
+
     # from galfind import EPOCHS_Selector
     # epochs_selector = EPOCHS_Selector(allow_lowz = False, unmasked_instruments = "NIRCam")
     # epochs_selected_cat = epochs_selector(JOF_cat, aper_diams[0], EAZY_fitter, return_copy = True)
@@ -50,12 +50,11 @@ def test_selection():
     SED_fit_label = "EAZY_fsps_larson_zfree"
     from galfind import MUV_Calculator, Xi_Ion_Calculator, M99
     for beta_dust_conv in [None, M99]: #, Reddy18(C00(), 100 * u.Myr), Reddy18(C00(), 300 * u.Myr)]:
-        for fesc_conv in ["Chisholm22"]: # None, 0.1, 0.2, 0.5, 
+        for fesc_conv in [None]:#, "Chisholm22"]: # None, 0.1, 0.2, 0.5,
             calculator = Xi_Ion_Calculator(aper_diams[0], SED_fit_label, beta_dust_conv = beta_dust_conv, fesc_conv = fesc_conv)
             calculator(JOF_cat, n_chains = 10_000, output = False, n_jobs = 1)
-    MUV_calculator = MUV_Calculator(aper_diams[0], SED_fit_label)
-    MUV_calculator(JOF_cat, n_chains = 10_000, output = False, n_jobs = 1)
-    breakpoint()
+    #MUV_calculator = MUV_Calculator(aper_diams[0], SED_fit_label)
+    #MUV_calculator(JOF_cat, n_chains = 10_000, output = False, n_jobs = 1)
 
 def test_pipes():
     
@@ -87,6 +86,8 @@ def test_pipes():
     pipes_fitter(JOF_cat, aper_diams[0], save_PDFs = False, load_SEDs = False, load_PDFs = False, overwrite = False)
 
 def test_UVLF():
+    # {"templates": "fsps_larson", "lowz_zmax": 4.0}, {"templates": "fsps_larson", "lowz_zmax": 6.0}, 
+    SED_fit_params_arr = [{"templates": "fsps_larson", "lowz_zmax": None}]
 
     JOF_cat = Catalogue.pipeline(
         survey,
@@ -96,31 +97,57 @@ def test_UVLF():
         aper_diams = aper_diams,
         forced_phot_band = forced_phot_band,
         min_flux_pc_err = min_flux_pc_err,
-        crops = {"SELECTION": EPOCHS_Selector(allow_lowz=True). \
-            _get_selection_name(aper_diams[0], \
-            EAZY({"templates": "fsps_larson", "lowz_zmax": None}).label)}
+        crops = EPOCHS_Selector(aper_diams[0], EAZY(SED_fit_params_arr[-1]), allow_lowz=True)
     )
-    #JOF_cat.load_sextractor_Re()
-    # {"templates": "fsps_larson", "lowz_zmax": 4.0}, {"templates": "fsps_larson", "lowz_zmax": 6.0}, 
-    SED_fit_params_arr = [{"templates": "fsps_larson", "lowz_zmax": None}]
+    
+    # JOF_cat.load_sextractor_Re()
+
     for SED_fit_params in SED_fit_params_arr:
         EAZY_fitter = EAZY(SED_fit_params)
         EAZY_fitter(JOF_cat, aper_diams[0], load_PDFs = True, load_SEDs = True, update = True)
+
+    # epochs_selector = EPOCHS_Selector(aper_diams[0], EAZY_fitter, allow_lowz = False, unmasked_instruments = "NIRCam")
+    # epochs_selected_cat = epochs_selector(JOF_cat, return_copy = True)
+    # epochs_selector_lowz = EPOCHS_Selector(aper_diams[0], EAZY_fitter, allow_lowz = True, unmasked_instruments = "NIRCam")
+    # epochs_selected_cat_lowz = epochs_selector_lowz(JOF_cat, return_copy = True)
 
     from galfind import MUV_Calculator
     MUV_calculator = MUV_Calculator(aper_diams[0], EAZY_fitter.label)
     MUV_calculator(JOF_cat, n_chains = 10_000, output = False, n_jobs = 1)
 
     from galfind import Number_Density_Function
-    UV_LF_z9 = Number_Density_Function.from_single_cat(
+    this_work_plot_kwargs = {
+        "mfc": "gray",
+        "marker": "D",
+        "ms": 8.0,
+        "mew": 2.0,
+        "mec": "black",
+        "ecolor": "black",
+        "elinewidth": 2.0,
+    }
+    UVLF_z9 = Number_Density_Function.from_single_cat(
         JOF_cat,
-        MUV_calculator.name,
-        np.arange(-21.25, -17.25, 0.5),
+        MUV_calculator,
+        np.arange(-21.25, -17.25, 0.5) * u.ABmag,
         [8.5, 9.5],
         aper_diam = aper_diams[0],
         SED_fit_code = EAZY_fitter,
         x_origin = "phot_rest",
     )
+    z9_author_years = {
+        "Bouwens+21": {"z_ref": 9.0, "plot_kwargs": {}},
+        "Harikane+22": {"z_ref": 9.0, "plot_kwargs": {}},
+        "Finkelstein+23": {"z_ref": 9.0, "plot_kwargs": {}},
+        "Leung+23": {"z_ref": 9.0, "plot_kwargs": {}},
+        "Perez-Gonzalez+23": {"z_ref": 9.0, "plot_kwargs": {}},
+        "Adams+24": {"z_ref": 9.0, "plot_kwargs": {}},
+    } # also Finkelstein+22, but wide z bin used
+    UVLF_z9.plot(
+        x_lims=MUV_calculator.name,
+        author_year_dict=z9_author_years,
+        plot_kwargs=this_work_plot_kwargs,
+    )
+
 
 def main():
     JOF_data = Data.pipeline(
@@ -155,8 +182,8 @@ def check_multinest():
 if __name__ == "__main__":
     #test_load()
     #main()
-    test_selection()
-    #test_UVLF()
+    #test_selection()
+    test_UVLF()
     #test_pipes()
     #check_multinest()
 

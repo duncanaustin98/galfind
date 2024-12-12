@@ -77,7 +77,8 @@ morgan_version_to_dir = {
     "v10": "mosaic_1084_wispscale",
     "v11": "mosaic_1084_wispnathan",
     "v12": "mosaic_1210_wispnathan",
-    "v12test": "mosaic_1210_wispnathan_test"
+    "v12test": "mosaic_1210_wispnathan_test", # not sure if this is needed?
+    "v13": "mosaic_1293_wispnathan",
 }
 
 
@@ -975,7 +976,7 @@ class Band_Data_Base(ABC):
 
     # can be simplified with new masks
     def calc_unmasked_area(
-        self,
+        self: Self,
         mask_type: str = "All",
     ) -> NoReturn:
         # calculate areas for given mask
@@ -3167,12 +3168,12 @@ class Data:
 
 
     def calc_unmasked_area(
-        self,
+        self: Self,
         instr_or_band_name: Union[str, List[str]],
         mask_type: Union[str, List[str]] = "MASK",
         depth_regions: Optional[Union[str, List[str]]] = None,
-        out_units: u.Quantity = u.arcsec ** 2,
-    ) -> NoReturn:
+        out_units: u.Quantity = u.arcmin ** 2,
+    ) -> u.Quantity:
 
         if not hasattr(self, "unmasked_area"):
             self.unmasked_area = {}
@@ -3192,7 +3193,7 @@ class Data:
             area_tab = Table.read(area_tab_path)
             funcs.make_dirs(area_tab_path)
             area_tab_ = area_tab[(
-                (area_tab["masking_instrument_band"] == instr_or_band_save_name) \
+                (area_tab["mask_instr_band"] == instr_or_band_save_name) \
                 & (area_tab["mask_type"] == mask_save_name))]
             if len(area_tab_) == 0:
                 calculate = True
@@ -3250,10 +3251,21 @@ class Data:
                 "unmasked_area": [np.round(self.unmasked_area \
                     [instr_or_band_save_name][mask_save_name].to(out_units), 3)],
             }
+
             new_area_tab = Table(area_data)
             if Path(area_tab_path).is_file():
                 area_tab = vstack([area_tab, new_area_tab])
             else:
-                area_tab
+                area_tab = new_area_tab
             area_tab.write(area_tab_path, overwrite=True)
             funcs.change_file_permissions(area_tab_path)
+        breakpoint()
+        unmasked_area = (
+            area_tab[
+                area_tab["mask_instr_band"]
+                == instr_or_band_name
+            ]["unmasked_area"][0]
+            * area_tab["unmasked_area"].unit
+        )
+        breakpoint()
+        return unmasked_area

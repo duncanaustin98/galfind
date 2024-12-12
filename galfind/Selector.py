@@ -9,7 +9,7 @@ import json
 from tqdm import tqdm
 from typing import TYPE_CHECKING, List, Union, NoReturn, Callable, Optional
 if TYPE_CHECKING:
-    from . import Multiple_Filter
+    from . import Multiple_Filter, Rest_Frame_Property_Calculator
 try:
     from typing import Self, Type  # python 3.11+
 except ImportError:
@@ -158,7 +158,8 @@ class Selector(ABC):
         # (i.e. fits length == cat obj length)
         [self._call_gal(gal, return_copy = False) for gal \
             in tqdm(cat, total = len(cat), desc = f"Selecting {self.name}")]
-        cat._append_property_to_tab(self.name, "SELECTION")
+        if self.__class__.__name__ != "ID_Selector":
+            cat._append_property_to_tab(self.name, "SELECTION")
         if return_copy:
             cat_copy = deepcopy(cat)
             return cat_copy.crop(self)
@@ -440,6 +441,232 @@ class Multiple_SED_fit_Selector(Multiple_Selector, SED_fit_Selector, ABC):
         # run selection individually on each selector
         [selector.__call__(object, return_copy = False) for selector in self.selectors]
         return SED_fit_Selector.__call__(self, object, return_copy = return_copy)
+
+
+class ID_Selector(Data_Selector):
+
+    def __init__(
+        self: Self,
+        IDs: int,
+    ):
+        if isinstance(IDs, int):
+            IDs = [IDs]
+        kwargs = {"IDs": IDs}
+        super().__init__(**kwargs)
+
+    @property
+    def _selection_name(self) -> str:
+        return f"ID_{self.kwargs['IDs']}"
+
+    @property
+    def _include_kwargs(self) -> List[str]:
+        return ["IDs"]
+
+    def _assertions(self: Self) -> bool:
+        try:
+            assert isinstance(self.kwargs["IDs"], tuple([list, np.ndarray]))
+            assert all(isinstance(ID, int) for ID in self.kwargs["IDs"])
+            passed = True
+        except:
+            passed = False
+        return passed
+        
+    def _selection_criteria(
+        self: Self,
+        gal: Galaxy,
+        *args,
+        **kwargs
+    ) -> bool:
+        return gal.ID in self.kwargs["IDs"]
+
+
+class Redshift_Limit_Selector(SED_fit_Selector):
+
+    def __init__(
+        self: Self,
+        aper_diam: u.Quantity,
+        SED_fit_label: Union[str, SED_code],
+        z_lim: Union[float, int],
+        gtr_or_less: str
+    ):
+        kwargs = {"z_lim": z_lim, "gtr_or_less": gtr_or_less}
+        super().__init__(aper_diam, SED_fit_label, **kwargs)
+
+    @property
+    def _selection_name(self) -> str:
+        if self.kwargs["gtr_or_less"] == "gtr":
+            sign = ">"
+        else:
+            sign = "<"
+        return f"z{sign}{self.kwargs['z_lim']:.2f}"
+
+    @property
+    def _include_kwargs(self) -> List[str]:
+        return ["z_lim", "gtr_or_less"]
+
+    def _assertions(self: Self) -> bool:
+        try:
+            assert isinstance(self.kwargs["z_lim"], (int, float))
+            assert self.kwargs["gtr_or_less"] in ["gtr", "less"]
+            passed = True
+        except:
+            passed = False
+        return passed
+        
+    def _selection_criteria(
+        self: Self,
+        gal: Galaxy,
+        *args,
+        **kwargs
+    ) -> bool:
+        if self.kwargs["gtr_or_less"] == "gtr":
+            return gal.aper_phot[self.aper_diam].SED_results \
+                [self.SED_fit_label].z > self.kwargs["z_lim"]
+        else:
+            return gal.aper_phot[self.aper_diam].SED_results \
+                [self.SED_fit_label].z < self.kwargs["z_lim"]
+
+class Rest_Frame_Property_Limit_Selector(SED_fit_Selector):
+
+    def __init__(
+        self: Self,
+        aper_diam: u.Quantity,
+        SED_fit_label: Union[str, SED_code],
+        property_calculator: Rest_Frame_Property_Calculator,
+        property_lim: Union[u.Quantity, u.Magnitude, u.Dex],
+        gtr_or_less: str,
+    ):
+        kwargs = {
+            "property_calculator": property_calculator,
+            "property_lim": property_lim,
+            "gtr_or_less": gtr_or_less
+        }
+        super().__init__(aper_diam, SED_fit_label, **kwargs)
+
+    @property
+    def _selection_name(self) -> str:
+        if self.kwargs["gtr_or_less"] == "gtr":
+            sign = ">"
+        else:
+            sign = "<"
+        return self.kwargs["property_calculator"].name + \
+            f"{sign}{self.kwargs['property_lim'].value:.2f}"
+
+    @property
+    def _include_kwargs(self) -> List[str]:
+        return ["property_calculator", "property_lim", "gtr_or_less"]
+
+    def _assertions(self: Self) -> bool:
+        try:
+            from . import Rest_Frame_Property_Calculator
+            assert isinstance(self.kwargs["property_calculator"], \
+                tuple(Rest_Frame_Property_Calculator.__subclasses__()))
+            assert isinstance(self.kwargs["property_lim"], \
+                (u.Quantity, u.Magnitude, u.Dex)) #or \
+                # all(isinstance(val, (u.Quantity, u.Magnitude, u.Dex)) \
+                # for val in self.kwargs["property_lim"])
+            assert self.kwargs["gtr_or_less"] in ["gtr", "less"]
+            assert self.aper_diam == self.kwargs["property_calculator"].aper_diam
+            assert self.SED_fit_label == self.kwargs["property_calculator"].SED_fit_label
+            passed = True
+        except:
+            passed = False
+        return passed
+    
+    def _failure_criteria(
+        self: Self,
+        gal: Galaxy,
+        *args,
+        **kwargs
+    ) -> bool:
+        assertions = []
+        try:
+            assertions.extend([
+                self.kwargs["property_calculator"].name in gal.aper_phot[self.aper_diam].SED_results \
+                    [self.SED_fit_label].phot_rest.properties.keys()
+            ])
+            assertions.extend([
+                gal.aper_phot[self.aper_diam].SED_results \
+                    [self.SED_fit_label].phot_rest.properties \
+                    [self.kwargs["property_calculator"].name].unit \
+                    .is_equivalent(self.kwargs["property_lim"].unit)
+            ])
+            failed = not all(assertions)
+        except:
+            failed = True
+        return failed
+        
+    def _selection_criteria(
+        self: Self,
+        gal: Galaxy,
+        *args,
+        **kwargs
+    ) -> bool:
+        if self.kwargs["gtr_or_less"] == "gtr":
+            return gal.aper_phot[self.aper_diam].SED_results \
+                [self.SED_fit_label].phot_rest.properties \
+                [self.kwargs["property_calculator"].name] \
+                > self.kwargs["property_lim"]
+        else:
+            return gal.aper_phot[self.aper_diam].SED_results \
+                [self.SED_fit_label].phot_rest.properties \
+                [self.kwargs["property_calculator"].name] \
+                < self.kwargs["property_lim"]
+
+
+class Redshift_Bin_Selector(Multiple_SED_fit_Selector):
+
+    def __init__(
+        self: Self,
+        aper_diam: u.Quantity,
+        SED_fit_label: Union[str, SED_code],
+        z_bin: List[Union[int, float]],
+    ):
+        assert all(isinstance(z_lim, (int, float)) for z_lim in z_bin)
+        assert len(z_bin) == 2
+        assert z_bin[0] < z_bin[1]
+        selection_name = f"{z_bin[0]:.2f}<z<{z_bin[1]:.2f}"
+        selectors = [
+            Redshift_Limit_Selector(aper_diam, SED_fit_label, z_bin[0], "gtr"),
+            Redshift_Limit_Selector(aper_diam, SED_fit_label, z_bin[1], "less"),
+        ]
+        super().__init__(aper_diam, SED_fit_label, selectors, selection_name)
+
+
+class Rest_Frame_Property_Bin_Selector(Multiple_SED_fit_Selector):
+
+    def __init__(
+        self: Self,
+        aper_diam: u.Quantity,
+        SED_fit_label: Union[str, SED_code],
+        property_calculator: Rest_Frame_Property_Calculator,
+        property_bin: List[Union[u.Quantity, u.Magnitude, u.Dex]],
+    ):
+        assert isinstance(property_bin, (u.Quantity, u.Magnitude, u.Dex))
+        assert len(property_bin) == 2
+        assert property_bin[0] < property_bin[1]
+        from . import Rest_Frame_Property_Calculator
+        assert isinstance(property_calculator, \
+            tuple(Rest_Frame_Property_Calculator.__subclasses__()))
+        selection_name = f"{property_bin[0].value:.2f}<" + \
+            f"{property_calculator.name}<{property_bin[1].value:.2f}"
+        selectors = [
+            Rest_Frame_Property_Limit_Selector(
+                aper_diam,
+                SED_fit_label,
+                property_calculator,
+                property_bin[0],
+                "gtr"
+            ),
+            Rest_Frame_Property_Limit_Selector(
+                aper_diam,
+                SED_fit_label,
+                property_calculator,
+                property_bin[1],
+                "less"
+            ),
+        ]
+        super().__init__(aper_diam, SED_fit_label, selectors, selection_name)
 
 
 class Colour_Selector(Photometry_Selector):

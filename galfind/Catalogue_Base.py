@@ -126,6 +126,8 @@ class Catalogue_Base:
             return gal
 
     def __getitem__(self, index: Any) -> Optional[Union[Galaxy, List[Galaxy]]]:
+        if len(self) == 0:
+            return self
         if isinstance(index, int):
             return self.gals[index]
         elif isinstance(index, (list, np.ndarray)):
@@ -161,19 +163,18 @@ class Catalogue_Base:
         #     else:
         #         return None
         elif isinstance(index, tuple(Selector.__subclasses__())):
-            assert all(index.name in gal.selection_flags for gal in self), \
-                galfind_logger.critical(
-                    f"{index.name} not in {self.survey} selection flags!"
-                )
+            # run selection if not already done
+            if not all(index.name in gal.selection_flags for gal in self):
+                index(self)
             keep_arr = [gal.selection_flags[index.name] for gal in self]
             return list(np.array(self.gals)[np.array(keep_arr)])
     
     def crop(
         self: Self,
-        index: Type[Selector],
+        selector: Type[Selector],
     ) -> Self:
-        self.gals = self[index]
-        self.cat_creator.crops.append(index)
+        self.gals = self[selector]
+        self.cat_creator.crops.append(selector)
         return self
 
     # only acts on attributes that don't already exist in Catalogue

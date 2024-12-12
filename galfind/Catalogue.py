@@ -386,7 +386,7 @@ class Catalogue_Creator:
     def set_crops(self, crops: Optional[Union[Type[Selector], List[Type[Selector]]]]) -> NoReturn:
         if crops is None:
             self.crops = []
-        elif not isinstance(crops, tuple([list, np.ndarray])):
+        elif not isinstance(crops, (list, np.ndarray)):
             self.crops = [crops]
         else:
             self.crops = crops
@@ -394,7 +394,9 @@ class Catalogue_Creator:
 
     def _get_crop_mask(self) -> NoReturn:
         tab = self.open_cat(self.cat_path, "SELECTION")
-        if len(self.crops) > 0:
+        if tab is None:
+            tab = self.open_cat(self.cat_path, "ID")
+        elif len(self.crops) > 0:
             # crop table using crop dict
             keep_arr = []
             for selector in self.crops:
@@ -1404,6 +1406,7 @@ class Catalogue(Catalogue_Base):
                         z_bin,
                         aper_diam,
                         SED_fit_code,
+                        self.cat_creator.crops,
                         z_step,
                         timed=timed,
                     )
