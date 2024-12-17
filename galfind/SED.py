@@ -1,17 +1,7 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-"""
-Created on Tue Oct 10 13:30:14 2023
-
-@author: u92876da
-"""
-
-# SED.py
 
 import glob
 import os
 from abc import ABC
-
 import astropy.io.ascii as ascii
 import astropy.units as u
 import matplotlib.pyplot as plt
@@ -19,7 +9,11 @@ import numpy as np
 from astropy.table import Table
 from scipy.interpolate import interp1d
 from scipy.optimize import curve_fit
-
+from typing import Optional, Dict, Any
+try:
+    from typing import Self, Type  # python 3.11+
+except ImportError:
+    from typing_extensions import Self, Type  # python > 3.7 AND python < 3.11
 from . import (
     IGM_attenuation,
     Mock_Photometry,
@@ -98,19 +92,21 @@ class SED:
             self.mags = mags
         return mags
 
-    def plot_SED(
-        self,
-        ax,
-        wav_units=u.AA,
-        mag_units=u.ABmag,
-        label=None,
-        annotate=True,
-        save=False,
-        save_name="",
-        log_fluxes=True,
-        plot_kwargs={},
-        legend_kwargs={},
+    def plot(
+        self: Self,
+        ax: Optional[plt.Axes] = None,
+        wav_units: u.Unit = u.AA,
+        mag_units: u.Unit = u.ABmag,
+        label: Optional[str] = None,
+        annotate: bool = True,
+        save_name: Optional[str] = None,
+        log_fluxes: bool = True,
+        plot_kwargs: Dict[str, Any] = {},
+        legend_kwargs: Dict[str, Any] = {},
     ):
+        if ax is None:
+            fig, ax = plt.subplots()
+
         wavs = funcs.convert_wav_units(self.wavs, wav_units)
         mags = funcs.convert_mag_units(self.wavs, self.mags, mag_units)
 
@@ -119,7 +115,7 @@ class SED:
         else:
             mags = mags.value
 
-        if type(label) == type(None) and hasattr(self, "template_name"):
+        if label is not None and hasattr(self, "template_name"):
             label = self.template_name
 
         plot = ax.plot(wavs.value, mags, label=label, **plot_kwargs)
@@ -138,11 +134,15 @@ class SED:
                     mag_units, False if mag_units == u.ABmag else True
                 )
             )
+            
             ax.legend(**legend_kwargs)
-        if save:
+        if save_name is not None:
+            # save png by default
+            if save_name.split(".")[-1] not in ["png", "pdf"]:
+                save_name = f"{'.'.join(save_name.split('.')[-1:])}.png"
             funcs.make_dirs(save_name)
-            plt.savefig(f"{save_name}.png")
-            funcs.change_file_permissions(f"{save_name}.png")
+            plt.savefig(save_name)
+            funcs.change_file_permissions(save_name)
         return plot
 
     def calc_bandpass_averaged_flux(self, filter_wavs, filter_trans):
@@ -316,7 +316,7 @@ class SED_rest(SED):
         self, wavs, mags, wav_units, mag_units, wav_range=[0, 10_000] * u.AA
     ):
         try:
-            wavs = wavs.value  # if wavs is in Angstrom
+            wavs = wavs.value # if wavs is in Angstrom
         except:
             pass
         mags = mags[
@@ -613,8 +613,8 @@ class Mock_SED_rest(SED_rest):  # , Mock_SED):
     def renorm_at_wav(
         self, wav, mag
     ):  # this mag can also be a flux, but must have astropy units
-        assert type(wav) in [u.Quantity]
-        assert type(mag) in [u.Quantity, u.Magnitude]
+        assert isinstance(wav, u.Quantity)
+        assert isinstance(mag, (u.Quantity, u.Magnitude))
         assert u.get_physical_type(wav.unit) == "length"
         norm = (
             funcs.convert_mag_units(wav, mag, u.Jy).value

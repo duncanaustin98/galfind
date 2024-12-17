@@ -20,7 +20,7 @@ try:
 except ImportError:
     from typing_extensions import Self, Type  # python > 3.7 AND python < 3.11
 
-from . import galfind_logger, config
+from . import galfind_logger, config, all_band_names
 from . import useful_funcs_austind as funcs
 from .decorators import ignore_warnings
 from . import Catalogue, Galaxy, SED_code, Photometry_rest, PDF
@@ -90,7 +90,7 @@ class Rest_Frame_Property_Calculator(ABC):
     def __call__(
         self: Self,
         object: Union[Catalogue, Galaxy, Photometry_rest],
-        n_chains: int = 1_000,
+        n_chains: int = 10_000,
         output: bool = False,
         overwrite: bool = False,
         n_jobs: int = 1,
@@ -116,7 +116,7 @@ class Rest_Frame_Property_Calculator(ABC):
     def _call_cat(
         self: Self,
         cat: Catalogue,
-        n_chains: int = 1_000,
+        n_chains: int = 10_000,
         output: bool = False,
         overwrite: bool = False,
         n_jobs: int = 1,
@@ -172,7 +172,8 @@ class Rest_Frame_Property_Calculator(ABC):
                             for params in params_arr
                         )
             cat.gals = gals
-        self._update_fits_cat(cat)
+        if cat.cat_creator.crops == []:
+            self._update_fits_cat(cat)
         if output:
             return cat
     
@@ -228,7 +229,7 @@ class Rest_Frame_Property_Calculator(ABC):
     def _call_gal(
         self: Self,
         gal: Galaxy,
-        n_chains: int = 1_000,
+        n_chains: int = 10_000,
         output: bool = False,
         overwrite: bool = False,
         save_dir: str = ""
@@ -256,7 +257,7 @@ class Rest_Frame_Property_Calculator(ABC):
     def _call_phot_rest(
         self: Self,
         phot_rest: Photometry_rest,
-        n_chains: int = 1_000,
+        n_chains: int = 10_000,
         output: bool = False,
         overwrite: bool = False,
         save_path: Optional[str] = None,
@@ -644,7 +645,7 @@ class UV_Beta_Calculator(Rest_Frame_Property_Calculator):
     def _call_phot_rest(
         self: Self,
         phot_rest: Photometry_rest,
-        n_chains: int = 1_000,
+        n_chains: int = 10_000,
         output: bool = False,
         overwrite: bool = False,
         save_path: Optional[str] = None,
@@ -819,21 +820,42 @@ class mUV_Calculator(Rest_Frame_Property_Calculator):
         ref_wav: u.Quantity = 1_500.0 * u.AA,
         top_hat_width: u.Quantity = 100.0 * u.AA,
         resolution: u.Quantity = 1.0 * u.AA,
+        ext_src_corrs: Optional[str] = "UV",
+        ext_src_uplim: Optional[Union[int, float]] = 10.0,
     ) -> NoReturn:
         pre_req_properties = [UV_Beta_Calculator(aper_diam, SED_fit_label, rest_UV_wav_lims)]
-        global_kwargs = {"ref_wav": ref_wav, "top_hat_width": top_hat_width, "resolution": resolution}
+        global_kwargs = {
+            "ref_wav": ref_wav,
+            "top_hat_width": top_hat_width,
+            "resolution": resolution,
+            "ext_src_corrs": ext_src_corrs,
+            "ext_src_uplim": ext_src_uplim,
+        }
         super().__init__(aper_diam, SED_fit_label, pre_req_properties, **global_kwargs)
 
     @property
     def name(self: Self) -> str:
+        ext_src_label = f"_extsrc_{self.global_kwargs['ext_src_corrs']}" \
+            if self.global_kwargs["ext_src_corrs"] is not None else ""
+        ext_src_lim_label = f"<{self.global_kwargs['ext_src_uplim']:.0f}" if \
+            self.global_kwargs["ext_src_uplim"] is not None and \
+            self.global_kwargs["ext_src_corrs"] is not None else ""
         return f"m{self.global_kwargs['ref_wav'].to(u.AA).value:.0f}_" + \
-            rest_UV_wavs_name(self.pre_req_properties[0].global_kwargs["rest_UV_wav_lims"])
+            rest_UV_wavs_name(self.pre_req_properties[0].global_kwargs \
+            ["rest_UV_wav_lims"]) + ext_src_label + ext_src_lim_label
     
     def _kwarg_assertions(self: Self) -> None:
         assert all(u.get_physical_type(self.global_kwargs[name]) == "length" \
             for name in ["ref_wav", "top_hat_width", "resolution"])
         assert self.global_kwargs["ref_wav"] > self.pre_req_properties[0].global_kwargs["rest_UV_wav_lims"][0]
         assert self.global_kwargs["ref_wav"] < self.pre_req_properties[0].global_kwargs["rest_UV_wav_lims"][1]
+        assert self.global_kwargs["top_hat_width"] > 0.0 * u.AA
+        assert self.global_kwargs["resolution"] > 0.0 * u.AA
+        if self.global_kwargs["ext_src_corrs"] is not None:
+            assert self.global_kwargs["ext_src_corrs"] in ["UV"] + all_band_names
+        if self.global_kwargs["ext_src_uplim"] is not None:
+            assert isinstance(self.global_kwargs["ext_src_uplim"], (int, float))
+            assert self.global_kwargs["ext_src_uplim"] > 0.0
     
     def _calc_obj_kwargs(
         self: Self,
@@ -896,6 +918,25 @@ class mUV_Calculator(Rest_Frame_Property_Calculator):
             np.log10(rest_wavelengths.value)) * beta_arr[:, np.newaxis].value \
             + amplitude_arr[:, np.newaxis].value) * u.erg / (u.s * u.AA * u.cm**2), \
             u.ABmag), axis = 1)
+        # TODO: speed up implementation of extended source corrections
+        if self.global_kwargs["ext_src_corrs"] is not None:
+            if self.global_kwargs["ext_src_corrs"] == "UV":
+                # calculate band nearest to the rest frame UV reference wavelength
+                band_wavs = [filt.WavelengthCen.to(u.AA).value \
+                    for filt in phot_rest.filterset] * u.AA / (1. + phot_rest.z)
+                ref_band = phot_rest.filterset.band_names[np.argmin(np.abs( \
+                    band_wavs - self.global_kwargs["ref_wav"]))]
+                ext_src_corr = phot_rest.ext_src_corrs[ref_band]
+            else: # band given
+                ext_src_corr = phot_rest.ext_src_corrs[self.global_kwargs["ext_src_corrs"]]
+            # apply limit to extended source correction
+            if self.global_kwargs["ext_src_uplim"] is not None:
+                if ext_src_corr > self.global_kwargs["ext_src_uplim"]:
+                    ext_src_corr = self.global_kwargs["ext_src_uplim"]
+            if ext_src_corr < 1.0:
+                ext_src_corr = 1.0
+            # apply extended source corrections
+            mUV_arr = (mUV_arr.value + funcs.flux_to_mag_ratio(ext_src_corr)) * u.ABmag
         return mUV_arr
     
     def _get_output_kwargs(
@@ -903,7 +944,43 @@ class mUV_Calculator(Rest_Frame_Property_Calculator):
         phot_rest: Photometry_rest
     ) -> Dict[str, Any]:
         return {}
+
+    def _call_cat(
+        self: Self,
+        cat: Catalogue,
+        n_chains: int = 10_000,
+        output: bool = False,
+        overwrite: bool = False,
+        n_jobs: int = 1,
+    ) -> Optional[Catalogue]:
+        if self.global_kwargs["ext_src_corrs"]:
+            # load extended source corrections
+            cat.load_sextractor_ext_src_corrs()
+        return super()._call_cat(cat, n_chains, output, overwrite, n_jobs)
     
+    def _call_phot_rest(
+        self: Self,
+        phot_rest: Photometry_rest,
+        n_chains: int = 10_000,
+        output: bool = False,
+        overwrite: bool = False,
+        save_path: Optional[str] = None,
+        save_scattered_fluxes: bool = False,
+    ) -> Optional[Photometry_rest]:
+        if self.global_kwargs["ext_src_corrs"]:
+            # assert that extended source corrections have been loaded
+            assert hasattr(phot_rest, "ext_src_corrs"), \
+                galfind_logger.critical(
+                    "Extended source corrections must be pre-loaded!"
+                )
+        return super()._call_phot_rest(
+            phot_rest, 
+            n_chains, 
+            output, 
+            overwrite, 
+            save_path, 
+            save_scattered_fluxes
+        )
 
 class MUV_Calculator(Rest_Frame_Property_Calculator):
 
@@ -915,6 +992,8 @@ class MUV_Calculator(Rest_Frame_Property_Calculator):
         ref_wav: u.Quantity = 1_500.0 * u.AA,
         top_hat_width: u.Quantity = 100.0 * u.AA,
         resolution: u.Quantity = 1.0 * u.AA,
+        ext_src_corrs: Optional[str] = "UV",
+        ext_src_uplim: Optional[Union[int, float]] = 10.0,
     ) -> NoReturn:
         mUV_calculator = mUV_Calculator(
             aper_diam, 
@@ -922,15 +1001,22 @@ class MUV_Calculator(Rest_Frame_Property_Calculator):
             rest_UV_wav_lims, 
             ref_wav,
             top_hat_width,
-            resolution
+            resolution,
+            ext_src_corrs,
+            ext_src_uplim,
         )
         super().__init__(aper_diam, SED_fit_label, [mUV_calculator])
 
     @property
     def name(self: Self) -> str:
+        ext_src_label = f"_extsrc_{self.pre_req_properties[0].global_kwargs['ext_src_corrs']}" \
+            if self.pre_req_properties[0].global_kwargs["ext_src_corrs"] is not None else ""
+        ext_src_lim_label = f"<{self.pre_req_properties[0].global_kwargs['ext_src_uplim']:.0f}" if \
+            self.pre_req_properties[0].global_kwargs["ext_src_uplim"] is not None and \
+            self.pre_req_properties[0].global_kwargs["ext_src_corrs"] is not None else ""
         return f"M{self.pre_req_properties[0].global_kwargs['ref_wav'].to(u.AA).value:.0f}_" + \
-            rest_UV_wavs_name(self.pre_req_properties[0]. \
-            pre_req_properties[0].global_kwargs["rest_UV_wav_lims"])
+            rest_UV_wavs_name(self.pre_req_properties[0].pre_req_properties[0]. \
+            global_kwargs["rest_UV_wav_lims"]) + ext_src_label + ext_src_lim_label
     
     def _kwarg_assertions(self: Self) -> NoReturn:
         pass
@@ -984,6 +1070,8 @@ class LUV_Calculator(Rest_Frame_Property_Calculator):
         beta_dust_conv: Optional[Union[str, Type[AUV_from_beta]]] = M99,
         top_hat_width: u.Quantity = 100.0 * u.AA,
         resolution: u.Quantity = 1.0 * u.AA,
+        ext_src_corrs: Optional[str] = "UV",
+        ext_src_uplim: Optional[Union[int, float]] = 10.0,
     ) -> NoReturn:
         mUV_calculator = mUV_Calculator(
             aper_diam, 
@@ -991,7 +1079,9 @@ class LUV_Calculator(Rest_Frame_Property_Calculator):
             rest_UV_wav_lims, 
             ref_wav,
             top_hat_width,
-            resolution
+            resolution,
+            ext_src_corrs,
+            ext_src_uplim,
         )
         pre_req_properties = [mUV_calculator]
         if beta_dust_conv is None:
@@ -1023,8 +1113,13 @@ class LUV_Calculator(Rest_Frame_Property_Calculator):
             dust_label = ""
         rest_wavs_label = rest_UV_wavs_name(self.pre_req_properties[0]. \
             pre_req_properties[0].global_kwargs["rest_UV_wav_lims"])
+        ext_src_label = f"_extsrc_{self.pre_req_properties[0].global_kwargs['ext_src_corrs']}" \
+            if self.pre_req_properties[0].global_kwargs["ext_src_corrs"] is not None else ""
+        ext_src_lim_label = f"<{self.pre_req_properties[0].global_kwargs['ext_src_uplim']:.0f}" if \
+            self.pre_req_properties[0].global_kwargs["ext_src_uplim"] is not None and \
+            self.pre_req_properties[0].global_kwargs["ext_src_corrs"] is not None else ""
         return f"L{self.pre_req_properties[0].global_kwargs['ref_wav'].to(u.AA).value:.0f}" + \
-            f"_{self.global_kwargs['frame']}{dust_label}_{rest_wavs_label}"
+            f"_{self.global_kwargs['frame']}{dust_label}_{rest_wavs_label}{ext_src_label}{ext_src_lim_label}"
     
     def _kwarg_assertions(self: Self) -> NoReturn:
         assert self.global_kwargs["frame"] in ["rest", "obs"]
@@ -1094,6 +1189,8 @@ class SFR_UV_Calculator(Rest_Frame_Property_Calculator):
         SFR_conv: str = "MD14",
         top_hat_width: u.Quantity = 100.0 * u.AA,
         resolution: u.Quantity = 1.0 * u.AA,
+        ext_src_corrs: Optional[str] = "UV",
+        ext_src_uplim: Optional[Union[int, float]] = 10.0,
     ) -> NoReturn:
         LUV_calculator = LUV_Calculator(
             aper_diam, 
@@ -1103,7 +1200,9 @@ class SFR_UV_Calculator(Rest_Frame_Property_Calculator):
             ref_wav, 
             beta_dust_conv, 
             top_hat_width, 
-            resolution
+            resolution,
+            ext_src_corrs,
+            ext_src_uplim
         )
         pre_req_properties = [LUV_calculator]
         global_kwargs = {"SFR_conv": SFR_conv}
@@ -1119,8 +1218,14 @@ class SFR_UV_Calculator(Rest_Frame_Property_Calculator):
         ref_wav_label = f"{self.pre_req_properties[0].pre_req_properties[0].global_kwargs['ref_wav'].to(u.AA).value:.0f}"
         rest_wavs_label = rest_UV_wavs_name(self.pre_req_properties[0]. \
             pre_req_properties[0].pre_req_properties[0].global_kwargs["rest_UV_wav_lims"])
+        ext_src_label = f"_extsrc_{self.pre_req_properties[0].pre_req_properties[0].global_kwargs['ext_src_corrs']}" \
+            if self.pre_req_properties[0].pre_req_properties[0].global_kwargs["ext_src_corrs"] is not None else ""
+        ext_src_lim_label = f"<{self.pre_req_properties[0].pre_req_properties[0].global_kwargs['ext_src_uplim']:.0f}" if \
+            self.pre_req_properties[0].pre_req_properties[0].global_kwargs["ext_src_uplim"] is not None and \
+            self.pre_req_properties[0].pre_req_properties[0].global_kwargs["ext_src_corrs"] is not None else ""
         return f"SFR{ref_wav_label}{dust_label}_" + \
-            f"{rest_wavs_label}_{self.global_kwargs['SFR_conv']}"
+            f"{rest_wavs_label}_{self.global_kwargs['SFR_conv']}" + \
+            ext_src_label + ext_src_lim_label
     
     def _kwarg_assertions(self: Self) -> NoReturn:
         assert self.global_kwargs["SFR_conv"] in funcs.SFR_conversions.keys()
@@ -1786,6 +1891,9 @@ class Xi_Ion_Calculator(Rest_Frame_Property_Calculator):
         top_hat_width: u.Quantity = 100.0 * u.AA,
         resolution: u.Quantity = 1.0 * u.AA,
         fesc_conv: Optional[Union[str, float]] = None,
+        logged: bool = True,
+        ext_src_corrs: Optional[str] = "UV",
+        ext_src_uplim: Optional[Union[int, float]] = 10.0,
     ) -> NoReturn:
         line_lum_calculator = \
             Optical_Line_Luminosity_Calculator(
@@ -1807,7 +1915,9 @@ class Xi_Ion_Calculator(Rest_Frame_Property_Calculator):
             UV_ref_wav,
             beta_dust_conv,
             top_hat_width,
-            resolution
+            resolution,
+            ext_src_corrs,
+            ext_src_uplim,
         )
         pre_req_properties = [line_lum_calculator, LUV_calculator]
         if fesc_conv is None:
@@ -1823,7 +1933,8 @@ class Xi_Ion_Calculator(Rest_Frame_Property_Calculator):
             pre_req_properties.append(self.fesc_calculator)
         else: # float
             self.fesc_calculator = fesc_conv
-        super().__init__(aper_diam, SED_fit_label, pre_req_properties)
+        global_kwargs = {"logged": logged}
+        super().__init__(aper_diam, SED_fit_label, pre_req_properties, **global_kwargs)
 
     @property
     def name(self: Self) -> str:
@@ -1844,7 +1955,12 @@ class Xi_Ion_Calculator(Rest_Frame_Property_Calculator):
         line_label = "+".join(self.pre_req_properties[0]. \
             pre_req_properties[0].pre_req_properties[1]. \
             global_kwargs["strong_line_names"])
-        return f"xi_ion_{line_label}{dust_label}_{fesc_label}"
+        ext_src_label = "_extsrc" if self.pre_req_properties[1]. \
+            pre_req_properties[0].global_kwargs["ext_src_corrs"] else ""
+        label = f"xi_ion_{line_label}{dust_label}_{fesc_label}{ext_src_label}"
+        if self.global_kwargs["logged"]:
+            label = f"log_{label}"
+        return label
     
     def _kwarg_assertions(self: Self) -> NoReturn:
         if self.fesc_calculator is not None:
@@ -1892,7 +2008,6 @@ class Xi_Ion_Calculator(Rest_Frame_Property_Calculator):
                 fesc_arr = phot_rest.properties[self.fesc_calculator.name]
             else: # isinstance(fesc_conv, float)
                 fesc_arr = self.fesc_calculator
-
         # calculate xi_ion values 
         # under assumption of Case B recombination
         xi_ion_arr = (line_lum_arr / (1.36e-12 * u.erg * \
@@ -1906,6 +2021,8 @@ class Xi_Ion_Calculator(Rest_Frame_Property_Calculator):
             if len(finite_xi_ion_arr) < 1:
                 return None
         xi_ion_arr[~np.isfinite(xi_ion_arr)] = np.nan
+        if self.global_kwargs["logged"]:
+            xi_ion_arr = np.log10(xi_ion_arr.value) * u.Unit(f"dex({xi_ion_arr.unit.to_string()})")
         return xi_ion_arr
     
     def _get_output_kwargs(

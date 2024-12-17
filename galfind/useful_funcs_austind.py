@@ -19,6 +19,7 @@ from numpy.typing import NDArray
 from typing import Union, List, Tuple, TYPE_CHECKING
 if TYPE_CHECKING:
     from .Data import Band_Data_Base, Band_Data, Stacked_Band_Data
+    from . import Selector
 try:
     from typing import Self, Type  # python 3.11+
 except ImportError:
@@ -508,6 +509,10 @@ default_lims = {
     "M1500": [-23.0, -16.0],
     "M_UV": [-23.0, -16.0],
     "M1500_[1250,3000]AA": [-23.0, -16.0],
+    "M1500_[1250,3000]AA_extsrc": [-23.0, -16.0],
+    "M1500_[1250,3000]AA_extsrc_UV<10": [-23.0, -16.0],
+    "xi_ion_Halpha_fesc=0": [10 ** 23.5, 10 ** 26.5],
+    "log_xi_ion_Halpha_fesc=0": [23.5, 26.5],
     "M_UV_ext_src_corr": [-23.0, -16.0],
     "stellar_mass": [7.5, 11.0],
     "stellar_mass_ext_src_corr": [7.5, 11.0],
@@ -524,6 +529,37 @@ def get_SED_fit_label_aper_diam_z_bin_name(
     z_bin: Union[list, np.array]
 ) -> str:
     return f"{SED_fit_params_key}_{aper_diam.to(u.arcsec).value:.2f}as_{get_z_bin_name(z_bin)}"
+
+
+def get_crop_name(crops: List[Selector]) -> str:
+    if crops is not None:
+        aper_diam = np.unique([selector.aper_diam.to(u.arcsec).value for selector \
+            in crops if hasattr(selector, "aper_diam") and selector.aper_diam is not None])
+        if len(aper_diam) == 1:
+            aper_diam = aper_diam[0]
+        else:
+            aper_diam = None
+        SED_fit_label = np.unique([selector.SED_fit_label for selector \
+            in crops if hasattr(selector, "SED_fit_label") and selector.SED_fit_label is not None])
+        if len(SED_fit_label) == 1:
+            SED_fit_label = SED_fit_label[0]
+        else:
+            SED_fit_label = None
+        if aper_diam is not None and SED_fit_label is not None:
+            SED_fit_aper_diam_name = f"{SED_fit_label}_{aper_diam:.2f}as"
+            out_crop_name = f"{SED_fit_aper_diam_name}/" + \
+                "+".join([selector.name.replace( \
+                f"_{SED_fit_aper_diam_name}", "") for selector in crops])
+        elif aper_diam is not None:
+            aper_diam_name = f"{aper_diam:.2f}as"
+            out_crop_name = f"{aper_diam_name}/" + \
+                "+".join([selector.name.replace(f"_{aper_diam_name}", "") \
+                for selector in crops])
+        else:
+            out_crop_name = "+".join([selector.name for selector in crops])
+        return out_crop_name
+    else:
+        return ""
 
 
 def calc_Vmax(area, zmin, zmax):
@@ -580,7 +616,6 @@ def calc_cv_proper(
     total_area = 0.0
     for data, y_to_x in zip(data_arr, rectangular_geometry_y_to_x):
         # calculate area of field
-        breakpoint()
         area = data.calc_unmasked_area(data.forced_phot_band.filt_name)
         # field is square if y_to_x == 1
         dimensions_x = np.sqrt(area.value / y_to_x) * u.arcmin
