@@ -9,7 +9,7 @@ import astropy.units as u
 import matplotlib.pyplot as plt
 import numpy as np
 from astropy.table import Table
-from typing import NoReturn, Optional, TYPE_CHECKING
+from typing import NoReturn, Optional, Dict, Any, TYPE_CHECKING
 if TYPE_CHECKING:
     from . import Catalogue, Multiple_Catalogue, Rest_Frame_Property_Calculator
 try:
@@ -43,7 +43,7 @@ class Base_Number_Density_Function:
     ) -> Self:
         if x_name in ["M1500", "M_UV", "MUV"]:
             x_name = "UVLF"
-        if type(z_ref) in [str, int]:
+        if isinstance(z_ref, (str, int)):
             z_ref = float(z_ref)
         x_name_config_key = f"{x_name}_LIT_DIR"
         ecsv_data_path = f"{config['NumberDensityFunctions'][x_name_config_key]}/z={z_ref:.1f}/{author_year}.ecsv"
@@ -72,6 +72,9 @@ class Base_Number_Density_Function:
 
         flags_property_name_conv = {
             "M1500": "LUV",
+            "M1500_[1250,3000]AA": "LUV",
+            "M1500_[1250,3000]AA_extsrc": "LUV",
+            "M1500_[1250,3000]AA_extsrc_UV<10": "LUV",
             "M_UV": "LUV",
             "stellar_mass": "Mstar",
         }
@@ -83,7 +86,7 @@ class Base_Number_Density_Function:
         z_ref = (z_bin[0] + z_bin[1]) / 2.0
         for pos, path in enumerate(datasets):
             ds = distribution_functions.read(path, verbose=False)
-            if ds.name == author_year:
+            if all(string in ds.name for string in author_year.split("+")):
                 # choose closest redshift to bin centre
                 z = None
                 deltaz = 100
@@ -94,9 +97,10 @@ class Base_Number_Density_Function:
                         if delta_z_i < deltaz:
                             deltaz = delta_z_i
                             z = float(z_i)
-                if type(z) == type(None):
+                if z is None:
                     galfind_logger.warning(
-                        f"No available redshift for {author_year=} in {z_bin=}! Available redshifts are {ds.redshifts}"
+                        f"No available redshift for {author_year=} in {z_bin=}!" + \
+                        f" Available redshifts are {ds.redshifts}"
                     )
                     return None
                 else:
@@ -119,8 +123,9 @@ class Base_Number_Density_Function:
                     err_high = 10 ** (log10phi + high) - 10**log10phi
                     err_low = (10**log10phi) - 10 ** (log10phi - low)
                     phi_err = np.array([err_low, err_high])
-
-                    if x_name in ["M1500", "M_UV"]:
+                    
+                    if x_name in [key for (key, val) in \
+                            flags_property_name_conv.items() if val == "LUV"]:
                         x = ds.M[z]
                     else:
                         x = ds.log10X[z]
@@ -128,6 +133,7 @@ class Base_Number_Density_Function:
                     return cls(
                         x_name, x, z, 10**log10phi, phi_err, author_year
                     )
+        galfind_logger.info(f"No {author_year=} in {obs_or_models} for {x_name=}")
         return None  # if no author_year in flags_data
 
     def get_z_bin_name(self) -> str:
@@ -137,22 +143,29 @@ class Base_Number_Density_Function:
         self,
         fig=None,
         ax=None,
-        log: bool = False,
+        log_x: bool = False,
+        log_y: bool = False,
         annotate: bool = False,
         save: bool = False,
         show: bool = False,
         plot_kwargs: dict = {},
         legend_kwargs: dict = {},
-        x_lims: Union[list, np.array, str, None] = "default",
-        save_name: Union[str, None] = None,
-    ) -> None:
+        x_lims: Optional[Union[list, np.array, str]] = "default",
+        title: Optional[str] = None,
+        save_name: Optional[str] = None,
+    ) -> NoReturn:
         if all(i is None for i in [fig, ax]):
             fig, ax = plt.subplots()
 
         # don't plot empty bins
-        x_mid_bins = np.array(
-            [_x for _x, _y in zip(self.x_mid_bins, self.phi) if _y != 0.0]
-        )
+        if isinstance(self.x_mid_bins, (u.Quantity, u.Magnitude, u.Dex)):
+            x_mid_bins = np.array(
+                [_x for _x, _y in zip(self.x_mid_bins.value, self.phi) if _y != 0.0]
+            )
+        else:
+            x_mid_bins = np.array(
+                [_x for _x, _y in zip(self.x_mid_bins, self.phi) if _y != 0.0]
+            )
         phi = np.array([_y for _y in self.phi if _y != 0.0])
         phi_errs_cv = np.array(
             [
@@ -168,7 +181,7 @@ class Base_Number_Density_Function:
                 ],
             ]
         )
-        if log:
+        if log_y:
             y = np.log10(phi)
             y_errs = np.array(
                 [
@@ -200,14 +213,23 @@ class Base_Number_Density_Function:
 
         if annotate:
             y_label = r"$\Phi$ / N dex$^{-1}$Mpc$^{-3}$"
-            if log:
+            if log_x:
+                x_label = r"$\log_{10}($" + self.x_name + ")"
+                ax.set_xscale("log")
+            else:
+                x_label = self.x_name
+            if log_y:
                 y_label = r"$\log_{10}($" + y_label + ")"
             else:
                 ax.set_yscale("log")
             ax.set_xlabel(self.x_name)
             ax.set_ylabel(y_label)
+            if title is not None:
+                ax.set_title(title)
             if x_lims is not None:
                 if isinstance(x_lims, str):
+                    if x_lims == "default":
+                        x_lims = self.x_name
                     ax.set_xlim(*funcs.default_lims[x_lims])
                 else:
                     assert len(x_lims) == 2
@@ -226,14 +248,16 @@ class Base_Number_Density_Function:
         if save:
             if self.__class__.__name__ != "Number_Density_Function":
                 assert save_name is not None
-                plot_path = f"{config['NumberDensityFunctions']['NUMBER_DENSITY_FUNC_DIR']}/Plots/Literature/{save_name}"
+                plot_path = config['NumberDensityFunctions']['NUMBER_DENSITY_FUNC_DIR'] + \
+                    f"/Plots/Literature/{save_name}"
             else:
                 plot_path = self.get_plot_path()
-            if os.access(plot_path, os.W_OK):
-                funcs.make_dirs(plot_path)
-            else:
-                galfind_logger.warning(f"Cannot write to {plot_path}!")
-            plt.savefig(plot_path)
+                if save_name is not None:
+                    plot_path = "/".join(plot_path.split("/")[:-1]) + f"/{save_name}.png"
+            funcs.make_dirs(plot_path)
+            plt.savefig(plot_path, bbox_inches="tight")
+            funcs.change_file_permissions(plot_path)
+            galfind_logger.info(f"Saved plot to {plot_path}")
         if show:
             plt.show()
 
@@ -241,17 +265,19 @@ class Base_Number_Density_Function:
 class Number_Density_Function(Base_Number_Density_Function):
     def __init__(
         self,
-        x_name,
+        x_name: str,
         x_bins,
         x_origin,
         z_bin,
-        Ngals,
+        Ngals: int,
         phi,
         phi_errs,
         cv_errs,
         origin_surveys,
+        crop_name: str,
         cv_origin,
     ) -> Self:
+        self.crop_name = crop_name
         self.x_bins = x_bins
         self.x_origin = x_origin
         self.z_bin = z_bin
@@ -295,6 +321,7 @@ class Number_Density_Function(Base_Number_Density_Function):
         x_origin = tab.meta["x_origin"]
         x_name = tab.meta["x_name"]
         origin_surveys = tab.meta["origin_surveys"]
+        crop_name = tab.meta["crop_name"]
         z_bin = tab.meta["z_bin"]
         return cls(
             x_name,
@@ -306,6 +333,7 @@ class Number_Density_Function(Base_Number_Density_Function):
             np.array([phi_l1, phi_u1]),
             cv_errs,
             origin_surveys,
+            crop_name,
             cv_origin,
         )
 
@@ -369,7 +397,7 @@ class Number_Density_Function(Base_Number_Density_Function):
         cv_origin: Union[str, None] = "Driver2010",
         save: bool = True,
         timed: bool = False,
-    ) -> Self:
+    ) -> Optional[Self]:
         # input assertions
         assert len(z_bin) == 2
         assert z_bin[0] < z_bin[1]
@@ -394,24 +422,40 @@ class Number_Density_Function(Base_Number_Density_Function):
             x = [gal.aper_phot[aper_diam].SED_results[SED_fit_code.label].phot_rest.properties[x_calculator.name] for gal in cat]
         else: # x_origin == "SED_result":
             x = [gal.aper_phot[aper_diam].SED_results[SED_fit_code.label].properties[x_calculator.name] for gal in cat]
+        # remove nans
+        x = [x_ for x_ in x if not np.isnan(x_)]
         assert all(x_.unit == x[0].unit for x_ in x)
         x = np.array([x_.value for x_ in x]) * x[0].unit
 
         # determine save_path
         origin_surveys = Number_Density_Function.get_origin_surveys(data_arr)
         save_path = Number_Density_Function.get_save_path(
-            origin_surveys, SED_fit_code.label, z_bin, x_calculator.name
+            origin_surveys,
+            x_origin,
+            x_calculator.name,
+            cat.crop_name,
         )
-
         if not Path(save_path).is_file():
-            # extract z_bin_name
-            z_bin_name = funcs.get_SED_fit_label_aper_diam_z_bin_name(SED_fit_code.label, aper_diam, z_bin)
             # crop catalogue to this redshift bin
             from . import Redshift_Limit_Selector, Redshift_Bin_Selector
             # TODO: Implement Redshift_Limit_Selector in case of np.nan z_bin entry
             z_bin_selector = Redshift_Bin_Selector(aper_diam, SED_fit_code.label, z_bin)
             z_bin_cat = deepcopy(cat).crop(z_bin_selector)
-
+            # ensure every galaxy in this redshift bin has 
+            # the relevant property already calculated
+            if len(z_bin_cat) == 0:
+                galfind_logger.warning(
+                    f"No galaxies in {z_bin=}"
+                )
+                return None
+            elif len([i for i, gal in enumerate(z_bin_cat) if \
+                    np.isnan(gal.aper_phot[aper_diam].SED_results \
+                    [SED_fit_code.label].phot_rest.properties \
+                    [x_calculator.name])]) != 0:
+                galfind_logger.warning(
+                    f">1 nan in {x_calculator.name} for {z_bin=}, skipping!"
+                )
+                return None
             # create x_bins from x_bin_edges (must include start and end values here too)
             x_bins = [
                 [x_bin_edges[i].value, x_bin_edges[i + 1].value] * x_bin_edges.unit
@@ -432,12 +476,15 @@ class Number_Density_Function(Base_Number_Density_Function):
             phi_l1 = np.zeros(len(x_bins))
             phi_u1 = np.zeros(len(x_bins))
             cv_errs = np.zeros(len(x_bins))
-            phi_errs_cv = np.zeros(len(x_bins))
+            #phi_errs_cv = np.zeros(len(x_bins))
             # loop through each mass bin in the given redshift bin
             for i, x_bin in enumerate(x_bins):
                 if len(z_bin_cat) == 0:
                     Ngals[i] = 0
                 else:
+                    # plot histogram
+                    #hist_fig, hist_ax = plt.subplots()
+                    #z_bin_cat.hist(x_calculator, hist_fig, hist_ax)
                     # crop to galaxies in the x bin - not the bootstrapping method
                     from . import Rest_Frame_Property_Limit_Selector, Rest_Frame_Property_Bin_Selector
                     # TODO: Implement Rest_Frame_Property_Limit_Selector in case of np.nan x_bin entry
@@ -446,17 +493,19 @@ class Number_Density_Function(Base_Number_Density_Function):
                     Ngals[i] = len(z_bin_x_bin_cat)
                 # if there are galaxies in the z,x bin
                 if int(Ngals[i]) != 0:
+                    # plot histogram
+                    #z_bin_x_bin_cat.hist(x_calculator, hist_fig, hist_ax)
                     dx = x_bin[1].value - x_bin[0].value
                     # calculate Vmax's
                     V_max = np.zeros(int(Ngals[i])).astype(float)
                     for data in data_arr:
                         V_max += np.array(
                             [
-                                gal.V_max[z_bin_name][data.full_name]
-                                if gal.V_max[z_bin_name][data.full_name]
-                                != -1.0
-                                else 0.0
-                                for gal in z_bin_x_bin_cat
+                                gal.aper_phot[aper_diam].SED_results[SED_fit_code.label]. \
+                                V_max[z_bin_cat.crop_name.split("/")[-1]][data.full_name]
+                                if gal.aper_phot[aper_diam].SED_results[SED_fit_code.label]. \
+                                V_max[z_bin_cat.crop_name.split("/")[-1]][data.full_name] != -1.0
+                                else 0.0 for gal in z_bin_x_bin_cat
                             ]
                         )
                     V_max = np.array(
@@ -490,7 +539,6 @@ class Number_Density_Function(Base_Number_Density_Function):
                         )
                     else:
                         raise NotImplementedError
-
             number_density_func = cls(
                 x_calculator.name,
                 x_bins,
@@ -501,15 +549,14 @@ class Number_Density_Function(Base_Number_Density_Function):
                 np.array([phi_l1, phi_u1]),
                 cv_errs,
                 origin_surveys,
+                z_bin_cat.crop_name,
                 cv_origin,
             )
-
-            if save and not Path(save_path).is_file():
+            if save:
                 number_density_func.save()
-
             return number_density_func
 
-        else:  # load results
+        else: # load results
             return cls.from_ecsv(save_path)
 
     @staticmethod
@@ -521,16 +568,14 @@ class Number_Density_Function(Base_Number_Density_Function):
     def get_save_path(
         origin_surveys: str,
         SED_fit_params_key: str,
-        z_bin: Union[list, np.array],
         x_name: str,
+        crop_name: str,
         ext: str = ".ecsv",
     ) -> str:
         save_path = config['NumberDensityFunctions']['NUMBER_DENSITY_FUNC_DIR'] + \
-            f"/Data/{SED_fit_params_key}/{x_name}/{origin_surveys}" + \
-            f"/{z_bin[0]}<z<{z_bin[1]}{ext}"
-
-        if os.access(save_path, os.W_OK):
-            funcs.make_dirs(save_path)
+            f"/Data/{SED_fit_params_key}/{x_name}/" + \
+            f"{origin_surveys}/{crop_name}{ext}"
+        funcs.make_dirs(save_path)
         return save_path
 
     # cv_origin == "Driver2010"
@@ -548,15 +593,15 @@ class Number_Density_Function(Base_Number_Density_Function):
         )
         return SED_fit_params_key, x_name, origin_surveys, z_bin
 
-    def get_z_bin_name(self) -> str:
-        return f"{self.z_bin[0]:.1f}<z<{self.z_bin[1]:.1f}"
+    # def get_z_bin_name(self) -> str:
+    #     return f"{self.z_bin[0]:.1f}<z<{self.z_bin[1]:.1f}"
 
     def get_plot_path(self) -> str:
         plot_path = self.get_save_path(
             self.origin_surveys,
-            self.x_origin.replace("_REST_PROPERTY", ""),
-            self.z_bin,
+            self.x_origin,
             self.x_name,
+            self.crop_name,
             ext=".png",
         ).replace("/Data/", "/Plots/")
         if os.access(plot_path, os.W_OK):
@@ -569,9 +614,9 @@ class Number_Density_Function(Base_Number_Density_Function):
         if save_path is None:
             save_path = self.get_save_path(
                 self.origin_surveys,
-                self.x_origin.replace("_REST_PROPERTY", ""),
-                self.z_bin,
+                self.x_origin,
                 self.x_name,
+                self.crop_name,
             )
         x_bins_low = np.array([x_bin[0].value for x_bin in self.x_bins])
         x_bins_up = np.array([x_bin[1].value for x_bin in self.x_bins])
@@ -593,6 +638,7 @@ class Number_Density_Function(Base_Number_Density_Function):
             "origin_surveys": self.origin_surveys,
             "z_bin": self.z_bin,
             "cv_origin": self.cv_origin,
+            "crop_name": self.crop_name
         }
         funcs.make_dirs(save_path)
         tab.write(save_path, overwrite=True)
@@ -603,31 +649,39 @@ class Number_Density_Function(Base_Number_Density_Function):
 
     def plot(
         self,
-        fig=None,
-        ax=None,
-        log: bool = False,
+        fig: Optional[plt.Figure] = None,
+        ax: Optional[plt.Axes] = None,
+        log_x: bool = False,
+        log_y: bool = False,
         annotate: bool = True,
         save: bool = True,
         show: bool = False,
-        plot_kwargs: dict = {},
-        legend_kwargs: dict = {},
+        plot_kwargs: Dict[str, Any] = {},
+        legend_kwargs: Dict[str, Any] = {},
         x_lims: Union[list, np.array, str, None] = "default",
-        obs_author_years: dict = {},
-        sim_author_years: dict = {},
-    ) -> None:
-        if all(type(_x) == type(None) for _x in [fig, ax]):
+        title: Optional[str] = None,
+        obs_author_years: Dict[str, Any] = {},
+        sim_author_years: Dict[str, Any] = {},
+        save_name: Optional[str] = None,
+    ) -> NoReturn:
+        if all(_x is None for _x in [fig, ax]):
             fig, ax = plt.subplots()
+
+        if title is None:
+            title = self.crop_name
+
         for author_year, author_year_kwargs in obs_author_years.items():
             author_year_func_from_flags_data = (
                 Base_Number_Density_Function.from_flags_repo(
                     self.x_name, self.z_bin, author_year, "obs"
                 )
             )
-            if type(author_year_func_from_flags_data) != type(None):
+            if author_year_func_from_flags_data is not None:
                 author_year_func_from_flags_data.plot(
                     fig,
                     ax,
-                    log,
+                    log_x,
+                    log_y,
                     annotate=False,
                     save=False,
                     show=False,
@@ -640,28 +694,33 @@ class Number_Density_Function(Base_Number_Density_Function):
                     self.x_name, self.z_bin, author_year, "models"
                 )
             )
-            if type(author_year_func_from_flags_data) != type(None):
+            if author_year_func_from_flags_data is not None:
                 author_year_func_from_flags_data.plot(
                     fig,
                     ax,
-                    log,
+                    log_x,
+                    log_y,
                     annotate=False,
                     save=False,
                     show=False,
                     plot_kwargs=author_year_kwargs,
                     x_lims=None,
                 )
+
         # plot this work
         super().plot(
             fig,
             ax,
-            log,
+            log_x,
+            log_y,
             annotate,
             save,
             show,
             plot_kwargs,
             legend_kwargs,
             x_lims,
+            title,
+            save_name,
         )
 
 
@@ -756,7 +815,7 @@ class Multiple_Number_Density_Function:
                 if i != len(x_bin_edges) - 1
             ]
             # extract z_bin_name
-            assert type(x_origin) == str  # NOT GENERAL!
+            assert isinstance(x_origin, str)
             z_bin_name = f"{x_origin}_{z_bin[0]:.1f}<z<{z_bin[1]:.1f}"
             # calculate Vmax for each galaxy in catalogue within z bin
             # in general call Vmax_multifield

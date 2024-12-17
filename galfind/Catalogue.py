@@ -29,7 +29,7 @@ from astropy.utils.masked import Masked
 from tqdm import tqdm
 from typing import Union, Tuple, Any, List, Dict, Callable, Optional, NoReturn, TYPE_CHECKING
 if TYPE_CHECKING:
-    from . import Band_Data_Base, Selector, Multiple_Filter, Data
+    from . import Band_Data_Base, Selector, Multiple_Filter, Data, Rest_Frame_Property_Calculator
 try:
     from typing import Self, Type  # python 3.11+
 except ImportError:
@@ -229,7 +229,8 @@ def galfind_selection_labels(
 
 class Catalogue_Creator:
 
-    def __init__(self,
+    def __init__(
+        self: Self,
         survey: str,
         version: str, 
         cat_path: str,
@@ -368,10 +369,7 @@ class Catalogue_Creator:
 
     @property
     def crop_name(self) -> List[str]:
-        if self.crops is not None:
-            return "+".join([selector.name for selector in self.crops])
-        else:
-            return ""
+        return funcs.get_crop_name(self.crops)
 
     def load_tab(self, cat_type: str, cropped: bool = True) -> Table:
         tab = self.open_cat(self.cat_path, cat_type)
@@ -406,12 +404,12 @@ class Catalogue_Creator:
                         f"Catalogue cropped by {selector.name}"
                     )
                 else:
-                    galfind_logger.warning(
-                        f"{selector.name} selection not yet performed!"
-                    )
+                    err_message = f"{selector.name} not yet performed!"
+                    galfind_logger.warning(err_message)
+                    raise Exception(err_message)
             # crop table
             if len(keep_arr) > 0:
-                self.crop_mask = np.array(np.logical_or.reduce(keep_arr)).astype(bool)
+                self.crop_mask = np.array(np.logical_and.reduce(keep_arr)).astype(bool)
                 return
         self.crop_mask = np.full(len(tab), True)
 
@@ -715,74 +713,72 @@ class Catalogue(Catalogue_Base):
         print(str(cross_matched_cat))
         return cross_matched_cat
 
-    def calc_ext_src_corrs(self) -> None:
-        self.load_sex_flux_mag_autos()
-        # calculate aperture corrections if not already
-        if not hasattr(self.instrument, "aper_corrs"):
-            aper_corrs = self.instrument.get_aper_corrs(
-                self.cat_creator.aper_diam
-            )
-        else:
-            aper_corrs = self.instrument.aper_corrs[self.cat_creator.aper_diam]
-        assert len(aper_corrs) == len(self.instrument)
-        aper_corrs = {
-            band_name: aper_corr
-            for band_name, aper_corr in zip(
-                self.instrument.band_names, aper_corrs
-            )
-        }
-        # calculate and save dict of ext_src_corrs for each galaxy in self
-        galfind_logger.debug(
-            "Photometry_obs.calc_ext_src_corrs takes 2min 20s for JOF with 16,000 galaxies. Fairly slow!"
-        )
-        [
-            gal.phot.calc_ext_src_corrs(aper_corrs=aper_corrs)
-            for gal in tqdm(
-                self,
-                desc=f"Calculating extended source corrections for {self.survey} {self.version}",
-                total=len(self),
-            )
-        ]
-        # save the extended source corrections to catalogue
-        self._append_property_to_tab(
-            "_".join(inspect.stack()[0].function.split("_")[1:]), "phot_obs"
-        )
+        # # calculate aperture corrections if not already
+        # if not hasattr(self.instrument, "aper_corrs"):
+        #     aper_corrs = self.instrument.get_aper_corrs(
+        #         self.cat_creator.aper_diam
+        #     )
+        # else:
+        #     aper_corrs = self.instrument.aper_corrs[self.cat_creator.aper_diam]
+        # assert len(aper_corrs) == len(self.instrument)
+        # aper_corrs = {
+        #     band_name: aper_corr
+        #     for band_name, aper_corr in zip(
+        #         self.instrument.band_names, aper_corrs
+        #     )
+        # }
+        # # calculate and save dict of ext_src_corrs for each galaxy in self
+        # galfind_logger.debug(
+        #     "Photometry_obs.calc_ext_src_corrs takes 2min 20s for JOF with 16,000 galaxies. Fairly slow!"
+        # )
+        # [
+        #     gal.phot.calc_ext_src_corrs(aper_corrs=aper_corrs)
+        #     for gal in tqdm(
+        #         self,
+        #         desc=f"Calculating extended source corrections for {self.survey} {self.version}",
+        #         total=len(self),
+        #     )
+        # ]
+        # # save the extended source corrections to catalogue
+        # self._append_property_to_tab(
+        #     "_".join(inspect.stack()[0].function.split("_")[1:]), "phot_obs"
+        # )
 
-    def make_ext_src_corrs(
-        self, gal_property: str, origin: Union[str, dict]
-    ) -> str:
-        # calculate pre-requisites
-        self.calc_ext_src_corrs()
-        # make extended source correction for given property
-        [aper_phot_.make_ext_src_corrs(gal_property, origin) for gal in self for aper_phot_ in gal.aper_phot.values()]
-        # save properties to fits table
-        #property_name = f"{gal_property}{funcs.ext_src_label}"
-        #self._append_property_to_tab(property_name, origin)
-        #return property_name
+    # def make_ext_src_corrs(
+    #     self, gal_property: str, origin: Union[str, dict]
+    # ) -> str:
+    #     # calculate pre-requisites
+    #     self.calc_ext_src_corrs()
+    #     # make extended source correction for given property
+    #     [aper_phot_.make_ext_src_corrs(gal_property, origin) for gal in self for aper_phot_ in gal.aper_phot.values()]
+    #     # save properties to fits table
+    #     #property_name = f"{gal_property}{funcs.ext_src_label}"
+    #     #self._append_property_to_tab(property_name, origin)
+    #     #return property_name
 
-    def make_all_ext_src_corrs(self) -> None:
-        self.calc_ext_src_corrs()
-        properties_dict = [gal.phot.make_all_ext_src_corrs() for gal in self]
-        unique_origins = np.unique(
-            [property_dict.keys() for property_dict in properties_dict]
-        )[0]
-        unique_properties_origins_dict = {
-            key: np.unique(
-                [property_dict[key] for property_dict in properties_dict]
-            )
-            for key in unique_origins
-        }
-        unique_properties_origins_dict = {
-            key: value
-            for key, value in unique_properties_origins_dict.items()
-            if len(value) > 0
-        }
-        # breakpoint()
-        [
-            self._append_property_to_tab(property_name, origin)
-            for origin, property_names in unique_properties_origins_dict.items()
-            for property_name in property_names
-        ]
+    # def make_all_ext_src_corrs(self) -> None:
+    #     self.calc_ext_src_corrs()
+    #     properties_dict = [gal.phot.make_all_ext_src_corrs() for gal in self]
+    #     unique_origins = np.unique(
+    #         [property_dict.keys() for property_dict in properties_dict]
+    #     )[0]
+    #     unique_properties_origins_dict = {
+    #         key: np.unique(
+    #             [property_dict[key] for property_dict in properties_dict]
+    #         )
+    #         for key in unique_origins
+    #     }
+    #     unique_properties_origins_dict = {
+    #         key: value
+    #         for key, value in unique_properties_origins_dict.items()
+    #         if len(value) > 0
+    #     }
+    #     # breakpoint()
+    #     [
+    #         self._append_property_to_tab(property_name, origin)
+    #         for origin, property_names in unique_properties_origins_dict.items()
+    #         for property_name in property_names
+    #     ]
 
     def _append_property_to_tab(
         self,
@@ -859,6 +855,49 @@ class Catalogue(Catalogue_Base):
                 f"only works when hasattr({repr(self)}, data)!"
             galfind_logger.critical(err_message)
             raise Exception(err_message)
+        
+    def load_sextractor_auto_mags(self):
+        if hasattr(self, "data"):
+            # load Re from SExtractor
+            self.load_band_properties_from_cat("MAG_AUTO", "sex_MAG_AUTO", multiply_factor = u.ABmag)
+            for gal in self:
+                for aper_diam in self.aper_phot.keys():
+                    gal.aper_phot[aper_diam].sex_MAG_AUTO = gal.sex_MAG_AUTO
+        else:
+            err_message = "Loading SExtractor auto mags from catalogue " + \
+                f"only works when hasattr({repr(self)}, data)!"
+            galfind_logger.critical(err_message)
+            raise Exception(err_message)
+
+    def load_sextractor_auto_fluxes(self):
+        if hasattr(self, "data"):
+            # load Re from SExtractor
+            multiply_factor = {band_data.filt_name: \
+                funcs.flux_image_to_Jy(1.0, band_data.ZP) \
+                for band_data in self.data}
+            self.load_band_properties_from_cat(
+                "FLUX_AUTO", 
+                "sex_FLUX_AUTO", 
+                multiply_factor = multiply_factor
+            )
+            for gal in self:
+                for aper_diam in gal.aper_phot.keys():
+                    gal.aper_phot[aper_diam].sex_FLUX_AUTO = gal.sex_FLUX_AUTO
+        else:
+            err_message = "Loading SExtractor flux autos from catalogue " + \
+                f"only works when hasattr({repr(self)}, data)!"
+            galfind_logger.critical(err_message)
+            raise Exception(err_message)
+        
+    def load_sextractor_ext_src_corrs(self) -> None:
+        self.load_sextractor_auto_fluxes()
+        galfind_logger.info(
+            f"Loading SExtractor extended source corrections for {self.cat_name}!"
+        )
+        [filt.instrument._load_aper_corrs() for filt in self.data.filterset]
+        aper_corrs = {filt.band_name: filt.instrument. \
+            aper_corrs[filt.band_name] for filt in self.data.filterset}
+        [gal.load_sextractor_ext_src_corrs(aper_corrs) for gal in self]
 
     def load_band_properties_from_cat(
         self,
@@ -873,6 +912,9 @@ class Catalogue(Catalogue_Base):
         else:  # dest == "phot_obs"
             has_attr = hasattr(self[0].phot, save_name)
         if not has_attr:
+            galfind_logger.info(
+                f"Loading {cat_colname=} from {self.cat_path} saved as {save_name}!"
+            )
             # load the same property from every available band
             # open catalogue with astropy
             fits_cat = self.open_cat(cropped=True)
@@ -1187,12 +1229,62 @@ class Catalogue(Catalogue_Base):
                     os.remove(selection_path)
                     os.symlink(out_path, selection_path)
 
+    def hist(
+        self: Self,
+        x_calculator: Type[Rest_Frame_Property_Calculator],
+        fig: Optional[plt.Figure] = None,
+        ax: Optional[plt.Axes] = None,
+        log: bool = False,
+        n_bins: int = 50, 
+        save: bool = True,
+        show: bool = False,
+        overwrite: bool = True,
+    ) -> NoReturn:
+        save_path = f"{config['DEFAULT']['GALFIND_WORK']}/Plots/{self.version}/" + \
+            f"{self.filterset.instrument_name}/{self.survey}/hist/" + \
+            f"{self.crop_name}/{x_calculator.name}.png"
+        if not Path(save_path).is_file() or overwrite:
+            galfind_logger.info(
+                f"Making histogram for {x_calculator.name}!"
+            )
+            from . import Rest_Frame_Property_Calculator
+            if isinstance(x_calculator, tuple(Rest_Frame_Property_Calculator.__subclasses__())):
+                # calculate x values
+                x = [gal.aper_phot[x_calculator.aper_diam].SED_results \
+                    [x_calculator.SED_fit_label].phot_rest.properties \
+                    [x_calculator.name] for gal in self]
+                # remove nans
+                x = np.array([x_.value for x_ in x if not np.isnan(x_)])
+                #x_name = x_calculator.name
+                x_label = x_calculator.name
+            else:
+                raise NotImplementedError
+            if log:
+                x = np.log10(x)
+                #x_name = f"log({x_name})"
+                x_label = f"log({x_label})"
+            if any(fig_ax is None for fig_ax in [fig, ax]):
+                fig, ax = plt.subplots()
+            ax.hist(x, bins = n_bins)
+            ax.set_xlabel(x_label)
+            #ax.set_ylabel("Number of Galaxies")
+            #ax.set_title(f"{x_label} histogram")
+            if save:
+                funcs.make_dirs(save_path)
+                plt.savefig(save_path)
+                funcs.change_file_permissions(save_path)
+            if show:
+                plt.show()
+        else:
+            galfind_logger.info(
+                f"{x_calculator.name} histogram already exists and {overwrite=}, skipping!"
+            )
+        
+
     def plot(
-        self: Type[Self],
-        x_name: str,
-        x_origin: Union[str, dict],
-        y_name: str,
-        y_origin: Union[str, dict],
+        self: Self,
+        x_calculator: Type[Rest_Frame_Property_Calculator],
+        y_calculator: Type[Rest_Frame_Property_Calculator],
         colour_by: Union[None, str] = None,
         c_origin: Union[str, dict, None] = None,
         incl_x_errs: bool = True,
@@ -1211,25 +1303,21 @@ class Catalogue(Catalogue_Base):
         fig: Optional[plt.Figure] = None,
         ax: Optional[plt.Axes] = None,
     ):
-        if type(x_origin) in [dict]:
-            assert "code" in x_origin.keys()
-            assert x_origin["code"].__class__.__name__ in [
-                code.__name__ for code in SED_code.__subclasses__()
-            ]
-        x = self.__getattr__(
-            x_name, SED_fit_params=x_origin, property_type="vals"
-        )
-        if incl_x_errs:
-            x_err = self.__getattr__(
-                x_name, SED_fit_params=x_origin, property_type="errs"
-            )
-            x_err = np.array([x_err[:, 0], x_err[:, 1]])
+        from . import Rest_Frame_Property_Calculator
+        if isinstance(x_calculator, tuple(Rest_Frame_Property_Calculator.__subclasses__())):
+            x = np.array([gal.aper_phot[x_calculator.aper_diam].SED_results \
+                [x_calculator.SED_fit_label].phot_rest.properties[x_calculator.name] for gal in self])
+            if incl_x_errs:
+                x_err = np.array([gal.aper_phot[x_calculator.aper_diam].SED_results \
+                    [x_calculator.SED_fit_label].phot_rest.property_errs \
+                    [x_calculator.name] for gal in self])
+                breakpoint()
+                x_err = np.array([x_err[:, 0], x_err[:, 1]])
+            else:
+                x_err = None
         else:
-            x_err = None
-        if type(x_origin) in [dict]:
-            x_label = x_origin["code"].gal_property_fmt_dict[x_name]
-        else:
-            NotImplementedError
+            raise NotImplementedError
+        #x_label = x_origin["code"].gal_property_fmt_dict[x_name]
         if log_x or x_name in funcs.logged_properties:
             if incl_x_errs:
                 x, x_err = funcs.errs_to_log(x, x_err)
@@ -1238,25 +1326,20 @@ class Catalogue(Catalogue_Base):
             x_name = f"log({x_name})"
             x_label = f"log({x_label})"
 
-        if type(y_origin) in [dict]:
-            assert "code" in y_origin.keys()
-            assert y_origin["code"].__class__.__name__ in [
-                code.__name__ for code in SED_code.__subclasses__()
-            ]
-        y = self.__getattr__(
-            y_name, SED_fit_params=y_origin, property_type="vals"
-        )
-        if incl_y_errs:
-            y_err = self.__getattr__(
-                y_name, SED_fit_params=y_origin, property_type="errs"
-            )
-            y_err = np.array([y_err[:, 0], y_err[:, 1]])
+        if isinstance(y_calculator, tuple(Rest_Frame_Property_Calculator.__subclasses__())):
+            y = np.array([gal.aper_phot[y_calculator.aper_diam].SED_results \
+                [y_calculator.SED_fit_label].phot_rest.properties[y_calculator.name] for gal in self])
+            if incl_y_errs:
+                y_err = np.array([gal.aper_phot[y_calculator.aper_diam].SED_results \
+                    [y_calculator.SED_fit_label].phot_rest.property_errs \
+                    [y_calculator.name] for gal in self])
+                breakpoint()
+                y_err = np.array([y_err[:, 0], y_err[:, 1]])
+            else:
+                y_err = None
         else:
-            y_err = None
-        if type(y_origin) in [dict]:
-            y_label = y_origin["code"].gal_property_fmt_dict[y_name]
-        else:
-            NotImplementedError
+            raise NotImplementedError
+        #y_label = y_origin["code"].gal_property_fmt_dict[y_name]
         if log_y or y_name in funcs.logged_properties:
             if incl_y_errs:
                 y, y_err = funcs.errs_to_log(y, y_err)
@@ -1265,11 +1348,11 @@ class Catalogue(Catalogue_Base):
             y_name = f"log({y_name})"
             y_label = f"log({y_label})"
 
-        if type(colour_by) == type(None):
+        if colour_by is None:
             # plot all as a single colour
             pass
         else:
-            if type(c_origin) in [dict]:
+            if isinstance(c_origin, dict):
                 assert "code" in c_origin.keys()
                 assert c_origin["code"].__class__.__name__ in [
                     code.__name__ for code in SED_code.__subclasses__()
@@ -1277,10 +1360,7 @@ class Catalogue(Catalogue_Base):
             c = getattr(
                 self, colour_by, SED_fit_params=c_origin, property_type="vals"
             )
-            if type(c_origin) in [dict]:
-                cbar_label = c_origin["code"].gal_property_fmt_dict[colour_by]
-            else:
-                NotImplementedError
+            #cbar_label = c_origin["code"].gal_property_fmt_dict[colour_by]
             if log_c or c in funcs.logged_properties:
                 c = np.log10(c)
                 colour_by = f"log({colour_by})"
@@ -1290,7 +1370,7 @@ class Catalogue(Catalogue_Base):
         plt.style.use(
             f"{config['DEFAULT']['GALFIND_DIR']}/galfind_style.mplstyle"
         )
-        if type(fig) == type(None) or type(ax) == type(None):
+        if fig is None or ax is None:
             fig, ax = plt.subplots()
 
         if "label" not in plot_kwargs.keys():
@@ -1298,7 +1378,7 @@ class Catalogue(Catalogue_Base):
 
         if mean_err:
             # produce scatter plot
-            if type(colour_by) == type(None):
+            if colour_by is None:
                 plot = ax.scatter(x, y, **plot_kwargs)
             else:
                 if "cmap" not in plot_kwargs.keys():
@@ -1311,7 +1391,7 @@ class Catalogue(Catalogue_Base):
             # produce errorbar plot
             if "ls" not in plot_kwargs.keys():
                 plot_kwargs["ls"] = ""
-            if type(colour_by) == type(None):
+            if colour_by is None:
                 plot = ax.errorbar(x, y, xerr=x_err, yerr=y_err, **plot_kwargs)
             else:
                 if "cmap" not in plot_kwargs.keys():
@@ -1328,7 +1408,7 @@ class Catalogue(Catalogue_Base):
             ax.set_title(plot_label)
             ax.set_xlabel(x_label)
             ax.set_ylabel(y_label)
-            if type(colour_by) != type(None):
+            if colour_by is not None:
                 # make colourbar
                 pass
             ax.legend(**legend_kwargs)
@@ -1346,7 +1426,7 @@ class Catalogue(Catalogue_Base):
                 origin_str += (
                     f"y={y_origin['code'].label_from_SED_fit_params(y_origin)}"
                 )
-            if any(type(var) == type(None) for var in [colour_by, c_origin]):
+            if any(var is None for var in [colour_by, c_origin]):
                 pass
             elif type(c_origin) in [str]:
                 origin_str += f",c={c_origin}"
@@ -1354,8 +1434,9 @@ class Catalogue(Catalogue_Base):
                 origin_str += f",c={c_origin['code'].label_from_SED_fit_params(c_origin)}"
 
             # determine appropriate save path
-            save_dir = f"{config['Other']['PLOT_DIR']}/{self.version}/{self.instrument.name}/{self.survey}/{origin_str}"
-            if type(colour_by) == type(None):
+            save_dir = f"{config['Other']['PLOT_DIR']}/{self.version}/" + \
+                f"{self.instrument.name}/{self.survey}/{origin_str}"
+            if colour_by is None:
                 colour_label = f"_c={colour_by}"
             else:
                 colour_label = ""
@@ -1363,7 +1444,6 @@ class Catalogue(Catalogue_Base):
             save_path = f"{save_dir}/{save_name}{save_type}"
             funcs.make_dirs(save_path)
             plt.savefig(save_path)
-
         if show:
             plt.show()
 
@@ -1383,12 +1463,12 @@ class Catalogue(Catalogue_Base):
         assert isinstance(SED_fit_code, tuple(SED_code.__subclasses__()))
         assert all(SED_fit_code.label in gal.aper_phot[aper_diam].SED_results.keys() for gal in self)
 
-        z_bin_name = funcs.get_SED_fit_label_aper_diam_z_bin_name(SED_fit_code.label, aper_diam, z_bin)
         for data in data_arr:
             save_path = f"{config['NumberDensityFunctions']['VMAX_DIR']}/" + \
                 f"{self.version}/{self.filterset.instrument_name}/{self.survey}/" + \
-                f"{z_bin_name}/Vmax_field={data.full_name}.ecsv"
+                f"{self.crop_name}/Vmax_field={data.full_name}.ecsv"
             funcs.make_dirs(save_path)
+
             # if this file already exists
             if Path(save_path).is_file():
                 # open file
@@ -1414,28 +1494,33 @@ class Catalogue(Catalogue_Base):
                         self,
                         total=len(self),
                         desc=f"Calculating Vmax's for {self.data.full_name}" + \
-                            f" in {z_bin_name} {data.full_name}",
+                            f" in {self.crop_name} {data.full_name}",
                     )
                 ]
                 # table with uncalculated Vmax's
                 Vmax_arr = np.array(
                     [
-                        gal.V_max[z_bin_name][data.full_name].to(u.Mpc**3).value
-                        if isinstance(gal.V_max[z_bin_name][data.full_name], u.Quantity)
-                        else gal.V_max[z_bin_name][data.full_name]
+                        gal.aper_phot[aper_diam].SED_results[SED_fit_code.label]. \
+                        V_max[self.crop_name.split("/")[-1]][data.full_name].to(u.Mpc**3).value
+                        if isinstance(gal.aper_phot[aper_diam].SED_results[SED_fit_code.label]. \
+                        V_max[self.crop_name.split("/")[-1]][data.full_name], u.Quantity)
+                        else gal.aper_phot[aper_diam].SED_results[SED_fit_code.label]. \
+                        V_max[self.crop_name.split("/")[-1]][data.full_name]
                         for gal in self if gal.ID in update_IDs
                     ]
                 )
                 obs_zmin = np.array(
                     [
-                        gal.obs_zrange[z_bin_name][data.full_name][0]
+                        gal.aper_phot[aper_diam].SED_results[SED_fit_code.label]. \
+                        obs_zrange[self.crop_name.split("/")[-1]][data.full_name][0]
                         for gal in self
                         if gal.ID in update_IDs
                     ]
                 )
                 obs_zmax = np.array(
                     [
-                        gal.obs_zrange[z_bin_name][data.full_name][1]
+                        gal.aper_phot[aper_diam].SED_results[SED_fit_code.label]. \
+                        obs_zrange[self.crop_name.split("/")[-1]][data.full_name][1]
                         for gal in self
                         if gal.ID in update_IDs
                     ]
@@ -1466,9 +1551,7 @@ class Catalogue(Catalogue_Base):
                 ]
                 Vmax_tab.sort("ID")
                 # save appropriate Vmax properties
-                [
-                    gal.save_Vmax(
-                        Vmax, z_bin_name, data.full_name, is_simple_Vmax=False
-                    )
-                    for gal, Vmax in zip(self, np.array(Vmax_tab["Vmax"]))
-                ]
+                for gal, Vmax in zip(self, np.array(Vmax_tab["Vmax"])):
+                    gal._make_Vmax_storage(aper_diam, SED_fit_code, self.crop_name.split("/")[-1])
+                    gal.aper_phot[aper_diam].SED_results[SED_fit_code.label]. \
+                        V_max[self.crop_name.split("/")[-1]][data.full_name] = Vmax #* u.Mpc ** 3

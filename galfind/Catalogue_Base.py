@@ -70,8 +70,8 @@ class Catalogue_Base:
         output_str += funcs.band_sep
         output_str += f"CAT PATH = {self.cat_path}\n"
         # access table header to display what has been run for this catalogue
-        cat = self.cat_creator.open_cat(self.cat_path, "ID")
-        output_str += f"TOTAL GALAXIES = {len(cat)}\n"
+        tab = self.cat_creator.open_cat(self.cat_path, "ID")
+        output_str += f"TOTAL GALAXIES = {len(tab)}\n"
         output_str += f"RA RANGE = {self.ra_range}\n"
         output_str += f"DEC RANGE = {self.dec_range}\n"
         output_str += funcs.band_sep
@@ -127,7 +127,7 @@ class Catalogue_Base:
 
     def __getitem__(self, index: Any) -> Optional[Union[Galaxy, List[Galaxy]]]:
         if len(self) == 0:
-            return self
+            raise IndexError("No galaxies in catalogue!")
         if isinstance(index, int):
             return self.gals[index]
         elif isinstance(index, (list, np.ndarray)):
@@ -165,7 +165,7 @@ class Catalogue_Base:
         elif isinstance(index, tuple(Selector.__subclasses__())):
             # run selection if not already done
             if not all(index.name in gal.selection_flags for gal in self):
-                index(self)
+                [index(gal, return_copy = False) for gal in self]
             keep_arr = [gal.selection_flags[index.name] for gal in self]
             return list(np.array(self.gals)[np.array(keep_arr)])
     
@@ -179,7 +179,8 @@ class Catalogue_Base:
 
     # only acts on attributes that don't already exist in Catalogue
     def __getattr__(
-        self, property_name: str #, origin: Union[str, dict] = "gal"
+        self: Self,
+        property_name: str #, origin: Union[str, dict] = "gal"
     ) -> np.ndarray:
         # get attributes from stored galaxy objects
         # if property_name in self.__dict__.keys():
@@ -200,8 +201,7 @@ class Catalogue_Base:
                 assert all(
                     attr.unit == attr_arr[0].unit for attr in attr_arr
                 )
-                attr_arr = [attr.value for attr in attr_arr] \
-                    * u.Unit(attr_arr[0].unit)
+                attr_arr = [attr.value for attr in attr_arr] * u.Unit(attr_arr[0].unit)
             return attr_arr
         else:
             raise AttributeError
@@ -217,12 +217,11 @@ class Catalogue_Base:
                 else:
                     setattr(gal, name, value)
 
-    # not needed!
     def __setitem__(self, index, gal):
         self.gals[index] = gal
 
     def __deepcopy__(self, memo):
-        galfind_logger.info(f"deepcopy({self.__class__.__name__})")
+        galfind_logger.debug(f"deepcopy({self.__class__.__name__})")
         cls = self.__class__
         result = cls.__new__(cls)
         memo[id(self)] = result

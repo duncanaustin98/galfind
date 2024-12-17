@@ -3259,13 +3259,12 @@ class Data:
                 area_tab = new_area_tab
             area_tab.write(area_tab_path, overwrite=True)
             funcs.change_file_permissions(area_tab_path)
-        breakpoint()
+        # return unmasked area
         unmasked_area = (
             area_tab[
                 area_tab["mask_instr_band"]
-                == instr_or_band_name
+                == instr_or_band_save_name
             ]["unmasked_area"][0]
             * area_tab["unmasked_area"].unit
         )
-        breakpoint()
         return unmasked_area

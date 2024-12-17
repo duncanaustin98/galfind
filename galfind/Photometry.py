@@ -10,12 +10,13 @@ from __future__ import annotations
 
 from copy import deepcopy
 import time
+import matplotlib.pyplot as plt
 from abc import ABC
 import astropy.units as u
 import matplotlib.patheffects as pe
 import numpy as np
 from numpy.typing import NDArray
-from typing import Union, List, Dict, Any, TYPE_CHECKING
+from typing import Union, Optional, List, Dict, Any, TYPE_CHECKING
 if TYPE_CHECKING:
     from . import Instrument
     from astropy.utils.masked import Masked
@@ -205,7 +206,8 @@ class Photometry:
 
     @property
     def wav(self):
-        return self.instrument.band_wavelengths
+        return np.array([filt.WavelengthCen.to(u.AA).value \
+            for filt in self.filterset]) * u.AA
 
     # @classmethod
     # def from_fits_cat(cls, fits_cat_row, instrument, cat_creator):
@@ -263,9 +265,9 @@ class Photometry:
 
     def plot(
         self: Self,
-        ax,
-        wav_units: u.Quantity = u.AA,
-        mag_units: Union[u.Quantity, u.Magnitude] = u.Jy,
+        ax: Optional[plt.Axes] = None,
+        wav_units: u.Unit = u.AA,
+        mag_units: u.Unit = u.Jy,
         plot_errs={"x": True, "y": True},
         annotate=True,
         uplim_sigma=2.0,
@@ -378,17 +380,17 @@ class Photometry:
                 [
                     [
                         funcs.convert_wav_units(
-                            filter.WavelengthCen - filter.WavelengthLower50,
+                            filt.WavelengthCen - filt.WavelengthLower50,
                             wav_units,
                         ).value
-                        for filter in self.instrument
+                        for filt in self.filterset
                     ],
                     [
                         funcs.convert_wav_units(
-                            filter.WavelengthUpper50 - filter.WavelengthCen,
+                            filt.WavelengthUpper50 - filt.WavelengthCen,
                             wav_units,
                         ).value
-                        for filter in self.instrument
+                        for filt in self.filterset
                     ],
                 ]
             )
