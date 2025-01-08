@@ -385,9 +385,25 @@ class Bagpipes(SED_code):
         if all(not to_run for to_run in to_run_arr):
             galfind_logger.info("All objects run and not overwrite.")
             return
-        gals_arr = deepcopy(cat)[to_run_arr]
+        
+        run_cat = deepcopy(cat)
+        run_cat.gals = run_cat[to_run_arr]
+        # remove filters without a depth measurement
+        gals_arr = []
+        for gal in tqdm(run_cat.gals, "Removing filters without depth measurements"):
+            remove_filt = []
+            for i, (depth, filt) in enumerate(zip(gal.aper_phot[aper_diam].depths, gal.aper_phot[aper_diam].filterset)):
+                if np.isnan(depth):
+                    remove_filt.extend([filt])
+            for filt in remove_filt:
+                gal.aper_phot[aper_diam] -= filt
+                galfind_logger.warning(
+                    f"Removed {filt.band_name} from {gal.ID} for bagpipes fitting due to NaN depth."
+                )
+            gals_arr.extend([gal])
+        run_cat.gals = gals_arr
         IDs = [gal.ID for gal in gals_arr]
-        filters = self._load_filters(cat, aper_diam)
+        filters = self._load_filters(run_cat, aper_diam)
 
         # now = datetime.now().isoformat()
         # path = f'/nvme/scratch/work/tharvey/bagpipes/temp/{now}_redshifts.npy'
@@ -463,11 +479,10 @@ class Bagpipes(SED_code):
             load_func = self._load_pipes_phot
         # TODO: spectroscopic fitting
         spectrum_exists = False
-
         fit_cat = bagpipes.fit_catalogue(
             IDs,
             fit_instructions, 
-            load_func, 
+            load_func,
             spectrum_exists = spectrum_exists, 
             photometry_exists = photometry_exists, 
             run = out_subdir, 
@@ -481,7 +496,7 @@ class Bagpipes(SED_code):
             save_pdf_txts = save_PDFs,
             n_posterior = 500,
             #time_calls = time_calls
-            load_data_kwargs = {"cat": cat, "aper_diam": aper_diam}
+            load_data_kwargs = {"cat": run_cat, "aper_diam": aper_diam}
         )
         galfind_logger.info(f"Fitting bagpipes with {fit_instructions=}")
         try:
@@ -599,7 +614,6 @@ class Bagpipes(SED_code):
             filt_path = self._get_filt_path(filt)
             if not Path(filt_path).is_file():
                 funcs.make_dirs(filt_path)
-                #breakpoint()
                 wavs = filt.wav.to(u.AA).value
                 trans = filt.trans
                 np.savetxt(filt_path, np.array([wavs, trans]).T, header = filt.band_name)
