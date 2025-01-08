@@ -518,12 +518,12 @@ class Catalogue_Creator:
         timed: bool = True
     ) -> NoReturn:
         meta = self.open_hdr(self.cat_path, "ID")
-        if 'SURVEY' in meta.keys():
-            save_dir = f"{config['DEFAULT']['GALFIND_WORK']}/Masks/{meta['SURVEY']}/has_data_mask"
-        elif self.survey is not None:
-            save_dir = f"{config['DEFAULT']['GALFIND_WORK']}/Masks/{self.survey}/has_data_mask"
+        if all(name in meta.keys() for name in ["SURVEY", "INSTR"]):
+            save_dir = f"{config['DEFAULT']['GALFIND_WORK']}/Masks/{meta['SURVEY']}/has_data_mask/{meta['INSTR']}"
+        elif self.survey is not None and self.filterset is not None:
+            save_dir = f"{config['DEFAULT']['GALFIND_WORK']}/Masks/{self.survey}/has_data_mask/{self.filterset.instrument_name}"
         else:
-            err_message = f"Neither 'SURVEY' in {self.cat_path} nor 'survey' provided!"
+            err_message = f"Not both of ['SURVEY', 'INSTR'] in {self.cat_path} nor 'survey' and 'filterset' provided!"
             galfind_logger.critical(err_message)
             raise Exception(err_message)
         save_path = f"{save_dir}/{self.cat_name}.h5"

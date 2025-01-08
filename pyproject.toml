@@ -96,6 +96,7 @@ dependencies = [
   "numba", # 0.60.0
   "configparser",
   "ipykernel",
+  "emcee",
 ]
 # numpy<2.0 prevents import sep; ValueError: numpy.dtype size changed, may indicate binary incompatibility. Expected 96 from C header, got 88 from PyObject.
 #grizli

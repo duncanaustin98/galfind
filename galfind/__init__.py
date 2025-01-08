@@ -213,6 +213,7 @@ from .Spectrum import (
     Spectral_Filter,
     Spectral_Grating,
 )
+from .MCMC import Prior, Flat_Prior, Priors, MCMC_Fitter, Schechter_Mag_Fitter, Schechter_Lum_Fitter
 from .Number_Density_Function import (
     Base_Number_Density_Function,
     Number_Density_Function,

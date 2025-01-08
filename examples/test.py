@@ -3,13 +3,18 @@ import numpy as np
 import matplotlib.pyplot as plt
 from copy import deepcopy
 from tqdm import tqdm
-from galfind import Filter, Catalogue, Catalogue_Creator, Data, EAZY, LePhare, Bagpipes
+from galfind import Filter, Catalogue, Catalogue_Creator, Data, EAZY, LePhare, Bagpipes, config
 from galfind import Colour_Selector, Unmasked_Instrument_Selector, EPOCHS_Selector
 from galfind.Data import morgan_version_to_dir
+
+plt.style.use(
+    f"{config['DEFAULT']['GALFIND_DIR']}/galfind_style.mplstyle"
+)
+
 # Load in a JOF data object
 survey = "JOF"
 version = "v11"
-instrument_names = ["NIRCam"]
+instrument_names = ["NIRCam"] # "ACS_WFC", 
 aper_diams = [0.32] * u.arcsec
 forced_phot_band = ["F277W", "F356W", "F444W"]
 min_flux_pc_err = 10.
@@ -29,34 +34,32 @@ def test_selection():
         aper_diams = aper_diams,
         forced_phot_band = forced_phot_band,
         min_flux_pc_err = min_flux_pc_err,
-        #crops = EPOCHS_Selector(aper_diams[0], EAZY(SED_fit_params_arr[-1]), allow_lowz=True)
+        #crops = EPOCHS_Selector(aper_diams[0], EAZY(SED_fit_params_arr[-1]), allow_lowz=False)
     )
-    # load sextractor half-light radii
-    # JOF_cat.load_sextractor_Re()
 
     # load EAZY SED fitting results
     for SED_fit_params in SED_fit_params_arr:
         EAZY_fitter = EAZY(SED_fit_params)
         EAZY_fitter(JOF_cat, aper_diams[0], load_PDFs = True, load_SEDs = True, update = True)
 
-    # perform EPOCHS selection
+    # load sextractor half-light radii
+    JOF_cat.load_sextractor_Re()
+
+    from galfind import EPOCHS_Selector, Redwards_Lya_Detect_Selector
     # epochs_selector = EPOCHS_Selector(aper_diams[0], EAZY_fitter, allow_lowz = False, unmasked_instruments = "NIRCam")
-    # EPOCHS_JOF_cat = epochs_selector(JOF_cat, return_copy = True)
-
-    # from galfind import EPOCHS_Selector
-    # epochs_selector = EPOCHS_Selector(allow_lowz = False, unmasked_instruments = "NIRCam")
-    # epochs_selected_cat = epochs_selector(JOF_cat, aper_diams[0], EAZY_fitter, return_copy = True)
-    # epochs_selector_lowz = EPOCHS_Selector(allow_lowz = True, unmasked_instruments = "NIRCam")
-    # epochs_selected_cat_lowz = epochs_selector_lowz(JOF_cat, aper_diams[0], EAZY_fitter, return_copy = True)
-
-    SED_fit_label = "EAZY_fsps_larson_zfree"
+    # epochs_selected_cat = epochs_selector(JOF_cat, return_copy = True)
+    # epochs_selector_lowz = EPOCHS_Selector(aper_diams[0], EAZY_fitter, allow_lowz = True, unmasked_instruments = "NIRCam")
+    # epochs_selected_cat_lowz = epochs_selector_lowz(JOF_cat, return_copy = True)
+    Redwards_Lya_Detect_Selector(aper_diams[0], EAZY(SED_fit_params_arr[-1]), SNR_lims = [5.0], widebands_only = True)(JOF_cat)
+    # SED_fit_label = "EAZY_fsps_larson_zfree"
     from galfind import MUV_Calculator, Xi_Ion_Calculator, M99
-    for beta_dust_conv in [None, M99]: #, Reddy18(C00(), 100 * u.Myr), Reddy18(C00(), 300 * u.Myr)]:
-        for fesc_conv in [None]:#, "Chisholm22"]: # None, 0.1, 0.2, 0.5,
-            calculator = Xi_Ion_Calculator(aper_diams[0], SED_fit_label, beta_dust_conv = beta_dust_conv, fesc_conv = fesc_conv)
-            calculator(JOF_cat, n_chains = 10_000, output = False, n_jobs = 1)
-    #MUV_calculator = MUV_Calculator(aper_diams[0], SED_fit_label)
-    #MUV_calculator(JOF_cat, n_chains = 10_000, output = False, n_jobs = 1)
+    # for beta_dust_conv in [None, M99]: #, Reddy18(C00(), 100 * u.Myr), Reddy18(C00(), 300 * u.Myr)]:
+    #     for fesc_conv in [None]:#, "Chisholm22"]: # None, 0.1, 0.2, 0.5,
+    #         calculator = Xi_Ion_Calculator(aper_diams[0], SED_fit_label, beta_dust_conv = beta_dust_conv, fesc_conv = fesc_conv)
+    #         calculator(JOF_cat, n_chains = 10_000, output = False, n_jobs = 1)
+    breakpoint()
+    MUV_calculator = MUV_Calculator(aper_diams[0], EAZY_fitter)
+    MUV_calculator(JOF_cat, n_chains = 10_000, output = False, n_jobs = 1)
 
 def test_pipes():
     
@@ -101,11 +104,11 @@ def test_UVLF():
         band_names = ["F277W", "F356W", "F444W"], \
         gtr_or_less = "gtr", lim = 45. * u.marcsec)
     ])
-    xi_ion_calc = Xi_Ion_Calculator(aper_diams[0], EAZY(SED_fit_params_arr[-1]), ext_src_corrs = None)
-    low_xi_ion = deepcopy(test_selection_criteria)
-    low_xi_ion.extend([Rest_Frame_Property_Limit_Selector(aper_diams[0], EAZY(SED_fit_params_arr[-1]), xi_ion_calc, 25.2 * u.Unit("dex(Hz/erg)"), "less")])
-    high_xi_ion = deepcopy(test_selection_criteria)
-    high_xi_ion.extend([Rest_Frame_Property_Limit_Selector(aper_diams[0], EAZY(SED_fit_params_arr[-1]), xi_ion_calc, 25.2 * u.Unit("dex(Hz/erg)"), "gtr")])
+    # xi_ion_calc = Xi_Ion_Calculator(aper_diams[0], EAZY(SED_fit_params_arr[-1]), ext_src_corrs = None)
+    # low_xi_ion = deepcopy(test_selection_criteria)
+    # low_xi_ion.extend([Rest_Frame_Property_Limit_Selector(aper_diams[0], EAZY(SED_fit_params_arr[-1]), xi_ion_calc, 25.2 * u.Unit("dex(Hz/erg)"), "less")])
+    # high_xi_ion = deepcopy(test_selection_criteria)
+    # high_xi_ion.extend([Rest_Frame_Property_Limit_Selector(aper_diams[0], EAZY(SED_fit_params_arr[-1]), xi_ion_calc, 25.2 * u.Unit("dex(Hz/erg)"), "gtr")])
     
     for crops in [
         test_selection_criteria,
@@ -123,7 +126,7 @@ def test_UVLF():
             aper_diams = aper_diams,
             forced_phot_band = forced_phot_band,
             min_flux_pc_err = min_flux_pc_err,
-            #crops = crops, #EPOCHS_Selector(aper_diams[0], EAZY(SED_fit_params_arr[-1]), allow_lowz=False)
+            crops = crops, #EPOCHS_Selector(aper_diams[0], EAZY(SED_fit_params_arr[-1]), allow_lowz=False)
         )
         #JOF_cat.load_sextractor_Re()
         #JOF_cat.load_sextractor_ext_src_corrs()
@@ -132,9 +135,10 @@ def test_UVLF():
             EAZY_fitter = EAZY(SED_fit_params)
             EAZY_fitter(JOF_cat, aper_diams[0], load_PDFs = True, load_SEDs = True, update = True)
             
-        xi_ion_calc(JOF_cat, n_chains = 10_000, output = False, n_jobs = 1)
-        Rest_Frame_Property_Limit_Selector(aper_diams[0], EAZY(SED_fit_params_arr[-1]), xi_ion_calc, 25.2 * u.Unit("dex(Hz/erg)"), "less")(JOF_cat)
-        breakpoint()
+        # xi_ion_calc(JOF_cat, n_chains = 10_000, output = False, n_jobs = 1)
+        # Rest_Frame_Property_Limit_Selector(aper_diams[0], EAZY(SED_fit_params_arr[-1]), xi_ion_calc, 25.2 * u.Unit("dex(Hz/erg)"), "less")(JOF_cat)
+        # Rest_Frame_Property_Limit_Selector(aper_diams[0], EAZY(SED_fit_params_arr[-1]), xi_ion_calc, 25.2 * u.Unit("dex(Hz/erg)"), "gtr")(JOF_cat)
+        # breakpoint()
 
         #Redwards_Lya_Detect_Selector(aper_diams[0], EAZY(SED_fit_params_arr[-1]), SNR_lims = [5.0], widebands_only = True)(JOF_cat)
         #Rest_Frame_Property_Limit_Selector(aper_diams[0], EAZY(SED_fit_params_arr[-1]), beta_calc, -2.2 * u.dimensionless_unscaled, "gtr")(JOF_cat)
@@ -213,7 +217,9 @@ def test_UVLF():
             [9.5, 11.5],
             [11.5, 13.5]
         ]
-        for z_bin, obs_author_years in zip(z_bins, obs_author_years):
+        prop_cycle = plt.rcParams['axes.prop_cycle']
+        colours = prop_cycle.by_key()['color']
+        for i, (z_bin, obs_author_years, colour) in enumerate(zip(z_bins, obs_author_years, colours)):
             UVLF = Number_Density_Function.from_single_cat(
                 JOF_cat,
                 MUV_calculator,
@@ -223,6 +229,18 @@ def test_UVLF():
                 SED_fit_code = EAZY_fitter,
                 x_origin = "phot_rest",
             )
+            from galfind import Flat_Prior, Priors, Schechter_Mag_Fitter
+            prior_arr = [
+                Flat_Prior("log10_phi_star", [-7.5, 2.5], -2.5),
+                Flat_Prior("M_star", [-25.0, -15.0], -20.0),
+                Flat_Prior("alpha", [-5., 3.], -1.5)
+            ]
+            priors = Priors(prior_arr)
+            UVLF.fit(Schechter_Mag_Fitter, priors, fixed_params = {}, n_walkers = 100, n_steps = 20_000)
+            corner_kwargs = {"color": colour, "sigma_arr": [2.0], "quantiles": [0.5]}
+            if i != 0:
+                corner_kwargs["fig"] = fig
+            fig = UVLF.fitter.plot_corner(**corner_kwargs)
             if UVLF is not None:
                 UVLF.plot(
                     obs_author_years=obs_author_years,
@@ -462,7 +480,32 @@ def main():
 def check_multinest():
     import pymultinest as pmn
 
+def test_data_load():
+    JOF_data = Data.pipeline(
+        survey,
+        version,
+        instrument_names = instrument_names,
+        version_to_dir_dict = morgan_version_to_dir,
+        aper_diams = aper_diams,
+        forced_phot_band = forced_phot_band,
+        min_flux_pc_err = min_flux_pc_err
+    )
+
+# def update_data_names():
+#     from astropy.io import fits
+#     for band in ["F435W", "F606W", "F775W", "F814W", "F850LP"]:
+#         for (ext, ext_name) in zip(["SCI", "WHT", "RMS"], ["drz", "wht", "rms_err"]):
+#             im_name = f"{band}_{ext}.fits"
+#             print(f"{band}_{ext}: {im_name}")
+#             path = f"/raid/scratch/data/hst/JADES-Deep-GS/ACS_WFC/mosaic_1084_wisptemp2/30mas/ACS_WFC_{band.lower()}_JADES-Deep-GS_{ext_name}.fits"
+#             #path = f"/raid/scratch/data/hst/JADES-Deep-GS/ACS_WFC/mosaic_1084_wisptemp2/30mas/ACS_WFC_{band}_JADES-Deep-GS_{ext_name}.fits"
+#             hdul = fits.open(path)
+#             breakpoint()
+#             hdul[0].header["EXTNAME"] = ext
+#             hdul.writeto(path, overwrite = True)
+
 if __name__ == "__main__":
+    #update_data_names()
     #test_load()
     #main()
     #test_selection()
@@ -470,6 +513,7 @@ if __name__ == "__main__":
     #split_UVLF_by_beta()
     #test_pipes()
     #check_multinest()
+    #test_data_load()
 
     # LePhare_SED_fit_params = {"GAL_TEMPLATES": "BC03_Chabrier2003_Z(m42_m62)"}
     # EAZY_SED_fit_params = {"templates": "fsps_larson", "lowz_zmax": None}

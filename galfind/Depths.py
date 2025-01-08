@@ -1622,7 +1622,7 @@ def append_loc_depth_cols(
             # make local depth error columns in image units
             if len(aper_diams) == 1:
                 cat[f"FLUXERR_APER_{band_data.filt_name}_loc_depth"] = \
-                    list(funcs.mag_to_flux(band_depths, band_data.ZP) / 5.0)
+                    list(funcs.mag_to_flux(np.array(band_depths), band_data.ZP) / 5.0)
             else:
                 cat[f"FLUXERR_APER_{band_data.filt_name}_loc_depth"] = [
                     tuple(

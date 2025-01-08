@@ -1641,11 +1641,10 @@ class Data:
                 ]
                 for filt in instrument.filt_names
             }
-            if len(filt_names_paths) == 0:
-                galfind_logger.warning(
-                    f"No data found for {survey} {version} {instr_name} in {search_dir}"
-                )
-                continue
+            if all(len(values) == 0 for values in filt_names_paths.values()):
+                err_message = f"No data found for {survey} {version} {instr_name} in {search_dir}"
+                galfind_logger.critical(err_message)
+                raise Exception(err_message)
             else:
                 bands_found = [
                     key
