@@ -168,6 +168,12 @@ from .SED import (
 from .Selector import (
     Selector, 
     Multiple_Selector,
+    Data_Selector,
+    Photometry_Selector,
+    SED_fit_Selector,
+    Multiple_Data_Selector,
+    Multiple_Photometry_Selector,
+    Multiple_SED_fit_Selector,
     Unmasked_Band_Selector, 
     Unmasked_Bands_Selector, 
     Unmasked_Instrument_Selector,
@@ -188,6 +194,10 @@ from .Selector import (
     Chi_Sq_Diff_Selector,
     Robust_zPDF_Selector,
     EPOCHS_Selector,
+    Redshift_Limit_Selector,
+    Redshift_Bin_Selector,
+    Rest_Frame_Property_Limit_Selector,
+    Rest_Frame_Property_Bin_Selector,
 )
 
 from .Emission_lines import Emission_line, wav_lyman_alpha, line_diagnostics
@@ -203,10 +213,13 @@ from .Spectrum import (
     Spectral_Filter,
     Spectral_Grating,
 )
+from .MCMC import Prior, Flat_Prior, Priors, MCMC_Fitter, Schechter_Mag_Fitter, Schechter_Lum_Fitter
 from .Number_Density_Function import (
     Base_Number_Density_Function,
     Number_Density_Function,
 )  # UVLFs, mass functions, etc
+
+from .Property_calculator import Property_Calculator
 
 from .Rest_frame_properties import (
     Rest_Frame_Property_Calculator,
@@ -224,4 +237,5 @@ from .Rest_frame_properties import (
     Optical_Line_Flux_Calculator,
     Optical_Line_Luminosity_Calculator,
     Xi_Ion_Calculator,
+    SFR_Halpha_Calculator,
 )

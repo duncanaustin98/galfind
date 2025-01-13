@@ -603,7 +603,7 @@ class Bagpipes(SED_code):
         galfind_logger.info(f"Fitting bagpipes with {fit_instructions=}")
         try:
             run_parallel = False
-            fit_cat.fit(verbose = True, mpi_serial = run_parallel, sampler = self.sampler)
+            fit_cat.fit(verbose = False, mpi_serial = run_parallel, sampler = self.sampler)
         except Exception as e:
             raise e
 

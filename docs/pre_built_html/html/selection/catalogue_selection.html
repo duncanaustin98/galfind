@@ -96,8 +96,8 @@
 <h1>Catalogue selection methods<a class="headerlink" href="#Catalogue-selection-methods" title="Link to this heading"></a></h1>
 <p>In this notebook, we will utilize the <code class="docutils literal notranslate"><span class="pre">Galaxy</span></code> class selection methods of galaxies stored in the <code class="docutils literal notranslate"><span class="pre">Catalogue</span></code> object to create boolean selection columns in the outputted fits table. These boolean columns can be loaded back in to new <code class="docutils literal notranslate"><span class="pre">Catalogue</span></code> objects directly from the fits catalogue upon load-in, handy for any subsequent plotting of cutouts, scaling relations, and UV LF / mass function generation. While the details on the available galaxy selection techniques are outlined in the <a class="reference internal" href="galaxy_selection.html"><span class="doc">Galaxy
 selection notebook</span></a>, we will show the catalogue level implementation of the EPOCHS selection here. It is worth noting that all other galaxy selection options are also available on a catalogue scale.</p>
-<div class="nbinput nblast docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[ ]:
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[1]:
 </pre></div>
 </div>
 <div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="c1"># imports</span>
@@ -107,8 +107,42 @@ selection notebook</span></a>, we will show the catalogue level implementation o
 </pre></div>
 </div>
 </div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area stderr docutils container">
+<div class="highlight"><pre>
+WARNING:galfind:Could not change permissions of /raid/scratch/work/austind/GALFIND_WORK/Log_files/2024-12-11.log to 777.
+</pre></div></div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+Reading GALFIND config file from: /nvme/scratch/work/austind/GALFIND/galfind/../configs/galfind_config.ini
+</pre></div></div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area stderr docutils container">
+<div class="highlight"><pre>
+WARNING:galfind:Aperture corrections for VISTA not found in /nvme/scratch/work/austind/GALFIND/galfind/Aperture_corrections/VISTA_aper_corr.txt
+WARNING:galfind:Aperture corrections for VISTA not found in /nvme/scratch/work/austind/GALFIND/galfind/Aperture_corrections/VISTA_aper_corr.txt
+</pre></div></div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+Failed to `import dust_attenuation`
+Install from the repo with $ pip install git+https://github.com/karllark/dust_attenuation.git
+</pre></div></div>
+</div>
 <div class="nbinput docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[ ]:
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[2]:
 </pre></div>
 </div>
 <div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">survey</span> <span class="o">=</span> <span class="s2">&quot;JOF&quot;</span>
@@ -147,32 +181,6 @@ selection notebook</span></a>, we will show the catalogue level implementation o
 <div class="nboutput docutils container">
 <div class="prompt empty docutils container">
 </div>
-<div class="output_area docutils container">
-<div class="highlight"><pre>
-Reading GALFIND config file from: /nvme/scratch/work/austind/GALFIND/galfind/../configs/galfind_config.ini
-</pre></div></div>
-</div>
-<div class="nboutput docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area stderr docutils container">
-<div class="highlight"><pre>
-WARNING:galfind:Aperture corrections for VISTA not found in /nvme/scratch/work/austind/GALFIND/galfind/Aperture_corrections/VISTA_aper_corr.txt
-WARNING:galfind:Aperture corrections for VISTA not found in /nvme/scratch/work/austind/GALFIND/galfind/Aperture_corrections/VISTA_aper_corr.txt
-</pre></div></div>
-</div>
-<div class="nboutput docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area docutils container">
-<div class="highlight"><pre>
-Failed to `import dust_attenuation`
-Install from the repo with $ pip install git+https://github.com/karllark/dust_attenuation.git
-</pre></div></div>
-</div>
-<div class="nboutput docutils container">
-<div class="prompt empty docutils container">
-</div>
 <div class="output_area stderr docutils container">
 <div class="highlight"><pre>
 INFO:galfind:Loaded aper_diams=&lt;Quantity [0.32] arcsec&gt; for F277W+F356W+F444W
@@ -188,52 +196,10 @@ INFO:galfind:Making JOF v11 JOF_MASTER_Sel-F277W+F356W+F444W_v11 catalogue!
 WARNING:galfind:cat_aper_diams not in kwargs.keys()=dict_keys([&#39;ZP&#39;, &#39;min_flux_pc_err&#39;])! Setting to aper_diams=&lt;Quantity [0.32] arcsec&gt;
 WARNING:galfind:cat_aper_diams not in kwargs.keys()=dict_keys([&#39;ZP&#39;, &#39;min_flux_pc_err&#39;])! Setting to aper_diams=&lt;Quantity [0.32] arcsec&gt;
 WARNING:galfind:cat_aper_diams not in kwargs.keys()=dict_keys([])! Setting to aper_diams=&lt;Quantity [0.32] arcsec&gt;
-WARNING:galfind:cat_type = cat_type=&#39;selection&#39; not in [&#39;ID&#39;, &#39;sky_coord&#39;, &#39;phot&#39;, &#39;mask&#39;, &#39;depths&#39;] and not a valid HDU extension in /raid/scratch/work/austind/GALFIND_WORK/Catalogues/v11/NIRCam/JOF/(0.32)as/JOF_MASTER_Sel-F277W+F356W+F444W_v11.fits!
-WARNING:galfind:selection tab is None!
 INFO:galfind:Made /raid/scratch/work/austind/GALFIND_WORK/Catalogues/v11/NIRCam/JOF/(0.32)as/JOF_MASTER_Sel-F277W+F356W+F444W_v11.fits catalogue!
 INFO:galfind:Loaded FLUX_RADIUS from /raid/scratch/work/austind/GALFIND_WORK/Catalogues/v11/NIRCam/JOF/(0.32)as/JOF_MASTER_Sel-F277W+F356W+F444W_v11.fits saved as sex_Re for cat_band_properties[0].keys()=dict_keys([&#39;F090W&#39;, &#39;F115W&#39;, &#39;F150W&#39;, &#39;F162M&#39;, &#39;F182M&#39;, &#39;F200W&#39;, &#39;F210M&#39;, &#39;F250M&#39;, &#39;F277W&#39;, &#39;F300M&#39;, &#39;F335M&#39;, &#39;F356W&#39;, &#39;F410M&#39;, &#39;F444W&#39;])
 INFO:galfind:Making .in file for EAZY_fsps_larson_zmax=4.0 SED fitting for JOF v11 NIRCam
 INFO:galfind:Made .in file for EAZY_fsps_larson_zmax=4.0 SED fitting for JOF v11 NIRCam.
-</pre></div></div>
-</div>
-<div class="nboutput docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area docutils container">
-<div class="highlight"><pre>
-Running SED fitting took 0.1s
-</pre></div></div>
-</div>
-<div class="nboutput docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area stderr docutils container">
-<div class="highlight"><pre>
-INFO:galfind:Loading EAZY_fsps_larson property PDFs into JOF v11 NIRCam
-</pre></div></div>
-</div>
-<div class="nboutput docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area docutils container">
-<div class="highlight"><pre>
-Loading properties and associated errors took 1.3s
-</pre></div></div>
-</div>
-<div class="nboutput docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area stderr docutils container">
-<div class="highlight"><pre>
-Constructing redshift PDFs: 100%|██████████| 16335/16335 [00:00&lt;00:00, 64379.56it/s]
-INFO:galfind:Finished loading EAZY_fsps_larson property PDFs into JOF v11 NIRCam
-INFO:galfind:Loading EAZY_fsps_larson SEDs into JOF v11 NIRCam
-Constructing SEDs: 100%|██████████| 16335/16335 [00:01&lt;00:00, 10705.98it/s]
-INFO:galfind:Finished loading EAZY_fsps_larson SEDs into JOF v11 NIRCam
-INFO:galfind:Updating SED results in galfind catalogue object
-Updating galaxy SED results: 100%|██████████| 16335/16335 [00:00&lt;00:00, 153220.57it/s]
-INFO:galfind:Making .in file for EAZY_fsps_larson_zmax=6.0 SED fitting for JOF v11 NIRCam
-INFO:galfind:Made .in file for EAZY_fsps_larson_zmax=6.0 SED fitting for JOF v11 NIRCam.
 </pre></div></div>
 </div>
 <div class="nboutput docutils container">
@@ -265,13 +231,53 @@ Loading properties and associated errors took 1.4s
 </div>
 <div class="output_area stderr docutils container">
 <div class="highlight"><pre>
-Constructing redshift PDFs: 100%|██████████| 16335/16335 [00:00&lt;00:00, 57103.15it/s]
+Constructing redshift PDFs: 100%|██████████| 16335/16335 [00:00&lt;00:00, 57825.10it/s]
 INFO:galfind:Finished loading EAZY_fsps_larson property PDFs into JOF v11 NIRCam
 INFO:galfind:Loading EAZY_fsps_larson SEDs into JOF v11 NIRCam
-Constructing SEDs: 100%|██████████| 16335/16335 [00:01&lt;00:00, 9820.70it/s]
+Constructing SEDs: 100%|██████████| 16335/16335 [00:01&lt;00:00, 12404.10it/s]
 INFO:galfind:Finished loading EAZY_fsps_larson SEDs into JOF v11 NIRCam
 INFO:galfind:Updating SED results in galfind catalogue object
-Updating galaxy SED results: 100%|██████████| 16335/16335 [00:00&lt;00:00, 165499.44it/s]
+Updating galaxy SED results: 100%|██████████| 16335/16335 [00:00&lt;00:00, 157758.30it/s]
+INFO:galfind:Making .in file for EAZY_fsps_larson_zmax=6.0 SED fitting for JOF v11 NIRCam
+INFO:galfind:Made .in file for EAZY_fsps_larson_zmax=6.0 SED fitting for JOF v11 NIRCam.
+</pre></div></div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+Running SED fitting took 0.1s
+</pre></div></div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area stderr docutils container">
+<div class="highlight"><pre>
+INFO:galfind:Loading EAZY_fsps_larson property PDFs into JOF v11 NIRCam
+</pre></div></div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+Loading properties and associated errors took 1.3s
+</pre></div></div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area stderr docutils container">
+<div class="highlight"><pre>
+Constructing redshift PDFs: 100%|██████████| 16335/16335 [00:00&lt;00:00, 58049.29it/s]
+INFO:galfind:Finished loading EAZY_fsps_larson property PDFs into JOF v11 NIRCam
+INFO:galfind:Loading EAZY_fsps_larson SEDs into JOF v11 NIRCam
+Constructing SEDs: 100%|██████████| 16335/16335 [00:01&lt;00:00, 8771.30it/s]
+INFO:galfind:Finished loading EAZY_fsps_larson SEDs into JOF v11 NIRCam
+INFO:galfind:Updating SED results in galfind catalogue object
+Updating galaxy SED results: 100%|██████████| 16335/16335 [00:00&lt;00:00, 114869.76it/s]
 INFO:galfind:Making .in file for EAZY_fsps_larson_zfree SED fitting for JOF v11 NIRCam
 INFO:galfind:Made .in file for EAZY_fsps_larson_zfree SED fitting for JOF v11 NIRCam.
 </pre></div></div>
@@ -297,7 +303,7 @@ INFO:galfind:Loading EAZY_fsps_larson property PDFs into JOF v11 NIRCam
 </div>
 <div class="output_area docutils container">
 <div class="highlight"><pre>
-Loading properties and associated errors took 1.6s
+Loading properties and associated errors took 1.3s
 </pre></div></div>
 </div>
 <div class="nboutput docutils container">
@@ -305,13 +311,13 @@ Loading properties and associated errors took 1.6s
 </div>
 <div class="output_area stderr docutils container">
 <div class="highlight"><pre>
-Constructing redshift PDFs: 100%|██████████| 16335/16335 [00:00&lt;00:00, 57600.55it/s]
+Constructing redshift PDFs: 100%|██████████| 16335/16335 [00:00&lt;00:00, 45896.80it/s]
 INFO:galfind:Finished loading EAZY_fsps_larson property PDFs into JOF v11 NIRCam
 INFO:galfind:Loading EAZY_fsps_larson SEDs into JOF v11 NIRCam
-Constructing SEDs: 100%|██████████| 16335/16335 [00:01&lt;00:00, 10839.12it/s]
+Constructing SEDs: 100%|██████████| 16335/16335 [00:02&lt;00:00, 7851.67it/s]
 INFO:galfind:Finished loading EAZY_fsps_larson SEDs into JOF v11 NIRCam
 INFO:galfind:Updating SED results in galfind catalogue object
-Updating galaxy SED results: 100%|██████████| 16335/16335 [00:00&lt;00:00, 190991.38it/s]
+Updating galaxy SED results: 100%|██████████| 16335/16335 [00:00&lt;00:00, 121496.96it/s]
 WARNING: hdu= was not specified but multiple tables are present, reading in first available table (hdu=1) [astropy.io.fits.connect]
 WARNING:astroquery:hdu= was not specified but multiple tables are present, reading in first available table (hdu=1)
 </pre></div></div>
@@ -341,12 +347,12 @@ FILTERS: [&#39;F090W&#39;, &#39;F115W&#39;, &#39;F150W&#39;, &#39;F162M&#39;, &#
 </div>
 <p>Now that we have loaded the blank catalogue, we will perform the selection. Since we are running on a <code class="docutils literal notranslate"><span class="pre">Catalogue</span></code> this time around instead of a <code class="docutils literal notranslate"><span class="pre">Galaxy</span></code> (as in <a class="reference internal" href="galaxy_selection.html"><span class="doc">Galaxy Selection, Example 4</span></a>), we do not need to insert the catalogue filterset when instantiating <code class="docutils literal notranslate"><span class="pre">EPOCHS_Selector</span></code> as this information is already stored in the catalogue we are running.</p>
 <div class="nbinput docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[2]:
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[3]:
 </pre></div>
 </div>
 <div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="c1"># perform EPOCHS selection</span>
-<span class="n">epochs_selector</span> <span class="o">=</span> <span class="n">EPOCHS_Selector</span><span class="p">(</span><span class="n">allow_lowz</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span> <span class="n">unmasked_instruments</span> <span class="o">=</span> <span class="s2">&quot;NIRCam&quot;</span><span class="p">)</span>
-<span class="n">EPOCHS_JOF_cat</span> <span class="o">=</span> <span class="n">epochs_selector</span><span class="p">(</span><span class="n">JOF_cat</span><span class="p">,</span> <span class="n">aper_diams</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">EAZY_fitter</span><span class="p">,</span> <span class="n">return_copy</span> <span class="o">=</span> <span class="kc">True</span><span class="p">)</span>
+<span class="n">epochs_selector</span> <span class="o">=</span> <span class="n">EPOCHS_Selector</span><span class="p">(</span><span class="n">aper_diams</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">EAZY_fitter</span><span class="p">,</span> <span class="n">allow_lowz</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span> <span class="n">unmasked_instruments</span> <span class="o">=</span> <span class="s2">&quot;NIRCam&quot;</span><span class="p">)</span>
+<span class="n">EPOCHS_JOF_cat</span> <span class="o">=</span> <span class="n">epochs_selector</span><span class="p">(</span><span class="n">JOF_cat</span><span class="p">,</span> <span class="n">return_copy</span> <span class="o">=</span> <span class="kc">True</span><span class="p">)</span>
 </pre></div>
 </div>
 </div>
@@ -355,95 +361,66 @@ FILTERS: [&#39;F090W&#39;, &#39;F115W&#39;, &#39;F150W&#39;, &#39;F162M&#39;, &#
 </div>
 <div class="output_area stderr docutils container">
 <div class="highlight"><pre>
-Selecting bluewards_Lya_SNR&lt;2.0_EAZY_fsps_larson_zfree_0.32as:   0%|          | 0/16335 [00:00&lt;?, ?it/s]Selecting bluewards_Lya_SNR&lt;2.0_EAZY_fsps_larson_zfree_0.32as: 100%|██████████| 16335/16335 [00:07&lt;00:00, 2226.65it/s]
-WARNING:galfind:hdu=&#39;SELECTION&#39; does not exist in self.cat_path=&#39;/raid/scratch/work/austind/GALFIND_WORK/Catalogues/v11/NIRCam/JOF/(0.32)as/JOF_MASTER_Sel-F277W+F356W+F444W_v11.fits&#39;!
-INFO:galfind:Appending property_name=&#39;bluewards_Lya_SNR&lt;2.0_EAZY_fsps_larson_zfree_0.32as&#39; to hdu=&#39;SELECTION&#39; .fits table!
-INFO:galfind:Writing table to /raid/scratch/work/austind/GALFIND_WORK/Catalogues/v11/NIRCam/JOF/(0.32)as/JOF_MASTER_Sel-F277W+F356W+F444W_v11.fits
-Selecting redwards_Lya_SNR&gt;5.0,5.0_widebands_EAZY_fsps_larson_zfree_0.32as: 100%|██████████| 16335/16335 [00:10&lt;00:00, 1632.60it/s]
-INFO:galfind:Appending property_name=&#39;redwards_Lya_SNR&gt;5.0,5.0_widebands_EAZY_fsps_larson_zfree_0.32as&#39; to hdu=&#39;SELECTION&#39; .fits table!
-INFO:galfind:Writing table to /raid/scratch/work/austind/GALFIND_WORK/Catalogues/v11/NIRCam/JOF/(0.32)as/JOF_MASTER_Sel-F277W+F356W+F444W_v11.fits
-Selecting ALL_redwards_Lya_SNR&gt;2.0_EAZY_fsps_larson_zfree_0.32as: 100%|██████████| 16335/16335 [00:07&lt;00:00, 2047.44it/s]
-INFO:galfind:Appending property_name=&#39;ALL_redwards_Lya_SNR&gt;2.0_EAZY_fsps_larson_zfree_0.32as&#39; to hdu=&#39;SELECTION&#39; .fits table!
-INFO:galfind:Writing table to /raid/scratch/work/austind/GALFIND_WORK/Catalogues/v11/NIRCam/JOF/(0.32)as/JOF_MASTER_Sel-F277W+F356W+F444W_v11.fits
-Selecting red_chi_sq&lt;3.0_EAZY_fsps_larson_zfree_0.32as: 100%|██████████| 16335/16335 [00:00&lt;00:00, 22113.73it/s]
-INFO:galfind:Appending property_name=&#39;red_chi_sq&lt;3.0_EAZY_fsps_larson_zfree_0.32as&#39; to hdu=&#39;SELECTION&#39; .fits table!
-INFO:galfind:Writing table to /raid/scratch/work/austind/GALFIND_WORK/Catalogues/v11/NIRCam/JOF/(0.32)as/JOF_MASTER_Sel-F277W+F356W+F444W_v11.fits
-Selecting chi_sq_diff&gt;4.0,dz&gt;0.5_EAZY_fsps_larson_zfree_0.32as: 100%|██████████| 16335/16335 [00:01&lt;00:00, 9690.94it/s]
-INFO:galfind:Appending property_name=&#39;chi_sq_diff&gt;4.0,dz&gt;0.5_EAZY_fsps_larson_zfree_0.32as&#39; to hdu=&#39;SELECTION&#39; .fits table!
-INFO:galfind:Writing table to /raid/scratch/work/austind/GALFIND_WORK/Catalogues/v11/NIRCam/JOF/(0.32)as/JOF_MASTER_Sel-F277W+F356W+F444W_v11.fits
-Selecting zPDF&gt;60%,|dz|/z&lt;0.1_EAZY_fsps_larson_zfree_0.32as: 100%|██████████| 16335/16335 [00:03&lt;00:00, 4473.76it/s]
-INFO:galfind:Appending property_name=&#39;zPDF&gt;60%,|dz|/z&lt;0.1_EAZY_fsps_larson_zfree_0.32as&#39; to hdu=&#39;SELECTION&#39; .fits table!
-INFO:galfind:Writing table to /raid/scratch/work/austind/GALFIND_WORK/Catalogues/v11/NIRCam/JOF/(0.32)as/JOF_MASTER_Sel-F277W+F356W+F444W_v11.fits
-Selecting unmasked_F090W: 100%|██████████| 16335/16335 [00:00&lt;00:00, 44225.58it/s]
-INFO:galfind:Appending property_name=&#39;unmasked_F090W&#39; to hdu=&#39;SELECTION&#39; .fits table!
-INFO:galfind:Writing table to /raid/scratch/work/austind/GALFIND_WORK/Catalogues/v11/NIRCam/JOF/(0.32)as/JOF_MASTER_Sel-F277W+F356W+F444W_v11.fits
-Selecting unmasked_F115W: 100%|██████████| 16335/16335 [00:00&lt;00:00, 45585.44it/s]
-INFO:galfind:Appending property_name=&#39;unmasked_F115W&#39; to hdu=&#39;SELECTION&#39; .fits table!
-INFO:galfind:Writing table to /raid/scratch/work/austind/GALFIND_WORK/Catalogues/v11/NIRCam/JOF/(0.32)as/JOF_MASTER_Sel-F277W+F356W+F444W_v11.fits
-Selecting unmasked_F150W: 100%|██████████| 16335/16335 [00:00&lt;00:00, 42910.80it/s]
-INFO:galfind:Appending property_name=&#39;unmasked_F150W&#39; to hdu=&#39;SELECTION&#39; .fits table!
-INFO:galfind:Writing table to /raid/scratch/work/austind/GALFIND_WORK/Catalogues/v11/NIRCam/JOF/(0.32)as/JOF_MASTER_Sel-F277W+F356W+F444W_v11.fits
-Selecting unmasked_F162M: 100%|██████████| 16335/16335 [00:00&lt;00:00, 45532.00it/s]
-INFO:galfind:Appending property_name=&#39;unmasked_F162M&#39; to hdu=&#39;SELECTION&#39; .fits table!
-INFO:galfind:Writing table to /raid/scratch/work/austind/GALFIND_WORK/Catalogues/v11/NIRCam/JOF/(0.32)as/JOF_MASTER_Sel-F277W+F356W+F444W_v11.fits
-Selecting unmasked_F182M: 100%|██████████| 16335/16335 [00:00&lt;00:00, 39436.12it/s]
-INFO:galfind:Appending property_name=&#39;unmasked_F182M&#39; to hdu=&#39;SELECTION&#39; .fits table!
-INFO:galfind:Writing table to /raid/scratch/work/austind/GALFIND_WORK/Catalogues/v11/NIRCam/JOF/(0.32)as/JOF_MASTER_Sel-F277W+F356W+F444W_v11.fits
-Selecting unmasked_F200W: 100%|██████████| 16335/16335 [00:00&lt;00:00, 29474.78it/s]
-INFO:galfind:Appending property_name=&#39;unmasked_F200W&#39; to hdu=&#39;SELECTION&#39; .fits table!
-INFO:galfind:Writing table to /raid/scratch/work/austind/GALFIND_WORK/Catalogues/v11/NIRCam/JOF/(0.32)as/JOF_MASTER_Sel-F277W+F356W+F444W_v11.fits
-Selecting unmasked_F210M: 100%|██████████| 16335/16335 [00:00&lt;00:00, 36769.14it/s]
-INFO:galfind:Appending property_name=&#39;unmasked_F210M&#39; to hdu=&#39;SELECTION&#39; .fits table!
-INFO:galfind:Writing table to /raid/scratch/work/austind/GALFIND_WORK/Catalogues/v11/NIRCam/JOF/(0.32)as/JOF_MASTER_Sel-F277W+F356W+F444W_v11.fits
-Selecting unmasked_F250M: 100%|██████████| 16335/16335 [00:00&lt;00:00, 44106.66it/s]
-INFO:galfind:Appending property_name=&#39;unmasked_F250M&#39; to hdu=&#39;SELECTION&#39; .fits table!
-INFO:galfind:Writing table to /raid/scratch/work/austind/GALFIND_WORK/Catalogues/v11/NIRCam/JOF/(0.32)as/JOF_MASTER_Sel-F277W+F356W+F444W_v11.fits
-Selecting unmasked_F277W: 100%|██████████| 16335/16335 [00:00&lt;00:00, 42518.25it/s]
-INFO:galfind:Appending property_name=&#39;unmasked_F277W&#39; to hdu=&#39;SELECTION&#39; .fits table!
-INFO:galfind:Writing table to /raid/scratch/work/austind/GALFIND_WORK/Catalogues/v11/NIRCam/JOF/(0.32)as/JOF_MASTER_Sel-F277W+F356W+F444W_v11.fits
-Selecting unmasked_F300M: 100%|██████████| 16335/16335 [00:00&lt;00:00, 43876.90it/s]
-INFO:galfind:Appending property_name=&#39;unmasked_F300M&#39; to hdu=&#39;SELECTION&#39; .fits table!
-INFO:galfind:Writing table to /raid/scratch/work/austind/GALFIND_WORK/Catalogues/v11/NIRCam/JOF/(0.32)as/JOF_MASTER_Sel-F277W+F356W+F444W_v11.fits
-Selecting unmasked_F335M: 100%|██████████| 16335/16335 [00:00&lt;00:00, 42378.97it/s]
-INFO:galfind:Appending property_name=&#39;unmasked_F335M&#39; to hdu=&#39;SELECTION&#39; .fits table!
-INFO:galfind:Writing table to /raid/scratch/work/austind/GALFIND_WORK/Catalogues/v11/NIRCam/JOF/(0.32)as/JOF_MASTER_Sel-F277W+F356W+F444W_v11.fits
-Selecting unmasked_F356W: 100%|██████████| 16335/16335 [00:00&lt;00:00, 39992.74it/s]
-INFO:galfind:Appending property_name=&#39;unmasked_F356W&#39; to hdu=&#39;SELECTION&#39; .fits table!
-INFO:galfind:Writing table to /raid/scratch/work/austind/GALFIND_WORK/Catalogues/v11/NIRCam/JOF/(0.32)as/JOF_MASTER_Sel-F277W+F356W+F444W_v11.fits
-Selecting unmasked_F410M: 100%|██████████| 16335/16335 [00:00&lt;00:00, 41598.59it/s]
-INFO:galfind:Appending property_name=&#39;unmasked_F410M&#39; to hdu=&#39;SELECTION&#39; .fits table!
-INFO:galfind:Writing table to /raid/scratch/work/austind/GALFIND_WORK/Catalogues/v11/NIRCam/JOF/(0.32)as/JOF_MASTER_Sel-F277W+F356W+F444W_v11.fits
-Selecting unmasked_F444W: 100%|██████████| 16335/16335 [00:00&lt;00:00, 42591.26it/s]
-INFO:galfind:Appending property_name=&#39;unmasked_F444W&#39; to hdu=&#39;SELECTION&#39; .fits table!
-INFO:galfind:Writing table to /raid/scratch/work/austind/GALFIND_WORK/Catalogues/v11/NIRCam/JOF/(0.32)as/JOF_MASTER_Sel-F277W+F356W+F444W_v11.fits
-Selecting unmasked_NIRCam: 100%|██████████| 16335/16335 [00:05&lt;00:00, 3249.06it/s]
-INFO:galfind:Appending property_name=&#39;unmasked_NIRCam&#39; to hdu=&#39;SELECTION&#39; .fits table!
-INFO:galfind:Writing table to /raid/scratch/work/austind/GALFIND_WORK/Catalogues/v11/NIRCam/JOF/(0.32)as/JOF_MASTER_Sel-F277W+F356W+F444W_v11.fits
-Selecting bluest_band_SNR&lt;2.0_0.32as: 100%|██████████| 16335/16335 [00:06&lt;00:00, 2337.70it/s]
-INFO:galfind:Appending property_name=&#39;bluest_band_SNR&lt;2.0_0.32as&#39; to hdu=&#39;SELECTION&#39; .fits table!
-INFO:galfind:Writing table to /raid/scratch/work/austind/GALFIND_WORK/Catalogues/v11/NIRCam/JOF/(0.32)as/JOF_MASTER_Sel-F277W+F356W+F444W_v11.fits
-Selecting sex_Re_F277W&gt;45.0mas: 100%|██████████| 16335/16335 [00:00&lt;00:00, 37485.80it/s]
-INFO:galfind:Appending property_name=&#39;sex_Re_F277W&gt;45.0mas&#39; to hdu=&#39;SELECTION&#39; .fits table!
-INFO:galfind:Writing table to /raid/scratch/work/austind/GALFIND_WORK/Catalogues/v11/NIRCam/JOF/(0.32)as/JOF_MASTER_Sel-F277W+F356W+F444W_v11.fits
-Selecting sex_Re_F356W&gt;45.0mas: 100%|██████████| 16335/16335 [00:00&lt;00:00, 38407.03it/s]
-INFO:galfind:Appending property_name=&#39;sex_Re_F356W&gt;45.0mas&#39; to hdu=&#39;SELECTION&#39; .fits table!
-INFO:galfind:Writing table to /raid/scratch/work/austind/GALFIND_WORK/Catalogues/v11/NIRCam/JOF/(0.32)as/JOF_MASTER_Sel-F277W+F356W+F444W_v11.fits
-Selecting sex_Re_F444W&gt;45.0mas: 100%|██████████| 16335/16335 [00:00&lt;00:00, 40306.76it/s]
-INFO:galfind:Appending property_name=&#39;sex_Re_F444W&gt;45.0mas&#39; to hdu=&#39;SELECTION&#39; .fits table!
-INFO:galfind:Writing table to /raid/scratch/work/austind/GALFIND_WORK/Catalogues/v11/NIRCam/JOF/(0.32)as/JOF_MASTER_Sel-F277W+F356W+F444W_v11.fits
-Selecting sex_Re_F277W+F356W+F444W&gt;45.0mas: 100%|██████████| 16335/16335 [00:00&lt;00:00, 25470.28it/s]
-INFO:galfind:Appending property_name=&#39;sex_Re_F277W+F356W+F444W&gt;45.0mas&#39; to hdu=&#39;SELECTION&#39; .fits table!
-INFO:galfind:Writing table to /raid/scratch/work/austind/GALFIND_WORK/Catalogues/v11/NIRCam/JOF/(0.32)as/JOF_MASTER_Sel-F277W+F356W+F444W_v11.fits
-Selecting EPOCHS_NIRCam_EAZY_fsps_larson_zfree_0.32as: 100%|██████████| 16335/16335 [00:15&lt;00:00, 1088.78it/s]
-INFO:galfind:Appending property_name=&#39;EPOCHS_NIRCam_EAZY_fsps_larson_zfree_0.32as&#39; to hdu=&#39;SELECTION&#39; .fits table!
-INFO:galfind:Writing table to /raid/scratch/work/austind/GALFIND_WORK/Catalogues/v11/NIRCam/JOF/(0.32)as/JOF_MASTER_Sel-F277W+F356W+F444W_v11.fits
-WARNING: hdu= was not specified but multiple tables are present, reading in first available table (hdu=1) [astropy.io.fits.connect]
-WARNING:astroquery:hdu= was not specified but multiple tables are present, reading in first available table (hdu=1)
+Selecting bluewards_Lya_SNR&lt;2.0_EAZY_fsps_larson_zfree_0.32as:   0%|          | 0/16335 [00:00&lt;?, ?it/s]Selecting bluewards_Lya_SNR&lt;2.0_EAZY_fsps_larson_zfree_0.32as: 100%|██████████| 16335/16335 [00:00&lt;00:00, 82465.86it/s]
+WARNING:galfind:property_name=&#39;bluewards_Lya_SNR&lt;2.0_EAZY_fsps_larson_zfree_0.32as&#39; already appended to hdu=&#39;SELECTION&#39; .fits table, not overwriting!
+Selecting redwards_Lya_SNR&gt;5.0,5.0_widebands_EAZY_fsps_larson_zfree_0.32as: 100%|██████████| 16335/16335 [00:00&lt;00:00, 27624.17it/s]
+WARNING:galfind:property_name=&#39;redwards_Lya_SNR&gt;5.0,5.0_widebands_EAZY_fsps_larson_zfree_0.32as&#39; already appended to hdu=&#39;SELECTION&#39; .fits table, not overwriting!
+Selecting ALL_redwards_Lya_SNR&gt;2.0_widebands_EAZY_fsps_larson_zfree_0.32as: 100%|██████████| 16335/16335 [00:00&lt;00:00, 73698.42it/s]
+WARNING:galfind:property_name=&#39;ALL_redwards_Lya_SNR&gt;2.0_widebands_EAZY_fsps_larson_zfree_0.32as&#39; already appended to hdu=&#39;SELECTION&#39; .fits table, not overwriting!
+Selecting red_chi_sq&lt;3.0_EAZY_fsps_larson_zfree_0.32as: 100%|██████████| 16335/16335 [00:00&lt;00:00, 90268.24it/s]
+WARNING:galfind:property_name=&#39;red_chi_sq&lt;3.0_EAZY_fsps_larson_zfree_0.32as&#39; already appended to hdu=&#39;SELECTION&#39; .fits table, not overwriting!
+Selecting chi_sq_diff&gt;4.0,dz&gt;0.5_EAZY_fsps_larson_zfree_0.32as: 100%|██████████| 16335/16335 [00:00&lt;00:00, 78391.61it/s]
+WARNING:galfind:property_name=&#39;chi_sq_diff&gt;4.0,dz&gt;0.5_EAZY_fsps_larson_zfree_0.32as&#39; already appended to hdu=&#39;SELECTION&#39; .fits table, not overwriting!
+Selecting zPDF&gt;60%,|dz|/z&lt;0.1_EAZY_fsps_larson_zfree_0.32as: 100%|██████████| 16335/16335 [00:00&lt;00:00, 90060.12it/s]
+WARNING:galfind:property_name=&#39;zPDF&gt;60%,|dz|/z&lt;0.1_EAZY_fsps_larson_zfree_0.32as&#39; already appended to hdu=&#39;SELECTION&#39; .fits table, not overwriting!
+Selecting unmasked_F090W: 100%|██████████| 16335/16335 [00:00&lt;00:00, 407806.60it/s]
+WARNING:galfind:property_name=&#39;unmasked_F090W&#39; already appended to hdu=&#39;SELECTION&#39; .fits table, not overwriting!
+Selecting unmasked_F115W: 100%|██████████| 16335/16335 [00:00&lt;00:00, 428560.43it/s]
+WARNING:galfind:property_name=&#39;unmasked_F115W&#39; already appended to hdu=&#39;SELECTION&#39; .fits table, not overwriting!
+Selecting unmasked_F150W: 100%|██████████| 16335/16335 [00:00&lt;00:00, 457834.09it/s]
+WARNING:galfind:property_name=&#39;unmasked_F150W&#39; already appended to hdu=&#39;SELECTION&#39; .fits table, not overwriting!
+Selecting unmasked_F162M: 100%|██████████| 16335/16335 [00:00&lt;00:00, 465811.99it/s]
+WARNING:galfind:property_name=&#39;unmasked_F162M&#39; already appended to hdu=&#39;SELECTION&#39; .fits table, not overwriting!
+Selecting unmasked_F182M: 100%|██████████| 16335/16335 [00:00&lt;00:00, 436605.97it/s]
+WARNING:galfind:property_name=&#39;unmasked_F182M&#39; already appended to hdu=&#39;SELECTION&#39; .fits table, not overwriting!
+Selecting unmasked_F200W: 100%|██████████| 16335/16335 [00:00&lt;00:00, 416017.71it/s]
+WARNING:galfind:property_name=&#39;unmasked_F200W&#39; already appended to hdu=&#39;SELECTION&#39; .fits table, not overwriting!
+Selecting unmasked_F210M: 100%|██████████| 16335/16335 [00:00&lt;00:00, 406425.29it/s]
+WARNING:galfind:property_name=&#39;unmasked_F210M&#39; already appended to hdu=&#39;SELECTION&#39; .fits table, not overwriting!
+Selecting unmasked_F250M: 100%|██████████| 16335/16335 [00:00&lt;00:00, 350003.86it/s]
+WARNING:galfind:property_name=&#39;unmasked_F250M&#39; already appended to hdu=&#39;SELECTION&#39; .fits table, not overwriting!
+Selecting unmasked_F277W: 100%|██████████| 16335/16335 [00:00&lt;00:00, 337517.15it/s]
+WARNING:galfind:property_name=&#39;unmasked_F277W&#39; already appended to hdu=&#39;SELECTION&#39; .fits table, not overwriting!
+Selecting unmasked_F300M: 100%|██████████| 16335/16335 [00:00&lt;00:00, 339950.46it/s]
+WARNING:galfind:property_name=&#39;unmasked_F300M&#39; already appended to hdu=&#39;SELECTION&#39; .fits table, not overwriting!
+Selecting unmasked_F335M: 100%|██████████| 16335/16335 [00:00&lt;00:00, 374540.56it/s]
+WARNING:galfind:property_name=&#39;unmasked_F335M&#39; already appended to hdu=&#39;SELECTION&#39; .fits table, not overwriting!
+Selecting unmasked_F356W: 100%|██████████| 16335/16335 [00:00&lt;00:00, 345510.07it/s]
+WARNING:galfind:property_name=&#39;unmasked_F356W&#39; already appended to hdu=&#39;SELECTION&#39; .fits table, not overwriting!
+Selecting unmasked_F410M: 100%|██████████| 16335/16335 [00:00&lt;00:00, 400964.20it/s]
+WARNING:galfind:property_name=&#39;unmasked_F410M&#39; already appended to hdu=&#39;SELECTION&#39; .fits table, not overwriting!
+Selecting unmasked_F444W: 100%|██████████| 16335/16335 [00:00&lt;00:00, 365014.52it/s]
+WARNING:galfind:property_name=&#39;unmasked_F444W&#39; already appended to hdu=&#39;SELECTION&#39; .fits table, not overwriting!
+Selecting unmasked_NIRCam: 100%|██████████| 16335/16335 [00:00&lt;00:00, 474989.81it/s]
+WARNING:galfind:property_name=&#39;unmasked_NIRCam&#39; already appended to hdu=&#39;SELECTION&#39; .fits table, not overwriting!
+Selecting bluest_band_SNR&lt;2.0_0.32as: 100%|██████████| 16335/16335 [00:00&lt;00:00, 69916.41it/s]
+WARNING:galfind:property_name=&#39;bluest_band_SNR&lt;2.0_0.32as&#39; already appended to hdu=&#39;SELECTION&#39; .fits table, not overwriting!
+Selecting sex_Re_F277W&gt;45.0mas: 100%|██████████| 16335/16335 [00:00&lt;00:00, 97083.08it/s]
+WARNING:galfind:property_name=&#39;sex_Re_F277W&gt;45.0mas&#39; already appended to hdu=&#39;SELECTION&#39; .fits table, not overwriting!
+Selecting sex_Re_F356W&gt;45.0mas: 100%|██████████| 16335/16335 [00:00&lt;00:00, 94243.72it/s]
+WARNING:galfind:property_name=&#39;sex_Re_F356W&gt;45.0mas&#39; already appended to hdu=&#39;SELECTION&#39; .fits table, not overwriting!
+Selecting sex_Re_F444W&gt;45.0mas: 100%|██████████| 16335/16335 [00:00&lt;00:00, 83504.21it/s]
+WARNING:galfind:property_name=&#39;sex_Re_F444W&gt;45.0mas&#39; already appended to hdu=&#39;SELECTION&#39; .fits table, not overwriting!
+Selecting sex_Re_F277W+F356W+F444W&gt;45.0mas: 100%|██████████| 16335/16335 [00:00&lt;00:00, 349934.14it/s]
+WARNING:galfind:property_name=&#39;sex_Re_F277W+F356W+F444W&gt;45.0mas&#39; already appended to hdu=&#39;SELECTION&#39; .fits table, not overwriting!
+Selecting EPOCHS_NIRCam_EAZY_fsps_larson_zfree_0.32as: 100%|██████████| 16335/16335 [00:00&lt;00:00, 88523.67it/s]
+WARNING:galfind:property_name=&#39;EPOCHS_NIRCam_EAZY_fsps_larson_zfree_0.32as&#39; already appended to hdu=&#39;SELECTION&#39; .fits table, not overwriting!
+INFO:galfind:deepcopy(Catalogue)
 </pre></div></div>
 </div>
-<p>Let’s have a look at how this changes the <code class="docutils literal notranslate"><span class="pre">Catalogue</span></code> print statement.</p>
+<p>Of course we see that returning a deep copy of the catalogue object takes longer than not. Let’s have a look at how this changes the <code class="docutils literal notranslate"><span class="pre">Catalogue</span></code> print statement.</p>
 <div class="nbinput docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[3]:
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[4]:
 </pre></div>
 </div>
 <div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="nb">print</span><span class="p">(</span><span class="n">EPOCHS_JOF_cat</span><span class="p">)</span>
@@ -476,7 +453,7 @@ FILTERS: [&#39;F090W&#39;, &#39;F115W&#39;, &#39;F150W&#39;, &#39;F162M&#39;, &#
 <p>Fantastic! We now have a catalogue that has been cropped to only the EPOCHS sample.</p>
 <p>Once the selection has been run on the <code class="docutils literal notranslate"><span class="pre">Catalogue</span></code> object, it is saved in the fits catalogue and is automatically loaded back in immediately when re-initializing the catalogue.</p>
 <div class="nbinput docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[4]:
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[5]:
 </pre></div>
 </div>
 <div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">JOF_cat_new</span> <span class="o">=</span> <span class="n">Catalogue</span><span class="o">.</span><span class="n">pipeline</span><span class="p">(</span>
@@ -541,7 +518,7 @@ INFO:galfind:Loading EAZY_fsps_larson property PDFs into JOF v11 NIRCam
 </div>
 <div class="output_area docutils container">
 <div class="highlight"><pre>
-Loading properties and associated errors took 0.9s
+Loading properties and associated errors took 1.3s
 </pre></div></div>
 </div>
 <div class="nboutput docutils container">
@@ -549,13 +526,13 @@ Loading properties and associated errors took 0.9s
 </div>
 <div class="output_area stderr docutils container">
 <div class="highlight"><pre>
-Constructing redshift PDFs: 100%|██████████| 16335/16335 [00:00&lt;00:00, 61812.21it/s]
+Constructing redshift PDFs: 100%|██████████| 16335/16335 [00:00&lt;00:00, 52702.52it/s]
 INFO:galfind:Finished loading EAZY_fsps_larson property PDFs into JOF v11 NIRCam
 INFO:galfind:Loading EAZY_fsps_larson SEDs into JOF v11 NIRCam
-Constructing SEDs: 100%|██████████| 16335/16335 [00:01&lt;00:00, 13997.23it/s]
+Constructing SEDs: 100%|██████████| 16335/16335 [00:01&lt;00:00, 12606.34it/s]
 INFO:galfind:Finished loading EAZY_fsps_larson SEDs into JOF v11 NIRCam
 INFO:galfind:Updating SED results in galfind catalogue object
-Updating galaxy SED results: 100%|██████████| 16335/16335 [00:00&lt;00:00, 155117.39it/s]
+Updating galaxy SED results: 100%|██████████| 16335/16335 [00:00&lt;00:00, 109341.89it/s]
 INFO:galfind:Making .in file for EAZY_fsps_larson_zmax=6.0 SED fitting for JOF v11 NIRCam
 INFO:galfind:Made .in file for EAZY_fsps_larson_zmax=6.0 SED fitting for JOF v11 NIRCam.
 </pre></div></div>
@@ -581,7 +558,7 @@ INFO:galfind:Loading EAZY_fsps_larson property PDFs into JOF v11 NIRCam
 </div>
 <div class="output_area docutils container">
 <div class="highlight"><pre>
-Loading properties and associated errors took 2.1s
+Loading properties and associated errors took 2.7s
 </pre></div></div>
 </div>
 <div class="nboutput docutils container">
@@ -589,13 +566,13 @@ Loading properties and associated errors took 2.1s
 </div>
 <div class="output_area stderr docutils container">
 <div class="highlight"><pre>
-Constructing redshift PDFs: 100%|██████████| 16335/16335 [00:00&lt;00:00, 73632.12it/s]
+Constructing redshift PDFs: 100%|██████████| 16335/16335 [00:00&lt;00:00, 50266.21it/s]
 INFO:galfind:Finished loading EAZY_fsps_larson property PDFs into JOF v11 NIRCam
 INFO:galfind:Loading EAZY_fsps_larson SEDs into JOF v11 NIRCam
-Constructing SEDs: 100%|██████████| 16335/16335 [00:01&lt;00:00, 13353.57it/s]
+Constructing SEDs: 100%|██████████| 16335/16335 [00:01&lt;00:00, 10613.19it/s]
 INFO:galfind:Finished loading EAZY_fsps_larson SEDs into JOF v11 NIRCam
 INFO:galfind:Updating SED results in galfind catalogue object
-Updating galaxy SED results: 100%|██████████| 16335/16335 [00:00&lt;00:00, 164242.58it/s]
+Updating galaxy SED results: 100%|██████████| 16335/16335 [00:00&lt;00:00, 109709.92it/s]
 INFO:galfind:Making .in file for EAZY_fsps_larson_zfree SED fitting for JOF v11 NIRCam
 INFO:galfind:Made .in file for EAZY_fsps_larson_zfree SED fitting for JOF v11 NIRCam.
 </pre></div></div>
@@ -621,7 +598,7 @@ INFO:galfind:Loading EAZY_fsps_larson property PDFs into JOF v11 NIRCam
 </div>
 <div class="output_area docutils container">
 <div class="highlight"><pre>
-Loading properties and associated errors took 0.9s
+Loading properties and associated errors took 1.3s
 </pre></div></div>
 </div>
 <div class="nboutput nblast docutils container">
@@ -629,17 +606,17 @@ Loading properties and associated errors took 0.9s
 </div>
 <div class="output_area stderr docutils container">
 <div class="highlight"><pre>
-Constructing redshift PDFs: 100%|██████████| 16335/16335 [00:00&lt;00:00, 57692.22it/s]
+Constructing redshift PDFs: 100%|██████████| 16335/16335 [00:00&lt;00:00, 45106.84it/s]
 INFO:galfind:Finished loading EAZY_fsps_larson property PDFs into JOF v11 NIRCam
 INFO:galfind:Loading EAZY_fsps_larson SEDs into JOF v11 NIRCam
-Constructing SEDs: 100%|██████████| 16335/16335 [00:01&lt;00:00, 13687.70it/s]
+Constructing SEDs: 100%|██████████| 16335/16335 [00:01&lt;00:00, 10576.12it/s]
 INFO:galfind:Finished loading EAZY_fsps_larson SEDs into JOF v11 NIRCam
 INFO:galfind:Updating SED results in galfind catalogue object
-Updating galaxy SED results: 100%|██████████| 16335/16335 [00:00&lt;00:00, 192622.12it/s]
+Updating galaxy SED results: 100%|██████████| 16335/16335 [00:00&lt;00:00, 107419.12it/s]
 </pre></div></div>
 </div>
 <div class="nbinput docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[5]:
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[6]:
 </pre></div>
 </div>
 <div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="k">if</span> <span class="n">JOF_cat</span> <span class="o">==</span> <span class="n">JOF_cat_new</span><span class="p">:</span>
@@ -659,7 +636,7 @@ Catalogues are different
 </div>
 <p>Should you notice an error in, for instance, a custom selector, you can always delete the selection fits extension so that you don’t keep re-loading the dodgy results.</p>
 <div class="nbinput docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[6]:
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[7]:
 </pre></div>
 </div>
 <div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">JOF_cat_new</span><span class="o">.</span><span class="n">del_hdu</span><span class="p">(</span><span class="n">hdu</span> <span class="o">=</span> <span class="s2">&quot;SELECTION&quot;</span><span class="p">)</span>

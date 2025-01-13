@@ -77,7 +77,8 @@ morgan_version_to_dir = {
     "v10": "mosaic_1084_wispscale",
     "v11": "mosaic_1084_wispnathan",
     "v12": "mosaic_1210_wispnathan",
-    "v12test": "mosaic_1210_wispnathan_test"
+    "v12test": "mosaic_1210_wispnathan_test", # not sure if this is needed?
+    "v13": "mosaic_1293_wispnathan",
 }
 
 
@@ -656,7 +657,7 @@ class Band_Data_Base(ABC):
             for params in params_arr:
                 Depths.calc_band_depth(params)
             # load depths into object
-            self._load_depths(params_arr)
+            self._load_depths_from_params(params_arr)
         else:
             galfind_logger.warning(
                 f"Depths loaded for {self.filt_name}, skipping!"
@@ -702,7 +703,10 @@ class Band_Data_Base(ABC):
             )
         return params
 
-    def _load_depths(self, params: List[Tuple[Any, ...]]) -> NoReturn:
+    def _load_depths_from_params(
+        self: Self, 
+        params: List[Tuple[Any, ...]]
+    ) -> NoReturn:
         if hasattr(self, "depth_args"):
             if all(param[1] in self.depth_args.keys() for param in params):
                 galfind_logger.warning(
@@ -726,6 +730,14 @@ class Band_Data_Base(ABC):
             self.depth_args = {
                 param[1]: Depths.get_depth_args(param) for param in params
             }
+
+    def _load_depths(
+        self: Self,
+        aper_diam: u.Quantity,
+        mode: str
+    ) -> NoReturn:
+        params = (aper_diam, mode)
+        return self._load_depths_from_params([params])
 
     def plot_depths(
         self,
@@ -964,7 +976,7 @@ class Band_Data_Base(ABC):
 
     # can be simplified with new masks
     def calc_unmasked_area(
-        self,
+        self: Self,
         mask_type: str = "All",
     ) -> NoReturn:
         # calculate areas for given mask
@@ -1629,11 +1641,10 @@ class Data:
                 ]
                 for filt in instrument.filt_names
             }
-            if len(filt_names_paths) == 0:
-                galfind_logger.warning(
-                    f"No data found for {survey} {version} {instr_name} in {search_dir}"
-                )
-                continue
+            if all(len(values) == 0 for values in filt_names_paths.values()):
+                err_message = f"No data found for {survey} {version} {instr_name} in {search_dir}"
+                galfind_logger.critical(err_message)
+                raise Exception(err_message)
             else:
                 bands_found = [
                     key
@@ -2305,6 +2316,14 @@ class Data:
         if hasattr(self, "forced_phot_band"):
             self.forced_phot_band.load_aper_diams(aper_diams)
         [band_data.load_aper_diams(aper_diams) for band_data in self]
+    
+    def _load_depths(
+        self: Self,
+        aper_diam: u.Quantity,
+        mode: str
+    ) -> NoReturn:
+        [band_data._load_depths(aper_diam, mode) for band_data in self]
+        
 
     def psf_homogenize(self):
         raise(NotImplementedError())
@@ -2684,7 +2703,7 @@ class Data:
             # save properties to individual band_data objects
             for band_data in self_band_data_arr:
                 [
-                    band_data._load_depths(params)
+                    band_data._load_depths_from_params(params)
                     for _params in params
                     if _params[0] == band_data
                 ]
@@ -3148,12 +3167,12 @@ class Data:
 
 
     def calc_unmasked_area(
-        self,
+        self: Self,
         instr_or_band_name: Union[str, List[str]],
         mask_type: Union[str, List[str]] = "MASK",
         depth_regions: Optional[Union[str, List[str]]] = None,
-        out_units: u.Quantity = u.arcsec ** 2,
-    ) -> NoReturn:
+        out_units: u.Quantity = u.arcmin ** 2,
+    ) -> u.Quantity:
 
         if not hasattr(self, "unmasked_area"):
             self.unmasked_area = {}
@@ -3173,7 +3192,7 @@ class Data:
             area_tab = Table.read(area_tab_path)
             funcs.make_dirs(area_tab_path)
             area_tab_ = area_tab[(
-                (area_tab["masking_instrument_band"] == instr_or_band_save_name) \
+                (area_tab["mask_instr_band"] == instr_or_band_save_name) \
                 & (area_tab["mask_type"] == mask_save_name))]
             if len(area_tab_) == 0:
                 calculate = True
@@ -3231,10 +3250,20 @@ class Data:
                 "unmasked_area": [np.round(self.unmasked_area \
                     [instr_or_band_save_name][mask_save_name].to(out_units), 3)],
             }
+
             new_area_tab = Table(area_data)
             if Path(area_tab_path).is_file():
                 area_tab = vstack([area_tab, new_area_tab])
             else:
-                area_tab
+                area_tab = new_area_tab
             area_tab.write(area_tab_path, overwrite=True)
             funcs.change_file_permissions(area_tab_path)
+        # return unmasked area
+        unmasked_area = (
+            area_tab[
+                area_tab["mask_instr_band"]
+                == instr_or_band_save_name
+            ]["unmasked_area"][0]
+            * area_tab["unmasked_area"].unit
+        )
+        return unmasked_area
