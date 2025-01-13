@@ -245,13 +245,25 @@ class Photometry:
         self: Self,
         other: Union[
             str,
+            Type[Filter],
             Filter,
             Multiple_Filter,
             Self,
             List[Union[str, Filter, Multiple_Filter, Self]],
         ],
     ) -> Self:
-        pass
+        if isinstance(other, tuple(Filter.__subclasses__())) or isinstance(other, Filter):
+            filterset_copy = deepcopy(self.filterset)
+            filterset_copy -= other
+            old_index = np.where(np.array(self.filterset.band_names) == other.band_name)[0][0]
+            self.filterset = filterset_copy
+            new_fluxes = np.delete(self.flux, old_index)
+            new_flux_errs = np.delete(self.flux_errs, old_index)
+            new_depths = np.delete(self.depths, old_index)
+            self.flux = new_fluxes
+            self.flux_errs = new_flux_errs
+            self.depths = new_depths
+        return self
 
     def crop(self: Type[Self], indices: Union[List[int], NDArray[int]]) -> Self:
         copy = deepcopy(self)

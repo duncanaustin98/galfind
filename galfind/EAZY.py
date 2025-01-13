@@ -248,6 +248,7 @@ class EAZY(SED_code):
         save_SEDs: bool = True,
         save_PDFs: bool = True,
         overwrite: bool = False,
+        update: bool = False,
         **kwargs: Dict[str, Any],
     ) -> NoReturn:
         """

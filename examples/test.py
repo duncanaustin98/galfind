@@ -87,7 +87,8 @@ def test_pipes():
 
     pipes_SED_fit_params = {"fix_z": EAZY_fitter.label, "fesc": None}
     pipes_fitter = Bagpipes(pipes_SED_fit_params)
-    pipes_fitter(JOF_cat, aper_diams[0], save_PDFs = False, load_SEDs = False, load_PDFs = False, overwrite = False)
+    pipes_fitter(JOF_cat, aper_diams[0], save_PDFs = False, load_SEDs = False, load_PDFs = True, overwrite = False, update = True)
+
 
 def test_UVLF():
     from galfind import Redwards_Lya_Detect_Selector, Sextractor_Bands_Radius_Selector, Xi_Ion_Calculator, UV_Beta_Calculator, Rest_Frame_Property_Limit_Selector
