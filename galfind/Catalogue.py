@@ -29,7 +29,7 @@ from astropy.utils.masked import Masked
 from tqdm import tqdm
 from typing import Union, Tuple, Any, List, Dict, Callable, Optional, NoReturn, TYPE_CHECKING
 if TYPE_CHECKING:
-    from . import Band_Data_Base, Selector, Multiple_Filter, Data, Rest_Frame_Property_Calculator
+    from . import Band_Data_Base, Selector, Multiple_Filter, Data, Property_Calculator
 try:
     from typing import Self, Type  # python 3.11+
 except ImportError:
@@ -1231,7 +1231,7 @@ class Catalogue(Catalogue_Base):
 
     def hist(
         self: Self,
-        x_calculator: Type[Rest_Frame_Property_Calculator],
+        x_calculator: Type[Property_Calculator],
         fig: Optional[plt.Figure] = None,
         ax: Optional[plt.Axes] = None,
         log: bool = False,
@@ -1247,8 +1247,8 @@ class Catalogue(Catalogue_Base):
             galfind_logger.info(
                 f"Making histogram for {x_calculator.name}!"
             )
-            from . import Rest_Frame_Property_Calculator
-            if isinstance(x_calculator, tuple(Rest_Frame_Property_Calculator.__subclasses__())):
+            from . import Property_Calculator
+            if isinstance(x_calculator, tuple(Property_Calculator.__subclasses__())):
                 # calculate x values
                 x = [gal.aper_phot[x_calculator.aper_diam].SED_results \
                     [x_calculator.SED_fit_label].phot_rest.properties \
@@ -1283,8 +1283,8 @@ class Catalogue(Catalogue_Base):
 
     def plot(
         self: Self,
-        x_calculator: Type[Rest_Frame_Property_Calculator],
-        y_calculator: Type[Rest_Frame_Property_Calculator],
+        x_calculator: Type[Property_Calculator],
+        y_calculator: Type[Property_Calculator],
         colour_by: Union[None, str] = None,
         c_origin: Union[str, dict, None] = None,
         incl_x_errs: bool = True,
@@ -1297,84 +1297,111 @@ class Catalogue(Catalogue_Base):
         save: bool = True,
         show: bool = False,
         legend_kwargs: dict = {},
+        plot_legend: bool = False,
         plot_kwargs: dict = {},
         cmap: str = "viridis",
         save_type: str = ".png",
         fig: Optional[plt.Figure] = None,
         ax: Optional[plt.Axes] = None,
+        plot_type: str = "individual",
     ):
-        from . import Rest_Frame_Property_Calculator
-        if isinstance(x_calculator, tuple(Rest_Frame_Property_Calculator.__subclasses__())):
-            x = np.array([gal.aper_phot[x_calculator.aper_diam].SED_results \
-                [x_calculator.SED_fit_label].phot_rest.properties[x_calculator.name] for gal in self])
+        from . import Property_Calculator
+        x_name = x_calculator.full_name
+        y_name = y_calculator.full_name
+        x_label = x_calculator.plot_name
+        y_label = y_calculator.plot_name
+
+        if plot_type.lower() == "individual":
+            if isinstance(x_calculator, tuple(Property_Calculator.__subclasses__())):
+                x = x_calculator.extract_vals(self)
+                if incl_x_errs:
+                    raise NotImplementedError
+                else:
+                    x_err = None
+            else:
+                raise NotImplementedError
+            #x_label = x_origin["code"].gal_property_fmt_dict[x_name]
+            if log_x or x_name in funcs.logged_properties:
+                if incl_x_errs:
+                    x, x_err = funcs.errs_to_log(x, x_err)
+                else:
+                    x = np.log10(x)
+                x_name = f"log({x_name})"
+                x_label = f"log({x_label})"
+
+            if isinstance(y_calculator, tuple(Property_Calculator.__subclasses__())):
+                y = y_calculator.extract_vals(self)
+                if incl_y_errs:
+                    raise NotImplementedError
+                else:
+                    y_err = None
+            else:
+                raise NotImplementedError
+            
+            #y_label = y_origin["code"].gal_property_fmt_dict[y_name]
+            if log_y or y_name in funcs.logged_properties:
+                if incl_y_errs:
+                    y, y_err = funcs.errs_to_log(y, y_err)
+                else:
+                    y = np.log10(y)
+                y_name = f"log({y_name})"
+                y_label = f"log({y_label})"
+
+        # if colour_by is None:
+        #     # plot all as a single colour
+        #     pass
+        # else:
+        #     if isinstance(c_origin, dict):
+        #         assert "code" in c_origin.keys()
+        #         assert c_origin["code"].__class__.__name__ in [
+        #             code.__name__ for code in SED_code.__subclasses__()
+        #         ]
+        #     c = getattr(
+        #         self, colour_by, SED_fit_params=c_origin, property_type="vals"
+        #     )
+        #     #cbar_label = c_origin["code"].gal_property_fmt_dict[colour_by]
+        #     if log_c or c in funcs.logged_properties:
+        #         c = np.log10(c)
+        #         colour_by = f"log({colour_by})"
+        #         cbar_label = f"log({cbar_label})"
+
+        elif plot_type.lower() == "stacked":
+            # extract the PDFs
+            x_PDFs = x_calculator.extract_PDFs(self)
+            y_PDFs = y_calculator.extract_PDFs(self)
+            # add all the PDFs together
+            x_PDF = None
+            y_PDF = None
+            for x_PDF_, y_PDF_ in zip(x_PDFs, y_PDFs):
+                if x_PDF_ is not None and y_PDF_ is not None:
+                    if x_PDF is None and y_PDF is None:
+                        x_PDF = x_PDF_
+                        y_PDF = y_PDF_
+                    else:
+                        x_PDF += x_PDF_
+                        y_PDF += y_PDF_
+            
+            x = x_PDF.median.value
+            y = y_PDF.median.value
             if incl_x_errs:
-                x_err = np.array([gal.aper_phot[x_calculator.aper_diam].SED_results \
-                    [x_calculator.SED_fit_label].phot_rest.property_errs \
-                    [x_calculator.name] for gal in self])
-                breakpoint()
-                x_err = np.array([x_err[:, 0], x_err[:, 1]])
+                x_err = [[x_PDF.errs[0].value], [x_PDF.errs[1].value]]
             else:
                 x_err = None
-        else:
-            raise NotImplementedError
-        #x_label = x_origin["code"].gal_property_fmt_dict[x_name]
-        if log_x or x_name in funcs.logged_properties:
-            if incl_x_errs:
-                x, x_err = funcs.errs_to_log(x, x_err)
-            else:
-                x = np.log10(x)
-            x_name = f"log({x_name})"
-            x_label = f"log({x_label})"
-
-        if isinstance(y_calculator, tuple(Rest_Frame_Property_Calculator.__subclasses__())):
-            y = np.array([gal.aper_phot[y_calculator.aper_diam].SED_results \
-                [y_calculator.SED_fit_label].phot_rest.properties[y_calculator.name] for gal in self])
             if incl_y_errs:
-                y_err = np.array([gal.aper_phot[y_calculator.aper_diam].SED_results \
-                    [y_calculator.SED_fit_label].phot_rest.property_errs \
-                    [y_calculator.name] for gal in self])
-                breakpoint()
-                y_err = np.array([y_err[:, 0], y_err[:, 1]])
+                y_err = [[y_PDF.errs[0].value], [y_PDF.errs[1].value]]
             else:
                 y_err = None
         else:
-            raise NotImplementedError
-        #y_label = y_origin["code"].gal_property_fmt_dict[y_name]
-        if log_y or y_name in funcs.logged_properties:
-            if incl_y_errs:
-                y, y_err = funcs.errs_to_log(y, y_err)
-            else:
-                y = np.log10(y)
-            y_name = f"log({y_name})"
-            y_label = f"log({y_label})"
-
-        if colour_by is None:
-            # plot all as a single colour
-            pass
-        else:
-            if isinstance(c_origin, dict):
-                assert "code" in c_origin.keys()
-                assert c_origin["code"].__class__.__name__ in [
-                    code.__name__ for code in SED_code.__subclasses__()
-                ]
-            c = getattr(
-                self, colour_by, SED_fit_params=c_origin, property_type="vals"
-            )
-            #cbar_label = c_origin["code"].gal_property_fmt_dict[colour_by]
-            if log_c or c in funcs.logged_properties:
-                c = np.log10(c)
-                colour_by = f"log({colour_by})"
-                cbar_label = f"log({cbar_label})"
+            err_message = f"{plot_type=} not recognised!"
+            galfind_logger.critical(err_message)
+            raise Exception(err_message)
 
         # setup matplotlib figure/axis if not already given
-        plt.style.use(
-            f"{config['DEFAULT']['GALFIND_DIR']}/galfind_style.mplstyle"
-        )
         if fig is None or ax is None:
             fig, ax = plt.subplots()
 
         if "label" not in plot_kwargs.keys():
-            plot_kwargs["label"] = "+".join(self.crops)
+            plot_kwargs["label"] = self.crop_name
 
         if mean_err:
             # produce scatter plot
@@ -1389,21 +1416,30 @@ class Catalogue(Catalogue_Base):
                 pass
         else:
             # produce errorbar plot
-            if "ls" not in plot_kwargs.keys():
-                plot_kwargs["ls"] = ""
+            if incl_x_errs or incl_y_errs:
+                if "ls" not in plot_kwargs.keys():
+                    plot_kwargs["ls"] = ""
             if colour_by is None:
-                plot = ax.errorbar(x, y, xerr=x_err, yerr=y_err, **plot_kwargs)
+                if incl_x_errs or incl_y_errs:
+                    plot = ax.errorbar(x, y, xerr=x_err, yerr=y_err, **plot_kwargs)
+                else:
+                    plot = ax.scatter(x, y, **plot_kwargs)
             else:
                 if "cmap" not in plot_kwargs.keys():
                     plot_kwargs["cmap"] = cmap
-                plot = ax.errorbar(
-                    x, y, xerr=x_err, yerr=y_err, c=c, **plot_kwargs
-                )
+                if incl_x_errs or incl_y_errs:
+                    plot = ax.errorbar(
+                        x, y, xerr=x_err, yerr=y_err, c=c, **plot_kwargs
+                    )
+                else:  
+                    plot = ax.scatter(
+                        x, y, c=c, **plot_kwargs
+                    )
 
         # sort plot aesthetics
         if annotate:
             plot_label = (
-                f"{self.version}, {self.instrument.name}, {self.survey}"
+                f"{self.version}, {self.filterset.instrument_name}, {self.survey}"
             )
             ax.set_title(plot_label)
             ax.set_xlabel(x_label)
@@ -1411,37 +1447,27 @@ class Catalogue(Catalogue_Base):
             if colour_by is not None:
                 # make colourbar
                 pass
-            ax.legend(**legend_kwargs)
+            if plot_legend:
+                ax.legend(**legend_kwargs)
 
         if save:
-            # determine origin_str
-            origin_str = ""
-            if type(x_origin) in [str]:
-                origin_str += f"x={x_origin},"
-            else:
-                origin_str += f"x={x_origin['code'].label_from_SED_fit_params(x_origin)},"
-            if type(y_origin) in [str]:
-                origin_str += f"y={y_origin},"
-            else:
-                origin_str += (
-                    f"y={y_origin['code'].label_from_SED_fit_params(y_origin)}"
-                )
-            if any(var is None for var in [colour_by, c_origin]):
-                pass
-            elif type(c_origin) in [str]:
-                origin_str += f",c={c_origin}"
-            else:  # dict
-                origin_str += f",c={c_origin['code'].label_from_SED_fit_params(c_origin)}"
-
             # determine appropriate save path
-            save_dir = f"{config['Other']['PLOT_DIR']}/{self.version}/" + \
-                f"{self.instrument.name}/{self.survey}/{origin_str}"
-            if colour_by is None:
-                colour_label = f"_c={colour_by}"
-            else:
-                colour_label = ""
-            save_name = f"{y_name}_vs_{x_name}{colour_label}"
-            save_path = f"{save_dir}/{save_name}{save_type}"
+            save_path = f"{config['Other']['PLOT_DIR']}/{self.version}/" + \
+                f"{self.filterset.instrument_name}/{self.survey}/" + \
+                f"{y_name}_vs_{x_name}/{self.crop_name}{save_type}"
+            # if any(var is None for var in [colour_by, c_origin]):
+            #     pass
+            # elif type(c_origin) in [str]:
+            #     plot_name += f",c={c_origin}"
+            # else:  # dict
+            #     plot_name += f",c={c_origin['code'].label_from_SED_fit_params(c_origin)}"
+            # if colour_by is None:
+            #     colour_label = f"_c={colour_by}"
+            # else:
+            #     colour_label = ""
+
+            #save_name = f"{y_name}_vs_{x_name}{colour_label}"
+            #save_path = f"{save_dir}/{save_name}{save_type}"
             funcs.make_dirs(save_path)
             plt.savefig(save_path)
         if show:

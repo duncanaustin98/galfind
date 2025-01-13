@@ -25,6 +25,7 @@ from . import useful_funcs_austind as funcs
 from .decorators import ignore_warnings
 from . import Catalogue, Galaxy, SED_code, Photometry_rest, PDF
 from .Emission_lines import line_diagnostics, strong_optical_lines
+from .Property_calculator import Property_Calculator
 from .Dust_Attenuation import AUV_from_beta, Dust_Law, C00, M99
 
 # Rest optical line property naming functions
@@ -70,7 +71,7 @@ from .Dust_Attenuation import AUV_from_beta, Dust_Law, C00, M99
 #     dlambda = dz * wav_rest / (1.0 + self.z)
 #     return dlambda
 
-class Rest_Frame_Property_Calculator(ABC):
+class Rest_Frame_Property_Calculator(Property_Calculator):
 
     def __init__(
         self: Self,
@@ -79,13 +80,14 @@ class Rest_Frame_Property_Calculator(ABC):
         pre_req_properties: List[Rest_Frame_Property_Calculator] = [],
         **global_kwargs
     ) -> None:
-        self.aper_diam = aper_diam
+        #self.aper_diam = aper_diam
         if isinstance(SED_fit_label, SED_code):
             SED_fit_label = SED_fit_label.label
         self.SED_fit_label = SED_fit_label
         self.pre_req_properties = pre_req_properties
         self.global_kwargs = global_kwargs
         self._kwarg_assertions()
+        super().__init__(aper_diam)
 
     def __call__(
         self: Self,
@@ -401,11 +403,46 @@ class Rest_Frame_Property_Calculator(ABC):
         else:
             PDF_obj = PDF.from_1D_arr(self.name, vals, kwargs = self._get_output_kwargs(phot_rest))
         return PDF_obj, scattered_fluxes
-        
-    @property
-    @abstractmethod
-    def name(self: Self) -> str:
-        pass
+
+    def extract_vals(
+        self: Self, 
+        object: Union[Catalogue, Galaxy, Photometry_rest],
+    ) -> Union[u.Quantity, u.Magnitude, u.Dex]:
+        if isinstance(object, Catalogue):
+            cat_vals = [gal.aper_phot[self.aper_diam].SED_results[self.SED_fit_label].phot_rest.properties[self.name] for gal in object]
+            cat_vals_no_nans = [val for val in cat_vals if not np.isnan(val)]
+            if not all(isinstance(val, float) for val in cat_vals_no_nans):
+                assert all(val.unit == cat_vals[0].unit for val in cat_vals_no_nans), \
+                    galfind_logger.critical(f"Units of {self.name} in {object} are not consistent")
+                cat_vals = np.array([val.value if not np.isnan(val) else val for val in cat_vals]) * cat_vals[0].unit
+            else:
+                cat_vals = np.array(cat_vals)
+            return cat_vals
+        elif isinstance(object, Galaxy):
+            return object.aper_phot[self.aper_diam].SED_results[self.SED_fit_label].phot_rest.properties[self.name]
+        elif isinstance(object, Photometry_rest):
+            return object.properties[self.name]
+        else:
+            err_message = f"{object=} with {type(object)=} " + \
+                f"not in [Catalogue, Galaxy, Photometry_rest]"
+            galfind_logger.critical(err_message)
+            raise TypeError(err_message)
+
+    def extract_PDFs(
+        self: Self,
+        object: Union[Catalogue, Galaxy, Photometry_rest],
+    ) -> Union[Type[PDF], List[Type[PDF]]]:
+        if isinstance(object, Catalogue):
+            return [gal.aper_phot[self.aper_diam].SED_results[self.SED_fit_label].phot_rest.property_PDFs[self.name] for gal in object]
+        elif isinstance(object, Galaxy):
+            return object.aper_phot[self.aper_diam].SED_results[self.SED_fit_label].phot_rest.property_PDFs[self.name]
+        elif isinstance(object, Photometry_rest):
+            return object.property_PDFs[self.name]
+        else:
+            err_message = f"{object=} with {type(object)=} " + \
+                f"not in [Catalogue, Galaxy, Photometry_rest]"
+            galfind_logger.critical(err_message)
+            raise TypeError(err_message)
 
     @abstractmethod
     def _kwarg_assertions(self: Self) -> None:
@@ -554,6 +591,10 @@ class UV_Beta_Calculator(Rest_Frame_Property_Calculator):
     @property
     def name(self: Self) -> str:
         return f"beta_{rest_UV_wavs_name(self.global_kwargs['rest_UV_wav_lims'])}"
+
+    @property
+    def plot_name(self: Self) -> str:
+        return r"$\beta_{\mathrm{UV}}$"
     
     def _kwarg_assertions(self: Self) -> None:
         assert u.get_physical_type(self.global_kwargs["rest_UV_wav_lims"]) == "length"
@@ -689,6 +730,10 @@ class UV_Dust_Attenuation_Calculator(Rest_Frame_Property_Calculator):
             label += "_A>0"
         return label
     
+    @property
+    def plot_name(self: Self) -> str:
+        return r"$A_{{}}$".format(int(self.global_kwargs['ref_wav'].to(u.AA).value))
+    
     def _kwarg_assertions(self: Self) -> None:
         assert u.get_physical_type(self.global_kwargs["ref_wav"]) == "length"
         assert self.global_kwargs["ref_wav"] > self.pre_req_properties[0].global_kwargs["rest_UV_wav_lims"][0]
@@ -758,6 +803,10 @@ class Fesc_From_Beta_Calculator(Rest_Frame_Property_Calculator):
         if self.global_kwargs["keep_valid"]:
             label += "_0<fesc<1"
         return label
+
+    @property
+    def plot_name(self: Self) -> str:
+        return r"$f_{\mathrm{esc}}$" # type of fesc here too
     
     def _kwarg_assertions(self: Self) -> None:
         #if isinstance(self.global_kwargs["fesc_conv"], str):
@@ -842,6 +891,10 @@ class mUV_Calculator(Rest_Frame_Property_Calculator):
         return f"m{self.global_kwargs['ref_wav'].to(u.AA).value:.0f}_" + \
             rest_UV_wavs_name(self.pre_req_properties[0].global_kwargs \
             ["rest_UV_wav_lims"]) + ext_src_label + ext_src_lim_label
+
+    @property
+    def plot_name(self: Self) -> str:
+        return r"$m_{\mathrm{UV}}$"
     
     def _kwarg_assertions(self: Self) -> None:
         assert all(u.get_physical_type(self.global_kwargs[name]) == "length" \
@@ -1017,6 +1070,10 @@ class MUV_Calculator(Rest_Frame_Property_Calculator):
             rest_UV_wavs_name(self.pre_req_properties[0].pre_req_properties[0]. \
             global_kwargs["rest_UV_wav_lims"]) + ext_src_label + ext_src_lim_label
     
+    @property
+    def plot_name(self: Self) -> str:
+        return r"$M_{\mathrm{UV}}$"
+
     def _kwarg_assertions(self: Self) -> NoReturn:
         pass
     
@@ -1120,6 +1177,10 @@ class LUV_Calculator(Rest_Frame_Property_Calculator):
         return f"L{self.pre_req_properties[0].global_kwargs['ref_wav'].to(u.AA).value:.0f}" + \
             f"_{self.global_kwargs['frame']}{dust_label}_{rest_wavs_label}{ext_src_label}{ext_src_lim_label}"
     
+    @property
+    def plot_name(self: Self) -> str:
+        return r"$L_{\mathrm{UV}}$" # frame and units here too
+
     def _kwarg_assertions(self: Self) -> NoReturn:
         assert self.global_kwargs["frame"] in ["rest", "obs"]
     
@@ -1226,6 +1287,10 @@ class SFR_UV_Calculator(Rest_Frame_Property_Calculator):
             f"{rest_wavs_label}_{self.global_kwargs['SFR_conv']}" + \
             ext_src_label + ext_src_lim_label
     
+    @property
+    def plot_name(self: Self) -> str:
+        return r"$\mathrm{SFR}_{\mathrm{UV}}$" # units here too
+
     def _kwarg_assertions(self: Self) -> NoReturn:
         assert self.global_kwargs["SFR_conv"] in funcs.SFR_conversions.keys()
     
@@ -1281,6 +1346,10 @@ class Optical_Continuum_Calculator(Rest_Frame_Property_Calculator):
     def name(self: Self) -> str:
         return f"cont_{'+'.join(self.global_kwargs['strong_line_names'])}"
     
+    @property
+    def plot_name(self: Self) -> str:
+        return f"{'+'.join(self.global_kwargs['strong_line_names'])} continuum / nJy"
+
     def _kwarg_assertions(self: Self) -> None:
         assert all(
             line_name in strong_optical_lines
@@ -1439,6 +1508,10 @@ class Optical_Line_EW_Calculator(Rest_Frame_Property_Calculator):
     def name(self: Self) -> str:
         return f"EW{self.global_kwargs['frame']}_{'+'.join(self.global_kwargs['strong_line_names'])}"
     
+    @property
+    def plot_name(self: Self) -> str:
+        return f"{'+'.join(self.global_kwargs['strong_line_names'])} EW / " + r"$\mathrm{\AA}$"
+
     def _kwarg_assertions(self: Self) -> None:
         assert all(
             line_name in strong_optical_lines
@@ -1595,6 +1668,10 @@ class Dust_Attenuation_From_UV_Calculator(Rest_Frame_Property_Calculator):
         if self.global_kwargs["keep_valid"]:
             label += "_A>0"
         return label
+
+    @property
+    def plot_name(self: Self) -> str:
+        return r"$A_{{}}$".format(int(self.global_kwargs['calc_wav'].to(u.AA).value))
     
     def _kwarg_assertions(self: Self) -> None:
         assert u.get_physical_type(self.global_kwargs["calc_wav"]) == "length"
@@ -1731,6 +1808,11 @@ class Optical_Line_Flux_Calculator(Rest_Frame_Property_Calculator):
         return f"flux_{self.pre_req_properties[1].global_kwargs['frame']}_" + \
             f"{'+'.join(self.pre_req_properties[1].global_kwargs['strong_line_names'])}{dust_label}"
     
+    @property
+    def plot_name(self: Self) -> str:
+        return f"{'+'.join(self.pre_req_properties[1].global_kwargs['strong_line_names'])} flux / " + \
+            r"$\mathrm{erg\,s^{-1}\,cm^{-2}}$"
+
     def _kwarg_assertions(self: Self) -> NoReturn:
         pass
     
@@ -1829,6 +1911,10 @@ class Optical_Line_Luminosity_Calculator(Rest_Frame_Property_Calculator):
         return f"lum_{self.pre_req_properties[0].pre_req_properties[1].global_kwargs['frame']}_" + \
             f"{'+'.join(self.pre_req_properties[0].pre_req_properties[1].global_kwargs['strong_line_names'])}{dust_label}"
     
+    @property
+    def plot_name(self: Self) -> str:
+        return r"L_{{{}}} / \mathrm{erg\,s^{-1}}".format('+'.join(self.pre_req_properties[0].pre_req_properties[1].global_kwargs['strong_line_names']))
+
     def _kwarg_assertions(self: Self) -> NoReturn:
         pass
     
@@ -1839,7 +1925,7 @@ class Optical_Line_Luminosity_Calculator(Rest_Frame_Property_Calculator):
         if self.pre_req_properties[0].pre_req_properties[1].global_kwargs["frame"] == "rest":
             lum_distance = funcs.calc_lum_distance(z=0.0)
         else:  # frame == "obs"
-            lum_distance = funcs.calc_lum_distance(z=self.z)
+            lum_distance = funcs.calc_lum_distance(z=phot_rest.z)
         return {"lum_distance": lum_distance}
 
     def _fail_criteria(
@@ -1960,6 +2046,13 @@ class Xi_Ion_Calculator(Rest_Frame_Property_Calculator):
         if self.global_kwargs["logged"]:
             label = f"log_{label}"
         return label
+
+    @property
+    def plot_name(self: Self) -> str:
+        if self.global_kwargs["logged"]:
+            return r"$\log(\xi_{\mathrm{ion}})$"
+        else:
+            return r"$\xi_{\mathrm{ion}}$"
     
     def _kwarg_assertions(self: Self) -> NoReturn:
         if self.fesc_calculator is not None:
@@ -2023,6 +2116,106 @@ class Xi_Ion_Calculator(Rest_Frame_Property_Calculator):
         if self.global_kwargs["logged"]:
             xi_ion_arr = np.log10(xi_ion_arr.value) * u.Unit(f"dex({xi_ion_arr.unit.to_string()})")
         return xi_ion_arr
+    
+    def _get_output_kwargs(
+        self: Self,
+        phot_rest: Photometry_rest
+    ) -> Dict[str, Any]:
+        return {}
+    
+
+class SFR_Halpha_Calculator(Rest_Frame_Property_Calculator):
+
+    def __init__(
+        self: Self,
+        aper_diam: u.Quantity,
+        SED_fit_label: Union[str, Type[SED_code]],
+        rest_optical_wavs: u.Quantity = [4_200.0, 10_000.0] * u.AA,
+        dust_law: Optional[Union[str, Type[Dust_Law]]] = C00,
+        beta_dust_conv: Optional[Union[str, Type[AUV_from_beta]]] = M99,
+        UV_ref_wav: Optional[u.Quantity] = 1_500.0 * u.AA,
+        UV_wav_lims: Optional[u.Quantity] = [1_250.0, 3_000.0] * u.AA,
+        logged: bool = True,
+    ) -> NoReturn:
+        line_lum_calculator = \
+            Optical_Line_Luminosity_Calculator(
+                aper_diam, 
+                SED_fit_label, 
+                "Halpha", 
+                "obs",
+                rest_optical_wavs, 
+                dust_law, 
+                beta_dust_conv, 
+                UV_ref_wav, 
+                UV_wav_lims
+            )
+        pre_req_properties = [line_lum_calculator]
+        global_kwargs = {"logged": logged}
+        super().__init__(aper_diam, SED_fit_label, pre_req_properties, **global_kwargs)
+
+    @property
+    def name(self: Self) -> str:
+        if self.pre_req_properties[0].pre_req_properties[0]. \
+                dust_calculator is not None:
+            dust_label = "_" + "_".join(self.pre_req_properties[0]. \
+                pre_req_properties[0].dust_calculator.name.split("_")[1:2]) + "dust"
+        else:
+            dust_label = ""
+        label = f"SFR_Halpha{dust_label}"
+        if self.global_kwargs["logged"]:
+            label = f"log_{label}"
+        return label
+
+    @property
+    def plot_name(self: Self) -> str:
+        if self.global_kwargs["logged"]:
+            return r"$\log(SFR_{\mathrm{H}\alpha})$"
+        else:
+            return r"$SFR_{\mathrm{H}\alpha}$"
+    
+    def _kwarg_assertions(self: Self) -> NoReturn:
+        pass
+    
+    def _calc_obj_kwargs(
+        self: Self,
+        phot_rest: Photometry_rest
+    ) -> Dict[str, Any]:
+        return {}
+
+    def _fail_criteria(
+        self: Self,
+        phot_rest: Photometry_rest,
+    ) -> bool:
+        # always pass
+        return False
+    
+    def _calculate(
+        self: Self,
+        fluxes_arr: u.Quantity,
+        phot_rest: Photometry_rest,
+    ) -> Optional[Union[u.Quantity, u.Magnitude, u.Dex]]:
+        # extract line and UV luminosity (and fesc is required) chains/value
+        if len(fluxes_arr) > 1:
+            line_lum_arr = phot_rest.property_PDFs[self.pre_req_properties[0].name].input_arr
+            assert len(fluxes_arr) == len(line_lum_arr)
+        else:
+            line_lum_arr = phot_rest.properties[self.pre_req_properties[0].name]
+        # calculate SFR_Halpha values
+        # from Kennicutt 1998 (Salpeter 1955 IMF, 0.1-100 Msun)
+        SFR_Halpha_arr = (7.9e-42 * line_lum_arr.to(u.erg / u.s)).value * u.Msun / u.yr
+        finite_SFR_Halpha_arr = SFR_Halpha_arr[np.isfinite(SFR_Halpha_arr)]
+        if len(fluxes_arr) > 1:
+            self.obj_kwargs["negative_SFR_Halpha_pc"] = 100.0 * (1 - len(finite_SFR_Halpha_arr) / len(SFR_Halpha_arr))
+            if len(finite_SFR_Halpha_arr) < 50 or self.obj_kwargs["negative_SFR_Halpha_pc"] > 99.0:
+                return None
+        else:
+            if len(finite_SFR_Halpha_arr) < 1:
+                return None
+        SFR_Halpha_arr[~np.isfinite(SFR_Halpha_arr)] = np.nan
+        if self.global_kwargs["logged"]:
+            SFR_Halpha_arr = np.log10(SFR_Halpha_arr.value) * u.Unit(f"dex({SFR_Halpha_arr.unit.to_string()})")
+        breakpoint()
+        return SFR_Halpha_arr
     
     def _get_output_kwargs(
         self: Self,

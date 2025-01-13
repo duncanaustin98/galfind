@@ -430,35 +430,36 @@ class Number_Density_Function(Base_Number_Density_Function):
         assert all(x_.unit == x[0].unit for x_ in x)
         x = np.array([x_.value for x_ in x]) * x[0].unit
 
+        # crop catalogue to this redshift bin
+        from . import Redshift_Limit_Selector, Redshift_Bin_Selector
+        # TODO: Implement Redshift_Limit_Selector in case of np.nan z_bin entry
+        z_bin_selector = Redshift_Bin_Selector(aper_diam, SED_fit_code.label, z_bin)
+        z_bin_cat = deepcopy(cat).crop(z_bin_selector)
+        # ensure every galaxy in this redshift bin has 
+        # the relevant property already calculated
+        if len(z_bin_cat) == 0:
+            galfind_logger.warning(
+                f"No galaxies in {z_bin=}"
+            )
+            return None
+        elif len([i for i, gal in enumerate(z_bin_cat) if \
+                np.isnan(gal.aper_phot[aper_diam].SED_results \
+                [SED_fit_code.label].phot_rest.properties \
+                [x_calculator.name])]) != 0:
+            galfind_logger.warning(
+                f">1 nan in {x_calculator.name} for {z_bin=}, skipping!"
+            )
+            return None
+        
         # determine save_path
         origin_surveys = Number_Density_Function.get_origin_surveys(data_arr)
         save_path = Number_Density_Function.get_save_path(
             origin_surveys,
             x_origin,
             x_calculator.name,
-            cat.crop_name,
+            z_bin_cat.crop_name,
         )
         if not Path(save_path).is_file():
-            # crop catalogue to this redshift bin
-            from . import Redshift_Limit_Selector, Redshift_Bin_Selector
-            # TODO: Implement Redshift_Limit_Selector in case of np.nan z_bin entry
-            z_bin_selector = Redshift_Bin_Selector(aper_diam, SED_fit_code.label, z_bin)
-            z_bin_cat = deepcopy(cat).crop(z_bin_selector)
-            # ensure every galaxy in this redshift bin has 
-            # the relevant property already calculated
-            if len(z_bin_cat) == 0:
-                galfind_logger.warning(
-                    f"No galaxies in {z_bin=}"
-                )
-                return None
-            elif len([i for i, gal in enumerate(z_bin_cat) if \
-                    np.isnan(gal.aper_phot[aper_diam].SED_results \
-                    [SED_fit_code.label].phot_rest.properties \
-                    [x_calculator.name])]) != 0:
-                galfind_logger.warning(
-                    f">1 nan in {x_calculator.name} for {z_bin=}, skipping!"
-                )
-                return None
             # create x_bins from x_bin_edges (must include start and end values here too)
             x_bins = [
                 [x_bin_edges[i].value, x_bin_edges[i + 1].value] * x_bin_edges.unit
@@ -486,8 +487,8 @@ class Number_Density_Function(Base_Number_Density_Function):
                     Ngals[i] = 0
                 else:
                     # plot histogram
-                    #hist_fig, hist_ax = plt.subplots()
-                    #z_bin_cat.hist(x_calculator, hist_fig, hist_ax)
+                    hist_fig, hist_ax = plt.subplots()
+                    z_bin_cat.hist(x_calculator, hist_fig, hist_ax)
                     # crop to galaxies in the x bin - not the bootstrapping method
                     from . import Rest_Frame_Property_Limit_Selector, Rest_Frame_Property_Bin_Selector
                     # TODO: Implement Rest_Frame_Property_Limit_Selector in case of np.nan x_bin entry
