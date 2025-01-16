@@ -9,6 +9,7 @@ from matplotlib import pyplot as plt
 from astropy.io import fits
 import astropy.units as u
 from astropy.table import Table
+import matplotlib.patheffects as pe
 import subprocess
 from typing import Union, Dict, Any, List, Tuple, Callable, Optional, NoReturn, TYPE_CHECKING
 if TYPE_CHECKING:
@@ -21,6 +22,18 @@ except ImportError:
 from . import galfind_logger, config
 from . import useful_funcs_austind as funcs
 
+name_to_label = {
+    "n": r"$n$",
+    "r_e": r"$r_e$",
+    "mag": r"$m_{\mathrm{AB}}$",
+    "axr": r"b$/$a",
+    "pa": "PA",
+    "x_off": r"$x_{\mathrm{off}}$",
+    "y_off": r"$y_{\mathrm{off}}$",
+    "chi2": r"$\chi^2$",
+    "Ndof": r"$N_{\mathrm{dof}}$",
+    "red_chi2": r"$\chi^2_{\mathrm{red}}$"
+}
 
 class Morphology_Result(ABC):
 
@@ -39,6 +52,7 @@ class Morphology_Result(ABC):
         self.properties = properties
         [setattr(self, key, val) for key, val in properties.items()]
         self.property_errs = property_errs
+        [setattr(self, f"{key}_err", val) for key, val in property_errs.items()]
         self.property_pdfs = property_pdfs
 
     @property
@@ -79,20 +93,20 @@ class Galfit_Result(Morphology_Result):
         return self.im_path.split("/")[-1].split("_")[0]
 
     @property
-    def instr_name(self: Self) -> str:
-        return self.im_path.replace(config['GALFIT']['OUTPUT_DIR'], "").split("/")[0]
-
-    @property
     def version(self: Self) -> str:
         return self.im_path.replace(config['GALFIT']['OUTPUT_DIR'], "").split("/")[1]
 
     @property
-    def survey(self: Self) -> str:
+    def instr_name(self: Self) -> str:
         return self.im_path.replace(config['GALFIT']['OUTPUT_DIR'], "").split("/")[2]
+
+    @property
+    def survey(self: Self) -> str:
+        return self.im_path.replace(config['GALFIT']['OUTPUT_DIR'], "").split("/")[3]
     
     @property
     def filt_name(self: Self) -> str:
-        return self.im_path.replace(config['GALFIT']['OUTPUT_DIR'], "").split("/")[3]
+        return self.im_path.replace(config['GALFIT']['OUTPUT_DIR'], "").split("/")[4]
     
     @property
     def plot_path(self: Self) -> str:
@@ -103,6 +117,7 @@ class Galfit_Result(Morphology_Result):
         fig: Optional[plt.Figure] = None,
         title: Optional[str] = None,
         cmap: str = "gray",
+        annotate_properties: List[str] = ["n", "r_e"],
         save: bool = True,
         show: bool = False,
     ) -> None:
@@ -124,7 +139,11 @@ class Galfit_Result(Morphology_Result):
         # Plot the images
         if title is None:
             # default title
-            fig.suptitle(f"{self.id}: {self.filt_name} {self.survey} {self.version}")
+            title = f"ID={self.id}, " + \
+                f"{self.filt_name}, {self.survey}, " + \
+                f"{self.version}; MODEL={self.fitter.model}; " + \
+                r"$\chi^2_{\mathrm{red}}$" + f"={self.red_chi2:.2f}"
+        fig.suptitle(title)
         axs[0].imshow(orig, cmap=cmap, vmin=vmin, vmax=vmax)
         axs[1].imshow(mod, cmap=cmap)
         axs[2].imshow(res, cmap=cmap, vmin=vmin, vmax=vmax)
@@ -136,12 +155,41 @@ class Galfit_Result(Morphology_Result):
         for ax in axs.flat:
             ax.axis('off')
 
+        # Annotate the model with fitting parameters
+        annotate_kwargs = {
+            'color': 'red',
+            'fontsize': 8,
+            'horizontalalignment': 'left',
+            'verticalalignment': 'center',
+            'transform': axs[1].transAxes,
+            'path_effects': [pe.withStroke(linewidth=0.5, foreground='white')]
+        }
+        x0, y0, dy = 0.05, 0.95, -0.05
+        for name in annotate_properties:
+            name = name.lower()
+            assert name in self.properties.keys(), \
+                galfind_logger.error(f"{name=} not in {self.properties.keys()=}")
+            val = self.properties[name].value
+            if name in self.property_errs.keys():
+                err = self.property_errs[name][0].value
+                out_str = rf"{name_to_label[name]}$ = {val:.2f} \pm {err:.2f}$"
+            else:
+                out_str = rf"{name_to_label[name]}$ = {val:.2f}$"
+            axs[1].text(
+                x0, 
+                y0 + dy * list(self.properties.keys()).index(name), 
+                out_str,
+                **annotate_kwargs
+            )
+
         # Save the figure
         if save:
             funcs.make_dirs(self.plot_path)
-            plt.savefig(self.plot_path, dpi=200)
+            plt.savefig(self.plot_path, bbox_inches = "tight", dpi=200)
         if show:
             plt.show()
+        else:
+            plt.close(fig)
         galfind_logger.info(
             f"Galfit output image saved to {self.plot_path}"
         )
@@ -231,6 +279,8 @@ class Galfit_Fitter(Morphology_Fitter):
         "mag": u.ABmag,
         "axr": u.dimensionless_unscaled,
         "pa": u.deg,
+        "x_off": u.pixel,
+        "y_off": u.pixel
     }
 
     def __init__(
@@ -333,7 +383,7 @@ class Galfit_Fitter(Morphology_Fitter):
             self._delete_temps(cutout, out_dir)
             self._move_mask_to_in_dir(cutout, in_dir, out_dir)
             galfind_logger.info(f"{cutout.ID} Galfit fit complete")
-        fitting_result = self._extract_results_from_file(out_path)
+        fitting_result = self._extract_results_from_file(cutout, out_path)
         if plot:
             fitting_result.plot()
         # update Cutout object with Morphology results
@@ -506,6 +556,7 @@ class Galfit_Fitter(Morphology_Fitter):
     
     def _extract_results_from_file(
         self: Self,
+        cutout: Type[Band_Cutout_Base],
         out_path: str,
     ) -> Dict[str, Any]:
         hdr = fits.open(out_path)[2].header
@@ -521,6 +572,15 @@ class Galfit_Fitter(Morphology_Fitter):
         pa, pa_err = hdr['1_PA'].split('+/-')
         pa = pa.replace('*', '')
         pa_err = pa_err.replace('*', '')
+        cen_x, cen_x_err = hdr['1_XC'].split('+/-')
+        cen_x = cen_x.replace('*', '')
+        cen_x_err = cen_x_err.replace('*', '')
+        cen_y, cen_y_err = hdr['1_YC'].split('+/-')
+        cen_y = cen_y.replace('*', '')
+        cen_y_err = cen_y_err.replace('*', '')
+        size = int((cutout.cutout_size / cutout.band_data.pix_scale).to(u.dimensionless_unscaled).value)
+        x_off = float(cen_x) - size / 2
+        y_off = float(cen_y) - size / 2
         # extract sersic index
         n = hdr['1_N']
         # if galfit was ran with fixed n=1, then the n value will be in brackets
@@ -536,12 +596,12 @@ class Galfit_Fitter(Morphology_Fitter):
         # Make (and output) fitting result object
         from . import PDF
         # unordered PDFs - i.e. chain 1 for sersic is not the same as chain 1 for r_e
-        property_names = list(Galfit_Fitter.property_units.keys()) #["n", "r_e", "mag", "axr", "pa"]
+        property_names = list(Galfit_Fitter.property_units.keys()) #["n", "r_e", "mag", "axr", "pa", "x_off", "y_off"]
         properties = {name: float(val) * Galfit_Fitter.property_units[name] \
-            for name, val in zip(property_names, [n, re, mag, axr, pa])}
+            for name, val in zip(property_names, [n, re, mag, axr, pa, x_off, y_off])}
         property_errs = {name: [float(val) * Galfit_Fitter.property_units[name], \
             float(val) * Galfit_Fitter.property_units[name]] for name, val in \
-            zip(property_names, [n_err, re_err, mag_err, axr_err, pa_err])}
+            zip(property_names, [n_err, re_err, mag_err, axr_err, pa_err, cen_x_err, cen_y_err])}
         pdfs = {name: PDF.from_1D_arr(name, \
             np.random.normal(properties[name].value, property_errs[name][0].value, 10_000) \
             * properties[name].unit) for name in property_names}

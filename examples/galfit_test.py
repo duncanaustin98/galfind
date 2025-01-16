@@ -35,7 +35,7 @@ def main():
         pix_scale=0.03 * u.arcsec,
         size=0.96 * u.arcsec
     )
-    Galfit_Fitter(psf, "sersic")(cat, plot = True)
+    Galfit_Fitter(psf, "sersic")(cat, plot = False)
     breakpoint()
 
 

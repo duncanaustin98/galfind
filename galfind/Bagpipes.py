@@ -11,6 +11,7 @@ from __future__ import annotations
 import bagpipes
 import itertools
 import importlib
+import h5py
 import os
 import glob
 import shutil
@@ -36,10 +37,12 @@ from .SED import SED_obs
 pipes_unit_dict = {
     "z": u.dimensionless_unscaled,
     "redshift": u.dimensionless_unscaled,
+    "chisq": u.dimensionless_unscaled,
     "mass": u.dex(u.solMass),
     "dust": u.ABmag,
     "fwhm": u.Gyr,
     "metallicity": u.dimensionless_unscaled, # is this actually in units of solar metallicity?
+    "mass_weighted_zmet": u.dimensionless_unscaled, # check!
     "tmax": u.Gyr,
     "logU": u.dimensionless_unscaled, # ???
     "fesc": u.dimensionless_unscaled,
@@ -74,7 +77,7 @@ def get_pipes_unit(label: str) -> u.Unit:
                 f"Multiple {relevant_keys=} found for {label=}! Bagpipes unit_dict requires updating"
             )
     else:
-        galfind_logger.info(
+        galfind_logger.warning(
             f"No keys found in {label=} for Bagpipes unit_dict! Returning dimensionless"
         )
         return u.dimensionless_unscaled
@@ -773,9 +776,12 @@ class Bagpipes(SED_code):
         for key, val in self.gal_property_labels.items():
             if "redshift" in key:
                 self.gal_property_labels["z"] = val
-                # delete the key
                 del self.gal_property_labels[key]
-                # only 1 redshift key should exist
+                break
+        for key, val in self.gal_property_labels.items():
+            if "chisq_phot" in key:
+                self.gal_property_labels["chi_sq"] = val
+                del self.gal_property_labels[key]
                 break
         self.gal_property_units = {label: get_pipes_unit(label) for label in self.gal_property_labels.keys()}
 
@@ -839,29 +845,32 @@ class Bagpipes(SED_code):
         out_path = f"{config['Bagpipes']['PIPES_OUT_DIR']}/pipes/cats/{cat.version}/" + \
             f"{cat.survey}/{cat.filterset.instrument_name}/{self.label}.fits"
         fits_out_path = Bagpipes.get_galfind_fits_path(out_path)
-        PDF_dir = out_path.replace(".fits", "").replace("cats", "pdfs")
-        SED_dir = out_path.replace(".fits", "").replace("cats", "seds")
-
-        load_properties = []
-        PDF_paths = {
-            gal_property if "redshift" not in gal_property else "z": [
-                f"{PDF_dir}/{gal_property}/{str(int(ID))}_{cat.survey}.txt"
-                if Path(
-                    f"{PDF_dir}/{gal_property}/{str(int(ID))}_{cat.survey}.txt"
-                ).is_file()
-                else None
-                for ID in cat.ID
-            ]
-            for gal_property in load_properties
-        }
+        h5_dir = out_path.replace(".fits", "").replace("cats", "posterior")
+        h5_paths = [f"{h5_dir}/{ID}.h5" for ID in cat.ID]
+        # PDF_dir = out_path.replace(".fits", "").replace("cats", "posterior")
+        # SED_dir = out_path.replace(".fits", "").replace("cats", "posterior")
+        # open h5
+        # load_properties = []
+        # PDF_paths = {
+        #     gal_property if "redshift" not in gal_property else "z": [
+        #         f"{h5_dir}/{gal_property}/{str(int(ID))}_{cat.survey}.txt"
+        #         if Path(
+        #             f"{h5_dir}/{gal_property}/{str(int(ID))}_{cat.survey}.txt"
+        #         ).is_file()
+        #         else None
+        #         for ID in cat.ID
+        #     ]
+        #     for gal_property in load_properties
+        # }
         # determine SED paths
-        SED_paths = [
-            f"{SED_dir}/{str(int(ID))}_{cat.survey}.dat"
-            if Path(f"{SED_dir}/{str(int(ID))}_{cat.survey}.dat").is_file()
-            else None
-            for ID in cat.ID
-        ]
-        return in_path, out_path, fits_out_path, PDF_paths, SED_paths
+        #SED_paths = []
+        # SED_paths = [
+        #     f"{h5_dir}/{str(int(ID))}_{cat.survey}.dat"
+        #     if Path(f"{h5_dir}/{str(int(ID))}_{cat.survey}.dat").is_file()
+        #     else None
+        #     for ID in cat.ID
+        # ]
+        return in_path, out_path, fits_out_path, h5_paths, h5_paths #PDF_paths, SED_paths
 
     def extract_SEDs(
         self: Self,
@@ -911,70 +920,106 @@ class Bagpipes(SED_code):
         self: Self, 
         gal_property: str, 
         IDs: List[int], 
-        PDF_paths: Union[str, List[str]], 
+        PDF_paths: str, 
     ) -> List[Type[PDF]]:
-        # ensure this works if only extracting 1 galaxy
-        if isinstance(IDs, (str, int, float)):
-            IDs = np.array([int(IDs)])
-        if isinstance(PDF_paths, str):
-            PDF_paths = [PDF_paths]
-        # # return list of None's if gal_property not in the PDF_paths, else load the PDFs
-        # if gal_property not in PDF_paths.keys():
-        #     return list(np.full(len(IDs), None))
+        pass
+        # breakpoint()
+        # pdfs = PDF.from_1D_arr(
+        #     gal_property,
+        #     np.array(Table.read(PDF_paths, format="ascii.fast_no_header")["col1"]),
+        #     self.SED_fit_params,
+        # )
+        # # ensure this works if only extracting 1 galaxy
+        # if isinstance(IDs, (str, int, float)):
+        #     IDs = np.array([int(IDs)])
+        # if isinstance(PDF_paths, str):
+        #     PDF_paths = [PDF_paths]
+        # # # return list of None's if gal_property not in the PDF_paths, else load the PDFs
+        # # if gal_property not in PDF_paths.keys():
+        # #     return list(np.full(len(IDs), None))
+        # # else:
+        # if gal_property not in Bagpipes.gal_property_unit_dict.keys():
+        #     Bagpipes.gal_property_unit_dict[gal_property] = (
+        #         u.dimensionless_unscaled
+        #     )
+        # pdf_arrs = [
+        #     np.array(Table.read(path, format="ascii.fast_no_header")["col1"])
+        #     if type(path) != type(None)
+        #     else None
+        #     for path in tqdm(
+        #         PDF_paths,
+        #         desc=f"Loading {gal_property} PDFs",
+        #         total=len(PDF_paths),
+        #     )
+        # ]
+        # if gal_property == "z":
+        #     pdfs = [
+        #         Redshift_PDF.from_1D_arr(
+        #             pdf
+        #             * u.Unit(Bagpipes.gal_property_unit_dict[gal_property]),
+        #             SED_fit_params,
+        #             timed=timed,
+        #         )
+        #         if type(pdf) != type(None)
+        #         else None
+        #         for pdf in tqdm(
+        #             pdf_arrs,
+        #             desc=f"Constructing {gal_property} PDFs",
+        #             total=len(pdf_arrs),
+        #         )
+        #     ]
         # else:
-        if gal_property not in Bagpipes.gal_property_unit_dict.keys():
-            Bagpipes.gal_property_unit_dict[gal_property] = (
-                u.dimensionless_unscaled
+        #     pdfs = [
+        #         SED_fit_PDF.from_1D_arr(
+        #             gal_property,
+        #             pdf
+        #             * u.Unit(Bagpipes.gal_property_unit_dict[gal_property]),
+        #             SED_fit_params,
+        #             timed=timed,
+        #         )
+        #         if type(pdf) != type(None)
+        #         else None
+        #         for pdf in tqdm(
+        #             pdf_arrs,
+        #             desc=f"Constructing {gal_property} PDFs",
+        #             total=len(pdf_arrs),
+        #         )
+        #     ]
+        # # add save path to PDF
+        # pdfs = [
+        #     pdf.add_save_path(path) if type(pdf) != type(None) else None
+        #     for path, pdf in zip(PDF_paths, pdfs)
+        # ]
+        # return pdfs
+    
+    def load_cat_property_PDFs(
+        self: Self, 
+        PDF_paths: List[str],
+        IDs: List[int]
+    ) -> List[Dict[str, Optional[Type[PDF]]]]:
+        from . import PDF
+        assert len(IDs) == len(PDF_paths), \
+            galfind_logger.critical(
+                f"{len(IDs)=} != {len(PDF_paths)=}"
             )
-        pdf_arrs = [
-            np.array(Table.read(path, format="ascii.fast_no_header")["col1"])
-            if type(path) != type(None)
-            else None
-            for path in tqdm(
-                PDF_paths,
-                desc=f"Loading {gal_property} PDFs",
-                total=len(PDF_paths),
-            )
-        ]
-        if gal_property == "z":
-            pdfs = [
-                Redshift_PDF.from_1D_arr(
-                    pdf
-                    * u.Unit(Bagpipes.gal_property_unit_dict[gal_property]),
-                    SED_fit_params,
-                    timed=timed,
-                )
-                if type(pdf) != type(None)
-                else None
-                for pdf in tqdm(
-                    pdf_arrs,
-                    desc=f"Constructing {gal_property} PDFs",
-                    total=len(pdf_arrs),
-                )
-            ]
-        else:
-            pdfs = [
-                SED_fit_PDF.from_1D_arr(
-                    gal_property,
-                    pdf
-                    * u.Unit(Bagpipes.gal_property_unit_dict[gal_property]),
-                    SED_fit_params,
-                    timed=timed,
-                )
-                if type(pdf) != type(None)
-                else None
-                for pdf in tqdm(
-                    pdf_arrs,
-                    desc=f"Constructing {gal_property} PDFs",
-                    total=len(pdf_arrs),
-                )
-            ]
-        # add save path to PDF
-        pdfs = [
-            pdf.add_save_path(path) if type(pdf) != type(None) else None
-            for path, pdf in zip(PDF_paths, pdfs)
-        ]
-        return pdfs
+        ignore_labels = ["dust_curve", "photometry", "spectrum_full", "uvj", "sfh", "mass_weighted_zmet", "chisq_phot"]
+        cat_property_PDFs = []
+        for h5_path, ID in tqdm(zip(PDF_paths, IDs), desc=f"Loading {self.label} PDFs", total=len(IDs)):
+            gal_property_PDFs = {}
+            if Path(h5_path).is_file():
+                with h5py.File(h5_path, "r") as h5:
+                    # TODO: Make appropriate redshift PDF should it be left free in the fitting procedure
+                    for quantity_type in ["basic_quantities", "advanced_quantities"]:
+                        quantities = np.array(h5[quantity_type])
+                        for name in quantities:
+                            if name not in ignore_labels:
+                                pdf = SED_fit_PDF.from_1D_arr(name, np.array(h5[quantity_type][name]) * get_pipes_unit(name), self.SED_fit_params)
+                                gal_property_PDFs[name] = pdf
+                    h5.close()
+            else:
+                raise FileNotFoundError(f"{h5_path} not found!")
+            cat_property_PDFs.extend([gal_property_PDFs])
+        return cat_property_PDFs
 
     @staticmethod
     def get_galfind_fits_path(path):

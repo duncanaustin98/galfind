@@ -4,6 +4,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from tqdm import tqdm
 import numpy as np
+from copy import deepcopy
 import astropy.units as u
 from typing import TYPE_CHECKING, Dict, Any, List, Union, Tuple, Optional, NoReturn
 if TYPE_CHECKING:
@@ -13,9 +14,11 @@ try:
 except ImportError:
     from typing_extensions import Self, Type  # python > 3.7 AND python < 3.11
 
-from . import config, galfind_logger
+from . import config, galfind_logger, all_band_names
 from . import useful_funcs_austind as funcs
 from . import Catalogue, Galaxy, SED_code, SED_result
+from . import SED_fit_PDF
+
 
 class Property_Calculator(ABC):
 
@@ -87,6 +90,13 @@ class Property_Calculator(ABC):
         save_dir: str = ""
     ) -> Optional[Galaxy]:
         pass
+
+    # @abstractmethod
+    # def _calculate(
+    #     self: Self,
+    #     object: Union[Catalogue, Galaxy, Photometry_rest, SED_result],
+    # ) -> Optional[Union[u.Quantity, u.Magnitude, u.Dex]]:
+    #     pass
 
 # 
 class Property_Extractor:
@@ -432,6 +442,110 @@ class SED_Property_Calculator(Property_Calculator):
                 f"not in [Catalogue, Galaxy, SED_obs]"
             galfind_logger.critical(err_message)
             raise TypeError(err_message)
+        
+
+class Ext_Src_Property_Calculator(SED_Property_Calculator):
+
+    def __init__(
+        self: Self,
+        property_name: str,
+        plot_name: str,
+        aper_diam: u.Quantity,
+        SED_fit_label: Union[str, Type[SED_code]],
+        ext_src_corrs: Optional[str] = "UV",
+        ext_src_uplim: Optional[Union[int, float]] = 10.0,
+        ref_wav: float = 1_500.0 * u.AA,
+    ) -> None:
+        self.ext_src_corrs = ext_src_corrs
+        self.ext_src_uplim = ext_src_uplim
+        self.ref_wav = ref_wav
+        if self.ext_src_corrs is not None:
+            assert self.ext_src_corrs in ["UV"] + all_band_names
+        if self.ext_src_uplim is not None:
+            assert isinstance(self.ext_src_uplim, (int, float))
+            assert self.ext_src_uplim > 0.0
+        assert u.get_physical_type(self.ref_wav) == "length"
+        self.property_name = property_name
+        self._plot_name = plot_name
+        super().__init__(aper_diam, SED_fit_label)
+    
+    @property
+    def name(self: Self) -> str:
+        ext_src_label = f"_extsrc_{self.ext_src_corrs}" \
+            if self.ext_src_corrs is not None else ""
+        ext_src_lim_label = f"<{self.ext_src_uplim:.0f}" if \
+            self.ext_src_uplim is not None and \
+            self.ext_src_corrs is not None else ""
+        return self.property_name + ext_src_label + ext_src_lim_label
+    
+    @property
+    def plot_name(self: Self) -> str:
+        return self._plot_name
+
+    def _call_cat(
+        self: Self,
+        cat: Catalogue,
+        #save: bool = True,
+    ) -> Optional[Catalogue]:
+        cat.load_sextractor_ext_src_corrs()
+        return np.array([self._call_gal(gal) for gal in cat])
+
+    def _call_gal(
+        self: Self,
+        gal: Galaxy,
+    ) -> Optional[Galaxy]:
+        # TODO: Ensure the extended source corrections have already been loaded
+        # update the relevant Photometry_rest object stored in the Galaxy
+        assert self.aper_diam in gal.aper_phot.keys(), \
+            galfind_logger.critical(
+                f"{self.aper_diam=} not in {gal.aper_phot.keys()}"
+            )
+        assert self.SED_fit_label in gal.aper_phot[self.aper_diam].SED_results.keys(), \
+            galfind_logger.critical(
+                f"{self.SED_fit_label=} not in " + \
+                gal.aper_phot[self.aper_diam].SED_results.keys()
+            )
+        if self.ext_src_corrs == "UV":
+            # calculate band nearest to the rest frame UV reference wavelength
+            band_wavs = [filt.WavelengthCen.to(u.AA).value \
+                for filt in gal.aper_phot[self.aper_diam].filterset] * u.AA / (1. + gal.aper_phot[self.aper_diam].SED_results[self.SED_fit_label].z)
+            ref_band = gal.aper_phot[self.aper_diam].filterset.band_names[np.argmin(np.abs(band_wavs - self.ref_wav))]
+            ext_src_corr = gal.aper_phot[self.aper_diam].ext_src_corrs[ref_band]
+        else: # band given
+            ext_src_corr = gal.aper_phot[self.aper_diam].ext_src_corrs[self.ext_src_corrs]
+        # apply limit to extended source correction
+        if self.ext_src_uplim is not None:
+            if ext_src_corr > self.ext_src_uplim:
+                ext_src_corr = self.ext_src_uplim
+        if ext_src_corr < 1.0:
+            ext_src_corr = 1.0
+        return self._call_sed_result(gal.aper_phot[self.aper_diam].SED_results[self.SED_fit_label], ext_src_corr)
+
+    def _call_sed_result(
+        self: Self,
+        sed_result: SED_result,
+        ext_src_corr: Optional[Union[int, float]] = None,
+    ) -> Optional[SED_result]:
+        # extract the relevant PDF
+        # load calculated PDF into the SED_result object
+        old_pdf = deepcopy(sed_result.property_PDFs[self.property_name])
+        if isinstance(old_pdf.input_arr, u.Magnitude):
+            assert old_pdf.input_arr.unit.is_equivalent(u.ABmag)
+            new_arr = old_pdf.input_arr.value - 2.5 * np.log10(ext_src_corr)
+        elif isinstance(old_pdf.input_arr, u.Dex):
+            new_arr = old_pdf.input_arr.value + np.log10(ext_src_corr)
+        else:
+            new_arr = old_pdf.input_arr.value * ext_src_corr
+        new_arr = new_arr * old_pdf.input_arr.unit
+        new_pdf = SED_fit_PDF.from_1D_arr(
+            self.name, 
+            new_arr, 
+            old_pdf.SED_fit_params
+        )
+        setattr(sed_result, self.name, new_pdf.median)
+        sed_result.property_PDFs[self.name] = new_pdf
+        # TODO: save raw data at this point
+        return sed_result
 
 
 class Custom_SED_Property_Extractor(Property_Extractor, SED_Property_Calculator):

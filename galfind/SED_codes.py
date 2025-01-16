@@ -141,6 +141,14 @@ class SED_code(ABC):
     ) -> List[Type[PDF]]:
         pass
 
+    @abstractmethod
+    def load_cat_property_PDFs(
+        self: Self, 
+        PDF_paths: Union[List[str], List[Dict[str, str]]],
+        IDs: List[int]
+    ) -> List[Dict[str, Optional[Type[PDF]]]]:
+        pass
+
     def _assert_SED_fit_params(self) -> NoReturn:
         for key in self.required_SED_fit_params:
             assert key in self.SED_fit_params.keys(), galfind_logger.critical(
@@ -186,7 +194,6 @@ class SED_code(ABC):
         update: bool = False,
         **fit_kwargs
     ) -> List[SED_result]:
-        
         if timed:
             start = time.time()
 
@@ -288,29 +295,7 @@ class SED_code(ABC):
                 f"Loading {self.hdu_name} property PDFs into " + \
                 f"{cat.survey} {cat.version} {cat.filterset.instrument_name}"
             )
-            # construct PDF objects, type = array of len(fits_cat), 
-            # each element a dict of {gal_property: PDF object} excluding None PDFs
-            cat_property_PDFs_ = {
-                gal_property: self.extract_PDFs(
-                    gal_property,
-                    aper_phot_IDs,
-                    PDF_path,
-                )
-                for gal_property, PDF_path in PDF_paths.items()
-            }
-            cat_property_PDFs_ = [
-                {
-                    gal_property: PDF_arr[i]
-                    for gal_property, PDF_arr in cat_property_PDFs_.items()
-                    if PDF_arr[i] is not None
-                }
-                for i in range(len(aper_phot_IDs))
-            ]
-            # set to None if no PDFs are found
-            cat_property_PDFs = [
-                None if len(cat_property_PDF) == 0 else cat_property_PDF
-                for cat_property_PDF in cat_property_PDFs_
-            ]
+            cat_property_PDFs = self.load_cat_property_PDFs(PDF_paths, aper_phot_IDs)
             galfind_logger.info(
                 f"Finished loading {self.hdu_name} property PDFs into " + \
                 f"{cat.survey} {cat.version} {cat.filterset.instrument_name}"
@@ -346,7 +331,7 @@ class SED_code(ABC):
         cat_SED_results = [SED_result(self, phot, properties, property_errs, property_PDFs, SED) \
             for phot, properties, property_errs, property_PDFs, SED in \
             zip(phot_arr, cat_properties, cat_property_errs, cat_property_PDFs, cat_SEDs)]
-        
+
         if update:
             cat.update_SED_results(cat_SED_results, timed=timed)
 

@@ -220,7 +220,7 @@ from .Number_Density_Function import (
     Number_Density_Function,
 )  # UVLFs, mass functions, etc
 
-from .Property_calculator import Property_Calculator
+from .Property_calculator import Property_Calculator, Ext_Src_Property_Calculator
 
 from .Rest_frame_properties import (
     Rest_Frame_Property_Calculator,

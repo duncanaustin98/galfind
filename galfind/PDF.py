@@ -160,7 +160,7 @@ class PDF:
         add_kwargs: dict = {},
         save: bool = False,
     ):
-        if type(other) in [int, float, u.Quantity, u.Magnitude, u.Dex]:
+        if isinstance(other, tuple(int, float, u.Quantity, u.Magnitude, u.Dex)):
             # multiply input array by other
             if hasattr(self, "input_arr"):
                 old_input_arr = self.input_arr
@@ -172,10 +172,10 @@ class PDF:
             # convolve the two PDFs with each other as done in Qiao's merger work
             raise NotImplementedError
 
-        if type(name_ext) == type(None):
+        if name_ext is None:
             new_property_name = self.property_name
         else:  # type(name_ext) == str
-            assert type(name_ext) in [str], galfind_logger.critical(
+            assert isinstance(name_ext, str), galfind_logger.critical(
                 f"{name_ext=} with {type(name_ext)=} not in [str]!"
             )
             if name_ext[0] != "_":
@@ -593,7 +593,7 @@ class SED_fit_PDF(PDF):
         return sed_fit_PDF
 
     def load_peaks_from_SED_result(self, SED_result, nth_peak=0):
-        assert type(nth_peak) == int, galfind_logger.critical(
+        assert isinstance(nth_peak, int), galfind_logger.critical(
             f"nth_peak with type = {type(nth_peak)} must be of type 'int'"
         )
         assert nth_peak == 0, galfind_logger.critical(
