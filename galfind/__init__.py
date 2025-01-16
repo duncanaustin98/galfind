@@ -167,6 +167,7 @@ from .SED import (
 
 from .Selector import (
     Selector, 
+    ID_Selector,
     Multiple_Selector,
     Data_Selector,
     Photometry_Selector,
@@ -239,3 +240,5 @@ from .Rest_frame_properties import (
     Xi_Ion_Calculator,
     SFR_Halpha_Calculator,
 )
+
+from .Morphology import Morphology_Result, Morphology_Fitter, Galfit_Fitter

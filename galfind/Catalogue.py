@@ -29,7 +29,7 @@ from astropy.utils.masked import Masked
 from tqdm import tqdm
 from typing import Union, Tuple, Any, List, Dict, Callable, Optional, NoReturn, TYPE_CHECKING
 if TYPE_CHECKING:
-    from . import Band_Data_Base, Selector, Multiple_Filter, Data, Property_Calculator
+    from . import Filter, Band_Data_Base, Selector, Multiple_Filter, Data, Property_Calculator, Band_Cutout_Base, Band_Cutout
 try:
     from typing import Self, Type  # python 3.11+
 except ImportError:
@@ -861,7 +861,7 @@ class Catalogue(Catalogue_Base):
             # load Re from SExtractor
             self.load_band_properties_from_cat("MAG_AUTO", "sex_MAG_AUTO", multiply_factor = u.ABmag)
             for gal in self:
-                for aper_diam in self.aper_phot.keys():
+                for aper_diam in gal.aper_phot.keys():
                     gal.aper_phot[aper_diam].sex_MAG_AUTO = gal.sex_MAG_AUTO
         else:
             err_message = "Loading SExtractor auto mags from catalogue " + \
@@ -1031,63 +1031,18 @@ class Catalogue(Catalogue_Base):
         )
 
     def make_cutouts(
-        self,
+        self: Self,
         cutout_size: Union[u.Quantity, dict] = 0.96 * u.arcsec,
-    ) -> None:
-        # loop over galaxies, making a cutout of each one
-        for band in tqdm(
-            self.instrument.band_names,
-            total=len(self.instrument),
-            desc="Making band cutouts",
-        ):
-            # TODO: Requires update to use new Cutout class
-            start = time.time()
-            im_data, im_header, seg_data, seg_header = self.data.load_data(
-                band, incl_mask=False
-            )
-            end1 = time.time()
-            print("Time to load im/seg data:", end1 - start)
-            wht_data = self.data.load_wht(band)
-            end2 = time.time()
-            print("Time to load wht data:", end2 - end1)
-            rms_err_data = self.data.load_rms_err(band)
-            end3 = time.time()
-            print("Time to load rms_err data:", end3 - end2)
-            wcs = WCS(im_header)
-            pos = 0
-            end = time.time()
-            print("Time to load data:", end - start)
-
-            for gal in self:
-                if isinstance(cutout_size, dict):
-                    cutout_size_gal = cutout_size[gal.ID]
-                else:
-                    cutout_size_gal = cutout_size
-                gal.make_cutout(
-                    band,
-                    data={
-                        "SCI": im_data,
-                        "SEG": seg_data,
-                        "WHT": wht_data,
-                        "RMS_ERR": rms_err_data,
-                    },
-                    wcs=wcs,
-                    im_header=im_header,
-                    survey=self.survey,
-                    version=self.version,
-                    pix_scale=self.data.pix_scales[band],
-                    cutout_size=cutout_size_gal,
-                )
-                pos += 1
-
-            end2 = time.time()
-            print("Time to make cutouts:", end2 - end)
-
-    #             else:
-    #                 for gal in self:
-    #                     if gal.ID in IDs:
-    #                         gal.cutout_paths[band] = f"{config['Cutouts']['CUTOUT_DIR']}/{self.version}/{self.survey}/{band}/{gal.ID}.fits"
-    #                 print(f"Cutouts for {band} already exist. Skipping.")
+    ) -> List[Dict[str, Type[Band_Cutout_Base]]]:
+        return [gal.make_cutouts(self.data, cutout_size) for gal in self]
+    
+    def make_band_cutouts(
+        self: Self,
+        filt: Union[str, Filter],
+        cutout_size: u.Quantity = 0.96 * u.arcsec,
+    ) -> List[Band_Cutout]:
+        band_data = self.data[filt.band_name]
+        return [gal.make_band_cutout(band_data, cutout_size) for gal in self]
 
     def stack_gals(
         self, cutout_size: u.Quantity = 0.96 * u.arcsec
@@ -1285,8 +1240,7 @@ class Catalogue(Catalogue_Base):
         self: Self,
         x_calculator: Type[Property_Calculator],
         y_calculator: Type[Property_Calculator],
-        colour_by: Union[None, str] = None,
-        c_origin: Union[str, dict, None] = None,
+        c_calculator: Optional[Type[Property_Calculator]] = None,
         incl_x_errs: bool = True,
         incl_y_errs: bool = True,
         log_x: bool = False,
@@ -1310,8 +1264,11 @@ class Catalogue(Catalogue_Base):
         y_name = y_calculator.full_name
         x_label = x_calculator.plot_name
         y_label = y_calculator.plot_name
+        colour_name = c_calculator.full_name if c_calculator is not None else ""
+        colour_label = c_calculator.plot_name if c_calculator is not None else None
 
         if plot_type.lower() == "individual":
+
             if isinstance(x_calculator, tuple(Property_Calculator.__subclasses__())):
                 x = x_calculator.extract_vals(self)
                 if incl_x_errs:
@@ -1320,12 +1277,11 @@ class Catalogue(Catalogue_Base):
                     x_err = None
             else:
                 raise NotImplementedError
-            #x_label = x_origin["code"].gal_property_fmt_dict[x_name]
             if log_x or x_name in funcs.logged_properties:
                 if incl_x_errs:
                     x, x_err = funcs.errs_to_log(x, x_err)
                 else:
-                    x = np.log10(x)
+                    x = np.log10(x.value)
                 x_name = f"log({x_name})"
                 x_label = f"log({x_label})"
 
@@ -1337,35 +1293,28 @@ class Catalogue(Catalogue_Base):
                     y_err = None
             else:
                 raise NotImplementedError
-            
-            #y_label = y_origin["code"].gal_property_fmt_dict[y_name]
             if log_y or y_name in funcs.logged_properties:
                 if incl_y_errs:
                     y, y_err = funcs.errs_to_log(y, y_err)
                 else:
-                    y = np.log10(y)
+                    y = np.log10(y.value)
                 y_name = f"log({y_name})"
                 y_label = f"log({y_label})"
-
-        # if colour_by is None:
-        #     # plot all as a single colour
-        #     pass
-        # else:
-        #     if isinstance(c_origin, dict):
-        #         assert "code" in c_origin.keys()
-        #         assert c_origin["code"].__class__.__name__ in [
-        #             code.__name__ for code in SED_code.__subclasses__()
-        #         ]
-        #     c = getattr(
-        #         self, colour_by, SED_fit_params=c_origin, property_type="vals"
-        #     )
-        #     #cbar_label = c_origin["code"].gal_property_fmt_dict[colour_by]
-        #     if log_c or c in funcs.logged_properties:
-        #         c = np.log10(c)
-        #         colour_by = f"log({colour_by})"
-        #         cbar_label = f"log({cbar_label})"
+            
+            if c_calculator is not None:
+                if isinstance(c_calculator, tuple(Property_Calculator.__subclasses__())):
+                    c = c_calculator.extract_vals(self).value
+                else:
+                    raise NotImplementedError
+                if log_c or colour_name in funcs.logged_properties:
+                    c = np.log10(c)
+                    colour_name = f"log({colour_name})"
+                    colour_label = f"log({colour_label})"
 
         elif plot_type.lower() == "stacked":
+            assert c_calculator is None, galfind_logger.critical(
+                "Cannot stack galaxies and colour by another property!"
+            )
             # extract the PDFs
             x_PDFs = x_calculator.extract_PDFs(self)
             y_PDFs = y_calculator.extract_PDFs(self)
@@ -1405,7 +1354,7 @@ class Catalogue(Catalogue_Base):
 
         if mean_err:
             # produce scatter plot
-            if colour_by is None:
+            if c_calculator is None:
                 plot = ax.scatter(x, y, **plot_kwargs)
             else:
                 if "cmap" not in plot_kwargs.keys():
@@ -1419,7 +1368,7 @@ class Catalogue(Catalogue_Base):
             if incl_x_errs or incl_y_errs:
                 if "ls" not in plot_kwargs.keys():
                     plot_kwargs["ls"] = ""
-            if colour_by is None:
+            if c_calculator is None:
                 if incl_x_errs or incl_y_errs:
                     plot = ax.errorbar(x, y, xerr=x_err, yerr=y_err, **plot_kwargs)
                 else:
@@ -1436,40 +1385,29 @@ class Catalogue(Catalogue_Base):
                         x, y, c=c, **plot_kwargs
                     )
 
-        # sort plot aesthetics
-        if annotate:
+        # sort plot aesthetics - automatically annotate if coloured
+        if annotate or c_calculator is not None:
             plot_label = (
                 f"{self.version}, {self.filterset.instrument_name}, {self.survey}"
             )
             ax.set_title(plot_label)
             ax.set_xlabel(x_label)
             ax.set_ylabel(y_label)
-            if colour_by is not None:
-                # make colourbar
-                pass
+            if c_calculator is not None:
+                fig.colorbar(plot, label = colour_label)
+
             if plot_legend:
                 ax.legend(**legend_kwargs)
 
         if save:
             # determine appropriate save path
+            save_colour_name = f"_c={colour_name}" if c_calculator is not None else ""
             save_path = f"{config['Other']['PLOT_DIR']}/{self.version}/" + \
                 f"{self.filterset.instrument_name}/{self.survey}/" + \
-                f"{y_name}_vs_{x_name}/{self.crop_name}{save_type}"
-            # if any(var is None for var in [colour_by, c_origin]):
-            #     pass
-            # elif type(c_origin) in [str]:
-            #     plot_name += f",c={c_origin}"
-            # else:  # dict
-            #     plot_name += f",c={c_origin['code'].label_from_SED_fit_params(c_origin)}"
-            # if colour_by is None:
-            #     colour_label = f"_c={colour_by}"
-            # else:
-            #     colour_label = ""
-
-            #save_name = f"{y_name}_vs_{x_name}{colour_label}"
-            #save_path = f"{save_dir}/{save_name}{save_type}"
+                f"{y_name}_vs_{x_name}/{self.crop_name}{save_colour_name}{save_type}"
             funcs.make_dirs(save_path)
             plt.savefig(save_path)
+
         if show:
             plt.show()
 

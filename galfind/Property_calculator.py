@@ -399,7 +399,7 @@ class SED_Property_Calculator(Property_Calculator):
         object: Union[Catalogue, Galaxy, SED_obs]
     ) -> Union[u.Quantity, u.Magnitude, u.Dex]:
         if isinstance(object, Catalogue):
-            cat_vals = [getattr(gal.aper_phot[self.aper_diam].SED_results[self.SED_fit_label].SED, self.name) for gal in object]
+            cat_vals = [getattr(gal.aper_phot[self.aper_diam].SED_results[self.SED_fit_label], self.name) for gal in object]
             if not all(isinstance(val, float) for val in cat_vals):
                 assert all(val.unit == cat_vals[0].unit for val in cat_vals), \
                     galfind_logger.critical(f"Units of {self.name} in {object} are not consistent")
@@ -408,7 +408,7 @@ class SED_Property_Calculator(Property_Calculator):
                 cat_vals = np.array(cat_vals)
             return cat_vals
         elif isinstance(object, Galaxy):
-            return getattr(object.aper_phot[self.aper_diam].SED_results[self.SED_fit_label].SED, self.name)
+            return getattr(object.aper_phot[self.aper_diam].SED_results[self.SED_fit_label], self.name)
         elif isinstance(object, SED_obs):
             return getattr(object, self.name)
         else:
@@ -432,6 +432,29 @@ class SED_Property_Calculator(Property_Calculator):
                 f"not in [Catalogue, Galaxy, SED_obs]"
             galfind_logger.critical(err_message)
             raise TypeError(err_message)
+
+
+class Custom_SED_Property_Extractor(Property_Extractor, SED_Property_Calculator):
+
+    def __init__(
+        self: Self,
+        name: str,
+        plot_name: str,
+        aper_diam: u.Quantity,
+        SED_fit_label: Union[str, Type[SED_code]],
+    ) -> None:
+        self._name = name
+        self._plot_name = plot_name
+        super().__init__(aper_diam, SED_fit_label)
+    
+    @property
+    def name(self: Self) -> str:
+        return self._name
+    
+    @property
+    def plot_name(self: Self) -> str:
+        return self._plot_name
+
 
 class Redshift_Extractor(Property_Extractor, SED_Property_Calculator):
     

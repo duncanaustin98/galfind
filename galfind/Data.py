@@ -161,11 +161,7 @@ class Band_Data_Base(ABC):
         return self.load_im()[0].shape
 
     def __repr__(self) -> str:
-        # included = ""
-        # for attr in ["mask", "seg", "forced_phot", "depth"]:
-        #     if hasattr(self, f"{attr}_args"):
-        #         included += f"{attr},"
-        return f"{self.instr_name}/{self.filt_name}" #({included})"
+        return f"{self.__class__.__name__}({self.instr_name}/{self.filt_name})"
     
     def __str__(self) -> str:
         output_str = funcs.line_sep
@@ -377,6 +373,7 @@ class Band_Data_Base(ABC):
     def load_seg(
         self, incl_hdr: bool = True
     ) -> Tuple[np.ndarray, fits.Header]:
+        # TODO: load from the correct hdu rather than the first one
         if not Path(self.seg_path).is_file():
             err_message = (
                 f"Segmentation map for {self.survey} "
@@ -1709,8 +1706,8 @@ class Data:
         pix_scale: u.Quantity = 0.03 * u.arcsec,
         version_to_dir_dict: Optional[Dict[str, str]] = None,
     ) -> Self:
-        # if version_to_dir_dict is not None:
-        version = version_to_dir_dict[version.split("_")[0]]
+        if version_to_dir_dict is not None:
+            version = version_to_dir_dict[version.split("_")[0]]
         # else:
         #     version_substr = version
         # if len(version.split("_")) > 1:

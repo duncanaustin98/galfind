@@ -12,9 +12,9 @@ plt.style.use(
 )
 
 # Load in a JOF data object
-survey = "JOF"
-version = "v11"
-instrument_names = ["NIRCam"] # "ACS_WFC",
+survey = "CLIO"
+version = "v9"
+instrument_names = ["NIRCam"] # "ACS_WFC", 
 aper_diams = [0.32] * u.arcsec
 forced_phot_band = ["F277W", "F356W", "F444W"] #["F814W"]
 min_flux_pc_err = 10.
@@ -26,7 +26,18 @@ def test_selection():
         {"templates": "fsps_larson", "lowz_zmax": None}
     ]
 
-    JOF_cat = Catalogue.pipeline(
+    data = Data.from_survey_version(
+        survey,
+        version,
+        instrument_names = instrument_names,
+        version_to_dir_dict = morgan_version_to_dir,
+        aper_diams = aper_diams,
+        forced_phot_band = forced_phot_band,
+    )
+    print(data.band_data_arr)
+    breakpoint()
+
+    cat = Catalogue.pipeline(
         survey,
         version,
         instrument_names = instrument_names, 
@@ -40,26 +51,27 @@ def test_selection():
     # load EAZY SED fitting results
     for SED_fit_params in SED_fit_params_arr:
         EAZY_fitter = EAZY(SED_fit_params)
-        EAZY_fitter(JOF_cat, aper_diams[0], load_PDFs = True, load_SEDs = True, update = True)
+        EAZY_fitter(cat, aper_diams[0], load_PDFs = True, load_SEDs = True, update = True)
 
     # load sextractor half-light radii
-    JOF_cat.load_sextractor_Re()
+    cat.load_sextractor_Re()
 
     from galfind import EPOCHS_Selector, Redwards_Lya_Detect_Selector
-    # epochs_selector = EPOCHS_Selector(aper_diams[0], EAZY_fitter, allow_lowz = False, unmasked_instruments = "NIRCam")
-    # epochs_selected_cat = epochs_selector(JOF_cat, return_copy = True)
+    epochs_selector = EPOCHS_Selector(aper_diams[0], EAZY_fitter, allow_lowz = False, unmasked_instruments = "NIRCam")
+    epochs_selected_cat = epochs_selector(cat, return_copy = True)
     # epochs_selector_lowz = EPOCHS_Selector(aper_diams[0], EAZY_fitter, allow_lowz = True, unmasked_instruments = "NIRCam")
-    # epochs_selected_cat_lowz = epochs_selector_lowz(JOF_cat, return_copy = True)
-    Redwards_Lya_Detect_Selector(aper_diams[0], EAZY(SED_fit_params_arr[-1]), SNR_lims = [5.0], widebands_only = True)(JOF_cat)
-    # SED_fit_label = "EAZY_fsps_larson_zfree"
-    from galfind import MUV_Calculator, Xi_Ion_Calculator, M99
-    # for beta_dust_conv in [None, M99]: #, Reddy18(C00(), 100 * u.Myr), Reddy18(C00(), 300 * u.Myr)]:
-    #     for fesc_conv in [None]:#, "Chisholm22"]: # None, 0.1, 0.2, 0.5,
-    #         calculator = Xi_Ion_Calculator(aper_diams[0], SED_fit_label, beta_dust_conv = beta_dust_conv, fesc_conv = fesc_conv)
-    #         calculator(JOF_cat, n_chains = 10_000, output = False, n_jobs = 1)
-    breakpoint()
-    MUV_calculator = MUV_Calculator(aper_diams[0], EAZY_fitter)
-    MUV_calculator(JOF_cat, n_chains = 10_000, output = False, n_jobs = 1)
+    # epochs_selected_cat_lowz = epochs_selector_lowz(cat, return_copy = True)
+
+    # Redwards_Lya_Detect_Selector(aper_diams[0], EAZY(SED_fit_params_arr[-1]), SNR_lims = [5.0], widebands_only = True)(JOF_cat)
+    # # SED_fit_label = "EAZY_fsps_larson_zfree"
+    # from galfind import MUV_Calculator, Xi_Ion_Calculator, M99
+    # # for beta_dust_conv in [None, M99]: #, Reddy18(C00(), 100 * u.Myr), Reddy18(C00(), 300 * u.Myr)]:
+    # #     for fesc_conv in [None]:#, "Chisholm22"]: # None, 0.1, 0.2, 0.5,
+    # #         calculator = Xi_Ion_Calculator(aper_diams[0], SED_fit_label, beta_dust_conv = beta_dust_conv, fesc_conv = fesc_conv)
+    # #         calculator(JOF_cat, n_chains = 10_000, output = False, n_jobs = 1)
+    # breakpoint()
+    # MUV_calculator = MUV_Calculator(aper_diams[0], EAZY_fitter)
+    # MUV_calculator(JOF_cat, n_chains = 10_000, output = False, n_jobs = 1)
 
 def test_pipes():
     
@@ -88,6 +100,61 @@ def test_pipes():
     pipes_SED_fit_params = {"fix_z": EAZY_fitter.label, "fesc": None}
     pipes_fitter = Bagpipes(pipes_SED_fit_params)
     pipes_fitter(JOF_cat, aper_diams[0], save_PDFs = False, load_SEDs = False, load_PDFs = True, overwrite = False, update = True)
+
+    from galfind.Property_calculator import Redshift_Extractor, Custom_SED_Property_Extractor
+    from galfind import UV_Beta_Calculator
+    z_extractor = Redshift_Extractor(aper_diams[0], EAZY_fitter)
+    MUV_extractor = Custom_SED_Property_Extractor("M_UV", r"$M_{\mathrm{UV}}$", aper_diams[0], pipes_fitter.label)
+    stellar_mass_extractor = Custom_SED_Property_Extractor("stellar_mass", r"$\log_{10}(M_{\star}~/~\mathrm{M}_{\odot})$", aper_diams[0], pipes_fitter.label)
+    xi_ion_extractor = Custom_SED_Property_Extractor("xi_ion_caseB", r"$\xi_{\mathrm{ion}}~/~\mathrm{Hz}~\mathrm{erg}^{-1}$", aper_diams[0], pipes_fitter.label)
+    beta_extractor = Custom_SED_Property_Extractor("beta_C94", r"$\beta$", aper_diams[0], pipes_fitter.label)
+    dust_extractor = Custom_SED_Property_Extractor("dust:Av", r"$A_{\mathrm{V}}$", aper_diams[0], pipes_fitter.label)
+    beta_calculator = UV_Beta_Calculator(aper_diams[0], EAZY_fitter)
+    beta_calculator(JOF_cat, n_chains = 10_000, output = False, n_jobs = 1)
+    # Plot EAZY redshift on x axis and xi_ion on y axis
+    plt.style.use(f"{config['DEFAULT']['GALFIND_DIR']}/galfind_style.mplstyle")
+    plot_kwargs = {
+        "mfc": "gray",
+        "marker": "D",
+        "ms": 8.0,
+        "mew": 2.0,
+        "mec": "black",
+        "ecolor": "black",
+        "elinewidth": 2.0,
+    }
+
+    for colour_by in [z_extractor]: #, dust_extractor, z_extractor, None]:
+
+        fig, ax = plt.subplots()
+        JOF_cat.plot(z_extractor, xi_ion_extractor, incl_x_errs = False, incl_y_errs = False, annotate = True, plot_type = "individual", save = True, fig = fig, ax = ax, log_y = True, c_calculator = colour_by)
+        #JOF_cat.plot(z_calculator, xi_ion_calculator, incl_x_errs = False, incl_y_errs = False, annotate = True, plot_type = "stacked", plot_kwargs = plot_kwargs, fig = fig, ax = ax)
+
+        fig, ax = plt.subplots()
+        ax.set_xlim(-21.5, -16.5)
+        JOF_cat.plot(MUV_extractor, xi_ion_extractor, incl_x_errs = False, incl_y_errs = False, annotate = True, plot_type = "individual", save = True, fig = fig, ax = ax, log_y = True, c_calculator = colour_by)
+        #JOF_cat.plot(MUV_extractor, xi_ion_calculator, incl_x_errs = False, incl_y_errs = False, annotate = True, plot_type = "stacked", plot_kwargs = plot_kwargs, fig = fig, ax = ax)
+
+        fig, ax = plt.subplots()
+        JOF_cat.plot(stellar_mass_extractor, xi_ion_extractor, incl_x_errs = False, incl_y_errs = False, annotate = True, plot_type = "individual", save = True, fig = fig, ax = ax, log_y = True, c_calculator = colour_by)
+        #JOF_cat.plot(stellar_mass_extractor, xi_ion_calculator, incl_x_errs = False, incl_y_errs = False, annotate = True, plot_type = "stacked", plot_kwargs = plot_kwargs, fig = fig, ax = ax)
+
+        fig, ax = plt.subplots()
+        ax.set_xlim(-21.5, -16.5)
+        JOF_cat.plot(MUV_extractor, stellar_mass_extractor, incl_x_errs = False, incl_y_errs = False, annotate = True, plot_type = "individual", save = True, fig = fig, ax = ax, c_calculator = colour_by)
+        #JOF_cat.plot(MUV_extractor, stellar_mass_extractor, incl_x_errs = False, incl_y_errs = False, annotate = True, plot_type = "stacked", plot_kwargs = plot_kwargs, fig = fig, ax = ax)
+
+        fig, ax = plt.subplots()
+        ax.set_xlim(-21.5, -16.5)
+        JOF_cat.plot(MUV_extractor, beta_calculator, incl_x_errs = False, incl_y_errs = False, annotate = True, plot_type = "individual", save = True, fig = fig, ax = ax, c_calculator = colour_by)
+        #JOF_cat.plot(MUV_extractor, stellar_mass_extractor, incl_x_errs = False, incl_y_errs = False, annotate = True, plot_type = "stacked", plot_kwargs = plot_kwargs, fig = fig, ax = ax)
+
+        fig, ax = plt.subplots()
+        JOF_cat.plot(stellar_mass_extractor, beta_calculator, incl_x_errs = False, incl_y_errs = False, annotate = True, plot_type = "individual", save = True, fig = fig, ax = ax, c_calculator = colour_by)
+        #JOF_cat.plot(MUV_extractor, stellar_mass_extractor, incl_x_errs = False, incl_y_errs = False, annotate = True, plot_type = "stacked", plot_kwargs = plot_kwargs, fig = fig, ax = ax)
+
+        fig, ax = plt.subplots()
+        JOF_cat.plot(beta_calculator, xi_ion_extractor, incl_x_errs = False, incl_y_errs = False, annotate = True, plot_type = "individual", save = True, fig = fig, ax = ax, log_y = True, c_calculator = colour_by)
+        #JOF_cat.plot(MUV_extractor, stellar_mass_extractor, incl_x_errs = False, incl_y_errs = False, annotate = True, plot_type = "stacked", plot_kwargs = plot_kwargs, fig = fig, ax = ax)
 
 
 def test_UVLF():
@@ -586,7 +653,7 @@ if __name__ == "__main__":
     #update_data_names()
     #test_load()
     #main()
-    #test_selection()
+    test_selection()
 
     #test_UVLF()
 
@@ -594,7 +661,7 @@ if __name__ == "__main__":
     #test_pipes()
     #check_multinest()
 
-    test_plotting()
+    #test_plotting()
 
     # LePhare_SED_fit_params = {"GAL_TEMPLATES": "BC03_Chabrier2003_Z(m42_m62)"}
     # EAZY_SED_fit_params = {"templates": "fsps_larson", "lowz_zmax": None}

@@ -47,6 +47,7 @@ if TYPE_CHECKING:
     from . import Multiple_Catalogue
     from . import Filter
     from . import Multiple_Filter
+    from . import Morphology_Result
 try:
     from typing import Self, Type  # python 3.11+
 except ImportError:
@@ -106,6 +107,10 @@ class Band_Cutout_Base(Cutout_Base, ABC):
         output_str += f"{repr(self)}:\n"
         output_str += funcs.line_sep
         output_str += f"Cutout path: {self.cutout_path}\n"
+        if hasattr(self, "morph_fits"):
+            if len(self.morph_fits) > 0:
+                output_str += f"Morphology fits:\n"
+                output_str += f"{repr(self.morph_fits)}\n"
         output_str += f"Meta:\n"
         output_str += funcs.band_sep
         for key, val in self.meta.items():
@@ -191,6 +196,18 @@ class Band_Cutout_Base(Cutout_Base, ABC):
         else:
             hdu = fits.open(self.cutout_path)[hdu_name]
             return dict(hdu.header), hdu.data
+
+    def update_morph_fits(
+        self: Self,
+        morph_results: Union[Morphology_Result, List[Morphology_Result]],
+        overwrite: bool = False,
+    ) -> NoReturn:
+        from . import Morphology_Result
+        if overwrite or not hasattr(self, "morph_fits"):
+            self.morph_fits = {}
+        if isinstance(morph_results, Morphology_Result):
+            morph_results = [morph_results]
+        self.morph_fits = {**self.morph_fits, **{result.name: result for result in morph_results}}
 
     def plot(
         self: Self,
@@ -1313,6 +1330,7 @@ class Catalogue_Cutouts(Multiple_Cutout_Base):
         cutouts: List[Type[Cutout_Base]],
         ID: str
     ) -> Self:
+        # each plot is a different galaxy using the same filter
         self.ID = ID
         super().__init__(cutouts)
 

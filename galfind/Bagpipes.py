@@ -992,8 +992,9 @@ class Bagpipes(SED_code):
         cat: Catalogue,
         aper_diam: u.Quantity,
     ) -> NDArray[float, float]:
+        from . import ID_Selector
         # get appropriate galaxy photometry from catalogue
-        aper_phot = cat[{"ID": ID}].aper_phot[aper_diam]
+        aper_phot = cat[ID_Selector(int(ID))][0].aper_phot[aper_diam]
         # extract fluxes and errors in uJy
         band_wavs = np.array([filt.WavelengthCen.to(u.AA).value for filt in aper_phot.filterset]) * u.AA
         assert all(u.get_physical_type(f_nu) in [
