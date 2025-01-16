@@ -22,7 +22,7 @@ from . import galfind_logger, config
 from . import useful_funcs_austind as funcs
 
 
-class Morphology_Result:
+class Morphology_Result(ABC):
 
     def __init__(
         self: Self,
@@ -52,7 +52,100 @@ class Morphology_Result:
     
     def __repr__(self: Self) -> str:
         return f"{self.__class__.__name__}({self.name})"
+    
+    @abstractmethod
+    def plot(self: Self) -> None:
+        pass
 
+
+class Galfit_Result(Morphology_Result):
+
+    def __init__(
+        self: Self,
+        fitter: Type[Galfit_Fitter],
+        chi2: float,
+        Ndof: int,
+        properties: Dict[str, Union[u.Quantity, u.Magnitude, u.Dex]],
+        property_errs: Dict[str, List[Union[u.Quantity, u.Magnitude, u.Dex], Union[u.Quantity, u.Magnitude, u.Dex]]],
+        property_pdfs: Dict[str, Type[PDF_Base]],
+        im_path: str,
+    ) -> None:
+        self.im_path = im_path
+        #f'{galaxy_path}/{id}_ss_imgblock.fits'
+        super().__init__(fitter, chi2, Ndof, properties, property_errs, property_pdfs)
+
+    @property
+    def id(self: Self) -> str:
+        return self.im_path.split("/")[-1].split("_")[0]
+
+    @property
+    def instr_name(self: Self) -> str:
+        return self.im_path.replace(config['GALFIT']['OUTPUT_DIR'], "").split("/")[0]
+
+    @property
+    def version(self: Self) -> str:
+        return self.im_path.replace(config['GALFIT']['OUTPUT_DIR'], "").split("/")[1]
+
+    @property
+    def survey(self: Self) -> str:
+        return self.im_path.replace(config['GALFIT']['OUTPUT_DIR'], "").split("/")[2]
+    
+    @property
+    def filt_name(self: Self) -> str:
+        return self.im_path.replace(config['GALFIT']['OUTPUT_DIR'], "").split("/")[3]
+    
+    @property
+    def plot_path(self: Self) -> str:
+        return f"{'/'.join(self.im_path.replace(config['GALFIT']['OUTPUT_DIR'], config['GALFIT']['GALFIT_PLOT_DIR']).split('/')[:-1]).replace(self.id + '/', '')}/{self.id}.png"
+
+    def plot(
+        self: Self,
+        fig: Optional[plt.Figure] = None,
+        title: Optional[str] = None,
+        cmap: str = "gray",
+        save: bool = True,
+        show: bool = False,
+    ) -> None:
+
+        if fig is None:
+            fig, axs = plt.subplots(1, 3, figsize=(10, 4))
+
+        hdul = fits.open(self.im_path)
+        orig = hdul[1].data # Original image
+        mod = hdul[2].data # Galfit model image
+        res = hdul[3].data # Residual image
+        # Close the fits file
+        hdul.close()
+
+        # Set the colour range of the plot to be that of the input image.
+        vmin = orig.min()
+        vmax = orig.max()
+        
+        # Plot the images
+        if title is None:
+            # default title
+            fig.suptitle(f"{self.id}: {self.filt_name} {self.survey} {self.version}")
+        axs[0].imshow(orig, cmap=cmap, vmin=vmin, vmax=vmax)
+        axs[1].imshow(mod, cmap=cmap)
+        axs[2].imshow(res, cmap=cmap, vmin=vmin, vmax=vmax)
+        
+        # Set titles and turn off axis
+        axs[0].set_title('Original')
+        axs[1].set_title('Model')
+        axs[2].set_title('Residual')
+        for ax in axs.flat:
+            ax.axis('off')
+
+        # Save the figure
+        if save:
+            funcs.make_dirs(self.plot_path)
+            plt.savefig(self.plot_path, dpi=200)
+        if show:
+            plt.show()
+        galfind_logger.info(
+            f"Galfit output image saved to {self.plot_path}"
+        )
+    
 
 class Morphology_Fitter(ABC):
 
@@ -70,13 +163,15 @@ class Morphology_Fitter(ABC):
 
     def __call__(
         self: Self,
-        object: Union[Galaxy, Catalogue] #Union[Type[Band_Cutout_Base], Type[RGB_Base], Type[Multiple_Cutout_Base]],
+        object: Union[Galaxy, Catalogue], #Union[Type[Band_Cutout_Base], Type[RGB_Base], Type[Multiple_Cutout_Base]],
+        *args: Any,
+        **kwargs: Dict[str, Any],
     ) -> None:
         from . import Galaxy, Catalogue #Band_Cutout_Base, RGB_Base, Multiple_Cutout_Base
         if isinstance(object, Catalogue):
-            result = self._fit_cat(object)
+            result = self._fit_cat(object, *args, **kwargs)
         elif isinstance(object, Galaxy):
-            result = self._fit_gal(object)
+            result = self._fit_gal(object, *args, **kwargs)
         else:
             raise TypeError(f"{type(object)=} invalid!")
         return result
@@ -112,7 +207,7 @@ class Morphology_Fitter(ABC):
 
     def _make_results_table(
         self: Self,
-        results: List[Morphology_Result],
+        results: List[Type[Morphology_Result]],
         out_path: str,
     ) -> Table:
         all_property_names = np.unique(np.array([list(result.properties.keys()) for result in results]).flatten())
@@ -121,9 +216,9 @@ class Morphology_Fitter(ABC):
         fit_property_u1 = {f"{name}_u1": [result.property_errs[name][1].value if name in result.property_errs.keys() else np.nan for result in results] for name in all_property_names}
         fit_data = {**fit_properties, **fit_property_l1, **fit_property_u1}
         tab = Table(fit_data)
-        breakpoint()
         funcs.make_dirs(out_path)
         tab.write(out_path, overwrite=True)
+        galfind_logger.info(f"Saved results table to {out_path}")
         return tab
 
 
@@ -157,10 +252,12 @@ class Galfit_Fitter(Morphology_Fitter):
 
     def __call__(
         self: Self,
-        object: Union[Galaxy, Catalogue] #Union[Type[Band_Cutout_Base], Type[RGB_Base], Type[Multiple_Cutout_Base]],
+        object: Union[Galaxy, Catalogue], #Union[Type[Band_Cutout_Base], Type[RGB_Base], Type[Multiple_Cutout_Base]],
+        *args: Any,
+        **kwargs: Dict[str, Any],
     ) -> None:
         self._make_constraints_file()
-        super().__call__(object)
+        super().__call__(object, *args, **kwargs)
 
     def _make_constraints_file(self):
         # Create constraints file for Galfit
@@ -171,7 +268,8 @@ class Galfit_Fitter(Morphology_Fitter):
 
     def _fit_cat(
         self: Self,
-        cat: Catalogue
+        cat: Catalogue,
+        plot: bool = False,
     ):
         cat.load_sextractor_auto_mags()
         cat.load_sextractor_Re()
@@ -194,7 +292,8 @@ class Galfit_Fitter(Morphology_Fitter):
                 fid_mag = gal.sex_MAG_AUTO[self.psf.cutout.band_data.filt_name], 
                 fid_re = gal.sex_Re[self.psf.cutout.band_data.filt_name],
                 in_dir = f"{in_subdir}/{str(gal.ID)}",
-                out_dir = f"{out_subdir}/{str(gal.ID)}/{self.model}"
+                out_dir = f"{out_subdir}/{str(gal.ID)}/{self.model}",
+                plot = plot
             )
             for gal in cat
         ]
@@ -214,6 +313,7 @@ class Galfit_Fitter(Morphology_Fitter):
         fid_re: u.Quantity,
         in_dir: str = "",
         out_dir: str = "",
+        plot: bool = False,
     ) -> None:
         if in_dir != "":
             in_dir = f"{in_dir}/"
@@ -234,6 +334,8 @@ class Galfit_Fitter(Morphology_Fitter):
             self._move_mask_to_in_dir(cutout, in_dir, out_dir)
             galfind_logger.info(f"{cutout.ID} Galfit fit complete")
         fitting_result = self._extract_results_from_file(out_path)
+        if plot:
+            fitting_result.plot()
         # update Cutout object with Morphology results
         cutout.update_morph_fits(fitting_result)
         return fitting_result # TODO: should output cutout
@@ -443,13 +545,14 @@ class Galfit_Fitter(Morphology_Fitter):
         pdfs = {name: PDF.from_1D_arr(name, \
             np.random.normal(properties[name].value, property_errs[name][0].value, 10_000) \
             * properties[name].unit) for name in property_names}
-        return Morphology_Result(
+        return Galfit_Result(
             fitter = self,
             chi2 = float(hdr["CHISQ"]),
             Ndof = float(hdr["NDOF"]),
             properties = properties,
             property_errs = property_errs,
             property_pdfs = pdfs,
+            im_path = out_path
         )
 
 # def _calc_RFF(field, band,  id, flux_r):
@@ -562,129 +665,6 @@ class Galfit_Fitter(Morphology_Fitter):
 #     d_A = cosmo.angular_diameter_distance(z) #Angular diameter distance in Mpc
 #     re_kpc = (re_as * d_A).to(u.kpc, u.dimensionless_angles()) # re of galaxy in kpc
 #     return re_kpc
-
-# def output_images(galaxy_path, save_path, id, field, band, type='ss'):
-#     band = band.upper()
-#     if not os.path.exists(save_path):
-#         os.makedirs(save_path)
-#     if type == 'ss':
-#         #Open the fits file.
-#         try:
-#             hdul = fits.open(f'{galaxy_path}/{id}_ss_imgblock.fits')
-            
-#             orig = hdul[1].data #Original image
-#             mod = hdul[2].data #Galfit model image
-#             res = hdul[3].data #Residual image
-            
-#             #Set the colour range of the plot to be that of the input image.
-#             vmin = orig.min()
-#             vmax = orig.max()
-            
-#             #Plot the images
-#             fig, axs = plt.subplots(1, 3, figsize=(10, 4))
-#             fig.suptitle(f'{field} {id} {band}')
-#             axs[0].imshow(orig, cmap='gray', vmin=vmin, vmax=vmax)
-#             axs[1].imshow(mod, cmap='gray')
-#             axs[2].imshow(res, cmap='gray', vmin=vmin, vmax=vmax)
-            
-#             #Set titles and turn off axis
-#             axs[0].set_title('Original')
-#             axs[1].set_title('Model')
-#             axs[2].set_title('Residual')
-            
-#             for ax in axs.flat:
-#                 ax.axis('off')
-
-#             #Save the figure
-#             plt.savefig(f'{save_path}/{id}_{field}_galfit_ss_output.png', dpi=200)   
-#             plt.close(fig)
-#             #print(f'{id} single sersic galfit output image saved')
-            
-#             #Close the fits file
-#             hdul.close()
-#         except FileNotFoundError:
-#             print(f'{id} single sersic galfit output not found')
-    
-#     elif type == 'ds':
-#         #Open the fits file.
-#         try:
-#             hdul = fits.open(f'{galaxy_path}/{id}_ds_imgblock.fits')
-#             orig = hdul[1].data
-#             mod = hdul[2].data #Galfit model image
-#             res = hdul[3].data #Residual image
-            
-#             #Set the colour range of the plot to be that of the input image.
-#             vmin = orig.min()
-#             vmax = orig.max()
-            
-#             #Plot the images
-#             fig, axs = plt.subplots(1, 3, figsize=(10, 4))
-#             fig.suptitle(f'{field} {id} {band}')
-#             axs[0].imshow(orig, cmap='gray', vmin=vmin, vmax=vmax)
-#             axs[1].imshow(mod, cmap='gray')
-#             axs[2].imshow(res, cmap='gray', vmin=vmin, vmax=vmax)
-            
-#             #Set titles and turn off axis
-#             axs[0].set_title('Original')
-#             axs[1].set_title('Model')
-#             axs[2].set_title('Residual')
-            
-#             for ax in axs.flat:
-#                 ax.axis('off')
-
-#             #Save the figure
-#             plt.savefig(f'{save_path}/{id}_{field}_galfit_ds_output.png', dpi=200)   
-#             plt.close(fig)
-#             #print(f'{id} double sersic galfit output image saved')
-            
-#             #Close the fits file
-#             hdul.close()
-#         except FileNotFoundError:
-#             print(f'{id} double sersic galfit output not found')
-        
-    
-#     elif type == 'ss_psf':
-#         #Open the fits file.
-#         try:
-#             hdul = fits.open(f'{galaxy_path}/{id}_ss_psf_imgblock.fits')
-#             orig = hdul[1].data
-#             mod = hdul[2].data #Galfit model image
-#             res = hdul[3].data #Residual image
-            
-#             #Set the colour range of the plot to be that of the input image.
-#             vmin = orig.min()
-#             vmax = orig.max()
-            
-#             #Plot the images
-#             fig, axs = plt.subplots(2, 2, figsize=(10, 4))
-#             fig.suptitle(f'{field} {id} {band}')
-#             axs[0,0].imshow(orig, cmap='gray', vmin=vmin, vmax=vmax)
-#             axs[1,1].imshow(mod, cmap='gray')
-#             axs[0,1].imshow(res, cmap='gray', vmin=vmin, vmax=vmax)
-#             axs[1,0].imshow(mod, cmap='gray', vmin=vmin, vmax=vmax)
-            
-#             #Set titles and turn off axis
-#             axs[0,0].set_title('Original')
-#             axs[1,1].set_title('Model')
-#             axs[0,1].set_title('Residual')
-#             axs[1,0].set_title('Model (scaled colour)')
-            
-#             for ax in axs.flat:
-#                 ax.axis('off')
-
-#             #Save the figure
-#             plt.savefig(f'{save_path}/{id}_{field}_galfit_ss_psf_output.png', dpi=200)   
-#             plt.close(fig)
-#             #print(f'{id} single sersic with psf galfit output image saved')
-            
-#             #Close the fits file
-#             hdul.close()
-#         except FileNotFoundError:
-#             print(f'{id} single sersic with psf galfit output not found')
-
-#     else:
-#         print('Invalid type.')
-#         sys.exit()
 
 # def input_images(galaxy_path, save_path, id, field, band):
 #     if not os.path.exists(save_path):
