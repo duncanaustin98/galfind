@@ -7,7 +7,10 @@ import numpy as np
 import corner
 import multiprocessing as mp
 import os
+from astropy.stats import sigma_clip
+from matplotlib import patheffects as pe
 import matplotlib.pyplot as plt
+from numpy.typing import NDArray
 from typing import NoReturn, Union, Optional, List, Dict, Any, TYPE_CHECKING
 try:
     from typing import Self, Type  # python 3.11+
@@ -163,7 +166,7 @@ class MCMC_Fitter(ABC):
         priors: Priors,
         x_data: NDArray[float],
         y_data: NDArray[float],
-        y_data_errs: NDArray[NDarray[float, float]],
+        y_data_errs: NDArray[NDArray[float, float]],
         nwalkers: int,
         backend_filename: Optional[str],
         fixed_params: Dict[str, float]
@@ -200,11 +203,11 @@ class MCMC_Fitter(ABC):
         # pos = [flat_priors_lower + (flat_priors_diff) \
         #        * np.random.uniform(0, 1, self.ndim) for i in range(self.nwalkers)]
 
-        # init_pos = [self.fiducial_params + 1e0 * np.random.uniform(0, 1, self.ndim) * \
-        #         self.fiducial_params for i in range(self.nwalkers)]
-        init_pos = [np.array([np.random.uniform(prior.prior_params["lower_lim"], \
-            prior.prior_params["upper_lim"], 1)[0] for prior in self.priors]) \
-            for i in range(self.nwalkers)]
+        init_pos = [self.fiducial_params + 1e-4 * np.random.uniform(0, 1, self.ndim) * \
+                self.fiducial_params for i in range(self.nwalkers)]
+        # init_pos = [np.array([np.random.uniform(prior.prior_params["lower_lim"], \
+        #     prior.prior_params["upper_lim"], 1)[0] for prior in self.priors]) \
+        #     for i in range(self.nwalkers)]
         self.init_pos = init_pos
 
     def __call__(
@@ -240,9 +243,15 @@ class MCMC_Fitter(ABC):
     # @abstractmethod
     # def blob_funcs(self):
     #     pass
-    
-    def save(self):
-        pass
+
+    def _get_sigma_sq(
+        self: Self,
+        residuals: NDArray[float],
+        params: Dict[str, float]
+    ) -> NDArray[float]:
+        sigma = [y_err_u1 if residual > 0. else y_err_l1 for residual, y_err_u1, y_err_l1 in 
+            zip(residuals, self.y_data_errs[0], self.y_data_errs[1])]
+        return np.array(sigma) ** 2
     
     def log_likelihood(
         self: Self,
@@ -256,12 +265,9 @@ class MCMC_Fitter(ABC):
             return -np.inf # np.full(1 + len(self.blob_keys), -np.inf)
         # update params with fixed values
         params_loc = self._fix_params(params_loc)
-        return_value = lp
-        delta_y_arr = self.y_data - self.model(self.x_data, params_loc)
-        for (delta_y, y_err_u1, y_err_l1) in zip(delta_y_arr, self.y_data_errs[0], self.y_data_errs[1]):
-            y_err = y_err_u1 if delta_y > 0. else y_err_l1
-            return_value -= 0.5 * (delta_y / y_err) ** 2 # extra term here!
-        return return_value
+        residuals = self.y_data - self.model(self.x_data, params_loc)
+        sigma_sq = self._get_sigma_sq(residuals, params_loc)
+        return lp - 0.5 * np.sum(residuals ** 2 / sigma_sq + np.log(sigma_sq))
     
         # if len(self.blob_keys) == 0:
         #     return return_value
@@ -283,6 +289,41 @@ class MCMC_Fitter(ABC):
         for key, val in self.fixed_params.items():
             params[key] = val
         return params
+    
+    def _calculate_scatter(self) -> float:
+        self.get_params_med()
+        residuals = self.y_data - self.model(self.x_data, self.params_med)
+        self.scatter = np.sqrt(np.sum(residuals ** 2) / (len(self.y_data) - 1))
+        galfind_logger.info(f"Scatter: {self.scatter:.3f} dex")
+        return self.scatter
+
+    def get_params_med(self: Self) -> Dict[str, float]:
+        autocorr_time = np.max(self.sampler.get_autocorr_time())
+        discard = int(autocorr_time * 2)
+        thin = 1 # int(autocorr_time / 2)
+        chain = self.sampler.get_chain(flat = True, discard = discard, thin = thin)
+        self.params_med = {prior.name: np.median(chain[:, i]) for i, prior in enumerate(self.priors)}
+        galfind_logger.info(f"Median parameters: {self.params_med}")
+        return self.params_med
+
+    def plot(self: Self, ax: plt.Axes) -> None: #colour = "blue", nsamples = 1_000, plot_med = False, alpha = 0.3):
+        x_data = np.linspace(np.min(self.x_data), np.max(self.x_data), 100)
+        autocorr_time = np.max(self.sampler.get_autocorr_time())
+        discard = int(autocorr_time * 2)
+        thin = 1 # int(autocorr_time / 2)
+
+        y_fit = np.array([self.model(x_data, {prior.name: param for prior, param \
+            in zip(self.priors, params)}) for params in self.sampler.get_chain(
+            flat = True, discard = discard, thin = thin)]).T
+        
+        l1_chains = np.array([np.percentile(y, 16) for y in y_fit])
+        med_chains = np.array([np.percentile(y, 50) for y in y_fit])
+        u1_chains = np.array([np.percentile(y, 84) for y in y_fit])
+        
+        ax.plot(x_data, med_chains, color = "black", zorder = 2)
+        ax.fill_between(x_data, l1_chains, u1_chains, color = "black", alpha = 0.5, \
+            zorder = 1, path_effects = [pe.withStroke(linewidth = 2., foreground = "white")])
+        galfind_logger.info("Plotting MCMC fit")
 
     def plot_corner(
         self: Self,
@@ -294,7 +335,7 @@ class MCMC_Fitter(ABC):
         #if print_autocorr_time == True:
         #tau = self.backend.get_autocorr_time()
         #print("autocorr time = " + str(tau))
-        flat_samples = self.backend.get_chain(flat = True)#, discard=100, thin=15)
+        flat_samples = self.backend.get_chain(flat = True) #, discard=100, thin=15)
         #print(flat_samples)
         # flat_blobs = self.backend.get_blobs(flat = True)
         # #print(flat_blobs)
@@ -324,18 +365,18 @@ class MCMC_Fitter(ABC):
             "smooth": None,
             "title_kwargs": {"fontsize": 12},
             "show_titles": True,
-            "sigma_arr": [1, 2, 3],
+            #"sigma_arr": [1, 2, 3],
             "plot_density": False,
             "plot_datapoints": False,
         }
         for key, value in plot_kwargs.items():
             default_plot_kwargs[key] = value
         # convert sigma_arr to levels
-        if not "levels" in default_plot_kwargs.keys():
-            default_plot_kwargs["levels"] = tuple([ \
-                1.0 - np.exp(-0.5 * np.array(sigma) ** 2) \
-                for sigma in default_plot_kwargs["sigma_arr"]])
         if "sigma_arr" in default_plot_kwargs.keys():
+            if not "levels" in default_plot_kwargs.keys():
+                default_plot_kwargs["levels"] = tuple([ \
+                    1.0 - np.exp(-0.5 * np.array(sigma) ** 2) \
+                    for sigma in default_plot_kwargs["sigma_arr"]])
             del default_plot_kwargs["sigma_arr"]
         if len(default_plot_kwargs["quantiles"]) != 3:
             default_plot_kwargs["title_quantiles"] = None
@@ -389,6 +430,16 @@ class MCMC_Fitter(ABC):
             fig_.savefig(self.backend_filename.replace(".h5", "_MCMC.jpeg"), dpi = 600, bbox_inches = "tight")
             #os.chdir(orig_dir)
         return fig_
+    
+    def sigma_clip(
+        self: Self,
+        sigma: float = 3.0
+    ) -> NDArray[bool]:
+        
+        residuals = self.y_data - self.model(self.x_data, self.params_med)
+        removed_residuals = sigma_clip(residuals, sigma = sigma, masked = True)
+        breakpoint()
+        remove_indices = [np.abs(residuals) < sigma * self.scatter]
 
 class Schechter_Lum_Fitter(MCMC_Fitter):
 
@@ -397,7 +448,7 @@ class Schechter_Lum_Fitter(MCMC_Fitter):
         priors: Priors,
         x_data: NDArray[float],
         y_data: NDArray[float],
-        y_data_errs: NDArray[NDarray[float, float]],
+        y_data_errs: NDArray[NDArray[float, float]],
         nwalkers: int,
         backend_filename: Optional[str],
         fixed_params: Dict[str, float]
@@ -445,7 +496,7 @@ class Schechter_Mag_Fitter(MCMC_Fitter):
         priors: Priors,
         x_data: NDArray[float],
         y_data: NDArray[float],
-        y_data_errs: NDArray[NDarray[float, float]],
+        y_data_errs: NDArray[NDArray[float, float]],
         nwalkers: int,
         backend_filename: Optional[str],
         fixed_params: Dict[str, float]
@@ -472,6 +523,62 @@ class Schechter_Mag_Fitter(MCMC_Fitter):
         return (10 ** params["log10_phi_star"]) * 0.4 * np.log(10) * \
             10 ** (0.4 * (params["alpha"] + 1) * (params["M_star"] - x)) * \
             np.exp(-10 ** (0.4 * (params["M_star"] - x)))
+    
+    def update(
+        self: Self
+    ) -> NoReturn:
+        pass
+
+class Linear_Fitter(MCMC_Fitter):
+    # Power Law in log-log space
+    def __init__(
+        self: Self,
+        priors: Priors,
+        x_data: NDArray[float],
+        y_data: NDArray[float],
+        y_data_errs: NDArray[NDArray[float, float]],
+        nwalkers: int,
+        backend_filename: Optional[str],
+        fixed_params: Dict[str, float],
+        incl_scatter: bool = False,
+    ):
+        self.incl_scatter = incl_scatter
+        if incl_scatter:
+            params = ["m", "c", "logf"]
+        else:
+            params = ["m", "c"]
+        assert all([key in params for key in fixed_params.keys()]), \
+            galfind_logger.critical(
+                f"{fixed_params=} must be m and/or c or empty"
+            )
+        assert len(fixed_params) + len(priors) == len(params), \
+            galfind_logger.critical(
+                f"Must have exactly {len(params)} parameters if " + \
+                f"{'not' if not incl_scatter else ''} including scatter"
+            )
+        assert all([key in fixed_params.keys() or key in priors.names for key in params]), \
+            galfind_logger.critical(
+                f"{repr(priors)=} or {fixed_params=} must contain {', '.join(params)}"
+            )
+        super().__init__(priors, x_data, y_data, y_data_errs, nwalkers, backend_filename, fixed_params)
+    
+    def _get_sigma_sq(
+        self: Self,
+        residuals: NDArray[float],
+        params: Dict[str, float]
+    ) -> NDArray[float]:
+        if self.incl_scatter:
+            return super()._get_sigma_sq(residuals, params) + \
+                np.exp(2 * params["logf"]) * self.model(self.x_data, params) ** 2
+        else:
+            return super()._get_sigma_sq(residuals, params)
+
+    def model(
+        self: Self,
+        x: Union[float, List[float], NDArray[float]],
+        params: Dict[str, float]
+    ) -> float:
+        return params["m"] * x + params["c"]
     
     def update(
         self: Self

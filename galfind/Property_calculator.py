@@ -8,7 +8,7 @@ from copy import deepcopy
 import astropy.units as u
 from typing import TYPE_CHECKING, Dict, Any, List, Union, Tuple, Optional, NoReturn
 if TYPE_CHECKING:
-    from . import Catalogue, Galaxy, Photometry_rest, SED_code, SED_obs, PDF
+    from . import Catalogue, Galaxy, Photometry_rest, SED_code, SED_obs, PDF, Morphology_Fitter, Morphology_Result, Band_Cutout_Base
 try:
     from typing import Self, Type  # python 3.11+
 except ImportError:
@@ -20,7 +20,58 @@ from . import Catalogue, Galaxy, SED_code, SED_result
 from . import SED_fit_PDF
 
 
-class Property_Calculator(ABC):
+class Property_Calculator_Base(ABC):
+
+    @property
+    @abstractmethod
+    def full_name(self: Self) -> str:
+        pass
+
+    @property
+    @abstractmethod
+    def name(self: Self) -> str:
+        pass
+
+    @property
+    @abstractmethod
+    def plot_name(self: Self) -> str:
+        pass
+
+    @abstractmethod
+    def __call__(
+        self: Self,
+        object: Union[Catalogue, Galaxy, Photometry_rest],
+        n_chains: int = 10_000,
+        output: bool = False,
+        overwrite: bool = False,
+        n_jobs: int = 1,
+    ) -> Optional[Union[Catalogue, Galaxy, Photometry_rest]]:
+        pass
+    
+    @abstractmethod
+    def _call_cat(
+        self: Self,
+        cat: Catalogue,
+        n_chains: int = 10_000,
+        output: bool = False,
+        overwrite: bool = False,
+        n_jobs: int = 1,
+    ) -> Optional[Catalogue]:
+        pass
+
+    @abstractmethod
+    def _call_gal(
+        self: Self,
+        gal: Galaxy,
+        n_chains: int = 10_000,
+        output: bool = False,
+        overwrite: bool = False,
+        save_dir: str = ""
+    ) -> Optional[Galaxy]:
+        pass
+
+
+class Property_Calculator(Property_Calculator_Base):
 
     def __init__(
         self: Self,
@@ -247,6 +298,146 @@ class Photometry_Property_Calculator(Property_Calculator):
 #         raise NotImplementedError("This method should be implemented in the subclass")
 
 
+class Morphology_Property_Calculator(Property_Calculator_Base):
+
+    def __init__(
+        self: Self,
+        morph_fitter: Morphology_Fitter
+    ) -> None:
+        self.morph_fitter = morph_fitter
+
+    @property
+    def cutout_label(self: Self) -> str:
+        return self.morph_fitter.psf.cutout.band_data.filt_name + \
+            f"_{self.morph_fitter.psf.cutout.cutout_size.to(u.arcsec).value:.2f}as"
+    
+    @property
+    def full_name(self: Self) -> str:
+        return f"{self.name}_{self.morph_fitter.name}"
+
+    @property
+    @abstractmethod
+    def name(self: Self) -> str:
+        pass
+
+    @property
+    @abstractmethod
+    def plot_name(self: Self) -> str:
+        pass
+
+    def __call__(
+        self: Self,
+        object: Union[Catalogue, Galaxy, Type[Band_Cutout_Base]],
+    ) -> Optional[Union[Catalogue, Galaxy, Type[Band_Cutout_Base]]]:
+        from . import Band_Cutout_Base
+        if isinstance(object, Catalogue):
+            val = self._call_cat(object)
+        elif isinstance(object, Galaxy):
+            val = self._call_gal(object)
+        elif isinstance(object, tuple(Band_Cutout_Base.__subclasses__())):
+            val = self._call_sed_result(object)
+        else:
+            err_message = f"{object=} with {type(object)=} " + \
+                f"not in [Catalogue, Galaxy, Band_Cutout_Base]"
+            galfind_logger.critical(err_message)
+            raise TypeError(err_message)
+        return val
+    
+    def _call_cat(
+        self: Self,
+        cat: Catalogue,
+        #save: bool = True,
+    ) -> Optional[Catalogue]:
+        pass
+        #return np.array([self._call_gal(gal) for gal in cat])
+    
+    def _call_gal(
+        self: Self,
+        gal: Galaxy,
+    ) -> Optional[Galaxy]:
+        pass
+        # # update the relevant Photometry_rest object stored in the Galaxy
+        # assert self.aper_diam in gal.aper_phot.keys(), \
+        #     galfind_logger.critical(
+        #         f"{self.aper_diam=} not in {gal.aper_phot.keys()}"
+        #     )
+        # assert self.SED_fit_label in gal.aper_phot[self.aper_diam].SED_results.keys(), \
+        #     galfind_logger.critical(
+        #         f"{self.SED_fit_label=} not in " + \
+        #         gal.aper_phot[self.aper_diam].SED_results.keys()
+        #     )
+        # return self._call_cutout(gal.aper_phot[self.aper_diam].SED_results[self.SED_fit_label])
+    
+    def _call_cutout(
+        self: Self,
+        cutout: Type[Band_Cutout_Base],
+    ) -> Optional[Type[Band_Cutout_Base]]:
+        pass
+        #return getattr(cutout, self.name)
+    
+    def extract_vals(
+        self: Self, 
+        object: Union[Catalogue, Galaxy, Type[Band_Cutout_Base]]
+    ) -> Union[u.Quantity, u.Magnitude, u.Dex]:
+        from . import Band_Cutout_Base
+        if isinstance(object, Catalogue):
+            cat_vals = [getattr(gal.cutouts[self.cutout_label].morph_fits[self.morph_fitter.name], self.name) for gal in object]
+            if not all(isinstance(val, float) for val in cat_vals):
+                assert all(val.unit == cat_vals[0].unit for val in cat_vals), \
+                    galfind_logger.critical(f"Units of {self.name} in {object} are not consistent")
+                cat_vals = np.array([val.value for val in cat_vals]) * cat_vals[0].unit
+            else:
+                cat_vals = np.array(cat_vals)
+            return cat_vals
+        elif isinstance(object, Galaxy):
+            return getattr(object.cutouts[self.cutout_label].morph_fits[self.morph_fitter.name], self.name)
+        elif isinstance(object, tuple(Band_Cutout_Base.__subclasses__())):
+            return getattr(object, self.name)
+        else:
+            err_message = f"{object=} with {type(object)=} " + \
+                f"not in [Catalogue, Galaxy, Band_Cutout_Base]"
+            galfind_logger.critical(err_message)
+            raise TypeError(err_message)
+        
+    def extract_PDFs(
+        self: Self,
+        object: Union[Catalogue, Galaxy, Type[Band_Cutout_Base]],
+    ) -> Union[Type[PDF], List[Type[PDF]]]:
+        from . import Band_Cutout_Base
+        if isinstance(object, Catalogue):
+            return [gal.cutouts[self.cutout_label].morph_fits[self.morph_fitter.name].property_PDFs[self.name] for gal in object]
+        elif isinstance(object, Galaxy):
+            return object.cutouts[self.cutout_label].morph_fits[self.morph_fitter.name].property_PDFs[self.name]
+        elif isinstance(object, tuple(Band_Cutout_Base.__subclasses__())):
+            return object.property_PDFs[self.name]
+        else:
+            err_message = f"{object=} with {type(object)=} " + \
+                f"not in [Catalogue, Galaxy, Band_Cutout_Base]"
+            galfind_logger.critical(err_message)
+            raise TypeError(err_message)
+
+
+class Custom_Morphology_Property_Extractor(Property_Extractor, Morphology_Property_Calculator):
+
+    def __init__(
+        self: Self,
+        name: str,
+        plot_name: str,
+        morph_fitter: Morphology_Fitter,
+    ) -> None:
+        self._name = name
+        self._plot_name = plot_name
+        super().__init__(morph_fitter)
+    
+    @property
+    def name(self: Self) -> str:
+        return self._name
+    
+    @property
+    def plot_name(self: Self) -> str:
+        return self._plot_name
+    
+
 # Calculates additional properties from best fitting rest frame SED
 class SED_Property_Calculator(Property_Calculator):
 
@@ -262,7 +453,8 @@ class SED_Property_Calculator(Property_Calculator):
     
     @property
     def full_name(self: Self) -> str:
-        return f"{self.name}_{self.SED_fit_label}_{self.aper_diam.to(u.arcsec).value:.2f}as"
+        return f"{self.name}_{self.SED_fit_label}" + \
+            f"_{self.aper_diam.to(u.arcsec).value:.2f}as"
 
     @property
     @abstractmethod
@@ -426,6 +618,32 @@ class SED_Property_Calculator(Property_Calculator):
                 f"not in [Catalogue, Galaxy, SED_obs]"
             galfind_logger.critical(err_message)
             raise TypeError(err_message)
+    
+    # TODO: Propagate from parent class
+    def extract_errs(
+        self: Self, 
+        object: Union[Catalogue, Galaxy, SED_obs]
+    ) -> Union[u.Quantity, u.Magnitude, u.Dex]:
+        if isinstance(object, Catalogue):
+            cat_errs = [gal.aper_phot[self.aper_diam].SED_results[self.SED_fit_label].property_errs[self.name] for gal in object]
+            # if not all(isinstance(val, float) for val in cat_errs):
+            #     assert all(val.unit == cat_errs[0].unit for val in cat_errs), \
+            #         galfind_logger.critical(f"Units of {self.name} in {object} are not consistent")
+            #     breakpoint()
+            #     cat_errs = np.array([val.value for val in cat_errs]) * cat_errs[0].unit
+            # else:
+            #     cat_errs = np.array(cat_errs)
+            return cat_errs
+        raise NotImplementedError()
+        # elif isinstance(object, Galaxy):
+        #     return getattr(object.aper_phot[self.aper_diam].SED_results[self.SED_fit_label], self.name)
+        # elif isinstance(object, SED_obs):
+        #     return getattr(object, self.name)
+        # else:
+        #     err_message = f"{object=} with {type(object)=} " + \
+        #         f"not in [Catalogue, Galaxy, SED_obs]"
+        #     galfind_logger.critical(err_message)
+        #     raise TypeError(err_message)
         
     def extract_PDFs(
         self: Self,
@@ -579,3 +797,246 @@ class Redshift_Extractor(Property_Extractor, SED_Property_Calculator):
     @property
     def plot_name(self: Self) -> str:
         return "Redshift, z"
+
+
+class Multiple_SED_Property_Calculator(Property_Calculator_Base):
+
+    def __init__(
+        self: Self,
+        calculators: List[Type[Property_Calculator_Base]],
+        name: Optional[str],
+        plot_name: Optional[str],
+    ) -> None:
+        self._name = name
+        self._plot_name = plot_name
+        self.calculators = calculators
+
+    @property
+    @abstractmethod
+    def full_name(self: Self) -> str:
+        pass
+
+    @property
+    @abstractmethod
+    def name(self: Self) -> str:
+        pass
+
+    @property
+    @abstractmethod
+    def plot_name(self: Self) -> str:
+        pass
+
+    def __call__(
+        self: Self,
+        object: Union[Catalogue, Galaxy, Photometry_rest, SED_obs, Type[Band_Cutout_Base]],
+    ) -> Optional[Union[Catalogue, Galaxy, Photometry_rest, SED_obs, Type[Band_Cutout_Base]]]:
+        if isinstance(object, Catalogue):
+            val = self._call_cat(object)
+        elif isinstance(object, Galaxy):
+            val = self._call_gal(object)
+        elif isinstance(object, tuple(Photometry_rest, SED_obs) + tuple(Band_Cutout_Base.__subclasses__())):
+            val = self._call_single(object)
+        else:
+            err_message = f"{object=} with {type(object)=} " + \
+                f"not in [Catalogue, Galaxy, Photometry_rest, SED_obs, Type[Band_Cutout_Base]]"
+            galfind_logger.critical(err_message)
+            raise TypeError(err_message)
+        return val
+    
+    def _call_cat(
+        self: Self,
+        cat: Catalogue,
+        #save: bool = True,
+    ) -> Optional[Catalogue]:
+        return np.array([self._call_gal(gal) for gal in cat])
+    
+    @abstractmethod
+    def _call_gal(
+        self: Self,
+        gal: Galaxy,
+    ) -> Optional[Galaxy]:
+        pass
+
+    # @abstractmethod
+    # def _call_single(
+    #     self: Self,
+    #     object: Union[Photometry_rest, SED_obs, Type[Band_Cutout_Base]],
+    # ) -> Optional[Union[Photometry_rest, SED_obs, Type[Band_Cutout_Base]]]:
+    #     pass
+
+
+class Property_Multiplier(Multiple_SED_Property_Calculator):
+
+    def __init__(
+        self: Self,
+        calculators: List[Type[Property_Calculator_Base]],
+        name: Optional[str] = None,
+        plot_name: Optional[str] = None,
+    ) -> None:
+        super().__init__(calculators, name, plot_name)
+
+    @property
+    def full_name(self: Self) -> str:
+        suffixes = [calculator.full_name.replace(calculator.name, "") for calculator in self.calculators]
+        if all(suffix == suffixes[0] for suffix in suffixes):
+            # add suffix to end of string
+            return f"{'_mult_'.join([calculator.name for calculator in self.calculators])}{suffixes[0]}"
+        else:
+            return "_mult_".join([calculator.full_name for calculator in self.calculators])
+    
+    @property
+    def name(self: Self) -> str:
+        pass
+        # if self._name is None:
+        #     return "*".join([calculator.name for calculator in self.calculators])
+        # else:
+        #     return self._name
+    
+    @property
+    def plot_name(self: Self) -> str:
+        if self._plot_name is None:
+            return "".join([calculator.plot_name for calculator in self.calculators])
+        else:
+            return self._plot_name
+
+    def extract_vals(
+        self: Self, 
+        object: Union[Catalogue, Galaxy, Photometry_rest, SED_obs, Type[Band_Cutout_Base]]
+    ) -> Union[u.Quantity, u.Magnitude, u.Dex]:
+        # calculate relevant values using each calculator
+        vals = [calculator.extract_vals(object) for calculator in self.calculators]
+        breakpoint()
+
+    def extract_PDFs(
+        self: Self,
+        object: Union[Catalogue, Galaxy, Photometry_rest, SED_obs, Type[Band_Cutout_Base]],
+    ) -> Union[Type[PDF], List[Type[PDF]]]:
+        # calculate relevant PDFs using each calculator
+        PDFs = [calculator.extract_PDFs(object) for calculator in self.calculators]
+        breakpoint()
+
+    #@abstractmethod
+    def _call_gal(
+        self: Self,
+        gal: Galaxy,
+    ) -> Optional[Galaxy]:
+        raise NotImplementedError
+
+class Property_Divider(Multiple_SED_Property_Calculator):
+
+    def __init__(
+        self: Self,
+        calculators: List[Type[Property_Calculator_Base]],
+        name: Optional[str] = None,
+        plot_name: Optional[str] = None,
+    ) -> None:
+        assert len(calculators) == 2
+        super().__init__(calculators, name, plot_name)
+
+    @property
+    def full_name(self: Self) -> str:
+        suffixes = [calculator.full_name.replace(calculator.name, "") for calculator in self.calculators]
+        if all(suffix == suffixes[0] for suffix in suffixes):
+            # add suffix to end of string
+            return f"{'_div_'.join([calculator.name for calculator in self.calculators])}{suffixes[0]}"
+        else:
+            return "_div_".join([calculator.full_name for calculator in self.calculators])
+    
+    @property
+    def name(self: Self) -> str:
+        pass
+        # if self._name is None:
+        #     return "/".join([calculator.name for calculator in self.calculators])
+        # else:
+        #     return self._name
+    
+    @property
+    def plot_name(self: Self) -> str:
+        # TODO: Improve this so that units appear at the end of the string
+        if self._plot_name is None:
+            return "/".join([calculator.plot_name for calculator in self.calculators])
+        else:
+            return self._plot_name
+
+    def extract_vals(
+        self: Self, 
+        object: Union[Catalogue, Galaxy, Photometry_rest, SED_obs, Type[Band_Cutout_Base]]
+    ) -> Union[u.Quantity, u.Magnitude, u.Dex]:
+        # calculate relevant values using each calculator
+        vals_arr = [calculator.extract_vals(object) for calculator in self.calculators]
+        # remove dex units
+        vals_arr = [vals.physical if isinstance(vals, u.Dex) else vals for vals in vals_arr]
+        return vals_arr[0] / vals_arr[1]
+
+    def extract_PDFs(
+        self: Self,
+        object: Union[Catalogue, Galaxy, Photometry_rest, SED_obs, Type[Band_Cutout_Base]],
+    ) -> Union[Type[PDF], List[Type[PDF]]]:
+        from . import PDF
+        # calculate relevant PDFs using each calculator
+        pdfs_arr = [calculator.extract_PDFs(object) for calculator in self.calculators]
+        # remove dex units
+        pdf_input_arrs = [[pdf.input_arr.physical if isinstance(pdf.input_arr, u.Dex) else pdf.input_arr for pdf in pdfs] for pdfs in pdfs_arr]
+        return PDF.from_1D_arr(
+            self.name, 
+            pdf_input_arrs[0] / pdf_input_arrs[1], 
+            #{**pdfs[0].SED_fit_params, **pdfs[1].SED_fit_params}
+        )
+
+    #@abstractmethod
+    def _call_gal(
+        self: Self,
+        gal: Galaxy,
+    ) -> Optional[Galaxy]:
+        raise NotImplementedError
+
+# class Property_Adder(Multiple_SED_Property_Calculator):
+
+#     def __init__(
+#         self: Self,
+#         calculators: List[Type[Property_Calculator_Base]],
+#     ) -> None:
+#         assert len(calculators) == 2
+#         super().__init__(calculators)
+
+#     def extract_vals(
+#         self: Self, 
+#         object: Union[Catalogue, Galaxy, Photometry_rest, SED_obs, Type[Band_Cutout_Base]]
+#     ) -> Union[u.Quantity, u.Magnitude, u.Dex]:
+#         # calculate relevant values using each calculator
+#         vals = [calculator.extract_vals(object) for calculator in self.calculators]
+#         breakpoint()
+
+#     def extract_PDFs(
+#         self: Self,
+#         object: Union[Catalogue, Galaxy, Photometry_rest, SED_obs, Type[Band_Cutout_Base]],
+#     ) -> Union[Type[PDF], List[Type[PDF]]]:
+#         # calculate relevant PDFs using each calculator
+#         PDFs = [calculator.extract_PDFs(object) for calculator in self.calculators]
+#         breakpoint()
+
+# class Property_Subtractor(Multiple_SED_Property_Calculator):
+
+#     def __init__(
+#         self: Self,
+#         calculators: List[Type[Property_Calculator_Base]],
+#     ) -> None:
+#         assert len(calculators) == 2
+#         super().__init__(calculators)
+
+#     def extract_vals(
+#         self: Self, 
+#         object: Union[Catalogue, Galaxy, Photometry_rest, SED_obs, Type[Band_Cutout_Base]]
+#     ) -> Union[u.Quantity, u.Magnitude, u.Dex]:
+#         # calculate relevant values using each calculator
+#         vals = [calculator.extract_vals(object) for calculator in self.calculators]
+#         breakpoint()
+
+#     def extract_PDFs(
+#         self: Self,
+#         object: Union[Catalogue, Galaxy, Photometry_rest, SED_obs, Type[Band_Cutout_Base]],
+#     ) -> Union[Type[PDF], List[Type[PDF]]]:
+#         # calculate relevant PDFs using each calculator
+#         PDFs = [calculator.extract_PDFs(object) for calculator in self.calculators]
+#         breakpoint()
+

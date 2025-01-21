@@ -207,7 +207,7 @@ class Band_Cutout_Base(Cutout_Base, ABC):
             self.morph_fits = {}
         if isinstance(morph_results, Morphology_Result):
             morph_results = [morph_results]
-        self.morph_fits = {**self.morph_fits, **{result.name: result for result in morph_results}}
+        self.morph_fits = {**self.morph_fits, **{result.fitter.name: result for result in morph_results}}
 
     def plot(
         self: Self,

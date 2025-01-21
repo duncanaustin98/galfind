@@ -511,14 +511,14 @@ class Band_Data_Base(ABC):
         ):
             if "sextractor" in method.lower():
                 self.forced_phot_path, self.forced_phot_args = \
-                SExtractor.perform_forced_phot(
-                    self,
-                    forced_phot_band,
-                    err_type,
-                    config_name=config_name,
-                    params_name=params_name,
-                    overwrite=overwrite,
-                )
+                    SExtractor.perform_forced_phot(
+                        self,
+                        forced_phot_band,
+                        err_type,
+                        config_name=config_name,
+                        params_name=params_name,
+                        overwrite=overwrite,
+                    )
             else:
                 raise (Exception(f"{method.lower()=} does not contain 'sextractor'"))
 
@@ -622,7 +622,7 @@ class Band_Data_Base(ABC):
                 )
 
     def run_depths(
-        self,
+        self: Self,
         mode: str = "n_nearest",
         scatter_size: float = 0.1,
         distance_to_mask: Union[int, float] = 30,
@@ -633,7 +633,9 @@ class Band_Data_Base(ABC):
         split_depths_factor: int = 5,
         step_size: int = 100,
         n_split: Union[str, int] = "auto",
+        plot: bool = True,
         overwrite: bool = False,
+        master_cat_path: Optional[str] = None,
     ) -> NoReturn:
         if not hasattr(self, "depth_args"):
             # load parameters (i.e. for each aper_diams in self)
@@ -649,12 +651,16 @@ class Band_Data_Base(ABC):
                 step_size,
                 n_split,
                 overwrite,
+                master_cat_path,
             )
             # run depths
             for params in params_arr:
                 Depths.calc_band_depth(params)
             # load depths into object
             self._load_depths_from_params(params_arr)
+            # plot depths
+            if plot:
+                self.plot_depth_diagnostics(save = True, overwrite = False, master_cat_path = master_cat_path)
         else:
             galfind_logger.warning(
                 f"Depths loaded for {self.filt_name}, skipping!"
@@ -676,6 +682,7 @@ class Band_Data_Base(ABC):
         step_size: int = 100,
         n_split: Union[str, int] = "auto",
         overwrite: bool = False,
+        master_cat_path: Optional[str] = None,
     ) -> List[Tuple[Any, ...]]:
         params = []
         for aper_diam in self.aper_diams:
@@ -695,6 +702,7 @@ class Band_Data_Base(ABC):
                         step_size,
                         n_split,
                         overwrite,
+                        master_cat_path,
                     )
                 ]
             )
@@ -810,20 +818,32 @@ class Band_Data_Base(ABC):
         aper_diam: u.Quantity,
         save: bool = False,
         show: bool = False,
+        overwrite: bool = True,
+        master_cat_path: Optional[str] = None,
     ) -> NoReturn:
-        Depths.plot_depth_diagnostic(
-            self, 
-            aper_diam,
-            save = save,
-            show = show,
+        save_path = Depths.get_depth_plot_path(self, aper_diam)
+        if not Path(save_path).is_file() or overwrite:
+            Depths.plot_depth_diagnostic(
+                self,
+                aper_diam,
+                save = save,
+                show = show,
+                master_cat_path = master_cat_path,
             )
     
     def plot_depth_diagnostics(
         self,
         save: bool = False,
+        overwrite: bool = True,
+        master_cat_path: Optional[str] = None,
     ) -> NoReturn:
         for aper_diam in self.aper_diams:
-            self.plot_depth_diagnostic(aper_diam, save = save)
+            self.plot_depth_diagnostic(
+                aper_diam,
+                save = save,
+                overwrite = overwrite,
+                master_cat_path = master_cat_path
+            )
 
     def plot_area_depth(
         self,
@@ -2620,11 +2640,16 @@ class Data:
         n_split: Union[
             str, int, List[Union[str, int]], Dict[str, Union[str, int]]
         ] = "auto",
+        plot: Union[bool, List[bool], Dict[str, bool]] = True,
         overwrite: Union[bool, List[bool], Dict[str, bool]] = False,
         timed: bool = False,
     ) -> NoReturn:
         if timed:
             start = time.time()
+        if hasattr(self, "phot_cat_path"):
+            master_cat_path = self.phot_cat_path
+        else:
+            master_cat_path = None
         if hasattr(self, "forced_phot_band"):
             if (
                 self.forced_phot_band.filt_name
@@ -2682,6 +2707,7 @@ class Data:
                         self_._sort_band_dependent_params(
                             band_data.filt_name, overwrite
                         ),
+                        master_cat_path,
                     )
                 )
             else:
@@ -2704,6 +2730,12 @@ class Data:
                     for _params in params
                     if _params[0] == band_data
                 ]
+                if plot:
+                    band_data.plot_depth_diagnostics(
+                        save = True, 
+                        overwrite = False, 
+                        master_cat_path = master_cat_path
+                    )
 
             # make depth table
             Depths.make_depth_tab(self)
@@ -2729,15 +2761,35 @@ class Data:
         aper_diam: u.Quantity,
         save: bool = False, 
         show: bool = False,
+        overwrite: bool = True,
     ) -> NoReturn:
-        self[band].plot_depth_diagnostic(aper_diam, save = save, show = show)
+        try:
+            master_cat_path = self._get_phot_cat_path()
+        except:
+            master_cat_path = None
+        self[band].plot_depth_diagnostic(
+            aper_diam,
+            save = save,
+            show = show,
+            overwrite = overwrite,
+            master_cat_path = master_cat_path
+        )
 
     def plot_depth_diagnostics(
         self,
         save: bool = False,
+        overwrite: bool = True,
     ) -> NoReturn:
+        try:
+            master_cat_path = self._get_phot_cat_path()
+        except:
+            master_cat_path = None
         for band_data in self:
-            band_data.plot_depth_diagnostics(save = save)
+            band_data.plot_depth_diagnostics(
+                save = save,
+                overwrite = overwrite,
+                master_cat_path = master_cat_path
+            )
 
     def plot_area_depth(
         self,

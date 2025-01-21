@@ -16,6 +16,7 @@ from copy import deepcopy
 from pathlib import Path
 
 import astropy.units as u
+from matplotlib import cm
 import h5py
 import matplotlib.pyplot as plt
 import numpy as np
@@ -29,7 +30,7 @@ from astropy.utils.masked import Masked
 from tqdm import tqdm
 from typing import Union, Tuple, Any, List, Dict, Callable, Optional, NoReturn, TYPE_CHECKING
 if TYPE_CHECKING:
-    from . import Filter, Band_Data_Base, Selector, Multiple_Filter, Data, Property_Calculator, Band_Cutout_Base, Band_Cutout
+    from . import Filter, Band_Data_Base, Selector, Multiple_Filter, Data, Property_Calculator_Base, Band_Cutout_Base, Band_Cutout
 try:
     from typing import Self, Type  # python 3.11+
 except ImportError:
@@ -1186,7 +1187,7 @@ class Catalogue(Catalogue_Base):
 
     def hist(
         self: Self,
-        x_calculator: Type[Property_Calculator],
+        x_calculator: Type[Property_Calculator_Base],
         fig: Optional[plt.Figure] = None,
         ax: Optional[plt.Axes] = None,
         log: bool = False,
@@ -1202,8 +1203,8 @@ class Catalogue(Catalogue_Base):
             galfind_logger.info(
                 f"Making histogram for {x_calculator.name}!"
             )
-            from . import Property_Calculator
-            if isinstance(x_calculator, tuple(Property_Calculator.__subclasses__())):
+            from . import Property_Calculator_Base
+            if isinstance(x_calculator, tuple(Property_Calculator_Base.__subclasses__())):
                 # calculate x values
                 x = [gal.aper_phot[x_calculator.aper_diam].SED_results \
                     [x_calculator.SED_fit_label].phot_rest.properties \
@@ -1238,9 +1239,9 @@ class Catalogue(Catalogue_Base):
 
     def plot(
         self: Self,
-        x_calculator: Type[Property_Calculator],
-        y_calculator: Type[Property_Calculator],
-        c_calculator: Optional[Type[Property_Calculator]] = None,
+        x_calculator: Type[Property_Calculator_Base],
+        y_calculator: Type[Property_Calculator_Base],
+        c_calculator: Optional[Type[Property_Calculator_Base]] = None,
         incl_x_errs: bool = True,
         incl_y_errs: bool = True,
         log_x: bool = False,
@@ -1258,8 +1259,11 @@ class Catalogue(Catalogue_Base):
         fig: Optional[plt.Figure] = None,
         ax: Optional[plt.Axes] = None,
         plot_type: str = "individual",
+        n_samples: int = 100_000,
+        n_bins: int = 25,
+        contour_levels: List[float] = [68., 95., 100.]
     ):
-        from . import Property_Calculator
+        from . import Property_Calculator_Base
         x_name = x_calculator.full_name
         y_name = y_calculator.full_name
         x_label = x_calculator.plot_name
@@ -1269,7 +1273,7 @@ class Catalogue(Catalogue_Base):
 
         if plot_type.lower() == "individual":
 
-            if isinstance(x_calculator, tuple(Property_Calculator.__subclasses__())):
+            if isinstance(x_calculator, tuple(Property_Calculator_Base.__subclasses__())):
                 x = x_calculator.extract_vals(self)
                 if incl_x_errs:
                     raise NotImplementedError
@@ -1285,7 +1289,7 @@ class Catalogue(Catalogue_Base):
                 x_name = f"log({x_name})"
                 x_label = f"log({x_label})"
 
-            if isinstance(y_calculator, tuple(Property_Calculator.__subclasses__())):
+            if isinstance(y_calculator, tuple(Property_Calculator_Base.__subclasses__())):
                 y = y_calculator.extract_vals(self)
                 if incl_y_errs:
                     raise NotImplementedError
@@ -1300,9 +1304,9 @@ class Catalogue(Catalogue_Base):
                     y = np.log10(y.value)
                 y_name = f"log({y_name})"
                 y_label = f"log({y_label})"
-            
+
             if c_calculator is not None:
-                if isinstance(c_calculator, tuple(Property_Calculator.__subclasses__())):
+                if isinstance(c_calculator, tuple(Property_Calculator_Base.__subclasses__())):
                     c = c_calculator.extract_vals(self).value
                 else:
                     raise NotImplementedError
@@ -1311,7 +1315,34 @@ class Catalogue(Catalogue_Base):
                     colour_name = f"log({colour_name})"
                     colour_label = f"log({colour_label})"
 
+        elif plot_type.lower() == "contour":
+
+            assert c_calculator is None, galfind_logger.critical(
+                "Cannot contour galaxies and colour by another property!"
+            )
+            # extract the PDFs
+            x_PDFs = x_calculator.extract_PDFs(self)
+            y_PDFs = y_calculator.extract_PDFs(self)
+            x = []
+            y = []
+            for x_PDF_, y_PDF_ in zip(x_PDFs, y_PDFs):
+                if x_PDF_ is not None and y_PDF_ is not None:
+                    # extract n_samples from each PDF
+                    x.extend(x_PDF_.draw_sample(n_samples).value)
+                    y.extend(y_PDF_.draw_sample(n_samples).value)
+
+            if log_x or x_name in funcs.logged_properties:
+                x = np.log10(x)
+                x_name = f"log({x_name})"
+                x_label = f"log({x_label})"
+
+            if log_y or y_name in funcs.logged_properties:
+                y = np.log10(y)
+                y_name = f"log({y_name})"
+                y_label = f"log({y_label})"
+
         elif plot_type.lower() == "stacked":
+
             assert c_calculator is None, galfind_logger.critical(
                 "Cannot stack galaxies and colour by another property!"
             )
@@ -1340,6 +1371,7 @@ class Catalogue(Catalogue_Base):
                 y_err = [[y_PDF.errs[0].value], [y_PDF.errs[1].value]]
             else:
                 y_err = None
+
         else:
             err_message = f"{plot_type=} not recognised!"
             galfind_logger.critical(err_message)
@@ -1349,41 +1381,78 @@ class Catalogue(Catalogue_Base):
         if fig is None or ax is None:
             fig, ax = plt.subplots()
 
-        if "label" not in plot_kwargs.keys():
+        if "label" not in plot_kwargs.keys() and plot_type.lower() != "contour":
             plot_kwargs["label"] = self.crop_name
 
-        if mean_err:
-            # produce scatter plot
-            if c_calculator is None:
-                plot = ax.scatter(x, y, **plot_kwargs)
-            else:
-                if "cmap" not in plot_kwargs.keys():
-                    plot_kwargs["cmap"] = cmap
-                plot = ax.scatter(x, y, c=c, **plot_kwargs)
-            if incl_x_errs and incl_y_errs:
-                # plot the mean error
-                pass
+        if c_calculator is not None:
+            plot_kwargs["c"] = c
+            if "cmap" not in plot_kwargs.keys():
+                plot_kwargs["cmap"] = cmap
+        
+        if plot_type.lower() == "contour":
+            x_interval = (np.max(x) - np.min(x)) / (n_bins + 1)
+            y_interval = (np.max(y) - np.min(y)) / (n_bins + 1)
+            x_edges = np.linspace(np.min(x) - x_interval, np.max(x) + x_interval, n_bins)
+            y_edges = np.linspace(np.min(y) - y_interval, np.max(y) + y_interval, n_bins)
+            N, x_edges, y_edges = np.histogram2d(x, y, bins=(x_edges, y_edges))
+            x_mid_bins = (x_edges[:-1] + x_edges[1:]) / 2
+            y_mid_bins = (y_edges[:-1] + y_edges[1:]) / 2
+            x_mesh, y_mesh = np.meshgrid(x_mid_bins, y_mid_bins)
+            levels = np.percentile(N, contour_levels)
+            # n_bins = int(len(x) / (25 * n_samples))
+            for i in range(len(levels) - 1):
+                ax.contourf(x_mesh, y_mesh, N.T, levels = [levels[i], levels[i + 1]], alpha = (i + 1) / len(levels), colors = [cmap], **plot_kwargs) # , norm = norm, cmap = cmap, norm = norm, cmap = cm.get_cmap(cmap).resampled(len(plot_kwargs["levels"]) - 1)
+            for level in levels:
+                ax.contour(x_mesh, y_mesh, N.T, levels = (level,), colors = cmap, linewidths = 1.0, **plot_kwargs)
+            ax.set_xlim([x_edges[0], x_edges[-1]])
+            ax.set_ylim([y_edges[0], y_edges[-1]])
         else:
-            # produce errorbar plot
-            if incl_x_errs or incl_y_errs:
+            if incl_x_errs or incl_y_errs and not mean_err:
                 if "ls" not in plot_kwargs.keys():
                     plot_kwargs["ls"] = ""
-            if c_calculator is None:
-                if incl_x_errs or incl_y_errs:
-                    plot = ax.errorbar(x, y, xerr=x_err, yerr=y_err, **plot_kwargs)
-                else:
-                    plot = ax.scatter(x, y, **plot_kwargs)
+                plot = ax.errorbar(x, y, xerr=x_err, yerr=y_err, **plot_kwargs)
             else:
-                if "cmap" not in plot_kwargs.keys():
-                    plot_kwargs["cmap"] = cmap
-                if incl_x_errs or incl_y_errs:
-                    plot = ax.errorbar(
-                        x, y, xerr=x_err, yerr=y_err, c=c, **plot_kwargs
-                    )
-                else:  
-                    plot = ax.scatter(
-                        x, y, c=c, **plot_kwargs
-                    )
+                plot = ax.scatter(x, y, **plot_kwargs)
+
+        if mean_err and (incl_x_errs or incl_y_errs):
+            # plot the mean error
+            pass
+
+        # if mean_err:
+        #     # produce scatter plot
+        #     if c_calculator is None:
+        #         plot = ax.scatter(x, y, **plot_kwargs)
+        #     else:
+        #         if "cmap" not in plot_kwargs.keys():
+        #             plot_kwargs["cmap"] = cmap
+        #         plot = ax.scatter(x, y, c=c, **plot_kwargs)
+        #     if incl_x_errs and incl_y_errs:
+        #         # plot the mean error
+        #         pass
+        # else:
+        #     # produce errorbar plot
+        #     if incl_x_errs or incl_y_errs:
+        #         if "ls" not in plot_kwargs.keys():
+        #             plot_kwargs["ls"] = ""
+        #     if c_calculator is None:
+        #         if incl_x_errs or incl_y_errs:
+        #             plot = ax.errorbar(x, y, xerr=x_err, yerr=y_err, **plot_kwargs)
+        #         else:
+        #             if plot_type.lower() == "contour":
+        #                 pass
+        #             else:
+        #                 plot = ax.scatter(x, y, **plot_kwargs)
+        #     else:
+        #         if "cmap" not in plot_kwargs.keys():
+        #             plot_kwargs["cmap"] = cmap
+        #         if incl_x_errs or incl_y_errs:
+        #             plot = ax.errorbar(
+        #                 x, y, xerr=x_err, yerr=y_err, c=c, **plot_kwargs
+        #             )
+        #         else:  
+        #             plot = ax.scatter(
+        #                 x, y, c=c, **plot_kwargs
+        #             )
 
         # sort plot aesthetics - automatically annotate if coloured
         if annotate or c_calculator is not None:
@@ -1395,7 +1464,6 @@ class Catalogue(Catalogue_Base):
             ax.set_ylabel(y_label)
             if c_calculator is not None:
                 fig.colorbar(plot, label = colour_label)
-
             if plot_legend:
                 ax.legend(**legend_kwargs)
 
@@ -1407,6 +1475,8 @@ class Catalogue(Catalogue_Base):
                 f"{y_name}_vs_{x_name}/{self.crop_name}{save_colour_name}{save_type}"
             funcs.make_dirs(save_path)
             plt.savefig(save_path)
+            funcs.change_file_permissions(save_path)
+            galfind_logger.info(f"Saved plot to {save_path}!")
 
         if show:
             plt.show()

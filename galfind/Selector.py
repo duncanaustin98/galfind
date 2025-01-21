@@ -1829,6 +1829,67 @@ class EPOCHS_Selector(Multiple_SED_fit_Selector):
 # def select_all_bands(self):
 #     return self.select_min_bands(len(self.instrument))
 
+class Rest_Frame_Property_Kwarg_Selector(SED_fit_Selector):
+
+    def __init__(
+        self: Self,
+        aper_diam: u.Quantity,
+        SED_fit_label: Union[str, SED_code],
+        property_calculator: Type[Rest_Frame_Property_Calculator],
+        kwarg_name: str,
+        kwarg_val: Union[int, float],
+    ):
+        # TODO: Add more assertions here to ensure the 
+        # kwarg name is in the photometry_rest object
+        kwargs = {
+            "property_calculator": property_calculator,
+            "kwarg_name": kwarg_name,
+            "kwarg_val": kwarg_val,
+        }
+        super().__init__(aper_diam, SED_fit_label, **kwargs)
+
+    @property
+    def _selection_name(self) -> str:
+        return self.kwargs["property_calculator"].name + \
+            f"_{self.kwargs['kwarg_name']}={self.kwargs['kwarg_val']}"
+
+    @property
+    def _include_kwargs(self) -> List[str]:
+        return ["property_calculator", "kwarg_name", "kwarg_val"]
+    
+    def _assertions(self: Self) -> bool:
+        from . import Rest_Frame_Property_Calculator
+        try:
+            assertions = []
+            assertions.extend([isinstance(self.kwargs["property_calculator"], \
+                tuple(Rest_Frame_Property_Calculator.__subclasses__()))])
+            assertions.extend([isinstance(self.kwargs["kwarg_name"], str)])
+            passed = all(assertions)
+        except:
+            passed = False
+        return passed
+    
+    def _failure_criteria(
+        self: Self,
+        gal: Galaxy,
+    ) -> bool:
+        if self.kwargs["kwarg_name"] not in gal.aper_phot[self.aper_diam].SED_results \
+                [self.SED_fit_label].phot_rest.property_kwargs \
+                [self.kwargs["property_calculator"].name].keys():
+            return True
+        else:
+            return False
+
+    def _selection_criteria(
+        self: Self,
+        gal: Galaxy,
+    ) -> bool:
+        return gal.aper_phot[self.aper_diam].SED_results \
+            [self.SED_fit_label].phot_rest.property_kwargs \
+            [self.kwargs["property_calculator"].name] \
+            [self.kwargs["kwarg_name"]] == self.kwargs["kwarg_val"]
+
+
 # Photometric galaxy property selection functions
 
     # def select_phot_galaxy_property(

@@ -4,6 +4,7 @@ from __future__ import annotations
 # import automask as am
 import astropy.visualization as vis
 import cv2 as cv2
+import matplotlib as mpl
 import matplotlib.patheffects as pe
 import matplotlib.pyplot as plt
 import numpy as np
@@ -17,7 +18,7 @@ from astropy.table import Table, vstack
 import os
 from astropy.visualization.mpl_normalize import ImageNormalize
 from matplotlib import cm
-from matplotlib.colors import LinearSegmentedColormap
+from matplotlib.colors import LinearSegmentedColormap, BoundaryNorm
 from mpl_toolkits.axes_grid1.axes_divider import make_axes_locatable
 from numba import jit
 from photutils.aperture import CircularAperture
@@ -732,6 +733,7 @@ def calc_band_depth(params: Tuple[Any]) -> NoReturn:
         step_size,
         n_split,
         overwrite,
+        master_cat_path,
     ) = params
 
     grid_depth_path = get_grid_depth_path(self, aper_diam, mode)
@@ -779,7 +781,10 @@ def calc_band_depth(params: Tuple[Any]) -> NoReturn:
 
         # Get fluxes in regions
         fluxes = do_photometry(im_data, xy, radius_pix)
-        cat = Table.read(self.forced_phot_path)
+        if master_cat_path is None:
+            cat = Table.read(self.forced_phot_path)
+        else:
+            cat = Table.read(master_cat_path)
         depths, diagnostic, depth_labels, final_labels = calc_depths(
             xy,
             fluxes,
@@ -844,9 +849,6 @@ def calc_band_depth(params: Tuple[Any]) -> NoReturn:
         for name_i, data_i in zip(hf_save_names, hf_save_data):
             hf.create_dataset(name_i, data=data_i)
         hf.close()
-
-    # if plot:
-    #     self.plot_depth(band, cat_creator, mode, aper_diam, show=False)
 
 
 def get_depth_tab_path(self: Data) -> str:
@@ -1149,15 +1151,23 @@ def get_hf_output(
     hf_output["nmad_grid"][hf_output["nmad_grid"] == 0] = np.nan
     return hf_output
 
-def get_cat_xy(self: Type[Band_Data_Base]) -> Tuple[np.ndarray, np.ndarray]:
+def get_cat_xy(
+    self: Type[Band_Data_Base],
+    master_cat_path: Optional[str]
+) -> Tuple[np.ndarray, np.ndarray]:
     # load catalogue to calculate x/y image coordinates
-    cat = Table.read(self.forced_phot_path)
-    cat_x, cat_y = self.load_wcs().world_to_pixel(
-        SkyCoord(
-            cat[self.forced_phot_args["ra_label"]],
-            cat[self.forced_phot_args["dec_label"]],
-        )
-    )
+    if master_cat_path is None:
+        cat = Table.read(self.forced_phot_path)
+    else:
+        cat = Table.read(master_cat_path)
+    cat_ra = cat[self.forced_phot_args["ra_label"]]
+    if cat_ra.unit is None:
+        cat_ra *= self.forced_phot_args["ra_unit"]
+    cat_dec = cat[self.forced_phot_args["dec_label"]]
+    if cat_dec.unit is None:
+        cat_dec *= self.forced_phot_args["dec_unit"]
+    wcs = self.load_wcs()
+    cat_x, cat_y = wcs.world_to_pixel(SkyCoord(cat_ra, cat_dec))
     return cat_x, cat_y
 
 def plot_depth_diagnostic(
@@ -1166,13 +1176,15 @@ def plot_depth_diagnostic(
     save: bool = True, 
     show: bool = False,
     cmap: str = "plasma",
+    master_cat_path: Optional[str] = None
 ) -> NoReturn:
+    plt.style.use("default")
     assert hasattr(self, "depth_path"), \
         galfind_logger.critical(
             f"{repr(self)} has no 'depth_path'"
         )
     hf_output = get_hf_output(self, aper_diam)
-    cat_x, cat_y = get_cat_xy(self)
+    cat_x, cat_y = get_cat_xy(self, master_cat_path)
     combined_mask = self._combine_seg_data_and_mask()
 
     # setup figure and axes appropriately
@@ -1192,14 +1204,7 @@ def plot_depth_diagnostic(
     cmap_ = cm.get_cmap(cmap)
     cmap_.set_bad(color="black")
 
-    num_labels = len(np.unique(hf_output["labels_grid"]))
-    labels_cmap = LinearSegmentedColormap.from_list
-    (
-        "custom",
-        [cm.get_cmap("Set2")(i / num_labels) for i in range(num_labels)],
-        num_labels,
-    )
-    labels_arr, possible_labels, colours = _get_labels(hf_output, cmap = labels_cmap, cmap_name = "Set2")
+    labels_arr, possible_labels, colours, labels_cmap = _get_labels(hf_output, cmap_name = "Set2")
 
     _plot_rolling_average(fig, axs[0], hf_output, cmap_)
     _plot_rolling_average_diagnostic(fig, axs[1], hf_output, cmap_)
@@ -1207,7 +1212,7 @@ def plot_depth_diagnostic(
     _plot_depth_hist(fig, axs[3], hf_output, labels_arr, possible_labels, colours)
     _plot_cat_diagnostic(fig, axs[4], hf_output, cmap_, cat_x, cat_y, combined_mask)
     if len(possible_labels) > 1:
-        _plot_labels(fig, axs[5], hf_output, labels_cmap)
+        _plot_labels(axs[5], hf_output, labels_cmap)
 
     # Delete all axes with nothing on
     for i, ax in enumerate(axs):
@@ -1296,9 +1301,8 @@ def _plot_rolling_average_diagnostic(
 
 def _get_labels(
     hf_output: Dict[str, Any],
-    cmap: plt.Colormap,
     cmap_name: str = "Set2"
-) -> Tuple[List[str], List[int], List[plt.Color]]:
+) -> Tuple[List[str], List[int], List[plt.Color], plt.Colormap]:
     possible_labels = np.unique(hf_output["labels_grid"])
     av_depths = [
         np.nanmedian(hf_output["nmad_grid"][hf_output["labels_grid"] == label])
@@ -1306,30 +1310,37 @@ def _get_labels(
     ]
     # mask nan in av_depths
     av_depths = np.array(av_depths)[~np.isnan(av_depths)]
-    if len(av_depths) > 1:
-        labels_arr = ["Shallow", "Deep"]
-        colours = [
-            cmap(possible_labels[0]),
-            cmap(possible_labels[1]),
-        ]
-    else:
+    num_labels = len(np.unique(hf_output["labels_grid"]))
+    labels_cmap = LinearSegmentedColormap.from_list(
+        "custom",
+        [cm.get_cmap(cmap_name)(i / num_labels) for i in range(num_labels)],
+        num_labels,
+    )
+    if len(av_depths) == 1:
         labels_arr = ["Single Region"]
         possible_labels = [0]
         colours = [cm.get_cmap(cmap_name)(0)]
-    return labels_arr, possible_labels, colours
+    elif len(av_depths) == 2:
+        labels_arr = ["Shallow", "Deep"]
+        colours = [
+            #[cm.get_cmap(cmap_name)(i / len(av_depths)) for i in range(len())]
+            labels_cmap(possible_labels[0]),
+            labels_cmap(possible_labels[1]),
+        ]
+    else:
+        err_message = "Depth plotting fails with more than 2 regions!"
+        galfind_logger.critical(err_message)
+        raise Exception(err_message)
+    return labels_arr, possible_labels, colours, labels_cmap
 
 def _plot_labels(
-    fig: plt.Figure,
     ax: plt.Axes,
     hf_output: Dict[str, Any],
     cmap: plt.Colormap,
 ) -> Tuple[List[str], List[int], List[plt.Color]]:
-    mappable = ax.imshow(
+    ax.imshow(
         hf_output["labels_grid"], cmap=cmap, origin="lower", interpolation="None"
     )
-    divider = make_axes_locatable(ax)
-    cax = divider.append_axes("right", size="5%", pad=0.05)
-    fig.colorbar(mappable, label=r"Number of Apertures Used", cax=cax)
     ax.set_title("Labels")
 
 def _plot_cat_depths(
@@ -1343,7 +1354,7 @@ def _plot_cat_depths(
 ) -> NoReturn:
     ax.set_title("Catalogue Depths")
     m = ax.scatter(
-        cat_x, cat_y, s=1, zorder=5, c=hf_output["depths"], cmap=cmap
+        cat_x, cat_y, s=1, zorder=5, c=hf_output["depths"], cmap=cmap, edgecolors=None
     )
     divider = make_axes_locatable(ax)
     cax = divider.append_axes("right", size="5%", pad=0.05)
@@ -1382,6 +1393,7 @@ def _plot_cat_diagnostic(
         zorder=5,
         c=np.array(hf_output["diagnostic"]),
         cmap=cmap,
+        edgecolors=None
     )
     # Make it so axes aren't stetch disproportionately
     ax.set_aspect("equal")
@@ -1474,6 +1486,7 @@ def _plot_depth_hist(
         ax.set_xlabel(r"5$\sigma$ Depth")
         if title is None:
             title = "Depth Histogram"
+        ax.set_yticks([])
         ax.set_title(title)
         ax.legend(frameon=False)
 

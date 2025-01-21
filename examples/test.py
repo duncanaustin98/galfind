@@ -14,7 +14,7 @@ plt.style.use(
 # Load in a JOF data object
 survey = "JOF"
 version = "v11"
-instrument_names = ["NIRCam"] # "ACS_WFC", 
+instrument_names = ["ACS_WFC", "NIRCam"] # "ACS_WFC", 
 aper_diams = [0.32] * u.arcsec
 forced_phot_band = ["F277W", "F356W", "F444W"] #["F814W"]
 min_flux_pc_err = 10.
@@ -36,17 +36,23 @@ def test_selection():
     )
     print(data.band_data_arr)
     breakpoint()
+    # fig, ax = plt.subplots()
+    # data.filterset.plot(ax, save = True)
+    #breakpoint()
 
     cat = Catalogue.pipeline(
         survey,
         version,
-        instrument_names = instrument_names, 
+        instrument_names = instrument_names,
         version_to_dir_dict = morgan_version_to_dir,
         aper_diams = aper_diams,
         forced_phot_band = forced_phot_band,
         min_flux_pc_err = min_flux_pc_err,
         #crops = EPOCHS_Selector(aper_diams[0], EAZY(SED_fit_params_arr[-1]), allow_lowz=False)
     )
+    breakpoint()
+    # cat.data.plot_depth_diagnostic("F435W", 0.32 * u.arcsec, save = True)
+    # breakpoint()
 
     # load EAZY SED fitting results
     for SED_fit_params in SED_fit_params_arr:
@@ -59,8 +65,8 @@ def test_selection():
     from galfind import EPOCHS_Selector, Redwards_Lya_Detect_Selector
     epochs_selector = EPOCHS_Selector(aper_diams[0], EAZY_fitter, allow_lowz = False, unmasked_instruments = "NIRCam")
     epochs_selected_cat = epochs_selector(cat, return_copy = True)
-    # epochs_selector_lowz = EPOCHS_Selector(aper_diams[0], EAZY_fitter, allow_lowz = True, unmasked_instruments = "NIRCam")
-    # epochs_selected_cat_lowz = epochs_selector_lowz(cat, return_copy = True)
+    epochs_selector_lowz = EPOCHS_Selector(aper_diams[0], EAZY_fitter, allow_lowz = True, unmasked_instruments = "NIRCam")
+    epochs_selected_cat_lowz = epochs_selector_lowz(cat, return_copy = True)
 
     # Redwards_Lya_Detect_Selector(aper_diams[0], EAZY(SED_fit_params_arr[-1]), SNR_lims = [5.0], widebands_only = True)(JOF_cat)
     # # SED_fit_label = "EAZY_fsps_larson_zfree"
@@ -88,6 +94,7 @@ def test_pipes():
         min_flux_pc_err = min_flux_pc_err,
         crops = EPOCHS_Selector(aper_diams[0], EAZY(SED_fit_params_arr[-1]), allow_lowz=True)
     )
+    breakpoint()
 
     #JOF_cat.load_sextractor_Re()
 
@@ -101,13 +108,12 @@ def test_pipes():
     pipes_fitter = Bagpipes(pipes_SED_fit_params)
     pipes_fitter(JOF_cat, aper_diams[0], save_PDFs = False, load_SEDs = False, load_PDFs = True, overwrite = False, update = True)
 
-
-    from galfind import Ext_Src_Property_Calculator
-    ext_src_calculator = Ext_Src_Property_Calculator("stellar_mass", "Mstar", aper_diams[0], pipes_fitter.label)
-    ext_src_calculator(JOF_cat) #, n_chains = 10_000, output = False, n_jobs = 1)
-    ext_src_calculator = Ext_Src_Property_Calculator("M_UV", "MUV", aper_diams[0], pipes_fitter.label)
-    ext_src_calculator(JOF_cat) #, n_chains = 10_000, output = False, n_jobs = 1)
-    breakpoint()
+    # from galfind import Ext_Src_Property_Calculator
+    # ext_src_calculator = Ext_Src_Property_Calculator("stellar_mass", "Mstar", aper_diams[0], pipes_fitter.label)
+    # ext_src_calculator(JOF_cat) #, n_chains = 10_000, output = False, n_jobs = 1)
+    # ext_src_calculator = Ext_Src_Property_Calculator("M_UV", "MUV", aper_diams[0], pipes_fitter.label)
+    # ext_src_calculator(JOF_cat) #, n_chains = 10_000, output = False, n_jobs = 1)
+    #breakpoint()
 
     # from galfind.Property_calculator import Redshift_Extractor, Custom_SED_Property_Extractor
     # from galfind import UV_Beta_Calculator
@@ -549,24 +555,122 @@ def test_plotting():
         aper_diams = aper_diams,
         forced_phot_band = forced_phot_band,
         min_flux_pc_err = min_flux_pc_err,
-        #crops = EPOCHS_Selector(aper_diams[0], EAZY(SED_fit_params_arr[-1]), allow_lowz=True)
+        crops = EPOCHS_Selector(aper_diams[0], EAZY(SED_fit_params_arr[-1]), allow_lowz=True)
     )
 
     # Load EAZY SED fitting results
     for SED_fit_params in SED_fit_params_arr:
         EAZY_fitter = EAZY(SED_fit_params)
         EAZY_fitter(JOF_cat, aper_diams[0], load_PDFs = True, load_SEDs = True, update = True)
-    
-    from galfind import SFR_Halpha_Calculator
-    SFR_Halpha_calculator = SFR_Halpha_Calculator(aper_diams[0], EAZY_fitter)
-    SFR_Halpha_calculator(JOF_cat, n_chains = 10_000, output = False, n_jobs = 1)
 
-    # # Load xi_ion
-    # from galfind import Xi_Ion_Calculator #, M99
-    # for beta_dust_conv in [None]: #, M99]: #, Reddy18(C00(), 100 * u.Myr), Reddy18(C00(), 300 * u.Myr)]:
-    #     for fesc_conv in [None]: #, "Chisholm22"]: # None, 0.1, 0.2, 0.5,
-    #         xi_ion_calculator = Xi_Ion_Calculator(aper_diams[0], EAZY_fitter.label, beta_dust_conv = beta_dust_conv, fesc_conv = fesc_conv)
-    #         xi_ion_calculator(JOF_cat, n_chains = 10_000, output = False, n_jobs = 1)
+    from galfind import MUV_Calculator
+    MUV_calculator = MUV_Calculator(aper_diams[0], EAZY_fitter.label)
+    MUV_calculator(JOF_cat, n_chains = 10_000, output = False, n_jobs = 1)
+    from galfind import Xi_Ion_Calculator #, M99
+    for beta_dust_conv in [None]: #, M99]: #, Reddy18(C00(), 100 * u.Myr), Reddy18(C00(), 300 * u.Myr)]:
+        for fesc_conv in [None]: #, "Chisholm22"]: # None, 0.1, 0.2, 0.5,
+            xi_ion_calculator = Xi_Ion_Calculator(aper_diams[0], EAZY_fitter.label, beta_dust_conv = beta_dust_conv, fesc_conv = fesc_conv)
+            xi_ion_calculator(JOF_cat, n_chains = 10_000, output = False, n_jobs = 1)
+
+    # from galfind import SFR_Halpha_Calculator
+    # SFR_Halpha_calculator = SFR_Halpha_Calculator(aper_diams[0], EAZY_fitter)
+    # SFR_Halpha_calculator(JOF_cat, n_chains = 10_000, output = False, n_jobs = 1)
+
+    from galfind import Rest_Frame_Property_Kwarg_Selector, Optical_Line_EW_Calculator
+    EWrest_calculator = \
+        Optical_Line_EW_Calculator(
+            aper_diams[0], 
+            EAZY_fitter, 
+            ["Halpha"], 
+            "rest", 
+    )
+    Ha_emission_band_selector = Rest_Frame_Property_Kwarg_Selector(aper_diams[0], EAZY_fitter, EWrest_calculator, "band", "F444W")
+    JOF_cat_new = Ha_emission_band_selector(JOF_cat, return_copy = True)
+
+    from galfind import PSF_Cutout, Galfit_Fitter, Custom_Morphology_Property_Extractor
+    band_name = "F444W"
+    filt = Filter.from_filt_name(band_name)
+    psf_path = f'/nvme/scratch/work/westcottl/psf/PSF_Resample_03_{band_name}.fits'
+    psf = PSF_Cutout.from_fits(
+        fits_path=psf_path,
+        filt=filt,
+        unit="adu",
+        pix_scale=0.03 * u.arcsec,
+        size=0.96 * u.arcsec
+    )
+    galfit_fitter = Galfit_Fitter(psf, "sersic")
+    galfit_fitter(JOF_cat_new, plot = False)
+
+    sersic_extractor = Custom_Morphology_Property_Extractor("n", r"$n_{\mathrm{Sersic}}$", galfit_fitter)
+    r_eff_extractor = Custom_Morphology_Property_Extractor("r_e", r"$r_{\mathrm{eff}}~/~\mathrm{pix}$", galfit_fitter)
+    axis_ratio_extractor = Custom_Morphology_Property_Extractor("axr", r"$b/a$", galfit_fitter)
+
+    # remove high r_e sources
+    JOF_cat_new.gals = [gal for gal in JOF_cat_new if r_eff_extractor.extract_vals(gal) < 100. * u.pix]
+    #breakpoint()
+
+    # from galfind.Property_calculator import Redshift_Extractor
+    # z_extractor = Redshift_Extractor(aper_diams[0], EAZY_fitter)
+
+    pipes_SED_fit_params = {"fix_z": EAZY_fitter.label, "fesc": None}
+    pipes_fitter = Bagpipes(pipes_SED_fit_params)
+    pipes_fitter(JOF_cat_new, aper_diams[0], save_PDFs = False, load_SEDs = False, load_PDFs = True, overwrite = False, update = True)
+
+    from galfind.Property_calculator import Custom_SED_Property_Extractor
+    from galfind import Property_Multiplier, Property_Divider
+    from galfind import Ext_Src_Property_Calculator
+    from galfind import UV_Beta_Calculator
+    ext_src_Mstar = Ext_Src_Property_Calculator("stellar_mass", "Mstar", aper_diams[0], pipes_fitter.label, ext_src_corrs="F444W", ext_src_uplim=None)
+    ext_src_Mstar(JOF_cat_new)
+    ext_src_MUV = Ext_Src_Property_Calculator("M_UV", "MUV", aper_diams[0], pipes_fitter.label)
+    ext_src_MUV(JOF_cat_new)
+    beta_extractor = UV_Beta_Calculator(aper_diams[0], pipes_fitter.label)
+    beta_extractor(JOF_cat_new)
+    stellar_mass_extractor = Custom_SED_Property_Extractor("stellar_mass_extsrc_F444W", r"$\log_{10}(M_{\star}~/~\mathrm{M}_{\odot})$", aper_diams[0], pipes_fitter.label)
+    MUV_extractor = Custom_SED_Property_Extractor("M_UV_extsrc_UV<10", r"$M_{\mathrm{UV}}$", aper_diams[0], pipes_fitter.label)
+    xi_ion_extractor = Custom_SED_Property_Extractor("xi_ion_caseB", r"$\xi_{\mathrm{ion}}~/~\mathrm{Hz}~\mathrm{erg}^{-1}$", aper_diams[0], pipes_fitter.label)
+    SED_beta_extractor = Custom_SED_Property_Extractor("beta_C94", r"$\beta$", aper_diams[0], pipes_fitter.label)
+    specific_xi_ion_calculator = Property_Divider(
+        [xi_ion_extractor, stellar_mass_extractor], 
+        plot_name = r"$\xi_{\mathrm{ion}}/M_{\star}~[\mathrm{Hz}~\mathrm{erg}^{-1}~\mathrm{M}_{\odot}^{-1}]$"
+    )
+
+    for x, y, c in zip(
+        [beta_extractor],#, stellar_mass_extractor, MUV_extractor, stellar_mass_extractor, MUV_extractor], # stellar_mass_extractor, MUV_extractor, stellar_mass_extractor, MUV_extractor, beta_extractor, beta_extractor, 
+        [stellar_mass_extractor], #, xi_ion_extractor, xi_ion_extractor, xi_ion_extractor, xi_ion_extractor], # xi_ion_extractor, xi_ion_extractor, xi_ion_extractor, xi_ion_extractor, xi_ion_extractor, xi_ion_extractor,
+        [xi_ion_extractor], #, SED_beta_extractor, SED_beta_extractor, beta_extractor, beta_extractor] # MUV_extractor, stellar_mass_extractor, beta_extractor, beta_extractor, r_eff_extractor, sersic_extractor, 
+    ):
+        fig, ax = plt.subplots()
+        JOF_cat_new.plot(
+            x,
+            y,
+            fig = fig, 
+            ax = ax,
+            log_x = False,
+            log_y = False, #True,
+            incl_x_errs = False,
+            incl_y_errs = False,
+            save = False,
+            plot_type = "contour",
+            cmap = "teal",
+            plot_kwargs = {},
+        )
+        JOF_cat_new.plot(
+            x,
+            y,
+            c_calculator = c,
+            fig = fig, 
+            ax = ax,
+            log_x = False,
+            log_y = False, #True,
+            log_c = True,
+            incl_x_errs = False,
+            incl_y_errs = False,
+            save = True,
+            plot_type = "individual",
+            #cmap = "viridis",
+            plot_kwargs = {},
+        )
     
     # from galfind.Property_calculator import Redshift_Extractor
     # z_calculator = Redshift_Extractor(aper_diams[0], EAZY_fitter)
@@ -662,12 +766,12 @@ if __name__ == "__main__":
     #test_load()
     #main()
     
-    #test_selection()
+    test_selection()
 
     #test_UVLF()
 
     #split_UVLF_by_beta()
-    test_pipes()
+    #test_pipes()
     #check_multinest()
 
     #test_plotting()

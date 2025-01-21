@@ -55,7 +55,7 @@ pipes_unit_dict = {
     "mass_weighted_age": u.Gyr,
     "tform": u.Gyr,
     "tquench": u.Gyr,
-    "xi_ion_caseB": u.dex(u.Hz / u.erg),
+    "xi_ion_caseB": u.Hz / u.erg,
     "UV_colour": u.ABmag,
     "VJ_colour": u.ABmag,
     "beta_C94": u.dimensionless_unscaled,
@@ -172,6 +172,9 @@ class Bagpipes(SED_code):
 
     @classmethod
     def from_label(cls, label: str) -> Type[SED_code]:
+        # TODO: For continuity SFH, add z used to calculate bins 
+        # into the SED fit params from_label extractor
+        breakpoint()
         SED_fit_params = {}
         SED_fit_params["sfh"] = label.split("_sfh_")[1].split("_dust_")[0]
         dust_label = label.split("_dust_")[1].split("_Z_")[0]
@@ -237,7 +240,7 @@ class Bagpipes(SED_code):
             else:
                 if "z_range" in self.SED_fit_params.keys():
                     assert len(self.SED_fit_params["z_range"]) == 2
-                    redshift_label = f"{int(self.SED_fit_params['z_range'][0])}_z_{int(self.SED_fit_params['z_range'][1])}"
+                    redshift_label = f"{int(self.SED_fit_params['z_range'][0])}z{int(self.SED_fit_params['z_range'][1])}"
                 else:
                     galfind_logger.critical(
                         f"Bagpipes {self.SED_fit_params=} must include either " + \
@@ -245,20 +248,35 @@ class Bagpipes(SED_code):
                     )
                     breakpoint()
             # sort SPS label
-            if self.SED_fit_params["sps_model"].upper() == "BC03":
-                sps_label = ""  # should change this probably to read BC03
-            elif self.SED_fit_params["sps_model"].upper() == "BPASS":
-                sps_label = f"_{self.SED_fit_params['sps_model'].lower()}"
+            if self.SED_fit_params["sps_model"].upper() in ["BC03", "BPASS"]:
+                sps_label = self.SED_fit_params["sps_model"].upper()
             else:
                 galfind_logger.critical(
                     f"Bagpipes {self.SED_fit_params=} must include " + \
                     "'sps_model' with .upper() in ['BC03', 'BPASS']"
                 )
                 breakpoint()
+            # sfh label
+            if "continuity" in self.SED_fit_params["sfh"]:
+                assert "z_calculator" in self.SED_fit_params.keys(), \
+                    galfind_logger.critical(
+                        f"Bagpipes {self.SED_fit_params=} must include " + \
+                        "'z_calculator' for 'continuity' SFH"
+                    )
+                from . import Redshift_Extractor
+                if isinstance(self.SED_fit_params["z_calculator"], Redshift_Extractor):
+                    z_label = f"z{self.SED_fit_params['z_calculator'].SED_fit_label.replace('_', '').replace('zfree', '')}"
+                else:
+                    z_label = f"z{self.SED_fit_params['z_calculator']:0.1f}"
+                sfh_label = f"{self.SED_fit_params['sfh']}_{z_label}"
+                sfh_label = sfh_label.replace("continuity", "cont")
+            else:
+                sfh_label = self.SED_fit_params["sfh"]
+            # '_dust' label
             return (
-                f"Bagpipes_sfh_{self.SED_fit_params['sfh']}_dust_{self.SED_fit_params['dust']}_"
+                f"Bagpipes_sfh_{sfh_label}_{self.SED_fit_params['dust']}_"
                 + f"{self.SED_fit_params['dust_prior']}_Z_{self.SED_fit_params['metallicity_prior']}"
-                + f"{sps_label}_{redshift_label}"
+                + f"_{sps_label}_{redshift_label}"
             )
 
     @property
@@ -299,9 +317,9 @@ class Bagpipes(SED_code):
                 "dust_prior": "log_10",
                 "dust_eta": 1.0,
                 "t_bc": 10 * u.Myr,
-                "logU": (-3.0, -1.0), 
+                "logU": (-4.0, -1.0), 
                 "logU_prior": "uniform",
-                "fesc": (1.e-4, 1.0),
+                "fesc": None, #(1.e-4, 1.0),
                 "fesc_prior": "log_10"
             }
             for name, default in defaults_dict.items():
@@ -330,6 +348,9 @@ class Bagpipes(SED_code):
         except ImportError:
             self.rank = 0
             self.size = 1
+        self._load_fit_instructions()
+        if "continuity" in self.SED_fit_params["sfh"]:
+            self._update_continuity_sfh_fit_instructions(cat)
         return super().__call__(
             cat,
             aper_diam,
@@ -363,7 +384,8 @@ class Bagpipes(SED_code):
         pass
 
     def _temp_out_subdir(self, cat: Catalogue) -> str:
-        return f"{cat.version}/{cat.survey}/{cat.filterset.instrument_name}/{self.label}/temp"
+        # /{self.label}
+        return f"{cat.version}/{cat.survey}/{cat.filterset.instrument_name}/temp"
     
     def _new_subdir(self, cat: Catalogue) -> str:
         return f"{cat.version}/{cat.survey}/{cat.filterset.instrument_name}/{self.label}"
@@ -439,17 +461,14 @@ class Bagpipes(SED_code):
         overwrite: bool = False,
         **kwargs: Dict[str, Any],
     ) -> NoReturn:
-        
         # determine temp directories
-        # out_subdir = self._temp_out_subdir(cat)
-        out_subdir = f"{cat.survey}/temp"
+        out_subdir = self._temp_out_subdir(cat)
         path_post = f"{config['Bagpipes']['PIPES_OUT_DIR']}/pipes/posterior/{out_subdir}"
         path_plots = f"{config['Bagpipes']['PIPES_OUT_DIR']}/pipes/plots/{out_subdir}"
         path_sed = f"{config['Bagpipes']['PIPES_OUT_DIR']}/pipes/seds/{out_subdir}"
         path_sfr = f"{config['Bagpipes']['PIPES_OUT_DIR']}/pipes/sfr/{out_subdir}"
         path_fits = f"{config['Bagpipes']['PIPES_OUT_DIR']}/pipes/cats/{out_subdir}"
-
-        new_subdir = f"{cat.version}/{cat.survey}/{cat.filterset.instrument_name}/{self.label}"
+        new_subdir = self._new_subdir(cat)
         new_path_post = path_post.replace(out_subdir, new_subdir)
         funcs.make_dirs(new_path_post)
         new_path_plots = path_plots.replace(out_subdir, new_subdir)
@@ -495,6 +514,7 @@ class Bagpipes(SED_code):
         run_cat = deepcopy(cat)
         run_cat.gals = run_cat[to_run_arr]
         # remove filters without a depth measurement
+        breakpoint()
         gals_arr = []
         for gal in tqdm(run_cat.gals, "Removing filters without depth measurements"):
             remove_filt = []
@@ -573,8 +593,6 @@ class Bagpipes(SED_code):
         # #     f.write(json_file)
         # #     f.close()
 
-        fit_instructions = self._load_fit_instructions()
-        #print(fit_instructions)
         if all(hasattr(gal, "aper_phot") for gal in gals_arr):
             photometry_exists = True
             load_func = self._load_pipes_phot
@@ -586,7 +604,7 @@ class Bagpipes(SED_code):
             plot = True
         fit_cat = bagpipes.fit_catalogue(
             IDs,
-            fit_instructions,
+            self.fit_instructions,
             load_func,
             spectrum_exists = spectrum_exists,
             photometry_exists = photometry_exists,
@@ -603,7 +621,7 @@ class Bagpipes(SED_code):
             #time_calls = time_calls
             load_data_kwargs = {"cat": run_cat, "aper_diam": aper_diam}
         )
-        galfind_logger.info(f"Fitting bagpipes with {fit_instructions=}")
+        #galfind_logger.info(f"Fitting bagpipes with {self.fit_instructions=}")
         try:
             run_parallel = False
             fit_cat.fit(verbose = False, mpi_serial = run_parallel, sampler = self.sampler)
@@ -1065,7 +1083,7 @@ class Bagpipes(SED_code):
         # TODO: append to bagpipes log file for survey/version/instrument
         return pipes_input
 
-    def _load_fit_instructions(self: Self) -> Dict[str, Any]:
+    def _load_fit_instructions(self: Self) -> None:
         if "fit_instructions" in self.SED_fit_params.keys():
             fit_instructions = self.SED_fit_params["fit_instructions"]
         else:
@@ -1086,7 +1104,7 @@ class Bagpipes(SED_code):
             exp["age_prior"] = self.SED_fit_params["age_prior"]
             exp["tau"] = (0.01, 15.0)
             
-            exp["massformed"] = (5.0, 12.0)  # Change this?
+            exp["massformed"] = (5.0, 15.0)  # Change this?
 
             exp["metallicity_prior"] = self.SED_fit_params["metallicity_prior"]
             if self.SED_fit_params["metallicity_prior"] == "log_10":
@@ -1099,7 +1117,7 @@ class Bagpipes(SED_code):
             const["age_min"] = 0.001  # Gyr
             const["age_prior"] = self.SED_fit_params["age_prior"]
             # Log_10 total stellar mass formed: M_Solar
-            const["massformed"] = (5.0, 12.0)
+            const["massformed"] = (5.0, 15.0)
 
             const["metallicity_prior"] = self.SED_fit_params["metallicity_prior"]
             if self.SED_fit_params["metallicity_prior"] == "log_10":
@@ -1109,7 +1127,7 @@ class Bagpipes(SED_code):
 
             delayed["tau"] = (0.01, 15.0)  # `Gyr`
             # Log_10 total stellar mass formed: M_Solar
-            delayed["massformed"] = (5.0, 12.0)
+            delayed["massformed"] = (5.0, 15.0)
 
             delayed["age"] = (0.001, 15.0) # Gyr
             delayed["age_prior"] = self.SED_fit_params["age_prior"]
@@ -1122,7 +1140,7 @@ class Bagpipes(SED_code):
             burst["age"] = (0.01, 15.0)  # Gyr time since burst
             burst["age_prior"] = self.SED_fit_params["age_prior"]
             # Log_10 total stellar mass formed: M_Solar
-            burst["massformed"] = (0.0, 12.0)
+            burst["massformed"] = (0.0, 15.0)
 
             burst["metallicity_prior"] = self.SED_fit_params["metallicity_prior"]
             if self.SED_fit_params["metallicity_prior"] == "log_10":
@@ -1136,7 +1154,7 @@ class Bagpipes(SED_code):
             lognorm["tmax"] = (0.01, 15) 
             lognorm["fwhm"] = (0.01, 15)
             # Log_10 total stellar mass formed: M_Solar
-            lognorm["massformed"] = (5.0, 12.0)
+            lognorm["massformed"] = (5.0, 15.0)
 
             lognorm["metallicity_prior"] = self.SED_fit_params["metallicity_prior"]
             if self.SED_fit_params["metallicity_prior"] == "log_10":
@@ -1161,7 +1179,7 @@ class Bagpipes(SED_code):
             dblplaw["alpha_prior"] = "log_10"
             dblplaw["beta_prior"] = "log_10"
             # above as in Carnall et al. (2017).
-            dblplaw["massformed"] = (5.0, 12.0)
+            dblplaw["massformed"] = (5.0, 15.0)
             # dblplaw["metallicity"] = (0., 2.5)
             if self.SED_fit_params["metallicity_prior"] == "log_10":
                 dblplaw["metallicity"] = (1.e-3, 3.0)
@@ -1172,46 +1190,12 @@ class Bagpipes(SED_code):
             continuity = {}
             # continuity["age"] = (0.01, 15) # Gyr
             # continuity['age_prior'] = age_prior
-            continuity["massformed"] = (5.0, 12.0)
+            continuity["massformed"] = (5.0, 15.0)
             continuity["metallicity_prior"] = self.SED_fit_params["metallicity_prior"]
             if self.SED_fit_params["metallicity_prior"] == "log_10":
                 continuity["metallicity"] = (1.e-3, 3.0)
             elif self.SED_fit_params["metallicity_prior"] == "uniform":
                 continuity["metallicity"] = (0.0, 3.0)
-
-            # if not self.len(fix_z_SED_fit_params) != 0:
-            #     if self.SED_fit_params["sfh"] == "continuity":
-            #         raise Exception(
-            #             "Continuity model not compatible with varying redshift range."
-            #         )
-            #         continuity["redshift"] = redshift_range
-
-            # # This is a filler - real one is generated below when catalogue is loaded in
-            # cont_nbins = num_bins
-            # continuity["bin_edges"] = list(
-            #     calculate_bins(
-            #         redshift=8,
-            #         num_bins=cont_nbins,
-            #         first_bin=first_bin,
-            #         second_bin=second_bin,
-            #         return_flat=True,
-            #         output_unit="Myr",
-            #         log_time=False,
-            #     )
-            # )
-            # scale = 0
-            # if self.SED_fit_params["sfh"] == "continuity":
-            #     scale = 0.3
-            # if self.SED_fit_params["sfh"] == "continuity_bursty":
-            #     scale = 1.0
-
-            # for i in range(1, len(continuity["bin_edges"]) - 1):
-            #     continuity["dsfr" + str(i)] = (-10.0, 10.0)
-            #     continuity["dsfr" + str(i) + "_prior"] = "student_t"
-            #     # Defaults to this value as in Leja19, but can be set
-            #     continuity["dsfr" + str(i) + "_prior_scale"] = scale
-            #     # Defaults to this value as in Leja19, but can be set
-            #     continuity["dsfr" + str(i) + "_prior_df"] = 2
 
             # Iyer et al. (2019) Non-parametric SFH
             nbins = 6
@@ -1224,7 +1208,7 @@ class Bagpipes(SED_code):
             # The Dirichlet prior has a single tunable parameter α that specifies how correlated the values are. In our case, values of this parameter α<1 result in values that can be arbitrarily close, leading to extremely spiky SFHs because galaxies have to assemble a significant fraction of their mass in a very short period of time, while α>1 leads to smoother SFHs with more evenly spaced values that never- theless have considerable diversity. In practice, we use a value of α=5, which leads to a distribution of parameters that is similar to what we find in SAM and MUFASA.
             iyer["alpha"] = 5.0
             # Log_10 total stellar mass formed: M_Solar
-            iyer["massformed"] = (5.0, 12.0)
+            iyer["massformed"] = (5.0, 15.0)
 
             iyer["metallicity_prior"] = self.SED_fit_params["metallicity_prior"]
             if self.SED_fit_params["metallicity_prior"] == "log_10":
@@ -1257,10 +1241,10 @@ class Bagpipes(SED_code):
                 fit_instructions["lognormal"] = lognorm
             elif self.SED_fit_params["sfh"] == "iyer":
                 fit_instructions["iyer"] = iyer
-            # elif self.SED_fit_params["sfh"] == "continuity":
-            #     fit_instructions["continuity"] = continuity
-            # elif self.SED_fit_params["sfh"] == "continuity_bursty":
-            #     fit_instructions["continuity"] = continuity
+            elif self.SED_fit_params["sfh"] == "continuity":
+                fit_instructions["continuity"] = continuity
+            elif self.SED_fit_params["sfh"] == "continuity_bursty":
+                fit_instructions["continuity"] = continuity
             elif self.SED_fit_params["sfh"] == "dblplaw":
                 fit_instructions["dblplaw"] = dblplaw
             else:
@@ -1325,9 +1309,49 @@ class Bagpipes(SED_code):
                 fit_instructions["dust"] = dust
 
             if not self.SED_fit_params["fix_z"]:
-                fit_instructions["redshift"] = (0.0, 25.0)
+                fit_instructions["redshift"] = self.SED_fit_params["z_range"] #(0.0, 25.0)
+        
+        self.fit_instructions = fit_instructions
 
-        return fit_instructions
+    def _update_continuity_sfh_fit_instructions(
+        self: Self,
+        cat: Catalogue,
+    ) -> Dict[str, Any]:
+        z_calculator = self.SED_fit_params["z_calculator"]
+        if isinstance(z_calculator, float):
+            z_arr = np.full(len(cat), z_calculator)
+        else:
+            z_arr = z_calculator(cat)
+        fit_instructions_arr = []
+        for z in z_arr:
+            fit_instructions_i = deepcopy(self.fit_instructions)
+            bin_edges = list(calculate_bins(
+                redshift = z,
+                # num_bins=cont_nbins,
+                # first_bin=first_bin,
+                # second_bin=second_bin,
+                return_flat=True, 
+                output_unit='Myr', 
+                log_time=False
+            ))
+            fit_instructions_i["continuity"]["bin_edges"] = bin_edges
+            fit_instructions_arr.extend([fit_instructions_i])
+
+        sfr_bins = {}
+        if self.SED_fit_params["sfh"] == "continuity":
+            scale = 0.3
+        if self.SED_fit_params["sfh"] == "continuity_bursty":
+            scale = 1.0
+        for i in range(1, len(fit_instructions_arr[0]["continuity"]["bin_edges"]) - 1):
+            sfr_bins["dsfr" + str(i)] = (-10.0, 10.0)
+            sfr_bins["dsfr" + str(i) + "_prior"] = "student_t"
+            # Defaults to this value as in Leja19, but can be set
+            sfr_bins["dsfr" + str(i) + "_prior_scale"] = scale
+            # Defaults to this value as in Leja19, but can be set
+            sfr_bins["dsfr" + str(i) + "_prior_df"] = 2
+        for fit_instructions in fit_instructions_arr:
+            fit_instructions["continuity"] = {**fit_instructions["continuity"], **sfr_bins}
+        self.fit_instructions = fit_instructions_arr
 
 def calculate_bins(redshift, redshift_sfr_start=20, log_time=True, output_unit = 'yr', return_flat = False, num_bins=6, first_bin=10*u.Myr, second_bin=None, cosmo = funcs.astropy_cosmo):
     time_observed = cosmo.lookback_time(redshift)

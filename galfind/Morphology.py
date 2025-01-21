@@ -56,16 +56,11 @@ class Morphology_Result(ABC):
         self.property_pdfs = property_pdfs
 
     @property
-    def name(self: Self) -> str:
-        return self.fitter.__class__.__name__.split("_")[0] + \
-            f"_{self.fitter.psf.cutout.filt_name}_{self.fitter.model}"
-
-    @property
     def red_chi2(self: Self) -> float:
         return self.chi2 / self.Ndof
     
     def __repr__(self: Self) -> str:
-        return f"{self.__class__.__name__}({self.name})"
+        return f"{self.__class__.__name__}({self.fitter.name})"
     
     @abstractmethod
     def plot(self: Self) -> None:
@@ -208,6 +203,11 @@ class Morphology_Fitter(ABC):
             galfind_logger.critical(
                 f"{self.model=} not in {self._available_models=}"
             )
+    
+    @property
+    def name(self: Self) -> str:
+        return self.__class__.__name__.split("_")[0] + \
+            f"_{self.psf.cutout.filt_name}_{self.model}"
 
     def __call__(
         self: Self,
