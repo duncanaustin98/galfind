@@ -80,7 +80,7 @@ class PDF:
         add_kwargs: dict = {},
         save: bool = False,
     ):
-        if type(other) in [int, float, u.Quantity, u.Magnitude, u.Dex]:
+        if isinstance(other, (int, float, u.Quantity, u.Magnitude, u.Dex)):
             # multiply input array by other
             if hasattr(self, "input_arr"):
                 old_input_arr = self.input_arr
@@ -90,7 +90,7 @@ class PDF:
             new_kwargs = {**self.kwargs, **add_kwargs}
         else:  # PDF
             # for extending length of PDF
-            assert type(self) == type(other), galfind_logger.critical(
+            assert isinstance(self, type(other)), galfind_logger.critical(
                 f"{type(self)=}!={type(other)=}"
             )
             assert (
@@ -100,19 +100,22 @@ class PDF:
             )
             # update kwargs
             new_kwargs = {**self.kwargs, **other.kwargs, **add_kwargs}
-            if hasattr(self, "input_arr") and hasattr(other, "input_arr"):
-                new_input_arr = np.concatenate(
-                    (self.input_arr, other.input_arr)
-                )
+            if hasattr(self, "input_arr"):
+                self_input_arr = self.input_arr
             else:
-                new_input_arr = np.concatenate(
-                    (self.draw_sample(), other.draw_sample())
-                )
+                self_input_arr = self.draw_sample()
+            if hasattr(other, "input_arr"):
+                other_input_arr = other.input_arr
+            else:
+                other_input_arr = other.draw_sample()
+            new_input_arr = np.concatenate(
+                (self_input_arr, other_input_arr)
+            )
 
-        if type(name_ext) == type(None):
+        if name_ext is None:
             new_property_name = self.property_name
         else:  # type(name_ext) == str
-            assert type(name_ext) in [str], galfind_logger.critical(
+            assert isinstance(name_ext, str), galfind_logger.critical(
                 f"{name_ext=} with {type(name_ext)=} not in [str]!"
             )
             if name_ext[0] != "_":
@@ -157,7 +160,7 @@ class PDF:
         add_kwargs: dict = {},
         save: bool = False,
     ):
-        if type(other) in [int, float, u.Quantity, u.Magnitude, u.Dex]:
+        if isinstance(other, tuple(int, float, u.Quantity, u.Magnitude, u.Dex)):
             # multiply input array by other
             if hasattr(self, "input_arr"):
                 old_input_arr = self.input_arr
@@ -169,10 +172,10 @@ class PDF:
             # convolve the two PDFs with each other as done in Qiao's merger work
             raise NotImplementedError
 
-        if type(name_ext) == type(None):
+        if name_ext is None:
             new_property_name = self.property_name
         else:  # type(name_ext) == str
-            assert type(name_ext) in [str], galfind_logger.critical(
+            assert isinstance(name_ext, str), galfind_logger.critical(
                 f"{name_ext=} with {type(name_ext)=} not in [str]!"
             )
             if name_ext[0] != "_":
@@ -308,9 +311,9 @@ class PDF:
                 ] * self.x.unit
             return self._errs
 
-    def draw_sample(self, size: int = 50):
+    def draw_sample(self, size: int = 10_000):
         # draw a sample of specified size from the PDF
-        raise NotImplementedError
+        return np.random.choice(self.x, size=size, p=self.p_x/np.sum(self.p_x)) * self.x.unit
 
     def integrate_between_lims(
         self, lower_x_lim: Union[int, float], upper_x_lim: Union[int, float]
@@ -590,7 +593,7 @@ class SED_fit_PDF(PDF):
         return sed_fit_PDF
 
     def load_peaks_from_SED_result(self, SED_result, nth_peak=0):
-        assert type(nth_peak) == int, galfind_logger.critical(
+        assert isinstance(nth_peak, int), galfind_logger.critical(
             f"nth_peak with type = {type(nth_peak)} must be of type 'int'"
         )
         assert nth_peak == 0, galfind_logger.critical(

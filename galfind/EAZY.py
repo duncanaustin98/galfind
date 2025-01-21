@@ -25,7 +25,7 @@ from scipy.linalg import LinAlgWarning
 from tqdm import tqdm
 from typing import TYPE_CHECKING, List, Any, Dict, Optional, NoReturn, Type, Union, Tuple
 if TYPE_CHECKING:
-    from . import Catalogue
+    from . import Catalogue, PDF
 try:
     from typing import Self, Type  # python 3.11+
 except ImportError:
@@ -248,6 +248,7 @@ class EAZY(SED_code):
         save_SEDs: bool = True,
         save_PDFs: bool = True,
         overwrite: bool = False,
+        update: bool = False,
         **kwargs: Dict[str, Any],
     ) -> NoReturn:
         """
@@ -673,3 +674,31 @@ class EAZY(SED_code):
             # close .h5 file
             hf.close()
             return redshift_PDFs
+
+    def load_cat_property_PDFs(
+            self: Self, 
+            PDF_paths: List[Dict[str, str]],
+            IDs: List[int]
+        ) -> List[Dict[str, Optional[Type[PDF]]]]:
+        cat_property_PDFs_ = {
+            gal_property: self.extract_PDFs(
+                gal_property,
+                IDs,
+                PDF_path,
+            )
+            for gal_property, PDF_path in PDF_paths.items()
+        }
+        cat_property_PDFs_ = [
+            {
+                gal_property: PDF_arr[i]
+                for gal_property, PDF_arr in cat_property_PDFs_.items()
+                if PDF_arr[i] is not None
+            }
+            for i in range(len(IDs))
+        ]
+        # set to None if no PDFs are found
+        cat_property_PDFs = [
+            None if len(cat_property_PDF) == 0 else cat_property_PDF
+            for cat_property_PDF in cat_property_PDFs_
+        ]
+        return cat_property_PDFs

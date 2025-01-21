@@ -649,6 +649,9 @@ class Catalogue_Base:
                 keys_left = hdu.ID_label
             else:
                 raise NotImplementedError()
+            # convert ID column to appropriate units if not already
+            if fits_cat[keys_left].dtype != int:
+                fits_cat[keys_left] = fits_cat[keys_left].astype(int)
             combined_tab = join(
                 fits_cat, ID_tab, keys_left=keys_left, keys_right="IDs_temp"
             )

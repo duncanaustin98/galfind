@@ -17,9 +17,9 @@ import astropy.units as u
 import numpy as np
 from astropy.io import fits
 from astropy.table import Table
-from typing import Any, Dict, List, NoReturn, TYPE_CHECKING
+from typing import Any, Dict, List, Union, NoReturn, Optional, TYPE_CHECKING
 if TYPE_CHECKING:
-    from . import Catalogue, Filter, Multiple_Filter
+    from . import Catalogue, Filter, Multiple_Filter, PDF
 try:
     from typing import Self, Type  # python 3.11+
 except ImportError:
@@ -532,6 +532,13 @@ class LePhare(SED_code):
         #             break
         #     open_file.close()
         # return z, PDF
+
+    def load_cat_property_PDFs(
+        self: Self, 
+        PDF_paths: Union[List[str], List[Dict[str, str]]],
+        IDs: List[int]
+    ) -> List[Dict[str, Optional[Type[PDF]]]]:
+        pass
 
 # def calc_LePhare_errs(cat, col_name):
 #     if col_name == "Z_BEST":

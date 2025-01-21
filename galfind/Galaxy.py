@@ -33,7 +33,7 @@ from mpl_toolkits.axes_grid1.anchored_artists import AnchoredSizeBar
 from tqdm import tqdm
 from typing import  Union, Callable, Tuple, List, NoReturn, Optional, Dict, Any, TYPE_CHECKING
 if TYPE_CHECKING:
-    from . import Filter, SED_code, Selector
+    from . import Filter, SED_code, Selector, Band_Data, Band_Cutout
 try:
     from typing import Self, Type  # python 3.11+
 except ImportError:
@@ -280,16 +280,39 @@ class Galaxy:
         RGB_obj.plot(ax, method)
 
     def make_cutouts(
-        self: Type[Self], data: Data, cutout_size: u.Quantity = 0.96 * u.arcsec
+        self: Type[Self], 
+        data: Data, 
+        cutout_size: u.Quantity = 0.96 * u.arcsec
     ) -> Multiple_Band_Cutout:
+        if not hasattr(self, "multi_band_cutout"):
+            self.multi_band_cutout = Multiple_Band_Cutout.from_gal(data, self, cutout_size)
+        else:
+            galfind_logger.debug(
+                f"{self.__class__.__name__} {self.ID=} already has cutouts!"
+            )
+        return self.multi_band_cutout
+
+    def make_band_cutout(
+        self: Type[Self],
+        band_data: Band_Data,
+        cutout_size: u.Quantity = 0.96 * u.arcsec,
+    ) -> Band_Cutout:
         if not hasattr(self, "cutouts"):
             self.cutouts = {}
+        cutout_ = None
         cutout_size_str = f"{cutout_size.to(u.arcsec).value:.2f}as"
-        if cutout_size_str not in self.cutouts.keys():
-            self.cutouts[cutout_size_str] = Multiple_Band_Cutout.from_gal(
-                data, self, cutout_size
-            )
-        return self.cutouts[cutout_size_str]
+        if hasattr(self, "multi_band_cutout"):
+            # point to relevant cutout that has already been made
+            if cutout_size_str in self.multi_band_cutout.keys() and \
+                    any(band_data.filt_name == cutout.filt_name for cutout \
+                    in self.multi_band_cutout[cutout_size_str]):
+                cutout_ = self.multi_band_cutout[cutout_size_str][band_data.filt_name]
+        if cutout_ is None:
+            from . import Band_Cutout 
+            # make the cutout from the relevant band_data
+            cutout_ = Band_Cutout.from_gal_band_data(self, band_data, cutout_size)
+        self.cutouts[f"{band_data.filt_name}_{cutout_size_str}"] = cutout_
+        return cutout_
 
     def plot_cutouts(
         self: Type[Self],
