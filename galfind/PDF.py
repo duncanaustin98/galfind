@@ -248,7 +248,6 @@ class PDF:
         Nbins: int = 50,
         normed: bool = False,
         ignore_nans: bool = True,
-        timed: bool = False,
     ):
         assert isinstance(arr, (u.Quantity, u.Magnitude, u.Dex)), \
             galfind_logger.critical(
@@ -267,7 +266,7 @@ class PDF:
         except:
             breakpoint()
         x = 0.5 * (x_bin_edges[1:] + x_bin_edges[:-1]) * arr_.unit
-        PDF_obj = cls(property_name, x, p_x, kwargs, normed, timed)
+        PDF_obj = cls(property_name, x, p_x, kwargs, normed)
         PDF_obj.input_arr = arr
         return PDF_obj
 
@@ -565,11 +564,10 @@ class SED_fit_PDF(PDF):
         kwargs={},
         Nbins=50,
         normed=False,
-        timed=False,
     ):
         # super doesn't work here due to argument differences between PDF().__init__ and SED_fit_PDF().__init__
         PDF_obj = PDF.from_1D_arr(
-            property_name, arr, kwargs, Nbins, normed, timed
+            property_name, arr, kwargs, Nbins, normed
         )  # normalizes here if not already
         sed_fit_PDF = cls(
             property_name,
@@ -578,7 +576,6 @@ class SED_fit_PDF(PDF):
             SED_fit_params,
             kwargs,
             True,
-            timed,
         )
         sed_fit_PDF.input_arr = arr
         return sed_fit_PDF
@@ -632,10 +629,9 @@ class Redshift_PDF(SED_fit_PDF):
         kwargs={},
         Nbins=50,
         normed=False,
-        timed=False,
     ):
         SED_fit_PDF_obj = SED_fit_PDF.from_1D_arr(
-            "z", z_arr, SED_fit_params, kwargs, Nbins, normed, timed
+            "z", z_arr, SED_fit_params, kwargs, Nbins, normed
         )  # normalized here if not already
         z_PDF = cls(
             SED_fit_PDF_obj.x,
@@ -643,7 +639,6 @@ class Redshift_PDF(SED_fit_PDF):
             SED_fit_params,
             kwargs,
             True,
-            timed,
         )
         z_PDF.input_arr = z_arr
         return z_PDF

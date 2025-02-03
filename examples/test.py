@@ -12,8 +12,8 @@ plt.style.use(
 )
 
 # Load in a JOF data object
-survey = "PRIMER-UDS"
-version = "v12"
+survey = "CEERSP10"
+version = "v9"
 instrument_names = ["ACS_WFC", "NIRCam"] # "ACS_WFC", 
 aper_diams = [0.32] * u.arcsec
 forced_phot_band = ["F277W", "F356W", "F444W"] #["F814W"]
@@ -21,8 +21,8 @@ min_flux_pc_err = 10.
 
 def test_selection():
     SED_fit_params_arr = [
-        {"templates": "fsps_larson", "lowz_zmax": 4.0},
-        {"templates": "fsps_larson", "lowz_zmax": 6.0},
+        #{"templates": "fsps_larson", "lowz_zmax": 4.0},
+        #{"templates": "fsps_larson", "lowz_zmax": 6.0},
         {"templates": "fsps_larson", "lowz_zmax": None}
     ]
     # data = Data.from_survey_version(
@@ -69,25 +69,28 @@ def test_selection():
         aper_diams = aper_diams,
         forced_phot_band = forced_phot_band,
         min_flux_pc_err = min_flux_pc_err,
-        crops = EPOCHS_Selector(aper_diams[0], EAZY(SED_fit_params_arr[-1]), allow_lowz=False)
+        #crops = EPOCHS_Selector(aper_diams[0], EAZY(SED_fit_params_arr[-1]), allow_lowz=False)
     )
+
+    #from galfind import Unmasked_Instrument_Selector
+    #Unmasked_Instrument_Selector("ACS_WFC")(cat)
 
     # load EAZY SED fitting results
     for SED_fit_params in SED_fit_params_arr:
         EAZY_fitter = EAZY(SED_fit_params)
-        EAZY_fitter(cat, aper_diams[0], load_PDFs = True, load_SEDs = True, update = True)
+        EAZY_fitter(cat, aper_diams[0], load_PDFs = False, load_SEDs = False, update = True)
     
     #breakpoint()
 
-    #from galfind import MUV_Calculator
-    #MUV_calculator = MUV_Calculator(aper_diams[0], EAZY_fitter.label)
-    #MUV_calculator(cat, n_chains = 10_000, output = False, n_jobs = 1)
-    # from galfind import MUV_Calculator, Xi_Ion_Calculator, M99
-    # for beta_dust_conv in [None, M99]:#, Reddy18(C00(), 100 * u.Myr), Reddy18(C00(), 300 * u.Myr)]:
-    #     for fesc_conv in [None, "Chisholm22"]: # None, 0.1, 0.2, 0.5,
-    #         xi_ion_calculator = Xi_Ion_Calculator(aper_diams[0], EAZY_fitter.label, beta_dust_conv = beta_dust_conv, fesc_conv = fesc_conv)
-    #         xi_ion_calculator(cat, n_chains = 10_000, output = False, n_jobs = 1)
-    #         breakpoint()
+    from galfind import MUV_Calculator
+    MUV_calculator = MUV_Calculator(aper_diams[0], EAZY_fitter.label)
+    MUV_calculator(cat, n_chains = 10_000, output = False, n_jobs = 1)
+    from galfind import MUV_Calculator, Xi_Ion_Calculator, M99
+    for beta_dust_conv in [None, M99]:#, Reddy18(C00(), 100 * u.Myr), Reddy18(C00(), 300 * u.Myr)]:
+        for fesc_conv in [None, "Chisholm22"]: # None, 0.1, 0.2, 0.5,
+            xi_ion_calculator = Xi_Ion_Calculator(aper_diams[0], EAZY_fitter.label, beta_dust_conv = beta_dust_conv, fesc_conv = fesc_conv)
+            xi_ion_calculator(cat, n_chains = 10_000, output = False, n_jobs = 1)
+            #breakpoint()
 
     # cat.plot(MUV_calculator, xi_ion_calculator, incl_x_errs = False, incl_y_errs = False, annotate = True, plot_type = "individual", save = True, log_y = True)
 
@@ -100,19 +103,19 @@ def test_selection():
     # epochs_selector_lowz = EPOCHS_Selector(aper_diams[0], EAZY_fitter, allow_lowz = True, unmasked_instruments = "NIRCam")
     # epochs_selected_cat_lowz = epochs_selector_lowz(cat, return_copy = True)
 
-    cat.plot_phot_diagnostics(
-        aper_diams[0],
-        EAZY_fitter,
-        EAZY_fitter,
-        imshow_kwargs = {},
-        norm_kwargs = {},
-        aper_kwargs = {},
-        kron_kwargs = {},
-        n_cutout_rows = 3,
-        wav_unit = u.um,
-        flux_unit = u.ABmag,
-        overwrite = True
-    )
+    # cat.plot_phot_diagnostics(
+    #     aper_diams[0],
+    #     EAZY_fitter,
+    #     EAZY_fitter,
+    #     imshow_kwargs = {},
+    #     norm_kwargs = {},
+    #     aper_kwargs = {},
+    #     kron_kwargs = {},
+    #     n_cutout_rows = 3,
+    #     wav_unit = u.um,
+    #     flux_unit = u.ABmag,
+    #     overwrite = True
+    # )
 
     # Redwards_Lya_Detect_Selector(aper_diams[0], EAZY(SED_fit_params_arr[-1]), SNR_lims = [5.0], widebands_only = True)(JOF_cat)
     # # SED_fit_label = "EAZY_fsps_larson_zfree"
@@ -811,7 +814,8 @@ if __name__ == "__main__":
     #update_data_names()
     #test_load()
     #main()
-    
+    #import time
+    #time.sleep((8 * u.hr).to(u.s).value)
     test_selection()
 
     #test_UVLF()

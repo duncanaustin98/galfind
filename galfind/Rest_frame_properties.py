@@ -388,21 +388,24 @@ class Rest_Frame_Property_Calculator(Property_Calculator):
         phot_rest: Photometry_rest,
         n_chains: int,
     ) -> Tuple[PDF, u.Quantity]:
-        # scatter relevant photometric data points n_chains times
-        if "keep_indices" in self.obj_kwargs.keys():
-            cropped_phot_rest = phot_rest[self.obj_kwargs["keep_indices"]]
-        else:
-            cropped_phot_rest = deepcopy(phot_rest)
-        scattered_fluxes = cropped_phot_rest.scatter_fluxes(n_chains)
-        # calculate chain
-        galfind_logger.debug(f"Calculating {self.name} chains")
-        vals = self._calculate(scattered_fluxes, phot_rest)
-        galfind_logger.debug(f"{self.name} chains calculated")
-        # construct PDF object
-        if vals is None:
-            PDF_obj = None
-        else:
-            PDF_obj = PDF.from_1D_arr(self.name, vals, kwargs = self._get_output_kwargs(phot_rest))
+        try:
+            # scatter relevant photometric data points n_chains times
+            if "keep_indices" in self.obj_kwargs.keys():
+                cropped_phot_rest = phot_rest[self.obj_kwargs["keep_indices"]]
+            else:
+                cropped_phot_rest = deepcopy(phot_rest)
+            scattered_fluxes = cropped_phot_rest.scatter_fluxes(n_chains)
+            # calculate chain
+            galfind_logger.debug(f"Calculating {self.name} chains")
+            vals = self._calculate(scattered_fluxes, phot_rest)
+            galfind_logger.debug(f"{self.name} chains calculated")
+            # construct PDF object
+            if vals is None:
+                PDF_obj = None
+            else:
+                PDF_obj = PDF.from_1D_arr(self.name, vals, kwargs = self._get_output_kwargs(phot_rest))
+        except:
+            breakpoint()
         return PDF_obj, scattered_fluxes
 
     def extract_vals(
@@ -2105,6 +2108,9 @@ class Xi_Ion_Calculator(Rest_Frame_Property_Calculator):
         # under assumption of Case B recombination
         xi_ion_arr = (line_lum_arr / (1.36e-12 * u.erg * \
             (1.0 - fesc_arr) * LUV_arr)).to(u.Hz / u.erg)
+        xi_ion_arr[~np.isfinite(xi_ion_arr)] = np.nan
+        if self.global_kwargs["logged"]:
+            xi_ion_arr = np.log10(xi_ion_arr.value) * u.Unit(f"dex({xi_ion_arr.unit.to_string()})")
         finite_xi_ion_arr = xi_ion_arr[np.isfinite(xi_ion_arr)]
         if len(fluxes_arr) > 1:
             self.obj_kwargs["negative_xi_ion_pc"] = 100.0 * (1 - len(finite_xi_ion_arr) / len(xi_ion_arr))
@@ -2113,9 +2119,6 @@ class Xi_Ion_Calculator(Rest_Frame_Property_Calculator):
         else:
             if len(finite_xi_ion_arr) < 1:
                 return None
-        xi_ion_arr[~np.isfinite(xi_ion_arr)] = np.nan
-        if self.global_kwargs["logged"]:
-            xi_ion_arr = np.log10(xi_ion_arr.value) * u.Unit(f"dex({xi_ion_arr.unit.to_string()})")
         return xi_ion_arr
     
     def _get_output_kwargs(
