@@ -25,15 +25,15 @@ def test_selection():
         {"templates": "fsps_larson", "lowz_zmax": 6.0},
         {"templates": "fsps_larson", "lowz_zmax": None}
     ]
-    data = Data.from_survey_version(
-        survey,
-        version,
-        instrument_names = instrument_names,
-        version_to_dir_dict = morgan_version_to_dir,
-        aper_diams = aper_diams,
-        forced_phot_band = forced_phot_band,
-    )
-    print(data.band_data_arr)
+    # data = Data.from_survey_version(
+    #     survey,
+    #     version,
+    #     instrument_names = instrument_names,
+    #     version_to_dir_dict = morgan_version_to_dir,
+    #     aper_diams = aper_diams,
+    #     forced_phot_band = forced_phot_band,
+    # )
+    # print(data.band_data_arr)
     #breakpoint()
     # data.mask(
     #     "auto",
@@ -69,9 +69,8 @@ def test_selection():
         aper_diams = aper_diams,
         forced_phot_band = forced_phot_band,
         min_flux_pc_err = min_flux_pc_err,
-        #crops = EPOCHS_Selector(aper_diams[0], EAZY(SED_fit_params_arr[-1]), allow_lowz=False)
+        crops = EPOCHS_Selector(aper_diams[0], EAZY(SED_fit_params_arr[-1]), allow_lowz=False)
     )
-    #breakpoint()
 
     # load EAZY SED fitting results
     for SED_fit_params in SED_fit_params_arr:
@@ -95,13 +94,13 @@ def test_selection():
     # # load sextractor half-light radii
     # cat.load_sextractor_Re()
 
-    from galfind import EPOCHS_Selector, Redwards_Lya_Detect_Selector
-    epochs_selector = EPOCHS_Selector(aper_diams[0], EAZY_fitter, allow_lowz = False, unmasked_instruments = "NIRCam")
-    epochs_selected_cat = epochs_selector(cat, return_copy = True)
-    epochs_selector_lowz = EPOCHS_Selector(aper_diams[0], EAZY_fitter, allow_lowz = True, unmasked_instruments = "NIRCam")
-    epochs_selected_cat_lowz = epochs_selector_lowz(cat, return_copy = True)
+    # from galfind import EPOCHS_Selector, Redwards_Lya_Detect_Selector
+    # epochs_selector = EPOCHS_Selector(aper_diams[0], EAZY_fitter, allow_lowz = False, unmasked_instruments = "NIRCam")
+    # epochs_selected_cat = epochs_selector(cat, return_copy = True)
+    # epochs_selector_lowz = EPOCHS_Selector(aper_diams[0], EAZY_fitter, allow_lowz = True, unmasked_instruments = "NIRCam")
+    # epochs_selected_cat_lowz = epochs_selector_lowz(cat, return_copy = True)
 
-    epochs_selected_cat.plot_phot_diagnostics(
+    cat.plot_phot_diagnostics(
         aper_diams[0],
         EAZY_fitter,
         EAZY_fitter,
@@ -109,24 +108,10 @@ def test_selection():
         norm_kwargs = {},
         aper_kwargs = {},
         kron_kwargs = {},
-        n_cutout_rows = 2,
+        n_cutout_rows = 3,
         wav_unit = u.um,
         flux_unit = u.ABmag,
         overwrite = True
-    )
-
-    epochs_selected_cat_lowz.plot_phot_diagnostics(
-        aper_diams[0],
-        EAZY_fitter,
-        EAZY_fitter,
-        imshow_kwargs = {},
-        norm_kwargs = {},
-        aper_kwargs = {},
-        kron_kwargs = {},
-        n_cutout_rows = 2,
-        wav_unit = u.um,
-        flux_unit = u.ABmag,
-        overwrite = False
     )
 
     # Redwards_Lya_Detect_Selector(aper_diams[0], EAZY(SED_fit_params_arr[-1]), SNR_lims = [5.0], widebands_only = True)(JOF_cat)

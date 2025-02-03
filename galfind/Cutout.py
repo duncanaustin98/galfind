@@ -1161,7 +1161,7 @@ class Multiple_Cutout_Base(ABC):
         split_by_instr: bool = False,
         imshow_kwargs: Dict[str, Any] = {},
         norm_kwargs: Dict[str, Any] = {},
-        plot_regions: List[List[Union[Dict[str, Any], Type[Patch]]]] = [],
+        plot_regions: Dict[str, List[Union[Dict[str, Any], Type[Patch]]]] = {},
         scalebars: Optional[Dict] = [],
         mask: Optional[List[bool]] = None,
         instr_split_cmap: str = "Spectral_r",
@@ -1228,13 +1228,15 @@ class Multiple_Cutout_Base(ABC):
 
         if scalebars == []:
             scalebars = list(itertools.repeat([], len(self)))
-        if plot_regions == [] or plot_regions is None:
-            plot_regions = list(itertools.repeat([], len(self)))
         assert len(scalebars) == len(self)
-        assert len(plot_regions) == len(self)
-        for i, (ax, cutout, scalebars_band, plot_regions_band) in enumerate(
-            zip(ax_arr, self, scalebars, plot_regions)
+        for i, (ax, cutout, scalebars_band) in enumerate(
+            zip(ax_arr, self, scalebars)
         ):
+            filt_name = cutout.band_data.filt_name
+            if filt_name in plot_regions.keys():
+                plot_regions_band = plot_regions[filt_name]
+            else:
+                plot_regions_band = []
             if isinstance(cutout, tuple(Band_Cutout_Base.__subclasses__())):
                 cutout.plot(
                     ax,

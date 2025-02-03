@@ -407,7 +407,7 @@ class Galaxy:
 
         # make fixed aperture regions to plot
         aper_kwargs = {"ls": "-", "color": "green", "path_effects": [pe.withStroke(linewidth = 3., foreground = "white")]}
-        fixed_apertures = np.full(len(self.aper_phot[aper_diam].filterset), {"aper_diam": aper_diam, **aper_kwargs})
+        fixed_apertures = np.full(len(self.aper_phot[aper_diam]), {"aper_diam": aper_diam, **aper_kwargs})
         # make kron aperture regions to plot
         if all(hasattr(self, property_name) for property_name in \
                 ["sex_KRON_RADIUS", "sex_A_IMAGE", "sex_B_IMAGE", "sex_THETA_IMAGE"]):
@@ -419,13 +419,14 @@ class Galaxy:
                     height = (self.sex_KRON_RADIUS[filt_name] * self.sex_B_IMAGE).to(u.dimensionless_unscaled).value,
                     angle = self.sex_THETA_IMAGE.to(u.deg).value,
                     **kron_kwargs
-                ) 
+                )
                 for filt_name in self.aper_phot[aper_diam].filterset.band_names
             ]
-            plot_regions = [[aper, kron] for aper, kron in \
-                zip(fixed_apertures, kron_apertures)]
+            plot_regions = {filt_name: [aper, kron] for filt_name, aper, kron in \
+                zip(self.aper_phot[aper_diam].filterset.band_names, fixed_apertures, kron_apertures)}
         else:
-            plot_regions = [[aper] for aper in zip(fixed_apertures)]
+            plot_regions = {filt_name: [aper] for filt_name, aper in \
+                zip(self.aper_phot[aper_diam].filterset.band_names, fixed_apertures)}
         ax_arr = multi_band_cutout.plot(
             fig = fig,
             n_rows = n_rows,
