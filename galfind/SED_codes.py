@@ -212,7 +212,7 @@ class SED_code(ABC):
         fits_cat = cat.open_cat(hdu=self) # could be cached
         if "z" not in self.gal_property_labels.keys():
             fit = True
-        elif fits_cat is None or self.gal_property_labels['z'] \
+        elif fits_cat is None or self.gal_property_labels["z"] \
                 not in fits_cat.colnames:
             fit = True
         else:
@@ -248,7 +248,7 @@ class SED_code(ABC):
             u.dimensionless_unscaled for gal_property, label in \
             self.gal_property_labels.items()} for i in range(len(aper_phot_IDs))]
         
-        # TODO: ensure that all errors have an associated property - when instantiating the class
+        # TODO: When instantiating the class, ensure that all errors have an associated property
         assert all(
             err_key in self.gal_property_labels.keys()
             for err_key in self.gal_property_err_labels.keys()

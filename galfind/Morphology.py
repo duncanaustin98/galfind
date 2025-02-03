@@ -10,6 +10,7 @@ from astropy.io import fits
 import astropy.units as u
 from astropy.table import Table
 import matplotlib.patheffects as pe
+from photutils import EllipticalAperture
 import subprocess
 from typing import Union, Dict, Any, List, Tuple, Callable, Optional, NoReturn, TYPE_CHECKING
 if TYPE_CHECKING:
@@ -45,6 +46,7 @@ class Morphology_Result(ABC):
         properties: Dict[str, Union[u.Quantity, u.Magnitude, u.Dex]],
         property_errs: Dict[str, List[Union[u.Quantity, u.Magnitude, u.Dex], Union[u.Quantity, u.Magnitude, u.Dex]]],
         property_pdfs: Dict[str, Type[PDF_Base]],
+        rff: Optional[float] = None,
     ) -> None:
         self.fitter = fitter
         self.chi2 = chi2
@@ -54,6 +56,7 @@ class Morphology_Result(ABC):
         self.property_errs = property_errs
         [setattr(self, f"{key}_err", val) for key, val in property_errs.items()]
         self.property_pdfs = property_pdfs
+        self.rff = rff
 
     @property
     def red_chi2(self: Self) -> float:
@@ -78,10 +81,11 @@ class Galfit_Result(Morphology_Result):
         property_errs: Dict[str, List[Union[u.Quantity, u.Magnitude, u.Dex], Union[u.Quantity, u.Magnitude, u.Dex]]],
         property_pdfs: Dict[str, Type[PDF_Base]],
         im_path: str,
+        rff: Optional[float] = None,
     ) -> None:
         self.im_path = im_path
         #f'{galaxy_path}/{id}_ss_imgblock.fits'
-        super().__init__(fitter, chi2, Ndof, properties, property_errs, property_pdfs)
+        super().__init__(fitter, chi2, Ndof, properties, property_errs, property_pdfs, rff)
 
     @property
     def id(self: Self) -> str:
@@ -116,7 +120,6 @@ class Galfit_Result(Morphology_Result):
         save: bool = True,
         show: bool = False,
     ) -> None:
-
         if fig is None:
             fig, axs = plt.subplots(1, 3, figsize=(10, 4))
 
@@ -263,6 +266,10 @@ class Morphology_Fitter(ABC):
         fit_property_l1 = {f"{name}_l1": [result.property_errs[name][0].value if name in result.property_errs.keys() else np.nan for result in results] for name in all_property_names}
         fit_property_u1 = {f"{name}_u1": [result.property_errs[name][1].value if name in result.property_errs.keys() else np.nan for result in results] for name in all_property_names}
         fit_data = {**fit_properties, **fit_property_l1, **fit_property_u1}
+        # add ID, chi2, Ndof, red_chi2, and RFF
+        for name in ["id", "chi2", "Ndof", "red_chi2", "rff"]:
+            if hasattr(results[0], name):
+                fit_data[name] = [getattr(result, name) for result in results]
         tab = Table(fit_data)
         funcs.make_dirs(out_path)
         tab.write(out_path, overwrite=True)
@@ -319,7 +326,7 @@ class Galfit_Fitter(Morphology_Fitter):
     def _fit_cat(
         self: Self,
         cat: Catalogue,
-        plot: bool = False,
+        plot: bool = True,
     ):
         cat.load_sextractor_auto_mags()
         cat.load_sextractor_Re()
@@ -343,7 +350,6 @@ class Galfit_Fitter(Morphology_Fitter):
                 fid_re = gal.sex_Re[self.psf.cutout.band_data.filt_name],
                 in_dir = f"{in_subdir}/{str(gal.ID)}",
                 out_dir = f"{out_subdir}/{str(gal.ID)}/{self.model}",
-                plot = plot
             )
             for gal in cat
         ]
@@ -363,13 +369,12 @@ class Galfit_Fitter(Morphology_Fitter):
         fid_re: u.Quantity,
         in_dir: str = "",
         out_dir: str = "",
-        plot: bool = False,
-    ) -> None:
+    ) -> Galfit_Result:
         if in_dir != "":
             in_dir = f"{in_dir}/"
         if out_dir != "":
             out_dir = f"{out_dir}/"
-        out_path = f"{out_dir}{cutout.ID}_imgblock_out.fits"
+        out_path = self._imgblock_out_path(cutout, out_dir)
         if not Path(out_path).is_file():
             self._make_temps(cutout, out_dir)
             self._make_in_mask(cutout, out_dir)
@@ -382,9 +387,10 @@ class Galfit_Fitter(Morphology_Fitter):
             )
             self._delete_temps(cutout, out_dir)
             self._move_mask_to_in_dir(cutout, in_dir, out_dir)
-            galfind_logger.info(f"{cutout.ID} Galfit fit complete")
-        fitting_result = self._extract_results_from_file(cutout, out_path)
-        if plot:
+            galfind_logger.info(f"{cutout.ID} Galfit run finished")
+        fitting_result = self._extract_results_from_file(cutout, in_dir, out_dir)
+
+        if not Path(fitting_result.plot_path).is_file():
             fitting_result.plot()
         # update Cutout object with Morphology results
         cutout.update_morph_fits(fitting_result)
@@ -408,8 +414,24 @@ class Galfit_Fitter(Morphology_Fitter):
         funcs.make_dirs(path)
         return path
 
-    @staticmethod
+    def _temp_psf_path(
+        self: Self,
+        out_dir: str = ""
+    ) -> str:
+        path = f"{out_dir}{self.psf.cutout.cutout_path.split('/')[-1]}"
+        funcs.make_dirs(path)
+        return path
+    
+    def _temp_constraints_path(
+        self: Self,
+        out_dir: str = ""
+    ) -> str:
+        path = f"{out_dir}{self.constraints_path.split('/')[-1]}"
+        funcs.make_dirs(path)
+        return path
+
     def _make_temps(
+        self: Self,
         cutout: Type[Band_Cutout_Base],
         out_dir: str = ""
     ) -> None:
@@ -423,6 +445,12 @@ class Galfit_Fitter(Morphology_Fitter):
             rms_err_data, rms_err_hdr = cutout.band_data.load_rms_err(output_hdr = True)
             hdul = fits.HDUList([fits.PrimaryHDU(rms_err_data, header=rms_err_hdr)])
             hdul.writeto(temp_sigma_path, overwrite=True)
+        temp_psf_path = self._temp_psf_path(out_dir)
+        if not Path(temp_psf_path).is_file():
+            os.symlink(self.psf.cutout.cutout_path, temp_psf_path)
+        temp_constraints_path = self._temp_constraints_path(out_dir)
+        if not Path(temp_constraints_path).is_file():
+            os.symlink(self.constraints_path, temp_constraints_path)
     
     @staticmethod
     def _mask_path(
@@ -430,6 +458,15 @@ class Galfit_Fitter(Morphology_Fitter):
         out_dir: str = ""
     ) -> str:
         path = f"{out_dir}{cutout.ID}_mask_in.fits"
+        funcs.make_dirs(path)
+        return path
+    
+    @staticmethod
+    def _imgblock_out_path(
+        cutout: Type[Band_Cutout_Base],
+        out_dir: str = ""
+    ) -> str:
+        path = f"{out_dir}{cutout.ID}_imgblock_out.fits"
         funcs.make_dirs(path)
         return path
     
@@ -532,8 +569,8 @@ class Galfit_Fitter(Morphology_Fitter):
             f'Z)  0   #  Skip this model in output image?  (yes=1, no=0)'
         ]
     
-    @staticmethod
     def _delete_temps(
+        self: Self,
         cutout: Type[Band_Cutout_Base],
         out_dir: str = ""
     ) -> None:
@@ -543,6 +580,12 @@ class Galfit_Fitter(Morphology_Fitter):
         temp_sigma_path = Galfit_Fitter._temp_sigma_path(cutout, out_dir)
         if Path(temp_sigma_path).is_file():
             os.remove(temp_sigma_path)
+        temp_psf_path = self._temp_psf_path(out_dir)
+        if Path(temp_psf_path).is_file():
+            os.unlink(temp_psf_path)
+        temp_constraints_path = self._temp_constraints_path(out_dir)
+        if Path(temp_constraints_path).is_file():
+            os.unlink(temp_constraints_path)
     
     @staticmethod
     def _move_mask_to_in_dir(
@@ -557,8 +600,11 @@ class Galfit_Fitter(Morphology_Fitter):
     def _extract_results_from_file(
         self: Self,
         cutout: Type[Band_Cutout_Base],
-        out_path: str,
-    ) -> Dict[str, Any]:
+        in_dir: str,
+        out_dir: str,
+        pdf_len: int = 10_000,
+    ) -> Galfit_Result:
+        out_path = self._imgblock_out_path(cutout, out_dir)
         hdr = fits.open(out_path)[2].header
         mag, mag_err = hdr['1_MAG'].split('+/-')
         mag = mag.replace('*', '')
@@ -602,129 +648,86 @@ class Galfit_Fitter(Morphology_Fitter):
         property_errs = {name: [float(val) * Galfit_Fitter.property_units[name], \
             float(val) * Galfit_Fitter.property_units[name]] for name, val in \
             zip(property_names, [n_err, re_err, mag_err, axr_err, pa_err, cen_x_err, cen_y_err])}
-        pdfs = {name: PDF.from_1D_arr(name, \
-            np.random.normal(properties[name].value, property_errs[name][0].value, 10_000) \
-            * properties[name].unit) for name in property_names}
+        pdfs = {name: PDF.from_1D_arr(name, np.random.normal(properties[name].value, \
+            property_errs[name][0].value, pdf_len) * properties[name].unit \
+            if not np.isnan(property_errs[name][0].value) else \
+            np.full(pdf_len, properties[name].value) * properties[name].unit) \
+            for name in property_names}
+        rff = self._calc_RFF(cutout, in_dir, out_dir)
         return Galfit_Result(
             fitter = self,
             chi2 = float(hdr["CHISQ"]),
-            Ndof = float(hdr["NDOF"]),
+            Ndof = int(hdr["NDOF"]),
             properties = properties,
             property_errs = property_errs,
             property_pdfs = pdfs,
-            im_path = out_path
+            im_path = out_path,
+            rff = rff
         )
-
-# def _calc_RFF(field, band,  id, flux_r):
-#     #This function calculates the RFF value for a given galaxy, and returns it to use in the run_check function.
-#     if test == False:
-#         gal = f'/nvme/scratch/work/westcottl/EPOCHS_Cutouts/{field}/{band}/{id}/{id}imgblock.fits'
-#         mask_path = f'/nvme/scratch/work/westcottl/EPOCHS_Cutouts/{field}/{band}/{id}/{id}mask.fits'
-#         sigma = f'/nvme/scratch/work/westcottl/EPOCHS_Cutouts/{field}/{band}/{id}/{id}sigma.fits'
-#     elif test == True:
-#         gal = f'/nvme/scratch/work/westcottl/EPOCHS_Cutouts/Test/{field}/{band}/{id}/{id}imgblock.fits'
-#         mask_path = f'/nvme/scratch/work/westcottl/EPOCHS_Cutouts/Test/{field}/{band}/{id}/{id}mask.fits'
-#         sigma = f'/nvme/scratch/work/westcottl/EPOCHS_Cutouts/Test/{field}/{band}/{id}/{id}sigma.fits'
-#     hdul = fits.open(gal)
-#     hdul_sigma = fits.open(sigma)
-#     mask = fits.open(mask_path)
-#     orig = hdul[1].data
-#     model = hdul[2].data
-#     err = hdul_sigma[0].data
-
-#     # Find the maximum pixel value and its location
-#     max_value = model.max()
-#     max_loc = divmod(model.argmax(), model.shape[1])
-
-#     # Extract the x and y coordinates of the brightest pixel, where the kron circle will be centered
-#     brightest_x = max_loc[1]
-#     brightest_y = max_loc[0]
-
-#     # Define the radius of the circle
-#     radius = 2 * flux_r
     
-#     # Create an array of indices for all pixels
-#     indices = np.indices(model.shape)
-
-#     # Calculate the distance from each pixel to the brightest pixel
-#     distances = np.sqrt((indices[0] - brightest_y)**2 + (indices[1] - brightest_x)**2)
-    
-#     # Create a mask for pixels within the circle
-#     within_circle = distances <= radius
-
-#     # Apply the mask to the image data
-#     pixels_within_circle = model[within_circle]
-
-#     # Print the pixels within the circle
-#     #print("Pixels within the circle:", pixels_within_circle)
-    
-#     # Get the indices of the pixels within the circle
-#     indices_within_circle = np.argwhere(within_circle)
-
-#     # Print the pixel indices within the circle
-#     #print("Indices within the circle:", indices_within_circle)
-
-#     pix = np.transpose(indices_within_circle)
-
-#     counter = 0
-#     residual = 0
-#     sum_model = 0
-#     for i, j in zip(pix[0], pix[1]):
-#         #print(i,j)
-#         residual = residual + (abs(orig[i][j] - model[i][j]))
-#         sum_model = sum_model + model[i][j]
-#         #print(a)
-#         counter = counter + 1
-
-    
-#     hdul_mask = mask[0].data
-#     counter = 0
-#     background = []
-#     while counter < 10:
-#         # Define the size of the apertures
-#         aperture_size = 10
-
-#         #Generate random coordinates within the image's dimensions
-#         x = random.randint(0, hdul_mask.shape[1] - 1)
-#         y = random.randint(0, hdul_mask.shape[0] - 1)
-    
-#         if x - (aperture_size/2) >= 0 and x + (aperture_size/2) < hdul_mask.shape[1] and y - (aperture_size/2) >= 0 and y + (aperture_size/2) < hdul_mask.shape[0]:
-#             #print(x + 10, x - 10)
-#             # Calculate the coordinates of the aperture
-#             x_start = max(0, x - aperture_size // 2)
-#             y_start = max(0, y - aperture_size // 2)
-#             x_end = min(hdul_mask.shape[1], x + aperture_size // 2)
-#             y_end = min(hdul_mask.shape[0], y + aperture_size // 2)
-            
-#             # Extract the pixels within the aperture
-#             aperture = hdul_mask[y_start:y_end, x_start:x_end]
-            
-#             # Check if all pixels within the aperture are 0
-#             if np.all(aperture == 0):
-#                 aperture = err[x_start:x_end, y_start:y_end]
-#                 mean_aperture = sum(sum(aperture))/(len(aperture)**2)
-#                 background.append(mean_aperture)
-#                 counter = counter + 1
+    def _calc_RFF(
+        self: Self,
+        cutout: Type[Band_Cutout_Base],
+        in_dir: str,
+        out_dir: str,
+    ) -> float:
+        """
+        Calculates the Residual Flux Fraction (RFF) for a given galaxy.
+        """
+        # TODO: Cannot re-create the FLUX_AUTO values from the Kron aperture 
+        # -> Kron radius too small
+        # -> elliptical aperture also too small
+        fit_hdul = fits.open(self._imgblock_out_path(cutout, out_dir))
+        data = fit_hdul[1].data
+        model = fit_hdul[2].data
+        err = cutout.band_data.load_rms_err()
+        mask = fits.open(Galfit_Fitter._mask_path(cutout, in_dir))[0].data
+        pix_scale = cutout.meta["SIZE_AS"] / cutout.meta["SIZE_PIX"]
         
-#     background_mean = sum(background)/len(background)
+        # reconstruct Kron elliptical aperture
+        kron_aper = EllipticalAperture(
+            ((cutout.meta["SIZE_PIX"] - 1) / 2, (cutout.meta["SIZE_PIX"] - 1) / 2),
+            cutout.meta["A_IMAGE_AS"] / pix_scale,
+            cutout.meta["B_IMAGE_AS"] / pix_scale,
+            cutout.meta["THETA_IMAGE"]
+        )
+        residuals = abs(data - model)
+        model_kron = kron_aper.do_photometry(model)[0][0]
+        residual_kron = kron_aper.do_photometry(residuals)[0][0]
+        # Depths.make_grid(data, mask, 
+        # background_aper = 
+    
+        counter = 0
+        background = []
+        while counter < 10:
+            # Define the size of the apertures
+            aperture_size = 10
 
-#     RMS = background_mean * len(pixels_within_circle)
-
-#     RFF = ((residual - 0.8)*(RMS))/(sum_model)
-#     RFF_r = round(RFF, 3)
-
-#     return RFF_r
-
-# def re_convert(z, re):
-#     #This function will convert the re value from pixels to kpc.
-#     pixel_scale = u.pixel_scale(0.03*u.arcsec/u.pixel) #Pixel scale for JWST is 0.03 pix/arcsec
-#     re_as = (re*u.pixel).to(u.arcsec, pixel_scale) #Converts re from pixels to arcseconds
-
-#     cosmo = FlatLambdaCDM(H0=70, Om0=0.3)
-
-#     d_A = cosmo.angular_diameter_distance(z) #Angular diameter distance in Mpc
-#     re_kpc = (re_as * d_A).to(u.kpc, u.dimensionless_angles()) # re of galaxy in kpc
-#     return re_kpc
+            #Generate random coordinates within the image's dimensions
+            x = np.random.randint(0, mask.shape[1] - 1)
+            y = np.random.randint(0, mask.shape[0] - 1)
+        
+            if x - (aperture_size/2) >= 0 and x + (aperture_size/2) < mask.shape[1] and y - (aperture_size/2) >= 0 and y + (aperture_size/2) < mask.shape[0]:
+                #print(x + 10, x - 10)
+                # Calculate the coordinates of the aperture
+                x_start = max(0, x - aperture_size // 2)
+                y_start = max(0, y - aperture_size // 2)
+                x_end = min(mask.shape[1], x + aperture_size // 2)
+                y_end = min(mask.shape[0], y + aperture_size // 2)
+                
+                # Extract the pixels within the aperture
+                aperture = mask[y_start:y_end, x_start:x_end]
+                
+                # Check if all pixels within the aperture are 0
+                if np.all(aperture == 0):
+                    aperture = err[x_start:x_end, y_start:y_end]
+                    mean_aperture = sum(sum(aperture)) / (len(aperture)**2)
+                    background.append(mean_aperture)
+                    counter = counter + 1
+            
+        background_mean = sum(background) / len(background)
+        rff = (residual_kron - 0.8 * background_mean * kron_aper.area) / model_kron
+        return rff
 
 # def input_images(galaxy_path, save_path, id, field, band):
 #     if not os.path.exists(save_path):

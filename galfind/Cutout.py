@@ -145,6 +145,17 @@ class Band_Cutout_Base(Cutout_Base, ABC):
             return f"({meta['RA']:.5f},{meta['DEC']:.5f})"
 
     @property
+    def instr_name(self) -> str:
+        return self._get_instr_name(self.meta)
+
+    @staticmethod
+    def _get_instr_name(meta: Dict[str, Any]) -> str:
+        if "INSTR" in meta.keys():
+            return meta["INSTR"]
+        else:
+            return None
+
+    @property
     def meta(self) -> dict:
         return dict(self.load("PRIMARY")[0])
 
@@ -172,6 +183,7 @@ class Band_Cutout_Base(Cutout_Base, ABC):
         band_data: Band_Data, 
         cutout_size: u.Quantity, 
         ID: str, 
+        instr_name: Optional[str],
         data_type: str
     ) -> str:
         assert data_type in ["data", "png"], \
@@ -180,8 +192,12 @@ class Band_Cutout_Base(Cutout_Base, ABC):
             ext = ".fits"
         elif data_type == "png":
             ext = ".png"
+        if instr_name is None:
+            instr_name = ""
+        else:
+            instr_name = f"{instr_name}/"
         save_path = f"{config['Cutouts']['CUTOUT_DIR']}/{band_data.version}/" + \
-            f"{band_data.survey}/{cutout_size.to(u.arcsec).value:.2f}as/" + \
+            f"{band_data.survey}/{instr_name}{cutout_size.to(u.arcsec).value:.2f}as/" + \
             f"{band_data.filt_name}/{data_type}/{ID}{ext}"
         funcs.make_dirs(save_path)
         return save_path
@@ -386,7 +402,7 @@ class Band_Cutout_Base(Cutout_Base, ABC):
                     ax.add_artist(scalebar)
         # option to save here
         if save:
-            save_path = self._get_save_path(self.band_data, self.cutout_size, self.ID, "png")
+            save_path = self._get_save_path(self.band_data, self.cutout_size, self.ID, self.instr_name, "png")
             plt.savefig(save_path)
             funcs.change_file_permissions(save_path)
             galfind_logger.info(f"Saved png cutout to: {save_path}")
@@ -456,12 +472,31 @@ class Band_Cutout(Band_Cutout_Base):
         # TODO: ensure in some way that the galaxy arises from the data
         # extract the position of the galaxy
         sky_coord = gal.sky_coord
+        meta = {"ID": gal.ID, "INSTR": gal.cat_filterset.instrument_name}
+        meta_keys = ["Re", "FLUX_AUTO", "MAG_AUTO", "KRON_RADIUS", "A_IMAGE", "B_IMAGE", "THETA_IMAGE", "A_IMAGE_AS", "B_IMAGE_AS"]
+        suffixes = ["_AS", "_JY", "", "", "", "", "", "", ""]
+        filt_name = band_data.filt.band_name
+        for meta_key, suffix in zip(meta_keys, suffixes):
+            meta_key = f"sex_{meta_key}"
+            if hasattr(gal, meta_key):
+                attr = getattr(gal, meta_key)
+                if isinstance(attr, dict):
+                    attr = attr[filt_name]
+                attr = attr.value
+                if len(meta_key) > 8:
+                    meta_key = f"HIERARCH {meta_key}"
+                meta = {
+                    **meta, 
+                    **{f"{meta_key.replace('sex_', '').upper()}{suffix.upper()}": attr}
+                }
+            else:
+                galfind_logger.info(f"No {meta_key} found for {repr(gal)}!")
         return cls.from_data_skycoord(
             band_data, 
             sky_coord, 
             cutout_size, 
-            meta={"ID": gal.ID}, 
-            overwrite=overwrite
+            meta = meta, 
+            overwrite = overwrite
         )
 
     @classmethod
@@ -485,7 +520,8 @@ class Band_Cutout(Band_Cutout_Base):
                 .to(u.dimensionless_unscaled).value,
         }
         ID = cls._get_ID(meta)
-        save_path = cls._get_save_path(band_data, cutout_size, ID, data_type="data")
+        instr_name = cls._get_instr_name(meta)
+        save_path = cls._get_save_path(band_data, cutout_size, ID, instr_name, data_type="data")
         cls._make_cutout(band_data, sky_coord, cutout_size, save_path, meta, overwrite)
         band_data = cls._update_band_data(band_data, save_path)
         return cls(save_path, band_data, cutout_size)
@@ -573,7 +609,7 @@ class Band_Cutout(Band_Cutout_Base):
             galfind_logger.info(f"Saved fits cutout to: {save_path}")
         else:
             ID = Band_Cutout_Base._get_ID(meta)
-            galfind_logger.info(
+            galfind_logger.debug(
                 f"Already made fits cutout for {band_data.survey}" + \
                 f" {band_data.version} {ID} {band_data.filt_name}"
             )
@@ -645,7 +681,7 @@ class Stacked_Band_Cutout(Band_Cutout_Base):
             Band_Cutout.from_gal_band_data(gal, cat.data[filt], cutout_size, overwrite = overwrite)
             for gal in cat
         ]
-        save_path = cls._get_save_path(cat.data[filt], cutout_size, cat.crop_name, "data")
+        save_path = cls._get_save_path(cat.data[filt], cutout_size, cat.crop_name, cat.filterset.instrument_name, "data")
         return cls.from_cutouts(cutouts, save_path, overwrite = overwrite)
 
     @classmethod
@@ -1125,11 +1161,13 @@ class Multiple_Cutout_Base(ABC):
         split_by_instr: bool = False,
         imshow_kwargs: Dict[str, Any] = {},
         norm_kwargs: Dict[str, Any] = {},
-        plot_regions: List[List[Dict]] = {},
+        plot_regions: List[List[Union[Dict[str, Any], Type[Patch]]]] = [],
         scalebars: Optional[Dict] = [],
         mask: Optional[List[bool]] = None,
+        instr_split_cmap: str = "Spectral_r",
         show: bool = False,
         save: bool = True,
+        close_fig: bool = False,
     ) -> plt.Figure:
         
         assert n_rows > 0
@@ -1160,9 +1198,9 @@ class Multiple_Cutout_Base(ABC):
             #instr_names = [name for name in json.loads( \
             #    config["Other"]["INSTRUMENT_NAMES"]) if name in instr_names]
             # determine appropriate colours from the colour map
-            cmap = plt.get_cmap("Spectral_r", len(instr_names))
+            instr_split_cmap = plt.get_cmap(instr_split_cmap, len(instr_names))
             norm = Normalize(vmin=0, vmax=len(instr_names) - 1)
-            colours = {name: cmap(norm(i)) for i, name in enumerate(instr_names)}
+            colours = {name: instr_split_cmap(norm(i)) for i, name in enumerate(instr_names)}
             plot_band_counts = {name: 0 for name in instr_names}
             for ax, cutout in zip(ax_arr, self):
                 plot_band_counts[cutout.band_data.instr_name] += 1
@@ -1190,9 +1228,10 @@ class Multiple_Cutout_Base(ABC):
 
         if scalebars == []:
             scalebars = list(itertools.repeat([], len(self)))
-        if plot_regions == {} or plot_regions is None:
+        if plot_regions == [] or plot_regions is None:
             plot_regions = list(itertools.repeat([], len(self)))
-
+        assert len(scalebars) == len(self)
+        assert len(plot_regions) == len(self)
         for i, (ax, cutout, scalebars_band, plot_regions_band) in enumerate(
             zip(ax_arr, self, scalebars, plot_regions)
         ):
@@ -1220,9 +1259,12 @@ class Multiple_Cutout_Base(ABC):
             save_path = self._get_save_path()
             plt.savefig(save_path, bbox_inches = "tight")
             funcs.change_file_permissions(save_path)
+            galfind_logger.info(f"Saved cutout plot to: {save_path}")
         if show:
             plt.show()
-        # return fig
+        if close_fig:
+            plt.close(fig)
+        return fig, ax
 
 
 # Galaxy_Cutouts
@@ -1307,11 +1349,18 @@ class Multiple_Band_Cutout(Multiple_Cutout_Base):
         assert all([cutout.ID == self[0].ID for cutout in self])
         return self[0].ID
 
-    def _get_save_path(
-        self: Self,
-    ) -> str:
+    @property
+    def instr_name(self) -> str:
+        assert all([cutout.instr_name == self[0].instr_name for cutout in self])
+        return self[0].instr_name
+
+    def _get_save_path(self: Self) -> str:
+        if self.instr_name is None:
+            instr_name = ""
+        else:
+            instr_name = f"{self.instr_name}/"
         save_path = f"{config['Cutouts']['CUTOUT_DIR']}/{self.version}/" + \
-            f"{self.survey}/{self.cutout_size.to(u.arcsec).value:.2f}as/" + \
+            f"{self.survey}/{instr_name}{self.cutout_size.to(u.arcsec).value:.2f}as/" + \
             f"multi_band/png/{self.ID}.png"
         # '+'.join(filt.band_name for filt in self.filterset)
         funcs.make_dirs(save_path)
@@ -1360,12 +1409,20 @@ class Catalogue_Cutouts(Multiple_Cutout_Base):
         # NOT GENERAL
         assert all([cutout.version == self[0].version for cutout in self])
         return self[0].version
+
+    @property
+    def instr_name(self) -> str:
+        # NOT GENERAL
+        assert all([cutout.instr_name == self[0].instr_name for cutout in self])
+        return self[0].instr_name
     
-    def _get_save_path(
-        self: Self,
-    ) -> str:
+    def _get_save_path(self: Self) -> str:
+        if self.instr_name is None:
+            instr_name = ""
+        else:
+            instr_name = f"{self.instr_name}/"
         save_path = f"{config['Cutouts']['CUTOUT_DIR']}/{self.version}/" + \
-            f"{self.survey}/{self.cutout_size.to(u.arcsec).value:.2f}as/" + \
+            f"{self.survey}/{instr_name}{self.cutout_size.to(u.arcsec).value:.2f}as/" + \
             f"{self[0].band_data.filt_name}/png/{self.ID}.png"
         # '+'.join(filt.band_name for filt in self.filterset)
         funcs.make_dirs(save_path)

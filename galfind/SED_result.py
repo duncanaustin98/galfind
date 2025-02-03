@@ -37,16 +37,17 @@ class SED_result:
         self.properties = properties
         [setattr(self, key, value) for key, value in properties.items()]
         self.property_errs = property_errs
+        self.property_PDFs = property_PDFs
         # load in peaks
-        if property_PDFs is None:
-            self.property_PDFs = None
-        else:
-            self.property_PDFs = {
-                property: property_PDF.load_peaks_from_best_fit(
-                    properties[property], properties["chi_sq"]
-                )
-                for property, property_PDF in property_PDFs.items()
-            }
+        # if property_PDFs is None:
+        #     self.property_PDFs = None
+        # else:
+        #     self.property_PDFs = {
+        #         property: property_PDF.load_peaks_from_best_fit(
+        #             properties[property], properties["chi_sq"]
+        #         )
+        #         for property, property_PDF in property_PDFs.items()
+        #     }
         self.SED = SED
         # should really be contained in self.SED
         self.phot_rest = Photometry_rest.from_phot(phot, self.z)

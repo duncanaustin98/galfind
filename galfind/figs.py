@@ -8,6 +8,7 @@ def make_rectangular_fig(n_ax, xy_ratio):
 
 def make_square_fig(n_ax):
     assert isinstance(np.sqrt(n_ax), int)
+    pass
 
 
 def make_fig_ax(n_x: int, n_y: int, scaling: float = 3.):

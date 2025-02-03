@@ -97,7 +97,7 @@ class Band_Data_Base(ABC):
         im_ext_name: Union[str, List[str]] = "SCI",
         rms_err_ext_name: Union[str, List[str]] = "ERR",
         wht_ext_name: Union[str, List[str]] = "WHT",
-        use_galfind_err: bool = False,
+        use_galfind_err: bool = True,
         aper_diams: Optional[u.Quantity] = None,
     ):
         self.survey = survey
@@ -354,7 +354,10 @@ class Band_Data_Base(ABC):
         self, output_hdr: bool = False
     ) -> Union[Tuple[np.ndarray, fits.Header], np.ndarray]:
         if Path(self.rms_err_path).is_file():
-            hdu = fits.open(self.rms_err_path)[self.rms_err_ext]
+            try:
+                hdu = fits.open(self.rms_err_path)[self.rms_err_ext]
+            except:
+                breakpoint()
             rms_err = hdu.data
             hdr = hdu.header
         else:
@@ -988,7 +991,7 @@ class Band_Data_Base(ABC):
         )
         self.wht_path = save_path
         self.wht_ext = 1
-        self.rms_err_ext_name = ["WHT"]
+        self.wht_ext_name = ["WHT"]
         self._use_galfind_err = True
 
     # can be simplified with new masks
@@ -1046,7 +1049,7 @@ class Band_Data(Band_Data_Base):
         im_ext_name: Union[str, List[str]] = "SCI",
         rms_err_ext_name: Union[str, List[str]] = "ERR",
         wht_ext_name: Union[str, List[str]] = "WHT",
-        use_galfind_err: bool = False,
+        use_galfind_err: bool = True,
         aper_diams: Optional[u.Quantity] = None,
     ):
         self.filt = filt
@@ -1174,7 +1177,7 @@ class Stacked_Band_Data(Band_Data_Base):
         im_ext_name: Union[str, List[str]] = "SCI",
         rms_err_ext_name: Union[str, List[str]] = "ERR",
         wht_ext_name: Union[str, List[str]] = "WHT",
-        use_galfind_err: bool = False,
+        use_galfind_err: bool = True,
         aper_diams: Optional[u.Quantity] = None,
     ):
         # ensure every band_data is from the same survey and version,
@@ -1340,7 +1343,7 @@ class Stacked_Band_Data(Band_Data_Base):
         )
 
         # make rms_err/wht maps if they do not exist and are required
-        used_galfind_err = False
+        # used_galfind_err = False
         if err_type.lower() == "rms_err":
             if any(band_data.rms_err_path is None for band_data in band_data_arr):
                 run = True
@@ -1354,7 +1357,7 @@ class Stacked_Band_Data(Band_Data_Base):
             if run:
                 for band_data in band_data_arr:
                     band_data._make_rms_err_from_wht()
-                used_galfind_err = True
+                # used_galfind_err = True
         else:  # err_type.lower() == "wht"
             if any(band_data.wht_path is None for band_data in band_data_arr):
                 run = True
@@ -1368,7 +1371,7 @@ class Stacked_Band_Data(Band_Data_Base):
             if run:
                 for band_data in band_data_arr:
                     band_data._make_wht_from_rms_err()
-                used_galfind_err = True
+                # used_galfind_err = True
         # load output path and perform stacking if required
         stacked_band_data_path = Stacked_Band_Data._get_stacked_band_data_path(
             band_data_arr, err_type
@@ -1699,6 +1702,7 @@ class Data:
                     # in the same fits file but different extensions.
                     raise NotImplementedError(err_message)
                 else:
+                    #breakpoint()
                     band_data = Band_Data(
                         Filter.from_filt_name(filt_name),
                         survey,
@@ -1825,6 +1829,7 @@ class Data:
                             f"{filt_name}, {path} not recognised as im, rms_err, or wht!"
                             + "Consider updating 'im_str', ''rms_err_str', and 'wht_str'!"
                         )
+                # breakpoint()
                 # extract sci/rms_err/wht extensions
                 hdul = fits.open(path)
                 if not single_path:

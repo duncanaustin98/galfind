@@ -19,7 +19,7 @@ from astropy.utils.masked import Masked
 from tqdm import tqdm
 from typing import TYPE_CHECKING, List, Union, Dict, Optional, Tuple
 if TYPE_CHECKING:
-    from . import Multiple_Filter, PDF
+    from . import Multiple_Filter, PDF, Filter
 try:
     from typing import Self, Type  # python 3.11+
 except ImportError:
@@ -159,22 +159,22 @@ class Photometry_rest(Photometry):
             setattr(result, key, deepcopy(value, memo))
         return result
 
-    @property
-    def first_Lya_detect_band(
-        self: Self,
-        Lya_wav: u.Quantity = line_diagnostics["Lya"]["line_wav"]
-    ):
-        try:
-            return self._first_Lya_detect_band
-        except AttributeError:
-            first_band = None
-            for band in self.filterset:
-                lower_wav = band.WavelengthLower50
-                if lower_wav > Lya_wav * (1 + self.z):
-                    first_band = band.band_name
-                    break
-            self._first_Lya_detect_band = first_band
-            return self._first_Lya_detect_band
+    # @property
+    # def first_Lya_detect_band(
+    #     self: Self,
+    #     Lya_wav: u.Quantity = line_diagnostics["Lya"]["line_wav"]
+    # ):
+    #     try:
+    #         return self._first_Lya_detect_band
+    #     except AttributeError:
+    #         first_band = None
+    #         for band in self.filterset:
+    #             lower_wav = band.WavelengthLower50
+    #             if lower_wav > Lya_wav * (1 + self.z):
+    #                 first_band = band.band_name
+    #                 break
+    #         self._first_Lya_detect_band = first_band
+    #         return self._first_Lya_detect_band
 
     @property
     def first_Lya_non_detect_band(
@@ -183,6 +183,7 @@ class Photometry_rest(Photometry):
         try:
             return self._first_Lya_non_detect_band
         except AttributeError:
+            
             first_band = None
             # bands already ordered from blue -> red
             for band in self.filterset:
@@ -192,6 +193,28 @@ class Photometry_rest(Photometry):
                     break
             self._first_Lya_non_detect_band = first_band
         return self._first_Lya_non_detect_band
+
+    def get_first_redwards_band(
+        self: Self,
+        ref_wav: u.Quantity,
+        ignore_bands: Optional[Union[str, List[str]]] = None,
+    ) -> Filter:
+        """
+        Get the first band redwards of a reference wavelength, ignoring required bands
+        """
+        # convert ignore_bands to List[str] if not already
+        if ignore_bands is None:
+            ignore_bands = []
+        elif isinstance(ignore_bands, str):
+            ignore_bands = [ignore_bands]
+        first_band = None
+        for filt in self.filterset:
+            if filt.band_name not in ignore_bands:
+                lower_wav = filt.WavelengthLower50
+                if lower_wav > ref_wav * (1 + self.z):
+                    first_band = filt.band_name
+                    break
+        return first_band
 
     def _make_phot_from_scattered_fluxes(
         self: Self,

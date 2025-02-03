@@ -14,10 +14,11 @@ try:
 except ImportError:
     from typing_extensions import Self, Type  # python > 3.7 AND python < 3.11
 
-from . import config, galfind_logger, all_band_names
+from . import config, galfind_logger, all_band_names, astropy_cosmo
 from . import useful_funcs_austind as funcs
 from . import Catalogue, Galaxy, SED_code, SED_result
-from . import SED_fit_PDF
+from . import PDF, SED_fit_PDF
+from . import SED_obs
 
 
 class Property_Calculator_Base(ABC):
@@ -405,11 +406,13 @@ class Morphology_Property_Calculator(Property_Calculator_Base):
     ) -> Union[Type[PDF], List[Type[PDF]]]:
         from . import Band_Cutout_Base
         if isinstance(object, Catalogue):
-            return [gal.cutouts[self.cutout_label].morph_fits[self.morph_fitter.name].property_PDFs[self.name] for gal in object]
+            return [gal.cutouts[self.cutout_label].morph_fits \
+                [self.morph_fitter.name].property_pdfs[self.name] for gal in object]
         elif isinstance(object, Galaxy):
-            return object.cutouts[self.cutout_label].morph_fits[self.morph_fitter.name].property_PDFs[self.name]
+            return object.cutouts[self.cutout_label].morph_fits \
+                [self.morph_fitter.name].property_pdfs[self.name]
         elif isinstance(object, tuple(Band_Cutout_Base.__subclasses__())):
-            return object.property_PDFs[self.name]
+            return object.property_pdfs[self.name]
         else:
             err_message = f"{object=} with {type(object)=} " + \
                 f"not in [Catalogue, Galaxy, Band_Cutout_Base]"
@@ -436,7 +439,7 @@ class Custom_Morphology_Property_Extractor(Property_Extractor, Morphology_Proper
     @property
     def plot_name(self: Self) -> str:
         return self._plot_name
-    
+
 
 # Calculates additional properties from best fitting rest frame SED
 class SED_Property_Calculator(Property_Calculator):
@@ -799,13 +802,13 @@ class Redshift_Extractor(Property_Extractor, SED_Property_Calculator):
         return "Redshift, z"
 
 
-class Multiple_SED_Property_Calculator(Property_Calculator_Base):
+class Multiple_Property_Calculator(Property_Calculator_Base):
 
     def __init__(
         self: Self,
         calculators: List[Type[Property_Calculator_Base]],
-        name: Optional[str],
-        plot_name: Optional[str],
+        name: Optional[str] = None,
+        plot_name: Optional[str] = None,
     ) -> None:
         self._name = name
         self._plot_name = plot_name
@@ -865,7 +868,7 @@ class Multiple_SED_Property_Calculator(Property_Calculator_Base):
     #     pass
 
 
-class Property_Multiplier(Multiple_SED_Property_Calculator):
+class Property_Multiplier(Multiple_Property_Calculator):
 
     def __init__(
         self: Self,
@@ -922,7 +925,7 @@ class Property_Multiplier(Multiple_SED_Property_Calculator):
     ) -> Optional[Galaxy]:
         raise NotImplementedError
 
-class Property_Divider(Multiple_SED_Property_Calculator):
+class Property_Divider(Multiple_Property_Calculator):
 
     def __init__(
         self: Self,
@@ -990,7 +993,7 @@ class Property_Divider(Multiple_SED_Property_Calculator):
     ) -> Optional[Galaxy]:
         raise NotImplementedError
 
-# class Property_Adder(Multiple_SED_Property_Calculator):
+# class Property_Adder(Multiple_Property_Calculator):
 
 #     def __init__(
 #         self: Self,
@@ -1015,7 +1018,7 @@ class Property_Divider(Multiple_SED_Property_Calculator):
 #         PDFs = [calculator.extract_PDFs(object) for calculator in self.calculators]
 #         breakpoint()
 
-# class Property_Subtractor(Multiple_SED_Property_Calculator):
+# class Property_Subtractor(Multiple_Property_Calculator):
 
 #     def __init__(
 #         self: Self,
@@ -1040,3 +1043,142 @@ class Property_Divider(Multiple_SED_Property_Calculator):
 #         PDFs = [calculator.extract_PDFs(object) for calculator in self.calculators]
 #         breakpoint()
 
+
+class Re_kpc_Calculator(Multiple_Property_Calculator):
+
+    def __init__(
+        self: Self,
+        re_extractor: Custom_Morphology_Property_Extractor,
+        z_extractor: Redshift_Extractor,
+    ) -> None:
+        super().__init__([re_extractor, z_extractor])
+
+    @property
+    def full_name(self: Self) -> str:
+        return f"{self.calculators[0].full_name}_kpc_z={self.z_label}"
+
+    @property
+    def name(self: Self) -> str:
+        return f"{self.calculators[0].name}_kpc" #_z={self.z_label}"
+    
+    @property
+    def plot_name(self: Self) -> str:
+        # TODO: Units should be pulled out into a separate property
+        return self.calculators[0].plot_name.replace("pix", "kpc")
+    
+    @property
+    def z_label(self: Self) -> str:
+        return self.calculators[1].full_name.replace(f"{self.calculators[1].name}_", "")
+    
+    @property
+    def pix_scale(self: Self) -> u.Quantity:
+        return u.pixel_scale(self.calculators[0].morph_fitter \
+            .psf.cutout.band_data.pix_scale / u.pix)
+
+    def _convert_to_kpc(
+        self: Self,
+        re_pix: u.Quantity,
+        z: u.Quantity,
+    ) -> u.Quantity:
+        re_as = (re_pix).to(u.arcsec, self.pix_scale)
+        return (re_as * astropy_cosmo.angular_diameter_distance(z)) \
+            .to(u.kpc, u.dimensionless_angles())
+
+    def extract_vals(
+        self: Self, 
+        object: Union[Catalogue, Galaxy, Type[Band_Cutout_Base]]
+    ) -> Union[u.Quantity, u.Magnitude, u.Dex]:
+        re_pix = self.calculators[0].extract_vals(object)
+        z = self.calculators[1].extract_vals(object)
+        return self._convert_to_kpc(re_pix, z)
+
+    def extract_PDFs(
+        self: Self,
+        object: Union[Catalogue, Galaxy, Type[Band_Cutout_Base]],
+    ) -> Union[Type[PDF], List[Type[PDF]]]:
+        re_pix_pdfs = self.calculators[0].extract_PDFs(object)
+        z = self.calculators[1].extract_vals(object)
+        return [PDF.from_1D_arr(self.name, self._convert_to_kpc( \
+            pdfs.input_arr, z_)) for pdfs, z_ in zip(re_pix_pdfs, z)]
+    
+    #@abstractmethod
+    def _call_gal(
+        self: Self,
+        gal: Galaxy,
+    ) -> Optional[Galaxy]:
+        raise NotImplementedError
+
+
+class Surface_Density_Calculator(Multiple_Property_Calculator):
+    
+    def __init__(
+        self: Self,
+        property_calculator: Type[Property_Calculator_Base],
+        re_kpc_calculator: Re_kpc_Calculator,
+    ) -> None:
+        super().__init__([property_calculator, re_kpc_calculator])
+
+    @classmethod
+    def from_re_pix(
+        cls,
+        property_calculator: Type[Property_Calculator_Base],
+        re_extractor: Custom_Morphology_Property_Extractor,
+        z_extractor: Redshift_Extractor,
+    ) -> Self:
+        re_kpc_calculator = Re_kpc_Calculator(re_extractor, z_extractor)
+        return cls(property_calculator, re_kpc_calculator)
+    
+    @property
+    def full_name(self: Self) -> str:
+        suffixes = [
+            self.calculators[0].full_name.replace(f"{self.calculators[0].name}_", ""),
+            self.calculators[1].z_label,
+        ]
+        if all(suffix == suffixes[0] for suffix in suffixes):
+            # add suffix to end of string
+            return f"Sigma_{self.calculators[0].name}_{self.calculators[1].name}_{suffixes[0]}"
+        else:
+            return f"Sigma_{self.calculators[0].full_name}_{self.calculators[1].full_name}"
+
+    @property
+    def name(self: Self) -> str:
+        return f"Sigma_{self.calculators[0].name}_{self.calculators[1].name}"
+    
+    @property
+    def plot_name(self: Self) -> str:
+        # TODO: Units should be pulled out into a separate property
+        return rf"$\Sigma_{{{self.calculators[0].plot_name.replace('$', '')}}}$"
+    
+    def _convert_to_surface_density(
+        self: Self,
+        property_val: Union[u.Quantity, u.Dex],
+        re_kpc: u.Quantity,
+    ) -> u.Quantity:
+        if isinstance(property_val, u.Dex):
+            property_val = property_val.physical
+        return property_val / (2 * np.pi * re_kpc.to(u.kpc) ** 2)
+
+    def extract_vals(
+        self: Self,
+        object: Union[Catalogue, Galaxy, Type[Band_Cutout_Base]],
+    ) -> Union[u.Quantity, u.Magnitude, u.Dex]:
+        property_vals = self.calculators[0].extract_vals(object)
+        re_kpc = self.calculators[1].extract_vals(object)
+        return self._convert_to_surface_density(property_vals, re_kpc)
+
+    def extract_PDFs(
+        self: Self,
+        object: Union[Catalogue, Galaxy, Type[Band_Cutout_Base]],
+    ) -> Union[Type[PDF], List[Type[PDF]]]:
+        property_pdfs = self.calculators[0].extract_PDFs(object)
+        re_kpc = self.calculators[1].extract_vals(object)
+        return [PDF.from_1D_arr(self.name, self._convert_to_surface_density( \
+            pdfs.input_arr, re_kpc_)) for pdfs, re_kpc_ in zip(property_pdfs, re_kpc)]
+    
+    #@abstractmethod
+    def _call_gal(
+        self: Self,
+        gal: Galaxy,
+    ) -> Optional[Galaxy]:
+        raise NotImplementedError
+    

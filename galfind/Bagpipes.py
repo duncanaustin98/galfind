@@ -17,6 +17,7 @@ import glob
 import shutil
 from pathlib import Path
 import astropy.units as u
+import matplotlib.pyplot as plt
 import numpy as np
 from copy import deepcopy
 from astropy.table import Table
@@ -56,6 +57,7 @@ pipes_unit_dict = {
     "tform": u.Gyr,
     "tquench": u.Gyr,
     "xi_ion_caseB": u.Hz / u.erg,
+    "ndot_ion_caseB": u.Hz,
     "UV_colour": u.ABmag,
     "VJ_colour": u.ABmag,
     "beta_C94": u.dimensionless_unscaled,
@@ -84,75 +86,6 @@ def get_pipes_unit(label: str) -> u.Unit:
 
 
 class Bagpipes(SED_code):
-    # # these should be made on runtime!
-    # galaxy_properties = [
-    #     "redshift",
-    #     "stellar_mass",
-    #     "formed_mass",
-    #     "dust:Av",
-    #     "beta_C94",
-    #     "m_UV",
-    #     "M_UV",
-    #     "sfr",
-    #     "sfr_10myr",
-    #     "ssfr",
-    #     "ssfr_10myr",
-    # ]  # "Halpha_EWrest", "xi_ion_caseB",
-    # gal_property_fmt_dict = {
-    #     "z": "Redshift, z",
-    #     "stellar_mass": r"$M_{\star}$",
-    #     "formed_mass": r"$M_{\star, \mathrm{formed}}$",
-    #     "dust:Av": r"$A_V$",
-    #     "beta_C94": r"$\beta_{\mathrm{C94}}$",
-    #     "m_UV": r"$m_{\mathrm{UV}}$",
-    #     "M_UV": r"$M_{\mathrm{UV}}$",
-    #     "Halpha_EWrest": r"EW$_{\mathrm{rest}}$(H$\alpha$)",
-    #     "xi_ion_caseB": r"$\xi_{\mathrm{ion}}$",
-    #     "sfr": r"SFR$_{\mathrm{100Myr}}$",
-    #     "sfr_10myr": r"SFR$_{\mathrm{10Myr}}$",
-    #     "ssfr": r"sSFR$_{\mathrm{100Myr}}$",
-    #     "ssfr_10myr": r"sSFR$_{\mathrm{10Myr}}$",
-    # }
-    # gal_property_unit_dict = {
-    #     "z": u.dimensionless_unscaled,
-    #     "stellar_mass": "dex(solMass)",
-    #     "formed_mass": "dex(solMass)",
-    #     "dust:Av": u.ABmag,
-    #     "beta_C94": u.dimensionless_unscaled,
-    #     "m_UV": u.ABmag,
-    #     "M_UV": u.ABmag,
-    #     "Halpha_EWrest": u.AA,
-    #     "xi_ion_caseB": u.Hz / u.erg,
-    #     "sfr": u.solMass / u.yr,
-    #     "sfr_10myr": u.solMass / u.yr,
-    #     "ssfr": u.yr**-1,
-    #     "ssfr_10myr": u.yr**-1,
-    # }
-    # galaxy_property_dict = {
-    #     **{
-    #         gal_property
-    #         if "redshift" not in gal_property
-    #         else "z": f"{gal_property}_50"
-    #         for gal_property in galaxy_properties
-    #     },
-    #     **{"chi_sq": "chisq_phot"},
-    # }
-    # galaxy_property_errs_dict = {
-    #     gal_property if "redshift" not in gal_property else "z": [
-    #         f"{gal_property}_16",
-    #         f"{gal_property}_84",
-    #     ]
-    #     for gal_property in galaxy_properties
-    # }
-    # available_templates = ["BC03", "BPASS"]
-    # ext_src_corr_properties = [
-    #     "stellar_mass",
-    #     "formed_mass",
-    #     "m_UV",
-    #     "M_UV",
-    #     "sfr",
-    #     "sfr_10myr",
-    # ]
 
     def __init__(
         self: Self,
@@ -160,8 +93,6 @@ class Bagpipes(SED_code):
         custom_label: Optional[str] = None,
         sampler: str = "multinest",
     ) -> Self:
-        # determine which bagpipes import is required
-        #importlib.reload(bagpipes)
         if custom_label is not None:
             self.custom_label = custom_label
         self.sampler = sampler
@@ -348,6 +279,9 @@ class Bagpipes(SED_code):
         except ImportError:
             self.rank = 0
             self.size = 1
+        breakpoint()
+        # re-load to take into account sps model
+        importlib.reload(bagpipes)
         self._load_fit_instructions()
         if "continuity" in self.SED_fit_params["sfh"]:
             self._update_continuity_sfh_fit_instructions(cat)
@@ -374,6 +308,47 @@ class Bagpipes(SED_code):
         # TODO: Copied from EAZY
         self.gal_property_units = {}
 
+    def extract_priors(
+        self: Self,
+        filterset: Multiple_Filter,
+        redshift: float,
+        n_draws: int = 10_000
+    ) -> str:
+        save_path = f"{config['Bagpipes']['PIPES_OUT_DIR']}/priors/{self.label}_z{redshift:.1f}.h5"
+        funcs.make_dirs(save_path)
+        if not Path(save_path).is_file():
+            if not hasattr(self, "fit_instructions"):
+                self._load_fit_instructions()
+                if "continuity" in self.SED_fit_params["sfh"]:
+                    self._update_continuity_sfh_fit_instructions(cat = None)
+                    self.fit_instructions = self.fit_instructions[0]
+            if "redshift" in self.fit_instructions.keys():
+                if isinstance(self.fit_instructions["redshift"], float):
+                    fit_instructions = self.fit_instructions
+                else:
+                    fit_instructions = self.fit_instructions
+                    assert redshift < fit_instructions["redshift"][1] and redshift > fit_instructions["redshift"][0]
+                    fit_instructions["redshift"] = redshift
+            else:
+                fit_instructions = self.fit_instructions
+                fit_instructions["redshift"] = redshift
+            filt_list = [self._get_filt_path(filt) for filt in filterset]
+            galfind_logger.info(f"Extracting priors for {self.label} at z = {redshift:.1f}")
+            priors = bagpipes.fitting.check_priors(fit_instructions, filt_list = filt_list, n_draws = n_draws)
+            hf = h5py.File(save_path, "w")
+            for key, vals in priors.samples.items():
+                hf.create_dataset(key, data=np.array(vals).flatten())
+            hf.close()
+            for i, (key, vals) in enumerate(priors.samples.items()):
+                fig, ax = plt.subplots()
+                ax.hist(vals, bins = int(n_draws / 100), histtype = "step", label = key)
+                ax.set_xlabel(key)
+                out_path = f"{save_path.replace('.h5', f'/{key}.png')}"
+                funcs.make_dirs(out_path)
+                fig.savefig(out_path)
+                fig.clf()
+        return save_path
+
     def make_in(
         self,
         cat: Catalogue,
@@ -392,11 +367,10 @@ class Bagpipes(SED_code):
 
     def _move_files(self, cat: Catalogue, direction = "from_temp") -> NoReturn:
         assert direction in ["from_temp", "to_temp"]
-        temp_out_subdir = f"{cat.survey}/temp"#self._temp_out_subdir(cat)
+        temp_out_subdir = self._temp_out_subdir(cat)
         temp_post_dir = f"{config['Bagpipes']['PIPES_OUT_DIR']}/pipes/posterior/{temp_out_subdir}"
         temp_plots_dir = f"{config['Bagpipes']['PIPES_OUT_DIR']}/pipes/plots/{temp_out_subdir}"
         temp_sed_dir = f"{config['Bagpipes']['PIPES_OUT_DIR']}/pipes/seds/{temp_out_subdir}"
-
         temp_sfr_dir = f"{config['Bagpipes']['PIPES_OUT_DIR']}/pipes/sfr/{temp_out_subdir}"
         temp_fits_dir = f"{config['Bagpipes']['PIPES_OUT_DIR']}/pipes/cats/{temp_out_subdir}"
         new_subdir = self._new_subdir(cat)
@@ -405,6 +379,7 @@ class Bagpipes(SED_code):
         new_sed_dir = f"{config['Bagpipes']['PIPES_OUT_DIR']}/pipes/seds/{new_subdir}"
         new_sfr_dir = f"{config['Bagpipes']['PIPES_OUT_DIR']}/pipes/sfr/{new_subdir}"
         new_fits_dir = f"{config['Bagpipes']['PIPES_OUT_DIR']}/pipes/cats/{new_subdir}"
+        breakpoint()
         if direction == "from_temp":
             # move files from temp directory to main directory
             from_post_dir = temp_post_dir
@@ -438,6 +413,7 @@ class Bagpipes(SED_code):
             [from_post_dir, from_plots_dir, from_sed_dir, from_sfr_dir],
             [to_post_dir, to_plots_dir, to_sed_dir, to_sfr_dir]
         ):
+            breakpoint()
             for path in glob.glob(f"{from_dir}/*"):
                 if not Path(f"{to_dir}/{path.split('/')[-1]}").is_file():
                     os.rename(path, f"{to_dir}/{path.split('/')[-1]}")
@@ -448,7 +424,7 @@ class Bagpipes(SED_code):
                     galfind_logger.info(
                         f"{path.split('/')[-1]} already exists in {to_dir}, skipping!"
                     )
-        # TODO: fits catalogue
+        # TODO: move fits catalogue
         
 
     @run_in_dir(path=config["Bagpipes"]["PIPES_OUT_DIR"])
@@ -514,7 +490,6 @@ class Bagpipes(SED_code):
         run_cat = deepcopy(cat)
         run_cat.gals = run_cat[to_run_arr]
         # remove filters without a depth measurement
-        breakpoint()
         gals_arr = []
         for gal in tqdm(run_cat.gals, "Removing filters without depth measurements"):
             remove_filt = []
@@ -631,128 +606,9 @@ class Bagpipes(SED_code):
         # rename files and move to appropriate directories
 
         if self.rank == 0:
+            breakpoint()
             galfind_logger.info(f"Renaming and moving {self.label} output files on rank 0.")
             self._move_files(cat, direction = "from_temp")
-            # # try:
-            #     # if overwrite:
-            #     #     shutil.rmtree(f'{path_overall}/posterior/{field}/{new_path}', ignore_errors=True)
-            #     #     shutil.rmtree(f'{path_overall}/plots/{field}/{new_path}', ignore_errors=True)
-
-            # new_post_names = [path.split("/")[-1] for path in glob.glob(f"{path_post}/*")]
-            # for post_name in new_post_names:
-            #     if not Path(f"{new_path_post}/{post_name}").is_file():
-            #         os.rename(f"{path_post}/{post_name}", f"{new_path_post}/{post_name}")
-            #         galfind_logger.info(
-            #             f"Moved {post_name} to new_path_post"
-            #         )
-            #     else:
-            #         galfind_logger.info(
-            #             f"{post_name} already exists in new_path_post, skipping!"
-            #         )
-
-            # new_plot_names = [path.split("/")[-1] for path in glob.glob(f"{path_plots}/*")]
-            # for plot_name in new_plot_names:
-            #     if not Path(f"{new_path_plots}/{plot_name}").is_file():
-            #         os.rename(f"{path_plots}/{plot_name}", f"{new_path_plots}/{plot_name}")
-            #         galfind_logger.info(
-            #             f"Moved {plot_name} to new_path_plots"
-            #         )
-            #     else:
-            #         galfind_logger.info(
-            #             f"{plot_name} already exists in new_path_plots, skipping!"
-            #         )
-
-            # new_sed_names = [path.split("/")[-1] for path in glob.glob(f"{path_sed}/*")]
-            # for sed_name in new_sed_names:
-            #     if not Path(f"{new_path_sed}/{sed_name}").is_file():
-            #         os.rename(f"{path_sed}/{sed_name}", f"{new_path_sed}/{sed_name}")
-            #         galfind_logger.info(
-            #             f"Moved {sed_name} to new_path_sed"
-            #         )
-            #     else:
-            #         galfind_logger.info(
-            #             f"{sed_name} already exists in new_path_sed, skipping!"
-            #         )
-
-            # new_sfh_names = [path.split("/")[-1] for path in glob.glob(f"{path_sfr}/*")]
-            # for sfh_name in new_sfh_names:
-            #     if not Path(f"{new_path_sfr}/{sfh_name}").is_file():
-            #         os.rename(f"{path_sfr}/{sfh_name}", f"{new_path_sfr}/{sfh_name}")
-            #         galfind_logger.info(
-            #             f"Moved {sfh_name} to new_path_sfr"
-            #         )
-            #     else:
-            #         galfind_logger.info(
-            #             f"{sfh_name} already exists in new_path_sfr, skipping!"
-            #         )
-            
-            # if not Path(new_path_fits).is_file():
-            #     os.rename(f"{path_fits}.fits", new_path_fits)
-            #     galfind_logger.info(
-            #         f"Moved {path_fits}.fits to {new_path_fits}"
-            #     )
-            # else:
-            #     # merge catalogues
-            #     raise NotImplementedError
-            
-            # except FileExistsError as e:
-            #     print(e)
-            #     print('Path to rename already exists, skipping output.')
-            #     print('Moving files instead')
-            #     # Moving plots 
-            #     files = glob.glob(path_plots+'/*')
-            #     new_plot_path = f'{path_overall}/plots/{field}/{new_path}'
-            
-            #     for file in files:
-            #         filename = file.split('/')[-1]
-            #         shutil.move(file, new_plot_path+f'/{filename}')
-            #         print('Moving', file, 'to', new_plot_path+f'/{filename}')
-            #     # Moving .h5 files
-            #     files = glob.glob(path_post+'/*')
-            #     new_post_path = f'{path_overall}/posterior/{field}/{new_path}'
-                
-            #     for file in files:
-            #         print(file)
-            #         filename = file.split('/')[-1]
-                    
-            #         shutil.move(file, new_post_path+f'/{filename}')
-            #         print('Moving', file, 'to', new_post_path+f'/{filename}')
-                
-            #     files = glob.glob(path_sed+'/*')
-            #     new_sed_path = f'{path_overall}/seds/{field}/{new_path}'
-                
-            #     for file in files:
-            #         print(file)
-            #         filename = file.split('/')[-1]
-            #         shutil.move(file, new_sed_path+f'/{filename}')
-            #         print('Moving', file, 'to', new_sed_path+f'/{filename}')
-
-            #     # Merging catalogue
-            #     try:
-            #         orig_table = Table.read(f'{path_overall}/cats/{field}/{new_path}.fits')
-
-            #         run_table = Table.read(f'{path_overall}/cats/{out_subdir}.fits')
-            #         if reset:
-            #             new_table = run_table
-            #         else:
-            #             new_table = vstack([orig_table, run_table])
-                    
-            #         new_table.write(f'{path_overall}/cats/{field}/{new_path}.fits', overwrite=True)
-            #     except FileNotFoundError:
-            #         shutil.move(f'{path_overall}/cats/{out_subdir}.fits', f'{path_overall}/cats/{field}/{new_path}.fits')
-            
-            # shutil.rmtree('pipes/posterior/'+out_subdir, ignore_errors=True)
-            # shutil.rmtree('pipes/seds/'+out_subdir, ignore_errors=True)
-            # try:
-            #     os.remove(f'pipes/cats/{field}/temp.fits')
-            # except FileNotFoundError:
-            #     pass
-            # shutil.rmtree('pipes/plots/'+out_subdir, ignore_errors=True)
-
-            # try:
-            #     os.remove(path)
-            # except FileNotFoundError: 
-            #     pass
 
     def make_fits_from_out(
         self: Self, 
@@ -795,6 +651,9 @@ class Bagpipes(SED_code):
             if "redshift" in key:
                 self.gal_property_labels["z"] = val
                 del self.gal_property_labels[key]
+                if key in self.gal_property_err_labels.keys():
+                    self.gal_property_err_labels["z"] = self.gal_property_err_labels[key]
+                    del self.gal_property_err_labels[key]
                 break
         for key, val in self.gal_property_labels.items():
             if "chisq_phot" in key:
@@ -1031,7 +890,11 @@ class Bagpipes(SED_code):
                         quantities = np.array(h5[quantity_type])
                         for name in quantities:
                             if name not in ignore_labels:
-                                pdf = SED_fit_PDF.from_1D_arr(name, np.array(h5[quantity_type][name]) * get_pipes_unit(name), self.SED_fit_params)
+                                if "redshift" in name:
+                                    pdf = Redshift_PDF.from_1D_arr(np.array(h5[quantity_type][name]) * u.dimensionless_unscaled, self.SED_fit_params)
+                                    name = "z"
+                                else:
+                                    pdf = SED_fit_PDF.from_1D_arr(name, np.array(h5[quantity_type][name]) * get_pipes_unit(name), self.SED_fit_params)
                                 gal_property_PDFs[name] = pdf
                     h5.close()
             else:
@@ -1315,13 +1178,17 @@ class Bagpipes(SED_code):
 
     def _update_continuity_sfh_fit_instructions(
         self: Self,
-        cat: Catalogue,
+        cat: Optional[Catalogue],
     ) -> Dict[str, Any]:
         z_calculator = self.SED_fit_params["z_calculator"]
-        if isinstance(z_calculator, float):
-            z_arr = np.full(len(cat), z_calculator)
+        if cat is None:
+            assert isinstance(self.SED_fit_params["z_calculator"], float)
+            z_arr = [self.SED_fit_params["z_calculator"]]
         else:
-            z_arr = z_calculator(cat)
+            if isinstance(z_calculator, float):
+                z_arr = np.full(len(cat), z_calculator)
+            else:
+                z_arr = z_calculator(cat)
         fit_instructions_arr = []
         for z in z_arr:
             fit_instructions_i = deepcopy(self.fit_instructions)

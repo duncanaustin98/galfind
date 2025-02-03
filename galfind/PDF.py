@@ -24,25 +24,17 @@ class PDF:
         p_x,
         kwargs={},
         normed: bool = False,
-        timed: bool = False,
     ):
-        if timed:
-            start = time.time()
-        if type(x) not in [u.Quantity, u.Magnitude, u.Dex]:
+        if not isinstance(x, tuple([u.Quantity, u.Magnitude, u.Dex])):
             breakpoint()
         # assert type(x) in [u.Quantity, u.Magnitude, u.Dex]
         self.property_name = property_name
         self.x = x
         self.kwargs = kwargs
-        if timed:
-            mid = time.time()
         # normalize to np.trapz(p_x, x) == 1
         if not normed:
             p_x /= np.trapz(p_x, x.value)
         self.p_x = p_x
-        if timed:
-            end = time.time()
-            # print(mid - start, end - mid)
 
     def __str__(self, print_peaks=False):
         line_sep = "*" * 40 + "\n"
@@ -332,7 +324,7 @@ class PDF:
         try:
             self.peaks[nth_peak]
         except (AttributeError, IndexError) as e:
-            if type(e) == AttributeError:
+            if isinstance(e, AttributeError):
                 self.peaks = []
             # calculate the nth_peak - what if array isnt the correct length
             if nth_peak == 0:
@@ -560,10 +552,9 @@ class SED_fit_PDF(PDF):
         SED_fit_params,
         kwargs={},
         normed=False,
-        timed=False,
     ):
         self.SED_fit_params = SED_fit_params
-        super().__init__(property_name, x, p_x, kwargs, normed, timed)
+        super().__init__(property_name, x, p_x, kwargs, normed)
 
     @classmethod
     def from_1D_arr(
@@ -600,9 +591,9 @@ class SED_fit_PDF(PDF):
             f"SED_fit_PDF.load_peaks_from_SED_result only loads the 0th peak, not the {funcs.ordinal(nth_peak)}"
         )
         assert (
-            SED_result.SED_fit_params == self.SED_fit_params
+            SED_result.SED_code.SED_fit_params == self.SED_fit_params
         ), galfind_logger.critical(
-            f"SED_result.SED_fit_params = {SED_result.SED_fit_params} != self.SED_fit_params = {self.SED_fit_params}"
+            f"{SED_result.SED_code.SED_fit_params=} != {self.SED_fit_params=}"
         )
         # load peak value and peak chi_sq
         self.load_peaks_from_best_fit(
@@ -624,9 +615,14 @@ class SED_fit_PDF(PDF):
 
 class Redshift_PDF(SED_fit_PDF):
     def __init__(
-        self, z, p_z, SED_fit_params, kwargs={}, normed=False, timed=False
+        self,
+        z,
+        p_z,
+        SED_fit_params,
+        kwargs={},
+        normed=False
     ):
-        super().__init__("z", z, p_z, SED_fit_params, kwargs, normed, timed)
+        super().__init__("z", z, p_z, SED_fit_params, kwargs, normed)
 
     @classmethod
     def from_1D_arr(

@@ -230,6 +230,8 @@ from .Property_calculator import (
     Custom_Morphology_Property_Extractor,
     Property_Multiplier,
     Property_Divider,
+    Re_kpc_Calculator,
+    Surface_Density_Calculator,
 )
 
 from .Rest_frame_properties import (

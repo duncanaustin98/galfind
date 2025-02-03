@@ -16,6 +16,7 @@ from pathlib import Path
 import astropy.units as u
 import matplotlib.patches as patches
 import matplotlib.patheffects as pe
+from matplotlib.patches import Ellipse
 import matplotlib.pyplot as plt
 import numpy as np
 from astropy.coordinates import SkyCoord
@@ -33,7 +34,7 @@ from mpl_toolkits.axes_grid1.anchored_artists import AnchoredSizeBar
 from tqdm import tqdm
 from typing import  Union, Callable, Tuple, List, NoReturn, Optional, Dict, Any, TYPE_CHECKING
 if TYPE_CHECKING:
-    from . import Filter, SED_code, Selector, Band_Data, Band_Cutout
+    from . import Filter, SED_code, Selector, Band_Data, Band_Cutout, Multiple_Filter, SED_code
 try:
     from typing import Self, Type  # python 3.11+
 except ImportError:
@@ -90,6 +91,7 @@ class Galaxy:
         sky_coord: SkyCoord, 
         aper_phot: Dict[u.Quantity, Photometry_obs],
         selection_flags: Optional[Dict[u.Quantity, Dict[str, bool]]] = None,
+        cat_filterset: Optional[Multiple_Filter] = None,
     ):
         self.ID = int(ID)
         self.sky_coord = sky_coord
@@ -97,6 +99,7 @@ class Galaxy:
         if selection_flags is None:
             selection_flags = {}
         self.selection_flags = selection_flags
+        self.cat_filterset = cat_filterset
         #{aper_diam: {} for aper_diam in self.aper_phot.keys()}
 
     # @classmethod
@@ -282,10 +285,17 @@ class Galaxy:
     def make_cutouts(
         self: Type[Self], 
         data: Data, 
-        cutout_size: u.Quantity = 0.96 * u.arcsec
+        cutout_size: u.Quantity = 0.96 * u.arcsec,
+        overwrite: bool = False
     ) -> Multiple_Band_Cutout:
         if not hasattr(self, "multi_band_cutout"):
-            self.multi_band_cutout = Multiple_Band_Cutout.from_gal(data, self, cutout_size)
+            self.multi_band_cutout = Multiple_Band_Cutout. \
+                from_gal_data(
+                    self,
+                    data,
+                    cutout_size,
+                    overwrite = overwrite
+                )
         else:
             galfind_logger.debug(
                 f"{self.__class__.__name__} {self.ID=} already has cutouts!"
@@ -318,147 +328,215 @@ class Galaxy:
         self: Type[Self],
         fig: plt.Figure,
         data: Data,
-        SED_fit_params: Dict[str, Any],
-        hide_masked_cutouts: bool = True,
+        SED_code: SED_code,
+        #hide_masked_cutouts: bool = True,
         cutout_size: u.Quantity = 0.96 * u.arcsec,
-        high_dyn_rng: bool = False,
         aper_diam: u.Quantity = 0.32 * u.arcsec,
-        cmap: str = "magma",
-        ax_ratio: Union[float, int] = 1,
+        imshow_kwargs: Dict[str, Any] = {},
+        norm_kwargs: Dict[str, Any] = {},
+        aper_kwargs: Dict[str, Any] = {},
+        kron_kwargs: Dict[str, Any] = {},
+        n_rows: int = 2,
     ):
-        cutouts_obj = self.cutouts[f"{cutout_size.to(u.arcsec).value:.2f}as"]
+        multi_band_cutout = self.make_cutouts(data, cutout_size)
 
-        # make intructions for radii to plot
-        galfind_logger.warning("Need to load in SExtractor FLUX_RADIUS")
-        sex_radius = None
-        aper_kwargs = {
-            "fill": False,
-            "linestyle": "--",
-            "lw": 1,
-            "color": "white",
-            "zorder": 20,
-        }
-        sex_rad_kwargs = {
-            "fill": False,
-            "linestyle": "--",
-            "lw": 1,
-            "color": "blue",
-            "zorder": 20,
-        }
-        if sex_radius is None:
-            plot_radii = [
-                [{"radius": aper_diam, "kwargs": aper_kwargs}]
-                for cutout in cutouts_obj
+        # # make intructions for radii to plot
+        # sex_radius = None
+        # aper_kwargs = {
+        #     "fill": False,
+        #     "linestyle": "--",
+        #     "lw": 1,
+        #     "color": "white",
+        #     "zorder": 20,
+        # }
+        # sex_rad_kwargs = {
+        #     "fill": False,
+        #     "linestyle": "--",
+        #     "lw": 1,
+        #     "color": "blue",
+        #     "zorder": 20,
+        # }
+        # breakpoint()
+        # if sex_radius is None:
+        #     plot_radii = [
+        #         [{"radius": aper_diam, "kwargs": aper_kwargs}]
+        #         for cutout in multi_band_cutout
+        #     ]
+        # else:
+        #     plot_radii = [
+        #         [
+        #             {"radius": aper_diam, "kwargs": aper_kwargs},
+        #             {
+        #                 "radius": self.sex_radius[cutout.filt.band_name],
+        #                 "kwargs": sex_rad_kwargs,
+        #             },
+        #         ]
+        #         for cutout in multi_band_cutout
+        #     ]
+
+        # # make instructions for scalebars to plot
+        # physical_scalebar_kwargs = {
+        #     "loc": "upper left",
+        #     "pad": 0.3,
+        #     "color": "white",
+        #     "frameon": False,
+        #     "size_vertical": 1.5,
+        # }
+        # angular_scalebar_kwargs = {
+        #     "loc": "lower right",
+        #     "pad": 0.3,
+        #     "color": "white",
+        #     "frameon": False,
+        #     "size_vertical": 2,
+        # }
+        # z = self.aper_phot[aper_diam].SED_results[SED_code.label].z
+        # scalebars = [
+        #     {
+        #         "physical": {
+        #             **physical_scalebar_kwargs,
+        #             "z": z,
+        #             "pix_length": 10,
+        #         }
+        #     }
+        #     if i == 0
+        #     else {"angular": {**angular_scalebar_kwargs, "as_length": 0.3}}
+        #     if i == len(multi_band_cutout) - 1
+        #     else {}
+        #     for i, cutout in enumerate(multi_band_cutout)
+        # ]
+
+        # make fixed aperture regions to plot
+        aper_kwargs = {"ls": "-", "color": "green", "path_effects": [pe.withStroke(linewidth = 3., foreground = "white")]}
+        fixed_apertures = np.full(len(self.aper_phot[aper_diam].filterset), {"aper_diam": aper_diam, **aper_kwargs})
+        # make kron aperture regions to plot
+        if all(hasattr(self, property_name) for property_name in \
+                ["sex_KRON_RADIUS", "sex_A_IMAGE", "sex_B_IMAGE", "sex_THETA_IMAGE"]):
+            kron_kwargs = {"ls": "--", "color": "blue", "path_effects": [pe.withStroke(linewidth = 3., foreground = "white")]}
+            kron_apertures = [
+                Ellipse(
+                    (-99., -99.),
+                    width = (self.sex_KRON_RADIUS[filt_name] * self.sex_A_IMAGE).to(u.dimensionless_unscaled).value,
+                    height = (self.sex_KRON_RADIUS[filt_name] * self.sex_B_IMAGE).to(u.dimensionless_unscaled).value,
+                    angle = self.sex_THETA_IMAGE.to(u.deg).value,
+                    **kron_kwargs
+                ) 
+                for filt_name in self.aper_phot[aper_diam].filterset.band_names
             ]
+            plot_regions = [[aper, kron] for aper, kron in \
+                zip(fixed_apertures, kron_apertures)]
         else:
-            plot_radii = [
-                [
-                    {"radius": aper_diam, "kwargs": aper_kwargs},
-                    {
-                        "radius": self.sex_radius[cutout.filt.band_name],
-                        "kwargs": sex_rad_kwargs,
-                    },
-                ]
-                for cutout in cutouts_obj
-            ]
-
-        # make instructions for scalebars to plot
-        physical_scalebar_kwargs = {
-            "loc": "upper left",
-            "pad": 0.3,
-            "color": "white",
-            "frameon": False,
-            "size_vertical": 1.5,
-        }
-        angular_scalebar_kwargs = {
-            "loc": "lower right",
-            "pad": 0.3,
-            "color": "white",
-            "frameon": False,
-            "size_vertical": 2,
-        }
-        z = self.phot.SED_results[
-            SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)
-        ].z
-        scalebars = [
-            {
-                "physical": {
-                    **physical_scalebar_kwargs,
-                    "z": z,
-                    "pix_length": 10,
-                }
-            }
-            if i == 0
-            else {"angular": {**angular_scalebar_kwargs, "as_length": 0.3}}
-            if i == len(cutouts_obj) - 1
-            else {}
-            for i, cutout in enumerate(cutouts_obj)
-        ]
-
-        ax_arr = cutouts_obj.plot(
-            fig,
-            ax_ratio,
-            high_dyn_range=high_dyn_rng,
-            cutout_band_cmap=cmap,
-            plot_radii=plot_radii,
-            scalebars=scalebars,
+            plot_regions = [[aper] for aper in zip(fixed_apertures)]
+        ax_arr = multi_band_cutout.plot(
+            fig = fig,
+            n_rows = n_rows,
+            # fig_scaling: float = 1.5,
+            split_by_instr = True,
+            imshow_kwargs = imshow_kwargs,
+            norm_kwargs = norm_kwargs,
+            plot_regions = plot_regions,
+            # scalebars: Optional[Dict] = [],
+            # mask: Optional[List[bool]] = None,
+            show = False,
+            save = False,
+            close_fig = False,
         )
         return ax_arr
+    
+    def _extract_lowz_codes(
+        self: Type[Self],
+        aper_diam: u.Quantity,
+        SED_arr: List[SED_code],
+        lowz_dz: float = 0.5
+    ) -> List[SED_code]:
+        lowz_codes = []
+        none_zmax_codes = [code for code in SED_arr \
+            if code.SED_fit_params.get("lowz_zmax", False) is None]
+        for none_zmax_code in none_zmax_codes:
+            none_zmax_code_SED_fit_params = deepcopy(none_zmax_code.SED_fit_params)
+            lowz_zmax_codes = []
+            for SED_result in self.aper_phot[aper_diam].SED_results.values():
+                code = SED_result.SED_code
+                if code.SED_fit_params.get("lowz_zmax", False) is None:
+                    continue
+                code_SED_fit_params = deepcopy(code.SED_fit_params)
+                remove_keys = [key for key in code_SED_fit_params.keys() if \
+                    any(substr in key.lower() for substr in ["z_max", "zmax"])]
+                for key in remove_keys:
+                    del code_SED_fit_params[key]
+                    if key in none_zmax_code_SED_fit_params.keys():
+                        del none_zmax_code_SED_fit_params[key]
+                if code_SED_fit_params == none_zmax_code_SED_fit_params:
+                    lowz_zmax_codes.append(code)
+            z_gal = self.aper_phot[aper_diam].SED_results[none_zmax_code.label].z
+            lowz_zmax = np.array(sorted([lowz_zmax_code.SED_fit_params["lowz_zmax"] \
+                for lowz_zmax_code in lowz_zmax_codes]))
+            if any(lowz_zmax + lowz_dz < z_gal):
+                lowz_codes.extend([lowz_zmax_codes[np.where(lowz_zmax + lowz_dz < z_gal)[0][-1]]])
+        return lowz_codes
 
     def plot_phot_diagnostic(
         self: Type[Self],
-        ax: plt.Axes,
+        ax: Tuple[plt.Figure, List[plt.Axes], List[plt.Axes]],
         data: Data,
-        SED_fit_params_arr: List[dict],
-        zPDF_plot_SED_fit_params_arr,
-        wav_unit=u.um,
-        flux_unit=u.ABmag,
-        hide_masked_cutouts=True,
-        cutout_size=0.96 * u.arcsec,
-        high_dyn_rng=False,
+        SED_arr: List[Union[str, SED_code]],
+        zPDF_arr: List[Union[str, SED_code]],
+        plot_lowz: bool = True,
+        lowz_dz: float = 0.5,
+        n_cutout_rows: int = 1,
+        wav_unit = u.um,
+        flux_unit = u.ABmag,
+        #hide_masked_cutouts=True,
+        cutout_size: u.Quantity = 0.96 * u.arcsec,
+        #high_dyn_rng=False,
         annotate_PDFs=True,
-        plot_rejected_reasons=False,
-        aper_diam=0.32 * u.arcsec,
-        overwrite=True,
+        #plot_rejected_reasons=False,
+        aper_diam: u.Quantity = 0.32 * u.arcsec,
+        imshow_kwargs: Dict[str, Any] = {},
+        norm_kwargs: Dict[str, Any] = {},
+        aper_kwargs: Dict[str, Any] = {},
+        kron_kwargs: Dict[str, Any] = {},
+        overwrite: bool = False,
+        save: bool = True,
+        show: bool = True,
     ):
+        # unpack tuple
         cutout_fig, phot_ax, PDF_ax = ax
-        # update SED_fit_params with appropriate lowz_zmax
-        SED_fit_params_arr = [
-            SED_fit_params["code"].update_lowz_zmax(
-                SED_fit_params, self.phot.SED_results
-            )
-            for SED_fit_params in deepcopy(SED_fit_params_arr)
-        ]
-        zPDF_plot_SED_fit_params_arr = [
-            SED_fit_params["code"].update_lowz_zmax(
-                SED_fit_params, self.phot.SED_results
-            )
-            for SED_fit_params in deepcopy(zPDF_plot_SED_fit_params_arr)
-        ]
 
-        zPDF_labels = [
-            f"{SED_fit_params['code'].label_from_SED_fit_params(SED_fit_params)} PDF"
-            for SED_fit_params in zPDF_plot_SED_fit_params_arr
-        ]
+        if not isinstance(SED_arr, list):
+            SED_arr = [SED_arr]
+        if not isinstance(zPDF_arr, list):
+            zPDF_arr = [zPDF_arr]
+        # extract lowz_zmax from SED_arr if required
+        if plot_lowz:
+            SED_arr.extend(self._extract_lowz_codes(aper_diam, SED_arr, lowz_dz))
+            zPDF_arr.extend(self._extract_lowz_codes(aper_diam, zPDF_arr, lowz_dz))
+
+        zPDF_labels = [code.label for code in zPDF_arr]
         # reset parameters
         for ax_, label in zip(PDF_ax, zPDF_labels):
             ax_.set_yticks([])
             ax_.set_xlabel("Redshift, z")
             ax_.set_title(label, fontsize="medium")
 
-        out_path = f"{config['Selection']['SELECTION_DIR']}/SED_plots/{data.version}/{data.instrument.name}/{data.survey}/{self.ID}.png"
-        funcs.make_dirs(out_path)
+        out_path = f"{config['Other']['PLOT_DIR']}/{data.version}/" + \
+            f"{data.filterset.instrument_name}/{data.survey}/SED_plots/" + \
+            f"{aper_diam.to(u.arcsec).value:.2f}as/{self.ID}.png"
 
         if not Path(out_path).is_file() or overwrite:
             # plot cutouts (assuming reference SED_fit_params is at 0th index)
             self.plot_cutouts(
                 cutout_fig,
                 data,
-                SED_fit_params_arr[0],
-                hide_masked_cutouts=hide_masked_cutouts,
+                SED_arr[0],
+                #hide_masked_cutouts=hide_masked_cutouts,
                 cutout_size=cutout_size,
-                high_dyn_rng=high_dyn_rng,
-                aper_diam=aper_diam,
+                #high_dyn_rng=high_dyn_rng,
+                aper_diam = aper_diam,
+                imshow_kwargs = imshow_kwargs,
+                norm_kwargs = norm_kwargs,
+                aper_kwargs = aper_kwargs,
+                kron_kwargs = kron_kwargs,
+                n_rows = n_cutout_rows,
             )
 
             # plot specified SEDs and save colours
@@ -472,19 +550,18 @@ class Galaxy:
                     pe.withStroke(linewidth=2.0, foreground="white")
                 ],
             }
-            for SED_fit_params in reversed(SED_fit_params_arr):
-                key = SED_fit_params["code"].label_from_SED_fit_params(
-                    SED_fit_params
+            for code in reversed(SED_arr):
+                SED_plot = self.aper_phot[aper_diam].SED_results[code.label].SED.plot(
+                    phot_ax, wav_unit, flux_unit, label=code.label
                 )
-                SED_plot = self.phot.SED_results[key].SED.plot_SED(
-                    phot_ax, wav_unit, flux_unit, label=key
-                )
-                SED_colours[key] = SED_plot[0].get_color()
+                SED_colours[code.label] = SED_plot[0].get_color()
                 # plot the mock photometry
-                self.phot.SED_results[key].SED.create_mock_phot(
-                    self.phot.instrument, depths=self.phot.depths
+                self.aper_phot[aper_diam].SED_results[code.label].SED.create_mock_phot(
+                    self.aper_phot[aper_diam].filterset,
+                    depths=self.aper_phot[aper_diam].depths
+                    # min flux pc err = 10.0
                 )
-                self.phot.SED_results[key].SED.mock_phot.plot(
+                self.aper_phot[aper_diam].SED_results[code.label].SED.mock_phot.plot(
                     phot_ax,
                     wav_unit,
                     flux_unit,
@@ -494,10 +571,11 @@ class Galaxy:
                     errorbar_kwargs=errorbar_kwargs,
                     label=None,
                     filled=False,
-                    colour=SED_colours[key],
+                    colour=SED_colours[code.label],
                 )
                 # ax_photo.scatter(band_wavs_lowz, band_mags_lowz, edgecolors=eazy_color_lowz, marker='o', facecolor='none', s=80, zorder=4.5)
-            self.phot.plot(
+            
+            self.aper_phot[aper_diam].plot(
                 phot_ax,
                 wav_unit,
                 flux_unit,
@@ -513,7 +591,7 @@ class Galaxy:
             #     if rejected != '':
             #         phot_ax.annotate(rejected, (0.9, 0.95), ha='center', fontsize='small', xycoords = 'axes fraction', zorder=5)
             # photometry axis legend
-            phot_ax.legend(loc="upper right", fontsize="small", frameon=False)
+            phot_ax.legend(loc="best", fontsize="small", frameon=False)
             for text in phot_ax.get_legend().get_texts():
                 text.set_path_effects(
                     [pe.withStroke(linewidth=3, foreground="white")]
@@ -521,30 +599,33 @@ class Galaxy:
                 text.set_zorder(12)
 
             # plot PDF on relevant axis
-            assert (
-                len(zPDF_plot_SED_fit_params_arr) == len(PDF_ax)
-            )  # again, this is not totally generalized and should be == 2 for now
+            # again, this is not totally generalized and should be == 2 for now
+            #assert (len(zPDF_arr) == len(PDF_ax))
             # could extend to plotting multiple PDFs on the same axis
-            for ax, SED_fit_params in zip(
-                PDF_ax, zPDF_plot_SED_fit_params_arr
-            ):
-                key = SED_fit_params["code"].label_from_SED_fit_params(
-                    SED_fit_params
-                )
-                if key in SED_colours.keys():
-                    colour = SED_colours[key]
+            for ax, code in zip(PDF_ax, zPDF_arr):
+                if code.label in SED_colours.keys():
+                    colour = SED_colours[code.label]
                 else:
                     colour = "black"
-                self.phot.SED_results[key].property_PDFs["z"].plot(
+                # load peak value/chi sq from SED_result into redshift PDF 
+                # TODO: Load this into the PDF when instantiated from SED_result
+                self.aper_phot[aper_diam].SED_results[code.label].property_PDFs["z"]. \
+                    load_peaks_from_SED_result(self.aper_phot[aper_diam].SED_results[code.label])
+                # plot the PDF
+                self.aper_phot[aper_diam].SED_results[code.label].property_PDFs["z"].plot(
                     ax, annotate=annotate_PDFs, colour=colour
                 )
 
-            # Save and clear axes
-            plt.savefig(out_path, dpi=300, bbox_inches="tight")
-            funcs.change_file_permissions(out_path)
-            for ax in [phot_ax] + PDF_ax:
-                ax.cla()
-
+            if save:
+                funcs.make_dirs(out_path)
+                plt.savefig(out_path, dpi=300, bbox_inches="tight")
+                funcs.change_file_permissions(out_path)
+            if show:
+                plt.show()
+            else:
+                for ax in [phot_ax] + PDF_ax:
+                    ax.clear()
+                
         return out_path
 
     # Spectroscopy

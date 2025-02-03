@@ -12,8 +12,8 @@ plt.style.use(
 )
 
 # Load in a JOF data object
-survey = "JOF"
-version = "v11"
+survey = "PRIMER-UDS"
+version = "v12"
 instrument_names = ["ACS_WFC", "NIRCam"] # "ACS_WFC", 
 aper_diams = [0.32] * u.arcsec
 forced_phot_band = ["F277W", "F356W", "F444W"] #["F814W"]
@@ -25,7 +25,6 @@ def test_selection():
         {"templates": "fsps_larson", "lowz_zmax": 6.0},
         {"templates": "fsps_larson", "lowz_zmax": None}
     ]
-
     data = Data.from_survey_version(
         survey,
         version,
@@ -35,10 +34,32 @@ def test_selection():
         forced_phot_band = forced_phot_band,
     )
     print(data.band_data_arr)
-    breakpoint()
+    #breakpoint()
+    # data.mask(
+    #     "auto",
+    #     angle = 70.0
+    # )
+
     # fig, ax = plt.subplots()
     # data.filterset.plot(ax, save = True)
     #breakpoint()
+
+    # # temp: define the z=6 sample
+    # from galfind import Redshift_Bin_Selector, Band_SNR_Selector
+    # EAZY_fitter = EAZY(SED_fit_params_arr[-1])
+    # sample = [
+    #     Band_SNR_Selector(
+    #         aper_diams[0],
+    #         "F115W",
+    #         "detect",
+    #         5.0
+    #     ),
+    #     Redshift_Bin_Selector(
+    #         aper_diams[0],
+    #         EAZY_fitter,
+    #         [5.5, 6.5]
+    #     )
+    # ]
 
     cat = Catalogue.pipeline(
         survey,
@@ -50,17 +71,29 @@ def test_selection():
         min_flux_pc_err = min_flux_pc_err,
         #crops = EPOCHS_Selector(aper_diams[0], EAZY(SED_fit_params_arr[-1]), allow_lowz=False)
     )
-    breakpoint()
-    # cat.data.plot_depth_diagnostic("F435W", 0.32 * u.arcsec, save = True)
-    # breakpoint()
+    #breakpoint()
 
     # load EAZY SED fitting results
     for SED_fit_params in SED_fit_params_arr:
         EAZY_fitter = EAZY(SED_fit_params)
         EAZY_fitter(cat, aper_diams[0], load_PDFs = True, load_SEDs = True, update = True)
+    
+    #breakpoint()
 
-    # load sextractor half-light radii
-    cat.load_sextractor_Re()
+    #from galfind import MUV_Calculator
+    #MUV_calculator = MUV_Calculator(aper_diams[0], EAZY_fitter.label)
+    #MUV_calculator(cat, n_chains = 10_000, output = False, n_jobs = 1)
+    # from galfind import MUV_Calculator, Xi_Ion_Calculator, M99
+    # for beta_dust_conv in [None, M99]:#, Reddy18(C00(), 100 * u.Myr), Reddy18(C00(), 300 * u.Myr)]:
+    #     for fesc_conv in [None, "Chisholm22"]: # None, 0.1, 0.2, 0.5,
+    #         xi_ion_calculator = Xi_Ion_Calculator(aper_diams[0], EAZY_fitter.label, beta_dust_conv = beta_dust_conv, fesc_conv = fesc_conv)
+    #         xi_ion_calculator(cat, n_chains = 10_000, output = False, n_jobs = 1)
+    #         breakpoint()
+
+    # cat.plot(MUV_calculator, xi_ion_calculator, incl_x_errs = False, incl_y_errs = False, annotate = True, plot_type = "individual", save = True, log_y = True)
+
+    # # load sextractor half-light radii
+    # cat.load_sextractor_Re()
 
     from galfind import EPOCHS_Selector, Redwards_Lya_Detect_Selector
     epochs_selector = EPOCHS_Selector(aper_diams[0], EAZY_fitter, allow_lowz = False, unmasked_instruments = "NIRCam")
@@ -68,16 +101,44 @@ def test_selection():
     epochs_selector_lowz = EPOCHS_Selector(aper_diams[0], EAZY_fitter, allow_lowz = True, unmasked_instruments = "NIRCam")
     epochs_selected_cat_lowz = epochs_selector_lowz(cat, return_copy = True)
 
+    epochs_selected_cat.plot_phot_diagnostics(
+        aper_diams[0],
+        EAZY_fitter,
+        EAZY_fitter,
+        imshow_kwargs = {},
+        norm_kwargs = {},
+        aper_kwargs = {},
+        kron_kwargs = {},
+        n_cutout_rows = 2,
+        wav_unit = u.um,
+        flux_unit = u.ABmag,
+        overwrite = True
+    )
+
+    epochs_selected_cat_lowz.plot_phot_diagnostics(
+        aper_diams[0],
+        EAZY_fitter,
+        EAZY_fitter,
+        imshow_kwargs = {},
+        norm_kwargs = {},
+        aper_kwargs = {},
+        kron_kwargs = {},
+        n_cutout_rows = 2,
+        wav_unit = u.um,
+        flux_unit = u.ABmag,
+        overwrite = False
+    )
+
     # Redwards_Lya_Detect_Selector(aper_diams[0], EAZY(SED_fit_params_arr[-1]), SNR_lims = [5.0], widebands_only = True)(JOF_cat)
     # # SED_fit_label = "EAZY_fsps_larson_zfree"
-    # from galfind import MUV_Calculator, Xi_Ion_Calculator, M99
+    #from galfind import MUV_Calculator, Xi_Ion_Calculator, M99
     # # for beta_dust_conv in [None, M99]: #, Reddy18(C00(), 100 * u.Myr), Reddy18(C00(), 300 * u.Myr)]:
     # #     for fesc_conv in [None]:#, "Chisholm22"]: # None, 0.1, 0.2, 0.5,
     # #         calculator = Xi_Ion_Calculator(aper_diams[0], SED_fit_label, beta_dust_conv = beta_dust_conv, fesc_conv = fesc_conv)
     # #         calculator(JOF_cat, n_chains = 10_000, output = False, n_jobs = 1)
     # breakpoint()
     # MUV_calculator = MUV_Calculator(aper_diams[0], EAZY_fitter)
-    # MUV_calculator(JOF_cat, n_chains = 10_000, output = False, n_jobs = 1)
+    # MUV_calculator(cat, n_chains = 10_000, output = False, n_jobs = 1)
 
 def test_pipes():
     
@@ -590,7 +651,7 @@ def test_plotting():
     from galfind import PSF_Cutout, Galfit_Fitter, Custom_Morphology_Property_Extractor
     band_name = "F444W"
     filt = Filter.from_filt_name(band_name)
-    psf_path = f'/nvme/scratch/work/westcottl/psf/PSF_Resample_03_{band_name}.fits'
+    psf_path = f"/nvme/scratch/work/westcottl/psf/PSF_Resample_03_{band_name}.fits"
     psf = PSF_Cutout.from_fits(
         fits_path=psf_path,
         filt=filt,

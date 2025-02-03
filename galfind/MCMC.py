@@ -11,7 +11,7 @@ from astropy.stats import sigma_clip
 from matplotlib import patheffects as pe
 import matplotlib.pyplot as plt
 from numpy.typing import NDArray
-from typing import NoReturn, Union, Optional, List, Dict, Any, TYPE_CHECKING
+from typing import NoReturn, Union, Optional, List, Dict, Any, Tuple, TYPE_CHECKING
 try:
     from typing import Self, Type  # python 3.11+
 except ImportError:
@@ -265,7 +265,7 @@ class MCMC_Fitter(ABC):
             return -np.inf # np.full(1 + len(self.blob_keys), -np.inf)
         # update params with fixed values
         params_loc = self._fix_params(params_loc)
-        residuals = self.y_data - self.model(self.x_data, params_loc)
+        residuals = self.get_residuals(params_loc)
         sigma_sq = self._get_sigma_sq(residuals, params_loc)
         return lp - 0.5 * np.sum(residuals ** 2 / sigma_sq + np.log(sigma_sq))
     
@@ -291,18 +291,18 @@ class MCMC_Fitter(ABC):
         return params
     
     def _calculate_scatter(self) -> float:
-        self.get_params_med()
-        residuals = self.y_data - self.model(self.x_data, self.params_med)
+        residuals = self.get_residuals(self.get_params_med())
         self.scatter = np.sqrt(np.sum(residuals ** 2) / (len(self.y_data) - 1))
         galfind_logger.info(f"Scatter: {self.scatter:.3f} dex")
         return self.scatter
 
     def get_params_med(self: Self) -> Dict[str, float]:
-        autocorr_time = np.max(self.sampler.get_autocorr_time())
-        discard = int(autocorr_time * 2)
-        thin = 1 # int(autocorr_time / 2)
-        chain = self.sampler.get_chain(flat = True, discard = discard, thin = thin)
-        self.params_med = {prior.name: np.median(chain[:, i]) for i, prior in enumerate(self.priors)}
+        if not hasattr(self, "params_med"):
+            autocorr_time = np.max(self.sampler.get_autocorr_time())
+            discard = int(autocorr_time * 2)
+            thin = 1 # int(autocorr_time / 2)
+            chain = self.sampler.get_chain(flat = True, discard = discard, thin = thin)
+            self.params_med = {prior.name: np.median(chain[:, i]) for i, prior in enumerate(self.priors)}
         galfind_logger.info(f"Median parameters: {self.params_med}")
         return self.params_med
 
@@ -431,15 +431,16 @@ class MCMC_Fitter(ABC):
             #os.chdir(orig_dir)
         return fig_
     
+    def get_residuals(self: Self, params: Dict[str, float]) -> NDArray[float]:
+        return self.y_data - self.model(self.x_data, params)
+
     def sigma_clip(
         self: Self,
         sigma: float = 3.0
     ) -> NDArray[bool]:
-        
-        residuals = self.y_data - self.model(self.x_data, self.params_med)
-        removed_residuals = sigma_clip(residuals, sigma = sigma, masked = True)
-        breakpoint()
-        remove_indices = [np.abs(residuals) < sigma * self.scatter]
+        removed_residuals = sigma_clip(self.get_residuals(self.get_params_med()), sigma = sigma, masked = True)
+        kept_residuals = ~removed_residuals.mask
+        return kept_residuals
 
 class Schechter_Lum_Fitter(MCMC_Fitter):
 

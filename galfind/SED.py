@@ -1,4 +1,6 @@
 
+from __future__ import annotations
+
 import glob
 import os
 from abc import ABC
@@ -9,11 +11,13 @@ import numpy as np
 from astropy.table import Table
 from scipy.interpolate import interp1d
 from scipy.optimize import curve_fit
-from typing import Optional, Dict, Any
+from typing import TYPE_CHECKING, Optional, Dict, Any, List
 try:
     from typing import Self, Type  # python 3.11+
 except ImportError:
     from typing_extensions import Self, Type  # python > 3.7 AND python < 3.11
+if TYPE_CHECKING:
+    from . import Multiple_Filter
 from . import (
     IGM_attenuation,
     Mock_Photometry,
@@ -364,13 +368,17 @@ class SED_obs(SED):
             z_int, wav_obs.value, mag_obs.value, SED_rest.wavs.unit, u.ABmag
         )
 
-    def create_mock_phot(self, filterset, depths=[], min_flux_pc_err=10.0):
-        if type(depths) == dict:
-            depths = [depth for (band, depth) in depths.items()]
-        if (
-            depths == []
-        ):  # if depths not given, expect the galaxy to be very well detected
-            depths = [99.0 for filt in filterset.band_names]
+    def create_mock_phot(
+        self: Self,
+        filterset: Multiple_Filter,
+        depths: Optional[u.Quantity] = None,
+        min_flux_pc_err: float = 10.0
+    ) -> Mock_Photometry:
+        # if depths not given, expect the galaxy to be very well detected
+        if depths is None:
+            depths = np.full(len(filterset), 99.0) * u.ABmag
+        # elif isinstance(depths, dict):
+        #     depths = [depth for (band, depth) in depths.items()]
         bp_averaged_fluxes = (
             [
                 self.calc_bandpass_averaged_flux(filt.wav, filt.trans)
@@ -785,9 +793,9 @@ class Mock_SED_obs(SED_obs):
             assert len(bands) == 2
             # requires colour to exist in the mock photometry
             for band in bands:
-                if band not in self.mock_photometry.instrument:
+                if band not in self.mock_photometry.filterset.band_names:
                     galfind_logger.critical(
-                        f"self.mock_photometry includes the bands = {self.mock_photometry.instrument.band_names}, and {band} is not included!"
+                        f"self.mock_photometry includes the bands = {self.mock_photometry.filterset.band_names}, and {band} is not included!"
                     )
                 assert self.mock_photometry[band].unit == u.Jy
             # calculate colour in mags
@@ -850,8 +858,8 @@ class Mock_SED_template_set(ABC):
     def __len__(self):
         return len(self.SED_arr)
 
-    def create_mock_phot(self, instrument):
-        [sed.create_mock_phot(instrument) for sed in self.SED_arr]
+    def create_mock_phot(self, filterset):
+        [sed.create_mock_phot(filterset) for sed in self.SED_arr]
 
     # @abstractmethod
     # def calc_UV_slope():

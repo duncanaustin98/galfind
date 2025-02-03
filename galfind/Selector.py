@@ -976,10 +976,14 @@ class Redwards_Lya_Detect_Selector(Redshift_Selector):
         SED_fit_label: Union[str, SED_code],
         SNR_lims: float,
         widebands_only: bool,
+        ignore_bands: Optional[Union[str, List[str]]] = None,
     ):
+        if isinstance(ignore_bands, str):
+            ignore_bands = [ignore_bands]
         kwargs = {
             "SNR_lims": SNR_lims,
             "widebands_only": widebands_only,
+            "ignore_bands": ignore_bands,
         }
         super().__init__(aper_diam, SED_fit_label, **kwargs)
 
@@ -987,20 +991,23 @@ class Redwards_Lya_Detect_Selector(Redshift_Selector):
     def _selection_name(self) -> str:
         if isinstance(self.kwargs["SNR_lims"], (int, float)):
             # require all redwards bands to be detected at >SNR_lims
-            selection_name = f"ALL_redwards_Lya_SNR>{self.kwargs['SNR_lims']:.1f}"
+            selection_name = f"ALL_red_Lya_SNR>{self.kwargs['SNR_lims']:.1f}"
         else: # isinstance(SNR_lims, (list, np.array)):
             # require the n^th band redwards of Lya 
             # to be detected at >SNR_lims[n]
             SNR_str = ",".join([str(np.round(SNR, 1)) \
                 for SNR in self.kwargs["SNR_lims"]])
-            selection_name = f"redwards_Lya_SNR>{SNR_str}"
+            selection_name = f"red_Lya_SNR>{SNR_str}"
         if self.kwargs["widebands_only"]:
-            selection_name += "_widebands"
+            selection_name += "_wide"
+        if self.kwargs["ignore_bands"] is not None:
+            ignore_str = ",".join(self.kwargs["ignore_bands"])
+            selection_name += f"_no_{ignore_str}"
         return selection_name
 
     @property
     def _include_kwargs(self) -> List[str]:
-        return ["SNR_lims", "widebands_only"]
+        return ["SNR_lims", "widebands_only", "ignore_bands"]
 
     def _assertions(self: Self) -> bool:
         try:
@@ -1013,6 +1020,10 @@ class Redwards_Lya_Detect_Selector(Redshift_Selector):
             else:
                 assertions.extend([False])
             assertions.extend([isinstance(self.kwargs["widebands_only"], bool)])
+            if self.kwargs["ignore_bands"] is not None:
+                for band in self.kwargs["ignore_bands"]:
+                    # ensure this band exists
+                    assertions.extend([band in json.loads(config.get("Other", "ALL_BANDS"))])
             passed = all(assertions)
         except:
             passed = False
@@ -1029,8 +1040,13 @@ class Redwards_Lya_Detect_Selector(Redshift_Selector):
             SNR_lims = self.kwargs["SNR_lims"]
 
         # extract first Lya non-detect band
+        from .Emission_lines import line_diagnostics
         first_Lya_detect_band = gal.aper_phot[self.aper_diam]. \
-            SED_results[self.SED_fit_label].phot_rest.first_Lya_detect_band
+            SED_results[self.SED_fit_label].phot_rest. \
+                get_first_redwards_band(
+                    line_diagnostics["Lya"]["line_wav"],
+                    ignore_bands = self.kwargs["ignore_bands"]
+                )
         # if no bands redwards of Lyman alpha, do not select the galaxy
         if first_Lya_detect_band is None:
             return False

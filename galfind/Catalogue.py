@@ -353,9 +353,9 @@ class Catalogue_Creator:
         galfind_logger.debug(
             f"Loading {self.survey} {self.version} {self.cat_name} galaxies!"
         )
-        gals = [Galaxy(ID, sky_coord, phot_obs, flags) \
-            for ID, sky_coord, phot_obs, flags \
-            in zip(IDs, sky_coords, phot_obs_arr, selection_flags)]
+        gals = [Galaxy(ID, sky_coord, phot_obs, flags, cat_filterset) \
+            for ID, sky_coord, phot_obs, flags, cat_filterset \
+            in zip(IDs, sky_coords, phot_obs_arr, selection_flags, filterset_arr)]
         cat = Catalogue(gals, self)
         # point to data if provided
         if hasattr(self, "data"):
@@ -890,6 +890,49 @@ class Catalogue(Catalogue_Base):
             galfind_logger.critical(err_message)
             raise Exception(err_message)
         
+    def load_sextractor_kron_radii(self):
+        if hasattr(self, "data"):
+            # load Kron radius from SExtractor
+            kron_radii = self.load_band_properties_from_cat(
+                "KRON_RADIUS", 
+                "sex_KRON_RADIUS", 
+            )
+            A_image_arr = self.load_band_properties_from_cat(
+                "A_IMAGE",
+                "sex_A_IMAGE",
+                update = False
+            )
+            [setattr(gal, "sex_A_IMAGE", A_image[self.data[0].filt_name]) for gal, A_image in zip(self, A_image_arr)]
+            A_image_as_arr = [{band_data.filt_name: kron_radius[band_data.filt_name] * A_image[band_data.filt_name] * band_data.pix_scale \
+                for band_data in self.data} for kron_radius, A_image in zip(kron_radii, A_image_arr)]
+            [gal.load_property(A_image_as, "sex_A_IMAGE_AS") for gal, A_image_as in zip(self, A_image_as_arr)]
+            B_image_arr = self.load_band_properties_from_cat(
+                "B_IMAGE",
+                "sex_B_IMAGE",
+                update = False
+            )
+            [setattr(gal, "sex_B_IMAGE", B_image[self.data[0].filt_name]) for gal, B_image in zip(self, B_image_arr)]
+            B_image_as_arr = [{band_data.filt_name: kron_radius[band_data.filt_name] * B_image[band_data.filt_name] * band_data.pix_scale \
+                for band_data in self.data} for kron_radius, B_image in zip(kron_radii, B_image_arr)]
+            [gal.load_property(B_image_as, "sex_B_IMAGE_AS") for gal, B_image_as in zip(self, B_image_as_arr)]
+            theta_image_arr = self.load_band_properties_from_cat(
+                "THETA_IMAGE",
+                "sex_THETA_IMAGE",
+                multiply_factor = u.deg,
+                update = False,
+            )
+            [setattr(gal, "sex_THETA_IMAGE", theta_image[self.data[0].filt_name]) for gal, theta_image in zip(self, theta_image_arr)]
+            
+            for gal in self:
+                for aper_diam in gal.aper_phot.keys():
+                    for name in ["KRON_RADIUS", "A_IMAGE", "B_IMAGE", "THETA_IMAGE", "A_IMAGE_AS", "B_IMAGE_AS"]:
+                        name = f"sex_{name}"
+                        if hasattr(gal, name):
+                            setattr(gal.aper_phot[aper_diam], name, getattr(gal, name))
+                        else:
+                            galfind_logger.warning(f"{name} not in {gal.ID=}")
+            
+        
     def load_sextractor_ext_src_corrs(self) -> None:
         self.load_sextractor_auto_fluxes()
         galfind_logger.info(
@@ -906,7 +949,8 @@ class Catalogue(Catalogue_Base):
         save_name: str,
         multiply_factor: Union[dict, u.Quantity, u.Magnitude, None] = None,
         dest: str = "gal",
-    ) -> None:
+        update: bool = True,
+    ) -> Optional[List[Dict[str, Union[u.Quantity, u.Magnitude, u.Dex]]]]:
         assert dest in ["gal", "phot_obs"]
         if dest == "gal":
             has_attr = hasattr(self[0], save_name)
@@ -939,18 +983,19 @@ class Catalogue(Catalogue_Base):
                 if f"{cat_colname}_{filt.band_name}" in fits_cat.colnames
             }
             if len(cat_band_properties) == 0:
-                galfind_logger.info(
-                    f"Could not load {cat_colname=} from {self.cat_path}," + \
-                    f" as no '{cat_colname}_band' exists for band in {self.instrument.band_names=}!"
-                )
-            else:
-                cat_band_properties = [
-                    {
-                        band: cat_band_properties[band][i]
-                        for band in cat_band_properties.keys()
-                    }
-                    for i in range(len(fits_cat))
-                ]
+                err_message = f"Could not load {cat_colname=} from {self.cat_path} " + \
+                    f"as no '{cat_colname}_band' exists for band in {self.instrument.band_names=}!"
+                galfind_logger.info(err_message)
+                raise Exception(err_message)
+            
+            cat_band_properties = [
+                {
+                    band: cat_band_properties[band][i]
+                    for band in cat_band_properties.keys()
+                }
+                for i in range(len(fits_cat))
+            ]
+            if update:
                 if dest == "gal":
                     [
                         gal.load_property(gal_properties, save_name)
@@ -970,6 +1015,7 @@ class Catalogue(Catalogue_Base):
                     f"Loaded {cat_colname} from {self.cat_path} " + \
                     f"saved as {save_name} for {cat_band_properties[0].keys()=}"
                 )
+            return cat_band_properties
 
     def load_property_from_cat(
         self,
@@ -1044,6 +1090,30 @@ class Catalogue(Catalogue_Base):
     ) -> List[Band_Cutout]:
         band_data = self.data[filt.band_name]
         return [gal.make_band_cutout(band_data, cutout_size) for gal in self]
+
+    def plot_cutouts(
+        self: Self,
+        cutout_size: u.Quantity = 0.96 * u.arcsec,
+        #save_name: Optional[str] = None,
+        plot_kwargs: Dict[str, Any] = {},
+        crop_name: Optional[str] = None,
+        collate_dir: Optional[str] = None,
+        overwrite: bool = False,
+        overwrite_sample: bool = True,
+    ) -> NoReturn:
+        out_paths = np.full(len(self), None)
+        for i, gal in enumerate(self):
+            cutouts = gal.make_cutouts(self.data, cutout_size, overwrite = overwrite)
+            cutouts.plot(close_fig = True, **plot_kwargs)
+            out_paths[i] = cutouts._get_save_path()
+        out_paths.astype(str)
+        # collate plots for the specified galaxies
+        if collate_dir is None:
+            if crop_name is None:
+                crop_name = self.crop_name
+            collate_dir = "/".join(out_paths[0].replace("/png", "").split("/")[:-2] + [crop_name]) \
+                + out_paths[0].replace("/png", "").split("/")[-2]
+        self._collate_plots(out_paths, collate_dir, overwrite = overwrite_sample)
 
     def stack_gals(
         self, cutout_size: u.Quantity = 0.96 * u.arcsec
@@ -1127,26 +1197,36 @@ class Catalogue(Catalogue_Base):
 
     def plot_phot_diagnostics(
         self,
-        SED_fit_params_arr,#=[
-        #     EAZY({"templates": "fsps_larson", "lowz_zmax": None}),
-        #     EAZY({"templates": "fsps_larson", "dz": 0.5, "lowz_zma"}),
-        # ],
-        zPDF_plot_SED_fit_params_arr,#=[
-        #     EAZY({"templates": "fsps_larson", "lowz_zmax": None}),
-        #     EAZY({"templates": "fsps_larson", "dz": 0.5}),
-        # ],
-        wav_unit=u.um,
-        flux_unit=u.ABmag,
+        aper_diam: u.Quantity,
+        SED_arr: List[SED_code],
+        zPDF_arr: List[SED_code],
+        plot_lowz: bool = True,
+        wav_unit: u.Unit = u.um,
+        flux_unit: u.Unit = u.ABmag,
+        crop_name: Optional[str] = None,
+        collate_dir: Optional[str] = None,
+        imshow_kwargs: Dict[str, Any] = {},
+        norm_kwargs: Dict[str, Any] = {},
+        aper_kwargs: Dict[str, Any] = {},
+        kron_kwargs: Dict[str, Any] = {},
+        n_cutout_rows: int = 2,
+        overwrite: bool = False,
     ):
+        # load sextractor parameters
+        self.load_sextractor_auto_mags()
+        self.load_sextractor_auto_fluxes()
+        self.load_sextractor_kron_radii()
+        self.load_sextractor_Re()
+
         # loop over galaxies and plot photometry diagnostic plots for each one
         # figure size may well depend on how many bands there are
         overall_fig = plt.figure(figsize=(8, 7), constrained_layout=True)
         fig, cutout_fig = overall_fig.subfigures(
             2,
             1,
-            hspace=-2,
+            hspace=-2.,
             height_ratios=[2.0, 1.0]
-            if len(self.data.instrument) <= 8
+            if len(self.data) <= 8
             else [1.8, 1],
         )
 
@@ -1160,11 +1240,20 @@ class Catalogue(Catalogue_Base):
             gal.plot_phot_diagnostic(
                 [cutout_fig, phot_ax, PDF_ax],
                 self.data,
-                SED_fit_params_arr,
-                zPDF_plot_SED_fit_params_arr,
-                wav_unit,
-                flux_unit,
-                aper_diam=self.cat_creator.aper_diam,
+                aper_diam = aper_diam,
+                SED_arr = SED_arr,
+                zPDF_arr = zPDF_arr,
+                plot_lowz = plot_lowz,
+                n_cutout_rows = n_cutout_rows,
+                wav_unit = wav_unit,
+                flux_unit = flux_unit,
+                imshow_kwargs = imshow_kwargs,
+                norm_kwargs = norm_kwargs,
+                aper_kwargs = aper_kwargs,
+                kron_kwargs = kron_kwargs,
+                overwrite = overwrite,
+                save = True,
+                show = False,
             )
             for gal in tqdm(
                 self,
@@ -1172,18 +1261,37 @@ class Catalogue(Catalogue_Base):
                 desc="Plotting photometry diagnostic plots",
             )
         ]
+        if collate_dir is None:
+            if crop_name is None:
+                crop_name = self.crop_name
+            collate_dir = f"{config['Other']['PLOT_DIR']}/{self.version}/" + \
+                f"{self.filterset.instrument_name}/{self.survey}/SED_plots/" + \
+                f"{aper_diam.to(u.arcsec).value:.2f}as/{crop_name}/"
+        self._collate_plots(out_paths, collate_dir)
 
+    def _collate_plots(
+        self: Self,
+        out_paths: List[str],
+        collate_dir: str,
+        overwrite: bool = True
+    ):
         # make a folder to store symlinked photometric diagnostic plots for selected galaxies
         if self.crops != []:
+            if overwrite:
+                # remove existing symlinks in folder
+                symlink_paths = glob.glob(f"{collate_dir}/*.png")
+                for symlink_path in symlink_paths:
+                    os.remove(symlink_path)
             # create symlink to selection folder for diagnostic plots
             for gal, out_path in zip(self, out_paths):
-                selection_path = f"{config['Selection']['SELECTION_DIR']}/SED_plots/{self.version}/{self.instrument.name}/{'+'.join(self.crops)}/{self.survey}/{str(gal.ID)}.png"
+                selection_path = f"{collate_dir}/{str(gal.ID)}.png"
                 funcs.make_dirs(selection_path)
                 try:
                     os.symlink(out_path, selection_path)
                 except FileExistsError:  # replace existing file
-                    os.remove(selection_path)
-                    os.symlink(out_path, selection_path)
+                    if Path(out_path).is_file():
+                        os.remove(selection_path)
+                        os.symlink(out_path, selection_path)
 
     def hist(
         self: Self,
@@ -1261,7 +1369,10 @@ class Catalogue(Catalogue_Base):
         plot_type: str = "individual",
         n_samples: int = 100_000,
         n_bins: int = 25,
-        contour_levels: List[float] = [68., 95., 100.]
+        contour_levels: List[float] = [68., 95., 100.],
+        x_hist_ax: Optional[plt.Axes] = None,
+        y_hist_ax: Optional[plt.Axes] = None,
+        hist_kwargs: Dict[str, Any] = {},
     ):
         from . import Property_Calculator_Base
         x_name = x_calculator.full_name
@@ -1272,7 +1383,6 @@ class Catalogue(Catalogue_Base):
         colour_label = c_calculator.plot_name if c_calculator is not None else None
 
         if plot_type.lower() == "individual":
-
             if isinstance(x_calculator, tuple(Property_Calculator_Base.__subclasses__())):
                 x = x_calculator.extract_vals(self)
                 if incl_x_errs:
@@ -1390,6 +1500,9 @@ class Catalogue(Catalogue_Base):
                 plot_kwargs["cmap"] = cmap
         
         if plot_type.lower() == "contour":
+            nan_mask = np.logical_and(~np.isnan(x), ~np.isnan(y))
+            x = np.array(x)[nan_mask]
+            y = np.array(y)[nan_mask]
             x_interval = (np.max(x) - np.min(x)) / (n_bins + 1)
             y_interval = (np.max(y) - np.min(y)) / (n_bins + 1)
             x_edges = np.linspace(np.min(x) - x_interval, np.max(x) + x_interval, n_bins)
@@ -1418,41 +1531,24 @@ class Catalogue(Catalogue_Base):
             # plot the mean error
             pass
 
-        # if mean_err:
-        #     # produce scatter plot
-        #     if c_calculator is None:
-        #         plot = ax.scatter(x, y, **plot_kwargs)
-        #     else:
-        #         if "cmap" not in plot_kwargs.keys():
-        #             plot_kwargs["cmap"] = cmap
-        #         plot = ax.scatter(x, y, c=c, **plot_kwargs)
-        #     if incl_x_errs and incl_y_errs:
-        #         # plot the mean error
-        #         pass
-        # else:
-        #     # produce errorbar plot
-        #     if incl_x_errs or incl_y_errs:
-        #         if "ls" not in plot_kwargs.keys():
-        #             plot_kwargs["ls"] = ""
-        #     if c_calculator is None:
-        #         if incl_x_errs or incl_y_errs:
-        #             plot = ax.errorbar(x, y, xerr=x_err, yerr=y_err, **plot_kwargs)
-        #         else:
-        #             if plot_type.lower() == "contour":
-        #                 pass
-        #             else:
-        #                 plot = ax.scatter(x, y, **plot_kwargs)
-        #     else:
-        #         if "cmap" not in plot_kwargs.keys():
-        #             plot_kwargs["cmap"] = cmap
-        #         if incl_x_errs or incl_y_errs:
-        #             plot = ax.errorbar(
-        #                 x, y, xerr=x_err, yerr=y_err, c=c, **plot_kwargs
-        #             )
-        #         else:  
-        #             plot = ax.scatter(
-        #                 x, y, c=c, **plot_kwargs
-        #             )
+        # if histograms are wanted to be displayed
+        if x_hist_ax is not None or y_hist_ax is not None:
+            # if "bins" not in hist_kwargs.keys():
+            #     hist_kwargs["bins"] = 30
+            if isinstance(x, u.Magnitude):
+                x = x.value
+            if isinstance(y, u.Magnitude):
+                y = y.value
+            #divider = make_axes_locatable(ax)
+        if x_hist_ax is not None:
+            assert isinstance(x_hist_ax, plt.Axes)
+            #ax_hist_top = divider.append_axes("top", size="20%", pad=0.1, sharex=ax)
+            x_hist_ax.hist(x, **hist_kwargs)
+        if y_hist_ax is not None:
+            assert isinstance(y_hist_ax, plt.Axes)
+            # Right histogram
+            #ax_hist_right = divider.append_axes("right", size="20%", pad=0.1, sharey=ax)
+            y_hist_ax.hist(y, orientation='horizontal', **hist_kwargs)
 
         # sort plot aesthetics - automatically annotate if coloured
         if annotate or c_calculator is not None:
