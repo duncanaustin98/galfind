@@ -807,12 +807,18 @@ def test_data_load():
 #             hdul[0].header["EXTNAME"] = ext
 #             hdul.writeto(path, overwrite = True)
 
+def test_lens_model():
+    from galfind import Lens_Model
+    lens_model = Lens_Model("string_A", "string_B")
+    print(lens_model)
+
 if __name__ == "__main__":
     #update_data_names()
     #test_load()
     #main()
     
-    test_selection()
+    #test_selection()
+    test_lens_model()
 
     #test_UVLF()
 

@@ -254,3 +254,5 @@ from .Rest_frame_properties import (
 )
 
 from .Morphology import Morphology_Result, Morphology_Fitter, Galfit_Fitter
+
+from .Cluster_Data import Cluster_Data, Lens_Model

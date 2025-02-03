@@ -1722,6 +1722,9 @@ class Data:
                 band_data_arr.extend([band_data])
         return cls(band_data_arr, forced_phot_band=forced_phot_band)
 
+    def add_lens_model(self: Self, lens_model: Lens_Model) -> NoReturn:
+        self.lens_model = lens_model
+
     @staticmethod
     def _get_data_dir(
         survey: str,
