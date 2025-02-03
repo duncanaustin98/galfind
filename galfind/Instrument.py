@@ -177,7 +177,7 @@ class Instrument(ABC):
 
         if Path(aper_corr_path).is_file():
             aper_corr_tab = Table.read(aper_corr_path, format="ascii")
-            aper_diams = [0.32, 0.5, 1.0, 1.5, 2.0] * u.arcsec
+            aper_diams = [0.2, 0.32, 0.5, 1.0, 1.5, 2.0] * u.arcsec
             # save aperture corrections in self
             if not hasattr(self, "aper_corrs"):
                 self.aper_corrs = {}
