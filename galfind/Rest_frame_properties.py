@@ -619,11 +619,7 @@ class UV_Beta_Calculator(Rest_Frame_Property_Calculator):
             and filt.WavelengthUpper50 < self.global_kwargs["rest_UV_wav_lims"][1] * (1.0 + phot_rest.z)
         ]
         if len(rest_frame_UV_indices) < 2:
-            rest_frame_UV_indices = None
-            rest_UV_band_wavs = None
-            #beta_fit_obj = None
-            rest_UV_SNRs = None
-            negative_flux_pc = None
+            failure = True
         else:
             rest_UV_band_wavs = np.array(
                 [
@@ -632,16 +628,22 @@ class UV_Beta_Calculator(Rest_Frame_Property_Calculator):
                     in phot_rest.filterset[rest_frame_UV_indices]
                 ]
             ) * u.AA
-            #beta_fit_obj = beta_fit(phot_rest.z, phot_rest.filterset[rest_frame_UV_indices])
             phot_rest_UV = phot_rest[rest_frame_UV_indices]
             rest_UV_SNRs = phot_rest_UV.flux / phot_rest_UV.flux_errs
-            # determine what percentage of scatters fall into the negative flux region
-            negative_flux_pc = (1. - np.prod([1. - norm.cdf(0., loc=mu, scale=std) for mu, std in \
-                zip(phot_rest_UV.flux.value, phot_rest_UV.flux_errs.value)])) * 100.0
-            
+            if any(np.isnan(SNR) for SNR in rest_UV_SNRs):
+                failure = True
+            else:
+                # determine what percentage of scatters fall into the negative flux region
+                negative_flux_pc = (1. - np.prod([1. - norm.cdf(0., loc=mu, scale=std) for mu, std in \
+                    zip(phot_rest_UV.flux.value, phot_rest_UV.flux_errs.value)])) * 100.0
+        if failure:
+            rest_frame_UV_indices = None
+            rest_UV_band_wavs = None
+            rest_UV_SNRs = None
+            negative_flux_pc = None
+        
         return {
             "keep_indices": rest_frame_UV_indices,
-            #"beta_fit": beta_fit_obj, 
             "rest_UV_band_wavs": rest_UV_band_wavs,
             "rest_UV_SNRs": rest_UV_SNRs,
             "negative_flux_pc": negative_flux_pc
@@ -1367,6 +1369,12 @@ class Optical_Continuum_Calculator(Rest_Frame_Property_Calculator):
         # determine the nearest band to the first line
         wavelength = line_diagnostics[self.global_kwargs \
             ["strong_line_names"][0]]["line_wav"] * (1.0 + phot_rest.z)
+        if len(phot_rest.filterset) == 0:
+            return {
+                "emission_band": None,
+                "cont_bands": None,
+                "keep_indices": None,
+            }
         nearest_band = phot_rest.filterset[
             int(np.abs(
                 [
@@ -1408,7 +1416,7 @@ class Optical_Continuum_Calculator(Rest_Frame_Property_Calculator):
                 ):
                     cont_bands.extend([filt])
                     cont_band_indices.extend([i])
-            if len(cont_bands) == 0:
+            if len(cont_bands) == 0 or any(np.isnan(phot_rest.depths[i]) for i in cont_band_indices):
                 cont_bands = None
                 cont_band_indices = None
         return {
@@ -1546,21 +1554,27 @@ class Optical_Line_EW_Calculator(Rest_Frame_Property_Calculator):
             if wavelength > filt.WavelengthLower50
             and wavelength < filt.WavelengthUpper50
         ]
+
         if nearest_band.band_name not in emission_bands:
-            emission_band = None
-            emission_band_index = None
-            emission_band_wavelength = None
-            bandwidth = None
+            failure = True
         else:
             emission_band = nearest_band
             emission_band_index = int(np.where(np.array( \
                 phot_rest.filterset.band_names) == emission_band.band_name)[0][0])
-            emission_band_wavelength = emission_band.WavelengthCen
-            bandwidth = emission_band.WavelengthUpper50 \
-                - emission_band.WavelengthLower50
-            if self.global_kwargs["frame"] == "rest":
-                bandwidth /= (1.0 + phot_rest.z)
-            bandwidth = bandwidth.to(u.AA)
+            if np.isnan(phot_rest.depths[emission_band_index]):
+                failure = True
+            else:
+                emission_band_wavelength = emission_band.WavelengthCen
+                bandwidth = emission_band.WavelengthUpper50 \
+                    - emission_band.WavelengthLower50
+                if self.global_kwargs["frame"] == "rest":
+                    bandwidth /= (1.0 + phot_rest.z)
+                bandwidth = bandwidth.to(u.AA)
+        if failure:
+            emission_band = None
+            emission_band_index = None
+            emission_band_wavelength = None
+            bandwidth = None
         return {
             "emission_band": emission_band,
             "keep_indices": emission_band_index,
@@ -1825,10 +1839,13 @@ class Optical_Line_Flux_Calculator(Rest_Frame_Property_Calculator):
         phot_rest: Photometry_rest
     ) -> Dict[str, Any]:
         emission_band = phot_rest.property_kwargs[self.pre_req_properties[1].name]["band"]
-        band_wav = deepcopy(phot_rest.filterset[emission_band].WavelengthCen)
-        if band_wav is not None:
-            if self.pre_req_properties[1].global_kwargs["frame"] == "rest":
-                band_wav /= (1.0 + phot_rest.z)
+        if np.isnan(phot_rest.depths[emission_band]):
+            band_wav = None
+        else:
+            band_wav = deepcopy(phot_rest.filterset[emission_band].WavelengthCen)
+            if band_wav is not None:
+                if self.pre_req_properties[1].global_kwargs["frame"] == "rest":
+                    band_wav /= (1.0 + phot_rest.z)
         return {"band_wav": band_wav}
 
     def _fail_criteria(
@@ -1981,8 +1998,8 @@ class Xi_Ion_Calculator(Rest_Frame_Property_Calculator):
         resolution: u.Quantity = 1.0 * u.AA,
         fesc_conv: Optional[Union[str, float]] = None,
         logged: bool = True,
-        ext_src_corrs: Optional[str] = "UV",
-        ext_src_uplim: Optional[Union[int, float]] = 10.0,
+        #ext_src_corrs: Optional[str] = "UV",
+        #ext_src_uplim: Optional[Union[int, float]] = 10.0,
     ) -> NoReturn:
         line_lum_calculator = \
             Optical_Line_Luminosity_Calculator(
@@ -2005,8 +2022,8 @@ class Xi_Ion_Calculator(Rest_Frame_Property_Calculator):
             beta_dust_conv,
             top_hat_width,
             resolution,
-            ext_src_corrs,
-            ext_src_uplim,
+            ext_src_corrs = None,
+            ext_src_uplim = None,
         )
         pre_req_properties = [line_lum_calculator, LUV_calculator]
         if fesc_conv is None:
@@ -2044,9 +2061,9 @@ class Xi_Ion_Calculator(Rest_Frame_Property_Calculator):
         line_label = "+".join(self.pre_req_properties[0]. \
             pre_req_properties[0].pre_req_properties[1]. \
             global_kwargs["strong_line_names"])
-        ext_src_label = "_extsrc" if self.pre_req_properties[1]. \
-            pre_req_properties[0].global_kwargs["ext_src_corrs"] else ""
-        label = f"xi_ion_{line_label}{dust_label}_{fesc_label}{ext_src_label}"
+        # ext_src_label = "_extsrc" if self.pre_req_properties[1]. \
+        #     pre_req_properties[0].global_kwargs["ext_src_corrs"] else ""
+        label = f"xi_ion_{line_label}{dust_label}_{fesc_label}" #{ext_src_label}"
         if self.global_kwargs["logged"]:
             label = f"log_{label}"
         return label

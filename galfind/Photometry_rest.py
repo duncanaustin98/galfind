@@ -31,6 +31,7 @@ from .decorators import ignore_warnings
 from .Dust_Attenuation import AUV_from_beta
 from .Emission_lines import line_diagnostics, strong_optical_lines
 
+
 class Photometry_rest(Photometry):
     def __init__(
         self: Self,
@@ -176,23 +177,23 @@ class Photometry_rest(Photometry):
     #         self._first_Lya_detect_band = first_band
     #         return self._first_Lya_detect_band
 
-    @property
-    def first_Lya_non_detect_band(
-        self, Lya_wav=line_diagnostics["Lya"]["line_wav"]
-    ):
-        try:
-            return self._first_Lya_non_detect_band
-        except AttributeError:
+    # @property
+    # def first_Lya_non_detect_band(
+    #     self, Lya_wav=line_diagnostics["Lya"]["line_wav"]
+    # ):
+    #     try:
+    #         return self._first_Lya_non_detect_band
+    #     except AttributeError:
             
-            first_band = None
-            # bands already ordered from blue -> red
-            for band in self.filterset:
-                upper_wav = band.WavelengthUpper50
-                if upper_wav < Lya_wav * (1 + self.z):
-                    first_band = band.band_name
-                    break
-            self._first_Lya_non_detect_band = first_band
-        return self._first_Lya_non_detect_band
+    #         first_band = None
+    #         # bands already ordered from blue -> red
+    #         for band in self.filterset:
+    #             upper_wav = band.WavelengthUpper50
+    #             if upper_wav < Lya_wav * (1 + self.z):
+    #                 first_band = band.band_name
+    #                 break
+    #         self._first_Lya_non_detect_band = first_band
+    #     return self._first_Lya_non_detect_band
 
     def get_first_redwards_band(
         self: Self,
@@ -214,6 +215,28 @@ class Photometry_rest(Photometry):
                 if lower_wav > ref_wav * (1 + self.z):
                     first_band = filt.band_name
                     break
+        return first_band
+    
+    def get_first_bluewards_band(
+        self: Self,
+        ref_wav: u.Quantity,
+        ignore_bands: Optional[Union[str, List[str]]] = None,
+    ) -> Filter:
+        """
+        Get the first band bluewards of a reference wavelength, ignoring required bands
+        """
+        # convert ignore_bands to List[str] if not already
+        if ignore_bands is None:
+            ignore_bands = []
+        elif isinstance(ignore_bands, str):
+            ignore_bands = [ignore_bands]
+        first_band = None
+        # bands already ordered from blue -> red
+        for filt in self.filterset:
+            upper_wav = filt.WavelengthUpper50
+            if upper_wav < ref_wav * (1 + self.z):
+                first_band = filt.band_name
+                break
         return first_band
 
     def _make_phot_from_scattered_fluxes(

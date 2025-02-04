@@ -11,12 +11,12 @@ plt.style.use(
     f"{config['DEFAULT']['GALFIND_DIR']}/galfind_style.mplstyle"
 )
 
-# Load in a JOF data object
-survey = "CEERSP10"
+# Load in a data object
+survey = "CEERSP3"
 version = "v9"
-instrument_names = ["ACS_WFC", "NIRCam"] # "ACS_WFC", 
+instrument_names = ["ACS_WFC", "NIRCam"] # "ACS_WFC"
 aper_diams = [0.32] * u.arcsec
-forced_phot_band = ["F277W", "F356W", "F444W"] #["F814W"]
+forced_phot_band = ["F277W", "F356W", "F444W"]
 min_flux_pc_err = 10.
 
 def test_selection():
@@ -34,7 +34,7 @@ def test_selection():
     #     forced_phot_band = forced_phot_band,
     # )
     # print(data.band_data_arr)
-    #breakpoint()
+    # breakpoint()
     # data.mask(
     #     "auto",
     #     angle = 70.0
@@ -71,6 +71,7 @@ def test_selection():
         min_flux_pc_err = min_flux_pc_err,
         #crops = EPOCHS_Selector(aper_diams[0], EAZY(SED_fit_params_arr[-1]), allow_lowz=False)
     )
+    #breakpoint()
 
     #from galfind import Unmasked_Instrument_Selector
     #Unmasked_Instrument_Selector("ACS_WFC")(cat)
@@ -88,8 +89,9 @@ def test_selection():
     from galfind import MUV_Calculator, Xi_Ion_Calculator, M99
     for beta_dust_conv in [None, M99]:#, Reddy18(C00(), 100 * u.Myr), Reddy18(C00(), 300 * u.Myr)]:
         for fesc_conv in [None, "Chisholm22"]: # None, 0.1, 0.2, 0.5,
-            xi_ion_calculator = Xi_Ion_Calculator(aper_diams[0], EAZY_fitter.label, beta_dust_conv = beta_dust_conv, fesc_conv = fesc_conv)
-            xi_ion_calculator(cat, n_chains = 10_000, output = False, n_jobs = 1)
+            for logged in [False, True]:
+                xi_ion_calculator = Xi_Ion_Calculator(aper_diams[0], EAZY_fitter.label, beta_dust_conv = beta_dust_conv, fesc_conv = fesc_conv, logged = logged)
+                xi_ion_calculator(cat, n_chains = 10_000, output = False, n_jobs = 1)
             #breakpoint()
 
     # cat.plot(MUV_calculator, xi_ion_calculator, incl_x_errs = False, incl_y_errs = False, annotate = True, plot_type = "individual", save = True, log_y = True)

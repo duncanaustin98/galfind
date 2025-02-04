@@ -189,6 +189,7 @@ from .Selector import (
     Kokorev24_LRD_red2_Selector, 
     Kokorev24_LRD_Selector,
     Bluewards_Lya_Non_Detect_Selector,
+    Bluewards_LyLim_Non_Detect_Selector,
     Redwards_Lya_Detect_Selector,
     Lya_Band_Selector,
     Chi_Sq_Lim_Selector,

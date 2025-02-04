@@ -16,7 +16,7 @@ except ImportError:
     from typing_extensions import Self, Type  # python > 3.7 AND python < 3.11
 
 from . import useful_funcs_austind as funcs
-from . import galfind_logger, config
+from . import galfind_logger, config, wav_lyman_lim
 from . import Galaxy, Catalogue, Instrument, SED_code
 from .Instrument import expected_instr_bands
 
@@ -923,6 +923,72 @@ class Min_Unmasked_Band_Selector(Data_Selector):
         return n_unmasked_bands >= self.kwargs["min_bands"]
 
 
+class Bluewards_LyLim_Non_Detect_Selector(Redshift_Selector):
+
+    def __init__(
+        self: Self,
+        aper_diam: u.Quantity,
+        SED_fit_label: Union[str, SED_code],
+        SNR_lim: float,
+        ignore_bands: Optional[Union[str, List[str]]] = None,
+    ):
+        if isinstance(ignore_bands, str):
+            ignore_bands = [ignore_bands]
+        kwargs = {"SNR_lim": SNR_lim, "ignore_bands": ignore_bands}
+        super().__init__(aper_diam, SED_fit_label, **kwargs)
+
+    @property
+    def _selection_name(self) -> str:
+        selection_name = f"bluewards_LyLim_SNR<{self.kwargs['SNR_lim']:.1f}"
+        if self.kwargs["ignore_bands"] is not None:
+            ignore_str = ",".join(self.kwargs["ignore_bands"])
+            selection_name += f"_no_{ignore_str}"
+        return selection_name
+
+    @property
+    def _include_kwargs(self) -> List[str]:
+        return ["SNR_lim", "ignore_bands"]
+
+    def _assertions(self: Self) -> bool:
+        try:
+            assertions = []
+            assertions.extend([isinstance(self.kwargs["SNR_lim"], (int, float))])
+            if self.kwargs["ignore_bands"] is not None:
+                for band in self.kwargs["ignore_bands"]:
+                    # ensure this band exists
+                    assertions.extend([band in json.loads(config.get("Other", "ALL_BANDS"))])
+            passed = all(assertions)
+        except:
+            passed = False
+        return passed
+        
+    def _selection_criteria(
+        self: Self,
+        gal: Galaxy,
+    ) -> bool:
+        # extract first Lylim non-detect band
+        first_Lylim_non_detect_band = gal.aper_phot[self.aper_diam]. \
+            SED_results[self.SED_fit_label].phot_rest. \
+                get_first_bluewards_band(
+                    wav_lyman_lim * u.AA,
+                    self.kwargs["ignore_bands"],
+                )
+        # if no bands bluewards of Lyman alpha,
+        # select the galaxy by default
+        if first_Lylim_non_detect_band is None:
+            return True
+        # find index of first Lya non-detect band
+        first_Lylim_non_detect_index = np.where(
+            np.array(gal.aper_phot[self.aper_diam].filterset.band_names) \
+            == first_Lylim_non_detect_band)[0][0]
+        SNR_non_detect = gal.aper_phot[self.aper_diam].SNR[: first_Lylim_non_detect_index + 1]
+        mask_non_detect = gal.aper_phot[self.aper_diam].flux.mask[: first_Lylim_non_detect_index + 1]
+        # require the first Lylim non detect band and all bluewards bands 
+        # to be non-detected at < SNR_lim if not masked
+        return all(SNR < self.kwargs["SNR_lim"] or mask for mask, SNR in 
+            zip(mask_non_detect, SNR_non_detect))
+
+
 class Bluewards_Lya_Non_Detect_Selector(Redshift_Selector):
 
     def __init__(
@@ -930,20 +996,37 @@ class Bluewards_Lya_Non_Detect_Selector(Redshift_Selector):
         aper_diam: u.Quantity,
         SED_fit_label: Union[str, SED_code],
         SNR_lim: float,
+        ignore_bands: Optional[Union[str, List[str]]] = None,
     ):
-        kwargs = {"SNR_lim": SNR_lim}
+        if isinstance(ignore_bands, str):
+            ignore_bands = [ignore_bands]
+        kwargs = {"SNR_lim": SNR_lim, "ignore_bands": ignore_bands}
         super().__init__(aper_diam, SED_fit_label, **kwargs)
 
     @property
     def _selection_name(self) -> str:
-        return f"bluewards_Lya_SNR<{self.kwargs['SNR_lim']:.1f}"
+        selection_name = f"bluewards_Lya_SNR<{self.kwargs['SNR_lim']:.1f}"
+        if self.kwargs["ignore_bands"] is not None:
+            ignore_str = ",".join(self.kwargs["ignore_bands"])
+            selection_name += f"_no_{ignore_str}"
+        return selection_name
 
     @property
     def _include_kwargs(self) -> List[str]:
-        return ["SNR_lim"]
+        return ["SNR_lim", "ignore_bands"]
 
     def _assertions(self: Self) -> bool:
-        return isinstance(self.kwargs["SNR_lim"], (int, float))
+        try:
+            assertions = []
+            assertions.extend([isinstance(self.kwargs["SNR_lim"], (int, float))])
+            if self.kwargs["ignore_bands"] is not None:
+                for band in self.kwargs["ignore_bands"]:
+                    # ensure this band exists
+                    assertions.extend([band in json.loads(config.get("Other", "ALL_BANDS"))])
+            passed = all(assertions)
+        except:
+            passed = False
+        return passed
         
     def _selection_criteria(
         self: Self,
@@ -951,7 +1034,11 @@ class Bluewards_Lya_Non_Detect_Selector(Redshift_Selector):
     ) -> bool:
         # extract first Lya non-detect band
         first_Lya_non_detect_band = gal.aper_phot[self.aper_diam]. \
-            SED_results[self.SED_fit_label].phot_rest.first_Lya_non_detect_band
+            SED_results[self.SED_fit_label].phot_rest. \
+                get_first_bluewards_band(
+                    wav_lyman_lim * u.AA,
+                    self.kwargs["ignore_bands"],
+                )
         # if no bands bluewards of Lyman alpha, 
         # select the galaxy by default
         if first_Lya_non_detect_band is None:

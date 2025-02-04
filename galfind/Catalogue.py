@@ -1363,7 +1363,7 @@ class Catalogue(Catalogue_Base):
         plot_legend: bool = False,
         plot_kwargs: dict = {},
         cmap: str = "viridis",
-        save_type: str = ".png",
+        save_path: Optional[str] = None,
         fig: Optional[plt.Figure] = None,
         ax: Optional[plt.Axes] = None,
         plot_type: str = "individual",
@@ -1566,9 +1566,10 @@ class Catalogue(Catalogue_Base):
         if save:
             # determine appropriate save path
             save_colour_name = f"_c={colour_name}" if c_calculator is not None else ""
-            save_path = f"{config['Other']['PLOT_DIR']}/{self.version}/" + \
-                f"{self.filterset.instrument_name}/{self.survey}/" + \
-                f"{y_name}_vs_{x_name}/{self.crop_name}{save_colour_name}{save_type}"
+            if save_path is None:
+                save_path = f"{config['Other']['PLOT_DIR']}/{self.version}/" + \
+                    f"{self.filterset.instrument_name}/{self.survey}/" + \
+                    f"{y_name}_vs_{x_name}/{self.crop_name}{save_colour_name}.png"
             funcs.make_dirs(save_path)
             plt.savefig(save_path)
             funcs.change_file_permissions(save_path)

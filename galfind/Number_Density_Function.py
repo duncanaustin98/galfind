@@ -153,7 +153,7 @@ class Base_Number_Density_Function:
         legend_kwargs: dict = {},
         x_lims: Optional[Union[list, np.array, str]] = "default",
         title: Optional[str] = None,
-        save_name: Optional[str] = None,
+        save_path: Optional[str] = None,
     ) -> Tuple[plt.Figure, plt.Axes]:
         if all(i is None for i in [fig, ax]):
             fig_, ax_ = plt.subplots()
@@ -249,18 +249,20 @@ class Base_Number_Density_Function:
             _legend_kwargs = {**legend_kwargs, **default_legend_kwargs}
             ax_.legend(**_legend_kwargs)
         if save:
-            if self.__class__.__name__ != "Number_Density_Function":
-                assert save_name is not None
-                plot_path = config['NumberDensityFunctions']['NUMBER_DENSITY_FUNC_DIR'] + \
-                    f"/Plots/Literature/{save_name}"
-            else:
-                plot_path = self.get_plot_path()
-                if save_name is not None:
-                    plot_path = "/".join(plot_path.split("/")[:-1]) + f"/{save_name}.png"
-            funcs.make_dirs(plot_path)
-            plt.savefig(plot_path, bbox_inches="tight")
-            funcs.change_file_permissions(plot_path)
-            galfind_logger.info(f"Saved plot to {plot_path}")
+            # if self.__class__.__name__ != "Number_Density_Function":
+            #     raise NotImplementedError
+            #     # assert save_path is not None
+            #     # save_path = config['NumberDensityFunctions']['NUMBER_DENSITY_FUNC_DIR'] + \
+            #     #     f"/Plots/Literature/{save_name}"
+            # else:
+            if save_path is None:
+                save_path = self.get_plot_path()
+                # if save_name is not None:
+                #     plot_path = "/".join(plot_path.split("/")[:-1]) + f"/{save_name}.png"
+            funcs.make_dirs(save_path)
+            plt.savefig(save_path, bbox_inches="tight")
+            funcs.change_file_permissions(save_path)
+            galfind_logger.info(f"Saved plot to {save_path}")
         if show:
             plt.show()
         return fig_, ax_
@@ -292,6 +294,7 @@ class Number_Density_Function(Base_Number_Density_Function):
         x_mid_bins = np.array(
             [(x_bin[1].value + x_bin[0].value) / 2.0 for x_bin in x_bins]
         ) * x_bins[0].unit
+        
         z_ref = float((z_bin[1] + z_bin[0]) / 2.0)
         phi_errs_cv = np.array(
             [
@@ -308,12 +311,13 @@ class Number_Density_Function(Base_Number_Density_Function):
         tab = Table.read(save_path)
         x_bins_up = np.array(tab["x_bins_up"])
         x_bins_low = np.array(tab["x_bins_low"])
+        x_unit = tab["x_bins_up"].unit
         x_bins = np.array(
             [
                 [x_bin_low, x_bin_up]
                 for x_bin_low, x_bin_up in zip(x_bins_low, x_bins_up)
             ]
-        )
+        ) * x_unit
         Ngals = np.array(tab["Ngals"])
         phi = np.array(tab["phi"])
         phi_l1 = np.array(tab["phi_l1"])
@@ -661,8 +665,11 @@ class Number_Density_Function(Base_Number_Density_Function):
                 self.x_name,
                 self.crop_name,
             )
-        x_bins_low = np.array([x_bin[0].value for x_bin in self.x_bins])
-        x_bins_up = np.array([x_bin[1].value for x_bin in self.x_bins])
+        assert all(x_bin[0].unit == self.x_bins[0][0].unit for x_bin in self.x_bins)
+        assert all(x_bin[1].unit == self.x_bins[0][1].unit for x_bin in self.x_bins)
+        assert self.x_bins[0][0].unit == self.x_bins[0][1].unit
+        x_bins_low = np.array([x_bin[0].value for x_bin in self.x_bins]) * self.x_bins[0][0].unit
+        x_bins_up = np.array([x_bin[1].value for x_bin in self.x_bins]) * self.x_bins[0][1].unit
         tab = Table(
             {
                 "x_bins_low": x_bins_low,
@@ -705,7 +712,7 @@ class Number_Density_Function(Base_Number_Density_Function):
         title: Optional[str] = None,
         obs_author_years: Dict[str, Any] = {},
         sim_author_years: Dict[str, Any] = {},
-        save_name: Optional[str] = None,
+        save_path: Optional[str] = None,
     ) -> Tuple[plt.Figure, plt.Axes]:
         if all(_x is None for _x in [fig, ax]):
             fig_, ax_ = plt.subplots()
@@ -765,7 +772,7 @@ class Number_Density_Function(Base_Number_Density_Function):
             legend_kwargs,
             x_lims,
             title,
-            save_name,
+            save_path,
         )
         return fig_, ax_
 
