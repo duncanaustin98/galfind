@@ -114,8 +114,12 @@ class Base_Number_Density_Function:
 
                     label = f"{label},z={z}"
 
-                    phi_err = np.array(ds.log10phi_err[z])
-                    log10phi = ds.log10phi[z]
+                    if flags_property_name_conv[x_name] == "LUV":
+                        phi_err = np.array([ds.log10phi_mag_err[z][0][::-1], ds.log10phi_mag_err[z][1][::-1]])
+                        log10phi = ds.log10phi_mag[z][::-1]
+                    else:
+                        phi_err = np.array(ds.log10phi_err[z])
+                        log10phi = ds.log10phi[z]
                     if len(np.shape(phi_err)) > 1:
                         low = np.array(phi_err[0])
                         high = np.array(phi_err[1])
@@ -239,8 +243,8 @@ class Base_Number_Density_Function:
                     ax_.set_xlim(*x_lims)
             # sort out legend_kwargs
             default_legend_kwargs = {
-                "loc": "center left",
-                "bbox_to_anchor": (1.05, 0.5),
+                "loc": "best",
+                #"bbox_to_anchor": (1.05, 0.5),
             }
             # overwrite default with input for duplicate kwargs
             for key in plot_kwargs.keys():

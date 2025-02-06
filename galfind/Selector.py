@@ -17,7 +17,7 @@ except ImportError:
 
 from . import useful_funcs_austind as funcs
 from . import galfind_logger, config, wav_lyman_lim
-from . import Galaxy, Catalogue, Instrument, SED_code
+from . import Galaxy, Catalogue, Catalogue_Base, Instrument, SED_code
 from .Instrument import expected_instr_bands
 
 class Selector(ABC):
@@ -103,12 +103,12 @@ class Selector(ABC):
 
     def __call__(
         self: Self,
-        object: Union[Galaxy, Catalogue],
+        object: Union[Galaxy, Type[Catalogue_Base]],
         return_copy: bool = True,
-    ) -> Optional[Union[Galaxy, Catalogue]]:
+    ) -> Optional[Union[Galaxy, Type[Catalogue_Base]]]:
         if isinstance(object, Galaxy):
             obj = self._call_gal(object, return_copy)
-        elif isinstance(object, Catalogue):
+        elif isinstance(object, tuple(Catalogue_Base.__subclasses__())):
             obj = self._call_cat(object, return_copy)
         else:
             raise ValueError(
@@ -291,7 +291,7 @@ class SED_fit_Selector(Selector, ABC):
     
     def _assert_SED_fit_label(
         self: Self, 
-        object: Union[Galaxy, Catalogue],
+        object: Union[Galaxy, Type[Catalogue_Base]],
     ) -> str:
         if isinstance(object, Galaxy):
             assert self.SED_fit_label in object.aper_phot[self.aper_diam].SED_results.keys(), \
@@ -299,7 +299,7 @@ class SED_fit_Selector(Selector, ABC):
                     f"SED fitting results for {self.SED_fit_label=} " + \
                     f"not loaded for {repr(object)}."
                 )
-        elif isinstance(object, Catalogue):
+        elif isinstance(object, tuple(Catalogue_Base.__subclasses__())):
             assert any(self.SED_fit_label in gal.aper_phot[self.aper_diam].\
                     SED_results.keys() for gal in object), \
                 galfind_logger.critical(
@@ -334,7 +334,7 @@ class Multiple_Selector(ABC):
         selectors: List[Type[Selector]],
         selection_name: Optional[str] = None
     ):
-        self.selectors = np.array(selectors, dtype = "object")
+        self.selectors = np.array(selectors, dtype = "object").flatten()
         if selection_name is not None:
             self.selection_name = selection_name
     
@@ -371,10 +371,13 @@ class Multiple_Selector(ABC):
         return []
     
     def _assertions(self: Self) -> bool:
-        return all(
-            selector._assertions()
-            for selector in self.selectors
-        )
+        try:
+            return all(
+                selector._assertions()
+                for selector in self.selectors
+            )
+        except:
+            breakpoint()
 
     def _failure_criteria(
         self: Self,
@@ -413,9 +416,9 @@ class Multiple_Data_Selector(Multiple_Selector, Data_Selector, ABC):
         return_copy: bool = True,
         *args,
         **kwargs
-    ) -> Optional[Union[Galaxy, Catalogue]]:
+    ) -> Optional[Union[Galaxy, Type[Catalogue_Base]]]:
         # run selection individually on each selector
-        if isinstance(object, Catalogue):
+        if isinstance(object, tuple(Catalogue_Base.__subclasses__())):
             self.crop_to_filterset(object.filterset)
         [selector.__call__(object, return_copy = False) for selector in self.selectors]
         return Data_Selector.__call__(self, object, return_copy = return_copy)

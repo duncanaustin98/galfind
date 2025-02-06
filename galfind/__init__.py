@@ -154,9 +154,9 @@ from .Bagpipes import Bagpipes
 
 from .Galaxy import Galaxy
 
-from .Multiple_Catalogue import Multiple_Catalogue
-from .Multiple_Data import Multiple_Data
 from .Catalogue_Base import Catalogue_Base
+from .Multiple_Catalogue import Combined_Catalogue
+#from .Multiple_Data import Multiple_Data
 from .Catalogue import Catalogue, Catalogue_Creator
 from .SED import SED, SED_rest, SED_obs, Mock_SED_rest, Mock_SED_obs
 from .SED import (

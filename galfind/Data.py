@@ -354,10 +354,7 @@ class Band_Data_Base(ABC):
         self, output_hdr: bool = False
     ) -> Union[Tuple[np.ndarray, fits.Header], np.ndarray]:
         if Path(self.rms_err_path).is_file():
-            try:
-                hdu = fits.open(self.rms_err_path)[self.rms_err_ext]
-            except:
-                breakpoint()
+            hdu = fits.open(self.rms_err_path)[self.rms_err_ext]
             rms_err = hdu.data
             hdr = hdu.header
         else:
@@ -1382,7 +1379,7 @@ class Stacked_Band_Data(Band_Data_Base):
                 band_data.data_shape == band_data_arr[0].data_shape
                 for band_data in band_data_arr
             ), galfind_logger.critical(
-                "All band data images must have the same shape!"
+                "All band data images in stacking bands must have the same shape!"
             )
             # ensure all band data images have the same ZP
             assert all(
@@ -2474,16 +2471,13 @@ class Data:
         assert self.forced_phot_band.forced_phot_args["method"] == self[0].forced_phot_args["method"]
 
         # determine photometric catalogue path
-        save_dir = (
-            f"{config['DEFAULT']['GALFIND_WORK']}/Catalogues/"
-            + f"{self.version}/{self.filterset.instrument_name}/{self.survey}/"
-            + f"{funcs.aper_diams_to_str(self[0].aper_diams)}"
+        phot_cat_path = funcs.get_phot_cat_path(
+            self.survey,
+            self.version,
+            self.filterset.instrument_name,
+            self[0].aper_diams,
+            self.forced_phot_band.filt_name
         )
-        save_name = (
-            f"{self.survey}_MASTER_Sel-"
-            + f"{self.forced_phot_band.filt_name}_{self.version}.fits"
-        )
-        phot_cat_path = f"{save_dir}/{save_name}"
         funcs.make_dirs(phot_cat_path)
         return phot_cat_path
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
+import matplotlib.pyplot as plt
 import astropy.units as u
 import numpy as np
 from astropy.coordinates import SkyCoord
@@ -13,14 +14,13 @@ import inspect
 from numpy.typing import NDArray
 from typing import TYPE_CHECKING, Any, List, Dict, Union, Type, Optional
 if TYPE_CHECKING:
-    from . import Galaxy, Catalogue_Creator, Selector
+    from . import Galaxy, Catalogue_Creator, Selector, Property_Calculator_Base
 try:
     from typing import Self, Type  # python 3.11+
 except ImportError:
     from typing_extensions import Self, Type  # python > 3.7 AND python < 3.11
 
 from . import (
-    Multiple_Catalogue,
     SED_code,
     galfind_logger,
 )
@@ -33,23 +33,11 @@ class Catalogue_Base:
         self,
         gals: List[Galaxy],
         cat_creator: Catalogue_Creator,
-        SED_rest_properties: Dict[str, Union[u.Quantity, u.Magnitude, u.Dex]] = {},
+        #SED_rest_properties: Dict[str, Union[u.Quantity, u.Magnitude, u.Dex]] = {},
     ):
         self.gals = gals
         self.cat_creator = cat_creator
-
-        # keep a record of the crops that have been made to the catalogue
-        # TODO: Ensure this is updated appropriately after Data class rewrite
-        # self.selection_cols = [
-        #     key.replace("SELECTED_", "")
-        #     for key in self.open_cat().meta.keys()
-        #     if "SELECTED_" in key
-        # ]
-        # if crops is None:
-        #     crops = []
-        # self.crops = crops
-        self.SED_rest_properties = SED_rest_properties
-
+        #self.SED_rest_properties = SED_rest_properties
         # concat is commutative for catalogues
         self.__radd__ = self.__add__
         # cross-match is commutative for catalogues - not if they are of different classes
@@ -61,9 +49,7 @@ class Catalogue_Base:
         return f"{self.__class__.__name__.upper()}({self.survey}," + \
             f"{self.version},{self.filterset.instrument_name})"
 
-    def __str__(
-        self,
-    ) -> str:
+    def __str__(self: Self) -> str:
         #display_selections = ["EPOCHS", "BROWN_DWARF"]
         output_str = funcs.line_sep
         output_str += f"{repr(self)}:\n"
@@ -212,7 +198,7 @@ class Catalogue_Base:
         elif obj == "gal":
             # set attributes of individual galaxies within the catalogue
             for i, gal in enumerate(self):
-                if type(value) in [list, np.array]:
+                if isinstance(value, tuple([list, np.array])):
                     setattr(gal, name, value[i])
                 else:
                     setattr(gal, name, value)
@@ -237,10 +223,11 @@ class Catalogue_Base:
 
     def __add__(self, cat, out_survey=None):
         if not cat.__class__.__name__ == "Spectral_Catalogue":
+            from . import Combined_Catalogue
             # concat catalogues
             if out_survey == None:
                 out_survey = "+".join([self.survey, cat.survey])
-            return Multiple_Catalogue([self, cat], survey=out_survey)
+            return Combined_Catalogue([self, cat], survey=out_survey)
     
     def __sub__(self):
         pass
@@ -268,16 +255,17 @@ class Catalogue_Base:
             Default is 'compare_within_radius'.
 
         Returns:
-        - Multiple_Catalogue
-            The resulting MultipleCatalogue after performing the multiplication, with duplicates removed.
+        - Combined_Catalogue
+            The resulting Combined_Catalogue after performing the multiplication, with duplicates removed.
 
         """
+        from . import Combined_Catalogue
         # cross-match catalogues
         # update .fits tables with cross-matched version
         # open tables
         self_copy = deepcopy(self)
-
-        if isinstance(other, Multiple_Catalogue):
+        
+        if isinstance(other, Combined_Catalogue):
             other_copy_gals = other.cat_arr
         else:
             other_copy_gals = [other]
@@ -512,24 +500,28 @@ class Catalogue_Base:
             new_copies.append(other_copy)
 
         out_survey = "+".join([self.survey, other.survey])
-        return Multiple_Catalogue([self_copy, *new_copies], survey=out_survey)
+        return Combined_Catalogue([self_copy, *new_copies], survey=out_survey)
 
-    # Need to save the cross-match distances
+    @property
+    def crop_name(self) -> List[str]:
+        return self.cat_creator.crop_name
 
-    def combine_and_remove_duplicates(
-        self,
-        other,
-        out_survey=None,
-        max_sep=1.0 * u.arcsec,
-        match_type="nearest",
-    ):
-        "Alias for self * other"
-        return self.__mul__(
-            other,
-            out_survey=out_survey,
-            max_sep=max_sep,
-            match_type=match_type,
-        )
+    # # Need to save the cross-match distances
+
+    # def combine_and_remove_duplicates(
+    #     self,
+    #     other,
+    #     out_survey=None,
+    #     max_sep=1.0 * u.arcsec,
+    #     match_type="nearest",
+    # ):
+    #     "Alias for self * other"
+    #     return self.__mul__(
+    #         other,
+    #         out_survey=out_survey,
+    #         max_sep=max_sep,
+    #         match_type=match_type,
+    #     )
 
     @property
     def cat_dir(self):
@@ -661,12 +653,17 @@ class Catalogue_Base:
         else:
             return fits_cat
 
+    def get_hdu_names(self):
+        hdul = fits.open(self.cat_path)
+        return [hdu_.name for hdu_ in hdul if hdu_.name != "PRIMARY"]
+
     def check_hdu_exists(self, hdu_name: str):
         # check whether the hdu extension exists
         hdul = fits.open(self.cat_path)
         return any(hdu_.name == hdu_name.upper() for hdu_ in hdul)
 
-    def write_cat(self, tab_arr, tab_names):
+    @staticmethod
+    def write_cat(tab_arr, tab_names, cat_path: str):
         hdu_list = fits.HDUList()
         [
             hdu_list.append(
@@ -678,9 +675,10 @@ class Catalogue_Base:
             )
             for (tab, name) in zip(tab_arr, tab_names)
         ]
-        hdu_list.writeto(self.cat_path, overwrite=True)
-        funcs.change_file_permissions(self.cat_path)
-        galfind_logger.info(f"Writing table to {self.cat_path}")
+        funcs.make_dirs(cat_path)
+        hdu_list.writeto(cat_path, overwrite=True)
+        funcs.change_file_permissions(cat_path)
+        galfind_logger.info(f"Writing table to {cat_path}")
 
     def write_hdu(self, tab: Table, hdu: str):
         # if hdu exists, overwrite it
@@ -708,7 +706,7 @@ class Catalogue_Base:
                 for hdu_ in fits.open(self.cat_path)
                 if hdu_.name != "PRIMARY"
             ] + [hdu]
-        self.write_cat(tab_arr, tab_names)
+        self.write_cat(tab_arr, tab_names, self.cat_path)
 
     def del_hdu(self, hdu):
         if self.check_hdu_exists(hdu):  # delete hdu if it exists
@@ -722,7 +720,7 @@ class Catalogue_Base:
                 for hdu_ in fits.open(self.cat_path)
                 if hdu_.name != hdu.upper() and hdu_.name != "PRIMARY"
             ]
-            self.write_cat(tab_arr, tab_names)
+            self.write_cat(tab_arr, tab_names, self.cat_path)
             galfind_logger.info(
                 f"Deleted {hdu.upper()=} from {self.cat_path=}!"
             )
@@ -752,4 +750,237 @@ class Catalogue_Base:
                     }
                 tab_arr.append(tab)
                 tab_names.append(hdu_.name)
-        self.write_cat(tab_arr, tab_names)
+        self.write_cat(tab_arr, tab_names, self.cat_path)
+
+    def plot(
+        self: Self,
+        x_calculator: Type[Property_Calculator_Base],
+        y_calculator: Type[Property_Calculator_Base],
+        c_calculator: Optional[Type[Property_Calculator_Base]] = None,
+        incl_x_errs: bool = True,
+        incl_y_errs: bool = True,
+        log_x: bool = False,
+        log_y: bool = False,
+        log_c: bool = False,
+        mean_err: bool = False,
+        annotate: bool = True,
+        save: bool = True,
+        show: bool = False,
+        legend_kwargs: dict = {},
+        plot_legend: bool = False,
+        plot_kwargs: dict = {},
+        cmap: str = "viridis",
+        save_path: Optional[str] = None,
+        fig: Optional[plt.Figure] = None,
+        ax: Optional[plt.Axes] = None,
+        plot_type: str = "individual",
+        n_samples: int = 100_000,
+        n_bins: int = 25,
+        contour_levels: List[float] = [68., 95., 100.],
+        x_hist_ax: Optional[plt.Axes] = None,
+        y_hist_ax: Optional[plt.Axes] = None,
+        hist_kwargs: Dict[str, Any] = {},
+    ):
+        from . import Property_Calculator_Base
+        x_name = x_calculator.full_name
+        y_name = y_calculator.full_name
+        x_label = x_calculator.plot_name
+        y_label = y_calculator.plot_name
+        colour_name = c_calculator.full_name if c_calculator is not None else ""
+        colour_label = c_calculator.plot_name if c_calculator is not None else None
+
+        if plot_type.lower() == "individual":
+            if isinstance(x_calculator, tuple(Property_Calculator_Base.__subclasses__())):
+                x = x_calculator.extract_vals(self)
+                if incl_x_errs:
+                    raise NotImplementedError
+                else:
+                    x_err = None
+            else:
+                raise NotImplementedError
+            if log_x or x_name in funcs.logged_properties:
+                if incl_x_errs:
+                    x, x_err = funcs.errs_to_log(x, x_err)
+                else:
+                    x = np.log10(x.value)
+                x_name = f"log({x_name})"
+                x_label = f"log({x_label})"
+
+            if isinstance(y_calculator, tuple(Property_Calculator_Base.__subclasses__())):
+                y = y_calculator.extract_vals(self)
+                if incl_y_errs:
+                    raise NotImplementedError
+                else:
+                    y_err = None
+            else:
+                raise NotImplementedError
+            if log_y or y_name in funcs.logged_properties:
+                if incl_y_errs:
+                    y, y_err = funcs.errs_to_log(y, y_err)
+                else:
+                    y = np.log10(y.value)
+                y_name = f"log({y_name})"
+                y_label = f"log({y_label})"
+
+            if c_calculator is not None:
+                if isinstance(c_calculator, tuple(Property_Calculator_Base.__subclasses__())):
+                    c = c_calculator.extract_vals(self).value
+                else:
+                    raise NotImplementedError
+                if log_c or colour_name in funcs.logged_properties:
+                    c = np.log10(c)
+                    colour_name = f"log({colour_name})"
+                    colour_label = f"log({colour_label})"
+
+        elif plot_type.lower() == "contour":
+
+            assert c_calculator is None, galfind_logger.critical(
+                "Cannot contour galaxies and colour by another property!"
+            )
+            # extract the PDFs
+            x_PDFs = x_calculator.extract_PDFs(self)
+            y_PDFs = y_calculator.extract_PDFs(self)
+            x = []
+            y = []
+            for x_PDF_, y_PDF_ in zip(x_PDFs, y_PDFs):
+                if x_PDF_ is not None and y_PDF_ is not None:
+                    # extract n_samples from each PDF
+                    x.extend(x_PDF_.draw_sample(n_samples).value)
+                    y.extend(y_PDF_.draw_sample(n_samples).value)
+
+            if log_x or x_name in funcs.logged_properties:
+                x = np.log10(x)
+                x_name = f"log({x_name})"
+                x_label = f"log({x_label})"
+
+            if log_y or y_name in funcs.logged_properties:
+                y = np.log10(y)
+                y_name = f"log({y_name})"
+                y_label = f"log({y_label})"
+
+        elif plot_type.lower() == "stacked":
+
+            assert c_calculator is None, galfind_logger.critical(
+                "Cannot stack galaxies and colour by another property!"
+            )
+            # extract the PDFs
+            x_PDFs = x_calculator.extract_PDFs(self)
+            y_PDFs = y_calculator.extract_PDFs(self)
+            # add all the PDFs together
+            x_PDF = None
+            y_PDF = None
+            for x_PDF_, y_PDF_ in zip(x_PDFs, y_PDFs):
+                if x_PDF_ is not None and y_PDF_ is not None:
+                    if x_PDF is None and y_PDF is None:
+                        x_PDF = x_PDF_
+                        y_PDF = y_PDF_
+                    else:
+                        x_PDF += x_PDF_
+                        y_PDF += y_PDF_
+            
+            x = x_PDF.median.value
+            y = y_PDF.median.value
+            if incl_x_errs:
+                x_err = [[x_PDF.errs[0].value], [x_PDF.errs[1].value]]
+            else:
+                x_err = None
+            if incl_y_errs:
+                y_err = [[y_PDF.errs[0].value], [y_PDF.errs[1].value]]
+            else:
+                y_err = None
+
+        else:
+            err_message = f"{plot_type=} not recognised!"
+            galfind_logger.critical(err_message)
+            raise Exception(err_message)
+
+        # setup matplotlib figure/axis if not already given
+        if fig is None or ax is None:
+            fig, ax = plt.subplots()
+
+        if "label" not in plot_kwargs.keys() and plot_type.lower() != "contour":
+            plot_kwargs["label"] = self.crop_name
+
+        if c_calculator is not None:
+            plot_kwargs["c"] = c
+            if "cmap" not in plot_kwargs.keys():
+                plot_kwargs["cmap"] = cmap
+        
+        if plot_type.lower() == "contour":
+            nan_mask = np.logical_and(~np.isnan(x), ~np.isnan(y))
+            x = np.array(x)[nan_mask]
+            y = np.array(y)[nan_mask]
+            x_interval = (np.max(x) - np.min(x)) / (n_bins + 1)
+            y_interval = (np.max(y) - np.min(y)) / (n_bins + 1)
+            x_edges = np.linspace(np.min(x) - x_interval, np.max(x) + x_interval, n_bins)
+            y_edges = np.linspace(np.min(y) - y_interval, np.max(y) + y_interval, n_bins)
+            N, x_edges, y_edges = np.histogram2d(x, y, bins=(x_edges, y_edges))
+            x_mid_bins = (x_edges[:-1] + x_edges[1:]) / 2
+            y_mid_bins = (y_edges[:-1] + y_edges[1:]) / 2
+            x_mesh, y_mesh = np.meshgrid(x_mid_bins, y_mid_bins)
+            levels = np.percentile(N, contour_levels)
+            # n_bins = int(len(x) / (25 * n_samples))
+            for i in range(len(levels) - 1):
+                ax.contourf(x_mesh, y_mesh, N.T, levels = [levels[i], levels[i + 1]], alpha = (i + 1) / len(levels), colors = [cmap], **plot_kwargs) # , norm = norm, cmap = cmap, norm = norm, cmap = cm.get_cmap(cmap).resampled(len(plot_kwargs["levels"]) - 1)
+            for level in levels:
+                ax.contour(x_mesh, y_mesh, N.T, levels = (level,), colors = cmap, linewidths = 1.0, **plot_kwargs)
+            ax.set_xlim([x_edges[0], x_edges[-1]])
+            ax.set_ylim([y_edges[0], y_edges[-1]])
+        else:
+            if incl_x_errs or incl_y_errs and not mean_err:
+                if "ls" not in plot_kwargs.keys():
+                    plot_kwargs["ls"] = ""
+                plot = ax.errorbar(x, y, xerr=x_err, yerr=y_err, **plot_kwargs)
+            else:
+                plot = ax.scatter(x, y, **plot_kwargs)
+
+        if mean_err and (incl_x_errs or incl_y_errs):
+            # plot the mean error
+            pass
+
+        # if histograms are wanted to be displayed
+        if x_hist_ax is not None or y_hist_ax is not None:
+            # if "bins" not in hist_kwargs.keys():
+            #     hist_kwargs["bins"] = 30
+            if isinstance(x, u.Magnitude):
+                x = x.value
+            if isinstance(y, u.Magnitude):
+                y = y.value
+            #divider = make_axes_locatable(ax)
+        if x_hist_ax is not None:
+            assert isinstance(x_hist_ax, plt.Axes)
+            #ax_hist_top = divider.append_axes("top", size="20%", pad=0.1, sharex=ax)
+            x_hist_ax.hist(x, **hist_kwargs)
+        if y_hist_ax is not None:
+            assert isinstance(y_hist_ax, plt.Axes)
+            # Right histogram
+            #ax_hist_right = divider.append_axes("right", size="20%", pad=0.1, sharey=ax)
+            y_hist_ax.hist(y, orientation='horizontal', **hist_kwargs)
+
+        # sort plot aesthetics - automatically annotate if coloured
+        if annotate or c_calculator is not None:
+            plot_label = (
+                f"{self.version}, {self.filterset.instrument_name}, {self.survey}"
+            )
+            ax.set_title(plot_label)
+            ax.set_xlabel(x_label)
+            ax.set_ylabel(y_label)
+            if c_calculator is not None:
+                fig.colorbar(plot, label = colour_label)
+            if plot_legend:
+                ax.legend(**legend_kwargs)
+
+        if save:
+            # determine appropriate save path
+            save_colour_name = f"_c={colour_name}" if c_calculator is not None else ""
+            if save_path is None:
+                save_path = f"{config['Other']['PLOT_DIR']}/{self.version}/" + \
+                    f"{self.filterset.instrument_name}/{self.survey}/" + \
+                    f"{y_name}_vs_{x_name}/{self.crop_name}{save_colour_name}.png"
+            funcs.make_dirs(save_path)
+            plt.savefig(save_path)
+            funcs.change_file_permissions(save_path)
+            galfind_logger.info(f"Saved plot to {save_path}!")
+
+        if show:
+            plt.show()

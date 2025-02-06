@@ -14,7 +14,7 @@ from photutils import EllipticalAperture
 import subprocess
 from typing import Union, Dict, Any, List, Tuple, Callable, Optional, NoReturn, TYPE_CHECKING
 if TYPE_CHECKING:
-    from . import Galaxy, Catalogue, PSF_Base, Band_Cutout_Base, RGB_Base, Multiple_Cutout_Base, PDF_Base
+    from . import Galaxy, Catalogue, Catalogue_Base, PSF_Base, Band_Cutout_Base, RGB_Base, Multiple_Cutout_Base, PDF_Base
 try:
     from typing import Self, Type  # python 3.11+
 except ImportError:
@@ -214,12 +214,12 @@ class Morphology_Fitter(ABC):
 
     def __call__(
         self: Self,
-        object: Union[Galaxy, Catalogue], #Union[Type[Band_Cutout_Base], Type[RGB_Base], Type[Multiple_Cutout_Base]],
+        object: Union[Galaxy, Type[Catalogue_Base]], #Union[Type[Band_Cutout_Base], Type[RGB_Base], Type[Multiple_Cutout_Base]],
         *args: Any,
         **kwargs: Dict[str, Any],
     ) -> None:
-        from . import Galaxy, Catalogue #Band_Cutout_Base, RGB_Base, Multiple_Cutout_Base
-        if isinstance(object, Catalogue):
+        from . import Galaxy, Catalogue_Base #Band_Cutout_Base, RGB_Base, Multiple_Cutout_Base
+        if isinstance(object, tuple(Catalogue_Base.__subclasses__())):
             result = self._fit_cat(object, *args, **kwargs)
         elif isinstance(object, Galaxy):
             result = self._fit_gal(object, *args, **kwargs)

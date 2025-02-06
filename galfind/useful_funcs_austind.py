@@ -25,7 +25,7 @@ try:
 except ImportError:
     from typing_extensions import Self, Type  # python > 3.7 AND python < 3.11
 
-from . import astropy_cosmo, galfind_logger
+from . import astropy_cosmo, galfind_logger, config
 
 # fluxes and magnitudes
 
@@ -506,14 +506,14 @@ mass_IMF_factor = {}
 # General number density function tools
 
 default_lims = {
-    "M1500": [-23.0, -16.0],
-    "M_UV": [-23.0, -16.0],
-    "M1500_[1250,3000]AA": [-23.0, -16.0],
-    "M1500_[1250,3000]AA_extsrc": [-23.0, -16.0],
-    "M1500_[1250,3000]AA_extsrc_UV<10": [-23.0, -16.0],
+    "M1500": [-24.0, -16.0],
+    "M_UV": [-24.0, -16.0],
+    "M1500_[1250,3000]AA": [-24.0, -16.0],
+    "M1500_[1250,3000]AA_extsrc": [-24.0, -16.0],
+    "M1500_[1250,3000]AA_extsrc_UV<10": [-24.0, -16.0],
     "xi_ion_Halpha_fesc=0": [10 ** 23.5, 10 ** 26.5],
     "log_xi_ion_Halpha_fesc=0": [23.5, 26.5],
-    "M_UV_ext_src_corr": [-23.0, -16.0],
+    "M_UV_ext_src_corr": [-24.0, -16.0],
     "stellar_mass": [7.5, 11.0],
     "stellar_mass_ext_src_corr": [7.5, 11.0],
 }
@@ -593,11 +593,11 @@ def calc_cv_proper(
     rectangular_geometry_y_to_x: Union[int, float, list, np.array, dict] = 1.0,
     data_region: Union[str, int] = "all",
 ) -> float:
-    if type(data_region) in [int]:
+    if isinstance(data_region, int):
         data_region = str(data_region)
-    if type(rectangular_geometry_y_to_x) in [int]:
+    if isinstance(rectangular_geometry_y_to_x, int):
         rectangular_geometry_y_to_x = float(rectangular_geometry_y_to_x)
-    if type(rectangular_geometry_y_to_x) in [float]:
+    if isinstance(rectangular_geometry_y_to_x, float):
         rectangular_geometry_y_to_x = [
             rectangular_geometry_y_to_x for i in range(len(data_arr))
         ]
@@ -740,6 +740,23 @@ def cat_from_path(path, crop_names=None):
     # include catalogue metadata
     cat.meta = {**cat.meta, **{"cat_path": path}}
     return cat
+
+
+def get_phot_cat_path(
+    survey,
+    version,
+    instrument_name,
+    aper_diams,
+    forced_phot_band_name,
+):
+    save_dir = (
+        f"{config['DEFAULT']['GALFIND_WORK']}/Catalogues/{version}/" + \
+        f"{instrument_name}/{survey}/{aper_diams_to_str(aper_diams)}"
+    )
+    save_name = (
+        f"{survey}_MASTER_Sel-{forced_phot_band_name}_{version}.fits"
+    )
+    return f"{save_dir}/{save_name}"
 
 
 def fits_cat_to_np(fits_cat, column_labels, reshape_by_aper_diams=True):

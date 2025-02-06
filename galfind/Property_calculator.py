@@ -16,7 +16,7 @@ except ImportError:
 
 from . import config, galfind_logger, all_band_names, astropy_cosmo
 from . import useful_funcs_austind as funcs
-from . import Catalogue, Galaxy, SED_code, SED_result
+from . import Catalogue, Catalogue_Base, Galaxy, SED_code, SED_result
 from . import PDF, SED_fit_PDF
 from . import SED_obs
 
@@ -328,10 +328,10 @@ class Morphology_Property_Calculator(Property_Calculator_Base):
 
     def __call__(
         self: Self,
-        object: Union[Catalogue, Galaxy, Type[Band_Cutout_Base]],
-    ) -> Optional[Union[Catalogue, Galaxy, Type[Band_Cutout_Base]]]:
-        from . import Band_Cutout_Base
-        if isinstance(object, Catalogue):
+        object: Union[Type[Catalogue_Base], Galaxy, Type[Band_Cutout_Base]],
+    ) -> Optional[Union[Type[Catalogue_Base], Galaxy, Type[Band_Cutout_Base]]]:
+        from . import Band_Cutout_Base, Catalogue_Base
+        if isinstance(object, tuple(Catalogue_Base.__subclasses__())):
             val = self._call_cat(object)
         elif isinstance(object, Galaxy):
             val = self._call_gal(object)
@@ -378,10 +378,10 @@ class Morphology_Property_Calculator(Property_Calculator_Base):
     
     def extract_vals(
         self: Self, 
-        object: Union[Catalogue, Galaxy, Type[Band_Cutout_Base]]
+        object: Union[Type[Catalogue_Base], Galaxy, Type[Band_Cutout_Base]]
     ) -> Union[u.Quantity, u.Magnitude, u.Dex]:
         from . import Band_Cutout_Base
-        if isinstance(object, Catalogue):
+        if isinstance(object, tuple(Catalogue_Base.__subclasses__())):
             cat_vals = [getattr(gal.cutouts[self.cutout_label].morph_fits[self.morph_fitter.name], self.name) for gal in object]
             if not all(isinstance(val, float) for val in cat_vals):
                 assert all(val.unit == cat_vals[0].unit for val in cat_vals), \
@@ -402,10 +402,10 @@ class Morphology_Property_Calculator(Property_Calculator_Base):
         
     def extract_PDFs(
         self: Self,
-        object: Union[Catalogue, Galaxy, Type[Band_Cutout_Base]],
+        object: Union[Type[Catalogue_Base], Galaxy, Type[Band_Cutout_Base]],
     ) -> Union[Type[PDF], List[Type[PDF]]]:
         from . import Band_Cutout_Base
-        if isinstance(object, Catalogue):
+        if isinstance(object, tuple(Catalogue_Base.__subclasses__())):
             return [gal.cutouts[self.cutout_label].morph_fits \
                 [self.morph_fitter.name].property_pdfs[self.name] for gal in object]
         elif isinstance(object, Galaxy):
@@ -471,8 +471,8 @@ class SED_Property_Calculator(Property_Calculator):
 
     def __call__(
         self: Self,
-        object: Union[Catalogue, Galaxy, Photometry_rest],
-    ) -> Optional[Union[Catalogue, Galaxy, Photometry_rest]]:
+        object: Union[Type[Catalogue_Base], Galaxy, Photometry_rest],
+    ) -> Optional[Union[Type[Catalogue_Base], Galaxy, Photometry_rest]]:
         # if isinstance(self, tuple(Property_Extractor.__subclasses__())):
         #     # call with n_jobs = 1
         #     n_jobs = 1
@@ -484,7 +484,7 @@ class SED_Property_Calculator(Property_Calculator):
         # [rest_frame_property(object, n_chains, output = False, \
         #     overwrite = overwrite, n_jobs = n_jobs) for \
         #     rest_frame_property in self.pre_req_properties]
-        if isinstance(object, Catalogue):
+        if isinstance(object, tuple(Catalogue_Base.__subclasses__())):
             val = self._call_cat(object)
         elif isinstance(object, Galaxy):
             val = self._call_gal(object)
@@ -601,9 +601,9 @@ class SED_Property_Calculator(Property_Calculator):
     
     def extract_vals(
         self: Self, 
-        object: Union[Catalogue, Galaxy, SED_obs]
+        object: Union[Type[Catalogue_Base], Galaxy, SED_obs]
     ) -> Union[u.Quantity, u.Magnitude, u.Dex]:
-        if isinstance(object, Catalogue):
+        if isinstance(object, tuple(Catalogue_Base.__subclasses__())):
             cat_vals = [getattr(gal.aper_phot[self.aper_diam].SED_results[self.SED_fit_label], self.name) for gal in object]
             if not all(isinstance(val, float) for val in cat_vals):
                 assert all(val.unit == cat_vals[0].unit for val in cat_vals), \
@@ -625,9 +625,9 @@ class SED_Property_Calculator(Property_Calculator):
     # TODO: Propagate from parent class
     def extract_errs(
         self: Self, 
-        object: Union[Catalogue, Galaxy, SED_obs]
+        object: Union[Type[Catalogue_Base], Galaxy, SED_obs]
     ) -> Union[u.Quantity, u.Magnitude, u.Dex]:
-        if isinstance(object, Catalogue):
+        if isinstance(object, tuple(Catalogue_Base.__subclasses__())):
             cat_errs = [gal.aper_phot[self.aper_diam].SED_results[self.SED_fit_label].property_errs[self.name] for gal in object]
             # if not all(isinstance(val, float) for val in cat_errs):
             #     assert all(val.unit == cat_errs[0].unit for val in cat_errs), \
@@ -650,9 +650,9 @@ class SED_Property_Calculator(Property_Calculator):
         
     def extract_PDFs(
         self: Self,
-        object: Union[Catalogue, Galaxy, SED_obs],
+        object: Union[Type[Catalogue_Base], Galaxy, SED_obs],
     ) -> Union[Type[PDF], List[Type[PDF]]]:
-        if isinstance(object, Catalogue):
+        if isinstance(object, tuple(Catalogue_Base.__subclasses__())):
             return [gal.aper_phot[self.aper_diam].SED_results[self.SED_fit_label].property_PDFs[self.name] for gal in object]
         elif isinstance(object, Galaxy):
             return object.aper_phot[self.aper_diam].SED_results[self.SED_fit_label].property_PDFs[self.name]
@@ -831,9 +831,9 @@ class Multiple_Property_Calculator(Property_Calculator_Base):
 
     def __call__(
         self: Self,
-        object: Union[Catalogue, Galaxy, Photometry_rest, SED_obs, Type[Band_Cutout_Base]],
-    ) -> Optional[Union[Catalogue, Galaxy, Photometry_rest, SED_obs, Type[Band_Cutout_Base]]]:
-        if isinstance(object, Catalogue):
+        object: Union[Type[Catalogue_Base], Galaxy, Photometry_rest, SED_obs, Type[Band_Cutout_Base]],
+    ) -> Optional[Union[Type[Catalogue_Base], Galaxy, Photometry_rest, SED_obs, Type[Band_Cutout_Base]]]:
+        if isinstance(object, tuple(Catalogue_Base.__subclasses__())):
             val = self._call_cat(object)
         elif isinstance(object, Galaxy):
             val = self._call_gal(object)

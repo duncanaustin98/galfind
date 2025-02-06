@@ -12,29 +12,29 @@ plt.style.use(
 )
 
 # Load in a data object
-survey = "CEERSP3"
-version = "v9"
-instrument_names = ["ACS_WFC", "NIRCam"] # "ACS_WFC"
+survey = "PRIMER-COSMOS"
+version = "v12"
+instrument_names = ["NIRCam"] # "ACS_WFC"
 aper_diams = [0.32] * u.arcsec
 forced_phot_band = ["F277W", "F356W", "F444W"]
 min_flux_pc_err = 10.
 
 def test_selection():
     SED_fit_params_arr = [
-        #{"templates": "fsps_larson", "lowz_zmax": 4.0},
-        #{"templates": "fsps_larson", "lowz_zmax": 6.0},
+        {"templates": "fsps_larson", "lowz_zmax": 4.0},
+        {"templates": "fsps_larson", "lowz_zmax": 6.0},
         {"templates": "fsps_larson", "lowz_zmax": None}
     ]
-    # data = Data.from_survey_version(
-    #     survey,
-    #     version,
-    #     instrument_names = instrument_names,
-    #     version_to_dir_dict = morgan_version_to_dir,
-    #     aper_diams = aper_diams,
-    #     forced_phot_band = forced_phot_band,
-    # )
-    # print(data.band_data_arr)
-    # breakpoint()
+    data = Data.from_survey_version(
+        survey,
+        version,
+        instrument_names = instrument_names,
+        version_to_dir_dict = morgan_version_to_dir,
+        aper_diams = aper_diams,
+        forced_phot_band = forced_phot_band,
+    )
+    print(data.band_data_arr)
+    breakpoint()
     # data.mask(
     #     "auto",
     #     angle = 70.0
@@ -80,8 +80,19 @@ def test_selection():
     for SED_fit_params in SED_fit_params_arr:
         EAZY_fitter = EAZY(SED_fit_params)
         EAZY_fitter(cat, aper_diams[0], load_PDFs = False, load_SEDs = False, update = True)
-    
+
     #breakpoint()
+
+    # cat.plot(MUV_calculator, xi_ion_calculator, incl_x_errs = False, incl_y_errs = False, annotate = True, plot_type = "individual", save = True, log_y = True)
+
+    # load sextractor half-light radii
+    cat.load_sextractor_Re()
+
+    from galfind import EPOCHS_Selector, Redwards_Lya_Detect_Selector
+    epochs_selector = EPOCHS_Selector(aper_diams[0], EAZY_fitter, allow_lowz = False, unmasked_instruments = "NIRCam")
+    epochs_selected_cat = epochs_selector(cat, return_copy = True)
+    epochs_selector_lowz = EPOCHS_Selector(aper_diams[0], EAZY_fitter, allow_lowz = True, unmasked_instruments = "NIRCam")
+    epochs_selected_cat_lowz = epochs_selector_lowz(cat, return_copy = True)
 
     from galfind import MUV_Calculator
     MUV_calculator = MUV_Calculator(aper_diams[0], EAZY_fitter.label)
@@ -89,35 +100,23 @@ def test_selection():
     from galfind import MUV_Calculator, Xi_Ion_Calculator, M99
     for beta_dust_conv in [None, M99]:#, Reddy18(C00(), 100 * u.Myr), Reddy18(C00(), 300 * u.Myr)]:
         for fesc_conv in [None, "Chisholm22"]: # None, 0.1, 0.2, 0.5,
-            for logged in [False, True]:
-                xi_ion_calculator = Xi_Ion_Calculator(aper_diams[0], EAZY_fitter.label, beta_dust_conv = beta_dust_conv, fesc_conv = fesc_conv, logged = logged)
-                xi_ion_calculator(cat, n_chains = 10_000, output = False, n_jobs = 1)
+            xi_ion_calculator = Xi_Ion_Calculator(aper_diams[0], EAZY_fitter.label, beta_dust_conv = beta_dust_conv, fesc_conv = fesc_conv, logged = False)
+            xi_ion_calculator(cat, n_chains = 10_000, output = False, n_jobs = 1)
             #breakpoint()
 
-    # cat.plot(MUV_calculator, xi_ion_calculator, incl_x_errs = False, incl_y_errs = False, annotate = True, plot_type = "individual", save = True, log_y = True)
-
-    # # load sextractor half-light radii
-    # cat.load_sextractor_Re()
-
-    # from galfind import EPOCHS_Selector, Redwards_Lya_Detect_Selector
-    # epochs_selector = EPOCHS_Selector(aper_diams[0], EAZY_fitter, allow_lowz = False, unmasked_instruments = "NIRCam")
-    # epochs_selected_cat = epochs_selector(cat, return_copy = True)
-    # epochs_selector_lowz = EPOCHS_Selector(aper_diams[0], EAZY_fitter, allow_lowz = True, unmasked_instruments = "NIRCam")
-    # epochs_selected_cat_lowz = epochs_selector_lowz(cat, return_copy = True)
-
-    # cat.plot_phot_diagnostics(
-    #     aper_diams[0],
-    #     EAZY_fitter,
-    #     EAZY_fitter,
-    #     imshow_kwargs = {},
-    #     norm_kwargs = {},
-    #     aper_kwargs = {},
-    #     kron_kwargs = {},
-    #     n_cutout_rows = 3,
-    #     wav_unit = u.um,
-    #     flux_unit = u.ABmag,
-    #     overwrite = True
-    # )
+    epochs_selected_cat.plot_phot_diagnostics(
+        aper_diams[0],
+        EAZY_fitter,
+        EAZY_fitter,
+        imshow_kwargs = {},
+        norm_kwargs = {},
+        aper_kwargs = {},
+        kron_kwargs = {},
+        n_cutout_rows = 3,
+        wav_unit = u.um,
+        flux_unit = u.ABmag,
+        overwrite = True
+    )
 
     # Redwards_Lya_Detect_Selector(aper_diams[0], EAZY(SED_fit_params_arr[-1]), SNR_lims = [5.0], widebands_only = True)(JOF_cat)
     # # SED_fit_label = "EAZY_fsps_larson_zfree"

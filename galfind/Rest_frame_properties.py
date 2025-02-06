@@ -23,7 +23,7 @@ except ImportError:
 from . import galfind_logger, config, all_band_names
 from . import useful_funcs_austind as funcs
 from .decorators import ignore_warnings
-from . import Catalogue, Galaxy, SED_code, Photometry_rest, PDF
+from . import Catalogue, Catalogue_Base, Galaxy, SED_code, Photometry_rest, PDF
 from .Emission_lines import line_diagnostics, strong_optical_lines
 from .Property_calculator import Property_Calculator
 from .Dust_Attenuation import AUV_from_beta, Dust_Law, C00, M99
@@ -91,17 +91,17 @@ class Rest_Frame_Property_Calculator(Property_Calculator):
 
     def __call__(
         self: Self,
-        object: Union[Catalogue, Galaxy, Photometry_rest],
+        object: Union[Type[Catalogue_Base], Galaxy, Photometry_rest],
         n_chains: int = 10_000,
         output: bool = False,
         overwrite: bool = False,
         n_jobs: int = 1,
-    ) -> Optional[Union[Catalogue, Galaxy, Photometry_rest]]:
+    ) -> Optional[Union[Type[Catalogue_Base], Galaxy, Photometry_rest]]:
         # calculate pre-requisite properties first
         [rest_frame_property(object, n_chains, output = False, \
             overwrite = overwrite, n_jobs = n_jobs) for \
             rest_frame_property in self.pre_req_properties]
-        if isinstance(object, Catalogue):
+        if isinstance(object, tuple(Catalogue_Base.__subclasses__())):
             obj = self._call_cat(object, n_chains, output, overwrite, n_jobs = n_jobs)
         elif isinstance(object, Galaxy):
             obj = self._call_gal(object, n_chains, output, overwrite)
@@ -410,9 +410,9 @@ class Rest_Frame_Property_Calculator(Property_Calculator):
 
     def extract_vals(
         self: Self, 
-        object: Union[Catalogue, Galaxy, Photometry_rest],
+        object: Union[Type[Catalogue_Base], Galaxy, Photometry_rest],
     ) -> Union[u.Quantity, u.Magnitude, u.Dex]:
-        if isinstance(object, Catalogue):
+        if isinstance(object, tuple(Catalogue_Base.__subclasses__())):
             cat_vals = [gal.aper_phot[self.aper_diam].SED_results[self.SED_fit_label].phot_rest.properties[self.name] for gal in object]
             cat_vals_no_nans = [val for val in cat_vals if not np.isnan(val)]
             if not all(isinstance(val, float) for val in cat_vals_no_nans):
@@ -428,15 +428,15 @@ class Rest_Frame_Property_Calculator(Property_Calculator):
             return object.properties[self.name]
         else:
             err_message = f"{object=} with {type(object)=} " + \
-                f"not in [Catalogue, Galaxy, Photometry_rest]"
+                f"not in [{', '.join(Catalogue_Base.__subclasses__())}, Galaxy, Photometry_rest]"
             galfind_logger.critical(err_message)
             raise TypeError(err_message)
 
     def extract_PDFs(
         self: Self,
-        object: Union[Catalogue, Galaxy, Photometry_rest],
+        object: Union[Type[Catalogue_Base], Galaxy, Photometry_rest],
     ) -> Union[Type[PDF], List[Type[PDF]]]:
-        if isinstance(object, Catalogue):
+        if isinstance(object, tuple(Catalogue_Base.__subclasses__())):
             return [gal.aper_phot[self.aper_diam].SED_results[self.SED_fit_label].phot_rest.property_PDFs[self.name] for gal in object]
         elif isinstance(object, Galaxy):
             return object.aper_phot[self.aper_diam].SED_results[self.SED_fit_label].phot_rest.property_PDFs[self.name]
@@ -444,7 +444,7 @@ class Rest_Frame_Property_Calculator(Property_Calculator):
             return object.property_PDFs[self.name]
         else:
             err_message = f"{object=} with {type(object)=} " + \
-                f"not in [Catalogue, Galaxy, Photometry_rest]"
+                f"not in [{', '.join(Catalogue_Base.__subclasses__())}, Galaxy, Photometry_rest]"
             galfind_logger.critical(err_message)
             raise TypeError(err_message)
 
@@ -633,6 +633,7 @@ class UV_Beta_Calculator(Rest_Frame_Property_Calculator):
             if any(np.isnan(SNR) for SNR in rest_UV_SNRs):
                 failure = True
             else:
+                failure = False
                 # determine what percentage of scatters fall into the negative flux region
                 negative_flux_pc = (1. - np.prod([1. - norm.cdf(0., loc=mu, scale=std) for mu, std in \
                     zip(phot_rest_UV.flux.value, phot_rest_UV.flux_errs.value)])) * 100.0
@@ -1564,6 +1565,7 @@ class Optical_Line_EW_Calculator(Rest_Frame_Property_Calculator):
             if np.isnan(phot_rest.depths[emission_band_index]):
                 failure = True
             else:
+                failure = False
                 emission_band_wavelength = emission_band.WavelengthCen
                 bandwidth = emission_band.WavelengthUpper50 \
                     - emission_band.WavelengthLower50
@@ -1839,13 +1841,17 @@ class Optical_Line_Flux_Calculator(Rest_Frame_Property_Calculator):
         phot_rest: Photometry_rest
     ) -> Dict[str, Any]:
         emission_band = phot_rest.property_kwargs[self.pre_req_properties[1].name]["band"]
-        if np.isnan(phot_rest.depths[emission_band]):
-            band_wav = None
+        if emission_band in phot_rest.filterset.band_names:
+            emission_band_index = int(np.where(np.array(phot_rest.filterset.band_names) == emission_band)[0][0])
+            if np.isnan(phot_rest.depths[emission_band_index]):
+                band_wav = None
+            else:
+                band_wav = deepcopy(phot_rest.filterset[emission_band].WavelengthCen)
+                if band_wav is not None:
+                    if self.pre_req_properties[1].global_kwargs["frame"] == "rest":
+                        band_wav /= (1.0 + phot_rest.z)
         else:
-            band_wav = deepcopy(phot_rest.filterset[emission_band].WavelengthCen)
-            if band_wav is not None:
-                if self.pre_req_properties[1].global_kwargs["frame"] == "rest":
-                    band_wav /= (1.0 + phot_rest.z)
+            band_wav = None
         return {"band_wav": band_wav}
 
     def _fail_criteria(
