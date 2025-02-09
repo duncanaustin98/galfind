@@ -22,6 +22,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from astropy.table import Table
 from astropy.coordinates import SkyCoord
+from numpy.typing import NDArray
 from astropy.io import fits
 from astropy.table import Table, join, vstack, MaskedColumn
 from astropy.wcs import WCS
@@ -353,7 +354,8 @@ class Catalogue_Creator:
         galfind_logger.debug(
             f"Loading {self.survey} {self.version} {self.cat_name} galaxies!"
         )
-        gals = [Galaxy(ID, sky_coord, phot_obs, flags, cat_filterset) \
+        #, origin_survey = self.survey
+        gals = [Galaxy(ID, sky_coord, phot_obs, flags, cat_filterset, survey = self.survey) \
             for ID, sky_coord, phot_obs, flags, cat_filterset \
             in zip(IDs, sky_coords, phot_obs_arr, selection_flags, filterset_arr)]
         cat = Catalogue(gals, self)
@@ -1289,162 +1291,23 @@ class Catalogue(Catalogue_Base):
                         os.remove(selection_path)
                         os.symlink(out_path, selection_path)
 
-    def hist(
-        self: Self,
-        x_calculator: Type[Property_Calculator_Base],
-        fig: Optional[plt.Figure] = None,
-        ax: Optional[plt.Axes] = None,
-        log: bool = False,
-        n_bins: int = 50, 
-        save: bool = True,
-        show: bool = False,
-        overwrite: bool = True,
-    ) -> NoReturn:
-        save_path = f"{config['DEFAULT']['GALFIND_WORK']}/Plots/{self.version}/" + \
-            f"{self.filterset.instrument_name}/{self.survey}/hist/" + \
-            f"{self.crop_name}/{x_calculator.name}.png"
-        if not Path(save_path).is_file() or overwrite:
-            galfind_logger.info(
-                f"Making histogram for {x_calculator.name}!"
-            )
-            from . import Property_Calculator_Base
-            if isinstance(x_calculator, tuple(Property_Calculator_Base.__subclasses__())):
-                # calculate x values
-                x = [gal.aper_phot[x_calculator.aper_diam].SED_results \
-                    [x_calculator.SED_fit_label].phot_rest.properties \
-                    [x_calculator.name] for gal in self]
-                # remove nans
-                x = np.array([x_.value for x_ in x if not np.isnan(x_)])
-                #x_name = x_calculator.name
-                x_label = x_calculator.name
-            else:
-                raise NotImplementedError
-            if log:
-                x = np.log10(x)
-                #x_name = f"log({x_name})"
-                x_label = f"log({x_label})"
-            if any(fig_ax is None for fig_ax in [fig, ax]):
-                fig, ax = plt.subplots()
-            ax.hist(x, bins = n_bins)
-            ax.set_xlabel(x_label)
-            #ax.set_ylabel("Number of Galaxies")
-            #ax.set_title(f"{x_label} histogram")
-            if save:
-                funcs.make_dirs(save_path)
-                plt.savefig(save_path)
-                funcs.change_file_permissions(save_path)
-            if show:
-                plt.show()
-        else:
-            galfind_logger.info(
-                f"{x_calculator.name} histogram already exists and {overwrite=}, skipping!"
-            )
-
     # Number Density Function (e.g. UVLF and mass functions) methods
 
     def calc_Vmax(
         self: Self,
-        data_arr: Union[list, np.array],
-        z_bin: Union[list, np.array],
+        z_bin: List[float],
         aper_diam: u.Quantity,
         SED_fit_code: SED_code,
         z_step: float = 0.01,
-        timed: bool = False,
-    ) -> None:
-        assert len(z_bin) == 2
-        assert z_bin[0] < z_bin[1]
-        assert isinstance(SED_fit_code, tuple(SED_code.__subclasses__()))
-        assert all(SED_fit_code.label in gal.aper_phot[aper_diam].SED_results.keys() for gal in self)
-
-        for data in data_arr:
-            save_path = f"{config['NumberDensityFunctions']['VMAX_DIR']}/" + \
-                f"{self.version}/{self.filterset.instrument_name}/{self.survey}/" + \
-                f"{self.crop_name}/Vmax_field={data.full_name}.ecsv"
-            funcs.make_dirs(save_path)
-
-            # if this file already exists
-            if Path(save_path).is_file():
-                # open file
-                old_tab = Table.read(save_path)
-                update_IDs = np.array(
-                    [gal.ID for gal in self if gal.ID not in old_tab["ID"]]
-                )
-            else:
-                update_IDs = self.ID
-            if len(update_IDs) > 0:
-                [
-                    gal.calc_Vmax(
-                        self.data.full_name,
-                        [data],
-                        z_bin,
-                        aper_diam,
-                        SED_fit_code,
-                        self.cat_creator.crops,
-                        z_step,
-                        timed=timed,
-                    )
-                    for gal in tqdm(
-                        self,
-                        total=len(self),
-                        desc=f"Calculating Vmax's for {self.data.full_name}" + \
-                            f" in {self.crop_name} {data.full_name}",
-                    )
-                ]
-                # table with uncalculated Vmax's
-                Vmax_arr = np.array(
-                    [
-                        gal.aper_phot[aper_diam].SED_results[SED_fit_code.label]. \
-                        V_max[self.crop_name.split("/")[-1]][data.full_name].to(u.Mpc**3).value
-                        if isinstance(gal.aper_phot[aper_diam].SED_results[SED_fit_code.label]. \
-                        V_max[self.crop_name.split("/")[-1]][data.full_name], u.Quantity)
-                        else gal.aper_phot[aper_diam].SED_results[SED_fit_code.label]. \
-                        V_max[self.crop_name.split("/")[-1]][data.full_name]
-                        for gal in self if gal.ID in update_IDs
-                    ]
-                )
-                obs_zmin = np.array(
-                    [
-                        gal.aper_phot[aper_diam].SED_results[SED_fit_code.label]. \
-                        obs_zrange[self.crop_name.split("/")[-1]][data.full_name][0]
-                        for gal in self
-                        if gal.ID in update_IDs
-                    ]
-                )
-                obs_zmax = np.array(
-                    [
-                        gal.aper_phot[aper_diam].SED_results[SED_fit_code.label]. \
-                        obs_zrange[self.crop_name.split("/")[-1]][data.full_name][1]
-                        for gal in self
-                        if gal.ID in update_IDs
-                    ]
-                )
-                new_tab = Table(
-                    {
-                        "ID": update_IDs,
-                        "Vmax": Vmax_arr,
-                        "obs_zmin": obs_zmin,
-                        "obs_zmax": obs_zmax,
-                    },
-                    dtype=[int, float, float, float],
-                )
-                new_tab.meta = {
-                    "Vmax_invalid_val": -1.0,
-                    "Vmax_unit": u.Mpc**3,
-                }
-                if Path(save_path).is_file():  # update and save table
-                    out_tab = vstack([old_tab, new_tab])
-                    out_tab.meta = {**old_tab.meta, **new_tab.meta}
-                else:  # save table
-                    out_tab = new_tab
-                out_tab.sort("ID")
-                out_tab.write(save_path, overwrite=True)
-            else:  # Vmax table already opened
-                Vmax_tab = old_tab[
-                    np.array([row["ID"] in self.ID for row in old_tab])
-                ]
-                Vmax_tab.sort("ID")
-                # save appropriate Vmax properties
-                for gal, Vmax in zip(self, np.array(Vmax_tab["Vmax"])):
-                    gal._make_Vmax_storage(aper_diam, SED_fit_code, self.crop_name.split("/")[-1])
-                    gal.aper_phot[aper_diam].SED_results[SED_fit_code.label]. \
-                        V_max[self.crop_name.split("/")[-1]][data.full_name] = Vmax #* u.Mpc ** 3
+    ) -> NDArray[float]:
+        assert hasattr(self, "data"), \
+            galfind_logger.critical(
+                f"{self.cat_name} does not have data loaded!"
+            )
+        return self._calc_Vmax(
+            self.data,
+            z_bin = z_bin,
+            aper_diam = aper_diam,
+            SED_fit_code = SED_fit_code,
+            z_step = z_step,
+        )

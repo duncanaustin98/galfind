@@ -6,21 +6,23 @@ from copy import deepcopy
 import matplotlib.pyplot as plt
 import astropy.units as u
 import numpy as np
+from pathlib import Path
 from astropy.coordinates import SkyCoord
 from astropy.io import fits
-from astropy.table import Table, join
+from astropy.table import Table, join, vstack
 from tqdm import tqdm
 import inspect
 from numpy.typing import NDArray
-from typing import TYPE_CHECKING, Any, List, Dict, Union, Type, Optional
+from typing import TYPE_CHECKING, Any, List, Dict, Union, Type, Optional, NoReturn
 if TYPE_CHECKING:
-    from . import Galaxy, Catalogue_Creator, Selector, Property_Calculator_Base
+    from . import Galaxy, Catalogue_Creator, Data, Selector, Property_Calculator_Base
 try:
     from typing import Self, Type  # python 3.11+
 except ImportError:
     from typing_extensions import Self, Type  # python > 3.7 AND python < 3.11
 
 from . import (
+    config,
     SED_code,
     galfind_logger,
 )
@@ -159,8 +161,9 @@ class Catalogue_Base:
         self: Self,
         selector: Type[Selector],
     ) -> Self:
-        self.gals = self[selector]
-        self.cat_creator.crops.append(selector)
+        if selector not in self.crops:
+            self.gals = self[selector]
+            self.cat_creator.crops.append(selector)
         return self
 
     # only acts on attributes that don't already exist in Catalogue
@@ -752,6 +755,57 @@ class Catalogue_Base:
                 tab_names.append(hdu_.name)
         self.write_cat(tab_arr, tab_names, self.cat_path)
 
+    def hist(
+        self: Self,
+        x_calculator: Type[Property_Calculator_Base],
+        fig: Optional[plt.Figure] = None,
+        ax: Optional[plt.Axes] = None,
+        log: bool = False,
+        n_bins: int = 50, 
+        save: bool = True,
+        show: bool = False,
+        overwrite: bool = True,
+    ) -> NoReturn:
+        save_path = f"{config['DEFAULT']['GALFIND_WORK']}/Plots/{self.version}/" + \
+            f"{self.filterset.instrument_name}/{self.survey}/hist/" + \
+            f"{self.crop_name}/{x_calculator.name}.png"
+        if not Path(save_path).is_file() or overwrite:
+            galfind_logger.info(
+                f"Making histogram for {x_calculator.name}!"
+            )
+            from . import Property_Calculator_Base
+            if isinstance(x_calculator, tuple(Property_Calculator_Base.__subclasses__())):
+                # calculate x values
+                x = [gal.aper_phot[x_calculator.aper_diam].SED_results \
+                    [x_calculator.SED_fit_label].phot_rest.properties \
+                    [x_calculator.name] for gal in self]
+                # remove nans
+                x = np.array([x_.value for x_ in x if not np.isnan(x_)])
+                #x_name = x_calculator.name
+                x_label = x_calculator.name
+            else:
+                raise NotImplementedError
+            if log:
+                x = np.log10(x)
+                #x_name = f"log({x_name})"
+                x_label = f"log({x_label})"
+            if any(fig_ax is None for fig_ax in [fig, ax]):
+                fig, ax = plt.subplots()
+            ax.hist(x, bins = n_bins)
+            ax.set_xlabel(x_label)
+            #ax.set_ylabel("Number of Galaxies")
+            #ax.set_title(f"{x_label} histogram")
+            if save:
+                funcs.make_dirs(save_path)
+                plt.savefig(save_path)
+                funcs.change_file_permissions(save_path)
+            if show:
+                plt.show()
+        else:
+            galfind_logger.info(
+                f"{x_calculator.name} histogram already exists and {overwrite=}, skipping!"
+            )
+
     def plot(
         self: Self,
         x_calculator: Type[Property_Calculator_Base],
@@ -968,12 +1022,17 @@ class Catalogue_Base:
             if c_calculator is not None:
                 fig.colorbar(plot, label = colour_label)
             if plot_legend:
-                ax.legend(**legend_kwargs)
+                default_legend_kwargs = {
+                    "loc": "best"
+                }
+                for key, value in legend_kwargs.items():
+                    default_legend_kwargs[key] = value
+                ax.legend(**default_legend_kwargs)
 
         if save:
             # determine appropriate save path
-            save_colour_name = f"_c={colour_name}" if c_calculator is not None else ""
             if save_path is None:
+                save_colour_name = f"_c={colour_name}" if c_calculator is not None else ""
                 save_path = f"{config['Other']['PLOT_DIR']}/{self.version}/" + \
                     f"{self.filterset.instrument_name}/{self.survey}/" + \
                     f"{y_name}_vs_{x_name}/{self.crop_name}{save_colour_name}.png"
@@ -984,3 +1043,154 @@ class Catalogue_Base:
 
         if show:
             plt.show()
+
+    def get_vmax_ecsv_path(
+        self: Self,
+        data: Data,
+    ) -> str:
+        full_data_name = funcs.get_full_survey_name(data.survey, data.version, data.filterset)
+        save_path = f"{config['NumberDensityFunctions']['VMAX_DIR']}/" + \
+            f"{self.version}/{self.filterset.instrument_name}/" + \
+            f"{self.survey}/{self.crop_name}/Vmax_field={full_data_name}.ecsv"
+        funcs.make_dirs(save_path)
+        return save_path
+
+    def _calc_Vmax(
+        self: Self,
+        data: Data,
+        z_bin: List[float],
+        aper_diam: u.Quantity,
+        SED_fit_code: SED_code,
+        z_step: float = 0.01,
+    ) -> Dict[str, NDArray[float]]:
+        assert len(z_bin) == 2
+        assert z_bin[0] < z_bin[1]
+        assert isinstance(SED_fit_code, tuple(SED_code.__subclasses__()))
+        assert all(SED_fit_code.label in gal.aper_phot[aper_diam].SED_results.keys() for gal in self)
+
+        save_path = self.get_vmax_ecsv_path(data)
+        # if this file already exists
+        if Path(save_path).is_file():
+            # open file
+            old_tab = Table.read(save_path)
+            update_gals = np.array(
+                [gal for gal in self if gal.ID not in old_tab[old_tab["survey"] == gal.survey]["ID"]]
+            )
+        else:
+            update_gals = self.gals
+        if len(update_gals) > 0:
+            full_survey_name = funcs.get_full_survey_name(self.survey, self.version, self.filterset)
+            full_data_name = funcs.get_full_survey_name(data.survey, data.version, data.filterset)
+            # calculate Vmax's and append them to Vmax ecsv
+            [
+                gal.calc_Vmax(
+                    data,
+                    z_bin,
+                    aper_diam,
+                    SED_fit_code,
+                    self.cat_creator.crops,
+                    z_step,
+                )
+                for gal in tqdm(
+                    self,
+                    total=len(self),
+                    desc=f"Calculating {full_survey_name} Vmax's in {full_data_name}"
+                )
+            ]
+            # make/update file to store data
+            Vmax_arr = self._make_Vmax_ecsv(
+                data,
+                update_gals,
+                aper_diam,
+                SED_fit_code,
+            )
+        else:  # Vmax table already opened
+            # if isinstance(self, Combined_Catalogue):
+            #     IDs = self._get_unique_IDs()
+            # else:
+            #     IDs = self.ID
+            #breakpoint()
+            #try:
+            Vmax_arr = self._load_Vmax_from_ecsv(old_tab, aper_diam, SED_fit_code, data.full_name)
+            #except:
+            #    breakpoint()
+        return Vmax_arr
+    
+    def _make_Vmax_ecsv(
+        self: Self,
+        data: Data,
+        update_gals: List[Galaxy],
+        aper_diam: u.Quantity,
+        SED_fit_code: SED_code,
+    ) -> NDArray[float]:
+        save_path = self.get_vmax_ecsv_path(data)
+        # extract relevant properties
+        Vmax_arr = np.array(
+            [
+                gal.aper_phot[aper_diam].SED_results[SED_fit_code.label]. \
+                V_max[self.crop_name.split("/")[-1]][data.full_name].to(u.Mpc**3).value
+                for gal in update_gals
+            ]
+        ) * u.Mpc ** 3
+        obs_zmin = np.array(
+            [
+                gal.aper_phot[aper_diam].SED_results[SED_fit_code.label]. \
+                obs_zrange[self.crop_name.split("/")[-1]][data.full_name][0]
+                for gal in update_gals
+            ]
+        )
+        obs_zmax = np.array(
+            [
+                gal.aper_phot[aper_diam].SED_results[SED_fit_code.label]. \
+                obs_zrange[self.crop_name.split("/")[-1]][data.full_name][1]
+                for gal in update_gals
+            ]
+        )
+        data = {
+            "ID": np.array([gal.ID for gal in update_gals]),
+            "survey": np.array([gal.survey for gal in update_gals]),
+            "Vmax": Vmax_arr,
+            "obs_zmin": obs_zmin,
+            "obs_zmax": obs_zmax,
+        }
+        new_tab = Table(data, dtype=[int, str, float, float, float])
+        new_tab.meta = {"Vmax_invalid_val": -1.0}
+
+        self._save_ecsv(save_path, new_tab)
+
+        return Vmax_arr
+    
+    def _save_ecsv(
+        self: Self,
+        save_path: str,
+        tab: Table
+    ) -> NoReturn:
+        if Path(save_path).is_file(): # update and save table
+            old_tab = Table.read(save_path)
+            out_tab = vstack([old_tab, tab])
+            out_tab.meta = {**old_tab.meta, **tab.meta}
+        else: # save table
+            out_tab = tab
+        out_tab.write(save_path, overwrite=True)
+    
+    def _load_Vmax_from_ecsv(
+        self: Self,
+        tab: Table,
+        aper_diam: u.Quantity,
+        SED_fit_code: SED_code,
+        full_survey_name: str,
+    ) -> NDArray[float]:
+        if any(gal.survey == full_survey_name.split("_")[0] for gal in self):
+            load_gals_arr = [gal for gal in self if gal.survey == full_survey_name.split("_")[0]]
+        else:
+            load_gals_arr = self.gals
+        from . import Combined_Catalogue
+        # save appropriate Vmax properties
+        Vmax_arr = np.zeros(len(load_gals_arr))
+        for i, gal in enumerate(load_gals_arr):
+            Vmax = float(tab[np.logical_and((tab["ID"] == gal.ID), (tab["survey"] == gal.survey))]["Vmax"])
+            gal._make_Vmax_storage(aper_diam, SED_fit_code, self.crop_name.split("/")[-1])
+            gal.aper_phot[aper_diam].SED_results[SED_fit_code.label]. \
+                V_max[self.crop_name.split("/")[-1]][full_survey_name] = Vmax * u.Mpc ** 3
+            Vmax_arr[i] = Vmax
+        return Vmax_arr

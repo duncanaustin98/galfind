@@ -127,10 +127,13 @@ class Rest_Frame_Property_Calculator(Property_Calculator):
             galfind_logger.critical(
                 f"{n_jobs=} with {type(n_jobs)=} != int"
             )
-        save_dir = f"{config['PhotProperties']['PDF_SAVE_DIR']}/" + \
-            f"{cat.version}/{cat.survey}/{cat.filterset.instrument_name}/" + \
-            f"{self.aper_diam.to(u.arcsec).value:.2f}as" + \
-            f"/{self.SED_fit_label}/{self.name}"
+        try:
+            save_dir = f"{config['PhotProperties']['PDF_SAVE_DIR']}/" + \
+                f"{cat.version}/{cat.survey}/{cat.filterset.instrument_name}/" + \
+                f"{self.aper_diam.to(u.arcsec).value:.2f}as" + \
+                f"/{self.SED_fit_label}/{self.name}"
+        except:
+            breakpoint()
         if n_jobs <= 1:
             # update properties for each galaxy in the catalogue
             [self._call_gal(gal, n_chains = n_chains, output = False, \

@@ -9,21 +9,23 @@ import matplotlib.cm as cm
 import matplotlib.pyplot as plt
 import numpy as np
 from astropy.table import vstack, Table
-from typing import TYPE_CHECKING, List, Optional, Callable
+from typing import TYPE_CHECKING, List, Optional, Callable, Union
 try:
     from typing import Self, Type  # python 3.11+
 except ImportError:
     from typing_extensions import Self, Type  # python > 3.7 AND python < 3.11
 if TYPE_CHECKING:
     from . import (
-        #Combined_Catalogue_Creator,
         Galaxy,
         Catalogue,
+        Data, 
+        SED_code,
     )
 
 from . import galfind_logger, config
 from . import useful_funcs_austind as funcs
 from . import Catalogue_Base, Multiple_Filter
+from .Selector import Selector
 from .Catalogue import open_galfind_cat
 
 
@@ -50,6 +52,7 @@ class Combined_Catalogue_Creator:
         self.crops = crops
         self.open_cat = open_cat
 
+    # Copied and pasted from Catalogue_Creator
     @property
     def crop_name(self) -> List[str]:
         return funcs.get_crop_name(self.crops)
@@ -185,15 +188,35 @@ class Combined_Catalogue(Catalogue_Base):
     #     combined_table.write(filename, format="fits")
     #     funcs.change_file_permissions(filename)
 
-    def __add__(self, other):
-        # Check types to allow adding, Catalogue + Multiple_Catalogue, Multiple_Catalogue + Catalogue, Multiple_Catalogue + Multiple_Catalogue
-        pass
+    # def __add__(self, other):
+    #     # Check types to allow adding, Catalogue + Multiple_Catalogue, Multiple_Catalogue + Catalogue, Multiple_Catalogue + Multiple_Catalogue
+    #     pass
 
-    def __and__(self, other):
-        pass
+    # def __and__(self, other):
+    #     pass
 
-    def __len__(self):
-        return np.sum([len(cat) for cat in self.cat_arr])
+    # def __len__(self):
+    #     return np.sum([len(cat) for cat in self.cat_arr])
+    
+    # TODO: Make this work appropriately
+    # def __getattr__(self, attr):
+    #     if attr == "unique_ID":
+    #         return self.get_unique_IDs()
+    #     else:
+    #         super().__getattr__(attr)
+
+    def crop(
+        self: Self,
+        selector: Type[Selector]
+    ) -> Self:
+        [cat.crop(selector) for cat in self.cat_arr if selector not in cat.crops]
+        self.gals = list(chain.from_iterable([cat.gals for cat in self.cat_arr]))
+        return super().crop(selector)
+
+    def _get_unique_IDs(self):
+        tab = self.cat_creator.open_cat(self.cat_path, "OBJECTS")
+        return [int(tab[np.logical_and((tab["SURVEY_ID"] == gal.ID), \
+            (tab["SURVEY"] == gal.survey))]["UNIQUE_ID"]) for gal in self]
 
     def load_sextractor_ext_src_corrs(self):
         for cat in self.cat_arr:
@@ -203,6 +226,69 @@ class Combined_Catalogue(Catalogue_Base):
         if not all(hasattr(self.gals[0].aper_phot[aper_diam], "ext_src_corrs") for aper_diam in self.aper_diams):
             raise ValueError("ext_src_corrs not loaded into Galaxy objects")
 
+    def calc_Vmax(
+        self: Self,
+        z_bin: List[float],
+        aper_diam: u.Quantity,
+        SED_fit_code: SED_code,
+        z_step: float = 0.01,
+    ) -> None:
+        # # calculate Vmax for galaxy selection in their origin field
+        # [
+        #     cat.calc_Vmax(
+        #         z_bin, aper_diam, SED_fit_code, z_step
+        #     ) for cat in self.cat_arr
+        # ]
+        # calculate Vmax for galaxy selection in each field
+        [
+            [
+                cat._calc_Vmax(
+                    data_cat.data, z_bin, aper_diam, SED_fit_code, z_step
+                ) for data_cat in self.cat_arr
+            ] for cat in self.cat_arr
+        ]
+        # TODO: Check that the above has loaded in appropriate info for the galaxies!
+        # # calculate the rest of the Vmax's
+        # [
+        #     self._calc_Vmax(
+        #         cat.data,
+        #         z_bin = z_bin,
+        #         aper_diam = aper_diam,
+        #         SED_fit_code = SED_fit_code,
+        #         z_step = z_step,
+        #     )
+        #     for cat in self.cat_arr
+        # ]
+
+        # combine Vmax's for each field on a galaxy by galaxy basis
+        save_path = self.get_vmax_ecsv_path(self)
+        if not Path(save_path).is_file():
+            # make Vmax table
+            Vmax_arr = np.array(
+                [
+                    [
+                        gal.aper_phot[aper_diam].SED_results[SED_fit_code.label]. \
+                        V_max[self.crop_name.split("/")[-1]][cat.data.full_name]. \
+                        to(u.Mpc**3).value for cat in self.cat_arr
+                    ] for gal in self
+                ]
+            )
+            Vmax_arr = np.where(Vmax_arr == -1.0, 0.0, Vmax_arr)
+            Vmax_arr = np.sum(Vmax_arr, axis = 1)
+            Vmax_arr = np.where(Vmax_arr == 0.0, -1.0, Vmax_arr)
+            data = {
+                "ID": np.array([gal.ID for gal in self]),
+                "survey": np.array([gal.survey for gal in self]),
+                "Vmax": Vmax_arr * u.Mpc ** 3,
+            }
+            new_tab = Table(data, dtype=[int, str, float])
+            new_tab.meta = {"Vmax_invalid_val": -1.0}
+            self._save_ecsv(save_path, new_tab)
+
+        full_survey_name = funcs.get_full_survey_name(self.survey, self.version, self.filterset)
+        tab = Table.read(save_path)
+        self._load_Vmax_from_ecsv(tab, aper_diam, SED_fit_code, full_survey_name)
+        
     def plot_combined_area_depth(
         self,
         save_path,

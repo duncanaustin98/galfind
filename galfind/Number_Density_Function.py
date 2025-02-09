@@ -4,14 +4,19 @@ import os
 import sys
 from copy import deepcopy
 from pathlib import Path
-from typing import Union
 import astropy.units as u
 import matplotlib.pyplot as plt
 import numpy as np
 from astropy.table import Table
-from typing import NoReturn, Optional, Tuple, Dict, Any, TYPE_CHECKING
+from typing import NoReturn, Optional, Union, Tuple, Dict, List, Any, TYPE_CHECKING
 if TYPE_CHECKING:
-    from . import Catalogue, Multiple_Catalogue, Rest_Frame_Property_Calculator
+    from . import (
+        Catalogue_Base,
+        Catalogue,
+        Combined_Catalogue,
+        Rest_Frame_Property_Calculator,
+        Property_Calculator
+    )
 try:
     from typing import Self, Type  # python 3.11+
 except ImportError:
@@ -349,58 +354,12 @@ class Number_Density_Function(Base_Number_Density_Function):
         )
 
     @classmethod
-    def from_multiple_cat(
-        cls,
-        multiple_cat,
-        x_name: str,
-        x_bin_edges: Union[list, np.array],
-        z_bin: Union[list, np.array],
-        x_origin: Union[str, dict] = "EAZY_fsps_larson_zfree",
-        z_step: float = 0.01,
-        cv_origin: Union[str, None] = "Driver2010",
-        save: bool = True,
-        timed: bool = False,
-    ) -> Self:
-        pass
-
-    @classmethod
-    def from_single_cat(
-        cls,
-        cat: Catalogue,
-        x_calculator: Type[Rest_Frame_Property_Calculator],
-        x_bin_edges: Union[list, np.array],
-        z_bin: Union[list, np.array],
-        aper_diam: u.Quantity,
-        SED_fit_code: SED_code,
-        x_origin: str = "phot_rest",
-        z_step: float = 0.01,
-        cv_origin: Union[str, None] = "Driver2010",
-        save: bool = True,
-        timed: bool = False,
-    ) -> Self:
-        return cls.from_cat(
-            cat,
-            [cat.data],
-            x_calculator,
-            x_bin_edges,
-            z_bin,
-            aper_diam,
-            SED_fit_code,
-            x_origin,
-            z_step,
-            cv_origin,
-            save,
-            timed,
-        )
-
-    @classmethod
     def from_cat(
         cls,
-        cat: Union[Catalogue, Multiple_Catalogue],
-        data_arr: Union[list, np.array],
-        x_calculator: Type[Rest_Frame_Property_Calculator],
-        x_bin_edges: Union[list, np.array],
-        z_bin: Union[list, np.array],
+        cat: Type[Catalogue_Base],
+        x_calculator: Type[Property_Calculator],
+        x_bin_edges: List[float],
+        z_bin: List[float],
         aper_diam: u.Quantity,
         SED_fit_code: SED_code,
         x_origin: str = "phot_rest",
@@ -426,9 +385,11 @@ class Number_Density_Function(Base_Number_Density_Function):
         # SED fit label assertions
         assert isinstance(SED_fit_code, tuple(SED_code.__subclasses__()))
         assert all(SED_fit_code.label in gal.aper_phot[aper_diam].SED_results.keys() for gal in cat)
+        # x_origin assertions
+        assert x_origin in ["phot_rest", "SED_result"]
 
         # extract x values
-        assert x_origin in ["phot_rest", "SED_result"]
+        # TODO: Generalize this to exclude x_origin dependence
         if x_origin == "phot_rest":
             x = [gal.aper_phot[aper_diam].SED_results[SED_fit_code.label].phot_rest.properties[x_calculator.name] for gal in cat]
         else: # x_origin == "SED_result":
@@ -460,13 +421,14 @@ class Number_Density_Function(Base_Number_Density_Function):
             return None
         
         # determine save_path
-        origin_surveys = Number_Density_Function.get_origin_surveys(data_arr)
+        full_survey_name = funcs.get_full_survey_name(cat.survey, cat.version, cat.filterset)
         save_path = Number_Density_Function.get_save_path(
-            origin_surveys,
+            cat.survey,
             x_origin,
             x_calculator.name,
             z_bin_cat.crop_name,
         )
+
         if not Path(save_path).is_file():
             # create x_bins from x_bin_edges (must include start and end values here too)
             x_bins = [
@@ -476,12 +438,10 @@ class Number_Density_Function(Base_Number_Density_Function):
             ]
             # calculate Vmax for each galaxy in catalogue within z bin
             z_bin_cat.calc_Vmax(
-                data_arr, 
                 z_bin, 
                 aper_diam, 
                 SED_fit_code, 
                 z_step, 
-                timed=timed
             )
             Ngals = np.zeros(len(x_bins))
             phi = np.zeros(len(x_bins))
@@ -508,25 +468,20 @@ class Number_Density_Function(Base_Number_Density_Function):
                     # plot histogram
                     #z_bin_x_bin_cat.hist(x_calculator, hist_fig, hist_ax)
                     dx = x_bin[1].value - x_bin[0].value
-                    # calculate Vmax's
-                    V_max = np.zeros(int(Ngals[i])).astype(float)
-                    for data in data_arr:
-                        V_max += np.array(
-                            [
-                                gal.aper_phot[aper_diam].SED_results[SED_fit_code.label]. \
-                                V_max[z_bin_cat.crop_name.split("/")[-1]][data.full_name]
-                                if gal.aper_phot[aper_diam].SED_results[SED_fit_code.label]. \
-                                V_max[z_bin_cat.crop_name.split("/")[-1]][data.full_name] != -1.0
-                                else 0.0 for gal in z_bin_x_bin_cat
-                            ]
-                        )
+                    # extract Vmax's
                     V_max = np.array(
-                        [_V_max for _V_max in V_max if _V_max != 0.0]
+                        [
+                            gal.aper_phot[aper_diam].SED_results[SED_fit_code.label]. \
+                            V_max[z_bin_cat.crop_name.split("/")[-1]][full_survey_name].value
+                            for gal in z_bin_x_bin_cat
+                        ]
                     )
+                    V_max = V_max[V_max != -1.0] #* u.Mpc ** 3
                     if len(V_max) != Ngals[i]:
                         galfind_logger.warning(
                             f"{Ngals[i] - len(V_max)} galaxies not detected"
                         )
+
                     phi[i] = np.sum(V_max**-1.0) / dx
                     # use standard Poisson errors if number of galaxies in bin is not small
                     if len(V_max) >= 4:
@@ -543,6 +498,14 @@ class Number_Density_Function(Base_Number_Density_Function):
                             np.abs((np.array(poisson_int[1]) - len(V_max)))
                             / len(V_max)
                         )
+                    from . import Catalogue_Base, Catalogue, Combined_Catalogue
+                    if isinstance(cat, Combined_Catalogue):
+                        data_arr = [cat_.data for cat_ in cat.cat_arr]
+                    elif isinstance(cat, Catalogue):
+                        data_arr = [cat.data]
+                    else:
+                        err_message = f"{repr(cat)=} not in {', '.join(Catalogue_Base.__subclasses__())}!"
+                        raise ValueError(err_message)
                     if cv_origin is None:
                         pass
                     elif cv_origin == "Driver2010":
@@ -560,7 +523,7 @@ class Number_Density_Function(Base_Number_Density_Function):
                 phi,
                 np.array([phi_l1, phi_u1]),
                 cv_errs,
-                origin_surveys,
+                cat.survey,
                 z_bin_cat.crop_name,
                 cv_origin,
             )
@@ -571,9 +534,9 @@ class Number_Density_Function(Base_Number_Density_Function):
         else: # load results
             return cls.from_ecsv(save_path)
 
-    @staticmethod
-    def get_origin_surveys(data_arr) -> str:
-        return "+".join([data.full_name for data in data_arr])
+    # @staticmethod
+    # def get_origin_surveys(data_arr) -> str:
+    #     return "+".join([data.full_name for data in data_arr])
 
     # cv_origin == "Driver2010"
     @staticmethod

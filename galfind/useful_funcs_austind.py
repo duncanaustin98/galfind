@@ -1,4 +1,4 @@
-# useful_funcs_austind.py
+
 from __future__ import annotations
 
 import astropy.constants as const
@@ -19,7 +19,7 @@ from numpy.typing import NDArray
 from typing import Union, List, Tuple, TYPE_CHECKING
 if TYPE_CHECKING:
     from .Data import Band_Data_Base, Band_Data, Stacked_Band_Data
-    from . import Selector
+    from . import Selector, Multiple_Filter
 try:
     from typing import Self, Type  # python 3.11+
 except ImportError:
@@ -561,6 +561,12 @@ def get_crop_name(crops: List[Selector]) -> str:
     else:
         return ""
 
+def get_full_survey_name(
+    survey: str,
+    version: str,
+    filterset: Multiple_Filter,
+) -> str:
+    return f"{survey}_{version}_{filterset.instrument_name}"
 
 def calc_Vmax(area, zmin, zmax):
     return (
@@ -670,7 +676,6 @@ def calc_cv_proper(
 
 
 # general functions
-
 
 def adjust_errs(data, data_err):
     # print("adjusting errors:", plot_data, code)

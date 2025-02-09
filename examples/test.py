@@ -33,12 +33,12 @@ def test_selection():
         aper_diams = aper_diams,
         forced_phot_band = forced_phot_band,
     )
-    print(data.band_data_arr)
-    breakpoint()
-    # data.mask(
-    #     "auto",
-    #     angle = 70.0
-    # )
+    #print(data.band_data_arr)
+    #breakpoint()
+    data.mask(
+        "auto",
+        angle = 92.0
+    )
 
     # fig, ax = plt.subplots()
     # data.filterset.plot(ax, save = True)

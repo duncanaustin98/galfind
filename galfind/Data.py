@@ -354,7 +354,10 @@ class Band_Data_Base(ABC):
         self, output_hdr: bool = False
     ) -> Union[Tuple[np.ndarray, fits.Header], np.ndarray]:
         if Path(self.rms_err_path).is_file():
-            hdu = fits.open(self.rms_err_path)[self.rms_err_ext]
+            try:
+                hdu = fits.open(self.rms_err_path)[self.rms_err_ext]
+            except:
+                breakpoint()
             rms_err = hdu.data
             hdr = hdu.header
         else:
@@ -1927,7 +1930,7 @@ class Data:
 
     @property
     def full_name(self):
-        return f"{self.survey}_{self.version}_{self.filterset.instrument_name}"
+        return funcs.get_full_survey_name(self.survey, self.version, self.filterset)
     
     @property
     def aper_diams(self) -> u.Quantity:
