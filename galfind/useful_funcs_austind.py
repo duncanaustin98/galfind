@@ -16,7 +16,7 @@ import contextlib
 import joblib
 from numba import njit
 from numpy.typing import NDArray
-from typing import Union, List, Tuple, TYPE_CHECKING
+from typing import Union, List, Tuple, TYPE_CHECKING, Optional
 if TYPE_CHECKING:
     from .Data import Band_Data_Base, Band_Data, Stacked_Band_Data
     from . import Selector, Multiple_Filter
@@ -748,20 +748,24 @@ def cat_from_path(path, crop_names=None):
 
 
 def get_phot_cat_path(
-    survey,
-    version,
-    instrument_name,
-    aper_diams,
-    forced_phot_band_name,
+    survey: str,
+    version: str,
+    instrument_name: str,
+    aper_diams: u.Quantity,
+    forced_phot_band_name: Optional[str],
 ):
     save_dir = (
         f"{config['DEFAULT']['GALFIND_WORK']}/Catalogues/{version}/" + \
         f"{instrument_name}/{survey}/{aper_diams_to_str(aper_diams)}"
     )
-    save_name = (
-        f"{survey}_MASTER_Sel-{forced_phot_band_name}_{version}.fits"
-    )
-    return f"{save_dir}/{save_name}"
+    if forced_phot_band_name is None:
+        forced_phot_band_name = ""
+    else:
+        forced_phot_band_name = f"_MASTER_Sel-{forced_phot_band_name}"
+    save_name = f"{survey}{forced_phot_band_name}_{version}.fits"
+    save_path = f"{save_dir}/{save_name}"
+    make_dirs(save_path)
+    return save_path
 
 
 def fits_cat_to_np(fits_cat, column_labels, reshape_by_aper_diams=True):

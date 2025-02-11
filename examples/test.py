@@ -25,20 +25,20 @@ def test_selection():
         {"templates": "fsps_larson", "lowz_zmax": 6.0},
         {"templates": "fsps_larson", "lowz_zmax": None}
     ]
-    data = Data.from_survey_version(
-        survey,
-        version,
-        instrument_names = instrument_names,
-        version_to_dir_dict = morgan_version_to_dir,
-        aper_diams = aper_diams,
-        forced_phot_band = forced_phot_band,
-    )
-    #print(data.band_data_arr)
-    #breakpoint()
-    data.mask(
-        "auto",
-        angle = 92.0
-    )
+    # data = Data.from_survey_version(
+    #     survey,
+    #     version,
+    #     instrument_names = instrument_names,
+    #     version_to_dir_dict = morgan_version_to_dir,
+    #     aper_diams = aper_diams,
+    #     forced_phot_band = forced_phot_band,
+    # )
+    # #print(data.band_data_arr)
+    # #breakpoint()
+    # data.mask(
+    #     "auto",
+    #     angle = 92.0
+    # )
 
     # fig, ax = plt.subplots()
     # data.filterset.plot(ax, save = True)
@@ -79,7 +79,7 @@ def test_selection():
     # load EAZY SED fitting results
     for SED_fit_params in SED_fit_params_arr:
         EAZY_fitter = EAZY(SED_fit_params)
-        EAZY_fitter(cat, aper_diams[0], load_PDFs = False, load_SEDs = False, update = True)
+        EAZY_fitter(cat, aper_diams[0], load_PDFs = True, load_SEDs = True, update = True)
 
     #breakpoint()
 
@@ -97,12 +97,6 @@ def test_selection():
     from galfind import MUV_Calculator
     MUV_calculator = MUV_Calculator(aper_diams[0], EAZY_fitter.label)
     MUV_calculator(cat, n_chains = 10_000, output = False, n_jobs = 1)
-    from galfind import MUV_Calculator, Xi_Ion_Calculator, M99
-    for beta_dust_conv in [None, M99]:#, Reddy18(C00(), 100 * u.Myr), Reddy18(C00(), 300 * u.Myr)]:
-        for fesc_conv in [None, "Chisholm22"]: # None, 0.1, 0.2, 0.5,
-            xi_ion_calculator = Xi_Ion_Calculator(aper_diams[0], EAZY_fitter.label, beta_dust_conv = beta_dust_conv, fesc_conv = fesc_conv, logged = False)
-            xi_ion_calculator(cat, n_chains = 10_000, output = False, n_jobs = 1)
-            #breakpoint()
 
     epochs_selected_cat.plot_phot_diagnostics(
         aper_diams[0],
@@ -117,6 +111,13 @@ def test_selection():
         flux_unit = u.ABmag,
         overwrite = True
     )
+
+    from galfind import MUV_Calculator, Xi_Ion_Calculator, M99
+    for beta_dust_conv in [None, M99]:#, Reddy18(C00(), 100 * u.Myr), Reddy18(C00(), 300 * u.Myr)]:
+        for fesc_conv in [None, "Chisholm22"]: # None, 0.1, 0.2, 0.5,
+            xi_ion_calculator = Xi_Ion_Calculator(aper_diams[0], EAZY_fitter.label, beta_dust_conv = beta_dust_conv, fesc_conv = fesc_conv, logged = False)
+            xi_ion_calculator(cat, n_chains = 10_000, output = False, n_jobs = 1)
+            #breakpoint()
 
     # Redwards_Lya_Detect_Selector(aper_diams[0], EAZY(SED_fit_params_arr[-1]), SNR_lims = [5.0], widebands_only = True)(JOF_cat)
     # # SED_fit_label = "EAZY_fsps_larson_zfree"
