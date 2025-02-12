@@ -72,7 +72,9 @@ if __name__ == "__main__":
     instrument_names = ["ACS_WFC", "NIRCam"]
     aper_diams = [0.32] * u.arcsec
     forced_phot_band = ["F277W", "F356W", "F444W"]
-    realization = 3
+    realization = 6
+    import time
+    time.sleep(4 * 60 * 60)
     main(
         survey,
         version,

@@ -435,6 +435,30 @@ class Rest_Frame_Property_Calculator(Property_Calculator):
             galfind_logger.critical(err_message)
             raise TypeError(err_message)
 
+    # TODO: Propagate from parent class
+    def extract_errs(
+        self: Self, 
+        object: Union[Type[Catalogue_Base], Galaxy, Photometry_rest],
+    ) -> Union[u.Quantity, u.Magnitude, u.Dex]:
+        if isinstance(object, tuple(Catalogue_Base.__subclasses__())):
+            cat_errs = [gal.aper_phot[self.aper_diam].SED_results[self.SED_fit_label].phot_rest.property_errs[self.name] for gal in object]
+            if not all(isinstance(val, float) for val in cat_errs):
+                assert all(val.unit == cat_errs[0].unit for val in cat_errs), \
+                    galfind_logger.critical(f"Units of {self.name} in {object} are not consistent")
+                cat_errs = np.array([val.value for val in cat_errs]) * cat_errs[0].unit
+            else:
+                cat_errs = np.array(cat_errs)
+            return cat_errs 
+        elif isinstance(object, Galaxy):
+            return object.aper_phot[self.aper_diam].SED_results[self.SED_fit_label].phot_rest.property_errs[self.name]
+        elif isinstance(object, Photometry_rest):
+            return object.property_errs[self.name]
+        else:
+            err_message = f"{object=} with {type(object)=} " + \
+                f"not in [Catalogue, Galaxy, Photometry_rest]"
+            galfind_logger.critical(err_message)
+            raise TypeError(err_message)
+
     def extract_PDFs(
         self: Self,
         object: Union[Type[Catalogue_Base], Galaxy, Photometry_rest],

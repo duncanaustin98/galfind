@@ -160,7 +160,8 @@ class Base_Number_Density_Function:
         show: bool = False,
         plot_kwargs: dict = {},
         legend_kwargs: dict = {},
-        x_lims: Optional[Union[list, np.array, str]] = "default",
+        x_lims: Optional[Union[List[float], str]] = "default",
+        y_lims: Optional[List[float]] = None,
         title: Optional[str] = None,
         save_path: Optional[str] = None,
     ) -> Tuple[plt.Figure, plt.Axes]:
@@ -238,14 +239,6 @@ class Base_Number_Density_Function:
             ax_.set_ylabel(y_label)
             if title is not None:
                 ax_.set_title(title)
-            if x_lims is not None:
-                if isinstance(x_lims, str):
-                    if x_lims == "default":
-                        x_lims = self.x_name
-                    ax_.set_xlim(*funcs.default_lims[x_lims])
-                else:
-                    assert len(x_lims) == 2
-                    ax_.set_xlim(*x_lims)
             # sort out legend_kwargs
             default_legend_kwargs = {
                 "loc": "best",
@@ -257,6 +250,19 @@ class Base_Number_Density_Function:
                     default_legend_kwargs.pop(key)
             _legend_kwargs = {**legend_kwargs, **default_legend_kwargs}
             ax_.legend(**_legend_kwargs)
+
+        if x_lims is not None:
+            if isinstance(x_lims, str):
+                if x_lims == "default":
+                    x_lims = self.x_name
+                ax_.set_xlim(*funcs.default_lims[x_lims])
+            else:
+                assert len(x_lims) == 2
+                ax_.set_xlim(*x_lims)
+        if y_lims is not None:
+            assert len(y_lims) == 2
+            ax.set_ylim(*y_lims)
+
         if save:
             # if self.__class__.__name__ != "Number_Density_Function":
             #     raise NotImplementedError
@@ -675,7 +681,8 @@ class Number_Density_Function(Base_Number_Density_Function):
         show: bool = False,
         plot_kwargs: Dict[str, Any] = {},
         legend_kwargs: Dict[str, Any] = {},
-        x_lims: Union[list, np.array, str, None] = "default",
+        x_lims: Optional[Union[List[float], str]] = "default",
+        y_lims: Optional[List[float]] = None,
         title: Optional[str] = None,
         obs_author_years: Dict[str, Any] = {},
         sim_author_years: Dict[str, Any] = {},
@@ -738,6 +745,7 @@ class Number_Density_Function(Base_Number_Density_Function):
             plot_kwargs,
             legend_kwargs,
             x_lims,
+            y_lims,
             title,
             save_path,
         )
