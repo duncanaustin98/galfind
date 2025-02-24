@@ -218,7 +218,7 @@ class SED_code(ABC):
         else:
             fit = False
 
-        if fit:    
+        if fit:
             self.fit(
                 cat,
                 aper_diam,

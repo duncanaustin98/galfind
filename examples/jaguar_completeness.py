@@ -7,6 +7,11 @@ from galfind.selection import Completeness
 from galfind.Data import morgan_version_to_dir
 from galfind.Catalogue import jaguar_phot_labels, load_jaguar_phot
 
+def make_completeness_grid_from_cat(
+    cat_path: str,
+):
+    pass
+
 def main(
     survey: str,
     version: str,
@@ -71,12 +76,12 @@ def main(
 
 if __name__ == "__main__":
     # input parameters for data objectconda act
-    survey = "CEERSP9"
-    version = "v9"
+    survey = "JOF"
+    version = "v11"
     instrument_names = ["ACS_WFC", "NIRCam"]
     aper_diams = [0.32] * u.arcsec
     forced_phot_band = ["F277W", "F356W", "F444W"]
-    realization = 2
+    realization = 1
     import time
     time.sleep(4*60*60) #4 * 60 * 60)
     main(
@@ -87,6 +92,9 @@ if __name__ == "__main__":
         forced_phot_band,
         realization,
     )
+
+    cat_path = "/raid/scratch/work/austind/GALFIND_WORK/"
+    make_completeness_grid_from_cat(cat_path)
 
     # from astropy.table import Table
     # jaguar_cat_path = "/raid/scratch/data/JAGUAR/JADES_SF_mock_r1_v1.2.fits"

@@ -483,7 +483,7 @@ class ID_Selector(Data_Selector):
 
     def __init__(
         self: Self,
-        IDs: int,
+        IDs: Union[int, List[int]],
     ):
         if isinstance(IDs, int):
             IDs = [IDs]
