@@ -58,23 +58,27 @@ def main(
     completeness = Completeness.from_sim_cat(
         jaguar_cat,
         SED_fitter_arr = SED_fitter_arr,
-        sample = None,
+        sampler = None,
         aper_diam = aper_diams[0],
         mode = "n_nearest",
         depth_region = "all",
+        x_calculator = None,
+        y_calculator = None,
+        x_arr = None,
+        y_arr = None,
     )
 
 
 if __name__ == "__main__":
     # input parameters for data objectconda act
-    survey = "PRIMER-UDS"
-    version = "v12"
+    survey = "CEERSP9"
+    version = "v9"
     instrument_names = ["ACS_WFC", "NIRCam"]
     aper_diams = [0.32] * u.arcsec
     forced_phot_band = ["F277W", "F356W", "F444W"]
-    realization = 6
+    realization = 2
     import time
-    time.sleep(4 * 60 * 60)
+    time.sleep(4*60*60) #4 * 60 * 60)
     main(
         survey,
         version,

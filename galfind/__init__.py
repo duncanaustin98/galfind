@@ -216,7 +216,7 @@ from .Spectrum import (
     Spectral_Filter,
     Spectral_Grating,
 )
-from .MCMC import Prior, Flat_Prior, Priors, MCMC_Fitter, Schechter_Mag_Fitter, Schechter_Lum_Fitter, Linear_Fitter
+from .MCMC import Prior, Flat_Prior, Priors, MCMC_Fitter, Schechter_Mag_Fitter, Schechter_Lum_Fitter, Linear_Fitter, Power_Law_Fitter, Scattered_Linear_Fitter
 from .Number_Density_Function import (
     Base_Number_Density_Function,
     Number_Density_Function,
@@ -250,6 +250,7 @@ from .Rest_frame_properties import (
     Line_Dust_Attenuation_From_UV_Calculator,
     Optical_Line_Flux_Calculator,
     Optical_Line_Luminosity_Calculator,
+    Ndot_Ion_Calculator,
     Xi_Ion_Calculator,
     SFR_Halpha_Calculator,
 )

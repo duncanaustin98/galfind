@@ -334,13 +334,11 @@ class ACS_WFC(Instrument, funcs.Singleton):
                 (band_data.pix_scale.to(u.rad).value ** 2) * u.MJy.to(u.Jy)
             ) + u.Jy.to(u.ABmag)
         else:
-            raise (
-                Exception(
-                    f"ACS_WFC data for {band_data.filt.filt_name}"
-                    + " must contain either 'ZEROPNT' or 'PHOTFLAM' and 'PHOTPLAM' "
-                    + "or 'BUNIT'=MJy/sr in its header to calculate its ZP!"
-                )
-            )
+            err_message = f"ACS_WFC data for {band_data.filt_name}" + \
+                " must contain either 'ZEROPNT' or 'PHOTFLAM' and 'PHOTPLAM' " + \
+                "or 'BUNIT'=MJy/sr in its header to calculate its ZP!"
+            galfind_logger.critical(err_message)
+            raise (Exception(err_message))
         return ZP
 
     def make_model_PSF(self, band: Union[str, Filter]) -> Type[PSF_Base]:

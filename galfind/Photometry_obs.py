@@ -168,13 +168,17 @@ class Photometry_obs(Photometry):
 
     @property
     def SNR(self):
+        if isinstance(self.flux, u.Quantity):
+            fluxes = self.flux
+        else:
+            fluxes = self.flux.filled(fill_value=np.nan)
         return [
             (flux * 10 ** (aper_corr / -2.5)) * 5 / depth
             if flux > 0.0
             else flux * 5 / depth
             for aper_corr, flux, depth in zip(
                 self.aper_corrs,
-                self.flux.filled(fill_value=np.nan).to(u.Jy).value,
+                fluxes.to(u.Jy).value,
                 self.depths.to(u.Jy).value,
             )
         ]

@@ -8,11 +8,11 @@ if TYPE_CHECKING:
 from .grid import Grid_2D
 
 class Contamination(Grid_2D):
-    
-    @staticmethod
-    def _make_grid(
-        sim_cat: Catalogue,
-        select_cat: Catalogue,
-    ):
-        # make grid from the catalogues
-        pass
+    pass
+    # @staticmethod
+    # def _make_grid(
+    #     sim_cat: Catalogue,
+    #     select_cat: Catalogue,
+    # ):
+    #     # make grid from the catalogues
+    #     pass

@@ -285,13 +285,14 @@ def flux_lambda_obs_to_rest(flux_lambda_obs, z):
     return flux_lambda_rest
 
 
-def luminosity_to_flux(lum, wavs, z=None, cosmo=astropy_cosmo, out_units=u.Jy):
+def luminosity_to_flux(lum, wavs, z, cosmo=astropy_cosmo, out_units=u.Jy):
+
+    """
+        Input luminosity should be intrinsic (i.e. rest frame luminosity), leading to observed frame output flux units.
+    """
+
     # calculate luminosity distance
-    if z == None:
-        lum_distance = 10 * u.pc
-        z = 0.0
-    else:
-        lum_distance = cosmo.luminosity_distance(z)
+    lum_distance = cosmo.luminosity_distance(z)
     # sort out the units
     if (
         u.get_physical_type(lum.unit) == "yank"
@@ -300,14 +301,12 @@ def luminosity_to_flux(lum, wavs, z=None, cosmo=astropy_cosmo, out_units=u.Jy):
             "ABmag/spectral flux density",
             "spectral flux density",
         ]:  # f_ν
-            return (
-                lum_lam_to_lum_nu(lum, wavs) / (4 * np.pi * lum_distance**2)
-            ).to(out_units)
+            lum = lum_lam_to_lum_nu(lum, wavs)
         elif (
             u.get_physical_type(out_units)
             == "power density/spectral flux density wav"
         ):  # f_λ
-            return (lum / (4 * np.pi * lum_distance**2)).to(out_units)
+            pass
         else:
             raise (Exception(""))
     elif (
@@ -317,21 +316,29 @@ def luminosity_to_flux(lum, wavs, z=None, cosmo=astropy_cosmo, out_units=u.Jy):
             "ABmag/spectral flux density",
             "spectral flux density",
         ]:  # f_ν
-            return (lum / (4 * np.pi * lum_distance**2)).to(out_units)
+            pass
         elif (
             u.get_physical_type(out_units)
             == "power density/spectral flux density wav"
         ):  # f_λ
-            return (
-                lum_nu_to_lum_lam(lum, wavs) / (4 * np.pi * lum_distance**2)
-            ).to(out_units)
+            lum = lum_nu_to_lum_lam(lum, wavs)
         else:
             raise (Exception(""))
+    return (lum * (1. + z) / (4 * np.pi * lum_distance ** 2)).to(out_units)
 
 
 def flux_to_luminosity(
-    flux, wavs, z=None, cosmo=astropy_cosmo, out_units=u.erg / (u.s * u.Hz)
+    flux, 
+    wavs, 
+    z, 
+    cosmo = astropy_cosmo,
+    out_units = u.erg / (u.s * u.Hz),
 ):
+    
+    """
+        Input should be in observed frame units, leading to output intrinsic luminosity units.
+    """
+
     # sort out the units
     if flux.unit == u.ABmag:
         # convert to f_ν
@@ -377,18 +384,8 @@ def flux_to_luminosity(
             f"{flux.unit=} not in ['spectral flux density', 'power density/spectral flux density wav']"
         )
     # calculate luminosity distance
-    lum_distance = calc_lum_distance(z, cosmo)
-    if z == None:
-        z = 0.0
-    return (4 * np.pi * flux * lum_distance**2).to(out_units)
-
-
-def calc_lum_distance(z, cosmo=astropy_cosmo):
-    if z == None or z == 0.0 or z == 0:
-        lum_distance = 10 * u.pc
-    else:
-        lum_distance = cosmo.luminosity_distance(z)
-    return lum_distance
+    lum_distance = cosmo.luminosity_distance(z)
+    return (4 * np.pi * flux * lum_distance ** 2 / (1. + z)).to(out_units)
 
 
 def dust_correct(lum, dust_mag):

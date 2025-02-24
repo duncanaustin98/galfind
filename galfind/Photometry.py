@@ -297,7 +297,7 @@ class Photometry:
         wavs_to_plot = funcs.convert_wav_units(self.wav, wav_units).value
         mags_to_plot = funcs.convert_mag_units(self.wav, self.flux, mag_units)
 
-        if uplim_sigma == None:
+        if uplim_sigma is None:
             uplims = list(np.full(len(self.flux), False))
         else:
             # work out optimal size of error bar in terms of sigma

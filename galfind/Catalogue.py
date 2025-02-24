@@ -196,7 +196,6 @@ def load_jaguar_phot(
     phot_err = {aper_diam: funcs.flux_image_to_Jy(_phot_err, kwargs["ZP"]) for aper_diam, _phot_err \
         in phot_property_from_fits(cat, err_labels, **kwargs).items()}
     return phot, phot_err
-        
 
 def load_galfind_mask(
     cat: Table,

@@ -2442,7 +2442,10 @@ class Data:
             elif isinstance(forced_phot_band, list):
                 filt_names = forced_phot_band
             if isinstance(forced_phot_band, tuple([str, list])):
-                assert all(name in self.filterset.band_names for name in filt_names)
+                assert all(name in self.filterset.band_names for name in filt_names), \
+                    galfind_logger.critical(
+                        f"Not all {filt_names.split('+')} in {self.filterset.band_names}"
+                    )
                 if len(filt_names) == 1:
                     forced_phot_band = self[filt_names[0]]
                 else:

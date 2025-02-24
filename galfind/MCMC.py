@@ -8,6 +8,7 @@ import corner
 import multiprocessing as mp
 import os
 from astropy.stats import sigma_clip
+from scipy import stats
 from matplotlib import patheffects as pe
 import matplotlib.pyplot as plt
 from numpy.typing import NDArray
@@ -159,7 +160,7 @@ class Priors:
         return f"Priors({self.names})"
     
 
-class MCMC_Fitter(ABC):
+class Base_MCMC_Fitter(ABC):
 
     def __init__(
         self: Self,
@@ -169,7 +170,7 @@ class MCMC_Fitter(ABC):
         y_data_errs: NDArray[NDArray[float, float]],
         nwalkers: int,
         backend_filename: Optional[str],
-        fixed_params: Dict[str, float]
+        fixed_params: Dict[str, float],
     ):
         self.priors = priors
         self.x_data = x_data
@@ -243,44 +244,13 @@ class MCMC_Fitter(ABC):
     # @abstractmethod
     # def blob_funcs(self):
     #     pass
-
-    def _get_sigma_sq(
-        self: Self,
-        residuals: NDArray[float],
-        params: Dict[str, float]
-    ) -> NDArray[float]:
-        sigma = [y_err_u1 if residual > 0. else y_err_l1 for residual, y_err_u1, y_err_l1 in 
-            zip(residuals, self.y_data_errs[0], self.y_data_errs[1])]
-        return np.array(sigma) ** 2
     
+    @abstractmethod
     def log_likelihood(
         self: Self,
         params: List[float],
     ) -> float:
-        params_loc = {}
-        for i, prior in enumerate(self.priors):
-            params_loc[prior.name] = params[i]
-        lp = self.priors(params_loc)
-        if not np.isfinite(lp):
-            return -np.inf # np.full(1 + len(self.blob_keys), -np.inf)
-        # update params with fixed values
-        params_loc = self._fix_params(params_loc)
-        residuals = self.get_residuals(params_loc)
-        sigma_sq = self._get_sigma_sq(residuals, params_loc)
-        return lp - 0.5 * np.sum(residuals ** 2 / sigma_sq + np.log(sigma_sq))
-    
-        # if len(self.blob_keys) == 0:
-        #     return return_value
-        # else:
-        #     # append log likelihood to front of blobs array and change to tuple
-        #     output_values = tuple(np.insert(self.blob_funcs(params_loc), 0, return_value))
-        #     # print(return_value, " ".join(map(str, self.blob_funcs(params_loc))))
-        #     # z = (self.blob_funcs(params_loc)[i] for i in range(len(self.blob_keys)))
-        #     # x = tuple(self.blob_funcs(params_loc))
-        #     # print(x)
-        #     # print(type(x))
-        #     #print(val + "," for val in self.blob_funcs(params_loc))
-        #     return output_values #return_value, " ".join(map(str, self.blob_funcs(params_loc)))
+        pass
 
     def _fix_params(
         self: Self,
@@ -290,40 +260,51 @@ class MCMC_Fitter(ABC):
             params[key] = val
         return params
     
-    def _calculate_scatter(self) -> float:
-        residuals = self.get_residuals(self.get_params_med())
-        self.scatter = np.sqrt(np.sum(residuals ** 2) / (len(self.y_data) - 1))
-        galfind_logger.info(f"Scatter: {self.scatter:.3f} dex")
-        return self.scatter
+    # def _calculate_scatter(self) -> float:
+    #     residuals = self.get_residuals(self.get_params_med())
+    #     self.scatter = np.sqrt(np.sum(residuals ** 2) / (len(self.y_data) - 1))
+    #     galfind_logger.info(f"Scatter: {self.scatter:.3f} dex")
+    #     return self.scatter
 
-    def get_params_med(self: Self) -> Dict[str, float]:
-        if not hasattr(self, "params_med"):
-            autocorr_time = np.max(self.sampler.get_autocorr_time())
-            discard = int(autocorr_time * 2)
-            thin = 1 # int(autocorr_time / 2)
-            chain = self.sampler.get_chain(flat = True, discard = discard, thin = thin)
-            self.params_med = {prior.name: np.median(chain[:, i]) for i, prior in enumerate(self.priors)}
-        galfind_logger.info(f"Median parameters: {self.params_med}")
-        return self.params_med
+    # def get_sample(self: Self) -> NDArray[float]:
+    #     autocorr_time = np.max(self.sampler.get_autocorr_time())
+    #     discard = int(autocorr_time * 2)
+    #     thin = int(autocorr_time / 2)
+    #     chain = self.sampler.get_chain(flat = True, discard = discard, thin = thin)
+    #     return chain
 
-    def plot(self: Self, ax: plt.Axes) -> None: #colour = "blue", nsamples = 1_000, plot_med = False, alpha = 0.3):
-        x_data = np.linspace(np.min(self.x_data), np.max(self.x_data), 100)
-        autocorr_time = np.max(self.sampler.get_autocorr_time())
-        discard = int(autocorr_time * 2)
-        thin = 1 # int(autocorr_time / 2)
+    # def get_params_med(self: Self) -> Dict[str, float]:
+    #     if not hasattr(self, "params_med"):
+    #         chain = self.get_sample()
+    #         self.params_med = {prior.name: np.median(chain[:, i]) for i, prior in enumerate(self.priors)}
+    #     galfind_logger.info(f"Median parameters: {self.params_med}")
+    #     return self.params_med
 
-        y_fit = np.array([self.model(x_data, {prior.name: param for prior, param \
-            in zip(self.priors, params)}) for params in self.sampler.get_chain(
-            flat = True, discard = discard, thin = thin)]).T
+    def plot(
+        self: Self,
+        ax: plt.Axes,
+        log_data: bool = False,
+        x_arr: Optional[NDArray[float]] = None,
+        label: Optional[str] = None,
+        **kwargs: Dict[str, Any]
+    ) -> None: #colour = "blue", nsamples = 1_000, plot_med = False, alpha = 0.3):
+        if x_arr is None:
+            x_arr = np.linspace(np.min(self.x_data), np.max(self.x_data), 100)
+
+        l1_chains, med_chains, u1_chains = self._get_plot_chains(x_arr = x_arr, log_data = log_data)
         
-        l1_chains = np.array([np.percentile(y, 16) for y in y_fit])
-        med_chains = np.array([np.percentile(y, 50) for y in y_fit])
-        u1_chains = np.array([np.percentile(y, 84) for y in y_fit])
-        
-        ax.plot(x_data, med_chains, color = "black", zorder = 2)
-        ax.fill_between(x_data, l1_chains, u1_chains, color = "black", alpha = 0.5, \
+        ax.plot(x_arr, med_chains, color = "black", zorder = 2, label = label)
+        ax.fill_between(x_arr, l1_chains, u1_chains, color = "black", alpha = 0.5, \
             zorder = 1, path_effects = [pe.withStroke(linewidth = 2., foreground = "white")])
         galfind_logger.info("Plotting MCMC fit")
+
+    @abstractmethod
+    def _get_plot_chains(
+        self: Self,
+        x_arr: NDArray[float],
+        log_data: bool = False,
+    ) -> Tuple[NDArray[float], NDArray[float], NDArray[float]]:
+        pass
 
     def plot_corner(
         self: Self,
@@ -431,6 +412,151 @@ class MCMC_Fitter(ABC):
             #os.chdir(orig_dir)
         return fig_
     
+    # def get_residuals(self: Self, params: Dict[str, float]) -> NDArray[float]:
+    #     return self.y_data - self.model(self.x_data, params)
+
+    # def sigma_clip(
+    #     self: Self,
+    #     sigma: float = 3.0
+    # ) -> NDArray[bool]:
+    #     removed_residuals = sigma_clip(self.get_residuals(self.get_params_med()), sigma = sigma, masked = True)
+    #     kept_residuals = ~removed_residuals.mask
+    #     return kept_residuals
+
+
+class MCMC_Fitter(Base_MCMC_Fitter):
+    
+    # def _instantiate_walkers(self: Self) -> NoReturn:
+    #     # # uniformly distributed starting positions over flat prior
+    #     # flat_priors_lower = [self.flat_priors[i][0] for i in range(self.ndim)]
+    #     # flat_priors_diff = [self.flat_priors[i][1] - self.flat_priors[i][0] for i in range(self.ndim)]
+
+    #     # pos = [flat_priors_lower + (flat_priors_diff) \
+    #     #        * np.random.uniform(0, 1, self.ndim) for i in range(self.nwalkers)]
+
+    #     init_pos = [self.fiducial_params + 1e-4 * np.random.uniform(0, 1, self.ndim) * \
+    #             self.fiducial_params for i in range(self.nwalkers)]
+    #     # init_pos = [np.array([np.random.uniform(prior.prior_params["lower_lim"], \
+    #     #     prior.prior_params["upper_lim"], 1)[0] for prior in self.priors]) \
+    #     #     for i in range(self.nwalkers)]
+    #     self.init_pos = init_pos
+
+    # def __call__(
+    #     self: Self,
+    #     n_steps: int,
+    #     n_processes: int = 1,
+    # ) -> NoReturn:
+    #     if hasattr(self, "backend"):
+    #         galfind_logger.info("Initial size: {0}".format(self.backend.iteration))
+    #         n_steps -= self.backend.iteration
+    #     else:
+    #         galfind_logger.info("Initial size: 0")
+    #     with mp.Pool(processes=n_processes) as pool:
+    #         # blobs_dtype = [(key, object) for key in self.blob_keys]
+    #         # print("blobs_dtype = ", blobs_dtype)
+    #         self.sampler.run_mcmc(self.init_pos, n_steps, progress = True)
+    #         if hasattr(self, "backend"):
+    #             galfind_logger.info("Final size: {0}".format(self.backend.iteration))
+    #     pool.close()
+    
+    @abstractmethod
+    def update(self):
+        pass
+    
+    @abstractmethod
+    def model(
+        self: Self,
+        x: Union[float, List[float], NDArray[float]],
+        params: Dict[str, float]
+    ) -> float:
+        pass
+
+    def _get_sigma_sq(
+        self: Self,
+        residuals: NDArray[float],
+        params: Dict[str, float],
+    ) -> NDArray[float]:
+        sigma = [y_err_u1 if residual > 0. else y_err_l1 for residual, y_err_u1, y_err_l1 in 
+            zip(residuals, self.y_data_errs[0], self.y_data_errs[1])]
+        return np.array(sigma) ** 2
+    
+    def log_likelihood(
+        self: Self,
+        params: List[float],
+    ) -> float:
+        params_loc = {}
+        for i, prior in enumerate(self.priors):
+            params_loc[prior.name] = params[i]
+        lp = self.priors(params_loc)
+        if not np.isfinite(lp):
+            return -np.inf # np.full(1 + len(self.blob_keys), -np.inf)
+        # update params with fixed values
+        params_loc = self._fix_params(params_loc)
+        residuals = self.get_residuals(params_loc)
+        sigma_sq = self._get_sigma_sq(residuals, params_loc)
+        return lp - 0.5 * np.sum(residuals ** 2 / sigma_sq + np.log(sigma_sq))
+    
+        # if len(self.blob_keys) == 0:
+        #     return return_value
+        # else:
+        #     # append log likelihood to front of blobs array and change to tuple
+        #     output_values = tuple(np.insert(self.blob_funcs(params_loc), 0, return_value))
+        #     # print(return_value, " ".join(map(str, self.blob_funcs(params_loc))))
+        #     # z = (self.blob_funcs(params_loc)[i] for i in range(len(self.blob_keys)))
+        #     # x = tuple(self.blob_funcs(params_loc))
+        #     # print(x)
+        #     # print(type(x))
+        #     #print(val + "," for val in self.blob_funcs(params_loc))
+        #     return output_values #return_value, " ".join(map(str, self.blob_funcs(params_loc)))
+
+    # def _fix_params(
+    #     self: Self,
+    #     params: Dict[str, float]
+    # ) -> Dict[str, float]:
+    #     for key, val in self.fixed_params.items():
+    #         params[key] = val
+    #     return params
+
+    def _get_plot_chains(
+        self: Self,
+        x_arr: NDArray[float],
+        log_data: bool = False,
+    ) -> Tuple[NDArray[float], NDArray[float], NDArray[float]]:
+        autocorr_time = np.max(self.sampler.get_autocorr_time())
+        discard = int(autocorr_time * 2)
+        thin = 1 # int(autocorr_time / 2)
+        if log_data:
+            model = lambda x, params: np.log10(self.model(x, params))
+        else:
+            model = self.model
+        y_fit = np.array([model(x_arr, {prior.name: param for prior, param \
+            in zip(self.priors, params)}) for params in self.sampler.get_chain(
+            flat = True, discard = discard, thin = thin)]).T
+        l1_chains = np.array([np.percentile(y, 16) for y in y_fit])
+        med_chains = np.array([np.percentile(y, 50) for y in y_fit])
+        u1_chains = np.array([np.percentile(y, 84) for y in y_fit])
+        return l1_chains, med_chains, u1_chains
+    
+    def _calculate_scatter(self) -> float:
+        residuals = self.get_residuals(self.get_params_med())
+        self.scatter = np.sqrt(np.sum(residuals ** 2) / (len(self.y_data) - 1))
+        galfind_logger.info(f"Scatter: {self.scatter:.3f} dex")
+        return self.scatter
+
+    def get_sample(self: Self) -> NDArray[float]:
+        autocorr_time = np.max(self.sampler.get_autocorr_time())
+        discard = int(autocorr_time * 2)
+        thin = int(autocorr_time / 2)
+        chain = self.sampler.get_chain(flat = True, discard = discard, thin = thin)
+        return chain
+
+    def get_params_med(self: Self) -> Dict[str, float]:
+        if not hasattr(self, "params_med"):
+            chain = self.get_sample()
+            self.params_med = {prior.name: np.median(chain[:, i]) for i, prior in enumerate(self.priors)}
+        galfind_logger.info(f"Median parameters: {self.params_med}")
+        return self.params_med
+    
     def get_residuals(self: Self, params: Dict[str, float]) -> NDArray[float]:
         return self.y_data - self.model(self.x_data, params)
 
@@ -441,6 +567,73 @@ class MCMC_Fitter(ABC):
         removed_residuals = sigma_clip(self.get_residuals(self.get_params_med()), sigma = sigma, masked = True)
         kept_residuals = ~removed_residuals.mask
         return kept_residuals
+
+class Scattered_MCMC_Fitter(Base_MCMC_Fitter):
+
+    def __init__(
+        self: Self,
+        priors: Priors,
+        x_data_chains: NDArray[NDArray[float]],
+        y_data_chains: NDArray[NDArray[float]],
+        nwalkers: int,
+        backend_filename: Optional[str],
+        fixed_params: Dict[str, float],
+    ):
+        assert "scatter" in priors.names + list(fixed_params.keys())
+        y_data_errs = None
+        super().__init__(priors, x_data_chains, y_data_chains, y_data_errs, nwalkers, backend_filename, fixed_params)
+        self.mask = self.x_data.mask | self.y_data.mask
+
+    @abstractmethod
+    def update(self):
+        pass
+    
+    @abstractmethod
+    def model(
+        self: Self,
+        x: Union[float, List[float], NDArray[float]],
+        params: Dict[str, float]
+    ) -> float:
+        pass
+
+    def _get_plot_chains(
+        self: Self,
+        x_arr: NDArray[float],
+        log_data: bool = False,
+    ) -> Tuple[NDArray[float], NDArray[float], NDArray[float]]:
+        autocorr_time = np.max(self.sampler.get_autocorr_time())
+        discard = int(autocorr_time * 2)
+        thin = 1 # int(autocorr_time / 2)
+        if log_data:
+            model = lambda x, params: np.log10(self.model(x, params))
+        else:
+            model = self.model
+        params_arr = [{prior.name: param for prior, param in zip(self.priors, params)} \
+            for params in self.sampler.get_chain(flat = True, discard = discard, thin = thin)]
+        y_fit = np.array([model(x_arr, params) for params in params_arr]).T
+        l1_chains = np.array([np.percentile(y, 16) for y in y_fit])
+        med_chains = np.array([np.percentile(y, 50) for y in y_fit])
+        u1_chains = np.array([np.percentile(y, 84) for y in y_fit])
+        return l1_chains, med_chains, u1_chains
+
+    def log_likelihood(
+        self: Self,
+        params: List[float],
+    ) -> float:
+        params_loc = {}
+        for i, prior in enumerate(self.priors):
+            params_loc[prior.name] = params[i]
+        lp = self.priors(params_loc)
+        if not np.isfinite(lp):
+            return -np.inf # np.full(1 + len(self.blob_keys), -np.inf)
+        else:
+            model = self.model(self.x_data, params_loc)
+            model.mask = self.mask
+            probs_samples = stats.norm(model, params_loc["scatter"]).pdf(self.y_data)
+            probs_objects = np.nanmean(probs_samples, axis = 1)
+            assert len(probs_objects) == len(self.x_data)
+            return np.log(probs_objects + 1e-100).sum()
+
 
 class Schechter_Lum_Fitter(MCMC_Fitter):
 
@@ -531,7 +724,7 @@ class Schechter_Mag_Fitter(MCMC_Fitter):
         pass
 
 class Linear_Fitter(MCMC_Fitter):
-    # Power Law in log-log space
+    # Power Law in linear space
     def __init__(
         self: Self,
         priors: Priors,
@@ -541,13 +734,12 @@ class Linear_Fitter(MCMC_Fitter):
         nwalkers: int,
         backend_filename: Optional[str],
         fixed_params: Dict[str, float],
-        incl_scatter: bool = False,
+        incl_logf: bool = False,
     ):
-        self.incl_scatter = incl_scatter
-        if incl_scatter:
-            params = ["m", "c", "logf"]
-        else:
-            params = ["m", "c"]
+        self.incl_logf = incl_logf
+        params = ["m", "c"]
+        if incl_logf:
+            params.append("logf")
         assert all([key in params for key in fixed_params.keys()]), \
             galfind_logger.critical(
                 f"{fixed_params=} must be m and/or c or empty"
@@ -555,7 +747,7 @@ class Linear_Fitter(MCMC_Fitter):
         assert len(fixed_params) + len(priors) == len(params), \
             galfind_logger.critical(
                 f"Must have exactly {len(params)} parameters if " + \
-                f"{'not' if not incl_scatter else ''} including scatter"
+                f"{'not' if not incl_logf else ''} including logf"
             )
         assert all([key in fixed_params.keys() or key in priors.names for key in params]), \
             galfind_logger.critical(
@@ -566,9 +758,9 @@ class Linear_Fitter(MCMC_Fitter):
     def _get_sigma_sq(
         self: Self,
         residuals: NDArray[float],
-        params: Dict[str, float]
+        params: Dict[str, float],
     ) -> NDArray[float]:
-        if self.incl_scatter:
+        if self.incl_logf:
             return super()._get_sigma_sq(residuals, params) + \
                 np.exp(2 * params["logf"]) * self.model(self.x_data, params) ** 2
         else:
@@ -585,3 +777,113 @@ class Linear_Fitter(MCMC_Fitter):
         self: Self
     ) -> NoReturn:
         pass
+
+class Power_Law_Fitter(MCMC_Fitter):
+    # Linear in log-log space
+    def __init__(
+        self: Self,
+        priors: Priors,
+        x_data: NDArray[float],
+        y_data: NDArray[float],
+        y_data_errs: NDArray[NDArray[float, float]],
+        nwalkers: int,
+        backend_filename: Optional[str],
+        fixed_params: Dict[str, float],
+        incl_logf: bool = False,
+    ):
+        self.incl_logf = incl_logf
+        params = ["A", "slope"]
+        if incl_logf:
+            params.append("logf")
+        # TODO: Whack these assertions in parent class
+        assert all([key in params for key in fixed_params.keys()]), \
+            galfind_logger.critical(
+                f"{fixed_params=} must be A and/or slope or empty"
+            )
+        assert len(fixed_params) + len(priors) == len(params), \
+            galfind_logger.critical(
+                f"Must have exactly {len(params)} parameters if " + \
+                f"{'not' if not incl_logf else ''} including logf"
+            )
+        assert all([key in fixed_params.keys() or key in priors.names for key in params]), \
+            galfind_logger.critical(
+                f"{repr(priors)=} or {fixed_params=} must contain {', '.join(params)}"
+            )
+        super().__init__(priors, x_data, y_data, y_data_errs, nwalkers, backend_filename, fixed_params)
+    
+    def _get_sigma_sq(
+        self: Self,
+        residuals: NDArray[float],
+        params: Dict[str, float]
+    ) -> NDArray[float]:
+        if self.incl_logf:
+            return super()._get_sigma_sq(residuals, params) + \
+                np.exp(2 * params["logf"]) * self.model(self.x_data, params) ** 2
+        else:
+            return super()._get_sigma_sq(residuals, params)
+
+    def model(
+        self: Self,
+        x: Union[float, List[float], NDArray[float]],
+        params: Dict[str, float]
+    ) -> float:
+        return params["A"] * x ** params["slope"]
+    
+    def update(
+        self: Self
+    ) -> NoReturn:
+        pass
+
+    # def plot(
+    #     self: Self,
+    #     ax: plt.Axes,
+    #     log_data: bool = True,
+    #     x_arr: Optional[NDArray[float]] = None,
+    #     **kwargs: Dict[str, Any]
+    # ) -> None:
+    #     super().plot(ax, log_data, x_arr, **kwargs)
+
+# below is copied!
+class Scattered_Linear_Fitter(Scattered_MCMC_Fitter):
+
+    def __init__(
+        self: Self,
+        priors: Priors,
+        x_data_chains: NDArray[NDArray[float]],
+        y_data_chains: NDArray[NDArray[float]],
+        nwalkers: int,
+        backend_filename: Optional[str],
+        fixed_params: Dict[str, float],
+        incl_logf: bool = False,
+    ):
+        self.incl_logf = incl_logf
+        params = ["m", "c", "scatter"]
+        if incl_logf:
+            params.append("logf")
+        assert all([key in params for key in fixed_params.keys()]), \
+            galfind_logger.critical(
+                f"{fixed_params=} must be m and/or c or empty"
+            )
+        assert len(fixed_params) + len(priors) == len(params), \
+            galfind_logger.critical(
+                f"Must have exactly {len(params)} parameters if " + \
+                f"{'not' if not incl_logf else ''} including logf"
+            )
+        assert all([key in fixed_params.keys() or key in priors.names for key in params]), \
+            galfind_logger.critical(
+                f"{repr(priors)=} or {fixed_params=} must contain {', '.join(params)}"
+            )
+        super().__init__(priors, x_data_chains, y_data_chains, nwalkers, backend_filename, fixed_params)
+
+    def model(
+        self: Self,
+        x: Union[float, List[float], NDArray[float]],
+        params: Dict[str, float]
+    ) -> float:
+        return params["m"] * x + params["c"]
+    
+    def update(
+        self: Self
+    ) -> NoReturn:
+        pass
+
