@@ -12,7 +12,7 @@ plt.style.use(
 )
 
 # Load in a data object
-survey = "PRIMER-COSMOS"
+survey = "JADES-DR3-GN-Medium"
 version = "v12"
 instrument_names = ["NIRCam"] # "ACS_WFC"
 aper_diams = [0.32] * u.arcsec
@@ -21,20 +21,19 @@ min_flux_pc_err = 10.
 
 def test_selection():
     SED_fit_params_arr = [
-        #{"templates": "fsps_larson", "lowz_zmax": 4.0},
+        {"templates": "fsps_larson", "lowz_zmax": 4.0},
         {"templates": "fsps_larson", "lowz_zmax": 6.0},
         {"templates": "fsps_larson", "lowz_zmax": None}
     ]
-    # data = Data.from_survey_version(
-    #     survey,
-    #     version,
-    #     instrument_names = instrument_names,
-    #     version_to_dir_dict = morgan_version_to_dir,
-    #     aper_diams = aper_diams,
-    #     forced_phot_band = forced_phot_band,
-    # )
-    # #print(data.band_data_arr)
-    # #breakpoint()
+    data = Data.from_survey_version(
+        survey,
+        version,
+        instrument_names = instrument_names,
+        version_to_dir_dict = morgan_version_to_dir,
+        aper_diams = aper_diams,
+        forced_phot_band = forced_phot_band,
+    )
+    print(data.band_data_arr)
     # data.mask(
     #     "auto",
     #     angle = 92.0
@@ -69,7 +68,7 @@ def test_selection():
         aper_diams = aper_diams,
         forced_phot_band = forced_phot_band,
         min_flux_pc_err = min_flux_pc_err,
-        crops = EPOCHS_Selector(aper_diams[0], EAZY(SED_fit_params_arr[-1]), allow_lowz=False)
+        #crops = EPOCHS_Selector(aper_diams[0], EAZY(SED_fit_params_arr[-1]), allow_lowz=False)
     )
     #breakpoint()
 
@@ -88,17 +87,17 @@ def test_selection():
     # load sextractor half-light radii
     cat.load_sextractor_Re()
 
-    # from galfind import EPOCHS_Selector, Redwards_Lya_Detect_Selector
-    # epochs_selector = EPOCHS_Selector(aper_diams[0], EAZY_fitter, allow_lowz = False, unmasked_instruments = "NIRCam")
-    # epochs_selected_cat = epochs_selector(cat, return_copy = True)
+    from galfind import EPOCHS_Selector, Redwards_Lya_Detect_Selector
+    epochs_selector = EPOCHS_Selector(aper_diams[0], EAZY_fitter, allow_lowz = False, unmasked_instruments = "NIRCam")
+    epochs_selected_cat = epochs_selector(cat, return_copy = True)
     # epochs_selector_lowz = EPOCHS_Selector(aper_diams[0], EAZY_fitter, allow_lowz = True, unmasked_instruments = "NIRCam")
     # epochs_selected_cat_lowz = epochs_selector_lowz(cat, return_copy = True)
 
-    # from galfind import MUV_Calculator
-    # MUV_calculator = MUV_Calculator(aper_diams[0], EAZY_fitter.label)
-    # MUV_calculator(cat, n_chains = 10_000, output = False, n_jobs = 1)
+    from galfind import MUV_Calculator
+    MUV_calculator = MUV_Calculator(aper_diams[0], EAZY_fitter.label)
+    MUV_calculator(epochs_selected_cat, n_chains = 10_000, output = False, n_jobs = 1)
 
-    cat.plot_phot_diagnostics(
+    epochs_selected_cat.plot_phot_diagnostics(
         aper_diams[0],
         EAZY_fitter,
         EAZY_fitter,
@@ -106,7 +105,7 @@ def test_selection():
         norm_kwargs = {},
         aper_kwargs = {},
         kron_kwargs = {},
-        n_cutout_rows = 3,
+        n_cutout_rows = 2,
         wav_unit = u.um,
         flux_unit = u.ABmag,
         overwrite = True

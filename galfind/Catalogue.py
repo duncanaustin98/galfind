@@ -353,6 +353,7 @@ class Catalogue_Creator:
         load_selection_kwargs: Dict[str, Any] = {},
         load_SED_result_func: Optional[Callable] = None,
         apply_gal_instr_mask: bool = True,
+        simulated: bool = False,
     ):
         self.survey = survey
         self.version = version
@@ -386,6 +387,7 @@ class Catalogue_Creator:
         self.load_selection_kwargs = load_selection_kwargs
         self.load_SED_result_func = load_SED_result_func
         self.apply_gal_instr_mask = apply_gal_instr_mask
+        self.simulated = simulated
 
         self.set_crops(crops)
         if self.apply_gal_instr_mask:
@@ -438,7 +440,7 @@ class Catalogue_Creator:
         SED_results = {}
         phot_obs_arr = [{aper_diam: Photometry_obs(filterset_arr[i], \
             phot[aper_diam][i], phot_err[aper_diam][i], depths[aper_diam][i], \
-            aper_diam, SED_results=SED_results) for aper_diam in self.aper_diams} \
+            aper_diam, SED_results = SED_results, simulated = self.simulated) for aper_diam in self.aper_diams} \
             for i in range(len(filterset_arr))]
         assert len(IDs) == len(sky_coords) == len(phot_obs_arr), \
             galfind_logger.critical(
@@ -449,9 +451,8 @@ class Catalogue_Creator:
             f"Loading {self.survey} {self.version} {self.cat_name} galaxies!"
         )
         #, origin_survey = self.survey
-        gals = [Galaxy(ID, sky_coord, phot_obs, flags, cat_filterset, survey = self.survey) \
-            for ID, sky_coord, phot_obs, flags, cat_filterset \
-            in zip(IDs, sky_coords, phot_obs_arr, selection_flags, filterset_arr)]
+        gals = [Galaxy(ID, sky_coord, phot_obs, flags, cat_filterset, survey = self.survey, simulated = self.simulated) \
+            for ID, sky_coord, phot_obs, flags, cat_filterset in zip(IDs, sky_coords, phot_obs_arr, selection_flags, filterset_arr)]
         cat = Catalogue(gals, self)
         # point to data if provided
         if hasattr(self, "data"):

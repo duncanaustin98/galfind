@@ -44,6 +44,7 @@ def main(
         load_mask_func = None,
         load_depth_func = None,
         apply_gal_instr_mask = False,
+        simulated = True,
     )
     # load the Jaguar catalogue
     jaguar_cat = jaguar_cat_creator()

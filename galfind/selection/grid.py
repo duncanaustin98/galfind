@@ -244,6 +244,7 @@ class Grid_2D:
         # define new depth labels and load in function
         scattered_cat_creator.get_depth_labels = galfind_depth_labels
         scattered_cat_creator.load_depth_func = load_galfind_depths
+        scattered_cat_creator.simulated = True
 
         # make scattered catalogue if it doesn't already exist
         if not Path(scattered_cat_path).is_file():

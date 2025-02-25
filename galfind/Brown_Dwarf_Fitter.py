@@ -4,6 +4,7 @@ from __future__ import annotations
 from BDFit import StarFit
 import numpy as np
 import astropy.units as u
+from pathlib import Path
 from typing import TYPE_CHECKING, Dict, List, NoReturn, Union
 if TYPE_CHECKING:
     from . import Catalogue, SED_obs
@@ -12,7 +13,9 @@ try:
 except ImportError:
     from typing_extensions import Self, Type  # python > 3.7 AND python < 3.11
 
-from . import config, SED_code
+from . import useful_funcs_austind as funcs
+from . import config, galfind_logger
+from . import SED_code
 
 class Template_Fitter(SED_code):
 
@@ -32,19 +35,11 @@ class Template_Fitter(SED_code):
 
     @property
     def label(self) -> str:
-        if len(self.SED_fit_params["templates"]) > 1:
-            template_label = "+".join(self.SED_fit_params["templates"])
-        else:
-            template_label = self.SED_fit_params["templates"][0]
-        return f"{self.__class__.__name__}_{template_label}"
+        return f"{self.__class__.__name__}_{self.tab_suffix}"
 
     @property
     def hdu_name(self) -> str:
-        if len(self.SED_fit_params["templates"]) > 1:
-            template_label = "+".join(self.SED_fit_params["templates"])
-        else:
-            template_label = self.SED_fit_params["templates"][0]
-        return f"{self.__class__.__name__}_{template_label}"
+        return f"{self.__class__.__name__}_{self.tab_suffix}"
 
     @property
     def tab_suffix(self) -> str:
@@ -91,41 +86,47 @@ class Template_Fitter(SED_code):
         overwrite: bool = False,
         **kwargs: Dict[str, Any],
     ) -> NoReturn:
-        # convert cat.filterset to bands used in StarFit
-        facilities_to_search = {}
-        for filt in cat.filterset:
-            if filt.facility_name not in facilities_to_search.keys():
-                facilities_to_search[filt.facility_name] = []
-            facilities_to_search[filt.facility_name].append(filt.instrument.SVO_name)
-        bands = [
-            f"{filt.instrument_name}.{filt.band_name}" 
-            if filt.instrument_name != "NIRCam" else filt.band_name 
-            for filt in cat.filterset
-        ]
-        starfit = StarFit(
-            facilities_to_search = facilities_to_search,
-            libraries = self.SED_fit_params["templates"],
-            compile_bands = bands,
-        )
-        output = starfit.fit_catalog(
-            photometry_function = self._load_phot,
-            bands = bands,
-            photometry_function_kwargs = {
-                "cat": cat,
-                "aper_diam": aper_diam,
-                "out_units": u.nJy,
-                "no_data_val": np.nan,
-                "incl_units": True,
-            },
-            sys_err = None, 
-            filter_mask = None, #filter_mask, 
-            subset = None,
-        )
-        breakpoint()
-        # save as a .fits file
-        out_path = f"{config['TemplateFitting']['BROWN_DWARF_OUT_DIR']}/{self.tab_suffix}.fits"
-        #
-        # save the best fitting SEDs
+        aper_diams_str = funcs.aper_diams_to_str(np.array([aper_diam.to(u.arcsec).value]) * u.arcsec)
+        out_path = f"{config['TemplateFitting']['BROWN_DWARF_OUT_DIR']}/{cat.version}/" + \
+            f"{cat.filterset.instrument_name}/{cat.survey}/{aper_diams_str}/{self.hdu_name}.fits"
+        if not Path(out_path).is_file() or overwrite:
+            # convert cat.filterset to bands used in StarFit
+            facilities_to_search = {}
+            for filt in cat.filterset:
+                if filt.facility_name not in facilities_to_search.keys():
+                    facilities_to_search[filt.facility_name] = []
+                facilities_to_search[filt.facility_name].append(filt.instrument.SVO_name)
+            bands = [
+                f"{filt.instrument_name}.{filt.band_name}" 
+                if filt.instrument_name != "NIRCam" else filt.band_name 
+                for filt in cat.filterset
+            ]
+            starfit = StarFit(
+                facilities_to_search = facilities_to_search,
+                libraries = self.SED_fit_params["templates"],
+                compile_bands = bands,
+            )
+            starfit.fit_catalog(
+                photometry_function = self._load_phot,
+                bands = bands,
+                photometry_function_kwargs = {
+                    "cat": cat,
+                    "aper_diam": aper_diam,
+                    "out_units": u.nJy,
+                    "no_data_val": np.nan,
+                    "incl_units": True,
+                },
+                sys_err = None, 
+                filter_mask = None, #filter_mask, 
+                subset = None,
+            )
+            tab = starfit.make_cat()
+            tab["ID"] = np.array(cat.ID)
+            # save as a .fits file
+            funcs.make_dirs(out_path)
+            tab.write(out_path, overwrite = overwrite)
+            galfind_logger.info(f"Saved {self.tab_suffix} fits to {out_path}")
+            # save the best fitting SEDs
 
     def make_fits_from_out(self, out_path):
         pass
@@ -165,11 +166,21 @@ class Template_Fitter(SED_code):
                 f"'{key}' not in SED_fit_params keys = {list(self.SED_fit_params.keys())}"
             )
 
-    pass
-
 
 class Brown_Dwarf_Fitter(Template_Fitter):
 
     def __init__(self: Self):
         SED_fit_params = {"templates": ["sonora_bobcat", "sonora_cholla", "sonora_elf_owl", "sonora_diamondback", "low-z"]}
         super().__init__(SED_fit_params)
+
+    @property
+    def label(self) -> str:
+        return self.__class__.__name__
+
+    @property
+    def hdu_name(self) -> str:
+        return self.__class__.__name__
+
+    @property
+    def tab_suffix(self) -> str:
+        return "brown_dwarf"
