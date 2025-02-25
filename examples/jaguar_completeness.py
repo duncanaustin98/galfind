@@ -7,11 +7,6 @@ from galfind.selection import Completeness
 from galfind.Data import morgan_version_to_dir
 from galfind.Catalogue import jaguar_phot_labels, load_jaguar_phot
 
-def make_completeness_grid_from_cat(
-    cat_path: str,
-):
-    pass
-
 def main(
     survey: str,
     version: str,

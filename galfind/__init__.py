@@ -144,6 +144,7 @@ from .SED_codes import SED_code
 from .LePhare import LePhare
 from .EAZY import EAZY # Failed to `import dust_attenuation`
 from .Bagpipes import Bagpipes
+from .Brown_Dwarf_Fitter import Template_Fitter, Brown_Dwarf_Fitter
 
 # don't do Bagpipes or LePhare for now
 # sed_code_to_name_dict = {

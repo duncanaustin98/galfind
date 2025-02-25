@@ -354,10 +354,7 @@ class Band_Data_Base(ABC):
         self, output_hdr: bool = False
     ) -> Union[Tuple[np.ndarray, fits.Header], np.ndarray]:
         if Path(self.rms_err_path).is_file():
-            try:
-                hdu = fits.open(self.rms_err_path)[self.rms_err_ext]
-            except:
-                breakpoint()
+            hdu = fits.open(self.rms_err_path)[self.rms_err_ext]
             rms_err = hdu.data
             hdr = hdu.header
         else:

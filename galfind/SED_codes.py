@@ -344,6 +344,7 @@ class SED_code(ABC):
         no_data_val: Any,
         upper_sigma_lim: Optional[Dict[str, Union[float, int]]] = None,
         input_filterset: Optional[Multiple_Filter] = None,
+        incl_units: bool = False,
     ) -> Tuple[np.ndarray, np.ndarray]:
         if input_filterset is None:
             input_filterset = cat.filterset
@@ -406,8 +407,10 @@ class SED_code(ABC):
         # insert 'no_data_val' from SED_input_bands with no data in the catalogue
         phot_in = np.zeros((len(cat), len(input_filterset)))
         phot_err_in = np.zeros((len(cat), len(input_filterset)))
+        load_message = f"Loading photometry for {cat.survey} {cat.version} for {self.label} SED fitting"
+        galfind_logger.info(load_message)
         for i, gal in tqdm(
-            enumerate(cat), desc="Making .in file", total=len(cat)
+            enumerate(cat), desc=load_message, total=len(cat)
         ):
             for j, band_name in enumerate(input_filterset.band_names):
                 if band_name in gal.aper_phot[aper_diam].filterset.band_names:  # Check mask?
@@ -419,6 +422,9 @@ class SED_code(ABC):
                 else:
                     phot_in[i, j] = no_data_val
                     phot_err_in[i, j] = no_data_val
+        if incl_units:
+            phot_in = phot_in * out_units
+            phot_err_in = phot_err_in * out_units
         return phot_in, phot_err_in
 
     # should be catalogue method

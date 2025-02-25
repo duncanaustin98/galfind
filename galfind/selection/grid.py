@@ -299,7 +299,11 @@ class Grid_2D:
             ) for SED_fitter in SED_fitter_arr
         ]
         # perform sample selection
-        select_cat = sampler(scattered_sim_cat, return_copy = True)
+        select_cat = deepcopy(scattered_sim_cat)
+        for _sampler in sampler:
+            _sampler(scattered_sim_cat)
+            #select_cat = sampler(select_cat, return_copy = True)
+        raise Exception()
         return cls.from_sim_cat_select_cat(
             sim_cat, 
             select_cat,
