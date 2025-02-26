@@ -78,7 +78,7 @@ class Spitzer(Facility, funcs.Singleton):
 class Euclid(Facility, funcs.Singleton):
     pass
 
-class CFHT(Faclility, funcs.Singleton):
+class CFHT(Facility, funcs.Singleton):
     pass
 
 class Subaru(Facility, funcs.Singleton):
@@ -454,7 +454,7 @@ class MegaCam(Instrument, funcs.Singleton):
             "i_2",
             "z",
             "z_1",
-            "gri",
+            #"gri",
         ]
         self.SVO_name = "MegaCam"
         super().__init__("CFHT", Megacam_band_names)
@@ -463,6 +463,11 @@ class MegaCam(Instrument, funcs.Singleton):
         ZP = band_data.load_im()[1]["PHOTZP"]
         return ZP
 
+    def make_model_PSF(self, band: Union[str, Filter]) -> Type[PSF_Base]:
+        pass
+
+    def make_empirical_PSF(self, data: Data, band: Union[str, Filter]) -> Type[PSF_Base]:
+        pass
 
 class HSC(Instrument, funcs.Singleton):
     def __init__(self) -> None:

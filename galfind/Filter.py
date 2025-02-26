@@ -90,7 +90,7 @@ class Filter:
             elif key in ["Description", "Comments"]:
                 output_prop[key] = str(np.array(value)[0])
             elif key == "DetectorType":
-                detector_type_dict = {1: "photon counter"}
+                detector_type_dict = {1: "photon counter", 0: "energy counter"}
                 output_prop[key] = str(
                     detector_type_dict[int(np.array(value)[0])]
                 )
