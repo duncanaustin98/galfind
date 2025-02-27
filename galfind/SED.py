@@ -164,7 +164,6 @@ class SED:
         numerator = np.trapz(sed_interp * filter_trans, x=filter_wavs)
         # calculate integral(T(λ)dλ)
         denominator = np.trapz(filter_trans, x=filter_wavs)
-        breakpoint()
         # calculate bandpass-averaged flux in Jy
         return numerator / denominator
 
@@ -858,8 +857,8 @@ class Mock_SED_template_set(ABC):
     def __len__(self):
         return len(self.SED_arr)
 
-    def create_mock_phot(self, filterset):
-        [sed.create_mock_phot(filterset) for sed in self.SED_arr]
+    def create_mock_photometry(self, filterset):
+        [sed.create_mock_photometry(filterset) for sed in self.SED_arr]
 
     # @abstractmethod
     # def calc_UV_slope():

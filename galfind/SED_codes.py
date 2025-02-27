@@ -233,6 +233,7 @@ class SED_code(ABC):
         if timed:
             mid = time.time()
             print(f"Running SED fitting took {(mid - start):.1f}s")
+        breakpoint()
         SED_fit_cat = cat.open_cat(cropped=True, hdu=self)
         aper_phot_IDs = [gal.ID for gal in cat]
         phot_arr = [gal.aper_phot[aper_diam] for gal in cat]

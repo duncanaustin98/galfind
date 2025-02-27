@@ -12,8 +12,8 @@ plt.style.use(
 )
 
 # Load in a data object
-survey = "JADES-DR3-GN-Medium"
-version = "v12"
+survey = "JADES-DR3-GN-Deep"
+version = "v13"
 instrument_names = ["NIRCam"] # "ACS_WFC"
 aper_diams = [0.32] * u.arcsec
 forced_phot_band = ["F277W", "F356W", "F444W"]
@@ -25,15 +25,17 @@ def test_selection():
         {"templates": "fsps_larson", "lowz_zmax": 6.0},
         {"templates": "fsps_larson", "lowz_zmax": None}
     ]
-    data = Data.from_survey_version(
-        survey,
-        version,
-        instrument_names = instrument_names,
-        version_to_dir_dict = morgan_version_to_dir,
-        aper_diams = aper_diams,
-        forced_phot_band = forced_phot_band,
-    )
-    print(data.band_data_arr)
+    # import time
+    # time.sleep(180 * 60)
+    # data = Data.from_survey_version(
+    #     survey,
+    #     version,
+    #     instrument_names = instrument_names,
+    #     version_to_dir_dict = morgan_version_to_dir,
+    #     aper_diams = aper_diams,
+    #     forced_phot_band = forced_phot_band,
+    # )
+    # print(data.band_data_arr)
     # data.mask(
     #     "auto",
     #     angle = 92.0

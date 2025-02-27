@@ -521,12 +521,12 @@ class Galaxy:
                 )
                 SED_colours[code.label] = SED_plot[0].get_color()
                 # plot the mock photometry
-                self.aper_phot[aper_diam].SED_results[code.label].SED.create_mock_phot(
+                self.aper_phot[aper_diam].SED_results[code.label].SED.create_mock_photometry(
                     self.aper_phot[aper_diam].filterset,
                     depths=self.aper_phot[aper_diam].depths
                     # min flux pc err = 10.0
                 )
-                self.aper_phot[aper_diam].SED_results[code.label].SED.mock_phot.plot(
+                self.aper_phot[aper_diam].SED_results[code.label].SED.mock_photometry.plot(
                     phot_ax,
                     wav_unit,
                     flux_unit,
@@ -1004,7 +1004,7 @@ class Galaxy:
                     z, wav_z.value, mag_z, wav_z.unit, u.ABmag
                 )
                 galfind_logger.debug("Not propagating min_flux_pc_err!")
-                test_mock_phot = test_sed_obs.create_mock_phot(
+                test_mock_phot = test_sed_obs.create_mock_photometry(
                     data.filterset,
                     depths=data_depths,
                     min_flux_pc_err=10.0,

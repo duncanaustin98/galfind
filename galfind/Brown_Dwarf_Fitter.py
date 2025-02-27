@@ -4,6 +4,7 @@ from __future__ import annotations
 from BDFit import StarFit
 import numpy as np
 import astropy.units as u
+from astropy.table import Table
 from pathlib import Path
 from typing import TYPE_CHECKING, Dict, List, NoReturn, Union
 if TYPE_CHECKING:
@@ -86,9 +87,7 @@ class Template_Fitter(SED_code):
         overwrite: bool = False,
         **kwargs: Dict[str, Any],
     ) -> NoReturn:
-        aper_diams_str = funcs.aper_diams_to_str(np.array([aper_diam.to(u.arcsec).value]) * u.arcsec)
-        out_path = f"{config['TemplateFitting']['BROWN_DWARF_OUT_DIR']}/{cat.version}/" + \
-            f"{cat.filterset.instrument_name}/{cat.survey}/{aper_diams_str}/{self.hdu_name}.fits"
+        out_path = self._get_out_paths(cat, aper_diam)[1]
         if not Path(out_path).is_file() or overwrite:
             # convert cat.filterset to bands used in StarFit
             facilities_to_search = {}
@@ -117,9 +116,10 @@ class Template_Fitter(SED_code):
                     "incl_units": True,
                 },
                 sys_err = None, 
-                filter_mask = None, #filter_mask, 
+                filter_mask = None,
                 subset = None,
             )
+            self.starfit = starfit
             tab = starfit.make_cat()
             tab["ID"] = np.array(cat.ID)
             # save as a .fits file
@@ -127,6 +127,8 @@ class Template_Fitter(SED_code):
             tab.write(out_path, overwrite = overwrite)
             galfind_logger.info(f"Saved {self.tab_suffix} fits to {out_path}")
             # save the best fitting SEDs
+            SED_save_path = out_path.replace(".fits", "_SEDs")
+            starfit.save_best_fit_SEDs(SED_save_path)
 
     def make_fits_from_out(self, out_path):
         pass
@@ -136,13 +138,20 @@ class Template_Fitter(SED_code):
         cat: Catalogue,
         aper_diam: u.Quantity
     ) -> Tuple[str, str, str, Dict[str, List[str]], List[str]]:
-        return None, None, None, None, None
+        aper_diams_str = funcs.aper_diams_to_str(np.array([aper_diam.to(u.arcsec).value]) * u.arcsec)
+        out_path = f"{config['TemplateFitting']['BROWN_DWARF_OUT_DIR']}/{cat.version}/" + \
+            f"{cat.filterset.instrument_name}/{cat.survey}/{aper_diams_str}/{self.hdu_name}.fits"
+        return None, out_path, out_path, None, out_path
 
     def extract_SEDs(
         self: Self, 
         IDs: List[int], 
-        SED_paths: Union[str, List[str]]
+        SED_paths: str,
     ) -> List[SED_obs]:
+        # open .fits table
+        tab = Table.read(SED_paths)
+        # extract SEDs
+
         pass
 
     def extract_PDFs(
@@ -150,8 +159,8 @@ class Template_Fitter(SED_code):
         gal_property: str, 
         IDs: List[int], 
         PDF_paths: Union[str, List[str]], 
-    ) -> List[Type[PDF]]:
-        pass
+    ) -> Optional[List[Type[PDF]]]:
+        return None
 
     def load_cat_property_PDFs(
         self: Self, 
