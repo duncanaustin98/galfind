@@ -633,8 +633,8 @@ class Band_Data_Base(ABC):
         split_depths_factor: int = 5,
         step_size: int = 100,
         n_split: Union[str, int] = "auto",
-        n_retry_box: int = 5,
-        grid_offset_times: int = 4,
+        n_retry_box: int = 1,
+        grid_offset_times: int = 1,
         plot: bool = True,
         overwrite: bool = False,
         master_cat_path: Optional[str] = None,
@@ -685,8 +685,8 @@ class Band_Data_Base(ABC):
         split_depths_factor: int = 5,
         step_size: int = 100,
         n_split: Union[str, int] = "auto",
-        n_retry_box: int = 5,
-        grid_offset_times: int = 4,
+        n_retry_box: int = 1,
+        grid_offset_times: int = 1,
         overwrite: bool = False,
         master_cat_path: Optional[str] = None,
     ) -> List[Tuple[Any, ...]]:
@@ -2650,8 +2650,8 @@ class Data:
         n_split: Union[
             str, int, List[Union[str, int]], Dict[str, Union[str, int]]
         ] = "auto",
-        n_retry_box: Union[int, List[int], Dict[str, int]] = 5,
-        grid_offset_times: Union[int, List[int], Dict[str, int]] = 4,
+        n_retry_box: Union[int, List[int], Dict[str, int]] = 1,
+        grid_offset_times: Union[int, List[int], Dict[str, int]] = 1,
         plot: Union[bool, List[bool], Dict[str, bool]] = True,
         overwrite: Union[bool, List[bool], Dict[str, bool]] = False,
         timed: bool = False,
