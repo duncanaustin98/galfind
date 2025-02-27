@@ -12,26 +12,26 @@ plt.style.use(
 )
 
 # Load in a data object
-survey = "JADES-DR3-GN-Deep"
+survey = "JADES-DR3-GN-Medium"
 version = "v13"
-instrument_names = ["NIRCam"] # "ACS_WFC"
+instrument_names = ["ACS_WFC", "NIRCam"] # "ACS_WFC"
 aper_diams = [0.32] * u.arcsec
 forced_phot_band = ["F277W", "F356W", "F444W"]
 min_flux_pc_err = 10.
 
-def test_euclid_filters():
-    from galfind import Multiple_Filter
-    filterset = Multiple_Filter.from_instruments(
-        ["MegaCam", "NISP", "VIS", "IRAC"],
-        excl_bands = [
-            "CFHT/MegaCam.Y",
-            "CFHT/MegaCam.J",
-            "CFHT/MegaCam.H",
-        ]
-    )
-    fig, ax = plt.subplots()
-    filterset.plot(ax, save = True)
-    breakpoint()
+# def test_euclid_filters():
+#     from galfind import Multiple_Filter
+#     filterset = Multiple_Filter.from_instruments(
+#         ["MegaCam", "NISP", "VIS", "IRAC"],
+#         excl_bands = [
+#             "CFHT/MegaCam.Y",
+#             "CFHT/MegaCam.J",
+#             "CFHT/MegaCam.H",
+#         ]
+#     )
+#     fig, ax = plt.subplots()
+#     filterset.plot(ax, save = True)
+#     breakpoint()
 
 
 def test_selection():
@@ -51,6 +51,7 @@ def test_selection():
     #     forced_phot_band = forced_phot_band,
     # )
     # print(data.band_data_arr)
+    # breakpoint()
     # data.mask(
     #     "auto",
     #     angle = 92.0
@@ -834,9 +835,9 @@ if __name__ == "__main__":
     #main()
     #import time
     #time.sleep((8 * u.hr).to(u.s).value)
-    #test_selection()
+    test_selection()
 
-    test_euclid_filters()
+    #test_euclid_filters()
 
     #test_UVLF()
 

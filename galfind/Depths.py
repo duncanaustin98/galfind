@@ -661,7 +661,7 @@ def cluster_wht_map(
     min_size = min_size // bin_factor**2
     if isinstance(wht_map, str):
         #
-        weight_map = fits.open(wht_map)
+        weight_map = fits.open(wht_map, ignore_missing_simple = True)
         # Check if we have multiple extensions
         if len(weight_map) > 1:
             weight_map = weight_map["WHT"].data
@@ -889,7 +889,7 @@ def calc_band_depth(params: Tuple[Any]) -> NoReturn:
             radius=(aper_diam / 2.0).value,
             scatter_size=scatter_size,
             distance_to_mask=distance_to_mask,
-            pixel_scale=pixel_scale,
+            pixel_scale=self.pix_scale.value,
             n_retry_box=n_retry_box,
             grid_offset_times=grid_offset_times,
             plot=False,

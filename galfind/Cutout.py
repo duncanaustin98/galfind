@@ -207,10 +207,10 @@ class Band_Cutout_Base(Cutout_Base, ABC):
         hdu_name: str = "SCI"
     ) -> Union[Dict[str, Tuple[Dict[str, Any], np.ndarray]], Tuple[Dict[str, Any], np.ndarray]]:
         if hdu_name is None:
-            hdul = fits.open(self.cutout_path)
+            hdul = fits.open(self.cutout_path, ignore_missing_simple = True)
             return {hdu.name: (dict(hdu.header), hdu.data) for hdu in hdul}
         else:
-            hdu = fits.open(self.cutout_path)[hdu_name]
+            hdu = fits.open(self.cutout_path, ignore_missing_simple = True)[hdu_name]
             return dict(hdu.header), hdu.data
 
     def update_morph_fits(

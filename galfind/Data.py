@@ -312,7 +312,7 @@ class Band_Data_Base(ABC):
             )
             galfind_logger.critical(err_message)
             raise (Exception(err_message))
-        im_hdul = fits.open(self.im_path)
+        im_hdul = fits.open(self.im_path, ignore_missing_simple = True)
         im_data = im_hdul[self.im_ext].data
         # im_data = im_data.byteswap().newbyteorder() slow
         im_header = im_hdul[self.im_ext].header
@@ -334,7 +334,7 @@ class Band_Data_Base(ABC):
         self, output_hdr: bool = False
     ) -> Union[Tuple[np.ndarray, fits.Header], np.ndarray]:
         if Path(self.wht_path).is_file():
-            hdu = fits.open(self.wht_path)[self.wht_ext]
+            hdu = fits.open(self.wht_path, ignore_missing_simple = True)[self.wht_ext]
             wht = hdu.data
             hdr = hdu.header
         else:
@@ -354,7 +354,7 @@ class Band_Data_Base(ABC):
         self, output_hdr: bool = False
     ) -> Union[Tuple[np.ndarray, fits.Header], np.ndarray]:
         if Path(self.rms_err_path).is_file():
-            hdu = fits.open(self.rms_err_path)[self.rms_err_ext]
+            hdu = fits.open(self.rms_err_path, ignore_missing_simple = True)[self.rms_err_ext]
             rms_err = hdu.data
             hdr = hdu.header
         else:
@@ -381,7 +381,7 @@ class Band_Data_Base(ABC):
             )
             galfind_logger.critical(err_message)
             raise (Exception(err_message))
-        seg_hdul = fits.open(self.seg_path)
+        seg_hdul = fits.open(self.seg_path, ignore_missing_simple = True)
         seg_data = seg_hdul[0].data
         seg_header = seg_hdul[0].header
         if incl_hdr:
@@ -395,7 +395,7 @@ class Band_Data_Base(ABC):
         if hasattr(self, "mask_args"):
             # load mask
             if ".fits" in self.mask_path:
-                hdul = fits.open(self.mask_path, mode="readonly")
+                hdul = fits.open(self.mask_path, mode = "readonly", ignore_missing_simple = True)
                 hdu_names_indices = {
                     hdu.name.upper(): i
                     for i, hdu in enumerate(hdul)
@@ -1091,7 +1091,7 @@ class Band_Data(Band_Data_Base):
 
     @property
     def ZP(self) -> Dict[str, float]:
-        return self.filt.instrument.calc_ZP(self)
+        return float(self.filt.instrument.calc_ZP(self))
 
     def __add__(
         self, other: Union[Band_Data, List[Band_Data], Data, List[Data]]
@@ -1278,7 +1278,7 @@ class Stacked_Band_Data(Band_Data_Base):
             == self.filterset[0].instrument.calc_ZP(self)
             for filt in self.filterset
         )
-        return self.filterset[0].instrument.calc_ZP(self)
+        return float(self.filterset[0].instrument.calc_ZP(self))
 
     # stacking/mosaicing
     def __mul__(
@@ -1836,7 +1836,10 @@ class Data:
                         )
                 # breakpoint()
                 # extract sci/rms_err/wht extensions
-                hdul = fits.open(path)
+                try:
+                    hdul = fits.open(path, ignore_missing_simple = True)
+                except:
+                    breakpoint()
                 if not single_path:
                     for j, hdu in enumerate(hdul):
                         if is_sci[path] and hdu.name in list(im_ext_name):
