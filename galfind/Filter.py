@@ -492,8 +492,6 @@ class Multiple_Filter:
                 multi_filt = new_multi_filt
             else:
                 multi_filt += new_multi_filt
-            if excl_bands != []:
-                breakpoint()
         return multi_filt
 
     @classmethod
@@ -513,14 +511,17 @@ class Multiple_Filter:
         # construct instrument object from string
         if isinstance(instrument, str):
             instrument = instr_to_name_dict[instrument]
-        # make excl_bands a list of string filter names if not already
-        if excl_bands != []:
-            print(instrument)
-            breakpoint()
+        # make excl_bands a list of string filter names
+        # belonging to the specific instrument if not already
         excl_bands = cls._get_name_from_filt(excl_bands)
-        excl_bands = [
-            Filter._get_facility_instrument_filt(filt)[2]
+        excl_bands_facility_instrument_filt = [
+            Filter._get_facility_instrument_filt(filt)
             for filt in excl_bands
+        ]
+        excl_bands = [
+            excl_band_facility_instrument_filt[2]
+            for excl_band_facility_instrument_filt in excl_bands_facility_instrument_filt
+            if excl_band_facility_instrument_filt[1] == instrument.__class__.__name__
         ]
         # make keep_suffix a list of strings if not already
         if isinstance(keep_suffix, str):
@@ -569,8 +570,6 @@ class Multiple_Filter:
             )
         else:
             raise NotImplementedError
-        if excl_bands != []:
-            breakpoint()
         return cls(filters, sort_order=sort_order)
 
     def __len__(self) -> int:

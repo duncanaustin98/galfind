@@ -399,7 +399,7 @@ class SED_obs(SED):
         # elif isinstance(depths, dict):
         #     depths = [depth for (band, depth) in depths.items()]
         detector_types = [
-            getattr(filt, "DetectorType").replace(" counting", "")
+            getattr(filt, "DetectorType").split(" ")[0]
             if hasattr(filt, "DetectorType") else "photon" 
             for filt in filterset
         ]
@@ -434,11 +434,11 @@ class SED_obs(SED):
             depths = [99.0 for band in filters]
 
         if hasattr(filters[0], "DetectorType"):
-            blue_detector_type = getattr(filters[0], "DetectorType").replace(" counting", "")
+            blue_detector_type = getattr(filters[0], "DetectorType").split(" ")[0]
         else:
             blue_detector_type = "photon"
         if hasattr(filters[1], "DetectorType"):
-            red_detector_type = getattr(filters[1], "DetectorType").replace(" counting", "")
+            red_detector_type = getattr(filters[1], "DetectorType").split(" ")[0]
         else:
             red_detector_type = "photon"
         if blue_detector_type != red_detector_type:
