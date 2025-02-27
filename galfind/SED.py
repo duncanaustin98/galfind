@@ -176,7 +176,7 @@ class SED:
             numerator = np.trapz(filter_wavs * sed_interp * filter_trans, x = filter_wavs)
             # calculate integral(λ * T(λ) dλ)
             denominator = np.trapz(filter_wavs * filter_trans, x = filter_wavs)
-        else: # count_type == "energy"
+        else: # detector_type == "energy"
             # calculate integral(f(λ) * T(λ) dλ)
             numerator = np.trapz(sed_interp * filter_trans, x = filter_wavs)
             # calculate integral(T(λ) dλ)
