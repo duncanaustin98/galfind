@@ -975,10 +975,14 @@ def calc_band_depth(params: Tuple[Any]) -> NoReturn:
             num_grid,
             labels_grid,
             placing_efficiency,
+            n_retry_box,
+            grid_offset_times,
         ]
+        assert len(hf_save_names) == len(hf_save_data)
+
         hf = h5py.File(grid_depth_path, "w")
         for name_i, data_i in zip(hf_save_names, hf_save_data):
-            hf.create_dataset(name_i, data=data_i, compression="gzip" if type(data_i) == np.ndarray else None)
+            hf.create_dataset(name_i, data=data_i, compression="gzip" if isinstance(data_i, np.ndarray) else None)
         hf.close()
 
 
@@ -1251,7 +1255,7 @@ def plot_area_depth(
 
         ax.yaxis.set_ticks_position("both")
         ax.xaxis.set_ticks_position("both")
-
+        
         ax.set_xlim(0, area_master * 1.02)
         # Add hlines at integer depths
         depths = np.arange(20, 35, 1)
@@ -1277,6 +1281,7 @@ def get_hf_output(
     hf_output = {
         label: np.array(hf[label])
         for label in get_depth_h5_labels()
+        if label in hf.keys()
     }
     hf.close()
     hf_output["nmad_grid"][hf_output["nmad_grid"] == 0] = np.nan

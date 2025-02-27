@@ -14,7 +14,7 @@ plt.style.use(
 # Load in a data object
 survey = "JADES-DR3-GN-Medium"
 version = "v13"
-instrument_names = ["ACS_WFC", "NIRCam"] # "ACS_WFC"
+instrument_names = ["ACS_WFC", "NIRCam"]
 aper_diams = [0.32] * u.arcsec
 forced_phot_band = ["F277W", "F356W", "F444W"]
 min_flux_pc_err = 10.
