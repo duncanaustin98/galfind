@@ -327,6 +327,25 @@ class EAZY(SED_code):
             )
             z_min = 12
             z_max = 25
+        elif templates == "sfhz":
+            params["TEMPLATES_FILE"] = (
+                f"{eazy_templates_path}/sfhz/corr_sfhz_13_galfind.param"
+            )
+            
+        elif templates == "sfhz+carnall_eelg":
+            params["TEMPLATES_FILE"] = (
+                f"{eazy_templates_path}/sfhz/carnall_sfhz_13_galfind.param"
+            )
+
+
+        elif templates == "sfhz+carnall_eelg+agn":
+            params["TEMPLATES_FILE"] = (
+                f"{eazy_templates_path}/sfhz/sorted_agn_blue_sfhz_13_galfind.param"
+            )
+
+            
+
+
         # Redshift limits
         params["Z_MIN"] = z_min # Setting minimum Z
         params["Z_MAX"] = z_max # Setting maximum Z
