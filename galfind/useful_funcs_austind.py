@@ -1,17 +1,5 @@
-# useful_funcs_austind.py
+
 from __future__ import annotations
-
-import inspect
-import os
-from typing import Union, List, Tuple, TYPE_CHECKING
-
-try:
-    from typing import Self, Type  # python 3.11+
-except ImportError:
-    from typing_extensions import Self, Type  # python > 3.7 AND python < 3.11
-
-if TYPE_CHECKING:
-    from .Data import Band_Data_Base, Band_Data, Stacked_Band_Data
 
 import astropy.constants as const
 import astropy.units as u
@@ -22,11 +10,24 @@ from astropy.coordinates import SkyCoord
 from astropy.table import Table
 from astropy.wcs.utils import skycoord_to_pixel
 from scipy.stats import chi2
+import inspect
+import os
+import contextlib
+import joblib
+from numba import njit
+from numpy.typing import NDArray
+from typing import Union, List, Tuple, TYPE_CHECKING, Optional
+if TYPE_CHECKING:
+    from .Data import Band_Data_Base, Band_Data, Stacked_Band_Data
+    from . import Selector, Multiple_Filter
+try:
+    from typing import Self, Type  # python 3.11+
+except ImportError:
+    from typing_extensions import Self, Type  # python > 3.7 AND python < 3.11
 
-from . import astropy_cosmo, galfind_logger
+from . import astropy_cosmo, galfind_logger, config
 
 # fluxes and magnitudes
-
 
 def convert_wav_units(wavs, units):
     if units == wavs.unit:
@@ -284,13 +285,14 @@ def flux_lambda_obs_to_rest(flux_lambda_obs, z):
     return flux_lambda_rest
 
 
-def luminosity_to_flux(lum, wavs, z=None, cosmo=astropy_cosmo, out_units=u.Jy):
+def luminosity_to_flux(lum, wavs, z, cosmo=astropy_cosmo, out_units=u.Jy):
+
+    """
+        Input luminosity should be intrinsic (i.e. rest frame luminosity), leading to observed frame output flux units.
+    """
+
     # calculate luminosity distance
-    if z == None:
-        lum_distance = 10 * u.pc
-        z = 0.0
-    else:
-        lum_distance = cosmo.luminosity_distance(z)
+    lum_distance = cosmo.luminosity_distance(z)
     # sort out the units
     if (
         u.get_physical_type(lum.unit) == "yank"
@@ -299,14 +301,12 @@ def luminosity_to_flux(lum, wavs, z=None, cosmo=astropy_cosmo, out_units=u.Jy):
             "ABmag/spectral flux density",
             "spectral flux density",
         ]:  # f_ν
-            return (
-                lum_lam_to_lum_nu(lum, wavs) / (4 * np.pi * lum_distance**2)
-            ).to(out_units)
+            lum = lum_lam_to_lum_nu(lum, wavs)
         elif (
             u.get_physical_type(out_units)
             == "power density/spectral flux density wav"
         ):  # f_λ
-            return (lum / (4 * np.pi * lum_distance**2)).to(out_units)
+            pass
         else:
             raise (Exception(""))
     elif (
@@ -316,21 +316,29 @@ def luminosity_to_flux(lum, wavs, z=None, cosmo=astropy_cosmo, out_units=u.Jy):
             "ABmag/spectral flux density",
             "spectral flux density",
         ]:  # f_ν
-            return (lum / (4 * np.pi * lum_distance**2)).to(out_units)
+            pass
         elif (
             u.get_physical_type(out_units)
             == "power density/spectral flux density wav"
         ):  # f_λ
-            return (
-                lum_nu_to_lum_lam(lum, wavs) / (4 * np.pi * lum_distance**2)
-            ).to(out_units)
+            lum = lum_nu_to_lum_lam(lum, wavs)
         else:
             raise (Exception(""))
+    return (lum * (1. + z) / (4 * np.pi * lum_distance ** 2)).to(out_units)
 
 
 def flux_to_luminosity(
-    flux, wavs, z=None, cosmo=astropy_cosmo, out_units=u.erg / (u.s * u.Hz)
+    flux, 
+    wavs, 
+    z, 
+    cosmo = astropy_cosmo,
+    out_units = u.erg / (u.s * u.Hz),
 ):
+    
+    """
+        Input should be in observed frame units, leading to output intrinsic luminosity units.
+    """
+
     # sort out the units
     if flux.unit == u.ABmag:
         # convert to f_ν
@@ -376,18 +384,8 @@ def flux_to_luminosity(
             f"{flux.unit=} not in ['spectral flux density', 'power density/spectral flux density wav']"
         )
     # calculate luminosity distance
-    lum_distance = calc_lum_distance(z, cosmo)
-    if z == None:
-        z = 0.0
-    return (4 * np.pi * flux * lum_distance**2).to(out_units)
-
-
-def calc_lum_distance(z, cosmo=astropy_cosmo):
-    if z == None or z == 0.0 or z == 0:
-        lum_distance = 10 * u.pc
-    else:
-        lum_distance = cosmo.luminosity_distance(z)
-    return lum_distance
+    lum_distance = cosmo.luminosity_distance(z)
+    return (4 * np.pi * flux * lum_distance ** 2 / (1. + z)).to(out_units)
 
 
 def dust_correct(lum, dust_mag):
@@ -396,6 +394,14 @@ def dust_correct(lum, dust_mag):
         for lum_i, dust_mag_i in zip(lum.value, dust_mag.value)
     ] * lum.unit
 
+SFR_conversions = {
+    "MD14": 1.15e-28 * (u.solMass / u.yr) / (u.erg / (u.s * u.Hz))
+}
+
+fesc_from_beta_conversions = {
+    "Chisholm22": lambda beta: np.random.normal(1.3, 0.6, len(beta))
+        * 10 ** (-4.0 - np.random.normal(1.22, 0.1, len(beta)) * beta) 
+}
 
 # unit labelling
 
@@ -497,9 +503,14 @@ mass_IMF_factor = {}
 # General number density function tools
 
 default_lims = {
-    "M1500": [-23.0, -16.0],
-    "M_UV": [-23.0, -16.0],
-    "M_UV_ext_src_corr": [-23.0, -16.0],
+    "M1500": [-24.0, -16.0],
+    "M_UV": [-24.0, -16.0],
+    "M1500_[1250,3000]AA": [-24.0, -16.0],
+    "M1500_[1250,3000]AA_extsrc": [-24.0, -16.0],
+    "M1500_[1250,3000]AA_extsrc_UV<10": [-24.0, -16.0],
+    "xi_ion_Halpha_fesc=0": [10 ** 23.5, 10 ** 26.5],
+    "log_xi_ion_Halpha_fesc=0": [23.5, 26.5],
+    "M_UV_ext_src_corr": [-24.0, -16.0],
     "stellar_mass": [7.5, 11.0],
     "stellar_mass_ext_src_corr": [7.5, 11.0],
 }
@@ -509,11 +520,50 @@ def get_z_bin_name(z_bin: Union[list, np.array]) -> str:
     return f"{z_bin[0]:.1f}<z<{z_bin[1]:.1f}"
 
 
-def get_SED_fit_params_z_bin_name(
-    SED_fit_params_key: str, z_bin: Union[list, np.array]
-):
-    return f"{SED_fit_params_key}_{get_z_bin_name(z_bin)}"
+def get_SED_fit_label_aper_diam_z_bin_name(
+    SED_fit_params_key: str,
+    aper_diam: u.Quantity,
+    z_bin: Union[list, np.array]
+) -> str:
+    return f"{SED_fit_params_key}_{aper_diam.to(u.arcsec).value:.2f}as_{get_z_bin_name(z_bin)}"
 
+
+def get_crop_name(crops: List[Selector]) -> str:
+    if crops is not None:
+        aper_diam = np.unique([selector.aper_diam.to(u.arcsec).value for selector \
+            in crops if hasattr(selector, "aper_diam") and selector.aper_diam is not None])
+        if len(aper_diam) == 1:
+            aper_diam = aper_diam[0]
+        else:
+            aper_diam = None
+        SED_fit_label = np.unique([selector.SED_fit_label for selector \
+            in crops if hasattr(selector, "SED_fit_label") and selector.SED_fit_label is not None])
+        if len(SED_fit_label) == 1:
+            SED_fit_label = SED_fit_label[0]
+        else:
+            SED_fit_label = None
+        if aper_diam is not None and SED_fit_label is not None:
+            SED_fit_aper_diam_name = f"{SED_fit_label}_{aper_diam:.2f}as"
+            out_crop_name = f"{SED_fit_aper_diam_name}/" + \
+                "+".join([selector.name.replace( \
+                f"_{SED_fit_aper_diam_name}", "") for selector in crops])
+        elif aper_diam is not None:
+            aper_diam_name = f"{aper_diam:.2f}as"
+            out_crop_name = f"{aper_diam_name}/" + \
+                "+".join([selector.name.replace(f"_{aper_diam_name}", "") \
+                for selector in crops])
+        else:
+            out_crop_name = "+".join([selector.name for selector in crops])
+        return out_crop_name
+    else:
+        return ""
+
+def get_full_survey_name(
+    survey: str,
+    version: str,
+    filterset: Multiple_Filter,
+) -> str:
+    return f"{survey}_{version}_{filterset.instrument_name}"
 
 def calc_Vmax(area, zmin, zmax):
     return (
@@ -546,17 +596,17 @@ def calc_cv_proper(
     rectangular_geometry_y_to_x: Union[int, float, list, np.array, dict] = 1.0,
     data_region: Union[str, int] = "all",
 ) -> float:
-    if type(data_region) in [int]:
+    if isinstance(data_region, int):
         data_region = str(data_region)
-    if type(rectangular_geometry_y_to_x) in [int]:
+    if isinstance(rectangular_geometry_y_to_x, int):
         rectangular_geometry_y_to_x = float(rectangular_geometry_y_to_x)
-    if type(rectangular_geometry_y_to_x) in [float]:
+    if isinstance(rectangular_geometry_y_to_x, float):
         rectangular_geometry_y_to_x = [
             rectangular_geometry_y_to_x for i in range(len(data_arr))
         ]
-    elif type(rectangular_geometry_y_to_x) in [list, np.array]:
+    elif isinstance(rectangular_geometry_y_to_x, (list, np.ndarray)):
         assert len(rectangular_geometry_y_to_x) == len(data_arr)
-    elif type(rectangular_geometry_y_to_x) in [dict]:
+    elif isinstance(rectangular_geometry_y_to_x, dict):
         assert all(
             data.full_name in rectangular_geometry_y_to_x.keys()
             for data in data_arr
@@ -569,7 +619,7 @@ def calc_cv_proper(
     total_area = 0.0
     for data, y_to_x in zip(data_arr, rectangular_geometry_y_to_x):
         # calculate area of field
-        area = data.area[data_region].to(u.arcmin**2)
+        area = data.calc_unmasked_area(data.forced_phot_band.filt_name)
         # field is square if y_to_x == 1
         dimensions_x = np.sqrt(area.value / y_to_x) * u.arcmin
         dimensions_y = np.sqrt(area.value * y_to_x) * u.arcmin
@@ -624,7 +674,6 @@ def calc_cv_proper(
 
 # general functions
 
-
 def adjust_errs(data, data_err):
     # print("adjusting errors:", plot_data, code)
     data_l1 = data - data_err[0]
@@ -671,35 +720,7 @@ def split_dir_name(save_path, output):
         return "/".join(np.array(save_path.split("/")[:-1])) + "/"
     elif output == "name":
         return save_path.split("/")[-1]
-
-
-def save_PDF(PDF, header, path):
-    if not all(value == -99.0 for value in PDF):
-        path = f"{path}.txt"
-        make_dirs(path)
-        # print(f"Saving PDF: {path}")
-        np.savetxt(path, PDF, header=header)
-
-
-def PDF_path(save_dir, obs_name, ID, rest_UV_wavs, conv_filt):
-    return f"{save_dir}/{obs_name}/{ID}"
-
-
-def percentiles_from_PDF(PDF):
-    if all(val == -99.0 for val in PDF):
-        return -99.0, -99.0, -99.0
-    else:
-        try:
-            PDF = np.array(
-                [val.value for val in PDF.copy()]
-            )  # remove the units
-        except:
-            pass
-        PDF_median = np.median(PDF)
-        PDF_l1 = PDF_median - np.percentile(PDF, 16)
-        PDF_u1 = np.percentile(PDF, 84) - PDF_median
-        return PDF_median, PDF_l1, PDF_u1
-
+    
 
 def gauss_func(x, mu, sigma):
     return (np.pi * sigma) * np.exp(-0.5 * ((x - mu) / sigma) ** 2)
@@ -721,6 +742,27 @@ def cat_from_path(path, crop_names=None):
     # include catalogue metadata
     cat.meta = {**cat.meta, **{"cat_path": path}}
     return cat
+
+
+def get_phot_cat_path(
+    survey: str,
+    version: str,
+    instrument_name: str,
+    aper_diams: u.Quantity,
+    forced_phot_band_name: Optional[str],
+):
+    save_dir = (
+        f"{config['DEFAULT']['GALFIND_WORK']}/Catalogues/{version}/" + \
+        f"{instrument_name}/{survey}/{aper_diams_to_str(aper_diams)}"
+    )
+    if forced_phot_band_name is None:
+        forced_phot_band_name = ""
+    else:
+        forced_phot_band_name = f"_MASTER_Sel-{forced_phot_band_name}"
+    save_name = f"{survey}{forced_phot_band_name}_{version}.fits"
+    save_path = f"{save_dir}/{save_name}"
+    make_dirs(save_path)
+    return save_path
 
 
 def fits_cat_to_np(fits_cat, column_labels, reshape_by_aper_diams=True):
@@ -967,3 +1009,92 @@ def sort_band_data_arr(band_data_arr: List[Type[Band_Data_Base]]):
     ]
     sorted_band_data_arr.extend(stacked_band_data_arr)
     return sorted_band_data_arr
+
+# The below makes TQDM work with joblib
+@contextlib.contextmanager
+def tqdm_joblib(tqdm_object):
+    """Context manager to patch joblib to report into tqdm progress bar given as argument"""
+
+    class TqdmBatchCompletionCallback(joblib.parallel.BatchCompletionCallBack):
+        def __call__(self, *args, **kwargs):
+            tqdm_object.update(n=self.batch_size)
+            return super().__call__(*args, **kwargs)
+
+    old_batch_callback = joblib.parallel.BatchCompletionCallBack
+    joblib.parallel.BatchCompletionCallBack = TqdmBatchCompletionCallback
+    try:
+        yield tqdm_object
+    finally:
+        joblib.parallel.BatchCompletionCallBack = old_batch_callback
+        tqdm_object.close()
+
+# useful for rest frame SED property calculations
+
+@njit
+def linear_fit(x: NDArray[np.float64], y: NDArray[np.float64]) -> Tuple[float, float]:
+    """
+    Performs linear least-squares fitting: y = slope * x + intercept.
+    
+    Parameters:
+        x (ndarray): The independent variable (1D array).
+        y (ndarray): The dependent variable (1D array).
+        
+    Returns:
+        slope (float): The slope of the best-fit line.
+        intercept (float): The intercept of the best-fit line.
+    """
+    n = len(x)
+    
+    # Compute sums for least squares
+    sum_x = 0.0
+    sum_y = 0.0
+    sum_x2 = 0.0
+    sum_xy = 0.0
+    for i in range(n):
+        sum_x += x[i]
+        sum_y += y[i]
+        sum_x2 += x[i] * x[i]
+        sum_xy += x[i] * y[i]
+    
+    # Calculate slope and intercept
+    slope = (n * sum_xy - sum_x * sum_y) / (n * sum_x2 - sum_x ** 2)
+    intercept = (sum_y - slope * sum_x) / n
+    return slope, intercept
+
+@njit
+def interpolate_linear_fit(x: NDArray[np.float64], y: NDArray[np.float64], x_out: float) -> float:
+    slope, intercept = linear_fit(x, y)
+    return slope * x_out + intercept
+
+@njit
+def residual_sum_of_squares(params, x, y):
+    """
+    Calculate the residual sum of squares for a linear model y = mx + b.
+    """
+    m, c = params
+    residuals = y - (m * x + c)
+    return np.sum(residuals ** 2)
+
+@njit
+def gradient_descent_beta_fit(x, y, initial_params, learning_rate=0.01, max_iter=1000, tol=1e-6):
+    """
+    Perform gradient descent to minimize the residual sum of squares.
+    """
+    params = np.array(initial_params, dtype=np.float64)
+    for i in range(max_iter):
+        m, c = params
+        residuals = y - (m * x + c)
+        
+        # Compute gradients
+        grad_m = -2 * np.sum(x * residuals)
+        grad_c = -2 * np.sum(residuals)
+        
+        # Update parameters
+        params[0] -= learning_rate * grad_m
+        params[1] -= learning_rate * grad_c
+        
+        # Check for convergence
+        if np.sqrt(grad_m ** 2 + grad_c ** 2) < tol:
+            break
+            
+    return params, i  # Return optimized parameters and iterations taken

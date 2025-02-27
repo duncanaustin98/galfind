@@ -1,17 +1,9 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-"""
-Created on Tue Oct 10 13:30:14 2023
 
-@author: u92876da
-"""
-
-# SED.py
+from __future__ import annotations
 
 import glob
 import os
 from abc import ABC
-
 import astropy.io.ascii as ascii
 import astropy.units as u
 import matplotlib.pyplot as plt
@@ -19,7 +11,13 @@ import numpy as np
 from astropy.table import Table
 from scipy.interpolate import interp1d
 from scipy.optimize import curve_fit
-
+from typing import TYPE_CHECKING, Optional, Dict, Any, List, Union
+try:
+    from typing import Self, Type  # python 3.11+
+except ImportError:
+    from typing_extensions import Self, Type  # python > 3.7 AND python < 3.11
+if TYPE_CHECKING:
+    from . import Multiple_Filter
 from . import (
     IGM_attenuation,
     Mock_Photometry,
@@ -98,19 +96,21 @@ class SED:
             self.mags = mags
         return mags
 
-    def plot_SED(
-        self,
-        ax,
-        wav_units=u.AA,
-        mag_units=u.ABmag,
-        label=None,
-        annotate=True,
-        save=False,
-        save_name="",
-        log_fluxes=True,
-        plot_kwargs={},
-        legend_kwargs={},
+    def plot(
+        self: Self,
+        ax: Optional[plt.Axes] = None,
+        wav_units: u.Unit = u.AA,
+        mag_units: u.Unit = u.ABmag,
+        label: Optional[str] = None,
+        annotate: bool = True,
+        save_name: Optional[str] = None,
+        log_fluxes: bool = True,
+        plot_kwargs: Dict[str, Any] = {},
+        legend_kwargs: Dict[str, Any] = {},
     ):
+        if ax is None:
+            fig, ax = plt.subplots()
+
         wavs = funcs.convert_wav_units(self.wavs, wav_units)
         mags = funcs.convert_mag_units(self.wavs, self.mags, mag_units)
 
@@ -119,7 +119,7 @@ class SED:
         else:
             mags = mags.value
 
-        if type(label) == type(None) and hasattr(self, "template_name"):
+        if label is not None and hasattr(self, "template_name"):
             label = self.template_name
 
         plot = ax.plot(wavs.value, mags, label=label, **plot_kwargs)
@@ -138,14 +138,29 @@ class SED:
                     mag_units, False if mag_units == u.ABmag else True
                 )
             )
+            
             ax.legend(**legend_kwargs)
-        if save:
+        if save_name is not None:
+            # save png by default
+            if save_name.split(".")[-1] not in ["png", "pdf"]:
+                save_name = f"{'.'.join(save_name.split('.')[-1:])}.png"
             funcs.make_dirs(save_name)
-            plt.savefig(f"{save_name}.png")
-            funcs.change_file_permissions(f"{save_name}.png")
+            plt.savefig(save_name)
+            funcs.change_file_permissions(save_name)
         return plot
 
-    def calc_bandpass_averaged_flux(self, filter_wavs, filter_trans):
+    def calc_bandpass_averaged_flux(
+        self: Self,
+        filter_wavs: Union[u.Quantity, u.Dex],
+        filter_trans: Union[u.Quantity, u.Magnitude, u.Dex],
+        detector_type: str = "photon",
+    ):
+        detector_type = detector_type.lower()
+        if detector_type not in ["photon", "energy"]:
+            galfind_logger.warning(
+                f"Cannot calculate bandpass-averaged flux for {detector_type=}, assuming 'photon'"
+            )
+            detector_type = "photon"
         wavs = funcs.convert_wav_units(self.wavs, u.AA).value
         mags = funcs.convert_mag_units(
             self.wavs, self.mags, u.erg / (u.s * u.AA * u.cm**2)
@@ -156,15 +171,23 @@ class SED:
         sed_interp = interp1d(wavs, mags, fill_value="extrapolate")(
             filter_wavs
         )  # in f_lambda
-        # calculate integral(f(λ) * T(λ)dλ)
-        numerator = np.trapz(sed_interp * filter_trans, x=filter_wavs)
-        # calculate integral(T(λ)dλ)
-        denominator = np.trapz(filter_trans, x=filter_wavs)
+        if detector_type == "photon":
+            # calculate integral(λ * f(λ) * T(λ) dλ)
+            numerator = np.trapz(filter_wavs * sed_interp * filter_trans, x = filter_wavs)
+            # calculate integral(λ * T(λ) dλ)
+            denominator = np.trapz(filter_wavs * filter_trans, x = filter_wavs)
+        else: # detector_type == "energy"
+            # calculate integral(f(λ) * T(λ) dλ)
+            numerator = np.trapz(sed_interp * filter_trans, x = filter_wavs)
+            # calculate integral(T(λ) dλ)
+            denominator = np.trapz(filter_trans, x = filter_wavs)
         # calculate bandpass-averaged flux in Jy
         return numerator / denominator
 
     def calc_line_EW(
-        self, line_name, plot=False
+        self: Self,
+        line_name: str,
+        plot: bool = False,
     ):  # ONLY WORKS FOR EMISSION LINES, NOT ABSORPTION AT THIS POINT
         wavs_AA = self.convert_wav_units(u.AA, update=True)
         flux_lambda = self.convert_mag_units(
@@ -195,7 +218,6 @@ class SED:
         line_plus_cont_flux = np.trapz(
             flux_lambda[feature_mask], x=wavs_AA[feature_mask]
         )
-        ##breakpoint()
         # calculate continuum flux and mean continuum level
         cont_mask = np.logical_or.reduce(
             np.array(
@@ -316,7 +338,7 @@ class SED_rest(SED):
         self, wavs, mags, wav_units, mag_units, wav_range=[0, 10_000] * u.AA
     ):
         try:
-            wavs = wavs.value  # if wavs is in Angstrom
+            wavs = wavs.value # if wavs is in Angstrom
         except:
             pass
         mags = mags[
@@ -364,17 +386,26 @@ class SED_obs(SED):
             z_int, wav_obs.value, mag_obs.value, SED_rest.wavs.unit, u.ABmag
         )
 
-    def create_mock_phot(self, filterset, depths=[], min_flux_pc_err=10.0):
-        if type(depths) == dict:
-            depths = [depth for (band, depth) in depths.items()]
-        if (
-            depths == []
-        ):  # if depths not given, expect the galaxy to be very well detected
-            depths = [99.0 for filt in filterset.band_names]
+    def create_mock_photometry(
+        self: Self,
+        filterset: Multiple_Filter,
+        depths: Optional[u.Quantity] = None,
+        min_flux_pc_err: float = 10.0
+    ) -> Mock_Photometry:
+        # if depths not given, expect the galaxy to be very well detected
+        if depths is None:
+            depths = np.full(len(filterset), 99.0) * u.ABmag
+        # elif isinstance(depths, dict):
+        #     depths = [depth for (band, depth) in depths.items()]
+        detector_types = [
+            getattr(filt, "DetectorType").split(" ")[0]
+            if hasattr(filt, "DetectorType") else "photon" 
+            for filt in filterset
+        ]
         bp_averaged_fluxes = (
             [
-                self.calc_bandpass_averaged_flux(filt.wav, filt.trans)
-                for filt in filterset
+                self.calc_bandpass_averaged_flux(filt.wav, filt.trans, detector_type)
+                for filt, detector_type in zip(filterset, detector_types)
             ]
             * u.erg
             / (u.s * (u.cm**2) * u.AA)
@@ -386,10 +417,10 @@ class SED_obs(SED):
         bp_averaged_fluxes_Jy = funcs.convert_mag_units(
             band_wavs, bp_averaged_fluxes, u.Jy
         )
-        self.mock_phot = Mock_Photometry(
+        self.mock_photometry = Mock_Photometry(
             filterset, bp_averaged_fluxes_Jy, depths, min_flux_pc_err
         )
-        return self.mock_phot
+        return self.mock_photometry
 
     def calc_colour(self, filters, depths=[]):
         assert type(filters) in [np.array, list]
@@ -400,8 +431,24 @@ class SED_obs(SED):
             depths == []
         ):  # if depths not given, expect the galaxy to be very well detected
             depths = [99.0 for band in filters]
+
+        if hasattr(filters[0], "DetectorType"):
+            blue_detector_type = getattr(filters[0], "DetectorType").split(" ")[0]
+        else:
+            blue_detector_type = "photon"
+        if hasattr(filters[1], "DetectorType"):
+            red_detector_type = getattr(filters[1], "DetectorType").split(" ")[0]
+        else:
+            red_detector_type = "photon"
+        if blue_detector_type != red_detector_type:
+            galfind_logger.warning(
+                "Detector types for blue and red filters are different. Assuming photon counting for both."
+            )
+            blue_detector_type = "photon"
+            red_detector_type = "photon"
+
         blue_flux = (
-            self.calc_bandpass_averaged_flux(filters[0].wav, filters[0].trans)
+            self.calc_bandpass_averaged_flux(filters[0].wav, filters[0].trans, blue_detector_type)
             * u.erg
             / (u.s * (u.cm**2) * u.AA)
         )
@@ -409,7 +456,7 @@ class SED_obs(SED):
             np.array(filters[0].WavelengthCen.value) * u.AA, blue_flux, u.ABmag
         )
         red_flux = (
-            self.calc_bandpass_averaged_flux(filters[1].wav, filters[1].trans)
+            self.calc_bandpass_averaged_flux(filters[1].wav, filters[1].trans, red_detector_type)
             * u.erg
             / (u.s * (u.cm**2) * u.AA)
         )
@@ -613,8 +660,8 @@ class Mock_SED_rest(SED_rest):  # , Mock_SED):
     def renorm_at_wav(
         self, wav, mag
     ):  # this mag can also be a flux, but must have astropy units
-        assert type(wav) in [u.Quantity]
-        assert type(mag) in [u.Quantity, u.Magnitude]
+        assert isinstance(wav, u.Quantity)
+        assert isinstance(mag, (u.Quantity, u.Magnitude))
         assert u.get_physical_type(wav.unit) == "length"
         norm = (
             funcs.convert_mag_units(wav, mag, u.Jy).value
@@ -785,15 +832,15 @@ class Mock_SED_obs(SED_obs):
             assert len(bands) == 2
             # requires colour to exist in the mock photometry
             for band in bands:
-                if band not in self.mock_photometry.instrument:
+                if band not in self.mock_photometry.filterset.band_names:
                     galfind_logger.critical(
-                        f"self.mock_photometry includes the bands = {self.mock_photometry.instrument.band_names}, and {band} is not included!"
+                        f"self.mock_photometry includes the bands = {self.mock_photometry.filterset.band_names}, and {band} is not included!"
                     )
-                assert self.mock_photometry[band].unit == u.Jy
+                assert self.mock_photometry[band].flux.unit == u.Jy
             # calculate colour in mags
             colour = -2.5 * np.log10(
-                self.mock_photometry[bands[0]] / self.mock_photometry[bands[1]]
-            )
+                self.mock_photometry[bands[0]].flux / self.mock_photometry[bands[1]].flux
+            ) * u.ABmag
             # save colour in Mock_SED object
             if "colours" in self.__dict__:
                 self.colours = {**self.colours, **{colour_name: colour.value}}
@@ -850,8 +897,8 @@ class Mock_SED_template_set(ABC):
     def __len__(self):
         return len(self.SED_arr)
 
-    def create_mock_phot(self, instrument):
-        [sed.create_mock_phot(instrument) for sed in self.SED_arr]
+    def create_mock_photometry(self, filterset):
+        [sed.create_mock_photometry(filterset) for sed in self.SED_arr]
 
     # @abstractmethod
     # def calc_UV_slope():

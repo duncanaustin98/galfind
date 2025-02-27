@@ -25,7 +25,7 @@ from scipy.linalg import LinAlgWarning
 from tqdm import tqdm
 from typing import TYPE_CHECKING, List, Any, Dict, Optional, NoReturn, Type, Union, Tuple
 if TYPE_CHECKING:
-    from . import Catalogue
+    from . import Catalogue, PDF
 try:
     from typing import Self, Type  # python 3.11+
 except ImportError:
@@ -40,6 +40,7 @@ from .SED import SED_obs
 
 # %% EAZY SED fitting code
 
+# TODO: update these at runtime
 EAZY_FILTER_CODES = {
     "NIRCam": {
         "F070W": 36,
@@ -91,7 +92,7 @@ EAZY_FILTER_CODES = {
 
 class EAZY(SED_code):
     #ext_src_corr_properties = []
-    def __init__(self, SED_fit_params: Dict[str, Any]):
+    def __init__(self: Self, SED_fit_params: Dict[str, Any]):
         super().__init__(SED_fit_params)
 
     @classmethod
@@ -241,14 +242,15 @@ class EAZY(SED_code):
 
     @run_in_dir(path=config["EAZY"]["EAZY_DIR"])
     def fit(
-        self,
+        self: Self,
         cat: Catalogue,
         aper_diam: u.Quantity,
         save_SEDs: bool = True,
         save_PDFs: bool = True,
         overwrite: bool = False,
+        update: bool = False,
         **kwargs: Dict[str, Any],
-    ):
+    ) -> NoReturn:
         """
         z_step  - redshift step size - default 0.01
         z_min - minimum redshift to fit - default 0
@@ -509,7 +511,7 @@ class EAZY(SED_code):
         fit_pz = 10 ** (fit.lnp)
         fit_zgrid = fit.zgrid
         hf = h5py.File(zPDF_path, "w")
-        hf.create_dataset("z", data=np.array(fit.zgrid))
+        hf.create_dataset("z", data=np.array(fit.zgrid).astype(np.float32), compression="gzip", dtype="f4")
         pz_arr = np.array(
             [
                 np.array(
@@ -525,7 +527,7 @@ class EAZY(SED_code):
                 )
             ]
         )
-        hf.create_dataset("p_z_arr", data=pz_arr)
+        hf.create_dataset("p_z_arr", data=pz_arr, compression="gzip")
         hf.close()
 
     @staticmethod
@@ -533,7 +535,7 @@ class EAZY(SED_code):
         hf = h5py.File(SED_path, "w")
         hf.create_dataset("wav_unit", data=str(wav_unit))
         hf.create_dataset("flux_unit", data=str(flux_unit))
-        hf.create_dataset("z_arr", data=z_arr)
+        hf.create_dataset("z_arr", data=z_arr, compression="gzip")
         # Load best-fitting SEDs
         fit_data_arr = [
             fit.show_fit(
@@ -566,13 +568,18 @@ class EAZY(SED_code):
                 total=len(fit_data_arr),
             )
         ]
-        hf.create_dataset("wav_flux_arr", data=wav_flux_arr)
+        wav_flux_arr = np.array(wav_flux_arr).astype(np.float32)
+        hf.create_dataset("wav_flux_arr", data=wav_flux_arr, compression="gzip", dtype="f4")
         hf.close()
 
     def make_fits_from_out(self, out_path: str) -> NoReturn:
         pass
 
-    def _get_out_paths(self, cat: Catalogue, aper_diam: u.Quantity) -> Tuple[str, str, str, Dict[str, List[str]], List[str]]:
+    def _get_out_paths(
+        self: Self, 
+        cat: Catalogue, 
+        aper_diam: u.Quantity
+    ) -> Tuple[str, str, str, Dict[str, List[str]], List[str]]:
         in_dir = f"{config['EAZY']['EAZY_DIR']}/input/{cat.filterset.instrument_name}/{cat.version}/{cat.survey}"
         in_name = cat.cat_name.replace('.fits', f"_{aper_diam.to(u.arcsec).value:.2f}as.in")
         in_path = f"{in_dir}/{in_name}"
@@ -616,10 +623,10 @@ class EAZY(SED_code):
         # return np.ones(len(IDs))
         hf = h5py.File(SED_paths[0], "r")
         IDs_np = np.array(IDs)
-        z_arr = hf["z_arr"][IDs_np - 1]
-        wav_flux_arr = hf["wav_flux_arr"][IDs_np - 1]
-        wav_arr = wav_flux_arr[:, 0]
-        flux_arr = wav_flux_arr[:, 1]
+        z_arr = hf["z_arr"][IDs_np - 1].astype(np.float32)
+        wav_flux_arr = hf["wav_flux_arr"][IDs_np - 1].astype(np.float32)
+        wav_arr = wav_flux_arr[:, 0].astype(np.float32)
+        flux_arr = wav_flux_arr[:, 1].astype(np.float32)
         wav_unit = u.Unit(hf["wav_unit"][()].decode())
         flux_unit = u.Unit(hf["flux_unit"][()].decode())
         hf.close()
@@ -687,3 +694,31 @@ class EAZY(SED_code):
             # close .h5 file
             hf.close()
             return redshift_PDFs
+
+    def load_cat_property_PDFs(
+            self: Self, 
+            PDF_paths: List[Dict[str, str]],
+            IDs: List[int]
+        ) -> List[Dict[str, Optional[Type[PDF]]]]:
+        cat_property_PDFs_ = {
+            gal_property: self.extract_PDFs(
+                gal_property,
+                IDs,
+                PDF_path,
+            )
+            for gal_property, PDF_path in PDF_paths.items()
+        }
+        cat_property_PDFs_ = [
+            {
+                gal_property: PDF_arr[i]
+                for gal_property, PDF_arr in cat_property_PDFs_.items()
+                if PDF_arr[i] is not None
+            }
+            for i in range(len(IDs))
+        ]
+        # set to None if no PDFs are found
+        cat_property_PDFs = [
+            None if len(cat_property_PDF) == 0 else cat_property_PDF
+            for cat_property_PDF in cat_property_PDFs_
+        ]
+        return cat_property_PDFs

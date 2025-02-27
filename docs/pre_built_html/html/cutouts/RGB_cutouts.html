@@ -1,0 +1,279 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>RGB cutouts &mdash; galfind 0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=80d5e7a1" />
+      <link rel="stylesheet" type="text/css" href="../_static/css/theme.css?v=e59714d7" />
+      <link rel="stylesheet" type="text/css" href="../_static/copybutton.css?v=76b2166b" />
+      <link rel="stylesheet" type="text/css" href="../_static/nbsphinx-code-cells.css?v=2aa19091" />
+
+  
+      <script src="../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../_static/documentation_options.js?v=2709fde1"></script>
+      <script src="../_static/doctools.js?v=9a2dae69"></script>
+      <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
+      <script src="../_static/clipboard.min.js?v=a7894cd8"></script>
+      <script src="../_static/copybutton.js?v=f281be69"></script>
+      <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+      <script>window.MathJax = {"tex": {"inlineMath": [["$", "$"], ["\\(", "\\)"]], "processEscapes": true}, "options": {"ignoreHtmlClass": "tex2jax_ignore|mathjax_ignore|document", "processHtmlClass": "tex2jax_process|mathjax_process|math|output_area"}}</script>
+      <script defer="defer" src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+    <script src="../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+    <link rel="next" title="Stacking cutouts" href="stacking.html" />
+    <link rel="prev" title="Making cutouts from a single or multiple bands" href="single_band_cutouts.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../index.html" class="icon icon-home">
+            galfind
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="../getting_started/getting_started.html">Welcome to Galfind!</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../instrument/instrument.html">Photometric Instruments</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../data/data.html">Galfind Data Object</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../catalogue/catalogue.html">Catalogue Object</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../galaxy/galaxy.html">Galaxy Objects</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../photometry/photometry.html">Handling Source Photometry</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../sed_fitting/sed_fitting.html">SED Fitting</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../selection/selection.html">Selection Methods</a></li>
+<li class="toctree-l1 current"><a class="reference internal" href="cutouts.html">Cutouts and Stacking</a><ul class="current">
+<li class="toctree-l2"><a class="reference internal" href="single_band_cutouts.html">Making cutouts from a single or multiple bands</a></li>
+<li class="toctree-l2 current"><a class="current reference internal" href="#">RGB cutouts</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#Example-1:-Constructing-RGB-objects">Example 1: Constructing RGB objects</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#Example-2:-Plotting-cutout-RGBs">Example 2: Plotting cutout RGBs</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="stacking.html">Stacking cutouts</a></li>
+<li class="toctree-l2"><a class="reference internal" href="multiple_cutouts.html">Plotting multiple cutouts from a catalogue</a></li>
+</ul>
+</li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../index.html">galfind</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="cutouts.html">Cutouts and Stacking</a></li>
+      <li class="breadcrumb-item active">RGB cutouts</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="../_sources/cutouts/RGB_cutouts.ipynb.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="RGB-cutouts">
+<h1>RGB cutouts<a class="headerlink" href="#RGB-cutouts" title="Link to this heading"></a></h1>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[1]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="c1"># imports</span>
+<span class="kn">import</span> <span class="nn">astropy.units</span> <span class="k">as</span> <span class="nn">u</span>
+<span class="kn">import</span> <span class="nn">numpy</span> <span class="k">as</span> <span class="nn">np</span>
+<span class="kn">from</span> <span class="nn">copy</span> <span class="kn">import</span> <span class="n">deepcopy</span>
+<span class="kn">from</span> <span class="nn">galfind</span> <span class="kn">import</span> <span class="n">Catalogue</span><span class="p">,</span> <span class="n">RGB</span>
+<span class="kn">from</span> <span class="nn">galfind.Data</span> <span class="kn">import</span> <span class="n">morgan_version_to_dir</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+Reading GALFIND config file from: /nvme/scratch/work/austind/GALFIND/galfind/../configs/galfind_config.ini
+</pre></div></div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area stderr docutils container">
+<div class="highlight"><pre>
+WARNING:galfind:Aperture corrections for VISTA not found in /nvme/scratch/work/austind/GALFIND/galfind/Aperture_corrections/VISTA_aper_corr.txt
+WARNING:galfind:Aperture corrections for VISTA not found in /nvme/scratch/work/austind/GALFIND/galfind/Aperture_corrections/VISTA_aper_corr.txt
+</pre></div></div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+Failed to `import dust_attenuation`
+Install from the repo with $ pip install git+https://github.com/karllark/dust_attenuation.git
+</pre></div></div>
+</div>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[2]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">survey</span> <span class="o">=</span> <span class="s2">&quot;JOF&quot;</span>
+<span class="n">version</span> <span class="o">=</span> <span class="s2">&quot;v11&quot;</span>
+<span class="n">instrument_names</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;NIRCam&quot;</span><span class="p">]</span>
+<span class="n">aper_diams</span> <span class="o">=</span> <span class="p">[</span><span class="mf">0.32</span><span class="p">]</span> <span class="o">*</span> <span class="n">u</span><span class="o">.</span><span class="n">arcsec</span>
+<span class="n">forced_phot_band</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;F277W&quot;</span><span class="p">,</span> <span class="s2">&quot;F356W&quot;</span><span class="p">,</span> <span class="s2">&quot;F444W&quot;</span><span class="p">]</span>
+<span class="n">min_flux_pc_err</span> <span class="o">=</span> <span class="mf">10.</span>
+
+<span class="n">JOF_cat</span> <span class="o">=</span> <span class="n">Catalogue</span><span class="o">.</span><span class="n">pipeline</span><span class="p">(</span>
+    <span class="n">survey</span><span class="p">,</span>
+    <span class="n">version</span><span class="p">,</span>
+    <span class="n">instrument_names</span> <span class="o">=</span> <span class="n">instrument_names</span><span class="p">,</span>
+    <span class="n">version_to_dir_dict</span> <span class="o">=</span> <span class="n">morgan_version_to_dir</span><span class="p">,</span>
+    <span class="n">aper_diams</span> <span class="o">=</span> <span class="n">aper_diams</span><span class="p">,</span>
+    <span class="n">forced_phot_band</span> <span class="o">=</span> <span class="n">forced_phot_band</span><span class="p">,</span>
+    <span class="n">min_flux_pc_err</span> <span class="o">=</span> <span class="n">min_flux_pc_err</span>
+<span class="p">)</span>
+<span class="c1"># TODO: Smooth galaxy load-in</span>
+<span class="c1"># from Robertson et al. 2023</span>
+<span class="n">z14_gal</span> <span class="o">=</span> <span class="n">JOF_cat</span><span class="p">[</span><span class="mi">717</span><span class="p">]</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area stderr docutils container">
+<div class="highlight"><pre>
+INFO:galfind:Loaded aper_diams=&lt;Quantity [0.32] arcsec&gt; for F277W+F356W+F444W
+INFO:galfind:Combined mask for NIRCam/F277W+F356W+F444W already exists at /raid/scratch/work/austind/GALFIND_WORK/Masks/JOF/combined/JOF_F277W+F356W+F444W_auto.fits
+WARNING: hdu= was not specified but multiple tables are present, reading in first available table (hdu=1) [astropy.io.fits.connect]
+WARNING:astroquery:hdu= was not specified but multiple tables are present, reading in first available table (hdu=1)
+WARNING:galfind:Aperture correction columns already in /raid/scratch/work/austind/GALFIND_WORK/Catalogues/v11/NIRCam/JOF/(0.32)as/JOF_MASTER_Sel-F277W+F356W+F444W_v11.fits
+Calculating depths:   0%|          | 0/15 [00:00&lt;?, ?it/s]
+INFO:galfind:Calculated/loaded depths for JOF v11 NIRCam
+INFO:galfind:Local depth columns already exist in /raid/scratch/work/austind/GALFIND_WORK/Catalogues/v11/NIRCam/JOF/(0.32)as/JOF_MASTER_Sel-F277W+F356W+F444W_v11.fits
+INFO:galfind:Loaded &#39;has_data_mask&#39; from /raid/scratch/work/austind/GALFIND_WORK/Masks/JOF/has_data_mask/JOF_MASTER_Sel-F277W+F356W+F444W_v11.h5
+INFO:galfind:Making JOF v11 JOF_MASTER_Sel-F277W+F356W+F444W_v11 catalogue!
+WARNING:galfind:cat_aper_diams not in kwargs.keys()=dict_keys([&#39;ZP&#39;, &#39;min_flux_pc_err&#39;])! Setting to aper_diams=&lt;Quantity [0.32] arcsec&gt;
+WARNING:galfind:cat_aper_diams not in kwargs.keys()=dict_keys([&#39;ZP&#39;, &#39;min_flux_pc_err&#39;])! Setting to aper_diams=&lt;Quantity [0.32] arcsec&gt;
+WARNING:galfind:cat_aper_diams not in kwargs.keys()=dict_keys([])! Setting to aper_diams=&lt;Quantity [0.32] arcsec&gt;
+INFO:galfind:Made /raid/scratch/work/austind/GALFIND_WORK/Catalogues/v11/NIRCam/JOF/(0.32)as/JOF_MASTER_Sel-F277W+F356W+F444W_v11.fits catalogue!
+</pre></div></div>
+</div>
+<p>Now that we have set up the z=14.63 galaxy candidate as before, we will now construct an <code class="docutils literal notranslate"><span class="pre">RGB_Cutout</span></code> object which stores all the information required to plot an RGB.</p>
+<section id="Example-1:-Constructing-RGB-objects">
+<h2>Example 1: Constructing RGB objects<a class="headerlink" href="#Example-1:-Constructing-RGB-objects" title="Link to this heading"></a></h2>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[3]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="c1"># define RGB bands</span>
+<span class="n">rgb_bands</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;B&quot;</span><span class="p">:</span> <span class="s2">&quot;F090W&quot;</span><span class="p">,</span> <span class="s2">&quot;G&quot;</span><span class="p">:</span> <span class="s2">&quot;F200W&quot;</span><span class="p">,</span> <span class="s2">&quot;R&quot;</span><span class="p">:</span> <span class="s2">&quot;F444W&quot;</span><span class="p">}</span>
+<span class="n">z14_rgb</span> <span class="o">=</span> <span class="n">RGB</span><span class="o">.</span><span class="n">from_gal_data</span><span class="p">(</span><span class="n">z14_gal</span><span class="p">,</span> <span class="n">JOF_cat</span><span class="o">.</span><span class="n">data</span><span class="p">,</span> <span class="n">rgb_bands</span><span class="p">,</span> <span class="mf">6.</span> <span class="o">*</span> <span class="n">u</span><span class="o">.</span><span class="n">arcsec</span><span class="p">,</span> <span class="n">overwrite</span> <span class="o">=</span> <span class="kc">False</span><span class="p">)</span>
+
+<span class="nb">print</span><span class="p">(</span><span class="n">z14_rgb</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area stderr docutils container">
+<div class="highlight"><pre>
+INFO:galfind:Already made fits cutout for JOF v11 718 F090W
+INFO:galfind:Already made fits cutout for JOF v11 718 F200W
+INFO:galfind:Already made fits cutout for JOF v11 718 F444W
+</pre></div></div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+&lt;galfind.Cutout.RGB object at 0x7f03d89b64c0&gt;
+</pre></div></div>
+</div>
+</section>
+<section id="Example-2:-Plotting-cutout-RGBs">
+<h2>Example 2: Plotting cutout RGBs<a class="headerlink" href="#Example-2:-Plotting-cutout-RGBs" title="Link to this heading"></a></h2>
+<p>Let’s now have a go at plotting this RGB using astropy.vizualization.make_lupton_rgb.</p>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[ ]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">rgb_kwargs</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;minimum&quot;</span><span class="p">:</span> <span class="o">-</span><span class="mf">0.3</span><span class="p">,</span> <span class="s2">&quot;stretch&quot;</span><span class="p">:</span> <span class="mf">2.</span><span class="p">,</span> <span class="s2">&quot;Q&quot;</span><span class="p">:</span> <span class="mf">8.</span><span class="p">}</span>
+<span class="n">z14_rgb</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span>
+    <span class="n">method</span> <span class="o">=</span> <span class="s2">&quot;lupton&quot;</span><span class="p">,</span>
+    <span class="n">rgb_kwargs</span> <span class="o">=</span> <span class="n">rgb_kwargs</span><span class="p">,</span>
+    <span class="n">show</span> <span class="o">=</span> <span class="kc">True</span>
+    <span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<img alt="../_images/cutouts_RGB_cutouts_7_0.png" src="../_images/cutouts_RGB_cutouts_7_0.png" />
+</div>
+</div>
+</section>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="single_band_cutouts.html" class="btn btn-neutral float-left" title="Making cutouts from a single or multiple bands" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="stacking.html" class="btn btn-neutral float-right" title="Stacking cutouts" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2024, Duncan Austin.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

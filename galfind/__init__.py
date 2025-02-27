@@ -118,13 +118,12 @@ from . import useful_funcs_austind
 from . import figs
 from . import decorators
 from . import SExtractor, Masking, Depths
-from .Cutout import Band_Cutout, Stacked_Band_Cutout, RGB, Stacked_RGB, Multiple_Band_Cutout, Multiple_RGB
-from .PDF import PDF, SED_fit_PDF, Redshift_PDF, PDF_nD
-from .Instrument import Facility, JWST, HST, Paranal, Instrument, ACS_WFC, WFC3_IR, NIRCam, MIRI, VISTA
-
-instr_to_name_dict = {name: globals()[name]() for name in json.loads(config.get("Other", "INSTRUMENT_NAMES"))}
 
 from .PSF import PSF_Base, PSF_Cutout
+from .Instrument import (Facility, JWST, HST, Paranal, Spitzer, Euclid, CFHT, Subaru,
+                         Instrument, ACS_WFC, WFC3_IR, NIRCam, MIRI, VISTA, NISP, VIS, IRAC, MegaCam, HSC
+                        )
+instr_to_name_dict = {name: globals()[name]() for name in json.loads(config.get("Other", "INSTRUMENT_NAMES"))}
 from .Filter import Filter, Multiple_Filter, Tophat_Filter, U, V, J
 
 # sort bands blue -> red based on central wavelength
@@ -133,7 +132,11 @@ all_band_names = [filt.band_name for filt in sorted(Multiple_Filter.from_instrum
     key=lambda band: band.WavelengthCen.to(u.AA).value)]
 config.set("Other", "ALL_BANDS", json.dumps(all_band_names))
 
+from .PDF import PDF, SED_fit_PDF, Redshift_PDF, PDF_nD
+
 from .Data import Band_Data_Base, Band_Data, Stacked_Band_Data, Data
+from .Cutout import Cutout_Base, Band_Cutout, Band_Cutout_Base, Stacked_Band_Cutout, RGB, Stacked_RGB, Multiple_Band_Cutout, Multiple_RGB, Catalogue_Cutouts
+
 from .Photometry import Photometry, Multiple_Photometry, Mock_Photometry
 from .Photometry_obs import Photometry_obs, Multiple_Photometry_obs
 from .Photometry_rest import Photometry_rest
@@ -143,6 +146,7 @@ from .SED_codes import SED_code
 from .LePhare import LePhare
 from .EAZY import EAZY # Failed to `import dust_attenuation`
 from .Bagpipes import Bagpipes
+from .Brown_Dwarf_Fitter import Template_Fitter, Brown_Dwarf_Fitter
 
 # don't do Bagpipes or LePhare for now
 # sed_code_to_name_dict = {
@@ -153,9 +157,9 @@ from .Bagpipes import Bagpipes
 
 from .Galaxy import Galaxy
 
-from .Multiple_Catalogue import Multiple_Catalogue
-from .Multiple_Data import Multiple_Data
 from .Catalogue_Base import Catalogue_Base
+from .Multiple_Catalogue import Combined_Catalogue
+#from .Multiple_Data import Multiple_Data
 from .Catalogue import Catalogue, Catalogue_Creator
 from .SED import SED, SED_rest, SED_obs, Mock_SED_rest, Mock_SED_obs
 from .SED import (
@@ -166,7 +170,14 @@ from .SED import (
 
 from .Selector import (
     Selector, 
+    ID_Selector,
     Multiple_Selector,
+    Data_Selector,
+    Photometry_Selector,
+    SED_fit_Selector,
+    Multiple_Data_Selector,
+    Multiple_Photometry_Selector,
+    Multiple_SED_fit_Selector,
     Unmasked_Band_Selector, 
     Unmasked_Bands_Selector, 
     Unmasked_Instrument_Selector,
@@ -181,19 +192,25 @@ from .Selector import (
     Kokorev24_LRD_red2_Selector, 
     Kokorev24_LRD_Selector,
     Bluewards_Lya_Non_Detect_Selector,
+    Bluewards_LyLim_Non_Detect_Selector,
     Redwards_Lya_Detect_Selector,
     Lya_Band_Selector,
     Chi_Sq_Lim_Selector,
     Chi_Sq_Diff_Selector,
     Robust_zPDF_Selector,
     EPOCHS_Selector,
+    Redshift_Limit_Selector,
+    Redshift_Bin_Selector,
+    Rest_Frame_Property_Limit_Selector,
+    Rest_Frame_Property_Bin_Selector,
+    Rest_Frame_Property_Kwarg_Selector, 
 )
 
 from .Emission_lines import Emission_line, wav_lyman_alpha, line_diagnostics
 from . import IGM_attenuation
 from . import lyman_alpha_damping_wing
 from .DLA import DLA
-from .Dust_Attenuation import Dust_Attenuation, C00
+from .Dust_Attenuation import Dust_Law, C00, M99, Reddy15, Reddy18, AUV_from_beta
 from .Spectrum import (
     Spectral_Catalogue,
     Spectrum,
@@ -202,9 +219,43 @@ from .Spectrum import (
     Spectral_Filter,
     Spectral_Grating,
 )
+from .MCMC import Prior, Flat_Prior, Priors, MCMC_Fitter, Schechter_Mag_Fitter, Schechter_Lum_Fitter, Linear_Fitter, Power_Law_Fitter, Scattered_Linear_Fitter
 from .Number_Density_Function import (
     Base_Number_Density_Function,
     Number_Density_Function,
 )  # UVLFs, mass functions, etc
 
-# dynamically add Galaxy selection methods to Catalogue class?
+from .Property_calculator import (
+    Property_Calculator_Base, 
+    Property_Calculator,
+    Redshift_Extractor,
+    Ext_Src_Property_Calculator, 
+    Custom_SED_Property_Extractor,
+    Custom_Morphology_Property_Extractor,
+    Property_Multiplier,
+    Property_Divider,
+    Re_kpc_Calculator,
+    Surface_Density_Calculator,
+)
+
+from .Rest_frame_properties import (
+    Rest_Frame_Property_Calculator,
+    UV_Beta_Calculator,
+    UV_Dust_Attenuation_Calculator,
+    mUV_Calculator,
+    MUV_Calculator,
+    LUV_Calculator,
+    SFR_UV_Calculator,
+    Fesc_From_Beta_Calculator,
+    Optical_Continuum_Calculator,
+    Optical_Line_EW_Calculator,
+    Dust_Attenuation_From_UV_Calculator,
+    Line_Dust_Attenuation_From_UV_Calculator,
+    Optical_Line_Flux_Calculator,
+    Optical_Line_Luminosity_Calculator,
+    Ndot_Ion_Calculator,
+    Xi_Ion_Calculator,
+    SFR_Halpha_Calculator,
+)
+
+from .Morphology import Morphology_Result, Morphology_Fitter, Galfit_Fitter

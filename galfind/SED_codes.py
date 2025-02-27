@@ -16,9 +16,9 @@ import itertools
 import numpy as np
 from astropy.table import Table, join
 from tqdm import tqdm
-from typing import TYPE_CHECKING, NoReturn, Tuple, Union, List, Dict, Any, Optional, Type
+from typing import TYPE_CHECKING, NoReturn, Tuple, Union, List, Dict, Any, Optional
 if TYPE_CHECKING:
-    from . import Catalogue, Multiple_Filter
+    from . import Catalogue, Multiple_Filter, SED_obs, PDF
 try:
     from typing import Self, Type  # python 3.11+
 except ImportError:
@@ -92,11 +92,24 @@ class SED_code(ABC):
         pass
 
     @abstractmethod
-    def make_in(self, cat: Catalogue):
+    def make_in(
+        self, 
+        cat: Catalogue, 
+        aper_diam: u.Quantity, 
+        overwrite: bool = False
+    ) -> str:
         pass
 
     @abstractmethod
-    def fit(self, cat: Catalogue, overwrite: bool = False):
+    def fit(
+        self: Self,
+        cat: Catalogue,
+        aper_diam: u.Quantity,
+        save_SEDs: bool = True,
+        save_PDFs: bool = True,
+        overwrite: bool = False,
+        **kwargs: Dict[str, Any],
+    ) -> NoReturn:
         pass
 
     @abstractmethod
@@ -104,15 +117,36 @@ class SED_code(ABC):
         pass
 
     @abstractmethod
-    def _get_out_paths(out_path, IDs):
+    def _get_out_paths(
+        self: Self, 
+        cat: Catalogue, 
+        aper_diam: u.Quantity
+    ) -> Tuple[str, str, str, Dict[str, List[str]], List[str]]:
         pass
 
     @abstractmethod
-    def extract_SEDs(self, IDs, data_paths):
+    def extract_SEDs(
+        self: Self, 
+        IDs: List[int], 
+        SED_paths: Union[str, List[str]]
+    ) -> List[SED_obs]:
         pass
 
     @abstractmethod
-    def extract_PDFs(self, gal_property, IDs, data_paths):
+    def extract_PDFs(
+        self: Self, 
+        gal_property: str, 
+        IDs: List[int], 
+        PDF_paths: Union[str, List[str]], 
+    ) -> List[Type[PDF]]:
+        pass
+
+    @abstractmethod
+    def load_cat_property_PDFs(
+        self: Self, 
+        PDF_paths: Union[List[str], List[Dict[str, str]]],
+        IDs: List[int]
+    ) -> List[Dict[str, Optional[Type[PDF]]]]:
         pass
 
     def _assert_SED_fit_params(self) -> NoReturn:
@@ -160,7 +194,6 @@ class SED_code(ABC):
         update: bool = False,
         **fit_kwargs
     ) -> List[SED_result]:
-        
         if timed:
             start = time.time()
 
@@ -176,9 +209,16 @@ class SED_code(ABC):
 
         in_path, out_path, fits_out_path, PDF_paths, SED_paths = self._get_out_paths(cat, aper_diam)
         # run the SED fitting if not already done so or if wanted overwriting
-        fits_cat = cat.open_cat(hdu=self) # should be cached
-        if fits_cat is None or self.gal_property_labels['z'] \
+        fits_cat = cat.open_cat(hdu=self) # could be cached
+        if "z" not in self.gal_property_labels.keys():
+            fit = True
+        elif fits_cat is None or self.gal_property_labels["z"] \
                 not in fits_cat.colnames:
+            fit = True
+        else:
+            fit = False
+
+        if fit:
             self.fit(
                 cat,
                 aper_diam,
@@ -193,6 +233,7 @@ class SED_code(ABC):
         if timed:
             mid = time.time()
             print(f"Running SED fitting took {(mid - start):.1f}s")
+        breakpoint()
         SED_fit_cat = cat.open_cat(cropped=True, hdu=self)
         aper_phot_IDs = [gal.ID for gal in cat]
         phot_arr = [gal.aper_phot[aper_diam] for gal in cat]
@@ -202,18 +243,18 @@ class SED_code(ABC):
             in zip(aper_phot_IDs, SED_fit_IDs)), galfind_logger.critical(
             f"IDs in SED_fit_cat do not match those in the catalogue"
             )
-
         cat_properties = [{gal_property: SED_fit_cat[label][i] * \
             self.gal_property_units[gal_property] if gal_property in \
             self.gal_property_units.keys() else SED_fit_cat[label][i] * \
             u.dimensionless_unscaled for gal_property, label in \
             self.gal_property_labels.items()} for i in range(len(aper_phot_IDs))]
         
-        # TODO: ensure that all errors have an associated property - when instantiating the class
+        # TODO: When instantiating the class, ensure that all errors have an associated property
         assert all(
             err_key in self.gal_property_labels.keys()
             for err_key in self.gal_property_err_labels.keys()
         )
+
         # adjust errors if required (i.e. if 16th and 84th percentiles rather than errors)
         cat_property_errs = {
             gal_property: list(
@@ -231,6 +272,7 @@ class SED_code(ABC):
             else [list(SED_fit_cat[err_labels[0]]), list(SED_fit_cat[err_labels[1]])]
             for gal_property, err_labels in self.gal_property_err_labels.items()
         }
+
         cat_property_errs = [
             {
                 key: [value[0][i], value[1][i]]
@@ -254,29 +296,7 @@ class SED_code(ABC):
                 f"Loading {self.hdu_name} property PDFs into " + \
                 f"{cat.survey} {cat.version} {cat.filterset.instrument_name}"
             )
-            # construct PDF objects, type = array of len(fits_cat), 
-            # each element a dict of {gal_property: PDF object} excluding None PDFs
-            cat_property_PDFs_ = {
-                gal_property: self.extract_PDFs(
-                    gal_property,
-                    aper_phot_IDs,
-                    PDF_path,
-                )
-                for gal_property, PDF_path in PDF_paths.items()
-            }
-            cat_property_PDFs_ = [
-                {
-                    gal_property: PDF_arr[i]
-                    for gal_property, PDF_arr in cat_property_PDFs_.items()
-                    if PDF_arr[i] is not None
-                }
-                for i in range(len(aper_phot_IDs))
-            ]
-            # set to None if no PDFs are found
-            cat_property_PDFs = [
-                None if len(cat_property_PDF) == 0 else cat_property_PDF
-                for cat_property_PDF in cat_property_PDFs_
-            ]
+            cat_property_PDFs = self.load_cat_property_PDFs(PDF_paths, aper_phot_IDs)
             galfind_logger.info(
                 f"Finished loading {self.hdu_name} property PDFs into " + \
                 f"{cat.survey} {cat.version} {cat.filterset.instrument_name}"
@@ -308,7 +328,7 @@ class SED_code(ABC):
             cat_SEDs = np.array(
                 list(itertools.repeat(None, len(cat_properties)))
             )
-        
+
         cat_SED_results = [SED_result(self, phot, properties, property_errs, property_PDFs, SED) \
             for phot, properties, property_errs, property_PDFs, SED in \
             zip(phot_arr, cat_properties, cat_property_errs, cat_property_PDFs, cat_SEDs)]
@@ -325,6 +345,7 @@ class SED_code(ABC):
         no_data_val: Any,
         upper_sigma_lim: Optional[Dict[str, Union[float, int]]] = None,
         input_filterset: Optional[Multiple_Filter] = None,
+        incl_units: bool = False,
     ) -> Tuple[np.ndarray, np.ndarray]:
         if input_filterset is None:
             input_filterset = cat.filterset
@@ -387,8 +408,10 @@ class SED_code(ABC):
         # insert 'no_data_val' from SED_input_bands with no data in the catalogue
         phot_in = np.zeros((len(cat), len(input_filterset)))
         phot_err_in = np.zeros((len(cat), len(input_filterset)))
+        load_message = f"Loading photometry for {cat.survey} {cat.version} for {self.label} SED fitting"
+        galfind_logger.info(load_message)
         for i, gal in tqdm(
-            enumerate(cat), desc="Making .in file", total=len(cat)
+            enumerate(cat), desc=load_message, total=len(cat)
         ):
             for j, band_name in enumerate(input_filterset.band_names):
                 if band_name in gal.aper_phot[aper_diam].filterset.band_names:  # Check mask?
@@ -400,11 +423,16 @@ class SED_code(ABC):
                 else:
                     phot_in[i, j] = no_data_val
                     phot_err_in[i, j] = no_data_val
+        if incl_units:
+            phot_in = phot_in * out_units
+            phot_err_in = phot_err_in * out_units
         return phot_in, phot_err_in
 
     # should be catalogue method
     def update_fits_cat(
-        self, cat: Catalogue, fits_out_path: str
+        self: Self,
+        cat: Catalogue,
+        fits_out_path: str,
     ) -> None:
         # open relevant catalogue hdu extension
         orig_tab = cat.open_cat(hdu=self)
@@ -413,14 +441,22 @@ class SED_code(ABC):
         if orig_tab is None:
             cat.write_hdu(SED_fitting_tab, hdu=self.hdu_name)
         else:
-            # combine catalogues
-            combined_tab = join(
-                orig_tab,
-                SED_fitting_tab,
-                keys=self.ID_label,
-                join_type="outer",
-            )
-            cat.write_hdu(combined_tab, hdu=self.hdu_name)
+            # if any of the column names are the same
+            if any(name in orig_tab.colnames for name in SED_fitting_tab.colnames if name != self.ID_label):
+                galfind_logger.warning(
+                    f"Column names in {self.hdu_name=} table already exist in catalogue table. " + \
+                    "Will not update catalogue table."
+                )
+                # TODO: merge tables appropriately
+            else:
+                # combine catalogues
+                combined_tab = join(
+                    orig_tab,
+                    SED_fitting_tab,
+                    keys=self.ID_label,
+                    join_type="outer",
+                )
+                cat.write_hdu(combined_tab, hdu=self.hdu_name)
 
     # def update_lowz_zmax(SED_results):
     #     if "dz" in SED_fit_params.keys():

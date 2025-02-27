@@ -72,6 +72,18 @@ class JWST(Facility, funcs.Singleton):
 class Paranal(Facility, funcs.Singleton):
     pass
 
+class Spitzer(Facility, funcs.Singleton):
+    pass
+
+class Euclid(Facility, funcs.Singleton):
+    pass
+
+class CFHT(Facility, funcs.Singleton):
+    pass
+
+class Subaru(Facility, funcs.Singleton):
+    pass
+
 
 class Instrument(ABC):
     def __init__(
@@ -177,7 +189,7 @@ class Instrument(ABC):
 
         if Path(aper_corr_path).is_file():
             aper_corr_tab = Table.read(aper_corr_path, format="ascii")
-            aper_diams = [0.32, 0.5, 1.0, 1.5, 2.0] * u.arcsec
+            aper_diams = [0.2, 0.32, 0.5, 1.0, 1.5, 2.0] * u.arcsec
             # save aperture corrections in self
             if not hasattr(self, "aper_corrs"):
                 self.aper_corrs = {}
@@ -300,9 +312,9 @@ class ACS_WFC(Instrument, funcs.Singleton):
             "F658N",
             "F660N",
             "FR716N",
-            "POL_UV",
+            #"POL_UV",
             "G800L",
-            "POL_V",
+            #"POL_V",
             "F775W",
             "FR782N",
             "F814W",
@@ -334,13 +346,11 @@ class ACS_WFC(Instrument, funcs.Singleton):
                 (band_data.pix_scale.to(u.rad).value ** 2) * u.MJy.to(u.Jy)
             ) + u.Jy.to(u.ABmag)
         else:
-            raise (
-                Exception(
-                    f"ACS_WFC data for {band_data.filt.filt_name}"
-                    + " must contain either 'ZEROPNT' or 'PHOTFLAM' and 'PHOTPLAM' "
-                    + "or 'BUNIT'=MJy/sr in its header to calculate its ZP!"
-                )
-            )
+            err_message = f"ACS_WFC data for {band_data.filt_name}" + \
+                " must contain either 'ZEROPNT' or 'PHOTFLAM' and 'PHOTPLAM' " + \
+                "or 'BUNIT'=MJy/sr in its header to calculate its ZP!"
+            galfind_logger.critical(err_message)
+            raise (Exception(err_message))
         return ZP
 
     def make_model_PSF(self, band: Union[str, Filter]) -> Type[PSF_Base]:
@@ -393,6 +403,7 @@ class WFC3_IR(Instrument, funcs.Singleton):
     def make_empirical_PSF(self, band_data: Band_Data) -> Type[PSF_Base]:
         pass
 
+
 class VISTA(Instrument, funcs.Singleton):
     def __init__(self) -> None:
         VISTA_band_names = [
@@ -427,6 +438,137 @@ class VISTA(Instrument, funcs.Singleton):
         pass
 
 
+class MegaCam(Instrument, funcs.Singleton):
+    def __init__(self) -> None:
+        Megacam_band_names = [
+            "u",
+            "u_1",
+            "g",
+            "g_1",
+            "r",
+            "r_1",
+            "i",
+            "i_1",
+            "i_2",
+            "z",
+            "z_1",
+            #"gri",
+        ]
+        self.SVO_name = "MegaCam"
+        super().__init__("CFHT", Megacam_band_names)
+
+    def calc_ZP(self, band_data: Type[Band_Data_Base]) -> u.Quantity:
+        ZP = band_data.load_im()[1]["PHOTZP"]
+        return ZP
+
+    def make_model_PSF(self, band: Union[str, Filter]) -> Type[PSF_Base]:
+        pass
+
+    def make_empirical_PSF(self, data: Data, band: Union[str, Filter]) -> Type[PSF_Base]:
+        pass
+
+class HSC(Instrument, funcs.Singleton):
+    def __init__(self) -> None:
+        HSC_band_names = [
+            "g",
+            "r",
+            "i",
+            "z",
+            "Y",
+            "NB387_filter",
+            "NB468_filter",
+            "g_filter",
+            "NB515_filter",
+            "r2_filter",
+            "r_filter",
+            "NB656_filter",
+            "NB718_filter",
+            "i_filter",
+            "i2_filter",
+            "NB816_filter",
+            "z_filter",
+            "NB921_filter",
+            "NB926_filter",
+            "IB945_filter",
+            "NB973_filter",
+            "Y_filter",
+        ]
+        self.SVO_name = "HSC"
+        super().__init__("Subaru", HSC_band_names)
+
+    def calc_ZP(self, band_data: Type[Band_Data_Base]) -> u.Quantity:
+        ZP = band_data.load_im()[1]["PHOTZP"]
+        return ZP
+    
+    def make_model_PSF(self, band: Union[str, Filter]) -> Type[PSF_Base]:
+        pass
+
+    def make_empirical_PSF(self, data: Data, band: Union[str, Filter]) -> Type[PSF_Base]:
+        pass
+
+
+class VIS(Instrument, funcs.Singleton):
+    def __init__(self) -> None:
+        VIS_band_names = [
+            "vis"
+        ]
+        self.SVO_name = "VIS"
+        super().__init__("Euclid", VIS_band_names)
+
+    def calc_ZP(self, band_data: Type[Band_Data_Base]) -> u.Quantity:
+        ZP = band_data.load_im()[1]["PHOTZP"]
+        return ZP
+
+    def make_model_PSF(self, band: Union[str, Filter]) -> Type[PSF_Base]:
+        pass
+
+    def make_empirical_PSF(self, data: Data, band: Union[str, Filter]) -> Type[PSF_Base]:
+        pass
+
+
+class NISP(Instrument, funcs.Singleton):
+    def __init__(self) -> None:
+        NISP_band_names = [
+            "Y",
+            "J",
+            "H",
+        ]
+        self.SVO_name = "NISP"
+        super().__init__("Euclid", NISP_band_names)
+
+    def calc_ZP(self, band_data: Type[Band_Data_Base]) -> u.Quantity:
+        ZP = band_data.load_im()[1]["PHOTZP"]
+        return ZP
+
+    def make_model_PSF(self, band: Union[str, Filter]) -> Type[PSF_Base]:
+        pass
+
+    def make_empirical_PSF(self, data: Data, band: Union[str, Filter]) -> Type[PSF_Base]:
+        pass
+
+
+class IRAC(Instrument, funcs.Singleton):
+    def __init__(self) -> None:
+        IRAC_band_names = [
+            "I1",
+            "I2",
+            "I3",
+            "I4",
+        ]
+        self.SVO_name = "IRAC"
+        super().__init__("Spitzer", IRAC_band_names)
+
+    def calc_ZP(self, band_data: Type[Band_Data_Base]) -> u.Quantity:
+        ZP = band_data.load_im()[1]["PHOTZP"]
+        return ZP
+
+    def make_model_PSF(self, band: Union[str, Filter]) -> Type[PSF_Base]:
+        pass
+
+    def make_empirical_PSF(self, data: Data, band: Union[str, Filter]) -> Type[PSF_Base]:
+        pass
+
+
 # Instrument attributes
 
 # TODO: Generalize this so the user does not 
@@ -437,6 +579,11 @@ expected_instr_bands = {
     "NIRCam": NIRCam().filt_names,
     "MIRI": MIRI().filt_names,
     "VISTA": VISTA().filt_names,
+    "MegaCam": MegaCam().filt_names,
+    "HSC": HSC().filt_names,
+    "VIS": VIS().filt_names,
+    "NISP": NISP().filt_names,
+    "IRAC": IRAC().filt_names,
 }
 
 expected_instr_facilities = {
@@ -445,5 +592,10 @@ expected_instr_facilities = {
     "NIRCam": "JWST",
     "MIRI": "JWST",
     "VISTA": "Paranal",
+    "MegaCam": "CFHT",
+    "HSC": "Subaru",
+    "VIS": "Euclid",
+    "NISP": "Euclid",
+    "IRAC": "Spitzer",
 }
 

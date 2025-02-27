@@ -6,7 +6,7 @@
   <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Bagpipes &mdash; galfind 0.1 documentation</title>
+  <title>SED fitting with Bagpipes &mdash; galfind 0.1 documentation</title>
       <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=80d5e7a1" />
       <link rel="stylesheet" type="text/css" href="../_static/css/theme.css?v=e59714d7" />
       <link rel="stylesheet" type="text/css" href="../_static/copybutton.css?v=76b2166b" />
@@ -60,10 +60,18 @@
 <li class="toctree-l1 current"><a class="reference internal" href="sed_fitting.html">SED Fitting</a><ul class="current">
 <li class="toctree-l2"><a class="reference internal" href="EAZY.html">EAZY-py</a></li>
 <li class="toctree-l2"><a class="reference internal" href="LePhare.html">LePhare</a></li>
-<li class="toctree-l2 current"><a class="current reference internal" href="#">Bagpipes</a></li>
+<li class="toctree-l2 current"><a class="current reference internal" href="#">SED fitting with Bagpipes</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#Example-1:-Running-for-a-single-Galaxy/Photometry_obs-object">Example 1: Running for a single Galaxy/Photometry_obs object</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#Example-2:-Running-an-entire-Catalogue">Example 2: Running an entire Catalogue</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#Example-3:-Running-with-different-priors">Example 3: Running with different priors</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#Example-4:-Multi-processing-Catalogue-SED-fitting">Example 4: Multi-processing Catalogue SED fitting</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#Example-4:-Running-with-different-input-grids">Example 4: Running with different input grids</a></li>
+</ul>
+</li>
 </ul>
 </li>
 <li class="toctree-l1"><a class="reference internal" href="../selection/selection.html">Selection Methods</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../cutouts/cutouts.html">Cutouts and Stacking</a></li>
 </ul>
 
         </div>
@@ -81,7 +89,7 @@
   <ul class="wy-breadcrumbs">
       <li><a href="../index.html" class="icon icon-home" aria-label="Home"></a></li>
           <li class="breadcrumb-item"><a href="sed_fitting.html">SED Fitting</a></li>
-      <li class="breadcrumb-item active">Bagpipes</li>
+      <li class="breadcrumb-item active">SED fitting with Bagpipes</li>
       <li class="wy-breadcrumbs-aside">
             <a href="../_sources/sed_fitting/Bagpipes.ipynb.txt" rel="nofollow"> View page source</a>
       </li>
@@ -91,13 +99,76 @@
           <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
            <div itemprop="articleBody">
              
-  <section id="Bagpipes">
-<h1>Bagpipes<a class="headerlink" href="#Bagpipes" title="Link to this heading"></a></h1>
+  <section id="SED-fitting-with-Bagpipes">
+<h1>SED fitting with Bagpipes<a class="headerlink" href="#SED-fitting-with-Bagpipes" title="Link to this heading"></a></h1>
+<p>While we have previously used the <code class="docutils literal notranslate"><span class="pre">EAZY</span></code> and <code class="docutils literal notranslate"><span class="pre">LePhare</span></code> classes (more details found in the <a class="reference internal" href="EAZY.html"><span class="doc">EAZY</span></a> and <a class="reference internal" href="LePhare.html"><span class="doc">LePhare</span></a> notebooks) to perform SED fitting for redshifts (and basic stellar masses/SFRs in the case of LePhare), we will now use the well-known SED fitting tool <code class="docutils literal notranslate"><span class="pre">Bagpipes</span></code> to recover galaxy properties using a Bayesian framework.</p>
+<p>The first thing that must be done is to ensure bagpipes is downloaded and installed appropriately. At Manchester, we have slightly altered the Bagpipes basecode to include additional functionality, e.g. to directly output UV continuum slopes, <span class="math notranslate nohighlight">\(M_{\mathrm{UV}}\)</span>s, etc, as well as the option to include Gaussian redshift priors on an object by object basis. To use this functionality, you must first clone the forked bagpipes repository from Thomas Harvey’s github. In an appropriate directory
+(i.e. outside of the galfind directory!), simply run:</p>
+<p>git clone <a class="reference external" href="https://github.com/tHarvey303/bagpipes.git">https://github.com/tHarvey303/bagpipes.git</a> cd bagpipes pip install -e .</p>
+<p>You will now need to ensure that the appropriate stellar, nebular, and dust emission grids are placed within the bagpipes/models/grids. Some default templates will be made available at will be made available at …</p>
+<p>By default, since <code class="docutils literal notranslate"><span class="pre">PyMultiNest</span></code> is not available without additional installation, bagpipes will perform the sampling using <code class="docutils literal notranslate"><span class="pre">Nautilus</span></code>, which is slower.</p>
+<p>Should you wish to fit using <code class="docutils literal notranslate"><span class="pre">PyMultiNest</span></code>, follow the installation instructions given here: <a class="reference external" href="https://johannesbuchner.github.io/PyMultiNest/">https://johannesbuchner.github.io/PyMultiNest/</a></p>
+<p>As per usual, we will first import the required modules as well as our example JOF NIRCam v11 catalogue.</p>
 <div class="nbinput docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[ ]:
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[1]:
 </pre></div>
 </div>
-<div class="input_area highlight-python notranslate"><div class="highlight"><pre><span></span>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span> <span class="nn">astropy.units</span> <span class="k">as</span> <span class="nn">u</span>
+<span class="kn">from</span> <span class="nn">copy</span> <span class="kn">import</span> <span class="n">deepcopy</span>
+<span class="kn">from</span> <span class="nn">galfind</span> <span class="kn">import</span> <span class="n">Catalogue</span><span class="p">,</span> <span class="n">EPOCHS_Selector</span><span class="p">,</span> <span class="n">Bagpipes</span><span class="p">,</span> <span class="n">EAZY</span>
+<span class="kn">from</span> <span class="nn">galfind.Data</span> <span class="kn">import</span> <span class="n">morgan_version_to_dir</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+Reading GALFIND config file from: /nvme/scratch/work/austind/GALFIND/galfind/../configs/galfind_config.ini
+</pre></div></div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area stderr docutils container">
+<div class="highlight"><pre>
+WARNING:galfind:Aperture corrections for VISTA not found in /nvme/scratch/work/austind/GALFIND/galfind/Aperture_corrections/VISTA_aper_corr.txt
+WARNING:galfind:Aperture corrections for VISTA not found in /nvme/scratch/work/austind/GALFIND/galfind/Aperture_corrections/VISTA_aper_corr.txt
+</pre></div></div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+Failed to `import dust_attenuation`
+Install from the repo with $ pip install git+https://github.com/karllark/dust_attenuation.git
+</pre></div></div>
+</div>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[2]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">survey</span> <span class="o">=</span> <span class="s2">&quot;JOF&quot;</span>
+<span class="n">version</span> <span class="o">=</span> <span class="s2">&quot;v11&quot;</span>
+<span class="n">instrument_names</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;NIRCam&quot;</span><span class="p">]</span>
+<span class="n">aper_diams</span> <span class="o">=</span> <span class="p">[</span><span class="mf">0.32</span><span class="p">]</span> <span class="o">*</span> <span class="n">u</span><span class="o">.</span><span class="n">arcsec</span>
+<span class="n">forced_phot_band</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;F277W&quot;</span><span class="p">,</span> <span class="s2">&quot;F356W&quot;</span><span class="p">,</span> <span class="s2">&quot;F444W&quot;</span><span class="p">]</span>
+<span class="n">min_flux_pc_err</span> <span class="o">=</span> <span class="mf">10.</span>
+
+<span class="n">JOF_cat</span> <span class="o">=</span> <span class="n">Catalogue</span><span class="o">.</span><span class="n">pipeline</span><span class="p">(</span>
+    <span class="n">survey</span><span class="p">,</span>
+    <span class="n">version</span><span class="p">,</span>
+    <span class="n">instrument_names</span> <span class="o">=</span> <span class="n">instrument_names</span><span class="p">,</span>
+    <span class="n">version_to_dir_dict</span> <span class="o">=</span> <span class="n">morgan_version_to_dir</span><span class="p">,</span>
+    <span class="n">aper_diams</span> <span class="o">=</span> <span class="n">aper_diams</span><span class="p">,</span>
+    <span class="n">forced_phot_band</span> <span class="o">=</span> <span class="n">forced_phot_band</span><span class="p">,</span>
+    <span class="n">min_flux_pc_err</span> <span class="o">=</span> <span class="n">min_flux_pc_err</span><span class="p">,</span>
+    <span class="n">crops</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;SELECTION&quot;</span><span class="p">:</span> <span class="n">EPOCHS_Selector</span><span class="p">(</span><span class="n">allow_lowz</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span><span class="o">.</span> \
+        <span class="n">_get_selection_name</span><span class="p">(</span><span class="n">aper_diams</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> \
+        <span class="n">EAZY</span><span class="p">({</span><span class="s2">&quot;templates&quot;</span><span class="p">:</span> <span class="s2">&quot;fsps_larson&quot;</span><span class="p">,</span> <span class="s2">&quot;lowz_zmax&quot;</span><span class="p">:</span> <span class="kc">None</span><span class="p">})</span><span class="o">.</span><span class="n">label</span><span class="p">)}</span>
+<span class="p">)</span>
 </pre></div>
 </div>
 </div>
@@ -106,13 +177,126 @@
 </div>
 <div class="output_area docutils container">
 <div class="highlight"><pre>
-<span class="ansi-red-intense-fg ansi-bold">Failed to start the Kernel.
+<span class="ansi-red-fg">---------------------------------------------------------------------------</span>
+<span class="ansi-red-fg">TypeError</span>                                 Traceback (most recent call last)
+Cell <span class="ansi-green-fg">In[2], line 16</span>
+<span class="ansi-green-intense-fg ansi-bold">      5</span> forced_phot_band <span style="color: rgb(98,98,98)">=</span> [<span style="color: rgb(175,0,0)">&#34;</span><span style="color: rgb(175,0,0)">F277W</span><span style="color: rgb(175,0,0)">&#34;</span>, <span style="color: rgb(175,0,0)">&#34;</span><span style="color: rgb(175,0,0)">F356W</span><span style="color: rgb(175,0,0)">&#34;</span>, <span style="color: rgb(175,0,0)">&#34;</span><span style="color: rgb(175,0,0)">F444W</span><span style="color: rgb(175,0,0)">&#34;</span>]
+<span class="ansi-green-intense-fg ansi-bold">      6</span> min_flux_pc_err <span style="color: rgb(98,98,98)">=</span> <span style="color: rgb(98,98,98)">10.</span>
+<span class="ansi-green-intense-fg ansi-bold">      8</span> JOF_cat <span style="color: rgb(98,98,98)">=</span> Catalogue<span style="color: rgb(98,98,98)">.</span>pipeline(
+<span class="ansi-green-intense-fg ansi-bold">      9</span>     survey,
+<span class="ansi-green-intense-fg ansi-bold">     10</span>     version,
+<span class="ansi-green-intense-fg ansi-bold">     11</span>     instrument_names <span style="color: rgb(98,98,98)">=</span> instrument_names,
+<span class="ansi-green-intense-fg ansi-bold">     12</span>     version_to_dir_dict <span style="color: rgb(98,98,98)">=</span> morgan_version_to_dir,
+<span class="ansi-green-intense-fg ansi-bold">     13</span>     aper_diams <span style="color: rgb(98,98,98)">=</span> aper_diams,
+<span class="ansi-green-intense-fg ansi-bold">     14</span>     forced_phot_band <span style="color: rgb(98,98,98)">=</span> forced_phot_band,
+<span class="ansi-green-intense-fg ansi-bold">     15</span>     min_flux_pc_err <span style="color: rgb(98,98,98)">=</span> min_flux_pc_err,
+<span class="ansi-green-fg">---&gt; 16</span>     crops <span style="color: rgb(98,98,98)">=</span> {<span style="color: rgb(175,0,0)">&#34;</span><span style="color: rgb(175,0,0)">SELECTION</span><span style="color: rgb(175,0,0)">&#34;</span>: <span class="ansi-yellow-bg">EPOCHS_Selector</span><span class="ansi-yellow-bg">(</span><span class="ansi-yellow-bg">allow_lowz</span><span class="ansi-yellow-bg" style="color: rgb(98,98,98)">=</span><span class="ansi-yellow-bg ansi-bold" style="color: rgb(0,135,0)">True</span><span class="ansi-yellow-bg">)</span><span style="color: rgb(98,98,98)">.</span> \
+<span class="ansi-green-intense-fg ansi-bold">     17</span>         _get_selection_name(aper_diams[<span style="color: rgb(98,98,98)">0</span>], \
+<span class="ansi-green-intense-fg ansi-bold">     18</span>         EAZY({<span style="color: rgb(175,0,0)">&#34;</span><span style="color: rgb(175,0,0)">templates</span><span style="color: rgb(175,0,0)">&#34;</span>: <span style="color: rgb(175,0,0)">&#34;</span><span style="color: rgb(175,0,0)">fsps_larson</span><span style="color: rgb(175,0,0)">&#34;</span>, <span style="color: rgb(175,0,0)">&#34;</span><span style="color: rgb(175,0,0)">lowz_zmax</span><span style="color: rgb(175,0,0)">&#34;</span>: <span class="ansi-bold" style="color: rgb(0,135,0)">None</span>})<span style="color: rgb(98,98,98)">.</span>label)}
+<span class="ansi-green-intense-fg ansi-bold">     19</span> )
 
-</span><span class="ansi-red-intense-fg ansi-bold">Unhandled error.
-
-</span><span class="ansi-red-intense-fg ansi-bold">View Jupyter &lt;a href=&#39;command:jupyter.viewOutput&#39;&gt;log&lt;/a&gt; for further details.</span>
+<span class="ansi-red-fg">TypeError</span>: __init__() missing 2 required positional arguments: &#39;aper_diam&#39; and &#39;SED_fit_label&#39;
 </pre></div></div>
 </div>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[3]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">SED_fit_params_arr</span> <span class="o">=</span> <span class="p">[{</span><span class="s2">&quot;templates&quot;</span><span class="p">:</span> <span class="s2">&quot;fsps_larson&quot;</span><span class="p">,</span> <span class="s2">&quot;lowz_zmax&quot;</span><span class="p">:</span> <span class="kc">None</span><span class="p">}]</span>
+<span class="k">for</span> <span class="n">SED_fit_params</span> <span class="ow">in</span> <span class="n">SED_fit_params_arr</span><span class="p">:</span>
+    <span class="n">EAZY_fitter</span> <span class="o">=</span> <span class="n">EAZY</span><span class="p">(</span><span class="n">SED_fit_params</span><span class="p">)</span>
+    <span class="n">EAZY_fitter</span><span class="p">(</span><span class="n">JOF_cat</span><span class="p">,</span> <span class="n">aper_diams</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">load_PDFs</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span> <span class="n">load_SEDs</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span> <span class="n">update</span> <span class="o">=</span> <span class="kc">True</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+<span class="ansi-red-fg">---------------------------------------------------------------------------</span>
+<span class="ansi-red-fg">NameError</span>                                 Traceback (most recent call last)
+Cell <span class="ansi-green-fg">In[3], line 4</span>
+<span class="ansi-green-intense-fg ansi-bold">      2</span> <span class="ansi-bold" style="color: rgb(0,135,0)">for</span> SED_fit_params <span class="ansi-bold" style="color: rgb(175,0,255)">in</span> SED_fit_params_arr:
+<span class="ansi-green-intense-fg ansi-bold">      3</span>     EAZY_fitter <span style="color: rgb(98,98,98)">=</span> EAZY(SED_fit_params)
+<span class="ansi-green-fg">----&gt; 4</span>     EAZY_fitter(<span class="ansi-yellow-bg">JOF_cat</span>, aper_diams[<span style="color: rgb(98,98,98)">0</span>], load_PDFs <span style="color: rgb(98,98,98)">=</span> <span class="ansi-bold" style="color: rgb(0,135,0)">False</span>, load_SEDs <span style="color: rgb(98,98,98)">=</span> <span class="ansi-bold" style="color: rgb(0,135,0)">False</span>, update <span style="color: rgb(98,98,98)">=</span> <span class="ansi-bold" style="color: rgb(0,135,0)">True</span>)
+
+<span class="ansi-red-fg">NameError</span>: name &#39;JOF_cat&#39; is not defined
+</pre></div></div>
+</div>
+<section id="Example-1:-Running-for-a-single-Galaxy/Photometry_obs-object">
+<h2>Example 1: Running for a single Galaxy/Photometry_obs object<a class="headerlink" href="#Example-1:-Running-for-a-single-Galaxy/Photometry_obs-object" title="Link to this heading"></a></h2>
+<div class="nbinput nblast docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[4]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="c1"># TODO: More complicated than running on the full catalogue</span>
+</pre></div>
+</div>
+</div>
+</section>
+<section id="Example-2:-Running-an-entire-Catalogue">
+<h2>Example 2: Running an entire Catalogue<a class="headerlink" href="#Example-2:-Running-an-entire-Catalogue" title="Link to this heading"></a></h2>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[5]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">SED_fit_params</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;fix_z&quot;</span><span class="p">:</span> <span class="n">EAZY_fitter</span><span class="p">()</span><span class="o">.</span><span class="n">label</span><span class="p">}</span>
+<span class="n">pipes_fitter</span> <span class="o">=</span> <span class="n">Bagpipes</span><span class="p">(</span><span class="n">SED_fit_params</span><span class="p">)</span>
+<span class="n">pipes_fitter</span><span class="p">(</span><span class="n">JOF_cat</span><span class="p">,</span> <span class="n">aper_diams</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">save_PDFs</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span> <span class="n">load_SEDs</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span> <span class="n">update</span> <span class="o">=</span> <span class="kc">True</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+<span class="ansi-red-fg">---------------------------------------------------------------------------</span>
+<span class="ansi-red-fg">TypeError</span>                                 Traceback (most recent call last)
+Cell <span class="ansi-green-fg">In[5], line 1</span>
+<span class="ansi-green-fg">----&gt; 1</span> SED_fit_params <span style="color: rgb(98,98,98)">=</span> {<span style="color: rgb(175,0,0)">&#34;</span><span style="color: rgb(175,0,0)">fix_z</span><span style="color: rgb(175,0,0)">&#34;</span>: <span class="ansi-yellow-bg">EAZY_fitter</span><span class="ansi-yellow-bg">(</span><span class="ansi-yellow-bg">)</span><span style="color: rgb(98,98,98)">.</span>label}
+<span class="ansi-green-intense-fg ansi-bold">      2</span> pipes_fitter <span style="color: rgb(98,98,98)">=</span> Bagpipes(SED_fit_params)
+<span class="ansi-green-intense-fg ansi-bold">      3</span> pipes_fitter(JOF_cat, aper_diams[<span style="color: rgb(98,98,98)">0</span>], save_PDFs <span style="color: rgb(98,98,98)">=</span> <span class="ansi-bold" style="color: rgb(0,135,0)">False</span>, load_SEDs <span style="color: rgb(98,98,98)">=</span> <span class="ansi-bold" style="color: rgb(0,135,0)">False</span>, update <span style="color: rgb(98,98,98)">=</span> <span class="ansi-bold" style="color: rgb(0,135,0)">True</span>)
+
+<span class="ansi-red-fg">TypeError</span>: __call__() missing 2 required positional arguments: &#39;cat&#39; and &#39;aper_diam&#39;
+</pre></div></div>
+</div>
+</section>
+<section id="Example-3:-Running-with-different-priors">
+<h2>Example 3: Running with different priors<a class="headerlink" href="#Example-3:-Running-with-different-priors" title="Link to this heading"></a></h2>
+<div class="nbinput nblast docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[ ]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span>
+</pre></div>
+</div>
+</div>
+</section>
+<section id="Example-4:-Multi-processing-Catalogue-SED-fitting">
+<h2>Example 4: Multi-processing Catalogue SED fitting<a class="headerlink" href="#Example-4:-Multi-processing-Catalogue-SED-fitting" title="Link to this heading"></a></h2>
+<div class="nbinput nblast docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[6]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="c1"># TODO: Have a look at pymultinest</span>
+</pre></div>
+</div>
+</div>
+</section>
+<section id="Example-4:-Running-with-different-input-grids">
+<h2>Example 4: Running with different input grids<a class="headerlink" href="#Example-4:-Running-with-different-input-grids" title="Link to this heading"></a></h2>
+<p>Since Bagpipes only samples from a given set of input stellar and nebular grids created under a set of assumptions about the IMF, as well as the SPS model and CLOUDY nebular physics assumptions used, the user may wish to change these to determine whether their results are sensitive to these choices.</p>
+<div class="nbinput nblast docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[7]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="c1"># TODO: A bit more complicated to do this</span>
+</pre></div>
+</div>
+</div>
+</section>
 </section>
 
 

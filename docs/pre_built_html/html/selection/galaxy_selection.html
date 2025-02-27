@@ -71,6 +71,7 @@
 <li class="toctree-l2"><a class="reference internal" href="custom_selection.html">Custom selection</a></li>
 </ul>
 </li>
+<li class="toctree-l1"><a class="reference internal" href="../cutouts/cutouts.html">Cutouts and Stacking</a></li>
 </ul>
 
         </div>
@@ -102,8 +103,8 @@
 <h1>Galaxy selection methods<a class="headerlink" href="#Galaxy-selection-methods" title="Link to this heading"></a></h1>
 <p>As is well known, any photometric study requires some sample of galaxy candidates selected from the photometric catalogue. In this notebook, we will use a myriad of examples to showcase the available selection methods in galfind. The future aim of this code is to implement plug-in architecture here so that the user can provide and use additional selection functions that will be recognized by the galfind <code class="docutils literal notranslate"><span class="pre">Catalogue</span></code> class.</p>
 <p>Let’s first create a <code class="docutils literal notranslate"><span class="pre">Galaxy</span></code> object for the highest redshift photometric galaxy candidate in JOF identified by Robertson et al. 2023 at z=14.63, which has NIRCam ID=718 in our galfind produced catalogue.</p>
-<div class="nbinput nblast docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[25]:
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[1]:
 </pre></div>
 </div>
 <div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="c1"># imports</span>
@@ -113,6 +114,40 @@
 <span class="kn">from</span> <span class="nn">galfind.Data</span> <span class="kn">import</span> <span class="n">morgan_version_to_dir</span>
 </pre></div>
 </div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area stderr docutils container">
+<div class="highlight"><pre>
+WARNING:galfind:Could not change permissions of /raid/scratch/work/austind/GALFIND_WORK/Log_files/2024-12-11.log to 777.
+</pre></div></div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+Reading GALFIND config file from: /nvme/scratch/work/austind/GALFIND/galfind/../configs/galfind_config.ini
+</pre></div></div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area stderr docutils container">
+<div class="highlight"><pre>
+WARNING:galfind:Aperture corrections for VISTA not found in /nvme/scratch/work/austind/GALFIND/galfind/Aperture_corrections/VISTA_aper_corr.txt
+WARNING:galfind:Aperture corrections for VISTA not found in /nvme/scratch/work/austind/GALFIND/galfind/Aperture_corrections/VISTA_aper_corr.txt
+</pre></div></div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+Failed to `import dust_attenuation`
+Install from the repo with $ pip install git+https://github.com/karllark/dust_attenuation.git
+</pre></div></div>
 </div>
 <div class="nbinput docutils container">
 <div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[2]:
@@ -159,8 +194,6 @@ INFO:galfind:Making JOF v11 JOF_MASTER_Sel-F277W+F356W+F444W_v11 catalogue!
 WARNING:galfind:cat_aper_diams not in kwargs.keys()=dict_keys([&#39;ZP&#39;, &#39;min_flux_pc_err&#39;])! Setting to aper_diams=&lt;Quantity [0.32] arcsec&gt;
 WARNING:galfind:cat_aper_diams not in kwargs.keys()=dict_keys([&#39;ZP&#39;, &#39;min_flux_pc_err&#39;])! Setting to aper_diams=&lt;Quantity [0.32] arcsec&gt;
 WARNING:galfind:cat_aper_diams not in kwargs.keys()=dict_keys([])! Setting to aper_diams=&lt;Quantity [0.32] arcsec&gt;
-WARNING:galfind:cat_type = cat_type=&#39;selection&#39; not in [&#39;ID&#39;, &#39;sky_coord&#39;, &#39;phot&#39;, &#39;mask&#39;, &#39;depths&#39;] and not a valid HDU extension in /raid/scratch/work/austind/GALFIND_WORK/Catalogues/v11/NIRCam/JOF/(0.32)as/JOF_MASTER_Sel-F277W+F356W+F444W_v11.fits!
-WARNING:galfind:selection tab is None!
 INFO:galfind:Made /raid/scratch/work/austind/GALFIND_WORK/Catalogues/v11/NIRCam/JOF/(0.32)as/JOF_MASTER_Sel-F277W+F356W+F444W_v11.fits catalogue!
 </pre></div></div>
 </div>
@@ -177,6 +210,34 @@ PHOTOMETRY:
 Photometry_obs(NIRCam, 0.32 arcsec)
 ----------
 SELECTION FLAGS:
+----------
+bluewards_Lya_SNR&lt;2.0_EAZY_fsps_larson_zfree_0.32as: True
+redwards_Lya_SNR&gt;5.0,5.0_widebands_EAZY_fsps_larson_zfree_0.32as: True
+ALL_redwards_Lya_SNR&gt;2.0_widebands_EAZY_fsps_larson_zfree_0.32as: True
+red_chi_sq&lt;3.0_EAZY_fsps_larson_zfree_0.32as: True
+chi_sq_diff&gt;4.0,dz&gt;0.5_EAZY_fsps_larson_zfree_0.32as: True
+zPDF&gt;60%,|dz|/z&lt;0.1_EAZY_fsps_larson_zfree_0.32as: True
+unmasked_F090W: True
+unmasked_F115W: True
+unmasked_F150W: True
+unmasked_F162M: True
+unmasked_F182M: True
+unmasked_F200W: True
+unmasked_F210M: True
+unmasked_F250M: True
+unmasked_F277W: True
+unmasked_F300M: True
+unmasked_F335M: True
+unmasked_F356W: True
+unmasked_F410M: True
+unmasked_F444W: True
+unmasked_NIRCam: True
+bluest_band_SNR&lt;2.0_0.32as: True
+sex_Re_F277W&gt;45.0mas: True
+sex_Re_F356W&gt;45.0mas: True
+sex_Re_F444W&gt;45.0mas: True
+sex_Re_F277W+F356W+F444W&gt;45.0mas: True
+EPOCHS_NIRCam_EAZY_fsps_larson_zfree_0.32as: True
 ----------
 ****************************************
 
@@ -234,7 +295,33 @@ Photometry_obs(NIRCam, 0.32 arcsec)
 ----------
 SELECTION FLAGS:
 ----------
+bluewards_Lya_SNR&lt;2.0_EAZY_fsps_larson_zfree_0.32as: True
+redwards_Lya_SNR&gt;5.0,5.0_widebands_EAZY_fsps_larson_zfree_0.32as: True
+ALL_redwards_Lya_SNR&gt;2.0_widebands_EAZY_fsps_larson_zfree_0.32as: True
+red_chi_sq&lt;3.0_EAZY_fsps_larson_zfree_0.32as: True
+chi_sq_diff&gt;4.0,dz&gt;0.5_EAZY_fsps_larson_zfree_0.32as: True
+zPDF&gt;60%,|dz|/z&lt;0.1_EAZY_fsps_larson_zfree_0.32as: True
+unmasked_F090W: True
+unmasked_F115W: True
+unmasked_F150W: True
+unmasked_F162M: True
+unmasked_F182M: True
+unmasked_F200W: True
+unmasked_F210M: True
+unmasked_F250M: True
+unmasked_F277W: True
+unmasked_F300M: True
+unmasked_F335M: True
+unmasked_F356W: True
+unmasked_F410M: True
 unmasked_F444W: True
+unmasked_NIRCam: True
+bluest_band_SNR&lt;2.0_0.32as: True
+sex_Re_F277W&gt;45.0mas: True
+sex_Re_F356W&gt;45.0mas: True
+sex_Re_F444W&gt;45.0mas: True
+sex_Re_F277W+F356W+F444W&gt;45.0mas: True
+EPOCHS_NIRCam_EAZY_fsps_larson_zfree_0.32as: True
 ----------
 ****************************************
 
@@ -273,9 +360,33 @@ Photometry_obs(NIRCam, 0.32 arcsec)
 ----------
 SELECTION FLAGS:
 ----------
-unmasked_F444W: True
+bluewards_Lya_SNR&lt;2.0_EAZY_fsps_larson_zfree_0.32as: True
+redwards_Lya_SNR&gt;5.0,5.0_widebands_EAZY_fsps_larson_zfree_0.32as: True
+ALL_redwards_Lya_SNR&gt;2.0_widebands_EAZY_fsps_larson_zfree_0.32as: True
+red_chi_sq&lt;3.0_EAZY_fsps_larson_zfree_0.32as: True
+chi_sq_diff&gt;4.0,dz&gt;0.5_EAZY_fsps_larson_zfree_0.32as: True
+zPDF&gt;60%,|dz|/z&lt;0.1_EAZY_fsps_larson_zfree_0.32as: True
+unmasked_F090W: True
+unmasked_F115W: True
+unmasked_F150W: True
+unmasked_F162M: True
+unmasked_F182M: True
+unmasked_F200W: True
+unmasked_F210M: True
+unmasked_F250M: True
 unmasked_F277W: True
+unmasked_F300M: True
+unmasked_F335M: True
 unmasked_F356W: True
+unmasked_F410M: True
+unmasked_F444W: True
+unmasked_NIRCam: True
+bluest_band_SNR&lt;2.0_0.32as: True
+sex_Re_F277W&gt;45.0mas: True
+sex_Re_F356W&gt;45.0mas: True
+sex_Re_F444W&gt;45.0mas: True
+sex_Re_F277W+F356W+F444W&gt;45.0mas: True
+EPOCHS_NIRCam_EAZY_fsps_larson_zfree_0.32as: True
 unmasked_F277W+F356W+F444W: True
 ----------
 ****************************************
@@ -337,10 +448,12 @@ Photometry_obs(NIRCam, 0.32 arcsec)
 ----------
 SELECTION FLAGS:
 ----------
-unmasked_F444W: True
-unmasked_F277W: True
-unmasked_F356W: True
-unmasked_F277W+F356W+F444W: True
+bluewards_Lya_SNR&lt;2.0_EAZY_fsps_larson_zfree_0.32as: True
+redwards_Lya_SNR&gt;5.0,5.0_widebands_EAZY_fsps_larson_zfree_0.32as: True
+ALL_redwards_Lya_SNR&gt;2.0_widebands_EAZY_fsps_larson_zfree_0.32as: True
+red_chi_sq&lt;3.0_EAZY_fsps_larson_zfree_0.32as: True
+chi_sq_diff&gt;4.0,dz&gt;0.5_EAZY_fsps_larson_zfree_0.32as: True
+zPDF&gt;60%,|dz|/z&lt;0.1_EAZY_fsps_larson_zfree_0.32as: True
 unmasked_F090W: True
 unmasked_F115W: True
 unmasked_F150W: True
@@ -349,10 +462,20 @@ unmasked_F182M: True
 unmasked_F200W: True
 unmasked_F210M: True
 unmasked_F250M: True
+unmasked_F277W: True
 unmasked_F300M: True
 unmasked_F335M: True
+unmasked_F356W: True
 unmasked_F410M: True
+unmasked_F444W: True
 unmasked_NIRCam: True
+bluest_band_SNR&lt;2.0_0.32as: True
+sex_Re_F277W&gt;45.0mas: True
+sex_Re_F356W&gt;45.0mas: True
+sex_Re_F444W&gt;45.0mas: True
+sex_Re_F277W+F356W+F444W&gt;45.0mas: True
+EPOCHS_NIRCam_EAZY_fsps_larson_zfree_0.32as: True
+unmasked_F277W+F356W+F444W: True
 ----------
 ****************************************
 
@@ -406,7 +529,33 @@ Photometry_obs(NIRCam, 0.32 arcsec)
 ----------
 SELECTION FLAGS:
 ----------
+bluewards_Lya_SNR&lt;2.0_EAZY_fsps_larson_zfree_0.32as: True
+redwards_Lya_SNR&gt;5.0,5.0_widebands_EAZY_fsps_larson_zfree_0.32as: True
+ALL_redwards_Lya_SNR&gt;2.0_widebands_EAZY_fsps_larson_zfree_0.32as: True
+red_chi_sq&lt;3.0_EAZY_fsps_larson_zfree_0.32as: True
+chi_sq_diff&gt;4.0,dz&gt;0.5_EAZY_fsps_larson_zfree_0.32as: True
+zPDF&gt;60%,|dz|/z&lt;0.1_EAZY_fsps_larson_zfree_0.32as: True
+unmasked_F090W: True
+unmasked_F115W: True
+unmasked_F150W: True
+unmasked_F162M: True
+unmasked_F182M: True
+unmasked_F200W: True
+unmasked_F210M: True
+unmasked_F250M: True
+unmasked_F277W: True
+unmasked_F300M: True
+unmasked_F335M: True
+unmasked_F356W: True
+unmasked_F410M: True
+unmasked_F444W: True
+unmasked_NIRCam: True
+bluest_band_SNR&lt;2.0_0.32as: True
+sex_Re_F277W&gt;45.0mas: True
+sex_Re_F356W&gt;45.0mas: True
 sex_Re_F444W&gt;45.0mas: True
+sex_Re_F277W+F356W+F444W&gt;45.0mas: True
+EPOCHS_NIRCam_EAZY_fsps_larson_zfree_0.32as: True
 ----------
 ****************************************
 
@@ -437,7 +586,33 @@ Photometry_obs(NIRCam, 0.32 arcsec)
 ----------
 SELECTION FLAGS:
 ----------
+bluewards_Lya_SNR&lt;2.0_EAZY_fsps_larson_zfree_0.32as: True
+redwards_Lya_SNR&gt;5.0,5.0_widebands_EAZY_fsps_larson_zfree_0.32as: True
+ALL_redwards_Lya_SNR&gt;2.0_widebands_EAZY_fsps_larson_zfree_0.32as: True
+red_chi_sq&lt;3.0_EAZY_fsps_larson_zfree_0.32as: True
+chi_sq_diff&gt;4.0,dz&gt;0.5_EAZY_fsps_larson_zfree_0.32as: True
+zPDF&gt;60%,|dz|/z&lt;0.1_EAZY_fsps_larson_zfree_0.32as: True
+unmasked_F090W: True
+unmasked_F115W: True
+unmasked_F150W: True
+unmasked_F162M: True
+unmasked_F182M: True
+unmasked_F200W: True
+unmasked_F210M: True
+unmasked_F250M: True
+unmasked_F277W: True
+unmasked_F300M: True
+unmasked_F335M: True
+unmasked_F356W: True
+unmasked_F410M: True
+unmasked_F444W: True
+unmasked_NIRCam: True
+bluest_band_SNR&lt;2.0_0.32as: True
+sex_Re_F277W&gt;45.0mas: True
+sex_Re_F356W&gt;45.0mas: True
 sex_Re_F444W&gt;45.0mas: True
+sex_Re_F277W+F356W+F444W&gt;45.0mas: True
+EPOCHS_NIRCam_EAZY_fsps_larson_zfree_0.32as: True
 sex_Re_F444W&lt;50.0mas: False
 ----------
 ****************************************
@@ -471,11 +646,34 @@ Photometry_obs(NIRCam, 0.32 arcsec)
 ----------
 SELECTION FLAGS:
 ----------
-sex_Re_F444W&gt;45.0mas: True
-sex_Re_F444W&lt;50.0mas: False
+bluewards_Lya_SNR&lt;2.0_EAZY_fsps_larson_zfree_0.32as: True
+redwards_Lya_SNR&gt;5.0,5.0_widebands_EAZY_fsps_larson_zfree_0.32as: True
+ALL_redwards_Lya_SNR&gt;2.0_widebands_EAZY_fsps_larson_zfree_0.32as: True
+red_chi_sq&lt;3.0_EAZY_fsps_larson_zfree_0.32as: True
+chi_sq_diff&gt;4.0,dz&gt;0.5_EAZY_fsps_larson_zfree_0.32as: True
+zPDF&gt;60%,|dz|/z&lt;0.1_EAZY_fsps_larson_zfree_0.32as: True
+unmasked_F090W: True
+unmasked_F115W: True
+unmasked_F150W: True
+unmasked_F162M: True
+unmasked_F182M: True
+unmasked_F200W: True
+unmasked_F210M: True
+unmasked_F250M: True
+unmasked_F277W: True
+unmasked_F300M: True
+unmasked_F335M: True
+unmasked_F356W: True
+unmasked_F410M: True
+unmasked_F444W: True
+unmasked_NIRCam: True
+bluest_band_SNR&lt;2.0_0.32as: True
 sex_Re_F277W&gt;45.0mas: True
 sex_Re_F356W&gt;45.0mas: True
+sex_Re_F444W&gt;45.0mas: True
 sex_Re_F277W+F356W+F444W&gt;45.0mas: True
+EPOCHS_NIRCam_EAZY_fsps_larson_zfree_0.32as: True
+sex_Re_F444W&lt;50.0mas: False
 ----------
 ****************************************
 
@@ -509,11 +707,34 @@ Photometry_obs(NIRCam, 0.32 arcsec)
 ----------
 SELECTION FLAGS:
 ----------
-sex_Re_F444W&gt;45.0mas: True
-sex_Re_F444W&lt;50.0mas: False
+bluewards_Lya_SNR&lt;2.0_EAZY_fsps_larson_zfree_0.32as: True
+redwards_Lya_SNR&gt;5.0,5.0_widebands_EAZY_fsps_larson_zfree_0.32as: True
+ALL_redwards_Lya_SNR&gt;2.0_widebands_EAZY_fsps_larson_zfree_0.32as: True
+red_chi_sq&lt;3.0_EAZY_fsps_larson_zfree_0.32as: True
+chi_sq_diff&gt;4.0,dz&gt;0.5_EAZY_fsps_larson_zfree_0.32as: True
+zPDF&gt;60%,|dz|/z&lt;0.1_EAZY_fsps_larson_zfree_0.32as: True
+unmasked_F090W: True
+unmasked_F115W: True
+unmasked_F150W: True
+unmasked_F162M: True
+unmasked_F182M: True
+unmasked_F200W: True
+unmasked_F210M: True
+unmasked_F250M: True
+unmasked_F277W: True
+unmasked_F300M: True
+unmasked_F335M: True
+unmasked_F356W: True
+unmasked_F410M: True
+unmasked_F444W: True
+unmasked_NIRCam: True
+bluest_band_SNR&lt;2.0_0.32as: True
 sex_Re_F277W&gt;45.0mas: True
 sex_Re_F356W&gt;45.0mas: True
+sex_Re_F444W&gt;45.0mas: True
 sex_Re_F277W+F356W+F444W&gt;45.0mas: True
+EPOCHS_NIRCam_EAZY_fsps_larson_zfree_0.32as: True
+sex_Re_F444W&lt;50.0mas: False
 sex_Re_F090W&gt;45.0mas: True
 sex_Re_F115W&gt;45.0mas: False
 sex_Re_F150W&gt;45.0mas: False
@@ -559,8 +780,8 @@ sex_Re_NIRCam&gt;45.0mas: False
 <div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[15]:
 </pre></div>
 </div>
-<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">f444w_gtr_5sigma_selector</span> <span class="o">=</span> <span class="n">Band_SNR_Selector</span><span class="p">(</span><span class="s2">&quot;F444W&quot;</span><span class="p">,</span> <span class="s2">&quot;detect&quot;</span><span class="p">,</span> <span class="mf">5.</span><span class="p">)</span>
-<span class="n">f444w_gtr_5sigma_selector</span><span class="p">(</span><span class="n">gal</span><span class="p">,</span> <span class="n">aper_diams</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">return_copy</span> <span class="o">=</span> <span class="kc">False</span><span class="p">)</span>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">f444w_gtr_5sigma_selector</span> <span class="o">=</span> <span class="n">Band_SNR_Selector</span><span class="p">(</span><span class="n">aper_diams</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="s2">&quot;F444W&quot;</span><span class="p">,</span> <span class="s2">&quot;detect&quot;</span><span class="p">,</span> <span class="mf">5.</span><span class="p">)</span>
+<span class="n">f444w_gtr_5sigma_selector</span><span class="p">(</span><span class="n">gal</span><span class="p">,</span> <span class="n">return_copy</span> <span class="o">=</span> <span class="kc">False</span><span class="p">)</span>
 </pre></div>
 </div>
 </div>
@@ -569,11 +790,11 @@ sex_Re_NIRCam&gt;45.0mas: False
 <div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[16]:
 </pre></div>
 </div>
-<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">second_reddest_gtr_8sigma_selector</span> <span class="o">=</span> <span class="n">Band_SNR_Selector</span><span class="p">(</span><span class="o">-</span><span class="mi">2</span><span class="p">,</span> <span class="s2">&quot;detect&quot;</span><span class="p">,</span> <span class="mf">8.</span><span class="p">)</span>
-<span class="n">second_reddest_gtr_8sigma_selector</span><span class="p">(</span><span class="n">gal</span><span class="p">,</span> <span class="n">aper_diams</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">return_copy</span> <span class="o">=</span> <span class="kc">False</span><span class="p">)</span>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">second_reddest_gtr_8sigma_selector</span> <span class="o">=</span> <span class="n">Band_SNR_Selector</span><span class="p">(</span><span class="n">aper_diams</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="o">-</span><span class="mi">2</span><span class="p">,</span> <span class="s2">&quot;detect&quot;</span><span class="p">,</span> <span class="mf">8.</span><span class="p">)</span>
+<span class="n">second_reddest_gtr_8sigma_selector</span><span class="p">(</span><span class="n">gal</span><span class="p">,</span> <span class="n">return_copy</span> <span class="o">=</span> <span class="kc">False</span><span class="p">)</span>
 
-<span class="n">bluest_less_2sigma_selector</span> <span class="o">=</span> <span class="n">Band_SNR_Selector</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="s2">&quot;non_detect&quot;</span><span class="p">,</span> <span class="mf">2.</span><span class="p">)</span>
-<span class="n">bluest_less_2sigma_selector</span><span class="p">(</span><span class="n">gal</span><span class="p">,</span> <span class="n">aper_diams</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">return_copy</span> <span class="o">=</span> <span class="kc">False</span><span class="p">)</span>
+<span class="n">bluest_less_2sigma_selector</span> <span class="o">=</span> <span class="n">Band_SNR_Selector</span><span class="p">(</span><span class="n">aper_diams</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="mi">0</span><span class="p">,</span> <span class="s2">&quot;non_detect&quot;</span><span class="p">,</span> <span class="mf">2.</span><span class="p">)</span>
+<span class="n">bluest_less_2sigma_selector</span><span class="p">(</span><span class="n">gal</span><span class="p">,</span> <span class="n">return_copy</span> <span class="o">=</span> <span class="kc">False</span><span class="p">)</span>
 </pre></div>
 </div>
 </div>
@@ -582,11 +803,11 @@ sex_Re_NIRCam&gt;45.0mas: False
 <div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[17]:
 </pre></div>
 </div>
-<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">f200w_f277w_bluer_0_3sigma_selector</span> <span class="o">=</span> <span class="n">Colour_Selector</span><span class="p">([</span><span class="s2">&quot;F200W&quot;</span><span class="p">,</span> <span class="s2">&quot;F277W&quot;</span><span class="p">],</span> <span class="s2">&quot;bluer&quot;</span><span class="p">,</span> <span class="mf">0.3</span><span class="p">)</span>
-<span class="n">f200w_f277w_bluer_0_3sigma_selector</span><span class="p">(</span><span class="n">gal</span><span class="p">,</span> <span class="n">aper_diams</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">return_copy</span> <span class="o">=</span> <span class="kc">False</span><span class="p">)</span>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">f200w_f277w_bluer_0_3sigma_selector</span> <span class="o">=</span> <span class="n">Colour_Selector</span><span class="p">(</span><span class="n">aper_diams</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="p">[</span><span class="s2">&quot;F200W&quot;</span><span class="p">,</span> <span class="s2">&quot;F277W&quot;</span><span class="p">],</span> <span class="s2">&quot;bluer&quot;</span><span class="p">,</span> <span class="mf">0.3</span><span class="p">)</span>
+<span class="n">f200w_f277w_bluer_0_3sigma_selector</span><span class="p">(</span><span class="n">gal</span><span class="p">,</span> <span class="n">return_copy</span> <span class="o">=</span> <span class="kc">False</span><span class="p">)</span>
 
-<span class="n">f356w_f444w_redder_0_5sigma_selector</span> <span class="o">=</span> <span class="n">Colour_Selector</span><span class="p">(</span><span class="s2">&quot;F356W-F444W&quot;</span><span class="p">,</span> <span class="s2">&quot;redder&quot;</span><span class="p">,</span> <span class="mf">0.5</span><span class="p">)</span>
-<span class="n">f356w_f444w_redder_0_5sigma_selector</span><span class="p">(</span><span class="n">gal</span><span class="p">,</span> <span class="n">aper_diams</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">return_copy</span> <span class="o">=</span> <span class="kc">False</span><span class="p">)</span>
+<span class="n">f356w_f444w_redder_0_5sigma_selector</span> <span class="o">=</span> <span class="n">Colour_Selector</span><span class="p">(</span><span class="n">aper_diams</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="s2">&quot;F356W-F444W&quot;</span><span class="p">,</span> <span class="s2">&quot;redder&quot;</span><span class="p">,</span> <span class="mf">0.5</span><span class="p">)</span>
+<span class="n">f356w_f444w_redder_0_5sigma_selector</span><span class="p">(</span><span class="n">gal</span><span class="p">,</span> <span class="n">return_copy</span> <span class="o">=</span> <span class="kc">False</span><span class="p">)</span>
 </pre></div>
 </div>
 </div>
@@ -595,8 +816,8 @@ sex_Re_NIRCam&gt;45.0mas: False
 <div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[18]:
 </pre></div>
 </div>
-<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">Kokorev24_selector</span> <span class="o">=</span> <span class="n">Kokorev24_LRD_Selector</span><span class="p">()</span>
-<span class="n">Kokorev24_selector</span><span class="p">(</span><span class="n">gal</span><span class="p">,</span> <span class="n">aper_diams</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">return_copy</span> <span class="o">=</span> <span class="kc">False</span><span class="p">)</span>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">Kokorev24_selector</span> <span class="o">=</span> <span class="n">Kokorev24_LRD_Selector</span><span class="p">(</span><span class="n">aper_diams</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
+<span class="n">Kokorev24_selector</span><span class="p">(</span><span class="n">gal</span><span class="p">,</span> <span class="n">return_copy</span> <span class="o">=</span> <span class="kc">False</span><span class="p">)</span>
 
 <span class="nb">print</span><span class="p">(</span><span class="n">gal</span><span class="p">)</span>
 </pre></div>
@@ -616,9 +837,35 @@ Photometry_obs(NIRCam, 0.32 arcsec)
 ----------
 SELECTION FLAGS:
 ----------
+bluewards_Lya_SNR&lt;2.0_EAZY_fsps_larson_zfree_0.32as: True
+redwards_Lya_SNR&gt;5.0,5.0_widebands_EAZY_fsps_larson_zfree_0.32as: True
+ALL_redwards_Lya_SNR&gt;2.0_widebands_EAZY_fsps_larson_zfree_0.32as: True
+red_chi_sq&lt;3.0_EAZY_fsps_larson_zfree_0.32as: True
+chi_sq_diff&gt;4.0,dz&gt;0.5_EAZY_fsps_larson_zfree_0.32as: True
+zPDF&gt;60%,|dz|/z&lt;0.1_EAZY_fsps_larson_zfree_0.32as: True
+unmasked_F090W: True
+unmasked_F115W: True
+unmasked_F150W: True
+unmasked_F162M: True
+unmasked_F182M: True
+unmasked_F200W: True
+unmasked_F210M: True
+unmasked_F250M: True
+unmasked_F277W: True
+unmasked_F300M: True
+unmasked_F335M: True
+unmasked_F356W: True
+unmasked_F410M: True
+unmasked_F444W: True
+unmasked_NIRCam: True
+bluest_band_SNR&lt;2.0_0.32as: True
+sex_Re_F277W&gt;45.0mas: True
+sex_Re_F356W&gt;45.0mas: True
+sex_Re_F444W&gt;45.0mas: True
+sex_Re_F277W+F356W+F444W&gt;45.0mas: True
+EPOCHS_NIRCam_EAZY_fsps_larson_zfree_0.32as: True
 F444W_SNR&gt;5.0_0.32as: True
 2nd_reddest_band_SNR&gt;8.0_0.32as: False
-bluest_band_SNR&lt;2.0_0.32as: True
 F200W-F277W&lt;0.30_0.32as: False
 F356W-F444W&gt;0.50_0.32as: False
 F115W-F150W&lt;0.80_0.32as: False
@@ -703,7 +950,7 @@ INFO:galfind:Loading EAZY_fsps_larson property PDFs into JOF v11 NIRCam
 </div>
 <div class="output_area docutils container">
 <div class="highlight"><pre>
-Loading properties and associated errors took 1.4s
+Loading properties and associated errors took 1.7s
 </pre></div></div>
 </div>
 <div class="nboutput docutils container">
@@ -711,13 +958,13 @@ Loading properties and associated errors took 1.4s
 </div>
 <div class="output_area stderr docutils container">
 <div class="highlight"><pre>
-Constructing redshift PDFs: 100%|██████████| 16335/16335 [00:00&lt;00:00, 63809.47it/s]
+Constructing redshift PDFs: 100%|██████████| 16335/16335 [00:00&lt;00:00, 51820.38it/s]
 INFO:galfind:Finished loading EAZY_fsps_larson property PDFs into JOF v11 NIRCam
 INFO:galfind:Loading EAZY_fsps_larson SEDs into JOF v11 NIRCam
-Constructing SEDs: 100%|██████████| 16335/16335 [00:02&lt;00:00, 7135.45it/s]
+Constructing SEDs: 100%|██████████| 16335/16335 [00:01&lt;00:00, 13137.21it/s]
 INFO:galfind:Finished loading EAZY_fsps_larson SEDs into JOF v11 NIRCam
 INFO:galfind:Updating SED results in galfind catalogue object
-Updating galaxy SED results: 100%|██████████| 16335/16335 [00:00&lt;00:00, 120088.68it/s]
+Updating galaxy SED results: 100%|██████████| 16335/16335 [00:00&lt;00:00, 97403.14it/s]
 INFO:galfind:Making .in file for EAZY_fsps_larson_zmax=6.0 SED fitting for JOF v11 NIRCam
 INFO:galfind:Made .in file for EAZY_fsps_larson_zmax=6.0 SED fitting for JOF v11 NIRCam.
 </pre></div></div>
@@ -743,7 +990,7 @@ INFO:galfind:Loading EAZY_fsps_larson property PDFs into JOF v11 NIRCam
 </div>
 <div class="output_area docutils container">
 <div class="highlight"><pre>
-Loading properties and associated errors took 1.6s
+Loading properties and associated errors took 1.0s
 </pre></div></div>
 </div>
 <div class="nboutput docutils container">
@@ -751,13 +998,13 @@ Loading properties and associated errors took 1.6s
 </div>
 <div class="output_area stderr docutils container">
 <div class="highlight"><pre>
-Constructing redshift PDFs: 100%|██████████| 16335/16335 [00:00&lt;00:00, 64527.69it/s]
+Constructing redshift PDFs: 100%|██████████| 16335/16335 [00:00&lt;00:00, 49979.58it/s]
 INFO:galfind:Finished loading EAZY_fsps_larson property PDFs into JOF v11 NIRCam
 INFO:galfind:Loading EAZY_fsps_larson SEDs into JOF v11 NIRCam
-Constructing SEDs: 100%|██████████| 16335/16335 [00:01&lt;00:00, 11359.15it/s]
+Constructing SEDs: 100%|██████████| 16335/16335 [00:01&lt;00:00, 11128.17it/s]
 INFO:galfind:Finished loading EAZY_fsps_larson SEDs into JOF v11 NIRCam
 INFO:galfind:Updating SED results in galfind catalogue object
-Updating galaxy SED results: 100%|██████████| 16335/16335 [00:00&lt;00:00, 146391.40it/s]
+Updating galaxy SED results: 100%|██████████| 16335/16335 [00:00&lt;00:00, 113332.75it/s]
 INFO:galfind:Making .in file for EAZY_fsps_larson_zfree SED fitting for JOF v11 NIRCam
 INFO:galfind:Made .in file for EAZY_fsps_larson_zfree SED fitting for JOF v11 NIRCam.
 </pre></div></div>
@@ -791,13 +1038,13 @@ Loading properties and associated errors took 2.0s
 </div>
 <div class="output_area stderr docutils container">
 <div class="highlight"><pre>
-Constructing redshift PDFs: 100%|██████████| 16335/16335 [00:00&lt;00:00, 58898.23it/s]
+Constructing redshift PDFs: 100%|██████████| 16335/16335 [00:00&lt;00:00, 45034.97it/s]
 INFO:galfind:Finished loading EAZY_fsps_larson property PDFs into JOF v11 NIRCam
 INFO:galfind:Loading EAZY_fsps_larson SEDs into JOF v11 NIRCam
-Constructing SEDs: 100%|██████████| 16335/16335 [00:01&lt;00:00, 10815.80it/s]
+Constructing SEDs: 100%|██████████| 16335/16335 [00:01&lt;00:00, 13250.56it/s]
 INFO:galfind:Finished loading EAZY_fsps_larson SEDs into JOF v11 NIRCam
 INFO:galfind:Updating SED results in galfind catalogue object
-Updating galaxy SED results: 100%|██████████| 16335/16335 [00:00&lt;00:00, 160069.24it/s]
+Updating galaxy SED results: 100%|██████████| 16335/16335 [00:00&lt;00:00, 170640.30it/s]
 </pre></div></div>
 </div>
 <div class="nboutput docutils container">
@@ -814,9 +1061,35 @@ Photometry_obs(NIRCam, 0.32 arcsec, EAZY_fsps_larson_zmax=4.0,EAZY_fsps_larson_z
 ----------
 SELECTION FLAGS:
 ----------
+bluewards_Lya_SNR&lt;2.0_EAZY_fsps_larson_zfree_0.32as: True
+redwards_Lya_SNR&gt;5.0,5.0_widebands_EAZY_fsps_larson_zfree_0.32as: True
+ALL_redwards_Lya_SNR&gt;2.0_widebands_EAZY_fsps_larson_zfree_0.32as: True
+red_chi_sq&lt;3.0_EAZY_fsps_larson_zfree_0.32as: True
+chi_sq_diff&gt;4.0,dz&gt;0.5_EAZY_fsps_larson_zfree_0.32as: True
+zPDF&gt;60%,|dz|/z&lt;0.1_EAZY_fsps_larson_zfree_0.32as: True
+unmasked_F090W: True
+unmasked_F115W: True
+unmasked_F150W: True
+unmasked_F162M: True
+unmasked_F182M: True
+unmasked_F200W: True
+unmasked_F210M: True
+unmasked_F250M: True
+unmasked_F277W: True
+unmasked_F300M: True
+unmasked_F335M: True
+unmasked_F356W: True
+unmasked_F410M: True
+unmasked_F444W: True
+unmasked_NIRCam: True
+bluest_band_SNR&lt;2.0_0.32as: True
+sex_Re_F277W&gt;45.0mas: True
+sex_Re_F356W&gt;45.0mas: True
+sex_Re_F444W&gt;45.0mas: True
+sex_Re_F277W+F356W+F444W&gt;45.0mas: True
+EPOCHS_NIRCam_EAZY_fsps_larson_zfree_0.32as: True
 F444W_SNR&gt;5.0_0.32as: True
 2nd_reddest_band_SNR&gt;8.0_0.32as: False
-bluest_band_SNR&lt;2.0_0.32as: True
 F200W-F277W&lt;0.30_0.32as: False
 F356W-F444W&gt;0.50_0.32as: False
 F115W-F150W&lt;0.80_0.32as: False
@@ -861,14 +1134,14 @@ Kokorev+24_LRD_0.32as: False
 <div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[21]:
 </pre></div>
 </div>
-<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">two_sig_non_detect_bluewards_Lya_selector</span> <span class="o">=</span> <span class="n">Bluewards_Lya_Non_Detect_Selector</span><span class="p">(</span><span class="n">SNR_lim</span> <span class="o">=</span> <span class="mf">2.0</span><span class="p">)</span>
-<span class="n">two_sig_non_detect_bluewards_Lya_selector</span><span class="p">(</span><span class="n">gal</span><span class="p">,</span> <span class="n">aper_diams</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">EAZY_fitter</span><span class="p">,</span> <span class="n">return_copy</span> <span class="o">=</span> <span class="kc">False</span><span class="p">)</span>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">two_sig_non_detect_bluewards_Lya_selector</span> <span class="o">=</span> <span class="n">Bluewards_Lya_Non_Detect_Selector</span><span class="p">(</span><span class="n">aper_diams</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">EAZY_fitter</span><span class="p">,</span> <span class="n">SNR_lim</span> <span class="o">=</span> <span class="mf">2.0</span><span class="p">)</span>
+<span class="n">two_sig_non_detect_bluewards_Lya_selector</span><span class="p">(</span><span class="n">gal</span><span class="p">,</span> <span class="n">return_copy</span> <span class="o">=</span> <span class="kc">False</span><span class="p">)</span>
 
-<span class="n">two_sigma_detect_all_redwards_Lya_selector</span> <span class="o">=</span> <span class="n">Redwards_Lya_Detect_Selector</span><span class="p">(</span><span class="n">SNR_lims</span> <span class="o">=</span> <span class="mf">2.0</span><span class="p">,</span> <span class="n">widebands_only</span> <span class="o">=</span> <span class="kc">False</span><span class="p">)</span>
-<span class="n">two_sigma_detect_all_redwards_Lya_selector</span><span class="p">(</span><span class="n">gal</span><span class="p">,</span> <span class="n">aper_diams</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">EAZY_fitter</span><span class="p">,</span> <span class="n">return_copy</span> <span class="o">=</span> <span class="kc">False</span><span class="p">)</span>
+<span class="n">two_sigma_detect_all_redwards_Lya_selector</span> <span class="o">=</span> <span class="n">Redwards_Lya_Detect_Selector</span><span class="p">(</span><span class="n">aper_diams</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">EAZY_fitter</span><span class="p">,</span> <span class="n">SNR_lims</span> <span class="o">=</span> <span class="mf">2.0</span><span class="p">,</span> <span class="n">widebands_only</span> <span class="o">=</span> <span class="kc">False</span><span class="p">)</span>
+<span class="n">two_sigma_detect_all_redwards_Lya_selector</span><span class="p">(</span><span class="n">gal</span><span class="p">,</span> <span class="n">return_copy</span> <span class="o">=</span> <span class="kc">False</span><span class="p">)</span>
 
-<span class="n">five_sigma_detect_two_redwards_Lya_selector</span> <span class="o">=</span> <span class="n">Redwards_Lya_Detect_Selector</span><span class="p">(</span><span class="n">SNR_lims</span> <span class="o">=</span> <span class="p">[</span><span class="mf">5.0</span><span class="p">,</span> <span class="mf">5.0</span><span class="p">],</span> <span class="n">widebands_only</span> <span class="o">=</span> <span class="kc">True</span><span class="p">)</span>
-<span class="n">five_sigma_detect_two_redwards_Lya_selector</span><span class="p">(</span><span class="n">gal</span><span class="p">,</span> <span class="n">aper_diams</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">EAZY_fitter</span><span class="p">,</span> <span class="n">return_copy</span> <span class="o">=</span> <span class="kc">False</span><span class="p">)</span>
+<span class="n">five_sigma_detect_two_redwards_Lya_selector</span> <span class="o">=</span> <span class="n">Redwards_Lya_Detect_Selector</span><span class="p">(</span><span class="n">aper_diams</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">EAZY_fitter</span><span class="p">,</span> <span class="n">SNR_lims</span> <span class="o">=</span> <span class="p">[</span><span class="mf">5.0</span><span class="p">,</span> <span class="mf">5.0</span><span class="p">],</span> <span class="n">widebands_only</span> <span class="o">=</span> <span class="kc">True</span><span class="p">)</span>
+<span class="n">five_sigma_detect_two_redwards_Lya_selector</span><span class="p">(</span><span class="n">gal</span><span class="p">,</span> <span class="n">return_copy</span> <span class="o">=</span> <span class="kc">False</span><span class="p">)</span>
 
 <span class="nb">print</span><span class="p">(</span><span class="n">gal</span><span class="p">)</span>
 </pre></div>
@@ -888,9 +1161,35 @@ Photometry_obs(NIRCam, 0.32 arcsec, EAZY_fsps_larson_zmax=4.0,EAZY_fsps_larson_z
 ----------
 SELECTION FLAGS:
 ----------
+bluewards_Lya_SNR&lt;2.0_EAZY_fsps_larson_zfree_0.32as: True
+redwards_Lya_SNR&gt;5.0,5.0_widebands_EAZY_fsps_larson_zfree_0.32as: True
+ALL_redwards_Lya_SNR&gt;2.0_widebands_EAZY_fsps_larson_zfree_0.32as: True
+red_chi_sq&lt;3.0_EAZY_fsps_larson_zfree_0.32as: True
+chi_sq_diff&gt;4.0,dz&gt;0.5_EAZY_fsps_larson_zfree_0.32as: True
+zPDF&gt;60%,|dz|/z&lt;0.1_EAZY_fsps_larson_zfree_0.32as: True
+unmasked_F090W: True
+unmasked_F115W: True
+unmasked_F150W: True
+unmasked_F162M: True
+unmasked_F182M: True
+unmasked_F200W: True
+unmasked_F210M: True
+unmasked_F250M: True
+unmasked_F277W: True
+unmasked_F300M: True
+unmasked_F335M: True
+unmasked_F356W: True
+unmasked_F410M: True
+unmasked_F444W: True
+unmasked_NIRCam: True
+bluest_band_SNR&lt;2.0_0.32as: True
+sex_Re_F277W&gt;45.0mas: True
+sex_Re_F356W&gt;45.0mas: True
+sex_Re_F444W&gt;45.0mas: True
+sex_Re_F277W+F356W+F444W&gt;45.0mas: True
+EPOCHS_NIRCam_EAZY_fsps_larson_zfree_0.32as: True
 F444W_SNR&gt;5.0_0.32as: True
 2nd_reddest_band_SNR&gt;8.0_0.32as: False
-bluest_band_SNR&lt;2.0_0.32as: True
 F200W-F277W&lt;0.30_0.32as: False
 F356W-F444W&gt;0.50_0.32as: False
 F115W-F150W&lt;0.80_0.32as: False
@@ -902,9 +1201,7 @@ F277W-F356W&gt;0.60_0.32as: False
 F277W-F444W&gt;0.70_0.32as: False
 Kokorev+24_LRD_red2_0.32as: False
 Kokorev+24_LRD_0.32as: False
-bluewards_Lya_SNR&lt;2.0_EAZY_fsps_larson_zfree_0.32as: True
 ALL_redwards_Lya_SNR&gt;2.0_EAZY_fsps_larson_zfree_0.32as: True
-redwards_Lya_SNR&gt;5.0,5.0_widebands_EAZY_fsps_larson_zfree_0.32as: True
 ----------
 ****************************************
 
@@ -918,11 +1215,11 @@ which are explained in the <a class="reference internal" href="../data/running_d
 <div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[22]:
 </pre></div>
 </div>
-<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">lya_band_2sig_detect_selector</span> <span class="o">=</span> <span class="n">Lya_Band_Selector</span><span class="p">(</span><span class="n">SNR_lim</span> <span class="o">=</span> <span class="mf">2.0</span><span class="p">,</span> <span class="n">detect_or_non_detect</span> <span class="o">=</span> <span class="s2">&quot;detect&quot;</span><span class="p">,</span> <span class="n">widebands_only</span> <span class="o">=</span> <span class="kc">False</span><span class="p">)</span>
-<span class="n">lya_band_2sig_detect_selector</span><span class="p">(</span><span class="n">gal</span><span class="p">,</span> <span class="n">aper_diams</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">EAZY_fitter</span><span class="p">,</span> <span class="n">return_copy</span> <span class="o">=</span> <span class="kc">False</span><span class="p">)</span>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">lya_band_2sig_detect_selector</span> <span class="o">=</span> <span class="n">Lya_Band_Selector</span><span class="p">(</span><span class="n">aper_diams</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">EAZY_fitter</span><span class="p">,</span> <span class="n">SNR_lim</span> <span class="o">=</span> <span class="mf">2.0</span><span class="p">,</span> <span class="n">detect_or_non_detect</span> <span class="o">=</span> <span class="s2">&quot;detect&quot;</span><span class="p">,</span> <span class="n">widebands_only</span> <span class="o">=</span> <span class="kc">False</span><span class="p">)</span>
+<span class="n">lya_band_2sig_detect_selector</span><span class="p">(</span><span class="n">gal</span><span class="p">,</span> <span class="n">return_copy</span> <span class="o">=</span> <span class="kc">False</span><span class="p">)</span>
 
-<span class="n">lya_wideband_3sig_non_detect_selector</span> <span class="o">=</span> <span class="n">Lya_Band_Selector</span><span class="p">(</span><span class="n">SNR_lim</span> <span class="o">=</span> <span class="mf">3.0</span><span class="p">,</span> <span class="n">detect_or_non_detect</span> <span class="o">=</span> <span class="s2">&quot;non_detect&quot;</span><span class="p">,</span> <span class="n">widebands_only</span> <span class="o">=</span> <span class="kc">True</span><span class="p">)</span>
-<span class="n">lya_wideband_3sig_non_detect_selector</span><span class="p">(</span><span class="n">gal</span><span class="p">,</span> <span class="n">aper_diams</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">EAZY_fitter</span><span class="p">,</span> <span class="n">return_copy</span> <span class="o">=</span> <span class="kc">False</span><span class="p">)</span>
+<span class="n">lya_wideband_3sig_non_detect_selector</span> <span class="o">=</span> <span class="n">Lya_Band_Selector</span><span class="p">(</span><span class="n">aper_diams</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">EAZY_fitter</span><span class="p">,</span> <span class="n">SNR_lim</span> <span class="o">=</span> <span class="mf">3.0</span><span class="p">,</span> <span class="n">detect_or_non_detect</span> <span class="o">=</span> <span class="s2">&quot;non_detect&quot;</span><span class="p">,</span> <span class="n">widebands_only</span> <span class="o">=</span> <span class="kc">True</span><span class="p">)</span>
+<span class="n">lya_wideband_3sig_non_detect_selector</span><span class="p">(</span><span class="n">gal</span><span class="p">,</span> <span class="n">return_copy</span> <span class="o">=</span> <span class="kc">False</span><span class="p">)</span>
 </pre></div>
 </div>
 </div>
@@ -931,14 +1228,14 @@ which are explained in the <a class="reference internal" href="../data/running_d
 <div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[23]:
 </pre></div>
 </div>
-<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">red_chi_sq_less_3_selector</span> <span class="o">=</span> <span class="n">Chi_Sq_Lim_Selector</span><span class="p">(</span><span class="n">chi_sq_lim</span> <span class="o">=</span> <span class="mf">3.0</span><span class="p">,</span> <span class="n">reduced</span> <span class="o">=</span> <span class="kc">True</span><span class="p">)</span>
-<span class="n">red_chi_sq_less_3_selector</span><span class="p">(</span><span class="n">gal</span><span class="p">,</span> <span class="n">aper_diams</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">EAZY_fitter</span><span class="p">,</span> <span class="n">return_copy</span> <span class="o">=</span> <span class="kc">False</span><span class="p">)</span>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">red_chi_sq_less_3_selector</span> <span class="o">=</span> <span class="n">Chi_Sq_Lim_Selector</span><span class="p">(</span><span class="n">aper_diams</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">EAZY_fitter</span><span class="p">,</span> <span class="n">chi_sq_lim</span> <span class="o">=</span> <span class="mf">3.0</span><span class="p">,</span> <span class="n">reduced</span> <span class="o">=</span> <span class="kc">True</span><span class="p">)</span>
+<span class="n">red_chi_sq_less_3_selector</span><span class="p">(</span><span class="n">gal</span><span class="p">,</span> <span class="n">return_copy</span> <span class="o">=</span> <span class="kc">False</span><span class="p">)</span>
 
-<span class="n">red_chi_sq_diff_less_4_dz_0_5_selector</span> <span class="o">=</span> <span class="n">Chi_Sq_Diff_Selector</span><span class="p">(</span><span class="n">chi_sq_diff</span> <span class="o">=</span> <span class="mf">4.0</span><span class="p">,</span> <span class="n">dz</span> <span class="o">=</span> <span class="mf">0.5</span><span class="p">)</span>
-<span class="n">red_chi_sq_diff_less_4_dz_0_5_selector</span><span class="p">(</span><span class="n">gal</span><span class="p">,</span> <span class="n">aper_diams</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">EAZY_fitter</span><span class="p">,</span> <span class="n">return_copy</span> <span class="o">=</span> <span class="kc">False</span><span class="p">)</span>
+<span class="n">red_chi_sq_diff_less_4_dz_0_5_selector</span> <span class="o">=</span> <span class="n">Chi_Sq_Diff_Selector</span><span class="p">(</span><span class="n">aper_diams</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">EAZY_fitter</span><span class="p">,</span> <span class="n">chi_sq_diff</span> <span class="o">=</span> <span class="mf">4.0</span><span class="p">,</span> <span class="n">dz</span> <span class="o">=</span> <span class="mf">0.5</span><span class="p">)</span>
+<span class="n">red_chi_sq_diff_less_4_dz_0_5_selector</span><span class="p">(</span><span class="n">gal</span><span class="p">,</span> <span class="n">return_copy</span> <span class="o">=</span> <span class="kc">False</span><span class="p">)</span>
 
-<span class="n">robust_zpdf_gtr0_6_dz_0_1_z_selector</span> <span class="o">=</span> <span class="n">Robust_zPDF_Selector</span><span class="p">(</span><span class="n">integral_lim</span> <span class="o">=</span> <span class="mf">0.6</span><span class="p">,</span> <span class="n">dz_over_z</span> <span class="o">=</span> <span class="mf">0.1</span><span class="p">)</span>
-<span class="n">robust_zpdf_gtr0_6_dz_0_1_z_selector</span><span class="p">(</span><span class="n">gal</span><span class="p">,</span> <span class="n">aper_diams</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">EAZY_fitter</span><span class="p">,</span> <span class="n">return_copy</span> <span class="o">=</span> <span class="kc">False</span><span class="p">)</span>
+<span class="n">robust_zpdf_gtr0_6_dz_0_1_z_selector</span> <span class="o">=</span> <span class="n">Robust_zPDF_Selector</span><span class="p">(</span><span class="n">aper_diams</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">EAZY_fitter</span><span class="p">,</span> <span class="n">integral_lim</span> <span class="o">=</span> <span class="mf">0.6</span><span class="p">,</span> <span class="n">dz_over_z</span> <span class="o">=</span> <span class="mf">0.1</span><span class="p">)</span>
+<span class="n">robust_zpdf_gtr0_6_dz_0_1_z_selector</span><span class="p">(</span><span class="n">gal</span><span class="p">,</span> <span class="n">return_copy</span> <span class="o">=</span> <span class="kc">False</span><span class="p">)</span>
 
 <span class="nb">print</span><span class="p">(</span><span class="n">gal</span><span class="o">.</span><span class="n">selection_flags</span><span class="o">.</span><span class="n">keys</span><span class="p">())</span>
 </pre></div>
@@ -949,7 +1246,7 @@ which are explained in the <a class="reference internal" href="../data/running_d
 </div>
 <div class="output_area docutils container">
 <div class="highlight"><pre>
-dict_keys([&#39;F444W_SNR&gt;5.0_0.32as&#39;, &#39;2nd_reddest_band_SNR&gt;8.0_0.32as&#39;, &#39;bluest_band_SNR&lt;2.0_0.32as&#39;, &#39;F200W-F277W&lt;0.30_0.32as&#39;, &#39;F356W-F444W&gt;0.50_0.32as&#39;, &#39;F115W-F150W&lt;0.80_0.32as&#39;, &#39;F200W-F277W&gt;0.70_0.32as&#39;, &#39;F200W-F356W&gt;1.00_0.32as&#39;, &#39;Kokorev+24_LRD_red1_0.32as&#39;, &#39;F150W-F200W&lt;0.80_0.32as&#39;, &#39;F277W-F356W&gt;0.60_0.32as&#39;, &#39;F277W-F444W&gt;0.70_0.32as&#39;, &#39;Kokorev+24_LRD_red2_0.32as&#39;, &#39;Kokorev+24_LRD_0.32as&#39;, &#39;bluewards_Lya_SNR&lt;2.0_EAZY_fsps_larson_zfree_0.32as&#39;, &#39;ALL_redwards_Lya_SNR&gt;2.0_EAZY_fsps_larson_zfree_0.32as&#39;, &#39;redwards_Lya_SNR&gt;5.0,5.0_widebands_EAZY_fsps_larson_zfree_0.32as&#39;, &#39;Lya_band_SNR&gt;2.0_EAZY_fsps_larson_zfree_0.32as&#39;, &#39;Lya_band_SNR&lt;3.0_widebands_EAZY_fsps_larson_zfree_0.32as&#39;, &#39;red_chi_sq&lt;3.0_EAZY_fsps_larson_zfree_0.32as&#39;, &#39;chi_sq_diff&gt;4.0,dz&gt;0.5_EAZY_fsps_larson_zfree_0.32as&#39;, &#39;zPDF&gt;60%,|dz|/z&lt;0.1_EAZY_fsps_larson_zfree_0.32as&#39;])
+dict_keys([&#39;bluewards_Lya_SNR&lt;2.0_EAZY_fsps_larson_zfree_0.32as&#39;, &#39;redwards_Lya_SNR&gt;5.0,5.0_widebands_EAZY_fsps_larson_zfree_0.32as&#39;, &#39;ALL_redwards_Lya_SNR&gt;2.0_widebands_EAZY_fsps_larson_zfree_0.32as&#39;, &#39;red_chi_sq&lt;3.0_EAZY_fsps_larson_zfree_0.32as&#39;, &#39;chi_sq_diff&gt;4.0,dz&gt;0.5_EAZY_fsps_larson_zfree_0.32as&#39;, &#39;zPDF&gt;60%,|dz|/z&lt;0.1_EAZY_fsps_larson_zfree_0.32as&#39;, &#39;unmasked_F090W&#39;, &#39;unmasked_F115W&#39;, &#39;unmasked_F150W&#39;, &#39;unmasked_F162M&#39;, &#39;unmasked_F182M&#39;, &#39;unmasked_F200W&#39;, &#39;unmasked_F210M&#39;, &#39;unmasked_F250M&#39;, &#39;unmasked_F277W&#39;, &#39;unmasked_F300M&#39;, &#39;unmasked_F335M&#39;, &#39;unmasked_F356W&#39;, &#39;unmasked_F410M&#39;, &#39;unmasked_F444W&#39;, &#39;unmasked_NIRCam&#39;, &#39;bluest_band_SNR&lt;2.0_0.32as&#39;, &#39;sex_Re_F277W&gt;45.0mas&#39;, &#39;sex_Re_F356W&gt;45.0mas&#39;, &#39;sex_Re_F444W&gt;45.0mas&#39;, &#39;sex_Re_F277W+F356W+F444W&gt;45.0mas&#39;, &#39;EPOCHS_NIRCam_EAZY_fsps_larson_zfree_0.32as&#39;, &#39;F444W_SNR&gt;5.0_0.32as&#39;, &#39;2nd_reddest_band_SNR&gt;8.0_0.32as&#39;, &#39;F200W-F277W&lt;0.30_0.32as&#39;, &#39;F356W-F444W&gt;0.50_0.32as&#39;, &#39;F115W-F150W&lt;0.80_0.32as&#39;, &#39;F200W-F277W&gt;0.70_0.32as&#39;, &#39;F200W-F356W&gt;1.00_0.32as&#39;, &#39;Kokorev+24_LRD_red1_0.32as&#39;, &#39;F150W-F200W&lt;0.80_0.32as&#39;, &#39;F277W-F356W&gt;0.60_0.32as&#39;, &#39;F277W-F444W&gt;0.70_0.32as&#39;, &#39;Kokorev+24_LRD_red2_0.32as&#39;, &#39;Kokorev+24_LRD_0.32as&#39;, &#39;ALL_redwards_Lya_SNR&gt;2.0_EAZY_fsps_larson_zfree_0.32as&#39;, &#39;Lya_band_SNR&gt;2.0_EAZY_fsps_larson_zfree_0.32as&#39;, &#39;Lya_band_SNR&lt;3.0_widebands_EAZY_fsps_larson_zfree_0.32as&#39;])
 </pre></div></div>
 </div>
 </section>
@@ -962,8 +1259,8 @@ dict_keys([&#39;F444W_SNR&gt;5.0_0.32as&#39;, &#39;2nd_reddest_band_SNR&gt;8.0_0
 </div>
 <div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">galfind</span> <span class="kn">import</span> <span class="n">EPOCHS_Selector</span>
 
-<span class="n">epochs_selector</span> <span class="o">=</span> <span class="n">EPOCHS_Selector</span><span class="p">(</span><span class="n">allow_lowz</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span> <span class="n">unmasked_instruments</span> <span class="o">=</span> <span class="s2">&quot;NIRCam&quot;</span><span class="p">,</span> <span class="n">cat_filterset</span> <span class="o">=</span> <span class="n">cat</span><span class="o">.</span><span class="n">filterset</span><span class="p">)</span>
-<span class="n">epochs_selected_gal</span> <span class="o">=</span> <span class="n">epochs_selector</span><span class="p">(</span><span class="n">gal_copy</span><span class="p">,</span> <span class="n">aper_diams</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">EAZY_fitter</span><span class="p">,</span> <span class="n">return_copy</span> <span class="o">=</span> <span class="kc">True</span><span class="p">)</span>
+<span class="n">epochs_selector</span> <span class="o">=</span> <span class="n">EPOCHS_Selector</span><span class="p">(</span><span class="n">aper_diams</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">EAZY_fitter</span><span class="p">,</span> <span class="n">allow_lowz</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span> <span class="n">unmasked_instruments</span> <span class="o">=</span> <span class="s2">&quot;NIRCam&quot;</span><span class="p">,</span> <span class="n">cat_filterset</span> <span class="o">=</span> <span class="n">cat</span><span class="o">.</span><span class="n">filterset</span><span class="p">)</span>
+<span class="n">epochs_selected_gal</span> <span class="o">=</span> <span class="n">epochs_selector</span><span class="p">(</span><span class="n">gal_copy</span><span class="p">,</span> <span class="n">return_copy</span> <span class="o">=</span> <span class="kc">True</span><span class="p">)</span>
 
 <span class="nb">print</span><span class="p">(</span><span class="n">epochs_selected_gal</span><span class="p">)</span>
 </pre></div>
@@ -983,23 +1280,9 @@ Photometry_obs(NIRCam, 0.32 arcsec, EAZY_fsps_larson_zmax=4.0,EAZY_fsps_larson_z
 ----------
 SELECTION FLAGS:
 ----------
-F444W_SNR&gt;5.0_0.32as: True
-2nd_reddest_band_SNR&gt;8.0_0.32as: False
-bluest_band_SNR&lt;2.0_0.32as: True
-F200W-F277W&lt;0.30_0.32as: False
-F356W-F444W&gt;0.50_0.32as: False
-F115W-F150W&lt;0.80_0.32as: False
-F200W-F277W&gt;0.70_0.32as: True
-F200W-F356W&gt;1.00_0.32as: False
-Kokorev+24_LRD_red1_0.32as: False
-F150W-F200W&lt;0.80_0.32as: False
-F277W-F356W&gt;0.60_0.32as: False
-F277W-F444W&gt;0.70_0.32as: False
-Kokorev+24_LRD_red2_0.32as: False
-Kokorev+24_LRD_0.32as: False
 bluewards_Lya_SNR&lt;2.0_EAZY_fsps_larson_zfree_0.32as: True
 redwards_Lya_SNR&gt;5.0,5.0_widebands_EAZY_fsps_larson_zfree_0.32as: True
-ALL_redwards_Lya_SNR&gt;2.0_EAZY_fsps_larson_zfree_0.32as: True
+ALL_redwards_Lya_SNR&gt;2.0_widebands_EAZY_fsps_larson_zfree_0.32as: True
 red_chi_sq&lt;3.0_EAZY_fsps_larson_zfree_0.32as: True
 chi_sq_diff&gt;4.0,dz&gt;0.5_EAZY_fsps_larson_zfree_0.32as: True
 zPDF&gt;60%,|dz|/z&lt;0.1_EAZY_fsps_larson_zfree_0.32as: True
@@ -1018,11 +1301,25 @@ unmasked_F356W: True
 unmasked_F410M: True
 unmasked_F444W: True
 unmasked_NIRCam: True
+bluest_band_SNR&lt;2.0_0.32as: True
 sex_Re_F277W&gt;45.0mas: True
 sex_Re_F356W&gt;45.0mas: True
 sex_Re_F444W&gt;45.0mas: True
 sex_Re_F277W+F356W+F444W&gt;45.0mas: True
 EPOCHS_NIRCam_EAZY_fsps_larson_zfree_0.32as: True
+F444W_SNR&gt;5.0_0.32as: True
+2nd_reddest_band_SNR&gt;8.0_0.32as: False
+F200W-F277W&lt;0.30_0.32as: False
+F356W-F444W&gt;0.50_0.32as: False
+F115W-F150W&lt;0.80_0.32as: False
+F200W-F277W&gt;0.70_0.32as: True
+F200W-F356W&gt;1.00_0.32as: False
+Kokorev+24_LRD_red1_0.32as: False
+F150W-F200W&lt;0.80_0.32as: False
+F277W-F356W&gt;0.60_0.32as: False
+F277W-F444W&gt;0.70_0.32as: False
+Kokorev+24_LRD_red2_0.32as: False
+Kokorev+24_LRD_0.32as: False
 ----------
 ****************************************
 

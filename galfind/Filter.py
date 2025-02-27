@@ -90,7 +90,7 @@ class Filter:
             elif key in ["Description", "Comments"]:
                 output_prop[key] = str(np.array(value)[0])
             elif key == "DetectorType":
-                detector_type_dict = {1: "photon counter"}
+                detector_type_dict = {0: "energy counter", 1: "photon counter"}
                 output_prop[key] = str(
                     detector_type_dict[int(np.array(value)[0])]
                 )
@@ -202,7 +202,9 @@ class Filter:
         return self.instrument.facility.__class__.__name__
 
     @staticmethod
-    def _get_facility_instrument_filt(filt_name: str) -> Tuple[str, str, str, str, str]:
+    def _get_facility_instrument_filt(
+        filt_name: str
+    ) -> Tuple[str, str, str, str, str]:
         # determine facility and instrument names of filter string
         split_str = filt_name.split("/")
         if len(split_str) == 3:
@@ -217,18 +219,19 @@ class Filter:
         elif len(split_str) == 1:
             # formatted as e.g. F444W
             # try to determine facility and instrument from band name alone
-            filt = split_str[0].upper()
+            filt = split_str[0] #.upper() # Potentially breaking change!
             instruments_with_filt = [
                 instr_name
                 for instr_name, instrument in instr_to_name_dict.items()
                 if filt in instrument.filt_names
             ]
-            assert len(instruments_with_filt) == 1, galfind_logger.critical(
-                f"Could not determine instrument from band name {filt}"
-            )
+            assert len(instruments_with_filt) == 1, \
+                galfind_logger.critical(
+                    f"Could not determine instrument from band name {filt}"
+                )
             instrument = instruments_with_filt[0]
             facility = instr_to_name_dict[instrument].facility.__class__.__name__
-        filt = filt.upper()
+        filt = filt #.upper() # Potentially breaking change!
         # determine instrument and facility SVO names
         SVO_facility_name = instr_to_name_dict[instrument].facility.SVO_name
         SVO_instr_name = instr_to_name_dict[instrument].SVO_name
@@ -236,7 +239,8 @@ class Filter:
 
     @staticmethod
     def _make_new_filt(
-        current_filt_names: List[str], filt_or_name: Union[str, Filter]
+        current_filt_names: List[str],
+        filt_or_name: Union[str, Filter]
     ) -> Union[Filter, None]:
         already_included = False
         if isinstance(filt_or_name, str):
@@ -507,11 +511,17 @@ class Multiple_Filter:
         # construct instrument object from string
         if isinstance(instrument, str):
             instrument = instr_to_name_dict[instrument]
-        # make excl_bands a list of string filter names if not already
+        # make excl_bands a list of string filter names
+        # belonging to the specific instrument if not already
         excl_bands = cls._get_name_from_filt(excl_bands)
-        excl_bands = [
-            Filter._get_facility_instrument_filt(filt)[2]
+        excl_bands_facility_instrument_filt = [
+            Filter._get_facility_instrument_filt(filt)
             for filt in excl_bands
+        ]
+        excl_bands = [
+            excl_band_facility_instrument_filt[2]
+            for excl_band_facility_instrument_filt in excl_bands_facility_instrument_filt
+            if excl_band_facility_instrument_filt[1] == instrument.__class__.__name__
         ]
         # make keep_suffix a list of strings if not already
         if isinstance(keep_suffix, str):
@@ -583,11 +593,9 @@ class Multiple_Filter:
         elif isinstance(i, str):
             return list(np.array(self.filters)[[index for index, filt in enumerate(self) if filt.band_name == i]])[0]
         elif isinstance(i, (list, np.ndarray)):
-            if not all(isinstance(j, (np.bool_, bool)) for j in i):
-                raise TypeError(
-                    f"{i=} in {self.__class__.__name__}.__getitem__" + \
-                    " is not all bool"
-                )
+            # if all(isinstance(j, int) for j in i):
+            #     # convert to boolean array
+
             if isinstance(i, list):
                 return Multiple_Filter(list(np.array(self.filters)[np.array(i)]))
             else:
@@ -854,7 +862,8 @@ class Multiple_Filter:
         # make a list if not already
         if not isinstance(filters, list):
             filters = [filters]
-        # if list elements include Multiple_Filter objects, flatten the Multiple_Filter objects to make a list of str
+        # if list elements include Multiple_Filter objects,
+        # flatten the Multiple_Filter objects to make a list of str
         _filters = [
             filt if isinstance(filt, str) else filt.band_name
             for filt in filters

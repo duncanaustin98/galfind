@@ -1,0 +1,567 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Plotting multiple cutouts from a catalogue &mdash; galfind 0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=80d5e7a1" />
+      <link rel="stylesheet" type="text/css" href="../_static/css/theme.css?v=e59714d7" />
+      <link rel="stylesheet" type="text/css" href="../_static/copybutton.css?v=76b2166b" />
+      <link rel="stylesheet" type="text/css" href="../_static/nbsphinx-code-cells.css?v=2aa19091" />
+
+  
+      <script src="../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../_static/documentation_options.js?v=2709fde1"></script>
+      <script src="../_static/doctools.js?v=9a2dae69"></script>
+      <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
+      <script src="../_static/clipboard.min.js?v=a7894cd8"></script>
+      <script src="../_static/copybutton.js?v=f281be69"></script>
+      <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+      <script>window.MathJax = {"tex": {"inlineMath": [["$", "$"], ["\\(", "\\)"]], "processEscapes": true}, "options": {"ignoreHtmlClass": "tex2jax_ignore|mathjax_ignore|document", "processHtmlClass": "tex2jax_process|mathjax_process|math|output_area"}}</script>
+      <script defer="defer" src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+    <script src="../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+    <link rel="prev" title="Stacking cutouts" href="stacking.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../index.html" class="icon icon-home">
+            galfind
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="../getting_started/getting_started.html">Welcome to Galfind!</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../instrument/instrument.html">Photometric Instruments</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../data/data.html">Galfind Data Object</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../catalogue/catalogue.html">Catalogue Object</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../galaxy/galaxy.html">Galaxy Objects</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../photometry/photometry.html">Handling Source Photometry</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../sed_fitting/sed_fitting.html">SED Fitting</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../selection/selection.html">Selection Methods</a></li>
+<li class="toctree-l1 current"><a class="reference internal" href="cutouts.html">Cutouts and Stacking</a><ul class="current">
+<li class="toctree-l2"><a class="reference internal" href="single_band_cutouts.html">Making cutouts from a single or multiple bands</a></li>
+<li class="toctree-l2"><a class="reference internal" href="RGB_cutouts.html">RGB cutouts</a></li>
+<li class="toctree-l2"><a class="reference internal" href="stacking.html">Stacking cutouts</a></li>
+<li class="toctree-l2 current"><a class="current reference internal" href="#">Plotting multiple cutouts from a catalogue</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#Example-1:-Plotting-a-catalogue-of-cutouts-in-a-single-band">Example 1: Plotting a catalogue of cutouts in a single band</a></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../index.html">galfind</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="cutouts.html">Cutouts and Stacking</a></li>
+      <li class="breadcrumb-item active">Plotting multiple cutouts from a catalogue</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="../_sources/cutouts/multiple_cutouts.ipynb.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="Plotting-multiple-cutouts-from-a-catalogue">
+<h1>Plotting multiple cutouts from a catalogue<a class="headerlink" href="#Plotting-multiple-cutouts-from-a-catalogue" title="Link to this heading"></a></h1>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[1]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="c1"># imports</span>
+<span class="kn">import</span> <span class="nn">astropy.units</span> <span class="k">as</span> <span class="nn">u</span>
+<span class="kn">from</span> <span class="nn">galfind</span> <span class="kn">import</span> <span class="n">EAZY</span><span class="p">,</span> <span class="n">Catalogue</span><span class="p">,</span> <span class="n">EPOCHS_Selector</span><span class="p">,</span> <span class="n">Catalogue_Cutouts</span>
+<span class="kn">from</span> <span class="nn">galfind.Data</span> <span class="kn">import</span> <span class="n">morgan_version_to_dir</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+Reading GALFIND config file from: /nvme/scratch/work/austind/GALFIND/galfind/../configs/galfind_config.ini
+</pre></div></div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area stderr docutils container">
+<div class="highlight"><pre>
+WARNING:galfind:Aperture corrections for VISTA not found in /nvme/scratch/work/austind/GALFIND/galfind/Aperture_corrections/VISTA_aper_corr.txt
+WARNING:galfind:Aperture corrections for VISTA not found in /nvme/scratch/work/austind/GALFIND/galfind/Aperture_corrections/VISTA_aper_corr.txt
+</pre></div></div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+Failed to `import dust_attenuation`
+Install from the repo with $ pip install git+https://github.com/karllark/dust_attenuation.git
+</pre></div></div>
+</div>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[2]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">survey</span> <span class="o">=</span> <span class="s2">&quot;JOF&quot;</span>
+<span class="n">version</span> <span class="o">=</span> <span class="s2">&quot;v11&quot;</span>
+<span class="n">instrument_names</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;NIRCam&quot;</span><span class="p">]</span>
+<span class="n">aper_diams</span> <span class="o">=</span> <span class="p">[</span><span class="mf">0.32</span><span class="p">]</span> <span class="o">*</span> <span class="n">u</span><span class="o">.</span><span class="n">arcsec</span>
+<span class="n">forced_phot_band</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;F277W&quot;</span><span class="p">,</span> <span class="s2">&quot;F356W&quot;</span><span class="p">,</span> <span class="s2">&quot;F444W&quot;</span><span class="p">]</span>
+<span class="n">min_flux_pc_err</span> <span class="o">=</span> <span class="mf">10.</span>
+<span class="n">SED_fit_params_arr</span> <span class="o">=</span> <span class="p">[</span>
+    <span class="p">{</span><span class="s2">&quot;templates&quot;</span><span class="p">:</span> <span class="s2">&quot;fsps_larson&quot;</span><span class="p">,</span> <span class="s2">&quot;lowz_zmax&quot;</span><span class="p">:</span> <span class="mf">4.0</span><span class="p">},</span>
+    <span class="p">{</span><span class="s2">&quot;templates&quot;</span><span class="p">:</span> <span class="s2">&quot;fsps_larson&quot;</span><span class="p">,</span> <span class="s2">&quot;lowz_zmax&quot;</span><span class="p">:</span> <span class="mf">6.0</span><span class="p">},</span>
+    <span class="p">{</span><span class="s2">&quot;templates&quot;</span><span class="p">:</span> <span class="s2">&quot;fsps_larson&quot;</span><span class="p">,</span> <span class="s2">&quot;lowz_zmax&quot;</span><span class="p">:</span> <span class="kc">None</span><span class="p">}</span>
+<span class="p">]</span>
+
+<span class="n">JOF_cat</span> <span class="o">=</span> <span class="n">Catalogue</span><span class="o">.</span><span class="n">pipeline</span><span class="p">(</span>
+    <span class="n">survey</span><span class="p">,</span>
+    <span class="n">version</span><span class="p">,</span>
+    <span class="n">instrument_names</span> <span class="o">=</span> <span class="n">instrument_names</span><span class="p">,</span>
+    <span class="n">version_to_dir_dict</span> <span class="o">=</span> <span class="n">morgan_version_to_dir</span><span class="p">,</span>
+    <span class="n">aper_diams</span> <span class="o">=</span> <span class="n">aper_diams</span><span class="p">,</span>
+    <span class="n">forced_phot_band</span> <span class="o">=</span> <span class="n">forced_phot_band</span><span class="p">,</span>
+    <span class="n">min_flux_pc_err</span> <span class="o">=</span> <span class="n">min_flux_pc_err</span>
+<span class="p">)</span>
+<span class="c1"># load sextractor half-light radii</span>
+<span class="n">JOF_cat</span><span class="o">.</span><span class="n">load_sextractor_Re</span><span class="p">()</span>
+
+<span class="c1"># load EAZY SED fitting results</span>
+<span class="k">for</span> <span class="n">SED_fit_params</span> <span class="ow">in</span> <span class="n">SED_fit_params_arr</span><span class="p">:</span>
+    <span class="n">EAZY_fitter</span> <span class="o">=</span> <span class="n">EAZY</span><span class="p">(</span><span class="n">SED_fit_params</span><span class="p">)</span>
+    <span class="n">EAZY_fitter</span><span class="p">(</span><span class="n">JOF_cat</span><span class="p">,</span> <span class="n">aper_diams</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">load_PDFs</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span> <span class="n">load_SEDs</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span> <span class="n">update</span> <span class="o">=</span> <span class="kc">True</span><span class="p">)</span>
+
+<span class="nb">print</span><span class="p">(</span><span class="n">JOF_cat</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area stderr docutils container">
+<div class="highlight"><pre>
+INFO:galfind:Loaded aper_diams=&lt;Quantity [0.32] arcsec&gt; for F277W+F356W+F444W
+INFO:galfind:Combined mask for NIRCam/F277W+F356W+F444W already exists at /raid/scratch/work/austind/GALFIND_WORK/Masks/JOF/combined/JOF_F277W+F356W+F444W_auto.fits
+WARNING: hdu= was not specified but multiple tables are present, reading in first available table (hdu=1) [astropy.io.fits.connect]
+WARNING:astroquery:hdu= was not specified but multiple tables are present, reading in first available table (hdu=1)
+WARNING:galfind:Aperture correction columns already in /raid/scratch/work/austind/GALFIND_WORK/Catalogues/v11/NIRCam/JOF/(0.32)as/JOF_MASTER_Sel-F277W+F356W+F444W_v11.fits
+Calculating depths:   0%|          | 0/15 [00:00&lt;?, ?it/s]
+INFO:galfind:Calculated/loaded depths for JOF v11 NIRCam
+INFO:galfind:Local depth columns already exist in /raid/scratch/work/austind/GALFIND_WORK/Catalogues/v11/NIRCam/JOF/(0.32)as/JOF_MASTER_Sel-F277W+F356W+F444W_v11.fits
+INFO:galfind:Loaded &#39;has_data_mask&#39; from /raid/scratch/work/austind/GALFIND_WORK/Masks/JOF/has_data_mask/JOF_MASTER_Sel-F277W+F356W+F444W_v11.h5
+INFO:galfind:Making JOF v11 JOF_MASTER_Sel-F277W+F356W+F444W_v11 catalogue!
+WARNING:galfind:cat_aper_diams not in kwargs.keys()=dict_keys([&#39;ZP&#39;, &#39;min_flux_pc_err&#39;])! Setting to aper_diams=&lt;Quantity [0.32] arcsec&gt;
+WARNING:galfind:cat_aper_diams not in kwargs.keys()=dict_keys([&#39;ZP&#39;, &#39;min_flux_pc_err&#39;])! Setting to aper_diams=&lt;Quantity [0.32] arcsec&gt;
+WARNING:galfind:cat_aper_diams not in kwargs.keys()=dict_keys([])! Setting to aper_diams=&lt;Quantity [0.32] arcsec&gt;
+INFO:galfind:Made /raid/scratch/work/austind/GALFIND_WORK/Catalogues/v11/NIRCam/JOF/(0.32)as/JOF_MASTER_Sel-F277W+F356W+F444W_v11.fits catalogue!
+INFO:galfind:Loaded FLUX_RADIUS from /raid/scratch/work/austind/GALFIND_WORK/Catalogues/v11/NIRCam/JOF/(0.32)as/JOF_MASTER_Sel-F277W+F356W+F444W_v11.fits saved as sex_Re for cat_band_properties[0].keys()=dict_keys([&#39;F090W&#39;, &#39;F115W&#39;, &#39;F150W&#39;, &#39;F162M&#39;, &#39;F182M&#39;, &#39;F200W&#39;, &#39;F210M&#39;, &#39;F250M&#39;, &#39;F277W&#39;, &#39;F300M&#39;, &#39;F335M&#39;, &#39;F356W&#39;, &#39;F410M&#39;, &#39;F444W&#39;])
+INFO:galfind:Making .in file for EAZY_fsps_larson_zmax=4.0 SED fitting for JOF v11 NIRCam
+INFO:galfind:Made .in file for EAZY_fsps_larson_zmax=4.0 SED fitting for JOF v11 NIRCam.
+</pre></div></div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+Running SED fitting took 0.0s
+</pre></div></div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area stderr docutils container">
+<div class="highlight"><pre>
+INFO:galfind:Loading EAZY_fsps_larson property PDFs into JOF v11 NIRCam
+</pre></div></div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+Loading properties and associated errors took 1.6s
+</pre></div></div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area stderr docutils container">
+<div class="highlight"><pre>
+Constructing redshift PDFs: 100%|██████████| 16335/16335 [00:00&lt;00:00, 42696.63it/s]
+INFO:galfind:Finished loading EAZY_fsps_larson property PDFs into JOF v11 NIRCam
+INFO:galfind:Loading EAZY_fsps_larson SEDs into JOF v11 NIRCam
+Constructing SEDs: 100%|██████████| 16335/16335 [00:01&lt;00:00, 13033.44it/s]
+INFO:galfind:Finished loading EAZY_fsps_larson SEDs into JOF v11 NIRCam
+INFO:galfind:Updating SED results in galfind catalogue object
+Updating galaxy SED results: 100%|██████████| 16335/16335 [00:00&lt;00:00, 120248.23it/s]
+INFO:galfind:Making .in file for EAZY_fsps_larson_zmax=6.0 SED fitting for JOF v11 NIRCam
+INFO:galfind:Made .in file for EAZY_fsps_larson_zmax=6.0 SED fitting for JOF v11 NIRCam.
+</pre></div></div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+Running SED fitting took 0.1s
+</pre></div></div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area stderr docutils container">
+<div class="highlight"><pre>
+INFO:galfind:Loading EAZY_fsps_larson property PDFs into JOF v11 NIRCam
+</pre></div></div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+Loading properties and associated errors took 1.0s
+</pre></div></div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area stderr docutils container">
+<div class="highlight"><pre>
+Constructing redshift PDFs: 100%|██████████| 16335/16335 [00:00&lt;00:00, 21071.14it/s]
+INFO:galfind:Finished loading EAZY_fsps_larson property PDFs into JOF v11 NIRCam
+INFO:galfind:Loading EAZY_fsps_larson SEDs into JOF v11 NIRCam
+Constructing SEDs: 100%|██████████| 16335/16335 [00:01&lt;00:00, 14844.02it/s]
+INFO:galfind:Finished loading EAZY_fsps_larson SEDs into JOF v11 NIRCam
+INFO:galfind:Updating SED results in galfind catalogue object
+Updating galaxy SED results: 100%|██████████| 16335/16335 [00:00&lt;00:00, 149794.28it/s]
+INFO:galfind:Making .in file for EAZY_fsps_larson_zfree SED fitting for JOF v11 NIRCam
+INFO:galfind:Made .in file for EAZY_fsps_larson_zfree SED fitting for JOF v11 NIRCam.
+</pre></div></div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+Running SED fitting took 0.1s
+</pre></div></div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area stderr docutils container">
+<div class="highlight"><pre>
+INFO:galfind:Loading EAZY_fsps_larson property PDFs into JOF v11 NIRCam
+</pre></div></div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+Loading properties and associated errors took 1.5s
+</pre></div></div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area stderr docutils container">
+<div class="highlight"><pre>
+Constructing redshift PDFs: 100%|██████████| 16335/16335 [00:00&lt;00:00, 62918.14it/s]
+INFO:galfind:Finished loading EAZY_fsps_larson property PDFs into JOF v11 NIRCam
+INFO:galfind:Loading EAZY_fsps_larson SEDs into JOF v11 NIRCam
+Constructing SEDs: 100%|██████████| 16335/16335 [00:01&lt;00:00, 11562.38it/s]
+INFO:galfind:Finished loading EAZY_fsps_larson SEDs into JOF v11 NIRCam
+INFO:galfind:Updating SED results in galfind catalogue object
+Updating galaxy SED results: 100%|██████████| 16335/16335 [00:00&lt;00:00, 120412.44it/s]
+WARNING: hdu= was not specified but multiple tables are present, reading in first available table (hdu=1) [astropy.io.fits.connect]
+WARNING:astroquery:hdu= was not specified but multiple tables are present, reading in first available table (hdu=1)
+</pre></div></div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+****************************************
+CATALOGUE(JOF,v11,NIRCam):
+----------
+CAT PATH = /raid/scratch/work/austind/GALFIND_WORK/Catalogues/v11/NIRCam/JOF/(0.32)as/JOF_MASTER_Sel-F277W+F356W+F444W_v11.fits
+TOTAL GALAXIES = 16335
+RA RANGE = [53.01070689 53.11059594] deg
+DEC RANGE = [-27.91226173 -27.83206063] deg
+----------
+****************************************
+MULTIPLE_FILTER
+----------
+FACILITY: JWST
+INSTRUMENT: NIRCam
+FILTERS: [&#39;F090W&#39;, &#39;F115W&#39;, &#39;F150W&#39;, &#39;F162M&#39;, &#39;F182M&#39;, &#39;F200W&#39;, &#39;F210M&#39;, &#39;F250M&#39;, &#39;F277W&#39;, &#39;F300M&#39;, &#39;F335M&#39;, &#39;F356W&#39;, &#39;F410M&#39;, &#39;F444W&#39;]
+****************************************
+
+</pre></div></div>
+</div>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[3]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="c1"># perform EPOCHS selection</span>
+<span class="n">epochs_selector</span> <span class="o">=</span> <span class="n">EPOCHS_Selector</span><span class="p">(</span><span class="n">allow_lowz</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span> <span class="n">unmasked_instruments</span> <span class="o">=</span> <span class="s2">&quot;NIRCam&quot;</span><span class="p">)</span>
+<span class="n">EPOCHS_JOF_cat</span> <span class="o">=</span> <span class="n">epochs_selector</span><span class="p">(</span><span class="n">JOF_cat</span><span class="p">,</span> <span class="n">aper_diams</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">EAZY_fitter</span><span class="p">,</span> <span class="n">return_copy</span> <span class="o">=</span> <span class="kc">True</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area stderr docutils container">
+<div class="highlight"><pre>
+Selecting bluewards_Lya_SNR&lt;2.0_EAZY_fsps_larson_zfree_0.32as:   0%|          | 0/16335 [00:00&lt;?, ?it/s]Selecting bluewards_Lya_SNR&lt;2.0_EAZY_fsps_larson_zfree_0.32as: 100%|██████████| 16335/16335 [00:00&lt;00:00, 104705.05it/s]
+WARNING:galfind:property_name=&#39;bluewards_Lya_SNR&lt;2.0_EAZY_fsps_larson_zfree_0.32as&#39; already appended to hdu=&#39;SELECTION&#39; .fits table, not overwriting!
+Selecting redwards_Lya_SNR&gt;5.0,5.0_widebands_EAZY_fsps_larson_zfree_0.32as: 100%|██████████| 16335/16335 [00:00&lt;00:00, 43036.81it/s]
+WARNING:galfind:property_name=&#39;redwards_Lya_SNR&gt;5.0,5.0_widebands_EAZY_fsps_larson_zfree_0.32as&#39; already appended to hdu=&#39;SELECTION&#39; .fits table, not overwriting!
+Selecting ALL_redwards_Lya_SNR&gt;2.0_EAZY_fsps_larson_zfree_0.32as: 100%|██████████| 16335/16335 [00:00&lt;00:00, 105034.75it/s]
+WARNING:galfind:property_name=&#39;ALL_redwards_Lya_SNR&gt;2.0_EAZY_fsps_larson_zfree_0.32as&#39; already appended to hdu=&#39;SELECTION&#39; .fits table, not overwriting!
+Selecting red_chi_sq&lt;3.0_EAZY_fsps_larson_zfree_0.32as: 100%|██████████| 16335/16335 [00:00&lt;00:00, 98664.56it/s]
+WARNING:galfind:property_name=&#39;red_chi_sq&lt;3.0_EAZY_fsps_larson_zfree_0.32as&#39; already appended to hdu=&#39;SELECTION&#39; .fits table, not overwriting!
+Selecting chi_sq_diff&gt;4.0,dz&gt;0.5_EAZY_fsps_larson_zfree_0.32as: 100%|██████████| 16335/16335 [00:00&lt;00:00, 106662.90it/s]
+WARNING:galfind:property_name=&#39;chi_sq_diff&gt;4.0,dz&gt;0.5_EAZY_fsps_larson_zfree_0.32as&#39; already appended to hdu=&#39;SELECTION&#39; .fits table, not overwriting!
+Selecting zPDF&gt;60%,|dz|/z&lt;0.1_EAZY_fsps_larson_zfree_0.32as: 100%|██████████| 16335/16335 [00:00&lt;00:00, 112722.84it/s]
+WARNING:galfind:property_name=&#39;zPDF&gt;60%,|dz|/z&lt;0.1_EAZY_fsps_larson_zfree_0.32as&#39; already appended to hdu=&#39;SELECTION&#39; .fits table, not overwriting!
+Selecting unmasked_F090W: 100%|██████████| 16335/16335 [00:00&lt;00:00, 483091.41it/s]
+WARNING:galfind:property_name=&#39;unmasked_F090W&#39; already appended to hdu=&#39;SELECTION&#39; .fits table, not overwriting!
+Selecting unmasked_F115W: 100%|██████████| 16335/16335 [00:00&lt;00:00, 507525.82it/s]
+WARNING:galfind:property_name=&#39;unmasked_F115W&#39; already appended to hdu=&#39;SELECTION&#39; .fits table, not overwriting!
+Selecting unmasked_F150W: 100%|██████████| 16335/16335 [00:00&lt;00:00, 364017.70it/s]
+WARNING:galfind:property_name=&#39;unmasked_F150W&#39; already appended to hdu=&#39;SELECTION&#39; .fits table, not overwriting!
+Selecting unmasked_F162M: 100%|██████████| 16335/16335 [00:00&lt;00:00, 282851.37it/s]
+WARNING:galfind:property_name=&#39;unmasked_F162M&#39; already appended to hdu=&#39;SELECTION&#39; .fits table, not overwriting!
+Selecting unmasked_F182M: 100%|██████████| 16335/16335 [00:00&lt;00:00, 508101.69it/s]
+WARNING:galfind:property_name=&#39;unmasked_F182M&#39; already appended to hdu=&#39;SELECTION&#39; .fits table, not overwriting!
+Selecting unmasked_F200W: 100%|██████████| 16335/16335 [00:00&lt;00:00, 477565.65it/s]
+WARNING:galfind:property_name=&#39;unmasked_F200W&#39; already appended to hdu=&#39;SELECTION&#39; .fits table, not overwriting!
+Selecting unmasked_F210M: 100%|██████████| 16335/16335 [00:00&lt;00:00, 327127.72it/s]
+WARNING:galfind:property_name=&#39;unmasked_F210M&#39; already appended to hdu=&#39;SELECTION&#39; .fits table, not overwriting!
+Selecting unmasked_F250M: 100%|██████████| 16335/16335 [00:00&lt;00:00, 384219.13it/s]
+WARNING:galfind:property_name=&#39;unmasked_F250M&#39; already appended to hdu=&#39;SELECTION&#39; .fits table, not overwriting!
+Selecting unmasked_F277W: 100%|██████████| 16335/16335 [00:00&lt;00:00, 517543.46it/s]
+WARNING:galfind:property_name=&#39;unmasked_F277W&#39; already appended to hdu=&#39;SELECTION&#39; .fits table, not overwriting!
+Selecting unmasked_F300M: 100%|██████████| 16335/16335 [00:00&lt;00:00, 358454.70it/s]
+WARNING:galfind:property_name=&#39;unmasked_F300M&#39; already appended to hdu=&#39;SELECTION&#39; .fits table, not overwriting!
+Selecting unmasked_F335M: 100%|██████████| 16335/16335 [00:00&lt;00:00, 333381.78it/s]
+WARNING:galfind:property_name=&#39;unmasked_F335M&#39; already appended to hdu=&#39;SELECTION&#39; .fits table, not overwriting!
+Selecting unmasked_F356W: 100%|██████████| 16335/16335 [00:00&lt;00:00, 417943.87it/s]
+WARNING:galfind:property_name=&#39;unmasked_F356W&#39; already appended to hdu=&#39;SELECTION&#39; .fits table, not overwriting!
+Selecting unmasked_F410M: 100%|██████████| 16335/16335 [00:00&lt;00:00, 435365.83it/s]
+WARNING:galfind:property_name=&#39;unmasked_F410M&#39; already appended to hdu=&#39;SELECTION&#39; .fits table, not overwriting!
+Selecting unmasked_F444W: 100%|██████████| 16335/16335 [00:00&lt;00:00, 244953.40it/s]
+WARNING:galfind:property_name=&#39;unmasked_F444W&#39; already appended to hdu=&#39;SELECTION&#39; .fits table, not overwriting!
+Selecting unmasked_NIRCam: 100%|██████████| 16335/16335 [00:00&lt;00:00, 272159.42it/s]
+WARNING:galfind:property_name=&#39;unmasked_NIRCam&#39; already appended to hdu=&#39;SELECTION&#39; .fits table, not overwriting!
+Selecting bluest_band_SNR&lt;2.0_0.32as: 100%|██████████| 16335/16335 [00:00&lt;00:00, 83317.17it/s]
+WARNING:galfind:property_name=&#39;bluest_band_SNR&lt;2.0_0.32as&#39; already appended to hdu=&#39;SELECTION&#39; .fits table, not overwriting!
+Selecting sex_Re_F277W&gt;45.0mas: 100%|██████████| 16335/16335 [00:00&lt;00:00, 98452.32it/s]
+WARNING:galfind:property_name=&#39;sex_Re_F277W&gt;45.0mas&#39; already appended to hdu=&#39;SELECTION&#39; .fits table, not overwriting!
+Selecting sex_Re_F356W&gt;45.0mas: 100%|██████████| 16335/16335 [00:00&lt;00:00, 113194.19it/s]
+WARNING:galfind:property_name=&#39;sex_Re_F356W&gt;45.0mas&#39; already appended to hdu=&#39;SELECTION&#39; .fits table, not overwriting!
+Selecting sex_Re_F444W&gt;45.0mas: 100%|██████████| 16335/16335 [00:00&lt;00:00, 117559.37it/s]
+WARNING:galfind:property_name=&#39;sex_Re_F444W&gt;45.0mas&#39; already appended to hdu=&#39;SELECTION&#39; .fits table, not overwriting!
+Selecting sex_Re_F277W+F356W+F444W&gt;45.0mas: 100%|██████████| 16335/16335 [00:00&lt;00:00, 489165.27it/s]
+WARNING:galfind:property_name=&#39;sex_Re_F277W+F356W+F444W&gt;45.0mas&#39; already appended to hdu=&#39;SELECTION&#39; .fits table, not overwriting!
+Selecting EPOCHS_NIRCam_EAZY_fsps_larson_zfree_0.32as: 100%|██████████| 16335/16335 [00:00&lt;00:00, 121097.96it/s]
+WARNING:galfind:property_name=&#39;EPOCHS_NIRCam_EAZY_fsps_larson_zfree_0.32as&#39; already appended to hdu=&#39;SELECTION&#39; .fits table, not overwriting!
+</pre></div></div>
+</div>
+<section id="Example-1:-Plotting-a-catalogue-of-cutouts-in-a-single-band">
+<h2>Example 1: Plotting a catalogue of cutouts in a single band<a class="headerlink" href="#Example-1:-Plotting-a-catalogue-of-cutouts-in-a-single-band" title="Link to this heading"></a></h2>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[4]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">f444w_cat_cutouts</span> <span class="o">=</span> <span class="n">Catalogue_Cutouts</span><span class="o">.</span><span class="n">from_cat_filt</span><span class="p">(</span><span class="n">EPOCHS_JOF_cat</span><span class="p">,</span> <span class="s2">&quot;F444W&quot;</span><span class="p">,</span> <span class="mf">0.96</span> <span class="o">*</span> <span class="n">u</span><span class="o">.</span><span class="n">arcsec</span><span class="p">,</span> <span class="n">overwrite</span> <span class="o">=</span> <span class="kc">False</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">f444w_cat_cutouts</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area stderr docutils container">
+<div class="highlight"><pre>
+INFO:galfind:Already made fits cutout for JOF v11 288 F444W
+INFO:galfind:Already made fits cutout for JOF v11 568 F444W
+INFO:galfind:Already made fits cutout for JOF v11 710 F444W
+INFO:galfind:Already made fits cutout for JOF v11 718 F444W
+INFO:galfind:Already made fits cutout for JOF v11 885 F444W
+INFO:galfind:Already made fits cutout for JOF v11 946 F444W
+INFO:galfind:Already made fits cutout for JOF v11 1669 F444W
+INFO:galfind:Already made fits cutout for JOF v11 1676 F444W
+INFO:galfind:Already made fits cutout for JOF v11 2162 F444W
+INFO:galfind:Already made fits cutout for JOF v11 2248 F444W
+INFO:galfind:Already made fits cutout for JOF v11 2799 F444W
+INFO:galfind:Already made fits cutout for JOF v11 2839 F444W
+INFO:galfind:Already made fits cutout for JOF v11 2875 F444W
+INFO:galfind:Already made fits cutout for JOF v11 3004 F444W
+INFO:galfind:Already made fits cutout for JOF v11 3219 F444W
+INFO:galfind:Already made fits cutout for JOF v11 3397 F444W
+INFO:galfind:Already made fits cutout for JOF v11 3642 F444W
+INFO:galfind:Already made fits cutout for JOF v11 3830 F444W
+INFO:galfind:Already made fits cutout for JOF v11 3898 F444W
+INFO:galfind:Already made fits cutout for JOF v11 4023 F444W
+INFO:galfind:Already made fits cutout for JOF v11 4047 F444W
+INFO:galfind:Already made fits cutout for JOF v11 4087 F444W
+INFO:galfind:Already made fits cutout for JOF v11 4094 F444W
+INFO:galfind:Already made fits cutout for JOF v11 4134 F444W
+INFO:galfind:Already made fits cutout for JOF v11 4270 F444W
+INFO:galfind:Already made fits cutout for JOF v11 4276 F444W
+INFO:galfind:Already made fits cutout for JOF v11 4305 F444W
+INFO:galfind:Already made fits cutout for JOF v11 4805 F444W
+INFO:galfind:Already made fits cutout for JOF v11 5376 F444W
+INFO:galfind:Already made fits cutout for JOF v11 5553 F444W
+INFO:galfind:Already made fits cutout for JOF v11 5625 F444W
+INFO:galfind:Already made fits cutout for JOF v11 5687 F444W
+INFO:galfind:Already made fits cutout for JOF v11 5797 F444W
+INFO:galfind:Already made fits cutout for JOF v11 5798 F444W
+INFO:galfind:Already made fits cutout for JOF v11 5988 F444W
+INFO:galfind:Already made fits cutout for JOF v11 6161 F444W
+INFO:galfind:Already made fits cutout for JOF v11 6176 F444W
+INFO:galfind:Already made fits cutout for JOF v11 6491 F444W
+INFO:galfind:Already made fits cutout for JOF v11 6508 F444W
+INFO:galfind:Already made fits cutout for JOF v11 6775 F444W
+INFO:galfind:Already made fits cutout for JOF v11 6813 F444W
+INFO:galfind:Already made fits cutout for JOF v11 6888 F444W
+INFO:galfind:Already made fits cutout for JOF v11 6979 F444W
+INFO:galfind:Already made fits cutout for JOF v11 7412 F444W
+INFO:galfind:Already made fits cutout for JOF v11 7555 F444W
+INFO:galfind:Already made fits cutout for JOF v11 7917 F444W
+INFO:galfind:Already made fits cutout for JOF v11 8822 F444W
+INFO:galfind:Already made fits cutout for JOF v11 8915 F444W
+INFO:galfind:Already made fits cutout for JOF v11 9005 F444W
+INFO:galfind:Already made fits cutout for JOF v11 9064 F444W
+INFO:galfind:Already made fits cutout for JOF v11 9143 F444W
+INFO:galfind:Already made fits cutout for JOF v11 9571 F444W
+INFO:galfind:Already made fits cutout for JOF v11 9687 F444W
+INFO:galfind:Already made fits cutout for JOF v11 9971 F444W
+INFO:galfind:Already made fits cutout for JOF v11 10098 F444W
+INFO:galfind:Already made fits cutout for JOF v11 10572 F444W
+INFO:galfind:Already made fits cutout for JOF v11 10578 F444W
+INFO:galfind:Already made fits cutout for JOF v11 10757 F444W
+INFO:galfind:Already made fits cutout for JOF v11 11106 F444W
+INFO:galfind:Already made fits cutout for JOF v11 11141 F444W
+INFO:galfind:Already made fits cutout for JOF v11 11188 F444W
+INFO:galfind:Already made fits cutout for JOF v11 11194 F444W
+INFO:galfind:Already made fits cutout for JOF v11 11333 F444W
+INFO:galfind:Already made fits cutout for JOF v11 11424 F444W
+INFO:galfind:Already made fits cutout for JOF v11 11471 F444W
+INFO:galfind:Already made fits cutout for JOF v11 11939 F444W
+INFO:galfind:Already made fits cutout for JOF v11 12086 F444W
+INFO:galfind:Already made fits cutout for JOF v11 12395 F444W
+INFO:galfind:Already made fits cutout for JOF v11 12751 F444W
+INFO:galfind:Already made fits cutout for JOF v11 13546 F444W
+INFO:galfind:Already made fits cutout for JOF v11 13679 F444W
+INFO:galfind:Already made fits cutout for JOF v11 13713 F444W
+INFO:galfind:Already made fits cutout for JOF v11 14210 F444W
+INFO:galfind:Already made fits cutout for JOF v11 14266 F444W
+INFO:galfind:Already made fits cutout for JOF v11 14477 F444W
+INFO:galfind:Already made fits cutout for JOF v11 14765 F444W
+INFO:galfind:Already made fits cutout for JOF v11 14973 F444W
+INFO:galfind:Already made fits cutout for JOF v11 15316 F444W
+INFO:galfind:Already made fits cutout for JOF v11 15360 F444W
+INFO:galfind:Already made fits cutout for JOF v11 15521 F444W
+INFO:galfind:Already made fits cutout for JOF v11 15874 F444W
+</pre></div></div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+&lt;galfind.Cutout.Catalogue_Cutouts object at 0x7f7e4c954190&gt;
+</pre></div></div>
+</div>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[5]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">f444w_cat_cutouts</span><span class="o">.</span><span class="n">plot</span><span class="p">()</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<img alt="../_images/cutouts_multiple_cutouts_6_0.png" src="../_images/cutouts_multiple_cutouts_6_0.png" />
+</div>
+</div>
+</section>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="stacking.html" class="btn btn-neutral float-left" title="Stacking cutouts" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2024, Duncan Austin.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

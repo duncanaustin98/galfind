@@ -95,7 +95,7 @@ line_diagnostics = {
     },
     "Halpha": {
         "line_wav": 6_562.8 * u.AA,
-        "feature_wavs": [6_560.0, 6_570.0] * u.AA,
+        "feature_wavs": [6_558.0, 6_570.0] * u.AA,
         "cont_wavs": [[6_555.0, 6_558.0], [6_570.0, 6_575.0]] * u.AA,
         "rel_lambda": None,
     },
@@ -125,10 +125,10 @@ strong_optical_lines = ["Hbeta", "[OIII]-4959", "[OIII]-5007", "Halpha"]
 class Emission_line:
     def __init__(
         self,
-        line_name,
-        line_flux,
-        Doppler_b=0.0 * u.km / u.s,
-        voigt_type="Tepper-Garcia+06",
+        line_name: str,
+        line_flux: u.Quantity,
+        Doppler_b: u.Quantity = 0.0 * u.km / u.s,
+        voigt_type: str = "Tepper-Garcia+06",
     ):
         self.line_name = line_name
         self.line_flux = line_flux

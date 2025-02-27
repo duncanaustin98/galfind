@@ -1,0 +1,686 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Making cutouts from a single or multiple bands &mdash; galfind 0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=80d5e7a1" />
+      <link rel="stylesheet" type="text/css" href="../_static/css/theme.css?v=e59714d7" />
+      <link rel="stylesheet" type="text/css" href="../_static/copybutton.css?v=76b2166b" />
+      <link rel="stylesheet" type="text/css" href="../_static/nbsphinx-code-cells.css?v=2aa19091" />
+
+  
+      <script src="../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../_static/documentation_options.js?v=2709fde1"></script>
+      <script src="../_static/doctools.js?v=9a2dae69"></script>
+      <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
+      <script src="../_static/clipboard.min.js?v=a7894cd8"></script>
+      <script src="../_static/copybutton.js?v=f281be69"></script>
+      <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+      <script>window.MathJax = {"tex": {"inlineMath": [["$", "$"], ["\\(", "\\)"]], "processEscapes": true}, "options": {"ignoreHtmlClass": "tex2jax_ignore|mathjax_ignore|document", "processHtmlClass": "tex2jax_process|mathjax_process|math|output_area"}}</script>
+      <script defer="defer" src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+    <script src="../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+    <link rel="next" title="RGB cutouts" href="RGB_cutouts.html" />
+    <link rel="prev" title="Cutouts and Stacking" href="cutouts.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../index.html" class="icon icon-home">
+            galfind
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="../getting_started/getting_started.html">Welcome to Galfind!</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../instrument/instrument.html">Photometric Instruments</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../data/data.html">Galfind Data Object</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../catalogue/catalogue.html">Catalogue Object</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../galaxy/galaxy.html">Galaxy Objects</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../photometry/photometry.html">Handling Source Photometry</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../sed_fitting/sed_fitting.html">SED Fitting</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../selection/selection.html">Selection Methods</a></li>
+<li class="toctree-l1 current"><a class="reference internal" href="cutouts.html">Cutouts and Stacking</a><ul class="current">
+<li class="toctree-l2 current"><a class="current reference internal" href="#">Making cutouts from a single or multiple bands</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#Example-1:-Making-(and-plotting)-a-single-band-cutout">Example 1: Making (and plotting) a single band cutout</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#Example-2:-Making-and-plotting-multiple-cutouts-simultaneously">Example 2: Making and plotting multiple cutouts simultaneously</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="RGB_cutouts.html">RGB cutouts</a></li>
+<li class="toctree-l2"><a class="reference internal" href="stacking.html">Stacking cutouts</a></li>
+<li class="toctree-l2"><a class="reference internal" href="multiple_cutouts.html">Plotting multiple cutouts from a catalogue</a></li>
+</ul>
+</li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../index.html">galfind</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="cutouts.html">Cutouts and Stacking</a></li>
+      <li class="breadcrumb-item active">Making cutouts from a single or multiple bands</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="../_sources/cutouts/single_band_cutouts.ipynb.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="Making-cutouts-from-a-single-or-multiple-bands">
+<h1>Making cutouts from a single or multiple bands<a class="headerlink" href="#Making-cutouts-from-a-single-or-multiple-bands" title="Link to this heading"></a></h1>
+<p>The first thing we will do is load the ID=718 z=14.63 JOF candidate from Robertson et al. 2023, as done in, for example, the <a class="reference internal" href="../selection/galaxy_selection.html"><span class="doc">galaxy selection notebook</span></a>.</p>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[1]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="c1"># imports</span>
+<span class="kn">import</span> <span class="nn">astropy.units</span> <span class="k">as</span> <span class="nn">u</span>
+<span class="kn">import</span> <span class="nn">numpy</span> <span class="k">as</span> <span class="nn">np</span>
+<span class="kn">from</span> <span class="nn">copy</span> <span class="kn">import</span> <span class="n">deepcopy</span>
+<span class="kn">from</span> <span class="nn">galfind</span> <span class="kn">import</span> <span class="n">Catalogue</span><span class="p">,</span> <span class="n">Band_Cutout</span><span class="p">,</span> <span class="n">Multiple_Band_Cutout</span>
+<span class="kn">from</span> <span class="nn">galfind.Data</span> <span class="kn">import</span> <span class="n">morgan_version_to_dir</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+Reading GALFIND config file from: /nvme/scratch/work/austind/GALFIND/galfind/../configs/galfind_config.ini
+</pre></div></div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area stderr docutils container">
+<div class="highlight"><pre>
+WARNING:galfind:Aperture corrections for VISTA not found in /nvme/scratch/work/austind/GALFIND/galfind/Aperture_corrections/VISTA_aper_corr.txt
+WARNING:galfind:Aperture corrections for VISTA not found in /nvme/scratch/work/austind/GALFIND/galfind/Aperture_corrections/VISTA_aper_corr.txt
+</pre></div></div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+Failed to `import dust_attenuation`
+Install from the repo with $ pip install git+https://github.com/karllark/dust_attenuation.git
+</pre></div></div>
+</div>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[2]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">survey</span> <span class="o">=</span> <span class="s2">&quot;JOF&quot;</span>
+<span class="n">version</span> <span class="o">=</span> <span class="s2">&quot;v11&quot;</span>
+<span class="n">instrument_names</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;NIRCam&quot;</span><span class="p">]</span>
+<span class="n">aper_diams</span> <span class="o">=</span> <span class="p">[</span><span class="mf">0.32</span><span class="p">]</span> <span class="o">*</span> <span class="n">u</span><span class="o">.</span><span class="n">arcsec</span>
+<span class="n">forced_phot_band</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;F277W&quot;</span><span class="p">,</span> <span class="s2">&quot;F356W&quot;</span><span class="p">,</span> <span class="s2">&quot;F444W&quot;</span><span class="p">]</span>
+<span class="n">min_flux_pc_err</span> <span class="o">=</span> <span class="mf">10.</span>
+
+<span class="n">JOF_cat</span> <span class="o">=</span> <span class="n">Catalogue</span><span class="o">.</span><span class="n">pipeline</span><span class="p">(</span>
+    <span class="n">survey</span><span class="p">,</span>
+    <span class="n">version</span><span class="p">,</span>
+    <span class="n">instrument_names</span> <span class="o">=</span> <span class="n">instrument_names</span><span class="p">,</span>
+    <span class="n">version_to_dir_dict</span> <span class="o">=</span> <span class="n">morgan_version_to_dir</span><span class="p">,</span>
+    <span class="n">aper_diams</span> <span class="o">=</span> <span class="n">aper_diams</span><span class="p">,</span>
+    <span class="n">forced_phot_band</span> <span class="o">=</span> <span class="n">forced_phot_band</span><span class="p">,</span>
+    <span class="n">min_flux_pc_err</span> <span class="o">=</span> <span class="n">min_flux_pc_err</span>
+<span class="p">)</span>
+<span class="c1"># TODO: Smooth galaxy load-in</span>
+<span class="c1"># from Robertson et al. 2023</span>
+<span class="n">z14_gal</span> <span class="o">=</span> <span class="n">JOF_cat</span><span class="p">[</span><span class="mi">717</span><span class="p">]</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area stderr docutils container">
+<div class="highlight"><pre>
+INFO:galfind:Loaded aper_diams=&lt;Quantity [0.32] arcsec&gt; for F277W+F356W+F444W
+INFO:galfind:Combined mask for NIRCam/F277W+F356W+F444W already exists at /raid/scratch/work/austind/GALFIND_WORK/Masks/JOF/combined/JOF_F277W+F356W+F444W_auto.fits
+WARNING: hdu= was not specified but multiple tables are present, reading in first available table (hdu=1) [astropy.io.fits.connect]
+WARNING:astroquery:hdu= was not specified but multiple tables are present, reading in first available table (hdu=1)
+WARNING:galfind:Aperture correction columns already in /raid/scratch/work/austind/GALFIND_WORK/Catalogues/v11/NIRCam/JOF/(0.32)as/JOF_MASTER_Sel-F277W+F356W+F444W_v11.fits
+Calculating depths:   0%|          | 0/15 [00:00&lt;?, ?it/s]
+INFO:galfind:Calculated/loaded depths for JOF v11 NIRCam
+INFO:galfind:Local depth columns already exist in /raid/scratch/work/austind/GALFIND_WORK/Catalogues/v11/NIRCam/JOF/(0.32)as/JOF_MASTER_Sel-F277W+F356W+F444W_v11.fits
+INFO:galfind:Loaded &#39;has_data_mask&#39; from /raid/scratch/work/austind/GALFIND_WORK/Masks/JOF/has_data_mask/JOF_MASTER_Sel-F277W+F356W+F444W_v11.h5
+INFO:galfind:Making JOF v11 JOF_MASTER_Sel-F277W+F356W+F444W_v11 catalogue!
+WARNING:galfind:cat_aper_diams not in kwargs.keys()=dict_keys([&#39;ZP&#39;, &#39;min_flux_pc_err&#39;])! Setting to aper_diams=&lt;Quantity [0.32] arcsec&gt;
+WARNING:galfind:cat_aper_diams not in kwargs.keys()=dict_keys([&#39;ZP&#39;, &#39;min_flux_pc_err&#39;])! Setting to aper_diams=&lt;Quantity [0.32] arcsec&gt;
+WARNING:galfind:cat_aper_diams not in kwargs.keys()=dict_keys([])! Setting to aper_diams=&lt;Quantity [0.32] arcsec&gt;
+INFO:galfind:Made /raid/scratch/work/austind/GALFIND_WORK/Catalogues/v11/NIRCam/JOF/(0.32)as/JOF_MASTER_Sel-F277W+F356W+F444W_v11.fits catalogue!
+</pre></div></div>
+</div>
+<section id="Example-1:-Making-(and-plotting)-a-single-band-cutout">
+<h2>Example 1: Making (and plotting) a single band cutout<a class="headerlink" href="#Example-1:-Making-(and-plotting)-a-single-band-cutout" title="Link to this heading"></a></h2>
+<p>Now that we have loaded the galaxy in question, we will first produce and plot the F444W cutout for this source. There are various options regarding the size of the cutout to make, as well as various other plotting options (i.e. changing colourmaps, scaling, adding SNR labels, etc).</p>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[3]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">JOF_f444w_data</span> <span class="o">=</span> <span class="n">JOF_cat</span><span class="o">.</span><span class="n">data</span><span class="p">[</span><span class="s2">&quot;F444W&quot;</span><span class="p">]</span>
+<span class="n">z14_f444w_cutout</span> <span class="o">=</span> <span class="n">Band_Cutout</span><span class="o">.</span><span class="n">from_gal_band_data</span><span class="p">(</span> \
+    <span class="n">z14_gal</span><span class="p">,</span> <span class="n">JOF_f444w_data</span><span class="p">,</span> <span class="n">cutout_size</span> <span class="o">=</span> <span class="mf">0.96</span> <span class="o">*</span> <span class="n">u</span><span class="o">.</span><span class="n">arcsec</span><span class="p">,</span> <span class="n">overwrite</span> <span class="o">=</span> <span class="kc">True</span><span class="p">)</span>
+
+<span class="nb">print</span><span class="p">(</span><span class="n">z14_f444w_cutout</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area stderr docutils container">
+<div class="highlight"><pre>
+WARNING: FITSFixedWarning: &#39;obsfix&#39; made the change &#39;Set OBSGEO-L to    39.276914 from OBSGEO-[XYZ].
+Set OBSGEO-B to    29.758199 from OBSGEO-[XYZ].
+Set OBSGEO-H to 1287432120.418 from OBSGEO-[XYZ]&#39;. [astropy.wcs.wcs]
+WARNING:astroquery:FITSFixedWarning: &#39;obsfix&#39; made the change &#39;Set OBSGEO-L to    39.276914 from OBSGEO-[XYZ].
+Set OBSGEO-B to    29.758199 from OBSGEO-[XYZ].
+Set OBSGEO-H to 1287432120.418 from OBSGEO-[XYZ]&#39;.
+INFO:galfind:Created cutout for SCI in F444W
+INFO:galfind:Created cutout for SEG in F444W
+INFO:galfind:Created cutout for RMS_ERR in F444W
+INFO:galfind:Created cutout for WHT in F444W
+INFO:galfind:Saved fits cutout to: /raid/scratch/work/austind/GALFIND_WORK/Cutouts/v11/JOF/0.96as/F444W/data/718.fits
+</pre></div></div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+****************************************
+BAND_CUTOUT(718,F444W,0.96as):
+****************************************
+Cutout path: /raid/scratch/work/austind/GALFIND_WORK/Cutouts/v11/JOF/0.96as/F444W/data/718.fits
+Meta:
+----------
+SIMPLE: True
+BITPIX: 8
+NAXIS: 0
+EXTEND: True
+ID: 718
+SURVEY: JOF
+VERSION: v11
+RA: 53.10762649807784
+DEC: -27.86013118667997
+SIZE_AS: 0.96
+SIZE_PIX: 32.0
+****************************************
+
+</pre></div></div>
+</div>
+<p>From the galfind logger information, we see that an 0.96as F444W cutout has been made and saved for this source, which contains SCI, SEG, WHT, and RMS_ERR extensions. WCS data is stored in the header of each of these extensions. We can load these explicitly by calling <code class="docutils literal notranslate"><span class="pre">Band_Cutout_Base.load()</span></code>, which <code class="docutils literal notranslate"><span class="pre">Band_Cutout</span></code> inherits.</p>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[4]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">z14_f444w_cutout_raw_data</span> <span class="o">=</span> <span class="n">z14_f444w_cutout</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="n">hdu_name</span> <span class="o">=</span> <span class="kc">None</span><span class="p">)</span>
+<span class="n">z14_f444w_cutout_sci_data</span> <span class="o">=</span> <span class="n">z14_f444w_cutout</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="n">hdu_name</span> <span class="o">=</span> <span class="s2">&quot;SCI&quot;</span><span class="p">)</span>
+
+<span class="k">if</span> <span class="n">z14_f444w_cutout_raw_data</span><span class="p">[</span><span class="s2">&quot;SCI&quot;</span><span class="p">][</span><span class="mi">0</span><span class="p">]</span> <span class="o">==</span> <span class="n">z14_f444w_cutout_sci_data</span><span class="p">[</span><span class="mi">0</span><span class="p">]:</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Header is the same!&quot;</span><span class="p">)</span>
+<span class="k">else</span><span class="p">:</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Header is different!&quot;</span><span class="p">)</span>
+<span class="k">try</span><span class="p">:</span>
+    <span class="n">np</span><span class="o">.</span><span class="n">testing</span><span class="o">.</span><span class="n">assert_array_equal</span><span class="p">(</span>
+        <span class="n">z14_f444w_cutout_raw_data</span><span class="p">[</span><span class="s2">&quot;SCI&quot;</span><span class="p">][</span><span class="mi">1</span><span class="p">],</span>
+        <span class="n">z14_f444w_cutout_sci_data</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
+    <span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Data is the same!&quot;</span><span class="p">)</span>
+<span class="k">except</span><span class="p">:</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Data is different!&quot;</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+Header is the same!
+Data is the same!
+</pre></div></div>
+</div>
+<p>Now let’s have a go at plotting the F444W cutout from this galaxy using the default plotting function (other than the default show = False, which has now been set to True for illustrative purposes).</p>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[5]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">z14_f444w_cutout</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span>
+    <span class="n">ax</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">plot_type</span> <span class="o">=</span> <span class="s2">&quot;SCI&quot;</span><span class="p">,</span>
+    <span class="n">imshow_kwargs</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;norm&quot;</span><span class="p">:</span> <span class="s2">&quot;linear&quot;</span><span class="p">,</span> <span class="s2">&quot;cmap&quot;</span><span class="p">:</span> <span class="s2">&quot;magma&quot;</span><span class="p">},</span>
+    <span class="n">norm_kwargs</span> <span class="o">=</span> <span class="p">{},</span>
+    <span class="n">plot_regions</span> <span class="o">=</span> <span class="p">[],</span>
+    <span class="n">scalebars</span> <span class="o">=</span> <span class="p">[],</span>
+    <span class="n">label_kwargs</span> <span class="o">=</span> <span class="p">{},</span>
+    <span class="n">show</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
+    <span class="n">save</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
+<span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area stderr docutils container">
+<div class="highlight"><pre>
+INFO:galfind:Saved png cutout to: /raid/scratch/work/austind/GALFIND_WORK/Cutouts/v11/JOF/0.96as/F444W/png/718.png
+</pre></div></div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<img alt="../_images/cutouts_single_band_cutouts_8_1.png" src="../_images/cutouts_single_band_cutouts_8_1.png" />
+</div>
+</div>
+<p>Now that we have seen what the default plotting code outputs, now let’s have a look at how we can alter the default plotting kwargs to improve the plot appearance.</p>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[6]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">z14_f444w_cutout</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span>
+    <span class="n">ax</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">plot_type</span> <span class="o">=</span> <span class="s2">&quot;SCI&quot;</span><span class="p">,</span>
+    <span class="n">imshow_kwargs</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;norm&quot;</span><span class="p">:</span> <span class="s2">&quot;EPOCHS&quot;</span><span class="p">,</span> <span class="s2">&quot;cmap&quot;</span><span class="p">:</span> <span class="s2">&quot;Greys_r&quot;</span><span class="p">},</span>
+    <span class="n">norm_kwargs</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;high_dyn_range&quot;</span><span class="p">:</span> <span class="kc">False</span><span class="p">,</span> <span class="s2">&quot;SNR&quot;</span><span class="p">:</span> <span class="kc">None</span><span class="p">},</span>
+    <span class="n">plot_regions</span> <span class="o">=</span> <span class="p">[{</span><span class="s2">&quot;aper_diam&quot;</span><span class="p">:</span> <span class="mf">0.32</span> <span class="o">*</span> <span class="n">u</span><span class="o">.</span><span class="n">arcsec</span><span class="p">,</span> <span class="s2">&quot;color&quot;</span><span class="p">:</span> <span class="s2">&quot;green&quot;</span><span class="p">,</span> <span class="s2">&quot;ls&quot;</span><span class="p">:</span> <span class="s2">&quot;-&quot;</span><span class="p">,</span> <span class="s2">&quot;lw&quot;</span><span class="p">:</span> <span class="mf">3.</span><span class="p">}],</span>
+    <span class="n">scalebars</span> <span class="o">=</span> <span class="p">[],</span>
+    <span class="n">label_kwargs</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;xpos&quot;</span><span class="p">:</span> <span class="mf">0.05</span><span class="p">,</span> <span class="s2">&quot;ypos&quot;</span><span class="p">:</span> <span class="mf">0.95</span><span class="p">,</span> <span class="s2">&quot;ha&quot;</span><span class="p">:</span> <span class="s2">&quot;left&quot;</span><span class="p">,</span> <span class="s2">&quot;fontsize&quot;</span><span class="p">:</span> <span class="s2">&quot;large&quot;</span><span class="p">,</span> <span class="s2">&quot;c&quot;</span><span class="p">:</span> <span class="s2">&quot;red&quot;</span><span class="p">},</span>
+    <span class="n">show</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
+    <span class="n">save</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
+<span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area stderr docutils container">
+<div class="highlight"><pre>
+INFO:galfind:Saved png cutout to: /raid/scratch/work/austind/GALFIND_WORK/Cutouts/v11/JOF/0.96as/F444W/png/718.png
+</pre></div></div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<img alt="../_images/cutouts_single_band_cutouts_10_1.png" src="../_images/cutouts_single_band_cutouts_10_1.png" />
+</div>
+</div>
+<p>In the above cell we have plotted the extraction aperture for this source using the <code class="docutils literal notranslate"><span class="pre">aper_diam</span></code> dictionary key, although there also exists an option to supply the plot region explicitly here. Since <code class="docutils literal notranslate"><span class="pre">plot_radii</span></code> takes a list, any appropriate matplotlib.pyplot.patches.Ellipse object (of which patches.Circle is a child) inserted here will also be plotted. Let’s try, for example, plotting the SExtractor fitting F444W Kron aperture for this source. It is worth noting that should the region be
+centred at (-99., -99.) that this will be by default set at the X/Y co-ordinates of the cutout/source centre.</p>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[7]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">matplotlib.patches</span> <span class="kn">import</span> <span class="n">Ellipse</span>
+<span class="kn">import</span> <span class="nn">matplotlib.patheffects</span> <span class="k">as</span> <span class="nn">pe</span>
+<span class="c1"># update catalogue with Kron apertures from the fits catalogue</span>
+<span class="c1"># get updated galaxy from catalogue</span>
+<span class="c1"># extract A_IMAGE, B_IMAGE, THETA_IMAGE from fits catalogue and produce elliptical Kron aperture</span>
+<span class="n">kron_kwargs</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;ls&quot;</span><span class="p">:</span> <span class="s2">&quot;-&quot;</span><span class="p">,</span> <span class="s2">&quot;color&quot;</span><span class="p">:</span> <span class="s2">&quot;blue&quot;</span><span class="p">,</span> <span class="s2">&quot;path_effects&quot;</span><span class="p">:</span> <span class="p">[</span><span class="n">pe</span><span class="o">.</span><span class="n">withStroke</span><span class="p">(</span><span class="n">linewidth</span> <span class="o">=</span> <span class="mf">3.</span><span class="p">,</span> <span class="n">foreground</span> <span class="o">=</span> <span class="s2">&quot;white&quot;</span><span class="p">)]}</span>
+<span class="n">kron_aperture</span> <span class="o">=</span> <span class="n">Ellipse</span><span class="p">((</span><span class="o">-</span><span class="mf">99.</span><span class="p">,</span> <span class="o">-</span><span class="mf">99.</span><span class="p">),</span> <span class="n">width</span> <span class="o">=</span> <span class="mf">10.</span><span class="p">,</span> <span class="n">height</span> <span class="o">=</span> <span class="mf">5.</span><span class="p">,</span> <span class="n">angle</span> <span class="o">=</span> <span class="mf">25.</span><span class="p">,</span> <span class="o">**</span><span class="n">kron_kwargs</span><span class="p">)</span> <span class="c1">#z14_gal.sex_A[&quot;F444W&quot;], height = z14_gal.sex_B[&quot;F444W&quot;], angle = z14_gal.sex_theta[&quot;F444W&quot;])</span>
+<span class="c1"># plot</span>
+<span class="n">z14_f444w_cutout</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">plot_regions</span> <span class="o">=</span> <span class="p">[{</span><span class="s2">&quot;aper_diam&quot;</span><span class="p">:</span> <span class="mf">0.32</span> <span class="o">*</span> <span class="n">u</span><span class="o">.</span><span class="n">arcsec</span><span class="p">},</span> <span class="n">kron_aperture</span><span class="p">])</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area stderr docutils container">
+<div class="highlight"><pre>
+INFO:galfind:Saved png cutout to: /raid/scratch/work/austind/GALFIND_WORK/Cutouts/v11/JOF/0.96as/F444W/png/718.png
+</pre></div></div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<img alt="../_images/cutouts_single_band_cutouts_12_1.png" src="../_images/cutouts_single_band_cutouts_12_1.png" />
+</div>
+</div>
+<p>Woo! Now let’s have a go at creating a <code class="docutils literal notranslate"><span class="pre">Band_Data</span></code> object using the other available class method, <code class="docutils literal notranslate"><span class="pre">from_band_data_skycoord()</span></code>. This method avoids the need to load in a <code class="docutils literal notranslate"><span class="pre">Galaxy</span></code> object at all. All that is required is a <code class="docutils literal notranslate"><span class="pre">Band_Data</span></code> object which stores the data to plot, an astropy SkyCoord object storing the RA/DEC sky position, and, as usual, a cutout size.</p>
+<div class="nbinput nblast docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[8]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="c1"># code to run from_band_data_skycoord</span>
+</pre></div>
+</div>
+</div>
+</section>
+<section id="Example-2:-Making-and-plotting-multiple-cutouts-simultaneously">
+<h2>Example 2: Making and plotting multiple cutouts simultaneously<a class="headerlink" href="#Example-2:-Making-and-plotting-multiple-cutouts-simultaneously" title="Link to this heading"></a></h2>
+<p>Fantastic! We have got the hang of plotting a single cutout. Fairly straightforwards right? Now we’ll construct a <code class="docutils literal notranslate"><span class="pre">Multiple_Band_Cutout</span></code>, which stores an array of <code class="docutils literal notranslate"><span class="pre">Band_Cutout</span></code> objects for a single (or stacked) source. We will visit the stacking of galaxy cutouts in the <a class="reference internal" href="stacking.html"><span class="doc">stacking notebook</span></a>, although for now we will use the <code class="docutils literal notranslate"><span class="pre">from_gal_data()</span></code> class method to instantiate our <code class="docutils literal notranslate"><span class="pre">Multiple_Band_Cutout</span></code> object directly from a single galaxy.</p>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[9]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">z14_cutouts</span> <span class="o">=</span> <span class="n">Multiple_Band_Cutout</span><span class="o">.</span><span class="n">from_gal_data</span><span class="p">(</span><span class="n">z14_gal</span><span class="p">,</span> <span class="n">JOF_cat</span><span class="o">.</span><span class="n">data</span><span class="p">,</span> <span class="n">cutout_size</span> <span class="o">=</span> <span class="mf">0.96</span> <span class="o">*</span> <span class="n">u</span><span class="o">.</span><span class="n">arcsec</span><span class="p">,</span> <span class="n">overwrite</span> <span class="o">=</span> <span class="kc">True</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area stderr docutils container">
+<div class="highlight"><pre>
+WARNING: FITSFixedWarning: &#39;obsfix&#39; made the change &#39;Set OBSGEO-L to    39.276914 from OBSGEO-[XYZ].
+Set OBSGEO-B to    29.758199 from OBSGEO-[XYZ].
+Set OBSGEO-H to 1287432120.418 from OBSGEO-[XYZ]&#39;. [astropy.wcs.wcs]
+WARNING:astroquery:FITSFixedWarning: &#39;obsfix&#39; made the change &#39;Set OBSGEO-L to    39.276914 from OBSGEO-[XYZ].
+Set OBSGEO-B to    29.758199 from OBSGEO-[XYZ].
+Set OBSGEO-H to 1287432120.418 from OBSGEO-[XYZ]&#39;.
+INFO:galfind:Created cutout for SCI in F090W
+INFO:galfind:Created cutout for SEG in F090W
+INFO:galfind:Created cutout for RMS_ERR in F090W
+INFO:galfind:Created cutout for WHT in F090W
+INFO:galfind:Saved fits cutout to: /raid/scratch/work/austind/GALFIND_WORK/Cutouts/v11/JOF/0.96as/F090W/data/718.fits
+WARNING: FITSFixedWarning: &#39;obsfix&#39; made the change &#39;Set OBSGEO-L to    39.276914 from OBSGEO-[XYZ].
+Set OBSGEO-B to    29.758199 from OBSGEO-[XYZ].
+Set OBSGEO-H to 1287432120.418 from OBSGEO-[XYZ]&#39;. [astropy.wcs.wcs]
+WARNING:astroquery:FITSFixedWarning: &#39;obsfix&#39; made the change &#39;Set OBSGEO-L to    39.276914 from OBSGEO-[XYZ].
+Set OBSGEO-B to    29.758199 from OBSGEO-[XYZ].
+Set OBSGEO-H to 1287432120.418 from OBSGEO-[XYZ]&#39;.
+INFO:galfind:Created cutout for SCI in F115W
+INFO:galfind:Created cutout for SEG in F115W
+INFO:galfind:Created cutout for RMS_ERR in F115W
+INFO:galfind:Created cutout for WHT in F115W
+INFO:galfind:Saved fits cutout to: /raid/scratch/work/austind/GALFIND_WORK/Cutouts/v11/JOF/0.96as/F115W/data/718.fits
+WARNING: FITSFixedWarning: &#39;obsfix&#39; made the change &#39;Set OBSGEO-L to    39.276914 from OBSGEO-[XYZ].
+Set OBSGEO-B to    29.758199 from OBSGEO-[XYZ].
+Set OBSGEO-H to 1287432120.418 from OBSGEO-[XYZ]&#39;. [astropy.wcs.wcs]
+WARNING:astroquery:FITSFixedWarning: &#39;obsfix&#39; made the change &#39;Set OBSGEO-L to    39.276914 from OBSGEO-[XYZ].
+Set OBSGEO-B to    29.758199 from OBSGEO-[XYZ].
+Set OBSGEO-H to 1287432120.418 from OBSGEO-[XYZ]&#39;.
+INFO:galfind:Created cutout for SCI in F150W
+INFO:galfind:Created cutout for SEG in F150W
+INFO:galfind:Created cutout for RMS_ERR in F150W
+INFO:galfind:Created cutout for WHT in F150W
+INFO:galfind:Saved fits cutout to: /raid/scratch/work/austind/GALFIND_WORK/Cutouts/v11/JOF/0.96as/F150W/data/718.fits
+WARNING: FITSFixedWarning: &#39;obsfix&#39; made the change &#39;Set OBSGEO-L to    39.276914 from OBSGEO-[XYZ].
+Set OBSGEO-B to    29.758199 from OBSGEO-[XYZ].
+Set OBSGEO-H to 1287432120.418 from OBSGEO-[XYZ]&#39;. [astropy.wcs.wcs]
+WARNING:astroquery:FITSFixedWarning: &#39;obsfix&#39; made the change &#39;Set OBSGEO-L to    39.276914 from OBSGEO-[XYZ].
+Set OBSGEO-B to    29.758199 from OBSGEO-[XYZ].
+Set OBSGEO-H to 1287432120.418 from OBSGEO-[XYZ]&#39;.
+INFO:galfind:Created cutout for SCI in F162M
+INFO:galfind:Created cutout for SEG in F162M
+INFO:galfind:Created cutout for RMS_ERR in F162M
+INFO:galfind:Created cutout for WHT in F162M
+INFO:galfind:Saved fits cutout to: /raid/scratch/work/austind/GALFIND_WORK/Cutouts/v11/JOF/0.96as/F162M/data/718.fits
+WARNING: FITSFixedWarning: &#39;obsfix&#39; made the change &#39;Set OBSGEO-L to    39.276914 from OBSGEO-[XYZ].
+Set OBSGEO-B to    29.758199 from OBSGEO-[XYZ].
+Set OBSGEO-H to 1287432120.418 from OBSGEO-[XYZ]&#39;. [astropy.wcs.wcs]
+WARNING:astroquery:FITSFixedWarning: &#39;obsfix&#39; made the change &#39;Set OBSGEO-L to    39.276914 from OBSGEO-[XYZ].
+Set OBSGEO-B to    29.758199 from OBSGEO-[XYZ].
+Set OBSGEO-H to 1287432120.418 from OBSGEO-[XYZ]&#39;.
+INFO:galfind:Created cutout for SCI in F182M
+INFO:galfind:Created cutout for SEG in F182M
+INFO:galfind:Created cutout for RMS_ERR in F182M
+INFO:galfind:Created cutout for WHT in F182M
+INFO:galfind:Saved fits cutout to: /raid/scratch/work/austind/GALFIND_WORK/Cutouts/v11/JOF/0.96as/F182M/data/718.fits
+WARNING: FITSFixedWarning: &#39;obsfix&#39; made the change &#39;Set OBSGEO-L to    39.276914 from OBSGEO-[XYZ].
+Set OBSGEO-B to    29.758199 from OBSGEO-[XYZ].
+Set OBSGEO-H to 1287432120.418 from OBSGEO-[XYZ]&#39;. [astropy.wcs.wcs]
+WARNING:astroquery:FITSFixedWarning: &#39;obsfix&#39; made the change &#39;Set OBSGEO-L to    39.276914 from OBSGEO-[XYZ].
+Set OBSGEO-B to    29.758199 from OBSGEO-[XYZ].
+Set OBSGEO-H to 1287432120.418 from OBSGEO-[XYZ]&#39;.
+INFO:galfind:Created cutout for SCI in F200W
+INFO:galfind:Created cutout for SEG in F200W
+INFO:galfind:Created cutout for RMS_ERR in F200W
+INFO:galfind:Created cutout for WHT in F200W
+INFO:galfind:Saved fits cutout to: /raid/scratch/work/austind/GALFIND_WORK/Cutouts/v11/JOF/0.96as/F200W/data/718.fits
+WARNING: FITSFixedWarning: &#39;obsfix&#39; made the change &#39;Set OBSGEO-L to    39.276914 from OBSGEO-[XYZ].
+Set OBSGEO-B to    29.758199 from OBSGEO-[XYZ].
+Set OBSGEO-H to 1287432120.418 from OBSGEO-[XYZ]&#39;. [astropy.wcs.wcs]
+WARNING:astroquery:FITSFixedWarning: &#39;obsfix&#39; made the change &#39;Set OBSGEO-L to    39.276914 from OBSGEO-[XYZ].
+Set OBSGEO-B to    29.758199 from OBSGEO-[XYZ].
+Set OBSGEO-H to 1287432120.418 from OBSGEO-[XYZ]&#39;.
+INFO:galfind:Created cutout for SCI in F210M
+INFO:galfind:Created cutout for SEG in F210M
+INFO:galfind:Created cutout for RMS_ERR in F210M
+INFO:galfind:Created cutout for WHT in F210M
+INFO:galfind:Saved fits cutout to: /raid/scratch/work/austind/GALFIND_WORK/Cutouts/v11/JOF/0.96as/F210M/data/718.fits
+WARNING: FITSFixedWarning: &#39;obsfix&#39; made the change &#39;Set OBSGEO-L to    39.276914 from OBSGEO-[XYZ].
+Set OBSGEO-B to    29.758199 from OBSGEO-[XYZ].
+Set OBSGEO-H to 1287432120.418 from OBSGEO-[XYZ]&#39;. [astropy.wcs.wcs]
+WARNING:astroquery:FITSFixedWarning: &#39;obsfix&#39; made the change &#39;Set OBSGEO-L to    39.276914 from OBSGEO-[XYZ].
+Set OBSGEO-B to    29.758199 from OBSGEO-[XYZ].
+Set OBSGEO-H to 1287432120.418 from OBSGEO-[XYZ]&#39;.
+INFO:galfind:Created cutout for SCI in F250M
+INFO:galfind:Created cutout for SEG in F250M
+INFO:galfind:Created cutout for RMS_ERR in F250M
+INFO:galfind:Created cutout for WHT in F250M
+INFO:galfind:Saved fits cutout to: /raid/scratch/work/austind/GALFIND_WORK/Cutouts/v11/JOF/0.96as/F250M/data/718.fits
+WARNING: FITSFixedWarning: &#39;obsfix&#39; made the change &#39;Set OBSGEO-L to    39.276914 from OBSGEO-[XYZ].
+Set OBSGEO-B to    29.758199 from OBSGEO-[XYZ].
+Set OBSGEO-H to 1287432120.418 from OBSGEO-[XYZ]&#39;. [astropy.wcs.wcs]
+WARNING:astroquery:FITSFixedWarning: &#39;obsfix&#39; made the change &#39;Set OBSGEO-L to    39.276914 from OBSGEO-[XYZ].
+Set OBSGEO-B to    29.758199 from OBSGEO-[XYZ].
+Set OBSGEO-H to 1287432120.418 from OBSGEO-[XYZ]&#39;.
+INFO:galfind:Created cutout for SCI in F277W
+INFO:galfind:Created cutout for SEG in F277W
+INFO:galfind:Created cutout for RMS_ERR in F277W
+INFO:galfind:Created cutout for WHT in F277W
+INFO:galfind:Saved fits cutout to: /raid/scratch/work/austind/GALFIND_WORK/Cutouts/v11/JOF/0.96as/F277W/data/718.fits
+WARNING: FITSFixedWarning: &#39;obsfix&#39; made the change &#39;Set OBSGEO-L to    39.276914 from OBSGEO-[XYZ].
+Set OBSGEO-B to    29.758199 from OBSGEO-[XYZ].
+Set OBSGEO-H to 1287432120.418 from OBSGEO-[XYZ]&#39;. [astropy.wcs.wcs]
+WARNING:astroquery:FITSFixedWarning: &#39;obsfix&#39; made the change &#39;Set OBSGEO-L to    39.276914 from OBSGEO-[XYZ].
+Set OBSGEO-B to    29.758199 from OBSGEO-[XYZ].
+Set OBSGEO-H to 1287432120.418 from OBSGEO-[XYZ]&#39;.
+INFO:galfind:Created cutout for SCI in F300M
+INFO:galfind:Created cutout for SEG in F300M
+INFO:galfind:Created cutout for RMS_ERR in F300M
+INFO:galfind:Created cutout for WHT in F300M
+INFO:galfind:Saved fits cutout to: /raid/scratch/work/austind/GALFIND_WORK/Cutouts/v11/JOF/0.96as/F300M/data/718.fits
+WARNING: FITSFixedWarning: &#39;obsfix&#39; made the change &#39;Set OBSGEO-L to    39.276914 from OBSGEO-[XYZ].
+Set OBSGEO-B to    29.758199 from OBSGEO-[XYZ].
+Set OBSGEO-H to 1287432120.418 from OBSGEO-[XYZ]&#39;. [astropy.wcs.wcs]
+WARNING:astroquery:FITSFixedWarning: &#39;obsfix&#39; made the change &#39;Set OBSGEO-L to    39.276914 from OBSGEO-[XYZ].
+Set OBSGEO-B to    29.758199 from OBSGEO-[XYZ].
+Set OBSGEO-H to 1287432120.418 from OBSGEO-[XYZ]&#39;.
+INFO:galfind:Created cutout for SCI in F335M
+INFO:galfind:Created cutout for SEG in F335M
+INFO:galfind:Created cutout for RMS_ERR in F335M
+INFO:galfind:Created cutout for WHT in F335M
+INFO:galfind:Saved fits cutout to: /raid/scratch/work/austind/GALFIND_WORK/Cutouts/v11/JOF/0.96as/F335M/data/718.fits
+WARNING: FITSFixedWarning: &#39;obsfix&#39; made the change &#39;Set OBSGEO-L to    39.276914 from OBSGEO-[XYZ].
+Set OBSGEO-B to    29.758199 from OBSGEO-[XYZ].
+Set OBSGEO-H to 1287432120.418 from OBSGEO-[XYZ]&#39;. [astropy.wcs.wcs]
+WARNING:astroquery:FITSFixedWarning: &#39;obsfix&#39; made the change &#39;Set OBSGEO-L to    39.276914 from OBSGEO-[XYZ].
+Set OBSGEO-B to    29.758199 from OBSGEO-[XYZ].
+Set OBSGEO-H to 1287432120.418 from OBSGEO-[XYZ]&#39;.
+INFO:galfind:Created cutout for SCI in F356W
+INFO:galfind:Created cutout for SEG in F356W
+INFO:galfind:Created cutout for RMS_ERR in F356W
+INFO:galfind:Created cutout for WHT in F356W
+INFO:galfind:Saved fits cutout to: /raid/scratch/work/austind/GALFIND_WORK/Cutouts/v11/JOF/0.96as/F356W/data/718.fits
+WARNING: FITSFixedWarning: &#39;obsfix&#39; made the change &#39;Set OBSGEO-L to    39.276914 from OBSGEO-[XYZ].
+Set OBSGEO-B to    29.758199 from OBSGEO-[XYZ].
+Set OBSGEO-H to 1287432120.418 from OBSGEO-[XYZ]&#39;. [astropy.wcs.wcs]
+WARNING:astroquery:FITSFixedWarning: &#39;obsfix&#39; made the change &#39;Set OBSGEO-L to    39.276914 from OBSGEO-[XYZ].
+Set OBSGEO-B to    29.758199 from OBSGEO-[XYZ].
+Set OBSGEO-H to 1287432120.418 from OBSGEO-[XYZ]&#39;.
+INFO:galfind:Created cutout for SCI in F410M
+INFO:galfind:Created cutout for SEG in F410M
+INFO:galfind:Created cutout for RMS_ERR in F410M
+INFO:galfind:Created cutout for WHT in F410M
+INFO:galfind:Saved fits cutout to: /raid/scratch/work/austind/GALFIND_WORK/Cutouts/v11/JOF/0.96as/F410M/data/718.fits
+INFO:galfind:Created cutout for SCI in F444W
+INFO:galfind:Created cutout for SEG in F444W
+INFO:galfind:Created cutout for RMS_ERR in F444W
+INFO:galfind:Created cutout for WHT in F444W
+INFO:galfind:Saved fits cutout to: /raid/scratch/work/austind/GALFIND_WORK/Cutouts/v11/JOF/0.96as/F444W/data/718.fits
+</pre></div></div>
+</div>
+<p>The logging output usefully lets us know that we have created the cutouts appropriately. Let’s see what data is shown when we print this object out.</p>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[10]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="nb">print</span><span class="p">(</span><span class="n">z14_cutouts</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+&lt;galfind.Cutout.Multiple_Band_Cutout object at 0x7f8878f845b0&gt;
+</pre></div></div>
+</div>
+<p>We now can see exactly what cutout data is stored, which can be especially useful when dealing with a large number of photometric bands. In some cases it may also be useful to be able to create this object simply by adding together many <code class="docutils literal notranslate"><span class="pre">Band_Data</span></code> objects. We overload the <code class="docutils literal notranslate"><span class="pre">Band_Data</span></code> and <code class="docutils literal notranslate"><span class="pre">Multiple_Band_Data</span></code> <code class="docutils literal notranslate"><span class="pre">__add__</span></code> and <code class="docutils literal notranslate"><span class="pre">__sub__</span></code> operators for exactly this purpose.</p>
+<div class="nbinput nblast docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[11]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="c1"># code for __add__, __sub__, and __eq__ methods</span>
+</pre></div>
+</div>
+</div>
+<p>We can see that our new <code class="docutils literal notranslate"><span class="pre">Multiple_Band_Cutout</span></code> object that we have constructed is identical to the one created using the class constructor method directly.</p>
+<p>Let’s now look at how we can plot the data stored in this object by calling the <code class="docutils literal notranslate"><span class="pre">plot()</span></code> function. This first appropriately sets up a figure and axes according to how many cutouts are stored, and then iteratively calls <code class="docutils literal notranslate"><span class="pre">Band_Cutout_Base.plot()</span></code> for each <code class="docutils literal notranslate"><span class="pre">Band_Cutout</span></code>/<code class="docutils literal notranslate"><span class="pre">Stacked_Band_Cutout</span></code> in <code class="docutils literal notranslate"><span class="pre">Multiple_Band_Cutout</span></code>.</p>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[12]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">z14_cutouts</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span>
+    <span class="n">n_rows</span> <span class="o">=</span> <span class="mi">1</span><span class="p">,</span>
+    <span class="n">fig_scaling</span> <span class="o">=</span> <span class="mf">1.5</span><span class="p">,</span>
+    <span class="n">show</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
+    <span class="n">save</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
+    <span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<img alt="../_images/cutouts_single_band_cutouts_22_0.png" src="../_images/cutouts_single_band_cutouts_22_0.png" />
+</div>
+</div>
+<p>Yet again our first attempt at plotting has yielded the default (or most basic) implementation of the plotting code. Below we shall adjust some of these parameters and see how the output plot differs.</p>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[13]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">z14_cutouts</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span>
+    <span class="n">n_rows</span> <span class="o">=</span> <span class="mi">2</span><span class="p">,</span>
+    <span class="n">fig_scaling</span> <span class="o">=</span> <span class="mf">1.5</span><span class="p">,</span>
+    <span class="n">imshow_kwargs</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;cmap&quot;</span><span class="p">:</span> <span class="s2">&quot;viridis&quot;</span><span class="p">},</span>
+    <span class="n">split_by_instr</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
+    <span class="n">show</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
+    <span class="n">save</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
+    <span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<img alt="../_images/cutouts_single_band_cutouts_24_0.png" src="../_images/cutouts_single_band_cutouts_24_0.png" />
+</div>
+</div>
+<p>Let’s say you also want to make a plot using a colormap that makes it <em>extremely</em> challenging for colorblind people to see, then you can do. Below we use <code class="docutils literal notranslate"><span class="pre">jet_r</span></code>.</p>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[14]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">z14_cutouts</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span>
+    <span class="n">n_rows</span> <span class="o">=</span> <span class="mi">4</span><span class="p">,</span>
+    <span class="n">fig_scaling</span> <span class="o">=</span> <span class="mf">1.5</span><span class="p">,</span>
+    <span class="n">split_by_instr</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
+    <span class="n">imshow_kwargs</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;cmap&quot;</span><span class="p">:</span> <span class="s2">&quot;jet_r&quot;</span><span class="p">,</span> <span class="s2">&quot;norm&quot;</span><span class="p">:</span> <span class="s2">&quot;EPOCHS&quot;</span><span class="p">},</span>
+    <span class="n">norm_kwargs</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;high_dyn_range&quot;</span><span class="p">:</span> <span class="kc">False</span><span class="p">,</span> <span class="s2">&quot;SNR&quot;</span><span class="p">:</span> <span class="kc">None</span><span class="p">},</span>
+    <span class="n">show</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
+    <span class="n">save</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
+    <span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<img alt="../_images/cutouts_single_band_cutouts_26_0.png" src="../_images/cutouts_single_band_cutouts_26_0.png" />
+</div>
+</div>
+</section>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="cutouts.html" class="btn btn-neutral float-left" title="Cutouts and Stacking" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="RGB_cutouts.html" class="btn btn-neutral float-right" title="RGB cutouts" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2024, Duncan Austin.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

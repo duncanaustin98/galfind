@@ -256,16 +256,18 @@ def perform_forced_phot(
     galfind_logger.debug(finish_message)
 
     forced_phot_args = \
-    {
-        "forced_phot_band": forced_phot_band,
-        "err_type": err_type,
-        "method": get_code(),
-        "config_name": config_name,
-        "params_name": params_name,
-        "id_label": "NUMBER",
-        "ra_label": "ALPHA_J2000",
-        "dec_label": "DELTA_J2000",
-    }
+        {
+            "forced_phot_band": forced_phot_band,
+            "err_type": err_type,
+            "method": get_code(),
+            "config_name": config_name,
+            "params_name": params_name,
+            "id_label": "NUMBER",
+            "ra_label": "ALPHA_J2000",
+            "dec_label": "DELTA_J2000",
+            "ra_unit": u.deg,
+            "dec_unit": u.deg,
+        }
     return forced_phot_path, forced_phot_args
 
     # if self.forced_phot_band not in self.instrument.band_names:

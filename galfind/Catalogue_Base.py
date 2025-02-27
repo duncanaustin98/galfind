@@ -3,19 +3,26 @@
 from __future__ import annotations
 
 from copy import deepcopy
+import matplotlib.pyplot as plt
 import astropy.units as u
 import numpy as np
+from pathlib import Path
 from astropy.coordinates import SkyCoord
 from astropy.io import fits
-from astropy.table import Table, join
+from astropy.table import Table, join, vstack
 from tqdm import tqdm
 import inspect
-from typing import TYPE_CHECKING, Any, List, Dict, Union, Type, Optional
+from numpy.typing import NDArray
+from typing import TYPE_CHECKING, Any, List, Dict, Union, Type, Optional, NoReturn
 if TYPE_CHECKING:
-    from . import Galaxy, Catalogue_Creator
+    from . import Galaxy, Catalogue_Creator, Data, Selector, Property_Calculator_Base
+try:
+    from typing import Self, Type  # python 3.11+
+except ImportError:
+    from typing_extensions import Self, Type  # python > 3.7 AND python < 3.11
 
 from . import (
-    Multiple_Catalogue,
+    config,
     SED_code,
     galfind_logger,
 )
@@ -28,23 +35,11 @@ class Catalogue_Base:
         self,
         gals: List[Galaxy],
         cat_creator: Catalogue_Creator,
-        SED_rest_properties: Dict[str, Union[u.Quantity, u.Magnitude, u.Dex]] = {},
+        #SED_rest_properties: Dict[str, Union[u.Quantity, u.Magnitude, u.Dex]] = {},
     ):
         self.gals = gals
         self.cat_creator = cat_creator
-
-        # keep a record of the crops that have been made to the catalogue
-        # TODO: Ensure this is updated appropriately after Data class rewrite
-        # self.selection_cols = [
-        #     key.replace("SELECTED_", "")
-        #     for key in self.open_cat().meta.keys()
-        #     if "SELECTED_" in key
-        # ]
-        # if crops is None:
-        #     crops = []
-        # self.crops = crops
-        self.SED_rest_properties = SED_rest_properties
-
+        #self.SED_rest_properties = SED_rest_properties
         # concat is commutative for catalogues
         self.__radd__ = self.__add__
         # cross-match is commutative for catalogues - not if they are of different classes
@@ -56,17 +51,15 @@ class Catalogue_Base:
         return f"{self.__class__.__name__.upper()}({self.survey}," + \
             f"{self.version},{self.filterset.instrument_name})"
 
-    def __str__(
-        self,
-    ) -> str:
+    def __str__(self: Self) -> str:
         #display_selections = ["EPOCHS", "BROWN_DWARF"]
         output_str = funcs.line_sep
         output_str += f"{repr(self)}:\n"
         output_str += funcs.band_sep
         output_str += f"CAT PATH = {self.cat_path}\n"
         # access table header to display what has been run for this catalogue
-        cat = self.cat_creator.open_cat(self.cat_path, "ID")
-        output_str += f"TOTAL GALAXIES = {len(cat)}\n"
+        tab = self.cat_creator.open_cat(self.cat_path, "ID")
+        output_str += f"TOTAL GALAXIES = {len(tab)}\n"
         output_str += f"RA RANGE = {self.ra_range}\n"
         output_str += f"DEC RANGE = {self.dec_range}\n"
         output_str += funcs.band_sep
@@ -120,17 +113,63 @@ class Catalogue_Base:
             self.iter += 1
             return gal
 
-    def __getitem__(self, index: Any) -> Union[Galaxy, List[Galaxy]]:
+    def __getitem__(self, index: Any) -> Optional[Union[Galaxy, List[Galaxy]]]:
+        if len(self) == 0:
+            raise IndexError("No galaxies in catalogue!")
+        if isinstance(index, int):
+            return self.gals[index]
+        elif isinstance(index, (list, np.ndarray)):
+            if len(index) == 1:
+                return self.gals[index[0]]
+        from . import Selector
         if isinstance(index, (slice, np.ndarray)):
             return list(np.array(self.gals)[index])
         elif isinstance(index, list):
             return list(np.array(self.gals)[np.array(index)])
-        else:
-            return self.gals[index]
+        # elif isinstance(index, dict):
+        #     # make this more general
+        #     keep_arr = []
+        #     for key, values in index.items():
+        #         if key == "ID":
+        #             if not isinstance(values, (list, np.ndarray)):
+        #                 values = [int(values)]
+        #             values = np.array(values).astype(int)
+        #             keep_arr.extend(
+        #                 [np.array(
+        #                     [
+        #                         True if getattr(gal, key) in values else False
+        #                         for i, gal in enumerate(self)
+                                
+        #                     ]
+        #                 )]
+        #             )
+        #     if len(keep_arr) > 0:
+        #         self_copy.gals = list(np.array(self.gals)[np.array( \
+        #             np.logical_and.reduce(keep_arr)).astype(bool)])
+        #         if len(self_copy.gals) == 1:
+        #             return self_copy.gals[0]
+        #     else:
+        #         return None
+        elif isinstance(index, tuple(Selector.__subclasses__())):
+            # run selection if not already done
+            if not all(index.name in gal.selection_flags for gal in self):
+                [index(gal, return_copy = False) for gal in self]
+            keep_arr = [gal.selection_flags[index.name] for gal in self]
+            return list(np.array(self.gals)[np.array(keep_arr)])
+    
+    def crop(
+        self: Self,
+        selector: Type[Selector],
+    ) -> Self:
+        if selector not in self.crops:
+            self.gals = self[selector]
+            self.cat_creator.crops.append(selector)
+        return self
 
     # only acts on attributes that don't already exist in Catalogue
     def __getattr__(
-        self, property_name: str #, origin: Union[str, dict] = "gal"
+        self: Self,
+        property_name: str #, origin: Union[str, dict] = "gal"
     ) -> np.ndarray:
         # get attributes from stored galaxy objects
         # if property_name in self.__dict__.keys():
@@ -151,8 +190,7 @@ class Catalogue_Base:
                 assert all(
                     attr.unit == attr_arr[0].unit for attr in attr_arr
                 )
-                attr_arr = [attr.value for attr in attr_arr] \
-                    * u.Unit(attr_arr[0].unit)
+                attr_arr = [attr.value for attr in attr_arr] * u.Unit(attr_arr[0].unit)
             return attr_arr
         else:
             raise AttributeError
@@ -163,16 +201,16 @@ class Catalogue_Base:
         elif obj == "gal":
             # set attributes of individual galaxies within the catalogue
             for i, gal in enumerate(self):
-                if type(value) in [list, np.array]:
+                if isinstance(value, tuple([list, np.array])):
                     setattr(gal, name, value[i])
                 else:
                     setattr(gal, name, value)
 
-    # not needed!
     def __setitem__(self, index, gal):
         self.gals[index] = gal
 
     def __deepcopy__(self, memo):
+        galfind_logger.debug(f"deepcopy({self.__class__.__name__})")
         cls = self.__class__
         result = cls.__new__(cls)
         memo[id(self)] = result
@@ -188,10 +226,11 @@ class Catalogue_Base:
 
     def __add__(self, cat, out_survey=None):
         if not cat.__class__.__name__ == "Spectral_Catalogue":
+            from . import Combined_Catalogue
             # concat catalogues
             if out_survey == None:
                 out_survey = "+".join([self.survey, cat.survey])
-            return Multiple_Catalogue([self, cat], survey=out_survey)
+            return Combined_Catalogue([self, cat], survey=out_survey)
     
     def __sub__(self):
         pass
@@ -219,16 +258,17 @@ class Catalogue_Base:
             Default is 'compare_within_radius'.
 
         Returns:
-        - Multiple_Catalogue
-            The resulting MultipleCatalogue after performing the multiplication, with duplicates removed.
+        - Combined_Catalogue
+            The resulting Combined_Catalogue after performing the multiplication, with duplicates removed.
 
         """
+        from . import Combined_Catalogue
         # cross-match catalogues
         # update .fits tables with cross-matched version
         # open tables
         self_copy = deepcopy(self)
-
-        if isinstance(other, Multiple_Catalogue):
+        
+        if isinstance(other, Combined_Catalogue):
             other_copy_gals = other.cat_arr
         else:
             other_copy_gals = [other]
@@ -463,24 +503,28 @@ class Catalogue_Base:
             new_copies.append(other_copy)
 
         out_survey = "+".join([self.survey, other.survey])
-        return Multiple_Catalogue([self_copy, *new_copies], survey=out_survey)
+        return Combined_Catalogue([self_copy, *new_copies], survey=out_survey)
 
-    # Need to save the cross-match distances
+    @property
+    def crop_name(self) -> List[str]:
+        return self.cat_creator.crop_name
 
-    def combine_and_remove_duplicates(
-        self,
-        other,
-        out_survey=None,
-        max_sep=1.0 * u.arcsec,
-        match_type="nearest",
-    ):
-        "Alias for self * other"
-        return self.__mul__(
-            other,
-            out_survey=out_survey,
-            max_sep=max_sep,
-            match_type=match_type,
-        )
+    # # Need to save the cross-match distances
+
+    # def combine_and_remove_duplicates(
+    #     self,
+    #     other,
+    #     out_survey=None,
+    #     max_sep=1.0 * u.arcsec,
+    #     match_type="nearest",
+    # ):
+    #     "Alias for self * other"
+    #     return self.__mul__(
+    #         other,
+    #         out_survey=out_survey,
+    #         max_sep=max_sep,
+    #         match_type=match_type,
+    #     )
 
     @property
     def cat_dir(self):
@@ -523,48 +567,49 @@ class Catalogue_Base:
         else:
             galfind_logger.critical("No index or ID provided to remove_gal!")
 
-    def crop(
-        self,
-        crop_limits: Union[int, float, bool, list, np.array],
-        crop_property: str,
-        SED_fit_params: Union[dict, str] = "EAZY_fsps_larson_zfree",
-        phot_type: str = "obs",
-    ):  # -> self.__class__
-        cat_copy = deepcopy(self)
-        if type(crop_limits) in [int, float, bool]:
-            cat_copy.gals = cat_copy[
-                cat_copy.__getattr__(crop_property, origin=SED_fit_params)
-                == crop_limits
-            ]
-            if crop_limits == True:
-                cat_copy.crops.append(crop_property)
-            else:
-                cat_copy.crops.append(f"{crop_property}={crop_limits}")
-        elif type(crop_limits) in [list, np.array]:
-            cat_copy.gals = cat_copy[
-                (
-                    (
-                        cat_copy.__getattr__(
-                            crop_property, origin=SED_fit_params
-                        )
-                        >= crop_limits[0]
-                    )
-                    & (
-                        cat_copy.__getattr__(
-                            crop_property, origin=SED_fit_params
-                        )
-                        <= crop_limits[1]
-                    )
-                )
-            ]
-            cat_copy.crops.append(
-                f"{crop_limits[0]}<{crop_property}<{crop_limits[1]}"
-            )
-        else:
-            galfind_logger.critical(
-                f"crop_limits={crop_limits} with type = {type(crop_limits)} not in [int, float, bool, list, np.array]"
-            )
-        return cat_copy
+    # def crop(
+    #     self: Self,
+    #     crop_limits: Union[int, float, bool, list, NDArray],
+    #     crop_property: str,
+    #     aper_diam: u.Quantity,
+    #     SED_fit_label: Union[str, SED_code],
+    #     origin: str,
+    # ) -> Self:
+        
+    #     assert origin in ["phot_rest", "SED_result"]
+    #     if isinstance(SED_fit_label, tuple(SED_code.__subclasses__())):
+    #         SED_fit_label = SED_fit_label.label
+
+    #     # extract appropriate properties
+    #     if origin == "phot_rest":
+    #         property_arr = [gal.aper_phot[aper_diam].SED_results[SED_fit_label].phot_rest.properties[crop_property] for gal in self]
+    #     elif origin == "SED_result":
+    #         property_arr = [gal.aper_phot[aper_diam].SED_results[SED_fit_label].properties[crop_property] for gal in self]
+    #     assert all(prop.unit == property_arr[0].unit for prop in property_arr)
+    #     property_arr = np.array([prop.value for prop in property_arr]) * property_arr[0].unit
+
+    #     cat_copy = deepcopy(self)
+    #     if isinstance(crop_limits, (int, float, bool)):
+    #         cat_copy.gals = cat_copy[
+    #             property_arr == crop_limits
+    #         ]
+    #         # if crop_limits:
+    #         #     cat_copy.cat_creator.crops.append(crop_property)
+    #         # else:
+    #         #     cat_copy.cat_creator.crops.append(f"{crop_property}={crop_limits}")
+    #     elif isinstance(crop_limits, (list, np.array)):
+    #         cat_copy.gals = cat_copy[
+    #             ((property_arr >= crop_limits[0]) & (property_arr <= crop_limits[1]))
+    #         ]
+    #         # cat_copy.cat_creator.crops.append(
+    #         #     f"{crop_limits[0]}<{crop_property}<{crop_limits[1]}"
+    #         # )
+    #     else:
+    #         galfind_logger.warning(
+    #             f"{crop_limits=} with {type(crop_limits)=}" + \
+    #             f" not in [int, float, bool, list, np.array]"
+    #         )
+    #     return cat_copy
 
     def open_cat(self, cropped: bool = False, hdu: Optional[str, Type[SED_code]] = None):
         if hdu is None:
@@ -599,6 +644,9 @@ class Catalogue_Base:
                 keys_left = hdu.ID_label
             else:
                 raise NotImplementedError()
+            # convert ID column to appropriate units if not already
+            if fits_cat[keys_left].dtype != int:
+                fits_cat[keys_left] = fits_cat[keys_left].astype(int)
             combined_tab = join(
                 fits_cat, ID_tab, keys_left=keys_left, keys_right="IDs_temp"
             )
@@ -608,12 +656,17 @@ class Catalogue_Base:
         else:
             return fits_cat
 
+    def get_hdu_names(self):
+        hdul = fits.open(self.cat_path)
+        return [hdu_.name for hdu_ in hdul if hdu_.name != "PRIMARY"]
+
     def check_hdu_exists(self, hdu_name: str):
         # check whether the hdu extension exists
         hdul = fits.open(self.cat_path)
         return any(hdu_.name == hdu_name.upper() for hdu_ in hdul)
 
-    def write_cat(self, tab_arr, tab_names):
+    @staticmethod
+    def write_cat(tab_arr, tab_names, cat_path: str):
         hdu_list = fits.HDUList()
         [
             hdu_list.append(
@@ -625,9 +678,10 @@ class Catalogue_Base:
             )
             for (tab, name) in zip(tab_arr, tab_names)
         ]
-        hdu_list.writeto(self.cat_path, overwrite=True)
-        funcs.change_file_permissions(self.cat_path)
-        galfind_logger.info(f"Writing table to {self.cat_path}")
+        funcs.make_dirs(cat_path)
+        hdu_list.writeto(cat_path, overwrite=True)
+        funcs.change_file_permissions(cat_path)
+        galfind_logger.info(f"Writing table to {cat_path}")
 
     def write_hdu(self, tab: Table, hdu: str):
         # if hdu exists, overwrite it
@@ -655,7 +709,7 @@ class Catalogue_Base:
                 for hdu_ in fits.open(self.cat_path)
                 if hdu_.name != "PRIMARY"
             ] + [hdu]
-        self.write_cat(tab_arr, tab_names)
+        self.write_cat(tab_arr, tab_names, self.cat_path)
 
     def del_hdu(self, hdu):
         if self.check_hdu_exists(hdu):  # delete hdu if it exists
@@ -669,7 +723,7 @@ class Catalogue_Base:
                 for hdu_ in fits.open(self.cat_path)
                 if hdu_.name != hdu.upper() and hdu_.name != "PRIMARY"
             ]
-            self.write_cat(tab_arr, tab_names)
+            self.write_cat(tab_arr, tab_names, self.cat_path)
             galfind_logger.info(
                 f"Deleted {hdu.upper()=} from {self.cat_path=}!"
             )
@@ -699,4 +753,447 @@ class Catalogue_Base:
                     }
                 tab_arr.append(tab)
                 tab_names.append(hdu_.name)
-        self.write_cat(tab_arr, tab_names)
+        self.write_cat(tab_arr, tab_names, self.cat_path)
+
+    def hist(
+        self: Self,
+        x_calculator: Type[Property_Calculator_Base],
+        fig: Optional[plt.Figure] = None,
+        ax: Optional[plt.Axes] = None,
+        log: bool = False,
+        n_bins: int = 50, 
+        save: bool = True,
+        show: bool = False,
+        overwrite: bool = True,
+    ) -> NoReturn:
+        save_path = f"{config['DEFAULT']['GALFIND_WORK']}/Plots/{self.version}/" + \
+            f"{self.filterset.instrument_name}/{self.survey}/hist/" + \
+            f"{self.crop_name}/{x_calculator.name}.png"
+        if not Path(save_path).is_file() or overwrite:
+            galfind_logger.info(
+                f"Making histogram for {x_calculator.name}!"
+            )
+            from . import Property_Calculator_Base
+            if isinstance(x_calculator, tuple(Property_Calculator_Base.__subclasses__())):
+                # calculate x values
+                x = [gal.aper_phot[x_calculator.aper_diam].SED_results \
+                    [x_calculator.SED_fit_label].phot_rest.properties \
+                    [x_calculator.name] for gal in self]
+                # remove nans
+                x = np.array([x_.value for x_ in x if not np.isnan(x_)])
+                #x_name = x_calculator.name
+                x_label = x_calculator.name
+            else:
+                raise NotImplementedError
+            if log:
+                x = np.log10(x)
+                #x_name = f"log({x_name})"
+                x_label = f"log({x_label})"
+            if any(fig_ax is None for fig_ax in [fig, ax]):
+                fig, ax = plt.subplots()
+            ax.hist(x, bins = n_bins)
+            ax.set_xlabel(x_label)
+            #ax.set_ylabel("Number of Galaxies")
+            #ax.set_title(f"{x_label} histogram")
+            if save:
+                funcs.make_dirs(save_path)
+                plt.savefig(save_path)
+                funcs.change_file_permissions(save_path)
+            if show:
+                plt.show()
+        else:
+            galfind_logger.info(
+                f"{x_calculator.name} histogram already exists and {overwrite=}, skipping!"
+            )
+
+    def plot(
+        self: Self,
+        x_calculator: Type[Property_Calculator_Base],
+        y_calculator: Type[Property_Calculator_Base],
+        c_calculator: Optional[Type[Property_Calculator_Base]] = None,
+        incl_x_errs: bool = True,
+        incl_y_errs: bool = True,
+        log_x: bool = False,
+        log_y: bool = False,
+        log_c: bool = False,
+        mean_err: bool = False,
+        annotate: bool = True,
+        save: bool = True,
+        show: bool = False,
+        legend_kwargs: dict = {},
+        plot_legend: bool = False,
+        plot_kwargs: dict = {},
+        cmap: str = "viridis",
+        save_path: Optional[str] = None,
+        fig: Optional[plt.Figure] = None,
+        ax: Optional[plt.Axes] = None,
+        plot_type: str = "individual",
+        n_samples: int = 100_000,
+        n_bins: int = 25,
+        contour_levels: List[float] = [68., 95., 100.],
+        x_hist_ax: Optional[plt.Axes] = None,
+        y_hist_ax: Optional[plt.Axes] = None,
+        hist_kwargs: Dict[str, Any] = {},
+        plot_label: Optional[str] = "default",
+    ):
+        from . import Property_Calculator_Base
+        x_name = x_calculator.full_name
+        y_name = y_calculator.full_name
+        x_label = x_calculator.plot_name
+        y_label = y_calculator.plot_name
+        colour_name = c_calculator.full_name if c_calculator is not None else ""
+        colour_label = c_calculator.plot_name if c_calculator is not None else None
+
+        if plot_type.lower() == "individual":
+            if isinstance(x_calculator, tuple(Property_Calculator_Base.__subclasses__())):
+                x = x_calculator.extract_vals(self)
+                if incl_x_errs:
+                    raise NotImplementedError
+                else:
+                    x_err = None
+            else:
+                raise NotImplementedError
+            if log_x or x_name in funcs.logged_properties:
+                if incl_x_errs:
+                    x, x_err = funcs.errs_to_log(x, x_err)
+                else:
+                    x = np.log10(x.value)
+                x_name = f"log({x_name})"
+                x_label = f"log({x_label})"
+
+            if isinstance(y_calculator, tuple(Property_Calculator_Base.__subclasses__())):
+                y = y_calculator.extract_vals(self)
+                if incl_y_errs:
+                    raise NotImplementedError
+                else:
+                    y_err = None
+            else:
+                raise NotImplementedError
+            if log_y or y_name in funcs.logged_properties:
+                if incl_y_errs:
+                    y, y_err = funcs.errs_to_log(y, y_err)
+                else:
+                    y = np.log10(y.value)
+                y_name = f"log({y_name})"
+                y_label = f"log({y_label})"
+
+            if c_calculator is not None:
+                if isinstance(c_calculator, tuple(Property_Calculator_Base.__subclasses__())):
+                    c = c_calculator.extract_vals(self).value
+                else:
+                    raise NotImplementedError
+                if log_c or colour_name in funcs.logged_properties:
+                    c = np.log10(c)
+                    colour_name = f"log({colour_name})"
+                    colour_label = f"log({colour_label})"
+
+        elif plot_type.lower() == "contour":
+
+            assert c_calculator is None, galfind_logger.critical(
+                "Cannot contour galaxies and colour by another property!"
+            )
+            # extract the PDFs
+            x_PDFs = x_calculator.extract_PDFs(self)
+            y_PDFs = y_calculator.extract_PDFs(self)
+            x = []
+            y = []
+            for x_PDF_, y_PDF_ in zip(x_PDFs, y_PDFs):
+                if x_PDF_ is not None and y_PDF_ is not None:
+                    # extract n_samples from each PDF
+                    x.extend(x_PDF_.draw_sample(n_samples).value)
+                    y.extend(y_PDF_.draw_sample(n_samples).value)
+
+            if log_x or x_name in funcs.logged_properties:
+                x = np.log10(x)
+                x_name = f"log({x_name})"
+                x_label = f"log({x_label})"
+
+            if log_y or y_name in funcs.logged_properties:
+                y = np.log10(y)
+                y_name = f"log({y_name})"
+                y_label = f"log({y_label})"
+
+        elif plot_type.lower() == "stacked":
+
+            assert c_calculator is None, galfind_logger.critical(
+                "Cannot stack galaxies and colour by another property!"
+            )
+            # extract the PDFs
+            x_PDFs = x_calculator.extract_PDFs(self)
+            y_PDFs = y_calculator.extract_PDFs(self)
+            # add all the PDFs together
+            x_PDF = None
+            y_PDF = None
+            for x_PDF_, y_PDF_ in zip(x_PDFs, y_PDFs):
+                if x_PDF_ is not None and y_PDF_ is not None:
+                    if x_PDF is None and y_PDF is None:
+                        x_PDF = x_PDF_
+                        y_PDF = y_PDF_
+                    else:
+                        x_PDF += x_PDF_
+                        y_PDF += y_PDF_
+            
+            x = x_PDF.median.value
+            y = y_PDF.median.value
+            if incl_x_errs:
+                x_err = [[x_PDF.errs[0].value], [x_PDF.errs[1].value]]
+            else:
+                x_err = None
+            if incl_y_errs:
+                y_err = [[y_PDF.errs[0].value], [y_PDF.errs[1].value]]
+            else:
+                y_err = None
+
+        else:
+            err_message = f"{plot_type=} not recognised!"
+            galfind_logger.critical(err_message)
+            raise Exception(err_message)
+
+        # setup matplotlib figure/axis if not already given
+        if fig is None or ax is None:
+            fig, ax = plt.subplots()
+
+        if "label" not in plot_kwargs.keys() and plot_type.lower() != "contour":
+            plot_kwargs["label"] = self.crop_name
+
+        if c_calculator is not None:
+            plot_kwargs["c"] = c
+            if "cmap" not in plot_kwargs.keys():
+                plot_kwargs["cmap"] = cmap
+        
+        if plot_type.lower() == "contour":
+            nan_mask = np.logical_and(~np.isnan(x), ~np.isnan(y))
+            x = np.array(x)[nan_mask]
+            y = np.array(y)[nan_mask]
+            x_interval = (np.max(x) - np.min(x)) / (n_bins + 1)
+            y_interval = (np.max(y) - np.min(y)) / (n_bins + 1)
+            x_edges = np.linspace(np.min(x) - x_interval, np.max(x) + x_interval, n_bins)
+            y_edges = np.linspace(np.min(y) - y_interval, np.max(y) + y_interval, n_bins)
+            N, x_edges, y_edges = np.histogram2d(x, y, bins=(x_edges, y_edges))
+            x_mid_bins = (x_edges[:-1] + x_edges[1:]) / 2
+            y_mid_bins = (y_edges[:-1] + y_edges[1:]) / 2
+            x_mesh, y_mesh = np.meshgrid(x_mid_bins, y_mid_bins)
+            levels = np.percentile(N, contour_levels)
+            # n_bins = int(len(x) / (25 * n_samples))
+            for i in range(len(levels) - 1):
+                ax.contourf(x_mesh, y_mesh, N.T, levels = [levels[i], levels[i + 1]], alpha = (i + 1) / len(levels), colors = [cmap], **plot_kwargs) # , norm = norm, cmap = cmap, norm = norm, cmap = cm.get_cmap(cmap).resampled(len(plot_kwargs["levels"]) - 1)
+            for level in levels:
+                ax.contour(x_mesh, y_mesh, N.T, levels = (level,), colors = cmap, linewidths = 1.0, **plot_kwargs)
+            ax.set_xlim([x_edges[0], x_edges[-1]])
+            ax.set_ylim([y_edges[0], y_edges[-1]])
+        else:
+            if incl_x_errs or incl_y_errs and not mean_err:
+                if "ls" not in plot_kwargs.keys():
+                    plot_kwargs["ls"] = ""
+                plot = ax.errorbar(x, y, xerr=x_err, yerr=y_err, **plot_kwargs)
+            else:
+                plot = ax.scatter(x, y, **plot_kwargs)
+
+        if mean_err and (incl_x_errs or incl_y_errs):
+            # plot the mean error
+            pass
+
+        # if histograms are wanted to be displayed
+        if x_hist_ax is not None or y_hist_ax is not None:
+            # if "bins" not in hist_kwargs.keys():
+            #     hist_kwargs["bins"] = 30
+            if isinstance(x, u.Magnitude):
+                x = x.value
+            if isinstance(y, u.Magnitude):
+                y = y.value
+            #divider = make_axes_locatable(ax)
+        if x_hist_ax is not None:
+            assert isinstance(x_hist_ax, plt.Axes)
+            #ax_hist_top = divider.append_axes("top", size="20%", pad=0.1, sharex=ax)
+            x_hist_ax.hist(x, **hist_kwargs)
+        if y_hist_ax is not None:
+            assert isinstance(y_hist_ax, plt.Axes)
+            # Right histogram
+            #ax_hist_right = divider.append_axes("right", size="20%", pad=0.1, sharey=ax)
+            y_hist_ax.hist(y, orientation='horizontal', **hist_kwargs)
+
+        # sort plot aesthetics - automatically annotate if coloured
+        if annotate or c_calculator is not None:
+            if plot_label == "default":
+                plot_label = (
+                    f"{self.version}, {self.filterset.instrument_name}, {self.survey}"
+                )
+            if plot_label is not None:
+                ax.set_title(plot_label)
+            ax.set_xlabel(x_label)
+            ax.set_ylabel(y_label)
+            if c_calculator is not None:
+                fig.colorbar(plot, label = colour_label)
+            if plot_legend:
+                default_legend_kwargs = {
+                    "loc": "best"
+                }
+                for key, value in legend_kwargs.items():
+                    default_legend_kwargs[key] = value
+                ax.legend(**default_legend_kwargs)
+
+        if save:
+            # determine appropriate save path
+            if save_path is None:
+                save_colour_name = f"_c={colour_name}" if c_calculator is not None else ""
+                save_path = f"{config['Other']['PLOT_DIR']}/{self.version}/" + \
+                    f"{self.filterset.instrument_name}/{self.survey}/" + \
+                    f"{y_name}_vs_{x_name}/{self.crop_name}{save_colour_name}.png"
+            funcs.make_dirs(save_path)
+            plt.savefig(save_path)
+            funcs.change_file_permissions(save_path)
+            galfind_logger.info(f"Saved plot to {save_path}!")
+
+        if show:
+            plt.show()
+
+    def get_vmax_ecsv_path(
+        self: Self,
+        data: Data,
+    ) -> str:
+        full_data_name = funcs.get_full_survey_name(data.survey, data.version, data.filterset)
+        save_path = f"{config['NumberDensityFunctions']['VMAX_DIR']}/" + \
+            f"{self.version}/{self.filterset.instrument_name}/" + \
+            f"{self.survey}/{self.crop_name}/Vmax_field={full_data_name}.ecsv"
+        funcs.make_dirs(save_path)
+        return save_path
+
+    def _calc_Vmax(
+        self: Self,
+        data: Data,
+        z_bin: List[float],
+        aper_diam: u.Quantity,
+        SED_fit_code: SED_code,
+        z_step: float = 0.01,
+    ) -> Dict[str, NDArray[float]]:
+        assert len(z_bin) == 2
+        assert z_bin[0] < z_bin[1]
+        assert isinstance(SED_fit_code, tuple(SED_code.__subclasses__()))
+        assert all(SED_fit_code.label in gal.aper_phot[aper_diam].SED_results.keys() for gal in self)
+
+        save_path = self.get_vmax_ecsv_path(data)
+        # if this file already exists
+        if Path(save_path).is_file():
+            # open file
+            old_tab = Table.read(save_path)
+            update_gals = np.array(
+                [gal for gal in self if gal.ID not in old_tab[old_tab["survey"] == gal.survey]["ID"]]
+            )
+        else:
+            update_gals = self.gals
+        if len(update_gals) > 0:
+            full_survey_name = funcs.get_full_survey_name(self.survey, self.version, self.filterset)
+            full_data_name = funcs.get_full_survey_name(data.survey, data.version, data.filterset)
+            # calculate Vmax's and append them to Vmax ecsv
+            [
+                gal.calc_Vmax(
+                    data,
+                    z_bin,
+                    aper_diam,
+                    SED_fit_code,
+                    self.cat_creator.crops,
+                    z_step,
+                )
+                for gal in tqdm(
+                    self,
+                    total=len(self),
+                    desc=f"Calculating {full_survey_name} Vmax's in {full_data_name}"
+                )
+            ]
+            # make/update file to store data
+            Vmax_arr = self._make_Vmax_ecsv(
+                data,
+                update_gals,
+                aper_diam,
+                SED_fit_code,
+            )
+        else:  # Vmax table already opened
+            # if isinstance(self, Combined_Catalogue):
+            #     IDs = self._get_unique_IDs()
+            # else:
+            #     IDs = self.ID
+            #breakpoint()
+            #try:
+            Vmax_arr = self._load_Vmax_from_ecsv(old_tab, aper_diam, SED_fit_code, data.full_name)
+            #except:
+            #    breakpoint()
+        return Vmax_arr
+    
+    def _make_Vmax_ecsv(
+        self: Self,
+        data: Data,
+        update_gals: List[Galaxy],
+        aper_diam: u.Quantity,
+        SED_fit_code: SED_code,
+    ) -> NDArray[float]:
+        save_path = self.get_vmax_ecsv_path(data)
+        # extract relevant properties
+        Vmax_arr = np.array(
+            [
+                gal.aper_phot[aper_diam].SED_results[SED_fit_code.label]. \
+                V_max[self.crop_name.split("/")[-1]][data.full_name].to(u.Mpc**3).value
+                for gal in update_gals
+            ]
+        ) * u.Mpc ** 3
+        obs_zmin = np.array(
+            [
+                gal.aper_phot[aper_diam].SED_results[SED_fit_code.label]. \
+                obs_zrange[self.crop_name.split("/")[-1]][data.full_name][0]
+                for gal in update_gals
+            ]
+        )
+        obs_zmax = np.array(
+            [
+                gal.aper_phot[aper_diam].SED_results[SED_fit_code.label]. \
+                obs_zrange[self.crop_name.split("/")[-1]][data.full_name][1]
+                for gal in update_gals
+            ]
+        )
+        data = {
+            "ID": np.array([gal.ID for gal in update_gals]),
+            "survey": np.array([gal.survey for gal in update_gals]),
+            "Vmax": Vmax_arr,
+            "obs_zmin": obs_zmin,
+            "obs_zmax": obs_zmax,
+        }
+        new_tab = Table(data, dtype=[int, str, float, float, float])
+        new_tab.meta = {"Vmax_invalid_val": -1.0}
+
+        self._save_ecsv(save_path, new_tab)
+
+        return Vmax_arr
+    
+    def _save_ecsv(
+        self: Self,
+        save_path: str,
+        tab: Table
+    ) -> NoReturn:
+        if Path(save_path).is_file(): # update and save table
+            old_tab = Table.read(save_path)
+            out_tab = vstack([old_tab, tab])
+            out_tab.meta = {**old_tab.meta, **tab.meta}
+        else: # save table
+            out_tab = tab
+        out_tab.write(save_path, overwrite=True)
+    
+    def _load_Vmax_from_ecsv(
+        self: Self,
+        tab: Table,
+        aper_diam: u.Quantity,
+        SED_fit_code: SED_code,
+        full_survey_name: str,
+    ) -> NDArray[float]:
+        if any(gal.survey == full_survey_name.split("_")[0] for gal in self):
+            load_gals_arr = [gal for gal in self if gal.survey == full_survey_name.split("_")[0]]
+        else:
+            load_gals_arr = self.gals
+        from . import Combined_Catalogue
+        # save appropriate Vmax properties
+        Vmax_arr = np.zeros(len(load_gals_arr))
+        for i, gal in enumerate(load_gals_arr):
+            Vmax = float(tab[np.logical_and((tab["ID"] == gal.ID), (tab["survey"] == gal.survey))]["Vmax"])
+            gal._make_Vmax_storage(aper_diam, SED_fit_code, self.crop_name.split("/")[-1])
+            gal.aper_phot[aper_diam].SED_results[SED_fit_code.label]. \
+                V_max[self.crop_name.split("/")[-1]][full_survey_name] = Vmax * u.Mpc ** 3
+            Vmax_arr[i] = Vmax
+        return Vmax_arr
