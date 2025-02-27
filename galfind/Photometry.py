@@ -16,7 +16,7 @@ import astropy.units as u
 import matplotlib.patheffects as pe
 import numpy as np
 from numpy.typing import NDArray
-from typing import Union, Optional, List, Dict, Any, TYPE_CHECKING
+from typing import TYPE_CHECKING, Union, Optional, List, Dict, Any, NoReturn
 if TYPE_CHECKING:
     from . import Instrument
     from astropy.utils.masked import Masked
@@ -48,15 +48,13 @@ class Photometry:
                 )
             depths = [depths[filt.filt_name] for filt in filterset]
         self.depths = depths
-        try:
-            assert (
-                len(self.filterset)
-                == len(self.flux)
-                == len(self.flux_errs)
-                == len(self.depths)
-            )
-        except:
-            breakpoint()
+        assert all(
+            len(self.filterset) == len(getattr(self, name))
+            for name in ["flux", "flux_errs", "depths"] 
+            if getattr(self, name) is not None), \
+                galfind_logger.critical(
+                    f"Not all ['flux', 'flux_errs', 'depths'] are {len(self.filterset)=} or None!"
+                )
 
     def __str__(self) -> str:
         output_str = funcs.line_sep
@@ -300,7 +298,7 @@ class Photometry:
         wavs_to_plot = funcs.convert_wav_units(self.wav, wav_units).value
         mags_to_plot = funcs.convert_mag_units(self.wav, self.flux, mag_units)
 
-        if uplim_sigma == None:
+        if uplim_sigma is None:
             uplims = list(np.full(len(self.flux), False))
         else:
             # work out optimal size of error bar in terms of sigma
@@ -461,7 +459,8 @@ class Photometry:
     
     def scatter_fluxes(
         self: Self, 
-        n_scatter: int = 1
+        n_scatter: int = 1,
+        update: bool = False,
     ) -> Union[u.Quantity, Masked[u.Quantity]]:
         assert self.flux.unit != u.ABmag, \
             galfind_logger.critical(
@@ -474,11 +473,13 @@ class Photometry:
                 for flux, err in zip(self.flux.value, self.flux_errs.value)
             ]
         ).T * self.flux.unit
+        if update:
+            self.flux = scattered_fluxes[0]
         return scattered_fluxes
 
     def scatter(
         self: Self, 
-        n_scatter: int = 1
+        n_scatter: int = 1,
     ) -> List[Photometry]:
         scattered_fluxes = self.scatter_fluxes(n_scatter)
         galfind_logger.debug("Made phot matrix")
@@ -503,6 +504,24 @@ class Photometry:
             )
             for i in range(n_scatter)
         ]
+    
+    def _update_errs_from_depths(
+        self: Self,
+        min_flux_pc_err: float,
+    ) -> NoReturn:
+        # calculate 1σ depths and convert to Jy
+        one_sig_depths_Jy = self.depths.to(u.Jy) / 5
+        # apply min_flux_pc_err criteria
+        # TODO: Retain the flux mask in flux errors if there is one
+        self.flux_errs = np.array(
+            [
+                depth
+                if depth > flux * min_flux_pc_err / 100
+                else flux * min_flux_pc_err / 100
+                for flux, depth in zip(self.flux.value, one_sig_depths_Jy.value)
+            ]
+        ) * u.Jy
+
 
 class Multiple_Photometry(ABC):
     def __init__(

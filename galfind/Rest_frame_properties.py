@@ -20,7 +20,7 @@ try:
 except ImportError:
     from typing_extensions import Self, Type  # python > 3.7 AND python < 3.11
 
-from . import galfind_logger, config, all_band_names
+from . import galfind_logger, config, all_band_names, astropy_cosmo
 from . import useful_funcs_austind as funcs
 from .decorators import ignore_warnings
 from . import Catalogue, Catalogue_Base, Galaxy, SED_code, Photometry_rest, PDF
@@ -122,6 +122,7 @@ class Rest_Frame_Property_Calculator(Property_Calculator):
         output: bool = False,
         overwrite: bool = False,
         n_jobs: int = 1,
+        dtype: np.dtype = np.float32,
     ) -> Optional[Catalogue]:
         assert isinstance(n_jobs, int), \
             galfind_logger.critical(
@@ -166,7 +167,7 @@ class Rest_Frame_Property_Calculator(Property_Calculator):
                         pass
             # multi-process with joblib
             # sort input params
-            params_arr = [(self, gal, n_chains, overwrite, save_dir) for gal in cat]
+            params_arr = [(self, gal, n_chains, overwrite, save_dir, dtype) for gal in cat]
             # run in parallel
             with funcs.tqdm_joblib(tqdm(desc = f"Calculating {self.name} for " + \
                 f"{cat.survey} {cat.version} {cat.filterset.instrument_name}", \
@@ -184,9 +185,9 @@ class Rest_Frame_Property_Calculator(Property_Calculator):
     
     @staticmethod
     def _call_gal_multi_process(params: Dict[str, Any]) -> NoReturn:
-        self, gal, n_chains, overwrite, save_dir = params
+        self, gal, n_chains, overwrite, save_dir, dtype = params
         return self._call_gal(gal, n_chains = n_chains, output = True, \
-            overwrite = overwrite, save_dir = save_dir)
+            overwrite = overwrite, save_dir = save_dir, dtype = dtype)
     
     def _update_fits_cat(
         self: Self,
@@ -237,7 +238,8 @@ class Rest_Frame_Property_Calculator(Property_Calculator):
         n_chains: int = 10_000,
         output: bool = False,
         overwrite: bool = False,
-        save_dir: str = ""
+        save_dir: str = "",
+        dtype: np.dtype = np.float32,
     ) -> Optional[Galaxy]:
         # update the relevant Photometry_rest object stored in the Galaxy
         assert self.aper_diam in gal.aper_phot.keys(), \
@@ -254,7 +256,7 @@ class Rest_Frame_Property_Calculator(Property_Calculator):
         save_path = f"{save_dir}{gal.ID}.npy"
         self._call_phot_rest(gal.aper_phot[self.aper_diam]. \
             SED_results[self.SED_fit_label].phot_rest, n_chains = n_chains, 
-            output = False, overwrite = overwrite, save_path = save_path)
+            output = False, overwrite = overwrite, save_path = save_path, dtype = dtype)
         
         if output:
             return gal
@@ -267,6 +269,7 @@ class Rest_Frame_Property_Calculator(Property_Calculator):
         overwrite: bool = False,
         save_path: Optional[str] = None,
         save_scattered_fluxes: bool = False,
+        dtype: np.dtype = np.float32,
     ) -> Optional[Photometry_rest]:
         property_name = self.name
         calculated = False
@@ -354,7 +357,7 @@ class Rest_Frame_Property_Calculator(Property_Calculator):
                         phot_rest.property_kwargs[property_name] = {}
                     else: # phot_rest has not failed
                         galfind_logger.debug("Making PDF")
-                        PDF_obj, scattered_fluxes = self._make_PDF(phot_rest, n_new_chains)
+                        PDF_obj, scattered_fluxes = self._make_PDF(phot_rest, n_new_chains, dtype = dtype)
                         galfind_logger.debug("PDF made")
                         if PDF_obj is None:
                             phot_rest.property_PDFs[property_name] = None
@@ -390,19 +393,34 @@ class Rest_Frame_Property_Calculator(Property_Calculator):
         self: Self,
         phot_rest: Photometry_rest,
         n_chains: int,
+        dtype: np.dtype = np.float32,
     ) -> Tuple[PDF, u.Quantity]:
+        # ensure the type is a float
+        assert "float" in dtype.__name__, \
+            galfind_logger(
+                f"{dtype=} is not a float type"
+            )
+        #try:
+        # scatter relevant photometric data points n_chains times
+        if "keep_indices" in self.obj_kwargs.keys():
+            cropped_phot_rest = phot_rest[self.obj_kwargs["keep_indices"]]
+        else:
+            cropped_phot_rest = deepcopy(phot_rest)
+        scattered_fluxes = cropped_phot_rest.scatter_fluxes(n_chains)
+        # calculate chain
+        galfind_logger.debug(f"Calculating {self.name} chains")
+        vals = self._calculate(scattered_fluxes, phot_rest)
+
+        if vals is not None:
+            # increase the floating point precision of saved array if required
+            while any(val.value > np.finfo(dtype).max or val.value < np.finfo(dtype).min for val in vals):
+                new_dtype_precision = int(dtype.__name__.replace("float", "")) * 2
+                dtype = getattr(np, f"float{new_dtype_precision}")
+            # update datatype of vals
+            vals = vals.astype(dtype)
+        galfind_logger.debug(f"{self.name} chains calculated")
+        # construct PDF object
         try:
-            # scatter relevant photometric data points n_chains times
-            if "keep_indices" in self.obj_kwargs.keys():
-                cropped_phot_rest = phot_rest[self.obj_kwargs["keep_indices"]]
-            else:
-                cropped_phot_rest = deepcopy(phot_rest)
-            scattered_fluxes = cropped_phot_rest.scatter_fluxes(n_chains)
-            # calculate chain
-            galfind_logger.debug(f"Calculating {self.name} chains")
-            vals = self._calculate(scattered_fluxes, phot_rest)
-            galfind_logger.debug(f"{self.name} chains calculated")
-            # construct PDF object
             if vals is None:
                 PDF_obj = None
             else:
@@ -432,6 +450,30 @@ class Rest_Frame_Property_Calculator(Property_Calculator):
         else:
             err_message = f"{object=} with {type(object)=} " + \
                 f"not in [{', '.join(Catalogue_Base.__subclasses__())}, Galaxy, Photometry_rest]"
+            galfind_logger.critical(err_message)
+            raise TypeError(err_message)
+
+    # TODO: Propagate from parent class
+    def extract_errs(
+        self: Self, 
+        object: Union[Type[Catalogue_Base], Galaxy, Photometry_rest],
+    ) -> Union[u.Quantity, u.Magnitude, u.Dex]:
+        if isinstance(object, tuple(Catalogue_Base.__subclasses__())):
+            cat_errs = [gal.aper_phot[self.aper_diam].SED_results[self.SED_fit_label].phot_rest.property_errs[self.name] for gal in object]
+            if all(isinstance(val, tuple([u.Quantity, u.Magnitude, u.Dex])) for val in cat_errs):
+                assert all(val.unit == cat_errs[0].unit for val in cat_errs), \
+                    galfind_logger.critical(f"Units of {self.name} in {object} are not consistent")
+                cat_errs = np.array([val.value for val in cat_errs]) * cat_errs[0].unit
+            else:
+                cat_errs = np.array(cat_errs)
+            return cat_errs 
+        elif isinstance(object, Galaxy):
+            return object.aper_phot[self.aper_diam].SED_results[self.SED_fit_label].phot_rest.property_errs[self.name]
+        elif isinstance(object, Photometry_rest):
+            return object.property_errs[self.name]
+        else:
+            err_message = f"{object=} with {type(object)=} " + \
+                f"not in [Catalogue, Galaxy, Photometry_rest]"
             galfind_logger.critical(err_message)
             raise TypeError(err_message)
 
@@ -618,8 +660,8 @@ class UV_Beta_Calculator(Rest_Frame_Property_Calculator):
         # determine bands that fall within rest frame UV wavelength limits
         rest_frame_UV_indices = [
             i for i, filt in enumerate(phot_rest.filterset)
-            if filt.WavelengthLower50 > self.global_kwargs["rest_UV_wav_lims"][0] * (1.0 + phot_rest.z)
-            and filt.WavelengthUpper50 < self.global_kwargs["rest_UV_wav_lims"][1] * (1.0 + phot_rest.z)
+            if filt.WavelengthLower50 > self.global_kwargs["rest_UV_wav_lims"][0] * (1.0 + phot_rest.z.value)
+            and filt.WavelengthUpper50 < self.global_kwargs["rest_UV_wav_lims"][1] * (1.0 + phot_rest.z.value)
         ]
         if len(rest_frame_UV_indices) < 2:
             failure = True
@@ -627,7 +669,7 @@ class UV_Beta_Calculator(Rest_Frame_Property_Calculator):
             rest_UV_band_wavs = np.array(
                 [
                     funcs.convert_wav_units(filt.WavelengthCen \
-                    / (1.0 + phot_rest.z), u.AA).value for filt \
+                    / (1.0 + phot_rest.z.value), u.AA).value for filt \
                     in phot_rest.filterset[rest_frame_UV_indices]
                 ]
             ) * u.AA
@@ -699,6 +741,7 @@ class UV_Beta_Calculator(Rest_Frame_Property_Calculator):
         output: bool = False,
         overwrite: bool = False,
         save_path: Optional[str] = None,
+        dtype: np.dtype = np.float32,
     ) -> Optional[Photometry_rest]:
         return super()._call_phot_rest(
             phot_rest,
@@ -706,7 +749,8 @@ class UV_Beta_Calculator(Rest_Frame_Property_Calculator):
             output,
             overwrite,
             save_path,
-            save_scattered_fluxes = True
+            save_scattered_fluxes = True,
+            dtype = dtype,
         )
 
 
@@ -985,7 +1029,7 @@ class mUV_Calculator(Rest_Frame_Property_Calculator):
             if self.global_kwargs["ext_src_corrs"] == "UV":
                 # calculate band nearest to the rest frame UV reference wavelength
                 band_wavs = [filt.WavelengthCen.to(u.AA).value \
-                    for filt in phot_rest.filterset] * u.AA / (1. + phot_rest.z)
+                    for filt in phot_rest.filterset] * u.AA / (1. + phot_rest.z.value)
                 ref_band = phot_rest.filterset.band_names[np.argmin(np.abs( \
                     band_wavs - self.global_kwargs["ref_wav"]))]
                 ext_src_corr = phot_rest.ext_src_corrs[ref_band]
@@ -1028,6 +1072,7 @@ class mUV_Calculator(Rest_Frame_Property_Calculator):
         overwrite: bool = False,
         save_path: Optional[str] = None,
         save_scattered_fluxes: bool = False,
+        dtype: np.dtype = np.float32,
     ) -> Optional[Photometry_rest]:
         if self.global_kwargs["ext_src_corrs"]:
             # assert that extended source corrections have been loaded
@@ -1041,7 +1086,8 @@ class mUV_Calculator(Rest_Frame_Property_Calculator):
             output, 
             overwrite, 
             save_path, 
-            save_scattered_fluxes
+            save_scattered_fluxes,
+            dtype,
         )
 
 class MUV_Calculator(Rest_Frame_Property_Calculator):
@@ -1111,7 +1157,7 @@ class MUV_Calculator(Rest_Frame_Property_Calculator):
         else:
             mUV_arr = phot_rest.properties[self.pre_req_properties[0].name]
         # calculate M_UV from m_UV
-        d_L = funcs.calc_lum_distance(phot_rest.z).to(u.pc).value
+        d_L = astropy_cosmo.luminosity_distance(phot_rest.z.value).to(u.pc).value
         return (mUV_arr.value \
             - 5.0 * np.log10(d_L / 10.0) \
             + 2.5 * np.log10(1.0 + phot_rest.z.value)
@@ -1130,7 +1176,7 @@ class LUV_Calculator(Rest_Frame_Property_Calculator):
         self: Self, 
         aper_diam: u.Quantity, 
         SED_fit_label: Union[str, Type[SED_code]],
-        frame: str = "obs",
+        #frame: str = "obs",
         rest_UV_wav_lims: u.Quantity = [1_250.0, 3_000.0] * u.AA,
         ref_wav: u.Quantity = 1_500.0 * u.AA,
         beta_dust_conv: Optional[Union[str, Type[AUV_from_beta]]] = M99,
@@ -1168,7 +1214,7 @@ class LUV_Calculator(Rest_Frame_Property_Calculator):
                 keep_valid = True
             )
             pre_req_properties.append(self.dust_calculator)
-        global_kwargs = {"frame": frame}
+        global_kwargs = {} #"frame": frame}
         super().__init__(aper_diam, SED_fit_label, pre_req_properties, **global_kwargs)
 
     @property
@@ -1184,15 +1230,17 @@ class LUV_Calculator(Rest_Frame_Property_Calculator):
         ext_src_lim_label = f"<{self.pre_req_properties[0].global_kwargs['ext_src_uplim']:.0f}" if \
             self.pre_req_properties[0].global_kwargs["ext_src_uplim"] is not None and \
             self.pre_req_properties[0].global_kwargs["ext_src_corrs"] is not None else ""
+        # {self.global_kwargs['frame']}
         return f"L{self.pre_req_properties[0].global_kwargs['ref_wav'].to(u.AA).value:.0f}" + \
-            f"_{self.global_kwargs['frame']}{dust_label}_{rest_wavs_label}{ext_src_label}{ext_src_lim_label}"
+            f"{dust_label}_{rest_wavs_label}{ext_src_label}{ext_src_lim_label}"
     
     @property
     def plot_name(self: Self) -> str:
         return r"$L_{\mathrm{UV}}$" # frame and units here too
 
     def _kwarg_assertions(self: Self) -> NoReturn:
-        assert self.global_kwargs["frame"] in ["rest", "obs"]
+        pass
+        #assert self.global_kwargs["frame"] in ["rest", "obs"]
     
     def _calc_obj_kwargs(
         self: Self,
@@ -1218,15 +1266,15 @@ class LUV_Calculator(Rest_Frame_Property_Calculator):
         else:
             mUV_arr = phot_rest.properties[self.pre_req_properties[0].name]
         # convert mUVs to LUVs
-        if self.global_kwargs["frame"] == "rest":
-            z = 0.0
-            wavs = np.full(len(fluxes_arr), \
-                self.pre_req_properties[0].global_kwargs["ref_wav"])
-        else: # frame == "obs"
-            z = phot_rest.z
-            wavs = np.full(len(fluxes_arr), self.pre_req_properties \
-                [0].global_kwargs["ref_wav"] * (1.0 + z))
-        LUV_arr = funcs.flux_to_luminosity(mUV_arr, wavs, z)
+        # if self.global_kwargs["frame"] == "rest":
+        #     z = 0.0
+        #     wavs = np.full(len(fluxes_arr), \
+        #         self.pre_req_properties[0].global_kwargs["ref_wav"])
+        # else: # frame == "obs"
+        # use observed frame wavelengths
+        wavs = np.full(len(fluxes_arr), self.pre_req_properties \
+            [0].global_kwargs["ref_wav"] * (1.0 + phot_rest.z.value))
+        LUV_arr = funcs.flux_to_luminosity(mUV_arr, wavs, phot_rest.z.value)
         
         # extract dust chains/value if required
         if self.dust_calculator is not None:
@@ -1265,7 +1313,7 @@ class SFR_UV_Calculator(Rest_Frame_Property_Calculator):
         LUV_calculator = LUV_Calculator(
             aper_diam, 
             SED_fit_label, 
-            "obs", 
+            # "obs", 
             rest_UV_wav_lims, 
             ref_wav, 
             beta_dust_conv, 
@@ -1372,7 +1420,7 @@ class Optical_Continuum_Calculator(Rest_Frame_Property_Calculator):
     ) -> Dict[str, Any]:
         # determine the nearest band to the first line
         wavelength = line_diagnostics[self.global_kwargs \
-            ["strong_line_names"][0]]["line_wav"] * (1.0 + phot_rest.z)
+            ["strong_line_names"][0]]["line_wav"] * (1.0 + phot_rest.z.value)
         if len(phot_rest.filterset) == 0:
             return {
                 "emission_band": None,
@@ -1407,13 +1455,13 @@ class Optical_Continuum_Calculator(Rest_Frame_Property_Calculator):
                 # get continuum bands which are entirely within the 
                 # rest frame optical and do not contain any strong optical lines
                 if (
-                    filt.WavelengthUpper50 < self.global_kwargs["rest_optical_wavs"][1] * (1.0 + phot_rest.z)
-                    and filt.WavelengthLower50 > self.global_kwargs["rest_optical_wavs"][0] * (1.0 + phot_rest.z)
+                    filt.WavelengthUpper50 < self.global_kwargs["rest_optical_wavs"][1] * (1.0 + phot_rest.z.value)
+                    and filt.WavelengthLower50 > self.global_kwargs["rest_optical_wavs"][0] * (1.0 + phot_rest.z.value)
                     and not any(
-                        line_diagnostics[line_name]["line_wav"] * (1.0 + phot_rest.z)
+                        line_diagnostics[line_name]["line_wav"] * (1.0 + phot_rest.z.value)
                         < filt.WavelengthUpper50
                         and line_diagnostics[line_name]["line_wav"]
-                        * (1.0 + phot_rest.z)
+                        * (1.0 + phot_rest.z.value)
                         > filt.WavelengthLower50
                         for line_name in strong_optical_lines
                     )
@@ -1440,15 +1488,15 @@ class Optical_Continuum_Calculator(Rest_Frame_Property_Calculator):
             # and that there are no other strong optical lines in this band
             # and that there is more than 1 relevant continuum band
             if not all(
-                (line_diagnostics[line_name]["line_wav"]) * (1.0 + phot_rest.z)
+                (line_diagnostics[line_name]["line_wav"]) * (1.0 + phot_rest.z.value)
                 < self.obj_kwargs["emission_band"].WavelengthUpper50
-                and (line_diagnostics[line_name]["line_wav"]) * (1.0 + phot_rest.z)
+                and (line_diagnostics[line_name]["line_wav"]) * (1.0 + phot_rest.z.value)
                 > self.obj_kwargs["emission_band"].WavelengthLower50
                 for line_name in self.global_kwargs["strong_line_names"]
             ) or any(
-                line_diagnostics[line_name]["line_wav"] * (1.0 + phot_rest.z)
+                line_diagnostics[line_name]["line_wav"] * (1.0 + phot_rest.z.value)
                 < self.obj_kwargs["emission_band"].WavelengthUpper50
-                and line_diagnostics[line_name]["line_wav"] * (1.0 + phot_rest.z)
+                and line_diagnostics[line_name]["line_wav"] * (1.0 + phot_rest.z.value)
                 > self.obj_kwargs["emission_band"].WavelengthLower50
                 for line_name in strong_optical_lines
                 if line_name not in self.global_kwargs["strong_line_names"]
@@ -1473,11 +1521,11 @@ class Optical_Continuum_Calculator(Rest_Frame_Property_Calculator):
             # calculate continuum from interpolation to 
             # middle of the emission band if two continuum bands
             cont_wavs = [
-                (band.WavelengthCen.to(u.AA) / (1.0 + phot_rest.z)).value
+                (band.WavelengthCen.to(u.AA) / (1.0 + phot_rest.z.value)).value
                 for band in self.obj_kwargs["cont_bands"]
             ] # in Angstrom
             em_wav = (
-                self.obj_kwargs["emission_band"].WavelengthCen.to(u.AA) / (1.0 + phot_rest.z)
+                self.obj_kwargs["emission_band"].WavelengthCen.to(u.AA) / (1.0 + phot_rest.z.value)
             ).value # in Angstrom
             cont_chains = np.array([funcs.interpolate_linear_fit( \
                 np.array(cont_wavs, dtype=np.float64), cont_fluxes_, em_wav) \
@@ -1541,7 +1589,7 @@ class Optical_Line_EW_Calculator(Rest_Frame_Property_Calculator):
     ) -> Dict[str, Any]:
         # determine the nearest band to the first line
         wavelength = line_diagnostics[self.global_kwargs \
-            ["strong_line_names"][0]]["line_wav"] * (1.0 + phot_rest.z)
+            ["strong_line_names"][0]]["line_wav"] * (1.0 + phot_rest.z.value)
         nearest_band = phot_rest.filterset[
             int(np.abs(
                 [
@@ -1573,7 +1621,7 @@ class Optical_Line_EW_Calculator(Rest_Frame_Property_Calculator):
                 bandwidth = emission_band.WavelengthUpper50 \
                     - emission_band.WavelengthLower50
                 if self.global_kwargs["frame"] == "rest":
-                    bandwidth /= (1.0 + phot_rest.z)
+                    bandwidth /= (1.0 + phot_rest.z.value)
                 bandwidth = bandwidth.to(u.AA)
         if failure:
             emission_band = None
@@ -1597,15 +1645,15 @@ class Optical_Line_EW_Calculator(Rest_Frame_Property_Calculator):
             # ensure all lines lie within this band (defined by 50% throughput boundaries) 
             # and that there are no other strong optical lines in this band
             if not all(
-                (line_diagnostics[line_name]["line_wav"]) * (1.0 + phot_rest.z)
+                (line_diagnostics[line_name]["line_wav"]) * (1.0 + phot_rest.z.value)
                 < self.obj_kwargs["emission_band"].WavelengthUpper50
-                and (line_diagnostics[line_name]["line_wav"]) * (1.0 + phot_rest.z)
+                and (line_diagnostics[line_name]["line_wav"]) * (1.0 + phot_rest.z.value)
                 > self.obj_kwargs["emission_band"].WavelengthLower50
                 for line_name in self.global_kwargs["strong_line_names"]
             ) or any(
-                line_diagnostics[line_name]["line_wav"] * (1.0 + phot_rest.z)
+                line_diagnostics[line_name]["line_wav"] * (1.0 + phot_rest.z.value)
                 < self.obj_kwargs["emission_band"].WavelengthUpper50
-                and line_diagnostics[line_name]["line_wav"] * (1.0 + phot_rest.z)
+                and line_diagnostics[line_name]["line_wav"] * (1.0 + phot_rest.z.value)
                 > self.obj_kwargs["emission_band"].WavelengthLower50
                 for line_name in strong_optical_lines
                 if line_name not in self.global_kwargs["strong_line_names"]
@@ -1637,9 +1685,9 @@ class Optical_Line_EW_Calculator(Rest_Frame_Property_Calculator):
             name
             for name, line in line_diagnostics.items()
             if name not in strong_optical_lines
-            and line["line_wav"] * (1.0 * phot_rest.z) < \
+            and line["line_wav"] * (1.0 * phot_rest.z.value) < \
                 self.obj_kwargs["emission_band"].WavelengthUpper50
-            and line["line_wav"] * (1.0 * phot_rest.z) > \
+            and line["line_wav"] * (1.0 * phot_rest.z.value) > \
                 self.obj_kwargs["emission_band"].WavelengthLower50
         ]
         return {
@@ -1852,7 +1900,7 @@ class Optical_Line_Flux_Calculator(Rest_Frame_Property_Calculator):
                 band_wav = deepcopy(phot_rest.filterset[emission_band].WavelengthCen)
                 if band_wav is not None:
                     if self.pre_req_properties[1].global_kwargs["frame"] == "rest":
-                        band_wav /= (1.0 + phot_rest.z)
+                        band_wav /= (1.0 + phot_rest.z.value)
         else:
             band_wav = None
         return {"band_wav": band_wav}
@@ -1908,7 +1956,7 @@ class Optical_Line_Luminosity_Calculator(Rest_Frame_Property_Calculator):
         aper_diam: u.Quantity,
         SED_fit_label: Union[str, Type[SED_code]],
         strong_line_names: Union[str, list],
-        frame: str = "rest",
+        #frame: str = "rest",
         rest_optical_wavs: u.Quantity = [4_200.0, 10_000.0] * u.AA,
         dust_law: Optional[Union[str, Type[Dust_Law]]] = C00,
         beta_dust_conv: Optional[Union[str, Type[AUV_from_beta]]] = M99,
@@ -1920,7 +1968,7 @@ class Optical_Line_Luminosity_Calculator(Rest_Frame_Property_Calculator):
                 aper_diam, 
                 SED_fit_label, 
                 strong_line_names, 
-                frame, 
+                "obs", 
                 rest_optical_wavs, 
                 dust_law, 
                 beta_dust_conv, 
@@ -1938,8 +1986,7 @@ class Optical_Line_Luminosity_Calculator(Rest_Frame_Property_Calculator):
                 self.pre_req_properties[0].dust_calculator.name.split("_")[-1]
         else:
             dust_label = ""
-        return f"lum_{self.pre_req_properties[0].pre_req_properties[1].global_kwargs['frame']}_" + \
-            f"{'+'.join(self.pre_req_properties[0].pre_req_properties[1].global_kwargs['strong_line_names'])}{dust_label}"
+        return f"lum_{'+'.join(self.pre_req_properties[0].pre_req_properties[1].global_kwargs['strong_line_names'])}{dust_label}"
     
     @property
     def plot_name(self: Self) -> str:
@@ -1952,11 +1999,7 @@ class Optical_Line_Luminosity_Calculator(Rest_Frame_Property_Calculator):
         self: Self,
         phot_rest: Photometry_rest
     ) -> Dict[str, Any]:
-        if self.pre_req_properties[0].pre_req_properties[1].global_kwargs["frame"] == "rest":
-            lum_distance = funcs.calc_lum_distance(z=0.0)
-        else:  # frame == "obs"
-            lum_distance = funcs.calc_lum_distance(z=phot_rest.z)
-        return {"lum_distance": lum_distance}
+        return {"lum_distance": astropy_cosmo.luminosity_distance(phot_rest.z.value)}
 
     def _fail_criteria(
         self: Self,
@@ -1978,6 +2021,8 @@ class Optical_Line_Luminosity_Calculator(Rest_Frame_Property_Calculator):
             assert len(fluxes_arr) == len(line_flux_arr)
         else:
             line_flux_arr = phot_rest.properties[self.pre_req_properties[0].name]
+        # if len(line_flux_arr[np.isfinite(line_flux_arr)]) == 0:
+        #     breakpoint()
         # calculate line luminosities
         line_lum_arr = (4 * np.pi * line_flux_arr * \
             self.obj_kwargs["lum_distance"] ** 2).to(u.erg / u.s)
@@ -1989,7 +2034,295 @@ class Optical_Line_Luminosity_Calculator(Rest_Frame_Property_Calculator):
         phot_rest: Photometry_rest
     ) -> Dict[str, Any]:
         return {}
+
+
+class Ndot_Ion_Calculator(Rest_Frame_Property_Calculator):
+
+    def __init__(
+        self: Self,
+        aper_diam: u.Quantity,
+        SED_fit_label: Union[str, Type[SED_code]],
+        #frame: str = "rest",
+        rest_optical_wavs: u.Quantity = [4_200.0, 10_000.0] * u.AA,
+        dust_law: Optional[Union[str, Type[Dust_Law]]] = C00,
+        beta_dust_conv: Optional[Union[str, Type[AUV_from_beta]]] = M99,
+        UV_wav_lims: Optional[u.Quantity] = [1_250.0, 3_000.0] * u.AA,
+        fesc_conv: Optional[Union[str, float]] = None,
+        logged: bool = True,
+    ) -> NoReturn:
+        line_lum_calculator = \
+            Optical_Line_Luminosity_Calculator(
+                aper_diam, 
+                SED_fit_label, 
+                "Halpha", 
+                rest_optical_wavs, 
+                dust_law, 
+                beta_dust_conv
+            )
+        pre_req_properties = [line_lum_calculator]
+        if fesc_conv is None:
+            self.fesc_calculator = None
+        elif isinstance(fesc_conv, str):
+            self.fesc_calculator = Fesc_From_Beta_Calculator(
+                aper_diam,
+                SED_fit_label,
+                UV_wav_lims,
+                fesc_conv,
+                keep_valid = True
+            )
+            pre_req_properties.append(self.fesc_calculator)
+        else: # float
+            self.fesc_calculator = fesc_conv
+        global_kwargs = {"logged": logged}
+        super().__init__(aper_diam, SED_fit_label, pre_req_properties, **global_kwargs)
+
+    @property
+    def name(self: Self) -> str:
+        if self.pre_req_properties[0].pre_req_properties[0]. \
+                dust_calculator is not None:
+            dust_label = "_" + "_".join(self.pre_req_properties[0]. \
+                pre_req_properties[0].dust_calculator.name.split("_")[1:2]) + "dust"
+        else:
+            dust_label = ""
+        if self.fesc_calculator is None:
+            fesc_label = "fesc=0"
+        elif isinstance(self.fesc_calculator, Fesc_From_Beta_Calculator):
+            fesc_label = self.fesc_calculator.name.split("_")[0]
+            if dust_label == "":
+                fesc_label += "_".join(fesc_label.split("_")[1:])
+        else: # isinstance(fesc_conv, float)
+            fesc_label = f"fesc={self.fesc_calculator:.2f}"
+        line_label = "+".join(self.pre_req_properties[0]. \
+            pre_req_properties[0].pre_req_properties[1]. \
+            global_kwargs["strong_line_names"])
+        # try:
+        #     ext_src_label = f"_extsrc_{self.pre_req_properties[0].pre_req_properties[0].global_kwargs['ext_src_corrs']}" \
+        #         if self.pre_req_properties[0].pre_req_properties[0].global_kwargs["ext_src_corrs"] is not None else ""
+        #     ext_src_lim_label = f"<{self.pre_req_properties[0].pre_req_properties[0].global_kwargs['ext_src_uplim']:.0f}" if \
+        #         self.pre_req_properties[0].pre_req_properties[0].global_kwargs["ext_src_uplim"] is not None and \
+        #         self.pre_req_properties[0].pre_req_properties[0].global_kwargs["ext_src_corrs"] is not None else ""
+        # except:
+        #     breakpoint()
+        label = f"ndot_ion_{line_label}{dust_label}_{fesc_label}"#{ext_src_label}{ext_src_lim_label}"
+        if self.global_kwargs["logged"]:
+            label = f"log_{label}"
+        return label
+
+    @property
+    def plot_name(self: Self) -> str:
+        if self.global_kwargs["logged"]:
+            return r"$\log(\dot{n}_{\mathrm{ion}}~/~\mathrm{s}^{-1})$"
+        else:
+            return r"$\dot{n}_{\mathrm{ion}}~/~\mathrm{s}^{-1}$"
     
+    def _kwarg_assertions(self: Self) -> NoReturn:
+        if self.fesc_calculator is not None:
+            assert isinstance(self.fesc_calculator, (Fesc_From_Beta_Calculator, float))
+        if isinstance(self.fesc_calculator, float):
+            assert self.fesc_calculator >= 0.0
+            assert self.fesc_calculator <= 1.0
+    
+    def _calc_obj_kwargs(
+        self: Self,
+        phot_rest: Photometry_rest
+    ) -> Dict[str, Any]:
+        return {}
+
+    def _fail_criteria(
+        self: Self,
+        phot_rest: Photometry_rest,
+    ) -> bool:
+        # always pass
+        return False
+    
+    def _calculate(
+        self: Self,
+        fluxes_arr: u.Quantity,
+        phot_rest: Photometry_rest,
+    ) -> Optional[Union[u.Quantity, u.Magnitude, u.Dex]]:
+        if self.fesc_calculator is None or self.fesc_calculator == 0.0 or self.fesc_calculator == 0:
+            ndot_0 = True
+        else:
+            ndot_0 = False
+        # extract line and UV luminosity (and fesc is required) chains/value
+        if len(fluxes_arr) > 1:
+            line_lum_arr = phot_rest.property_PDFs[self.pre_req_properties[0].name].input_arr
+            assert len(fluxes_arr) == len(line_lum_arr)
+            if self.fesc_calculator is None:
+                fesc_arr = np.full(len(fluxes_arr), 0.0)
+            elif isinstance(self.fesc_calculator, Fesc_From_Beta_Calculator):
+                fesc_arr = phot_rest.property_PDFs[self.fesc_calculator.name].input_arr
+            else: # isinstance(fesc_conv, float)
+                fesc_arr = np.full(len(fluxes_arr), float(self.fesc_calculator))
+            assert len(fluxes_arr) == len(fesc_arr)
+        else:
+            line_lum_arr = phot_rest.properties[self.pre_req_properties[0].name]
+            if self.fesc_calculator is None:
+                fesc_arr = 0.0
+            elif isinstance(self.fesc_calculator, Fesc_From_Beta_Calculator):
+                fesc_arr = phot_rest.properties[self.fesc_calculator.name]
+            else: # isinstance(fesc_conv, float)
+                fesc_arr = float(self.fesc_calculator)
+
+        # calculate ndot_ion values 
+        # under assumption of Case B recombination
+        if ndot_0:
+            ndot_ion_arr = line_lum_arr / (1.36e-12 * u.erg)
+        else:
+            ndot_ion_arr = line_lum_arr * fesc_arr / (1.36e-12 * u.erg * (1.0 - fesc_arr))
+        ndot_ion_arr = ndot_ion_arr.to(u.Hz)
+        ndot_ion_arr[~np.isfinite(ndot_ion_arr)] = np.nan
+        if self.global_kwargs["logged"]:
+            ndot_ion_arr = np.log10(ndot_ion_arr.value) * u.Unit(f"dex({ndot_ion_arr.unit.to_string()})")
+        finite_ndot_ion_arr = ndot_ion_arr[np.isfinite(ndot_ion_arr)]
+        if len(fluxes_arr) > 1:
+            self.obj_kwargs["negative_ndot_ion_pc"] = 100.0 * (1 - len(finite_ndot_ion_arr) / len(ndot_ion_arr))
+            if len(finite_ndot_ion_arr) < 50 or self.obj_kwargs["negative_ndot_ion_pc"] > 99.0:
+                return None
+        else:
+            if len(finite_ndot_ion_arr) < 1:
+                return None
+        return ndot_ion_arr
+    
+    def _get_output_kwargs(
+        self: Self,
+        phot_rest: Photometry_rest
+    ) -> Dict[str, Any]:
+        return {}
+
+
+# class Ndot_Ion_Fesc_Calculator(Rest_Frame_Property_Calculator):
+
+#     def __init__(
+#         self: Self,
+#         aper_diam: u.Quantity,
+#         SED_fit_label: Union[str, Type[SED_code]],
+#         #frame: str = "rest",
+#         rest_optical_wavs: u.Quantity = [4_200.0, 10_000.0] * u.AA,
+#         dust_law: Optional[Union[str, Type[Dust_Law]]] = C00,
+#         beta_dust_conv: Optional[Union[str, Type[AUV_from_beta]]] = M99,
+#         UV_wav_lims: Optional[u.Quantity] = [1_250.0, 3_000.0] * u.AA,
+#         fesc_conv: Union[str, float] = "Chisholm22",
+#         logged: bool = True,
+#     ) -> NoReturn:
+#         ndot_ion_calculator = \
+#             Ndot_Ion_Calculator(
+#                 aper_diam,
+#                 SED_fit_label,
+#                 #frame,
+#                 rest_optical_wavs,
+#                 dust_law,
+#                 beta_dust_conv,
+#                 UV_wav_lims,
+#                 fesc_conv,
+#                 logged = False,
+#             )
+                
+#         pre_req_properties = [ndot_ion_calculator]
+#         if isinstance(fesc_conv, str):
+#             self.fesc_calculator = Fesc_From_Beta_Calculator(
+#                 aper_diam,
+#                 SED_fit_label,
+#                 UV_wav_lims,
+#                 fesc_conv,
+#                 keep_valid = True
+#             )
+#             pre_req_properties.append(self.fesc_calculator)
+#         else: # float
+#             self.fesc_calculator = fesc_conv
+#         global_kwargs = {"logged": logged}
+#         super().__init__(aper_diam, SED_fit_label, pre_req_properties, **global_kwargs)
+
+#     @property
+#     def name(self: Self) -> str:
+#         if self.pre_req_properties[0].pre_req_properties[0].pre_req_properties[0]. \
+#                 dust_calculator is not None:
+#             dust_label = "_" + "_".join(self.pre_req_properties[0]. \
+#                 pre_req_properties[0].dust_calculator.name.split("_")[1:2]) + "dust"
+#         else:
+#             dust_label = ""
+#         if isinstance(self.fesc_calculator, Fesc_From_Beta_Calculator):
+#             fesc_label = self.fesc_calculator.name.split("_")[0]
+#             if dust_label == "":
+#                 fesc_label += "_".join(fesc_label.split("_")[1:])
+#         else: # isinstance(fesc_conv, float)
+#             fesc_label = f"fesc={self.fesc_calculator:.2f}"
+#         line_label = "+".join(self.pre_req_properties[0]. \
+#             pre_req_properties[0].pre_req_properties[0].pre_req_properties[1]. \
+#             global_kwargs["strong_line_names"])
+#         # try:
+#         #     ext_src_label = f"_extsrc_{self.pre_req_properties[0].pre_req_properties[0].global_kwargs['ext_src_corrs']}" \
+#         #         if self.pre_req_properties[0].pre_req_properties[0].global_kwargs["ext_src_corrs"] is not None else ""
+#         #     ext_src_lim_label = f"<{self.pre_req_properties[0].pre_req_properties[0].global_kwargs['ext_src_uplim']:.0f}" if \
+#         #         self.pre_req_properties[0].pre_req_properties[0].global_kwargs["ext_src_uplim"] is not None and \
+#         #         self.pre_req_properties[0].pre_req_properties[0].global_kwargs["ext_src_corrs"] is not None else ""
+#         # except:
+#         #     breakpoint()
+#         label = f"fesc_ndot_ion_{line_label}{dust_label}_{fesc_label}"#{ext_src_label}{ext_src_lim_label}"
+#         if self.global_kwargs["logged"]:
+#             label = f"log_{label}"
+#         return label
+
+#     @property
+#     def plot_name(self: Self) -> str:
+#         if self.global_kwargs["logged"]:
+#             return r"$\log(\dot{n}_{\mathrm{ion}}f_{\mathrm{esc}}~/~\mathrm{s}^{-1})$"
+#         else:
+#             return r"$\dot{n}_{\mathrm{ion}}f_{\mathrm{esc}}~/~\mathrm{s}^{-1}$"
+    
+#     def _kwarg_assertions(self: Self) -> NoReturn:
+#         if isinstance(self.fesc_calculator, float):
+#             assert self.fesc_calculator >= 0.0
+#             assert self.fesc_calculator <= 1.0
+#         else:
+#             assert isinstance(self.fesc_calculator, Fesc_From_Beta_Calculator)
+    
+#     def _calc_obj_kwargs(
+#         self: Self,
+#         phot_rest: Photometry_rest
+#     ) -> Dict[str, Any]:
+#         return {}
+
+#     def _fail_criteria(
+#         self: Self,
+#         phot_rest: Photometry_rest,
+#     ) -> bool:
+#         # always pass
+#         return False
+    
+#     def _calculate(
+#         self: Self,
+#         fluxes_arr: u.Quantity,
+#         phot_rest: Photometry_rest,
+#     ) -> Optional[Union[u.Quantity, u.Magnitude, u.Dex]]:
+#         # extract line and UV luminosity (and fesc is required) chains/value
+#         if len(fluxes_arr) > 1:
+#             ndot_ion_arr = phot_rest.property_PDFs[self.pre_req_properties[0].name].input_arr
+#             assert len(fluxes_arr) == len(ndot_ion_arr)
+#             if self.fesc_calculator is None:
+#                 fesc_arr = np.full(len(fluxes_arr), 0.0)
+#             elif isinstance(self.fesc_calculator, Fesc_From_Beta_Calculator):
+#                 fesc_arr = phot_rest.property_PDFs[self.fesc_calculator.name].input_arr
+#             else: # isinstance(fesc_conv, float)
+#                 fesc_arr = np.full(len(fluxes_arr), self.fesc_calculator)
+#             assert len(fluxes_arr) == len(fesc_arr)
+#         else:
+#             ndot_ion_arr = phot_rest.properties[self.pre_req_properties[0].name]
+#             if self.fesc_calculator is None:
+#                 fesc_arr = 0.0
+#             elif isinstance(self.fesc_calculator, Fesc_From_Beta_Calculator):
+#                 fesc_arr = phot_rest.properties[self.fesc_calculator.name]
+#             else: # isinstance(fesc_conv, float)
+#                 fesc_arr = self.fesc_calculator
+#         # calculate fesc_ndot_ion values
+#         fesc_ndot_ion_arr = fesc_arr * ndot_ion_arr
+#         return fesc_ndot_ion_arr
+    
+#     def _get_output_kwargs(
+#         self: Self,
+#         phot_rest: Photometry_rest
+#     ) -> Dict[str, Any]:
+#         return {}
 
 class Xi_Ion_Calculator(Rest_Frame_Property_Calculator):
 
@@ -1997,7 +2330,7 @@ class Xi_Ion_Calculator(Rest_Frame_Property_Calculator):
         self: Self,
         aper_diam: u.Quantity,
         SED_fit_label: Union[str, Type[SED_code]],
-        frame: str = "rest",
+        #frame: str = "rest",
         rest_optical_wavs: u.Quantity = [4_200.0, 10_000.0] * u.AA,
         dust_law: Optional[Union[str, Type[Dust_Law]]] = C00,
         beta_dust_conv: Optional[Union[str, Type[AUV_from_beta]]] = M99,
@@ -2015,7 +2348,7 @@ class Xi_Ion_Calculator(Rest_Frame_Property_Calculator):
                 aper_diam, 
                 SED_fit_label, 
                 "Halpha", 
-                frame,
+                #frame,
                 rest_optical_wavs, 
                 dust_law, 
                 beta_dust_conv, 
@@ -2025,7 +2358,7 @@ class Xi_Ion_Calculator(Rest_Frame_Property_Calculator):
         LUV_calculator = LUV_Calculator(
             aper_diam,
             SED_fit_label,
-            frame,
+            #frame,
             UV_wav_lims,
             UV_ref_wav,
             beta_dust_conv,
@@ -2080,9 +2413,9 @@ class Xi_Ion_Calculator(Rest_Frame_Property_Calculator):
     @property
     def plot_name(self: Self) -> str:
         if self.global_kwargs["logged"]:
-            return r"$\log(\xi_{\mathrm{ion}})$"
+            return r"$\log(\xi_{\mathrm{ion}}~/~\mathrm{Hz erg}^{-1})$"
         else:
-            return r"$\xi_{\mathrm{ion}}$"
+            return r"$\xi_{\mathrm{ion}}~/~\mathrm{Hz erg}^{-1}$"
     
     def _kwarg_assertions(self: Self) -> NoReturn:
         if self.fesc_calculator is not None:
@@ -2171,8 +2504,7 @@ class SFR_Halpha_Calculator(Rest_Frame_Property_Calculator):
             Optical_Line_Luminosity_Calculator(
                 aper_diam, 
                 SED_fit_label, 
-                "Halpha", 
-                "obs",
+                "Halpha",
                 rest_optical_wavs, 
                 dust_law, 
                 beta_dust_conv, 

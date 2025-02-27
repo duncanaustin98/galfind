@@ -99,8 +99,8 @@ def perform_forced_phot(
             name=f"FLUX_APER_{self.filt_name}",
         )
         phot_table["FLUX_APER"] = aper_tab
-        phot_table["FLUXERR_APER"] = phot_table["FLUX_APER"] * -99
-        phot_table["MAGERR_APER"] = phot_table["FLUX_APER"] * 99
+        phot_table["FLUXERR_APER"] = phot_table["FLUX_APER"] * -99.0
+        phot_table["MAGERR_APER"] = phot_table["FLUX_APER"] * 99.0
 
         # This converts the fluxes to magnitudes using the correct ZP
         # and puts them in the same format as the sextractor catalogue
@@ -125,12 +125,12 @@ def perform_forced_phot(
         funcs.change_file_permissions(forced_phot_path)
     
     forced_phot_args = \
-    {
-        "forced_phot_band": forced_phot_band,
-        "err_type": err_type,
-        "method": get_code(),
-        "id_label": "NUMBER",
-        "ra_label": "ALPHA_J2000",
-        "dec_label": "DELTA_J2000",
-    }
+        {
+            "forced_phot_band": forced_phot_band,
+            "err_type": err_type,
+            "method": get_code(),
+            "id_label": "NUMBER",
+            "ra_label": "ALPHA_J2000",
+            "dec_label": "DELTA_J2000",
+        }
     return forced_phot_path, forced_phot_args

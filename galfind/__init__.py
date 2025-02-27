@@ -146,6 +146,7 @@ from .SED_codes import SED_code
 from .LePhare import LePhare
 from .EAZY import EAZY # Failed to `import dust_attenuation`
 from .Bagpipes import Bagpipes
+from .Brown_Dwarf_Fitter import Template_Fitter, Brown_Dwarf_Fitter
 
 # don't do Bagpipes or LePhare for now
 # sed_code_to_name_dict = {
@@ -218,7 +219,7 @@ from .Spectrum import (
     Spectral_Filter,
     Spectral_Grating,
 )
-from .MCMC import Prior, Flat_Prior, Priors, MCMC_Fitter, Schechter_Mag_Fitter, Schechter_Lum_Fitter, Linear_Fitter
+from .MCMC import Prior, Flat_Prior, Priors, MCMC_Fitter, Schechter_Mag_Fitter, Schechter_Lum_Fitter, Linear_Fitter, Power_Law_Fitter, Scattered_Linear_Fitter
 from .Number_Density_Function import (
     Base_Number_Density_Function,
     Number_Density_Function,
@@ -252,6 +253,7 @@ from .Rest_frame_properties import (
     Line_Dust_Attenuation_From_UV_Calculator,
     Optical_Line_Flux_Calculator,
     Optical_Line_Luminosity_Calculator,
+    Ndot_Ion_Calculator,
     Xi_Ion_Calculator,
     SFR_Halpha_Calculator,
 )

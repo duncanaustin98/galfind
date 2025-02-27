@@ -35,12 +35,14 @@ class Photometry_obs(Photometry):
         depths: Union[Dict[str, float], List[float]],
         aper_diam: u.Quantity,
         SED_results: Dict[str, SED_result] = {},
+        simulated: bool = False,
         timed: bool = False,
     ):
         if timed:
             start = time.time()
         self.aper_diam = aper_diam
         self.SED_results = SED_results
+        self.simulated = simulated
         super().__init__(filterset, flux, flux_errs, depths)
         if timed:
             end = time.time()
@@ -168,21 +170,37 @@ class Photometry_obs(Photometry):
 
     @property
     def SNR(self):
-        return [
-            (flux * 10 ** (aper_corr / -2.5)) * 5 / depth
-            if flux > 0.0
-            else flux * 5 / depth
-            for aper_corr, flux, depth in zip(
-                self.aper_corrs,
-                self.flux.filled(fill_value=np.nan).to(u.Jy).value,
-                self.depths.to(u.Jy).value,
-            )
-        ]
+        if isinstance(self.flux, u.Quantity):
+            fluxes = self.flux
+        else:
+            fluxes = self.flux.filled(fill_value=np.nan)
+        if self.simulated:
+            return [
+                flux * 5 / depth
+                for flux, depth in zip(
+                    fluxes.to(u.Jy).value,
+                    self.depths.to(u.Jy).value,
+                )
+            ]
+        else:
+            return [
+                (flux * 10 ** (aper_corr / -2.5)) * 5 / depth
+                if flux > 0.0
+                else flux * 5 / depth
+                for aper_corr, flux, depth in zip(
+                    self.aper_corrs,
+                    fluxes.to(u.Jy).value,
+                    self.depths.to(u.Jy).value,
+                )
+            ]
 
     @property
     def aper_corrs(self):
-        return [filt.instrument.aper_corrs[filt.band_name] \
-            [self.aper_diam] for filt in self.filterset]
+        if self.simulated:
+            return [np.nan for filt in self.filterset]
+        else:
+            return [filt.instrument.aper_corrs[filt.band_name] \
+                [self.aper_diam] for filt in self.filterset]
 
     @classmethod  # not a gal object here, more like a catalogue row
     def from_fits_cat(

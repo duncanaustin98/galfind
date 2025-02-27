@@ -354,10 +354,7 @@ class Band_Data_Base(ABC):
         self, output_hdr: bool = False
     ) -> Union[Tuple[np.ndarray, fits.Header], np.ndarray]:
         if Path(self.rms_err_path).is_file():
-            try:
-                hdu = fits.open(self.rms_err_path)[self.rms_err_ext]
-            except:
-                breakpoint()
+            hdu = fits.open(self.rms_err_path)[self.rms_err_ext]
             rms_err = hdu.data
             hdr = hdu.header
         else:
@@ -2442,7 +2439,10 @@ class Data:
             elif isinstance(forced_phot_band, list):
                 filt_names = forced_phot_band
             if isinstance(forced_phot_band, tuple([str, list])):
-                assert all(name in self.filterset.band_names for name in filt_names)
+                assert all(name in self.filterset.band_names for name in filt_names), \
+                    galfind_logger.critical(
+                        f"Not all {filt_names.split('+')} in {self.filterset.band_names}"
+                    )
                 if len(filt_names) == 1:
                     forced_phot_band = self[filt_names[0]]
                 else:

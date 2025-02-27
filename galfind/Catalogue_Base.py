@@ -834,6 +834,7 @@ class Catalogue_Base:
         x_hist_ax: Optional[plt.Axes] = None,
         y_hist_ax: Optional[plt.Axes] = None,
         hist_kwargs: Dict[str, Any] = {},
+        plot_label: Optional[str] = "default",
     ):
         from . import Property_Calculator_Base
         x_name = x_calculator.full_name
@@ -1013,10 +1014,12 @@ class Catalogue_Base:
 
         # sort plot aesthetics - automatically annotate if coloured
         if annotate or c_calculator is not None:
-            plot_label = (
-                f"{self.version}, {self.filterset.instrument_name}, {self.survey}"
-            )
-            ax.set_title(plot_label)
+            if plot_label == "default":
+                plot_label = (
+                    f"{self.version}, {self.filterset.instrument_name}, {self.survey}"
+                )
+            if plot_label is not None:
+                ax.set_title(plot_label)
             ax.set_xlabel(x_label)
             ax.set_ylabel(y_label)
             if c_calculator is not None:

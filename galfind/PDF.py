@@ -255,14 +255,14 @@ class PDF:
                 " not in [u.Quantity, u.Magnitude, u.Dex]"
             )
         if ignore_nans:
-            arr_ = arr[~np.isnan(arr)]
+            arr_ = arr[np.isfinite(arr)]
         else:
             arr_ = arr
         assert len(arr_) > 0, galfind_logger.critical(
             f"{property_name=} 1D {arr_=} with {len(arr_)=} == 0"
         )
         try:
-            p_x, x_bin_edges = np.histogram(arr_.value, bins=Nbins, density=True)
+            p_x, x_bin_edges = np.histogram(arr_.value.astype(np.float64), bins=Nbins, density=True)
         except:
             breakpoint()
         x = 0.5 * (x_bin_edges[1:] + x_bin_edges[:-1]) * arr_.unit
@@ -386,7 +386,7 @@ class PDF:
     def save(
         self: Self, 
         save_path: str, 
-        size: int = 10_000, 
+        size: int = 10_000,
     ) -> None:
         if hasattr(self, "input_arr"):
             save_arr = self.input_arr

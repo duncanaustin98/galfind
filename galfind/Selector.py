@@ -483,7 +483,7 @@ class ID_Selector(Data_Selector):
 
     def __init__(
         self: Self,
-        IDs: int,
+        IDs: Union[int, List[int]],
     ):
         if isinstance(IDs, int):
             IDs = [IDs]
@@ -881,7 +881,10 @@ class Unmasked_Band_Selector(Data_Selector):
         band_index = int([i for i, band_name in enumerate( \
             gal.aper_phot[list(gal.aper_phot.keys())[0]].filterset.band_names) \
             if band_name == self.kwargs["band_name"]][0])
-        return not gal.aper_phot[list(gal.aper_phot.keys())[0]].flux.mask[band_index]
+        if isinstance(gal.aper_phot[list(gal.aper_phot.keys())[0]].flux, u.Quantity):
+            return True
+        else:
+            return not gal.aper_phot[list(gal.aper_phot.keys())[0]].flux.mask[band_index]
     
     def _call_cat(
         self: Self,
@@ -921,7 +924,10 @@ class Min_Unmasked_Band_Selector(Data_Selector):
         *args,
         **kwargs
     ) -> bool:
-        mask = gal.aper_phot[list(gal.aper_phot.keys())[0]].flux.mask
+        if isinstance(gal.aper_phot[list(gal.aper_phot.keys())[0]].flux, u.Quantity):
+            mask = np.full(len(gal.aper_phot[list(gal.aper_phot.keys())[0]].flux), False)
+        else:
+            mask = gal.aper_phot[list(gal.aper_phot.keys())[0]].flux.mask
         n_unmasked_bands = len([val for val in mask if not val])
         return n_unmasked_bands >= self.kwargs["min_bands"]
 
@@ -985,7 +991,10 @@ class Bluewards_LyLim_Non_Detect_Selector(Redshift_Selector):
             np.array(gal.aper_phot[self.aper_diam].filterset.band_names) \
             == first_Lylim_non_detect_band)[0][0]
         SNR_non_detect = gal.aper_phot[self.aper_diam].SNR[: first_Lylim_non_detect_index + 1]
-        mask_non_detect = gal.aper_phot[self.aper_diam].flux.mask[: first_Lylim_non_detect_index + 1]
+        if isinstance(gal.aper_phot[self.aper_diam].flux, u.Quantity):
+            mask_non_detect = np.full(len(SNR_non_detect), False)
+        else:
+            mask_non_detect = gal.aper_phot[self.aper_diam].flux.mask[: first_Lylim_non_detect_index + 1]
         # require the first Lylim non detect band and all bluewards bands 
         # to be non-detected at < SNR_lim if not masked
         return all(SNR < self.kwargs["SNR_lim"] or mask for mask, SNR in 
@@ -1051,7 +1060,10 @@ class Bluewards_Lya_Non_Detect_Selector(Redshift_Selector):
             np.array(gal.aper_phot[self.aper_diam].filterset.band_names) \
             == first_Lya_non_detect_band)[0][0]
         SNR_non_detect = gal.aper_phot[self.aper_diam].SNR[: first_Lya_non_detect_index + 1]
-        mask_non_detect = gal.aper_phot[self.aper_diam].flux.mask[: first_Lya_non_detect_index + 1]
+        if isinstance(gal.aper_phot[self.aper_diam].flux, u.Quantity):
+            mask_non_detect = np.full(len(SNR_non_detect), False)
+        else:
+            mask_non_detect = gal.aper_phot[self.aper_diam].flux.mask[: first_Lya_non_detect_index + 1]
         # require the first Lya non detect band and all bluewards bands 
         # to be non-detected at < SNR_lim if not masked
         return all(SNR < self.kwargs["SNR_lim"] or mask for mask, SNR in 
@@ -1146,7 +1158,10 @@ class Redwards_Lya_Detect_Selector(Redshift_Selector):
         detect_bands = gal.aper_phot[self.aper_diam]. \
             filterset.band_names[first_Lya_detect_index:]
         SNR_detect = gal.aper_phot[self.aper_diam].SNR[first_Lya_detect_index:]
-        mask_detect = gal.aper_phot[self.aper_diam].flux.mask[first_Lya_detect_index:]
+        if isinstance(gal.aper_phot[self.aper_diam].flux, u.Quantity):
+            mask_detect = np.full(len(SNR_detect), False)
+        else:
+            mask_detect = gal.aper_phot[self.aper_diam].flux.mask[first_Lya_detect_index:]
         # option as to whether to exclude potentially 
         # shallower medium/narrow bands in this calculation
         if self.kwargs["widebands_only"]:
@@ -1227,9 +1242,12 @@ class Lya_Band_Selector(Redshift_Selector):
         SNRs = gal.aper_phot[self.aper_diam].SNR[
             first_Lya_detect_band : first_Lya_non_detect_index + 1
         ]
-        mask_bands = gal.aper_phot[self.aper_diam].flux.mask[
-            first_Lya_detect_band : first_Lya_non_detect_index + 1
-        ]
+        if isinstance(gal.aper_phot[self.aper_diam].flux, u.Quantity):
+            mask_bands = np.full(SNRs, False)
+        else:
+            mask_bands = gal.aper_phot[self.aper_diam].flux.mask[
+                first_Lya_detect_band : first_Lya_non_detect_index + 1
+            ]
         if self.kwargs["widebands_only"]:
             wide_band_detect_indices = [
                 True
@@ -1343,7 +1361,10 @@ class Band_SNR_Selector(Photometry_Selector):
         else:
             band_index = self.kwargs["band"]
         SNR = gal.aper_phot[self.aper_diam].SNR[band_index]
-        masked = gal.aper_phot[self.aper_diam].flux.mask[band_index]
+        if isinstance(gal.aper_phot[self.aper_diam].flux, u.Quantity):
+            masked = False
+        else:
+            masked = gal.aper_phot[self.aper_diam].flux.mask[band_index]
         # fails if masked
         return (
             not masked
@@ -1478,13 +1499,16 @@ class Chi_Sq_Lim_Selector(SED_fit_Selector):
     ) -> bool:
         chi_sq_lim = self.kwargs["chi_sq_lim"]
         if self.kwargs["reduced"]:
-            n_bands = len(
-                [
-                    mask_band
-                    for mask_band in gal.aper_phot[self.aper_diam].flux.mask
-                    if not mask_band
-                ]
-            )
+            if isinstance(gal.aper_phot[self.aper_diam].flux, u.Quantity):
+                n_bands = len(gal.aper_phot[self.aper_diam].filterset.band_names)
+            else:
+                n_bands = len(
+                    [
+                        mask_band
+                        for mask_band in gal.aper_phot[self.aper_diam].flux.mask
+                        if not mask_band
+                    ]
+                )
             chi_sq_lim *= n_bands - 1
         chi_sq = gal.aper_phot[self.aper_diam].SED_results[self.SED_fit_label].chi_sq
         return chi_sq < chi_sq_lim

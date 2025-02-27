@@ -93,6 +93,7 @@ class Galaxy:
         selection_flags: Optional[Dict[u.Quantity, Dict[str, bool]]] = None,
         cat_filterset: Optional[Multiple_Filter] = None,
         survey: Optional[str] = None,
+        simulated: bool = False,
     ):
         self.ID = int(ID)
         self.sky_coord = sky_coord
@@ -102,46 +103,7 @@ class Galaxy:
         self.selection_flags = selection_flags
         self.cat_filterset = cat_filterset
         self.survey = survey
-        #{aper_diam: {} for aper_diam in self.aper_phot.keys()}
-
-    # @classmethod
-    # def from_pipeline(
-    #     cls,
-    # ):
-    #     pass
-
-    # @classmethod
-    # def from_fits_cat(
-    #     cls,
-    #     fits_cat_row,
-    #     instrument,
-    #     cat_creator,
-    #     codes,
-    #     lowz_zmax,
-    #     templates_arr,
-    # ):
-    #     # load multiple photometries from the fits catalogue
-    #     phot = Photometry_obs.from_fits_cat(
-    #         fits_cat_row,
-    #         instrument,
-    #         cat_creator,
-    #         cat_creator.aper_diam,
-    #         cat_creator.min_flux_pc_err,
-    #         codes,
-    #         lowz_zmax,
-    #         templates_arr,
-    #     )  # \
-    #     # for min_flux_pc_err in cat_creator.min_flux_pc_err for aper_diam in cat_creator.aper_diam]
-    #     # load the ID and Sky Coordinate from the source catalogue
-    #     ID = int(fits_cat_row[cat_creator.ID_label])
-    #     sky_coord = SkyCoord(
-    #         fits_cat_row[cat_creator.ra_dec_labels["RA"]] * u.deg,
-    #         fits_cat_row[cat_creator.ra_dec_labels["DEC"]] * u.deg,
-    #         frame="icrs",
-    #     )
-    #     # mask flags should come from cat_creator
-    #     mask_flags = {}  # {f"unmasked_{band}": cat_creator.load_flag(fits_cat_row, f"unmasked_{band}") for band in instrument.band_names}
-    #     return cls(sky_coord, ID, phot, mask_flags)
+        self.simulated = simulated
 
     def __repr__(self):
         return f"{self.__class__.__name__}({self.ID}, " + \
@@ -559,12 +521,12 @@ class Galaxy:
                 )
                 SED_colours[code.label] = SED_plot[0].get_color()
                 # plot the mock photometry
-                self.aper_phot[aper_diam].SED_results[code.label].SED.create_mock_phot(
+                self.aper_phot[aper_diam].SED_results[code.label].SED.create_mock_photometry(
                     self.aper_phot[aper_diam].filterset,
                     depths=self.aper_phot[aper_diam].depths
                     # min flux pc err = 10.0
                 )
-                self.aper_phot[aper_diam].SED_results[code.label].SED.mock_phot.plot(
+                self.aper_phot[aper_diam].SED_results[code.label].SED.mock_photometry.plot(
                     phot_ax,
                     wav_unit,
                     flux_unit,
@@ -1042,7 +1004,7 @@ class Galaxy:
                     z, wav_z.value, mag_z, wav_z.unit, u.ABmag
                 )
                 galfind_logger.debug("Not propagating min_flux_pc_err!")
-                test_mock_phot = test_sed_obs.create_mock_phot(
+                test_mock_phot = test_sed_obs.create_mock_photometry(
                     data.filterset,
                     depths=data_depths,
                     min_flux_pc_err=10.0,

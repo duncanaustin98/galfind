@@ -218,7 +218,6 @@ class SED:
         line_plus_cont_flux = np.trapz(
             flux_lambda[feature_mask], x=wavs_AA[feature_mask]
         )
-        ##breakpoint()
         # calculate continuum flux and mean continuum level
         cont_mask = np.logical_or.reduce(
             np.array(
@@ -387,7 +386,7 @@ class SED_obs(SED):
             z_int, wav_obs.value, mag_obs.value, SED_rest.wavs.unit, u.ABmag
         )
 
-    def create_mock_phot(
+    def create_mock_photometry(
         self: Self,
         filterset: Multiple_Filter,
         depths: Optional[u.Quantity] = None,
@@ -418,10 +417,10 @@ class SED_obs(SED):
         bp_averaged_fluxes_Jy = funcs.convert_mag_units(
             band_wavs, bp_averaged_fluxes, u.Jy
         )
-        self.mock_phot = Mock_Photometry(
+        self.mock_photometry = Mock_Photometry(
             filterset, bp_averaged_fluxes_Jy, depths, min_flux_pc_err
         )
-        return self.mock_phot
+        return self.mock_photometry
 
     def calc_colour(self, filters, depths=[]):
         assert type(filters) in [np.array, list]
@@ -837,11 +836,11 @@ class Mock_SED_obs(SED_obs):
                     galfind_logger.critical(
                         f"self.mock_photometry includes the bands = {self.mock_photometry.filterset.band_names}, and {band} is not included!"
                     )
-                assert self.mock_photometry[band].unit == u.Jy
+                assert self.mock_photometry[band].flux.unit == u.Jy
             # calculate colour in mags
             colour = -2.5 * np.log10(
-                self.mock_photometry[bands[0]] / self.mock_photometry[bands[1]]
-            )
+                self.mock_photometry[bands[0]].flux / self.mock_photometry[bands[1]].flux
+            ) * u.ABmag
             # save colour in Mock_SED object
             if "colours" in self.__dict__:
                 self.colours = {**self.colours, **{colour_name: colour.value}}
@@ -898,8 +897,8 @@ class Mock_SED_template_set(ABC):
     def __len__(self):
         return len(self.SED_arr)
 
-    def create_mock_phot(self, filterset):
-        [sed.create_mock_phot(filterset) for sed in self.SED_arr]
+    def create_mock_photometry(self, filterset):
+        [sed.create_mock_photometry(filterset) for sed in self.SED_arr]
 
     # @abstractmethod
     # def calc_UV_slope():

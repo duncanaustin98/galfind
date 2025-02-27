@@ -39,6 +39,7 @@ except ImportError:
 
 from . import (
     EAZY,  # noqa F501
+    NIRCam,
     Catalogue_Base,
     Photometry_rest,
     Photometry_obs,
@@ -113,12 +114,53 @@ def phot_property_from_galfind_tab(
     assert all(label == labels[aper_diams[0]] for label in labels.values()), \
         galfind_logger.critical("All phot_labels not equal!")
     properties = {}
-    _properties = funcs.fits_cat_to_np(cat, labels[aper_diams[0]])
+    if "reshape_by_aper_diams" in kwargs.keys() and \
+            isinstance(kwargs["reshape_by_aper_diams"], bool):
+        _properties = funcs.fits_cat_to_np(
+            cat,
+            labels[aper_diams[0]],
+            reshape_by_aper_diams = kwargs["reshape_by_aper_diams"]
+        )
+    else:
+        _properties = funcs.fits_cat_to_np(
+            cat,
+            labels[aper_diams[0]],
+        )
     for aper_diam_index in aper_diam_indices:
         aper_diam = kwargs["cat_aper_diams"][aper_diam_index]
         properties[aper_diam] = _properties[:, :, aper_diam_index]
     return properties
 
+def phot_property_from_fits(
+    cat: Table,
+    labels: Dict[u.Quantity, List[str]],
+    **kwargs
+) -> np.ndarray:
+    aper_diams = [label.value for label in labels.keys()] * list(labels.keys())[0].unit
+    assert len(aper_diams) > 0, \
+        galfind_logger.critical(f"{len(aper_diams)=} <= 0")
+    if "cat_aper_diams" not in kwargs.keys():
+        galfind_logger.warning(
+            f"cat_aper_diams not in {kwargs.keys()=}! " + \
+            f"Setting to {aper_diams=}"
+        )
+        kwargs["cat_aper_diams"] = aper_diams
+    else:
+        assert isinstance(kwargs["cat_aper_diams"], u.Quantity), \
+            galfind_logger.critical(f"{type(kwargs['cat_aper_diams'])=} != u.Quantity!")
+        assert isinstance(kwargs["cat_aper_diams"].value, (list, np.ndarray)), \
+            galfind_logger.critical(f"{type(kwargs['cat_aper_diams'])=} != list!")
+    # ensure labels are formatted properly
+    assert all(label == labels[aper_diams[0]] for label in labels.values()), \
+        galfind_logger.critical("All phot_labels not equal!")
+    # extract properties from fits table
+    properties = {}
+    for aper_diam in aper_diams:
+        properties[aper_diam] = np.lib.recfunctions.structured_to_unstructured(
+            cat[labels[aper_diams[0]]].as_array()
+        )
+    return properties
+    
 def load_galfind_phot(
     cat: Table,
     phot_labels: Dict[u.Quantity, List[str]],
@@ -133,6 +175,26 @@ def load_galfind_phot(
         in phot_property_from_galfind_tab(cat, phot_labels, **kwargs).items()}
     phot_err = {aper_diam: funcs.flux_image_to_Jy(_phot_err, kwargs["ZP"]) for aper_diam, _phot_err \
         in phot_property_from_galfind_tab(cat, err_labels, **kwargs).items()}
+    return phot, phot_err
+
+def load_jaguar_phot(
+    cat: Table,
+    phot_labels: Dict[u.Quantity, List[str]],
+    err_labels: Dict[u.Quantity, List[str]],
+    **kwargs
+) -> Tuple[Dict[u.Quantity, np.ndarray], Dict[u.Quantity, np.ndarray]]:
+    assert phot_labels.keys() == err_labels.keys(), \
+        galfind_logger.critical(f"{phot_labels.keys()=} != {err_labels.keys()=}!")
+    assert "ZP" in kwargs.keys(), \
+        galfind_logger.critical("ZP not in kwargs!")
+    phot = {aper_diam: funcs.flux_image_to_Jy(_phot, kwargs["ZP"]) for aper_diam, _phot \
+        in phot_property_from_fits(cat, phot_labels, **kwargs).items()}
+    if "incl_errs" in kwargs.keys():
+        if not kwargs["incl_errs"]:
+            phot_err = {aper_diam: np.array(list(itertools.repeat(None, len(cat)))) for aper_diam in phot_labels.keys()}
+            return phot, phot_err
+    phot_err = {aper_diam: funcs.flux_image_to_Jy(_phot_err, kwargs["ZP"]) for aper_diam, _phot_err \
+        in phot_property_from_fits(cat, err_labels, **kwargs).items()}
     return phot, phot_err
 
 def load_galfind_mask(
@@ -199,10 +261,39 @@ def galfind_phot_labels(
     err_labels = {aper_diam * aper_diams.unit: [f"FLUXERR_APER_{filt_name}_loc_depth_{str(int(kwargs['min_flux_pc_err']))}pc_Jy" for filt_name in filterset.band_names] for aper_diam in aper_diams.value}
     return phot_labels, err_labels
 
+def jaguar_phot_labels(
+    filterset: Multiple_Filter, 
+    aper_diams: u.Quantity, 
+    **kwargs
+) -> Tuple[Dict[str, str], Dict[str, str]]:
+    assert "min_flux_pc_err" in kwargs.keys(), \
+        galfind_logger.critical("min_flux_pc_err not in kwargs!")
+    phot_labels = {
+        aper_diam * aper_diams.unit: [
+                f"NRC_{filt.band_name}_fnu" if \
+                isinstance(filt.instrument, NIRCam) \
+                else f"HST_{filt.band_name}_fnu" \
+                for filt in filterset
+            ] for aper_diam in aper_diams.value
+    }
+    err_labels = {aper_diam * aper_diams.unit: [] for aper_diam in aper_diams.value}
+    return phot_labels, err_labels
+
+def scattered_phot_labels(
+    filterset: Multiple_Filter, 
+    aper_diams: u.Quantity, 
+    **kwargs
+) -> Tuple[Dict[str, str], Dict[str, str]]:
+    assert "min_flux_pc_err" in kwargs.keys(), \
+        galfind_logger.critical("min_flux_pc_err not in kwargs!")
+    phot_labels = {aper_diam * aper_diams.unit: [f"{filt_name}_scattered" for filt_name in filterset.band_names] for aper_diam in aper_diams.value}
+    err_labels = {aper_diam * aper_diams.unit: [f"{filt_name}_err" for filt_name in filterset.band_names] for aper_diam in aper_diams.value}
+    return phot_labels, err_labels
+
 def galfind_mask_labels(
     filterset: Multiple_Filter, 
     **kwargs
-) -> Dict[str, str]:
+) -> List[str]:
     return [f"unmasked_{filt_name}" for filt_name in filterset.band_names]
 
 def galfind_depth_labels(
@@ -254,13 +345,15 @@ class Catalogue_Creator:
         load_mask_func: Optional[Callable] = load_galfind_mask,
         get_mask_labels: Callable[[Multiple_Filter], Dict[str, str]] = galfind_mask_labels,
         load_mask_kwargs: Dict[str, Any] = {},
-        load_depths_func: Optional[Callable] = load_galfind_depths,
+        load_depth_func: Optional[Callable] = load_galfind_depths,
         get_depth_labels: Callable[[Multiple_Filter], Dict[str, str]] = galfind_depth_labels,
-        load_depths_kwargs: Dict[str, Any] = {},
+        load_depth_kwargs: Dict[str, Any] = {},
         load_selection_func: Optional[Callable[[], Dict[u.Quantity, Dict[str, List[Any]]]]] = load_bool_Table,
         get_selection_labels: Callable[[Table, List[str]], List[str]] = galfind_selection_labels,
         load_selection_kwargs: Dict[str, Any] = {},
         load_SED_result_func: Optional[Callable] = None,
+        apply_gal_instr_mask: bool = True,
+        simulated: bool = False,
     ):
         self.survey = survey
         self.version = version
@@ -286,16 +379,19 @@ class Catalogue_Creator:
         self.load_mask_func = load_mask_func
         self.get_mask_labels = get_mask_labels
         self.load_mask_kwargs = load_mask_kwargs
-        self.load_depth_func = load_depths_func
+        self.load_depth_func = load_depth_func
         self.get_depth_labels = get_depth_labels
-        self.load_depth_kwargs = load_depths_kwargs
+        self.load_depth_kwargs = load_depth_kwargs
         self.load_selection_func = load_selection_func
         self.get_selection_labels = get_selection_labels
         self.load_selection_kwargs = load_selection_kwargs
         self.load_SED_result_func = load_SED_result_func
+        self.apply_gal_instr_mask = apply_gal_instr_mask
+        self.simulated = simulated
 
         self.set_crops(crops)
-        self.make_gal_instr_mask()
+        if self.apply_gal_instr_mask:
+            self.make_gal_instr_mask()
         # ensure survey/version is correct
         # in primary header which stores the IDs
         hdr = self.open_hdr(self.cat_path, "ID")
@@ -340,11 +436,11 @@ class Catalogue_Creator:
         phot, phot_err = self.load_phot(cropped)
         depths = self.load_depths(cropped)
         selection_flags = self.load_selection_flags(cropped)
-        filterset_arr = self.load_gal_filtersets(cropped)
+        filterset_arr = self.load_gal_filtersets(length = len(IDs), cropped = cropped)
         SED_results = {}
         phot_obs_arr = [{aper_diam: Photometry_obs(filterset_arr[i], \
             phot[aper_diam][i], phot_err[aper_diam][i], depths[aper_diam][i], \
-            aper_diam, SED_results=SED_results) for aper_diam in self.aper_diams} \
+            aper_diam, SED_results = SED_results, simulated = self.simulated) for aper_diam in self.aper_diams} \
             for i in range(len(filterset_arr))]
         assert len(IDs) == len(sky_coords) == len(phot_obs_arr), \
             galfind_logger.critical(
@@ -355,9 +451,8 @@ class Catalogue_Creator:
             f"Loading {self.survey} {self.version} {self.cat_name} galaxies!"
         )
         #, origin_survey = self.survey
-        gals = [Galaxy(ID, sky_coord, phot_obs, flags, cat_filterset, survey = self.survey) \
-            for ID, sky_coord, phot_obs, flags, cat_filterset \
-            in zip(IDs, sky_coords, phot_obs_arr, selection_flags, filterset_arr)]
+        gals = [Galaxy(ID, sky_coord, phot_obs, flags, cat_filterset, survey = self.survey, simulated = self.simulated) \
+            for ID, sky_coord, phot_obs, flags, cat_filterset in zip(IDs, sky_coords, phot_obs_arr, selection_flags, filterset_arr)]
         cat = Catalogue(gals, self)
         # point to data if provided
         if hasattr(self, "data"):
@@ -430,12 +525,13 @@ class Catalogue_Creator:
         # load the photometric fluxes and errors in units of Jy
         phot_labels, err_labels = self.get_phot_labels(self.filterset, self.aper_diams, **self.load_phot_kwargs)
         phot, phot_err = self.load_phot_func(tab, phot_labels, err_labels, **self.load_phot_kwargs)
-        if cropped:
-            gal_instr_mask = self.gal_instr_mask[self.crop_mask]
-        else:
-            gal_instr_mask = self.gal_instr_mask
-        phot = {aper_diam: self._apply_gal_instr_mask(_phot, gal_instr_mask) for aper_diam, _phot in phot.items()}
-        phot_err = {aper_diam: self._apply_gal_instr_mask(_phot_err, gal_instr_mask) for aper_diam, _phot_err in phot_err.items()}
+        if self.apply_gal_instr_mask:
+            if cropped:
+                gal_instr_mask = self.gal_instr_mask[self.crop_mask]
+            else:
+                gal_instr_mask = self.gal_instr_mask
+            phot = {aper_diam: self._apply_gal_instr_mask(_phot, gal_instr_mask) for aper_diam, _phot in phot.items()}
+            phot_err = {aper_diam: self._apply_gal_instr_mask(_phot_err, gal_instr_mask) for aper_diam, _phot_err in phot_err.items()}
 
         mask = self.load_mask(cropped)
         if mask is not None:
@@ -457,17 +553,18 @@ class Catalogue_Creator:
                 err_message = f"Error loading mask: {e}"
                 galfind_logger.critical(err_message)
                 raise(Exception(err_message))
-            if cropped:
-                gal_instr_mask = self.gal_instr_mask[self.crop_mask]
-            else:
-                gal_instr_mask = self.gal_instr_mask
-            mask = self._apply_gal_instr_mask(mask, gal_instr_mask)
+            if self.apply_gal_instr_mask:
+                if cropped:
+                    gal_instr_mask = self.gal_instr_mask[self.crop_mask]
+                else:
+                    gal_instr_mask = self.gal_instr_mask
+                mask = self._apply_gal_instr_mask(mask, gal_instr_mask)
             return mask
         else:
             galfind_logger.warning(
                 "Either load mask or mask label function not provided!"
             )
-            return None
+            return None #{aper_diam: list(itertools.repeat(None, len(tab))) for aper_diam in self.aper_diams}
 
     def load_depths(self, cropped: bool = True) -> np.ndarray:
         tab = self.load_tab("depths", cropped)
@@ -479,18 +576,19 @@ class Catalogue_Creator:
                 err_message = f"Error loading depths: {e}"
                 galfind_logger.critical(err_message)
                 raise(Exception(err_message))
-            if cropped:
-                gal_instr_mask = self.gal_instr_mask[self.crop_mask]
-            else:
-                gal_instr_mask = self.gal_instr_mask
-            depths = {aper_diam: self._apply_gal_instr_mask(_depths, gal_instr_mask) \
-                for aper_diam, _depths in depths.items()}
+            if self.apply_gal_instr_mask:
+                if cropped:
+                    gal_instr_mask = self.gal_instr_mask[self.crop_mask]
+                else:
+                    gal_instr_mask = self.gal_instr_mask
+                depths = {aper_diam: self._apply_gal_instr_mask(_depths, gal_instr_mask) \
+                    for aper_diam, _depths in depths.items()}
             return depths
         else:
             galfind_logger.warning(
                 "Either load depth or depth label function not provided!"
             )
-            return None
+            return {aper_diam: list(itertools.repeat(None, len(tab))) for aper_diam in self.aper_diams}
         
     def load_selection_flags(self, cropped: bool = True) -> List[Dict[str, bool]]:
         tab = self.load_tab("SELECTION", cropped)
@@ -582,24 +680,31 @@ class Catalogue_Creator:
             galfind_logger.critical(f"{len(gal_instr_mask)} != {len(arr)}!")
         return [ele[mask] for ele, mask in zip(arr, gal_instr_mask)]
 
-    def load_gal_filtersets(self, cropped: bool = True):
-        # create set of filtersets to be pointed to by sources with these bands available
-        galfind_logger.debug(f"Making {self.cat_name} unique filtersets!")
-        if cropped:
-            gal_instr_mask = self.gal_instr_mask[self.crop_mask]
-        else:
-            gal_instr_mask = self.gal_instr_mask
-        unique_filt_comb = np.unique(gal_instr_mask, axis=0)
-        unique_filtersets = [deepcopy(self.filterset)[data_comb] for data_comb in unique_filt_comb]
-        filterset_arr = [
-            unique_filtersets[
-                np.where(
-                    np.all(unique_filt_comb == data_comb, axis=1)
-                )[0][0]
+    def load_gal_filtersets(
+        self: Self,
+        length: int,
+        cropped: bool = True
+    ) -> List[Multiple_Filter]:
+        if self.apply_gal_instr_mask:
+            # create set of filtersets to be pointed to by sources with these bands available
+            galfind_logger.debug(f"Making {self.cat_name} unique filtersets!")
+            if cropped:
+                gal_instr_mask = self.gal_instr_mask[self.crop_mask]
+            else:
+                gal_instr_mask = self.gal_instr_mask
+            unique_filt_comb = np.unique(gal_instr_mask, axis=0)
+            unique_filtersets = [deepcopy(self.filterset)[data_comb] for data_comb in unique_filt_comb]
+            filterset_arr = [
+                unique_filtersets[
+                    np.where(
+                        np.all(unique_filt_comb == data_comb, axis=1)
+                    )[0][0]
+                ]
+                for data_comb in gal_instr_mask
             ]
-            for data_comb in gal_instr_mask
-        ]
-        galfind_logger.debug(f"Made {self.cat_name} unique filtersets!")
+            galfind_logger.debug(f"Made {self.cat_name} unique filtersets!")
+        else:
+            filterset_arr = list(itertools.repeat(self.filterset, length))
         return filterset_arr
 
 class Catalogue(Catalogue_Base):
@@ -1311,3 +1416,62 @@ class Catalogue(Catalogue_Base):
             SED_fit_code = SED_fit_code,
             z_step = z_step,
         )
+    
+
+# class Simulated_Catalogue(Catalogue_Base):
+#     # TODO: Store Simulated_Galaxy rather than Galaxy objects
+
+    def scatter(
+        self: Self,
+        aper_diam: u.Quantity,
+        mode: str,
+        depth_region: str = "all",
+    ):
+        assert all(aper_diam in gal.aper_phot.keys() for gal in self)
+        # load galaxy depths from the average depths of the field
+        self._update_depths_from_data(aper_diam, mode, depth_region)
+        # calculate photometric errors from these newly inserted depths
+        self._update_errs_from_depths(aper_diam)
+        # scatter each set of fluxes once by the calculated errors
+        [
+            gal.aper_phot[aper_diam].scatter_fluxes(update = True) 
+            for gal in tqdm(self, desc = "Scattering catalogue fluxes", total = len(self))
+        ]
+
+    def _update_depths_from_data(
+        self: Self,
+        aper_diam: u.Quantity,
+        mode: str,
+        depth_region: str = "all",
+    ) -> NoReturn:
+        assert hasattr(self, "data"), \
+            galfind_logger.critical(
+                f"{self.cat_name} does not have data loaded!"
+            )
+        self.data._load_depths(aper_diam, mode)
+        assert all([hasattr(band_data, "med_depth") for band_data in self.data])
+        assert all([aper_diam in band_data.med_depth.keys() for band_data in self.data])
+        assert all([depth_region in band_data.med_depth[aper_diam].keys() for band_data in self.data])
+        depths = np.array([band_data.med_depth[aper_diam][depth_region] for band_data in self.data]) * u.ABmag
+        [
+            setattr(gal.aper_phot[aper_diam], "depths", depths) 
+            for gal in tqdm(self, desc = "Updating catalogue depths", total = len(self))
+        ]
+
+    def _update_errs_from_depths(
+        self: Self,
+        aper_diam: u.Quantity,
+        default_min_flux_pc_err: float = 10.0,
+    ) -> NoReturn:
+        if "min_flux_pc_err" in self.cat_creator.load_phot_kwargs.keys():
+            min_flux_pc_err = self.cat_creator.load_phot_kwargs["min_flux_pc_err"]
+        else:
+            galfind_logger.warning(
+                f"No 'min_flux_pc_err' in {self.cat_creator.load_phot_kwargs.keys()=}." + \
+                f" Using {default_min_flux_pc_err=}!"
+            )
+            min_flux_pc_err = default_min_flux_pc_err
+        [
+            gal.aper_phot[aper_diam]._update_errs_from_depths(min_flux_pc_err)
+            for gal in tqdm(self, desc = "Updating catalogue errors from average depths", total = len(self))
+        ]
