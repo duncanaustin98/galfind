@@ -63,7 +63,8 @@ class Photometry:
         output_str += f"{self.__class__.__name__.upper()}:\n"
         output_str += funcs.band_sep
         #if print_instrument:
-        output_str += str(self.instrument)
+        if hasattr(self, "instrument"):
+            output_str += str(self.instrument)
         # if print_fluxes:
         fluxes_str = [
             "%.1f ± %.1f nJy"

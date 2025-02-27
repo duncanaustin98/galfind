@@ -120,7 +120,9 @@ from . import decorators
 from . import SExtractor, Masking, Depths
 
 from .PSF import PSF_Base, PSF_Cutout
-from .Instrument import Facility, JWST, HST, Paranal, Instrument, ACS_WFC, WFC3_IR, NIRCam, MIRI, VISTA
+from .Instrument import (Facility, JWST, HST, Paranal, Spitzer, Euclid, CFHT, Subaru,
+                         Instrument, ACS_WFC, WFC3_IR, NIRCam, MIRI, VISTA, NISP, VIS, IRAC, MegaCam, HSC
+                        )
 instr_to_name_dict = {name: globals()[name]() for name in json.loads(config.get("Other", "INSTRUMENT_NAMES"))}
 from .Filter import Filter, Multiple_Filter, Tophat_Filter, U, V, J
 

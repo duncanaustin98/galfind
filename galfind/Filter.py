@@ -90,7 +90,7 @@ class Filter:
             elif key in ["Description", "Comments"]:
                 output_prop[key] = str(np.array(value)[0])
             elif key == "DetectorType":
-                detector_type_dict = {1: "photon counter"}
+                detector_type_dict = {1: "photon counter", 0: "energy counter"}
                 output_prop[key] = str(
                     detector_type_dict[int(np.array(value)[0])]
                 )
@@ -219,7 +219,7 @@ class Filter:
         elif len(split_str) == 1:
             # formatted as e.g. F444W
             # try to determine facility and instrument from band name alone
-            filt = split_str[0].upper()
+            filt = split_str[0]#.upper() # Potentially breaking change!
             instruments_with_filt = [
                 instr_name
                 for instr_name, instrument in instr_to_name_dict.items()
@@ -231,7 +231,7 @@ class Filter:
                 )
             instrument = instruments_with_filt[0]
             facility = instr_to_name_dict[instrument].facility.__class__.__name__
-        filt = filt.upper()
+        filt = filt#.upper() # Potentially breaking change!
         # determine instrument and facility SVO names
         SVO_facility_name = instr_to_name_dict[instrument].facility.SVO_name
         SVO_instr_name = instr_to_name_dict[instrument].SVO_name

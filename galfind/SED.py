@@ -160,10 +160,11 @@ class SED:
         sed_interp = interp1d(wavs, mags, fill_value="extrapolate")(
             filter_wavs
         )  # in f_lambda
-        # calculate integral(f(λ) * T(λ)dλ)
-        numerator = np.trapz(sed_interp * filter_trans, x=filter_wavs)
-        # calculate integral(T(λ)dλ)
-        denominator = np.trapz(filter_trans, x=filter_wavs)
+        # calculate integral(f(λ) * T(λ)dλ)# This is a bit wrong for photon counting 
+        # as it should be integral(f(λ) * T(λ) * λ dλ) for f_nu
+        numerator = np.trapz(sed_interp * filter_trans*filter_wavs, x=filter_wavs)
+        # calculate integral(λT(λ)dλ)
+        denominator = np.trapz(filter_trans*filter_wavs, x=filter_wavs)
         # calculate bandpass-averaged flux in Jy
         return numerator / denominator
 
