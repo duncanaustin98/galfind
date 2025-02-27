@@ -476,7 +476,7 @@ class HSC(Instrument, funcs.Singleton):
             "r",
             "i",
             "z",
-            "y",
+            "Y",
             "NB387_filter",
             "NB468_filter",
             "g_filter",

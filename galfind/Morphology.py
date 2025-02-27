@@ -10,7 +10,10 @@ from astropy.io import fits
 import astropy.units as u
 from astropy.table import Table
 import matplotlib.patheffects as pe
-from photutils import EllipticalAperture
+try:    
+    from photutils import EllipticalAperture
+except ImportError:
+    from photutils.aperture import EllipticalAperture
 import subprocess
 from typing import Union, Dict, Any, List, Tuple, Callable, Optional, NoReturn, TYPE_CHECKING
 if TYPE_CHECKING:
