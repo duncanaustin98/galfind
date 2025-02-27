@@ -492,7 +492,7 @@ class EAZY(SED_code):
         fit_pz = 10 ** (fit.lnp)
         fit_zgrid = fit.zgrid
         hf = h5py.File(zPDF_path, "w")
-        hf.create_dataset("z", data=np.array(fit.zgrid), compression="gzip")
+        hf.create_dataset("z", data=np.array(fit.zgrid).astype(np.float32), compression="gzip", dtype="f4")
         pz_arr = np.array(
             [
                 np.array(
@@ -549,7 +549,8 @@ class EAZY(SED_code):
                 total=len(fit_data_arr),
             )
         ]
-        hf.create_dataset("wav_flux_arr", data=wav_flux_arr, compression="gzip")
+        wav_flux_arr = np.array(wav_flux_arr).astype(np.float32)
+        hf.create_dataset("wav_flux_arr", data=wav_flux_arr, compression="gzip", dtype="f4")
         hf.close()
 
     def make_fits_from_out(self, out_path: str) -> NoReturn:
@@ -603,10 +604,10 @@ class EAZY(SED_code):
         # return np.ones(len(IDs))
         hf = h5py.File(SED_paths[0], "r")
         IDs_np = np.array(IDs)
-        z_arr = hf["z_arr"][IDs_np - 1]
-        wav_flux_arr = hf["wav_flux_arr"][IDs_np - 1]
-        wav_arr = wav_flux_arr[:, 0]
-        flux_arr = wav_flux_arr[:, 1]
+        z_arr = hf["z_arr"][IDs_np - 1].astype(np.float32)
+        wav_flux_arr = hf["wav_flux_arr"][IDs_np - 1].astype(np.float32)
+        wav_arr = wav_flux_arr[:, 0].astype(np.float32)
+        flux_arr = wav_flux_arr[:, 1].astype(np.float32)
         wav_unit = u.Unit(hf["wav_unit"][()].decode())
         flux_unit = u.Unit(hf["flux_unit"][()].decode())
         hf.close()
