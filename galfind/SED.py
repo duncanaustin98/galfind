@@ -11,7 +11,7 @@ import numpy as np
 from astropy.table import Table
 from scipy.interpolate import interp1d
 from scipy.optimize import curve_fit
-from typing import TYPE_CHECKING, Optional, Dict, Any, List
+from typing import TYPE_CHECKING, Optional, Dict, Any, List, Union
 try:
     from typing import Self, Type  # python 3.11+
 except ImportError:
@@ -149,7 +149,18 @@ class SED:
             funcs.change_file_permissions(save_name)
         return plot
 
-    def calc_bandpass_averaged_flux(self, filter_wavs, filter_trans):
+    def calc_bandpass_averaged_flux(
+        self: Self,
+        filter_wavs: Union[u.Quantity, u.Dex],
+        filter_trans: Union[u.Quantity, u.Magnitude, u.Dex],
+        detector_type: str = "photon",
+    ):
+        detector_type = detector_type.lower()
+        if detector_type not in ["photon", "energy"]:
+            galfind_logger.warning(
+                f"Cannot calculate bandpass-averaged flux for {detector_type=}, assuming 'photon'"
+            )
+            detector_type = "photon"
         wavs = funcs.convert_wav_units(self.wavs, u.AA).value
         mags = funcs.convert_mag_units(
             self.wavs, self.mags, u.erg / (u.s * u.AA * u.cm**2)
@@ -160,16 +171,23 @@ class SED:
         sed_interp = interp1d(wavs, mags, fill_value="extrapolate")(
             filter_wavs
         )  # in f_lambda
-        # calculate integral(f(λ) * T(λ)dλ)# This is a bit wrong for photon counting 
-        # as it should be integral(f(λ) * T(λ) * λ dλ) for f_nu
-        numerator = np.trapz(sed_interp * filter_trans*filter_wavs, x=filter_wavs)
-        # calculate integral(λT(λ)dλ)
-        denominator = np.trapz(filter_trans*filter_wavs, x=filter_wavs)
+        if detector_type == "photon":
+            # calculate integral(λ * f(λ) * T(λ) dλ)
+            numerator = np.trapz(filter_wavs * sed_interp * filter_trans, x = filter_wavs)
+            # calculate integral(λ * T(λ) dλ)
+            denominator = np.trapz(filter_wavs * filter_trans, x = filter_wavs)
+        else: # count_type == "energy"
+            # calculate integral(f(λ) * T(λ) dλ)
+            numerator = np.trapz(sed_interp * filter_trans, x = filter_wavs)
+            # calculate integral(T(λ) dλ)
+            denominator = np.trapz(filter_trans, x = filter_wavs)
         # calculate bandpass-averaged flux in Jy
         return numerator / denominator
 
     def calc_line_EW(
-        self, line_name, plot=False
+        self: Self,
+        line_name: str,
+        plot: bool = False,
     ):  # ONLY WORKS FOR EMISSION LINES, NOT ABSORPTION AT THIS POINT
         wavs_AA = self.convert_wav_units(u.AA, update=True)
         flux_lambda = self.convert_mag_units(
@@ -380,10 +398,15 @@ class SED_obs(SED):
             depths = np.full(len(filterset), 99.0) * u.ABmag
         # elif isinstance(depths, dict):
         #     depths = [depth for (band, depth) in depths.items()]
+        detector_types = [
+            getattr(filt, "DetectorType").replace(" counting", "")
+            if hasattr(filt, "DetectorType") else "photon" 
+            for filt in filterset
+        ]
         bp_averaged_fluxes = (
             [
-                self.calc_bandpass_averaged_flux(filt.wav, filt.trans)
-                for filt in filterset
+                self.calc_bandpass_averaged_flux(filt.wav, filt.trans, detector_type)
+                for filt, detector_type in zip(filterset, detector_types)
             ]
             * u.erg
             / (u.s * (u.cm**2) * u.AA)
@@ -409,8 +432,24 @@ class SED_obs(SED):
             depths == []
         ):  # if depths not given, expect the galaxy to be very well detected
             depths = [99.0 for band in filters]
+
+        if hasattr(filters[0], "DetectorType"):
+            blue_detector_type = getattr(filters[0], "DetectorType").replace(" counting", "")
+        else:
+            blue_detector_type = "photon"
+        if hasattr(filters[1], "DetectorType"):
+            red_detector_type = getattr(filters[1], "DetectorType").replace(" counting", "")
+        else:
+            red_detector_type = "photon"
+        if blue_detector_type != red_detector_type:
+            galfind_logger.warning(
+                "Detector types for blue and red filters are different. Assuming photon counting for both."
+            )
+            blue_detector_type = "photon"
+            red_detector_type = "photon"
+
         blue_flux = (
-            self.calc_bandpass_averaged_flux(filters[0].wav, filters[0].trans)
+            self.calc_bandpass_averaged_flux(filters[0].wav, filters[0].trans, blue_detector_type)
             * u.erg
             / (u.s * (u.cm**2) * u.AA)
         )
@@ -418,7 +457,7 @@ class SED_obs(SED):
             np.array(filters[0].WavelengthCen.value) * u.AA, blue_flux, u.ABmag
         )
         red_flux = (
-            self.calc_bandpass_averaged_flux(filters[1].wav, filters[1].trans)
+            self.calc_bandpass_averaged_flux(filters[1].wav, filters[1].trans, red_detector_type)
             * u.erg
             / (u.s * (u.cm**2) * u.AA)
         )

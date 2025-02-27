@@ -19,6 +19,21 @@ aper_diams = [0.32] * u.arcsec
 forced_phot_band = ["F277W", "F356W", "F444W"]
 min_flux_pc_err = 10.
 
+def test_euclid_filters():
+    from galfind import Multiple_Filter
+    filterset = Multiple_Filter.from_instruments(
+        ["MegaCam", "NISP", "VIS", "IRAC"],
+        excl_bands = [
+            "CFHT/MegaCam.Y",
+            "CFHT/MegaCam.J",
+            "CFHT/MegaCam.H",
+        ]
+    )
+    fig, ax = plt.subplots()
+    filterset.plot(ax, save = True)
+    breakpoint()
+
+
 def test_selection():
     SED_fit_params_arr = [
         {"templates": "fsps_larson", "lowz_zmax": 4.0},
@@ -817,7 +832,9 @@ if __name__ == "__main__":
     #main()
     #import time
     #time.sleep((8 * u.hr).to(u.s).value)
-    test_selection()
+    #test_selection()
+
+    test_euclid_filters()
 
     #test_UVLF()
 

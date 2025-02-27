@@ -90,7 +90,7 @@ class Filter:
             elif key in ["Description", "Comments"]:
                 output_prop[key] = str(np.array(value)[0])
             elif key == "DetectorType":
-                detector_type_dict = {1: "photon counter", 0: "energy counter"}
+                detector_type_dict = {0: "energy counter", 1: "photon counter"}
                 output_prop[key] = str(
                     detector_type_dict[int(np.array(value)[0])]
                 )
@@ -219,7 +219,7 @@ class Filter:
         elif len(split_str) == 1:
             # formatted as e.g. F444W
             # try to determine facility and instrument from band name alone
-            filt = split_str[0]#.upper() # Potentially breaking change!
+            filt = split_str[0] #.upper() # Potentially breaking change!
             instruments_with_filt = [
                 instr_name
                 for instr_name, instrument in instr_to_name_dict.items()
@@ -231,7 +231,7 @@ class Filter:
                 )
             instrument = instruments_with_filt[0]
             facility = instr_to_name_dict[instrument].facility.__class__.__name__
-        filt = filt#.upper() # Potentially breaking change!
+        filt = filt #.upper() # Potentially breaking change!
         # determine instrument and facility SVO names
         SVO_facility_name = instr_to_name_dict[instrument].facility.SVO_name
         SVO_instr_name = instr_to_name_dict[instrument].SVO_name
@@ -239,7 +239,8 @@ class Filter:
 
     @staticmethod
     def _make_new_filt(
-        current_filt_names: List[str], filt_or_name: Union[str, Filter]
+        current_filt_names: List[str],
+        filt_or_name: Union[str, Filter]
     ) -> Union[Filter, None]:
         already_included = False
         if isinstance(filt_or_name, str):
@@ -491,6 +492,8 @@ class Multiple_Filter:
                 multi_filt = new_multi_filt
             else:
                 multi_filt += new_multi_filt
+            if excl_bands != []:
+                breakpoint()
         return multi_filt
 
     @classmethod
@@ -511,6 +514,9 @@ class Multiple_Filter:
         if isinstance(instrument, str):
             instrument = instr_to_name_dict[instrument]
         # make excl_bands a list of string filter names if not already
+        if excl_bands != []:
+            print(instrument)
+            breakpoint()
         excl_bands = cls._get_name_from_filt(excl_bands)
         excl_bands = [
             Filter._get_facility_instrument_filt(filt)[2]
@@ -563,6 +569,8 @@ class Multiple_Filter:
             )
         else:
             raise NotImplementedError
+        if excl_bands != []:
+            breakpoint()
         return cls(filters, sort_order=sort_order)
 
     def __len__(self) -> int:
@@ -855,7 +863,8 @@ class Multiple_Filter:
         # make a list if not already
         if not isinstance(filters, list):
             filters = [filters]
-        # if list elements include Multiple_Filter objects, flatten the Multiple_Filter objects to make a list of str
+        # if list elements include Multiple_Filter objects,
+        # flatten the Multiple_Filter objects to make a list of str
         _filters = [
             filt if isinstance(filt, str) else filt.band_name
             for filt in filters
