@@ -279,16 +279,28 @@ def jaguar_phot_labels(
     err_labels = {aper_diam * aper_diams.unit: [] for aper_diam in aper_diams.value}
     return phot_labels, err_labels
 
-def scattered_phot_labels(
+def scattered_phot_labels_inst(
     filterset: Multiple_Filter, 
     aper_diams: u.Quantity, 
     **kwargs
 ) -> Tuple[Dict[str, str], Dict[str, str]]:
     assert "min_flux_pc_err" in kwargs.keys(), \
         galfind_logger.critical("min_flux_pc_err not in kwargs!")
-    phot_labels = {aper_diam * aper_diams.unit: [f"{filt_name}_scattered" for filt_name in filterset.band_names] for aper_diam in aper_diams.value}
-    err_labels = {aper_diam * aper_diams.unit: [f"{filt_name}_err" for filt_name in filterset.band_names] for aper_diam in aper_diams.value}
+    phot_labels = {aper_diam * aper_diams.unit: [f"{filt.instrument_name}.{filt.band_name}_scattered" for filt in filterset] for aper_diam in aper_diams.value}
+    err_labels = {aper_diam * aper_diams.unit: [f"{filt.instrument_name}.{filt.band_name}_err" for filt in filterset] for aper_diam in aper_diams.value}
     return phot_labels, err_labels
+
+def scattered_phot_labels(
+    filterset: Multiple_Filter,
+    aper_diams: u.Quantity,
+    **kwargs
+) -> Tuple[Dict[str, str], Dict[str, str]]:
+    assert "min_flux_pc_err" in kwargs.keys(), \
+        galfind_logger.critical("min_flux_pc_err not in kwargs!")
+    phot_labels = {aper_diam * aper_diams.unit: [f"{filt.band_name}_scattered" for filt in filterset] for aper_diam in aper_diams.value}
+    err_labels = {aper_diam * aper_diams.unit: [f"{filt.band_name}_err" for filt in filterset] for aper_diam in aper_diams.value}
+    return phot_labels, err_labels
+
 
 def galfind_mask_labels(
     filterset: Multiple_Filter, 
@@ -304,6 +316,14 @@ def galfind_depth_labels(
     return {aper_diam * aper_diams.unit: [f"loc_depth_{filt_name}" \
         for filt_name in filterset.band_names] \
         for aper_diam in aper_diams.value}
+
+def scattered_depth_labels(
+    filterset: Multiple_Filter,
+    aper_diams: u.Quantity,
+    **kwargs
+) -> Dict[str, str]:
+    return {aper_diam * aper_diams.unit: [f"loc_depth_{filt.instrument_name}.{filt.band_name}" for filt in filterset] for aper_diam in aper_diams.value}
+
 
 def load_bool_Table(
     tab: Table,
@@ -1426,17 +1446,21 @@ class Catalogue(Catalogue_Base):
         aper_diam: u.Quantity,
         mode: str,
         depth_region: str = "all",
+        min_flux_pc_err: float = 10.0,
     ):
         assert all(aper_diam in gal.aper_phot.keys() for gal in self)
         # load galaxy depths from the average depths of the field
-        self._update_depths_from_data(aper_diam, mode, depth_region)
+        if hasattr(self, "data"):
+            self._update_depths_from_data(aper_diam, mode, depth_region)
         # calculate photometric errors from these newly inserted depths
-        self._update_errs_from_depths(aper_diam)
+        self._update_errs_from_depths(aper_diam, apply_min_flux_pc_err = False)
         # scatter each set of fluxes once by the calculated errors
         [
             gal.aper_phot[aper_diam].scatter_fluxes(update = True) 
             for gal in tqdm(self, desc = "Scattering catalogue fluxes", total = len(self))
         ]
+
+        self._update_errs_from_depths(aper_diam)
 
     def _update_depths_from_data(
         self: Self,
@@ -1462,16 +1486,21 @@ class Catalogue(Catalogue_Base):
         self: Self,
         aper_diam: u.Quantity,
         default_min_flux_pc_err: float = 10.0,
+        apply_min_flux_pc_err: bool = True,
     ) -> NoReturn:
-        if "min_flux_pc_err" in self.cat_creator.load_phot_kwargs.keys():
-            min_flux_pc_err = self.cat_creator.load_phot_kwargs["min_flux_pc_err"]
+        if apply_min_flux_pc_err:
+        
+            if "min_flux_pc_err" in self.cat_creator.load_phot_kwargs.keys():
+                min_flux_pc_err = self.cat_creator.load_phot_kwargs["min_flux_pc_err"]
+            else:
+                galfind_logger.warning(
+                    f"No 'min_flux_pc_err' in {self.cat_creator.load_phot_kwargs.keys()=}." + \
+                    f" Using {default_min_flux_pc_err=}!"
+                )
+                min_flux_pc_err = default_min_flux_pc_err
         else:
-            galfind_logger.warning(
-                f"No 'min_flux_pc_err' in {self.cat_creator.load_phot_kwargs.keys()=}." + \
-                f" Using {default_min_flux_pc_err=}!"
-            )
-            min_flux_pc_err = default_min_flux_pc_err
-        [
-            gal.aper_phot[aper_diam]._update_errs_from_depths(min_flux_pc_err)
+            min_flux_pc_err = 0.
+
+        [gal.aper_phot[aper_diam]._update_errs_from_depths(min_flux_pc_err)
             for gal in tqdm(self, desc = "Updating catalogue errors from average depths", total = len(self))
         ]

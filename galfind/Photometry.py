@@ -36,7 +36,7 @@ class Photometry:
         filterset: Multiple_Filter,
         flux: Union[Masked, u.Quantity],
         flux_errs: Union[Masked, u.Quantity],
-        depths: Union[Dict[str, float], List[float]],
+        depths: Optional[Union[Dict[str, u.Magnitude], u.Magnitude]],
     ):
         self.filterset = filterset
         self.flux = flux
@@ -46,8 +46,19 @@ class Photometry:
                 galfind_logger.critical(
                     f"not all {filterset.band_names} in {depths.keys()=}"
                 )
+           
             depths = [depths[filt.filt_name] for filt in filterset]
+            assert all(depth.unit == u.ABmag for depth in depths), \
+                galfind_logger.critical(
+                    f"not all depths are in ABmag: {depths=}"
+                )
+            depths = np.array([depth.value for depth in depths]) * u.ABmag
+            
         self.depths = depths
+        assert depths.unit == u.ABmag, \
+            galfind_logger.critical(
+                f"{depths.unit=} != 'ABmag'"
+            )
         assert all(
             len(self.filterset) == len(getattr(self, name))
             for name in ["flux", "flux_errs", "depths"] 
@@ -511,6 +522,9 @@ class Photometry:
     ) -> NoReturn:
         # calculate 1σ depths and convert to Jy
         one_sig_depths_Jy = self.depths.to(u.Jy) / 5
+
+        assert min_flux_pc_err >= 0., galfind_logger.critical(f"Negative {min_flux_pc_err=}<0")
+        breakpoint()
         # apply min_flux_pc_err criteria
         # TODO: Retain the flux mask in flux errors if there is one
         self.flux_errs = np.array(
