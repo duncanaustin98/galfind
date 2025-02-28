@@ -12,7 +12,7 @@ plt.style.use(
 )
 
 # Load in a data object
-survey = "JADES-DR3-GN-Medium"
+survey = "JADES-DR3-GN-Deep"
 version = "v13"
 instrument_names = ["ACS_WFC", "NIRCam"]
 aper_diams = [0.32] * u.arcsec

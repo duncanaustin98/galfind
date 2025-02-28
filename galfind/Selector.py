@@ -1476,7 +1476,7 @@ class Chi_Sq_Lim_Selector(SED_fit_Selector):
     def _selection_name(self) -> str:
         selection_name = f"chi_sq<{self.kwargs['chi_sq_lim']:.1f}"
         if self.kwargs["reduced"]:
-            selection_name = "red_" + selection_name
+            selection_name = f"red_{selection_name}"
         return selection_name
 
     @property
@@ -1615,6 +1615,125 @@ class Chi_Sq_Diff_Selector(SED_fit_Selector):
         assert any(len(gal_labels) > 0 for gal_labels in cat_SED_fit_labels), \
             galfind_logger.critical(
                 f"{self.SED_fit_label} lowz not run for any galaxy."
+            )
+        return SED_fit_Selector._call_cat(self, cat, return_copy)
+
+
+class Chi_Sq_Template_Diff_Selector(SED_fit_Selector):
+
+    def __init__(
+        self: Self,
+        aper_diam: u.Quantity,
+        SED_fit_label: Union[str, SED_code],
+        chi_sq_diff: Union[int, float],
+        secondary_SED_fit_label: Union[str, SED_code],
+        reduced: bool = False,
+    ):
+        if isinstance(secondary_SED_fit_label, tuple(SED_code.__subclasses__())):
+            secondary_SED_fit_label = SED_fit_label.label
+        kwargs = {
+            "chi_sq_diff": chi_sq_diff,
+            "secondary_SED_fit_label": secondary_SED_fit_label,
+            "reduced": reduced,
+        }
+        super().__init__(aper_diam, SED_fit_label, **kwargs)
+
+    @property
+    def _selection_name(self) -> str:
+        name = f"chi_sq_{self.kwargs['secondary_SED_fit_label']}>{self.kwargs['chi_sq_diff']:.1f}"
+        if self.kwargs["reduced"]:
+            name = f"red_{name}"
+        return name
+    
+    @property
+    def _include_kwargs(self) -> List[str]:
+        return ["chi_sq_diff", "secondary_SED_fit_label", "reduced"]
+    
+    def _assertions(self: Self) -> bool:
+        try:
+            assertions = []
+            assertions.extend([isinstance(self.kwargs["chi_sq_diff"], (int, float))])
+            assertions.extend([self.kwargs["chi_sq_diff"] > 0.0])
+            assertions.extend([isinstance(self.kwargs["secondary_SED_fit_label"], str)])
+            assertions.extend([isinstance(self.kwargs["reduced"], bool)])
+            passed = all(assertions)
+        except:
+            passed = False
+        return passed
+
+    def _failure_criteria(
+        self: Self,
+        gal: Galaxy,
+    ) -> bool:
+        try:
+            failed = not all(
+                label in gal.aper_phot[self.aper_diam].SED_results.keys()
+                for label in [self.SED_fit_label, self.kwargs["secondary_SED_fit_label"]]
+            )
+        except:
+            failed = True
+        return failed
+    
+    def _selection_criteria(
+        self: Self,
+        gal: Galaxy,
+    ) -> bool:
+        # extract chi_sq/red_chi_sq of SED_fitting runs that are to be compared
+        chi_sq = np.zeros(2)
+        for i, label in enumerate([self.SED_fit_label, self.kwargs["secondary_SED_fit_label"]]):
+            if not any(hasattr(gal.aper_phot[self.aper_diam].SED_results[label], chi_sq_label) for chi_sq_label in ["chi_sq", "red_chi_sq"]):
+                return False
+            if self.kwargs["reduced"]:
+                if hasattr(gal.aper_phot[self.aper_diam].SED_results[label], "red_chi_sq"):
+                    chi_sq[i] = getattr(gal.aper_phot[self.aper_diam].SED_results[label], "red_chi_sq")
+                else:
+                    chi_sq_ = getattr(gal.aper_phot[self.aper_diam].SED_results[label], "chi_sq")
+                    # work out number of degrees of freedom
+                    if isinstance(gal.aper_phot[self.aper_diam].flux, u.Quantity):
+                        n_bands = len(gal.aper_phot[self.aper_diam].filterset.band_names)
+                    else:
+                        n_bands = len(
+                            [
+                                mask_band
+                                for mask_band in gal.aper_phot[self.aper_diam].flux.mask
+                                if not mask_band
+                            ]
+                        )
+                    Ndof = n_bands - 1
+                    chi_sq[i] = chi_sq_ / Ndof
+            else: # absolute chi squared
+                if hasattr(gal.aper_phot[self.aper_diam].SED_results[label], "chi_sq"):
+                    chi_sq[i] = getattr(gal.aper_phot[self.aper_diam].SED_results[label], "chi_sq")
+                else:
+                    chi_sq = getattr(gal.aper_phot[self.aper_diam].SED_results[label], "red_chi_sq")
+                    # work out number of degrees of freedom
+                    if isinstance(gal.aper_phot[self.aper_diam].flux, u.Quantity):
+                        n_bands = len(gal.aper_phot[self.aper_diam].filterset.band_names)
+                    else:
+                        n_bands = len(
+                            [
+                                mask_band
+                                for mask_band in gal.aper_phot[self.aper_diam].flux.mask
+                                if not mask_band
+                            ]
+                        )
+                    Ndof = n_bands - 1
+                    chi_sq[i] = chi_sq * Ndof
+        return (
+            (chi_sq[1] - chi_sq[0] > self.kwargs["chi_sq_diff"])
+            or (chi_sq[1] == -1.0)
+        )
+    
+    def _call_cat(
+        self: Self,
+        cat: Catalogue,
+        return_copy: bool = True,
+    ) -> Union[NoReturn, Catalogue]:
+        # ensure a secondary SED fitting run has been run for at least 1 galaxy in the catalogue
+        cat_SED_fit_labels = [gal.aper_phot[self.aper_diam].SED_results.keys() for gal in cat]
+        assert any(self.kwargs["secondary_SED_fit_label"] in gal_labels for gal_labels in cat_SED_fit_labels), \
+            galfind_logger.critical(
+                f"{self.kwargs['secondary_SED_fit_label']} not run for any galaxy."
             )
         return SED_fit_Selector._call_cat(self, cat, return_copy)
 
@@ -1812,7 +1931,7 @@ class Kokorev24_LRD_Selector(Multiple_Photometry_Selector):
         super().__init__(aper_diam,
         [
             Kokorev24_LRD_red1_Selector(aper_diam), 
-            Kokorev24_LRD_red2_Selector(aper_diam)
+            Kokorev24_LRD_red2_Selector(aper_diam), 
         ], 
         selection_name = "Kokorev+24_LRD")
 
@@ -1916,6 +2035,64 @@ class Sextractor_Instrument_Radius_Selector(Multiple_Data_Selector):
         return Multiple_Data_Selector._call_cat(self, cat, return_copy)
 
 
+class Brown_Dwarf_Selector(Multiple_SED_fit_Selector):
+
+    def __init__(
+        self: Self,
+        aper_diam: u.Quantity,
+        SED_fit_label: Union[str, SED_code],
+        unmasked_instruments: Union[str, List[str]] = "NIRCam",
+        chi_sq_lim: float = 10.0,
+        chi_sq_diff: Union[int, float] = 4.0,
+        secondary_SED_fit_label: Optional[Union[str, SED_code]] = None,
+        cat_filterset: Optional[Multiple_Filter] = None,
+        # size_lim: u.Quantity = 145.0 * u.arcsec,
+        # size_band: str = "F444W",
+    ):
+        selectors = [
+            Chi_Sq_Lim_Selector(aper_diam, SED_fit_label, chi_sq_lim = chi_sq_lim, reduced = True),
+            Sextractor_Band_Radius_Selector(band_name = "F444W", gtr_or_less = "less", lim = 145.0 * u.marcsec),
+        ]
+        # add hot pixel checks in LW widebands
+        selectors.extend([
+            Sextractor_Bands_Radius_Selector( \
+            band_names = ["F277W", "F356W", "F444W"], \
+            gtr_or_less = "gtr", lim = 45.0 * u.marcsec)
+        ])
+        
+        chi_sq_label = f"red_chi2<{chi_sq_lim:.1f}"
+        if chi_sq_diff is not None:
+            assert secondary_SED_fit_label is not None, \
+                galfind_logger.critical(
+                    "Must provide secondary SED fitting label if red_chi_sq_diff is not None."
+                )
+            if isinstance(secondary_SED_fit_label, tuple(SED_code.__subclasses__())):
+                secondary_SED_fit_label = secondary_SED_fit_label.label
+            selectors.extend([
+                Chi_Sq_Template_Diff_Selector(
+                    aper_diam,
+                    SED_fit_label,
+                    chi_sq_diff,
+                    secondary_SED_fit_label,
+                    reduced = False
+                )
+            ])
+            chi_sq_diff_label = f",chi2_dgal_{chi_sq_diff:.1f}"
+        else:
+            chi_sq_diff_label = ""
+        chi_sq_label += chi_sq_diff_label
+        
+        # add unmasked instrument selections
+        if isinstance(unmasked_instruments, str):
+            unmasked_instruments = unmasked_instruments.split("+")
+        selectors.extend([Unmasked_Instrument_Selector(instrument, \
+            cat_filterset) for instrument in unmasked_instruments])
+        unmasked_instr_name = f"_{'+'.join(unmasked_instruments)}"
+
+        name = f"bd_{chi_sq_label}{unmasked_instr_name}"
+        super().__init__(aper_diam, SED_fit_label, selectors, selection_name = name)
+
+
 class EPOCHS_Selector(Multiple_SED_fit_Selector):
 
     def __init__(
@@ -1932,7 +2109,7 @@ class EPOCHS_Selector(Multiple_SED_fit_Selector):
             Redwards_Lya_Detect_Selector(aper_diam, SED_fit_label, SNR_lims = 2.0, widebands_only = True),
             Chi_Sq_Lim_Selector(aper_diam, SED_fit_label, chi_sq_lim = 3.0, reduced = True),
             Chi_Sq_Diff_Selector(aper_diam, SED_fit_label, chi_sq_diff = 4.0, dz = 0.5),
-            Robust_zPDF_Selector(aper_diam, SED_fit_label, integral_lim = 0.6, dz_over_z = 0.1)
+            Robust_zPDF_Selector(aper_diam, SED_fit_label, integral_lim = 0.6, dz_over_z = 0.1),
         ]
         # add unmasked instrument selections
         if isinstance(unmasked_instruments, str):

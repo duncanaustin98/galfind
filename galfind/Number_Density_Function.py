@@ -15,8 +15,9 @@ if TYPE_CHECKING:
         Catalogue,
         Combined_Catalogue,
         Rest_Frame_Property_Calculator,
-        Property_Calculator
+        Property_Calculator,
     )
+    from .selection import Completeness
 try:
     from typing import Self, Type  # python 3.11+
 except ImportError:
@@ -371,6 +372,7 @@ class Number_Density_Function(Base_Number_Density_Function):
         x_origin: str = "phot_rest",
         z_step: float = 0.01,
         cv_origin: Union[str, None] = "Driver2010",
+        completeness: Optional[Completeness] = None,
         save: bool = True,
         timed: bool = False,
     ) -> Optional[Self]:
@@ -487,7 +489,11 @@ class Number_Density_Function(Base_Number_Density_Function):
                         galfind_logger.warning(
                             f"{Ngals[i] - len(V_max)} galaxies not detected"
                         )
-
+                    if completeness is None:
+                        compl_bin = np.ones(len(z_bin_x_bin_cat))
+                    else:
+                        breakpoint()
+                        compl_bin = np.array([completeness(gal) for gal in z_bin_x_bin_cat])
                     phi[i] = np.sum(V_max**-1.0) / dx
                     # use standard Poisson errors if number of galaxies in bin is not small
                     if len(V_max) >= 4:
