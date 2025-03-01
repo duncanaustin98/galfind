@@ -322,7 +322,14 @@ def scattered_depth_labels(
     aper_diams: u.Quantity,
     **kwargs
 ) -> Dict[str, str]:
-    return {aper_diam * aper_diams.unit: [f"loc_depth_{filt.instrument_name}.{filt.band_name}" for filt in filterset] for aper_diam in aper_diams.value}
+    return {
+        aper_diam * aper_diams.unit: 
+        [
+            f"loc_depth_{filt.instrument_name}.{filt.band_name}"
+            for filt in filterset
+        ]
+        for aper_diam in aper_diams.value
+    }
 
 
 def load_bool_Table(

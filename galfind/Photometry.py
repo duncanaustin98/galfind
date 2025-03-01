@@ -55,10 +55,11 @@ class Photometry:
             depths = np.array([depth.value for depth in depths]) * u.ABmag
             
         self.depths = depths
-        assert depths.unit == u.ABmag, \
-            galfind_logger.critical(
-                f"{depths.unit=} != 'ABmag'"
-            )
+        if self.depths is not None:
+            assert self.depths.unit == u.ABmag, \
+                galfind_logger.critical(
+                    f"{depths.unit=} != 'ABmag'"
+                )
         assert all(
             len(self.filterset) == len(getattr(self, name))
             for name in ["flux", "flux_errs", "depths"] 
