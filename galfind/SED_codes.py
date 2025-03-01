@@ -233,6 +233,7 @@ class SED_code(ABC):
         if timed:
             mid = time.time()
             print(f"Running SED fitting took {(mid - start):.1f}s")
+
         SED_fit_cat = cat.open_cat(cropped=True, hdu=self)
         aper_phot_IDs = [gal.ID for gal in cat]
         phot_arr = [gal.aper_phot[aper_diam] for gal in cat]
@@ -334,7 +335,6 @@ class SED_code(ABC):
 
         if update:
             cat.update_SED_results(cat_SED_results, timed=timed)
-
         return cat_SED_results
 
     def _load_phot(self,

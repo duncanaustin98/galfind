@@ -36,6 +36,8 @@ class SED_result:
         self.SED_code = SED_code
         self.properties = properties
         [setattr(self, key, value) for key, value in properties.items()]
+        if not hasattr(self, "z"):
+            self.z = 0.0
         self.property_errs = property_errs
         self.property_PDFs = property_PDFs
         # load in peaks

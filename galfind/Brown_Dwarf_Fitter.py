@@ -4,11 +4,13 @@ from __future__ import annotations
 from BDFit import StarFit
 import numpy as np
 import astropy.units as u
+import h5py
 from astropy.table import Table
 from pathlib import Path
+import itertools
 from typing import TYPE_CHECKING, Dict, List, NoReturn, Union
 if TYPE_CHECKING:
-    from . import Catalogue, SED_obs
+    from . import Catalogue
 try:
     from typing import Self, Type, Any  # python 3.11+
 except ImportError:
@@ -17,6 +19,7 @@ except ImportError:
 from . import useful_funcs_austind as funcs
 from . import config, galfind_logger
 from . import SED_code
+from .SED import SED_obs
 
 class Template_Fitter(SED_code):
 
@@ -28,7 +31,7 @@ class Template_Fitter(SED_code):
 
     @classmethod
     def from_label(cls, label: str) -> Type[SED_code]:
-        pass
+        raise NotImplementedError()
 
     @property
     def ID_label(self) -> str:
@@ -61,14 +64,30 @@ class Template_Fitter(SED_code):
 
     #@abstractmethod
     def _load_gal_property_labels(self) -> NoReturn:
-        super()._load_gal_property_labels({})
+        self.gal_property_labels = {
+            "chi_sq": "chi2",
+            "red_chi_sq": "red_chi2",
+            "temp": "temp",
+            "log_g": "log_g",
+            "kzz": "kzz",
+            #"met": "met",
+            #"co": "co",
+            #"f": "f",
+        }
+        #super()._load_gal_property_labels(gal_property_labels)
 
     #@abstractmethod
     def _load_gal_property_err_labels(self) -> NoReturn:
         super()._load_gal_property_err_labels({})
 
     def _load_gal_property_units(self) -> NoReturn:
-        pass
+        self.gal_property_units = {
+            **{gal_property: u.dimensionless_unscaled for gal_property in ["chi_sq", "red_chi_sq"]},
+            "temp": u.K,
+            "log_g": u.dimensionless_unscaled,
+            "kzz": u.dimensionless_unscaled,
+        }
+        # , "met", "co", "f"
 
     def make_in(
         self, 
@@ -127,8 +146,10 @@ class Template_Fitter(SED_code):
             tab.write(out_path, overwrite = overwrite)
             galfind_logger.info(f"Saved {self.tab_suffix} fits to {out_path}")
             # save the best fitting SEDs
-            SED_save_path = out_path.replace(".fits", "_SEDs")
-            starfit.save_best_fit_SEDs(SED_save_path)
+            if save_SEDs:
+                SED_save_path = out_path.replace(".fits", "_SEDs.h5")
+                starfit.make_best_fit_SEDs(SED_save_path, IDs = cat.ID)
+                galfind_logger.info(f"Saved {self.tab_suffix} SEDs to {SED_save_path}")
 
     def make_fits_from_out(self, out_path):
         pass
@@ -141,18 +162,29 @@ class Template_Fitter(SED_code):
         aper_diams_str = funcs.aper_diams_to_str(np.array([aper_diam.to(u.arcsec).value]) * u.arcsec)
         out_path = f"{config['TemplateFitting']['BROWN_DWARF_OUT_DIR']}/{cat.version}/" + \
             f"{cat.filterset.instrument_name}/{cat.survey}/{aper_diams_str}/{self.hdu_name}.fits"
-        return None, out_path, out_path, None, out_path
+        SED_path = out_path.replace(".fits", "_SEDs.h5")
+        return None, out_path, out_path, None, SED_path
 
     def extract_SEDs(
         self: Self, 
         IDs: List[int], 
         SED_paths: str,
     ) -> List[SED_obs]:
-        # open .fits table
-        tab = Table.read(SED_paths)
-        # extract SEDs
-
-        pass
+        # open .h5 table
+        SED_h5 = h5py.File(SED_paths, "r")
+        libraries = list(SED_h5.keys())
+        # loop over each library, extracting SEDs for relevant IDs
+        sed_obs_arr = {}
+        for library in libraries:
+            lib_IDs = SED_h5[library]["IDs"][:]
+            wavs = SED_h5[library]["wavs"][:]
+            fluxes_arr = SED_h5[library]["fluxes"][:]
+            wav_unit = u.Unit(SED_h5[library].attrs["wav_unit"])
+            flux_unit = u.Unit(SED_h5[library].attrs["flux_unit"])
+            sed_obs_arr_ = {ID: SED_obs(0.0, wavs, fluxes, wav_unit, flux_unit)
+                for ID, fluxes in zip(lib_IDs, fluxes_arr) if ID in IDs}
+            sed_obs_arr.update(sed_obs_arr_)
+        return [sed_obs_arr[ID] if ID in sed_obs_arr.keys() else None for ID in IDs]
 
     def extract_PDFs(
         self: Self, 
@@ -160,14 +192,16 @@ class Template_Fitter(SED_code):
         IDs: List[int], 
         PDF_paths: Union[str, List[str]], 
     ) -> Optional[List[Type[PDF]]]:
-        return None
+        pass
 
     def load_cat_property_PDFs(
         self: Self, 
         PDF_paths: Union[List[str], List[Dict[str, str]]],
         IDs: List[int]
     ) -> List[Dict[str, Optional[Type[PDF]]]]:
-        pass
+        return np.array(
+            list(itertools.repeat(None, len(IDs)))
+        )
 
     def _assert_SED_fit_params(self) -> NoReturn:
         for key in self.required_SED_fit_params:
@@ -192,4 +226,4 @@ class Brown_Dwarf_Fitter(Template_Fitter):
 
     @property
     def tab_suffix(self) -> str:
-        return "brown_dwarf"
+        return ""

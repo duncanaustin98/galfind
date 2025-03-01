@@ -203,7 +203,8 @@ from .Selector import (
     Redshift_Bin_Selector,
     Rest_Frame_Property_Limit_Selector,
     Rest_Frame_Property_Bin_Selector,
-    Rest_Frame_Property_Kwarg_Selector, 
+    Rest_Frame_Property_Kwarg_Selector,
+    Brown_Dwarf_Selector,
 )
 
 from .Emission_lines import Emission_line, wav_lyman_alpha, line_diagnostics
