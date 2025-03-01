@@ -767,7 +767,7 @@ class EAZY(SED_code):
             nexisting = sum(1 for line in f if line != '\n')
 
         with open(filter_file, 'a') as f:
-            with open (f'{filter_file}.INFO', 'w') as f_info:
+            with open (f'{filter_file}.INFO', 'a') as f_info:
                 # count lines in file
                 for i, filt in enumerate(filterset):
                     code = i + nexisting + 1
