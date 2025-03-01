@@ -12,12 +12,56 @@ plt.style.use(
 )
 
 # Load in a data object
-survey = "JADES-DR3-GN-Deep"
-version = "v13"
+survey = "JOF"
+version = "v11"
 instrument_names = ["ACS_WFC", "NIRCam"]
 aper_diams = [0.32] * u.arcsec
 forced_phot_band = ["F277W", "F356W", "F444W"]
 min_flux_pc_err = 10.
+
+
+def plot_brown_dwarfs():
+
+    from galfind import Brown_Dwarf_Fitter, Brown_Dwarf_Selector, Band_SNR_Selector
+    
+    plt.style.use(
+        f"{config['DEFAULT']['GALFIND_DIR']}/galfind_style.mplstyle"
+    )
+
+    eazy_fitter = EAZY({"templates": "fsps_larson", "lowz_zmax": None})
+    bd_fitter = Brown_Dwarf_Fitter()
+    bd_selector = Brown_Dwarf_Selector(aper_diams[0], bd_fitter, secondary_SED_fit_label = eazy_fitter)
+    
+    bd_cat = Catalogue.pipeline(
+        survey,
+        version,
+        instrument_names = instrument_names,
+        version_to_dir_dict = morgan_version_to_dir,
+        aper_diams = aper_diams,
+        forced_phot_band = forced_phot_band,
+        min_flux_pc_err = min_flux_pc_err,
+        crops = bd_selector,
+    )
+    f277w_five_sig = Band_SNR_Selector(aper_diams[0], "F277W", "detect", 5.0)
+    bd_five_sig_f277w_cat = f277w_five_sig(bd_cat, return_copy = True)
+
+    eazy_fitter(bd_five_sig_f277w_cat, aper_diams[0], load_PDFs = True, load_SEDs = True, update = True)
+    bd_fitter(bd_five_sig_f277w_cat, aper_diams[0], load_PDFs = True, load_SEDs = True, update = True)
+
+    bd_five_sig_f277w_cat.plot_phot_diagnostics(
+        aper_diams[0],
+        [eazy_fitter, bd_fitter],
+        eazy_fitter,
+        imshow_kwargs = {},
+        norm_kwargs = {},
+        aper_kwargs = {},
+        kron_kwargs = {},
+        n_cutout_rows = 2,
+        wav_unit = u.um,
+        flux_unit = u.ABmag,
+        overwrite = True
+    )
+    breakpoint()
 
 # def test_euclid_filters():
 #     from galfind import Multiple_Filter
@@ -835,8 +879,9 @@ if __name__ == "__main__":
     #main()
     #import time
     #time.sleep((8 * u.hr).to(u.s).value)
-    test_selection()
+    #test_selection()
 
+    plot_brown_dwarfs()
     #test_euclid_filters()
 
     #test_UVLF()
