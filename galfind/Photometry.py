@@ -524,7 +524,6 @@ class Photometry:
         one_sig_depths_Jy = self.depths.to(u.Jy) / 5
 
         assert min_flux_pc_err >= 0., galfind_logger.critical(f"Negative {min_flux_pc_err=}<0")
-        breakpoint()
         # apply min_flux_pc_err criteria
         # TODO: Retain the flux mask in flux errors if there is one
         self.flux_errs = np.array(

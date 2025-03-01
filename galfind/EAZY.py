@@ -11,6 +11,7 @@ from __future__ import annotations
 # EAZY.py
 import itertools
 import os
+from shutil import copy
 import time
 import warnings
 from pathlib import Path
@@ -758,8 +759,8 @@ class EAZY(SED_code):
 
         # copy default filter file and append to it
 
-        os.copy(default_param_path, filter_file)
-        os.copy(f'{default_param_path}.INFO', f'{filter_file}.INFO')
+        copy(default_param_path, filter_file)
+        copy(f'{default_param_path}.INFO', f'{filter_file}.INFO')
         # count lines in .INFO
 
         with open(f'{filter_file}.INFO', 'r') as f:

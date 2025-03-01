@@ -77,7 +77,7 @@ if not skip:
         output_table.write(out_filename, format='fits', overwrite=True)
 
 
-out_filename = '/nvme/scratch/work/tharvey/catalogs/JADES_SF_mock_r1_v1.2_MegaCam+HSC+VIS+NISP+IRAC_phot_fnu_10x.fits'
+out_filename = '/nvme/scratch/work/tharvey/catalogs/JADES_SF_mock_r1_v1.2_MegaCam+HSC+VIS+NISP+IRAC_phot_fnu_200x.fits'
 
 survey = 'Euclid_Deep'
 version = 'v_sim'
@@ -142,9 +142,9 @@ def get_depth_labels(filterset, aper_diams):
     return depth_labels
 
 #jaguar_cat_path = f"/nvme/scratch/work/tharvey/catalogs/JADES_SF_mock_r{str(int(realization))}_v1.2_MegaCam+HSC+VIS+NISP+IRAC_phot.fits"
-jaguar_cat_path = '/nvme/scratch/work/tharvey/catalogs/JADES_SF_mock_r1_v1.2_MegaCam+HSC+VIS+NISP+IRAC_phot_fnu_10x.fits'
+jaguar_cat_path = '/nvme/scratch/work/tharvey/catalogs/JADES_SF_mock_r1_v1.2_MegaCam+HSC+VIS+NISP+IRAC_phot_fnu_200x.fits'
 jaguar_cat_creator = Catalogue_Creator(
-    survey = f"JAGUAR-{survey}-r{str(int(realization))}_10_fnu_2",
+    survey = f"JAGUAR-{survey}-r{str(int(realization))}_200_fnu",
     version = version,
     cat_path = jaguar_cat_path,
     filterset = filterset,
@@ -155,7 +155,7 @@ jaguar_cat_creator = Catalogue_Creator(
     load_phot_func = load_jaguar_phot,
     load_phot_kwargs = {
         "ZP": u.nJy.to(u.ABmag),
-        "min_flux_pc_err": 10.0,
+        "min_flux_pc_err": 5.0,
         "incl_errs": False,
     },
     load_mask_func = None,
