@@ -17,7 +17,7 @@ except ImportError:
     from typing_extensions import Self, Type  # python > 3.7 AND python < 3.11
 
 from .. import galfind_logger, config
-from ..Catalogue import galfind_depth_labels, scattered_phot_labels, load_galfind_depths
+from ..Catalogue import galfind_depth_labels, scattered_phot_labels, load_galfind_depths, scattered_depth_labels, scattered_phot_labels_inst
 from .. import useful_funcs_austind as funcs
 
 
@@ -218,16 +218,34 @@ class Grid_2D:
         y_arr: NDArray[float],
         mode: str = "n_nearest",
         depth_region: str = "all",
+        sim_filterset: Optional[Multiple_Filter] = None,
+        data_filterset: Optional[Multiple_Filter] = None,
+        aper_diams: Optional[List[u.Quantity]] = None,
+        depth_labels_func: Optional[Callable] = None,
+        phot_labels_func: Optional[Callable] = None,
 
     ) -> Self:
         #assert sim_cat.cat_creator.load_mask_func is None 
         assert not sim_cat.cat_creator.apply_gal_instr_mask
+
+        if hasattr(sim_cat, 'data') and sim_cat.data is not None:
+            if data_filterset is not None or aper_diams is not None or sim_filterset is not None:
+                galfind_logger.critical("Don't provide filterset and aper_diams if you have a Data object")
+            sim_filterset = sim_cat.data.filterset
+            aper_diams = sim_cat.data.aper_diams
+            data_filterset = sim_cat.data.filterset
+            
+        elif not hasattr(sim_cat, 'data') or sim_cat.data is None:
+            if data_filterset is None or aper_diams is None or sim_filterset is None:
+                galfind_logger.critical("filterset and aper_diams must be provided if not in the Catalogue object")
+            
+
         # determine scattered catalogue path
         scattered_cat_path = funcs.get_phot_cat_path(
             sim_cat.survey,
             sim_cat.version,
-            sim_cat.filterset.instrument_name,
-            sim_cat.data.aper_diams,
+            sim_filterset.instrument_name,
+            aper_diams,
             forced_phot_band_name = None,
         ).replace(".fits", f"_reg={depth_region}.fits") #_{sim_cat.cat_path.split('/')[-1]}
 
@@ -235,14 +253,14 @@ class Grid_2D:
         scattered_cat_creator = deepcopy(sim_cat.cat_creator)
         scattered_cat_creator.cat_path = scattered_cat_path
         # define new photometry and photometry error labels
-        scattered_cat_creator.get_phot_labels = scattered_phot_labels
+        scattered_cat_creator.get_phot_labels = scattered_phot_labels if phot_labels_func is None else phot_labels_func
         # define ZP to be from Jy
         load_phot_kwargs = scattered_cat_creator.load_phot_kwargs
         load_phot_kwargs["ZP"] = u.Jy.to(u.ABmag)
         load_phot_kwargs["incl_errs"] = True
         scattered_cat_creator.load_phot_kwargs = load_phot_kwargs
         # define new depth labels and load in function
-        scattered_cat_creator.get_depth_labels = galfind_depth_labels
+        scattered_cat_creator.get_depth_labels = galfind_depth_labels if depth_labels_func is None else depth_labels_func
         scattered_cat_creator.load_depth_func = load_galfind_depths
         scattered_cat_creator.simulated = True
 
@@ -258,23 +276,23 @@ class Grid_2D:
             # update cat creator with the updated one
             scattered_sim_cat.cat_creator = scattered_cat_creator
             # add new scattered flux columns to the old table
-            for i, filt in tqdm(enumerate(scattered_sim_cat.data.filterset), 
+            for i, filt in tqdm(enumerate(data_filterset), 
                 desc = "Adding scattered flux/err/depth columns to the table",
-                total = len(scattered_sim_cat.data.filterset)
+                total = len(data_filterset)
             ):
-                scattered_tab[f"{filt.band_name}_scattered"] = np.array(
+                scattered_tab[f"{filt.instrument_name}.{filt.band_name}_scattered"] = np.array(
                     [
                         gal.aper_phot[aper_diam].flux[i].value
                         for gal in scattered_sim_cat
                     ]
                 )
-                scattered_tab[f"{filt.band_name}_err"] = np.array(
+                scattered_tab[f"{filt.instrument_name}.{filt.band_name}_err"] = np.array(
                     [
                         gal.aper_phot[aper_diam].flux_errs[i].value
                         for gal in scattered_sim_cat
                     ]
                 )
-                scattered_tab[f"loc_depth_{filt.band_name}"] = np.array(
+                scattered_tab[f"loc_depth_{filt.instrument_name}.{filt.band_name}"] = np.array(
                     [
                         gal.aper_phot[aper_diam].depths[i].value
                         for gal in scattered_sim_cat

@@ -2101,7 +2101,8 @@ class EPOCHS_Selector(Multiple_SED_fit_Selector):
         SED_fit_label: Union[str, SED_code],
         allow_lowz: bool = False,
         unmasked_instruments: Union[str, List[str]] = "NIRCam",
-        cat_filterset: Optional[Multiple_Filter] = None
+        cat_filterset: Optional[Multiple_Filter] = None,
+        simulated: bool = False,
     ):
         selectors = [
             Bluewards_Lya_Non_Detect_Selector(aper_diam, SED_fit_label, SNR_lim = 2.0),
@@ -2111,21 +2112,24 @@ class EPOCHS_Selector(Multiple_SED_fit_Selector):
             Chi_Sq_Diff_Selector(aper_diam, SED_fit_label, chi_sq_diff = 4.0, dz = 0.5),
             Robust_zPDF_Selector(aper_diam, SED_fit_label, integral_lim = 0.6, dz_over_z = 0.1),
         ]
-        # add unmasked instrument selections
-        if isinstance(unmasked_instruments, str):
-            unmasked_instruments = unmasked_instruments.split("+")
-        selectors.extend([Unmasked_Instrument_Selector(instrument, \
-            cat_filterset) for instrument in unmasked_instruments])
         # add 2σ non-detection in first band if wanted
         if not allow_lowz:
             selectors.extend([Band_SNR_Selector( \
                 aper_diam, band = 0, SNR_lim = 2.0, detect_or_non_detect = "non_detect")])
-        # add hot pixel checks in LW widebands
-        selectors.extend([
-            Sextractor_Bands_Radius_Selector( \
-            band_names = ["F277W", "F356W", "F444W"], \
-            gtr_or_less = "gtr", lim = 45. * u.marcsec)
-        ])
+
+        if not simulated:
+            # add unmasked instrument selections
+            if isinstance(unmasked_instruments, str):
+                unmasked_instruments = unmasked_instruments.split("+")
+            selectors.extend([Unmasked_Instrument_Selector(instrument, \
+                cat_filterset) for instrument in unmasked_instruments])
+            
+            # add hot pixel checks in LW widebands
+            selectors.extend([
+                Sextractor_Bands_Radius_Selector( \
+                band_names = ["F277W", "F356W", "F444W"], \
+                gtr_or_less = "gtr", lim = 45. * u.marcsec)
+            ])
         lowz_name = "_lowz" if allow_lowz else ""
         unmasked_instr_name = "_" + "+".join(unmasked_instruments)
         selection_name = f"EPOCHS{lowz_name}{unmasked_instr_name}"
