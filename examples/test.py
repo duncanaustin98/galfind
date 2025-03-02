@@ -42,13 +42,13 @@ def plot_brown_dwarfs():
         min_flux_pc_err = min_flux_pc_err,
         crops = bd_selector,
     )
-    f277w_five_sig = Band_SNR_Selector(aper_diams[0], "F277W", "detect", 5.0)
-    bd_five_sig_f277w_cat = f277w_five_sig(bd_cat, return_copy = True)
+    f444w_five_sig = Band_SNR_Selector(aper_diams[0], "F444W", "detect", 5.0)
+    bd_cat = f444w_five_sig(bd_cat, return_copy = True)
 
-    eazy_fitter(bd_five_sig_f277w_cat, aper_diams[0], load_PDFs = True, load_SEDs = True, update = True)
-    bd_fitter(bd_five_sig_f277w_cat, aper_diams[0], load_PDFs = True, load_SEDs = True, update = True)
+    eazy_fitter(bd_cat, aper_diams[0], load_PDFs = True, load_SEDs = True, update = True)
+    bd_fitter(bd_cat, aper_diams[0], load_PDFs = True, load_SEDs = True, update = True)
 
-    bd_five_sig_f277w_cat.plot_phot_diagnostics(
+    bd_cat.plot_phot_diagnostics(
         aper_diams[0],
         [eazy_fitter, bd_fitter],
         eazy_fitter,
@@ -56,9 +56,9 @@ def plot_brown_dwarfs():
         norm_kwargs = {},
         aper_kwargs = {},
         kron_kwargs = {},
-        n_cutout_rows = 2,
+        n_cutout_rows = 3,
         wav_unit = u.um,
-        flux_unit = u.ABmag,
+        flux_unit = u.nJy,
         overwrite = True
     )
     breakpoint()

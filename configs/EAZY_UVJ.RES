@@ -1,4 +1,3 @@
-
     23 REST_FRAME/maiz-apellaniz_Johnson_U.res 2006AJ....131.1184M lambda_c= 3.5900e+03 AB-Vega= 0.769 w95=862.3
 1      3.05000e+03 0.00000e+00
 2      3.10000e+03 2.37000e-01

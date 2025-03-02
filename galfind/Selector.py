@@ -1545,7 +1545,7 @@ class Chi_Sq_Diff_Selector(SED_fit_Selector):
             assertions.extend([isinstance(self.kwargs["chi_sq_diff"], (int, float))])
             assertions.extend([isinstance(self.kwargs["dz"], (int, float))])
             assertions.extend([self.kwargs["dz"] > 0.0])
-            assertions.extend([self.kwargs["chi_sq_diff"] > 0.0])
+            assertions.extend([self.kwargs["chi_sq_diff"] >= 0.0])
             passed = all(assertions)
         except:
             passed = False
@@ -1653,7 +1653,7 @@ class Chi_Sq_Template_Diff_Selector(SED_fit_Selector):
         try:
             assertions = []
             assertions.extend([isinstance(self.kwargs["chi_sq_diff"], (int, float))])
-            assertions.extend([self.kwargs["chi_sq_diff"] > 0.0])
+            assertions.extend([self.kwargs["chi_sq_diff"] >= 0.0])
             assertions.extend([isinstance(self.kwargs["secondary_SED_fit_label"], str)])
             assertions.extend([isinstance(self.kwargs["reduced"], bool)])
             passed = all(assertions)
@@ -2042,16 +2042,16 @@ class Brown_Dwarf_Selector(Multiple_SED_fit_Selector):
         aper_diam: u.Quantity,
         SED_fit_label: Union[str, SED_code],
         unmasked_instruments: Union[str, List[str]] = "NIRCam",
-        chi_sq_lim: float = 10.0,
-        chi_sq_diff: Union[int, float] = 4.0,
+        red_chi_sq_lim: float = 2.0,
+        red_chi_sq_diff: Union[int, float] = 0.0,
         secondary_SED_fit_label: Optional[Union[str, SED_code]] = None,
         cat_filterset: Optional[Multiple_Filter] = None,
         # size_lim: u.Quantity = 145.0 * u.arcsec,
         # size_band: str = "F444W",
     ):
         selectors = [
-            Chi_Sq_Lim_Selector(aper_diam, SED_fit_label, chi_sq_lim = chi_sq_lim, reduced = True),
-            Sextractor_Band_Radius_Selector(band_name = "F444W", gtr_or_less = "less", lim = 145.0 * u.marcsec),
+            Chi_Sq_Lim_Selector(aper_diam, SED_fit_label, chi_sq_lim = red_chi_sq_lim, reduced = True),
+            Sextractor_Band_Radius_Selector(band_name = "F444W", gtr_or_less = "less", lim = 130.0 * u.marcsec),
         ]
         # add hot pixel checks in LW widebands
         selectors.extend([
@@ -2060,8 +2060,8 @@ class Brown_Dwarf_Selector(Multiple_SED_fit_Selector):
             gtr_or_less = "gtr", lim = 45.0 * u.marcsec)
         ])
         
-        chi_sq_label = f"red_chi2<{chi_sq_lim:.1f}"
-        if chi_sq_diff is not None:
+        chi_sq_label = f"red_chi2<{red_chi_sq_lim:.1f}"
+        if red_chi_sq_diff is not None:
             assert secondary_SED_fit_label is not None, \
                 galfind_logger.critical(
                     "Must provide secondary SED fitting label if red_chi_sq_diff is not None."
@@ -2072,12 +2072,12 @@ class Brown_Dwarf_Selector(Multiple_SED_fit_Selector):
                 Chi_Sq_Template_Diff_Selector(
                     aper_diam,
                     SED_fit_label,
-                    chi_sq_diff,
+                    red_chi_sq_diff,
                     secondary_SED_fit_label,
-                    reduced = False
+                    reduced = True,
                 )
             ])
-            chi_sq_diff_label = f",chi2_dgal_{chi_sq_diff:.1f}"
+            chi_sq_diff_label = f",dgal{red_chi_sq_diff:.1f}"
         else:
             chi_sq_diff_label = ""
         chi_sq_label += chi_sq_diff_label
