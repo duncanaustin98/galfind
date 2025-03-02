@@ -17,7 +17,7 @@ from galfind import (
     EPOCHS_Selector,
     
 )
-from galfind.selection import Completeness
+from galfind.selection import Grid, Grid_2D
 from galfind.Catalogue import phot_property_from_fits, scattered_depth_labels, scattered_phot_labels_inst
 from galfind import useful_funcs_austind as funcs
 import itertools
@@ -27,6 +27,14 @@ from matplotlib import pyplot as plt
 import astropy.units as u
 from astropy.io import fits
 from astropy.table import Table, Row
+
+
+survey = 'Euclid_Deep'
+version = 'v_sim'
+scale_factor = 50.0
+aper_diams = [0.32] * u.arcsec
+
+
 
 filterset_mc = Multiple_Filter.from_instrument('MegaCam', excl_bands=['CFHT/MegaCam.g',
                                                                       'CFHT/MegaCam.r', 
@@ -40,7 +48,12 @@ filterset_mc = Multiple_Filter.from_instrument('MegaCam', excl_bands=['CFHT/Mega
 filterset_hsc = Multiple_Filter.from_instrument('HSC')
 
 filterset = Multiple_Filter.from_instruments(['NISP', 'VIS', 'IRAC'], excl_bands=['Spitzer/IRAC.I3', 'Spitzer/IRAC.I4'])
-filterset = filterset + filterset_mc + filterset_hsc       
+filterset = filterset + filterset_mc + filterset_hsc    
+
+
+# Set our depths
+depths = [26] + [28] * len(filterset.band_names[1:])
+
 
 folder = '/raid/scratch/data/JAGUAR/Full_Spectra'
 out_folder = '/nvme/scratch/work/tharvey/catalogs/' 
@@ -49,9 +62,9 @@ realization = 1 # realisation
 redshift_bins = [(0.2, 1), (1, 1.5), (1.5, 2), (2, 3), (3, 4), (4, 5), (5, 15)]
 filenames = [f'{folder}/JADES_SF_mock_r{realization}_v1.2_spec_5A_30um_z_{str(z1).replace(".", "p")}_{str(z2).replace(".", "p")}.fits' for z1, z2 in redshift_bins]
 
-out_filename = f'{out_folder}/JADES_SF_mock_r{realization}_v1.2_{filterset.instrument_name}_phot.fits'
+out_filename = f'{out_folder}/JADES_SF_mock_r{realization}_v1.2_{filterset.instrument_name}_phot_new.fits'
 out_colnames = [f'{filter.instrument_name}_{filter.band_name}_fnu' for filter in filterset.filters]
-out_colnames=['ID', 'redshift'] + out_colnames
+out_colnames=['ID', 'redshift', 'RA', 'DEC'] + out_colnames
 
 
 if not skip:
@@ -67,23 +80,29 @@ if not skip:
     
         for i in tqdm(range(nrows), desc=f'Processing spectra from {file}'):
             flux = hdu[1].section[i, :] / (1+redshifts[i]) # convert from rest-frame to observed-frame
-            sed = SED_obs(redshifts[i], wav, flux, wav_units=u.AA, mag_units=u.erg/u.s/u.cm**2/u.AA)
-            mock_phot = sed.create_mock_phot(filterset=filterset, min_flux_pc_err=0)
+            sed = SED_obs(redshifts[i], wav*(1+redshifts[i]), flux, wav_units=u.AA, mag_units=u.erg/u.s/u.cm**2/u.AA)
+            mock_phot = sed.create_mock_photometry(filterset=filterset, min_flux_pc_err=0)
             flux = mock_phot.flux.to(u.nJy)
-            row = (ids[i], redshifts[i]) + tuple(flux.value)
+            row = (ids[i], redshifts[i], 0, 0) + tuple(flux.value)
             rows.append(row)
-            
-        output_table = Table(rows = rows, names=out_colnames)
-        output_table.write(out_filename, format='fits', overwrite=True)
+        
+
+    output_table = Table(rows = rows, names=out_colnames)
+    output_table.write(out_filename, format='fits', overwrite=True)
+
+output_table = Table.read(out_filename)
+
+flux_columns = [col for col in output_table.colnames if 'fnu' in col]
+
+for col in flux_columns:
+    output_table[col] = output_table[col] * scale_factor
+    
+out_filename = out_filename.replace('.fits', f'_fnu_{scale_factor}x.fits')
 
 
-out_filename = '/nvme/scratch/work/tharvey/catalogs/JADES_SF_mock_r1_v1.2_MegaCam+HSC+VIS+NISP+IRAC_phot_fnu_200x.fits'
+output_table.write(out_filename, format='fits', overwrite=True)
 
-survey = 'Euclid_Deep'
-version = 'v_sim'
-aper_diams = [0.32] * u.arcsec
 
-depths = [26] + [28] * len(filterset.band_names[1:])
 depths = np.array(depths) * u.ABmag
 
 def jaguar_phot_labels(
@@ -142,11 +161,11 @@ def get_depth_labels(filterset, aper_diams):
     return depth_labels
 
 #jaguar_cat_path = f"/nvme/scratch/work/tharvey/catalogs/JADES_SF_mock_r{str(int(realization))}_v1.2_MegaCam+HSC+VIS+NISP+IRAC_phot.fits"
-jaguar_cat_path = '/nvme/scratch/work/tharvey/catalogs/JADES_SF_mock_r1_v1.2_MegaCam+HSC+VIS+NISP+IRAC_phot_fnu_200x.fits'
+
 jaguar_cat_creator = Catalogue_Creator(
-    survey = f"JAGUAR-{survey}-r{str(int(realization))}_200_fnu",
+    survey = f"JAGUAR-{survey}-r{str(int(realization))}_{scale_factor}_fnu",
     version = version,
-    cat_path = jaguar_cat_path,
+    cat_path = out_filename,
     filterset = filterset,
     aper_diams = aper_diams, # not relevant in this case, but still required
     ID_label = "ID",
@@ -185,7 +204,7 @@ selector = EPOCHS_Selector(
 )
 
 # make 2D completeness grid from the Jaguar catalogue
-completeness = Completeness.from_sim_cat(
+completeness = Grid_2D.from_sim_cat(
     jaguar_cat,
     SED_fitter_arr = SED_fitter_arr,
     sampler = None,
@@ -201,4 +220,6 @@ completeness = Completeness.from_sim_cat(
     aper_diams = aper_diams,
     depth_labels_func = scattered_depth_labels,
     phot_labels_func = scattered_phot_labels_inst,
+    load_SEDs=False,
+    load_PDFs=False,
     )

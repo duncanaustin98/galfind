@@ -202,10 +202,6 @@ class EAZY(SED_code):
             # Make filter file
             
             filt_codes = self._make_filter_file(cat.filterset, in_filt_name, default_param_path = f"{config['EAZY']['EAZY_CONFIG_DIR']}/EAZY_UVJ.RES")
-            
-            # Get filter codes for the given instrument and bands
-
-            filt_codes = [pos+1 for pos in range(len(cat.filterset))]
                 
                 # Make input file
             in_data = np.array(
@@ -764,17 +760,26 @@ class EAZY(SED_code):
         # count lines in .INFO
 
         with open(f'{filter_file}.INFO', 'r') as f:
-            nexisting = sum(1 for line in f if line != '\n')
+            current_lines = f.readlines()
+            nexisting = len(current_lines)
+            last_line = current_lines[-1]
 
         with open(filter_file, 'a') as f:
             with open (f'{filter_file}.INFO', 'a') as f_info:
+                # work out whether we need to move to the next line - i.e is the current line got anything in it
+                
+                if not last_line.endswith('\n'):
+                    f_info.write('\n')
+
+                f.write('\n')
+
                 # count lines in file
                 for i, filt in enumerate(filterset):
                     code = i + nexisting + 1
                     wav_cent = filt.properties["WavelengthEff"].to(u.Angstrom).value
-                    f_info.write(f'{code} {len(filt.trans)} {filt.facility_name}/{filt.instrument_name}.{filt.band_name} lambda_c= {wav_cent}\n')
+                    f_info.write(f'{code}  {len(filt.trans)} {filt.facility_name}/{filt.instrument_name}.{filt.band_name} lambda_c= {wav_cent}\n')
                     f.write(f' {len(filt.trans)} {filt.facility_name}/{filt.instrument_name}.{filt.band_name} lambda_c= {wav_cent}\n')
 
                     for pos, (wav, trans) in enumerate(zip(filt.wav, filt.trans)):
-                        f.write(f'{code} {wav.to(u.Angstrom).value} {trans}\n')
-        return np.arange(nexisting + 1, nexisting + 1 + len(filterset))
+                        f.write(f'{pos+1} {wav.to(u.Angstrom).value} {trans}\n')
+        return np.arange(nexisting+1, nexisting + len(filterset)+1)
