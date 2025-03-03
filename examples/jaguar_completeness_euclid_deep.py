@@ -31,7 +31,7 @@ from astropy.table import Table, Row
 
 survey = 'Euclid_Deep'
 version = 'v_sim'
-scale_factor = 50.0
+scale_factor = 40.0
 aper_diams = [0.32] * u.arcsec
 
 
@@ -193,7 +193,7 @@ jaguar_cat = jaguar_cat_creator()
    # construct array of required EAZY SED fitter objects
 SED_fitter_arr = [
     #EAZY({"templates": "fsps_larson", "lowz_zmax": 4.0}),
-    #EAZY({"templates": "fsps_larson", "lowz_zmax": 6.0}),
+    EAZY({"templates": "fsps_larson", "lowz_zmax": 5}),
     EAZY({"templates": "fsps_larson", "lowz_zmax": 15}),
 ]
 
@@ -207,7 +207,7 @@ selector = EPOCHS_Selector(
 completeness = Grid_2D.from_sim_cat(
     jaguar_cat,
     SED_fitter_arr = SED_fitter_arr,
-    sampler = None,
+    sampler = selector,
     aper_diam = aper_diams[0],
     mode = "n_nearest",
     depth_region = "all",
@@ -220,6 +220,6 @@ completeness = Grid_2D.from_sim_cat(
     aper_diams = aper_diams,
     depth_labels_func = scattered_depth_labels,
     phot_labels_func = scattered_phot_labels_inst,
-    load_SEDs=False,
-    load_PDFs=False,
-    )
+    save_SEDs=True,
+    save_PDFs=True,
+)

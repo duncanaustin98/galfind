@@ -412,11 +412,17 @@ class SED_code(ABC):
         for i, gal in tqdm(
             enumerate(cat), desc=load_message, total=len(cat)
         ):
-            for j, band_name in enumerate(input_filterset.band_names):
+            for j, (band_name, band_instrument) in enumerate(zip(input_filterset.band_names, input_filterset.instrument_names)):
                 if band_name in gal.aper_phot[aper_diam].filterset.band_names:  # Check mask?
                     index = np.where(
-                        band_name == np.array(gal.aper_phot[aper_diam].filterset.band_names)
-                    )[0][0]
+                        (band_name == np.array(gal.aper_phot[aper_diam].filterset.band_names)) \
+                            & (band_instrument == np.array(gal.aper_phot[aper_diam].filterset.instrument_names))
+                    )[0]
+                    assert len(index) == 1, galfind_logger.critical(
+                        f"Multiple indices found for {band_name} in {gal.aper_phot[aper_diam].filterset.band_names}"
+                    )
+                    index = index[0]
+
                     phot_in[i, j] = np.array(phot[i].data)[index]
                     phot_err_in[i, j] = np.array(phot_err[i].data)[index]
                 else:

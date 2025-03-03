@@ -223,8 +223,8 @@ class Grid_2D:
         aper_diams: Optional[List[u.Quantity]] = None,
         depth_labels_func: Optional[Callable] = None,
         phot_labels_func: Optional[Callable] = None,
-        load_PDFs: bool = True,
-        load_SEDs: bool = True,
+        save_PDFs: bool = True,
+        save_SEDs: bool = True,
 
     ) -> Self:
         #assert sim_cat.cat_creator.load_mask_func is None 
@@ -314,8 +314,8 @@ class Grid_2D:
             SED_fitter(
                 scattered_sim_cat,
                 aper_diam,
-                load_PDFs = load_PDFs,
-                load_SEDs = load_SEDs,
+                save_PDFs = save_PDFs,
+                save_SEDs = save_SEDs,
                 update = True
             ) for SED_fitter in SED_fitter_arr
         ]
