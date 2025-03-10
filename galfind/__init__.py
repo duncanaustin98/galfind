@@ -175,6 +175,7 @@ from .Selector import (
     Data_Selector,
     Photometry_Selector,
     SED_fit_Selector,
+    Morphology_Selector,
     Multiple_Data_Selector,
     Multiple_Photometry_Selector,
     Multiple_SED_fit_Selector,
@@ -198,6 +199,7 @@ from .Selector import (
     Chi_Sq_Lim_Selector,
     Chi_Sq_Diff_Selector,
     Robust_zPDF_Selector,
+    Re_Selector,
     EPOCHS_Selector,
     Redshift_Limit_Selector,
     Redshift_Bin_Selector,
@@ -205,6 +207,8 @@ from .Selector import (
     Rest_Frame_Property_Bin_Selector,
     Rest_Frame_Property_Kwarg_Selector,
     Brown_Dwarf_Selector,
+    Hainline24_TY_Brown_Dwarf_Selector_1,
+    Hainline24_TY_Brown_Dwarf_Selector_2,
 )
 
 from .Emission_lines import Emission_line, wav_lyman_alpha, line_diagnostics

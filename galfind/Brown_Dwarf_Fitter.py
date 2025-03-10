@@ -26,7 +26,9 @@ class Template_Fitter(SED_code):
     def __init__(
         self: Self,
         SED_fit_params: Dict[str, Any],
+        fit_instrument: str = "NIRCam",
     ):
+        self.fit_instrument = fit_instrument
         super().__init__(SED_fit_params)
 
     @classmethod
@@ -109,15 +111,21 @@ class Template_Fitter(SED_code):
         out_path = self._get_out_paths(cat, aper_diam)[1]
         if not Path(out_path).is_file() or overwrite:
             # convert cat.filterset to bands used in StarFit
+            fit_instrument_indices = np.array([i for i, filt in enumerate(cat.filterset) if filt.instrument_name == self.fit_instrument])
+            fit_instrument_filterset = cat.filterset[fit_instrument_indices]
+            assert len(fit_instrument_filterset) > 0, \
+                galfind_logger.critical(
+                    f"No filters in cat.filterset with instrument_name = {self.fit_instrument=}"
+                )
             facilities_to_search = {}
-            for filt in cat.filterset:
+            for filt in fit_instrument_filterset:
                 if filt.facility_name not in facilities_to_search.keys():
                     facilities_to_search[filt.facility_name] = []
                 facilities_to_search[filt.facility_name].append(filt.instrument.SVO_name)
             bands = [
                 f"{filt.instrument_name}.{filt.band_name}" 
                 if filt.instrument_name != "NIRCam" else filt.band_name 
-                for filt in cat.filterset
+                for filt in fit_instrument_filterset
             ]
             starfit = StarFit(
                 facilities_to_search = facilities_to_search,
@@ -133,6 +141,7 @@ class Template_Fitter(SED_code):
                     "out_units": u.nJy,
                     "no_data_val": np.nan,
                     "incl_units": True,
+                    "input_filterset": fit_instrument_filterset,
                 },
                 sys_err = None, 
                 filter_mask = None,
@@ -161,12 +170,13 @@ class Template_Fitter(SED_code):
     ) -> Tuple[str, str, str, Dict[str, List[str]], List[str]]:
         aper_diams_str = funcs.aper_diams_to_str(np.array([aper_diam.to(u.arcsec).value]) * u.arcsec)
         out_path = f"{config['TemplateFitting']['BROWN_DWARF_OUT_DIR']}/{cat.version}/" + \
-            f"{cat.filterset.instrument_name}/{cat.survey}/{aper_diams_str}/{self.hdu_name}.fits"
+            f"{cat.filterset.instrument_name}/{cat.survey}/{aper_diams_str}/" + \
+            f"{self.hdu_name}_{self.fit_instrument}.fits"
         SED_path = out_path.replace(".fits", "_SEDs.h5")
         return None, out_path, out_path, None, SED_path
 
     def extract_SEDs(
-        self: Self, 
+        self: Self,
         IDs: List[int], 
         SED_paths: str,
     ) -> List[SED_obs]:
@@ -212,9 +222,12 @@ class Template_Fitter(SED_code):
 
 class Brown_Dwarf_Fitter(Template_Fitter):
 
-    def __init__(self: Self):
+    def __init__(
+        self: Self,
+        fit_instrument: str = "NIRCam"
+    ):
         SED_fit_params = {"templates": ["sonora_bobcat", "sonora_cholla", "sonora_elf_owl", "sonora_diamondback", "low-z"]}
-        super().__init__(SED_fit_params)
+        super().__init__(SED_fit_params, fit_instrument)
 
     @property
     def label(self) -> str:

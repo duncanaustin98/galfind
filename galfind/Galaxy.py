@@ -450,6 +450,7 @@ class Galaxy:
         n_cutout_rows: int = 1,
         wav_unit = u.um,
         flux_unit = u.ABmag,
+        log_fluxes: bool = False,
         #hide_masked_cutouts=True,
         cutout_size: u.Quantity = 0.96 * u.arcsec,
         #high_dyn_rng=False,
@@ -516,37 +517,56 @@ class Galaxy:
                 ],
             }
             for code in reversed(SED_arr):
-                SED_plot = self.aper_phot[aper_diam].SED_results[code.label].SED.plot(
-                    phot_ax, wav_unit, flux_unit, label=code.label
-                )
-                SED_colours[code.label] = SED_plot[0].get_color()
-                # plot the mock photometry
-                self.aper_phot[aper_diam].SED_results[code.label].SED.create_mock_photometry(
-                    self.aper_phot[aper_diam].filterset,
-                    depths=self.aper_phot[aper_diam].depths
-                    # min flux pc err = 10.0
-                )
-                self.aper_phot[aper_diam].SED_results[code.label].SED.mock_photometry.plot(
-                    phot_ax,
-                    wav_unit,
-                    flux_unit,
-                    uplim_sigma=None,
-                    auto_scale=False,
-                    plot_errs={"x": False, "y": False},
-                    errorbar_kwargs=errorbar_kwargs,
-                    label=None,
-                    filled=False,
-                    colour=SED_colours[code.label],
-                )
-                # ax_photo.scatter(band_wavs_lowz, band_mags_lowz, edgecolors=eazy_color_lowz, marker='o', facecolor='none', s=80, zorder=4.5)
+                if self.aper_phot[aper_diam].SED_results[code.label].SED is not None:
+                    SED_plot = self.aper_phot[aper_diam].SED_results[code.label].SED.plot(
+                        phot_ax,
+                        wav_unit,
+                        flux_unit,
+                        log_fluxes = log_fluxes,
+                        label = code.label,
+                    )
+                    SED_colours[code.label] = SED_plot[0].get_color()
+                    # plot the mock photometry
+                    self.aper_phot[aper_diam].SED_results[code.label].SED.create_mock_photometry(
+                        self.aper_phot[aper_diam].filterset,
+                        depths = self.aper_phot[aper_diam].depths,
+                        # min flux pc err = 10.0
+                    )
+                    self.aper_phot[aper_diam].SED_results[code.label].SED.mock_photometry.plot(
+                        phot_ax,
+                        wav_unit,
+                        flux_unit,
+                        uplim_sigma=None,
+                        auto_scale=False,
+                        plot_errs={"x": False, "y": False},
+                        errorbar_kwargs=errorbar_kwargs,
+                        label=None,
+                        filled=False,
+                        colour=SED_colours[code.label],
+                        log_scale = log_fluxes,
+                    )
+                    # ax_photo.scatter(band_wavs_lowz, band_mags_lowz, edgecolors=eazy_color_lowz, marker='o', facecolor='none', s=80, zorder=4.5)
             
             self.aper_phot[aper_diam].plot(
                 phot_ax,
                 wav_unit,
                 flux_unit,
-                annotate=False,
-                auto_scale=True,
-                label_SNRs=True,
+                annotate = False,
+                # uplim_sigma = 2.0,
+                # auto_scale = True,
+                # label_SNRs = True,
+                # errorbar_kwargs = {
+                #     "ls": "",
+                #     "marker": "o",
+                #     "ms": 4.0,
+                #     "zorder": 100.0,
+                #     "path_effects": [pe.withStroke(linewidth=2.0, foreground="white")],
+                # },
+                # filled = True,
+                # colour = "black",
+                # label = "Photometry",
+                SNR_labelsize = 7.5,
+                log_scale = log_fluxes,
             )
             # photometry axis title
             phot_ax.set_title(f"{data.survey} {self.ID} ({data.version})")
@@ -556,7 +576,7 @@ class Galaxy:
             #     if rejected != '':
             #         phot_ax.annotate(rejected, (0.9, 0.95), ha='center', fontsize='small', xycoords = 'axes fraction', zorder=5)
             # photometry axis legend
-            phot_ax.legend(loc="best", fontsize="small", frameon=False)
+            phot_ax.legend(loc="best", fontsize=8.0, frameon=True)
             for text in phot_ax.get_legend().get_texts():
                 text.set_path_effects(
                     [pe.withStroke(linewidth=3, foreground="white")]
@@ -590,7 +610,6 @@ class Galaxy:
             else:
                 for ax in [phot_ax] + PDF_ax:
                     ax.clear()
-                
         return out_path
 
     # Spectroscopy

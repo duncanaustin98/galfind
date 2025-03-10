@@ -437,11 +437,11 @@ class Photometry_obs(Photometry):
         ax: Optional[plt.Axes] = None,
         wav_units: u.Unit = u.AA,
         mag_units: u.Unit = u.Jy,
-        plot_errs: dict = {"x": True, "y": True},
+        plot_errs: dict = {"x": False, "y": True},
         annotate: bool = True,
         uplim_sigma: float = 2.0,
         auto_scale: bool = True,
-        label_SNRs: bool = True,
+        SNR_labelsize: Optional[float] = 7.5,
         errorbar_kwargs: dict = {
             "ls": "",
             "marker": "o",
@@ -452,13 +452,14 @@ class Photometry_obs(Photometry):
         filled: bool = True,
         colour: str = "black",
         label: str = "Photometry",
+        log_scale: bool = False,
     ):
         plot, wavs_to_plot, mags_to_plot, yerr, uplims = super().plot(
             ax,
             wav_units,
             mag_units,
             plot_errs,
-            annotate,
+            # annotate,
             uplim_sigma,
             auto_scale,
             errorbar_kwargs,
@@ -466,12 +467,13 @@ class Photometry_obs(Photometry):
             colour,
             label,
             return_extra=True,
+            log_scale=log_scale,
         )
 
-        if label_SNRs:
+        if SNR_labelsize is not None:
             label_kwargs = {
                 "ha": "center",
-                "fontsize": "medium",
+                "fontsize": SNR_labelsize,
                 "path_effects": [
                     pe.withStroke(linewidth=2.0, foreground="white")
                 ],

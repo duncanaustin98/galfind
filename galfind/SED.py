@@ -135,7 +135,7 @@ class SED:
             )
             ax.set_ylabel(
                 funcs.label_fluxes(
-                    mag_units, False if mag_units == u.ABmag else True
+                    mag_units, True if mag_units != u.ABmag and log_fluxes else False
                 )
             )
             
