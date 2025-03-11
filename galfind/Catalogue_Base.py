@@ -162,7 +162,7 @@ class Catalogue_Base:
         selector: Type[Selector],
     ) -> Self:
         if selector not in self.crops:
-            self.gals = self[selector]
+            self.gals = np.array(self[selector])
             self.cat_creator.crops.append(selector)
         return self
 

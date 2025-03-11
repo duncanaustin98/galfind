@@ -909,14 +909,14 @@ class Galaxy:
         # name appropriate empty output dicts if not already made
         if not hasattr(SED_result_obj, "obs_zrange"):
             SED_result_obj.obs_zrange = {}
-            if crop_name not in SED_result_obj.obs_zrange.keys():
-                SED_result_obj.obs_zrange[crop_name] = {}
+        if crop_name not in SED_result_obj.obs_zrange.keys():
+            SED_result_obj.obs_zrange[crop_name] = {}
         # if not hasattr(self, "V_max_simple"):
         #    self.V_max_simple = {}
         if not hasattr(SED_result_obj, "V_max"):
             SED_result_obj.V_max = {}
-            if crop_name not in SED_result_obj.V_max.keys():
-                SED_result_obj.V_max[crop_name] = {}
+        if crop_name not in SED_result_obj.V_max.keys():
+            SED_result_obj.V_max[crop_name] = {}
 
     # Vmax calculation in a single field
     def calc_Vmax(
@@ -938,8 +938,8 @@ class Galaxy:
         from . import (
             Data_Selector, 
             SED_fit_Selector, 
-            Multiple_Selector,
-            Rest_Frame_Property_Limit_Selector
+            Multiple_Selector, 
+            Rest_Frame_Property_Limit_Selector, 
         )
 
         SED_result_obj = self.aper_phot[aper_diam].SED_results[SED_fit_code.label]
@@ -948,7 +948,7 @@ class Galaxy:
 
         # return V_max if already calculated
         self._make_Vmax_storage(aper_diam, SED_fit_code, crop_name)
-        if len(SED_result_obj.V_max[crop_name]) > 0:
+        if data.full_name in SED_result_obj.V_max[crop_name].keys():
             return SED_result_obj.V_max[crop_name][data.full_name]
 
         # flatten multiple selectors and remove 

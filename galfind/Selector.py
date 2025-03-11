@@ -1181,10 +1181,11 @@ class Bluewards_Lya_Non_Detect_Selector(Redshift_Selector):
         gal: Galaxy,
     ) -> bool:
         # extract first Lya non-detect band
+        from .Emission_lines import line_diagnostics
         first_Lya_non_detect_band = gal.aper_phot[self.aper_diam]. \
             SED_results[self.SED_fit_label].phot_rest. \
                 get_first_bluewards_band(
-                    wav_lyman_lim * u.AA,
+                    line_diagnostics["Lya"]["line_wav"],
                     self.kwargs["ignore_bands"],
                 )
         # if no bands bluewards of Lyman alpha, 
