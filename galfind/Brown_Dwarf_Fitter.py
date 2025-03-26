@@ -179,6 +179,8 @@ class Template_Fitter(SED_code):
         self: Self,
         IDs: List[int], 
         SED_paths: str,
+        *args,
+        **kwargs,
     ) -> List[SED_obs]:
         # open .h5 table
         SED_h5 = h5py.File(SED_paths, "r")
@@ -218,6 +220,8 @@ class Template_Fitter(SED_code):
             assert key in self.SED_fit_params.keys(), galfind_logger.critical(
                 f"'{key}' not in SED_fit_params keys = {list(self.SED_fit_params.keys())}"
             )
+        if "excl_bands" not in self.SED_fit_params.keys():
+            self.SED_fit_params["excl_bands"] = []
 
 
 class Brown_Dwarf_Fitter(Template_Fitter):

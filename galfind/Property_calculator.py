@@ -244,6 +244,136 @@ class Photometry_Property_Calculator(Property_Calculator):
     ) -> Optional[Galaxy]:
         pass
 
+class Photometry_Property_Loader(Photometry_Property_Calculator):
+
+    def __init__(
+        self: Self,
+        aper_diam: u.Quantity,
+        property_getter: Callable[Catalogue, NDArray],
+        name: str,
+        plot_name: Optional[str],
+        units: u.Unit,
+    ) -> None:
+        self._name = name
+        self._plot_name = plot_name
+        self.units = units
+        self.property_getter = property_getter
+        super().__init__(aper_diam)
+
+    @property
+    def name(self: Self) -> str:
+        return self._name
+    
+    @property
+    def plot_name(self: Self) -> str:
+        return self._plot_name
+    
+    def _get_IDs_properties(
+        self: Self,
+        cat: Type[Catalogue_Base],
+    ) -> Tuple[NDArray, NDArray]:
+        IDs, properties_arr = self.property_getter(cat)
+        self._IDs = IDs
+        self._properties = np.percentile(properties_arr, [16, 50, 84], axis = 1)
+        self._property_PDFs = np.array([PDF.from_1D_arr(self.name, properties * self.units) if not all(np.isnan(properties)) else None for properties in properties_arr])
+    
+    def __call__(
+        self: Self,
+        object: Type[Catalogue_Base],
+        output: bool = False,
+        overwrite: bool = False,
+        n_jobs: int = 1,
+    ) -> NDArray:
+        if isinstance(object, tuple(Catalogue_Base.__subclasses__())):
+            val = self._call_cat(object)
+        else:
+            breakpoint()
+            err_message = f"{object=} with {type(object)=} != Catalogue"
+            galfind_logger.critical(err_message)
+            raise TypeError(err_message)
+        return val
+    
+    def _call_cat(
+        self: Self,
+        cat: Catalogue,
+        output: bool = False,
+        overwrite: bool = False,
+        n_jobs: int = 1,
+    ) -> NDArray:
+        self._get_IDs_properties(cat)
+        return np.array([self._call_gal(gal) for gal in cat]) * self.units
+    
+    def _call_gal(self: Self, gal: Galaxy) -> NDArray:
+        # load property into galaxy
+        if not hasattr(gal.aper_phot[self.aper_diam], "properties"):
+            gal.aper_phot[self.aper_diam].properties = {}
+        if not hasattr(gal.aper_phot[self.aper_diam], "property_errs"):
+            gal.aper_phot[self.aper_diam].property_errs = {}
+        if not hasattr(gal.aper_phot[self.aper_diam], "property_PDFs"):
+            gal.aper_phot[self.aper_diam].property_PDFs = {}
+
+        gal.aper_phot[self.aper_diam].properties[self.name] = self._properties[1][self._IDs == f"{gal.ID}_{gal.survey}"] * self.units
+        gal.aper_phot[self.aper_diam].property_errs[self.name] = np.array([self._properties[1][self._IDs == f"{gal.ID}_{gal.survey}"] - \
+            self._properties[0][self._IDs == f"{gal.ID}_{gal.survey}"], self._properties[2][self._IDs == f"{gal.ID}_{gal.survey}"] - \
+            self._properties[1][self._IDs == f"{gal.ID}_{gal.survey}"]]) * self.units
+        pdf = self._property_PDFs[self._IDs == f"{gal.ID}_{gal.survey}"]
+        try:
+            if pdf is not None:
+                gal.aper_phot[self.aper_diam].property_PDFs[self.name] = pdf[0]
+            else:
+                gal.aper_phot[self.aper_diam].property_PDFs[self.name] = None
+        except:
+            breakpoint()
+        return gal.aper_phot[self.aper_diam].properties[self.name]
+    
+    def extract_vals(
+        self: Self, 
+        object: Type[Catalogue_Base]
+    ) -> Union[u.Quantity, u.Magnitude, u.Dex]:
+        if isinstance(object, tuple(Catalogue_Base.__subclasses__())):
+            cat_vals = [gal.aper_phot[self.aper_diam].properties[self.name] for gal in object]
+            if not all(isinstance(val, float) for val in cat_vals):
+                assert all(val.unit == cat_vals[0].unit for val in cat_vals), \
+                    galfind_logger.critical(f"Units of {self.name} in {object} are not consistent")
+                cat_vals = np.array([val.value for val in cat_vals]) * cat_vals[0].unit
+            else:
+                cat_vals = np.array(cat_vals)
+            return cat_vals
+        else:
+            err_message = f"{object=} with {type(object)=} " + \
+                f"not in [Catalogue, Galaxy, SED_obs]"
+            galfind_logger.critical(err_message)
+            raise TypeError(err_message)
+    
+    # TODO: Propagate from parent class
+    def extract_errs(
+        self: Self, 
+        object: Type[Catalogue_Base]
+    ) -> Union[u.Quantity, u.Magnitude, u.Dex]:
+        if isinstance(object, tuple(Catalogue_Base.__subclasses__())):
+            cat_errs = [gal.aper_phot[self.aper_diam].property_errs[self.name] for gal in object]
+            if not all(isinstance(val, float) for val in cat_errs):
+                assert all(val.unit == cat_errs[0].unit for val in cat_errs), \
+                    galfind_logger.critical(f"Units of {self.name} in {object} are not consistent")
+                cat_errs = np.array([val.value for val in cat_errs]) * cat_errs[0].unit
+            else:
+                cat_errs = np.array(cat_errs)
+            return cat_errs[:, :, 0]
+        raise NotImplementedError()
+        
+    def extract_PDFs(
+        self: Self,
+        object: Type[Catalogue_Base],
+    ) -> Union[Type[PDF], List[Type[PDF]]]:
+        if isinstance(object, tuple(Catalogue_Base.__subclasses__())):
+            return [gal.aper_phot[self.aper_diam].property_PDFs[self.name] for gal in object]
+        else:
+            err_message = f"{object=} with {type(object)=} != Catalogue"
+            galfind_logger.critical(err_message)
+            raise TypeError(err_message)
+            
+
+
 # # Extracts properties from observed frame photometry (e.g. magnitudes)
 # class Photometry_Property_Extractor(Property_Extractor, Photometry_Property_Calculator):
     

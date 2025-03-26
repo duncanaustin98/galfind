@@ -390,7 +390,7 @@ class SED_obs(SED):
         self: Self,
         filterset: Multiple_Filter,
         depths: Optional[u.Quantity] = None,
-        min_flux_pc_err: float = 10.0
+        min_flux_pc_err: float = 10.0,
     ) -> Mock_Photometry:
         # if depths not given, expect the galaxy to be very well detected
         if depths is None:

@@ -848,32 +848,38 @@ class Catalogue_Base:
             if isinstance(x_calculator, tuple(Property_Calculator_Base.__subclasses__())):
                 x = x_calculator.extract_vals(self)
                 if incl_x_errs:
-                    raise NotImplementedError
+                    x_err = x_calculator.extract_errs(self)
                 else:
                     x_err = None
             else:
                 raise NotImplementedError
             if log_x or x_name in funcs.logged_properties:
                 if incl_x_errs:
-                    x, x_err = funcs.errs_to_log(x, x_err)
+                    unit = x.unit
+                    x, x_err = funcs.errs_to_log(x.value, x_err.value)
+                    x *= unit
+                    x_err *= unit
                 else:
-                    x = np.log10(x.value)
+                    x = np.log10(x.value) * u.dimensionless_unscaled
                 x_name = f"log({x_name})"
                 x_label = f"log({x_label})"
 
             if isinstance(y_calculator, tuple(Property_Calculator_Base.__subclasses__())):
                 y = y_calculator.extract_vals(self)
                 if incl_y_errs:
-                    raise NotImplementedError
+                    y_err = y_calculator.extract_errs(self)
                 else:
                     y_err = None
             else:
                 raise NotImplementedError
             if log_y or y_name in funcs.logged_properties:
                 if incl_y_errs:
-                    y, y_err = funcs.errs_to_log(y, y_err)
+                    unit = y.unit
+                    y, y_err = funcs.errs_to_log(y.flatten().value, y_err.T.value)
+                    y *= unit
+                    y_err *= unit
                 else:
-                    y = np.log10(y.value)
+                    y = np.log10(y.value) * u.dimensionless_unscaled
                 y_name = f"log({y_name})"
                 y_label = f"log({y_label})"
 
@@ -983,11 +989,26 @@ class Catalogue_Base:
             ax.set_ylim([y_edges[0], y_edges[-1]])
         else:
             if incl_x_errs or incl_y_errs and not mean_err:
-                if "ls" not in plot_kwargs.keys():
-                    plot_kwargs["ls"] = ""
-                plot = ax.errorbar(x, y, xerr=x_err, yerr=y_err, **plot_kwargs)
-            else:
-                plot = ax.scatter(x, y, **plot_kwargs)
+                # if "ls" not in plot_kwargs.keys():
+                #     plot_kwargs["ls"] = ""
+                # old_to_new_names = {"s": "ms", "edgecolor": "mec", "facecolor": "mfc"}
+                # for old_name, new_name in old_to_new_names.items():
+                #     if old_name in plot_kwargs.keys():
+                #         plot_kwargs[new_name] = plot_kwargs.pop(old_name)
+                if "mec" in plot_kwargs.keys():
+                    colour = plot_kwargs["mec"]
+                elif "edgecolor" in plot_kwargs.keys():
+                    colour = plot_kwargs["edgecolor"]
+                if incl_x_errs:
+                    x_err = x_err.T.value
+                # breakpoint()
+                if incl_y_errs:
+                    y_err = y_err.value # .T
+                try:
+                    plot = ax.errorbar(x.value, y.value, xerr=x_err, yerr=y_err, marker = 'none', color = colour, ls = "", capsize = 0.0) # **plot_kwargs)
+                except:
+                    plot = ax.errorbar(x.value, y.value, xerr=x_err, yerr=y_err.T, marker = 'none', color = colour, ls = "", capsize = 0.0) # **plot_kwargs)
+            plot = ax.scatter(x, y, **plot_kwargs)
 
         if mean_err and (incl_x_errs or incl_y_errs):
             # plot the mean error

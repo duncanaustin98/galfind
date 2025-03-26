@@ -636,7 +636,8 @@ class ID_Selector(Data_Selector):
     def _assertions(self: Self) -> bool:
         try:
             assert isinstance(self.kwargs["IDs"], tuple([list, np.ndarray]))
-            assert(isinstance(self.kwargs["name"], str))
+            if self.kwargs["name"] is not None:
+                assert(isinstance(self.kwargs["name"], str))
             assert all(isinstance(ID, int) for ID in self.kwargs["IDs"])
             passed = True
         except:

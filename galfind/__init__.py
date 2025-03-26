@@ -68,7 +68,7 @@ if config.getboolean("DEFAULT", "USE_LOGGING"):
         try:
             os.chmod(log_file_path, 0o777)
         except PermissionError:
-            galfind_logger.warning(f"Could not change permissions of {log_file_path} to 777.")
+            galfind_logger.debug(f"Could not change permissions of {log_file_path} to 777.")
     # print out the default galfind config file parameters
     # for i, (option, value) in enumerate(config["DEFAULT"].items()):
     #     if i == 0:
@@ -106,7 +106,7 @@ try:
     import mkl
     mkl.set_num_threads(int(n_threads))
 except:
-    galfind_logger.warning(f"Failed to set mkl.set_num_threads to {n_threads}.")
+    galfind_logger.debug(f"Failed to set mkl.set_num_threads to {n_threads}.")
 
 # set cosmology
 astropy_cosmo = FlatLambdaCDM(H0=70, Om0=0.3, Ob0=0.05, Tcmb0=2.725)
@@ -233,6 +233,7 @@ from .Number_Density_Function import (
 from .Property_calculator import (
     Property_Calculator_Base, 
     Property_Calculator,
+    Photometry_Property_Loader,
     Redshift_Extractor,
     Ext_Src_Property_Calculator, 
     Custom_SED_Property_Extractor,

@@ -397,7 +397,9 @@ class J(Tophat_Filter):
 
 class Multiple_Filter:
     def __init__(
-        self: Type[Self], filters: List[Filter], sort_order: str = "ascending"
+        self: Type[Self],
+        filters: List[Filter],
+        sort_order: str = "ascending",
     ) -> None:
         self.filters = filters
         self.sort_order = sort_order

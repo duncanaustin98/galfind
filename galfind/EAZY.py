@@ -614,7 +614,9 @@ class EAZY(SED_code):
     def extract_SEDs(
         self: Self, 
         IDs: List[int], 
-        SED_paths: Union[str, List[str]]
+        SED_paths: Union[str, List[str]],
+        *args,
+        **kwargs,
     ) -> List[SED_obs]:
         # ensure this works if only extracting 1 galaxy
         if isinstance(IDs, (str, int, float)):

@@ -14,8 +14,8 @@ plt.style.use(
 )
 
 # Load in a data object
-survey = "JADES-DR3-GN-Parallel"
-version = "v13"
+survey = "MEGASCIENCE"
+version = "dr3"
 instrument_names = ["NIRCam"] # "ACS_WFC", 
 aper_diams = [0.32] * u.arcsec
 forced_phot_band = ["F277W", "F356W", "F444W"]
@@ -33,7 +33,7 @@ def plot_brown_dwarfs():
     eazy_fitter = EAZY({"templates": "fsps_larson", "lowz_zmax": None})
     bd_fitter = Brown_Dwarf_Fitter()
 
-    #bd_selector = Brown_Dwarf_Selector(aper_diams[0], bd_fitter, secondary_SED_fit_label = eazy_fitter)
+    bd_selector = Brown_Dwarf_Selector(aper_diams[0], bd_fitter, secondary_SED_fit_label = eazy_fitter)
     hainline_bd_1 = Hainline24_TY_Brown_Dwarf_Selector_1(aper_diams[0])
     hainline_bd_2 = Hainline24_TY_Brown_Dwarf_Selector_2(aper_diams[0])
 
@@ -41,10 +41,11 @@ def plot_brown_dwarfs():
         survey,
         version,
         instrument_names = instrument_names,
-        version_to_dir_dict = morgan_version_to_dir,
+        #version_to_dir_dict = morgan_version_to_dir,
         aper_diams = aper_diams,
         forced_phot_band = forced_phot_band,
         min_flux_pc_err = min_flux_pc_err,
+        pix_scales = {"NIRCam": 0.04 * u.arcsec},
         #crops = bd_selector,
     )
     eazy_fitter(cat, aper_diams[0], load_PDFs = True, load_SEDs = True, update = True)
@@ -144,24 +145,24 @@ def test_selection():
     ]
     # import time
     # time.sleep(180 * 60)
-    # data = Data.from_survey_version(
-    #     survey,
-    #     version,
-    #     instrument_names = instrument_names,
-    #     version_to_dir_dict = morgan_version_to_dir,
-    #     aper_diams = aper_diams,
-    #     forced_phot_band = forced_phot_band,
-    # )
-    # print(data.band_data_arr)
-    # breakpoint()
-    # data.mask(
-    #     "auto",
-    #     angle = 92.0
-    # )
+    data = Data.from_survey_version(
+        survey,
+        version,
+        instrument_names = instrument_names,
+        #version_to_dir_dict = morgan_version_to_dir,
+        pix_scales = {"NIRCam": 0.04 * u.arcsec},
+        aper_diams = aper_diams,
+        forced_phot_band = forced_phot_band,
+    )
+    #print(data.band_data_arr)
+    data.mask(
+        "auto",
+        angle = 40.0
+    )
 
     # fig, ax = plt.subplots()
     # data.filterset.plot(ax, save = True)
-    #breakpoint()
+    breakpoint()
 
     # # temp: define the z=6 sample
     # from galfind import Redshift_Bin_Selector, Band_SNR_Selector
@@ -184,10 +185,11 @@ def test_selection():
         survey,
         version,
         instrument_names = instrument_names,
-        version_to_dir_dict = morgan_version_to_dir,
+        #version_to_dir_dict = morgan_version_to_dir,
         aper_diams = aper_diams,
         forced_phot_band = forced_phot_band,
         min_flux_pc_err = min_flux_pc_err,
+        pix_scales = {"NIRCam": 0.04 * u.arcsec},
         #crops = EPOCHS_Selector(aper_diams[0], EAZY(SED_fit_params_arr[-1]), allow_lowz=False)
     )
     #breakpoint()
