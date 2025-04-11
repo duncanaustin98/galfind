@@ -982,7 +982,13 @@ def calc_band_depth(params: Tuple[Any]) -> NoReturn:
 
         hf = h5py.File(grid_depth_path, "w")
         for name_i, data_i in zip(hf_save_names, hf_save_data):
-            hf.create_dataset(name_i, data=data_i, compression="gzip" if isinstance(data_i, np.ndarray) else None)
+            hf.create_dataset(
+                name_i,
+                data = data_i,
+                compression = "gzip" if isinstance(data_i, np.ndarray) and \
+                    not isinstance(data_i, tuple([u.Quantity, u.Magnitude, u.Dex])) \
+                    else None
+                )
         hf.close()
 
 

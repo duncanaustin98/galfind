@@ -6,10 +6,17 @@ import astropy.units as u
 import numpy as np
 from copy import deepcopy
 import json
+from pathlib import Path
+from astropy.utils.masked import Masked
 from tqdm import tqdm
 from typing import TYPE_CHECKING, Any, List, Union, NoReturn, Callable, Optional
 if TYPE_CHECKING:
-    from . import Multiple_Filter, Rest_Frame_Property_Calculator
+    from . import (
+        Multiple_Filter,
+        Rest_Frame_Property_Calculator,
+        Morphology_Fitter,
+        Property_Calculator,
+    )
 try:
     from typing import Self, Type  # python 3.11+
 except ImportError:
@@ -19,6 +26,7 @@ from . import useful_funcs_austind as funcs
 from . import galfind_logger, config, wav_lyman_lim
 from . import Galaxy, Catalogue, Catalogue_Base, Instrument, SED_code
 from .Instrument import expected_instr_bands
+from .Morphology import fwhm_nircam
 
 class Selector(ABC):
 
@@ -26,7 +34,9 @@ class Selector(ABC):
         self: Self,
         aper_diam: Optional[u.Quantity],
         SED_fit_label: Optional[str],
-        **kwargs):
+        morph_fitter: Optional[Type[Morphology_Fitter]],
+        **kwargs
+    ):
         assert (key in kwargs.keys() for key in self._include_kwargs), \
             galfind_logger.critical(
                 f"Selection {self.__class__.__name__} given {kwargs=}" + \
@@ -34,6 +44,7 @@ class Selector(ABC):
             )
         self.aper_diam = aper_diam
         self.SED_fit_label = SED_fit_label
+        self.morph_fitter = morph_fitter
         self.kwargs = kwargs
         assert self._assertions()
 
@@ -98,7 +109,16 @@ class Selector(ABC):
         gal: Galaxy,
         *args,
         **kwargs
-    ) -> NoReturn:
+    ) -> bool:
+        pass
+
+    @abstractmethod
+    def _check_morph_fit_exists(
+        self: Self,
+        gal: Galaxy,
+        *args,
+        **kwargs
+    ) -> bool:
         pass
 
     def __call__(
@@ -130,7 +150,8 @@ class Selector(ABC):
         if not selection_name in gal_.selection_flags.keys():
             if self._failure_criteria(gal_) \
                     or not self._check_phot_exists(gal_) \
-                    or not self._check_SED_fit_exists(gal_):
+                    or not self._check_SED_fit_exists(gal_) \
+                    or not self._check_morph_fit_exists(gal_):
                 gal_.selection_flags[self.name] = False
             else:
                 if self._selection_criteria(gal_):
@@ -153,9 +174,17 @@ class Selector(ABC):
                     f"SED fitting results for {self.SED_fit_label=} " + \
                     f"not loaded for any galaxy in {repr(cat)}."
                 )
+        if self.morph_fitter is not None:
+            # ensure results have been loaded for 
+            # at least 1 galaxy in the catalogue
+            assert any(self._check_morph_fit_exists(gal) for gal in cat), \
+                galfind_logger.critical(
+                    f"Morphology fitting results for {repr(self.morph_fitter)=} " + \
+                    f"not loaded for any galaxy in {repr(cat)}."
+                )
         [self._call_gal(gal, return_copy = False) for gal \
             in tqdm(cat, total = len(cat), desc = f"Selecting {self.name}")]
-        if self.__class__.__name__ != "ID_Selector" and cat.cat_creator.crops == []:
+        if cat.cat_creator.crops == [] or self.__class__.__name__ != "ID_Selector":
             cat._append_property_to_tab(self.name, "SELECTION")
         if return_copy:
             cat_copy = deepcopy(cat)
@@ -167,7 +196,7 @@ class Selector(ABC):
 class Data_Selector(Selector, ABC):
 
     def __init__(self: Self, **kwargs) -> Self:
-        super().__init__(aper_diam = None, SED_fit_label = None, **kwargs)
+        super().__init__(aper_diam = None, SED_fit_label = None, morph_fitter = None, **kwargs)
 
     @property
     def requires_phot(self: Self) -> bool:
@@ -187,8 +216,15 @@ class Data_Selector(Selector, ABC):
     def _check_SED_fit_exists(
         self: Self,
         *args,
-        **kwargs
-    ) -> NoReturn:
+        **kwargs,
+    ) -> bool:
+        return True
+
+    def _check_morph_fit_exists(
+        self: Self,
+        *args,
+        **kwargs,
+    ) -> bool:
         return True
     
     def __call__(
@@ -207,7 +243,7 @@ class Photometry_Selector(Selector, ABC):
         assert isinstance(aper_diam, u.Quantity)
         assert aper_diam.unit.is_equivalent(u.arcsec)
         assert aper_diam > 0 * u.arcsec
-        super().__init__(aper_diam, SED_fit_label = None, **kwargs)
+        super().__init__(aper_diam, SED_fit_label = None, morph_fitter = None, **kwargs)
 
     @property
     def name(self: Self) -> str:
@@ -230,7 +266,14 @@ class Photometry_Selector(Selector, ABC):
         self: Self,
         *args,
         **kwargs
-    ) -> NoReturn:
+    ) -> bool:
+        return True
+
+    def _check_morph_fit_exists(
+        self: Self,
+        *args,
+        **kwargs,
+    ) -> bool:
         return True
     
     def __call__(
@@ -257,8 +300,12 @@ class SED_fit_Selector(Selector, ABC):
         if isinstance(SED_fit_label, tuple(SED_code.__subclasses__())):
             SED_fit_label = SED_fit_label.label
         else:
-            assert isinstance(SED_fit_label, str)
-        super().__init__(aper_diam, SED_fit_label, **kwargs)
+            assert isinstance(SED_fit_label, str), \
+                galfind_logger.critical(
+                    f"{SED_fit_label=} must be a string or SED_code object."
+                )
+
+        super().__init__(aper_diam, SED_fit_label, morph_fitter = None, **kwargs)
 
     @property
     def requires_SED_fit(self: Self) -> bool:
@@ -282,12 +329,19 @@ class SED_fit_Selector(Selector, ABC):
     def _check_SED_fit_exists(
         self: Self,
         gal: Galaxy,
-    ) -> NoReturn:
+    ) -> bool:
         try:
             passed = self.SED_fit_label in gal.aper_phot[self.aper_diam].SED_results.keys()
         except:
             passed = False
         return passed
+    
+    def _check_morph_fit_exists(
+        self: Self,
+        *args,
+        **kwargs,
+    ) -> bool:
+        return True
     
     def _assert_SED_fit_label(
         self: Self, 
@@ -319,6 +373,85 @@ class SED_fit_Selector(Selector, ABC):
         self._assert_SED_fit_label(object)
         return Selector.__call__(self, object, return_copy)
     
+
+class Morphology_Selector(Selector, ABC):
+
+    def __init__(
+        self: Self,
+        morph_fitter: Union[str, Morphology_Fitter],
+        **kwargs,
+    ) -> Self:
+        from . import Morphology_Fitter
+        assert isinstance(morph_fitter, tuple(Morphology_Fitter.__subclasses__()))
+        super().__init__(aper_diam = None, SED_fit_label = None, morph_fitter = morph_fitter, **kwargs)
+
+    @property
+    def requires_SED_fit(self: Self) -> bool:
+        return False
+
+    @property
+    def name(self: Self) -> str:
+        morph_name = f"{self._cutout_str}_{self.morph_fitter.name}"
+        return f"{self._selection_name}_{self.morph_fitter.name}"
+
+    @property
+    def _cutout_str(self: Self) -> str:
+        filt_name = self.morph_fitter.psf.cutout.band_data.filt_name
+        cutout_size = self.morph_fitter.psf.cutout.cutout_size
+        return f"{filt_name}_{cutout_size.to(u.arcsec).value:.2f}as"
+
+    def _check_phot_exists(
+        self: Self,
+        gal: Galaxy,
+    ) -> bool:
+        return True
+
+    def _check_SED_fit_exists(
+        self: Self,
+        *args,
+        **kwargs
+    ) -> bool:
+        return True
+    
+    def _check_morph_fit_exists(
+        self: Self,
+        gal: Galaxy,
+    ) -> bool:
+        try:
+            passed = self.morph_fitter.name in gal.cutouts[self._cutout_str].morph_fits.keys()
+        except:
+            passed = False
+        return passed
+    
+    def _assert_morph_fitter(
+        self: Self, 
+        object: Union[Galaxy, Type[Catalogue_Base]],
+    ) -> str:
+        if isinstance(object, Galaxy):
+            assert self._check_morph_fit_exists(object), \
+                galfind_logger.critical(
+                    f"Morphology fitting results for {self.morph_fitter=} " + \
+                    f"not loaded for {repr(object)}."
+                )
+        elif isinstance(object, tuple(Catalogue_Base.__subclasses__())):
+            assert any(self._check_morph_fit_exists(gal) for gal in object), \
+                galfind_logger.critical(
+                    f"Morphology fitting results for {self.morph_fitter=} " + \
+                    f"not loaded for any galaxy in {repr(object)}."
+                )
+        else:
+            raise ValueError(
+                f"{object=} with {type(object)=} not in ['Galaxy', 'Catalogue']!"
+            )
+    
+    def __call__(
+        self: Self,
+        object: Union[Galaxy, Catalogue],
+        return_copy: bool = True,
+    ) -> Optional[Union[Galaxy, Catalogue]]:
+        self._assert_morph_fitter(object)
+        return Selector.__call__(self, object, return_copy)
+
 
 class Redshift_Selector(SED_fit_Selector):
 
@@ -483,25 +616,31 @@ class ID_Selector(Data_Selector):
 
     def __init__(
         self: Self,
-        IDs: Union[int, List[int]],
+        IDs: int,
+        name: Optional[str] = None,
     ):
         if isinstance(IDs, int):
             IDs = [IDs]
-        kwargs = {"IDs": IDs}
+        kwargs = {"IDs": IDs, "name": name}
         super().__init__(**kwargs)
 
     @property
     def _selection_name(self) -> str:
-        return f"ID_{self.kwargs['IDs']}"
+        if self.kwargs["name"] is None:
+            return f"ID_{self.kwargs['IDs']}"
+        else:
+            return self.kwargs["name"]
 
     @property
     def _include_kwargs(self) -> List[str]:
-        return ["IDs"]
+        return ["IDs", "name"]
 
     def _assertions(self: Self) -> bool:
         try:
             assert isinstance(self.kwargs["IDs"], tuple([list, np.ndarray]))
-            assert all(isinstance(ID, int) for ID in self.kwargs["IDs"])
+            if self.kwargs["name"] is not None:
+                assert(isinstance(self.kwargs["name"], str))
+            assert all(isinstance(ID, tuple([int, np.int64])) for ID in self.kwargs["IDs"])
             passed = True
         except:
             passed = False
@@ -569,7 +708,7 @@ class Rest_Frame_Property_Limit_Selector(Redshift_Selector):
         self: Self,
         aper_diam: u.Quantity,
         SED_fit_label: Union[str, SED_code],
-        property_calculator: Type[Rest_Frame_Property_Calculator],
+        property_calculator: Type[Property_Calculator],
         property_lim: Union[u.Quantity, u.Magnitude, u.Dex],
         gtr_or_less: str,
     ):
@@ -596,9 +735,9 @@ class Rest_Frame_Property_Limit_Selector(Redshift_Selector):
 
     def _assertions(self: Self) -> bool:
         try:
-            from . import Rest_Frame_Property_Calculator
+            from . import Property_Calculator
             assert isinstance(self.property_calculator, \
-                tuple(Rest_Frame_Property_Calculator.__subclasses__()))
+                tuple(Property_Calculator.__subclasses__()))
             assert isinstance(self.kwargs["property_lim"], \
                 (u.Quantity, u.Magnitude, u.Dex)) #or \
                 # all(isinstance(val, (u.Quantity, u.Magnitude, u.Dex)) \
@@ -876,12 +1015,12 @@ class Unmasked_Band_Selector(Data_Selector):
         self: Self,
         gal: Galaxy,
         *args,
-        **kwargs
+        **kwargs,
     ) -> bool:
         band_index = int([i for i, band_name in enumerate( \
             gal.aper_phot[list(gal.aper_phot.keys())[0]].filterset.band_names) \
             if band_name == self.kwargs["band_name"]][0])
-        if isinstance(gal.aper_phot[list(gal.aper_phot.keys())[0]].flux, u.Quantity):
+        if not isinstance(gal.aper_phot[list(gal.aper_phot.keys())[0]].flux, Masked):
             return True
         else:
             return not gal.aper_phot[list(gal.aper_phot.keys())[0]].flux.mask[band_index]
@@ -948,7 +1087,7 @@ class Bluewards_LyLim_Non_Detect_Selector(Redshift_Selector):
 
     @property
     def _selection_name(self) -> str:
-        selection_name = f"bluewards_LyLim_SNR<{self.kwargs['SNR_lim']:.1f}"
+        selection_name = f"blue_LyLim<{self.kwargs['SNR_lim']:.1f}"
         if self.kwargs["ignore_bands"] is not None:
             ignore_str = ",".join(self.kwargs["ignore_bands"])
             selection_name += f"_no_{ignore_str}"
@@ -1017,7 +1156,7 @@ class Bluewards_Lya_Non_Detect_Selector(Redshift_Selector):
 
     @property
     def _selection_name(self) -> str:
-        selection_name = f"bluewards_Lya_SNR<{self.kwargs['SNR_lim']:.1f}"
+        selection_name = f"blue_Lya<{self.kwargs['SNR_lim']:.1f}"
         if self.kwargs["ignore_bands"] is not None:
             ignore_str = ",".join(self.kwargs["ignore_bands"])
             selection_name += f"_no_{ignore_str}"
@@ -1045,10 +1184,11 @@ class Bluewards_Lya_Non_Detect_Selector(Redshift_Selector):
         gal: Galaxy,
     ) -> bool:
         # extract first Lya non-detect band
+        from .Emission_lines import line_diagnostics
         first_Lya_non_detect_band = gal.aper_phot[self.aper_diam]. \
             SED_results[self.SED_fit_label].phot_rest. \
                 get_first_bluewards_band(
-                    wav_lyman_lim * u.AA,
+                    line_diagnostics["Lya"]["line_wav"],
                     self.kwargs["ignore_bands"],
                 )
         # if no bands bluewards of Lyman alpha, 
@@ -1093,13 +1233,13 @@ class Redwards_Lya_Detect_Selector(Redshift_Selector):
     def _selection_name(self) -> str:
         if isinstance(self.kwargs["SNR_lims"], (int, float)):
             # require all redwards bands to be detected at >SNR_lims
-            selection_name = f"ALL_red_Lya_SNR>{self.kwargs['SNR_lims']:.1f}"
+            selection_name = f"ALL_red_Lya>{self.kwargs['SNR_lims']:.1f}"
         else: # isinstance(SNR_lims, (list, np.array)):
             # require the n^th band redwards of Lya 
             # to be detected at >SNR_lims[n]
             SNR_str = ",".join([str(np.round(SNR, 1)) \
                 for SNR in self.kwargs["SNR_lims"]])
-            selection_name = f"red_Lya_SNR>{SNR_str}"
+            selection_name = f"red_Lya>{SNR_str}"
         if self.kwargs["widebands_only"]:
             selection_name += "_wide"
         if self.kwargs["ignore_bands"] is not None:
@@ -1387,6 +1527,127 @@ class Band_SNR_Selector(Photometry_Selector):
         return Photometry_Selector._call_cat(self, cat, return_copy)
 
 
+class Band_Mag_Selector(Photometry_Selector):
+
+    def __init__(
+        self: Self,
+        aper_diam: u.Quantity,
+        band: Union[str, int],
+        detect_or_non_detect: str,
+        mag_lim: Union[int, float],
+    ):
+        kwargs = {
+            "band": band,
+            "detect_or_non_detect": detect_or_non_detect,
+            "mag_lim": mag_lim,
+        }
+        super().__init__(aper_diam, **kwargs)
+
+    @property
+    def _selection_name(self) -> str:
+        if self.kwargs["detect_or_non_detect"].lower() == "detect":
+            sign = "<"
+        else: # self.kwargs["detect_or_non_detect"].lower() == "non_detect"
+            sign = ">"
+        if isinstance(self.kwargs["band"], str):
+            selection_name = self.kwargs['band'] + \
+                f"_mag{sign}{self.kwargs['mag_lim']:.1f}"
+        else: # isinstance(self.kwargs["band"], int):
+            galfind_logger.debug(
+                "Indexing e.g. 2 and -4 when there are 6 bands " + \
+                f"results in differing {self.__class__.__name__} selection " + \
+                "names even though the same band is referenced!"
+            )
+            if self.kwargs["band"] == 0:
+                selection_name = "bluest_band_mag" + \
+                    f"{sign}{self.kwargs['mag_lim']:.1f}"
+            elif self.kwargs["band"] == -1:
+                selection_name = f"reddest_band_mag" + \
+                    f"{sign}{self.kwargs['mag_lim']:.1f}"
+            elif self.kwargs["band"] > 0:
+                selection_name = funcs.ordinal(self.kwargs["band"] + 1) + \
+                    f"_bluest_band_mag{sign}{self.kwargs['mag_lim']:.1f}"
+            elif self.kwargs["band"] < -1:
+                selection_name = funcs.ordinal(abs(self.kwargs["band"])) + \
+                    f"_reddest_band_mag{sign}{self.kwargs['mag_lim']:.1f}"
+        return selection_name
+
+    @property
+    def _include_kwargs(self) -> List[str]:
+        return ["band", "mag_lim", "detect_or_non_detect"]
+
+    def _assertions(self: Self) -> bool:
+        try:
+            assertions = []
+            assertions.extend([isinstance(self.kwargs["band"], (int, str))])
+            if isinstance(self.kwargs["band"], str):
+                assertions.extend([self.kwargs["band"] in json.loads(config.get("Other", "ALL_BANDS"))])
+            assertions.extend([isinstance(self.kwargs["mag_lim"], (int, float))])
+            assertions.extend([self.kwargs["detect_or_non_detect"].lower() in ["detect", "non_detect"]])
+            passed = all(assertions)
+        except:
+            passed = False
+        return passed
+    
+    def _failure_criteria(
+        self: Self,
+        gal: Galaxy,
+        *args,
+        **kwargs
+    ) -> bool:
+        if isinstance(self.kwargs["band"], str):
+            try:
+                failed = self.kwargs["band"] not in \
+                    gal.aper_phot[self.aper_diam].filterset.band_names
+            except:
+                failed = True
+            return failed
+        else:
+            return False
+        
+    def _selection_criteria(
+        self: Self,
+        gal: Galaxy,
+        *args,
+        **kwargs
+    ) -> bool:
+        if isinstance(self.kwargs["band"], str):
+            band_index = int(np.where(np.array( \
+                gal.aper_phot[self.aper_diam].filterset.band_names) \
+                == self.kwargs["band"])[0][0])
+        else:
+            band_index = self.kwargs["band"]
+        mag = funcs.convert_mag_units(
+            gal.aper_phot[self.aper_diam].filterset[band_index].WavelengthCen,
+            gal.aper_phot[self.aper_diam].flux[band_index],
+            u.ABmag,
+        ).value
+        if isinstance(gal.aper_phot[self.aper_diam].flux, u.Quantity):
+            masked = False
+        else:
+            masked = gal.aper_phot[self.aper_diam].flux.mask[band_index]
+        # fails if masked
+        return (
+            not masked
+            and ((self.kwargs["detect_or_non_detect"].lower() \
+            == "detect" and mag < self.kwargs["mag_lim"])
+            or (self.kwargs["detect_or_non_detect"].lower() \
+            == "non_detect" and mag > self.kwargs["mag_lim"]))
+        )
+
+    def _call_cat(
+        self: Self,
+        cat: Catalogue,
+        return_copy: bool = True,
+    ) -> Union[NoReturn, Catalogue]:
+        if isinstance(self.kwargs["band"], str):
+            assert (self.kwargs["band"] in cat.filterset.band_names), \
+                galfind_logger.critical(
+                    f"{self.kwargs['band']} not in {cat.filterset.band_names}."
+                )
+        return Photometry_Selector._call_cat(self, cat, return_copy)
+
+
 # TODO: UVJ_Selector should be specific 
 # case of a photometric property selector
 
@@ -1476,7 +1737,7 @@ class Chi_Sq_Lim_Selector(SED_fit_Selector):
     def _selection_name(self) -> str:
         selection_name = f"chi_sq<{self.kwargs['chi_sq_lim']:.1f}"
         if self.kwargs["reduced"]:
-            selection_name = "red_" + selection_name
+            selection_name = f"red_{selection_name}"
         return selection_name
 
     @property
@@ -1545,7 +1806,7 @@ class Chi_Sq_Diff_Selector(SED_fit_Selector):
             assertions.extend([isinstance(self.kwargs["chi_sq_diff"], (int, float))])
             assertions.extend([isinstance(self.kwargs["dz"], (int, float))])
             assertions.extend([self.kwargs["dz"] > 0.0])
-            assertions.extend([self.kwargs["chi_sq_diff"] > 0.0])
+            assertions.extend([self.kwargs["chi_sq_diff"] >= 0.0])
             passed = all(assertions)
         except:
             passed = False
@@ -1615,6 +1876,125 @@ class Chi_Sq_Diff_Selector(SED_fit_Selector):
         assert any(len(gal_labels) > 0 for gal_labels in cat_SED_fit_labels), \
             galfind_logger.critical(
                 f"{self.SED_fit_label} lowz not run for any galaxy."
+            )
+        return SED_fit_Selector._call_cat(self, cat, return_copy)
+
+
+class Chi_Sq_Template_Diff_Selector(SED_fit_Selector):
+
+    def __init__(
+        self: Self,
+        aper_diam: u.Quantity,
+        SED_fit_label: Union[str, SED_code],
+        chi_sq_diff: Union[int, float],
+        secondary_SED_fit_label: Union[str, SED_code],
+        reduced: bool = False,
+    ):
+        if isinstance(secondary_SED_fit_label, tuple(SED_code.__subclasses__())):
+            secondary_SED_fit_label = SED_fit_label.label
+        kwargs = {
+            "chi_sq_diff": chi_sq_diff,
+            "secondary_SED_fit_label": secondary_SED_fit_label,
+            "reduced": reduced,
+        }
+        super().__init__(aper_diam, SED_fit_label, **kwargs)
+
+    @property
+    def _selection_name(self) -> str:
+        name = f"chi_sq_{self.kwargs['secondary_SED_fit_label']}>{self.kwargs['chi_sq_diff']:.1f}"
+        if self.kwargs["reduced"]:
+            name = f"red_{name}"
+        return name
+    
+    @property
+    def _include_kwargs(self) -> List[str]:
+        return ["chi_sq_diff", "secondary_SED_fit_label", "reduced"]
+    
+    def _assertions(self: Self) -> bool:
+        try:
+            assertions = []
+            assertions.extend([isinstance(self.kwargs["chi_sq_diff"], (int, float))])
+            assertions.extend([self.kwargs["chi_sq_diff"] >= 0.0])
+            assertions.extend([isinstance(self.kwargs["secondary_SED_fit_label"], str)])
+            assertions.extend([isinstance(self.kwargs["reduced"], bool)])
+            passed = all(assertions)
+        except:
+            passed = False
+        return passed
+
+    def _failure_criteria(
+        self: Self,
+        gal: Galaxy,
+    ) -> bool:
+        try:
+            failed = not all(
+                label in gal.aper_phot[self.aper_diam].SED_results.keys()
+                for label in [self.SED_fit_label, self.kwargs["secondary_SED_fit_label"]]
+            )
+        except:
+            failed = True
+        return failed
+    
+    def _selection_criteria(
+        self: Self,
+        gal: Galaxy,
+    ) -> bool:
+        # extract chi_sq/red_chi_sq of SED_fitting runs that are to be compared
+        chi_sq = np.zeros(2)
+        for i, label in enumerate([self.SED_fit_label, self.kwargs["secondary_SED_fit_label"]]):
+            if not any(hasattr(gal.aper_phot[self.aper_diam].SED_results[label], chi_sq_label) for chi_sq_label in ["chi_sq", "red_chi_sq"]):
+                return False
+            if self.kwargs["reduced"]:
+                if hasattr(gal.aper_phot[self.aper_diam].SED_results[label], "red_chi_sq"):
+                    chi_sq[i] = getattr(gal.aper_phot[self.aper_diam].SED_results[label], "red_chi_sq")
+                else:
+                    chi_sq_ = getattr(gal.aper_phot[self.aper_diam].SED_results[label], "chi_sq")
+                    # work out number of degrees of freedom
+                    if isinstance(gal.aper_phot[self.aper_diam].flux, u.Quantity):
+                        n_bands = len(gal.aper_phot[self.aper_diam].filterset.band_names)
+                    else:
+                        n_bands = len(
+                            [
+                                mask_band
+                                for mask_band in gal.aper_phot[self.aper_diam].flux.mask
+                                if not mask_band
+                            ]
+                        )
+                    Ndof = n_bands - 1
+                    chi_sq[i] = chi_sq_ / Ndof
+            else: # absolute chi squared
+                if hasattr(gal.aper_phot[self.aper_diam].SED_results[label], "chi_sq"):
+                    chi_sq[i] = getattr(gal.aper_phot[self.aper_diam].SED_results[label], "chi_sq")
+                else:
+                    chi_sq_ = getattr(gal.aper_phot[self.aper_diam].SED_results[label], "red_chi_sq")
+                    # work out number of degrees of freedom
+                    if isinstance(gal.aper_phot[self.aper_diam].flux, u.Quantity):
+                        n_bands = len(gal.aper_phot[self.aper_diam].filterset.band_names)
+                    else:
+                        n_bands = len(
+                            [
+                                mask_band
+                                for mask_band in gal.aper_phot[self.aper_diam].flux.mask
+                                if not mask_band
+                            ]
+                        )
+                    Ndof = n_bands - 1
+                    chi_sq[i] = chi_sq_ * Ndof
+        return (
+            (chi_sq[1] - chi_sq[0] > self.kwargs["chi_sq_diff"])
+            or (chi_sq[1] < 0.0)
+        )
+    
+    def _call_cat(
+        self: Self,
+        cat: Catalogue,
+        return_copy: bool = True,
+    ) -> Union[NoReturn, Catalogue]:
+        # ensure a secondary SED fitting run has been run for at least 1 galaxy in the catalogue
+        cat_SED_fit_labels = [gal.aper_phot[self.aper_diam].SED_results.keys() for gal in cat]
+        assert any(self.kwargs["secondary_SED_fit_label"] in gal_labels for gal_labels in cat_SED_fit_labels), \
+            galfind_logger.critical(
+                f"{self.kwargs['secondary_SED_fit_label']} not run for any galaxy."
             )
         return SED_fit_Selector._call_cat(self, cat, return_copy)
 
@@ -1743,7 +2123,53 @@ class Sextractor_Band_Radius_Selector(Data_Selector):
         # load in effective radii as calculated from SExtractor
         cat.load_sextractor_Re()
         return Data_Selector._call_cat(self, cat, return_copy)
-        
+
+
+class Re_Selector(Morphology_Selector):
+
+    def __init__(
+        self: Self,
+        morph_fitter: Type[Morphology_Fitter],
+        gtr_or_less: str,
+        lim: u.Quantity,
+    ):
+        kwargs = {
+            "gtr_or_less": gtr_or_less,
+            "lim": lim,
+        }
+        super().__init__(morph_fitter, **kwargs)
+
+    @property
+    def _selection_name(self) -> str:
+        lim_str = f"{self.kwargs['lim'].to(u.marcsec).value:.1f}mas"
+        gtr_or_less_str = ">" if self.kwargs["gtr_or_less"].lower() == "gtr" else "<"
+        return f"Re{gtr_or_less_str}{lim_str}"
+
+    @property
+    def _include_kwargs(self) -> List[str]:
+        return ["gtr_or_less", "lim"]
+
+    def _assertions(self):
+        try:
+            assertions = []
+            assertions.extend([self.kwargs["gtr_or_less"].lower() in ["gtr", "less"]])
+            assertions.extend([isinstance(self.kwargs["lim"], u.Quantity)])
+            assertions.extend([self.kwargs["lim"].value > 0.0])
+            passed = all(assertions)
+        except:
+            passed = False
+        return passed
+    
+    def _selection_criteria(self, gal):
+        re_pix = gal.cutouts[self._cutout_str].morph_fits[self.morph_fitter.name].r_e
+        if np.isnan(re_pix):
+            return False
+        pix_scale = self.morph_fitter.psf.cutout.band_data.pix_scale / u.pix
+        re_as = re_pix * pix_scale
+        if self.kwargs["gtr_or_less"].lower() == "gtr":
+            return re_as > self.kwargs["lim"]
+        else: # self.kwargs["gtr_or_less"].lower() == "less"
+            return re_as < self.kwargs["lim"]
     
 class Kokorev24_LRD_red1_Selector(Multiple_Photometry_Selector):
 
@@ -1812,7 +2238,7 @@ class Kokorev24_LRD_Selector(Multiple_Photometry_Selector):
         super().__init__(aper_diam,
         [
             Kokorev24_LRD_red1_Selector(aper_diam), 
-            Kokorev24_LRD_red2_Selector(aper_diam)
+            Kokorev24_LRD_red2_Selector(aper_diam), 
         ], 
         selection_name = "Kokorev+24_LRD")
 
@@ -1916,6 +2342,194 @@ class Sextractor_Instrument_Radius_Selector(Multiple_Data_Selector):
         return Multiple_Data_Selector._call_cat(self, cat, return_copy)
 
 
+class Sextractor_Instrument_Radius_PSF_FWHM_Selector(Multiple_Data_Selector):
+
+    def __init__(
+        self: Self,
+        instrument: str,
+        gtr_or_less: str,
+        scaling: float = 1.0,
+        cat_filterset: Optional[Multiple_Filter] = None
+    ):
+        if isinstance(instrument, str):
+            assert instrument in expected_instr_bands.keys(), \
+                galfind_logger.critical(
+                    f"{instrument=} not a valid instrument name."
+                )
+            instrument = [instr() for instr in Instrument.__subclasses__() \
+                if instr.__name__ == instrument][0]
+        assert instrument.__class__.__name__ == "NIRCam", \
+            galfind_logger.critical(
+                f"{instrument.name=} must be NIRCam."
+            )
+        selectors = [Sextractor_Band_Radius_Selector(
+            band_name = band_name, gtr_or_less = gtr_or_less, lim = fwhm_nircam[band_name] * scaling) \
+            for band_name in instrument.filt_names if band_name in fwhm_nircam.keys()]
+        gtr_or_less_str = ">" if gtr_or_less.lower() == "gtr" else "<"
+        if scaling != 1.0:
+            fwhm_name = f"{scaling:.1f}*psf_fwhm"
+        else:
+            fwhm_name = "psf_fwhm"
+        selection_name = f"sex_Re{gtr_or_less_str}{instrument.__class__.__name__}_{fwhm_name}"
+        super().__init__(selectors, selection_name, cat_filterset = cat_filterset)
+    
+    def _call_cat(
+        self: Self,
+        cat: Catalogue,
+        return_copy: bool = True,
+    ) -> Union[NoReturn, Catalogue]:
+        self.crop_to_filterset(cat.filterset)
+        assert all([filt.band_name in fwhm_nircam.keys() for filt in cat.filterset if filt.instrument_name == "NIRCam"]), \
+            galfind_logger.critical(
+                f"{cat.filterset.instrument_name=} must have all NIRCam bands."
+            )
+        return Multiple_Data_Selector._call_cat(self, cat, return_copy)
+
+class Brown_Dwarf_Selector(Multiple_SED_fit_Selector):
+
+    def __init__(
+        self: Self,
+        aper_diam: u.Quantity,
+        SED_fit_label: Union[str, SED_code],
+        unmasked_instruments: Union[str, List[str]] = "NIRCam",
+        red_chi_sq_lim: float = 6.0,
+        secondary_SED_fit_label: Optional[Union[str, SED_code]] = None,
+        cat_filterset: Optional[Multiple_Filter] = None,
+        select_band: str = "F150W",
+        morph_cut: bool = True,
+        #psf_like_bands: Optional[List[str]] = None,
+        #psf_like_SNRs: Optional[List[float]] = None,
+    ):
+        selectors = [
+            Chi_Sq_Lim_Selector(aper_diam, SED_fit_label, chi_sq_lim = red_chi_sq_lim, reduced = True),
+            Band_SNR_Selector(aper_diam, band = select_band, SNR_lim = 5.0, detect_or_non_detect = "detect"),
+        ]
+        if morph_cut:
+            from . import Filter, PSF_Cutout, Galfit_Fitter
+            filt = Filter.from_filt_name(select_band)
+            psf_path = f"/nvme/scratch/work/westcottl/psf/PSF_Resample_03_{select_band}.fits"
+            assert Path(psf_path).is_file(), \
+                galfind_logger.critical(
+                    f"{psf_path=} does not exist."
+                )
+            psf = PSF_Cutout.from_fits(
+                fits_path=psf_path,
+                filt=filt,
+                unit="adu",
+                pix_scale = 0.03 * u.arcsec,
+                size = 0.96 * u.arcsec,
+            )
+            galfit_fitter = Galfit_Fitter(psf, "sersic", fixed_params = ["n"])
+            assert select_band in fwhm_nircam, \
+                galfind_logger.critical(
+                    f"{select_band=} not in fwhm_nircam."
+                )
+            selectors.extend([Re_Selector(galfit_fitter, gtr_or_less = "less", lim = 1.2 * fwhm_nircam[select_band])])
+            morph_name = "_psf"
+        else:
+            morph_name = ""
+        
+        # add hot pixel checks in LW widebands
+        selectors.extend([
+            Sextractor_Bands_Radius_Selector( \
+            band_names = ["F277W", "F356W", "F444W"], \
+            gtr_or_less = "gtr", lim = 45.0 * u.marcsec)
+        ])
+        
+        chi2_label = f"_red_chi2<{red_chi_sq_lim:.1f}"
+        if secondary_SED_fit_label is None:
+            gal_chi2_compar_label = chi2_label
+        else:
+            if isinstance(secondary_SED_fit_label, tuple(SED_code.__subclasses__())):
+                secondary_SED_fit_label = secondary_SED_fit_label.label
+            selectors.extend([
+                Chi_Sq_Template_Diff_Selector(
+                    aper_diam,
+                    SED_fit_label,
+                    chi_sq_diff = 0.0,
+                    secondary_SED_fit_label = secondary_SED_fit_label,
+                    reduced = True,
+                )
+            ])
+            gal_chi2_compar_label = f"{chi2_label},{secondary_SED_fit_label}"
+        
+        # add unmasked instrument selections
+        if isinstance(unmasked_instruments, str):
+            unmasked_instruments = unmasked_instruments.split("+")
+        selectors.extend([Unmasked_Instrument_Selector(instrument, \
+            cat_filterset) for instrument in unmasked_instruments])
+        unmasked_instr_name = f"_{'+'.join(unmasked_instruments)}"
+
+        name = f"bd{gal_chi2_compar_label}{unmasked_instr_name}_{select_band}{morph_name}"
+        super().__init__(aper_diam, SED_fit_label, selectors, selection_name = name)
+
+    @property
+    def name(self: Self) -> str:
+        return f"{self._selection_name}_{self.aper_diam.to(u.arcsec).value:.2f}as"
+
+
+class Hainline24_TY_Brown_Dwarf_Selector_1(Multiple_Photometry_Selector):
+    
+    def __init__(
+        self: Self,
+        aper_diam: u.Quantity,
+    ):
+        super().__init__(aper_diam,
+            [
+                Colour_Selector(
+                    aper_diam,
+                    colour_bands = ["F277W", "F444W"],
+                    bluer_or_redder = "redder",
+                    colour_val = 1.0
+                ),
+                Colour_Selector(
+                    aper_diam,
+                    colour_bands = ["F115W", "F277W"],
+                    bluer_or_redder = "bluer",
+                    colour_val = 0.0
+                ),
+                Band_Mag_Selector(
+                    aper_diam,
+                    band = "F444W",
+                    mag_lim = 28.5,
+                    detect_or_non_detect = "detect"
+                ),
+            ],
+            selection_name = "Hainline+24_bd_1"
+        )
+
+
+class Hainline24_TY_Brown_Dwarf_Selector_2(Multiple_Photometry_Selector):
+    
+    def __init__(
+        self: Self,
+        aper_diam: u.Quantity,
+    ):
+        super().__init__(aper_diam,
+            [
+                Colour_Selector(
+                    aper_diam,
+                    colour_bands = ["F277W", "F444W"],
+                    bluer_or_redder = "redder",
+                    colour_val = 1.0
+                ),
+                Colour_Selector(
+                    aper_diam,
+                    colour_bands = ["F115W", "F150W"],
+                    bluer_or_redder = "bluer",
+                    colour_val = 0.0
+                ),
+                Band_Mag_Selector(
+                    aper_diam,
+                    band = "F444W",
+                    mag_lim = 28.5,
+                    detect_or_non_detect = "detect"
+                ),
+            ], 
+            selection_name = "Hainline+24_bd_2"
+        )
+
+
 class EPOCHS_Selector(Multiple_SED_fit_Selector):
 
     def __init__(
@@ -1924,7 +2538,8 @@ class EPOCHS_Selector(Multiple_SED_fit_Selector):
         SED_fit_label: Union[str, SED_code],
         allow_lowz: bool = False,
         unmasked_instruments: Union[str, List[str]] = "NIRCam",
-        cat_filterset: Optional[Multiple_Filter] = None
+        cat_filterset: Optional[Multiple_Filter] = None,
+        simulated: bool = False,
     ):
         selectors = [
             Bluewards_Lya_Non_Detect_Selector(aper_diam, SED_fit_label, SNR_lim = 2.0),
@@ -1932,23 +2547,26 @@ class EPOCHS_Selector(Multiple_SED_fit_Selector):
             Redwards_Lya_Detect_Selector(aper_diam, SED_fit_label, SNR_lims = 2.0, widebands_only = True),
             Chi_Sq_Lim_Selector(aper_diam, SED_fit_label, chi_sq_lim = 3.0, reduced = True),
             Chi_Sq_Diff_Selector(aper_diam, SED_fit_label, chi_sq_diff = 4.0, dz = 0.5),
-            Robust_zPDF_Selector(aper_diam, SED_fit_label, integral_lim = 0.6, dz_over_z = 0.1)
+            Robust_zPDF_Selector(aper_diam, SED_fit_label, integral_lim = 0.6, dz_over_z = 0.1),
         ]
-        # add unmasked instrument selections
-        if isinstance(unmasked_instruments, str):
-            unmasked_instruments = unmasked_instruments.split("+")
-        selectors.extend([Unmasked_Instrument_Selector(instrument, \
-            cat_filterset) for instrument in unmasked_instruments])
         # add 2σ non-detection in first band if wanted
         if not allow_lowz:
             selectors.extend([Band_SNR_Selector( \
                 aper_diam, band = 0, SNR_lim = 2.0, detect_or_non_detect = "non_detect")])
-        # add hot pixel checks in LW widebands
-        selectors.extend([
-            Sextractor_Bands_Radius_Selector( \
-            band_names = ["F277W", "F356W", "F444W"], \
-            gtr_or_less = "gtr", lim = 45. * u.marcsec)
-        ])
+
+        if not simulated:
+            # add unmasked instrument selections
+            if isinstance(unmasked_instruments, str):
+                unmasked_instruments = unmasked_instruments.split("+")
+            selectors.extend([Unmasked_Instrument_Selector(instrument, \
+                cat_filterset) for instrument in unmasked_instruments])
+            
+            # add hot pixel checks in LW widebands
+            selectors.extend([
+                Sextractor_Bands_Radius_Selector( \
+                band_names = ["F277W", "F356W", "F444W"], \
+                gtr_or_less = "gtr", lim = 45. * u.marcsec)
+            ])
         lowz_name = "_lowz" if allow_lowz else ""
         unmasked_instr_name = "_" + "+".join(unmasked_instruments)
         selection_name = f"EPOCHS{lowz_name}{unmasked_instr_name}"

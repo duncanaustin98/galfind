@@ -11,6 +11,7 @@ from __future__ import annotations
 # EAZY.py
 import itertools
 import os
+from shutil import copy
 import time
 import warnings
 from pathlib import Path
@@ -25,7 +26,7 @@ from scipy.linalg import LinAlgWarning
 from tqdm import tqdm
 from typing import TYPE_CHECKING, List, Any, Dict, Optional, NoReturn, Type, Union, Tuple
 if TYPE_CHECKING:
-    from . import Catalogue, PDF
+    from . import Catalogue, PDF, Multiple_Filter
 try:
     from typing import Self, Type  # python 3.11+
 except ImportError:
@@ -41,7 +42,7 @@ from .SED import SED_obs
 # %% EAZY SED fitting code
 
 # TODO: update these at runtime
-EAZY_FILTER_CODES = {
+'''EAZY_FILTER_CODES = {
     "NIRCam": {
         "F070W": 36,
         "F090W": 1,
@@ -87,7 +88,7 @@ EAZY_FILTER_CODES = {
         "F2100W": 20,
         "F2550W": 21,
     },
-}
+}'''
 
 
 class EAZY(SED_code):
@@ -187,17 +188,21 @@ class EAZY(SED_code):
         in_dir = f"{config['EAZY']['EAZY_DIR']}/input/{cat.filterset.instrument_name}/{cat.version}/{cat.survey}"
         in_name = cat.cat_name.replace('.fits', f"_{aper_diam.to(u.arcsec).value:.2f}as.in")
         in_path = f"{in_dir}/{in_name}"
+        in_filt_name = f"{in_path.replace('.in', '_filters.RES')}"
+
         if not Path(in_path).is_file() or overwrite:
             # 1) obtain input data
             IDs = np.array([gal.ID for gal in cat.gals])  # load IDs
             redshifts = np.array([-99.0 for i in range(len(cat))]) # TODO: Load spec-z's
             # load photometry
             phot, phot_err = self._load_phot(cat, aper_diam, u.uJy, -99.0, None)
-            # Get filter codes (referenced to GALFIND/EAZY/jwst_nircam_FILTER.RES.info) for the given instrument and bands
-            filt_codes = [
-                EAZY_FILTER_CODES[band.instrument_name][band.band_name]
-                for band in cat.filterset
-            ]
+
+            funcs.make_dirs(in_path)
+
+            # Make filter file
+            
+            filt_codes = self._make_filter_file(cat.filterset, in_filt_name, default_param_path = f"{config['EAZY']['EAZY_CONFIG_DIR']}/EAZY_UVJ.RES")
+                
             # Make input file
             in_data = np.array(
                 [
@@ -230,7 +235,7 @@ class EAZY(SED_code):
                 + [float]
             )
             in_tab = Table(in_data, dtype=in_types, names=in_names)
-            funcs.make_dirs(in_path)
+
             in_tab.write(
                 in_path,
                 format="ascii.commented_header",
@@ -270,6 +275,8 @@ class EAZY(SED_code):
         # Nakajima - unobscured AGN templates
 
         in_path, out_path, fits_out_path, PDF_paths, SED_paths = self._get_out_paths(cat, aper_diam)
+
+        in_filt_path = f"{in_path.replace('.in', '_filters.RES')}"
 
         templates = self.SED_fit_params["templates"]
 
@@ -330,21 +337,15 @@ class EAZY(SED_code):
         elif templates == "sfhz":
             params["TEMPLATES_FILE"] = (
                 f"{eazy_templates_path}/sfhz/corr_sfhz_13_galfind.param"
-            )
-            
+            )  
         elif templates == "sfhz+carnall_eelg":
             params["TEMPLATES_FILE"] = (
                 f"{eazy_templates_path}/sfhz/carnall_sfhz_13_galfind.param"
             )
-
-
         elif templates == "sfhz+carnall_eelg+agn":
             params["TEMPLATES_FILE"] = (
                 f"{eazy_templates_path}/sfhz/sorted_agn_blue_sfhz_13_galfind.param"
             )
-
-            
-
 
         # Redshift limits
         params["Z_MIN"] = z_min # Setting minimum Z
@@ -353,10 +354,9 @@ class EAZY(SED_code):
 
         # Next section deals with passing config parameters into EAZY config dictionary
         # JWST filter_file
-        params["FILTERS_RES"] = (
-            f"{config['EAZY']['EAZY_CONFIG_DIR']}/jwst_nircam_FILTER.RES"
-        )
-
+        params["FILTERS_RES"] = in_filt_path
+            #f"{config['EAZY']['EAZY_CONFIG_DIR']}/jwst_nircam_FILTER.RES"
+        
         # Errors
         params["WAVELENGTH_FILE"] = (
             f"{eazy_templates_path}/lambda.def"  # Wavelength grid definition file
@@ -394,7 +394,6 @@ class EAZY(SED_code):
                 translate_file=translate_file,
                 n_proc=self.SED_fit_params["N_PROC"],
             )
-            
             fit.fit_catalog(n_proc=self.SED_fit_params["N_PROC"], get_best_fit=True)
             # Save backup of fit in hdf5 file
             hdf5.write_hdf5(
@@ -451,7 +450,7 @@ class EAZY(SED_code):
                 if self.SED_fit_params["SAVE_UBVJ"]:
                     # This is all duplicated from base code.
                     rf_tempfilt, lc_rest, ubvj = fit.rest_frame_fluxes(
-                        f_numbers=[9, 10, 11, 12], simple=False, n_proc=self.SED_fit_params["N_PROC"]
+                        f_numbers=[1, 2, 3, 4], simple=False, n_proc=self.SED_fit_params["N_PROC"]
                     )
                     for i, ubvj_filt in enumerate(["U", "B", "V", "J"]):
                         table[f"{ubvj_filt}_rf_flux"] = ubvj[:, i, 2]
@@ -583,6 +582,7 @@ class EAZY(SED_code):
         in_dir = f"{config['EAZY']['EAZY_DIR']}/input/{cat.filterset.instrument_name}/{cat.version}/{cat.survey}"
         in_name = cat.cat_name.replace('.fits', f"_{aper_diam.to(u.arcsec).value:.2f}as.in")
         in_path = f"{in_dir}/{in_name}"
+
         out_folder = funcs.split_dir_name(
             in_path.replace("input", "output"), "dir"
         )
@@ -602,7 +602,9 @@ class EAZY(SED_code):
     def extract_SEDs(
         self: Self, 
         IDs: List[int], 
-        SED_paths: Union[str, List[str]]
+        SED_paths: Union[str, List[str]],
+        *args,
+        **kwargs,
     ) -> List[SED_obs]:
         # ensure this works if only extracting 1 galaxy
         if isinstance(IDs, (str, int, float)):
@@ -722,3 +724,61 @@ class EAZY(SED_code):
             for cat_property_PDF in cat_property_PDFs_
         ]
         return cat_property_PDFs
+
+    def _make_filter_file(
+        self: Self,
+        filterset: Multiple_Filter, 
+        filter_file: str,
+        default_param_path: str
+    ) -> NoReturn:
+        '''
+        Write a filter file for EAZY from a Multiple_Filter object
+
+        '''
+        # Need to write a filterset file for EAZY
+        # Two files one with list of filters and one with the transmission curves
+        # format of list is
+
+        # 1 len(transmission_curve) name1 lambda_c = pivot_wav
+        # 2 len(transmission_curve) name2 lambda_c = pivot_wav
+
+        # format of transmission curve is
+        # len(transmission_curve) name1 lambda_c = pivot_wav
+        # 1 0.1 0.0
+        # 2 0.2 0.1
+        # 3 0.3 0.2
+        #...
+        # len(transmission_curve) name1 lambda_c = pivot_wav
+        # 1 0.1 0.0
+        # 2 0.2 0.1
+
+        # copy default filter file and append to it
+
+        copy(default_param_path, filter_file)
+        copy(f'{default_param_path}.INFO', f'{filter_file}.INFO')
+        # count lines in .INFO
+
+        with open(f'{filter_file}.INFO', 'r') as f:
+            current_lines = f.readlines()
+            nexisting = len(current_lines)
+            last_line = current_lines[-1]
+
+        with open(filter_file, 'a') as f:
+            with open (f'{filter_file}.INFO', 'a') as f_info:
+                # work out whether we need to move to the next line - i.e is the current line got anything in it
+                
+                if not last_line.endswith('\n'):
+                    f_info.write('\n')
+
+                f.write('\n')
+
+                # count lines in file
+                for i, filt in enumerate(filterset):
+                    code = i + nexisting + 1
+                    wav_cent = filt.properties["WavelengthEff"].to(u.Angstrom).value
+                    f_info.write(f'{code}  {len(filt.trans)} {filt.facility_name}/{filt.instrument_name}.{filt.band_name} lambda_c= {wav_cent}\n')
+                    f.write(f' {len(filt.trans)} {filt.facility_name}/{filt.instrument_name}.{filt.band_name} lambda_c= {wav_cent}\n')
+
+                    for pos, (wav, trans) in enumerate(zip(filt.wav, filt.trans)):
+                        f.write(f'{pos + 1} {wav.to(u.Angstrom).value} {trans}\n')
+        return np.arange(nexisting + 1, nexisting + 1 + len(filterset))

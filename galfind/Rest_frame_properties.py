@@ -278,6 +278,7 @@ class Rest_Frame_Property_Calculator(Property_Calculator):
             properties_to_nan_check = [self] + self.pre_req_properties
         else:
             properties_to_nan_check = self.pre_req_properties
+
         if any(np.isnan(phot_rest.properties[property.name]) \
                for property in properties_to_nan_check):
             phot_rest.properties[property_name] = np.nan
@@ -296,6 +297,7 @@ class Rest_Frame_Property_Calculator(Property_Calculator):
                     if self._fail_criteria(phot_rest):
                         phot_rest.properties[property_name] = np.nan
                     else:
+                        #breakpoint()
                         value = self._calculate(np.array([phot_rest.flux[ \
                             self.obj_kwargs["keep_indices"]].value]) \
                             * phot_rest.flux.unit, phot_rest)[0]
@@ -1284,7 +1286,6 @@ class LUV_Calculator(Rest_Frame_Property_Calculator):
             else:
                 AUV_arr = phot_rest.properties[self.dust_calculator.name]
             LUV_arr = funcs.dust_correct(LUV_arr, AUV_arr)
-        
         # output luminosities
         return LUV_arr
     

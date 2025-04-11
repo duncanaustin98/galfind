@@ -502,7 +502,7 @@ class LePhare(SED_code):
         # return out_path.replace(".out", "_LePhare.fits")
 
     @staticmethod
-    def extract_SEDs(IDs, SED_paths):
+    def extract_SEDs(IDs, SED_paths, *args, **kwargs):
         pass
 
     @staticmethod

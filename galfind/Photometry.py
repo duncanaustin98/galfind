@@ -13,13 +13,13 @@ import time
 import matplotlib.pyplot as plt
 from abc import ABC
 import astropy.units as u
+from astropy.utils.masked import Masked
 import matplotlib.patheffects as pe
 import numpy as np
 from numpy.typing import NDArray
 from typing import TYPE_CHECKING, Union, Optional, List, Dict, Any, NoReturn
 if TYPE_CHECKING:
     from . import Instrument
-    from astropy.utils.masked import Masked
 try:
     from typing import Self, Type  # python 3.11+
 except ImportError:
@@ -36,7 +36,7 @@ class Photometry:
         filterset: Multiple_Filter,
         flux: Union[Masked, u.Quantity],
         flux_errs: Union[Masked, u.Quantity],
-        depths: Union[Dict[str, float], List[float]],
+        depths: Optional[Union[Dict[str, u.Magnitude], u.Magnitude]],
     ):
         self.filterset = filterset
         self.flux = flux
@@ -46,8 +46,20 @@ class Photometry:
                 galfind_logger.critical(
                     f"not all {filterset.band_names} in {depths.keys()=}"
                 )
+           
             depths = [depths[filt.filt_name] for filt in filterset]
+            assert all(depth.unit == u.ABmag for depth in depths), \
+                galfind_logger.critical(
+                    f"not all depths are in ABmag: {depths=}"
+                )
+            depths = np.array([depth.value for depth in depths]) * u.ABmag
+            
         self.depths = depths
+        if self.depths is not None:
+            assert self.depths.unit == u.ABmag, \
+                galfind_logger.critical(
+                    f"{depths.unit=} != 'ABmag'"
+                )
         assert all(
             len(self.filterset) == len(getattr(self, name))
             for name in ["flux", "flux_errs", "depths"] 
@@ -279,24 +291,34 @@ class Photometry:
         ax: Optional[plt.Axes] = None,
         wav_units: u.Unit = u.AA,
         mag_units: u.Unit = u.Jy,
-        plot_errs={"x": True, "y": True},
-        annotate=True,
-        uplim_sigma=2.0,
-        auto_scale=True,
-        errorbar_kwargs={
+        plot_errs: Dict[str, bool] = {"x": False, "y": True},
+        #annotate=True,
+        uplim_sigma: Optional[float] = 2.0,
+        auto_scale: bool = True,
+        errorbar_kwargs: Dict[str, Any] = {
             "ls": "",
             "marker": "o",
             "ms": 4.0,
             "zorder": 100.0,
             "path_effects": [pe.withStroke(linewidth=2.0, foreground="white")],
         },
-        filled=True,
-        colour="black",
-        label="Photometry",
-        return_extra=False,
+        filled: bool = True,
+        colour: str = "black",
+        label: Optional[str] = "Photometry",
+        return_extra: bool = False,
+        log_scale: bool = False,
     ):
+        #breakpoint()
+        if log_scale:
+            assert mag_units != u.ABmag, galfind_logger.critical(
+                f"Cannot log scale {mag_units=} == 'ABmag'"
+            )
+        # if not isinstance(self.flux.value, Masked):
+        #     breakpoint()
         wavs_to_plot = funcs.convert_wav_units(self.wav, wav_units).value
         mags_to_plot = funcs.convert_mag_units(self.wav, self.flux, mag_units)
+        # if not isinstance(mags_to_plot.value, Masked):
+        #     mags_to_plot = np.ma.masked_array(mags_to_plot.value, mask=False)
 
         if uplim_sigma is None:
             uplims = list(np.full(len(self.flux), False))
@@ -374,13 +396,18 @@ class Photometry:
 
         # log scale y axis if not in units of ABmag
         if mag_units != u.ABmag:
-            if plot_errs["y"]:
-                yerr = np.array(
-                    funcs.log_scale_flux_errors(mags_to_plot, yerr)
-                )
-            mags_to_plot = np.array(
-                funcs.log_scale_fluxes(mags_to_plot)
-            )  # called 'mags_to_plot' but in this case are fluxes
+            if log_scale:
+                if plot_errs["y"]:
+                    yerr = np.array(
+                        funcs.log_scale_flux_errors(mags_to_plot, yerr)
+                    )
+                mags_to_plot = np.array(
+                    funcs.log_scale_fluxes(mags_to_plot)
+                )  # called 'mags_to_plot' but in this case are fluxes
+            else:
+                if plot_errs["y"]:
+                    yerr = np.array([yerr[0].value, yerr[1].value])
+                mags_to_plot = np.array(mags_to_plot.value)
         else:
             if plot_errs["y"]:
                 yerr = np.array([yerr[0].value, yerr[1].value])
@@ -418,8 +445,12 @@ class Photometry:
 
         if auto_scale:
             # auto-scale the x-axis
-            lower_xlim = np.min(wavs_to_plot - xerr[0]) * 0.95
-            upper_xlim = np.max(wavs_to_plot + xerr[1]) * 1.05
+            if plot_errs["x"]:
+                lower_xlim = np.min(wavs_to_plot - xerr[0]) * 0.95
+                upper_xlim = np.max(wavs_to_plot + xerr[1]) * 1.05
+            else:
+                lower_xlim = np.min(wavs_to_plot) * 0.95
+                upper_xlim = np.max(wavs_to_plot) * 1.05
             ax.set_xlim(lower_xlim, upper_xlim)
             # auto-scale the y-axis based on plotting units
             if mag_units == u.ABmag:
@@ -430,13 +461,24 @@ class Photometry:
                     lower_ylim = np.max(mags_to_plot) + 0.25
                     upper_ylim = np.min(mags_to_plot) - 0.75
             else:  # auto-scale flux units
-                if plot_errs["y"]:
-                    lower_ylim = np.nanmin(mags_to_plot - yerr[0]) - 0.15
-                    upper_ylim = np.nanmax(mags_to_plot + yerr[1]) + 0.35
+                if log_scale:
+                    if plot_errs["y"]:
+                        lower_ylim = np.nanmin(mags_to_plot - yerr[0]) - 0.15
+                        upper_ylim = np.nanmax(mags_to_plot + yerr[1]) + 0.35
+                    else:
+                        lower_ylim = np.min(mags_to_plot) - 0.15
+                        upper_ylim = np.max(mags_to_plot) + 0.35
                 else:
-                    lower_ylim = np.min(mags_to_plot) - 0.15
-                    upper_ylim = np.max(mags_to_plot) + 0.35
-            ax.set_ylim(lower_ylim, upper_ylim)
+                    if plot_errs["y"]:
+                        lower_ylim = np.nanmin(mags_to_plot - yerr[0]) * 0.95
+                        upper_ylim = np.nanmax(mags_to_plot + yerr[1]) * 1.05
+                    else:
+                        lower_ylim = np.min(mags_to_plot) * 0.95
+                        upper_ylim = np.max(mags_to_plot) * 1.05
+            try:
+                ax.set_ylim(lower_ylim, upper_ylim)
+            except:
+                pass
 
         if mag_units == u.ABmag:
             plot_limits = {"lolims": uplims}
@@ -511,6 +553,8 @@ class Photometry:
     ) -> NoReturn:
         # calculate 1σ depths and convert to Jy
         one_sig_depths_Jy = self.depths.to(u.Jy) / 5
+
+        assert min_flux_pc_err >= 0., galfind_logger.critical(f"Negative {min_flux_pc_err=}<0")
         # apply min_flux_pc_err criteria
         # TODO: Retain the flux mask in flux errors if there is one
         self.flux_errs = np.array(

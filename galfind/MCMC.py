@@ -286,16 +286,17 @@ class Base_MCMC_Fitter(ABC):
         log_data: bool = False,
         x_arr: Optional[NDArray[float]] = None,
         label: Optional[str] = None,
+        colour: str = "black",
         **kwargs: Dict[str, Any]
-    ) -> None: #colour = "blue", nsamples = 1_000, plot_med = False, alpha = 0.3):
+    ) -> None: #nsamples = 1_000, plot_med = False, alpha = 0.3):
         if x_arr is None:
             x_arr = np.linspace(np.min(self.x_data), np.max(self.x_data), 100)
 
         l1_chains, med_chains, u1_chains = self._get_plot_chains(x_arr = x_arr, log_data = log_data)
         
-        ax.plot(x_arr, med_chains, color = "black", zorder = 2, label = label)
-        ax.fill_between(x_arr, l1_chains, u1_chains, color = "black", alpha = 0.5, \
-            zorder = 1, path_effects = [pe.withStroke(linewidth = 2., foreground = "white")])
+        ax.plot(x_arr, med_chains, color = colour, zorder = 200, label = label)
+        ax.fill_between(x_arr, l1_chains, u1_chains, color = colour, alpha = 0.5, \
+            zorder = 200, path_effects = [pe.withStroke(linewidth = 2., foreground = "white")])
         galfind_logger.info("Plotting MCMC fit")
 
     @abstractmethod
@@ -537,7 +538,7 @@ class MCMC_Fitter(Base_MCMC_Fitter):
         u1_chains = np.array([np.percentile(y, 84) for y in y_fit])
         return l1_chains, med_chains, u1_chains
     
-    def _calculate_scatter(self) -> float:
+    def get_scatter(self) -> float:
         residuals = self.get_residuals(self.get_params_med())
         self.scatter = np.sqrt(np.sum(residuals ** 2) / (len(self.y_data) - 1))
         galfind_logger.info(f"Scatter: {self.scatter:.3f} dex")
@@ -556,6 +557,16 @@ class MCMC_Fitter(Base_MCMC_Fitter):
             self.params_med = {prior.name: np.median(chain[:, i]) for i, prior in enumerate(self.priors)}
         galfind_logger.info(f"Median parameters: {self.params_med}")
         return self.params_med
+    
+    def get_params_errs(self: Self) -> NDArray[float]:
+        if not hasattr(self, "params_errs"):
+            chain = self.get_sample()
+            params = {prior.name: np.percentile(chain[:, i], [16, 50, 84]) for i, prior in enumerate(self.priors)}
+            self.params_errs = {}
+            for key, vals in params.items():
+                self.params_errs[key] = np.array([vals[1] - vals[0], vals[2] - vals[1]])
+        galfind_logger.info(f"{self.params_errs}=")
+        return self.params_errs
     
     def get_residuals(self: Self, params: Dict[str, float]) -> NDArray[float]:
         return self.y_data - self.model(self.x_data, params)
@@ -734,12 +745,12 @@ class Linear_Fitter(MCMC_Fitter):
         nwalkers: int,
         backend_filename: Optional[str],
         fixed_params: Dict[str, float],
-        incl_logf: bool = False,
+        incl_scatter: bool = False,
     ):
-        self.incl_logf = incl_logf
+        self.incl_scatter = incl_scatter
         params = ["m", "c"]
-        if incl_logf:
-            params.append("logf")
+        if incl_scatter:
+            params.append("scatter")
         assert all([key in params for key in fixed_params.keys()]), \
             galfind_logger.critical(
                 f"{fixed_params=} must be m and/or c or empty"
@@ -747,7 +758,7 @@ class Linear_Fitter(MCMC_Fitter):
         assert len(fixed_params) + len(priors) == len(params), \
             galfind_logger.critical(
                 f"Must have exactly {len(params)} parameters if " + \
-                f"{'not' if not incl_logf else ''} including logf"
+                f"{'not' if not incl_scatter else ''} including scatter"
             )
         assert all([key in fixed_params.keys() or key in priors.names for key in params]), \
             galfind_logger.critical(
@@ -760,9 +771,9 @@ class Linear_Fitter(MCMC_Fitter):
         residuals: NDArray[float],
         params: Dict[str, float],
     ) -> NDArray[float]:
-        if self.incl_logf:
-            return super()._get_sigma_sq(residuals, params) + \
-                np.exp(2 * params["logf"]) * self.model(self.x_data, params) ** 2
+        if self.incl_scatter:
+            return super()._get_sigma_sq(residuals, params) + params["scatter"] ** 2 #\
+                #np.exp(2 * params["logf"]) * self.model(self.x_data, params) ** 2
         else:
             return super()._get_sigma_sq(residuals, params)
 
