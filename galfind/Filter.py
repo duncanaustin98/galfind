@@ -843,6 +843,14 @@ class Multiple_Filter:
         return [band.band_name for band in self]
 
     @property
+    def instrument_names(self) -> List[str]:
+        return [band.instrument_name for band in self]
+    
+    @property
+    def facility_names(self) -> List[str]:
+        return [band.facility_name for band in self]
+
+    @property
     def band_wavelengths(self):
         # Central wavelengths
         return (

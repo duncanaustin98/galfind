@@ -781,4 +781,6 @@ class EAZY(SED_code):
 
                     for pos, (wav, trans) in enumerate(zip(filt.wav, filt.trans)):
                         f.write(f'{pos + 1} {wav.to(u.Angstrom).value} {trans}\n')
+                        
         return np.arange(nexisting + 1, nexisting + 1 + len(filterset))
+
