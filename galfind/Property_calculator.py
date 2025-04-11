@@ -156,10 +156,12 @@ class Property_Extractor:
     def __call__(
         self: Self,
         object: Union[Catalogue, Galaxy, Photometry_rest, SED_obs, SED_result],
+        *args,
+        **kwargs
         #save: bool = True,
     ) -> Optional[Catalogue]:
         # call the super with n_jobs = 1
-        return super().__call__(object)
+        return super().__call__(object, *args, **kwargs)
 
     def _call_cat(
         self: Self,
@@ -602,6 +604,8 @@ class SED_Property_Calculator(Property_Calculator):
     def __call__(
         self: Self,
         object: Union[Type[Catalogue_Base], Galaxy, Photometry_rest],
+        *args,
+        **kwargs
     ) -> Optional[Union[Type[Catalogue_Base], Galaxy, Photometry_rest]]:
         # if isinstance(self, tuple(Property_Extractor.__subclasses__())):
         #     # call with n_jobs = 1
@@ -645,7 +649,13 @@ class SED_Property_Calculator(Property_Calculator):
         #     n_jobs = self.n_jobs
         #if n_jobs <= 1:
             # update properties for each galaxy in the catalogue
-        return np.array([self._call_gal(gal) for gal in cat])
+        try:
+            cat_properties = np.array([self._call_gal(gal) for gal in cat])
+        except:
+            unit = self._call_gal(cat.gals[0]).unit
+            cat_properties = np.array([self._call_gal(gal).value for gal in cat]) * unit
+        return cat_properties
+        #return np.array([self._call_gal(gal) for gal in cat])
         # else:
         #     # TODO: should be set when serializing the object
         #     for gal in tqdm(cat, total = len(cat)):
@@ -758,7 +768,10 @@ class SED_Property_Calculator(Property_Calculator):
         object: Union[Type[Catalogue_Base], Galaxy, SED_obs]
     ) -> Union[u.Quantity, u.Magnitude, u.Dex]:
         if isinstance(object, tuple(Catalogue_Base.__subclasses__())):
-            cat_errs = [gal.aper_phot[self.aper_diam].SED_results[self.SED_fit_label].property_errs[self.name] for gal in object]
+            try:
+                cat_errs = [gal.aper_phot[self.aper_diam].SED_results[self.SED_fit_label].property_errs[self.name] for gal in object]
+            except:
+                breakpoint()
             # if not all(isinstance(val, float) for val in cat_errs):
             #     assert all(val.unit == cat_errs[0].unit for val in cat_errs), \
             #         galfind_logger.critical(f"Units of {self.name} in {object} are not consistent")
@@ -894,6 +907,8 @@ class Ext_Src_Property_Calculator(SED_Property_Calculator):
             old_pdf.SED_fit_params
         )
         setattr(sed_result, self.name, new_pdf.median)
+        sed_result.properties[self.name] = new_pdf.median
+        sed_result.property_errs[self.name] = new_pdf.errs
         sed_result.property_PDFs[self.name] = new_pdf
         # TODO: save raw data at this point
         return sed_result
@@ -962,6 +977,8 @@ class Multiple_Property_Calculator(Property_Calculator_Base):
     def __call__(
         self: Self,
         object: Union[Type[Catalogue_Base], Galaxy, Photometry_rest, SED_obs, Type[Band_Cutout_Base]],
+        *args,
+        **kwargs,
     ) -> Optional[Union[Type[Catalogue_Base], Galaxy, Photometry_rest, SED_obs, Type[Band_Cutout_Base]]]:
         if isinstance(object, tuple(Catalogue_Base.__subclasses__())):
             val = self._call_cat(object)
@@ -981,7 +998,11 @@ class Multiple_Property_Calculator(Property_Calculator_Base):
         cat: Catalogue,
         #save: bool = True,
     ) -> Optional[Catalogue]:
-        return np.array([self._call_gal(gal) for gal in cat])
+        try:
+            return np.array([self._call_gal(gal) for gal in cat])
+        except:
+            unit = self._call_gal(cat.gals[0]).unit
+            return np.array([self._call_gal(gal).value for gal in cat]) * unit
     
     @abstractmethod
     def _call_gal(
@@ -1222,6 +1243,15 @@ class Re_kpc_Calculator(Multiple_Property_Calculator):
         z = self.calculators[1].extract_vals(object)
         return self._convert_to_kpc(re_pix, z)
 
+    def extract_errs(
+        self: Self, 
+        object: Union[Catalogue, Galaxy, Type[Band_Cutout_Base]]
+    ) -> Union[u.Quantity, u.Magnitude, u.Dex]:
+        re_pix_errs = np.array([pdf.errs if pdf is not None else [np.nan, np.nan] for pdf in self.calculators[0].extract_PDFs(object)]) * u.pix
+        z = self.calculators[1].extract_vals(object)
+        re_kpc_errs = self._convert_to_kpc(re_pix_errs, z[:, np.newaxis])
+        return re_kpc_errs.T
+
     def extract_PDFs(
         self: Self,
         object: Union[Catalogue, Galaxy, Type[Band_Cutout_Base]],
@@ -1236,7 +1266,8 @@ class Re_kpc_Calculator(Multiple_Property_Calculator):
         self: Self,
         gal: Galaxy,
     ) -> Optional[Galaxy]:
-        raise NotImplementedError
+        [calculator(gal) for calculator in self.calculators]
+        return self.extract_vals(gal)
 
 
 class Surface_Density_Calculator(Multiple_Property_Calculator):

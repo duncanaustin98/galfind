@@ -1437,6 +1437,7 @@ class Catalogue(Catalogue_Base):
         aper_diam: u.Quantity,
         SED_fit_code: SED_code,
         z_step: float = 0.01,
+        unmasked_area: Union[str, List[str], u.Quantity] = "selection",
     ) -> NDArray[float]:
         assert hasattr(self, "data"), \
             galfind_logger.critical(
@@ -1448,6 +1449,7 @@ class Catalogue(Catalogue_Base):
             aper_diam = aper_diam,
             SED_fit_code = SED_fit_code,
             z_step = z_step,
+            unmasked_area = unmasked_area,
         )
     
 

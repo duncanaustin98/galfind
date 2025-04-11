@@ -63,6 +63,7 @@ pipes_unit_dict = {
     "UV_colour": u.ABmag,
     "VJ_colour": u.ABmag,
     "beta_C94": u.dimensionless_unscaled,
+    "burstiness": u.dimensionless_unscaled,
     "m_UV": u.ABmag,
     "M_UV": u.ABmag,
     "flux": u.erg / u.s / u.cm**2 / u.AA, # check!
@@ -632,7 +633,6 @@ class Bagpipes(SED_code):
         #breakpoint()
         #galfind_logger.info(f"Fitting bagpipes with {self.fit_instructions=}")
         try:
-            breakpoint()
             run_parallel = False
             fit_cat.fit(
                 verbose = False,
@@ -818,7 +818,11 @@ class Bagpipes(SED_code):
         # extract observed frame wavelengths
         wavs = self._extract_SED_wavelengths(cat, aper_diam) * (1. + z_arr[:, np.newaxis]) * u.um
         # extract in erg/s/cm^2/AA
-        flambda = np.array([self._extract_SED_fluxes(SED_path) for SED_path in SED_paths]) * u.erg / u.s / u.cm ** 2 / u.AA
+        if "spectrum_type" in kwargs.keys():
+            spectrum_type = kwargs["spectrum_type"]
+        else:
+            spectrum_type = "spectrum_full"
+        flambda = np.array([self._extract_SED_fluxes(SED_path, spectrum_type = spectrum_type) for SED_path in SED_paths]) * u.erg / u.s / u.cm ** 2 / u.AA
         # convert fluxes to uJy
         fnu = (flambda * wavs ** 2 / const.c).to(u.uJy)
         SED_obs_arr = [
@@ -891,9 +895,9 @@ class Bagpipes(SED_code):
 
         return wavs
 
-    def _extract_SED_fluxes(self: Self, SED_path: str) -> u.Quantity:
+    def _extract_SED_fluxes(self: Self, SED_path: str, spectrum_type: str = "spectrum_full") -> u.Quantity:
         f = h5py.File(SED_path, "r")
-        spectrum_full = np.array(f["advanced_quantities"]["spectrum_full"])
+        spectrum_full = np.array(f["advanced_quantities"][spectrum_type])
         spectrum_percentiles = np.percentile(spectrum_full, [16, 50, 84], axis = 0)
         #spectrum_l1 = spectrum_percentiles[0]
         spectrum_med = spectrum_percentiles[1] # erg / s / cm**2 / AA

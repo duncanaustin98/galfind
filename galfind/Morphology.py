@@ -351,6 +351,8 @@ class Galfit_Fitter(Morphology_Fitter):
         self: Self,
         cat: Catalogue,
         plot: bool = True,
+        *args,
+        **kwargs,
     ):
         cat.load_sextractor_auto_mags()
         cat.load_sextractor_Re()
@@ -378,6 +380,8 @@ class Galfit_Fitter(Morphology_Fitter):
                 fid_re = gal.sex_Re[self.psf.cutout.band_data.filt_name],
                 in_dir = f"{in_subdir}/{str(gal.ID)}",
                 out_dir = f"{out_subdir}/{str(gal.ID)}/{self.model}{fixed_param_str}",
+                *args,
+                **kwargs,
             )
             for gal in cat
         ]
@@ -397,6 +401,8 @@ class Galfit_Fitter(Morphology_Fitter):
         fid_re: u.Quantity,
         in_dir: str = "",
         out_dir: str = "",
+        *args,
+        **kwargs,
     ) -> Galfit_Result:
         if in_dir != "":
             in_dir = f"{in_dir}/"

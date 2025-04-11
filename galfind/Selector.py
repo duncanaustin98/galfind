@@ -7,13 +7,15 @@ import numpy as np
 from copy import deepcopy
 import json
 from pathlib import Path
+from astropy.utils.masked import Masked
 from tqdm import tqdm
 from typing import TYPE_CHECKING, Any, List, Union, NoReturn, Callable, Optional
 if TYPE_CHECKING:
     from . import (
         Multiple_Filter,
         Rest_Frame_Property_Calculator,
-        Morphology_Fitter
+        Morphology_Fitter,
+        Property_Calculator,
     )
 try:
     from typing import Self, Type  # python 3.11+
@@ -638,7 +640,7 @@ class ID_Selector(Data_Selector):
             assert isinstance(self.kwargs["IDs"], tuple([list, np.ndarray]))
             if self.kwargs["name"] is not None:
                 assert(isinstance(self.kwargs["name"], str))
-            assert all(isinstance(ID, int) for ID in self.kwargs["IDs"])
+            assert all(isinstance(ID, tuple([int, np.int64])) for ID in self.kwargs["IDs"])
             passed = True
         except:
             passed = False
@@ -706,7 +708,7 @@ class Rest_Frame_Property_Limit_Selector(Redshift_Selector):
         self: Self,
         aper_diam: u.Quantity,
         SED_fit_label: Union[str, SED_code],
-        property_calculator: Type[Rest_Frame_Property_Calculator],
+        property_calculator: Type[Property_Calculator],
         property_lim: Union[u.Quantity, u.Magnitude, u.Dex],
         gtr_or_less: str,
     ):
@@ -733,9 +735,9 @@ class Rest_Frame_Property_Limit_Selector(Redshift_Selector):
 
     def _assertions(self: Self) -> bool:
         try:
-            from . import Rest_Frame_Property_Calculator
+            from . import Property_Calculator
             assert isinstance(self.property_calculator, \
-                tuple(Rest_Frame_Property_Calculator.__subclasses__()))
+                tuple(Property_Calculator.__subclasses__()))
             assert isinstance(self.kwargs["property_lim"], \
                 (u.Quantity, u.Magnitude, u.Dex)) #or \
                 # all(isinstance(val, (u.Quantity, u.Magnitude, u.Dex)) \
@@ -1013,12 +1015,12 @@ class Unmasked_Band_Selector(Data_Selector):
         self: Self,
         gal: Galaxy,
         *args,
-        **kwargs
+        **kwargs,
     ) -> bool:
         band_index = int([i for i, band_name in enumerate( \
             gal.aper_phot[list(gal.aper_phot.keys())[0]].filterset.band_names) \
             if band_name == self.kwargs["band_name"]][0])
-        if isinstance(gal.aper_phot[list(gal.aper_phot.keys())[0]].flux, u.Quantity):
+        if not isinstance(gal.aper_phot[list(gal.aper_phot.keys())[0]].flux, Masked):
             return True
         else:
             return not gal.aper_phot[list(gal.aper_phot.keys())[0]].flux.mask[band_index]
@@ -1085,7 +1087,7 @@ class Bluewards_LyLim_Non_Detect_Selector(Redshift_Selector):
 
     @property
     def _selection_name(self) -> str:
-        selection_name = f"bluewards_LyLim_SNR<{self.kwargs['SNR_lim']:.1f}"
+        selection_name = f"blue_LyLim<{self.kwargs['SNR_lim']:.1f}"
         if self.kwargs["ignore_bands"] is not None:
             ignore_str = ",".join(self.kwargs["ignore_bands"])
             selection_name += f"_no_{ignore_str}"
@@ -1154,7 +1156,7 @@ class Bluewards_Lya_Non_Detect_Selector(Redshift_Selector):
 
     @property
     def _selection_name(self) -> str:
-        selection_name = f"bluewards_Lya_SNR<{self.kwargs['SNR_lim']:.1f}"
+        selection_name = f"blue_Lya<{self.kwargs['SNR_lim']:.1f}"
         if self.kwargs["ignore_bands"] is not None:
             ignore_str = ",".join(self.kwargs["ignore_bands"])
             selection_name += f"_no_{ignore_str}"
@@ -1231,13 +1233,13 @@ class Redwards_Lya_Detect_Selector(Redshift_Selector):
     def _selection_name(self) -> str:
         if isinstance(self.kwargs["SNR_lims"], (int, float)):
             # require all redwards bands to be detected at >SNR_lims
-            selection_name = f"ALL_red_Lya_SNR>{self.kwargs['SNR_lims']:.1f}"
+            selection_name = f"ALL_red_Lya>{self.kwargs['SNR_lims']:.1f}"
         else: # isinstance(SNR_lims, (list, np.array)):
             # require the n^th band redwards of Lya 
             # to be detected at >SNR_lims[n]
             SNR_str = ",".join([str(np.round(SNR, 1)) \
                 for SNR in self.kwargs["SNR_lims"]])
-            selection_name = f"red_Lya_SNR>{SNR_str}"
+            selection_name = f"red_Lya>{SNR_str}"
         if self.kwargs["widebands_only"]:
             selection_name += "_wide"
         if self.kwargs["ignore_bands"] is not None:

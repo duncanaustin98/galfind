@@ -929,6 +929,7 @@ class Galaxy:
         z_step: float = 0.01,
         depth_mode: str = "n_nearest",
         depth_region: str = "all",
+        unmasked_area: Union[str, List[str], u.Quantity] = "selection",
     ) -> float:
         # TODO: remove dependence on full_survey_name input
         # input assertions
@@ -1097,9 +1098,19 @@ class Galaxy:
             # continue
 
             # calculate/load unmasked area of forced photometry band
-            unmasked_area = data.calc_unmasked_area(
-                instr_or_band_name=data.forced_phot_band.filt_name,
-            )
+
+            if unmasked_area == "selection":
+                unmasked_area_ = data.calc_unmasked_area(
+                    instr_or_band_name = data.forced_phot_band.filt_name,
+                )
+            elif isinstance(unmasked_area, u.Quantity):
+                assert isinstance(unmasked_area, u.Quantity)
+                # TODO: ensure this has units of area
+                unmasked_area_ = unmasked_area
+            else:
+                unmasked_area_ = data.calc_unmasked_area(
+                    instr_or_band_name = unmasked_area,
+                )
             z_min_used = np.max([z_min, z_bin[0]])
             z_max_used = np.min([z_max, z_bin[1]])
             if any(_z == -1.0 for _z in [z_min_used, z_max_used]):
@@ -1107,7 +1118,7 @@ class Galaxy:
             else:
                 # V_max_simple = funcs.calc_Vmax(unmasked_area, z_bin[0], z_max_used)
                 V_max = funcs.calc_Vmax(
-                    unmasked_area, 
+                    unmasked_area_, 
                     z_min_used, 
                     z_max_used
                 ).to(u.Mpc**3).value

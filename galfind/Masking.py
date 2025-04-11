@@ -125,7 +125,8 @@ def manually_mask(
         else:
             raise (
                 Exception(
-                    "Neither .fits or .reg mask path found "
+                    f"Neither .fits at {fits_mask_path=} or" + \
+                    f".reg mask path in {reg_mask_dir=} found "
                     + f"for {self.survey} {self.version} {self.filt_name}"
                 )
             )

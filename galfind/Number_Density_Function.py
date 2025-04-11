@@ -375,6 +375,7 @@ class Number_Density_Function(Base_Number_Density_Function):
         z_step: float = 0.01,
         cv_origin: Union[str, None] = "Driver2010",
         completeness: Optional[Completeness] = None,
+        unmasked_area: Union[str, List[str], u.Quantity] = "selection",
         plot: bool = True,
         save: bool = True,
         timed: bool = False,
@@ -453,7 +454,8 @@ class Number_Density_Function(Base_Number_Density_Function):
                 z_bin, 
                 aper_diam, 
                 SED_fit_code, 
-                z_step, 
+                z_step,
+                unmasked_area = unmasked_area,
             )
 
             if plot:
@@ -834,6 +836,7 @@ class Multiple_Number_Density_Function:
         x_origin: Union[str, dict] = "EAZY_fsps_larson_zfree",
         z_step: float = 0.1,
         use_vmax_simple: bool = False,
+        unmasked_area: Union[str, List[str], u.Quantity] = "selection",
         timed: bool = False,
     ) -> "Number_Density_Function":
         # input assertions
@@ -877,7 +880,7 @@ class Multiple_Number_Density_Function:
             z_bin_name = f"{x_origin}_{z_bin[0]:.1f}<z<{z_bin[1]:.1f}"
             # calculate Vmax for each galaxy in catalogue within z bin
             # in general call Vmax_multifield
-            cat.calc_Vmax(cat.data, z_bin, x_origin, z_step, timed=timed)
+            cat.calc_Vmax(cat.data, z_bin, x_origin, z_step, unmasked_area = unmasked_area, timed=timed)
             # crop catalogue to this redshift bin
             z_bin_cat = cat.crop(z_bin, "z", x_origin)
 

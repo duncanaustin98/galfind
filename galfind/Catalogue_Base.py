@@ -154,6 +154,9 @@ class Catalogue_Base:
             # run selection if not already done
             if not all(index.name in gal.selection_flags for gal in self):
                 [index(gal, return_copy = False) for gal in self]
+            else:
+                pass
+                #breakpoint()
             keep_arr = [gal.selection_flags[index.name] for gal in self]
             return list(np.array(self.gals)[np.array(keep_arr)])
     
@@ -161,7 +164,7 @@ class Catalogue_Base:
         self: Self,
         selector: Type[Selector],
     ) -> Self:
-        if selector not in self.crops:
+        if not any(crops._selection_name == selector._selection_name for crops in self.crops):
             self.gals = np.array(self[selector])
             self.cat_creator.crops.append(selector)
         return self
@@ -765,6 +768,7 @@ class Catalogue_Base:
         save: bool = True,
         show: bool = False,
         overwrite: bool = True,
+        colour: Optional[str] = None,
     ) -> NoReturn:
         save_path = f"{config['DEFAULT']['GALFIND_WORK']}/Plots/{self.version}/" + \
             f"{self.filterset.instrument_name}/{self.survey}/hist/" + \
@@ -776,12 +780,10 @@ class Catalogue_Base:
             from . import Property_Calculator_Base
             if isinstance(x_calculator, tuple(Property_Calculator_Base.__subclasses__())):
                 # calculate x values
-                x = [gal.aper_phot[x_calculator.aper_diam].SED_results \
-                    [x_calculator.SED_fit_label].phot_rest.properties \
-                    [x_calculator.name] for gal in self]
+                unit = x_calculator.extract_vals(self).unit
+                x = np.array([x_.input_arr for x_ in x_calculator.extract_PDFs(self)]).flatten() * unit
                 # remove nans
                 x = np.array([x_.value for x_ in x if not np.isnan(x_)])
-                #x_name = x_calculator.name
                 x_label = x_calculator.name
             else:
                 raise NotImplementedError
@@ -791,7 +793,7 @@ class Catalogue_Base:
                 x_label = f"log({x_label})"
             if any(fig_ax is None for fig_ax in [fig, ax]):
                 fig, ax = plt.subplots()
-            ax.hist(x, bins = n_bins)
+            ax.hist(x, bins = n_bins, color = colour)
             ax.set_xlabel(x_label)
             #ax.set_ylabel("Number of Galaxies")
             #ax.set_title(f"{x_label} histogram")
@@ -835,7 +837,11 @@ class Catalogue_Base:
         y_hist_ax: Optional[plt.Axes] = None,
         hist_kwargs: Dict[str, Any] = {},
         plot_label: Optional[str] = "default",
-    ):
+        plot_cbar: bool = True,
+        inf_val: float = 1.0e6,
+        xlims: Optional[List[float]] = None,
+        ylims: Optional[List[float]] = None,
+    ) -> Optional[plt.Axes]:
         from . import Property_Calculator_Base
         x_name = x_calculator.full_name
         y_name = y_calculator.full_name
@@ -856,36 +862,49 @@ class Catalogue_Base:
             if log_x or x_name in funcs.logged_properties:
                 if incl_x_errs:
                     unit = x.unit
-                    x, x_err = funcs.errs_to_log(x.value, x_err.value)
+                    x_err = np.array(x_err)
+                    if x_err.shape[1] == 2:
+                        x_err = x_err.T
+                    #try:
+                    x, x_err, _ = funcs.errs_to_log(x.flatten().value, x_err)
+                    # except:
+                    #     breakpoint()
                     x *= unit
                     x_err *= unit
                 else:
                     x = np.log10(x.value) * u.dimensionless_unscaled
                 x_name = f"log({x_name})"
                 x_label = f"log({x_label})"
-
+            
             if isinstance(y_calculator, tuple(Property_Calculator_Base.__subclasses__())):
                 y = y_calculator.extract_vals(self)
                 if incl_y_errs:
                     y_err = y_calculator.extract_errs(self)
                 else:
                     y_err = None
+                y_ = deepcopy(y.flatten().value)
+                y_err_ = deepcopy(y_err)
+                y_uplims_1 = np.full(y_.shape, False)
             else:
                 raise NotImplementedError
             if log_y or y_name in funcs.logged_properties:
                 if incl_y_errs:
                     unit = y.unit
-                    y, y_err = funcs.errs_to_log(y.flatten().value, y_err.T.value)
-                    y *= unit
-                    y_err *= unit
+                    y_err = np.array(y_err)
+                    try:
+                        y_, y_err_, y_uplims_1 = funcs.errs_to_log(y.flatten().value, y_err.T, uplim_sigma = None, inf_val = inf_val)
+                    except:
+                        y_, y_err_, y_uplims_1 = funcs.errs_to_log(y.flatten().value, y_err, uplim_sigma = None, inf_val = inf_val)
+                    y_ *= unit
+                    y_err_ *= unit
                 else:
-                    y = np.log10(y.value) * u.dimensionless_unscaled
+                    y_ = np.log10(y.value) * u.dimensionless_unscaled
                 y_name = f"log({y_name})"
                 y_label = f"log({y_label})"
 
             if c_calculator is not None:
                 if isinstance(c_calculator, tuple(Property_Calculator_Base.__subclasses__())):
-                    c = c_calculator.extract_vals(self).value
+                    c = c_calculator.extract_vals(self).value.flatten()
                 else:
                     raise NotImplementedError
                 if log_c or colour_name in funcs.logged_properties:
@@ -999,16 +1018,37 @@ class Catalogue_Base:
                     colour = plot_kwargs["mec"]
                 elif "edgecolor" in plot_kwargs.keys():
                     colour = plot_kwargs["edgecolor"]
-                if incl_x_errs:
+                elif "c" in plot_kwargs.keys():
+                    colour = plot_kwargs["c"]
+                if incl_x_errs and isinstance(x_err, (u.Quantity, u.Magnitude, u.Dex)):
                     x_err = x_err.T.value
-                # breakpoint()
-                if incl_y_errs:
-                    y_err = y_err.value # .T
+                if incl_y_errs and isinstance(y_err, (u.Quantity, u.Magnitude, u.Dex)):
+                    y_err_ = y_err_.value # .T
+                if isinstance(x, (u.Quantity, u.Magnitude, u.Dex)):
+                    x = x.value
+                if isinstance(y_, (u.Quantity, u.Magnitude, u.Dex)):
+                    y_ = y_.value
+                x = np.array(x)
+                y_ = np.array(y_)
+                x_err = np.array(x_err)
+                y_err_ = np.array(y_err_)
+                if isinstance(colour, np.ndarray):
+                    errorbar_colour = "gray"
+                else:
+                    errorbar_colour = colour
                 try:
-                    plot = ax.errorbar(x.value, y.value, xerr=x_err, yerr=y_err, marker = 'none', color = colour, ls = "", capsize = 0.0) # **plot_kwargs)
+                    plot = ax.errorbar(x, y_, xerr=x_err, yerr=y_err_, uplims = y_uplims_1, marker = 'none', color = errorbar_colour, ls = "", capsize = 0.0, alpha = 0.5,)#, **errorbar_kwargs) # **plot_kwargs)
                 except:
-                    plot = ax.errorbar(x.value, y.value, xerr=x_err, yerr=y_err.T, marker = 'none', color = colour, ls = "", capsize = 0.0) # **plot_kwargs)
-            plot = ax.scatter(x, y, **plot_kwargs)
+                    try:
+                        plot = ax.errorbar(x, y_, xerr=x_err, yerr=y_err_.T, uplims = y_uplims_1, marker = 'none', color = errorbar_colour, ls = "", capsize = 0.0, alpha = 0.5,)#, **errorbar_kwargs) # **plot_kwargs)
+                    except:
+                        try:
+                            plot = ax.errorbar(x, y_, xerr=x_err.T, yerr=y_err_, uplims = y_uplims_1, marker = 'none', color = errorbar_colour, ls = "", capsize = 0.0, alpha = 0.5,)#, **errorbar_kwargs) # **plot_kwargs)
+                        except:
+                            plot = ax.errorbar(x, y_, xerr=x_err.T, yerr=y_err_.T, uplims = y_uplims_1, marker = 'none', color = errorbar_colour, ls = "", capsize = 0.0, alpha = 0.5,)
+            if "zorder" not in plot_kwargs.keys():
+                plot_kwargs["zorder"] = plot.lines[0].zorder + 1
+            plot = ax.scatter(x, y_, **plot_kwargs)
 
         if mean_err and (incl_x_errs or incl_y_errs):
             # plot the mean error
@@ -1043,8 +1083,8 @@ class Catalogue_Base:
                 ax.set_title(plot_label)
             ax.set_xlabel(x_label)
             ax.set_ylabel(y_label)
-            if c_calculator is not None:
-                fig.colorbar(plot, label = colour_label)
+            if c_calculator is not None and plot_cbar:
+               fig.colorbar(plot, label = colour_label)
             if plot_legend:
                 default_legend_kwargs = {
                     "loc": "best"
@@ -1052,6 +1092,12 @@ class Catalogue_Base:
                 for key, value in legend_kwargs.items():
                     default_legend_kwargs[key] = value
                 ax.legend(**default_legend_kwargs)
+
+        # TODO: Determine these dynamically
+        if xlims is not None:
+            ax.set_xlim(xlims)
+        if ylims is not None:
+            ax.set_ylim(ylims)
 
         if save:
             # determine appropriate save path
@@ -1067,6 +1113,9 @@ class Catalogue_Base:
 
         if show:
             plt.show()
+    
+        if plot_type.lower() != "contour":
+            return plot
 
     def get_vmax_ecsv_path(
         self: Self,
@@ -1086,6 +1135,7 @@ class Catalogue_Base:
         aper_diam: u.Quantity,
         SED_fit_code: SED_code,
         z_step: float = 0.01,
+        unmasked_area: Union[str, List[str], u.Quantity] = "selection",
     ) -> Dict[str, NDArray[float]]:
         assert len(z_bin) == 2
         assert z_bin[0] < z_bin[1]
@@ -1114,6 +1164,7 @@ class Catalogue_Base:
                     SED_fit_code,
                     self.cat_creator.crops,
                     z_step,
+                    unmasked_area = unmasked_area
                 )
                 for gal in tqdm(
                     self,

@@ -286,15 +286,16 @@ class Base_MCMC_Fitter(ABC):
         log_data: bool = False,
         x_arr: Optional[NDArray[float]] = None,
         label: Optional[str] = None,
+        colour: str = "black",
         **kwargs: Dict[str, Any]
-    ) -> None: #colour = "blue", nsamples = 1_000, plot_med = False, alpha = 0.3):
+    ) -> None: #nsamples = 1_000, plot_med = False, alpha = 0.3):
         if x_arr is None:
             x_arr = np.linspace(np.min(self.x_data), np.max(self.x_data), 100)
 
         l1_chains, med_chains, u1_chains = self._get_plot_chains(x_arr = x_arr, log_data = log_data)
         
-        ax.plot(x_arr, med_chains, color = "black", zorder = 200, label = label)
-        ax.fill_between(x_arr, l1_chains, u1_chains, color = "black", alpha = 0.5, \
+        ax.plot(x_arr, med_chains, color = colour, zorder = 200, label = label)
+        ax.fill_between(x_arr, l1_chains, u1_chains, color = colour, alpha = 0.5, \
             zorder = 200, path_effects = [pe.withStroke(linewidth = 2., foreground = "white")])
         galfind_logger.info("Plotting MCMC fit")
 

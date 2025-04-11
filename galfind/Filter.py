@@ -344,13 +344,13 @@ class Tophat_Filter(Filter):
             .to(u.dimensionless_unscaled)
             .value
         )
-        wav = list(np.linspace(lower_wav, upper_wav, n_elements)) * u.AA
+        wav = list(np.linspace(lower_wav.to(u.AA).value, upper_wav.to(u.AA).value, n_elements)) * u.AA
         trans = list(np.full(len(wav), throughput))
         properties = {
             **properties,
             **{
-                "WavelengthCen": (lower_wav + upper_wav) / 2.0,
-                "FWHM": upper_wav - lower_wav,
+                "WavelengthCen": ((lower_wav + upper_wav) / 2.0).to(u.AA),
+                "FWHM": (upper_wav - lower_wav).to(u.AA),
             },
         }
         super().__init__(None, band_name, wav, trans, properties=properties)
