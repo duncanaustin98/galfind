@@ -7,14 +7,16 @@ from galfind import Filter, Catalogue, Catalogue_Creator, Data, EAZY, LePhare, B
 from galfind import Colour_Selector, Unmasked_Instrument_Selector, EPOCHS_Selector
 from galfind.Data import morgan_version_to_dir
 
+from galfind import Hainline24_TY_Brown_Dwarf_Selector_1, Hainline24_TY_Brown_Dwarf_Selector_2
+
 plt.style.use(
     f"{config['DEFAULT']['GALFIND_DIR']}/galfind_style.mplstyle"
 )
 
 # Load in a data object
-survey = "JOF"
-version = "v11"
-instrument_names = ["ACS_WFC", "NIRCam"]
+survey = "MEGASCIENCE"
+version = "dr3"
+instrument_names = ["NIRCam"] # "ACS_WFC", 
 aper_diams = [0.32] * u.arcsec
 forced_phot_band = ["F277W", "F356W", "F444W"]
 min_flux_pc_err = 10.
@@ -30,25 +32,39 @@ def plot_brown_dwarfs():
 
     eazy_fitter = EAZY({"templates": "fsps_larson", "lowz_zmax": None})
     bd_fitter = Brown_Dwarf_Fitter()
+
     bd_selector = Brown_Dwarf_Selector(aper_diams[0], bd_fitter, secondary_SED_fit_label = eazy_fitter)
-    
-    bd_cat = Catalogue.pipeline(
+    hainline_bd_1 = Hainline24_TY_Brown_Dwarf_Selector_1(aper_diams[0])
+    hainline_bd_2 = Hainline24_TY_Brown_Dwarf_Selector_2(aper_diams[0])
+
+    cat = Catalogue.pipeline(
         survey,
         version,
         instrument_names = instrument_names,
-        version_to_dir_dict = morgan_version_to_dir,
+        #version_to_dir_dict = morgan_version_to_dir,
         aper_diams = aper_diams,
         forced_phot_band = forced_phot_band,
         min_flux_pc_err = min_flux_pc_err,
-        crops = bd_selector,
+        pix_scales = {"NIRCam": 0.04 * u.arcsec},
+        #crops = bd_selector,
     )
-    f277w_five_sig = Band_SNR_Selector(aper_diams[0], "F277W", "detect", 5.0)
-    bd_five_sig_f277w_cat = f277w_five_sig(bd_cat, return_copy = True)
+    eazy_fitter(cat, aper_diams[0], load_PDFs = True, load_SEDs = True, update = True)
+    bd_fitter(cat, aper_diams[0], load_PDFs = True, load_SEDs = True, update = True)
 
-    eazy_fitter(bd_five_sig_f277w_cat, aper_diams[0], load_PDFs = True, load_SEDs = True, update = True)
-    bd_fitter(bd_five_sig_f277w_cat, aper_diams[0], load_PDFs = True, load_SEDs = True, update = True)
+    bd_cat_hainline_1 = hainline_bd_1(cat, return_copy = True)
+    bd_cat_hainline_2 = hainline_bd_2(cat, return_copy = True)
+    bd_selector = Brown_Dwarf_Selector(aper_diams[0], bd_fitter, cat_filterset = cat.filterset)
+    bd_cat_templates = bd_selector(cat, return_copy = True)
 
-    bd_five_sig_f277w_cat.plot_phot_diagnostics(
+    # f150w_selector = Band_SNR_Selector(aper_diams[0], band = "F150W", SNR_lim = 5.0, detect_or_non_detect = "detect")
+    # f444w_selector = Band_SNR_Selector(aper_diams[0], band = "F444W", SNR_lim = 5.0, detect_or_non_detect = "detect")
+    # bd_cat = f150w_selector(bd_cat, return_copy = True)
+    # bd_cat = f444w_selector(bd_cat, return_copy = True)
+    # breakpoint()
+    #eazy_fitter(cat, aper_diams[0], load_PDFs = True, load_SEDs = True, update = True)
+    #bd_fitter(cat, aper_diams[0], load_PDFs = True, load_SEDs = True, update = True)
+
+    bd_cat_hainline_1.plot_phot_diagnostics(
         aper_diams[0],
         [eazy_fitter, bd_fitter],
         eazy_fitter,
@@ -56,12 +72,55 @@ def plot_brown_dwarfs():
         norm_kwargs = {},
         aper_kwargs = {},
         kron_kwargs = {},
-        n_cutout_rows = 2,
+        n_cutout_rows = 3,
         wav_unit = u.um,
         flux_unit = u.ABmag,
+        log_fluxes = False,
         overwrite = True
     )
-    breakpoint()
+    bd_cat_hainline_2.plot_phot_diagnostics(
+        aper_diams[0],
+        [eazy_fitter, bd_fitter],
+        eazy_fitter,
+        imshow_kwargs = {},
+        norm_kwargs = {},
+        aper_kwargs = {},
+        kron_kwargs = {},
+        n_cutout_rows = 3,
+        wav_unit = u.um,
+        flux_unit = u.ABmag,
+        log_fluxes = False,
+        overwrite = True
+    )
+
+    bd_cat_templates.plot_phot_diagnostics(
+        aper_diams[0],
+        [eazy_fitter, bd_fitter],
+        eazy_fitter,
+        imshow_kwargs = {},
+        norm_kwargs = {},
+        aper_kwargs = {},
+        kron_kwargs = {},
+        n_cutout_rows = 3,
+        wav_unit = u.um,
+        flux_unit = u.ABmag,
+        log_fluxes = False,
+        overwrite = True
+    )
+    bd_cat_templates.plot_phot_diagnostics(
+        aper_diams[0],
+        [eazy_fitter, bd_fitter],
+        eazy_fitter,
+        imshow_kwargs = {},
+        norm_kwargs = {},
+        aper_kwargs = {},
+        kron_kwargs = {},
+        n_cutout_rows = 3,
+        wav_unit = u.um,
+        flux_unit = u.ABmag,
+        log_fluxes = False,
+        overwrite = True
+    )
 
 # def test_euclid_filters():
 #     from galfind import Multiple_Filter
@@ -86,24 +145,24 @@ def test_selection():
     ]
     # import time
     # time.sleep(180 * 60)
-    # data = Data.from_survey_version(
-    #     survey,
-    #     version,
-    #     instrument_names = instrument_names,
-    #     version_to_dir_dict = morgan_version_to_dir,
-    #     aper_diams = aper_diams,
-    #     forced_phot_band = forced_phot_band,
-    # )
-    # print(data.band_data_arr)
-    # breakpoint()
-    # data.mask(
-    #     "auto",
-    #     angle = 92.0
-    # )
+    data = Data.from_survey_version(
+        survey,
+        version,
+        instrument_names = instrument_names,
+        #version_to_dir_dict = morgan_version_to_dir,
+        pix_scales = {"NIRCam": 0.04 * u.arcsec},
+        aper_diams = aper_diams,
+        forced_phot_band = forced_phot_band,
+    )
+    #print(data.band_data_arr)
+    data.mask(
+        "auto",
+        angle = 40.0
+    )
 
     # fig, ax = plt.subplots()
     # data.filterset.plot(ax, save = True)
-    #breakpoint()
+    breakpoint()
 
     # # temp: define the z=6 sample
     # from galfind import Redshift_Bin_Selector, Band_SNR_Selector
@@ -126,10 +185,11 @@ def test_selection():
         survey,
         version,
         instrument_names = instrument_names,
-        version_to_dir_dict = morgan_version_to_dir,
+        #version_to_dir_dict = morgan_version_to_dir,
         aper_diams = aper_diams,
         forced_phot_band = forced_phot_band,
         min_flux_pc_err = min_flux_pc_err,
+        pix_scales = {"NIRCam": 0.04 * u.arcsec},
         #crops = EPOCHS_Selector(aper_diams[0], EAZY(SED_fit_params_arr[-1]), allow_lowz=False)
     )
     #breakpoint()
@@ -144,7 +204,7 @@ def test_selection():
 
     # #breakpoint()
 
-    # # cat.plot(MUV_calculator, xi_ion_calculator, incl_x_errs = False, incl_y_errs = False, annotate = True, plot_type = "individual", save = True, log_y = True)
+    # cat.plot(MUV_calculator, xi_ion_calculator, incl_x_errs = False, incl_y_errs = False, annotate = True, plot_type = "individual", save = True, log_y = True)
 
     # load sextractor half-light radii
     cat.load_sextractor_Re()
@@ -879,9 +939,9 @@ if __name__ == "__main__":
     #main()
     #import time
     #time.sleep((8 * u.hr).to(u.s).value)
-    #test_selection()
+    test_selection()
 
-    plot_brown_dwarfs()
+    #plot_brown_dwarfs()
     #test_euclid_filters()
 
     #test_UVLF()

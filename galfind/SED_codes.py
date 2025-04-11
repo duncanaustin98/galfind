@@ -77,6 +77,13 @@ class SED_code(ABC):
     def are_errs_percentiles(self) -> bool:
         pass
 
+    @property
+    def excl_bands_label(self) -> str:
+        if self.SED_fit_params["excl_bands"] == []:
+            return ""
+        else:
+            return f"_{'_'.join(self.SED_fit_params['excl_bands'])}"
+
     #@abstractmethod
     def _load_gal_property_labels(self, gal_property_labels: Dict[str, str]) -> NoReturn:
         self.gal_property_labels = {key: f"{item}_{self.tab_suffix}" 
@@ -128,7 +135,9 @@ class SED_code(ABC):
     def extract_SEDs(
         self: Self, 
         IDs: List[int], 
-        SED_paths: Union[str, List[str]]
+        SED_paths: Union[str, List[str]],
+        *args,
+        **kwargs
     ) -> List[SED_obs]:
         pass
 
@@ -154,6 +163,15 @@ class SED_code(ABC):
             assert key in self.SED_fit_params.keys(), galfind_logger.critical(
                 f"'{key}' not in SED_fit_params keys = {list(self.SED_fit_params.keys())}"
             )
+        if "excl_bands" not in self.SED_fit_params.keys():
+            self.SED_fit_params["excl_bands"] = []
+        if isinstance(self.SED_fit_params["excl_bands"], str):
+            self.SED_fit_params["excl_bands"] = [self.SED_fit_params["excl_bands"]]
+        assert isinstance(self.SED_fit_params["excl_bands"], list), \
+            galfind_logger.critical(
+                f"{self.SED_fit_params['excl_bands']=} != list"
+            )
+
     
     def __str__(self) -> str:
         output_str = funcs.line_sep
@@ -315,7 +333,7 @@ class SED_code(ABC):
                 f"Loading {self.hdu_name} SEDs into " + \
                 f"{cat.survey} {cat.version} {cat.filterset.instrument_name}"
             )
-            cat_SEDs = self.extract_SEDs(aper_phot_IDs, SED_paths)
+            cat_SEDs = self.extract_SEDs(aper_phot_IDs, SED_paths, cat = cat, aper_diam = aper_diam)
             galfind_logger.info(
                 f"Finished loading {self.hdu_name} SEDs into " + \
                 f"{cat.survey} {cat.version} {cat.filterset.instrument_name}"
@@ -348,6 +366,8 @@ class SED_code(ABC):
     ) -> Tuple[np.ndarray, np.ndarray]:
         if input_filterset is None:
             input_filterset = cat.filterset
+        input_filterset.filters = np.array([filt for filt in input_filterset if filt.band_name not in self.SED_fit_params["excl_bands"]])
+        galfind_logger.info(f"Excluded bands: {self.excl_bands_label}")
         # load in raw photometry from the galaxies in the catalogue and convert to appropriate units
         phot = np.array(
             [gal.aper_phot[aper_diam].flux.to(out_units) for gal in cat], dtype=object

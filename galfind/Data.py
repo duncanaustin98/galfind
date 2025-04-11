@@ -3270,20 +3270,20 @@ class Data:
                 calculate = False
         else:
             calculate = True
-        
+
         if calculate:
             masks = []
             for name in instr_or_band_name:
                 if name in self.filterset.instrument_name.split("+"):
                     pix_scales = [band_data.pix_scale for band_data in self \
-                        if band_data.filt.instr_name == instr_or_band_name]
+                        if band_data.instr_name == name]
                     assert all(pix_scale == pix_scales[0] for pix_scale in pix_scales), \
                         galfind_logger.critical(
                             "All pixel scales for bands in the same instrument must be the same!"
                         )
                     pix_scale = pix_scales[0]
                     masks.extend([band_data.load_mask()[0][mask_type_] for band_data in self \
-                        for mask_type_ in mask_type if band_data.filt.instr_name == instr_or_band_name])
+                        for mask_type_ in mask_type if band_data.instr_name == name])
                 elif name in self.filterset.band_names:
                     pix_scale = self[name].pix_scale
                     masks.extend([self[name].load_mask()[0][mask_type_] for mask_type_ in mask_type])

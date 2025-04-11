@@ -221,6 +221,8 @@ class Base_Number_Density_Function:
         for key in plot_kwargs.keys():
             if key in default_plot_kwargs.keys():
                 default_plot_kwargs.pop(key)
+                default_plot_kwargs[key] = plot_kwargs[key]
+
         _plot_kwargs = {**plot_kwargs, **default_plot_kwargs}
         ax_.errorbar(x_mid_bins, y, yerr=y_errs, **_plot_kwargs)
         galfind_logger.info(f"Plotting {default_plot_kwargs['label']}")
@@ -373,6 +375,8 @@ class Number_Density_Function(Base_Number_Density_Function):
         z_step: float = 0.01,
         cv_origin: Union[str, None] = "Driver2010",
         completeness: Optional[Completeness] = None,
+        unmasked_area: Union[str, List[str], u.Quantity] = "selection",
+        plot: bool = True,
         save: bool = True,
         timed: bool = False,
     ) -> Optional[Self]:
@@ -438,6 +442,7 @@ class Number_Density_Function(Base_Number_Density_Function):
         )
 
         if not Path(save_path).is_file():
+
             # create x_bins from x_bin_edges (must include start and end values here too)
             x_bins = [
                 [x_bin_edges[i].value, x_bin_edges[i + 1].value] * x_bin_edges.unit
@@ -449,8 +454,17 @@ class Number_Density_Function(Base_Number_Density_Function):
                 z_bin, 
                 aper_diam, 
                 SED_fit_code, 
-                z_step, 
+                z_step,
+                unmasked_area = unmasked_area,
             )
+
+            if plot:
+                z_bin_cat.plot_phot_diagnostics(
+                    aper_diam, 
+                    SED_arr = SED_fit_code,
+                    zPDF_arr = SED_fit_code,
+                )
+
             Ngals = np.zeros(len(x_bins))
             phi = np.zeros(len(x_bins))
             phi_l1 = np.zeros(len(x_bins))
@@ -462,15 +476,27 @@ class Number_Density_Function(Base_Number_Density_Function):
                 if len(z_bin_cat) == 0:
                     Ngals[i] = 0
                 else:
-                    # plot histogram
-                    hist_fig, hist_ax = plt.subplots()
-                    z_bin_cat.hist(x_calculator, hist_fig, hist_ax)
+
+                    if plot:
+                        # plot histogram
+                        hist_fig, hist_ax = plt.subplots()
+                        z_bin_cat.hist(x_calculator, hist_fig, hist_ax)
+                    
                     # crop to galaxies in the x bin - not the bootstrapping method
                     from . import Rest_Frame_Property_Limit_Selector, Rest_Frame_Property_Bin_Selector
                     # TODO: Implement Rest_Frame_Property_Limit_Selector in case of np.nan x_bin entry
                     x_bin_selector = Rest_Frame_Property_Bin_Selector(aper_diam, SED_fit_code.label, x_calculator, x_bin)
                     z_bin_x_bin_cat = deepcopy(z_bin_cat).crop(x_bin_selector)
                     Ngals[i] = len(z_bin_x_bin_cat)
+
+                    # plot cutouts
+                    if plot and Ngals[i] > 0:
+                        z_bin_x_bin_cat.plot_phot_diagnostics(
+                            aper_diam, 
+                            SED_arr = SED_fit_code,
+                            zPDF_arr = SED_fit_code,
+                        )
+                    
                 # if there are galaxies in the z,x bin
                 if int(Ngals[i]) != 0:
                     # plot histogram
@@ -810,6 +836,7 @@ class Multiple_Number_Density_Function:
         x_origin: Union[str, dict] = "EAZY_fsps_larson_zfree",
         z_step: float = 0.1,
         use_vmax_simple: bool = False,
+        unmasked_area: Union[str, List[str], u.Quantity] = "selection",
         timed: bool = False,
     ) -> "Number_Density_Function":
         # input assertions
@@ -853,7 +880,7 @@ class Multiple_Number_Density_Function:
             z_bin_name = f"{x_origin}_{z_bin[0]:.1f}<z<{z_bin[1]:.1f}"
             # calculate Vmax for each galaxy in catalogue within z bin
             # in general call Vmax_multifield
-            cat.calc_Vmax(cat.data, z_bin, x_origin, z_step, timed=timed)
+            cat.calc_Vmax(cat.data, z_bin, x_origin, z_step, unmasked_area = unmasked_area, timed=timed)
             # crop catalogue to this redshift bin
             z_bin_cat = cat.crop(z_bin, "z", x_origin)
 

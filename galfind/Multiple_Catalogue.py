@@ -232,6 +232,7 @@ class Combined_Catalogue(Catalogue_Base):
         aper_diam: u.Quantity,
         SED_fit_code: SED_code,
         z_step: float = 0.01,
+        unmasked_area: Union[str, u.Quantity] = "selection",
     ) -> None:
         # # calculate Vmax for galaxy selection in their origin field
         # [
@@ -243,7 +244,12 @@ class Combined_Catalogue(Catalogue_Base):
         [
             [
                 cat._calc_Vmax(
-                    data_cat.data, z_bin, aper_diam, SED_fit_code, z_step
+                    data_cat.data, 
+                    z_bin, 
+                    aper_diam, 
+                    SED_fit_code, 
+                    z_step,
+                    unmasked_area = unmasked_area,
                 ) for data_cat in self.cat_arr
             ] for cat in self.cat_arr
         ]
@@ -264,15 +270,18 @@ class Combined_Catalogue(Catalogue_Base):
         save_path = self.get_vmax_ecsv_path(self)
         if not Path(save_path).is_file():
             # make Vmax table
-            Vmax_arr = np.array(
-                [
+            try:
+                Vmax_arr = np.array(
                     [
-                        gal.aper_phot[aper_diam].SED_results[SED_fit_code.label]. \
-                        V_max[self.crop_name.split("/")[-1]][cat.data.full_name]. \
-                        to(u.Mpc**3).value for cat in self.cat_arr
-                    ] for gal in self
-                ]
-            )
+                        [
+                            gal.aper_phot[aper_diam].SED_results[SED_fit_code.label]. \
+                            V_max[self.crop_name.split("/")[-1]][cat.data.full_name]. \
+                            to(u.Mpc**3).value for cat in self.cat_arr
+                        ] for gal in self
+                    ]
+                )
+            except:
+                breakpoint()
             Vmax_arr = np.where(Vmax_arr == -1.0, 0.0, Vmax_arr)
             Vmax_arr = np.sum(Vmax_arr, axis = 1)
             Vmax_arr = np.where(Vmax_arr == 0.0, -1.0, Vmax_arr)

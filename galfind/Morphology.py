@@ -26,6 +26,23 @@ except ImportError:
 from . import galfind_logger, config
 from . import useful_funcs_austind as funcs
 
+fwhm_nircam = {
+    "F090W": 33.0 * u.marcsec,
+    "F115W": 40.0 * u.marcsec,
+    "F150W": 50.0 * u.marcsec,
+    "F162M": 55.0 * u.marcsec,
+    "F182M": 62.0 * u.marcsec,
+    "F200W": 66.0 * u.marcsec,
+    "F210M": 71.0 * u.marcsec,
+    "F250M": 85.0 * u.marcsec,
+    "F277W": 92.0 * u.marcsec,
+    "F300M": 100.0 * u.marcsec,
+    "F335M": 111.0 * u.marcsec,
+    "F356W": 116.0 * u.marcsec,
+    "F410M": 137.0 * u.marcsec,
+    "F444W": 145.0 * u.marcsec,
+}
+
 name_to_label = {
     "n": r"$n$",
     "r_e": r"$r_e$",
@@ -282,7 +299,7 @@ class Morphology_Fitter(ABC):
 
 class Galfit_Fitter(Morphology_Fitter):
 
-    model_to_code_dict = {"sersic": "ss", "sersic+sersic": "ds", "sersic+psf": "ss_psf"}
+    model_to_code_dict = {"sersic": "ss", "sersic+sersic": "ds", "sersic+psf": "ss_psf", "psf": "psf"}
     property_units = {
         "n": u.dimensionless_unscaled,
         "r_e": u.pixel,
@@ -297,12 +314,16 @@ class Galfit_Fitter(Morphology_Fitter):
         self: Self,
         psf: Type[PSF_Base],
         model: str,
+        fixed_params: List[str] = [],
     ) -> None:
+        self.fixed_params = fixed_params
+        assert all(param in self.property_units.keys() for param in fixed_params), \
+            galfind_logger.critical(f"Not all {fixed_params=} in {self.property_units.keys()=}")
         super().__init__(psf, model)
 
     @property
     def _available_models(self: Self) -> List[str]:
-        return ["sersic", "sersic+sersic", "sersic+psf"]
+        return ["sersic", "sersic+sersic", "sersic+psf", "psf"]
 
     @property
     def constraints_path(self):
@@ -330,6 +351,8 @@ class Galfit_Fitter(Morphology_Fitter):
         self: Self,
         cat: Catalogue,
         plot: bool = True,
+        *args,
+        **kwargs,
     ):
         cat.load_sextractor_auto_mags()
         cat.load_sextractor_Re()
@@ -346,18 +369,24 @@ class Galfit_Fitter(Morphology_Fitter):
             f"{cat.survey}/{self.psf.cutout.band_data.filt_name}"
         cutout_key = f"{self.psf.cutout.band_data.filt_name}_" + \
             f"{self.psf.cutout.cutout_size.to(u.arcsec).value:.2f}as"
+        if len(self.fixed_params) > 0:
+            fixed_param_str = f"_fixed_{'+'.join(self.fixed_params)}"
+        else:
+            fixed_param_str = ""
         results = [
             self._fit_cutout(
                 gal.cutouts[cutout_key],
                 fid_mag = gal.sex_MAG_AUTO[self.psf.cutout.band_data.filt_name], 
                 fid_re = gal.sex_Re[self.psf.cutout.band_data.filt_name],
                 in_dir = f"{in_subdir}/{str(gal.ID)}",
-                out_dir = f"{out_subdir}/{str(gal.ID)}/{self.model}",
+                out_dir = f"{out_subdir}/{str(gal.ID)}/{self.model}{fixed_param_str}",
+                *args,
+                **kwargs,
             )
             for gal in cat
         ]
         # make output table
-        out_path = f"{out_subdir}/{self.model}/results.fits"
+        out_path = f"{out_subdir}/{self.model}{fixed_param_str}/results.fits"
         if not Path(out_path).is_file():
             tab = self._make_results_table(results, out_path = out_path)
         else:
@@ -372,6 +401,8 @@ class Galfit_Fitter(Morphology_Fitter):
         fid_re: u.Quantity,
         in_dir: str = "",
         out_dir: str = "",
+        *args,
+        **kwargs,
     ) -> Galfit_Result:
         if in_dir != "":
             in_dir = f"{in_dir}/"
@@ -385,16 +416,20 @@ class Galfit_Fitter(Morphology_Fitter):
             # TODO: Load results rather than re-running if already performed
             subprocess.run(
                 f"{config['GALFIT']['GALFIT_INSTALL_PATH']}/./galfit {input_filepath}", 
-                shell=True, 
+                shell=True,
                 cwd=out_dir
             )
             self._delete_temps(cutout, out_dir)
             self._move_mask_to_in_dir(cutout, in_dir, out_dir)
             galfind_logger.info(f"{cutout.ID} Galfit run finished")
-        fitting_result = self._extract_results_from_file(cutout, in_dir, out_dir)
+        fitting_result, crashed = self._extract_results_from_file(cutout, in_dir, out_dir)
 
-        if not Path(fitting_result.plot_path).is_file():
-            fitting_result.plot()
+        if not Path(fitting_result.plot_path).is_file() and not crashed:
+            if "sersic" in self.model:
+                annotate_properties = ["n", "r_e"]
+            else:
+                annotate_properties = ["mag"]
+            fitting_result.plot(annotate_properties = annotate_properties, save = True)
         # update Cutout object with Morphology results
         cutout.update_morph_fits(fitting_result)
         return fitting_result # TODO: should output cutout
@@ -539,8 +574,8 @@ class Galfit_Fitter(Morphology_Fitter):
             f.close()
         return txt_path
 
-    @staticmethod
     def _sersic_txt(
+        self: Self,
         size: int, 
         fid_mag_AB: float,
         fid_re_pix: float,
@@ -548,14 +583,24 @@ class Galfit_Fitter(Morphology_Fitter):
         axis_ratio: Union[int, float],
         PA: Union[int, float],
     ) -> List[str]:
+        params = ["mag", "r_e", "n", "axr", "pa"]
+        if any(param not in params for param in self.fixed_params):
+            galfind_logger.critical(f">=1 fixed parameter not in {params=}")
+        fixed_params_ = {}
+        for name in params:
+            if name not in self.fixed_params:
+                fixed_params_[name] = 1
+            else:
+                galfind_logger.info(f"Fixing {name} in GALFIT")
+                fixed_params_[name] = 0
         return [ '#Sersic function', 
             f'0)  sersic  # Object type',
             f'1)  {size//2} {size//2}  1 1   #position x,y [pixel]',
-            f'3)  {fid_mag_AB} 1   # total mag',
-            f'4)  {fid_re_pix}  1   # effective radius [pixels]',
-            f'5)  {sersic_index}   1   # sersic exponent',
-            f'9)  {axis_ratio}   1 # Axis ratio (b/a) ',
-            f'10) {PA}   1',
+            f'3)  {fid_mag_AB} {fixed_params_["mag"]}   # total mag',
+            f'4)  {fid_re_pix}  {fixed_params_["r_e"]}   # effective radius [pixels]',
+            f'5)  {sersic_index}   {fixed_params_["n"]}   # sersic exponent',
+            f'9)  {axis_ratio}   {fixed_params_["axr"]} # Axis ratio (b/a) ',
+            f'10) {PA}   {fixed_params_["pa"]}',
             f'Z)  0   #  Skip this model in output image?  (yes=1, no=0) '
         ]
 
@@ -606,67 +651,146 @@ class Galfit_Fitter(Morphology_Fitter):
         in_dir: str,
         out_dir: str,
         pdf_len: int = 10_000,
-    ) -> Galfit_Result:
+    ) -> Tuple[Galfit_Result, bool]:
+        
         out_path = self._imgblock_out_path(cutout, out_dir)
-        hdr = fits.open(out_path)[2].header
-        mag, mag_err = hdr['1_MAG'].split('+/-')
-        mag = mag.replace('*', '')
-        mag_err = mag_err.replace('*', '')
-        re, re_err = hdr['1_RE'].split('+/-')
-        re = re.replace('*', '')
-        re_err = re_err.replace('*', '')
-        axr, axr_err = hdr['1_AR'].split('+/-')
-        axr = axr.replace('*', '')
-        axr_err = axr_err.replace('*', '')  
-        pa, pa_err = hdr['1_PA'].split('+/-')
-        pa = pa.replace('*', '')
-        pa_err = pa_err.replace('*', '')
-        cen_x, cen_x_err = hdr['1_XC'].split('+/-')
-        cen_x = cen_x.replace('*', '')
-        cen_x_err = cen_x_err.replace('*', '')
-        cen_y, cen_y_err = hdr['1_YC'].split('+/-')
-        cen_y = cen_y.replace('*', '')
-        cen_y_err = cen_y_err.replace('*', '')
-        size = int((cutout.cutout_size / cutout.band_data.pix_scale).to(u.dimensionless_unscaled).value)
-        x_off = float(cen_x) - size / 2
-        y_off = float(cen_y) - size / 2
-        # extract sersic index
-        n = hdr['1_N']
-        # if galfit was ran with fixed n=1, then the n value will be in brackets
-        if '[' in str(n):
-            n = float(n.replace("[", "").replace("]", ""))
-            n_err = float(0.0)
+        property_names = {}
+        out_properties = {}
+        out_property_errs = {}
+        chi2 = {}
+        Ndof = {}
+        
+        if "psf" in self.model:
+            property_names, out_properties, out_property_errs, chi2, Ndof = self._extract_psf_results(cutout, out_path)
+        if "sersic" in self.model:
+            property_names, out_properties, out_property_errs, chi2, Ndof = self._extract_sersic_results(cutout, out_path)
+        
+        if all(np.isnan(val) for val in out_properties):
+            crashed = True
         else:
-            n, n_err = n.split('+/-')
-            n = n.replace('*', '')
-            n_err = n_err.replace('*', '')
-        # TODO: RFF calculation
-
+            crashed = False
+        
         # Make (and output) fitting result object
         from . import PDF
         # unordered PDFs - i.e. chain 1 for sersic is not the same as chain 1 for r_e
-        property_names = list(Galfit_Fitter.property_units.keys()) #["n", "r_e", "mag", "axr", "pa", "x_off", "y_off"]
         properties = {name: float(val) * Galfit_Fitter.property_units[name] \
-            for name, val in zip(property_names, [n, re, mag, axr, pa, x_off, y_off])}
+            for name, val in zip(property_names, out_properties)}
         property_errs = {name: [float(val) * Galfit_Fitter.property_units[name], \
             float(val) * Galfit_Fitter.property_units[name]] for name, val in \
-            zip(property_names, [n_err, re_err, mag_err, axr_err, pa_err, cen_x_err, cen_y_err])}
+            zip(property_names, out_property_errs)}
         pdfs = {name: PDF.from_1D_arr(name, np.random.normal(properties[name].value, \
-            property_errs[name][0].value, pdf_len) * properties[name].unit \
-            if not np.isnan(property_errs[name][0].value) else \
-            np.full(pdf_len, properties[name].value) * properties[name].unit) \
+            property_errs[name][0].value, pdf_len) * properties[name].unit) \
+            if not np.isnan(property_errs[name][0].value) else None \
+            #np.full(pdf_len, properties[name].value) * properties[name].unit) \
             for name in property_names}
-        rff = self._calc_RFF(cutout, in_dir, out_dir)
+        if np.isnan(chi2):
+            rff = np.nan
+        else:
+            rff = self._calc_RFF(cutout, in_dir, out_dir)
+
         return Galfit_Result(
             fitter = self,
-            chi2 = float(hdr["CHISQ"]),
-            Ndof = int(hdr["NDOF"]),
+            chi2 = chi2,
+            Ndof = Ndof,
             properties = properties,
             property_errs = property_errs,
             property_pdfs = pdfs,
             im_path = out_path,
             rff = rff
-        )
+        ), crashed
+
+        
+    def _extract_psf_results(
+        self: Self,
+        cutout: Type[Band_Cutout_Base],
+        out_path: str,
+    ) -> Galfit_Result:
+        property_names = ["mag", "x_off", "y_off"]
+        if Path(out_path).is_file():
+            hdr = fits.open(out_path)[2].header
+            cen_x, cen_x_err = hdr['1_XC'].split('+/-')
+            cen_x = cen_x.replace('*', '')
+            cen_x_err = cen_x_err.replace('*', '')
+            cen_y, cen_y_err = hdr['1_YC'].split('+/-')
+            cen_y = cen_y.replace('*', '')
+            cen_y_err = cen_y_err.replace('*', '')
+            # extract sersic index
+            mag = hdr['1_MAG']
+            # if galfit was ran with fixed n=1, then the n value will be in brackets
+            if '[' in str(mag):
+                mag = float(mag.replace("[", "").replace("]", ""))
+                mag_err = float(0.0)
+            else:
+                mag, mag_err = mag.split('+/-')
+                mag = mag.replace('*', '')
+                mag_err = mag_err.replace('*', '')
+            size = int((cutout.cutout_size / cutout.band_data.pix_scale).to(u.dimensionless_unscaled).value)
+            x_off = float(cen_x) - size / 2
+            y_off = float(cen_y) - size / 2
+            out_properties = [mag, x_off, y_off]
+            out_property_errs = [mag_err, cen_x_err, cen_y_err]
+            chi_sq = float(hdr["CHISQ"])
+            Ndof = int(hdr["NDOF"])
+        else:
+            out_properties = np.full(len(property_names), np.nan)
+            out_property_errs = np.full(len(property_names), np.nan)
+            chi_sq = np.nan
+            Ndof = np.nan
+        assert len(out_properties) == len(property_names)
+        assert len(out_property_errs) == len(property_names)
+        return property_names, out_properties, out_property_errs, chi_sq, Ndof
+
+    def _extract_sersic_results(
+        self: Self,
+        cutout: Type[Band_Cutout_Base],
+        out_path: str,
+    ) -> Galfit_Result:
+        property_names = list(Galfit_Fitter.property_units.keys()) #["n", "r_e", "mag", "axr", "pa", "x_off", "y_off"]
+        if Path(out_path).is_file():
+            hdr = fits.open(out_path)[2].header
+            mag, mag_err = hdr['1_MAG'].split('+/-')
+            mag = mag.replace('*', '')
+            mag_err = mag_err.replace('*', '')
+            re, re_err = hdr['1_RE'].split('+/-')
+            re = re.replace('*', '')
+            re_err = re_err.replace('*', '')
+            axr, axr_err = hdr['1_AR'].split('+/-')
+            axr = axr.replace('*', '')
+            axr_err = axr_err.replace('*', '')  
+            pa, pa_err = hdr['1_PA'].split('+/-')
+            pa = pa.replace('*', '')
+            pa_err = pa_err.replace('*', '')
+            cen_x, cen_x_err = hdr['1_XC'].split('+/-')
+            cen_x = cen_x.replace('*', '')
+            cen_x_err = cen_x_err.replace('*', '')
+            cen_y, cen_y_err = hdr['1_YC'].split('+/-')
+            cen_y = cen_y.replace('*', '')
+            cen_y_err = cen_y_err.replace('*', '')
+            size = int((cutout.cutout_size / cutout.band_data.pix_scale).to(u.dimensionless_unscaled).value)
+            x_off = float(cen_x) - size / 2
+            y_off = float(cen_y) - size / 2
+            # extract sersic index
+            n = hdr['1_N']
+            # if galfit was ran with fixed n=1, then the n value will be in brackets
+            if '[' in str(n):
+                n = float(n.replace("[", "").replace("]", ""))
+                n_err = float(0.0)
+            else:
+                n, n_err = n.split('+/-')
+                n = n.replace('*', '')
+                n_err = n_err.replace('*', '')
+            out_properties = [n, re, mag, axr, pa, x_off, y_off]
+            out_property_errs = [n_err, re_err, mag_err, axr_err, pa_err, cen_x_err, cen_y_err]
+            chi_sq = float(hdr["CHISQ"])
+            Ndof = int(hdr["NDOF"])
+        else:
+            out_properties = np.full(len(property_names), np.nan)
+            out_property_errs = np.full(len(property_names), np.nan)
+            chi_sq = np.nan
+            Ndof = np.nan
+        assert len(out_properties) == len(property_names)
+        assert len(out_property_errs) == len(property_names)
+        return property_names, out_properties, out_property_errs, chi_sq, Ndof
     
     def _calc_RFF(
         self: Self,

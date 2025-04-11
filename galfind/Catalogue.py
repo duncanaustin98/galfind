@@ -1027,31 +1027,34 @@ class Catalogue(Catalogue_Base):
                 "KRON_RADIUS", 
                 "sex_KRON_RADIUS", 
             )
-            A_image_arr = self.load_band_properties_from_cat(
-                "A_IMAGE",
-                "sex_A_IMAGE",
-                update = False
-            )
-            [setattr(gal, "sex_A_IMAGE", A_image[self.data[0].filt_name]) for gal, A_image in zip(self, A_image_arr)]
-            A_image_as_arr = [{band_data.filt_name: kron_radius[band_data.filt_name] * A_image[band_data.filt_name] * band_data.pix_scale \
-                for band_data in self.data} for kron_radius, A_image in zip(kron_radii, A_image_arr)]
-            [gal.load_property(A_image_as, "sex_A_IMAGE_AS") for gal, A_image_as in zip(self, A_image_as_arr)]
-            B_image_arr = self.load_band_properties_from_cat(
-                "B_IMAGE",
-                "sex_B_IMAGE",
-                update = False
-            )
-            [setattr(gal, "sex_B_IMAGE", B_image[self.data[0].filt_name]) for gal, B_image in zip(self, B_image_arr)]
-            B_image_as_arr = [{band_data.filt_name: kron_radius[band_data.filt_name] * B_image[band_data.filt_name] * band_data.pix_scale \
-                for band_data in self.data} for kron_radius, B_image in zip(kron_radii, B_image_arr)]
-            [gal.load_property(B_image_as, "sex_B_IMAGE_AS") for gal, B_image_as in zip(self, B_image_as_arr)]
-            theta_image_arr = self.load_band_properties_from_cat(
-                "THETA_IMAGE",
-                "sex_THETA_IMAGE",
-                multiply_factor = u.deg,
-                update = False,
-            )
-            [setattr(gal, "sex_THETA_IMAGE", theta_image[self.data[0].filt_name]) for gal, theta_image in zip(self, theta_image_arr)]
+            try:
+                A_image_arr = self.load_band_properties_from_cat(
+                    "A_IMAGE",
+                    "sex_A_IMAGE",
+                    update = False
+                )
+                [setattr(gal, "sex_A_IMAGE", A_image[self.data[0].filt_name]) for gal, A_image in zip(self, A_image_arr)]
+                A_image_as_arr = [{band_data.filt_name: kron_radius[band_data.filt_name] * A_image[band_data.filt_name] * band_data.pix_scale \
+                    for band_data in self.data} for kron_radius, A_image in zip(kron_radii, A_image_arr)]
+                [gal.load_property(A_image_as, "sex_A_IMAGE_AS") for gal, A_image_as in zip(self, A_image_as_arr)]
+                B_image_arr = self.load_band_properties_from_cat(
+                    "B_IMAGE",
+                    "sex_B_IMAGE",
+                    update = False,
+                )
+                [setattr(gal, "sex_B_IMAGE", B_image[self.data[0].filt_name]) for gal, B_image in zip(self, B_image_arr)]
+                B_image_as_arr = [{band_data.filt_name: kron_radius[band_data.filt_name] * B_image[band_data.filt_name] * band_data.pix_scale \
+                    for band_data in self.data} for kron_radius, B_image in zip(kron_radii, B_image_arr)]
+                [gal.load_property(B_image_as, "sex_B_IMAGE_AS") for gal, B_image_as in zip(self, B_image_as_arr)]
+                theta_image_arr = self.load_band_properties_from_cat(
+                    "THETA_IMAGE",
+                    "sex_THETA_IMAGE",
+                    multiply_factor = u.deg,
+                    update = False,
+                )
+                [setattr(gal, "sex_THETA_IMAGE", theta_image[self.data[0].filt_name]) for gal, theta_image in zip(self, theta_image_arr)]
+            except:
+                pass
             
             for gal in self:
                 for aper_diam in gal.aper_phot.keys():
@@ -1333,6 +1336,7 @@ class Catalogue(Catalogue_Base):
         plot_lowz: bool = True,
         wav_unit: u.Unit = u.um,
         flux_unit: u.Unit = u.ABmag,
+        log_fluxes: bool = False,
         crop_name: Optional[str] = None,
         collate_dir: Optional[str] = None,
         imshow_kwargs: Dict[str, Any] = {},
@@ -1377,6 +1381,7 @@ class Catalogue(Catalogue_Base):
                 n_cutout_rows = n_cutout_rows,
                 wav_unit = wav_unit,
                 flux_unit = flux_unit,
+                log_fluxes = log_fluxes,
                 imshow_kwargs = imshow_kwargs,
                 norm_kwargs = norm_kwargs,
                 aper_kwargs = aper_kwargs,
@@ -1414,14 +1419,15 @@ class Catalogue(Catalogue_Base):
                     os.remove(symlink_path)
             # create symlink to selection folder for diagnostic plots
             for gal, out_path in zip(self, out_paths):
-                selection_path = f"{collate_dir}/{str(gal.ID)}.png"
-                funcs.make_dirs(selection_path)
-                try:
-                    os.symlink(out_path, selection_path)
-                except FileExistsError:  # replace existing file
-                    if Path(out_path).is_file():
-                        os.remove(selection_path)
+                if out_path is not None:
+                    selection_path = f"{collate_dir}/{str(gal.ID)}.png"
+                    funcs.make_dirs(selection_path)
+                    try:
                         os.symlink(out_path, selection_path)
+                    except FileExistsError:  # replace existing file
+                        if Path(out_path).is_file():
+                            os.remove(selection_path)
+                            os.symlink(out_path, selection_path)
 
     # Number Density Function (e.g. UVLF and mass functions) methods
 
@@ -1431,6 +1437,7 @@ class Catalogue(Catalogue_Base):
         aper_diam: u.Quantity,
         SED_fit_code: SED_code,
         z_step: float = 0.01,
+        unmasked_area: Union[str, List[str], u.Quantity] = "selection",
     ) -> NDArray[float]:
         assert hasattr(self, "data"), \
             galfind_logger.critical(
@@ -1442,6 +1449,7 @@ class Catalogue(Catalogue_Base):
             aper_diam = aper_diam,
             SED_fit_code = SED_fit_code,
             z_step = z_step,
+            unmasked_area = unmasked_area,
         )
     
 

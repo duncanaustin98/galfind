@@ -682,10 +682,22 @@ def adjust_errs(data, data_err):
     return data, data_err
 
 
-def errs_to_log(data, data_err):
-    log_l1 = np.log10(data) - np.log10(data - data_err[0])
-    log_u1 = np.log10(data + data_err[1]) - np.log10(data)
-    return np.log10(data), [log_l1, log_u1]
+def errs_to_log(data, data_err, uplim_sigma = None, uplim_arrowsize = 0.2, inf_val = 1e6):
+    log_data = np.log10(data)
+    log_l1 = log_data - np.log10(data - data_err[0])
+    log_u1 = np.log10(data + data_err[1]) - log_data
+    if uplim_sigma is not None:
+        u1_nans = np.isnan(log_u1)
+        log_data[u1_nans] = np.log10(data + uplim_sigma * data_err[1])[u1_nans]
+        log_l1[u1_nans] = uplim_arrowsize
+        log_u1[u1_nans] = 0.0
+        uplim_indices = u1_nans
+    l1_nans = np.isnan(log_l1)
+    log_l1[l1_nans] = inf_val
+    if uplim_sigma is not None:
+        return log_data, [log_l1, log_u1], uplim_indices
+    else:
+        return log_data, [log_l1, log_u1], np.full(len(log_data), False)
 
 
 def PDF_hist(

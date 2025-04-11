@@ -26,7 +26,7 @@ from scipy.linalg import LinAlgWarning
 from tqdm import tqdm
 from typing import TYPE_CHECKING, List, Any, Dict, Optional, NoReturn, Type, Union, Tuple
 if TYPE_CHECKING:
-    from . import Catalogue, PDF
+    from . import Catalogue, PDF, Multiple_Filter
 try:
     from typing import Self, Type  # python 3.11+
 except ImportError:
@@ -203,7 +203,7 @@ class EAZY(SED_code):
             
             filt_codes = self._make_filter_file(cat.filterset, in_filt_name, default_param_path = f"{config['EAZY']['EAZY_CONFIG_DIR']}/EAZY_UVJ.RES")
                 
-                # Make input file
+            # Make input file
             in_data = np.array(
                 [
                     np.concatenate(
@@ -337,21 +337,15 @@ class EAZY(SED_code):
         elif templates == "sfhz":
             params["TEMPLATES_FILE"] = (
                 f"{eazy_templates_path}/sfhz/corr_sfhz_13_galfind.param"
-            )
-            
+            )  
         elif templates == "sfhz+carnall_eelg":
             params["TEMPLATES_FILE"] = (
                 f"{eazy_templates_path}/sfhz/carnall_sfhz_13_galfind.param"
             )
-
-
         elif templates == "sfhz+carnall_eelg+agn":
             params["TEMPLATES_FILE"] = (
                 f"{eazy_templates_path}/sfhz/sorted_agn_blue_sfhz_13_galfind.param"
             )
-
-            
-
 
         # Redshift limits
         params["Z_MIN"] = z_min # Setting minimum Z
@@ -363,7 +357,6 @@ class EAZY(SED_code):
         params["FILTERS_RES"] = in_filt_path
             #f"{config['EAZY']['EAZY_CONFIG_DIR']}/jwst_nircam_FILTER.RES"
         
-
         # Errors
         params["WAVELENGTH_FILE"] = (
             f"{eazy_templates_path}/lambda.def"  # Wavelength grid definition file
@@ -401,7 +394,6 @@ class EAZY(SED_code):
                 translate_file=translate_file,
                 n_proc=self.SED_fit_params["N_PROC"],
             )
-            
             fit.fit_catalog(n_proc=self.SED_fit_params["N_PROC"], get_best_fit=True)
             # Save backup of fit in hdf5 file
             hdf5.write_hdf5(
@@ -610,7 +602,9 @@ class EAZY(SED_code):
     def extract_SEDs(
         self: Self, 
         IDs: List[int], 
-        SED_paths: Union[str, List[str]]
+        SED_paths: Union[str, List[str]],
+        *args,
+        **kwargs,
     ) -> List[SED_obs]:
         # ensure this works if only extracting 1 galaxy
         if isinstance(IDs, (str, int, float)):
@@ -731,7 +725,12 @@ class EAZY(SED_code):
         ]
         return cat_property_PDFs
 
-    def _make_filter_file(self, filterset: Multiple_Filter, filter_file: str, default_param_path: str) -> NoReturn:
+    def _make_filter_file(
+        self: Self,
+        filterset: Multiple_Filter, 
+        filter_file: str,
+        default_param_path: str
+    ) -> NoReturn:
         '''
         Write a filter file for EAZY from a Multiple_Filter object
 
@@ -781,5 +780,7 @@ class EAZY(SED_code):
                     f.write(f' {len(filt.trans)} {filt.facility_name}/{filt.instrument_name}.{filt.band_name} lambda_c= {wav_cent}\n')
 
                     for pos, (wav, trans) in enumerate(zip(filt.wav, filt.trans)):
-                        f.write(f'{pos+1} {wav.to(u.Angstrom).value} {trans}\n')
-        return np.arange(nexisting+1, nexisting + len(filterset)+1)
+                        f.write(f'{pos + 1} {wav.to(u.Angstrom).value} {trans}\n')
+                        
+        return np.arange(nexisting + 1, nexisting + 1 + len(filterset))
+
