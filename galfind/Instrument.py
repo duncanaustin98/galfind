@@ -339,6 +339,10 @@ class ACS_WFC(Instrument, funcs.Singleton):
             )
         elif "ZEROPNT" in im_header:
             ZP = im_header["ZEROPNT"]
+            galfind_logger.warning(
+                f"Using ZEROPNT from header for {band_data.filt_name} " + \
+                "instead of PHOTFLAM and PHOTPLAM! Potential ST mags used here!"
+            )
         # elif "BUNIT" in im_header:
         #     unit = im_header["BUNIT"].replace(" ", "")
         #     assert unit == "MJy/sr"
