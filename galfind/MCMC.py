@@ -300,14 +300,6 @@ class Base_MCMC_Fitter(ABC):
             zorder = 200, path_effects = [pe.withStroke(linewidth = 2., foreground = "white")])
         galfind_logger.info("Plotting MCMC fit")
 
-    @abstractmethod
-    def _get_plot_chains(
-        self: Self,
-        x_arr: NDArray[float],
-        log_data: bool = False,
-    ) -> Tuple[NDArray[float], NDArray[float], NDArray[float]]:
-        pass
-
     def get_sample(self: Self) -> NDArray[float]:
         autocorr_time = np.max(self.sampler.get_autocorr_time())
         discard = int(autocorr_time * 2)
