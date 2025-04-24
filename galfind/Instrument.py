@@ -339,16 +339,16 @@ class ACS_WFC(Instrument, funcs.Singleton):
             )
         elif "ZEROPNT" in im_header:
             ZP = im_header["ZEROPNT"]
-        elif "BUNIT" in im_header:
-            unit = im_header["BUNIT"].replace(" ", "")
-            assert unit == "MJy/sr"
-            ZP = -2.5 * np.log10(
-                (band_data.pix_scale.to(u.rad).value ** 2) * u.MJy.to(u.Jy)
-            ) + u.Jy.to(u.ABmag)
+        # elif "BUNIT" in im_header:
+        #     unit = im_header["BUNIT"].replace(" ", "")
+        #     assert unit == "MJy/sr"
+        #     ZP = -2.5 * np.log10(
+        #         (band_data.pix_scale.to(u.rad).value ** 2) * u.MJy.to(u.Jy)
+        #     ) + u.Jy.to(u.ABmag)
         else:
             err_message = f"ACS_WFC data for {band_data.filt_name}" + \
                 " must contain either 'ZEROPNT' or 'PHOTFLAM' and 'PHOTPLAM' " + \
-                "or 'BUNIT'=MJy/sr in its header to calculate its ZP!"
+                "in its header to calculate its ZP!" # or 'BUNIT'=MJy/sr 
             galfind_logger.critical(err_message)
             raise (Exception(err_message))
         return ZP
