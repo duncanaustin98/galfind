@@ -299,6 +299,7 @@ class Number_Density_Function(Base_Number_Density_Function):
         origin_surveys,
         crop_name: str,
         cv_origin,
+        completeness: Optional[Completeness] = None,
     ) -> Self:
         self.crop_name = crop_name
         self.x_bins = x_bins
@@ -309,6 +310,7 @@ class Number_Density_Function(Base_Number_Density_Function):
         self.cv_errs = cv_errs  # cosmic variance % errs / 100
         self.origin_surveys = origin_surveys
         self.cv_origin = cv_origin
+        self.completeness = completeness
         x_mid_bins = np.array(
             [(x_bin[1].value + x_bin[0].value) / 2.0 for x_bin in x_bins]
         ) * x_bins[0].unit
@@ -321,11 +323,20 @@ class Number_Density_Function(Base_Number_Density_Function):
             ]
         )
         super().__init__(
-            x_name, x_mid_bins, z_ref, phi, phi_errs_cv, "This work"
+            x_name,
+            x_mid_bins,
+            z_ref,
+            phi,
+            phi_errs_cv,
+            "This work",
         )
 
     @classmethod
-    def from_ecsv(cls, save_path: str):
+    def from_ecsv(
+        cls: Type[Number_Density_Function],
+        save_path: str, 
+        completeness: Optional[Completeness] = None
+    ) -> Self:
         tab = Table.read(save_path)
         x_bins_up = np.array(tab["x_bins_up"])
         x_bins_low = np.array(tab["x_bins_low"])
@@ -360,6 +371,7 @@ class Number_Density_Function(Base_Number_Density_Function):
             origin_surveys,
             crop_name,
             cv_origin,
+            completeness,
         )
 
     @classmethod
@@ -439,6 +451,7 @@ class Number_Density_Function(Base_Number_Density_Function):
             x_origin,
             x_calculator.name,
             z_bin_cat.crop_name,
+            completeness = completeness,
         )
 
         if not Path(save_path).is_file():
@@ -481,6 +494,7 @@ class Number_Density_Function(Base_Number_Density_Function):
                         # plot histogram
                         hist_fig, hist_ax = plt.subplots()
                         z_bin_cat.hist(x_calculator, hist_fig, hist_ax)
+                        plt.close()
                     
                     # crop to galaxies in the x bin - not the bootstrapping method
                     from . import Rest_Frame_Property_Limit_Selector, Rest_Frame_Property_Bin_Selector
@@ -510,20 +524,23 @@ class Number_Density_Function(Base_Number_Density_Function):
                             for gal in z_bin_x_bin_cat
                         ]
                     )
-                    V_max = V_max[V_max != -1.0] #* u.Mpc ** 3
+                    remove_indices = V_max != -1.0
+                    V_max = V_max[remove_indices] #* u.Mpc ** 3
                     if len(V_max) != Ngals[i]:
                         galfind_logger.warning(
                             f"{Ngals[i] - len(V_max)} galaxies not detected"
                         )
+                    
                     if completeness is None:
                         compl_bin = np.ones(len(z_bin_x_bin_cat))
                     else:
-                        breakpoint()
-                        compl_bin = np.array([completeness(gal) for gal in z_bin_x_bin_cat])
-                    phi[i] = np.sum(V_max**-1.0) / dx
+                        compl_bin = completeness(z_bin_x_bin_cat)
+                    compl_bin = compl_bin[remove_indices]
+
+                    phi[i] = np.sum((V_max * compl_bin) ** - 1.0) / dx
                     # use standard Poisson errors if number of galaxies in bin is not small
                     if len(V_max) >= 4:
-                        phi_errs = np.sqrt(np.sum(V_max**-2.0)) / dx
+                        phi_errs = np.sqrt(np.sum((V_max * compl_bin) ** -2.0)) / dx
                         phi_l1[i] = phi_errs
                         phi_u1[i] = phi_errs
                     else:
@@ -564,6 +581,7 @@ class Number_Density_Function(Base_Number_Density_Function):
                 cat.survey,
                 z_bin_cat.crop_name,
                 cv_origin,
+                completeness = completeness,
             )
             if save:
                 number_density_func.save()
@@ -584,10 +602,15 @@ class Number_Density_Function(Base_Number_Density_Function):
         x_name: str,
         crop_name: str,
         ext: str = ".ecsv",
+        completeness: Optional[Completeness] = None,
     ) -> str:
+        if completeness is None:
+            compl_name = ""
+        else:
+            compl_name = "_compl_corr"
         save_path = config['NumberDensityFunctions']['NUMBER_DENSITY_FUNC_DIR'] + \
             f"/Data/{SED_fit_params_key}/{x_name}/" + \
-            f"{origin_surveys}/{crop_name}{ext}"
+            f"{origin_surveys}/{crop_name}{compl_name}{ext}"
         funcs.make_dirs(save_path)
         return save_path
 
@@ -615,8 +638,10 @@ class Number_Density_Function(Base_Number_Density_Function):
             self.x_origin,
             self.x_name,
             self.crop_name,
-            ext=".png",
+            ext = ".png",
+            completeness = self.completeness,
         ).replace("/Data/", "/Plots/")
+
         if os.access(plot_path, os.W_OK):
             funcs.make_dirs(plot_path)
         else:
@@ -639,6 +664,7 @@ class Number_Density_Function(Base_Number_Density_Function):
                 self.x_origin,
                 self.x_name,
                 self.crop_name,
+                completeness = self.completeness,
             )
             backend_filename = backend_filename\
                 .replace("/Data/", f"/{fit_type.__name__.replace('Fitter', 'Fits')}/")\
@@ -669,6 +695,7 @@ class Number_Density_Function(Base_Number_Density_Function):
                 self.x_origin,
                 self.x_name,
                 self.crop_name,
+                completeness = self.completeness,
             )
         assert all(x_bin[0].unit == self.x_bins[0][0].unit for x_bin in self.x_bins)
         assert all(x_bin[1].unit == self.x_bins[0][1].unit for x_bin in self.x_bins)
@@ -720,6 +747,7 @@ class Number_Density_Function(Base_Number_Density_Function):
         sim_author_years: Dict[str, Any] = {},
         save_path: Optional[str] = None,
     ) -> Tuple[plt.Figure, plt.Axes]:
+        
         if all(_x is None for _x in [fig, ax]):
             fig_, ax_ = plt.subplots()
         else:
@@ -764,8 +792,7 @@ class Number_Density_Function(Base_Number_Density_Function):
                     plot_kwargs=author_year_kwargs,
                     x_lims=None,
                 )
-
-        # plot this work
+        
         fig_, ax_ = super().plot(
             fig_,
             ax_,

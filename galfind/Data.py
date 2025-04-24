@@ -79,6 +79,7 @@ morgan_version_to_dir = {
     "v12": "mosaic_1210_wispnathan",
     "v12test": "mosaic_1210_wispnathan_test", # not sure if this is needed?
     "v13": "mosaic_1293_wispnathan",
+    "v14": "mosaic_1364_wispnathan",
 }
 
 
@@ -935,7 +936,10 @@ class Band_Data_Base(ABC):
     def _combine_seg_data_and_mask(self) -> np.ndarray:
         seg_data = self.load_seg()[0]
         mask = self.load_mask()[0]["MASK"]
-        assert seg_data.shape == mask.shape
+        assert seg_data.shape == mask.shape, \
+            galfind_logger.critical(
+                f"{self.seg_path=} with {self.seg_data.shape=} != {self.mask_path=} with {mask.shape=}"
+            )
         combined_mask = np.logical_or(seg_data > 0, mask == 1).astype(int)
         return combined_mask
 

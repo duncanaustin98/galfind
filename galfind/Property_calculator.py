@@ -4,6 +4,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from tqdm import tqdm
 import numpy as np
+import itertools
 from copy import deepcopy
 import astropy.units as u
 from typing import TYPE_CHECKING, Dict, Any, List, Union, Tuple, Optional, NoReturn
@@ -77,8 +78,10 @@ class Property_Calculator(Property_Calculator_Base):
     def __init__(
         self: Self,
         aper_diam: u.Quantity,
+        **kwargs: Dict[str, Any],
     ) -> None:
         self.aper_diam = aper_diam
+        self.kwargs = kwargs
 
     @property
     def full_name(self: Self) -> str:
@@ -251,16 +254,17 @@ class Photometry_Property_Loader(Photometry_Property_Calculator):
     def __init__(
         self: Self,
         aper_diam: u.Quantity,
-        property_getter: Callable[Catalogue, NDArray],
+        property_getter: Callable[Tuple[Catalogue, u.Quantity], NDArray],
         name: str,
         plot_name: Optional[str],
         units: u.Unit,
+        **kwargs: Dict[str, Any],
     ) -> None:
         self._name = name
         self._plot_name = plot_name
         self.units = units
         self.property_getter = property_getter
-        super().__init__(aper_diam)
+        super().__init__(aper_diam, **kwargs)
 
     @property
     def name(self: Self) -> str:
@@ -274,10 +278,15 @@ class Photometry_Property_Loader(Photometry_Property_Calculator):
         self: Self,
         cat: Type[Catalogue_Base],
     ) -> Tuple[NDArray, NDArray]:
-        IDs, properties_arr = self.property_getter(cat)
+        IDs, properties_arr = self.property_getter(cat, self.aper_diam, **self.kwargs)
         self._IDs = IDs
-        self._properties = np.percentile(properties_arr, [16, 50, 84], axis = 1)
-        self._property_PDFs = np.array([PDF.from_1D_arr(self.name, properties * self.units) if not all(np.isnan(properties)) else None for properties in properties_arr])
+        if len(properties_arr.shape) == 1:
+            self._properties = np.vstack((np.zeros(len(properties_arr)), properties_arr, np.zeros(len(properties_arr))))
+            # array of None
+            self._property_PDFs = None #np.array(list(itertools.repeat(None, len(properties_arr))))
+        else:
+            self._properties = np.percentile(properties_arr, [16, 50, 84], axis = 1)
+            self._property_PDFs = np.array([PDF.from_1D_arr(self.name, properties * self.units) if not all(np.isnan(properties)) else None for properties in properties_arr])
     
     def __call__(
         self: Self,
@@ -303,7 +312,7 @@ class Photometry_Property_Loader(Photometry_Property_Calculator):
         n_jobs: int = 1,
     ) -> NDArray:
         self._get_IDs_properties(cat)
-        return np.array([self._call_gal(gal) for gal in cat]) * self.units
+        return np.array([self._call_gal(gal).value for gal in cat]) * self.units
     
     def _call_gal(self: Self, gal: Galaxy) -> NDArray:
         # load property into galaxy
@@ -314,18 +323,22 @@ class Photometry_Property_Loader(Photometry_Property_Calculator):
         if not hasattr(gal.aper_phot[self.aper_diam], "property_PDFs"):
             gal.aper_phot[self.aper_diam].property_PDFs = {}
 
-        gal.aper_phot[self.aper_diam].properties[self.name] = self._properties[1][self._IDs == f"{gal.ID}_{gal.survey}"] * self.units
+        gal.aper_phot[self.aper_diam].properties[self.name] = self._properties[1][self._IDs == f"{gal.ID}_{gal.survey}"][0] * self.units
         gal.aper_phot[self.aper_diam].property_errs[self.name] = np.array([self._properties[1][self._IDs == f"{gal.ID}_{gal.survey}"] - \
             self._properties[0][self._IDs == f"{gal.ID}_{gal.survey}"], self._properties[2][self._IDs == f"{gal.ID}_{gal.survey}"] - \
             self._properties[1][self._IDs == f"{gal.ID}_{gal.survey}"]]) * self.units
-        pdf = self._property_PDFs[self._IDs == f"{gal.ID}_{gal.survey}"]
-        try:
-            if pdf is not None:
-                gal.aper_phot[self.aper_diam].property_PDFs[self.name] = pdf[0]
-            else:
-                gal.aper_phot[self.aper_diam].property_PDFs[self.name] = None
-        except:
-            breakpoint()
+
+        if self._property_PDFs is None:
+            gal.aper_phot[self.aper_diam].property_PDFs[self.name] = None
+        else:
+            pdf = self._property_PDFs[self._IDs == f"{gal.ID}_{gal.survey}"]
+            try:
+                if pdf is not None:
+                    gal.aper_phot[self.aper_diam].property_PDFs[self.name] = pdf[0]
+                else:
+                    gal.aper_phot[self.aper_diam].property_PDFs[self.name] = None
+            except:
+                breakpoint()
         return gal.aper_phot[self.aper_diam].properties[self.name]
     
     def extract_vals(
@@ -374,6 +387,31 @@ class Photometry_Property_Loader(Photometry_Property_Calculator):
             galfind_logger.critical(err_message)
             raise TypeError(err_message)
             
+class Band_SNR_Loader(Photometry_Property_Loader):
+
+    def __init__(
+        self: Self,
+        aper_diam: u.Quantity,
+        band_name: str,
+    ) -> None:
+        self._name = f"{band_name}_SNR"
+        self._plot_name = f"{band_name} SNR"
+        self.units = u.dimensionless_unscaled
+        self.kwargs = {"band_name": band_name}
+        super().__init__(aper_diam, Band_SNR_Loader._load_SNR, self._name, self._plot_name, self.units, self.kwargs)
+
+    @staticmethod
+    def _load_SNR(cat: Catalogue, aper_diam: u.Quantity, **kwargs) -> Tuple[NDArray, NDArray]:
+        assert "band_name" in kwargs.keys()
+        # determine relevant band indices
+        IDs = np.array([f"{gal.ID}_{gal.survey}" for gal in cat])
+        band_SNRs = np.array(
+            [[SNR for SNR, band_name in zip(
+                gal.aper_phot[aper_diam].SNR,
+                gal.aper_phot[aper_diam].filterset.band_names
+            ) if band_name == kwargs["band_name"]] for gal in cat]
+        ).flatten()
+        return IDs, band_SNRs
 
 
 # # Extracts properties from observed frame photometry (e.g. magnitudes)

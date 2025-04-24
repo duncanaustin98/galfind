@@ -3,7 +3,7 @@ import astropy.units as u
 from typing import List
 
 from galfind import Data, Catalogue_Creator, EAZY
-from galfind.selection import Completeness
+from galfind.selection import Grid_2D
 from galfind.Data import morgan_version_to_dir
 from galfind.Catalogue import jaguar_phot_labels, load_jaguar_phot
 
@@ -56,7 +56,7 @@ def main(
         EAZY({"templates": "fsps_larson", "lowz_zmax": None}),
     ]
     # make 2D completeness grid from the Jaguar catalogue
-    completeness = Completeness.from_sim_cat(
+    completeness = Grid_2D.from_sim_cat(
         jaguar_cat,
         SED_fitter_arr = SED_fitter_arr,
         sampler = None,
@@ -71,15 +71,15 @@ def main(
 
 
 if __name__ == "__main__":
-    # input parameters for data objectconda act
+    # input parameters for data object
     survey = "JOF"
     version = "v11"
     instrument_names = ["ACS_WFC", "NIRCam"]
     aper_diams = [0.32] * u.arcsec
     forced_phot_band = ["F277W", "F356W", "F444W"]
-    realization = 1
-    import time
-    time.sleep(4*60*60) #4 * 60 * 60)
+    realization = 10
+    #import time
+    #time.sleep(4*60*60) #4 * 60 * 60)
     main(
         survey,
         version,
@@ -89,8 +89,8 @@ if __name__ == "__main__":
         realization,
     )
 
-    cat_path = "/raid/scratch/work/austind/GALFIND_WORK/"
-    make_completeness_grid_from_cat(cat_path)
+    #cat_path = "/raid/scratch/work/austind/GALFIND_WORK/"
+    #make_completeness_grid_from_cat(cat_path)
 
     # from astropy.table import Table
     # jaguar_cat_path = "/raid/scratch/data/JAGUAR/JADES_SF_mock_r1_v1.2.fits"

@@ -234,6 +234,7 @@ from .Property_calculator import (
     Property_Calculator_Base, 
     Property_Calculator,
     Photometry_Property_Loader,
+    Band_SNR_Loader,
     Redshift_Extractor,
     Ext_Src_Property_Calculator, 
     Custom_SED_Property_Extractor,

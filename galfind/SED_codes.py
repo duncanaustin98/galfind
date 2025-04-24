@@ -464,7 +464,7 @@ class SED_code(ABC):
         SED_fitting_tab = Table.read(fits_out_path)
         # if table has not already been made
         if orig_tab is None:
-            cat.write_hdu(SED_fitting_tab, hdu=self.hdu_name)
+            cat.write_hdu(SED_fitting_tab, hdu=self.hdu_name.upper())
         else:
             # if any of the column names are the same
             if any(name in orig_tab.colnames for name in SED_fitting_tab.colnames if name != self.ID_label):
@@ -481,7 +481,7 @@ class SED_code(ABC):
                     keys=self.ID_label,
                     join_type="outer",
                 )
-                cat.write_hdu(combined_tab, hdu=self.hdu_name)
+                cat.write_hdu(combined_tab, hdu=self.hdu_name.upper())
 
     # def update_lowz_zmax(SED_results):
     #     if "dz" in SED_fit_params.keys():

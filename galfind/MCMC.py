@@ -9,6 +9,7 @@ import multiprocessing as mp
 import os
 from astropy.stats import sigma_clip
 from scipy import stats
+from tqdm import tqdm
 from matplotlib import patheffects as pe
 import matplotlib.pyplot as plt
 from numpy.typing import NDArray
@@ -307,6 +308,46 @@ class Base_MCMC_Fitter(ABC):
     ) -> Tuple[NDArray[float], NDArray[float], NDArray[float]]:
         pass
 
+    def get_sample(self: Self) -> NDArray[float]:
+        autocorr_time = np.max(self.sampler.get_autocorr_time())
+        discard = int(autocorr_time * 2)
+        thin = int(autocorr_time / 2)
+        chain = self.sampler.get_chain(flat = True, discard = discard, thin = thin)
+        return chain
+    
+    def _get_plot_chains(
+        self: Self,
+        x_arr: NDArray[float],
+        log_data: bool = False,
+    ) -> Tuple[NDArray[float], NDArray[float], NDArray[float]]:
+        y_fit = self.get_chains(x_arr, log_data = log_data).T
+        l1_chains = np.array([np.percentile(y, 16) for y in y_fit])
+        med_chains = np.array([np.percentile(y, 50) for y in y_fit])
+        u1_chains = np.array([np.percentile(y, 84) for y in y_fit])
+        return l1_chains, med_chains, u1_chains
+    
+    def get_chains(
+        self: Self,
+        x_arr: NDArray[float],
+        log_data: bool = False,
+        shape: Optional[int] = None,
+    ) -> NDArray[float]:
+        autocorr_time = np.max(self.sampler.get_autocorr_time())
+        discard = int(autocorr_time * 2)
+        thin = 1 # int(autocorr_time / 2)
+        if log_data:
+            model = lambda x, params: np.log10(self.model(x, params))
+        else:
+            model = self.model
+        if shape is None:
+            params_arr = self.sampler.get_chain(flat = True, discard = discard, thin = thin)
+        else:
+            params_arr = self.sampler.get_chain(flat = True, discard = discard, thin = thin)[-shape:]
+        y_fit = np.array([model(x_arr, {prior.name: param for prior, param \
+            in zip(self.priors, params)}) for params in tqdm( \
+            params_arr, desc = "Loading chains", total = len(params_arr))])
+        return y_fit
+
     def plot_corner(
         self: Self,
         legend: bool = False,
@@ -517,26 +558,6 @@ class MCMC_Fitter(Base_MCMC_Fitter):
     #     for key, val in self.fixed_params.items():
     #         params[key] = val
     #     return params
-
-    def _get_plot_chains(
-        self: Self,
-        x_arr: NDArray[float],
-        log_data: bool = False,
-    ) -> Tuple[NDArray[float], NDArray[float], NDArray[float]]:
-        autocorr_time = np.max(self.sampler.get_autocorr_time())
-        discard = int(autocorr_time * 2)
-        thin = 1 # int(autocorr_time / 2)
-        if log_data:
-            model = lambda x, params: np.log10(self.model(x, params))
-        else:
-            model = self.model
-        y_fit = np.array([model(x_arr, {prior.name: param for prior, param \
-            in zip(self.priors, params)}) for params in self.sampler.get_chain(
-            flat = True, discard = discard, thin = thin)]).T
-        l1_chains = np.array([np.percentile(y, 16) for y in y_fit])
-        med_chains = np.array([np.percentile(y, 50) for y in y_fit])
-        u1_chains = np.array([np.percentile(y, 84) for y in y_fit])
-        return l1_chains, med_chains, u1_chains
     
     def get_scatter(self) -> float:
         residuals = self.get_residuals(self.get_params_med())
@@ -544,12 +565,12 @@ class MCMC_Fitter(Base_MCMC_Fitter):
         galfind_logger.info(f"Scatter: {self.scatter:.3f} dex")
         return self.scatter
 
-    def get_sample(self: Self) -> NDArray[float]:
-        autocorr_time = np.max(self.sampler.get_autocorr_time())
-        discard = int(autocorr_time * 2)
-        thin = int(autocorr_time / 2)
-        chain = self.sampler.get_chain(flat = True, discard = discard, thin = thin)
-        return chain
+    # def get_sample(self: Self) -> NDArray[float]:
+    #     autocorr_time = np.max(self.sampler.get_autocorr_time())
+    #     discard = int(autocorr_time * 2)
+    #     thin = int(autocorr_time / 2)
+    #     chain = self.sampler.get_chain(flat = True, discard = discard, thin = thin)
+    #     return chain
 
     def get_params_med(self: Self) -> Dict[str, float]:
         if not hasattr(self, "params_med"):

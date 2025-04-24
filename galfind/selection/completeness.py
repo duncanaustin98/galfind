@@ -2,12 +2,14 @@
 from __future__ import annotations
 
 import numpy as np
+import h5py as h5
 from numpy.typing import NDArray
 from astropy.table import Table
+from scipy.interpolate import interp1d
 import astropy.units as u
-from typing import TYPE_CHECKING, Union
+from typing import TYPE_CHECKING, Union, Optional, List
 if TYPE_CHECKING:
-    from . import Galaxy, Property_Calculator
+    from . import Galaxy, Catalogue, Property_Calculator
 try:
     from typing import Self, Type  # python 3.11+
 except ImportError:
@@ -22,10 +24,30 @@ class Completeness:
         x: NDArray[float],
         x_calculator: Type[Property_Calculator],
         completeness: NDArray[float],
+        x_completeness_lim: float,
     ):
         self.x = x
         self.x_calculator = x_calculator
         self.completeness = completeness
+        self.x_completeness_lim = x_completeness_lim
+
+    @classmethod
+    def from_h5(
+        cls: Type[Completeness],
+        h5_path: str,
+        x_calculator: Type[Property_Calculator],
+        x_label: str = "x",
+        completeness_label: str = "completeness",
+        x_completeness_lim: Optional[float] = None,
+    ):
+        # open h5 file
+        hf = h5.File(h5_path, "r")
+        # read x and y datasets
+        x = hf[x_label][:]
+        compl = hf[completeness_label][:]
+        # close h5 file
+        hf.close()
+        return cls(x, x_calculator, compl, x_completeness_lim)
 
     # @classmethod
     # def from_simulated_fits_cat(
@@ -82,11 +104,16 @@ class Completeness:
 
     def __call__(
         self: Self,
-        gal: Galaxy,
+        cat: Catalogue,
     ) -> float:
-        x_gal = self.x_calculator(gal)
-        x_interp = np.interp(x_gal, self.x, self.completeness)
-                    
+        x_cat = self.x_calculator(cat).value
+        # get the index of the nearest self.x value for each x in x_cat
+        compl_indices = [(np.abs(self.x - x_gal)).argmin() for x_gal in x_cat]
+        compl_cat = self.completeness[compl_indices]
+        if self.x_completeness_lim is not None:
+            compl_cat[x_cat > self.x_completeness_lim] = 1.0
+            # set points above the x completeness limit to being fully complete
+        return compl_cat
         # # Don't trust completeness/contamination if very small number of objects in bin
         # if num > 5:
         #     contam = contam[0]
@@ -94,8 +121,6 @@ class Completeness:
         # else:
         #     comp = 1
         #     contam = 0
-        
-        return x_interp
 
     def plot():
         pass

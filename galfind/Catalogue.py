@@ -177,7 +177,7 @@ def load_galfind_phot(
         in phot_property_from_galfind_tab(cat, err_labels, **kwargs).items()}
     return phot, phot_err
 
-def load_jaguar_phot(
+def load_phot(
     cat: Table,
     phot_labels: Dict[u.Quantity, List[str]],
     err_labels: Dict[u.Quantity, List[str]],

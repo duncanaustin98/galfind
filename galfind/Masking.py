@@ -175,7 +175,9 @@ def clean_reg_mask(mask_path: str) -> str:
 
 
 def convert_mask_to_fits(
-    self: Type[Band_Data_Base], mask_path: str, out_path: Optional[str]
+    self: Type[Band_Data_Base],
+    mask_path: str,
+    out_path: Optional[str],
 ) -> Union[str, np.ndarray]:
     if out_path is None:
         convert = True
@@ -188,8 +190,13 @@ def convert_mask_to_fits(
         im_data = self.load_im()[0]
         # open .reg mask file
         mask_regions = Regions.read(mask_path)
-        wcs = self.load_wcs()
+        assert len(mask_regions) > 0, \
+            galfind_logger.critical(
+                f"No regions found in {mask_path}! " + \
+                ".reg likely in 'physical' co-ordinates!"
+            )
 
+        wcs = self.load_wcs()
         pix_mask = np.zeros(im_data.shape, dtype=bool)
         for region in mask_regions:
             if "Region" not in region.__class__.__name__:
@@ -647,7 +654,7 @@ def get_combined_path_name(self: Stacked_Band_Data) -> str:
                 for band_data in self.band_data_arr
             ]
         )
-    out_name = f"{self.survey}_{filt_name_mask_method}.fits"
+    out_name = f"{self.survey}_{self.version}_{filt_name_mask_method}.fits"
     out_path = f"{out_dir}/{out_name}"
     funcs.make_dirs(out_path)
     return out_path

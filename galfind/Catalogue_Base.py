@@ -116,12 +116,22 @@ class Catalogue_Base:
     def __getitem__(self, index: Any) -> Optional[Union[Galaxy, List[Galaxy]]]:
         if len(self) == 0:
             raise IndexError("No galaxies in catalogue!")
+        from . import Selector
         if isinstance(index, int):
             return self.gals[index]
         elif isinstance(index, (list, np.ndarray)):
             if len(index) == 1:
                 return self.gals[index[0]]
-        from . import Selector
+            elif all(isinstance(index_, tuple(Selector.__subclasses__())) for index_ in index):
+                keep_arr = []
+                for i, index_ in enumerate(index):
+                    # run selection if not already done
+                    if not all(index_.name in gal.selection_flags for gal in self):
+                        [index_(gal, return_copy = False) for gal in self]
+                    else:
+                        pass
+                    keep_arr.append([gal.selection_flags[index_.name] for gal in self])
+                return list(np.array(self.gals)[np.logical_and.reduce(keep_arr)])
         if isinstance(index, (slice, np.ndarray)):
             return list(np.array(self.gals)[index])
         elif isinstance(index, list):
@@ -621,7 +631,7 @@ class Catalogue_Base:
             )
         else:
             if isinstance(hdu, SED_code):
-                hdu_name = hdu.hdu_name
+                hdu_name = hdu.hdu_name.upper()
             elif isinstance(hdu, str):
                 hdu_name = hdu
             else:
@@ -666,7 +676,7 @@ class Catalogue_Base:
     def check_hdu_exists(self, hdu_name: str):
         # check whether the hdu extension exists
         hdul = fits.open(self.cat_path)
-        return any(hdu_.name == hdu_name.upper() for hdu_ in hdul)
+        return any(hdu_.name == hdu_name for hdu_ in hdul)
 
     @staticmethod
     def write_cat(tab_arr, tab_names, cat_path: str):
