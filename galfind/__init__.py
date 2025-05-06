@@ -215,7 +215,7 @@ from .Emission_lines import Emission_line, wav_lyman_alpha, line_diagnostics
 from . import IGM_attenuation
 from . import lyman_alpha_damping_wing
 from .DLA import DLA
-from .Dust_Attenuation import Dust_Law, C00, M99, Reddy15, Reddy18, AUV_from_beta
+from .Dust_Attenuation import Dust_Law, Calzetti00, SMC, Reddy15, Salim18, Modified_Calzetti00, Power_Law_Dust, M99, Reddy15, Reddy18, AUV_from_beta
 from .Spectrum import (
     Spectral_Catalogue,
     Spectrum,

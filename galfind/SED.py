@@ -733,6 +733,17 @@ class Mock_SED_rest(SED_rest):  # , Mock_SED):
                 interp_line_profile * self.mags.unit
             )  # * emission_line.line_flux / line_flux
 
+    def add_dust_attenuation(self, dust_attenuation, E_BminusV):
+        self.colours = {}  # reset colours
+        self.dust_attenuation = dust_attenuation
+        self.E_BminusV = E_BminusV
+        self.wavs = funcs.convert_wav_units(self.wavs, u.AA)
+        self.mags = funcs.convert_mag_units(self.wavs, self.mags, u.Jy)
+        # attenuate flux in Jy (named self.mags)
+        #print(dust_attenuation)
+        self.mags *= 10 ** (
+            -0.4 * dust_attenuation.attenuate(self.wavs, E_BminusV)
+        )
 
 class Mock_SED_obs(SED_obs):
     def __init__(

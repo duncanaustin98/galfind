@@ -26,7 +26,7 @@ from .decorators import ignore_warnings
 from . import Catalogue, Catalogue_Base, Galaxy, SED_code, Photometry_rest, PDF
 from .Emission_lines import line_diagnostics, strong_optical_lines
 from .Property_calculator import Property_Calculator
-from .Dust_Attenuation import AUV_from_beta, Dust_Law, C00, M99
+from .Dust_Attenuation import AUV_from_beta, Dust_Law, Calzetti00, M99
 
 # Rest optical line property naming functions
 
@@ -1704,7 +1704,7 @@ class Dust_Attenuation_From_UV_Calculator(Rest_Frame_Property_Calculator):
         aper_diam: u.Quantity,
         SED_fit_label: Union[str, Type[SED_code]],
         calc_wav: u.Quantity,
-        dust_law: Union[str, Type[Dust_Law]] = C00,
+        dust_law: Union[str, Type[Dust_Law]] = Calzetti00,
         beta_dust_conv: Union[str, Type[AUV_from_beta]] = M99,
         UV_ref_wav: u.Quantity = 1_500.0 * u.AA,
         UV_wav_lims: u.Quantity = [1_250.0, 3_000.0] * u.AA,
@@ -1799,7 +1799,7 @@ class Line_Dust_Attenuation_From_UV_Calculator(Dust_Attenuation_From_UV_Calculat
         aper_diam: u.Quantity,
         SED_fit_label: Union[str, Type[SED_code]],
         line_name: str,
-        dust_law: Union[str, Type[Dust_Law]] = C00,
+        dust_law: Union[str, Type[Dust_Law]] = Calzetti00,
         beta_dust_conv: Union[str, Type[AUV_from_beta]] = M99,
         UV_ref_wav: u.Quantity = 1_500.0 * u.AA,
         UV_wav_lims: u.Quantity = [1_250.0, 3_000.0] * u.AA,
@@ -1830,7 +1830,7 @@ class Optical_Line_Flux_Calculator(Rest_Frame_Property_Calculator):
         strong_line_names: Union[str, list],
         frame: str = "rest",
         rest_optical_wavs: u.Quantity = [4_200.0, 10_000.0] * u.AA,
-        dust_law: Optional[Union[str, Type[Dust_Law]]] = C00,
+        dust_law: Optional[Union[str, Type[Dust_Law]]] = Calzetti00,
         beta_dust_conv: Optional[Union[str, Type[AUV_from_beta]]] = M99,
         UV_ref_wav: Optional[u.Quantity] = 1_500.0 * u.AA,
         UV_wav_lims: Optional[u.Quantity] = [1_250.0, 3_000.0] * u.AA,
@@ -1959,7 +1959,7 @@ class Optical_Line_Luminosity_Calculator(Rest_Frame_Property_Calculator):
         strong_line_names: Union[str, list],
         #frame: str = "rest",
         rest_optical_wavs: u.Quantity = [4_200.0, 10_000.0] * u.AA,
-        dust_law: Optional[Union[str, Type[Dust_Law]]] = C00,
+        dust_law: Optional[Union[str, Type[Dust_Law]]] = Calzetti00,
         beta_dust_conv: Optional[Union[str, Type[AUV_from_beta]]] = M99,
         UV_ref_wav: Optional[u.Quantity] = 1_500.0 * u.AA,
         UV_wav_lims: Optional[u.Quantity] = [1_250.0, 3_000.0] * u.AA,
@@ -2045,7 +2045,7 @@ class Ndot_Ion_Calculator(Rest_Frame_Property_Calculator):
         SED_fit_label: Union[str, Type[SED_code]],
         #frame: str = "rest",
         rest_optical_wavs: u.Quantity = [4_200.0, 10_000.0] * u.AA,
-        dust_law: Optional[Union[str, Type[Dust_Law]]] = C00,
+        dust_law: Optional[Union[str, Type[Dust_Law]]] = Calzetti00,
         beta_dust_conv: Optional[Union[str, Type[AUV_from_beta]]] = M99,
         UV_wav_lims: Optional[u.Quantity] = [1_250.0, 3_000.0] * u.AA,
         fesc_conv: Optional[Union[str, float]] = None,
@@ -2200,7 +2200,7 @@ class Ndot_Ion_Calculator(Rest_Frame_Property_Calculator):
 #         SED_fit_label: Union[str, Type[SED_code]],
 #         #frame: str = "rest",
 #         rest_optical_wavs: u.Quantity = [4_200.0, 10_000.0] * u.AA,
-#         dust_law: Optional[Union[str, Type[Dust_Law]]] = C00,
+#         dust_law: Optional[Union[str, Type[Dust_Law]]] = Calzetti00,
 #         beta_dust_conv: Optional[Union[str, Type[AUV_from_beta]]] = M99,
 #         UV_wav_lims: Optional[u.Quantity] = [1_250.0, 3_000.0] * u.AA,
 #         fesc_conv: Union[str, float] = "Chisholm22",
@@ -2333,7 +2333,7 @@ class Xi_Ion_Calculator(Rest_Frame_Property_Calculator):
         SED_fit_label: Union[str, Type[SED_code]],
         #frame: str = "rest",
         rest_optical_wavs: u.Quantity = [4_200.0, 10_000.0] * u.AA,
-        dust_law: Optional[Union[str, Type[Dust_Law]]] = C00,
+        dust_law: Optional[Union[str, Type[Dust_Law]]] = Calzetti00,
         beta_dust_conv: Optional[Union[str, Type[AUV_from_beta]]] = M99,
         UV_ref_wav: Optional[u.Quantity] = 1_500.0 * u.AA,
         UV_wav_lims: Optional[u.Quantity] = [1_250.0, 3_000.0] * u.AA,
@@ -2495,7 +2495,7 @@ class SFR_Halpha_Calculator(Rest_Frame_Property_Calculator):
         aper_diam: u.Quantity,
         SED_fit_label: Union[str, Type[SED_code]],
         rest_optical_wavs: u.Quantity = [4_200.0, 10_000.0] * u.AA,
-        dust_law: Optional[Union[str, Type[Dust_Law]]] = C00,
+        dust_law: Optional[Union[str, Type[Dust_Law]]] = Calzetti00,
         beta_dust_conv: Optional[Union[str, Type[AUV_from_beta]]] = M99,
         UV_ref_wav: Optional[u.Quantity] = 1_500.0 * u.AA,
         UV_wav_lims: Optional[u.Quantity] = [1_250.0, 3_000.0] * u.AA,
