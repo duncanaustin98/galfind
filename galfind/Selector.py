@@ -6,6 +6,7 @@ import astropy.units as u
 import numpy as np
 from copy import deepcopy
 import json
+import h5py
 from pathlib import Path
 from astropy.utils.masked import Masked
 from tqdm import tqdm
@@ -125,11 +126,13 @@ class Selector(ABC):
         self: Self,
         object: Union[Galaxy, Type[Catalogue_Base]],
         return_copy: bool = True,
+        *args,
+        **kwargs,
     ) -> Optional[Union[Galaxy, Type[Catalogue_Base]]]:
         if isinstance(object, Galaxy):
-            obj = self._call_gal(object, return_copy)
+            obj = self._call_gal(object, return_copy, *args, **kwargs)
         elif isinstance(object, tuple(Catalogue_Base.__subclasses__())):
-            obj = self._call_cat(object, return_copy)
+            obj = self._call_cat(object, return_copy, *args, **kwargs)
         else:
             raise ValueError(
                 f"{object=} must be either a Galaxy or Catalogue object."
@@ -141,6 +144,8 @@ class Selector(ABC):
         self: Self, 
         gal: Galaxy,
         return_copy: bool = True,
+        *args,
+        **kwargs,
     ) -> Union[NoReturn, Galaxy]:
         if return_copy:
             gal_ = deepcopy(gal)
@@ -148,13 +153,13 @@ class Selector(ABC):
             gal_ = gal
         selection_name = self.name
         if not selection_name in gal_.selection_flags.keys():
-            if self._failure_criteria(gal_) \
+            if self._failure_criteria(gal_, *args, **kwargs) \
                     or not self._check_phot_exists(gal_) \
                     or not self._check_SED_fit_exists(gal_) \
                     or not self._check_morph_fit_exists(gal_):
                 gal_.selection_flags[self.name] = False
             else:
-                if self._selection_criteria(gal_):
+                if self._selection_criteria(gal_, *args, **kwargs):
                     gal_.selection_flags[self.name] = True
                 else:
                     gal_.selection_flags[self.name] = False
@@ -165,6 +170,8 @@ class Selector(ABC):
         self: Self,
         cat: Catalogue,
         return_copy: bool = True,
+        *args,
+        **kwargs,
     ) -> Union[NoReturn, Catalogue]:
         if self.SED_fit_label is not None:
             # ensure results have been loaded for 
@@ -182,7 +189,7 @@ class Selector(ABC):
                     f"Morphology fitting results for {repr(self.morph_fitter)=} " + \
                     f"not loaded for any galaxy in {repr(cat)}."
                 )
-        [self._call_gal(gal, return_copy = False) for gal \
+        [self._call_gal(gal, return_copy = False, *args, **kwargs) for gal \
             in tqdm(cat, total = len(cat), desc = f"Selecting {self.name}")]
         if cat.cat_creator.crops == [] or self.__class__.__name__ != "ID_Selector":
             cat._append_property_to_tab(self.name, "SELECTION")
@@ -234,7 +241,7 @@ class Data_Selector(Selector, ABC):
         *args,
         **kwargs
     ) -> Optional[Union[Galaxy, Catalogue]]:
-        return Selector.__call__(self, object, return_copy)
+        return Selector.__call__(self, object, return_copy, *args, **kwargs)
 
 
 class Photometry_Selector(Selector, ABC):
@@ -654,6 +661,283 @@ class ID_Selector(Data_Selector):
     ) -> bool:
         return gal.ID in self.kwargs["IDs"]
 
+
+class Region_Selector(Data_Selector):
+
+    def __init__(
+        self: Self,
+        fail_name: Optional[str] = None,
+        **kwargs
+    ):
+        if fail_name is not None:
+            self._fail_name = fail_name
+        super().__init__(**kwargs)
+
+    @abstractmethod
+    def make_mask(
+        self: Self,
+        data: Band_Data,
+        *args,
+        **kwargs
+    ) -> u.Quantity:
+        pass
+
+    @property
+    def name(self: Self) -> str:
+        return self._selection_name
+
+    @property
+    def fail_name(self: Self) -> str:
+        if hasattr(self, "_fail_name"):
+            assert self._fail_name != self.name, \
+                galfind_logger.critical(
+                    f"{self._fail_name=} cannot be the same as {self.name=}"
+                )
+            return self._fail_name
+        return f"not_{self._selection_name}"
+
+    def _call_cat(
+        self: Self,
+        cat: Catalogue,
+        return_copy: bool = True,
+        *args,
+        **kwargs,
+    ) -> Union[NoReturn, Catalogue]:
+        # apply selection
+        super()._call_cat(cat, return_copy = False, *args, **kwargs)
+        if not hasattr(cat, "regions"):
+            cat.regions = []
+        for name in [self.name, self.fail_name]:
+            if name not in cat.region:
+                cat.regions.append(name)
+        if return_copy:
+            cat_copy = deepcopy(cat)
+            cat_ = cat_copy.crop(self)
+        else:
+            cat_ = cat
+        return cat_
+
+    def _call_gal(
+        self: Self, 
+        gal: Galaxy,
+        return_copy: bool = True,
+        *args,
+        **kwargs,
+    ) -> Union[NoReturn, Galaxy]:
+        if return_copy:
+            gal_ = deepcopy(gal)
+        else:
+            gal_ = gal
+        # apply selection
+        super()._call_gal(gal_, return_copy = False, *args, **kwargs)
+        if not hasattr(gal_, "region"):
+            gal_.region = []
+        if gal_.selection_flags[self.name]:
+            gal_.region.append(self.name)
+        else:
+            gal_.region.append(self.fail_name)
+        return gal_
+
+
+class Ds9_Region_Selector(Region_Selector):
+
+    def __init__(
+        self: Self,
+        region_path: str,
+        region_name: Optional[str] = None,
+        fail_name: Optional[str] = None,
+    ):
+        if region_name is None:
+            region_name = region_path.split("/")[-1].replace(".reg", "")
+        kwargs = {"region_path": region_path, "region_name": region_name}
+        super().__init__(fail_name, **kwargs)
+
+    @property
+    def _selection_name(self) -> str:
+        return self.kwargs["region_name"]
+
+    @property
+    def _include_kwargs(self) -> List[str]:
+        return ["region_path", "region_name"]
+
+    def _assertions(self: Self) -> bool:
+        try:
+            assert isinstance(self.kwargs["region_path"], str)
+            assert isinstance(self.kwargs["region_name"], str)
+            assert self.kwargs["region_path"].endswith(".reg")
+            assert Path(self.kwargs["region_path"]).is_file()
+            passed = True
+        except:
+            passed = False
+        return passed
+    
+    def __call__(
+        self: Self,
+        object: Union[Galaxy, Catalogue],
+        return_copy: bool = True,
+        *args,
+        **kwargs
+    ) -> Optional[Union[Galaxy, Catalogue]]:
+        breakpoint()
+        with open(self.kwargs["region_path"], "r") as f:
+            # save .reg file to object
+            pass
+        return super().__call__(object, return_copy, *args, **kwargs)
+
+    def _failure_criteria(
+        self: Self,
+        gal: Galaxy,
+        *args,
+        **kwargs
+    ) -> bool:
+        return False
+        
+    def _selection_criteria(
+        self: Self,
+        gal: Galaxy,
+        *args,
+        **kwargs
+    ) -> bool:
+        raise Exception()
+
+
+class Depth_Region_Selector(Region_Selector):
+
+    def __init__(
+        self: Self,
+        aper_diam: u.Quantity,
+        filt_name: Union[str, List[str]],
+        region_label: Union[int, str],
+        region_name: Optional[str] = None,
+        fail_name: Optional[str] = None,
+    ):
+        assert isinstance(aper_diam, u.Quantity)
+        self._aper_diam = aper_diam
+        if isinstance(filt_name, list):
+            filt_name = "+".join(filt_name)
+        if isinstance(region_label, int):
+            region_label = str(region_label)
+        kwargs = {
+            "filt_name": filt_name,
+            "region_label": region_label,
+            "region_name": region_name,
+        }
+        super().__init__(fail_name, **kwargs)
+
+    @property
+    def _selection_name(self) -> str:
+        if self.kwargs["region_name"] is None:
+            reg_name = f"{self.kwargs['filt_name']}_{self.kwargs['region_label']}"
+        else:
+            reg_name = self.kwargs["region_name"]
+        return reg_name
+
+    @property
+    def _include_kwargs(self) -> List[str]:
+        return ["filt_name", "region_label", "region_name"]
+
+    def _assertions(self: Self) -> bool:
+        try:
+            assert isinstance(self.kwargs["filt_name"], str)
+            assert isinstance(self.kwargs["region_label"], str)
+            if self.kwargs["region_name"] is not None:
+                assert isinstance(self.kwargs["region_name"], str)
+            passed = True
+        except:
+            passed = False
+        return passed
+
+    def _check_phot_exists(
+        self: Self,
+        gal: Galaxy,
+        *args,
+        **kwargs,
+    ) -> bool:
+        # TODO: Sort out aper_diam set to None as part of Data_Selector
+        try:
+            passed = len(gal.aper_phot[self._aper_diam]) != 0
+        except:
+            passed = False
+        return passed
+    
+    def __call__(
+        self: Self,
+        object: Union[Galaxy, Catalogue],
+        return_copy: bool = True,
+        *args,
+        **kwargs
+    ) -> Optional[Union[Galaxy, Catalogue]]:
+        # can only call on catalogue objects
+        assert isinstance(object, tuple(Catalogue_Base.__subclasses__())), \
+            galfind_logger.critical(
+                f"{object=} must be a Catalogue object."
+            )
+        return super().__call__(object, return_copy)
+
+    def _call_cat(
+        self: Self,
+        cat: Catalogue,
+        return_copy: bool = True,
+        *args,
+        **kwargs,
+    ) -> Union[NoReturn, Catalogue]:
+        # add array of depth regions to kwargs
+        # TODO: Add these as options; hard coded for now!
+        mode = "n_nearest"
+        instr_name = "NIRCam"
+        h5_path = f"{config['Depths']['DEPTH_DIR']}/" \
+            + f"{instr_name}/{cat.version}/{cat.survey}/" \
+            + f"{format(self._aper_diam.value, '.2f')}as/" \
+            + f"{mode}/{self.kwargs['filt_name']}.h5"
+        assert Path(h5_path).is_file(), \
+            galfind_logger.critical(
+                f"{h5_path=} does not exist."
+            )
+        # open depth.h5 file
+        depth_h5 = h5py.File(h5_path, "r")
+        # get depth regions
+        depth_labels = depth_h5["depth_labels"][:]
+        depth_h5.close()
+        # TODO: not have this assertion
+        assert len(cat) == len(depth_labels), \
+            galfind_logger.critical(
+                f"Length of {cat} ({len(cat)}) does not match " + \
+                f"length of depth labels ({len(depth_labels)})"
+            )
+        reg_dict = {gal.ID: depth_label for gal, depth_label in zip(cat, depth_labels)}
+        kwargs["reg_dict"] = reg_dict
+        return super()._call_cat(cat, return_copy = False, *args, **kwargs)
+
+    def _failure_criteria(
+        self: Self,
+        gal: Galaxy,
+        *args,
+        **kwargs
+    ) -> bool:
+        assert "reg_dict" in kwargs.keys(), \
+            galfind_logger.critical(
+                f"Missing reg_dict in {kwargs=}"
+            )
+        if np.isnan(kwargs["reg_dict"][gal.ID]):
+            return True
+        else:
+            return False
+        
+    def _selection_criteria(
+        self: Self,
+        gal: Galaxy,
+        *args,
+        **kwargs
+    ) -> bool:
+        depth_label = kwargs["reg_dict"][gal.ID]
+        if isinstance(depth_label, float):
+            depth_label = str(int(depth_label))
+        if depth_label == self.kwargs["region_label"]:
+            return True
+        else:
+            return False
+        raise Exception()
+    
 
 class Redshift_Limit_Selector(Redshift_Selector):
 

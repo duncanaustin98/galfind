@@ -68,6 +68,7 @@ from . import Masking
 from .decorators import run_in_dir
 from . import Filter, Multiple_Filter
 from .Instrument import ACS_WFC, WFC3_IR, NIRCam, MIRI, Instrument  # noqa F501
+from . import Region_Selector
 
 morgan_version_to_dir = {
     "v8b": "mosaic_1084_wispfix",
@@ -81,7 +82,6 @@ morgan_version_to_dir = {
     "v13": "mosaic_1293_wispnathan",
     "v14": "mosaic_1364_wispnathan",
 }
-
 
 class Band_Data_Base(ABC):
     def __init__(
@@ -3244,7 +3244,7 @@ class Data:
         self: Self,
         instr_or_band_name: Union[str, List[str]],
         mask_type: Union[str, List[str]] = "MASK",
-        depth_regions: Optional[Union[str, List[str]]] = None,
+        region_selector: Optional[Type[Region_Selector], List[Type[Region_Selector]]] = None,
         out_units: u.Quantity = u.arcmin ** 2,
     ) -> u.Quantity:
 
