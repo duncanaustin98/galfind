@@ -40,7 +40,7 @@ except ImportError:
     from typing_extensions import Self, Type  # python > 3.7 AND python < 3.11
 
 if TYPE_CHECKING:
-    from . import Multiple_Filter
+    from . import Multiple_Filter, Region_Selector
     from .PSF import PSF
 
 import astropy.units as u
@@ -68,7 +68,6 @@ from . import Masking
 from .decorators import run_in_dir
 from . import Filter, Multiple_Filter
 from .Instrument import ACS_WFC, WFC3_IR, NIRCam, MIRI, Instrument  # noqa F501
-from . import Region_Selector
 
 morgan_version_to_dir = {
     "v8b": "mosaic_1084_wispfix",
@@ -351,7 +350,7 @@ class Band_Data_Base(ABC):
         else:
             return wht
 
-    def load_rms_err(
+    def load_rms_err(   
         self, output_hdr: bool = False
     ) -> Union[Tuple[np.ndarray, fits.Header], np.ndarray]:
         if Path(self.rms_err_path).is_file():
@@ -719,7 +718,7 @@ class Band_Data_Base(ABC):
 
     def _load_depths_from_params(
         self: Self, 
-        params: List[Tuple[Any, ...]]
+        params: List[Tuple[Any, ...]],
     ) -> NoReturn:
         if hasattr(self, "depth_args"):
             if all(param[1] in self.depth_args.keys() for param in params):
@@ -735,22 +734,39 @@ class Band_Data_Base(ABC):
                 Depths.get_depths_from_h5(self, param[1], param[2])
                 for param in params
             ]
-            self.med_depth = {
-                param[1]: depth[0] for depth, param in zip(depths, params)
-            }
-            self.mean_depth = {
-                param[1]: depth[1] for depth, param in zip(depths, params)
-            }
+            for depth, param in zip(depths, params):
+                for key in depth[0].keys():
+                    self._update_depths(param[1], depth[0][key], depth[1][key], key)
             self.depth_args = {
                 param[1]: Depths.get_depth_args(param) for param in params
             }
 
+    def _update_depths(
+        self: Self,
+        aper_diam: u.Quantity,
+        med_depth: float,
+        mean_depth: float,
+        label: str,
+    ):
+        if not hasattr(self, "med_depth"):
+            self.med_depth = {}
+            if aper_diam not in self.med_depth.keys():
+                self.med_depth[aper_diam] = {}
+        if not hasattr(self, "mean_depth"):
+            self.mean_depth = {}
+            if aper_diam not in self.mean_depth.keys():
+                self.mean_depth[aper_diam] = {}
+        self.med_depth[aper_diam][label] = med_depth
+        self.mean_depth[aper_diam][label] = mean_depth
+    
+
     def _load_depths(
         self: Self,
         aper_diam: u.Quantity,
-        mode: str
+        mode: str,
+        region: str = "all", 
     ) -> NoReturn:
-        params = (aper_diam, mode)
+        params = (aper_diam, mode, region)
         return self._load_depths_from_params([params])
 
     def plot_depths(
@@ -2354,9 +2370,10 @@ class Data:
     def _load_depths(
         self: Self,
         aper_diam: u.Quantity,
-        mode: str
+        mode: str,
+        region: str = "all",
     ) -> NoReturn:
-        [band_data._load_depths(aper_diam, mode) for band_data in self]
+        [band_data._load_depths(aper_diam, mode, region) for band_data in self]
         
 
     def psf_homogenize(self):
@@ -3245,6 +3262,7 @@ class Data:
         instr_or_band_name: Union[str, List[str]],
         mask_type: Union[str, List[str]] = "MASK",
         region_selector: Optional[Type[Region_Selector], List[Type[Region_Selector]]] = None,
+        invert_region: bool = True,
         out_units: u.Quantity = u.arcmin ** 2,
     ) -> u.Quantity:
 
@@ -3256,8 +3274,20 @@ class Data:
         if isinstance(mask_type, str):
             mask_type = mask_type.split("+")
 
-        instr_or_band_save_name = "+".join(np.sort(instr_or_band_name))
+        if region_selector is None:
+            reg_name = "All"
+        else:
+            if not isinstance(region_selector, list):
+                region_selector = [region_selector]
+            reg_name = "+".join([
+                region_selector_.name if not invert_region 
+                else region_selector_.fail_name 
+                for region_selector_ in region_selector
+            ])
+        
+        instr_or_band_save_name = f"{'+'.join(np.sort(instr_or_band_name))}_{reg_name}"
         mask_save_name = "+".join(np.sort(mask_type))
+
         if instr_or_band_save_name not in self.unmasked_area.keys():
             self.unmasked_area[instr_or_band_save_name] = {}
         
@@ -3267,7 +3297,9 @@ class Data:
             funcs.make_dirs(area_tab_path)
             area_tab_ = area_tab[(
                 (area_tab["mask_instr_band"] == instr_or_band_save_name) \
-                & (area_tab["mask_type"] == mask_save_name))]
+                & (area_tab["mask_type"] == mask_save_name) \
+                & (area_tab["region"] == reg_name)
+            )]
             if len(area_tab_) == 0:
                 calculate = True
             else:
@@ -3298,6 +3330,9 @@ class Data:
                         err_message
                     )
                     raise(Exception(err_message))
+            if region_selector is not None:
+                for region_selector_ in region_selector:
+                    masks.extend([region_selector_.load_mask(self, invert = not invert_region)])
             if len(masks) == 0:
                 galfind_logger.critical(
                     f"Could not find any masks for {instr_or_band_name}"
@@ -3312,15 +3347,12 @@ class Data:
             else:
                 unmasked_area = funcs.calc_unmasked_area(mask, pix_scale)
 
-            galfind_logger.debug(
-                "Area calculation for different depth regions not yet implemented!"
-            )
-
             self.unmasked_area[instr_or_band_save_name][mask_save_name] = unmasked_area
 
             area_data = {
                 "mask_instr_band": [instr_or_band_save_name],
                 "mask_type": [mask_save_name],
+                "region": [reg_name],
                 "unmasked_area": [np.round(self.unmasked_area \
                     [instr_or_band_save_name][mask_save_name].to(out_units), 3)],
             }
@@ -3332,6 +3364,7 @@ class Data:
                 area_tab = new_area_tab
             area_tab.write(area_tab_path, overwrite=True)
             funcs.change_file_permissions(area_tab_path)
+
         # return unmasked area
         unmasked_area = (
             area_tab[

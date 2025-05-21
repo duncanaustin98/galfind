@@ -6,9 +6,12 @@ import astropy.units as u
 import numpy as np
 from copy import deepcopy
 import json
+from astropy.coordinates import SkyCoord
 import h5py
+from astropy.io import fits
 from pathlib import Path
 from astropy.utils.masked import Masked
+from scipy import ndimage
 from tqdm import tqdm
 from typing import TYPE_CHECKING, Any, List, Union, NoReturn, Callable, Optional
 if TYPE_CHECKING:
@@ -17,6 +20,7 @@ if TYPE_CHECKING:
         Rest_Frame_Property_Calculator,
         Morphology_Fitter,
         Property_Calculator,
+        Data,
     )
 try:
     from typing import Self, Type  # python 3.11+
@@ -676,11 +680,19 @@ class Region_Selector(Data_Selector):
     @abstractmethod
     def make_mask(
         self: Self,
-        data: Band_Data,
-        *args,
-        **kwargs
+        cat: Catalogue,
     ) -> u.Quantity:
         pass
+
+    def load_mask(
+        self: Self,
+        data: Data,
+        invert: bool = True,
+    ) -> u.Quantity:
+        mask = fits.open(self.get_mask_path(data), mode = "readonly", ignore_missing_simple = True)[self.name].data
+        if invert:
+            mask = np.logical_not(mask)
+        return mask
 
     @property
     def name(self: Self) -> str:
@@ -695,6 +707,12 @@ class Region_Selector(Data_Selector):
                 )
             return self._fail_name
         return f"not_{self._selection_name}"
+    
+    def get_mask_path(
+        self: Self,
+        data: Data,
+    ) -> str:
+        return f"{config['Masking']['MASK_DIR']}/{data.survey}/region_masks/{data.version}_{self.name}.fits"
 
     def _call_cat(
         self: Self,
@@ -707,9 +725,33 @@ class Region_Selector(Data_Selector):
         super()._call_cat(cat, return_copy = False, *args, **kwargs)
         if not hasattr(cat, "regions"):
             cat.regions = []
+        cat.region_selector = self
+        if hasattr(cat, "data"):
+            if not hasattr(cat.data, "regions"):
+                cat.data.regions = []
+            cat.data.region_selector = self
         for name in [self.name, self.fail_name]:
             if name not in cat.region:
                 cat.regions.append(name)
+                if hasattr(cat, "data"):
+                    cat.data.regions.append(name)
+
+        mask_path = self.get_mask_path(cat.data)
+        if not Path(mask_path).is_file():
+            galfind_logger.info(
+                f"Creating {self.name} mask for {cat.survey}."
+            )
+            funcs.make_dirs(mask_path)
+            mask = self.make_mask(cat)
+            # make header
+            hdr = cat.data.forced_phot_band.load_wcs().to_header()
+            # Save mask
+            mask_hdu = fits.ImageHDU(
+                mask.astype(np.uint8), header=hdr, name=self.name
+            )
+            hdulist = fits.HDUList([fits.PrimaryHDU(), mask_hdu])
+            hdulist.writeto(mask_path, overwrite=True)
+
         if return_copy:
             cat_copy = deepcopy(cat)
             cat_ = cat_copy.crop(self)
@@ -759,6 +801,9 @@ class Ds9_Region_Selector(Region_Selector):
     @property
     def _include_kwargs(self) -> List[str]:
         return ["region_path", "region_name"]
+
+    def make_mask(self: Self):
+        raise Exception()
 
     def _assertions(self: Self) -> bool:
         try:
@@ -836,6 +881,58 @@ class Depth_Region_Selector(Region_Selector):
     def _include_kwargs(self) -> List[str]:
         return ["filt_name", "region_label", "region_name"]
 
+    def make_mask(
+        self: Self,
+        cat: Catalogue,
+    ) -> NDArray:
+        """
+        Fill zeros in a sparse array based on the nearest non-zero value.
+        
+        Parameters:
+        -----------
+        cat: Catalogue
+            
+        Returns:
+        --------
+        filled_array : 2D numpy array
+            Array with zeros replaced by nearest non-zero values
+        """
+        # Make an array of zeros based on the cat.data filt_name shape
+        # TODO: the zero index is hard-coded for now, as SExtractor requires all images to be the same shape
+        mask = np.zeros(cat.data[self.kwargs["filt_name"]][0].data_shape)
+        sky_coords = SkyCoord(cat.sky_coord)
+        # load wcs of forced photometry band
+        wcs = cat.data.forced_phot_band.load_wcs()
+        x, y = wcs.all_world2pix(
+            sky_coords.ra, sky_coords.dec, 0
+        )
+        x = x.astype(int)
+        y = y.astype(int)
+        selection_vals = np.array([2.0 if gal.selection_flags[self.name] else 1.0 for gal in cat])
+        assert len(selection_vals) == len(x) == len(y), \
+            galfind_logger.critical(
+                f"{len(selection_vals)=} != {len(x)=} or != {len(y)=}"
+            )
+        mask[y, x] = selection_vals
+        # Make a copy of the input array
+        result = deepcopy(mask)
+        # Create a mask for zero values
+        blank_mask = (mask == 0)
+        distances, indices = ndimage.distance_transform_edt(blank_mask, return_distances=True, return_indices=True)
+        # For each zero position, fill with the value of its nearest non-zero neighbor
+        for i in tqdm(range(mask.shape[0]), desc = f"Making {self.name} mask", total = mask.shape[0]):
+            for j in range(mask.shape[1]):
+                if mask[i, j] == 0:
+                    # Get coordinates of nearest non-zero pixel
+                    nearest_i, nearest_j = indices[0][i, j], indices[1][i, j]
+                    # Get the value at this nearest non-zero pixel
+                    nearest_value = mask[nearest_i, nearest_j]
+                    # Set the result pixel to this value
+                    result[i, j] = nearest_value
+        result -= 1.0
+        result = result.astype(bool)
+        return result
+
     def _assertions(self: Self) -> bool:
         try:
             assert isinstance(self.kwargs["filt_name"], str)
@@ -883,30 +980,35 @@ class Depth_Region_Selector(Region_Selector):
     ) -> Union[NoReturn, Catalogue]:
         # add array of depth regions to kwargs
         # TODO: Add these as options; hard coded for now!
-        mode = "n_nearest"
-        instr_name = "NIRCam"
-        h5_path = f"{config['Depths']['DEPTH_DIR']}/" \
-            + f"{instr_name}/{cat.version}/{cat.survey}/" \
-            + f"{format(self._aper_diam.value, '.2f')}as/" \
-            + f"{mode}/{self.kwargs['filt_name']}.h5"
-        assert Path(h5_path).is_file(), \
-            galfind_logger.critical(
-                f"{h5_path=} does not exist."
+        if all(self._selection_name in gal.selection_flags.keys() for gal in cat):
+            galfind_logger.info(
+                f"Depth regions already selected for {repr(cat)}."
             )
-        # open depth.h5 file
-        depth_h5 = h5py.File(h5_path, "r")
-        # get depth regions
-        depth_labels = depth_h5["depth_labels"][:]
-        depth_h5.close()
-        # TODO: not have this assertion
-        assert len(cat) == len(depth_labels), \
-            galfind_logger.critical(
-                f"Length of {cat} ({len(cat)}) does not match " + \
-                f"length of depth labels ({len(depth_labels)})"
-            )
-        reg_dict = {gal.ID: depth_label for gal, depth_label in zip(cat, depth_labels)}
-        kwargs["reg_dict"] = reg_dict
-        return super()._call_cat(cat, return_copy = False, *args, **kwargs)
+        else:
+            mode = "n_nearest"
+            instr_name = "NIRCam"
+            h5_path = f"{config['Depths']['DEPTH_DIR']}/" \
+                + f"{instr_name}/{cat.version}/{cat.survey}/" \
+                + f"{format(self._aper_diam.value, '.2f')}as/" \
+                + f"{mode}/{self.kwargs['filt_name']}.h5"
+            assert Path(h5_path).is_file(), \
+                galfind_logger.critical(
+                    f"{h5_path=} does not exist."
+                )
+            # open depth.h5 file
+            depth_h5 = h5py.File(h5_path, "r")
+            # get depth regions
+            depth_labels = depth_h5["depth_labels"][:]
+            depth_h5.close()
+            # TODO: not have this assertion
+            assert len(cat) == len(depth_labels), \
+                galfind_logger.critical(
+                    f"Length of {cat} ({len(cat)}) does not match " + \
+                    f"length of depth labels ({len(depth_labels)})"
+                )
+            reg_dict = {gal.ID: depth_label for gal, depth_label in zip(cat, depth_labels)}
+            kwargs["reg_dict"] = reg_dict
+        return super()._call_cat(cat, return_copy = return_copy, *args, **kwargs)
 
     def _failure_criteria(
         self: Self,
@@ -914,10 +1016,8 @@ class Depth_Region_Selector(Region_Selector):
         *args,
         **kwargs
     ) -> bool:
-        assert "reg_dict" in kwargs.keys(), \
-            galfind_logger.critical(
-                f"Missing reg_dict in {kwargs=}"
-            )
+        if "reg_dict" not in kwargs.keys():
+            return False
         if np.isnan(kwargs["reg_dict"][gal.ID]):
             return True
         else:
@@ -929,6 +1029,8 @@ class Depth_Region_Selector(Region_Selector):
         *args,
         **kwargs
     ) -> bool:
+        if "reg_dict" not in kwargs.keys():
+            return True
         depth_label = kwargs["reg_dict"][gal.ID]
         if isinstance(depth_label, float):
             depth_label = str(int(depth_label))
@@ -936,7 +1038,6 @@ class Depth_Region_Selector(Region_Selector):
             return True
         else:
             return False
-        raise Exception()
     
 
 class Redshift_Limit_Selector(Redshift_Selector):

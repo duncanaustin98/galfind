@@ -1182,6 +1182,7 @@ class Catalogue_Base:
                     desc=f"Calculating {full_survey_name} Vmax's in {full_data_name}"
                 )
             ]
+            breakpoint()
             # make/update file to store data
             Vmax_arr = self._make_Vmax_ecsv(
                 data,

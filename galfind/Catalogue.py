@@ -31,7 +31,7 @@ from astropy.utils.masked import Masked
 from tqdm import tqdm
 from typing import Union, Tuple, Any, List, Dict, Callable, Optional, NoReturn, TYPE_CHECKING
 if TYPE_CHECKING:
-    from . import Filter, Band_Data_Base, Selector, Multiple_Filter, Data, Property_Calculator_Base, Band_Cutout_Base, Band_Cutout
+    from . import Filter, Band_Data_Base, Selector, Multiple_Filter, Data, Property_Calculator_Base, Band_Cutout_Base, Band_Cutout, Region_Selector
 try:
     from typing import Self, Type  # python 3.11+
 except ImportError:
@@ -1487,7 +1487,7 @@ class Catalogue(Catalogue_Base):
             galfind_logger.critical(
                 f"{self.cat_name} does not have data loaded!"
             )
-        self.data._load_depths(aper_diam, mode)
+        self.load_depths(aper_diam, mode)
         assert all([hasattr(band_data, "med_depth") for band_data in self.data])
         assert all([aper_diam in band_data.med_depth.keys() for band_data in self.data])
         assert all([depth_region in band_data.med_depth[aper_diam].keys() for band_data in self.data])
@@ -1519,3 +1519,39 @@ class Catalogue(Catalogue_Base):
         [gal.aper_phot[aper_diam]._update_errs_from_depths(min_flux_pc_err)
             for gal in tqdm(self, desc = "Updating catalogue errors from average depths", total = len(self))
         ]
+
+    def load_depths(
+        self: Self,
+        aper_diam: u.Quantity,
+        mode: str,
+        region_selector: Optional[Region_Selector] = None,
+        invert_region: bool = False,
+    ) -> NoReturn:
+        if region_selector is None:
+            return self.data._load_depths(
+                aper_diam,
+                mode,
+            )
+        else:
+            galfind_logger.info(
+                f"Loading {aper_diam} {mode} {region_selector.name if not invert_region else region_selector.fail_name} depths!"
+            )
+            gal_depths = {filt_name: [
+                    gal.aper_phot[aper_diam].depths[np.where(np.array(gal.aper_phot[aper_diam].filterset.band_names) == filt_name)[0][0]].value
+                    for gal in self if filt_name in gal.aper_phot[aper_diam].filterset.band_names 
+                    and ((gal.selection_flags[region_selector.name] and not invert_region)
+                    or (not gal.selection_flags[region_selector.name] and invert_region))
+                ]
+                for filt_name in self.data.filterset.band_names
+            }
+            med_depths = {filt_name: np.nanmedian(gal_band_depths) for filt_name, gal_band_depths in gal_depths.items()}
+            mean_depths = {filt_name: np.nanmean(gal_band_depths) for filt_name, gal_band_depths in gal_depths.items()}
+            # pass to data objects for storage
+            for band_data in self.data:
+                band_data._update_depths(
+                    aper_diam,
+                    med_depths[band_data.filt_name],
+                    mean_depths[band_data.filt_name],
+                    region_selector.name if not invert_region
+                    else region_selector.fail_name
+                )
