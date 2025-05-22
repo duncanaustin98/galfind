@@ -684,10 +684,14 @@ class Multiple_Mask_Selector(Multiple_Selector, Mask_Selector, ABC):
         invert: bool = True,
     ) -> u.Quantity:
         # load mask from each selector
-        masks = [selector.load_mask(data, invert) for selector in self.selectors]
+        masks = [selector.load_mask(data, False) for selector in self.selectors]
         # combine masks
         combined_mask = np.logical_and.reduce(masks)
-        breakpoint()
+        if invert:
+            combined_mask = np.invert(combined_mask)
+        galfind_logger.info(
+            f"Loaded {repr(self)} mask from {data.survey}!"
+        )
         return combined_mask
 
 
@@ -760,6 +764,9 @@ class Region_Selector(Data_Selector):
         mask = fits.open(self.get_mask_path(data), mode = "readonly", ignore_missing_simple = True)[self.name].data
         if invert:
             mask = np.logical_not(mask)
+        galfind_logger.info(
+            f"Loaded {repr(self)} mask from {data.survey}!"
+        )
         return mask
 
     @property
@@ -1496,18 +1503,25 @@ class Unmasked_Band_Selector(Mask_Selector):
     ) -> u.Quantity:
         # load mask from each selector
         if self.kwargs["band_name"] not in data.filterset.band_names:
-            mask = np.full(data.data_shape, False)
+            data_shapes = [band_data.data_shape for band_data in data]
+            assert all(data_shape == data_shapes[0] for data_shape in data_shapes), \
+                galfind_logger.critical(
+                    f"Data shapes do not match: {data_shapes}"
+                )
+            mask = np.full(data_shapes[0], False)
             galfind_logger.warning(
                 f"{self.kwargs['band_name']} not in {data.filterset.band_names}!"
             )
         else:
             # extract band_data from data
             band_data = data[self.kwargs["band_name"]]
-            breakpoint()
             # load mask from data
-            mask = band_data.load_mask()
-        if invert:
+            mask = band_data.load_mask("MASK")[0].astype(bool)
+        if not invert:
             mask = np.logical_not(mask)
+        galfind_logger.info(
+            f"Loaded {repr(self)} mask from {data.survey}!"
+        )
         return mask
 
 
@@ -1550,7 +1564,13 @@ class Min_Unmasked_Band_Selector(Mask_Selector):
         invert: bool = True,
     ) -> u.Quantity:
         # add masks
-        n_bands_unmasked = np.zeros(data.data_shape, 0)
+        breakpoint()
+        data_shapes = [band_data.data_shape for band_data in data]
+        assert all(data_shape == data_shapes[0] for data_shape in data_shapes), \
+            galfind_logger.critical(
+                f"Data shapes do not match: {data_shapes}"
+            )
+        n_bands_unmasked = np.zeros(data_shapes[0])
         for band_data in data:
             n_bands_unmasked += band_data.load_mask()
         breakpoint()
@@ -1560,6 +1580,9 @@ class Min_Unmasked_Band_Selector(Mask_Selector):
         breakpoint()
         if invert:
             mask = np.logical_not(mask)
+        galfind_logger.info(
+            f"Loaded {repr(self)} mask from {data.survey}!"
+        )
         return mask
 
 
@@ -1628,17 +1651,23 @@ class Min_Instrument_Unmasked_Band_Selector(Mask_Selector):
         invert: bool = True,
     ) -> u.Quantity:
         # add masks
-        n_bands_unmasked = np.zeros(data.data_shape, 0)
+        data_shapes = [band_data.data_shape for band_data in data]
+        assert all(data_shape == data_shapes[0] for data_shape in data_shapes), \
+            galfind_logger.critical(
+                f"Data shapes do not match: {data_shapes}"
+            )
+        n_bands_unmasked = np.zeros(data_shapes[0])
         for band_data in data:
-            if band_data.instrument_name == self.kwargs["instrument"].__class__.__name__:
-                n_bands_unmasked += band_data.load_mask()
-        breakpoint()
+            if band_data.instr_name == self.kwargs["instrument"].__class__.__name__:
+                n_bands_unmasked += band_data.load_mask("MASK", True)[0]
         # convert to boolean (True if n_bands_unmasked >= min_bands else False)
         mask = n_bands_unmasked >= self.kwargs["min_bands"]
         mask = mask.astype(bool)
-        breakpoint()
         if invert:
             mask = np.logical_not(mask)
+        galfind_logger.info(
+            f"Loaded {repr(self)} mask from {data.survey}!"
+        )
         return mask
 
 
