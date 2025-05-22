@@ -54,7 +54,7 @@ class Selector(ABC):
         assert self._assertions()
 
     def __repr__(self: Self) -> str:
-        return f"{self.__class__.__name__}({','.join([str(kwarg).replace(' ', '') for kwarg in self.kwargs.values()])})"
+        return f"{self.__class__.__name__}({','.join([repr(kwarg).replace(' ', '') for kwarg in self.kwargs.values()])})"
     
     def __str__(self: Self) -> str:
         output_str = funcs.line_sep
@@ -471,6 +471,17 @@ class Redshift_Selector(SED_fit_Selector):
         return False
 
 
+class Mask_Selector(Data_Selector):
+
+    @abstractmethod
+    def load_mask(
+        self: Self,
+        data: Data,
+        invert: bool = True,
+    ) -> u.Quantity:
+        pass
+
+
 class Multiple_Selector(ABC):
 
     def __init__(
@@ -571,7 +582,7 @@ class Multiple_Data_Selector(Multiple_Selector, Data_Selector, ABC):
         # crop each selector to the filterset
         self.selectors = [selector for selector in self.selectors \
             if selector.kwargs["band_name"] in filterset.band_names]
-
+        
 
 class Multiple_Photometry_Selector(Multiple_Selector, Photometry_Selector, ABC):
 
@@ -590,7 +601,7 @@ class Multiple_Photometry_Selector(Multiple_Selector, Photometry_Selector, ABC):
         object: Union[Galaxy, Catalogue],
         return_copy: bool = True,
         *args,
-        **kwargs
+        **kwargs,
     ) -> Optional[Union[Galaxy, Catalogue]]:
         # run selection individually on each selector
         [selector.__call__(object, return_copy = False) for selector in self.selectors]
@@ -621,6 +632,63 @@ class Multiple_SED_fit_Selector(Multiple_Selector, SED_fit_Selector, ABC):
         # run selection individually on each selector
         [selector.__call__(object, return_copy = False) for selector in self.selectors]
         return SED_fit_Selector.__call__(self, object, return_copy = return_copy)
+
+
+class Multiple_Mask_Selector(Multiple_Selector, Mask_Selector, ABC):
+
+    def __init__(
+        self: Self,
+        selectors: List[Type[Mask_Selector]],
+        selection_name: Optional[str] = None,
+        cat_filterset: Optional[Catalogue] = None,
+    ):
+        assert all([isinstance(selector, Mask_Selector) for selector in selectors])
+        Multiple_Selector.__init__(self, selectors, selection_name)
+        Mask_Selector.__init__(self)
+        # NOT SURE IF THIS IS REQUIRED?
+        if cat_filterset is not None:
+            self.crop_to_filterset(cat_filterset)
+
+    def __call__(
+        self: Self,
+        object: Union[Galaxy, Catalogue],
+        return_copy: bool = True,
+        *args,
+        **kwargs
+    ) -> Optional[Union[Galaxy, Type[Catalogue_Base]]]:
+        # NOT SURE IF THIS IS REQUIRED?
+        # run selection individually on each selector
+        if isinstance(object, tuple(Catalogue_Base.__subclasses__())):
+            self.crop_to_filterset(object.filterset)
+        [selector.__call__(object, return_copy = False) for selector in self.selectors]
+        return Mask_Selector.__call__(self, object, return_copy = return_copy)
+
+    # NOT SURE IF THIS IS REQUIRED?
+    def crop_to_filterset(self: Self, filterset: Multiple_Filter) -> NoReturn:
+        # crop each selector to the filterset
+        selectors_arr = []
+        for selector in self.selectors:
+            append = False
+            if hasattr(selector, "band_name"):
+                if selector.kwargs["band_name"] in filterset.band_names:
+                    append = True
+            else:
+                append = True
+            if append:
+                selectors_arr.append(selector)
+        self.selectors = selectors_arr
+    
+    def load_mask(
+        self: Self,
+        data: Data,
+        invert: bool = True,
+    ) -> u.Quantity:
+        # load mask from each selector
+        masks = [selector.load_mask(data, invert) for selector in self.selectors]
+        # combine masks
+        combined_mask = np.logical_and.reduce(masks)
+        breakpoint()
+        return combined_mask
 
 
 class ID_Selector(Data_Selector):
@@ -1362,7 +1430,7 @@ class Min_Band_Selector(Data_Selector):
         return len(gal.aper_phot[list(gal.aper_phot.keys())[0]]) >= self.kwargs["min_bands"]
 
 
-class Unmasked_Band_Selector(Data_Selector):
+class Unmasked_Band_Selector(Mask_Selector):
 
     def __init__(
         self: Self,
@@ -1421,8 +1489,29 @@ class Unmasked_Band_Selector(Data_Selector):
             )
         return Data_Selector._call_cat(self, cat, return_copy)
 
+    def load_mask(
+        self: Self,
+        data: Data,
+        invert: bool = True,
+    ) -> u.Quantity:
+        # load mask from each selector
+        if self.kwargs["band_name"] not in data.filterset.band_names:
+            mask = np.full(data.data_shape, False)
+            galfind_logger.warning(
+                f"{self.kwargs['band_name']} not in {data.filterset.band_names}!"
+            )
+        else:
+            # extract band_data from data
+            band_data = data[self.kwargs["band_name"]]
+            breakpoint()
+            # load mask from data
+            mask = band_data.load_mask()
+        if invert:
+            mask = np.logical_not(mask)
+        return mask
 
-class Min_Unmasked_Band_Selector(Data_Selector):
+
+class Min_Unmasked_Band_Selector(Mask_Selector):
 
     def __init__(
         self: Self,
@@ -1454,6 +1543,103 @@ class Min_Unmasked_Band_Selector(Data_Selector):
             mask = gal.aper_phot[list(gal.aper_phot.keys())[0]].flux.mask
         n_unmasked_bands = len([val for val in mask if not val])
         return n_unmasked_bands >= self.kwargs["min_bands"]
+
+    def load_mask(
+        self: Self,
+        data: Data,
+        invert: bool = True,
+    ) -> u.Quantity:
+        # add masks
+        n_bands_unmasked = np.zeros(data.data_shape, 0)
+        for band_data in data:
+            n_bands_unmasked += band_data.load_mask()
+        breakpoint()
+        # convert to boolean (True if n_bands_unmasked >= min_bands else False)
+        mask = n_bands_unmasked >= self.kwargs["min_bands"]
+        mask = mask.astype(bool)
+        breakpoint()
+        if invert:
+            mask = np.logical_not(mask)
+        return mask
+
+
+class Min_Instrument_Unmasked_Band_Selector(Mask_Selector):
+
+    def __init__(
+        self: Self,
+        min_bands: int,
+        instrument: Union[str, Type[Instrument]],
+    ):
+        if isinstance(instrument, str):
+            assert instrument in expected_instr_bands.keys(), \
+                galfind_logger.critical(
+                    f"{instrument=} not a valid instrument name."
+                )
+            instrument = [instr() for instr in Instrument.__subclasses__() \
+                if instr.__name__ == instrument][0]
+        kwargs = {"min_bands": min_bands, "instrument": instrument}
+        super().__init__(**kwargs)
+
+    @property
+    def _selection_name(self) -> str:
+        return f"unmasked_bands_{self.kwargs['instrument'].__class__.__name__}>{self.kwargs['min_bands'] - 1}"
+
+    @property
+    def _include_kwargs(self) -> List[str]:
+        return ["min_bands", "instrument"]
+
+    def _assertions(self: Self) -> bool:
+        try:
+            assertions = []
+            assertions.extend([isinstance(self.kwargs["min_bands"], int)])
+            assertions.extend([isinstance(self.kwargs["instrument"], tuple(Instrument.__subclasses__()))])
+            passed = all(assertions)
+        except:
+            passed = False
+        return passed
+        
+    def _selection_criteria(
+        self: Self,
+        gal: Galaxy,
+        *args,
+        **kwargs
+    ) -> bool:
+        phot_obs = gal.aper_phot[list(gal.aper_phot.keys())[0]]
+        if isinstance(phot_obs.flux, u.Quantity):
+            mask_arr = np.full(len(phot_obs.flux), False)
+        else:
+            mask_arr = phot_obs.flux.mask
+        instr_name_arr = np.array([filt.instrument_name for filt in phot_obs.filterset])
+        assert len(mask_arr) == len(instr_name_arr), \
+            galfind_logger.critical(
+                f"{len(mask_arr)=} != {len(instr_name_arr)=}"
+            )
+        n_unmasked_bands = len(
+            [
+                mask for mask, instr_name in zip(mask_arr, instr_name_arr) 
+                if not mask and instr_name == self.kwargs["instrument"].__class__.__name__
+            ]
+        )
+        return n_unmasked_bands >= self.kwargs["min_bands"]
+
+    def load_mask(
+        self: Self,
+        data: Data,
+        invert: bool = True,
+    ) -> u.Quantity:
+        # add masks
+        n_bands_unmasked = np.zeros(data.data_shape, 0)
+        for band_data in data:
+            if band_data.instrument_name == self.kwargs["instrument"].__class__.__name__:
+                n_bands_unmasked += band_data.load_mask()
+        breakpoint()
+        # convert to boolean (True if n_bands_unmasked >= min_bands else False)
+        mask = n_bands_unmasked >= self.kwargs["min_bands"]
+        mask = mask.astype(bool)
+        breakpoint()
+        if invert:
+            mask = np.logical_not(mask)
+        return mask
 
 
 class Bluewards_LyLim_Non_Detect_Selector(Redshift_Selector):
@@ -2628,7 +2814,7 @@ class Kokorev24_LRD_Selector(Multiple_Photometry_Selector):
         selection_name = "Kokorev+24_LRD")
 
 
-class Unmasked_Bands_Selector(Multiple_Data_Selector):
+class Unmasked_Bands_Selector(Multiple_Mask_Selector):
 
     def __init__(
         self: Self, 
@@ -2640,7 +2826,7 @@ class Unmasked_Bands_Selector(Multiple_Data_Selector):
         super().__init__(selectors, f"unmasked_{'+'.join(band_names)}")
 
 
-class Unmasked_Instrument_Selector(Multiple_Data_Selector):
+class Unmasked_Instrument_Selector(Multiple_Mask_Selector):
 
     def __init__(
         self: Self, 
@@ -2922,7 +3108,7 @@ class EPOCHS_Selector(Multiple_SED_fit_Selector):
         aper_diam: u.Quantity,
         SED_fit_label: Union[str, SED_code],
         allow_lowz: bool = False,
-        unmasked_instruments: Union[str, List[str]] = "NIRCam",
+        unmasked_instruments: Union[str, List[str]] = "NIRCam", # TODO: Update this to allow for custom masking or change to default "EPOCHS" masking
         cat_filterset: Optional[Multiple_Filter] = None,
         simulated: bool = False,
     ):
