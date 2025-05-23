@@ -3353,7 +3353,7 @@ class Data:
             
             if region_selector is not None:
                 masks.extend([
-                    region_selector_.load_mask(self, invert = invert_region).astype(bool)
+                    region_selector_.load_mask(self, invert = invert_region)
                     for region_selector_ in region_selector
                 ])
             if len(masks) == 0:
@@ -3403,11 +3403,14 @@ class Data:
             funcs.change_file_permissions(area_tab_path)
 
         # return unmasked area
-        unmasked_area = (
-            area_tab[
-                area_tab["mask_instr_band"]
-                == mask_selector_name
-            ]["unmasked_area"][0]
-            * area_tab["unmasked_area"].unit
-        )
+        unmasked_area_tab = area_tab[
+            (area_tab["mask_instr_band"] == mask_selector_name) \
+            & (area_tab["mask_type"] == mask_save_name) \
+            & (area_tab["region"] == reg_name)
+        ]["unmasked_area"]
+        assert len(unmasked_area_tab) == 1, \
+            galfind_logger.critical(
+                f"Multiple unmasked areas found for {mask_selector_name} {mask_save_name} {reg_name}"
+            )
+        unmasked_area = unmasked_area_tab[0] * area_tab["unmasked_area"].unit
         return unmasked_area

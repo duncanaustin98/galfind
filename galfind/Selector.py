@@ -761,7 +761,7 @@ class Region_Selector(Data_Selector):
         data: Data,
         invert: bool = True,
     ) -> u.Quantity:
-        mask = fits.open(self.get_mask_path(data), mode = "readonly", ignore_missing_simple = True)[self.name].data
+        mask = fits.open(self.get_mask_path(data), mode = "readonly", ignore_missing_simple = True)[self.name].data.astype(bool)
         if invert:
             mask = np.logical_not(mask)
         galfind_logger.info(

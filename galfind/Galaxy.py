@@ -1142,7 +1142,6 @@ class Galaxy:
                         region_selector = region_selector,
                         invert_region = invert_region,
                     )
-                breakpoint()
                 z_min_used = np.max([z_min, z_bin[0]])
                 z_max_used = np.min([z_max, z_bin[1]])
                 if any(_z == -1.0 for _z in [z_min_used, z_max_used]):
