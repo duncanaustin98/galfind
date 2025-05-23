@@ -16,6 +16,7 @@ if TYPE_CHECKING:
         Combined_Catalogue,
         Rest_Frame_Property_Calculator,
         Property_Calculator,
+        Mask_Selector,
     )
     from .selection import Completeness
 try:
@@ -387,7 +388,7 @@ class Number_Density_Function(Base_Number_Density_Function):
         z_step: float = 0.01,
         cv_origin: Union[str, None] = "Driver2010",
         completeness: Optional[Completeness] = None,
-        unmasked_area: Union[str, List[str], u.Quantity] = "selection",
+        unmasked_area: Union[str, List[str], u.Quantity, Type[Mask_Selector]] = "selection",
         plot: bool = True,
         save: bool = True,
         timed: bool = False,
@@ -565,7 +566,9 @@ class Number_Density_Function(Base_Number_Density_Function):
                         pass
                     elif cv_origin == "Driver2010":
                         cv_errs[i] = funcs.calc_cv_proper(
-                            z_bin, data_arr=data_arr
+                            z_bin, 
+                            data_arr=data_arr,
+                            masked_selector = unmasked_area,
                         )
                     else:
                         raise NotImplementedError

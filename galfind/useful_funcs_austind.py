@@ -19,7 +19,7 @@ from numpy.typing import NDArray
 from typing import Union, List, Tuple, TYPE_CHECKING, Optional
 if TYPE_CHECKING:
     from .Data import Band_Data_Base, Band_Data, Stacked_Band_Data
-    from . import Selector, Multiple_Filter
+    from . import Selector, Multiple_Filter, Mask_Selector
 try:
     from typing import Self, Type  # python 3.11+
 except ImportError:
@@ -593,6 +593,7 @@ def poisson_interval(k, alpha=0.05):
 def calc_cv_proper(
     z_bin: Union[list, np.array],
     data_arr: Union[list, np.array],
+    masked_selector: Type[Mask_Selector],
     rectangular_geometry_y_to_x: Union[int, float, list, np.array, dict] = 1.0,
     data_region: Union[str, int] = "all",
 ) -> float:
@@ -619,7 +620,7 @@ def calc_cv_proper(
     total_area = 0.0
     for data, y_to_x in zip(data_arr, rectangular_geometry_y_to_x):
         # calculate area of field
-        area = data.calc_unmasked_area(data.forced_phot_band.filt_name)
+        area = data.calc_unmasked_area(masked_selector) #data.forced_phot_band.filt_name)
         # field is square if y_to_x == 1
         dimensions_x = np.sqrt(area.value / y_to_x) * u.arcmin
         dimensions_y = np.sqrt(area.value * y_to_x) * u.arcmin
@@ -1001,14 +1002,13 @@ band_sep = "-" * 10 + "\n"
 def aper_diams_to_str(aper_diams: u.Quantity):
     return f"({','.join([f'{aper_diam:.2f}' for aper_diam in aper_diams.value])})as"
 
-def calc_unmasked_area(mask: Union[np.ndarray, Tuple[np.ndarray]], pixel_scale: u.Quantity):
+def calc_unmasked_area(
+    mask: Union[np.ndarray, Tuple[np.ndarray]],
+    pixel_scale: u.Quantity
+) -> u.Quantity:
     if isinstance(mask, tuple):
-        mask = np.logical_or.reduce(mask)
-    return (
-        ((mask.shape[0] * mask.shape[1]) - np.sum(mask))
-        * (pixel_scale ** 2)
-    ).to(u.arcmin**2)
-
+        mask = np.logical_and.reduce(mask)
+    return ((np.sum(mask)) * (pixel_scale ** 2)).to(u.arcmin**2)
 
 def sort_band_data_arr(band_data_arr: List[Type[Band_Data_Base]]):
     stacked_band_data_arr = [band_data for band_data in band_data_arr if band_data.__class__.__name__ == "Stacked_Band_Data"]

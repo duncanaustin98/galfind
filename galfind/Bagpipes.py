@@ -144,9 +144,7 @@ class Bagpipes(SED_code):
             redshift_label = label.split(SED_fit_params["sps_model"])[1][1:]
         else:
             SED_fit_params["sps_model"] = "BC03"
-            redshift_label = label.split(SED_fit_params["metallicity_prior"])[
-                -1
-            ][1:]
+            redshift_label = label.split(SED_fit_params["metallicity_prior"])[-1][1:]
         if redshift_label == "zfix":
             SED_fit_params["fix_z"] = True
         else:
@@ -282,9 +280,15 @@ class Bagpipes(SED_code):
         except ImportError:
             self.rank = 0
             self.size = 1
-        #breakpoint()
         # re-load to take into account sps model
+        if self.SED_fit_params["sps_model"] == "BPASS":
+            # set environment variable to use BPASS
+            os.environ["use_bpass"] = "1"
+        else:
+            # set environment variable to use BC03
+            os.environ["use_bpass"] = "0"
         importlib.reload(bagpipes)
+
         self._load_fit_instructions()
         if "continuity" in self.SED_fit_params["sfh"]:
             self._update_continuity_sfh_fit_instructions(cat)
@@ -1138,7 +1142,6 @@ class Bagpipes(SED_code):
                 lognorm["metallicity"] = (0.0, 3.0)
 
             # DPL
-
             dblplaw = {}  # double-power-law
             # Vary the time of peak star-formation between
             # the Big Bang at 0 Gyr and 15 Gyr later. In

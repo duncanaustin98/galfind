@@ -31,7 +31,18 @@ from astropy.utils.masked import Masked
 from tqdm import tqdm
 from typing import Union, Tuple, Any, List, Dict, Callable, Optional, NoReturn, TYPE_CHECKING
 if TYPE_CHECKING:
-    from . import Filter, Band_Data_Base, Selector, Multiple_Filter, Data, Property_Calculator_Base, Band_Cutout_Base, Band_Cutout, Region_Selector
+    from . import (
+        Filter,
+        Band_Data_Base,
+        Selector,
+        Multiple_Filter,
+        Data,
+        Property_Calculator_Base,
+        Band_Cutout_Base,
+        Band_Cutout,
+        Region_Selector,
+        Mask_Selector,
+    )
 try:
     from typing import Self, Type  # python 3.11+
 except ImportError:
@@ -1437,7 +1448,7 @@ class Catalogue(Catalogue_Base):
         aper_diam: u.Quantity,
         SED_fit_code: SED_code,
         z_step: float = 0.01,
-        unmasked_area: Union[str, List[str], u.Quantity] = "selection",
+        unmasked_area: Union[str, List[str], u.Quantity, Type[Mask_Selector]] = "selection",
     ) -> NDArray[float]:
         assert hasattr(self, "data"), \
             galfind_logger.critical(

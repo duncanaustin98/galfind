@@ -15,7 +15,7 @@ import inspect
 from numpy.typing import NDArray
 from typing import TYPE_CHECKING, Any, List, Dict, Union, Type, Optional, NoReturn
 if TYPE_CHECKING:
-    from . import Galaxy, Catalogue_Creator, Data, Selector, Property_Calculator_Base
+    from . import Galaxy, Catalogue_Creator, Data, Selector, Property_Calculator_Base, Mask_Selector
 try:
     from typing import Self, Type  # python 3.11+
 except ImportError:
@@ -1145,7 +1145,7 @@ class Catalogue_Base:
         aper_diam: u.Quantity,
         SED_fit_code: SED_code,
         z_step: float = 0.01,
-        unmasked_area: Union[str, List[str], u.Quantity] = "selection",
+        unmasked_area: Union[str, List[str], u.Quantity, Type[Mask_Selector]] = "selection",
     ) -> Dict[str, NDArray[float]]:
         assert len(z_bin) == 2
         assert z_bin[0] < z_bin[1]
@@ -1182,7 +1182,7 @@ class Catalogue_Base:
                     desc=f"Calculating {full_survey_name} Vmax's in {full_data_name}"
                 )
             ]
-            breakpoint()
+            #breakpoint()
             # make/update file to store data
             Vmax_arr = self._make_Vmax_ecsv(
                 data,

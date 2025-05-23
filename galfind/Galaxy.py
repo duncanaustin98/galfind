@@ -34,7 +34,7 @@ from mpl_toolkits.axes_grid1.anchored_artists import AnchoredSizeBar
 from tqdm import tqdm
 from typing import  Union, Callable, Tuple, List, NoReturn, Optional, Dict, Any, TYPE_CHECKING
 if TYPE_CHECKING:
-    from . import Filter, SED_code, Selector, Band_Data, Band_Cutout, Multiple_Filter, SED_code
+    from . import Filter, SED_code, Selector, Band_Data, Band_Cutout, Multiple_Filter, SED_code, Mask_Selector
 try:
     from typing import Self, Type  # python 3.11+
 except ImportError:
@@ -928,7 +928,7 @@ class Galaxy:
         crops: List[Type[Selector]],
         z_step: float = 0.01,
         depth_mode: str = "n_nearest",
-        unmasked_area: Union[str, List[str], u.Quantity] = "selection",
+        unmasked_area: Union[str, List[str], u.Quantity, Type[Mask_Selector]] = "selection",
     ) -> float:
         # TODO: remove dependence on full_survey_name input
         # input assertions
@@ -1120,12 +1120,17 @@ class Galaxy:
                 # continue
 
                 # calculate/load unmasked area of forced photometry band
-
+                if hasattr(data, "region_selector"):
+                    region_selector = data.region_selector
+                    invert_region = region != data.region_selector.name
+                else:
+                    region_selector = None
+                    invert_region = False
                 if unmasked_area == "selection":
                     unmasked_area_ = data.calc_unmasked_area(
-                        instr_or_band_name = data.forced_phot_band.filt_name,
-                        region_selector = data.region_selector,
-                        invert_region = region != data.region_selector.name,
+                        mask_selector = data.forced_phot_band.filt_name,
+                        region_selector = region_selector,
+                        invert_region = invert_region,
                     )
                 elif isinstance(unmasked_area, u.Quantity):
                     assert isinstance(unmasked_area, u.Quantity)
@@ -1133,10 +1138,11 @@ class Galaxy:
                     unmasked_area_ = unmasked_area
                 else:
                     unmasked_area_ = data.calc_unmasked_area(
-                        instr_or_band_name = unmasked_area,
-                        region_selector = data.region_selector,
-                        invert_region = region != data.region_selector.name,
+                        mask_selector = unmasked_area,
+                        region_selector = region_selector,
+                        invert_region = invert_region,
                     )
+                breakpoint()
                 z_min_used = np.max([z_min, z_bin[0]])
                 z_max_used = np.min([z_max, z_bin[1]])
                 if any(_z == -1.0 for _z in [z_min_used, z_max_used]):

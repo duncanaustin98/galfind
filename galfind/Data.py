@@ -1038,7 +1038,7 @@ class Band_Data_Base(ABC):
             if len(mask_types) == 1:
                 self._calc_area_given_mask(mask_type)
             elif len(mask_types) > 1:
-                masks = tuple([self.load_mask()[0][mask_type] for mask_type in mask_types])
+                masks = tuple([self.load_mask(mask_type, invert = True)[0] for mask_type in mask_types])
                 self._calc_area_given_mask("+".join(np.sort(mask_types)), masks)
     
     def _calc_area_given_mask(
@@ -1051,9 +1051,9 @@ class Band_Data_Base(ABC):
         if mask_name not in self.unmasked_area.keys():
             # load mask
             if mask is None:
-                mask = self.load_mask()[0][mask_name.upper()]
+                mask = self.load_mask(mask_name.upper(), invert = True)[0]
             if isinstance(mask, tuple):
-                mask = np.logical_or.reduce(mask)
+                mask = np.logical_and.reduce(mask)
             # ensure mask is the same shape as your imaging
             assert mask.shape == self.data_shape, galfind_logger.critical(
                 f"{mask_name=} shape {mask.shape} != {self.data_shape=}"
@@ -3301,6 +3301,7 @@ class Data:
 
         if mask_selector_name not in self.unmasked_area.keys():
             self.unmasked_area[mask_selector_name] = {}
+
         area_tab_path = f"{config['DEFAULT']['GALFIND_WORK']}/Unmasked_areas/{self.survey}_{self.version}.ecsv"
         if Path(area_tab_path).is_file():
             area_tab = Table.read(area_tab_path)
@@ -3319,7 +3320,7 @@ class Data:
             
         if calculate:
             if isinstance(mask_selector, tuple(Mask_Selector.__subclasses__())):
-                masks = [mask_selector.load_mask(self, invert = not invert_region)]
+                masks = [mask_selector.load_mask(self, invert = False)]
                 pix_scales = [band_data.pix_scale for band_data in self]
                 assert all(pix_scale == pix_scales[0] for pix_scale in pix_scales), \
                     galfind_logger.critical(
@@ -3337,11 +3338,11 @@ class Data:
                                 "All pixel scales for bands in the same instrument must be the same!"
                             )
                         pix_scale = pix_scales[0]
-                        masks.extend([band_data.load_mask()[0][mask_type_] for band_data in self \
+                        masks.extend([band_data.load_mask(mask_type_, invert = True)[0] for band_data in self \
                             for mask_type_ in mask_type if band_data.instr_name == name])
                     elif name in self.filterset.band_names:
                         pix_scale = self[name].pix_scale
-                        masks.extend([self[name].load_mask()[0][mask_type_] for mask_type_ in mask_type])
+                        masks.extend([self[name].load_mask(mask_type_, invert = True)[0] for mask_type_ in mask_type])
                     else:
                         possible_names = self.filterset.instrument_name.split("+") + self.filterset.band_names
                         err_message = f"{name} not in {possible_names}"
@@ -3351,9 +3352,10 @@ class Data:
                         raise(Exception(err_message))
             
             if region_selector is not None:
-                for region_selector_ in region_selector:
-                    masks.extend([region_selector_.load_mask(self, invert = not invert_region)])
-            
+                masks.extend([
+                    region_selector_.load_mask(self, invert = invert_region).astype(bool)
+                    for region_selector_ in region_selector
+                ])
             if len(masks) == 0:
                 galfind_logger.critical(
                     f"Could not find any masks for {mask_selector_name}"
@@ -3361,9 +3363,21 @@ class Data:
             elif len(masks) == 1:
                 mask = masks[0]
             else:
-                mask = np.logical_or.reduce(tuple(masks))
-            mask = np.invert(mask)
+                mask = np.logical_and.reduce(tuple(masks))
 
+            # save .fits mask
+            mask_save_path = f"{config['Masking']['MASK_DIR']}/{self.survey}/area_masks/" + \
+                f"{mask_selector_name}_{mask_save_name}_{reg_name}_{self.version}.fits"
+            if not Path(mask_save_path).is_file():
+                galfind_logger.info(
+                    f"Saving mask to {mask_save_path.split('/')[-1]}"
+                )
+                funcs.make_dirs(mask_save_path)
+                # save boolean mask as .fits file
+                hdu = fits.ImageHDU(mask.astype(np.uint8), name=mask_selector_name)
+                hdu.writeto(mask_save_path, overwrite=True)
+                funcs.change_file_permissions(mask_save_path)
+            
             if isinstance(mask_selector, list) and len(mask_selector) == 1:
                 self[mask_selector_name[0]]._calc_area_given_mask(mask_save_name, mask)
                 unmasked_area = self[mask_selector_name[0]].unmasked_area[mask_save_name]
