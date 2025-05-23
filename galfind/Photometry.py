@@ -364,7 +364,7 @@ class Photometry:
             mag_errs_new_units = funcs.convert_mag_err_units(
                 self.wav,
                 self.flux,
-                self.flux_errs,
+                [self.flux_errs, self.flux_errs],
                 mag_units,
             )
             # update with upper limit errors
@@ -393,7 +393,6 @@ class Photometry:
                 yerr.append(mag_errs * mag_units)
         else:
             yerr = None
-
         # log scale y axis if not in units of ABmag
         if mag_units != u.ABmag:
             if log_scale:
@@ -412,7 +411,6 @@ class Photometry:
             if plot_errs["y"]:
                 yerr = np.array([yerr[0].value, yerr[1].value])
             mags_to_plot = np.array(mags_to_plot.value)
-
         if plot_errs["x"]:
             xerr = np.array(
                 [
@@ -484,7 +482,7 @@ class Photometry:
             plot_limits = {"lolims": uplims}
         else:
             plot_limits = {"uplims": uplims}
-
+            
         plot = ax.errorbar(
             wavs_to_plot,
             mags_to_plot,

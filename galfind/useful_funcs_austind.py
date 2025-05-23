@@ -90,6 +90,11 @@ def convert_mag_err_units(wavs, mags, mag_errs, units):
     ), galfind_logger.critical(
         f"Could not convert mag error units as mags.unit = {mags.unit} != mag_errs.unit = ({mag_errs[0].unit}, {mag_errs[1].unit})"
     )
+    assert len(mag_errs) == 2 and len(mag_errs[0]) > 1 and len(mag_errs[1]) > 1, \
+        galfind_logger.critical(
+            f"Could not convert mag error units as mag_errs = {mag_errs} with {len(mag_errs)=} != 2"
+            f" and {len(mag_errs[0])=}, {len(mag_errs[1])=}"
+        )
 
     if units == mags.unit:
         return mag_errs
@@ -123,7 +128,6 @@ def convert_mag_err_units(wavs, mags, mag_errs, units):
                     "Units must be either ABmag or have physical units of 'spectral flux density' or 'power density/spectral flux density wav'!"
                 )
             )
-
         if swap_order:  # swap order of l1 / u1
             return [
                 mags_new_units - mags_u1_new_units,
@@ -649,7 +653,6 @@ def calc_cv_proper(
         ).decompose()
         A *= scale
         B *= scale
-        C *= scale
         N = 1
         cos_var = (
             (1.0 - 0.03 * np.sqrt(np.max([A / B, B / A]) - 1.0))
