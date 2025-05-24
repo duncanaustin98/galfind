@@ -550,7 +550,7 @@ class Photometry_obs(Photometry):
                         )
                     )
                 ]
-        breakpoint()
+                
         if annotate:
             # x/y labels etc here
             ax.legend()
