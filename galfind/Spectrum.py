@@ -136,6 +136,7 @@ class Spectrum:
         MSA_metafile_name: str,
         author_years: dict = {},  # {author_year: z}
         meta: dict = {},
+        **kwargs,
     ) -> NoReturn:
         self.wavs = wavs
         self.fluxes = fluxes
@@ -148,6 +149,8 @@ class Spectrum:
         self.MSA_metafile_name = MSA_metafile_name
         self.author_years = author_years
         self.meta = meta
+        for key, value in kwargs.items():
+            setattr(self, key, value)
 
     @property
     def PID(self) -> Union[int, None]:
@@ -212,6 +215,8 @@ class Spectrum:
         save: bool = True,
         version: str = "v3",
         z: Union[float, None] = None,
+        *args,
+        **kwargs,
     ) -> Self:
         import msaexp.spectrum
 
@@ -259,7 +264,7 @@ class Spectrum:
             full_flux_errs = spectrum_1D.spec["full_err"] * (
                 N_exposures**-0.25
             )
-        elif version == "v3":
+        elif version in ["v3", "v4_2"]:
             msa_metafile = str(header["MSAMETFL"]).replace(" ", "")
             full_flux_errs = spectrum_1D.spec["full_err"]
         else:
@@ -302,6 +307,7 @@ class Spectrum:
             reduction_name,
             MSA_metafile_name,
             meta={name: header[name] for name in header},
+            **kwargs,
         )
         spec_obj.origin = loc_2D_path
         return spec_obj
@@ -375,8 +381,13 @@ class Spectrum:
             # )
 
     def calc_SNR_cont(
-        self, rest_cont_wav: u.Quantity, delta_wav: u.Quantity = 100 * u.AA
+        self: Self,
+        rest_cont_wav: u.Quantity,
+        delta_wav: u.Quantity = 100 * u.AA,
     ):
+        assert hasattr(self, "z"), galfind_logger.critical(
+            f"{repr(self)} does not have a redshift (z) attribute!"
+        )
         rest_wavs = self.wavs / (1.0 + self.z)
         wav_mask = (rest_wavs > rest_cont_wav - delta_wav / 2.0) & (
             rest_wavs < rest_cont_wav + delta_wav / 2.0
@@ -389,7 +400,18 @@ class Spectrum:
         self.SNR = mean_SNR
         return mean_SNR
 
-    def plot(self, src: str = "msaexp", out_dir: Optional[str] = f"{config['DEFAULT']['GALFIND_WORK']}/DJA_spec_plots/") -> NoReturn:
+    def plot(
+        self: Self,
+        src: str = "msaexp",
+        out_dir: Optional[str] = f"{config['DEFAULT']['GALFIND_WORK']}/DJA_spec_plots/",
+        fig: Optional[plt.Figure] = None,
+        ax: Optional[plt.Axes] = None,
+        wav_units: u.Unit = u.um,
+        flux_units: u.Unit = u.uJy,
+    ) -> NoReturn:
+        assert src in ["msaexp", "manual"], galfind_logger.critical(
+            f"{src=} not in ['msaexp', 'manual']"
+        )
         if src == "msaexp":
             import msaexp.spectrum
 
@@ -402,6 +424,31 @@ class Spectrum:
             save_path = f"{out_dir}{self.instrument.grating_filter_name}/{self.src_name}_spec.png"
             funcs.make_dirs(save_path)
             fig.savefig(save_path)
+        elif src == "manual":
+            if fig is None or ax is None:
+                fig, ax = plt.subplots()
+            # unit conversions
+            wavs = funcs.convert_wav_units(self.wavs, wav_units)
+            fluxes = funcs.convert_mag_units(self.wavs, self.fluxes, flux_units)
+            ax.plot(wavs, fluxes, label=self.src_name)
+    
+    def make_mock_phot(
+        self: Self,
+        filterset: Multiple_Filter,
+        depths: Optional[Dict[str, float]] = None,
+    ):
+        from . import SED_obs
+        # TODO: Link SED and Spectrum objects
+        # make SED object from self
+        assert self.z is not None, galfind_logger.critical(
+            f"{repr(self)} does not have a redshift (z) attribute!"
+        )
+        sed_obs = SED_obs(self.z, self.wavs.value, self.fluxes.value, self.wavs.unit, self.fluxes.unit)
+        return sed_obs.create_mock_photometry(
+            filterset,
+            depths = depths
+        )
+
 
 
 # should inherit from Catalogue_Base
@@ -410,12 +457,10 @@ class Spectral_Catalogue:
         # check if any of the sources are the same
         orig_src_names = [spec.src_name for spec in spectrum_arr]
         unique_src_names = np.unique(orig_src_names)
-        self.spectrum_arr = np.array(
-            [
-                [spec for spec in spectrum_arr if spec.src_name == src_name]
-                for src_name in unique_src_names
-            ]
-        )
+        self.spectrum_arr = [
+            [spec for spec in spectrum_arr if spec.src_name == src_name]
+            for src_name in unique_src_names
+        ]
         # self.sky_coords = np.array([spec[0].sky_coord for spec in self.spectrum_arr])
 
     def __len__(self):
@@ -457,76 +502,88 @@ class Spectral_Catalogue:
         z_cat_range: Union[list, np.array, None] = None,
         grating_filter: Union[str, None] = None,
         grade: int = 3,
+        filename_arr: Optional[List[str]] = None,
         save: bool = True,
         z_from_cat: bool = False,
         version: str = "v2",
     ):
-        if type(grating_filter) != type(None):
+        if grating_filter is not None:
             assert grating_filter in NIRSpec.available_grating_filters
-        assert version in ["v1", "v2", "v3"]
+        assert version in ["v1", "v2", "v3", "v4_2"]
         # open and crop catalogue
         # DJA_cat = utils.read_catalog(config['Spectra']['DJA_CAT_PATH'], format = "ascii.ecsv")
         DJA_cat = Table.read(
             config["Spectra"]["DJA_CAT_PATH"].replace("v2", version)
         )
-        if type(ra_range) != type(None):
-            assert len(ra_range) == 2
-            if type(ra_range) in [list, np.array]:
-                assert ra_range[0].unit == ra_range[1].unit
-                ra_range = [ra_range[0].value, ra_range[1].value] * ra_range[
-                    0
-                ].unit
-            ra_range = sorted(ra_range.to(u.deg).value)
-            DJA_cat = DJA_cat[
-                ((DJA_cat["ra"] > ra_range[0]) & (DJA_cat["ra"] < ra_range[1]))
-            ]
-        if type(dec_range) != type(None):
-            assert len(dec_range) == 2
-            if type(dec_range) in [list, np.array]:
-                assert dec_range[0].unit == dec_range[1].unit
-                dec_range = [
-                    dec_range[0].value,
-                    dec_range[1].value,
-                ] * dec_range[0].unit
-            dec_range = sorted(dec_range.to(u.deg).value)
-            DJA_cat = DJA_cat[
-                (
-                    (DJA_cat["dec"] > dec_range[0])
-                    & (DJA_cat["dec"] < dec_range[1])
-                )
-            ]
-        if type(grade) != type(None):
-            DJA_cat = DJA_cat[DJA_cat["grade"] == grade]
-        if type(grating_filter) != type(None):
-            if "grating" in DJA_cat.colnames:
+        if filename_arr is None:
+            if ra_range is not None:
+                assert len(ra_range) == 2
+                if type(ra_range) in [list, np.array]:
+                    assert ra_range[0].unit == ra_range[1].unit
+                    ra_range = [ra_range[0].value, ra_range[1].value] * ra_range[
+                        0
+                    ].unit
+                ra_range = sorted(ra_range.to(u.deg).value)
                 DJA_cat = DJA_cat[
-                    DJA_cat["grating"] == grating_filter.split("/")[0]
+                    ((DJA_cat["ra"] > ra_range[0]) & (DJA_cat["ra"] < ra_range[1]))
                 ]
-        if type(grating_filter) != type(None):
-            if "filter" in DJA_cat.colnames:
+            if dec_range is not None:
+                assert len(dec_range) == 2
+                if type(dec_range) in [list, np.array]:
+                    assert dec_range[0].unit == dec_range[1].unit
+                    dec_range = [
+                        dec_range[0].value,
+                        dec_range[1].value,
+                    ] * dec_range[0].unit
+                dec_range = sorted(dec_range.to(u.deg).value)
                 DJA_cat = DJA_cat[
-                    DJA_cat["filter"] == grating_filter.split("/")[1]
+                    (
+                        (DJA_cat["dec"] > dec_range[0])
+                        & (DJA_cat["dec"] < dec_range[1])
+                    )
                 ]
-        if type(z_cat_range) != type(None):
-            DJA_cat = DJA_cat[
-                (
-                    (DJA_cat["z"] > z_cat_range[0])
-                    & (DJA_cat["z"] < z_cat_range[1])
-                )
-            ]
-            z_from_cat = True
-        if type(PID) != type(None):
-            if "PID" in DJA_cat.colnames:
-                DJA_cat = DJA_cat[DJA_cat["PID"] == PID]
+            if grade is not None:
+                DJA_cat = DJA_cat[DJA_cat["grade"] == grade]
+            if grating_filter is not None:
+                if "grating" in DJA_cat.colnames:
+                    # TODO: Generalize this!
+                    if version == "v4_2":
+                        if grating_filter == "PRISM/CLEAR":
+                            grating_filter = "PRISM_CLEAR"
+                    DJA_cat = DJA_cat[
+                        DJA_cat["grating"] == grating_filter.split("/")[0]
+                    ]
+                
+                if "filter" in DJA_cat.colnames:
+                    DJA_cat = DJA_cat[
+                        DJA_cat["filter"] == grating_filter.split("/")[1]
+                    ]
+            if z_cat_range is not None:
+                DJA_cat = DJA_cat[
+                    (
+                        (DJA_cat["z"] > z_cat_range[0])
+                        & (DJA_cat["z"] < z_cat_range[1])
+                    )
+                ]
+                z_from_cat = True
+            if PID is not None:
+                if "PID" in DJA_cat.colnames:
+                    DJA_cat = DJA_cat[DJA_cat["PID"] == PID]
+        else:
+            mask = np.isin(np.array(DJA_cat["file"]), np.array(filename_arr))
+            DJA_cat = DJA_cat[mask]
+            # TODO: assertions that these follow the other rules
 
         if z_from_cat:
             return cls(
                 [
                     Spectrum.from_DJA(
                         f"{config['Spectra']['DJA_WEB_DIR']}/{root}/{file}",
-                        save=save,
-                        version=version,
-                        z=z,
+                        save = save,
+                        version = version,
+                        z = z,
+                        root = root,
+                        file = file,
                     )
                     for root, file, z in tqdm(
                         zip(DJA_cat["root"], DJA_cat["file"], DJA_cat["z"]),
@@ -540,8 +597,10 @@ class Spectral_Catalogue:
                 [
                     Spectrum.from_DJA(
                         f"{config['Spectra']['DJA_WEB_DIR']}/{root}/{file}",
-                        save=save,
-                        version=version,
+                        save = save,
+                        version = version,
+                        root = root,
+                        file = file,
                     )
                     for root, file in tqdm(
                         zip(DJA_cat["root"], DJA_cat["file"]),
@@ -550,5 +609,13 @@ class Spectral_Catalogue:
                     )
                 ]
             )
+    
+    def plot(
+        self: Self,
+        src: str = "msaexp"
+    ):
+        for gal in tqdm(self, desc="Plotting spectra"):
+            for spec in gal:
+                spec.plot(src = src)
 
     # def crop_to_grating(self, name = "G395H/F290LP"):

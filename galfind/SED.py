@@ -168,9 +168,7 @@ class SED:
         # update filter wavelengths to correct units
         filter_wavs = funcs.convert_wav_units(filter_wavs, u.AA).value
         # interpolate SED to be on same grid as filter_profile
-        sed_interp = interp1d(wavs, mags, fill_value="extrapolate")(
-            filter_wavs
-        )  # in f_lambda
+        sed_interp = interp1d(wavs, mags, fill_value="extrapolate")(filter_wavs) # in f_lambda
         if detector_type == "photon":
             # calculate integral(λ * f(λ) * T(λ) dλ)
             numerator = np.trapz(filter_wavs * sed_interp * filter_trans, x = filter_wavs)
@@ -310,9 +308,7 @@ class SED:
                 "Wavelength": band_wavs,
                 "Transmission": np.ones(len(band_wavs)),
             }
-            bp_averaged_fluxes[i] = self.calc_bandpass_averaged_flux(
-                filter_profile
-            )
+            bp_averaged_fluxes[i] = self.calc_bandpass_averaged_flux(filter_profile)
         # convert bp_averaged_fluxes to Jy
         bp_averaged_fluxes_Jy = funcs.convert_mag_units(
             [UVJ_filters[band]["lam_eff"] for band in ["U", "V", "J"]],

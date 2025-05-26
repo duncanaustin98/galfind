@@ -973,8 +973,12 @@ class Depth_Region_Selector(Region_Selector):
             Array with zeros replaced by nearest non-zero values
         """
         # Make an array of zeros based on the cat.data filt_name shape
-        # TODO: the zero index is hard-coded for now, as SExtractor requires all images to be the same shape
-        mask = np.zeros(cat.data[self.kwargs["filt_name"]][0].data_shape)
+        if isinstance(self.kwargs["filt_name"], str) and "+" not in self.kwargs["filt_name"]:
+            data_shape = cat.data[self.kwargs["filt_name"]].data_shape
+        else:
+            # TODO: the zero index is hard-coded for now, as SExtractor requires all images to be the same shape
+            data_shape = cat.data[self.kwargs["filt_name"]][0].data_shape
+        mask = np.zeros(data_shape)
         sky_coords = SkyCoord(cat.sky_coord)
         # load wcs of forced photometry band
         wcs = cat.data.forced_phot_band.load_wcs()
