@@ -13,6 +13,7 @@ from abc import ABC, abstractmethod
 
 import astropy.units as u
 import itertools
+import logging
 import numpy as np
 from astropy.table import Table, join
 from tqdm import tqdm
@@ -430,7 +431,7 @@ class SED_code(ABC):
         load_message = f"Loading photometry for {cat.survey} {cat.version} for {self.label} SED fitting"
         galfind_logger.info(load_message)
         for i, gal in tqdm(
-            enumerate(cat), desc=load_message, total=len(cat)
+            enumerate(cat), desc=load_message, total=len(cat), disable=galfind_logger.getEffectiveLevel() > logging.INFO
         ):
             for j, (band_name, band_instrument) in enumerate(zip(input_filterset.band_names, input_filterset.instrument_names)):
                 if band_name in gal.aper_phot[aper_diam].filterset.band_names:  # Check mask?

@@ -9,6 +9,7 @@ from pathlib import Path
 from copy import deepcopy
 import time
 from scipy.stats import norm
+import logging
 from numba import njit
 from joblib import Parallel, delayed, parallel_config
 import itertools
@@ -140,10 +141,11 @@ class Rest_Frame_Property_Calculator(Property_Calculator):
             [self._call_gal(gal, n_chains = n_chains, output = False, \
                 overwrite = overwrite, save_dir = save_dir) \
                 for gal in tqdm(cat, total = len(cat), \
-                desc = f"Calculating {self.name}")]
+                desc = f"Calculating {self.name}",
+                disable=galfind_logger.getEffectiveLevel() > logging.INFO)]
         else:
             # TODO: should be set when serializing the object
-            for gal in tqdm(cat, total = len(cat)):
+            for gal in tqdm(cat, total = len(cat), disable=galfind_logger.getEffectiveLevel() > logging.INFO):
                 for label in gal.aper_phot[self.aper_diam].SED_results.keys():
                     try:
                         gal.aper_phot[self.aper_diam].flux = \

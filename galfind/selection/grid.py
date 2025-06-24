@@ -3,12 +3,13 @@ from __future__ import annotations
 import astropy.units as u
 import numpy as np
 import h5py
+import logging
 from numpy.typing import NDArray
 from abc import abstractmethod
 from copy import deepcopy
 from tqdm import tqdm
 from pathlib import Path
-from typing import TYPE_CHECKING, Tuple, List, Dict, Optional
+from typing import TYPE_CHECKING, Tuple, List, Dict, Optional, Callable
 if TYPE_CHECKING:
     from . import Catalogue, SED_code, Selector, Multiple_Filter, Property_Calculator_Base
 try:
@@ -60,7 +61,7 @@ class Grid:
         y_sim_bins = np.digitize(y_sim, y_arr)
         # determine which galaxies are selected
         selected = np.full(len(x_select_bins), False)
-        for i, (x_select_bin, y_select_bin, x_sim_bin, y_sim_bin) in enumerate(zip(x_select_bins, y_select_bins, x_sim_bin, y_sim_bin)):
+        for i, (x_select_bin, y_select_bin, x_sim_bin, y_sim_bin) in enumerate(zip(x_select_bins, y_select_bins, x_sim_bins, y_sim_bins)):
             selected[i] = cls._select(x_select_bin, y_select_bin, x_sim_bin, y_sim_bin)
         # make a grid from the selected and simulated galaxies
         z, _, _ = np.histogram2d(
@@ -280,7 +281,8 @@ class Grid_2D:
             # add new scattered flux columns to the old table
             for i, filt in tqdm(enumerate(data_filterset), 
                 desc = "Adding scattered flux/err/depth columns to the table",
-                total = len(data_filterset)
+                total = len(data_filterset),
+                disable = galfind_logger.getEffectiveLevel() > logging.INFO
             ):
                 scattered_tab[f"{filt.instrument_name}.{filt.band_name}_scattered"] = np.array(
                     [

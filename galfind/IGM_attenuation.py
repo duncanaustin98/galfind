@@ -16,8 +16,9 @@ import numpy as np
 from astropy.table import Table
 from scipy.interpolate import RegularGridInterpolator
 from tqdm import tqdm
+import logging 
 
-from . import config, wav_lyman_lim
+from . import config, wav_lyman_lim, galfind_logger
 from .Emission_lines import wav_lyman_alpha
 
 
@@ -247,6 +248,7 @@ def make_IGM_transmission_grid(
         enumerate(z_arr),
         total=len(z_arr),
         desc=f"Making {prescription} IGM grid",
+        disable=galfind_logger.getEffectiveLevel() > logging.INFO
     ):
         IGM_transmission[i, :] = calc_IGM_transmission(
             lyman_series, wav_rest_arr, z, prescription=prescription
