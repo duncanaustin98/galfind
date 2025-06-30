@@ -154,13 +154,13 @@ def clean_reg_mask(mask_path: str) -> str:
                 if i <= 2:
                     temp.write(line)
                 if not (line.endswith(",0)\n") and line.startswith("circle")):
+                    comma_split_line = line.split(",")
                     if (
                         (
-                            line.startswith("ellipse")
-                            and not (line.split(",")[2] == "0")
-                            and not (line.split(",")[3] == "0")
+                            (line.startswith("ellipse") or line.startswith("box"))
+                            and not (comma_split_line[2] == "0")
+                            and not (comma_split_line[3] == "0")
                         )
-                        or line.startswith("box")
                         or line.startswith("circle")
                         or line.startswith("polygon")
                     ):

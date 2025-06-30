@@ -1112,7 +1112,9 @@ def make_depth_tab(self: Data) -> NoReturn:
 
 
 def get_depths_from_h5(
-    self: Type[Band_Data_Base], aper_diam: u.Quantity, mode: str
+    self: Type[Band_Data_Base],
+    aper_diam: u.Quantity,
+    mode: str,
 ) -> Tuple[Dict[str, float], Dict[str, float]]:
     # open .h5
     hf = h5py.File(get_grid_depth_path(self, aper_diam, mode), "r")

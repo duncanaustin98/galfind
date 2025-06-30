@@ -16,7 +16,7 @@ import logging
 from numpy.typing import NDArray
 from typing import TYPE_CHECKING, Any, List, Dict, Union, Type, Optional, NoReturn
 if TYPE_CHECKING:
-    from . import Galaxy, Catalogue_Creator, Data, Selector, Property_Calculator_Base
+    from . import Galaxy, Catalogue_Creator, Data, Selector, Property_Calculator_Base, Mask_Selector
 try:
     from typing import Self, Type  # python 3.11+
 except ImportError:
@@ -1148,7 +1148,7 @@ class Catalogue_Base:
         aper_diam: u.Quantity,
         SED_fit_code: SED_code,
         z_step: float = 0.01,
-        unmasked_area: Union[str, List[str], u.Quantity] = "selection",
+        unmasked_area: Union[str, List[str], u.Quantity, Type[Mask_Selector]] = "selection",
     ) -> Dict[str, NDArray[float]]:
         assert len(z_bin) == 2
         assert z_bin[0] < z_bin[1]
@@ -1165,7 +1165,12 @@ class Catalogue_Base:
             )
         else:
             update_gals = self.gals
+        # HACK: remove update gals from self
+        # update_gals_ids = np.array([gal.ID for gal in update_gals])
+        # self.gals = np.array([gal for gal in self if gal.ID not in update_gals_ids])
+        # update_gals = []
         if len(update_gals) > 0:
+            breakpoint()
             full_survey_name = funcs.get_full_survey_name(self.survey, self.version, self.filterset)
             full_data_name = funcs.get_full_survey_name(data.survey, data.version, data.filterset)
             # calculate Vmax's and append them to Vmax ecsv
@@ -1186,6 +1191,7 @@ class Catalogue_Base:
                     disable = galfind_logger.getEffectiveLevel() > logging.INFO,
                 )
             ]
+            #breakpoint()
             # make/update file to store data
             Vmax_arr = self._make_Vmax_ecsv(
                 data,

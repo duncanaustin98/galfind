@@ -251,7 +251,7 @@ class Grid_2D:
             aper_diams,
             forced_phot_band_name = None,
         ).replace(".fits", f"_reg={depth_region}.fits") #_{sim_cat.cat_path.split('/')[-1]}
-
+        breakpoint()
         # construct catalogue creator for scattered catalogue
         scattered_cat_creator = deepcopy(sim_cat.cat_creator)
         scattered_cat_creator.cat_path = scattered_cat_path
@@ -310,7 +310,7 @@ class Grid_2D:
         else:
             # load the scattered catalogue
             scattered_sim_cat = scattered_cat_creator()
-
+        
         # run/load SED fitting on the scattered catalogue
         [
             SED_fitter(
@@ -322,10 +322,13 @@ class Grid_2D:
             ) for SED_fitter in SED_fitter_arr
         ]
         # perform sample selection
-        select_cat = deepcopy(scattered_sim_cat)
-        for _sampler in sampler:
-            _sampler(scattered_sim_cat)
-            #select_cat = sampler(select_cat, return_copy = True)
+        if sampler is not None:
+            select_cat = deepcopy(scattered_sim_cat)
+            for _sampler in sampler:
+                _sampler(scattered_sim_cat)
+                #select_cat = sampler(select_cat, return_copy = True)
+        return scattered_sim_cat
+    
         raise Exception()
         return cls.from_sim_cat_select_cat(
             sim_cat, 

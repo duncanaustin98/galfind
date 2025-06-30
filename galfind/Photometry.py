@@ -322,6 +322,15 @@ class Photometry:
 
         if uplim_sigma is None:
             uplims = list(np.full(len(self.flux), False))
+            if plot_errs["y"]:
+                yerr = funcs.convert_mag_err_units(
+                    self.wav,
+                    self.flux,
+                    [self.flux_errs, self.flux_errs],
+                    mag_units,
+                )
+            else:
+                yerr = None
         else:
             # work out optimal size of error bar in terms of sigma
             if mag_units == u.ABmag:
@@ -358,41 +367,42 @@ class Photometry:
             galfind_logger.debug(
                 "Should test whether upper plotting limits preserves the mask!"
             )
-        self.non_detected_indices = uplims
 
-        if plot_errs["y"]:
-            mag_errs_new_units = funcs.convert_mag_err_units(
-                self.wav,
-                self.flux,
-                self.flux_errs,
-                mag_units,
-            )
-            # update with upper limit errors
-            uplim_l1_vals = [
-                funcs.convert_mag_units(
+            if plot_errs["y"]:
+                mag_errs_new_units = funcs.convert_mag_err_units(
                     self.wav,
-                    funcs.convert_mag_units(self.wav, self.depths[i], u.Jy)
-                    * uplim_sigma_arrow
-                    / 5.0,
+                    self.flux,
+                    [self.flux_errs, self.flux_errs],
                     mag_units,
-                ).value
-                for i in uplim_indices
-            ] * mag_units
+                )
+                # update with upper limit errors
+                uplim_l1_vals = [
+                    funcs.convert_mag_units(
+                        self.wav,
+                        funcs.convert_mag_units(self.wav, self.depths[i], u.Jy)
+                        * uplim_sigma_arrow
+                        / 5.0,
+                        mag_units,
+                    ).value
+                    for i in uplim_indices
+                ] * mag_units
 
-            if mag_units == u.ABmag:
-                # swap l1 / u1 errors
-                uplim_u1_vals = (uplim_l1_vals - uplim_vals).value
-                uplim_l1_vals = [np.nan for i in uplim_indices]
+                if mag_units == u.ABmag:
+                    # swap l1 / u1 errors
+                    uplim_u1_vals = (uplim_l1_vals - uplim_vals).value
+                    uplim_l1_vals = [np.nan for i in uplim_indices]
+                else:
+                    uplim_l1_vals = (uplim_vals - uplim_l1_vals).value
+                    uplim_u1_vals = [np.nan for i in uplim_indices]
+                yerr = []
+                for i, uplim_errs in enumerate([uplim_l1_vals, uplim_u1_vals]):
+                    mag_errs = mag_errs_new_units[i].value
+                    mag_errs.put(uplim_indices, uplim_errs)
+                    yerr.append(mag_errs * mag_units)
             else:
-                uplim_l1_vals = (uplim_vals - uplim_l1_vals).value
-                uplim_u1_vals = [np.nan for i in uplim_indices]
-            yerr = []
-            for i, uplim_errs in enumerate([uplim_l1_vals, uplim_u1_vals]):
-                mag_errs = mag_errs_new_units[i].value
-                mag_errs.put(uplim_indices, uplim_errs)
-                yerr.append(mag_errs * mag_units)
-        else:
-            yerr = None
+                yerr = None
+
+        self.non_detected_indices = uplims
 
         # log scale y axis if not in units of ABmag
         if mag_units != u.ABmag:

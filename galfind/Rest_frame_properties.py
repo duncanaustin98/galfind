@@ -6,6 +6,7 @@ import numpy as np
 from abc import abstractmethod, ABC
 from tqdm import tqdm
 from pathlib import Path
+from astropy.table import Table
 from copy import deepcopy
 import time
 from scipy.stats import norm
@@ -180,8 +181,8 @@ class Rest_Frame_Property_Calculator(Property_Calculator):
                             for params in params_arr
                         )
             cat.gals = gals
-        if cat.cat_creator.crops == []:
-            self._update_fits_cat(cat)
+        #if cat.cat_creator.crops == []:
+        self._update_fits_cat(cat)
         if output:
             return cat
     
@@ -198,12 +199,21 @@ class Rest_Frame_Property_Calculator(Property_Calculator):
         # TODO: generalize this funciton further
         # determine appropriate hdu and name to save properties as
         # TODO: generalize hdu name for non-EAZY SED fitting labels
-        property_hdu = "_".join(self.SED_fit_label.split("_")[:-1])
+        property_hdu = f"PROPERTIES_{'_'.join(self.SED_fit_label.split('_')[:-1])}".upper()
         property_name = f"{self.name}_{self.aper_diam.to(u.arcsec).value:.2f}as"
         # open fits catalogue
         tab = cat.open_cat(hdu=property_hdu)
-        if not property_name in tab.colnames:
+        if tab is None:
+            write = True
+            tab = Table()
+            tab["ID"] = np.array([gal.ID for gal in cat])
+        elif not property_name in tab.colnames:
+            write = True
             assert len(tab) == len(cat)
+        else:
+            write = False
+
+        if write:
             # extract median property values from phot_rest.properties
             property_vals = [gal.aper_phot[self.aper_diam].SED_results \
                 [self.SED_fit_label].phot_rest.properties[self.name].value if \

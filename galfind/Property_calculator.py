@@ -290,7 +290,7 @@ class Photometry_Property_Loader(Photometry_Property_Calculator):
     
     def __call__(
         self: Self,
-        object: Type[Catalogue_Base],
+        object: Type[Galaxy, Catalogue_Base],
         output: bool = False,
         overwrite: bool = False,
         n_jobs: int = 1,
@@ -298,10 +298,11 @@ class Photometry_Property_Loader(Photometry_Property_Calculator):
         if isinstance(object, tuple(Catalogue_Base.__subclasses__())):
             val = self._call_cat(object)
         else:
-            breakpoint()
-            err_message = f"{object=} with {type(object)=} != Catalogue"
-            galfind_logger.critical(err_message)
-            raise TypeError(err_message)
+            val = self._call_gal(object)
+            # breakpoint()
+            # err_message = f"{object=} with {type(object)=} != Catalogue"
+            # galfind_logger.critical(err_message)
+            # raise TypeError(err_message)
         return val
     
     def _call_cat(
@@ -394,11 +395,11 @@ class Band_SNR_Loader(Photometry_Property_Loader):
         aper_diam: u.Quantity,
         band_name: str,
     ) -> None:
-        self._name = f"{band_name}_SNR"
-        self._plot_name = f"{band_name} SNR"
-        self.units = u.dimensionless_unscaled
-        self.kwargs = {"band_name": band_name}
-        super().__init__(aper_diam, Band_SNR_Loader._load_SNR, self._name, self._plot_name, self.units, self.kwargs)
+        _name = f"{band_name}_SNR"
+        _plot_name = f"{band_name} SNR"
+        units = u.dimensionless_unscaled
+        kwargs = {"band_name": band_name}
+        super().__init__(aper_diam, Band_SNR_Loader._load_SNR, _name, _plot_name, units, **kwargs)
 
     @staticmethod
     def _load_SNR(cat: Catalogue, aper_diam: u.Quantity, **kwargs) -> Tuple[NDArray, NDArray]:
