@@ -16,6 +16,7 @@ except ImportError:
     from typing_extensions import Self, Type  # python > 3.7 AND python < 3.11
 
 from .grid import Grid_2D
+from .. import galfind_logger
 
 class Completeness:
 
@@ -25,11 +26,13 @@ class Completeness:
         x_calculator: Type[Property_Calculator],
         completeness: NDArray[float],
         x_completeness_lim: float,
+        origin: Optional[str] = None,
     ):
         self.x = x
         self.x_calculator = x_calculator
         self.completeness = completeness
         self.x_completeness_lim = x_completeness_lim
+        self.origin = origin
 
     @classmethod
     def from_h5(
@@ -39,7 +42,9 @@ class Completeness:
         x_label: str = "x",
         completeness_label: str = "completeness",
         x_completeness_lim: Optional[float] = None,
+        origin: Optional[str] = None,
     ):
+        # TODO: Extract origin from h5 path
         # open h5 file
         hf = h5.File(h5_path, "r")
         # read x and y datasets
@@ -47,7 +52,16 @@ class Completeness:
         compl = hf[completeness_label][:]
         # close h5 file
         hf.close()
-        return cls(x, x_calculator, compl, x_completeness_lim)
+        return cls(x, x_calculator, compl, x_completeness_lim, origin = origin)
+
+    @property
+    def high_x_val(self: Self) -> float:
+        return 1.0
+        # calculate the mean of the completeness values above the completeness limit
+        if self.x_completeness_lim is None:
+            return None
+        high_x_mask = self.x > self.x_completeness_lim
+        return np.mean(self.completeness[high_x_mask])
 
     # @classmethod
     # def from_simulated_fits_cat(
@@ -104,26 +118,79 @@ class Completeness:
 
     def __call__(
         self: Self,
-        cat: Catalogue,
+        obj: Union[Galaxy, Type[Catalogue_Base]],
     ) -> float:
-        x_cat = self.x_calculator(cat).value
-        # get the index of the nearest self.x value for each x in x_cat
-        compl_indices = [(np.abs(self.x - x_gal)).argmin() for x_gal in x_cat]
-        compl_cat = self.completeness[compl_indices]
-        if self.x_completeness_lim is not None:
-            compl_cat[x_cat > self.x_completeness_lim] = 1.0
-            # set points above the x completeness limit to being fully complete
-        return compl_cat
-        # # Don't trust completeness/contamination if very small number of objects in bin
-        # if num > 5:
-        #     contam = contam[0]
-        #     comp = comp[0]
-        # else:
-        #     comp = 1
-        #     contam = 0
+        from .. import Galaxy, Catalogue, Combined_Catalogue
+        if isinstance(obj, Galaxy):
+            return self._call_gal(obj)
+        else:
+            return np.array([self._call_gal(gal) for gal in obj])
+
+    def _call_gal(
+        self: Self,
+        gal: Galaxy,
+    ) -> float:
+        x_gal = self.x_calculator(gal).value
+        #x_gal = x_gal * 0.76983916192 # aperture correction
+        # compl_index = (np.abs(self.x - x_gal)).argmin()
+        # # interpolate curve
+        # compl_gal = self.completeness[compl_index]
+        if self.x_completeness_lim is not None and x_gal > self.x_completeness_lim:
+            compl_gal = self.high_x_val
+        else:
+            compl_gal = interp1d(self.x, self.completeness)(x_gal)
+        print(x_gal, compl_gal)
+        return compl_gal
 
     def plot():
         pass
+
+
+class Catalogue_Completeness: #(Completeness)
+
+    def __init__(
+        self: Self,
+        compl_arr = List[Completeness],
+    ):
+        self.compl_arr = compl_arr
+
+    @property
+    def origins(self: Self) -> List[str]:
+        return np.array([compl.origin for compl in self.compl_arr])
+    
+    def __call__(
+        self: Self,
+        cat: Type[Catalogue_Base],
+    ) -> float:
+        from .. import Catalogue, Combined_Catalogue
+        if isinstance(cat, Combined_Catalogue):
+            cat_arr = cat.cat_arr
+        else:
+            cat_arr = [cat]
+        for cat in cat_arr:
+            origin_indices = np.array([i for i, origin in enumerate(self.origins) if origin.startswith(cat.survey)])
+            try:
+                assert len(origin_indices) > 0, galfind_logger.critical(
+                    f"{cat.survey=} not in {self.origins=}"
+                )
+            except:
+                breakpoint()
+            [completeness.x_calculator._get_IDs_properties(cat) for completeness in np.array(self.compl_arr)[origin_indices]]
+        return np.array([self._call_gal(gal) for gal in cat])
+
+    def _call_gal(
+        self: Self,
+        gal: Galaxy,
+    ) -> float:
+        # get the completeness for the galaxy
+        if hasattr(gal, "region"):
+            region = gal.region[0]
+        else:
+            region = "all"
+        origin = f"{gal.survey}_{region}"
+        completeness = self.compl_arr[np.where(origin == self.origins)[0][0]]
+        compl_gal = completeness(gal)
+        return compl_gal
 
 
 class Completeness_2D(Grid_2D):

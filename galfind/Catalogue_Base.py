@@ -1162,7 +1162,12 @@ class Catalogue_Base:
             )
         else:
             update_gals = self.gals
+        # HACK: remove update gals from self
+        # update_gals_ids = np.array([gal.ID for gal in update_gals])
+        # self.gals = np.array([gal for gal in self if gal.ID not in update_gals_ids])
+        # update_gals = []
         if len(update_gals) > 0:
+            breakpoint()
             full_survey_name = funcs.get_full_survey_name(self.survey, self.version, self.filterset)
             full_data_name = funcs.get_full_survey_name(data.survey, data.version, data.filterset)
             # calculate Vmax's and append them to Vmax ecsv

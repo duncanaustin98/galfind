@@ -652,7 +652,7 @@ class Catalogue_Creator:
     # current bottleneck
     def make_gal_instr_mask(
         self,
-        null_data_vals: List[Union[float, np.nan]] = [0.0, np.nan],
+        null_data_vals: List[Union[float, np.nan]] = [0.0],
         overwrite: bool = False,
         timed: bool = True
     ) -> NoReturn:
@@ -683,7 +683,7 @@ class Catalogue_Creator:
                 gal_instr_mask = np.array(
                     [
                         [
-                            True if val not in null_data_vals else False
+                            True if val not in null_data_vals and np.isfinite(val) else False
                             for val in gal_phot
                         ]
                         for gal_phot in tqdm(
@@ -695,7 +695,7 @@ class Catalogue_Creator:
                 gal_instr_mask = np.array(
                     [
                         [
-                            True if val not in null_data_vals else False
+                            True if val not in null_data_vals and np.isfinite(val) else False
                             for val in gal_phot
                         ]
                         for gal_phot in phot
@@ -1470,28 +1470,30 @@ class Catalogue(Catalogue_Base):
     def scatter(
         self: Self,
         aper_diam: u.Quantity,
-        mode: str,
+        mode: str = "n_nearest",
         depth_region: str = "all",
         min_flux_pc_err: float = 10.0,
+        update_errs: bool = True,
     ):
         assert all(aper_diam in gal.aper_phot.keys() for gal in self)
         # load galaxy depths from the average depths of the field
         if hasattr(self, "data"):
             self._update_depths_from_data(aper_diam, mode, depth_region)
         # calculate photometric errors from these newly inserted depths
-        self._update_errs_from_depths(aper_diam, apply_min_flux_pc_err = False)
+        if update_errs:
+            self._update_errs_from_depths(aper_diam, apply_min_flux_pc_err = False)
         # scatter each set of fluxes once by the calculated errors
         [
             gal.aper_phot[aper_diam].scatter_fluxes(update = True) 
             for gal in tqdm(self, desc = "Scattering catalogue fluxes", total = len(self))
         ]
-
-        self._update_errs_from_depths(aper_diam)
+        if update_errs:
+            self._update_errs_from_depths(aper_diam)
 
     def _update_depths_from_data(
         self: Self,
         aper_diam: u.Quantity,
-        mode: str,
+        mode: str = "n_nearest",
         depth_region: str = "all",
     ) -> NoReturn:
         assert hasattr(self, "data"), \
@@ -1515,7 +1517,6 @@ class Catalogue(Catalogue_Base):
         apply_min_flux_pc_err: bool = True,
     ) -> NoReturn:
         if apply_min_flux_pc_err:
-        
             if "min_flux_pc_err" in self.cat_creator.load_phot_kwargs.keys():
                 min_flux_pc_err = self.cat_creator.load_phot_kwargs["min_flux_pc_err"]
             else:
