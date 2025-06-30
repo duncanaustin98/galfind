@@ -16,6 +16,7 @@ if TYPE_CHECKING:
         Combined_Catalogue,
         Rest_Frame_Property_Calculator,
         Property_Calculator,
+        Mask_Selector,
     )
     from .selection import Completeness
 try:
@@ -386,8 +387,8 @@ class Number_Density_Function(Base_Number_Density_Function):
         x_origin: str = "phot_rest",
         z_step: float = 0.01,
         cv_origin: Union[str, None] = "Driver2010",
-        completeness: Optional[Completeness] = None,
-        unmasked_area: Union[str, List[str], u.Quantity] = "selection",
+        completeness: Optional[Catalogue_Completeness] = None,
+        unmasked_area: Union[str, List[str], u.Quantity, Type[Mask_Selector]] = "selection",
         plot: bool = True,
         save: bool = True,
         timed: bool = False,
@@ -453,7 +454,6 @@ class Number_Density_Function(Base_Number_Density_Function):
             z_bin_cat.crop_name,
             completeness = completeness,
         )
-
         if not Path(save_path).is_file():
 
             # create x_bins from x_bin_edges (must include start and end values here too)
@@ -530,13 +530,27 @@ class Number_Density_Function(Base_Number_Density_Function):
                         galfind_logger.warning(
                             f"{Ngals[i] - len(V_max)} galaxies not detected"
                         )
-                    
                     if completeness is None:
                         compl_bin = np.ones(len(z_bin_x_bin_cat))
                     else:
                         compl_bin = completeness(z_bin_x_bin_cat)
-                    compl_bin = compl_bin[remove_indices]
-
+                    try:
+                        compl_bin = compl_bin[remove_indices]
+                    except:
+                        breakpoint()
+                    assert len(compl_bin) == len(V_max), \
+                        galfind_logger.critical(
+                            f"{len(compl_bin)=} != {len(V_max)=} for {z_bin_x_bin_cat.crop_name}"
+                        )
+                    # import matplotlib.pyplot as plt
+                    # from scipy.interpolate import interp1d
+                    # fig, ax = plt.subplots()
+                    # ax.scatter(completeness.compl_arr[0].x_calculator(z_bin_x_bin_cat)[remove_indices], compl_bin, label = str(x_bin))
+                    # ax.plot(completeness.compl_arr[0].x, completeness.compl_arr[0].completeness, label = "Completeness")
+                    # ax.plot(completeness.compl_arr[0].x, interp1d(completeness.compl_arr[0].x, completeness.compl_arr[0].completeness)(completeness.compl_arr[0].x), label = "Interpolated Completeness")
+                    # ax.legend()
+                    # plt.savefig("test_compl_NEP.png")
+                    # breakpoint()
                     phi[i] = np.sum((V_max * compl_bin) ** - 1.0) / dx
                     # use standard Poisson errors if number of galaxies in bin is not small
                     if len(V_max) >= 4:
@@ -565,7 +579,9 @@ class Number_Density_Function(Base_Number_Density_Function):
                         pass
                     elif cv_origin == "Driver2010":
                         cv_errs[i] = funcs.calc_cv_proper(
-                            z_bin, data_arr=data_arr
+                            z_bin, 
+                            data_arr=data_arr,
+                            masked_selector = unmasked_area,
                         )
                     else:
                         raise NotImplementedError
@@ -792,7 +808,7 @@ class Number_Density_Function(Base_Number_Density_Function):
                     plot_kwargs=author_year_kwargs,
                     x_lims=None,
                 )
-        
+
         fig_, ax_ = super().plot(
             fig_,
             ax_,
@@ -808,6 +824,7 @@ class Number_Density_Function(Base_Number_Density_Function):
             title,
             save_path,
         )
+                
         return fig_, ax_
 
 

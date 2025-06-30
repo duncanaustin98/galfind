@@ -34,7 +34,7 @@ from mpl_toolkits.axes_grid1.anchored_artists import AnchoredSizeBar
 from tqdm import tqdm
 from typing import  Union, Callable, Tuple, List, NoReturn, Optional, Dict, Any, TYPE_CHECKING
 if TYPE_CHECKING:
-    from . import Filter, SED_code, Selector, Band_Data, Band_Cutout, Multiple_Filter, SED_code
+    from . import Filter, SED_code, Selector, Band_Data, Band_Cutout, Multiple_Filter, SED_code, Mask_Selector
 try:
     from typing import Self, Type  # python 3.11+
 except ImportError:
@@ -465,151 +465,155 @@ class Galaxy:
         save: bool = True,
         show: bool = True,
     ):
-        # unpack tuple
-        cutout_fig, phot_ax, PDF_ax = ax
-
-        if not isinstance(SED_arr, list):
-            SED_arr = [SED_arr]
-        if not isinstance(zPDF_arr, list):
-            zPDF_arr = [zPDF_arr]
-        # extract lowz_zmax from SED_arr if required
-        if plot_lowz:
-            SED_arr.extend(self._extract_lowz_codes(aper_diam, SED_arr, lowz_dz))
-            zPDF_arr.extend(self._extract_lowz_codes(aper_diam, zPDF_arr, lowz_dz))
-
-        zPDF_labels = [code.label for code in zPDF_arr]
-        # reset parameters
-        for ax_, label in zip(PDF_ax, zPDF_labels):
-            ax_.set_yticks([])
-            ax_.set_xlabel("Redshift, z")
-            ax_.set_title(label, fontsize="medium")
-
+        
         out_path = f"{config['Other']['PLOT_DIR']}/{data.version}/" + \
             f"{data.filterset.instrument_name}/{data.survey}/SED_plots/" + \
             f"{aper_diam.to(u.arcsec).value:.2f}as/{self.ID}.png"
+        
+        try:
+            # unpack tuple
+            cutout_fig, phot_ax, PDF_ax = ax
 
-        if not Path(out_path).is_file() or overwrite:
-            # plot cutouts (assuming reference SED_fit_params is at 0th index)
-            self.plot_cutouts(
-                cutout_fig,
-                data,
-                SED_arr[0],
-                #hide_masked_cutouts=hide_masked_cutouts,
-                cutout_size=cutout_size,
-                #high_dyn_rng=high_dyn_rng,
-                aper_diam = aper_diam,
-                imshow_kwargs = imshow_kwargs,
-                norm_kwargs = norm_kwargs,
-                aper_kwargs = aper_kwargs,
-                kron_kwargs = kron_kwargs,
-                n_rows = n_cutout_rows,
-            )
+            if not isinstance(SED_arr, list):
+                SED_arr = [SED_arr]
+            if not isinstance(zPDF_arr, list):
+                zPDF_arr = [zPDF_arr]
+            # extract lowz_zmax from SED_arr if required
+            if plot_lowz:
+                SED_arr.extend(self._extract_lowz_codes(aper_diam, SED_arr, lowz_dz))
+                zPDF_arr.extend(self._extract_lowz_codes(aper_diam, zPDF_arr, lowz_dz))
 
-            # plot specified SEDs and save colours
-            SED_colours = {}
-            errorbar_kwargs = {
-                "ls": "",
-                "marker": "o",
-                "ms": 8.0,
-                "zorder": 100.0,
-                "path_effects": [
-                    pe.withStroke(linewidth=2.0, foreground="white")
-                ],
-            }
-            for code in reversed(SED_arr):
-                if self.aper_phot[aper_diam].SED_results[code.label].SED is not None:
-                    SED_plot = self.aper_phot[aper_diam].SED_results[code.label].SED.plot(
-                        phot_ax,
-                        wav_unit,
-                        flux_unit,
-                        log_fluxes = log_fluxes,
-                        label = code.label,
-                    )
-                    SED_colours[code.label] = SED_plot[0].get_color()
-                    # plot the mock photometry
-                    self.aper_phot[aper_diam].SED_results[code.label].SED.create_mock_photometry(
-                        self.aper_phot[aper_diam].filterset,
-                        depths = self.aper_phot[aper_diam].depths,
-                        # min flux pc err = 10.0
-                    )
-                    self.aper_phot[aper_diam].SED_results[code.label].SED.mock_photometry.plot(
-                        phot_ax,
-                        wav_unit,
-                        flux_unit,
-                        uplim_sigma=None,
-                        auto_scale=False,
-                        plot_errs={"x": False, "y": False},
-                        errorbar_kwargs=errorbar_kwargs,
-                        label=None,
-                        filled=False,
-                        colour=SED_colours[code.label],
-                        log_scale = log_fluxes,
-                    )
-                    # ax_photo.scatter(band_wavs_lowz, band_mags_lowz, edgecolors=eazy_color_lowz, marker='o', facecolor='none', s=80, zorder=4.5)
-            
-            self.aper_phot[aper_diam].plot(
-                phot_ax,
-                wav_unit,
-                flux_unit,
-                annotate = False,
-                # uplim_sigma = 2.0,
-                # auto_scale = True,
-                # label_SNRs = True,
-                # errorbar_kwargs = {
-                #     "ls": "",
-                #     "marker": "o",
-                #     "ms": 4.0,
-                #     "zorder": 100.0,
-                #     "path_effects": [pe.withStroke(linewidth=2.0, foreground="white")],
-                # },
-                # filled = True,
-                # colour = "black",
-                # label = "Photometry",
-                SNR_labelsize = 7.5,
-                log_scale = log_fluxes,
-            )
-            # photometry axis title
-            phot_ax.set_title(f"{data.survey} {self.ID} ({data.version})")
-            # plot rejected reasons somewhere
-            # if plot_rejected_reasons:
-            #     rejected = str(row[f'rejected_reasons{col_ext}'][0])
-            #     if rejected != '':
-            #         phot_ax.annotate(rejected, (0.9, 0.95), ha='center', fontsize='small', xycoords = 'axes fraction', zorder=5)
-            # photometry axis legend
-            phot_ax.legend(loc="best", fontsize=8.0, frameon=True)
-            for text in phot_ax.get_legend().get_texts():
-                text.set_path_effects(
-                    [pe.withStroke(linewidth=3, foreground="white")]
+            zPDF_labels = [code.label for code in zPDF_arr]
+            # reset parameters
+            for ax_, label in zip(PDF_ax, zPDF_labels):
+                ax_.set_yticks([])
+                ax_.set_xlabel("Redshift, z")
+                ax_.set_title(label, fontsize="medium")
+
+            if not Path(out_path).is_file() or overwrite:
+                # plot cutouts (assuming reference SED_fit_params is at 0th index)
+                self.plot_cutouts(
+                    cutout_fig,
+                    data,
+                    SED_arr[0],
+                    #hide_masked_cutouts=hide_masked_cutouts,
+                    cutout_size=cutout_size,
+                    #high_dyn_rng=high_dyn_rng,
+                    aper_diam = aper_diam,
+                    imshow_kwargs = imshow_kwargs,
+                    norm_kwargs = norm_kwargs,
+                    aper_kwargs = aper_kwargs,
+                    kron_kwargs = kron_kwargs,
+                    n_rows = n_cutout_rows,
                 )
-                text.set_zorder(12)
 
-            # plot PDF on relevant axis
-            # again, this is not totally generalized and should be == 2 for now
-            #assert (len(zPDF_arr) == len(PDF_ax))
-            # could extend to plotting multiple PDFs on the same axis
-            for ax, code in zip(PDF_ax, zPDF_arr):
-                if code.label in SED_colours.keys():
-                    colour = SED_colours[code.label]
+                # plot specified SEDs and save colours
+                SED_colours = {}
+                errorbar_kwargs = {
+                    "ls": "",
+                    "marker": "o",
+                    "ms": 8.0,
+                    "zorder": 100.0,
+                    "path_effects": [
+                        pe.withStroke(linewidth=2.0, foreground="white")
+                    ],
+                }
+                for code in reversed(SED_arr):
+                    if self.aper_phot[aper_diam].SED_results[code.label].SED is not None:
+                        SED_plot = self.aper_phot[aper_diam].SED_results[code.label].SED.plot(
+                            phot_ax,
+                            wav_unit,
+                            flux_unit,
+                            log_fluxes = log_fluxes,
+                            label = code.label,
+                        )
+                        SED_colours[code.label] = SED_plot[0].get_color()
+                        # plot the mock photometry
+                        self.aper_phot[aper_diam].SED_results[code.label].SED.create_mock_photometry(
+                            self.aper_phot[aper_diam].filterset,
+                            depths = self.aper_phot[aper_diam].depths,
+                            # min flux pc err = 10.0
+                        )
+                        self.aper_phot[aper_diam].SED_results[code.label].SED.mock_photometry.plot(
+                            phot_ax,
+                            wav_unit,
+                            flux_unit,
+                            uplim_sigma=None,
+                            auto_scale=False,
+                            plot_errs={"x": False, "y": False},
+                            errorbar_kwargs=errorbar_kwargs,
+                            label=None,
+                            filled=False,
+                            colour=SED_colours[code.label],
+                            log_scale = log_fluxes,
+                        )
+                        # ax_photo.scatter(band_wavs_lowz, band_mags_lowz, edgecolors=eazy_color_lowz, marker='o', facecolor='none', s=80, zorder=4.5)
+                
+                self.aper_phot[aper_diam].plot(
+                    phot_ax,
+                    wav_unit,
+                    flux_unit,
+                    annotate = False,
+                    # uplim_sigma = 2.0,
+                    # auto_scale = True,
+                    # label_SNRs = True,
+                    # errorbar_kwargs = {
+                    #     "ls": "",
+                    #     "marker": "o",
+                    #     "ms": 4.0,
+                    #     "zorder": 100.0,
+                    #     "path_effects": [pe.withStroke(linewidth=2.0, foreground="white")],
+                    # },
+                    # filled = True,
+                    # colour = "black",
+                    # label = "Photometry",
+                    SNR_labelsize = 7.5,
+                    log_scale = log_fluxes,
+                )
+                # photometry axis title
+                phot_ax.set_title(f"{data.survey} {self.ID} ({data.version})")
+                # plot rejected reasons somewhere
+                # if plot_rejected_reasons:
+                #     rejected = str(row[f'rejected_reasons{col_ext}'][0])
+                #     if rejected != '':
+                #         phot_ax.annotate(rejected, (0.9, 0.95), ha='center', fontsize='small', xycoords = 'axes fraction', zorder=5)
+                # photometry axis legend
+                phot_ax.legend(loc="best", fontsize=8.0, frameon=True)
+                for text in phot_ax.get_legend().get_texts():
+                    text.set_path_effects(
+                        [pe.withStroke(linewidth=3, foreground="white")]
+                    )
+                    text.set_zorder(12)
+
+                # plot PDF on relevant axis
+                # again, this is not totally generalized and should be == 2 for now
+                #assert (len(zPDF_arr) == len(PDF_ax))
+                # could extend to plotting multiple PDFs on the same axis
+                for ax, code in zip(PDF_ax, zPDF_arr):
+                    if code.label in SED_colours.keys():
+                        colour = SED_colours[code.label]
+                    else:
+                        colour = "black"
+                    # load peak value/chi sq from SED_result into redshift PDF 
+                    # TODO: Load this into the PDF when instantiated from SED_result
+                    self.aper_phot[aper_diam].SED_results[code.label].property_PDFs["z"]. \
+                        load_peaks_from_SED_result(self.aper_phot[aper_diam].SED_results[code.label])
+                    # plot the PDF
+                    self.aper_phot[aper_diam].SED_results[code.label].property_PDFs["z"].plot(
+                        ax, annotate=annotate_PDFs, colour=colour
+                    )
+
+                if save:
+                    funcs.make_dirs(out_path)
+                    plt.savefig(out_path, dpi=300, bbox_inches="tight")
+                    funcs.change_file_permissions(out_path)
+                if show:
+                    plt.show()
                 else:
-                    colour = "black"
-                # load peak value/chi sq from SED_result into redshift PDF 
-                # TODO: Load this into the PDF when instantiated from SED_result
-                self.aper_phot[aper_diam].SED_results[code.label].property_PDFs["z"]. \
-                    load_peaks_from_SED_result(self.aper_phot[aper_diam].SED_results[code.label])
-                # plot the PDF
-                self.aper_phot[aper_diam].SED_results[code.label].property_PDFs["z"].plot(
-                    ax, annotate=annotate_PDFs, colour=colour
-                )
-
-            if save:
-                funcs.make_dirs(out_path)
-                plt.savefig(out_path, dpi=300, bbox_inches="tight")
-                funcs.change_file_permissions(out_path)
-            if show:
-                plt.show()
-            else:
-                for ax in [phot_ax] + PDF_ax:
-                    ax.clear()
+                    for ax in [phot_ax] + PDF_ax:
+                        ax.clear()
+        except:
+            pass
         return out_path
 
     # Spectroscopy
@@ -914,7 +918,7 @@ class Galaxy:
         # if not hasattr(self, "V_max_simple"):
         #    self.V_max_simple = {}
         if not hasattr(SED_result_obj, "V_max"):
-            SED_result_obj.V_max = {}
+            SED_result_obj.V_max = { }
         if crop_name not in SED_result_obj.V_max.keys():
             SED_result_obj.V_max[crop_name] = {}
 
@@ -928,8 +932,7 @@ class Galaxy:
         crops: List[Type[Selector]],
         z_step: float = 0.01,
         depth_mode: str = "n_nearest",
-        depth_region: str = "all",
-        unmasked_area: Union[str, List[str], u.Quantity] = "selection",
+        unmasked_area: Union[str, List[str], u.Quantity, Type[Mask_Selector]] = "selection",
     ) -> float:
         # TODO: remove dependence on full_survey_name input
         # input assertions
@@ -942,7 +945,7 @@ class Galaxy:
             Multiple_Selector, 
             Rest_Frame_Property_Limit_Selector, 
         )
-
+        breakpoint()
         SED_result_obj = self.aper_phot[aper_diam].SED_results[SED_fit_code.label]
         crop_name = funcs.get_crop_name(crops).split("/")[-1]
         z_obs = SED_result_obj.z
@@ -978,11 +981,14 @@ class Galaxy:
         assert Vmax_crops != []
 
         # calculate V_max
+        V_max_dict = {}
         if z_obs > z_bin[1] or z_obs < z_bin[0]:
             # V_max_simple = -1.
+            region = "all"
             V_max = -1.0
             z_min_used = -1.0
             z_max_used = -1.0
+            V_max_dict[region] = V_max
         else:
             distance_detect = astropy_cosmo.luminosity_distance(z_obs)
             sed_obs = SED_result_obj.SED
@@ -991,141 +997,173 @@ class Galaxy:
                 "Should use local depth if the data.full_name " + \
                 "is the same as the catalogue the galaxy is measured in!"
             )
-            data._load_depths(aper_diam, depth_mode)
-            data_depths = [band_data.med_depth[aper_diam][depth_region] for band_data in data]
-            # calculate z_range
-            # z_test for other fields should be lower than starting z
-            z_detect = []
-            for z in np.arange(z_bin[0], z_bin[1] + z_step, z_step): #, tqdm(
-            #     np.arange(z_bin[0], z_bin[1] + z_step, z_step),
-            #     desc=f"Calculating z_max and z_min for ID={self.ID}",
-            # ):
+            if hasattr(data, "regions"):
                 galfind_logger.debug(
-                    "ΙGM attenuation is ignored when redshifting the best-fit galaxy SED!"
+                    f"Calculating split Vmax for {repr(self)} in {data.regions=}"
                 )
-                wav_z = sed_obs.wavs * ((1.0 + z) / (1.0 + sed_obs.z))
-                distance_test = astropy_cosmo.luminosity_distance(z)
-                mag_z = (
-                    funcs.convert_mag_units(
-                        sed_obs.wavs, sed_obs.mags, u.ABmag
-                    ).value
-                    - (
-                        5
-                        * np.log10(
-                            (distance_detect / distance_test)
-                            .to(u.dimensionless_unscaled)
-                            .value
-                        )
+                regions = data.regions
+            else:
+                galfind_logger.debug(
+                    f"Calculating Vmax for {repr(self)} in {data.full_name=}"
+                )
+                regions = ["all"]
+            for region in regions:
+                assert all(hasattr(band_data, "med_depth") for band_data in data), \
+                    galfind_logger.critical(
+                        f"Not all bands in {repr(data)=} have med_depth attributes!"
                     )
-                    + (2.5 * np.log10((1.0 + sed_obs.z) / (1.0 + z)))
-                )
-                # construct galaxy at new redshift with average depths of new field
-                test_sed_obs = SED_obs(
-                    z, wav_z.value, mag_z, wav_z.unit, u.ABmag
-                )
-                galfind_logger.debug("Not propagating min_flux_pc_err!")
-                test_mock_phot = test_sed_obs.create_mock_photometry(
-                    data.filterset,
-                    depths=data_depths,
-                    min_flux_pc_err=10.0,
-                )
-                test_phot_obs = Photometry_obs(
-                    test_mock_phot.filterset,
-                    Masked(
-                        test_mock_phot.flux,
-                        mask=np.full(len(data.filterset), False),
-                    ),
-                    Masked(
-                        test_mock_phot.flux_errs,
-                        mask=np.full(len(data.filterset), False),
-                    ),
-                    test_mock_phot.depths,
-                    aper_diam,
-                )
-                sed_result = SED_result(
-                    SED_fit_code,
-                    test_phot_obs,
-                    {"z": z},
-                    property_errs={},
-                    property_PDFs={},
-                    SED=None,
-                )
-                test_phot_obs.SED_results = {
-                    SED_fit_code.label: sed_result
-                }
-                test_gal = Galaxy(
-                    self.ID,
-                    self.sky_coord,
-                    {aper_diam: test_phot_obs},
-                    selection_flags={},
-                )
-                # run selection methods on new galaxy
-                [selector(test_gal, return_copy = False) for selector in Vmax_crops]
-                goodz = all(
-                    test_gal.selection_flags[selector.name]
-                    for selector in Vmax_crops
-                )
-                if goodz:
-                    z_detect.append(z)
+                assert all(region in band_data.med_depth[aper_diam].keys() for band_data in data), \
+                    galfind_logger.critical(
+                        f"Not all bands in {repr(data)=} have med_depths for {region=}"
+                    )
+                # TODO: make split regions available on a data level without having to pre-load results
+                #data._load_depths(aper_diam, depth_mode, region)
+                data_depths = [band_data.med_depth[aper_diam][region] for band_data in data]
+                # calculate z_range
+                # z_test for other fields should be lower than starting z
+                z_detect = []
+                for z in np.arange(z_bin[0], z_bin[1] + z_step, z_step): #, tqdm(
+                #     np.arange(z_bin[0], z_bin[1] + z_step, z_step),
+                #     desc=f"Calculating z_max and z_min for ID={self.ID}",
+                # ):
+                    galfind_logger.debug(
+                        "ΙGM attenuation is ignored when redshifting the best-fit galaxy SED!"
+                    )
+                    wav_z = sed_obs.wavs * ((1.0 + z) / (1.0 + sed_obs.z))
+                    distance_test = astropy_cosmo.luminosity_distance(z)
+                    mag_z = (
+                        funcs.convert_mag_units(
+                            sed_obs.wavs, sed_obs.mags, u.ABmag
+                        ).value
+                        - (
+                            5
+                            * np.log10(
+                                (distance_detect / distance_test)
+                                .to(u.dimensionless_unscaled)
+                                .value
+                            )
+                        )
+                        + (2.5 * np.log10((1.0 + sed_obs.z) / (1.0 + z)))
+                    )
+                    # construct galaxy at new redshift with average depths of new field
+                    test_sed_obs = SED_obs(
+                        z, wav_z.value, mag_z, wav_z.unit, u.ABmag
+                    )
+                    galfind_logger.debug("Not propagating min_flux_pc_err!")
+                    test_mock_phot = test_sed_obs.create_mock_photometry(
+                        data.filterset,
+                        depths=data_depths,
+                        min_flux_pc_err=10.0,
+                    )
+                    test_phot_obs = Photometry_obs(
+                        test_mock_phot.filterset,
+                        Masked(
+                            test_mock_phot.flux,
+                            mask=np.full(len(data.filterset), False),
+                        ),
+                        Masked(
+                            test_mock_phot.flux_errs,
+                            mask=np.full(len(data.filterset), False),
+                        ),
+                        test_mock_phot.depths,
+                        aper_diam,
+                    )
+                    sed_result = SED_result(
+                        SED_fit_code,
+                        test_phot_obs,
+                        {"z": z},
+                        property_errs={},
+                        property_PDFs={},
+                        SED=None,
+                    )
+                    test_phot_obs.SED_results = {
+                        SED_fit_code.label: sed_result
+                    }
+                    test_gal = Galaxy(
+                        self.ID,
+                        self.sky_coord,
+                        {aper_diam: test_phot_obs},
+                        selection_flags={},
+                    )
+                    # run selection methods on new galaxy
+                    [selector(test_gal, return_copy = False) for selector in Vmax_crops]
+                    goodz = all(
+                        test_gal.selection_flags[selector.name]
+                        for selector in Vmax_crops
+                    )
+                    if goodz:
+                        z_detect.append(z)
 
-            if len(z_detect) < 2:
-                z_max = -1.0
-                z_min = -1.0
-                # V_max_simple = -1.
-                V_max = -1.0
-            else:
-                z_max = np.round(z_detect[-1], 3)
-                z_min = np.round(z_detect[0], 3)
+                if len(z_detect) < 2:
+                    z_max = -1.0
+                    z_min = -1.0
+                    # V_max_simple = -1.
+                    V_max = -1.0
+                else:
+                    z_max = np.round(z_detect[-1], 3)
+                    z_min = np.round(z_detect[0], 3)
 
-            # don't worry about completeness and contamination for now
-            # completeness_field = detect_completeness[field] * jag_completeness[field]
-            # contamination_field = jag_contamination[field]
-            # Don't filter objects based on Jaguar sims with no objects in bin
-            # if contamination_field > vmax_contam_limit and contamination_field < 1:
-            #    continue
-            # if completeness_field < comp_limit and completeness_field > 0:
-            #    #print(f'Skipping {field} for {id} because completeness {completeness_field} < 0.5')
-            #    continue
-            # if z_max_field <= z_min_field:
-            # print(f'Skipping {field} for {id}')
-            # if (field == detect_field) and (detect_field != 'NGDEEP'): # Removes galaxies which aren't detected in their own field. Excludes NGDEEP because some are detected in NGDEEP-HST
-            #     print(f'{id} detected in {field} is not found to be detectable.')
-            #     V_max = 0
-            #     V_max_new = 0
-            #     fields_used = -1
-            #     fields = []
-            #     break
-            # continue
+                # don't worry about completeness and contamination for now
+                # completeness_field = detect_completeness[field] * jag_completeness[field]
+                # contamination_field = jag_contamination[field]
+                # Don't filter objects based on Jaguar sims with no objects in bin
+                # if contamination_field > vmax_contam_limit and contamination_field < 1:
+                #    continue
+                # if completeness_field < comp_limit and completeness_field > 0:
+                #    #print(f'Skipping {field} for {id} because completeness {completeness_field} < 0.5')
+                #    continue
+                # if z_max_field <= z_min_field:
+                # print(f'Skipping {field} for {id}')
+                # if (field == detect_field) and (detect_field != 'NGDEEP'): # Removes galaxies which aren't detected in their own field. Excludes NGDEEP because some are detected in NGDEEP-HST
+                #     print(f'{id} detected in {field} is not found to be detectable.')
+                #     V_max = 0
+                #     V_max_new = 0
+                #     fields_used = -1
+                #     fields = []
+                #     break
+                # continue
 
-            # calculate/load unmasked area of forced photometry band
+                # calculate/load unmasked area of forced photometry band
+                if hasattr(data, "region_selector"):
+                    region_selector = data.region_selector
+                    invert_region = region != data.region_selector.name
+                else:
+                    region_selector = None
+                    invert_region = False
+                if unmasked_area == "selection":
+                    unmasked_area_ = data.calc_unmasked_area(
+                        mask_selector = data.forced_phot_band.filt_name,
+                        region_selector = region_selector,
+                        invert_region = invert_region,
+                    )
+                elif isinstance(unmasked_area, u.Quantity):
+                    assert isinstance(unmasked_area, u.Quantity)
+                    # TODO: ensure this has units of area
+                    unmasked_area_ = unmasked_area
+                else:
+                    unmasked_area_ = data.calc_unmasked_area(
+                        mask_selector = unmasked_area,
+                        region_selector = region_selector,
+                        invert_region = invert_region,
+                    )
+                z_min_used = np.max([z_min, z_bin[0]])
+                z_max_used = np.min([z_max, z_bin[1]])
+                if any(_z == -1.0 for _z in [z_min_used, z_max_used]):
+                    V_max = -1.0
+                else:
+                    # V_max_simple = funcs.calc_Vmax(unmasked_area, z_bin[0], z_max_used)
+                    V_max = funcs.calc_Vmax(
+                        unmasked_area_, 
+                        z_min_used, 
+                        z_max_used
+                    ).to(u.Mpc**3).value
+                V_max_dict[region] = V_max
 
-            if unmasked_area == "selection":
-                unmasked_area_ = data.calc_unmasked_area(
-                    instr_or_band_name = data.forced_phot_band.filt_name,
-                )
-            elif isinstance(unmasked_area, u.Quantity):
-                assert isinstance(unmasked_area, u.Quantity)
-                # TODO: ensure this has units of area
-                unmasked_area_ = unmasked_area
-            else:
-                unmasked_area_ = data.calc_unmasked_area(
-                    instr_or_band_name = unmasked_area,
-                )
-            z_min_used = np.max([z_min, z_bin[0]])
-            z_max_used = np.min([z_max, z_bin[1]])
-            if any(_z == -1.0 for _z in [z_min_used, z_max_used]):
-                V_max = -1.0
-            else:
-                # V_max_simple = funcs.calc_Vmax(unmasked_area, z_bin[0], z_max_used)
-                V_max = funcs.calc_Vmax(
-                    unmasked_area_, 
-                    z_min_used, 
-                    z_max_used
-                ).to(u.Mpc**3).value
-
-        SED_result_obj.obs_zrange[crop_name][data.full_name] = \
-            [z_min_used, z_max_used]
+        SED_result_obj.obs_zrange[crop_name][data.full_name] = [z_min_used, z_max_used]
         # self.V_max_simple[z_bin_name][data.full_name] = V_max_simple
+        V_max = np.sum(list(V_max_dict.values()))
+        if V_max < -1.0:
+            V_max = -1.0
         SED_result_obj.V_max[crop_name][data.full_name] = V_max * u.Mpc ** 3
 
         return V_max

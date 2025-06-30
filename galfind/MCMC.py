@@ -7,9 +7,11 @@ import numpy as np
 import corner
 import multiprocessing as mp
 import os
+import json
 from astropy.stats import sigma_clip
 from scipy import stats
 from tqdm import tqdm
+import h5py
 from matplotlib import patheffects as pe
 import matplotlib.pyplot as plt
 from numpy.typing import NDArray
@@ -32,6 +34,12 @@ class Prior(ABC):
         self.name = name
         self.prior_params = prior_params
         self.fiducial = fiducial
+
+    # @abstractmethod
+    # @property
+    # def latex_name(self: Self) -> str:
+    #     """Return the LaTeX name of the prior."""
+    #     pass
     
     @abstractmethod
     def __call__(
@@ -65,7 +73,7 @@ class Flat_Prior(Prior):
         self: Self,
         name: str,
         prior_lims: List[float],
-        fiducial: float
+        fiducial: float,
     ):
         assert len(prior_lims) == 2, \
             galfind_logger.critical(
@@ -172,6 +180,7 @@ class Base_MCMC_Fitter(ABC):
         nwalkers: int,
         backend_filename: Optional[str],
         fixed_params: Dict[str, float],
+        init_pos: Optional[NDArray[float]] = None,
     ):
         self.priors = priors
         self.x_data = x_data
@@ -186,8 +195,18 @@ class Base_MCMC_Fitter(ABC):
         else:
             self.sampler = emcee.EnsembleSampler(self.nwalkers, self.ndim, self.log_likelihood)
         self.backend_filename = backend_filename
-        self._instantiate_walkers()
+        if init_pos is not None:
+            self.init_pos = init_pos
+        else:
+            self._instantiate_walkers()
         self.fixed_params = fixed_params
+
+    # TODO:
+    # @abstractmethod
+    # @classmethod
+    # def from_h5(cls: Type[Self], h5_path: str) -> Self:
+    #     """Load MCMC fitter from an HDF5 file."""
+    #     pass
 
     @property
     def ndim(self):
@@ -204,13 +223,13 @@ class Base_MCMC_Fitter(ABC):
 
         # pos = [flat_priors_lower + (flat_priors_diff) \
         #        * np.random.uniform(0, 1, self.ndim) for i in range(self.nwalkers)]
-
-        init_pos = [self.fiducial_params + 1e-4 * np.random.uniform(0, 1, self.ndim) * \
-                self.fiducial_params for i in range(self.nwalkers)]
-        # init_pos = [np.array([np.random.uniform(prior.prior_params["lower_lim"], \
-        #     prior.prior_params["upper_lim"], 1)[0] for prior in self.priors]) \
-        #     for i in range(self.nwalkers)]
-        self.init_pos = init_pos
+        if not hasattr(self, "init_pos"):
+            init_pos = [self.fiducial_params + 1e-4 * np.random.uniform(0, 1, self.ndim) * \
+                    self.fiducial_params for i in range(self.nwalkers)]
+            # init_pos = [np.array([np.random.uniform(prior.prior_params["lower_lim"], \
+            #     prior.prior_params["upper_lim"], 1)[0] for prior in self.priors]) \
+            #     for i in range(self.nwalkers)]
+            self.init_pos = init_pos
 
     def __call__(
         self: Self,
@@ -326,7 +345,7 @@ class Base_MCMC_Fitter(ABC):
     ) -> NDArray[float]:
         autocorr_time = np.max(self.sampler.get_autocorr_time())
         discard = int(autocorr_time * 2)
-        thin = 1 # int(autocorr_time / 2)
+        thin = int(autocorr_time / 2)
         if log_data:
             model = lambda x, params: np.log10(self.model(x, params))
         else:
@@ -342,40 +361,31 @@ class Base_MCMC_Fitter(ABC):
 
     def plot_corner(
         self: Self,
+        fig: Optional[plt.Figure] = None,
+        range: Optional[List[Tuple[float]]] = None,
+        colour: str = "black",
         legend: bool = False,
         save: bool = True,
         **plot_kwargs: Dict[str, Any]
     ) -> plt.Figure:
-        # print(reader.get_last_sample())
-        #if print_autocorr_time == True:
-        #tau = self.backend.get_autocorr_time()
-        #print("autocorr time = " + str(tau))
-        flat_samples = self.backend.get_chain(flat = True) #, discard=100, thin=15)
-        #print(flat_samples)
-        # flat_blobs = self.backend.get_blobs(flat = True)
-        # #print(flat_blobs)
-        # if flat_blobs is not None:
-        #     flat_blobs = flat_blobs.reshape([self.nwalkers * self.backend.iteration, self.ndim])
-        # # THIS BIT NEEDS SORTING BIG TIME
-        # if flat_blobs != None:
-        #     corner_data = np.hstack([flat_samples, flat_blobs[self.blob_keys[0]]])
-        # else:
-        #     corner_data = flat_samples
-        #print(corner_data)
-        corner_labels = [prior.name for prior in self.priors]
-        
-        #print(np.asarray([flat_blobs[blob] for blob in self.blob_keys]))
-        
-        #corner_data = np.hstack([flat_samples, np.asarray(flat_blobs[blob] for blob in self.blob_keys)])
-        # for i in range(len(self.blob_keys)): # this part is untested
-        #     #print(type(flat_blobs[self.blob_keys[i]]))
-        #     print(type(np.asarray([flat_blobs[blob] for blob in self.blob_keys])))
-        #     corner_data = np.hstack([flat_samples, flat_blobs[self.blob_keys[i]]])
-        #     #print(corner_data)
 
+        flat_samples = self.backend.get_chain(flat = True) #, discard=100, thin=15)
+
+        if "labels" not in plot_kwargs.keys():
+            plot_kwargs["labels"] = [prior.name for prior in self.priors]
+        if range is not None:
+            assert len(range) == len(plot_kwargs["labels"]), \
+                galfind_logger.critical(
+                    f"{len(range)=} must be equal to {len(plot_kwargs['labels'])=}"
+                )
+
+        if fig is None:
+            fig_corner = plt.figure()
+        else:
+            fig_corner = fig
         default_plot_kwargs = {
-            "fig": None,
-            "color": "black",
+            "fig": fig_corner,
+            "color": colour,
             "quantiles": [0.16, 0.5, 0.84],
             "smooth": None,
             "title_kwargs": {"fontsize": 12},
@@ -397,7 +407,7 @@ class Base_MCMC_Fitter(ABC):
             default_plot_kwargs["title_quantiles"] = None
             default_plot_kwargs["show_titles"] = False
 
-        fig_ = corner.corner(flat_samples, labels = corner_labels, **default_plot_kwargs)
+        fig_ = corner.corner(flat_samples, range = range, **default_plot_kwargs)
         
         # calculate best fit values of the variables and their associated errors
         # means = []
@@ -433,17 +443,7 @@ class Base_MCMC_Fitter(ABC):
             fig_.subplots_adjust(top=0.9, bottom=0.1, left=0.1, right=0.9, hspace=0.1, wspace=0.1)
 
         if save == True:
-            #os.chdir("/Users/user/Documents/PGR/UDS field/Plots/2pt angular correlation")
-            # orig_dir = os.getcwd()
-            # if "SAVE_DIR" in os.environ:
-            #     save_dir = os.environ["SAVE_DIR"]
-            # elif save_dir != None:
-            #     pass
-            # else:
-            #     raise(Exception("Must define save_dir"))
-            # os.chdir(save_dir)
             fig_.savefig(self.backend_filename.replace(".h5", "_MCMC.jpeg"), dpi = 600, bbox_inches = "tight")
-            #os.chdir(orig_dir)
         return fig_
     
     # def get_residuals(self: Self, params: Dict[str, float]) -> NDArray[float]:
@@ -779,6 +779,63 @@ class Linear_Fitter(MCMC_Fitter):
             )
         super().__init__(priors, x_data, y_data, y_data_errs, nwalkers, backend_filename, fixed_params)
     
+    @classmethod
+    def from_h5(cls: Type[Self], h5_path: str) -> Self:
+        galfind_logger.warning(
+            "Loading MCMC fitter from HDF5 is not implemented yet, if it works its a hack to get working for thesis!"
+        )
+        # construct priors from saved .h5 file
+        h5_file = h5py.File(h5_path, "r")
+        h5_priors = h5_file["priors"]
+        prior_types = {prior.__name__: prior for prior in Prior.__subclasses__()}
+        priors = Priors(
+            [
+                prior_types[str(h5_priors[prior_name]["prior_type"][()].decode("utf-8"))](
+                    prior_name, 
+                    [
+                        float(h5_priors[prior_name]["lower_lim"][()]),
+                        float(h5_priors[prior_name]["upper_lim"][()]),
+                    ],
+                    float(h5_priors[prior_name]["fiducial"][()])
+                )
+                for prior_name in [name.decode("utf-8") for name in h5_file["priors_names"][()]]
+            ]
+        )
+        # ensure these priors are the correct way round
+        x_data = h5_file["x_data"][()]
+        y_data = h5_file["y_data"][()]
+        y_data_errs = h5_file["y_data_errs"][()]
+        n_walkers = h5_file["nwalkers"][()]
+        backend_filename = h5_file["backend_filename"][()].decode("utf-8")
+        #init_pos = h5_file["init_pos"][()]
+        # TODO: load these in
+        #incl_scatter = h5_file["incl_scatter"][()]
+        #fixed_params = json.loads(h5_file["fixed_params"][()])#.decode("utf-8"))
+        h5_file.close()
+        return cls(priors, x_data, y_data, y_data_errs, n_walkers, backend_filename = backend_filename, fixed_params = {})#, init_pos = init_pos)
+    
+    def save_h5(self: Self) -> NoReturn:
+        # open h5 file
+        h5_out_name = self.backend_filename.replace(".h5", "_fitter.h5")
+        out_file = h5py.File(h5_out_name, "w")
+        priors = out_file.create_group("priors")
+        for prior in self.priors:
+            prior_ = priors.create_group(prior.name)
+            prior_["lower_lim"] = prior.prior_params["lower_lim"]
+            prior_["upper_lim"] = prior.prior_params["upper_lim"]
+            prior_["fiducial"] = prior.fiducial
+            prior_["prior_type"] = prior.__class__.__name__
+        priors_names = [prior.name for prior in self.priors]
+        out_file.create_dataset("priors_names", data = np.array(priors_names, dtype = "S"))
+        out_file.create_dataset("x_data", data = self.x_data)
+        out_file.create_dataset("y_data", data = self.y_data)
+        out_file.create_dataset("y_data_errs", data = self.y_data_errs)
+        out_file.create_dataset("nwalkers", data = self.nwalkers)
+        out_file.create_dataset("fixed_params", data = json.dumps(self.fixed_params))
+        out_file.create_dataset("incl_scatter", data = self.incl_scatter)
+        out_file.create_dataset("backend_filename", data = self.backend_filename)
+        out_file.close()
+
     def _get_sigma_sq(
         self: Self,
         residuals: NDArray[float],

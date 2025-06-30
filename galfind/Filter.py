@@ -278,6 +278,7 @@ class Filter:
         self,
         ax,
         wav_units: u.Quantity = u.um,
+        trans_scaling: float = 1.0,
         colour: str = "black",
         save_dir: str = "",
         label: bool = True,
@@ -287,8 +288,8 @@ class Filter:
         # convert wavelength units
         wavs = funcs.convert_wav_units(self.wav, wav_units).value
         # add extra points to ensure the plot is closed
-        wavs = list(np.concatenate(([wavs[0]], wavs, [wavs[-1]])))
-        trans = list(np.concatenate(([0.0], self.trans, [0.0])))
+        wavs = np.concatenate(([wavs[0]], wavs, [wavs[-1]]))
+        trans = np.concatenate(([0.0], self.trans, [0.0])) * trans_scaling
         # plot the filter profile
         ax.fill_between(wavs, 0.0, trans, color=colour, alpha=0.6)
         ax.plot(
@@ -946,6 +947,7 @@ class Multiple_Filter:
         self,
         ax,
         wav_units: u.Unit = u.um,
+        trans_scaling: float = 1.0,
         cmap_name: str = "Spectral_r",
         save_dir: str = "",
         label: bool = True,
@@ -958,7 +960,15 @@ class Multiple_Filter:
         colours = [cmap(norm(i)) for i in range(len(self))]
         # plot each filter profile
         for i, (band, colour) in enumerate(zip(self, colours)):
-            band.plot(ax, colour=colour, label=label, show=False, save=False)
+            band.plot(
+                ax,
+                wav_units = wav_units,
+                trans_scaling = trans_scaling,
+                colour=colour,
+                label=label,
+                show=False,
+                save=False
+            )
         # annotate plot if needed
         if save or show:
             ax.set_title(f"{self.instrument_name} filters")
