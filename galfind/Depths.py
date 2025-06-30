@@ -16,6 +16,7 @@ from pathlib import Path
 from astropy.io import fits
 from astropy.table import Table, vstack
 import os
+import logging
 from astropy.visualization.mpl_normalize import ImageNormalize
 from matplotlib import cm
 from matplotlib.colors import LinearSegmentedColormap, BoundaryNorm
@@ -72,7 +73,7 @@ def make_grid_force(data, mask, radius, scatter_size, pixel_scale=0.03, plot=Fal
         scatter = np.random.uniform(low=-scatter_size_pixels, high=scatter_size_pixels, size=(xy.shape[0], 2))
         xy_scatter = xy + scatter
         
-        for pos, (x, y) in tqdm(enumerate(xy_scatter)):
+        for pos, (x, y) in tqdm(enumerate(xy_scatter), disable=galfind_logger.getEffectiveLevel() > logging.INFO):
             count = 0
             done = False
             
@@ -394,7 +395,7 @@ def calc_depths(
         )
         label_size_grid[:] = np.nan
         # print('Grid size:', grid_size)
-        for i in tqdm(range(0, grid_size[0], step_size)):
+        for i in tqdm(range(0, grid_size[0], step_size), disable = galfind_logger.getEffectiveLevel() > logging.INFO):
             for j in range(0, grid_size[1], step_size):
                 setnan = False
                 if mask is not None:
@@ -481,7 +482,7 @@ def calc_depths(
         depths, diagnostic, cat_labels = [], [], []
         count = 0
         print("Total number", len(cat_x))
-        for i, j in tqdm(zip(cat_x, cat_y), total=len(cat_x)):
+        for i, j in tqdm(zip(cat_x, cat_y), total=len(cat_x), disable=galfind_logger.getEffectiveLevel() > logging.INFO):
             # Check if the coordinate is outside the image or in the mask
             if i > x_max or i < 0 or j > y_max or j < 0:
                 depth = np.nan
@@ -1264,7 +1265,7 @@ def plot_area_depth(
         ax.yaxis.set_ticks_position("both")
         ax.xaxis.set_ticks_position("both")
         
-        ax.set_xlim(0, area_master * 1.02)
+        # ax.set_xlim(0, area_master * 1.02)
         # Add hlines at integer depths
         depths = np.arange(20, 35, 1)
         # for depth in depths:
@@ -1703,7 +1704,8 @@ def append_loc_depth_cols(
             raise(Exception())
         aper_diams = self[0].aper_diams.to(u.arcsec).value
         for i, band_data in tqdm(enumerate(self.band_data_arr), 
-                total=len(self), desc="Appending local depth columns"):
+                total=len(self), desc="Appending local depth columns",
+                disable=galfind_logger.getEffectiveLevel() > logging.INFO):
             for j, aper_diam in enumerate(aper_diams):
                 aper_diam *= u.arcsec
                 h5_path = get_grid_depth_path(

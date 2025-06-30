@@ -14,6 +14,7 @@ import os
 import time
 from copy import deepcopy
 from pathlib import Path
+import logging
 
 import astropy.units as u
 from matplotlib import cm
@@ -687,7 +688,8 @@ class Catalogue_Creator:
                             for val in gal_phot
                         ]
                         for gal_phot in tqdm(
-                            phot, desc="Making has_data_mask", total=len(phot)
+                            phot, desc="Making has_data_mask", total=len(phot),
+                            disable = galfind_logger.getEffectiveLevel() > logging.INFO,
                         )
                     ]
                 )
@@ -835,6 +837,7 @@ class Catalogue(Catalogue_Base):
                 zip(self, cat_SED_results),
                 desc="Updating galaxy SED results",
                 total=len(self),
+                disable = galfind_logger.getEffectiveLevel() > logging.INFO
             )
         ]
 
@@ -1405,6 +1408,7 @@ class Catalogue(Catalogue_Base):
                 self,
                 total=len(self),
                 desc="Plotting photometry diagnostic plots",
+                disable = galfind_logger.getEffectiveLevel() > logging.INFO
             )
         ]
         if collate_dir is None:
@@ -1485,7 +1489,7 @@ class Catalogue(Catalogue_Base):
         # scatter each set of fluxes once by the calculated errors
         [
             gal.aper_phot[aper_diam].scatter_fluxes(update = True) 
-            for gal in tqdm(self, desc = "Scattering catalogue fluxes", total = len(self))
+            for gal in tqdm(self, desc = "Scattering catalogue fluxes", total = len(self), disable = galfind_logger.getEffectiveLevel() > logging.INFO)
         ]
         if update_errs:
             self._update_errs_from_depths(aper_diam)
@@ -1507,7 +1511,7 @@ class Catalogue(Catalogue_Base):
         depths = np.array([band_data.med_depth[aper_diam][depth_region] for band_data in self.data]) * u.ABmag
         [
             setattr(gal.aper_phot[aper_diam], "depths", depths) 
-            for gal in tqdm(self, desc = "Updating catalogue depths", total = len(self))
+            for gal in tqdm(self, desc = "Updating catalogue depths", total = len(self), disable = galfind_logger.getEffectiveLevel() > logging.INFO)
         ]
 
     def _update_errs_from_depths(
@@ -1529,7 +1533,7 @@ class Catalogue(Catalogue_Base):
             min_flux_pc_err = 0.
 
         [gal.aper_phot[aper_diam]._update_errs_from_depths(min_flux_pc_err)
-            for gal in tqdm(self, desc = "Updating catalogue errors from average depths", total = len(self))
+            for gal in tqdm(self, desc = "Updating catalogue errors from average depths", total = len(self), disable = galfind_logger.getEffectiveLevel() > logging.INFO)
         ]
 
     def load_depths(

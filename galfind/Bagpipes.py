@@ -24,6 +24,7 @@ import numpy as np
 from copy import deepcopy
 from astropy.table import Table
 from tqdm import tqdm
+import logging
 from typing import Union, Dict, Any, List, Tuple, Optional, NoReturn, TYPE_CHECKING
 if TYPE_CHECKING:
     from . import Catalogue, PDF, Multiple_Filter
@@ -38,6 +39,7 @@ from . import useful_funcs_austind as funcs
 from .useful_funcs_austind import astropy_cosmo as cosmo
 from .decorators import run_in_dir
 from .SED import SED_obs
+from .Filter import Filter
 
 pipes_unit_dict = {
     "z": u.dimensionless_unscaled,
@@ -597,7 +599,8 @@ class Bagpipes(SED_code):
                 f"Bagpipes {excl_bands_arr=} must be a (ragged) list of lists with length {len(run_cat.gals)}!"
             )
         gals_arr = []
-        for gal, excl_bands in tqdm(zip(run_cat.gals, excl_bands_arr), "Removing filters without depth measurements"):
+
+        for gal, excl_bands in tqdm(zip(run_cat.gals, excl_bands_arr), "Removing filters without depth measurements", disable = galfind_logger.getEffectiveLevel() > logging.INFO):
             remove_filt = []
             for i, (depth, filt) in enumerate(zip(gal.aper_phot[aper_diam].depths, gal.aper_phot[aper_diam].filterset)):
                 if np.isnan(depth) or filt.band_name in excl_bands:
@@ -801,7 +804,7 @@ class Bagpipes(SED_code):
         self: Self,
         cat: Catalogue,
         aper_diam: u.Quantity,
-    ) -> NDArray[str]:
+    ) -> List[str]:
         self._generate_filters(cat.filterset)
         cat_filt_paths = np.zeros(len(cat), dtype=object)
 
@@ -929,6 +932,7 @@ class Bagpipes(SED_code):
                 zip(z_arr, wavs, fnu),
                 desc="Constructing pipes SEDs",
                 total=len(wavs),
+                disable = galfind_logger.getEffectiveLevel() > logging.INFO
             )
         ]
         return SED_obs_arr
@@ -949,7 +953,7 @@ class Bagpipes(SED_code):
                 f"Bagpipes {excl_bands_arr=} must be a (ragged) list of lists with length {len(cat.gals)}!"
             )
         gals_arr = []
-        for gal, excl_bands in tqdm(zip(cat.gals, excl_bands_arr), "Removing filters without depth measurements"):
+        for gal, excl_bands in tqdm(zip(cat.gals, excl_bands_arr), "Removing filters without depth measurements", disable = galfind_logger.getEffectiveLevel() > logging.INFO):
             remove_filt = []
             for i, (depth, filt) in enumerate(zip(gal.aper_phot[aper_diam].depths, gal.aper_phot[aper_diam].filterset)):
                 if np.isnan(depth) or filt.band_name in excl_bands:
@@ -1099,7 +1103,7 @@ class Bagpipes(SED_code):
             )
         ignore_labels = ["dust_curve", "photometry", "spectrum_full", "uvj", "sfh", "mass_weighted_zmet", "chisq_phot", "ndot_ion_caseB_rest", "ndot_ion_caseB_obs"]
         cat_property_PDFs = []
-        for h5_path, ID in tqdm(zip(PDF_paths, IDs), desc=f"Loading {self.label} PDFs", total=len(IDs)):
+        for h5_path, ID in tqdm(zip(PDF_paths, IDs), desc=f"Loading {self.label} PDFs", total=len(IDs), disable=galfind_logger.getEffectiveLevel() > logging.INFO):
             gal_property_PDFs = {}
             if Path(h5_path).is_file():
                 with h5py.File(h5_path, "r") as h5:
@@ -1135,7 +1139,7 @@ class Bagpipes(SED_code):
         ID: int,
         cat: Catalogue,
         aper_diam: u.Quantity,
-    ) -> NDArray[float, float]:
+    ) -> np.NDArray[float, float]:
         from . import ID_Selector
         # get appropriate galaxy photometry from catalogue
         aper_phot = cat[ID_Selector(int(ID))][0].aper_phot[aper_diam]

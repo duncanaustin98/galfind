@@ -13,6 +13,8 @@ from pathlib import Path
 from astropy.utils.masked import Masked
 from scipy import ndimage
 from tqdm import tqdm
+import logging
+
 from typing import TYPE_CHECKING, Any, List, Union, NoReturn, Callable, Optional
 if TYPE_CHECKING:
     from . import (
@@ -193,8 +195,11 @@ class Selector(ABC):
                     f"Morphology fitting results for {repr(self.morph_fitter)=} " + \
                     f"not loaded for any galaxy in {repr(cat)}."
                 )
-        [self._call_gal(gal, return_copy = False, *args, **kwargs) for gal \
-            in tqdm(cat, total = len(cat), desc = f"Selecting {self.name}")]
+        [
+            self._call_gal(gal, return_copy = False, *args, **kwargs) for gal \
+            in tqdm(cat, total = len(cat), desc = f"Selecting {self.name}", \
+            disable = galfind_logger.getEffectiveLevel() > logging.INFO)
+        ]
         if cat.cat_creator.crops == [] or self.__class__.__name__ != "ID_Selector":
             cat._append_property_to_tab(self.name, "SELECTION")
         if return_copy:
@@ -2611,22 +2616,27 @@ class Robust_zPDF_Selector(SED_fit_Selector):
         SED_fit_label: Union[str, SED_code],
         integral_lim: float,
         dz_over_z: Union[int, float],
+        min_dz: Union[int, float] = 0.0,
     ):
         kwargs = {
             "integral_lim": integral_lim,
             "dz_over_z": dz_over_z,
+            "min_dz": min_dz,
         }
         super().__init__(aper_diam, SED_fit_label, **kwargs)
 
     @property
     def _selection_name(self) -> str:
-        return f"zPDF>{int(self.kwargs['integral_lim'] * 100)}%," + \
+        name = f"zPDF>{int(self.kwargs['integral_lim'] * 100)}%," + \
             f"|dz|/z<{self.kwargs['dz_over_z']}"
-    
+        if self.kwargs["min_dz"] > 0.0:
+            name += f",|dz|>{self.kwargs['min_dz']:.1f}"
+        return name
+
     @property
     def _include_kwargs(self) -> List[str]:
-        return ["integral_lim", "dz_over_z"]
-    
+        return ["integral_lim", "dz_over_z", "min_dz"]
+
     def _assertions(self: Self) -> bool:
         try:
             assertions = []
@@ -2635,6 +2645,9 @@ class Robust_zPDF_Selector(SED_fit_Selector):
             assertions.extend([(self.kwargs["integral_lim"] * 100).is_integer()])
             assertions.extend([isinstance(self.kwargs["dz_over_z"], (int, float))])
             assertions.extend([self.kwargs["dz_over_z"] > 0.0])
+            assertions.extend([isinstance(self.kwargs["min_dz"], (int, float))])
+            assertions.extend([self.kwargs["min_dz"] >= 0.0])
+
             passed = all(assertions)
         except:
             passed = False
@@ -2654,11 +2667,18 @@ class Robust_zPDF_Selector(SED_fit_Selector):
         self: Self,
         gal: Galaxy,
     ) -> bool:
+
         # extract best fitting redshift - peak of the redshift PDF
         zbest = gal.aper_phot[self.aper_diam].SED_results[self.SED_fit_label].z
+
+        dz_z = self.kwargs["dz_over_z"]
+        # adjust dz_z if zbest * dz_z is less than min_dz
+        if zbest * dz_z < self.kwargs["min_dz"]:
+            dz_z = self.kwargs["min_dz"] / zbest
+
         integral = gal.aper_phot[self.aper_diam].SED_results[self.SED_fit_label]. \
             property_PDFs["z"].integrate_between_lims(
-                float(self.kwargs["dz_over_z"]), float(zbest)
+                float(dz_z), float(zbest)
             )
         return integral > self.kwargs["integral_lim"]
 

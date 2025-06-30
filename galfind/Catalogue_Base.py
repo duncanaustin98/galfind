@@ -12,6 +12,7 @@ from astropy.io import fits
 from astropy.table import Table, join, vstack
 from tqdm import tqdm
 import inspect
+import logging
 from numpy.typing import NDArray
 from typing import TYPE_CHECKING, Any, List, Dict, Union, Type, Optional, NoReturn
 if TYPE_CHECKING:
@@ -340,6 +341,7 @@ class Catalogue_Base:
                 for pos, coord in tqdm(
                     enumerate(self_copy.sky_coord),
                     desc="Cross-matching galaxies",
+                    disable = galfind_logger.getEffectiveLevel() > logging.INFO
                 ):
                     # Need to save index of match in other_sky_coords
 
@@ -456,6 +458,7 @@ class Catalogue_Base:
                             zip(gal_matched_cat, gal_matched_other),
                             total=len(gal_matched_cat),
                             desc="Appending spectra to catalogue!",
+                            disable = galfind_logger.getEffectiveLevel() > logging.INFO
                         )
                     ]
                     return self_copy
@@ -1184,7 +1187,8 @@ class Catalogue_Base:
                 for gal in tqdm(
                     self,
                     total=len(self),
-                    desc=f"Calculating {full_survey_name} Vmax's in {full_data_name}"
+                    desc=f"Calculating {full_survey_name} Vmax's in {full_data_name}",
+                    disable = galfind_logger.getEffectiveLevel() > logging.INFO,
                 )
             ]
             #breakpoint()

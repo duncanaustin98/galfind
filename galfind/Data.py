@@ -19,6 +19,7 @@ import sys
 from matplotlib.colors import LinearSegmentedColormap
 import time
 import itertools
+import logging
 from matplotlib import cm
 from copy import deepcopy
 from pathlib import Path
@@ -1445,7 +1446,7 @@ class Stacked_Band_Data(Band_Data_Base):
                     wht_data = 1.0 / (rms_err_data**2)
                 else:  # err_type.lower() == "wht"
                     wht_data = band_data.load_wht()
-                    rms_err_data = np.sqrt(1.0 / wht)
+                    rms_err_data = np.sqrt(1.0 / wht_data)
                 if i == 0:
                     sum = im_data * wht_data
                     sum_wht = wht_data
@@ -2764,7 +2765,7 @@ class Data:
         if len(params) > 0:
             # Parallelise the calculation of depths for each band
             with funcs.tqdm_joblib(
-                tqdm(desc="Calculating depths", total=len(params))
+                tqdm(desc="Calculating depths", total=len(params), disable = galfind_logger.getEffectiveLevel() > logging.INFO)
             ) as progress_bar:
                 Parallel(n_jobs=n_jobs)(
                     delayed(Depths.calc_band_depth)(param) for param in params
@@ -2955,7 +2956,8 @@ class Data:
                 raise(Exception())
             aper_diams = self[0].aper_diams.to(u.arcsec).value
             for i, band_data in tqdm(enumerate(self), \
-                    total=len(self), desc="Appending aperture correction columns"):
+                    total=len(self), desc="Appending aperture correction columns",
+                    disable=galfind_logger.getEffectiveLevel() > logging.INFO):
                 mag_aper_corr_data = np.zeros(len(cat))
                 flux_aper_corr_data = np.zeros(len(cat))
                 if len(aper_diams) == 1:

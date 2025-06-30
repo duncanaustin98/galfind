@@ -6,7 +6,8 @@ import os
 from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import NoReturn, Union, Optional
-from lmfit import Model, Parameters, minimize, fit_report
+import logging
+#from lmfit import Model, Parameters, minimize, fit_report
 
 import astropy.units as u
 import matplotlib.pyplot as plt
@@ -757,6 +758,7 @@ class Spectral_Catalogue:
                         zip(DJA_cat["root"], DJA_cat["file"], DJA_cat["z"]),
                         total=len(DJA_cat),
                         desc=f"Loading DJA_{version} catalogue",
+                        disable=galfind_logger.getEffectiveLevel() > logging.INFO
                     )
                 ]
             )
@@ -774,6 +776,7 @@ class Spectral_Catalogue:
                         zip(DJA_cat["root"], DJA_cat["file"]),
                         total=len(DJA_cat),
                         desc=f"Loading DJA_{version} catalogue",
+                        disable=galfind_logger.getEffectiveLevel() > logging.INFO
                     )
                 ]
             )

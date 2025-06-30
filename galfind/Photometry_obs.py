@@ -9,6 +9,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from tqdm import tqdm
 from copy import deepcopy
+import logging
 from photutils.aperture import (
     CircularAperture,
     aperture_photometry,
@@ -636,6 +637,7 @@ class Multiple_Photometry_obs:
                     ),
                     desc="Initializing Multiple_Photometry_obs",
                     total=len(instrument_arr),
+                    disable=galfind_logger.getEffectiveLevel() > logging.INFO
                 )
             ]
         else:

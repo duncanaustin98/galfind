@@ -15,6 +15,7 @@ from shutil import copy
 import time
 import warnings
 from pathlib import Path
+import logging
 
 import astropy.units as u
 import eazy
@@ -522,6 +523,7 @@ class EAZY(SED_code):
                 for pos_obj, ID in tqdm(
                     enumerate(fit.OBJID),
                     total=len(fit.OBJID),
+                    disable=galfind_logger.getEffectiveLevel() > logging.INFO,
                     desc="Saving z-PDFs",
                 )
             ]
@@ -565,6 +567,7 @@ class EAZY(SED_code):
                 fit_data_arr,
                 desc="Creating wav_flux_arr",
                 total=len(fit_data_arr),
+                disable=galfind_logger.getEffectiveLevel() > logging.INFO
             )
         ]
         wav_flux_arr = np.array(wav_flux_arr).astype(np.float32)
@@ -638,6 +641,7 @@ class EAZY(SED_code):
                 zip(z_arr, wav_arr, flux_arr),
                 total=len(z_arr),
                 desc="Constructing SEDs",
+                disable=galfind_logger.getEffectiveLevel() > logging.INFO
             )
         ]
         # close .h5 file
@@ -691,6 +695,7 @@ class EAZY(SED_code):
                     zip(IDs, pz_arr),
                     total=len(IDs),
                     desc="Constructing redshift PDFs",
+                    disable=galfind_logger.getEffectiveLevel() > logging.INFO
                 )
             ]
             # close .h5 file

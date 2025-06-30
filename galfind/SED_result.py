@@ -16,6 +16,7 @@ import astropy.units as u
 import numpy as np
 from astropy.table import Table
 from tqdm import tqdm
+import logging
 
 from . import galfind_logger
 from . import useful_funcs_austind as funcs
@@ -273,6 +274,7 @@ class Catalogue_SED_results:
                         SED_fit_params_arr,
                         desc="Collecting cat_PDF_paths",
                         total=len(SED_fit_params_arr),
+                        disable=galfind_logger.getEffectiveLevel() > logging.INFO
                     )
                 ]
             else:
@@ -298,6 +300,7 @@ class Catalogue_SED_results:
                         SED_fit_params_arr,
                         desc="Collecting cat_SED_paths",
                         total=len(SED_fit_params_arr),
+                        disable=galfind_logger.getEffectiveLevel() > logging.INFO
                     )
                 ]
             else:
