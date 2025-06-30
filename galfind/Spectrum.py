@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import NoReturn, Union, Optional, Self
+from typing import NoReturn, Union, Optional
 import logging
 
 import astropy.units as u
@@ -213,7 +213,7 @@ class Spectrum:
         save: bool = True,
         version: str = "v3",
         z: Union[float, None] = None,
-    ) -> Self:
+    ):
         import msaexp.spectrum
 
         # open 2D spectrum

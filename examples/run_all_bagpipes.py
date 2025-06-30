@@ -52,7 +52,7 @@ class General_EPOCHS_Selector(Multiple_SED_fit_Selector):
         self: Self,
         aper_diam: u.Quantity,
         SED_fit_label: Union[str, SED_code],
-        allow_lowz: bool = False,
+        allow_lowz: bool = True,
         unmasked_instruments: Union[str, List[str]] = "NIRCam",
         cat_filterset: Optional[Multiple_Filter] = None,
         simulated: bool = False,
@@ -120,6 +120,16 @@ survey_properties = [
             ['CEERSP10', 'v9', ['ACS_WFC', 'NIRCam']],
 ]
 
+survey_properties = [
+    ['JADES-DR3-GS-North', 'v13', ['ACS_WFC', 'NIRCam']],
+    ['JADES-DR3-GS-South', 'v13', ['ACS_WFC', 'NIRCam']],
+    ['JADES-DR3-GS-East', 'v13', ['ACS_WFC', 'NIRCam']],
+    ['JADES-DR3-GS-West', 'v13', ['ACS_WFC', 'NIRCam']],
+    ['JADES-DR3-GN-Deep', 'v13', ['ACS_WFC', 'NIRCam']],
+    ['JADES-DR3-GN-Medium', 'v13', ['ACS_WFC', 'NIRCam']],
+    ['JADES-DR3-GN-Parallel', 'v13', ['ACS_WFC', 'NIRCam']],
+]
+
 # Others - UNCOVER/CANUCS/Technicolor/GLIMPSE/MACS0416 etc
 # Where are they?
 
@@ -146,17 +156,18 @@ def main(survey, version, instrument_names):
     print(f'Loaded catalogue for {survey}, {version} with {len(cat)} objects')
 
     # Load/run EAZY results
-    SED_fit_params_arr = [{"templates": "fsps_larson", "lowz_zmax": None}]
+    SED_fit_params_arr = [{"templates": "fsps_larson", "lowz_zmax": None}, {"templates": "fsps_larson", "lowz_zmax": 6}]
     for SED_fit_params in SED_fit_params_arr:
         EAZY_fitter = EAZY(SED_fit_params)
-        EAZY_fitter(cat, aper_diams[0], load_PDFs = True, load_SEDs = False, update = True)
+        for i in [0, 1]:
+            EAZY_fitter(cat, aper_diams[i], load_PDFs = True, load_SEDs = False, update = True)
 
     # Apply selection
     selector = General_EPOCHS_Selector(aper_diams[0], sed_name, allow_lowz = True, z_min=3, z_max=15)
     cropped_cat = selector(cat, return_copy = True)
 
     print(f'Selected {len(cropped_cat)} objects from the catalogue.')
-
+    '''
     # Setup Bagpipes config
     pipes_fit_params_arr = [
         {
@@ -175,6 +186,7 @@ def main(survey, version, instrument_names):
         pipes_fitter = Bagpipes(pipes_fit_params)
         pipes_fitter(cropped_cat, aper_diams[0], save_PDFs = False, load_SEDs = False, update = True)
 
+    '''
 
 if __name__ == "__main__":
-    Parallel(n_jobs=1)(delayed(main)(survey, version, instrument_names) for survey, version, instrument_names in survey_properties)
+    Parallel(n_jobs=6)(delayed(main)(survey, version, instrument_names) for survey, version, instrument_names in survey_properties)
