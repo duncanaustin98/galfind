@@ -186,11 +186,11 @@ class EAZY(SED_code):
         aper_diam: u.Quantity, 
         overwrite: bool = False
     ) -> str:
+        
         in_dir = f"{config['EAZY']['EAZY_DIR']}/input/{cat.filterset.instrument_name}/{cat.version}/{cat.survey}"
         in_name = cat.cat_name.replace('.fits', f"_{aper_diam.to(u.arcsec).value:.2f}as.in")
         in_path = f"{in_dir}/{in_name}"
         in_filt_name = f"{in_path.replace('.in', '_filters.RES')}"
-
         if not Path(in_path).is_file() or overwrite:
             # 1) obtain input data
             IDs = np.array([gal.ID for gal in cat.gals])  # load IDs

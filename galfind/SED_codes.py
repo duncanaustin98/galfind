@@ -374,8 +374,10 @@ class SED_code(ABC):
     ) -> Tuple[np.ndarray, np.ndarray]:
         if input_filterset is None:
             input_filterset = cat.filterset
+        breakpoint()
         input_filterset.filters = np.array([filt for filt in input_filterset if filt.band_name not in self.SED_fit_params["excl_bands"]])
         galfind_logger.info(f"Excluded bands: {self.excl_bands_label}")
+        #breakpoint()
         # load in raw photometry from the galaxies in the catalogue and convert to appropriate units
         phot = np.array(
             [gal.aper_phot[aper_diam].flux.to(out_units) for gal in cat], dtype=object
@@ -397,7 +399,7 @@ class SED_code(ABC):
                 ],
                 dtype=object,
             )  # [:, :, 0]
-
+        breakpoint()
         # include upper limits if wanted
         if upper_sigma_lim is not None:
             # determine relevant indices

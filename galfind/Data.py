@@ -755,12 +755,12 @@ class Band_Data_Base(ABC):
     ):
         if not hasattr(self, "med_depth"):
             self.med_depth = {}
-            if aper_diam not in self.med_depth.keys():
-                self.med_depth[aper_diam] = {}
+        if aper_diam not in self.med_depth.keys():
+            self.med_depth[aper_diam] = {}
         if not hasattr(self, "mean_depth"):
             self.mean_depth = {}
-            if aper_diam not in self.mean_depth.keys():
-                self.mean_depth[aper_diam] = {}
+        if aper_diam not in self.mean_depth.keys():
+            self.mean_depth[aper_diam] = {}
         self.med_depth[aper_diam][label] = med_depth
         self.mean_depth[aper_diam][label] = mean_depth
     
