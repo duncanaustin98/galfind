@@ -590,11 +590,13 @@ class Bagpipes(SED_code):
         run_cat = deepcopy(cat)
         run_cat.gals = run_cat[to_run_arr]
         # remove filters without a depth measurement
-        if isinstance(self.SED_fit_params["excl_bands"][0], list):
+        if self.SED_fit_params["excl_bands"] == []:
+            excl_bands_arr = np.array([[] for _ in range(len(run_cat.gals))])
+        elif isinstance(self.SED_fit_params["excl_bands"][0], list):
             excl_bands_arr = self.SED_fit_params["excl_bands"]
         else:
             excl_bands_arr = np.full(len(run_cat.gals), self.SED_fit_params["excl_bands"])
-        assert len(self.SED_fit_params["excl_bands"]) == len(run_cat.gals), \
+        assert len(excl_bands_arr) == len(run_cat.gals), \
             galfind_logger.critical(
                 f"Bagpipes {excl_bands_arr=} must be a (ragged) list of lists with length {len(run_cat.gals)}!"
             )
@@ -807,12 +809,13 @@ class Bagpipes(SED_code):
     ) -> List[str]:
         self._generate_filters(cat.filterset)
         cat_filt_paths = np.zeros(len(cat), dtype=object)
-
-        if isinstance(self.SED_fit_params["excl_bands"][0], list):
+        if self.SED_fit_params["excl_bands"] == []:
+            excl_bands_arr = np.array([[] for _ in range(len(cat.gals))])
+        elif isinstance(self.SED_fit_params["excl_bands"][0], list):
             excl_bands_arr = self.SED_fit_params["excl_bands"]
         else:
             excl_bands_arr = np.full(len(cat.gals), self.SED_fit_params["excl_bands"])
-        assert len(self.SED_fit_params["excl_bands"]) == len(cat.gals), \
+        assert len(excl_bands_arr) == len(cat.gals), \
             galfind_logger.critical(
                 f"Bagpipes {excl_bands_arr=} must be a (ragged) list of lists with length {len(cat.gals)}!"
             )
@@ -944,11 +947,13 @@ class Bagpipes(SED_code):
     ) -> List[u.Quantity]:
         run_cat = deepcopy(cat)
         # remove filters without a depth measurement
-        if isinstance(self.SED_fit_params["excl_bands"][0], list):
+        if self.SED_fit_params["excl_bands"] == []:
+            excl_bands_arr = np.array([[] for _ in range(len(cat.gals))])
+        elif isinstance(self.SED_fit_params["excl_bands"][0], list):
             excl_bands_arr = self.SED_fit_params["excl_bands"]
         else:
             excl_bands_arr = np.full(len(cat.gals), self.SED_fit_params["excl_bands"])
-        assert len(self.SED_fit_params["excl_bands"]) == len(run_cat.gals), \
+        assert len(excl_bands_arr) == len(cat.gals), \
             galfind_logger.critical(
                 f"Bagpipes {excl_bands_arr=} must be a (ragged) list of lists with length {len(cat.gals)}!"
             )
