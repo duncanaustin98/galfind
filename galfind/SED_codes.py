@@ -80,27 +80,40 @@ class SED_code(ABC):
 
     @property
     def excl_bands_label(self) -> str:
-        if isinstance(self.SED_fit_params["excl_bands"][0], list):
+        if self.SED_fit_params["excl_bands"] == []:
+            return ""
+        elif isinstance(self.SED_fit_params["excl_bands"][0], list):
             assert "excl_bands_label" in self.SED_fit_params.keys(), \
                 galfind_logger.critical(
                     f"excl_bands_label not in SED_fit_params keys = {list(self.SED_fit_params.keys())}"
                 )
             return f"_{self.SED_fit_params['excl_bands_label']}"
         else:
-            if self.SED_fit_params["excl_bands"] == []:
-                return ""
-            else:
                 return f"_{'_'.join(self.SED_fit_params['excl_bands'])}"
 
     #@abstractmethod
-    def _load_gal_property_labels(self, gal_property_labels: Dict[str, str]) -> NoReturn:
-        self.gal_property_labels = {key: f"{item}_{self.tab_suffix}" 
-            for key, item in gal_property_labels.items()}
+    def _load_gal_property_labels(
+        self: Self,
+        gal_property_labels: Dict[str, str]
+    ) -> NoReturn:
+        self.gal_property_labels = {
+            key: f"{item}_{self.tab_suffix}" # _{aper_diam.to(u.arcsec).value:.2f}as
+            for key, item in gal_property_labels.items()
+        }
 
     #@abstractmethod
-    def _load_gal_property_err_labels(self, gal_property_err_labels: Dict[str, List[str, str]]) -> NoReturn:
-        self.gal_property_err_labels = {key: [f"{item[0]}_{self.tab_suffix}", f"{item[1]}_{self.tab_suffix}"]
-            for key, item in gal_property_err_labels.items()}
+    def _load_gal_property_err_labels(
+        self: Self,
+        gal_property_err_labels: Dict[str, List[str, str]],
+    ) -> NoReturn:
+        #aper_diam_name = f"{aper_diam.to(u.arcsec).value:.2f}as"
+        self.gal_property_err_labels = {
+            key: [
+                f"{item[0]}_{self.tab_suffix}", # _{aper_diam_name}
+                f"{item[1]}_{self.tab_suffix}" # _{aper_diam_name}
+            ]
+            for key, item in gal_property_err_labels.items()
+        }
 
     @abstractmethod
     def _load_gal_property_units(self) -> NoReturn:
@@ -238,12 +251,13 @@ class SED_code(ABC):
         fits_cat = cat.open_cat(hdu=self) # could be cached
         if "z" not in self.gal_property_labels.keys():
             fit = True
-        elif fits_cat is None or self.gal_property_labels["z"] \
-                not in fits_cat.colnames:
+        elif fits_cat is None:
+            fit = True
+        elif f"{self.gal_property_labels['z']}_{aper_diam.to(u.arcsec):.2f}as" not in fits_cat.colnames:
             fit = True
         else:
             fit = False
-
+        
         if fit:
             self.fit(
                 cat,
@@ -256,10 +270,10 @@ class SED_code(ABC):
             self.make_fits_from_out(out_path)
             self.update_fits_cat(cat, fits_out_path)
 
-        if timed:
-            mid = time.time()
-            print(f"Running SED fitting took {(mid - start):.1f}s")
-
+            if timed:
+                mid = time.time()
+                print(f"Running SED fitting took {(mid - start):.1f}s")
+        breakpoint()
         SED_fit_cat = cat.open_cat(cropped=True, hdu=self)
         aper_phot_IDs = [gal.ID for gal in cat]
         phot_arr = [gal.aper_phot[aper_diam] for gal in cat]
@@ -274,7 +288,7 @@ class SED_code(ABC):
             self.gal_property_units.keys() else SED_fit_cat[label][i] * \
             u.dimensionless_unscaled for gal_property, label in \
             self.gal_property_labels.items()} for i in range(len(aper_phot_IDs))]
-        
+        breakpoint()
         # TODO: When instantiating the class, ensure that all errors have an associated property
         assert all(
             err_key in self.gal_property_labels.keys()
@@ -374,10 +388,9 @@ class SED_code(ABC):
     ) -> Tuple[np.ndarray, np.ndarray]:
         if input_filterset is None:
             input_filterset = cat.filterset
-        breakpoint()
         input_filterset.filters = np.array([filt for filt in input_filterset if filt.band_name not in self.SED_fit_params["excl_bands"]])
-        galfind_logger.info(f"Excluded bands: {self.excl_bands_label}")
-        #breakpoint()
+        if self.excl_bands_label != "":
+            galfind_logger.info(f"Excluded bands: {self.excl_bands_label}")
         # load in raw photometry from the galaxies in the catalogue and convert to appropriate units
         phot = np.array(
             [gal.aper_phot[aper_diam].flux.to(out_units) for gal in cat], dtype=object
@@ -399,7 +412,6 @@ class SED_code(ABC):
                 ],
                 dtype=object,
             )  # [:, :, 0]
-        breakpoint()
         # include upper limits if wanted
         if upper_sigma_lim is not None:
             # determine relevant indices
@@ -472,6 +484,7 @@ class SED_code(ABC):
         # open relevant catalogue hdu extension
         orig_tab = cat.open_cat(hdu=self)
         SED_fitting_tab = Table.read(fits_out_path)
+        # update SED_fitting_tab colnames with aperture diameter
         # if table has not already been made
         if orig_tab is None:
             cat.write_hdu(SED_fitting_tab, hdu=self.hdu_name.upper())

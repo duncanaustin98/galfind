@@ -18,7 +18,7 @@ except ImportError:
     from typing_extensions import Self, Type  # python > 3.7 AND python < 3.11
 
 from .. import galfind_logger, config
-from ..Catalogue import galfind_depth_labels, scattered_phot_labels, load_galfind_depths, scattered_depth_labels, scattered_phot_labels_inst
+from ..Catalogue import galfind_depth_labels, scattered_phot_labels, load_galfind_depths, scattered_depth_labels #, scattered_phot_labels_inst
 from .. import useful_funcs_austind as funcs
 
 
@@ -251,7 +251,6 @@ class Grid_2D:
             aper_diams,
             forced_phot_band_name = None,
         ).replace(".fits", f"_reg={depth_region}.fits") #_{sim_cat.cat_path.split('/')[-1]}
-        breakpoint()
         # construct catalogue creator for scattered catalogue
         scattered_cat_creator = deepcopy(sim_cat.cat_creator)
         scattered_cat_creator.cat_path = scattered_cat_path

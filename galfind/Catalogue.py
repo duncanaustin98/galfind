@@ -291,7 +291,7 @@ def jaguar_phot_labels(
     err_labels = {aper_diam * aper_diams.unit: [] for aper_diam in aper_diams.value}
     return phot_labels, err_labels
 
-def scattered_phot_labels_inst(
+def scattered_phot_labels( # _inst
     filterset: Multiple_Filter, 
     aper_diams: u.Quantity, 
     **kwargs
@@ -302,16 +302,17 @@ def scattered_phot_labels_inst(
     err_labels = {aper_diam * aper_diams.unit: [f"{filt.instrument_name}.{filt.band_name}_err" for filt in filterset] for aper_diam in aper_diams.value}
     return phot_labels, err_labels
 
-def scattered_phot_labels(
-    filterset: Multiple_Filter,
-    aper_diams: u.Quantity,
-    **kwargs
-) -> Tuple[Dict[str, str], Dict[str, str]]:
-    assert "min_flux_pc_err" in kwargs.keys(), \
-        galfind_logger.critical("min_flux_pc_err not in kwargs!")
-    phot_labels = {aper_diam * aper_diams.unit: [f"{filt.band_name}_scattered" for filt in filterset] for aper_diam in aper_diams.value}
-    err_labels = {aper_diam * aper_diams.unit: [f"{filt.band_name}_err" for filt in filterset] for aper_diam in aper_diams.value}
-    return phot_labels, err_labels
+# def scattered_phot_labels(
+#     filterset: Multiple_Filter,
+#     aper_diams: u.Quantity,
+#     **kwargs
+# ) -> Tuple[Dict[str, str], Dict[str, str]]:
+#     assert "min_flux_pc_err" in kwargs.keys(), \
+#         galfind_logger.critical("min_flux_pc_err not in kwargs!")
+#     breakpoint()
+#     phot_labels = {aper_diam * aper_diams.unit: [f"{filt.band_name}_scattered" for filt in filterset if filt] for aper_diam in aper_diams.value}
+#     err_labels = {aper_diam * aper_diams.unit: [f"{filt.band_name}_err" for filt in filterset] for aper_diam in aper_diams.value}
+#     return phot_labels, err_labels
 
 
 def galfind_mask_labels(
@@ -824,7 +825,7 @@ class Catalogue(Catalogue_Base):
             SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)
         ] = SED_paths
 
-    def update_SED_results(self, cat_SED_results, timed=True):
+    def update_SED_results(self, cat_SED_results, timed: bool = True):
         assert (
             len(cat_SED_results) == len(self)
         )  # if this is not the case then instead should cross match IDs between self and gal_SED_result

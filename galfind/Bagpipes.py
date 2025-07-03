@@ -359,10 +359,10 @@ class Bagpipes(SED_code):
         )
 
     def _load_gal_property_labels(self):
-        super()._load_gal_property_labels(self.gal_property_labels)
+        return super()._load_gal_property_labels(self.gal_property_labels)
 
     def _load_gal_property_err_labels(self):
-        super()._load_gal_property_err_labels(self.gal_property_err_labels)
+        return super()._load_gal_property_err_labels(self.gal_property_err_labels)
 
     def _load_gal_property_units(self) -> NoReturn:
         # TODO: Copied from EAZY
@@ -590,16 +590,18 @@ class Bagpipes(SED_code):
         run_cat = deepcopy(cat)
         run_cat.gals = run_cat[to_run_arr]
         # remove filters without a depth measurement
-        if isinstance(self.SED_fit_params["excl_bands"][0], list):
+        if self.SED_fit_params["excl_bands"] == []:
+            excl_bands_arr = np.array([[] for _ in range(len(run_cat.gals))])
+        elif isinstance(self.SED_fit_params["excl_bands"][0], list):
             excl_bands_arr = self.SED_fit_params["excl_bands"]
         else:
             excl_bands_arr = np.full(len(run_cat.gals), self.SED_fit_params["excl_bands"])
-        assert len(self.SED_fit_params["excl_bands"]) == len(run_cat.gals), \
+        assert len(excl_bands_arr) == len(run_cat.gals), \
             galfind_logger.critical(
                 f"Bagpipes {excl_bands_arr=} must be a (ragged) list of lists with length {len(run_cat.gals)}!"
             )
-        gals_arr = []
 
+        gals_arr = []
         for gal, excl_bands in tqdm(zip(run_cat.gals, excl_bands_arr), "Removing filters without depth measurements", disable = galfind_logger.getEffectiveLevel() > logging.INFO):
             remove_filt = []
             for i, (depth, filt) in enumerate(zip(gal.aper_phot[aper_diam].depths, gal.aper_phot[aper_diam].filterset)):
@@ -808,11 +810,13 @@ class Bagpipes(SED_code):
         self._generate_filters(cat.filterset)
         cat_filt_paths = np.zeros(len(cat), dtype=object)
 
-        if isinstance(self.SED_fit_params["excl_bands"][0], list):
+        if self.SED_fit_params["excl_bands"] == []:
+            excl_bands_arr = np.array([[] for _ in range(len(cat.gals))])
+        elif isinstance(self.SED_fit_params["excl_bands"][0], list):
             excl_bands_arr = self.SED_fit_params["excl_bands"]
         else:
             excl_bands_arr = np.full(len(cat.gals), self.SED_fit_params["excl_bands"])
-        assert len(self.SED_fit_params["excl_bands"]) == len(cat.gals), \
+        assert len(excl_bands_arr) == len(cat.gals), \
             galfind_logger.critical(
                 f"Bagpipes {excl_bands_arr=} must be a (ragged) list of lists with length {len(cat.gals)}!"
             )
@@ -944,11 +948,13 @@ class Bagpipes(SED_code):
     ) -> List[u.Quantity]:
         run_cat = deepcopy(cat)
         # remove filters without a depth measurement
-        if isinstance(self.SED_fit_params["excl_bands"][0], list):
+        if self.SED_fit_params["excl_bands"] == []:
+            excl_bands_arr = np.array([[] for _ in range(len(cat.gals))])
+        elif isinstance(self.SED_fit_params["excl_bands"][0], list):
             excl_bands_arr = self.SED_fit_params["excl_bands"]
         else:
             excl_bands_arr = np.full(len(cat.gals), self.SED_fit_params["excl_bands"])
-        assert len(self.SED_fit_params["excl_bands"]) == len(run_cat.gals), \
+        assert len(excl_bands_arr) == len(cat.gals), \
             galfind_logger.critical(
                 f"Bagpipes {excl_bands_arr=} must be a (ragged) list of lists with length {len(cat.gals)}!"
             )

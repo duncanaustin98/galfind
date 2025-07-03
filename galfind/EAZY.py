@@ -203,7 +203,6 @@ class EAZY(SED_code):
             # Make filter file
             
             filt_codes = self._make_filter_file(cat.filterset, in_filt_name, default_param_path = f"{config['EAZY']['EAZY_CONFIG_DIR']}/EAZY_UVJ.RES")
-                
             # Make input file
             in_data = np.array(
                 [
@@ -357,7 +356,9 @@ class EAZY(SED_code):
         # JWST filter_file
         params["FILTERS_RES"] = in_filt_path
             #f"{config['EAZY']['EAZY_CONFIG_DIR']}/jwst_nircam_FILTER.RES"
-        
+        print(f"Using filter file: {params['FILTERS_RES']}")
+        #breakpoint()
+
         # Errors
         params["WAVELENGTH_FILE"] = (
             f"{eazy_templates_path}/lambda.def"  # Wavelength grid definition file
@@ -387,7 +388,7 @@ class EAZY(SED_code):
                 f"Running {self.__class__.__name__} {templates} {lowz_label}"
             )
             fit = eazy.photoz.PhotoZ(
-                param_file=default_param_path,
+                param_file=default_param_path, # come back to here!!! 03/06/2025
                 zeropoint_file=None,
                 params=params,
                 load_prior=False,
@@ -413,10 +414,11 @@ class EAZY(SED_code):
             or not Path(SED_path).is_file()
         ):
             # load in .h5 file
+            breakpoint()
             fit = hdf5.initialize_from_hdf5(h5file=h5_path, verbose=True)
         else:
             fit = None
-
+        breakpoint()
         if not Path(fits_out_path).is_file() and fit is not None:
             # If not using Fsps larson, use standard saving output. Otherwise generate own fits file.
             if templates == "HOT_45K" or templates == "HOT_60K":
@@ -430,6 +432,7 @@ class EAZY(SED_code):
                     simple=False,
                 )
             else:
+                breakpoint()
                 colnames = [
                     "IDENT",
                     "zbest",
@@ -444,7 +447,7 @@ class EAZY(SED_code):
                     fit.pz_percentiles([84]),
                     fit.chi2_best,
                 ]
-
+                breakpoint()
                 table = Table(data=data, names=colnames)
 
                 # Get rest frame colors
@@ -462,14 +465,18 @@ class EAZY(SED_code):
                     galfind_logger.info(
                         f"Finished calculating UBVJ fluxes for {self.__class__.__name__} {templates} {lowz_label}"
                     )
+                    breakpoint()
 
                 # add the template name to the column labels except for IDENT
+                aper_diam_name = f"{aper_diam.to(u.arcsec).value:.2f}as"
                 for col_name in table.colnames:
                     if col_name != self.ID_label:
+                        breakpoint()
                         table.rename_column(
                             col_name,
-                            f"{col_name}_{self.tab_suffix}",
+                            f"{col_name}_{self.tab_suffix}_{aper_diam_name}",
                         )
+                breakpoint()
                 # Write fits file
                 table.write(fits_out_path, overwrite=True)
                 funcs.change_file_permissions(fits_out_path)
