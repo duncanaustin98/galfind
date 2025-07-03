@@ -80,6 +80,8 @@ class SED_code(ABC):
 
     @property
     def excl_bands_label(self) -> str:
+        if self.SED_fit_params["excl_bands"] == []:
+            return ""
         if isinstance(self.SED_fit_params["excl_bands"][0], list):
             assert "excl_bands_label" in self.SED_fit_params.keys(), \
                 galfind_logger.critical(
@@ -87,10 +89,7 @@ class SED_code(ABC):
                 )
             return f"_{self.SED_fit_params['excl_bands_label']}"
         else:
-            if self.SED_fit_params["excl_bands"] == []:
-                return ""
-            else:
-                return f"_{'_'.join(self.SED_fit_params['excl_bands'])}"
+            return f"_{'_'.join(self.SED_fit_params['excl_bands'])}"
 
     #@abstractmethod
     def _load_gal_property_labels(self, gal_property_labels: Dict[str, str]) -> NoReturn:
