@@ -622,9 +622,15 @@ class Bagpipes(SED_code):
         if not (not self.SED_fit_params["fix_z"]):
             if isinstance(self.SED_fit_params["fix_z"], str):
                 redshifts = np.array([getattr(gal, self.SED_fit_params["fix_z"]) for gal in gals_arr]).astype(float)
-            else:
+            elif isinstance(self.SED_fit_params["fix_z"], tuple(SED_code.__subclasses__())):
                 redshifts = np.array([gal.aper_phot[aper_diam].SED_results \
-                    [self.SED_fit_params["fix_z"]].z for gal in gals_arr]).astype(float)
+                    [self.SED_fit_params["fix_z"].label].z for gal in gals_arr]).astype(float)
+            else:
+                raise TypeError(
+                    galfind_logger.critical(
+                        f"{self.SED_fit_params['fix_z']=} must be a string or a subclass of SED_code!"
+                    )
+                )
         else:
             redshifts = None
 
