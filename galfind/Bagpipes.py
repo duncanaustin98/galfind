@@ -536,12 +536,14 @@ class Bagpipes(SED_code):
         aper_diam: u.Quantity,
         save_SEDs: bool = True,
         save_PDFs: bool = True,
-        temp_label: Optional[str] = None,
         overwrite: bool = False,
         **kwargs: Dict[str, Any],
     ) -> NoReturn:
-        # dump priors if not already done
-        self.dump_priors(new_path_post)
+        if "temp_label" in kwargs.keys():
+            temp_label = kwargs["temp_label"]
+        breakpoint()
+        # # dump priors if not already done
+        # self.dump_priors(new_path_post)
         # determine temp directories
         out_subdir = self._temp_out_subdir(cat, temp_label = temp_label)
         path_post = f"{config['Bagpipes']['PIPES_OUT_DIR']}/pipes/posterior/{out_subdir}"
