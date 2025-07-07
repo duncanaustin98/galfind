@@ -19,6 +19,8 @@ def run_in_dir(path):
     def decorated(func):
         def wrapper(*args, **kwargs):
             cwd = os.getcwd()
+            if not os.path.exists(path):
+                os.makedirs(path)
             os.chdir(path)
             #print(f"Changed directory to {path}")
             return_value = func(*args, **kwargs)
