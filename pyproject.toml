@@ -98,6 +98,7 @@ dependencies = [
   "ipykernel",
   "emcee",
   "lmfit",
+  "spectres",
   "BDFit @ git+https://github.com/tHarvey303/BD-Finder/",
   "corner",
 ]
