@@ -541,7 +541,8 @@ class Bagpipes(SED_code):
     ) -> NoReturn:
         if "temp_label" in kwargs.keys():
             temp_label = kwargs["temp_label"]
-        breakpoint()
+        else:
+            temp_label = None
         # # dump priors if not already done
         # self.dump_priors(new_path_post)
         # determine temp directories
