@@ -197,6 +197,15 @@ class Galaxy:
         [self.aper_phot[gal_SED_result.aper_diam]. \
             update_SED_result(gal_SED_result) \
             for gal_SED_result in gal_SED_results]
+        
+    def load_fixz_SED_result(
+        self: Self,
+        aper_diam: u.Quantity,
+        z_value: float,
+        z_label: str = "z",
+    ) -> NoReturn:
+        self.aper_phot[aper_diam].load_fixz_SED_result(z_value, z_label)
+        
 
     def load_property(
         self, gal_property: Union[dict, u.Quantity], save_name: str

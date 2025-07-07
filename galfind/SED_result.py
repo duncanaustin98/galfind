@@ -11,12 +11,14 @@ from __future__ import annotations
 import itertools
 import time
 from copy import deepcopy
-from typing import Union
 import astropy.units as u
 import numpy as np
 from astropy.table import Table
 from tqdm import tqdm
 import logging
+from typing import Union, TYPE_CHECKING
+if TYPE_CHECKING:
+    from .Photometry_obs import Photometry_obs
 
 from . import galfind_logger
 from . import useful_funcs_austind as funcs
@@ -56,8 +58,27 @@ class SED_result:
         self.phot_rest = Photometry_rest.from_phot(phot, self.z)
         self.aper_diam = phot.aper_diam
 
+    @classmethod
+    def load_fixz(
+        cls,
+        phot: Photometry_obs,
+        z_value: float,
+        z_label: str = "z"
+    ):
+        return cls(
+            z_label,
+            phot,
+            properties = {z_label: z_value * u.dimensionless_unscaled},
+            property_errs = {},
+            property_PDFs = None,
+            SED = None,
+        )
+
     def __repr__(self):
-        return f"SED_result({self.SED_code.label})"
+        if isinstance(self.SED_code, str):
+            return f"SED_result({self.SED_code})"
+        else:
+            return f"SED_result({self.SED_code.label})"
 
     def __str__(self) -> str:
         output_str = funcs.line_sep
