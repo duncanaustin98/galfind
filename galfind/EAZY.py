@@ -382,6 +382,8 @@ class EAZY(SED_code):
         # Pass in optional arguments
         params.update(kwargs)
 
+        aper_diam_label = f"{aper_diam.to(u.arcsec).value:.2f}as"
+
         if not Path(h5_path).is_file() or overwrite:
             # Initialize photo-z object with above parameters
             galfind_logger.info(
@@ -418,7 +420,7 @@ class EAZY(SED_code):
             fit = hdf5.initialize_from_hdf5(h5file=h5_path, verbose=True)
         else:
             fit = None
-        breakpoint()
+
         if not Path(fits_out_path).is_file() and fit is not None:
             # If not using Fsps larson, use standard saving output. Otherwise generate own fits file.
             if templates == "HOT_45K" or templates == "HOT_60K":
@@ -432,7 +434,6 @@ class EAZY(SED_code):
                     simple=False,
                 )
             else:
-                breakpoint()
                 colnames = [
                     "IDENT",
                     "zbest",
@@ -447,7 +448,6 @@ class EAZY(SED_code):
                     fit.pz_percentiles([84]),
                     fit.chi2_best,
                 ]
-                breakpoint()
                 table = Table(data=data, names=colnames)
 
                 # Get rest frame colors
@@ -465,18 +465,14 @@ class EAZY(SED_code):
                     galfind_logger.info(
                         f"Finished calculating UBVJ fluxes for {self.__class__.__name__} {templates} {lowz_label}"
                     )
-                    breakpoint()
 
                 # add the template name to the column labels except for IDENT
-                aper_diam_name = f"{aper_diam.to(u.arcsec).value:.2f}as"
                 for col_name in table.colnames:
                     if col_name != self.ID_label:
-                        breakpoint()
                         table.rename_column(
                             col_name,
-                            f"{col_name}_{self.tab_suffix}_{aper_diam_name}",
+                            f"{col_name}_{self.tab_suffix}_{aper_diam_label}",
                         )
-                breakpoint()
                 # Write fits file
                 table.write(fits_out_path, overwrite=True)
                 funcs.change_file_permissions(fits_out_path)
@@ -495,7 +491,7 @@ class EAZY(SED_code):
 
         # Save best-fitting SEDs
         if save_SEDs and not Path(SED_path).is_file():
-            z_arr = np.array(table[f"zbest_{templates}_{lowz_label}"]).astype(
+            z_arr = np.array(table[f"zbest_{templates}_{lowz_label}_{aper_diam_label}"]).astype(
                 float
             )
             self.save_SEDs(SED_path, fit, z_arr, u.AA, u.nJy)

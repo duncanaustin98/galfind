@@ -247,13 +247,14 @@ class SED_code(ABC):
         )
 
         in_path, out_path, fits_out_path, PDF_paths, SED_paths = self._get_out_paths(cat, aper_diam)
+        aper_diam_label = f"{aper_diam.to(u.arcsec).value:.2f}as"
         # run the SED fitting if not already done so or if wanted overwriting
         fits_cat = cat.open_cat(hdu=self) # could be cached
         if "z" not in self.gal_property_labels.keys():
             fit = True
         elif fits_cat is None:
             fit = True
-        elif f"{self.gal_property_labels['z']}_{aper_diam.to(u.arcsec):.2f}as" not in fits_cat.colnames:
+        elif f"{self.gal_property_labels['z']}_{aper_diam_label}" not in fits_cat.colnames:
             fit = True
         else:
             fit = False
@@ -273,7 +274,6 @@ class SED_code(ABC):
             if timed:
                 mid = time.time()
                 print(f"Running SED fitting took {(mid - start):.1f}s")
-        breakpoint()
         SED_fit_cat = cat.open_cat(cropped=True, hdu=self)
         aper_phot_IDs = [gal.ID for gal in cat]
         phot_arr = [gal.aper_phot[aper_diam] for gal in cat]
@@ -283,12 +283,12 @@ class SED_code(ABC):
             in zip(aper_phot_IDs, SED_fit_IDs)), galfind_logger.critical(
             f"IDs in SED_fit_cat do not match those in the catalogue"
             )
-        cat_properties = [{gal_property: SED_fit_cat[label][i] * \
+        cat_properties = [{gal_property: SED_fit_cat[f"{label}_{aper_diam_label}"][i] * \
             self.gal_property_units[gal_property] if gal_property in \
-            self.gal_property_units.keys() else SED_fit_cat[label][i] * \
+            self.gal_property_units.keys() else SED_fit_cat[f"{label}_{aper_diam_label}"][i] * \
             u.dimensionless_unscaled for gal_property, label in \
             self.gal_property_labels.items()} for i in range(len(aper_phot_IDs))]
-        breakpoint()
+
         # TODO: When instantiating the class, ensure that all errors have an associated property
         assert all(
             err_key in self.gal_property_labels.keys()
@@ -302,14 +302,17 @@ class SED_code(ABC):
                     np.array(SED_fit_cat[self.gal_property_labels[gal_property]]),
                     np.array(
                         [
-                            np.array(SED_fit_cat[err_labels[0]]),
-                            np.array(SED_fit_cat[err_labels[1]]),
+                            np.array(SED_fit_cat[f"{err_labels[0]}_{aper_diam_label}"]),
+                            np.array(SED_fit_cat[f"{err_labels[1]}_{aper_diam_label}"]),
                         ]
                     ),
                 )[1]
             )
             if self.are_errs_percentiles
-            else [list(SED_fit_cat[err_labels[0]]), list(SED_fit_cat[err_labels[1]])]
+            else [
+                list(SED_fit_cat[f"{err_labels[0]}_{aper_diam_label}"]),
+                list(SED_fit_cat[f"{err_labels[1]}_{aper_diam_label}"])
+            ]
             for gal_property, err_labels in self.gal_property_err_labels.items()
         }
 

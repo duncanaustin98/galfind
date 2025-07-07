@@ -269,7 +269,6 @@ class Rest_Frame_Property_Calculator(Property_Calculator):
         self._call_phot_rest(gal.aper_phot[self.aper_diam]. \
             SED_results[self.SED_fit_label].phot_rest, n_chains = n_chains, 
             output = False, overwrite = overwrite, save_path = save_path, dtype = dtype)
-        
         if output:
             return gal
     
