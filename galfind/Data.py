@@ -46,7 +46,6 @@ if TYPE_CHECKING:
 
 import astropy.units as u
 import astropy.visualization as vis
-import cv2
 import h5py
 import joblib
 import matplotlib.pyplot as plt

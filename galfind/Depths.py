@@ -3,7 +3,6 @@ from __future__ import annotations
 
 # import automask as am
 import astropy.visualization as vis
-import cv2 as cv2
 import matplotlib as mpl
 import matplotlib.patheffects as pe
 import matplotlib.pyplot as plt
@@ -48,6 +47,7 @@ def do_photometry(image, xy_coords, radius_pixels):
     return aper_sums
 
 def make_grid_force(data, mask, radius, scatter_size, pixel_scale=0.03, plot=False, ax=None, distance_to_mask=50, n_retry_box=5, grid_offset_times=4):
+    import cv2
     radius_pixels = radius / pixel_scale
     scatter_size_pixels = scatter_size / pixel_scale
     
@@ -168,6 +168,7 @@ def make_grid(
     scatter_size: float in arcseconds
     pixel_scale: float in arcseconds/pixel
     """
+    import cv2
     radius_pixels = radius / pixel_scale
     scatter_size_pixels = scatter_size / pixel_scale
 
@@ -655,6 +656,7 @@ def make_ds9_region_file(
 def cluster_wht_map(
     wht_map, num_regions="auto", bin_factor=1, min_size=10000, plot=False
 ):
+    import cv2
     "Works best for 2 regions, but can be used for more than 2 regions - may need additional smoothing and cleaning"
     # Read the image and associated weight map
 

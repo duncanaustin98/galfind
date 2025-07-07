@@ -1420,6 +1420,11 @@ class Bagpipes(SED_code):
         self: Self,
         cat: Optional[Catalogue],
     ) -> Dict[str, Any]:
+        assert "z_calculator" in self.SED_fit_params.keys(), \
+            galfind_logger.critical(
+                "Bagpipes SED fitting requires a redshift calculator in SED_fit_params \
+                to calculate the SFR bins for the continuity SFH!")
+            
         z_calculator = self.SED_fit_params["z_calculator"]
         if cat is None:
             assert isinstance(self.SED_fit_params["z_calculator"], float)

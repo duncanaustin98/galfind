@@ -7,7 +7,6 @@ from astropy.io import fits
 from astroquery.gaia import Gaia
 from tqdm import tqdm
 from astropy.table import Column
-import cv2
 from pathlib import Path
 import os
 import glob
@@ -253,6 +252,8 @@ def auto_mask(
 ):
     output_mask_path = f"{config['Masking']['MASK_DIR']}/{self.survey}/auto/{self.filt_name}_auto.fits"
     funcs.make_dirs(output_mask_path)
+
+    import cv2
 
     #print("auto_mask:", self, star_mask_params)
 
