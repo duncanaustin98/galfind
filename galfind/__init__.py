@@ -12,7 +12,10 @@ end = time.time()
 #print(f"__init__ imports took {end - start}s")
 
 galfind_dir = "/".join(__file__.split("/")[:-1])
-config_dir = f"{galfind_dir}/../configs"
+try:
+    config_dir = os.environ['GALFIND_CONFIG_DIR']
+except:
+    config_dir = f"{galfind_dir}/../configs"
 
 # note whether the __init__ is running in a workflow
 if "hostedtoolcache" in galfind_dir:
