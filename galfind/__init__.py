@@ -17,24 +17,24 @@ try:
 except:
     config_dir = f"{galfind_dir}/../configs"
 
+try:
+    config_path = f"{config_dir}/{os.environ['GALFIND_CONFIG_NAME']}"
+except KeyError:
+    config_path = f"{config_dir}/galfind_config.ini"
+
+print("Reading GALFIND config file from:", config_path)
+
 # note whether the __init__ is running in a workflow
 if "hostedtoolcache" in galfind_dir:
     in_workflow = True
 else:
     in_workflow = False
 
-# needs to be able to be changed by the user - should be import option
-try:
-    config_path = f"{config_dir}/{os.environ['GALFIND_CONFIG_NAME']}"
-except KeyError:
-    config_path = f"{config_dir}/galfind_config.ini"  # needs to be able to be changed by the user
-
-print("Reading GALFIND config file from:", config_path)
 # configuration variables
 config = configparser.ConfigParser()
 config.read(config_path)
 config.set("DEFAULT", "GALFIND_DIR", galfind_dir)
-config.set("DEFAULT", "CONFIG_DIR", config_dir)
+config.set("DEFAULT", "CONFIG_DIR",  f"{galfind_dir}/../configs")
 
 # Make IS_CLUSTER variable from the config parameters
 if config["DEFAULT"]["SURVEY"] in json.loads(config.get("Other", "CLUSTER_FIELDS")):
