@@ -137,6 +137,7 @@ class Rest_Frame_Property_Calculator(Property_Calculator):
                 f"/{self.SED_fit_label}/{self.name}"
         except:
             breakpoint()
+
         if n_jobs <= 1:
             # update properties for each galaxy in the catalogue
             [self._call_gal(gal, n_chains = n_chains, output = False, \
@@ -214,34 +215,45 @@ class Rest_Frame_Property_Calculator(Property_Calculator):
             write = False
 
         if write:
-            # extract median property values from phot_rest.properties
-            property_vals = [gal.aper_phot[self.aper_diam].SED_results \
-                [self.SED_fit_label].phot_rest.properties[self.name].value if \
-                not np.isnan(gal.aper_phot[self.aper_diam].SED_results[self.SED_fit_label]. \
-                phot_rest.properties[self.name]) else np.nan for gal in cat]
-            # calculate errors from PDFs storing chains
-            property_l1 = [median_val - gal.aper_phot[self.aper_diam].SED_results \
-                [self.SED_fit_label].phot_rest.property_PDFs[self.name]. \
-                get_percentile(16.).value if gal.aper_phot[self.aper_diam].SED_results \
-                [self.SED_fit_label].phot_rest.property_PDFs[self.name] is not None \
-                else np.nan for gal, median_val in zip(cat, property_vals)]
-            property_u1 = [gal.aper_phot[self.aper_diam].SED_results[self.SED_fit_label] \
-                .phot_rest.property_PDFs[self.name].get_percentile(84.).value - median_val \
-                if gal.aper_phot[self.aper_diam].SED_results[self.SED_fit_label]. \
-                phot_rest.property_PDFs[self.name] is not None else np.nan \
-                for gal, median_val in zip(cat, property_vals)]
+            if all([self.SED_fit_label in gal.aper_phot[self.aper_diam].SED_results.keys() for gal in cat]):
+                property_vals = np.zeros(len(cat), dtype = np.float32)
+                property_l1 = np.zeros(len(cat), dtype = np.float32)
+                property_u1 = np.zeros(len(cat), dtype = np.float32)
+                for i, gal in enumerate(cat):
+                    phot_rest_ = gal.aper_phot[self.aper_diam].SED_results[self.SED_fit_label].phot_rest
+                    if np.isnan(phot_rest_.properties[self.name]):
+                        property_vals[i] = np.nan
+                    else:
+                        property_vals[i] = phot_rest_.properties[self.name].value
+                    if phot_rest_.property_PDFs[self.name] is None:
+                        property_l1[i] = np.nan
+                        property_u1[i] = np.nan
+                    else:
+                        # extract errors from PDFs storing chains
+                        property_l1[i] = property_vals[i] - phot_rest_.property_PDFs[self.name].get_percentile(16.).value
+                        property_u1[i] = phot_rest_.property_PDFs[self.name].get_percentile(84.).value - property_vals[i]
+                
+                kwarg_names = np.unique([key for gal in cat for key in \
+                    gal.aper_phot[self.aper_diam].SED_results[self.SED_fit_label]. \
+                    phot_rest.property_kwargs[self.name].keys()])
+                for kwarg_name in kwarg_names:
+                    tab[f"{property_name}_{kwarg_name}"] = [gal.aper_phot[self.aper_diam]. \
+                        SED_results[self.SED_fit_label].phot_rest.property_kwargs[self.name] \
+                        [kwarg_name] if kwarg_name in gal.aper_phot[self.aper_diam].SED_results \
+                        [self.SED_fit_label].phot_rest.property_kwargs[self.name].keys() else np.nan for gal in cat]
+
+            else:
+                raise(
+                    ValueError(
+                        galfind_logger.critical(
+                            f"{self.SED_fit_label=} not in all galaxies in {cat.survey} {cat.version}"
+                        )
+                    )
+                )
             # update fits catalogue
             tab[property_name] = property_vals
             tab[f"{property_name}_l1"] = property_l1
             tab[f"{property_name}_u1"] = property_u1
-            kwarg_names = np.unique([key for gal in cat for key in \
-                gal.aper_phot[self.aper_diam].SED_results[self.SED_fit_label]. \
-                phot_rest.property_kwargs[self.name].keys()])
-            for kwarg_name in kwarg_names:
-                tab[f"{property_name}_{kwarg_name}"] = [gal.aper_phot[self.aper_diam]. \
-                    SED_results[self.SED_fit_label].phot_rest.property_kwargs[self.name] \
-                    [kwarg_name] if kwarg_name in gal.aper_phot[self.aper_diam].SED_results \
-                    [self.SED_fit_label].phot_rest.property_kwargs[self.name].keys() else np.nan for gal in cat]
             cat.write_hdu(tab, hdu=property_hdu)
 
     def _call_gal(
@@ -290,7 +302,6 @@ class Rest_Frame_Property_Calculator(Property_Calculator):
             properties_to_nan_check = [self] + self.pre_req_properties
         else:
             properties_to_nan_check = self.pre_req_properties
-
         if any(np.isnan(phot_rest.properties[property.name]) \
                for property in properties_to_nan_check):
             phot_rest.properties[property_name] = np.nan
@@ -346,6 +357,7 @@ class Rest_Frame_Property_Calculator(Property_Calculator):
                             return phot_rest
                         else:
                             return
+
                 if property_name not in phot_rest.property_PDFs.keys() or overwrite:
                     n_new_chains = n_chains
                     galfind_logger.debug(
@@ -362,6 +374,7 @@ class Rest_Frame_Property_Calculator(Property_Calculator):
                         f"Already calculated n={len(phot_rest.property_PDFs[property_name])}" + \
                         f" {property_name} chains to {repr(phot_rest)}"
                     )
+                #breakpoint()
                 if n_new_chains > 0:
                     self.obj_kwargs = self._calc_obj_kwargs(phot_rest)
                     if self._fail_criteria(phot_rest):
@@ -400,6 +413,7 @@ class Rest_Frame_Property_Calculator(Property_Calculator):
                             calculated = True
             if calculated:
                 phot_rest.property_kwargs[property_name] = self._get_output_kwargs(phot_rest)
+
         if output:
             return phot_rest
     

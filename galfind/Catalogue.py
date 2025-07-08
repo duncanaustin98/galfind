@@ -1224,6 +1224,19 @@ class Catalogue(Catalogue_Base):
             dest="phot_obs",
         )
 
+    def load_fixz_SED_results(
+        self: Self,
+        aper_diam: u.Quantity,
+        z_arr: Union[List[float], NDArray[float]],
+        z_label: str = "z",
+    ) -> NoReturn:
+        assert len(z_arr) == len(self), \
+            galfind_logger.critical(
+                f"{len(z_arr)} != {len(self)}! {z_arr=} and {self=}"
+            )
+        
+        [gal.load_fixz_SED_result(aper_diam, z_value, z_label) for gal, z_value in zip(self, z_arr)]
+
     def make_cutouts(
         self: Self,
         cutout_size: Union[u.Quantity, dict] = 0.96 * u.arcsec,

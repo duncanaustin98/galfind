@@ -16,14 +16,14 @@ from photutils.aperture import (
 )
 from typing import TYPE_CHECKING, Union, List, Dict, NoReturn, Optional
 if TYPE_CHECKING:
-    from . import Multiple_Filter, SED_result, Multiple_Band_Cutout
+    from . import Multiple_Filter, Multiple_Band_Cutout
 try:
     from typing import Self, Type  # python 3.11+
 except ImportError:
     from typing_extensions import Self, Type  # python > 3.7 AND python < 3.11
 
 from .Photometry import Photometry
-from .SED_result import Catalogue_SED_results, Galaxy_SED_results
+from .SED_result import SED_result, Catalogue_SED_results, Galaxy_SED_results
 from . import useful_funcs_austind as funcs
 from . import galfind_logger
 
@@ -271,7 +271,11 @@ class Photometry_obs(Photometry):
         self: Self, 
         gal_SED_result: SED_result
     ) -> NoReturn:
-        gal_SED_result_dict = {gal_SED_result.SED_code.label: gal_SED_result}
+        if isinstance(gal_SED_result.SED_code, str):
+            label = gal_SED_result.SED_code
+        else:
+            label = gal_SED_result.SED_code.label
+        gal_SED_result_dict = {label: gal_SED_result}
         if hasattr(self, "SED_results"):
             self.SED_results = {**self.SED_results, **gal_SED_result_dict}
         else:
@@ -287,6 +291,19 @@ class Photometry_obs(Photometry):
         self, gal_property: Union[dict, u.Quantity], save_name: str
     ) -> None:
         setattr(self, save_name, gal_property)
+
+    def load_fixz_SED_result(
+        self: Self,
+        z_value: float,
+        z_label: str = "z",
+    ) -> NoReturn:
+        if z_label in self.SED_results.keys():
+            galfind_logger.warning(
+                f"{z_label} already in {self.SED_results.keys()}, overwriting!"
+            )
+        zfix_SED_result = SED_result.load_fixz(deepcopy(self), z_value, z_label)
+        self.update_SED_result(zfix_SED_result)
+        #self.SED_results[z_label] = zfix_SED_result
 
     # def make_ext_src_corrs(
     #     self,
