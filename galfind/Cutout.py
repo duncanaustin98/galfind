@@ -490,7 +490,7 @@ class Band_Cutout(Band_Cutout_Base):
                     **{f"{meta_key.replace('sex_', '').upper()}{suffix.upper()}": attr}
                 }
             else:
-                galfind_logger.info(f"No {meta_key} found for {repr(gal)}!")
+                galfind_logger.debug(f"No {meta_key} found for {repr(gal)}!")
         return cls.from_data_skycoord(
             band_data, 
             sky_coord, 

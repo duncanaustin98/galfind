@@ -665,6 +665,9 @@ class Galfit_Fitter(Morphology_Fitter):
         if "sersic" in self.model:
             property_names, out_properties, out_property_errs, chi2, Ndof = self._extract_sersic_results(cutout, out_path)
         
+        out_properties = np.array(out_properties, dtype=float)
+        out_property_errs = np.array(out_property_errs, dtype=float)
+
         if all(np.isnan(val) for val in out_properties):
             crashed = True
         else:
