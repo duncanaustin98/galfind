@@ -1,6 +1,8 @@
 
 from __future__ import annotations
 
+from tqdm import tqdm
+import logging
 from abc import ABC, abstractmethod
 from pathlib import Path
 import os
@@ -383,8 +385,9 @@ class Galfit_Fitter(Morphology_Fitter):
                 *args,
                 **kwargs,
             )
-            for gal in cat
+            for gal in tqdm(cat, total = len(cat), desc = f"fitting/loading {repr(self)} for {repr(cat)}", disable = galfind_logger.getEffectiveLevel()> logging.INFO)
         ]
+
         # make output table
         out_path = f"{out_subdir}/{self.model}{fixed_param_str}/results.fits"
         if not Path(out_path).is_file():
