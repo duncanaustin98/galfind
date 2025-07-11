@@ -862,6 +862,7 @@ class Galfit_Fitter(Morphology_Fitter):
                 else:
                     broken_counter +=1 
                 counter = counter + 1
+        # If all apertures were broken, return NaN
         if broken_counter == counter:
             galfind_logger.warning(f"All apertures were broken for {cutout.ID} in {in_dir}!")
             rff = np.nan
