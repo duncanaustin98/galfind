@@ -41,7 +41,7 @@ PIXEL_SCALE     0               # size of pixel in arcsec (0=use FITS WCS info).
 #------------------------- Star/Galaxy Separation ----------------------------
 
 SEEING_FWHM     0.05             # stellar FWHM in arcsec
-STARNNW_NAME    /nvme/scratch/work/nadams/SExtractor/default.nnw       # Neural-Network_Weight table filename
+STARNNW_NAME    /nvme/scratch/work/austind/GALFIND/configs/SExtractor/default.nnw       # Neural-Network_Weight table filename
 
 #------------------------------ Background -----------------------------------
 #BACK_SIZE       64              # Background mesh: <size> or <width>,<height>
