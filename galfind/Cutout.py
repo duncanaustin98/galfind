@@ -674,6 +674,13 @@ class Stacked_Band_Cutout(Band_Cutout_Base):
         cutout_size: u.Quantity,
         overwrite: bool = False
     ) -> Self:
+        
+        # load sextractor parameters for metadata inclusion
+        cat.load_sextractor_auto_mags()
+        cat.load_sextractor_auto_fluxes()
+        cat.load_sextractor_kron_radii()
+        cat.load_sextractor_Re()
+
         if isinstance(filt, Filter):
             filt = filt.band_name
         # make every individual cutout from the catalogue
@@ -1049,6 +1056,7 @@ class Stacked_RGB(RGB_Base):
         Returns:
             Self: An instance of the class with the generated stacked cutouts.
         """
+        
         # make a stacked cutout for each filter
         stacked_cutouts = {
             colour: [
@@ -1165,10 +1173,12 @@ class Multiple_Cutout_Base(ABC):
         scalebars: Optional[Dict] = [],
         mask: Optional[List[bool]] = None,
         instr_split_cmap: str = "Spectral_r",
+        incl_title: bool = False,
         show: bool = False,
         save: bool = True,
+        save_path: Optional[str] = None,
         close_fig: bool = False,
-    ) -> plt.Figure:
+    ) -> List[plt.Figure, plt.Axes]:
         
         assert n_rows > 0
         if n_rows > len(self):
@@ -1176,9 +1186,9 @@ class Multiple_Cutout_Base(ABC):
         else:
             n_y = n_rows
         n_x = len(self) // n_y
-
         if len(self) % n_y != 0:
             n_x += 1
+
         if fig is not None:
             # Delete everything on the figure
             fig.clf()
@@ -1229,6 +1239,18 @@ class Multiple_Cutout_Base(ABC):
         if scalebars == []:
             scalebars = list(itertools.repeat([], len(self)))
         assert len(scalebars) == len(self)
+        # get shared attributes
+        attrs = ["survey", "ID", "filt_name"]
+        shared_attrs = {
+            name: np.unique([getattr(cutout, name) for cutout in self])[0] for name in 
+            attrs if len(np.unique([getattr(cutout, name) for cutout in self])) == 1
+        }
+        
+        if incl_title:
+            # determine title from shared attributes
+            title = ""
+        else:
+            title = None
         for i, (ax, cutout, scalebars_band) in enumerate(
             zip(ax_arr, self, scalebars)
         ):
@@ -1237,28 +1259,35 @@ class Multiple_Cutout_Base(ABC):
                 plot_regions_band = plot_regions[filt_name]
             else:
                 plot_regions_band = []
+            
+            label = "\n".join([getattr(cutout, name) for name in attrs if name not in shared_attrs.keys()])
             if isinstance(cutout, tuple(Band_Cutout_Base.__subclasses__())):
                 cutout.plot(
                     ax,
-                    imshow_kwargs=imshow_kwargs,
-                    norm_kwargs=norm_kwargs,
-                    plot_regions=plot_regions_band,
-                    scalebars=scalebars_band,
-                    show=False,
-                    save=False,
+                    imshow_kwargs = imshow_kwargs,
+                    norm_kwargs = norm_kwargs,
+                    plot_regions = plot_regions_band,
+                    scalebars = scalebars_band,
+                    label = label,
+                    show = False,
+                    save = False,
                 )
             else:
                 cutout.plot(
                     ax,
-                    imshow_kwargs=imshow_kwargs,
-                    norm_kwargs=norm_kwargs,
-                    plot_regions=plot_regions_band,
-                    scalebars=scalebars_band,
-                    show=False,
-                    save=False,
+                    imshow_kwargs = imshow_kwargs,
+                    norm_kwargs = norm_kwargs,
+                    plot_regions = plot_regions_band,
+                    scalebars = scalebars_band,
+                    label = label,
+                    show = False,
+                    save = False,
                 )
+        fig.set_title(title)
+
         if save:
-            save_path = self._get_save_path()
+            if save_path is None:
+                save_path = self._get_save_path()
             plt.savefig(save_path, bbox_inches = "tight")
             funcs.change_file_permissions(save_path)
             galfind_logger.info(f"Saved cutout plot to: {save_path}")
@@ -1266,7 +1295,7 @@ class Multiple_Cutout_Base(ABC):
             plt.show()
         if close_fig:
             plt.close(fig)
-        return fig, ax
+        return fig, ax_arr
 
 
 # Galaxy_Cutouts
@@ -1402,15 +1431,19 @@ class Catalogue_Cutouts(Multiple_Cutout_Base):
     
     @property
     def survey(self) -> str:
+        unique_surveys = np.unique([cutout.survey for cutout in self])
+        return "+".join(unique_surveys)
         # NOT GENERAL
-        assert all([cutout.survey == self[0].survey for cutout in self])
-        return self[0].survey
+        #assert all([cutout.survey == self[0].survey for cutout in self])
+        #return self[0].survey
     
     @property
     def version(self) -> str:
+        unique_versions = np.unique([cutout.version for cutout in self])
+        return "+".join(unique_versions)
         # NOT GENERAL
-        assert all([cutout.version == self[0].version for cutout in self])
-        return self[0].version
+        #assert all([cutout.version == self[0].version for cutout in self])
+        #return self[0].version
 
     @property
     def instr_name(self) -> str:
@@ -1441,6 +1474,7 @@ class Catalogue_Cutouts(Multiple_Cutout_Base):
         mask: Optional[List[bool]] = None,
         show: bool = False,
         save: bool = True,
+        save_path: Optional[str] = None,
     ) -> plt.Figure:
         n_rows = np.sqrt(2 * len(self))
         n_rows = int(n_rows // 1)
@@ -1458,6 +1492,7 @@ class Catalogue_Cutouts(Multiple_Cutout_Base):
             mask = mask,
             show = show,
             save = save,
+            save_path = save_path,
         )
 
 

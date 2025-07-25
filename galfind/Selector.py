@@ -704,7 +704,7 @@ class ID_Selector(Data_Selector):
 
     def __init__(
         self: Self,
-        IDs: int,
+        IDs: Union[int, List[int]],
         name: Optional[str] = None,
     ):
         if isinstance(IDs, int):

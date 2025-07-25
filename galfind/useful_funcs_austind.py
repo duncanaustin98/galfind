@@ -1025,6 +1025,10 @@ def sort_band_data_arr(band_data_arr: List[Type[Band_Data_Base]]):
     sorted_band_data_arr.extend(stacked_band_data_arr)
     return sorted_band_data_arr
 
+def rolling_average(y_array, window_size):
+    kernel = np.ones(window_size) / window_size
+    return np.convolve(y_array, kernel, mode='valid')
+
 # The below makes TQDM work with joblib
 @contextlib.contextmanager
 def tqdm_joblib(tqdm_object):
