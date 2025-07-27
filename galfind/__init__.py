@@ -164,7 +164,14 @@ from .Catalogue_Base import Catalogue_Base
 from .Multiple_Catalogue import Combined_Catalogue
 #from .Multiple_Data import Multiple_Data
 from .Catalogue import Catalogue, Catalogue_Creator
-from .SED import SED, SED_rest, SED_obs, Mock_SED_rest, Mock_SED_obs
+from .SED import (
+    SED,
+    SED_rest,
+    SED_obs,
+    Mock_SED_rest,
+    Mock_SED_obs,
+    SED_2D,
+)
 from .SED import (
     Mock_SED_template_set,
     Mock_SED_rest_template_set,
@@ -233,7 +240,19 @@ from .Spectrum import (
     Spectral_Filter,
     Spectral_Grating,
 )
-from .MCMC import Prior, Flat_Prior, Priors, MCMC_Fitter, Schechter_Mag_Fitter, Schechter_Lum_Fitter, Linear_Fitter, Power_Law_Fitter
+from .MCMC import (
+    Prior,
+    Flat_Prior,
+    Gaussian_Prior,
+    Priors,
+    MCMC_Fitter,
+    Schechter_Mag_Fitter,
+    Schechter_Lum_Fitter,
+    DPL_Mag_Fitter,
+    DPL_Lum_Fitter,
+    Linear_Fitter,
+    Power_Law_Fitter,
+)
 from .Number_Density_Function import (
     Base_Number_Density_Function,
     Number_Density_Function,

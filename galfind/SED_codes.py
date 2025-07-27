@@ -340,7 +340,11 @@ class SED_code(ABC):
                 f"Loading {self.hdu_name} SEDs into " + \
                 f"{cat.survey} {cat.version} {cat.filterset.instrument_name}"
             )
-            cat_SEDs = self.extract_SEDs(aper_phot_IDs, SED_paths, cat = cat, aper_diam = aper_diam)
+            if all("z" in pdf.keys() for pdf in cat_property_PDFs):
+                zPDFs = [pdf["z"] for pdf in cat_property_PDFs]
+            else:
+                zPDFs = None
+            cat_SEDs = self.extract_SEDs(aper_phot_IDs, SED_paths, cat = cat, aper_diam = aper_diam, zPDFs = zPDFs)
             galfind_logger.info(
                 f"Finished loading {self.hdu_name} SEDs into " + \
                 f"{cat.survey} {cat.version} {cat.filterset.instrument_name}"

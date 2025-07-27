@@ -418,7 +418,7 @@ class PDF:
         self,
         ax,
         annotate: bool = True,
-        annotate_peak_loc: bool = False,
+        #annotate_peak_loc: bool = False,
         colour: str = "black",
     ) -> None:
         ax.plot(self.x, self.p_x / np.max(self.p_x), color=colour)

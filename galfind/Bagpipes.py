@@ -38,7 +38,7 @@ from . import Redshift_PDF, SED_code, SED_fit_PDF, config, galfind_logger
 from . import useful_funcs_austind as funcs
 from .useful_funcs_austind import astropy_cosmo as cosmo
 from .decorators import run_in_dir
-from .SED import SED_obs
+from .SED import SED_obs, SED_2D
 from .Filter import Filter
 
 pipes_unit_dict = {
@@ -923,36 +923,67 @@ class Bagpipes(SED_code):
         
         # extract redshifts
         if self.SED_fit_params["fix_z"]:
-            z_arr = self.SED_fit_params["z_calculator"](cat)
+            length = 500 # TODO: Calculate this at runtime
+            z_arr = [np.full(length, z) for z in self.SED_fit_params["z_calculator"](cat)]
         else:
-            raise NotImplementedError
+            assert "zPDFs" in kwargs.keys(), \
+                galfind_logger.critical(
+                    f"Bagpipes.extract_SEDs() with {kwargs.keys()=} requires 'zPDFs' if not fixing redshift!"
+                )
+            zPDFs = kwargs["zPDFs"]
+            #z_arr = [np.full(length, pdf.median) for pdf in zPDFs]
+            z_arr = [pdf.input_arr for pdf in zPDFs]
         # extract observed frame wavelengths
         rest_wavs = self._extract_SED_wavelengths(cat, aper_diam)
         assert len(rest_wavs) == len(z_arr), \
-            galfind_logger.critical(f"{len(rest_wavs)=}!={len(z_arr)=}")
-        wavs = [wavs * (1. + z) * u.um for wavs, z in zip(rest_wavs, z_arr)]
-        # if isinstance(rest_wavs, np.ndarray):
-        #     wavs = [wavs_ * u.um for wavs_ in rest_wavs * (1. + z_arr[:, np.newaxis])]
-        # else:
-        #     wavs = 
-        #wavs = self._extract_SED_wavelengths(cat, aper_diam) * (1. + z_arr[:, np.newaxis]) * u.um
+            galfind_logger.critical(
+                f"{len(rest_wavs)=}!={len(z_arr)=}"
+            )
+        obs_wavs = [
+            np.tile(rest_wavs_[np.newaxis, :], (len(z_arr_), 1)) * (1. + z_arr_[:, np.newaxis]) * u.um \
+            for z_arr_, rest_wavs_ in \
+            tqdm(
+                zip(z_arr, rest_wavs),
+                desc = f"Calculating {repr(self)} observed wavelengths from {repr(cat)}", 
+                total = len(z_arr),
+                disable = galfind_logger.getEffectiveLevel() > logging.INFO
+            )
+        ]
         # extract in erg/s/cm^2/AA
         if "spectrum_type" in kwargs.keys():
             spectrum_type = kwargs["spectrum_type"]
         else:
             spectrum_type = "spectrum_full"
-        flambda = [self._extract_SED_fluxes(SED_path, spectrum_type = spectrum_type) * u.erg / u.s / u.cm ** 2 / u.AA for SED_path in SED_paths]
-        # convert fluxes to uJy
-        fnu = [(flambda_ * wavs_ ** 2 / const.c).to(u.uJy) for flambda_, wavs_ in zip(flambda, wavs)]
-
+        assert len(obs_wavs) == len(SED_paths), \
+            galfind_logger.critical(
+                f"{len(obs_wavs)=}!={len(SED_paths)=}"
+            )
+        fnu = [
+            (
+                self._extract_SED_fluxes(SED_path, spectrum_type = spectrum_type) * \
+                u.erg / u.s / u.cm ** 2 / u.AA * obs_wavs_ ** 2 / const.c
+            ).to(u.uJy)
+            for obs_wavs_, SED_path in tqdm(
+                zip(obs_wavs, SED_paths),
+                desc = f"Calculating {repr(self)} SED fluxes from {repr(cat)}",
+                disable = galfind_logger.getEffectiveLevel() > logging.INFO
+            )
+        ]
+        assert len(z_arr) == len(obs_wavs) == len(fnu), \
+            galfind_logger.critical(
+                f"{len(z_arr)=}!={len(obs_wavs)=}!={len(fnu)=}"
+            )
         SED_obs_arr = [
-            SED_obs(z, wav.value, flux.value, u.um, u.uJy)
-            if all(i is not None for i in [z, wav, flux])
-            else None
-            for z, wav, flux in tqdm(
-                zip(z_arr, wavs, fnu),
-                desc="Constructing pipes SEDs",
-                total=len(wavs),
+            SED_2D(
+                [
+                    SED_obs(z, obs_wavs__.value, fnu__.value, u.um, u.uJy)
+                    for obs_wavs__, fnu__ in zip(obs_wavs_, fnu_)
+                ]
+            )
+            for z, obs_wavs_, fnu_ in tqdm(
+                zip(z_arr, obs_wavs, fnu),
+                desc = "Constructing pipes SEDs",
+                total = len(z_arr),
                 disable = galfind_logger.getEffectiveLevel() > logging.INFO
             )
         ]
@@ -992,13 +1023,11 @@ class Bagpipes(SED_code):
 
         bagpipes = self.reload()
         from bagpipes.filters import filter_set
-
         ft_arr = [filter_set(gal_filters) for gal_filters in filters]
         wavs_arr = [self._get_wavs(ft) for ft in ft_arr]
         return wavs_arr
     
     def _get_wavs(self: Self, ft: Type[filter_set]) -> u.Quantity:
-
         bagpipes = self.reload()
         if self.SED_fit_params["sps_model"] == "BPASS":
             from bagpipes import config_bpass as pipes_config
@@ -1008,35 +1037,33 @@ class Bagpipes(SED_code):
         min_wav = ft.min_phot_wav
         max_wav = ft.max_phot_wav
         max_z = pipes_config.max_redshift
-
         max_wavs = [(min_wav / (1.0 + max_z)), 1.01 * max_wav, 10**8]
 
         x = [1.0]
-
         R = [pipes_config.R_other, pipes_config.R_phot, pipes_config.R_other]
-
         for i in range(len(R)):
             if i == len(R) - 1 or R[i] > R[i + 1]:
                 while x[-1] < max_wavs[i]:
                     x.append(x[-1] * (1.0 + 0.5 / R[i]))
-
             else:
                 while x[-1] * (1.0 + 0.5 / R[i]) < max_wavs[i]:
                     x.append(x[-1] * (1.0 + 0.5 / R[i]))
-
         wavs = (np.array(x) * u.AA).to(u.um).value
-
         return wavs
 
-    def _extract_SED_fluxes(self: Self, SED_path: str, spectrum_type: str = "spectrum_full") -> u.Quantity:
+    def _extract_SED_fluxes(
+        self: Self,
+        SED_path: str,
+        spectrum_type: str = "spectrum_full"
+    ) -> u.Quantity:
         f = h5py.File(SED_path, "r")
         spectrum_full = np.array(f["advanced_quantities"][spectrum_type])
-        spectrum_percentiles = np.percentile(spectrum_full, [16, 50, 84], axis = 0)
-        #spectrum_l1 = spectrum_percentiles[0]
-        spectrum_med = spectrum_percentiles[1] # erg / s / cm**2 / AA
-        #spectrum_u1 = spectrum_percentiles[2]
+        # spectrum_percentiles = np.percentile(spectrum_full, [16, 50, 84], axis = 0)
+        # #spectrum_l1 = spectrum_percentiles[0]
+        # spectrum_med = spectrum_percentiles[1] # erg / s / cm**2 / AA
+        # #spectrum_u1 = spectrum_percentiles[2]
         f.close()
-        return spectrum_med
+        return spectrum_full #spectrum_med
 
     def extract_PDFs(
         self: Self, 

@@ -418,6 +418,7 @@ unit_labels_dict = {
     ): r"$\mathrm{erg s}^{-1}\mathrm{AA}^{-1}\mathrm{cm}^{-2}$",
     u.Jy: r"$\mathrm{Jy}$",
     u.nJy: r"$\mathrm{nJy}$",
+    u.uJy: r"$\mathrm{\mu Jy}$",
     u.ABmag: r"$\mathrm{AB mag}$",
 }
 

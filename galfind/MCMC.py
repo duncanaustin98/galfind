@@ -90,13 +90,40 @@ class Flat_Prior(Prior):
     def __call__(
         self: Self,
         param: float
-    ) -> bool:
+    ) -> float:
         if param > self.prior_params["lower_lim"] and \
                 param < self.prior_params["upper_lim"]:
-            return True
+            return 0.0 #-np.log(self.prior_params["upper_lim"] - self.prior_params["lower_lim"])
         else:
-            return False
-        
+            return -np.inf
+
+
+class Gaussian_Prior(Prior):
+
+    def __init__(
+        self: Self,
+        name: str,
+        prior_lims: Dict[str, float],
+        fiducial: float,
+    ):
+        assert len(prior_lims) == 2, \
+            galfind_logger.critical(
+                "Flat priors must have two limits"
+            )
+        assert all(key in prior_lims.keys() for key in ["mu", "sigma"]), \
+            galfind_logger.critical(
+                f"{prior_lims.keys()=} does not contain 'mu' and 'sigma' keys!"
+            )
+        prior_params = prior_lims
+        super().__init__(name, prior_params, fiducial)
+
+    def __call__(
+        self: Self,
+        param: float
+    ) -> float:
+        return -0.5 * ((param - self.prior_params["mu"]) / self.prior_params["sigma"]) ** 2
+           # - np.log(self.prior_params["sigma"]) - 0.5 * np.log(2 * np.pi)
+
 
 class Priors:
 
@@ -114,10 +141,7 @@ class Priors:
         self: Self,
         params: Dict[str, float]
     ) -> float:
-        if all(prior(params[prior.name]) for prior in self.prior_arr):
-            return 0.0
-        else:
-            return -np.inf
+        return np.sum(prior(params[prior.name]) for prior in self.prior_arr)
 
     def __add__(
         self: Self,
@@ -217,6 +241,39 @@ class Base_MCMC_Fitter(ABC):
     @property
     def fiducial_params(self):
         return [prior.fiducial for prior in self.priors]
+    
+    def get_BIC(self):
+        if not hasattr(self, "backend"):
+            BIC = None
+        backend_len = self.backend.iteration
+        if backend_len == 0:
+            BIC = None
+        else:
+            samples = self.get_sample(thin = False)
+            # log likelihood already calculated
+            lnL = np.array([self.log_likelihood(theta) for theta in tqdm(samples, total = len(samples))])
+            max_lnL = np.max(lnL)
+            k = len(self.priors) # free params length
+            n = len(self.x_data) # data length
+            BIC = k * np.log(n) - 2 * max_lnL
+        galfind_logger.info(f"BIC: {BIC}")
+        return BIC
+
+    def get_AIC(self):
+        if not hasattr(self, "backend"):
+            AIC = None
+        backend_len = self.backend.iteration
+        if backend_len == 0:
+            AIC = None
+        else:
+            samples = self.get_sample(thin = False)
+            lnL = np.array([self.log_likelihood(theta) for theta in samples])
+            max_lnL = np.max(lnL)
+            k = len(self.priors) # free params length
+            n = len(self.x_data) # data length
+            AIC = 2 * (k - max_lnL)
+        galfind_logger.info(f"AIC: {AIC}")
+        return AIC
     
     def _instantiate_walkers(self: Self) -> NoReturn:
         # # uniformly distributed starting positions over flat prior
@@ -322,11 +379,17 @@ class Base_MCMC_Fitter(ABC):
             zorder = 200, path_effects = [pe.withStroke(linewidth = 2., foreground = "white")])
         galfind_logger.info("Plotting MCMC fit")
 
-    def get_sample(self: Self) -> NDArray[float]:
+    def get_sample(self: Self, discard: bool = True, thin: bool = True) -> NDArray[float]:
         autocorr_time = np.max(self.sampler.get_autocorr_time())
-        discard = int(autocorr_time * 2)
-        thin = int(autocorr_time / 2)
-        chain = self.sampler.get_chain(flat = True, discard = discard, thin = thin)
+        if discard:
+            discard_ = int(autocorr_time * 2)
+        else:
+            discard_ = 0
+        if thin:
+            thin_ = int(autocorr_time / 2)
+        else:
+            thin_ = 1
+        chain = self.sampler.get_chain(flat = True, discard = discard_, thin = thin_)
         return chain
     
     def _get_plot_chains(
@@ -346,9 +409,20 @@ class Base_MCMC_Fitter(ABC):
         log_data: bool = False,
         shape: Optional[int] = None,
     ) -> NDArray[float]:
-        autocorr_time = np.max(self.sampler.get_autocorr_time())
+        try:
+            sampler_autocorr_time = self.sampler.get_autocorr_time()
+        except Exception as e:
+            galfind_logger.warning(
+                f"Could not calculate autocorrelation time! Chains likely unconverged! {e}"
+            )
+            sampler_autocorr_time = None
+        if sampler_autocorr_time is None:
+            autocorr_time = self.backend.iteration / 50
+        else:
+            autocorr_time = np.max(sampler_autocorr_time)
         discard = int(autocorr_time * 2)
         thin = int(autocorr_time / 2)
+
         if log_data:
             model = lambda x, params: np.log10(self.model(x, params))
         else:

@@ -138,7 +138,6 @@ class SED:
                     mag_units, True if mag_units != u.ABmag and log_fluxes else False
                 )
             )
-            
             ax.legend(**legend_kwargs)
         if save_name is not None:
             # save png by default
@@ -1129,3 +1128,134 @@ class Mock_SED_obs_template_set(Mock_SED_template_set):
             )
         if show:
             plt.show()
+
+
+class SED_2D:
+
+    def __init__(
+        self: Self,
+        SED_arr: List[Type[SED]],
+    ):
+        sed_classes = np.unique([SED.__class__.__name__ for SED in SED_arr])
+        assert len(sed_classes) == 1, \
+            galfind_logger.critical(
+                f"SED_2D can only be created from a list of SEDs of the same class! Found {sed_classes}."
+            )
+        self.SED_arr = SED_arr
+
+    def __repr__(self: Self) -> str:
+        return f"{self.__class__.__name__}{len(self)}"
+
+    def __len__(self) -> int:
+        return len(self.SED_arr)
+
+    def __iter__(self):
+        self.iter = 0
+        return self
+
+    def __next__(self):
+        if self.iter > len(self) - 1:
+            raise StopIteration
+        else:
+            sed = self[self.iter]
+            self.iter += 1
+            return sed
+        
+    def __getitem__(self: Self, index: Any) -> Type[SED]:
+        if len(self) == 0:
+            raise IndexError(f"No SEDs in {self}!")
+        if isinstance(index, int):
+            return self.SED_arr[index]
+        else:
+            raise TypeError(
+                f"Indexing {self} with {type(index)} is not supported! Use an integer index."
+            )
+        
+    @property
+    def frame(self: Self) -> Optional[str]:
+        """Returns the frame of the SEDs in the SED_2D."""
+        possible_frames = ["rest", "obs"]
+        frame = self.SED_arr[0].__class__.__name__.split("_")[-1]
+        if frame in possible_frames:
+            return frame
+        else:
+            return None
+
+    def plot(
+        self: Self,
+        #fig: Optional[plt.Figure],
+        ax: Optional[plt.Axes] = None,
+        wav_units: u.Unit = u.AA,
+        mag_units: u.Unit = u.ABmag,
+        label: Optional[str] = None,
+        annotate: bool = True,
+        save_name: Optional[str] = None,
+        log_fluxes: bool = True,
+        plot_kwargs: Dict[str, Any] = {},
+        legend_kwargs: Dict[str, Any] = {},
+    ): # -> plt.Axes: #Tuple[plt.Figure, plt.Axes]:
+        
+        if ax is None:
+            fig, ax = plt.subplots()
+
+        wavs_arr = [
+            funcs.convert_wav_units(sed.wavs, wav_units)
+            for sed in self
+        ]
+        mags_arr = [
+            funcs.log_scale_fluxes(
+                funcs.convert_mag_units(sed.wavs, sed.mags, mag_units)
+            ) if mag_units != u.ABmag and log_fluxes else
+            funcs.convert_mag_units(sed.wavs, sed.mags, mag_units).value
+            for sed in self
+        ]
+        breakpoint()
+
+        if label is not None and hasattr(self, "template_name"):
+            label = self.template_name
+
+        # interpolate mags onto common wavelength grid
+        all_wavs = np.concatenate([wavs_arr_ for wavs_arr_ in wavs_arr])
+        wavs_interp = np.linspace(np.min(all_wavs), np.max(all_wavs), 10_000)
+        mags_interp = np.array([
+            interp1d(
+                wavs,
+                mags,
+                bounds_error=False,
+                fill_value="extrapolate",
+            )(wavs_interp)
+            for wavs, mags in zip(wavs_arr, mags_arr)
+        ])
+        # determine 16th, 50th and 84th percentiles of the interpolated mags
+        mags_16 = np.percentile(mags_interp, 16, axis=0)
+        mags_50 = np.percentile(mags_interp, 50, axis=0)
+        mags_84 = np.percentile(mags_interp, 84, axis=0)
+
+        plot = ax.plot(wavs_interp.value, mags_50, label=label, **plot_kwargs)
+        ax.fill_between(wavs_interp.value, mags_16, mags_84, alpha=0.5, color=plot_kwargs.get("color", "C0"))
+
+        if annotate:
+            ax.set_xlabel(
+                funcs.label_wavelengths(
+                    wav_units,
+                    False,
+                    "" if self.frame is None else self.frame,
+                )
+            )
+            ax.set_ylabel(
+                funcs.label_fluxes(
+                    mag_units, True if mag_units != u.ABmag and log_fluxes else False
+                )
+            )
+            ax.legend(**legend_kwargs)
+
+        if save_name is not None:
+            # save png by default
+            if save_name.split(".")[-1] not in ["png", "pdf"]:
+                save_name = f"{'.'.join(save_name.split('.')[-1:])}.png"
+            funcs.make_dirs(save_name)
+            plt.savefig(save_name)
+            funcs.change_file_permissions(save_name)
+
+        return plot
+    
