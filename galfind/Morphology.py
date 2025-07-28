@@ -1,6 +1,8 @@
 
 from __future__ import annotations
 
+from tqdm import tqdm
+import logging
 from abc import ABC, abstractmethod
 from pathlib import Path
 import os
@@ -383,8 +385,9 @@ class Galfit_Fitter(Morphology_Fitter):
                 *args,
                 **kwargs,
             )
-            for gal in cat
+            for gal in tqdm(cat, total = len(cat), desc = f"fitting/loading {repr(self)} for {repr(cat)}", disable = galfind_logger.getEffectiveLevel()> logging.INFO)
         ]
+
         # make output table
         out_path = f"{out_subdir}/{self.model}{fixed_param_str}/results.fits"
         if not Path(out_path).is_file():
@@ -422,6 +425,7 @@ class Galfit_Fitter(Morphology_Fitter):
             self._delete_temps(cutout, out_dir)
             self._move_mask_to_in_dir(cutout, in_dir, out_dir)
             galfind_logger.info(f"{cutout.ID} Galfit run finished")
+
         fitting_result, crashed = self._extract_results_from_file(cutout, in_dir, out_dir)
 
         if not Path(fitting_result.plot_path).is_file() and not crashed:
@@ -811,6 +815,7 @@ class Galfit_Fitter(Morphology_Fitter):
         data = fit_hdul[1].data
         model = fit_hdul[2].data
         err = cutout.band_data.load_rms_err()
+
         mask = fits.open(Galfit_Fitter._mask_path(cutout, in_dir))[0].data
         pix_scale = cutout.meta["SIZE_AS"] / cutout.meta["SIZE_PIX"]
         
@@ -826,8 +831,9 @@ class Galfit_Fitter(Morphology_Fitter):
         residual_kron = kron_aper.do_photometry(residuals)[0][0]
         # Depths.make_grid(data, mask, 
         # background_aper = 
-    
+
         counter = 0
+        broken_counter = 0
         background = []
         while counter < 10:
             # Define the size of the apertures
@@ -853,10 +859,16 @@ class Galfit_Fitter(Morphology_Fitter):
                     aperture = err[x_start:x_end, y_start:y_end]
                     mean_aperture = sum(sum(aperture)) / (len(aperture)**2)
                     background.append(mean_aperture)
-                    counter = counter + 1
-            
-        background_mean = sum(background) / len(background)
-        rff = (residual_kron - 0.8 * background_mean * kron_aper.area) / model_kron
+                else:
+                    broken_counter +=1 
+                counter = counter + 1
+        # If all apertures were broken ie not all 0, return NaN
+        if broken_counter == counter:
+            galfind_logger.warning(f"All apertures were broken for {cutout.ID} in {in_dir}!")
+            rff = np.nan
+        else:
+            background_mean = sum(background) / len(background)
+            rff = (residual_kron - 0.8 * background_mean * kron_aper.area) / model_kron
         return rff
 
 # def input_images(galaxy_path, save_path, id, field, band):
