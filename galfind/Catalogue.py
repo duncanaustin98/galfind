@@ -428,9 +428,8 @@ class Catalogue_Creator:
         self.apply_gal_instr_mask = apply_gal_instr_mask
         self.simulated = simulated
 
-        self.set_crops(crops)
-        if self.apply_gal_instr_mask:
-            self.make_gal_instr_mask()
+        self.load_crops(crops)
+
         # ensure survey/version is correct
         # in primary header which stores the IDs
         hdr = self.open_hdr(self.cat_path, "ID")
@@ -462,7 +461,10 @@ class Catalogue_Creator:
         cat_creator.data = data
         return cat_creator
 
-    def __call__(self, cropped: bool = False) -> Catalogue:
+    def __call__(
+        self: Self,
+        cropped: bool = False
+    ) -> Catalogue:
         galfind_logger.info(
             f"Making {self.survey} {self.version} {self.cat_name} catalogue!"
         )
@@ -493,9 +495,18 @@ class Catalogue_Creator:
         gals = [Galaxy(ID, sky_coord, phot_obs, flags, cat_filterset, survey = self.survey, simulated = self.simulated) \
             for ID, sky_coord, phot_obs, flags, cat_filterset in zip(IDs, sky_coords, phot_obs_arr, selection_flags, filterset_arr)]
         cat = Catalogue(gals, self)
-        # point to data if provided
-        if hasattr(self, "data"):
-            cat.data = self.data
+        breakpoint()
+        if len(self._crops_to_perform) != 0:
+            # perform the crops
+            for crop in self._crops_to_perform:
+                galfind_logger.info(f"Performing {repr(crop)}")
+                crop(cat, return_copy = False)
+            self.load_crops(self.crops)
+            cat = self(cropped)
+        else:
+            # point to data if provided
+            if hasattr(self, "data"):
+                cat.data = self.data
         galfind_logger.info(f"Made {self.cat_path} catalogue!")
         return cat
 
@@ -508,17 +519,24 @@ class Catalogue_Creator:
     def crop_name(self) -> List[str]:
         return funcs.get_crop_name(self.crops)
 
-    def load_tab(self, cat_type: str, cropped: bool = True) -> Table:
+    def load_tab(
+        self: Self,
+        cat_type: str,
+        cropped: bool = True
+    ) -> Table:
         tab = self.open_cat(self.cat_path, cat_type)
         if tab is None:
             return None
         else:
-            if cropped:
+            if cropped and self.crop_mask is not None:
                 return tab[self.crop_mask]
             else:
                 return tab
     
-    def set_crops(self, crops: Optional[Union[Type[Selector], List[Type[Selector]]]]) -> NoReturn:
+    def load_crops(
+        self: Self,
+        crops: Optional[Union[Type[Selector], List[Type[Selector]]]] = None
+    ) -> NoReturn:
         if crops is None:
             self.crops = []
         elif not isinstance(crops, (list, np.ndarray)):
@@ -526,8 +544,12 @@ class Catalogue_Creator:
         else:
             self.crops = crops
         self._get_crop_mask()
+        if self.apply_gal_instr_mask:
+            self.make_gal_instr_mask()
 
-    def _get_crop_mask(self) -> NoReturn:
+
+    def _get_crop_mask(self) -> Optional[NDArray[bool]]:
+        self._crops_to_perform = []
         tab = self.open_cat(self.cat_path, "SELECTION")
         if tab is None:
             tab = self.open_cat(self.cat_path, "ID")
@@ -541,14 +563,17 @@ class Catalogue_Creator:
                         f"Catalogue cropped by {selector.name}"
                     )
                 else:
-                    err_message = f"{selector.name} not yet performed!"
-                    galfind_logger.warning(err_message)
-                    raise Exception(err_message)
-            # crop table
-            if len(keep_arr) > 0:
+                    galfind_logger.info(f"{selector.name} not yet performed!")
+                    self._crops_to_perform.append(selector)
+            # crop table if required
+            if len(keep_arr) > 0 and len(self._crops_to_perform) == 0:
                 self.crop_mask = np.array(np.logical_and.reduce(keep_arr)).astype(bool)
-                return
-        self.crop_mask = np.full(len(tab), True)
+                return self.crop_mask
+        if len(self._crops_to_perform) == 0:
+            self.crop_mask = np.full(len(tab), True)
+        else:
+            self.crop_mask = None
+        return self.crop_mask
 
 
     def load_IDs(self, cropped: bool = True) -> List[int]:
@@ -565,7 +590,7 @@ class Catalogue_Creator:
         phot_labels, err_labels = self.get_phot_labels(self.filterset, self.aper_diams, **self.load_phot_kwargs)
         phot, phot_err = self.load_phot_func(tab, phot_labels, err_labels, **self.load_phot_kwargs)
         if self.apply_gal_instr_mask:
-            if cropped:
+            if cropped and self.crop_mask is not None:
                 gal_instr_mask = self.gal_instr_mask[self.crop_mask]
             else:
                 gal_instr_mask = self.gal_instr_mask
@@ -593,7 +618,7 @@ class Catalogue_Creator:
                 galfind_logger.critical(err_message)
                 raise(Exception(err_message))
             if self.apply_gal_instr_mask:
-                if cropped:
+                if cropped and self.crop_mask is not None:
                     gal_instr_mask = self.gal_instr_mask[self.crop_mask]
                 else:
                     gal_instr_mask = self.gal_instr_mask
@@ -616,7 +641,7 @@ class Catalogue_Creator:
                 galfind_logger.critical(err_message)
                 raise(Exception(err_message))
             if self.apply_gal_instr_mask:
-                if cropped:
+                if cropped and self.crop_mask is not None:
                     gal_instr_mask = self.gal_instr_mask[self.crop_mask]
                 else:
                     gal_instr_mask = self.gal_instr_mask
@@ -728,7 +753,7 @@ class Catalogue_Creator:
         if self.apply_gal_instr_mask:
             # create set of filtersets to be pointed to by sources with these bands available
             galfind_logger.debug(f"Making {self.cat_name} unique filtersets!")
-            if cropped:
+            if cropped and self.crop_mask is not None:
                 gal_instr_mask = self.gal_instr_mask[self.crop_mask]
             else:
                 gal_instr_mask = self.gal_instr_mask
@@ -801,7 +826,7 @@ class Catalogue(Catalogue_Base):
         data: Data,
         crops: Optional[Union[Type[Selector], List[Type[Selector]]]] = None,
     ) -> Catalogue:
-        cat_creator = Catalogue_Creator.from_data(data, crops=crops)
+        cat_creator = Catalogue_Creator.from_data(data, crops = crops)
         return cat_creator(cropped = True)
 
     def __repr__(self):
