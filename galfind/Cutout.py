@@ -81,6 +81,80 @@ class Cutout_Base(ABC):
     def plot(self) -> plt.Axes:
         pass
 
+    def _plot_regions(
+        self: Self,
+        ax: plt.Axes,
+        plot_regions: List[Dict[str, Any]] = [],
+        def_plot_region_kwargs: Dict[str, Any] = {
+            "fill": False,
+            "color": "white",
+            "linestyle": "--",
+            "linewidth": 1,
+            "zorder": 20,
+        },
+    ) -> NoReturn:
+        if len(plot_regions) > 0:
+            # add circles to show extraction aperture and sextractor FLUX_RADIUS
+            xpos = np.mean(ax.get_xlim())
+            ypos = np.mean(ax.get_ylim())
+            for plot_region in plot_regions:
+                skip_region = False
+                if isinstance(plot_region, dict):
+                    assert "aper_diam" in plot_region.keys()
+                    pix_scale = (
+                        self.meta["SIZE_AS"]
+                        * u.arcsec
+                        / self.meta["SIZE_PIX"]
+                    )
+                    radius = (
+                        (plot_region["aper_diam"] / (2.0 * pix_scale))
+                        .to(u.dimensionless_unscaled)
+                        .value
+                    )
+                    # add region kwargs to default values
+                    plot_region_kwargs = deepcopy(plot_region)
+                    plot_region_kwargs.pop("aper_diam")
+
+                    for key, value in plot_region_kwargs.items():
+                        def_plot_region_kwargs[key] = value
+                    # make circular region with given radius
+                    region = patches.Circle(
+                        (xpos, ypos),
+                        radius,
+                        **def_plot_region_kwargs,
+                    )
+                elif isinstance(plot_region, tuple([patches.Ellipse] + patches.Ellipse.__subclasses__())):
+                    region = plot_region
+                    if region.center == (-99., -99.):
+                        region.set_center((xpos, ypos))
+                    # update default kwargs with pre-set ones
+                    blank_patch = Patch()
+                    kwarg_names = ArtistInspector(blank_patch).get_setters()
+                    kwarg_names.remove("transform")
+                    blank_kwargs = {key: value for key, value in \
+                        ArtistInspector(blank_patch).properties().items() \
+                        if key in kwarg_names}
+                    reg_kwargs = {key: value for key, value in \
+                        ArtistInspector(region).properties().items() \
+                        if key in kwarg_names}
+                    assert len(blank_kwargs) == len(reg_kwargs)
+                    added_reg_kwargs = {key: value for key, value in \
+                        reg_kwargs.items() if value != blank_kwargs[key]}
+                    for key, value in added_reg_kwargs.items():
+                        def_plot_region_kwargs[key] = value
+                    # set region kwargs
+                    region.set(**def_plot_region_kwargs)
+                else:
+                    skip_region = True
+                    galfind_logger.warning(
+                        f"{plot_region=} does not contain " + \
+                        f"'aper_diam' or {type(plot_region)=} not in " + \
+                        tuple([patches.Ellipse] + patches.Ellipse.__subclasses__()) + \
+                        ", skipping!"
+                    )
+                if not skip_region:
+                    ax.add_patch(region)
+
 
 class Band_Cutout_Base(Cutout_Base, ABC):
     def __init__(
@@ -284,74 +358,7 @@ class Band_Cutout_Base(Cutout_Base, ABC):
         )
 
         # plot any regions wanted
-        if len(plot_regions) > 0:
-            # add circles to show extraction aperture and sextractor FLUX_RADIUS
-            xpos = np.mean(ax.get_xlim())
-            ypos = np.mean(ax.get_ylim())
-            for plot_region in plot_regions:
-                skip_region = False
-                def_plot_region_kwargs = {
-                    "fill": False,
-                    "color": "white",
-                    "linestyle": "--",
-                    "linewidth": 1,
-                    "zorder": 20,
-                }
-                if isinstance(plot_region, dict):
-                    assert "aper_diam" in plot_region.keys()
-                    pix_scale = (
-                        self.meta["SIZE_AS"]
-                        * u.arcsec
-                        / self.meta["SIZE_PIX"]
-                    )
-                    radius = (
-                        (plot_region["aper_diam"] / (2.0 * pix_scale))
-                        .to(u.dimensionless_unscaled)
-                        .value
-                    )
-                    # add region kwargs to default values
-                    plot_region_kwargs = deepcopy(plot_region)
-                    plot_region_kwargs.pop("aper_diam")
-
-                    for key, value in plot_region_kwargs.items():
-                        def_plot_region_kwargs[key] = value
-                    # make circular region with given radius
-                    region = patches.Circle(
-                        (xpos, ypos),
-                        radius,
-                        **def_plot_region_kwargs,
-                    )
-                elif isinstance(plot_region, tuple([patches.Ellipse] + patches.Ellipse.__subclasses__())):
-                    region = plot_region
-                    if region.center == (-99., -99.):
-                        region.set_center((xpos, ypos))
-                    # update default kwargs with pre-set ones
-                    blank_patch = Patch()
-                    kwarg_names = ArtistInspector(blank_patch).get_setters()
-                    kwarg_names.remove("transform")
-                    blank_kwargs = {key: value for key, value in \
-                        ArtistInspector(blank_patch).properties().items() \
-                        if key in kwarg_names}
-                    reg_kwargs = {key: value for key, value in \
-                        ArtistInspector(region).properties().items() \
-                        if key in kwarg_names}
-                    assert len(blank_kwargs) == len(reg_kwargs)
-                    added_reg_kwargs = {key: value for key, value in \
-                        reg_kwargs.items() if value != blank_kwargs[key]}
-                    for key, value in added_reg_kwargs.items():
-                        def_plot_region_kwargs[key] = value
-                    # set region kwargs
-                    region.set(**def_plot_region_kwargs)
-                else:
-                    skip_region = True
-                    galfind_logger.warning(
-                        f"{plot_region=} does not contain " + \
-                        f"'aper_diam' or {type(plot_region)=} not in " + \
-                        tuple([patches.Ellipse] + patches.Ellipse.__subclasses__()) + \
-                        ", skipping!"
-                    )
-                if not skip_region:
-                    ax.add_patch(region)
+        self._plot_regions(ax, plot_regions)
 
         # add scalebars
         if len(scalebars) > 0:
@@ -884,21 +891,24 @@ class RGB_Base(Cutout_Base, ABC):
 
     @property
     def ID(self) -> str:
-        ID_list = [cutout.ID for cutout in self.cutouts]
+        ID_list = [cutout.ID for cutout in np.array([val for val in self.cutouts.values()]).flatten()]
         assert all([ID == ID_list[0] for ID in ID_list])
         return ID_list[0]
 
     @property
     def meta(self) -> dict:
-        meta_list = [cutout.meta for cutout in self.cutouts]
-        # ensure the same meta for all cutouts
-        assert all(meta[key] == val for meta in meta_list for key, val in meta_list[0].items())
+        meta_list = [cutout.meta for cutout in np.array([val for val in self.cutouts.values()]).flatten()]
+        # TODO: ensure the same meta for all cutouts
+        # try:
+        #     assert all(meta[key] == val for meta in meta_list for key, val in meta_list[0].items())
+        # except AssertionError:
+        #     breakpoint()
         return meta_list[0]
 
     @property
     def name(self):
         return ",".join(
-            f"{colour}={'+'.join(self.get_colour_band_names[colour])}"
+            f"{colour}={'+'.join(self.get_colour_band_names(colour))}"
             for colour in ["B", "G", "R"]
         )
 
@@ -921,7 +931,7 @@ class RGB_Base(Cutout_Base, ABC):
 
     def get_colour_band_names(self, colour: str) -> List[str]:
         assert colour in ["B", "G", "R"]
-        return [cutout.filt.band_name for cutout in self[colour]]
+        return [cutout.band_data.filt.band_name for cutout in self[colour]]
 
     def load(
         self: Self,
@@ -937,6 +947,7 @@ class RGB_Base(Cutout_Base, ABC):
         method: str = "lupton",
         plot_type: str = "SCI",
         rgb_kwargs: Dict[str, Any] = {},
+        plot_regions: List[Dict[str, Any]] = [],
         show: bool = False,
     ) -> NoReturn:
         method = method.lower()  # make method lowercase
@@ -983,15 +994,45 @@ class RGB_Base(Cutout_Base, ABC):
                 fig, ax = plt.subplots()
             data = {colour: [cutout.load(plot_type)[1] \
                 for cutout in self[colour]] for colour in ["B", "G", "R"]}
-            red_mad_std = mad_std(data["R"][0])
-            scale = 0.3 / (5. * red_mad_std)
-            offset = 0.2
-            r = data["R"][0] * scale + offset
-            g = data["G"][0] * scale * 1.3 + offset
-            b = data["B"][0] * scale * 1.6 + offset
+            # red_mad_std = mad_std(data["R"][0])
+            # scale = 0.3 / (5. * red_mad_std)
+            # offset = 0.2
+            r = data["R"][0] #* scale + offset
+            g = data["G"][0] #* scale * 1.3 + offset
+            b = data["B"][0] #* scale * 1.6 + offset
+            #from astropy.visualization import PercentileInterval
+            #stretch_percentile = PercentileInterval(99.9)
+            #r = stretch_percentile(r)
+            #g = stretch_percentile(g)
+            #b = stretch_percentile(b)
             rgb_img = make_lupton_rgb(r, g, b, **rgb_kwargs)
-            norm = ImageNormalize(vmin=-scale*red_mad_std, vmax=scale*red_mad_std, stretch=SqrtStretch())
+            #norm = ImageNormalize(vmin=-scale*red_mad_std, vmax=scale*red_mad_std, stretch=SqrtStretch())
             ax.imshow(rgb_img, origin = "lower")#, norm = norm)
+            # turn off grid
+            ax.grid(False, which = "both")
+            # turn off ticks
+            ax.set_xticks([])
+            ax.set_yticks([])
+            # label RGB filters
+            for i, (colour, plt_colour) in enumerate(zip(["B", "G", "R"], ["blue", "green", "red"])):
+                filt_name = "+".join(self.get_colour_band_names(colour))
+                ax.text(
+                    0.15 + i * 0.35,
+                    0.1,
+                    filt_name,
+                    color = plt_colour,
+                    fontweight = "bold",
+                    fontsize = 8.0,
+                    ha = "center",
+                    va = "center",
+                    path_effects = [
+                        pe.withStroke(linewidth = 2.0, foreground = "white")
+                    ],
+                    transform = ax.transAxes,
+                )
+            # plot regions
+            self._plot_regions(ax, plot_regions)
+
             if show:
                 plt.show()
 

@@ -340,7 +340,7 @@ class SED_code(ABC):
                 f"Loading {self.hdu_name} SEDs into " + \
                 f"{cat.survey} {cat.version} {cat.filterset.instrument_name}"
             )
-            if all("z" in pdf.keys() for pdf in cat_property_PDFs):
+            if all("z" in pdf.keys() if pdf is not None else False for pdf in cat_property_PDFs):
                 zPDFs = [pdf["z"] for pdf in cat_property_PDFs]
             else:
                 zPDFs = None
@@ -377,7 +377,7 @@ class SED_code(ABC):
     ) -> Tuple[np.ndarray, np.ndarray]:
         if input_filterset is None:
             input_filterset = cat.filterset
-        breakpoint()
+
         input_filterset.filters = np.array([filt for filt in input_filterset if filt.band_name not in self.SED_fit_params["excl_bands"]])
         galfind_logger.info(f"Excluded bands: {self.excl_bands_label}")
         #breakpoint()
@@ -392,6 +392,10 @@ class SED_code(ABC):
                 dtype=object,
             )  # [:, :, 0]
         else:
+            galfind_logger.warning(
+                "Photometry is in ABmag, but errors are not scaled asymmetrically. " +
+                "This is not recommended!"
+            )
             # Not correct in general! Only for high S/N! Fails to scale mag errors asymetrically from flux errors
             phot_err = np.array(
                 [
@@ -402,7 +406,7 @@ class SED_code(ABC):
                 ],
                 dtype=object,
             )  # [:, :, 0]
-        breakpoint()
+
         # include upper limits if wanted
         if upper_sigma_lim is not None:
             # determine relevant indices

@@ -4,6 +4,7 @@ import time
 from copy import deepcopy
 import astropy.units as u
 import matplotlib.patheffects as pe
+from scipy.stats import gaussian_kde
 import numpy as np
 from astropy.table import Table
 from typing import Callable, Union, Optional, TYPE_CHECKING
@@ -267,6 +268,8 @@ class PDF:
             breakpoint()
         x = 0.5 * (x_bin_edges[1:] + x_bin_edges[:-1]) * arr_.unit
         PDF_obj = cls(property_name, x, p_x, kwargs, normed)
+        if len(arr.shape) != 1:
+            arr = arr.flatten()
         PDF_obj.input_arr = arr
         return PDF_obj
 
@@ -318,7 +321,10 @@ class PDF:
         # integrate using trapezium rule between limits
         return np.trapz(p_x, x)
 
-    def get_peak(self, nth_peak: int):
+    def get_peak(
+        self: Self,
+        nth_peak: int
+    ) -> float:
         # not properly implemented yet
         try:
             self.peaks[nth_peak]
@@ -335,13 +341,17 @@ class PDF:
         # pz_column, integral, peak_z, peak_loc, peak_second_loc, secondary_peak, ratio = useful_funcs_updated_new_galfind.robust_pdf([gal_id], [zbest], SED_code, field_name, rel_limits=True, z_fact=int_limit, use_custom_lephare_seds=custom_lephare, template=template, plot=False, version=catalog_version, custom_sex=custom_sex, min_percentage_err=min_percentage_err, custom_path=eazy_pdf_path, use_galfind=True)
         # print(integral, 'integral', peak_z, 'peak_z', peak_loc, 'peak_loc', peak_second_loc, 'peak_second_loc', secondary_peak, 'secondary_peak', ratio, 'ratio')
 
-    def get_percentile(self, percentile: float):
+    def get_percentile(
+        self: Self,
+        percentile: float,
+        log: bool = False
+    ) -> float:
         assert isinstance(percentile, float), \
             galfind_logger.critical(
                 f"{percentile=} with {type(percentile)=} != float"
             )
         try:
-            return self.percentiles[f"{percentile:.1f}"]
+            perc = self.percentiles[f"{percentile:.1f}"]
         except (AttributeError, KeyError) as e:
             if isinstance(e, AttributeError):
                 self.percentiles = {}
@@ -358,7 +368,11 @@ class PDF:
                     )
                     * self.x.unit
                 )
-            return self.percentiles[f"{percentile:.1f}"]
+            perc = self.percentiles[f"{percentile:.1f}"]
+        if log:
+            return np.log10(perc.value)
+        else:
+            return perc
 
     def manipulate_PDF(
         self,
@@ -420,45 +434,93 @@ class PDF:
         annotate: bool = True,
         #annotate_peak_loc: bool = False,
         colour: str = "black",
+        log: bool = False,
+        hatch: str = "//",
+        **pdf_kwargs,
     ) -> None:
-        ax.plot(self.x, self.p_x / np.max(self.p_x), color=colour)
+
+        if not hasattr(self, "input_arr"):
+            input_arr = self.draw_sample(10_000)
+        else:
+            input_arr = self.input_arr
+
+        if isinstance(input_arr, tuple([u.Quantity, u.Magnitude, u.Dex])):
+            input_arr = input_arr.value
+        if log:
+            input_arr = np.log10(input_arr)
+        
+        # construct gaussian_kde
+        kde = gaussian_kde(input_arr)
+        x = np.linspace(
+            np.min(input_arr),
+            np.max(input_arr),
+            len(input_arr)
+        )
+        y = kde(x)
+
+        # plot the pdf
+        ax.plot(
+            x,
+            y,
+            color = colour,
+            **pdf_kwargs
+        )
+        ax.fill_between(
+            x,
+            y,
+            color = colour,
+            alpha = 0.2,
+            hatch = hatch
+        )
+
+        perc = {}
+        perc_lims = [1.0, 3.0, 97.0, 99.0]
+        if annotate:
+            perc_lims += [16.0, 84.0]
+        for p in perc_lims:
+            perc_ = self.get_percentile(p, log = log)
+            if isinstance(perc_, u.Quantity):
+                perc_ = perc_.value
+            perc[p] = perc_
 
         # Set x and y plot limits
-        ax.set_xlim(
-            self.get_percentile(3.0) - 0.2, self.get_percentile(97.0) + 0.2
-        )
-        if abs(ax.get_xlim()[1] - ax.get_xlim()[0]) < 0.3:
-            ax.set_xlim(ax.get_xlim()[0] - 0.5, ax.get_xlim()[1] + 0.5)
-        ax.set_ylim(0, 1.2)
+        ax.set_xlim(np.max([np.min(x), perc[1.0]]), np.max(x))#np.min([np.max(x), perc[99.0]]))
+        ax.set_ylim(0, 1.1 * np.max(y))
 
-        # fill inside PDF with hatch
-        x_lim = np.linspace(
-            self.get_percentile(1.0), self.get_percentile(99.0)
-        )  # np.linspace(0.93 * float(self.get_peak(0)["value"]), 1.07 * float(self.get_peak(0)["value"]), 100)
-
-        pdf_lim = np.interp(x_lim, self.x, self.p_x / np.max(self.p_x))
-        ax.fill_between(x_lim, pdf_lim, color=colour, alpha=0.2, hatch="//")
-
+        if self.property_name in funcs.property_name_to_label:
+            x_plot_name = funcs.property_name_to_label[self.property_name]
+        else:
+            x_plot_name = self.property_name
+            galfind_logger.warning(
+                f"{self.property_name=} not in funcs.property_name_to_label, using property name as label."
+            )
+        if log:
+            x_plot_name = r"$\log_{10}($" + x_plot_name + r"$)$"
+        ax.set_xlabel(x_plot_name, fontsize="medium")
+        # turn off grid
         ax.grid(False)
+        # turn off y axis tick labels
+        ax.tick_params(axis="y", which="both", labelleft=False, labelright=False)
 
         if annotate:
+
             # Draw vertical line at zbest
             ax.axvline(
-                self.get_peak(0)["value"],
+                self.get_peak(0, log = log)["value"],
                 color=colour,
                 linestyle="--",
                 alpha=0.5,
                 lw=2,
             )
             ax.axvline(
-                self.get_percentile(16.0),
+                perc[16.0],
                 color=colour,
                 linestyle=":",
                 alpha=0.5,
                 lw=2,
             )
             ax.axvline(
-                self.get_percentile(84.0),
+                perc[84.0],
                 color=colour,
                 linestyle=":",
                 alpha=0.5,
@@ -466,7 +528,7 @@ class PDF:
             )
             ax.annotate(
                 r"-1$\sigma$",
-                (self.get_percentile(16.0), 0.1),
+                (perc[16.0], 0.1),
                 fontsize="small",
                 ha="center",
                 transform=ax.get_yaxis_transform(),
@@ -476,7 +538,7 @@ class PDF:
             )
             ax.annotate(
                 r"+1$\sigma$",
-                (self.get_percentile(84.0), 0.1),
+                (perc[84.0], 0.1),
                 fontsize="small",
                 ha="center",
                 transform=ax.get_yaxis_transform(),
@@ -486,9 +548,9 @@ class PDF:
             )
             ax.annotate(
                 r"$z_{\rm phot}=$"
-                + f'{self.get_peak(0)["value"]:.1f}'
-                + f'$^{{+{(self.get_percentile(84.) - self.get_peak(0)["value"]):.1f}}}_{{-{(self.get_peak(0)["value"] - self.get_percentile(16.)):.1f}}}$',
-                (self.get_peak(0)["value"], 1.17),
+                + f'{self.get_peak(0, log = log)["value"]:.1f}'
+                + f'$^{{+{(perc[84.0] - self.get_peak(0, log = log)["value"]):.1f}}}_{{-{(self.get_peak(0, log = log)["value"] - perc[16.]):.1f}}}$',
+                (self.get_peak(0, log = log)["value"], 1.17),
                 fontsize="medium",
                 va="top",
                 ha="center",
@@ -499,19 +561,19 @@ class PDF:
             # Horizontal arrow at PDF peak going left or right depending on which side PDF is on, labelled with chi2
             # Check if highest peak is closer to xlim[0] or xlim[1]
             x_lim = ax.get_xlim()
-            y_lim = ax.get_ylim()
+            #y_lim = ax.get_ylim()
             amount = 0.3 * (x_lim[1] - x_lim[0])
             if (
-                self.get_peak(0)["value"] - x_lim[0]
-                < x_lim[1] - self.get_peak(0)["value"]
+                self.get_peak(0, log = log)["value"] - x_lim[0]
+                < x_lim[1] - self.get_peak(0, log = log)["value"]
             ):
                 direction = 1
             else:
                 direction = -1
             ax.annotate(
-                r"$\chi^2=$" + f'{self.get_peak(0)["chi_sq"]:.2f}',
-                (self.get_peak(0)["value"], 1.0),
-                xytext=(self.get_peak(0)["value"] + direction * amount, 0.90),
+                r"$\chi^2=$" + f'{self.get_peak(0, log = log)["chi_sq"]:.2f}',
+                (self.get_peak(0, log = log)["value"], 1.0),
+                xytext=(self.get_peak(0, log = log)["value"] + direction * amount, 0.90),
                 fontsize="small",
                 va="top",
                 ha="center",

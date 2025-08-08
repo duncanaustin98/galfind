@@ -249,9 +249,7 @@ class Base_MCMC_Fitter(ABC):
         if backend_len == 0:
             BIC = None
         else:
-            samples = self.get_sample(thin = False)
-            # log likelihood already calculated
-            lnL = np.array([self.log_likelihood(theta) for theta in tqdm(samples, total = len(samples))])
+            lnL = self.backend.get_log_prob(flat = True)
             max_lnL = np.max(lnL)
             k = len(self.priors) # free params length
             n = len(self.x_data) # data length
@@ -266,8 +264,7 @@ class Base_MCMC_Fitter(ABC):
         if backend_len == 0:
             AIC = None
         else:
-            samples = self.get_sample(thin = False)
-            lnL = np.array([self.log_likelihood(theta) for theta in samples])
+            lnL = self.backend.get_log_prob(flat = True)
             max_lnL = np.max(lnL)
             k = len(self.priors) # free params length
             n = len(self.x_data) # data length

@@ -1191,6 +1191,7 @@ class SED_2D:
         annotate: bool = True,
         save_name: Optional[str] = None,
         log_fluxes: bool = True,
+        plot_chains: bool = False,
         plot_kwargs: Dict[str, Any] = {},
         legend_kwargs: Dict[str, Any] = {},
     ): # -> plt.Axes: #Tuple[plt.Figure, plt.Axes]:
@@ -1209,30 +1210,30 @@ class SED_2D:
             funcs.convert_mag_units(sed.wavs, sed.mags, mag_units).value
             for sed in self
         ]
-        breakpoint()
 
         if label is not None and hasattr(self, "template_name"):
             label = self.template_name
 
         # interpolate mags onto common wavelength grid
-        all_wavs = np.concatenate([wavs_arr_ for wavs_arr_ in wavs_arr])
-        wavs_interp = np.linspace(np.min(all_wavs), np.max(all_wavs), 10_000)
+        #all_wavs = np.concatenate([wavs_arr_ for wavs_arr_ in wavs_arr])
+        wavs_interp = wavs_arr[0] #np.linspace(np.min(all_wavs), np.max(all_wavs), 10_000)
         mags_interp = np.array([
             interp1d(
                 wavs,
                 mags,
-                bounds_error=False,
+                #bounds_error=False,
                 fill_value="extrapolate",
             )(wavs_interp)
             for wavs, mags in zip(wavs_arr, mags_arr)
         ])
+
         # determine 16th, 50th and 84th percentiles of the interpolated mags
         mags_16 = np.percentile(mags_interp, 16, axis=0)
         mags_50 = np.percentile(mags_interp, 50, axis=0)
         mags_84 = np.percentile(mags_interp, 84, axis=0)
-
+        #breakpoint()
         plot = ax.plot(wavs_interp.value, mags_50, label=label, **plot_kwargs)
-        ax.fill_between(wavs_interp.value, mags_16, mags_84, alpha=0.5, color=plot_kwargs.get("color", "C0"))
+        ax.fill_between(wavs_interp.value, mags_16, mags_84, alpha=0.5, color=plot[0].get_color())
 
         if annotate:
             ax.set_xlabel(

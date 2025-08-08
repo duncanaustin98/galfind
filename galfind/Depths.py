@@ -8,6 +8,7 @@ import matplotlib.patheffects as pe
 import matplotlib.pyplot as plt
 import numpy as np
 import h5py
+import time
 import astropy.units as u
 from astropy.coordinates import SkyCoord
 from copy import deepcopy
@@ -653,6 +654,17 @@ def make_ds9_region_file(
     funcs.change_file_permissions(filename)
 
 
+def load_xy_from_ds9_region_file(filename: str):
+    with open(filename, "r") as f:
+        lines = f.readlines()
+    f.close()
+    xy = [
+        (float(line.split("(")[1].split(",")[0]), float(line.split("(")[1].split(",")[1]))
+        for line in lines if line.startswith("circle")
+    ]
+    return xy
+
+
 def cluster_wht_map(
     wht_map, num_regions="auto", bin_factor=1, min_size=10000, plot=False
 ):
@@ -821,7 +833,9 @@ def cluster_wht_map(
 
 
 def get_depth_dir(
-    self: Union[Type[Band_Data_Base], Data], aper_diam: u.Quantity, mode: str
+    self: Union[Type[Band_Data_Base], Data],
+    aper_diam: u.Quantity,
+    mode: str,
 ) -> str:
     if self.__class__.__name__ in ["Band_Data", "Stacked_Band_Data"]:
         instr_name = self.instr_name
@@ -838,10 +852,22 @@ def get_depth_dir(
 
 
 def get_grid_depth_path(
-    self: Type[Band_Data_Base], aper_diam: u.Quantity, mode: str
+    self: Type[Band_Data_Base],
+    aper_diam: u.Quantity,
+    mode: str
 ) -> str:
     depth_dir = get_depth_dir(self, aper_diam, mode)
-    depth_path = f"{depth_dir}/{self.filt_name}.h5"
+    assert hasattr(self, "forced_phot_args"), \
+        galfind_logger.critical(
+            f"Forced photometry not run for {repr(self)}, cannot run depths!"
+        )
+    forced_phot_code = self.forced_phot_args["method"]
+    dates = funcs.date_finder(forced_phot_code)
+    for remove in dates + ["version", "(", ")", " "]:
+        forced_phot_code = forced_phot_code.replace(remove, "")
+    subdir = f"{forced_phot_code}_{self.forced_phot_args['err_type'].split('_')[0]}" + \
+        f"_{self.forced_phot_args['forced_phot_band'].filt_name}"
+    depth_path = f"{depth_dir}/{subdir}/{self.filt_name}.h5"
     funcs.make_dirs(depth_path)
     return depth_path
 
@@ -885,40 +911,72 @@ def calc_band_depth(params: Tuple[Any]) -> NoReturn:
         else:
             assert isinstance(n_split, int) or n_split == "auto"
 
-        # Place apertures in empty regions in the image
-        xy, placing_efficiency = make_grid_force(
-            im_data,
-            combined_mask,
-            radius=(aper_diam / 2.0).value,
-            scatter_size=scatter_size,
-            distance_to_mask=distance_to_mask,
-            pixel_scale=self.pix_scale.value,
-            n_retry_box=n_retry_box,
-            grid_offset_times=grid_offset_times,
-            plot=False,
-        )
-
-        # Make ds9 region file of apertures for compatability and debugging
         region_path = (
             f"{get_depth_dir(self, aper_diam, mode)}/"
             + f"{self.survey}_{self.version}_{self.filt_name}.reg"
         )
-        make_ds9_region_file(
-            xy,
-            radius_pix,
-            region_path,
-            coordinate_type="pixel",
-            convert=False,
-            wcs=wcs,
-            pixel_scale=self.pix_scale.value,
-        )
+        if not Path(region_path).is_file():
+            galfind_logger.info(
+                f"Calculating region co-ordinates for {repr(self)}"
+            )
+            # Place apertures in empty regions in the image
+            xy, placing_efficiency = make_grid_force(
+                im_data,
+                combined_mask,
+                radius=(aper_diam / 2.0).value,
+                scatter_size=scatter_size,
+                distance_to_mask=distance_to_mask,
+                pixel_scale=self.pix_scale.value,
+                n_retry_box=n_retry_box,
+                grid_offset_times=grid_offset_times,
+                plot=False,
+            )
+            # Make ds9 region file of apertures for compatability and debugging
+            make_ds9_region_file(
+                xy,
+                radius_pix,
+                region_path,
+                coordinate_type="pixel",
+                convert=False,
+                wcs=wcs,
+                pixel_scale=self.pix_scale.value,
+            )
+        else:
+            galfind_logger.info(
+                f"Loading region co-ordinates from {region_path} for {repr(self)}"
+            )
+            # load xy and placing efficiency from region_path
+            xy = load_xy_from_ds9_region_file(region_path)
+            radius_pixels = (aper_diam / 2.0).value / self.pix_scale.value
+            possible_pos = ((im_data.shape[0] * im_data.shape[1]) - np.sum(combined_mask)) / (np.pi * radius_pixels ** 2)
+            placing_efficiency = len(xy) / possible_pos
+            galfind_logger.info(f"Placing efficiency = {100 * placing_efficiency:.2f}%")
 
         # Get fluxes in regions
-        fluxes = do_photometry(im_data, xy, radius_pix)
+        flux_save_path = region_path.replace(".reg", "_fluxes.npy")
+        if not Path(flux_save_path).is_file():
+            galfind_logger.info(
+                f"Calculating fluxes for {len(xy)} blank {aper_diam} apertures for {repr(self)}"
+            )
+            start_time = time.time()
+            fluxes = do_photometry(im_data, xy, radius_pix)
+            end_time = time.time()
+            galfind_logger.info(
+                f"Fluxes calculated in {end_time - start_time:.2f} seconds"
+            )
+            # save as .npy
+            np.save(flux_save_path, fluxes)
+        else:
+            galfind_logger.info(
+                f"Loading fluxes from {flux_save_path} for {repr(self)}"
+            )
+            fluxes = np.load(flux_save_path)
+
         if master_cat_path is None:
             cat = Table.read(self.forced_phot_path)
         else:
             cat = Table.read(master_cat_path)
+
         depths, diagnostic, depth_labels, final_labels = calc_depths(
             xy,
             fluxes,
@@ -1158,7 +1216,7 @@ def get_depth_plot_path(
     self: Type[Band_Data_Base],
     aper_diam: u.Quantity
 ) -> str:
-    depth_dir = f"{get_depth_dir(self, aper_diam, self.depth_args[aper_diam]['mode'])}/plots"
+    depth_dir = f"{'/'.join(get_grid_depth_path(self, aper_diam, self.depth_args[aper_diam]['mode']).split('/')[:-1])}/plots"
     depth_plot_path = f"{depth_dir}/{self.filt_name}.png"
     funcs.make_dirs(depth_plot_path)
     return depth_plot_path

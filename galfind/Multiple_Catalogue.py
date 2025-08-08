@@ -10,22 +10,23 @@ import matplotlib.pyplot as plt
 import numpy as np
 from astropy.table import vstack, Table
 from typing import TYPE_CHECKING, List, Optional, Callable, Union
+
 try:
     from typing import Self, Type  # python 3.11+
 except ImportError:
     from typing_extensions import Self, Type  # python > 3.7 AND python < 3.11
+
 if TYPE_CHECKING:
     from . import (
         Galaxy,
         Catalogue,
-        Data, 
         SED_code,
+        Selector,
     )
 
 from . import galfind_logger, config
 from . import useful_funcs_austind as funcs
 from . import Catalogue_Base, Multiple_Filter
-from .Selector import Selector
 from .Catalogue import open_galfind_cat
 
 

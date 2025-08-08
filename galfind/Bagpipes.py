@@ -40,6 +40,7 @@ from .useful_funcs_austind import astropy_cosmo as cosmo
 from .decorators import run_in_dir
 from .SED import SED_obs, SED_2D
 from .Filter import Filter
+from .SFH import SFH
 
 pipes_unit_dict = {
     "z": u.dimensionless_unscaled,
@@ -931,7 +932,6 @@ class Bagpipes(SED_code):
                     f"Bagpipes.extract_SEDs() with {kwargs.keys()=} requires 'zPDFs' if not fixing redshift!"
                 )
             zPDFs = kwargs["zPDFs"]
-            #z_arr = [np.full(length, pdf.median) for pdf in zPDFs]
             z_arr = [pdf.input_arr for pdf in zPDFs]
         # extract observed frame wavelengths
         rest_wavs = self._extract_SED_wavelengths(cat, aper_diam)
@@ -1163,16 +1163,26 @@ class Bagpipes(SED_code):
                         for name in quantities:
                             if name not in ignore_labels:
                                 if "redshift" in name:
-                                    pdf = Redshift_PDF.from_1D_arr(np.array(h5[quantity_type][name]) * u.dimensionless_unscaled, self.SED_fit_params)
+                                    pdf = Redshift_PDF.from_1D_arr(np.array(h5[quantity_type][name]).flatten() * u.dimensionless_unscaled, self.SED_fit_params)
                                     name = "z"
                                 else:
-                                    pdf = SED_fit_PDF.from_1D_arr(name, np.array(h5[quantity_type][name]) * get_pipes_unit(name), self.SED_fit_params)
+                                    pdf = SED_fit_PDF.from_1D_arr(name, np.array(h5[quantity_type][name]).flatten() * get_pipes_unit(name), self.SED_fit_params)
                                 gal_property_PDFs[name] = pdf
                     h5.close()
             else:
                 raise FileNotFoundError(f"{h5_path} not found!")
             cat_property_PDFs.extend([gal_property_PDFs])
         return cat_property_PDFs
+    
+    def load_sfhs(
+        self: Self,
+        cat: Catalogue,
+        aper_diam: u.Quantity,
+    ):
+        PDF_paths = self._get_out_paths(cat, aper_diam)[3]
+        sfh_arr = [SFH.from_pipes_post(path) for path in PDF_paths]
+        return sfh_arr
+
 
     @staticmethod
     def get_galfind_fits_path(path):

@@ -226,7 +226,6 @@ class Grid_2D:
         phot_labels_func: Optional[Callable] = None,
         save_PDFs: bool = True,
         save_SEDs: bool = True,
-
     ) -> Self:
         #assert sim_cat.cat_creator.load_mask_func is None 
         assert not sim_cat.cat_creator.apply_gal_instr_mask

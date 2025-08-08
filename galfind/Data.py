@@ -1044,7 +1044,7 @@ class Band_Data_Base(ABC):
     def _calc_area_given_mask(
         self,
         mask_name: str,
-        mask: Optional[np.ndarray, Tuple[np.ndarray]] = None,
+        mask: Optional[NDArray, Tuple[NDArray]] = None,
     ) -> NoReturn:
         if not hasattr(self, "unmasked_area"):
             self.unmasked_area = {}
@@ -3270,9 +3270,10 @@ class Data:
         region_selector: Optional[Type[Region_Selector], List[Type[Region_Selector]]] = None,
         invert_region: bool = True,
         out_units: u.Quantity = u.arcmin ** 2,
+        **kwargs: Dict[str, Any],
     ) -> u.Quantity:
 
-        from . import Mask_Selector
+        from . import Mask_Selector, Redshift_Selector, Multiple_Mask_Selector
 
         if not hasattr(self, "unmasked_area"):
             self.unmasked_area = {}
@@ -3300,6 +3301,25 @@ class Data:
         
         mask_save_name = "+".join(np.sort(mask_type))
 
+        if isinstance(mask_selector, tuple(Mask_Selector.__subclasses__())):
+            if "z" not in kwargs.keys():
+                galfind_logger.warning(
+                    "'z' not included in Data.calc_unmasked_area, assuming no mask z dependence"
+                )
+                zbin = None
+            else:
+                zbins = mask_selector.extract_zbins(self)
+                # select zbin which matches the redshift of the data
+                zbin = [zbin_ for zbin_ in zbins if zbin_[0] <= kwargs["z"] < zbin_[1]]
+                assert len(zbin) == 1, \
+                    galfind_logger.critical(
+                        f"Multiple or no zbins found for z={kwargs['z']}!"
+                    )
+                zbin = zbin[0]
+                mask_selector_name = f"{mask_selector_name}_{zbin[0]:.2f}<z<{zbin[1]:.2f}"
+        else:
+            zbin = None
+
         if mask_selector_name not in self.unmasked_area.keys():
             self.unmasked_area[mask_selector_name] = {}
 
@@ -3312,6 +3332,11 @@ class Data:
                 & (area_tab["mask_type"] == mask_save_name) \
                 & (area_tab["region"] == reg_name)
             )]
+            # if zbin is not None:
+            #     breakpoint()
+            #     area_tab_ = area_tab_[
+            #         (area_tab_["zbin_min"] == zbin[0]) & (area_tab_["zbin_max"] == zbin[1])
+            #     ]
             if len(area_tab_) == 0:
                 calculate = True
             else:
@@ -3321,7 +3346,7 @@ class Data:
             
         if calculate:
             if isinstance(mask_selector, tuple(Mask_Selector.__subclasses__())):
-                masks = [mask_selector.load_mask(self, invert = False)]
+                masks = [mask_selector.load_mask(self, invert = False, **kwargs)]
                 pix_scales = [band_data.pix_scale for band_data in self]
                 assert all(pix_scale == pix_scales[0] for pix_scale in pix_scales), \
                     galfind_logger.critical(
@@ -3351,7 +3376,7 @@ class Data:
                             err_message
                         )
                         raise(Exception(err_message))
-            
+
             if region_selector is not None:
                 masks.extend([
                     region_selector_.load_mask(self, invert = invert_region)
@@ -3378,7 +3403,7 @@ class Data:
                 hdu = fits.ImageHDU(mask.astype(np.uint8), name=mask_selector_name)
                 hdu.writeto(mask_save_path, overwrite=True)
                 funcs.change_file_permissions(mask_save_path)
-            
+
             if isinstance(mask_selector, list) and len(mask_selector) == 1:
                 self[mask_selector_name[0]]._calc_area_given_mask(mask_save_name, mask)
                 unmasked_area = self[mask_selector_name[0]].unmasked_area[mask_save_name]

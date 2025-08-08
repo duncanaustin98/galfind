@@ -217,6 +217,7 @@ from .Selector import (
     Robust_zPDF_Selector,
     Re_Selector,
     EPOCHS_Selector,
+    EPOCHS_unmasked_criteria,
     Redshift_Limit_Selector,
     Redshift_Bin_Selector,
     Rest_Frame_Property_Limit_Selector,
@@ -225,6 +226,7 @@ from .Selector import (
     Brown_Dwarf_Selector,
     Hainline24_TY_Brown_Dwarf_Selector_1,
     Hainline24_TY_Brown_Dwarf_Selector_2,
+    Redshift_Selector,
 )
 
 from .Emission_lines import Emission_line, wav_lyman_alpha, line_diagnostics
@@ -294,3 +296,5 @@ from .Rest_frame_properties import (
 )
 
 from .Morphology import Morphology_Result, Morphology_Fitter, Galfit_Fitter
+
+from .SFH import SFH

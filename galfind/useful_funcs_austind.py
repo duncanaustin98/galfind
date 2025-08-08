@@ -6,6 +6,7 @@ import astropy.units as u
 import matplotlib.pyplot as plt
 import numpy as np
 import sep
+import re
 from astropy.coordinates import SkyCoord
 from astropy.table import Table
 from astropy.wcs.utils import skycoord_to_pixel
@@ -16,7 +17,7 @@ import contextlib
 import joblib
 from numba import njit
 from numpy.typing import NDArray
-from typing import Union, List, Tuple, TYPE_CHECKING, Optional
+from typing import Union, List, Tuple, TYPE_CHECKING, Optional, Any
 if TYPE_CHECKING:
     from .Data import Band_Data_Base, Band_Data, Stacked_Band_Data
     from . import Selector, Multiple_Filter, Mask_Selector
@@ -420,16 +421,14 @@ unit_labels_dict = {
     u.nJy: r"$\mathrm{nJy}$",
     u.uJy: r"$\mathrm{\mu Jy}$",
     u.ABmag: r"$\mathrm{AB mag}$",
+    u.Hz / u.erg: r"$\mathrm{Hz}^{-1}\mathrm{erg}^{-1}$",
 }
 
-# property labelling 
-# {
-#     **{"z": "Redshift, z"},
-#     **{
-#         f"{ubvj_filt}_flux": ubvj_filt
-#         for ubvj_filt in ["U", "B", "V", "J"]
-#     },
-# }
+property_name_to_label = {
+    "z": r"Redshift, $z$",
+    "M_UV": r"$M_{\mathrm{UV}}$",
+    "xi_ion_caseB_rest": r"$\xi_{\mathrm{ion,0}}$",
+}
 
 
 def label_log(label):
@@ -855,6 +854,30 @@ def ordinal(n: int):
     else:
         suffix = ["th", "st", "nd", "rd", "th"][min(n % 10, 4)]
     return str(n) + suffix
+
+
+def date_finder(text: str):
+    pattern = r"\b\d{4}-\d{2}-\d{2}\b|\b\d{2}[/-]\d{2}[/-]\d{4}\b"
+    dates = re.findall(pattern, text)
+    return dates
+
+
+def validate_quantity(
+    quant: Optional[Any],
+    physical_type: str,
+):
+    if quant is not None:
+        if not isinstance(quant, u.Quantity):
+            galfind_logger.warning(
+                f"{quant} must be a Quantity! Changing to None"
+            )
+            quant = None
+        else:
+            assert u.get_physical_type(quant) == physical_type, \
+                galfind_logger.critical(
+                    f"{quant} must have units of type {physical_type}!"
+                )
+    return quant
 
 
 # beta slope function

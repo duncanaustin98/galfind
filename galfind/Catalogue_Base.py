@@ -14,7 +14,7 @@ from tqdm import tqdm
 import inspect
 import logging
 from numpy.typing import NDArray
-from typing import TYPE_CHECKING, Any, List, Dict, Union, Type, Optional, NoReturn
+from typing import TYPE_CHECKING, Any, List, Dict, Union, Type, Optional, NoReturn, Tuple
 if TYPE_CHECKING:
     from . import Galaxy, Catalogue_Creator, Data, Selector, Property_Calculator_Base, Mask_Selector
 try:
@@ -573,6 +573,42 @@ class Catalogue_Base:
             return []
         else:
             return self.cat_creator.get_selection_labels(tab)
+
+    # TODO: Time this function with decorator
+    def cross_match(
+        self: Self,
+        other: Type[Catalogue_Base],
+        max_sep: u.Quantity,
+    ) -> Dict[Galaxy, List[Tuple[float, Galaxy]]]:
+        assert max_sep is not None, \
+            galfind_logger.critical(
+                "No max_sep provided for cross-match!"
+            )
+        galfind_logger.info(
+            f"Cross-matching {repr(self)} with {repr(other)} within {max_sep}!"
+        )
+        max_sep = funcs.validate_quantity(max_sep, "angle")
+        # make sky coordinates of self and other
+        self_coords = SkyCoord(self.RA, self.DEC, frame="icrs")
+        other_coords = SkyCoord(other.RA, other.DEC, frame="icrs")
+        # match and populate dict
+        idx_self, idx_other, sep2d, _ = self_coords.search_around_sky(other_coords, max_sep)
+        matches = {}
+        self_gals_copy = deepcopy(self.gals)
+        other_gals_copy = deepcopy(other.gals)
+        sep2d = sep2d.to(u.arcsec)
+        for i_src, i_match, sep in zip(idx_self, idx_other, sep2d):
+            try:
+                key = self_gals_copy[i_match]
+                item = (sep, other_gals_copy[i_src])
+                if not key in matches.keys():
+                    matches[key] = [item]
+                else:
+                    matches[key].extend([item])
+            except:
+                breakpoint()
+
+        return matches
 
     # TODO: should be __sub__ instead
     def remove_gal(self, index=None, id=None):
