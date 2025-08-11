@@ -105,43 +105,47 @@ def phot_property_from_galfind_tab(
     labels: Dict[u.Quantity, List[str]],
     **kwargs
 ) -> np.ndarray:
-    aper_diams = [label.value for label in labels.keys()] * list(labels.keys())[0].unit
-    if "cat_aper_diams" not in kwargs.keys():
-        galfind_logger.warning(
-            f"cat_aper_diams not in {kwargs.keys()=}! " + \
-            f"Setting to {aper_diams=}"
-        )
-        kwargs["cat_aper_diams"] = aper_diams
+    if len(cat) == 0:
+        galfind_logger.warning("cat is empty! Returning empty properties.")
+        return {}
     else:
-        assert isinstance(kwargs["cat_aper_diams"], u.Quantity), \
-            galfind_logger.critical(f"{type(kwargs['cat_aper_diams'])=} != u.Quantity!")
-        assert isinstance(kwargs["cat_aper_diams"].value, (list, np.ndarray)), \
-            galfind_logger.critical(f"{type(kwargs['cat_aper_diams'])=} != list!")
-    # load aperture diameter indices
-    aper_diam_indices = [i for i, aper_diam in enumerate(
-        kwargs["cat_aper_diams"]) if aper_diam in aper_diams]
-    assert len(aper_diam_indices) > 0, \
-        galfind_logger.critical("len(aper_diam_indices) <= 0")
-    # ensure labels are formatted properly
-    assert all(label == labels[aper_diams[0]] for label in labels.values()), \
-        galfind_logger.critical("All phot_labels not equal!")
-    properties = {}
-    if "reshape_by_aper_diams" in kwargs.keys() and \
-            isinstance(kwargs["reshape_by_aper_diams"], bool):
-        _properties = funcs.fits_cat_to_np(
-            cat,
-            labels[aper_diams[0]],
-            reshape_by_aper_diams = kwargs["reshape_by_aper_diams"]
-        )
-    else:
-        _properties = funcs.fits_cat_to_np(
-            cat,
-            labels[aper_diams[0]],
-        )
-    for aper_diam_index in aper_diam_indices:
-        aper_diam = kwargs["cat_aper_diams"][aper_diam_index]
-        properties[aper_diam] = _properties[:, :, aper_diam_index]
-    return properties
+        aper_diams = [label.value for label in labels.keys()] * list(labels.keys())[0].unit
+        if "cat_aper_diams" not in kwargs.keys():
+            galfind_logger.warning(
+                f"cat_aper_diams not in {kwargs.keys()=}! " + \
+                f"Setting to {aper_diams=}"
+            )
+            kwargs["cat_aper_diams"] = aper_diams
+        else:
+            assert isinstance(kwargs["cat_aper_diams"], u.Quantity), \
+                galfind_logger.critical(f"{type(kwargs['cat_aper_diams'])=} != u.Quantity!")
+            assert isinstance(kwargs["cat_aper_diams"].value, (list, np.ndarray)), \
+                galfind_logger.critical(f"{type(kwargs['cat_aper_diams'])=} != list!")
+        # load aperture diameter indices
+        aper_diam_indices = [i for i, aper_diam in enumerate(
+            kwargs["cat_aper_diams"]) if aper_diam in aper_diams]
+        assert len(aper_diam_indices) > 0, \
+            galfind_logger.critical("len(aper_diam_indices) <= 0")
+        # ensure labels are formatted properly
+        assert all(label == labels[aper_diams[0]] for label in labels.values()), \
+            galfind_logger.critical("All phot_labels not equal!")
+        properties = {}
+        if "reshape_by_aper_diams" in kwargs.keys() and \
+                isinstance(kwargs["reshape_by_aper_diams"], bool):
+            _properties = funcs.fits_cat_to_np(
+                cat,
+                labels[aper_diams[0]],
+                reshape_by_aper_diams = kwargs["reshape_by_aper_diams"]
+            )
+        else:
+            _properties = funcs.fits_cat_to_np(
+                cat,
+                labels[aper_diams[0]],
+            )
+        for aper_diam_index in aper_diam_indices:
+            aper_diam = kwargs["cat_aper_diams"][aper_diam_index]
+            properties[aper_diam] = _properties[:, :, aper_diam_index]
+        return properties
 
 def phot_property_from_fits(
     cat: Table,
@@ -492,10 +496,9 @@ class Catalogue_Creator:
             f"Loading {self.survey} {self.version} {self.cat_name} galaxies!"
         )
         #, origin_survey = self.survey
-        gals = [Galaxy(ID, sky_coord, phot_obs, flags, cat_filterset, survey = self.survey, simulated = self.simulated) \
-            for ID, sky_coord, phot_obs, flags, cat_filterset in zip(IDs, sky_coords, phot_obs_arr, selection_flags, filterset_arr)]
+        gals = [Galaxy(ID, sky_coord, phot_obs, flags, self.filterset, survey = self.survey, simulated = self.simulated) \
+            for ID, sky_coord, phot_obs, flags in zip(IDs, sky_coords, phot_obs_arr, selection_flags)]
         cat = Catalogue(gals, self)
-        breakpoint()
         if len(self._crops_to_perform) != 0:
             # perform the crops
             for crop in self._crops_to_perform:
@@ -607,8 +610,16 @@ class Catalogue_Creator:
                 for aper_diam, _phot_err in phot_err.items()}
         return phot, phot_err
     
-    def load_mask(self, cropped: bool = True) -> np.ndarray:
+    def load_mask(
+        self: Self,
+        cropped: bool = True
+    ) -> Optional[NDArray[bool]]:
         tab = self.load_tab("mask", cropped)
+        if len(tab) == 0:
+            galfind_logger.warning(
+                f"No mask data in {self.cat_path} for {self.crop_name}!"
+            )
+            return None
         if self.load_mask_func is not None:
             mask_labels = self.get_mask_labels(self.filterset)
             try:

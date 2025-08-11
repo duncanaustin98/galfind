@@ -199,45 +199,15 @@ class Photometry_rest(Photometry):
         self: Self,
         ref_wav: u.Quantity,
         ignore_bands: Optional[Union[str, List[str]]] = None,
-    ) -> Filter:
-        """
-        Get the first band redwards of a reference wavelength, ignoring required bands
-        """
-        # convert ignore_bands to List[str] if not already
-        if ignore_bands is None:
-            ignore_bands = []
-        elif isinstance(ignore_bands, str):
-            ignore_bands = [ignore_bands]
-        first_band = None
-        for filt in self.filterset:
-            if filt.band_name not in ignore_bands:
-                lower_wav = filt.WavelengthLower50
-                if lower_wav > ref_wav * (1 + self.z):
-                    first_band = filt.band_name
-                    break
-        return first_band
+    ) -> Optional[str]:
+        return funcs.get_first_redwards_band(self.z, self.filterset, ref_wav, ignore_bands)
     
     def get_first_bluewards_band(
         self: Self,
         ref_wav: u.Quantity,
         ignore_bands: Optional[Union[str, List[str]]] = None,
-    ) -> Filter:
-        """
-        Get the first band bluewards of a reference wavelength, ignoring required bands
-        """
-        # convert ignore_bands to List[str] if not already
-        if ignore_bands is None:
-            ignore_bands = []
-        elif isinstance(ignore_bands, str):
-            ignore_bands = [ignore_bands]
-        first_band = None
-        # bands already ordered from blue -> red
-        for filt in self.filterset:
-            upper_wav = filt.WavelengthUpper50
-            if upper_wav < ref_wav * (1 + self.z):
-                first_band = filt.band_name
-                break
-        return first_band
+    ) -> Optional[str]:
+        return funcs.get_first_bluewards_band(self.z, self.filterset, ref_wav, ignore_bands)
 
     def _make_phot_from_scattered_fluxes(
         self: Self,

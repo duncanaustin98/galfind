@@ -958,7 +958,7 @@ class Band_Data_Base(ABC):
         mask = self.load_mask()[0]["MASK"]
         assert seg_data.shape == mask.shape, \
             galfind_logger.critical(
-                f"{self.seg_path=} with {self.seg_data.shape=} != {self.mask_path=} with {mask.shape=}"
+                f"{self.seg_path=} with {seg_data.shape=} != {mask.shape=} from {self.mask_path=}"
             )
         combined_mask = np.logical_or(seg_data > 0, mask == 1).astype(int)
         return combined_mask
@@ -3364,11 +3364,11 @@ class Data:
                                 "All pixel scales for bands in the same instrument must be the same!"
                             )
                         pix_scale = pix_scales[0]
-                        masks.extend([band_data.load_mask(mask_type_, invert = True)[0] for band_data in self \
+                        masks.extend([band_data.load_mask(mask_type_, invert = True, **kwargs)[0] for band_data in self \
                             for mask_type_ in mask_type if band_data.instr_name == name])
                     elif name in self.filterset.band_names:
                         pix_scale = self[name].pix_scale
-                        masks.extend([self[name].load_mask(mask_type_, invert = True)[0] for mask_type_ in mask_type])
+                        masks.extend([self[name].load_mask(mask_type_, invert = True, **kwargs)[0] for mask_type_ in mask_type])
                     else:
                         possible_names = self.filterset.instrument_name.split("+") + self.filterset.band_names
                         err_message = f"{name} not in {possible_names}"

@@ -784,7 +784,12 @@ class Catalogue_Base:
                 f"{hdu.upper()=} does not exist in {self.cat_path=}, could not delete!"
             )
 
-    def del_cols_hdrs_from_fits(self, col_names=[], hdr_names=[], hdu=None):
+    def del_cols_hdrs_from_fits(
+        self: Self,
+        col_names: List[str] = [],
+        hdr_names: List[str] = [],
+        hdu: Optional[str] = None
+    ) -> NoReturn:
         # open up all fits extensions
         tab_arr = []
         tab_names = []
@@ -1206,7 +1211,7 @@ class Catalogue_Base:
         # self.gals = np.array([gal for gal in self if gal.ID not in update_gals_ids])
         # update_gals = []
         if len(update_gals) > 0:
-            breakpoint()
+            #breakpoint()
             full_survey_name = funcs.get_full_survey_name(self.survey, self.version, self.filterset)
             full_data_name = funcs.get_full_survey_name(data.survey, data.version, data.filterset)
             # calculate Vmax's and append them to Vmax ecsv

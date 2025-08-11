@@ -20,7 +20,7 @@ from numpy.typing import NDArray
 from typing import Union, List, Tuple, TYPE_CHECKING, Optional, Any
 if TYPE_CHECKING:
     from .Data import Band_Data_Base, Band_Data, Stacked_Band_Data
-    from . import Selector, Multiple_Filter, Mask_Selector
+    from . import Selector, Filter, Multiple_Filter, Mask_Selector
 try:
     from typing import Self, Type  # python 3.11+
 except ImportError:
@@ -600,6 +600,7 @@ def calc_cv_proper(
     masked_selector: Type[Mask_Selector],
     rectangular_geometry_y_to_x: Union[int, float, list, np.array, dict] = 1.0,
     data_region: Union[str, int] = "all",
+    **kwargs: Dict[str, Any],
 ) -> float:
     if isinstance(data_region, int):
         data_region = str(data_region)
@@ -624,7 +625,7 @@ def calc_cv_proper(
     total_area = 0.0
     for data, y_to_x in zip(data_arr, rectangular_geometry_y_to_x):
         # calculate area of field
-        area = data.calc_unmasked_area(masked_selector) #data.forced_phot_band.filt_name)
+        area = data.calc_unmasked_area(masked_selector, **kwargs) #data.forced_phot_band.filt_name)
         # field is square if y_to_x == 1
         dimensions_x = np.sqrt(area.value / y_to_x) * u.arcmin
         dimensions_y = np.sqrt(area.value * y_to_x) * u.arcmin
@@ -781,8 +782,16 @@ def get_phot_cat_path(
     return save_path
 
 
-def fits_cat_to_np(fits_cat, column_labels, reshape_by_aper_diams=True):
+def fits_cat_to_np(
+    fits_cat: Table,
+    column_labels: List[str],
+    reshape_by_aper_diams: bool = True
+):
     new_cat = fits_cat[column_labels].as_array()
+    assert len(new_cat) > 0, \
+        galfind_logger.critical(
+            "Cannot convert empty fits_cat!"
+        )
     if isinstance(new_cat, np.ma.core.MaskedArray):
         new_cat = new_cat.data
     if reshape_by_aper_diams:
@@ -1072,6 +1081,52 @@ def tqdm_joblib(tqdm_object):
         tqdm_object.close()
 
 # useful for rest frame SED property calculations
+
+def get_first_bluewards_band(
+    z: float,
+    filterset: Multiple_Filter,
+    ref_wav: u.Quantity,
+    ignore_bands: Optional[Union[str, List[str]]] = None,
+) -> Optional[str]:
+    """
+    Get the first band bluewards of a reference wavelength, ignoring required bands
+    """
+    # convert ignore_bands to List[str] if not already
+    if ignore_bands is None:
+        ignore_bands = []
+    elif isinstance(ignore_bands, str):
+        ignore_bands = [ignore_bands]
+    first_band = None
+    # bands already ordered from blue -> red
+    for filt in filterset:
+        upper_wav = filt.WavelengthUpper50
+        if upper_wav < ref_wav * (1.0 + z):
+            first_band = filt.band_name
+            break
+    return first_band
+
+def get_first_redwards_band(
+    z: float,
+    filterset: Multiple_Filter,
+    ref_wav: u.Quantity,
+    ignore_bands: Optional[Union[str, List[str]]] = None,
+) -> Optional[str]:
+    """
+    Get the first band redwards of a reference wavelength, ignoring required bands
+    """
+    # convert ignore_bands to List[str] if not already
+    if ignore_bands is None:
+        ignore_bands = []
+    elif isinstance(ignore_bands, str):
+        ignore_bands = [ignore_bands]
+    first_band = None
+    for filt in filterset:
+        if filt.band_name not in ignore_bands:
+            lower_wav = filt.WavelengthLower50
+            if lower_wav > ref_wav * (1.0 + z):
+                first_band = filt.band_name
+                break
+    return first_band
 
 @njit
 def linear_fit(x: NDArray[np.float64], y: NDArray[np.float64]) -> Tuple[float, float]:

@@ -7,6 +7,7 @@ from pathlib import Path
 import astropy.units as u
 import matplotlib.pyplot as plt
 import numpy as np
+from numpy.typing import NDArray
 from astropy.table import Table
 from typing import NoReturn, Optional, Union, Tuple, Dict, List, Any, TYPE_CHECKING
 if TYPE_CHECKING:
@@ -32,7 +33,13 @@ from .SED_codes import SED_code
 
 class Base_Number_Density_Function:
     def __init__(
-        self, x_name, x_mid_bins, z_ref, phi, phi_errs_cv, author_year
+        self: Self,
+        x_name: str,
+        x_mid_bins: NDArray[float],
+        z_ref: Union[str, int, float], 
+        phi: NDArray[float],
+        phi_errs_cv: NDArray[float],
+        author_year: str
     ):
         self.x_name = x_name
         self.x_mid_bins = x_mid_bins
@@ -166,7 +173,9 @@ class Base_Number_Density_Function:
         y_lims: Optional[List[float]] = None,
         title: Optional[str] = None,
         save_path: Optional[str] = None,
+        plot_cv_errs: bool = True,
     ) -> Tuple[plt.Figure, plt.Axes]:
+
         if all(i is None for i in [fig, ax]):
             fig_, ax_ = plt.subplots()
         else:
@@ -182,16 +191,21 @@ class Base_Number_Density_Function:
                 [_x for _x, _y in zip(self.x_mid_bins, self.phi) if _y != 0.0]
             )
         phi = np.array([_y for _y in self.phi if _y != 0.0])
-        phi_errs_cv = np.array(
+        if not plot_cv_errs and hasattr(self, "phi_errs") and \
+                isinstance(self, Number_Density_Function):
+            phi_errs_ = self.phi_errs
+        else:
+            phi_errs_ = self.phi_errs_cv
+        phi_errs = np.array(
             [
                 [
                     _yerr
-                    for _yerr, _y in zip(self.phi_errs_cv[0], self.phi)
+                    for _yerr, _y in zip(phi_errs_[0], self.phi)
                     if _y != 0.0
                 ],
                 [
                     _yerr
-                    for _yerr, _y in zip(self.phi_errs_cv[1], self.phi)
+                    for _yerr, _y in zip(phi_errs_[1], self.phi)
                     if _y != 0.0
                 ],
             ]
@@ -201,16 +215,16 @@ class Base_Number_Density_Function:
             y_errs = np.array(
                 [
                     np.log10(_phi / (_phi - _phi_err))
-                    for _phi, _phi_err in zip(phi, phi_errs_cv)
+                    for _phi, _phi_err in zip(phi, phi_errs)
                 ],
                 [
                     np.log10(1.0 + (_phi_err / _phi))
-                    for _phi, _phi_err in zip(phi, phi_errs_cv)
+                    for _phi, _phi_err in zip(phi, phi_errs)
                 ],
             )
         else:
             y = phi
-            y_errs = phi_errs_cv
+            y_errs = phi_errs
 
         # sort out plot_kwargs
         default_plot_kwargs = {
@@ -231,15 +245,15 @@ class Base_Number_Density_Function:
         if annotate:
             y_label = r"$\Phi$ / N dex$^{-1}$Mpc$^{-3}$"
             if log_x:
-                x_label = r"$\log_{10}($" + self.x_name + ")"
+                x_label = r"$\log_{10}($" + self.x_name + r"$)$"
                 ax_.set_xscale("log")
             else:
                 x_label = self.x_name
             if log_y:
-                y_label = r"$\log_{10}($" + y_label + ")"
+                y_label = r"$\log_{10}($" + y_label + r"$)$"
             else:
                 ax_.set_yscale("log")
-            ax_.set_xlabel(self.x_name)
+            ax_.set_xlabel(x_label)
             ax_.set_ylabel(y_label)
             if title is not None:
                 ax_.set_title(title)
@@ -285,6 +299,7 @@ class Base_Number_Density_Function:
         if show:
             plt.show()
         return fig_, ax_
+
 
 class Number_Density_Function(Base_Number_Density_Function):
     def __init__(
@@ -427,7 +442,7 @@ class Number_Density_Function(Base_Number_Density_Function):
         # crop catalogue to this redshift bin
         from . import Redshift_Limit_Selector, Redshift_Bin_Selector
         # TODO: Implement Redshift_Limit_Selector in case of np.nan z_bin entry
-        z_bin_selector = Redshift_Bin_Selector(aper_diam, SED_fit_code.label, z_bin)
+        z_bin_selector = Redshift_Bin_Selector(aper_diam, SED_fit_code, z_bin)
         z_bin_cat = deepcopy(cat).crop(z_bin_selector)
         # ensure every galaxy in this redshift bin has 
         # the relevant property already calculated
@@ -440,9 +455,16 @@ class Number_Density_Function(Base_Number_Density_Function):
                 np.isnan(gal.aper_phot[aper_diam].SED_results \
                 [SED_fit_code.label].phot_rest.properties \
                 [x_calculator.name])]) != 0:
+            nan_gals = [gal for gal in z_bin_cat if np.isnan(gal.aper_phot[aper_diam].SED_results[SED_fit_code.label].phot_rest.properties[x_calculator.name])]
             galfind_logger.warning(
-                f">1 nan in {x_calculator.name} for {z_bin=}, skipping!"
+                f"{len(nan_gals)} {repr(x_calculator)} nans for {z_bin=}!"
             )
+            for gal in nan_gals:
+                galfind_logger.warning(
+                    f"{gal.ID}: (z={gal.aper_phot[aper_diam].SED_results[SED_fit_code.label].z:.2f}" + \
+                    f",{gal.aper_phot[aper_diam].filterset.band_names})"
+                )
+            breakpoint()
             return None
         
         # determine save_path
@@ -454,8 +476,8 @@ class Number_Density_Function(Base_Number_Density_Function):
             z_bin_cat.crop_name,
             completeness = completeness,
         )
-        if not Path(save_path).is_file():
 
+        if not Path(save_path).is_file():
             # create x_bins from x_bin_edges (must include start and end values here too)
             x_bins = [
                 [x_bin_edges[i].value, x_bin_edges[i + 1].value] * x_bin_edges.unit
@@ -499,7 +521,7 @@ class Number_Density_Function(Base_Number_Density_Function):
                     # crop to galaxies in the x bin - not the bootstrapping method
                     from . import Rest_Frame_Property_Limit_Selector, Rest_Frame_Property_Bin_Selector
                     # TODO: Implement Rest_Frame_Property_Limit_Selector in case of np.nan x_bin entry
-                    x_bin_selector = Rest_Frame_Property_Bin_Selector(aper_diam, SED_fit_code.label, x_calculator, x_bin)
+                    x_bin_selector = Rest_Frame_Property_Bin_Selector(aper_diam, SED_fit_code, x_calculator, x_bin)
                     z_bin_x_bin_cat = deepcopy(z_bin_cat).crop(x_bin_selector)
                     Ngals[i] = len(z_bin_x_bin_cat)
 
@@ -580,8 +602,9 @@ class Number_Density_Function(Base_Number_Density_Function):
                     elif cv_origin == "Driver2010":
                         cv_errs[i] = funcs.calc_cv_proper(
                             z_bin, 
-                            data_arr=data_arr,
+                            data_arr = data_arr,
                             masked_selector = unmasked_area,
+                            z = np.sum(z_bin) / 2.0,
                         )
                     else:
                         raise NotImplementedError
@@ -746,7 +769,7 @@ class Number_Density_Function(Base_Number_Density_Function):
         )
 
     def plot(
-        self,
+        self: Type[Self],
         fig: Optional[plt.Figure] = None,
         ax: Optional[plt.Axes] = None,
         log_x: bool = False,
@@ -762,6 +785,7 @@ class Number_Density_Function(Base_Number_Density_Function):
         obs_author_years: Dict[str, Any] = {},
         sim_author_years: Dict[str, Any] = {},
         save_path: Optional[str] = None,
+        plot_cv_errs: bool = False,
     ) -> Tuple[plt.Figure, plt.Axes]:
         
         if all(_x is None for _x in [fig, ax]):
@@ -823,6 +847,7 @@ class Number_Density_Function(Base_Number_Density_Function):
             y_lims,
             title,
             save_path,
+            plot_cv_errs = plot_cv_errs,
         )
                 
         return fig_, ax_
@@ -873,7 +898,7 @@ class Multiple_Number_Density_Function:
     @classmethod
     def from_cat(
         cls,
-        cat,
+        cat: Catalogue,
         x_name: str,
         x_bin_edges_arr: Union[list, np.array],
         z_bins: Union[list, np.array],
@@ -895,13 +920,13 @@ class Multiple_Number_Density_Function:
         )
         # ensure x_bin_edges are evenly spaced?
         # extract x_name values from catalogue
-        if type(x_origin) in [dict]:
+        if isinstance(x_origin, dict):
             assert "code" in x_origin.keys()
             assert x_origin["code"].__class__.__name__ in [
                 code.__name__ for code in SED_code.__subclasses__()
             ]
             SED_fit_params = x_origin  # redshifts must come from same SED fitting as x values
-        elif type(x_origin) in [str]:
+        elif isinstance(x_origin, str):
             # convert to SED_fit_params
             SED_fit_params = x_origin.split("_")[0]
         else:
@@ -971,6 +996,7 @@ class Multiple_Number_Density_Function:
                         float(z_bin[0]),
                         float(z_bin[1]),
                         fields_used=fields_used,
+                        **kwargs,
                     )
                     phi_errs_cv[j] = np.sqrt(
                         phi_errs[j] ** 2.0 + (cv_errs[j] * phi[j]) ** 2.0

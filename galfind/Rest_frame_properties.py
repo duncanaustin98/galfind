@@ -685,6 +685,9 @@ class UV_Beta_Calculator(Rest_Frame_Property_Calculator):
         self: Self,
         phot_rest: Photometry_rest
     ) -> Dict[str, Any]:
+        #breakpoint()
+        # if phot_rest.depths[0].value in [28.62635434]:
+        #     breakpoint()
         # determine bands that fall within rest frame UV wavelength limits
         rest_frame_UV_indices = [
             i for i, filt in enumerate(phot_rest.filterset)

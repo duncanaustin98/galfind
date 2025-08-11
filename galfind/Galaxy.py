@@ -951,7 +951,7 @@ class Galaxy:
             Multiple_Selector, 
             Rest_Frame_Property_Limit_Selector, 
         )
-        breakpoint()
+        #breakpoint()
         SED_result_obj = self.aper_phot[aper_diam].SED_results[SED_fit_code.label]
         crop_name = funcs.get_crop_name(crops).split("/")[-1]
         z_obs = SED_result_obj.z
@@ -1141,6 +1141,7 @@ class Galaxy:
                         mask_selector = data.forced_phot_band.filt_name,
                         region_selector = region_selector,
                         invert_region = invert_region,
+                        z = self.aper_phot[aper_diam].SED_results[SED_fit_code.label].z,
                     )
                 elif isinstance(unmasked_area, u.Quantity):
                     assert isinstance(unmasked_area, u.Quantity)
@@ -1151,6 +1152,7 @@ class Galaxy:
                         mask_selector = unmasked_area,
                         region_selector = region_selector,
                         invert_region = invert_region,
+                        z = self.aper_phot[aper_diam].SED_results[SED_fit_code.label].z,
                     )
                 z_min_used = np.max([z_min, z_bin[0]])
                 z_max_used = np.min([z_max, z_bin[1]])
