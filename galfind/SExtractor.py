@@ -81,7 +81,7 @@ def get_err_map(
         )
 
 @run_in_dir(path=config["DEFAULT"]["GALFIND_DIR"])
-def segment_sextractor(
+def segment(
     self: Type[Band_Data_Base],
     err_type: str = "rms_err",
     config_name: str = "default.sex",

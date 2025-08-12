@@ -250,7 +250,6 @@ def auto_mask(
     gaia_row_lim: int = 500,
     overwrite: bool = False,
 ):
-    breakpoint()
     output_mask_path = f"{config['Masking']['MASK_DIR']}/{self.survey}/auto/{self.version}/{self.filt_name}_auto.fits"
     funcs.make_dirs(output_mask_path)
 

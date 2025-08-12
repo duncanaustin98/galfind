@@ -86,10 +86,12 @@ class Subaru(Facility, funcs.Singleton):
 
 
 class Instrument(ABC):
+
     def __init__(
         self: Type[Self],
         facility: Union[str, Facility],
         filt_names: List[str],
+        align_params: Dict[str, Any] = {},
     ) -> None:
         if isinstance(facility, str):
             self.facility = globals()[facility]()
@@ -97,11 +99,11 @@ class Instrument(ABC):
         else:
             self.facility = facility
         self.filt_names = filt_names
+        self.align_params = align_params
         self._load_aper_corrs()
 
         if not hasattr(self, "SVO_name"):
             self.SVO_name = self.__class__.__name__
-
 
     def __str__(self) -> str:
         # print filter_names?
@@ -241,7 +243,13 @@ class NIRCam(Instrument, funcs.Singleton):
             "F470N",
             "F480M",
         ]
-        super().__init__("JWST", NIRCam_band_names)
+        align_params = {
+            "searchrad": 40,
+            "separation": 0.09,
+            "tolerance": 10.0,
+            "max_sep": 1000,
+        }
+        super().__init__("JWST", NIRCam_band_names, align_params)
 
     def calc_ZP(self, band_data: Type[Band_Data_Base]) -> u.Quantity:
         # assume flux units of MJy/sr and calculate corresponding ZP
@@ -325,8 +333,14 @@ class ACS_WFC(Instrument, funcs.Singleton):
             "FR931N",
             "FR1016N",
         ]
+        align_params = {
+            "searchrad": 30,
+            "separation": 0.03,
+            "tolerance": 8.0,
+            "max_sep": 100,
+        }
         self.SVO_name = "ACS"
-        super().__init__("HST", ACS_WFC_band_names)
+        super().__init__("HST", ACS_WFC_band_names, align_params)
 
     def calc_ZP(self, band_data: Type[Band_Data_Base]) -> u.Quantity:
         im_header = band_data.load_im()[1]

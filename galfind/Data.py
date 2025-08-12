@@ -14,6 +14,7 @@ import contextlib
 import glob
 import json
 import os
+import shutil
 import subprocess
 import sys
 from matplotlib.colors import LinearSegmentedColormap
@@ -53,7 +54,7 @@ import numpy as np
 from astropy.convolution import convolve, convolve_fft
 from astropy.coordinates import SkyCoord
 from astropy.io import fits
-from astropy.table import Column, Table, hstack, vstack
+from astropy.table import Column, Table, QTable, hstack, vstack
 from astropy.visualization.mpl_normalize import ImageNormalize
 from astropy.wcs import WCS
 from astroquery.gaia import Gaia
@@ -62,11 +63,9 @@ from matplotlib.colors import LogNorm, Normalize
 from regions import Regions
 from tqdm import tqdm
 
-from . import Depths, SExtractor, config, galfind_logger
+from . import Depths, Masking, SExtractor, Photutils, Filter, Multiple_Filter, config, galfind_logger
 from . import useful_funcs_austind as funcs
-from . import Masking
 from .decorators import run_in_dir
-from . import Filter, Multiple_Filter
 from .Instrument import ACS_WFC, WFC3_IR, NIRCam, MIRI, Instrument  # noqa F501
 
 morgan_version_to_dir = {
@@ -299,7 +298,9 @@ class Band_Data_Base(ABC):
             return im_data, im_header, seg_data, seg_header
 
     def load_im(
-        self, return_hdul: bool = False
+        self: Self,
+        return_hdul: bool = False,
+        **kwargs: Dict[str, Any],
     ) -> Union[
         Tuple[np.ndarray, fits.Header],
         Tuple[np.ndarray, fits.Header, fits.HDUList],
@@ -312,7 +313,7 @@ class Band_Data_Base(ABC):
             )
             galfind_logger.critical(err_message)
             raise (Exception(err_message))
-        im_hdul = fits.open(self.im_path, ignore_missing_simple = True)
+        im_hdul = fits.open(self.im_path, ignore_missing_simple = True, **kwargs)
         im_data = im_hdul[self.im_ext].data
         # im_data = im_data.byteswap().newbyteorder() slow
         im_header = im_hdul[self.im_ext].header
@@ -321,7 +322,7 @@ class Band_Data_Base(ABC):
         else:
             return im_data, im_header
 
-    def load_wcs(self) -> WCS:
+    def load_wcs(self: Type[Self]) -> WCS:
         try:
             self.wcs
         except (AttributeError, KeyError) as e:
@@ -331,10 +332,14 @@ class Band_Data_Base(ABC):
         return self.wcs
 
     def load_wht(
-        self, output_hdr: bool = False
+        self: Type[Self],
+        output_hdr: bool = False,
+        return_hdul: bool = False,
+        **kwargs: Dict[str, Any],
     ) -> Union[Tuple[np.ndarray, fits.Header], np.ndarray]:
         if Path(self.wht_path).is_file():
-            hdu = fits.open(self.wht_path, ignore_missing_simple = True)[self.wht_ext]
+            hdul = fits.open(self.wht_path, ignore_missing_simple = True, **kwargs)
+            hdu = hdul[self.wht_ext]
             wht = hdu.data
             hdr = hdu.header
         else:
@@ -346,15 +351,25 @@ class Band_Data_Base(ABC):
             wht = None
             hdr = None
         if output_hdr:
-            return wht, hdr
+            if return_hdul:
+                return wht, hdr, hdul
+            else:
+                return wht, hdr
         else:
-            return wht
+            if return_hdul:
+                return wht, hdul
+            else:
+                return wht
 
     def load_rms_err(   
-        self, output_hdr: bool = False
+        self: Type[Self],
+        output_hdr: bool = False,
+        return_hdul: bool = False,
+        **kwargs: Dict[str, Any],
     ) -> Union[Tuple[np.ndarray, fits.Header], np.ndarray]:
         if Path(self.rms_err_path).is_file():
-            hdu = fits.open(self.rms_err_path, ignore_missing_simple = True)[self.rms_err_ext]
+            hdul = fits.open(self.rms_err_path, ignore_missing_simple = True, **kwargs)
+            hdu = hdul[self.rms_err_ext]
             rms_err = hdu.data
             hdr = hdu.header
         else:
@@ -366,9 +381,15 @@ class Band_Data_Base(ABC):
             rms_err = None
             hdr = None
         if output_hdr:
-            return rms_err, hdr
+            if return_hdul:
+                return rms_err, hdr, hdul
+            else:
+                return rms_err, hdr
         else:
-            return rms_err
+            if return_hdul:
+                return rms_err, hdul
+            else:
+                return rms_err
 
     def load_seg(
         self, incl_hdr: bool = True
@@ -472,7 +493,7 @@ class Band_Data_Base(ABC):
 
         Notes:
         ------
-        - If the method is "sextractor", it uses the Segmentation.segment_sextractor function.
+        - If the method is "sextractor", it uses the Segmentation.segment function.
         - The segmentation arguments used here stored in the `seg_args` attribute.
         - The `overwrite` parameter determines if existing segmentation data should be replaced.
             Segments the data using the specified method and error type.
@@ -481,7 +502,7 @@ class Band_Data_Base(ABC):
         if not (hasattr(self, "seg_args") and hasattr(self, "seg_path")):
             # segment the data
             if "sextractor" in method.lower():
-                self.seg_path = SExtractor.segment_sextractor(
+                self.seg_path = SExtractor.segment(
                     self,
                     err_type,
                     config_name=config_name,
@@ -1062,6 +1083,7 @@ class Band_Data_Base(ABC):
             unmasked_area = funcs.calc_unmasked_area(mask, self.pixel_scale)
             self.unmasked_area[mask_name.upper()] = unmasked_area
 
+
 class Band_Data(Band_Data_Base):
     def __init__(
         self,
@@ -1189,6 +1211,173 @@ class Band_Data(Band_Data_Base):
                 [deepcopy(self), *band_data_arr]
             )
 
+    def sky_align(
+        self: Self,
+        align_band_data: Band_Data,
+        wcs_name: str = "TWEAK",
+        **kwargs: Dict[str, Any],
+    ) -> NoReturn:
+
+        from stwcs.wcsutil import HSTWCS
+        from tweakwcs import fit_wcs, FITSWCSCorrector, XYXYMatch
+        from drizzlepac import updatehdr
+
+        if self.filt_name == align_band_data.filt_name:
+            galfind_logger.warning(
+                f"Cannot align {repr(self)} to itself, skipping alignment!"
+            )
+            return
+
+        req_params = ["searchrad", "separation", "tolerance", "max_sep"]
+        for name in req_params:
+            if name not in kwargs.keys():
+                # use default from instrument
+                assert name in self.filt.instrument.align_params.keys(), \
+                    galfind_logger.critical(
+                        f"{repr(self)}.sky_align: {name} not in {self.filt.instrument.align_params.keys()=}!"
+                    )
+                kwargs[name] = self.filt.instrument.align_params[name]
+
+        galfind_logger.info(
+            f"Sky aligning {repr(self)} to {repr(align_band_data)} with parameters: {kwargs}"
+        )
+
+        # copy original image to a subfolder
+        copied_filenames = []
+        for name, path in zip(["sci", "rms_err", "wht"], [self.im_path, self.rms_err_path, self.wht_path]):
+            pre_align_filename = f"{'/'.join(path.split('/')[:-1])}/pre_sky_alignment/{path.split('/')[-1]}"
+            if pre_align_filename not in copied_filenames:
+                copied_filenames.append(pre_align_filename)
+                funcs.make_dirs(pre_align_filename)
+                if not Path(pre_align_filename).is_file():
+                    shutil.copy(path, pre_align_filename)
+                    galfind_logger.info(
+                        f"Successfully copied {name} image from {path} to {pre_align_filename}."
+                    )
+        # TODO: should assert that segmentation has already been performed, rather than use segmentation from Photutils by default
+        seg_cat_path = Photutils.segment(self)
+        input_cat = QTable.read(seg_cat_path)
+
+        ref_cat_path = Photutils.segment(align_band_data)
+        ref_cat = QTable.read(ref_cat_path)
+
+        sci_data, sci_hdr, sci_im = self.load_im(return_hdul = True, mode = "update")
+        # TODO: Include HSTWCS wcs loading option in self.load_wcs
+        sci_wcs = HSTWCS(sci_im, self.im_ext)
+
+        # match catalogs
+        match = XYXYMatch(searchrad=kwargs["searchrad"], separation=kwargs["separation"], tolerance=kwargs["tolerance"], use2dhist=False, xoffset=0.0, yoffset=0.0)
+        input_wcs_corrector = FITSWCSCorrector(sci_wcs)
+        ridx, iidx = match(ref_cat, input_cat, tp_wcs = input_wcs_corrector)
+        galfind_logger.info(f"Number of alignment matches = ({len(ridx)=}, {len(iidx)=}")
+
+        seps = np.zeros(len(ridx))
+        for i, (ri, ii) in enumerate(zip(ridx, iidx)):
+            sep = ref_cat[ri]['sky_centroid'].separation(input_cat[ii]['sky_centroid'])
+            seps[i] = (sep.to(u.arcsec) / align_band_data.pix_scale).value
+        mask_sep = seps < kwargs["max_sep"]
+        galfind_logger.info(f"Applying rejection of separations > {kwargs['max_sep']} pixels")
+        galfind_logger.info(f"Reducing selection to {len(input_cat[iidx][mask_sep])}")
+        galfind_logger.info(f"Mean OFFSET: {seps[mask_sep].mean()}")
+
+        # if plot:
+        #     plt.scatter(ref_cat['RA'][ridx],ref_cat['DEC'][ridx], c=seps)
+        #     plt.colorbar()
+        #     plt.show()
+
+        aligned_imwcs = fit_wcs(ref_cat[ridx][mask_sep], input_cat[iidx][mask_sep], input_wcs_corrector, nclip = 0, fitgeom = "general").wcs
+
+        rms_err_im = self.load_rms_err(output_hdr = False, return_hdul = True, mode = "update")[1]
+        wht_im = self.load_wht(output_hdr = False, return_hdul = True, mode = "update")[1]
+        aligned_paths = []
+        for name, im, ext, path in zip(
+            ["sci", "rms_err", "wht"],
+            [sci_im, rms_err_im, wht_im],
+            [self.im_ext, self.rms_err_ext, self.wht_ext],
+            [self.im_path, self.rms_err_path, self.wht_path]
+        ):
+            if path not in aligned_paths:
+                galfind_logger.info(f"Updating {name} WCS to {wcs_name} for {repr(self)}, aligned to {repr(align_band_data)}")
+                aligned_paths.append(path)
+                updatehdr.update_wcs(im, ext, aligned_imwcs, wcsname = wcs_name, reusename=True, verbose=True)
+                im.flush()
+            im.close()
+        galfind_logger.info(f"Finished aligning {repr(self)} to {repr(align_band_data)}")
+
+    def xy_align(
+        self: Type[Self],
+        align_band_data: Band_Data,
+        n_cores: int = 1,
+    ) -> NoReturn:
+        
+        from reproject import reproject_interp
+
+        if align_band_data == self:
+            galfind_logger.warning(
+                f"Cannot align {repr(self)} to itself, skipping alignment!"
+            )
+            return
+        if self.data_shape == align_band_data.data_shape:
+            galfind_logger.warning(
+                f"Data shapes are the same for {repr(self)} and {repr(align_band_data)}, skipping alignment!"
+            )
+            return
+        # TODO: Allow for XY pixel matching to convert the pixel scale of self to the alignment band pixel scale!
+        if self.pix_scale != align_band_data.pix_scale:
+            galfind_logger.warning(
+                f"{repr(self)} {self.pix_scale=} != {repr(align_band_data)} {align_band_data.pix_scale=}, skipping alignment!"
+            )
+            return
+        sci_hdr = self.load_im(return_hdul = False)[-1]
+        ref_hdr = align_band_data.load_im(return_hdul = False)[-1]
+        # add required ZP information to reference header
+        possible_ZP_keys = ["PHOTFLAM", "PHOTPLAM", "PHOTZP", "ZEROPNT", "ZP", "PIX_SCALE", "PIXSCALE"]
+        ZP_info = {
+            ZP_key: sci_hdr[ZP_key]
+            for ZP_key in possible_ZP_keys
+            if ZP_key in sci_hdr.keys()
+        }
+        if len(ZP_info) == 0:
+            err_message = f"{repr(self)} header with {sci_hdr.keys()=} does not contain any {possible_ZP_keys=}!"
+            galfind_logger.critical(err_message)
+            raise Exception(err_message)
+
+        copied_filenames = []
+        for name, path, ext, load_func in zip(
+            ["sci", "rms_err", "wht"],
+            [self.im_path, self.rms_err_path, self.wht_path],
+            [self.im_ext, self.rms_err_ext, self.wht_ext],
+            [self.load_im, self.load_rms_err, self.load_wht]
+        ):
+            pre_align_filename = f"{'/'.join(path.split('/')[:-1])}/pre_xy_alignment/{path.split('/')[-1]}"
+            if pre_align_filename not in copied_filenames:
+                copied_filenames.append(pre_align_filename)
+                funcs.make_dirs(pre_align_filename)
+                if not Path(pre_align_filename).is_file():
+                    shutil.copy(path, pre_align_filename)
+                    galfind_logger.info(
+                        f"Successfully copied {name} image from {path} to {pre_align_filename}."
+                    )
+                else:
+                    galfind_logger.warning(
+                        f"File {pre_align_filename} already exists, skipping copy."
+                    )
+            galfind_logger.info(
+                f"XY pixel aligning {repr(self)} {name} to {repr(align_band_data)}"
+            )
+            hdul = load_func(return_hdul = True, mode = "update")[-1]
+            hdul[ext].header = sci_hdr
+            array = reproject_interp(hdul[ext], ref_hdr, parallel = n_cores)[0]
+            hdul[ext].header = deepcopy(ref_hdr)
+            hdul[ext].header["SIMPLE"] = "T"
+            hdul[ext].header["EXTNAME"] = name.split("_")[-1].upper()
+            for key, val in ZP_info.items():
+                hdul[ext].header[key] = val
+            hdul[ext].data = array
+            hdul[ext].verify("fix+warn")
+            hdul.flush()
+            hdul.close()
+
 
 class Stacked_Band_Data(Band_Data_Base):
     def __init__(
@@ -1231,7 +1420,9 @@ class Stacked_Band_Data(Band_Data_Base):
 
     @classmethod
     def from_band_data_arr(
-        cls, band_data_arr: List[Band_Data], err_type: str = "rms_err"
+        cls,
+        band_data_arr: List[Band_Data],
+        err_type: str = "rms_err"
     ) -> Stacked_Band_Data:
         # make sure all filters are different
         assert all(
@@ -1548,9 +1739,11 @@ class Data:
         forced_phot_band: Optional[
             Union[str, List[str], Type[Band_Data_Base]]
         ] = None,
+        xy_align_band_name: str = "F444W",
     ):
         # save and sort band_arr by central wavelength
         self.band_data_arr = funcs.sort_band_data_arr(band_data_arr)
+        #self._xy_align(xy_align_band_name)
         # load forced photometry band
         if forced_phot_band is not None:
             self.load_forced_phot_band(forced_phot_band)
@@ -2236,6 +2429,7 @@ class Data:
                 )
                 breakpoint()
         return result
+        
 
     def _indices_from_filt_names(
         self, filt_names: Union[str, List[str]]
@@ -2379,7 +2573,76 @@ class Data:
         region: str = "all",
     ) -> NoReturn:
         [band_data._load_depths(aper_diam, mode, region) for band_data in self]
-        
+    
+    def sky_align(
+        self: Self,
+        align_band_data: Union[str, Type[Band_Data]],
+        wcs_name: str = "TWEAK",
+        **kwargs: Dict[str, Any],
+    ) -> NoReturn:
+        assert not hasattr(self, "forced_phot_band"), \
+            galfind_logger.critical(
+                f"Should not have already loaded {self.forced_phot_band=} if trying to sky align!"
+            )
+        if isinstance(align_band_data, str):
+            assert align_band_data in self.filterset.band_names, \
+                galfind_logger.critical(
+                    f"{align_band_data=} not in {self.filterset.band_names}, cannot sky align!"
+                )
+            align_band_data = self[align_band_data]
+        elif isinstance(align_band_data, tuple(Band_Data_Base.__subclasses__())):
+            assert align_band_data.filt_name in self.filterset.band_names, \
+                galfind_logger.critical(
+                    f"{align_band_data.filt_name=} not in {self.filterset.band_names}, cannot sky align!"
+                )
+        else:
+            err_message = f"{align_band_data=} must be a string or Band_Data object!"
+            galfind_logger.critical(err_message)
+            raise Exception(err_message)
+
+        for band_data in self:
+            if band_data.filt_name != align_band_data.filt_name:
+                band_data.sky_align(align_band_data, wcs_name = wcs_name, **kwargs)
+        self.align_band_data = align_band_data
+
+    # TODO:
+    # check astrometry!
+    def check_astrometry(
+        self: Self,
+        align_band: Union[str, Type[Filter]],
+    ):
+        # load segmentation map source catalogue
+        pass
+
+
+    def xy_align(
+        self: Self,
+        align_band_data: Union[str, Type[Band_Data]],
+        n_cores: int = 1,
+    ) -> NoReturn:
+        # determine shape of every band_data in self
+        if isinstance(align_band_data, str):
+            assert align_band_data in self.filterset.band_names, \
+                galfind_logger.critical(
+                    f"{align_band_data=} not in {self.filterset.band_names}, cannot xy align!"
+                )
+            align_band_data = self[align_band_data]
+        elif isinstance(align_band_data, tuple(Band_Data_Base.__subclasses__())):
+            assert align_band_data in self, \
+                galfind_logger.critical(
+                    f"{repr(align_band_data)=} not in {repr(self)}, cannot xy align!"
+                )
+        else:
+            err_message = f"{align_band_data=} must be a string or of type {tuple(Band_Data_Base.__subclasses__())}!"
+            galfind_logger.critical(err_message)
+            raise Exception(err_message)
+        for band_data in self:
+            if band_data.filt_name != align_band_data.filt_name:
+                band_data.xy_align(align_band_data, n_cores = n_cores)
+            else:
+                galfind_logger.warning(
+                    f"Cannot align {repr(self)} to itself, skipping xy align!"
+                )
 
     def psf_homogenize(self):
         raise(NotImplementedError())

@@ -567,11 +567,15 @@ class Multiple_Data_Selector(Multiple_Selector, Data_Selector, ABC):
         self: Self,
         selectors: List[Type[Selector]],
         selection_name: Optional[str] = None,
-        cat_filterset: Optional[Catalogue] = None,
+        cat_filterset: Optional[Multiple_Filter] = None,
     ):
         Multiple_Selector.__init__(self, selectors, selection_name)
         Data_Selector.__init__(self)
         if cat_filterset is not None:
+            assert isinstance(cat_filterset, Multiple_Filter), \
+                galfind_logger.critical(
+                    f"{cat_filterset=} must be a Multiple_Filter object."
+                )
             self.crop_to_filterset(cat_filterset)
 
     def __call__(
@@ -647,13 +651,17 @@ class Multiple_Mask_Selector(Multiple_Selector, Mask_Selector, ABC):
         self: Self,
         selectors: List[Type[Mask_Selector]],
         selection_name: Optional[str] = None,
-        cat_filterset: Optional[Catalogue] = None,
+        cat_filterset: Optional[Multiple_Filter] = None,
     ):
         assert all([isinstance(selector, Mask_Selector) for selector in selectors])
         Multiple_Selector.__init__(self, selectors, selection_name)
         Mask_Selector.__init__(self)
         # NOT SURE IF THIS IS REQUIRED?
         if cat_filterset is not None:
+            assert isinstance(cat_filterset, Multiple_Filter), \
+                galfind_logger.critical(
+                    f"{cat_filterset=} must be a Multiple_Filter object."
+                )
             self.crop_to_filterset(cat_filterset)
 
     def __call__(
@@ -676,7 +684,7 @@ class Multiple_Mask_Selector(Multiple_Selector, Mask_Selector, ABC):
         selectors_arr = []
         for selector in self.selectors:
             append = False
-            if hasattr(selector, "band_name"):
+            if "band_name" in selector.kwargs.keys():
                 if selector.kwargs["band_name"] in filterset.band_names:
                     append = True
             else:
