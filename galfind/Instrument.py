@@ -310,7 +310,7 @@ class ACS_WFC(Instrument, funcs.Singleton):
             "F502N",
             "FR505N",
             "F555W",
-            "FR551N",
+            #"FR551N",
             "F550M",
             "F606W",
             "FR601N",
@@ -353,10 +353,11 @@ class ACS_WFC(Instrument, funcs.Singleton):
             )
         elif "ZEROPNT" in im_header:
             ZP = im_header["ZEROPNT"]
-            galfind_logger.warning(
+            galfind_logger.debug(
                 f"Using ZEROPNT from header for {band_data.filt_name} " + \
                 "instead of PHOTFLAM and PHOTPLAM! Potential ST mags used here!"
             )
+        # DO NOT UNCOMMENT! REGULARLY CAUSES ZP ERRORS
         # elif "BUNIT" in im_header:
         #     unit = im_header["BUNIT"].replace(" ", "")
         #     assert unit == "MJy/sr"
@@ -364,8 +365,8 @@ class ACS_WFC(Instrument, funcs.Singleton):
         #         (band_data.pix_scale.to(u.rad).value ** 2) * u.MJy.to(u.Jy)
         #     ) + u.Jy.to(u.ABmag)
         else:
-            err_message = f"ACS_WFC data for {band_data.filt_name}" + \
-                " must contain either 'ZEROPNT' or 'PHOTFLAM' and 'PHOTPLAM' " + \
+            err_message = f"ACS_WFC data for {band_data.filt_name} " + \
+                "must contain either 'PHOTFLAM' and 'PHOTPLAM' or 'ZEROPNT'" + \
                 "in its header to calculate its ZP!" # or 'BUNIT'=MJy/sr 
             galfind_logger.critical(err_message)
             raise (Exception(err_message))

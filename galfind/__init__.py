@@ -298,3 +298,5 @@ from .Rest_frame_properties import (
 from .Morphology import Morphology_Result, Morphology_Fitter, Galfit_Fitter
 
 from .SFH import SFH
+
+from .NIRCam_reduction import Raw_JWST_Data

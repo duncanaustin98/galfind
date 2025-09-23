@@ -137,14 +137,19 @@ class Rest_Frame_Property_Calculator(Property_Calculator):
                 f"/{self.SED_fit_label}/{self.name}"
         except:
             breakpoint()
-
         if n_jobs <= 1:
             # update properties for each galaxy in the catalogue
-            [self._call_gal(gal, n_chains = n_chains, output = False, \
-                overwrite = overwrite, save_dir = save_dir) \
-                for gal in tqdm(cat, total = len(cat), \
-                desc = f"Calculating {self.name}",
-                disable=galfind_logger.getEffectiveLevel() > logging.INFO)]
+            [
+                self._call_gal(
+                    gal, n_chains = n_chains, output = False, 
+                    overwrite = overwrite, save_dir = save_dir
+                ) for gal in tqdm(
+                    cat,
+                    total = len(cat), \
+                    desc = f"Calculating {self.name}",
+                    disable = galfind_logger.getEffectiveLevel() > logging.INFO
+                )
+            ]
         else:
             # TODO: should be set when serializing the object
             for gal in tqdm(cat, total = len(cat), disable=galfind_logger.getEffectiveLevel() > logging.INFO):
@@ -685,14 +690,14 @@ class UV_Beta_Calculator(Rest_Frame_Property_Calculator):
         self: Self,
         phot_rest: Photometry_rest
     ) -> Dict[str, Any]:
-        #breakpoint()
-        # if phot_rest.depths[0].value in [28.62635434]:
-        #     breakpoint()
         # determine bands that fall within rest frame UV wavelength limits
+        # remove any nans from rest_UV_SNRs
+        nan_SNR_indices = np.isnan(phot_rest.flux / phot_rest.flux_errs)
         rest_frame_UV_indices = [
             i for i, filt in enumerate(phot_rest.filterset)
             if filt.WavelengthLower50 > self.global_kwargs["rest_UV_wav_lims"][0] * (1.0 + phot_rest.z.value)
             and filt.WavelengthUpper50 < self.global_kwargs["rest_UV_wav_lims"][1] * (1.0 + phot_rest.z.value)
+            and not nan_SNR_indices[i]
         ]
         if len(rest_frame_UV_indices) < 2:
             failure = True
@@ -706,13 +711,10 @@ class UV_Beta_Calculator(Rest_Frame_Property_Calculator):
             ) * u.AA
             phot_rest_UV = phot_rest[rest_frame_UV_indices]
             rest_UV_SNRs = phot_rest_UV.flux / phot_rest_UV.flux_errs
-            if any(np.isnan(SNR) for SNR in rest_UV_SNRs):
-                failure = True
-            else:
-                failure = False
-                # determine what percentage of scatters fall into the negative flux region
-                negative_flux_pc = (1. - np.prod([1. - norm.cdf(0., loc=mu, scale=std) for mu, std in \
-                    zip(phot_rest_UV.flux.value, phot_rest_UV.flux_errs.value)])) * 100.0
+            failure = False
+            # determine what percentage of scatters fall into the negative flux region
+            negative_flux_pc = (1. - np.prod([1. - norm.cdf(0., loc=mu, scale=std) for mu, std in \
+                zip(phot_rest_UV.flux.value, phot_rest_UV.flux_errs.value)])) * 100.0
         if failure:
             rest_frame_UV_indices = None
             rest_UV_band_wavs = None

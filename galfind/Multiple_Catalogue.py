@@ -135,6 +135,7 @@ class Combined_Catalogue(Catalogue_Base):
                         tab.rename_column(cat.ID_label, "SURVEY_ID")
                     full_tab_arr[j] = tab
                 full_tab = vstack(list(full_tab_arr))
+                # TODO: Sort unique IDs!
                 full_tab["UNIQUE_ID"] = np.arange(1, len(full_tab) + 1).astype(np.int32)
                 # TODO: sort out metadata - finishing off required
                 full_tab.meta["SURVEY"] = survey

@@ -250,14 +250,12 @@ def auto_mask(
     gaia_row_lim: int = 500,
     overwrite: bool = False,
 ):
-    output_mask_path = f"{config['Masking']['MASK_DIR']}/{self.survey}/auto/{self.version}/{self.filt_name}_auto.fits"
+    output_mask_path = f"{config['Masking']['MASK_DIR']}/{self.survey}" + \
+        f"/auto/{self.version}/{self.filt_name}_auto.fits"
     funcs.make_dirs(output_mask_path)
 
-    import cv2
-
-    #print("auto_mask:", self, star_mask_params)
-
     if not Path(output_mask_path).is_file() or overwrite:
+        import cv2
         check_star_mask_params(star_mask_params)
         galfind_logger.info(f"Automasking {self.survey} {self.filt_name}")
 

@@ -197,7 +197,8 @@ def perform_forced_phot(
         assert (
             self.data_shape == forced_phot_band.data_shape
         ), galfind_logger.critical(
-            f"{self.data_shape=}!={forced_phot_band.data_shape=}"
+            f"{self.data_shape=}!={forced_phot_band.data_shape=} " + \
+            f"({repr(self)=}, {repr(forced_phot_band)=})"
         )
         # update the SExtractor params file at runtime
         # to include the correct number of aperture diameters

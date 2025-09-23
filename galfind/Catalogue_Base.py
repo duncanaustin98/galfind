@@ -14,7 +14,7 @@ from tqdm import tqdm
 import inspect
 import logging
 from numpy.typing import NDArray
-from typing import TYPE_CHECKING, Any, List, Dict, Union, Type, Optional, NoReturn, Tuple
+from typing import TYPE_CHECKING, Any, List, Dict, Union, Optional, NoReturn, Tuple
 if TYPE_CHECKING:
     from . import Galaxy, Catalogue_Creator, Data, Selector, Property_Calculator_Base, Mask_Selector
 try:
@@ -176,7 +176,12 @@ class Catalogue_Base:
         selector: Type[Selector],
     ) -> Self:
         if not any(crops._selection_name == selector._selection_name for crops in self.crops):
-            self.gals = np.array(self[selector])
+            if len(self) == 0:
+                galfind_logger.warning(
+                    f"No galaxies in {repr(self)} to crop!"
+                )
+            else:
+                self.gals = np.array(self[selector])
             self.cat_creator.crops.append(selector)
         return self
 
@@ -1232,7 +1237,6 @@ class Catalogue_Base:
                     disable = galfind_logger.getEffectiveLevel() > logging.INFO,
                 )
             ]
-            #breakpoint()
             # make/update file to store data
             Vmax_arr = self._make_Vmax_ecsv(
                 data,
@@ -1240,16 +1244,12 @@ class Catalogue_Base:
                 aper_diam,
                 SED_fit_code,
             )
-        else:  # Vmax table already opened
-            # if isinstance(self, Combined_Catalogue):
-            #     IDs = self._get_unique_IDs()
-            # else:
-            #     IDs = self.ID
-            #breakpoint()
-            #try:
-            Vmax_arr = self._load_Vmax_from_ecsv(old_tab, aper_diam, SED_fit_code, data.full_name)
-            #except:
-            #    breakpoint()
+        else:
+            if len(self) == 0:
+                return []
+            else:
+                old_tab = Table.read(save_path)
+                Vmax_arr = self._load_Vmax_from_ecsv(old_tab, aper_diam, SED_fit_code, data.full_name)
         return Vmax_arr
     
     def _make_Vmax_ecsv(

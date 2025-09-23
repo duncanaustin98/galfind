@@ -379,12 +379,24 @@ class Galaxy:
         # ]
 
         # make fixed aperture regions to plot
-        aper_kwargs = {"ls": "-", "color": "green", "path_effects": [pe.withStroke(linewidth = 3., foreground = "white")]}
-        fixed_apertures = np.full(len(self.aper_phot[aper_diam]), {"aper_diam": aper_diam, **aper_kwargs})
+        aper_kwargs = {
+            "linestyle": "-",
+            "color": "green",
+            "path_effects": [pe.withStroke(linewidth = 3., foreground = "white")]
+        }
+        fixed_apertures = np.full(
+            len(self.aper_phot[aper_diam]),
+            {"aper_diam": aper_diam, **aper_kwargs}
+        )
         # make kron aperture regions to plot
         if all(hasattr(self, property_name) for property_name in \
-                ["sex_KRON_RADIUS", "sex_A_IMAGE", "sex_B_IMAGE", "sex_THETA_IMAGE"]):
-            kron_kwargs = {"ls": "--", "color": "blue", "path_effects": [pe.withStroke(linewidth = 3., foreground = "white")]}
+            ["sex_KRON_RADIUS", "sex_A_IMAGE", "sex_B_IMAGE", "sex_THETA_IMAGE"]
+        ):
+            kron_kwargs = {
+                "linestyle": "--",
+                "color": "blue",
+                "path_effects": [pe.withStroke(linewidth = 3., foreground = "white")]
+            }
             kron_apertures = [
                 Ellipse(
                     (-99., -99.),
@@ -400,6 +412,7 @@ class Galaxy:
         else:
             plot_regions = {filt_name: [aper] for filt_name, aper in \
                 zip(self.aper_phot[aper_diam].filterset.band_names, fixed_apertures)}
+        
         ax_arr = multi_band_cutout.plot(
             fig = fig,
             n_rows = n_rows,
@@ -495,7 +508,7 @@ class Galaxy:
         # reset parameters
         for ax_, label in zip(PDF_ax, zPDF_labels):
             ax_.set_yticks([])
-            ax_.set_xlabel("Redshift, z")
+            ax_.set_xlabel(r"Redshift, $z$")
             ax_.set_title(label, fontsize="medium")
 
         if not Path(out_path).is_file() or overwrite:

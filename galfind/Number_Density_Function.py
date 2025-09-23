@@ -97,7 +97,7 @@ class Base_Number_Density_Function:
             f"{flags_property_name_conv[x_name]}/{obs_or_models}"
         )
 
-        num_obs = np.linspace(0, 1, len(datasets))
+        #num_obs = np.linspace(0, 1, len(datasets))
         z_ref = (z_bin[0] + z_bin[1]) / 2.0
         for pos, path in enumerate(datasets):
             ds = distribution_functions.read(path, verbose=False)
@@ -128,9 +128,15 @@ class Base_Number_Density_Function:
 
                     label = f"{label},z={z}"
 
+                    if x_name in [key for (key, val) in \
+                            flags_property_name_conv.items() if val == "LUV"]:
+                        x = ds.M[z]
+                    else:
+                        x = ds.log10X[z]
+
                     if flags_property_name_conv[x_name] == "LUV":
-                        phi_err = np.array([ds.log10phi_mag_err[z][0][::-1], ds.log10phi_mag_err[z][1][::-1]])
-                        log10phi = ds.log10phi_mag[z][::-1]
+                        phi_err = np.array(ds.log10phi_mag_err[z])
+                        log10phi = ds.log10phi_mag[z]
                     else:
                         phi_err = np.array(ds.log10phi_err[z])
                         log10phi = ds.log10phi[z]
@@ -142,18 +148,35 @@ class Base_Number_Density_Function:
                     err_high = 10 ** (log10phi + high) - 10**log10phi
                     err_low = (10**log10phi) - 10 ** (log10phi - low)
                     phi_err = np.array([err_low, err_high])
-                    
-                    if x_name in [key for (key, val) in \
-                            flags_property_name_conv.items() if val == "LUV"]:
-                        x = ds.M[z]
-                    else:
-                        x = ds.log10X[z]
+
+                    #breakpoint()
                     # x = ds.log10X[z] - np.log10(1. / funcs.imf_mass_factor[ds.imf]) stellar mass only
                     return cls(
                         x_name, x, z, 10**log10phi, phi_err, author_year
                     )
         galfind_logger.info(f"No {author_year=} in {obs_or_models} for {x_name=}")
         return None  # if no author_year in flags_data
+
+    def __add__(
+        self: Self,
+        other: Union[Type[Base_Number_Density_Function], List[Type[Base_Number_Density_Function]], Multiple_Number_Density_Function]
+    ) -> Multiple_Number_Density_Function:
+        base_ndf_subcls = tuple(Base_Number_Density_Function.__subclasses__())
+        if isinstance(other, list):
+            assert all(isinstance(ndf, base_ndf_subcls) for ndf in other)
+            number_density_funcs = [self] + other
+        elif isinstance(other, base_ndf_subcls):
+            number_density_funcs = [self, other]
+        elif isinstance(other, Multiple_Number_Density_Function):
+            assert all(isinstance(ndf, base_ndf_subcls) for ndf in other.number_density_functions)
+            number_density_funcs = [self] + other.number_density_functions
+        else:
+            err_message = f"{repr(other)=} not in [{base_ndf_subcls}, List[{base_ndf_subcls}], Multiple_Number_Density_Function]!"
+            galfind_logger.critical(err_message)
+            raise ValueError(err_message)
+        # TODO: Ensure no duplicates
+        multiple_ndf = Multiple_Number_Density_Function(number_density_funcs)
+        return multiple_ndf
 
     def get_z_bin_name(self) -> str:
         return f"z={float(self.z_ref):.1f}"
@@ -446,16 +469,16 @@ class Number_Density_Function(Base_Number_Density_Function):
         z_bin_cat = deepcopy(cat).crop(z_bin_selector)
         # ensure every galaxy in this redshift bin has 
         # the relevant property already calculated
-        if len(z_bin_cat) == 0:
-            galfind_logger.warning(
-                f"No galaxies in {z_bin=}"
-            )
-            return None
-        elif len([i for i, gal in enumerate(z_bin_cat) if \
+        if len([i for i, gal in enumerate(z_bin_cat) if \
                 np.isnan(gal.aper_phot[aper_diam].SED_results \
                 [SED_fit_code.label].phot_rest.properties \
                 [x_calculator.name])]) != 0:
-            nan_gals = [gal for gal in z_bin_cat if np.isnan(gal.aper_phot[aper_diam].SED_results[SED_fit_code.label].phot_rest.properties[x_calculator.name])]
+            nan_gals = [
+                gal for gal in z_bin_cat if np.isnan(
+                    gal.aper_phot[aper_diam].SED_results \
+                    [SED_fit_code.label].phot_rest.properties[x_calculator.name]
+                )
+            ]
             galfind_logger.warning(
                 f"{len(nan_gals)} {repr(x_calculator)} nans for {z_bin=}!"
             )
@@ -464,11 +487,21 @@ class Number_Density_Function(Base_Number_Density_Function):
                     f"{gal.ID}: (z={gal.aper_phot[aper_diam].SED_results[SED_fit_code.label].z:.2f}" + \
                     f",{gal.aper_phot[aper_diam].filterset.band_names})"
                 )
-            breakpoint()
+            # remove nan_gals from z_bin_cat
+            z_bin_cat.gals = [gal for gal in z_bin_cat if gal not in nan_gals]
+
+        if len(z_bin_cat) == 0:
+            galfind_logger.warning(
+                f"No galaxies in {z_bin=}"
+            )
             return None
         
         # determine save_path
-        full_survey_name = funcs.get_full_survey_name(cat.survey, cat.version, cat.filterset)
+        full_survey_name = funcs.get_full_survey_name(
+            cat.survey,
+            cat.version,
+            cat.filterset
+        )
         save_path = Number_Density_Function.get_save_path(
             cat.survey,
             x_origin,
@@ -511,7 +544,6 @@ class Number_Density_Function(Base_Number_Density_Function):
                 if len(z_bin_cat) == 0:
                     Ngals[i] = 0
                 else:
-
                     if plot:
                         # plot histogram
                         hist_fig, hist_ax = plt.subplots()
@@ -522,7 +554,10 @@ class Number_Density_Function(Base_Number_Density_Function):
                     from . import Rest_Frame_Property_Limit_Selector, Rest_Frame_Property_Bin_Selector
                     # TODO: Implement Rest_Frame_Property_Limit_Selector in case of np.nan x_bin entry
                     x_bin_selector = Rest_Frame_Property_Bin_Selector(aper_diam, SED_fit_code, x_calculator, x_bin)
-                    z_bin_x_bin_cat = deepcopy(z_bin_cat).crop(x_bin_selector)
+                    try:
+                        z_bin_x_bin_cat = deepcopy(z_bin_cat).crop(x_bin_selector)
+                    except:
+                        breakpoint()
                     Ngals[i] = len(z_bin_x_bin_cat)
 
                     # plot cutouts
@@ -695,7 +730,8 @@ class Number_Density_Function(Base_Number_Density_Function):
         n_walkers: int, 
         n_steps: int,
         n_processes: int = 1,
-        backend_filename: Optional[str] = None
+        backend_filename: Optional[str] = None,
+        incl_cv_errs: bool = True,
     ) -> NoReturn:
         if backend_filename is None:
             backend_filename = self.get_save_path(
@@ -705,21 +741,30 @@ class Number_Density_Function(Base_Number_Density_Function):
                 self.crop_name,
                 completeness = self.completeness,
             )
+            fixed_params_str = "_".join([f'{key}={val:.3f}' for key, val in fixed_params.items()])
+            if fixed_params_str != "":
+                fixed_params_str = f"_{fixed_params_str}"
+            if not incl_cv_errs:
+                incl_cv_str = "_no_cv"
+                phi_errs_ptr = self.phi_errs
+            else:
+                incl_cv_str = ""
+                phi_errs_ptr = self.phi_errs_cv
             backend_filename = backend_filename\
                 .replace("/Data/", f"/{fit_type.__name__.replace('Fitter', 'Fits')}/")\
-                .replace(".ecsv", ".h5")
+                .replace(".ecsv", f"{fixed_params_str}{incl_cv_str}.h5")
             funcs.make_dirs(backend_filename)
         # remove 0s from x_mid_bins, phi, and phi_errs
         zero_indices = np.where(self.phi == 0.0)[0]
         x_mid_bins = np.delete(self.x_mid_bins.value, zero_indices)
         phi = np.delete(self.phi, zero_indices)
-        phi_errs_cv = np.array([np.delete(self.phi_errs_cv[0], zero_indices), 
-            np.delete(self.phi_errs_cv[1], zero_indices)])
+        phi_errs = np.array([np.delete(phi_errs_ptr[0], zero_indices), 
+            np.delete(phi_errs_ptr[1], zero_indices)])
         self.fitter = fit_type(
             priors, 
             x_mid_bins,
             phi,
-            phi_errs_cv,
+            phi_errs,
             n_walkers,
             backend_filename,
             fixed_params
@@ -887,123 +932,277 @@ class Number_Density_Function(Base_Number_Density_Function):
 #     mass_form=mass_form,mass_keyword=mass_keyword, z_keyword=z_keyword, zgauss=zgauss)
 # else:
 
-
-class Multiple_Number_Density_Function:
+# Specific class written to allow for fitting of galaxy bias
+class Multiple_Number_Density_Function(Number_Density_Function):
     def __init__(
-        self, 
-        number_density_function_arr: Union[list, np.array]
+        self: Self, 
+        number_density_functions: List[Type[Base_Number_Density_Function]],
     ):
-        self.number_density_function_arr = number_density_function_arr
-
-    @classmethod
-    def from_cat(
-        cls,
-        cat: Catalogue,
-        x_name: str,
-        x_bin_edges_arr: Union[list, np.array],
-        z_bins: Union[list, np.array],
-        x_origin: Union[str, dict] = "EAZY_fsps_larson_zfree",
-        z_step: float = 0.1,
-        use_vmax_simple: bool = False,
-        unmasked_area: Union[str, List[str], u.Quantity] = "selection",
-        timed: bool = False,
-    ) -> "Number_Density_Function":
-        # input assertions
-        assert all(len(z_bin) == 2 for z_bin in z_bins)
-        assert all(z_bin[0] < z_bin[1] for z_bin in z_bins)
-        assert len(x_bin_edges_arr) == len(z_bins)
-        assert all(len(x_bin_edges) >= 2 for x_bin_edges in x_bin_edges_arr)
-        # ensure x_bin_edges are sorted from lower to higher x values in every z bin
-        assert all(
-            np.sort(np.array(x_bin_edges)) == np.array(x_bin_edges)
-            for x_bin_edges in x_bin_edges_arr
+        self.number_density_functions = number_density_functions
+        self._assertions(number_density_functions)
+        super().__init__(
+            x_name = getattr(number_density_functions[0], "x_name"),
+            x_bins = getattr(number_density_functions[0], "x_bins"),
+            x_origin = getattr(number_density_functions[0], "x_origin"),
+            z_bin = getattr(number_density_functions[0], "z_bin"),
+            Ngals = np.array([ndf.Ngals for ndf in number_density_functions]).T,
+            phi = np.array([ndf.phi for ndf in number_density_functions]).T,
+            phi_errs = np.array([ndf.phi_errs for ndf in number_density_functions]).transpose((1, 2, 0)),
+            cv_errs = np.array([ndf.cv_errs for ndf in number_density_functions]).T,
+            origin_surveys = "+".join([ndf.origin_surveys for ndf in number_density_functions]),
+            crop_name = getattr(number_density_functions[0], "crop_name"),
+            cv_origin = getattr(number_density_functions[0], "cv_origin"),
+            #completeness = getattr(number_density_functions[0], "completeness"),
         )
-        # ensure x_bin_edges are evenly spaced?
-        # extract x_name values from catalogue
-        if isinstance(x_origin, dict):
-            assert "code" in x_origin.keys()
-            assert x_origin["code"].__class__.__name__ in [
-                code.__name__ for code in SED_code.__subclasses__()
-            ]
-            SED_fit_params = x_origin  # redshifts must come from same SED fitting as x values
-        elif isinstance(x_origin, str):
-            # convert to SED_fit_params
-            SED_fit_params = x_origin.split("_")[0]
-        else:
+
+    @staticmethod
+    def _assertions(
+        number_density_functions: List[Type[Number_Density_Function]],
+    ):
+        same_attr_labels = [
+            "x_name",
+            "x_bins",
+            "x_origin",
+            "z_bin",
+            "crop_name",
+            "cv_origin",
+            #"completeness",
+        ]
+        assert all(
+            np.array_equal(getattr(ndf, attr_label), getattr(number_density_functions[0], attr_label))
+            for ndf in number_density_functions for attr_label in same_attr_labels
+        ), galfind_logger.critical(
+            f"Not all {', '.join(same_attr_labels)} are the same for all number density functions!"
+        )
+        assert all(getattr(ndf, "completeness") is None for ndf in number_density_functions), \
             galfind_logger.critical(
-                f"{x_origin=} with {type(x_origin)=} not in [dict, str]!"
+                f"Not all completeness are None for all {number_density_functions}!"
             )
+        # ensure all number density functions have different Ngals arrays
+        assert all(
+            np.unique(
+                [getattr(ndf, "phi") for ndf in number_density_functions],
+                axis = 0,
+                return_counts = True
+            )[1] == 1
+        )
 
-        x = getattr(cat, x_name, x_origin)
+    def __iter__(self):
+        self.iter = 0
+        return self
 
-        # calculate mass function in each redshift bin
-        for i, (z_bin, x_bin_edges) in enumerate(zip(z_bins, x_bin_edges_arr)):
-            # create x_bins from x_bin_edges (must include start and end values here too)
-            x_bins = [
-                [x_bin_edges[i], x_bin_edges[i + 1]]
-                for i in range(len(x_bin_edges) - 1)
-                if i != len(x_bin_edges) - 1
-            ]
-            # extract z_bin_name
-            assert isinstance(x_origin, str)
-            z_bin_name = f"{x_origin}_{z_bin[0]:.1f}<z<{z_bin[1]:.1f}"
-            # calculate Vmax for each galaxy in catalogue within z bin
-            # in general call Vmax_multifield
-            cat.calc_Vmax(cat.data, z_bin, x_origin, z_step, unmasked_area = unmasked_area, timed=timed)
-            # crop catalogue to this redshift bin
-            z_bin_cat = cat.crop(z_bin, "z", x_origin)
+    def __next__(self):
+        if self.iter > len(self) - 1:
+            raise StopIteration
+        else:
+            ndf = self[self.iter]
+            self.iter += 1
+            return ndf
 
-            Ngals = np.zeros(len(x_bins))
-            phi = np.zeros(len(x_bins))
-            phi_errs = np.zeros(len(x_bins))
-            cv_errs = np.zeros(len(x_bins))
-            phi_errs_cv = np.zeros(len(x_bins))
-            # loop through each mass bin in the given redshift bin
-            for j, x_bin in enumerate(x_bins):
-                # crop to galaxies in the x bin - not the bootstrapping method
-                z_bin_x_bin_cat = z_bin_cat.crop(x_bin, x_name, SED_fit_params)
+    def __getitem__(self, index: Any) -> Optional[Union[Type[Number_Density_Function], List[Type[Number_Density_Function]]]]:
+        if len(self) == 0:
+            raise IndexError("No number density functions in object!")
+        if isinstance(index, int):
+            return self.gals[index]
+        else:
+            raise IndexError(f"{repr(index)} not an int!")
 
-                Ngals[j] = len(z_bin_x_bin_cat)
-                # if there are galaxies in the z, mx bin
-                if Ngals[j] != 0:
-                    dx = x_bin[1] - x_bin[0]
-                    V_max = np.array(
-                        [
-                            gal.V_max[z_bin_name][cat.data.full_name]
-                            for gal in cat
-                        ]
-                    )
-                    phi[j] = (np.sum(V_max**-1.0) / dx).value
-                    # use standard Poisson errors if number of galaxies in bin is not small
-                    if len(V_max) >= 4:
-                        phi_errs[j] = (np.sqrt(np.sum(V_max**-2.0)) / dx).value
-                    else:
-                        # using minimum is a minor cheat for symmetric errors?
-                        phi_errs[j] = phi[j] * np.min(
-                            np.abs(
-                                (
-                                    np.array(
-                                        funcs.poisson_interval(
-                                            len(V_max), 0.32
-                                        )
-                                    )
-                                    - len(V_max)
-                                )
-                            )
-                            / len(V_max)
-                        )
-                    cv_errs[j] = funcs.calc_cv_proper(
-                        float(z_bin[0]),
-                        float(z_bin[1]),
-                        fields_used=fields_used,
-                        **kwargs,
-                    )
-                    phi_errs_cv[j] = np.sqrt(
-                        phi_errs[j] ** 2.0 + (cv_errs[j] * phi[j]) ** 2.0
-                    )
+    def __add__(
+        self: Self,
+        other: Union[Type[Base_Number_Density_Function], List[Type[Base_Number_Density_Function]], Multiple_Number_Density_Function]
+    ) -> Multiple_Number_Density_Function:
+        base_ndf_subcls = tuple(Base_Number_Density_Function.__subclasses__())
+        if isinstance(other, list):
+            assert all(isinstance(ndf, base_ndf_subcls) for ndf in other)
+            new_ndfs = other
+        elif isinstance(other, base_ndf_subcls):
+            new_ndfs = [other]
+        elif isinstance(other, Multiple_Number_Density_Function):
+            assert all(isinstance(ndf, base_ndf_subcls) for ndf in other.number_density_functions)
+            new_ndfs = other.number_density_functions
+        else:
+            err_message = f"{repr(other)=} not in [{base_ndf_subcls}, List[{base_ndf_subcls}], Multiple_Number_Density_Function]!"
+            galfind_logger.critical(err_message)
+            raise ValueError(err_message)
+        self._assertions(new_ndfs)
+        self.number_density_functions += new_ndfs
+        for hstack_label in ["Ngals", "phi", "cv_errs"]:
+            setattr(self, hstack_label, \
+                np.hstack([getattr(self, hstack_label), np.array([getattr(ndf, hstack_label) for ndf in new_ndfs]).T])
+            )
+        phi_errs_l1 = np.hstack([getattr(self, "phi_errs")[0], np.array([getattr(ndf, "phi_errs")[0] for ndf in new_ndfs]).T])
+        phi_errs_u1 = np.hstack([getattr(self, "phi_errs")[1], np.array([getattr(ndf, "phi_errs")[1] for ndf in new_ndfs]).T])
+        self.phi_errs = np.array([phi_errs_l1, phi_errs_u1])
+        self.origin_surveys = "+".join([ndf.origin_surveys for ndf in self.number_density_functions])
+        return self
+
+    # @classmethod
+    # def from_cat(
+    #     cls,
+    #     cat: Catalogue,
+    #     x_name: str,
+    #     x_bin_edges_arr: Union[list, np.array],
+    #     z_bins: Union[list, np.array],
+    #     x_origin: Union[str, dict] = "EAZY_fsps_larson_zfree",
+    #     z_step: float = 0.1,
+    #     use_vmax_simple: bool = False,
+    #     unmasked_area: Union[str, List[str], u.Quantity] = "selection",
+    #     timed: bool = False,
+    # ) -> "Number_Density_Function":
+    #     # input assertions
+    #     assert all(len(z_bin) == 2 for z_bin in z_bins)
+    #     assert all(z_bin[0] < z_bin[1] for z_bin in z_bins)
+    #     assert len(x_bin_edges_arr) == len(z_bins)
+    #     assert all(len(x_bin_edges) >= 2 for x_bin_edges in x_bin_edges_arr)
+    #     # ensure x_bin_edges are sorted from lower to higher x values in every z bin
+    #     assert all(
+    #         np.sort(np.array(x_bin_edges)) == np.array(x_bin_edges)
+    #         for x_bin_edges in x_bin_edges_arr
+    #     )
+    #     # ensure x_bin_edges are evenly spaced?
+    #     # extract x_name values from catalogue
+    #     if isinstance(x_origin, dict):
+    #         assert "code" in x_origin.keys()
+    #         assert x_origin["code"].__class__.__name__ in [
+    #             code.__name__ for code in SED_code.__subclasses__()
+    #         ]
+    #         SED_fit_params = x_origin  # redshifts must come from same SED fitting as x values
+    #     elif isinstance(x_origin, str):
+    #         # convert to SED_fit_params
+    #         SED_fit_params = x_origin.split("_")[0]
+    #     else:
+    #         galfind_logger.critical(
+    #             f"{x_origin=} with {type(x_origin)=} not in [dict, str]!"
+    #         )
+
+    #     x = getattr(cat, x_name, x_origin)
+
+    #     # calculate mass function in each redshift bin
+    #     for i, (z_bin, x_bin_edges) in enumerate(zip(z_bins, x_bin_edges_arr)):
+    #         # create x_bins from x_bin_edges (must include start and end values here too)
+    #         x_bins = [
+    #             [x_bin_edges[i], x_bin_edges[i + 1]]
+    #             for i in range(len(x_bin_edges) - 1)
+    #             if i != len(x_bin_edges) - 1
+    #         ]
+    #         # extract z_bin_name
+    #         assert isinstance(x_origin, str)
+    #         z_bin_name = f"{x_origin}_{z_bin[0]:.1f}<z<{z_bin[1]:.1f}"
+    #         # calculate Vmax for each galaxy in catalogue within z bin
+    #         # in general call Vmax_multifield
+    #         cat.calc_Vmax(cat.data, z_bin, x_origin, z_step, unmasked_area = unmasked_area, timed=timed)
+    #         # crop catalogue to this redshift bin
+    #         z_bin_cat = cat.crop(z_bin, "z", x_origin)
+
+    #         Ngals = np.zeros(len(x_bins))
+    #         phi = np.zeros(len(x_bins))
+    #         phi_errs = np.zeros(len(x_bins))
+    #         cv_errs = np.zeros(len(x_bins))
+    #         phi_errs_cv = np.zeros(len(x_bins))
+    #         # loop through each mass bin in the given redshift bin
+    #         for j, x_bin in enumerate(x_bins):
+    #             # crop to galaxies in the x bin - not the bootstrapping method
+    #             z_bin_x_bin_cat = z_bin_cat.crop(x_bin, x_name, SED_fit_params)
+
+    #             Ngals[j] = len(z_bin_x_bin_cat)
+    #             # if there are galaxies in the z, mx bin
+    #             if Ngals[j] != 0:
+    #                 dx = x_bin[1] - x_bin[0]
+    #                 V_max = np.array(
+    #                     [
+    #                         gal.V_max[z_bin_name][cat.data.full_name]
+    #                         for gal in cat
+    #                     ]
+    #                 )
+    #                 phi[j] = (np.sum(V_max**-1.0) / dx).value
+    #                 # use standard Poisson errors if number of galaxies in bin is not small
+    #                 if len(V_max) >= 4:
+    #                     phi_errs[j] = (np.sqrt(np.sum(V_max**-2.0)) / dx).value
+    #                 else:
+    #                     # using minimum is a minor cheat for symmetric errors?
+    #                     phi_errs[j] = phi[j] * np.min(
+    #                         np.abs(
+    #                             (
+    #                                 np.array(
+    #                                     funcs.poisson_interval(
+    #                                         len(V_max), 0.32
+    #                                     )
+    #                                 )
+    #                                 - len(V_max)
+    #                             )
+    #                         )
+    #                         / len(V_max)
+    #                     )
+    #                 cv_errs[j] = funcs.calc_cv_proper(
+    #                     float(z_bin[0]),
+    #                     float(z_bin[1]),
+    #                     fields_used=fields_used,
+    #                     **kwargs,
+    #                 )
+    #                 phi_errs_cv[j] = np.sqrt(
+    #                     phi_errs[j] ** 2.0 + (cv_errs[j] * phi[j]) ** 2.0
+    #                 )
 
     def __len__(self):
-        return len(self.number_density_function_arr)
+        return len(self.number_density_functions)
+
+    def fit(
+        self: Self,
+        fit_type: Type[MCMC_Fitter],
+        priors: Priors,
+        fixed_params: Dict[str, float],
+        n_walkers: int, 
+        n_steps: int,
+        n_processes: int = 1,
+        backend_filename: Optional[str] = None,
+        incl_cv_errs: bool = True,
+    ) -> NoReturn:
+
+        # instantiate fitter
+        if backend_filename is None:
+            backend_filename = self.get_save_path(
+                self.origin_surveys,
+                self.x_origin,
+                self.x_name,
+                self.crop_name,
+                completeness = self.completeness,
+            )
+            fixed_params_str = "_".join([f'{key}={val:.3f}' for key, val in fixed_params.items()])
+            if fixed_params_str != "":
+                fixed_params_str = f"_{fixed_params_str}"
+            if not incl_cv_errs:
+                incl_cv_str = "_no_cv"
+                phi_errs_ptr = self.phi_errs
+            else:
+                incl_cv_str = ""
+                phi_errs_ptr = self.phi_errs_cv
+            backend_filename = backend_filename\
+                .replace("/Data/", f"/{fit_type.__name__.replace('Fitter', 'Fits')}/")\
+                .replace(".ecsv", f"{fixed_params_str}{incl_cv_str}.h5")
+            funcs.make_dirs(backend_filename)
+        # mask nans and zeros
+        phi_mask = np.isnan(self.phi) | (self.phi == 0)
+        x_mid_bins = np.ma.array(np.tile(self.x_mid_bins.value, (5, 1)).T, mask = phi_mask).compressed()
+        phi = np.ma.array(self.phi, mask = phi_mask).compressed()
+        phi_errs = np.array([
+            np.ma.array(phi_errs_ptr[0], mask = phi_mask).compressed(),
+            np.ma.array(phi_errs_ptr[1], mask = phi_mask).compressed()
+        ])
+        surveys_arr = np.ma.array(
+            np.tile([ndf.origin_surveys for ndf in self.number_density_functions], (10, 1)),
+            mask = phi_mask).compressed()
+        self.fitter = fit_type(
+            surveys_arr = surveys_arr,
+            priors = priors, 
+            x_data = x_mid_bins,
+            y_data = phi,
+            y_data_errs = phi_errs,
+            nwalkers = n_walkers,
+            backend_filename = backend_filename,
+            fixed_params = fixed_params,
+        )
+        # run fitter
+        self.fitter(n_steps, n_processes)
 
     def plot(self):
         pass

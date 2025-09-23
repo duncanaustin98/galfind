@@ -206,7 +206,6 @@ class Base_MCMC_Fitter(ABC):
         backend_filename: Optional[str],
         fixed_params: Dict[str, float],
         init_pos: Optional[NDArray[float]] = None,
-
     ):
         self.priors = priors
         self.x_data = x_data
@@ -217,7 +216,12 @@ class Base_MCMC_Fitter(ABC):
             if backend_filename.split(".")[-1] != "h5":
                 backend_filename = f"{backend_filename}.h5"
             self.backend = emcee.backends.HDFBackend(backend_filename)
-            self.sampler = emcee.EnsembleSampler(self.nwalkers, self.ndim, self.log_likelihood, backend = self.backend) #, blobs_dtype = blobs_dtype, pool = pool)
+            try:
+                self.sampler = emcee.EnsembleSampler(self.nwalkers, self.ndim, self.log_likelihood, backend = self.backend) #, blobs_dtype = blobs_dtype, pool = pool)
+            except:
+                err_message = f"Could not load {backend_filename=}! Delete the file or choose a different name."
+                galfind_logger.critical(err_message)
+                raise Exception(err_message)
         else:
             self.sampler = emcee.EnsembleSampler(self.nwalkers, self.ndim, self.log_likelihood)
         self.backend_filename = backend_filename
@@ -271,6 +275,17 @@ class Base_MCMC_Fitter(ABC):
             AIC = 2 * (k - max_lnL)
         galfind_logger.info(f"AIC: {AIC}")
         return AIC
+    
+    def get_autocorr_time(self):
+        try:
+            sampler_autocorr_time = self.sampler.get_autocorr_time()
+            autocorr_time = np.max(sampler_autocorr_time)
+        except Exception as e:
+            galfind_logger.warning(
+                f"Could not calculate autocorrelation time! Chains likely unconverged! {e}"
+            )
+            autocorr_time = self.backend.iteration / 50
+        return autocorr_time
     
     def _instantiate_walkers(self: Self) -> NoReturn:
         # # uniformly distributed starting positions over flat prior
@@ -377,7 +392,7 @@ class Base_MCMC_Fitter(ABC):
         galfind_logger.info("Plotting MCMC fit")
 
     def get_sample(self: Self, discard: bool = True, thin: bool = True) -> NDArray[float]:
-        autocorr_time = np.max(self.sampler.get_autocorr_time())
+        autocorr_time = self.get_autocorr_time()
         if discard:
             discard_ = int(autocorr_time * 2)
         else:
@@ -406,17 +421,7 @@ class Base_MCMC_Fitter(ABC):
         log_data: bool = False,
         shape: Optional[int] = None,
     ) -> NDArray[float]:
-        try:
-            sampler_autocorr_time = self.sampler.get_autocorr_time()
-        except Exception as e:
-            galfind_logger.warning(
-                f"Could not calculate autocorrelation time! Chains likely unconverged! {e}"
-            )
-            sampler_autocorr_time = None
-        if sampler_autocorr_time is None:
-            autocorr_time = self.backend.iteration / 50
-        else:
-            autocorr_time = np.max(sampler_autocorr_time)
+        autocorr_time = self.get_autocorr_time()
         discard = int(autocorr_time * 2)
         thin = int(autocorr_time / 2)
 
@@ -428,8 +433,8 @@ class Base_MCMC_Fitter(ABC):
             params_arr = self.sampler.get_chain(flat = True, discard = discard, thin = thin)
         else:
             params_arr = self.sampler.get_chain(flat = True, discard = discard, thin = thin)[-shape:]
-        y_fit = np.array([model(x_arr, {prior.name: param for prior, param \
-            in zip(self.priors, params)}) for params in tqdm( \
+        y_fit = np.array([model(x_arr, {**{prior.name: param for prior, param \
+            in zip(self.priors, params)}, **self.fixed_params}) for params in tqdm( \
             params_arr, desc = "Loading chains", total = len(params_arr))])
         return y_fit
 
@@ -516,8 +521,10 @@ class Base_MCMC_Fitter(ABC):
             # Adjust spacing to fit the legend
             fig_.subplots_adjust(top=0.9, bottom=0.1, left=0.1, right=0.9, hspace=0.1, wspace=0.1)
 
-        if save == True:
-            fig_.savefig(self.backend_filename.replace(".h5", "_MCMC.jpeg"), dpi = 600, bbox_inches = "tight")
+        if save:
+            save_path = self.backend_filename.replace(".h5", "_MCMC.jpeg")
+            fig_.savefig(save_path, dpi = 600, bbox_inches = "tight")
+            galfind_logger.info(f"Saved corner plot to {save_path}")
         return fig_
     
     # def get_residuals(self: Self, params: Dict[str, float]) -> NDArray[float]:
@@ -977,8 +984,8 @@ class Linear_Fitter(MCMC_Fitter):
         y_data: NDArray[float],
         y_data_errs: NDArray[NDArray[float, float]],
         nwalkers: int,
-        backend_filename: Optional[str],
-        fixed_params: Dict[str, float],
+        backend_filename: Optional[str] = None,
+        fixed_params: Dict[str, float] = {},
     ):
         params = ["m", "c"]
         scatter_params = ["scatter", "scatter_up", "scatter_lo", "scatter_f", "scatter_logk", "scatter_y_a", "scatter_y_b", "scatter_c", "scatter_x", "scatter_y"]
@@ -1241,47 +1248,61 @@ class Power_Law_Fitter(MCMC_Fitter):
     # ) -> None:
     #     super().plot(ax, log_data, x_arr, **kwargs)
 
-# below is copied!
-# class Scattered_Linear_Fitter(Scattered_MCMC_Fitter):
 
-#     def __init__(
-#         self: Self,
-#         priors: Priors,
-#         x_data_chains: NDArray[NDArray[float]],
-#         y_data_chains: NDArray[NDArray[float]],
-#         nwalkers: int,
-#         backend_filename: Optional[str],
-#         fixed_params: Dict[str, float],
-#         incl_logf: bool = False,
-#     ):
-#         self.incl_logf = incl_logf
-#         params = ["m", "c", "scatter"]
-#         if incl_logf:
-#             params.append("logf")
-#         assert all([key in params for key in fixed_params.keys()]), \
-#             galfind_logger.critical(
-#                 f"{fixed_params=} must be m and/or c or empty"
-#             )
-#         assert len(fixed_params) + len(priors) == len(params), \
-#             galfind_logger.critical(
-#                 f"Must have exactly {len(params)} parameters if " + \
-#                 f"{'not' if not incl_logf else ''} including logf"
-#             )
-#         assert all([key in fixed_params.keys() or key in priors.names for key in params]), \
-#             galfind_logger.critical(
-#                 f"{repr(priors)=} or {fixed_params=} must contain {', '.join(params)}"
-#             )
-#         super().__init__(priors, x_data_chains, y_data_chains, nwalkers, backend_filename, fixed_params)
+def get_gal_bias_fitter(
+    fitter: Tuple[Schechter_Lum_Fitter, Schechter_Mag_Fitter, DPL_Lum_Fitter, DPL_Mag_Fitter]
+) -> Type[MCMC_Fitter]:
 
-#     def model(
-#         self: Self,
-#         x: Union[float, List[float], NDArray[float]],
-#         params: Dict[str, float]
-#     ) -> float:
-#         return params["m"] * x + params["c"]
+    """
+    A factory function to create a Galaxy Bias Fitter class based on the provided fitter class.
+    """
+
+    # ensure fitter class is of required type
+    fitter_classes = [
+        Schechter_Lum_Fitter, Schechter_Mag_Fitter,
+        DPL_Lum_Fitter, DPL_Mag_Fitter,
+    ]
+    assert fitter.__name__ in [subcls.__name__ for subcls in fitter_classes], \
+        galfind_logger.critical(
+            f"{repr(fitter)=} not in {fitter_classes=}"
+        )
+
+    class Galaxy_Bias_Fitter(fitter):
+        
+        def __init__(
+            self: Self,
+            surveys_arr: List[str],
+            **kwargs,
+        ):
+            assert "priors" in kwargs.keys(), \
+                galfind_logger.critical("Must provide priors!")
+            assert "b_gal" in kwargs["priors"].names, \
+                galfind_logger.critical(
+                    f"{kwargs['priors'].names} must include b_gal!"
+                )
+            #gal_bias_prior = kwargs["priors"]["b_gal"]
+            # remove b_gal from priors
+            #kwargs["priors"] = Priors([prior for prior in kwargs["priors"] if prior.name != "b_gal"])
+            
+            Base_MCMC_Fitter.__init__(self, **kwargs)
+
+            #self.priors += gal_bias_prior
+
+            self.surveys_arr = surveys_arr
+            assert len(self.surveys_arr) == len(self.x_data) == len(self.y_data) == self.y_data_errs.shape[1], \
+                galfind_logger.critical(
+                    f"{len(self.surveys_arr)=}, {len(self.x_data)=}, {len(self.y_data)=}, {self.y_data_errs.shape[1]=}, must all be equal!"
+                )
+            self.sigma_dm_sq = 0.025 ** 2 # ish-correct for GOODS at z=7
+            
+
+        def _get_sigma_sq(
+            self: Self,
+            residuals: NDArray[float],
+            params: Dict[str, float],
+        ) -> NDArray[float]:
+            sigma_sq = super()._get_sigma_sq(residuals, params)
+            sigma_sq += self.sigma_dm_sq * (params["b_gal"] * self.y_data) ** 2
+            return sigma_sq
     
-#     def update(
-#         self: Self
-#     ) -> NoReturn:
-#         pass
-
+    return Galaxy_Bias_Fitter

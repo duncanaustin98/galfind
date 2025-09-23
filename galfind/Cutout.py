@@ -342,20 +342,22 @@ class Band_Cutout_Base(Cutout_Base, ABC):
             "va": "top",
             "zorder": 10,
             "fontweight": "bold",
-            }
+        }
         for key, value in label_kwargs.items():
             def_label_kwargs[key] = value
-        text_unpack_kwargs = deepcopy(def_label_kwargs)
-        text_unpack_kwargs.pop("xpos")
-        text_unpack_kwargs.pop("ypos")
-        # plot text for band label
-        ax.text(
-            def_label_kwargs["xpos"],
-            def_label_kwargs["ypos"],
-            self.filt_name,
-            transform=ax.transAxes,
-            **text_unpack_kwargs
-        )
+        label = def_label_kwargs.pop("label", None)
+        if label is not None:
+            text_unpack_kwargs = deepcopy(def_label_kwargs)
+            text_unpack_kwargs.pop("xpos")
+            text_unpack_kwargs.pop("ypos")
+            # plot text for band label
+            ax.text(
+                def_label_kwargs["xpos"],
+                def_label_kwargs["ypos"],
+                label,
+                transform = ax.transAxes,
+                **text_unpack_kwargs
+            )
 
         # plot any regions wanted
         self._plot_regions(ax, plot_regions)
@@ -636,9 +638,9 @@ class Band_Cutout(Band_Cutout_Base):
             3,
             cutout_path,
             4,
-            pix_scale=band_data.pix_scale,
+            pix_scale = band_data.pix_scale,
             rms_err_ext_name = "RMS_ERR",
-            )
+        )
         new_band_data.seg_path = cutout_path
         new_band_data.seg_args = band_data.seg_args
         return new_band_data
@@ -1300,31 +1302,26 @@ class Multiple_Cutout_Base(ABC):
                 plot_regions_band = plot_regions[filt_name]
             else:
                 plot_regions_band = []
+            label_kwargs = {
+                "label": "\n".join([
+                    getattr(cutout, name) for name in attrs
+                    if name not in shared_attrs.keys()
+                ]),
+            }
             
-            label = "\n".join([getattr(cutout, name) for name in attrs if name not in shared_attrs.keys()])
-            if isinstance(cutout, tuple(Band_Cutout_Base.__subclasses__())):
-                cutout.plot(
-                    ax,
-                    imshow_kwargs = imshow_kwargs,
-                    norm_kwargs = norm_kwargs,
-                    plot_regions = plot_regions_band,
-                    scalebars = scalebars_band,
-                    label = label,
-                    show = False,
-                    save = False,
-                )
-            else:
-                cutout.plot(
-                    ax,
-                    imshow_kwargs = imshow_kwargs,
-                    norm_kwargs = norm_kwargs,
-                    plot_regions = plot_regions_band,
-                    scalebars = scalebars_band,
-                    label = label,
-                    show = False,
-                    save = False,
-                )
-        fig.set_title(title)
+            cutout.plot(
+                ax,
+                imshow_kwargs = imshow_kwargs,
+                norm_kwargs = norm_kwargs,
+                plot_regions = plot_regions_band,
+                scalebars = scalebars_band,
+                label_kwargs = label_kwargs,
+                show = False,
+                save = False,
+            )
+
+        if title is not None:
+            fig.suptitle(title)
 
         if save:
             if save_path is None:

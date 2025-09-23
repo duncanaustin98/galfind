@@ -32,7 +32,7 @@ except ImportError:
 
 from . import useful_funcs_austind as funcs
 from . import galfind_logger, config, wav_lyman_lim
-from . import Galaxy, Catalogue, Catalogue_Base, Instrument, SED_code
+from . import Galaxy, Catalogue, Catalogue_Base, Instrument, SED_code, Depths
 from .Instrument import expected_instr_bands
 from .Morphology import fwhm_nircam
 
@@ -1086,15 +1086,18 @@ class Depth_Region_Selector(Region_Selector):
         # TODO: Add these as options; hard coded for now!
         if all(self._selection_name in gal.selection_flags.keys() for gal in cat):
             galfind_logger.info(
-                f"Depth regions already selected for {repr(cat)}."
+                f"Depth regions already selected for {repr(cat)}!"
             )
         else:
-            mode = "n_nearest"
-            instr_name = "NIRCam"
-            h5_path = f"{config['Depths']['DEPTH_DIR']}/" \
-                + f"{instr_name}/{cat.version}/{cat.survey}/" \
-                + f"{format(self._aper_diam.value, '.2f')}as/" \
-                + f"{mode}/{self.kwargs['filt_name']}.h5"
+            if self.kwargs['filt_name'] == cat.data.forced_phot_band.filt_name:
+                band_data_base = cat.data.forced_phot_band
+            else:
+                band_data_base = cat.data[self.kwargs["filt_name"]]
+            h5_path = Depths.get_grid_depth_path(
+                band_data_base,
+                self._aper_diam,
+                mode = "n_nearest",
+            )
             assert Path(h5_path).is_file(), \
                 galfind_logger.critical(
                     f"{h5_path=} does not exist."

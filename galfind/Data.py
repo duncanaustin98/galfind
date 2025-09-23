@@ -114,6 +114,7 @@ class Band_Data_Base(ABC):
         if aper_diams is not None:
             self.aper_diams = aper_diams
         self._psf_match = None
+
         # make rms error / wht maps using galfind if required
         if use_galfind_err:
             if (
@@ -240,7 +241,11 @@ class Band_Data_Base(ABC):
                 breakpoint()
         return result
 
-    def _check_data(self, incl_rms_err: bool = True, incl_wht: bool = True):
+    def _check_data(
+        self: Type[Self],
+        incl_rms_err: bool = True,
+        incl_wht: bool = True
+    ):
         # make im_ext_name lists if not already
         if isinstance(self.im_ext_name, str):
             self.im_ext_name = [self.im_ext_name]
@@ -257,11 +262,13 @@ class Band_Data_Base(ABC):
         if incl_rms_err:
             # load rms error header
             rms_err_hdr = self.load_rms_err(output_hdr=True)[1]
+            if rms_err_hdr["EXTNAME"] not in self.rms_err_ext_name:
+                breakpoint()
             assert (
                 rms_err_hdr["EXTNAME"] in self.rms_err_ext_name
             ), galfind_logger.critical(
-                f"RMS error extension name {rms_err_hdr['EXTNAME']} "
-                + f"not in {str(self.rms_err_ext_name)} for {self.filt.band_name}"
+                f"RMS error at {self.rms_err_path} has "
+                + f"{rms_err_hdr['EXTNAME']=}!={str(self.rms_err_ext_name)}"
             )
         if incl_wht:
             # load weight header
@@ -988,7 +995,11 @@ class Band_Data_Base(ABC):
     def _pix_scale_to_str(pix_scale: u.Quantity):
         return f"{round(pix_scale.to(u.marcsec).value)}mas"
 
-    def _make_rms_err_from_wht(self, overwrite: bool = False) -> NoReturn:
+    def _make_rms_err_from_wht(
+        self,
+        overwrite: bool = False,
+        rms_err_ext_name: str = "ERR"
+    ) -> NoReturn:
         save_path = self.im_path.replace(
             self.im_path.split("/")[-1],
             f"rms_err/{self.filt.band_name}_rms_err.fits",
@@ -1000,7 +1011,7 @@ class Band_Data_Base(ABC):
             primary_hdr = deepcopy(hdr)
             primary_hdr["EXTNAME"] = "PRIMARY"
             primary = fits.PrimaryHDU(header=primary_hdr)
-            hdu = fits.ImageHDU(err, header=hdr, name="ERR")
+            hdu = fits.ImageHDU(err, header=hdr, name=rms_err_ext_name)
             hdul = fits.HDUList([primary, hdu])
             # save and overwrite object attributes
             funcs.make_dirs(save_path)
@@ -1014,10 +1025,14 @@ class Band_Data_Base(ABC):
         )
         self.rms_err_path = save_path
         self.rms_err_ext = 1
-        self.rms_err_ext_name = ["ERR"]
+        self.rms_err_ext_name = [rms_err_ext_name]
         self._use_galfind_err = True
 
-    def _make_wht_from_rms_err(self, overwrite: bool = False) -> NoReturn:
+    def _make_wht_from_rms_err(
+        self,
+        overwrite: bool = False,
+        wht_ext_name: str = "WHT"
+    ) -> NoReturn:
         save_path = self.im_path.replace(
             self.im_path.split("/")[-1], f"wht/{self.filt.band_name}_wht.fits"
         )
@@ -1027,7 +1042,7 @@ class Band_Data_Base(ABC):
             primary_hdr = deepcopy(hdr)
             primary_hdr["EXTNAME"] = "PRIMARY"
             primary = fits.PrimaryHDU(header=primary_hdr)
-            hdu = fits.ImageHDU(wht, header=hdr, name="WHT")
+            hdu = fits.ImageHDU(wht, header=hdr, name=wht_ext_name)
             hdul = fits.HDUList([primary, hdu])
             # save and overwrite object attributes
             funcs.make_dirs(save_path)
@@ -1041,7 +1056,7 @@ class Band_Data_Base(ABC):
         )
         self.wht_path = save_path
         self.wht_ext = 1
-        self.wht_ext_name = ["WHT"]
+        self.wht_ext_name = [wht_ext_name]
         self._use_galfind_err = True
 
     # can be simplified with new masks
@@ -1309,7 +1324,7 @@ class Band_Data(Band_Data_Base):
         align_band_data: Band_Data,
         n_cores: int = 1,
     ) -> NoReturn:
-        
+
         from reproject import reproject_interp
 
         if align_band_data == self:
@@ -2640,8 +2655,8 @@ class Data:
             if band_data.filt_name != align_band_data.filt_name:
                 band_data.xy_align(align_band_data, n_cores = n_cores)
             else:
-                galfind_logger.warning(
-                    f"Cannot align {repr(self)} to itself, skipping xy align!"
+                galfind_logger.debug(
+                    f"Cannot align {repr(band_data)} to itself"
                 )
 
     def psf_homogenize(self):

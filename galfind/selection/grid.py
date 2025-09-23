@@ -317,9 +317,10 @@ class Grid_2D:
                 aper_diam,
                 save_PDFs = save_PDFs,
                 save_SEDs = save_SEDs,
-                update = True
-            ) for SED_fitter in SED_fitter_arr
+                update = True,
+            ) for SED_fitter in [SED_fitter_arr[1]]
         ]
+        raise Exception()
         # perform sample selection
         if sampler is not None:
             select_cat = deepcopy(scattered_sim_cat)

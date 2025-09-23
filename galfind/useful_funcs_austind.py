@@ -17,7 +17,7 @@ import contextlib
 import joblib
 from numba import njit
 from numpy.typing import NDArray
-from typing import Union, List, Tuple, TYPE_CHECKING, Optional, Any
+from typing import Union, List, Tuple, TYPE_CHECKING, Optional, Any, Dict
 if TYPE_CHECKING:
     from .Data import Band_Data_Base, Band_Data, Stacked_Band_Data
     from . import Selector, Filter, Multiple_Filter, Mask_Selector
@@ -1127,6 +1127,89 @@ def get_first_redwards_band(
                 first_band = filt.band_name
                 break
     return first_band
+
+def group_positions(
+    sky_coords: SkyCoord,
+    match_radius: u.Quantity = 2.0 * u.arcsec
+) -> Dict[int, List[int]]:
+    """
+    Group sky positions by proximity within a matching radius.
+
+    Parameters
+    ----------
+    ra_list : array-like
+        List of Right Ascensions in degrees.
+    dec_list : array-like
+        List of Declinations in degrees.
+    match_radius : astropy.units.Quantity
+        Matching radius (default 2 arcsec).
+
+    Returns
+    -------
+    groups : dict
+        Dictionary mapping group_id -> list of indices belonging to that group.
+    """
+
+    # adjacency matrix for matches
+    coords_len = len(sky_coords)
+    groups = {}
+    visited = np.zeros(coords_len, dtype=bool)
+    for i in range(coords_len):
+        if visited[i]:
+            continue
+        # Find all neighbors within radius of point i that havn't already been visited
+        sep = sky_coords[i].separation(sky_coords)
+        mask = (sep < match_radius) & ~visited
+        indices = np.where(mask)[0]
+
+        # name group by median RA/DEC of each group
+        median_ra = np.median(sky_coords[indices].ra).to_string(unit=u.hourangle, sep=('h', 'm', 's'))
+        ra_label = f"{round(float(median_ra.split('h')[0])):02d}" + \
+            f"{round(float(median_ra.split('h')[-1].split('m')[0])):02d}" + \
+            f"{round(float(median_ra.split('h')[-1].split('m')[-1].split('s')[0])):02d}"
+        median_dec = np.median(sky_coords[indices].dec)
+        dec_sign = "p" if median_dec >= 0.0 * u.deg else "m"
+        median_dec = median_dec.to_string(unit=u.deg, sep=('d', 'm'))
+        dec_label = f"{round(abs(float(median_dec.split('d')[0]))):02d}" + \
+            f"{round(float(median_dec.split('d')[-1].split('m')[0])):02d}"
+        group_name = f"j{ra_label}{dec_sign}{dec_label}"
+
+        groups[group_name] = indices.tolist()
+        visited[indices] = True
+    return groups
+
+def parse_s_region(s_region):
+    """
+    Parse S_REGION polygon string into matplotlib Polygon coordinates.
+    """
+    # Expect "POLYGON ICRS ra1 dec1 ra2 dec2 ..."
+    m = re.search(r'POLYGON\s+\w+\s+(.+)', s_region, flags=re.IGNORECASE)
+    if not m:
+        return None
+    vals = list(map(float, m.group(1).split()))
+    if len(vals) < 6 or len(vals) % 2 != 0:
+        return None
+    coords = np.array(list(zip(vals[0::2], vals[1::2])))
+    return coords
+
+def footprints_from_files(files):
+    """
+    Extract matplotlib Polygons from files with S_REGION.
+    """
+    from astropy.io import fits
+    from matplotlib.patches import Polygon
+    footprints = {}
+    for f in files:
+        try:
+            with fits.open(f) as hdul:
+                sreg = hdul["SCI"].header.get("S_REGION")
+            if sreg:
+                coords = parse_s_region(sreg)
+                if coords is not None:
+                    footprints[f] = coords
+        except Exception as e:
+            print(f"Skipping {f}: {e}")
+    return footprints
 
 @njit
 def linear_fit(x: NDArray[np.float64], y: NDArray[np.float64]) -> Tuple[float, float]:

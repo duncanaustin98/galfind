@@ -323,18 +323,22 @@ class PDF:
 
     def get_peak(
         self: Self,
-        nth_peak: int
+        nth_peak: int,
+        log: bool = False,
     ) -> float:
         # not properly implemented yet
         try:
-            self.peaks[nth_peak]
+            peaks = self.peaks[nth_peak]
         except (AttributeError, IndexError) as e:
             if isinstance(e, AttributeError):
                 self.peaks = []
             # calculate the nth_peak - what if array isnt the correct length
             if nth_peak == 0:
                 self.peaks.append({"value": None, "chi_sq": None})
-        return self.peaks[nth_peak]
+        if log:
+            peaks = deepcopy(self.peaks)
+            peaks[nth_peak]["value"] = np.log10(peaks[nth_peak]["value"].value) * u.dex
+        return peaks
 
         # currently just copied straight from Tom's plotting script
         # # calculate peak locations etc - should go inside of PDF class
@@ -503,7 +507,6 @@ class PDF:
         ax.tick_params(axis="y", which="both", labelleft=False, labelright=False)
 
         if annotate:
-
             # Draw vertical line at zbest
             ax.axvline(
                 self.get_peak(0, log = log)["value"],

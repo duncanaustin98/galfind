@@ -106,7 +106,9 @@ def phot_property_from_galfind_tab(
     **kwargs
 ) -> np.ndarray:
     if len(cat) == 0:
-        galfind_logger.warning("cat is empty! Returning empty properties.")
+        galfind_logger.warning(
+            "Catalogue is empty! Returning empty properties."
+        )
         return {}
     else:
         aper_diams = [label.value for label in labels.keys()] * list(labels.keys())[0].unit
@@ -1122,8 +1124,10 @@ class Catalogue(Catalogue_Base):
             f"Loading SExtractor extended source corrections for {self.cat_name}!"
         )
         [filt.instrument._load_aper_corrs() for filt in self.data.filterset]
-        aper_corrs = {filt.band_name: filt.instrument. \
-            aper_corrs[filt.band_name] for filt in self.data.filterset}
+        aper_corrs = {
+            filt.band_name: filt.instrument.aper_corrs[filt.band_name]
+            for filt in self.data.filterset
+        }
         [gal.load_sextractor_ext_src_corrs(aper_corrs) for gal in self]
 
     def load_band_properties_from_cat(
@@ -1134,6 +1138,11 @@ class Catalogue(Catalogue_Base):
         dest: str = "gal",
         update: bool = True,
     ) -> Optional[List[Dict[str, Union[u.Quantity, u.Magnitude, u.Dex]]]]:
+        if len(self) == 0:
+            galfind_logger.warning(
+                f"No galaxies in {self.cat_name}, skipping loading {cat_colname=}"
+            )
+            return None
         assert dest in ["gal", "phot_obs"]
         if dest == "gal":
             has_attr = hasattr(self[0], save_name)
