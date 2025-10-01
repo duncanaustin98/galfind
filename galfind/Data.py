@@ -16,6 +16,7 @@ import json
 import os
 import shutil
 import subprocess
+import astropy
 import sys
 from matplotlib.colors import LinearSegmentedColormap
 import time
@@ -1338,11 +1339,13 @@ class Band_Data(Band_Data_Base):
             )
             return
         # TODO: Allow for XY pixel matching to convert the pixel scale of self to the alignment band pixel scale!
-        if self.pix_scale != align_band_data.pix_scale:
-            galfind_logger.warning(
-                f"{repr(self)} {self.pix_scale=} != {repr(align_band_data)} {align_band_data.pix_scale=}, skipping alignment!"
-            )
-            return
+        #if self.pix_scale != align_band_data.pix_scale:
+            # breakpoint()
+            # galfind_logger.warning(
+            #     f"{repr(self)} {self.pix_scale=} != {repr(align_band_data)} {align_band_data.pix_scale=}, skipping alignment!"
+            # )
+            # return
+        #scaling_factor = (align_band_data.pix_scale / self.pix_scale).value
         sci_hdr = self.load_im(return_hdul = False)[-1]
         ref_hdr = align_band_data.load_im(return_hdul = False)[-1]
         # add required ZP information to reference header
@@ -1362,7 +1365,7 @@ class Band_Data(Band_Data_Base):
             ["sci", "rms_err", "wht"],
             [self.im_path, self.rms_err_path, self.wht_path],
             [self.im_ext, self.rms_err_ext, self.wht_ext],
-            [self.load_im, self.load_rms_err, self.load_wht]
+            [self.load_im, self.load_rms_err, self.load_wht],
         ):
             pre_align_filename = f"{'/'.join(path.split('/')[:-1])}/pre_xy_alignment/{path.split('/')[-1]}"
             if pre_align_filename not in copied_filenames:
@@ -1380,7 +1383,21 @@ class Band_Data(Band_Data_Base):
             galfind_logger.info(
                 f"XY pixel aligning {repr(self)} {name} to {repr(align_band_data)}"
             )
-            hdul = load_func(return_hdul = True, mode = "update")[-1]
+            if self.pix_scale != align_band_data.pix_scale:
+                if self.pix_scale > align_band_data.pix_scale:
+                    galfind_logger.warning(
+                        f"Reprojecting {repr(self)} {name} from {self.pix_scale=} to smaller {align_band_data.pix_scale=}!"
+                    )
+                    hdul = load_func(return_hdul = True)[-1]
+                else: # self.pix_scale < align_band_data.pix_scale:
+                    galfind_logger.warning(
+                        f"Reprojecting {repr(self)} {name} from {self.pix_scale=} to larger {align_band_data.pix_scale=}," + \
+                        " this may result in loss of information"
+                    )
+                hdul = load_func(return_hdul = True)[-1]
+            else:
+                hdul = load_func(return_hdul = True, mode = "update")[-1]
+            
             hdul[ext].header = sci_hdr
             array = reproject_interp(hdul[ext], ref_hdr, parallel = n_cores)[0]
             hdul[ext].header = deepcopy(ref_hdr)
@@ -1390,8 +1407,28 @@ class Band_Data(Band_Data_Base):
                 hdul[ext].header[key] = val
             hdul[ext].data = array
             hdul[ext].verify("fix+warn")
-            hdul.flush()
-            hdul.close()
+            if self.pix_scale != align_band_data.pix_scale:
+                out_path = path.replace(
+                    f"{Band_Data_Base._pix_scale_to_str(self.pix_scale)}/",
+                    f"{Band_Data_Base._pix_scale_to_str(align_band_data.pix_scale)}/"
+                )
+                assert out_path != path, galfind_logger.critical(
+                    f"Failed to change pixel scale in {path=} to {align_band_data.pix_scale=}!"
+                )
+                funcs.make_dirs(out_path)
+                hdul.writeto(out_path, overwrite = True)
+                funcs.change_file_permissions(out_path)
+                # update pixel scale and path of self
+                if name == "sci":
+                    self.im_path = out_path
+                elif name == "rms_err":
+                    self.rms_err_path = out_path
+                elif name == "wht":
+                    self.wht_path = out_path
+            else:
+                hdul.flush()
+                hdul.close()
+        self.pix_scale = align_band_data.pix_scale
 
 
 class Stacked_Band_Data(Band_Data_Base):
@@ -2023,14 +2060,19 @@ class Data:
                 path: any([str in path for str in rms_err_str]) for path in paths
             }
             is_wht = {path: any([str in path for str in wht_str]) for path in paths}
+            # ensure name only appears in one of the image types
+            unique_ext_names, unique_ext_counts = np.unique(
+                list(im_ext_name) + list(rms_err_ext_name) + list(wht_ext_name),
+                return_counts = True
+            )
+            assert all(count == 1 for count in unique_ext_counts), \
+                galfind_logger.critical(
+                    f"Extension name {hdu.name} appears in multiple image types!"
+                )
             # check to see if all paths are science images
-            if all(is_sci_ext for is_sci_ext in is_sci.values()):
-                all_sci = True
-            else:
-                all_sci = False
             for path in paths:
                 # if all paths are science images
-                if all_sci:
+                if all(is_sci_ext for is_sci_ext in is_sci.values()):
                     # all extensions must be within the same image
                     single_path = True
                     im_paths[filt_name].extend([path])
@@ -2064,25 +2106,102 @@ class Data:
                     else:
                         galfind_logger.critical(
                             f"{filt_name}, {path} not recognised as im, rms_err, or wht!"
-                            + "Consider updating 'im_str', ''rms_err_str', and 'wht_str'!"
+                            + "Consider updating 'im_str', 'rms_err_str', and 'wht_str'!"
                         )
-                # breakpoint()
                 # extract sci/rms_err/wht extensions
                 try:
-                    hdul = fits.open(path, ignore_missing_simple = True)
+                    hdul = fits.open(path, ignore_missing_simple = True, mode = "update")
                 except:
                     breakpoint()
                 if not single_path:
-                    for j, hdu in enumerate(hdul):
-                        if is_sci[path] and hdu.name in list(im_ext_name):
-                            im_exts[filt_name].extend([int(j)])
-                            break
-                        elif is_rms_err[path] and hdu.name in list(rms_err_ext_name):
-                            rms_err_exts[filt_name].extend([int(j)])
-                            break
-                        elif is_wht[path] and hdu.name in list(wht_ext_name):
-                            wht_exts[filt_name].extend([int(j)])
-                            break
+                    is_data_hdu = [True if type(hdu.data) == np.ndarray and hdu.data.ndim == 2 else False for hdu in hdul]
+                    n_data_hdul = len([is_data for is_data in is_data_hdu if is_data])
+                    assert n_data_hdul > 0, galfind_logger.critical(
+                        f"No data HDU found in {path}!"
+                    )
+                    for j, (hdu, is_data) in enumerate(zip(hdul, is_data_hdu)):
+                        if is_data:
+                            if is_sci[path]:
+                                if n_data_hdul == 1 or hdu.name in list(im_ext_name):
+                                    im_exts[filt_name].extend([int(j)])
+                                    if n_data_hdul == 1:
+                                        if type(hdu) == astropy.io.fits.hdu.image.PrimaryHDU:
+                                            galfind_logger.warning(
+                                                f"Creating new non-PRIMARY {list(im_ext_name)[0]=} hdu for {filt_name}, {path}!"
+                                            )
+                                            non_primary_hdu = fits.ImageHDU(
+                                                data = hdu.data,
+                                                header = hdu.header,
+                                                name = list(im_ext_name)[0]
+                                            )
+                                            hdul.append(non_primary_hdu)
+                                            im_exts[filt_name].pop(-1)
+                                            im_exts[filt_name].extend([int(len(hdul)-1)])
+                                            # remove primary HDU data
+                                            hdu.data = None
+                                        elif hdu.name not in list(im_ext_name):
+                                            galfind_logger.warning(
+                                                f"Updating {hdu.name=} to {list(im_ext_name)[0]=} for {filt_name}, {path}!"
+                                            )
+                                            hdu.name = list(im_ext_name)[0]
+                                            hdu.header["EXTNAME"] = list(im_ext_name)[0]
+                                    break
+                            elif is_rms_err[path]:
+                                if n_data_hdul == 1 or hdu.name in list(rms_err_ext_name):
+                                    rms_err_exts[filt_name].extend([int(j)])
+                                    if n_data_hdul == 1:
+                                        if type(hdu) == astropy.io.fits.hdu.image.PrimaryHDU:
+                                            galfind_logger.warning(
+                                                f"Creating new non-PRIMARY {list(rms_err_ext_name)[0]=} hdu for {filt_name}, {path}!"
+                                            )
+                                            non_primary_hdu = fits.ImageHDU(
+                                                data = hdu.data,
+                                                header = hdu.header,
+                                                name = list(rms_err_ext_name)[0]
+                                            )
+                                            hdul.append(non_primary_hdu)
+                                            # remove last element of rms_err_exts as it was the primary HDU
+                                            rms_err_exts[filt_name].pop(-1)
+                                            rms_err_exts[filt_name].extend([int(len(hdul)-1)])
+                                            # remove primary HDU data
+                                            hdu.data = None
+                                        elif hdu.name not in list(rms_err_ext_name):
+                                            galfind_logger.warning(
+                                                f"Updating {hdu.name=} to {list(rms_err_ext_name)[0]=} for {filt_name}, {path}!"
+                                            )
+                                            hdu.name = list(rms_err_ext_name)[0]
+                                            hdu.header["EXTNAME"] = list(rms_err_ext_name)[0]
+                                    break
+                            elif is_wht[path]:
+                                if n_data_hdul == 1 or hdu.name in list(wht_ext_name):
+                                    wht_exts[filt_name].extend([int(j)])
+                                    if n_data_hdul == 1:
+                                        if type(hdu) == astropy.io.fits.hdu.image.PrimaryHDU:
+                                            galfind_logger.warning(
+                                                f"Creating new non-PRIMARY {list(wht_ext_name)[0]=} hdu for {filt_name}, {path}!"
+                                            )
+                                            non_primary_hdu = fits.ImageHDU(
+                                                data = hdu.data,
+                                                header = hdu.header,
+                                                name = list(wht_ext_name)[0]
+                                            )
+                                            hdul.append(non_primary_hdu)
+                                            wht_exts[filt_name].pop(-1)
+                                            wht_exts[filt_name].extend([int(len(hdul)-1)])
+                                            # remove primary HDU data
+                                            hdu.data = None
+                                        elif hdu.name not in list(wht_ext_name):
+                                            galfind_logger.warning(
+                                                f"Updating {hdu.name=} to {list(wht_ext_name)[0]=} for {filt_name}, {path}!"
+                                            )
+                                            hdu.name = list(wht_ext_name)[0]
+                                            hdu.header["EXTNAME"] = list(wht_ext_name)[0]
+                                    break
+                            galfind_logger.warning(
+                                f"Data HDU not recognised as im, rms_err, or wht for {filt_name}, {path}, {hdu.name=}!"
+                            )
+                    hdul.flush()
+                    hdul.close()
                 else:
                     for j, hdu in enumerate(hdul):
                         if hdu.name in im_ext_name:

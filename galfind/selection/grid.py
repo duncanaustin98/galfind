@@ -318,7 +318,7 @@ class Grid_2D:
                 save_PDFs = save_PDFs,
                 save_SEDs = save_SEDs,
                 update = True,
-            ) for SED_fitter in [SED_fitter_arr[1]]
+            ) for SED_fitter in SED_fitter_arr #[SED_fitter_arr[1]]
         ]
         raise Exception()
         # perform sample selection
@@ -326,7 +326,7 @@ class Grid_2D:
             select_cat = deepcopy(scattered_sim_cat)
             for _sampler in sampler:
                 _sampler(scattered_sim_cat)
-                #select_cat = sampler(select_cat, return_copy = True)
+                select_cat = sampler(select_cat, return_copy = True)
         return scattered_sim_cat
     
         raise Exception()
