@@ -323,12 +323,14 @@ class Photometry:
         if uplim_sigma is None:
             uplims = list(np.full(len(self.flux), False))
             if plot_errs["y"]:
-                yerr = funcs.convert_mag_err_units(
-                    self.wav,
-                    self.flux,
-                    [self.flux_errs, self.flux_errs],
-                    mag_units,
-                )
+                yerr = np.array(
+                    funcs.convert_mag_err_units(
+                        self.wav,
+                        self.flux,
+                        [self.flux_errs, self.flux_errs],
+                        mag_units,
+                    )
+                ) * mag_units
             else:
                 yerr = None
         else:
@@ -494,6 +496,8 @@ class Photometry:
             plot_limits = {"lolims": uplims}
         else:
             plot_limits = {"uplims": uplims}
+
+        # TODO: make nans very large and exclude from autoscaling
 
         plot = ax.errorbar(
             wavs_to_plot,

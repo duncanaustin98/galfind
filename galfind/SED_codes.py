@@ -19,7 +19,7 @@ from astropy.table import Table, join
 from tqdm import tqdm
 from typing import TYPE_CHECKING, NoReturn, Tuple, Union, List, Dict, Any, Optional
 if TYPE_CHECKING:
-    from . import Catalogue, Multiple_Filter, SED_obs, PDF
+    from . import Catalogue, Spectral_Catalogue, Multiple_Filter, SED_obs, PDF
 try:
     from typing import Self, Type  # python 3.11+
 except ImportError:
@@ -208,7 +208,7 @@ class SED_code(ABC):
 
     def __call__(
         self: Self,
-        cat: Catalogue,
+        cat: Union[Catalogue, Spectral_Catalogue],
         aper_diam: u.Quantity,
         save_PDFs: bool = True,
         save_SEDs: bool = True,
@@ -219,6 +219,7 @@ class SED_code(ABC):
         update: bool = False,
         **fit_kwargs
     ) -> List[SED_result]:
+
         if timed:
             start = time.time()
 
@@ -365,6 +366,7 @@ class SED_code(ABC):
         if update:
             cat.update_SED_results(cat_SED_results, timed=timed)
         return cat_SED_results
+            
 
     def _load_phot(self,
         cat: Catalogue,

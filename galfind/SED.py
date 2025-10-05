@@ -212,9 +212,9 @@ class SED:
         if plot:
             plt.plot(wavs_AA[feature_mask], flux_lambda[feature_mask])
             plt.show()
-        line_plus_cont_flux = np.trapz(
-            flux_lambda[feature_mask], x=wavs_AA[feature_mask]
-        )
+        # line_plus_cont_flux = np.trapz(
+        #     flux_lambda[feature_mask], x=wavs_AA[feature_mask]
+        # )
         # calculate continuum flux and mean continuum level
         cont_mask = np.logical_or.reduce(
             np.array(
@@ -272,6 +272,28 @@ class SED:
             self.line_fluxes[line_name] = line_flux
             self.line_cont[line_name] = mean_cont
         return line_EW
+
+    def calc_xi_ion(
+        self: Self,
+        line_name: str = "Halpha"
+    ) -> u.Quantity:
+        # Note that no dust correction is applied here
+        self.calc_line_EW(line_name, plot = False)
+        Ha_flux = self.line_fluxes[line_name]
+        # calculate mUV
+        mUV = self.calc_mUV()
+        # convert mUV to L_UV in erg/s/Hz
+        dL = astropy_cosmo.luminosity_distance(self.z).to(u.cm)
+        L_UV = 4 * np.pi * dL ** 2 \
+            * funcs.convert_mag_units(
+                funcs.wav_rest_to_obs(1_500.0 * u.AA, self.z),
+                mUV,
+                u.erg / (u.s * u.Hz * u.cm**2)
+            ) * (1.0 + self.z)
+        # convert Ha_flux to L_Ha in erg/s
+        L_Ha = 4 * np.pi * dL ** 2 * Ha_flux / (1.0 + self.z)
+        xi_ion = (L_Ha / (L_UV * 1.36e-12)).value * u.Hz / u.erg # assuming case B recombination, T = 10^4 K, n_e = 10^2 cm^-3
+        return xi_ion
 
     def calc_UVJ_colours(self, resolution=1.0 * u.AA):
         UVJ_filters = {
@@ -460,6 +482,28 @@ class SED_obs(SED):
         )
         return blue_flux_mAB - red_flux_mAB
 
+    def calc_mUV(
+        self: Self,
+        wav_range: u.Quantity = [1_450.0, 1_550.0] * u.AA,
+        wav_resolution: u.Quantity = 1.0 * u.AA,
+    ):
+        assert wav_range[0] < wav_range[1], \
+            galfind_logger.critical(
+                f"{wav_range[0]=}!<{wav_range[1]=}"
+            )
+        # create tophat filter in rest frame
+        from galfind import Tophat_Filter
+        obs_wav_range = wav_range * (1. + self.z)
+        #wavs = np.arange(obs_wav_range[0].value, obs_wav_range[1].value, wav_resolution.value) * wav_range.unit
+        mUV_filter = Tophat_Filter("mUV", obs_wav_range[0], obs_wav_range[1], wav_resolution)
+        UV_flux = self.calc_bandpass_averaged_flux(mUV_filter.wav, mUV_filter.trans) * u.erg / (u.s * (u.cm**2) * u.AA)
+        # convert to m_AB
+        return funcs.convert_mag_units(
+            mUV_filter.WavelengthCen,
+            UV_flux,
+            u.ABmag,
+        )
+
 
 class Mock_SED_rest(SED_rest):  # , Mock_SED):
     def __init__(
@@ -639,7 +683,7 @@ class Mock_SED_rest(SED_rest):  # , Mock_SED):
         return template_obj
 
     def normalize_to_m_UV(self, m_UV):
-        if not type(m_UV) == type(None):
+        if m_UV is not None:
             assert type(m_UV) in [u.Quantity, u.Magnitude]
             norm = (
                 funcs.convert_mag_units(1_500.0 * u.AA, m_UV, u.Jy).value
@@ -1037,7 +1081,7 @@ class Mock_SED_rest_template_set(Mock_SED_template_set):
                         },
                     },
                 )
-                if type(m_UV_norm) != type(None):
+                if m_UV_norm is not None:
                     mock_sed_rest.normalize_to_m_UV(m_UV_norm)
                 mock_SED_rest_arr.append(mock_sed_rest)
         return cls(mock_SED_rest_arr)

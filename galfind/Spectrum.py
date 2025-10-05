@@ -7,6 +7,7 @@ from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import NoReturn, Union, Optional
 import logging
+from copy import deepcopy
 #from lmfit import Model, Parameters, minimize, fit_report
 
 import astropy.units as u
@@ -45,6 +46,7 @@ class Spectral_Grating:  # disperser
             if self.name[-1] == "M"
             else 2_700.0
         )
+        self.resolution_curve_path = "/nvme/scratch/work/tharvey/JWST_R_curves/NIRSpec/jwst_nirspec_prism_disp.fits"
 
     def get_resolution(self, wavs):
         pass
@@ -70,7 +72,9 @@ class Spectral_Filter:
 
 class Spectral_Instrument(ABC):
     def __init__(
-        self, grating: Spectral_Grating, filter: Spectral_Filter
+        self,
+        grating: Spectral_Grating,
+        filter: Spectral_Filter,
     ) -> NoReturn:
         self.grating = grating
         self.filter = filter
@@ -111,7 +115,8 @@ class NIRSpec(Spectral_Instrument):
             f"{grating_filter_name=} not in {self.available_grating_filters=}"
         )
         super().__init__(
-            Spectral_Grating(grating_name), Spectral_Filter(filter_name)
+            Spectral_Grating(grating_name),
+            Spectral_Filter(filter_name),
         )
 
     def load_sensitivity(self):
@@ -293,11 +298,10 @@ class Spectrum:
 
         flux_errs = Masked(np.array(full_flux_errs) * flux_unit, mask=mask)
 
-        if type(z) != type(None):
-            z_method = "cat"
-        else:
-            z = None
+        if z is None:
             z_method = None
+        else:
+            z_method = "cat"
         reduction_name = f"DJA_{version}"
 
         spec_obj = cls(
@@ -328,7 +332,7 @@ class Spectrum:
     def plot_slitlet(self, ax, colour="black", add_labels=True):
         # mostly copied from msaexp MSAMetafile base code
         self.load_MSA_metafile()
-        assert type(self.MSA_metafile) != type(None)
+        assert self.MSA_metafile is not None
         slits = self.MSA_metafile.regions_from_metafile(
             dither_point_index=self.dither_pt,
             as_string=False,
@@ -661,6 +665,21 @@ class Spectral_Catalogue:
             + [spectrum for gal in cat for spectrum in gal]
         )
         return Spectral_Catalogue(spectra_arr)
+    
+    def __deepcopy__(self, memo):
+        galfind_logger.debug(f"deepcopy({self.__class__.__name__})")
+        cls = self.__class__
+        result = cls.__new__(cls)
+        memo[id(self)] = result
+        for key, value in self.__dict__.items():
+            try:
+                setattr(result, key, deepcopy(value, memo))
+            except:
+                galfind_logger.critical(
+                    f"deepcopy({self.__class__.__name__}) {key}: {value} FAIL!"
+                )
+                breakpoint()
+        return result
 
     @classmethod
     def from_DJA(

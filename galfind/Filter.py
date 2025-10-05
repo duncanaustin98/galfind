@@ -10,6 +10,7 @@ import matplotlib.pyplot as plt
 from matplotlib.colors import Normalize
 from typing import List, Tuple, Union, Optional, NoReturn, TYPE_CHECKING
 import warnings
+import matplotlib.patheffects as pe
 
 if TYPE_CHECKING:
     from . import Facility, Instrument, Data
@@ -282,6 +283,8 @@ class Filter:
         colour: str = "black",
         save_dir: str = "",
         label: bool = True,
+        label_offset: float = 0.03,
+        label_fontsize: int = 10,
         save: bool = False,
         show: bool = False,
     ):
@@ -298,10 +301,11 @@ class Filter:
         if label:
             ax.text(
                 funcs.convert_wav_units(self.WavelengthCen, wav_units).value,
-                np.max(trans) + 0.03,
+                np.max(trans) + label_offset,
                 self.band_name,
                 ha="center",
-                fontsize=8,
+                fontsize = label_fontsize,
+                path_effects=[pe.withStroke(linewidth=3, foreground="w")],
             )
         if save or show:
             leg_labels = ax.get_legend_handles_labels()[1]
@@ -951,6 +955,8 @@ class Multiple_Filter:
         cmap_name: str = "Spectral_r",
         save_dir: str = "",
         label: bool = True,
+        label_offset: float = 0.03,
+        label_fontsize: float = 8.0,
         show: bool = False,
         save: bool = False,
     ) -> NoReturn:
@@ -966,6 +972,8 @@ class Multiple_Filter:
                 trans_scaling = trans_scaling,
                 colour=colour,
                 label=label,
+                label_offset = label_offset + (label_offset / 2) * (-1) ** i,
+                label_fontsize = label_fontsize,
                 show=False,
                 save=False
             )

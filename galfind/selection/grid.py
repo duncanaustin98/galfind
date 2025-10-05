@@ -240,7 +240,6 @@ class Grid_2D:
         elif not hasattr(sim_cat, 'data') or sim_cat.data is None:
             if data_filterset is None or aper_diams is None or sim_filterset is None:
                 galfind_logger.critical("filterset and aper_diams must be provided if not in the Catalogue object")
-            
 
         # determine scattered catalogue path
         scattered_cat_path = funcs.get_phot_cat_path(

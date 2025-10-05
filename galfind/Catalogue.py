@@ -52,6 +52,7 @@ except ImportError:
 from . import (
     EAZY,  # noqa F501
     NIRCam,
+    MIRI,
     Catalogue_Base,
     Photometry_rest,
     Photometry_obs,
@@ -290,6 +291,8 @@ def jaguar_phot_labels(
         aper_diam * aper_diams.unit: [
                 f"NRC_{filt.band_name}_fnu" if \
                 isinstance(filt.instrument, NIRCam) \
+                else f"MIRI_{filt.band_name}_fnu" if \
+                isinstance(filt.instrument, MIRI) \
                 else f"HST_{filt.band_name}_fnu" \
                 for filt in filterset
             ] for aper_diam in aper_diams.value
@@ -318,7 +321,6 @@ def scattered_phot_labels(
 #     phot_labels = {aper_diam * aper_diams.unit: [f"{filt.band_name}_scattered" for filt in filterset] for aper_diam in aper_diams.value}
 #     err_labels = {aper_diam * aper_diams.unit: [f"{filt.band_name}_err" for filt in filterset] for aper_diam in aper_diams.value}
 #     return phot_labels, err_labels
-
 
 def galfind_mask_labels(
     filterset: Multiple_Filter, 
@@ -1588,9 +1590,10 @@ class Catalogue(Catalogue_Base):
                 )
                 min_flux_pc_err = default_min_flux_pc_err
         else:
-            min_flux_pc_err = 0.
+            min_flux_pc_err = 0.0
 
-        [gal.aper_phot[aper_diam]._update_errs_from_depths(min_flux_pc_err)
+        [
+            gal.aper_phot[aper_diam]._update_errs_from_depths(min_flux_pc_err)
             for gal in tqdm(self, desc = "Updating catalogue errors from average depths", total = len(self), disable = galfind_logger.getEffectiveLevel() > logging.INFO)
         ]
 

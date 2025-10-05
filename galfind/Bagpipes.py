@@ -27,7 +27,7 @@ from tqdm import tqdm
 import logging
 from typing import Union, Dict, Any, List, Tuple, Optional, NoReturn, TYPE_CHECKING
 if TYPE_CHECKING:
-    from . import Catalogue, PDF, Multiple_Filter
+    from . import Catalogue, Spectral_Catalogue, PDF, Multiple_Filter
     from bagpipes.filters import filter_set
 try:
     from typing import Self, Type  # python 3.11+
@@ -208,8 +208,11 @@ class Bagpipes(SED_code):
                         f"Bagpipes {self.SED_fit_params=} must include " + \
                         "'z_calculator' for 'continuity' SFH"
                     )
+
                 from . import Redshift_Extractor
-                if isinstance(self.SED_fit_params["z_calculator"], Redshift_Extractor):
+                if self.SED_fit_params["z_calculator"] == "spec":
+                    z_label = "zspec"
+                elif isinstance(self.SED_fit_params["z_calculator"], Redshift_Extractor):
                     z_label = f"z{self.SED_fit_params['z_calculator'].SED_fit_label.replace('_', '').replace('zfree', '')}"
                 else:
                     z_label = f"z{self.SED_fit_params['z_calculator']:0.1f}"
@@ -322,7 +325,7 @@ class Bagpipes(SED_code):
     def __call__(
         self: Self,
         cat: Catalogue,
-        aper_diam: u.Quantity,
+        aper_diam: Optional[u.Quantity] = None,
         save_PDFs: bool = True,
         save_SEDs: bool = True,
         load_PDFs: bool = True,
@@ -340,24 +343,42 @@ class Bagpipes(SED_code):
         except ImportError:
             self.rank = 0
             self.size = 1
-        
+
         self._load_fit_instructions()
         if "continuity" in self.SED_fit_params["sfh"]:
             self._update_continuity_sfh_fit_instructions(cat)
         if not self.SED_fit_params["fix_z"] and "z_sigma" in self.SED_fit_params.keys():
             self._update_redshift_fit_instructions(cat)
-        return super().__call__(
-            cat,
-            aper_diam,
-            save_PDFs,
-            save_SEDs,
-            load_PDFs,
-            load_SEDs,
-            timed,
-            overwrite,
-            update,
-            **fit_kwargs
-        )
+        from galfind import Catalogue
+        if isinstance(cat, Catalogue):
+            assert aper_diam is not None, \
+                galfind_logger.critical(
+                    "Bagpipes fitting requires aper_diam to be specified!"
+                )
+            return super().__call__(
+                cat,
+                aper_diam,
+                save_PDFs,
+                save_SEDs,
+                load_PDFs,
+                load_SEDs,
+                timed,
+                overwrite,
+                update,
+                **fit_kwargs
+            )
+        else:
+            from galfind import Spectral_Catalogue
+            assert isinstance(cat, Spectral_Catalogue)
+            return self.fit_spec_cat(
+                cat,
+                save_PDFs = save_PDFs,
+                save_SEDs = save_SEDs,
+                load_PDFs = load_PDFs,
+                load_SEDs = load_SEDs,
+                overwrite = overwrite,
+                **fit_kwargs,
+            )
 
     def _load_gal_property_labels(self):
         super()._load_gal_property_labels(self.gal_property_labels)
@@ -428,22 +449,47 @@ class Bagpipes(SED_code):
 
     def _temp_out_subdir(
         self: Self,
-        cat: Catalogue,
+        cat: Union[Catalogue, Spectral_Catalogue],
         temp_label: Optional[str] = None,
     ) -> str:
-        temp_subdir = f"{cat.version}/{cat.survey}/{cat.filterset.instrument_name}/temp"
-        if temp_label is None:
-            while len(glob.glob(f"{config['Bagpipes']['PIPES_OUT_DIR']}/pipes/posterior/{temp_subdir}/*")) > 0:
-                temp_subdir += "_"
+        from galfind import Catalogue
+        if isinstance(cat, Catalogue):
+            temp_subdir = f"{cat.version}/{cat.survey}/{cat.filterset.instrument_name}/temp"
+            if temp_label is None:
+                while len(glob.glob(f"{config['Bagpipes']['PIPES_OUT_DIR']}/pipes/posterior/{temp_subdir}/*")) > 0:
+                    temp_subdir += "_"
+            else:
+                temp_subdir = temp_subdir.replace("/temp", f"/{temp_label}")
         else:
-            temp_subdir = temp_subdir.replace("/temp", f"/{temp_label}")
+            from galfind import Spectral_Catalogue
+            assert isinstance(cat, Spectral_Catalogue), \
+                galfind_logger.critical(
+                    f"{type(cat)=} not in [Catalogue, Spectral_Catalogue]!"
+                )
+            assert all(spectrum.instrument.grating.name == \
+                cat[0].instrument.grating.name for spectrum in cat), \
+                    galfind_logger.critical(
+                        "All spectra in Spectral_Catalogue must have the same grating/filter!"
+                    )
+            temp_subdir = f"spec_{cat[0].instrument.grating.name}/temp"
+            #if hasattr(cat, "name"):
+            #    temp_subdir = f"{cat.name}_{temp_subdir}"
         return temp_subdir
     
     def _new_subdir(
         self: Self,
         cat: Catalogue
     ) -> str:
-        return f"{cat.version}/{cat.survey}/{cat.filterset.instrument_name}/{self.label}"
+        from galfind import Catalogue
+        if isinstance(cat, Catalogue):
+            return f"{cat.version}/{cat.survey}/{cat.filterset.instrument_name}/{self.label}"
+        else:
+            from galfind import Spectral_Catalogue
+            assert isinstance(cat, Spectral_Catalogue), \
+                galfind_logger.critical(
+                    f"{type(cat)=} not in [Catalogue, Spectral_Catalogue]!"
+                )
+            return f"spec_{cat[0].instrument.grating.name}/{self.label}"
 
     def _move_files(
         self,
@@ -508,7 +554,7 @@ class Bagpipes(SED_code):
         cat: Catalogue,
         direction: str = "from_temp",
         temp_label: Optional[str] = None,
-    ) -> NoReturn:
+    ) -> None:
         assert direction in ["from_temp", "to_temp"]
         fits_dir = f"{config['Bagpipes']['PIPES_OUT_DIR']}/pipes/cats"
         funcs.make_dirs(f"{fits_dir}/")
@@ -533,13 +579,52 @@ class Bagpipes(SED_code):
     @run_in_dir(path=config["Bagpipes"]["PIPES_OUT_DIR"])
     def fit(
         self: Self,
-        cat: Catalogue,
+        cat: Union[Catalogue, Spectral_Catalogue],
         aper_diam: u.Quantity,
         save_SEDs: bool = True,
         save_PDFs: bool = True,
         overwrite: bool = False,
         **kwargs: Dict[str, Any],
     ) -> NoReturn:
+        from galfind import Catalogue
+        if isinstance(cat, Catalogue):
+            is_spec = False
+        else:
+            is_spec = True
+            from galfind import Spectral_Catalogue
+            assert isinstance(cat, Spectral_Catalogue)
+            assert all(spec.instrument.grating.name == cat[0].instrument.grating.name for spec in cat), \
+                galfind_logger.critical(
+                    "All spectra in Spectral_Catalogue must have the same grating!"
+                )
+            spec_calibration_order = kwargs.get("spec_calibration_order", 2)
+            spec_fit_instructions = kwargs.get("spec_fit_instructions", {})
+            R_boost_factor = kwargs.get("R_boost_factor", 1.0)
+            grating = cat[0].instrument.grating
+            # Update fit instructions for spectroscopy
+            fit_instructions = self._add_spec_fit_instructions(
+                spec_calibration_order,
+                spec_fit_instructions,
+            )
+            if grating.resolution_curve_path is not None:
+                rtable = Table.read(grating.resolution_curve_path)
+                galfind_logger.debug(
+                    f"Found R_curve file {grating.resolution_curve_path}"
+                )
+                # Assume first column is wavelength in Angstroms and second is R - unless
+                if "R" in rtable.colnames:
+                    R = np.array(rtable["R"])
+                else:
+                    galfind_logger.debug(
+                        f"Assuming {rtable.colnames[1]} is R"
+                    )
+                    R = np.array(rtable[rtable.colnames[1]])
+                R *= R_boost_factor
+                wav = np.array(rtable[rtable.colnames[0]]) * 1e4
+                R_curve = np.c_[wav, R]
+                for fit_instructions_ in fit_instructions:
+                    fit_instructions_["R_curve"] = R_curve
+
         if "temp_label" in kwargs.keys():
             temp_label = kwargs["temp_label"]
         else:
@@ -565,7 +650,6 @@ class Bagpipes(SED_code):
         new_path_fits = path_fits.replace(out_subdir, f"{new_subdir}.fits")
         funcs.make_dirs(new_path_fits)
 
-        
         if self.rank == 0:
             # if overwrite:
             #     shutil.rmtree(path_post, ignore_errors = True)
@@ -573,14 +657,17 @@ class Bagpipes(SED_code):
             for path in [path_post, path_plots, path_sed, path_fits]:
                 funcs.make_dirs(path)
                 funcs.change_file_permissions(path)
-        phot_tab = cat.open_cat()
-        os.environ["total_to_fit"] = str(len(phot_tab))
+        
+        #phot_tab = cat.open_cat()
+        #os.environ["total_to_fit"] = str(len(phot_tab))
+        os.environ["total_to_fit"] = str(len(cat))
         os.environ["num_loaded"] = "0"
 
         if "rerun" in kwargs.keys():
             rerun = kwargs["rerun"]
         else:
             rerun = False
+
         # only run for galaxies that haven't been run yet
         #breakpoint()
         #rerun = True
@@ -590,8 +677,8 @@ class Bagpipes(SED_code):
             self._move_files(cat, direction = "to_temp", temp_label = temp_label)
         else:
             to_run_arr = np.ones(len(cat), dtype=bool)
-            for i, gal in enumerate(cat):
-                save_path = f"{new_path_post}/{gal.ID}.h5"
+            #for i, gal in enumerate(cat):
+            #    save_path = f"{new_path_post}/{gal.ID}.h5"
                 # if Path(save_path).is_file() and not overwrite:
                 #     to_run_arr[i] = False
             if all(not to_run for to_run in to_run_arr):
@@ -600,112 +687,72 @@ class Bagpipes(SED_code):
                 return
         self._move_fits_cat(cat, direction = "to_temp", temp_label = temp_label)
 
-        run_cat = deepcopy(cat)
-        run_cat.gals = run_cat[to_run_arr]
-        # remove filters without a depth measurement
-        if self.SED_fit_params["excl_bands"] == []:
-            excl_bands_arr = np.array([[] for _ in range(len(run_cat.gals))])
-        elif isinstance(self.SED_fit_params["excl_bands"][0], list):
-            excl_bands_arr = self.SED_fit_params["excl_bands"]
-        else:
-            excl_bands_arr = np.full(len(run_cat.gals), self.SED_fit_params["excl_bands"])
-        assert len(excl_bands_arr) == len(run_cat.gals), \
-            galfind_logger.critical(
-                f"Bagpipes {excl_bands_arr=} must be a (ragged) list of lists with length {len(run_cat.gals)}!"
-            )
-        gals_arr = []
-        for gal, excl_bands in tqdm(zip(run_cat.gals, excl_bands_arr), "Removing filters without depth measurements", disable = galfind_logger.getEffectiveLevel() > logging.INFO):
-            remove_filt = []
-            for i, (depth, filt) in enumerate(zip(gal.aper_phot[aper_diam].depths, gal.aper_phot[aper_diam].filterset)):
-                if np.isnan(depth) or filt.band_name in excl_bands:
-                    remove_filt.extend([filt])
-            for filt in remove_filt:
-                gal.aper_phot[aper_diam] -= filt
-                galfind_logger.warning(
-                    f"Removed {filt.band_name} from {gal.ID} for bagpipes fitting."
+        if not is_spec:
+            run_cat = deepcopy(cat)
+            run_cat.gals = run_cat[to_run_arr]
+            # remove filters without a depth measurement
+            if self.SED_fit_params["excl_bands"] == []:
+                excl_bands_arr = np.array([[] for _ in range(len(run_cat.gals))])
+            elif isinstance(self.SED_fit_params["excl_bands"][0], list):
+                excl_bands_arr = self.SED_fit_params["excl_bands"]
+            else:
+                excl_bands_arr = np.full(len(run_cat.gals), self.SED_fit_params["excl_bands"])
+            assert len(excl_bands_arr) == len(run_cat.gals), \
+                galfind_logger.critical(
+                    f"Bagpipes {excl_bands_arr=} must be a (ragged) list of lists with length {len(run_cat.gals)}!"
                 )
-            gals_arr.extend([gal])
+            gals_arr = []
+            for gal, excl_bands in tqdm(zip(run_cat.gals, excl_bands_arr), "Removing filters without depth measurements", disable = galfind_logger.getEffectiveLevel() > logging.INFO):
+                remove_filt = []
+                for i, (depth, filt) in enumerate(zip(gal.aper_phot[aper_diam].depths, gal.aper_phot[aper_diam].filterset)):
+                    if np.isnan(depth) or filt.band_name in excl_bands:
+                        remove_filt.extend([filt])
+                for filt in remove_filt:
+                    gal.aper_phot[aper_diam] -= filt
+                    galfind_logger.warning(
+                        f"Removed {filt.band_name} from {gal.ID} for bagpipes fitting."
+                    )
+                gals_arr.extend([gal])
 
-        run_cat.gals = gals_arr
-        IDs = [gal.ID for gal in gals_arr]
-        filters = self._load_filters(run_cat, aper_diam)
+            run_cat.gals = gals_arr
+            IDs = [gal.ID for gal in gals_arr]
+            filters = self._load_filters(run_cat, aper_diam)
+        else:
+            IDs = [f"{spec._PID}_{spec._src_ID}" for spec in cat]
+            filters = None
 
         # if fix_z is not False
         if not (not self.SED_fit_params["fix_z"]):
-            if isinstance(self.SED_fit_params["fix_z"], str):
-                redshifts = np.array([getattr(gal, self.SED_fit_params["fix_z"]) for gal in gals_arr]).astype(float)
-            elif isinstance(self.SED_fit_params["fix_z"], tuple(SED_code.__subclasses__())):
-                redshifts = np.array([gal.aper_phot[aper_diam].SED_results \
-                    [self.SED_fit_params["fix_z"].label].z for gal in gals_arr]).astype(float)
-            else:
-                raise TypeError(
-                    galfind_logger.critical(
-                        f"{self.SED_fit_params['fix_z']=} must be a string or a subclass of SED_code!"
+            if not is_spec:
+                if isinstance(self.SED_fit_params["fix_z"], str):
+                    redshifts = np.array([getattr(gal, self.SED_fit_params["fix_z"]) for gal in gals_arr]).astype(float)
+                elif isinstance(self.SED_fit_params["fix_z"], tuple(SED_code.__subclasses__())):
+                    redshifts = np.array([gal.aper_phot[aper_diam].SED_results \
+                        [self.SED_fit_params["fix_z"].label].z for gal in gals_arr]).astype(float)
+                else:
+                    raise TypeError(
+                        galfind_logger.critical(
+                            f"{self.SED_fit_params['fix_z']=} must be a string or a subclass of SED_code!"
+                        )
                     )
-                )
+            else:
+                redshifts = np.array([spec.z for spec in cat])
         else:
             redshifts = None
 
-        # # if use_redshift_sigma:
-        # #     if set_redshift_sigma is None:
-        # #         redshift_err_low = np.array(np.ravel(catalog[f"{zcol_name}{photoz_template}{extra_append}"])-np.ravel(catalog[f'{zcol_low_name}{photoz_template}{extra_append}']))
-        # #         redshift_err_high = np.array(np.ravel(catalog[f'{zcol_up_name}{photoz_template}{extra_append}'])-np.ravel(catalog[f"{zcol_name}{photoz_template}{extra_append}"]))
-        # #         redshift_sigma = np.mean([redshift_err_low, redshift_err_high], axis=0)
-        # #         redshift_sigma[redshift_sigma < 0] = 3 # Replaces values where redshift_sigma is negative with 3 (have seen -99s before)
-        # #     elif len(set_redshift_sigma) == len(ids):
-        # #         redshift_sigma = np.array(set_redshift_sigma)
-
-        # # if fix_redshifts:
-        # #     np.save(path, np.vstack((ids,redshifts)))
-        # # else:
-        # #     np.save(path, np.vstack((ids,np.ones(len(ids))*-1)))
-        
-        # #	use_redshift_sigma = False
-        # #	fix_redshifts = False
-        # #	ids = [set_ID]
-        # # Log fit parameters to json
-        # warnings.simplefilter(action='ignore', category=FutureWarning) 
-
-        # if overwrite:
-        #     print(f'Removing {out_subdir}')
-        #     shutil.rmtree('pipes/posterior/'+out_subdir, ignore_errors=True)
-        #     shutil.rmtree('pipes/seds/'+out_subdir, ignore_errors=True)
-        #     shutil.rmtree('pipes/cats/'+out_subdir, ignore_errors=True)
-        #     shutil.rmtree('pipes/plots/'+out_subdir, ignore_errors=True)
-
-        
-        # if sfh in ['continuity', 'continuity_bursty']:
-        #     fit_instructions_list = []
-        #     for z in redshifts:
-        #         fit_instructions_i = deepcopy(fit_instructions)
-        #         fit_instructions_i['continuity']['bin_edges'] = list(calculate_bins(redshift = z, num_bins=cont_nbins, first_bin=first_bin, second_bin=second_bin, return_flat=True, output_unit='Myr', log_time=False))
-        #         fit_instructions_list.append(fit_instructions_i)
-        #     fit_instructions = fit_instructions_list
-        #     print('Continuity model detected. Setting custom fit_instructions list for each galaxy.')
-        
-        # # if self.rank == 0:
-        # #     fit_instructions_write = deepcopy(fit_instructions)
-        # #     # Convert numpy arrays to lists for json
-        # #     if type(fit_instructions_write) == list:
-        # #         fit_instructions_write = fit_instructions_write[0]
-        # #     for key in fit_instructions_write.keys():
-        # #         if type(fit_instructions_write[key]) == np.ndarray:
-        # #             fit_instructions_write[key] = fit_instructions_write[key].tolist()
-        # #         elif type(fit_instructions_write[key]) == dict:
-        # #             for subkey in fit_instructions_write[key].keys():
-        # #                 if type(fit_instructions_write[key][subkey]) == np.ndarray:
-        # #                     fit_instructions_write[key][subkey] = fit_instructions_write[key][subkey].tolist()
-
-        # #     json_file = json.dumps(fit_instructions_write)
-        # #     f = open(f'{path_overall}/posterior/{out_subdir}/config.json',"w")
-        # #     f.write(json_file)
-        # #     f.close()
-
-        if all(hasattr(gal, "aper_phot") for gal in gals_arr):
+        if not is_spec: # photometry
+            #if all(hasattr(gal, "aper_phot") for gal in gals_arr):
             photometry_exists = True
+            spectrum_exists = False
             load_func = self._load_pipes_phot
-        # TODO: spectroscopic fitting
-        spectrum_exists = False
+            load_data_kwargs = {"cat": run_cat, "aper_diam": aper_diam}
+        else:
+            photometry_exists = False
+            spectrum_exists = True
+            load_func = self._load_pipes_spec
+            run_cat = cat # temporary
+            load_data_kwargs = {"cat": run_cat}
+        
         if "plot" in kwargs.keys():
             plot = kwargs["plot"]
         else:
@@ -719,17 +766,17 @@ class Bagpipes(SED_code):
             spectrum_exists = spectrum_exists,
             photometry_exists = photometry_exists,
             run = out_subdir,
-            make_plots = False, #plot,
+            make_plots = plot,
             cat_filt_list = filters,
             redshifts = redshifts, 
             redshift_sigma = None, #redshift_sigma if use_redshift_sigma else None, 
             analysis_function = None, #custom_plotting if plot else None, 
-            vary_filt_list = True,
+            vary_filt_list = not is_spec,
             full_catalogue = True,
             save_pdf_txts = save_PDFs,
             n_posterior = 500,
             #time_calls = time_calls
-            load_data_kwargs = {"cat": run_cat, "aper_diam": aper_diam}
+            load_data_kwargs = load_data_kwargs,
         )
         #breakpoint()
         #galfind_logger.info(f"Fitting bagpipes with {self.fit_instructions=}")
@@ -749,6 +796,84 @@ class Bagpipes(SED_code):
             galfind_logger.info(f"Renaming and moving {self.label} output files on rank 0.")
             self._move_files(cat, direction = "from_temp", temp_label = temp_label)
 
+    @run_in_dir(path=config["Bagpipes"]["PIPES_OUT_DIR"])
+    def fit_spec_cat(
+        self: Self,
+        cat: Union[Catalogue, Spectral_Catalogue],
+        save_SEDs: bool = True,
+        save_PDFs: bool = True,
+        overwrite: bool = False,
+        **kwargs: Dict[str, Any],
+    ):
+        # fit all spectra in a Spectral_Catalogue with the same grating
+        unique_gratings = np.unique(
+            [spec.instrument.grating.name for spec_arr in cat for spec in spec_arr]
+        )
+        for grating_name in unique_gratings:
+            temp_cat = deepcopy(cat)
+            to_fit_arr = [
+                spec for spec_arr in temp_cat for spec in spec_arr 
+                if spec.instrument.grating.name == grating_name
+            ]
+            temp_cat.spectrum_arr = to_fit_arr
+            self.fit(
+                temp_cat,
+                aper_diam = None,
+                save_SEDs = save_SEDs,
+                save_PDFs = save_PDFs,
+                overwrite = overwrite,
+                **kwargs,
+            )
+        
+    def _add_spec_fit_instructions(
+        self: Self,
+        spec_calibration_order: int = 2,
+        spec_fit_instructions: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        fit_instructions = deepcopy(self.fit_instructions)
+        if spec_fit_instructions is None:
+            spec_fit_instructions = {}
+            # Account for velocity dispersion in spectrum
+            spec_fit_instructions["veldisp"] = (1., 1000.) # km/s
+            spec_fit_instructions["veldisp_prior"] = "log_10"
+            
+            # The calibration dictionary fits a Chebyshev polynomial to deal with the flux calibration of the spectrum, slit losses, underestimated uncertanties, etc.
+            calib = {}
+            if spec_calibration_order >= 0:
+                calib["type"] = "polynomial_bayesian"
+
+                calib["0"] = (0.5, 1.5) # Zero order is centred on 1, at which point there is no change to the spectrum.
+                calib["0_prior"] = "Gaussian"
+                calib["0_prior_mu"] = 1.0
+                calib["0_prior_sigma"] = 0.25
+
+            if spec_calibration_order >= 1:
+                calib["1"] = (-0.5, 0.5) # Subsequent orders are centred on zero.
+                calib["1_prior"] = "Gaussian"
+                calib["1_prior_mu"] = 0.
+                calib["1_prior_sigma"] = 0.25
+
+            if spec_calibration_order >= 2:
+                calib["2"] = (-0.5, 0.5)
+                calib["2_prior"] = "Gaussian"
+                calib["2_prior_mu"] = 0.
+                calib["2_prior_sigma"] = 0.25
+
+            if len(calib) > 0:
+                spec_fit_instructions["calib"] = calib
+
+            # This is the noise model for the spectrum - deals with underestimated uncertanties in the spectrum
+            noise = {}
+            noise["type"] = "white_scaled"
+            noise["scaling"] = (1., 10.)
+            noise["scaling_prior"] = "log_10"
+            spec_fit_instructions["noise"] = noise
+
+        for fit_instructions_ in fit_instructions:
+            # add appropriate keys
+            fit_instructions_.update(spec_fit_instructions)
+        return fit_instructions
+
     def make_fits_from_out(
         self: Self, 
         out_path: str,
@@ -757,7 +882,6 @@ class Bagpipes(SED_code):
         # update properties from bagpipes output table column names
         tab = Table.read(out_path)
         self._update_gal_properties(tab.colnames)
-        pass
         # fits_out_path = self.get_galfind_fits_path(out_path)
         # breakpoint()
         # if not Path(fits_out_path).is_file() or overwrite:
@@ -1234,8 +1358,51 @@ class Bagpipes(SED_code):
         )
         # TODO: append to bagpipes log file for survey/version/instrument
         return pipes_input
+    
+    @staticmethod
+    def _load_pipes_spec(
+        ID: int,
+        cat: Spectral_Catalogue,
+        wav_units: u.Unit = u.AA,
+        spec_units: u.Unit = u.erg / (u.s * u.cm ** 2 * u.AA),
+    ) -> np.NDArray[float, float]:
+        assert spec_units != u.ABmag, galfind_logger.critical(
+            f"Bagpipes cannot fit spectra in {spec_units=}, must be in flux units! "
+            "Errors must be symmetrical!"
+        )
+        # extract relevant spectrum
+        spec_arr = [spec for spec in cat if f"{spec._PID}_{spec._src_ID}" == ID]
+        assert len(spec_arr) == 1, galfind_logger.critical(
+            f"Found {len(spec_arr)} spectra for {ID=} in {repr(cat)}!"
+        )
+        spec = spec_arr[0]
+        wavs = funcs.convert_wav_units(
+            spec.wavs,
+            wav_units
+        )
+        fluxes = funcs.convert_mag_units(
+            spec.wavs,
+            spec.fluxes.filled(np.nan),
+            spec_units
+        )
+        flux_errs = funcs.convert_mag_err_units(
+            spec.wavs,
+            spec.fluxes.filled(np.nan),
+            [spec.flux_errs.filled(np.nan), spec.flux_errs.filled(np.nan)],
+            spec_units
+        )
+        flux_errs = flux_errs[0]
+        # Remove NaN values
+        nanmask = np.isnan(fluxes)
+        wavs = wavs[~nanmask]
+        fluxes = fluxes[~nanmask]
+        flux_errs = flux_errs[~nanmask]
+        # Combine data into output array
+        output = np.squeeze(np.dstack([wavs.value, fluxes.value, flux_errs.value]))
+        return output
 
     def _load_fit_instructions(self: Self) -> None:
+
         if "fit_instructions" in self.SED_fit_params.keys():
             fit_instructions = self.SED_fit_params["fit_instructions"]
         else:
@@ -1467,22 +1634,33 @@ class Bagpipes(SED_code):
 
     def _update_continuity_sfh_fit_instructions(
         self: Self,
-        cat: Optional[Catalogue],
+        cat: Optional[Catalogue, Spectral_Catalogue],
     ) -> Dict[str, Any]:
-        assert "z_calculator" in self.SED_fit_params.keys(), \
-            galfind_logger.critical(
-                "Bagpipes SED fitting requires a redshift calculator in SED_fit_params \
-                to calculate the SFR bins for the continuity SFH!")
-            
-        z_calculator = self.SED_fit_params["z_calculator"]
-        if cat is None:
-            assert isinstance(self.SED_fit_params["z_calculator"], float)
-            z_arr = [self.SED_fit_params["z_calculator"]]
-        else:
-            if isinstance(z_calculator, float):
-                z_arr = np.full(len(cat), z_calculator)
+        from galfind import Catalogue
+        if isinstance(cat, Catalogue):
+            assert "z_calculator" in self.SED_fit_params.keys(), \
+                galfind_logger.critical(
+                    "Bagpipes SED fitting requires a redshift calculator in SED_fit_params \
+                    to calculate the SFR bins for the continuity SFH!"
+                )
+            z_calculator = self.SED_fit_params["z_calculator"]
+            if cat is None:
+                assert isinstance(self.SED_fit_params["z_calculator"], float)
+                z_arr = [self.SED_fit_params["z_calculator"]]
             else:
-                z_arr = z_calculator(cat)
+                if isinstance(z_calculator, float):
+                    z_arr = np.full(len(cat), z_calculator)
+                else:
+                    z_arr = z_calculator(cat)
+        else:
+            # take the PRISM redshifts if available, else the 0th element
+            z_arr = np.full(len(cat), None)
+            for i, spec_arr in enumerate(cat):
+                for spec in spec_arr:
+                    if spec.instrument.grating_filter_name == "PRISM/CLEAR":
+                        z_arr[i] = spec.z
+                        continue
+            
         fit_instructions_arr = []
         for z in z_arr:
             fit_instructions_i = deepcopy(self.fit_instructions)
