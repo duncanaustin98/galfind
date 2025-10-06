@@ -47,8 +47,6 @@ class Spectral_Grating:  # disperser
             if self.name[-1] == "M"
             else 2_700.0
         )
-        print(f"{config['Spectra']['R_CURVE_DIR']}/NIRSpec/jwst_nirspec_prism_disp.fits")
-        breakpoint()
         self.resolution_curve_path = f"{config['Spectra']['R_CURVE_DIR']}/NIRSpec/jwst_nirspec_prism_disp.fits"
 
     def get_resolution(self, wavs):
