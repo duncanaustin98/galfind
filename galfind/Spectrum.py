@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import NoReturn, Union, Optional
 import logging
 from copy import deepcopy
+import h5py
 #from lmfit import Model, Parameters, minimize, fit_report
 
 import astropy.units as u
@@ -227,21 +228,21 @@ class Spectrum:
         *args,
         **kwargs,
     ) -> Self:
-        import msaexp.spectrum
 
         # open 2D spectrum
-        loc_2D_path = url_path.replace(
+        loc_2d_path = url_path.replace(
             config["Spectra"]["DJA_WEB_DIR"],
             config["Spectra"]["DJA_2D_SPECTRA_DIR"],
         )
-        if not Path(loc_2D_path).is_file():
-            funcs.make_dirs(loc_2D_path)
+        #breakpoint()
+        if not Path(loc_2d_path).is_file():
+            funcs.make_dirs(loc_2d_path)
             img = fits.open(url_path, cache=False)
             if save:
-                img.writeto(loc_2D_path)
-                funcs.change_file_permissions(loc_2D_path)
+                img.writeto(loc_2d_path)
+                funcs.change_file_permissions(loc_2d_path)
         else:
-            img = fits.open(loc_2D_path)
+            img = fits.open(loc_2d_path)
         # extract info from img header
         header = img["SCI"].header
         sky_coord = SkyCoord(
@@ -258,27 +259,61 @@ class Spectrum:
         except:
             instrument = NIRSpec
         instrument = instrument(grating_name, filter_name)
+
         # extract 1D spectrum from 2D fits image using msaexp
-        spectrum_1D = msaexp.spectrum.SpectrumSampler(loc_2D_path)
-        flux_unit = u.Unit(str(header["BUNIT"].replace(" ", "")))
-        # could also extract resolution here
-        mask = ~spectrum_1D.spec["valid"]
-        wavs = spectrum_1D.spec["wave"] * u.um
-        fluxes = Masked(spectrum_1D.spec["flux"] * flux_unit, mask=mask)
+        loc_1d_path = url_path.replace(
+            config["Spectra"]["DJA_WEB_DIR"],
+            config["Spectra"]["DJA_1D_SPECTRA_DIR"],
+        )
+        if not Path(loc_1d_path).is_file():
+            import msaexp.spectrum
+            spectrum_1D = msaexp.spectrum.SpectrumSampler(loc_2d_path)
+            # could also extract resolution here
+            mask = ~spectrum_1D.spec["valid"]
+            wavs = spectrum_1D.spec["wave"]
+            fluxes = spectrum_1D.spec["flux"] #Masked( * flux_unit, mask = mask)
+            if version == "v2":
+                # determine number of exposures
+                N_exposures = int(header["NOUTPUTS"]) * int(header["NFRAMES"])
+                flux_errs = spectrum_1D.spec["full_err"] * (
+                    N_exposures**-0.25
+                )
+            elif version in ["v3", "v4_2"]:
+                flux_errs = spectrum_1D.spec["full_err"]
+            else:
+                flux_errs = spectrum_1D.spec["full_err"]
+            # save as local .h5 file
+            funcs.make_dirs(loc_1d_path)
+            hf = h5py.File(loc_1d_path, "w")
+            for name, data in zip(
+                ["mask", "wavs", "fluxes", "flux_errs"],
+                [mask, wavs, fluxes, flux_errs]
+            ):
+                hf.create_dataset(name, data = data)
+            wav_unit = u.um # NOT GENERAL!
+            flux_unit = u.Unit(str(header["BUNIT"].replace(" ", "")))
+            hf.attrs["wav_unit"] = (u.um).to_string()
+            hf.attrs["flux_unit"] = flux_unit.to_string()
+            hf.close()
+        else:
+            hf = h5py.File(loc_1d_path, "r")
+            mask = np.array(hf["mask"])
+            wavs = np.array(hf["wavs"])
+            wav_unit = u.Unit(hf.attrs["wav_unit"])
+            flux_unit = u.Unit(hf.attrs["flux_unit"])
+            fluxes = np.array(hf["fluxes"])
+            flux_errs = np.array(hf["flux_errs"])
+        wavs *= wav_unit
+        fluxes = Masked(fluxes * flux_unit, mask = mask)
+        flux_errs = Masked(np.array(flux_errs) * flux_unit, mask = mask)
 
         if version == "v2":
             msa_metafile = str(header["MSAMETFL"]).replace(" ", "")
-            # determine number of exposures
-            N_exposures = int(header["NOUTPUTS"]) * int(header["NFRAMES"])
-            full_flux_errs = spectrum_1D.spec["full_err"] * (
-                N_exposures**-0.25
-            )
         elif version in ["v3", "v4_2"]:
             msa_metafile = str(header["MSAMETFL"]).replace(" ", "")
-            full_flux_errs = spectrum_1D.spec["full_err"]
         else:
             msa_metafile = str(header["MSAMET1"]).replace(" ", "")
-            full_flux_errs = spectrum_1D.spec["full_err"]
+        
         meta_uri_dir = "https://mast.stsci.edu/api/v0.1/Download/file?uri=mast:JWST/product"
         meta_in_path = f"{meta_uri_dir}/{msa_metafile}"
 
@@ -295,8 +330,6 @@ class Spectrum:
             MSA_metafile_name = meta_out_path
         except:
             MSA_metafile_name = None
-
-        flux_errs = Masked(np.array(full_flux_errs) * flux_unit, mask=mask)
 
         if z is None:
             z_method = None
@@ -317,7 +350,7 @@ class Spectrum:
             meta={name: header[name] for name in header},
             **kwargs,
         )
-        spec_obj.origin = loc_2D_path
+        spec_obj.origin = loc_2d_path
         return spec_obj
 
     def load_MSA_metafile(self):
