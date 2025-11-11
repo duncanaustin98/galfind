@@ -23,6 +23,8 @@ from .SED import SED_obs
 
 class Template_Fitter(SED_code):
 
+    ID_label = "ID"
+
     def __init__(
         self: Self,
         SED_fit_params: Dict[str, Any],
@@ -35,9 +37,9 @@ class Template_Fitter(SED_code):
     def from_label(cls, label: str) -> Type[SED_code]:
         raise NotImplementedError()
 
-    @property
-    def ID_label(self) -> str:
-        return "ID"
+    # @property
+    # def ID_label(self) -> str:
+    #     return "ID"
 
     @property
     def label(self) -> str:

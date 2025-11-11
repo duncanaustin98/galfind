@@ -197,6 +197,7 @@ class Base_Number_Density_Function:
         title: Optional[str] = None,
         save_path: Optional[str] = None,
         plot_cv_errs: bool = True,
+        offset: float = 0.0,
     ) -> Tuple[plt.Figure, plt.Axes]:
 
         if all(i is None for i in [fig, ax]):
@@ -213,6 +214,7 @@ class Base_Number_Density_Function:
             x_mid_bins = np.array(
                 [_x for _x, _y in zip(self.x_mid_bins, self.phi) if _y != 0.0]
             )
+        x_mid_bins += offset
         phi = np.array([_y for _y in self.phi if _y != 0.0])
         if not plot_cv_errs and hasattr(self, "phi_errs") and \
                 isinstance(self, Number_Density_Function):
@@ -260,10 +262,16 @@ class Base_Number_Density_Function:
             if key in default_plot_kwargs.keys():
                 default_plot_kwargs.pop(key)
                 default_plot_kwargs[key] = plot_kwargs[key]
-
         _plot_kwargs = {**plot_kwargs, **default_plot_kwargs}
-        ax_.errorbar(x_mid_bins, y, yerr=y_errs, **_plot_kwargs)
+
+        # turn nans into upper limits
+        if any(np.isnan(y_errs[0])):
+            upper_limit_indices = np.where(np.isnan(y_errs[0]))[0]
+            y_errs[0][upper_limit_indices] = 0.5 * y[upper_limit_indices]
+            _plot_kwargs["uplims"] = [True if i in upper_limit_indices else False for i in range(len(y))]
+        
         galfind_logger.info(f"Plotting {default_plot_kwargs['label']}")
+        line = ax_.errorbar(x_mid_bins, y, yerr=y_errs, **_plot_kwargs)
 
         if annotate:
             y_label = r"$\Phi$ / N dex$^{-1}$Mpc$^{-3}$"
@@ -321,7 +329,7 @@ class Base_Number_Density_Function:
             galfind_logger.info(f"Saved plot to {save_path}")
         if show:
             plt.show()
-        return fig_, ax_
+        return fig_, ax_, line
 
 
 class Number_Density_Function(Base_Number_Density_Function):
@@ -831,6 +839,7 @@ class Number_Density_Function(Base_Number_Density_Function):
         sim_author_years: Dict[str, Any] = {},
         save_path: Optional[str] = None,
         plot_cv_errs: bool = False,
+        offset: float = 0.0,
     ) -> Tuple[plt.Figure, plt.Axes]:
         
         if all(_x is None for _x in [fig, ax]):
@@ -841,6 +850,7 @@ class Number_Density_Function(Base_Number_Density_Function):
         if title is None:
             title = self.crop_name
 
+        lit_lines = []
         for author_year, author_year_kwargs in obs_author_years.items():
             author_year_func_from_flags_data = (
                 Base_Number_Density_Function.from_flags_repo(
@@ -848,16 +858,18 @@ class Number_Density_Function(Base_Number_Density_Function):
                 )
             )
             if author_year_func_from_flags_data is not None:
-                author_year_func_from_flags_data.plot(
-                    fig_,
-                    ax_,
-                    log_x,
-                    log_y,
-                    annotate=False,
-                    save=False,
-                    show=False,
-                    plot_kwargs=author_year_kwargs,
-                    x_lims=None,
+                lit_lines.append(
+                    author_year_func_from_flags_data.plot(
+                        fig_,
+                        ax_,
+                        log_x,
+                        log_y,
+                        annotate=False,
+                        save=False,
+                        show=False,
+                        plot_kwargs=author_year_kwargs,
+                        x_lims=None,
+                    )[-1]
                 )
         for author_year, author_year_kwargs in sim_author_years.items():
             author_year_func_from_flags_data = (
@@ -866,19 +878,21 @@ class Number_Density_Function(Base_Number_Density_Function):
                 )
             )
             if author_year_func_from_flags_data is not None:
-                author_year_func_from_flags_data.plot(
-                    fig_,
-                    ax_,
-                    log_x,
-                    log_y,
-                    annotate=False,
-                    save=False,
-                    show=False,
-                    plot_kwargs=author_year_kwargs,
-                    x_lims=None,
+                lit_lines.append(
+                    author_year_func_from_flags_data.plot(
+                        fig_,
+                        ax_,
+                        log_x,
+                        log_y,
+                        annotate=False,
+                        save=False,
+                        show=False,
+                        plot_kwargs=author_year_kwargs,
+                        x_lims=None,
+                    )[-1]
                 )
 
-        fig_, ax_ = super().plot(
+        fig_, ax_, line = super().plot(
             fig_,
             ax_,
             log_x,
@@ -893,9 +907,9 @@ class Number_Density_Function(Base_Number_Density_Function):
             title,
             save_path,
             plot_cv_errs = plot_cv_errs,
+            offset = offset,
         )
-                
-        return fig_, ax_
+        return fig_, ax_, line, lit_lines    
 
 
 #         def mass_function(catalog, fields, z_bins, mass_bins, rerun=False, out_directory = '/nvme/scratch/work/tharvey/masses/',

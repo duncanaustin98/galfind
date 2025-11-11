@@ -121,22 +121,59 @@ class Combined_Catalogue(Catalogue_Base):
             )
 
         if not Path(cat_path).is_file() or overwrite:
+            # TODO: Make the loading of these not require to indiviudally specify code names
+            from . import SED_code, EAZY, LePhare, Bagpipes
             unique_hdu_names = np.unique(list(chain.from_iterable([cat.get_hdu_names() for cat in cat_arr])))
             full_tab_hdus = np.full(len(unique_hdu_names), None)
+            # put flux table first
+            assert "OBJECTS" in unique_hdu_names, \
+                galfind_logger.critical(
+                    "All catalogues must have an 'OBJECTS' HDU"
+                )
+            unique_hdu_names = np.concatenate((["OBJECTS"], unique_hdu_names[unique_hdu_names != "OBJECTS"]))
+            # determine ID column names
             for i, hdu in enumerate(unique_hdu_names):
                 # make combined catalogue .fits if this does not already exist
-                full_tab_arr = np.full(len(cat_arr), None)
+                full_tab_arr = [] #np.full(len(cat_arr), None)
+                unique_ids = []
                 for j, cat in enumerate(cat_arr):
                     tab = cat.open_cat(hdu = hdu, cropped=False)
-                    if hdu == "OBJECTS":
+                    if i == 0:
+                        assert hdu == "OBJECTS", \
+                            galfind_logger.critical(
+                                "First HDU must be 'OBJECTS'"
+                            )
                         tab["SURVEY"] = cat.survey
                         tab["VERSION"] = cat.version
                         tab["INSTR_NAME"] = cat.filterset.instrument_name
                         tab.rename_column(cat.ID_label, "SURVEY_ID")
-                    full_tab_arr[j] = tab
+                    # determine SED_code that the hdu originates from, if not any cat.ID_label
+                    ID_colname = [subcls.ID_label for subcls in SED_code.__subclasses__() if subcls.__name__.upper() in hdu]
+                    if len(ID_colname) == 0:
+                        ID_colname = [cat.ID_label if i != 0 else "SURVEY_ID"]
+                    if len(ID_colname) > 1:
+                        # choose the first one found
+                        ID_colname_hdu_pos = [hdu.find(subcls.__name__.upper()) for subcls in SED_code.__subclasses__() if subcls.__name__.upper() in hdu]
+                        ID_colname_index = np.argmin(ID_colname_hdu_pos)
+                        ID_colname = [ID_colname[ID_colname_index]]
+                    #ID_colname = np.unique(ID_colname)
+                    try:
+                        assert len(ID_colname) == 1, \
+                            galfind_logger.critical(
+                                f"Could not determine ID_colname for HDU {hdu}"
+                            )
+                        ID_colname = ID_colname[0]
+                        if j == 0:
+                            cat_unique_ids = list(tab[ID_colname])
+                        else:
+                            cat_unique_ids = np.sum(len(tab_) for tab_ in full_tab_arr) + np.array(list(tab[ID_colname]))
+                    except:
+                        breakpoint()
+                    unique_ids.extend(cat_unique_ids)
+                    full_tab_arr.append(tab)
                 full_tab = vstack(list(full_tab_arr))
                 # TODO: Sort unique IDs!
-                full_tab["UNIQUE_ID"] = np.arange(1, len(full_tab) + 1).astype(np.int32)
+                full_tab["UNIQUE_ID"] = np.array(unique_ids).astype(np.int32) #np.arange(1, len(full_tab) + 1).astype(np.int32)
                 # TODO: sort out metadata - finishing off required
                 full_tab.meta["SURVEY"] = survey
                 full_tab.meta["VERSION"] = version

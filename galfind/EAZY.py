@@ -93,6 +93,8 @@ from .SED import SED_obs
 
 
 class EAZY(SED_code):
+
+    ID_label = "IDENT"
     #ext_src_corr_properties = []
     def __init__(self: Self, SED_fit_params: Dict[str, Any]):
         super().__init__(SED_fit_params)
@@ -107,9 +109,9 @@ class EAZY(SED_code):
             "lowz_zmax": funcs.zmax_from_lowz_label(label_arr[-1])}
         return cls(SED_fit_params)
 
-    @property
-    def ID_label(self) -> str:
-        return "IDENT"
+    # @property
+    # def ID_label(self) -> str:
+    #     return "IDENT"
 
     @property
     def label(self) -> str:

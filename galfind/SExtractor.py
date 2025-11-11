@@ -22,12 +22,17 @@ from . import useful_funcs_austind as funcs
 from .decorators import run_in_dir
 
 def get_code() -> str:
-    # of order 0.1s per call
-    return (
-        subprocess.check_output("sex --version", shell=True)
-        .decode("utf-8")
-        .replace("\n", "")
-    )
+    try:
+        # of order 0.1s per call
+        output = (
+            subprocess.check_output("sex --version", shell=True)
+            .decode("utf-8")
+            .replace("\n", "")
+        )
+    except:
+        output = "SExtractor"
+        galfind_logger.warning(f"sex not installed, defaulting version to '{output}'")
+    return output
 
 def get_segmentation_path(
     self: Type[Band_Data_Base],

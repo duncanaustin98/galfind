@@ -48,10 +48,10 @@ class SED_code(ABC):
     def from_label(cls, label: str) -> Type[SED_code]:
         pass
 
-    @property
-    @abstractmethod
-    def ID_label(self) -> str:
-        pass
+    # @property
+    # @abstractmethod
+    # def ID_label(self) -> str:
+    #     pass
 
     @property
     @abstractmethod

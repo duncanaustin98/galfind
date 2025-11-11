@@ -29,6 +29,7 @@ from . import useful_funcs_austind as funcs
 from .decorators import run_in_dir
 
 class LePhare(SED_code):
+    ID_label = "IDENT"
     ext_src_corr_properties = ["MASS_BEST", "SFR_BEST"]
 
     def __init__(self, SED_fit_params: Dict[str, Any]):
@@ -39,9 +40,9 @@ class LePhare(SED_code):
         raise NotImplementedError
         #return super().from_label(label)
 
-    @property
-    def ID_label(self) -> str:
-        return "IDENT"
+    # @property
+    # def ID_label(self) -> str:
+    #     return "IDENT"
     
     @property
     def label(self) -> str:

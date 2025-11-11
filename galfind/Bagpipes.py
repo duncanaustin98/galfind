@@ -95,6 +95,8 @@ def get_pipes_unit(label: str) -> u.Unit:
 
 class Bagpipes(SED_code):
 
+    ID_label = "#ID"
+
     def __init__(
         self: Self,
         SED_fit_params: Dict[str, Any],
@@ -161,9 +163,9 @@ class Bagpipes(SED_code):
             SED_fit_params["fix_z"] = False
         return cls(SED_fit_params)
 
-    @property
-    def ID_label(self) -> str:
-        return "#ID"
+    # @property
+    # def ID_label(self) -> str:
+    #     return "#ID"
 
     @property
     def label(self) -> str:

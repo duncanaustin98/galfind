@@ -319,7 +319,7 @@ class Grid_2D:
                 update = True,
             ) for SED_fitter in SED_fitter_arr #[SED_fitter_arr[1]]
         ]
-        raise Exception()
+        #raise Exception()
         # perform sample selection
         if sampler is not None:
             select_cat = deepcopy(scattered_sim_cat)

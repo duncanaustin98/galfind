@@ -285,6 +285,7 @@ class Filter:
         label: bool = True,
         label_offset: float = 0.03,
         label_fontsize: int = 10,
+        annotate: bool = False,
         save: bool = False,
         show: bool = False,
     ):
@@ -295,7 +296,7 @@ class Filter:
         trans = np.concatenate(([0.0], self.trans, [0.0])) * trans_scaling
         # plot the filter profile
         ax.fill_between(wavs, 0.0, trans, color=colour, alpha=0.6)
-        ax.plot(
+        line, = ax.plot(
             wavs, trans, color="black", lw=2, label=self.band_name
         )  # cmap[np.where(self.bands == band)])
         if label:
@@ -307,7 +308,7 @@ class Filter:
                 fontsize = label_fontsize,
                 path_effects=[pe.withStroke(linewidth=3, foreground="w")],
             )
-        if save or show:
+        if annotate:
             leg_labels = ax.get_legend_handles_labels()[1]
             if len(leg_labels) == 1:
                 title = f"{leg_labels[0]} filter"

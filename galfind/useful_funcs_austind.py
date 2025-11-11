@@ -421,13 +421,13 @@ unit_labels_dict = {
     u.nJy: r"$\mathrm{nJy}$",
     u.uJy: r"$\mathrm{\mu Jy}$",
     u.ABmag: r"$\mathrm{AB mag}$",
-    u.Hz / u.erg: r"$\mathrm{Hz}^{-1}\mathrm{erg}^{-1}$",
+    u.Hz / u.erg: r"$\mathrm{Hz}\mathrm{erg}^{-1}$",
 }
 
 property_name_to_label = {
     "z": r"Redshift, $z$",
     "M_UV": r"$M_{\mathrm{UV}}$",
-    "xi_ion_caseB_rest": r"$\xi_{\mathrm{ion,0}}$",
+    "xi_ion_caseB_rest": r"$\xi_{\mathrm{ion,0}}~/~\mathrm{Hz}~\mathrm{erg}^{-1}$",
 }
 
 

@@ -279,7 +279,7 @@ class Base_MCMC_Fitter(ABC):
     def get_autocorr_time(self):
         try:
             sampler_autocorr_time = self.sampler.get_autocorr_time()
-            autocorr_time = np.max(sampler_autocorr_time)
+            autocorr_time = np.nanmax(sampler_autocorr_time)
         except Exception as e:
             galfind_logger.warning(
                 f"Could not calculate autocorrelation time! Chains likely unconverged! {e}"
@@ -295,11 +295,11 @@ class Base_MCMC_Fitter(ABC):
         # pos = [flat_priors_lower + (flat_priors_diff) \
         #        * np.random.uniform(0, 1, self.ndim) for i in range(self.nwalkers)]
         if not hasattr(self, "init_pos"):
-            init_pos = [self.fiducial_params + 1e-4 * np.random.uniform(0, 1, self.ndim) * \
-                    self.fiducial_params for i in range(self.nwalkers)]
-            # init_pos = [np.array([np.random.uniform(prior.prior_params["lower_lim"], \
-            #     prior.prior_params["upper_lim"], 1)[0] for prior in self.priors]) \
-            #     for i in range(self.nwalkers)]
+            # init_pos = [self.fiducial_params + 1e-4 * np.random.uniform(0, 1, self.ndim) * \
+            #         self.fiducial_params for i in range(self.nwalkers)]
+            init_pos = [np.array([np.random.uniform(prior.prior_params["lower_lim"], \
+                prior.prior_params["upper_lim"], 1)[0] for prior in self.priors]) \
+                for i in range(self.nwalkers)]
             self.init_pos = init_pos
 
     def __call__(
@@ -328,7 +328,8 @@ class Base_MCMC_Fitter(ABC):
     def model(
         self: Self,
         x: Union[float, List[float], NDArray[float]],
-        params: Dict[str, float]
+        params: Dict[str, float],
+        **kwargs: Dict[str, Any],
     ) -> float:
         pass
     
@@ -376,20 +377,37 @@ class Base_MCMC_Fitter(ABC):
         ax: plt.Axes,
         log_data: bool = False,
         x_arr: Optional[NDArray[float]] = None,
-        label: Optional[str] = None,
-        colour: str = "black",
-        **kwargs: Dict[str, Any]
-    ) -> None: #nsamples = 1_000, plot_med = False, alpha = 0.3):
+        plot_kwargs: Dict[str, Any] = {},
+        fill_between_kwargs: Dict[str, Any] = {},
+        offset: float = 0.0,
+        **kwargs: Dict[str, Any],
+    ) -> None: #nsamples = 1_000, plot_med = False):
+        
+        def_plot_kwargs = {
+            "color": "black",
+            "ls": "--",
+            "zorder": 200,
+            "path_effects": [pe.withStroke(linewidth = 2., foreground = "white")],
+        }
+        for key, value in plot_kwargs.items():
+            def_plot_kwargs[key] = value
+        def_fill_between_kwargs = {
+            "color": def_plot_kwargs["color"],
+            "alpha": 0.5,
+            "zorder": 199,
+            "path_effects": [pe.withStroke(linewidth = 2., foreground = "white")],
+        }
+        for key, value in fill_between_kwargs.items():
+            def_fill_between_kwargs[key] = value
+
         if x_arr is None:
             x_arr = np.linspace(np.min(self.x_data), np.max(self.x_data), 100)
-
-        l1_chains, med_chains, u1_chains = self._get_plot_chains(x_arr = x_arr, log_data = log_data)
-        
-        ax.plot(x_arr, med_chains, color = colour, zorder = 200, \
-            label = label, path_effects = [pe.withStroke(linewidth = 2., foreground = "white")])
-        ax.fill_between(x_arr, l1_chains, u1_chains, color = colour, alpha = 0.5, \
-            zorder = 200, path_effects = [pe.withStroke(linewidth = 2., foreground = "white")])
+        l1_chains, med_chains, u1_chains = self._get_plot_chains(x_arr = x_arr, log_data = log_data, **kwargs)
+        x_arr += offset
+        ax.plot(x_arr, med_chains, **def_plot_kwargs)
+        ax.fill_between(x_arr, l1_chains, u1_chains, **def_fill_between_kwargs)
         galfind_logger.info("Plotting MCMC fit")
+        return x_arr, med_chains, l1_chains, u1_chains
 
     def get_sample(self: Self, discard: bool = True, thin: bool = True) -> NDArray[float]:
         autocorr_time = self.get_autocorr_time()
@@ -408,8 +426,9 @@ class Base_MCMC_Fitter(ABC):
         self: Self,
         x_arr: NDArray[float],
         log_data: bool = False,
+        **kwargs: Dict[str, Any],
     ) -> Tuple[NDArray[float], NDArray[float], NDArray[float]]:
-        y_fit = self.get_chains(x_arr, log_data = log_data).T
+        y_fit = self.get_chains(x_arr, log_data = log_data, **kwargs).T
         l1_chains = np.array([np.percentile(y, 16) for y in y_fit])
         med_chains = np.array([np.percentile(y, 50) for y in y_fit])
         u1_chains = np.array([np.percentile(y, 84) for y in y_fit])
@@ -420,22 +439,44 @@ class Base_MCMC_Fitter(ABC):
         x_arr: NDArray[float],
         log_data: bool = False,
         shape: Optional[int] = None,
+        incl_scatter: bool = False,
+        **kwargs: Dict[str, Any],
     ) -> NDArray[float]:
         autocorr_time = self.get_autocorr_time()
         discard = int(autocorr_time * 2)
         thin = int(autocorr_time / 2)
 
         if log_data:
-            model = lambda x, params: np.log10(self.model(x, params))
+            model = lambda x, params: np.log10(self.model(x, params, **kwargs))
         else:
             model = self.model
         if shape is None:
             params_arr = self.sampler.get_chain(flat = True, discard = discard, thin = thin)
         else:
             params_arr = self.sampler.get_chain(flat = True, discard = discard, thin = thin)[-shape:]
-        y_fit = np.array([model(x_arr, {**{prior.name: param for prior, param \
-            in zip(self.priors, params)}, **self.fixed_params}) for params in tqdm( \
-            params_arr, desc = "Loading chains", total = len(params_arr))])
+        if incl_scatter:
+            scatter = self.get_scatter()
+            params_dict_arr = [
+                {
+                    **{
+                        prior.name: param if not prior.name == "c" else np.random.normal(param, scatter[0])
+                        if param < self.get_params_med()[prior.name] else np.random.normal(param, scatter[1])
+                        for prior, param in zip(self.priors, params)
+                    },
+                    **self.fixed_params
+                }
+                for params in params_arr
+            ]
+        else:
+            params_dict_arr = [
+                {
+                    **{prior.name: param for prior, param in zip(self.priors, params)},
+                    **self.fixed_params
+                }
+                for params in params_arr
+            ]
+        y_fit = np.array([model(x_arr, params_dict, **kwargs) for params_dict in tqdm( \
+            params_dict_arr, desc = "Loading chains", total = len(params_dict_arr))])
         return y_fit
 
     def plot_corner(
@@ -582,7 +623,8 @@ class MCMC_Fitter(Base_MCMC_Fitter):
     def model(
         self: Self,
         x: Union[float, List[float], NDArray[float]],
-        params: Dict[str, float]
+        params: Dict[str, float],
+        **kwargs: Dict[str, Any],
     ) -> float:
         pass
 
@@ -591,7 +633,7 @@ class MCMC_Fitter(Base_MCMC_Fitter):
         residuals: NDArray[float],
         params: Dict[str, float],
     ) -> NDArray[float]:
-        sigma = [y_err_u1 if residual > 0. else y_err_l1 for residual, y_err_u1, y_err_l1 in 
+        sigma = [y_err_l1 if residual > 0. else y_err_u1 for residual, y_err_l1, y_err_u1 in 
             zip(residuals, self.y_data_errs[0], self.y_data_errs[1])]
         return np.array(sigma) ** 2
     
@@ -634,23 +676,26 @@ class MCMC_Fitter(Base_MCMC_Fitter):
     
     def get_scatter(
         self: Self,
-        x_arr: Optional[float] = None
+        x_arr: Optional[float] = None,
+        **kwargs,
     ) -> float:
         if self.scatter_type == "asymmetric":
-            residuals = self.get_residuals(self.get_params_med())
+            residuals = self.get_residuals(self.get_params_med(), **kwargs)
             positive_residuals = residuals[residuals > 0]
             negative_residuals = residuals[residuals < 0]
             positive_scatter = np.sqrt(np.sum(positive_residuals ** 2) / (len(positive_residuals) - 1))
             negative_scatter = np.sqrt(np.sum(negative_residuals ** 2) / (len(negative_residuals) - 1))
             scatter = [positive_residuals, negative_residuals]
             galfind_logger.info(f"Scatter: [+{positive_scatter:.3f}, -{negative_scatter:.3f}] dex")
-        elif self.scatter_type == "symmetric":
-            residuals = self.get_residuals(self.get_params_med())
-            scatter = np.sqrt(np.sum(residuals ** 2) / (len(self.y_data) - 1))
-            galfind_logger.info(f"Scatter: {scatter:.3f} dex")
-        elif self.scatter_type == "scatter_y" or self.scatter_type == "scatter_xy":
+        elif self.scatter_type == "scatter":
+            #residuals = self.get_residuals(self.get_params_med(), **kwargs)
+            #scatter = np.sqrt(np.sum(residuals ** 2) / (len(self.y_data) - 1))
+            scatter_ = self.get_params_med()["scatter"]
+            scatter = [scatter_, scatter_]
+            galfind_logger.info(f"Scatter: {scatter_:.3f} dex")
+        elif self.scatter_type in ["scatter_y", "scatter_xy", "exp_scatter_y"]:
             med_params = self.get_params_med()
-            residuals = self.get_residuals(med_params)
+            residuals = self.get_residuals(med_params, **kwargs)
             sorted_indices = np.argsort(self.x_data)
             x_sorted = self.x_data[sorted_indices]
             y_sorted = self.y_data[sorted_indices]
@@ -667,6 +712,9 @@ class MCMC_Fitter(Base_MCMC_Fitter):
                     y_sorted_above * med_params["scatter_y"])
                 y_below_sigma = np.abs(med_params["scatter_c"] + x_sorted_below * med_params["scatter_x"] + \
                     y_sorted_below * med_params["scatter_y"])
+            elif self.scatter_type == "exp_scatter_y":
+                y_above_sigma = np.log1p(np.exp(med_params["exp_scatter_y_a"] + ((y_sorted_above - self.y_data.mean()) / self.y_data.std()) * med_params["exp_scatter_y_b"]))
+                y_below_sigma = np.log1p(np.exp(med_params["exp_scatter_y_a"] + ((y_sorted_below - self.y_data.mean()) / self.y_data.std()) * med_params["exp_scatter_y_b"]))
             else:
                 raise ValueError(f"Unknown scatter type {self.scatter_type=}, cannot plot!")
             window_above = len(y_above_sigma)
@@ -687,8 +735,57 @@ class MCMC_Fitter(Base_MCMC_Fitter):
         self.scatter = scatter
         return self.scatter
     
-
-
+    def get_empirical_scatter(
+        self: Self,
+        n_bins: int = 10,
+    ) -> None:
+        from statsmodels.stats.weightstats import DescrStatsW
+        
+        model_y = self.model(self.x_data, self.params_med, subcls = "sfg")
+        bins = np.linspace(self.x_data.min(), self.x_data.max(), n_bins) #int(len(x_arr) / 10_000))
+        bin_indices = np.digitize(self.x_data, bins)
+        bin_centres = 0.5 * (bins[1:] + bins[:-1])
+        plot_bin_centres = []
+        model_value_diff = []
+        scat_up = []
+        scat_lo = []
+        Ngals = []
+        for i in tqdm(range(1, len(bins)), desc = "Calculating scatter in bins", total=len(bins)-1):
+            bin_y = self.y_data[bin_indices == i]
+            bin_model_y = model_y[bin_indices == i]
+            bin_y_errs_l1 = self.y_data_errs[0][bin_indices == i]
+            bin_y_errs_u1 = self.y_data_errs[1][bin_indices == i]
+            if len(bin_y) == 0:
+                continue
+            bin_y_errs = np.array([
+                y_l1_ if y_ >= model_y_ else y_u1_ for y_, model_y_, y_l1_, y_u1_
+                in zip(bin_y, bin_model_y, bin_y_errs_l1, bin_y_errs_u1)
+            ])
+            #bin_y_above = bin_y[bin_y >= bin_model_y]
+            #bin_y_below = bin_y[bin_y < bin_model_y]
+            ds = DescrStatsW(bin_y, weights = 1 / (bin_y_errs ** 2))
+            quantiles = ds.quantile([0.16, 0.5, 0.84], return_pandas = False)
+            med_model = np.median(bin_model_y)
+            #med_values = np.median(bin_y)
+            model_value_diff.append(med_model - quantiles[1])
+            #print(f"Bin {i}: median model = {med_model}, median values = {med_values}, N = {len(bin_y)}")
+            plot_bin_centres.append(bin_centres[i-1])
+            sigma_l1_emp = quantiles[1] - quantiles[0] #med_model - np.percentile(bin_y, 16)
+            sigma_u1_emp = quantiles[2] - quantiles[1] #np.percentile(bin_y, 84) - med_model
+            #print(np.mean(bin_y_errs_u1[bin_y >= bin_model_y]), np.mean(bin_y_errs_l1[bin_y < bin_model_y]))
+            scat_up_ = sigma_u1_emp #** 2 - np.mean(bin_y_errs_u1[bin_y >= bin_model_y]) ** 2
+            scat_lo_ = sigma_l1_emp #** 2 - np.mean(bin_y_errs_l1[bin_y < bin_model_y]) ** 2
+            scat_up.append(scat_up_)
+            scat_lo.append(scat_lo_)
+            Ngals.append(len(bin_y))
+        Ngals = np.array(Ngals)
+        ds = DescrStatsW(scat_up) #, weights = 1 / Ngals)
+        scat_up_ = ds.quantile([0.5], return_pandas = False)[0]
+        ds = DescrStatsW(scat_lo) #, weights = 1 / Ngals)
+        scat_lo_ = ds.quantile([0.5], return_pandas = False)[0]
+        print(f"Empirical scatter: +{scat_up_}, -{scat_lo_}")
+        return scat_lo_, scat_up_
+    
     # def get_sample(self: Self) -> NDArray[float]:
     #     autocorr_time = np.max(self.sampler.get_autocorr_time())
     #     discard = int(autocorr_time * 2)
@@ -828,7 +925,8 @@ class Schechter_Lum_Fitter(MCMC_Fitter):
     def model(
         self: Self,
         x: Union[float, List[float], NDArray[float]],
-        params: Dict[str, float]
+        params: Dict[str, float],
+        **kwargs: Dict[str, Any],
     ) -> float:
         return 10 ** params["log10_phi_star"] * ((x / params["L_star"]) ** params["alpha"]) * \
             np.exp(-x / params["L_star"]) / params["L_star"]
@@ -876,7 +974,8 @@ class Schechter_Mag_Fitter(MCMC_Fitter):
     def model(
         self: Self,
         x: Union[float, List[float], NDArray[float]],
-        params: Dict[str, float]
+        params: Dict[str, float],
+        **kwargs: Dict[str, Any],
     ) -> float:
         return (10 ** params["log10_phi_star"]) * 0.4 * np.log(10) * \
             10 ** (0.4 * (params["alpha"] + 1) * (params["M_star"] - x)) * \
@@ -917,7 +1016,8 @@ class DPL_Lum_Fitter(MCMC_Fitter):
     def model(
         self: Self,
         x: Union[float, List[float], NDArray[float]],
-        params: Dict[str, float]
+        params: Dict[str, float],
+        **kwargs: Dict[str, Any],
     ) -> float:
         return ((10 ** params["log10_phi_star"]) / params["L_star"]) * \
             (
@@ -961,7 +1061,8 @@ class DPL_Mag_Fitter(MCMC_Fitter):
     def model(
         self: Self,
         x: Union[float, List[float], NDArray[float]],
-        params: Dict[str, float]
+        params: Dict[str, float],
+        **kwargs: Dict[str, Any],
     ) -> float:
         numerator = 0.4 * np.log(10) * 10 ** (params["log10_phi_star"]) * \
             10 ** (0.4 * (params["M_star"] - x))
@@ -988,7 +1089,7 @@ class Linear_Fitter(MCMC_Fitter):
         fixed_params: Dict[str, float] = {},
     ):
         params = ["m", "c"]
-        scatter_params = ["scatter", "scatter_up", "scatter_lo", "scatter_f", "scatter_logk", "scatter_y_a", "scatter_y_b", "scatter_c", "scatter_x", "scatter_y"]
+        scatter_params = ["scatter", "scatter_up", "scatter_lo", "scatter_f", "scatter_logk", "scatter_y_a", "scatter_y_b", "exp_scatter_y_a", "exp_scatter_y_b", "scatter_c", "scatter_x", "scatter_y"]
 
         assert all([key in params + scatter_params for key in fixed_params.keys()]), \
             galfind_logger.critical(
@@ -1012,10 +1113,13 @@ class Linear_Fitter(MCMC_Fitter):
                 scatter_type = "scatter_asymmetric"
             elif all([name in input_scatter_names for name in ["scatter_y_a", "scatter_y_b"]]):
                 scatter_type = "scatter_y" # NOT GENERAL!
+            elif all([name in input_scatter_names for name in ["exp_scatter_y_a", "exp_scatter_y_b"]]):
+                scatter_type = "exp_scatter_y"
             else:
                 galfind_logger.critical(
                     f"Must have both 'scatter_up' and 'scatter_lo' if using asymmetric scatter, " + \
-                    f" or both 'scatter_y_a' and 'scatter_y_b' if using asymmetric scatter, got {input_scatter_names}"
+                    f" both 'scatter_y_a' and 'scatter_y_b', or both 'exp_scatter_y_a' and 'exp_scatter_y_b'" + \
+                    f"if using asymmetric scatter, got {input_scatter_names}"
                 )
         elif len(input_scatter_names) == 3:
             assert all([name in input_scatter_names for name in ["scatter_c", "scatter_x", "scatter_y"]]), \
@@ -1071,7 +1175,7 @@ class Linear_Fitter(MCMC_Fitter):
         h5_file.close()
         return cls(priors, x_data, y_data, y_data_errs, n_walkers, backend_filename = backend_filename, fixed_params = {}) #, incl_scatter = incl_scatter)#, init_pos = init_pos)
     
-    def save_h5(self: Self) -> NoReturn:
+    def save_h5(self: Self) -> None:
         # open h5 file
         h5_out_name = self.backend_filename.replace(".h5", "_fitter.h5")
         out_file = h5py.File(h5_out_name, "w")
@@ -1092,6 +1196,7 @@ class Linear_Fitter(MCMC_Fitter):
         #out_file.create_dataset("incl_scatter", data = self.incl_scatter)
         out_file.create_dataset("backend_filename", data = self.backend_filename)
         out_file.close()
+        galfind_logger.info(f"Saved MCMC fitter to {h5_out_name}")
 
     def _get_sigma_sq(
         self: Self,
@@ -1110,6 +1215,12 @@ class Linear_Fitter(MCMC_Fitter):
                 (params["scatter_f"] * (10 ** - (self.y_data * (10 ** params["scatter_logk"])))) ** 2
         elif self.scatter_type == "scatter_y":
             return super()._get_sigma_sq(residuals, params) + (params["scatter_y_a"] + self.y_data * params["scatter_y_b"]) ** 2
+        elif self.scatter_type == "exp_scatter_y":
+            # softplus
+            return super()._get_sigma_sq(residuals, params) + \
+                (np.log1p(np.exp(params["exp_scatter_y_a"] + \
+                ((self.y_data - self.y_data.mean()) / self.y_data.std()) * \
+                params["exp_scatter_y_b"]))) ** 2
         elif self.scatter_type == "scatter_xy":
             return super()._get_sigma_sq(residuals, params) + \
                 (
@@ -1122,7 +1233,8 @@ class Linear_Fitter(MCMC_Fitter):
     def model(
         self: Self,
         x: Union[float, List[float], NDArray[float]],
-        params: Dict[str, float]
+        params: Dict[str, float],
+        **kwargs: Dict[str, Any],
     ) -> float:
         return params["m"] * x + params["c"]
     
@@ -1136,52 +1248,66 @@ class Linear_Fitter(MCMC_Fitter):
         ax: plt.Axes,
         log_data: bool = False,
         x_arr: Optional[NDArray[float]] = None,
-        label: Optional[str] = None,
-        colour: str = "black",
-        scatter_colour: str = "grey",
         plot_scatter: bool = True,
-        **kwargs: Dict[str, Any]
+        plot_kwargs: Dict[str, Any] = {},
+        fill_between_kwargs: Dict[str, Any] = {},
+        scatter_kwargs: Dict[str, Any] = {},
+        **kwargs: Dict[str, Any],
     ) -> None:
-        
         if plot_scatter:
+            def_scatter_kwargs = {
+                "color": "grey",
+                "alpha": 0.5,
+                "zorder": 100,
+                "path_effects": [pe.withStroke(linewidth = 2., foreground = "white")]
+            }
+            for key, val in scatter_kwargs.items():
+                def_scatter_kwargs[key] = val
+            
             if x_arr is None:
                 x_arr = np.linspace(np.min(self.x_data), np.max(self.x_data), 100)
-                l1_chains, med_chains, u1_chains = self._get_plot_chains(x_arr = x_arr, log_data = log_data)
+                l1_chains_scat, med_chains, u1_chains_scat = self._get_plot_chains(x_arr = x_arr, log_data = log_data)
             if self.scatter_type is None:
                 galfind_logger.info("Plotting empirical scatter not included in MCMC fit")
-                pass
+                scatter_l1, scatter_u1 = self.get_empirical_scatter()
+                l1_chains_scat -= scatter_l1
+                u1_chains_scat += scatter_u1
             else:
                 galfind_logger.info("Plotting fitted scatter of MCMC fit")
                 med_params = self.get_params_med()
                 if self.scatter_type == "scatter":
-                    l1_chains -= med_params["scatter"]
-                    u1_chains += med_params["scatter"]
+                    l1_chains_scat -= med_params["scatter"]
+                    u1_chains_scat += med_params["scatter"]
                 elif self.scatter_type == "scatter_asymmetric":
                     # deliberately wrong way round, as sign convention in log likelihood also swapped
-                    l1_chains -= med_params["scatter_up"]
-                    u1_chains += med_params["scatter_lo"]
-                elif self.scatter_type in ["scatter_y", "scatter_xy"]:
+                    l1_chains_scat -= med_params["scatter_up"]
+                    u1_chains_scat += med_params["scatter_lo"]
+                elif self.scatter_type in ["scatter_y", "scatter_xy", "exp_scatter_y"]:
                     y_interp_below, y_interp_above = self.get_scatter(x_arr = x_arr)
-                    l1_chains -= y_interp_below
-                    u1_chains += y_interp_above
+                    l1_chains_scat -= y_interp_below
+                    u1_chains_scat += y_interp_above
                 else:
                     err_message = f"Unknown {self.scatter_type=}, cannot plot!"
                     galfind_logger.warning(err_message)
                 #ax.plot(x_arr, med_chains, color = colour, zorder = 200, label = label)
-                ax.fill_between(x_arr, l1_chains, u1_chains, color = scatter_colour, alpha = 0.5, \
-                    zorder = 199, path_effects = [pe.withStroke(linewidth = 2., foreground = "white")])
+                ax.fill_between(x_arr, l1_chains_scat, u1_chains_scat, **def_scatter_kwargs)
         else:
             galfind_logger.info("Not plotting scatter of MCMC fit")
         
-        super().plot(
+        x_arr, med_chains, l1_chains, u1_chains = super().plot(
             ax,
             log_data = log_data,
             x_arr = x_arr,
-            label = label,
-            colour = colour,
-            **kwargs
+            #label = label,
+            #colour = colour,
+            plot_kwargs = plot_kwargs,
+            fill_between_kwargs = fill_between_kwargs,
         )
-        
+        if plot_scatter:
+            return x_arr, med_chains, l1_chains, u1_chains, l1_chains_scat, u1_chains_scat
+        else:
+            return x_arr, med_chains, l1_chains, u1_chains
+
 
 class Power_Law_Fitter(MCMC_Fitter):
     # Linear in log-log space
@@ -1230,7 +1356,8 @@ class Power_Law_Fitter(MCMC_Fitter):
     def model(
         self: Self,
         x: Union[float, List[float], NDArray[float]],
-        params: Dict[str, float]
+        params: Dict[str, float],
+        **kwargs: Dict[str, Any],
     ) -> float:
         return params["A"] * x ** params["slope"]
     

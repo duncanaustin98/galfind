@@ -5,10 +5,11 @@ from __future__ import annotations
 import os
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import NoReturn, Union, Optional
+from typing import NoReturn, Union, Optional, List, Dict, Any, Self
 import logging
 from copy import deepcopy
 import h5py
+
 #from lmfit import Model, Parameters, minimize, fit_report
 
 import astropy.units as u
@@ -362,7 +363,7 @@ class Spectrum:
             except:
                 self.MSA_metafile = None
 
-    def plot_slitlet(self, ax, colour="black", add_labels=True):
+    def plot_slitlet(self, ax: plt.Axes, colour: str = "black", add_labels: bool = True):
         # mostly copied from msaexp MSAMetafile base code
         self.load_MSA_metafile()
         assert self.MSA_metafile is not None
@@ -443,12 +444,14 @@ class Spectrum:
 
     def plot(
         self: Self,
-        src: str = "msaexp",
+        src: str = "manual",
         out_dir: Optional[str] = f"{config['DEFAULT']['GALFIND_WORK']}/DJA_spec_plots/",
         fig: Optional[plt.Figure] = None,
         ax: Optional[plt.Axes] = None,
         wav_units: u.Unit = u.um,
         flux_units: u.Unit = u.uJy,
+        log_fluxes: bool = False,
+        **fit_kwargs: Dict[str, Any],
     ) -> NoReturn:
         assert src in ["msaexp", "manual"], galfind_logger.critical(
             f"{src=} not in ['msaexp', 'manual']"
@@ -469,9 +472,29 @@ class Spectrum:
             if fig is None or ax is None:
                 fig, ax = plt.subplots()
             # unit conversions
-            wavs = funcs.convert_wav_units(self.wavs, wav_units)
-            fluxes = funcs.convert_mag_units(self.wavs, self.fluxes, flux_units)
-            ax.plot(wavs, fluxes, label=self.src_name)
+            mask = ~self.fluxes.mask
+            wavs = funcs.convert_wav_units(self.wavs[mask], wav_units).value
+            fluxes = funcs.convert_mag_units(self.wavs[mask], self.fluxes[mask].filled(np.nan), flux_units).value
+            flux_errs = funcs.convert_mag_err_units(
+                self.wavs[mask],
+                self.fluxes[mask].filled(np.nan),
+                np.array([
+                    self.flux_errs[mask].filled(np.nan).value,
+                    self.flux_errs[mask].filled(np.nan).value
+                ]) * self.flux_errs.unit,
+                flux_units
+            )
+            if log_fluxes:
+                flux_errs_l1 = np.log10(fluxes / (fluxes - flux_errs[0].value))
+                flux_errs_u1 = np.log10((fluxes + flux_errs[1].value) / fluxes)
+                fluxes = np.log10(fluxes)
+            else:
+                flux_errs_l1 = flux_errs[0].value
+                flux_errs_u1 = flux_errs[1].value
+            flux_errs = [flux_errs_l1, flux_errs_u1]
+            ax.plot(wavs, fluxes, label=self.src_name, **fit_kwargs)
+            alpha = deepcopy(fit_kwargs).pop("alpha", 1.0) * 0.5
+            ax.fill_between(wavs, fluxes - flux_errs[0], fluxes + flux_errs[1], alpha = alpha, **fit_kwargs)
     
     def make_mock_phot(
         self: Self,
