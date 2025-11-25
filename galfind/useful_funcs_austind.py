@@ -5,6 +5,7 @@ import astropy.constants as const
 import astropy.units as u
 import matplotlib.pyplot as plt
 import numpy as np
+from pathlib import Path
 import sep
 import re
 from astropy.coordinates import SkyCoord
@@ -1279,3 +1280,15 @@ def gradient_descent_beta_fit(x, y, initial_params, learning_rate=0.01, max_iter
             break
             
     return params, i  # Return optimized parameters and iterations taken
+
+def symlink(target_path, symlink_path):
+    make_dirs(symlink_path)
+    if Path(target_path).is_file():
+        try:
+            os.symlink(target_path, symlink_path)
+            galfind_logger.info(f"Created symlink: {symlink_path} -> {target_path}")
+        except FileExistsError:
+            galfind_logger.info(f"Symlink already exists: {symlink_path}")
+    else:
+        breakpoint()
+        galfind_logger.warning(f"Target file does not exist for symlink: {target_path}")

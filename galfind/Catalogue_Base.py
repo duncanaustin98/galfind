@@ -1216,11 +1216,10 @@ class Catalogue_Base:
         # self.gals = np.array([gal for gal in self if gal.ID not in update_gals_ids])
         # update_gals = []
         if len(update_gals) > 0:
-            #breakpoint()
             full_survey_name = funcs.get_full_survey_name(self.survey, self.version, self.filterset)
             full_data_name = funcs.get_full_survey_name(data.survey, data.version, data.filterset)
             # calculate Vmax's and append them to Vmax ecsv
-            [
+            Vmax_outputs = [
                 gal.calc_Vmax(
                     data,
                     z_bin,
@@ -1228,7 +1227,7 @@ class Catalogue_Base:
                     SED_fit_code,
                     self.cat_creator.crops,
                     z_step,
-                    unmasked_area = unmasked_area
+                    unmasked_area = unmasked_area,
                 )
                 for gal in tqdm(
                     self,
@@ -1237,64 +1236,42 @@ class Catalogue_Base:
                     disable = galfind_logger.getEffectiveLevel() > logging.INFO,
                 )
             ]
-            # make/update file to store data
-            Vmax_arr = self._make_Vmax_ecsv(
-                data,
-                update_gals,
-                aper_diam,
-                SED_fit_code,
-            )
+            IDs = np.repeat(np.array([gal.ID for gal in update_gals]), len(data.regions))
+            surveys = np.repeat(np.array([gal.survey for gal in update_gals]), len(data.regions))
+            regions = np.tile(data.regions, len(update_gals))
+            aper_diams = np.full(len(IDs), aper_diam.value)
+            SED_fit_codes = np.full(len(IDs), SED_fit_code.label)
+            ecsv_zmin = []
+            ecsv_zmax = []
+            ecsv_Vmax = []
+            for Vmax_output in Vmax_outputs:
+                zmin, zmax, Vmax = Vmax_output
+                for region in data.regions:
+                    ecsv_zmin.extend([zmin[region]])
+                    ecsv_zmax.extend([zmax[region]])
+                    ecsv_Vmax.extend([Vmax[region]])
+            ecsv_data = {
+                "ID": IDs,
+                "survey": surveys,
+                "region": regions,
+                "aper_diam": aper_diams,
+                "SED_fit_code": SED_fit_codes,
+                "zmin": ecsv_zmin,
+                "zmax": ecsv_zmax,
+                "Vmax": ecsv_Vmax,
+            }
+            new_tab = Table(ecsv_data, dtype=[int, str, str, float, str, float, float, float])
+            new_tab.meta = {"Vmax_invalid_val": -1.0}
+            self._save_ecsv(save_path, new_tab)
+            self._load_Vmax_from_ecsv(new_tab, aper_diam, SED_fit_code, data.full_name)
         else:
-            if len(self) == 0:
-                return []
-            else:
+            if len(self) != 0:
+                #return []
+            # else:
                 old_tab = Table.read(save_path)
-                Vmax_arr = self._load_Vmax_from_ecsv(old_tab, aper_diam, SED_fit_code, data.full_name)
-        return Vmax_arr
-    
-    def _make_Vmax_ecsv(
-        self: Self,
-        data: Data,
-        update_gals: List[Galaxy],
-        aper_diam: u.Quantity,
-        SED_fit_code: SED_code,
-    ) -> NDArray[float]:
-        save_path = self.get_vmax_ecsv_path(data)
-        # extract relevant properties
-        Vmax_arr = np.array(
-            [
-                gal.aper_phot[aper_diam].SED_results[SED_fit_code.label]. \
-                V_max[self.crop_name.split("/")[-1]][data.full_name].to(u.Mpc**3).value
-                for gal in update_gals
-            ]
-        ) * u.Mpc ** 3
-        obs_zmin = np.array(
-            [
-                gal.aper_phot[aper_diam].SED_results[SED_fit_code.label]. \
-                obs_zrange[self.crop_name.split("/")[-1]][data.full_name][0]
-                for gal in update_gals
-            ]
-        )
-        obs_zmax = np.array(
-            [
-                gal.aper_phot[aper_diam].SED_results[SED_fit_code.label]. \
-                obs_zrange[self.crop_name.split("/")[-1]][data.full_name][1]
-                for gal in update_gals
-            ]
-        )
-        data = {
-            "ID": np.array([gal.ID for gal in update_gals]),
-            "survey": np.array([gal.survey for gal in update_gals]),
-            "Vmax": Vmax_arr,
-            "obs_zmin": obs_zmin,
-            "obs_zmax": obs_zmax,
-        }
-        new_tab = Table(data, dtype=[int, str, float, float, float])
-        new_tab.meta = {"Vmax_invalid_val": -1.0}
-
-        self._save_ecsv(save_path, new_tab)
-
-        return Vmax_arr
+                self._load_Vmax_from_ecsv(old_tab, aper_diam, SED_fit_code, data.full_name)
+        # breakpoint()
+        # return Vmax_arr
     
     def _save_ecsv(
         self: Self,
@@ -1316,6 +1293,7 @@ class Catalogue_Base:
         SED_fit_code: SED_code,
         full_survey_name: str,
     ) -> NDArray[float]:
+        #breakpoint()
         if any(gal.survey == full_survey_name.split("_")[0] for gal in self):
             load_gals_arr = [gal for gal in self if gal.survey == full_survey_name.split("_")[0]]
         else:
@@ -1324,6 +1302,9 @@ class Catalogue_Base:
         # save appropriate Vmax properties
         Vmax_arr = np.zeros(len(load_gals_arr))
         for i, gal in enumerate(load_gals_arr):
+            Vmax_row = tab[np.logical_and((tab["ID"] == gal.ID), (tab["survey"] == gal.survey))]
+            #gal.set_Vmax()
+            breakpoint()
             Vmax = float(tab[np.logical_and((tab["ID"] == gal.ID), (tab["survey"] == gal.survey))]["Vmax"])
             gal._make_Vmax_storage(aper_diam, SED_fit_code, self.crop_name.split("/")[-1])
             gal.aper_phot[aper_diam].SED_results[SED_fit_code.label]. \

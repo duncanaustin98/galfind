@@ -937,7 +937,7 @@ class Galaxy:
         # if not hasattr(self, "V_max_simple"):
         #    self.V_max_simple = {}
         if not hasattr(SED_result_obj, "V_max"):
-            SED_result_obj.V_max = { }
+            SED_result_obj.V_max = {}
         if crop_name not in SED_result_obj.V_max.keys():
             SED_result_obj.V_max[crop_name] = {}
 
@@ -969,10 +969,13 @@ class Galaxy:
         crop_name = funcs.get_crop_name(crops).split("/")[-1]
         z_obs = SED_result_obj.z
 
-        # return V_max if already calculated
-        self._make_Vmax_storage(aper_diam, SED_fit_code, crop_name)
-        if data.full_name in SED_result_obj.V_max[crop_name].keys():
-            return SED_result_obj.V_max[crop_name][data.full_name]
+        # no need to store Vmax's on a galaxy level
+        #breakpoint()
+
+        # # return V_max if already calculated
+        # self._make_Vmax_storage(aper_diam, SED_fit_code, crop_name)
+        # if data.full_name in SED_result_obj.V_max[crop_name].keys():
+        #     return SED_result_obj.V_max[crop_name][data.full_name]
 
         # flatten multiple selectors and remove 
         # SED_fit_selectors that require SED fitting from crops
@@ -1000,14 +1003,18 @@ class Galaxy:
         assert Vmax_crops != []
 
         # calculate V_max
+        z_min_dict = {}
+        z_max_dict = {}
         V_max_dict = {}
         if z_obs > z_bin[1] or z_obs < z_bin[0]:
             # V_max_simple = -1.
             region = "all"
-            V_max = -1.0
-            z_min_used = -1.0
-            z_max_used = -1.0
-            V_max_dict[region] = V_max
+            #V_max = -1.0
+            # z_min_used = -1.0
+            # z_max_used = -1.0
+            z_min_dict[region] = -1.0
+            z_max_dict[region] = -1.0
+            V_max_dict[region] = -1.0
         else:
             distance_detect = astropy_cosmo.luminosity_distance(z_obs)
             sed_obs = SED_result_obj.SED
@@ -1178,16 +1185,20 @@ class Galaxy:
                         z_min_used, 
                         z_max_used
                     ).to(u.Mpc**3).value
+                z_min_dict[region] = z_min_used
+                z_max_dict[region] = z_max_used
                 V_max_dict[region] = V_max
 
-        SED_result_obj.obs_zrange[crop_name][data.full_name] = [z_min_used, z_max_used]
-        # self.V_max_simple[z_bin_name][data.full_name] = V_max_simple
-        V_max = np.sum(list(V_max_dict.values()))
-        if V_max < -1.0:
-            V_max = -1.0
-        SED_result_obj.V_max[crop_name][data.full_name] = V_max * u.Mpc ** 3
+        return z_min_dict, z_max_dict, V_max_dict
 
-        return V_max
+        # SED_result_obj.obs_zrange[crop_name][data.full_name] = [z_min_used, z_max_used]
+        # # self.V_max_simple[z_bin_name][data.full_name] = V_max_simple
+        # V_max = np.sum(list(V_max_dict.values()))
+        # if V_max < -1.0:
+        #     V_max = -1.0
+        # SED_result_obj.V_max[crop_name][data.full_name] = V_max * u.Mpc ** 3
+
+        # return V_max
     
         # breakpoint()
         # z_bin_name = f"{z_bin[0]:.1f}<z<{z_bin[1]:.1f}"
