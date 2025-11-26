@@ -1266,12 +1266,8 @@ class Catalogue_Base:
             self._load_Vmax_from_ecsv(new_tab, aper_diam, SED_fit_code, data.full_name)
         else:
             if len(self) != 0:
-                #return []
-            # else:
                 old_tab = Table.read(save_path)
                 self._load_Vmax_from_ecsv(old_tab, aper_diam, SED_fit_code, data.full_name)
-        # breakpoint()
-        # return Vmax_arr
     
     def _save_ecsv(
         self: Self,
@@ -1292,8 +1288,7 @@ class Catalogue_Base:
         aper_diam: u.Quantity,
         SED_fit_code: SED_code,
         full_survey_name: str,
-    ) -> NDArray[float]:
-        #breakpoint()
+    ) -> NoReturn:
         if any(gal.survey == full_survey_name.split("_")[0] for gal in self):
             load_gals_arr = [gal for gal in self if gal.survey == full_survey_name.split("_")[0]]
         else:
@@ -1302,12 +1297,5 @@ class Catalogue_Base:
         # save appropriate Vmax properties
         Vmax_arr = np.zeros(len(load_gals_arr))
         for i, gal in enumerate(load_gals_arr):
-            Vmax_row = tab[np.logical_and((tab["ID"] == gal.ID), (tab["survey"] == gal.survey))]
-            #gal.set_Vmax()
-            breakpoint()
-            Vmax = float(tab[np.logical_and((tab["ID"] == gal.ID), (tab["survey"] == gal.survey))]["Vmax"])
-            gal._make_Vmax_storage(aper_diam, SED_fit_code, self.crop_name.split("/")[-1])
-            gal.aper_phot[aper_diam].SED_results[SED_fit_code.label]. \
-                V_max[self.crop_name.split("/")[-1]][full_survey_name] = Vmax * u.Mpc ** 3
-            Vmax_arr[i] = Vmax
-        return Vmax_arr
+            Vmax_rows = tab[np.logical_and((tab["ID"] == gal.ID), (tab["survey"] == gal.survey))]
+            gal.set_Vmax(Vmax_rows)

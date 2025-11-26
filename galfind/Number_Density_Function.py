@@ -582,31 +582,43 @@ class Number_Density_Function(Base_Number_Density_Function):
                     #z_bin_x_bin_cat.hist(x_calculator, hist_fig, hist_ax)
                     dx = x_bin[1].value - x_bin[0].value
                     # extract Vmax's
-                    V_max = np.array(
-                        [
-                            gal.aper_phot[aper_diam].SED_results[SED_fit_code.label]. \
-                            V_max[z_bin_cat.crop_name.split("/")[-1]][full_survey_name].value
-                            for gal in z_bin_x_bin_cat
-                        ]
-                    )
-                    remove_indices = V_max != -1.0
-                    V_max = V_max[remove_indices] #* u.Mpc ** 3
-                    if len(V_max) != Ngals[i]:
-                        galfind_logger.warning(
-                            f"{Ngals[i] - len(V_max)} galaxies not detected"
-                        )
-                    if completeness is None:
-                        compl_bin = np.ones(len(z_bin_x_bin_cat))
-                    else:
-                        compl_bin = completeness(z_bin_x_bin_cat)
-                    try:
-                        compl_bin = compl_bin[remove_indices]
-                    except:
-                        breakpoint()
-                    assert len(compl_bin) == len(V_max), \
-                        galfind_logger.critical(
-                            f"{len(compl_bin)=} != {len(V_max)=} for {z_bin_x_bin_cat.crop_name}"
-                        )
+                    #breakpoint()
+                    Vmax_arr = [
+                        gal.aper_phot[aper_diam].SED_results[SED_fit_code.label]
+                        for gal in z_bin_x_bin_cat
+                    ]
+                    #V_max[z_bin_cat.crop_name.split("/")[-1]][full_survey_name].value
+                    # V_max = np.array(
+                    #     [
+                    #         gal.aper_phot[aper_diam].SED_results[SED_fit_code.label]. \
+                            
+                    #         for gal in z_bin_x_bin_cat
+                    #     ]
+                    # )
+                    regions = np.unique([reg for reg in Vmax.keys() for Vmax in Vmax_arr])
+                    for region in regions:
+                        # TODO: FINISH THIS FOR MULTI-REGION SURVEYS
+                        Vmax = np.array([Vmax[region] for Vmax in Vmax_arr])
+                        remove_indices = Vmax != -1.0
+                        Vmax = Vmax[remove_indices] * u.Mpc ** 3
+                        if len(Vmax) != Ngals[i]:
+                            galfind_logger.warning(
+                                f"{Ngals[i] - len(Vmax)} galaxies not detected"
+                            )
+                        assert completeness is None
+                        if completeness is None:
+                            compl_bin = np.ones(len(z_bin_x_bin_cat))
+                        else:
+                            raise Exception()
+                            compl_bin = completeness(z_bin_x_bin_cat)
+                        try:
+                            compl_bin = compl_bin[remove_indices]
+                        except:
+                            breakpoint()
+                        assert len(compl_bin) == len(Vmax), \
+                            galfind_logger.critical(
+                                f"{len(compl_bin)=} != {len(Vmax)=} for {z_bin_x_bin_cat.crop_name}"
+                            )
                     # import matplotlib.pyplot as plt
                     # from scipy.interpolate import interp1d
                     # fig, ax = plt.subplots()
@@ -616,7 +628,8 @@ class Number_Density_Function(Base_Number_Density_Function):
                     # ax.legend()
                     # plt.savefig("test_compl_NEP.png")
                     # breakpoint()
-                    phi[i] = np.sum((V_max * compl_bin) ** - 1.0) / dx
+                        phi[i] += np.sum((Vmax * compl_bin) ** -1.0) / dx
+                    breakpoint()
                     # use standard Poisson errors if number of galaxies in bin is not small
                     if len(V_max) >= 4:
                         phi_errs = np.sqrt(np.sum((V_max * compl_bin) ** -2.0)) / dx

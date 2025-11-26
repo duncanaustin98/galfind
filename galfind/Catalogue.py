@@ -461,7 +461,7 @@ class Catalogue_Creator:
         cat_creator = cls(
             data.survey,
             data.version,
-            data.phot_cat_path,
+            data._get_phot_cat_path(),
             data.filterset,
             data.aper_diams,
             crops = crops,

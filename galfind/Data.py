@@ -2003,6 +2003,7 @@ class Data:
         instrument: Type[Instrument],
         pix_scale: u.Quantity = 0.03 * u.arcsec,
         version_to_dir_dict: Optional[Dict[str, str]] = None,
+        data_dir: str = config['DEFAULT']['GALFIND_DATA'],
     ) -> Self:
         if version_to_dir_dict is not None:
             version = version_to_dir_dict[version.split("_")[0]]
@@ -2010,12 +2011,13 @@ class Data:
         #     version_substr = version
         # if len(version.split("_")) > 1:
         #     version_substr += f"_{'_'.join(version.split('_')[1:])}"
-        return (
-            f"{config['DEFAULT']['GALFIND_DATA']}/"
-            + f"{instrument.facility.__class__.__name__.lower()}/{survey}/"
-            + f"{instrument.__class__.__name__}/{version}/"
+        out_dir = (
+            f"{data_dir}/{instrument.facility.__class__.__name__.lower()}"
+            + f"/{survey}/{instrument.__class__.__name__}/{version}/"
             + f"{Band_Data_Base._pix_scale_to_str(pix_scale)}"
         )
+        os.makedirs(out_dir, exist_ok = True)
+        return out_dir
 
     @staticmethod
     def _sort_paths(

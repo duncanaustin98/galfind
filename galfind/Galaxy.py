@@ -922,24 +922,58 @@ class Galaxy:
             aper_diam_aper_corrs = {key: val[aper_diam] for key, val in aper_corrs.items()}
             self.aper_phot[aper_diam].load_sextractor_ext_src_corrs(aper_diam_aper_corrs)
 
-    def _make_Vmax_storage(
+    def set_Vmax(
         self: Self,
-        aper_diam: u.Quantity,
-        SED_fit_code: SED_code,
-        crop_name: str,
+        ecsv_rows: Table
     ) -> NoReturn:
-        SED_result_obj = self.aper_phot[aper_diam].SED_results[SED_fit_code.label]
-        # name appropriate empty output dicts if not already made
-        if not hasattr(SED_result_obj, "obs_zrange"):
-            SED_result_obj.obs_zrange = {}
-        if crop_name not in SED_result_obj.obs_zrange.keys():
-            SED_result_obj.obs_zrange[crop_name] = {}
-        # if not hasattr(self, "V_max_simple"):
-        #    self.V_max_simple = {}
-        if not hasattr(SED_result_obj, "V_max"):
-            SED_result_obj.V_max = {}
-        if crop_name not in SED_result_obj.V_max.keys():
-            SED_result_obj.V_max[crop_name] = {}
+        # TODO: Currently only stores Vmax for a single redshift / selection
+        aper_diam_arr = np.unique(ecsv_rows["aper_diam"].data) * u.arcsec
+        SED_fit_code_arr = np.unique(ecsv_rows["SED_fit_code"].data)
+        for aper_diam in aper_diam_arr:
+            if aper_diam in self.aper_phot.keys():
+                aper_phot_obj = self.aper_phot[aper_diam]
+                for SED_fit_code in SED_fit_code_arr:
+                    if SED_fit_code in aper_phot_obj.SED_results.keys():
+                        SED_result_obj = aper_phot_obj.SED_results[SED_fit_code]
+                        if not hasattr(SED_result_obj, "V_max"):
+                            SED_result_obj.zmin = {}
+                            SED_result_obj.zmax = {}
+                            SED_result_obj.Vmax = {}
+                        # crop ecsv tab to just the relevant rows for this 
+                        # aper_diam and SED_fit_code combination
+                        ecsv_row = ecsv_rows[
+                            (
+                                (ecsv_rows["aper_diam"] == aper_diam.to(u.arcsec).value) &
+                                (ecsv_rows["SED_fit_code"] == SED_fit_code)
+                            )
+                        ]
+                        assert len(ecsv_row) > 0, \
+                            galfind_logger.critical(
+                                f"Galaxy {self.ID=} has no rows in " + \
+                                f"ecsv for {aper_diam:.2f} {SED_fit_code=}"
+                            )
+                        regions = np.unique(ecsv_row["region"].data)
+                        for region in regions:
+                            region_row = ecsv_row[ecsv_row["region"] == region]
+                            assert len(region_row) == 1, \
+                                galfind_logger.critical(
+                                    f"Galaxy {self.ID=} has multiple rows in " + \
+                                    f"ecsv for {aper_diam:.2f} {SED_fit_code=} " + \
+                                    f"and {region=}"
+                                )
+                            SED_result_obj.zmin[region] = region_row["zmin"].data[0]
+                            SED_result_obj.zmax[region] = region_row["zmax"].data[0]
+                            SED_result_obj.Vmax[region] = region_row["Vmax"].data[0]
+                    else:
+                        galfind_logger.debug(
+                            f"Galaxy {self.ID=} has no SED_result for " + \
+                            f"{aper_diam:.2f} {SED_fit_code=}, cannot append Vmax!"
+                        )
+            else:
+                galfind_logger.debug(
+                    f"Galaxy {self.ID=} has no aper_phot for " + \
+                    f"{aper_diam:.2f}, cannot append Vmax!"
+                )
 
     # Vmax calculation in a single field
     def calc_Vmax(
