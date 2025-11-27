@@ -5,11 +5,31 @@ This module defines a hierarchy of custom exceptions to provide better error
 tracing and more informative error messages throughout the codebase.
 """
 
+import logging
+
+# Get the galfind logger
+_logger = logging.getLogger("galfind")
+
 
 class GalfindError(Exception):
-    """Base exception class for all galfind-related errors."""
+    """Base exception class for all galfind-related errors.
 
-    pass
+    Automatically logs the error message at CRITICAL level when raised.
+    """
+
+    def __init__(self, message: str = "", log_level: int = logging.CRITICAL):
+        """Initialize the exception and log the message.
+
+        Parameters
+        ----------
+        message : str
+            The error message.
+        log_level : int
+            The logging level to use (default: logging.CRITICAL).
+        """
+        super().__init__(message)
+        if message:
+            _logger.log(log_level, message)
 
 
 class CatalogueError(GalfindError):

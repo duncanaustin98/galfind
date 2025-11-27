@@ -221,7 +221,6 @@ class Base_MCMC_Fitter(ABC):
                 self.sampler = emcee.EnsembleSampler(self.nwalkers, self.ndim, self.log_likelihood, backend = self.backend) #, blobs_dtype = blobs_dtype, pool = pool)
             except Exception as e:
                 err_message = f"Could not load {backend_filename=}! Delete the file or choose a different name."
-                galfind_logger.critical(err_message)
                 raise MCMCError(err_message) from e
         else:
             self.sampler = emcee.EnsembleSampler(self.nwalkers, self.ndim, self.log_likelihood)

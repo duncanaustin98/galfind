@@ -1038,7 +1038,6 @@ class Catalogue_Base:
 
         else:
             err_message = f"{plot_type=} not recognised!"
-            galfind_logger.critical(err_message)
             raise PlottingError(err_message)
 
         # setup matplotlib figure/axis if not already given

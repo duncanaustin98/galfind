@@ -1570,7 +1570,6 @@ class Bagpipes(SED_code):
                 fit_instructions["dblplaw"] = dblplaw
             else:
                 err_message = f"{self.SED_fit_params['sfh']} SFH not found."
-                galfind_logger.critical(err_message)
                 raise SEDFittingError(err_message)
 
             # nebular emission (lines/continuum)

@@ -46,16 +46,21 @@ class Selector(ABC):
         morph_fitter: Optional[Type[Morphology_Fitter]],
         **kwargs
     ):
-        assert (key in kwargs.keys() for key in self._include_kwargs), \
-            galfind_logger.critical(
-                f"Selection {self.__class__.__name__} given {kwargs=}" + \
-                f" missing required keys = {self._include_kwargs}."
+        # Check for missing required kwargs
+        missing_keys = [
+            key for key in self._include_kwargs if key not in kwargs.keys()
+        ]
+        if missing_keys:
+            raise SelectorError(
+                f"Selector {self.__class__.__name__} given {kwargs=} "
+                f"missing required keys: {missing_keys}"
             )
         self.aper_diam = aper_diam
         self.SED_fitter = SED_fitter
         self.morph_fitter = morph_fitter
         self.kwargs = kwargs
-        assert self._assertions()
+        # Validate inputs using _assertions
+        self._validate()
 
     def __repr__(self: Self) -> str:
         return f"{self.__class__.__name__}({','.join([repr(kwarg).replace(' ', '') for kwarg in self.kwargs.values()])})"
@@ -87,6 +92,17 @@ class Selector(ABC):
     @abstractmethod
     def _assertions(self: Self) -> bool:
         pass
+
+    def _validate(self: Self) -> None:
+        """Validate selector inputs and raise SelectorError if invalid.
+
+        Calls _assertions() and raises a descriptive error if validation fails.
+        """
+        if not self._assertions():
+            raise SelectorError(
+                f"Invalid inputs for {self.__class__.__name__}. "
+                f"Received kwargs: {self.kwargs}"
+            )
 
     #@abstractmethod
     def _failure_criteria(

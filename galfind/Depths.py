@@ -1535,7 +1535,6 @@ def _get_labels(
         ]
     else:
         err_message = "Depth plotting fails with more than 2 regions!"
-        galfind_logger.critical(err_message)
         raise PlottingError(err_message)
     return labels_arr, possible_labels, colours, labels_cmap
 

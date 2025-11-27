@@ -631,7 +631,6 @@ class Catalogue_Creator:
                 mask = self.load_mask_func(tab, mask_labels, **self.load_mask_kwargs)
             except Exception as e:
                 err_message = f"Error loading mask: {e}"
-                galfind_logger.critical(err_message)
                 raise CatalogueError(err_message) from e
             if self.apply_gal_instr_mask:
                 if cropped and self.crop_mask is not None:
@@ -654,7 +653,6 @@ class Catalogue_Creator:
                 depths = self.load_depth_func(tab, depth_labels, **self.load_depth_kwargs)
             except Exception as e:
                 err_message = f"Error loading depths: {e}"
-                galfind_logger.critical(err_message)
                 raise CatalogueError(err_message) from e
             if self.apply_gal_instr_mask:
                 if cropped and self.crop_mask is not None:
@@ -705,7 +703,6 @@ class Catalogue_Creator:
             save_dir = f"{config['DEFAULT']['GALFIND_WORK']}/Masks/{self.survey}/has_data_mask/{self.filterset.instrument_name}"
         else:
             err_message = f"Not both of ['SURVEY', 'INSTR'] in {self.cat_path} nor 'survey' and 'filterset' provided!"
-            galfind_logger.critical(err_message)
             raise CatalogueError(err_message)
         save_path = f"{save_dir}/{self.cat_name}.h5"
         funcs.make_dirs(save_path)
@@ -1039,7 +1036,6 @@ class Catalogue(Catalogue_Base):
         else:
             err_message = "Loading SExtractor Re from catalogue " + \
                 f"only works when hasattr({repr(self)}, data)!"
-            galfind_logger.critical(err_message)
             raise MissingDataError(err_message)
         
     def load_sextractor_auto_mags(self):
@@ -1052,7 +1048,6 @@ class Catalogue(Catalogue_Base):
         else:
             err_message = "Loading SExtractor auto mags from catalogue " + \
                 f"only works when hasattr({repr(self)}, data)!"
-            galfind_logger.critical(err_message)
             raise MissingDataError(err_message)
 
     def load_sextractor_auto_fluxes(self):
@@ -1072,7 +1067,6 @@ class Catalogue(Catalogue_Base):
         else:
             err_message = "Loading SExtractor flux autos from catalogue " + \
                 f"only works when hasattr({repr(self)}, data)!"
-            galfind_logger.critical(err_message)
             raise MissingDataError(err_message)
         
     def load_sextractor_kron_radii(self):
