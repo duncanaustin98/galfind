@@ -91,6 +91,9 @@ class SED_code(ABC):
         else:
             return f"_{'_'.join(self.SED_fit_params['excl_bands'])}"
 
+    def __repr__(self) -> str:
+        return f"{self.__class__.__name__}({self.tab_suffix})"
+
     #@abstractmethod
     def _load_gal_property_labels(self, gal_property_labels: Dict[str, str]) -> NoReturn:
         self.gal_property_labels = {key: f"{item}_{self.tab_suffix}" 
@@ -365,6 +368,11 @@ class SED_code(ABC):
 
         if update:
             cat.update_SED_results(cat_SED_results, timed=timed)
+            if not hasattr(cat, "SED_results"):
+                cat.SED_results = {}
+            if not aper_diam in cat.SED_results.keys():
+                cat.SED_results[aper_diam] = []
+            cat.SED_results[aper_diam].append(self)
         return cat_SED_results
             
 

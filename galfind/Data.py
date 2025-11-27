@@ -1976,7 +1976,6 @@ class Data:
                     # in the same fits file but different extensions.
                     raise NotImplementedError(err_message)
                 else:
-                    #breakpoint()
                     band_data = Band_Data(
                         Filter.from_filt_name(filt_name),
                         survey,

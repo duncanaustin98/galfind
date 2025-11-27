@@ -65,7 +65,14 @@ class Catalogue_Base:
         output_str += f"DEC RANGE = {self.dec_range}\n"
         output_str += funcs.band_sep
         output_str += str(self.filterset)
-        # display what other things have previously been calculated for this catalogue, including templates and zmax_lowz
+        # display what other things have previously been calculated for this catalogue
+        if hasattr(self, "SED_results"):
+            output_str += "SED FITTING RESULTS:\n"
+            for aper_diam, SED_results in self.SED_results.items():
+                output_str += funcs.band_sep
+                output_str += f"{aper_diam}: {','.join([repr(SED_result) for SED_result in SED_results])}\n"
+            output_str += funcs.line_sep
+        # breakpoint()
         # output_str += "CAT STATUS = SEXTRACTOR, "
         # for i, (key, value) in enumerate(cat.meta.items()):
         #     if key in ["DEPTHS", "MASKED"] + [
@@ -77,11 +84,11 @@ class Catalogue_Base:
         #     if sel_criteria in cat.colnames:
         #         output_str += f"{sel_criteria} SELECTION, "
         # output_str += "\n"
-        # display total number of galaxies that satisfy the selection criteria previously performed
-        #if print_sel_criteria:
-        # for sel_criteria in display_selections:
-        #     if sel_criteria in cat.colnames:
-        #         output_str += f"N_GALS_{sel_criteria} = {len(cat[cat[sel_criteria]])}\n"
+        # # display total number of galaxies that satisfy the selection criteria previously performed
+        # if print_sel_criteria:
+        #     for sel_criteria in display_selections:
+        #         if sel_criteria in cat.colnames:
+        #             output_str += f"N_GALS_{sel_criteria} = {len(cat[cat[sel_criteria]])}\n"
         # output_str += funcs.band_sep
         # # display crops that have been performed on this specific object
         # if self.crops != []:
@@ -95,8 +102,8 @@ class Catalogue_Base:
         #             output_str += "Rest frame SED properties:\n"
         #             output_str += f"{key}: {str(properties)}\n"
         #             output_str += funcs.band_sep
-        #if print_cls_name:
-        #output_str += funcs.line_sep
+        # if print_cls_name:
+        #     output_str += funcs.line_sep
         return output_str
 
     def __len__(self):

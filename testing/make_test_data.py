@@ -13,7 +13,7 @@ def main(
     instrument_names: List[str],
     aper_diams: u.Quantity = [0.32] * u.arcsec,
     forced_phot_band: Union[str, List[str], Type[Band_Data_Base]] = ["F277W", "F356W", "F444W"],
-    cutout_size: u.Quantity = 12 * u.arcsec,
+    cutout_size: u.Quantity = 15.0 * u.arcsec,
 ):
     # load in data
     data = Data.pipeline(
