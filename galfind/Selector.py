@@ -48,7 +48,7 @@ class Selector(ABC):
     ):
         # Check for missing required kwargs
         missing_keys = [
-            key for key in self._include_kwargs if key not in kwargs.keys()
+            key for key in self._include_kwargs if key not in kwargs
         ]
         if missing_keys:
             raise SelectorError(
