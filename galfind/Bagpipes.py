@@ -41,6 +41,7 @@ from .decorators import run_in_dir
 from .SED import SED_obs, SED_2D
 from .Filter import Filter
 from .SFH import SFH
+from .exceptions import SEDFittingError
 
 pipes_unit_dict = {
     "z": u.dimensionless_unscaled,
@@ -1570,7 +1571,7 @@ class Bagpipes(SED_code):
             else:
                 err_message = f"{self.SED_fit_params['sfh']} SFH not found."
                 galfind_logger.critical(err_message)
-                raise Exception(err_message)
+                raise SEDFittingError(err_message)
 
             # nebular emission (lines/continuum)
             nebular = {}

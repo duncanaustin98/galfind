@@ -29,6 +29,7 @@ from . import useful_funcs_austind as funcs
 from . import config, galfind_logger
 from . import MCMC_Fitter, Priors, Schechter_Mag_Fitter, Schechter_Lum_Fitter
 from .SED_codes import SED_code
+from .exceptions import GalfindError
 
 
 class Base_Number_Density_Function:
@@ -609,7 +610,7 @@ class Number_Density_Function(Base_Number_Density_Function):
                         if completeness is None:
                             compl_bin = np.ones(len(z_bin_x_bin_cat))
                         else:
-                            raise Exception()
+                            raise GalfindError("completeness feature not yet implemented")
                             compl_bin = completeness(z_bin_x_bin_cat)
                         try:
                             compl_bin = compl_bin[remove_indices]

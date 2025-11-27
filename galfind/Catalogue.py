@@ -59,6 +59,7 @@ from . import (
     config,
     galfind_logger,
 )
+from .exceptions import CatalogueError, MissingDataError, InvalidArgumentError
 from . import useful_funcs_austind as funcs
 from . import SED_code
 from .Cutout import Multiple_Band_Cutout, Multiple_RGB, Stacked_RGB
@@ -631,7 +632,7 @@ class Catalogue_Creator:
             except Exception as e:
                 err_message = f"Error loading mask: {e}"
                 galfind_logger.critical(err_message)
-                raise(Exception(err_message))
+                raise CatalogueError(err_message) from e
             if self.apply_gal_instr_mask:
                 if cropped and self.crop_mask is not None:
                     gal_instr_mask = self.gal_instr_mask[self.crop_mask]
@@ -654,7 +655,7 @@ class Catalogue_Creator:
             except Exception as e:
                 err_message = f"Error loading depths: {e}"
                 galfind_logger.critical(err_message)
-                raise(Exception(err_message))
+                raise CatalogueError(err_message) from e
             if self.apply_gal_instr_mask:
                 if cropped and self.crop_mask is not None:
                     gal_instr_mask = self.gal_instr_mask[self.crop_mask]
@@ -705,7 +706,7 @@ class Catalogue_Creator:
         else:
             err_message = f"Not both of ['SURVEY', 'INSTR'] in {self.cat_path} nor 'survey' and 'filterset' provided!"
             galfind_logger.critical(err_message)
-            raise Exception(err_message)
+            raise CatalogueError(err_message)
         save_path = f"{save_dir}/{self.cat_name}.h5"
         funcs.make_dirs(save_path)
         if Path(save_path).is_file() or overwrite:
@@ -1039,7 +1040,7 @@ class Catalogue(Catalogue_Base):
             err_message = "Loading SExtractor Re from catalogue " + \
                 f"only works when hasattr({repr(self)}, data)!"
             galfind_logger.critical(err_message)
-            raise Exception(err_message)
+            raise MissingDataError(err_message)
         
     def load_sextractor_auto_mags(self):
         if hasattr(self, "data"):
@@ -1052,7 +1053,7 @@ class Catalogue(Catalogue_Base):
             err_message = "Loading SExtractor auto mags from catalogue " + \
                 f"only works when hasattr({repr(self)}, data)!"
             galfind_logger.critical(err_message)
-            raise Exception(err_message)
+            raise MissingDataError(err_message)
 
     def load_sextractor_auto_fluxes(self):
         if hasattr(self, "data"):
@@ -1072,7 +1073,7 @@ class Catalogue(Catalogue_Base):
             err_message = "Loading SExtractor flux autos from catalogue " + \
                 f"only works when hasattr({repr(self)}, data)!"
             galfind_logger.critical(err_message)
-            raise Exception(err_message)
+            raise MissingDataError(err_message)
         
     def load_sextractor_kron_radii(self):
         if hasattr(self, "data"):
@@ -1180,7 +1181,7 @@ class Catalogue(Catalogue_Base):
                 err_message = f"Could not load {cat_colname=} from {self.cat_path} " + \
                     f"as no '{cat_colname}_band' exists for band in {self.instrument.band_names=}!"
                 galfind_logger.info(err_message)
-                raise Exception(err_message)
+                raise CatalogueError(err_message)
             
             cat_band_properties = [
                 {

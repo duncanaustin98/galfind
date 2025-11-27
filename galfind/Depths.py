@@ -40,6 +40,7 @@ except ImportError:
 # install cv2, skimage, sklearn
 from . import useful_funcs_austind as funcs
 from . import config, galfind_logger
+from .exceptions import PlottingError
 
 
 def do_photometry(image, xy_coords, radius_pixels):
@@ -1535,7 +1536,7 @@ def _get_labels(
     else:
         err_message = "Depth plotting fails with more than 2 regions!"
         galfind_logger.critical(err_message)
-        raise Exception(err_message)
+        raise PlottingError(err_message)
     return labels_arr, possible_labels, colours, labels_cmap
 
 def _plot_labels(

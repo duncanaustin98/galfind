@@ -23,6 +23,7 @@ except ImportError:
 
 from . import config, galfind_logger
 from . import useful_funcs_austind as funcs
+from .exceptions import MCMCError
 
 class Prior(ABC):
 
@@ -218,10 +219,10 @@ class Base_MCMC_Fitter(ABC):
             self.backend = emcee.backends.HDFBackend(backend_filename)
             try:
                 self.sampler = emcee.EnsembleSampler(self.nwalkers, self.ndim, self.log_likelihood, backend = self.backend) #, blobs_dtype = blobs_dtype, pool = pool)
-            except:
+            except Exception as e:
                 err_message = f"Could not load {backend_filename=}! Delete the file or choose a different name."
                 galfind_logger.critical(err_message)
-                raise Exception(err_message)
+                raise MCMCError(err_message) from e
         else:
             self.sampler = emcee.EnsembleSampler(self.nwalkers, self.ndim, self.log_likelihood)
         self.backend_filename = backend_filename

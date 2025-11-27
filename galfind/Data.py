@@ -68,6 +68,7 @@ from . import Depths, Masking, SExtractor, Photutils, Filter, Multiple_Filter, c
 from . import useful_funcs_austind as funcs
 from .decorators import run_in_dir
 from .Instrument import ACS_WFC, WFC3_IR, NIRCam, MIRI, Instrument  # noqa F501
+from .exceptions import DataError, InvalidArgumentError
 
 morgan_version_to_dir = {
     "v8b": "mosaic_1084_wispfix",
@@ -1358,7 +1359,7 @@ class Band_Data(Band_Data_Base):
         if len(ZP_info) == 0:
             err_message = f"{repr(self)} header with {sci_hdr.keys()=} does not contain any {possible_ZP_keys=}!"
             galfind_logger.critical(err_message)
-            raise Exception(err_message)
+            raise DataError(err_message)
 
         copied_filenames = []
         for name, path, ext, load_func in zip(
@@ -1938,7 +1939,7 @@ class Data:
             if all(len(values) == 0 for values in filt_names_paths.values()):
                 err_message = f"No data found for {survey} {version} {instr_name} in {search_dir}"
                 galfind_logger.critical(err_message)
-                raise Exception(err_message)
+                raise DataError(err_message)
             else:
                 bands_found = [
                     key
@@ -2733,7 +2734,7 @@ class Data:
         else:
             err_message = f"{align_band_data=} must be a string or Band_Data object!"
             galfind_logger.critical(err_message)
-            raise Exception(err_message)
+            raise InvalidArgumentError(err_message)
 
         for band_data in self:
             if band_data.filt_name != align_band_data.filt_name:
@@ -2770,7 +2771,7 @@ class Data:
         else:
             err_message = f"{align_band_data=} must be a string or of type {tuple(Band_Data_Base.__subclasses__())}!"
             galfind_logger.critical(err_message)
-            raise Exception(err_message)
+            raise InvalidArgumentError(err_message)
         for band_data in self:
             if band_data.filt_name != align_band_data.filt_name:
                 band_data.xy_align(align_band_data, n_cores = n_cores)

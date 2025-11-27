@@ -11,6 +11,8 @@ from astropy.cosmology import FlatLambdaCDM
 end = time.time()
 #print(f"__init__ imports took {end - start}s")
 
+from .exceptions import ConfigurationError
+
 galfind_dir = "/".join(__file__.split("/")[:-1])
 try:
     config_dir = os.environ['GALFIND_CONFIG_DIR']
@@ -97,7 +99,7 @@ if config.getboolean("DEFAULT", "USE_LOGGING"):
     # Reattach the original formatter
         galfind_logger.handlers[0].setFormatter(galfind_log_formatter)
 else:
-    raise (Exception("galfind currently not set up to allow users to ignore logging!"))
+    raise ConfigurationError("galfind currently not set up to allow users to ignore logging!")
 
 # limit number of threads to N_CORES
 n_threads = str(config.getint("DEFAULT", "N_CORES"))
@@ -121,6 +123,18 @@ from . import useful_funcs_austind
 from . import figs
 from . import decorators
 from . import SExtractor, Masking, Depths
+from .exceptions import (
+    GalfindError,
+    CatalogueError,
+    DataError,
+    ConfigurationError,
+    SelectorError,
+    SEDFittingError,
+    MissingDataError,
+    InvalidArgumentError,
+    PlottingError,
+    MCMCError,
+)
 
 from .PSF import PSF_Base, PSF_Cutout
 from .Instrument import (Facility, JWST, HST, Paranal, Spitzer, Euclid, CFHT, Subaru,

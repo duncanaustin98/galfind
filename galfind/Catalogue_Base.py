@@ -28,6 +28,7 @@ from . import (
     galfind_logger,
 )
 from . import useful_funcs_austind as funcs
+from .exceptions import InvalidArgumentError, PlottingError
 
 
 class Catalogue_Base:
@@ -1038,7 +1039,7 @@ class Catalogue_Base:
         else:
             err_message = f"{plot_type=} not recognised!"
             galfind_logger.critical(err_message)
-            raise Exception(err_message)
+            raise PlottingError(err_message)
 
         # setup matplotlib figure/axis if not already given
         if fig is None or ax is None:

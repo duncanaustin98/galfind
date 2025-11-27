@@ -35,6 +35,7 @@ from . import galfind_logger, config, wav_lyman_lim
 from . import Galaxy, Catalogue, Catalogue_Base, Instrument, SED_code, Depths
 from .Instrument import expected_instr_bands
 from .Morphology import fwhm_nircam
+from .exceptions import SelectorError
 
 class Selector(ABC):
 
@@ -903,7 +904,7 @@ class Ds9_Region_Selector(Region_Selector):
         return ["region_path", "region_name"]
 
     def make_mask(self: Self):
-        raise Exception()
+        raise SelectorError("make_mask not implemented for Ds9_Region_Selector")
 
     def _assertions(self: Self) -> bool:
         try:
@@ -943,7 +944,7 @@ class Ds9_Region_Selector(Region_Selector):
         *args,
         **kwargs
     ) -> bool:
-        raise Exception()
+        raise SelectorError("_selection_criteria not implemented for Ds9_Region_Selector")
 
 
 class Depth_Region_Selector(Region_Selector):

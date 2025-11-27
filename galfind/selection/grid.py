@@ -20,6 +20,7 @@ except ImportError:
 from .. import galfind_logger, config
 from ..Catalogue import galfind_depth_labels, scattered_phot_labels, load_galfind_depths, scattered_depth_labels#, scattered_phot_labels_inst
 from .. import useful_funcs_austind as funcs
+from ..exceptions import GalfindError
 
 
 class Grid:
@@ -328,7 +329,7 @@ class Grid_2D:
                 select_cat = sampler(select_cat, return_copy = True)
         return scattered_sim_cat
     
-        raise Exception()
+        raise GalfindError("unreachable code - from_sim_cat_select_cat not properly implemented")
         return cls.from_sim_cat_select_cat(
             sim_cat, 
             select_cat,
