@@ -1151,44 +1151,26 @@ def fail_kokorev24_lrd_red1_selector(request):
     return Kokorev24_LRD_red1_Selector, *request.param
 
 
-@pytest.fixture(
-    scope = "module",
-    params = [
-        {"aper_diam": test_aper_diams[0]},
-    ]
-)
-def pass_kokorev24_lrd_red2_selector(request):
-    return Kokorev24_LRD_red2_Selector, request.param, True
+@pytest.fixture(scope = "module")
+def pass_kokorev24_lrd_red2_selector(pass_kokorev24_lrd_red1_selector):
+    pass_cls, inputs, _ = pass_kokorev24_lrd_red1_selector
+    return Kokorev24_LRD_red2_Selector, inputs, True
 
-@pytest.fixture(
-    scope = "module",
-    params = [
-        ({"aper_diam": 0.32}, Exception),  # missing units
-        ({"aper_diam": -0.32 * u.arcsec}, Exception),  # negative aperture
-    ]
-)
-def fail_kokorev24_lrd_red2_selector(request):
-    return Kokorev24_LRD_red2_Selector, *request.param
+@pytest.fixture(scope = "module")
+def fail_kokorev24_lrd_red2_selector(fail_kokorev24_lrd_red1_selector):
+    fail_cls, inputs, outcome = fail_kokorev24_lrd_red1_selector
+    return Kokorev24_LRD_red2_Selector, inputs, outcome
 
 
-@pytest.fixture(
-    scope = "module",
-    params = [
-        {"aper_diam": test_aper_diams[0]},
-    ]
-)
-def pass_kokorev24_lrd_selector(request):
-    return Kokorev24_LRD_Selector, request.param, True
+@pytest.fixture(scope = "module")
+def pass_kokorev24_lrd_selector(pass_kokorev24_lrd_red1_selector):
+    pass_cls, inputs, _ = pass_kokorev24_lrd_red1_selector
+    return Kokorev24_LRD_Selector, inputs, True
 
-@pytest.fixture(
-    scope = "module",
-    params = [
-        ({"aper_diam": 0.32}, Exception),  # missing units
-        ({"aper_diam": -0.32 * u.arcsec}, Exception),  # negative aperture
-    ]
-)
-def fail_kokorev24_lrd_selector(request):
-    return Kokorev24_LRD_Selector, *request.param
+@pytest.fixture(scope = "module")
+def fail_kokorev24_lrd_selector(fail_kokorev24_lrd_red1_selector):
+    fail_cls, inputs, outcome = fail_kokorev24_lrd_red1_selector
+    return Kokorev24_LRD_Selector, inputs, outcome
 
 
 @pytest.fixture(
