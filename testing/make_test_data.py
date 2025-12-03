@@ -5,7 +5,7 @@ from typing import List, Union, Type
 from galfind import Data, Catalogue, Band_Data_Base, galfind_logger
 from galfind.Data import morgan_version_to_dir
 
-from test_config import test_galfind_data_dir, test_survey, test_version, test_bands
+from ..conftest import test_galfind_data_dir, test_survey, test_version, test_bands_
 
 def main(
     survey: str,
@@ -31,7 +31,7 @@ def main(
     cutouts = random_gal.make_cutouts(data, cutout_size)
     # move cutouts to new data directory
     for cutout in cutouts:
-        if cutout.band_data.filt.band_name in test_bands:
+        if cutout.band_data.filt.band_name in test_bands_:
             output_dir = Data._get_data_dir(
                 test_survey,
                 test_version,

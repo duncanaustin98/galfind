@@ -1,0 +1,1125 @@
+
+import pytest
+from pytest_lazy_fixtures import lf
+import numpy as np
+import astropy.units as u
+import inspect
+import sys
+import os
+
+os.environ["GALFIND_CONFIG_DIR"] = f"{os.getcwd()}/testing"
+os.environ["GALFIND_CONFIG_NAME"] = "test_galfind_config.ini"
+
+
+from conftest import (
+    test_survey,
+    test_bands_,
+    test_aper_diams,
+    test_forced_phot_band_,
+)
+
+import galfind
+from galfind import (
+    config,
+    Selector,
+    EAZY,
+    Catalogue,
+    Galaxy,
+    NIRCam,
+    JWST,
+)
+from galfind.Selector import (
+    ID_Selector,
+    Ds9_Region_Selector,
+    Depth_Region_Selector,
+    Redshift_Limit_Selector,
+    Rest_Frame_Property_Limit_Selector,
+    Redshift_Bin_Selector,
+    Rest_Frame_Property_Bin_Selector,
+    Colour_Selector,
+    Min_Band_Selector,
+    Unmasked_Band_Selector,
+    Min_Unmasked_Band_Selector,
+    Min_Instrument_Unmasked_Band_Selector,
+    Bluewards_LyLim_Non_Detect_Selector,
+    Bluewards_Lya_Non_Detect_Selector,
+    Redwards_Lya_Detect_Selector,
+    Lya_Band_Selector,
+    Unmasked_Bluewards_Lya_Selector,
+    Unmasked_Redwards_Lya_Selector,
+    Band_SNR_Selector,
+    Band_Mag_Selector,
+    Chi_Sq_Lim_Selector,
+    Chi_Sq_Diff_Selector,
+    Chi_Sq_Template_Diff_Selector,
+    Robust_zPDF_Selector,
+    Sextractor_Band_Radius_Selector, # up to here
+    Re_Selector,
+    Kokorev24_LRD_red1_Selector,
+    Kokorev24_LRD_red2_Selector,
+    Kokorev24_LRD_Selector,
+    Unmasked_Bands_Selector,
+    Unmasked_Instrument_Selector,
+    Sextractor_Bands_Radius_Selector,
+    Sextractor_Instrument_Radius_Selector,
+    Sextractor_Instrument_Radius_PSF_FWHM_Selector,
+    Brown_Dwarf_Selector,
+    Hainline24_TY_Brown_Dwarf_Selector_1,
+    Hainline24_TY_Brown_Dwarf_Selector_2,
+    EPOCHS_unmasked_criteria,
+    EPOCHS_Selector,
+    Rest_Frame_Property_Kwarg_Selector,
+)
+
+
+@pytest.fixture(
+    scope = "module",
+    params = [
+        {"IDs": 0},
+        {"IDs": [0, 1]},
+        {"IDs": np.array([0, 1])},
+        {"IDs": [-1, 0]},
+        {"IDs": 123_456_789},
+        {"IDs": np.arange(0, 100, 1), "name": "large_named"},
+    ]
+)
+def pass_ID_selector(request):
+    return ID_Selector, request.param, True
+
+@pytest.fixture(
+    scope = "module",
+    params = [
+        ({"IDs": "invalid"}, Exception),
+        ({"IDs": 0.5}, Exception),
+        ({"IDs": [0, "1"]}, Exception),
+        ({"IDs": np.arange(0, 100, 1)}, Exception),
+        ({"name": "test"}, Exception),
+    ]
+)
+def fail_ID_selector(request):
+    return ID_Selector, *request.param
+
+
+@pytest.fixture(
+    scope = "module",
+    params = [
+        {
+            "region_path": f"{config['Masking']['MASK_DIR']}/{test_survey}/reg/stellar/{test_bands_[-1]}_stellar.reg"
+        },
+        {
+            "region_path": f"{config['Masking']['MASK_DIR']}/{test_survey}/reg/stellar/{test_bands_[-1]}_stellar.reg",
+            "region_name": f"{test_bands_[-1]}_stellar"
+        },
+        {
+            "region_path": f"{config['Masking']['MASK_DIR']}/{test_survey}/reg/stellar/{test_bands_[-1]}_stellar.reg",
+            "region_name": f"{test_bands_[-1]}_stellar",
+            "fail_name": f"not_{test_bands_[-1]}_stellar",
+        },
+    ]
+)
+def pass_ds9_region_selector(request):
+    return Ds9_Region_Selector, request.param, True
+
+@pytest.fixture(
+    scope = "module",
+    params = [
+        ({"region_path": "invalid_path.reg"}, Exception),
+    ]
+)
+def fail_ds9_region_selector(request):
+    return Ds9_Region_Selector, *request.param
+
+
+@pytest.fixture(
+    scope = "module",
+    params = [
+        {"aper_diam": test_aper_diams[0], "filt_name": test_forced_phot_band_[0], "region_label": 0},
+        {"aper_diam": 0.1 * u.arcsec, "filt_name": test_forced_phot_band_[0], "region_label": 0},
+        {"aper_diam": test_aper_diams[0], "filt_name": test_forced_phot_band_, "region_label": 0},
+    ]
+)
+def pass_depth_region_selector(request):
+    return Depth_Region_Selector, request.param, True
+
+@pytest.fixture(
+    scope = "module",
+    params = [
+        ({"aper_diam": test_aper_diams[0], "filt_name": 0, "region_label": 0}, Exception),
+        ({"aper_diam": test_aper_diams[0].value, "filt_name": test_forced_phot_band_[0], "region_label": 0}, Exception),
+    ]
+)
+def fail_depth_region_selector(request):
+    return Depth_Region_Selector, *request.param
+
+@pytest.fixture(
+    scope = "module",
+    params = [
+        {
+            "aper_diam": test_aper_diams[0],
+            "SED_fitter": "eazy_fsps_larson_sed_fitter",
+            "z_lim": 1.0,
+            "gtr_or_less": "gtr",
+        },
+        {
+            "aper_diam": 0.1 * u.arcsec,
+            "SED_fitter": "eazy_fsps_larson_sed_fitter",
+            "z_lim": 1.0,
+            "gtr_or_less": "gtr",
+        },
+        {
+            "aper_diam": test_aper_diams[0],
+            "SED_fitter": "eazy_fsps_larson_sed_fitter",
+            "z_lim": 1.0,
+            "gtr_or_less": "less",
+        },
+    ]
+)
+def pass_redshift_limit_selector(request):
+    inputs = request.param
+    inputs["SED_fitter"] = request.getfixturevalue(inputs["SED_fitter"])
+    return Redshift_Limit_Selector, inputs, True
+
+@pytest.fixture(
+    scope = "module",
+    params = [
+        (
+            {
+                "aper_diam": test_aper_diams[0],
+                "SED_fitter": "eazy_fsps_larson_sed_fitter",
+                "z_lim": 1.0,
+                "gtr_or_less": "random",
+            }, Exception
+        ),
+        (
+            {
+                "aper_diam": test_aper_diams[0],
+                "SED_fitter": "eazy_fsps_larson_sed_fitter",
+                "z_lim": -1.0,
+                "gtr_or_less": "gtr",
+            }, Exception
+        ),
+    ]
+)
+def fail_redshift_limit_selector(request):
+    inputs, outcome = request.param
+    inputs["SED_fitter"] = request.getfixturevalue(inputs["SED_fitter"])
+    return Redshift_Limit_Selector, inputs, outcome
+
+
+@pytest.fixture(
+    scope = "module",
+    params = [
+    ]
+)
+def pass_rest_frame_property_limit_selector(request):
+    return Rest_Frame_Property_Limit_Selector, request.param, True
+
+@pytest.fixture(
+    scope = "module",
+    params = [
+    ]
+)
+def fail_rest_frame_property_limit_selector(request):
+    return Rest_Frame_Property_Limit_Selector, *request.param
+
+
+@pytest.fixture(
+    scope = "module",
+    params = [
+        {
+            "aper_diam": test_aper_diams[0],
+            "SED_fitter": "eazy_fsps_larson_sed_fitter",
+            "z_bin": [0.5, 1.0],
+        },
+        {
+            "aper_diam": 0.1 * u.arcsec,
+            "SED_fitter": "eazy_fsps_larson_sed_fitter",
+            "z_bin": [0.5, 1.0],
+        },
+        {
+            "aper_diam": test_aper_diams[0],
+            "SED_fitter": "eazy_fsps_larson_sed_fitter",
+            "z_bin": [1, 2],
+        },
+        {
+            "aper_diam": test_aper_diams[0],
+            "SED_fitter": "eazy_fsps_larson_sed_fitter",
+            "z_bin": [1.2, 2],
+        },
+        {
+            "aper_diam": test_aper_diams[0],
+            "SED_fitter": "eazy_fsps_larson_sed_fitter",
+            "z_bin": np.array([1.5, 2.5]),
+        },
+    ]
+)
+def pass_redshift_bin_selector(request):
+    inputs = request.param
+    inputs["SED_fitter"] = request.getfixturevalue(inputs["SED_fitter"])
+    return Redshift_Bin_Selector, inputs, True
+
+@pytest.fixture(
+    scope = "module",
+    params = [
+        (
+            {
+                "aper_diam": test_aper_diams[0],
+                "SED_fitter": "eazy_fsps_larson_sed_fitter",
+                "z_bin": [1.0, 0.5],
+            }, Exception
+        ),
+        (
+            {
+                "aper_diam": test_aper_diams[0],
+                "SED_fitter": "eazy_fsps_larson_sed_fitter",
+                "z_bin": [0.5, "1.0"],
+            }, Exception
+        ),
+        (
+            {
+                "aper_diam": test_aper_diams[0],
+                "SED_fitter": "eazy_fsps_larson_sed_fitter",
+                "z_bin": 1.0,
+            }, Exception
+        ),
+    ]
+)
+def fail_redshift_bin_selector(request):
+    inputs, outcome = request.param
+    inputs["SED_fitter"] = request.getfixturevalue(inputs["SED_fitter"])
+    return Redshift_Bin_Selector, inputs, outcome
+
+
+@pytest.fixture(
+    scope = "module",
+    params = [
+    ]
+)
+def pass_rest_frame_property_bin_selector(request):
+    return Rest_Frame_Property_Bin_Selector, request.param, True
+
+@pytest.fixture(
+    scope = "module",
+    params = [
+    ]
+)
+def fail_rest_frame_property_bin_selector(request):
+    return Rest_Frame_Property_Bin_Selector, *request.param
+
+
+@pytest.fixture(
+    scope = "module",
+    params = [
+        {
+            "aper_diam": test_aper_diams[0],
+            "colour_bands": [test_forced_phot_band_[0], test_forced_phot_band_[1]],
+            "bluer_or_redder": "bluer",
+            "colour_val": 0.5,
+        },
+        {
+            "aper_diam": 0.1 * u.arcsec,
+            "colour_bands": [test_forced_phot_band_[0], test_forced_phot_band_[1]],
+            "bluer_or_redder": "bluer",
+            "colour_val": 0.5,
+        },
+        {
+            "aper_diam": test_aper_diams[0],
+            "colour_bands": f"{test_forced_phot_band_[0]}-{test_forced_phot_band_[1]}",
+            "bluer_or_redder": "bluer",
+            "colour_val": 0.5,
+        },
+        {
+            "aper_diam": test_aper_diams[0],
+            "colour_bands": np.array([test_forced_phot_band_[0], test_forced_phot_band_[1]]),
+            "bluer_or_redder": "bluer",
+            "colour_val": 0.5,
+        },
+        {
+            "aper_diam": test_aper_diams[0],
+            "colour_bands": [test_forced_phot_band_[0], test_forced_phot_band_[1]],
+            "bluer_or_redder": "redder",
+            "colour_val": 0.5,
+        },
+        {
+            "aper_diam": test_aper_diams[0],
+            "colour_bands": f"{test_forced_phot_band_[0]}-{test_forced_phot_band_[1]}",
+            "bluer_or_redder": "bluer",
+            "colour_val": 2,
+        },
+        {
+            "aper_diam": test_aper_diams[0],
+            "colour_bands": [test_forced_phot_band_[0], test_forced_phot_band_[1]],
+            "bluer_or_redder": "bluer",
+            "colour_val": -0.5,
+        },
+    ]
+)
+def pass_colour_selector(request):
+    return Colour_Selector, request.param, True
+
+@pytest.fixture(
+    scope = "module",
+    params = [
+        (
+            {
+                "aper_diam": test_aper_diams[0],
+                "colour_bands": [test_forced_phot_band_[0], test_forced_phot_band_[1]],
+                "bluer_or_redder": "random",
+                "colour_val": 0.5,
+            }, Exception
+        ),
+        (
+            {
+                "aper_diam": test_aper_diams[0].value,
+                "colour_bands": [test_forced_phot_band_[0], test_forced_phot_band_[1]],
+                "bluer_or_redder": "bluer",
+                "colour_val": 0.5,
+            }, Exception
+        ),
+    ]
+)
+def fail_colour_selector(request):
+    return Colour_Selector, *request.param
+
+
+@pytest.fixture(
+    scope = "module",
+    params = [
+        {"min_bands": 2},
+    ]
+)
+def pass_min_band_selector(request):
+    return Min_Band_Selector, request.param, True
+
+@pytest.fixture(
+    scope = "module",
+    params = [
+        ({"min_bands": 2.0}, Exception),
+        ({"min_bands": -1}, Exception),
+        ({"min_bands": "invalid"}, Exception),
+        ({"min_bands": [2]}, Exception),
+        ({"min_bands": np.array([2])}, Exception),
+    ]
+)
+def fail_min_band_selector(request):
+    return Min_Band_Selector, *request.param
+
+
+@pytest.fixture(
+    scope = "module",
+    params = [
+        {"band_name": "F444W"},
+    ]
+)
+def pass_unmasked_band_selector(request):
+    return Unmasked_Band_Selector, request.param, True
+
+@pytest.fixture(
+    scope = "module",
+    params = [
+        ({"band_name": "invalid"}, Exception),
+        ({"band_name": 0}, Exception),
+        ({"band_name": 0.32 * u.arcsec}, Exception),
+        ({"band_name": [0, 1]}, Exception),
+    ]
+)
+def fail_unmasked_band_selector(request):
+    return Unmasked_Band_Selector, *request.param
+
+
+@pytest.fixture(
+    scope = "module",
+    params = [
+        {"min_bands": 2},
+    ]
+)
+def pass_min_unmasked_band_selector(request):
+    return Min_Unmasked_Band_Selector, request.param, True
+
+@pytest.fixture(
+    scope = "module",
+    params = [
+        ({"min_bands": 2.0}, Exception),
+        ({"min_bands": -1}, Exception),
+        ({"min_bands": "invalid"}, Exception),
+        ({"min_bands": [2]}, Exception),
+        ({"min_bands": np.array([2])}, Exception),
+    ]
+)
+def fail_min_unmasked_band_selector(request):
+    return Min_Unmasked_Band_Selector, *request.param
+
+
+@pytest.fixture(
+    scope = "module",
+    params = [
+        {"min_bands": 1, "instrument": NIRCam()},
+        {"min_bands": 1, "instrument": "NIRCam"},
+    ]
+)
+def pass_min_instrument_unmasked_band_selector(request):
+    return Min_Instrument_Unmasked_Band_Selector, request.param, True
+
+@pytest.fixture(
+    scope = "module",
+    params = [
+        ({"min_bands": 2.0, "instrument": NIRCam()}, Exception),
+        ({"min_bands": -1, "instrument": NIRCam()}, Exception),
+        ({"min_bands": 1, "instrument": "invalid"}, Exception),
+        ({"min_bands": 1, "instrument": JWST()}, Exception),
+        ({"min_bands": 0.32 * u.arcsec, "instrument": NIRCam()}, Exception),
+    ]
+)
+def fail_min_instrument_unmasked_band_selector(request):
+    return Min_Instrument_Unmasked_Band_Selector, *request.param
+
+
+@pytest.fixture(
+    scope = "module",
+    params = [
+        {   
+            "aper_diam": 0.32 * u.arcsec,
+            "SED_fitter": "eazy_fsps_larson_sed_fitter",
+            "SNR_lim": 2.0,
+        },
+        {   
+            "aper_diam": 0.32 * u.arcsec,
+            "SED_fitter": "eazy_fsps_larson_sed_fitter",
+            "SNR_lim": 2.0,
+            "ignore_bands": "F090W",
+        },
+    ]
+)
+def pass_bluewards_lylim_non_detect_selector(request):
+    inputs = request.param.copy()
+    inputs["SED_fitter"] = request.getfixturevalue(inputs["SED_fitter"])
+    return Bluewards_LyLim_Non_Detect_Selector, inputs, True
+
+@pytest.fixture(
+    scope = "module",
+    params = [
+        (
+            {   
+                "aper_diam": 0.32,
+                "SED_fitter": "eazy_fsps_larson_sed_fitter",
+                "SNR_lim": 2.0,
+            }, Exception
+        ),
+    ]
+)
+def fail_bluewards_lylim_non_detect_selector(request):
+    inputs, outcome = request.param
+    inputs_ = inputs.copy() # monkeypatch?
+    inputs_["SED_fitter"] = request.getfixturevalue(inputs["SED_fitter"])
+    return Bluewards_LyLim_Non_Detect_Selector, inputs_, outcome
+
+
+@pytest.fixture(scope = "module")
+def pass_bluewards_lya_non_detect_selector(pass_bluewards_lylim_non_detect_selector):
+    pass_cls, inputs, _ = pass_bluewards_lylim_non_detect_selector
+    return Bluewards_Lya_Non_Detect_Selector, inputs, True
+
+@pytest.fixture(scope = "module")
+def fail_bluewards_lya_non_detect_selector(fail_bluewards_lylim_non_detect_selector):
+    fail_cls, inputs, outcome = fail_bluewards_lylim_non_detect_selector
+    return Bluewards_Lya_Non_Detect_Selector, inputs, outcome
+
+
+@pytest.fixture(
+    scope = "module",
+    params = [
+        {   
+            "aper_diam": 0.32 * u.arcsec,
+            "SED_fitter": "eazy_fsps_larson_sed_fitter",
+            "SNR_lims": 2.0,
+            "widebands_only": True,
+        },
+        {   
+            "aper_diam": 0.32 * u.arcsec,
+            "SED_fitter": "eazy_fsps_larson_sed_fitter",
+            "SNR_lims": 2.0,
+            "widebands_only": True,
+            "ignore_bands": "F090W",
+        },
+    ]
+)
+def pass_redwards_lya_detect_selector(request):
+    inputs = request.param.copy()
+    inputs["SED_fitter"] = request.getfixturevalue(inputs["SED_fitter"])
+    return Redwards_Lya_Detect_Selector, inputs, True
+
+@pytest.fixture(
+    scope = "module",
+    params = [
+        (
+            {   
+                "aper_diam": 0.32,
+                "SED_fitter": "eazy_fsps_larson_sed_fitter",
+                "SNR_lims": -1.0,
+                "widebands_only": True,
+            }, Exception
+        ),
+    ]
+)
+def fail_redwards_lya_detect_selector(request):
+    inputs, outcome = request.param
+    inputs_ = inputs.copy() # monkeypatch?
+    inputs_["SED_fitter"] = request.getfixturevalue(inputs["SED_fitter"])
+    return Redwards_Lya_Detect_Selector, inputs_, outcome
+
+
+@pytest.fixture(
+    scope = "module",
+    params = [
+        {   
+            "aper_diam": 0.32 * u.arcsec,
+            "SED_fitter": "eazy_fsps_larson_sed_fitter",
+            "SNR_lim": 2.0,
+            "detect_or_non_detect": "detect",
+            "widebands_only": True,
+        },
+        {   
+            "aper_diam": 0.32 * u.arcsec,
+            "SED_fitter": "eazy_fsps_larson_sed_fitter",
+            "SNR_lim": 2.0,
+            "detect_or_non_detect": "non_detect",
+            "widebands_only": True,
+        },
+    ]
+)
+def pass_lya_band_selector(request):
+    inputs = request.param
+    inputs["SED_fitter"] = request.getfixturevalue(inputs["SED_fitter"])
+    return Lya_Band_Selector, inputs, True
+
+@pytest.fixture(
+    scope = "module",
+    params = [
+        (
+            {   
+                "aper_diam": 0.32 * u.arcsec,
+                "SED_fitter": "eazy_fsps_larson_sed_fitter",
+                "SNR_lim": 2.0,
+                "detect_or_non_detect": "invalid",
+                "widebands_only": True,
+            }, Exception
+        ),
+    ]
+)
+def fail_lya_band_selector(request):
+    inputs, outcome = request.param
+    inputs["SED_fitter"] = request.getfixturevalue(inputs["SED_fitter"])
+    return Lya_Band_Selector, inputs, outcome
+
+
+@pytest.fixture(
+    scope = "module",
+    params = [
+        {   
+            "aper_diam": 0.32 * u.arcsec,
+            "SED_fitter": "eazy_fsps_larson_sed_fitter",
+            "min_bands": 2,
+            "widebands_only": True,
+        },
+        {   
+            "aper_diam": 0.32 * u.arcsec,
+            "SED_fitter": "eazy_fsps_larson_sed_fitter",
+            "min_bands": 2,
+            "widebands_only": False,
+        },
+        {   
+            "aper_diam": 0.32 * u.arcsec,
+            "SED_fitter": "eazy_fsps_larson_sed_fitter",
+            "min_bands": 2,
+            "widebands_only": True,
+            "ignore_bands": "F090W",
+        },
+    ]
+)
+def pass_unmasked_bluewards_lya_selector(request):
+    inputs = request.param.copy()
+    inputs["SED_fitter"] = request.getfixturevalue(inputs["SED_fitter"])
+    return Unmasked_Bluewards_Lya_Selector, inputs, True
+
+@pytest.fixture(
+    scope = "module",
+    params = [
+        (
+            {   
+                "aper_diam": 0.32 * u.arcsec,
+                "SED_fitter": "eazy_fsps_larson_sed_fitter",
+                "min_bands": 2.0,
+                "widebands_only": True,
+            }, Exception
+        ),
+        (
+            {   
+                "aper_diam": 0.32 * u.arcsec,
+                "SED_fitter": "eazy_fsps_larson_sed_fitter",
+                "min_bands": 2.0,
+                "widebands_only": True,
+                "ignore_bands": "invalid",
+            }, Exception
+        ),
+    ]
+)
+def fail_unmasked_bluewards_lya_selector(request):
+    inputs, outcome = request.param
+    inputs_ = inputs.copy() # monkeypatch?
+    inputs_["SED_fitter"] = request.getfixturevalue(inputs["SED_fitter"])
+    return Unmasked_Bluewards_Lya_Selector, inputs_, outcome
+
+
+@pytest.fixture(scope = "module")
+def pass_unmasked_redwards_lya_selector(pass_unmasked_bluewards_lya_selector):
+    pass_cls, inputs, _ = pass_unmasked_bluewards_lya_selector
+    return Unmasked_Redwards_Lya_Selector, inputs, True
+
+@pytest.fixture(scope = "module")
+def fail_unmasked_redwards_lya_selector(fail_unmasked_bluewards_lya_selector):
+    fail_cls, inputs, outcome = fail_unmasked_bluewards_lya_selector
+    return Unmasked_Redwards_Lya_Selector, inputs, outcome
+
+
+@pytest.fixture(
+    scope = "module",
+    params = [
+        {
+            "aper_diam": 0.32 * u.arcsec,
+            "band": "F444W",
+            "detect_or_non_detect": "detect",
+            "SNR_lim": 5.0,
+        },
+        {
+            "aper_diam": 0.32 * u.arcsec,
+            "band": "F444W",
+            "detect_or_non_detect": "non_detect",
+            "SNR_lim": 5.0,
+        },
+        {
+            "aper_diam": 0.32 * u.arcsec,
+            "band": 0,
+            "detect_or_non_detect": "detect",
+            "SNR_lim": 5.0,
+        },
+        {
+            "aper_diam": 0.32 * u.arcsec,
+            "band": -1,
+            "detect_or_non_detect": "detect",
+            "SNR_lim": 5.0,
+        },
+        {
+            "aper_diam": 0.32 * u.arcsec,
+            "band": 1,
+            "detect_or_non_detect": "detect",
+            "SNR_lim": 5.0,
+        },
+        {
+            "aper_diam": 0.32 * u.arcsec,
+            "band": -2,
+            "detect_or_non_detect": "detect",
+            "SNR_lim": 5.0,
+        },
+    ]
+)
+def pass_band_snr_selector(request):
+    return Band_SNR_Selector, request.param, True
+
+@pytest.fixture(
+    scope = "module",
+    params = [
+        (
+            {
+                "aper_diam": 0.32 * u.arcsec,
+                "band": "invalid",
+                "detect_or_non_detect": "detect",
+                "SNR_lim": 5.0,
+            }, Exception
+        ),
+        (
+            {
+                "aper_diam": 0.32 * u.arcsec,
+                "band": "F444W",
+                "detect_or_non_detect": "invalid",
+                "SNR_lim": 5.0,
+            }, Exception
+        ),
+    ]
+)
+def fail_band_snr_selector(request):
+    return Band_SNR_Selector, *request.param
+
+@pytest.fixture(
+    scope = "module",
+    params = [
+        {
+            "aper_diam": 0.32 * u.arcsec,
+            "band": "F444W",
+            "detect_or_non_detect": "detect",
+            "mag_lim": 28.0,
+        },
+        {
+            "aper_diam": 0.32 * u.arcsec,
+            "band": "F444W",
+            "detect_or_non_detect": "non_detect",
+            "mag_lim": 28.0,
+        },
+        {
+            "aper_diam": 0.32 * u.arcsec,
+            "band": 1,
+            "detect_or_non_detect": "non_detect",
+            "mag_lim": 28.0,
+        },
+        {
+            "aper_diam": 0.32 * u.arcsec,
+            "band": 0,
+            "detect_or_non_detect": "non_detect",
+            "mag_lim": 28.0,
+        },
+        {
+            "aper_diam": 0.32 * u.arcsec,
+            "band": -1,
+            "detect_or_non_detect": "non_detect",
+            "mag_lim": 28.0,
+        },
+        {
+            "aper_diam": 0.32 * u.arcsec,
+            "band": -2,
+            "detect_or_non_detect": "non_detect",
+            "mag_lim": 28.0,
+        },
+    ]
+)
+def pass_band_mag_selector(request):
+    return Band_Mag_Selector, request.param, True
+
+@pytest.fixture(
+    scope = "module",
+    params = [
+        (
+            {
+                "aper_diam": 0.32 * u.arcsec,
+                "band": "F444W",
+                "detect_or_non_detect": "invalid",
+                "mag_lim": 28.0,
+            }, Exception
+        ),
+        (
+            {
+                "aper_diam": 0.32 * u.arcsec,
+                "band": "invalid",
+                "detect_or_non_detect": "detect",
+                "mag_lim": 28.0,
+            }, Exception
+        ),
+        (
+            {
+                "aper_diam": 0.32 * u.arcsec,
+                "band": "F444W",
+                "detect_or_non_detect": "detect",
+                "mag_lim": 28.0 * u.ABmag, # shouldn't really fail here!
+            }, Exception
+        ),
+    ]
+)
+def fail_band_mag_selector(request):
+    return Band_Mag_Selector, *request.param
+
+
+@pytest.fixture(
+    scope = "module",
+    params = [
+        {
+            "aper_diam": 0.32 * u.arcsec,
+            "SED_fitter": "eazy_fsps_larson_sed_fitter",
+            "chi_sq_lim": 4.0,
+            "reduced": True,
+        },
+        {
+            "aper_diam": 0.32 * u.arcsec,
+            "SED_fitter": "eazy_fsps_larson_sed_fitter",
+            "chi_sq_lim": 4.0,
+            "reduced": False,
+        },
+        {
+            "aper_diam": 0.32 * u.arcsec,
+            "SED_fitter": "eazy_fsps_larson_sed_fitter",
+            "chi_sq_lim": 2,
+            "reduced": True,
+        },
+    ]
+)
+def pass_chi_sq_lim_selector(request):
+    inputs = request.param.copy()
+    inputs["SED_fitter"] = request.getfixturevalue(inputs["SED_fitter"])
+    return Chi_Sq_Lim_Selector, inputs, True
+
+@pytest.fixture(
+    scope = "module",
+    params = [
+        (
+            {
+                "aper_diam": 0.32 * u.arcsec,
+                "SED_fitter": "eazy_fsps_larson_sed_fitter",
+                "chi_sq_lim": 4.0,
+                "reduced": "invalid",
+            }, Exception
+        ),
+        (
+            {
+                "aper_diam": 0.32 * u.arcsec,
+                "SED_fitter": "eazy_fsps_larson_sed_fitter",
+                "chi_sq_lim": -1.0,
+                "reduced": True,
+            }, Exception
+        ),
+    ]
+)
+def fail_chi_sq_lim_selector(request):
+    inputs, outcome = request.param
+    inputs_ = inputs.copy()
+    inputs_["SED_fitter"] = request.getfixturevalue(inputs["SED_fitter"])
+    return Chi_Sq_Lim_Selector, inputs_, outcome
+
+
+@pytest.fixture(
+    scope = "module",
+    params = [
+        {
+            "aper_diam": 0.32 * u.arcsec,
+            "SED_fitter": "eazy_fsps_larson_sed_fitter",
+            "chi_sq_diff": 2.0,
+            "dz": 0.5,
+        },
+        {
+            "aper_diam": 0.32 * u.arcsec,
+            "SED_fitter": "eazy_fsps_larson_sed_fitter",
+            "chi_sq_diff": 2,
+            "dz": 0.5,
+        },
+        {
+            "aper_diam": 0.32 * u.arcsec,
+            "SED_fitter": "eazy_fsps_larson_sed_fitter",
+            "chi_sq_diff": 2.0,
+            "dz": 1,
+        },
+    ]
+)
+def pass_chi_sq_diff_selector(request):
+    inputs = request.param.copy()
+    inputs["SED_fitter"] = request.getfixturevalue(inputs["SED_fitter"])
+    return Chi_Sq_Diff_Selector, inputs, True
+
+@pytest.fixture(
+    scope = "module",
+    params = [
+        (
+            {
+                "aper_diam": 0.32 * u.arcsec,
+                "SED_fitter": "eazy_fsps_larson_sed_fitter",
+                "chi_sq_diff": -1.0,
+                "dz": 0.5,
+            }, Exception
+        ),
+        (
+            {
+                "aper_diam": 0.32 * u.arcsec,
+                "SED_fitter": "eazy_fsps_larson_sed_fitter",
+                "chi_sq_diff": 2.0,
+                "dz": -0.5,
+            }, Exception
+        ),
+    ]
+)
+def fail_chi_sq_diff_selector(request):
+    inputs, outcome = request.param
+    inputs_ = inputs.copy()
+    inputs_["SED_fitter"] = request.getfixturevalue(inputs["SED_fitter"])
+    return Chi_Sq_Diff_Selector, inputs_, outcome
+
+
+@pytest.fixture(
+    scope = "module",
+    params = [
+        {
+            "aper_diam": 0.32 * u.arcsec,
+            "SED_fitter": "eazy_fsps_larson_sed_fitter",
+            "chi_sq_diff": 2.0,
+            "secondary_SED_fit_label": "eazy_sfhz_sed_fitter",
+        },
+        {
+            "aper_diam": 0.32 * u.arcsec,
+            "SED_fitter": "eazy_fsps_larson_sed_fitter",
+            "chi_sq_diff": 2,
+            "secondary_SED_fit_label": "eazy_sfhz_sed_fitter",
+            "reduced": True,
+        },
+    ]
+)
+def pass_chi_sq_template_diff_selector(request):
+    inputs = request.param.copy()
+    inputs["SED_fitter"] = request.getfixturevalue(inputs["SED_fitter"])
+    inputs["secondary_SED_fit_label"] = request.getfixturevalue(inputs["secondary_SED_fit_label"])
+    return Chi_Sq_Template_Diff_Selector, inputs, True
+
+@pytest.fixture(
+    scope = "module",
+    params = [
+        (
+            {
+                "aper_diam": 0.32 * u.arcsec,
+                "SED_fitter": "eazy_fsps_larson_sed_fitter",
+                "chi_sq_diff": -1.0,
+                "secondary_SED_fit_label": "eazy_sfhz_sed_fitter",
+            }, Exception
+        ),
+        (
+            {
+                "aper_diam": 0.32 * u.arcsec,
+                "SED_fitter": "eazy_fsps_larson_sed_fitter",
+                "chi_sq_diff": 2.0,
+                "secondary_SED_fit_label": "eazy_sfhz_sed_fitter",
+                "reduced": "invalid",
+            }, Exception
+        ),
+    ]
+)
+def fail_chi_sq_template_diff_selector(request):
+    inputs, outcome = request.param
+    inputs_ = inputs.copy()
+    inputs_["SED_fitter"] = request.getfixturevalue(inputs["SED_fitter"])
+    inputs_["secondary_SED_fit_label"] = request.getfixturevalue(inputs["secondary_SED_fit_label"])
+    return Chi_Sq_Template_Diff_Selector, inputs_, outcome
+
+
+@pytest.fixture(
+    scope = "module",
+    params = [
+        {
+            "aper_diam": 0.32 * u.arcsec,
+            "SED_fitter": "eazy_fsps_larson_sed_fitter",
+            "integral_lim": 0.6,
+            "dz_over_z": 0.1,
+        },
+        {
+            "aper_diam": 0.32 * u.arcsec,
+            "SED_fitter": "eazy_fsps_larson_sed_fitter",
+            "integral_lim": 0.6,
+            "dz_over_z": 1.5,
+        },
+    ]
+)
+def pass_robust_zPDF_selector(request):
+    inputs = request.param.copy()
+    inputs["SED_fitter"] = request.getfixturevalue(inputs["SED_fitter"])
+    return Robust_zPDF_Selector, inputs, True
+
+@pytest.fixture(
+    scope = "module",
+    params = [
+        (
+            {
+                "aper_diam": 0.32 * u.arcsec,
+                "SED_fitter": "eazy_fsps_larson_sed_fitter",
+                "integral_lim": 1.1,
+                "dz_over_z": 0.1,
+            }, Exception
+        ),
+        (
+            {
+                "aper_diam": 0.32 * u.arcsec,
+                "SED_fitter": "eazy_fsps_larson_sed_fitter",
+                "integral_lim": 1.234_567_890,
+                "dz_over_z": 0.1,
+            }, Exception
+        ),
+        (
+            {
+                "aper_diam": 0.32 * u.arcsec,
+                "SED_fitter": "eazy_fsps_larson_sed_fitter",
+                "integral_lim": 0.60,
+                "dz_over_z": 0.0,
+            }, Exception
+        ),
+        (
+            {
+                "aper_diam": 0.32 * u.arcsec,
+                "SED_fitter": "eazy_fsps_larson_sed_fitter",
+                "integral_lim": 0.6,
+                "dz_over_z": -1.0,
+            }, Exception
+        ),
+        (
+            {
+                "aper_diam": 0.32 * u.arcsec,
+                "SED_fitter": "eazy_fsps_larson_sed_fitter",
+                "integral_lim": 1.1,
+                "dz_over_z": 0.0,
+            }, Exception
+        ),
+    ]
+)
+def fail_robust_zPDF_selector(request):
+    inputs, outcome = request.param
+    inputs_ = inputs.copy()
+    inputs_["SED_fitter"] = request.getfixturevalue(inputs["SED_fitter"])
+    return Robust_zPDF_Selector, inputs_, outcome
+
+
+##################################################
+
+def get_selector_fixtures():
+    module = sys.modules[__name__]
+    return [
+        lf(name) for name, obj in inspect.getmembers(module)
+        if name.endswith("_selector")
+    ]
+
+@pytest.fixture(
+    scope = "module",
+    params = get_selector_fixtures()
+)
+def selector(request):
+    return request.param
+
+def get_pass_selector_fixtures():
+    module = sys.modules[__name__]
+    return [
+        lf(name) for name, obj in inspect.getmembers(module)
+        if name.endswith("_selector") and name.startswith("pass_")
+    ]
+
+@pytest.fixture(
+    scope = "module",
+    params = get_pass_selector_fixtures()
+)
+def pass_selector(request):
+    return request.param
+
+#################################################
+
+def test_selector_init(selector):
+    selector_cls, inputs, outcome = selector
+    # instantiate selector_cls with inputs
+    if outcome != True:
+        with pytest.raises(outcome):
+            selector_cls(**inputs)
+    else:
+        selector_inst = selector_cls(**inputs)
+        assert isinstance(selector_inst, selector_cls)
+
+# TODO: Determine expected __call__ failures due to 
+# objects not containing required information
+
+@pytest.mark.requires_data
+def test_selector_call_gal(pass_selector, gal):
+    selector_inst = pass_selector[0](**pass_selector[1])
+    out_gal = selector_inst(gal)
+    assert isinstance(out_gal, Galaxy)
+
+@pytest.mark.requires_data
+def test_selector_call_cat(pass_selector, cat):
+    selector_inst = pass_selector[0](**pass_selector[1])
+    out_cat = selector_inst(cat)
+    assert isinstance(out_cat, Catalogue)
+

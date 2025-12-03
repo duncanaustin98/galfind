@@ -4,6 +4,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 import astropy.units as u
 import numpy as np
+from numpy.typing import NDArray
 from copy import deepcopy
 import json
 from astropy.coordinates import SkyCoord
@@ -55,6 +56,11 @@ class Selector(ABC):
         self.morph_fitter = morph_fitter
         self.kwargs = kwargs
         assert self._assertions()
+        assert len(self.name) < 68, \
+            galfind_logger.critical(
+                f"{self.name=} with {len(self)=}>68! " + \
+                "Please shorten the name to avoid FITS column name length limits."
+            )
 
     def __repr__(self: Self) -> str:
         return f"{self.__class__.__name__}({','.join([repr(kwarg).replace(' ', '') for kwarg in self.kwargs.values()])})"
@@ -465,14 +471,14 @@ class Morphology_Selector(Selector, ABC):
         return Selector.__call__(self, object, return_copy)
 
 
-class Redshift_Selector(SED_fit_Selector):
+class Redshift_Selector(SED_fit_Selector, ABC):
 
     @property
     def requires_SED_fit(self: Self) -> bool:
         return False
 
 
-class Mask_Selector(Data_Selector):
+class Mask_Selector(Data_Selector, ABC):
 
     @abstractmethod
     def load_mask(
@@ -762,7 +768,7 @@ class ID_Selector(Data_Selector):
         return gal.ID in self.kwargs["IDs"]
 
 
-class Region_Selector(Data_Selector):
+class Region_Selector(Data_Selector, ABC):
 
     def __init__(
         self: Self,
@@ -923,7 +929,6 @@ class Ds9_Region_Selector(Region_Selector):
         *args,
         **kwargs
     ) -> Optional[Union[Galaxy, Catalogue]]:
-        breakpoint()
         with open(self.kwargs["region_path"], "r") as f:
             # save .reg file to object
             pass
@@ -1174,6 +1179,7 @@ class Redshift_Limit_Selector(Redshift_Selector):
     def _assertions(self: Self) -> bool:
         try:
             assert isinstance(self.kwargs["z_lim"], (int, float))
+            assert self.kwargs["z_lim"] >= 0.0
             assert self.kwargs["gtr_or_less"] in ["gtr", "less"]
             passed = True
         except:
@@ -1248,8 +1254,8 @@ class Rest_Frame_Property_Limit_Selector(Redshift_Selector):
         *args,
         **kwargs
     ) -> bool:
-        assertions = []
         try:
+            assertions = []
             assertions.extend([
                 self.kwargs["property_name"] in gal.aper_phot[self.aper_diam].SED_results \
                     [self.SED_fitter.label].phot_rest.properties.keys()
@@ -1354,7 +1360,7 @@ class Colour_Selector(Photometry_Selector):
     def __init__(
         self: Self,
         aper_diam: u.Quantity,
-        colour_bands: Union[str, List[str]],
+        colour_bands: Union[str, List[str], NDArray[str]],
         bluer_or_redder: str,
         colour_val: float,
     ):
@@ -1380,9 +1386,8 @@ class Colour_Selector(Photometry_Selector):
     def _assertions(self: Self) -> bool:
         try:
             assert self.kwargs["bluer_or_redder"] in ["bluer", "redder"]
-            colour_bands = self.kwargs["colour_bands"]
-            assert isinstance(colour_bands, list)
-            assert len(colour_bands) == 2
+            assert isinstance(self.kwargs["colour_bands"], (list, np.ndarray))
+            assert len(self.kwargs["colour_bands"]) == 2
             passed = True
         except:
             passed = False
@@ -1459,7 +1464,14 @@ class Min_Band_Selector(Data_Selector):
         return ["min_bands"]
 
     def _assertions(self: Self) -> bool:
-        return isinstance(self.kwargs["min_bands"], int)
+        try:
+            assertions = []
+            assertions.extend([isinstance(self.kwargs["min_bands"], int)])
+            assertions.extend([self.kwargs["min_bands"] > 0])
+            passed = all(assertions)
+        except:
+            passed = False
+        return passed
         
     def _selection_criteria(
         self: Self,
@@ -1577,7 +1589,14 @@ class Min_Unmasked_Band_Selector(Mask_Selector):
         return ["min_bands"]
 
     def _assertions(self: Self) -> bool:
-        return isinstance(self.kwargs["min_bands"], int)
+        try:
+            assertions = []
+            assertions.extend([isinstance(self.kwargs["min_bands"], int)])
+            assertions.extend([self.kwargs["min_bands"] > 0])
+            passed = all(assertions)
+        except:
+            passed = False
+        return passed
         
     def _selection_criteria(
         self: Self,
@@ -1650,6 +1669,7 @@ class Min_Instrument_Unmasked_Band_Selector(Mask_Selector):
         try:
             assertions = []
             assertions.extend([isinstance(self.kwargs["min_bands"], int)])
+            assertions.extend([self.kwargs["min_bands"] > 0])
             assertions.extend([isinstance(self.kwargs["instrument"], tuple(Instrument.__subclasses__()))])
             passed = all(assertions)
         except:
@@ -2056,8 +2076,11 @@ class Unmasked_Bluewards_Lya_Selector(Redshift_Selector, Mask_Selector):
         widebands_only: bool = False,
         ignore_bands: Optional[Union[str, List[str]]] = None,
     ):
+        if isinstance(ignore_bands, str):
+            ignore_bands = [ignore_bands]
         kwargs = {"min_bands": min_bands, "widebands_only": widebands_only, "ignore_bands": ignore_bands}
-        Mask_Selector.__init__(self, **kwargs)
+        # # this calls self._assertions with self.aper_diam = None and self.SED_fitter = None
+        # Mask_Selector.__init__(self, **kwargs)
         Redshift_Selector.__init__(self, aper_diam, SED_fitter, **kwargs)
 
     @property
@@ -2076,7 +2099,8 @@ class Unmasked_Bluewards_Lya_Selector(Redshift_Selector, Mask_Selector):
 
     def _assertions(self: Self) -> bool:
         try:
-            assert isinstance(self.kwargs["min_bands"], int) and self.kwargs["min_bands"] > 0
+            assert isinstance(self.kwargs["min_bands"], int)
+            assert self.kwargs["min_bands"] > 0
             assert isinstance(self.kwargs["widebands_only"], bool)
             if self.kwargs["ignore_bands"] is not None:
                 for band in self.kwargs["ignore_bands"]:
@@ -2205,8 +2229,11 @@ class Unmasked_Redwards_Lya_Selector(Redshift_Selector, Mask_Selector):
         widebands_only: bool = False,
         ignore_bands: Optional[Union[str, List[str]]] = None,
     ):
+        if isinstance(ignore_bands, str):
+            ignore_bands = [ignore_bands]
         kwargs = {"min_bands": min_bands, "widebands_only": widebands_only, "ignore_bands": ignore_bands}
-        Mask_Selector.__init__(self, **kwargs)
+        # # this calls self._assertions with self.aper_diam = None and self.SED_fitter = None
+        # Mask_Selector.__init__(self, **kwargs)
         Redshift_Selector.__init__(self, aper_diam, SED_fitter, **kwargs)
 
     @property
@@ -2692,6 +2719,7 @@ class Chi_Sq_Lim_Selector(SED_fit_Selector):
         try:
             assertions = []
             assertions.extend([isinstance(self.kwargs["chi_sq_lim"], (int, float))])
+            assertions.extend([self.kwargs["chi_sq_lim"] > 0.0])
             assertions.extend([isinstance(self.kwargs["reduced"], bool)])
             passed = all(assertions)
         except:

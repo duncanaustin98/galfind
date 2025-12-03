@@ -89,15 +89,11 @@ class Instrument(ABC):
 
     def __init__(
         self: Type[Self],
-        facility: Union[str, Facility],
+        facility: Facility,
         filt_names: List[str],
         align_params: Dict[str, Any] = {},
     ) -> None:
-        if isinstance(facility, str):
-            self.facility = globals()[facility]()
-            assert isinstance(self.facility, tuple(Facility.__subclasses__()))
-        else:
-            self.facility = facility
+        self.facility = facility
         self.filt_names = filt_names
         self.align_params = align_params
         self._load_aper_corrs()
@@ -249,9 +245,9 @@ class NIRCam(Instrument, funcs.Singleton):
             "tolerance": 10.0,
             "max_sep": 1000,
         }
-        super().__init__("JWST", NIRCam_band_names, align_params)
+        super().__init__(JWST(), NIRCam_band_names, align_params)
 
-    def calc_ZP(self, band_data: Type[Band_Data_Base]) -> u.Quantity:
+    def calc_ZP(self: Self, band_data: Type[Band_Data_Base]) -> u.Quantity:
         # assume flux units of MJy/sr and calculate corresponding ZP
         ZP = -2.5 * np.log10(
             (band_data.pix_scale.to(u.rad).value ** 2) * u.MJy.to(u.Jy)
@@ -282,7 +278,7 @@ class MIRI(Instrument, funcs.Singleton):
             "F2300C",
             "F2550W",
         ]
-        super().__init__("JWST", MIRI_band_names)
+        super().__init__(JWST(), MIRI_band_names)
 
     def calc_ZP(self, band_data: Type[Band_Data_Base]) -> u.Quantity:
         # assume flux units of MJy/sr and calculate corresponding ZP
@@ -340,7 +336,7 @@ class ACS_WFC(Instrument, funcs.Singleton):
             "max_sep": 100,
         }
         self.SVO_name = "ACS"
-        super().__init__("HST", ACS_WFC_band_names, align_params)
+        super().__init__(HST(), ACS_WFC_band_names, align_params)
 
     def calc_ZP(self, band_data: Type[Band_Data_Base]) -> u.Quantity:
         im_header = band_data.load_im()[1]
@@ -401,7 +397,7 @@ class WFC3_IR(Instrument, funcs.Singleton):
             "F167N",
         ]
         self.SVO_name = "WFC3"
-        super().__init__("HST", WFC3_IR_band_names)
+        super().__init__(HST(), WFC3_IR_band_names)
 
     def calc_ZP(self, band_data: Type[Band_Data_Base]) -> u.Quantity:
         # Taken from Appendix A of
@@ -444,7 +440,7 @@ class VISTA(Instrument, funcs.Singleton):
             "Ks",
         ]
         self.SVO_name = "VIRCam"
-        super().__init__("Paranal", VISTA_band_names)
+        super().__init__(Paranal(), VISTA_band_names)
 
     def calc_ZP(self, band_data: Type[Band_Data_Base]) -> u.Quantity:
         ZP = band_data.load_im()[1]["PHOTZP"]
@@ -474,7 +470,7 @@ class MegaCam(Instrument, funcs.Singleton):
             #"gri",
         ]
         self.SVO_name = "MegaCam"
-        super().__init__("CFHT", Megacam_band_names)
+        super().__init__(CFHT(), Megacam_band_names)
 
     def calc_ZP(self, band_data: Type[Band_Data_Base]) -> u.Quantity:
         ZP = band_data.load_im()[1]["PHOTZP"]
@@ -513,7 +509,7 @@ class HSC(Instrument, funcs.Singleton):
             "Y_filter",
         ]
         self.SVO_name = "HSC"
-        super().__init__("Subaru", HSC_band_names)
+        super().__init__(Subaru(), HSC_band_names)
 
     def calc_ZP(self, band_data: Type[Band_Data_Base]) -> u.Quantity:
         ZP = band_data.load_im()[1]["PHOTZP"]
@@ -532,7 +528,7 @@ class VIS(Instrument, funcs.Singleton):
             "vis"
         ]
         self.SVO_name = "VIS"
-        super().__init__("Euclid", VIS_band_names)
+        super().__init__(Euclid(), VIS_band_names)
 
     def calc_ZP(self, band_data: Type[Band_Data_Base]) -> u.Quantity:
         ZP = band_data.load_im()[1]["PHOTZP"]
@@ -553,7 +549,7 @@ class NISP(Instrument, funcs.Singleton):
             "H",
         ]
         self.SVO_name = "NISP"
-        super().__init__("Euclid", NISP_band_names)
+        super().__init__(Euclid(), NISP_band_names)
 
     def calc_ZP(self, band_data: Type[Band_Data_Base]) -> u.Quantity:
         ZP = band_data.load_im()[1]["PHOTZP"]
@@ -575,7 +571,7 @@ class IRAC(Instrument, funcs.Singleton):
             "I4",
         ]
         self.SVO_name = "IRAC"
-        super().__init__("Spitzer", IRAC_band_names)
+        super().__init__(Spitzer(), IRAC_band_names)
 
     def calc_ZP(self, band_data: Type[Band_Data_Base]) -> u.Quantity:
         ZP = band_data.load_im()[1]["PHOTZP"]

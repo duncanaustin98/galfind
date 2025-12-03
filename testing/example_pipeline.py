@@ -5,16 +5,17 @@ os.environ["GALFIND_CONFIG_DIR"] = os.getcwd()
 os.environ["GALFIND_CONFIG_NAME"] = "test_galfind_config.ini"
 from galfind import Data, Catalogue, EAZY, Bagpipes, Band_SNR_Selector, MUV_Calculator
 
-from test_config import (
+from ..conftest import (
     test_survey,
     test_version,
     test_instrument_names,
     test_aper_diams,
-    test_forced_phot_band,
+    test_forced_phot_band_,
 )
 
 def main():
     start = time.time()
+
     # load data
     data = Data.pipeline(
         survey=test_survey,
@@ -23,7 +24,7 @@ def main():
         im_str = "test",
         rms_err_ext_name = "RMS_ERR",
         aper_diams = test_aper_diams,
-        forced_phot_band = test_forced_phot_band,
+        forced_phot_band = test_forced_phot_band_,
     )
     print(data)
     breakpoint()

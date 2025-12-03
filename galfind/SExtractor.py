@@ -101,6 +101,7 @@ def segment(
     seg_path = get_segmentation_path(self, err_map_type)
     
     if not Path(seg_path).is_file() or overwrite:
+        self._check_aper_diams()
         galfind_logger.info(
             "Making SExtractor seg/bkg maps for "
             f"{self.survey} {self.version} {self.filt_name}"

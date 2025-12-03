@@ -281,16 +281,42 @@ class Band_Data_Base(ABC):
                 + f"not in {str(self.wht_ext_name)} for {self.filt.band_name}"
             )
 
+    def _check_aper_diams(self: Self) -> NoReturn:
+        if hasattr(self, "aper_diams"):
+            if not isinstance(self.aper_diams, u.Quantity):
+                err_message = (
+                    f"Aperture diameters for {self.filt_name} "
+                    + "not an astropy Quantity!"
+                )
+                galfind_logger.critical(err_message)
+                raise (Exception(err_message))
+            elif not u.get_physical_type(self.aper_diams.unit) == "angle":
+                err_message = (
+                    f"Aperture diameters for {self.filt_name} must have angular units!"
+                )
+                galfind_logger.critical(err_message)
+                raise (Exception(err_message))
+            else:
+                pass
+        else:
+            err_message = (f"Aperture diameters not loaded for {self.filt_name}!")
+            galfind_logger.critical(err_message)
+            raise (Exception(err_message))
+
     # %% Loading methods
 
-    def load_aper_diams(self, aper_diams: u.Quantity) -> NoReturn:
-        if hasattr(self, "aper_diams"):
-            galfind_logger.warning(
+    def set_aper_diams(
+        self: Self,
+        aper_diams: u.Quantity
+    ) -> NoReturn:
+        if hasattr(self, "aper_diams") and getattr(self, "aper_diams", None) is not None:
+            galfind_logger.debug(
                 f"{self.aper_diams=} already loaded for {self.filt_name},"
                 + f" skipping {aper_diams=} load-in"
             )
         else:
             self.aper_diams = aper_diams
+            self._check_aper_diams()
             galfind_logger.info(f"Loaded {aper_diams=} for {self.filt_name}")
 
     def load_data(self, incl_mask: bool = True):
@@ -400,7 +426,9 @@ class Band_Data_Base(ABC):
                 return rms_err
 
     def load_seg(
-        self, incl_hdr: bool = True
+        self: Self,
+        incl_hdr: bool = True,
+        **kwargs: Dict[str, Any],
     ) -> Tuple[np.ndarray, fits.Header]:
         # TODO: load from the correct hdu rather than the first one
         if not Path(self.seg_path).is_file():
@@ -410,7 +438,7 @@ class Band_Data_Base(ABC):
             )
             galfind_logger.critical(err_message)
             raise (Exception(err_message))
-        seg_hdul = fits.open(self.seg_path, ignore_missing_simple = True)
+        seg_hdul = fits.open(self.seg_path, ignore_missing_simple = True, **kwargs)
         seg_data = seg_hdul[0].data
         seg_header = seg_hdul[0].header
         if incl_hdr:
@@ -527,8 +555,12 @@ class Band_Data_Base(ABC):
                 "config_name": config_name,
                 "params_name": params_name,
             }
+        else:
+            galfind_logger.warning(
+                f"Segmentation already performed for {self.filt_name}, skipping!"
+            )
 
-    def _perform_forced_phot(
+    def perform_forced_phot(
         self,
         forced_phot_band: Type[Band_Data_Base],
         err_type: str = "rms_err",
@@ -1102,7 +1134,7 @@ class Band_Data_Base(ABC):
 
 class Band_Data(Band_Data_Base):
     def __init__(
-        self,
+        self: Self,
         filt: Type[Filter],
         survey: str,
         version: str,
@@ -1433,7 +1465,7 @@ class Band_Data(Band_Data_Base):
 
 class Stacked_Band_Data(Band_Data_Base):
     def __init__(
-        self,
+        self: Self,
         filterset: Union[List[Filter], Multiple_Filter],
         survey: str,
         version: str,
@@ -1499,7 +1531,7 @@ class Stacked_Band_Data(Band_Data_Base):
         # if all band_data in band_data_arr have aper_diams included
         if all(hasattr(band_data, "aper_diams") for band_data in band_data_arr):
             if all(all(diam == diam_0 for diam, diam_0 in zip(band_data.aper_diams, band_data_arr[0].aper_diams)) for band_data in band_data_arr):
-                stacked_band_data.load_aper_diams(band_data_arr[0].aper_diams)
+                stacked_band_data.set_aper_diams(band_data_arr[0].aper_diams)
 
         # if all band_data in band_data_arr have been segmented, segment the stacked band data
         if all(hasattr(band_data, "seg_args") for band_data in band_data_arr):
@@ -1999,11 +2031,21 @@ class Data:
     def _get_data_dir(
         survey: str,
         version: str,
-        instrument: Type[Instrument],
+        instrument: Union[str, Type[Instrument]],
         pix_scale: u.Quantity = 0.03 * u.arcsec,
         version_to_dir_dict: Optional[Dict[str, str]] = None,
         data_dir: str = config['DEFAULT']['GALFIND_DATA'],
     ) -> Self:
+        if isinstance(instrument, str):
+            instrument_arr = [
+                instr for instr in Instrument.__subclasses__()
+                if instr.__name__ == instrument
+            ]
+            assert len(instrument_arr) == 1, \
+                galfind_logger.critical(
+                    f"Instrument {instrument} not found!"
+                )
+            instrument = instrument_arr[0]()
         if version_to_dir_dict is not None:
             version = version_to_dir_dict[version.split("_")[0]]
         # else:
@@ -2849,7 +2891,7 @@ class Data:
 
         # run for every band in the Data object
         [
-            band_data._perform_forced_phot(
+            band_data.perform_forced_phot(
                 self.forced_phot_band,
                 self_._sort_band_dependent_params(band_data.filt_name, err_type),
                 self_._sort_band_dependent_params(band_data.filt_name, method),
