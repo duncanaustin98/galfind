@@ -1066,6 +1066,480 @@ def fail_robust_zPDF_selector(request):
     return Robust_zPDF_Selector, inputs_, outcome
 
 
+@pytest.fixture(
+    scope = "module",
+    params = [
+        {
+            "band_name": "F444W",
+            "gtr_or_less": "gtr",
+            "lim": 50.0 * u.marcsec,
+        },
+        {
+            "band_name": "F444W",
+            "gtr_or_less": "less",
+            "lim": 100.0 * u.marcsec,
+        },
+        {
+            "band_name": "F277W",
+            "gtr_or_less": "gtr",
+            "lim": 45.0 * u.marcsec,
+        },
+    ]
+)
+def pass_sextractor_band_radius_selector(request):
+    return Sextractor_Band_Radius_Selector, request.param, True
+
+@pytest.fixture(
+    scope = "module",
+    params = [
+        (
+            {
+                "band_name": "invalid_band",
+                "gtr_or_less": "gtr",
+                "lim": 50.0 * u.marcsec,
+            }, Exception
+        ),
+        (
+            {
+                "band_name": "F444W",
+                "gtr_or_less": "invalid",
+                "lim": 50.0 * u.marcsec,
+            }, Exception
+        ),
+        (
+            {
+                "band_name": "F444W",
+                "gtr_or_less": "gtr",
+                "lim": -50.0 * u.marcsec,
+            }, Exception
+        ),
+        (
+            {
+                "band_name": "F444W",
+                "gtr_or_less": "gtr",
+                "lim": 50.0,  # missing units
+            }, Exception
+        ),
+    ]
+)
+def fail_sextractor_band_radius_selector(request):
+    return Sextractor_Band_Radius_Selector, *request.param
+
+
+# Re_Selector requires a morph_fitter which is complex to instantiate
+# in tests without full data. We'll skip these fixtures as they require
+# Morphology_Fitter objects that need actual PSF and cutout data.
+
+
+@pytest.fixture(
+    scope = "module",
+    params = [
+        {"aper_diam": test_aper_diams[0]},
+    ]
+)
+def pass_kokorev24_lrd_red1_selector(request):
+    return Kokorev24_LRD_red1_Selector, request.param, True
+
+@pytest.fixture(
+    scope = "module",
+    params = [
+        ({"aper_diam": 0.32}, Exception),  # missing units
+        ({"aper_diam": -0.32 * u.arcsec}, Exception),  # negative aperture
+    ]
+)
+def fail_kokorev24_lrd_red1_selector(request):
+    return Kokorev24_LRD_red1_Selector, *request.param
+
+
+@pytest.fixture(
+    scope = "module",
+    params = [
+        {"aper_diam": test_aper_diams[0]},
+    ]
+)
+def pass_kokorev24_lrd_red2_selector(request):
+    return Kokorev24_LRD_red2_Selector, request.param, True
+
+@pytest.fixture(
+    scope = "module",
+    params = [
+        ({"aper_diam": 0.32}, Exception),  # missing units
+        ({"aper_diam": -0.32 * u.arcsec}, Exception),  # negative aperture
+    ]
+)
+def fail_kokorev24_lrd_red2_selector(request):
+    return Kokorev24_LRD_red2_Selector, *request.param
+
+
+@pytest.fixture(
+    scope = "module",
+    params = [
+        {"aper_diam": test_aper_diams[0]},
+    ]
+)
+def pass_kokorev24_lrd_selector(request):
+    return Kokorev24_LRD_Selector, request.param, True
+
+@pytest.fixture(
+    scope = "module",
+    params = [
+        ({"aper_diam": 0.32}, Exception),  # missing units
+        ({"aper_diam": -0.32 * u.arcsec}, Exception),  # negative aperture
+    ]
+)
+def fail_kokorev24_lrd_selector(request):
+    return Kokorev24_LRD_Selector, *request.param
+
+
+@pytest.fixture(
+    scope = "module",
+    params = [
+        {"band_names": "F444W"},
+        {"band_names": ["F444W"]},
+        {"band_names": ["F277W", "F444W"]},
+        {"band_names": "F277W+F444W"},
+    ]
+)
+def pass_unmasked_bands_selector(request):
+    return Unmasked_Bands_Selector, request.param, True
+
+@pytest.fixture(
+    scope = "module",
+    params = [
+        ({"band_names": "invalid_band"}, Exception),
+        ({"band_names": ["invalid1", "invalid2"]}, Exception),
+    ]
+)
+def fail_unmasked_bands_selector(request):
+    return Unmasked_Bands_Selector, *request.param
+
+
+@pytest.fixture(
+    scope = "module",
+    params = [
+        {"instrument": NIRCam()},
+        {"instrument": "NIRCam"},
+    ]
+)
+def pass_unmasked_instrument_selector(request):
+    return Unmasked_Instrument_Selector, request.param, True
+
+@pytest.fixture(
+    scope = "module",
+    params = [
+        ({"instrument": "invalid_instrument"}, Exception),
+        ({"instrument": JWST()}, Exception),  # JWST is a facility, not an instrument
+    ]
+)
+def fail_unmasked_instrument_selector(request):
+    return Unmasked_Instrument_Selector, *request.param
+
+
+@pytest.fixture(
+    scope = "module",
+    params = [
+        {
+            "band_names": ["F277W", "F356W", "F444W"],
+            "gtr_or_less": "gtr",
+            "lim": 45.0 * u.marcsec,
+        },
+        {
+            "band_names": ["F444W"],
+            "gtr_or_less": "less",
+            "lim": 100.0 * u.marcsec,
+        },
+    ]
+)
+def pass_sextractor_bands_radius_selector(request):
+    return Sextractor_Bands_Radius_Selector, request.param, True
+
+@pytest.fixture(
+    scope = "module",
+    params = [
+        (
+            {
+                "band_names": ["invalid_band"],
+                "gtr_or_less": "gtr",
+                "lim": 45.0 * u.marcsec,
+            }, Exception
+        ),
+        (
+            {
+                "band_names": ["F444W"],
+                "gtr_or_less": "invalid",
+                "lim": 45.0 * u.marcsec,
+            }, Exception
+        ),
+    ]
+)
+def fail_sextractor_bands_radius_selector(request):
+    return Sextractor_Bands_Radius_Selector, *request.param
+
+
+@pytest.fixture(
+    scope = "module",
+    params = [
+        {
+            "instrument": "NIRCam",
+            "gtr_or_less": "gtr",
+            "lim": 45.0 * u.marcsec,
+        },
+        {
+            "instrument": "NIRCam",
+            "gtr_or_less": "less",
+            "lim": 100.0 * u.marcsec,
+        },
+    ]
+)
+def pass_sextractor_instrument_radius_selector(request):
+    return Sextractor_Instrument_Radius_Selector, request.param, True
+
+@pytest.fixture(
+    scope = "module",
+    params = [
+        (
+            {
+                "instrument": "invalid_instrument",
+                "gtr_or_less": "gtr",
+                "lim": 45.0 * u.marcsec,
+            }, Exception
+        ),
+        (
+            {
+                "instrument": "NIRCam",
+                "gtr_or_less": "invalid",
+                "lim": 45.0 * u.marcsec,
+            }, Exception
+        ),
+    ]
+)
+def fail_sextractor_instrument_radius_selector(request):
+    return Sextractor_Instrument_Radius_Selector, *request.param
+
+
+@pytest.fixture(
+    scope = "module",
+    params = [
+        {
+            "instrument": "NIRCam",
+            "gtr_or_less": "gtr",
+            "scaling": 1.0,
+        },
+        {
+            "instrument": "NIRCam",
+            "gtr_or_less": "less",
+            "scaling": 0.5,
+        },
+        {
+            "instrument": "NIRCam",
+            "gtr_or_less": "gtr",
+            "scaling": 1.2,
+        },
+    ]
+)
+def pass_sextractor_instrument_radius_psf_fwhm_selector(request):
+    return Sextractor_Instrument_Radius_PSF_FWHM_Selector, request.param, True
+
+@pytest.fixture(
+    scope = "module",
+    params = [
+        (
+            {
+                "instrument": "invalid_instrument",
+                "gtr_or_less": "gtr",
+                "scaling": 1.0,
+            }, Exception
+        ),
+        (
+            {
+                "instrument": "ACS_WFC",  # Not NIRCam, which is required
+                "gtr_or_less": "gtr",
+                "scaling": 1.0,
+            }, Exception
+        ),
+    ]
+)
+def fail_sextractor_instrument_radius_psf_fwhm_selector(request):
+    return Sextractor_Instrument_Radius_PSF_FWHM_Selector, *request.param
+
+
+# Brown_Dwarf_Selector class is incomplete in the codebase (missing super().__init__)
+# Adding placeholder fixtures for completeness
+@pytest.fixture(
+    scope = "module",
+    params = [
+    ]
+)
+def pass_brown_dwarf_selector(request):
+    return Brown_Dwarf_Selector, request.param, True
+
+@pytest.fixture(
+    scope = "module",
+    params = [
+    ]
+)
+def fail_brown_dwarf_selector(request):
+    return Brown_Dwarf_Selector, *request.param
+
+
+# Re_Selector requires a morph_fitter (Morphology_Fitter) which is complex to
+# instantiate in tests without full data. Adding placeholder fixtures.
+@pytest.fixture(
+    scope = "module",
+    params = [
+    ]
+)
+def pass_re_selector(request):
+    return Re_Selector, request.param, True
+
+@pytest.fixture(
+    scope = "module",
+    params = [
+    ]
+)
+def fail_re_selector(request):
+    return Re_Selector, *request.param
+
+
+@pytest.fixture(
+    scope = "module",
+    params = [
+        {"aper_diam": test_aper_diams[0]},
+    ]
+)
+def pass_hainline24_ty_brown_dwarf_selector_1(request):
+    return Hainline24_TY_Brown_Dwarf_Selector_1, request.param, True
+
+@pytest.fixture(
+    scope = "module",
+    params = [
+        ({"aper_diam": 0.32}, Exception),  # missing units
+        ({"aper_diam": -0.32 * u.arcsec}, Exception),  # negative aperture
+    ]
+)
+def fail_hainline24_ty_brown_dwarf_selector_1(request):
+    return Hainline24_TY_Brown_Dwarf_Selector_1, *request.param
+
+
+@pytest.fixture(
+    scope = "module",
+    params = [
+        {"aper_diam": test_aper_diams[0]},
+    ]
+)
+def pass_hainline24_ty_brown_dwarf_selector_2(request):
+    return Hainline24_TY_Brown_Dwarf_Selector_2, request.param, True
+
+@pytest.fixture(
+    scope = "module",
+    params = [
+        ({"aper_diam": 0.32}, Exception),  # missing units
+        ({"aper_diam": -0.32 * u.arcsec}, Exception),  # negative aperture
+    ]
+)
+def fail_hainline24_ty_brown_dwarf_selector_2(request):
+    return Hainline24_TY_Brown_Dwarf_Selector_2, *request.param
+
+
+@pytest.fixture(
+    scope = "module",
+    params = [
+        {
+            "aper_diam": test_aper_diams[0],
+            "SED_fitter": "eazy_fsps_larson_sed_fitter",
+        },
+        {
+            "aper_diam": test_aper_diams[0],
+            "SED_fitter": "eazy_fsps_larson_sed_fitter",
+            "forced_phot_band": ["F277W", "F356W", "F444W"],
+        },
+    ]
+)
+def pass_epochs_unmasked_criteria(request):
+    inputs = request.param.copy()
+    inputs["SED_fitter"] = request.getfixturevalue(inputs["SED_fitter"])
+    return EPOCHS_unmasked_criteria, inputs, True
+
+@pytest.fixture(
+    scope = "module",
+    params = [
+        (
+            {
+                "aper_diam": 0.32,  # missing units
+                "SED_fitter": "eazy_fsps_larson_sed_fitter",
+            }, Exception
+        ),
+    ]
+)
+def fail_epochs_unmasked_criteria(request):
+    inputs, outcome = request.param
+    inputs_ = inputs.copy()
+    inputs_["SED_fitter"] = request.getfixturevalue(inputs["SED_fitter"])
+    return EPOCHS_unmasked_criteria, inputs_, outcome
+
+
+@pytest.fixture(
+    scope = "module",
+    params = [
+        {
+            "aper_diam": test_aper_diams[0],
+            "SED_fitter": "eazy_fsps_larson_sed_fitter",
+        },
+        {
+            "aper_diam": test_aper_diams[0],
+            "SED_fitter": "eazy_fsps_larson_sed_fitter",
+            "simulated": True,
+        },
+        {
+            "aper_diam": test_aper_diams[0],
+            "SED_fitter": "eazy_fsps_larson_sed_fitter",
+            "forced_phot_band": ["F277W", "F356W", "F444W"],
+        },
+    ]
+)
+def pass_epochs_selector(request):
+    inputs = request.param.copy()
+    inputs["SED_fitter"] = request.getfixturevalue(inputs["SED_fitter"])
+    return EPOCHS_Selector, inputs, True
+
+@pytest.fixture(
+    scope = "module",
+    params = [
+        (
+            {
+                "aper_diam": 0.32,  # missing units
+                "SED_fitter": "eazy_fsps_larson_sed_fitter",
+            }, Exception
+        ),
+    ]
+)
+def fail_epochs_selector(request):
+    inputs, outcome = request.param
+    inputs_ = inputs.copy()
+    inputs_["SED_fitter"] = request.getfixturevalue(inputs["SED_fitter"])
+    return EPOCHS_Selector, inputs_, outcome
+
+
+# Rest_Frame_Property_Kwarg_Selector requires a Rest_Frame_Property_Calculator
+# which is complex to instantiate without full test data.
+# The fixtures are left as placeholders similar to the other property-based selectors.
+@pytest.fixture(
+    scope = "module",
+    params = [
+    ]
+)
+def pass_rest_frame_property_kwarg_selector(request):
+    return Rest_Frame_Property_Kwarg_Selector, request.param, True
+
+@pytest.fixture(
+    scope = "module",
+    params = [
+    ]
+)
+def fail_rest_frame_property_kwarg_selector(request):
+    return Rest_Frame_Property_Kwarg_Selector, *request.param
+
+
 ##################################################
 
 def get_selector_fixtures():
