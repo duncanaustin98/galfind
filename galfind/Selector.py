@@ -186,6 +186,21 @@ class Selector(ABC):
         *args,
         **kwargs,
     ) -> Union[NoReturn, Catalogue]:
+        self._assert_cat(cat)
+        [
+            self._call_gal(gal, return_copy = False, *args, **kwargs) for gal \
+            in tqdm(cat, total = len(cat), desc = f"Selecting {self.name}", \
+            disable = galfind_logger.getEffectiveLevel() > logging.INFO)
+        ]
+        if cat.cat_creator.crops == [] or self.__class__.__name__ != "ID_Selector":
+            cat._append_property_to_tab(self.name, "SELECTION")
+        if return_copy:
+            cat_copy = deepcopy(cat)
+            return cat_copy.crop(self)
+        else:
+            return cat
+        
+    def _assert_cat(self: Self, cat: Catalogue) -> NoReturn:
         if self.SED_fitter is not None:
             # ensure results have been loaded for 
             # at least 1 galaxy in the catalogue
@@ -202,18 +217,6 @@ class Selector(ABC):
                     f"Morphology fitting results for {repr(self.morph_fitter)=} " + \
                     f"not loaded for any galaxy in {repr(cat)}."
                 )
-        [
-            self._call_gal(gal, return_copy = False, *args, **kwargs) for gal \
-            in tqdm(cat, total = len(cat), desc = f"Selecting {self.name}", \
-            disable = galfind_logger.getEffectiveLevel() > logging.INFO)
-        ]
-        if cat.cat_creator.crops == [] or self.__class__.__name__ != "ID_Selector":
-            cat._append_property_to_tab(self.name, "SELECTION")
-        if return_copy:
-            cat_copy = deepcopy(cat)
-            return cat_copy.crop(self)
-        else:
-            return cat
         
 
 class Data_Selector(Selector, ABC):
@@ -751,6 +754,7 @@ class ID_Selector(Data_Selector):
     def _assertions(self: Self) -> bool:
         try:
             assert isinstance(self.kwargs["IDs"], tuple([list, np.ndarray]))
+            assert all([id >= 1 for id in self.kwargs["IDs"]])
             if self.kwargs["name"] is not None:
                 assert(isinstance(self.kwargs["name"], str))
             assert all(isinstance(ID, tuple([int, np.int64])) for ID in self.kwargs["IDs"])
@@ -758,6 +762,14 @@ class ID_Selector(Data_Selector):
         except:
             passed = False
         return passed
+    
+    def _assert_cat(self: Self, cat: Catalogue) -> NoReturn:
+        cat_IDs = np.array([gal.ID for gal in cat])
+        assert all(ID in cat_IDs for ID in self.kwargs["IDs"]), \
+            galfind_logger.critical(
+                f"Not all {self.kwargs['IDs']=} found in {repr(cat)} with {cat_IDs=}!"
+            )
+        super()._assert_cat(cat)
         
     def _selection_criteria(
         self: Self,

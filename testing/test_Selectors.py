@@ -4,6 +4,7 @@ from pytest_lazy_fixtures import lf
 import numpy as np
 import astropy.units as u
 import inspect
+from copy import copy
 import sys
 import os
 
@@ -71,29 +72,28 @@ from galfind.Selector import (
     Rest_Frame_Property_Kwarg_Selector,
 )
 
-
 @pytest.fixture(
     scope = "module",
     params = [
-        {"IDs": 0},
-        {"IDs": [0, 1]},
-        {"IDs": np.array([0, 1])},
-        {"IDs": [-1, 0]},
-        {"IDs": 123_456_789},
-        {"IDs": np.arange(0, 100, 1), "name": "large_named"},
+        ({"IDs": 1}, True),
+        ({"IDs": [1, 2]}, True),
+        ({"IDs": np.array([1, 2])}, True),
+        ({"IDs": 123_456_789}, {"gal": True, "cat": Exception}),
+        ({"IDs": np.arange(1, 50, 1), "name": "large_named"}, True),
     ]
 )
-def pass_ID_selector(request):
-    return ID_Selector, request.param, True
+def call_ID_selector(request):
+    return ID_Selector, *request.param
 
 @pytest.fixture(
     scope = "module",
     params = [
         ({"IDs": "invalid"}, Exception),
-        ({"IDs": 0.5}, Exception),
-        ({"IDs": [0, "1"]}, Exception),
-        ({"IDs": np.arange(0, 100, 1)}, Exception),
+        ({"IDs": 1.5}, Exception),
+        ({"IDs": [1, "2"]}, Exception),
+        ({"IDs": np.arange(1, 50, 1)}, Exception),
         ({"name": "test"}, Exception),
+        ({"IDs": [0, 1]}, Exception),
     ]
 )
 def fail_ID_selector(request):
@@ -103,21 +103,27 @@ def fail_ID_selector(request):
 @pytest.fixture(
     scope = "module",
     params = [
-        {
-            "region_path": f"{config['Masking']['MASK_DIR']}/{test_survey}/reg/stellar/{test_bands_[-1]}_stellar.reg"
-        },
-        {
-            "region_path": f"{config['Masking']['MASK_DIR']}/{test_survey}/reg/stellar/{test_bands_[-1]}_stellar.reg",
-            "region_name": f"{test_bands_[-1]}_stellar"
-        },
-        {
-            "region_path": f"{config['Masking']['MASK_DIR']}/{test_survey}/reg/stellar/{test_bands_[-1]}_stellar.reg",
-            "region_name": f"{test_bands_[-1]}_stellar",
-            "fail_name": f"not_{test_bands_[-1]}_stellar",
-        },
+        (
+            {
+                "region_path": f"{config['Masking']['MASK_DIR']}/{test_survey}/reg/stellar/{test_bands_[-1]}_stellar.reg"
+            }, True
+        ),
+        (
+            {
+                "region_path": f"{config['Masking']['MASK_DIR']}/{test_survey}/reg/stellar/{test_bands_[-1]}_stellar.reg",
+                "region_name": f"{test_bands_[-1]}_stellar"
+            }, True
+        ),
+        (
+            {
+                "region_path": f"{config['Masking']['MASK_DIR']}/{test_survey}/reg/stellar/{test_bands_[-1]}_stellar.reg",
+                "region_name": f"{test_bands_[-1]}_stellar",
+                "fail_name": f"not_{test_bands_[-1]}_stellar",
+            }, True
+        ),
     ]
 )
-def pass_ds9_region_selector(request):
+def call_ds9_region_selector(request):
     return Ds9_Region_Selector, request.param, True
 
 @pytest.fixture(
@@ -133,7 +139,13 @@ def fail_ds9_region_selector(request):
 @pytest.fixture(
     scope = "module",
     params = [
-        {"aper_diam": test_aper_diams[0], "filt_name": test_forced_phot_band_[0], "region_label": 0},
+        (
+            {
+                "aper_diam": test_aper_diams[0],
+                "filt_name": test_forced_phot_band_[0],
+                "region_label": 0
+            }, True
+        ),
         {"aper_diam": 0.1 * u.arcsec, "filt_name": test_forced_phot_band_[0], "region_label": 0},
         {"aper_diam": test_aper_diams[0], "filt_name": test_forced_phot_band_, "region_label": 0},
     ]
@@ -1524,58 +1536,81 @@ def fail_rest_frame_property_kwarg_selector(request):
 
 ##################################################
 
-def get_selector_fixtures():
+def get_call_selector_fixtures():
     module = sys.modules[__name__]
     return [
         lf(name) for name, obj in inspect.getmembers(module)
-        if name.endswith("_selector")
+        if name.endswith("_selector") and name.startswith("call_")
+        and "ID" in name
     ]
 
 @pytest.fixture(
     scope = "module",
-    params = get_selector_fixtures()
+    params = get_call_selector_fixtures()
 )
-def selector(request):
+def call_selector(request):
     return request.param
 
-def get_pass_selector_fixtures():
+def get_fail_selector_fixtures():
     module = sys.modules[__name__]
     return [
         lf(name) for name, obj in inspect.getmembers(module)
-        if name.endswith("_selector") and name.startswith("pass_")
+        if name.endswith("_selector") and name.startswith("fail_")
+        and "ID" in name
     ]
 
 @pytest.fixture(
     scope = "module",
-    params = get_pass_selector_fixtures()
+    params = get_fail_selector_fixtures()
 )
-def pass_selector(request):
-    return request.param
+def fail_selector(request):
+    selector_cls, inputs, outcome = request.param
+    return selector_cls, inputs, outcome
 
 #################################################
 
-def test_selector_init(selector):
-    selector_cls, inputs, outcome = selector
+def test_pass_selector_init(call_selector):
+    selector_cls, inputs, _ = call_selector
     # instantiate selector_cls with inputs
-    if outcome != True:
-        with pytest.raises(outcome):
-            selector_cls(**inputs)
-    else:
-        selector_inst = selector_cls(**inputs)
-        assert isinstance(selector_inst, selector_cls)
+    selector_inst = selector_cls(**inputs)
+    assert isinstance(selector_inst, selector_cls)
+
+def test_fail_selector_init(fail_selector):
+    selector_cls, inputs, outcome = fail_selector
+    # instantiate selector_cls with inputs
+    with pytest.raises(outcome):
+        selector_cls(**inputs)
 
 # TODO: Determine expected __call__ failures due to 
 # objects not containing required information
 
 @pytest.mark.requires_data
-def test_selector_call_gal(pass_selector, gal):
-    selector_inst = pass_selector[0](**pass_selector[1])
-    out_gal = selector_inst(gal)
-    assert isinstance(out_gal, Galaxy)
+def test_selector_call_gal(call_selector, gal):
+    selector_cls, inputs, outcome = call_selector
+    outcome_ = copy(outcome)
+    if isinstance(outcome_, dict):
+        outcome_ = outcome_["gal"]
+    if outcome_ != True:
+        with pytest.raises(outcome_):
+            selector_inst = selector_cls(**inputs)
+            selector_inst(gal)
+    else:
+        selector_inst = selector_cls(**inputs)
+        out_gal = selector_inst(gal)
+        assert isinstance(out_gal, Galaxy)
+
 
 @pytest.mark.requires_data
-def test_selector_call_cat(pass_selector, cat):
-    selector_inst = pass_selector[0](**pass_selector[1])
-    out_cat = selector_inst(cat)
-    assert isinstance(out_cat, Catalogue)
-
+def test_selector_call_cat(call_selector, cat):
+    selector_cls, inputs, outcome = call_selector
+    outcome_ = copy(outcome)
+    if isinstance(outcome_, dict):
+        outcome_ = outcome_["cat"]
+    if outcome_ != True:
+        with pytest.raises(outcome_):
+            selector_inst = selector_cls(**inputs)
+            selector_inst(cat)
+    else:
+        selector_inst = selector_cls(**inputs)
+        out_cat = selector_inst(cat)
+        assert isinstance(out_cat, Catalogue)

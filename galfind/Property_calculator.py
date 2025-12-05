@@ -1115,6 +1115,7 @@ class Property_Multiplier(Multiple_Property_Calculator):
     ) -> Optional[Galaxy]:
         raise NotImplementedError
 
+
 class Property_Divider(Multiple_Property_Calculator):
 
     def __init__(

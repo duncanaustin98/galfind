@@ -9,6 +9,7 @@ os.environ["GALFIND_CONFIG_NAME"] = "test_galfind_config.ini"
 
 import galfind
 from galfind import (
+    config,
     Facility,
     Instrument,
     JWST,
@@ -141,7 +142,13 @@ def eazy_sfhz_sed_fitter():
 def sed_fitter(request):
     return request.param
 
-@pytest.fixture(scope="session")
+# @pytest.fixture(autouse = True, scope = "session")
+# def galfind_work_dir(tmp_path_factory):
+#     tmp = tmp_path_factory.mktemp("session_workdir")
+#     config.set("DEFAULT", "GALFIND_WORK", str(tmp))
+#     # monkeypatch.("GALFIND_WORK_DIR", str(tmpdir))
+
+@pytest.fixture(scope = "session")
 def data_dir_nircam(survey, version, nircam_pix_scale):
     return Data._get_data_dir(
         survey,
@@ -152,7 +159,13 @@ def data_dir_nircam(survey, version, nircam_pix_scale):
     )
 
 @pytest.fixture(scope="session")
-def forced_phot_stacked_band_data_from_arr(survey, version, data_dir_nircam, aper_diams, test_forced_phot_band):
+def forced_phot_stacked_band_data_from_arr(
+    survey,
+    version,
+    data_dir_nircam,
+    aper_diams,
+    test_forced_phot_band
+):
     band_data_arr = [
         Band_Data(
             filt = Filter.from_SVO("JWST", "NIRCam", band_name),
@@ -171,7 +184,13 @@ def forced_phot_stacked_band_data_from_arr(survey, version, data_dir_nircam, ape
     return Stacked_Band_Data.from_band_data_arr(band_data_arr)
 
 @pytest.fixture(scope="session")
-def data(survey, version, instrument_names, aper_diams, forced_phot_stacked_band_data_from_arr):
+def data(
+    survey,
+    version,
+    instrument_names,
+    aper_diams,
+    forced_phot_stacked_band_data_from_arr,
+):
     return Data.pipeline(
         survey,
         version,
