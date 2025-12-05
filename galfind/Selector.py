@@ -3267,52 +3267,52 @@ class EPOCHS_Selector(Multiple_SED_fit_Selector):
         super().__init__(aper_diam, SED_fit_label, selectors, selection_name = selection_name)
 
 
-    class COSMOS_Web_Selector(Multiple_SED_fit_Selector):
+class COSMOS_Web_Selector(Multiple_SED_fit_Selector):
 
-        def __init__(
-            self: Self,
-            band_names: Union[str, List[str]],
-            aper_diam: u.Quantity,
-            SED_fit_label: Union[str, SED_code],
-            allow_lowz: bool = False,
-            unmasked_instruments: Union[str, List[str]] = "NIRCam", # TODO: Update this to allow for custom masking or change to default "EPOCHS" masking
-            cat_filterset: Optional[Multiple_Filter] = None,
-            simulated: bool = False,
-        ):
-            selectors = [
-                Unmasked_Bands_Selector(band_names),
-                Redshift_Limit_Selector(aper_diam, SED_fit_label, z_lim=8.5, gtr_or_less="gtr"),
-                Bluewards_Lya_Non_Detect_Selector(aper_diam, SED_fit_label, SNR_lim = 2.0),
-                Redwards_Lya_Detect_Selector(aper_diam, SED_fit_label, SNR_lims = [10.0, 10.0], widebands_only = True),
-                #Band_SNR_Selector(aper_diam, band = 'F150W', SNR_lim = 1.0, detect_or_non_detect = "detect"),
-                #Robust_zPDF_Selector(aper_diam, SED_fit_label, integral_lim = 0.6, dz_over_z = 0.1),
-                zPDF_High_Tail_Selector(aper_diam, SED_fit_label, z_thr=8.0, p_lim=0.8),
-                Chi_Sq_Lim_Selector(aper_diam, SED_fit_label, chi_sq_lim = 8.0, reduced = False),
-                Chi_Sq_Diff_Selector(aper_diam, SED_fit_label, chi_sq_diff = 5.0, dz = 0.5),
-                Colour_Selector(aper_diam, colour_bands = ["F277W", "F444W"], bluer_or_redder = "bluer", colour_val = 1),
-            ]
-            # add 2σ non-detection in first band if wanted
-            if not allow_lowz:
-                selectors.extend([Band_SNR_Selector( \
-                    aper_diam, band = 0, SNR_lim = 2.0, detect_or_non_detect = "non_detect")])
+    def __init__(
+        self: Self,
+        band_names: Union[str, List[str]],
+        aper_diam: u.Quantity,
+        SED_fit_label: Union[str, SED_code],
+        allow_lowz: bool = False,
+        unmasked_instruments: Union[str, List[str]] = "NIRCam", # TODO: Update this to allow for custom masking or change to default "EPOCHS" masking
+        cat_filterset: Optional[Multiple_Filter] = None,
+        simulated: bool = False,
+    ):
+        selectors = [
+            Unmasked_Bands_Selector(band_names),
+            Redshift_Limit_Selector(aper_diam, SED_fit_label, z_lim=8.5, gtr_or_less="gtr"),
+            Bluewards_Lya_Non_Detect_Selector(aper_diam, SED_fit_label, SNR_lim = 2.0),
+            Redwards_Lya_Detect_Selector(aper_diam, SED_fit_label, SNR_lims = [10.0, 10.0], widebands_only = True),
+            #Band_SNR_Selector(aper_diam, band = 'F150W', SNR_lim = 1.0, detect_or_non_detect = "detect"),
+            #Robust_zPDF_Selector(aper_diam, SED_fit_label, integral_lim = 0.6, dz_over_z = 0.1),
+            zPDF_High_Tail_Selector(aper_diam, SED_fit_label, z_thr=8.0, p_lim=0.8),
+            Chi_Sq_Lim_Selector(aper_diam, SED_fit_label, chi_sq_lim = 8.0, reduced = False),
+            Chi_Sq_Diff_Selector(aper_diam, SED_fit_label, chi_sq_diff = 5.0, dz = 0.5),
+            Colour_Selector(aper_diam, colour_bands = ["F277W", "F444W"], bluer_or_redder = "bluer", colour_val = 1),
+        ]
+        # add 2σ non-detection in first band if wanted
+        if not allow_lowz:
+            selectors.extend([Band_SNR_Selector( \
+                aper_diam, band = 0, SNR_lim = 2.0, detect_or_non_detect = "non_detect")])
 
-            if not simulated:
-                # add unmasked instrument selections
-                if isinstance(unmasked_instruments, str):
-                    unmasked_instruments = unmasked_instruments.split("+")
-                selectors.extend([Unmasked_Instrument_Selector(instrument, \
-                    cat_filterset) for instrument in unmasked_instruments])
+        if not simulated:
+            # add unmasked instrument selections
+            if isinstance(unmasked_instruments, str):
+                unmasked_instruments = unmasked_instruments.split("+")
+            selectors.extend([Unmasked_Instrument_Selector(instrument, \
+                cat_filterset) for instrument in unmasked_instruments])
                 
-                # add hot pixel checks in LW widebands
-                selectors.extend([
-                    Sextractor_Bands_Radius_Selector( \
-                    band_names = ["F277W", "F444W"], \
-                    gtr_or_less = "gtr", lim = 45. * u.marcsec)
-                ])
-            lowz_name = "_lowz" if allow_lowz else ""
-            unmasked_instr_name = "_" + "+".join(unmasked_instruments)
-            selection_name = f"COSMOS-Web{lowz_name}{unmasked_instr_name}"
-            super().__init__(aper_diam, SED_fit_label, selectors, selection_name = selection_name)
+            # add hot pixel checks in LW widebands
+            selectors.extend([
+                Sextractor_Bands_Radius_Selector( \
+                band_names = ["F277W", "F444W"], \
+                gtr_or_less = "gtr", lim = 45. * u.marcsec)
+            ])
+        lowz_name = "_lowz" if allow_lowz else ""
+        unmasked_instr_name = "_" + "+".join(unmasked_instruments)
+        selection_name = f"COSMOS-Web{lowz_name}{unmasked_instr_name}"
+        super().__init__(aper_diam, SED_fit_label, selectors, selection_name = selection_name)
 
 # Catalogue Level Selection functions
 

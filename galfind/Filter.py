@@ -395,6 +395,18 @@ class J(Tophat_Filter):
             resolution=resolution,
         )
 
+class mUV(Tophat_Filter):
+    def __init__(
+        self, throughput: float = 1.0, resolution: u.Quantity = 1.0 * u.AA
+    ):
+        super().__init__(
+            self.__class__.__name__,
+            1_450.0 * u.AA,
+            1_550.0 * u.AA,
+            throughput=throughput,
+            resolution=resolution,
+        )
+
 
 class Multiple_Filter:
     def __init__(
