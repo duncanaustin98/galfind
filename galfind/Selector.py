@@ -1542,15 +1542,18 @@ class Unmasked_Band_Selector(Mask_Selector):
         else:
             return not gal.aper_phot[list(gal.aper_phot.keys())[0]].flux.mask[band_index]
     
+    def _assert_cat(self: Self, cat: Catalogue) -> NoReturn:
+        assert self.kwargs["band_name"] in cat.filterset.band_names, \
+            galfind_logger.critical(
+                f"{self.kwargs['band_name']} not in {cat.filterset.band_names}."
+            )
+        super()._assert_cat(cat)
+
     def _call_cat(
         self: Self,
         cat: Catalogue,
         return_copy: bool = True,
     ) -> Union[NoReturn, Catalogue]:
-        assert self.kwargs["band_name"] in cat.filterset.band_names, \
-            galfind_logger.critical(
-                f"{self.kwargs['band_name']} not in {cat.filterset.band_names}."
-            )
         return Data_Selector._call_cat(self, cat, return_copy)
 
     def load_mask(
@@ -2497,16 +2500,19 @@ class Band_SNR_Selector(Photometry_Selector):
             == "non_detect" and SNR < self.kwargs["SNR_lim"]))
         )
 
-    def _call_cat(
-        self: Self,
-        cat: Catalogue,
-        return_copy: bool = True,
-    ) -> Union[NoReturn, Catalogue]:
+    def _assert_cat(self: Self, cat: Catalogue) -> NoReturn:
         if isinstance(self.kwargs["band"], str):
             assert (self.kwargs["band"] in cat.filterset.band_names), \
                 galfind_logger.critical(
                     f"{self.kwargs['band']} not in {cat.filterset.band_names}."
                 )
+        super()._assert_cat(cat)
+
+    def _call_cat(
+        self: Self,
+        cat: Catalogue,
+        return_copy: bool = True,
+    ) -> Union[NoReturn, Catalogue]:
         return Photometry_Selector._call_cat(self, cat, return_copy)
 
 
@@ -2618,16 +2624,19 @@ class Band_Mag_Selector(Photometry_Selector):
             == "non_detect" and mag > self.kwargs["mag_lim"]))
         )
 
-    def _call_cat(
-        self: Self,
-        cat: Catalogue,
-        return_copy: bool = True,
-    ) -> Union[NoReturn, Catalogue]:
+    def _assert_cat(self: Self, cat: Catalogue) -> NoReturn:
         if isinstance(self.kwargs["band"], str):
             assert (self.kwargs["band"] in cat.filterset.band_names), \
                 galfind_logger.critical(
                     f"{self.kwargs['band']} not in {cat.filterset.band_names}."
                 )
+        super()._assert_cat(cat)
+
+    def _call_cat(
+        self: Self,
+        cat: Catalogue,
+        return_copy: bool = True,
+    ) -> Union[NoReturn, Catalogue]:
         return Photometry_Selector._call_cat(self, cat, return_copy)
 
 
@@ -2850,17 +2859,20 @@ class Chi_Sq_Diff_Selector(SED_fit_Selector):
             f"_zmax={label.split('zmax=')[-1][:3]}", "") \
             in self.SED_fitter.label]
     
-    def _call_cat(
-        self: Self,
-        cat: Catalogue,
-        return_copy: bool = True,
-    ) -> Union[NoReturn, Catalogue]:
+    def _assert_cat(self: Self, cat: Catalogue) -> NoReturn:
         # ensure a lowz run has been run for at least 1 galaxy in the catalogue
         cat_SED_fit_labels = [self._get_lowz_SED_fit_labels(gal) for gal in cat]
         assert any(len(gal_labels) > 0 for gal_labels in cat_SED_fit_labels), \
             galfind_logger.critical(
                 f"{repr(self.SED_fitter)} lowz not run for any galaxy."
             )
+        super()._assert_cat(cat)
+
+    def _call_cat(
+        self: Self,
+        cat: Catalogue,
+        return_copy: bool = True,
+    ) -> Union[NoReturn, Catalogue]:
         return SED_fit_Selector._call_cat(self, cat, return_copy)
 
 
@@ -2969,17 +2981,20 @@ class Chi_Sq_Template_Diff_Selector(SED_fit_Selector):
             or (chi_sq[1] < 0.0)
         )
     
-    def _call_cat(
-        self: Self,
-        cat: Catalogue,
-        return_copy: bool = True,
-    ) -> Union[NoReturn, Catalogue]:
+    def _assert_cat(self: Self, cat: Catalogue) -> NoReturn:
         # ensure a secondary SED fitting run has been run for at least 1 galaxy in the catalogue
         cat_SED_fit_labels = [gal.aper_phot[self.aper_diam].SED_results.keys() for gal in cat]
         assert any(self.kwargs["secondary_SED_fit_label"] in gal_labels for gal_labels in cat_SED_fit_labels), \
             galfind_logger.critical(
                 f"{self.kwargs['secondary_SED_fit_label']} not run for any galaxy."
             )
+        super()._assert_cat(cat)
+
+    def _call_cat(
+        self: Self,
+        cat: Catalogue,
+        return_copy: bool = True,
+    ) -> Union[NoReturn, Catalogue]:
         return SED_fit_Selector._call_cat(self, cat, return_copy)
 
 
@@ -3108,17 +3123,20 @@ class Sextractor_Band_Radius_Selector(Data_Selector):
         else: # self.kwargs["gtr_or_less"].lower() == "less"
             return gal.sex_Re[self.kwargs["band_name"]] < self.kwargs["lim"]
 
-    def _call_cat(
-        self: Self,
-        cat: Catalogue,
-        return_copy: bool = True,
-    ) -> Union[NoReturn, Catalogue]:
+    def _assert_cat(self: Self, cat: Catalogue) -> NoReturn:
         if isinstance(self.kwargs["band_name"], str):
             assert (self.kwargs["band_name"] in cat.filterset.band_names), \
                 galfind_logger.critical(
                     f"{self.kwargs['band_name']} not in" + \
                     f" {cat.filterset.band_names}!"
                 )
+        super()._assert_cat(cat)
+
+    def _call_cat(
+        self: Self,
+        cat: Catalogue,
+        return_copy: bool = True,
+    ) -> Union[NoReturn, Catalogue]:
         # load in effective radii as calculated from SExtractor
         cat.load_sextractor_Re()
         return Data_Selector._call_cat(self, cat, return_copy)
