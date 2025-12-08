@@ -22,5 +22,6 @@ galfind-0.1.dev658+ge85f12d
 examples/reionization_paper
 build
 configs/galfind_config_goolsby.ini
+configs/james_galfind_config.ini
 galfind/configs
 configs/DJA_spectral_catalogues/DJA_v4_2.csv
