@@ -2033,15 +2033,26 @@ class Lya_Band_Selector(Redshift_Selector):
         self: Self,
         gal: Galaxy,
     ) -> bool:
+        from .Emission_lines import line_diagnostics
         bands = np.array(gal.aper_phot[self.aper_diam].filterset.band_names)
         # determine Lya band(s) - usually a single band, 
         # but could be two in the case of medium bands
         first_Lya_detect_band = gal.aper_phot[self.aper_diam]. \
-            SED_results[self.SED_fitter.label].phot_rest.first_Lya_detect_band
+            SED_results[self.SED_fitter.label].phot_rest. \
+            get_first_redwards_band(
+                line_diagnostics["Lya"]["line_wav"],
+                None #self.kwargs["ignore_bands"],
+            )
+        first_Lya_non_detect_band = gal.aper_phot[self.aper_diam]. \
+            SED_results[self.SED_fitter.label].phot_rest. \
+            get_first_bluewards_band(
+                line_diagnostics["Lya"]["line_wav"],
+                None #self.kwargs["ignore_bands"],
+            )
+        if first_Lya_detect_band is None or first_Lya_non_detect_band is None:
+            return False
         first_Lya_detect_index = np.where(bands == \
             first_Lya_detect_band)[0][0]
-        first_Lya_non_detect_band = gal.aper_phot[self.aper_diam]. \
-            SED_results[self.SED_fitter.label].phot_rest.first_Lya_non_detect_band
         first_Lya_non_detect_index = np.where(bands == \
             first_Lya_non_detect_band)[0][0]
         # load SNRs, cropping by the relevant bands
@@ -2160,6 +2171,7 @@ class Unmasked_Bluewards_Lya_Selector(Redshift_Selector, Mask_Selector):
         if not isinstance(gal.aper_phot[self.aper_diam].flux, Masked):
             return True
         else:
+            ignore_bands_ = self.kwargs["ignore_bands"] if self.kwargs["ignore_bands"] is not None else []
             reversed_first_Lya_non_detect_index = len(gal.aper_phot[self.aper_diam]) - (first_Lya_non_detect_index + 1)
             mask = [
                 band_mask for i, (band_mask, band_name) in enumerate(
@@ -2168,7 +2180,7 @@ class Unmasked_Bluewards_Lya_Selector(Redshift_Selector, Mask_Selector):
                         reversed(gal.aper_phot[self.aper_diam].filterset.band_names)
                     )
                 ) if reversed_first_Lya_non_detect_index <= i <= (reversed_first_Lya_non_detect_index + self.kwargs["min_bands"] - 1)
-                and band_name not in self.kwargs["ignore_bands"]
+                and band_name not in ignore_bands_
                 and (not self.kwargs["widebands_only"] or band_name[-1] == "W" or "LP" == band_name[-2:])
             ]
             return not any(mask)
@@ -2326,11 +2338,12 @@ class Unmasked_Redwards_Lya_Selector(Redshift_Selector, Mask_Selector):
         if not isinstance(gal.aper_phot[self.aper_diam].flux, Masked):
             return True
         else:
+            ignore_bands_ = self.kwargs["ignore_bands"] if self.kwargs["ignore_bands"] is not None else []
             mask = [
                 band_mask for i, (band_mask, band_name) in enumerate(
                     zip(gal.aper_phot[self.aper_diam].flux.mask, gal.aper_phot[self.aper_diam].filterset.band_names)
                 ) if first_Lya_detect_index <= i <= first_Lya_detect_index + self.kwargs["min_bands"] - 1
-                and band_name not in self.kwargs["ignore_bands"]
+                and band_name not in ignore_bands_
                 and (not self.kwargs["widebands_only"] or band_name[-1] == "W" or "LP" == band_name[-2:])
             ]
             return not any(mask)
@@ -3270,6 +3283,14 @@ class Unmasked_Bands_Selector(Multiple_Mask_Selector):
             band_names = band_names.split("+")
         selectors = [Unmasked_Band_Selector(band_name = name) for name in band_names]
         super().__init__(selectors, f"unmasked_{'+'.join(band_names)}")
+    
+    def _assert_cat(self: Self, cat: Catalogue) -> NoReturn:
+        assert all(name in cat.filterset.band_names for name in \
+                [selector.kwargs["band_name"] for selector in self.selectors]), \
+            galfind_logger.critical(
+                f"Not all bands in {cat.filterset.band_names}!"
+            )
+        super()._assert_cat(cat)
 
 
 class Unmasked_Instrument_Selector(Multiple_Mask_Selector):

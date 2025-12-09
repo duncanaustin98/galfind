@@ -180,7 +180,7 @@ def fail_depth_region_selector(request):
                 "SED_fitter": "eazy_fsps_larson_sed_fitter",
                 "z_lim": 1.0,
                 "gtr_or_less": "gtr",
-            }, True
+            }, Exception
         ),
         (
             {
@@ -256,7 +256,7 @@ def fail_rest_frame_property_limit_selector(request):
                 "aper_diam": 0.1 * u.arcsec,
                 "SED_fitter": "eazy_fsps_larson_sed_fitter",
                 "z_bin": [0.5, 1.0],
-            }, True
+            }, Exception
         ),
         (
             {
@@ -1196,7 +1196,7 @@ def fail_robust_zPDF_selector(request):
         ),
         (
             {
-                "band_name": "F277W",
+                "band_name": "F200W",
                 "gtr_or_less": "gtr",
                 "lim": 45.0 * u.marcsec,
             }, True
@@ -1295,8 +1295,9 @@ def fail_kokorev24_lrd_selector(fail_kokorev24_lrd_red1_selector):
     params = [
         ({"band_names": "F444W"}, True),
         ({"band_names": ["F444W"]}, True),
-        ({"band_names": ["F277W", "F444W"]}, True),
-        ({"band_names": "F277W+F444W"}, True),
+        ({"band_names": ["F200W", "F444W"]}, True),
+        ({"band_names": "F200W+F444W"}, True),
+        ({"band_names": "F277W+F444W"}, Exception),
     ]
 )
 def call_unmasked_bands_selector(request):
@@ -1342,7 +1343,7 @@ def fail_unmasked_instrument_selector(request):
                 "band_names": ["F277W", "F356W", "F444W"],
                 "gtr_or_less": "gtr",
                 "lim": 45.0 * u.marcsec,
-            }, True
+            }, Exception
         ),
         (
             {
@@ -1387,14 +1388,14 @@ def fail_sextractor_bands_radius_selector(request):
                 "instrument": "NIRCam",
                 "gtr_or_less": "gtr",
                 "lim": 45.0 * u.marcsec,
-            }, True
+            }, {"cat": True, "gal": Exception}
         ),
         (
             {
                 "instrument": "NIRCam",
                 "gtr_or_less": "less",
                 "lim": 100.0 * u.marcsec,
-            }, True
+            }, {"cat": True, "gal": Exception}
         ),
     ]
 )
@@ -1432,21 +1433,21 @@ def fail_sextractor_instrument_radius_selector(request):
                 "instrument": "NIRCam",
                 "gtr_or_less": "gtr",
                 "scaling": 1.0,
-            }, True
+            }, {"cat": True, "gal": Exception}
         ),
         (
             {
                 "instrument": "NIRCam",
                 "gtr_or_less": "less",
                 "scaling": 0.5,
-            }, True
+            }, {"cat": True, "gal": Exception}
         ),
         (
             {
                 "instrument": "NIRCam",
                 "gtr_or_less": "gtr",
                 "scaling": 1.2,
-            }, True
+            }, {"cat": True, "gal": Exception}
         ),
     ]
 )
@@ -1568,7 +1569,7 @@ def fail_hainline24_ty_brown_dwarf_selector_2(request):
                 "aper_diam": test_aper_diams[0],
                 "SED_fitter": "eazy_fsps_larson_sed_fitter",
                 "forced_phot_band": ["F277W", "F356W", "F444W"],
-            }, True
+            }, Exception
         ),
     ]
 )
@@ -1603,21 +1604,21 @@ def fail_epochs_unmasked_criteria(request):
             {
                 "aper_diam": test_aper_diams[0],
                 "SED_fitter": "eazy_fsps_larson_sed_fitter",
-            }, True
+            }, Exception
         ),
         (
             {
                 "aper_diam": test_aper_diams[0],
                 "SED_fitter": "eazy_fsps_larson_sed_fitter",
                 "simulated": True,
-            }, True
+            }, Exception
         ),
         (
             {
                 "aper_diam": test_aper_diams[0],
                 "SED_fitter": "eazy_fsps_larson_sed_fitter",
                 "forced_phot_band": ["F277W", "F356W", "F444W"],
-            }, True
+            }, Exception
         ),
     ]
 )
@@ -1672,7 +1673,6 @@ def get_call_selector_fixtures():
     return [
         lf(name) for name, obj in inspect.getmembers(module)
         if name.endswith("_selector") and name.startswith("call_")
-        and "ID" in name
     ]
 
 @pytest.fixture(
@@ -1687,7 +1687,6 @@ def get_fail_selector_fixtures():
     return [
         lf(name) for name, obj in inspect.getmembers(module)
         if name.endswith("_selector") and name.startswith("fail_")
-        and "ID" in name
     ]
 
 @pytest.fixture(

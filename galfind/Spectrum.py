@@ -5,7 +5,11 @@ from __future__ import annotations
 import os
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import NoReturn, Union, Optional, List, Dict, Any, Self
+from typing import NoReturn, Union, Optional, List, Dict, Any
+try:
+    from typing import Self #, Type  # python 3.11+
+except ImportError:
+    from typing_extensions import Self #, Type  # python > 3.7 AND python < 3.11
 import logging
 from copy import deepcopy
 import h5py
