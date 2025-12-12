@@ -192,8 +192,7 @@ class Selector(ABC):
             in tqdm(cat, total = len(cat), desc = f"Selecting {self.name}", \
             disable = galfind_logger.getEffectiveLevel() > logging.INFO)
         ]
-        if cat.cat_creator.crops == [] or self.__class__.__name__ != "ID_Selector":
-            cat._append_property_to_tab(self.name, "SELECTION")
+        cat._append_property_to_tab(self.name, "SELECTION")
         if return_copy:
             cat_copy = deepcopy(cat)
             return cat_copy.crop(self)
