@@ -471,7 +471,7 @@ class Catalogue_Creator:
 
     def __call__(
         self: Self,
-        cropped: bool = False
+        cropped: bool = True,
     ) -> Catalogue:
         galfind_logger.info(
             f"Making {self.survey} {self.version} {self.cat_name} catalogue!"
@@ -503,13 +503,13 @@ class Catalogue_Creator:
         gals = [Galaxy(ID, sky_coord, phot_obs, flags, self.filterset, survey = self.survey, simulated = self.simulated) \
             for ID, sky_coord, phot_obs, flags in zip(IDs, sky_coords, phot_obs_arr, selection_flags)]
         cat = Catalogue(gals, self)
-        if len(self._crops_to_perform) != 0:
+        if cropped and len(self._crops_to_perform) != 0:
             # perform the crops
             for crop in self._crops_to_perform:
                 galfind_logger.info(f"Performing {repr(crop)}")
                 crop(cat, return_copy = False)
             self.load_crops(self.crops)
-            cat = self(cropped)
+            cat = self(cropped = True)
         else:
             # point to data if provided
             if hasattr(self, "data"):

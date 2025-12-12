@@ -20,6 +20,8 @@ from galfind import (
     Band_Data,
     Stacked_Band_Data,
     Catalogue,
+    Catalogue_Creator,
+    ID_Selector,
 )
 from galfind.Data import morgan_version_to_dir
 
@@ -199,6 +201,12 @@ def data(
         forced_phot_band = forced_phot_stacked_band_data_from_arr,
         im_str = ["test"],
     )
+
+@pytest.fixture(scope="session")
+def cat_creator_id_cropped(data):
+    id_selector = ID_Selector([23])
+    cat_creator = Catalogue_Creator.from_data(data, crops = id_selector)
+    return cat_creator
 
 @pytest.fixture(scope="session")
 def cat(data):
