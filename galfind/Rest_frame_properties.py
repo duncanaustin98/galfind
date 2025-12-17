@@ -95,7 +95,7 @@ class Rest_Frame_Property_Calculator(Property_Calculator):
         self: Self,
         object: Union[Type[Catalogue_Base], Galaxy, Photometry_rest],
         n_chains: int = 10_000,
-        output: bool = False,
+        output: bool = True,
         overwrite: bool = False,
         n_jobs: int = 1,
     ) -> Optional[Union[Type[Catalogue_Base], Galaxy, Photometry_rest]]:
@@ -970,14 +970,13 @@ class mUV_Calculator(Rest_Frame_Property_Calculator):
 
     @property
     def name(self: Self) -> str:
-        ext_src_label = f"_extsrc_{self.global_kwargs['ext_src_corrs']}" \
-            if self.global_kwargs["ext_src_corrs"] is not None else ""
-        ext_src_lim_label = f"<{self.global_kwargs['ext_src_uplim']:.0f}" if \
-            self.global_kwargs["ext_src_uplim"] is not None and \
-            self.global_kwargs["ext_src_corrs"] is not None else ""
+        ext_src_label = funcs.get_ext_src_corr_label(
+            ext_src_key = self.global_kwargs["ext_src_corrs"],
+            ext_src_uplim = self.global_kwargs["ext_src_uplim"],
+        )
         return f"m{self.global_kwargs['ref_wav'].to(u.AA).value:.0f}_" + \
             rest_UV_wavs_name(self.pre_req_properties[0].global_kwargs \
-            ["rest_UV_wav_lims"]) + ext_src_label + ext_src_lim_label
+            ["rest_UV_wav_lims"]) + ext_src_label
 
     @property
     def plot_name(self: Self) -> str:
@@ -1059,21 +1058,12 @@ class mUV_Calculator(Rest_Frame_Property_Calculator):
             u.ABmag), axis = 1)
         # TODO: speed up implementation of extended source corrections
         if self.global_kwargs["ext_src_corrs"] is not None:
-            if self.global_kwargs["ext_src_corrs"] == "UV":
-                # calculate band nearest to the rest frame UV reference wavelength
-                band_wavs = [filt.WavelengthCen.to(u.AA).value \
-                    for filt in phot_rest.filterset] * u.AA / (1. + phot_rest.z.value)
-                ref_band = phot_rest.filterset.band_names[np.argmin(np.abs( \
-                    band_wavs - self.global_kwargs["ref_wav"]))]
-                ext_src_corr = phot_rest.ext_src_corrs[ref_band]
-            else: # band given
-                ext_src_corr = phot_rest.ext_src_corrs[self.global_kwargs["ext_src_corrs"]]
-            # apply limit to extended source correction
-            if self.global_kwargs["ext_src_uplim"] is not None:
-                if ext_src_corr > self.global_kwargs["ext_src_uplim"]:
-                    ext_src_corr = self.global_kwargs["ext_src_uplim"]
-            if ext_src_corr < 1.0:
-                ext_src_corr = 1.0
+            ext_src_corr = funcs.get_ext_src_corr(
+                phot_rest,
+                ext_src_key = self.global_kwargs["ext_src_corrs"],
+                ext_src_uplim = self.global_kwargs["ext_src_uplim"],
+                ref_wav = self.global_kwargs["ref_wav"],
+            )
             # apply extended source corrections
             mUV_arr = (mUV_arr.value + funcs.flux_to_mag_ratio(ext_src_corr)) * u.ABmag
         return mUV_arr

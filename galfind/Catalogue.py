@@ -1132,6 +1132,13 @@ class Catalogue(Catalogue_Base):
         }
         [gal.load_sextractor_ext_src_corrs(aper_corrs) for gal in self]
 
+    def load_sextractor_params(self) -> None:
+        self.load_sextractor_auto_mags()
+        self.load_sextractor_auto_fluxes()
+        self.load_sextractor_kron_radii()
+        self.load_sextractor_Re()
+        self.load_sextractor_ext_src_corrs()
+
     def load_band_properties_from_cat(
         self,
         cat_colname: str,
@@ -1420,11 +1427,7 @@ class Catalogue(Catalogue_Base):
         n_cutout_rows: int = 2,
         overwrite: bool = False,
     ):
-        # load sextractor parameters
-        self.load_sextractor_auto_mags()
-        self.load_sextractor_auto_fluxes()
-        self.load_sextractor_kron_radii()
-        self.load_sextractor_Re()
+        self.load_sextractor_params()
 
         # loop over galaxies and plot photometry diagnostic plots for each one
         # figure size may well depend on how many bands there are

@@ -40,8 +40,8 @@ class Photometry_rest(Photometry):
         flux_errs: u.Quantity,
         depths: u.Quantity,
         z: float,
-        properties: Optional[Dict[str, Union[u.Mangitude, u.Quantity, u.Dex]]] = None,
-        property_errs: Optional[Dict[str, Tuple[Union[u.Mangitude, u.Quantity, u.Dex], Union[u.Mangitude, u.Quantity, u.Dex]]]] = None,
+        properties: Optional[Dict[str, Union[u.Magnitude, u.Quantity, u.Dex]]] = None,
+        property_errs: Optional[Dict[str, Tuple[Union[u.Magnitude, u.Quantity, u.Dex], Union[u.Magnitude, u.Quantity, u.Dex]]]] = None,
         property_PDFs: Optional[Dict[str, Type[PDF]]] = None,
         property_kwargs: Optional[Dict[str, Dict[str, Union[str, int, float]]]] = None
     ):
@@ -314,7 +314,8 @@ class Photometry_rest(Photometry):
         assert all(
             property_iters == property_iters_arr[0]
             for property_iters in property_iters_arr
-        ), f"All {property_names=} must have the same number of iterations to run!, {[(property_iters, property_iters_arr[0]) for property_iters in property_iters_arr]}"
+        ), f"All {property_names=} must have the same number of iterations to run!, " + \
+            f"{[(property_iters, property_iters_arr[0]) for property_iters in property_iters_arr]}"
         # do nothing if PDFs of the required length have already been loaded
         if property_iters_arr[0] == 0:
             return self, property_names

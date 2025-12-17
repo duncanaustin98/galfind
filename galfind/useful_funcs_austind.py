@@ -21,7 +21,7 @@ from numpy.typing import NDArray
 from typing import Union, List, Tuple, TYPE_CHECKING, Optional, Any, Dict
 if TYPE_CHECKING:
     from .Data import Band_Data_Base, Band_Data, Stacked_Band_Data
-    from . import Selector, Filter, Multiple_Filter, Mask_Selector
+    from . import Selector, Filter, Multiple_Filter, Mask_Selector, Photometry_rest
 try:
     from typing import Self, Type  # python 3.11+
 except ImportError:
@@ -1342,4 +1342,54 @@ def make_symlinks(target_galfind_work, symlink_galfind_work, survey, version, in
             target_paths = [str(path) for path in Path(target_dir).rglob("*") if path.is_file()]
             symlink_paths = [path.replace(target_galfind_work, symlink_galfind_work) for path in target_paths]
             for target_path, symlink_path in zip(target_paths, symlink_paths):
-                funcs.symlink(target_path, symlink_path)
+                symlink(target_path, symlink_path)
+
+def get_ext_src_corr(
+    phot_rest: Photometry_rest,
+    ext_src_key: Optional[str] = "UV",
+    ext_src_uplim: Optional[Union[int, float]] = 10.0,
+    ref_wav: u.Quantity = 1_500.0 * u.AA,
+) -> float:
+    if ext_src_key is None:
+        return 1.0
+    else:
+        if len(phot_rest.filterset) == 0:
+            galfind_logger.debug(
+                f"{repr(phot_rest)} has {len(phot_rest.filterset)=}! " + 
+                "Unable to compute extended source correction!"
+            )
+            return np.nan
+    if not hasattr(phot_rest, "ext_src_corrs"):
+        err_message = f"{repr(phot_rest)} has no attribute ext_src_corrs! " + \
+            "Unable to compute extended source correction!"
+        galfind_logger.critical(err_message)
+        raise AttributeError(err_message)
+    if ext_src_key == "UV":
+        # calculate band nearest to the rest frame UV reference wavelength
+        band_wavs = [filt.WavelengthCen.to(u.AA).value \
+            for filt in phot_rest.filterset] * u.AA / (1. + phot_rest.z.value)
+        ref_band = phot_rest.filterset.band_names[np.argmin(np.abs(band_wavs - ref_wav))]
+        ext_src_corr = phot_rest.ext_src_corrs[ref_band]
+    else: # band given
+        ext_src_corr = phot_rest.ext_src_corrs[ext_src_key]
+    # apply limit to extended source correction
+    if ext_src_uplim is not None:
+        if ext_src_corr > ext_src_uplim:
+            ext_src_corr = ext_src_uplim
+    if ext_src_corr < 1.0:
+        ext_src_corr = 1.0
+    return ext_src_corr
+
+def get_ext_src_corr_label(
+    ext_src_key: Optional[str] = "UV",
+    ext_src_uplim: Optional[Union[int, float]] = 10.0,
+) -> str:
+    if ext_src_key is None:
+        return ""
+    else:
+        ext_src_name = f"_extsrc_{ext_src_key}"
+        if ext_src_uplim is None:
+            ext_src_lim_label = ""
+        else:
+            ext_src_lim_label = f"<{ext_src_uplim:.0f}"
+        return ext_src_name + ext_src_lim_label

@@ -3,7 +3,11 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from tqdm import tqdm
+import logging
+from galfind import Catalogue
 import numpy as np
+from numpy.typing import NDArray
+from astropy.table import Table
 import itertools
 from copy import deepcopy
 import astropy.units as u
@@ -19,8 +23,7 @@ from . import config, galfind_logger, all_band_names, astropy_cosmo
 from . import useful_funcs_austind as funcs
 from . import Catalogue, Catalogue_Base, Galaxy, SED_code, SED_result
 from . import PDF, SED_fit_PDF
-from . import SED_obs
-
+from . import SED_obs, SED_rest
 
 class Property_Calculator_Base(ABC):
 
@@ -675,71 +678,70 @@ class SED_Property_Calculator(Property_Calculator):
         cat: Catalogue,
         #save: bool = True,
     ) -> Optional[Catalogue]:
-        # assert isinstance(n_jobs, int), \
-        #     galfind_logger.critical(
-        #         f"{n_jobs=} with {type(n_jobs)=} != int"
-        #     )
-        # if save:
-        # save_dir = f"{config['PhotProperties']['PDF_SAVE_DIR']}/" + \
-        #     f"{cat.version}/{cat.survey}/{cat.filterset.instrument_name}/" + \
-        #     f"{self.aper_diam.to(u.arcsec).value:.2f}as" + \
-        #     f"/{self.SED_fit_label}/{self.name}"
-        # if hasattr(self, "n_jobs"):
-        #     n_jobs = self.n_jobs
-        #if n_jobs <= 1:
-            # update properties for each galaxy in the catalogue
-        try:
-            cat_properties = np.array([self._call_gal(gal) for gal in cat])
-        except:
-            unit = self._call_gal(cat.gals[0]).unit
-            cat_properties = np.array([self._call_gal(gal).value for gal in cat]) * unit
-        return cat_properties
-        #return np.array([self._call_gal(gal) for gal in cat])
-        # else:
-        #     # TODO: should be set when serializing the object
-        #     for gal in tqdm(cat, total = len(cat)):
-        #         for label in gal.aper_phot[self.aper_diam].SED_results.keys():
-        #             try:
-        #                 gal.aper_phot[self.aper_diam].flux = \
-        #                     gal.aper_phot[self.aper_diam].flux.unmasked
-        #             except:
-        #                 pass
-        #             try:
-        #                 gal.aper_phot[self.aper_diam].flux_errs = \
-        #                     gal.aper_phot[self.aper_diam].flux_errs.unmasked
-        #             except:
-        #                 pass
-        #             try:
-        #                 gal.aper_phot[self.aper_diam].SED_results[label].phot_rest.flux = \
-        #                     gal.aper_phot[self.aper_diam].SED_results[label].phot_rest.flux.unmasked
-        #             except:
-        #                 pass
-        #             try:
-        #                 gal.aper_phot[self.aper_diam].SED_results[label].phot_rest.flux_errs = \
-        #                     gal.aper_phot[self.aper_diam].SED_results[label].phot_rest.flux_errs.unmasked
-        #             except:
-        #                 pass
-        #     # multi-process with joblib
-        #     # sort input params
-        #     params_arr = [(self, gal, n_chains, overwrite, save_dir) for gal in cat]
-        #     # run in parallel
-        #     with funcs.tqdm_joblib(tqdm(desc = f"Calculating {self.name} for " + \
-        #         f"{cat.survey} {cat.version} {cat.filterset.instrument_name}", \
-        #         total = len(cat))) as progress_bar:
-        #             with parallel_config(backend='loky', n_jobs=n_jobs):
-        #                 gals = Parallel()(delayed( \
-        #                     self._call_gal_multi_process)(params) \
-        #                     for params in params_arr
-        #                 )
-        #     cat.gals = gals
-        # if cat.cat_creator.crops == []:
-        #     self._update_fits_cat(cat)
-        # if output:
-        #     return cat
+        cat_properties = [
+            self._call_gal(gal)
+            for gal in tqdm(
+                cat,
+                desc = f"Calculating {repr(self)} for {repr(cat)}",
+                total = len(cat),
+                disable = galfind_logger.getEffectiveLevel() > logging.INFO
+            )
+        ]
+        if isinstance(cat_properties[0], (u.Quantity, u.Magnitude, u.Dex)):
+            cat_properties = np.array([prop.value for prop in cat_properties]) * cat_properties[0].unit
+        # write to output table that is appropriately named
+        self.update_fits_cat(cat, cat_properties)
+        return cat
+
+    def update_fits_cat(
+        self: Self,
+        cat: Catalogue,
+        cat_properties: NDArray,
+    ) -> None:
+        # TODO: generalize this funciton further
+        # determine appropriate hdu and name to save properties as
+        # TODO: generalize hdu name for non-EAZY SED fitting labels
+        property_hdu = f"SED_PROPERTIES_{'_'.join(self.SED_fit_label.split('_')[:-1])}".upper()
+        property_name = f"{self.name}_{self.aper_diam.to(u.arcsec).value:.2f}as"
+        # open fits catalogue
+        tab = cat.open_cat(hdu=property_hdu)
+        if tab is None:
+            write = True
+            tab = Table()
+            tab["ID"] = np.array([gal.ID for gal in cat])
+        elif not property_name in tab.colnames:
+            write = True
+            assert len(tab) == len(cat)
+        else:
+            write = False
+
+        if write:
+            assert all([self.SED_fit_label in gal.aper_phot[self.aper_diam].SED_results.keys() for gal in cat])
+            # if all([self.SED_fit_label in gal.aper_phot[self.aper_diam].SED_results.keys() for gal in cat]):
+            #     kwarg_names = np.unique([key for gal in cat for key in \
+            #         gal.aper_phot[self.aper_diam].SED_results[self.SED_fit_label]. \
+            #         phot_rest.property_kwargs[self.name].keys()])
+            #     for kwarg_name in kwarg_names:
+            #         tab[f"{property_name}_{kwarg_name}"] = [gal.aper_phot[self.aper_diam]. \
+            #             SED_results[self.SED_fit_label].phot_rest.property_kwargs[self.name] \
+            #             [kwarg_name] if kwarg_name in gal.aper_phot[self.aper_diam].SED_results \
+            #             [self.SED_fit_label].phot_rest.property_kwargs[self.name].keys() else np.nan for gal in cat]
+            # else:
+            #     raise(
+            #         ValueError(
+            #             galfind_logger.critical(
+            #                 f"{self.SED_fit_label=} not in all galaxies in {cat.survey} {cat.version}"
+            #             )
+            #         )
+            #     )
+            # update fits catalogue
+            tab[property_name] = cat_properties
+            cat.write_hdu(tab, hdu=property_hdu)
 
     def _call_gal(
         self: Self,
         gal: Galaxy,
+        **kwargs,
     ) -> Optional[Galaxy]:
         # update the relevant Photometry_rest object stored in the Galaxy
         assert self.aper_diam in gal.aper_phot.keys(), \
@@ -757,13 +759,14 @@ class SED_Property_Calculator(Property_Calculator):
         # self._call_phot_rest(gal.aper_phot[self.aper_diam]. \
         #     SED_results[self.SED_fit_label].phot_rest, n_chains = n_chains, 
         #     output = False, overwrite = overwrite, save_path = save_path)
-        return self._call_sed_result(gal.aper_phot[self.aper_diam].SED_results[self.SED_fit_label])
+        return self._call_sed_result(gal.aper_phot[self.aper_diam].SED_results[self.SED_fit_label], **kwargs)
         # if output:
         #     return gal
     
     def _call_sed_result(
         self: Self,
         sed_result: SED_result,
+        **kwargs
     ) -> Optional[SED_result]:
         # assert isinstance(n_chains, int), \
         #     galfind_logger.critical(
@@ -845,7 +848,62 @@ class SED_Property_Calculator(Property_Calculator):
                 f"not in [Catalogue, Galaxy, SED_obs]"
             galfind_logger.critical(err_message)
             raise TypeError(err_message)
-        
+
+
+class MUV_SED_Property_Calculator(SED_Property_Calculator):
+
+    def __init__(
+        self: Self,
+        aper_diam: u.Quantity,
+        SED_fitter: Type[SED_code],
+        ext_src_corrs: Optional[str] = "UV",
+        ext_src_uplim: Optional[Union[int, float]] = 10.0,
+        ref_wav: u.Quantity = 1_500.0 * u.AA,
+        #top_hat_width: u.Quantity = 100.0 * u.AA,
+    ):
+        # TODO: Quick fix, should be in parent rather than the label
+        self.SED_fitter = SED_fitter
+        self.ext_src_corrs = ext_src_corrs
+        self.ext_src_uplim = ext_src_uplim
+        self.ref_wav = ref_wav
+        #self.top_hat_width = top_hat_width
+        super().__init__(aper_diam, SED_fitter.label)
+    
+    @property
+    def name(self: Self) -> str:
+        ext_src_label = funcs.get_ext_src_corr_label(
+            ext_src_key = self.ext_src_corrs,
+            ext_src_uplim = self.ext_src_uplim,
+        )
+        return f"MUV_{self.SED_fitter.label}{ext_src_label}"
+
+    @property
+    def plot_name(self: Self) -> str:
+        return f"MUV ({self.SED_fitter.label})"
+
+    def _call_cat(
+        self: Self,
+        cat: Catalogue
+    ) -> Catalogue:
+        if self.ext_src_corrs is not None:
+            # load extended source corrections
+            cat.load_sextractor_ext_src_corrs()
+        return super()._call_cat(cat)
+
+    def _call_sed_result(
+        self: Self,
+        sed_result: SED_result,
+    ) -> float:
+        MUV = sed_result.SED.calc_MUV()
+        ext_src_corr = funcs.get_ext_src_corr(
+            sed_result.phot_rest,
+            ext_src_key = self.ext_src_corrs,
+            ext_src_uplim = self.ext_src_uplim,
+            ref_wav = self.ref_wav,
+        )
+        MUV -= 2.5 * np.log10(ext_src_corr)
+        return MUV
+
 
 class Ext_Src_Property_Calculator(SED_Property_Calculator):
 
