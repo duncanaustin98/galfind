@@ -154,7 +154,7 @@ class LePhare(SED_code):
         overwrite: bool = False,
     ) -> str:  # from FITS_organiser.py
         
-        in_dir = f"{config['LEPHARE']['LEPHARE_DIR']}/input/{cat.filterset.instrument_name}/{cat.version}/{cat.survey}"
+        in_dir = f"{config['LePhare']['LEPHARE_DIR']}/input/{cat.filterset.instrument_name}/{cat.version}/{cat.survey}"
         in_name = cat.cat_name.replace('.fits', f"_{aper_diam.to(u.arcsec).value:.2f}as.in")
         in_path = f"{in_dir}/{in_name}"
         if not Path(in_path).is_file() or overwrite:
@@ -223,20 +223,20 @@ class LePhare(SED_code):
         return in_path
     
     def compile(
-        self, 
+        self: Self,
         filterset: Multiple_Filter, 
         types: List[str] = ["STAR", "QSO", "GAL"],
         template_save_suffix: str = ""
-    ) -> NoReturn:
+    ) -> None:
         # determine appropriate input filterset
-        input_filterset = self.get_input_filterset(filterset)
-        self.compile_filters(input_filterset)
-        for _type in types:
-            self.compile_binary(_type)
-            self.compile_templates(input_filterset, _type, save_suffix = template_save_suffix)
+        #input_filterset = self.get_input_filterset(filterset)
+        self.compile_filters(filterset)
+        for type in types:
+            self.compile_binary(type)
+            self.compile_templates(filterset, type, save_suffix = template_save_suffix)
 
     @run_in_dir(path=config["LePhare"]["LEPHARE_CONFIG_DIR"])
-    def compile_binary(self, _type: str) -> NoReturn:
+    def compile_binary(self, _type: str) -> None:
         assert _type in ["STAR", "QSO", "GAL"], \
         galfind_logger.critical(
             f"{_type=} not in ['STAR', 'QSO', 'GAL']"
@@ -279,12 +279,15 @@ class LePhare(SED_code):
         else:
             galfind_logger.debug(f"{output_bin_name} already exists")
 
-    def _get_bin_out_path(self, _type: str) -> str:
+    def _get_bin_out_path(self: Self, type: str) -> str:
         return f"{os.environ['LEPHAREWORK']}/lib_bin/" + \
-            self.SED_fit_params[f"{_type}_TEMPLATES"] + ".bin"
+            self.SED_fit_params[f"{type}_TEMPLATES"] + ".bin"
 
     @run_in_dir(path=config["LePhare"]["LEPHARE_CONFIG_DIR"])
-    def compile_filters(self, input_filterset: Multiple_Filter) -> NoReturn:
+    def compile_filters(
+        self: Self,
+        input_filterset: Multiple_Filter,
+    ) -> None:
         save_dir = f"{os.environ['LEPHAREWORK']}/filt"
         save_name = self._get_save_filterset_name(input_filterset)
         save_path = f"{save_dir}/{save_name}"
@@ -316,7 +319,7 @@ class LePhare(SED_code):
         else:
             galfind_logger.debug(f"{save_path} already exists")
 
-    def _make_filt_txt(self, filt: Filter) -> NoReturn:
+    def _make_filt_txt(self: Self, filt: Filter) -> None:
         save_path = f"{os.environ['LEPHAREDIR']}/filt/" + \
             f"{filt.facility_name}/{filt.instrument_name}/" + \
             f"{filt.band_name}.txt"

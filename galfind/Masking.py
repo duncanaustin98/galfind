@@ -451,11 +451,16 @@ def auto_mask(
                 f"{reg_mask_dir}/stellar/{self.filt_name}_stellar.reg"
             )
             funcs.make_dirs(starmask_path)
-            with open(starmask_path, "w") as f:
-                for region in stellar_region_strings:
-                    f.write(region + "\n")
-                f.close()
-            funcs.change_file_permissions(starmask_path)
+            if not Path(starmask_path).is_file() or overwrite:
+                with open(starmask_path, "w") as f:
+                    for region in stellar_region_strings:
+                        f.write(region + "\n")
+                    f.close()
+                funcs.change_file_permissions(starmask_path)
+            else:
+                galfind_logger.warning(
+                    f"Stellar reg mask at {starmask_path} already exists, skipping!"
+                )
         else:
             full_mask = edge_mask.astype(np.uint8)
 
@@ -593,7 +598,7 @@ def auto_mask(
 
 def check_star_mask_params(
     star_mask_params: Dict[u.Quantity, Dict[str, float]],
-) -> NoReturn:
+) -> None:
     assert isinstance(star_mask_params, dict), galfind_logger.warning(
         f"Mask overridden, but {type(star_mask_params)=} != dict"
     )

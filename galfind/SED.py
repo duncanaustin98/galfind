@@ -367,6 +367,20 @@ class SED_rest(SED):
             & (wavs < wav_range.to(wav_units).value[1])
         ]
         super().__init__(wavs, mags, wav_units, mag_units)
+    
+    @classmethod
+    def from_SED_obs(cls, SED_obs, out_wav_units=u.AA, out_mag_units=u.ABmag):
+        wavs = funcs.convert_wav_units(
+            SED_obs.wavs / (1 + SED_obs.z), out_wav_units
+        )
+        mags = funcs.convert_mag_units(wavs, SED_obs.mags, out_mag_units)
+        return cls(
+            wavs.value,
+            mags.value,
+            wavs.unit,
+            mags.unit,
+            wav_range=[0, 10_000] * u.AA,
+        )
 
     def crop_to_Calzetti94_filters(self, update=False):
         wavs = self.wavs.to(u.AA)
@@ -503,6 +517,16 @@ class SED_obs(SED):
             UV_flux,
             u.ABmag,
         )
+
+    def calc_MUV(
+        self: Self,
+        wav_range: u.Quantity = [1_450.0, 1_550.0] * u.AA,
+        wav_resolution: u.Quantity = 1.0 * u.AA,
+    ):
+        mUV = self.calc_mUV(wav_range, wav_resolution)
+        dL = astropy_cosmo.luminosity_distance(self.z).to(u.pc).value
+        MUV = mUV.value - 5 * np.log10(dL / 10.0) + 2.5 * np.log10(1.0 + self.z)
+        return MUV # * u.ABmag
 
 
 class Mock_SED_rest(SED_rest):  # , Mock_SED):

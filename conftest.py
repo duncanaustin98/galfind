@@ -1,6 +1,7 @@
 
 import pytest
 from pytest_lazy_fixtures import lf
+from copy import deepcopy
 import astropy.units as u
 import os
 
@@ -22,6 +23,8 @@ from galfind import (
     Catalogue,
     Catalogue_Creator,
     ID_Selector,
+    Photometry_rest,
+    Multiple_Filter,
 )
 from galfind.Data import morgan_version_to_dir
 
@@ -117,6 +120,10 @@ def filter(request):
 @pytest.fixture(scope = "session")
 def f444w():
     return Filter.from_SVO("JWST", "NIRCam", "F444W")
+
+@pytest.fixture(scope = "session")
+def blank_multi_filt():
+    return Multiple_Filter([])
 
 # @pytest.fixture(scope = "session")
 # def cat():
@@ -215,3 +222,54 @@ def cat(data):
 @pytest.fixture(scope="session")
 def gal(cat):
     return cat[0]
+
+@pytest.fixture(scope="session")
+def cat_eazy_loaded(data, eazy_fsps_larson_sed_fitter, aper_diams):
+    # load catalogue from data
+    cat = Catalogue.from_data(data)
+    # load/run SED fitting
+    eazy_fsps_larson_sed_fitter(cat, aper_diams[0], update = True)
+    return cat
+
+@pytest.fixture(scope="session")
+def gal_eazy_loaded(cat_eazy_loaded):
+    return cat_eazy_loaded[0]
+
+@pytest.fixture(scope="session")
+def cat_eazy_sex_params_loaded(cat_eazy_loaded):
+    cat_eazy_loaded_ = deepcopy(cat_eazy_loaded)
+    cat_eazy_loaded_.load_sextractor_params()
+    #cat_eazy_loaded_.load_sextractor_ext_src_corrs()
+    return cat_eazy_loaded_
+
+@pytest.fixture(scope="session")
+def gal_eazy_sex_params_loaded(cat_eazy_sex_params_loaded):
+    return cat_eazy_sex_params_loaded[0]
+
+@pytest.fixture(scope="session")
+def phot_rest(
+    gal_eazy_loaded,
+    eazy_fsps_larson_sed_fitter,
+    aper_diams,
+):
+    return gal_eazy_loaded.aper_phot[aper_diams[0]] \
+        .SED_results[eazy_fsps_larson_sed_fitter.label].phot_rest
+
+@pytest.fixture(scope="session")
+def phot_rest_sex_params_loaded(
+    gal_eazy_sex_params_loaded,
+    eazy_fsps_larson_sed_fitter,
+    aper_diams,
+):
+    return gal_eazy_sex_params_loaded.aper_phot[aper_diams[0]] \
+        .SED_results[eazy_fsps_larson_sed_fitter.label].phot_rest
+
+@pytest.fixture(scope="session")
+def blank_phot_rest(blank_multi_filt):
+    return Photometry_rest(
+        blank_multi_filt,
+        flux = [] * u.uJy,
+        flux_errs = [] * u.uJy,
+        depths = [] * u.ABmag,
+        z = 10.0,
+    )
