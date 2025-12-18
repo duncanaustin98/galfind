@@ -17,6 +17,7 @@ from galfind import (
     NIRCam,
     Filter,
     EAZY,
+    LePhare,
     Data,
     Band_Data,
     Stacked_Band_Data,
@@ -37,7 +38,7 @@ test_aper_diams = [0.32] * u.arcsec
 test_forced_phot_band_ = ["F200W", "F444W"]
 
 
-@pytest.fixture
+@pytest.fixture(scope = "session")
 def test_bands():
     return test_bands_
 
@@ -125,6 +126,16 @@ def f444w():
 def blank_multi_filt():
     return Multiple_Filter([])
 
+@pytest.fixture(scope = "session")
+def nircam_multi_filter():
+    return Multiple_Filter.from_instrument("NIRCam")
+
+@pytest.fixture(scope = "session")
+def multi_filter_test_bands(test_bands):
+    return Multiple_Filter([
+        Filter.from_filt_name(name) for name in test_bands
+    ])
+
 # @pytest.fixture(scope = "session")
 # def cat():
 #     return 
@@ -141,11 +152,16 @@ def eazy_fsps_larson_sed_fitter():
 def eazy_sfhz_sed_fitter():
     return EAZY({"templates": "sfhz", "lowz_zmax": None})
 
+@pytest.fixture(scope="session")
+def lephare_sed_fitter():
+    return LePhare({"GAL_TEMPLATES": "BC03_Chabrier2003_Z(m42_m62)"})
+
 @pytest.fixture(
     scope = "session",
     params = [
         lf(eazy_fsps_larson_sed_fitter),
         lf(eazy_sfhz_sed_fitter),
+        lf(lephare_sed_fitter),
     ]
 )
 def sed_fitter(request):

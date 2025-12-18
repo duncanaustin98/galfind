@@ -637,6 +637,7 @@ class EAZY(SED_code):
         wav_unit = u.Unit(hf["wav_unit"][()].decode())
         flux_unit = u.Unit(hf["flux_unit"][()].decode())
         hf.close()
+        # close .h5 file
         SED_obs_arr = [
             SED_obs(z, wav, flux, wav_unit, flux_unit)
             for z, wav, flux in tqdm(
@@ -646,7 +647,6 @@ class EAZY(SED_code):
                 disable=galfind_logger.getEffectiveLevel() > logging.INFO
             )
         ]
-        # close .h5 file
         return SED_obs_arr
 
     def extract_PDFs(
@@ -705,10 +705,10 @@ class EAZY(SED_code):
             return redshift_PDFs
 
     def load_cat_property_PDFs(
-            self: Self, 
-            PDF_paths: List[Dict[str, str]],
-            IDs: List[int]
-        ) -> List[Dict[str, Optional[Type[PDF]]]]:
+        self: Self, 
+        PDF_paths: List[Dict[str, str]],
+        IDs: List[int]
+    ) -> List[Dict[str, Optional[Type[PDF]]]]:
         cat_property_PDFs_ = {
             gal_property: self.extract_PDFs(
                 gal_property,

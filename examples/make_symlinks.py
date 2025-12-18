@@ -59,12 +59,12 @@ def main(target_galfind_work, symlink_galfind_work, survey, version, instrument_
 
 if __name__ == "__main__":
 
-    survey = "COSMOS-Web-1A"
-    version = "v11"
+    #survey = "COSMOS-Web-1A"
+    version = "mosaic_1084_wispnathan_v2"
     instrument_names = ["ACS_WFC", "NIRCam"]
     target_dir = "/raid/scratch/work/jarcidia/GALFIND_WORK" #galfind.config["DEFAULT"]["GALFIND_WORK"]
 
     symlink_dir = "/raid/scratch/work/austind/GALFIND_WORK"
     dirs_to_link = ["Depths", "EAZY", "Masks", "SExtractor", "Stacked_Images"]
-
-    main(target_dir, symlink_dir, survey, version, instrument_names, dirs_to_link)
+    for survey in [f"COSMOS-Web-{x}{letter}" for x in range(0,8) for letter in ["A", "B"]]:
+        main(target_dir, symlink_dir, survey, version, instrument_names, dirs_to_link)

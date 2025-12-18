@@ -30,7 +30,12 @@ def main(
     LePhare_fitter = LePhare(SED_fit_params)
     LePhare_fitter.compile(cat.filterset)
     # fit catalogue
-    LePhare_fitter(cat, aper_diams[0])
+    LePhare_fitter(
+        cat,
+        aper_diams[0],
+        load_PDFs = True,
+        load_SEDs = True,
+    )
 
 
 if __name__ == "__main__":
@@ -46,7 +51,7 @@ if __name__ == "__main__":
     # print("COSMOS-Web-1A LePhare sleeping for 2hrs")
     # time.sleep((2 * u.hour).to(u.second).value)
 
-    # survey = "COSMOS-Web-1A"
+    # survey = "COSMOS-Web-3B"
     # version = "v11"
     # instrument_names = ["ACS_WFC", "NIRCam"]
     # forced_phot_band = ["F444W"]

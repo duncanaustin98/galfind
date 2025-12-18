@@ -20,7 +20,7 @@ def main(
         aper_diams = aper_diams,
         forced_phot_band = forced_phot_band,
         min_flux_pc_err = min_flux_pc_err,
-        version_to_dir_dict = morgan_version_to_dir,
+        #version_to_dir_dict = morgan_version_to_dir,
     )
     # load EAZY results into catalogue
     EAZY_SED_fitter = EAZY({"templates": "fsps_larson", "lowz_zmax": None})
@@ -34,8 +34,8 @@ def main(
 
 if __name__ == "__main__":
 
-    survey = "COSMOS-Web-1A"
-    version = "v11"
+    survey = "COSMOS-Web-3A"
+    version = "mosaic_1084_wispnathan_v2" #"v11"
     instrument_names = ["ACS_WFC", "NIRCam"]
     forced_phot_band = ["F444W"]
     aper_diams = [0.32] * u.arcsec

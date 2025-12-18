@@ -172,13 +172,20 @@ def calc_flux_from_ra_dec(ra, dec, im_data, wcs, r, unit="deg"):
     return flux  # image units
 
 
-def calc_1sigma_flux(depth, zero_point):
+def calc_1sigma_flux(
+    depth: Union[float, u.Magnitude],
+    zero_point: float,
+) -> float:
+    if isinstance(depth, u.Magnitude):
+        depth = depth.value
     flux_1sigma = (10 ** ((depth - zero_point) / -2.5)) / 5
     return flux_1sigma  # image units
 
 
 def n_sigma_detection(
-    depth, mag, zero_point
+    depth,
+    mag,
+    zero_point,
 ):  # mag here is non aperture corrected
     flux_1sigma = calc_1sigma_flux(depth, zero_point)
     flux = 10 ** ((mag - zero_point) / -2.5)
@@ -232,7 +239,13 @@ def flux_image_to_Jy(fluxes, zero_points):
         return np.array(fluxes * (10 ** ((zero_points - 8.9) / -2.5))) * u.Jy
 
 
-def five_to_n_sigma_mag(five_sigma_depth, n):
+def five_to_n_sigma_mag(
+    five_sigma_depth: Union[int, float, u.Magnitude],
+    n: Union[int, float],
+):
+    assert n > 0, galfind_logger.critical(f"{n=} must be > 0")
+    if isinstance(five_sigma_depth, u.Magnitude):
+        five_sigma_depth = five_sigma_depth.value
     n_sigma_mag = -2.5 * np.log10(n / 5) + five_sigma_depth
     # flux_sigma = (10 ** ((five_sigma_depth - zero_point) / -2.5)) / 5
     # n_sigma_mag = -2.5 * np.log10(flux_sigma * n) + zero_point
