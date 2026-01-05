@@ -34,11 +34,15 @@ def main(
 
 if __name__ == "__main__":
 
-    survey = "COSMOS-Web-1A"
+    #survey = "COSMOS-Web-3A"
     version = "v11"
     instrument_names = ["ACS_WFC", "NIRCam"]
     forced_phot_band = ["F444W"]
     aper_diams = [0.32] * u.arcsec
     min_flux_pc_err = 10.0
 
-    main(survey, version, instrument_names, forced_phot_band, aper_diams, min_flux_pc_err)
+    for survey in [f"COSMOS-Web-{x}{letter}" for x in range(8) for letter in ["A", "B"]]:
+        try:
+            main(survey, version, instrument_names, forced_phot_band, aper_diams, min_flux_pc_err)
+        except Exception as e:
+            print(f"Failed to run {survey}: {e}")

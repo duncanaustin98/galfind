@@ -15,6 +15,7 @@ import astropy.units as u
 import itertools
 import logging
 import numpy as np
+from numpy.typing import NDArray
 from astropy.table import Table, join
 from tqdm import tqdm
 from typing import TYPE_CHECKING, NoReturn, Tuple, Union, List, Dict, Any, Optional
@@ -126,7 +127,7 @@ class SED_code(ABC):
         save_PDFs: bool = True,
         overwrite: bool = False,
         **kwargs: Dict[str, Any],
-    ) -> NoReturn:
+    ) -> None:
         pass
 
     @abstractmethod
@@ -384,13 +385,12 @@ class SED_code(ABC):
         upper_sigma_lim: Optional[Dict[str, Union[float, int]]] = None,
         input_filterset: Optional[Multiple_Filter] = None,
         incl_units: bool = False,
-    ) -> Tuple[np.ndarray, np.ndarray]:
+    ) -> Tuple[NDArray[float], NDArray[float]]:
         if input_filterset is None:
             input_filterset = cat.filterset
 
         input_filterset.filters = np.array([filt for filt in input_filterset if filt.band_name not in self.SED_fit_params["excl_bands"]])
         galfind_logger.info(f"Excluded bands: {self.excl_bands_label}")
-        #breakpoint()
         # load in raw photometry from the galaxies in the catalogue and convert to appropriate units
         phot = np.array(
             [gal.aper_phot[aper_diam].flux.to(out_units) for gal in cat], dtype=object
@@ -423,7 +423,7 @@ class SED_code(ABC):
             upper_lim_indices = [
                 [i, j]
                 for i, gal in enumerate(cat)
-                for j, depth in enumerate(gal.phot[0].depths)
+                for j, depth in enumerate(gal.aper_phot[aper_diam].depths)
                 if funcs.n_sigma_detection(
                     depth,
                     (phot[i][j] * out_units).to(u.ABmag).value
@@ -431,11 +431,13 @@ class SED_code(ABC):
                     u.Jy.to(u.ABmag),
                 )
                 < upper_sigma_lim["threshold"]
+                or not np.isfinite(phot[i][j])
             ]
             phot = np.array(
                 [
                     funcs.five_to_n_sigma_mag(
-                        loc_depth, upper_sigma_lim["value"]
+                        loc_depth,
+                        upper_sigma_lim["value"]
                     )
                     if [i, j] in upper_lim_indices
                     else phot[i][j]
@@ -450,7 +452,6 @@ class SED_code(ABC):
                     for j, loc_depth in enumerate(gal.aper_phot[aper_diam].depths)
                 ]
             ).reshape(phot_shape)
-
         # insert 'no_data_val' from SED_input_bands with no data in the catalogue
         phot_in = np.zeros((len(cat), len(input_filterset)))
         phot_err_in = np.zeros((len(cat), len(input_filterset)))
@@ -469,9 +470,15 @@ class SED_code(ABC):
                         f"Multiple indices found for {band_name} in {gal.aper_phot[aper_diam].filterset.band_names}"
                     )
                     index = index[0]
+                    
+                    new_phot_in = np.array(phot[i].data)[index]
+                    new_phot_err_in = np.array(phot_err[i].data)[index]
+                    if not (np.isfinite(new_phot_in) and np.isfinite(new_phot_err_in)):
+                        new_phot_in = no_data_val
+                        new_phot_err_in = no_data_val
 
-                    phot_in[i, j] = np.array(phot[i].data)[index]
-                    phot_err_in[i, j] = np.array(phot_err[i].data)[index]
+                    phot_in[i, j] = new_phot_in
+                    phot_err_in[i, j] = new_phot_err_in
                 else:
                     phot_in[i, j] = no_data_val
                     phot_err_in[i, j] = no_data_val

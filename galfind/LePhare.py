@@ -13,18 +13,21 @@ import subprocess
 from pathlib import Path
 import os
 import json
+import logging
+from tqdm import tqdm
 import astropy.units as u
 import numpy as np
 from astropy.io import fits
+from numpy.typing import NDArray
 from astropy.table import Table
-from typing import Any, Dict, List, Union, NoReturn, Optional, TYPE_CHECKING
+from typing import Any, Dict, List, Union, NoReturn, Optional, TYPE_CHECKING, Tuple
 if TYPE_CHECKING:
-    from . import Catalogue, Filter, Multiple_Filter, PDF
+    from . import Catalogue, Filter, Multiple_Filter, PDF, SED_obs
 try:
     from typing import Self, Type  # python 3.11+
 except ImportError:
     from typing_extensions import Self, Type  # python > 3.7 AND python < 3.11
-from . import Multiple_Filter, SED_code, config, galfind_logger
+from . import Multiple_Filter, SED_code, Redshift_PDF, config, galfind_logger
 from . import useful_funcs_austind as funcs
 from .decorators import run_in_dir
 
@@ -32,7 +35,23 @@ class LePhare(SED_code):
     ID_label = "IDENT"
     ext_src_corr_properties = ["MASS_BEST", "SFR_BEST"]
 
-    def __init__(self, SED_fit_params: Dict[str, Any]):
+    def __init__(
+        self: Self,
+        SED_fit_params: Dict[str, Any],
+        filterset: Optional[Multiple_Filter] = None,
+        gal_lib_name: Optional[str] = None,
+        star_lib_name: Optional[str] = None,
+        qso_lib_name: Optional[str] = None,
+    ):
+        if filterset is not None:
+            assert isinstance(filterset, Multiple_Filter), \
+                galfind_logger.critical(
+                    f"{repr(filterset)} is not a Multiple_Filter"
+                )
+        self.filterset = filterset
+        self.gal_lib_name = gal_lib_name
+        self.star_lib_name = star_lib_name
+        self.qso_lib_name = qso_lib_name
         super().__init__(SED_fit_params)
 
     @classmethod
@@ -66,6 +85,14 @@ class LePhare(SED_code):
         # TODO: Check this is correct!
         return False
     
+    def __call__(
+        self: Self,
+        *args,
+        **kwargs,
+    ):
+        #self.compile()
+        return super().__call__(*args, **kwargs)
+
     def _load_gal_property_labels(self) -> NoReturn:
         self.gal_property_labels = {
             "z": "Z_BEST",
@@ -96,7 +123,7 @@ class LePhare(SED_code):
             "EXTINC_LAW",
             "EB_V",
             "EM_LINES",
-            ]
+        ]
         default_types = [str, str, str, bool, [float], [float], [int], [str], [float], bool]
         names_dict = {
             "Z_STEP": ["DELTA_Z_LOW_Z", "Z_MAX", "DELTA_Z_HIGH_Z"],
@@ -105,13 +132,13 @@ class LePhare(SED_code):
         # TODO: Add this into the SED_code class, called by super()
         for default_str, default_type in zip(default_strings, default_types):
             if default_str not in self.SED_fit_params.keys():
-                if default_type == bool:
+                if default_type is bool:
                     self.SED_fit_params[default_str] = config.getboolean("LePhare", default_str)
-                elif default_type == int:
+                elif default_type is int:
                     self.SED_fit_params[default_str] = config.getint("LePhare", default_str)
-                elif default_type == float:
+                elif default_type is float:
                     self.SED_fit_params[default_str] = config.getfloat("LePhare", default_str)
-                elif default_type == str or isinstance(default_type, list):
+                elif default_type is str or isinstance(default_type, list):
                     config_str = config.get("LePhare", default_str)
                     if default_type == str:
                         self.SED_fit_params[default_str] = config_str
@@ -146,39 +173,36 @@ class LePhare(SED_code):
                     self.SED_fit_params[name] = param
 
         return super()._assert_SED_fit_params()
-    
+
     def make_in(
         self,
         cat: Catalogue, 
         aper_diam: u.Quantity,
         overwrite: bool = False,
-    ) -> str:  # from FITS_organiser.py
-        
-        in_dir = f"{config['LePhare']['LEPHARE_DIR']}/input/{cat.filterset.instrument_name}/{cat.version}/{cat.survey}"
-        in_name = cat.cat_name.replace('.fits', f"_{aper_diam.to(u.arcsec).value:.2f}as.in")
-        in_path = f"{in_dir}/{in_name}"
+    ) -> str:
+        in_path = self.get_in_path(cat, aper_diam)
         if not Path(in_path).is_file() or overwrite:
             # 1) obtain input data
             IDs = np.array([gal.ID for gal in cat.gals])
             redshifts = np.array([-99.0 for i in range(len(cat))]) # TODO: Load spec-z's
-            # load photometry (STILL SHOULD BE MORE GENERAL!!!)
-            if self.SED_fit_params["COMPILE_SURVEY_FILTERS"]:
-                input_filterset = cat.filterset
-            else:
-                instr_name = cat.filterset.instrument_name
-                input_filterset = Multiple_Filter.from_instruments(instr_name.split("+"))
             
             phot, phot_err = self._load_phot(
                 cat,
                 aper_diam,
-                u.ABmag,
+                u.erg / (u.s * u.cm ** 2 * u.Hz), #u.nJy, #u.erg / (u.s * u.cm ** 2 * u.Hz), #u.Jy, #u.ABmag,
                 -99.0,
-                {"threshold": 2.0, "value": 3.0},
-                input_filterset,
+                None, #{"threshold": 2.0, "value": 3.0}, # None, #
+                self.filterset,
             )
 
             # calculate context
-            contexts = self._calc_context(phot)
+            contexts = self._calc_context(phot, phot_err) # cat, cat.filterset, aper_diam, 
+            # remove phot and phot_err columns with 0 context
+            #finite = np.array([not any(np.isnan(phot_)) for phot_ in phot])
+            # has_context = np.array(contexts) != 0 #& finite
+            # IDs = IDs[has_context]
+            # phot = phot[has_context, :]
+            # phot_err = phot_err[has_context, :]
 
             # 2) make and save LePhare .in catalogue
             in_data = np.array(
@@ -200,8 +224,8 @@ class LePhare(SED_code):
                 + list(
                     itertools.chain(
                         *zip(
-                            input_filterset.band_names,
-                            [f"{filt.band_name}_err" for filt in input_filterset],
+                            self.filterset.band_names,
+                            [f"{filt.band_name}_err" for filt in self.filterset],
                         )
                     )
                 )
@@ -209,7 +233,7 @@ class LePhare(SED_code):
             )
             in_types = (
                 [int]
-                + list(np.full(len(input_filterset) * 2, float))
+                + list(np.full(len(self.filterset) * 2, float))
                 + [int, float]
             )
             in_tab = Table(in_data, dtype=in_types, names=in_names)
@@ -224,33 +248,35 @@ class LePhare(SED_code):
     
     def compile(
         self: Self,
-        filterset: Multiple_Filter, 
         types: List[str] = ["STAR", "QSO", "GAL"],
         template_save_suffix: str = ""
     ) -> None:
-        # determine appropriate input filterset
-        #input_filterset = self.get_input_filterset(filterset)
-        self.compile_filters(filterset)
+        if self.filterset is None:
+            err_message = f"{repr(self)}.filterset is None, " + \
+                "cannot compile without filterset!"
+            galfind_logger.critical(err_message)
+            raise ValueError(err_message)
+        self._compile_filters()
         for type in types:
-            self.compile_binary(type)
-            self.compile_templates(filterset, type, save_suffix = template_save_suffix)
+            self._compile_binary(type)
+            self._compile_templates(type, save_suffix = template_save_suffix)
 
     @run_in_dir(path=config["LePhare"]["LEPHARE_CONFIG_DIR"])
-    def compile_binary(self, _type: str) -> None:
-        assert _type in ["STAR", "QSO", "GAL"], \
+    def _compile_binary(self: Self, type: str) -> None:
+        assert type in ["STAR", "QSO", "GAL"], \
         galfind_logger.critical(
-            f"{_type=} not in ['STAR', 'QSO', 'GAL']"
+            f"{type=} not in ['STAR', 'QSO', 'GAL']"
         )
-        save_dir = f"{config['LePhare']['LEPHARE_SED_DIR']}/{_type}"
-        save_name = self.SED_fit_params[f"{_type}_TEMPLATES"]
+        save_dir = f"{config['LePhare']['LEPHARE_SED_DIR']}/{type}"
+        save_name = self.SED_fit_params[f"{type}_TEMPLATES"]
         save_path = f"{save_dir}/{save_name}.list"
         assert Path(save_path).is_file(), \
             galfind_logger.critical(
                 f"{save_path=} not found"
             )
-        output_bin_name = self._get_bin_out_path(_type)
+        output_bin_name = self._get_bin_out_path(type)
         if not Path(output_bin_name).is_file():
-            if _type == "GAL":
+            if type == "GAL":
                 age_path = f"{self.SED_fit_params['GAL_AGES']}.list"
             else:
                 age_path = ""
@@ -258,18 +284,18 @@ class LePhare(SED_code):
             input = [
                 f"{config['DEFAULT']['GALFIND_DIR']}/compile_lephare_binaries.sh",
                 config_name,
-                _type,
+                type,
                 save_path,
                 save_name,
                 age_path
             ]
             # SExtractor bash script python wrapper
             galfind_logger.debug(input)
-            galfind_logger.info(f"Compiling {_type} LePhare binaries")
+            galfind_logger.info(f"Compiling {type} LePhare binaries")
             process = subprocess.Popen(input) #, shell = True)
             process.wait()
             galfind_logger.info(
-                f"Finished compiling {_type} LePhare " + \
+                f"Finished compiling {type} LePhare " + \
                 f"binaries, saved to {output_bin_name}"
             )
             funcs.change_file_permissions(output_bin_name)
@@ -284,17 +310,14 @@ class LePhare(SED_code):
             self.SED_fit_params[f"{type}_TEMPLATES"] + ".bin"
 
     @run_in_dir(path=config["LePhare"]["LEPHARE_CONFIG_DIR"])
-    def compile_filters(
-        self: Self,
-        input_filterset: Multiple_Filter,
-    ) -> None:
+    def _compile_filters(self: Self) -> None:
         save_dir = f"{os.environ['LEPHAREWORK']}/filt"
-        save_name = self._get_save_filterset_name(input_filterset)
+        save_name = self._get_save_filterset_name()
         save_path = f"{save_dir}/{save_name}"
         if not Path(save_path).is_file():
-            [self._make_filt_txt(filt) for filt in input_filterset]
+            [self._make_filt_txt(filt) for filt in self.filterset]
             config_name = config["LePhare"]["LEPHARE_CONFIG_FILE"].split("/")[-1]
-            in_filt_name = self._get_input_filterset_name(input_filterset)
+            in_filt_name = self._get_input_filterset_name()
             input = [
                 f"{config['DEFAULT']['GALFIND_DIR']}/compile_lephare_filters.sh",
                 config_name,
@@ -306,7 +329,7 @@ class LePhare(SED_code):
             if self.SED_fit_params["COMPILE_SURVEY_FILTERS"]:
                 extra_log_out = "survey"
             else:
-                extra_log_out = f"{input_filterset.instrument_name=}"
+                extra_log_out = f"{self.filterset.instrument_name=}"
             galfind_logger.info(f"Compiling LePhare filters for {extra_log_out}!")
             process = subprocess.Popen(input)
             process.wait()
@@ -335,27 +358,28 @@ class LePhare(SED_code):
             galfind_logger.info(f"Saved LePhare filters for {repr(filt)} to {save_path}")
             funcs.change_file_permissions(save_path)
 
-    def _get_input_filterset_name(self, input_filterset: Multiple_Filter) -> str:
+    def _get_input_filterset_name(self: Self) -> str:
         return ",".join([f"{filt.facility_name}/{filt.instrument_name}" + \
-            f"/{filt.band_name}.txt" for filt in input_filterset])
+            f"/{filt.band_name}.txt" for filt in self.filterset])
     
-    def _get_save_filterset_name(self, input_filterset: Multiple_Filter) -> str:
+    def _get_save_filterset_name(self: Self) -> str:
         if self.SED_fit_params["COMPILE_SURVEY_FILTERS"]:
-            return "+".join([filt.band_name for filt in input_filterset]) + ".filt"
+            return "+".join([filt.band_name for filt in self.filterset]) + ".filt"
         else:
-            return input_filterset.instrument_name + ".filt"
+            return self.filterset.instrument_name + ".filt"
 
     @run_in_dir(path=config["LePhare"]["LEPHARE_CONFIG_DIR"])
-    def compile_templates(
-        self, 
-        input_filterset: Multiple_Filter, 
+    def _compile_templates(
+        self: Self, 
         type: str,
-        save_suffix: str = ""
+        save_suffix: str = "",
+        overwrite: bool = False,
     ) -> NoReturn:
         assert type in ["STAR", "QSO", "GAL"], \
             galfind_logger.critical(
                 f"{type=} not in ['STAR', 'QSO', 'GAL']"
             )
+        
         # TODO: Neaten up path loading, although the below should still work
         temp_save_dir = f"{config['LePhare']['LEPHARE_SED_DIR']}/{type}"
         temp_save_name = self.SED_fit_params[f"{type}_TEMPLATES"]
@@ -369,18 +393,18 @@ class LePhare(SED_code):
             galfind_logger.critical(
                 f"BINARIES at {out_bin_path=} not found"
             )
-        
+
         save_dir = f"{os.environ['LEPHAREWORK']}/lib_mag"
-        filt_save_name = self._get_save_filterset_name(input_filterset).replace(".filt", "")
+        filt_save_name = self._get_save_filterset_name().replace(".filt", "")
         bin_save_name = self.SED_fit_params[f"{type}_TEMPLATES"]
         if save_suffix != "":
             if save_suffix[0] != "_":
                 save_suffix = f"_{save_suffix}"
         save_name = f"{bin_save_name}_{filt_save_name}{save_suffix}"
         save_path = f"{save_dir}/{save_name}.bin"
-        if not Path(save_path).is_file():
+        if not Path(save_path).is_file() or overwrite:
             config_name = config["LePhare"]["LEPHARE_CONFIG_FILE"].split("/")[-1]
-            in_filt_name = self._get_input_filterset_name(input_filterset)
+            in_filt_name = self._get_input_filterset_name()
             input = [
                 f"{config['DEFAULT']['GALFIND_DIR']}/compile_lephare_templates.sh",
                 config_name,
@@ -395,7 +419,7 @@ class LePhare(SED_code):
             if self.SED_fit_params["COMPILE_SURVEY_FILTERS"]:
                 extra_log_out = "survey"
             else:
-                extra_log_out = f"{input_filterset.instrument_name=}"
+                extra_log_out = f"{self.filterset.instrument_name=}"
             galfind_logger.info(
                 "Compiling LePhare templates for " + \
                 f"{extra_log_out} {bin_save_name}!"
@@ -411,35 +435,158 @@ class LePhare(SED_code):
         else:
             galfind_logger.debug(f"{save_path} already exists")
 
-    def _calc_context(self, phot: np.ndarray) -> List[int]:
+    def _calc_context(
+        self: Self,
+        # cat: Catalogue,
+        # filterset: Multiple_Filter,
+        # aper_diam: u.Quantity,
+        phot: NDArray[float],
+        phot_err: NDArray[float],
+        invalid_value: float = -99.0,
+    ) -> List[int]:
         # TODO: Update for the case where some galaxies have no data for a specific band!
-        contexts = []
-        for i, gal in enumerate(cat):
-            gal_context = 2 * (2 ** (len(SED_input_bands) - 1)) - 1
-            for j, band in enumerate(SED_input_bands):
-                if band not in gal.aper_phot[aper_diam].instrument.band_names:
-                    band_context = 2**j
-                    gal_context = gal_context - band_context
-            contexts.append(gal_context)
-        return np.array(contexts).astype(int)
+        #filterset_len = phot.shape[1]
+        #index_contexts = [2 ** i for i in range(filterset_len)]
+        contexts = [
+            int(
+                np.sum(
+                    [
+                        2 ** i for i, (p, e) in enumerate(zip(phot_, err_))
+                        if not (p == invalid_value or e == invalid_value)
+                    ]
+                )
+            )
+            for phot_, err_ in tqdm(
+                zip(phot, phot_err),
+                total = phot.shape[0],
+                desc = f"Calculating {repr(self)} contexts",
+                disable = galfind_logger.getEffectiveLevel() > logging.INFO
+            )
+        ]
+        return contexts
+        # contexts = np.zeros(len(cat), dtype=int)
+        #index_contexts = [2 * (2 ** i) - 1 for i in range(phot.shape[1])]
+        # breakpoint()
+        # for i, gal in tqdm(
+        #     enumerate(cat),
+        #     total = len(cat),
+        #     desc = f"Calculating {repr(self)} {repr(cat)} contexts",
+        #     disable = galfind_logger.getEffectiveLevel() > logging.INFO
+        # ):
+        #     breakpoint()
+        #     #gal_context = 2 * (2 ** (len(filterset) - 1)) - 1
+        #     for j, band in enumerate(filterset):
+        #         if band not in gal.aper_phot[aper_diam].filterset:
+        #             band_context = 2 ** j
+        #             gal_context = gal_context - band_context
+        #     contexts[i] = gal_context
+        # return contexts
 
     # Currently black box fitting from the lephare config path. Need to make this function more general
-    def fit(self, in_path, out_path, SED_folder, instrument):
-        template_name = f"{instrument.name}_MedWide"
-        lephare_config_path = f"{self.code_dir}/default.para"
-        # LePhare bash script python wrapper
-        process = subprocess.Popen(
-            [
-                f"{config['DEFAULT']['GALFIND_DIR']}/run_lephare.sh",
-                lephare_config_path,
-                in_path,
-                out_path,
-                config["DEFAULT"]["GALFIND_DIR"],
-                SED_folder,
-                template_name,
-            ]
-        )
-        process.wait()
+    def fit(
+        self: Self,
+        cat: Catalogue,
+        aper_diam: u.Quantity,
+        save_SEDs: bool = True,
+        save_PDFs: bool = True,
+        overwrite: bool = False,
+        update: bool = False,
+        **kwargs: Dict[str, Any],
+    ) -> None:
+
+        fits_out_path = self.get_fits_out_path(cat, aper_diam)
+
+        if not Path(fits_out_path).is_file() or overwrite:
+            galfind_logger.info(f"Fitting {repr(cat)} with {repr(self)}")
+
+            in_path = self.get_in_path(cat, aper_diam)
+            out_path = self.get_out_path(cat, aper_diam)
+            lephare_config_path = f"{config['LePhare']['LEPHARE_CONFIG_DIR']}/default.para"
+
+            if "save_suffix" in kwargs.keys():
+                save_suffix = kwargs["save_suffix"]
+            else:
+                save_suffix = ""
+            gal_lib_name = self.get_lib_name("GAL", save_suffix = save_suffix)
+            star_lib_name = self.get_lib_name("STAR", save_suffix = save_suffix)
+            qso_lib_name = self.get_lib_name("QSO", save_suffix = save_suffix)
+
+            for type in ["GAL", "STAR", "QSO"]:
+                self._assert_filterset(type, save_suffix = save_suffix)
+
+            run_dir = fits_out_path.replace(".fits", "_SEDs")
+            funcs.make_dirs(f"{run_dir}/*")
+
+            # temp_save_dir = f"{config['LePhare']['LEPHARE_SED_DIR']}/{type}"
+            # temp_save_name = self.SED_fit_params[f"{type}_TEMPLATES"]
+            # temp_save_path = f"{temp_save_dir}/{temp_save_name}.list"
+            # assert Path(temp_save_path).is_file(), \
+            #     galfind_logger.critical(
+            #         f"TEMPLATES at {temp_save_path=} not found"
+            #     )
+            # out_bin_path = self._get_bin_out_path(type)
+            # assert Path(out_bin_path).is_file(), \
+            #     galfind_logger.critical(
+            #         f"BINARIES at {out_bin_path=} not found"
+            #     )
+
+            process = subprocess.Popen(
+                [
+                    f"{config['DEFAULT']['GALFIND_DIR']}/run_lephare.sh",
+                    lephare_config_path,
+                    in_path,
+                    out_path,
+                    config["DEFAULT"]["GALFIND_DIR"],
+                    gal_lib_name,
+                    star_lib_name,
+                    qso_lib_name,
+                    run_dir,
+                ]
+            )
+            process.wait()
+        else:
+            galfind_logger.info(
+                f"{repr(cat)} already fitted with " + \
+                f"{repr(self)} at {fits_out_path}, skipping fit"
+            )
+
+    def _assert_filterset(
+        self: Self,
+        type: str,
+        save_suffix: str = "",
+    ) -> None:
+        save_name = self.get_lib_name(type, save_suffix = save_suffix)
+        save_path = f"{os.environ['LEPHAREWORK']}/lib_mag/{save_name}.bin"
+        assert Path(save_path).is_file(), \
+            galfind_logger.critical(
+                f"LePhare {type} filterset binary at {save_path=} not found"
+            )
+        # open file
+        with open(save_path.replace(".bin", ".doc"), "r") as f:
+            lines = f.readlines()
+            # read in filter names
+            for line in lines:
+                if line.startswith("FILTERS"):
+                    filter_names = [ele for ele in line.strip().split(" ") if ele not in ["FILTERS", ""]]
+                    break
+            f.close()
+
+        if not all([filt_name in self.filterset.band_names for filt_name in filter_names]):
+            err_message = f"LePhare {type} filterset binary at {save_path=} " + \
+                "does not match provided filterset!"
+            galfind_logger.critical(err_message)
+            raise ValueError(err_message)
+        elif not all([filt_name in filter_names for filt_name in self.filterset.band_names]):
+            err_message = f"Provided filterset does not match " + \
+                f"LePhare {type} filterset binary at {save_path=}!"
+            galfind_logger.critical(err_message)
+            raise ValueError(err_message)
+        else:
+            galfind_logger.debug(
+                f"LePhare {type} filterset binary at {save_path=} " + \
+                "matches provided filterset"
+            )
+        
 
     def SED_fit_params_from_label(self, label):
         label_arr = label.split("_")
@@ -448,9 +595,12 @@ class LePhare(SED_code):
         return {"code": self, "templates": label_arr[1]}
 
     def make_fits_from_out(
-        self, out_path, *args, **kwargs
-    ):  # from TXT_to_FITS_converter.py
-        fits_out_path = self.out_fits_name(out_path, *args, **kwargs)
+        self: Self,
+        out_path: str,
+        *args: Any,
+        **kwargs: Dict[str, Any],
+    ) -> None:
+        fits_out_path = self.fits_out_path_from_out_path(out_path, *args, **kwargs)
 
         # read in the data from the .out table
         txt_in = np.genfromtxt(out_path, comments="#")
@@ -497,52 +647,323 @@ class LePhare(SED_code):
         funcs.change_file_permissions(fits_out_path)
         return fits_out_path
 
+    def get_in_path(
+        self: Self,
+        cat: Catalogue,
+        aper_diam: u.Quantity,
+    ) -> str:
+        in_dir = f"{config['LePhare']['LEPHARE_DIR']}/input/{cat.filterset.instrument_name}/{cat.version}/{cat.survey}"
+        in_name = cat.cat_name.replace('.fits', f"_{aper_diam.to(u.arcsec).value:.2f}as.in")
+        return f"{in_dir}/{in_name}"
+
+    def get_out_path(
+        self: Self,
+        cat: Catalogue,
+        aper_diam: u.Quantity,
+    ) -> str:
+        in_path = self.get_in_path(cat, aper_diam)
+        out_folder = funcs.split_dir_name(
+            in_path.replace("input", "output"), "dir"
+        )
+        out_path = f"{out_folder}/{funcs.split_dir_name(in_path, 'name').replace('.in', '.out')}"
+        return out_path
+
+    def fits_out_path_from_out_path(
+        self: Self,
+        out_path: str,
+        *args: Any,
+        **kwargs: Dict[str, Any],
+    ) -> str:
+        if getattr(self, "gal_lib_name", None) is not None:
+            suffix = self.gal_lib_name
+        else:
+            suffix = self.SED_fit_params["GAL_TEMPLATES"]
+        return out_path.replace(
+            ".out",
+            f"_LePhare_{suffix}.fits"
+        )
+
+    def get_fits_out_path(
+        self: Self,
+        cat: Catalogue,
+        aper_diam: u.Quantity,
+    ) -> str:
+        return self.fits_out_path_from_out_path(
+            self.get_out_path(cat, aper_diam)
+        )
+
+    @staticmethod
+    def get_spec_path(
+        fits_out_path: str,
+        ID: int,
+    ) -> str:
+        return fits_out_path.replace(
+            ".fits",
+            f"_SEDs/Id{'0' * (9 - len(str(ID))) + str(ID)}.spec"
+        )
+
+    def get_PDF_paths(
+        self: Self,
+        cat: Catalogue,
+        aper_diam: u.Quantity,
+    ) -> Dict[str, List[str]]:
+        fits_out_path = self.get_fits_out_path(cat, aper_diam)
+        PDF_paths = {
+            "z": [
+                self.get_spec_path(fits_out_path, gal.ID)
+                for gal in cat
+            ]
+        }
+        return PDF_paths
+    
+    def get_SED_paths(
+        self: Self,
+        cat: Catalogue,
+        aper_diam: u.Quantity
+    ) -> Dict[str, List[str]]:
+        fits_out_path = self.get_fits_out_path(cat, aper_diam)
+        return [self.get_spec_path(fits_out_path, gal.ID) for gal in cat]
+
     def _get_out_paths(
         self: Self, 
         cat: Catalogue, 
         aper_diam: u.Quantity
     ) -> Tuple[str, str, str, Dict[str, List[str]], List[str]]:
-        return NotImplementedError
-        # return out_path.replace(".out", "_LePhare.fits")
+        in_path = self.get_in_path(cat, aper_diam)
+        out_path = self.get_out_path(cat, aper_diam)
+        fits_out_path = self.get_fits_out_path(cat, aper_diam)
+        PDF_paths = self.get_PDF_paths(cat, aper_diam)
+        SED_paths = self.get_SED_paths(cat, aper_diam)
+        return in_path, out_path, fits_out_path, PDF_paths, SED_paths
 
-    @staticmethod
-    def extract_SEDs(IDs, SED_paths, *args, **kwargs):
-        pass
+    def get_lib_name(
+        self: Self,
+        #cat: Catalogue,
+        type: str,
+        save_suffix: str = "",
+    ) -> str:
+        assert type in ["STAR", "QSO", "GAL"], \
+            galfind_logger.critical(
+                f"{type=} not in ['STAR', 'QSO', 'GAL']"
+            )
+        if hasattr(self, f"{type.lower()}_lib_name"):
+            save_name = getattr(self, f"{type.lower()}_lib_name")
+            if save_name is not None:
+                return save_name
+        #save_dir = f"{os.environ['LEPHAREWORK']}/lib_mag"
+        filt_save_name = self._get_save_filterset_name().replace(".filt", "")
+        bin_save_name = self.SED_fit_params[f"{type}_TEMPLATES"]
+        if save_suffix != "":
+            if save_suffix[0] != "_":
+                save_suffix = f"_{save_suffix}"
+        save_name = f"{bin_save_name}_{filt_save_name}{save_suffix}"
+        #save_path = f"{save_dir}/{save_name}.bin"
+        return save_name
 
-    @staticmethod
-    def extract_PDFs(gal_property, IDs, PDF_paths, SED_fit_params):
-        pass
-        # str_ID = "0" * (9 - len(str(ID))) + str(ID)
-        # print("ID = " + str_ID)
+    def extract_SEDs(
+        self: Self, 
+        IDs: List[int], 
+        SED_paths: Union[str, List[str]],
+        *args,
+        **kwargs,
+    ) -> List[SED_obs]:
+        # TODO: Generalize. Currently a near-carbon copy of EAZY method
 
-        # z = []
-        # PDF = []
-        # reached_output_format = False
-        # with open(self.z_PDF_path_from_cat_path(cat_path, ID, low_z_run)) as open_file:
-        #     while True:
-        #         line = open_file.readline()
-        #         # start at z = 0
-        #         if line.startswith("  0.00000"):
-        #             reached_output_format = True
-        #         if reached_output_format:
-        #             line = line.replace("  "," ")
-        #             line = line.replace("\n", "")
-        #             z_PDF = line.split(" ")
-        #             z_PDF.remove(z_PDF[0])
-        #             z.append(float(z_PDF[0]))
-        #             PDF.append(float(z_PDF[1]))
-        #         # end at z = 15
-        #         if line.startswith(" 25.00000"):
-        #             break
-        #     open_file.close()
-        # return z, PDF
+        # ensure this works if only extracting 1 galaxy
+        if isinstance(IDs, (str, int, float)):
+            IDs = np.array([int(IDs)])
+        if isinstance(SED_paths, str):
+            SED_paths = [SED_paths]
+        assert len(IDs) == len(SED_paths), \
+            galfind_logger.critical(
+                f"{len(IDs)=} != {len(SED_paths)=}"
+            )
+        # extract redshift PDF for each ID
+        SEDs = [
+            self._extract_SED(SED_path, type = "GAL")
+            for SED_path in tqdm(
+                SED_paths,
+                total = len(IDs),
+                desc = f"Constructing {repr(self)} galaxy SEDs",
+                disable = galfind_logger.getEffectiveLevel() > logging.INFO
+            )
+        ]
+        return SEDs
+
+    def _extract_SED(
+        self: Self,
+        SED_path: str,
+        type: str = "GAL",
+    ) -> SED_obs:
+        from galfind import SED_obs
+        assert type in ["GAL", "STAR", "QSO"], \
+            galfind_logger.critical(
+                f"{type=} not in ['GAL', 'STAR', 'QSO']"
+            )
+        wav = []
+        flux = []
+        reached_pdf = False
+        SED_fmt = []
+        with open(SED_path) as f:
+            i = 0
+            j = 0
+            while True:
+                line = f.readline()
+                # determine PDF length
+                if line.startswith("PDF"):
+                    PDF_len = int(line.split(" ")[-1])
+                # determine SED lengths
+                if not reached_pdf and any(
+                    line.startswith(type) for type in ["GAL", "STAR", "QSO"]
+                ):
+                    SED_name = line.split(" ")[0]
+                    SED_len = int([ele for ele in line.split(" ") if ele != ""][1])
+                    SED_z = float([ele for ele in line.split(" ") if ele != ""][5])
+                    SED_fmt.append((SED_name, SED_len, SED_z))
+                # locate beginning of redshift PDF
+                if line.startswith("  0.00000"):
+                    reached_pdf = True
+                    wanted_SED = [fmt for fmt in SED_fmt if fmt[0].startswith(type)][0]
+                    wanted_SED_name = wanted_SED[0]
+                    wanted_SED_len = wanted_SED[1]
+                    wanted_z = wanted_SED[2]
+                    skip_len = PDF_len
+                    for fmt in SED_fmt:
+                        if fmt[0] != wanted_SED_name:
+                            skip_len += fmt[1]
+                        else:
+                            break
+                # skip over len(PDF_len) lines
+                if reached_pdf:
+                    i += 1
+                    if i > skip_len:
+                        j += 1
+                        # started SEDs
+                        if j > wanted_SED_len:
+                            break
+                        else:
+                            line = line.replace("  "," ")
+                            line = line.replace("\n", "")
+                            SED_ = line.split(" ")
+                            SED_.remove(SED_[0])
+                            wav.append(float(SED_[0]))
+                            flux.append(float(SED_[1]))
+            f.close()
+        wav = np.array(wav)
+        # turn 90s into nans
+        flux = np.array(flux)
+        flux[flux == 90.0] = np.nan
+        sed_obs = SED_obs(wanted_z, wav, flux, u.AA, u.ABmag)
+        return sed_obs
+
+    def extract_PDFs(
+        self: Self, 
+        gal_property: str, 
+        IDs: List[int], 
+        PDF_paths: Union[str, List[str]], 
+    ) -> List[Redshift_PDF]:
+        # TODO: Generalize. Again the majority is carbon copy of eazy method
+
+        # ensure this works if only extracting 1 galaxy
+        if isinstance(IDs, (str, int, float)):
+            IDs = np.array([int(IDs)])
+        if isinstance(PDF_paths, str):
+            PDF_paths = [PDF_paths]
+
+        # EAZY only has redshift PDFs
+        if gal_property != "z":
+            return np.array(list(itertools.repeat(None, len(IDs))))
+        else:
+            # ensure the correct type
+            assert isinstance(PDF_paths, (list, np.ndarray)), \
+                galfind_logger.critical(
+                    f"type(data_paths) = {type(PDF_paths)} not in [list, np.array]!"
+                )
+            assert isinstance(IDs, (list, np.ndarray)), \
+                galfind_logger.critical(
+                    f"type(IDs) = {type(IDs)} not in [list, np.array]!"
+                )
+            # ensure the correct array size
+            assert len(IDs) == len(PDF_paths), \
+                galfind_logger.critical(
+                    f"{len(IDs)=} != {len(PDF_paths)=}!"
+                )
+            # extract redshift PDF for each ID
+            redshift_PDFs = [
+                self._extract_PDF(PDF_path)
+                for PDF_path in tqdm(
+                    PDF_paths,
+                    total = len(IDs),
+                    desc = f"Constructing {repr(self)} redshift PDFs",
+                    disable = galfind_logger.getEffectiveLevel() > logging.INFO
+                )
+            ]
+            return redshift_PDFs
+
+    def _extract_PDF(
+        self: Self,
+        PDF_path: str,
+    ) -> Redshift_PDF:
+        z = []
+        PDF = []
+        reached_output_format = False
+        with open(PDF_path) as f:
+            i = 0
+            while True:
+                line = f.readline()
+                if line.startswith("PDF"):
+                    PDF_len = int(line.split(" ")[-1])
+                # start at z = 0 (i.e. beginning of PDF)
+                if line.startswith("  0.00000"):
+                    reached_output_format = True
+                if reached_output_format:
+                    line = line.replace("  "," ")
+                    line = line.replace("\n", "")
+                    z_PDF = line.split(" ")
+                    z_PDF.remove(z_PDF[0])
+                    z.append(float(z_PDF[0]))
+                    PDF.append(float(z_PDF[1]))
+                    i += 1
+                    if i == PDF_len: #line.startswith(f" {zmax:.5f}"): # end at zmax
+                        break
+            f.close()
+        
+        pdf_out = Redshift_PDF(
+            np.array(z) * u.dimensionless_unscaled,
+            np.array(PDF),
+            self.SED_fit_params,
+            normed=False
+        )
+        return pdf_out
 
     def load_cat_property_PDFs(
         self: Self, 
         PDF_paths: Union[List[str], List[Dict[str, str]]],
-        IDs: List[int]
+        IDs: List[int],
     ) -> List[Dict[str, Optional[Type[PDF]]]]:
-        pass
+        # TODO: Put this in parent class (carbon copy of eazy method)
+        cat_property_PDFs_ = {
+            gal_property: self.extract_PDFs(
+                gal_property,
+                IDs,
+                PDF_path,
+            )
+            for gal_property, PDF_path in PDF_paths.items()
+        }
+        cat_property_PDFs_ = [
+            {
+                gal_property: PDF_arr[i]
+                for gal_property, PDF_arr in cat_property_PDFs_.items()
+                if PDF_arr[i] is not None
+            }
+            for i in range(len(IDs))
+        ]
+        # set to None if no PDFs are found
+        cat_property_PDFs = [
+            None if len(cat_property_PDF) == 0 else cat_property_PDF
+            for cat_property_PDF in cat_property_PDFs_
+        ]
+        return cat_property_PDFs
 
 # def calc_LePhare_errs(cat, col_name):
 #     if col_name == "Z_BEST":

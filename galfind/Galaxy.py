@@ -50,6 +50,7 @@ from . import (
     config,
     galfind_logger,
     instr_to_name_dict,
+    figs,
 )
 from . import useful_funcs_austind as funcs
 from .Cutout import RGB, Multiple_Band_Cutout
@@ -463,10 +464,10 @@ class Galaxy:
 
     def plot_phot_diagnostic(
         self: Type[Self],
-        ax: Tuple[plt.Figure, List[plt.Axes], List[plt.Axes]],
         data: Data,
         SED_arr: List[Union[str, SED_code]],
         zPDF_arr: List[Union[str, SED_code]],
+        ax: Optional[Tuple[plt.Figure, List[plt.Axes], List[plt.Axes]]] = None,
         plot_lowz: bool = True,
         lowz_dz: float = 0.5,
         n_cutout_rows: int = 1,
@@ -492,6 +493,9 @@ class Galaxy:
             f"{data.filterset.instrument_name}/{data.survey}/SED_plots/" + \
             f"{aper_diam.to(u.arcsec).value:.2f}as/{self.ID}.png"
         
+        if ax is None:
+            ax = figs.make_phot_diagnostic_fig(len(data))
+
         # unpack tuple
         cutout_fig, phot_ax, PDF_ax = ax
 
