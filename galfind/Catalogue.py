@@ -58,6 +58,7 @@ from . import (
     Photometry_obs,
     config,
     galfind_logger,
+    figs,
 )
 from . import useful_funcs_austind as funcs
 from . import SED_code
@@ -1429,28 +1430,14 @@ class Catalogue(Catalogue_Base):
     ):
         self.load_sextractor_params()
 
+        fig_axs = figs.setup_phot_diagnostic(len(self.data))
         # loop over galaxies and plot photometry diagnostic plots for each one
-        # figure size may well depend on how many bands there are
-        overall_fig = plt.figure(figsize=(8, 7), constrained_layout=True)
-        fig, cutout_fig = overall_fig.subfigures(
-            2,
-            1,
-            hspace=-2.,
-            height_ratios=[2.0, 1.0]
-            if len(self.data) <= 8
-            else [1.8, 1],
-        )
-
-        gs = fig.add_gridspec(2, 4)
-        phot_ax = fig.add_subplot(gs[:, 0:3])
-
-        PDF_ax = [fig.add_subplot(gs[0, 3:]), fig.add_subplot(gs[1, 3:])]
 
         # plot SEDs
         out_paths = [
             gal.plot_phot_diagnostic(
-                [cutout_fig, phot_ax, PDF_ax],
                 self.data,
+                ax = fig_axs,
                 aper_diam = aper_diam,
                 SED_arr = SED_arr,
                 zPDF_arr = zPDF_arr,

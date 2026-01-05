@@ -35,7 +35,23 @@ class LePhare(SED_code):
     ID_label = "IDENT"
     ext_src_corr_properties = ["MASS_BEST", "SFR_BEST"]
 
-    def __init__(self, SED_fit_params: Dict[str, Any]):
+    def __init__(
+        self: Self,
+        SED_fit_params: Dict[str, Any],
+        filterset: Optional[Multiple_Filter] = None,
+        gal_lib_name: Optional[str] = None,
+        star_lib_name: Optional[str] = None,
+        qso_lib_name: Optional[str] = None,
+    ):
+        if filterset is not None:
+            assert isinstance(filterset, Multiple_Filter), \
+                galfind_logger.critical(
+                    f"{repr(filterset)} is not a Multiple_Filter"
+                )
+        self.filterset = filterset
+        self.gal_lib_name = gal_lib_name
+        self.star_lib_name = star_lib_name
+        self.qso_lib_name = qso_lib_name
         super().__init__(SED_fit_params)
 
     @classmethod
@@ -69,6 +85,14 @@ class LePhare(SED_code):
         # TODO: Check this is correct!
         return False
     
+    def __call__(
+        self: Self,
+        *args,
+        **kwargs,
+    ):
+        #self.compile()
+        return super().__call__(*args, **kwargs)
+
     def _load_gal_property_labels(self) -> NoReturn:
         self.gal_property_labels = {
             "z": "Z_BEST",
@@ -155,30 +179,30 @@ class LePhare(SED_code):
         cat: Catalogue, 
         aper_diam: u.Quantity,
         overwrite: bool = False,
-    ) -> str:  # from FITS_organiser.py
+    ) -> str:
         in_path = self.get_in_path(cat, aper_diam)
         if not Path(in_path).is_file() or overwrite:
             # 1) obtain input data
             IDs = np.array([gal.ID for gal in cat.gals])
             redshifts = np.array([-99.0 for i in range(len(cat))]) # TODO: Load spec-z's
-            # load photometry (STILL SHOULD BE MORE GENERAL!!!)
-            if self.SED_fit_params["COMPILE_SURVEY_FILTERS"]:
-                input_filterset = cat.filterset
-            else:
-                instr_name = cat.filterset.instrument_name
-                input_filterset = Multiple_Filter.from_instruments(instr_name.split("+"))
             
             phot, phot_err = self._load_phot(
                 cat,
                 aper_diam,
-                u.erg / (u.s * u.cm ** 2 * u.Hz), #u.Jy, #u.ABmag,
+                u.erg / (u.s * u.cm ** 2 * u.Hz), #u.nJy, #u.erg / (u.s * u.cm ** 2 * u.Hz), #u.Jy, #u.ABmag,
                 -99.0,
-                None, #{"threshold": 2.0, "value": 3.0},
-                input_filterset,
+                None, #{"threshold": 2.0, "value": 3.0}, # None, #
+                self.filterset,
             )
 
             # calculate context
-            contexts = self._calc_context(cat, cat.filterset, aper_diam)
+            contexts = self._calc_context(phot, phot_err) # cat, cat.filterset, aper_diam, 
+            # remove phot and phot_err columns with 0 context
+            #finite = np.array([not any(np.isnan(phot_)) for phot_ in phot])
+            # has_context = np.array(contexts) != 0 #& finite
+            # IDs = IDs[has_context]
+            # phot = phot[has_context, :]
+            # phot_err = phot_err[has_context, :]
 
             # 2) make and save LePhare .in catalogue
             in_data = np.array(
@@ -200,8 +224,8 @@ class LePhare(SED_code):
                 + list(
                     itertools.chain(
                         *zip(
-                            input_filterset.band_names,
-                            [f"{filt.band_name}_err" for filt in input_filterset],
+                            self.filterset.band_names,
+                            [f"{filt.band_name}_err" for filt in self.filterset],
                         )
                     )
                 )
@@ -209,7 +233,7 @@ class LePhare(SED_code):
             )
             in_types = (
                 [int]
-                + list(np.full(len(input_filterset) * 2, float))
+                + list(np.full(len(self.filterset) * 2, float))
                 + [int, float]
             )
             in_tab = Table(in_data, dtype=in_types, names=in_names)
@@ -224,33 +248,35 @@ class LePhare(SED_code):
     
     def compile(
         self: Self,
-        filterset: Multiple_Filter, 
         types: List[str] = ["STAR", "QSO", "GAL"],
         template_save_suffix: str = ""
     ) -> None:
-        # determine appropriate input filterset
-        #input_filterset = self.get_input_filterset(filterset)
-        self.compile_filters(filterset)
+        if self.filterset is None:
+            err_message = f"{repr(self)}.filterset is None, " + \
+                "cannot compile without filterset!"
+            galfind_logger.critical(err_message)
+            raise ValueError(err_message)
+        self._compile_filters()
         for type in types:
-            self.compile_binary(type)
-            self.compile_templates(filterset, type, save_suffix = template_save_suffix)
+            self._compile_binary(type)
+            self._compile_templates(type, save_suffix = template_save_suffix)
 
     @run_in_dir(path=config["LePhare"]["LEPHARE_CONFIG_DIR"])
-    def compile_binary(self, _type: str) -> None:
-        assert _type in ["STAR", "QSO", "GAL"], \
+    def _compile_binary(self: Self, type: str) -> None:
+        assert type in ["STAR", "QSO", "GAL"], \
         galfind_logger.critical(
-            f"{_type=} not in ['STAR', 'QSO', 'GAL']"
+            f"{type=} not in ['STAR', 'QSO', 'GAL']"
         )
-        save_dir = f"{config['LePhare']['LEPHARE_SED_DIR']}/{_type}"
-        save_name = self.SED_fit_params[f"{_type}_TEMPLATES"]
+        save_dir = f"{config['LePhare']['LEPHARE_SED_DIR']}/{type}"
+        save_name = self.SED_fit_params[f"{type}_TEMPLATES"]
         save_path = f"{save_dir}/{save_name}.list"
         assert Path(save_path).is_file(), \
             galfind_logger.critical(
                 f"{save_path=} not found"
             )
-        output_bin_name = self._get_bin_out_path(_type)
+        output_bin_name = self._get_bin_out_path(type)
         if not Path(output_bin_name).is_file():
-            if _type == "GAL":
+            if type == "GAL":
                 age_path = f"{self.SED_fit_params['GAL_AGES']}.list"
             else:
                 age_path = ""
@@ -258,18 +284,18 @@ class LePhare(SED_code):
             input = [
                 f"{config['DEFAULT']['GALFIND_DIR']}/compile_lephare_binaries.sh",
                 config_name,
-                _type,
+                type,
                 save_path,
                 save_name,
                 age_path
             ]
             # SExtractor bash script python wrapper
             galfind_logger.debug(input)
-            galfind_logger.info(f"Compiling {_type} LePhare binaries")
+            galfind_logger.info(f"Compiling {type} LePhare binaries")
             process = subprocess.Popen(input) #, shell = True)
             process.wait()
             galfind_logger.info(
-                f"Finished compiling {_type} LePhare " + \
+                f"Finished compiling {type} LePhare " + \
                 f"binaries, saved to {output_bin_name}"
             )
             funcs.change_file_permissions(output_bin_name)
@@ -284,17 +310,14 @@ class LePhare(SED_code):
             self.SED_fit_params[f"{type}_TEMPLATES"] + ".bin"
 
     @run_in_dir(path=config["LePhare"]["LEPHARE_CONFIG_DIR"])
-    def compile_filters(
-        self: Self,
-        input_filterset: Multiple_Filter,
-    ) -> None:
+    def _compile_filters(self: Self) -> None:
         save_dir = f"{os.environ['LEPHAREWORK']}/filt"
-        save_name = self._get_save_filterset_name(input_filterset)
+        save_name = self._get_save_filterset_name()
         save_path = f"{save_dir}/{save_name}"
         if not Path(save_path).is_file():
-            [self._make_filt_txt(filt) for filt in input_filterset]
+            [self._make_filt_txt(filt) for filt in self.filterset]
             config_name = config["LePhare"]["LEPHARE_CONFIG_FILE"].split("/")[-1]
-            in_filt_name = self._get_input_filterset_name(input_filterset)
+            in_filt_name = self._get_input_filterset_name()
             input = [
                 f"{config['DEFAULT']['GALFIND_DIR']}/compile_lephare_filters.sh",
                 config_name,
@@ -306,7 +329,7 @@ class LePhare(SED_code):
             if self.SED_fit_params["COMPILE_SURVEY_FILTERS"]:
                 extra_log_out = "survey"
             else:
-                extra_log_out = f"{input_filterset.instrument_name=}"
+                extra_log_out = f"{self.filterset.instrument_name=}"
             galfind_logger.info(f"Compiling LePhare filters for {extra_log_out}!")
             process = subprocess.Popen(input)
             process.wait()
@@ -335,22 +358,22 @@ class LePhare(SED_code):
             galfind_logger.info(f"Saved LePhare filters for {repr(filt)} to {save_path}")
             funcs.change_file_permissions(save_path)
 
-    def _get_input_filterset_name(self, input_filterset: Multiple_Filter) -> str:
+    def _get_input_filterset_name(self: Self) -> str:
         return ",".join([f"{filt.facility_name}/{filt.instrument_name}" + \
-            f"/{filt.band_name}.txt" for filt in input_filterset])
+            f"/{filt.band_name}.txt" for filt in self.filterset])
     
-    def _get_save_filterset_name(self, input_filterset: Multiple_Filter) -> str:
+    def _get_save_filterset_name(self: Self) -> str:
         if self.SED_fit_params["COMPILE_SURVEY_FILTERS"]:
-            return "+".join([filt.band_name for filt in input_filterset]) + ".filt"
+            return "+".join([filt.band_name for filt in self.filterset]) + ".filt"
         else:
-            return input_filterset.instrument_name + ".filt"
+            return self.filterset.instrument_name + ".filt"
 
     @run_in_dir(path=config["LePhare"]["LEPHARE_CONFIG_DIR"])
-    def compile_templates(
-        self, 
-        input_filterset: Multiple_Filter, 
+    def _compile_templates(
+        self: Self, 
         type: str,
-        save_suffix: str = ""
+        save_suffix: str = "",
+        overwrite: bool = False,
     ) -> NoReturn:
         assert type in ["STAR", "QSO", "GAL"], \
             galfind_logger.critical(
@@ -372,16 +395,16 @@ class LePhare(SED_code):
             )
 
         save_dir = f"{os.environ['LEPHAREWORK']}/lib_mag"
-        filt_save_name = self._get_save_filterset_name(input_filterset).replace(".filt", "")
+        filt_save_name = self._get_save_filterset_name().replace(".filt", "")
         bin_save_name = self.SED_fit_params[f"{type}_TEMPLATES"]
         if save_suffix != "":
             if save_suffix[0] != "_":
                 save_suffix = f"_{save_suffix}"
         save_name = f"{bin_save_name}_{filt_save_name}{save_suffix}"
         save_path = f"{save_dir}/{save_name}.bin"
-        if not Path(save_path).is_file():
+        if not Path(save_path).is_file() or overwrite:
             config_name = config["LePhare"]["LEPHARE_CONFIG_FILE"].split("/")[-1]
-            in_filt_name = self._get_input_filterset_name(input_filterset)
+            in_filt_name = self._get_input_filterset_name()
             input = [
                 f"{config['DEFAULT']['GALFIND_DIR']}/compile_lephare_templates.sh",
                 config_name,
@@ -396,7 +419,7 @@ class LePhare(SED_code):
             if self.SED_fit_params["COMPILE_SURVEY_FILTERS"]:
                 extra_log_out = "survey"
             else:
-                extra_log_out = f"{input_filterset.instrument_name=}"
+                extra_log_out = f"{self.filterset.instrument_name=}"
             galfind_logger.info(
                 "Compiling LePhare templates for " + \
                 f"{extra_log_out} {bin_save_name}!"
@@ -414,26 +437,50 @@ class LePhare(SED_code):
 
     def _calc_context(
         self: Self,
-        cat: Catalogue,
-        filterset: Multiple_Filter,
-        aper_diam: u.Quantity,
-        # phot: NDArray[float]
+        # cat: Catalogue,
+        # filterset: Multiple_Filter,
+        # aper_diam: u.Quantity,
+        phot: NDArray[float],
+        phot_err: NDArray[float],
+        invalid_value: float = -99.0,
     ) -> List[int]:
         # TODO: Update for the case where some galaxies have no data for a specific band!
-        contexts = np.zeros(len(cat), dtype=int)
-        for i, gal in tqdm(
-            enumerate(cat),
-            total = len(cat),
-            desc = f"Calculating {repr(self)} {repr(cat)} contexts",
-            disable = galfind_logger.getEffectiveLevel() > logging.INFO
-        ):
-            gal_context = 2 * (2 ** (len(filterset) - 1)) - 1
-            for j, band in enumerate(filterset):
-                if band not in gal.aper_phot[aper_diam].filterset:
-                    band_context = 2 ** j
-                    gal_context = gal_context - band_context
-            contexts[i] = gal_context
+        #filterset_len = phot.shape[1]
+        #index_contexts = [2 ** i for i in range(filterset_len)]
+        contexts = [
+            int(
+                np.sum(
+                    [
+                        2 ** i for i, (p, e) in enumerate(zip(phot_, err_))
+                        if not (p == invalid_value or e == invalid_value)
+                    ]
+                )
+            )
+            for phot_, err_ in tqdm(
+                zip(phot, phot_err),
+                total = phot.shape[0],
+                desc = f"Calculating {repr(self)} contexts",
+                disable = galfind_logger.getEffectiveLevel() > logging.INFO
+            )
+        ]
         return contexts
+        # contexts = np.zeros(len(cat), dtype=int)
+        #index_contexts = [2 * (2 ** i) - 1 for i in range(phot.shape[1])]
+        # breakpoint()
+        # for i, gal in tqdm(
+        #     enumerate(cat),
+        #     total = len(cat),
+        #     desc = f"Calculating {repr(self)} {repr(cat)} contexts",
+        #     disable = galfind_logger.getEffectiveLevel() > logging.INFO
+        # ):
+        #     breakpoint()
+        #     #gal_context = 2 * (2 ** (len(filterset) - 1)) - 1
+        #     for j, band in enumerate(filterset):
+        #         if band not in gal.aper_phot[aper_diam].filterset:
+        #             band_context = 2 ** j
+        #             gal_context = gal_context - band_context
+        #     contexts[i] = gal_context
+        # return contexts
 
     # Currently black box fitting from the lephare config path. Need to make this function more general
     def fit(
@@ -460,9 +507,12 @@ class LePhare(SED_code):
                 save_suffix = kwargs["save_suffix"]
             else:
                 save_suffix = ""
-            gal_lib_name = self.get_lib_name(cat, "GAL", save_suffix = save_suffix)
-            star_lib_name = self.get_lib_name(cat, "STAR", save_suffix = save_suffix)
-            qso_lib_name = self.get_lib_name(cat, "QSO", save_suffix = save_suffix)
+            gal_lib_name = self.get_lib_name("GAL", save_suffix = save_suffix)
+            star_lib_name = self.get_lib_name("STAR", save_suffix = save_suffix)
+            qso_lib_name = self.get_lib_name("QSO", save_suffix = save_suffix)
+
+            for type in ["GAL", "STAR", "QSO"]:
+                self._assert_filterset(type, save_suffix = save_suffix)
 
             run_dir = fits_out_path.replace(".fits", "_SEDs")
             funcs.make_dirs(f"{run_dir}/*")
@@ -499,6 +549,44 @@ class LePhare(SED_code):
                 f"{repr(cat)} already fitted with " + \
                 f"{repr(self)} at {fits_out_path}, skipping fit"
             )
+
+    def _assert_filterset(
+        self: Self,
+        type: str,
+        save_suffix: str = "",
+    ) -> None:
+        save_name = self.get_lib_name(type, save_suffix = save_suffix)
+        save_path = f"{os.environ['LEPHAREWORK']}/lib_mag/{save_name}.bin"
+        assert Path(save_path).is_file(), \
+            galfind_logger.critical(
+                f"LePhare {type} filterset binary at {save_path=} not found"
+            )
+        # open file
+        with open(save_path.replace(".bin", ".doc"), "r") as f:
+            lines = f.readlines()
+            # read in filter names
+            for line in lines:
+                if line.startswith("FILTERS"):
+                    filter_names = [ele for ele in line.strip().split(" ") if ele not in ["FILTERS", ""]]
+                    break
+            f.close()
+
+        if not all([filt_name in self.filterset.band_names for filt_name in filter_names]):
+            err_message = f"LePhare {type} filterset binary at {save_path=} " + \
+                "does not match provided filterset!"
+            galfind_logger.critical(err_message)
+            raise ValueError(err_message)
+        elif not all([filt_name in filter_names for filt_name in self.filterset.band_names]):
+            err_message = f"Provided filterset does not match " + \
+                f"LePhare {type} filterset binary at {save_path=}!"
+            galfind_logger.critical(err_message)
+            raise ValueError(err_message)
+        else:
+            galfind_logger.debug(
+                f"LePhare {type} filterset binary at {save_path=} " + \
+                "matches provided filterset"
+            )
+        
 
     def SED_fit_params_from_label(self, label):
         label_arr = label.split("_")
@@ -586,9 +674,13 @@ class LePhare(SED_code):
         *args: Any,
         **kwargs: Dict[str, Any],
     ) -> str:
+        if getattr(self, "gal_lib_name", None) is not None:
+            suffix = self.gal_lib_name
+        else:
+            suffix = self.SED_fit_params["GAL_TEMPLATES"]
         return out_path.replace(
             ".out",
-            f"_LePhare_{self.SED_fit_params['GAL_TEMPLATES']}.fits"
+            f"_LePhare_{suffix}.fits"
         )
 
     def get_fits_out_path(
@@ -646,7 +738,7 @@ class LePhare(SED_code):
 
     def get_lib_name(
         self: Self,
-        cat: Catalogue,
+        #cat: Catalogue,
         type: str,
         save_suffix: str = "",
     ) -> str:
@@ -654,8 +746,12 @@ class LePhare(SED_code):
             galfind_logger.critical(
                 f"{type=} not in ['STAR', 'QSO', 'GAL']"
             )
+        if hasattr(self, f"{type.lower()}_lib_name"):
+            save_name = getattr(self, f"{type.lower()}_lib_name")
+            if save_name is not None:
+                return save_name
         #save_dir = f"{os.environ['LEPHAREWORK']}/lib_mag"
-        filt_save_name = self._get_save_filterset_name(cat.filterset).replace(".filt", "")
+        filt_save_name = self._get_save_filterset_name().replace(".filt", "")
         bin_save_name = self.SED_fit_params[f"{type}_TEMPLATES"]
         if save_suffix != "":
             if save_suffix[0] != "_":
@@ -753,6 +849,10 @@ class LePhare(SED_code):
                             wav.append(float(SED_[0]))
                             flux.append(float(SED_[1]))
             f.close()
+        wav = np.array(wav)
+        # turn 90s into nans
+        flux = np.array(flux)
+        flux[flux == 90.0] = np.nan
         sed_obs = SED_obs(wanted_z, wav, flux, u.AA, u.ABmag)
         return sed_obs
 

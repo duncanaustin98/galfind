@@ -20,7 +20,7 @@ def main(
         aper_diams = aper_diams,
         forced_phot_band = forced_phot_band,
         min_flux_pc_err = min_flux_pc_err,
-        #version_to_dir_dict = morgan_version_to_dir,
+        version_to_dir_dict = morgan_version_to_dir,
     )
     # load EAZY results into catalogue
     EAZY_SED_fitter = EAZY({"templates": "fsps_larson", "lowz_zmax": None})
@@ -34,11 +34,15 @@ def main(
 
 if __name__ == "__main__":
 
-    survey = "COSMOS-Web-3A"
-    version = "mosaic_1084_wispnathan_v2" #"v11"
+    #survey = "COSMOS-Web-3A"
+    version = "v11"
     instrument_names = ["ACS_WFC", "NIRCam"]
     forced_phot_band = ["F444W"]
     aper_diams = [0.32] * u.arcsec
     min_flux_pc_err = 10.0
 
-    main(survey, version, instrument_names, forced_phot_band, aper_diams, min_flux_pc_err)
+    for survey in [f"COSMOS-Web-{x}{letter}" for x in range(8) for letter in ["A", "B"]]:
+        try:
+            main(survey, version, instrument_names, forced_phot_band, aper_diams, min_flux_pc_err)
+        except Exception as e:
+            print(f"Failed to run {survey}: {e}")

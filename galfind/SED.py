@@ -104,6 +104,7 @@ class SED:
         label: Optional[str] = None,
         annotate: bool = True,
         save_name: Optional[str] = None,
+        save_dir: Optional[str] = f"{config['Other']['PLOT_DIR']}/SEDs",
         log_fluxes: bool = True,
         plot_kwargs: Dict[str, Any] = {},
         legend_kwargs: Dict[str, Any] = {},
@@ -143,9 +144,14 @@ class SED:
             # save png by default
             if save_name.split(".")[-1] not in ["png", "pdf"]:
                 save_name = f"{'.'.join(save_name.split('.')[-1:])}.png"
-            funcs.make_dirs(save_name)
-            plt.savefig(save_name)
-            funcs.change_file_permissions(save_name)
+            if save_dir is not None:
+                save_path = f"{save_dir}/{save_name}"
+            else:
+                save_path = save_name
+            funcs.make_dirs(save_path)
+            plt.savefig(save_path)
+            funcs.change_file_permissions(save_path)
+            galfind_logger.info(f"Saved {repr(self)} plot to {save_path}")
         return plot
 
     def calc_bandpass_averaged_flux(

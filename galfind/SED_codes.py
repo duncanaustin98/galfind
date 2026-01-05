@@ -431,6 +431,7 @@ class SED_code(ABC):
                     u.Jy.to(u.ABmag),
                 )
                 < upper_sigma_lim["threshold"]
+                or not np.isfinite(phot[i][j])
             ]
             phot = np.array(
                 [
@@ -451,7 +452,6 @@ class SED_code(ABC):
                     for j, loc_depth in enumerate(gal.aper_phot[aper_diam].depths)
                 ]
             ).reshape(phot_shape)
-
         # insert 'no_data_val' from SED_input_bands with no data in the catalogue
         phot_in = np.zeros((len(cat), len(input_filterset)))
         phot_err_in = np.zeros((len(cat), len(input_filterset)))
@@ -473,7 +473,7 @@ class SED_code(ABC):
                     
                     new_phot_in = np.array(phot[i].data)[index]
                     new_phot_err_in = np.array(phot_err[i].data)[index]
-                    if not np.isfinite(new_phot_err_in):
+                    if not (np.isfinite(new_phot_in) and np.isfinite(new_phot_err_in)):
                         new_phot_in = no_data_val
                         new_phot_err_in = no_data_val
 

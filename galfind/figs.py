@@ -30,3 +30,24 @@ def make_ax(fig: plt.Figure, n_x: int, n_y: int):
         cutout_ax_list.extend([cutout_ax])
     ax_arr = np.array(cutout_ax_list, dtype=object).flatten()
     return ax_arr
+
+def make_phot_diagnostic_fig(n_cutouts: int):
+    # figure size may well depend on how many bands there are
+    overall_fig = plt.figure(figsize=(8, 7), constrained_layout=True)
+    fig, cutout_fig = overall_fig.subfigures(
+        2,
+        1,
+        hspace=-2.,
+        height_ratios=[2.0, 1.0]
+        if n_cutouts <= 8
+        else [1.8, 1],
+    )
+
+    gs = fig.add_gridspec(2, 4)
+    phot_ax = fig.add_subplot(gs[:, 0:3])
+
+    PDF_ax = [fig.add_subplot(gs[0, 3:]), fig.add_subplot(gs[1, 3:])]
+
+    fig_axs = [cutout_fig, phot_ax, PDF_ax]
+
+    return fig_axs
