@@ -1280,7 +1280,7 @@ class Catalogue_Base:
         self: Self,
         save_path: str,
         tab: Table
-    ) -> NoReturn:
+    ) -> None:
         if Path(save_path).is_file(): # update and save table
             old_tab = Table.read(save_path)
             out_tab = vstack([old_tab, tab])
@@ -1295,7 +1295,7 @@ class Catalogue_Base:
         aper_diam: u.Quantity,
         SED_fit_code: SED_code,
         full_survey_name: str,
-    ) -> NoReturn:
+    ) -> None:
         if any(gal.survey == full_survey_name.split("_")[0] for gal in self):
             load_gals_arr = [gal for gal in self if gal.survey == full_survey_name.split("_")[0]]
         else:

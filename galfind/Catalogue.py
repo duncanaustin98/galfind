@@ -972,6 +972,11 @@ class Catalogue(Catalogue_Base):
         hdu: str = "OBJECTS",
         overwrite: bool = False,
     ) -> NoReturn:
+        assert len(property_name) < 68, \
+            galfind_logger.critical(
+                f"{len(property_name)=}>68. Please shorten '{property_name}'" + \
+                "to avoid FITS column name length limits."
+            )
         if hdu in ["OBJECTS", "SELECTION"]:
             ID_label = self.cat_creator.ID_label
         elif any([True for code in SED_code.__subclasses__() if hdu.find(code.__name__) != -1]):

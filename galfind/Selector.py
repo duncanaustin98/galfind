@@ -16,7 +16,7 @@ from scipy import ndimage
 from tqdm import tqdm
 import logging
 
-from typing import TYPE_CHECKING, Any, List, Union, NoReturn, Callable, Optional, Dict
+from typing import TYPE_CHECKING, Any, List, Union, Callable, Optional, Dict
 if TYPE_CHECKING:
     from . import (
         Multiple_Filter,
@@ -56,11 +56,6 @@ class Selector(ABC):
         self.morph_fitter = morph_fitter
         self.kwargs = kwargs
         assert self._assertions()
-        assert len(self.name) < 68, \
-            galfind_logger.critical(
-                f"{self.name=} with {len(self)=}>68! " + \
-                "Please shorten the name to avoid FITS column name length limits."
-            )
 
     def __repr__(self: Self) -> str:
         return f"{self.__class__.__name__}({','.join([repr(kwarg).replace(' ', '') for kwarg in self.kwargs.values()])})"
@@ -159,7 +154,7 @@ class Selector(ABC):
         return_copy: bool = True,
         *args,
         **kwargs,
-    ) -> Union[NoReturn, Galaxy]:
+    ) -> Optional[Galaxy]:
         if return_copy:
             gal_ = deepcopy(gal)
         else:
@@ -185,7 +180,7 @@ class Selector(ABC):
         return_copy: bool = True,
         *args,
         **kwargs,
-    ) -> Union[NoReturn, Catalogue]:
+    ) -> Optional[Catalogue]:
         self._assert_cat(cat)
         [
             self._call_gal(gal, return_copy = False, *args, **kwargs) for gal \
@@ -199,7 +194,7 @@ class Selector(ABC):
         else:
             return cat
         
-    def _assert_cat(self: Self, cat: Catalogue) -> NoReturn:
+    def _assert_cat(self: Self, cat: Catalogue) -> None:
         if self.SED_fitter is not None:
             # ensure results have been loaded for 
             # at least 1 galaxy in the catalogue
@@ -599,7 +594,7 @@ class Multiple_Data_Selector(Multiple_Selector, Data_Selector, ABC):
         [selector.__call__(object, return_copy = False) for selector in self.selectors]
         return Data_Selector.__call__(self, object, return_copy = return_copy)
 
-    def crop_to_filterset(self: Self, filterset: Multiple_Filter) -> NoReturn:
+    def crop_to_filterset(self: Self, filterset: Multiple_Filter) -> None:
         # crop each selector to the filterset
         self.selectors = [selector for selector in self.selectors \
             if selector.kwargs["band_name"] in filterset.band_names]
@@ -687,7 +682,7 @@ class Multiple_Mask_Selector(Multiple_Selector, Mask_Selector, ABC):
         return Mask_Selector.__call__(self, object, return_copy = return_copy)
 
     # NOT SURE IF THIS IS REQUIRED?
-    def crop_to_filterset(self: Self, filterset: Multiple_Filter) -> NoReturn:
+    def crop_to_filterset(self: Self, filterset: Multiple_Filter) -> None:
         # crop each selector to the filterset
         selectors_arr = []
         for selector in self.selectors:
@@ -762,7 +757,7 @@ class ID_Selector(Data_Selector):
             passed = False
         return passed
     
-    def _assert_cat(self: Self, cat: Catalogue) -> NoReturn:
+    def _assert_cat(self: Self, cat: Catalogue) -> None:
         cat_IDs = np.array([gal.ID for gal in cat])
         assert all(ID in cat_IDs for ID in self.kwargs["IDs"]), \
             galfind_logger.critical(
@@ -837,7 +832,7 @@ class Region_Selector(Data_Selector, ABC):
         return_copy: bool = True,
         *args,
         **kwargs,
-    ) -> Union[NoReturn, Catalogue]:
+    ) -> Optional[Catalogue]:
         # apply selection
         super()._call_cat(cat, return_copy = False, *args, **kwargs)
         if not hasattr(cat, "regions"):
@@ -882,7 +877,7 @@ class Region_Selector(Data_Selector, ABC):
         return_copy: bool = True,
         *args,
         **kwargs,
-    ) -> Union[NoReturn, Galaxy]:
+    ) -> Optional[Galaxy]:
         if return_copy:
             gal_ = deepcopy(gal)
         else:
@@ -1097,7 +1092,7 @@ class Depth_Region_Selector(Region_Selector):
         return_copy: bool = True,
         *args,
         **kwargs,
-    ) -> Union[NoReturn, Catalogue]:
+    ) -> Optional[Catalogue]:
         # add array of depth regions to kwargs
         # TODO: Add these as options; hard coded for now!
         if all(self._selection_name in gal.selection_flags.keys() for gal in cat):
@@ -1541,7 +1536,7 @@ class Unmasked_Band_Selector(Mask_Selector):
         else:
             return not gal.aper_phot[list(gal.aper_phot.keys())[0]].flux.mask[band_index]
     
-    def _assert_cat(self: Self, cat: Catalogue) -> NoReturn:
+    def _assert_cat(self: Self, cat: Catalogue) -> None:
         assert self.kwargs["band_name"] in cat.filterset.band_names, \
             galfind_logger.critical(
                 f"{self.kwargs['band_name']} not in {cat.filterset.band_names}."
@@ -1552,7 +1547,7 @@ class Unmasked_Band_Selector(Mask_Selector):
         self: Self,
         cat: Catalogue,
         return_copy: bool = True,
-    ) -> Union[NoReturn, Catalogue]:
+    ) -> Optional[Catalogue]:
         return Data_Selector._call_cat(self, cat, return_copy)
 
     def load_mask(
@@ -2512,7 +2507,7 @@ class Band_SNR_Selector(Photometry_Selector):
             == "non_detect" and SNR < self.kwargs["SNR_lim"]))
         )
 
-    def _assert_cat(self: Self, cat: Catalogue) -> NoReturn:
+    def _assert_cat(self: Self, cat: Catalogue) -> None:
         if isinstance(self.kwargs["band"], str):
             assert (self.kwargs["band"] in cat.filterset.band_names), \
                 galfind_logger.critical(
@@ -2524,7 +2519,7 @@ class Band_SNR_Selector(Photometry_Selector):
         self: Self,
         cat: Catalogue,
         return_copy: bool = True,
-    ) -> Union[NoReturn, Catalogue]:
+    ) -> Optional[Catalogue]:
         return Photometry_Selector._call_cat(self, cat, return_copy)
 
 
@@ -2636,7 +2631,7 @@ class Band_Mag_Selector(Photometry_Selector):
             == "non_detect" and mag > self.kwargs["mag_lim"]))
         )
 
-    def _assert_cat(self: Self, cat: Catalogue) -> NoReturn:
+    def _assert_cat(self: Self, cat: Catalogue) -> None:
         if isinstance(self.kwargs["band"], str):
             assert (self.kwargs["band"] in cat.filterset.band_names), \
                 galfind_logger.critical(
@@ -2648,7 +2643,7 @@ class Band_Mag_Selector(Photometry_Selector):
         self: Self,
         cat: Catalogue,
         return_copy: bool = True,
-    ) -> Union[NoReturn, Catalogue]:
+    ) -> Optional[Catalogue]:
         return Photometry_Selector._call_cat(self, cat, return_copy)
 
 
@@ -2871,7 +2866,7 @@ class Chi_Sq_Diff_Selector(SED_fit_Selector):
             f"_zmax={label.split('zmax=')[-1][:3]}", "") \
             in self.SED_fitter.label]
     
-    def _assert_cat(self: Self, cat: Catalogue) -> NoReturn:
+    def _assert_cat(self: Self, cat: Catalogue) -> None:
         # ensure a lowz run has been run for at least 1 galaxy in the catalogue
         cat_SED_fit_labels = [self._get_lowz_SED_fit_labels(gal) for gal in cat]
         assert any(len(gal_labels) > 0 for gal_labels in cat_SED_fit_labels), \
@@ -2884,7 +2879,7 @@ class Chi_Sq_Diff_Selector(SED_fit_Selector):
         self: Self,
         cat: Catalogue,
         return_copy: bool = True,
-    ) -> Union[NoReturn, Catalogue]:
+    ) -> Optional[Catalogue]:
         return SED_fit_Selector._call_cat(self, cat, return_copy)
 
 
@@ -2993,7 +2988,7 @@ class Chi_Sq_Template_Diff_Selector(SED_fit_Selector):
             or (chi_sq[1] < 0.0)
         )
     
-    def _assert_cat(self: Self, cat: Catalogue) -> NoReturn:
+    def _assert_cat(self: Self, cat: Catalogue) -> None:
         # ensure a secondary SED fitting run has been run for at least 1 galaxy in the catalogue
         cat_SED_fit_labels = [gal.aper_phot[self.aper_diam].SED_results.keys() for gal in cat]
         assert any(self.kwargs["secondary_SED_fit_label"] in gal_labels for gal_labels in cat_SED_fit_labels), \
@@ -3006,7 +3001,7 @@ class Chi_Sq_Template_Diff_Selector(SED_fit_Selector):
         self: Self,
         cat: Catalogue,
         return_copy: bool = True,
-    ) -> Union[NoReturn, Catalogue]:
+    ) -> Optional[Catalogue]:
         return SED_fit_Selector._call_cat(self, cat, return_copy)
 
 
@@ -3135,7 +3130,7 @@ class Sextractor_Band_Radius_Selector(Data_Selector):
         else: # self.kwargs["gtr_or_less"].lower() == "less"
             return gal.sex_Re[self.kwargs["band_name"]] < self.kwargs["lim"]
 
-    def _assert_cat(self: Self, cat: Catalogue) -> NoReturn:
+    def _assert_cat(self: Self, cat: Catalogue) -> None:
         if isinstance(self.kwargs["band_name"], str):
             assert (self.kwargs["band_name"] in cat.filterset.band_names), \
                 galfind_logger.critical(
@@ -3148,7 +3143,7 @@ class Sextractor_Band_Radius_Selector(Data_Selector):
         self: Self,
         cat: Catalogue,
         return_copy: bool = True,
-    ) -> Union[NoReturn, Catalogue]:
+    ) -> Optional[Catalogue]:
         # load in effective radii as calculated from SExtractor
         cat.load_sextractor_Re()
         return Data_Selector._call_cat(self, cat, return_copy)
@@ -3283,7 +3278,7 @@ class Unmasked_Bands_Selector(Multiple_Mask_Selector):
         selectors = [Unmasked_Band_Selector(band_name = name) for name in band_names]
         super().__init__(selectors, f"unmasked_{'+'.join(band_names)}")
     
-    def _assert_cat(self: Self, cat: Catalogue) -> NoReturn:
+    def _assert_cat(self: Self, cat: Catalogue) -> None:
         assert all(name in cat.filterset.band_names for name in \
                 [selector.kwargs["band_name"] for selector in self.selectors]), \
             galfind_logger.critical(
@@ -3313,7 +3308,7 @@ class Unmasked_Instrument_Selector(Multiple_Mask_Selector):
         self: Self,
         cat: Catalogue,
         return_copy: bool = True,
-    ) -> Union[NoReturn, Catalogue]:
+    ) -> Optional[Catalogue]:
         self.crop_to_filterset(cat.filterset)
         return Multiple_Data_Selector._call_cat(self, cat, return_copy)
 
@@ -3374,7 +3369,7 @@ class Sextractor_Instrument_Radius_Selector(Multiple_Data_Selector):
         self: Self,
         cat: Catalogue,
         return_copy: bool = True,
-    ) -> Union[NoReturn, Catalogue]:
+    ) -> Optional[Catalogue]:
         self.crop_to_filterset(cat.filterset)
         return Multiple_Data_Selector._call_cat(self, cat, return_copy)
 
@@ -3414,7 +3409,7 @@ class Sextractor_Instrument_Radius_PSF_FWHM_Selector(Multiple_Data_Selector):
         self: Self,
         cat: Catalogue,
         return_copy: bool = True,
-    ) -> Union[NoReturn, Catalogue]:
+    ) -> Optional[Catalogue]:
         self.crop_to_filterset(cat.filterset)
         assert all([filt.band_name in fwhm_nircam.keys() for filt in cat.filterset if filt.instrument_name == "NIRCam"]), \
             galfind_logger.critical(

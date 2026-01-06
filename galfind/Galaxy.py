@@ -914,7 +914,7 @@ class Galaxy:
     def load_sextractor_ext_src_corrs(
         self: Self, 
         aper_corrs: Optional[Dict[str, Dict[u.Quantity, float]]] = None
-    ) -> NoReturn:
+    ) -> None:
         # FLUX_AUTO must already be loaded
         if not hasattr(self, "sex_FLUX_AUTO"):
             galfind_logger.critical(
@@ -929,7 +929,12 @@ class Galaxy:
     def set_Vmax(
         self: Self,
         ecsv_rows: Table
-    ) -> NoReturn:
+    ) -> None:
+        assert all(colname in ecsv_rows.colnames for colname in \
+            ["aper_diam", "SED_fit_code", "region", "zmin", "zmax", "Vmax"]
+        ), galfind_logger.critical(
+            f"{repr(self)=} ecsv_rows missing required columns to set Vmax!"
+        )
         # TODO: Currently only stores Vmax for a single redshift / selection
         aper_diam_arr = np.unique(ecsv_rows["aper_diam"].data) * u.arcsec
         SED_fit_code_arr = np.unique(ecsv_rows["SED_fit_code"].data)
@@ -1004,7 +1009,7 @@ class Galaxy:
         )
         #breakpoint()
         SED_result_obj = self.aper_phot[aper_diam].SED_results[SED_fit_code.label]
-        crop_name = funcs.get_crop_name(crops).split("/")[-1]
+        #crop_name = funcs.get_crop_name(crops).split("/")[-1]
         z_obs = SED_result_obj.z
 
         # no need to store Vmax's on a galaxy level

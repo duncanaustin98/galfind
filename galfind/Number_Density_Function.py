@@ -505,11 +505,11 @@ class Number_Density_Function(Base_Number_Density_Function):
             return None
         
         # determine save_path
-        full_survey_name = funcs.get_full_survey_name(
-            cat.survey,
-            cat.version,
-            cat.filterset
-        )
+        # full_survey_name = funcs.get_full_survey_name(
+        #     cat.survey,
+        #     cat.version,
+        #     cat.filterset
+        # )
         save_path = Number_Density_Function.get_save_path(
             cat.survey,
             x_origin,
@@ -584,7 +584,7 @@ class Number_Density_Function(Base_Number_Density_Function):
                     # extract Vmax's
                     #breakpoint()
                     Vmax_arr = [
-                        gal.aper_phot[aper_diam].SED_results[SED_fit_code.label]
+                        getattr(gal.aper_phot[aper_diam].SED_results[SED_fit_code.label], "Vmax")
                         for gal in z_bin_x_bin_cat
                     ]
                     #V_max[z_bin_cat.crop_name.split("/")[-1]][full_survey_name].value
@@ -595,26 +595,28 @@ class Number_Density_Function(Base_Number_Density_Function):
                     #         for gal in z_bin_x_bin_cat
                     #     ]
                     # )
-                    regions = np.unique([reg for reg in Vmax.keys() for Vmax in Vmax_arr])
+                    regions = np.unique([reg for Vmax in Vmax_arr for reg in Vmax.keys()])
+                    #detectable_gals = np.full(len(regions), Ngals[i])
+                    Vmax_reg_compl = []
                     for region in regions:
                         # TODO: FINISH THIS FOR MULTI-REGION SURVEYS
                         Vmax = np.array([Vmax[region] for Vmax in Vmax_arr])
                         remove_indices = Vmax != -1.0
-                        Vmax = Vmax[remove_indices] * u.Mpc ** 3
-                        if len(Vmax) != Ngals[i]:
+                        #Vmax = Vmax[remove_indices] # * u.Mpc ** 3
+                        if len(Vmax[remove_indices]) != Ngals[i]:
                             galfind_logger.warning(
-                                f"{Ngals[i] - len(Vmax)} galaxies not detected"
+                                f"{Ngals[i] - len(Vmax[remove_indices])} galaxies not detected in {region=}"
                             )
-                        assert completeness is None
+                            #detectable_gals[j] = len(Vmax[remove_indices])
                         if completeness is None:
                             compl_bin = np.ones(len(z_bin_x_bin_cat))
                         else:
-                            raise Exception()
-                            compl_bin = completeness(z_bin_x_bin_cat)
-                        try:
-                            compl_bin = compl_bin[remove_indices]
-                        except:
-                            breakpoint()
+                            # TODO: currently only works for Catalogue, not Combined_Catalogue
+                            compl_bin = completeness(z_bin_x_bin_cat, data = cat.data, depth_region = region)
+                        # try:
+                        #     compl_bin = compl_bin #[remove_indices]
+                        # except:
+                        #     breakpoint()
                         assert len(compl_bin) == len(Vmax), \
                             galfind_logger.critical(
                                 f"{len(compl_bin)=} != {len(Vmax)=} for {z_bin_x_bin_cat.crop_name}"
@@ -627,24 +629,29 @@ class Number_Density_Function(Base_Number_Density_Function):
                     # ax.plot(completeness.compl_arr[0].x, interp1d(completeness.compl_arr[0].x, completeness.compl_arr[0].completeness)(completeness.compl_arr[0].x), label = "Interpolated Completeness")
                     # ax.legend()
                     # plt.savefig("test_compl_NEP.png")
-                    # breakpoint()
-                        phi[i] += np.sum((Vmax * compl_bin) ** -1.0) / dx
-                    breakpoint()
+                        Vmax_reg_compl.append(Vmax * compl_bin)
+
+                    Vmax_reg_compl = np.array(Vmax_reg_compl)
+                    Vmax_tot = np.where(Vmax_reg_compl != -1.0, Vmax_reg_compl, 0.0).sum(axis = 0) #np.sum(Vmax_reg_compl, axis = 1)
+                    Vmax_tot = Vmax_tot[Vmax_tot > 0.0]
+                    phi[i] = np.sum(Vmax_tot ** -1.0) / dx
                     # use standard Poisson errors if number of galaxies in bin is not small
-                    if len(V_max) >= 4:
-                        phi_errs = np.sqrt(np.sum((V_max * compl_bin) ** -2.0)) / dx
+                    detected_gals = len(Vmax_tot)
+                    if detected_gals >= 4:
+                        phi_errs = np.sqrt(np.sum(Vmax_tot ** -2.0)) / dx
                         phi_l1[i] = phi_errs
                         phi_u1[i] = phi_errs
                     else:
-                        poisson_int = funcs.poisson_interval(len(V_max), 0.32)
+                        poisson_int = funcs.poisson_interval(detected_gals, 0.32)
                         phi_l1[i] = phi[i] * np.min(
-                            np.abs((np.array(poisson_int[0]) - len(V_max)))
-                            / len(V_max)
+                            np.abs((np.array(poisson_int[0]) - detected_gals))
+                            / detected_gals
                         )
                         phi_u1[i] = phi[i] * np.min(
-                            np.abs((np.array(poisson_int[1]) - len(V_max)))
-                            / len(V_max)
+                            np.abs((np.array(poisson_int[1]) - detected_gals))
+                            / detected_gals
                         )
+                    
                     from . import Catalogue_Base, Catalogue, Combined_Catalogue
                     if isinstance(cat, Combined_Catalogue):
                         data_arr = [cat_.data for cat_ in cat.cat_arr]

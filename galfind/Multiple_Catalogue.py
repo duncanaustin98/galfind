@@ -332,7 +332,7 @@ class Combined_Catalogue(Catalogue_Base):
             new_tab = Table(data, dtype=[int, str, float])
             new_tab.meta = {"Vmax_invalid_val": -1.0}
             self._save_ecsv(save_path, new_tab)
-
+        breakpoint()
         full_survey_name = funcs.get_full_survey_name(self.survey, self.version, self.filterset)
         tab = Table.read(save_path)
         self._load_Vmax_from_ecsv(tab, aper_diam, SED_fit_code, full_survey_name)
