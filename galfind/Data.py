@@ -67,7 +67,7 @@ from . import useful_funcs_austind as funcs
 from . import Masking
 from .decorators import run_in_dir
 from . import Filter, Multiple_Filter
-from .Instrument import ACS_WFC, WFC3_IR, NIRCam, MIRI, Instrument  # noqa F501
+from .Instrument import ACS_SBC, ACS_WFC, WFC3_IR, NIRCam, MIRI, Instrument  # noqa F501
 
 morgan_version_to_dir = {
     "v8b": "mosaic_1084_wispfix",
@@ -1615,6 +1615,7 @@ class Data:
             config.get("Other", "INSTRUMENT_NAMES")
         ),
         pix_scales: Union[u.Quantity, Dict[str, u.Quantity]] = {
+            "ACS_SBC": 0.025 * u.arcsec,
             "ACS_WFC": 0.03 * u.arcsec,
             "WFC3_IR": 0.03 * u.arcsec,
             "NIRCam": 0.03 * u.arcsec,
