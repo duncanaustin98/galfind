@@ -27,10 +27,11 @@ from scipy.stats import gaussian_kde
 from skimage import morphology
 from sklearn.cluster import KMeans
 from tqdm import tqdm
+from numpy.typing import NDArray
 from typing import Optional, Union, Tuple, Dict, List, Any, NoReturn, TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from . import Band_Data_Base, Data
+    from . import Band_Data_Base, Data, Mask_Selector, Region_Selector
 
 try:
     from typing import Type  # python 3.11+
@@ -39,7 +40,7 @@ except ImportError:
 
 # install cv2, skimage, sklearn
 from . import useful_funcs_austind as funcs
-from . import config, galfind_logger
+from . import config, galfind_logger, Masking
 
 
 def do_photometry(image, xy_coords, radius_pixels):
@@ -1228,34 +1229,120 @@ def get_area_depth_dir(self: Data) -> str:
         + f"{self.version}/{self.survey}"
     )
 
-
-def plot_area_depth(
-    self: Data,
+def plot_band_data_area_depth(
+    self: Type[Band_Data_Base],
     aper_diam: u.Quantity,
+    mask_selector: Union[str, List[str], Type[Mask_Selector]] = None,
+    mask_type: Union[str, List[str]] = "MASK",
+    region_selector: Optional[Type[Region_Selector], List[Type[Region_Selector]]] = None,
+    invert_region: bool = False,
+    zbin: Optional[float] = None,
     fig: Optional[plt.Figure] = None,
     ax: Optional[plt.Axes] = None,
+    save: bool = False,
     show: bool = False,
-    use_area_per_band=True,
-    save: bool = True,
-    return_array=False,
-    cmap_name: str = "RdYlBu_r",
-    overwrite: bool = True
-) -> NoReturn:
-    # ensure the depths for all bands are calculated in the given aper_diam
-    assert all(aper_diam in band_data.depth_args.keys() for band_data in self)
-    
-    area_tab = None #self.calc_unmasked_area(
-    #     masking_instrument_or_band_name=self.forced_phot_band,
-    #     forced_phot_band=self.forced_phot_band,
-    # )
+    close: bool = False,
+    **plot_kwargs: Dict[str, Any],
+):
+    assert aper_diam in self.depth_args.keys()
+    #galfind_logger.info(f"Calculating area-depth for {repr(self)} in sub-region {depth_subreg}")
 
-    if hasattr(self, "forced_phot_band"):
-        if self.forced_phot_band not in self:
-            self.band_data_arr = self.band_data_arr + [self.forced_phot_band]
-        else:
-            self_band_data = self.band_data_arr
+    if fig is None or ax is None:
+        fig, ax = plt.subplots(1, 1, figsize=(4, 4))
+
+    start = time.time()
+    # load appropriate mask if not provided
+    hf_output = get_hf_output(self, aper_diam)
+    nmad_grid = hf_output["nmad_grid"]
+    # load mask and re-bin to nmad grid
+    # if mask is None:
+    #     re_binned_mask = np.ones(nmad_grid.shape, dtype=bool)
+    #     raise NotImplementedError("Area calculation without mask not implemented yet")
+    # else:
+    # calculate total area from this mask
+    
+    mask, mask_selector_name, mask_save_name, reg_name = Masking.make_area_mask_from_band_data(
+        self,
+        mask_selector,
+        mask_type,
+        region_selector,
+        invert_region,
+        zbin = zbin,
+        #**kwargs,
+    )
+    re_binned_mask_path = Masking.get_rebin_mask_path(self, mask_selector_name, mask_save_name, reg_name, shape = nmad_grid.shape)
+    if Path(re_binned_mask_path).is_file():
+        galfind_logger.info(f"Loading rebinned mask from {re_binned_mask_path} for area-depth calculation for {repr(self)}")
+        re_binned_mask = fits.open(re_binned_mask_path, ignore_missing_simple = True)[1].data.astype(bool)
     else:
-        self_band_data = self.band_data_arr
+        re_binned_mask = Masking.rebin_mask_to_shape(mask, shape = nmad_grid.shape)
+        # save rebinned boolean mask as .fits file
+        #breakpoint()
+        hdu = fits.ImageHDU(re_binned_mask.astype(np.uint8), name=mask_selector_name)
+        hdu.writeto(re_binned_mask_path, overwrite=True)
+        galfind_logger.info(f"Saved rebinned mask to {re_binned_mask_path} for area-depth calculation for {repr(self)}")
+        funcs.change_file_permissions(re_binned_mask_path)
+    # save rebinned mask to file
+    # determine total area of mask
+    area = funcs.calc_unmasked_area(mask, self.pix_scale)
+    # re-bin mask onto nmad grid
+    total_depths = nmad_grid[re_binned_mask].flatten()
+    total_depths = total_depths[~np.isnan(total_depths)]
+    total_depths = total_depths[total_depths != 0]
+    total_depths = total_depths[total_depths != np.inf]
+    total_depths = np.flip(np.sort(total_depths))
+    # Calculate the cumulative distribution scaled to area of band
+    cum_dist = np.arange(1, len(total_depths) + 1) * area / len(total_depths)
+    end = time.time()
+    galfind_logger.info(f"Area-depth calculation for {repr(self)} took {end - start:.2f} seconds")
+    # update default plot kwargs with any user provided ones
+    plot_kwargs_ = {
+        "drawstyle": "steps-post",
+        "linestyle": "solid",
+        "color": "black",
+        "alpha": 1.0,
+        "linewidth": 1.5,
+        "label": self.filt_name,
+    }
+    plot_kwargs_.update(plot_kwargs)
+
+    # Plot
+    ax.plot(
+        total_depths,
+        cum_dist,
+        **plot_kwargs_,
+        #color=colors[i] if band_data.__class__.__name__ == "Band_Data" else "black",
+        #drawstyle="steps-post",
+        #linestyle="solid" if band_data.__class__.__name__ == "Band_Data" else "dashed",
+    )
+    galfind_logger.info(f"Plotted area-depth for {repr(self)}")
+    if save:
+        save_path = f"{get_area_depth_dir(self)}/{format(aper_diam.value, '.2f')}as_area_depth.png"
+        funcs.make_dirs(save_path)
+        fig.savefig(save_path, dpi=300, bbox_inches="tight")
+        galfind_logger.info(f"Saved area-depth plot for {repr(self)} to {save_path}")
+    if show:
+        plt.show()
+    if close:
+        plt.close(fig)
+
+
+def plot_data_area_depth(
+    self: Data,
+    aper_diam: u.Quantity,
+    mask_selector: Union[str, List[str], Type[Mask_Selector]] = None,
+    mask_type: Union[str, List[str]] = "MASK",
+    region_selector: Optional[Type[Region_Selector], List[Type[Region_Selector]]] = None,
+    invert_region: bool = True,
+    fig: Optional[plt.Figure] = None,
+    ax: Optional[plt.Axes] = None,
+    cmap_name: str = "RdYlBu_r",
+    overwrite: bool = True,
+    save: bool = True,
+    show: bool = False,
+    close: bool = True,
+    **kwargs: Dict[str, Any],
+) -> None:
 
     save_path = f"{get_area_depth_dir(self)}/{format(aper_diam.value, '.2f')}as_area_depth.png"
     funcs.make_dirs(save_path)
@@ -1265,76 +1352,117 @@ def plot_area_depth(
         if fig is None or ax is None:
             fig, ax = plt.subplots(1, 1, figsize=(4, 4))
         cmap = plt.cm.get_cmap(cmap_name)
-        colors = cmap(np.linspace(0, 1, len(self_band_data)))
+        colours = cmap(np.linspace(0, 1, len(self.band_data_arr)))
 
-        data = {}
-        for i, band_data in enumerate(self_band_data):
-            area = None
-            hf_output = get_hf_output(band_data, aper_diam)
+        if "z" in kwargs.keys():
+            zbins = mask_selector.extract_zbins(self)
+            # select zbin which matches the redshift of the data
+            zbin = [zbin_ for zbin_ in zbins if zbin_[0] <= kwargs["z"] < zbin_[1]]
+            assert len(zbin) == 1, \
+                galfind_logger.critical(
+                    f"Multiple or no zbins found for z={kwargs['z']}!"
+                )
+            zbin = zbin[0]
+        else:
+            zbin = None
 
-            total_depths = hf_output["nmad_grid"].flatten()
-            total_depths = total_depths[~np.isnan(total_depths)]
-            total_depths = total_depths[total_depths != 0]
-            total_depths = total_depths[total_depths != np.inf]
-            total_depths = np.flip(np.sort(total_depths))
-            # Calculate the cumulative distribution scaled to area of band
-            cum_dist = np.arange(1, len(total_depths) + 1) * area / len(total_depths)
-
-            # Plot
-            ax.plot(
-                cum_dist,
-                total_depths,
-                label=band_data.filt_name,
-                color=colors[i] if band_data.__class__.__name__ == "Band_Data" else "black",
-                drawstyle="steps-post",
-                linestyle="solid" if band_data.__class__.__name__ == "Band_Data" else "dashed",
+        for band_data, colour in zip(self.band_data_arr, colours):
+            band_data.plot_area_depth(
+                aper_diam = aper_diam, 
+                mask_selector = mask_selector,
+                mask_type = mask_type,
+                region_selector = region_selector,
+                invert_region = invert_region,
+                zbin = zbin,
+                color = colour,
+                fig = fig,
+                ax = ax,
+                show = False,
+                #**kwargs
             )
-
-            if i == 0:
-                min_depth = np.percentile(total_depths, 0.5)
-                max_depth = np.percentile(total_depths, 99.5)
-            else:
-                min_temp = np.percentile(total_depths, 0.5)
-                max_temp = np.percentile(total_depths, 99.5)
-                if min_temp < min_depth:
-                    min_depth = min_temp
-                if max_temp > max_depth:
-                    max_depth = max_temp
-
-        ax.set_ylim(max_depth, min_depth)
-        # Place legend under plot
-        ax.legend(
-            frameon=False,
-            ncol=4,
-            bbox_to_anchor=(0.5, -0.14),
-            loc="upper center",
-            fontsize=8,
-            columnspacing=1,
-            handletextpad=0.5,
-        )
-        # ax.legend(frameon = False, ncol = 2)
-        # Add inner ticks
-        from matplotlib.ticker import AutoMinorLocator
-
-        ax.xaxis.set_minor_locator(AutoMinorLocator())
-        ax.yaxis.set_minor_locator(AutoMinorLocator())
-        # Make ticks face inwards
-        ax.tick_params(direction="in", axis="both", which="both")
-        # Set minor ticks to face in
-
-        ax.yaxis.set_ticks_position("both")
-        ax.xaxis.set_ticks_position("both")
+        if hasattr(self, "forced_phot_band"):
+            self.forced_phot_band.plot_area_depth(
+                aper_diam = aper_diam,
+                mask_selector = mask_selector,
+                mask_type = mask_type,
+                region_selector = region_selector,
+                invert_region = invert_region,
+                zbin = zbin,
+                color = "black",
+                linestyle = "--",
+                fig = fig,
+                ax = ax,
+                show = False,
+                **kwargs
+            )
         
-        # ax.set_xlim(0, area_master * 1.02)
-        # Add hlines at integer depths
-        depths = np.arange(20, 35, 1)
-        # for depth in depths:
-        #    ax.hlines(depth, 0, area_master, color = "black", linestyle = "dotted", alpha = 0.5)
-        ax.grid(True)
+        #breakpoint()
+        # data = {}
+        # for i, band_data in enumerate(self_band_data):
+        #     area = None
+        #     hf_output = get_hf_output(band_data, aper_diam)
+
+        #     total_depths = hf_output["nmad_grid"].flatten()
+        #     total_depths = total_depths[~np.isnan(total_depths)]
+        #     total_depths = total_depths[total_depths != 0]
+        #     total_depths = total_depths[total_depths != np.inf]
+        #     total_depths = np.flip(np.sort(total_depths))
+        #     # Calculate the cumulative distribution scaled to area of band
+        #     cum_dist = np.arange(1, len(total_depths) + 1) * area / len(total_depths)
+
+        #     # Plot
+        #     ax.plot(
+        #         cum_dist,
+        #         total_depths,
+        #         label=band_data.filt_name,
+        #         color=colors[i] if band_data.__class__.__name__ == "Band_Data" else "black",
+        #         drawstyle="steps-post",
+        #         linestyle="solid" if band_data.__class__.__name__ == "Band_Data" else "dashed",
+        #     )
+
+            # if i == 0:
+            #     min_depth = np.percentile(total_depths, 0.5)
+            #     max_depth = np.percentile(total_depths, 99.5)
+            # else:
+            #     min_temp = np.percentile(total_depths, 0.5)
+            #     max_temp = np.percentile(total_depths, 99.5)
+            #     if min_temp < min_depth:
+            #         min_depth = min_temp
+            #     if max_temp > max_depth:
+            #         max_depth = max_temp
+
         if save:
+            #ax.set_ylim(max_depth, min_depth)
+            # Place legend under plot
+            ax.legend(
+                frameon=False,
+                ncol=4,
+                bbox_to_anchor=(0.5, -0.14),
+                loc="upper center",
+                fontsize=8,
+                columnspacing=1,
+                handletextpad=0.5,
+            )
+            # Add inner ticks
+            from matplotlib.ticker import AutoMinorLocator
+            ax.xaxis.set_minor_locator(AutoMinorLocator())
+            ax.yaxis.set_minor_locator(AutoMinorLocator())
+            # Make ticks face inwards
+            ax.tick_params(direction="in", axis="both", which="both")
+            ax.invert_xaxis()
+            # Set minor ticks to face in
+            ax.yaxis.set_ticks_position("both")
+            ax.xaxis.set_ticks_position("both")
+            breakpoint()
+            ax.set_xlabel(rf"{format(aper_diam.value, '.2f')}as 5$\sigma$ Depth (AB mag)")
+            ax.set_ylabel("Cumulative Area (arcmin$^2$)")
+            
             fig.savefig(save_path, dpi=300, bbox_inches="tight")
+            galfind_logger.info(f"Saved area-depth plot for {repr(self)} to {save_path}")
         if show:
             plt.show()
+        if close:
+            plt.close(fig)
 
 def get_hf_output(
     self: Type[Band_Data_Base], 

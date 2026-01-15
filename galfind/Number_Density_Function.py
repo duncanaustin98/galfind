@@ -26,7 +26,7 @@ except ImportError:
     from typing_extensions import Self, Type  # python > 3.7 AND python < 3.11
 
 from . import useful_funcs_austind as funcs
-from . import config, galfind_logger
+from . import config, galfind_logger, figs
 from . import MCMC_Fitter, Priors, Schechter_Mag_Fitter, Schechter_Lum_Fitter
 from .SED_codes import SED_code
 
@@ -535,11 +535,14 @@ class Number_Density_Function(Base_Number_Density_Function):
             )
 
             if plot:
+                fig_axs_ = figs.make_phot_diagnostic_fig(len(z_bin_cat.filterset))
                 z_bin_cat.plot_phot_diagnostics(
                     aper_diam, 
                     SED_arr = SED_fit_code,
                     zPDF_arr = SED_fit_code,
+                    fig_axs = fig_axs_
                 )
+                plt.close(fig_axs_[0].figure)
 
             Ngals = np.zeros(len(x_bins))
             phi = np.zeros(len(x_bins))
@@ -555,8 +558,9 @@ class Number_Density_Function(Base_Number_Density_Function):
                     if plot:
                         # plot histogram
                         hist_fig, hist_ax = plt.subplots()
-                        z_bin_cat.hist(x_calculator, hist_fig, hist_ax)
-                        plt.close()
+                        z_bin_cat.hist(x_calculator, hist_fig, hist_ax, from_pdf = True, save = False, overwrite = True, density = True)
+                        z_bin_cat.hist(x_calculator, hist_fig, hist_ax, from_pdf = False, save = True, overwrite = True, density = True)
+                        plt.close(hist_fig)
                     
                     # crop to galaxies in the x bin - not the bootstrapping method
                     from . import Rest_Frame_Property_Limit_Selector, Rest_Frame_Property_Bin_Selector
@@ -570,11 +574,19 @@ class Number_Density_Function(Base_Number_Density_Function):
 
                     # plot cutouts
                     if plot and Ngals[i] > 0:
+                        fig_axs_ = figs.make_phot_diagnostic_fig(len(z_bin_x_bin_cat.filterset))
                         z_bin_x_bin_cat.plot_phot_diagnostics(
                             aper_diam, 
                             SED_arr = SED_fit_code,
                             zPDF_arr = SED_fit_code,
+                            fig_axs = fig_axs_,
                         )
+                        plt.close(fig_axs_[0].figure)
+                        # plot histogram
+                        hist_fig, hist_ax = plt.subplots()
+                        z_bin_x_bin_cat.hist(x_calculator, hist_fig, hist_ax, from_pdf = True, save = False, overwrite = True, density = True)
+                        z_bin_x_bin_cat.hist(x_calculator, hist_fig, hist_ax, from_pdf = False, save = True, overwrite = True, density = True)
+                        plt.close(hist_fig)
                     
                 # if there are galaxies in the z,x bin
                 if int(Ngals[i]) != 0:
@@ -582,7 +594,6 @@ class Number_Density_Function(Base_Number_Density_Function):
                     #z_bin_x_bin_cat.hist(x_calculator, hist_fig, hist_ax)
                     dx = x_bin[1].value - x_bin[0].value
                     # extract Vmax's
-                    #breakpoint()
                     Vmax_arr = [
                         getattr(gal.aper_phot[aper_diam].SED_results[SED_fit_code.label], "Vmax")
                         for gal in z_bin_x_bin_cat
@@ -601,20 +612,20 @@ class Number_Density_Function(Base_Number_Density_Function):
                     for region in regions:
                         # TODO: FINISH THIS FOR MULTI-REGION SURVEYS
                         Vmax = np.array([Vmax[region] for Vmax in Vmax_arr])
-                        remove_indices = Vmax != -1.0
-                        #Vmax = Vmax[remove_indices] # * u.Mpc ** 3
-                        if len(Vmax[remove_indices]) != Ngals[i]:
+                        keep_indices = Vmax != -1.0
+                        #Vmax = Vmax[keep_indices] # * u.Mpc ** 3
+                        if len(Vmax[keep_indices]) != Ngals[i]:
                             galfind_logger.warning(
-                                f"{Ngals[i] - len(Vmax[remove_indices])} galaxies not detected in {region=}"
+                                f"{Ngals[i] - len(Vmax[keep_indices])} galaxies not detected in {region=}"
                             )
-                            #detectable_gals[j] = len(Vmax[remove_indices])
+                            #detectable_gals[j] = len(Vmax[keep_indices])
                         if completeness is None:
                             compl_bin = np.ones(len(z_bin_x_bin_cat))
                         else:
                             # TODO: currently only works for Catalogue, not Combined_Catalogue
                             compl_bin = completeness(z_bin_x_bin_cat, data = cat.data, depth_region = region)
                         # try:
-                        #     compl_bin = compl_bin #[remove_indices]
+                        #     compl_bin = compl_bin #[keep_indices]
                         # except:
                         #     breakpoint()
                         assert len(compl_bin) == len(Vmax), \
@@ -624,15 +635,17 @@ class Number_Density_Function(Base_Number_Density_Function):
                     # import matplotlib.pyplot as plt
                     # from scipy.interpolate import interp1d
                     # fig, ax = plt.subplots()
-                    # ax.scatter(completeness.compl_arr[0].x_calculator(z_bin_x_bin_cat)[remove_indices], compl_bin, label = str(x_bin))
+                    # ax.scatter(completeness.compl_arr[0].x_calculator(z_bin_x_bin_cat)[keep_indices], compl_bin, label = str(x_bin))
                     # ax.plot(completeness.compl_arr[0].x, completeness.compl_arr[0].completeness, label = "Completeness")
                     # ax.plot(completeness.compl_arr[0].x, interp1d(completeness.compl_arr[0].x, completeness.compl_arr[0].completeness)(completeness.compl_arr[0].x), label = "Interpolated Completeness")
                     # ax.legend()
                     # plt.savefig("test_compl_NEP.png")
+                        mean_compl_bin = np.mean(compl_bin)
                         Vmax_reg_compl.append(Vmax * compl_bin)
 
                     Vmax_reg_compl = np.array(Vmax_reg_compl)
-                    Vmax_tot = np.where(Vmax_reg_compl != -1.0, Vmax_reg_compl, 0.0).sum(axis = 0) #np.sum(Vmax_reg_compl, axis = 1)
+                    Vmax_tot = np.clip(Vmax_reg_compl, 0.0, None).sum(axis = 0) #np.sum(Vmax_reg_compl, axis = 1)
+                    breakpoint()
                     Vmax_tot = Vmax_tot[Vmax_tot > 0.0]
                     phi[i] = np.sum(Vmax_tot ** -1.0) / dx
                     # use standard Poisson errors if number of galaxies in bin is not small
@@ -671,6 +684,7 @@ class Number_Density_Function(Base_Number_Density_Function):
                         )
                     else:
                         raise NotImplementedError
+            #raise NotImplementedError
             number_density_func = cls(
                 x_calculator.name,
                 x_bins,

@@ -596,9 +596,10 @@ class Multiple_Filter:
                     facility=instrument.facility.SVO_name,
                     instrument=instrument.SVO_name,
                 )
-            except:
+            except Exception as e:
                 err_message = "Could not retrieve filter list from SVO for " + \
-                    f"{instrument.facility.SVO_name}/{instrument.SVO_name}!"
+                    f"{instrument.facility.SVO_name}/{instrument.SVO_name}! " + \
+                    f"Exception={e}"
                 galfind_logger.critical(err_message)
                 raise(Exception(err_message))
             # only include filters from the requested instrument

@@ -18,7 +18,7 @@ try:
 except ImportError:
     from typing_extensions import Self, Type  # python > 3.7 AND python < 3.11
 if TYPE_CHECKING:
-    from . import Band_Data_Base, Stacked_Band_Data, Filter
+    from . import Band_Data_Base, Stacked_Band_Data, Filter, Mask_Selector, Region_Selector
 
 from . import config, galfind_logger
 from . import useful_funcs_austind as funcs
@@ -723,6 +723,284 @@ def combine_masks(self: Stacked_Band_Data) -> str:
         )
     mask_args = {band_data.filt_name: band_data.mask_args for band_data in self.band_data_arr}
     return out_path, mask_args
+
+def get_area_mask_path(
+    self: Type[Data],
+    mask_selector_name: str,
+    mask_save_name: str,
+    reg_name: str
+) -> str:
+    mask_path = f"{config['Masking']['MASK_DIR']}/{self.survey}/area_masks/" + \
+        f"{mask_selector_name}_{mask_save_name}_{reg_name}_{self.version}.fits"
+    funcs.make_dirs(mask_path)
+    return mask_path
+
+def make_area_mask_from_data(
+    self: Type[Data],
+    mask_selector: Union[str, List[str], Type[Mask_Selector]],
+    mask_type: Union[str, List[str]] = "MASK",
+    region_selector: Optional[Union[Type[Region_Selector], List[Type[Region_Selector]]]] = None,
+    invert_region: bool = False,
+    zbin: Optional[Tuple[float, float]] = None,
+    overwrite: bool = False,
+    **kwargs: Dict[str, Any],
+) -> Tuple[NDArray[float], str, str, str]:
+    from . import Mask_Selector
+    if isinstance(mask_selector, str):
+        mask_selector = mask_selector.split("+")
+    if isinstance(mask_type, str):
+        mask_type = mask_type.split("+")
+    
+    if region_selector is None:
+        reg_name = "All"
+    else:
+        if not isinstance(region_selector, list):
+            region_selector = [region_selector]
+        reg_name = "+".join([
+            region_selector_.name if not invert_region 
+            else region_selector_.fail_name 
+            for region_selector_ in region_selector
+        ])
+
+    if isinstance(mask_selector, tuple(Mask_Selector.__subclasses__())):
+        mask_selector_name = mask_selector.name
+    else:
+        mask_selector_name = f"{'+'.join(np.sort(mask_selector))}_{reg_name}"
+    
+    mask_save_name = "+".join(np.sort(mask_type))
+
+    if isinstance(mask_selector, tuple(Mask_Selector.__subclasses__())) and zbin is not None:
+        mask_selector_name += f"_{zbin[0]:.2f}<z<{zbin[1]:.2f}"
+
+    mask_save_path = get_area_mask_path(self, mask_selector_name, mask_save_name, reg_name)
+
+    if not Path(mask_save_path).is_file() or overwrite:
+        galfind_logger.info(
+            f"Creating area mask {mask_selector_name} with types {mask_type} at {mask_save_path}"
+        )
+        if isinstance(mask_selector, tuple(Mask_Selector.__subclasses__())):
+            masks = [mask_selector.load_mask(self, invert = False, **kwargs)]
+            pix_scales = [band_data.pix_scale for band_data in self]
+            assert all(pix_scale == pix_scales[0] for pix_scale in pix_scales), \
+                galfind_logger.critical(
+                    "All pixel scales must be the same!"
+                )
+            pix_scale = pix_scales[0]
+        else:
+            masks = []
+            for name in mask_selector:
+                if name in self.filterset.instrument_name.split("+"):
+                    pix_scales = [band_data.pix_scale for band_data in self \
+                        if band_data.instr_name == name]
+                    assert all(pix_scale == pix_scales[0] for pix_scale in pix_scales), \
+                        galfind_logger.critical(
+                            "All pixel scales for bands in the same instrument must be the same!"
+                        )
+                    pix_scale = pix_scales[0]
+                    masks.extend([band_data.load_mask(mask_type_, invert = True, **kwargs)[0] for band_data in self \
+                        for mask_type_ in mask_type if band_data.instr_name == name])
+                elif name in self.filterset.band_names:
+                    pix_scale = self[name].pix_scale
+                    masks.extend([self[name].load_mask(mask_type_, invert = True, **kwargs)[0] for mask_type_ in mask_type])
+                else:
+                    possible_names = self.filterset.instrument_name.split("+") + self.filterset.band_names
+                    err_message = f"{name} not in {possible_names}"
+                    galfind_logger.critical(
+                        err_message
+                    )
+                    raise(Exception(err_message))
+
+        if region_selector is not None:
+            masks.extend([
+                region_selector_.load_mask(self, invert = invert_region)
+                for region_selector_ in region_selector
+            ])
+        if len(masks) == 0:
+            galfind_logger.critical(
+                f"Could not find any masks for {mask_selector_name}"
+            )
+        elif len(masks) == 1:
+            mask = masks[0]
+        else:
+            mask = np.logical_and.reduce(tuple(masks))
+
+        # save .fits mask
+        galfind_logger.info(
+            f"Saving mask to {mask_save_path.split('/')[-1]}"
+        )
+        funcs.make_dirs(mask_save_path)
+        # save boolean mask as .fits file
+        hdu = fits.ImageHDU(mask.astype(np.uint8), name=mask_selector_name)
+        hdu.writeto(mask_save_path, overwrite=True)
+        funcs.change_file_permissions(mask_save_path)
+
+    else:
+        galfind_logger.info(
+            f"Area mask at {mask_save_path} already exists, loading!"
+        )
+        hdu = fits.open(mask_save_path)[mask_selector_name]
+        mask = hdu.data.astype(bool)
+        # TODO: Save pixel scale in mask header
+        #masks = [mask_selector.load_mask(self, invert = False, **kwargs)]
+        pix_scales = [band_data.pix_scale for band_data in self]
+        assert all(pix_scale == pix_scales[0] for pix_scale in pix_scales), \
+            galfind_logger.critical(
+                "All pixel scales must be the same!"
+            )
+        pix_scale = pix_scales[0]
+
+    if isinstance(mask_selector, list) and len(mask_selector) == 1:
+        self[mask_selector_name[0]]._calc_area_given_mask(mask_save_name, mask)
+        unmasked_area = self[mask_selector_name[0]].unmasked_area[mask_save_name]
+    else:
+        unmasked_area = funcs.calc_unmasked_area(mask, pix_scale)
+
+    self.unmasked_area[mask_selector_name][mask_save_name] = unmasked_area
+    
+    return mask, mask_selector_name, mask_save_name, reg_name
+
+
+def make_area_mask_from_band_data(
+    self: Type[Band_Data_Base],
+    mask_selector: Union[str, List[str], Type[Mask_Selector]],
+    mask_type: Union[str, List[str]] = "MASK",
+    region_selector: Optional[Union[Type[Region_Selector], List[Type[Region_Selector]]]] = None,
+    invert_region: bool = False,
+    zbin: Optional[Tuple[float, float]] = None,
+    overwrite: bool = False,
+    **kwargs: Dict[str, Any],
+) -> Tuple[NDArray[float], str, str, str]:
+    
+    from . import Mask_Selector
+    if isinstance(mask_selector, str):
+        mask_selector = mask_selector.split("+")
+    if isinstance(mask_type, str):
+        mask_type = mask_type.split("+")
+    
+    if region_selector is None:
+        reg_name = "All"
+    else:
+        if not isinstance(region_selector, list):
+            region_selector = [region_selector]
+        reg_name = "+".join([
+            region_selector_.name if not invert_region 
+            else region_selector_.fail_name 
+            for region_selector_ in region_selector
+        ])
+
+    if isinstance(mask_selector, tuple(Mask_Selector.__subclasses__())):
+        mask_selector_name = mask_selector.name
+    else:
+        mask_selector_name = f"{'+'.join(np.sort(mask_selector))}_{reg_name}"
+    
+    mask_save_name = "+".join(np.sort(mask_type))
+
+    if isinstance(mask_selector, tuple(Mask_Selector.__subclasses__())) and zbin is not None:
+        mask_selector_name += f"_{zbin[0]:.2f}<z<{zbin[1]:.2f}"
+
+    mask_save_path = get_area_mask_path(self, mask_selector_name, mask_save_name, reg_name)
+
+    if not Path(mask_save_path).is_file() or overwrite:
+        galfind_logger.info(
+            f"Creating area mask {mask_selector_name} with types {mask_type} at {mask_save_path}"
+        )
+        if isinstance(mask_selector, tuple(Mask_Selector.__subclasses__())):
+            masks = [mask_selector.load_mask(self, invert = False, **kwargs)]
+        else:
+            masks = []
+            for name in mask_selector:
+                if name in self.filterset.instrument_name.split("+"):
+                    masks.extend([self.load_mask(mask_type_, invert = True, **kwargs)[0] \
+                        for mask_type_ in mask_type if self.instr_name == name])
+                elif name in self.filterset.band_names:
+                    masks.extend([self.load_mask(mask_type_, invert = True, **kwargs)[0] for mask_type_ in mask_type])
+                else:
+                    err_message = f"{name} masking not valid for {repr(self)}"
+                    galfind_logger.critical(err_message)
+                    raise(Exception(err_message))
+
+        if region_selector is not None:
+            masks.extend([
+                region_selector_.load_mask(self, invert = invert_region)
+                for region_selector_ in region_selector
+            ])
+        if len(masks) == 0:
+            galfind_logger.critical(
+                f"Could not find any masks for {mask_selector_name}"
+            )
+        elif len(masks) == 1:
+            mask = masks[0]
+        else:
+            mask = np.logical_and.reduce(tuple(masks))
+
+        # save .fits mask
+        galfind_logger.info(
+            f"Saving mask to {mask_save_path.split('/')[-1]}"
+        )
+        funcs.make_dirs(mask_save_path)
+        # save boolean mask as .fits file
+        hdu = fits.ImageHDU(mask.astype(np.uint8), name=mask_selector_name)
+        hdu.writeto(mask_save_path, overwrite=True)
+        funcs.change_file_permissions(mask_save_path)
+    else:
+        galfind_logger.info(
+            f"Area mask at {mask_save_path} already exists, loading!"
+        )
+        hdu = fits.open(mask_save_path)[mask_selector_name]
+        mask = hdu.data.astype(bool)
+
+    return mask, mask_selector_name, mask_save_name, reg_name
+    
+
+def get_rebin_mask_path(
+    self: Type[Band_Data_Base],
+    mask_selector_name: str,
+    mask_save_name: str,
+    reg_name: str,
+    shape: Tuple[int, int],
+) -> str:
+    from . import Depths
+    re_binned_mask_path = get_area_mask_path(
+        self,
+        mask_selector_name,
+        mask_save_name,
+        reg_name
+    ).replace("area_masks", "rebin_h5")\
+    .replace(".fits", f"_{shape[0]}x{shape[1]}.h5")
+    funcs.make_dirs(re_binned_mask_path)
+    return re_binned_mask_path
+
+def rebin_mask_to_shape(
+    mask: NDArray[bool],
+    shape: Tuple[int, int]) -> NDArray[bool]:
+    """Rebin a mask to a new shape by summing blocks of pixels.
+
+    Parameters
+    ----------
+    mask : NDArray[bool]
+        The input mask to be rebinned.
+    shape : Tuple[int, int]
+        The desired output shape.
+
+    Returns
+    -------
+    NDArray[bool]
+        The rebinned mask.
+    """
+    from skimage.transform import resize
+    galfind_logger.info(
+        f"Rebinning mask from shape {mask.shape} to {shape}"
+    )
+    # Resize the mask using nearest neighbor interpolation
+    rebinned_mask = resize(
+        mask.astype(float),
+        shape,
+        order=0,
+        preserve_range=True,
+        anti_aliasing=False,
+    ).astype(bool)
+
+    return rebinned_mask
 
 
 # # if "COSMOS-Web" in self.survey:

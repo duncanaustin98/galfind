@@ -830,42 +830,52 @@ class Catalogue_Base:
         fig: Optional[plt.Figure] = None,
         ax: Optional[plt.Axes] = None,
         log: bool = False,
-        n_bins: int = 50, 
+        #n_bins: int = 50, 
         save: bool = True,
         show: bool = False,
         overwrite: bool = True,
-        colour: Optional[str] = None,
+        from_pdf: bool = True,
+        **plot_kwargs: Dict[str, Any],
     ) -> NoReturn:
         save_path = f"{config['DEFAULT']['GALFIND_WORK']}/Plots/{self.version}/" + \
             f"{self.filterset.instrument_name}/{self.survey}/hist/" + \
             f"{self.crop_name}/{x_calculator.name}.png"
         if not Path(save_path).is_file() or overwrite:
             galfind_logger.info(
-                f"Making histogram for {x_calculator.name}!"
+                f"Making histogram for {x_calculator.name}{' from PDFs' if from_pdf else ''}!"
             )
+            if any(fig_ax is None for fig_ax in [fig, ax]):
+                fig, ax = plt.subplots()
             from . import Property_Calculator_Base
             if isinstance(x_calculator, tuple(Property_Calculator_Base.__subclasses__())):
-                # calculate x values
-                unit = x_calculator.extract_vals(self).unit
-                x = np.array([x_.input_arr for x_ in x_calculator.extract_PDFs(self)]).flatten() * unit
-                # remove nans
-                x = np.array([x_.value for x_ in x if not np.isnan(x_)])
-                x_label = x_calculator.name
+                if from_pdf:
+                    # sample x values from PDFs
+                    #unit = x_calculator.extract_vals(self).unit
+                    x = np.array([x_.input_arr for x_ in x_calculator.extract_PDFs(self)]).flatten() #* unit
+                    # remove nans
+                    x = np.array([x_ for x_ in x if not np.isnan(x_)]) # .value
+                    x_label = f"{x_calculator.name} PDF samples"
+                    n_bins = 50
+                else:
+                    x = x_calculator.extract_vals(self).value
+                    x = np.array([x_ for x_ in x if not np.isnan(x_)]) #.value * x.unit
+                    x_label = x_calculator.name
+                    n_bins = int(np.sqrt(len(x)))
             else:
                 raise NotImplementedError
             if log:
                 x = np.log10(x)
                 #x_name = f"log({x_name})"
                 x_label = f"log({x_label})"
-            if any(fig_ax is None for fig_ax in [fig, ax]):
-                fig, ax = plt.subplots()
-            ax.hist(x, bins = n_bins, color = colour)
-            ax.set_xlabel(x_label)
+            ax.hist(x, bins = n_bins, label = x_label, **plot_kwargs)
             #ax.set_ylabel("Number of Galaxies")
             #ax.set_title(f"{x_label} histogram")
             if save:
+                ax.legend()
+                ax.set_xlabel(x_calculator.plot_name)
                 funcs.make_dirs(save_path)
                 plt.savefig(save_path)
+                galfind_logger.info(f"Saved histogram to {save_path}!")
                 funcs.change_file_permissions(save_path)
             if show:
                 plt.show()

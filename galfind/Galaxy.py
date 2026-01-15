@@ -1002,7 +1002,8 @@ class Galaxy:
         assert z_bin[0] < z_bin[1]
         assert crops != []
         from . import (
-            Data_Selector, 
+            Data_Selector,
+            Mask_Selector,
             SED_fit_Selector, 
             Multiple_Selector, 
             Rest_Frame_Property_Limit_Selector, 
@@ -1087,11 +1088,17 @@ class Galaxy:
                     )
                 # TODO: make split regions available on a data level without having to pre-load results
                 #data._load_depths(aper_diam, depth_mode, region)
-                data_depths = [band_data.med_depth[aper_diam][region] for band_data in data]
+                if self.survey == data.survey and self.region == region:
+                    # use local depths
+                    data_depths = self.aper_phot[aper_diam].depths.value
+                else:
+                    # use median depths in field region
+                    data_depths = [band_data.med_depth[aper_diam][region] for band_data in data]
                 # calculate z_range
                 # z_test for other fields should be lower than starting z
                 z_detect = []
-                for z in np.arange(z_bin[0], z_bin[1] + z_step, z_step): #, tqdm(
+                z_arr = np.arange(z_bin[0], z_bin[1] + z_step, z_step)
+                for z in z_arr: #, tqdm(
                 #     np.arange(z_bin[0], z_bin[1] + z_step, z_step),
                 #     desc=f"Calculating z_max and z_min for ID={self.ID}",
                 # ):
@@ -1162,7 +1169,8 @@ class Galaxy:
                     )
                     if goodz:
                         z_detect.append(z)
-
+                        
+                z_detect = np.array(z_detect)
                 if len(z_detect) < 2:
                     z_max = -1.0
                     z_min = -1.0
@@ -1171,7 +1179,72 @@ class Galaxy:
                 else:
                     z_max = np.round(z_detect[-1], 3)
                     z_min = np.round(z_detect[0], 3)
+                    if hasattr(data, "region_selector"):
+                        region_selector = data.region_selector
+                        invert_region = region != data.region_selector.name
+                    else:
+                        region_selector = None
+                        invert_region = False
+                    # compute cumulative area vs depth
 
+                    if issubclass(unmasked_area.__class__, Mask_Selector):
+                        z_detect_mid_bins = (z_detect[:-1] + z_detect[1:]) / 2
+                        zbin_use_idx = np.where(np.diff(z_detect) <= 0.1)[0]
+                        z_detect_mid_bins_use = z_detect_mid_bins[zbin_use_idx]
+                        area = np.zeros(len(z_detect_mid_bins_use)) * u.arcmin**2
+                        for i, z_mid_bin in enumerate(z_detect_mid_bins_use):
+                            area[i] = [
+                                data.calc_unmasked_area(
+                                    mask_selector = unmasked_area,
+                                    region_selector = region_selector,
+                                    invert_region = invert_region,
+                                    z = z_mid_bin,
+                                )
+                            ]
+                            #breakpoint()
+                            data.plot_area_depth(
+                                aper_diam = aper_diam,
+                                mask_selector = unmasked_area,
+                                #mask_type = mask_type,
+                                region_selector = region_selector,
+                                invert_region = invert_region,
+                                depth_mode = depth_mode,
+                                save = True,
+                                close = True,
+                                z = z_mid_bin,
+                            )
+                        breakpoint()
+                        V_max = [
+                            funcs.calc_Vmax(
+                                area_,
+                                z_detect_ - (z_step / 2),
+                                z_detect_ + (z_step / 2),
+                            ) for area_, z_detect_ in zip(area, z_detect_mid_bins_use)
+                        ]
+                        breakpoint()
+                        V_max = np.sum(np.array(V_max).to(u.Mpc**3).value)
+                    else:
+                        if unmasked_area == "selection":
+                            area = data.calc_unmasked_area(
+                                mask_selector = data.forced_phot_band.filt_name,
+                                region_selector = region_selector,
+                                invert_region = invert_region,
+                                z = self.aper_phot[aper_diam].SED_results[SED_fit_code.label].z,
+                            )
+                        elif isinstance(unmasked_area, u.Quantity):
+                            assert isinstance(unmasked_area, u.Quantity)
+                            # TODO: ensure this has units of area
+                            area = unmasked_area
+                        else:
+                            raise NotImplementedError
+                        V_max = funcs.calc_Vmax(
+                            area, 
+                            z_min_used, 
+                            z_max_used
+                        ).to(u.Mpc**3).value
+                
+                z_min_used = np.max([z_min, z_bin[0]])
+                z_max_used = np.min([z_max, z_bin[1]])
                 # don't worry about completeness and contamination for now
                 # completeness_field = detect_completeness[field] * jag_completeness[field]
                 # contamination_field = jag_contamination[field]
@@ -1192,42 +1265,6 @@ class Galaxy:
                 #     break
                 # continue
 
-                # calculate/load unmasked area of forced photometry band
-                if hasattr(data, "region_selector"):
-                    region_selector = data.region_selector
-                    invert_region = region != data.region_selector.name
-                else:
-                    region_selector = None
-                    invert_region = False
-                if unmasked_area == "selection":
-                    unmasked_area_ = data.calc_unmasked_area(
-                        mask_selector = data.forced_phot_band.filt_name,
-                        region_selector = region_selector,
-                        invert_region = invert_region,
-                        z = self.aper_phot[aper_diam].SED_results[SED_fit_code.label].z,
-                    )
-                elif isinstance(unmasked_area, u.Quantity):
-                    assert isinstance(unmasked_area, u.Quantity)
-                    # TODO: ensure this has units of area
-                    unmasked_area_ = unmasked_area
-                else:
-                    unmasked_area_ = data.calc_unmasked_area(
-                        mask_selector = unmasked_area,
-                        region_selector = region_selector,
-                        invert_region = invert_region,
-                        z = self.aper_phot[aper_diam].SED_results[SED_fit_code.label].z,
-                    )
-                z_min_used = np.max([z_min, z_bin[0]])
-                z_max_used = np.min([z_max, z_bin[1]])
-                if any(_z == -1.0 for _z in [z_min_used, z_max_used]):
-                    V_max = -1.0
-                else:
-                    # V_max_simple = funcs.calc_Vmax(unmasked_area, z_bin[0], z_max_used)
-                    V_max = funcs.calc_Vmax(
-                        unmasked_area_, 
-                        z_min_used, 
-                        z_max_used
-                    ).to(u.Mpc**3).value
                 z_min_dict[region] = z_min_used
                 z_max_dict[region] = z_max_used
                 V_max_dict[region] = V_max

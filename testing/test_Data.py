@@ -368,6 +368,21 @@ class TestBandDataPSFHomogenize:
 def test_data(data):
     assert isinstance(data, Data)
 
+
+class TestBandDataDepths:
+
+    def test_f444w_area_depth_plot(
+        self,
+        f444w_band_data,
+        aper_diams,
+    ):
+        #f444w_band_data.calc_depths(aper_diams, overwrite = True)
+        f444w_band_data.plot_area_depth(
+            aper_diam = aper_diams[0],
+            show = False,
+            #save_path = None,
+        )
+
 # @pytest.fixture(scope="session")
 # def data_from_survey_version(
 #     survey: str,

@@ -43,7 +43,7 @@ class Completeness:
         x_calculator: Type[Property_Calculator],
         x_label: str = "x",
         completeness_label: str = "completeness",
-        x_completeness_lim: Optional[Callable[[float], bool]] = None,
+        x_completeness_lim: Optional[Callable[[float, float], bool]] = None,
         origin: Optional[str] = None,
     ):
         # TODO: Extract origin from h5 path
@@ -66,7 +66,7 @@ class Completeness:
         z_colname: str,
         x_colname: str,
         x_calculator: Optional[Type[Property_Calculator]] = None,
-        x_completeness_lim: Optional[Callable[[float], bool]] = None,
+        x_completeness_lim: Optional[Callable[[float, float], bool]] = None,
         origin: Optional[str] = None,
         # n_z_bins: int = 10,
         # survey: str,
@@ -180,10 +180,9 @@ class Completeness:
         # compl_index = (np.abs(self.x - x_gal)).argmin()
         # # interpolate curve
         # compl_gal = self.completeness[compl_index]
-        if self.x_completeness_lim is not None and self.x_completeness_lim(x_gal):
-            compl_gal = self.high_x_val
-        else:
-            compl_gal = interp1d(self.x, self.completeness)(x_gal)
+        compl_gal = interp1d(self.x, self.completeness, fill_value = "extrapolate")(x_gal)
+        if self.x_completeness_lim is not None and self.x_completeness_lim(x_gal, compl_gal):
+            compl_gal = self.high_x_val 
         print(x_gal, compl_gal)
         return compl_gal
 

@@ -1432,13 +1432,14 @@ class Catalogue(Catalogue_Base):
         kron_kwargs: Dict[str, Any] = {},
         n_cutout_rows: int = 2,
         overwrite: bool = False,
+        fig_axs: Optional[Tuple[plt.Figure, NDArray[plt.Axes]]] = None,
     ):
         self.load_sextractor_params()
 
-        fig_axs = figs.setup_phot_diagnostic(len(self.data))
-        # loop over galaxies and plot photometry diagnostic plots for each one
+        if fig_axs is None:
+            fig_axs = figs.make_phot_diagnostic_fig(len(self.data))
 
-        # plot SEDs
+        # loop over galaxies and make photometry diagnostic plots for each one
         out_paths = [
             gal.plot_phot_diagnostic(
                 self.data,
