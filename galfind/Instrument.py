@@ -290,6 +290,51 @@ class MIRI(Instrument, funcs.Singleton):
         pass
 
 
+class ACS_SBC(Instrument, funcs.Singleton):
+    def __init__(self) -> None:
+        ACS_SBC_band_names = [
+            "F122M",
+            "F115LP",
+            "F125LP",
+            "PR130L",
+            "PR110L",
+            "F140LP",
+            "F150LP",
+            "F165LP",
+        ]
+        self.SVO_name = "ACS"
+        super().__init__("HST", ACS_SBC_band_names)
+
+    def calc_ZP(self: Self, band_data: Type[Band_Data_Base]) -> u.Quantity:
+        im_header = band_data.load_im()[1]
+        if "PHOTFLAM" in im_header and "PHOTPLAM" in im_header:
+            ZP = (
+                -2.5 * np.log10(im_header["PHOTFLAM"])
+                - 21.1
+                - 5.0 * np.log10(im_header["PHOTPLAM"])
+                + 18.6921
+            )
+        elif "ZEROPNT" in im_header:
+            ZP = im_header["ZEROPNT"]
+            galfind_logger.warning(
+                f"Using ZEROPNT from header for {band_data.filt_name} " + \
+                "instead of PHOTFLAM and PHOTPLAM! Potential ST mags used here!"
+            )
+        else:
+            err_message = f"{self.__class__.__name__} data for {band_data.filt_name}" + \
+                " must contain either 'ZEROPNT' or 'PHOTFLAM' and 'PHOTPLAM' " + \
+                "in its header to calculate its ZP!" # or 'BUNIT'=MJy/sr 
+            galfind_logger.critical(err_message)
+            raise (Exception(err_message))
+        return ZP
+
+    def make_model_PSF(self: Self, band: Union[str, Filter]) -> Type[PSF_Base]:
+        pass
+
+    def make_empirical_PSF(self: Self, band_data: Band_Data) -> Type[PSF_Base]:
+        pass
+
+
 class ACS_WFC(Instrument, funcs.Singleton):
     def __init__(self) -> None:
         ACS_WFC_band_names = [
