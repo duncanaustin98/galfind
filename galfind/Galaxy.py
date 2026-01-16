@@ -913,7 +913,8 @@ class Galaxy:
 
     def load_sextractor_ext_src_corrs(
         self: Self, 
-        aper_corrs: Optional[Dict[str, Dict[u.Quantity, float]]] = None
+        aper_corrs: Optional[Dict[str, Dict[u.Quantity, float]]] = None,
+        band_names: Optional[List[str]] = None,
     ) -> None:
         # FLUX_AUTO must already be loaded
         if not hasattr(self, "sex_FLUX_AUTO"):
@@ -924,7 +925,7 @@ class Galaxy:
         # load ext_src_corrs into aper_phot
         for aper_diam in self.aper_phot.keys():
             aper_diam_aper_corrs = {key: val[aper_diam] for key, val in aper_corrs.items()}
-            self.aper_phot[aper_diam].load_sextractor_ext_src_corrs(aper_diam_aper_corrs)
+            self.aper_phot[aper_diam].load_sextractor_ext_src_corrs(aper_diam_aper_corrs, band_names)
 
     def set_Vmax(
         self: Self,

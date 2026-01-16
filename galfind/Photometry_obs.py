@@ -577,19 +577,28 @@ class Photometry_obs(Photometry):
     
     def load_sextractor_ext_src_corrs(
         self: Self, 
-        aper_corrs: Optional[Dict[str, float]] = None
+        aper_corrs: Optional[Dict[str, float]] = None,
+        band_names: Optional[List[str]] = None,
     ) -> NoReturn:
+        if band_names is None:
+            band_names = self.filterset.band_names
+        # assert all(name in self.filterset.band_names for name in band_names), \
+        #     galfind_logger.critical(
+        #         f"Some of {band_names=} not in {self.filterset.band_names=}"
+        #     )
         if aper_corrs is None:
             [filt.instrument._load_aper_corrs() for filt in self.filterset]
             aper_corrs = {filt.band_name: filt.instrument. \
                 aper_corrs[filt.band_name][self.aper_diam] for filt in self.filterset}
-        assert all(filt_name in aper_corrs.keys() \
-            for filt_name in self.filterset.band_names)
+        assert all(filt_name in aper_corrs.keys() for filt_name in band_names)
 
-        ext_src_corrs = {filt_name: (self.sex_FLUX_AUTO[filt_name] \
+        ext_src_corrs = {
+            filt_name: (self.sex_FLUX_AUTO[filt_name] \
             / (self.flux[i] * funcs.mag_to_flux_ratio(-aper_corrs[filt_name]))) \
             .to(u.dimensionless_unscaled).unmasked for i, filt_name \
-            in enumerate(self.filterset.band_names)}
+            in enumerate(self.filterset.band_names)
+            if filt_name in band_names or band_names is None
+        }
         self.ext_src_corrs = {
             filt_name: ext_src_corr.value
             if ext_src_corr.value > 1.0 else 1.0
@@ -597,8 +606,7 @@ class Photometry_obs(Photometry):
         }
         # propagate ext_src_corrs to SED_results[key].phot_rest
         for key in self.SED_results.keys():
-            self.SED_results[key].phot_rest. \
-                ext_src_corrs = self.ext_src_corrs
+            self.SED_results[key].phot_rest.ext_src_corrs = self.ext_src_corrs
 
     # def load_local_depths(self, sex_cat_row, instrument, aper_diam_index):
     #    self.depths = np.array([sex_cat_row[f"loc_depth_{band}"].T[aper_diam_index] for band in instrument.band_names])

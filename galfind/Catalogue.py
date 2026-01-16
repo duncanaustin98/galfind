@@ -1060,12 +1060,32 @@ class Catalogue(Catalogue_Base):
             galfind_logger.critical(err_message)
             raise Exception(err_message)
 
-    def load_sextractor_auto_fluxes(self):
-        if hasattr(self, "data"):
+    def load_sextractor_auto_fluxes(
+        self: Self,
+        multiply_factor: Optional[Dict[str, float]] = None
+    ) -> None:
+        if hasattr(self, "data") or multiply_factor is not None:
             # load Re from SExtractor
-            multiply_factor = {band_data.filt_name: \
-                funcs.flux_image_to_Jy(1.0, band_data.ZP) \
-                for band_data in self.data}
+            if multiply_factor is None:
+                assert hasattr(self, "data"), \
+                    galfind_logger.critical(
+                        "Either provide multiply_factor or have self.data!"
+                    )
+                multiply_factor = {
+                    band_data.filt_name: \
+                    funcs.flux_image_to_Jy(1.0, band_data.ZP) \
+                    for band_data in self.data
+                }
+            else:
+                assert isinstance(multiply_factor, dict), \
+                    galfind_logger.critical(
+                        f"{type(multiply_factor)=} != dict!"
+                    )
+                assert all([key in self.filterset.band_names for key in multiply_factor.keys()]), \
+                    galfind_logger.critical(
+                        f"{len(multiply_factor)=} != " + \
+                        f"{len(self.filterset)=}!"
+                    )
             self.load_band_properties_from_cat(
                 "FLUX_AUTO", 
                 "sex_FLUX_AUTO", 
@@ -1076,7 +1096,7 @@ class Catalogue(Catalogue_Base):
                     gal.aper_phot[aper_diam].sex_FLUX_AUTO = gal.sex_FLUX_AUTO
         else:
             err_message = "Loading SExtractor flux autos from catalogue " + \
-                f"only works when hasattr({repr(self)}, data)!"
+                f"only works when hasattr({repr(self)}, data) or multiply_factor is not None!"
             galfind_logger.critical(err_message)
             raise Exception(err_message)
         
@@ -1126,17 +1146,25 @@ class Catalogue(Catalogue_Base):
                             galfind_logger.warning(f"{name} not in {gal.ID=}")
             
         
-    def load_sextractor_ext_src_corrs(self) -> None:
-        self.load_sextractor_auto_fluxes()
+    def load_sextractor_ext_src_corrs(
+        self: Self,
+        multiply_factor: Optional[Dict[str, float]] = None,
+    ) -> None:
+        if multiply_factor is None:
+            band_names = None
+        else:
+            band_names = list(multiply_factor.keys())
+        self.load_sextractor_auto_fluxes(multiply_factor = multiply_factor)
         galfind_logger.info(
             f"Loading SExtractor extended source corrections for {self.cat_name}!"
         )
-        [filt.instrument._load_aper_corrs() for filt in self.data.filterset]
+        [filt.instrument._load_aper_corrs() for filt in self.filterset]
         aper_corrs = {
             filt.band_name: filt.instrument.aper_corrs[filt.band_name]
-            for filt in self.data.filterset
+            for filt in self.filterset
+            if band_names is None or filt.band_name in band_names
         }
-        [gal.load_sextractor_ext_src_corrs(aper_corrs) for gal in self]
+        [gal.load_sextractor_ext_src_corrs(aper_corrs, band_names) for gal in self]
 
     def load_sextractor_params(self) -> None:
         self.load_sextractor_auto_mags()
@@ -1146,7 +1174,7 @@ class Catalogue(Catalogue_Base):
         self.load_sextractor_ext_src_corrs()
 
     def load_band_properties_from_cat(
-        self,
+        self: Self,
         cat_colname: str,
         save_name: str,
         multiply_factor: Union[dict, u.Quantity, u.Magnitude, None] = None,
@@ -1188,6 +1216,7 @@ class Catalogue(Catalogue_Base):
                 * multiply_factor[filt.band_name]
                 for filt in self.filterset
                 if f"{cat_colname}_{filt.band_name}" in fits_cat.colnames
+                and filt.band_name in multiply_factor.keys()
             }
             if len(cat_band_properties) == 0:
                 err_message = f"Could not load {cat_colname=} from {self.cat_path} " + \
