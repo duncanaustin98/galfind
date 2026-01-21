@@ -25,3 +25,4 @@ configs/galfind_config_goolsby.ini
 galfind/configs
 configs/DJA_spectral_catalogues/DJA_v4_2.csv
 testing/test_work
+examples/ACS_SBC_testing.py
