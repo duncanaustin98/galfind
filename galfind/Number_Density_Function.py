@@ -438,6 +438,7 @@ class Number_Density_Function(Base_Number_Density_Function):
         plot: bool = True,
         save: bool = True,
         timed: bool = False,
+        Vmax_method: str = "uniform_depth",
     ) -> Optional[Self]:
         # input assertions
         assert len(z_bin) == 2
@@ -532,6 +533,7 @@ class Number_Density_Function(Base_Number_Density_Function):
                 SED_fit_code, 
                 z_step,
                 unmasked_area = unmasked_area,
+                Vmax_method = Vmax_method,
             )
 
             if plot:

@@ -1118,7 +1118,7 @@ class MUV_Calculator(Rest_Frame_Property_Calculator):
     def __init__(
         self: Self, 
         aper_diam: u.Quantity, 
-        SED_fit_label: Union[str, Type[SED_code]], 
+        SED_fit_label: Union[str, Type[SED_code]],
         rest_UV_wav_lims: u.Quantity = [1_250.0, 3_000.0] * u.AA,
         ref_wav: u.Quantity = 1_500.0 * u.AA,
         top_hat_width: u.Quantity = 100.0 * u.AA,

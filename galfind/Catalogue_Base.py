@@ -1212,6 +1212,7 @@ class Catalogue_Base:
         SED_fit_code: SED_code,
         z_step: float = 0.01,
         unmasked_area: Union[str, List[str], u.Quantity, Type[Mask_Selector]] = "selection",
+        Vmax_method: str = "uniform_depth",
     ) -> Dict[str, NDArray[float]]:
         assert len(z_bin) == 2
         assert z_bin[0] < z_bin[1]
@@ -1245,6 +1246,7 @@ class Catalogue_Base:
                     self.cat_creator.crops,
                     z_step,
                     unmasked_area = unmasked_area,
+                    Vmax_method = Vmax_method,
                 )
                 for gal in tqdm(
                     self,

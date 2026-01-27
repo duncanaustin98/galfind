@@ -750,8 +750,8 @@ class ID_Selector(Data_Selector):
             assert isinstance(self.kwargs["IDs"], tuple([list, np.ndarray]))
             assert all([id >= 1 for id in self.kwargs["IDs"]])
             if self.kwargs["name"] is not None:
-                assert(isinstance(self.kwargs["name"], str))
-            assert all(isinstance(ID, tuple([int, np.int64])) for ID in self.kwargs["IDs"])
+                assert isinstance(self.kwargs["name"], str) 
+            assert all(np.isscalar(ID) and np.issubdtype(type(ID), np.integer) for ID in self.kwargs["IDs"])
             passed = True
         except:
             passed = False

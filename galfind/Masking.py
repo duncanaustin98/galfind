@@ -10,7 +10,7 @@ from astropy.table import Column
 from pathlib import Path
 import os
 import glob
-
+from numpy.typing import NDArray
 from typing import List, Dict, Tuple, Union, Optional, NoReturn, TYPE_CHECKING
 
 try:
@@ -735,17 +735,17 @@ def get_area_mask_path(
     funcs.make_dirs(mask_path)
     return mask_path
 
-def make_area_mask_from_data(
+def sort_area_mask_names(
     self: Type[Data],
     mask_selector: Union[str, List[str], Type[Mask_Selector]],
-    mask_type: Union[str, List[str]] = "MASK",
+    mask_type: Union[str, List[str]],
     region_selector: Optional[Union[Type[Region_Selector], List[Type[Region_Selector]]]] = None,
     invert_region: bool = False,
     zbin: Optional[Tuple[float, float]] = None,
-    overwrite: bool = False,
-    **kwargs: Dict[str, Any],
-) -> Tuple[NDArray[float], str, str, str]:
+) -> Tuple[str, str, str]:
+
     from . import Mask_Selector
+
     if isinstance(mask_selector, str):
         mask_selector = mask_selector.split("+")
     if isinstance(mask_type, str):
@@ -774,6 +774,30 @@ def make_area_mask_from_data(
 
     mask_save_path = get_area_mask_path(self, mask_selector_name, mask_save_name, reg_name)
 
+    return mask_selector_name, mask_save_name, reg_name, mask_save_path
+
+
+def make_area_mask_from_data(
+    self: Type[Data],
+    mask_selector: Union[str, List[str], Type[Mask_Selector]],
+    mask_type: Union[str, List[str]] = "MASK",
+    region_selector: Optional[Union[Type[Region_Selector], List[Type[Region_Selector]]]] = None,
+    invert_region: bool = False,
+    zbin: Optional[Tuple[float, float]] = None,
+    overwrite: bool = False,
+    **kwargs: Dict[str, Any],
+) -> Tuple[NDArray[float], str, str, str]:
+    from . import Mask_Selector
+
+    mask_selector_name, mask_save_name, reg_name, mask_save_path = \
+        sort_area_mask_names(
+            self,
+            mask_selector,
+            mask_type,
+            region_selector,
+            invert_region,
+            zbin,
+        )
     if not Path(mask_save_path).is_file() or overwrite:
         galfind_logger.info(
             f"Creating area mask {mask_selector_name} with types {mask_type} at {mask_save_path}"
@@ -861,7 +885,7 @@ def make_area_mask_from_data(
 
 
 def make_area_mask_from_band_data(
-    self: Type[Band_Data_Base],
+    self: Type[Band_Data],
     mask_selector: Union[str, List[str], Type[Mask_Selector]],
     mask_type: Union[str, List[str]] = "MASK",
     region_selector: Optional[Union[Type[Region_Selector], List[Type[Region_Selector]]]] = None,
@@ -870,36 +894,16 @@ def make_area_mask_from_band_data(
     overwrite: bool = False,
     **kwargs: Dict[str, Any],
 ) -> Tuple[NDArray[float], str, str, str]:
-    
     from . import Mask_Selector
-    if isinstance(mask_selector, str):
-        mask_selector = mask_selector.split("+")
-    if isinstance(mask_type, str):
-        mask_type = mask_type.split("+")
-    
-    if region_selector is None:
-        reg_name = "All"
-    else:
-        if not isinstance(region_selector, list):
-            region_selector = [region_selector]
-        reg_name = "+".join([
-            region_selector_.name if not invert_region 
-            else region_selector_.fail_name 
-            for region_selector_ in region_selector
-        ])
-
-    if isinstance(mask_selector, tuple(Mask_Selector.__subclasses__())):
-        mask_selector_name = mask_selector.name
-    else:
-        mask_selector_name = f"{'+'.join(np.sort(mask_selector))}_{reg_name}"
-    
-    mask_save_name = "+".join(np.sort(mask_type))
-
-    if isinstance(mask_selector, tuple(Mask_Selector.__subclasses__())) and zbin is not None:
-        mask_selector_name += f"_{zbin[0]:.2f}<z<{zbin[1]:.2f}"
-
-    mask_save_path = get_area_mask_path(self, mask_selector_name, mask_save_name, reg_name)
-
+    mask_selector_name, mask_save_name, reg_name, mask_save_path = \
+        sort_area_mask_names(
+            self,
+            mask_selector,
+            mask_type,
+            region_selector,
+            invert_region,
+            zbin,
+        )
     if not Path(mask_save_path).is_file() or overwrite:
         galfind_logger.info(
             f"Creating area mask {mask_selector_name} with types {mask_type} at {mask_save_path}"
@@ -965,8 +969,10 @@ def get_rebin_mask_path(
         mask_selector_name,
         mask_save_name,
         reg_name
-    ).replace("area_masks", "rebin_h5")\
-    .replace(".fits", f"_{shape[0]}x{shape[1]}.h5")
+    ).replace("area_masks", "rebin_h5")
+    if shape is not None:
+        re_binned_mask_path = re_binned_mask_path\
+            .replace(".fits", f"_{shape[0]}x{shape[1]}.fits")
     funcs.make_dirs(re_binned_mask_path)
     return re_binned_mask_path
 

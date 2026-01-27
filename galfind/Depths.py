@@ -852,6 +852,17 @@ def get_depth_dir(
     return depth_dir
 
 
+def get_forced_phot_subdir(aper_diams: u.Quantity, forced_phot_args: Dict[str, Any]) -> str:
+    forced_phot_code = forced_phot_args["method"]
+    dates = funcs.date_finder(forced_phot_code)
+    for remove in dates + ["version", "(", ")", " "]:
+        forced_phot_code = forced_phot_code.replace(remove, "")
+    subdir = f"{forced_phot_code}_{forced_phot_args['err_type'].split('_')[0]}" + \
+        f"_{forced_phot_args['forced_phot_band'].filt_name}_" + \
+        f"{funcs.aper_diams_to_str(aper_diams)}"
+    return subdir
+
+
 def get_grid_depth_path(
     self: Type[Band_Data_Base],
     aper_diam: u.Quantity,
@@ -862,12 +873,7 @@ def get_grid_depth_path(
         galfind_logger.critical(
             f"Forced photometry not run for {repr(self)}, cannot run depths!"
         )
-    forced_phot_code = self.forced_phot_args["method"]
-    dates = funcs.date_finder(forced_phot_code)
-    for remove in dates + ["version", "(", ")", " "]:
-        forced_phot_code = forced_phot_code.replace(remove, "")
-    subdir = f"{forced_phot_code}_{self.forced_phot_args['err_type'].split('_')[0]}" + \
-        f"_{self.forced_phot_args['forced_phot_band'].filt_name}"
+    subdir = get_forced_phot_subdir(self.aper_diams, self.forced_phot_args)
     depth_path = f"{depth_dir}/{subdir}/{self.filt_name}.h5"
     funcs.make_dirs(depth_path)
     return depth_path
@@ -1223,11 +1229,132 @@ def get_depth_plot_path(
     return depth_plot_path
 
 
-def get_area_depth_dir(self: Data) -> str:
+def get_area_depth_dir(self: Union[Type[Band_Data_Base], Data]) -> str:
     return (
-        f"{config['Depths']['DEPTH_DIR']}/Depth_area_plots/"
+        f"{config['Depths']['DEPTH_DIR']}/Depth_area/"
         + f"{self.version}/{self.survey}"
     )
+
+def get_area_depth_h5_path(
+    self: Type[Band_Data_Base],
+    aper_diam: u.Quantity,
+    mask_selector: Union[str, List[str], Type[Mask_Selector]],
+    mask_type: Union[str, List[str]],
+    region_selector: Optional[Union[Type[Region_Selector], List[Type[Region_Selector]]]] = None,
+    invert_region: bool = False,
+    zbin: Optional[Tuple[float, float]] = None,
+) -> str:
+    mask_selector_name, mask_save_name, reg_name, mask_save_path = \
+        Masking.sort_area_mask_names(
+            self,
+            mask_selector,
+            mask_type,
+            region_selector,
+            invert_region,
+            zbin,
+        )
+    rebin_mask_path = Masking.get_rebin_mask_path(self, mask_selector_name, mask_save_name, reg_name, shape = None)
+    path = f"{get_area_depth_dir(self)}/{rebin_mask_path.split('/')[-1].replace('.fits', '')}_{format(aper_diam.value, '.2f')}as_{self.filt_name}.h5"
+    funcs.make_dirs(path)
+    return path
+
+def get_area_depth_plot_path(
+    self: Type[Data],
+    aper_diam: u.Quantity,
+    mask_selector: Union[str, List[str], Type[Mask_Selector]],
+    mask_type: Union[str, List[str]],
+    region_selector: Optional[Union[Type[Region_Selector], List[Type[Region_Selector]]]] = None,
+    invert_region: bool = False,
+    zbin: Optional[Tuple[float, float]] = None,
+) -> str:
+    mask_selector_name, mask_save_name, reg_name, mask_save_path = \
+        Masking.sort_area_mask_names(
+            self,
+            mask_selector,
+            mask_type,
+            region_selector,
+            invert_region,
+            zbin,
+        )
+    rebin_mask_path = Masking.get_rebin_mask_path(self, mask_selector_name, mask_save_name, reg_name, shape = None)
+    path = f"{get_area_depth_dir(self)}/{rebin_mask_path.split('/')[-1].replace('.fits', '')}_{format(aper_diam.value, '.2f')}as_plot.png"
+    funcs.make_dirs(path)
+    return path
+
+def calc_band_data_area_depth(
+    self: Type[Band_Data_Base],
+    aper_diam: u.Quantity,
+    mask_selector: Union[str, List[str], Type[Mask_Selector]] = None,
+    mask_type: Union[str, List[str]] = "MASK",
+    region_selector: Optional[Type[Region_Selector], List[Type[Region_Selector]]] = None,
+    invert_region: bool = False,
+    zbin: Optional[float] = None,
+) -> Tuple[NDArray[float], NDArray[float], float]:
+    assert aper_diam in self.depth_args.keys()
+    #galfind_logger.info(f"Calculating area-depth for {repr(self)} in sub-region {depth_subreg}")
+    area_depth_save_path = get_area_depth_h5_path(self, aper_diam, mask_selector, mask_type, region_selector, invert_region, zbin)
+    from . import Stacked_Band_Data
+    if not Path(area_depth_save_path).is_file():
+        start = time.time()
+        # load appropriate mask if not provided
+        hf_output = get_hf_output(self, aper_diam)
+        nmad_grid = hf_output["nmad_grid"]
+        # load mask and re-bin to nmad grid
+        # if mask is None:
+        #     re_binned_mask = np.ones(nmad_grid.shape, dtype=bool)
+        #     raise NotImplementedError("Area calculation without mask not implemented yet")
+        # else:
+        # calculate total area from this mask
+        mask, mask_selector_name, mask_save_name, reg_name = Masking.make_area_mask_from_band_data(
+            self,
+            mask_selector,
+            mask_type,
+            region_selector,
+            invert_region,
+            zbin = zbin,
+            #**kwargs,
+        )
+        re_binned_mask_path = Masking.get_rebin_mask_path(self, mask_selector_name, mask_save_name, reg_name, shape = nmad_grid.shape)
+        if Path(re_binned_mask_path).is_file():
+            galfind_logger.info(f"Loading rebinned mask from {re_binned_mask_path} for area-depth calculation for {repr(self)}")
+            re_binned_mask = fits.open(re_binned_mask_path, ignore_missing_simple = True)[1].data.astype(bool)
+        else:
+            re_binned_mask = Masking.rebin_mask_to_shape(mask, shape = nmad_grid.shape)
+            # save rebinned boolean mask as .fits file
+            hdu = fits.ImageHDU(re_binned_mask.astype(np.uint8), name=mask_selector_name)
+            hdu.writeto(re_binned_mask_path, overwrite=True)
+            galfind_logger.info(f"Saved rebinned mask to {re_binned_mask_path} for area-depth calculation for {repr(self)}")
+            funcs.change_file_permissions(re_binned_mask_path)
+        # save rebinned mask to file
+        # determine total area of mask
+        area = funcs.calc_unmasked_area(mask, self.pix_scale)
+        # re-bin mask onto nmad grid
+        total_depths = nmad_grid[re_binned_mask].flatten()
+        total_depths = total_depths[~np.isnan(total_depths)]
+        total_depths = total_depths[total_depths != 0]
+        total_depths = total_depths[total_depths != np.inf]
+        total_depths = np.flip(np.sort(total_depths))
+        # Calculate the cumulative distribution scaled to area of band
+        cum_dist = np.arange(1, len(total_depths) + 1) * area / len(total_depths)
+        end = time.time()
+        galfind_logger.info(f"Area-depth calculation for {repr(self)} took {end - start:.2f} seconds")
+        # save total depths and cum_dist to .h5 file
+        hf = h5py.File(area_depth_save_path, "w")
+        hf.create_dataset("total_depths", data=total_depths, compression="gzip")
+        hf.create_dataset("cum_dist", data=cum_dist, compression="gzip")
+        hf.create_dataset("area", data=area)
+        hf.close()
+        galfind_logger.info(f"Saved area-depth data for {repr(self)} to {area_depth_save_path}")
+    else:
+        # load from .h5 file
+        galfind_logger.info(f"Loading area-depth data from {area_depth_save_path} for {repr(self)}")
+        hf = h5py.File(area_depth_save_path, "r")
+        total_depths = np.array(hf.get("total_depths"))
+        cum_dist = np.array(hf.get("cum_dist"))
+        area = hf.get("area")[()]
+        hf.close()
+    return total_depths, cum_dist, area
+    
 
 def plot_band_data_area_depth(
     self: Type[Band_Data_Base],
@@ -1244,57 +1371,15 @@ def plot_band_data_area_depth(
     close: bool = False,
     **plot_kwargs: Dict[str, Any],
 ):
-    assert aper_diam in self.depth_args.keys()
-    #galfind_logger.info(f"Calculating area-depth for {repr(self)} in sub-region {depth_subreg}")
-
-    if fig is None or ax is None:
-        fig, ax = plt.subplots(1, 1, figsize=(4, 4))
-
-    start = time.time()
-    # load appropriate mask if not provided
-    hf_output = get_hf_output(self, aper_diam)
-    nmad_grid = hf_output["nmad_grid"]
-    # load mask and re-bin to nmad grid
-    # if mask is None:
-    #     re_binned_mask = np.ones(nmad_grid.shape, dtype=bool)
-    #     raise NotImplementedError("Area calculation without mask not implemented yet")
-    # else:
-    # calculate total area from this mask
-    
-    mask, mask_selector_name, mask_save_name, reg_name = Masking.make_area_mask_from_band_data(
+    total_depths, cum_dist, area = calc_band_data_area_depth(
         self,
+        aper_diam,
         mask_selector,
         mask_type,
         region_selector,
         invert_region,
-        zbin = zbin,
-        #**kwargs,
+        zbin,
     )
-    re_binned_mask_path = Masking.get_rebin_mask_path(self, mask_selector_name, mask_save_name, reg_name, shape = nmad_grid.shape)
-    if Path(re_binned_mask_path).is_file():
-        galfind_logger.info(f"Loading rebinned mask from {re_binned_mask_path} for area-depth calculation for {repr(self)}")
-        re_binned_mask = fits.open(re_binned_mask_path, ignore_missing_simple = True)[1].data.astype(bool)
-    else:
-        re_binned_mask = Masking.rebin_mask_to_shape(mask, shape = nmad_grid.shape)
-        # save rebinned boolean mask as .fits file
-        #breakpoint()
-        hdu = fits.ImageHDU(re_binned_mask.astype(np.uint8), name=mask_selector_name)
-        hdu.writeto(re_binned_mask_path, overwrite=True)
-        galfind_logger.info(f"Saved rebinned mask to {re_binned_mask_path} for area-depth calculation for {repr(self)}")
-        funcs.change_file_permissions(re_binned_mask_path)
-    # save rebinned mask to file
-    # determine total area of mask
-    area = funcs.calc_unmasked_area(mask, self.pix_scale)
-    # re-bin mask onto nmad grid
-    total_depths = nmad_grid[re_binned_mask].flatten()
-    total_depths = total_depths[~np.isnan(total_depths)]
-    total_depths = total_depths[total_depths != 0]
-    total_depths = total_depths[total_depths != np.inf]
-    total_depths = np.flip(np.sort(total_depths))
-    # Calculate the cumulative distribution scaled to area of band
-    cum_dist = np.arange(1, len(total_depths) + 1) * area / len(total_depths)
-    end = time.time()
-    galfind_logger.info(f"Area-depth calculation for {repr(self)} took {end - start:.2f} seconds")
     # update default plot kwargs with any user provided ones
     plot_kwargs_ = {
         "drawstyle": "steps-post",
@@ -1305,8 +1390,9 @@ def plot_band_data_area_depth(
         "label": self.filt_name,
     }
     plot_kwargs_.update(plot_kwargs)
-
-    # Plot
+    # from . import Stacked_Band_Data
+    # if isinstance(self, Stacked_Band_Data):
+    #     breakpoint()
     ax.plot(
         total_depths,
         cum_dist,
@@ -1326,6 +1412,54 @@ def plot_band_data_area_depth(
     if close:
         plt.close(fig)
 
+def calc_data_area_depth(
+    self: Data,
+    aper_diam: u.Quantity,
+    mask_selector: Union[str, List[str], Type[Mask_Selector]] = None,
+    mask_type: Union[str, List[str]] = "MASK",
+    region_selector: Optional[Type[Region_Selector], List[Type[Region_Selector]]] = None,
+    invert_region: bool = True,
+    zbin: Optional[Tuple[float, float]] = None,
+) -> Tuple[Dict[str, NDArray[float]], Dict[str, NDArray[float]], Dict[str, float]]:
+    Masking.make_area_mask_from_data(
+        self,
+        mask_selector,
+        mask_type,
+        region_selector,
+        invert_region,
+        zbin = zbin,
+        #**kwargs,
+    )
+    total_depths = {}
+    cum_dist = {}
+    area = {}
+    for band_data in self.band_data_arr:
+        total_depths_, cum_dist_, area_ = calc_band_data_area_depth(
+            band_data,
+            aper_diam,
+            mask_selector,
+            mask_type,
+            region_selector,
+            invert_region,
+            zbin,
+        )
+        total_depths[band_data.filt_name] = total_depths_
+        cum_dist[band_data.filt_name] = cum_dist_
+        area[band_data.filt_name] = area_
+    if hasattr(self, "forced_phot_band"):
+        total_depths_, cum_dist_, area_ = calc_band_data_area_depth(
+            self.forced_phot_band,
+            aper_diam,
+            mask_selector,
+            mask_type,
+            region_selector,
+            invert_region,
+            zbin,
+        )
+        total_depths[self.forced_phot_band.filt_name] = total_depths_
+        cum_dist[self.forced_phot_band.filt_name] = cum_dist_
+        area[self.forced_phot_band.filt_name] = area_
+    return total_depths, cum_dist, area
 
 def plot_data_area_depth(
     self: Data,
@@ -1337,34 +1471,33 @@ def plot_data_area_depth(
     fig: Optional[plt.Figure] = None,
     ax: Optional[plt.Axes] = None,
     cmap_name: str = "RdYlBu_r",
-    overwrite: bool = True,
+    overwrite: bool = False,
     save: bool = True,
     show: bool = False,
     close: bool = True,
     **kwargs: Dict[str, Any],
 ) -> None:
 
-    save_path = f"{get_area_depth_dir(self)}/{format(aper_diam.value, '.2f')}as_area_depth.png"
+    if "z" in kwargs.keys():
+        zbins = mask_selector.extract_zbins(self)
+        # select zbin which matches the redshift of the data
+        zbin = [zbin_ for zbin_ in zbins if zbin_[0] <= kwargs["z"] < zbin_[1]]
+        assert len(zbin) == 1, \
+            galfind_logger.critical(
+                f"Multiple or no zbins found for z={kwargs['z']}!"
+            )
+        zbin = zbin[0]
+    else:
+        zbin = None
+    
+    save_path = get_area_depth_plot_path(self, aper_diam, mask_selector, mask_type, region_selector, invert_region, zbin)
     funcs.make_dirs(save_path)
-
     if not Path(save_path).is_file() or overwrite:
 
         if fig is None or ax is None:
             fig, ax = plt.subplots(1, 1, figsize=(4, 4))
         cmap = plt.cm.get_cmap(cmap_name)
         colours = cmap(np.linspace(0, 1, len(self.band_data_arr)))
-
-        if "z" in kwargs.keys():
-            zbins = mask_selector.extract_zbins(self)
-            # select zbin which matches the redshift of the data
-            zbin = [zbin_ for zbin_ in zbins if zbin_[0] <= kwargs["z"] < zbin_[1]]
-            assert len(zbin) == 1, \
-                galfind_logger.critical(
-                    f"Multiple or no zbins found for z={kwargs['z']}!"
-                )
-            zbin = zbin[0]
-        else:
-            zbin = None
 
         for band_data, colour in zip(self.band_data_arr, colours):
             band_data.plot_area_depth(
@@ -1393,7 +1526,7 @@ def plot_data_area_depth(
                 fig = fig,
                 ax = ax,
                 show = False,
-                **kwargs
+                #**kwargs
             )
         
         #breakpoint()
@@ -1453,7 +1586,7 @@ def plot_data_area_depth(
             # Set minor ticks to face in
             ax.yaxis.set_ticks_position("both")
             ax.xaxis.set_ticks_position("both")
-            breakpoint()
+            #breakpoint()
             ax.set_xlabel(rf"{format(aper_diam.value, '.2f')}as 5$\sigma$ Depth (AB mag)")
             ax.set_ylabel("Cumulative Area (arcmin$^2$)")
             

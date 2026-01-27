@@ -19,6 +19,7 @@ import matplotlib.patheffects as pe
 from matplotlib.patches import Ellipse
 import matplotlib.pyplot as plt
 import numpy as np
+from scipy.interpolate import interp1d
 from astropy.coordinates import SkyCoord
 from astropy.io import fits
 from astropy.nddata import Cutout2D
@@ -996,7 +997,14 @@ class Galaxy:
         z_step: float = 0.01,
         depth_mode: str = "n_nearest",
         unmasked_area: Union[str, List[str], u.Quantity, Type[Mask_Selector]] = "selection",
-    ) -> float:
+        Vmax_method: str = "uniform_depth",
+    ) -> Tuple[Dict[str, float], Dict[str, float], Dict[str, float]]:
+        assert hasattr(self, f"calc_Vmax_{Vmax_method.lower()}"), \
+            galfind_logger.critical(
+                f"Galaxy.calc_Vmax has no method for {Vmax_method.lower()=}! " + \
+                f"Please implement Galaxy.calc_Vmax_{Vmax_method.lower()}"
+            )
+    
         # TODO: remove dependence on full_survey_name input
         # input assertions
         assert len(z_bin) == 2
@@ -1009,19 +1017,7 @@ class Galaxy:
             Multiple_Selector, 
             Rest_Frame_Property_Limit_Selector, 
         )
-        #breakpoint()
-        SED_result_obj = self.aper_phot[aper_diam].SED_results[SED_fit_code.label]
-        #crop_name = funcs.get_crop_name(crops).split("/")[-1]
-        z_obs = SED_result_obj.z
-
-        # no need to store Vmax's on a galaxy level
-        #breakpoint()
-
-        # # return V_max if already calculated
-        # self._make_Vmax_storage(aper_diam, SED_fit_code, crop_name)
-        # if data.full_name in SED_result_obj.V_max[crop_name].keys():
-        #     return SED_result_obj.V_max[crop_name][data.full_name]
-
+        sed_result = self.aper_phot[aper_diam].SED_results[SED_fit_code.label]
         # flatten multiple selectors and remove 
         # SED_fit_selectors that require SED fitting from crops
         multiple_selectors = tuple(Multiple_Selector.__subclasses__())
@@ -1051,255 +1047,472 @@ class Galaxy:
         z_min_dict = {}
         z_max_dict = {}
         V_max_dict = {}
-        if z_obs > z_bin[1] or z_obs < z_bin[0]:
-            # V_max_simple = -1.
+        if sed_result.z > z_bin[1] or sed_result.z < z_bin[0]:
             region = "all"
-            #V_max = -1.0
-            # z_min_used = -1.0
-            # z_max_used = -1.0
             z_min_dict[region] = -1.0
             z_max_dict[region] = -1.0
             V_max_dict[region] = -1.0
         else:
-            distance_detect = astropy_cosmo.luminosity_distance(z_obs)
-            sed_obs = SED_result_obj.SED
-            # load appropriate depths for each data object in data_arr
-            galfind_logger.debug(
-                "Should use local depth if the data.full_name " + \
-                "is the same as the catalogue the galaxy is measured in!"
+            calc_Vmax_func = getattr(self, f"calc_Vmax_{Vmax_method.lower()}")
+            output = calc_Vmax_func(
+                data,
+                z_bin,
+                aper_diam,
+                SED_fit_code,
+                Vmax_crops,
+                z_step,
+                depth_mode,
+                unmasked_area,
             )
-            if hasattr(data, "regions"):
-                galfind_logger.debug(
-                    f"Calculating split Vmax for {repr(self)} in {data.regions=}"
-                )
-                regions = data.regions
-            else:
-                galfind_logger.debug(
-                    f"Calculating Vmax for {repr(self)} in {data.full_name=}"
-                )
-                regions = ["all"]
-            for region in regions:
-                assert all(hasattr(band_data, "med_depth") for band_data in data), \
-                    galfind_logger.critical(
-                        f"Not all bands in {repr(data)=} have med_depth attributes!"
-                    )
-                assert all(region in band_data.med_depth[aper_diam].keys() for band_data in data), \
-                    galfind_logger.critical(
-                        f"Not all bands in {repr(data)=} have med_depths for {region=}"
-                    )
-                # TODO: make split regions available on a data level without having to pre-load results
-                #data._load_depths(aper_diam, depth_mode, region)
-                if self.survey == data.survey and self.region == region:
-                    # use local depths
-                    data_depths = self.aper_phot[aper_diam].depths.value
-                else:
-                    # use median depths in field region
-                    data_depths = [band_data.med_depth[aper_diam][region] for band_data in data]
-                # calculate z_range
-                # z_test for other fields should be lower than starting z
-                z_detect = []
-                z_arr = np.arange(z_bin[0], z_bin[1] + z_step, z_step)
-                for z in z_arr: #, tqdm(
-                #     np.arange(z_bin[0], z_bin[1] + z_step, z_step),
-                #     desc=f"Calculating z_max and z_min for ID={self.ID}",
-                # ):
-                    galfind_logger.debug(
-                        "ΙGM attenuation is ignored when redshifting the best-fit galaxy SED!"
-                    )
-                    wav_z = sed_obs.wavs * ((1.0 + z) / (1.0 + sed_obs.z))
-                    distance_test = astropy_cosmo.luminosity_distance(z)
-                    mag_z = (
-                        funcs.convert_mag_units(
-                            sed_obs.wavs, sed_obs.mags, u.ABmag
-                        ).value
-                        - (
-                            5
-                            * np.log10(
-                                (distance_detect / distance_test)
-                                .to(u.dimensionless_unscaled)
-                                .value
-                            )
-                        )
-                        + (2.5 * np.log10((1.0 + sed_obs.z) / (1.0 + z)))
-                    )
-                    # construct galaxy at new redshift with average depths of new field
-                    test_sed_obs = SED_obs(
-                        z, wav_z.value, mag_z, wav_z.unit, u.ABmag
-                    )
-                    galfind_logger.debug("Not propagating min_flux_pc_err!")
-                    test_mock_phot = test_sed_obs.create_mock_photometry(
-                        data.filterset,
-                        depths=data_depths,
-                        min_flux_pc_err=10.0,
-                    )
-                    test_phot_obs = Photometry_obs(
-                        test_mock_phot.filterset,
-                        Masked(
-                            test_mock_phot.flux,
-                            mask=np.full(len(data.filterset), False),
-                        ),
-                        Masked(
-                            test_mock_phot.flux_errs,
-                            mask=np.full(len(data.filterset), False),
-                        ),
-                        test_mock_phot.depths,
-                        aper_diam,
-                    )
-                    sed_result = SED_result(
-                        SED_fit_code,
-                        test_phot_obs,
-                        {"z": z},
-                        property_errs={},
-                        property_PDFs={},
-                        SED=None,
-                    )
-                    test_phot_obs.SED_results = {
-                        SED_fit_code.label: sed_result
-                    }
-                    test_gal = Galaxy(
-                        self.ID,
-                        self.sky_coord,
-                        {aper_diam: test_phot_obs},
-                        selection_flags={},
-                    )
-                    # run selection methods on new galaxy
-                    [selector(test_gal, return_copy = False) for selector in Vmax_crops]
-                    goodz = all(
-                        test_gal.selection_flags[selector.name]
-                        for selector in Vmax_crops
-                    )
-                    if goodz:
-                        z_detect.append(z)
-                        
-                z_detect = np.array(z_detect)
-                if len(z_detect) < 2:
-                    z_max = -1.0
-                    z_min = -1.0
-                    # V_max_simple = -1.
-                    V_max = -1.0
-                else:
-                    z_max = np.round(z_detect[-1], 3)
-                    z_min = np.round(z_detect[0], 3)
-                    if hasattr(data, "region_selector"):
-                        region_selector = data.region_selector
-                        invert_region = region != data.region_selector.name
-                    else:
-                        region_selector = None
-                        invert_region = False
-                    # compute cumulative area vs depth
-
-                    if issubclass(unmasked_area.__class__, Mask_Selector):
-                        z_detect_mid_bins = (z_detect[:-1] + z_detect[1:]) / 2
-                        zbin_use_idx = np.where(np.diff(z_detect) <= 0.1)[0]
-                        z_detect_mid_bins_use = z_detect_mid_bins[zbin_use_idx]
-                        area = np.zeros(len(z_detect_mid_bins_use)) * u.arcmin**2
-                        for i, z_mid_bin in enumerate(z_detect_mid_bins_use):
-                            area[i] = [
-                                data.calc_unmasked_area(
-                                    mask_selector = unmasked_area,
-                                    region_selector = region_selector,
-                                    invert_region = invert_region,
-                                    z = z_mid_bin,
-                                )
-                            ]
-                            #breakpoint()
-                            data.plot_area_depth(
-                                aper_diam = aper_diam,
-                                mask_selector = unmasked_area,
-                                #mask_type = mask_type,
-                                region_selector = region_selector,
-                                invert_region = invert_region,
-                                depth_mode = depth_mode,
-                                save = True,
-                                close = True,
-                                z = z_mid_bin,
-                            )
-                        breakpoint()
-                        V_max = [
-                            funcs.calc_Vmax(
-                                area_,
-                                z_detect_ - (z_step / 2),
-                                z_detect_ + (z_step / 2),
-                            ) for area_, z_detect_ in zip(area, z_detect_mid_bins_use)
-                        ]
-                        breakpoint()
-                        V_max = np.sum(np.array(V_max).to(u.Mpc**3).value)
-                    else:
-                        if unmasked_area == "selection":
-                            area = data.calc_unmasked_area(
-                                mask_selector = data.forced_phot_band.filt_name,
-                                region_selector = region_selector,
-                                invert_region = invert_region,
-                                z = self.aper_phot[aper_diam].SED_results[SED_fit_code.label].z,
-                            )
-                        elif isinstance(unmasked_area, u.Quantity):
-                            assert isinstance(unmasked_area, u.Quantity)
-                            # TODO: ensure this has units of area
-                            area = unmasked_area
-                        else:
-                            raise NotImplementedError
-                        V_max = funcs.calc_Vmax(
-                            area, 
-                            z_min_used, 
-                            z_max_used
-                        ).to(u.Mpc**3).value
-                
-                z_min_used = np.max([z_min, z_bin[0]])
-                z_max_used = np.min([z_max, z_bin[1]])
-                # don't worry about completeness and contamination for now
-                # completeness_field = detect_completeness[field] * jag_completeness[field]
-                # contamination_field = jag_contamination[field]
-                # Don't filter objects based on Jaguar sims with no objects in bin
-                # if contamination_field > vmax_contam_limit and contamination_field < 1:
-                #    continue
-                # if completeness_field < comp_limit and completeness_field > 0:
-                #    #print(f'Skipping {field} for {id} because completeness {completeness_field} < 0.5')
-                #    continue
-                # if z_max_field <= z_min_field:
-                # print(f'Skipping {field} for {id}')
-                # if (field == detect_field) and (detect_field != 'NGDEEP'): # Removes galaxies which aren't detected in their own field. Excludes NGDEEP because some are detected in NGDEEP-HST
-                #     print(f'{id} detected in {field} is not found to be detectable.')
-                #     V_max = 0
-                #     V_max_new = 0
-                #     fields_used = -1
-                #     fields = []
-                #     break
-                # continue
-
-                z_min_dict[region] = z_min_used
-                z_max_dict[region] = z_max_used
-                V_max_dict[region] = V_max
-
+            breakpoint()
+            z_min_used, z_max_used, V_max = output
+            z_min_dict[region] = z_min_used
+            z_max_dict[region] = z_max_used
+            V_max_dict[region] = V_max
         return z_min_dict, z_max_dict, V_max_dict
 
-        # SED_result_obj.obs_zrange[crop_name][data.full_name] = [z_min_used, z_max_used]
-        # # self.V_max_simple[z_bin_name][data.full_name] = V_max_simple
-        # V_max = np.sum(list(V_max_dict.values()))
-        # if V_max < -1.0:
-        #     V_max = -1.0
-        # SED_result_obj.V_max[crop_name][data.full_name] = V_max * u.Mpc ** 3
+    def calc_Vmax_split_region(
+        self: Self,
+        data: Data,
+        z_bin: List[float],
+        aper_diam: u.Quantity,
+        SED_fit_code: SED_code,
+        Vmax_crops: List[Type[Selector]],
+        z_step: float = 0.01,
+        depth_mode: str = "n_nearest",
+        unmasked_area: Union[str, List[str], u.Quantity, Type[Mask_Selector]] = "selection",
+    ) -> Tuple[float, float, float]:
+        sed_result = self.aper_phot[aper_diam].SED_results[SED_fit_code.label]
+        distance_detect = astropy_cosmo.luminosity_distance(sed_result.z)
+        sed_obs = sed_result.SED
+        # load appropriate depths for each data object in data_arr
+        galfind_logger.debug(
+            "Should use local depth if the data.full_name " + \
+            "is the same as the catalogue the galaxy is measured in!"
+        )
+        if hasattr(data, "regions"):
+            galfind_logger.debug(
+                f"Calculating split Vmax for {repr(self)} in {data.regions=}"
+            )
+            regions = data.regions
+        else:
+            galfind_logger.debug(
+                f"Calculating Vmax for {repr(self)} in {data.full_name=}"
+            )
+            regions = ["all"]
+        for region in regions:
+            assert all(hasattr(band_data, "med_depth") for band_data in data), \
+                galfind_logger.critical(
+                    f"Not all bands in {repr(data)=} have med_depth attributes!"
+                )
+            assert all(region in band_data.med_depth[aper_diam].keys() for band_data in data), \
+                galfind_logger.critical(
+                    f"Not all bands in {repr(data)=} have med_depths for {region=}"
+                )
+            # TODO: make split regions available on a data level without having to pre-load results
+            #data._load_depths(aper_diam, depth_mode, region)
+            if self.survey == data.survey and self.region == region:
+                # use local depths
+                data_depths = self.aper_phot[aper_diam].depths.value
+            else:
+                # use median depths in field region
+                data_depths = [band_data.med_depth[aper_diam][region] for band_data in data]
+            # calculate z_range
+            # z_test for other fields should be lower than starting z
+            z_detect = []
+            z_arr = np.arange(z_bin[0], z_bin[1] + z_step, z_step)
+            for z in z_arr: #, tqdm(
+            #     np.arange(z_bin[0], z_bin[1] + z_step, z_step),
+            #     desc=f"Calculating z_max and z_min for ID={self.ID}",
+            # ):
+                galfind_logger.debug(
+                    "ΙGM attenuation is ignored when redshifting the best-fit galaxy SED!"
+                )
+                wav_z = sed_obs.wavs * ((1.0 + z) / (1.0 + sed_obs.z))
+                distance_test = astropy_cosmo.luminosity_distance(z)
+                mag_z = (
+                    funcs.convert_mag_units(
+                        sed_obs.wavs, sed_obs.mags, u.ABmag
+                    ).value
+                    - (
+                        5
+                        * np.log10(
+                            (distance_detect / distance_test)
+                            .to(u.dimensionless_unscaled)
+                            .value
+                        )
+                    )
+                    + (2.5 * np.log10((1.0 + sed_obs.z) / (1.0 + z)))
+                )
+                # construct galaxy at new redshift with average depths of new field
+                test_sed_obs = SED_obs(
+                    z, wav_z.value, mag_z, wav_z.unit, u.ABmag
+                )
+                galfind_logger.debug("Not propagating min_flux_pc_err! Setting to 10.0%")
+                test_mock_phot = test_sed_obs.create_mock_photometry(
+                    data.filterset,
+                    depths=data_depths,
+                    min_flux_pc_err=10.0,
+                )
+                test_phot_obs = Photometry_obs(
+                    test_mock_phot.filterset,
+                    Masked(
+                        test_mock_phot.flux,
+                        mask=np.full(len(data.filterset), False),
+                    ),
+                    Masked(
+                        test_mock_phot.flux_errs,
+                        mask=np.full(len(data.filterset), False),
+                    ),
+                    test_mock_phot.depths,
+                    aper_diam,
+                )
+                sed_result = SED_result(
+                    SED_fit_code,
+                    test_phot_obs,
+                    {"z": z},
+                    property_errs={},
+                    property_PDFs={},
+                    SED=None,
+                )
+                test_phot_obs.SED_results = {
+                    SED_fit_code.label: sed_result
+                }
+                test_gal = Galaxy(
+                    self.ID,
+                    self.sky_coord,
+                    {aper_diam: test_phot_obs},
+                    selection_flags={},
+                )
+                # run selection methods on new galaxy
+                [selector(test_gal, return_copy = False) for selector in Vmax_crops]
+                goodz = all(
+                    test_gal.selection_flags[selector.name]
+                    for selector in Vmax_crops
+                )
+                if goodz:
+                    z_detect.append(z)
+                    
+            z_detect = np.array(z_detect)
+            if len(z_detect) < 2:
+                z_max = -1.0
+                z_min = -1.0
+                # V_max_simple = -1.
+                V_max = -1.0
+            else:
+                z_max = np.round(z_detect[-1], 3)
+                z_min = np.round(z_detect[0], 3)
+                if hasattr(data, "region_selector"):
+                    region_selector = data.region_selector
+                    invert_region = region != data.region_selector.name
+                else:
+                    region_selector = None
+                    invert_region = False
+                # compute cumulative area vs depth
 
-        # return V_max
-    
-        # breakpoint()
-        # z_bin_name = f"{z_bin[0]:.1f}<z<{z_bin[1]:.1f}"
-        # if len(data_arr) > 1:
-        #     if not hasattr(self, "V_max_fields_used"):
-        #         self.V_max_fields_used = {}
-        #     if not z_bin_name in self.V_max_fields_used.keys():
-        #         self.V_max_fields_used[z_bin_name] = {}
-        #         V_max_combined = 0.
-        #         #V_max_simple_combined = 0.
-        #         fields_used = []
-        #         for data in data_arr:
-        #             if self.V_max[z_bin_name][data.full_name] >= 0.:
-        #                 V_max_combined += self.V_max[z_bin_name][data.full_name]
-        #                 fields_used.append(data.full_name)
-        #             #V_max_simple += self.V_max_simple[z_bin_name][data.full_name]
-        #         self.V_max_fields_used[z_bin_name][full_survey_name] = fields_used
-        #         #self.V_max_simple[z_bin_name][joint_survey_name] = V_max_simple
-        #         self.V_max[z_bin_name][full_survey_name] = V_max_combined
-        # breakpoint()
+                if issubclass(unmasked_area.__class__, Mask_Selector):
+                    z_detect_mid_bins = (z_detect[:-1] + z_detect[1:]) / 2
+                    zbin_use_idx = np.where(np.diff(z_detect) <= 0.1)[0]
+                    z_detect_mid_bins_use = z_detect_mid_bins[zbin_use_idx]
+                    area = np.zeros(len(z_detect_mid_bins_use)) * u.arcmin**2
+                    for i, z_mid_bin in enumerate(z_detect_mid_bins_use):
+                        area[i] = [
+                            data.calc_unmasked_area(
+                                mask_selector = unmasked_area,
+                                region_selector = region_selector,
+                                invert_region = invert_region,
+                                z = z_mid_bin,
+                            )
+                        ]
+                        # #breakpoint()
+                        # data.plot_area_depth(
+                        #     aper_diam = aper_diam,
+                        #     mask_selector = unmasked_area,
+                        #     #mask_type = mask_type,
+                        #     region_selector = region_selector,
+                        #     invert_region = invert_region,
+                        #     depth_mode = depth_mode,
+                        #     save = True,
+                        #     close = True,
+                        #     z = z_mid_bin,
+                        # )
+                    breakpoint()
+                    V_max = [
+                        funcs.calc_Vmax(
+                            area_,
+                            z_detect_ - (z_step / 2),
+                            z_detect_ + (z_step / 2),
+                        ) for area_, z_detect_ in zip(area, z_detect_mid_bins_use)
+                    ]
+                    breakpoint()
+                    V_max = np.sum(np.array(V_max).to(u.Mpc**3).value)
+                else:
+                    if unmasked_area == "selection":
+                        area = data.calc_unmasked_area(
+                            mask_selector = data.forced_phot_band.filt_name,
+                            region_selector = region_selector,
+                            invert_region = invert_region,
+                            z = self.aper_phot[aper_diam].SED_results[SED_fit_code.label].z,
+                        )
+                    elif isinstance(unmasked_area, u.Quantity):
+                        assert isinstance(unmasked_area, u.Quantity)
+                        # TODO: ensure this has units of area
+                        area = unmasked_area
+                    else:
+                        raise NotImplementedError
+                    V_max = funcs.calc_Vmax(
+                        area, 
+                        z_min_used, 
+                        z_max_used
+                    ).to(u.Mpc**3).value
+            
+            z_min_used = np.max([z_min, z_bin[0]])
+            z_max_used = np.min([z_max, z_bin[1]])
+
+        return z_min_used, z_max_used, V_max
+
+
+    def calc_Vmax_area_depth_scaled_split_region(
+        self: Self,
+        data: Data,
+        z_bin: List[float],
+        aper_diam: u.Quantity,
+        SED_fit_code: SED_code,
+        Vmax_crops: List[Type[Selector]],
+        z_step: float = 0.01,
+        depth_mode: str = "n_nearest",
+        unmasked_area: Union[str, List[str], u.Quantity, Type[Mask_Selector]] = "selection",
+    ) -> Tuple[float, float, float]:
+        #sed_result = self.aper_phot[aper_diam].SED_results[SED_fit_code.label]
+        #distance_detect = astropy_cosmo.luminosity_distance(sed_result.z)
+        #sed_obs = sed_result.SED
+        # load appropriate depths for each data object in data_arr
+        galfind_logger.debug(
+            "Should use local depth if the data.full_name " + \
+            "is the same as the catalogue the galaxy is measured in!"
+        )
+        if hasattr(data, "regions"):
+            galfind_logger.debug(
+                f"Calculating split Vmax for {repr(self)} in {data.regions=}"
+            )
+            regions = data.regions
+        else:
+            galfind_logger.debug(
+                f"Calculating Vmax for {repr(self)} in {data.full_name=}"
+            )
+            regions = ["all"]
+        z_arr = np.arange(z_bin[0], z_bin[1] + z_step, z_step)
+        # determine detection band name from maximum zbin redshift
+        # UV_select_band_name = funcs.get_first_redwards_band(
+        #     z_bin[-1],
+        #     data.filterset,
+        #     1216.0 * u.AA,
+        # )
+        # split by region
+        for region in regions:
+            assert all(hasattr(band_data, "med_depth") for band_data in data), \
+                galfind_logger.critical(
+                    f"Not all bands in {repr(data)=} have med_depth attributes!"
+                )
+            assert all(region in band_data.med_depth[aper_diam].keys() for band_data in data), \
+                galfind_logger.critical(
+                    f"Not all bands in {repr(data)=} have med_depths for {region=}"
+                )
+            
+            if hasattr(data, "region_selector"):
+                region_selector = data.region_selector
+                invert_region = region != data.region_selector.name
+            else:
+                region_selector = None
+                invert_region = False
+
+            for z in z_arr:
+                # compute area depth for all relevant redshift bin areas
+                data.calc_area_depth(
+                    aper_diam = aper_diam,
+                    mask_selector = unmasked_area,
+                    #mask_type = mask_type,
+                    region_selector = region_selector,
+                    invert_region = invert_region,
+                    z = z,
+                    plot = True,
+                )
+            # extract zbins from data.area_depths keys
+            area_zbins = []
+            area_zbin_labels = []
+            for key in data.area_depths[region].keys():
+                split_key = key.split("<z<")
+                if len(split_key) == 2:
+                    area_zbins.append([float(split_key[0]), float(split_key[1])])
+                    area_zbin_labels.append(key)
+
+            for area_zbin, area_zbin_label in zip(area_zbins, area_zbin_labels):
+                n_steps = 10
+                # interpolate depths of forced_phot_band n_steps times
+                forced_phot_band_depths = np.linspace(
+                    np.max(data.area_depths[region][area_zbin_label]["total_depths"][data.forced_phot_band.filt_name]),
+                    np.min(data.area_depths[region][area_zbin_label]["total_depths"][data.forced_phot_band.filt_name]),
+                    n_steps
+                )
+                #depths[data.forced_phot_band.filt_name] = forced_phot_band_depths
+                cum_area_arr = interp1d(
+                    data.area_depths[region][area_zbin_label]["total_depths"][data.forced_phot_band.filt_name],
+                    data.area_depths[region][area_zbin_label]["cum_dist"][data.forced_phot_band.filt_name]
+                )(forced_phot_band_depths)
+                # use interpolated forced_phot_band area to get depths of other bands at each step
+                # for band in data.filterset:
+                    # if band.filt_name == data.forced_phot_band.filt_name:
+                    #     continue
+                depths = {
+                    filt.band_name: interp1d(
+                        data.area_depths[region][area_zbin_label]["cum_dist"][filt.band_name],
+                        data.area_depths[region][area_zbin_label]["total_depths"][filt.band_name],
+                        fill_value = "extrapolate",
+                    )(cum_area_arr) for filt in data.filterset
+                }
+                # determine appropriate min and max redshift to compute the Vmax over
+                # in this redshift bin given the zbin the area has been computed over
+                zmin = np.max([z_bin[0], area_zbin[0]])
+                zmax = np.min([z_bin[1], area_zbin[1]])
+                Vmax_arr = np.zeros(n_steps)
+                cum_area_arr = cum_area_arr * u.arcmin ** 2
+                for i in range(n_steps):
+                    depth_step = [depths[filt.band_name][i] for filt in data.filterset]
+                    if i == 0:
+                        area_step = cum_area_arr[i]
+                    else:
+                        area_step = cum_area_arr[i] - cum_area_arr[i-1]
+                    # compute Vmax for this galaxy using these depths and area
+                    Vmax_arr[i] = self._compute_Vmax(
+                        zmin,
+                        zmax,
+                        filterset = data.filterset, # could use self.aper_phot[aper_diam].filterset instead?
+                        depths = depth_step,
+                        aper_diam = aper_diam,
+                        SED_fit_code = SED_fit_code,
+                        Vmax_crops = Vmax_crops,
+                        area = area_step,
+                        z_step = z_step,
+                    )
+                    print(f"Depth step {i+1}/{n_steps}: Vmax = {Vmax_arr[i]:.2f} Mpc^3")
+                #print(f"Vmax steps for {area_zbin_label}: {Vmax_arr}")
+                print(f"Total Vmax for {area_zbin_label} = {np.sum(np.clip(Vmax_arr, 0.0, None)):.2f} Mpc^3")
+
+
+    def _compute_Vmax(
+        self: Self,
+        zmin: float,
+        zmax: float,
+        filterset: Multiple_Filter,
+        depths: List[float],
+        aper_diam: u.Quantity,
+        SED_fit_code: SED_code,
+        Vmax_crops: List[Type[Selector]],
+        area: u.Quantity,
+        z_step: float = 0.01,
+    ) -> float:
+        sed_result = self.aper_phot[aper_diam].SED_results[SED_fit_code.label]
+        distance_detect = astropy_cosmo.luminosity_distance(sed_result.z)
+        sed_obs = sed_result.SED
+
+        z_detect = []
+        z_arr = np.arange(zmin, zmax + z_step, z_step)
+        #breakpoint()
+        for z in z_arr:
+            galfind_logger.debug(
+                "ΙGM attenuation is ignored when redshifting the best-fit galaxy SED!"
+            )
+            wav_z = sed_obs.wavs * ((1.0 + z) / (1.0 + sed_obs.z))
+            distance_test = astropy_cosmo.luminosity_distance(z)
+            mag_z = (
+                funcs.convert_mag_units(
+                    sed_obs.wavs, sed_obs.mags, u.ABmag
+                ).value
+                - (
+                    5
+                    * np.log10(
+                        (distance_detect / distance_test)
+                        .to(u.dimensionless_unscaled)
+                        .value
+                    )
+                )
+                + (2.5 * np.log10((1.0 + sed_obs.z) / (1.0 + z)))
+            )
+            # construct galaxy at new redshift with average depths of new field
+            test_sed_obs = SED_obs(
+                z, wav_z.value, mag_z, wav_z.unit, u.ABmag
+            )
+            galfind_logger.debug("Not propagating min_flux_pc_err! Setting to 10.0%")
+            test_mock_phot = test_sed_obs.create_mock_photometry(
+                filterset,
+                depths = depths,
+                min_flux_pc_err = 10.0,
+            )
+            test_phot_obs = Photometry_obs(
+                test_mock_phot.filterset,
+                Masked(
+                    test_mock_phot.flux,
+                    mask=np.full(len(filterset), False),
+                ),
+                Masked(
+                    test_mock_phot.flux_errs,
+                    mask=np.full(len(filterset), False),
+                ),
+                test_mock_phot.depths,
+                aper_diam,
+            )
+            sed_result = SED_result(
+                SED_fit_code,
+                test_phot_obs,
+                {"z": z},
+                property_errs={},
+                property_PDFs={},
+                SED=None,
+            )
+            test_phot_obs.SED_results = {
+                SED_fit_code.label: sed_result
+            }
+            test_gal = Galaxy(
+                self.ID,
+                self.sky_coord,
+                {aper_diam: test_phot_obs},
+                selection_flags={},
+            )
+            # run selection methods on new galaxy
+            [selector(test_gal, return_copy = False) for selector in Vmax_crops]
+            goodz = all(
+                test_gal.selection_flags[selector.name]
+                for selector in Vmax_crops
+            )
+            if goodz:
+                z_detect.append(z)
+
+        z_detect = np.array(z_detect)
+        if len(z_detect) < 2:
+            #z_max = -1.0
+            #z_min = -1.0
+            Vmax = -1.0
+        else:
+            z_detect_mid_bins = (z_detect[:-1] + z_detect[1:]) / 2
+            zbin_use_idx = np.where(np.diff(z_detect) <= z_step)[0]
+            if len(zbin_use_idx) + 1 != len(z_detect):
+                galfind_logger.warning(
+                    "Some z bins were skipped during Vmax calculation! " + \
+                    f"{z_detect=}, {zbin_use_idx=}"
+                )
+            z_detect_mid_bins_use = z_detect_mid_bins[zbin_use_idx]
+            Vmax = np.sum(
+                np.array(
+                    [
+                        funcs.calc_Vmax(
+                            area,
+                            z_detect_ - (z_step / 2),
+                            z_detect_ + (z_step / 2),
+                        ).to(u.Mpc**3).value for z_detect_ in z_detect_mid_bins_use
+                    ]
+                )
+            )
+        return Vmax
 
     # def calc_Vmax_multifield(self, detect_cat_name: str, data_arr: Union[list, np.array], z_bin: Union[list, np.array], \
     #         SED_fit_params_key: str = "EAZY_fsps_larson_zfree", z_step: float = 0.01) -> None:

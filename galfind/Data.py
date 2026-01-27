@@ -25,6 +25,7 @@ import logging
 from matplotlib import cm
 from copy import deepcopy
 from pathlib import Path
+from numpy.typing import NDArray
 from typing import (
     Any,
     List,
@@ -940,8 +941,61 @@ class Band_Data_Base(ABC):
                 master_cat_path = master_cat_path
             )
 
-    def plot_area_depth(self: Self, **kwargs: Dict[str, Any]) -> None:
-        return Depths.plot_band_data_area_depth(self, **kwargs)
+    def calc_area_depth(
+        self: Type[Self],
+        aper_diam: u.Quantity,
+        mask_selector: Union[str, List[str], Type[Mask_Selector]] = None,
+        mask_type: Union[str, List[str]] = "MASK",
+        region_selector: Optional[Type[Region_Selector], List[Type[Region_Selector]]] = None,
+        invert_region: bool = False,
+        zbin: Optional[float] = None,
+    ) -> Tuple[NDArray[float], NDArray[float], u.Quantity]:
+        total_depths, cum_dist, area = Depths.calc_band_data_area_depth(
+            self,
+            aper_diam,
+            mask_selector,
+            mask_type,
+            region_selector,
+            invert_region,
+            zbin,
+        )
+        self.area_depth = {
+            "total_depths": total_depths,
+            "cum_dist": cum_dist,
+            "area": area,
+        }
+        return total_depths, cum_dist, area
+
+    def plot_area_depth(
+        self: Type[Self],
+        aper_diam: u.Quantity,
+        mask_selector: Union[str, List[str], Type[Mask_Selector]] = None,
+        mask_type: Union[str, List[str]] = "MASK",
+        region_selector: Optional[Type[Region_Selector], List[Type[Region_Selector]]] = None,
+        invert_region: bool = False,
+        zbin: Optional[float] = None,
+        fig: Optional[plt.Figure] = None,
+        ax: Optional[plt.Axes] = None,
+        save: bool = False,
+        show: bool = False,
+        close: bool = False,
+        **plot_kwargs: Dict[str, Any],
+    ) -> None:
+        return Depths.plot_band_data_area_depth(
+            self,
+            aper_diam,
+            mask_selector,
+            mask_type,
+            region_selector,
+            invert_region,
+            zbin,
+            fig,
+            ax,
+            save,
+            show,
+            close,
+            **plot_kwargs,
+        )
 
     def plot(
         self,
@@ -951,7 +1005,7 @@ class Band_Data_Base(ABC):
         cmap: str = "plasma",
         save: bool = False,
         show: bool = True,
-    ) -> NoReturn:
+    ) -> None:
         """
         Plots the specified image data on the given matplotlib Axes.
 
@@ -2873,7 +2927,7 @@ class Data:
         config_name: str = "default.sex",
         params_name: str = "default.param",
         overwrite: bool = False,
-    ) -> NoReturn:
+    ) -> None:
         if hasattr(self, "phot_cat_path"):
             galfind_logger.critical("MASTER Photometric catalogue already exists!")
             return
@@ -3282,6 +3336,98 @@ class Data:
                 master_cat_path = master_cat_path
             )
 
+    def calc_area_depth(
+        self: Type[Self],
+        aper_diam: u.Quantity,
+        mask_selector: Union[str, List[str], Type[Mask_Selector]] = None,
+        mask_type: Union[str, List[str]] = "MASK",
+        region_selector: Optional[Type[Region_Selector], List[Type[Region_Selector]]] = None,
+        invert_region: bool = False,
+        z: Optional[float] = None,
+        plot: bool = True,
+    ) -> Tuple[Dict[str, NDArray[float]], Dict[str, NDArray[float]], Dict[str, float]]:
+
+        # extract zbin label
+        if z is not None:
+            zbins = mask_selector.extract_zbins(self)
+            # select zbin which matches the redshift of the data
+            zbin = [zbin_ for zbin_ in zbins if zbin_[0] <= z < zbin_[1]]
+            assert len(zbin) == 1, \
+                galfind_logger.critical(
+                    f"Multiple or no zbins found for {z=}!"
+                )
+            zbin = zbin[0]
+            zbin_label = f"{zbin[0]:.2f}<z<{zbin[1]:.2f}"
+        else:
+            zbin = None
+            zbin_label = "All-z"
+        # extract region label
+        if hasattr(self, "region_selector"):
+            if invert_region:
+                region = self.region_selector.fail_name
+            else:
+                region = self.region_selector.name
+        else:
+            region = None
+        try:
+            if hasattr(self, "area_depths") and (
+                (
+                    region in self.area_depths.keys() and
+                    zbin_label in self.area_depths[region].keys()
+                )
+                or zbin_label in self.area_depths.keys()
+            ):
+                galfind_logger.debug(
+                    f"Area depths already calculated in {repr(self)} for {region=}, {zbin_label=}, skipping!"
+                )
+            else:
+                total_depths, cum_dist, area = Depths.calc_data_area_depth(
+                    self,
+                    aper_diam,
+                    mask_selector,
+                    mask_type,
+                    region_selector,
+                    invert_region,
+                    zbin,
+                )
+                if not hasattr(self, "area_depths"):
+                    self.area_depths = {}
+                if region is not None and region not in self.area_depths.keys():
+                    self.area_depths[region] = {}
+                if region is not None:
+                    if zbin_label not in self.area_depths[region].keys():
+                        self.area_depths[region][zbin_label] = {
+                            "total_depths": total_depths,
+                            "cum_dist": cum_dist,
+                            "area": area,
+                        }
+                else:
+                    if zbin_label not in self.area_depths.keys():
+                        self.area_depths[zbin_label] = {
+                            "total_depths": total_depths,
+                            "cum_dist": cum_dist,
+                            "area": area,
+                        }
+        except Exception as e:
+            galfind_logger.critical(
+                f"Could not calculate area depths for {repr(self)}: {e}"
+            )
+            breakpoint()
+            raise e
+
+        if plot:
+            self.plot_area_depth(
+                aper_diam,
+                mask_selector,
+                mask_type,
+                region_selector,
+                invert_region,
+                save = True,
+                close = True,
+                overwrite = False,
+                z = z,
+            )
+
     def plot_area_depth(
         self: Self,
         aper_diam: u.Quantity,
@@ -3292,7 +3438,7 @@ class Data:
         fig: Optional[plt.Figure] = None,
         ax: Optional[plt.Axes] = None,
         cmap_name: str = "RdYlBu_r",
-        overwrite: bool = True,
+        overwrite: bool = False,
         save: bool = True,
         show: bool = False,
         close: bool = True,

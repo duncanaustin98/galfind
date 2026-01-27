@@ -201,7 +201,7 @@ class Instrument(ABC):
                 f"Aperture corrections for {self.__class__.__name__} loaded from {aper_corr_path}"
             )
         else:
-            galfind_logger.warning(
+            galfind_logger.debug(
                 f"Aperture corrections for {self.__class__.__name__} not found in {aper_corr_path}"
             )
 

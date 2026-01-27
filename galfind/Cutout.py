@@ -53,7 +53,7 @@ try:
 except ImportError:
     from typing_extensions import Self, Type  # python > 3.7 AND python < 3.11
 
-from . import Filter, Band_Data
+from . import Filter, Band_Data, Depths
 from . import config, galfind_logger, astropy_cosmo, figs
 from . import useful_funcs_austind as funcs
 
@@ -270,9 +270,11 @@ class Band_Cutout_Base(Cutout_Base, ABC):
             instr_name = ""
         else:
             instr_name = f"{instr_name}/"
+        # get forced phot subdir
+        subdir = Depths.get_forced_phot_subdir(band_data.aper_diams, band_data.forced_phot_args)
         save_path = f"{config['Cutouts']['CUTOUT_DIR']}/{band_data.version}/" + \
             f"{band_data.survey}/{instr_name}{cutout_size.to(u.arcsec).value:.2f}as/" + \
-            f"{band_data.filt_name}/{data_type}/{ID}{ext}"
+            f"{band_data.filt_name}/{subdir}/{data_type}/{ID}{ext}"
         funcs.make_dirs(save_path)
         return save_path
 
@@ -1428,9 +1430,10 @@ class Multiple_Band_Cutout(Multiple_Cutout_Base):
             instr_name = ""
         else:
             instr_name = f"{self.instr_name}/"
+        subdir = self[0].cutout_path.split("/")[-3] # get subdir from first cutout
         save_path = f"{config['Cutouts']['CUTOUT_DIR']}/{self.version}/" + \
             f"{self.survey}/{instr_name}{self.cutout_size.to(u.arcsec).value:.2f}as/" + \
-            f"multi_band/png/{self.ID}.png"
+            f"multi_band/{subdir}/png/{self.ID}.png"
         # '+'.join(filt.band_name for filt in self.filterset)
         funcs.make_dirs(save_path)
         return save_path

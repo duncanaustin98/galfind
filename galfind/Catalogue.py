@@ -699,12 +699,16 @@ class Catalogue_Creator:
         timed: bool = True
     ) -> NoReturn:
         meta = self.open_hdr(self.cat_path, "ID")
-        if all(name in meta.keys() for name in ["SURVEY", "INSTR"]):
-            save_dir = f"{config['DEFAULT']['GALFIND_WORK']}/Masks/{meta['SURVEY']}/has_data_mask/{meta['INSTR']}"
-        elif self.survey is not None and self.filterset is not None:
-            save_dir = f"{config['DEFAULT']['GALFIND_WORK']}/Masks/{self.survey}/has_data_mask/{self.filterset.instrument_name}"
+        req_metakeys = ["SURVEY", "INSTR", "APERDIAM"]
+        if all(name in meta.keys() for name in req_metakeys):
+            save_dir = f"{config['DEFAULT']['GALFIND_WORK']}/Masks/{meta['SURVEY']}/has_data_mask/{meta['INSTR']}/{meta['APERDIAM']}"
+        elif self.survey is not None and self.filterset is not None and self.aper_diams is not None:
+            if len(self.aper_diams) != 1:
+                galfind_logger.warning(f"len({self.aper_diams=}) != 1! Using {self.aper_diams[0]} for gal_instr_mask!")
+            save_dir = f"{config['DEFAULT']['GALFIND_WORK']}/Masks/{self.survey}/has_data_mask/{self.filterset.instrument_name}/{self.aper_diams[0]}"
         else:
-            err_message = f"Not both of ['SURVEY', 'INSTR'] in {self.cat_path} nor 'survey' and 'filterset' provided!"
+            err_message = f"Not all of {req_metakeys} in {self.cat_path} " + \
+                "nor 'survey', 'filterset', and 'aper_diams' provided in self!"
             galfind_logger.critical(err_message)
             raise Exception(err_message)
         save_path = f"{save_dir}/{self.cat_name}.h5"
@@ -1538,6 +1542,7 @@ class Catalogue(Catalogue_Base):
         SED_fit_code: SED_code,
         z_step: float = 0.01,
         unmasked_area: Union[str, List[str], u.Quantity, Type[Mask_Selector]] = "selection",
+        Vmax_method: str = "uniform_depth",
     ) -> NDArray[float]:
         assert hasattr(self, "data"), \
             galfind_logger.critical(
@@ -1550,6 +1555,7 @@ class Catalogue(Catalogue_Base):
             SED_fit_code = SED_fit_code,
             z_step = z_step,
             unmasked_area = unmasked_area,
+            Vmax_method = Vmax_method,
         )
     
 
