@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from galfind.Data import Band_Data_Base
 import numpy as np
 import astropy.units as u
 from copy import deepcopy
@@ -53,7 +54,7 @@ try:
 except ImportError:
     from typing_extensions import Self, Type  # python > 3.7 AND python < 3.11
 
-from . import Filter, Band_Data, Depths
+from . import Filter, Band_Data, Stacked_Band_Data, Depths
 from . import config, galfind_logger, astropy_cosmo, figs
 from . import useful_funcs_austind as funcs
 
@@ -254,7 +255,7 @@ class Band_Cutout_Base(Cutout_Base, ABC):
 
     @staticmethod
     def _get_save_path(
-        band_data: Band_Data, 
+        band_data_base: Type[Band_Data_Base], 
         cutout_size: u.Quantity, 
         ID: str, 
         instr_name: Optional[str],
@@ -271,10 +272,17 @@ class Band_Cutout_Base(Cutout_Base, ABC):
         else:
             instr_name = f"{instr_name}/"
         # get forced phot subdir
-        subdir = Depths.get_forced_phot_subdir(band_data.aper_diams, band_data.forced_phot_args)
-        save_path = f"{config['Cutouts']['CUTOUT_DIR']}/{band_data.version}/" + \
-            f"{band_data.survey}/{instr_name}{cutout_size.to(u.arcsec).value:.2f}as/" + \
-            f"{band_data.filt_name}/{subdir}/{data_type}/{ID}{ext}"
+        if not hasattr(band_data_base, "aper_diams") or not hasattr(band_data_base, "forced_phot_args"):
+            galfind_logger.debug(
+                f"{band_data_base=} does not have aper_diams or " +
+                "forced_phot_args attributes needed to get forced phot subdir!"
+            )
+            subdir = ""
+        else:
+            subdir = f"/{Depths.get_forced_phot_subdir(band_data_base.aper_diams, band_data_base.forced_phot_args)}"
+        save_path = f"{config['Cutouts']['CUTOUT_DIR']}/{band_data_base.version}/" + \
+            f"{band_data_base.survey}/{instr_name}{cutout_size.to(u.arcsec).value:.2f}as/" + \
+            f"{band_data_base.filt_name}{subdir}/{data_type}/{ID}{ext}"
         funcs.make_dirs(save_path)
         return save_path
 
@@ -506,8 +514,8 @@ class Band_Cutout(Band_Cutout_Base):
             band_data, 
             sky_coord, 
             cutout_size, 
-            meta = meta, 
-            overwrite = overwrite
+            overwrite = overwrite,
+            **meta,
         )
 
     @classmethod
@@ -516,8 +524,8 @@ class Band_Cutout(Band_Cutout_Base):
         band_data: Band_Data,
         sky_coord: SkyCoord,
         cutout_size: u.Quantity,
-        meta: dict = {},
         overwrite: bool = False,
+        **meta: Any,
     ) -> Self:
         # make cutout from data at the sky co-ordinate and save
         meta = {
@@ -534,7 +542,7 @@ class Band_Cutout(Band_Cutout_Base):
         instr_name = cls._get_instr_name(meta)
         save_path = cls._get_save_path(band_data, cutout_size, ID, instr_name, data_type="data")
         cls._make_cutout(band_data, sky_coord, cutout_size, save_path, meta, overwrite)
-        band_data = cls._update_band_data(band_data, save_path)
+        band_data = cls._update_band_data_base(band_data, save_path)
         return cls(save_path, band_data, cutout_size)
 
     # def set_cutout_size(
@@ -626,25 +634,33 @@ class Band_Cutout(Band_Cutout_Base):
             )
 
     @staticmethod
-    def _update_band_data(
-        band_data: Band_Data,
+    def _update_band_data_base(
+        band_data_base: Type[Band_Data_Base],
         cutout_path: str,
     ) -> Band_Data:
-        new_band_data = Band_Data(
-            band_data.filt, 
-            band_data.survey, 
-            band_data.version, 
+        if isinstance(band_data_base, Band_Data):
+            filt = band_data_base.filt
+        else:
+            assert isinstance(band_data_base, Stacked_Band_Data), \
+                galfind_logger.critical(
+                    f"band_data_base must be Band_Data or Stacked_Band_Data, not {type(band_data_base)=}"
+                )
+            filt = band_data_base.filterset
+        new_band_data = band_data_base.__class__(
+            filt, 
+            band_data_base.survey, 
+            band_data_base.version, 
             cutout_path, 
             1,
             cutout_path,
             3,
             cutout_path,
             4,
-            pix_scale = band_data.pix_scale,
+            pix_scale = band_data_base.pix_scale,
             rms_err_ext_name = "RMS_ERR",
         )
         new_band_data.seg_path = cutout_path
-        new_band_data.seg_args = band_data.seg_args
+        new_band_data.seg_args = band_data_base.seg_args
         return new_band_data
 
 
@@ -1209,6 +1225,7 @@ class Multiple_Cutout_Base(ABC):
     def plot(
         self: Self,
         fig: Optional[plt.Figure] = None,
+        ax_arr: Optional[np.ndarray] = None,
         n_rows: int = 1,
         fig_scaling: float = 1.5,
         split_by_instr: bool = False,
@@ -1234,17 +1251,17 @@ class Multiple_Cutout_Base(ABC):
         if len(self) % n_y != 0:
             n_x += 1
 
-        if fig is not None:
-            # Delete everything on the figure
-            fig.clf()
-        else:
+        if fig is None: # not None:
+        #     # Delete everything on the figure
+        #     fig.clf()
+        # else:
             fig = figs.make_fig(n_x, n_y, scaling = fig_scaling)
-
         # make appropriate axes from the figure and ax_ratio
-        ax_arr = figs.make_ax(fig, n_x, n_y)
-        # remove blank axes
-        n_blank_ax = n_x * n_y - len(self)
-        [fig.delaxes(ax_arr[-(i + 1)]) for i in range(n_blank_ax)]
+        if ax_arr is None:
+            ax_arr = figs.make_ax(fig, n_x, n_y)
+            # remove blank axes
+            n_blank_ax = n_x * n_y - len(self)
+            [fig.delaxes(ax_arr[-(i + 1)]) for i in range(n_blank_ax)]
 
         if split_by_instr:
             instr_names, n_bands = np.unique([cutout.band_data.instr_name \
@@ -1381,11 +1398,12 @@ class Multiple_Band_Cutout(Multiple_Cutout_Base):
         data: Data,
         sky_coord: SkyCoord,
         cutout_size: u.Quantity,
+        **meta,
     ) -> Self:
         # make a cutout for each filter
         cutouts = [
-            Band_Cutout.from_data_skycoord(data, filt, sky_coord, cutout_size)
-            for filt in data.filterset
+            Band_Cutout.from_data_skycoord(band_data, sky_coord, cutout_size, **meta)
+            for band_data in data
         ]
         return cls(cutouts)
 

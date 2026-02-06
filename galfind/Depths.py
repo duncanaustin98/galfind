@@ -857,10 +857,10 @@ def get_forced_phot_subdir(aper_diams: u.Quantity, forced_phot_args: Dict[str, A
     dates = funcs.date_finder(forced_phot_code)
     for remove in dates + ["version", "(", ")", " "]:
         forced_phot_code = forced_phot_code.replace(remove, "")
-    subdir = f"{forced_phot_code}_{forced_phot_args['err_type'].split('_')[0]}" + \
-        f"_{forced_phot_args['forced_phot_band'].filt_name}_" + \
-        f"{funcs.aper_diams_to_str(aper_diams)}"
-    return subdir
+    forced_phot_str = f"_{forced_phot_args['err_type'].split('_')[0]}" + \
+        f"_{forced_phot_args['forced_phot_band'].filt_name}_"
+    return f"{forced_phot_code}{forced_phot_str}{funcs.aper_diams_to_str(aper_diams)}"
+
 
 
 def get_grid_depth_path(

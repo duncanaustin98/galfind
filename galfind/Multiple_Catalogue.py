@@ -123,7 +123,9 @@ class Combined_Catalogue(Catalogue_Base):
         if not Path(cat_path).is_file() or overwrite:
             # TODO: Make the loading of these not require to indiviudally specify code names
             from . import SED_code, EAZY, LePhare, Bagpipes
-            unique_hdu_names = np.unique(list(chain.from_iterable([cat.get_hdu_names() for cat in cat_arr])))
+            unique_hdu_names, unique_hdu_counts = np.unique(list(chain.from_iterable([cat.get_hdu_names() for cat in cat_arr])), return_counts = True)
+            unique_hdu_names = np.array([hdu for hdu, count in zip(unique_hdu_names, unique_hdu_counts) if count == len(cat_arr)])
+            
             full_tab_hdus = np.full(len(unique_hdu_names), None)
             # put flux table first
             assert "OBJECTS" in unique_hdu_names, \
@@ -162,7 +164,8 @@ class Combined_Catalogue(Catalogue_Base):
                                 f"Could not determine ID_colname for HDU {hdu}"
                             )
                         ID_colname = ID_colname[0]
-                    #breakpoint()
+                    if tab is None:
+                        breakpoint()
                     if j == 0:
                         cat_unique_ids = list(tab[ID_colname])
                     else:
