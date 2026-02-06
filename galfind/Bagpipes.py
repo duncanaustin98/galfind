@@ -174,7 +174,7 @@ class Bagpipes(SED_code):
             return self.custom_label
         else:
             # sort redshift label
-            if self.SED_fit_params["fix_z"]:
+            if isinstance(self.SED_fit_params["fix_z"], (list, np.ndarray)) or self.SED_fit_params["fix_z"]:
                 redshift_label = "zfix"
             else:
                 if "z_sigma" in self.SED_fit_params.keys():
@@ -347,9 +347,10 @@ class Bagpipes(SED_code):
             self.size = 1
 
         self._load_fit_instructions()
-        if "continuity" in self.SED_fit_params["sfh"]:
+        if "sfh" in self.SED_fit_params.keys() and "continuity" in self.SED_fit_params["sfh"]:
             self._update_continuity_sfh_fit_instructions(cat)
-        if not self.SED_fit_params["fix_z"] and "z_sigma" in self.SED_fit_params.keys():
+        if isinstance(self.SED_fit_params["fix_z"], bool) and not \
+                self.SED_fit_params["fix_z"] and "z_sigma" in self.SED_fit_params.keys():
             self._update_redshift_fit_instructions(cat)
         from galfind import Catalogue
         if isinstance(cat, Catalogue):
@@ -452,11 +453,13 @@ class Bagpipes(SED_code):
     def _temp_out_subdir(
         self: Self,
         cat: Union[Catalogue, Spectral_Catalogue],
+        aper_diam: u.Quantity,
         temp_label: Optional[str] = None,
     ) -> str:
         from galfind import Catalogue
         if isinstance(cat, Catalogue):
-            temp_subdir = f"{cat.version}/{cat.survey}/{cat.filterset.instrument_name}/temp"
+            temp_subdir = f"{cat.version}/{cat.survey}/{cat.filterset.instrument_name}/" +\
+                f"{aper_diam.to(u.arcsec).value:.2f}as/temp"
             if temp_label is None:
                 while len(glob.glob(f"{config['Bagpipes']['PIPES_OUT_DIR']}/pipes/posterior/{temp_subdir}/*")) > 0:
                     temp_subdir += "_"
@@ -480,11 +483,13 @@ class Bagpipes(SED_code):
     
     def _new_subdir(
         self: Self,
-        cat: Catalogue
+        cat: Catalogue,
+        aper_diam: u.Quantity,
     ) -> str:
         from galfind import Catalogue
         if isinstance(cat, Catalogue):
-            return f"{cat.version}/{cat.survey}/{cat.filterset.instrument_name}/{self.label}"
+            return f"{cat.version}/{cat.survey}/{cat.filterset.instrument_name}/" + \
+                f"{aper_diam.to(u.arcsec).value:.2f}as/{self.label}"
         else:
             from galfind import Spectral_Catalogue
             assert isinstance(cat, Spectral_Catalogue), \
@@ -496,16 +501,17 @@ class Bagpipes(SED_code):
     def _move_files(
         self,
         cat: Catalogue,
+        aper_diam: u.Quantity,
         direction = "from_temp",
         temp_label: Optional[str] = None,
     ) -> NoReturn:
         assert direction in ["from_temp", "to_temp"]
-        temp_out_subdir = self._temp_out_subdir(cat, temp_label = temp_label)
+        temp_out_subdir = self._temp_out_subdir(cat, aper_diam, temp_label = temp_label)
         temp_post_dir = f"{config['Bagpipes']['PIPES_OUT_DIR']}/pipes/posterior/{temp_out_subdir}"
         temp_plots_dir = f"{config['Bagpipes']['PIPES_OUT_DIR']}/pipes/plots/{temp_out_subdir}"
         temp_sed_dir = f"{config['Bagpipes']['PIPES_OUT_DIR']}/pipes/seds/{temp_out_subdir}"
         temp_sfr_dir = f"{config['Bagpipes']['PIPES_OUT_DIR']}/pipes/sfr/{temp_out_subdir}"
-        new_subdir = self._new_subdir(cat)
+        new_subdir = self._new_subdir(cat, aper_diam)
         new_post_dir = f"{config['Bagpipes']['PIPES_OUT_DIR']}/pipes/posterior/{new_subdir}"
         new_plots_dir = f"{config['Bagpipes']['PIPES_OUT_DIR']}/pipes/plots/{new_subdir}"
         new_sed_dir = f"{config['Bagpipes']['PIPES_OUT_DIR']}/pipes/seds/{new_subdir}"
@@ -549,19 +555,20 @@ class Bagpipes(SED_code):
                     galfind_logger.info(
                         f"{path.split('/')[-1]} already exists in {to_dir}, skipping!"
                     )
-        self._move_fits_cat(cat, direction = direction, temp_label = temp_label)
+        self._move_fits_cat(cat, aper_diam, direction = direction, temp_label = temp_label)
 
     def _move_fits_cat(
         self: Self,
         cat: Catalogue,
+        aper_diam: u.Quantity,
         direction: str = "from_temp",
         temp_label: Optional[str] = None,
     ) -> None:
         assert direction in ["from_temp", "to_temp"]
         fits_dir = f"{config['Bagpipes']['PIPES_OUT_DIR']}/pipes/cats"
         funcs.make_dirs(f"{fits_dir}/")
-        temp_out_subdir = self._temp_out_subdir(cat, temp_label = temp_label)
-        new_subdir = self._new_subdir(cat)
+        temp_out_subdir = self._temp_out_subdir(cat, aper_diam, temp_label = temp_label)
+        new_subdir = self._new_subdir(cat, aper_diam)
         if direction == "from_temp":
             # move files from temp directory to main directory
             from_fits_path = f"{fits_dir}/{temp_out_subdir}.fits"
@@ -634,13 +641,13 @@ class Bagpipes(SED_code):
         # # dump priors if not already done
         # self.dump_priors(new_path_post)
         # determine temp directories
-        out_subdir = self._temp_out_subdir(cat, temp_label = temp_label)
+        out_subdir = self._temp_out_subdir(cat, aper_diam, temp_label = temp_label)
         path_post = f"{config['Bagpipes']['PIPES_OUT_DIR']}/pipes/posterior/{out_subdir}"
         path_plots = f"{config['Bagpipes']['PIPES_OUT_DIR']}/pipes/plots/{out_subdir}"
         path_sed = f"{config['Bagpipes']['PIPES_OUT_DIR']}/pipes/seds/{out_subdir}"
         path_sfr = f"{config['Bagpipes']['PIPES_OUT_DIR']}/pipes/sfr/{out_subdir}"
         path_fits = f"{config['Bagpipes']['PIPES_OUT_DIR']}/pipes/cats/{out_subdir}"
-        new_subdir = self._new_subdir(cat)
+        new_subdir = self._new_subdir(cat, aper_diam)
         new_path_post = path_post.replace(out_subdir, new_subdir)
         funcs.make_dirs(new_path_post)
         new_path_plots = path_plots.replace(out_subdir, new_subdir)
@@ -676,7 +683,7 @@ class Bagpipes(SED_code):
         if rerun:
             to_run_arr = np.ones(len(cat), dtype=bool)
             # move stuff back to temp directory
-            self._move_files(cat, direction = "to_temp", temp_label = temp_label)
+            self._move_files(cat, aper_diam, direction = "to_temp", temp_label = temp_label)
         else:
             to_run_arr = np.ones(len(cat), dtype=bool)
             #for i, gal in enumerate(cat):
@@ -687,7 +694,7 @@ class Bagpipes(SED_code):
                 galfind_logger.info("All objects run and not rerun/overwrite.")
                 breakpoint()
                 return
-        self._move_fits_cat(cat, direction = "to_temp", temp_label = temp_label)
+        self._move_fits_cat(cat, aper_diam, direction = "to_temp", temp_label = temp_label)
 
         if not is_spec:
             run_cat = deepcopy(cat)
@@ -724,17 +731,27 @@ class Bagpipes(SED_code):
             filters = None
 
         # if fix_z is not False
-        if not (not self.SED_fit_params["fix_z"]):
+        if isinstance(self.SED_fit_params["fix_z"], (list, np.ndarray)) or not (not self.SED_fit_params["fix_z"]):
             if not is_spec:
                 if isinstance(self.SED_fit_params["fix_z"], str):
                     redshifts = np.array([getattr(gal, self.SED_fit_params["fix_z"]) for gal in gals_arr]).astype(float)
                 elif isinstance(self.SED_fit_params["fix_z"], tuple(SED_code.__subclasses__())):
                     redshifts = np.array([gal.aper_phot[aper_diam].SED_results \
                         [self.SED_fit_params["fix_z"].label].z for gal in gals_arr]).astype(float)
+                elif isinstance(self.SED_fit_params["fix_z"], (list, np.ndarray)):
+                    assert len(self.SED_fit_params["fix_z"]) == len(gals_arr), \
+                        galfind_logger.critical(
+                            f"Bagpipes {self.SED_fit_params['fix_z']=} must have length equal to number of galaxies {len(gals_arr)}!"
+                        )
+                    assert all(isinstance(z, (np.integer, np.floating)) for z in self.SED_fit_params["fix_z"]), \
+                        galfind_logger.critical(
+                            f"Bagpipes {self.SED_fit_params['fix_z']=} must be a list/array of numbers!"
+                        )
+                    redshifts = np.array(self.SED_fit_params["fix_z"]).astype(float)
                 else:
                     raise TypeError(
                         galfind_logger.critical(
-                            f"{self.SED_fit_params['fix_z']=} must be a string or a subclass of SED_code!"
+                            f"{self.SED_fit_params['fix_z']=} must be a string, a list/np.ndarray, ora subclass of SED_code!"
                         )
                     )
             else:
@@ -760,7 +777,7 @@ class Bagpipes(SED_code):
         else:
             plot = True
         bagpipes = self.reload()
-
+        #breakpoint()
         fit_cat = bagpipes.fit_catalogue(
             IDs,
             self.fit_instructions,
@@ -795,8 +812,10 @@ class Bagpipes(SED_code):
         # rename files and move to appropriate directories
 
         if self.rank == 0:
-            galfind_logger.info(f"Renaming and moving {self.label} output files on rank 0.")
-            self._move_files(cat, direction = "from_temp", temp_label = temp_label)
+            galfind_logger.info(
+                f"Renaming and moving {aper_diam.to(u.arcsec).value:.2f}as {self.label} output files on rank 0."
+            )
+            self._move_files(cat, aper_diam, direction = "from_temp", temp_label = temp_label)
 
     @run_in_dir(path=config["Bagpipes"]["PIPES_OUT_DIR"])
     def fit_spec_cat(
@@ -976,7 +995,7 @@ class Bagpipes(SED_code):
     def _get_out_paths(
         self: Self, 
         cat: Catalogue, 
-        aper_diam: u.Quantity
+        aper_diam: u.Quantity,
     ) -> Tuple[str, str, str, Dict[str, List[str]], List[str]]:
     # @staticmethod
     # def get_out_paths(
@@ -997,7 +1016,8 @@ class Bagpipes(SED_code):
         #pipes_name = Bagpipes.label_from_SED_fit_params(self.SED_fit_params)
         in_path = None
         out_path = f"{config['Bagpipes']['PIPES_OUT_DIR']}/pipes/cats/{cat.version}/" + \
-            f"{cat.survey}/{cat.filterset.instrument_name}/{self.label}.fits"
+            f"{cat.survey}/{cat.filterset.instrument_name}/" + \
+            f"{aper_diam.to(u.arcsec).value:.2f}as/{self.label}.fits"
         fits_out_path = Bagpipes.get_galfind_fits_path(out_path)
         h5_dir = out_path.replace(".fits", "").replace("cats", "posterior")
         h5_paths = [f"{h5_dir}/{ID}.h5" for ID in cat.ID]
@@ -1049,7 +1069,14 @@ class Bagpipes(SED_code):
         aper_diam = kwargs["aper_diam"]
         
         # extract redshifts
-        if self.SED_fit_params["fix_z"]:
+        if isinstance(self.SED_fit_params["fix_z"], (list, np.ndarray)):
+            assert len(self.SED_fit_params["fix_z"]) == len(IDs), \
+                galfind_logger.critical(
+                    f"Bagpipes {self.SED_fit_params['fix_z']=} must have length equal to number of IDs {len(IDs)}!"
+                )
+            length = 500 # TODO: Calculate this at runtime
+            z_arr = [np.full(length, z) for z in self.SED_fit_params["fix_z"]]
+        elif self.SED_fit_params["fix_z"]:
             length = 500 # TODO: Calculate this at runtime
             z_arr = [np.full(length, z) for z in self.SED_fit_params["z_calculator"](cat)]
         else:
@@ -1627,11 +1654,10 @@ class Bagpipes(SED_code):
                     dust["Av"] = (0.0, 6.0)
                 
                 fit_instructions["dust"] = dust
-
-            if not self.SED_fit_params["fix_z"]:
+            if isinstance(self.SED_fit_params["fix_z"], bool) and not self.SED_fit_params["fix_z"]:
                 if "z_sigma" not in self.SED_fit_params.keys():
                     fit_instructions["redshift"] = (0.0, 25.0)
-        
+
         self.fit_instructions = fit_instructions
 
     def _update_continuity_sfh_fit_instructions(
@@ -1647,13 +1673,13 @@ class Bagpipes(SED_code):
                 )
             z_calculator = self.SED_fit_params["z_calculator"]
             if cat is None:
-                assert isinstance(self.SED_fit_params["z_calculator"], float)
-                z_arr = [self.SED_fit_params["z_calculator"]]
+                assert isinstance(z_calculator, float)
+                z_arr = [z_calculator]
             else:
                 if isinstance(z_calculator, float):
                     z_arr = np.full(len(cat), z_calculator)
                 else:
-                    z_arr = z_calculator(cat)
+                    z_arr = z_calculator.extract_vals(cat)
         else:
             # take the PRISM redshifts if available, else the 0th element
             z_arr = np.full(len(cat), None)
@@ -1664,7 +1690,20 @@ class Bagpipes(SED_code):
                         continue
             
         fit_instructions_arr = []
-        for z in z_arr:
+        for i, z in enumerate(z_arr):
+            if z < 0:
+                err_message = f"Cannot calculate {repr(self)} continuity SFH bins for {repr(cat[i])}!"
+                if "z_sfh_bins_fail" in self.SED_fit_params.keys():
+                    assert isinstance(self.SED_fit_params["z_sfh_bins_fail"], float), \
+                        galfind_logger.critical(
+                            f"{repr(self)} SED_fit_params['z_sfh_bins_fail'] must be a float if provided!"
+                        )
+                    err_message += f" Using fallback z={self.SED_fit_params['z_sfh_bins_fail']}."
+                    galfind_logger.warning(err_message)
+                else:
+                    galfind_logger.critical(err_message)
+                    raise ValueError(err_message)
+                z = self.SED_fit_params["z_sfh_bins_fail"]
             fit_instructions_i = deepcopy(self.fit_instructions)
             if "fixed_bin_ages" in self.SED_fit_params.keys():
                 fixed_bin_ages = self.SED_fit_params["fixed_bin_ages"].to(u.Myr)
@@ -1712,10 +1751,13 @@ class Bagpipes(SED_code):
         z_calculator = self.SED_fit_params["z_calculator"]
         z_pdfs = z_calculator.extract_PDFs(cat)
         for fit_instructions, z_pdf in zip(fit_instructions_arr, z_pdfs):
-            fit_instructions["redshift"] = (0.0, 25.0)
+            med = z_pdf.median.value
+            mean_err = np.mean(z_pdf.errs.value)
+            fit_instructions["redshift"] = (med - self.SED_fit_params["z_sigma"] * mean_err, med + self.SED_fit_params["z_sigma"] * mean_err)
             fit_instructions["redshift_prior"] = "Gaussian"
-            fit_instructions["redshift_prior_mu"] = z_pdf.median.value
-            fit_instructions["redshift_prior_sigma"] = self.SED_fit_params["z_sigma"] * np.mean(z_pdf.errs.value)
+            fit_instructions["redshift_prior_mu"] = med
+            fit_instructions["redshift_prior_sigma"] = mean_err
+
         self.fit_instructions = fit_instructions_arr
 
 def calculate_bins(redshift, redshift_sfr_start=20, log_time=True, output_unit = 'yr', return_flat = False, num_bins=6, fixed_bin_ages = [10.0] * u.Myr): #, cosmo = funcs.astropy_cosmo):

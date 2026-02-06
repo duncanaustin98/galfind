@@ -347,7 +347,8 @@ class Number_Density_Function(Base_Number_Density_Function):
         crop_name: str,
         cv_origin,
         completeness: Optional[Completeness] = None,
-    ) -> Self:
+        Vmax_method: str = "uniform_depth",
+    ):
         self.crop_name = crop_name
         self.x_bins = x_bins
         self.x_origin = x_origin
@@ -358,6 +359,7 @@ class Number_Density_Function(Base_Number_Density_Function):
         self.origin_surveys = origin_surveys
         self.cv_origin = cv_origin
         self.completeness = completeness
+        self.Vmax_method = Vmax_method
         x_mid_bins = np.array(
             [(x_bin[1].value + x_bin[0].value) / 2.0 for x_bin in x_bins]
         ) * x_bins[0].unit
@@ -406,6 +408,7 @@ class Number_Density_Function(Base_Number_Density_Function):
         origin_surveys = tab.meta["origin_surveys"]
         crop_name = tab.meta["crop_name"]
         z_bin = tab.meta["z_bin"]
+        Vmax_method = tab.meta["Vmax_method"]
         return cls(
             x_name,
             x_bins,
@@ -419,6 +422,7 @@ class Number_Density_Function(Base_Number_Density_Function):
             crop_name,
             cv_origin,
             completeness,
+            Vmax_method,
         )
 
     @classmethod
@@ -439,6 +443,7 @@ class Number_Density_Function(Base_Number_Density_Function):
         save: bool = True,
         timed: bool = False,
         Vmax_method: str = "uniform_depth",
+        n_Vmax_jobs: int = 1,
     ) -> Optional[Self]:
         # input assertions
         assert len(z_bin) == 2
@@ -517,6 +522,7 @@ class Number_Density_Function(Base_Number_Density_Function):
             x_calculator.name,
             z_bin_cat.crop_name,
             completeness = completeness,
+            Vmax_method = Vmax_method,
         )
 
         if not Path(save_path).is_file():
@@ -534,6 +540,7 @@ class Number_Density_Function(Base_Number_Density_Function):
                 z_step,
                 unmasked_area = unmasked_area,
                 Vmax_method = Vmax_method,
+                n_jobs = n_Vmax_jobs,
             )
 
             if plot:
@@ -647,7 +654,7 @@ class Number_Density_Function(Base_Number_Density_Function):
 
                     Vmax_reg_compl = np.array(Vmax_reg_compl)
                     Vmax_tot = np.clip(Vmax_reg_compl, 0.0, None).sum(axis = 0) #np.sum(Vmax_reg_compl, axis = 1)
-                    breakpoint()
+                    #breakpoint()
                     Vmax_tot = Vmax_tot[Vmax_tot > 0.0]
                     phi[i] = np.sum(Vmax_tot ** -1.0) / dx
                     # use standard Poisson errors if number of galaxies in bin is not small
@@ -700,6 +707,7 @@ class Number_Density_Function(Base_Number_Density_Function):
                 z_bin_cat.crop_name,
                 cv_origin,
                 completeness = completeness,
+                Vmax_method = Vmax_method,
             )
             if save:
                 number_density_func.save()
@@ -721,6 +729,7 @@ class Number_Density_Function(Base_Number_Density_Function):
         crop_name: str,
         ext: str = ".ecsv",
         completeness: Optional[Completeness] = None,
+        Vmax_method: str = "uniform_depth",
     ) -> str:
         if completeness is None:
             compl_name = ""
@@ -728,7 +737,7 @@ class Number_Density_Function(Base_Number_Density_Function):
             compl_name = "_compl_corr"
         save_path = config['NumberDensityFunctions']['NUMBER_DENSITY_FUNC_DIR'] + \
             f"/Data/{SED_fit_params_key}/{x_name}/" + \
-            f"{origin_surveys}/{crop_name}{compl_name}{ext}"
+            f"{origin_surveys}/{Vmax_method}/{crop_name}{compl_name}{ext}"
         funcs.make_dirs(save_path)
         return save_path
 
@@ -758,6 +767,7 @@ class Number_Density_Function(Base_Number_Density_Function):
             self.crop_name,
             ext = ".png",
             completeness = self.completeness,
+            Vmax_method = self.Vmax_method,
         ).replace("/Data/", "/Plots/")
 
         if os.access(plot_path, os.W_OK):
@@ -784,6 +794,7 @@ class Number_Density_Function(Base_Number_Density_Function):
                 self.x_name,
                 self.crop_name,
                 completeness = self.completeness,
+                Vmax_method = self.Vmax_method,
             )
             fixed_params_str = "_".join([f'{key}={val:.3f}' for key, val in fixed_params.items()])
             if fixed_params_str != "":
@@ -824,6 +835,7 @@ class Number_Density_Function(Base_Number_Density_Function):
                 self.x_name,
                 self.crop_name,
                 completeness = self.completeness,
+                Vmax_method = self.Vmax_method,
             )
         assert all(x_bin[0].unit == self.x_bins[0][0].unit for x_bin in self.x_bins)
         assert all(x_bin[1].unit == self.x_bins[0][1].unit for x_bin in self.x_bins)
@@ -848,7 +860,8 @@ class Number_Density_Function(Base_Number_Density_Function):
             "origin_surveys": self.origin_surveys,
             "z_bin": self.z_bin,
             "cv_origin": self.cv_origin,
-            "crop_name": self.crop_name
+            "crop_name": self.crop_name,
+            "Vmax_method": self.Vmax_method,
         }
         funcs.make_dirs(save_path)
         tab.write(save_path, overwrite=True)
@@ -1216,6 +1229,7 @@ class Multiple_Number_Density_Function(Number_Density_Function):
                 self.x_name,
                 self.crop_name,
                 completeness = self.completeness,
+                Vmax_method = self.Vmax_method,
             )
             fixed_params_str = "_".join([f'{key}={val:.3f}' for key, val in fixed_params.items()])
             if fixed_params_str != "":

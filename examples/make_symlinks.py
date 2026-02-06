@@ -65,6 +65,6 @@ if __name__ == "__main__":
     target_dir = "/raid/scratch/work/jarcidia/GALFIND_WORK" #galfind.config["DEFAULT"]["GALFIND_WORK"]
 
     symlink_dir = "/raid/scratch/work/austind/GALFIND_WORK"
-    dirs_to_link = ["SExtractor"] #["Depths", "EAZY", "Masks", "SExtractor", "Stacked_Images"]
+    dirs_to_link = ["Depths"] #["Depths", "EAZY", "Masks", "SExtractor", "Stacked_Images"]
     for survey in ["COSMOS-Web-0A"]: #[f"COSMOS-Web-{x}{letter}" for x in range(0,8) for letter in ["A", "B"]]:
         main(target_dir, symlink_dir, survey, version, instrument_names, dirs_to_link)

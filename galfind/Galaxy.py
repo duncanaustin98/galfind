@@ -927,13 +927,25 @@ class Galaxy:
         for aper_diam in self.aper_phot.keys():
             aper_diam_aper_corrs = {key: val[aper_diam] for key, val in aper_corrs.items()}
             self.aper_phot[aper_diam].load_sextractor_ext_src_corrs(aper_diam_aper_corrs, band_names)
+            for filt in self.cat_filterset:
+                if band_names is None or filt.band_name in band_names:
+                    setattr(
+                        self,
+                        f"ext_src_corr_{aper_diam.to(u.arcsec).value:.2f}as_{filt.band_name}",
+                        getattr(
+                            self.aper_phot[aper_diam],
+                            f"ext_src_corr_{filt.band_name}",
+                            np.nan,
+                        ),
+                    )
+                    
 
     def set_Vmax(
         self: Self,
         ecsv_rows: Table
     ) -> None:
         assert all(colname in ecsv_rows.colnames for colname in \
-            ["aper_diam", "SED_fit_code", "region", "zmin", "zmax", "Vmax"]
+            ["aper_diam", "SED_fit_code", "region", "Vmax_total"]
         ), galfind_logger.critical(
             f"{repr(self)=} ecsv_rows missing required columns to set Vmax!"
         )
@@ -946,9 +958,9 @@ class Galaxy:
                 for SED_fit_code in SED_fit_code_arr:
                     if SED_fit_code in aper_phot_obj.SED_results.keys():
                         SED_result_obj = aper_phot_obj.SED_results[SED_fit_code]
-                        if not hasattr(SED_result_obj, "V_max"):
-                            SED_result_obj.zmin = {}
-                            SED_result_obj.zmax = {}
+                        if not hasattr(SED_result_obj, "Vmax_total"):
+                            #SED_result_obj.zmin = {}
+                            #SED_result_obj.zmax = {}
                             SED_result_obj.Vmax = {}
                         # crop ecsv tab to just the relevant rows for this 
                         # aper_diam and SED_fit_code combination
@@ -966,15 +978,8 @@ class Galaxy:
                         regions = np.unique(ecsv_row["region"].data)
                         for region in regions:
                             region_row = ecsv_row[ecsv_row["region"] == region]
-                            assert len(region_row) == 1, \
-                                galfind_logger.critical(
-                                    f"Galaxy {self.ID=} has multiple rows in " + \
-                                    f"ecsv for {aper_diam:.2f} {SED_fit_code=} " + \
-                                    f"and {region=}"
-                                )
-                            SED_result_obj.zmin[region] = region_row["zmin"].data[0]
-                            SED_result_obj.zmax[region] = region_row["zmax"].data[0]
-                            SED_result_obj.Vmax[region] = region_row["Vmax"].data[0]
+                            # TODO: save the Vmax kwargs in the object
+                            SED_result_obj.Vmax[region] = np.sum(region_row["Vmax_total"].data)
                     else:
                         galfind_logger.debug(
                             f"Galaxy {self.ID=} has no SED_result for " + \
@@ -1044,17 +1049,13 @@ class Galaxy:
         assert Vmax_crops != []
 
         # calculate V_max
-        z_min_dict = {}
-        z_max_dict = {}
-        V_max_dict = {}
         if sed_result.z > z_bin[1] or sed_result.z < z_bin[0]:
-            region = "all"
-            z_min_dict[region] = -1.0
-            z_max_dict[region] = -1.0
-            V_max_dict[region] = -1.0
+            Vmax = {"all": -1.0}
+            Vmax_kwargs = {"all": {"zmin": -1.0, "zmax": -1.0}}
+            meta = {}
         else:
             calc_Vmax_func = getattr(self, f"calc_Vmax_{Vmax_method.lower()}")
-            output = calc_Vmax_func(
+            Vmax, Vmax_kwargs, meta = calc_Vmax_func(
                 data,
                 z_bin,
                 aper_diam,
@@ -1064,12 +1065,7 @@ class Galaxy:
                 depth_mode,
                 unmasked_area,
             )
-            breakpoint()
-            z_min_used, z_max_used, V_max = output
-            z_min_dict[region] = z_min_used
-            z_max_dict[region] = z_max_used
-            V_max_dict[region] = V_max
-        return z_min_dict, z_max_dict, V_max_dict
+        return Vmax, Vmax_kwargs, meta
 
     def calc_Vmax_split_region(
         self: Self,
@@ -1282,7 +1278,7 @@ class Galaxy:
         z_step: float = 0.01,
         depth_mode: str = "n_nearest",
         unmasked_area: Union[str, List[str], u.Quantity, Type[Mask_Selector]] = "selection",
-    ) -> Tuple[float, float, float]:
+    ) -> Tuple[Dict[str, Any], Dict[str, Any], Dict[str, Any]]:
         #sed_result = self.aper_phot[aper_diam].SED_results[SED_fit_code.label]
         #distance_detect = astropy_cosmo.luminosity_distance(sed_result.z)
         #sed_obs = sed_result.SED
@@ -1301,14 +1297,13 @@ class Galaxy:
                 f"Calculating Vmax for {repr(self)} in {data.full_name=}"
             )
             regions = ["all"]
-        z_arr = np.arange(z_bin[0], z_bin[1] + z_step, z_step)
-        # determine detection band name from maximum zbin redshift
-        # UV_select_band_name = funcs.get_first_redwards_band(
-        #     z_bin[-1],
-        #     data.filterset,
-        #     1216.0 * u.AA,
-        # )
-        # split by region
+
+        Vmax_output = {} # total Vmax outputs for the galaxy
+        Vmax_kwargs_output = {} # galaxy dependent kwargs output for each Vmax calculation
+
+        n_steps = 10
+        meta = {"z_bin": z_bin, "z_step": z_step, "n_depth_steps": n_steps} # data shared by all galaxies in this field
+
         for region in regions:
             assert all(hasattr(band_data, "med_depth") for band_data in data), \
                 galfind_logger.critical(
@@ -1319,24 +1314,10 @@ class Galaxy:
                     f"Not all bands in {repr(data)=} have med_depths for {region=}"
                 )
             
-            if hasattr(data, "region_selector"):
-                region_selector = data.region_selector
-                invert_region = region != data.region_selector.name
-            else:
-                region_selector = None
-                invert_region = False
+            Vmax_output[region] = {}
+            Vmax_kwargs_output[region] = {}
+            meta[region] = {}
 
-            for z in z_arr:
-                # compute area depth for all relevant redshift bin areas
-                data.calc_area_depth(
-                    aper_diam = aper_diam,
-                    mask_selector = unmasked_area,
-                    #mask_type = mask_type,
-                    region_selector = region_selector,
-                    invert_region = invert_region,
-                    z = z,
-                    plot = True,
-                )
             # extract zbins from data.area_depths keys
             area_zbins = []
             area_zbin_labels = []
@@ -1347,7 +1328,6 @@ class Galaxy:
                     area_zbin_labels.append(key)
 
             for area_zbin, area_zbin_label in zip(area_zbins, area_zbin_labels):
-                n_steps = 10
                 # interpolate depths of forced_phot_band n_steps times
                 forced_phot_band_depths = np.linspace(
                     np.max(data.area_depths[region][area_zbin_label]["total_depths"][data.forced_phot_band.filt_name]),
@@ -1375,7 +1355,9 @@ class Galaxy:
                 zmin = np.max([z_bin[0], area_zbin[0]])
                 zmax = np.min([z_bin[1], area_zbin[1]])
                 Vmax_arr = np.zeros(n_steps)
+                Vmax_kwargs_arr = np.full((n_steps,), {})
                 cum_area_arr = cum_area_arr * u.arcmin ** 2
+                depth_step_arr = np.zeros((n_steps, len(data.filterset)))
                 for i in range(n_steps):
                     depth_step = [depths[filt.band_name][i] for filt in data.filterset]
                     if i == 0:
@@ -1383,7 +1365,7 @@ class Galaxy:
                     else:
                         area_step = cum_area_arr[i] - cum_area_arr[i-1]
                     # compute Vmax for this galaxy using these depths and area
-                    Vmax_arr[i] = self._compute_Vmax(
+                    Vmax_, Vmax_kwargs_ = self._compute_Vmax(
                         zmin,
                         zmax,
                         filterset = data.filterset, # could use self.aper_phot[aper_diam].filterset instead?
@@ -1394,10 +1376,16 @@ class Galaxy:
                         area = area_step,
                         z_step = z_step,
                     )
-                    print(f"Depth step {i+1}/{n_steps}: Vmax = {Vmax_arr[i]:.2f} Mpc^3")
+                    Vmax_arr[i] = Vmax_
+                    Vmax_kwargs_arr[i] = Vmax_kwargs_
+                    depth_step_arr[i] = depth_step
+                    #print(f"Depth step {i+1}/{n_steps}: Vmax = {Vmax_arr[i]:.2f} Mpc^3")
                 #print(f"Vmax steps for {area_zbin_label}: {Vmax_arr}")
-                print(f"Total Vmax for {area_zbin_label} = {np.sum(np.clip(Vmax_arr, 0.0, None)):.2f} Mpc^3")
-
+                #print(f"Total Vmax for {area_zbin_label} = {np.sum(np.clip(Vmax_arr, 0.0, None)):.2f} Mpc^3")
+                Vmax_output[region][area_zbin_label] = np.sum(np.clip(Vmax_arr, 0.0, None))
+                Vmax_kwargs_output[region][area_zbin_label] = Vmax_kwargs_arr
+                meta[region][area_zbin_label] = {"depth_step_arr": depth_step_arr, "cum_area_arr": cum_area_arr}
+        return Vmax_output, Vmax_kwargs_output, meta,
 
     def _compute_Vmax(
         self: Self,
@@ -1416,8 +1404,7 @@ class Galaxy:
         sed_obs = sed_result.SED
 
         z_detect = []
-        z_arr = np.arange(zmin, zmax + z_step, z_step)
-        #breakpoint()
+        z_arr = np.linspace(zmin, zmax, int(np.round((zmax - zmin), 4) / z_step) + 1)
         for z in z_arr:
             galfind_logger.debug(
                 "ΙGM attenuation is ignored when redshifting the best-fit galaxy SED!"
@@ -1489,14 +1476,18 @@ class Galaxy:
 
         z_detect = np.array(z_detect)
         if len(z_detect) < 2:
-            #z_max = -1.0
-            #z_min = -1.0
             Vmax = -1.0
+            Vmax_kwargs = {
+                "zskip": [],
+                "zmin": -1.0,
+                "zmax": -1.0,
+                "area": area.to(u.arcmin**2).value,
+            }
         else:
             z_detect_mid_bins = (z_detect[:-1] + z_detect[1:]) / 2
             zbin_use_idx = np.where(np.diff(z_detect) <= z_step)[0]
             if len(zbin_use_idx) + 1 != len(z_detect):
-                galfind_logger.warning(
+                galfind_logger.debug(
                     "Some z bins were skipped during Vmax calculation! " + \
                     f"{z_detect=}, {zbin_use_idx=}"
                 )
@@ -1512,7 +1503,22 @@ class Galaxy:
                     ]
                 )
             )
-        return Vmax
+            ignore_z_mask = np.full(len(z_detect_mid_bins), True)
+            ignore_z_mask[zbin_use_idx] = False
+            if len(z_detect_mid_bins_use) > 0:
+                zmin = np.round(np.min(z_detect_mid_bins_use - (z_step / 2)), 2)
+                zmax = np.round(np.max(z_detect_mid_bins_use + (z_step / 2)), 2)
+            else:
+                zmin = -1.0
+                zmax = -1.0
+            Vmax_kwargs = {
+                "zskip": list(np.round(z_detect_mid_bins[ignore_z_mask], 2)),
+                "zmin": zmin,
+                "zmax": zmax,
+                "area": area.to(u.arcmin**2).value,
+            }
+        Vmax_kwargs["Vmax"] = Vmax
+        return Vmax, Vmax_kwargs
 
     # def calc_Vmax_multifield(self, detect_cat_name: str, data_arr: Union[list, np.array], z_bin: Union[list, np.array], \
     #         SED_fit_params_key: str = "EAZY_fsps_larson_zfree", z_step: float = 0.01) -> None:

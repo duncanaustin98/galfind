@@ -131,6 +131,7 @@ class Combined_Catalogue(Catalogue_Base):
                     "All catalogues must have an 'OBJECTS' HDU"
                 )
             unique_hdu_names = np.concatenate((["OBJECTS"], unique_hdu_names[unique_hdu_names != "OBJECTS"]))
+            object_cat_lengths = []
             # determine ID column names
             for i, hdu in enumerate(unique_hdu_names):
                 # make combined catalogue .fits if this does not already exist
@@ -143,10 +144,8 @@ class Combined_Catalogue(Catalogue_Base):
                             galfind_logger.critical(
                                 "First HDU must be 'OBJECTS'"
                             )
-                        tab["SURVEY"] = cat.survey
-                        tab["VERSION"] = cat.version
-                        tab["INSTR_NAME"] = cat.filterset.instrument_name
                         tab.rename_column(cat.ID_label, "SURVEY_ID")
+                        object_cat_lengths.append(len(tab))
                     # determine SED_code that the hdu originates from, if not any cat.ID_label
                     ID_colname = [subcls.ID_label for subcls in SED_code.__subclasses__() if subcls.__name__.upper() in hdu]
                     if len(ID_colname) == 0:
@@ -157,19 +156,21 @@ class Combined_Catalogue(Catalogue_Base):
                         ID_colname_index = np.argmin(ID_colname_hdu_pos)
                         ID_colname = [ID_colname[ID_colname_index]]
                     #ID_colname = np.unique(ID_colname)
-                    try:
+                    if isinstance(ID_colname, list):
                         assert len(ID_colname) == 1, \
                             galfind_logger.critical(
                                 f"Could not determine ID_colname for HDU {hdu}"
                             )
                         ID_colname = ID_colname[0]
-                        if j == 0:
-                            cat_unique_ids = list(tab[ID_colname])
-                        else:
-                            cat_unique_ids = np.sum(len(tab_) for tab_ in full_tab_arr) + np.array(list(tab[ID_colname]))
-                    except:
-                        breakpoint()
+                    #breakpoint()
+                    if j == 0:
+                        cat_unique_ids = list(tab[ID_colname])
+                    else:
+                        cat_unique_ids = np.sum(object_cat_lengths[:j]) + np.array(list(tab[ID_colname])).astype(int)
                     unique_ids.extend(cat_unique_ids)
+                    tab["SURVEY"] = cat.survey
+                    tab["VERSION"] = cat.version
+                    tab["INSTR_NAME"] = cat.filterset.instrument_name
                     full_tab_arr.append(tab)
                 full_tab = vstack(list(full_tab_arr))
                 # TODO: Sort unique IDs!
@@ -272,6 +273,7 @@ class Combined_Catalogue(Catalogue_Base):
         SED_fit_code: SED_code,
         z_step: float = 0.01,
         unmasked_area: Union[str, u.Quantity] = "selection",
+        Vmax_method: str = "uniform_depth",
     ) -> None:
         # # calculate Vmax for galaxy selection in their origin field
         # [
@@ -306,7 +308,7 @@ class Combined_Catalogue(Catalogue_Base):
         # ]
 
         # combine Vmax's for each field on a galaxy by galaxy basis
-        save_path = self.get_vmax_ecsv_path(self)
+        save_path = self.get_Vmax_ecsv_path(self, Vmax_method = Vmax_method)
         if not Path(save_path).is_file():
             # make Vmax table
             try:

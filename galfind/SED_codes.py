@@ -272,7 +272,7 @@ class SED_code(ABC):
         assert all(aper_phot_ID == SED_fit_ID for aper_phot_ID, SED_fit_ID \
             in zip(aper_phot_IDs, SED_fit_IDs)), galfind_logger.critical(
             f"IDs in SED_fit_cat do not match those in the catalogue"
-            )
+        )
         cat_properties = [{gal_property: SED_fit_cat[label][i] * \
             self.gal_property_units[gal_property] if gal_property in \
             self.gal_property_units.keys() else SED_fit_cat[label][i] * \

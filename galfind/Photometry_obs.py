@@ -592,18 +592,35 @@ class Photometry_obs(Photometry):
                 aper_corrs[filt.band_name][self.aper_diam] for filt in self.filterset}
         assert all(filt_name in aper_corrs.keys() for filt_name in band_names)
 
-        ext_src_corrs = {
-            filt_name: (self.sex_FLUX_AUTO[filt_name] \
-            / (self.flux[i] * funcs.mag_to_flux_ratio(-aper_corrs[filt_name]))) \
-            .to(u.dimensionless_unscaled).unmasked for i, filt_name \
-            in enumerate(self.filterset.band_names)
-            if filt_name in band_names or band_names is None
-        }
+        try:
+            unmasked_flux = self.flux.unmasked
+        except:
+            unmasked_flux = self.flux
+        try:
+            ext_src_corrs = {
+                filt_name: (self.sex_FLUX_AUTO[filt_name] \
+                / (unmasked_flux[i] * funcs.mag_to_flux_ratio(-aper_corrs[filt_name]))) \
+                .to(u.dimensionless_unscaled) for i, filt_name \
+                in enumerate(self.filterset.band_names)
+                if filt_name in band_names or band_names is None
+            }
+        except Exception as e:
+            galfind_logger.critical(
+                f"Failed to compute ext_src_corrs with {e=}, {self.sex_FLUX_AUTO=}, {self.flux=}, {aper_corrs=}"
+            )
+            breakpoint()
+            raise e
         self.ext_src_corrs = {
             filt_name: ext_src_corr.value
             if ext_src_corr.value > 1.0 else 1.0
             for filt_name, ext_src_corr in ext_src_corrs.items()
         }
+        for aper_diam, value in self.ext_src_corrs.items():
+            setattr(
+                self,
+                f"ext_src_corr_{aper_diam}",
+                value,
+            )
         # propagate ext_src_corrs to SED_results[key].phot_rest
         for key in self.SED_results.keys():
             self.SED_results[key].phot_rest.ext_src_corrs = self.ext_src_corrs

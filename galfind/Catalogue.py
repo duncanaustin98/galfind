@@ -701,11 +701,14 @@ class Catalogue_Creator:
         meta = self.open_hdr(self.cat_path, "ID")
         req_metakeys = ["SURVEY", "INSTR", "APERDIAM"]
         if all(name in meta.keys() for name in req_metakeys):
-            save_dir = f"{config['DEFAULT']['GALFIND_WORK']}/Masks/{meta['SURVEY']}/has_data_mask/{meta['INSTR']}/{meta['APERDIAM']}"
+            save_dir = f"{config['DEFAULT']['GALFIND_WORK']}/Masks/{meta['SURVEY']}/" + \
+                f"has_data_mask/{meta['INSTR']}/{meta['APERDIAM']}"
         elif self.survey is not None and self.filterset is not None and self.aper_diams is not None:
             if len(self.aper_diams) != 1:
                 galfind_logger.warning(f"len({self.aper_diams=}) != 1! Using {self.aper_diams[0]} for gal_instr_mask!")
-            save_dir = f"{config['DEFAULT']['GALFIND_WORK']}/Masks/{self.survey}/has_data_mask/{self.filterset.instrument_name}/{self.aper_diams[0]}"
+            save_dir = f"{config['DEFAULT']['GALFIND_WORK']}/Masks/{self.survey}/" + \
+                f"has_data_mask/{self.filterset.instrument_name}/" + \
+                f"{self.aper_diams[0].to(u.arcsec).value}as"
         else:
             err_message = f"Not all of {req_metakeys} in {self.cat_path} " + \
                 "nor 'survey', 'filterset', and 'aper_diams' provided in self!"
@@ -886,21 +889,26 @@ class Catalogue(Catalogue_Base):
             )
         ]
 
-    def match_available_spectra(self):
+    def match_available_spectra(
+        self: Self,
+        versions: List[str] = ["v1", "v2", "v3", "v4_2"],
+        **match_kwargs: Dict[str, Any],
+    ) -> Self:
         # make catalogue consisting of spectra downloaded from the DJA
-        DJA_cat = np.sum(
-            [
-                Spectral_Catalogue.from_DJA(
-                    ra_range=self.ra_range,
-                    dec_range=self.dec_range,
-                    version=version,
-                )
-                for version in ["v1", "v2"]
-            ]
-        )
+        for i, version in enumerate(versions):
+            DJA_cat_ = Spectral_Catalogue.from_DJA(
+                ra_range=self.ra_range,
+                dec_range=self.dec_range,
+                version=version,
+                **match_kwargs,
+            )
+            if i == 0:
+                DJA_cat = DJA_cat_
+            else:
+                DJA_cat += DJA_cat_
         # cross match this catalogue
         cross_matched_cat = self * DJA_cat
-        print(str(cross_matched_cat))
+        #print(str(cross_matched_cat))
         return cross_matched_cat
 
         # # calculate aperture corrections if not already
@@ -987,7 +995,6 @@ class Catalogue(Catalogue_Base):
             raise NotImplementedError
         else:
             raise NotImplementedError
-
         # TODO: Need to attach self.open_cat to catalogue_creator.open_cat
         append_tab = self.open_cat(cropped=False, hdu=hdu)
         # append to .fits table only if not already
@@ -1169,6 +1176,16 @@ class Catalogue(Catalogue_Base):
             if band_names is None or filt.band_name in band_names
         }
         [gal.load_sextractor_ext_src_corrs(aper_corrs, band_names) for gal in self]
+
+        if len(self) == len(self.cat_creator.open_cat(self.cat_path, "ID")):
+            galfind_logger.info(
+                f"Saving SExtractor extended source corrections to {self.cat_name}!"
+            )
+            # save to catalogue
+            for filt in self.filterset:
+                if band_names is None or filt.band_name in band_names:
+                    for aper_diam in self.aper_diams:
+                        self._append_property_to_tab(f"ext_src_corr_{aper_diam.to(u.arcsec).value:.2f}as_{filt.band_name}", "OBJECTS")
 
     def load_sextractor_params(self) -> None:
         self.load_sextractor_auto_mags()
@@ -1543,6 +1560,7 @@ class Catalogue(Catalogue_Base):
         z_step: float = 0.01,
         unmasked_area: Union[str, List[str], u.Quantity, Type[Mask_Selector]] = "selection",
         Vmax_method: str = "uniform_depth",
+        n_jobs: int = 1,
     ) -> NDArray[float]:
         assert hasattr(self, "data"), \
             galfind_logger.critical(
@@ -1556,6 +1574,7 @@ class Catalogue(Catalogue_Base):
             z_step = z_step,
             unmasked_area = unmasked_area,
             Vmax_method = Vmax_method,
+            n_jobs = n_jobs,
         )
     
 

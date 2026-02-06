@@ -157,6 +157,8 @@ class Spectrum:
         self.fluxes = fluxes
         self.flux_errs = flux_errs
         self.sky_coord = sky_coord
+        self.RA = sky_coord.ra.deg
+        self.DEC = sky_coord.dec.deg
         self.z = z
         self.z_method = z_method
         self.instrument = instrument
@@ -283,7 +285,7 @@ class Spectrum:
                 flux_errs = spectrum_1D.spec["full_err"] * (
                     N_exposures**-0.25
                 )
-            elif version in ["v3", "v4_2"]:
+            elif version in ["v3", "v4_2", "v4_4"]:
                 flux_errs = spectrum_1D.spec["full_err"]
             else:
                 flux_errs = spectrum_1D.spec["full_err"]
@@ -312,9 +314,9 @@ class Spectrum:
         fluxes = Masked(fluxes * flux_unit, mask = mask)
         flux_errs = Masked(np.array(flux_errs) * flux_unit, mask = mask)
 
-        if version == "v2":
+        if version in ["v2"]:
             msa_metafile = str(header["MSAMETFL"]).replace(" ", "")
-        elif version in ["v3", "v4_2"]:
+        elif version in ["v3", "v4_2", "v4_4"]:
             msa_metafile = str(header["MSAMETFL"]).replace(" ", "")
         else:
             msa_metafile = str(header["MSAMET1"]).replace(" ", "")
@@ -716,7 +718,9 @@ class Spectral_Catalogue:
 
     def __getattr__(self, name):
         if hasattr(self[0][0], name):
-            return [getattr(gal[0], name) for gal in self]
+            return [getattr(spec[0], name) for spec in self]
+        else:
+            raise AttributeError
 
     def __add__(self, cat):
         assert cat.__class__.__name__ == "Spectral_Catalogue"
@@ -753,11 +757,11 @@ class Spectral_Catalogue:
         filename_arr: Optional[List[str]] = None,
         save: bool = True,
         z_from_cat: bool = False,
-        version: str = "v2",
+        version: str = "v4_4",
     ):
         if grating_filter is not None:
             assert grating_filter in NIRSpec.available_grating_filters
-        assert version in ["v1", "v2", "v3", "v4_2"]
+        assert version in ["v1", "v2", "v3", "v4_2", "v4_4"]
         # open and crop catalogue
         # DJA_cat = utils.read_catalog(config['Spectra']['DJA_CAT_PATH'], format = "ascii.ecsv")
         DJA_cat = Table.read(
@@ -768,55 +772,68 @@ class Spectral_Catalogue:
                 assert len(ra_range) == 2
                 if type(ra_range) in [list, np.array]:
                     assert ra_range[0].unit == ra_range[1].unit
-                    ra_range = [ra_range[0].value, ra_range[1].value] * ra_range[
-                        0
-                    ].unit
+                    ra_range = [ra_range[0].value, ra_range[1].value] \
+                        * ra_range[0].unit
                 ra_range = sorted(ra_range.to(u.deg).value)
+                galfind_logger.info(f"Filtering DJA_{version} catalogue to RA range {ra_range}. Original size: {len(DJA_cat)}")
                 DJA_cat = DJA_cat[
                     ((DJA_cat["ra"] > ra_range[0]) & (DJA_cat["ra"] < ra_range[1]))
                 ]
+                galfind_logger.info(f"Filtered DJA_{version} catalogue to size: {len(DJA_cat)}")
+            
             if dec_range is not None:
                 assert len(dec_range) == 2
                 if type(dec_range) in [list, np.array]:
                     assert dec_range[0].unit == dec_range[1].unit
-                    dec_range = [
-                        dec_range[0].value,
-                        dec_range[1].value,
-                    ] * dec_range[0].unit
+                    dec_range = [dec_range[0].value, dec_range[1].value] \
+                        * dec_range[0].unit
                 dec_range = sorted(dec_range.to(u.deg).value)
+                galfind_logger.info(f"Filtering DJA_{version} catalogue to Dec range {dec_range}. Original size: {len(DJA_cat)}")
                 DJA_cat = DJA_cat[
                     (
                         (DJA_cat["dec"] > dec_range[0])
                         & (DJA_cat["dec"] < dec_range[1])
                     )
                 ]
+                galfind_logger.info(f"Filtered DJA_{version} catalogue to size: {len(DJA_cat)}")
+
             if grade is not None:
+                galfind_logger.info(f"Filtering DJA_{version} catalogue to grade {grade} sources. Original size: {len(DJA_cat)}")
                 DJA_cat = DJA_cat[DJA_cat["grade"] == grade]
+                galfind_logger.info(f"Filtered DJA_{version} catalogue to size: {len(DJA_cat)}")
+
             if grating_filter is not None:
+                galfind_logger.info(f"Filtering DJA_{version} catalogue to grating/filter {grating_filter}. Original size: {len(DJA_cat)}")
                 if "grating" in DJA_cat.colnames:
                     # TODO: Generalize this!
-                    if version == "v4_2":
+                    if version in ["v4_2"]:
                         if grating_filter == "PRISM/CLEAR":
                             grating_filter = "PRISM_CLEAR"
                     DJA_cat = DJA_cat[
                         DJA_cat["grating"] == grating_filter.split("/")[0]
                     ]
-                
                 if "filter" in DJA_cat.colnames:
                     DJA_cat = DJA_cat[
                         DJA_cat["filter"] == grating_filter.split("/")[1]
                     ]
+                galfind_logger.info(f"Filtered DJA_{version} catalogue to size: {len(DJA_cat)}")
+
             if z_cat_range is not None:
+                galfind_logger.info(f"Filtering DJA_{version} catalogue to z range {z_cat_range}. Original size: {len(DJA_cat)}")
                 DJA_cat = DJA_cat[
                     (
                         (DJA_cat["z"] > z_cat_range[0])
                         & (DJA_cat["z"] < z_cat_range[1])
                     )
                 ]
+                galfind_logger.info(f"Filtered DJA_{version} catalogue to size: {len(DJA_cat)}")
                 z_from_cat = True
+            
             if PID is not None:
+                galfind_logger.info(f"Filtering DJA_{version} catalogue to PID {PID}. Original size: {len(DJA_cat)}")
                 if "PID" in DJA_cat.colnames:
                     DJA_cat = DJA_cat[DJA_cat["PID"] == PID]
+                galfind_logger.info(f"Filtered DJA_{version} catalogue to size: {len(DJA_cat)}")
         else:
             mask = np.isin(np.array(DJA_cat["file"]), np.array(filename_arr))
             DJA_cat = DJA_cat[mask]
@@ -867,5 +884,3 @@ class Spectral_Catalogue:
         for gal in tqdm(self, desc="Plotting spectra"):
             for spec in gal:
                 spec.plot(src = src)
-
-    # def crop_to_grating(self, name = "G395H/F290LP"):

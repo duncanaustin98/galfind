@@ -302,7 +302,6 @@ class Catalogue_Base:
         new_copies = []
         for o in other_copy_gals:
             other_copy = deepcopy(o)
-
             # Convert from list of SkyCoord to SkyCoord(arra)
             sky_coords_cat = SkyCoord(
                 self_copy.RA, self_copy.DEC, unit=(u.deg, u.deg), frame="icrs"
@@ -377,9 +376,7 @@ class Catalogue_Base:
                             other_copy.gals[indexes]
                         )
                         # Save indexes of other_gals in other_sky_coords
-                        other_gals_indexes = np.arange(len(other_sky_coords))[
-                            indexes
-                        ]
+                        other_gals_indexes = np.arange(len(other_sky_coords))[indexes]
 
                         bands_gal1 = np.array(
                             coord_gal.phot.instrument.band_names
@@ -452,6 +449,7 @@ class Catalogue_Base:
             gal_matched_cat = self_copy[cat_matches]
             # Use indexes instead
             other_cat_matches = np.array(other_cat_matches, dtype=int)
+            breakpoint()
             gal_matched_other = other_copy[other_cat_matches]
             print("Obtained matched galaxies")
             assert len(gal_matched_cat) == len(
@@ -1193,14 +1191,15 @@ class Catalogue_Base:
         if plot_type.lower() != "contour":
             return plot
 
-    def get_vmax_ecsv_path(
+    def get_Vmax_ecsv_path(
         self: Self,
         data: Data,
+        Vmax_method: str = "uniform_depth",
     ) -> str:
         full_data_name = funcs.get_full_survey_name(data.survey, data.version, data.filterset)
         save_path = f"{config['NumberDensityFunctions']['VMAX_DIR']}/" + \
             f"{self.version}/{self.filterset.instrument_name}/" + \
-            f"{self.survey}/{self.crop_name}/Vmax_field={full_data_name}.ecsv"
+            f"{self.survey}/{self.crop_name}/{Vmax_method}/Vmax_field={full_data_name}.ecsv"
         funcs.make_dirs(save_path)
         return save_path
 
@@ -1213,13 +1212,15 @@ class Catalogue_Base:
         z_step: float = 0.01,
         unmasked_area: Union[str, List[str], u.Quantity, Type[Mask_Selector]] = "selection",
         Vmax_method: str = "uniform_depth",
+        n_jobs: int = 1,
     ) -> Dict[str, NDArray[float]]:
         assert len(z_bin) == 2
         assert z_bin[0] < z_bin[1]
         assert isinstance(SED_fit_code, tuple(SED_code.__subclasses__()))
         assert all(SED_fit_code.label in gal.aper_phot[aper_diam].SED_results.keys() for gal in self)
+        assert isinstance(n_jobs, int) and n_jobs >= 1
 
-        save_path = self.get_vmax_ecsv_path(data)
+        save_path = self.get_Vmax_ecsv_path(data, Vmax_method = Vmax_method)
         # if this file already exists
         if Path(save_path).is_file():
             # open file
@@ -1236,51 +1237,155 @@ class Catalogue_Base:
         if len(update_gals) > 0:
             full_survey_name = funcs.get_full_survey_name(self.survey, self.version, self.filterset)
             full_data_name = funcs.get_full_survey_name(data.survey, data.version, data.filterset)
+
+            # load in area-depth curves before parallelization
+            if Vmax_method.lower() == "area_depth_scaled_split_region":
+                z_arr = np.arange(z_bin[0], z_bin[1] + z_step, z_step)
+                if hasattr(self.data, "region_selector"):
+                    region_selector = self.data.region_selector
+                    invert_region = [True, False] #region != self.data.region_selector.name
+                else:
+                    region_selector = None
+                    invert_region = [False]
+                for invert_region_ in invert_region:
+                    for z in z_arr:
+                        # compute area depth for all relevant redshift bin areas
+                        self.data.calc_area_depth(
+                            aper_diam = aper_diam,
+                            mask_selector = unmasked_area,
+                            #mask_type = mask_type,
+                            region_selector = region_selector,
+                            invert_region = invert_region_,
+                            z = z,
+                            plot = True,
+                        )
+
             # calculate Vmax's and append them to Vmax ecsv
-            Vmax_outputs = [
-                gal.calc_Vmax(
-                    data,
-                    z_bin,
-                    aper_diam,
-                    SED_fit_code,
-                    self.cat_creator.crops,
-                    z_step,
-                    unmasked_area = unmasked_area,
-                    Vmax_method = Vmax_method,
+            if n_jobs == 1:
+                Vmax_outputs = [
+                    gal.calc_Vmax(
+                        data,
+                        z_bin,
+                        aper_diam,
+                        SED_fit_code,
+                        self.cat_creator.crops,
+                        z_step,
+                        unmasked_area = unmasked_area,
+                        Vmax_method = Vmax_method,
+                    )
+                    for gal in tqdm(
+                        update_gals, 
+                        total=len(update_gals),
+                        desc=f"Calculating {full_survey_name} Vmax's in {full_data_name}",
+                        disable = galfind_logger.getEffectiveLevel() > logging.INFO,
+                    )
+                ]
+            else:
+                params_arr = [
+                    (
+                        gal,
+                        data,
+                        z_bin,
+                        aper_diam,
+                        SED_fit_code,
+                        self.cat_creator.crops,
+                        z_step,
+                        unmasked_area,
+                        Vmax_method,
+                    ) 
+                    for gal in update_gals
+                ]
+                from joblib import Parallel, delayed, parallel_config
+                with funcs.tqdm_joblib(tqdm(
+                        desc = f"Calculating {full_survey_name} Vmax's in {full_data_name}",
+                        total = len(self)
+                    )
+                ) as progress_bar:
+                    with parallel_config(backend='loky', n_jobs=n_jobs):
+                        Vmax_outputs = Parallel()(delayed( \
+                            self._calc_Vmax_multi_process)(params) \
+                            for params in params_arr
+                        )
+
+            # prepare ecsv data
+            region_keys = [key for key in Vmax_outputs[0][0].keys()]
+            assert region_keys == data.regions, \
+                galfind_logger.critical(
+                    "Region keys from Vmax calculation do not match data regions!"
                 )
-                for gal in tqdm(
-                    self,
-                    total=len(self),
-                    desc=f"Calculating {full_survey_name} Vmax's in {full_data_name}",
-                    disable = galfind_logger.getEffectiveLevel() > logging.INFO,
+            assert all(len(Vmax_output[0]) == len(data.regions) for Vmax_output in Vmax_outputs), \
+                galfind_logger.critical(
+                    "Number of regions from Vmax calculation do not match data regions!"
                 )
-            ]
-            IDs = np.repeat(np.array([gal.ID for gal in update_gals]), len(data.regions))
-            surveys = np.repeat(np.array([gal.survey for gal in update_gals]), len(data.regions))
-            regions = np.tile(data.regions, len(update_gals))
+            zbin_keys = [key for key in Vmax_outputs[0][1][region_keys[0]].keys()]
+            # assert all([Vmax_output[1][region_keys[0]].keys() == zbin_keys for Vmax_output in Vmax_outputs]), \
+            #     galfind_logger.critical(
+            #         "z_bin keys from Vmax calculation do not match across galaxies!"
+            #     )
+            meta = Vmax_outputs[0][2]
+            # TODO: check meta data consistency across galaxies
+            # tricky due to dict element assertion requirements
+            # assert all(Vmax_output[2] == meta for Vmax_output in Vmax_outputs), \
+            #     galfind_logger.critical(
+            #         "meta data from Vmax calculation do not match across galaxies!"
+            #     )
+            Vmax = np.zeros((len(update_gals), len(region_keys), len(zbin_keys)))
+            kwargs = {}
+            for i, Vmax_output in enumerate(Vmax_outputs):
+                for j, region in enumerate(region_keys):
+                    for k, zbin in enumerate(zbin_keys):
+                        try:
+                            Vmax[i, j, k] = Vmax_output[0][region][zbin]
+                            if isinstance(Vmax_output[1][region][zbin], (list, np.ndarray)):
+                                for h, kwarg in enumerate(Vmax_output[1][region][zbin]):
+                                    if isinstance(kwarg, dict):
+                                        for key, value in kwarg.items():
+                                            key = f"{key}_{str(h+1)}"
+                                            if key not in kwargs.keys():
+                                                kwargs[key] = [value]
+                                            else:
+                                                kwargs[key].extend([value])
+                                    else:
+                                        raise NotImplementedError(
+                                            "Vmax output kwarg is not dict!"
+                                        )
+                            else:
+                                raise NotImplementedError(
+                                    "Vmax output kwarg is not list or ndarray!"
+                                )
+                        except Exception as e:
+                            galfind_logger.critical(
+                                f"Error when assigning Vmax for galaxy ID {update_gals[i].ID}! Error={e}"
+                            )
+                            breakpoint()
+                            raise e
+            IDs = np.repeat(np.array([gal.ID for gal in update_gals]), len(zbin_keys) * len(region_keys))
+            regions = np.tile(np.repeat(data.regions, len(zbin_keys)), len(update_gals))
+            zbin_labels = np.tile(zbin_keys, len(region_keys) * len(update_gals))
+            surveys = np.repeat(np.array([gal.survey for gal in update_gals]), len(zbin_keys) * len(region_keys))
             aper_diams = np.full(len(IDs), aper_diam.value)
             SED_fit_codes = np.full(len(IDs), SED_fit_code.label)
-            ecsv_zmin = []
-            ecsv_zmax = []
-            ecsv_Vmax = []
-            for Vmax_output in Vmax_outputs:
-                zmin, zmax, Vmax = Vmax_output
-                for region in data.regions:
-                    ecsv_zmin.extend([zmin[region]])
-                    ecsv_zmax.extend([zmax[region]])
-                    ecsv_Vmax.extend([Vmax[region]])
+            #breakpoint()
             ecsv_data = {
                 "ID": IDs,
                 "survey": surveys,
                 "region": regions,
                 "aper_diam": aper_diams,
                 "SED_fit_code": SED_fit_codes,
-                "zmin": ecsv_zmin,
-                "zmax": ecsv_zmax,
-                "Vmax": ecsv_Vmax,
+                "zbin_label": zbin_labels,
+                "Vmax_total": Vmax.flatten(),
+                **kwargs,
             }
-            new_tab = Table(ecsv_data, dtype=[int, str, str, float, str, float, float, float])
-            new_tab.meta = {"Vmax_invalid_val": -1.0}
+            #breakpoint()
+            try:
+                new_tab = Table(ecsv_data, dtype = [int, str, str, float, str, str, float] + [object] * len(kwargs))
+            except Exception as e:
+                galfind_logger.critical(
+                    f"Error when creating Vmax ecsv table! Error={e}"
+                )
+                breakpoint()
+                raise e
+            new_tab.meta = {"Vmax_invalid_val": -1.0, **meta}
             self._save_ecsv(save_path, new_tab)
             self._load_Vmax_from_ecsv(new_tab, aper_diam, SED_fit_code, data.full_name)
         else:
@@ -1288,6 +1393,22 @@ class Catalogue_Base:
                 old_tab = Table.read(save_path)
                 self._load_Vmax_from_ecsv(old_tab, aper_diam, SED_fit_code, data.full_name)
     
+    @staticmethod
+    def _calc_Vmax_multi_process(
+        params: Dict[str, Any]
+    ) -> Tuple[Dict[str, float], Dict[str, Any], Dict[str, Any]]:
+        gal, data, z_bin, aper_diam, SED_fit_code, crops, z_step, unmasked_area, Vmax_method = params
+        return gal.calc_Vmax(
+            data,
+            z_bin,
+            aper_diam,
+            SED_fit_code,
+            crops,
+            z_step,
+            unmasked_area = unmasked_area,
+            Vmax_method = Vmax_method,
+        )
+
     def _save_ecsv(
         self: Self,
         save_path: str,
@@ -1312,9 +1433,8 @@ class Catalogue_Base:
             load_gals_arr = [gal for gal in self if gal.survey == full_survey_name.split("_")[0]]
         else:
             load_gals_arr = self.gals
-        from . import Combined_Catalogue
         # save appropriate Vmax properties
-        Vmax_arr = np.zeros(len(load_gals_arr))
+        #Vmax_arr = np.zeros(len(load_gals_arr))
         for i, gal in enumerate(load_gals_arr):
             Vmax_rows = tab[np.logical_and((tab["ID"] == gal.ID), (tab["survey"] == gal.survey))]
             gal.set_Vmax(Vmax_rows)

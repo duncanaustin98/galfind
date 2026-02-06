@@ -2211,7 +2211,10 @@ class Data:
                 # extract sci/rms_err/wht extensions
                 try:
                     hdul = fits.open(path, ignore_missing_simple = True, mode = "update")
-                except:
+                except Exception as e:
+                    galfind_logger.critical(
+                        f"Failed to open {path}! Error: {e}!"
+                    )
                     breakpoint()
                 if not single_path:
                     is_data_hdu = [True if type(hdu.data) == np.ndarray and hdu.data.ndim == 2 else False for hdu in hdul]
@@ -2569,6 +2572,11 @@ class Data:
                 return item
 
     def __getattr__(self, attr: str) -> Any:
+
+        # Avoid recursion for pickling-related attributes
+        if attr in {"__getstate__", "__setstate__"}:
+            raise AttributeError(attr)
+        
         # attr inserted here must be pluralised with 's' suffix
         if all(attr[:-1] in band_data.__dict__.keys() for band_data in self):
             if hasattr(self, "forced_phot_band"):
