@@ -1406,3 +1406,14 @@ def get_ext_src_corr_label(
         else:
             ext_src_lim_label = f"<{ext_src_uplim:.0f}"
         return ext_src_name + ext_src_lim_label
+    
+def all_subclasses(cls):
+    out = set()
+    stack = [cls]
+    while stack:
+        parent = stack.pop()
+        for sub in parent.__subclasses__():
+            if sub not in out:
+                out.add(sub)
+                stack.append(sub)
+    return out

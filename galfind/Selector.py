@@ -317,7 +317,7 @@ class SED_fit_Selector(Selector, ABC):
         assert isinstance(aper_diam, u.Quantity)
         assert aper_diam.unit.is_equivalent(u.arcsec)
         assert aper_diam > 0 * u.arcsec
-        assert isinstance(SED_fitter, tuple(SED_code.__subclasses__())), \
+        assert isinstance(SED_fitter, tuple(funcs.all_subclasses(SED_code))), \
             galfind_logger.critical(
                 f"{repr(SED_fitter)} must be an SED_code object."
             )
@@ -2893,7 +2893,7 @@ class Chi_Sq_Template_Diff_Selector(SED_fit_Selector):
         secondary_SED_fit_label: Union[str, SED_code],
         reduced: bool = False,
     ):
-        if isinstance(secondary_SED_fit_label, tuple(SED_code.__subclasses__())):
+        if isinstance(secondary_SED_fit_label, tuple(funcs.all_subclasses(SED_code))):
             secondary_SED_fit_label = secondary_SED_fit_label.label
         kwargs = {
             "chi_sq_diff": chi_sq_diff,
@@ -3490,7 +3490,7 @@ class Brown_Dwarf_Selector(Multiple_SED_fit_Selector):
 #         if secondary_SED_fit_label is None:
 #             gal_chi2_compar_label = chi2_label
 #         else:
-#             if isinstance(secondary_SED_fit_label, tuple(SED_code.__subclasses__())):
+#             if isinstance(secondary_SED_fit_label, tuple(funcs.all_subclasses(SED_code))):
 #                 secondary_SED_fit_label = secondary_SED_fit_label.label
 #             selectors.extend([
 #                 Chi_Sq_Template_Diff_Selector(

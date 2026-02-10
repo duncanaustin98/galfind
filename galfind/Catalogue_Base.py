@@ -673,7 +673,11 @@ class Catalogue_Base:
     #         )
     #     return cat_copy
 
-    def open_cat(self, cropped: bool = False, hdu: Optional[str, Type[SED_code]] = None):
+    def open_cat(
+        self: Self,
+        cropped: bool = False,
+        hdu: Optional[str, Type[SED_code]] = None
+    ) -> Optional[Table]:
         if hdu is None:
             fits_cat = Table.read(
                 self.cat_path, character_as_bytes=False, memmap=True
@@ -697,14 +701,59 @@ class Catalogue_Base:
                 )
                 return None
         if cropped:
-            ID_tab = Table({"IDs_temp": self.ID}, dtype=[int])
+            if len(self) == 0:
+                galfind_logger.debug(
+                    f"No galaxies in {repr(self)} to crop the catalogue with! " + \
+                    "Cropping from .fits table!"
+                )
+                # load selection table
+                select_cat = self.open_cat(cropped = False, hdu = "SELECTION")
+                crop_mask = np.array(
+                    np.logical_and.reduce(
+                        [select_cat[crop.name] for crop in self.crops]
+                    )
+                )
+                IDs_temp = np.array(select_cat[self.cat_creator.ID_label])[crop_mask]
+            else:
+                IDs_temp = self.ID
+            ID_tab = Table({"IDs_temp": IDs_temp}, dtype=[int])
             if hdu is None:
                 keys_left = self.cat_creator.ID_label
-            elif hdu_name.upper() in ["OBJECTS"]:  # , "GALFIND_CAT"]:
+            elif hdu_name.upper() in ["OBJECTS", "SELECTION"]:  # , "GALFIND_CAT"]:
                 keys_left = self.cat_creator.ID_label
+            elif "PROPERTIES" in hdu_name.upper():
+                keys_left = "ID"
             elif isinstance(hdu, SED_code):
                 keys_left = hdu.ID_label
+            elif hdu_name.split("_")[0].upper() in [
+                subcls.__name__.upper() for subcls in funcs.all_subclasses(SED_code)
+            ]:
+                keys_left = [
+                    subcls for subcls in funcs.all_subclasses(SED_code)
+                    if subcls.__name__.upper() == hdu_name.split("_")[0].upper()
+                ][0].ID_label
+            elif any(
+                hdu_name_.upper() == subcls.__name__.upper()
+                for subcls in funcs.all_subclasses(SED_code)
+                for hdu_name_ in hdu_name.split("_")
+            ):
+                keys_left = [
+                    subcls for subcls in funcs.all_subclasses(SED_code)
+                    if any(
+                        hdu_name_.upper() == subcls.__name__.upper()
+                        for hdu_name_ in hdu_name.split("_")
+                    )
+                ][0].ID_label
+            elif hdu_name in [
+                subcls.__name__.upper() for subcls in funcs.all_subclasses(SED_code)
+            ]:
+                keys_left = [
+                    subcls for subcls in funcs.all_subclasses(SED_code)
+                    if subcls.__name__.upper() == hdu_name.upper()
+                ][0].ID_label
             else:
+                print(hdu, hdu_name)
+                breakpoint()
                 raise NotImplementedError()
             # convert ID column to appropriate units if not already
             if fits_cat[keys_left].dtype != int:

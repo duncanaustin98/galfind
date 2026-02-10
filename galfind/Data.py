@@ -3010,11 +3010,12 @@ class Data:
         assert all(all(diam == diam_0 for diam, diam_0 in zip(band_data.aper_diams, self[0].aper_diams)) for band_data in self)
         assert all(diam == diam_0 for diam, diam_0 in zip(self.forced_phot_band.aper_diams, self[0].aper_diams))
         # ensure all bands have the same forced photometry band
-        assert all(band_data.forced_phot_args["forced_phot_band"] == self.forced_phot_band for band_data in self)
-        assert self.forced_phot_band.forced_phot_args["forced_phot_band"] == self.forced_phot_band # points to itself?
-        # ensure all bands are made using the same err map
-        assert all(band_data.forced_phot_args["err_type"] == self[0].forced_phot_args["err_type"] for band_data in self)
-        assert self.forced_phot_band.forced_phot_args["method"] == self[0].forced_phot_args["method"]
+        if hasattr(self.forced_phot_band, "forced_phot_args"):
+            assert all(band_data.forced_phot_args["forced_phot_band"] == self.forced_phot_band for band_data in self)
+            assert self.forced_phot_band.forced_phot_args["forced_phot_band"] == self.forced_phot_band # points to itself?
+            # ensure all bands are made using the same err map
+            assert all(band_data.forced_phot_args["err_type"] == self[0].forced_phot_args["err_type"] for band_data in self)
+            assert self.forced_phot_band.forced_phot_args["method"] == self[0].forced_phot_args["method"]
 
         # determine photometric catalogue path
         phot_cat_path = funcs.get_phot_cat_path(

@@ -82,6 +82,7 @@ class Combined_Catalogue(Catalogue_Base):
         survey: Optional[str] = None,
         version: Optional[str] = None,
         overwrite: bool = False,
+        crop_fits: bool = False,
     ):
         # ensure all catalogues have the same aperture diameters
         assert all(cat.aper_diams == cat_arr[0].aper_diams for cat in cat_arr), \
@@ -140,21 +141,30 @@ class Combined_Catalogue(Catalogue_Base):
                 full_tab_arr = [] #np.full(len(cat_arr), None)
                 unique_ids = []
                 for j, cat in enumerate(cat_arr):
-                    tab = cat.open_cat(hdu = hdu, cropped=False)
+                    tab = cat.open_cat(hdu = hdu, cropped = crop_fits) # usually False
                     if i == 0:
                         assert hdu == "OBJECTS", \
                             galfind_logger.critical(
                                 "First HDU must be 'OBJECTS'"
                             )
                         tab.rename_column(cat.ID_label, "SURVEY_ID")
-                        object_cat_lengths.append(len(tab))
+                        uncropped_tab = cat.open_cat(hdu = hdu, cropped = False)
+                        object_cat_lengths.append(len(uncropped_tab))
                     # determine SED_code that the hdu originates from, if not any cat.ID_label
-                    ID_colname = [subcls.ID_label for subcls in SED_code.__subclasses__() if subcls.__name__.upper() in hdu]
+                    ID_colname = []
+                    for subcls in funcs.all_subclasses(SED_code):
+                        if subcls.__name__.upper() in hdu:
+                            if "PROPERTIES" in hdu:
+                                ID_label = "ID"
+                            else:
+                                ID_label = subcls.ID_label
+                            ID_colname.append(ID_label)
+                    #ID_colname = [subcls.ID_label for subcls in funcs.all_subclasses(SED_code) if subcls.__name__.upper() in hdu]
                     if len(ID_colname) == 0:
                         ID_colname = [cat.ID_label if i != 0 else "SURVEY_ID"]
                     if len(ID_colname) > 1:
                         # choose the first one found
-                        ID_colname_hdu_pos = [hdu.find(subcls.__name__.upper()) for subcls in SED_code.__subclasses__() if subcls.__name__.upper() in hdu]
+                        ID_colname_hdu_pos = [hdu.find(subcls.__name__.upper()) for subcls in funcs.all_subclasses(SED_code) if subcls.__name__.upper() in hdu]
                         ID_colname_index = np.argmin(ID_colname_hdu_pos)
                         ID_colname = [ID_colname[ID_colname_index]]
                     #ID_colname = np.unique(ID_colname)
@@ -164,7 +174,12 @@ class Combined_Catalogue(Catalogue_Base):
                                 f"Could not determine ID_colname for HDU {hdu}"
                             )
                         ID_colname = ID_colname[0]
-                    if tab is None:
+                    try:
+                        tab[ID_colname]
+                    except KeyError as e:
+                        galfind_logger.critical(
+                            f"Could not find ID column in HDU {hdu} for catalogue {cat.survey} {cat.version}. Error: {e}"
+                        )
                         breakpoint()
                     if j == 0:
                         cat_unique_ids = list(tab[ID_colname])

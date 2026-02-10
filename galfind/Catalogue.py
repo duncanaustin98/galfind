@@ -473,6 +473,7 @@ class Catalogue_Creator:
     def __call__(
         self: Self,
         cropped: bool = True,
+        load_gals: bool = True,
     ) -> Catalogue:
         galfind_logger.info(
             f"Making {self.survey} {self.version} {self.cat_name} catalogue!"
@@ -480,42 +481,48 @@ class Catalogue_Creator:
         galfind_logger.debug(
             f"Loading {self.survey} {self.version} {self.cat_name} photometry!"
         )
-        # make array of Photometry_obs for each aperture diameter
-        IDs = self.load_IDs(cropped)
-        sky_coords = self.load_skycoords(cropped)
-        phot, phot_err = self.load_phot(cropped)
-        depths = self.load_depths(cropped)
-        selection_flags = self.load_selection_flags(cropped)
-        filterset_arr = self.load_gal_filtersets(length = len(IDs), cropped = cropped)
-        SED_results = {}
-        phot_obs_arr = [{aper_diam: Photometry_obs(filterset_arr[i], \
-            phot[aper_diam][i], phot_err[aper_diam][i], depths[aper_diam][i], \
-            aper_diam, SED_results = SED_results, simulated = self.simulated) for aper_diam in self.aper_diams} \
-            for i in range(len(filterset_arr))]
-        assert len(IDs) == len(sky_coords) == len(phot_obs_arr), \
-            galfind_logger.critical(
-                f"{len(IDs)=} != {len(sky_coords)=} != {len(phot_obs_arr)=}!"
+        if load_gals:
+            # make array of Photometry_obs for each aperture diameter
+            IDs = self.load_IDs(cropped)
+            sky_coords = self.load_skycoords(cropped)
+            phot, phot_err = self.load_phot(cropped)
+            depths = self.load_depths(cropped)
+            selection_flags = self.load_selection_flags(cropped)
+            filterset_arr = self.load_gal_filtersets(length = len(IDs), cropped = cropped)
+            SED_results = {}
+            phot_obs_arr = [{aper_diam: Photometry_obs(filterset_arr[i], \
+                phot[aper_diam][i], phot_err[aper_diam][i], depths[aper_diam][i], \
+                aper_diam, SED_results = SED_results, simulated = self.simulated) for aper_diam in self.aper_diams} \
+                for i in range(len(filterset_arr))]
+            assert len(IDs) == len(sky_coords) == len(phot_obs_arr), \
+                galfind_logger.critical(
+                    f"{len(IDs)=} != {len(sky_coords)=} != {len(phot_obs_arr)=}!"
+                )
+            # make an array of galaxy objects to be stored in the catalogue
+            galfind_logger.debug(
+                f"Loading {self.survey} {self.version} {self.cat_name} galaxies!"
             )
-        # make an array of galaxy objects to be stored in the catalogue
-        galfind_logger.debug(
-            f"Loading {self.survey} {self.version} {self.cat_name} galaxies!"
-        )
-        #, origin_survey = self.survey
-        gals = [Galaxy(ID, sky_coord, phot_obs, flags, self.filterset, survey = self.survey, simulated = self.simulated) \
-            for ID, sky_coord, phot_obs, flags in zip(IDs, sky_coords, phot_obs_arr, selection_flags)]
+            #, origin_survey = self.survey
+            gals = [Galaxy(ID, sky_coord, phot_obs, flags, self.filterset, survey = self.survey, simulated = self.simulated) \
+                for ID, sky_coord, phot_obs, flags in zip(IDs, sky_coords, phot_obs_arr, selection_flags)]
+        else:
+            galfind_logger.info(
+                f"Not loading galaxies for {self.survey} {self.version} {self.cat_name} catalogue!"
+            )
+            gals = []
         cat = Catalogue(gals, self)
-        if cropped and len(self._crops_to_perform) != 0:
+        if load_gals and cropped and len(self._crops_to_perform) != 0:
             # perform the crops
             for crop in self._crops_to_perform:
                 galfind_logger.info(f"Performing {repr(crop)}")
                 crop(cat, return_copy = False)
             self.load_crops(self.crops)
-            cat = self(cropped = True)
+            cat = self(cropped = True, load_gals = load_gals)
         else:
             # point to data if provided
             if hasattr(self, "data"):
                 cat.data = self.data
-        galfind_logger.info(f"Made {self.cat_path} catalogue!")
+            galfind_logger.info(f"Made {self.cat_path} catalogue!")
         return cat
 
     @property
@@ -824,6 +831,7 @@ class Catalogue(Catalogue_Base):
         ] = None,
         min_flux_pc_err: Union[int, float] = 10.,
         crops: Optional[Union[Type[Selector], List[Type[Selector]]]] = None,
+        load_gals: bool = True,
     ) -> Catalogue:
         data = Data.pipeline(
             survey,
@@ -841,16 +849,17 @@ class Catalogue(Catalogue_Base):
             forced_phot_band=forced_phot_band,
             min_flux_pc_err=min_flux_pc_err,
         )
-        return cls.from_data(data, crops)
+        return cls.from_data(data, crops, load_gals = load_gals)
 
     @classmethod
     def from_data(
         cls, 
         data: Data,
         crops: Optional[Union[Type[Selector], List[Type[Selector]]]] = None,
+        load_gals: bool = True,
     ) -> Catalogue:
         cat_creator = Catalogue_Creator.from_data(data, crops = crops)
-        return cat_creator(cropped = True)
+        return cat_creator(cropped = True, load_gals = load_gals)
 
     def __repr__(self):
         return super().__repr__()
@@ -991,7 +1000,7 @@ class Catalogue(Catalogue_Base):
             )
         if hdu in ["OBJECTS", "SELECTION"]:
             ID_label = self.cat_creator.ID_label
-        elif any([True for code in SED_code.__subclasses__() if hdu.find(code.__name__) != -1]):
+        elif any([True for code in funcs.all_subclasses(SED_code) if hdu.find(code.__name__) != -1]):
             raise NotImplementedError
         else:
             raise NotImplementedError
