@@ -451,18 +451,22 @@ class EAZY(SED_code):
 
                 # Get rest frame colors
                 if self.SED_fit_params["SAVE_UBVJ"]:
-                    # This is all duplicated from base code.
+                    # This is duplicated from base code.
+                    # TODO: add n_proc option to rest_frame_fluxes function and use it here. n_proc != 0 spwans many threads
                     rf_tempfilt, lc_rest, ubvj = fit.rest_frame_fluxes(
-                        f_numbers=[1, 2, 3, 4], simple=False, n_proc=self.SED_fit_params["N_PROC"]
+                        f_numbers = [1, 2, 3, 4],
+                        simple = False,
+                        percentiles = [16, 50, 84],
+                        n_proc = 0, #self.SED_fit_params["N_PROC"] 
                     )
                     for i, ubvj_filt in enumerate(["U", "B", "V", "J"]):
-                        table[f"{ubvj_filt}_rf_flux"] = ubvj[:, i, 2]
+                        table[f"{ubvj_filt}_rf_flux"] = ubvj[:, i, 1]
                         # symmetric errors
                         table[f"{ubvj_filt}_rf_flux_err"] = (
-                            ubvj[:, i, 3] - ubvj[:, i, 1]
+                            ubvj[:, i, 2] - ubvj[:, i, 0]
                         ) / 2.0
                     galfind_logger.info(
-                        f"Finished calculating UBVJ fluxes for {self.__class__.__name__} {templates} {lowz_label}"
+                        f"Finished calculating UBVJ fluxes for {repr(self)}"
                     )
 
                 # add the template name to the column labels except for IDENT
@@ -476,7 +480,7 @@ class EAZY(SED_code):
                 table.write(fits_out_path, overwrite=True)
                 funcs.change_file_permissions(fits_out_path)
                 galfind_logger.info(
-                    f"Written {self.__class__.__name__} {templates} {lowz_label} fits out file to: {fits_out_path}"
+                    f"Written {repr(self)} fits out file to: {fits_out_path}"
                 )
         else:
             table = Table.read(fits_out_path)
@@ -485,7 +489,7 @@ class EAZY(SED_code):
         if save_PDFs and not Path(zPDF_path).is_file():
             self.save_zPDFs(zPDF_path, fit)
             galfind_logger.info(
-                f"Finished saving z-PDFs for {self.__class__.__name__} {templates} {lowz_label}"
+                f"Finished saving z-PDFs for {repr(self)}"
             )
 
         # Save best-fitting SEDs
@@ -495,7 +499,7 @@ class EAZY(SED_code):
             )
             self.save_SEDs(SED_path, fit, z_arr, u.AA, u.nJy)
             galfind_logger.info(
-                f"Finished saving SEDs for {self.__class__.__name__} {templates} {lowz_label}"
+                f"Finished saving SEDs for {repr(self)}"
             )
 
         # Write used parameters
@@ -505,7 +509,7 @@ class EAZY(SED_code):
                 fits_out_path.replace(".fits", "_params.csv")
             )
             galfind_logger.info(
-                f"Written output pararmeters for {self.__class__.__name__} {templates} {lowz_label}"
+                f"Written output pararmeters for {repr(self)}"
             )
 
     @staticmethod

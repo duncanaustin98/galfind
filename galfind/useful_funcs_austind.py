@@ -229,14 +229,14 @@ def flux_image_to_Jy(fluxes, zero_points):
         return (
             np.array(
                 [
-                    flux * (10 ** ((zero_points - 8.9) / -2.5))
+                    flux * (10 ** ((zero_points - (u.Jy).to(u.ABmag)) / -2.5))
                     for flux in fluxes
                 ]
             )
             * u.Jy
         )
     else:
-        return np.array(fluxes * (10 ** ((zero_points - 8.9) / -2.5))) * u.Jy
+        return np.array(fluxes * (10 ** ((zero_points - (u.Jy).to(u.ABmag)) / -2.5))) * u.Jy
 
 
 def five_to_n_sigma_mag(

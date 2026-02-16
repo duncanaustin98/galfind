@@ -68,7 +68,7 @@ class PDF:
 
     def __add__(
         self,
-        other: Union["PDF", int, float, u.Quantity, u.Magnitude, u.Dex],
+        other: Union[PDF, int, float, u.Quantity, u.Magnitude, u.Dex],
         name_ext: Union[str, None] = None,
         add_kwargs: dict = {},
         save: bool = False,

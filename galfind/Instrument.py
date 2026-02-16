@@ -159,6 +159,11 @@ class Instrument(ABC):
     def make_PSFs(self, data: Data, method: str) -> List[Type[PSF_Base]]:
         return [self.make_PSF(data, band, method) for band in self]
 
+    @property
+    @abstractmethod
+    def ZP_keys(self) -> List[str]:
+        pass
+
     @abstractmethod
     def calc_ZP(self, band_data: Type[Band_Data_Base]) -> u.Quantity:
         pass
@@ -247,7 +252,14 @@ class NIRCam(Instrument, funcs.Singleton):
         }
         super().__init__(JWST(), NIRCam_band_names, align_params)
 
-    def calc_ZP(self: Self, band_data: Type[Band_Data_Base]) -> u.Quantity:
+    @property
+    def ZP_keys(self) -> List[str]:
+        return []
+
+    def calc_ZP(
+        self: Self,
+        band_data: Type[Band_Data_Base]
+    ) -> u.Quantity:
         # assume flux units of MJy/sr and calculate corresponding ZP
         ZP = -2.5 * np.log10(
             (band_data.pix_scale.to(u.rad).value ** 2) * u.MJy.to(u.Jy)
@@ -279,6 +291,10 @@ class MIRI(Instrument, funcs.Singleton):
             "F2550W",
         ]
         super().__init__(JWST(), MIRI_band_names)
+
+    @property
+    def ZP_keys(self) -> List[str]:
+        return []
 
     def calc_ZP(self, band_data: Type[Band_Data_Base]) -> u.Quantity:
         # assume flux units of MJy/sr and calculate corresponding ZP
@@ -338,6 +354,10 @@ class ACS_WFC(Instrument, funcs.Singleton):
         self.SVO_name = "ACS"
         super().__init__(HST(), ACS_WFC_band_names, align_params)
 
+    @property
+    def ZP_keys(self) -> List[str]:
+        return ["PHOTFLAM", "PHOTPLAM", "ZEROPNT"] # or 'BUNIT'=MJy/sr
+        
     def calc_ZP(self, band_data: Type[Band_Data_Base]) -> u.Quantity:
         im_header = band_data.load_im()[1]
         if "PHOTFLAM" in im_header and "PHOTPLAM" in im_header:
@@ -399,6 +419,10 @@ class WFC3_IR(Instrument, funcs.Singleton):
         self.SVO_name = "WFC3"
         super().__init__(HST(), WFC3_IR_band_names)
 
+    @property
+    def ZP_keys(self) -> List[str]:
+        return []
+
     def calc_ZP(self, band_data: Type[Band_Data_Base]) -> u.Quantity:
         # Taken from Appendix A of
         # https://www.stsci.edu/files/live/sites/www/files/home/hst/instrumentation/wfc3/documentation/instrument-science-reports-isrs/_documents/2020/WFC3-ISR-2020-10.pdf
@@ -442,6 +466,10 @@ class VISTA(Instrument, funcs.Singleton):
         self.SVO_name = "VIRCam"
         super().__init__(Paranal(), VISTA_band_names)
 
+    @property
+    def ZP_keys(self) -> List[str]:
+        return ["PHOTZP"]
+
     def calc_ZP(self, band_data: Type[Band_Data_Base]) -> u.Quantity:
         ZP = band_data.load_im()[1]["PHOTZP"]
         return ZP
@@ -472,9 +500,12 @@ class MegaCam(Instrument, funcs.Singleton):
         self.SVO_name = "MegaCam"
         super().__init__(CFHT(), Megacam_band_names)
 
+    @property
+    def ZP_keys(self) -> List[str]:
+        return ["PHOTZP"]
+
     def calc_ZP(self, band_data: Type[Band_Data_Base]) -> u.Quantity:
-        ZP = band_data.load_im()[1]["PHOTZP"]
-        return ZP
+        return band_data.load_im()[1]["PHOTZP"]
 
     def make_model_PSF(self, band: Union[str, Filter]) -> Type[PSF_Base]:
         pass
@@ -511,6 +542,10 @@ class HSC(Instrument, funcs.Singleton):
         self.SVO_name = "HSC"
         super().__init__(Subaru(), HSC_band_names)
 
+    @property
+    def ZP_keys(self) -> List[str]:
+        return ["PHOTZP"]
+
     def calc_ZP(self, band_data: Type[Band_Data_Base]) -> u.Quantity:
         ZP = band_data.load_im()[1]["PHOTZP"]
         return ZP
@@ -530,9 +565,12 @@ class VIS(Instrument, funcs.Singleton):
         self.SVO_name = "VIS"
         super().__init__(Euclid(), VIS_band_names)
 
-    def calc_ZP(self, band_data: Type[Band_Data_Base]) -> u.Quantity:
-        ZP = band_data.load_im()[1]["PHOTZP"]
-        return ZP
+    @property
+    def ZP_keys(self) -> List[str]:
+        return ["PHOTZP"]
+
+    def calc_ZP(self: Self, band_data: Type[Band_Data_Base]) -> u.Quantity:
+        return band_data.load_im()[1]["PHOTZP"]
 
     def make_model_PSF(self, band: Union[str, Filter]) -> Type[PSF_Base]:
         pass
@@ -551,9 +589,12 @@ class NISP(Instrument, funcs.Singleton):
         self.SVO_name = "NISP"
         super().__init__(Euclid(), NISP_band_names)
 
+    @property
+    def ZP_keys(self) -> List[str]:
+        return ["PHOTZP"]
+
     def calc_ZP(self, band_data: Type[Band_Data_Base]) -> u.Quantity:
-        ZP = band_data.load_im()[1]["PHOTZP"]
-        return ZP
+        return band_data.load_im()[1]["PHOTZP"]
 
     def make_model_PSF(self, band: Union[str, Filter]) -> Type[PSF_Base]:
         pass
@@ -572,6 +613,10 @@ class IRAC(Instrument, funcs.Singleton):
         ]
         self.SVO_name = "IRAC"
         super().__init__(Spitzer(), IRAC_band_names)
+
+    @property
+    def ZP_keys(self) -> List[str]:
+        return ["PHOTZP"]
 
     def calc_ZP(self, band_data: Type[Band_Data_Base]) -> u.Quantity:
         ZP = band_data.load_im()[1]["PHOTZP"]

@@ -408,7 +408,10 @@ class Number_Density_Function(Base_Number_Density_Function):
         origin_surveys = tab.meta["origin_surveys"]
         crop_name = tab.meta["crop_name"]
         z_bin = tab.meta["z_bin"]
-        Vmax_method = tab.meta["Vmax_method"]
+        if "Vmax_method" in tab.meta.keys():
+            Vmax_method = tab.meta["Vmax_method"]
+        else:
+            Vmax_method = None
         return cls(
             x_name,
             x_bins,
@@ -735,9 +738,13 @@ class Number_Density_Function(Base_Number_Density_Function):
             compl_name = ""
         else:
             compl_name = "_compl_corr"
+        if Vmax_method is None:
+            Vmax_method_str = ""
+        else:
+            Vmax_method_str = f"/{Vmax_method}"
         save_path = config['NumberDensityFunctions']['NUMBER_DENSITY_FUNC_DIR'] + \
             f"/Data/{SED_fit_params_key}/{x_name}/" + \
-            f"{origin_surveys}/{Vmax_method}/{crop_name}{compl_name}{ext}"
+            f"{origin_surveys}{Vmax_method_str}/{crop_name}{compl_name}{ext}"
         funcs.make_dirs(save_path)
         return save_path
 

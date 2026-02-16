@@ -1085,12 +1085,17 @@ def make_depth_tab(self: Data) -> NoReturn:
             for band_data in self
             for aper_diam in band_data.aper_diams
         ]
-        if self.forced_phot_band not in self:
+        if self.forced_phot_band in self:
+            stacked_band_data_arr = []
+        else:
+            stacked_band_data_arr = [self.forced_phot_band]
+        stacked_band_data_arr += getattr(self, "stacked_band_data_arr", [])
+        for stacked_band_data in stacked_band_data_arr:
             calc_params_arr.extend(
                 [
-                    (self.forced_phot_band, aper_diam, 
-                    self.forced_phot_band.depth_args[aper_diam]["mode"])
-                    for aper_diam in self.forced_phot_band.aper_diams
+                    (stacked_band_data, aper_diam, 
+                    stacked_band_data.depth_args[aper_diam]["mode"])
+                    for aper_diam in stacked_band_data.aper_diams
                 ]
             )
     else:
@@ -1110,16 +1115,21 @@ def make_depth_tab(self: Data) -> NoReturn:
             if (band_data.filt_name, f"{format(aper_diam.value, '.2f')}as", 
             band_data.depth_args[aper_diam]["mode"]) not in filt_aper_diams
         ]
-        if self.forced_phot_band not in self:
+        if self.forced_phot_band in self:
+            stacked_band_data_arr = []
+        else:
+            stacked_band_data_arr = [self.forced_phot_band]
+        stacked_band_data_arr += getattr(self, "stacked_band_data_arr", [])
+        for stacked_band_data in stacked_band_data_arr:
             calc_params_arr.extend(
                 [
-                    (self.forced_phot_band, aper_diam, 
-                    self.forced_phot_band.depth_args[aper_diam]["mode"])
-                    for aper_diam in self.forced_phot_band.aper_diams
+                    (stacked_band_data, aper_diam, 
+                    stacked_band_data.depth_args[aper_diam]["mode"])
+                    for aper_diam in stacked_band_data.aper_diams
                     if (
-                        self.forced_phot_band.filt_name,
+                        stacked_band_data.filt_name,
                         f"{format(aper_diam.value, '.2f')}as",
-                        self.forced_phot_band.depth_args[aper_diam]["mode"]
+                        stacked_band_data.depth_args[aper_diam]["mode"]
                     )
                     not in filt_aper_diams
                 ]
@@ -1433,7 +1443,12 @@ def calc_data_area_depth(
     total_depths = {}
     cum_dist = {}
     area = {}
-    for band_data in self.band_data_arr:
+    self_band_data_arr = self.band_data_arr
+    if hasattr(self, "forced_phot_band") and self.forced_phot_band not in self_band_data_arr:
+        self_band_data_arr += [self.forced_phot_band]
+    if hasattr(self, "stacked_band_data_arr"):
+        self_band_data_arr += self.stacked_band_data_arr
+    for band_data in self_band_data_arr:
         total_depths_, cum_dist_, area_ = calc_band_data_area_depth(
             band_data,
             aper_diam,
@@ -1446,19 +1461,6 @@ def calc_data_area_depth(
         total_depths[band_data.filt_name] = total_depths_
         cum_dist[band_data.filt_name] = cum_dist_
         area[band_data.filt_name] = area_
-    if hasattr(self, "forced_phot_band"):
-        total_depths_, cum_dist_, area_ = calc_band_data_area_depth(
-            self.forced_phot_band,
-            aper_diam,
-            mask_selector,
-            mask_type,
-            region_selector,
-            invert_region,
-            zbin,
-        )
-        total_depths[self.forced_phot_band.filt_name] = total_depths_
-        cum_dist[self.forced_phot_band.filt_name] = cum_dist_
-        area[self.forced_phot_band.filt_name] = area_
     return total_depths, cum_dist, area
 
 def plot_data_area_depth(
@@ -1528,6 +1530,22 @@ def plot_data_area_depth(
                 show = False,
                 #**kwargs
             )
+        if hasattr(self, "stacked_band_data_arr"):
+            for stacked_band_data in self.stacked_band_data_arr:
+                stacked_band_data.plot_area_depth(
+                    aper_diam = aper_diam,
+                    mask_selector = mask_selector,
+                    mask_type = mask_type,
+                    region_selector = region_selector,
+                    invert_region = invert_region,
+                    zbin = zbin,
+                    color = "black",
+                    linestyle = ":",
+                    fig = fig,
+                    ax = ax,
+                    show = False,
+                    #**kwargs
+                )
         
         #breakpoint()
         # data = {}
