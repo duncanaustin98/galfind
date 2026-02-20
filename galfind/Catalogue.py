@@ -897,6 +897,24 @@ class Catalogue(Catalogue_Base):
                 disable = galfind_logger.getEffectiveLevel() > logging.INFO
             )
         ]
+    
+    def update_SED_result_lowz_zmax_info(self, aper_diam, SED_result_key, zmax_info_arr):
+        assert len(zmax_info_arr) == len(self), \
+            galfind_logger.critical(
+                "Length of zmax_info_dict must be the same as the catalogue!"
+            )
+        galfind_logger.info(
+            "Updating low-z zmax info in galfind catalogue object"
+        )
+        [
+            gal.update_SED_result_lowz_zmax_info(aper_diam, SED_result_key, zmax_info_arr[i])
+            for i, gal in tqdm(
+                enumerate(self),
+                desc="Updating galaxy low-z zmax info",
+                total=len(self),
+                disable = galfind_logger.getEffectiveLevel() > logging.INFO
+            )
+        ]
 
     def match_available_spectra(
         self: Self,
@@ -1483,6 +1501,7 @@ class Catalogue(Catalogue_Base):
         wav_unit: u.Unit = u.um,
         flux_unit: u.Unit = u.ABmag,
         log_fluxes: bool = False,
+        cutout_size: u.Quantity = 0.96 * u.arcsec,
         crop_name: Optional[str] = None,
         collate_dir: Optional[str] = None,
         imshow_kwargs: Dict[str, Any] = {},
@@ -1511,6 +1530,7 @@ class Catalogue(Catalogue_Base):
                 wav_unit = wav_unit,
                 flux_unit = flux_unit,
                 log_fluxes = log_fluxes,
+                cutout_size = cutout_size,
                 imshow_kwargs = imshow_kwargs,
                 norm_kwargs = norm_kwargs,
                 aper_kwargs = aper_kwargs,

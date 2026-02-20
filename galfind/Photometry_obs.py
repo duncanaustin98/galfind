@@ -281,6 +281,13 @@ class Photometry_obs(Photometry):
         else:
             self.SED_results = gal_SED_result_dict
 
+    def update_SED_result_lowz_zmax_info(
+        self: Self,
+        SED_result_key: str,
+        zmax_info: Dict[str, Dict[str, Union[float, u.Quantity, u.Magnitude, u.Dex]]],
+    ) -> None:
+        return self.SED_results[SED_result_key].update_lowz_zmax_properties(zmax_info)
+
     def get_SED_fit_params_arr(self, code) -> list:
         return [
             code.SED_fit_params_from_label(label)

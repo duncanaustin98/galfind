@@ -2783,12 +2783,12 @@ class Chi_Sq_Diff_Selector(SED_fit_Selector):
         SED_fitter: SED_code,
         chi_sq_diff: Union[int, float],
         dz: Union[int, float],
-        #lowz_zmax_arr: Optional[List[float]],
+        lowz_zmax_arr: List[float],
     ):
         kwargs = {
             "chi_sq_diff": chi_sq_diff,
             "dz": dz,
-            #"lowz_zmax_arr": lowz_zmax_arr,
+            "lowz_zmax_arr": lowz_zmax_arr,
         }
         super().__init__(aper_diam, SED_fitter, **kwargs)
 
@@ -2796,15 +2796,12 @@ class Chi_Sq_Diff_Selector(SED_fit_Selector):
     def _selection_name(self) -> str:
         chi_sq_name = f"chi_sq_diff>{self.kwargs['chi_sq_diff']:.1f}"
         dz_name = f"dz>{self.kwargs['dz']:.1f}"
-        if self.kwargs["lowz_zmax_arr"] is None:
-            lowz_zmax_name = ""
-        else:
-            lowz_zmax_name = f"zmax=({','.join([f'{zmax:.1f}' for zmax in self.kwargs['lowz_zmax_arr']])})"
+        lowz_zmax_name = f"zmax=({','.join([f'{zmax:.1f}' for zmax in self.kwargs['lowz_zmax_arr']])})"
         return f"{chi_sq_name},{dz_name},{lowz_zmax_name}"
     
     @property
     def _include_kwargs(self) -> List[str]:
-        return ["chi_sq_diff", "dz"]#, "lowz_zmax_arr"]
+        return ["chi_sq_diff", "dz", "lowz_zmax_arr"]
     
     def _assertions(self: Self) -> bool:
         try:
@@ -2813,10 +2810,14 @@ class Chi_Sq_Diff_Selector(SED_fit_Selector):
             assertions.extend([isinstance(self.kwargs["dz"], (int, float))])
             assertions.extend([self.kwargs["dz"] > 0.0])
             assertions.extend([self.kwargs["chi_sq_diff"] >= 0.0])
-            # if self.kwargs["lowz_zmax_arr"] is not None:
-            #     assertions.extend([isinstance(self.kwargs["lowz_zmax_arr"], (list, np.ndarray))])
-            #     assertions.extend([all(isinstance(zmax, (int, float)) for zmax in self.kwargs["lowz_zmax_arr"])])
-            #     assertions.extend([all(zmax > 0.0 for zmax in self.kwargs["lowz_zmax_arr"])])
+            assertions.extend([isinstance(self.kwargs["lowz_zmax_arr"], (list, np.ndarray))])
+            assertions.extend([all(isinstance(zmax, (int, float)) for zmax in self.kwargs["lowz_zmax_arr"])])
+            assertions.extend([all(zmax > 0.0 for zmax in self.kwargs["lowz_zmax_arr"])])
+            # ensure lowz_zmax_arr is sorted in ascending order
+            assertions.extend([
+                all(self.kwargs["lowz_zmax_arr"][i] < self.kwargs["lowz_zmax_arr"][i + 1] \
+                for i in range(len(self.kwargs["lowz_zmax_arr"]) - 1))
+            ])
             passed = all(assertions)
         except:
             passed = False
@@ -2827,14 +2828,19 @@ class Chi_Sq_Diff_Selector(SED_fit_Selector):
         gal: Galaxy,
     ) -> bool:
         try:
-            # assertions = []
-            # assertions.extend()
-            # #gal_SED_fit_labels = self._get_lowz_SED_fit_labels(gal)
-            # #assertions.extend([len(gal_SED_fit_labels) > 0])
-            failed = not all([
+            assertions = []
+            assertions.extend([
                 self.SED_fitter.label in 
                 gal.aper_phot[self.aper_diam].SED_results.keys()
             ])
+            assertions.extend([
+                all(f"{lowz_zmax:.1f}" in gal.aper_phot[self.aper_diam].\
+                SED_results[self.SED_fitter.label].lowz_zmax_properties.keys() \
+                for lowz_zmax in self.kwargs["lowz_zmax_arr"])
+            ])
+            #gal_SED_fit_labels = self._get_lowz_SED_fit_labels(gal)
+            #assertions.extend([len(gal_SED_fit_labels) > 0])
+            failed = not all(assertions)
         except:
             failed = True
         return failed
@@ -2846,40 +2852,53 @@ class Chi_Sq_Diff_Selector(SED_fit_Selector):
         # extract redshift + chi_sq of zfree run
         zfree = gal.aper_phot[self.aper_diam].SED_results[self.SED_fitter.label].z
         chi_sq_zfree = gal.aper_phot[self.aper_diam].SED_results[self.SED_fitter.label].chi_sq
-        # # extract redshift and chi_sq of lowz runs
+        # extract redshift and chi_sq of lowz runs
         # lowz_SED_fit_labels = [i for i in filter( \
         #     lambda label: float(label.split("zmax=")[-1][:3]) \
         #     < zfree - self.kwargs["dz"], \
         #     self._get_lowz_SED_fit_labels(gal)
         # )]
-        # # if no lowz runs, do not select galaxy
-        # if len(lowz_SED_fit_labels) == 0:
-        #     return False
-        # else:
-        breakpoint()
-        raise NotImplementedError("Lowz SED fitting runs not implemented for general SED fitting code.")
-        # sort the lowz_SED_fit_labels to get highest redshift applicable lowz run
-        lowz_SED_fit_label = sorted(lowz_SED_fit_labels, reverse = True, \
-            key = lambda label: float(label.split("zmax=")[-1][:3]))[0]
-        z_lowz = gal.aper_phot[self.aper_diam].SED_results[lowz_SED_fit_label].z
-        chi_sq_lowz = gal.aper_phot[self.aper_diam].SED_results[lowz_SED_fit_label].chi_sq
-        return (
-            (chi_sq_lowz - chi_sq_zfree > self.kwargs["chi_sq_diff"])
-            or (chi_sq_lowz == -1.0)
-            or (z_lowz < 0.0)
-        )
+        lowz_SED_fit_labels = [
+            i for i in filter(
+                lambda label: \
+                float(label) < zfree - self.kwargs["dz"], \
+            self._get_lowz_SED_fit_labels(gal)
+        )]
+        # if no lowz runs, do not select galaxy
+        if len(lowz_SED_fit_labels) == 0:
+            return False
+        else:
+            # sort the lowz_SED_fit_labels to get highest redshift applicable lowz run
+            # lowz_SED_fit_label = sorted(lowz_SED_fit_labels, reverse = True, \
+            #     key = lambda label: float(label.split("zmax=")[-1][:3]))[0]
+            lowz_SED_fit_label = sorted(lowz_SED_fit_labels, reverse = True, \
+                key = lambda label: float(label))[0]
+            lowz_properties = gal.aper_phot[self.aper_diam]. \
+                SED_results[self.SED_fitter.label].lowz_zmax_properties[lowz_SED_fit_label]
+            z_lowz = lowz_properties["zbest"]
+            chi_sq_lowz = lowz_properties["chi2_best"]
+            return (
+                (chi_sq_lowz - chi_sq_zfree > self.kwargs["chi_sq_diff"])
+                or (chi_sq_lowz == -1.0)
+                or (z_lowz < 0.0)
+            )
     
-    # def _get_lowz_SED_fit_labels(
-    #     self: Self,
-    #     gal: Galaxy,
-    # ) -> List[str]:
-    #     # TODO: Works for EAZY, but not for a general 
-    #     # SED fitting code with different zmax syntax
-    #     return [label for label in \
-    #         gal.aper_phot[self.aper_diam].SED_results.keys() \
-    #         if "zmax=" in label and label.replace( \
-    #         f"_zmax={label.split('zmax=')[-1][:3]}", "") \
-    #         in self.SED_fitter.label]
+    def _get_lowz_SED_fit_labels(
+        self: Self,
+        gal: Galaxy,
+    ) -> List[str]:
+        # TODO: Works for EAZY, but not for a general 
+        # SED fitting code with different zmax syntax
+        return [
+            label for label in getattr(
+                gal.aper_phot[self.aper_diam].SED_results[self.SED_fitter.label], \
+                "lowz_zmax_properties",
+                {}
+            ).keys()
+        ]
+        # if "zmax=" in label and label.replace( \
+        # f"_zmax={label.split('zmax=')[-1][:3]}", "") \
+        # in self.SED_fitter.label
     
     # def _assert_cat(self: Self, cat: Catalogue) -> None:
     #     # ensure a lowz run has been run for at least 1 galaxy in the catalogue
@@ -2895,6 +2914,7 @@ class Chi_Sq_Diff_Selector(SED_fit_Selector):
         cat: Catalogue,
         return_copy: bool = True,
     ) -> Optional[Catalogue]:
+        self.SED_fitter._update_lowz_zmax(cat, self.aper_diam, self.kwargs["lowz_zmax_arr"])
         return SED_fit_Selector._call_cat(self, cat, return_copy)
 
 
@@ -3630,7 +3650,7 @@ class EPOCHS_Selector(Multiple_SED_fit_Selector):
             Redwards_Lya_Detect_Selector(aper_diam, SED_fitter, SNR_lims = [5.0, 5.0], widebands_only = True, ignore_bands = ["F070W", "F850LP"]),
             Redwards_Lya_Detect_Selector(aper_diam, SED_fitter, SNR_lims = 2.0, widebands_only = True, ignore_bands = ["F070W", "F850LP"]),
             Chi_Sq_Lim_Selector(aper_diam, SED_fitter, chi_sq_lim = 3.0, reduced = True),
-            Chi_Sq_Diff_Selector(aper_diam, SED_fitter, chi_sq_diff = 4.0, dz = 0.5),
+            Chi_Sq_Diff_Selector(aper_diam, SED_fitter, chi_sq_diff = 4.0, dz = 0.5, lowz_zmax_arr = [4.0, 6.0]),
             Robust_zPDF_Selector(aper_diam, SED_fitter, integral_lim = 0.6, dz_over_z = 0.1),
         ]
         # # add 2σ non-detection in first band if wanted

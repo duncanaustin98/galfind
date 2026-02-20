@@ -16,6 +16,7 @@ import time
 import warnings
 from pathlib import Path
 import logging
+from copy import deepcopy
 
 import astropy.units as u
 import eazy
@@ -135,6 +136,102 @@ class EAZY(SED_code):
     @property
     def are_errs_percentiles(self) -> bool:
         return False
+
+    def __call__(
+        self: Self,
+        cat: Union[Catalogue, Spectral_Catalogue],
+        aper_diam: u.Quantity,
+        save_PDFs: bool = True,
+        save_SEDs: bool = True,
+        load_PDFs: bool = True,
+        load_SEDs: bool = True,
+        timed: bool = True,
+        overwrite: bool = False,
+        update: bool = True,
+        lowz_zmax_arr: Optional[List[float]] = None,
+        **fit_kwargs
+    ) -> Self:
+        super().__call__(
+            cat,
+            aper_diam,
+            save_PDFs,
+            save_SEDs,
+            load_PDFs,
+            load_SEDs,
+            timed,
+            overwrite,
+            update,
+            **fit_kwargs,
+        )
+        self._update_lowz_zmax(cat, aper_diam, lowz_zmax_arr)
+
+    def _update_lowz_zmax(
+        self,
+        cat: Union[Catalogue, Spectral_Catalogue],
+        aper_diam: u.Quantity,
+        lowz_zmax_arr: List[float],
+    ) -> Optional[List[SED_Result]]:
+        #cat_SED_results = [deepcopy(gal).aper_phot[aper_diam].SED_results[self.label] for gal in cat]
+        if lowz_zmax_arr is not None and self.SED_fit_params["lowz_zmax"] is None:
+            # update cat_SED_results with lowz_zmax info
+            h5_path = self._get_out_paths(cat, aper_diam)[2].replace(".fits", ".h5")
+            fit = hdf5.initialize_from_hdf5(h5file=h5_path, verbose=False)
+            lowz_zmax_arr = np.sort(lowz_zmax_arr)
+            save_dict_arr = np.full(len(cat), deepcopy({}))
+            zbest_arr = {}
+            chi2_best_arr = {}
+            for lowz_zmax in lowz_zmax_arr:
+                assert lowz_zmax <= self.SED_fit_params["Z_MAX"], \
+                    galfind_logger.critical(
+                        f"{lowz_zmax=} cannot be greater than " + \
+                        f"{self.SED_fit_params['Z_MAX']=}!"
+                    )
+                fit_copy = deepcopy(fit)
+                zgrid_mask = np.array([i for i in range(len(fit_copy.zgrid)) if fit_copy.zgrid[i] <= lowz_zmax])
+                fit_copy.chi2_fit = fit_copy.chi2_fit[:, zgrid_mask]
+                fit_copy.fit_coeffs = fit_copy.fit_coeffs[:, zgrid_mask, :]
+                fit_copy.tef_lnp = fit_copy.tef_lnp[:, zgrid_mask]
+                fit_copy.zgrid = fit_copy.zgrid[zgrid_mask]
+                fit_copy.trdz = fit_copy.trdz[zgrid_mask]
+                fit_copy.lnp = fit_copy.lnp[:, zgrid_mask]
+                fit_copy.fit_at_zbest()
+                idx = np.array(cat.ID) - 1
+                zbest_arr[f"{lowz_zmax:.1f}"] = fit_copy.zbest[idx]
+                chi2_best_arr[f"{lowz_zmax:.1f}"] = fit_copy.chi2_best[idx]
+            
+                #cat_SED_results = [deepcopy(gal).aper_phot[aper_diam].SED_results[self.label] for gal in cat]
+                # assert len(cat) == len(zbest_arr) == len(chi2_best_arr), \
+                #     galfind_logger.critical(
+                #         f"ARRAY LENGTH MISMATCH: {len(cat)=}, " +
+                #         f"{len(zbest_arr)=}, {len(chi2_best_arr)=}"
+                #     )
+                #cat_SED_results = [deepcopy(gal).aper_phot[aper_diam].SED_results[self.label].update_lowz_zmax_properties(f"{lowz_zmax:.1f}", {}) for gal in cat]
+                #cat_SED_results = np.full(len(cat), None)
+            for i in range(len(cat)):
+                #SED_result = deepcopy(cat[i].aper_phot[aper_diam].SED_results[self.label])
+                save_dict = {
+                    f"{lowz_zmax:.1f}": {
+                        "zbest": zbest_arr[f"{lowz_zmax:.1f}"][i],
+                        "chi2_best": chi2_best_arr[f"{lowz_zmax:.1f}"][i],
+                    } for lowz_zmax in lowz_zmax_arr
+                }
+                # }
+                save_dict_arr[i] = save_dict #.update(save_dict)
+                #SED_result.update_lowz_zmax_properties(f"{lowz_zmax:.1f}", save_dict)
+                #cat_SED_results[i] = SED_result
+                #cat_SED_result = deepcopy(cat[i]).aper_phot[aper_diam].SED_results[self.label]
+                #cat_SED_results[i] = deepcopy(cat_SED_result)
+            #cat.update_SED_results(cat_SED_results)
+            cat.update_SED_result_lowz_zmax_info(aper_diam, self.label, save_dict_arr)
+            # print(save_dict_arr)
+            # for i, gal in enumerate(cat[:5]):
+            #     print(i, id(gal.aper_phot[aper_diam].SED_results[self.label]))
+            # # cat_SED_results = [
+            # #     gal.aper_phot[aper_diam].SED_results[self.label].\
+            # #     update_lowz_zmax_properties(save_dict_arr[i]) for i, gal in enumerate(cat)
+            # # ]
+            #cat.update_SED_results(cat_SED_results)
+            return [gal.aper_phot[aper_diam].SED_results[self.label] for gal in cat]
 
     def _load_gal_property_labels(self):
         gal_property_labels = {

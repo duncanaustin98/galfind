@@ -1443,7 +1443,7 @@ def calc_data_area_depth(
     total_depths = {}
     cum_dist = {}
     area = {}
-    self_band_data_arr = self.band_data_arr
+    self_band_data_arr = deepcopy(self.band_data_arr)
     if hasattr(self, "forced_phot_band") and self.forced_phot_band not in self_band_data_arr:
         self_band_data_arr += [self.forced_phot_band]
     if hasattr(self, "stacked_band_data_arr"):
@@ -2018,16 +2018,18 @@ def get_depth_h5_labels():
 def append_loc_depth_cols(
     self: Data, 
     min_flux_pc_err: Optional[Union[int, float]] = None, 
+    update: bool = True,
     overwrite: bool = False
-) -> NoReturn:
+) -> None:
+    from . import Catalogue, Stacked_Band_Data
     # open catalogue
-    cat = Table.read(self.phot_cat_path)
+    tab = Table.read(self.phot_cat_path)
     # update catalogue with local depths if not already done so
-    if not (f"FLUX_APER_{self[0].filt_name}_aper_corr" in cat.colnames):
+    if not all(f"FLUX_APER_{band_data.filt_name}_aper_corr" in tab.colnames for band_data in self):
         galfind_logger.critical(
             "Must run aperture corrections before appending local depth columns!"
         )
-    elif f"loc_depth_{self[0].filt_name}" not in cat.colnames or overwrite:
+    elif not all(f"loc_depth_{band_data.filt_name}" in tab.colnames for band_data in self) or update or overwrite:
         assert hasattr(self, "forced_phot_band"), \
             galfind_logger.critical(
                 f"{repr(self)} has no 'forced_phot_band'"
@@ -2038,17 +2040,34 @@ def append_loc_depth_cols(
             for band_data in self), galfind_logger.critical(
                 f"Aperture diameters are not the same for all bands in {repr(self)}"
             )
-        if overwrite:
-            # TODO: Delete already existing columns
-            raise(Exception())
         aper_diams = self[0].aper_diams.to(u.arcsec).value
-        for i, band_data in tqdm(enumerate(self.band_data_arr), 
-                total=len(self), desc="Appending local depth columns",
+        self_band_data_arr = deepcopy(self.band_data_arr)
+        if hasattr(self, "forced_phot_band") and self.forced_phot_band not in self_band_data_arr:
+            self_band_data_arr += [self.forced_phot_band]
+        if hasattr(self, "stacked_band_data_arr"):
+            self_band_data_arr += self.stacked_band_data_arr
+
+        if overwrite:
+            # TODO: Delete pre-existing columns
+            raise NotImplementedError(
+                "Overwriting existing local depth columns not implemented yet"
+            )
+        elif update:
+            # only compute for bands which havn't already been computed
+            self_band_data_arr = [
+                band_data for band_data in self_band_data_arr 
+                if f"loc_depth_{band_data.filt_name}" not in tab.colnames
+            ]
+
+        for i, band_data in tqdm(enumerate(self_band_data_arr), 
+                total=len(self_band_data_arr), desc="Appending local depth columns",
                 disable=galfind_logger.getEffectiveLevel() > logging.INFO):
             for j, aper_diam in enumerate(aper_diams):
                 aper_diam *= u.arcsec
                 h5_path = get_grid_depth_path(
-                    band_data, aper_diam, band_data.depth_args[aper_diam]["mode"]
+                    band_data,
+                    aper_diam,
+                    band_data.depth_args[aper_diam]["mode"],
                 )
                 if Path(h5_path).is_file():
                     # open depth .h5
@@ -2068,13 +2087,13 @@ def append_loc_depth_cols(
                     assert diagnostic_name_ == diagnostic_name
                     hf.close()
                 else:
-                    depths = np.full(len(cat), np.nan)
-                    diagnostics = np.full(len(cat), np.nan)
+                    depths = np.full(len(tab), np.nan)
+                    diagnostics = np.full(len(tab), np.nan)
                 if len(aper_diams) == 1:
                     band_depths = list(depths)
                     band_diagnostics = list(diagnostics)
                     band_sigmas = list(funcs.n_sigma_detection(
-                        depths, cat[f"MAG_APER_{band_data.filt_name}"], band_data.ZP
+                        depths, tab[f"MAG_APER_{band_data.filt_name}"], band_data.ZP
                         ))
                 else:
                     if j == 0:
@@ -2089,7 +2108,7 @@ def append_loc_depth_cols(
                                 ),
                             )
                             for depth, mag_aper in zip(
-                                depths, cat[f"MAG_APER_{band_data.filt_name}"]
+                                depths, tab[f"MAG_APER_{band_data.filt_name}"]
                             )
                         ]
                     else:
@@ -2113,20 +2132,20 @@ def append_loc_depth_cols(
                                 ),
                             )
                             for band_sigma, depth, mag_aper in zip(
-                                band_sigmas, depths, cat[f"MAG_APER_{band_data.filt_name}"]
+                                band_sigmas, depths, tab[f"MAG_APER_{band_data.filt_name}"]
                             )
                         ]
 
             # update band with depths and diagnostics
-            cat[f"loc_depth_{band_data.filt_name}"] = band_depths
-            cat[f"{diagnostic_name}_{band_data.filt_name}"] = band_diagnostics
-            cat[f"sigma_{band_data.filt_name}"] = band_sigmas
+            tab[f"loc_depth_{band_data.filt_name}"] = band_depths
+            tab[f"{diagnostic_name}_{band_data.filt_name}"] = band_diagnostics
+            tab[f"sigma_{band_data.filt_name}"] = band_sigmas
             # make local depth error columns in image units
             if len(aper_diams) == 1:
-                cat[f"FLUXERR_APER_{band_data.filt_name}_loc_depth"] = \
+                tab[f"FLUXERR_APER_{band_data.filt_name}_loc_depth"] = \
                     list(funcs.mag_to_flux(np.array(band_depths), band_data.ZP) / 5.0)
             else:
-                cat[f"FLUXERR_APER_{band_data.filt_name}_loc_depth"] = [
+                tab[f"FLUXERR_APER_{band_data.filt_name}_loc_depth"] = [
                     tuple(
                         [
                             funcs.mag_to_flux(val, band_data.ZP) / 5.0
@@ -2136,33 +2155,11 @@ def append_loc_depth_cols(
                     for element in band_depths
                 ]
 
-            # impose n_pc min flux error and convert to Jy where appropriate
-            if len(aper_diams) == 1:
-                # TODO: Speed up this bit of code
-                cat[f"FLUXERR_APER_{band_data.filt_name}_loc_depth_{str(int(min_flux_pc_err))}pc_Jy"] = \
-                    [
-                        np.nan
-                        if flux == 0.0
-                        else funcs.flux_image_to_Jy(
-                            flux, band_data.ZP
-                        ).value
-                        * min_flux_pc_err
-                        / 100.0
-                        if err / flux
-                        < min_flux_pc_err / 100.0
-                        and flux > 0.0
-                        else funcs.flux_image_to_Jy(
-                            err, band_data.ZP
-                        ).value
-                        for flux, err in zip(
-                            cat[f"FLUX_APER_{band_data.filt_name}_aper_corr"],
-                            cat[f"FLUXERR_APER_{band_data.filt_name}_loc_depth"],
-                        )
-                    ]
-            else:
-                cat[f"FLUXERR_APER_{band_data.filt_name}_loc_depth_{str(int(min_flux_pc_err))}pc_Jy"] = \
-                    [
-                    tuple(
+            if not isinstance(band_data, Stacked_Band_Data): # or psf_homogenized
+                # impose n_pc min flux error and convert to Jy where appropriate
+                if len(aper_diams) == 1:
+                    # TODO: Speed up this bit of code
+                    tab[f"FLUXERR_APER_{band_data.filt_name}_loc_depth_{str(int(min_flux_pc_err))}pc_Jy"] = \
                         [
                             np.nan
                             if flux == 0.0
@@ -2177,24 +2174,61 @@ def append_loc_depth_cols(
                             else funcs.flux_image_to_Jy(
                                 err, band_data.ZP
                             ).value
-                            for flux, err in zip(flux_tup, err_tup)
+                            for flux, err in zip(
+                                tab[f"FLUX_APER_{band_data.filt_name}_aper_corr"],
+                                tab[f"FLUXERR_APER_{band_data.filt_name}_loc_depth"],
+                            )
                         ]
-                    )
-                    for flux_tup, err_tup in zip(
-                        cat[f"FLUX_APER_{band_data.filt_name}_aper_corr"],
-                        cat[f"FLUXERR_APER_{band_data.filt_name}_loc_depth"],
-                    )
-                ]
+                else:
+                    tab[f"FLUXERR_APER_{band_data.filt_name}_loc_depth_{str(int(min_flux_pc_err))}pc_Jy"] = \
+                        [
+                        tuple(
+                            [
+                                np.nan
+                                if flux == 0.0
+                                else funcs.flux_image_to_Jy(
+                                    flux, band_data.ZP
+                                ).value
+                                * min_flux_pc_err
+                                / 100.0
+                                if err / flux
+                                < min_flux_pc_err / 100.0
+                                and flux > 0.0
+                                else funcs.flux_image_to_Jy(
+                                    err, band_data.ZP
+                                ).value
+                                for flux, err in zip(flux_tup, err_tup)
+                            ]
+                        )
+                        for flux_tup, err_tup in zip(
+                            tab[f"FLUX_APER_{band_data.filt_name}_aper_corr"],
+                            tab[f"FLUXERR_APER_{band_data.filt_name}_loc_depth"],
+                        )
+                    ]
+            else:
+                galfind_logger.debug(
+                    f"Not imposing minimum flux error for {repr(self)}" + \
+                    "Aperture corrections cannot be applied unless PSF homogenized"
+                )
         # update meta
-        cat.meta = {**cat.meta, "MINPCERR": min_flux_pc_err}
-
-        # overwrite original catalogue with local depth columns
-        cat.write(self.phot_cat_path, overwrite=True)
-        funcs.change_file_permissions(self.phot_cat_path)
-        galfind_logger.info(
-            f"Appended local depth columns to {self.phot_cat_path}"
-        )
+        tab.meta = {
+            **tab.meta,
+            "MINPCERR": min_flux_pc_err
+        }
+        if update:
+            Catalogue.update_fits_cat(
+                tab,
+                self.phot_cat_path,
+                "OBJECTS",
+            )
+        else:
+            # overwrite original catalogue with local depth columns
+            tab.write(self.phot_cat_path, overwrite=True)
+            funcs.change_file_permissions(self.phot_cat_path)
+            galfind_logger.info(
+                f"Appended local depth columns to {self.phot_cat_path}"
+            )
     else:
-        galfind_logger.info(
+        galfind_logger.debug(
             f"Local depth columns already exist in {self.phot_cat_path}"
         )

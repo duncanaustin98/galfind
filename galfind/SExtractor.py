@@ -99,7 +99,7 @@ def segment(
 
     err_map_path, err_map_ext, err_map_type = get_err_map(self, err_type)
     seg_path = get_segmentation_path(self, err_map_type)
-    
+
     if not Path(seg_path).is_file() or overwrite:
         self._check_aper_diams()
         galfind_logger.info(
@@ -120,6 +120,7 @@ def segment(
             .replace("]", "")
             .replace(" ", "")
         )
+
         input = [
             "./make_seg_map.sh",
             config["SExtractor"]["SEX_DIR"],
@@ -142,7 +143,24 @@ def segment(
         galfind_logger.debug(input)
         process = subprocess.Popen(input)
         process.wait()
-        funcs.change_file_permissions(seg_path)
+
+        temp_path = "/".join(seg_path.split("/")[:-1]) + "/temp.fits"
+        for i, ext in enumerate(["", "_bkg", "_seg"]):
+            full_filepath = seg_path.replace("_seg.fits", f"{ext}.fits")
+            if len(seg_path) >= 256:
+                if i == 0:
+                    galfind_logger.debug(
+                        f"Segmentation path {len(seg_path)}>=256 characters long!"
+                    )
+                temp_filepath = temp_path.replace(".fits", f"{ext}.fits")
+                if Path(temp_filepath).is_file():
+                    galfind_logger.debug(f"Renaming {temp_filepath} to {full_filepath}!")
+                    os.rename(temp_filepath, full_filepath)
+                else:
+                    err_message = f"Expected temp file {temp_filepath} not found!"
+                    galfind_logger.critical(err_message)
+                    raise Exception(err_message)
+            funcs.change_file_permissions(full_filepath)
     return seg_path
 
 

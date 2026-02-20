@@ -343,7 +343,7 @@ class Band_Data_Base(ABC):
         # load image data and header
         if not Path(self.im_path).is_file():
             err_message = (
-                f"Image for {self.survey} {self.filt.band_name}"
+                f"Image for {self.survey} {self.filt_name}"
                 + f" at {self.im_path} is not a .fits image!"
             )
             galfind_logger.critical(err_message)
@@ -379,7 +379,7 @@ class Band_Data_Base(ABC):
             hdr = hdu.header
         else:
             err_message = (
-                f"Weight image for {self.survey} {self.filt.band_name}"
+                f"Weight image for {self.survey} {self.filt_name}"
                 + f" at {self.wht_path} is not a .fits image!"
             )
             galfind_logger.critical(err_message)
@@ -409,7 +409,7 @@ class Band_Data_Base(ABC):
             hdr = hdu.header
         else:
             err_message = (
-                f"RMS error for {self.survey} {self.filt.band_name}"
+                f"RMS error for {self.survey} {self.filt_name}"
                 + f" at {self.rms_err_path} is not a .fits image!"
             )
             galfind_logger.critical(err_message)
@@ -432,13 +432,17 @@ class Band_Data_Base(ABC):
         **kwargs: Dict[str, Any],
     ) -> Tuple[np.ndarray, fits.Header]:
         # TODO: load from the correct hdu rather than the first one
-        if not Path(self.seg_path).is_file():
-            err_message = (
-                f"Segmentation map for {self.survey} "
-                f"{self.filt.band_name} at {self.seg_path} is not a .fits image!"
-            )
-            galfind_logger.critical(err_message)
-            raise (Exception(err_message))
+        try:
+            if not Path(self.seg_path).is_file():
+                err_message = (
+                    f"Segmentation map for {self.survey} "
+                    f"{self.filt_name} at {self.seg_path} is not a .fits image!"
+                )
+                galfind_logger.critical(err_message)
+                raise (Exception(err_message))
+        except Exception as e:
+            breakpoint()
+            raise e
         seg_hdul = fits.open(self.seg_path, ignore_missing_simple = True, **kwargs)
         seg_data = seg_hdul[0].data
         seg_header = seg_hdul[0].header
@@ -501,20 +505,20 @@ class Band_Data_Base(ABC):
         return area_tab_path
     # %% Complex methods
 
-    def psf_homogenize(self, psf: PSF):
+    def psf_homogenize(self: Self, psf: PSF):
         """Homogenize the SCI/RMS_ERR/WHT images to the given PSF"""
         raise NotImplementedError
         self._psf_match = psf
         # Functionality in PSF_homogenization.py
 
     def segment(
-        self,
+        self: Self,
         err_type: str = "rms_err",
         method: str = "sextractor",
         config_name: str = "default.sex",
         params_name: str = "default.param",
         overwrite: bool = False,
-    ) -> NoReturn:
+    ) -> None:
         """
         Segment the image using the specified method and error type
         if it has not already been done.
@@ -1649,6 +1653,27 @@ class Stacked_Band_Data(Band_Data_Base):
             )
             return float(im_hdr["ZEROPNT"])
 
+    def __iter__(self):
+        self.iter = 0
+        return self
+
+    def __next__(self) -> Band_Data:
+        if self.iter > len(self) - 1:
+            raise StopIteration
+        else:
+            band_data = self[self.iter]
+            self.iter += 1
+            return band_data
+
+    def __len__(self) -> int:
+        return len(self.filterset)
+
+    def __getitem__(
+        self: Self,
+        idx: Any,
+    ) -> Band_Data:
+        return self.band_data_arr[idx]
+
     # stacking/mosaicing
     def __mul__(
         self, other: Union[Type[Band_Data_Base], List[Type[Band_Data_Base]]]
@@ -1681,24 +1706,29 @@ class Stacked_Band_Data(Band_Data_Base):
 
     @staticmethod
     def _get_stacked_band_data_path(
-        band_data_arr: List[Band_Data], err_type: str = "rms_err"
+        band_data_arr: List[Band_Data],
+        err_type: str = "rms_err",
     ) -> str:
         assert all(
             getattr(band_data, name) == getattr(band_data_arr[0], name)
             for name in ["survey", "version", "pix_scale"]
             for band_data in band_data_arr
         )
+        survey = band_data_arr[0].survey
+        version = band_data_arr[0].version
+        band_data_arr = funcs.sort_band_data_arr(band_data_arr)
+        instr_name = "+".join(np.unique([band_data.instr_name for band_data in band_data_arr]))
         # make stacked band data path, creating directory if it does not exist
         stacked_band_data_dir = (
             f"{config['DEFAULT']['GALFIND_WORK']}/Stacked_Images/"
-            + f"{band_data_arr[0].version}/{band_data_arr[0].instr_name}/{band_data_arr[0].survey}/{err_type.lower()}"
+            + f"{version}/{instr_name}/{survey}/{err_type.lower()}"
         )
         stacked_band_data_name = (
-            f"{band_data_arr[0].survey}_"
+            f"{survey}_"
             + Stacked_Band_Data._get_stacked_band_data_name(
                 [band_data.filt for band_data in band_data_arr]
             )
-            + f"_{band_data_arr[0].version}_stack.fits"
+            + f"_{version}_stack.fits"
         )
         stacked_band_data_path = (
             f"{stacked_band_data_dir}/{stacked_band_data_name}"
@@ -1817,6 +1847,11 @@ class Stacked_Band_Data(Band_Data_Base):
                     if i == 0:
                         prime_hdu["ZEROPNT"] = (u.Jy).to(u.ABmag)
                     wht_data /= scale**2
+
+                # handle non-finite values in the image and weight data by setting them to 0
+                valid = np.isfinite(im_data) & np.isfinite(wht_data)
+                im_data = np.where(valid, im_data, 0.0)
+                wht_data = np.where(valid, wht_data, 0.0)
 
                 if i == 0:
                     sum = im_data * wht_data
@@ -2419,12 +2454,12 @@ class Data:
         )
 
     @property
-    def survey(self):
+    def survey(self: Self) -> str:
         assert all(band_data.survey == self[0].survey for band_data in self)
         return self[0].survey
 
     @property
-    def version(self):
+    def version(self: Self) -> str:
         assert all(band_data.version == self[0].version for band_data in self)
         return self[0].version
 
@@ -2441,11 +2476,11 @@ class Data:
     #     return {band_data.filt_name: band_data.pix_scale for band_data in self}
 
     @property
-    def full_name(self):
+    def full_name(self: Self) -> str:
         return funcs.get_full_survey_name(self.survey, self.version, self.filterset)
     
     @property
-    def aper_diams(self) -> u.Quantity:
+    def aper_diams(self: Self) -> u.Quantity:
         all_aper_diams, aper_diam_counts = np.unique(np.concatenate([values for values in self.aper_diamss.values()]), return_counts = True)
         return [aper_diam.to(u.arcsec) for aper_diam, counts in zip(all_aper_diams, aper_diam_counts) if counts == len(self.aper_diamss)] * u.arcsec
 
@@ -2488,7 +2523,7 @@ class Data:
 
     # %% Overloaded operators
 
-    def __repr__(self):
+    def __repr__(self: Self) -> str:
         return (
             f"{self.__class__.__name__}({self.full_name.replace('_', ', ')})"
         )
@@ -2650,7 +2685,8 @@ class Data:
             raise AttributeError
 
     def __add__(
-        self, other: Union[Type[Band_Data_Base], List[Type[Band_Data_Base]], Data, List[Data]]
+        self: Self,
+        other: Union[Type[Band_Data_Base], List[Type[Band_Data_Base]], Data, List[Data]],
     ) -> Data:
         # if other is not a list, make it one
         if not isinstance(other, list):
@@ -2696,7 +2732,8 @@ class Data:
                 )
             )
 
-    def __eq__(self, other: Data) -> bool:
+
+    def __eq__(self: Self, other: Data) -> bool:
         if not isinstance(other, Data):
             return False
         elif len(self) != len(other):
@@ -2842,7 +2879,8 @@ class Data:
         return self[band].load_rms_err(output_hdr)
 
     def load_seg(
-        self, band: Union[int, str, Filter, List[Filter], Multiple_Filter]
+        self: Self,
+        band: Union[int, str, Filter, List[Filter], Multiple_Filter],
     ):
         return self[band].load_seg()
 
@@ -2993,6 +3031,7 @@ class Data:
         method: Union[str, List[str], Dict[str, str]] = "sextractor",
         config_name: str = "default.sex",
         params_name: str = "default.param",
+        update_fits_cat: bool = True,
         overwrite: bool = False,
     ) -> None:
         if hasattr(self, "phot_cat_path"):
@@ -3030,8 +3069,10 @@ class Data:
             for band_data in self_band_data_arr
         ]
 
-        # combined forced photometry catalogues into a single photometric catalogue
-        self._combine_forced_phot_cats(overwrite=overwrite)
+        self._combine_forced_phot_cats(
+            update = update_fits_cat,
+            overwrite = overwrite,
+        )
 
     def _make_band_data_base(
         self: Self,
@@ -3124,7 +3165,11 @@ class Data:
         funcs.make_dirs(phot_cat_path)
         return phot_cat_path
 
-    def _combine_forced_phot_cats(self, overwrite: bool = False) -> NoReturn:
+    def _combine_forced_phot_cats(
+        self: Self,
+        update: bool = True,
+        overwrite: bool = False,
+    ) -> None:
         # readme_sep: str = "-" * 20,
         phot_cat_path = self._get_phot_cat_path()
         funcs.make_dirs(phot_cat_path)
@@ -3133,21 +3178,25 @@ class Data:
         else:
             raise (Exception("MASTER Photometric catalogue already exists!"))
         
-        if not Path(phot_cat_path).is_file() or overwrite:
+        if not Path(phot_cat_path).is_file() or update or overwrite:
 
-            master_tab_arr = [self.forced_phot_band._get_master_tab(
-                output_ids_locs=True
-            )]
-            for band_data in self:
+            master_tab_arr = [
+                self.forced_phot_band._get_master_tab(
+                    output_ids_locs=True
+                )
+            ]
+            non_forced_phot_band_data_arr = deepcopy(self.band_data_arr)
+            if hasattr(self, "stacked_band_data_arr"):
+                non_forced_phot_band_data_arr += self.stacked_band_data_arr
+                
+            for band_data in non_forced_phot_band_data_arr:
                 if band_data.filt_name != self.forced_phot_band.filt_name: 
                     master_tab_arr.extend(
-                        [band_data._get_master_tab(output_ids_locs=False)])
+                        [band_data._get_master_tab(output_ids_locs=False)]
+                    )
             master_tab = hstack(master_tab_arr)
 
-            self_band_data_arr = self.band_data_arr + [self.forced_phot_band]
-            if hasattr(self, "stacked_band_data_arr"):
-                self_band_data_arr += self.stacked_band_data_arr
-
+            self_band_data_arr = [self.forced_phot_band] + non_forced_phot_band_data_arr
             # update table header
             master_tab.meta = {
                 **master_tab.meta,
@@ -3157,12 +3206,23 @@ class Data:
                     "VERSION": self.version,
                     "BANDS": str(self.filterset.band_names),
                     "APERDIAM": funcs.aper_diams_to_str(self.forced_phot_band.aper_diams),
-                    "ERR_TYPE": "+".join(np.unique(band_data.forced_phot_args["err_type"] for band_data in self_band_data_arr)[0]),
-                    "METHODS": "+".join(np.unique(band_data.forced_phot_args["method"] for band_data in self_band_data_arr)[0]),
+                    "ERR_TYPE": "+".join(np.unique([band_data.forced_phot_args["err_type"] for band_data in self_band_data_arr])),
+                    "METHODS": "+".join(np.unique([band_data.forced_phot_args["method"] for band_data in self_band_data_arr])),
                 },
             }
-            # save master table
-            master_tab.write(self.phot_cat_path, format="fits", overwrite=True)
+            if update:
+                galfind_logger.info(
+                    f"Updating combined SExtractor catalogue at {self.phot_cat_path}"
+                )
+                from . import Catalogue
+                Catalogue.update_fits_cat(
+                    master_tab,
+                    self.phot_cat_path,
+                    "OBJECTS",
+                )
+            else:
+                # save master table
+                master_tab.write(self.phot_cat_path, format="fits", overwrite=True)
             galfind_logger.info(
                 f"Saved combined SExtractor catalogue as {self.phot_cat_path}"
             )
@@ -3236,7 +3296,7 @@ class Data:
             for stacked_band_data in self.stacked_band_data_arr:
                 self_ += deepcopy(stacked_band_data)
             self_band_data_arr += self.stacked_band_data_arr
-
+        
         # mask each band, sorting the potentially band dependent input parameters
         [
             band_data.mask(
@@ -3388,7 +3448,6 @@ class Data:
                 Parallel(n_jobs=n_jobs)(
                     delayed(Depths.calc_band_depth)(param) for param in params
                 )
-
             # save properties to individual band_data objects
             for band_data in self_band_data_arr:
                 [
@@ -3606,10 +3665,13 @@ class Data:
             band in self.instrument.band_names
             for band in blue_bands + green_bands + red_bands
         ), galfind_logger.warning(
-            f"Cannot make galaxy RGB as not all {blue_bands + green_bands + red_bands} are in {self.instrument.band_names}"
+            "Cannot make galaxy RGB as not all " + \
+            f"{blue_bands + green_bands + red_bands} " + \
+            f"are in {self.instrument.band_names}"
         )
         # construct out_path
-        out_path = f"{config['RGB']['RGB_DIR']}/{self.version}/{self.survey}/{method}/B={'+'.join(blue_bands)},G={'+'.join(green_bands)},R={'+'.join(red_bands)}.png"
+        out_path = f"{config['RGB']['RGB_DIR']}/{self.version}/{self.survey}/" + \
+            f"{method}/B={'+'.join(blue_bands)},G={'+'.join(green_bands)},R={'+'.join(red_bands)}.png"
         funcs.make_dirs(out_path)
         if not os.path.exists(out_path):
             # load RGB band paths including .fits image extensions
@@ -3663,14 +3725,20 @@ class Data:
                 raise (NotImplementedError())
 
     def append_loc_depth_cols(
-        self,
+        self: Self,
         min_flux_pc_err: Union[int, float],
+        update_fits_cat: bool = True,
         overwrite: bool = False
-    ) -> NoReturn:
-        Depths.append_loc_depth_cols(self, min_flux_pc_err, overwrite)
+    ) -> None:
+        return Depths.append_loc_depth_cols(
+            self,
+            min_flux_pc_err = min_flux_pc_err,
+            update = update_fits_cat,
+            overwrite = overwrite,
+        )
 
     def append_aper_corr_cols(
-        self,
+        self: Self,
         overwrite: bool = False,
         psf_wanted: str = "model"
     ) -> NoReturn:
@@ -3688,7 +3756,7 @@ class Data:
             assert all(all(diam == diam_0 for diam, diam_0 
                 in zip(band_data.aper_diams, self[0].aper_diams)) 
                 for band_data in all_bands), galfind_logger.critical(
-                "Aperture diameters are not the same for all bands!"
+                    "Aperture diameters are not the same for all bands!"
                 )
             if overwrite:
                 # TODO: Delete already existing columns
@@ -3795,7 +3863,7 @@ class Data:
             )
     
     def append_mask_cols(
-        self, 
+        self: Self, 
         overwrite: bool = False
     ) -> NoReturn:
         # ensure forced photometry has been run on every band in catalogue

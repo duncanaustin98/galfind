@@ -6,6 +6,7 @@ from copy import deepcopy
 import matplotlib.pyplot as plt
 import astropy.units as u
 import numpy as np
+import re
 from pathlib import Path
 from astropy.coordinates import SkyCoord
 from astropy.io import fits
@@ -771,13 +772,17 @@ class Catalogue_Base:
         hdul = fits.open(self.cat_path)
         return [hdu_.name for hdu_ in hdul if hdu_.name != "PRIMARY"]
 
-    def check_hdu_exists(self, hdu_name: str):
+    def check_hdu_exists(self: Self, hdu_name: str) -> bool:
         # check whether the hdu extension exists
         hdul = fits.open(self.cat_path)
         return any(hdu_.name == hdu_name for hdu_ in hdul)
 
     @staticmethod
-    def write_cat(tab_arr, tab_names, cat_path: str):
+    def write_cat(
+        tab_arr: List[Table],
+        tab_names: List[str],
+        cat_path: str,
+    ) -> None:
         hdu_list = fits.HDUList()
         [
             hdu_list.append(
@@ -794,7 +799,63 @@ class Catalogue_Base:
         funcs.change_file_permissions(cat_path)
         galfind_logger.info(f"Writing table to {cat_path}")
 
-    def write_hdu(self, tab: Table, hdu: str):
+    @staticmethod
+    def update_fits_cat(
+        new_tab: Table,
+        cat_path: str,
+        hdu_name: str,
+    ) -> None:
+        # retain any pre-existing column and meta names
+        orig_tab = Table.read(cat_path, hdu = hdu_name)
+        # update original table with new master table columns
+        for col in new_tab.colnames:
+            out_colname = col
+            if len(col) > 68:
+                # truncate column name to 68 characters for fits format
+                # remove 'F', 'W', 'M', 'LP' from filter names
+                # find all filter names in column name
+                filter_names = re.findall(r'F[0-9]+[WMLP]+', col)
+                for filter_name in filter_names:
+                    out_colname = out_colname.replace(
+                        filter_name,
+                        filter_name.replace('F', '').replace('W', '').replace('M', '').replace('LP', '')
+                    )
+                galfind_logger.warning(
+                    f"{col=} with {len(col)=}>68 is too long for fits format! " + \
+                    f"Using truncated {out_colname} instead!"
+                )
+                if len(out_colname) > 68:
+                    out_colname = out_colname[:68]
+                    galfind_logger.warning(
+                        f"Truncated {out_colname=} with {len(out_colname)=}>68!" +
+                        f"Further truncating to {out_colname}!"
+                    )
+            if out_colname in orig_tab.colnames:
+                orig_tab[out_colname] = new_tab[col]
+            else:
+                orig_tab.add_column(new_tab[col], name=out_colname)
+        orig_meta = orig_tab.meta
+        orig_meta.update(new_tab.meta)
+        # retain all fits extensions
+        hdul = fits.open(cat_path, memmap=False)
+        non_objects_hdul = [
+            hdul[i] for i in range(len(hdul))
+            if hdul[i].name not in ["PRIMARY", hdu_name]
+        ]
+        # write the fits table
+        out_hdul = fits.HDUList(
+            [
+                fits.PrimaryHDU(),
+                fits.BinTableHDU(orig_tab, name=hdu_name)
+            ] + non_objects_hdul
+        )
+        out_hdul.writeto(cat_path, overwrite=True)
+        funcs.change_file_permissions(cat_path)
+        galfind_logger.info(
+            f"Updated {hdu_name} in {cat_path} with new table!"
+        )
+    
+    def write_hdu(self: Self, tab: Table, hdu: str) -> None:
         # if hdu exists, overwrite it
         if self.check_hdu_exists(hdu):
             tab_arr = [

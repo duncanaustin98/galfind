@@ -177,7 +177,7 @@ class Galaxy:
                 setattr(result, key, deepcopy(value, memo))
             except:
                 galfind_logger.critical(
-                    f"deepcopy({self.__class__.__name__}) {key}: {value} FAIL!"
+                    f"deepcopy({repr(self)}) {key}: {value} FAIL!"
                 )
                 breakpoint()
         return result
@@ -199,7 +199,10 @@ class Galaxy:
         [self.aper_phot[gal_SED_result.aper_diam]. \
             update_SED_result(gal_SED_result) \
             for gal_SED_result in gal_SED_results]
-        
+    
+    def update_SED_result_lowz_zmax_info(self, aper_diam, SED_result_key, zmax_info):
+        return self.aper_phot[aper_diam].update_SED_result_lowz_zmax_info(SED_result_key, zmax_info)
+
     def load_fixz_SED_result(
         self: Self,
         aper_diam: u.Quantity,
