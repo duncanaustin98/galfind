@@ -55,7 +55,7 @@ class PSF_Cutout(PSF_Base):
         
         psf_name = fits_path.split("/")[-1].replace(".fits", "")
         psf_out_path = psf_out_path = f"{config['PSF']['PSF_WORK_DIR']}/" + \
-            f"{pix_scale.to(u.arcsec).value}as/{filt.band_name}/{psf_name}.fits"
+            f"{pix_scale.to(u.arcsec).value}as/{filt.filt_name}/{psf_name}.fits"
         if not Path(psf_out_path).is_file():
             funcs.make_dirs(psf_out_path)
             # TODO:resample onto appropriate pixel scale - assume already done
@@ -76,7 +76,7 @@ class PSF_Cutout(PSF_Base):
                 "EXTNAME": psf_name,
                 "ID": psf_name,
                 "PIXSCALE": pix_scale.to(u.arcsec).value,
-                "BAND": filt.band_name
+                "BAND": filt.filt_name
             }
             cutout_fits = fits.PrimaryHDU(psf_cutout.data, header = fits.Header(hdr))
             cutout_fits.writeto(psf_out_path, overwrite = True)

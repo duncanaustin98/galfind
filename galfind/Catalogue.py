@@ -53,6 +53,7 @@ from . import (
     EAZY,  # noqa F501
     NIRCam,
     MIRI,
+    Multiple_Filter,
     Catalogue_Base,
     Photometry_rest,
     Photometry_obs,
@@ -271,14 +272,14 @@ def open_galfind_hdr(cat_path: str, cat_type: str) -> Dict[str, str]:
     return open_galfind_cat(cat_path, cat_type).meta
 
 def galfind_phot_labels(
-    filterset: Multiple_Filter, 
+    filterset: Multiple_Filter, #Union[Multiple_Filter, List[Type[Band_Data_Base]]], 
     aper_diams: u.Quantity, 
     **kwargs
 ) -> Tuple[Dict[str, str], Dict[str, str]]:
     assert "min_flux_pc_err" in kwargs.keys(), \
         galfind_logger.critical("min_flux_pc_err not in kwargs!")
-    phot_labels = {aper_diam * aper_diams.unit: [f"FLUX_APER_{filt_name}_aper_corr_Jy" for filt_name in filterset.band_names] for aper_diam in aper_diams.value}
-    err_labels = {aper_diam * aper_diams.unit: [f"FLUXERR_APER_{filt_name}_loc_depth_{str(int(kwargs['min_flux_pc_err']))}pc_Jy" for filt_name in filterset.band_names] for aper_diam in aper_diams.value}
+    phot_labels = {aper_diam * aper_diams.unit: [f"FLUX_APER_{filt.filt_name}_aper_corr_Jy" for filt in filterset] for aper_diam in aper_diams.value}
+    err_labels = {aper_diam * aper_diams.unit: [f"FLUXERR_APER_{filt.filt_name}_loc_depth_{str(int(kwargs['min_flux_pc_err']))}pc_Jy" for filt in filterset] for aper_diam in aper_diams.value}
     return phot_labels, err_labels
 
 def jaguar_phot_labels(
@@ -290,11 +291,11 @@ def jaguar_phot_labels(
         galfind_logger.critical("min_flux_pc_err not in kwargs!")
     phot_labels = {
         aper_diam * aper_diams.unit: [
-                f"NRC_{filt.band_name}_fnu" if \
+                f"NRC_{filt.filt_name}_fnu" if \
                 isinstance(filt.instrument, NIRCam) \
-                else f"MIRI_{filt.band_name}_fnu" if \
+                else f"MIRI_{filt.filt_name}_fnu" if \
                 isinstance(filt.instrument, MIRI) \
-                else f"HST_{filt.band_name}_fnu" \
+                else f"HST_{filt.filt_name}_fnu" \
                 for filt in filterset
             ] for aper_diam in aper_diams.value
     }
@@ -308,8 +309,8 @@ def scattered_phot_labels(
 ) -> Tuple[Dict[str, str], Dict[str, str]]:
     assert "min_flux_pc_err" in kwargs.keys(), \
         galfind_logger.critical("min_flux_pc_err not in kwargs!")
-    phot_labels = {aper_diam * aper_diams.unit: [f"{filt.instrument_name}.{filt.band_name}_scattered" for filt in filterset] for aper_diam in aper_diams.value}
-    err_labels = {aper_diam * aper_diams.unit: [f"{filt.instrument_name}.{filt.band_name}_err" for filt in filterset] for aper_diam in aper_diams.value}
+    phot_labels = {aper_diam * aper_diams.unit: [f"{filt.instrument_name}.{filt.filt_name}_scattered" for filt in filterset] for aper_diam in aper_diams.value}
+    err_labels = {aper_diam * aper_diams.unit: [f"{filt.instrument_name}.{filt.filt_name}_err" for filt in filterset] for aper_diam in aper_diams.value}
     return phot_labels, err_labels
 
 # def scattered_phot_labels(
@@ -319,15 +320,15 @@ def scattered_phot_labels(
 # ) -> Tuple[Dict[str, str], Dict[str, str]]:
 #     assert "min_flux_pc_err" in kwargs.keys(), \
 #         galfind_logger.critical("min_flux_pc_err not in kwargs!")
-#     phot_labels = {aper_diam * aper_diams.unit: [f"{filt.band_name}_scattered" for filt in filterset] for aper_diam in aper_diams.value}
-#     err_labels = {aper_diam * aper_diams.unit: [f"{filt.band_name}_err" for filt in filterset] for aper_diam in aper_diams.value}
+#     phot_labels = {aper_diam * aper_diams.unit: [f"{filt.filt_name}_scattered" for filt in filterset] for aper_diam in aper_diams.value}
+#     err_labels = {aper_diam * aper_diams.unit: [f"{filt.filt_name}_err" for filt in filterset] for aper_diam in aper_diams.value}
 #     return phot_labels, err_labels
 
 def galfind_mask_labels(
     filterset: Multiple_Filter, 
     **kwargs
 ) -> List[str]:
-    return [f"unmasked_{filt_name}" for filt_name in filterset.band_names]
+    return [f"unmasked_{filt_name}" for filt_name in filterset.filt_names]
 
 def galfind_depth_labels(
     filterset: Multiple_Filter, 
@@ -335,7 +336,7 @@ def galfind_depth_labels(
     **kwargs
 ) -> Dict[str, str]:
     return {aper_diam * aper_diams.unit: [f"loc_depth_{filt_name}" \
-        for filt_name in filterset.band_names] \
+        for filt_name in filterset.filt_names] \
         for aper_diam in aper_diams.value}
 
 def scattered_depth_labels(
@@ -346,12 +347,11 @@ def scattered_depth_labels(
     return {
         aper_diam * aper_diams.unit: 
         [
-            f"loc_depth_{filt.instrument_name}.{filt.band_name}"
+            f"loc_depth_{filt.instrument_name}.{filt.filt_name}"
             for filt in filterset
         ]
         for aper_diam in aper_diams.value
     }
-
 
 def load_bool_Table(
     tab: Table,
@@ -367,6 +367,16 @@ def galfind_selection_labels(
     # load selection names dict from header
     return [name for name in tab.colnames if name not in "NUMBER"]
 
+def galfind_snr_labels(
+    filterset: Multiple_Filter,
+    aper_diams: u.Quantity,
+    **kwargs,
+):
+    return {
+        aper_diam * aper_diams.unit: [
+            funcs.truncate_colname(f"sigma_{filt.filt_name}") for filt in filterset
+        ] for aper_diam in aper_diams.value
+    }
 
 class Catalogue_Creator:
 
@@ -531,7 +541,7 @@ class Catalogue_Creator:
         return ".".join(self.cat_path.split("/")[-1].split(".")[:-1])
 
     @property
-    def crop_name(self) -> List[str]:
+    def crop_name(self: Self) -> List[str]:
         return funcs.get_crop_name(self.crops)
 
     def load_tab(
@@ -591,15 +601,24 @@ class Catalogue_Creator:
         return self.crop_mask
 
 
-    def load_IDs(self, cropped: bool = True) -> List[int]:
+    def load_IDs(
+        self: Self,
+        cropped: bool = True
+    ) -> List[int]:
         tab = self.load_tab("ID", cropped)
         return self.load_ID_func(tab, self.ID_label, **self.load_ID_kwargs)
 
-    def load_skycoords(self, cropped: bool = True) -> SkyCoord:
+    def load_skycoords(
+        self: Self,
+        cropped: bool = True
+    ) -> SkyCoord:
         tab = self.load_tab("sky_coord", cropped)
         return self.load_skycoords_func(tab, self.skycoords_labels, self.skycoords_units, **self.load_skycoords_kwargs)
 
-    def load_phot(self, cropped: bool = True) -> Tuple[np.ndarray, np.ndarray]:
+    def load_phot(
+        self: Self,
+        cropped: bool = True
+    ) -> Tuple[np.ndarray, np.ndarray]:
         tab = self.load_tab("phot", cropped)
         # load the photometric fluxes and errors in units of Jy
         phot_labels, err_labels = self.get_phot_labels(self.filterset, self.aper_diams, **self.load_phot_kwargs)
@@ -867,6 +886,62 @@ class Catalogue(Catalogue_Base):
     def __str__(self) -> str:
         return super().__str__()
 
+    def load_stacked_band_data_snrs(
+        self: Self,
+        get_snr_colnames: Callable[[Multiple_Filter, u.Quantity], Dict[u.Quantity, str]] = galfind_snr_labels,
+        #filterset_arr: Union[Multiple_Filter, List[Multiple_Filter]],
+        overwrite: bool = False,
+    ) -> None:
+        if len(self) == 0:
+            galfind_logger.warning("Catalogue is empty! Cannot load stacked band data!")
+            return
+        if not hasattr(self, "data"):
+            galfind_logger.warning("No data attribute to load stacked band data from!")
+            return
+        if not hasattr(self.data, "stacked_band_data_arr"):
+            galfind_logger.warning("No stacked band data to load!")
+            return
+        
+        # if isinstance(filterset_arr, Multiple_Filter):
+        #     filterset_arr = [filterset_arr]
+        phot_tab = self.cat_creator.load_tab("phot", cropped = True)
+        mask_tab = self.cat_creator.load_tab("mask", cropped = True)
+        assert len(phot_tab) == len(mask_tab) == len(self), \
+            galfind_logger.critical(
+                f"{len(phot_tab)=} != {len(mask_tab)=} != {len(self)=}!"
+            )
+        snr_labels = get_snr_colnames(self.data.stacked_band_data_arr, self.aper_diams)
+        snrs = {
+            aper_diam: {
+                band_data.filt_name: np.array(phot_tab[snr_labels_[i]]).astype(float)
+                for i, band_data in enumerate(self.data.stacked_band_data_arr)
+            }
+            for aper_diam, snr_labels_ in snr_labels.items()
+        }
+        # add snrs to galaxy aperture photometry objects
+        galfind_logger.info(f"Loading {self.data.stacked_band_data_arr=} SNRs into {repr(self)}!")
+        for i, gal in tqdm(
+            enumerate(self),
+            total=len(self),
+            desc=f"Loading {self.data.stacked_band_data_arr} SNRs into {repr(self)}",
+            disable = galfind_logger.getEffectiveLevel() > logging.INFO,
+        ):
+            if not hasattr(gal, "stacked_band_snrs") or overwrite:
+                for aper_diam in self.aper_diams:
+                    if aper_diam in gal.aper_phot.keys():
+                        setattr(gal.aper_phot[aper_diam], "stacked_band_snrs", {
+                                band_data.filt_name: snrs[aper_diam][band_data.filt_name][i]
+                                for band_data in self.data.stacked_band_data_arr
+                            }
+                        )
+                    else:
+                        galfind_logger.warning(
+                            f"{repr(gal)} does not have photometry for {aper_diam=}! " + \
+                            f"Cannot load {self.data.stacked_band_data_arr=} SNRs for this aperture diameter!"
+                        )
+            else:
+                galfind_logger.debug(f"{repr(gal)} already has 'stacked_band_snrs' attribute! Not overwriting!")
+
     def save_phot_PDF_paths(self, PDF_paths, SED_fit_params):
         if "phot_PDF_paths" not in self.__dict__.keys():
             self.phot_PDF_paths = {}
@@ -893,6 +968,24 @@ class Catalogue(Catalogue_Base):
             for gal, gal_SED_result in tqdm(
                 zip(self, cat_SED_results),
                 desc="Updating galaxy SED results",
+                total=len(self),
+                disable = galfind_logger.getEffectiveLevel() > logging.INFO
+            )
+        ]
+    
+    def update_SED_result_lowz_zmax_info(self, aper_diam, SED_result_key, zmax_info_arr):
+        assert len(zmax_info_arr) == len(self), \
+            galfind_logger.critical(
+                "Length of zmax_info_dict must be the same as the catalogue!"
+            )
+        galfind_logger.info(
+            "Updating low-z zmax info in galfind catalogue object"
+        )
+        [
+            gal.update_SED_result_lowz_zmax_info(aper_diam, SED_result_key, zmax_info_arr[i])
+            for i, gal in tqdm(
+                enumerate(self),
+                desc="Updating galaxy low-z zmax info",
                 total=len(self),
                 disable = galfind_logger.getEffectiveLevel() > logging.INFO
             )
@@ -929,9 +1022,9 @@ class Catalogue(Catalogue_Base):
         #     aper_corrs = self.instrument.aper_corrs[self.cat_creator.aper_diam]
         # assert len(aper_corrs) == len(self.instrument)
         # aper_corrs = {
-        #     band_name: aper_corr
-        #     for band_name, aper_corr in zip(
-        #         self.instrument.band_names, aper_corrs
+        #     filt_name: aper_corr
+        #     for filt_name, aper_corr in zip(
+        #         self.instrument.filt_names, aper_corrs
         #     )
         # }
         # # calculate and save dict of ext_src_corrs for each galaxy in self
@@ -1101,7 +1194,7 @@ class Catalogue(Catalogue_Base):
                     galfind_logger.critical(
                         f"{type(multiply_factor)=} != dict!"
                     )
-                assert all([key in self.filterset.band_names for key in multiply_factor.keys()]), \
+                assert all([key in self.filterset.filt_names for key in multiply_factor.keys()]), \
                     galfind_logger.critical(
                         f"{len(multiply_factor)=} != " + \
                         f"{len(self.filterset)=}!"
@@ -1171,20 +1264,20 @@ class Catalogue(Catalogue_Base):
         multiply_factor: Optional[Dict[str, float]] = None,
     ) -> None:
         if multiply_factor is None:
-            band_names = None
+            filt_names = None
         else:
-            band_names = list(multiply_factor.keys())
+            filt_names = list(multiply_factor.keys())
         self.load_sextractor_auto_fluxes(multiply_factor = multiply_factor)
         galfind_logger.info(
             f"Loading SExtractor extended source corrections for {self.cat_name}!"
         )
         [filt.instrument._load_aper_corrs() for filt in self.filterset]
         aper_corrs = {
-            filt.band_name: filt.instrument.aper_corrs[filt.band_name]
+            filt.filt_name: filt.instrument.aper_corrs[filt.filt_name]
             for filt in self.filterset
-            if band_names is None or filt.band_name in band_names
+            if filt_names is None or filt.filt_name in filt_names
         }
-        [gal.load_sextractor_ext_src_corrs(aper_corrs, band_names) for gal in self]
+        [gal.load_sextractor_ext_src_corrs(aper_corrs, filt_names) for gal in self]
 
         if len(self) == len(self.cat_creator.open_cat(self.cat_path, "ID")):
             galfind_logger.info(
@@ -1192,9 +1285,9 @@ class Catalogue(Catalogue_Base):
             )
             # save to catalogue
             for filt in self.filterset:
-                if band_names is None or filt.band_name in band_names:
+                if filt_names is None or filt.filt_name in filt_names:
                     for aper_diam in self.aper_diams:
-                        self._append_property_to_tab(f"ext_src_corr_{aper_diam.to(u.arcsec).value:.2f}as_{filt.band_name}", "OBJECTS")
+                        self._append_property_to_tab(f"ext_src_corr_{aper_diam.to(u.arcsec).value:.2f}as_{filt.filt_name}", "OBJECTS")
 
     def load_sextractor_params(self) -> None:
         self.load_sextractor_auto_mags()
@@ -1230,27 +1323,27 @@ class Catalogue(Catalogue_Base):
             fits_cat = self.open_cat(cropped=True)
             if multiply_factor is None:
                 multiply_factor = {
-                    filt.band_name: 1.0 * u.dimensionless_unscaled
+                    filt.filt_name: 1.0 * u.dimensionless_unscaled
                     for filt in self.filterset
-                    if f"{cat_colname}_{filt.band_name}" in fits_cat.colnames
+                    if f"{cat_colname}_{filt.filt_name}" in fits_cat.colnames
                 }
             elif not isinstance(multiply_factor, dict):
                 multiply_factor = {
-                    filt.band_name: multiply_factor
+                    filt.filt_name: multiply_factor
                     for filt in self.filterset
-                    if f"{cat_colname}_{filt.band_name}" in fits_cat.colnames
+                    if f"{cat_colname}_{filt.filt_name}" in fits_cat.colnames
                 }
             # load in speed can be improved here!
             cat_band_properties = {
-                filt.band_name: np.array(fits_cat[f"{cat_colname}_{filt.band_name}"])
-                * multiply_factor[filt.band_name]
+                filt.filt_name: np.array(fits_cat[f"{cat_colname}_{filt.filt_name}"])
+                * multiply_factor[filt.filt_name]
                 for filt in self.filterset
-                if f"{cat_colname}_{filt.band_name}" in fits_cat.colnames
-                and filt.band_name in multiply_factor.keys()
+                if f"{cat_colname}_{filt.filt_name}" in fits_cat.colnames
+                and filt.filt_name in multiply_factor.keys()
             }
             if len(cat_band_properties) == 0:
                 err_message = f"Could not load {cat_colname=} from {self.cat_path} " + \
-                    f"as no '{cat_colname}_band' exists for band in {self.instrument.band_names=}!"
+                    f"as no '{cat_colname}_band' exists for band in {self.instrument.filt_names=}!"
                 galfind_logger.info(err_message)
                 raise Exception(err_message)
             
@@ -1325,10 +1418,10 @@ class Catalogue(Catalogue_Base):
                 )
 
     def load_sex_flux_mag_autos(self):
-        # sex_band_names = [band_name for band_name, cat_type in self.data.sex_cat_types.items() if "SExtractor" in cat_type]
+        # sex_filt_names = [filt_name for filt_name, cat_type in self.data.sex_cat_types.items() if "SExtractor" in cat_type]
         flux_im_to_Jy_conv = {
-            band_name: funcs.flux_image_to_Jy(1.0, self.data.im_zps[band_name])
-            for band_name in self.instrument.band_names
+            filt_name: funcs.flux_image_to_Jy(1.0, self.data.im_zps[filt_name])
+            for filt_name in self.instrument.filt_names
         }
         self.load_band_properties_from_cat(
             "FLUX_AUTO",
@@ -1367,7 +1460,7 @@ class Catalogue(Catalogue_Base):
         filt: Union[str, Filter],
         cutout_size: u.Quantity = 0.96 * u.arcsec,
     ) -> List[Band_Cutout]:
-        band_data = self.data[filt.band_name]
+        band_data = self.data[filt.filt_name]
         return [gal.make_band_cutout(band_data, cutout_size) for gal in self]
 
     def plot_cutouts(
@@ -1430,7 +1523,7 @@ class Catalogue(Catalogue_Base):
         if cutout_size_str not in self.RGBs.keys():
             self.RGBs[cutout_size_str] = {}
         rgb_key = ",".join(
-            f"{colour}={'+'.join(self.get_colour_band_names[colour])}"
+            f"{colour}={'+'.join(self.get_colour_filt_names[colour])}"
             for colour in ["B", "G", "R"]
         )
         if (
@@ -1483,6 +1576,7 @@ class Catalogue(Catalogue_Base):
         wav_unit: u.Unit = u.um,
         flux_unit: u.Unit = u.ABmag,
         log_fluxes: bool = False,
+        cutout_size: u.Quantity = 0.96 * u.arcsec,
         crop_name: Optional[str] = None,
         collate_dir: Optional[str] = None,
         imshow_kwargs: Dict[str, Any] = {},
@@ -1511,6 +1605,7 @@ class Catalogue(Catalogue_Base):
                 wav_unit = wav_unit,
                 flux_unit = flux_unit,
                 log_fluxes = log_fluxes,
+                cutout_size = cutout_size,
                 imshow_kwargs = imshow_kwargs,
                 norm_kwargs = norm_kwargs,
                 aper_kwargs = aper_kwargs,
@@ -1673,12 +1768,12 @@ class Catalogue(Catalogue_Base):
                 f"Loading {aper_diam} {mode} {region_selector.name if not invert_region else region_selector.fail_name} depths!"
             )
             gal_depths = {filt_name: [
-                    gal.aper_phot[aper_diam].depths[np.where(np.array(gal.aper_phot[aper_diam].filterset.band_names) == filt_name)[0][0]].value
-                    for gal in self if filt_name in gal.aper_phot[aper_diam].filterset.band_names 
+                    gal.aper_phot[aper_diam].depths[np.where(np.array(gal.aper_phot[aper_diam].filterset.filt_names) == filt_name)[0][0]].value
+                    for gal in self if filt_name in gal.aper_phot[aper_diam].filterset.filt_names 
                     and ((gal.selection_flags[region_selector.name] and not invert_region)
                     or (not gal.selection_flags[region_selector.name] and invert_region))
                 ]
-                for filt_name in self.data.filterset.band_names
+                for filt_name in self.data.filterset.filt_names
             }
             med_depths = {filt_name: np.nanmedian(gal_band_depths) for filt_name, gal_band_depths in gal_depths.items()}
             mean_depths = {filt_name: np.nanmean(gal_band_depths) for filt_name, gal_band_depths in gal_depths.items()}

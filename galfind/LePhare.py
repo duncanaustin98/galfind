@@ -224,8 +224,8 @@ class LePhare(SED_code):
                 + list(
                     itertools.chain(
                         *zip(
-                            self.filterset.band_names,
-                            [f"{filt.band_name}_err" for filt in self.filterset],
+                            self.filterset.filt_names,
+                            [f"{filt.filt_name}_err" for filt in self.filterset],
                         )
                     )
                 )
@@ -345,7 +345,7 @@ class LePhare(SED_code):
     def _make_filt_txt(self: Self, filt: Filter) -> None:
         save_path = f"{os.environ['LEPHAREDIR']}/filt/" + \
             f"{filt.facility_name}/{filt.instrument_name}/" + \
-            f"{filt.band_name}.txt"
+            f"{filt.filt_name}.txt"
         funcs.make_dirs(save_path)
         if Path(save_path).is_file():
             galfind_logger.debug(f"LePhare filter for {repr(filt)} already exists")
@@ -354,17 +354,17 @@ class LePhare(SED_code):
             #np.vstack([np.array(filt.wav.to(u.AA).value), np.array(filt.trans)]).T
             out_filt = np.column_stack((np.array(filt.wav.to(u.AA).value), np.array(filt.trans)))
             np.savetxt(save_path, out_filt, header = \
-                f"{filt.instrument_name}/{filt.band_name}", comments = "# ")
+                f"{filt.instrument_name}/{filt.filt_name}", comments = "# ")
             galfind_logger.info(f"Saved LePhare filters for {repr(filt)} to {save_path}")
             funcs.change_file_permissions(save_path)
 
     def _get_input_filterset_name(self: Self) -> str:
         return ",".join([f"{filt.facility_name}/{filt.instrument_name}" + \
-            f"/{filt.band_name}.txt" for filt in self.filterset])
+            f"/{filt.filt_name}.txt" for filt in self.filterset])
     
     def _get_save_filterset_name(self: Self) -> str:
         if self.SED_fit_params["COMPILE_SURVEY_FILTERS"]:
-            return "+".join([filt.band_name for filt in self.filterset]) + ".filt"
+            return "+".join([filt.filt_name for filt in self.filterset]) + ".filt"
         else:
             return self.filterset.instrument_name + ".filt"
 
@@ -571,12 +571,12 @@ class LePhare(SED_code):
                     break
             f.close()
 
-        if not all([filt_name in self.filterset.band_names for filt_name in filter_names]):
+        if not all([filt_name in self.filterset.filt_names for filt_name in filter_names]):
             err_message = f"LePhare {type} filterset binary at {save_path=} " + \
                 "does not match provided filterset!"
             galfind_logger.critical(err_message)
             raise ValueError(err_message)
-        elif not all([filt_name in filter_names for filt_name in self.filterset.band_names]):
+        elif not all([filt_name in filter_names for filt_name in self.filterset.filt_names]):
             err_message = f"Provided filterset does not match " + \
                 f"LePhare {type} filterset binary at {save_path=}!"
             galfind_logger.critical(err_message)

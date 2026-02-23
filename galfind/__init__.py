@@ -130,10 +130,10 @@ instr_to_name_dict = {name: globals()[name]() for name in json.loads(config.get(
 from .Filter import Filter, Multiple_Filter, Tophat_Filter, U, V, J
 
 # sort bands blue -> red based on central wavelength
-all_band_names = [filt.band_name for filt in sorted(Multiple_Filter.from_instruments \
+all_filt_names = [filt.filt_name for filt in sorted(Multiple_Filter.from_instruments \
     (list(json.loads(config.get("Other", "INSTRUMENT_NAMES")))), \
     key=lambda band: band.WavelengthCen.to(u.AA).value)]
-config.set("Other", "ALL_BANDS", json.dumps(all_band_names))
+config.set("Other", "ALL_BANDS", json.dumps(all_filt_names))
 
 from .PDF import PDF, SED_fit_PDF, Redshift_PDF, PDF_nD
 
@@ -227,6 +227,7 @@ from .Selector import (
     Hainline24_TY_Brown_Dwarf_Selector_1,
     Hainline24_TY_Brown_Dwarf_Selector_2,
     Redshift_Selector,
+    Stacked_Blue_Lya_Non_Detect_Selector,
 )
 
 from .Emission_lines import Emission_line, wav_lyman_alpha, line_diagnostics

@@ -22,7 +22,7 @@ try:
 except ImportError:
     from typing_extensions import Self, Type  # python > 3.7 AND python < 3.11
 
-from . import galfind_logger, config, all_band_names, astropy_cosmo
+from . import galfind_logger, config, all_filt_names, astropy_cosmo
 from . import useful_funcs_austind as funcs
 from .decorators import ignore_warnings
 from . import Catalogue, Catalogue_Base, Galaxy, SED_code, Photometry_rest, PDF
@@ -581,12 +581,12 @@ class beta_fit:
             if length != max_length:
                 wav_rest = np.concatenate([wav_rest, np.full(max_length - length, wav_rest[-1])])
                 trans = np.concatenate([trans, np.full(max_length - length, trans[-1])])
-            self.mid_wav_rest[filt.band_name] = filt.WavelengthCen.to(u.AA).value
-            self.wavelength_rest[filt.band_name] = wav_rest
-            self.transmission[filt.band_name] = trans
-            self.norm[filt.band_name] = np.trapz(
-                self.transmission[filt.band_name],
-                x=self.wavelength_rest[filt.band_name],
+            self.mid_wav_rest[filt.filt_name] = filt.WavelengthCen.to(u.AA).value
+            self.wavelength_rest[filt.filt_name] = wav_rest
+            self.transmission[filt.filt_name] = trans
+            self.norm[filt.filt_name] = np.trapz(
+                self.transmission[filt.filt_name],
+                x=self.wavelength_rest[filt.filt_name],
             )
 
     def __call__(self, _, A, beta):
@@ -596,7 +596,7 @@ class beta_fit:
             self.wavelength_rest,
             self.transmission,
             self.norm,
-            self.filterset.band_names
+            self.filterset.filt_names
         )
 
 @njit
@@ -759,8 +759,8 @@ class UV_Beta_Calculator(Rest_Frame_Property_Calculator):
         phot_rest: Photometry_rest
     ) -> Dict[str, Any]:
         return {
-            "rest_UV_band_names": "+".join(
-                np.array(phot_rest.filterset.band_names)
+            "rest_UV_filt_names": "+".join(
+                np.array(phot_rest.filterset.filt_names)
                 [self.obj_kwargs["keep_indices"]]),
             "n_UV_bands": len(self.obj_kwargs["keep_indices"]),
             "negative_flux_pc": self.obj_kwargs["negative_flux_pc"]
@@ -990,7 +990,7 @@ class mUV_Calculator(Rest_Frame_Property_Calculator):
         assert self.global_kwargs["top_hat_width"] > 0.0 * u.AA
         assert self.global_kwargs["resolution"] > 0.0 * u.AA
         if self.global_kwargs["ext_src_corrs"] is not None:
-            assert self.global_kwargs["ext_src_corrs"] in ["UV"] + all_band_names
+            assert self.global_kwargs["ext_src_corrs"] in ["UV"] + all_filt_names
         if self.global_kwargs["ext_src_uplim"] is not None:
             assert isinstance(self.global_kwargs["ext_src_uplim"], (int, float))
             assert self.global_kwargs["ext_src_uplim"] > 0.0
@@ -1460,12 +1460,12 @@ class Optical_Continuum_Calculator(Rest_Frame_Property_Calculator):
         ]
         # ensure emission line actually falls within this band
         emission_bands = [
-            filt.band_name
+            filt.filt_name
             for filt in phot_rest.filterset
             if wavelength > filt.WavelengthLower50
             and wavelength < filt.WavelengthUpper50
         ]
-        if nearest_band.band_name not in emission_bands:
+        if nearest_band.filt_name not in emission_bands:
             emission_band = None
             cont_bands = None
             cont_band_indices = None
@@ -1569,7 +1569,7 @@ class Optical_Continuum_Calculator(Rest_Frame_Property_Calculator):
         phot_rest: Photometry_rest
     ) -> Dict[str, Any]:
         return {
-            "bands": "+".join([band.band_name for band in self.obj_kwargs["cont_bands"]]),
+            "bands": "+".join([band.filt_name for band in self.obj_kwargs["cont_bands"]]),
             "negative_flux_pc": self.obj_kwargs["negative_flux_pc"]
         }
     
@@ -1623,18 +1623,18 @@ class Optical_Line_EW_Calculator(Rest_Frame_Property_Calculator):
         ]
         # ensure emission line actually falls within this band
         emission_bands = [
-            filt.band_name
+            filt.filt_name
             for filt in phot_rest.filterset
             if wavelength > filt.WavelengthLower50
             and wavelength < filt.WavelengthUpper50
         ]
 
-        if nearest_band.band_name not in emission_bands:
+        if nearest_band.filt_name not in emission_bands:
             failure = True
         else:
             emission_band = nearest_band
             emission_band_index = int(np.where(np.array( \
-                phot_rest.filterset.band_names) == emission_band.band_name)[0][0])
+                phot_rest.filterset.filt_names) == emission_band.filt_name)[0][0])
             if np.isnan(phot_rest.depths[emission_band_index]):
                 failure = True
             else:
@@ -1713,7 +1713,7 @@ class Optical_Line_EW_Calculator(Rest_Frame_Property_Calculator):
                 self.obj_kwargs["emission_band"].WavelengthLower50
         ]
         return {
-            "band": self.obj_kwargs["emission_band"].band_name,
+            "band": self.obj_kwargs["emission_band"].filt_name,
             "contam_lines": "+".join(contam_lines)
         }
 
@@ -1914,8 +1914,8 @@ class Optical_Line_Flux_Calculator(Rest_Frame_Property_Calculator):
         phot_rest: Photometry_rest
     ) -> Dict[str, Any]:
         emission_band = phot_rest.property_kwargs[self.pre_req_properties[1].name]["band"]
-        if emission_band in phot_rest.filterset.band_names:
-            emission_band_index = int(np.where(np.array(phot_rest.filterset.band_names) == emission_band)[0][0])
+        if emission_band in phot_rest.filterset.filt_names:
+            emission_band_index = int(np.where(np.array(phot_rest.filterset.filt_names) == emission_band)[0][0])
             if np.isnan(phot_rest.depths[emission_band_index]):
                 band_wav = None
             else:

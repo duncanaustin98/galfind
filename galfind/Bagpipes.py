@@ -714,12 +714,12 @@ class Bagpipes(SED_code):
             for gal, excl_bands in tqdm(zip(run_cat.gals, excl_bands_arr), "Removing filters without depth measurements", disable = galfind_logger.getEffectiveLevel() > logging.INFO):
                 remove_filt = []
                 for i, (depth, filt) in enumerate(zip(gal.aper_phot[aper_diam].depths, gal.aper_phot[aper_diam].filterset)):
-                    if np.isnan(depth) or filt.band_name in excl_bands:
+                    if np.isnan(depth) or filt.filt_name in excl_bands:
                         remove_filt.extend([filt])
                 for filt in remove_filt:
                     gal.aper_phot[aper_diam] -= filt
                     galfind_logger.warning(
-                        f"Removed {filt.band_name} from {gal.ID} for bagpipes fitting."
+                        f"Removed {filt.filt_name} from {gal.ID} for bagpipes fitting."
                     )
                 gals_arr.extend([gal])
 
@@ -751,7 +751,7 @@ class Bagpipes(SED_code):
                 else:
                     raise TypeError(
                         galfind_logger.critical(
-                            f"{self.SED_fit_params['fix_z']=} must be a string, a list/np.ndarray, ora subclass of SED_code!"
+                            f"{self.SED_fit_params['fix_z']=} must be a string, a list/np.ndarray, or a subclass of SED_code!"
                         )
                     )
             else:
@@ -949,7 +949,7 @@ class Bagpipes(SED_code):
     @staticmethod
     def _get_filt_path(filt: Filter) -> str:
         return f"{config['Bagpipes']['PIPES_FILT_DIR']}/" + \
-            f"{filt.instrument_name}/{filt.band_name}.txt"
+            f"{filt.instrument_name}/{filt.filt_name}.txt"
 
     def _generate_filters(
         self: Self,
@@ -961,9 +961,9 @@ class Bagpipes(SED_code):
                 funcs.make_dirs(filt_path)
                 wavs = filt.wav.to(u.AA).value
                 trans = filt.trans
-                np.savetxt(filt_path, np.array([wavs, trans]).T, header = filt.band_name)
+                np.savetxt(filt_path, np.array([wavs, trans]).T, header = filt.filt_name)
                 galfind_logger.info(
-                    f"Generated Bagpipes input filter for {filt.band_name}"
+                    f"Generated Bagpipes input filter for {filt.filt_name}"
                 )
 
     def _load_filters(
@@ -987,7 +987,7 @@ class Bagpipes(SED_code):
         for i, (gal, excl_bands) in enumerate(zip(cat, excl_bands_arr)):
             gal_filt_paths = []
             for filt in gal.aper_phot[aper_diam].filterset:
-                if filt.band_name not in excl_bands:
+                if filt.filt_name not in excl_bands:
                     gal_filt_paths.extend([self._get_filt_path(filt)])
             cat_filt_paths[i] = gal_filt_paths
         return list(cat_filt_paths)
@@ -1163,12 +1163,12 @@ class Bagpipes(SED_code):
         for gal, excl_bands in tqdm(zip(cat.gals, excl_bands_arr), "Removing filters without depth measurements", disable = galfind_logger.getEffectiveLevel() > logging.INFO):
             remove_filt = []
             for i, (depth, filt) in enumerate(zip(gal.aper_phot[aper_diam].depths, gal.aper_phot[aper_diam].filterset)):
-                if np.isnan(depth) or filt.band_name in excl_bands:
+                if np.isnan(depth) or filt.filt_name in excl_bands:
                     remove_filt.extend([filt])
             for filt in remove_filt:
                 gal.aper_phot[aper_diam] -= filt
                 galfind_logger.warning(
-                    f"Removed {filt.band_name} from {gal.ID} for bagpipes fitting."
+                    f"Removed {filt.filt_name} from {gal.ID} for bagpipes fitting."
                 )
             gals_arr.extend([gal])
         run_cat.gals = gals_arr
@@ -1383,7 +1383,7 @@ class Bagpipes(SED_code):
 
         galfind_logger.debug(
             f"{cat.survey} {ID}: \n {pipes_input}, \n " + \
-            f"bands = {','.join(aper_phot.filterset.band_names)}"
+            f"bands = {','.join(aper_phot.filterset.filt_names)}"
         )
         # TODO: append to bagpipes log file for survey/version/instrument
         return pipes_input

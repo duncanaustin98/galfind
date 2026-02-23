@@ -81,7 +81,7 @@ class Photometry_obs(Photometry):
     #             return self.__getattribute__(property_name)
     #         # elif (
     #         #     "aper_corr" in property_name
-    #         #     and property_name.split("_")[-1] in self.instrument.band_names
+    #         #     and property_name.split("_")[-1] in self.instrument.filt_names
     #         # ):
     #         #     # return band aperture corrections
     #         #     return self.aper_corrs[property_name.split("_")[-1]]
@@ -200,7 +200,7 @@ class Photometry_obs(Photometry):
         if self.simulated:
             return [np.nan for filt in self.filterset]
         else:
-            return [filt.instrument.aper_corrs[filt.band_name] \
+            return [filt.instrument.aper_corrs[filt.filt_name] \
                 [self.aper_diam] for filt in self.filterset]
 
     @classmethod  # not a gal object here, more like a catalogue row
@@ -280,6 +280,13 @@ class Photometry_obs(Photometry):
             self.SED_results = {**self.SED_results, **gal_SED_result_dict}
         else:
             self.SED_results = gal_SED_result_dict
+
+    def update_SED_result_lowz_zmax_info(
+        self: Self,
+        SED_result_key: str,
+        zmax_info: Dict[str, Dict[str, Union[float, u.Quantity, u.Magnitude, u.Dex]]],
+    ) -> None:
+        return self.SED_results[SED_result_key].update_lowz_zmax_properties(zmax_info)
 
     def get_SED_fit_params_arr(self, code) -> list:
         return [
@@ -578,19 +585,19 @@ class Photometry_obs(Photometry):
     def load_sextractor_ext_src_corrs(
         self: Self, 
         aper_corrs: Optional[Dict[str, float]] = None,
-        band_names: Optional[List[str]] = None,
+        filt_names: Optional[List[str]] = None,
     ) -> NoReturn:
-        if band_names is None:
-            band_names = self.filterset.band_names
-        # assert all(name in self.filterset.band_names for name in band_names), \
+        if filt_names is None:
+            filt_names = self.filterset.filt_names
+        # assert all(name in self.filterset.filt_names for name in filt_names), \
         #     galfind_logger.critical(
-        #         f"Some of {band_names=} not in {self.filterset.band_names=}"
+        #         f"Some of {filt_names=} not in {self.filterset.filt_names=}"
         #     )
         if aper_corrs is None:
             [filt.instrument._load_aper_corrs() for filt in self.filterset]
-            aper_corrs = {filt.band_name: filt.instrument. \
-                aper_corrs[filt.band_name][self.aper_diam] for filt in self.filterset}
-        assert all(filt_name in aper_corrs.keys() for filt_name in band_names)
+            aper_corrs = {filt.filt_name: filt.instrument. \
+                aper_corrs[filt.filt_name][self.aper_diam] for filt in self.filterset}
+        assert all(filt_name in aper_corrs.keys() for filt_name in filt_names)
 
         try:
             unmasked_flux = self.flux.unmasked
@@ -601,8 +608,8 @@ class Photometry_obs(Photometry):
                 filt_name: (self.sex_FLUX_AUTO[filt_name] \
                 / (unmasked_flux[i] * funcs.mag_to_flux_ratio(-aper_corrs[filt_name]))) \
                 .to(u.dimensionless_unscaled) for i, filt_name \
-                in enumerate(self.filterset.band_names)
-                if filt_name in band_names or band_names is None
+                in enumerate(self.filterset.filt_names)
+                if filt_name in filt_names or filt_names is None
             }
         except Exception as e:
             galfind_logger.critical(
@@ -626,7 +633,7 @@ class Photometry_obs(Photometry):
             self.SED_results[key].phot_rest.ext_src_corrs = self.ext_src_corrs
 
     # def load_local_depths(self, sex_cat_row, instrument, aper_diam_index):
-    #    self.depths = np.array([sex_cat_row[f"loc_depth_{band}"].T[aper_diam_index] for band in instrument.band_names])
+    #    self.depths = np.array([sex_cat_row[f"loc_depth_{band}"].T[aper_diam_index] for band in instrument.filt_names])
 
     # def SNR_crop(self, band, sigma_detect_thresh):
     #     index = self.instrument.band_from_index(band)
@@ -729,10 +736,10 @@ class Multiple_Photometry_obs:
         cls, fits_cat, instrument, cat_creator, SED_fit_params_arr, timed=False
     ):
         flux_arr, flux_errs_arr, gal_band_mask = cat_creator.load_photometry(
-            fits_cat, instrument.band_names, timed=timed
+            fits_cat, instrument.filt_names, timed=timed
         )
         depths_arr = cat_creator.load_depths(
-            fits_cat, instrument.band_names, gal_band_mask, timed=timed
+            fits_cat, instrument.filt_names, gal_band_mask, timed=timed
         )
         instrument_arr = cat_creator.load_instruments(
             instrument, gal_band_mask

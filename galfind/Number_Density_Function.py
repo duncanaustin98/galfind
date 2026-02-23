@@ -408,7 +408,10 @@ class Number_Density_Function(Base_Number_Density_Function):
         origin_surveys = tab.meta["origin_surveys"]
         crop_name = tab.meta["crop_name"]
         z_bin = tab.meta["z_bin"]
-        Vmax_method = tab.meta["Vmax_method"]
+        if "Vmax_method" in tab.meta.keys():
+            Vmax_method = tab.meta["Vmax_method"]
+        else:
+            Vmax_method = None
         return cls(
             x_name,
             x_bins,
@@ -499,7 +502,7 @@ class Number_Density_Function(Base_Number_Density_Function):
             for gal in nan_gals:
                 galfind_logger.warning(
                     f"{gal.ID}: (z={gal.aper_phot[aper_diam].SED_results[SED_fit_code.label].z:.2f}" + \
-                    f",{gal.aper_phot[aper_diam].filterset.band_names})"
+                    f",{gal.aper_phot[aper_diam].filterset.filt_names})"
                 )
             # remove nan_gals from z_bin_cat
             z_bin_cat.gals = [gal for gal in z_bin_cat if gal not in nan_gals]
@@ -735,9 +738,13 @@ class Number_Density_Function(Base_Number_Density_Function):
             compl_name = ""
         else:
             compl_name = "_compl_corr"
+        if Vmax_method is None:
+            Vmax_method_str = ""
+        else:
+            Vmax_method_str = f"/{Vmax_method}"
         save_path = config['NumberDensityFunctions']['NUMBER_DENSITY_FUNC_DIR'] + \
             f"/Data/{SED_fit_params_key}/{x_name}/" + \
-            f"{origin_surveys}/{Vmax_method}/{crop_name}{compl_name}{ext}"
+            f"{origin_surveys}{Vmax_method_str}/{crop_name}{compl_name}{ext}"
         funcs.make_dirs(save_path)
         return save_path
 

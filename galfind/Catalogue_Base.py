@@ -6,6 +6,7 @@ from copy import deepcopy
 import matplotlib.pyplot as plt
 import astropy.units as u
 import numpy as np
+import re
 from pathlib import Path
 from astropy.coordinates import SkyCoord
 from astropy.io import fits
@@ -379,13 +380,13 @@ class Catalogue_Base:
                         other_gals_indexes = np.arange(len(other_sky_coords))[indexes]
 
                         bands_gal1 = np.array(
-                            coord_gal.phot.instrument.band_names
+                            coord_gal.phot.instrument.filt_names
                         )[coord_gal.phot.flux.mask]
 
                         chi_squareds = []
                         for other_gal in other_gals:
                             bands_gal2 = np.array(
-                                other_gal.phot.instrument.band_names
+                                other_gal.phot.instrument.filt_names
                             )[other_gal.phot.flux.mask]
                             matched_bands = list(
                                 set(bands_gal1).union(set(bands_gal2))
@@ -397,13 +398,13 @@ class Catalogue_Base:
                             indexes_bands = np.argwhere(
                                 [
                                     band in matched_bands
-                                    for band in coord_gal.phot.instrument.band_names
+                                    for band in coord_gal.phot.instrument.filt_names
                                 ]
                             )
                             indexes_other_bands = np.argwhere(
                                 [
                                     band in matched_bands
-                                    for band in other_gal.phot.instrument.band_names
+                                    for band in other_gal.phot.instrument.filt_names
                                 ]
                             )
                             coord_gal_fluxes = coord_gal.phot.flux[
@@ -479,14 +480,14 @@ class Catalogue_Base:
                         desc="Filtering best galaxy for matches",
                     ):
                         # Compare the two galaxies and choose the better one
-                        bands_gal1 = np.array(gal1.phot.instrument.band_names)[
+                        bands_gal1 = np.array(gal1.phot.instrument.filt_names)[
                             gal1.phot.flux.mask
                         ]
-                        bands_gal2 = np.array(gal2.phot.instrument.band_names)[
+                        bands_gal2 = np.array(gal2.phot.instrument.filt_names)[
                             gal2.phot.flux.mask
                         ]
 
-                        band_names_union = list(
+                        filt_names_union = list(
                             set(bands_gal1).union(set(bands_gal2))
                         )
 
@@ -501,15 +502,15 @@ class Catalogue_Base:
                             # gal1.phot.depths is just an array. Need to slice by position
                             indexes_gal1 = np.argwhere(
                                 [
-                                    band in band_names_union
-                                    for band in gal1.phot.instrument.band_names
+                                    band in filt_names_union
+                                    for band in gal1.phot.instrument.filt_names
                                 ]
                             )
                             depths_gal1 = gal1.phot.depths[indexes_gal1]
                             indexes_gal2 = np.argwhere(
                                 [
-                                    band in band_names_union
-                                    for band in gal2.phot.instrument.band_names
+                                    band in filt_names_union
+                                    for band in gal2.phot.instrument.filt_names
                                 ]
                             )
                             depths_gal2 = gal2.phot.depths[indexes_gal2]
@@ -771,13 +772,17 @@ class Catalogue_Base:
         hdul = fits.open(self.cat_path)
         return [hdu_.name for hdu_ in hdul if hdu_.name != "PRIMARY"]
 
-    def check_hdu_exists(self, hdu_name: str):
+    def check_hdu_exists(self: Self, hdu_name: str) -> bool:
         # check whether the hdu extension exists
         hdul = fits.open(self.cat_path)
         return any(hdu_.name == hdu_name for hdu_ in hdul)
 
     @staticmethod
-    def write_cat(tab_arr, tab_names, cat_path: str):
+    def write_cat(
+        tab_arr: List[Table],
+        tab_names: List[str],
+        cat_path: str,
+    ) -> None:
         hdu_list = fits.HDUList()
         [
             hdu_list.append(
@@ -794,7 +799,43 @@ class Catalogue_Base:
         funcs.change_file_permissions(cat_path)
         galfind_logger.info(f"Writing table to {cat_path}")
 
-    def write_hdu(self, tab: Table, hdu: str):
+    @staticmethod
+    def update_fits_cat(
+        new_tab: Table,
+        cat_path: str,
+        hdu_name: str,
+    ) -> None:
+        # retain any pre-existing column and meta names
+        orig_tab = Table.read(cat_path, hdu = hdu_name)
+        # update original table with new master table columns
+        for col in new_tab.colnames:
+            out_colname = funcs.truncate_colname(col)
+            if out_colname in orig_tab.colnames:
+                orig_tab[out_colname] = new_tab[col]
+            else:
+                orig_tab.add_column(new_tab[col], name=out_colname)
+        orig_meta = orig_tab.meta
+        orig_meta.update(new_tab.meta)
+        # retain all fits extensions
+        hdul = fits.open(cat_path, memmap=False)
+        non_objects_hdul = [
+            hdul[i] for i in range(len(hdul))
+            if hdul[i].name not in ["PRIMARY", hdu_name]
+        ]
+        # write the fits table
+        out_hdul = fits.HDUList(
+            [
+                fits.PrimaryHDU(),
+                fits.BinTableHDU(orig_tab, name=hdu_name)
+            ] + non_objects_hdul
+        )
+        out_hdul.writeto(cat_path, overwrite=True)
+        funcs.change_file_permissions(cat_path)
+        galfind_logger.info(
+            f"Updated {hdu_name} in {cat_path} with new table!"
+        )
+    
+    def write_hdu(self: Self, tab: Table, hdu: str) -> None:
         # if hdu exists, overwrite it
         if self.check_hdu_exists(hdu):
             tab_arr = [

@@ -494,7 +494,7 @@ class Band_Cutout(Band_Cutout_Base):
         meta = {"ID": gal.ID, "INSTR": gal.cat_filterset.instrument_name}
         meta_keys = ["Re", "FLUX_AUTO", "MAG_AUTO", "KRON_RADIUS", "A_IMAGE", "B_IMAGE", "THETA_IMAGE", "A_IMAGE_AS", "B_IMAGE_AS"]
         suffixes = ["_AS", "_JY", "", "", "", "", "", "", ""]
-        filt_name = band_data.filt.band_name
+        filt_name = band_data.filt.filt_name
         for meta_key, suffix in zip(meta_keys, suffixes):
             meta_key = f"sex_{meta_key}"
             if hasattr(gal, meta_key):
@@ -709,7 +709,7 @@ class Stacked_Band_Cutout(Band_Cutout_Base):
         cat.load_sextractor_Re()
 
         if isinstance(filt, Filter):
-            filt = filt.band_name
+            filt = filt.filt_name
         # make every individual cutout from the catalogue
         cutouts = [
             Band_Cutout.from_gal_band_data(gal, cat.data[filt], cutout_size, overwrite = overwrite)
@@ -858,12 +858,12 @@ class RGB_Base(Cutout_Base, ABC):
         # ensure cutouts have ['B', 'G', 'R'] keys
         assert list(cutouts.keys()) == ["B", "G", "R"]
         # ensure all cutouts are from different filters
-        cutout_band_names = [
+        cutout_filt_names = [
             cutout.band_data.filt_name
             for colour in ["B", "G", "R"]
             for cutout in cutouts[colour]
         ]
-        assert len(np.unique(cutout_band_names)) == len(cutout_band_names)
+        assert len(np.unique(cutout_filt_names)) == len(cutout_filt_names)
         self.cutouts = cutouts
 
     def __len__(self) -> int:
@@ -881,7 +881,7 @@ class RGB_Base(Cutout_Base, ABC):
             colour = [
                 col
                 for col in ["B", "G", "R"]
-                if i in [cutout.filt.band_name for cutout in self[col]]
+                if i in [cutout.filt.filt_name for cutout in self[col]]
             ]
             assert len(colour) == 1, galfind_logger.critical(
                 f"band={i} in != 1 of ['B', 'G', 'R']"
@@ -928,7 +928,7 @@ class RGB_Base(Cutout_Base, ABC):
     @property
     def name(self):
         return ",".join(
-            f"{colour}={'+'.join(self.get_colour_band_names(colour))}"
+            f"{colour}={'+'.join(self.get_colour_filt_names(colour))}"
             for colour in ["B", "G", "R"]
         )
 
@@ -949,9 +949,9 @@ class RGB_Base(Cutout_Base, ABC):
             for colour, cutouts in self.items()
         }
 
-    def get_colour_band_names(self, colour: str) -> List[str]:
+    def get_colour_filt_names(self, colour: str) -> List[str]:
         assert colour in ["B", "G", "R"]
-        return [cutout.band_data.filt.band_name for cutout in self[colour]]
+        return [cutout.band_data.filt.filt_name for cutout in self[colour]]
 
     def load(
         self: Self,
@@ -1035,7 +1035,7 @@ class RGB_Base(Cutout_Base, ABC):
             ax.set_yticks([])
             # label RGB filters
             for i, (colour, plt_colour) in enumerate(zip(["B", "G", "R"], ["blue", "green", "red"])):
-                filt_name = "+".join(self.get_colour_band_names(colour))
+                filt_name = "+".join(self.get_colour_filt_names(colour))
                 ax.text(
                     0.15 + i * 0.35,
                     0.1,
@@ -1088,7 +1088,7 @@ class RGB(RGB_Base):
         cutouts = {
             colour: Band_Cutout.from_data_skycoord(data, filt, sky_coord)
             for filt in data.filterset
-            if filt.band_name in rgb_bands[colour]
+            if filt.filt_name in rgb_bands[colour]
             for colour in ["B", "G", "R"]
         }
         return cls(cutouts)
@@ -1452,7 +1452,7 @@ class Multiple_Band_Cutout(Multiple_Cutout_Base):
         save_path = f"{config['Cutouts']['CUTOUT_DIR']}/{self.version}/" + \
             f"{self.survey}/{instr_name}{self.cutout_size.to(u.arcsec).value:.2f}as/" + \
             f"multi_band/{subdir}/png/{self.ID}.png"
-        # '+'.join(filt.band_name for filt in self.filterset)
+        # '+'.join(filt.filt_name for filt in self.filterset)
         funcs.make_dirs(save_path)
         return save_path
 
@@ -1482,7 +1482,7 @@ class Catalogue_Cutouts(Multiple_Cutout_Base):
         overwrite: bool = False
     ) -> Self:
         if isinstance(filt, Filter):
-            filt = filt.band_name
+            filt = filt.filt_name
         cutouts = [Band_Cutout.from_gal_band_data
             (gal, cat.data[filt], cutout_size, overwrite) for gal in cat]
         
@@ -1518,7 +1518,7 @@ class Catalogue_Cutouts(Multiple_Cutout_Base):
         save_path = f"{config['Cutouts']['CUTOUT_DIR']}/{self.version}/" + \
             f"{self.survey}/{instr_name}{self.cutout_size.to(u.arcsec).value:.2f}as/" + \
             f"{self[0].band_data.filt_name}/png/{self.ID}.png"
-        # '+'.join(filt.band_name for filt in self.filterset)
+        # '+'.join(filt.filt_name for filt in self.filterset)
         funcs.make_dirs(save_path)
         return save_path
     

@@ -259,7 +259,7 @@ class Band_Data_Base(ABC):
         im_hdr = self.load_im()[1]
         assert im_hdr["EXTNAME"] in self.im_ext_name, galfind_logger.critical(
             f"Image extension name {im_hdr['EXTNAME']} "
-            + f"not in {str(self.im_ext_name)} for {self.filt.band_name}"
+            + f"not in {str(self.im_ext_name)} for {self.filt.filt_name}"
         )
         if incl_rms_err:
             # load rms error header
@@ -279,7 +279,7 @@ class Band_Data_Base(ABC):
                 wht_hdr["EXTNAME"] in self.wht_ext_name
             ), galfind_logger.critical(
                 f"Weight extension name {wht_hdr['EXTNAME']} "
-                + f"not in {str(self.wht_ext_name)} for {self.filt.band_name}"
+                + f"not in {str(self.wht_ext_name)} for {self.filt.filt_name}"
             )
 
     def _check_aper_diams(self: Self) -> NoReturn:
@@ -343,7 +343,7 @@ class Band_Data_Base(ABC):
         # load image data and header
         if not Path(self.im_path).is_file():
             err_message = (
-                f"Image for {self.survey} {self.filt.band_name}"
+                f"Image for {self.survey} {self.filt_name}"
                 + f" at {self.im_path} is not a .fits image!"
             )
             galfind_logger.critical(err_message)
@@ -379,7 +379,7 @@ class Band_Data_Base(ABC):
             hdr = hdu.header
         else:
             err_message = (
-                f"Weight image for {self.survey} {self.filt.band_name}"
+                f"Weight image for {self.survey} {self.filt_name}"
                 + f" at {self.wht_path} is not a .fits image!"
             )
             galfind_logger.critical(err_message)
@@ -409,7 +409,7 @@ class Band_Data_Base(ABC):
             hdr = hdu.header
         else:
             err_message = (
-                f"RMS error for {self.survey} {self.filt.band_name}"
+                f"RMS error for {self.survey} {self.filt_name}"
                 + f" at {self.rms_err_path} is not a .fits image!"
             )
             galfind_logger.critical(err_message)
@@ -432,13 +432,17 @@ class Band_Data_Base(ABC):
         **kwargs: Dict[str, Any],
     ) -> Tuple[np.ndarray, fits.Header]:
         # TODO: load from the correct hdu rather than the first one
-        if not Path(self.seg_path).is_file():
-            err_message = (
-                f"Segmentation map for {self.survey} "
-                f"{self.filt.band_name} at {self.seg_path} is not a .fits image!"
-            )
-            galfind_logger.critical(err_message)
-            raise (Exception(err_message))
+        try:
+            if not Path(self.seg_path).is_file():
+                err_message = (
+                    f"Segmentation map for {self.survey} "
+                    f"{self.filt_name} at {self.seg_path} is not a .fits image!"
+                )
+                galfind_logger.critical(err_message)
+                raise (Exception(err_message))
+        except Exception as e:
+            breakpoint()
+            raise e
         seg_hdul = fits.open(self.seg_path, ignore_missing_simple = True, **kwargs)
         seg_data = seg_hdul[0].data
         seg_header = seg_hdul[0].header
@@ -501,20 +505,20 @@ class Band_Data_Base(ABC):
         return area_tab_path
     # %% Complex methods
 
-    def psf_homogenize(self, psf: PSF):
+    def psf_homogenize(self: Self, psf: PSF):
         """Homogenize the SCI/RMS_ERR/WHT images to the given PSF"""
         raise NotImplementedError
         self._psf_match = psf
         # Functionality in PSF_homogenization.py
 
     def segment(
-        self,
+        self: Self,
         err_type: str = "rms_err",
         method: str = "sextractor",
         config_name: str = "default.sex",
         params_name: str = "default.param",
         overwrite: bool = False,
-    ) -> NoReturn:
+    ) -> None:
         """
         Segment the image using the specified method and error type
         if it has not already been done.
@@ -1092,7 +1096,7 @@ class Band_Data_Base(ABC):
     ) -> NoReturn:
         save_path = self.im_path.replace(
             self.im_path.split("/")[-1],
-            f"rms_err/{self.filt.band_name}_rms_err.fits",
+            f"rms_err/{self.filt.filt_name}_rms_err.fits",
         )
         if not Path(save_path).is_file() or overwrite:
             # make rms_err map from wht map
@@ -1124,7 +1128,7 @@ class Band_Data_Base(ABC):
         wht_ext_name: str = "WHT"
     ) -> NoReturn:
         save_path = self.im_path.replace(
-            self.im_path.split("/")[-1], f"wht/{self.filt.band_name}_wht.fits"
+            self.im_path.split("/")[-1], f"wht/{self.filt.filt_name}_wht.fits"
         )
         if not Path(save_path).is_file() or overwrite:
             err, hdr = self.load_rms_err(output_hdr=True)
@@ -1238,7 +1242,7 @@ class Band_Data(Band_Data_Base):
 
     @property
     def filt_name(self):
-        return self.filt.band_name
+        return self.filt.filt_name
 
     @property
     def ZP(self) -> Dict[str, float]:
@@ -1576,7 +1580,8 @@ class Stacked_Band_Data(Band_Data_Base):
 
         # stack bands
         input_data = Stacked_Band_Data._stack_band_data(
-            band_data_arr, err_type=err_type
+            band_data_arr, 
+            err_type = err_type,
         )
         # make filterset from filters
         filterset = Multiple_Filter(
@@ -1629,12 +1634,45 @@ class Stacked_Band_Data(Band_Data_Base):
 
     @property
     def ZP(self) -> Dict[str, float]:
-        assert all(
+        if all(
             filt.instrument.calc_ZP(self)
             == self.filterset[0].instrument.calc_ZP(self)
             for filt in self.filterset
-        )
-        return float(self.filterset[0].instrument.calc_ZP(self))
+        ):
+            galfind_logger.debug(
+                f"All filters in {repr(self)} have the same ZP=" + \
+                f"{self.filterset[0].instrument.calc_ZP(self):.2f}"
+            )
+            return float(self.filterset[0].instrument.calc_ZP(self))
+        else:
+            # extract ZP information from the header
+            # open image
+            im_hdr = self.load_im(return_hdul = False)[1]
+            assert "ZEROPNT" in im_hdr.keys(), galfind_logger.critical(
+                f"{repr(self)} header does not contain 'ZEROPNT' key!"
+            )
+            return float(im_hdr["ZEROPNT"])
+
+    def __iter__(self):
+        self.iter = 0
+        return self
+
+    def __next__(self) -> Band_Data:
+        if self.iter > len(self) - 1:
+            raise StopIteration
+        else:
+            band_data = self[self.iter]
+            self.iter += 1
+            return band_data
+
+    def __len__(self) -> int:
+        return len(self.filterset)
+
+    def __getitem__(
+        self: Self,
+        idx: Any,
+    ) -> Band_Data:
+        return self.band_data_arr[idx]
 
     # stacking/mosaicing
     def __mul__(
@@ -1664,28 +1702,33 @@ class Stacked_Band_Data(Band_Data_Base):
     def _get_stacked_band_data_name(
         filterset: Union[List[Filter], Multiple_Filter],
     ) -> str:
-        return "+".join([filt.band_name for filt in filterset])
+        return "+".join([filt.filt_name for filt in filterset])
 
     @staticmethod
     def _get_stacked_band_data_path(
-        band_data_arr: List[Band_Data], err_type: str = "rms_err"
+        band_data_arr: List[Band_Data],
+        err_type: str = "rms_err",
     ) -> str:
         assert all(
             getattr(band_data, name) == getattr(band_data_arr[0], name)
             for name in ["survey", "version", "pix_scale"]
             for band_data in band_data_arr
         )
+        survey = band_data_arr[0].survey
+        version = band_data_arr[0].version
+        band_data_arr = funcs.sort_band_data_arr(band_data_arr)
+        instr_name = "+".join(np.unique([band_data.instr_name for band_data in band_data_arr]))
         # make stacked band data path, creating directory if it does not exist
         stacked_band_data_dir = (
             f"{config['DEFAULT']['GALFIND_WORK']}/Stacked_Images/"
-            + f"{band_data_arr[0].version}/{band_data_arr[0].instr_name}/{band_data_arr[0].survey}/{err_type.lower()}"
+            + f"{version}/{instr_name}/{survey}/{err_type.lower()}"
         )
         stacked_band_data_name = (
-            f"{band_data_arr[0].survey}_"
+            f"{survey}_"
             + Stacked_Band_Data._get_stacked_band_data_name(
                 [band_data.filt for band_data in band_data_arr]
             )
-            + f"_{band_data_arr[0].version}_stack.fits"
+            + f"_{version}_stack.fits"
         )
         stacked_band_data_path = (
             f"{stacked_band_data_dir}/{stacked_band_data_name}"
@@ -1735,7 +1778,8 @@ class Stacked_Band_Data(Band_Data_Base):
                 # used_galfind_err = True
         # load output path and perform stacking if required
         stacked_band_data_path = Stacked_Band_Data._get_stacked_band_data_path(
-            band_data_arr, err_type
+            band_data_arr,
+            err_type = err_type,
         )
         if not Path(stacked_band_data_path).is_file() or overwrite:
             # ensure all shapes are the same for the band data images
@@ -1744,13 +1788,6 @@ class Stacked_Band_Data(Band_Data_Base):
                 for band_data in band_data_arr
             ), galfind_logger.critical(
                 "All band data images in stacking bands must have the same shape!"
-            )
-            # ensure all band data images have the same ZP
-            assert all(
-                band_data.ZP == band_data_arr[0].ZP
-                for band_data in band_data_arr
-            ), galfind_logger.critical(
-                "All image ZPs must be the same!"
             )
             # ensure all band data images have the same pixel scale
             assert all(
@@ -1764,20 +1801,58 @@ class Stacked_Band_Data(Band_Data_Base):
                 f"Stacking {[band_data.filt_name for band_data in band_data_arr]}"
                 + f" for {band_data_arr[0].survey} {band_data_arr[0].version}"
             )
+                        # ensure all band data images have the same ZP
+            if all(
+                band_data.ZP == band_data_arr[0].ZP
+                for band_data in band_data_arr
+            ): 
+                galfind_logger.debug(
+                    f"All ZPs are the same when stacking data: {band_data_arr[0].ZP}"
+                )
+                same_ZP = True
+            else:
+                galfind_logger.debug(
+                    "Not all ZPs are the same when stacking data: " + \
+                    ", ".join([
+                        f"({band_data.filt_name}: {band_data.ZP})"
+                        for band_data in band_data_arr
+                    ])
+                )
+                same_ZP = False
+
             for i, band_data in enumerate(band_data_arr):
+                im_data, im_header, im_hdul = band_data.load_im(
+                    return_hdul = True
+                )
                 if i == 0:
-                    im_data, im_header, im_hdul = band_data.load_im(
-                        return_hdul=True
-                    )
                     prime_hdu = im_hdul[0].header
-                else:
-                    im_data, im_header = band_data.load_im()
                 if err_type.lower() == "rms_err":
                     rms_err_data = band_data.load_rms_err()
                     wht_data = 1.0 / (rms_err_data**2)
-                else:  # err_type.lower() == "wht"
+                else: # err_type.lower() == "wht"
                     wht_data = band_data.load_wht()
-                    rms_err_data = np.sqrt(1.0 / wht_data)
+                    #rms_err_data = np.sqrt(1.0 / wht_data)
+                if not same_ZP:
+                    # convert image to Jy and update ZP information in header
+                    scale = funcs.flux_image_to_Jy(1.0, band_data.ZP).value
+                    im_data *= scale
+                    for key in band_data.filt.instrument.ZP_keys:
+                        if key in im_header.keys():
+                            im_header[f"HIERARCH OLD_{key}"] = im_header[key]
+                            im_header.remove(key)
+                        if i == 0 and key in prime_hdu.keys():
+                            prime_hdu[f"HIERARCH OLD_{key}"] = prime_hdu[key]
+                            prime_hdu.remove(key)
+                    im_header["ZEROPNT"] = (u.Jy).to(u.ABmag)
+                    if i == 0:
+                        prime_hdu["ZEROPNT"] = (u.Jy).to(u.ABmag)
+                    wht_data /= scale**2
+
+                # handle non-finite values in the image and weight data by setting them to 0
+                valid = np.isfinite(im_data) & np.isfinite(wht_data)
+                im_data = np.where(valid, im_data, 0.0)
+                wht_data = np.where(valid, wht_data, 0.0)
+
                 if i == 0:
                     sum = im_data * wht_data
                     sum_wht = wht_data
@@ -1880,11 +1955,11 @@ class Data:
         forced_phot_band: Optional[
             Union[str, List[str], Type[Band_Data_Base]]
         ] = None,
-        xy_align_band_name: str = "F444W",
+        xy_align_filt_name: str = "F444W",
     ):
         # save and sort band_arr by central wavelength
         self.band_data_arr = funcs.sort_band_data_arr(band_data_arr)
-        #self._xy_align(xy_align_band_name)
+        #self._xy_align(xy_align_filt_name)
         # load forced photometry band
         if forced_phot_band is not None:
             self.load_forced_phot_band(forced_phot_band)
@@ -1914,7 +1989,12 @@ class Data:
         forced_phot_band: Optional[
             Union[str, List[str], Type[Band_Data_Base]]
         ] = None,
-        min_flux_pc_err: Union[int, float] = 10.
+        min_flux_pc_err: Union[int, float] = 10.0,
+        stacked_band_data: Optional[
+            Union[str, List[str], Type[Stacked_Band_Data], List[
+                Union[str, List[str], Type[Stacked_Band_Data]]
+            ]
+        ]] = None,
     ) -> Type[Data]:
         data = cls.from_survey_version( \
             survey,
@@ -1931,6 +2011,11 @@ class Data:
             aper_diams,
             forced_phot_band,
         )
+        if stacked_band_data is not None:
+            if not isinstance(stacked_band_data, (list, np.ndarray)):
+                stacked_band_data = [stacked_band_data]
+            for stacked_band_data_ in stacked_band_data:
+                data.load_stacked_band_data(stacked_band_data_)
         data.mask()
         data.segment()
         data.perform_forced_phot()
@@ -2369,12 +2454,12 @@ class Data:
         )
 
     @property
-    def survey(self):
+    def survey(self: Self) -> str:
         assert all(band_data.survey == self[0].survey for band_data in self)
         return self[0].survey
 
     @property
-    def version(self):
+    def version(self: Self) -> str:
         assert all(band_data.version == self[0].version for band_data in self)
         return self[0].version
 
@@ -2391,11 +2476,11 @@ class Data:
     #     return {band_data.filt_name: band_data.pix_scale for band_data in self}
 
     @property
-    def full_name(self):
+    def full_name(self: Self) -> str:
         return funcs.get_full_survey_name(self.survey, self.version, self.filterset)
     
     @property
-    def aper_diams(self) -> u.Quantity:
+    def aper_diams(self: Self) -> u.Quantity:
         all_aper_diams, aper_diam_counts = np.unique(np.concatenate([values for values in self.aper_diamss.values()]), return_counts = True)
         return [aper_diam.to(u.arcsec) for aper_diam, counts in zip(all_aper_diams, aper_diam_counts) if counts == len(self.aper_diamss)] * u.arcsec
 
@@ -2438,7 +2523,7 @@ class Data:
 
     # %% Overloaded operators
 
-    def __repr__(self):
+    def __repr__(self: Self) -> str:
         return (
             f"{self.__class__.__name__}({self.full_name.replace('_', ', ')})"
         )
@@ -2600,7 +2685,8 @@ class Data:
             raise AttributeError
 
     def __add__(
-        self, other: Union[Type[Band_Data_Base], List[Type[Band_Data_Base]], Data, List[Data]]
+        self: Self,
+        other: Union[Type[Band_Data_Base], List[Type[Band_Data_Base]], Data, List[Data]],
     ) -> Data:
         # if other is not a list, make it one
         if not isinstance(other, list):
@@ -2646,7 +2732,8 @@ class Data:
                 )
             )
 
-    def __eq__(self, other: Data) -> bool:
+
+    def __eq__(self: Self, other: Data) -> bool:
         if not isinstance(other, Data):
             return False
         elif len(self) != len(other):
@@ -2683,7 +2770,7 @@ class Data:
         assert all(
             name in [band.filt_name for band in self] for name in filt_names
         ), galfind_logger.warning(
-            f"Not all {filt_names} in {self.filterset.band_names}"
+            f"Not all {filt_names} in {self.filterset.filt_names}"
         )
         return [i for i in range(len(self)) if self[i].filt_name in filt_names]
 
@@ -2792,7 +2879,8 @@ class Data:
         return self[band].load_rms_err(output_hdr)
 
     def load_seg(
-        self, band: Union[int, str, Filter, List[Filter], Multiple_Filter]
+        self: Self,
+        band: Union[int, str, Filter, List[Filter], Multiple_Filter],
     ):
         return self[band].load_seg()
 
@@ -2807,7 +2895,14 @@ class Data:
     def load_aper_diams(self, aper_diams: u.Quantity) -> NoReturn:
         if hasattr(self, "forced_phot_band"):
             self.forced_phot_band.load_aper_diams(aper_diams)
-        [band_data.load_aper_diams(aper_diams) for band_data in self]
+        if hasattr(self, "stacked_band_data_arr"):
+            [
+                stacked_band_data.load_aper_diams(aper_diams)
+                for stacked_band_data in self.stacked_band_data_arr
+            ]
+        [
+            band_data.load_aper_diams(aper_diams) for band_data in self
+        ]
     
     def _load_depths(
         self: Self,
@@ -2828,15 +2923,15 @@ class Data:
                 f"Should not have already loaded {self.forced_phot_band=} if trying to sky align!"
             )
         if isinstance(align_band_data, str):
-            assert align_band_data in self.filterset.band_names, \
+            assert align_band_data in self.filterset.filt_names, \
                 galfind_logger.critical(
-                    f"{align_band_data=} not in {self.filterset.band_names}, cannot sky align!"
+                    f"{align_band_data=} not in {self.filterset.filt_names}, cannot sky align!"
                 )
             align_band_data = self[align_band_data]
         elif isinstance(align_band_data, tuple(Band_Data_Base.__subclasses__())):
-            assert align_band_data.filt_name in self.filterset.band_names, \
+            assert align_band_data.filt_name in self.filterset.filt_names, \
                 galfind_logger.critical(
-                    f"{align_band_data.filt_name=} not in {self.filterset.band_names}, cannot sky align!"
+                    f"{align_band_data.filt_name=} not in {self.filterset.filt_names}, cannot sky align!"
                 )
         else:
             err_message = f"{align_band_data=} must be a string or Band_Data object!"
@@ -2865,9 +2960,9 @@ class Data:
     ) -> NoReturn:
         # determine shape of every band_data in self
         if isinstance(align_band_data, str):
-            assert align_band_data in self.filterset.band_names, \
+            assert align_band_data in self.filterset.filt_names, \
                 galfind_logger.critical(
-                    f"{align_band_data=} not in {self.filterset.band_names}, cannot xy align!"
+                    f"{align_band_data=} not in {self.filterset.filt_names}, cannot xy align!"
                 )
             align_band_data = self[align_band_data]
         elif isinstance(align_band_data, tuple(Band_Data_Base.__subclasses__())):
@@ -2912,13 +3007,15 @@ class Data:
         if hasattr(self, "forced_phot_band"):
             if (
                 self.forced_phot_band.filt_name
-                not in self.filterset.band_names
+                not in self.filterset.filt_names
             ):
                 self_band_data_arr = self.band_data_arr + [self.forced_phot_band]
             else:
                 self_band_data_arr = self.band_data_arr
         else:
             self_band_data_arr = self.band_data_arr
+        if hasattr(self, "stacked_band_data_arr"):
+            self_band_data_arr += self.stacked_band_data_arr
 
         [
             band_data.segment(
@@ -2934,6 +3031,7 @@ class Data:
         method: Union[str, List[str], Dict[str, str]] = "sextractor",
         config_name: str = "default.sex",
         params_name: str = "default.param",
+        update_fits_cat: bool = True,
         overwrite: bool = False,
     ) -> None:
         if hasattr(self, "phot_cat_path"):
@@ -2945,7 +3043,7 @@ class Data:
         if hasattr(self, "forced_phot_band"):
             if (
                 self.forced_phot_band.filt_name
-                not in self.filterset.band_names
+                not in self.filterset.filt_names
             ):
                 self_ = deepcopy(self) + deepcopy(self.forced_phot_band)
                 self_band_data_arr = self.band_data_arr + [
@@ -2954,6 +3052,9 @@ class Data:
             else:
                 self_ = deepcopy(self)
                 self_band_data_arr = self.band_data_arr
+
+        if hasattr(self, "stacked_band_data_arr"):
+            self_band_data_arr += self.stacked_band_data_arr
 
         # run for every band in the Data object
         [
@@ -2968,30 +3069,76 @@ class Data:
             for band_data in self_band_data_arr
         ]
 
-        # combined forced photometry catalogues into a single photometric catalogue
-        self._combine_forced_phot_cats(overwrite=overwrite)
+        self._combine_forced_phot_cats(
+            update = update_fits_cat,
+            overwrite = overwrite,
+        )
+
+    def _make_band_data_base(
+        self: Self,
+        band_data_base: Union[str, List[str], Type[Band_Data_Base]],
+    ) -> Optional[Type[Band_Data_Base]]:
+        if isinstance(band_data_base, tuple(Band_Data_Base.__subclasses__())):
+            assert band_data_base.filt_name in self.filterset.filt_names, \
+                galfind_logger.critical(
+                    f"{band_data_base.filt_name=} not in {self.filterset.filt_names}, cannot load forced photometry band!"
+                )
+        else:
+            # create a forced_phot_band object from given string
+            if isinstance(band_data_base, str):
+                filt_names = band_data_base.split("+")
+            elif isinstance(band_data_base, list):
+                filt_names = band_data_base
+            else:
+                err_message = f"{band_data_base=} must be a string, list of strings, or Band_Data_Base subclass!"
+                galfind_logger.critical(err_message)
+                raise Exception(err_message)
+            assert all(name in self.filterset.filt_names for name in filt_names), \
+                galfind_logger.critical(
+                    f"Not all {filt_names.split('+')} in {self.filterset.filt_names}"
+                )
+            if len(filt_names) == 1:
+                band_data_base = self[filt_names[0]]
+            else:
+                band_data_base = Stacked_Band_Data.from_band_data_arr(
+                    self[filt_names]
+                )
+        return band_data_base
+
+    def load_stacked_band_data_arr(
+        self: Self,
+        stacked_band_data_arr: Union[str, List[str], Multiple_Filter, List[Multiple_Filter]],
+    ) -> None:
+        if isinstance(stacked_band_data_arr, list) and isinstance(stacked_band_data_arr[0], Multiple_Filter):
+            stacked_band_data_arr = [
+                self._make_band_data_base(stacked_band_data.filt_names)
+                for stacked_band_data in stacked_band_data_arr
+            ]
+        else:
+            stacked_band_data_arr = [
+                self._make_band_data_base(stacked_band_data_arr)
+            ]
+        assert all(
+            isinstance(stacked_band_data, Stacked_Band_Data) \
+            for stacked_band_data in stacked_band_data_arr
+        ), galfind_logger.critical(
+            f"{stacked_band_data_arr=} must be a list of Stacked_Band_Data objects!"
+        )
+        # save stacked_band_data in self
+        if hasattr(self, "stacked_band_data_arr"):
+            breakpoint()
+            raise NotImplementedError("Currently cannot load multiple stacked_band_data objects!")
+            # if stacked_band_data in self.stacked_band_data_arr:
+            #     pass
+        else:
+            self.stacked_band_data_arr = stacked_band_data_arr
 
     def load_forced_phot_band(
-        self,
-        forced_phot_band: Union[str, List[str], Type[Band_Data_Base]],
+        self: Self,
+        forced_phot_band: Optional[Union[str, List[str], Type[Band_Data_Base]]],
     ) -> Optional[Type[Band_Data_Base]]:
         if forced_phot_band is not None:
-            # create a forced_phot_band object from given string
-            if isinstance(forced_phot_band, str):
-                filt_names = forced_phot_band.split("+")
-            elif isinstance(forced_phot_band, list):
-                filt_names = forced_phot_band
-            if isinstance(forced_phot_band, tuple([str, list])):
-                assert all(name in self.filterset.band_names for name in filt_names), \
-                    galfind_logger.critical(
-                        f"Not all {filt_names.split('+')} in {self.filterset.band_names}"
-                    )
-                if len(filt_names) == 1:
-                    forced_phot_band = self[filt_names[0]]
-                else:
-                    forced_phot_band = Stacked_Band_Data.from_band_data_arr(
-                        self[filt_names]
-                    )
+            forced_phot_band = self._make_band_data_base(forced_phot_band)
             # save forced phot band in self
             if hasattr(self, "forced_phot_band"):
                 assert (
@@ -3028,7 +3175,11 @@ class Data:
         funcs.make_dirs(phot_cat_path)
         return phot_cat_path
 
-    def _combine_forced_phot_cats(self, overwrite: bool = False) -> NoReturn:
+    def _combine_forced_phot_cats(
+        self: Self,
+        update: bool = True,
+        overwrite: bool = False,
+    ) -> None:
         # readme_sep: str = "-" * 20,
         phot_cat_path = self._get_phot_cat_path()
         funcs.make_dirs(phot_cat_path)
@@ -3037,32 +3188,48 @@ class Data:
         else:
             raise (Exception("MASTER Photometric catalogue already exists!"))
         
-        if not Path(phot_cat_path).is_file() or overwrite:
+        if not Path(phot_cat_path).is_file() or update or overwrite:
 
-            master_tab_arr = [self.forced_phot_band._get_master_tab(
-                output_ids_locs=True
-            )]
-            for band_data in self:
+            master_tab_arr = [
+                self.forced_phot_band._get_master_tab(
+                    output_ids_locs=True
+                )
+            ]
+            non_forced_phot_band_data_arr = deepcopy(self.band_data_arr)
+            if hasattr(self, "stacked_band_data_arr"):
+                non_forced_phot_band_data_arr += self.stacked_band_data_arr
+                
+            for band_data in non_forced_phot_band_data_arr:
                 if band_data.filt_name != self.forced_phot_band.filt_name: 
                     master_tab_arr.extend(
-                        [band_data._get_master_tab(output_ids_locs=False)])
+                        [band_data._get_master_tab(output_ids_locs=False)]
+                    )
             master_tab = hstack(master_tab_arr)
+
+            self_band_data_arr = [self.forced_phot_band] + non_forced_phot_band_data_arr
             # update table header
-            self_band_data_arr = self.band_data_arr + [self.forced_phot_band]
             master_tab.meta = {
                 **master_tab.meta,
                 **{
                     "INSTR": self.filterset.instrument_name,
                     "SURVEY": self.survey,
                     "VERSION": self.version,
-                    "BANDS": str(self.filterset.band_names),
+                    "BANDS": str(self.filterset.filt_names),
                     "APERDIAM": funcs.aper_diams_to_str(self.forced_phot_band.aper_diams),
-                    "ERR_TYPE": "+".join(np.unique(band_data.forced_phot_args["err_type"] for band_data in self_band_data_arr)[0]),
-                    "METHODS": "+".join(np.unique(band_data.forced_phot_args["method"] for band_data in self_band_data_arr)[0]),
+                    "ERR_TYPE": "+".join(np.unique([band_data.forced_phot_args["err_type"] for band_data in self_band_data_arr])),
+                    "METHODS": "+".join(np.unique([band_data.forced_phot_args["method"] for band_data in self_band_data_arr])),
                 },
             }
-            # save master table
-            master_tab.write(self.phot_cat_path, format="fits", overwrite=True)
+            if update:
+                from . import Catalogue
+                Catalogue.update_fits_cat(
+                    master_tab,
+                    self.phot_cat_path,
+                    "OBJECTS",
+                )
+            else:
+                # save master table
+                master_tab.write(self.phot_cat_path, format="fits", overwrite=True)
             galfind_logger.info(
                 f"Saved combined SExtractor catalogue as {self.phot_cat_path}"
             )
@@ -3081,12 +3248,12 @@ class Data:
         #     MAGERR_APER_'band': Aperture magnitude errors in {str(sex_aper_diams.to(u.arcsec).value) + 'as'} diameter apertures, AB mag units, negative if mag == 99.
         # """
         # if 'sextractor' in [cat_type.lower() for cat_type in self.sex_cat_types.values()]:
-        #     text += f"See SExtractor documentation () for descriptions of other columns. These are only available for {'+'.join([band_name for band_name, sex_cat_type in self.sex_cat_types.items() if 'sextractor' in sex_cat_type.lower()])}\n"
+        #     text += f"See SExtractor documentation () for descriptions of other columns. These are only available for {'+'.join([filt_name for filt_name, sex_cat_type in self.sex_cat_types.items() if 'sextractor' in sex_cat_type.lower()])}\n"
         # text += readme_sep + "\n"
         # self.make_sex_readme({"Photometry": text}, self.sex_cat_master_path.replace(".fits", "_README.txt"))
 
     def mask(
-        self,
+        self: Self,
         method: Union[str, List[str], Dict[str, str]] = "auto",
         fits_mask_path: Optional[Union[str, List[str], Dict[str, str]]] = None,
         star_mask_params: Optional[
@@ -3116,7 +3283,7 @@ class Data:
         if hasattr(self, "forced_phot_band"):
             if (
                 self.forced_phot_band.filt_name
-                not in self.filterset.band_names
+                not in self.filterset.filt_names
             ):
                 self_ = deepcopy(self) + deepcopy(self.forced_phot_band)
                 self_band_data_arr = self.band_data_arr + [
@@ -3127,10 +3294,16 @@ class Data:
                 no_forced_phot_band = True
         else:
             no_forced_phot_band = True
+
         if no_forced_phot_band:
             self_ = deepcopy(self)
             self_band_data_arr = self.band_data_arr
 
+        if hasattr(self, "stacked_band_data_arr"):
+            for stacked_band_data in self.stacked_band_data_arr:
+                self_ += deepcopy(stacked_band_data)
+            self_band_data_arr += self.stacked_band_data_arr
+        
         # mask each band, sorting the potentially band dependent input parameters
         [
             band_data.mask(
@@ -3201,7 +3374,7 @@ class Data:
         if hasattr(self, "forced_phot_band"):
             if (
                 self.forced_phot_band.filt_name
-                not in self.filterset.band_names
+                not in self.filterset.filt_names
             ):
                 self_ = deepcopy(self) + deepcopy(self.forced_phot_band)
                 self_band_data_arr = self.band_data_arr + [
@@ -3212,9 +3385,15 @@ class Data:
                 no_forced_phot_band = True
         else:
             no_forced_phot_band = True
+
         if no_forced_phot_band:
             self_ = deepcopy(self)
             self_band_data_arr = self.band_data_arr
+
+        if hasattr(self, "stacked_band_data_arr"):
+            for stacked_band_data in self.stacked_band_data_arr:
+                self_ += deepcopy(stacked_band_data)
+            self_band_data_arr += self.stacked_band_data_arr
 
         params = []
         # Look over all aperture diameters and bands
@@ -3276,7 +3455,6 @@ class Data:
                 Parallel(n_jobs=n_jobs)(
                     delayed(Depths.calc_band_depth)(param) for param in params
                 )
-
             # save properties to individual band_data objects
             for band_data in self_band_data_arr:
                 [
@@ -3491,13 +3669,16 @@ class Data:
     ):
         # ensure all blue, green and red bands are contained in the data object
         assert all(
-            band in self.instrument.band_names
+            band in self.instrument.filt_names
             for band in blue_bands + green_bands + red_bands
         ), galfind_logger.warning(
-            f"Cannot make galaxy RGB as not all {blue_bands + green_bands + red_bands} are in {self.instrument.band_names}"
+            "Cannot make galaxy RGB as not all " + \
+            f"{blue_bands + green_bands + red_bands} " + \
+            f"are in {self.instrument.filt_names}"
         )
         # construct out_path
-        out_path = f"{config['RGB']['RGB_DIR']}/{self.version}/{self.survey}/{method}/B={'+'.join(blue_bands)},G={'+'.join(green_bands)},R={'+'.join(red_bands)}.png"
+        out_path = f"{config['RGB']['RGB_DIR']}/{self.version}/{self.survey}/" + \
+            f"{method}/B={'+'.join(blue_bands)},G={'+'.join(green_bands)},R={'+'.join(red_bands)}.png"
         funcs.make_dirs(out_path)
         if not os.path.exists(out_path):
             # load RGB band paths including .fits image extensions
@@ -3551,14 +3732,20 @@ class Data:
                 raise (NotImplementedError())
 
     def append_loc_depth_cols(
-        self,
+        self: Self,
         min_flux_pc_err: Union[int, float],
+        update_fits_cat: bool = True,
         overwrite: bool = False
-    ) -> NoReturn:
-        Depths.append_loc_depth_cols(self, min_flux_pc_err, overwrite)
+    ) -> None:
+        return Depths.append_loc_depth_cols(
+            self,
+            min_flux_pc_err = min_flux_pc_err,
+            update = update_fits_cat,
+            overwrite = overwrite,
+        )
 
     def append_aper_corr_cols(
-        self,
+        self: Self,
         overwrite: bool = False,
         psf_wanted: str = "model"
     ) -> NoReturn:
@@ -3566,15 +3753,20 @@ class Data:
             galfind_logger.critical(
                 f"PSF '{psf_wanted}' not in ['model', 'empirical']"
             )
-        # not general
         cat = Table.read(self.phot_cat_path)
         if f"MAG_APER_{self[0].filt_name}_aper_corr" not in cat.colnames or overwrite:
             # ensure aperture diameters are the same for all bands
+            all_bands = deepcopy(self.band_data_arr)
+            if not getattr(self, "forced_phot_band") is None:
+                if getattr(self, "forced_phot_band").filt_name \
+                        not in [band_data.filt_name for band_data in all_bands]:
+                    all_bands += [self.forced_phot_band]
+            if hasattr(self, "stacked_band_data_arr"):
+                all_bands += self.stacked_band_data_arr
             assert all(all(diam == diam_0 for diam, diam_0 
                 in zip(band_data.aper_diams, self[0].aper_diams)) 
-                for band_data in self.band_data_arr + 
-                [self.forced_phot_band]), galfind_logger.critical(
-                "Aperture diameters are not the same for all bands!"
+                for band_data in all_bands), galfind_logger.critical(
+                    "Aperture diameters are not the same for all bands!"
                 )
             if overwrite:
                 # TODO: Delete already existing columns
@@ -3681,8 +3873,8 @@ class Data:
             )
     
     def append_mask_cols(
-        self, 
-        overwrite: bool = False
+        self: Self,
+        overwrite: bool = False,
     ) -> NoReturn:
         # ensure forced photometry has been run on every band in catalogue
         assert all(hasattr(band_data, "forced_phot_args") for band_data in self), \
@@ -3696,20 +3888,23 @@ class Data:
             galfind_logger.critical(
                 "RA/DEC labels not the same for all bands!"
             )
-        cat = Table.read(self.phot_cat_path)
-        if f"unmasked_{self[0].filt_name}" not in cat.colnames or overwrite:
-            if overwrite:
-                # TODO: Delete already existing columns
-                raise(NotImplementedError())
-                galfind_logger.info(
-                    f"Deleting {self.phot_cat_path} mask columns!"
-                )
+        tab = Table.read(self.phot_cat_path)
+
+        all_bands = deepcopy(self.band_data_arr)
+        if not getattr(self, "forced_phot_band") is None:
+            if getattr(self, "forced_phot_band").filt_name \
+                    not in [band_data.filt_name for band_data in all_bands]:
+                all_bands += [self.forced_phot_band]
+        if hasattr(self, "stacked_band_data_arr"):
+            all_bands += self.stacked_band_data_arr
+
+        if not all(f"unmasked_{band_data.filt_name}" not in tab.colnames for band_data in all_bands) or overwrite:
             # make sky_coords
-            ra = cat[self[0].forced_phot_args["ra_label"]]
-            dec = cat[self[0].forced_phot_args["dec_label"]]
+            ra = tab[self[0].forced_phot_args["ra_label"]]
+            dec = tab[self[0].forced_phot_args["dec_label"]]
             sky_coords = SkyCoord(ra=ra, dec=dec, unit=(u.deg, u.deg))
             # append mask columns to catalogue
-            for band_data in self:
+            for band_data in all_bands:
                 galfind_logger.info(
                     f"Appending {band_data.filt_name} mask" + \
                     f" columns to {self.phot_cat_path}"
@@ -3717,18 +3912,27 @@ class Data:
                 wcs = band_data.load_wcs()
                 cat_x, cat_y = wcs.world_to_pixel(sky_coords)
                 mask = band_data.load_mask()[0]["MASK"]
-                cat[f"unmasked_{band_data.filt_name}"] = \
-                    np.array(
-                        [
-                            False if x < 0.0
-                            or x >= mask.shape[1]
-                            or y < 0.0 or y >= mask.shape[0]
-                            else not bool(mask[int(y)][int(x)])
-                            for x, y in zip(cat_x, cat_y)
-                        ]
-                    )
-            cat.write(self.phot_cat_path, overwrite=True)
-            funcs.change_file_permissions(self.phot_cat_path)
+                if not f"unmasked_{band_data.filt_name}" in tab.colnames:
+                    tab[f"unmasked_{band_data.filt_name}"] = \
+                        np.array(
+                            [
+                                False if x < 0.0
+                                or x >= mask.shape[1]
+                                or y < 0.0 or y >= mask.shape[0]
+                                else not bool(mask[int(y)][int(x)])
+                                for x, y in zip(cat_x, cat_y)
+                            ]
+                        )
+            if not overwrite:
+                from . import Catalogue
+                Catalogue.update_fits_cat(
+                    tab,
+                    self.phot_cat_path,
+                    "OBJECTS",
+                )
+            else:
+                tab.write(self.phot_cat_path, overwrite=True)
+                funcs.change_file_permissions(self.phot_cat_path)
             galfind_logger.info(
                 f"Appended mask columns to {self.phot_cat_path}"
             )
@@ -3868,8 +4072,8 @@ class Data:
     #                         + "= "
     #                         + "+".join(
     #                             [
-    #                                 band_name
-    #                                 for band_name, sex_cat_type in self.sex_cat_types.items()
+    #                                 filt_name
+    #                                 for filt_name, sex_cat_type in self.sex_cat_types.items()
     #                                 if sex_cat_type == phot_code
     #                             ]
     #                         )
