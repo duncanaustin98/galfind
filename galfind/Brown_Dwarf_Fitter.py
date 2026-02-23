@@ -125,8 +125,8 @@ class Template_Fitter(SED_code):
                     facilities_to_search[filt.facility_name] = []
                 facilities_to_search[filt.facility_name].append(filt.instrument.SVO_name)
             bands = [
-                f"{filt.instrument_name}.{filt.band_name}" 
-                if filt.instrument_name != "NIRCam" else filt.band_name 
+                f"{filt.instrument_name}.{filt.filt_name}" 
+                if filt.instrument_name != "NIRCam" else filt.filt_name 
                 for filt in fit_instrument_filterset
             ]
             starfit = StarFit(

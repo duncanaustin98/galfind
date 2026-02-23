@@ -12,7 +12,7 @@
 #     if override_bands is not None:
 #         bands = override_bands
 #     else:
-#         bands = self.instrument.band_names
+#         bands = self.instrument.filt_names
 #     outdir = f"{config['DEFAULT']['GALFIND_WORK']}/PSF_Matched_Images/{self.version}/{self.instrument.instrument_from_band(bands[0]).name}/{self.survey}"
 #     self.im_psf_matched_dir = outdir
 #     if use_fft_conv:
@@ -260,7 +260,7 @@
 
         # if psf_match:
         #     psf_matched_name = (
-        #         f"{stack_band_name}_psf_matched_{psf_match_band}"
+        #         f"{stack_filt_name}_psf_matched_{psf_match_band}"
         #     )
         #     im_paths, wht_paths, rms_err_paths = self.convolve_images(
         #         psf_kernel_dir,
@@ -269,4 +269,4 @@
         #         override_bands=["F277W", "F356W", "F444W"],
         #     )
         # else:
-        #     psf_matched_name = stack_band_name
+        #     psf_matched_name = stack_filt_name

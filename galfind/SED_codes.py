@@ -422,7 +422,7 @@ class SED_code(ABC):
         if input_filterset is None:
             input_filterset = cat.filterset
 
-        input_filterset.filters = np.array([filt for filt in input_filterset if filt.band_name not in self.SED_fit_params["excl_bands"]])
+        input_filterset.filters = np.array([filt for filt in input_filterset if filt.filt_name not in self.SED_fit_params["excl_bands"]])
         galfind_logger.info(f"Excluded bands: {self.excl_bands_label}")
         # load in raw photometry from the galaxies in the catalogue and convert to appropriate units
         phot = np.array(
@@ -496,14 +496,14 @@ class SED_code(ABC):
             total=len(cat),
             disable=galfind_logger.getEffectiveLevel() > logging.INFO,
         ):
-            for j, (band_name, band_instrument) in enumerate(zip(input_filterset.band_names, input_filterset.instrument_names)):
-                if band_name in gal.aper_phot[aper_diam].filterset.band_names:  # Check mask?
+            for j, (filt_name, band_instrument) in enumerate(zip(input_filterset.filt_names, input_filterset.instrument_names)):
+                if filt_name in gal.aper_phot[aper_diam].filterset.filt_names:  # Check mask?
                     index = np.where(
-                        (band_name == np.array(gal.aper_phot[aper_diam].filterset.band_names)) \
+                        (filt_name == np.array(gal.aper_phot[aper_diam].filterset.filt_names)) \
                             & (band_instrument == np.array(gal.aper_phot[aper_diam].filterset.instrument_names))
                     )[0]
                     assert len(index) == 1, galfind_logger.critical(
-                        f"Multiple indices found for {band_name} in {gal.aper_phot[aper_diam].filterset.band_names}"
+                        f"Multiple indices found for {filt_name} in {gal.aper_phot[aper_diam].filterset.filt_names}"
                     )
                     index = index[0]
                     

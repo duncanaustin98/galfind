@@ -331,7 +331,7 @@ class EAZY(SED_code):
             )
             in_types = (
                 [int]
-                + list(np.full(len(cat.filterset.band_names) * 2, float))
+                + list(np.full(len(cat.filterset.filt_names) * 2, float))
                 + [float]
             )
             in_tab = Table(in_data, dtype=in_types, names=in_names)
@@ -884,8 +884,8 @@ class EAZY(SED_code):
                 for i, filt in enumerate(filterset):
                     code = i + nexisting + 1
                     wav_cent = filt.properties["WavelengthEff"].to(u.Angstrom).value
-                    f_info.write(f'{code}  {len(filt.trans)} {filt.facility_name}/{filt.instrument_name}.{filt.band_name} lambda_c= {wav_cent}\n')
-                    f.write(f' {len(filt.trans)} {filt.facility_name}/{filt.instrument_name}.{filt.band_name} lambda_c= {wav_cent}\n')
+                    f_info.write(f'{code}  {len(filt.trans)} {filt.facility_name}/{filt.instrument_name}.{filt.filt_name} lambda_c= {wav_cent}\n')
+                    f.write(f' {len(filt.trans)} {filt.facility_name}/{filt.instrument_name}.{filt.filt_name} lambda_c= {wav_cent}\n')
 
                     for pos, (wav, trans) in enumerate(zip(filt.wav, filt.trans)):
                         f.write(f'{pos + 1} {wav.to(u.Angstrom).value} {trans}\n')

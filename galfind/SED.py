@@ -912,9 +912,9 @@ class Mock_SED_obs(SED_obs):
             assert len(bands) == 2
             # requires colour to exist in the mock photometry
             for band in bands:
-                if band not in self.mock_photometry.filterset.band_names:
+                if band not in self.mock_photometry.filterset.filt_names:
                     galfind_logger.critical(
-                        f"self.mock_photometry includes the bands = {self.mock_photometry.filterset.band_names}, and {band} is not included!"
+                        f"self.mock_photometry includes the bands = {self.mock_photometry.filterset.filt_names}, and {band} is not included!"
                     )
                 assert self.mock_photometry[band].flux.unit == u.Jy
             # calculate colour in mags

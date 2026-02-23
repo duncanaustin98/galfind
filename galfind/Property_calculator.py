@@ -19,7 +19,7 @@ try:
 except ImportError:
     from typing_extensions import Self, Type  # python > 3.7 AND python < 3.11
 
-from . import config, galfind_logger, all_band_names, astropy_cosmo
+from . import config, galfind_logger, all_filt_names, astropy_cosmo
 from . import useful_funcs_austind as funcs
 from . import Catalogue, Catalogue_Base, Galaxy, SED_code, SED_result
 from . import PDF, SED_fit_PDF
@@ -396,24 +396,24 @@ class Band_SNR_Loader(Photometry_Property_Loader):
     def __init__(
         self: Self,
         aper_diam: u.Quantity,
-        band_name: str,
+        filt_name: str,
     ) -> None:
-        _name = f"{band_name}_SNR"
-        _plot_name = f"{band_name} SNR"
+        _name = f"{filt_name}_SNR"
+        _plot_name = f"{filt_name} SNR"
         units = u.dimensionless_unscaled
-        kwargs = {"band_name": band_name}
+        kwargs = {"filt_name": filt_name}
         super().__init__(aper_diam, Band_SNR_Loader._load_SNR, _name, _plot_name, units, **kwargs)
 
     @staticmethod
     def _load_SNR(cat: Catalogue, aper_diam: u.Quantity, **kwargs) -> Tuple[NDArray, NDArray]:
-        assert "band_name" in kwargs.keys()
+        assert "filt_name" in kwargs.keys()
         # determine relevant band indices
         IDs = np.array([f"{gal.ID}_{gal.survey}" for gal in cat])
         band_SNRs = np.array(
-            [[SNR for SNR, band_name in zip(
+            [[SNR for SNR, filt_name in zip(
                 gal.aper_phot[aper_diam].SNR,
-                gal.aper_phot[aper_diam].filterset.band_names
-            ) if band_name == kwargs["band_name"]] for gal in cat]
+                gal.aper_phot[aper_diam].filterset.filt_names
+            ) if filt_name == kwargs["filt_name"]] for gal in cat]
         ).flatten()
         return IDs, band_SNRs
 
@@ -921,7 +921,7 @@ class Ext_Src_Property_Calculator(SED_Property_Calculator):
         self.ext_src_uplim = ext_src_uplim
         self.ref_wav = ref_wav
         if self.ext_src_corrs is not None:
-            assert self.ext_src_corrs in ["UV"] + all_band_names
+            assert self.ext_src_corrs in ["UV"] + all_filt_names
         if self.ext_src_uplim is not None:
             assert isinstance(self.ext_src_uplim, (int, float))
             assert self.ext_src_uplim > 0.0
@@ -970,7 +970,7 @@ class Ext_Src_Property_Calculator(SED_Property_Calculator):
             # calculate band nearest to the rest frame UV reference wavelength
             band_wavs = [filt.WavelengthCen.to(u.AA).value \
                 for filt in gal.aper_phot[self.aper_diam].filterset] * u.AA / (1. + gal.aper_phot[self.aper_diam].SED_results[self.SED_fit_label].z)
-            ref_band = gal.aper_phot[self.aper_diam].filterset.band_names[np.argmin(np.abs(band_wavs - self.ref_wav))]
+            ref_band = gal.aper_phot[self.aper_diam].filterset.filt_names[np.argmin(np.abs(band_wavs - self.ref_wav))]
             ext_src_corr = gal.aper_phot[self.aper_diam].ext_src_corrs[ref_band]
         else: # band given
             ext_src_corr = gal.aper_phot[self.aper_diam].ext_src_corrs[self.ext_src_corrs]

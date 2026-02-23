@@ -502,7 +502,7 @@ class Number_Density_Function(Base_Number_Density_Function):
             for gal in nan_gals:
                 galfind_logger.warning(
                     f"{gal.ID}: (z={gal.aper_phot[aper_diam].SED_results[SED_fit_code.label].z:.2f}" + \
-                    f",{gal.aper_phot[aper_diam].filterset.band_names})"
+                    f",{gal.aper_phot[aper_diam].filterset.filt_names})"
                 )
             # remove nan_gals from z_bin_cat
             z_bin_cat.gals = [gal for gal in z_bin_cat if gal not in nan_gals]

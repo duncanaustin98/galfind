@@ -380,13 +380,13 @@ class Catalogue_Base:
                         other_gals_indexes = np.arange(len(other_sky_coords))[indexes]
 
                         bands_gal1 = np.array(
-                            coord_gal.phot.instrument.band_names
+                            coord_gal.phot.instrument.filt_names
                         )[coord_gal.phot.flux.mask]
 
                         chi_squareds = []
                         for other_gal in other_gals:
                             bands_gal2 = np.array(
-                                other_gal.phot.instrument.band_names
+                                other_gal.phot.instrument.filt_names
                             )[other_gal.phot.flux.mask]
                             matched_bands = list(
                                 set(bands_gal1).union(set(bands_gal2))
@@ -398,13 +398,13 @@ class Catalogue_Base:
                             indexes_bands = np.argwhere(
                                 [
                                     band in matched_bands
-                                    for band in coord_gal.phot.instrument.band_names
+                                    for band in coord_gal.phot.instrument.filt_names
                                 ]
                             )
                             indexes_other_bands = np.argwhere(
                                 [
                                     band in matched_bands
-                                    for band in other_gal.phot.instrument.band_names
+                                    for band in other_gal.phot.instrument.filt_names
                                 ]
                             )
                             coord_gal_fluxes = coord_gal.phot.flux[
@@ -480,14 +480,14 @@ class Catalogue_Base:
                         desc="Filtering best galaxy for matches",
                     ):
                         # Compare the two galaxies and choose the better one
-                        bands_gal1 = np.array(gal1.phot.instrument.band_names)[
+                        bands_gal1 = np.array(gal1.phot.instrument.filt_names)[
                             gal1.phot.flux.mask
                         ]
-                        bands_gal2 = np.array(gal2.phot.instrument.band_names)[
+                        bands_gal2 = np.array(gal2.phot.instrument.filt_names)[
                             gal2.phot.flux.mask
                         ]
 
-                        band_names_union = list(
+                        filt_names_union = list(
                             set(bands_gal1).union(set(bands_gal2))
                         )
 
@@ -502,15 +502,15 @@ class Catalogue_Base:
                             # gal1.phot.depths is just an array. Need to slice by position
                             indexes_gal1 = np.argwhere(
                                 [
-                                    band in band_names_union
-                                    for band in gal1.phot.instrument.band_names
+                                    band in filt_names_union
+                                    for band in gal1.phot.instrument.filt_names
                                 ]
                             )
                             depths_gal1 = gal1.phot.depths[indexes_gal1]
                             indexes_gal2 = np.argwhere(
                                 [
-                                    band in band_names_union
-                                    for band in gal2.phot.instrument.band_names
+                                    band in filt_names_union
+                                    for band in gal2.phot.instrument.filt_names
                                 ]
                             )
                             depths_gal2 = gal2.phot.depths[indexes_gal2]
@@ -809,27 +809,7 @@ class Catalogue_Base:
         orig_tab = Table.read(cat_path, hdu = hdu_name)
         # update original table with new master table columns
         for col in new_tab.colnames:
-            out_colname = col
-            if len(col) > 68:
-                # truncate column name to 68 characters for fits format
-                # remove 'F', 'W', 'M', 'LP' from filter names
-                # find all filter names in column name
-                filter_names = re.findall(r'F[0-9]+[WMLP]+', col)
-                for filter_name in filter_names:
-                    out_colname = out_colname.replace(
-                        filter_name,
-                        filter_name.replace('F', '').replace('W', '').replace('M', '').replace('LP', '')
-                    )
-                galfind_logger.warning(
-                    f"{col=} with {len(col)=}>68 is too long for fits format! " + \
-                    f"Using truncated {out_colname} instead!"
-                )
-                if len(out_colname) > 68:
-                    out_colname = out_colname[:68]
-                    galfind_logger.warning(
-                        f"Truncated {out_colname=} with {len(out_colname)=}>68!" +
-                        f"Further truncating to {out_colname}!"
-                    )
+            out_colname = funcs.truncate_colname(col)
             if out_colname in orig_tab.colnames:
                 orig_tab[out_colname] = new_tab[col]
             else:

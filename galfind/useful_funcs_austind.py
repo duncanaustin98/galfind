@@ -780,17 +780,17 @@ def get_phot_cat_path(
     version: str,
     instrument_name: str,
     aper_diams: u.Quantity,
-    forced_phot_band_name: Optional[str],
+    forced_phot_filt_name: Optional[str],
 ):
     save_dir = (
         f"{config['DEFAULT']['GALFIND_WORK']}/Catalogues/{version}/" + \
         f"{instrument_name}/{survey}/{aper_diams_to_str(aper_diams)}"
     )
-    if forced_phot_band_name is None:
-        forced_phot_band_name = ""
+    if forced_phot_filt_name is None:
+        forced_phot_filt_name = ""
     else:
-        forced_phot_band_name = f"_MASTER_Sel-{forced_phot_band_name}"
-    save_name = f"{survey}{forced_phot_band_name}_{version}.fits"
+        forced_phot_filt_name = f"_MASTER_Sel-{forced_phot_filt_name}"
+    save_name = f"{survey}{forced_phot_filt_name}_{version}.fits"
     save_path = f"{save_dir}/{save_name}"
     make_dirs(save_path)
     return save_path
@@ -1115,7 +1115,7 @@ def get_first_bluewards_band(
     for filt in filterset:
         upper_wav = filt.WavelengthUpper50
         if upper_wav < ref_wav * (1.0 + z):
-            first_band = filt.band_name
+            first_band = filt.filt_name
             break
     return first_band
 
@@ -1135,10 +1135,10 @@ def get_first_redwards_band(
         ignore_bands = [ignore_bands]
     first_band = None
     for filt in filterset:
-        if filt.band_name not in ignore_bands:
+        if filt.filt_name not in ignore_bands:
             lower_wav = filt.WavelengthLower50
             if lower_wav > ref_wav * (1.0 + z):
-                first_band = filt.band_name
+                first_band = filt.filt_name
                 break
     return first_band
 
@@ -1381,7 +1381,7 @@ def get_ext_src_corr(
         # calculate band nearest to the rest frame UV reference wavelength
         band_wavs = [filt.WavelengthCen.to(u.AA).value \
             for filt in phot_rest.filterset] * u.AA / (1. + phot_rest.z.value)
-        ref_band = phot_rest.filterset.band_names[np.argmin(np.abs(band_wavs - ref_wav))]
+        ref_band = phot_rest.filterset.filt_names[np.argmin(np.abs(band_wavs - ref_wav))]
         ext_src_corr = phot_rest.ext_src_corrs[ref_band]
     else: # band given
         ext_src_corr = phot_rest.ext_src_corrs[ext_src_key]
@@ -1407,6 +1407,30 @@ def get_ext_src_corr_label(
             ext_src_lim_label = f"<{ext_src_uplim:.0f}"
         return ext_src_name + ext_src_lim_label
     
+def truncate_colname(col):
+    out_colname = col
+    if len(col) > 68:
+        # truncate column name to 68 characters for fits format
+        # remove 'F', 'W', 'M', 'LP' from filter names
+        # find all filter names in column name
+        filter_names = re.findall(r'F[0-9]+[WMLP]+', col)
+        for filter_name in filter_names:
+            out_colname = out_colname.replace(
+                filter_name,
+                filter_name.replace('F', '').replace('W', '').replace('M', '').replace('LP', '')
+            )
+        galfind_logger.warning(
+            f"{col=} with {len(col)=}>68 is too long for fits format! " + \
+            f"Using truncated {out_colname} instead!"
+        )
+        if len(out_colname) > 68:
+            out_colname = out_colname[:68]
+            galfind_logger.warning(
+                f"Truncated {out_colname=} with {len(out_colname)=}>68!" +
+                f"Further truncating to {out_colname}!"
+            )
+    return out_colname
+
 def all_subclasses(cls):
     out = set()
     stack = [cls]

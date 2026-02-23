@@ -31,7 +31,7 @@ def main(
     cutouts = random_gal.make_cutouts(data, cutout_size)
     # move cutouts to new data directory
     for cutout in cutouts:
-        if cutout.band_data.filt.band_name in test_bands_:
+        if cutout.band_data.filt.filt_name in test_bands_:
             output_dir = Data._get_data_dir(
                 test_survey,
                 test_version,
@@ -39,7 +39,7 @@ def main(
                 instrument = cutout.band_data.filt.instrument,
                 data_dir = test_galfind_data_dir,
             )
-            output_path = f"{output_dir}/{cutout.band_data.filt.band_name}_{test_survey}.fits"
+            output_path = f"{output_dir}/{cutout.band_data.filt.filt_name}_{test_survey}.fits"
             # copy cutout to new location
             os.system(f"cp {cutout.cutout_path} {output_path}")
             galfind_logger.info(f"Copied {cutout.cutout_path} to {output_path}")

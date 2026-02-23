@@ -233,7 +233,7 @@ class Galaxy:
         if cutout_size_str not in self.RGBs.keys():
             self.RGBs[cutout_size_str] = {}
         rgb_key = ",".join(
-            f"{colour}={'+'.join(self.get_colour_band_names[colour])}"
+            f"{colour}={'+'.join(self.get_colour_filt_names[colour])}"
             for colour in ["B", "G", "R"]
         )
         if (
@@ -254,7 +254,7 @@ class Galaxy:
     ) -> NoReturn:
         cutout_size_str = f"{cutout_size.to(u.arcsec).value:.2f}as"
         rgb_key = ",".join(
-            f"{colour}={'+'.join(self.get_colour_band_names[colour])}"
+            f"{colour}={'+'.join(self.get_colour_filt_names[colour])}"
             for colour in ["B", "G", "R"]
         )
         RGB_obj = self.RGBs[cutout_size_str][rgb_key]
@@ -345,7 +345,7 @@ class Galaxy:
         #         [
         #             {"radius": aper_diam, "kwargs": aper_kwargs},
         #             {
-        #                 "radius": self.sex_radius[cutout.filt.band_name],
+        #                 "radius": self.sex_radius[cutout.filt.filt_name],
         #                 "kwargs": sex_rad_kwargs,
         #             },
         #         ]
@@ -410,13 +410,13 @@ class Galaxy:
                     angle = self.sex_THETA_IMAGE.to(u.deg).value,
                     **kron_kwargs
                 )
-                for filt_name in self.aper_phot[aper_diam].filterset.band_names
+                for filt_name in self.aper_phot[aper_diam].filterset.filt_names
             ]
             plot_regions = {filt_name: [aper, kron] for filt_name, aper, kron in \
-                zip(self.aper_phot[aper_diam].filterset.band_names, fixed_apertures, kron_apertures)}
+                zip(self.aper_phot[aper_diam].filterset.filt_names, fixed_apertures, kron_apertures)}
         else:
             plot_regions = {filt_name: [aper] for filt_name, aper in \
-                zip(self.aper_phot[aper_diam].filterset.band_names, fixed_apertures)}
+                zip(self.aper_phot[aper_diam].filterset.filt_names, fixed_apertures)}
         
         ax_arr = multi_band_cutout.plot(
             fig = fig,
@@ -754,17 +754,17 @@ class Galaxy:
     #         detect_or_non_detect = "detect" if sign == ">" else "non_detect"
     #         SNR_lim = float(name.split(sign)[1])
     #         if split_name[0] == "bluest":
-    #             band_name_or_index = 0
+    #             filt_name_or_index = 0
     #         elif split_name[0] == "reddest":
-    #             band_name_or_index = -1
+    #             filt_name_or_index = -1
     #         else:
-    #             band_name_or_index = int(split_name[0].split("_")[0][:-2])
+    #             filt_name_or_index = int(split_name[0].split("_")[0][:-2])
     #             if "bluest" in split_name[0]:
-    #                 band_name_or_index -= 1
+    #                 filt_name_or_index -= 1
     #             else:  # reddest in split_name[0]
-    #                 band_name_or_index *= -1
+    #                 filt_name_or_index *= -1
     #         kwargs = {
-    #             "band_name_or_index": band_name_or_index,
+    #             "filt_name_or_index": filt_name_or_index,
     #             "SNR_lim": SNR_lim,
     #             "detect_or_non_detect": detect_or_non_detect,
     #         }
@@ -918,7 +918,7 @@ class Galaxy:
     def load_sextractor_ext_src_corrs(
         self: Self, 
         aper_corrs: Optional[Dict[str, Dict[u.Quantity, float]]] = None,
-        band_names: Optional[List[str]] = None,
+        filt_names: Optional[List[str]] = None,
     ) -> None:
         # FLUX_AUTO must already be loaded
         if not hasattr(self, "sex_FLUX_AUTO"):
@@ -929,15 +929,15 @@ class Galaxy:
         # load ext_src_corrs into aper_phot
         for aper_diam in self.aper_phot.keys():
             aper_diam_aper_corrs = {key: val[aper_diam] for key, val in aper_corrs.items()}
-            self.aper_phot[aper_diam].load_sextractor_ext_src_corrs(aper_diam_aper_corrs, band_names)
+            self.aper_phot[aper_diam].load_sextractor_ext_src_corrs(aper_diam_aper_corrs, filt_names)
             for filt in self.cat_filterset:
-                if band_names is None or filt.band_name in band_names:
+                if filt_names is None or filt.filt_name in filt_names:
                     setattr(
                         self,
-                        f"ext_src_corr_{aper_diam.to(u.arcsec).value:.2f}as_{filt.band_name}",
+                        f"ext_src_corr_{aper_diam.to(u.arcsec).value:.2f}as_{filt.filt_name}",
                         getattr(
                             self.aper_phot[aper_diam],
-                            f"ext_src_corr_{filt.band_name}",
+                            f"ext_src_corr_{filt.filt_name}",
                             np.nan,
                         ),
                     )
@@ -1347,9 +1347,9 @@ class Galaxy:
                     # if band.filt_name == data.forced_phot_band.filt_name:
                     #     continue
                 depths = {
-                    filt.band_name: interp1d(
-                        data.area_depths[region][area_zbin_label]["cum_dist"][filt.band_name],
-                        data.area_depths[region][area_zbin_label]["total_depths"][filt.band_name],
+                    filt.filt_name: interp1d(
+                        data.area_depths[region][area_zbin_label]["cum_dist"][filt.filt_name],
+                        data.area_depths[region][area_zbin_label]["total_depths"][filt.filt_name],
                         fill_value = "extrapolate",
                     )(cum_area_arr) for filt in data.filterset
                 }
@@ -1362,7 +1362,7 @@ class Galaxy:
                 cum_area_arr = cum_area_arr * u.arcmin ** 2
                 depth_step_arr = np.zeros((n_steps, len(data.filterset)))
                 for i in range(n_steps):
-                    depth_step = [depths[filt.band_name][i] for filt in data.filterset]
+                    depth_step = [depths[filt.filt_name][i] for filt in data.filterset]
                     if i == 0:
                         area_step = cum_area_arr[i]
                     else:
@@ -1641,10 +1641,10 @@ class Galaxy:
 #         )
 #         sky_coords = SkyCoord(RAs, Decs, frame="icrs")
 #         # mask flags should come from cat_creator
-#         # mask_flags_arr = [{f"unmasked_{band}": cat_creator.load_flag(fits_cat_row, f"unmasked_{band}") for band in instrument.band_names} for fits_cat_row in fits_cat]
+#         # mask_flags_arr = [{f"unmasked_{band}": cat_creator.load_flag(fits_cat_row, f"unmasked_{band}") for band in instrument.filt_names} for fits_cat_row in fits_cat]
 #         mask_flags_arr = [
 #             {} for fits_cat_row in fits_cat
-#         ]  # f"unmasked_{band}": None for band in instrument.band_names
+#         ]  # f"unmasked_{band}": None for band in instrument.filt_names
 #         selection_flags_arr = [
 #             {
 #                 selection_flag: bool(fits_cat_row[selection_flag])

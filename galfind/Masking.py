@@ -712,10 +712,10 @@ def combine_masks(
             if key in hdr.keys():
                 hdr.remove(key)
         hdr_dict = {band_data.filt_name: band_data.load_mask()[1]["MASK"] for band_data in self.band_data_arr}
-        for band_name, band_hdr in hdr_dict.items():
+        for filt_name, band_hdr in hdr_dict.items():
             for key, value in band_hdr.items():
                 if key in auto_mask_keys:
-                    hdr[f"{key}_{band_name}"] = value
+                    hdr[f"{key}_{filt_name}"] = value
         print(list(dict(hdr).keys()))
         edge_mask = make_edge_mask(
             self,
@@ -867,11 +867,11 @@ def make_area_mask_from_data(
                     pix_scale = pix_scales[0]
                     masks.extend([band_data.load_mask(mask_type_, invert = True, **kwargs)[0] for band_data in self \
                         for mask_type_ in mask_type if band_data.instr_name == name])
-                elif name in self.filterset.band_names:
+                elif name in self.filterset.filt_names:
                     pix_scale = self[name].pix_scale
                     masks.extend([self[name].load_mask(mask_type_, invert = True, **kwargs)[0] for mask_type_ in mask_type])
                 else:
-                    possible_names = self.filterset.instrument_name.split("+") + self.filterset.band_names
+                    possible_names = self.filterset.instrument_name.split("+") + self.filterset.filt_names
                     err_message = f"{name} not in {possible_names}"
                     galfind_logger.critical(
                         err_message
@@ -960,7 +960,7 @@ def make_area_mask_from_band_data(
                 if name in self.filterset.instrument_name.split("+"):
                     masks.extend([self.load_mask(mask_type_, invert = True, **kwargs)[0] \
                         for mask_type_ in mask_type if self.instr_name == name])
-                elif name in self.filterset.band_names:
+                elif name in self.filterset.filt_names:
                     masks.extend([self.load_mask(mask_type_, invert = True, **kwargs)[0] for mask_type_ in mask_type])
                 else:
                     err_message = f"{name} masking not valid for {repr(self)}"
@@ -1111,5 +1111,5 @@ def rebin_mask_to_shape(
 #     )
 # if plot:
 #     # Save mask plot
-#     fig.savefig(f"{self.mask_dir}/{self.filt.band_name}_mask.png", dpi=300)
-#     funcs.change_file_permissions(f"{self.mask_dir}/{self.filt.band_name}_mask.png")
+#     fig.savefig(f"{self.mask_dir}/{self.filt.filt_name}_mask.png", dpi=300)
+#     funcs.change_file_permissions(f"{self.mask_dir}/{self.filt.filt_name}_mask.png")

@@ -213,7 +213,7 @@ class Instrument(ABC):
 
 class NIRCam(Instrument, funcs.Singleton):
     def __init__(self) -> None:
-        NIRCam_band_names = [
+        NIRCam_filt_names = [
             "F070W",
             "F090W",
             "F115W",
@@ -250,7 +250,7 @@ class NIRCam(Instrument, funcs.Singleton):
             "tolerance": 10.0,
             "max_sep": 1000,
         }
-        super().__init__(JWST(), NIRCam_band_names, align_params)
+        super().__init__(JWST(), NIRCam_filt_names, align_params)
 
     @property
     def ZP_keys(self) -> List[str]:
@@ -275,7 +275,7 @@ class NIRCam(Instrument, funcs.Singleton):
 
 class MIRI(Instrument, funcs.Singleton):
     def __init__(self) -> None:
-        MIRI_band_names = [
+        MIRI_filt_names = [
             "F560W",
             "F770W",
             "F1000W",
@@ -290,7 +290,7 @@ class MIRI(Instrument, funcs.Singleton):
             "F2300C",
             "F2550W",
         ]
-        super().__init__(JWST(), MIRI_band_names)
+        super().__init__(JWST(), MIRI_filt_names)
 
     @property
     def ZP_keys(self) -> List[str]:
@@ -312,7 +312,7 @@ class MIRI(Instrument, funcs.Singleton):
 
 class ACS_WFC(Instrument, funcs.Singleton):
     def __init__(self) -> None:
-        ACS_WFC_band_names = [
+        ACS_WFC_filt_names = [
             "FR388N",
             "FR423N",
             "F435W",
@@ -352,7 +352,7 @@ class ACS_WFC(Instrument, funcs.Singleton):
             "max_sep": 100,
         }
         self.SVO_name = "ACS"
-        super().__init__(HST(), ACS_WFC_band_names, align_params)
+        super().__init__(HST(), ACS_WFC_filt_names, align_params)
 
     @property
     def ZP_keys(self) -> List[str]:
@@ -397,7 +397,7 @@ class ACS_WFC(Instrument, funcs.Singleton):
 
 class WFC3_IR(Instrument, funcs.Singleton):
     def __init__(self) -> None:
-        WFC3_IR_band_names = [
+        WFC3_IR_filt_names = [
             "F098M",
             "G102",
             "F105W",
@@ -417,7 +417,7 @@ class WFC3_IR(Instrument, funcs.Singleton):
             "F167N",
         ]
         self.SVO_name = "WFC3"
-        super().__init__(HST(), WFC3_IR_band_names)
+        super().__init__(HST(), WFC3_IR_filt_names)
 
     @property
     def ZP_keys(self) -> List[str]:
@@ -445,7 +445,7 @@ class WFC3_IR(Instrument, funcs.Singleton):
 
 class VISTA(Instrument, funcs.Singleton):
     def __init__(self) -> None:
-        VISTA_band_names = [
+        VISTA_filt_names = [
             "Z_filter",
             "Z",
             "NB980_filter",
@@ -464,7 +464,7 @@ class VISTA(Instrument, funcs.Singleton):
             "Ks",
         ]
         self.SVO_name = "VIRCam"
-        super().__init__(Paranal(), VISTA_band_names)
+        super().__init__(Paranal(), VISTA_filt_names)
 
     @property
     def ZP_keys(self) -> List[str]:
@@ -483,7 +483,7 @@ class VISTA(Instrument, funcs.Singleton):
 
 class MegaCam(Instrument, funcs.Singleton):
     def __init__(self) -> None:
-        Megacam_band_names = [
+        Megacam_filt_names = [
             "u",
             "u_1",
             "g",
@@ -498,7 +498,7 @@ class MegaCam(Instrument, funcs.Singleton):
             #"gri",
         ]
         self.SVO_name = "MegaCam"
-        super().__init__(CFHT(), Megacam_band_names)
+        super().__init__(CFHT(), Megacam_filt_names)
 
     @property
     def ZP_keys(self) -> List[str]:
@@ -515,7 +515,7 @@ class MegaCam(Instrument, funcs.Singleton):
 
 class HSC(Instrument, funcs.Singleton):
     def __init__(self) -> None:
-        HSC_band_names = [
+        HSC_filt_names = [
             "g",
             "r",
             "i",
@@ -540,7 +540,7 @@ class HSC(Instrument, funcs.Singleton):
             "Y_filter",
         ]
         self.SVO_name = "HSC"
-        super().__init__(Subaru(), HSC_band_names)
+        super().__init__(Subaru(), HSC_filt_names)
 
     @property
     def ZP_keys(self) -> List[str]:
@@ -559,11 +559,11 @@ class HSC(Instrument, funcs.Singleton):
 
 class VIS(Instrument, funcs.Singleton):
     def __init__(self) -> None:
-        VIS_band_names = [
+        VIS_filt_names = [
             "vis"
         ]
         self.SVO_name = "VIS"
-        super().__init__(Euclid(), VIS_band_names)
+        super().__init__(Euclid(), VIS_filt_names)
 
     @property
     def ZP_keys(self) -> List[str]:
@@ -581,13 +581,13 @@ class VIS(Instrument, funcs.Singleton):
 
 class NISP(Instrument, funcs.Singleton):
     def __init__(self) -> None:
-        NISP_band_names = [
+        NISP_filt_names = [
             "Y",
             "J",
             "H",
         ]
         self.SVO_name = "NISP"
-        super().__init__(Euclid(), NISP_band_names)
+        super().__init__(Euclid(), NISP_filt_names)
 
     @property
     def ZP_keys(self) -> List[str]:
@@ -605,14 +605,14 @@ class NISP(Instrument, funcs.Singleton):
 
 class IRAC(Instrument, funcs.Singleton):
     def __init__(self) -> None:
-        IRAC_band_names = [
+        IRAC_filt_names = [
             "I1",
             "I2",
             "I3",
             "I4",
         ]
         self.SVO_name = "IRAC"
-        super().__init__(Spitzer(), IRAC_band_names)
+        super().__init__(Spitzer(), IRAC_filt_names)
 
     @property
     def ZP_keys(self) -> List[str]:

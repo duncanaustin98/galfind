@@ -20,7 +20,7 @@ from galfind import (
 
 @pytest.fixture(scope="module")
 def f444w_band_data(f444w, survey, version, data_dir_nircam, aper_diams):
-    fits_path = f"{data_dir_nircam}/{f444w.band_name}_{survey}.fits"
+    fits_path = f"{data_dir_nircam}/{f444w.filt_name}_{survey}.fits"
     return Band_Data(
         filt = f444w,
         survey = survey,
@@ -50,12 +50,12 @@ def f444w_band_data_segmented(f444w_band_data):
 def forced_phot_stacked_band_data_from_arr(survey, version, data_dir_nircam, test_forced_phot_band):
     band_data_arr = [
         Band_Data(
-            filt = Filter.from_SVO("JWST", "NIRCam", band_name),
+            filt = Filter.from_SVO("JWST", "NIRCam", filt_name),
             survey = survey,
             version = version,
-            im_path = f"{data_dir_nircam}/{band_name}_{survey}.fits",
+            im_path = f"{data_dir_nircam}/{filt_name}_{survey}.fits",
             im_ext = 1,
-        ) for band_name in test_forced_phot_band
+        ) for filt_name in test_forced_phot_band
     ]
     return Stacked_Band_Data.from_band_data_arr(band_data_arr)
 
@@ -88,7 +88,7 @@ class TestBandDataLoad:
     @pytest.fixture(scope = "class")
     def f444w_band_data_cls(self, f444w, survey, version, data_dir_nircam, band_data_to_load):
         kwargs = {}
-        fits_path = f"{data_dir_nircam}/{f444w.band_name}_{survey}.fits"
+        fits_path = f"{data_dir_nircam}/{f444w.filt_name}_{survey}.fits"
         if "rms_err" in band_data_to_load:
             kwargs = {
                 **kwargs,
@@ -176,7 +176,7 @@ class TestBandDataLoad:
             filt = f444w,
             survey = survey,
             version = version,
-            im_path = f"{data_dir_nircam}/{f444w.band_name}_{survey}.fits",
+            im_path = f"{data_dir_nircam}/{f444w.filt_name}_{survey}.fits",
             im_ext = 1,
             aper_diams = None
         )
@@ -185,7 +185,7 @@ class TestBandDataLoad:
             filt = f444w,
             survey = survey,
             version = version,
-            im_path = f"{data_dir_nircam}/{f444w.band_name}_{survey}.fits",
+            im_path = f"{data_dir_nircam}/{f444w.filt_name}_{survey}.fits",
             im_ext = 1,
             aper_diams = aper_diams
         )
@@ -233,7 +233,7 @@ class TestBandDataDunder:
         assert f444w_band_data.filt == f444w
         assert f444w_band_data.survey == survey
         assert f444w_band_data.version == version
-        assert f444w_band_data.im_path == f"{data_dir_nircam}/{f444w.band_name}_{survey}.fits"
+        assert f444w_band_data.im_path == f"{data_dir_nircam}/{f444w.filt_name}_{survey}.fits"
         assert f444w_band_data.im_ext == 1
         assert f444w_band_data.instr_name == "NIRCam"
         assert f444w_band_data.filt_name == "F444W"

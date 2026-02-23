@@ -156,7 +156,7 @@ class TestFilterDunderMethods:
     def test_f444w_name(self, f444w):
         assert f444w.facility_name == "JWST"
         assert f444w.instrument_name == "NIRCam"
-        assert f444w.band_name == "F444W"
+        assert f444w.filt_name == "F444W"
 
     def test_str(self, filter):
         print(filter)

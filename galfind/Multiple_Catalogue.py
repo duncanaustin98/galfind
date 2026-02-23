@@ -102,7 +102,7 @@ class Combined_Catalogue(Catalogue_Base):
         
         # make filterset comprising all available bands
         filters = np.array([filt for filt in chain.from_iterable([[filt for filt in cat.filterset] for cat in cat_arr])])
-        unique_filters = filters[sorted(np.unique([filt.band_name for filt in filters], return_index = True)[1])]
+        unique_filters = filters[sorted(np.unique([filt.filt_name for filt in filters], return_index = True)[1])]
         full_cat_filterset = Multiple_Filter(unique_filters)
         full_cat_instr_name = full_cat_filterset.instrument_name
         

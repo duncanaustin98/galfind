@@ -259,7 +259,7 @@ class Band_Data_Base(ABC):
         im_hdr = self.load_im()[1]
         assert im_hdr["EXTNAME"] in self.im_ext_name, galfind_logger.critical(
             f"Image extension name {im_hdr['EXTNAME']} "
-            + f"not in {str(self.im_ext_name)} for {self.filt.band_name}"
+            + f"not in {str(self.im_ext_name)} for {self.filt.filt_name}"
         )
         if incl_rms_err:
             # load rms error header
@@ -279,7 +279,7 @@ class Band_Data_Base(ABC):
                 wht_hdr["EXTNAME"] in self.wht_ext_name
             ), galfind_logger.critical(
                 f"Weight extension name {wht_hdr['EXTNAME']} "
-                + f"not in {str(self.wht_ext_name)} for {self.filt.band_name}"
+                + f"not in {str(self.wht_ext_name)} for {self.filt.filt_name}"
             )
 
     def _check_aper_diams(self: Self) -> NoReturn:
@@ -1096,7 +1096,7 @@ class Band_Data_Base(ABC):
     ) -> NoReturn:
         save_path = self.im_path.replace(
             self.im_path.split("/")[-1],
-            f"rms_err/{self.filt.band_name}_rms_err.fits",
+            f"rms_err/{self.filt.filt_name}_rms_err.fits",
         )
         if not Path(save_path).is_file() or overwrite:
             # make rms_err map from wht map
@@ -1128,7 +1128,7 @@ class Band_Data_Base(ABC):
         wht_ext_name: str = "WHT"
     ) -> NoReturn:
         save_path = self.im_path.replace(
-            self.im_path.split("/")[-1], f"wht/{self.filt.band_name}_wht.fits"
+            self.im_path.split("/")[-1], f"wht/{self.filt.filt_name}_wht.fits"
         )
         if not Path(save_path).is_file() or overwrite:
             err, hdr = self.load_rms_err(output_hdr=True)
@@ -1242,7 +1242,7 @@ class Band_Data(Band_Data_Base):
 
     @property
     def filt_name(self):
-        return self.filt.band_name
+        return self.filt.filt_name
 
     @property
     def ZP(self) -> Dict[str, float]:
@@ -1702,7 +1702,7 @@ class Stacked_Band_Data(Band_Data_Base):
     def _get_stacked_band_data_name(
         filterset: Union[List[Filter], Multiple_Filter],
     ) -> str:
-        return "+".join([filt.band_name for filt in filterset])
+        return "+".join([filt.filt_name for filt in filterset])
 
     @staticmethod
     def _get_stacked_band_data_path(
@@ -1955,11 +1955,11 @@ class Data:
         forced_phot_band: Optional[
             Union[str, List[str], Type[Band_Data_Base]]
         ] = None,
-        xy_align_band_name: str = "F444W",
+        xy_align_filt_name: str = "F444W",
     ):
         # save and sort band_arr by central wavelength
         self.band_data_arr = funcs.sort_band_data_arr(band_data_arr)
-        #self._xy_align(xy_align_band_name)
+        #self._xy_align(xy_align_filt_name)
         # load forced photometry band
         if forced_phot_band is not None:
             self.load_forced_phot_band(forced_phot_band)
@@ -2770,7 +2770,7 @@ class Data:
         assert all(
             name in [band.filt_name for band in self] for name in filt_names
         ), galfind_logger.warning(
-            f"Not all {filt_names} in {self.filterset.band_names}"
+            f"Not all {filt_names} in {self.filterset.filt_names}"
         )
         return [i for i in range(len(self)) if self[i].filt_name in filt_names]
 
@@ -2923,15 +2923,15 @@ class Data:
                 f"Should not have already loaded {self.forced_phot_band=} if trying to sky align!"
             )
         if isinstance(align_band_data, str):
-            assert align_band_data in self.filterset.band_names, \
+            assert align_band_data in self.filterset.filt_names, \
                 galfind_logger.critical(
-                    f"{align_band_data=} not in {self.filterset.band_names}, cannot sky align!"
+                    f"{align_band_data=} not in {self.filterset.filt_names}, cannot sky align!"
                 )
             align_band_data = self[align_band_data]
         elif isinstance(align_band_data, tuple(Band_Data_Base.__subclasses__())):
-            assert align_band_data.filt_name in self.filterset.band_names, \
+            assert align_band_data.filt_name in self.filterset.filt_names, \
                 galfind_logger.critical(
-                    f"{align_band_data.filt_name=} not in {self.filterset.band_names}, cannot sky align!"
+                    f"{align_band_data.filt_name=} not in {self.filterset.filt_names}, cannot sky align!"
                 )
         else:
             err_message = f"{align_band_data=} must be a string or Band_Data object!"
@@ -2960,9 +2960,9 @@ class Data:
     ) -> NoReturn:
         # determine shape of every band_data in self
         if isinstance(align_band_data, str):
-            assert align_band_data in self.filterset.band_names, \
+            assert align_band_data in self.filterset.filt_names, \
                 galfind_logger.critical(
-                    f"{align_band_data=} not in {self.filterset.band_names}, cannot xy align!"
+                    f"{align_band_data=} not in {self.filterset.filt_names}, cannot xy align!"
                 )
             align_band_data = self[align_band_data]
         elif isinstance(align_band_data, tuple(Band_Data_Base.__subclasses__())):
@@ -3007,7 +3007,7 @@ class Data:
         if hasattr(self, "forced_phot_band"):
             if (
                 self.forced_phot_band.filt_name
-                not in self.filterset.band_names
+                not in self.filterset.filt_names
             ):
                 self_band_data_arr = self.band_data_arr + [self.forced_phot_band]
             else:
@@ -3043,7 +3043,7 @@ class Data:
         if hasattr(self, "forced_phot_band"):
             if (
                 self.forced_phot_band.filt_name
-                not in self.filterset.band_names
+                not in self.filterset.filt_names
             ):
                 self_ = deepcopy(self) + deepcopy(self.forced_phot_band)
                 self_band_data_arr = self.band_data_arr + [
@@ -3079,9 +3079,9 @@ class Data:
         band_data_base: Union[str, List[str], Type[Band_Data_Base]],
     ) -> Optional[Type[Band_Data_Base]]:
         if isinstance(band_data_base, tuple(Band_Data_Base.__subclasses__())):
-            assert band_data_base.filt_name in self.filterset.band_names, \
+            assert band_data_base.filt_name in self.filterset.filt_names, \
                 galfind_logger.critical(
-                    f"{band_data_base.filt_name=} not in {self.filterset.band_names}, cannot load forced photometry band!"
+                    f"{band_data_base.filt_name=} not in {self.filterset.filt_names}, cannot load forced photometry band!"
                 )
         else:
             # create a forced_phot_band object from given string
@@ -3093,9 +3093,9 @@ class Data:
                 err_message = f"{band_data_base=} must be a string, list of strings, or Band_Data_Base subclass!"
                 galfind_logger.critical(err_message)
                 raise Exception(err_message)
-            assert all(name in self.filterset.band_names for name in filt_names), \
+            assert all(name in self.filterset.filt_names for name in filt_names), \
                 galfind_logger.critical(
-                    f"Not all {filt_names.split('+')} in {self.filterset.band_names}"
+                    f"Not all {filt_names.split('+')} in {self.filterset.filt_names}"
                 )
             if len(filt_names) == 1:
                 band_data_base = self[filt_names[0]]
@@ -3105,15 +3105,25 @@ class Data:
                 )
         return band_data_base
 
-    def load_stacked_band_data(
+    def load_stacked_band_data_arr(
         self: Self,
-        stacked_band_data: Union[str, List[str], Type[Stacked_Band_Data]],
+        stacked_band_data_arr: Union[str, List[str], Multiple_Filter, List[Multiple_Filter]],
     ) -> None:
-        stacked_band_data = self._make_band_data_base(stacked_band_data)
-        assert isinstance(stacked_band_data, Stacked_Band_Data), \
-            galfind_logger.critical(
-                f"{stacked_band_data=} with {type(stacked_band_data)=} must be of type Stacked_Band_Data!"
-            )
+        if isinstance(stacked_band_data_arr, list) and isinstance(stacked_band_data_arr[0], Multiple_Filter):
+            stacked_band_data_arr = [
+                self._make_band_data_base(stacked_band_data.filt_names)
+                for stacked_band_data in stacked_band_data_arr
+            ]
+        else:
+            stacked_band_data_arr = [
+                self._make_band_data_base(stacked_band_data_arr)
+            ]
+        assert all(
+            isinstance(stacked_band_data, Stacked_Band_Data) \
+            for stacked_band_data in stacked_band_data_arr
+        ), galfind_logger.critical(
+            f"{stacked_band_data_arr=} must be a list of Stacked_Band_Data objects!"
+        )
         # save stacked_band_data in self
         if hasattr(self, "stacked_band_data_arr"):
             breakpoint()
@@ -3121,7 +3131,7 @@ class Data:
             # if stacked_band_data in self.stacked_band_data_arr:
             #     pass
         else:
-            self.stacked_band_data_arr = [stacked_band_data]
+            self.stacked_band_data_arr = stacked_band_data_arr
 
     def load_forced_phot_band(
         self: Self,
@@ -3204,16 +3214,13 @@ class Data:
                     "INSTR": self.filterset.instrument_name,
                     "SURVEY": self.survey,
                     "VERSION": self.version,
-                    "BANDS": str(self.filterset.band_names),
+                    "BANDS": str(self.filterset.filt_names),
                     "APERDIAM": funcs.aper_diams_to_str(self.forced_phot_band.aper_diams),
                     "ERR_TYPE": "+".join(np.unique([band_data.forced_phot_args["err_type"] for band_data in self_band_data_arr])),
                     "METHODS": "+".join(np.unique([band_data.forced_phot_args["method"] for band_data in self_band_data_arr])),
                 },
             }
             if update:
-                galfind_logger.info(
-                    f"Updating combined SExtractor catalogue at {self.phot_cat_path}"
-                )
                 from . import Catalogue
                 Catalogue.update_fits_cat(
                     master_tab,
@@ -3241,12 +3248,12 @@ class Data:
         #     MAGERR_APER_'band': Aperture magnitude errors in {str(sex_aper_diams.to(u.arcsec).value) + 'as'} diameter apertures, AB mag units, negative if mag == 99.
         # """
         # if 'sextractor' in [cat_type.lower() for cat_type in self.sex_cat_types.values()]:
-        #     text += f"See SExtractor documentation () for descriptions of other columns. These are only available for {'+'.join([band_name for band_name, sex_cat_type in self.sex_cat_types.items() if 'sextractor' in sex_cat_type.lower()])}\n"
+        #     text += f"See SExtractor documentation () for descriptions of other columns. These are only available for {'+'.join([filt_name for filt_name, sex_cat_type in self.sex_cat_types.items() if 'sextractor' in sex_cat_type.lower()])}\n"
         # text += readme_sep + "\n"
         # self.make_sex_readme({"Photometry": text}, self.sex_cat_master_path.replace(".fits", "_README.txt"))
 
     def mask(
-        self,
+        self: Self,
         method: Union[str, List[str], Dict[str, str]] = "auto",
         fits_mask_path: Optional[Union[str, List[str], Dict[str, str]]] = None,
         star_mask_params: Optional[
@@ -3276,7 +3283,7 @@ class Data:
         if hasattr(self, "forced_phot_band"):
             if (
                 self.forced_phot_band.filt_name
-                not in self.filterset.band_names
+                not in self.filterset.filt_names
             ):
                 self_ = deepcopy(self) + deepcopy(self.forced_phot_band)
                 self_band_data_arr = self.band_data_arr + [
@@ -3367,7 +3374,7 @@ class Data:
         if hasattr(self, "forced_phot_band"):
             if (
                 self.forced_phot_band.filt_name
-                not in self.filterset.band_names
+                not in self.filterset.filt_names
             ):
                 self_ = deepcopy(self) + deepcopy(self.forced_phot_band)
                 self_band_data_arr = self.band_data_arr + [
@@ -3662,12 +3669,12 @@ class Data:
     ):
         # ensure all blue, green and red bands are contained in the data object
         assert all(
-            band in self.instrument.band_names
+            band in self.instrument.filt_names
             for band in blue_bands + green_bands + red_bands
         ), galfind_logger.warning(
             "Cannot make galaxy RGB as not all " + \
             f"{blue_bands + green_bands + red_bands} " + \
-            f"are in {self.instrument.band_names}"
+            f"are in {self.instrument.filt_names}"
         )
         # construct out_path
         out_path = f"{config['RGB']['RGB_DIR']}/{self.version}/{self.survey}/" + \
@@ -3746,11 +3753,14 @@ class Data:
             galfind_logger.critical(
                 f"PSF '{psf_wanted}' not in ['model', 'empirical']"
             )
-        # not general
         cat = Table.read(self.phot_cat_path)
         if f"MAG_APER_{self[0].filt_name}_aper_corr" not in cat.colnames or overwrite:
             # ensure aperture diameters are the same for all bands
-            all_bands = self.band_data_arr + [self.forced_phot_band]
+            all_bands = deepcopy(self.band_data_arr)
+            if not getattr(self, "forced_phot_band") is None:
+                if getattr(self, "forced_phot_band").filt_name \
+                        not in [band_data.filt_name for band_data in all_bands]:
+                    all_bands += [self.forced_phot_band]
             if hasattr(self, "stacked_band_data_arr"):
                 all_bands += self.stacked_band_data_arr
             assert all(all(diam == diam_0 for diam, diam_0 
@@ -3863,8 +3873,8 @@ class Data:
             )
     
     def append_mask_cols(
-        self: Self, 
-        overwrite: bool = False
+        self: Self,
+        overwrite: bool = False,
     ) -> NoReturn:
         # ensure forced photometry has been run on every band in catalogue
         assert all(hasattr(band_data, "forced_phot_args") for band_data in self), \
@@ -3878,20 +3888,23 @@ class Data:
             galfind_logger.critical(
                 "RA/DEC labels not the same for all bands!"
             )
-        cat = Table.read(self.phot_cat_path)
-        if f"unmasked_{self[0].filt_name}" not in cat.colnames or overwrite:
-            if overwrite:
-                # TODO: Delete already existing columns
-                raise(NotImplementedError())
-                galfind_logger.info(
-                    f"Deleting {self.phot_cat_path} mask columns!"
-                )
+        tab = Table.read(self.phot_cat_path)
+
+        all_bands = deepcopy(self.band_data_arr)
+        if not getattr(self, "forced_phot_band") is None:
+            if getattr(self, "forced_phot_band").filt_name \
+                    not in [band_data.filt_name for band_data in all_bands]:
+                all_bands += [self.forced_phot_band]
+        if hasattr(self, "stacked_band_data_arr"):
+            all_bands += self.stacked_band_data_arr
+
+        if not all(f"unmasked_{band_data.filt_name}" not in tab.colnames for band_data in all_bands) or overwrite:
             # make sky_coords
-            ra = cat[self[0].forced_phot_args["ra_label"]]
-            dec = cat[self[0].forced_phot_args["dec_label"]]
+            ra = tab[self[0].forced_phot_args["ra_label"]]
+            dec = tab[self[0].forced_phot_args["dec_label"]]
             sky_coords = SkyCoord(ra=ra, dec=dec, unit=(u.deg, u.deg))
             # append mask columns to catalogue
-            for band_data in self:
+            for band_data in all_bands:
                 galfind_logger.info(
                     f"Appending {band_data.filt_name} mask" + \
                     f" columns to {self.phot_cat_path}"
@@ -3899,18 +3912,27 @@ class Data:
                 wcs = band_data.load_wcs()
                 cat_x, cat_y = wcs.world_to_pixel(sky_coords)
                 mask = band_data.load_mask()[0]["MASK"]
-                cat[f"unmasked_{band_data.filt_name}"] = \
-                    np.array(
-                        [
-                            False if x < 0.0
-                            or x >= mask.shape[1]
-                            or y < 0.0 or y >= mask.shape[0]
-                            else not bool(mask[int(y)][int(x)])
-                            for x, y in zip(cat_x, cat_y)
-                        ]
-                    )
-            cat.write(self.phot_cat_path, overwrite=True)
-            funcs.change_file_permissions(self.phot_cat_path)
+                if not f"unmasked_{band_data.filt_name}" in tab.colnames:
+                    tab[f"unmasked_{band_data.filt_name}"] = \
+                        np.array(
+                            [
+                                False if x < 0.0
+                                or x >= mask.shape[1]
+                                or y < 0.0 or y >= mask.shape[0]
+                                else not bool(mask[int(y)][int(x)])
+                                for x, y in zip(cat_x, cat_y)
+                            ]
+                        )
+            if not overwrite:
+                from . import Catalogue
+                Catalogue.update_fits_cat(
+                    tab,
+                    self.phot_cat_path,
+                    "OBJECTS",
+                )
+            else:
+                tab.write(self.phot_cat_path, overwrite=True)
+                funcs.change_file_permissions(self.phot_cat_path)
             galfind_logger.info(
                 f"Appended mask columns to {self.phot_cat_path}"
             )
@@ -4050,8 +4072,8 @@ class Data:
     #                         + "= "
     #                         + "+".join(
     #                             [
-    #                                 band_name
-    #                                 for band_name, sex_cat_type in self.sex_cat_types.items()
+    #                                 filt_name
+    #                                 for filt_name, sex_cat_type in self.sex_cat_types.items()
     #                                 if sex_cat_type == phot_code
     #                             ]
     #                         )

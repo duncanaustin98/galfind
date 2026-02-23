@@ -172,7 +172,7 @@ class Photometry_rest(Photometry):
     #         for band in self.filterset:
     #             lower_wav = band.WavelengthLower50
     #             if lower_wav > Lya_wav * (1 + self.z):
-    #                 first_band = band.band_name
+    #                 first_band = band.filt_name
     #                 break
     #         self._first_Lya_detect_band = first_band
     #         return self._first_Lya_detect_band
@@ -190,7 +190,7 @@ class Photometry_rest(Photometry):
     #         for band in self.filterset:
     #             upper_wav = band.WavelengthUpper50
     #             if upper_wav < Lya_wav * (1 + self.z):
-    #                 first_band = band.band_name
+    #                 first_band = band.filt_name
     #                 break
     #         self._first_Lya_non_detect_band = first_band
     #     return self._first_Lya_non_detect_band

@@ -247,7 +247,7 @@ class Grid_2D:
             sim_cat.version,
             sim_filterset.instrument_name,
             aper_diams,
-            forced_phot_band_name = None,
+            forced_phot_filt_name = None,
         ).replace(".fits", f"_reg={depth_region}.fits") #_{sim_cat.cat_path.split('/')[-1]}
 
         # construct catalogue creator for scattered catalogue
@@ -282,19 +282,19 @@ class Grid_2D:
                 total = len(data_filterset),
                 disable = galfind_logger.getEffectiveLevel() > logging.INFO
             ):
-                scattered_tab[f"{filt.instrument_name}.{filt.band_name}_scattered"] = np.array(
+                scattered_tab[f"{filt.instrument_name}.{filt.filt_name}_scattered"] = np.array(
                     [
                         gal.aper_phot[aper_diam].flux[i].value
                         for gal in scattered_sim_cat
                     ]
                 )
-                scattered_tab[f"{filt.instrument_name}.{filt.band_name}_err"] = np.array(
+                scattered_tab[f"{filt.instrument_name}.{filt.filt_name}_err"] = np.array(
                     [
                         gal.aper_phot[aper_diam].flux_errs[i].value
                         for gal in scattered_sim_cat
                     ]
                 )
-                scattered_tab[f"loc_depth_{filt.instrument_name}.{filt.band_name}"] = np.array(
+                scattered_tab[f"loc_depth_{filt.instrument_name}.{filt.filt_name}"] = np.array(
                     [
                         gal.aper_phot[aper_diam].depths[i].value
                         for gal in scattered_sim_cat
