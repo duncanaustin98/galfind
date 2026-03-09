@@ -22,7 +22,7 @@ def make_data_obj():
     forced_phot_band = ["F115LP"] #ACS_SBC_bands
     min_flux_pc_err = 10.0
     # 1
-    data = Data.from_survey_version(
+    data = Data.from_survey_version_psfs(
         survey,
         version,
         instrument_names = instrument_names,

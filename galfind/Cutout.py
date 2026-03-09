@@ -288,7 +288,7 @@ class Band_Cutout_Base(Cutout_Base, ABC):
 
     def load(
         self: Self, 
-        hdu_name: str = "SCI"
+        hdu_name: str = "SCI",
     ) -> Union[Dict[str, Tuple[Dict[str, Any], np.ndarray]], Tuple[Dict[str, Any], np.ndarray]]:
         if hdu_name is None:
             hdul = fits.open(self.cutout_path, ignore_missing_simple = True)
@@ -341,6 +341,14 @@ class Band_Cutout_Base(Cutout_Base, ABC):
         for key, value in imshow_kwargs.items():
             def_imshow_kwargs[key] = value
         # plot cutout
+        if plot_type == "SEG":
+            # colour by unique values set to be between 0 and 1 to increase the imshow contrast
+            unique_ids = np.unique(cutout_data.copy())
+            assert unique_ids[0] == 0, galfind_logger.warning(
+                f"Unique IDs in SEG cutout should start at 0, but got {unique_ids[0]}!"
+            )
+            mapping = {uid: i / (len(unique_ids) - 1) for i, uid in enumerate(unique_ids)}
+            cutout_data = np.vectorize(mapping.get)(cutout_data)
         ax.imshow(cutout_data, **def_imshow_kwargs)
         # sort label kwargs
         def_label_kwargs = {

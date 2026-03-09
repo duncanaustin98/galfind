@@ -56,7 +56,7 @@ class Austin25_sample(Multiple_SED_fit_Selector):
         ]
         assert isinstance(simulated, bool), galfind_logger.critical(f"{type(simulated)=}!=bool")
         if not simulated:
-            selectors.extend([Sextractor_Bands_Radius_Selector(band_names = ["F277W", "F356W", "F444W"], gtr_or_less = "gtr", lim = 45. * u.marcsec)])
+            selectors.extend([Sextractor_Bands_Radius_Selector(filt_names = ["F277W", "F356W", "F444W"], gtr_or_less = "gtr", lim = 45. * u.marcsec)])
             # add unmasked instrument selections
             #selectors.extend([Unmasked_Instrument_Selector(instr_name) for instr_name in ["ACS_WFC", "NIRCam"]])
             selectors.extend([Austin25_unmasked_criteria()])

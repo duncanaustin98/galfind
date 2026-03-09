@@ -137,7 +137,7 @@ config.set("Other", "ALL_BANDS", json.dumps(all_filt_names))
 
 from .PDF import PDF, SED_fit_PDF, Redshift_PDF, PDF_nD
 
-from .Data import Band_Data_Base, Band_Data, Stacked_Band_Data, Data
+from .Data import Band_Data_Base, Band_Data, Stacked_Band_Data, Multiple_Band_Data_Base, Data
 from .Cutout import Cutout_Base, Band_Cutout, Band_Cutout_Base, Stacked_Band_Cutout, RGB, Stacked_RGB, Multiple_Band_Cutout, Multiple_RGB, Catalogue_Cutouts
 
 from .Photometry import Photometry, Multiple_Photometry, Mock_Photometry

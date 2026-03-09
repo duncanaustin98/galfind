@@ -417,7 +417,6 @@ class Galaxy:
         else:
             plot_regions = {filt_name: [aper] for filt_name, aper in \
                 zip(self.aper_phot[aper_diam].filterset.filt_names, fixed_apertures)}
-        
         ax_arr = multi_band_cutout.plot(
             fig = fig,
             n_rows = n_rows,
@@ -492,7 +491,6 @@ class Galaxy:
         save: bool = True,
         show: bool = True,
     ):
-        
         out_path = f"{config['Other']['PLOT_DIR']}/{data.version}/" + \
             f"{data.filterset.instrument_name}/{data.survey}/SED_plots/" + \
             f"{aper_diam.to(u.arcsec).value:.2f}as/{self.ID}.png"
@@ -577,7 +575,7 @@ class Galaxy:
                         log_scale = log_fluxes,
                     )
                     # ax_photo.scatter(band_wavs_lowz, band_mags_lowz, edgecolors=eazy_color_lowz, marker='o', facecolor='none', s=80, zorder=4.5)
-            
+
             self.aper_phot[aper_diam].plot(
                 phot_ax,
                 wav_unit,
@@ -599,6 +597,7 @@ class Galaxy:
                 SNR_labelsize = 7.5,
                 log_scale = log_fluxes,
             )
+
             # photometry axis title
             phot_ax.set_title(f"{data.survey} {self.ID} ({data.version})")
             # plot rejected reasons somewhere

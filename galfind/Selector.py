@@ -216,7 +216,12 @@ class Selector(ABC):
 class Data_Selector(Selector, ABC):
 
     def __init__(self: Self, **kwargs) -> Self:
-        super().__init__(aper_diam = None, SED_fitter = None, morph_fitter = None, **kwargs)
+        super().__init__(
+            aper_diam = None,
+            SED_fitter = None,
+            morph_fitter = None,
+            **kwargs,
+        )
 
     @property
     def requires_phot(self: Self) -> bool:
@@ -317,7 +322,7 @@ class SED_fit_Selector(Selector, ABC):
         assert isinstance(aper_diam, u.Quantity)
         assert aper_diam.unit.is_equivalent(u.arcsec)
         assert aper_diam > 0 * u.arcsec
-        assert isinstance(SED_fitter, tuple(funcs.all_subclasses(SED_code))), \
+        assert isinstance(SED_fitter, funcs.all_subclasses(SED_code)), \
             galfind_logger.critical(
                 f"{repr(SED_fitter)} must be an SED_code object."
             )
@@ -3081,7 +3086,7 @@ class Chi_Sq_Template_Diff_Selector(SED_fit_Selector):
         secondary_SED_fit_label: Union[str, SED_code],
         reduced: bool = False,
     ):
-        if isinstance(secondary_SED_fit_label, tuple(funcs.all_subclasses(SED_code))):
+        if isinstance(secondary_SED_fit_label, funcs.all_subclasses(SED_code)):
             secondary_SED_fit_label = secondary_SED_fit_label.label
         kwargs = {
             "chi_sq_diff": chi_sq_diff,
@@ -3320,7 +3325,7 @@ class Sextractor_Band_Radius_Selector(Data_Selector):
 
     def _assert_cat(
         self: Self,
-        cat: Catalogue
+        cat: Catalogue,
     ) -> None:
         if isinstance(self.kwargs["filt_name"], str):
             assert (self.kwargs["filt_name"] in cat.filterset.filt_names), \
@@ -3681,7 +3686,7 @@ class Brown_Dwarf_Selector(Multiple_SED_fit_Selector):
 #         if secondary_SED_fit_label is None:
 #             gal_chi2_compar_label = chi2_label
 #         else:
-#             if isinstance(secondary_SED_fit_label, tuple(funcs.all_subclasses(SED_code))):
+#             if isinstance(secondary_SED_fit_label, funcs.all_subclasses(SED_code)):
 #                 secondary_SED_fit_label = secondary_SED_fit_label.label
 #             selectors.extend([
 #                 Chi_Sq_Template_Diff_Selector(
@@ -3891,6 +3896,88 @@ class Rest_Frame_Property_Kwarg_Selector(SED_fit_Selector):
             [self.SED_fitter.label].phot_rest.property_kwargs \
             [self.kwargs["property_calculator"].name] \
             [self.kwargs["kwarg_name"]] == self.kwargs["kwarg_val"]
+
+
+class Star_Selector(Data_Selector):
+
+    def __init__(
+        self: Self,
+        band_data: Band_Data,
+    ):
+        self.band_data = band_data
+        kwargs = {
+        }
+        super().__init__(**kwargs)
+
+    @property
+    def _selection_name(self) -> str:
+        if self.kwargs["dz"] > 0.0:
+            dz_str = f"_dz{self.kwargs['dz']:.2f}"
+        else:
+            dz_str = ""
+        selection_name = f"blue_Lya_stacked_SNR<{self.kwargs['SNR_lim']:.1f}{dz_str}_zmax{self.kwargs['zmax']:.1f}"
+        return selection_name
+
+    @property
+    def _include_kwargs(self) -> List[str]:
+        return ["SNR_lim", "dz", "zmax"] # "filterset", "detect_or_non_detect", 
+
+    def _assertions(self: Self) -> bool:
+        try:
+            assertions = []
+            #assertions.extend([isinstance(self.kwargs["filterset"], Multiple_Filter)])
+            assertions.extend([isinstance(self.kwargs["SNR_lim"], (int, float))])
+            assertions.extend([isinstance(self.kwargs["dz"], (int, float))])
+            assertions.extend([self.kwargs["dz"] >= 0.0])
+            assertions.extend([isinstance(self.kwargs["zmax"], (int, float))])
+            assertions.extend([self.kwargs["zmax"] > 0.0])
+            #assertions.extend([self.kwargs["detect_or_non_detect"].lower() in ["detect", "non_detect"]])
+            passed = all(assertions)
+        except:
+            passed = False
+        return passed
+
+    def _failure_criteria(
+        self: Self,
+        gal: Galaxy,
+        *args,
+        **kwargs,
+    ) -> bool:
+        blue_stack_label = self._get_blue_stack_label(gal)
+        if blue_stack_label is None:
+            return True
+        else:
+            return False
+        
+    def _selection_criteria(
+        self: Self,
+        gal: Galaxy,
+        *args,
+        **kwargs
+    ) -> bool:
+        blue_stack_label = self._get_blue_stack_label(gal)
+        if not "+" in blue_stack_label:
+            snr = float(gal.aper_phot[self.aper_diam][blue_stack_label].SNR[0].unmasked)
+        else:
+            snr = float(gal.aper_phot[self.aper_diam].stacked_band_snrs[blue_stack_label])
+        if not np.isfinite(snr):
+            return False
+        return snr < self.kwargs["SNR_lim"]
+
+    def _assert_cat(
+        self: Self,
+        cat: Catalogue,
+    ) -> None:
+        req_stacked_bands = self._required_stacked_bands(cat.filterset)
+        stacked_band_data_filt_names = [band_data.filt_name for band_data in cat.data.stacked_band_data_arr]
+        if not all(["+".join(req_stacked_band.filt_names) in stacked_band_data_filt_names for req_stacked_band in req_stacked_bands]):
+            err_message = f"{repr(self)} requires the following stacked bands: " + \
+                f"{['+'.join(req_stacked_band.filt_names) for req_stacked_band in req_stacked_bands]}, " + \
+                f"but only the following stacked bands are available: {stacked_band_data_filt_names}!"
+            galfind_logger.critical(err_message)
+            raise Exception(err_message)
+        cat.load_stacked_band_data_snrs()
+        super()._assert_cat(cat)
 
 
 # Photometric galaxy property selection functions

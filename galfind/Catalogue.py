@@ -468,6 +468,7 @@ class Catalogue_Creator:
         cls,
         data: Data,
         crops: Optional[Union[Type[Selector], List[Type[Selector]]]] = None,
+        **kwargs: Dict[str, Any],
     ) -> Catalogue_Creator:
         cat_creator = cls(
             data.survey,
@@ -476,6 +477,7 @@ class Catalogue_Creator:
             data.filterset,
             data.aper_diams,
             crops = crops,
+            **kwargs,
         )
         cat_creator.data = data
         return cat_creator
@@ -500,10 +502,19 @@ class Catalogue_Creator:
             selection_flags = self.load_selection_flags(cropped)
             filterset_arr = self.load_gal_filtersets(length = len(IDs), cropped = cropped)
             SED_results = {}
-            phot_obs_arr = [{aper_diam: Photometry_obs(filterset_arr[i], \
-                phot[aper_diam][i], phot_err[aper_diam][i], depths[aper_diam][i], \
-                aper_diam, SED_results = SED_results, simulated = self.simulated) for aper_diam in self.aper_diams} \
-                for i in range(len(filterset_arr))]
+            phot_obs_arr = [
+                {
+                    aper_diam: Photometry_obs(
+                        filterset_arr[i],
+                        phot[aper_diam][i],
+                        phot_err[aper_diam][i],
+                        depths[aper_diam][i],
+                        aper_diam,
+                        SED_results = SED_results,
+                        simulated = self.simulated
+                    ) for aper_diam in self.aper_diams
+                } for i in range(len(filterset_arr))
+            ]
             assert len(IDs) == len(sky_coords) == len(phot_obs_arr), \
                 galfind_logger.critical(
                     f"{len(IDs)=} != {len(sky_coords)=} != {len(phot_obs_arr)=}!"
@@ -513,8 +524,18 @@ class Catalogue_Creator:
                 f"Loading {self.survey} {self.version} {self.cat_name} galaxies!"
             )
             #, origin_survey = self.survey
-            gals = [Galaxy(ID, sky_coord, phot_obs, flags, self.filterset, survey = self.survey, simulated = self.simulated) \
-                for ID, sky_coord, phot_obs, flags in zip(IDs, sky_coords, phot_obs_arr, selection_flags)]
+            gals = [
+                Galaxy(
+                    ID,
+                    sky_coord,
+                    phot_obs,
+                    flags,
+                    self.filterset,
+                    survey = self.survey,
+                    simulated = self.simulated
+                ) for ID, sky_coord, phot_obs, flags in 
+                zip(IDs, sky_coords, phot_obs_arr, selection_flags)
+            ]
         else:
             galfind_logger.info(
                 f"Not loading galaxies for {self.survey} {self.version} {self.cat_name} catalogue!"
@@ -524,7 +545,7 @@ class Catalogue_Creator:
         if load_gals and cropped and len(self._crops_to_perform) != 0:
             # perform the crops
             for crop in self._crops_to_perform:
-                galfind_logger.info(f"Performing {repr(crop)}")
+                galfind_logger.info(f"Performing {repr(crop)}!")
                 crop(cat, return_copy = False)
             self.load_crops(self.crops)
             cat = self(cropped = True, load_gals = load_gals)
@@ -560,8 +581,8 @@ class Catalogue_Creator:
     
     def load_crops(
         self: Self,
-        crops: Optional[Union[Type[Selector], List[Type[Selector]]]] = None
-    ) -> NoReturn:
+        crops: Optional[Union[Type[Selector], List[Type[Selector]]]] = None,
+    ) -> None:
         if crops is None:
             self.crops = []
         elif not isinstance(crops, (list, np.ndarray)):
@@ -572,14 +593,14 @@ class Catalogue_Creator:
         if self.apply_gal_instr_mask:
             self.make_gal_instr_mask()
 
-
-    def _get_crop_mask(self) -> Optional[NDArray[bool]]:
-        self._crops_to_perform = []
+    def _get_crop_mask(self: Self) -> Optional[NDArray[bool]]:
         tab = self.open_cat(self.cat_path, "SELECTION")
         if tab is None:
             tab = self.open_cat(self.cat_path, "ID")
+            self._crops_to_perform = self.crops
         elif len(self.crops) > 0:
             # crop table using crop dict
+            self._crops_to_perform = []
             keep_arr = []
             for selector in self.crops:
                 if selector.name in tab.colnames:
@@ -630,7 +651,6 @@ class Catalogue_Creator:
                 gal_instr_mask = self.gal_instr_mask
             phot = {aper_diam: self._apply_gal_instr_mask(_phot, gal_instr_mask) for aper_diam, _phot in phot.items()}
             phot_err = {aper_diam: self._apply_gal_instr_mask(_phot_err, gal_instr_mask) for aper_diam, _phot_err in phot_err.items()}
-
         mask = self.load_mask(cropped)
         if mask is not None:
             phot = {aper_diam: [Masked(gal_phot, mask=gal_mask)
@@ -851,6 +871,9 @@ class Catalogue(Catalogue_Base):
         min_flux_pc_err: Union[int, float] = 10.,
         crops: Optional[Union[Type[Selector], List[Type[Selector]]]] = None,
         load_gals: bool = True,
+        mask_method: str = "auto",
+        psf_method: Optional[str] = "empirical",
+        psf_homog_filt: Optional[str] = "F444W",
     ) -> Catalogue:
         data = Data.pipeline(
             survey,
@@ -867,18 +890,29 @@ class Catalogue(Catalogue_Base):
             aper_diams=aper_diams,
             forced_phot_band=forced_phot_band,
             min_flux_pc_err=min_flux_pc_err,
+            mask_method=mask_method,
+            psf_method=psf_method,
+            psf_homog_filt=psf_homog_filt,
         )
         return cls.from_data(data, crops, load_gals = load_gals)
 
     @classmethod
     def from_data(
-        cls, 
+        cls,
         data: Data,
         crops: Optional[Union[Type[Selector], List[Type[Selector]]]] = None,
         load_gals: bool = True,
+        **cat_creator_kwargs: Dict[str, Any],
     ) -> Catalogue:
-        cat_creator = Catalogue_Creator.from_data(data, crops = crops)
-        return cat_creator(cropped = True, load_gals = load_gals)
+        cat_creator = Catalogue_Creator.from_data(
+            data,
+            crops = crops,
+            **cat_creator_kwargs,
+        )
+        return cat_creator(
+            cropped = True,
+            load_gals = load_gals,
+        )
 
     def __repr__(self):
         return super().__repr__()
@@ -1014,19 +1048,6 @@ class Catalogue(Catalogue_Base):
         return cross_matched_cat
 
         # # calculate aperture corrections if not already
-        # if not hasattr(self.instrument, "aper_corrs"):
-        #     aper_corrs = self.instrument.get_aper_corrs(
-        #         self.cat_creator.aper_diam
-        #     )
-        # else:
-        #     aper_corrs = self.instrument.aper_corrs[self.cat_creator.aper_diam]
-        # assert len(aper_corrs) == len(self.instrument)
-        # aper_corrs = {
-        #     filt_name: aper_corr
-        #     for filt_name, aper_corr in zip(
-        #         self.instrument.filt_names, aper_corrs
-        #     )
-        # }
         # # calculate and save dict of ext_src_corrs for each galaxy in self
         # galfind_logger.debug(
         #     "Photometry_obs.calc_ext_src_corrs takes 2min 20s for JOF with 16,000 galaxies. Fairly slow!"
@@ -1269,15 +1290,18 @@ class Catalogue(Catalogue_Base):
             filt_names = list(multiply_factor.keys())
         self.load_sextractor_auto_fluxes(multiply_factor = multiply_factor)
         galfind_logger.info(
-            f"Loading SExtractor extended source corrections for {self.cat_name}!"
+            f"Loading SExtractor extended source corrections for {repr(self)}!"
         )
-        [filt.instrument._load_aper_corrs() for filt in self.filterset]
         aper_corrs = {
-            filt.filt_name: filt.instrument.aper_corrs[filt.filt_name]
-            for filt in self.filterset
-            if filt_names is None or filt.filt_name in filt_names
+            band_data.filt_name: band_data.psf.get_aper_corrs(
+                self.aper_diams,
+                out_type = "mag",
+            ) for band_data in self.data
+            if filt_names is None or band_data.filt_name in filt_names
         }
-        [gal.load_sextractor_ext_src_corrs(aper_corrs, filt_names) for gal in self]
+        [
+            gal.load_sextractor_ext_src_corrs(aper_corrs, filt_names) for gal in self
+        ]
 
         if len(self) == len(self.cat_creator.open_cat(self.cat_path, "ID")):
             galfind_logger.info(

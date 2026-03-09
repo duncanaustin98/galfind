@@ -244,8 +244,9 @@ def auto_mask(
     edge_mask_distance: Union[int, float] = 50,
     scale_extra: float = 0.2,
     exclude_gaia_galaxies: bool = True,
-    angle: float = -0.0,
+    angle: Optional[float] = None,
     edge_value: float = 0.0,
+    edge_threshold: Optional[float] = None,
     element: str = "ELLIPSE",
     gaia_row_lim: int = 500,
     overwrite: bool = False,
@@ -269,6 +270,36 @@ def auto_mask(
             #     Exception("Star mask making only implemented for NIRCam data!")
             # )
 
+        # Load data
+        im_data, im_hdr = self.load_im()
+        wcs = self.load_wcs()
+
+        if angle is None:
+            # compute the angle from WCS
+            if all(
+                hdr_kwarg in im_hdr.keys()
+                for hdr_kwarg in ["CD1_1", "CD1_2", "CD2_1", "CD2_2", "V3PA"]
+            ):
+                cd_matrix = np.array(
+                    [
+                        [im_hdr["CD1_1"], im_hdr["CD1_2"]],
+                        [im_hdr["CD2_1"], im_hdr["CD2_2"]],
+                    ]
+                )
+                angle_east = np.arctan2(cd_matrix[0, 1], cd_matrix[0, 0]) * (180.0 / np.pi)
+                angle = im_hdr["V3PA"] + angle_east
+                galfind_logger.info(
+                    f"Computed {repr(self)} angle from WCS: {angle}"
+                )
+                galfind_logger.warning(
+                    f"Angle computation from WCS for {repr(self)} may be unreliable, please check!"
+                )
+            else:
+                galfind_logger.debug(
+                    f"WCS CD matrix keywords not found in header for {repr(self)}, setting angle to 0.0"
+                )
+                angle = 0.0
+
         # angle rotation is anti-clockwise for positive angles
         composite = (
             lambda x_coord,
@@ -285,10 +316,6 @@ def auto_mask(
                 ellipse({x_coord},{y_coord},{29*spike_scale**(2/3)},{730*spike_scale},{str(np.round(360. + angle, 2))}) ||
                 ellipse({x_coord},{y_coord},{29*spike_scale**(2/3)},{300*spike_scale},{str(np.round(269.48 + angle, 2))}) ||"""
         )
-
-        # Load data
-        im_data = self.load_im()[0]
-        wcs = self.load_wcs()
 
         # Scale up the image by boundary by scale_extra factor to include diffraction spikes from stars outside image footprint
         scale_factor = scale_extra * np.array(
@@ -410,6 +437,7 @@ def auto_mask(
             self,
             edge_value = edge_value,
             edge_mask_distance = edge_mask_distance,
+            edge_threshold = edge_threshold,
             element = element,
         )
 
@@ -570,6 +598,7 @@ def make_edge_mask(
     self: Type[Band_Data_Base],
     edge_value: float = 0.0,
     edge_mask_distance: Union[int, float] = 50,
+    edge_threshold: Optional[float] = None,
     element: str = "ELLIPSE",
 ) -> NDArray[np.uint8]:
     import cv2
@@ -579,8 +608,14 @@ def make_edge_mask(
     im_data = self.load_im()[0]
     # Mask image edges
     fill = np.logical_or(
-        (im_data == edge_value), np.isnan(im_data)
+        (im_data == edge_value),
+        np.isnan(im_data)
     )  # true false array of where 0's are
+    if edge_threshold is not None:
+        fill = np.logical_or(
+            fill,
+            (abs(im_data) <= edge_threshold)
+        ) # also mask any values with magnitude below the threshold
     # also fill in nans
     edges = fill * 1  # convert to 1 for true and 0 for false
     edges = edges.astype(np.uint8)  # dtype for cv2
@@ -685,6 +720,7 @@ def combine_masks(
     self: Stacked_Band_Data,
     edge_value: float = 0.0,
     edge_mask_distance: Union[int, float] = 50,
+    edge_threshold: Optional[float] = None,
     element: str = "ELLIPSE",
 ) -> str:
     out_path = get_combined_path_name(self)
@@ -721,6 +757,7 @@ def combine_masks(
             self,
             edge_value = edge_value,
             edge_mask_distance = edge_mask_distance,
+            edge_threshold = edge_threshold,
             element = element,
         )
         # combine masks for each valid extension contained in all masks
@@ -832,7 +869,6 @@ def make_area_mask_from_data(
     **kwargs: Dict[str, Any],
 ) -> Tuple[NDArray[float], str, str, str]:
     from . import Mask_Selector
-
     mask_selector_name, mask_save_name, reg_name, mask_save_path = \
         sort_area_mask_names(
             self,
@@ -922,7 +958,6 @@ def make_area_mask_from_data(
         unmasked_area = self[mask_selector_name[0]].unmasked_area[mask_save_name]
     else:
         unmasked_area = funcs.calc_unmasked_area(mask, pix_scale)
-
     self.unmasked_area[mask_selector_name][mask_save_name] = unmasked_area
     
     return mask, mask_selector_name, mask_save_name, reg_name

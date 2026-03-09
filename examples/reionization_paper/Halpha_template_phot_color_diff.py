@@ -50,7 +50,7 @@ def Halpha_template_phot_color_diff(
     )
     # extract SEDs
     filters_colour = [
-        band for band in NIRCam() if band.band_name in colour_arr
+        band for band in NIRCam() if band.filt_name in colour_arr
     ]
     colours_arr = [
         gal.phot.SED_results["EAZY_fsps_larson_zfree"]

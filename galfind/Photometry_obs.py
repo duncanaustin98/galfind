@@ -197,11 +197,16 @@ class Photometry_obs(Photometry):
 
     @property
     def aper_corrs(self):
+        raise NotImplementedError("aper_corrs should be loaded with load_sextractor_ext_src_corrs or computed with make_all_ext_src_corrs!")
         if self.simulated:
-            return [np.nan for filt in self.filterset]
+            return [
+                np.nan for filt in self.filterset
+            ]
         else:
-            return [filt.instrument.aper_corrs[filt.filt_name] \
-                [self.aper_diam] for filt in self.filterset]
+            return [
+                filt.instrument.aper_corrs[filt.filt_name][self.aper_diam]
+                for filt in self.filterset
+            ]
 
     @classmethod  # not a gal object here, more like a catalogue row
     def from_fits_cat(

@@ -1301,7 +1301,7 @@ def symlink(target_path, symlink_path):
             os.symlink(target_path, symlink_path)
             galfind_logger.info(f"Created symlink: {symlink_path} -> {target_path}")
         except FileExistsError:
-            galfind_logger.info(f"Symlink already exists: {symlink_path}")
+            galfind_logger.debug(f"Symlink already exists: {symlink_path}")
     else:
         breakpoint()
         galfind_logger.warning(f"Target file does not exist for symlink: {target_path}")
@@ -1440,4 +1440,5 @@ def all_subclasses(cls):
             if sub not in out:
                 out.add(sub)
                 stack.append(sub)
+    out = tuple(out)
     return out
