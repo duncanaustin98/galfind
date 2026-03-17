@@ -1266,7 +1266,7 @@ class Multiple_Cutout_Base(ABC):
             fig = figs.make_fig(n_x, n_y, scaling = fig_scaling)
         # make appropriate axes from the figure and ax_ratio
         if ax_arr is None:
-            ax_arr = figs.make_ax(fig, n_x, n_y)
+            ax_arr = figs.make_cutout_ax(fig, n_x, n_y)
             # remove blank axes
             n_blank_ax = n_x * n_y - len(self)
             [fig.delaxes(ax_arr[-(i + 1)]) for i in range(n_blank_ax)]

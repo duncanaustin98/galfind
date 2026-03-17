@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import astropy.units as u
 import numpy as np
+import os
 from astroquery.svo_fps import SvoFps
 from copy import deepcopy
 import json
@@ -1064,13 +1065,14 @@ class Multiple_Filter:
             if not save_name.endswith(f".{fmt}"):
                 save_name += f".{fmt}"
             if save_dir is None:
-                save_dir = ""
-            else:
-                save_dir += "/"
-            save_path = f"{save_dir}{save_name}"
+                save_dir = os.getcwd()
+            save_path = f"{save_dir}/{save_name}"
             funcs.make_dirs(save_path)
             plt.savefig(save_path)
             funcs.change_file_permissions(save_path)
+            galfind_logger.info(
+                f"Saved {repr(self)} filter profile plot to {save_path}"
+            )
         if show:
             plt.show()
 

@@ -601,8 +601,10 @@ class Multiple_Data_Selector(Multiple_Selector, Data_Selector, ABC):
 
     def crop_to_filterset(self: Self, filterset: Multiple_Filter) -> None:
         # crop each selector to the filterset
-        self.selectors = [selector for selector in self.selectors \
-            if selector.kwargs["filt_name"] in filterset.filt_names]
+        self.selectors = [
+            selector for selector in self.selectors 
+            if selector.kwargs["filt_name"] in filterset.filt_names
+        ]
         
 
 class Multiple_Photometry_Selector(Multiple_Selector, Photometry_Selector, ABC):
@@ -1794,7 +1796,7 @@ class Bluewards_LyLim_Non_Detect_Selector(Redshift_Selector):
         # if no bands bluewards of Lyman alpha,
         # select the galaxy by default
         if first_Lylim_non_detect_band is None:
-            return True
+            return False #True
         # find index of first Lya non-detect band
         first_Lylim_non_detect_index = np.where(
             np.array(gal.aper_phot[self.aper_diam].filterset.filt_names) \
@@ -1864,7 +1866,7 @@ class Bluewards_Lya_Non_Detect_Selector(Redshift_Selector):
         # if no bands bluewards of Lyman alpha, 
         # select the galaxy by default
         if first_Lya_non_detect_band is None:
-            return True
+            return False #True
         # find index of first Lya non-detect band
         first_Lya_non_detect_index = np.where(
             np.array(gal.aper_phot[self.aper_diam].filterset.filt_names) \
@@ -2097,30 +2099,41 @@ class Unmasked_Bluewards_Lya_Selector(Redshift_Selector, Mask_Selector):
         self: Self,
         aper_diam: u.Quantity,
         SED_fitter: SED_code,
-        min_bands: int,
+        min_bands: Optional[int] = None,
         widebands_only: bool = False,
         ignore_bands: Optional[Union[str, List[str]]] = None,
     ):
         if isinstance(ignore_bands, str):
             ignore_bands = [ignore_bands]
-        kwargs = {"min_bands": min_bands, "widebands_only": widebands_only, "ignore_bands": ignore_bands}
+        kwargs = {
+            "min_bands": min_bands,
+            "widebands_only": widebands_only,
+            "ignore_bands": ignore_bands,
+        }
         # # this calls self._assertions with self.aper_diam = None and self.SED_fitter = None
         # Mask_Selector.__init__(self, **kwargs)
         Redshift_Selector.__init__(self, aper_diam, SED_fitter, **kwargs)
 
     @property
     def _selection_name(self) -> str:
-        selection_name = f"unmask_{self.kwargs['min_bands']}_blue_Lya"
+        selection_name = "unmask"
+        if self.kwargs["min_bands"] is not None:
+            selection_name += f"_{self.kwargs['min_bands']}"
         if self.kwargs["widebands_only"]:
             selection_name += "_wide"
         if self.kwargs["ignore_bands"] is not None:
             ignore_str = ",".join(self.kwargs["ignore_bands"])
             selection_name += f"_no_{ignore_str}"
+        selection_name += "_blue_Lya"
         return selection_name
 
     @property
     def _include_kwargs(self) -> List[str]:
-        return ["min_bands", "widebands_only", "ignore_bands"]
+        return [
+            "min_bands",
+            "widebands_only",
+            "ignore_bands",
+        ]
 
     def _assertions(self: Self) -> bool:
         try:
@@ -2155,7 +2168,7 @@ class Unmasked_Bluewards_Lya_Selector(Redshift_Selector, Mask_Selector):
             gal.aper_phot[self.aper_diam].SED_results[self.SED_fitter.label].z,
             gal.cat_filterset,
             line_diagnostics["Lya"]["line_wav"],
-            self.kwargs["ignore_bands"],
+            #self.kwargs["ignore_bands"],
         )
         # TODO: could be in failure criteria
         if first_Lya_non_detect_band is None or \
@@ -2183,6 +2196,7 @@ class Unmasked_Bluewards_Lya_Selector(Redshift_Selector, Mask_Selector):
                 and (not self.kwargs["widebands_only"] or filt_name[-1] == "W" or "LP" == filt_name[-2:])
             ]
             return not any(mask)
+                
 
     def load_mask(
         self: Self,
@@ -2218,6 +2232,18 @@ class Unmasked_Bluewards_Lya_Selector(Redshift_Selector, Mask_Selector):
 
         # load mask from each bluewards band
         masks = [data[filt_name].load_mask("MASK")[0].astype(bool) for filt_name in bluewards_filt_names]
+
+        # also ensure that first Lya bluewards band is unmasked
+        first_Lya_bluewards_band = funcs.get_first_bluewards_band(
+            z,
+            data.filterset,
+            line_diagnostics["Lya"]["line_wav"],
+            #self.kwargs["ignore_bands"],
+        )
+        if first_Lya_bluewards_band is not None:
+            first_Lya_bluewards_mask = data[first_Lya_bluewards_band].load_mask("MASK")[0].astype(bool)
+            masks.append(first_Lya_bluewards_mask)
+
         assert all(mask.shape == masks[0].shape for mask in masks), \
             galfind_logger.critical(
                 f"Mask shapes do not match: {[mask.shape for mask in masks]}"
@@ -2322,7 +2348,7 @@ class Unmasked_Redwards_Lya_Selector(Redshift_Selector, Mask_Selector):
             gal.aper_phot[self.aper_diam].SED_results[self.SED_fitter.label].z,
             gal.cat_filterset,
             line_diagnostics["Lya"]["line_wav"],
-            self.kwargs["ignore_bands"],
+            #self.kwargs["ignore_bands"],
         )
         # TODO: could be in failure criteria
         if first_Lya_detect_band is None or \
@@ -2382,6 +2408,18 @@ class Unmasked_Redwards_Lya_Selector(Redshift_Selector, Mask_Selector):
             redwards_filt_names = redwards_filt_names[:self.kwargs['min_bands']]
         # load mask from each redwards band
         masks = [data[filt_name].load_mask("MASK")[0].astype(bool) for filt_name in redwards_filt_names]
+
+        # also ensure that first Lya redwards band is unmasked
+        first_Lya_redwards_band = funcs.get_first_redwards_band(
+            z,
+            data.filterset,
+            line_diagnostics["Lya"]["line_wav"],
+            #self.kwargs["ignore_bands"],
+        )
+        if first_Lya_redwards_band is not None:
+            first_Lya_redwards_mask = data[first_Lya_redwards_band].load_mask("MASK")[0].astype(bool)
+            masks.append(first_Lya_redwards_mask)
+
         assert all(mask.shape == masks[0].shape for mask in masks), \
             galfind_logger.critical(
                 f"Mask shapes do not match: {[mask.shape for mask in masks]}"
@@ -3783,12 +3821,13 @@ class EPOCHS_unmasked_criteria(Multiple_Mask_Selector):
         aper_diam: u.Quantity,
         SED_fitter: SED_code,
         forced_phot_band: List[str] = ["F277W", "F356W", "F444W"],
+        ignore_bands: List[str] = ["F070W", "F850LP"],
         # allow_lowz: bool = False, # not used
     ):
         selectors = [
             Min_Instrument_Unmasked_Band_Selector(min_bands = 4, instrument = "NIRCam"), # unmasked in at least 4 NIRCam bands
-            Unmasked_Bluewards_Lya_Selector(aper_diam, SED_fitter, widebands_only = False, min_bands = 1, ignore_bands = ["F070W", "F850LP"]), #unmasked in at least 1 band bluewards of the break
-            Unmasked_Redwards_Lya_Selector(aper_diam, SED_fitter, widebands_only = True, min_bands = 2, ignore_bands = ["F070W", "F850LP"]), # unmasked in at least 2 widebands redwards of the break
+            Unmasked_Bluewards_Lya_Selector(aper_diam, SED_fitter, widebands_only = False, min_bands = 1, ignore_bands = ignore_bands), # unmasked in at least 1 band bluewards of the break
+            Unmasked_Redwards_Lya_Selector(aper_diam, SED_fitter, widebands_only = True, min_bands = 2, ignore_bands = ignore_bands), # unmasked in at least 2 widebands redwards of the break
         ]
         # must be unmasked in all forced photometry bands
         selectors.extend([Unmasked_Band_Selector(band) for band in forced_phot_band])
@@ -3805,11 +3844,12 @@ class EPOCHS_Selector(Multiple_SED_fit_Selector):
         #allow_lowz: bool = False,
         simulated: bool = False,
         forced_phot_band: List[str] = ["F277W", "F356W", "F444W"],
+        ignore_bands: Optional[List[str]] = ["F070W", "F850LP"],
     ):
         selectors = [
-            Bluewards_Lya_Non_Detect_Selector(aper_diam, SED_fitter, SNR_lim = 2.0, ignore_bands = ["F070W", "F850LP"]),
-            Redwards_Lya_Detect_Selector(aper_diam, SED_fitter, SNR_lims = [5.0, 5.0], widebands_only = True, ignore_bands = ["F070W", "F850LP"]),
-            Redwards_Lya_Detect_Selector(aper_diam, SED_fitter, SNR_lims = 2.0, widebands_only = True, ignore_bands = ["F070W", "F850LP"]),
+            Bluewards_Lya_Non_Detect_Selector(aper_diam, SED_fitter, SNR_lim = 2.0, ignore_bands = ignore_bands),
+            Redwards_Lya_Detect_Selector(aper_diam, SED_fitter, SNR_lims = [5.0, 5.0], widebands_only = True, ignore_bands = ignore_bands),
+            Redwards_Lya_Detect_Selector(aper_diam, SED_fitter, SNR_lims = 2.0, widebands_only = True, ignore_bands = ignore_bands),
             Chi_Sq_Lim_Selector(aper_diam, SED_fitter, chi_sq_lim = 3.0, reduced = True),
             Chi_Sq_Diff_Selector(aper_diam, SED_fitter, chi_sq_diff = 4.0, dz = 0.5, lowz_zmax_arr = [4.0, 6.0]),
             Robust_zPDF_Selector(aper_diam, SED_fitter, integral_lim = 0.6, dz_over_z = 0.1),
@@ -3821,7 +3861,13 @@ class EPOCHS_Selector(Multiple_SED_fit_Selector):
 
         if not simulated:
             # add unmasked instrument selections
-            selectors.extend([EPOCHS_unmasked_criteria(aper_diam, SED_fitter, forced_phot_band)]) # lowz here
+            selectors.extend([
+                EPOCHS_unmasked_criteria(
+                    aper_diam,
+                    SED_fitter,
+                    forced_phot_band,
+                    ignore_bands = ignore_bands
+                )]) # lowz here
             # add hot pixel checks in forced photometry bands
             selectors.extend([
                 Sextractor_Bands_Radius_Selector( \

@@ -7,6 +7,7 @@ from astropy.utils.masked import Masked
 import matplotlib.patheffects as pe
 import matplotlib.pyplot as plt
 import numpy as np
+from numpy.typing import NDArray
 from tqdm import tqdm
 from copy import deepcopy
 import logging
@@ -16,7 +17,7 @@ from photutils.aperture import (
 )
 from typing import TYPE_CHECKING, Union, List, Dict, NoReturn, Optional
 if TYPE_CHECKING:
-    from . import Multiple_Filter, Multiple_Band_Cutout
+    from . import Multiple_Filter, Multiple_Band_Cutout, PSF_Base
 try:
     from typing import Self, Type  # python 3.11+
 except ImportError:
@@ -35,6 +36,12 @@ class Photometry_obs(Photometry):
         flux_errs: Masked[u.Quantity],
         depths: Union[Dict[str, float], List[float]],
         aper_diam: u.Quantity,
+        psfs: Optional[
+            Union[
+                List[Optional[Type[PSF_Base]]],
+                NDArray[Optional[Type[PSF_Base]]]
+            ]
+        ] = None,
         SED_results: Dict[str, SED_result] = {},
         simulated: bool = False,
         timed: bool = False,
@@ -42,12 +49,16 @@ class Photometry_obs(Photometry):
         if timed:
             start = time.time()
         self.aper_diam = aper_diam
+        self.psfs = psfs
         self.SED_results = SED_results
         self.simulated = simulated
         super().__init__(filterset, flux, flux_errs, depths)
+        self._assert_psfs()
         if timed:
             end = time.time()
-            print(end - start)
+            galfind_logger.debug(
+                f"Initialized {repr(self)} in {end - start:.2f} seconds!"
+            )
 
     def __repr__(self):
         sed_result_str = ','.join(list(self.SED_results.keys()))
@@ -197,15 +208,23 @@ class Photometry_obs(Photometry):
 
     @property
     def aper_corrs(self):
-        raise NotImplementedError("aper_corrs should be loaded with load_sextractor_ext_src_corrs or computed with make_all_ext_src_corrs!")
-        if self.simulated:
+        if self.simulated or self.psfs is None:
             return [
                 np.nan for filt in self.filterset
             ]
-        else:
+        elif isinstance(self.psfs, (list, np.ndarray)):
             return [
-                filt.instrument.aper_corrs[filt.filt_name][self.aper_diam]
-                for filt in self.filterset
+                psf.get_aper_corrs(
+                    self.aper_diam,
+                    out_type = "mag",
+                ) for psf in self.psfs
+            ]
+        else: # isinstance(self.psfs, dict):
+            return [
+                self.psfs[filt.filt_name].get_aper_corrs(
+                    self.aper_diam,
+                    out_type = "mag",
+                ) for filt in self.filterset
             ]
 
     @classmethod  # not a gal object here, more like a catalogue row
@@ -243,7 +262,7 @@ class Photometry_obs(Photometry):
         phot,
         aper_diam: u.Quantity,
         min_flux_pc_err: Union[int, float],
-        SED_results: dict = {},
+        SED_results: Dict[str, SED_result] = {},
     ):
         return cls(
             phot.instrument,
@@ -272,10 +291,31 @@ class Photometry_obs(Photometry):
             aper_phot_filt = aperture_photometry(data, aperture, error = rms_err)
             breakpoint()
 
+    def _assert_psfs(self):
+        if self.psfs is not None:
+            if isinstance(self.psfs, (list, np.ndarray)):
+                assert len(self.psfs) == len(self.filterset), \
+                    galfind_logger.critical(
+                        f"{len(self.psfs)=} != {len(self.filterset)=}!"
+                    )
+            elif isinstance(self.psfs, dict):
+                assert all(filt.filt_name in self.psfs.keys() for filt in self.filterset), \
+                    galfind_logger.critical(
+                        f"Some of {[filt.filt_name for filt in self.filterset]} not in {self.psfs.keys()=}"
+                    )
+            else:
+                galfind_logger.critical(
+                    f"{type(self.psfs)=} not in [list, np.ndarray, dict] and is not None!"
+                )
+        else:
+            galfind_logger.debug(
+                f"No PSFs provided for {repr(self)}! Passed assertions!"
+            )
+
     def update_SED_result(
         self: Self, 
         gal_SED_result: SED_result
-    ) -> NoReturn:
+    ) -> None:
         if isinstance(gal_SED_result.SED_code, str):
             label = gal_SED_result.SED_code
         else:
@@ -589,20 +629,10 @@ class Photometry_obs(Photometry):
     
     def load_sextractor_ext_src_corrs(
         self: Self, 
-        aper_corrs: Optional[Dict[str, float]] = None,
         filt_names: Optional[List[str]] = None,
     ) -> NoReturn:
         if filt_names is None:
             filt_names = self.filterset.filt_names
-        # assert all(name in self.filterset.filt_names for name in filt_names), \
-        #     galfind_logger.critical(
-        #         f"Some of {filt_names=} not in {self.filterset.filt_names=}"
-        #     )
-        if aper_corrs is None:
-            [filt.instrument._load_aper_corrs() for filt in self.filterset]
-            aper_corrs = {filt.filt_name: filt.instrument. \
-                aper_corrs[filt.filt_name][self.aper_diam] for filt in self.filterset}
-        assert all(filt_name in aper_corrs.keys() for filt_name in filt_names)
 
         try:
             unmasked_flux = self.flux.unmasked
@@ -611,14 +641,14 @@ class Photometry_obs(Photometry):
         try:
             ext_src_corrs = {
                 filt_name: (self.sex_FLUX_AUTO[filt_name] \
-                / (unmasked_flux[i] * funcs.mag_to_flux_ratio(-aper_corrs[filt_name]))) \
-                .to(u.dimensionless_unscaled) for i, filt_name \
-                in enumerate(self.filterset.filt_names)
+                / (unmasked_flux[i] * funcs.mag_to_flux_ratio(-aper_corr))) \
+                .to(u.dimensionless_unscaled) for i, (aper_corr, filt_name) \
+                in enumerate(zip(self.aper_corrs, self.filterset.filt_names)) \
                 if filt_name in filt_names or filt_names is None
             }
         except Exception as e:
             galfind_logger.critical(
-                f"Failed to compute ext_src_corrs with {e=}, {self.sex_FLUX_AUTO=}, {self.flux=}, {aper_corrs=}"
+                f"Failed to compute ext_src_corrs with {e=}, {self.sex_FLUX_AUTO=}, {self.flux=}, {self.aper_corrs=}"
             )
             breakpoint()
             raise e

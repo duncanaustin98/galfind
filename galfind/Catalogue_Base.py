@@ -173,9 +173,6 @@ class Catalogue_Base:
             # run selection if not already done
             if not all(index.name in gal.selection_flags for gal in self):
                 [index(gal, return_copy = False) for gal in self]
-            else:
-                pass
-                #breakpoint()
             keep_arr = [gal.selection_flags[index.name] for gal in self]
             return list(np.array(self.gals)[np.array(keep_arr)])
     

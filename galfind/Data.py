@@ -1734,10 +1734,14 @@ class Stacked_Band_Data(Band_Data_Base):
             [band_data.filt for band_data in band_data_arr]
         )
         # instantiate the stacked band data object
-        assert all(getattr(band_data, "psf") == getattr(band_data_arr[0], "psf") \
-            for band_data in band_data_arr), galfind_logger.critical(
-                "All band_data in band_data_arr must have the same PSF homogenization status!"
-            )
+        try:
+            assert all(getattr(band_data, "psf") == getattr(band_data_arr[0], "psf") \
+                for band_data in band_data_arr), galfind_logger.critical(
+                    "All band_data in band_data_arr must have the same PSF homogenization status!"
+                )
+        except Exception as e:
+            galfind_logger.error(f"Error checking PSF homogenization status of band_data in band_data_arr: {e}")
+            breakpoint()
         input_data["psf"] = getattr(band_data_arr[0], "psf")
         stacked_band_data = cls(filterset, **input_data)
 
@@ -3816,9 +3820,11 @@ class Data:
             with funcs.tqdm_joblib(
                 tqdm(desc="Calculating depths", total=len(params), disable = galfind_logger.getEffectiveLevel() > logging.INFO)
             ) as progress_bar:
-                Parallel(n_jobs=n_jobs)(
+                # TODO: Fix pointer parallelization issues
+                outputs = Parallel(n_jobs=n_jobs)(
                     delayed(Depths.calc_band_depth)(param) for param in params
                 )
+                #self_band_data_arr = outputs
             # save properties to individual band_data objects
             for band_data in self_band_data_arr:
                 [

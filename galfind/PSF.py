@@ -392,6 +392,7 @@ class PSF_Cutout(PSF_Base):
             #psf_out_dir = "/".join(psf_filepath.split("/")[:-1]),
             is_kernel = False,
             origin = "empirical",
+            overwrite = overwrite,
         )
 
     @staticmethod

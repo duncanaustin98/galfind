@@ -47,6 +47,7 @@ def make_fig_ax(
         ax_arr = make_ax(fig, n_x, n_y, sharex = sharex, sharey = sharey, **gridspec_kwargs)
     return fig, ax_arr
 
+
 def make_fig(
     n_x: int,
     n_y: int,
@@ -96,8 +97,8 @@ def make_phot_diagnostic_fig(n_cutouts: int):
     fig, cutout_fig = overall_fig.subfigures(
         2,
         1,
-        hspace=-2.,
-        height_ratios=[2.0, 1.0]
+        hspace = -2.0,
+        height_ratios = [2.0, 1.0]
         if n_cutouts <= 8
         else [1.8, 1],
     )
@@ -109,4 +110,4 @@ def make_phot_diagnostic_fig(n_cutouts: int):
 
     fig_axs = [cutout_fig, phot_ax, PDF_ax]
 
-    return fig_axs
+    return overall_fig, fig_axs

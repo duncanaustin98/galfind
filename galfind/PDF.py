@@ -454,13 +454,15 @@ class PDF:
             input_arr = np.log10(input_arr)
         
         # construct gaussian_kde
-        kde = gaussian_kde(input_arr)
+        # kde = gaussian_kde(input_arr)
         x = np.linspace(
             np.min(input_arr),
             np.max(input_arr),
             len(input_arr)
         )
-        y = kde(x)
+        # y = kde(x)
+        #x = np.sort(input_arr)
+        y = np.interp(x, self.x.value, self.p_x)
 
         # plot the pdf
         ax.plot(
@@ -488,7 +490,7 @@ class PDF:
             perc[p] = perc_
 
         # Set x and y plot limits
-        ax.set_xlim(np.max([np.min(x), perc[1.0]]), np.max(x))#np.min([np.max(x), perc[99.0]]))
+        ax.set_xlim(np.max([np.min(x), perc[1.0]]), np.max(x)) #np.min([np.max(x), perc[99.0]]))
         ax.set_ylim(0, 1.1 * np.max(y))
 
         if self.property_name in funcs.property_name_to_label:
@@ -549,48 +551,54 @@ class PDF:
                 color=colour,
                 path_effects=[pe.withStroke(linewidth=3, foreground="white")],
             )
-            ax.annotate(
-                r"$z_{\rm phot}=$"
-                + f'{self.get_peak(0, log = log)["value"]:.1f}'
-                + f'$^{{+{(perc[84.0] - self.get_peak(0, log = log)["value"]):.1f}}}_{{-{(self.get_peak(0, log = log)["value"] - perc[16.]):.1f}}}$',
-                (self.get_peak(0, log = log)["value"], 1.17),
+            ax.text(
+                0.05,
+                0.95,
+                r"$z_{\rm phot}="
+                + f'{self.get_peak(0, log = log)["value"].value:.1f}'
+                + f'^{{+{(perc[84.0] - self.get_peak(0, log = log)["value"].value):.1f}}}_{{-{(self.get_peak(0, log = log)["value"].value - perc[16.]):.1f}}}$',
+                transform=ax.transAxes,
+                #(self.get_peak(0, log = log)["value"], 1.17),
                 fontsize="medium",
                 va="top",
-                ha="center",
+                ha="left",
                 color=colour,
                 path_effects=[pe.withStroke(linewidth=3, foreground="white")],
             )
 
             # Horizontal arrow at PDF peak going left or right depending on which side PDF is on, labelled with chi2
             # Check if highest peak is closer to xlim[0] or xlim[1]
-            x_lim = ax.get_xlim()
+            #x_lim = ax.get_xlim()
             #y_lim = ax.get_ylim()
-            amount = 0.3 * (x_lim[1] - x_lim[0])
-            if (
-                self.get_peak(0, log = log)["value"] - x_lim[0]
-                < x_lim[1] - self.get_peak(0, log = log)["value"]
-            ):
-                direction = 1
-            else:
-                direction = -1
-            ax.annotate(
+            # amount = 0.3 * (x_lim[1] - x_lim[0])
+            # if (
+            #     self.get_peak(0, log = log)["value"] - x_lim[0]
+            #     < x_lim[1] - self.get_peak(0, log = log)["value"]
+            # ):
+            #     direction = 1
+            # else:
+            #     direction = -1
+            ax.text(
+                0.05,
+                0.80,
                 r"$\chi^2=$" + f'{self.get_peak(0, log = log)["chi_sq"]:.2f}',
-                (self.get_peak(0, log = log)["value"], 1.0),
-                xytext=(self.get_peak(0, log = log)["value"] + direction * amount, 0.90),
+                #(self.get_peak(0, log = log)["value"], 1.0),
+                transform=ax.transAxes,
+                #xytext=(self.get_peak(0, log = log)["value"] + direction * amount, 0.90),
                 fontsize="small",
                 va="top",
-                ha="center",
+                ha="left",
                 color=colour,
                 path_effects=[pe.withStroke(linewidth=3, foreground="white")],
-                arrowprops=dict(
-                    facecolor=colour,
-                    edgecolor=colour,
-                    arrowstyle="-|>",
-                    lw=1.5,
-                    path_effects=[
-                        pe.withStroke(linewidth=1, foreground="white")
-                    ],
-                ),
+                # arrowprops=dict(
+                #     facecolor=colour,
+                #     edgecolor=colour,
+                #     arrowstyle="-|>",
+                #     lw=1.5,
+                #     path_effects=[
+                #         pe.withStroke(linewidth=1, foreground="white")
+                #     ],
+                # ),
             )
 
             # annotate PDF with peak locations etc

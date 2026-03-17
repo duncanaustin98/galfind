@@ -264,7 +264,7 @@ class Galaxy:
         self: Type[Self], 
         data: Data, 
         cutout_size: u.Quantity = 0.96 * u.arcsec,
-        overwrite: bool = False
+        overwrite: bool = False,
     ) -> Multiple_Band_Cutout:
         if not hasattr(self, "multi_band_cutout"):
             self.multi_band_cutout = Multiple_Band_Cutout. \
@@ -470,6 +470,7 @@ class Galaxy:
         data: Data,
         SED_arr: List[Union[str, SED_code]],
         zPDF_arr: List[Union[str, SED_code]],
+        fig: Optional[plt.Figure] = None,
         ax: Optional[Tuple[plt.Figure, List[plt.Axes], List[plt.Axes]]] = None,
         plot_lowz: bool = True,
         lowz_dz: float = 0.5,
@@ -489,35 +490,38 @@ class Galaxy:
         kron_kwargs: Dict[str, Any] = {},
         overwrite: bool = False,
         save: bool = True,
-        show: bool = True,
+        show: bool = False,
+        dpi: int = 300,
     ):
+
         out_path = f"{config['Other']['PLOT_DIR']}/{data.version}/" + \
             f"{data.filterset.instrument_name}/{data.survey}/SED_plots/" + \
             f"{aper_diam.to(u.arcsec).value:.2f}as/{self.ID}.png"
-        
-        if ax is None:
-            ax = figs.make_phot_diagnostic_fig(len(data))
-
-        # unpack tuple
-        cutout_fig, phot_ax, PDF_ax = ax
-
-        if not isinstance(SED_arr, list):
-            SED_arr = [SED_arr]
-        if not isinstance(zPDF_arr, list):
-            zPDF_arr = [zPDF_arr]
-        # extract lowz_zmax from SED_arr if required
-        if plot_lowz:
-            SED_arr.extend(self._extract_lowz_codes(aper_diam, SED_arr, lowz_dz))
-            zPDF_arr.extend(self._extract_lowz_codes(aper_diam, zPDF_arr, lowz_dz))
-
-        zPDF_labels = [code.label for code in zPDF_arr]
-        # reset parameters
-        for ax_, label in zip(PDF_ax, zPDF_labels):
-            ax_.set_yticks([])
-            ax_.set_xlabel(r"Redshift, $z$")
-            ax_.set_title(label, fontsize="medium")
 
         if not Path(out_path).is_file() or overwrite:
+
+            if fig is None or ax is None:
+                fig, ax = figs.make_phot_diagnostic_fig(len(data))
+
+            # unpack tuple
+            cutout_fig, phot_ax, PDF_ax = ax
+
+            if not isinstance(SED_arr, list):
+                SED_arr = [SED_arr]
+            if not isinstance(zPDF_arr, list):
+                zPDF_arr = [zPDF_arr]
+            # extract lowz_zmax from SED_arr if required
+            if plot_lowz:
+                SED_arr.extend(self._extract_lowz_codes(aper_diam, SED_arr, lowz_dz))
+                zPDF_arr.extend(self._extract_lowz_codes(aper_diam, zPDF_arr, lowz_dz))
+
+            zPDF_labels = [code.label for code in zPDF_arr]
+            # reset parameters
+            for ax_, label in zip(PDF_ax, zPDF_labels):
+                ax_.set_yticks([])
+                ax_.set_xlabel(r"Redshift, $z$")
+                ax_.set_title(label, fontsize="medium")
+
             # plot cutouts (assuming reference SED_fit_params is at 0th index)
             self.plot_cutouts(
                 cutout_fig,
@@ -633,13 +637,16 @@ class Galaxy:
 
             if save:
                 funcs.make_dirs(out_path)
-                plt.savefig(out_path, dpi=300, bbox_inches="tight")
+                plt.savefig(out_path, dpi = dpi) #, bbox_inches="tight")
                 funcs.change_file_permissions(out_path)
+
             if show:
                 plt.show()
             else:
-                for ax in [phot_ax] + PDF_ax:
-                    ax.clear()
+                # for ax in [phot_ax] + PDF_ax:
+                #     ax.clear()
+                plt.close(fig)
+
         return out_path
 
     # Spectroscopy
@@ -916,7 +923,6 @@ class Galaxy:
 
     def load_sextractor_ext_src_corrs(
         self: Self, 
-        aper_corrs: Optional[Dict[str, Dict[u.Quantity, float]]] = None,
         filt_names: Optional[List[str]] = None,
     ) -> None:
         # FLUX_AUTO must already be loaded
@@ -927,8 +933,7 @@ class Galaxy:
             raise AttributeError("sex_FLUX_AUTO")
         # load ext_src_corrs into aper_phot
         for aper_diam in self.aper_phot.keys():
-            aper_diam_aper_corrs = {key: val[aper_diam] for key, val in aper_corrs.items()}
-            self.aper_phot[aper_diam].load_sextractor_ext_src_corrs(aper_diam_aper_corrs, filt_names)
+            self.aper_phot[aper_diam].load_sextractor_ext_src_corrs(filt_names)
             for filt in self.cat_filterset:
                 if filt_names is None or filt.filt_name in filt_names:
                     setattr(

@@ -31,6 +31,8 @@ import itertools
 from astropy.utils.masked import Masked
 from tqdm import tqdm
 from typing import Union, Tuple, Any, List, Dict, Callable, Optional, NoReturn, TYPE_CHECKING
+
+from galfind.PSF import PSF_Base
 if TYPE_CHECKING:
     from . import (
         Filter,
@@ -250,18 +252,26 @@ def check_hdu_exists(cat_path: str, hdu: str) -> bool:
     hdul = fits.open(cat_path)
     return any(hdu_.name == hdu.upper() for hdu_ in hdul)
 
-def open_galfind_cat(cat_path: str, cat_type: str) -> Optional[Table]:
-    if cat_type in ["ID", "sky_coord", "phot", "mask", "depths"]:
+def open_galfind_cat(
+    cat_path: str,
+    cat_type: str,
+) -> Optional[Table]:
+    first_ext_keys = ["ID", "sky_coord", "phot", "mask", "depths"]
+    if cat_type in first_ext_keys:
         tab = Table.read(
-            cat_path, character_as_bytes=False, memmap=True
+            cat_path,
+            character_as_bytes = False,
+            memmap = True,
         )
     elif check_hdu_exists(cat_path, cat_type):
         tab = Table.read(
-            cat_path, character_as_bytes=False, memmap=True, hdu=cat_type
+            cat_path,
+            character_as_bytes = False,
+            memmap = True,
+            hdu = cat_type,
         )
     else:
-        err_message = f"cat_type = {cat_type=} not in " + \
-            "['ID', 'sky_coord', 'phot', 'mask', 'depths'] and " + \
+        err_message = f"{cat_type=} not in {first_ext_keys} and " + \
             f"not a valid HDU extension in {cat_path}!"
         galfind_logger.warning(err_message)
         return None
@@ -484,17 +494,24 @@ class Catalogue_Creator:
 
     def __call__(
         self: Self,
+        psfs: Optional[
+            Union[
+                List[Optional[Type[PSF_Base]]],
+                NDArray[Optional[Type[PSF_Base]]],
+                Dict[str, Optional[Type[PSF_Base]]],
+            ]
+        ] = None,
         cropped: bool = True,
         load_gals: bool = True,
     ) -> Catalogue:
         galfind_logger.info(
-            f"Making {self.survey} {self.version} {self.cat_name} catalogue!"
-        )
-        galfind_logger.debug(
-            f"Loading {self.survey} {self.version} {self.cat_name} photometry!"
+            f"Making {repr(self)} catalogue!"
         )
         if load_gals:
             # make array of Photometry_obs for each aperture diameter
+            galfind_logger.debug(
+                f"Loading {repr(self)} photometry!"
+            )
             IDs = self.load_IDs(cropped)
             sky_coords = self.load_skycoords(cropped)
             phot, phot_err = self.load_phot(cropped)
@@ -511,7 +528,8 @@ class Catalogue_Creator:
                         depths[aper_diam][i],
                         aper_diam,
                         SED_results = SED_results,
-                        simulated = self.simulated
+                        psfs = psfs,
+                        simulated = self.simulated,
                     ) for aper_diam in self.aper_diams
                 } for i in range(len(filterset_arr))
             ]
@@ -548,7 +566,11 @@ class Catalogue_Creator:
                 galfind_logger.info(f"Performing {repr(crop)}!")
                 crop(cat, return_copy = False)
             self.load_crops(self.crops)
-            cat = self(cropped = True, load_gals = load_gals)
+            cat = self(
+                psfs = psfs,
+                cropped = True,
+                load_gals = load_gals,
+            )
         else:
             # point to data if provided
             if hasattr(self, "data"):
@@ -615,6 +637,8 @@ class Catalogue_Creator:
             if len(keep_arr) > 0 and len(self._crops_to_perform) == 0:
                 self.crop_mask = np.array(np.logical_and.reduce(keep_arr)).astype(bool)
                 return self.crop_mask
+        else:
+            self._crops_to_perform = []
         if len(self._crops_to_perform) == 0:
             self.crop_mask = np.full(len(tab), True)
         else:
@@ -707,8 +731,10 @@ class Catalogue_Creator:
                     gal_instr_mask = self.gal_instr_mask[self.crop_mask]
                 else:
                     gal_instr_mask = self.gal_instr_mask
-                depths = {aper_diam: self._apply_gal_instr_mask(_depths, gal_instr_mask) \
-                    for aper_diam, _depths in depths.items()}
+                depths = {
+                    aper_diam: self._apply_gal_instr_mask(_depths, gal_instr_mask) \
+                    for aper_diam, _depths in depths.items()
+                }
             return depths
         else:
             galfind_logger.warning(
@@ -910,6 +936,7 @@ class Catalogue(Catalogue_Base):
             **cat_creator_kwargs,
         )
         return cat_creator(
+            psfs = data.psfs,
             cropped = True,
             load_gals = load_gals,
         )
@@ -1289,18 +1316,13 @@ class Catalogue(Catalogue_Base):
         else:
             filt_names = list(multiply_factor.keys())
         self.load_sextractor_auto_fluxes(multiply_factor = multiply_factor)
-        galfind_logger.info(
-            f"Loading SExtractor extended source corrections for {repr(self)}!"
-        )
-        aper_corrs = {
-            band_data.filt_name: band_data.psf.get_aper_corrs(
-                self.aper_diams,
-                out_type = "mag",
-            ) for band_data in self.data
-            if filt_names is None or band_data.filt_name in filt_names
-        }
         [
-            gal.load_sextractor_ext_src_corrs(aper_corrs, filt_names) for gal in self
+            gal.load_sextractor_ext_src_corrs(filt_names) for gal in tqdm(
+                self,
+                desc = f"Loading SExtractor extended source corrections for {repr(self)}",
+                total = len(self),
+                disable = galfind_logger.getEffectiveLevel() > logging.INFO,
+            )
         ]
 
         if len(self) == len(self.cat_creator.open_cat(self.cat_path, "ID")):
@@ -1609,18 +1631,19 @@ class Catalogue(Catalogue_Base):
         kron_kwargs: Dict[str, Any] = {},
         n_cutout_rows: int = 2,
         overwrite: bool = False,
-        fig_axs: Optional[Tuple[plt.Figure, NDArray[plt.Axes]]] = None,
+        #fig_axs: Optional[Tuple[plt.Figure, NDArray[plt.Axes]]] = None,
     ):
         self.load_sextractor_params()
 
-        if fig_axs is None:
-            fig_axs = figs.make_phot_diagnostic_fig(len(self.data))
+        # if fig_axs is None:
+        #     fig, fig_axs = figs.make_phot_diagnostic_fig(len(self.data))
 
         # loop over galaxies and make photometry diagnostic plots for each one
         out_paths = [
             gal.plot_phot_diagnostic(
                 self.data,
-                ax = fig_axs,
+                #fig = fig,
+                #ax = fig_axs,
                 aper_diam = aper_diam,
                 SED_arr = SED_arr,
                 zPDF_arr = zPDF_arr,
@@ -1657,7 +1680,7 @@ class Catalogue(Catalogue_Base):
         self: Self,
         out_paths: List[str],
         collate_dir: str,
-        overwrite: bool = True
+        overwrite: bool = True,
     ):
         # make a folder to store symlinked photometric diagnostic plots for selected galaxies
         if self.crops != []:
@@ -1727,7 +1750,12 @@ class Catalogue(Catalogue_Base):
         # scatter each set of fluxes once by the calculated errors
         [
             gal.aper_phot[aper_diam].scatter_fluxes(update = True) 
-            for gal in tqdm(self, desc = "Scattering catalogue fluxes", total = len(self), disable = galfind_logger.getEffectiveLevel() > logging.INFO)
+            for gal in tqdm(
+                self,
+                desc = "Scattering catalogue fluxes",
+                total = len(self),
+                disable = galfind_logger.getEffectiveLevel() > logging.INFO
+            )
         ]
         if update_errs:
             self._update_errs_from_depths(aper_diam)
