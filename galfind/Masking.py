@@ -868,6 +868,7 @@ def make_area_mask_from_data(
     overwrite: bool = False,
     **kwargs: Dict[str, Any],
 ) -> Tuple[NDArray[float], str, str, str]:
+    #try:
     from . import Mask_Selector
     mask_selector_name, mask_save_name, reg_name, mask_save_path = \
         sort_area_mask_names(
@@ -882,6 +883,8 @@ def make_area_mask_from_data(
         galfind_logger.info(
             f"Creating area mask {mask_selector_name} with types {mask_type} at {mask_save_path}"
         )
+        if "z" not in kwargs.keys() and zbin is not None:
+            kwargs["z"] = (zbin[0] + zbin[1]) / 2
         if isinstance(mask_selector, tuple(Mask_Selector.__subclasses__())):
             masks = [mask_selector.load_mask(self, invert = False, **kwargs)]
             pix_scales = [band_data.pix_scale for band_data in self]
@@ -937,9 +940,8 @@ def make_area_mask_from_data(
         hdu = fits.ImageHDU(mask.astype(np.uint8), name=mask_selector_name)
         hdu.writeto(mask_save_path, overwrite=True)
         funcs.change_file_permissions(mask_save_path)
-
     else:
-        galfind_logger.info(
+        galfind_logger.debug(
             f"Area mask at {mask_save_path} already exists, loading!"
         )
         hdu = fits.open(mask_save_path)[mask_selector_name]
@@ -958,8 +960,18 @@ def make_area_mask_from_data(
         unmasked_area = self[mask_selector_name[0]].unmasked_area[mask_save_name]
     else:
         unmasked_area = funcs.calc_unmasked_area(mask, pix_scale)
-    self.unmasked_area[mask_selector_name][mask_save_name] = unmasked_area
-    
+    try:
+        if not hasattr(self, "unmasked_area"):
+            self.unmasked_area = {}
+        if mask_selector_name not in self.unmasked_area.keys():
+            self.unmasked_area[mask_selector_name] = {}
+        self.unmasked_area[mask_selector_name][mask_save_name] = unmasked_area
+    except Exception as e:
+        galfind_logger.warning(
+            f"Could not save unmasked area for {mask_selector_name} {mask_save_name} in {repr(self)}: {e}"
+        )
+        breakpoint()
+        raise e
     return mask, mask_selector_name, mask_save_name, reg_name
 
 
@@ -1026,7 +1038,7 @@ def make_area_mask_from_band_data(
         hdu.writeto(mask_save_path, overwrite=True)
         funcs.change_file_permissions(mask_save_path)
     else:
-        galfind_logger.info(
+        galfind_logger.debug(
             f"Area mask at {mask_save_path} already exists, loading!"
         )
         hdu = fits.open(mask_save_path)[mask_selector_name]

@@ -282,24 +282,43 @@ class Galaxy:
 
     def make_band_cutout(
         self: Type[Self],
-        band_data: Band_Data,
+        band_data_base: Type[Band_Data_Base],
         cutout_size: u.Quantity = 0.96 * u.arcsec,
+        overwrite: bool = False,
     ) -> Band_Cutout:
         if not hasattr(self, "cutouts"):
             self.cutouts = {}
         cutout_ = None
         cutout_size_str = f"{cutout_size.to(u.arcsec).value:.2f}as"
+        label = f"{band_data_base.filt_name}_{cutout_size_str}"
+        if band_data_base.is_native:
+            label += "_native"
         if hasattr(self, "multi_band_cutout"):
             # point to relevant cutout that has already been made
             if cutout_size_str in self.multi_band_cutout.keys() and \
-                    any(band_data.filt_name == cutout.filt_name for cutout \
+                    any(band_data_base.filt_name == cutout.filt_name for cutout \
                     in self.multi_band_cutout[cutout_size_str]):
-                cutout_ = self.multi_band_cutout[cutout_size_str][band_data.filt_name]
+                cutout_ = self.multi_band_cutout[cutout_size_str][band_data_base.filt_name]
         if cutout_ is None:
+            # if isinstance(band_data_base, Stacked_Band_Data):
+            #     from . import Stacked_Band_Cutout
+            #     cutout_ = Stacked_Band_Cutout.from_data_skycoords(
+            #         gal.data,
+            #         filt,
+            #         sky_coords,
+            #         cutout_size,
+            #         save_path = None,
+            #     ) 
+            # else:
             from . import Band_Cutout 
             # make the cutout from the relevant band_data
-            cutout_ = Band_Cutout.from_gal_band_data(self, band_data, cutout_size)
-        self.cutouts[f"{band_data.filt_name}_{cutout_size_str}"] = cutout_
+            cutout_ = Band_Cutout.from_gal_band_data(
+                self,
+                band_data_base,
+                cutout_size,
+                overwrite = overwrite,
+            )
+        self.cutouts[label] = cutout_
         return cutout_
 
     def plot_cutouts(
@@ -949,13 +968,19 @@ class Galaxy:
 
     def set_Vmax(
         self: Self,
-        ecsv_rows: Table
+        ecsv_rows: Table,
+        data_survey: str,
     ) -> None:
-        assert all(colname in ecsv_rows.colnames for colname in \
-            ["aper_diam", "SED_fit_code", "region", "Vmax_total"]
-        ), galfind_logger.critical(
-            f"{repr(self)=} ecsv_rows missing required columns to set Vmax!"
-        )
+        try:
+            assert all(colname in ecsv_rows.colnames for colname in \
+                ["aper_diam", "SED_fit_code", "region", "Vmax_total"]
+            ), galfind_logger.critical(
+                f"{repr(self)=} ecsv_rows missing required columns to set Vmax! {ecsv_rows.colnames=}"
+            )
+        except Exception as e:
+            print(e)
+            breakpoint()
+            raise e
         # TODO: Currently only stores Vmax for a single redshift / selection
         aper_diam_arr = np.unique(ecsv_rows["aper_diam"].data) * u.arcsec
         SED_fit_code_arr = np.unique(ecsv_rows["SED_fit_code"].data)
@@ -965,10 +990,12 @@ class Galaxy:
                 for SED_fit_code in SED_fit_code_arr:
                     if SED_fit_code in aper_phot_obj.SED_results.keys():
                         SED_result_obj = aper_phot_obj.SED_results[SED_fit_code]
-                        if not hasattr(SED_result_obj, "Vmax_total"):
+                        if not hasattr(SED_result_obj, "Vmax"):
                             #SED_result_obj.zmin = {}
                             #SED_result_obj.zmax = {}
                             SED_result_obj.Vmax = {}
+                        if not data_survey in SED_result_obj.Vmax.keys():
+                            SED_result_obj.Vmax[data_survey] = {}
                         # crop ecsv tab to just the relevant rows for this 
                         # aper_diam and SED_fit_code combination
                         ecsv_row = ecsv_rows[
@@ -986,7 +1013,7 @@ class Galaxy:
                         for region in regions:
                             region_row = ecsv_row[ecsv_row["region"] == region]
                             # TODO: save the Vmax kwargs in the object
-                            SED_result_obj.Vmax[region] = np.sum(region_row["Vmax_total"].data)
+                            SED_result_obj.Vmax[data_survey][region] = np.sum(region_row["Vmax_total"].data)
                     else:
                         galfind_logger.debug(
                             f"Galaxy {self.ID=} has no SED_result for " + \
@@ -1025,8 +1052,8 @@ class Galaxy:
         from . import (
             Data_Selector,
             Mask_Selector,
-            SED_fit_Selector, 
-            Multiple_Selector, 
+            SED_fit_Selector,
+            Multiple_Selector,
             Rest_Frame_Property_Limit_Selector, 
         )
         sed_result = self.aper_phot[aper_diam].SED_results[SED_fit_code.label]
@@ -1054,11 +1081,12 @@ class Galaxy:
                     continue
             Vmax_crops.extend([crop])
         assert Vmax_crops != []
-
         # calculate V_max
         if sed_result.z > z_bin[1] or sed_result.z < z_bin[0]:
             Vmax = {"all": -1.0}
-            Vmax_kwargs = {"all": {"zmin": -1.0, "zmax": -1.0}}
+            Vmax_kwargs = {
+                "all": {"zmin": -1.0, "zmax": -1.0}
+            }
             meta = {}
         else:
             calc_Vmax_func = getattr(self, f"calc_Vmax_{Vmax_method.lower()}")
@@ -1174,9 +1202,9 @@ class Galaxy:
                     SED_fit_code,
                     test_phot_obs,
                     {"z": z},
-                    property_errs={},
-                    property_PDFs={},
-                    SED=None,
+                    property_errs = {},
+                    property_PDFs = {},
+                    SED = None,
                 )
                 test_phot_obs.SED_results = {
                     SED_fit_code.label: sed_result
@@ -1185,7 +1213,7 @@ class Galaxy:
                     self.ID,
                     self.sky_coord,
                     {aper_diam: test_phot_obs},
-                    selection_flags={},
+                    selection_flags = {},
                 )
                 # run selection methods on new galaxy
                 [selector(test_gal, return_copy = False) for selector in Vmax_crops]
@@ -1304,12 +1332,17 @@ class Galaxy:
                 f"Calculating Vmax for {repr(self)} in {data.full_name=}"
             )
             regions = ["all"]
+            setattr(data, "regions", regions)
 
         Vmax_output = {} # total Vmax outputs for the galaxy
         Vmax_kwargs_output = {} # galaxy dependent kwargs output for each Vmax calculation
 
         n_steps = 10
-        meta = {"z_bin": z_bin, "z_step": z_step, "n_depth_steps": n_steps} # data shared by all galaxies in this field
+        meta = {
+            "z_bin": z_bin,
+            "z_step": z_step,
+            "n_depth_steps": n_steps
+        } # data shared by all galaxies in this field
 
         for region in regions:
             assert all(hasattr(band_data, "med_depth") for band_data in data), \
@@ -1378,6 +1411,7 @@ class Galaxy:
                         filterset = data.filterset, # could use self.aper_phot[aper_diam].filterset instead?
                         depths = depth_step,
                         aper_diam = aper_diam,
+                        psfs = data.psfs,
                         SED_fit_code = SED_fit_code,
                         Vmax_crops = Vmax_crops,
                         area = area_step,
@@ -1392,7 +1426,7 @@ class Galaxy:
                 Vmax_output[region][area_zbin_label] = np.sum(np.clip(Vmax_arr, 0.0, None))
                 Vmax_kwargs_output[region][area_zbin_label] = Vmax_kwargs_arr
                 meta[region][area_zbin_label] = {"depth_step_arr": depth_step_arr, "cum_area_arr": cum_area_arr}
-        return Vmax_output, Vmax_kwargs_output, meta,
+        return Vmax_output, Vmax_kwargs_output, meta
 
     def _compute_Vmax(
         self: Self,
@@ -1401,6 +1435,7 @@ class Galaxy:
         filterset: Multiple_Filter,
         depths: List[float],
         aper_diam: u.Quantity,
+        psfs: Optional[Dict[str, Type[PSF_Base]]],
         SED_fit_code: SED_code,
         Vmax_crops: List[Type[Selector]],
         area: u.Quantity,
@@ -1412,6 +1447,7 @@ class Galaxy:
 
         z_detect = []
         z_arr = np.linspace(zmin, zmax, int(np.round((zmax - zmin), 4) / z_step) + 1)
+
         for z in z_arr:
             galfind_logger.debug(
                 "ΙGM attenuation is ignored when redshifting the best-fit galaxy SED!"
@@ -1434,7 +1470,11 @@ class Galaxy:
             )
             # construct galaxy at new redshift with average depths of new field
             test_sed_obs = SED_obs(
-                z, wav_z.value, mag_z, wav_z.unit, u.ABmag
+                z,
+                wav_z.value,
+                mag_z,
+                wav_z.unit,
+                u.ABmag,
             )
             galfind_logger.debug("Not propagating min_flux_pc_err! Setting to 10.0%")
             test_mock_phot = test_sed_obs.create_mock_photometry(
@@ -1454,14 +1494,15 @@ class Galaxy:
                 ),
                 test_mock_phot.depths,
                 aper_diam,
+                psfs = psfs,
             )
             sed_result = SED_result(
                 SED_fit_code,
                 test_phot_obs,
                 {"z": z},
-                property_errs={},
-                property_PDFs={},
-                SED=None,
+                property_errs = {},
+                property_PDFs = {},
+                SED = None,
             )
             test_phot_obs.SED_results = {
                 SED_fit_code.label: sed_result
@@ -1470,10 +1511,13 @@ class Galaxy:
                 self.ID,
                 self.sky_coord,
                 {aper_diam: test_phot_obs},
-                selection_flags={},
+                selection_flags = {},
             )
             # run selection methods on new galaxy
-            [selector(test_gal, return_copy = False) for selector in Vmax_crops]
+            [
+                selector(test_gal, return_copy = False)
+                for selector in Vmax_crops
+            ]
             goodz = all(
                 test_gal.selection_flags[selector.name]
                 for selector in Vmax_crops
@@ -1485,10 +1529,10 @@ class Galaxy:
         if len(z_detect) < 2:
             Vmax = -1.0
             Vmax_kwargs = {
-                "zskip": [],
-                "zmin": -1.0,
-                "zmax": -1.0,
-                "area": area.to(u.arcmin**2).value,
+                "zskip": str([]),
+                "zmin": str(-1.0),
+                "zmax": str(-1.0),
+                "area": str(area.to(u.arcmin**2).value),
             }
         else:
             z_detect_mid_bins = (z_detect[:-1] + z_detect[1:]) / 2
@@ -1519,12 +1563,12 @@ class Galaxy:
                 zmin = -1.0
                 zmax = -1.0
             Vmax_kwargs = {
-                "zskip": list(np.round(z_detect_mid_bins[ignore_z_mask], 2)),
-                "zmin": zmin,
-                "zmax": zmax,
-                "area": area.to(u.arcmin**2).value,
+                "zskip": str(list(np.round(z_detect_mid_bins[ignore_z_mask], 2))).replace("\n", ""),
+                "zmin": str(zmin),
+                "zmax": str(zmax),
+                "area": str(area.to(u.arcmin**2).value),
             }
-        Vmax_kwargs["Vmax"] = Vmax
+        Vmax_kwargs["Vmax"] = str(Vmax)
         return Vmax, Vmax_kwargs
 
     # def calc_Vmax_multifield(self, detect_cat_name: str, data_arr: Union[list, np.array], z_bin: Union[list, np.array], \

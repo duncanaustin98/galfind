@@ -195,15 +195,9 @@ class Catalogue_Base:
         self: Self,
         property_name: str #, origin: Union[str, dict] = "gal"
     ) -> np.ndarray:
-        # get attributes from stored galaxy objects
-        # if property_name in self.__dict__.keys():
-        #     return self.__getattribute__(property_name)
-        # elif property_name in self.cat_creator.__dict__.keys():
-        #     return self.cat_creator.__getattribute__(property_name)
-        # else:
         if property_name in self.cat_creator.__dict__.keys():
             return getattr(self.cat_creator, property_name)
-        elif all(hasattr(gal, property_name) for gal in self):
+        elif all(hasattr(gal, property_name) for gal in self) and len(self) > 0:
             attr_arr = [getattr(gal, property_name) for gal in self]
             #attr_arr = [gal.__getattr__(property_name, origin) for gal in self]
             # ensure all units are the same
@@ -678,7 +672,9 @@ class Catalogue_Base:
     ) -> Optional[Table]:
         if hdu is None:
             fits_cat = Table.read(
-                self.cat_path, character_as_bytes=False, memmap=True
+                self.cat_path,
+                character_as_bytes=False,
+                memmap=True,
             )
         else:
             if isinstance(hdu, SED_code):
@@ -691,7 +687,10 @@ class Catalogue_Base:
                 raise ValueError(err_message)
             if self.check_hdu_exists(hdu_name):
                 fits_cat = Table.read(
-                    self.cat_path, character_as_bytes=False, memmap=True, hdu=hdu_name
+                    self.cat_path,
+                    character_as_bytes=False,
+                    memmap=True,
+                    hdu=hdu_name,
                 )
             else:
                 galfind_logger.warning(
@@ -1301,6 +1300,7 @@ class Catalogue_Base:
         Vmax_method: str = "uniform_depth",
         n_jobs: int = 1,
     ) -> Dict[str, NDArray[float]]:
+
         assert len(z_bin) == 2
         assert z_bin[0] < z_bin[1]
         assert isinstance(SED_fit_code, tuple(SED_code.__subclasses__()))
@@ -1328,16 +1328,17 @@ class Catalogue_Base:
             # load in area-depth curves before parallelization
             if Vmax_method.lower() == "area_depth_scaled_split_region":
                 z_arr = np.arange(z_bin[0], z_bin[1] + z_step, z_step)
-                if hasattr(self.data, "region_selector"):
-                    region_selector = self.data.region_selector
+                if hasattr(data, "region_selector"):
+                    region_selector = data.region_selector
                     invert_region = [True, False] #region != self.data.region_selector.name
                 else:
                     region_selector = None
                     invert_region = [False]
+                    setattr(data, "regions", ["all"])
                 for invert_region_ in invert_region:
                     for z in z_arr:
                         # compute area depth for all relevant redshift bin areas
-                        self.data.calc_area_depth(
+                        data.calc_area_depth(
                             aper_diam = aper_diam,
                             mask_selector = unmasked_area,
                             #mask_type = mask_type,
@@ -1385,7 +1386,8 @@ class Catalogue_Base:
                 from joblib import Parallel, delayed, parallel_config
                 with funcs.tqdm_joblib(tqdm(
                         desc = f"Calculating {full_survey_name} Vmax's in {full_data_name}",
-                        total = len(self)
+                        total = len(update_gals),
+                        disable = galfind_logger.getEffectiveLevel() > logging.INFO,
                     )
                 ) as progress_bar:
                     with parallel_config(backend='loky', n_jobs=n_jobs):
@@ -1398,11 +1400,11 @@ class Catalogue_Base:
             region_keys = [key for key in Vmax_outputs[0][0].keys()]
             assert region_keys == data.regions, \
                 galfind_logger.critical(
-                    "Region keys from Vmax calculation do not match data regions!"
+                    f"{region_keys=} from Vmax calculation does not match {data.regions}!"
                 )
             assert all(len(Vmax_output[0]) == len(data.regions) for Vmax_output in Vmax_outputs), \
                 galfind_logger.critical(
-                    "Number of regions from Vmax calculation do not match data regions!"
+                    f"{len(Vmax_output[0])=} != {len(data.regions)=}"
                 )
             zbin_keys = [key for key in Vmax_outputs[0][1][region_keys[0]].keys()]
             # assert all([Vmax_output[1][region_keys[0]].keys() == zbin_keys for Vmax_output in Vmax_outputs]), \
@@ -1452,7 +1454,6 @@ class Catalogue_Base:
             surveys = np.repeat(np.array([gal.survey for gal in update_gals]), len(zbin_keys) * len(region_keys))
             aper_diams = np.full(len(IDs), aper_diam.value)
             SED_fit_codes = np.full(len(IDs), SED_fit_code.label)
-            #breakpoint()
             ecsv_data = {
                 "ID": IDs,
                 "survey": surveys,
@@ -1463,9 +1464,8 @@ class Catalogue_Base:
                 "Vmax_total": Vmax.flatten(),
                 **kwargs,
             }
-            #breakpoint()
             try:
-                new_tab = Table(ecsv_data, dtype = [int, str, str, float, str, str, float] + [object] * len(kwargs))
+                new_tab = Table(ecsv_data, dtype = [int, str, str, float, str, str, float] + [str] * len(kwargs))
             except Exception as e:
                 galfind_logger.critical(
                     f"Error when creating Vmax ecsv table! Error={e}"
@@ -1473,12 +1473,12 @@ class Catalogue_Base:
                 breakpoint()
                 raise e
             new_tab.meta = {"Vmax_invalid_val": -1.0, **meta}
-            self._save_ecsv(save_path, new_tab)
-            self._load_Vmax_from_ecsv(new_tab, aper_diam, SED_fit_code, data.full_name)
+            out_tab = self._save_ecsv(save_path, new_tab)
+            self._load_Vmax_from_ecsv(out_tab, data.survey, aper_diam, SED_fit_code, data.full_name)
         else:
             if len(self) != 0:
                 old_tab = Table.read(save_path)
-                self._load_Vmax_from_ecsv(old_tab, aper_diam, SED_fit_code, data.full_name)
+                self._load_Vmax_from_ecsv(old_tab, data.survey, aper_diam, SED_fit_code, data.full_name)
     
     @staticmethod
     def _calc_Vmax_multi_process(
@@ -1500,7 +1500,7 @@ class Catalogue_Base:
         self: Self,
         save_path: str,
         tab: Table
-    ) -> None:
+    ) -> Table:
         if Path(save_path).is_file(): # update and save table
             old_tab = Table.read(save_path)
             out_tab = vstack([old_tab, tab])
@@ -1508,10 +1508,12 @@ class Catalogue_Base:
         else: # save table
             out_tab = tab
         out_tab.write(save_path, overwrite=True)
+        return out_tab
     
     def _load_Vmax_from_ecsv(
         self: Self,
         tab: Table,
+        data_survey: str,
         aper_diam: u.Quantity,
         SED_fit_code: SED_code,
         full_survey_name: str,
@@ -1524,4 +1526,4 @@ class Catalogue_Base:
         #Vmax_arr = np.zeros(len(load_gals_arr))
         for i, gal in enumerate(load_gals_arr):
             Vmax_rows = tab[np.logical_and((tab["ID"] == gal.ID), (tab["survey"] == gal.survey))]
-            gal.set_Vmax(Vmax_rows)
+            gal.set_Vmax(Vmax_rows, data_survey = data_survey)

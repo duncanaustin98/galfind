@@ -15,10 +15,15 @@ INPUT_IMAGE_EXT=${12}
 CONFIG_PATH=${13}
 PARAMETERS_NAME=${14}
 PHOT_APERTURES=${15}
+IS_NATIVE=${16}
 # make appropriate directories
 OUTPUT_CAT_DIR=${OUTPUT_DIR}/${INSTRUMENT}/${VERSION}/${SURVEY}/${INPUT_WEIGHT_TYPE}/segmentation
 mkdir -p $OUTPUT_CAT_DIR
 OUTPUT_CAT_PATH=${OUTPUT_CAT_DIR}/${SURVEY}_${BAND}_${BAND}_sel_cat_${VERSION}
+
+if [ "$IS_NATIVE" = "true" ]; then
+    OUTPUT_CAT_PATH=${OUTPUT_CAT_PATH}_native
+fi
 
 if [ ${#OUTPUT_CAT_PATH} -ge 247 ]; then
     echo "WARNING: Path length exceeds/equals 256 characters!"

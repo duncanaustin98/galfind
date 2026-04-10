@@ -228,6 +228,7 @@ from .Selector import (
     Hainline24_TY_Brown_Dwarf_Selector_2,
     Redshift_Selector,
     Stacked_Blue_Lya_Non_Detect_Selector,
+    Compactness_Selector,
 )
 
 from .Emission_lines import Emission_line, wav_lyman_alpha, line_diagnostics

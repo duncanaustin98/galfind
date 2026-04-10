@@ -80,7 +80,7 @@ def make_cutout_ax(
     n_y: int,
     **gridspec_kwargs: Dict[str, Any],
 ) -> List[plt.Axes]:
-    gridspec_cutout = fig.add_gridspec(n_y, n_x)
+    gridspec_cutout = fig.add_gridspec(n_y, n_x, **gridspec_kwargs)
     cutout_ax_list = []
     for i in range(n_x * n_y):
         cutout_ax = fig.add_subplot(gridspec_cutout[i])

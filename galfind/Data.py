@@ -119,6 +119,7 @@ class Band_Data_Base(ABC):
         if aper_diams is not None:
             self.aper_diams = aper_diams
         self.psf = psf
+        self.is_native = False
 
         # make rms error / wht maps using galfind if required
         if use_galfind_err:
@@ -2205,7 +2206,6 @@ class Data:
             Union[str, List[str], Type[Band_Data_Base]]
         ] = None,
         #xy_align_filt_name: str = "F444W",
-        #psf_matched: Optional[str] = None,
     ):
         # save and sort band_arr by central wavelength
         self.band_data_arr = funcs.sort_band_data_arr(band_data_arr)
@@ -2213,11 +2213,7 @@ class Data:
         # load forced photometry band
         if forced_phot_band is not None:
             self.load_forced_phot_band(forced_phot_band)
-        # if psf_matched is not None:
-        #     assert psf_matched in self.filterset.filt_names, galfind_logger.critical(
-        #         f"{psf_matched=} not in {self.filterset.filt_names}!"
-        #     )
-        # self.psf_matched = psf_matched
+        self.is_native = False
 
     @classmethod
     def pipeline(
@@ -3296,6 +3292,7 @@ class Data:
         self: Self,
         psf: PSF_Cutout,
         use_fft_conv: bool = True,
+        save_native: bool = True,
         overwrite: bool = False,
         n_jobs: int = 1,
     ):
@@ -3305,6 +3302,13 @@ class Data:
             )
         assert isinstance(n_jobs, int) and n_jobs > 0, \
             galfind_logger.critical(f"{n_jobs=} must be a positive integer!")
+
+        if save_native:
+            self.native = deepcopy(self)
+            setattr(self.native, "is_native", True)
+            for band_data in self.native:
+                setattr(band_data, "is_native", True)
+        
         if n_jobs == 1:
             for band_data in self:
                 band_data.psf_homogenize(
@@ -3348,7 +3352,7 @@ class Data:
             self.load_stacked_band_data_arr(orig_filt_names)
 
     def segment(
-        self,
+        self: Self,
         err_type: str = "rms_err",
         method: str = "sextractor",
         config_name: str = "default.sex",
@@ -3389,6 +3393,16 @@ class Data:
             )
             for band_data in self_band_data_arr
         ]
+
+        # segment native data if it exists
+        if hasattr(self, "native"):
+            self.native.segment(
+                err_type,
+                method,
+                config_name,
+                params_name,
+                overwrite,
+            )
 
     def perform_forced_phot(
         self,
@@ -3926,51 +3940,51 @@ class Data:
                 region = self.region_selector.name
         else:
             region = None
-        try:
-            if hasattr(self, "area_depths") and (
-                (
-                    region in self.area_depths.keys() and
-                    zbin_label in self.area_depths[region].keys()
-                )
-                or zbin_label in self.area_depths.keys()
-            ):
-                galfind_logger.debug(
-                    f"Area depths already calculated in {repr(self)} for {region=}, {zbin_label=}, skipping!"
-                )
-            else:
-                total_depths, cum_dist, area = Depths.calc_data_area_depth(
-                    self,
-                    aper_diam,
-                    mask_selector,
-                    mask_type,
-                    region_selector,
-                    invert_region,
-                    zbin,
-                )
-                if not hasattr(self, "area_depths"):
-                    self.area_depths = {}
-                if region is not None and region not in self.area_depths.keys():
-                    self.area_depths[region] = {}
-                if region is not None:
-                    if zbin_label not in self.area_depths[region].keys():
-                        self.area_depths[region][zbin_label] = {
-                            "total_depths": total_depths,
-                            "cum_dist": cum_dist,
-                            "area": area,
-                        }
-                else:
-                    if zbin_label not in self.area_depths.keys():
-                        self.area_depths[zbin_label] = {
-                            "total_depths": total_depths,
-                            "cum_dist": cum_dist,
-                            "area": area,
-                        }
-        except Exception as e:
-            galfind_logger.critical(
-                f"Could not calculate area depths for {repr(self)}: {e}"
+        #try:
+        if hasattr(self, "area_depths") and (
+            (
+                region in self.area_depths.keys() and
+                zbin_label in self.area_depths[region].keys()
             )
-            breakpoint()
-            raise e
+            or zbin_label in self.area_depths.keys()
+        ):
+            galfind_logger.debug(
+                f"Area depths already calculated in {repr(self)} for {region=}, {zbin_label=}, skipping!"
+            )
+        else:
+            if not hasattr(self, "area_depths"):
+                self.area_depths = {"all": {}}
+            if region is not None and region not in self.area_depths.keys():
+                self.area_depths[region] = {}
+            total_depths, cum_dist, area = Depths.calc_data_area_depth(
+                self,
+                aper_diam,
+                mask_selector,
+                mask_type,
+                region_selector,
+                invert_region,
+                zbin,
+            )
+            if region is not None:
+                if zbin_label not in self.area_depths[region].keys():
+                    self.area_depths[region][zbin_label] = {
+                        "total_depths": total_depths,
+                        "cum_dist": cum_dist,
+                        "area": area,
+                    }
+            else:
+                if zbin_label not in self.area_depths["all"].keys():
+                    self.area_depths["all"][zbin_label] = {
+                        "total_depths": total_depths,
+                        "cum_dist": cum_dist,
+                        "area": area,
+                    }
+        # except Exception as e:
+        #     galfind_logger.critical(
+        #         f"Could not calculate area depths for {repr(self)}: {e}"
+        #     )
+        #     breakpoint()
+        #     raise e
 
         if plot:
             self.plot_area_depth(

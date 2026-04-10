@@ -417,7 +417,7 @@ class PSF_Cutout(PSF_Base):
         origin: str,
         pix_scale: u.Quantity = 0.03 * u.arcsec,
         size: u.Quantity = 4.0 * u.arcsec,
-        #psf_out_dir: Optional[str] = None,
+        psf_name: Optional[str] = None,
         is_kernel: bool = False,
         overwrite: bool = False,
     ) -> PSF_Cutout:
@@ -425,11 +425,14 @@ class PSF_Cutout(PSF_Base):
             err_message = f"File {fits_path} not found!"
             galfind_logger.critical(err_message)
             raise FileNotFoundError(err_message)
-        psf_name = fits_path.split("/")[-1].replace(".fits", "")
         # if psf_out_dir is None:
         #     psf_out_dir = f"{config['PSF']['PSF_WORK_DIR']}/" + \
         #         f"{pix_scale.to(u.arcsec).value}as/{filt.filt_name}"
-        psf_out_path = fits_path.replace(".fits", "_galfind.fits") #f"{psf_out_dir}/{psf_name}_galfind.fits"
+        psf_out_dir = "/".join(fits_path.split("/")[:-1])
+        if psf_name is None:
+            psf_name = fits_path.split("/")[-1].replace(".fits", "")
+        psf_out_path = f"{psf_out_dir}/{psf_name}_galfind.fits"
+        # fits_path.replace(".fits", "_galfind.fits") #
         if not Path(psf_out_path).is_file() or overwrite:
             funcs.make_dirs(psf_out_path)
             # TODO:resample onto appropriate pixel scale - assume already done
@@ -494,6 +497,133 @@ class PSF_Cutout(PSF_Base):
     #         return name
     #     else:
     #         return f"{name}_{id_label}"
+
+    @property
+    def fwhm(self: Self) -> u.Quantity:
+        radii_as, profile = self.calc_radial_profile()
+        #breakpoint()
+        fwhm_radius = np.interp(0.5, profile, radii_as)
+        return fwhm_radius
+    
+    @property
+    def radial_profile_path(self: Self) -> str:
+        return self.eec_path.replace("_EEC.h5", "_radial_profile.h5")
+    
+    def calc_radial_profile(
+        self: Self,
+        radii: Optional[u.Quantity] = None,
+        rmax: Optional[float] = None,
+        dr: float = 0.1,
+        order: int = 1,
+        overwrite: bool = False,
+    ) -> Tuple[NDArray[float], NDArray[float]]:
+        
+        if not Path(self.radial_profile_path).is_file() or overwrite:
+            
+            # open fits data
+            data = self.cutout.band_data.load_im()[0]
+            ny, nx = data.shape
+            y0, x0 = centroid_2dg(data)
+
+            if rmax is None:
+                rmax = min(ny, nx) / 2.0
+        
+            # radial bin edges and centres
+            edges  = np.arange(0, rmax + dr, dr)
+            r_bins = 0.5 * (edges[:-1] + edges[1:])
+            n_bins = len(r_bins)
+        
+            radial_profile = np.full(n_bins, np.nan)
+            #std     = np.full(n_bins, np.nan)
+            #npix    = np.zeros(n_bins, dtype=int)
+        
+            angles = np.linspace(0, 2 * np.pi, 360, endpoint=False)
+            cos_a  = np.cos(angles)
+            sin_a  = np.sin(angles)
+        
+            # working array to collect all samples in an annulus
+            # process bins in a vectorised loop over angles
+            for i, r in enumerate(r_bins):
+                # fractional pixel positions of the sampling ring
+                col_f = x0 + r * cos_a     # x  → column
+                row_f = y0 + r * sin_a     # y  → row
+        
+                coords = np.array([row_f, col_f])
+                from scipy.ndimage import map_coordinates
+                # cval=nan not supported for float map_coordinates directly, so use
+                # prefilter + mode='constant' with a sentinel then mask
+                vals = map_coordinates(data.astype(float), coords,
+                                        order=order, mode='nearest', prefilter=True)
+                # mask truly out-of-bounds positions
+                oob = (row_f < 0) | (row_f >= ny) | (col_f < 0) | (col_f >= nx)
+                vals[oob] = np.nan
+
+                #vals = sample_image(data, row_f, col_f, order=interp_order)
+        
+                #if mask_nan:
+                vals = vals[np.isfinite(vals)]
+        
+                if vals.size > 0:
+                    radial_profile[i] = np.mean(vals)
+                    #std[i]     = np.std(vals)
+                    #npix[i]    = vals.size
+            # normalize profile
+            radial_profile /= np.max(radial_profile)
+            # y, x = np.indices(data.shape)
+            # r = np.sqrt((x - x0) ** 2 + (y - y0) ** 2)
+            # r_int = r.astype(int)
+            # tbin = np.bincount(r_int.ravel(), data.ravel())
+            # #breakpoint()
+            # nr = np.bincount(r_int.ravel())
+            # radial_profile = tbin / nr
+            # radial_profile /= np.max(radial_profile)
+            # radii_pix = np.arange(len(radial_profile))
+            # radii_as = radii_pix * self.cutout.band_data.pix_scale.to(u.arcsec).value
+            radii_as = r_bins * self.cutout.band_data.pix_scale.to(u.arcsec).value
+            #breakpoint()
+            # save to h5 file
+            with h5py.File(self.radial_profile_path, "w") as f:
+                f.create_dataset("radii", data = radii_as, compression = "gzip")
+                f.create_dataset("profile", data = radial_profile, compression = "gzip")
+                galfind_logger.info(f"Saved radial profile for {repr(self)} to {self.radial_profile_path}")
+        else:
+            galfind_logger.debug(f"Radial profile file {self.radial_profile_path} already exists, skipping radial profile calculation.")
+            with h5py.File(self.radial_profile_path, "r") as f:
+                radii_as = f["radii"][:]
+                radial_profile = f["profile"][:]
+        
+        # interpolate to give radii
+        if radii is not None:
+            # convert to interpolation radii to arcsec
+            if isinstance(radii, u.Quantity):
+                radii = radii.to(u.arcsec).value
+            #else:
+            #    radii *= self.cutout.band_data.pix_scale.to(u.arcsec).value
+            radial_profile = interp1d(radii_as, radial_profile, fill_value = "extrapolate")(radii)
+            radii_as = radii
+        return radii_as, radial_profile
+    
+    def plot_radial_profile(
+        self: Self,
+        ax: plt.Axes,
+        radii: Optional[u.Quantity] = None,
+        log_y: bool = True,
+        annotate: bool = False,
+        overwrite: bool = False,
+        **kwargs: Dict[str, Any],
+    ) -> None:
+        radii_as, profile = self.calc_radial_profile(
+            radii = radii,
+            overwrite = overwrite,
+        )
+        if log_y:
+            profile = np.log10(profile)
+        ax.plot(radii_as, profile, **kwargs)
+        if annotate:
+            ax.legend(loc = "lower right")
+            ax.set_xlabel("Radius (arcsec)")
+            ax.set_ylabel("Radial Profile")
+
 
     @staticmethod
     def _make_eec(
@@ -691,13 +821,12 @@ class PSF_Cutout(PSF_Base):
             header = fits.Header(self_hdr),
             overwrite = True,
         )
-        breakpoint()
         return PSF_Cutout.from_fits(
             convolved_path,
             self.cutout.band_data.filt,
             pix_scale = self.cutout.band_data.pix_scale,
             size = self.cutout.cutout_size,
-            psf_out_dir = convolved_dir,
+            #psf_out_dir = convolved_dir,
             is_kernel = False,
             origin = "convolved",
         )

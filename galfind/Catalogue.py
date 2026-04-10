@@ -275,7 +275,7 @@ def open_galfind_cat(
             f"not a valid HDU extension in {cat_path}!"
         galfind_logger.warning(err_message)
         return None
-        #raise Exception(err_message)
+        
     return tab
 
 def open_galfind_hdr(cat_path: str, cat_type: str) -> Dict[str, str]:
@@ -1274,26 +1274,55 @@ class Catalogue(Catalogue_Base):
                     "sex_A_IMAGE",
                     update = False
                 )
-                [setattr(gal, "sex_A_IMAGE", A_image[self.data[0].filt_name]) for gal, A_image in zip(self, A_image_arr)]
-                A_image_as_arr = [{band_data.filt_name: kron_radius[band_data.filt_name] * A_image[band_data.filt_name] * band_data.pix_scale \
-                    for band_data in self.data} for kron_radius, A_image in zip(kron_radii, A_image_arr)]
-                [gal.load_property(A_image_as, "sex_A_IMAGE_AS") for gal, A_image_as in zip(self, A_image_as_arr)]
+                [
+                    setattr(gal, "sex_A_IMAGE", A_image[self.data[0].filt_name])
+                    for gal, A_image in zip(self, A_image_arr)
+                ]
+                A_image_as_arr = [
+                    {
+                        band_data.filt_name: kron_radius[band_data.filt_name] \
+                            * A_image[band_data.filt_name] \
+                            * band_data.pix_scale \
+                        for band_data in self.data
+                    } for kron_radius, A_image in zip(kron_radii, A_image_arr)
+                ]
+                [
+                    gal.load_property(A_image_as, "sex_A_IMAGE_AS")
+                    for gal, A_image_as in zip(self, A_image_as_arr)
+                ]
                 B_image_arr = self.load_band_properties_from_cat(
                     "B_IMAGE",
                     "sex_B_IMAGE",
                     update = False,
                 )
-                [setattr(gal, "sex_B_IMAGE", B_image[self.data[0].filt_name]) for gal, B_image in zip(self, B_image_arr)]
-                B_image_as_arr = [{band_data.filt_name: kron_radius[band_data.filt_name] * B_image[band_data.filt_name] * band_data.pix_scale \
-                    for band_data in self.data} for kron_radius, B_image in zip(kron_radii, B_image_arr)]
-                [gal.load_property(B_image_as, "sex_B_IMAGE_AS") for gal, B_image_as in zip(self, B_image_as_arr)]
+                [
+                    setattr(gal, "sex_B_IMAGE", B_image[self.data[0].filt_name])
+                    for gal, B_image in zip(self, B_image_arr)
+                ]
+                B_image_as_arr = [
+                    {
+                        band_data.filt_name: kron_radius[band_data.filt_name] \
+                            * B_image[band_data.filt_name] \
+                            * band_data.pix_scale \
+                        for band_data in self.data
+                    } for kron_radius, B_image in zip(kron_radii, B_image_arr)
+                ]
+                [
+                    gal.load_property(
+                        B_image_as,
+                        "sex_B_IMAGE_AS"
+                    ) for gal, B_image_as in zip(self, B_image_as_arr)
+                ]
                 theta_image_arr = self.load_band_properties_from_cat(
                     "THETA_IMAGE",
                     "sex_THETA_IMAGE",
                     multiply_factor = u.deg,
                     update = False,
                 )
-                [setattr(gal, "sex_THETA_IMAGE", theta_image[self.data[0].filt_name]) for gal, theta_image in zip(self, theta_image_arr)]
+                [
+                    setattr(gal, "sex_THETA_IMAGE", theta_image[self.data[0].filt_name])
+                    for gal, theta_image in zip(self, theta_image_arr)
+                ]
             except:
                 pass
             
@@ -1366,7 +1395,7 @@ class Catalogue(Catalogue_Base):
             )
             # load the same property from every available band
             # open catalogue with astropy
-            fits_cat = self.open_cat(cropped=True)
+            fits_cat = self.open_cat(cropped = True)
             if multiply_factor is None:
                 multiply_factor = {
                     filt.filt_name: 1.0 * u.dimensionless_unscaled
@@ -1426,8 +1455,7 @@ class Catalogue(Catalogue_Base):
         self,
         cat_colname: str,
         save_name: str,
-        multiply_factor: Union[u.Quantity, u.Magnitude] = 1.0
-        * u.dimensionless_unscaled,
+        multiply_factor: Union[u.Quantity, u.Magnitude] = 1.0 * u.dimensionless_unscaled,
         dest: str = "gal",
     ):
         assert dest in ["gal", "phot_obs"]
@@ -1437,7 +1465,7 @@ class Catalogue(Catalogue_Base):
             has_attr = hasattr(self[0].phot, save_name)
         if not has_attr:
             # open catalogue with astropy
-            fits_cat = self.open_cat(cropped=True)
+            fits_cat = self.open_cat(cropped = True)
             if cat_colname in fits_cat.colnames:
                 cat_property = np.array(fits_cat[cat_colname])
                 assert len(cat_property) == len(self)
@@ -1505,9 +1533,28 @@ class Catalogue(Catalogue_Base):
         self: Self,
         filt: Union[str, Filter],
         cutout_size: u.Quantity = 0.96 * u.arcsec,
+        native: bool = False,
+        overwrite: bool = False,
     ) -> List[Band_Cutout]:
-        band_data = self.data[filt.filt_name]
-        return [gal.make_band_cutout(band_data, cutout_size) for gal in self]
+        if native:
+            assert hasattr(self.data, "native"), \
+                galfind_logger.critical("Native data not available")
+            data = self.data.native
+        else:
+            data = self.data
+        band_data = data[filt.filt_name]
+        return [
+            gal.make_band_cutout(
+                band_data,
+                cutout_size,
+                overwrite = overwrite,
+            ) for gal in tqdm(
+                self,
+                desc="Making band cutouts",
+                total=len(self),
+                disable = galfind_logger.getEffectiveLevel() > logging.INFO,
+            )
+        ]
 
     def plot_cutouts(
         self: Self,
@@ -1555,7 +1602,7 @@ class Catalogue(Catalogue_Base):
         stacked_cutouts.plot(save_name=save_name)
 
     def make_RGBs(
-        self,
+        self: Self,
         cutout_size: u.Quantity = 0.96 * u.arcsec,
         rgb_bands: Dict[str, List[str]] = {
             "B": ["F090W"],
@@ -1715,7 +1762,7 @@ class Catalogue(Catalogue_Base):
     ) -> NDArray[float]:
         assert hasattr(self, "data"), \
             galfind_logger.critical(
-                f"{self.cat_name} does not have data loaded!"
+                f"{repr(self)} does not have data loaded!"
             )
         return self._calc_Vmax(
             self.data,

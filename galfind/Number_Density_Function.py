@@ -19,7 +19,7 @@ if TYPE_CHECKING:
         Property_Calculator,
         Mask_Selector,
     )
-    from .selection import Completeness
+    from .selection import Completeness, Completeness_2D
 try:
     from typing import Self, Type  # python 3.11+
 except ImportError:
@@ -440,7 +440,7 @@ class Number_Density_Function(Base_Number_Density_Function):
         x_origin: str = "phot_rest",
         z_step: float = 0.01,
         cv_origin: Union[str, None] = "Driver2010",
-        completeness: Optional[Catalogue_Completeness] = None,
+        completeness: Optional[Dict[str, Dict[str, Completeness_2D]]] = None,
         unmasked_area: Union[str, List[str], u.Quantity, Type[Mask_Selector]] = "selection",
         plot: bool = True,
         save: bool = True,
@@ -448,6 +448,9 @@ class Number_Density_Function(Base_Number_Density_Function):
         Vmax_method: str = "uniform_depth",
         n_Vmax_jobs: int = 1,
     ) -> Optional[Self]:
+        from . import Combined_Catalogue
+        if isinstance(cat, Combined_Catalogue):
+            plot = False
         # input assertions
         assert len(z_bin) == 2
         assert z_bin[0] < z_bin[1]
@@ -537,9 +540,9 @@ class Number_Density_Function(Base_Number_Density_Function):
             ]
             # calculate Vmax for each galaxy in catalogue within z bin
             z_bin_cat.calc_Vmax(
-                z_bin, 
-                aper_diam, 
-                SED_fit_code, 
+                z_bin,
+                aper_diam,
+                SED_fit_code,
                 z_step,
                 unmasked_area = unmasked_area,
                 Vmax_method = Vmax_method,
@@ -547,14 +550,14 @@ class Number_Density_Function(Base_Number_Density_Function):
             )
 
             if plot:
-                fig_axs_ = figs.make_phot_diagnostic_fig(len(z_bin_cat.filterset))
+                #overall_fig, fig_axs_ = figs.make_phot_diagnostic_fig(len(z_bin_cat.filterset))
                 z_bin_cat.plot_phot_diagnostics(
                     aper_diam, 
                     SED_arr = SED_fit_code,
                     zPDF_arr = SED_fit_code,
-                    fig_axs = fig_axs_
+                    #fig_axs = fig_axs_
                 )
-                plt.close(fig_axs_[0].figure)
+                #plt.close(fig_axs_[0].figure)
 
             Ngals = np.zeros(len(x_bins))
             phi = np.zeros(len(x_bins))
@@ -586,14 +589,14 @@ class Number_Density_Function(Base_Number_Density_Function):
 
                     # plot cutouts
                     if plot and Ngals[i] > 0:
-                        fig_axs_ = figs.make_phot_diagnostic_fig(len(z_bin_x_bin_cat.filterset))
+                        #fig_axs_ = figs.make_phot_diagnostic_fig(len(z_bin_x_bin_cat.filterset))
                         z_bin_x_bin_cat.plot_phot_diagnostics(
                             aper_diam, 
                             SED_arr = SED_fit_code,
                             zPDF_arr = SED_fit_code,
-                            fig_axs = fig_axs_,
+                            #fig_axs = fig_axs_,
                         )
-                        plt.close(fig_axs_[0].figure)
+                        #plt.close(fig_axs_[0].figure)
                         # plot histogram
                         hist_fig, hist_ax = plt.subplots()
                         z_bin_x_bin_cat.hist(x_calculator, hist_fig, hist_ax, from_pdf = True, save = False, overwrite = True, density = True)
@@ -618,42 +621,56 @@ class Number_Density_Function(Base_Number_Density_Function):
                     #         for gal in z_bin_x_bin_cat
                     #     ]
                     # )
-                    regions = np.unique([reg for Vmax in Vmax_arr for reg in Vmax.keys()])
-                    #detectable_gals = np.full(len(regions), Ngals[i])
+                    if isinstance(cat, Combined_Catalogue):
+                        cat_arr = cat.cat_arr
+                    else:
+                        cat_arr = [cat]
                     Vmax_reg_compl = []
-                    for region in regions:
-                        # TODO: FINISH THIS FOR MULTI-REGION SURVEYS
-                        Vmax = np.array([Vmax[region] for Vmax in Vmax_arr])
-                        keep_indices = Vmax != -1.0
-                        #Vmax = Vmax[keep_indices] # * u.Mpc ** 3
-                        if len(Vmax[keep_indices]) != Ngals[i]:
-                            galfind_logger.warning(
-                                f"{Ngals[i] - len(Vmax[keep_indices])} galaxies not detected in {region=}"
-                            )
-                            #detectable_gals[j] = len(Vmax[keep_indices])
-                        if completeness is None:
-                            compl_bin = np.ones(len(z_bin_x_bin_cat))
-                        else:
-                            # TODO: currently only works for Catalogue, not Combined_Catalogue
-                            compl_bin = completeness(z_bin_x_bin_cat, data = cat.data, depth_region = region)
-                        # try:
-                        #     compl_bin = compl_bin #[keep_indices]
-                        # except:
-                        #     breakpoint()
-                        assert len(compl_bin) == len(Vmax), \
-                            galfind_logger.critical(
-                                f"{len(compl_bin)=} != {len(Vmax)=} for {z_bin_x_bin_cat.crop_name}"
-                            )
-                    # import matplotlib.pyplot as plt
-                    # from scipy.interpolate import interp1d
-                    # fig, ax = plt.subplots()
-                    # ax.scatter(completeness.compl_arr[0].x_calculator(z_bin_x_bin_cat)[keep_indices], compl_bin, label = str(x_bin))
-                    # ax.plot(completeness.compl_arr[0].x, completeness.compl_arr[0].completeness, label = "Completeness")
-                    # ax.plot(completeness.compl_arr[0].x, interp1d(completeness.compl_arr[0].x, completeness.compl_arr[0].completeness)(completeness.compl_arr[0].x), label = "Interpolated Completeness")
-                    # ax.legend()
-                    # plt.savefig("test_compl_NEP.png")
-                        mean_compl_bin = np.mean(compl_bin)
-                        Vmax_reg_compl.append(Vmax * compl_bin)
+                    for cat_ in cat_arr:
+                        if completeness is not None:
+                            assert cat_.data.survey in completeness.keys(), \
+                                galfind_logger.critical(
+                                    f"{cat_.data.survey=} not in {completeness.keys()=}"
+                                )
+                        regions = np.unique([reg for Vmax in Vmax_arr for reg in Vmax[cat_.survey].keys()])
+                        #detectable_gals = np.full(len(regions), Ngals[i])
+                        for region in regions:
+                            # TODO: FINISH THIS FOR MULTI-REGION SURVEYS
+                            Vmax_ = np.array([Vmax[cat_.survey][region] for Vmax in Vmax_arr])
+                            keep_indices = Vmax_ != -1.0
+                            #Vmax = Vmax_[keep_indices] # * u.Mpc ** 3
+                            if len(Vmax_[keep_indices]) != Ngals[i]:
+                                galfind_logger.warning(
+                                    f"{Ngals[i] - len(Vmax_[keep_indices])} galaxies not detected in {region=}"
+                                )
+                                #detectable_gals[j] = len(Vmax_[keep_indices])
+                            if completeness is None:
+                                compl_bin = np.ones(len(z_bin_x_bin_cat))
+                            else:
+                                assert region in completeness[cat_.survey].keys(), \
+                                    galfind_logger.critical(
+                                        f"{region=} not in {completeness[cat_.survey].keys()=}"
+                                    )
+                                redshifts = np.zeros(len(z_bin_x_bin_cat))
+                                xvals = np.zeros(len(z_bin_x_bin_cat))
+                                for k, gal in enumerate(z_bin_x_bin_cat):
+                                    redshifts[k] = gal.aper_phot[aper_diam].SED_results[SED_fit_code.label].z.value
+                                    xvals[k] = gal.aper_phot[aper_diam].SED_results[SED_fit_code.label].phot_rest.properties[x_calculator.name].value
+                                compl_bin = completeness[cat_.survey][region](redshifts, xvals)
+                            assert len(compl_bin) == len(Vmax_), \
+                                galfind_logger.critical(
+                                    f"{len(compl_bin)=} != {len(Vmax_)=} for {z_bin_x_bin_cat.crop_name}"
+                                )
+                        # import matplotlib.pyplot as plt
+                        # from scipy.interpolate import interp1d
+                        # fig, ax = plt.subplots()
+                        # ax.scatter(completeness.compl_arr[0].x_calculator(z_bin_x_bin_cat)[keep_indices], compl_bin, label = str(x_bin))
+                        # ax.plot(completeness.compl_arr[0].x, completeness.compl_arr[0].completeness, label = "Completeness")
+                        # ax.plot(completeness.compl_arr[0].x, interp1d(completeness.compl_arr[0].x, completeness.compl_arr[0].completeness)(completeness.compl_arr[0].x), label = "Interpolated Completeness")
+                        # ax.legend()
+                        # plt.savefig("test_compl_NEP.png")
+                            mean_compl_bin = np.mean(compl_bin)
+                            Vmax_reg_compl.append(Vmax_ * compl_bin)
 
                     Vmax_reg_compl = np.array(Vmax_reg_compl)
                     Vmax_tot = np.clip(Vmax_reg_compl, 0.0, None).sum(axis = 0) #np.sum(Vmax_reg_compl, axis = 1)
@@ -696,7 +713,6 @@ class Number_Density_Function(Base_Number_Density_Function):
                         )
                     else:
                         raise NotImplementedError
-            #raise NotImplementedError
             number_density_func = cls(
                 x_calculator.name,
                 x_bins,
@@ -743,8 +759,8 @@ class Number_Density_Function(Base_Number_Density_Function):
         else:
             Vmax_method_str = f"/{Vmax_method}"
         save_path = config['NumberDensityFunctions']['NUMBER_DENSITY_FUNC_DIR'] + \
-            f"/Data/{SED_fit_params_key}/{x_name}/" + \
-            f"{origin_surveys}{Vmax_method_str}/{crop_name}{compl_name}{ext}"
+            f"/Data/{SED_fit_params_key}/{x_name}/{origin_surveys}" + \
+            f"{Vmax_method_str}/{crop_name}{compl_name}{ext}"
         funcs.make_dirs(save_path)
         return save_path
 

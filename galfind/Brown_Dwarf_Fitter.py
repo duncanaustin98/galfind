@@ -108,6 +108,7 @@ class Template_Fitter(SED_code):
         save_SEDs: bool = True,
         save_PDFs: bool = True,
         overwrite: bool = False,
+        verbose: bool = True,
         **kwargs: Dict[str, Any],
     ) -> NoReturn:
         out_path = self._get_out_paths(cat, aper_diam)[1]
@@ -133,6 +134,7 @@ class Template_Fitter(SED_code):
                 facilities_to_search = facilities_to_search,
                 libraries = self.SED_fit_params["templates"],
                 compile_bands = bands,
+                verbose = verbose,
             )
             starfit.fit_catalog(
                 photometry_function = self._load_phot,
@@ -145,11 +147,11 @@ class Template_Fitter(SED_code):
                     "incl_units": True,
                     "input_filterset": fit_instrument_filterset,
                 },
-                sys_err = None, 
+                sys_err = None,
                 filter_mask = None,
                 subset = None,
             )
-            self.starfit = starfit
+            #self.starfit = starfit
             tab = starfit.make_cat()
             tab["ID"] = np.array(cat.ID)
             # save as a .fits file

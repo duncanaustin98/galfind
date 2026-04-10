@@ -12,6 +12,7 @@ import h5py
 from astropy.io import fits
 from pathlib import Path
 from astropy.utils.masked import Masked
+from photutils.aperture import CircularAperture
 from scipy import ndimage
 from tqdm import tqdm
 import logging
@@ -805,7 +806,11 @@ class Region_Selector(Data_Selector, ABC):
         invert: bool = True,
         **kwargs: Dict[str, Any],
     ) -> u.Quantity:
-        mask = fits.open(self.get_mask_path(data), mode = "readonly", ignore_missing_simple = True)[self.name].data.astype(bool)
+        mask = fits.open(
+            self.get_mask_path(data),
+            mode = "readonly",
+            ignore_missing_simple = True
+        )[self.name].data.astype(bool)
         if invert:
             mask = np.logical_not(mask)
         galfind_logger.info(
@@ -850,7 +855,7 @@ class Region_Selector(Data_Selector, ABC):
                 cat.data.regions = []
             cat.data.region_selector = self
         for name in [self.name, self.fail_name]:
-            if name not in cat.region:
+            if name not in cat.regions:
                 cat.regions.append(name)
                 if hasattr(cat, "data"):
                     cat.data.regions.append(name)
@@ -1457,7 +1462,136 @@ class Colour_Selector(Photometry_Selector):
             self.kwargs["bluer_or_redder"] == "bluer") or \
             (colour > self.kwargs["colour_val"] and \
             self.kwargs["bluer_or_redder"] == "redder")
+
+
+class Compactness_Selector(Data_Selector):
+
+    def __init__(
+        self: Self,
+        #aper_diam: u.Quantity,
+        filt_name: str,
+        compare_radii: u.Quantity,
+        compactness_lim: Union[int, float],
+        psf_normed: bool = True,
+    ):
+        kwargs = {
+            "filt_name": filt_name,
+            "compare_radii": compare_radii,
+            "compactness_lim": compactness_lim,
+            "psf_normed": psf_normed,
+        }
+        super().__init__(**kwargs)
+
+    @property
+    def _selection_name(self) -> str:
+        name = f"compact_{self.kwargs['filt_name']}_" + \
+            f"r={self.kwargs['compare_radii'][1].to(u.arcsec).value:.2f}/" + \
+            f"{self.kwargs['compare_radii'][0].to(u.arcsec).value:.2f}as" + \
+            f"<{self.kwargs['compactness_lim']:.2f}"
+        if self.kwargs["psf_normed"]:
+            name += "*psf"
+        return name
+
+    @property
+    def _include_kwargs(self) -> List[str]:
+        return ["filt_name", "compare_radii", "compactness_lim", "psf_normed"]
+
+    def _assertions(self: Self) -> bool:
+        try:
+            assertions = []
+            assertions.extend([isinstance(self.kwargs["filt_name"], str)])
+            assertions.extend([self.kwargs["filt_name"] in json.loads(config.get("Other", "ALL_BANDS"))])
+            assertions.extend([isinstance(self.kwargs["compare_radii"], u.Quantity)])
+            assertions.extend([radii > 0 * u.arcsec for radii in self.kwargs["compare_radii"]])
+            assertions.extend([len(self.kwargs["compare_radii"]) == 2])
+            assertions.extend([self.kwargs["compare_radii"][0] < self.kwargs["compare_radii"][1]])
+            assertions.extend([isinstance(self.kwargs["compactness_lim"], (int, float))])
+            assertions.extend([isinstance(self.kwargs["psf_normed"], bool)])
+            passed = all(assertions)
+        except:
+            passed = False
+        return passed
     
+    def _failure_criteria(
+        self: Self,
+        gal: Galaxy,
+        *args,
+        **kwargs
+    ) -> bool:
+        try:
+            failed = self.kwargs["filt_name"] not in \
+                gal.aper_phot[list(gal.aper_phot.keys())[0]].filterset.filt_names
+        except:
+            failed = True
+        return failed
+
+    def _selection_criteria(
+        self: Self,
+        gal: Galaxy,
+        *args,
+        **kwargs
+    ) -> bool:
+        large_radii_as = self.kwargs["compare_radii"][1].to(u.arcsec).value
+        cutout_label = f"{self.kwargs['filt_name']}_" + \
+            f"{(large_radii_as * 2):.2f}as_native"
+        assert cutout_label in gal.cutouts.keys(), \
+            galfind_logger.critical(
+                f"{cutout_label=} not found in {gal.cutouts.keys()}"
+            )
+        cutout = gal.cutouts[cutout_label]
+        flux_ratio = self._compute_flux_ratio(cutout)
+        if self.kwargs["psf_normed"]:
+            assert cutout.band_data.psf is not None, \
+                galfind_logger.critical(
+                    f"PSF not found for {cutout.band_data}!"
+                )
+            psf_flux_ratio = self._compute_flux_ratio(cutout.band_data.psf.cutout)
+            return flux_ratio < self.kwargs["compactness_lim"] * psf_flux_ratio
+        else:
+            return flux_ratio < self.kwargs["compactness_lim"]
+
+    def _compute_flux_ratio(
+        self: Self,
+        cutout: Band_Cutout,
+    ) -> float:
+        pix_scale = cutout.band_data.pix_scale
+        # open band cutout and compute the compactness
+        sci = cutout.band_data.load_im()[0]
+        # find center of cutout using centroid_com
+        x0, y0 = sci.shape[1] / 2, sci.shape[0] / 2
+        # make circular apertures with radii rad_1 and rad_2
+        rad_pix = (self.kwargs["compare_radii"] / pix_scale).to(u.dimensionless_unscaled).value
+        aper_1 = CircularAperture((x0, y0), r = rad_pix[0])
+        aper_2 = CircularAperture((x0, y0), r = rad_pix[1])
+        # compute flux in each aperture
+        flux_1 = aper_1.do_photometry(sci)[0][0]
+        flux_2 = aper_2.do_photometry(sci)[0][0]
+        # compute flux ratio
+        flux_ratio = flux_2 / flux_1
+        return flux_ratio
+
+    def _assert_cat(self: Self, cat: Catalogue) -> None:
+        if isinstance(self.kwargs["filt_name"], str):
+            assert (self.kwargs["filt_name"] in cat.filterset.filt_names), \
+                galfind_logger.critical(
+                    f"{self.kwargs['filt_name']} not in {cat.filterset.filt_names}."
+                )
+        super()._assert_cat(cat)
+    
+    def _call_cat(
+        self: Self,
+        cat: Catalogue,
+        return_copy: bool = True,
+        *args,
+        **kwargs,
+    ) -> Optional[Catalogue]:
+        cat.make_band_cutouts(
+            filt = cat.filterset[self.kwargs["filt_name"]],
+            cutout_size = np.round(self.kwargs["compare_radii"][1] * 2, 2).to(u.arcsec),
+            native = True,
+        )
+        return super()._call_cat(cat, return_copy, *args, **kwargs)
+
 
 class Min_Band_Selector(Data_Selector):
 
@@ -1634,7 +1768,7 @@ class Min_Unmasked_Band_Selector(Mask_Selector):
         **kwargs: Dict[str, Any],
     ) -> u.Quantity:
         # add masks
-        breakpoint()
+        #breakpoint()
         data_shapes = [band_data.data_shape for band_data in data]
         assert all(data_shape == data_shapes[0] for data_shape in data_shapes), \
             galfind_logger.critical(
@@ -2204,57 +2338,64 @@ class Unmasked_Bluewards_Lya_Selector(Redshift_Selector, Mask_Selector):
         invert: bool = True,
         **kwargs: Dict[str, Any],
     ) -> u.Quantity:
-        assert "z" in kwargs.keys(), \
-            galfind_logger.critical(
-                "Redshift must be provided to load the mask."
-            )
-        z = kwargs["z"]
-        assert isinstance(z, float), \
-            galfind_logger.critical(
-                f"'z' must be a float, not {type(z)}."
-            )
-        zbins = self.extract_zbins(data)
-        # choose zbin which contains the redshift
-        zbin = [zbin for zbin in zbins if zbin[0] <= z < zbin[1]]
-        assert len(zbin) == 1, \
-            galfind_logger.critical(
-                f"Redshift {z} not in any zbin: {zbins}."
-            )
-        zbin = zbin[0]
-        # determine bands bluewards of Lya
-        from .Emission_lines import line_diagnostics
-        # get array of band_data for correct bands bluewards of Lya
-        bluewards_filt_names = [
-            filt.filt_name for filt in data.filterset \
-            if filt.WavelengthUpper50 < (1.0 + z) * line_diagnostics["Lya"]["line_wav"]
-            and filt.filt_name not in self.kwargs["ignore_bands"]
-        ][-self.kwargs['min_bands']:]
+        try:
+            assert "z" in kwargs.keys(), \
+                galfind_logger.critical(
+                    "Redshift must be provided to load the mask."
+                )
+            z = kwargs["z"]
+            assert isinstance(z, float), \
+                galfind_logger.critical(
+                    f"'z' must be a float, not {type(z)}."
+                )
+            zbins = self.extract_zbins(data)
+            # choose zbin which contains the redshift
+            zbin = [zbin for zbin in zbins if zbin[0] <= z < zbin[1]]
+            assert len(zbin) == 1, \
+                galfind_logger.critical(
+                    f"Redshift {z} not in any zbin: {zbins}."
+                )
+            zbin = zbin[0]
+            # determine bands bluewards of Lya
+            from .Emission_lines import line_diagnostics
+            # get array of band_data for correct bands bluewards of Lya
+            bluewards_filt_names = [
+                filt.filt_name for filt in data.filterset \
+                if filt.WavelengthUpper50 < (1.0 + z) * line_diagnostics["Lya"]["line_wav"]
+                and filt.filt_name not in self.kwargs["ignore_bands"]
+            ][-self.kwargs['min_bands']:]
 
-        # load mask from each bluewards band
-        masks = [data[filt_name].load_mask("MASK")[0].astype(bool) for filt_name in bluewards_filt_names]
+            # load mask from each bluewards band
+            masks = [data[filt_name].load_mask("MASK")[0].astype(bool) for filt_name in bluewards_filt_names]
 
-        # also ensure that first Lya bluewards band is unmasked
-        first_Lya_bluewards_band = funcs.get_first_bluewards_band(
-            z,
-            data.filterset,
-            line_diagnostics["Lya"]["line_wav"],
-            #self.kwargs["ignore_bands"],
-        )
-        if first_Lya_bluewards_band is not None:
-            first_Lya_bluewards_mask = data[first_Lya_bluewards_band].load_mask("MASK")[0].astype(bool)
-            masks.append(first_Lya_bluewards_mask)
-
-        assert all(mask.shape == masks[0].shape for mask in masks), \
-            galfind_logger.critical(
-                f"Mask shapes do not match: {[mask.shape for mask in masks]}"
+            # also ensure that first Lya bluewards band is unmasked
+            first_Lya_bluewards_band = funcs.get_first_bluewards_band(
+                z,
+                data.filterset,
+                line_diagnostics["Lya"]["line_wav"],
+                #self.kwargs["ignore_bands"],
             )
-        # combine masks
-        combined_mask = np.logical_and.reduce(masks)
-        if not invert:
-            combined_mask = np.logical_not(combined_mask)
-        galfind_logger.info(
-            f"Loaded {repr(self)} mask from {data.survey}!"
-        )
+            if first_Lya_bluewards_band is not None:
+                first_Lya_bluewards_mask = data[first_Lya_bluewards_band].load_mask("MASK")[0].astype(bool)
+                masks.append(first_Lya_bluewards_mask)
+
+            assert all(mask.shape == masks[0].shape for mask in masks), \
+                galfind_logger.critical(
+                    f"Mask shapes do not match: {[mask.shape for mask in masks]}"
+                )
+            # combine masks
+            combined_mask = np.logical_and.reduce(masks)
+            if not invert:
+                combined_mask = np.logical_not(combined_mask)
+            galfind_logger.info(
+                f"Loaded {repr(self)} mask from {data.survey}!"
+            )
+        except Exception as e:
+            galfind_logger.error(
+                f"Error loading {repr(self)} mask: {e}"
+            )
+            breakpoint()
+            raise e
         return combined_mask
 
     def extract_zbins(
@@ -2379,57 +2520,65 @@ class Unmasked_Redwards_Lya_Selector(Redshift_Selector, Mask_Selector):
         invert: bool = True,
         **kwargs: Dict[str, Any],
     ) -> u.Quantity:
-        assert "z" in kwargs.keys(), \
-            galfind_logger.critical(
-                "Redshift must be provided to load the mask."
-            )
-        z = kwargs["z"]
-        assert isinstance(z, float), \
-            galfind_logger.critical(
-                f"'z' must be a float, not {type(z)}."
-            )
-        zbins = self.extract_zbins(data)
-        # choose zbin which contains the redshift
-        zbin = [zbin for zbin in zbins if zbin[0] <= z < zbin[1]]
-        assert len(zbin) == 1, \
-            galfind_logger.critical(
-                f"Redshift {z} in zbins: {zbin}."
-            )
-        zbin = zbin[0]
-        # determine bands bluewards of Lya
-        from .Emission_lines import line_diagnostics
-        # get array of band_data for correct bands bluewards of Lya
-        redwards_filt_names = [
-            filt.filt_name for filt in data.filterset \
-            if filt.WavelengthLower50 > (1.0 + z) * line_diagnostics["Lya"]["line_wav"]
-            and filt.filt_name not in self.kwargs["ignore_bands"]
-        ]
-        if self.kwargs["min_bands"] not in ["all", "any"]:
-            redwards_filt_names = redwards_filt_names[:self.kwargs['min_bands']]
-        # load mask from each redwards band
-        masks = [data[filt_name].load_mask("MASK")[0].astype(bool) for filt_name in redwards_filt_names]
+        try:
+            assert "z" in kwargs.keys(), \
+                galfind_logger.critical(
+                    "Redshift must be provided to load the mask."
+                )
+            z = kwargs["z"]
+            assert isinstance(z, float), \
+                galfind_logger.critical(
+                    f"'z' must be a float, not {type(z)}."
+                )
+            zbins = self.extract_zbins(data)
+            # choose zbin which contains the redshift
+            zbin = [zbin for zbin in zbins if zbin[0] <= z < zbin[1]]
+            assert len(zbin) == 1, \
+                galfind_logger.critical(
+                    f"Redshift {z} in zbins: {zbin}."
+                )
+            zbin = zbin[0]
+            # determine bands bluewards of Lya
+            from .Emission_lines import line_diagnostics
+            # get array of band_data for correct bands bluewards of Lya
+            redwards_filt_names = [
+                filt.filt_name for filt in data.filterset \
+                if filt.WavelengthLower50 > (1.0 + z) * line_diagnostics["Lya"]["line_wav"]
+                and filt.filt_name not in self.kwargs["ignore_bands"]
+            ]
+            if self.kwargs["min_bands"] not in ["all", "any"]:
+                redwards_filt_names = redwards_filt_names[:self.kwargs['min_bands']]
+            # load mask from each redwards band
+            masks = [data[filt_name].load_mask("MASK")[0].astype(bool) for filt_name in redwards_filt_names]
 
-        # also ensure that first Lya redwards band is unmasked
-        first_Lya_redwards_band = funcs.get_first_redwards_band(
-            z,
-            data.filterset,
-            line_diagnostics["Lya"]["line_wav"],
-            #self.kwargs["ignore_bands"],
-        )
-        if first_Lya_redwards_band is not None:
-            first_Lya_redwards_mask = data[first_Lya_redwards_band].load_mask("MASK")[0].astype(bool)
-            masks.append(first_Lya_redwards_mask)
-
-        assert all(mask.shape == masks[0].shape for mask in masks), \
-            galfind_logger.critical(
-                f"Mask shapes do not match: {[mask.shape for mask in masks]}"
+            # also ensure that first Lya redwards band is unmasked
+            first_Lya_redwards_band = funcs.get_first_redwards_band(
+                z,
+                data.filterset,
+                line_diagnostics["Lya"]["line_wav"],
+                #self.kwargs["ignore_bands"],
             )
-        combined_mask = np.logical_and.reduce(masks)
-        if not invert:
-            combined_mask = np.logical_not(combined_mask)
-        galfind_logger.info(
-            f"Loaded {repr(self)} mask from {data.survey}!"
-        )
+            if first_Lya_redwards_band is not None:
+                first_Lya_redwards_mask = data[first_Lya_redwards_band].load_mask("MASK")[0].astype(bool)
+                masks.append(first_Lya_redwards_mask)
+
+            assert all(mask.shape == masks[0].shape for mask in masks), \
+                galfind_logger.critical(
+                    f"Mask shapes do not match: {[mask.shape for mask in masks]}"
+                )
+            combined_mask = np.logical_and.reduce(masks)
+            if not invert:
+                combined_mask = np.logical_not(combined_mask)
+            galfind_logger.info(
+                f"Loaded {repr(self)} mask from {data.survey}!"
+            )
+        except Exception as e:
+            galfind_logger.critical(
+                f"Error loading {repr(self)} mask: {e}"
+            )
+            combined_mask = None
+            breakpoint()
+            raise e
         return combined_mask
     
     def extract_zbins(
@@ -3845,12 +3994,21 @@ class EPOCHS_Selector(Multiple_SED_fit_Selector):
         simulated: bool = False,
         forced_phot_band: List[str] = ["F277W", "F356W", "F444W"],
         ignore_bands: Optional[List[str]] = ["F070W", "F850LP"],
+        sample: str = "robust",
     ):
+        assert sample in ["good", "robust"], \
+            galfind_logger.critical(
+                f"{sample=} not valid. Must be 'good' or 'robust'."
+            )
+        if sample == "robust":
+            chi_sq_lim = 3.0
+        else: # sample == "good"
+            chi_sq_lim = 6.0
         selectors = [
             Bluewards_Lya_Non_Detect_Selector(aper_diam, SED_fitter, SNR_lim = 2.0, ignore_bands = ignore_bands),
             Redwards_Lya_Detect_Selector(aper_diam, SED_fitter, SNR_lims = [5.0, 5.0], widebands_only = True, ignore_bands = ignore_bands),
             Redwards_Lya_Detect_Selector(aper_diam, SED_fitter, SNR_lims = 2.0, widebands_only = True, ignore_bands = ignore_bands),
-            Chi_Sq_Lim_Selector(aper_diam, SED_fitter, chi_sq_lim = 3.0, reduced = True),
+            Chi_Sq_Lim_Selector(aper_diam, SED_fitter, chi_sq_lim = chi_sq_lim, reduced = True),
             Chi_Sq_Diff_Selector(aper_diam, SED_fitter, chi_sq_diff = 4.0, dz = 0.5, lowz_zmax_arr = [4.0, 6.0]),
             Robust_zPDF_Selector(aper_diam, SED_fitter, integral_lim = 0.6, dz_over_z = 0.1),
         ]
@@ -3876,6 +4034,8 @@ class EPOCHS_Selector(Multiple_SED_fit_Selector):
             ])
         #lowz_name = "_lowz" if allow_lowz else ""
         selection_name = "EPOCHS" #{lowz_name}"
+        if sample == "good":
+            selection_name += "_good"
         super().__init__(aper_diam, SED_fitter, selectors, selection_name = selection_name)
 
 # Catalogue Level Selection functions
@@ -3951,8 +4111,7 @@ class Star_Selector(Data_Selector):
         band_data: Band_Data,
     ):
         self.band_data = band_data
-        kwargs = {
-        }
+        kwargs = {}
         super().__init__(**kwargs)
 
     @property

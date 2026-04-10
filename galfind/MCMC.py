@@ -379,7 +379,7 @@ class Base_MCMC_Fitter(ABC):
         x_arr: Optional[NDArray[float]] = None,
         plot_kwargs: Dict[str, Any] = {},
         fill_between_kwargs: Dict[str, Any] = {},
-        offset: float = 0.0,
+        xoff: float = 0.0,
         **kwargs: Dict[str, Any],
     ) -> None: #nsamples = 1_000, plot_med = False):
         
@@ -403,9 +403,8 @@ class Base_MCMC_Fitter(ABC):
         if x_arr is None:
             x_arr = np.linspace(np.min(self.x_data), np.max(self.x_data), 100)
         l1_chains, med_chains, u1_chains = self._get_plot_chains(x_arr = x_arr, log_data = log_data, **kwargs)
-        x_arr += offset
-        ax.plot(x_arr, med_chains, **def_plot_kwargs)
-        ax.fill_between(x_arr, l1_chains, u1_chains, **def_fill_between_kwargs)
+        ax.plot(x_arr - xoff, med_chains, **def_plot_kwargs)
+        ax.fill_between(x_arr - xoff, l1_chains, u1_chains, **def_fill_between_kwargs)
         galfind_logger.info("Plotting MCMC fit")
         return x_arr, med_chains, l1_chains, u1_chains
 
@@ -1252,6 +1251,7 @@ class Linear_Fitter(MCMC_Fitter):
         plot_kwargs: Dict[str, Any] = {},
         fill_between_kwargs: Dict[str, Any] = {},
         scatter_kwargs: Dict[str, Any] = {},
+        xoff: float = 0.0,
         **kwargs: Dict[str, Any],
     ) -> None:
         if plot_scatter:
@@ -1290,7 +1290,7 @@ class Linear_Fitter(MCMC_Fitter):
                     err_message = f"Unknown {self.scatter_type=}, cannot plot!"
                     galfind_logger.warning(err_message)
                 #ax.plot(x_arr, med_chains, color = colour, zorder = 200, label = label)
-                ax.fill_between(x_arr, l1_chains_scat, u1_chains_scat, **def_scatter_kwargs)
+                ax.fill_between(x_arr - xoff, l1_chains_scat, u1_chains_scat, **def_scatter_kwargs)
         else:
             galfind_logger.info("Not plotting scatter of MCMC fit")
         
@@ -1302,6 +1302,7 @@ class Linear_Fitter(MCMC_Fitter):
             #colour = colour,
             plot_kwargs = plot_kwargs,
             fill_between_kwargs = fill_between_kwargs,
+            xoff = xoff,
         )
         if plot_scatter:
             return x_arr, med_chains, l1_chains, u1_chains, l1_chains_scat, u1_chains_scat
