@@ -93,6 +93,7 @@ class Galaxy:
         sky_coord: SkyCoord, 
         aper_phot: Dict[u.Quantity, Photometry_obs],
         selection_flags: Optional[Dict[u.Quantity, Dict[str, bool]]] = None,
+        selection_kwargs: Optional[Dict[u.Quantity, Dict[str, Dict[str, Any]]]] = None,
         cat_filterset: Optional[Multiple_Filter] = None,
         survey: Optional[str] = None,
         simulated: bool = False,
@@ -103,6 +104,9 @@ class Galaxy:
         if selection_flags is None:
             selection_flags = {}
         self.selection_flags = selection_flags
+        if selection_kwargs is None:
+            selection_kwargs = {}
+        self.selection_kwargs = selection_kwargs
         self.cat_filterset = cat_filterset
         self.survey = survey
         self.simulated = simulated
@@ -154,6 +158,9 @@ class Galaxy:
            return self.sky_coord.dec.degree * u.deg
         if property_name in self.selection_flags:
             return self.selection_flags[property_name]
+        elif property_name.split('__')[0] in self.selection_kwargs and \
+                property_name.split('__')[1] in self.selection_kwargs[property_name.split('__')[0]]:
+            return self.selection_kwargs[property_name.split('__')[0]][property_name.split('__')[1]]
         else:
             # if property_name not in [
             #     "__array_struct__",
@@ -1214,6 +1221,7 @@ class Galaxy:
                     self.sky_coord,
                     {aper_diam: test_phot_obs},
                     selection_flags = {},
+                    selection_kwargs = {},
                 )
                 # run selection methods on new galaxy
                 [selector(test_gal, return_copy = False) for selector in Vmax_crops]
@@ -1512,6 +1520,7 @@ class Galaxy:
                 self.sky_coord,
                 {aper_diam: test_phot_obs},
                 selection_flags = {},
+                selection_kwargs = {},
             )
             # run selection methods on new galaxy
             [

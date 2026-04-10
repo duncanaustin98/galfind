@@ -375,7 +375,7 @@ def galfind_selection_labels(
     **kwargs
 ) -> List[str]:
     # load selection names dict from header
-    return [name for name in tab.colnames if name not in "NUMBER"]
+    return [name for name in tab.colnames if tab[name].dtype in (bool, np.bool_)]
 
 def galfind_snr_labels(
     filterset: Multiple_Filter,
@@ -516,7 +516,7 @@ class Catalogue_Creator:
             sky_coords = self.load_skycoords(cropped)
             phot, phot_err = self.load_phot(cropped)
             depths = self.load_depths(cropped)
-            selection_flags = self.load_selection_flags(cropped)
+            selection_flags_arr, selection_kwargs_arr = self.load_selection_flags_kwargs(cropped)
             filterset_arr = self.load_gal_filtersets(length = len(IDs), cropped = cropped)
             SED_results = {}
             phot_obs_arr = [
@@ -547,12 +547,13 @@ class Catalogue_Creator:
                     ID,
                     sky_coord,
                     phot_obs,
-                    flags,
-                    self.filterset,
+                    selection_flags = selection_flags,
+                    selection_kwargs = selection_kwargs,
+                    cat_filterset = self.filterset,
                     survey = self.survey,
                     simulated = self.simulated
-                ) for ID, sky_coord, phot_obs, flags in 
-                zip(IDs, sky_coords, phot_obs_arr, selection_flags)
+                ) for ID, sky_coord, phot_obs, selection_flags, selection_kwargs in 
+                zip(IDs, sky_coords, phot_obs_arr, selection_flags_arr, selection_kwargs_arr)
             ]
         else:
             galfind_logger.info(
@@ -615,6 +616,20 @@ class Catalogue_Creator:
         if self.apply_gal_instr_mask:
             self.make_gal_instr_mask()
 
+    @staticmethod
+    def _get_selection_kwarg_colnames(selector: Type[Selector]) -> List[str]:
+        from galfind import Multiple_Selector
+        kwarg_colnames = []
+        if isinstance(selector, funcs.all_subclasses(Multiple_Selector)):
+            for sub_selector in selector:
+                kwarg_colnames.extend(Catalogue_Creator._get_selection_kwarg_colnames(sub_selector))
+        else:
+            kwarg_colnames.extend([
+                f"{selector.name}__{kwarg_name}"
+                for kwarg_name, kwarg_dtype in zip(*selector.select_kwarg_names_dtypes)
+            ])
+        return kwarg_colnames
+
     def _get_crop_mask(self: Self) -> Optional[NDArray[bool]]:
         tab = self.open_cat(self.cat_path, "SELECTION")
         if tab is None:
@@ -625,7 +640,9 @@ class Catalogue_Creator:
             self._crops_to_perform = []
             keep_arr = []
             for selector in self.crops:
-                if selector.name in tab.colnames:
+                # iterate through selectors, appending all kwarg colnames
+                kwarg_colnames = self._get_selection_kwarg_colnames(selector)
+                if selector.name in tab.colnames and all([kwarg_colname in tab.colnames for kwarg_colname in kwarg_colnames]):
                     keep_arr.extend([np.array(tab[selector.name]).astype(bool)])
                     galfind_logger.info(
                         f"Catalogue cropped by {selector.name}"
@@ -742,7 +759,10 @@ class Catalogue_Creator:
             )
             return {aper_diam: list(itertools.repeat(None, len(tab))) for aper_diam in self.aper_diams}
         
-    def load_selection_flags(self, cropped: bool = True) -> List[Dict[str, bool]]:
+    def load_selection_flags_kwargs(
+        self: Self,
+        cropped: bool = True,
+    ) -> Tuple[List[Dict[str, bool]], List[Dict[str, Dict[str, Any]]]]:
         tab = self.load_tab("SELECTION", cropped)
         if self.load_selection_func is not None and self.get_selection_labels is not None and tab is not None:
             select_labels = self.get_selection_labels(tab, **self.load_selection_kwargs)
@@ -750,18 +770,38 @@ class Catalogue_Creator:
             # ensure all selection dict values are the same length as the catalogue
             assert all(len(selection) == len(tab) for selection in select_dict.values()), \
                 galfind_logger.critical("Not all selection values are the same length as the catalogue!")
-            gal_selection = [{key: bool(values[i]) for key, values in select_dict.items()} for i in range(len(tab))]
-            return gal_selection
-        elif tab is None:
-            galfind_logger.warning(
-                "selection tab is None!"
-            )
-            tab = self.load_tab("ID", cropped)
+            selection_flags = [{key: bool(values[i]) for key, values in select_dict.items()} for i in range(len(tab))]
+            # TODO: Generalize for non galfind-like tables
+            selection_kwarg_colnames = {
+                select_label: [
+                    colname.split('__')[1] for colname in tab.colnames
+                    if colname.startswith(select_label) and not tab[colname].dtype in (bool, np.bool_)
+                ] for select_label in select_labels
+            }
+            selection_kwargs = [
+                {
+                    select_label: {
+                        kwarg_name: tab[f"{select_label}__{kwarg_name}"][i]
+                        for kwarg_name in selection_kwarg_colnames[select_label]
+                        if tab[f"{select_label}__{kwarg_name}"].dtype not in (bool, np.bool_)
+                    } for select_label in select_labels
+                } for i in range(len(tab))
+            ]
+            breakpoint()
         else:
-            galfind_logger.warning(
-                "Selection function not provided!"
-            )
-        return list(itertools.repeat(None, len(tab)))
+            selection_flags = list(itertools.repeat(None, len(tab)))
+            selection_kwargs = list(itertools.repeat(None, len(tab)))
+            if tab is None:
+                galfind_logger.warning(
+                    "selection tab is None!"
+                )
+                tab = self.load_tab("ID", cropped)
+            else:
+                galfind_logger.warning(
+                    "Selection function not provided!"
+                )
+        
+        return selection_flags, selection_kwargs
 
     # current bottleneck
     def make_gal_instr_mask(
@@ -1132,9 +1172,10 @@ class Catalogue(Catalogue_Base):
         self,
         property_name: str,
         hdu: str = "OBJECTS",
+        dtype: Type = object,
         overwrite: bool = False,
     ) -> NoReturn:
-        assert len(property_name) < 68, \
+        assert len(property_name) <= 68, \
             galfind_logger.critical(
                 f"{len(property_name)=}>68. Please shorten '{property_name}'" + \
                 "to avoid FITS column name length limits."
@@ -1146,7 +1187,7 @@ class Catalogue(Catalogue_Base):
         else:
             raise NotImplementedError
         # TODO: Need to attach self.open_cat to catalogue_creator.open_cat
-        append_tab = self.open_cat(cropped=False, hdu=hdu)
+        append_tab = self.open_cat(cropped = False, hdu = hdu)
         # append to .fits table only if not already
         if append_tab is not None:
             if property_name in append_tab.colnames:
@@ -1165,7 +1206,7 @@ class Catalogue(Catalogue_Base):
         # make new table with calculated properties
         gal_IDs = getattr(self, "ID")
         # TODO: get an array of properties to save (NOT an array in all cases!)
-        gal_properties = getattr(self, property_name)
+        gal_properties = np.array(getattr(self, property_name)).astype(dtype)
         assert len(gal_properties) == len(gal_IDs)
         # mask any NaN values
         # i = 0
@@ -1362,7 +1403,7 @@ class Catalogue(Catalogue_Base):
             for filt in self.filterset:
                 if filt_names is None or filt.filt_name in filt_names:
                     for aper_diam in self.aper_diams:
-                        self._append_property_to_tab(f"ext_src_corr_{aper_diam.to(u.arcsec).value:.2f}as_{filt.filt_name}", "OBJECTS")
+                        self._append_property_to_tab(f"ext_src_corr_{aper_diam.to(u.arcsec).value:.2f}as_{filt.filt_name}", "OBJECTS", dtype = float)
 
     def load_sextractor_params(self) -> None:
         self.load_sextractor_auto_mags()
