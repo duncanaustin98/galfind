@@ -331,6 +331,8 @@ class Band_Cutout_Base(Cutout_Base, ABC):
         scalebars: Optional[Dict] = [],
         show: bool = False,
         save: bool = True,
+        *args,
+        **kwargs,
     ) -> NoReturn:
         #        high_dyn_range: bool = False,
         #        SNR: Optional[float] = None,
@@ -652,7 +654,7 @@ class Band_Cutout(Band_Cutout_Base):
             fits_hdul = fits.HDUList(hdul)
             fits_hdul.writeto(save_path, overwrite=True)
             funcs.change_file_permissions(save_path)
-            galfind_logger.info(f"Saved fits cutout to: {save_path}")
+            galfind_logger.debug(f"Saved fits cutout to: {save_path}")
         else:
             ID = Band_Cutout_Base._get_ID(meta)
             galfind_logger.debug(
@@ -1674,6 +1676,8 @@ class Catalogue_Cutouts(Multiple_Cutout_Base):
         show: bool = False,
         save: bool = True,
         save_path: Optional[str] = None,
+        *args,
+        **kwargs,
     ) -> plt.Figure:
         n_rows = np.sqrt(2 * len(self))
         n_rows = int(n_rows // 1)

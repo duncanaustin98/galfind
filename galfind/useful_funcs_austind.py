@@ -547,6 +547,7 @@ def get_SED_fit_label_aper_diam_z_bin_name(
 
 
 def get_crop_name(crops: List[Selector]) -> str:
+    from . import EAZY
     if crops is not None:
         aper_diam = np.unique([selector.aper_diam.to(u.arcsec).value for selector \
             in crops if hasattr(selector, "aper_diam") and selector.aper_diam is not None])
@@ -554,17 +555,21 @@ def get_crop_name(crops: List[Selector]) -> str:
             aper_diam = aper_diam[0]
         else:
             aper_diam = None
-        SED_fit_label = np.unique([selector.SED_fit_label for selector \
-            in crops if hasattr(selector, "SED_fit_label") and selector.SED_fit_label is not None])
+        SED_fit_label = np.unique([selector.SED_fitter.label for selector \
+            in crops if getattr(selector, "SED_fitter", None) is not None])
         if len(SED_fit_label) == 1:
             SED_fit_label = SED_fit_label[0]
         else:
             SED_fit_label = None
         if aper_diam is not None and SED_fit_label is not None:
-            SED_fit_aper_diam_name = f"{SED_fit_label}_{aper_diam:.2f}as"
-            out_crop_name = f"{SED_fit_aper_diam_name}/" + \
-                "+".join([selector.name.replace( \
-                f"_{SED_fit_aper_diam_name}", "") for selector in crops])
+            # SED_fit_aper_diam_name = f"{SED_fit_label}_{aper_diam:.2f}as"
+            out_crop_name = f"{aper_diam:.2f}as/" + \
+                "+".join([
+                    selector.name.replace(f"_{aper_diam:.2f}as", "") \
+                    if not isinstance(getattr(selector, "SED_fitter", None), EAZY) \
+                    else f"{selector.name.replace(f'_{aper_diam:.2f}as', '')}_zfree"
+                    for selector in crops
+                ])
         elif aper_diam is not None:
             aper_diam_name = f"{aper_diam:.2f}as"
             out_crop_name = f"{aper_diam_name}/" + \
@@ -907,6 +912,21 @@ def validate_quantity(
 def beta_slope_power_law_func(wav_rest, A, beta):
     return (10**A) * (wav_rest**beta)
 
+def crop_to_Calzetti94_filters(wavs, mags):
+    wavs = wavs.to(u.AA)
+    Calzetti94_filter_indices = np.logical_or.reduce(
+        [
+            (wavs.value > low_lim) & (wavs.value < up_lim)
+            for low_lim, up_lim in zip(
+                lower_Calzetti_filt,
+                upper_Calzetti_filt,
+            )
+        ]
+    )
+    wavs = wavs[Calzetti94_filter_indices]
+    mags = mags[Calzetti94_filter_indices]
+    return wavs, mags
+
 
 def inspect_info():
     info = inspect.getframeinfo(inspect.stack()[1][0])
@@ -1111,12 +1131,15 @@ def get_first_bluewards_band(
     elif isinstance(ignore_bands, str):
         ignore_bands = [ignore_bands]
     first_band = None
+    if z < 0.0:
+        return first_band
     # bands already ordered from blue -> red
-    for filt in filterset:
-        upper_wav = filt.WavelengthUpper50
-        if upper_wav < ref_wav * (1.0 + z):
-            first_band = filt.filt_name
-            break
+    for filt in reversed(filterset):
+        if filt.filt_name not in ignore_bands:
+            upper_wav = filt.WavelengthUpper50
+            if upper_wav < ref_wav * (1.0 + z):
+                first_band = filt.filt_name
+                break
     return first_band
 
 def get_first_redwards_band(

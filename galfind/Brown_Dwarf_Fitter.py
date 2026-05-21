@@ -239,7 +239,8 @@ class Brown_Dwarf_Fitter(Template_Fitter):
 
     @property
     def label(self) -> str:
-        return self.__class__.__name__
+        return "bd"
+        #return self.__class__.__name__
 
     @property
     def hdu_name(self) -> str:

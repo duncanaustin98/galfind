@@ -591,7 +591,7 @@ class Bagpipes(SED_code):
         cat: Union[Catalogue, Spectral_Catalogue],
         aper_diam: u.Quantity,
         save_SEDs: bool = True,
-        save_PDFs: bool = True,
+        save_PDFs: bool = False,
         overwrite: bool = False,
         **kwargs: Dict[str, Any],
     ) -> NoReturn:

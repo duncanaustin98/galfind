@@ -53,6 +53,7 @@ except ImportError:
 
 from . import (
     EAZY,  # noqa F501
+    Depths,
     NIRCam,
     MIRI,
     Multiple_Filter,
@@ -642,6 +643,7 @@ class Catalogue_Creator:
             for selector in self.crops:
                 # iterate through selectors, appending all kwarg colnames
                 kwarg_colnames = self._get_selection_kwarg_colnames(selector)
+                kwarg_colnames = [selector.shorten_kwarg_colname(name, max_len=68) for name in kwarg_colnames]
                 if selector.name in tab.colnames and all([kwarg_colname in tab.colnames for kwarg_colname in kwarg_colnames]):
                     keep_arr.extend([np.array(tab[selector.name]).astype(bool)])
                     galfind_logger.info(
@@ -778,6 +780,7 @@ class Catalogue_Creator:
                     if colname.startswith(select_label) and not tab[colname].dtype in (bool, np.bool_)
                 ] for select_label in select_labels
             }
+            # TODO: Cast fits values to None instead of the numpy default (e.g. 'None', np.nan, etc.)
             selection_kwargs = [
                 {
                     select_label: {
@@ -787,19 +790,15 @@ class Catalogue_Creator:
                     } for select_label in select_labels
                 } for i in range(len(tab))
             ]
-            breakpoint()
-        else:
+        elif tab is None:
+            galfind_logger.warning("'SELECTION' tab is None!")
+            tab = self.load_tab("ID", cropped)
             selection_flags = list(itertools.repeat(None, len(tab)))
             selection_kwargs = list(itertools.repeat(None, len(tab)))
-            if tab is None:
-                galfind_logger.warning(
-                    "selection tab is None!"
-                )
-                tab = self.load_tab("ID", cropped)
-            else:
-                galfind_logger.warning(
-                    "Selection function not provided!"
-                )
+        else:
+            err_message = "Selection function not provided!"
+            galfind_logger.critical(err_message)
+            raise Exception(err_message)
         
         return selection_flags, selection_kwargs
 
@@ -1174,12 +1173,9 @@ class Catalogue(Catalogue_Base):
         hdu: str = "OBJECTS",
         dtype: Type = object,
         overwrite: bool = False,
-    ) -> NoReturn:
-        assert len(property_name) <= 68, \
-            galfind_logger.critical(
-                f"{len(property_name)=}>68. Please shorten '{property_name}'" + \
-                "to avoid FITS column name length limits."
-            )
+    ) -> None:
+        from . import Selector
+        save_property_name = Selector.shorten_kwarg_colname(property_name)
         if hdu in ["OBJECTS", "SELECTION"]:
             ID_label = self.cat_creator.ID_label
         elif any([True for code in funcs.all_subclasses(SED_code) if hdu.find(code.__name__) != -1]):
@@ -1190,18 +1186,18 @@ class Catalogue(Catalogue_Base):
         append_tab = self.open_cat(cropped = False, hdu = hdu)
         # append to .fits table only if not already
         if append_tab is not None:
-            if property_name in append_tab.colnames:
+            if save_property_name in append_tab.colnames:
                 if overwrite:
                     # remove old column that already exists
-                    append_tab.remove_column(property_name)
+                    append_tab.remove_column(save_property_name)
                 else:
-                    err_message = f"{property_name=} already appended to " + \
+                    err_message = f"{save_property_name=} already appended to " + \
                         f"{hdu=} .fits table, not overwriting!"
-                    galfind_logger.warning(err_message)
+                    galfind_logger.debug(err_message)
                     return
         # return None
         galfind_logger.info(
-            f"Appending {property_name=} to {hdu=} .fits table!"
+            f"Appending {save_property_name=} to {hdu=} .fits table!"
         )
         # make new table with calculated properties
         gal_IDs = getattr(self, "ID")
@@ -1216,7 +1212,7 @@ class Catalogue(Catalogue_Base):
         #     i += 1
         #gal_properties = MaskedColumn(gal_properties, mask=np.isnan(gal_properties), dtype = property_type)
         new_tab = Table(
-            {"ID_temp": gal_IDs, property_name: gal_properties},
+            {"ID_temp": gal_IDs, save_property_name: gal_properties},
             dtype = [int, type(gal_properties[0])]
         )
         if append_tab is None:
@@ -1591,7 +1587,7 @@ class Catalogue(Catalogue_Base):
                 overwrite = overwrite,
             ) for gal in tqdm(
                 self,
-                desc="Making band cutouts",
+                desc=f"Making {filt.filt_name} band cutouts",
                 total=len(self),
                 disable = galfind_logger.getEffectiveLevel() > logging.INFO,
             )
@@ -1897,9 +1893,10 @@ class Catalogue(Catalogue_Base):
         mode: str,
         region_selector: Optional[Region_Selector] = None,
         invert_region: bool = False,
-    ) -> NoReturn:
+        update_ecsv: bool = False,
+    ) -> None:
         if region_selector is None:
-            return self.data._load_depths(
+            self.data._load_depths(
                 aper_diam,
                 mode,
             )
@@ -1916,7 +1913,10 @@ class Catalogue(Catalogue_Base):
                 for filt_name in self.data.filterset.filt_names
             }
             med_depths = {filt_name: np.nanmedian(gal_band_depths) for filt_name, gal_band_depths in gal_depths.items()}
+            depths_16 = {filt_name: np.nanpercentile(gal_band_depths, 16.) for filt_name, gal_band_depths in gal_depths.items()}
+            depths_84 = {filt_name: np.nanpercentile(gal_band_depths, 84.) for filt_name, gal_band_depths in gal_depths.items()}
             mean_depths = {filt_name: np.nanmean(gal_band_depths) for filt_name, gal_band_depths in gal_depths.items()}
+            
             # pass to data objects for storage
             for band_data in self.data:
                 band_data._update_depths(
@@ -1926,3 +1926,85 @@ class Catalogue(Catalogue_Base):
                     region_selector.name if not invert_region
                     else region_selector.fail_name
                 )
+        
+        if update_ecsv:
+            if region_selector is None:
+                gal_depths = {filt_name: [
+                        gal.aper_phot[aper_diam].depths[np.where(np.array(gal.aper_phot[aper_diam].filterset.filt_names) == filt_name)[0][0]].value
+                        for gal in self if filt_name in gal.aper_phot[aper_diam].filterset.filt_names 
+                    ]
+                    for filt_name in self.data.filterset.filt_names
+                }
+                med_depths = {filt_name: np.nanmedian(gal_band_depths) for filt_name, gal_band_depths in gal_depths.items()}
+                depths_16 = {filt_name: np.nanpercentile(gal_band_depths, 16.) for filt_name, gal_band_depths in gal_depths.items()}
+                depths_84 = {filt_name: np.nanpercentile(gal_band_depths, 84.) for filt_name, gal_band_depths in gal_depths.items()}
+                mean_depths = {filt_name: np.nanmean(gal_band_depths) for filt_name, gal_band_depths in gal_depths.items()}
+            
+            tab = self.open_cat(cropped = False, hdu = "OBJECTS")
+            if len(self) == len(tab): # and region_selector is not None:
+                # save depths to fits
+                depth_dir = Depths.get_depth_tab_dir(self.data)
+                gal_reg_depth_path = f"{depth_dir}/reg_depths/{self.survey}_{aper_diam.to(u.arcsec).value:.2f}as.ecsv"
+                append_data = {"reg_name": [], "filt_name": [], "depth_50": [], "depth_16": [], "depth_84": [], "mean_depth": []}
+                append_data_types = {"reg_name": str, "filt_name": str, "depth_50": float, "depth_16": float, "depth_84": float, "mean_depth": float}
+                if not Path(gal_reg_depth_path).is_file():
+                    orig_tab = Table(append_data, dtype = [append_data_types[key] for key in append_data])
+                else:
+                    orig_tab = Table.read(gal_reg_depth_path, format = "ascii.ecsv")
+                if region_selector is not None:
+                    reg_name = region_selector.name if not invert_region else region_selector.fail_name
+                else:
+                    reg_name = "all"
+                for band_data in self.data:
+                    filt_name = band_data.filt_name
+                    if not any(
+                        row["reg_name"] == reg_name and row["filt_name"] == filt_name 
+                        for row in orig_tab
+                    ):
+                        append_data["reg_name"].append(reg_name)
+                        append_data["filt_name"].append(filt_name)
+                        append_data["depth_50"].append(med_depths[filt_name])
+                        append_data["depth_16"].append(depths_16[filt_name])
+                        append_data["depth_84"].append(depths_84[filt_name])
+                        append_data["mean_depth"].append(mean_depths[filt_name])
+                # combine append data with original table
+                if len(append_data) > 0:
+                    append_tab = Table(append_data, dtype = [append_data_types[key] for key in append_data])
+                    out_tab = vstack([orig_tab, append_tab])
+                    funcs.make_dirs(gal_reg_depth_path)
+                    out_tab.write(gal_reg_depth_path, format = "ascii.ecsv", overwrite = True)
+                    funcs.change_file_permissions(gal_reg_depth_path)
+                    galfind_logger.info(f"Saved {reg_name} depths to {gal_reg_depth_path}!")
+    
+    def make_readme(
+        self: Self,
+        update: bool = False,
+        hdu_divider: str = "------------------",
+    ) -> None:
+        out_path = f"{self.fits_path.replace('.fits', '')}_README.txt"
+        if not Path(out_path).is_file() or update:
+            out_str = ""
+            if Path(out_path).is_file():
+                with open(out_path, "r") as f:
+                    out_str = f.read()
+                # split by hdu_divider
+                out_str = out_str.split(hdu_divider)
+
+            readme_info = self._readme_info_from_fits_tab(self.fits_path)
+        for origin, columns in readme_info.items():
+            pass
+
+    @staticmethod
+    def _readme_info_from_fits_tab(
+        fits_path: str
+    ) -> Dict[str, Dict[str, str]]:
+        hdul = fits.open(fits_path)
+        hdu_names = [hdu.name for hdu in hdul]
+        readme_info = {}
+        for i, hdu_name in enumerate(hdu_names):
+            tab = hdul[i]
+            if hdu_name == "OBJECTS":
+                # check for SExtractor columns
+                pass
+        return readme_info
+

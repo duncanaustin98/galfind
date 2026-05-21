@@ -159,7 +159,11 @@ class Base_Number_Density_Function:
 
     def __add__(
         self: Self,
-        other: Union[Type[Base_Number_Density_Function], List[Type[Base_Number_Density_Function]], Multiple_Number_Density_Function]
+        other: Union[
+            Type[Base_Number_Density_Function],
+            List[Type[Base_Number_Density_Function]],
+            Multiple_Number_Density_Function
+        ],
     ) -> Multiple_Number_Density_Function:
         base_ndf_subcls = tuple(Base_Number_Density_Function.__subclasses__())
         if isinstance(other, list):
@@ -177,6 +181,9 @@ class Base_Number_Density_Function:
         # TODO: Ensure no duplicates
         multiple_ndf = Multiple_Number_Density_Function(number_density_funcs)
         return multiple_ndf
+
+    def __len__(self):
+        return len(self.phi)
 
     def get_z_bin_name(self) -> str:
         return f"z={float(self.z_ref):.1f}"
@@ -354,7 +361,7 @@ class Number_Density_Function(Base_Number_Density_Function):
         self.x_origin = x_origin
         self.z_bin = z_bin
         self.Ngals = Ngals
-        self.phi_errs = phi_errs  # poisson only
+        self.phi_errs = phi_errs # poisson only
         self.cv_errs = cv_errs  # cosmic variance % errs / 100
         self.origin_surveys = origin_surveys
         self.cv_origin = cv_origin
@@ -779,6 +786,55 @@ class Number_Density_Function(Base_Number_Density_Function):
         )
         return SED_fit_params_key, x_name, origin_surveys, z_bin
 
+    def crop_to_xbin(self: Type[Self], x_bin: List[float]) -> Optional[Self]:
+        # check if x_bin is within self.x_bins
+        if x_bin[0] < self.x_bins[0][0] and x_bin[1] > self.x_bins[-1][1]:
+            galfind_logger.warning(
+                f"{x_bin=} not within {self.x_bins[0][0]} and {self.x_bins[-1][1]}!"
+            )
+            return None
+        # find indices of x bins in self that are entirely within the output crop x_bin
+        if np.isfinite(x_bin[0]):
+            lower_mask = (self.x_mid_bins >= x_bin[0])
+        else:
+            lower_mask = np.full(len(self.x_mid_bins), True)
+        if np.isfinite(x_bin[1]):
+            upper_mask = (self.x_mid_bins <= x_bin[1])
+        else:
+            upper_mask = np.full(len(self.x_mid_bins), True)
+        if np.isfinite(x_bin[0]) and np.isfinite(x_bin[1]):
+            assert x_bin[0] < x_bin[1], \
+                galfind_logger.critical(f"{x_bin[0]=} must be less than {x_bin[1]=}!")
+            xbin_str = f"{x_bin[0].value:.1f}<=x<={x_bin[1].value:.1f}"
+        elif np.isfinite(x_bin[0]) and not np.isfinite(x_bin[1]):
+            xbin_str = f"x>={x_bin[0].value:.1f}"
+        elif not np.isfinite(x_bin[0]) and np.isfinite(x_bin[1]):
+            xbin_str = f"x<={x_bin[1].value:.1f}"
+        indices = np.where(lower_mask & upper_mask)[0]
+        if len(indices) == 0:
+            galfind_logger.warning(
+                f"No x bins within {x_bin=} in {self.x_bins}!"
+            )
+            return None
+        else:
+            new_crop_name = f"{self.crop_name}_{xbin_str}"
+            new_ndf = self.__class__(
+                self.x_name,
+                self.x_bins[indices],
+                self.x_origin,
+                self.z_bin,
+                self.Ngals[indices],
+                self.phi[indices],
+                self.phi_errs[:, indices],
+                self.cv_errs[indices],
+                self.origin_surveys,
+                new_crop_name,
+                cv_origin = self.cv_origin,
+                completeness = self.completeness,
+                Vmax_method = self.Vmax_method,
+            )
+            return new_ndf
+    
     # def get_z_bin_name(self) -> str:
     #     return f"{self.z_bin[0]:.1f}<z<{self.z_bin[1]:.1f}"
 
@@ -828,7 +884,7 @@ class Number_Density_Function(Base_Number_Density_Function):
             else:
                 incl_cv_str = ""
                 phi_errs_ptr = self.phi_errs_cv
-            backend_filename = backend_filename\
+            backend_filename = backend_filename \
                 .replace("/Data/", f"/{fit_type.__name__.replace('Fitter', 'Fits')}/")\
                 .replace(".ecsv", f"{fixed_params_str}{incl_cv_str}.h5")
             funcs.make_dirs(backend_filename)
@@ -845,7 +901,7 @@ class Number_Density_Function(Base_Number_Density_Function):
             phi_errs,
             n_walkers,
             backend_filename,
-            fixed_params
+            fixed_params,
         )
         # run fitter
         self.fitter(n_steps, n_processes)
@@ -1089,7 +1145,7 @@ class Multiple_Number_Density_Function(Number_Density_Function):
         if len(self) == 0:
             raise IndexError("No number density functions in object!")
         if isinstance(index, int):
-            return self.gals[index]
+            return self.number_density_functions[index]
         else:
             raise IndexError(f"{repr(index)} not an int!")
 
@@ -1263,21 +1319,31 @@ class Multiple_Number_Density_Function(Number_Density_Function):
             else:
                 incl_cv_str = ""
                 phi_errs_ptr = self.phi_errs_cv
-            backend_filename = backend_filename\
+            backend_filename = backend_filename \
                 .replace("/Data/", f"/{fit_type.__name__.replace('Fitter', 'Fits')}/")\
                 .replace(".ecsv", f"{fixed_params_str}{incl_cv_str}.h5")
             funcs.make_dirs(backend_filename)
         # mask nans and zeros
         phi_mask = np.isnan(self.phi) | (self.phi == 0)
-        x_mid_bins = np.ma.array(np.tile(self.x_mid_bins.value, (5, 1)).T, mask = phi_mask).compressed()
+        x_mid_bins = np.ma.array(
+            np.tile(
+                self.x_mid_bins.value,
+                (len(self), 1)
+            ).T,
+            mask = phi_mask
+        ).compressed()
         phi = np.ma.array(self.phi, mask = phi_mask).compressed()
         phi_errs = np.array([
             np.ma.array(phi_errs_ptr[0], mask = phi_mask).compressed(),
-            np.ma.array(phi_errs_ptr[1], mask = phi_mask).compressed()
+            np.ma.array(phi_errs_ptr[1], mask = phi_mask).compressed(),
         ])
         surveys_arr = np.ma.array(
-            np.tile([ndf.origin_surveys for ndf in self.number_density_functions], (10, 1)),
-            mask = phi_mask).compressed()
+            np.tile(
+                [ndf.origin_surveys for ndf in self.number_density_functions],
+                (len(self[0]), 1)
+            ),
+            mask = phi_mask,
+        ).compressed()
         self.fitter = fit_type(
             surveys_arr = surveys_arr,
             priors = priors, 

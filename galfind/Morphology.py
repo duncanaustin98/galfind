@@ -58,7 +58,7 @@ name_to_label = {
     "y_off": r"$y_{\mathrm{off}}$",
     "chi2": r"$\chi^2$",
     "Ndof": r"$N_{\mathrm{dof}}$",
-    "red_chi2": r"$\chi^2_{\mathrm{red}}$"
+    "red_chi2": r"$\chi^2_{\mathrm{red}}$",
 }
 
 class Morphology_Result(ABC):

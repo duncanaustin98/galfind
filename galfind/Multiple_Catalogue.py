@@ -333,7 +333,6 @@ class Combined_Catalogue(Catalogue_Base):
         if not Path(save_path).is_file():
             # make Vmax table
             #try:
-            breakpoint()
             Vmax_arr = np.array(
                 [
                     [

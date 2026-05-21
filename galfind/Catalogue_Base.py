@@ -705,6 +705,12 @@ class Catalogue_Base:
                 )
                 # load selection table
                 select_cat = self.open_cat(cropped = False, hdu = "SELECTION")
+                if any(crop.name not in select_cat.colnames for crop in self.crops):
+                    err_message = f"Not all crops in {self.crops} have been performed on {repr(self)}! " + \
+                        "Cropping from .fits table not possible!"
+                    galfind_logger.critical(err_message)
+                    breakpoint()
+                    raise Exception(err_message)
                 crop_mask = np.array(
                     np.logical_and.reduce(
                         [select_cat[crop.name] for crop in self.crops]
@@ -723,7 +729,8 @@ class Catalogue_Base:
             elif isinstance(hdu, SED_code):
                 keys_left = hdu.ID_label
             elif hdu_name.split("_")[0].upper() in [
-                subcls.__name__.upper() for subcls in funcs.all_subclasses(SED_code)
+                subcls.__name__.upper()
+                for subcls in funcs.all_subclasses(SED_code)
             ]:
                 keys_left = [
                     subcls for subcls in funcs.all_subclasses(SED_code)
@@ -1326,27 +1333,27 @@ class Catalogue_Base:
             full_data_name = funcs.get_full_survey_name(data.survey, data.version, data.filterset)
 
             # load in area-depth curves before parallelization
-            if Vmax_method.lower() == "area_depth_scaled_split_region":
-                z_arr = np.arange(z_bin[0], z_bin[1] + z_step, z_step)
-                if hasattr(data, "region_selector"):
-                    region_selector = data.region_selector
-                    invert_region = [True, False] #region != self.data.region_selector.name
-                else:
-                    region_selector = None
-                    invert_region = [False]
-                    setattr(data, "regions", ["all"])
-                for invert_region_ in invert_region:
-                    for z in z_arr:
-                        # compute area depth for all relevant redshift bin areas
-                        data.calc_area_depth(
-                            aper_diam = aper_diam,
-                            mask_selector = unmasked_area,
-                            #mask_type = mask_type,
-                            region_selector = region_selector,
-                            invert_region = invert_region_,
-                            z = z,
-                            plot = True,
-                        )
+            #if Vmax_method.lower() == "area_depth_scaled_split_region":
+            z_arr = np.arange(z_bin[0], z_bin[1] + z_step, z_step)
+            if hasattr(data, "region_selector"):
+                region_selector = data.region_selector
+                invert_region = [True, False] #region != self.data.region_selector.name
+            else:
+                region_selector = None
+                invert_region = [False]
+                setattr(data, "regions", ["all"])
+            for invert_region_ in invert_region:
+                for z in z_arr:
+                    # compute area depth for all relevant redshift bin areas
+                    data.calc_area_depth(
+                        aper_diam = aper_diam,
+                        mask_selector = unmasked_area,
+                        #mask_type = mask_type,
+                        region_selector = region_selector,
+                        invert_region = invert_region_,
+                        z = z,
+                        plot = True,
+                    )
 
             # calculate Vmax's and append them to Vmax ecsv
             if n_jobs == 1:
@@ -1438,9 +1445,15 @@ class Catalogue_Base:
                                         raise NotImplementedError(
                                             "Vmax output kwarg is not dict!"
                                         )
+                            elif isinstance(Vmax_output[1][region][zbin], dict):
+                                for key, value in Vmax_output[1][region][zbin].items():
+                                    if key not in kwargs.keys():
+                                        kwargs[key] = [value]
+                                    else:
+                                        kwargs[key].extend([value])
                             else:
                                 raise NotImplementedError(
-                                    "Vmax output kwarg is not list or ndarray!"
+                                    "Vmax output kwarg is not list, ndarray or dict!"
                                 )
                         except Exception as e:
                             galfind_logger.critical(
