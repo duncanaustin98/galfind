@@ -3836,14 +3836,17 @@ class Data:
                 )
         if len(params) > 0:
             # Parallelise the calculation of depths for each band
-            with funcs.tqdm_joblib(
-                tqdm(desc="Calculating depths", total=len(params), disable = galfind_logger.getEffectiveLevel() > logging.INFO)
-            ) as progress_bar:
-                # TODO: Fix pointer parallelization issues
-                outputs = Parallel(n_jobs=n_jobs)(
-                    delayed(Depths.calc_band_depth)(param) for param in params
-                )
-                #self_band_data_arr = outputs
+            if n_jobs == 1:
+                outputs = [Depths.calc_band_depth(param) for param in params]
+            else:
+                with funcs.tqdm_joblib(
+                    tqdm(desc="Calculating depths", total=len(params), disable = galfind_logger.getEffectiveLevel() > logging.INFO)
+                ) as progress_bar:
+                    # TODO: Fix pointer parallelization issues
+                    outputs = Parallel(n_jobs=n_jobs)(
+                        delayed(Depths.calc_band_depth)(param) for param in params
+                    )
+                    #self_band_data_arr = outputs
             # save properties to individual band_data objects
             for band_data in self_band_data_arr:
                 [
