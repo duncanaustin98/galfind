@@ -1,7 +1,6 @@
 
 from __future__ import annotations
 
-from BDFit import StarFit
 import numpy as np
 import astropy.units as u
 import h5py
@@ -111,6 +110,7 @@ class Template_Fitter(SED_code):
         verbose: bool = True,
         **kwargs: Dict[str, Any],
     ) -> NoReturn:
+        from BDFit import StarFit
         out_path = self._get_out_paths(cat, aper_diam)[1]
         if not Path(out_path).is_file() or overwrite:
             # convert cat.filterset to bands used in StarFit
