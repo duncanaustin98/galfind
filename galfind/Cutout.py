@@ -1002,7 +1002,7 @@ class RGB_Base(Cutout_Base, ABC):
     def instr_name(self) -> Optional[str]:
         return self.cutouts["B"][0].instr_name
 
-    def get_colour_filt_names(self, colour: str) -> List[str]:
+    def get_colour_filt_names(self: Self, colour: str) -> List[str]:
         assert colour in ["B", "G", "R"]
         return [cutout.band_data.filt.filt_name for cutout in self[colour]]
 

@@ -786,17 +786,22 @@ class Catalogue_Base:
         tab_names: List[str],
         cat_path: str,
     ) -> None:
-        hdu_list = fits.HDUList()
-        [
-            hdu_list.append(
-                fits.BinTableHDU(
-                    data=tab.as_array(),
-                    header=fits.Header(tab.meta),
-                    name=name,
+        try:
+            hdu_list = fits.HDUList()
+            [
+                hdu_list.append(
+                    fits.BinTableHDU(
+                        data = tab.as_array(),
+                        header = fits.Header(tab.meta),
+                        name = name,
+                    )
                 )
-            )
-            for (tab, name) in zip(tab_arr, tab_names)
-        ]
+                for (tab, name) in zip(tab_arr, tab_names)
+            ]
+        except:
+            galfind_logger.critical("Failed to write .fits table!")
+            breakpoint()
+            raise
         funcs.make_dirs(cat_path)
         hdu_list.writeto(cat_path, overwrite=True)
         funcs.change_file_permissions(cat_path)

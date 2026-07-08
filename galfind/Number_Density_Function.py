@@ -76,7 +76,7 @@ class Base_Number_Density_Function:
         author_year: str,
         obs_or_models: str = "obs",
     ) -> Optional[Self]:
-        assert obs_or_models in ["obs", "models"]
+        assert obs_or_models in ["obs", "models/binned"]
         sys.path.insert(1, config["NumberDensityFunctions"]["FLAGS_DATA_DIR"])
         try:
             from flags_data import distribution_functions
@@ -93,6 +93,7 @@ class Base_Number_Density_Function:
             "M_UV": "LUV",
             "stellar_mass": "Mstar",
         }
+        
         datasets = distribution_functions.list_datasets(
             f"{flags_property_name_conv[x_name]}/{obs_or_models}"
         )
@@ -128,31 +129,46 @@ class Base_Number_Density_Function:
 
                     label = f"{label},z={z}"
 
-                    if x_name in [key for (key, val) in \
-                            flags_property_name_conv.items() if val == "LUV"]:
-                        x = ds.M[z]
-                    else:
-                        x = ds.log10X[z]
+                    try:
+                        if x_name in [
+                            key for (key, val)
+                            in flags_property_name_conv.items()
+                            if val == "LUV"
+                        ]:
+                            x = ds.M[z]
+                        else:
+                            x = ds.log10X[z]
+                    except:
+                        breakpoint()
 
                     if flags_property_name_conv[x_name] == "LUV":
-                        phi_err = np.array(ds.log10phi_mag_err[z])
+                        if obs_or_models == "obs":
+                            phi_err = np.array(ds.log10phi_mag_err[z])
                         log10phi = ds.log10phi_mag[z]
                     else:
-                        phi_err = np.array(ds.log10phi_err[z])
+                        if obs_or_models == "obs":
+                            phi_err = np.array(ds.log10phi_err[z])
                         log10phi = ds.log10phi[z]
-                    if len(np.shape(phi_err)) > 1:
-                        low = np.array(phi_err[0])
-                        high = np.array(phi_err[1])
-                    else:
-                        low = high = phi_err
-                    err_high = 10 ** (log10phi + high) - 10**log10phi
-                    err_low = (10**log10phi) - 10 ** (log10phi - low)
-                    phi_err = np.array([err_low, err_high])
+                    if obs_or_models == "obs":
+                        if len(np.shape(phi_err)) > 1:
+                            low = np.array(phi_err[0])
+                            high = np.array(phi_err[1])
+                        else:
+                            low = high = phi_err
+                        err_high = 10 ** (log10phi + high) - 10**log10phi
+                        err_low = (10**log10phi) - 10 ** (log10phi - low)
+                        phi_err = np.array([err_low, err_high])
+                    else: # obs_or_models == "models/binned"
+                        phi_err = np.zeros((2, len(log10phi)))
 
-                    #breakpoint()
                     # x = ds.log10X[z] - np.log10(1. / funcs.imf_mass_factor[ds.imf]) stellar mass only
                     return cls(
-                        x_name, x, z, 10**log10phi, phi_err, author_year
+                        x_name,
+                        x,
+                        z,
+                        10 ** log10phi,
+                        phi_err,
+                        author_year,
                     )
         galfind_logger.info(f"No {author_year=} in {obs_or_models} for {x_name=}")
         return None  # if no author_year in flags_data
@@ -270,15 +286,18 @@ class Base_Number_Density_Function:
                 default_plot_kwargs.pop(key)
                 default_plot_kwargs[key] = plot_kwargs[key]
         _plot_kwargs = {**plot_kwargs, **default_plot_kwargs}
-
-        # turn nans into upper limits
-        if any(np.isnan(y_errs[0])):
-            upper_limit_indices = np.where(np.isnan(y_errs[0]))[0]
-            y_errs[0][upper_limit_indices] = 0.5 * y[upper_limit_indices]
-            _plot_kwargs["uplims"] = [True if i in upper_limit_indices else False for i in range(len(y))]
         
         galfind_logger.info(f"Plotting {default_plot_kwargs['label']}")
-        line = ax_.errorbar(x_mid_bins, y, yerr=y_errs, **_plot_kwargs)
+        if all([y_err == 0.0 for y_err in y_errs.flatten()]):
+            galfind_logger.debug(f"No errors to plot for {default_plot_kwargs['label']}")
+            line = ax_.plot(x_mid_bins, y, **_plot_kwargs)
+        else:
+            # turn nans into upper limits
+            if any(np.isnan(y_errs[0])):
+                upper_limit_indices = np.where(np.isnan(y_errs[0]))[0]
+                y_errs[0][upper_limit_indices] = 0.5 * y[upper_limit_indices]
+                _plot_kwargs["uplims"] = [True if i in upper_limit_indices else False for i in range(len(y))]
+            line = ax_.errorbar(x_mid_bins, y, yerr=y_errs, **_plot_kwargs)
 
         if annotate:
             y_label = r"$\Phi$ / N dex$^{-1}$Mpc$^{-3}$"
@@ -301,7 +320,7 @@ class Base_Number_Density_Function:
                 #"bbox_to_anchor": (1.05, 0.5),
             }
             # overwrite default with input for duplicate kwargs
-            for key in plot_kwargs.keys():
+            for key in legend_kwargs.keys():
                 if key in default_legend_kwargs.keys():
                     default_legend_kwargs.pop(key)
             _legend_kwargs = {**legend_kwargs, **default_legend_kwargs}
@@ -681,7 +700,6 @@ class Number_Density_Function(Base_Number_Density_Function):
 
                     Vmax_reg_compl = np.array(Vmax_reg_compl)
                     Vmax_tot = np.clip(Vmax_reg_compl, 0.0, None).sum(axis = 0) #np.sum(Vmax_reg_compl, axis = 1)
-                    #breakpoint()
                     Vmax_tot = Vmax_tot[Vmax_tot > 0.0]
                     phi[i] = np.sum(Vmax_tot ** -1.0) / dx
                     # use standard Poisson errors if number of galaxies in bin is not small
@@ -982,7 +1000,10 @@ class Number_Density_Function(Base_Number_Density_Function):
         for author_year, author_year_kwargs in obs_author_years.items():
             author_year_func_from_flags_data = (
                 Base_Number_Density_Function.from_flags_repo(
-                    self.x_name, self.z_bin, author_year, "obs"
+                    self.x_name,
+                    self.z_bin,
+                    author_year,
+                    "obs",
                 )
             )
             if author_year_func_from_flags_data is not None:
@@ -1002,7 +1023,10 @@ class Number_Density_Function(Base_Number_Density_Function):
         for author_year, author_year_kwargs in sim_author_years.items():
             author_year_func_from_flags_data = (
                 Base_Number_Density_Function.from_flags_repo(
-                    self.x_name, self.z_bin, author_year, "models"
+                    self.x_name,
+                    self.z_bin,
+                    author_year,
+                    "models/binned",
                 )
             )
             if author_year_func_from_flags_data is not None:
@@ -1019,7 +1043,6 @@ class Number_Density_Function(Base_Number_Density_Function):
                         x_lims=None,
                     )[-1]
                 )
-
         fig_, ax_, line = super().plot(
             fig_,
             ax_,

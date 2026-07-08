@@ -3163,12 +3163,13 @@ class Data:
         return self[band].load_im(return_hdul)
 
     def load_wcs(
-        self, band: Union[int, str, Filter, List[Filter], Multiple_Filter]
+        self: Self,
+        band: Union[int, str, Filter, List[Filter], Multiple_Filter],
     ):
         return self[band].load_wcs()
 
     def load_wht(
-        self,
+        self: Self,
         band: Union[int, str, Filter, List[Filter], Multiple_Filter],
         output_hdr: bool = False,
     ):

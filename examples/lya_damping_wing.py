@@ -160,7 +160,7 @@ def get_transmission(tau_arr):
     return np.exp(-np.sum(tau_arr))
 
 
-def main(plot_lya_damping_wing=True, plot_DLA=True):
+def main(plot_lya_damping_wing=False, plot_DLA=True):
     wav_rest = np.linspace(1_216, 1_400, 1_000) * u.AA
 
     if plot_lya_damping_wing:

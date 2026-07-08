@@ -843,10 +843,10 @@ class Mock_SED_obs(SED_obs):
     ):
         lum_distance = astropy_cosmo.luminosity_distance(z).to(u.pc)
         m_UV = (
-            M_UV
+            M_UV.to(u.ABmag).value
             - 2.5 * np.log10(1 + z)
             + 5 * np.log10(lum_distance.value / 10)
-        )
+        ) * u.ABmag
         mock_SED_rest = Mock_SED_rest.power_law_from_beta_m_UV(
             beta, m_UV, template_name=template_name
         )

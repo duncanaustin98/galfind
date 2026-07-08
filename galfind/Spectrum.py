@@ -6,6 +6,7 @@ import os
 from abc import ABC, abstractmethod
 from pathlib import Path
 from scipy.optimize import curve_fit
+from astropy.wcs import WCS
 from typing import NoReturn, Union, Optional, List, Dict, Any, Tuple
 try:
     from typing import Self #, Type  # python 3.11+
@@ -26,6 +27,7 @@ from astropy.table import Table
 from astropy.utils.masked import Masked
 from numpy.typing import NDArray
 from tqdm import tqdm
+from matplotlib.patches import Rectangle
 
 from . import config, galfind_logger
 from . import useful_funcs_austind as funcs
@@ -371,7 +373,14 @@ class Spectrum:
             except:
                 self.MSA_metafile = None
 
-    def plot_slitlet(self, ax: plt.Axes, colour: str = "black", add_labels: bool = True):
+    def plot_slitlet(
+        self: Self,
+        ax: plt.Axes,
+        wcs: WCS,
+        add_labels: bool = True,
+        colour: str = "magenta",
+        nod_colour: str = "lightpink",
+    ):
         # mostly copied from msaexp MSAMetafile base code
         self.load_MSA_metafile()
         assert self.MSA_metafile is not None
@@ -382,11 +391,20 @@ class Spectrum:
             msa_metadata_id=self.MSA_ID,
         )
         for s in slits:
-            if s.meta["is_source"]:
-                kwargs = dict(color=colour, alpha=0.8, zorder=100)
+            xy = np.array(s.xy[0])  # shape (4, 2) - RA/Dec corners
+            # convert corners to pixel coordinates
+            pixels = wcs.world_to_pixel_values(xy[:, 0], xy[:, 1])
+            x_pix = np.append(pixels[0], pixels[0][0]) # close the rectangle
+            y_pix = np.append(pixels[1], pixels[1][0])
+            if s.meta['is_source']:
+                colour_ = colour
+                lw = 3.0
             else:
-                kwargs = dict(color="0.7", alpha=0.8, zorder=100)
-            ax.plot(*np.vstack([s.xy[0], s.xy[0][:1, :]]).T, **kwargs)
+                colour_ = nod_colour
+                lw = 2.0
+            # plot only slits that enter the field of view
+            if np.any((x_pix >= 0) & (x_pix < wcs.pixel_shape[0]) & (y_pix >= 0) & (y_pix < wcs.pixel_shape[1])):
+                ax.plot(x_pix, y_pix, color=colour_, lw=lw, alpha=0.8)
 
         if add_labels:
             ax.text(
@@ -396,7 +414,7 @@ class Spectrum:
                 ha="left",
                 va="bottom",
                 transform=ax.transAxes,
-                color=colour,
+                color="magenta",# color
                 fontsize=8,
             )
             ax.text(
@@ -406,7 +424,7 @@ class Spectrum:
                 ha="left",
                 va="bottom",
                 transform=ax.transAxes,
-                color=colour,
+                color="magenta", #color,
                 fontsize=8,
             )
             ax.text(
@@ -416,7 +434,7 @@ class Spectrum:
                 ha="right",
                 va="bottom",
                 transform=ax.transAxes,
-                color=colour,
+                color="magenta", #colour,
                 fontsize=8,
             )
             # ax.text(

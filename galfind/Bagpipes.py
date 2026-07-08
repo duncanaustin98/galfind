@@ -248,11 +248,14 @@ class Bagpipes(SED_code):
                 sfh_label = sfh_label.replace("continuity", "cont")
             else:
                 sfh_label = self.SED_fit_params["sfh"]
-            # '_dust' label
+            if self.SED_fit_params["fesc"] is None:
+                fesc_label = ""
+            else:
+                fesc_label = f"_fesc_{self.SED_fit_params['fesc_prior']}"
             return (
                 f"Bagpipes_sfh_{sfh_label}_{self.SED_fit_params['dust']}_"
                 + f"{self.SED_fit_params['dust_prior']}_Z_{self.SED_fit_params['metallicity_prior']}"
-                + f"_{sps_label}_{redshift_label}{self.excl_bands_label}"
+                + f"{fesc_label}_{sps_label}_{redshift_label}{self.excl_bands_label}"
             )
 
     @property
@@ -777,7 +780,6 @@ class Bagpipes(SED_code):
         else:
             plot = True
         bagpipes = self.reload()
-        #breakpoint()
         fit_cat = bagpipes.fit_catalogue(
             IDs,
             self.fit_instructions,
@@ -797,7 +799,6 @@ class Bagpipes(SED_code):
             #time_calls = time_calls
             load_data_kwargs = load_data_kwargs,
         )
-        #breakpoint()
         #galfind_logger.info(f"Fitting bagpipes with {self.fit_instructions=}")
         try:
             run_parallel = False
@@ -1078,7 +1079,7 @@ class Bagpipes(SED_code):
             z_arr = [np.full(length, z) for z in self.SED_fit_params["fix_z"]]
         elif self.SED_fit_params["fix_z"]:
             length = 500 # TODO: Calculate this at runtime
-            z_arr = [np.full(length, z) for z in self.SED_fit_params["z_calculator"](cat)]
+            z_arr = [np.full(length, self.SED_fit_params["z_calculator"](gal).value) for gal in cat]
         else:
             assert "zPDFs" in kwargs.keys(), \
                 galfind_logger.critical(
@@ -1304,7 +1305,7 @@ class Bagpipes(SED_code):
             galfind_logger.critical(
                 f"{len(IDs)=} != {len(PDF_paths)=}"
             )
-        ignore_labels = ["dust_curve", "photometry", "spectrum_full", "uvj", "sfh", "mass_weighted_zmet", "chisq_phot", "ndot_ion_caseB_rest", "ndot_ion_caseB_obs"]
+        ignore_labels = ["dust_curve", "photometry", "spectrum_full", "uvj", "sfh", "mass_weighted_zmet", "chisq_phot"]#, "ndot_ion_caseB_rest", "ndot_ion_caseB_obs"]
         cat_property_PDFs = []
         for h5_path, ID in tqdm(zip(PDF_paths, IDs), desc=f"Loading {self.label} PDFs", total=len(IDs), disable=galfind_logger.getEffectiveLevel() > logging.INFO):
             gal_property_PDFs = {}
@@ -1481,7 +1482,7 @@ class Bagpipes(SED_code):
             delayed["age_prior"] = self.SED_fit_params["age_prior"]
             delayed["metallicity_prior"] = self.SED_fit_params["metallicity_prior"]
             if self.SED_fit_params["metallicity_prior"] == "log_10":
-                delayed["metallicity"] = (1.e-3, 3)
+                delayed["metallicity"] = (1.e-3, 3.0)
             elif self.SED_fit_params["metallicity_prior"] == "uniform":
                 delayed["metallicity"] = (0, 3)
 
@@ -1492,7 +1493,7 @@ class Bagpipes(SED_code):
 
             burst["metallicity_prior"] = self.SED_fit_params["metallicity_prior"]
             if self.SED_fit_params["metallicity_prior"] == "log_10":
-                burst["metallicity"] = (1e-03, 3)
+                burst["metallicity"] = (1e-03, 3.0)
             elif self.SED_fit_params["metallicity_prior"] == "uniform":
                 burst["metallicity"] = (0, 3)
 

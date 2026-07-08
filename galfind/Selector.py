@@ -814,10 +814,11 @@ class ID_Selector(Data_Selector):
         self: Self,
         IDs: Union[int, List[int]],
         name: Optional[str] = None,
+        **select_kwargs: Dict[str, Any],
     ):
         if isinstance(IDs, int):
             IDs = [IDs]
-        kwargs = {"IDs": IDs, "name": name}
+        kwargs = {"IDs": IDs, "name": name, "select_kwargs": select_kwargs}
         super().__init__(**kwargs)
 
     @property
@@ -829,7 +830,11 @@ class ID_Selector(Data_Selector):
 
     @property
     def _include_kwargs(self) -> List[str]:
-        return ["IDs", "name"]
+        return ["IDs", "name", "select_kwargs"]
+
+    @property
+    def select_kwarg_names_dtypes(self: Self) -> Tuple[List[str], List[Type]]:
+        return [key for key in self.kwargs["select_kwargs"].keys()], [str] * len(self.kwargs["select_kwargs"])
 
     def _assertions(self: Self) -> bool:
         try:
@@ -838,6 +843,12 @@ class ID_Selector(Data_Selector):
             if self.kwargs["name"] is not None:
                 assert isinstance(self.kwargs["name"], str) 
             assert all(np.isscalar(ID) and np.issubdtype(type(ID), np.integer) for ID in self.kwargs["IDs"])
+            assert all([len(self.kwargs["IDs"]) == len(kwarg_vals) for kwarg_vals in self.kwargs["select_kwargs"].values()]), \
+                galfind_logger.critical(
+                    f"All {self.kwargs['IDs']=} and " + \
+                    f"{len([vals for vals in self.kwargs['select_kwargs'].values()])}" + \
+                    f" must have the same length!"
+                )
             passed = True
         except:
             passed = False
@@ -857,7 +868,13 @@ class ID_Selector(Data_Selector):
         *args,
         **kwargs
     ) -> Tuple[bool, Dict[str, Any]]:
-        return gal.ID in self.kwargs["IDs"], {}
+        out_kwargs = {}
+        for kwarg_name, kwarg_values in self.kwargs["select_kwargs"].items():
+            if gal.ID not in self.kwargs["IDs"]:
+                out_kwargs[kwarg_name] = ""
+            else:
+                out_kwargs[kwarg_name] = kwarg_values[np.where(np.array(self.kwargs["IDs"]) == gal.ID)[0][0]]
+        return gal.ID in self.kwargs["IDs"], out_kwargs
 
 
 class Region_Selector(Data_Selector, ABC):

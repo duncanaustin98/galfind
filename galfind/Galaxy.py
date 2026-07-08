@@ -240,14 +240,14 @@ class Galaxy:
         if cutout_size_str not in self.RGBs.keys():
             self.RGBs[cutout_size_str] = {}
         rgb_key = ",".join(
-            f"{colour}={'+'.join(self.get_colour_filt_names[colour])}"
+            f"{colour}={'+'.join(rgb_bands[colour])}"
             for colour in ["B", "G", "R"]
         )
         if (
             rgb_key
             not in self.RGBs[f"{cutout_size.to(u.arcsec).value:.2f}as"].keys()
         ):
-            RGB_obj = RGB.from_gal(data, self, rgb_bands)
+            RGB_obj = RGB.from_gal_data(self, data, rgb_bands, cutout_size)
             assert RGB_obj.name == rgb_key
             self.RGBs[cutout_size_str][rgb_key] = RGB_obj
         return self.RGBs[cutout_size_str][rgb_key]
@@ -258,14 +258,16 @@ class Galaxy:
         rgb_bands: Dict[str, List[str]],
         cutout_size: u.Quantity = 0.96 * u.arcsec,
         method: str = "trilogy",
+        rgb_unit: u.Unit = u.uJy,
+        rgb_kwargs: Dict[str, Any] = {},
     ) -> NoReturn:
         cutout_size_str = f"{cutout_size.to(u.arcsec).value:.2f}as"
         rgb_key = ",".join(
-            f"{colour}={'+'.join(self.get_colour_filt_names[colour])}"
+            f"{colour}={'+'.join(rgb_bands[colour])}"
             for colour in ["B", "G", "R"]
         )
         RGB_obj = self.RGBs[cutout_size_str][rgb_key]
-        RGB_obj.plot(ax, method)
+        RGB_obj.plot(ax, method, unit = rgb_unit, rgb_kwargs = rgb_kwargs)
 
     def make_cutouts(
         self: Type[Self], 

@@ -1563,9 +1563,16 @@ class Catalogue(Catalogue_Base):
     def make_cutouts(
         self: Self,
         cutout_size: Union[u.Quantity, dict] = 0.96 * u.arcsec,
+        native: bool = False,
     ) -> List[Dict[str, Type[Band_Cutout_Base]]]:
-        return [gal.make_cutouts(self.data, cutout_size) for gal in self]
-    
+        if native:
+            assert hasattr(self.data, "native"), \
+                galfind_logger.critical("Native data not available")
+            data = self.data.native
+        else:
+            data = self.data
+        return [gal.make_cutouts(data, cutout_size) for gal in self]
+
     def make_band_cutouts(
         self: Self,
         filt: Union[str, Filter],

@@ -41,6 +41,13 @@ class Prior(ABC):
     # def latex_name(self: Self) -> str:
     #     """Return the LaTeX name of the prior."""
     #     pass
+
+    @abstractmethod
+    def get_initpos(
+        self: Self,
+    ) -> float:
+        """Return an initial position for the MCMC walkers."""
+        pass
     
     @abstractmethod
     def __call__(
@@ -87,6 +94,11 @@ class Flat_Prior(Prior):
         prior_params = {"lower_lim": prior_lims[0], "upper_lim": prior_lims[1]}
         super().__init__(name, prior_params, fiducial)
 
+    def get_initpos(
+        self: Self,
+    ) -> float:
+        return np.random.uniform(self.prior_params["lower_lim"], self.prior_params["upper_lim"], 1)
+
     def __call__(
         self: Self,
         param: float
@@ -116,6 +128,11 @@ class Gaussian_Prior(Prior):
             )
         prior_params = prior_lims
         super().__init__(name, prior_params, fiducial)
+
+    def get_initpos(
+        self: Self,
+    ) -> float:
+        return np.random.normal(self.prior_params["mu"], self.prior_params["sigma"], 1)
 
     def __call__(
         self: Self,
@@ -281,7 +298,7 @@ class Base_MCMC_Fitter(ABC):
         galfind_logger.info(f"AIC: {AIC}")
         return AIC
     
-    def get_autocorr_time(self):
+    def get_autocorr_time(self) -> int:
         try:
             sampler_autocorr_time = self.sampler.get_autocorr_time()
             autocorr_time = np.nanmax(sampler_autocorr_time)
@@ -302,8 +319,7 @@ class Base_MCMC_Fitter(ABC):
         if not hasattr(self, "init_pos"):
             # init_pos = [self.fiducial_params + 1e-4 * np.random.uniform(0, 1, self.ndim) * \
             #         self.fiducial_params for i in range(self.nwalkers)]
-            init_pos = [np.array([np.random.uniform(prior.prior_params["lower_lim"], \
-                prior.prior_params["upper_lim"], 1)[0] for prior in self.priors]) \
+            init_pos = [np.array([prior.get_initpos()[0] for prior in self.priors]) \
                 for i in range(self.nwalkers)]
             self.init_pos = init_pos
 
@@ -496,10 +512,23 @@ class Base_MCMC_Fitter(ABC):
         colour: str = "black",
         legend: bool = False,
         save: bool = True,
+        fid_colour: str = "C1",
+        discard: Optional[Union[int, str]] = "default",
+        thin: Optional[Union[int, str]] = "default",
         **plot_kwargs: Dict[str, Any]
     ) -> plt.Figure:
 
-        flat_samples = self.backend.get_chain(flat = True) #, discard=100, thin=15)
+        autocorr_time = self.get_autocorr_time()
+        get_chain_kwargs = {}
+        if discard == "default":
+            discard = int(autocorr_time * 2)
+        if discard is not None:
+            get_chain_kwargs["discard"] = discard
+        if thin == "default":
+            thin = int(autocorr_time / 2)
+        if thin is not None:
+            get_chain_kwargs["thin"] = thin
+        flat_samples = self.backend.get_chain(flat = True, **get_chain_kwargs) #discard = discard, thin = thin)
 
         if "labels" not in plot_kwargs.keys():
             plot_kwargs["labels"] = [prior.name for prior in self.priors]
@@ -538,7 +567,11 @@ class Base_MCMC_Fitter(ABC):
             default_plot_kwargs["show_titles"] = False
 
         fig_ = corner.corner(flat_samples, range = range, **default_plot_kwargs)
-        
+
+        # plot fiducial values
+        if fid_colour is not None:
+            corner.overplot_lines(fig_, self.fiducial_params, color = fid_colour)
+            corner.overplot_points(fig_, np.array(self.fiducial_params)[None], marker = "s", color = fid_colour)
         # calculate best fit values of the variables and their associated errors
         # means = []
         # l1_errs = []

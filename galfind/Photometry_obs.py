@@ -623,6 +623,8 @@ class Photometry_obs(Photometry):
                 
         if annotate:
             # x/y labels etc here
+            ax.set_xlabel(f"Wavelength ({wav_units})")
+            ax.set_ylabel(f"Flux Density ({mag_units})")
             ax.legend()
 
         return plot
