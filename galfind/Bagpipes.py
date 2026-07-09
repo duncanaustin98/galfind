@@ -457,17 +457,22 @@ class Bagpipes(SED_code):
         self: Self,
         cat: Union[Catalogue, Spectral_Catalogue],
         aper_diam: u.Quantity,
-        temp_label: Optional[str] = None,
+        temp_label: Optional[str] = "temp", #None,
     ) -> str:
         from galfind import Catalogue
         if isinstance(cat, Catalogue):
-            temp_subdir = f"{cat.version}/{cat.survey}/{cat.filterset.instrument_name}/" +\
-                f"{aper_diam.to(u.arcsec).value:.2f}as/temp"
+            # temp_subdir = f"{cat.version}/{cat.survey}/{cat.filterset.instrument_name}/" + \
+            #     f"{aper_diam.to(u.arcsec).value:.2f}as/temp"
+            temp_subdir = f"{cat.survey}/temp"
             if temp_label is None:
                 while len(glob.glob(f"{config['Bagpipes']['PIPES_OUT_DIR']}/pipes/posterior/{temp_subdir}/*")) > 0:
                     temp_subdir += "_"
             else:
                 temp_subdir = temp_subdir.replace("/temp", f"/{temp_label}")
+            galfind_logger.info(
+                f"Using {temp_subdir=} for {cat.survey} with {cat.version} {cat.filterset.instrument_name} " + \
+                f"{aper_diam.to(u.arcsec).value:.2f}as"
+            )
         else:
             from galfind import Spectral_Catalogue
             assert isinstance(cat, Spectral_Catalogue), \
@@ -801,10 +806,9 @@ class Bagpipes(SED_code):
         )
         #galfind_logger.info(f"Fitting bagpipes with {self.fit_instructions=}")
         try:
-            run_parallel = False
             fit_cat.fit(
                 verbose = False,
-                mpi_serial = run_parallel,
+                mpi_serial = False if int(config["DEFAULT"]["N_CORES"]) == 1 else True,
                 sampler = self.sampler,
                 overwrite_h5 = True, #overwrite,
             )
