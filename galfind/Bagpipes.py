@@ -793,6 +793,7 @@ class Bagpipes(SED_code):
             photometry_exists = photometry_exists,
             run = out_subdir,
             make_plots = plot,
+            plot_csfh = kwargs.get("plot_csfh", False),
             cat_filt_list = filters,
             redshifts = redshifts, 
             redshift_sigma = None, #redshift_sigma if use_redshift_sigma else None, 
