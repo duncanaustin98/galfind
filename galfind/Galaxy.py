@@ -952,6 +952,7 @@ class Galaxy:
     def load_sextractor_ext_src_corrs(
         self: Self, 
         filt_names: Optional[List[str]] = None,
+        aper_corrs: Optional[Dict[str, float]] = None,
     ) -> None:
         # FLUX_AUTO must already be loaded
         if not hasattr(self, "sex_FLUX_AUTO"):
@@ -961,7 +962,7 @@ class Galaxy:
             raise AttributeError("sex_FLUX_AUTO")
         # load ext_src_corrs into aper_phot
         for aper_diam in self.aper_phot.keys():
-            self.aper_phot[aper_diam].load_sextractor_ext_src_corrs(filt_names)
+            self.aper_phot[aper_diam].load_sextractor_ext_src_corrs(filt_names, aper_corrs = aper_corrs)
             for filt in self.cat_filterset:
                 if filt_names is None or filt.filt_name in filt_names:
                     setattr(

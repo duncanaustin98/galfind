@@ -645,7 +645,7 @@ class Bagpipes(SED_code):
         if "temp_label" in kwargs.keys():
             temp_label = kwargs["temp_label"]
         else:
-            temp_label = None
+            temp_label = "temp" #None
         # # dump priors if not already done
         # self.dump_priors(new_path_post)
         # determine temp directories
@@ -779,11 +779,7 @@ class Bagpipes(SED_code):
             load_func = self._load_pipes_spec
             run_cat = cat # temporary
             load_data_kwargs = {"cat": run_cat}
-        
-        if "plot" in kwargs.keys():
-            plot = kwargs["plot"]
-        else:
-            plot = True
+
         bagpipes = self.reload()
         fit_cat = bagpipes.fit_catalogue(
             IDs,
@@ -792,7 +788,7 @@ class Bagpipes(SED_code):
             spectrum_exists = spectrum_exists,
             photometry_exists = photometry_exists,
             run = out_subdir,
-            make_plots = plot,
+            make_plots = kwargs.get("plot", True),
             plot_csfh = kwargs.get("plot_csfh", False),
             cat_filt_list = filters,
             redshifts = redshifts, 
@@ -807,10 +803,13 @@ class Bagpipes(SED_code):
         )
         #galfind_logger.info(f"Fitting bagpipes with {self.fit_instructions=}")
         try:
+            print(f"Fitting bagpipes with {self.size=}")
+            mpi_serial = False if self.size == 1 else True
             fit_cat.fit(
                 verbose = False,
-                mpi_serial = False if int(config["DEFAULT"]["N_CORES"]) == 1 else True,
+                mpi_serial = mpi_serial,
                 sampler = self.sampler,
+                pool = self.size, # nautilus sampler only
                 overwrite_h5 = True, #overwrite,
             )
         except Exception as e:
@@ -1188,10 +1187,11 @@ class Bagpipes(SED_code):
     
     def _get_wavs(self: Self, ft: Type[filter_set]) -> u.Quantity:
         bagpipes = self.reload()
-        if self.SED_fit_params["sps_model"] == "BPASS":
-            from bagpipes import config_bpass as pipes_config
-        else:
-            from bagpipes import config as pipes_config
+        from bagpipes import config as pipes_config
+        # if self.SED_fit_params["sps_model"] == "BPASS":
+        #     from bagpipes import config_bpass as pipes_config
+        # else:
+        #     from bagpipes import config as pipes_config
 
         min_wav = ft.min_phot_wav
         max_wav = ft.max_phot_wav

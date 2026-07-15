@@ -1376,6 +1376,7 @@ class Catalogue(Catalogue_Base):
     def load_sextractor_ext_src_corrs(
         self: Self,
         multiply_factor: Optional[Dict[str, float]] = None,
+        aper_corrs: Optional[Dict[str, float]] = None, 
     ) -> None:
         if multiply_factor is None:
             filt_names = None
@@ -1383,7 +1384,7 @@ class Catalogue(Catalogue_Base):
             filt_names = list(multiply_factor.keys())
         self.load_sextractor_auto_fluxes(multiply_factor = multiply_factor)
         [
-            gal.load_sextractor_ext_src_corrs(filt_names) for gal in tqdm(
+            gal.load_sextractor_ext_src_corrs(filt_names, aper_corrs = aper_corrs) for gal in tqdm(
                 self,
                 desc = f"Loading SExtractor extended source corrections for {repr(self)}",
                 total = len(self),
