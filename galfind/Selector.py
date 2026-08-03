@@ -4023,7 +4023,8 @@ class Robust_zPDF_Selector(SED_fit_Selector):
             dz_z = self.kwargs["min_dz"] / zbest
         integral = gal.aper_phot[self.aper_diam].SED_results[self.SED_fitter.label]. \
             property_PDFs["z"].integrate_between_lims(
-                float(dz_z), float(zbest)
+                float(dz_z),
+                float(zbest),
             )
         selected = integral > self.kwargs["integral_lim"]
         kwargs_out = {"dz_z": dz_z, "integral": integral}

@@ -652,14 +652,14 @@ class Band_Cutout(Band_Cutout_Base):
                         )
             funcs.make_dirs(save_path)
             fits_hdul = fits.HDUList(hdul)
-            fits_hdul.writeto(save_path, overwrite=True)
+            fits_hdul.writeto(save_path, overwrite = True)
             funcs.change_file_permissions(save_path)
-            galfind_logger.debug(f"Saved fits cutout to: {save_path}")
+            galfind_logger.info(f"Saved fits cutout to: {save_path}")
         else:
             ID = Band_Cutout_Base._get_ID(meta)
             galfind_logger.debug(
                 f"Already made fits cutout for {band_data.survey}" + \
-                f" {band_data.version} {ID} {band_data.filt_name}"
+                f" {band_data.version} {ID} {band_data.filt_name} at {save_path=}"
             )
 
     @staticmethod
@@ -1037,9 +1037,10 @@ class RGB_Base(Cutout_Base, ABC):
         save: bool = False,
         show: bool = False,
         overwrite: bool = False,
+        imshow_kwargs: Dict[str, Any] = {},
         *args,
         **kwargs,
-    ) -> NoReturn:
+    ) -> Optional[List[plt.Text]]:
         method = method.lower()  # make method lowercase
         # construct out_path
         # save_path = f"{config['Cutouts']['CUTOUT_DIR']}/{data.version}/{data.survey}/{self.name}/{method}/{self.ID}.pdf"
@@ -1107,18 +1108,19 @@ class RGB_Base(Cutout_Base, ABC):
             # b = self.channel_scale(b, satpercent = rgb_kwargs.pop("satpercent", 0.001))
             rgb_img = make_lupton_rgb(r, g, b, **rgb_kwargs)
             #norm = ImageNormalize(vmin=-scale*red_mad_std, vmax=scale*red_mad_std, stretch=SqrtStretch())
-            ax.imshow(rgb_img, origin = "lower") #, norm = norm)
+            ax.imshow(rgb_img, origin = "lower", **imshow_kwargs) #, norm = norm)
             # turn off grid
             ax.grid(False, which = "both")
             # turn off ticks
             ax.set_xticks([])
             ax.set_yticks([])
             # label RGB filters
+            all_texts = []
             for i, (colour, plt_colour) in enumerate(
                 zip(["B", "G", "R"], ["blue", "green", "red"])
             ):
                 filt_name = "+".join(self.get_colour_filt_names(colour))
-                ax.text(
+                txt = ax.text(
                     0.15 + i * 0.35,
                     0.1,
                     filt_name,
@@ -1131,7 +1133,9 @@ class RGB_Base(Cutout_Base, ABC):
                         pe.withStroke(linewidth = 2.0, foreground = "white")
                     ],
                     transform = ax.transAxes,
+                    zorder = 10_000,
                 )
+                all_texts.append(txt)
             # plot regions
             self._plot_regions(ax, plot_regions)
 
@@ -1144,6 +1148,8 @@ class RGB_Base(Cutout_Base, ABC):
 
             if show:
                 plt.show()
+            
+            return all_texts
     
     @staticmethod
     def channel_scale(arr, satpercent = 0.001):

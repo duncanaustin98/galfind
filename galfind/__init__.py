@@ -118,6 +118,7 @@ astropy_cosmo = FlatLambdaCDM(H0=70, Om0=0.3, Ob0=0.05, Tcmb0=2.725)
 wav_lyman_lim = 911.8  # * u.AA
 
 from . import useful_funcs_austind
+from . import utils
 from . import figs
 from . import decorators
 from . import SExtractor, Masking, Depths

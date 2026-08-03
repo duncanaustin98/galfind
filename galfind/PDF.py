@@ -310,7 +310,9 @@ class PDF:
         return np.random.choice(self.x, size=size, p=self.p_x/np.sum(self.p_x)) * self.x.unit
 
     def integrate_between_lims(
-        self, lower_x_lim: Union[int, float], upper_x_lim: Union[int, float]
+        self,
+        lower_x_lim: Union[int, float],
+        upper_x_lim: Union[int, float],
     ):
         # find index of closest values in self.x to lower_x_lim and upper_x_lim
         index_x_min = np.argmin(np.absolute(self.x - lower_x_lim))
@@ -723,15 +725,15 @@ class Redshift_PDF(SED_fit_PDF):
 
     def integrate_between_lims(
         self,
-        delta_z_over_z,
+        delta_z_over_z: float,
         zbest: Optional[float] = None,
         z_min: float = 0.,
         z_max: float = 25.,
     ):
         # find best fitting redshift from peak of the PDF distribution - not needed if peak is loaded in PDF object
-        if type(zbest) == type(None):
+        if zbest is None:
             zbest = self.get_peak(0)["value"]  # find first peak
-        elif type(zbest) in [int, float]:  # correct format
+        elif isinstance(zbest, (int, float)):  # correct format
             pass
         else:
             galfind_logger.critical(

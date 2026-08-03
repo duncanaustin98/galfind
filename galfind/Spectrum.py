@@ -380,6 +380,7 @@ class Spectrum:
         add_labels: bool = True,
         colour: str = "magenta",
         nod_colour: str = "lightpink",
+        **plot_kwargs,
     ):
         # mostly copied from msaexp MSAMetafile base code
         self.load_MSA_metafile()
@@ -398,13 +399,15 @@ class Spectrum:
             y_pix = np.append(pixels[1], pixels[1][0])
             if s.meta['is_source']:
                 colour_ = colour
-                lw = 3.0
+                lw = plot_kwargs.get("lw", 2.0) * 1.5
             else:
                 colour_ = nod_colour
-                lw = 2.0
+                lw = plot_kwargs.get("lw", 2.0)
+            plot_kwargs_ = deepcopy(plot_kwargs)
+            plot_kwargs_.pop("lw", None)
             # plot only slits that enter the field of view
             if np.any((x_pix >= 0) & (x_pix < wcs.pixel_shape[0]) & (y_pix >= 0) & (y_pix < wcs.pixel_shape[1])):
-                ax.plot(x_pix, y_pix, color=colour_, lw=lw, alpha=0.8)
+                ax.plot(x_pix, y_pix, color=colour_, lw=lw, **plot_kwargs_)
 
         if add_labels:
             ax.text(

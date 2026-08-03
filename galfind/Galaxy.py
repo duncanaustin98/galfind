@@ -260,14 +260,16 @@ class Galaxy:
         method: str = "trilogy",
         rgb_unit: u.Unit = u.uJy,
         rgb_kwargs: Dict[str, Any] = {},
-    ) -> NoReturn:
+        imshow_kwargs: Dict[str, Any] = {},
+    ) -> Optional[List[plt.Text]]:
         cutout_size_str = f"{cutout_size.to(u.arcsec).value:.2f}as"
         rgb_key = ",".join(
             f"{colour}={'+'.join(rgb_bands[colour])}"
             for colour in ["B", "G", "R"]
         )
         RGB_obj = self.RGBs[cutout_size_str][rgb_key]
-        RGB_obj.plot(ax, method, unit = rgb_unit, rgb_kwargs = rgb_kwargs)
+        rgb_labels = RGB_obj.plot(ax, method, unit = rgb_unit, rgb_kwargs = rgb_kwargs, imshow_kwargs = imshow_kwargs)
+        return rgb_labels
 
     def make_cutouts(
         self: Type[Self], 

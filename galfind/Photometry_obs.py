@@ -227,7 +227,7 @@ class Photometry_obs(Photometry):
                 ) for filt in self.filterset
             ]
 
-    @classmethod  # not a gal object here, more like a catalogue row
+    @classmethod # not a gal object here, more like a catalogue row
     def from_fits_cat(
         cls,
         fits_cat_row,
