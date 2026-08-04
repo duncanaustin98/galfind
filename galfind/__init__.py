@@ -165,6 +165,7 @@ from .Catalogue_Base import Catalogue_Base
 from .Multiple_Catalogue import Combined_Catalogue
 #from .Multiple_Data import Multiple_Data
 from .Catalogue import Catalogue, Catalogue_Creator
+from .Galaxy_Creator import Galaxy_Creator
 from .SED import (
     SED,
     SED_rest,
