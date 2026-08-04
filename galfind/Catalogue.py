@@ -504,6 +504,10 @@ class Catalogue_Creator:
         ] = None,
         cropped: bool = True,
         load_gals: bool = True,
+        # extra_crops: Union[
+        #     Type[Selector],
+        #     List[Type[Selector]]
+        # ] = [],
     ) -> Catalogue:
         galfind_logger.info(
             f"Making {repr(self)} catalogue!"
@@ -513,6 +517,8 @@ class Catalogue_Creator:
             galfind_logger.debug(
                 f"Loading {repr(self)} photometry!"
             )
+            # if len(extra_crops) > 0:
+            #     self.load_crops(self.crops, extra_crops = extra_crops)
             IDs = self.load_IDs(cropped)
             sky_coords = self.load_skycoords(cropped)
             phot, phot_err = self.load_phot(cropped)
@@ -556,12 +562,16 @@ class Catalogue_Creator:
                 ) for ID, sky_coord, phot_obs, selection_flags, selection_kwargs in 
                 zip(IDs, sky_coords, phot_obs_arr, selection_flags_arr, selection_kwargs_arr)
             ]
+            # if len(extra_crops) > 0:
+            #     self.load_crops(self.crops)
         else:
             galfind_logger.info(
                 f"Not loading galaxies for {self.survey} {self.version} {self.cat_name} catalogue!"
             )
             gals = []
         cat = Catalogue(gals, self)
+        # if len(extra_crops) > 0:
+        #     setattr(cat, "extra_crops", extra_crops)
         if load_gals and cropped and len(self._crops_to_perform) != 0:
             # perform the crops
             for crop in self._crops_to_perform:
@@ -592,7 +602,7 @@ class Catalogue_Creator:
     def load_tab(
         self: Self,
         cat_type: str,
-        cropped: bool = True
+        cropped: bool = True,
     ) -> Table:
         tab = self.open_cat(self.cat_path, cat_type)
         if tab is None:
@@ -606,6 +616,10 @@ class Catalogue_Creator:
     def load_crops(
         self: Self,
         crops: Optional[Union[Type[Selector], List[Type[Selector]]]] = None,
+        # extra_crops: Union[
+        #     Type[Selector],
+        #     List[Type[Selector]]
+        # ] = [],
     ) -> None:
         if crops is None:
             self.crops = []
@@ -613,7 +627,7 @@ class Catalogue_Creator:
             self.crops = [crops]
         else:
             self.crops = crops
-        self._get_crop_mask()
+        self._get_crop_mask() #extra_crops = extra_crops)
         if self.apply_gal_instr_mask:
             self.make_gal_instr_mask()
 
@@ -631,25 +645,47 @@ class Catalogue_Creator:
             ])
         return kwarg_colnames
 
-    def _get_crop_mask(self: Self) -> Optional[NDArray[bool]]:
+    def _get_crop_mask(
+        self: Self,
+        # extra_crops: Union[
+        #     Type[Selector],
+        #     List[Type[Selector]]
+        # ] = [],
+    ) -> Optional[NDArray[bool]]:
+        # from . import Selector
+        # if isinstance(extra_crops, funcs.all_subclasses(Selector)):
+        #     extra_crops = [extra_crops]
         tab = self.open_cat(self.cat_path, "SELECTION")
         if tab is None:
             tab = self.open_cat(self.cat_path, "ID")
             self._crops_to_perform = self.crops
-        elif len(self.crops) > 0:
+        elif len(self.crops) > 0: #  + extra_crops
             # crop table using crop dict
             self._crops_to_perform = []
             keep_arr = []
-            for selector in self.crops:
+            for selector in self.crops: # + extra_crops:
                 # iterate through selectors, appending all kwarg colnames
                 kwarg_colnames = self._get_selection_kwarg_colnames(selector)
-                kwarg_colnames = [selector.shorten_kwarg_colname(name, max_len=68) for name in kwarg_colnames]
-                if selector.name in tab.colnames and all([kwarg_colname in tab.colnames for kwarg_colname in kwarg_colnames]):
+                kwarg_colnames = [
+                    selector.shorten_kwarg_colname(name, max_len=68)
+                    for name in kwarg_colnames
+                ]
+                if selector.name in tab.colnames and all(
+                    [
+                        kwarg_colname in tab.colnames
+                        for kwarg_colname in kwarg_colnames
+                    ]
+                ):
                     keep_arr.extend([np.array(tab[selector.name]).astype(bool)])
                     galfind_logger.info(
                         f"Catalogue cropped by {selector.name}"
                     )
                 else:
+                    # if selector in id_crop:
+                    #     err_message = f"extra_crop = {selector.name} not in {tab.colnames=}!"
+                    #     galfind_logger.critical(err_message)
+                    #     raise Exception(err_message)
+                    # else:
                     galfind_logger.info(f"{selector.name} not yet performed!")
                     self._crops_to_perform.append(selector)
             # crop table if required
@@ -663,7 +699,6 @@ class Catalogue_Creator:
         else:
             self.crop_mask = None
         return self.crop_mask
-
 
     def load_IDs(
         self: Self,
@@ -882,7 +917,7 @@ class Catalogue_Creator:
     def load_gal_filtersets(
         self: Self,
         length: int,
-        cropped: bool = True
+        cropped: bool = True,
     ) -> List[Multiple_Filter]:
         if self.apply_gal_instr_mask:
             # create set of filtersets to be pointed to by sources with these bands available

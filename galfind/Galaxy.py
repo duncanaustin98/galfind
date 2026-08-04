@@ -111,6 +111,23 @@ class Galaxy:
         self.survey = survey
         self.simulated = simulated
 
+    @classmethod
+    def from_data_id(
+        cls,
+        data: Data,
+        id: int,
+        **gal_creator_kwargs,
+    ) -> Galaxy:
+        from . import Galaxy_Creator
+        gal_creator = Galaxy_Creator.from_data(
+            data,
+            id = int(id),
+            **gal_creator_kwargs,
+        )
+        return gal_creator(
+            psfs = data.psfs,
+        )
+
     def __repr__(self):
         return f"{self.__class__.__name__}({self.ID}, " + \
             f"[{self.RA.to(u.deg).value:.5f}," + \
