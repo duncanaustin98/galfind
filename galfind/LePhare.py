@@ -22,7 +22,7 @@ from numpy.typing import NDArray
 from astropy.table import Table
 from typing import Any, Dict, List, Union, NoReturn, Optional, TYPE_CHECKING, Tuple
 if TYPE_CHECKING:
-    from . import Catalogue, Filter, Multiple_Filter, PDF, SED_obs
+    from . import Galaxy, Catalogue, Spectral_Catalogue, Filter, Multiple_Filter, PDF, SED_obs
 try:
     from typing import Self, Type  # python 3.11+
 except ImportError:
@@ -89,7 +89,7 @@ class LePhare(SED_code):
         self: Self,
         *args,
         **kwargs,
-    ):
+    ) -> Union[Galaxy, Catalogue, Spectral_Catalogue]:
         #self.compile()
         return super().__call__(*args, **kwargs)
 
@@ -174,13 +174,23 @@ class LePhare(SED_code):
 
         return super()._assert_SED_fit_params()
 
+    def pre_fitting(
+        self: Type[Self],
+        cat: Catalogue,
+        aper_diam: u.Quantity,
+        overwrite: bool = False,
+        save_name: Optional[str] = None,
+    ) -> None:
+        pass
+
     def make_in(
         self,
         cat: Catalogue, 
         aper_diam: u.Quantity,
         overwrite: bool = False,
+        save_name: Optional[str] = None,
     ) -> str:
-        in_path = self.get_in_path(cat, aper_diam)
+        in_path = self.get_in_path(cat, aper_diam, save_name = save_name)
         if not Path(in_path).is_file() or overwrite:
             # 1) obtain input data
             IDs = np.array([gal.ID for gal in cat.gals])
@@ -491,16 +501,17 @@ class LePhare(SED_code):
         save_PDFs: bool = True,
         overwrite: bool = False,
         update: bool = False,
+        save_name: Optional[str] = None,
         **kwargs: Dict[str, Any],
     ) -> None:
 
-        fits_out_path = self.get_fits_out_path(cat, aper_diam)
+        fits_out_path = self.get_fits_out_path(cat, aper_diam, save_name = save_name)
 
         if not Path(fits_out_path).is_file() or overwrite:
             galfind_logger.info(f"Fitting {repr(cat)} with {repr(self)}")
 
-            in_path = self.get_in_path(cat, aper_diam)
-            out_path = self.get_out_path(cat, aper_diam)
+            in_path = self.get_in_path(cat, aper_diam, save_name = save_name)
+            out_path = self.get_out_path(cat, aper_diam, save_name = save_name)
             lephare_config_path = f"{config['LePhare']['LEPHARE_CONFIG_DIR']}/default.para"
 
             if "save_suffix" in kwargs.keys():
@@ -651,17 +662,23 @@ class LePhare(SED_code):
         self: Self,
         cat: Catalogue,
         aper_diam: u.Quantity,
+        save_name: Optional[str] = None,
     ) -> str:
+        if save_name is None:
+            save_name = ""
+        else:
+            save_name = f"_{save_name}"
         in_dir = f"{config['LePhare']['LEPHARE_DIR']}/input/{cat.filterset.instrument_name}/{cat.version}/{cat.survey}"
-        in_name = cat.cat_name.replace('.fits', f"_{aper_diam.to(u.arcsec).value:.2f}as.in")
+        in_name = cat.cat_name.replace('.fits', f"_{aper_diam.to(u.arcsec).value:.2f}as{save_name}.in")
         return f"{in_dir}/{in_name}"
 
     def get_out_path(
         self: Self,
         cat: Catalogue,
         aper_diam: u.Quantity,
+        save_name: Optional[str] = None,
     ) -> str:
-        in_path = self.get_in_path(cat, aper_diam)
+        in_path = self.get_in_path(cat, aper_diam, save_name = save_name)
         out_folder = funcs.split_dir_name(
             in_path.replace("input", "output"), "dir"
         )
@@ -687,9 +704,10 @@ class LePhare(SED_code):
         self: Self,
         cat: Catalogue,
         aper_diam: u.Quantity,
+        save_name: Optional[str] = None,
     ) -> str:
         return self.fits_out_path_from_out_path(
-            self.get_out_path(cat, aper_diam)
+            self.get_out_path(cat, aper_diam, save_name = save_name)
         )
 
     @staticmethod
@@ -706,8 +724,9 @@ class LePhare(SED_code):
         self: Self,
         cat: Catalogue,
         aper_diam: u.Quantity,
+        save_name: Optional[str] = None,
     ) -> Dict[str, List[str]]:
-        fits_out_path = self.get_fits_out_path(cat, aper_diam)
+        fits_out_path = self.get_fits_out_path(cat, aper_diam, save_name = save_name)
         PDF_paths = {
             "z": [
                 self.get_spec_path(fits_out_path, gal.ID)
@@ -719,21 +738,23 @@ class LePhare(SED_code):
     def get_SED_paths(
         self: Self,
         cat: Catalogue,
-        aper_diam: u.Quantity
+        aper_diam: u.Quantity,
+        save_name: Optional[str] = None,
     ) -> Dict[str, List[str]]:
-        fits_out_path = self.get_fits_out_path(cat, aper_diam)
+        fits_out_path = self.get_fits_out_path(cat, aper_diam, save_name = save_name)
         return [self.get_spec_path(fits_out_path, gal.ID) for gal in cat]
 
     def _get_out_paths(
         self: Self, 
         cat: Catalogue, 
-        aper_diam: u.Quantity
+        aper_diam: u.Quantity,
+        save_name: Optional[str] = None,
     ) -> Tuple[str, str, str, Dict[str, List[str]], List[str]]:
-        in_path = self.get_in_path(cat, aper_diam)
-        out_path = self.get_out_path(cat, aper_diam)
-        fits_out_path = self.get_fits_out_path(cat, aper_diam)
-        PDF_paths = self.get_PDF_paths(cat, aper_diam)
-        SED_paths = self.get_SED_paths(cat, aper_diam)
+        in_path = self.get_in_path(cat, aper_diam, save_name = save_name)
+        out_path = self.get_out_path(cat, aper_diam, save_name = save_name)
+        fits_out_path = self.get_fits_out_path(cat, aper_diam, save_name = save_name)
+        PDF_paths = self.get_PDF_paths(cat, aper_diam, save_name = save_name)
+        SED_paths = self.get_SED_paths(cat, aper_diam, save_name = save_name)
         return in_path, out_path, fits_out_path, PDF_paths, SED_paths
 
     def get_lib_name(

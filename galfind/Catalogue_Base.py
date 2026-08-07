@@ -60,7 +60,7 @@ class Catalogue_Base:
         output_str += funcs.band_sep
         output_str += f"CAT PATH = {self.cat_path}\n"
         # access table header to display what has been run for this catalogue
-        tab = self.cat_creator.open_cat(self.cat_path, "ID")
+        tab = self.cat_creator._open_tab("ID")
         output_str += f"TOTAL GALAXIES = {len(tab)}\n"
         output_str += f"RA RANGE = {self.ra_range}\n"
         output_str += f"DEC RANGE = {self.dec_range}\n"
@@ -570,7 +570,7 @@ class Catalogue_Base:
         
     @property
     def select_colnames(self) -> List[str]:
-        tab = self.cat_creator.open_cat(self.cat_path, "selection")
+        tab = self.cat_creator._open_tab("SELECTION")
         if tab is None:
             return []
         else:

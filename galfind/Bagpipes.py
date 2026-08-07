@@ -27,7 +27,7 @@ from tqdm import tqdm
 import logging
 from typing import Union, Dict, Any, List, Tuple, Optional, NoReturn, TYPE_CHECKING
 if TYPE_CHECKING:
-    from . import Catalogue, Spectral_Catalogue, PDF, Multiple_Filter
+    from . import Galaxy, Catalogue, Spectral_Catalogue, PDF, Multiple_Filter
     from bagpipes.filters import filter_set
 try:
     from typing import Self, Type  # python 3.11+
@@ -329,7 +329,7 @@ class Bagpipes(SED_code):
 
     def __call__(
         self: Self,
-        cat: Catalogue,
+        target: Union[Galaxy, Catalogue, Spectral_Catalogue],
         aper_diam: Optional[u.Quantity] = None,
         save_PDFs: bool = True,
         save_SEDs: bool = True,
@@ -338,6 +338,7 @@ class Bagpipes(SED_code):
         timed: bool = True,
         overwrite: bool = False,
         update: bool = False,
+        save_name: Optional[str] = None,
         **fit_kwargs
     ):
         try:
@@ -349,23 +350,14 @@ class Bagpipes(SED_code):
             self.rank = 0
             self.size = 1
 
-        self._load_fit_instructions()
-        if "sfh" in self.SED_fit_params.keys() and "continuity" in self.SED_fit_params["sfh"]:
-            self._update_continuity_sfh_fit_instructions(cat)
-        if isinstance(self.SED_fit_params["fix_z"], bool) and not \
-                self.SED_fit_params["fix_z"] and "z_sigma" in self.SED_fit_params.keys():
-            self._update_redshift_fit_instructions(cat)
-        out_path = self._get_out_paths(cat, aper_diam)[1]
-        if Path(out_path).is_file() and not overwrite:
-            self._update_gal_properties(Table.read(out_path).colnames)
-        from galfind import Catalogue
-        if isinstance(cat, Catalogue):
+        from . import Galaxy, Catalogue
+        if isinstance(target, (Galaxy, Catalogue)):
             assert aper_diam is not None, \
                 galfind_logger.critical(
                     "Bagpipes fitting requires aper_diam to be specified!"
                 )
             return super().__call__(
-                cat,
+                target,
                 aper_diam,
                 save_PDFs,
                 save_SEDs,
@@ -374,18 +366,20 @@ class Bagpipes(SED_code):
                 timed,
                 overwrite,
                 update,
+                save_name = save_name,
                 **fit_kwargs
             )
         else:
-            from galfind import Spectral_Catalogue
-            assert isinstance(cat, Spectral_Catalogue)
+            from . import Spectral_Catalogue
+            assert isinstance(target, Spectral_Catalogue)
             return self.fit_spec_cat(
-                cat,
+                target,
                 save_PDFs = save_PDFs,
                 save_SEDs = save_SEDs,
                 load_PDFs = load_PDFs,
                 load_SEDs = load_SEDs,
                 overwrite = overwrite,
+                save_name = save_name,
                 **fit_kwargs,
             )
 
@@ -467,14 +461,32 @@ class Bagpipes(SED_code):
                         )
         return save_path
 
+    def pre_fitting(
+        self: Self,
+        cat: Union[Catalogue, Spectral_Catalogue],
+        aper_diam: u.Quantity,
+        overwrite: bool = False,
+        save_name: Optional[str] = None,
+    ) -> None:
+        self._load_fit_instructions()
+        if "sfh" in self.SED_fit_params.keys() and "continuity" in self.SED_fit_params["sfh"]:
+            self._update_continuity_sfh_fit_instructions(cat)
+        if isinstance(self.SED_fit_params["fix_z"], bool) and not \
+                self.SED_fit_params["fix_z"] and "z_sigma" in self.SED_fit_params.keys():
+            self._update_redshift_fit_instructions(cat)
+        out_path = self._get_out_paths(cat, aper_diam, save_name = save_name)[1]
+        if Path(out_path).is_file() and not overwrite:
+            self._update_gal_properties(Table.read(out_path).colnames)
+
     def make_in(
         self: Self,
-        cat: Catalogue,
+        cat: Union[Catalogue, Spectral_Catalogue],
         aper_diam: u.Quantity,
-        overwrite: bool = False
+        overwrite: bool = False,
+        save_name: Optional[str] = None,
     ) -> str:
-        # no need for bagpipes input catalogue
         pass
+
 
     def _temp_out_subdir(
         self: Self,
@@ -1024,55 +1036,18 @@ class Bagpipes(SED_code):
         self: Self, 
         cat: Catalogue, 
         aper_diam: u.Quantity,
+        save_name: Optional[str] = None,
     ) -> Tuple[str, str, str, Dict[str, List[str]], List[str]]:
-    # @staticmethod
-    # def get_out_paths(
-    #     cat,
-    #     SED_fit_params,
-    #     IDs,
-    #     load_properties=[
-    #         "stellar_mass",
-    #         "formed_mass",
-    #         "dust:Av",
-    #         "beta_C94",
-    #         "m_UV",
-    #         "M_UV",
-    #         "sfr",
-    #         "sfr_10myr",
-    #     ],
-    # ):  # , "Halpha_EWrest", "xi_ion_caseB"
-        #pipes_name = Bagpipes.label_from_SED_fit_params(self.SED_fit_params)
         in_path = None
+        if save_name is None:
+            save_name = self.label
         out_path = f"{config['Bagpipes']['PIPES_OUT_DIR']}/pipes/cats/{cat.version}/" + \
             f"{cat.survey}/{cat.filterset.instrument_name}/" + \
-            f"{aper_diam.to(u.arcsec).value:.2f}as/{self.label}.fits"
+            f"{aper_diam.to(u.arcsec).value:.2f}as/{save_name}.fits"
         fits_out_path = Bagpipes.get_galfind_fits_path(out_path)
         h5_dir = out_path.replace(".fits", "").replace("cats", "posterior")
         h5_paths = [f"{h5_dir}/{ID}.h5" for ID in cat.ID]
-        # PDF_dir = out_path.replace(".fits", "").replace("cats", "posterior")
-        # SED_dir = out_path.replace(".fits", "").replace("cats", "posterior")
-        # open h5
-        # load_properties = []
-        # PDF_paths = {
-        #     gal_property if "redshift" not in gal_property else "z": [
-        #         f"{h5_dir}/{gal_property}/{str(int(ID))}_{cat.survey}.txt"
-        #         if Path(
-        #             f"{h5_dir}/{gal_property}/{str(int(ID))}_{cat.survey}.txt"
-        #         ).is_file()
-        #         else None
-        #         for ID in cat.ID
-        #     ]
-        #     for gal_property in load_properties
-        # }
-        # determine SED paths
-        #SED_paths = []
-        # SED_paths = [
-        #     f"{h5_dir}/{str(int(ID))}_{cat.survey}.dat"
-        #     if Path(f"{h5_dir}/{str(int(ID))}_{cat.survey}.dat").is_file()
-        #     else None
-        #     for ID in cat.ID
-        # ]
-        return in_path, out_path, fits_out_path, h5_paths, h5_paths #PDF_paths, SED_paths
+        return in_path, out_path, fits_out_path, h5_paths, h5_paths
 
     def extract_SEDs(
         self: Self,
@@ -1360,8 +1335,9 @@ class Bagpipes(SED_code):
         self: Self,
         cat: Catalogue,
         aper_diam: u.Quantity,
+        save_name: Optional[str] = None,
     ):
-        PDF_paths = self._get_out_paths(cat, aper_diam)[3]
+        PDF_paths = self._get_out_paths(cat, aper_diam, save_name = save_name)[3]
         sfh_arr = [SFH.from_pipes_post(path) for path in PDF_paths]
         return sfh_arr
 

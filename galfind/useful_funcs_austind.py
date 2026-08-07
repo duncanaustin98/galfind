@@ -21,7 +21,7 @@ from numpy.typing import NDArray
 from typing import Union, List, Tuple, TYPE_CHECKING, Optional, Any, Dict
 if TYPE_CHECKING:
     from .Data import Band_Data_Base, Band_Data, Stacked_Band_Data
-    from . import Selector, Filter, Multiple_Filter, Mask_Selector, Photometry_rest
+    from . import Selector, Filter, Multiple_Filter, Mask_Selector, Photometry_rest, Catalogue
 try:
     from typing import Self, Type  # python 3.11+
 except ImportError:
@@ -1465,6 +1465,33 @@ def all_subclasses(cls):
                 stack.append(sub)
     out = tuple(out)
     return out
+
+def cat_from_gal(
+    gal: Galaxy,
+    data: Optional[Data],
+    gal_creator_kwargs: Optional[Dict[str, Any]],
+) -> Catalogue:
+    from . import Data, Galaxy_Creator, Catalogue
+    assert isinstance(data, Data), \
+        galfind_logger.critical(
+            f"funcs.cat_from_gal requires {type(data)}==Data!"
+        )
+    # TODO: galaxy should already have an associated Galaxy_Creator
+    # make catalogue of length 1 from galaxy object
+    if hasattr(gal, "gal_creator"):
+        gal_creator = gal.gal_creator
+    else:
+        galfind_logger.debug(
+            f"{gal_creator_kwargs=} in funcs.cat_from_gal()"
+        )
+        gal_creator = Galaxy_Creator.from_data(
+            data,
+            gal.ID,
+            **gal_creator_kwargs,
+        )
+    # BUG: Galaxy_Creator.__call__() produces Galaxy rather than Catalogue object
+    cat = Catalogue([gal], gal_creator)
+    return cat
 
 # def _dicts_equal(d1, d2, name1="dict1", name2="dict2") -> bool:
 #     """Iteratively compare two dicts, tolerating values that don't support

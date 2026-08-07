@@ -111,8 +111,18 @@ class SED_code(ABC):
         pass
 
     @abstractmethod
+    def pre_fitting(
+        self: Type[Self],
+        cat: Union[Catalogue, Spectral_Catalogue],
+        aper_diam: u.Quantity,
+        overwrite: bool = False,
+        save_name: Optional[str] = None,
+    ) -> None:
+        pass
+
+    @abstractmethod
     def make_in(
-        self, 
+        self: Type[Self], 
         cat: Catalogue, 
         aper_diam: u.Quantity, 
         overwrite: bool = False
@@ -139,7 +149,8 @@ class SED_code(ABC):
     def _get_out_paths(
         self: Self, 
         cat: Catalogue, 
-        aper_diam: u.Quantity
+        aper_diam: u.Quantity,
+        save_name: Optional[str] = None,
     ) -> Tuple[str, str, str, Dict[str, List[str]], List[str]]:
         pass
 
@@ -227,7 +238,7 @@ class SED_code(ABC):
 
     def __call__(
         self: Self,
-        cat: Union[Catalogue, Spectral_Catalogue],
+        target: Union[Galaxy, Catalogue, Spectral_Catalogue],
         aper_diam: u.Quantity,
         save_PDFs: bool = True,
         save_SEDs: bool = True,
@@ -236,52 +247,96 @@ class SED_code(ABC):
         timed: bool = True,
         overwrite: bool = False,
         update: bool = True,
-        **fit_kwargs
+        save_name: Optional[str] = None,
+        **fit_kwargs,
     ) -> List[SED_result]:
+        from . import Galaxy
+        # Make length 1 catalogue if required
+        if isinstance(target, Galaxy):
+            cat = funcs.cat_from_gal(
+                target,
+                data = fit_kwargs.get("data", None),
+                gal_creator_kwargs = fit_kwargs.get("gal_creator_kwargs", {}),
+            )
+            # TODO: check loading from cache
+            fits_cat = cat.open_cat(hdu=self)
+            if target.ID in fits_cat[self.ID_label]:
+                fit = False
+            else:
+                fit = True
+                if save_name is None:
+                    save_name = ""
+                else:
+                    save_name += "_"
+                save_name += f"ID={target.ID}"
+            cat = self(
+                cat,
+                aper_diam,
+                save_PDFs = save_PDFs,
+                save_SEDs = save_SEDs,
+                load_PDFs = load_PDFs,
+                load_SEDs = load_SEDs,
+                overwrite = overwrite,
+                save_name = save_name,
+                fit = fit,
+                **fit_kwargs,
+            )
+            # return galaxy rather than catalogue if input was a galaxy
+            return cat[0]
 
         if timed:
             start = time.time()
 
-        galfind_logger.info(
-            f"Making .in file for {self.label} SED fitting for " + \
-            f"{cat.survey} {cat.version} {cat.filterset.instrument_name}"
-        )
-        self.make_in(cat, aper_diam, overwrite)
-        galfind_logger.info(
-            f"Made .in file for {self.label} SED fitting for " + \
-            f"{cat.survey} {cat.version} {cat.filterset.instrument_name}. "
-        )
-
-        in_path, out_path, fits_out_path, PDF_paths, SED_paths = self._get_out_paths(cat, aper_diam)
+        in_path, out_path, fits_out_path, PDF_paths, SED_paths = \
+            self._get_out_paths(
+                target,
+                aper_diam,
+                save_name = save_name,
+            )
         # run the SED fitting if not already done so or if wanted overwriting
-        fits_cat = cat.open_cat(hdu=self) # could be cached
-        if "z" not in self.gal_property_labels.keys():
-            fit = True
-        elif fits_cat is None or self.gal_property_labels["z"] \
-                not in fits_cat.colnames:
-            fit = True
+        self.pre_fitting(target, aper_diam, overwrite, save_name = save_name)
+        # TODO: check loading from cache
+        if fit_kwargs.get("fit", None):
+            fit = fit_kwargs["fit"]
         else:
-            fit = False
+            fits_cat = target.open_cat(hdu=self)
+            if "z" not in self.gal_property_labels.keys():
+                fit = True
+            elif fits_cat is None or self.gal_property_labels["z"] not in fits_cat.colnames:
+                fit = True
+            else:
+                fit = False
+        breakpoint()
         if fit:
+            galfind_logger.info(
+                f"Making .in file for {self.label} SED fitting for {repr(target)}!"
+            )
+            self.make_in(target, aper_diam, overwrite, save_name = save_name)
+            galfind_logger.info(
+                f"Made .in file for {self.label} SED fitting for {repr(target)}!"
+            )
+
             self.fit(
-                cat,
+                target,
                 aper_diam,
                 save_SEDs=save_SEDs,
                 save_PDFs=save_PDFs,
                 overwrite=overwrite,
+                save_name=save_name,
                 **fit_kwargs
             )
-            self.make_fits_from_out(out_path)
-            self.update_fits_cat(cat, fits_out_path)
+            self.make_fits_from_out(out_path, save_name = save_name)
+            breakpoint()
+            self.update_fits_cat(target, fits_out_path)
 
         if timed:
             mid = time.time()
             print(f"Running SED fitting took {(mid - start):.1f}s")
 
         if update:
-            SED_fit_cat = cat.open_cat(cropped=True, hdu=self)
-            aper_phot_IDs = [gal.ID for gal in cat]
-            phot_arr = [gal.aper_phot[aper_diam] for gal in cat]
+            SED_fit_cat = target.open_cat(cropped=True, hdu=self)
+            aper_phot_IDs = [gal.ID for gal in target]
+            phot_arr = [gal.aper_phot[aper_diam] for gal in target]
             # assume properties all come from the same table if only a single catalogue is given
             SED_fit_IDs = SED_fit_cat[self.ID_label]
             assert all(aper_phot_ID == SED_fit_ID for aper_phot_ID, SED_fit_ID \
@@ -332,24 +387,17 @@ class SED_code(ABC):
                     f"Loading properties and associated errors took {(mid - start):.1f}s"
                 )
 
-        # save PDF and SED paths in galfind catalogue object
-        #cat.save_phot_PDF_paths(PDF_paths)
-        #cat.save_phot_SED_paths(SED_paths)
-
             if load_PDFs:
                 galfind_logger.info(
-                    f"Loading {self.hdu_name} property PDFs into " + \
-                    f"{cat.survey} {cat.version} {cat.filterset.instrument_name}"
+                    f"Loading {self.hdu_name} property PDFs into {repr(target)}!"
                 )
                 cat_property_PDFs = self.load_cat_property_PDFs(PDF_paths, aper_phot_IDs)
                 galfind_logger.info(
-                    f"Finished loading {self.hdu_name} property PDFs into " + \
-                    f"{cat.survey} {cat.version} {cat.filterset.instrument_name}"
+                    f"Finished loading {self.hdu_name} property PDFs into {repr(target)}!"
                 )
             else:
                 galfind_logger.info(
-                    f"Not loading {self.hdu_name} property PDFs into " + \
-                    f"{cat.survey} {cat.version} {cat.filterset.instrument_name}"
+                    f"Not loading {self.hdu_name} property PDFs into {repr(target)}!"
                 )
                 cat_property_PDFs = np.array(
                     list(itertools.repeat(None, len(cat_properties)))
@@ -357,22 +405,19 @@ class SED_code(ABC):
 
             if load_SEDs:
                 galfind_logger.info(
-                    f"Loading {self.hdu_name} SEDs into " + \
-                    f"{cat.survey} {cat.version} {cat.filterset.instrument_name}"
+                    f"Loading {self.hdu_name} SEDs into {repr(target)}!"
                 )
                 if all("z" in pdf.keys() if pdf is not None else False for pdf in cat_property_PDFs):
                     zPDFs = [pdf["z"] for pdf in cat_property_PDFs]
                 else:
                     zPDFs = None
-                cat_SEDs = self.extract_SEDs(aper_phot_IDs, SED_paths, cat = cat, aper_diam = aper_diam, zPDFs = zPDFs)
+                cat_SEDs = self.extract_SEDs(aper_phot_IDs, SED_paths, cat = target, aper_diam = aper_diam, zPDFs = zPDFs)
                 galfind_logger.info(
-                    f"Finished loading {self.hdu_name} SEDs into " + \
-                    f"{cat.survey} {cat.version} {cat.filterset.instrument_name}"
+                    f"Finished loading {self.hdu_name} SEDs into {repr(target)}!"
                 )
             else:
                 galfind_logger.info(
-                    f"Not loading {self.hdu_name} SEDs into " + \
-                    f"{cat.survey} {cat.version} {cat.filterset.instrument_name}"
+                    f"Not loading {self.hdu_name} SEDs into {repr(target)}!"
                 )
                 cat_SEDs = np.array(
                     list(itertools.repeat(None, len(cat_properties)))
@@ -393,20 +438,20 @@ class SED_code(ABC):
                         cat_property_PDFs,
                         cat_SEDs
                     ),
-                    desc=f"Creating {repr(self)} cat_SED_results for {repr(cat)}",
-                    total=len(cat),
+                    desc=f"Creating {repr(self)} cat_SED_results for {repr(target)}",
+                    total=len(target),
                     disable=galfind_logger.getEffectiveLevel() > logging.INFO,
                 )
             ]
 
-            cat.update_SED_results(cat_SED_results, timed = timed)
-            if not hasattr(cat, "SED_results"):
-                cat.SED_results = {}
-            if not aper_diam in cat.SED_results.keys():
-                cat.SED_results[aper_diam] = []
-            cat.SED_results[aper_diam].append(self)
+            target.update_SED_results(cat_SED_results, timed = timed)
+            if not hasattr(target, "SED_results"):
+                target.SED_results = {}
+            if not aper_diam in target.SED_results.keys():
+                target.SED_results[aper_diam] = []
+            target.SED_results[aper_diam].append(self)
 
-        #return cat_SED_results
+        return target #_SED_results
             
 
     def _load_phot(self,

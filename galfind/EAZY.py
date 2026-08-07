@@ -28,7 +28,7 @@ from scipy.linalg import LinAlgWarning
 from tqdm import tqdm
 from typing import TYPE_CHECKING, List, Any, Dict, Optional, NoReturn, Type, Union, Tuple
 if TYPE_CHECKING:
-    from . import Catalogue, PDF, Multiple_Filter
+    from . import Galaxy, Catalogue, Spectral_Catalogue, PDF, Multiple_Filter, SED_Result, SED_obs
 try:
     from typing import Self, Type  # python 3.11+
 except ImportError:
@@ -139,7 +139,7 @@ class EAZY(SED_code):
 
     def __call__(
         self: Self,
-        cat: Union[Catalogue, Spectral_Catalogue],
+        target: Union[Galaxy, Catalogue, Spectral_Catalogue],
         aper_diam: u.Quantity,
         save_PDFs: bool = True,
         save_SEDs: bool = True,
@@ -149,10 +149,11 @@ class EAZY(SED_code):
         overwrite: bool = False,
         update: bool = True,
         lowz_zmax_arr: Optional[List[float]] = None,
+        save_name: Optional[str] = None,
         **fit_kwargs
-    ) -> Self:
-        super().__call__(
-            cat,
+    ) -> Union[Galaxy, Catalogue, Spectral_Catalogue]:
+        target = super().__call__(
+            target,
             aper_diam,
             save_PDFs,
             save_SEDs,
@@ -161,20 +162,27 @@ class EAZY(SED_code):
             timed,
             overwrite,
             update,
+            save_name = save_name,
             **fit_kwargs,
         )
-        self._update_lowz_zmax(cat, aper_diam, lowz_zmax_arr)
+        from . import Catalogue, Spectral_Catalogue
+        if isinstance(target, (Catalogue, Spectral_Catalogue)):
+            # BUG: save_name doesn't propagate 
+            # - don't think it makes a difference in the function though
+            self._update_lowz_zmax(target, aper_diam, lowz_zmax_arr, save_name = save_name)
+        return target
 
     def _update_lowz_zmax(
-        self,
+        self: Self,
         cat: Union[Catalogue, Spectral_Catalogue],
         aper_diam: u.Quantity,
         lowz_zmax_arr: List[float],
+        save_name: Optional[str] = None,
     ) -> Optional[List[SED_Result]]:
         #cat_SED_results = [deepcopy(gal).aper_phot[aper_diam].SED_results[self.label] for gal in cat]
         if lowz_zmax_arr is not None and self.SED_fit_params["lowz_zmax"] is None:
             # update cat_SED_results with lowz_zmax info
-            h5_path = self._get_out_paths(cat, aper_diam)[2].replace(".fits", ".h5")
+            h5_path = self._get_out_paths(cat, aper_diam, save_name = save_name)[2].replace(".fits", ".h5")
             fit = hdf5.initialize_from_hdf5(h5file=h5_path, verbose=False)
             lowz_zmax_arr = np.sort(lowz_zmax_arr)
             save_dict_arr = np.full(len(cat), deepcopy({}))
@@ -279,15 +287,28 @@ class EAZY(SED_code):
                         self.SED_fit_params[default_str] = config.getfloat("EAZY", default_str)
         return super()._assert_SED_fit_params()
 
+    def pre_fitting(
+        self: Type[Self],
+        cat: Catalogue,
+        aper_diam: u.Quantity,
+        overwrite: bool = False,
+        save_name: Optional[str] = None,
+    ) -> None:
+        pass
+
     def make_in(
         self, 
         cat: Catalogue, 
         aper_diam: u.Quantity, 
-        overwrite: bool = False
+        overwrite: bool = False,
+        save_name: Optional[str] = None,
     ) -> str:
-        
+        if save_name is None:
+            save_name = ""
+        else:
+            save_name = f"_{save_name}"
         in_dir = f"{config['EAZY']['EAZY_DIR']}/input/{cat.filterset.instrument_name}/{cat.version}/{cat.survey}"
-        in_name = cat.cat_name.replace('.fits', f"_{aper_diam.to(u.arcsec).value:.2f}as.in")
+        in_name = cat.cat_name.replace('.fits', f"_{aper_diam.to(u.arcsec).value:.2f}as{save_name}.in")
         in_path = f"{in_dir}/{in_name}"
         in_filt_name = f"{in_path.replace('.in', '_filters.RES')}"
         if not Path(in_path).is_file() or overwrite:
@@ -301,7 +322,11 @@ class EAZY(SED_code):
 
             # Make filter file
             
-            filt_codes = self._make_filter_file(cat.filterset, in_filt_name, default_param_path = f"{config['EAZY']['EAZY_CONFIG_DIR']}/EAZY_UVJ.RES")
+            filt_codes = self._make_filter_file(
+                cat.filterset,
+                in_filt_name,
+                default_param_path = f"{config['EAZY']['EAZY_CONFIG_DIR']}/EAZY_UVJ.RES",
+            )
                 
             # Make input file
             in_data = np.array(
@@ -354,6 +379,7 @@ class EAZY(SED_code):
         save_PDFs: bool = True,
         overwrite: bool = False,
         update: bool = False,
+        save_name: Optional[str] = None,
         **kwargs: Dict[str, Any],
     ) -> NoReturn:
         """
@@ -374,7 +400,13 @@ class EAZY(SED_code):
         # HOT_60K - modified IMF high-z templates for use at z > 12
         # Nakajima - unobscured AGN templates
 
-        in_path, out_path, fits_out_path, PDF_paths, SED_paths = self._get_out_paths(cat, aper_diam)
+        in_path, out_path, fits_out_path, PDF_paths, SED_paths = \
+            self._get_out_paths(
+                cat,
+                aper_diam,
+                overwrite,
+                save_name = save_name,
+            )
 
         in_filt_path = f"{in_path.replace('.in', '_filters.RES')}"
 
@@ -688,10 +720,15 @@ class EAZY(SED_code):
     def _get_out_paths(
         self: Self, 
         cat: Catalogue, 
-        aper_diam: u.Quantity
+        aper_diam: u.Quantity,
+        save_name: Optional[str] = None,
     ) -> Tuple[str, str, str, Dict[str, List[str]], List[str]]:
+        if save_name is None:
+            save_name = ""
+        else:
+            save_name = f"_{save_name}"
         in_dir = f"{config['EAZY']['EAZY_DIR']}/input/{cat.filterset.instrument_name}/{cat.version}/{cat.survey}"
-        in_name = cat.cat_name.replace('.fits', f"_{aper_diam.to(u.arcsec).value:.2f}as.in")
+        in_name = cat.cat_name.replace('.fits', f"_{aper_diam.to(u.arcsec).value:.2f}as{save_name}.in")
         in_path = f"{in_dir}/{in_name}"
 
         out_folder = funcs.split_dir_name(

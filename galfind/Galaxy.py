@@ -124,9 +124,7 @@ class Galaxy:
             id = int(id),
             **gal_creator_kwargs,
         )
-        return gal_creator(
-            psfs = data.psfs,
-        )
+        return gal_creator(psfs = data.psfs)
 
     def __repr__(self):
         return f"{self.__class__.__name__}({self.ID}, " + \

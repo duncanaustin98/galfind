@@ -194,9 +194,9 @@ class Galaxy_Creator(Catalogue_Creator):
             survey = self.survey,
             simulated = self.simulated,
         )
-        # if hasattr(self, "data"):
-        #     gal.data = self.data
-        galfind_logger.info(f"Made {self.cat_path} galaxy!")
+        if not hasattr(gal, "gal_creator"):
+            setattr(gal, "gal_creator", self)
+        galfind_logger.info(f"Made {repr(gal)} from {repr(self)}!")
         return gal
 
     def load_crops(
