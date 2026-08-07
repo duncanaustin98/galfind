@@ -1194,40 +1194,30 @@ def get_depths_from_h5(
     mode: str,
 ) -> Tuple[Dict[str, float], Dict[str, float]]:
     # open .h5
-    hf = h5py.File(get_grid_depth_path(self, aper_diam, mode), "r")
+    grid_depth_path = get_grid_depth_path(self, aper_diam, mode)
+    hf = h5py.File(grid_depth_path, "r")
     cat_depths = np.array(hf.get("depths"))
     depth_labels = np.array(hf.get("depth_labels"))
-    med_reg_band_depths = {
-        **{
-            str(int(depth_label)): np.nanmedian(
-                [
-                    depth
-                    for depth, label in zip(cat_depths, depth_labels)
-                    if label == depth_label
-                ]
-            )
-            for depth_label in np.unique(depth_labels)
-            if not np.isnan(depth_label)
-        },
-        **{"all": np.nanmedian(cat_depths)},
-    }
-    mean_reg_band_depths = {
-        **{
-            str(int(depth_label)): np.nanmean(
-                [
-                    depth
-                    for depth, label in zip(cat_depths, depth_labels)
-                    if label == depth_label
-                ]
-            )
-            for depth_label in np.unique(depth_labels)
-            if not np.isnan(depth_label)
-        },
-        **{"all": np.nanmean(cat_depths)},
-    }
     hf.close()
-    return med_reg_band_depths, mean_reg_band_depths
 
+    # compute median and mean depths for each region label
+    valid = ~np.isnan(depth_labels)
+    labels = depth_labels[valid]
+    depths = cat_depths[valid]
+    unique_labels, inverse = np.unique(labels, return_inverse=True)
+    order = np.argsort(inverse, kind="stable")
+    sorted_depths = depths[order]
+    group_bounds = np.searchsorted(inverse[order], np.arange(len(unique_labels) + 1))
+    med_reg_band_depths = {}
+    mean_reg_band_depths = {}
+    for i, label in enumerate(unique_labels):
+        group = sorted_depths[group_bounds[i]:group_bounds[i + 1]]
+        med_reg_band_depths[str(int(label))] = np.nanmedian(group)
+        mean_reg_band_depths[str(int(label))] = np.nanmean(group)
+    med_reg_band_depths["all"] = np.nanmedian(cat_depths)
+    mean_reg_band_depths["all"] = np.nanmean(cat_depths)
+    
+    return med_reg_band_depths, mean_reg_band_depths
 
 def get_depth_plot_path(
     self: Type[Band_Data_Base],
@@ -2017,8 +2007,8 @@ def get_depth_h5_labels():
 def append_loc_depth_cols(
     self: Data, 
     min_flux_pc_err: Optional[Union[int, float]] = None, 
-    update: bool = True,
-    overwrite: bool = False
+    update: bool = False,
+    overwrite: bool = False,
 ) -> None:
     from . import Catalogue, Stacked_Band_Data
     # open catalogue

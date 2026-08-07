@@ -612,7 +612,11 @@ class Multiple_Photometry(ABC):
 
 class Mock_Photometry(Photometry):
     def __init__(
-        self, instrument, flux, depths, min_flux_pc_err
+        self: Self,
+        filterset: Multiple_Filter,
+        flux: Union[u.Quantity, u.Magnitude],
+        depths: Union[List[float], NDArray[float], u.Magnitude],
+        min_flux_pc_err: Optional[float],
     ):  # these depths should be 5σ and in units of ABmag
         assert len(flux) == len(depths)
         # add astropy units of ABmag if depths are not already
@@ -623,7 +627,7 @@ class Mock_Photometry(Photometry):
         # calculate errors from ABmag depths
         flux_errs = self.flux_errs_from_depths(flux, depths, min_flux_pc_err)
         self.min_flux_pc_err = min_flux_pc_err
-        super().__init__(instrument, flux, flux_errs, depths)
+        super().__init__(filterset, flux, flux_errs, depths)
 
     @staticmethod
     def flux_errs_from_depths(flux, depths, min_flux_pc_err):

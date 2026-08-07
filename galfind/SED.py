@@ -1315,4 +1315,36 @@ class SED_2D:
             funcs.change_file_permissions(save_name)
 
         return plot
+
+    def create_mock_photometry(self: Self, *args, **kwargs):
+        mock_phot_arr = [sed.create_mock_photometry(*args, **kwargs) for sed in self.SED_arr]
+        assert all([len(mock_phot) == len(mock_phot_arr[0]) for mock_phot in mock_phot_arr]), \
+            galfind_logger.critical(
+                f"Mock photometry lengths are not the same for all SEDs in {self}!"
+            )
+        assert all([all([mock_phot.depths[i] == mock_phot_arr[0].depths[i] for i in range(len(mock_phot))]) for mock_phot in mock_phot_arr]), \
+            galfind_logger.critical(
+                f"Mock photometry depths are not the same for all SEDs in {self}!"
+            )
+        assert all([getattr(mock_phot, "min_flux_pc_err") == getattr(mock_phot_arr[0], "min_flux_pc_err") for mock_phot in mock_phot_arr]), \
+            galfind_logger.critical(
+                f"Mock photometry min_flux_pc_err are not the same for all SEDs in {self}!"
+            )
+        assert all([getattr(mock_phot, "flux").unit == getattr(mock_phot_arr[0], "flux").unit for mock_phot in mock_phot_arr]), \
+            galfind_logger.critical(
+                f"Mock photometry flux units are not the same for all SEDs in {self}!"
+            )
+        # weighted stack of the mock photometry fluxes and errors
+        mock_phot_fluxes = np.array([
+            mock_phot.flux.value for mock_phot in mock_phot_arr
+        ])
+        # make median flux array
+        median_fluxes = np.median(mock_phot_fluxes, axis=0)
+        self.mock_photometry = Mock_Photometry(
+            mock_phot_arr[0].filterset,
+            median_fluxes * mock_phot_arr[0].flux.unit,
+            mock_phot_arr[0].depths,
+            mock_phot_arr[0].min_flux_pc_err,
+        )
+        return self.mock_photometry
     

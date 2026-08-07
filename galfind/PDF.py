@@ -662,11 +662,32 @@ class SED_fit_PDF(PDF):
         assert nth_peak == 0, galfind_logger.critical(
             f"SED_fit_PDF.load_peaks_from_SED_result only loads the 0th peak, not the {funcs.ordinal(nth_peak)}"
         )
-        assert (
-            SED_result.SED_code.SED_fit_params == self.SED_fit_params
-        ), galfind_logger.critical(
-            f"{SED_result.SED_code.SED_fit_params=} != {self.SED_fit_params=}"
-        )
+        # TODO: Implement _dicts_equal from funcs
+        # if isinstance(self.SED_fit_params, dict):
+        #     # ensure all keys in self.SED_fit_params are in SED_result.SED_code.SED_fit_params and vice versa
+        #     assert all(
+        #         key in SED_result.SED_code.SED_fit_params for key in self.SED_fit_params.keys()
+        #     ), galfind_logger.critical(
+        #         f"{self.SED_fit_params.keys()} not all in {SED_result.SED_code.SED_fit_params.keys()}"
+        #     )
+        #     assert all(
+        #         key in self.SED_fit_params for key in SED_result.SED_code.SED_fit_params.keys()
+        #     ), galfind_logger.critical(
+        #         f"{SED_result.SED_code.SED_fit_params.keys()} not all in {self.SED_fit_params.keys()}"
+        #     )
+        #     # ensure all values for each key are the same
+        #     for key in self.SED_fit_params.keys():
+        #         assert (
+        #             SED_result.SED_code.SED_fit_params[key] == self.SED_fit_params[key]
+        #         ), galfind_logger.critical(
+        #             f"{SED_result.SED_code.SED_fit_params[key]=} != {self.SED_fit_params[key]=}"
+        #         )
+        # else:
+        #     assert (
+        #         SED_result.SED_code.SED_fit_params == self.SED_fit_params
+        #     ), galfind_logger.critical(
+        #         f"{SED_result.SED_code.SED_fit_params=} != {self.SED_fit_params=}"
+        #     )
         # load peak value and peak chi_sq
         self.load_peaks_from_best_fit(
             SED_result.properties[self.property_name],

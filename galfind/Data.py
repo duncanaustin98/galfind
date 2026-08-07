@@ -866,11 +866,16 @@ class Band_Data_Base(ABC):
                 overwrite,
                 master_cat_path,
             )
+            assert len(params_arr) == 1, \
+                galfind_logger.critical(
+                    f"Depths run for {self.filt_name} with {len(params_arr)} "
+                    + "parameter sets! Only one set of parameters should be used!"
+                )
+            params = params_arr[0]
             # run depths
-            for params in params_arr:
-                Depths.calc_band_depth(params)
+            Depths.calc_band_depth(params)
             # load depths into object
-            self._load_depths_from_params(params_arr)
+            self._load_depths_from_params(params)
             # plot depths
             if plot:
                 self.plot_depth_diagnostics(
@@ -931,27 +936,27 @@ class Band_Data_Base(ABC):
 
     def _load_depths_from_params(
         self: Self, 
-        params: List[Tuple[Any, ...]],
-    ) -> NoReturn:
+        params: Tuple[Any, ...],
+    ) -> None:
         if hasattr(self, "depth_args"):
-            if all(param[1] in self.depth_args.keys() for param in params):
+            if params[1] in self.depth_args.keys():
                 galfind_logger.warning(
                     f"Depth data already loaded for {self.filt_name}, skipping load-in"
                 )
         else:
             self.depth_path = {
-                param[1]: Depths.get_grid_depth_path(self, param[1], param[2])
-                for param in params
+                params[1]: Depths.get_grid_depth_path(self, params[1], params[2])
             }
-            depths = [
-                Depths.get_depths_from_h5(self, param[1], param[2])
-                for param in params
-            ]
-            for depth, param in zip(depths, params):
-                for key in depth[0].keys():
-                    self._update_depths(param[1], depth[0][key], depth[1][key], key)
+            depths = Depths.get_depths_from_h5(self, params[1], params[2])
+            assert all([key in depths[0].keys() for key in depths[1].keys()]), \
+                galfind_logger.critical(
+                    f"Depths keys {depths[0].keys()} not in {depths[1].keys()} " + \
+                    f"for {self.filt_name} {params[1]} {params[2]}"
+                )
+            for key in depths[0].keys():
+                self._update_depths(params[1], depths[0][key], depths[1][key], key)
             self.depth_args = {
-                param[1]: Depths.get_depth_args(param) for param in params
+                params[1]: Depths.get_depth_args(params)
             }
 
     def _update_depths(
@@ -971,7 +976,6 @@ class Band_Data_Base(ABC):
             self.mean_depth[aper_diam] = {}
         self.med_depth[aper_diam][label] = med_depth
         self.mean_depth[aper_diam][label] = mean_depth
-    
 
     def _load_depths(
         self: Self,
@@ -980,7 +984,7 @@ class Band_Data_Base(ABC):
         region: str = "all", 
     ) -> NoReturn:
         params = (aper_diam, mode, region)
-        return self._load_depths_from_params([params])
+        return self._load_depths_from_params(params)
 
     def plot_depths(
         self,
@@ -2253,6 +2257,7 @@ class Data:
         mask_method: str = "auto",
         psf_method: str = "default",
         psf_homog_filt: Optional[str] = "F444W",
+        update: bool = False,
     ) -> Type[Data]:
         data = cls.from_survey_version_psfs( \
             survey,
@@ -2280,11 +2285,14 @@ class Data:
                 data.load_stacked_band_data(stacked_band_data_)
         data.mask(method=mask_method)
         data.segment()
-        data.perform_forced_phot()
+        data.perform_forced_phot(update = update)
         data.append_aper_corr_cols()
         data.append_mask_cols()
         data.run_depths()
-        data.append_loc_depth_cols(min_flux_pc_err = min_flux_pc_err)
+        data.append_loc_depth_cols(
+            min_flux_pc_err = min_flux_pc_err,
+            update = update,
+        )
         return data
 
     @classmethod
@@ -3416,12 +3424,13 @@ class Data:
         method: Union[str, List[str], Dict[str, str]] = "sextractor",
         config_name: str = "default.sex",
         params_name: str = "default.param",
-        update_fits_cat: bool = True,
+        update: bool = True,
         overwrite: bool = False,
     ) -> None:
         if hasattr(self, "phot_cat_path"):
             galfind_logger.critical("MASTER Photometric catalogue already exists!")
             return
+        
         # create a forced_phot_band object from given string
         self.load_forced_phot_band(forced_phot_band)
 
@@ -3455,7 +3464,7 @@ class Data:
         ]
 
         self._combine_forced_phot_cats(
-            update = update_fits_cat,
+            update = update,
             overwrite = overwrite,
         )
 
@@ -3572,6 +3581,7 @@ class Data:
             self.phot_cat_path = phot_cat_path
         else:
             raise (Exception("MASTER Photometric catalogue already exists!"))
+        
         if not Path(phot_cat_path).is_file() or overwrite or (Path(phot_cat_path).is_file() and update):
             master_tab_arr = [
                 self.forced_phot_band._get_master_tab(
@@ -3850,9 +3860,8 @@ class Data:
             # save properties to individual band_data objects
             for band_data in self_band_data_arr:
                 [
-                    band_data._load_depths_from_params(params)
-                    for _params in params
-                    if _params[0] == band_data
+                    band_data._load_depths_from_params(band_params)
+                    for band_params in params if band_params[0] == band_data
                 ]
                 if plot:
                     band_data.plot_depth_diagnostics(
@@ -3860,7 +3869,6 @@ class Data:
                         overwrite = False, 
                         master_cat_path = master_cat_path
                     )
-
             # make depth table
             Depths.make_depth_tab(self)
 
@@ -4165,13 +4173,13 @@ class Data:
     def append_loc_depth_cols(
         self: Self,
         min_flux_pc_err: Union[int, float],
-        update_fits_cat: bool = True,
-        overwrite: bool = False
+        update: bool = True,
+        overwrite: bool = False,
     ) -> None:
         return Depths.append_loc_depth_cols(
             self,
             min_flux_pc_err = min_flux_pc_err,
-            update = update_fits_cat,
+            update = update,
             overwrite = overwrite,
         )
 

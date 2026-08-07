@@ -679,7 +679,9 @@ class Galaxy:
                     load_peaks_from_SED_result(self.aper_phot[aper_diam].SED_results[code.label])
                 # plot the PDF
                 self.aper_phot[aper_diam].SED_results[code.label].property_PDFs["z"].plot(
-                    ax, annotate=annotate_PDFs, colour=colour
+                    ax,
+                    annotate=annotate_PDFs,
+                    colour=colour,
                 )
 
             if save:

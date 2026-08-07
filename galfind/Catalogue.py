@@ -457,6 +457,7 @@ class Catalogue_Creator:
         self.load_SED_result_func = load_SED_result_func
         self.apply_gal_instr_mask = apply_gal_instr_mask
         self.simulated = simulated
+        self._tab_cache = {}
 
         self.load_crops(crops)
 
@@ -473,6 +474,7 @@ class Catalogue_Creator:
                 galfind_logger.critical(
                     f"{hdr['VERSION']=} != {self.version=}"
                 )
+    
     
     @classmethod
     def from_data(
@@ -599,12 +601,17 @@ class Catalogue_Creator:
     def crop_name(self: Self) -> List[str]:
         return funcs.get_crop_name(self.crops)
 
+    def _open_tab(self: Self, cat_type: str) -> Any:
+        if cat_type not in self._tab_cache:
+            self._tab_cache[cat_type] = self.open_cat(self.cat_path, cat_type)
+        return self._tab_cache[cat_type]
+
     def load_tab(
         self: Self,
         cat_type: str,
         cropped: bool = True,
     ) -> Table:
-        tab = self.open_cat(self.cat_path, cat_type)
+        tab = self._open_tab(cat_type)
         if tab is None:
             return None
         else:
@@ -655,9 +662,9 @@ class Catalogue_Creator:
         # from . import Selector
         # if isinstance(extra_crops, funcs.all_subclasses(Selector)):
         #     extra_crops = [extra_crops]
-        tab = self.open_cat(self.cat_path, "SELECTION")
+        tab = self._open_tab("SELECTION")
         if tab is None:
-            tab = self.open_cat(self.cat_path, "ID")
+            tab = self._open_tab("ID")
             self._crops_to_perform = self.crops
         elif len(self.crops) > 0: #  + extra_crops
             # crop table using crop dict
@@ -1406,8 +1413,7 @@ class Catalogue(Catalogue_Base):
                             setattr(gal.aper_phot[aper_diam], name, getattr(gal, name))
                         else:
                             galfind_logger.warning(f"{name} not in {gal.ID=}")
-            
-        
+
     def load_sextractor_ext_src_corrs(
         self: Self,
         multiply_factor: Optional[Dict[str, float]] = None,
@@ -1427,7 +1433,7 @@ class Catalogue(Catalogue_Base):
             )
         ]
 
-        if len(self) == len(self.cat_creator.open_cat(self.cat_path, "ID")):
+        if len(self) == len(self.cat_creator._open_tab("ID")):
             galfind_logger.info(
                 f"Saving SExtractor extended source corrections to {self.cat_name}!"
             )

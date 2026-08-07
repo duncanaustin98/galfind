@@ -262,7 +262,6 @@ class SED_code(ABC):
             fit = True
         else:
             fit = False
-
         if fit:
             self.fit(
                 cat,

@@ -1465,3 +1465,30 @@ def all_subclasses(cls):
                 stack.append(sub)
     out = tuple(out)
     return out
+
+# def _dicts_equal(d1, d2, name1="dict1", name2="dict2") -> bool:
+#     """Iteratively compare two dicts, tolerating values that don't support
+#     a simple boolean == (e.g. numpy arrays)."""
+#     keys1, keys2 = set(d1.keys()), set(d2.keys())
+
+#     only_in_1 = keys1 - keys2
+#     only_in_2 = keys2 - keys1
+#     if only_in_1 or only_in_2:
+#         galfind_logger.critical(
+#             f"Key mismatch between {name1} and {name2}: "
+#             f"only in {name1}={only_in_1}, only in {name2}={only_in_2}"
+#         )
+#         return False
+
+#     for key in keys1:
+#         v1, v2 = d1[key], d2[key]
+#         try:
+#             equal = bool(v1 == v2)
+#         except ValueError:
+#             # e.g. numpy arrays -> elementwise comparison
+#             equal = bool(np.array_equal(v1, v2))
+#         if not equal:
+#             galfind_logger.critical(f"{name1}[{key}]={v1!r} != {name2}[{key}]={v2!r}")
+#             return False
+
+#     return True

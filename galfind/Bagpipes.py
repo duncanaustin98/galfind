@@ -355,6 +355,9 @@ class Bagpipes(SED_code):
         if isinstance(self.SED_fit_params["fix_z"], bool) and not \
                 self.SED_fit_params["fix_z"] and "z_sigma" in self.SED_fit_params.keys():
             self._update_redshift_fit_instructions(cat)
+        out_path = self._get_out_paths(cat, aper_diam)[1]
+        if Path(out_path).is_file() and not overwrite:
+            self._update_gal_properties(Table.read(out_path).colnames)
         from galfind import Catalogue
         if isinstance(cat, Catalogue):
             assert aper_diam is not None, \

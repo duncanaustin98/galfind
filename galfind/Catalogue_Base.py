@@ -129,7 +129,7 @@ class Catalogue_Base:
         if isinstance(index, int):
             return self.gals[index]
         elif isinstance(index, (list, np.ndarray)):
-            if len(index) == 1:
+            if len(index) == 1 and all(isinstance(index_, int) for index_ in index):
                 return self.gals[index[0]]
             elif all(isinstance(index_, tuple(Selector.__subclasses__())) for index_ in index):
                 keep_arr = []
