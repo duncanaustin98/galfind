@@ -9,4 +9,3 @@ This page is auto-generated from the docstrings in the ``galfind`` source code.
    :recursive:
 
    galfind
-   
