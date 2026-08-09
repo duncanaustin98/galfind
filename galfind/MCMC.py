@@ -25,6 +25,32 @@ from . import config, galfind_logger
 from . import useful_funcs_austind as funcs
 
 class Prior(ABC):
+    """Abstract base class for a single-parameter MCMC prior distribution.
+
+    Subclasses implement `get_initpos` to draw a random starting position
+    for an MCMC walker and `__call__` to evaluate the (unnormalised)
+    log-prior probability of a parameter value.
+
+    Parameters
+    ----------
+    name : `str`
+        Name of the parameter this prior applies to.
+    prior_params : `dict` of `str`: `float`
+        Parameters defining the shape of the prior distribution (e.g.
+        limits, mean, standard deviation).
+    fiducial : `float`
+        Fiducial/reference value of the parameter, used e.g. for plotting
+        or as a default initial position.
+
+    Attributes
+    ----------
+    name : `str`
+        Name of the parameter this prior applies to.
+    prior_params : `dict` of `str`: `float`
+        Parameters defining the shape of the prior distribution.
+    fiducial : `float`
+        Fiducial/reference value of the parameter.
+    """
 
     def __init__(
         self: Self,
@@ -76,6 +102,31 @@ class Prior(ABC):
     
 
 class Flat_Prior(Prior):
+    """`Prior` subclass implementing a flat (uniform) prior distribution.
+
+    The log-prior probability is 0 within the given limits and
+    ``-numpy.inf`` (i.e. disallowed) outside them.
+
+    Parameters
+    ----------
+    name : `str`
+        Name of the parameter this prior applies to.
+    prior_lims : `list` of `float`
+        Two-element list ``[lower_lim, upper_lim]`` giving the (ascending)
+        limits of the flat prior.
+    fiducial : `float`
+        Fiducial/reference value of the parameter.
+
+    Attributes
+    ----------
+    name : `str`
+        Name of the parameter this prior applies to.
+    prior_params : `dict`
+        Dictionary with keys ``"lower_lim"`` and ``"upper_lim"`` giving the
+        limits of the flat prior.
+    fiducial : `float`
+        Fiducial/reference value of the parameter.
+    """
 
     def __init__(
         self: Self,
@@ -97,6 +148,13 @@ class Flat_Prior(Prior):
     def get_initpos(
         self: Self,
     ) -> float:
+        """Draw a random initial walker position from the flat prior.
+
+        Returns
+        -------
+        `float`
+            A value drawn uniformly from ``[lower_lim, upper_lim]``.
+        """
         return np.random.uniform(self.prior_params["lower_lim"], self.prior_params["upper_lim"], 1)
 
     def __call__(
@@ -111,6 +169,28 @@ class Flat_Prior(Prior):
 
 
 class Gaussian_Prior(Prior):
+    """`Prior` subclass implementing a Gaussian (normal) prior distribution.
+
+    Parameters
+    ----------
+    name : `str`
+        Name of the parameter this prior applies to.
+    prior_lims : `dict` of `str`: `float`
+        Dictionary with keys ``"mu"`` and ``"sigma"`` giving the mean and
+        standard deviation of the Gaussian prior.
+    fiducial : `float`
+        Fiducial/reference value of the parameter.
+
+    Attributes
+    ----------
+    name : `str`
+        Name of the parameter this prior applies to.
+    prior_params : `dict`
+        Dictionary with keys ``"mu"`` and ``"sigma"`` giving the mean and
+        standard deviation of the Gaussian prior.
+    fiducial : `float`
+        Fiducial/reference value of the parameter.
+    """
 
     def __init__(
         self: Self,
@@ -132,6 +212,14 @@ class Gaussian_Prior(Prior):
     def get_initpos(
         self: Self,
     ) -> float:
+        """Draw a random initial walker position from the Gaussian prior.
+
+        Returns
+        -------
+        `float`
+            A value drawn from a normal distribution with mean ``mu`` and
+            standard deviation ``sigma``.
+        """
         return np.random.normal(self.prior_params["mu"], self.prior_params["sigma"], 1)
 
     def __call__(
@@ -143,15 +231,31 @@ class Gaussian_Prior(Prior):
 
 
 class Priors:
+    """A collection of `Prior` objects for a multi-parameter MCMC fit.
+
+    Supports addition (with another `Priors` instance or a single `Prior`),
+    indexing by parameter name, iteration, and `len`.
+
+    Parameters
+    ----------
+    prior_arr : `list` of `Prior`
+        List of individual `Prior` objects making up this collection.
+
+    Attributes
+    ----------
+    prior_arr : `list` of `Prior`
+        List of individual `Prior` objects making up this collection.
+    """
 
     def __init__(
         self: Self,
         prior_arr: List[Prior],
     ):
         self.prior_arr = prior_arr
-    
+
     @property
     def names(self):
+        """`list` of `str`: Names of every `Prior` in this collection."""
         return [prior.name for prior in self.prior_arr]
 
     def __call__(
@@ -212,6 +316,60 @@ class Priors:
     
 
 class Base_MCMC_Fitter(ABC):
+    """Abstract base class wrapping an `emcee.EnsembleSampler` MCMC fit.
+
+    Handles walker initialisation, running the sampler (optionally with an
+    HDF5 backend for persistence/resuming), and generic post-processing
+    such as flattening/thinning chains, computing BIC/AIC, and plotting the
+    resulting fit and corner plots. Subclasses must implement `update`,
+    `model` and `log_likelihood` to define the specific model being fit.
+
+    Parameters
+    ----------
+    priors : `Priors`
+        Collection of priors, one per free parameter, to fit for.
+    x_data : `NDArray` of `float`
+        Independent variable data values.
+    y_data : `NDArray` of `float`
+        Dependent variable data values.
+    y_data_errs : `NDArray` of `NDArray` of `float`
+        Lower/upper (or symmetric) errors on `y_data`.
+    nwalkers : `int`
+        Number of MCMC walkers to use in the `emcee.EnsembleSampler`.
+    backend_filename : `str` or `None`
+        Path to an HDF5 file used as an `emcee.backends.HDFBackend` for
+        storing/resuming the chain. If `None`, no backend is used and the
+        chain is kept in memory only.
+    fixed_params : `dict` of `str`: `float`
+        Parameters that are held fixed (not fit for) at the given values.
+    init_pos : `NDArray` of `float`, optional
+        Initial walker positions. If `None`, positions are drawn from the
+        priors via `_instantiate_walkers`. Default is `None`.
+
+    Attributes
+    ----------
+    priors : `Priors`
+        Collection of priors, one per free parameter, being fit for.
+    x_data : `NDArray` of `float`
+        Independent variable data values.
+    y_data : `NDArray` of `float`
+        Dependent variable data values.
+    y_data_errs : `NDArray` of `NDArray` of `float`
+        Lower/upper (or symmetric) errors on `y_data`.
+    nwalkers : `int`
+        Number of MCMC walkers used in the `emcee.EnsembleSampler`.
+    backend : `emcee.backends.HDFBackend`
+        HDF5-backed sampler backend, only set if `backend_filename` is not
+        `None`.
+    sampler : `emcee.EnsembleSampler`
+        The underlying `emcee` ensemble sampler.
+    backend_filename : `str` or `None`
+        Path to the HDF5 backend file, if any.
+    init_pos : `NDArray` of `float`
+        Initial walker positions used to start/resume the sampler.
+    fixed_params : `dict` of `str`: `float`
+        Parameters that are held fixed (not fit for) at the given values.
+    """
 
     def __init__(
         self: Self,
@@ -262,13 +420,27 @@ class Base_MCMC_Fitter(ABC):
 
     @property
     def ndim(self):
+        """`int`: Number of free (fitted) parameters, i.e. the number of priors."""
         return len(self.priors)
-    
+
     @property
     def fiducial_params(self):
+        """`list` of `float`: Fiducial value of every prior, in prior order."""
         return [prior.fiducial for prior in self.priors]
-    
+
     def get_BIC(self):
+        """Compute the Bayesian Information Criterion (BIC) of the fit.
+
+        Uses the maximum log-likelihood found so far in the sampler
+        `backend`, the number of free parameters, and the number of data
+        points.
+
+        Returns
+        -------
+        `float` or `None`
+            The BIC value, or `None` if no `backend` exists or the backend
+            has not yet accumulated any iterations.
+        """
         if not hasattr(self, "backend"):
             BIC = None
         backend_len = self.backend.iteration
@@ -284,6 +456,17 @@ class Base_MCMC_Fitter(ABC):
         return BIC
 
     def get_AIC(self):
+        """Compute the Akaike Information Criterion (AIC) of the fit.
+
+        Uses the maximum log-likelihood found so far in the sampler
+        `backend` and the number of free parameters.
+
+        Returns
+        -------
+        `float` or `None`
+            The AIC value, or `None` if no `backend` exists or the backend
+            has not yet accumulated any iterations.
+        """
         if not hasattr(self, "backend"):
             AIC = None
         backend_len = self.backend.iteration
@@ -299,6 +482,18 @@ class Base_MCMC_Fitter(ABC):
         return AIC
     
     def get_autocorr_time(self) -> int:
+        """Estimate the integrated autocorrelation time of the chains.
+
+        Falls back to ``backend.iteration / 50`` if `emcee` is unable to
+        reliably estimate the autocorrelation time (e.g. because the
+        chains are not yet converged).
+
+        Returns
+        -------
+        `int`
+            The (maximum, over parameters) estimated autocorrelation time,
+            used elsewhere to set chain discard/thin values.
+        """
         try:
             sampler_autocorr_time = self.sampler.get_autocorr_time()
             autocorr_time = np.nanmax(sampler_autocorr_time)
@@ -346,11 +541,15 @@ class Base_MCMC_Fitter(ABC):
             if hasattr(self, "backend"):
                 galfind_logger.info("Final size: {0}".format(self.backend.iteration))
         pool.close()
-    
+
     @abstractmethod
     def update(self):
+        """Update any derived/cached fitter state (e.g. after loading a chain).
+
+        Abstract method to be implemented by subclasses.
+        """
         pass
-    
+
     @abstractmethod
     def model(
         self: Self,
@@ -358,17 +557,49 @@ class Base_MCMC_Fitter(ABC):
         params: Dict[str, float],
         **kwargs: Dict[str, Any],
     ) -> float:
+        """Evaluate the model at ``x`` for the given parameters.
+
+        Abstract method to be implemented by subclasses.
+
+        Parameters
+        ----------
+        x : `float`, `list` of `float`, or `NDArray` of `float`
+            Independent variable value(s) at which to evaluate the model.
+        params : `dict` of `str`: `float`
+            Model parameter values, keyed by parameter name.
+        **kwargs : `dict`
+            Additional model-specific keyword arguments.
+
+        Returns
+        -------
+        `float`
+            The model value(s) evaluated at ``x``.
+        """
         pass
-    
+
     # @abstractmethod
     # def blob_funcs(self):
     #     pass
-    
+
     @abstractmethod
     def log_likelihood(
         self: Self,
         params: List[float],
     ) -> float:
+        """Compute the log-likelihood of the data given the parameters.
+
+        Abstract method to be implemented by subclasses.
+
+        Parameters
+        ----------
+        params : `list` of `float`
+            Parameter values, in the same order as `priors`.
+
+        Returns
+        -------
+        `float`
+            The log-likelihood of the data given ``params``.
+        """
         pass
 
     def _fix_params(
@@ -409,7 +640,40 @@ class Base_MCMC_Fitter(ABC):
         xoff: float = 0.0,
         **kwargs: Dict[str, Any],
     ) -> None: #nsamples = 1_000, plot_med = False):
-        
+        """Plot the median MCMC model fit and its 1-sigma band on an axis.
+
+        Parameters
+        ----------
+        ax : `plt.Axes`
+            Matplotlib axis to plot the fit on.
+        log_data : `bool`, optional
+            Whether to plot `model` evaluated in log10 space. Default is
+            `False`.
+        x_arr : `NDArray` of `float`, optional
+            x-values at which to evaluate the model. If `None`, 100
+            linearly spaced values spanning `x_data` are used. Default is
+            `None`.
+        plot_kwargs : `dict`, optional
+            Keyword arguments passed to `ax.plot` for the median line,
+            overriding the defaults. Default is `{}`.
+        fill_between_kwargs : `dict`, optional
+            Keyword arguments passed to `ax.fill_between` for the 1-sigma
+            band, overriding the defaults. Default is `{}`.
+        xoff : `float`, optional
+            Offset subtracted from `x_arr` before plotting. Default is
+            ``0.0``.
+        **kwargs : `dict`
+            Additional keyword arguments passed on to `model` via
+            `_get_plot_chains`.
+
+        Returns
+        -------
+        `tuple`
+            ``(x_arr, med_chains, l1_chains, u1_chains)``: the x-values
+            plotted and the corresponding median, 16th and 84th percentile
+            model chains.
+        """
+
         def_plot_kwargs = {
             "color": "black",
             "ls": "--",
@@ -436,6 +700,23 @@ class Base_MCMC_Fitter(ABC):
         return x_arr, med_chains, l1_chains, u1_chains
 
     def get_sample(self: Self, discard: bool = True, thin: bool = True) -> NDArray[float]:
+        """Return a flattened sample of the MCMC chain.
+
+        Parameters
+        ----------
+        discard : `bool`, optional
+            Whether to discard the first ``2 * autocorr_time`` steps as
+            burn-in. Default is `True`.
+        thin : `bool`, optional
+            Whether to thin the chain by ``autocorr_time / 2``. Default is
+            `True`.
+
+        Returns
+        -------
+        `NDArray` of `float`
+            The flattened (and optionally discarded/thinned) parameter
+            chain, of shape ``(n_samples, ndim)``.
+        """
         autocorr_time = self.get_autocorr_time()
         if discard:
             discard_ = int(autocorr_time * 2)
@@ -468,6 +749,31 @@ class Base_MCMC_Fitter(ABC):
         incl_scatter: bool = False,
         **kwargs: Dict[str, Any],
     ) -> NDArray[float]:
+        """Evaluate `model` over (a subset of) the posterior chain at ``x_arr``.
+
+        Parameters
+        ----------
+        x_arr : `NDArray` of `float`
+            x-values at which to evaluate the model for every chain sample.
+        log_data : `bool`, optional
+            Whether to evaluate `model` in log10 space. Default is `False`.
+        shape : `int`, optional
+            If given, only the last ``shape`` chain samples are used
+            instead of the full (discarded/thinned) chain. Default is
+            `None`.
+        incl_scatter : `bool`, optional
+            Whether to perturb the ``"c"`` parameter of each sample by a
+            random draw from `get_scatter` before evaluating the model.
+            Default is `False`.
+        **kwargs : `dict`
+            Additional keyword arguments passed on to `model`.
+
+        Returns
+        -------
+        `NDArray` of `float`
+            Array of model values evaluated at `x_arr` for each chain
+            sample, of shape ``(n_samples, len(x_arr))``.
+        """
         autocorr_time = self.get_autocorr_time()
         discard = int(autocorr_time * 2)
         thin = int(autocorr_time / 2)
@@ -517,6 +823,47 @@ class Base_MCMC_Fitter(ABC):
         thin: Optional[Union[int, str]] = "default",
         **plot_kwargs: Dict[str, Any]
     ) -> plt.Figure:
+        """Make a `corner` plot of the posterior parameter distributions.
+
+        Parameters
+        ----------
+        fig : `plt.Figure`, optional
+            Existing figure to draw the corner plot onto. If `None`, a new
+            figure is created. Default is `None`.
+        range : `list` of `tuple` of `float`, optional
+            Per-parameter axis ranges, passed to `corner.corner`. Must have
+            the same length as the number of parameter labels if given.
+            Default is `None`.
+        colour : `str`, optional
+            Colour of the posterior contours/histograms. Default is
+            ``"black"``.
+        legend : `bool`, optional
+            Whether to add a legend to the figure. Default is `False`.
+        save : `bool`, optional
+            Whether to save the resulting figure to
+            ``backend_filename`` with ``.h5`` replaced by ``_MCMC.jpeg``.
+            Default is `True`.
+        fid_colour : `str`, optional
+            Colour used to overplot the `fiducial_params` values on the
+            corner plot. If `None`, fiducial values are not overplotted.
+            Default is ``"C1"``.
+        discard : `int`, `str`, or `None`, optional
+            Number of burn-in steps to discard from the chain. If
+            ``"default"``, uses ``2 * autocorr_time``. If `None`, no steps
+            are discarded. Default is ``"default"``.
+        thin : `int`, `str`, or `None`, optional
+            Chain thinning factor. If ``"default"``, uses
+            ``autocorr_time / 2``. If `None`, the chain is not thinned.
+            Default is ``"default"``.
+        **plot_kwargs : `dict`
+            Additional keyword arguments passed to `corner.corner`,
+            overriding the defaults.
+
+        Returns
+        -------
+        `plt.Figure`
+            The `corner` plot figure.
+        """
 
         autocorr_time = self.get_autocorr_time()
         get_chain_kwargs = {}
@@ -624,7 +971,18 @@ class Base_MCMC_Fitter(ABC):
 
 
 class MCMC_Fitter(Base_MCMC_Fitter):
-    
+    """`Base_MCMC_Fitter` subclass assuming (possibly asymmetric) Gaussian y-errors.
+
+    Implements `log_likelihood` as the sum of the prior log-probability and
+    a Gaussian likelihood on the residuals, selecting the appropriate
+    upper/lower `y_data_errs` value for each residual via `_get_sigma_sq`.
+    Also adds utilities for computing scatter (`get_scatter`,
+    `get_empirical_scatter`), summarising the posterior (`get_params_med`,
+    `get_params_errs`), sigma-clipping outliers, and saving/loading the
+    fitter to/from HDF5. Uses the same constructor as `Base_MCMC_Fitter`.
+    Subclasses must still implement `update` and `model`.
+    """
+
     # def _instantiate_walkers(self: Self) -> NoReturn:
     #     # # uniformly distributed starting positions over flat prior
     #     # flat_priors_lower = [self.flat_priors[i][0] for i in range(self.ndim)]
@@ -657,11 +1015,15 @@ class MCMC_Fitter(Base_MCMC_Fitter):
     #         if hasattr(self, "backend"):
     #             galfind_logger.info("Final size: {0}".format(self.backend.iteration))
     #     pool.close()
-    
+
     @abstractmethod
     def update(self):
+        """Update any derived/cached fitter state (e.g. after loading a chain).
+
+        Abstract method to be implemented by subclasses.
+        """
         pass
-    
+
     @abstractmethod
     def model(
         self: Self,
@@ -669,6 +1031,24 @@ class MCMC_Fitter(Base_MCMC_Fitter):
         params: Dict[str, float],
         **kwargs: Dict[str, Any],
     ) -> float:
+        """Evaluate the model at ``x`` for the given parameters.
+
+        Abstract method to be implemented by subclasses.
+
+        Parameters
+        ----------
+        x : `float`, `list` of `float`, or `NDArray` of `float`
+            Independent variable value(s) at which to evaluate the model.
+        params : `dict` of `str`: `float`
+            Model parameter values, keyed by parameter name.
+        **kwargs : `dict`
+            Additional model-specific keyword arguments.
+
+        Returns
+        -------
+        `float`
+            The model value(s) evaluated at ``x``.
+        """
         pass
 
     def _get_sigma_sq(
@@ -684,6 +1064,23 @@ class MCMC_Fitter(Base_MCMC_Fitter):
         self: Self,
         params: List[float],
     ) -> float:
+        """Compute the log-posterior (prior + Gaussian likelihood) for ``params``.
+
+        Combines the summed log-prior probability of `params` with a
+        Gaussian log-likelihood of the residuals between `y_data` and
+        `model`, using `_get_sigma_sq` for the per-point variance.
+
+        Parameters
+        ----------
+        params : `list` of `float`
+            Free parameter values, in the same order as `priors`.
+
+        Returns
+        -------
+        `float`
+            ``-numpy.inf`` if any parameter falls outside its prior,
+            otherwise the log-prior plus Gaussian log-likelihood.
+        """
         params_loc = {}
         for i, prior in enumerate(self.priors):
             params_loc[prior.name] = params[i]
@@ -722,6 +1119,34 @@ class MCMC_Fitter(Base_MCMC_Fitter):
         x_arr: Optional[float] = None,
         **kwargs,
     ) -> float:
+        """Compute the intrinsic scatter of the fit, according to `scatter_type`.
+
+        Behaviour depends on the ``self.scatter_type`` attribute (set by
+        subclasses, e.g. `Linear_Fitter`): ``"asymmetric"`` computes the
+        scatter separately above/below the median-parameter model from the
+        residuals; ``"scatter"`` reads the fitted ``"scatter"`` parameter;
+        ``"scatter_y"``, ``"scatter_xy"`` and ``"exp_scatter_y"`` compute a
+        rolling-average scatter above/below the model as a function of
+        `x_arr`.
+
+        Parameters
+        ----------
+        x_arr : `float`, optional
+            x-values at which to evaluate the scatter, required for the
+            ``"scatter_y"``, ``"scatter_xy"`` and ``"exp_scatter_y"``
+            scatter types. Default is `None`.
+        **kwargs : `dict`
+            Additional keyword arguments passed on to `get_residuals`.
+
+        Returns
+        -------
+        `float` or `list`
+            The computed scatter. For ``"scatter_y"``, ``"scatter_xy"`` and
+            ``"exp_scatter_y"`` this is a ``(y_interp_below, y_interp_above)``
+            tuple interpolated onto `x_arr`; otherwise a two-element
+            ``[negative, positive]`` scatter list, or `None` if
+            `scatter_type` is not recognised.
+        """
         if self.scatter_type == "asymmetric":
             residuals = self.get_residuals(self.get_params_med(), **kwargs)
             positive_residuals = residuals[residuals > 0]
@@ -782,6 +1207,26 @@ class MCMC_Fitter(Base_MCMC_Fitter):
         self: Self,
         n_bins: int = 10,
     ) -> None:
+        """Compute the empirical scatter of the data about the fitted model.
+
+        Bins `x_data` into `n_bins` bins, and in each bin computes the
+        weighted 16th/50th/84th percentiles of `y_data` (weighted by the
+        inverse-variance of the appropriate `y_data_errs` side relative to
+        the model), taking the median across bins of the resulting
+        upper/lower scatter estimates.
+
+        Parameters
+        ----------
+        n_bins : `int`, optional
+            Number of bins to use across the range of `x_data`. Default is
+            ``10``.
+
+        Returns
+        -------
+        `tuple` of `float`
+            ``(scat_lo, scat_up)``: the median empirical lower and upper
+            scatter estimates across bins.
+        """
         from statsmodels.stats.weightstats import DescrStatsW
         
         model_y = self.model(self.x_data, self.params_med, subcls = "sfg")
@@ -837,13 +1282,34 @@ class MCMC_Fitter(Base_MCMC_Fitter):
     #     return chain
 
     def get_params_med(self: Self) -> Dict[str, float]:
+        """Return (and cache) the per-parameter posterior median.
+
+        Computed once from `get_sample` and cached as ``self.params_med``
+        on subsequent calls.
+
+        Returns
+        -------
+        `dict` of `str`: `float`
+            Median posterior value of each parameter, keyed by prior name.
+        """
         if not hasattr(self, "params_med"):
             chain = self.get_sample()
             self.params_med = {prior.name: np.median(chain[:, i]) for i, prior in enumerate(self.priors)}
         galfind_logger.info(f"Median parameters: {self.params_med}")
         return self.params_med
-    
+
     def get_params_errs(self: Self) -> NDArray[float]:
+        """Return (and cache) the per-parameter posterior 1-sigma errors.
+
+        Computed once from `get_sample` (16th/50th/84th percentiles) and
+        cached as ``self.params_errs`` on subsequent calls.
+
+        Returns
+        -------
+        `dict` of `str`: `NDArray` of `float`
+            For each parameter, a two-element array
+            ``[median - 16th percentile, 84th percentile - median]``.
+        """
         if not hasattr(self, "params_errs"):
             chain = self.get_sample()
             params = {prior.name: np.percentile(chain[:, i], [16, 50, 84]) for i, prior in enumerate(self.priors)}
@@ -852,20 +1318,65 @@ class MCMC_Fitter(Base_MCMC_Fitter):
                 self.params_errs[key] = np.array([vals[1] - vals[0], vals[2] - vals[1]])
         galfind_logger.info(f"{self.params_errs}=")
         return self.params_errs
-    
+
     def get_residuals(self: Self, params: Dict[str, float]) -> NDArray[float]:
+        """Compute the residuals between `y_data` and the model.
+
+        Parameters
+        ----------
+        params : `dict` of `str`: `float`
+            Parameter values passed to `model`.
+
+        Returns
+        -------
+        `NDArray` of `float`
+            ``y_data - model(x_data, params)``.
+        """
         return self.y_data - self.model(self.x_data, params)
 
     def sigma_clip(
         self: Self,
         sigma: float = 3.0
     ) -> NDArray[bool]:
+        """Identify data points to keep after sigma-clipping the residuals.
+
+        Residuals are computed at the median posterior parameters
+        (`get_params_med`) and sigma-clipped with `astropy.stats.sigma_clip`.
+
+        Parameters
+        ----------
+        sigma : `float`, optional
+            The number of standard deviations to use for the clipping
+            limit. Default is ``3.0``.
+
+        Returns
+        -------
+        `NDArray` of `bool`
+            Boolean mask, `True` for data points kept (not clipped).
+        """
         removed_residuals = sigma_clip(self.get_residuals(self.get_params_med()), sigma = sigma, masked = True)
         kept_residuals = ~removed_residuals.mask
         return kept_residuals
 
     @classmethod
     def from_h5(cls: Type[Self], h5_path: str) -> Self:
+        """Construct a fitter instance from a saved fitter HDF5 file.
+
+        Reconstructs the `Priors`, data arrays, and sampler settings that
+        were previously written by `save_h5`.
+
+        Parameters
+        ----------
+        h5_path : `str`
+            Path to the fitter HDF5 file (as produced by `save_h5`).
+
+        Returns
+        -------
+        `Self`
+            A new fitter instance built from the saved priors and data.
+            Note: ``fixed_params`` is not yet restored from file and is
+            currently always set to ``{}``.
+        """
         galfind_logger.warning(
             "Loading MCMC fitter from HDF5 is not implemented yet, if it works its a hack to get working for thesis!"
         )
@@ -900,6 +1411,19 @@ class MCMC_Fitter(Base_MCMC_Fitter):
         return cls(priors, x_data, y_data, y_data_errs, n_walkers, backend_filename = backend_filename, fixed_params = {}) #, incl_scatter = incl_scatter)#, init_pos = init_pos)
     
     def save_h5(self: Self) -> str:
+        """Save the priors, data, and sampler settings of this fitter to HDF5.
+
+        Writes ``backend_filename`` with ``.h5`` replaced by ``_fitter.h5``,
+        storing the priors (name, limits, fiducial, type), `x_data`,
+        `y_data`, `y_data_errs`, `nwalkers`, `fixed_params` and
+        `backend_filename`, such that the fitter can later be reconstructed
+        with `from_h5`.
+
+        Returns
+        -------
+        `str`
+            Path to the saved HDF5 file.
+        """
         # open h5 file
         h5_out_name = self.backend_filename.replace(".h5", "_fitter.h5")
         out_file = h5py.File(h5_out_name, "w")
@@ -991,6 +1515,31 @@ class MCMC_Fitter(Base_MCMC_Fitter):
 
 
 class Schechter_Lum_Fitter(MCMC_Fitter):
+    """`MCMC_Fitter` implementing a Schechter luminosity function.
+
+    Fits ``L_star``, ``alpha`` and ``log10_phi_star``, any of which (except
+    ``log10_phi_star``) may instead be held fixed via `fixed_params`.
+
+    Parameters
+    ----------
+    priors : `Priors`
+        Priors for the free parameters among ``L_star``, ``alpha`` and
+        ``log10_phi_star`` (whichever are not in `fixed_params`).
+    x_data : `NDArray` of `float`
+        Luminosity values.
+    y_data : `NDArray` of `float`
+        Number density values.
+    y_data_errs : `NDArray` of `NDArray` of `float`
+        Lower/upper errors on `y_data`.
+    nwalkers : `int`
+        Number of MCMC walkers.
+    backend_filename : `str` or `None`
+        Path to an HDF5 backend file for the sampler, or `None`.
+    fixed_params : `dict` of `str`: `float`
+        Fixed values for ``L_star`` and/or ``alpha``. Must, together with
+        `priors`, contain exactly ``L_star``, ``alpha`` and
+        ``log10_phi_star``.
+    """
 
     def __init__(
         self: Self,
@@ -1030,17 +1579,59 @@ class Schechter_Lum_Fitter(MCMC_Fitter):
         params: Dict[str, float],
         **kwargs: Dict[str, Any],
     ) -> float:
+        """Evaluate the Schechter luminosity function.
+
+        Parameters
+        ----------
+        x : `float`, `list` of `float`, or `NDArray` of `float`
+            Luminosity value(s) at which to evaluate the function.
+        params : `dict` of `str`: `float`
+            Must contain ``"log10_phi_star"``, ``"L_star"`` and ``"alpha"``.
+        **kwargs : `dict`
+            Unused, present for interface compatibility.
+
+        Returns
+        -------
+        `float`
+            The Schechter function number density evaluated at ``x``.
+        """
         return 10 ** params["log10_phi_star"] * ((x / params["L_star"]) ** params["alpha"]) * \
             np.exp(-x / params["L_star"]) / params["L_star"]
-    
+
     def update(
         self: Self
     ) -> NoReturn:
+        """No-op update; this fitter has no derived state to refresh."""
         pass
 
 
 class Schechter_Mag_Fitter(MCMC_Fitter):
-    
+    """`MCMC_Fitter` implementing a Schechter function in magnitude space.
+
+    Fits ``M_star``, ``alpha`` and ``log10_phi_star``, any of which (except
+    ``log10_phi_star``) may instead be held fixed via `fixed_params`.
+
+    Parameters
+    ----------
+    priors : `Priors`
+        Priors for the free parameters among ``M_star``, ``alpha`` and
+        ``log10_phi_star`` (whichever are not in `fixed_params`).
+    x_data : `NDArray` of `float`
+        Absolute magnitude values.
+    y_data : `NDArray` of `float`
+        Number density values.
+    y_data_errs : `NDArray` of `NDArray` of `float`
+        Lower/upper errors on `y_data`.
+    nwalkers : `int`
+        Number of MCMC walkers.
+    backend_filename : `str` or `None`
+        Path to an HDF5 backend file for the sampler, or `None`.
+    fixed_params : `dict` of `str`: `float`
+        Fixed values for ``M_star`` and/or ``alpha``. Must, together with
+        `priors`, contain exactly ``M_star``, ``alpha`` and
+        ``log10_phi_star``.
+    """
+
     def __init__(
         self: Self,
         priors: Priors,
@@ -1079,16 +1670,60 @@ class Schechter_Mag_Fitter(MCMC_Fitter):
         params: Dict[str, float],
         **kwargs: Dict[str, Any],
     ) -> float:
+        """Evaluate the Schechter function in magnitude space.
+
+        Parameters
+        ----------
+        x : `float`, `list` of `float`, or `NDArray` of `float`
+            Absolute magnitude value(s) at which to evaluate the function.
+        params : `dict` of `str`: `float`
+            Must contain ``"log10_phi_star"``, ``"M_star"`` and ``"alpha"``.
+        **kwargs : `dict`
+            Unused, present for interface compatibility.
+
+        Returns
+        -------
+        `float`
+            The Schechter function number density evaluated at ``x``.
+        """
         return (10 ** params["log10_phi_star"]) * 0.4 * np.log(10) * \
             10 ** (0.4 * (params["alpha"] + 1) * (params["M_star"] - x)) * \
             np.exp(-10 ** (0.4 * (params["M_star"] - x)))
-    
+
     def update(
         self: Self
     ) -> NoReturn:
+        """No-op update; this fitter has no derived state to refresh."""
         pass
 
 class DPL_Lum_Fitter(MCMC_Fitter):
+    """`MCMC_Fitter` implementing a double power-law luminosity function.
+
+    Fits ``L_star``, ``alpha``, ``beta`` and ``log10_phi_star``, any of
+    which (except ``log10_phi_star``) may instead be held fixed via
+    `fixed_params`.
+
+    Parameters
+    ----------
+    priors : `Priors`
+        Priors for the free parameters among ``L_star``, ``alpha``,
+        ``beta`` and ``log10_phi_star`` (whichever are not in
+        `fixed_params`).
+    x_data : `NDArray` of `float`
+        Luminosity values.
+    y_data : `NDArray` of `float`
+        Number density values.
+    y_data_errs : `NDArray` of `NDArray` of `float`
+        Lower/upper errors on `y_data`.
+    nwalkers : `int`
+        Number of MCMC walkers.
+    backend_filename : `str` or `None`
+        Path to an HDF5 backend file for the sampler, or `None`.
+    fixed_params : `dict` of `str`: `float`
+        Fixed values for ``L_star``, ``alpha`` and/or ``beta``. Must,
+        together with `priors`, contain exactly ``L_star``, ``alpha``,
+        ``beta`` and ``log10_phi_star``.
+    """
 
     def __init__(
         self: Self,
@@ -1121,19 +1756,64 @@ class DPL_Lum_Fitter(MCMC_Fitter):
         params: Dict[str, float],
         **kwargs: Dict[str, Any],
     ) -> float:
+        """Evaluate the double power-law luminosity function.
+
+        Parameters
+        ----------
+        x : `float`, `list` of `float`, or `NDArray` of `float`
+            Luminosity value(s) at which to evaluate the function.
+        params : `dict` of `str`: `float`
+            Must contain ``"log10_phi_star"``, ``"L_star"``, ``"alpha"``
+            and ``"beta"``.
+        **kwargs : `dict`
+            Unused, present for interface compatibility.
+
+        Returns
+        -------
+        `float`
+            The double power-law number density evaluated at ``x``.
+        """
         return ((10 ** params["log10_phi_star"]) / params["L_star"]) * \
             (
                 ((x / params["L_star"]) ** params["alpha"]) + \
                 ((x / params["L_star"]) ** params["beta"])
             ) ** -1.0
-    
+
     def update(
         self: Self
     ) -> NoReturn:
+        """No-op update; this fitter has no derived state to refresh."""
         pass
 
 
 class DPL_Mag_Fitter(MCMC_Fitter):
+    """`MCMC_Fitter` implementing a double power-law function in magnitude space.
+
+    Fits ``M_star``, ``alpha``, ``beta`` and ``log10_phi_star``, any of
+    which (except ``log10_phi_star``) may instead be held fixed via
+    `fixed_params`.
+
+    Parameters
+    ----------
+    priors : `Priors`
+        Priors for the free parameters among ``M_star``, ``alpha``,
+        ``beta`` and ``log10_phi_star`` (whichever are not in
+        `fixed_params`).
+    x_data : `NDArray` of `float`
+        Absolute magnitude values.
+    y_data : `NDArray` of `float`
+        Number density values.
+    y_data_errs : `NDArray` of `NDArray` of `float`
+        Lower/upper errors on `y_data`.
+    nwalkers : `int`
+        Number of MCMC walkers.
+    backend_filename : `str` or `None`
+        Path to an HDF5 backend file for the sampler, or `None`.
+    fixed_params : `dict` of `str`: `float`
+        Fixed values for ``M_star``, ``alpha`` and/or ``beta``. Must,
+        together with `priors`, contain exactly ``M_star``, ``alpha``,
+        ``beta`` and ``log10_phi_star``.
+    """
 
     def __init__(
         self: Self,
@@ -1166,19 +1846,74 @@ class DPL_Mag_Fitter(MCMC_Fitter):
         params: Dict[str, float],
         **kwargs: Dict[str, Any],
     ) -> float:
+        """Evaluate the double power-law function in magnitude space.
+
+        Parameters
+        ----------
+        x : `float`, `list` of `float`, or `NDArray` of `float`
+            Absolute magnitude value(s) at which to evaluate the function.
+        params : `dict` of `str`: `float`
+            Must contain ``"log10_phi_star"``, ``"M_star"``, ``"alpha"``
+            and ``"beta"``.
+        **kwargs : `dict`
+            Unused, present for interface compatibility.
+
+        Returns
+        -------
+        `float`
+            The double power-law number density evaluated at ``x``.
+        """
         numerator = 0.4 * np.log(10) * 10 ** (params["log10_phi_star"]) * \
             10 ** (0.4 * (params["M_star"] - x))
         denominator = 10 ** (-0.4 * params["alpha"] * (params["M_star"] - x)) + \
             10 ** (-0.4 * params["beta"] * (params["M_star"] - x))
         return numerator / denominator
-    
+
     def update(
         self: Self
     ) -> NoReturn:
+        """No-op update; this fitter has no derived state to refresh."""
         pass
 
 
 class Linear_Fitter(MCMC_Fitter):
+    """`MCMC_Fitter` implementing a linear model ``y = m * x + c``.
+
+    Fits ``m`` and ``c`` (unless held fixed via `fixed_params`), and
+    optionally an additional intrinsic scatter model, whose type is
+    inferred automatically from which scatter-related parameter names are
+    present in `priors`/`fixed_params`: none (no scatter), ``"scatter"``
+    (single symmetric scatter), ``"scatter_up"``/``"scatter_lo"``
+    (asymmetric scatter), ``"scatter_y_a"``/``"scatter_y_b"``
+    (y-dependent scatter), ``"exp_scatter_y_a"``/``"exp_scatter_y_b"``
+    (softplus y-dependent scatter), or ``"scatter_c"``/``"scatter_x"``/
+    ``"scatter_y"`` (scatter linear in x and y).
+
+    Parameters
+    ----------
+    priors : `Priors`
+        Priors for the free parameters among ``m``, ``c`` and any scatter
+        parameters (whichever are not in `fixed_params`).
+    x_data : `NDArray` of `float`
+        Independent variable data values.
+    y_data : `NDArray` of `float`
+        Dependent variable data values.
+    y_data_errs : `NDArray` of `NDArray` of `float`
+        Lower/upper errors on `y_data`.
+    nwalkers : `int`
+        Number of MCMC walkers.
+    backend_filename : `str`, optional
+        Path to an HDF5 backend file for the sampler. Default is `None`.
+    fixed_params : `dict` of `str`: `float`, optional
+        Fixed values for ``m``, ``c`` and/or any scatter parameters.
+        Default is ``{}``.
+
+    Attributes
+    ----------
+    scatter_type : `str` or `None`
+        The inferred type of intrinsic scatter model being fit, or `None`
+        if no scatter parameters were provided.
+    """
     # Power Law in linear space
     def __init__(
         self: Self,
@@ -1280,11 +2015,28 @@ class Linear_Fitter(MCMC_Fitter):
         params: Dict[str, float],
         **kwargs: Dict[str, Any],
     ) -> float:
+        """Evaluate the linear model ``y = m * x + c``.
+
+        Parameters
+        ----------
+        x : `float`, `list` of `float`, or `NDArray` of `float`
+            Independent variable value(s) at which to evaluate the model.
+        params : `dict` of `str`: `float`
+            Must contain ``"m"`` and ``"c"``.
+        **kwargs : `dict`
+            Unused, present for interface compatibility.
+
+        Returns
+        -------
+        `float`
+            ``params["m"] * x + params["c"]``.
+        """
         return params["m"] * x + params["c"]
-    
+
     def update(
         self: Self
     ) -> NoReturn:
+        """No-op update; this fitter has no derived state to refresh."""
         pass
 
     def plot(
@@ -1299,6 +2051,49 @@ class Linear_Fitter(MCMC_Fitter):
         xoff: float = 0.0,
         **kwargs: Dict[str, Any],
     ) -> None:
+        """Plot the median linear fit, its 1-sigma band, and optionally scatter.
+
+        Extends `Base_MCMC_Fitter.plot` by additionally shading a band
+        showing the (empirical or fitted, according to `scatter_type`)
+        intrinsic scatter about the fit.
+
+        Parameters
+        ----------
+        ax : `plt.Axes`
+            Matplotlib axis to plot the fit on.
+        log_data : `bool`, optional
+            Whether to plot `model` evaluated in log10 space. Default is
+            `False`.
+        x_arr : `NDArray` of `float`, optional
+            x-values at which to evaluate the model. If `None`, 100
+            linearly spaced values spanning `x_data` are used. Default is
+            `None`.
+        plot_scatter : `bool`, optional
+            Whether to additionally plot the intrinsic scatter band.
+            Default is `True`.
+        plot_kwargs : `dict`, optional
+            Keyword arguments passed to `ax.plot` for the median line.
+            Default is `{}`.
+        fill_between_kwargs : `dict`, optional
+            Keyword arguments passed to `ax.fill_between` for the 1-sigma
+            band. Default is `{}`.
+        scatter_kwargs : `dict`, optional
+            Keyword arguments passed to `ax.fill_between` for the scatter
+            band, overriding the defaults. Default is `{}`.
+        xoff : `float`, optional
+            Offset subtracted from `x_arr` before plotting. Default is
+            ``0.0``.
+        **kwargs : `dict`
+            Additional keyword arguments (currently unused here, but
+            accepted for interface compatibility).
+
+        Returns
+        -------
+        `tuple`
+            ``(x_arr, med_chains, l1_chains, u1_chains)``, or, if
+            `plot_scatter` is `True`, additionally the lower/upper scatter
+            band values ``(..., l1_chains_scat, u1_chains_scat)``.
+        """
         if plot_scatter:
             def_scatter_kwargs = {
                 "color": "grey",
@@ -1356,6 +2151,39 @@ class Linear_Fitter(MCMC_Fitter):
 
 
 class Power_Law_Fitter(MCMC_Fitter):
+    """`MCMC_Fitter` implementing a power-law model ``y = A * x ** slope``.
+
+    Fits ``A`` and ``slope`` (unless held fixed via `fixed_params`), with
+    an optional additional ``logf`` parameter used to inflate the modelled
+    variance by a fractional amount of the model value.
+
+    Parameters
+    ----------
+    priors : `Priors`
+        Priors for the free parameters among ``A``, ``slope`` and (if
+        `incl_logf` is `True`) ``logf`` (whichever are not in
+        `fixed_params`).
+    x_data : `NDArray` of `float`
+        Independent variable data values.
+    y_data : `NDArray` of `float`
+        Dependent variable data values.
+    y_data_errs : `NDArray` of `NDArray` of `float`
+        Lower/upper errors on `y_data`.
+    nwalkers : `int`
+        Number of MCMC walkers.
+    backend_filename : `str` or `None`
+        Path to an HDF5 backend file for the sampler, or `None`.
+    fixed_params : `dict` of `str`: `float`
+        Fixed values for ``A``, ``slope`` and/or ``logf``.
+    incl_logf : `bool`, optional
+        Whether to include the additional ``logf`` variance-inflation
+        parameter. Default is `False`.
+
+    Attributes
+    ----------
+    incl_logf : `bool`
+        Whether the ``logf`` variance-inflation parameter is included.
+    """
     # Linear in log-log space
     def __init__(
         self: Self,
@@ -1405,11 +2233,28 @@ class Power_Law_Fitter(MCMC_Fitter):
         params: Dict[str, float],
         **kwargs: Dict[str, Any],
     ) -> float:
+        """Evaluate the power-law model ``y = A * x ** slope``.
+
+        Parameters
+        ----------
+        x : `float`, `list` of `float`, or `NDArray` of `float`
+            Independent variable value(s) at which to evaluate the model.
+        params : `dict` of `str`: `float`
+            Must contain ``"A"`` and ``"slope"``.
+        **kwargs : `dict`
+            Unused, present for interface compatibility.
+
+        Returns
+        -------
+        `float`
+            ``params["A"] * x ** params["slope"]``.
+        """
         return params["A"] * x ** params["slope"]
-    
+
     def update(
         self: Self
     ) -> NoReturn:
+        """No-op update; this fitter has no derived state to refresh."""
         pass
 
     # def plot(

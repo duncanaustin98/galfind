@@ -62,6 +62,50 @@ name_to_label = {
 }
 
 class Morphology_Result(ABC):
+    """Abstract base class holding the results of a morphological fit to a single source.
+
+    Parameters
+    ----------
+    fitter : `Type[Morphology_Fitter]`
+        The `Morphology_Fitter` instance that produced this result.
+    chi2 : `float`
+        Chi-squared value of the fit.
+    Ndof : `int`
+        Number of degrees of freedom of the fit.
+    properties : `dict` of `str` to (`astropy.units.Quantity`, `astropy.units.Magnitude` or `astropy.units.Dex`)
+        Best-fit morphological property values, keyed by property name.
+        Each is also set as an instance attribute of the same name.
+    property_errs : `dict` of `str` to `list`
+        Lower/upper uncertainties on each entry of `properties`, keyed by
+        property name. Each is also set as an instance attribute named
+        ``f"{key}_err"``.
+    property_pdfs : `dict` of `str` to `Type[PDF_Base]`
+        Posterior probability distributions for each fitted property,
+        keyed by property name.
+    rff : `float`, optional
+        Residual Flux Fraction of the fit. Default is `None`.
+    cutout : `Type[Band_Cutout_Base]`, optional
+        Cutout of the source that was fitted. Default is `None`.
+
+    Attributes
+    ----------
+    fitter : `Type[Morphology_Fitter]`
+        The `Morphology_Fitter` instance that produced this result.
+    chi2 : `float`
+        Chi-squared value of the fit.
+    Ndof : `int`
+        Number of degrees of freedom of the fit.
+    properties : `dict` of `str` to (`astropy.units.Quantity`, `astropy.units.Magnitude` or `astropy.units.Dex`)
+        Best-fit morphological property values, keyed by property name.
+    property_errs : `dict` of `str` to `list`
+        Lower/upper uncertainties on each entry of `properties`.
+    property_pdfs : `dict` of `str` to `Type[PDF_Base]`
+        Posterior probability distributions for each fitted property.
+    rff : `float` or `None`
+        Residual Flux Fraction of the fit.
+    cutout : `Type[Band_Cutout_Base]` or `None`
+        Cutout of the source that was fitted.
+    """
 
     def __init__(
         self: Self,
@@ -87,17 +131,54 @@ class Morphology_Result(ABC):
 
     @property
     def red_chi2(self: Self) -> float:
+        """`float`: Reduced chi-squared of the fit, ``chi2 / Ndof``."""
         return self.chi2 / self.Ndof
-    
+
     def __repr__(self: Self) -> str:
         return f"{self.__class__.__name__}({self.fitter.name})"
-    
+
     @abstractmethod
     def plot(self: Self) -> None:
+        """Plot the morphological fit result. Must be implemented by subclasses."""
         pass
 
 
 class Galfit_Result(Morphology_Result):
+    """Results of a GALFIT morphological fit to a single source.
+
+    Parameters
+    ----------
+    fitter : `Type[Galfit_Fitter]`
+        The `Galfit_Fitter` instance that produced this result.
+    chi2 : `float`
+        Chi-squared value of the fit.
+    Ndof : `int`
+        Number of degrees of freedom of the fit.
+    properties : `dict` of `str` to (`astropy.units.Quantity`, `astropy.units.Magnitude` or `astropy.units.Dex`)
+        Best-fit morphological property values, keyed by property name.
+    property_errs : `dict` of `str` to `list`
+        Lower/upper uncertainties on each entry of `properties`, keyed by
+        property name.
+    property_pdfs : `dict` of `str` to `Type[PDF_Base]`
+        Posterior probability distributions for each fitted property,
+        keyed by property name.
+    im_path : `str`
+        Path to the GALFIT output ``imgblock`` FITS file (containing the
+        original, model and residual images).
+    mask_path : `str`, optional
+        Path to the FITS bad-pixel mask used in the fit. Default is `None`.
+    rff : `float`, optional
+        Residual Flux Fraction of the fit. Default is `None`.
+    cutout : `Type[Band_Cutout_Base]`, optional
+        Cutout of the source that was fitted. Default is `None`.
+
+    Attributes
+    ----------
+    im_path : `str`
+        Path to the GALFIT output ``imgblock`` FITS file.
+    mask_path : `str` or `None`
+        Path to the FITS bad-pixel mask used in the fit.
+    """
 
     def __init__(
         self: Self,

@@ -35,12 +35,35 @@ from . import useful_funcs_austind as funcs
 from . import config, galfind_logger
 
 def get_code() -> str:
+    """Return a string identifying the photutils version used.
+
+    Returns
+    -------
+    `str`
+        The installed photutils version, formatted as ``"photutils-v<version>"``.
+    """
     return f"photutils-v{photutils.__version__}"
 
 def get_segmentation_path(
     self: Type[Band_Data_Base],
     segment_type: str,
 ) -> str:
+    """Construct (and ensure the directory exists for) the photutils segmentation map path.
+
+    Parameters
+    ----------
+    self : `Band_Data_Base`
+        Band data object providing ``instr_name``, ``version``, ``survey``
+        and ``filt_name`` used to build the path.
+    segment_type : `str`
+        Segmentation method identifier (e.g. ``"bkg"`` or ``"rms"``) used
+        as a subdirectory of the segmentation output.
+
+    Returns
+    -------
+    `str`
+        The path to the ``.fits`` segmentation map for this band/segmentation type.
+    """
     seg_dir = f"{config['Photutils']['PHOTUTILS_DIR']}/{self.instr_name}/{self.version}/{self.survey}/{segment_type}/segmentation"
     seg_path = f"{seg_dir}/{self.survey}_{self.filt_name}_{self.filt_name}_{self.version}_seg.fits"
     funcs.make_dirs(seg_path)
@@ -51,6 +74,25 @@ def get_forced_phot_path(
     segment_type: str,
     forced_phot_band: Optional[Type[Band_Data_Base]] = None,
 ) -> str:
+    """Construct (and ensure the directory exists for) the forced photometry catalogue path.
+
+    Parameters
+    ----------
+    self : `Band_Data_Base`
+        Band data object on which forced photometry is being performed.
+    segment_type : `str`
+        Segmentation method identifier used as a subdirectory of the
+        forced photometry output.
+    forced_phot_band : `Band_Data_Base`, optional
+        Band used for source detection/positions. If `None`, ``self`` is
+        used as both the detection and measurement band, and the current
+        photutils version is used as the method label. Default is `None`.
+
+    Returns
+    -------
+    `str`
+        The path to the ``.fits`` forced photometry catalogue.
+    """
     if forced_phot_band is None:
         select_filt_name = self.filt_name
         forced_phot_code = f"photutils-v{photutils.__version__}"

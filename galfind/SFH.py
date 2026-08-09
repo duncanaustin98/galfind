@@ -18,6 +18,39 @@ except ImportError:
 from . import galfind_logger
 
 class SFH:
+    """Container for a (possibly posterior-sampled) star-formation history.
+
+    Stores a lookback-time grid together with one or more corresponding
+    star-formation-rate tracks (e.g. drawn from a Bagpipes posterior) and
+    provides plotting utilities.
+
+    Parameters
+    ----------
+    z : `float`
+        Observed redshift of the galaxy the SFH belongs to.
+    ages : `numpy.ndarray`
+        Lookback time grid (with time units, e.g. `astropy.units.yr`) at
+        which `sfh_post` is sampled.
+    sfh_post : `numpy.ndarray`
+        Star-formation-rate posterior, with shape ``(n_samples, len(ages))``,
+        giving one or more SFR(t) tracks evaluated on `ages`.
+    type : `str`, optional
+        Label describing the SFH parameterization used (e.g. the Bagpipes
+        SFH type). Default is ``"continuity_bursty"``.
+
+    Attributes
+    ----------
+    z : `float`
+        Observed redshift.
+    ages : `numpy.ndarray`
+        Lookback time grid.
+    sfh_post : `numpy.ndarray`
+        Star-formation-rate posterior samples.
+    type : `str`
+        SFH parameterization label.
+    age_of_universe : `astropy.units.Quantity`
+        Age of the universe at `z` (see the `age_of_universe` property).
+    """
 
     def __init__(
         self: Self,
@@ -33,7 +66,29 @@ class SFH:
 
     @classmethod
     def from_pipes_post(cls: Self, path: str) -> Self:
-        
+        """Construct an `SFH` from a Bagpipes posterior HDF5 output file.
+
+        Reads the ``sfh`` array from the ``basic_quantities`` group,
+        determines the redshift (either a fixed value or the posterior
+        median from ``advanced_quantities``), infers the SFH type from the
+        stored fit instructions, and rebuilds the internal Bagpipes age
+        sampling grid.
+
+        Parameters
+        ----------
+        path : `str`
+            Path to the Bagpipes posterior ``.h5`` file.
+
+        Returns
+        -------
+        `SFH`
+            New `SFH` instance populated from the posterior file.
+
+        Raises
+        ------
+        FileNotFoundError
+            If `path` does not point to an existing file.
+        """
         if not Path(path).is_file():
             err_message = f"SFH file {path} not found!"
             galfind_logger.critical(err_message)
@@ -88,6 +143,11 @@ class SFH:
     
     @property
     def age_of_universe(self: Self) -> u.Quantity:
+        """`astropy.units.Quantity`: Age of the universe at redshift `z`.
+
+        Computed by interpolating the Bagpipes age-redshift relation
+        (`bagpipes.utils.z_array`, `bagpipes.utils.age_at_z`) at `self.z`.
+        """
         import bagpipes as pipes
         return 1.e9 * np.interp(self.z, pipes.utils.z_array, pipes.utils.age_at_z) * u.yr
 
@@ -107,6 +167,65 @@ class SFH:
         crop_ages: Optional[u.Quantity] = None,
         **plot_kwargs,
     ) -> Tuple[plt.Axes, plt.Axes, plt.Axes]:
+        """Plot the median SFH and its 16th-84th percentile envelope.
+
+        Plots either the SFR against lookback time or against the absolute
+        age of the universe, with an optional twin redshift axis and an
+        optional zoomed inset covering the most recent `zoom_time`.
+
+        Parameters
+        ----------
+        ax : `matplotlib.axes.Axes`
+            Axes to draw the SFH on.
+        time_units : `astropy.units.Unit`, optional
+            Time unit to convert ages to for plotting. Default is
+            `astropy.units.Myr`.
+        plot_type : `str`, optional
+            Either ``"lookback"`` (x-axis is lookback time) or
+            ``"absolute"`` (x-axis is age of the universe). Default is
+            ``"lookback"``.
+        z_axis : `bool`, optional
+            If `True` and `plot_type` is ``"absolute"``, add a twin x-axis
+            labelled with redshift. Default is `True`.
+        label_z : `bool`, optional
+            If `True`, annotate the observed redshift on the axes.
+            Default is `True`.
+        annotate : `bool`, optional
+            If `True`, set axis labels/limits and add annotations.
+            Default is `True`.
+        save : `bool`, optional
+            Not yet implemented; if truthy, raises `NotImplementedError`.
+            Default is `False`.
+        primary_colour : `str`, optional
+            Colour of the median SFH line. Default is ``"black"``.
+        secondary_colour : `str`, optional
+            Colour of the percentile envelope fill. Default is ``"gray"``.
+        zvals : `list` of `float` or `int`, optional
+            Redshift values to tick on the twin redshift axis. Default is
+            ``[0, 0.5, 1, 2, 4, 6, 7, 8, 10, 16, 25]``.
+        zoom_time : `astropy.units.Quantity`, optional
+            If given, draw an inset axis zooming into the most recent
+            `zoom_time` of lookback time. Default is `None`.
+        crop_ages : `astropy.units.Quantity`, optional
+            Two-element time range; if given, restrict the plotted ages to
+            this range. Default is `None`.
+        **plot_kwargs
+            Additional keyword arguments passed to `ax.plot`.
+
+        Returns
+        -------
+        `tuple` of `matplotlib.axes.Axes`
+            ``(ax, z_ax, zoom_ax)`` - the main axes, the twin redshift axes
+            (or `None` if not created), and the zoomed inset axes (or
+            `None` if not created).
+
+        Raises
+        ------
+        ValueError
+            If `plot_type` is not ``"lookback"`` or ``"absolute"``.
+        NotImplementedError
+            If `save` is truthy (saving is not yet implemented).
+        """
         galfind_logger.debug(f"Plotting {repr(self)}")
         assert u.get_physical_type(time_units) == "time", \
             galfind_logger.critical(

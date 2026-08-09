@@ -86,6 +86,74 @@ morgan_version_to_dir = {
 }
 
 class Band_Data_Base(ABC):
+    """Abstract base class representing imaging data for a single band.
+
+    Wraps the science image, RMS error/weight maps, and derived products
+    (segmentation map, mask, PSF, depths) for one photometric band of a
+    given survey/version/pixel scale, and provides the common loading,
+    masking, segmentation, forced photometry, and depth-calculation
+    machinery shared by `Band_Data` (a single filter) and
+    `Stacked_Band_Data` (a stack of multiple filters). Concrete subclasses
+    must implement the `instr_name`, `filt_name`, and `ZP` properties.
+
+    Parameters
+    ----------
+    survey : `str`
+        Name of the survey/field this data belongs to.
+    version : `str`
+        Data reduction version string.
+    im_path : `str`
+        Path to the FITS file containing the science image.
+    im_ext : `int`
+        FITS extension index of the science image within `im_path`.
+    rms_err_path : `str`, optional
+        Path to the FITS file containing the RMS error map. Default is `None`.
+    rms_err_ext : `int`, optional
+        FITS extension index of the RMS error map. Default is `None`.
+    wht_path : `str`, optional
+        Path to the FITS file containing the weight map. Default is `None`.
+    wht_ext : `int`, optional
+        FITS extension index of the weight map. Default is `None`.
+    pix_scale : `astropy.units.Quantity`, optional
+        Pixel scale of the imaging. Default is `0.03 * u.arcsec`.
+    im_ext_name : `str` or `list` of `str`, optional
+        Expected FITS `EXTNAME`(s) for the science image extension.
+        Default is `"SCI"`.
+    rms_err_ext_name : `str` or `list` of `str`, optional
+        Expected FITS `EXTNAME`(s) for the RMS error extension.
+        Default is `"ERR"`.
+    wht_ext_name : `str` or `list` of `str`, optional
+        Expected FITS `EXTNAME`(s) for the weight extension.
+        Default is `"WHT"`.
+    use_galfind_err : `bool`, optional
+        If `True`, automatically derive a missing RMS error map from the
+        weight map (or vice versa). Default is `True`.
+    aper_diams : `astropy.units.Quantity`, optional
+        Aperture diameters to associate with this band. Default is `None`.
+    psf : `PSF_Base`, optional
+        PSF object associated with this band's imaging. Default is `None`.
+
+    Attributes
+    ----------
+    survey : `str`
+        Survey/field name.
+    version : `str`
+        Data reduction version string.
+    im_path, rms_err_path, wht_path : `str`
+        Paths to the science, RMS error, and weight FITS files.
+    im_ext, rms_err_ext, wht_ext : `int`
+        FITS extension indices of the science, RMS error, and weight data.
+    pix_scale : `astropy.units.Quantity`
+        Pixel scale of the imaging.
+    aper_diams : `astropy.units.Quantity`
+        Aperture diameters associated with this band, if loaded.
+    psf : `PSF_Base` or `None`
+        PSF object associated with this band's imaging.
+    is_native : `bool`
+        Whether this object represents the native (pre-PSF-homogenized)
+        version of the data.
+    """
+
     def __init__(
         self,
         survey: str,
@@ -150,20 +218,36 @@ class Band_Data_Base(ABC):
     @property
     @abstractmethod
     def instr_name(self) -> str:
+        """`str`: Name of the instrument this band's data was taken with.
+
+        Must be implemented by subclasses.
+        """
         pass
 
     @property
     @abstractmethod
     def filt_name(self) -> str:
+        """`str`: Name of the filter (or combination of filters, for a
+        stack) this data corresponds to.
+
+        Must be implemented by subclasses.
+        """
         pass
 
     @property
     @abstractmethod
     def ZP(self) -> float:
+        """`float`: Photometric zero point of the image.
+
+        Must be implemented by subclasses.
+        """
         pass
 
     @property
     def data_shape(self) -> Tuple[int, int]:
+        """`tuple` of `int`: Pixel dimensions ``(ny, nx)`` of the science
+        image, loaded from the FITS file on access.
+        """
         return self.load_im()[0].shape
 
     def __repr__(self) -> str:
@@ -314,6 +398,22 @@ class Band_Data_Base(ABC):
         self: Self,
         aper_diams: u.Quantity
     ) -> NoReturn:
+        """Set the aperture diameters to use for this band, if not already set.
+
+        If aperture diameters are already loaded for this band, the call is a
+        no-op (a debug message is logged instead of overwriting them).
+
+        Parameters
+        ----------
+        aper_diams : `astropy.units.Quantity`
+            Aperture diameters (angular units) to associate with this band.
+
+        Raises
+        ------
+        Exception
+            If `aper_diams` is not an `astropy.units.Quantity` with angular
+            units (raised via `_check_aper_diams`).
+        """
         if hasattr(self, "aper_diams") and getattr(self, "aper_diams", None) is not None:
             galfind_logger.debug(
                 f"{self.aper_diams=} already loaded for {self.filt_name},"
@@ -325,6 +425,26 @@ class Band_Data_Base(ABC):
             galfind_logger.info(f"Loaded {aper_diams=} for {self.filt_name}")
 
     def load_data(self, incl_mask: bool = True):
+        """Load the science image, segmentation map, and (optionally) mask.
+
+        Parameters
+        ----------
+        incl_mask : `bool`, optional
+            If `True`, also load and return the mask. Default is `True`.
+
+        Returns
+        -------
+        `tuple`
+            ``(im_data, im_header, seg_data, seg_header)`` if `incl_mask` is
+            `False`, or ``(im_data, im_header, seg_data, seg_header, mask)``
+            if `incl_mask` is `True`.
+
+        Raises
+        ------
+        AssertionError
+            If segmentation has not yet been performed for this band (i.e.
+            `seg_args` is not set).
+        """
         assert hasattr(self, "seg_args")
         # load science image data and header (and hdul)
         im_data, im_header = self.load_im()
@@ -344,6 +464,27 @@ class Band_Data_Base(ABC):
         Tuple[np.ndarray, fits.Header],
         Tuple[np.ndarray, fits.Header, fits.HDUList],
     ]:
+        """Load the science image data and header from `im_path`/`im_ext`.
+
+        Parameters
+        ----------
+        return_hdul : `bool`, optional
+            If `True`, also return the opened `astropy.io.fits.HDUList`.
+            Default is `False`.
+        **kwargs : `dict`
+            Additional keyword arguments passed to `astropy.io.fits.open`.
+
+        Returns
+        -------
+        `tuple`
+            ``(im_data, im_header)``, or ``(im_data, im_header, im_hdul)``
+            if `return_hdul` is `True`.
+
+        Raises
+        ------
+        Exception
+            If `im_path` does not point to an existing FITS file.
+        """
         # load image data and header
         if not Path(self.im_path).is_file():
             err_message = (
@@ -362,6 +503,13 @@ class Band_Data_Base(ABC):
             return im_data, im_header
 
     def load_wcs(self: Type[Self]) -> WCS:
+        """Load (and cache) the WCS of the science image.
+
+        Returns
+        -------
+        `astropy.wcs.WCS`
+            The world coordinate system of the science image header.
+        """
         try:
             self.wcs
         except (AttributeError, KeyError) as e:
@@ -376,6 +524,26 @@ class Band_Data_Base(ABC):
         return_hdul: bool = False,
         **kwargs: Dict[str, Any],
     ) -> Union[Tuple[np.ndarray, fits.Header], np.ndarray]:
+        """Load the weight map data (and optionally header/HDUList).
+
+        Parameters
+        ----------
+        output_hdr : `bool`, optional
+            If `True`, also return the FITS header. Default is `False`.
+        return_hdul : `bool`, optional
+            If `True`, also return the opened `astropy.io.fits.HDUList`.
+            Default is `False`.
+        **kwargs : `dict`
+            Additional keyword arguments passed to `astropy.io.fits.open`.
+
+        Returns
+        -------
+        `numpy.ndarray` or `tuple`
+            The weight map data, optionally accompanied by the header
+            and/or HDUList depending on `output_hdr`/`return_hdul`.
+            Returns `None` (with a logged critical error) in place of the
+            data if `wht_path` does not point to an existing FITS file.
+        """
         if Path(self.wht_path).is_file():
             hdul = fits.open(self.wht_path, ignore_missing_simple = True, **kwargs)
             hdu = hdul[self.wht_ext]
@@ -406,6 +574,26 @@ class Band_Data_Base(ABC):
         return_hdul: bool = False,
         **kwargs: Dict[str, Any],
     ) -> Union[Tuple[np.ndarray, fits.Header], np.ndarray]:
+        """Load the RMS error map data (and optionally header/HDUList).
+
+        Parameters
+        ----------
+        output_hdr : `bool`, optional
+            If `True`, also return the FITS header. Default is `False`.
+        return_hdul : `bool`, optional
+            If `True`, also return the opened `astropy.io.fits.HDUList`.
+            Default is `False`.
+        **kwargs : `dict`
+            Additional keyword arguments passed to `astropy.io.fits.open`.
+
+        Returns
+        -------
+        `numpy.ndarray` or `tuple`
+            The RMS error map data, optionally accompanied by the header
+            and/or HDUList depending on `output_hdr`/`return_hdul`.
+            Returns `None` (with a logged critical error) in place of the
+            data if `rms_err_path` does not point to an existing FITS file.
+        """
         if Path(self.rms_err_path).is_file():
             hdul = fits.open(self.rms_err_path, ignore_missing_simple = True, **kwargs)
             hdu = hdul[self.rms_err_ext]
@@ -435,6 +623,26 @@ class Band_Data_Base(ABC):
         incl_hdr: bool = True,
         **kwargs: Dict[str, Any],
     ) -> Tuple[np.ndarray, fits.Header]:
+        """Load the segmentation map data (and optionally header).
+
+        Parameters
+        ----------
+        incl_hdr : `bool`, optional
+            If `True`, also return the FITS header. Default is `True`.
+        **kwargs : `dict`
+            Additional keyword arguments passed to `astropy.io.fits.open`.
+
+        Returns
+        -------
+        `numpy.ndarray` or `tuple`
+            The segmentation map data, or ``(seg_data, seg_header)`` if
+            `incl_hdr` is `True`.
+
+        Raises
+        ------
+        Exception
+            If `seg_path` does not point to an existing FITS file.
+        """
         # TODO: load from the correct hdu rather than the first one
         try:
             if not Path(self.seg_path).is_file():
@@ -464,6 +672,27 @@ class Band_Data_Base(ABC):
         ext: Optional[str] = None,
         invert: bool = False,
     ) -> Optional[Union[np.ndarray, Dict[str, np.ndarray]]]:
+        """Load the mask data (and header) for this band, if masking has been performed.
+
+        Parameters
+        ----------
+        ext : `str`, optional
+            Name of a specific mask extension to load (e.g. ``"MASK"``). If
+            `None`, all mask extensions are returned as dictionaries keyed
+            by extension name. Default is `None`.
+        invert : `bool`, optional
+            If `True` (and `ext` is given), invert the boolean mask before
+            returning it. Default is `False`.
+
+        Returns
+        -------
+        `tuple`
+            ``(mask, hdr)`` where `mask` (and `hdr`) is either a single
+            `numpy.ndarray` (`astropy.io.fits.Header`) if `ext` is given, or
+            a `dict` of `numpy.ndarray` (`astropy.io.fits.Header`) keyed by
+            extension name otherwise. Both elements are `None` if no mask
+            has been set for this band.
+        """
         if hasattr(self, "mask_args"):
             # load mask
             if ".fits" in self.mask_path:
@@ -507,6 +736,15 @@ class Band_Data_Base(ABC):
         return mask, hdr
 
     def get_area_tab_path(self: Self) -> str:
+        """Get the path to the unmasked-area lookup table for this survey/version.
+
+        Creates the parent directory if it does not already exist.
+
+        Returns
+        -------
+        `str`
+            Path to the ``.ecsv`` unmasked-area table.
+        """
         area_tab_path = f"{config['DEFAULT']['GALFIND_WORK']}/" + \
             f"Unmasked_areas/{self.survey}_{self.version}.ecsv"
         funcs.make_dirs(area_tab_path)
@@ -519,6 +757,31 @@ class Band_Data_Base(ABC):
         use_fft_conv: bool = True,
         overwrite: bool = False,
     ) -> None:
+        """PSF-homogenize this band's science, RMS error, and weight images to a target PSF.
+
+        Constructs a convolution kernel from this band's PSF to the target
+        `psf`, convolves the science/RMS-error/weight images with it (or
+        simply symlinks them if the kernel is trivial), writes the results
+        to a new version directory, and updates `self` in place (`im_path`,
+        `rms_err_path`, `wht_path`, `version`, and `psf` are all updated to
+        point at the new, homogenized data).
+
+        Parameters
+        ----------
+        psf : `PSF_Cutout`
+            Target PSF to homogenize this band's imaging to.
+        use_fft_conv : `bool`, optional
+            If `True`, use FFT-based convolution (`astropy.convolution.convolve_fft`);
+            otherwise use direct convolution. Default is `True`.
+        overwrite : `bool`, optional
+            If `True`, redo the convolution even if the output files
+            already exist. Default is `False`.
+
+        Raises
+        ------
+        AssertionError
+            If no PSF has been loaded for this band (`self.psf` not set).
+        """
         assert hasattr(self, "psf"), galfind_logger.critical(
             f"PSF not loaded for {self.filt_name}! Cannot make PSF homogenization kernel!"
         )
@@ -650,30 +913,35 @@ class Band_Data_Base(ABC):
         params_name: str = "default.param",
         overwrite: bool = False,
     ) -> None:
-        """
-        Segment the image using the specified method and error type
-        if it has not already been done.
+        """Segment the image using the specified method and error type, if not already done.
 
-        Parameters:
-        -----------
-        err_type : str, optional
-            The type of error to use for segmentation. Default is "rms_err".
-        method : str, optional
-            The segmentation method to use. Default is "sextractor".
-        overwrite : bool, optional
-            Whether to overwrite existing segmentation data. Default is False.
+        Parameters
+        ----------
+        err_type : `str`, optional
+            The type of error map to use for segmentation. Default is
+            ``"rms_err"``.
+        method : `str`, optional
+            The segmentation method to use; must contain ``"sextractor"``.
+            Default is ``"sextractor"``.
+        config_name : `str`, optional
+            Name of the SExtractor configuration file to use. Default is
+            ``"default.sex"``.
+        params_name : `str`, optional
+            Name of the SExtractor output parameters file to use. Default
+            is ``"default.param"``.
+        overwrite : `bool`, optional
+            Whether to overwrite existing segmentation data. Default is
+            `False`.
 
-        Returns:
-        --------
-        NoReturn
-            This method does not return any value.
+        Notes
+        -----
+        The segmentation arguments used are stored in the `seg_args`
+        attribute, and the resulting segmentation map path in `seg_path`.
 
-        Notes:
+        Raises
         ------
-        - If the method is "sextractor", it uses the Segmentation.segment function.
-        - The segmentation arguments used here stored in the `seg_args` attribute.
-        - The `overwrite` parameter determines if existing segmentation data should be replaced.
-            Segments the data using the specified method and error type.
+        Exception
+            If `method` does not contain ``"sextractor"``.
         """
         # do not re-segment if already done
         if not (hasattr(self, "seg_args") and hasattr(self, "seg_path")) or overwrite:
@@ -710,6 +978,33 @@ class Band_Data_Base(ABC):
         params_name: str = "default.param",
         overwrite: bool = False,
     ) -> NoReturn:
+        """Perform forced photometry on this band using a given detection band, if not already done.
+
+        Parameters
+        ----------
+        forced_phot_band : `Band_Data_Base`
+            Band (or stack) whose segmentation map/detections are used to
+            force photometry on this band's image.
+        err_type : `str`, optional
+            The type of error map to use. Default is ``"rms_err"``.
+        method : `str`, optional
+            The forced photometry method to use; must contain
+            ``"sextractor"``. Default is ``"sextractor"``.
+        config_name : `str`, optional
+            Name of the SExtractor configuration file to use. Default is
+            ``"default.sex"``.
+        params_name : `str`, optional
+            Name of the SExtractor output parameters file to use. Default
+            is ``"default.param"``.
+        overwrite : `bool`, optional
+            Whether to overwrite existing forced photometry results.
+            Default is `False`.
+
+        Raises
+        ------
+        Exception
+            If `method` does not contain ``"sextractor"``.
+        """
         # do not re-perform forced photometry if already done
         if not (
             hasattr(self, "forced_phot_args")
@@ -794,6 +1089,54 @@ class Band_Data_Base(ABC):
         gaia_row_lim: Union[int, List[int], Dict[str, int]] = 500,
         overwrite: Union[bool, List[bool], Dict[str, bool]] = False,
     ) -> None:
+        """Create or load a mask for this band's imaging, if not already done.
+
+        Either loads a pre-existing FITS mask (`fits_mask_path`), or
+        generates one using either manual region-based masking or automatic
+        star/edge masking, storing the result path and arguments in
+        `mask_path` and `mask_args`.
+
+        Parameters
+        ----------
+        method : `str`, optional
+            Masking method to use, one of ``"auto"`` or ``"manual"``.
+            Default is ``"auto"``.
+        fits_mask_path : `str`, optional
+            Path to a pre-existing FITS mask to use directly, skipping mask
+            generation. Default is `None`.
+        star_mask_params : `dict`, optional
+            Parameters controlling the size/shape of masked regions around
+            bright stars (central cores and diffraction spikes). Default is
+            ``{"central": {"a": 300.0, "b": 4.25}, "spikes": {"a": 400.0, "b": 4.5}}``.
+        edge_mask_distance : `int` or `float`, optional
+            Distance in pixels from the image edge to mask. Default is `50`.
+        scale_extra : `float`, optional
+            Additional fractional scaling applied to masked star regions.
+            Default is `0.2`.
+        exclude_gaia_galaxies : `bool`, optional
+            Whether to exclude Gaia sources classified as galaxies from
+            star masking. Default is `True`.
+        angle : `float`, optional
+            Position angle override for masked regions. Default is `None`.
+        edge_value : `float`, optional
+            Pixel value used to identify the image edge/blank border.
+            Default is `0.0`.
+        edge_threshold : `float`, optional
+            Threshold used when detecting the image edge. Default is `None`.
+        element : `str`, optional
+            Shape of the masking element (e.g. ``"ELLIPSE"``). Default is
+            ``"ELLIPSE"``.
+        gaia_row_lim : `int`, optional
+            Maximum number of Gaia catalogue rows to query. Default is `500`.
+        overwrite : `bool`, optional
+            Whether to regenerate the mask even if one already exists.
+            Default is `False`.
+
+        Raises
+        ------
+        Exception
+            If `method` is not one of ``"auto"`` or ``"manual"``.
+        """
         if not (hasattr(self, "mask_args") and hasattr(self, "mask_path")):
             # load in already made fits mask
             if fits_mask_path is not None:
@@ -848,6 +1191,64 @@ class Band_Data_Base(ABC):
         overwrite: bool = False,
         master_cat_path: Optional[str] = None,
     ) -> NoReturn:
+        """Calculate local depths for this band, for each loaded aperture diameter.
+
+        Runs the depth calculation (via `Depths.calc_band_depth`), loads the
+        resulting median/mean depths into `self`, and optionally produces
+        diagnostic plots, if depths have not already been calculated.
+
+        Parameters
+        ----------
+        mode : `str`, optional
+            Depth calculation mode. Default is ``"n_nearest"``.
+        scatter_size : `float`, optional
+            Size of the scatter used when placing empty apertures. Default
+            is `0.1`.
+        distance_to_mask : `int` or `float`, optional
+            Minimum distance (pixels) from masked regions for a placed
+            aperture to be valid. Default is `30`.
+        region_radius_used_pix : `int` or `float`, optional
+            Radius (pixels) of the local region used to estimate depth.
+            Default is `300`.
+        n_nearest : `int`, optional
+            Number of nearest empty apertures used for the ``"n_nearest"``
+            mode. Default is `200`.
+        coord_type : `str`, optional
+            Coordinate system used when placing apertures, e.g. ``"sky"``.
+            Default is ``"sky"``.
+        split_depth_min_size : `int`, optional
+            Minimum image size above which the depth calculation is split
+            into sub-regions. Default is `100_000`.
+        split_depths_factor : `int`, optional
+            Factor by which to split the image when calculating depths in
+            sub-regions. Default is `5`.
+        step_size : `int`, optional
+            Grid step size (pixels) used to place empty apertures. Default
+            is `100`.
+        n_split : `str` or `int`, optional
+            Number of sub-regions to split the calculation into, or
+            ``"auto"`` to determine automatically. Default is ``"auto"``.
+        n_retry_box : `int`, optional
+            Number of retries allowed when placing apertures in a sub-box.
+            Default is `1`.
+        grid_offset_times : `int`, optional
+            Number of grid offsets used when placing empty apertures.
+            Default is `1`.
+        plot : `bool`, optional
+            Whether to produce diagnostic depth plots. Default is `True`.
+        overwrite : `bool`, optional
+            Whether to recompute depths even if already loaded. Default is
+            `False`.
+        master_cat_path : `str`, optional
+            Path to the master photometric catalogue, used for catalogue
+            overlay diagnostics. Default is `None`.
+
+        Raises
+        ------
+        AssertionError
+            If more than one set of depth parameters is generated
+            internally (should not normally occur for a single band).
+        """
         if not hasattr(self, "depth_args"):
             # load parameters (i.e. for each aper_diams in self)
             params_arr = self._sort_run_depth_params(
@@ -889,6 +1290,19 @@ class Band_Data_Base(ABC):
             )
     
     def get_hf_output(self, aper_diam: u.Quantity) -> Dict[str, Any]:
+        """Get the stored HDF5 depth-calculation output for a given aperture diameter.
+
+        Parameters
+        ----------
+        aper_diam : `astropy.units.Quantity`
+            Aperture diameter to retrieve the depth output for.
+
+        Returns
+        -------
+        `dict`
+            Dictionary of depth-calculation outputs loaded from the HDF5
+            depth file for this band and aperture diameter.
+        """
         return Depths.get_hf_output(self, aper_diam)
 
     def _sort_run_depth_params(
@@ -998,6 +1412,39 @@ class Band_Data_Base(ABC):
         label_suffix: Optional[str] = None,
         title: Optional[str] = None,
     ) -> NoReturn:
+        """Plot depth diagnostics of a given type for this band.
+
+        Parameters
+        ----------
+        aper_diam : `astropy.units.Quantity`
+            Aperture diameter to plot depths for. Must be one of
+            `self.aper_diams`.
+        plot_type : `str`
+            Type of plot to make. One of ``"rolling_average"``,
+            ``"rolling_average_diag"``, ``"labels"``, ``"hist"``,
+            ``"cat_depths"``, or ``"cat_diag"``.
+        fig : `matplotlib.figure.Figure`, optional
+            Figure to plot onto. A new figure/axes pair is created if not
+            given together with `ax`. Default is `None`.
+        ax : `matplotlib.axes.Axes`, optional
+            Axes to plot onto. Default is `None`.
+        save : `bool`, optional
+            If `True`, save the plot to disk. Default is `False`.
+        show : `bool`, optional
+            If `True`, display the plot. Default is `True`.
+        cmap_name : `str`, optional
+            Name of the matplotlib colormap to use. Default is ``"plasma"``.
+        label_suffix : `str`, optional
+            Suffix appended to plot labels. Default is `None`.
+        title : `str`, optional
+            Plot title, used for histogram-type plots. Default is `None`.
+
+        Raises
+        ------
+        AssertionError
+            If `aper_diam` is not in `self.aper_diams`, or `plot_type` is
+            not a recognised value.
+        """
         assert aper_diam in self.aper_diams, \
             galfind_logger.critical(
                 f"{aper_diam=} not in {self.aper_diams} for {self.filt_name}"
@@ -1063,6 +1510,23 @@ class Band_Data_Base(ABC):
         overwrite: bool = True,
         master_cat_path: Optional[str] = None,
     ) -> NoReturn:
+        """Produce (and optionally save/show) the depth diagnostic plot for a single aperture diameter.
+
+        Parameters
+        ----------
+        aper_diam : `astropy.units.Quantity`
+            Aperture diameter to plot the depth diagnostic for.
+        save : `bool`, optional
+            If `True`, save the plot to disk. Default is `False`.
+        show : `bool`, optional
+            If `True`, display the plot. Default is `False`.
+        overwrite : `bool`, optional
+            If `True`, regenerate the plot even if it already exists on
+            disk. Default is `True`.
+        master_cat_path : `str`, optional
+            Path to the master photometric catalogue used for overlaying
+            catalogue sources on the diagnostic. Default is `None`.
+        """
         save_path = Depths.get_depth_plot_path(self, aper_diam)
         if not Path(save_path).is_file() or overwrite:
             Depths.plot_depth_diagnostic(
@@ -1079,6 +1543,19 @@ class Band_Data_Base(ABC):
         overwrite: bool = True,
         master_cat_path: Optional[str] = None,
     ) -> NoReturn:
+        """Produce depth diagnostic plots for every aperture diameter loaded for this band.
+
+        Parameters
+        ----------
+        save : `bool`, optional
+            If `True`, save each plot to disk. Default is `False`.
+        overwrite : `bool`, optional
+            If `True`, regenerate plots even if they already exist on disk.
+            Default is `True`.
+        master_cat_path : `str`, optional
+            Path to the master photometric catalogue used for overlaying
+            catalogue sources on the diagnostics. Default is `None`.
+        """
         for aper_diam in self.aper_diams:
             self.plot_depth_diagnostic(
                 aper_diam,
@@ -1096,6 +1573,33 @@ class Band_Data_Base(ABC):
         invert_region: bool = False,
         zbin: Optional[float] = None,
     ) -> Tuple[NDArray[float], NDArray[float], u.Quantity]:
+        """Calculate cumulative area as a function of depth for this band.
+
+        Parameters
+        ----------
+        aper_diam : `astropy.units.Quantity`
+            Aperture diameter to calculate the area-depth relation for.
+        mask_selector : `str`, `list` of `str`, or `Mask_Selector`, optional
+            Mask selector(s) defining which mask(s) to apply. Default is
+            `None`.
+        mask_type : `str` or `list` of `str`, optional
+            Mask extension type(s) to use. Default is ``"MASK"``.
+        region_selector : `Region_Selector` or `list` of `Region_Selector`, optional
+            Region selector(s) restricting the calculation to a sub-region
+            of the image. Default is `None`.
+        invert_region : `bool`, optional
+            If `True`, invert the region selection. Default is `False`.
+        zbin : `float`, optional
+            Redshift bin to restrict the calculation to, if relevant.
+            Default is `None`.
+
+        Returns
+        -------
+        `tuple`
+            ``(total_depths, cum_dist, area)`` giving the depth grid, the
+            cumulative distribution, and the total unmasked area. Also
+            stored on `self.area_depth`.
+        """
         total_depths, cum_dist, area = Depths.calc_band_data_area_depth(
             self,
             aper_diam,
@@ -1127,6 +1631,43 @@ class Band_Data_Base(ABC):
         close: bool = False,
         **plot_kwargs: Dict[str, Any],
     ) -> None:
+        """Plot cumulative area as a function of depth for this band.
+
+        Parameters
+        ----------
+        aper_diam : `astropy.units.Quantity`
+            Aperture diameter to plot the area-depth relation for.
+        mask_selector : `str`, `list` of `str`, or `Mask_Selector`, optional
+            Mask selector(s) defining which mask(s) to apply. Default is
+            `None`.
+        mask_type : `str` or `list` of `str`, optional
+            Mask extension type(s) to use. Default is ``"MASK"``.
+        region_selector : `Region_Selector` or `list` of `Region_Selector`, optional
+            Region selector(s) restricting the calculation to a sub-region
+            of the image. Default is `None`.
+        invert_region : `bool`, optional
+            If `True`, invert the region selection. Default is `False`.
+        zbin : `float`, optional
+            Redshift bin to restrict the calculation to. Default is `None`.
+        fig : `matplotlib.figure.Figure`, optional
+            Figure to plot onto. Default is `None`.
+        ax : `matplotlib.axes.Axes`, optional
+            Axes to plot onto. Default is `None`.
+        save : `bool`, optional
+            If `True`, save the plot to disk. Default is `False`.
+        show : `bool`, optional
+            If `True`, display the plot. Default is `False`.
+        close : `bool`, optional
+            If `True`, close the figure after plotting. Default is `False`.
+        **plot_kwargs : `dict`
+            Additional keyword arguments passed to the underlying plotting
+            call.
+
+        Returns
+        -------
+        None
+            Delegates to `Depths.plot_band_data_area_depth`.
+        """
         return Depths.plot_band_data_area_depth(
             self,
             aper_diam,
@@ -1152,31 +1693,32 @@ class Band_Data_Base(ABC):
         save: bool = False,
         show: bool = True,
     ) -> None:
-        """
-        Plots the specified image data on the given matplotlib Axes.
+        """Plot the specified image data for this band on a matplotlib Axes.
 
-        Parameters:
-        -----------
-        ax : plt.Axes
-            The matplotlib Axes object where the image will be plotted.
-        ext : str, optional
-            The type of image data to plot. Must be one of ['SCI', 'RMS_ERR', 'WHT', 'SEG', 'MASK'].
-            Default is 'SCI'.
-        norm : Type[Normalize], optional
-            The normalization for the image data. Default is LogNorm(vmin=0.0, vmax=10.0).
-        save : bool, optional
-            If True, the plot will be saved to a file. Default is False.
-        show : bool, optional
-            If True, the plot will be displayed. Default is True.
+        Parameters
+        ----------
+        ax : `matplotlib.axes.Axes`, optional
+            The matplotlib Axes to plot onto. A new figure/axes pair is
+            created if not given. Default is `None`.
+        ext : `str`, optional
+            The type of image data to plot. Must be one of ``"SCI"``,
+            ``"RMS_ERR"``, ``"WHT"``, ``"SEG"``, or ``"MASK"``. Default is
+            ``"SCI"``.
+        norm : `matplotlib.colors.Normalize`, optional
+            The normalization to use for the image data (ignored for
+            ``"MASK"``). Default is `LogNorm(vmin=0.0, vmax=10.0)`.
+        cmap : `str`, optional
+            Name of the matplotlib colormap to use. Default is ``"plasma"``.
+        save : `bool`, optional
+            If `True`, the plot will be saved to a file. Default is `False`.
+        show : `bool`, optional
+            If `True`, the plot will be displayed. Default is `True`.
 
-        Raises:
-        -------
+        Raises
+        ------
         Exception
-            If the provided extension `ext` is not one of the allowed values.
-
-        Returns:
-        --------
-        NoReturn
+            If the provided extension `ext` is not one of the allowed
+            values.
         """
         normalize = True
         if ext.lower() in ["sci", "im"]:
@@ -1300,6 +1842,19 @@ class Band_Data_Base(ABC):
         self: Self,
         mask_type: str = "All",
     ) -> NoReturn:
+        """Calculate the unmasked area for one or more mask extension types.
+
+        Results are stored in `self.unmasked_area`, keyed by mask name.
+
+        Parameters
+        ----------
+        mask_type : `str`, optional
+            Mask extension type(s) to compute the unmasked area for.
+            ``"All"`` computes the area for every extension in the mask
+            file; multiple extension names may be combined with ``"+"`` to
+            compute the area unmasked by all of them jointly. Default is
+            ``"All"``.
+        """
         # calculate areas for given mask
         if mask_type == "All":
             masks = self.load_mask()[0]
@@ -1336,6 +1891,57 @@ class Band_Data_Base(ABC):
 
 
 class Band_Data(Band_Data_Base):
+    """Imaging data for a single filter of a survey/version.
+
+    Concrete `Band_Data_Base` subclass representing one filter's science,
+    RMS error, and weight imaging, along with derived products (mask,
+    segmentation map, PSF, depths).
+
+    Parameters
+    ----------
+    filt : `Filter`
+        Filter this imaging data was taken through.
+    survey : `str`
+        Name of the survey/field this data belongs to.
+    version : `str`
+        Data reduction version string.
+    im_path : `str`
+        Path to the FITS file containing the science image.
+    im_ext : `int`
+        FITS extension index of the science image within `im_path`.
+    rms_err_path : `str`, optional
+        Path to the FITS file containing the RMS error map. Default is `None`.
+    rms_err_ext : `int`, optional
+        FITS extension index of the RMS error map. Default is `None`.
+    wht_path : `str`, optional
+        Path to the FITS file containing the weight map. Default is `None`.
+    wht_ext : `int`, optional
+        FITS extension index of the weight map. Default is `None`.
+    pix_scale : `astropy.units.Quantity`, optional
+        Pixel scale of the imaging. Default is `0.03 * u.arcsec`.
+    im_ext_name : `str` or `list` of `str`, optional
+        Expected FITS `EXTNAME`(s) for the science image extension.
+        Default is `"SCI"`.
+    rms_err_ext_name : `str` or `list` of `str`, optional
+        Expected FITS `EXTNAME`(s) for the RMS error extension.
+        Default is `"ERR"`.
+    wht_ext_name : `str` or `list` of `str`, optional
+        Expected FITS `EXTNAME`(s) for the weight extension.
+        Default is `"WHT"`.
+    use_galfind_err : `bool`, optional
+        If `True`, automatically derive a missing RMS error map from the
+        weight map (or vice versa). Default is `True`.
+    aper_diams : `astropy.units.Quantity`, optional
+        Aperture diameters to associate with this band. Default is `None`.
+    psf : `PSF_Base`, optional
+        PSF object associated with this band's imaging. Default is `None`.
+
+    Attributes
+    ----------
+    filt : `Filter`
+        Filter this imaging data was taken through.
+    """
+
     def __init__(
         self: Self,
         filt: Type[Filter],
@@ -1376,20 +1982,35 @@ class Band_Data(Band_Data_Base):
 
     @classmethod
     def from_band_data_arr(cls, band_data_arr: List[Type[Band_Data_Base]]):
+        """Construct a `Band_Data` by stacking multiple same-filter band data objects.
+
+        Parameters
+        ----------
+        band_data_arr : `list` of `Band_Data_Base`
+            Band data objects (expected to share the same filter) to stack.
+
+        Raises
+        ------
+        NotImplementedError
+            This method is not yet implemented.
+        """
         raise (NotImplementedError)
         # make sure all filters are the same
         # stack bands by multiplication
 
     @property
     def instr_name(self):
+        """`str`: Class name of the instrument this filter belongs to."""
         return self.filt.instrument.__class__.__name__
 
     @property
     def filt_name(self):
+        """`str`: Name of this band's filter."""
         return self.filt.filt_name
 
     @property
     def ZP(self) -> Dict[str, float]:
+        """`float`: Photometric zero point of the image, computed from the instrument."""
         return float(self.filt.instrument.calc_ZP(self))
 
     def __add__(
@@ -1471,6 +2092,31 @@ class Band_Data(Band_Data_Base):
         wcs_name: str = "TWEAK",
         **kwargs: Dict[str, Any],
     ) -> NoReturn:
+        """Align this band's WCS on-sky to match a reference band's detections.
+
+        Matches source catalogues (from segmentation) of this band and
+        `align_band_data`, fits a new WCS solution using `tweakwcs`, and
+        updates the science/RMS-error/weight FITS headers in place (backing
+        up the originals first).
+
+        Parameters
+        ----------
+        align_band_data : `Band_Data`
+            Reference band to align this band's astrometry to.
+        wcs_name : `str`, optional
+            Name to give the new WCS solution written to the FITS headers.
+            Default is ``"TWEAK"``.
+        **kwargs : `dict`
+            Alignment parameters (``searchrad``, ``separation``,
+            ``tolerance``, ``max_sep``); any not given are taken from the
+            instrument's default `align_params`.
+
+        Raises
+        ------
+        AssertionError
+            If a required alignment parameter is missing from both
+            `kwargs` and the instrument's `align_params`.
+        """
 
         from stwcs.wcsutil import HSTWCS
         from tweakwcs import fit_wcs, FITSWCSCorrector, XYXYMatch
@@ -1563,6 +2209,28 @@ class Band_Data(Band_Data_Base):
         align_band_data: Band_Data,
         n_cores: int = 1,
     ) -> NoReturn:
+        """Reproject this band's imaging onto the pixel grid of a reference band.
+
+        Uses `reproject.reproject_interp` to resample the science, RMS
+        error, and weight images onto `align_band_data`'s WCS/pixel grid
+        (backing up the originals first), and updates `self` in place if
+        the pixel scale changes.
+
+        Parameters
+        ----------
+        align_band_data : `Band_Data`
+            Reference band whose pixel grid this band's imaging should be
+            reprojected onto.
+        n_cores : `int`, optional
+            Number of cores to use for the reprojection. Default is `1`.
+
+        Raises
+        ------
+        Exception
+            If neither band's header contains any recognised zero-point
+            keyword (``PHOTFLAM``, ``PHOTPLAM``, ``PHOTZP``, ``ZEROPNT``,
+            ``ZP``, ``PIX_SCALE``, or ``PIXSCALE``).
+        """
 
         from reproject import reproject_interp
 
@@ -1672,12 +2340,76 @@ class Band_Data(Band_Data_Base):
         self: Self,
         method: str = "default",
     ) -> None:
+        """Load and set the PSF for this band using the instrument's PSF-making routine.
+
+        Parameters
+        ----------
+        method : `str`, optional
+            Method used to construct/retrieve the PSF. Default is
+            ``"default"``.
+        """
         self.psf = self.filt.instrument.make_psf(
             self,
             method = method,
         )
 
 class Stacked_Band_Data(Band_Data_Base):
+    """Imaging data formed by stacking multiple single-filter bands together.
+
+    Concrete `Band_Data_Base` subclass representing an inverse-variance
+    weighted stack of several `Band_Data` filters (e.g. a detection image),
+    sharing the common loading/masking/segmentation/depth machinery of the
+    base class. Typically constructed via `from_band_data_arr` rather than
+    calling the constructor directly.
+
+    Parameters
+    ----------
+    filterset : `list` of `Filter` or `Multiple_Filter`
+        Filters that were combined to make this stack.
+    survey : `str`
+        Name of the survey/field this data belongs to.
+    version : `str`
+        Data reduction version string.
+    im_path : `str`
+        Path to the FITS file containing the stacked science image.
+    im_ext : `int`
+        FITS extension index of the science image within `im_path`.
+    rms_err_path : `str`, optional
+        Path to the FITS file containing the RMS error map. Default is `None`.
+    rms_err_ext : `int`, optional
+        FITS extension index of the RMS error map. Default is `None`.
+    wht_path : `str`, optional
+        Path to the FITS file containing the weight map. Default is `None`.
+    wht_ext : `int`, optional
+        FITS extension index of the weight map. Default is `None`.
+    pix_scale : `astropy.units.Quantity`, optional
+        Pixel scale of the imaging. Default is `0.03 * u.arcsec`.
+    im_ext_name : `str` or `list` of `str`, optional
+        Expected FITS `EXTNAME`(s) for the science image extension.
+        Default is `"SCI"`.
+    rms_err_ext_name : `str` or `list` of `str`, optional
+        Expected FITS `EXTNAME`(s) for the RMS error extension.
+        Default is `"ERR"`.
+    wht_ext_name : `str` or `list` of `str`, optional
+        Expected FITS `EXTNAME`(s) for the weight extension.
+        Default is `"WHT"`.
+    use_galfind_err : `bool`, optional
+        If `True`, automatically derive a missing RMS error map from the
+        weight map (or vice versa). Default is `True`.
+    aper_diams : `astropy.units.Quantity`, optional
+        Aperture diameters to associate with this stack. Default is `None`.
+    psf : `PSF_Base`, optional
+        PSF object associated with this stack's imaging. Default is `None`.
+
+    Attributes
+    ----------
+    filterset : `list` of `Filter` or `Multiple_Filter`
+        Filters combined to make this stack.
+    band_data_arr : `list` of `Band_Data`
+        The individual band data objects that were stacked, sorted blue to
+        red (set by `from_band_data_arr`).
+    """
+
     def __init__(
         self: Self,
         filterset: Union[List[Filter], Multiple_Filter],
@@ -1724,6 +2456,33 @@ class Stacked_Band_Data(Band_Data_Base):
         band_data_arr: List[Band_Data],
         err_type: str = "rms_err",
     ) -> Stacked_Band_Data:
+        """Construct a `Stacked_Band_Data` by inverse-variance stacking several bands.
+
+        Stacks the science images (weighted by RMS error or weight map, as
+        selected by `err_type`), instantiates the resulting
+        `Stacked_Band_Data` object, and propagates aperture diameters,
+        segmentation, and masking from the input bands where they are
+        consistently defined across all of them.
+
+        Parameters
+        ----------
+        band_data_arr : `list` of `Band_Data`
+            Band data objects (must all have distinct filters) to stack.
+        err_type : `str`, optional
+            Error map type to use when weighting the stack, one of
+            ``"rms_err"`` or ``"wht"``. Default is ``"rms_err"``.
+
+        Returns
+        -------
+        `Stacked_Band_Data`
+            The newly constructed stacked band data object, with
+            `band_data_arr` set to the (blue-to-red sorted) input bands.
+
+        Raises
+        ------
+        AssertionError
+            If any two bands in `band_data_arr` share the same filter.
+        """
         # make sure all filters are different
         assert all(
             band_data.filt_name != band_data_arr[0].filt_name
@@ -1790,14 +2549,22 @@ class Stacked_Band_Data(Band_Data_Base):
 
     @property
     def instr_name(self) -> str:
+        """`str`: Combined instrument name of the filters in this stack."""
         return self.filterset.instrument_name
 
     @property
     def filt_name(self) -> str:
+        """`str`: Name of this stack, formed by joining its filter names with ``"+"``."""
         return self._get_stacked_band_data_name(self.filterset)
 
     @property
     def ZP(self) -> Dict[str, float]:
+        """`float`: Photometric zero point of the stacked image.
+
+        If all constituent filters share the same zero point, that value is
+        returned; otherwise the ``ZEROPNT`` header keyword of the stacked
+        image is used.
+        """
         if all(
             filt.instrument.calc_ZP(self)
             == self.filterset[0].instrument.calc_ZP(self)
@@ -2077,6 +2844,50 @@ class Stacked_Band_Data(Band_Data_Base):
         gaia_row_lim: Union[int, List[int], Dict[str, int]] = 500,
         overwrite: Union[bool, List[bool], Dict[str, bool]] = False,
     ) -> Union[None, NoReturn]:
+        """Create or load masks for this stack, and for its constituent bands if known.
+
+        If the individual bands that made up this stack are not tracked
+        (`band_data_arr` not set), masks the stacked image directly via the
+        base class implementation. Otherwise, masks each constituent band
+        individually and then combines the per-band masks into a single
+        mask for the stack.
+
+        Parameters
+        ----------
+        method : `str`, optional
+            Masking method to use, one of ``"auto"`` or ``"manual"``.
+            Default is ``"auto"``.
+        fits_mask_path : `str`, optional
+            Path to a pre-existing FITS mask to use directly. Default is
+            `None`.
+        star_mask_params : `dict`, optional
+            Parameters controlling the size/shape of masked regions around
+            bright stars. Default is
+            ``{"central": {"a": 300.0, "b": 4.25}, "spikes": {"a": 400.0, "b": 4.5}}``.
+        edge_mask_distance : `int` or `float`, optional
+            Distance in pixels from the image edge to mask. Default is `50`.
+        scale_extra : `float`, optional
+            Additional fractional scaling applied to masked star regions.
+            Default is `0.2`.
+        exclude_gaia_galaxies : `bool`, optional
+            Whether to exclude Gaia sources classified as galaxies from
+            star masking. Default is `True`.
+        angle : `float`, optional
+            Position angle override for masked regions. Default is `None`.
+        edge_value : `float`, optional
+            Pixel value used to identify the image edge/blank border.
+            Default is `0.0`.
+        edge_threshold : `float`, optional
+            Threshold used when detecting the image edge. Default is `None`.
+        element : `str`, optional
+            Shape of the masking element (e.g. ``"ELLIPSE"``). Default is
+            ``"ELLIPSE"``.
+        gaia_row_lim : `int`, optional
+            Maximum number of Gaia catalogue rows to query. Default is `500`.
+        overwrite : `bool`, optional
+            Whether to regenerate masks even if they already exist. Default
+            is `False`.
+        """
         # if the individual bands have not been loaded
         if not hasattr(self, "band_data_arr"):
             # mask the stacked band data
@@ -2122,6 +2933,28 @@ class Stacked_Band_Data(Band_Data_Base):
 
 
 class Multiple_Band_Data_Base:
+    """Lightweight container grouping several `Band_Data_Base` objects under a common name.
+
+    Provides sequence-like access (iteration, indexing, length) and
+    convenience properties that report a common value across all
+    constituent bands where one exists, or a ``"+"``-joined combination
+    otherwise.
+
+    Parameters
+    ----------
+    band_data_arr : `list` of `Band_Data_Base`
+        Band data objects (or subclass instances) to group together.
+    name : `str`
+        Name to identify this group of bands (returned by the `survey`
+        property).
+
+    Attributes
+    ----------
+    band_data_arr : `list` of `Band_Data_Base`
+        The grouped band data objects.
+    name : `str`
+        Name identifying this group.
+    """
 
     def __init__(
         self: Self,
@@ -2176,27 +3009,33 @@ class Multiple_Band_Data_Base:
 
     @property
     def survey(self) -> str:
+        """`str`: Name identifying this group of bands."""
         return self.name
         #return self._get_property("survey")
 
     @property
     def version(self) -> str:
+        """`str`: Common data reduction version across all bands, or a ``"+"``-joined combination."""
         return self._get_property("version")
 
     @property
     def pix_scale(self) -> u.Quantity:
+        """`astropy.units.Quantity`: Common pixel scale across all bands, or a ``"+"``-joined combination."""
         return self._get_property("pix_scale")
 
     @property
     def filt_name(self) -> str:
+        """`str`: Common filter name across all bands, or a ``"+"``-joined combination."""
         return self._get_property("filt_name")
 
     @property
     def instr_name(self) -> str:
+        """`str`: Common instrument name across all bands, or a ``"+"``-joined combination."""
         return self._get_property("instr_name")
 
     @property
     def filt(self) -> Union[Filter, Multiple_Filter]:
+        """`Filter` or `list` of `Filter`: Common filter across all bands, or a list of each band's filter if they differ."""
         if all(
             getattr(band_data, "filt") == getattr(self.band_data_arr[0], "filt")
             for band_data in self.band_data_arr
@@ -2207,6 +3046,36 @@ class Multiple_Band_Data_Base:
 
 
 class Data:
+    """Top-level container for a survey/version's multi-band imaging data.
+
+    Wraps a collection of `Band_Data` (and optionally `Stacked_Band_Data`)
+    objects for a single survey/version, providing collective access to
+    per-band loading, masking, segmentation, forced photometry, depth
+    calculation, and photometric catalogue construction. Individual bands
+    can be accessed via indexing (e.g. ``data["F444W"]`` or ``data[0]``) or
+    iteration. Most single-band operations delegate to the corresponding
+    `Band_Data_Base` method for each band. See `Data.pipeline` for the
+    typical end-to-end construction/processing entry point.
+
+    Parameters
+    ----------
+    band_data_arr : `list` of `Band_Data`
+        Band data objects making up this dataset, one per filter.
+    forced_phot_band : `str`, `list` of `str`, or `Band_Data_Base`, optional
+        Band (or filter name(s) identifying a band or stack) to use as the
+        detection/forced-photometry band. Default is `None`.
+
+    Attributes
+    ----------
+    band_data_arr : `list` of `Band_Data`
+        Band data objects, sorted by central wavelength.
+    forced_phot_band : `Band_Data_Base`
+        Detection/forced-photometry band, if loaded.
+    is_native : `bool`
+        Whether this object represents the native (pre-PSF-homogenized)
+        version of the data.
+    """
+
     def __init__(
         self,
         band_data_arr: List[Type[Band_Data]],
@@ -2259,6 +3128,75 @@ class Data:
         psf_homog_filt: Optional[str] = "F444W",
         update: bool = False,
     ) -> Type[Data]:
+        """Run the full galfind data-reduction pipeline for a survey/version.
+
+        Discovers imaging on disk (via `from_survey_version_psfs`), loads
+        PSFs, optionally PSF-homogenizes and stacks bands, masks, segments,
+        performs forced photometry, and calculates depths and aperture/mask
+        catalogue columns -- returning a fully processed `Data` object.
+
+        Parameters
+        ----------
+        survey : `str`
+            Name of the survey/field to process.
+        version : `str`
+            Data reduction version string.
+        instrument_names : `list` of `str`, optional
+            Names of instruments to search for imaging from. Default is
+            read from the galfind config (``Other.INSTRUMENT_NAMES``).
+        pix_scales : `astropy.units.Quantity` or `dict`, optional
+            Pixel scale to use, either a single value or one per
+            instrument. Default is
+            ``{"ACS_WFC": 0.03, "WFC3_IR": 0.03, "NIRCam": 0.03, "MIRI": 0.09} * u.arcsec``.
+        im_str : `list` of `str`, optional
+            Filename substrings identifying science images. Default is
+            ``["_sci", "_i2d", "_drz"]``.
+        rms_err_str : `list` of `str`, optional
+            Filename substrings identifying RMS error maps. Default is
+            ``["_rms_err", "_rms", "_err"]``.
+        wht_str : `list` of `str`, optional
+            Filename substrings identifying weight maps. Default is
+            ``["_wht", "_weight"]``.
+        version_to_dir_dict : `dict`, optional
+            Mapping from version string to data directory name, if
+            different from `version`. Default is `None`.
+        im_ext_name : `str` or `list` of `str`, optional
+            Expected FITS `EXTNAME`(s) for science images. Default is
+            ``"SCI"``.
+        rms_err_ext_name : `str` or `list` of `str`, optional
+            Expected FITS `EXTNAME`(s) for RMS error maps. Default is
+            ``"ERR"``.
+        wht_ext_name : `str` or `list` of `str`, optional
+            Expected FITS `EXTNAME`(s) for weight maps. Default is
+            ``"WHT"``.
+        aper_diams : `astropy.units.Quantity`, optional
+            Aperture diameters to use for photometry. Default is `None`.
+        forced_phot_band : `str`, `list` of `str`, or `Band_Data_Base`, optional
+            Band(s) to use for detection/forced photometry. Default is
+            `None`.
+        min_flux_pc_err : `int` or `float`, optional
+            Minimum flux percentage error floor applied when computing
+            local-depth-based flux errors. Default is `10.0`.
+        stacked_band_data : `str`, `list` of `str`, `Stacked_Band_Data`, or `list` thereof, optional
+            Band combination(s) to additionally stack. Default is `None`.
+        mask_method : `str`, optional
+            Masking method to use, one of ``"auto"`` or ``"manual"``.
+            Default is ``"auto"``.
+        psf_method : `str`, optional
+            Method used to construct/retrieve PSFs. Default is
+            ``"default"``.
+        psf_homog_filt : `str`, optional
+            Filter to PSF-homogenize all bands to. If `None`, PSF
+            homogenization is skipped. Default is ``"F444W"``.
+        update : `bool`, optional
+            Whether to update existing catalogue columns rather than
+            recomputing them from scratch. Default is `False`.
+
+        Returns
+        -------
+        `Data`
+            The fully processed `Data` object.
+        """
         data = cls.from_survey_version_psfs( \
             survey,
             version,
@@ -2322,6 +3260,70 @@ class Data:
         ] = None,
         psfs: Optional[Type[PSF_Base], Dict[str, Type[PSF_Base]]] = None,
     ):
+        """Discover on-disk imaging for a survey/version and build a `Data` object.
+
+        Searches the galfind data directory for each requested instrument,
+        matches FITS files to filters and image types (science/RMS
+        error/weight) by filename substring and header extension name, and
+        constructs a `Band_Data` object per discovered filter.
+
+        Parameters
+        ----------
+        survey : `str`
+            Name of the survey/field to search for.
+        version : `str`
+            Data reduction version string.
+        instrument_names : `list` of `str`, optional
+            Names of instruments to search for imaging from. Default is
+            read from the galfind config (``Other.INSTRUMENT_NAMES``).
+        pix_scales : `astropy.units.Quantity` or `dict`, optional
+            Pixel scale to use, either a single value or one per
+            instrument. Default is
+            ``{"ACS_WFC": 0.03, "WFC3_IR": 0.03, "NIRCam": 0.03, "MIRI": 0.09} * u.arcsec``.
+        im_str : `list` of `str`, optional
+            Filename substrings identifying science images. Default is
+            ``["_sci", "_i2d", "_drz"]``.
+        rms_err_str : `list` of `str`, optional
+            Filename substrings identifying RMS error maps. Default is
+            ``["_rms_err", "_rms", "_err"]``.
+        wht_str : `list` of `str`, optional
+            Filename substrings identifying weight maps. Default is
+            ``["_wht", "_weight"]``.
+        version_to_dir_dict : `dict`, optional
+            Mapping from version string to data directory name, if
+            different from `version`. Default is `None`.
+        im_ext_name : `str` or `list` of `str`, optional
+            Expected FITS `EXTNAME`(s) for science images. Default is
+            ``"SCI"``.
+        rms_err_ext_name : `str` or `list` of `str`, optional
+            Expected FITS `EXTNAME`(s) for RMS error maps. Default is
+            ``"ERR"``.
+        wht_ext_name : `str` or `list` of `str`, optional
+            Expected FITS `EXTNAME`(s) for weight maps. Default is
+            ``"WHT"``.
+        aper_diams : `astropy.units.Quantity`, optional
+            Aperture diameters to associate with each discovered band.
+            Default is `None`.
+        forced_phot_band : `str`, `list` of `str`, or `Band_Data_Base`, optional
+            Band(s) to use for detection/forced photometry. Default is
+            `None`.
+        psfs : `PSF_Base` or `dict` of `str` to `PSF_Base`, optional
+            PSF(s) to associate with the discovered bands, either a single
+            PSF applied to all filters or a dict keyed by filter name.
+            Default is `None`.
+
+        Returns
+        -------
+        `Data`
+            The constructed `Data` object for this survey/version.
+
+        Raises
+        ------
+        Exception
+            If no imaging data is found for a requested instrument, or if
+            multiple images are found for the same filter (band
+            stacking/mosaicing across files is not yet implemented).
+        """
         # make im/rms_err/wht extension names lists if not already
         if isinstance(im_ext_name, str):
             im_ext_name = [im_ext_name]
@@ -2462,6 +3464,7 @@ class Data:
 
     @property
     def psf_matched(self: Self) -> Optional[str]:
+        """`str` or `None`: Name of the PSF all bands are homogenized to, or `None` if not all bands share a common PSF."""
         if not all(band_data.psf is not None for band_data in self):
             return None
         else:
@@ -2757,6 +3760,7 @@ class Data:
 
     @property
     def survey(self: Self) -> str:
+        """`str`: Survey name shared by all bands in `self`."""
         assert all(
             band_data.survey == self[0].survey
             for band_data in self
@@ -2767,6 +3771,7 @@ class Data:
 
     @property
     def version(self: Self) -> str:
+        """`str`: Reduction version shared by all bands in `self`."""
         assert all(
             band_data.version == self[0].version
             for band_data in self
@@ -2777,6 +3782,7 @@ class Data:
 
     @property
     def filterset(self):
+        """`Multiple_Filter`: Filters of every `Band_Data` object in `self`."""
         return Multiple_Filter(band_data.filt for band_data in self if isinstance(band_data, Band_Data))
 
     # @property
@@ -2789,10 +3795,12 @@ class Data:
 
     @property
     def full_name(self: Self) -> str:
+        """`str`: Full survey name, combining the survey, version and filterset."""
         return funcs.get_full_survey_name(self.survey, self.version, self.filterset)
-    
+
     @property
     def aper_diams(self: Self) -> u.Quantity:
+        """`astropy.units.Quantity`: Aperture diameters common to every band in `self`."""
         all_aper_diams, aper_diam_counts = np.unique(np.concatenate([values for values in self.aper_diamss.values()]), return_counts = True)
         return [aper_diam.to(u.arcsec) for aper_diam, counts in zip(all_aper_diams, aper_diam_counts) if counts == len(self.aper_diamss)] * u.arcsec
 
@@ -3163,6 +4171,24 @@ class Data:
         band: Union[int, str, Filter, List[Filter], Multiple_Filter],
         incl_mask: bool = True,
     ):
+        """Load the science image, segmentation map, and (optionally) mask for a given band.
+
+        Delegates to `Band_Data_Base.load_data` for the selected band.
+
+        Parameters
+        ----------
+        band : `int`, `str`, `Filter`, `list` of `Filter`, or `Multiple_Filter`
+            Band to load data for; used to index `self`.
+        incl_mask : `bool`, optional
+            If `True`, also load and return the mask. Default is `True`.
+
+        Returns
+        -------
+        `tuple`
+            ``(im_data, im_header, seg_data, seg_header)`` if `incl_mask` is
+            `False`, or ``(im_data, im_header, seg_data, seg_header, mask)``
+            if `incl_mask` is `True`.
+        """
         return self[band].load_data(incl_mask)
 
     def load_im(
@@ -3170,12 +4196,45 @@ class Data:
         band: Union[int, str, Filter, List[Filter], Multiple_Filter],
         return_hdul: bool = False,
     ):
+        """Load the science image data and header for a given band.
+
+        Delegates to `Band_Data_Base.load_im` for the selected band.
+
+        Parameters
+        ----------
+        band : `int`, `str`, `Filter`, `list` of `Filter`, or `Multiple_Filter`
+            Band to load the image for; used to index `self`.
+        return_hdul : `bool`, optional
+            If `True`, also return the opened `astropy.io.fits.HDUList`.
+            Default is `False`.
+
+        Returns
+        -------
+        `tuple`
+            ``(im_data, im_header)``, or ``(im_data, im_header, im_hdul)``
+            if `return_hdul` is `True`.
+        """
         return self[band].load_im(return_hdul)
 
     def load_wcs(
         self: Self,
         band: Union[int, str, Filter, List[Filter], Multiple_Filter],
     ):
+        """Load (and cache) the WCS of a given band's science image.
+
+        Delegates to `Band_Data_Base.load_wcs` for the selected band.
+
+        Parameters
+        ----------
+        band : `int`, `str`, `Filter`, `list` of `Filter`, or `Multiple_Filter`
+            Band to load the WCS for; used to index `self`.
+
+        Returns
+        -------
+        `astropy.wcs.WCS`
+            The world coordinate system of the selected band's science
+            image header.
+        """
         return self[band].load_wcs()
 
     def load_wht(
@@ -3183,6 +4242,23 @@ class Data:
         band: Union[int, str, Filter, List[Filter], Multiple_Filter],
         output_hdr: bool = False,
     ):
+        """Load the weight map data (and optionally header) for a given band.
+
+        Delegates to `Band_Data_Base.load_wht` for the selected band.
+
+        Parameters
+        ----------
+        band : `int`, `str`, `Filter`, `list` of `Filter`, or `Multiple_Filter`
+            Band to load the weight map for; used to index `self`.
+        output_hdr : `bool`, optional
+            If `True`, also return the FITS header. Default is `False`.
+
+        Returns
+        -------
+        `numpy.ndarray` or `tuple`
+            The weight map data, optionally accompanied by the header
+            depending on `output_hdr`.
+        """
         return self[band].load_wht(output_hdr)
 
     def load_rms_err(
@@ -3190,12 +4266,43 @@ class Data:
         band: Union[int, str, Filter, List[Filter], Multiple_Filter],
         output_hdr: bool = False,
     ):
+        """Load the RMS error map data (and optionally header) for a given band.
+
+        Delegates to `Band_Data_Base.load_rms_err` for the selected band.
+
+        Parameters
+        ----------
+        band : `int`, `str`, `Filter`, `list` of `Filter`, or `Multiple_Filter`
+            Band to load the RMS error map for; used to index `self`.
+        output_hdr : `bool`, optional
+            If `True`, also return the FITS header. Default is `False`.
+
+        Returns
+        -------
+        `numpy.ndarray` or `tuple`
+            The RMS error map data, optionally accompanied by the header
+            depending on `output_hdr`.
+        """
         return self[band].load_rms_err(output_hdr)
 
     def load_seg(
         self: Self,
         band: Union[int, str, Filter, List[Filter], Multiple_Filter],
     ):
+        """Load the segmentation map data and header for a given band.
+
+        Delegates to `Band_Data_Base.load_seg` for the selected band.
+
+        Parameters
+        ----------
+        band : `int`, `str`, `Filter`, `list` of `Filter`, or `Multiple_Filter`
+            Band to load the segmentation map for; used to index `self`.
+
+        Returns
+        -------
+        `tuple`
+            ``(seg_data, seg_header)`` for the selected band.
+        """
         return self[band].load_seg()
 
     def load_mask(
@@ -3204,9 +4311,38 @@ class Data:
         ext: Optional[str] = None,
         invert: bool = False,
     ):
+        """Load the mask data (and header) for a given band, if masking has been performed.
+
+        Delegates to `Band_Data_Base.load_mask` for the selected band.
+
+        Parameters
+        ----------
+        band : `int`, `str`, `Filter`, `list` of `Filter`, or `Multiple_Filter`
+            Band to load the mask for; used to index `self`.
+        ext : `str`, optional
+            Name of a specific mask extension to load (e.g. ``"MASK"``). If
+            `None`, all mask extensions are returned. Default is `None`.
+        invert : `bool`, optional
+            If `True` (and `ext` is given), invert the boolean mask before
+            returning it. Default is `False`.
+
+        Returns
+        -------
+        `tuple`
+            ``(mask, hdr)`` for the selected band, as returned by
+            `Band_Data_Base.load_mask`.
+        """
         return self[band].load_mask(ext, invert)
 
     def load_aper_diams(self, aper_diams: u.Quantity) -> NoReturn:
+        """Set the aperture diameters to use for every band (and the forced photometry/stacked bands).
+
+        Parameters
+        ----------
+        aper_diams : `astropy.units.Quantity`
+            Aperture diameters (angular units) to associate with each
+            band in `self`.
+        """
         if hasattr(self, "forced_phot_band"):
             self.forced_phot_band.load_aper_diams(aper_diams)
         if hasattr(self, "stacked_band_data_arr"):
@@ -3222,6 +4358,14 @@ class Data:
         self: Self,
         method: str = "default",
     ) -> None:
+        """Load a PSF for every band in `self`.
+
+        Parameters
+        ----------
+        method : `str`, optional
+            Method used to obtain each band's PSF, passed to
+            `Band_Data_Base.load_psf`. Default is `"default"`.
+        """
         for band_data in self:
             band_data.load_psf(method)
 
@@ -3239,6 +4383,33 @@ class Data:
         wcs_name: str = "TWEAK",
         **kwargs: Dict[str, Any],
     ) -> NoReturn:
+        """Astrometrically align every band in `self` to a reference band.
+
+        Calls `Band_Data.sky_align` on every band other than
+        `align_band_data`, aligning their WCS to it, and stores the
+        reference band as `self.align_band_data`.
+
+        Parameters
+        ----------
+        align_band_data : `str` or `Band_Data`
+            Reference band (or its filter name) to align all other bands
+            to. Must be one of the bands in `self`.
+        wcs_name : `str`, optional
+            Name of the WCS solution to align to/produce. Default is
+            `"TWEAK"`.
+        **kwargs : `dict`
+            Additional keyword arguments passed to `Band_Data.sky_align`.
+
+        Raises
+        ------
+        AssertionError
+            If forced photometry has already been performed on `self`, or
+            if `align_band_data` (given as a `str`) is not a filter name
+            present in `self.filterset`.
+        Exception
+            If `align_band_data` is a `Band_Data` object not present in
+            `self`, or is not a `str`/`Band_Data`.
+        """
         assert not hasattr(self, "forced_phot_band"), \
             galfind_logger.critical(
                 f"Should not have already loaded {self.forced_phot_band=} if trying to sky align!"
@@ -3270,6 +4441,16 @@ class Data:
         self: Self,
         align_band: Union[str, Type[Filter]],
     ):
+        """Check the astrometric alignment of `self` against a reference band.
+
+        Not yet implemented.
+
+        Parameters
+        ----------
+        align_band : `str` or `Filter`
+            Reference band (or its filter name) to check astrometry
+            against.
+        """
         # load segmentation map source catalogue
         pass
 
@@ -3279,6 +4460,29 @@ class Data:
         align_band_data: Union[str, Type[Band_Data]],
         n_cores: int = 1,
     ) -> NoReturn:
+        """Pixel-align every band in `self` to a reference band.
+
+        Calls `Band_Data_Base.xy_align` on every band other than
+        `align_band_data`, aligning their pixel grid to it.
+
+        Parameters
+        ----------
+        align_band_data : `str` or `Band_Data`
+            Reference band (or its filter name) to align all other bands
+            to. Must be one of the bands in `self`.
+        n_cores : `int`, optional
+            Number of cores to use for the alignment, passed to
+            `Band_Data_Base.xy_align`. Default is `1`.
+
+        Raises
+        ------
+        AssertionError
+            If `align_band_data` (given as a `str`) is not a filter name
+            present in `self.filterset`, or if `align_band_data` (given
+            as a `Band_Data` object) is not present in `self`.
+        Exception
+            If `align_band_data` is not a `str` or `Band_Data` object.
+        """
         # determine shape of every band_data in self
         if isinstance(align_band_data, str):
             assert align_band_data in self.filterset.filt_names, \
@@ -3311,6 +4515,37 @@ class Data:
         overwrite: bool = False,
         n_jobs: int = 1,
     ):
+        """PSF-homogenize every band in `self` to a target PSF.
+
+        Optionally caches the native (pre-homogenization) data as
+        `self.native`, then calls `Band_Data.psf_homogenize` on every band
+        (serially if `n_jobs == 1`, otherwise in parallel via
+        `joblib.Parallel`), and finally reloads the forced photometry band
+        and any stacked bands so they point at the new, homogenized data.
+
+        Parameters
+        ----------
+        psf : `PSF_Cutout`
+            Target PSF to homogenize every band's imaging to.
+        use_fft_conv : `bool`, optional
+            If `True`, use FFT-based convolution; otherwise use direct
+            convolution. Default is `True`.
+        save_native : `bool`, optional
+            If `True`, deep-copy `self` (and mark it as native) to
+            `self.native` before homogenizing. Default is `True`.
+        overwrite : `bool`, optional
+            If `True`, redo the convolution even if the output files
+            already exist. Default is `False`.
+        n_jobs : `int`, optional
+            Number of parallel jobs to use for homogenizing the bands.
+            Default is `1`.
+
+        Raises
+        ------
+        AssertionError
+            If `self` is already PSF-matched (`self.psf_matched` is not
+            `None`), or if `n_jobs` is not a positive integer.
+        """
         assert getattr(self, "psf_matched") == None, \
             galfind_logger.critical(
                 f"Data already has {self.psf_matched=}, cannot PSF homogenize!"
@@ -3429,6 +4664,48 @@ class Data:
         update: bool = True,
         overwrite: bool = False,
     ) -> None:
+        """Run forced photometry (via SExtractor or similar) for every band and combine the results.
+
+        Loads (or creates) the forced photometry detection band, runs
+        forced photometry on every band in `self` (plus the forced
+        photometry band itself, if not already one of `self`'s bands, and
+        any stacked bands) using that detection band, and combines the
+        resulting per-band catalogues into the master photometric
+        catalogue via `self._combine_forced_phot_cats`. Does nothing if
+        `self` already has a `phot_cat_path` (i.e. forced photometry has
+        already been run).
+
+        Parameters
+        ----------
+        forced_phot_band : `str`, `list` of `str`, or `Band_Data_Base`, optional
+            Band(s) to use as the forced photometry detection band,
+            passed to `self.load_forced_phot_band`. Default is `None`.
+        err_type : `str`, `list` of `str`, or `dict`, optional
+            Error map type(s) to use for forced photometry, per band.
+            Default is `"rms_err"`.
+        method : `str`, `list` of `str`, or `dict`, optional
+            Forced photometry method(s) to use, per band. Default is
+            `"sextractor"`.
+        config_name : `str`, optional
+            Name of the SExtractor configuration file. Default is
+            `"default.sex"`.
+        params_name : `str`, optional
+            Name of the SExtractor output parameters file. Default is
+            `"default.param"`.
+        update : `bool`, optional
+            Whether to update an existing master catalogue rather than
+            overwriting it, passed to `self._combine_forced_phot_cats`.
+            Default is `True`.
+        overwrite : `bool`, optional
+            Whether to overwrite existing per-band forced photometry
+            output. Default is `False`.
+
+        Returns
+        -------
+        `None`
+            Nothing is returned; the master photometric catalogue is
+            written to disk as a side effect.
+        """
         if hasattr(self, "phot_cat_path"):
             galfind_logger.critical("MASTER Photometric catalogue already exists!")
             return

@@ -31,6 +31,50 @@ from . import Filter, Multiple_Filter
 
 
 class Photometry:
+    """Observed photometry of a single source across a set of filters.
+
+    Stores per-filter flux densities, flux uncertainties and (optional)
+    depths, and provides utilities for indexing, error propagation,
+    Monte Carlo flux scattering, and plotting.
+
+    Parameters
+    ----------
+    filterset : `Multiple_Filter`
+        The set of filters (bands) the photometry is measured in.
+    flux : `astropy.units.Quantity` or `astropy.utils.masked.Masked`
+        Flux density measured in each filter, one element per filter in
+        `filterset`.
+    flux_errs : `astropy.units.Quantity` or `astropy.utils.masked.Masked`
+        Uncertainty on `flux` for each filter.
+    depths : `dict` of {`str`: `astropy.units.Magnitude`}, `astropy.units.Magnitude`, or `None`
+        Limiting depth for each filter, in ABmag. If given as a `dict`
+        keyed by filter name, it is converted internally to an array
+        ordered to match `filterset`. May be `None` if depths are not
+        available.
+
+    Attributes
+    ----------
+    filterset : `Multiple_Filter`
+        The set of filters the photometry is measured in.
+    flux : `astropy.units.Quantity` or `astropy.utils.masked.Masked`
+        Flux density in each filter.
+    flux_errs : `astropy.units.Quantity` or `astropy.utils.masked.Masked`
+        Flux density uncertainty in each filter.
+    depths : `astropy.units.Magnitude` or `None`
+        Limiting depth (in ABmag) for each filter.
+    wav : `astropy.units.Quantity`
+        Central wavelength of each filter in `filterset`, in Angstrom
+        (property).
+
+    Raises
+    ------
+    AssertionError
+        If `depths` is a `dict` missing one of the filter names in
+        `filterset`, if `depths` is not in ABmag units, or if `flux`,
+        `flux_errs` and `depths` do not all have the same length as
+        `filterset` (where not `None`).
+    """
+
     def __init__(
         self: Self,
         filterset: Multiple_Filter,
@@ -217,6 +261,13 @@ class Photometry:
 
     @property
     def wav(self):
+        """Central wavelength of each filter in `filterset`.
+
+        Returns
+        -------
+        `astropy.units.Quantity`
+            Array of per-filter central wavelengths, in Angstrom.
+        """
         return np.array([filt.WavelengthCen.to(u.AA).value \
             for filt in self.filterset]) * u.AA
 
@@ -277,6 +328,23 @@ class Photometry:
         return self
 
     def crop(self: Type[Self], indices: Union[List[int], NDArray[int]]) -> Self:
+        """Remove the filters at the given indices from the photometry.
+
+        Builds a deep copy of `filterset` with the specified indices
+        removed, and deletes the corresponding entries from `flux`,
+        `flux_errs`, and `depths` on `self`.
+
+        Parameters
+        ----------
+        indices : `list` of `int` or `numpy.ndarray` of `int`
+            Indices of the filters/bands to remove.
+
+        Returns
+        -------
+        `None`
+            This method mutates `self` in place and does not return a
+            value.
+        """
         copy = deepcopy(self)
         indices = np.array(indices).astype(int)
         copy.filterset = copy.filterset[indices]
@@ -309,6 +377,80 @@ class Photometry:
         return_extra: bool = False,
         log_scale: bool = False,
     ):
+        """Plot the photometry as an errorbar plot of flux (or magnitude) vs. wavelength.
+
+        Converts the stored flux and central wavelengths to the requested
+        plotting units, optionally treats low-significance bands as upper
+        limits (replacing their plotted value and error bar with an
+        upper-limit arrow derived from the depth), optionally log-scales
+        non-ABmag flux units, and optionally auto-scales the axes.
+
+        Parameters
+        ----------
+        ax : `matplotlib.axes.Axes`, optional
+            Axes to draw the errorbar plot on. Default is `None`.
+        wav_units : `astropy.units.Unit`, optional
+            Units to convert the plotted wavelengths to. Default is
+            `astropy.units.AA`.
+        mag_units : `astropy.units.Unit`, optional
+            Units to convert the plotted flux/magnitude values to.
+            Default is `astropy.units.Jy`.
+        plot_errs : `dict` of {`str`: `bool`}, optional
+            Whether to plot x ("x") and/or y ("y") error bars. Default
+            is `{"x": False, "y": True}`.
+        uplim_sigma : `float`, optional
+            SNR threshold below which a band is plotted as a non-detection
+            (upper limit) rather than a normal data point, with the
+            plotted value derived from `uplim_sigma / 5` times the depth.
+            If `None`, no band is treated as an upper limit. Default is
+            `2.0`.
+        auto_scale : `bool`, optional
+            Whether to automatically set the x- and y-axis limits from
+            the plotted data. Default is `True`.
+        errorbar_kwargs : `dict`, optional
+            Keyword arguments passed through to `ax.errorbar`. The
+            `"mfc"`, `"color"`, and `"label"` entries are overwritten
+            internally based on `filled`, `colour`, and `label`. Default
+            sets `ls`, `marker`, `ms`, `zorder`, `elinewidth`, and a
+            white-stroke `path_effects` outline.
+        filled : `bool`, optional
+            Whether markers are filled with `colour` (`True`) or drawn
+            unfilled with `mfc="none"` (`False`). Default is `True`.
+        colour : `str`, optional
+            Marker and error bar colour. Default is `"black"`.
+        label : `str`, optional
+            Legend label for the errorbar series. Default is
+            `"Photometry"`.
+        return_extra : `bool`, optional
+            If `True`, also return the intermediate wavelength, flux,
+            error, and upper-limit arrays used to make the plot. Default
+            is `False`.
+        log_scale : `bool`, optional
+            Whether to log10-scale the plotted flux values and errors.
+            Only valid when `mag_units != astropy.units.ABmag`. Default
+            is `False`.
+
+        Returns
+        -------
+        `matplotlib.container.ErrorbarContainer`
+            The object returned by `ax.errorbar`, if `return_extra` is
+            `False`.
+        `tuple`
+            ``(plot, wavs_to_plot, mags_to_plot, yerr, uplims)`` if
+            `return_extra` is `True`, where `plot` is the
+            `ax.errorbar` return value, `wavs_to_plot` and
+            `mags_to_plot` are the plotted wavelength/flux arrays,
+            `yerr` is the plotted y-error array (or `None`), and
+            `uplims` is a `list` of `bool` flagging which bands were
+            plotted as upper limits.
+
+        Raises
+        ------
+        AssertionError
+            If `log_scale` is `True` and `mag_units` is
+            `astropy.units.ABmag`, or if the fixed upper-limit arrow
+            size (in sigma) is not smaller than `uplim_sigma`.
+        """
         #breakpoint()
         if log_scale:
             assert mag_units != u.ABmag, galfind_logger.critical(
@@ -518,10 +660,35 @@ class Photometry:
             return plot
     
     def scatter_fluxes(
-        self: Self, 
+        self: Self,
         n_scatter: int = 1,
         update: bool = False,
     ) -> Union[u.Quantity, Masked[u.Quantity]]:
+        """Draw Monte Carlo flux realisations by Gaussian scattering each band.
+
+        For each filter, draws `n_scatter` samples from a normal
+        distribution with mean `flux` and standard deviation `flux_errs`.
+
+        Parameters
+        ----------
+        n_scatter : `int`, optional
+            Number of scattered flux realisations to draw per filter.
+            Default is `1`.
+        update : `bool`, optional
+            If `True`, replace `self.flux` with the first scattered
+            realisation. Default is `False`.
+
+        Returns
+        -------
+        `astropy.units.Quantity` or `astropy.utils.masked.Masked`
+            Array of scattered fluxes with shape ``(n_scatter,
+            n_filters)``, in the same units as `flux`.
+
+        Raises
+        ------
+        AssertionError
+            If `flux` is in ABmag units.
+        """
         assert self.flux.unit != u.ABmag, \
             galfind_logger.critical(
                 f"{self.flux.unit=} == 'ABmag'"
@@ -538,9 +705,26 @@ class Photometry:
         return scattered_fluxes
 
     def scatter(
-        self: Self, 
+        self: Self,
         n_scatter: int = 1,
     ) -> List[Photometry]:
+        """Build new `Photometry` object(s) with Monte Carlo scattered fluxes.
+
+        Parameters
+        ----------
+        n_scatter : `int`, optional
+            Number of scattered flux realisations to generate. Default
+            is `1`.
+
+        Returns
+        -------
+        `Photometry`
+            A single `Photometry` object with scattered fluxes, if
+            `n_scatter` is `1`.
+        `list` of `Photometry`
+            A list of `Photometry` objects, one per scattered flux
+            realisation, if `n_scatter` is greater than `1`.
+        """
         scattered_fluxes = self.scatter_fluxes(n_scatter)
         galfind_logger.debug("Made phot matrix")
         scattered_phot = self._make_phot_from_scattered_fluxes(scattered_fluxes, n_scatter)
@@ -586,6 +770,26 @@ class Photometry:
 
 
 class Multiple_Photometry(ABC):
+    """Collection of `Photometry` objects built from parallel per-source input arrays.
+
+    Parameters
+    ----------
+    instrument_arr : `list` of `Instrument`
+        Instrument/filterset object for each source.
+    flux_arr : `list` of `astropy.units.Quantity`
+        Per-filter flux values for each source.
+    flux_errs_arr : `list` of `astropy.units.Quantity`
+        Per-filter flux error values for each source.
+    loc_depths_arr : `list`
+        Per-filter local depths for each source.
+
+    Attributes
+    ----------
+    phot_arr : `list` of `Photometry`
+        One `Photometry` object per source, built from the
+        corresponding elements of the input arrays.
+    """
+
     def __init__(
         self, instrument_arr, flux_arr, flux_errs_arr, loc_depths_arr
     ):
@@ -598,6 +802,26 @@ class Multiple_Photometry(ABC):
 
     @classmethod
     def from_fits_cat(cls, fits_cat, instrument, cat_creator):
+        """Construct a `Multiple_Photometry` from a FITS catalogue.
+
+        Parameters
+        ----------
+        fits_cat : `astropy.table.Table`
+            Catalogue table to load photometry from.
+        instrument : `Instrument`
+            Instrument definition used to determine available
+            filters/bands.
+        cat_creator : object
+            Catalogue creator object providing `load_photometry` and
+            `load_depths` methods.
+
+        Returns
+        -------
+        `Multiple_Photometry`
+            New instance populated with one `Photometry` per catalogue
+            row, with per-row instrument objects restricted to the
+            bands present for that row.
+        """
         flux_arr, flux_errs_arr, gal_bands = cat_creator.load_photometry(
             fits_cat, instrument.filt_names
         )
@@ -615,6 +839,35 @@ class Multiple_Photometry(ABC):
 
 
 class Mock_Photometry(Photometry):
+    """Simulated (mock) photometry for a single source, with flux errors derived from specified depths.
+
+    Parameters
+    ----------
+    filterset : `Multiple_Filter`
+        The set of filters the mock photometry is defined in.
+    flux : `astropy.units.Quantity` or `astropy.units.Magnitude`
+        Input (noiseless) flux for each filter.
+    depths : `list` of `float`, `numpy.ndarray` of `float`, or `astropy.units.Magnitude`
+        5σ limiting depths for each filter. Assumed to be in ABmag; if
+        not already an `astropy.units.Magnitude` in ABmag, ABmag units
+        are applied directly.
+    min_flux_pc_err : `float` or `None`
+        Minimum fractional flux error to apply, expressed as a
+        percentage of the flux; used as a floor on the depth-derived
+        error (see `flux_errs_from_depths`).
+
+    Attributes
+    ----------
+    min_flux_pc_err : `float` or `None`
+        The minimum percentage flux error applied when deriving
+        `flux_errs`.
+
+    Raises
+    ------
+    AssertionError
+        If `flux` and `depths` do not have the same length.
+    """
+
     def __init__(
         self: Self,
         filterset: Multiple_Filter,
@@ -635,6 +888,25 @@ class Mock_Photometry(Photometry):
 
     @staticmethod
     def flux_errs_from_depths(flux, depths, min_flux_pc_err):
+        """Derive per-filter flux errors from 5σ ABmag depths, with a minimum fractional error floor.
+
+        Parameters
+        ----------
+        flux : `astropy.units.Quantity`
+            Flux value in each filter (used to evaluate the
+            `min_flux_pc_err` floor).
+        depths : `astropy.units.Magnitude`
+            5σ limiting depths in ABmag for each filter.
+        min_flux_pc_err : `float`
+            Minimum flux error, as a percentage of `flux`; the 1σ
+            depth-derived error is replaced by this floor wherever the
+            floor is larger.
+
+        Returns
+        -------
+        `astropy.units.Quantity`
+            1σ flux error for each filter, in Jy.
+        """
         # calculate 1σ depths to Jy
         one_sig_depths_Jy = depths.to(u.Jy) / 5
         # apply min_flux_pc_err criteria

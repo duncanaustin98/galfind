@@ -87,10 +87,72 @@ select_func_to_type = {
 }
 
 class Galaxy:
+    """A single astronomical source with photometry, SED fits, morphology, and cutouts.
+
+    Represents one galaxy (or other source) identified in a GALFIND
+    catalogue. Stores the sky position and aperture photometry (with any
+    associated SED fitting results) for one or more aperture diameters,
+    and provides methods to make image cutouts and RGB images, and to
+    produce diagnostic plots of the photometry, SED fits, and redshift
+    PDFs. Selection flags and keyword arguments produced by `Selector`
+    objects are attached dynamically and exposed as ordinary attributes
+    through `__getattr__` (as are `RA`/`DEC`, derived from `sky_coord`).
+
+    Parameters
+    ----------
+    ID : `int`
+        Unique galaxy identifier within its catalogue.
+    sky_coord : `astropy.coordinates.SkyCoord`
+        On-sky position of the galaxy.
+    aper_phot : `Dict[astropy.units.Quantity, Photometry_obs]`
+        Aperture photometry for the galaxy, keyed by aperture diameter.
+    selection_flags : `Dict[astropy.units.Quantity, Dict[str, bool]]`, optional
+        Boolean selection results keyed by selection name, recording
+        whether the galaxy passes each selection criterion. Default is
+        `None`, in which case an empty `dict` is used.
+    selection_kwargs : `Dict[astropy.units.Quantity, Dict[str, Dict[str, Any]]]`, optional
+        Keyword arguments associated with each selection, keyed the same
+        way as `selection_flags`. Default is `None`, in which case an
+        empty `dict` is used.
+    cat_filterset : `Multiple_Filter`, optional
+        The full filterset of the catalogue the galaxy was loaded from.
+        Default is `None`.
+    survey : `str`, optional
+        Name of the survey/field the galaxy belongs to. Default is `None`.
+    simulated : `bool`, optional
+        Whether the galaxy originates from simulated (mock) data rather
+        than real observations. Default is `False`.
+
+    Attributes
+    ----------
+    ID : `int`
+        Unique galaxy identifier.
+    sky_coord : `astropy.coordinates.SkyCoord`
+        On-sky position of the galaxy.
+    aper_phot : `Dict[astropy.units.Quantity, Photometry_obs]`
+        Aperture photometry keyed by aperture diameter.
+    selection_flags : `dict`
+        Boolean selection results keyed by selection name.
+    selection_kwargs : `dict`
+        Keyword arguments used to produce each selection.
+    cat_filterset : `Multiple_Filter` or `None`
+        Filterset of the parent catalogue.
+    survey : `str` or `None`
+        Survey/field name.
+    simulated : `bool`
+        Whether this is a simulated source.
+    RA : `astropy.units.Quantity`
+        Right ascension in degrees, derived from `sky_coord` (accessed
+        dynamically via `__getattr__`).
+    DEC : `astropy.units.Quantity`
+        Declination in degrees, derived from `sky_coord` (accessed
+        dynamically via `__getattr__`).
+    """
+
     def __init__(
-        self: Self, 
-        ID: int, 
-        sky_coord: SkyCoord, 
+        self: Self,
+        ID: int,
+        sky_coord: SkyCoord,
         aper_phot: Dict[u.Quantity, Photometry_obs],
         selection_flags: Optional[Dict[u.Quantity, Dict[str, bool]]] = None,
         selection_kwargs: Optional[Dict[u.Quantity, Dict[str, Dict[str, Any]]]] = None,
@@ -118,6 +180,28 @@ class Galaxy:
         id: int,
         **gal_creator_kwargs,
     ) -> Galaxy:
+        """Construct a `Galaxy` for a single ID from a `Data` object.
+
+        Builds a `Galaxy_Creator` for the given catalogue `Data` and
+        `id`, then calls it to load the galaxy's photometry, sky
+        coordinates, and selection flags from the underlying catalogue.
+
+        Parameters
+        ----------
+        data : `Data`
+            The `Data` object describing the observations/catalogue from
+            which to load the galaxy.
+        id : `int`
+            The catalogue ID of the galaxy to load.
+        **gal_creator_kwargs
+            Additional keyword arguments forwarded to
+            `Galaxy_Creator.from_data`.
+
+        Returns
+        -------
+        `Galaxy`
+            The loaded galaxy, including its PSFs from `data.psfs`.
+        """
         from . import Galaxy_Creator
         gal_creator = Galaxy_Creator.from_data(
             data,
@@ -208,6 +292,23 @@ class Galaxy:
         self: Self,
         gal_SED_results: Union[SED_result, List[SED_result]]
     ) -> NoReturn:
+        """Attach one or more `SED_result` objects to this galaxy's photometry.
+
+        Each `SED_result` is dispatched to the `Photometry_obs` object in
+        `aper_phot` matching its aperture diameter.
+
+        Parameters
+        ----------
+        gal_SED_results : `SED_result` or `List[SED_result]`
+            The SED fitting result(s) to store. A single result is
+            wrapped in a list internally.
+
+        Raises
+        ------
+        AssertionError
+            If any `gal_SED_result.aper_diam` is not a key of
+            `self.aper_phot`.
+        """
         if not isinstance(gal_SED_results, list):
             gal_SED_results = [gal_SED_results]
         missing_aper_diams = [gal_SED_result.aper_diam \
@@ -223,6 +324,25 @@ class Galaxy:
             for gal_SED_result in gal_SED_results]
     
     def update_SED_result_lowz_zmax_info(self, aper_diam, SED_result_key, zmax_info):
+        """Forward low-z zmax metadata to the relevant `Photometry_obs` object.
+
+        Parameters
+        ----------
+        aper_diam : `astropy.units.Quantity`
+            Aperture diameter key selecting which `Photometry_obs` object
+            in `aper_phot` to update.
+        SED_result_key : `str`
+            Label of the `SED_result` to update.
+        zmax_info : `Any`
+            Low-z maximum-redshift information to store on the
+            `SED_result`.
+
+        Returns
+        -------
+        `Any`
+            The return value of the underlying
+            `Photometry_obs.update_SED_result_lowz_zmax_info` call.
+        """
         return self.aper_phot[aper_diam].update_SED_result_lowz_zmax_info(SED_result_key, zmax_info)
 
     def load_fixz_SED_result(
@@ -231,12 +351,34 @@ class Galaxy:
         z_value: float,
         z_label: str = "z",
     ) -> NoReturn:
+        """Load a fixed-redshift SED fitting result for one aperture diameter.
+
+        Parameters
+        ----------
+        aper_diam : `astropy.units.Quantity`
+            Aperture diameter key selecting which `Photometry_obs` object
+            in `aper_phot` to update.
+        z_value : `float`
+            The fixed redshift at which the SED fit was performed.
+        z_label : `str`, optional
+            Label identifying the redshift used, forwarded to
+            `Photometry_obs.load_fixz_SED_result`. Default is `"z"`.
+        """
         self.aper_phot[aper_diam].load_fixz_SED_result(z_value, z_label)
-        
+
 
     def load_property(
         self, gal_property: Union[dict, u.Quantity], save_name: str
     ) -> None:
+        """Attach an arbitrary property to the galaxy as a new attribute.
+
+        Parameters
+        ----------
+        gal_property : `dict` or `astropy.units.Quantity`
+            The property value to store.
+        save_name : `str`
+            Name of the attribute under which `gal_property` is stored.
+        """
         setattr(self, save_name, gal_property)
 
     def make_RGB(
@@ -249,6 +391,29 @@ class Galaxy:
         },
         cutout_size: u.Quantity = 0.96 * u.arcsec,
     ) -> RGB:
+        """Build (or retrieve a cached) `RGB` image cutout for this galaxy.
+
+        Results are cached on `self.RGBs`, keyed by cutout size and by the
+        band combination used for each colour channel, so repeated calls
+        with the same arguments reuse the previously built `RGB` object.
+
+        Parameters
+        ----------
+        data : `Data`
+            The `Data` object providing the band images from which the
+            cutouts are drawn.
+        rgb_bands : `Dict[str, List[str]]`, optional
+            Mapping of colour channel (`"B"`, `"G"`, `"R"`) to the list of
+            filter names to combine into that channel. Default combines
+            F090W (blue), F200W (green), and F444W (red).
+        cutout_size : `astropy.units.Quantity`, optional
+            Angular size of the cutout. Default is `0.96 * u.arcsec`.
+
+        Returns
+        -------
+        `RGB`
+            The RGB cutout object for this galaxy and band combination.
+        """
         if not hasattr(self, "RGBs"):
             self.RGBs = {}
         cutout_size_str = f"{cutout_size.to(u.arcsec).value:.2f}as"
@@ -277,13 +442,52 @@ class Galaxy:
         rgb_kwargs: Dict[str, Any] = {},
         imshow_kwargs: Dict[str, Any] = {},
     ) -> Optional[List[plt.Text]]:
+        """Plot a previously-made RGB cutout for this galaxy on a matplotlib axis.
+
+        Requires that `make_RGB` has already been called for the same
+        `rgb_bands` and `cutout_size`, since the cached `RGB` object is
+        looked up from `self.RGBs` rather than rebuilt.
+
+        Parameters
+        ----------
+        ax : `matplotlib.axes.Axes` or `None`
+            Axis to plot the RGB image on.
+        rgb_bands : `Dict[str, List[str]]`
+            Mapping of colour channel (`"B"`, `"G"`, `"R"`) to the list of
+            filter names combined into that channel, used to look up the
+            cached `RGB` object.
+        cutout_size : `astropy.units.Quantity`, optional
+            Angular size of the cutout, used to look up the cached `RGB`
+            object. Default is `0.96 * u.arcsec`.
+        method : `str`, optional
+            RGB scaling/combination method passed to `RGB.plot`. Default
+            is `"trilogy"`.
+        rgb_unit : `astropy.units.Unit`, optional
+            Flux unit used when combining the bands. Default is `u.uJy`.
+        rgb_kwargs : `Dict[str, Any]`, optional
+            Extra keyword arguments passed to `RGB.plot`. Default is `{}`.
+        imshow_kwargs : `Dict[str, Any]`, optional
+            Extra keyword arguments passed through to the underlying
+            `imshow` call. Default is `{}`.
+
+        Returns
+        -------
+        `List[matplotlib.text.Text]` or `None`
+            The text label artists returned by `RGB.plot`, if any.
+        """
         cutout_size_str = f"{cutout_size.to(u.arcsec).value:.2f}as"
         rgb_key = ",".join(
             f"{colour}={'+'.join(rgb_bands[colour])}"
             for colour in ["B", "G", "R"]
         )
         RGB_obj = self.RGBs[cutout_size_str][rgb_key]
-        rgb_labels = RGB_obj.plot(ax, method, unit = rgb_unit, rgb_kwargs = rgb_kwargs, imshow_kwargs = imshow_kwargs)
+        rgb_labels = RGB_obj.plot(
+            ax,
+            method,
+            unit = rgb_unit,
+            rgb_kwargs = rgb_kwargs,
+            imshow_kwargs = imshow_kwargs,
+        )
         return rgb_labels
 
     def make_cutouts(
@@ -292,6 +496,27 @@ class Galaxy:
         cutout_size: u.Quantity = 0.96 * u.arcsec,
         overwrite: bool = False,
     ) -> Multiple_Band_Cutout:
+        """Build (or retrieve a cached) multi-band cutout set for this galaxy.
+
+        The result is cached on `self.multi_band_cutout`; subsequent calls
+        return the cached object without regenerating the cutouts.
+
+        Parameters
+        ----------
+        data : `Data`
+            The `Data` object providing the band images from which the
+            cutouts are drawn.
+        cutout_size : `astropy.units.Quantity`, optional
+            Angular size of the cutouts. Default is `0.96 * u.arcsec`.
+        overwrite : `bool`, optional
+            Whether to overwrite any existing cutout files on disk when
+            building the cutouts. Default is `False`.
+
+        Returns
+        -------
+        `Multiple_Band_Cutout`
+            The multi-band cutout object for this galaxy.
+        """
         if not hasattr(self, "multi_band_cutout"):
             self.multi_band_cutout = Multiple_Band_Cutout. \
                 from_gal_data(
@@ -312,6 +537,29 @@ class Galaxy:
         cutout_size: u.Quantity = 0.96 * u.arcsec,
         overwrite: bool = False,
     ) -> Band_Cutout:
+        """Build (or retrieve a cached) single-band cutout for this galaxy.
+
+        If a `multi_band_cutout` already exists and contains a cutout for
+        the requested band and cutout size, that cutout is reused;
+        otherwise a new `Band_Cutout` is created. The result is cached in
+        `self.cutouts`, keyed by filter name (and cutout size, plus a
+        `"_native"` suffix for native-resolution data).
+
+        Parameters
+        ----------
+        band_data_base : `Band_Data_Base`
+            The band data object describing the image to cut out from.
+        cutout_size : `astropy.units.Quantity`, optional
+            Angular size of the cutout. Default is `0.96 * u.arcsec`.
+        overwrite : `bool`, optional
+            Whether to overwrite any existing cutout file on disk when
+            building the cutout. Default is `False`.
+
+        Returns
+        -------
+        `Band_Cutout`
+            The single-band cutout object for this galaxy and band.
+        """
         if not hasattr(self, "cutouts"):
             self.cutouts = {}
         cutout_ = None
@@ -366,6 +614,73 @@ class Galaxy:
         split_by_instr: bool = True,
         split_by_instr_cmap: str = "plasma"
     ):
+        """Plot per-band image cutouts for this galaxy in a grid on a figure.
+
+        Builds (or reuses) a `Multiple_Band_Cutout` for the galaxy, adds
+        fixed circular aperture regions (and, if SExtractor Kron
+        parameters are available, elliptical Kron apertures) to each
+        panel, and delegates the actual plotting to
+        `Multiple_Band_Cutout.plot`.
+
+        Parameters
+        ----------
+        fig : `matplotlib.figure.Figure`
+            Figure on which the cutout grid is drawn.
+        data : `Data`
+            The `Data` object providing the band images to cut out and
+            plot. If `incl_nodata_cutouts` is `False`, this is first
+            deep-copied and cropped to the bands present in the galaxy's
+            photometry filterset.
+        SED_code : `SED_code`
+            SED fitting code/result used when building the cutouts (e.g.
+            for redshift-dependent scale bars in `make_cutouts`).
+        cutout_size : `astropy.units.Quantity`, optional
+            Angular size of each cutout. Default is `0.96 * u.arcsec`.
+        aper_diam : `astropy.units.Quantity`, optional
+            Aperture diameter used both to select the relevant
+            `Photometry_obs` object and to draw the fixed circular
+            aperture region on each cutout. Default is `0.32 * u.arcsec`.
+        imshow_kwargs : `Dict[str, Any]`, optional
+            Extra keyword arguments passed through to the underlying
+            `imshow` calls. Default is `{}`.
+        norm_kwargs : `Dict[str, Any]`, optional
+            Extra keyword arguments controlling the image normalization
+            of each cutout. Default is `{}`.
+        aper_kwargs : `Dict[str, Any]`, optional
+            Style keyword arguments for the fixed circular aperture
+            patches (e.g. `linestyle`, `color`). Defaults are filled in
+            for `linestyle`, `color`, and `path_effects` if not supplied.
+        kron_kwargs : `Dict[str, Any]`, optional
+            Style keyword arguments for the Kron ellipse patches, used
+            only if the galaxy has SExtractor Kron shape parameters
+            loaded. Default is `{}`.
+        cutout_label_kwargs : `Dict[str, Any]`, optional
+            Extra keyword arguments controlling the per-cutout band-name
+            labels, forwarded to `Multiple_Band_Cutout.plot` as
+            `label_kwargs`. Default is `{}`.
+        cutout_gridspec_kwargs : `Dict[str, Any]`, optional
+            Extra keyword arguments controlling the `GridSpec` layout of
+            the cutout grid. Default is `{}`.
+        n_rows : `int`, optional
+            Number of rows to arrange the band cutouts into. Default is 2.
+        incl_nodata_cutouts : `bool`, optional
+            Whether to include bands with no data for this galaxy rather
+            than restricting `data` to bands present in the galaxy's
+            filterset. Default is `False`.
+        split_by_instr : `bool`, optional
+            Whether to visually group/colour cutout panels by instrument.
+            Default is `True`.
+        split_by_instr_cmap : `str`, optional
+            Name of the matplotlib colormap used to distinguish
+            instruments when `split_by_instr` is `True`. Default is
+            `"plasma"`.
+
+        Returns
+        -------
+        `numpy.ndarray` of `matplotlib.axes.Axes`
+            The array of axes used for the cutout grid, as returned by
+            `Multiple_Band_Cutout.plot`.
+        """
         if incl_nodata_cutouts:
             data_ = data
         else:
@@ -574,6 +889,164 @@ class Galaxy:
         dpi: int = 300,
         ext: str = "png",
     ) -> Optional[Tuple[plt.Figure, plt.Figure, List[plt.Axes], List[plt.Axes]]]:
+        """Make and save/show a full diagnostic plot for this galaxy.
+
+        Combines band-image cutouts, best-fit SED curve(s), observed
+        photometry, and redshift PDF panel(s) for one or more SED fitting
+        codes into a single figure, and writes it to
+        `{PLOT_DIR}/{version}/{instrument}/{survey}/SED_plots/{aper_diam}as/{ID}.{ext}`
+        unless the file already exists and `overwrite` and `save` do not
+        request otherwise.
+
+        Parameters
+        ----------
+        data : `Data`
+            The `Data` object providing the band images and survey/version
+            metadata used for the cutouts and output path/title.
+        SED_arr : `List[str or SED_code]`
+            SED fitting code(s) (or their labels) whose best-fit SEDs and
+            mock photometry are plotted on the photometry axis.
+        zPDF_arr : `List[str or SED_code]`
+            SED fitting code(s) (or their labels) whose redshift PDFs are
+            plotted, one per PDF axis.
+        fig : `matplotlib.figure.Figure`, optional
+            Unused placeholder for a pre-existing figure; if `None` (or
+            `ax` is `None`) a new figure/axes layout is created via
+            `figs.make_phot_diagnostic_fig`. Default is `None`.
+        ax : `tuple`, optional
+            Pre-existing `(cutout_fig, phot_ax, PDF_ax)` layout to plot
+            onto; if `None`, a new layout is created. Default is `None`.
+        plot_lowz : `bool`, optional
+            Whether to also include any low-z (`lowz_zmax`) fits related
+            to the codes in `SED_arr`/`zPDF_arr`, found via
+            `_extract_lowz_codes`. Default is `True`.
+        lowz_dz : `float`, optional
+            Minimum redshift offset from the primary fit's redshift for a
+            low-z fit to be included when `plot_lowz` is `True`. Default
+            is 0.5.
+        n_cutout_rows : `int`, optional
+            Number of rows to arrange the band cutouts into. Must
+            currently be given explicitly.
+        wav_unit : `astropy.units.Unit`, optional
+            Wavelength unit for the x-axis of the photometry/SED plot.
+            Default is `u.um`.
+        flux_unit : `astropy.units.Unit`, optional
+            Flux unit for the y-axis of the photometry/SED plot. Default
+            is `u.ABmag`.
+        log_fluxes : `bool`, optional
+            Whether to plot fluxes on a logarithmic scale. Default is
+            `False`.
+        cutout_size : `astropy.units.Quantity`, optional
+            Angular size of each band cutout. Default is `0.96 * u.arcsec`.
+        annotate_PDFs : `bool`, optional
+            Whether to annotate the redshift PDF panels (e.g. with peak
+            values). Default is `True`.
+        aper_diam : `astropy.units.Quantity`, optional
+            Aperture diameter selecting which `Photometry_obs` object to
+            plot. Default is `0.32 * u.arcsec`.
+        imshow_kwargs : `Dict[str, Any]`, optional
+            Extra keyword arguments passed through to the cutout `imshow`
+            calls. Default is `{}`.
+        norm_kwargs : `Dict[str, Any]`, optional
+            Extra keyword arguments controlling the cutout image
+            normalization. Default is `{}`.
+        aper_kwargs : `Dict[str, Any]`, optional
+            Style keyword arguments for the fixed circular aperture
+            patches on the cutouts. Default is `{}`.
+        kron_kwargs : `Dict[str, Any]`, optional
+            Style keyword arguments for the Kron ellipse patches on the
+            cutouts. Default is `{}`.
+        cutout_label_kwargs : `Dict[str, Any]`, optional
+            Extra keyword arguments controlling the per-cutout band-name
+            labels. Default is `{}`.
+        sed_plot_kwargs : `Dict[str, Any]`, optional
+            Extra keyword arguments passed to `SED_obs.plot` for the
+            best-fit SED curve(s). Default is `{}`.
+        cutout_gridspec_kwargs : `Dict[str, Any]`, optional
+            Extra keyword arguments controlling the `GridSpec` layout of
+            the cutout grid. Default is `{}`.
+        legend_kwargs : `Dict[str, Any]`, optional
+            Keyword arguments passed to `ax.legend(**legend_kwargs)` for
+            the photometry axis legend. Defaults for `loc`, `fontsize`,
+            and `frameon` are filled in if not supplied. Default is
+            `{"loc": "best"}`.
+        errorbar_kwargs : `Dict[str, Any]`, optional
+            Keyword arguments passed through to the observed-photometry
+            errorbar plot call (`Photometry_obs.plot`). Defaults for
+            `ls`, `marker`, `ms`, `zorder`, and `path_effects` are filled
+            in if not supplied. Default is `{}`.
+        SNR_label_kwargs : `Dict[str, Any]`, optional
+            Keyword arguments passed through to `Photometry_obs.plot` for
+            styling the per-band SNR annotation labels. Default is `{}`.
+        phot_axes_labels_kwargs : `Dict[str, Any]`, optional
+            Keyword arguments passed to `ax.set_xlabel`/`ax.set_ylabel` on
+            the photometry axis. Default is `{}`.
+        phot_axes_ticks_kwargs : `Dict[str, Any]`, optional
+            Keyword arguments passed to
+            `ax.tick_params(**phot_axes_ticks_kwargs)` on the photometry
+            axis. Default is `{}`.
+        PDF_axes_ticks_kwargs : `Dict[str, Any]`, optional
+            Keyword arguments passed to
+            `ax.tick_params(**PDF_axes_ticks_kwargs)` on each redshift
+            PDF axis. Default is `{}`.
+        PDF_axes_labels_kwargs : `Dict[str, Any]`, optional
+            Keyword arguments passed through to the PDF `plot` method as
+            `label_kwargs`, controlling the PDF axis labels. Default is
+            `{}`.
+        PDF_axes_title_kwargs : `Dict[str, Any]`, optional
+            Keyword arguments passed to
+            `ax.set_title(label, **PDF_axes_title_kwargs)` for each
+            redshift PDF panel title. A default `fontsize` of `"medium"`
+            is filled in if not supplied. Default is `{}`.
+        title_kwargs : `Dict[str, Any]`, optional
+            Keyword arguments passed to
+            `phot_ax.set_title(title, **title_kwargs)` for the overall
+            photometry axis title. Default is `{}`.
+        title : `str`, optional
+            Title of the photometry axis. If `None`, defaults to
+            `"{survey} {ID} ({version})"`. Default is `None`.
+        split_by_instr : `bool`, optional
+            Whether to visually group/colour cutout panels by instrument.
+            Default is `True`.
+        split_by_instr_cmap : `str`, optional
+            Name of the matplotlib colormap used to distinguish
+            instruments when `split_by_instr` is `True`. Default is
+            `"plasma"`.
+        incl_nodata_cutouts : `bool`, optional
+            Whether to include bands with no data for this galaxy in the
+            cutout grid. Default is `False`.
+        SED_cmap : `str`, optional
+            Name of a matplotlib colormap used to assign consistent
+            colours to each SED fit in `SED_arr`. If `None`, colours are
+            instead taken from each SED line's own default colour.
+            Default is `None`.
+        overwrite : `bool`, optional
+            Whether to regenerate and overwrite the plot if the output
+            file already exists. Default is `False`.
+        save : `bool`, optional
+            Whether to save the figure to `out_path`. Default is `True`.
+        show : `bool`, optional
+            Whether to display the figure interactively (only used if
+            `save` is `True`). Default is `False`.
+        dpi : `int`, optional
+            Resolution (dots per inch) used when saving the figure.
+            Default is 300.
+        ext : `str`, optional
+            File extension/format used when saving the figure. Default is
+            `"png"`.
+
+        Returns
+        -------
+        `tuple` of (`matplotlib.figure.Figure`, `matplotlib.figure.Figure`, `List[matplotlib.axes.Axes]`, `List[matplotlib.axes.Axes]`)
+            The overall figure, the cutout sub-figure, the photometry
+            axis, and the list of redshift PDF axes, respectively.
+
+        Raises
+        ------
+        NotImplementedError
+            If `n_cutout_rows` is `None`, since dynamic determination of
+            the cutout row count is not yet implemented.
+        """
 
         out_path = f"{config['Other']['PLOT_DIR']}/{data.version}/" + \
             f"{data.filterset.instrument_name}/{data.survey}/SED_plots/" + \
@@ -778,12 +1251,40 @@ class Galaxy:
     # Spectroscopy
 
     def load_spectra(self, spectra):
+        """Attach spectroscopic data to this galaxy.
+
+        Parameters
+        ----------
+        spectra : `Any`
+            Spectroscopic data to store on the galaxy.
+
+        Returns
+        -------
+        `Galaxy`
+            This galaxy instance, with `spectra` set.
+        """
         self.spectra = spectra
         return self
 
     def plot_spec_diagnostic(
         self, ax, grating_filter="PRISM/CLEAR", overwrite=True
     ):
+        """Plot a spectroscopic diagnostic for this galaxy, if available.
+
+        Not all galaxies have spectroscopic data attached (via
+        `load_spectra`); this method is currently a stub and does not yet
+        perform any plotting.
+
+        Parameters
+        ----------
+        ax : `matplotlib.axes.Axes`
+            Axis intended for the spectroscopic diagnostic plot.
+        grating_filter : `str`, optional
+            Name of the spectrograph grating/filter combination to plot.
+            Default is `"PRISM/CLEAR"`.
+        overwrite : `bool`, optional
+            Whether to overwrite an existing plot. Default is `True`.
+        """
         # bare in mind that not all galaxies have spectroscopic data
         if hasattr(self, "spectra"):
             # plot spectral diagnostic
@@ -1052,6 +1553,29 @@ class Galaxy:
         filt_names: Optional[List[str]] = None,
         aper_corrs: Optional[Dict[str, float]] = None,
     ) -> None:
+        """Load SExtractor extended-source aperture corrections for this galaxy.
+
+        Requires that `FLUX_AUTO` has already been loaded (as
+        `sex_FLUX_AUTO`). For each aperture diameter in `aper_phot`, the
+        aperture corrections are forwarded to the relevant
+        `Photometry_obs.load_sextractor_ext_src_corrs`, and per-filter
+        correction values are additionally stored on the galaxy as
+        `ext_src_corr_{aper_diam}as_{filter}` attributes.
+
+        Parameters
+        ----------
+        filt_names : `List[str]`, optional
+            Filter names to restrict the correction to. If `None`, all
+            filters in `cat_filterset` are used. Default is `None`.
+        aper_corrs : `Dict[str, float]`, optional
+            Aperture correction values keyed by filter name. Default is
+            `None`.
+
+        Raises
+        ------
+        AttributeError
+            If `self.sex_FLUX_AUTO` has not been loaded.
+        """
         # FLUX_AUTO must already be loaded
         if not hasattr(self, "sex_FLUX_AUTO"):
             galfind_logger.critical(
@@ -1079,6 +1603,31 @@ class Galaxy:
         ecsv_rows: Table,
         data_survey: str,
     ) -> None:
+        """Load precomputed V_max values for this galaxy from an ecsv table.
+
+        For each combination of aperture diameter and SED fitting code
+        present in `ecsv_rows` that also exists in this galaxy's
+        `aper_phot`/`SED_results`, sums the per-row `Vmax_total` values
+        for each region and stores them on the corresponding
+        `SED_result.Vmax[data_survey][region]`.
+
+        Parameters
+        ----------
+        ecsv_rows : `astropy.table.Table`
+            Table of rows containing (at least) the `aper_diam`,
+            `SED_fit_code`, `region`, and `Vmax_total` columns for this
+            galaxy.
+        data_survey : `str`
+            Name of the survey/field the Vmax values were computed in,
+            used as the key under which they are stored.
+
+        Raises
+        ------
+        AssertionError
+            If `ecsv_rows` is missing any of the required columns, or if
+            no rows exist in `ecsv_rows` for a given aperture diameter /
+            SED fitting code combination present in the galaxy.
+        """
         try:
             assert all(colname in ecsv_rows.colnames for colname in \
                 ["aper_diam", "SED_fit_code", "region", "Vmax_total"]
@@ -1146,6 +1695,65 @@ class Galaxy:
         unmasked_area: Union[str, List[str], u.Quantity, Type[Mask_Selector]] = "selection",
         Vmax_method: str = "uniform_depth",
     ) -> Tuple[Dict[str, float], Dict[str, float], Dict[str, float]]:
+        """Calculate the maximum observable volume (V_max) for this galaxy in a field.
+
+        Dispatches to a `calc_Vmax_{Vmax_method}` method (e.g.
+        `calc_Vmax_split_region`) after filtering out selection `crops`
+        that depend on data/morphology or on SED fitting that would need
+        to be redone at each trial redshift, since only crops applicable
+        purely from the (redshifted) photometry are meaningful for a
+        V_max calculation.
+
+        Parameters
+        ----------
+        data : `Data`
+            The `Data` object providing the depths and area information
+            for the field the V_max is computed in.
+        z_bin : `List[float]`
+            Two-element `[zmin, zmax]` redshift bin to compute the volume
+            over.
+        aper_diam : `astropy.units.Quantity`
+            Aperture diameter selecting which `Photometry_obs`/
+            `SED_result` to use.
+        SED_fit_code : `SED_code`
+            SED fitting code whose result (and redshift) is used.
+        crops : `List[Selector]`
+            Selection criteria the galaxy must continue to satisfy at
+            each trial redshift; crops based on data/morphology or on
+            SED-fit-dependent properties are automatically excluded.
+        z_step : `float`, optional
+            Redshift step size used when scanning the trial redshift
+            range. Default is 0.01.
+        depth_mode : `str`, optional
+            Depth-measurement mode to use (e.g. `"n_nearest"`). Default is
+            `"n_nearest"`.
+        unmasked_area : `str`, `List[str]`, `astropy.units.Quantity`, or `Mask_Selector`, optional
+            Specification of the unmasked area to use; either a
+            precomputed `astropy.units.Quantity` area, a `Mask_Selector`,
+            or `"selection"` to use the forced photometry band's mask.
+            Default is `"selection"`.
+        Vmax_method : `str`, optional
+            Name suffix of the `calc_Vmax_*` method to dispatch to.
+            Default is `"uniform_depth"`.
+
+        Returns
+        -------
+        `tuple` of (`dict`, `dict`, `dict`)
+            The V_max value(s), the keyword arguments used to compute
+            them, and metadata about the calculation, as returned by the
+            dispatched `calc_Vmax_{Vmax_method}` method. If the galaxy's
+            redshift falls outside `z_bin`, V_max is `-1.0` for all
+            regions.
+
+        Raises
+        ------
+        AssertionError
+            If there is no `calc_Vmax_{Vmax_method.lower()}` method, if
+            `z_bin` does not have exactly two elements with
+            `z_bin[0] < z_bin[1]`, if `crops` is empty, or if no crops
+            remain after excluding data/morphology/SED-fit-dependent
+            selectors.
+        """
         assert hasattr(self, f"calc_Vmax_{Vmax_method.lower()}"), \
             galfind_logger.critical(
                 f"Galaxy.calc_Vmax has no method for {Vmax_method.lower()=}! " + \
@@ -1221,6 +1829,58 @@ class Galaxy:
         depth_mode: str = "n_nearest",
         unmasked_area: Union[str, List[str], u.Quantity, Type[Mask_Selector]] = "selection",
     ) -> Tuple[float, float, float]:
+        """Calculate V_max for this galaxy separately in each field region.
+
+        For each region in `data.regions` (or a single `"all"` region if
+        `data` has none defined) and each redshift sub-bin over which the
+        unmasked area has been tabulated in `data.area_depths`, computes
+        the contribution to V_max using `_compute_Vmax` with the median
+        per-band depths for that region.
+
+        Parameters
+        ----------
+        data : `Data`
+            The `Data` object providing per-band median depths
+            (`med_depth`), region definitions, and area-vs-depth
+            information (`area_depths`).
+        z_bin : `List[float]`
+            Two-element `[zmin, zmax]` redshift bin to compute the volume
+            over.
+        aper_diam : `astropy.units.Quantity`
+            Aperture diameter used to look up per-band median depths.
+        SED_fit_code : `SED_code`
+            SED fitting code passed through to `_compute_Vmax`.
+        Vmax_crops : `List[Selector]`
+            Pre-filtered selection criteria to re-apply at each trial
+            redshift.
+        z_step : `float`, optional
+            Redshift step size used when scanning the trial redshift
+            range. Default is 0.01.
+        depth_mode : `str`, optional
+            Depth-measurement mode (currently unused directly in this
+            method but accepted for interface consistency). Default is
+            `"n_nearest"`.
+        unmasked_area : `str`, `astropy.units.Quantity`, or `Mask_Selector`, optional
+            Specification of the unmasked area to use for each redshift
+            sub-bin; either a fixed `astropy.units.Quantity`, a
+            `Mask_Selector`, or `"selection"` to use the forced photometry
+            band's mask. Default is `"selection"`.
+
+        Returns
+        -------
+        `tuple` of (`dict`, `dict`, `dict`)
+            Nested dictionaries (keyed by region, then by redshift
+            sub-bin label) of the total V_max, the V_max keyword
+            arguments, and metadata (depths and area used), respectively.
+
+        Raises
+        ------
+        AssertionError
+            If any band in `data` is missing `med_depth` attributes or
+            median depths for a given region.
+        NotImplementedError
+            If `unmasked_area` is not a recognised type/value.
+        """
         from . import Mask_Selector
 
         if hasattr(data, "regions"):
@@ -1424,6 +2084,59 @@ class Galaxy:
         depth_mode: str = "n_nearest",
         unmasked_area: Union[str, List[str], u.Quantity, Type[Mask_Selector]] = "selection",
     ) -> Tuple[Dict[str, Any], Dict[str, Any], Dict[str, Any]]:
+        """Calculate V_max for this galaxy, scaling depths across the unmasked area.
+
+        Similar to `calc_Vmax_split_region`, but rather than using a
+        single median depth per region/redshift sub-bin, interpolates the
+        forced-photometry-band depth across `n_steps` steps of the
+        cumulative unmasked area, derives the corresponding depths of the
+        other bands via their own cumulative-area curves, and sums the
+        V_max contribution from each depth step (each with its own area
+        increment).
+
+        Parameters
+        ----------
+        data : `Data`
+            The `Data` object providing per-band median depths
+            (`med_depth`), region definitions, and area-vs-depth curves
+            (`area_depths`, with `"cum_dist"` and `"total_depths"` per
+            band).
+        z_bin : `List[float]`
+            Two-element `[zmin, zmax]` redshift bin to compute the volume
+            over.
+        aper_diam : `astropy.units.Quantity`
+            Aperture diameter used to look up per-band median depths.
+        SED_fit_code : `SED_code`
+            SED fitting code passed through to `_compute_Vmax`.
+        Vmax_crops : `List[Selector]`
+            Pre-filtered selection criteria to re-apply at each trial
+            redshift.
+        z_step : `float`, optional
+            Redshift step size used when scanning the trial redshift
+            range. Default is 0.01.
+        depth_mode : `str`, optional
+            Depth-measurement mode (currently unused directly in this
+            method but accepted for interface consistency). Default is
+            `"n_nearest"`.
+        unmasked_area : `str`, `List[str]`, `astropy.units.Quantity`, or `Mask_Selector`, optional
+            Specification of the unmasked area (currently unused directly
+            in this method, since area is instead derived from
+            `data.area_depths`). Default is `"selection"`.
+
+        Returns
+        -------
+        `tuple` of (`dict`, `dict`, `dict`)
+            Nested dictionaries (keyed by region, then by redshift
+            sub-bin label) of the total V_max summed over depth steps,
+            the per-step V_max keyword arguments array, and metadata
+            (per-step depths and cumulative area), respectively.
+
+        Raises
+        ------
+        AssertionError
+            If any band in `data` is missing `med_depth` attributes or
+            median depths for a given region.
+        """
         # load appropriate depths for each data object in data_arr
         galfind_logger.debug(
             "Should use local depth if the data.full_name " + \

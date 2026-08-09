@@ -32,6 +32,35 @@ from . import useful_funcs_austind as funcs
 
 
 class Raw_JWST_Data:
+    """Downloads and reduces raw JWST NIRCam imaging data through the JWST calibration pipeline.
+
+    Wraps `astroquery` MAST queries/downloads and the ``jwst`` pipeline's
+    Stage 1-3 processing (detector-level calibration, image calibration,
+    and association-based resampling/combination) for a single JWST
+    programme ID.
+
+    Parameters
+    ----------
+    survey : `str`
+        Name of the survey this data belongs to.
+    pid : `int`
+        JWST proposal/programme ID to query and reduce data for.
+    instrument : `Type[Instrument]`, optional
+        The `Instrument` subclass to reduce data for. Only `NIRCam` is
+        currently supported. Default is `NIRCam`.
+
+    Attributes
+    ----------
+    instrument : `Instrument`
+        Instance of the `instrument` class.
+    survey : `str`
+        Name of the survey.
+    pid : `int`
+        JWST proposal/programme ID.
+    download_products : `list` of `str`
+        Local paths to the UNCAL products' download scripts. Only set
+        once `query_mast` has been called.
+    """
 
     def __init__(
         self: Self,
@@ -47,6 +76,10 @@ class Raw_JWST_Data:
 
     @property
     def folder_name(self: Self) -> str:
+        """`str`: Local directory this programme's raw/reduced data is stored under.
+
+        `"{GALFIND_DATA}/{facility_name}/PID={pid}"`.
+        """
         return f"{config['DEFAULT']['GALFIND_DATA']}/" + \
             f"{self.instrument.facility.__class__.__name__.lower()}/PID={self.pid}"
 

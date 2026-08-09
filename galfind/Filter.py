@@ -27,6 +27,49 @@ from . import ACS_WFC, WFC3_IR, NIRCam, MIRI, JWST, HST  # noqa: F401
 
 
 class Filter:
+    """Single photometric filter transmission profile.
+
+    Stores the wavelength grid and transmission curve of a single
+    photometric bandpass, together with its instrument/facility
+    association and any auxiliary properties retrieved from e.g. the SVO
+    Filter Profile Service. Instances are typically constructed via the
+    `from_SVO` or `from_filt_name` classmethods rather than directly.
+
+    Parameters
+    ----------
+    instrument : `None`, `str`, or `Instrument`
+        Instrument this filter belongs to. If a `str` is given, the
+        corresponding `Instrument` subclass is looked up by name and
+        instantiated. `None` indicates a user-defined filter with no
+        associated instrument.
+    filt_name : `str`
+        Name of the filter/band (e.g. ``"F444W"``).
+    wav : `astropy.units.Quantity`
+        Wavelength array of the filter transmission profile.
+    trans : `list` of `float`
+        Transmission values corresponding to `wav`.
+    properties : `dict`, optional
+        Additional filter properties (e.g. from SVO), each set as an
+        attribute on the instance. Default is ``{}``.
+
+    Attributes
+    ----------
+    instrument : `Instrument` or `None`
+        Instrument this filter belongs to.
+    filt_name : `str`
+        Name of the filter/band.
+    wav : `astropy.units.Quantity`
+        Wavelength array of the filter transmission profile.
+    trans : `list` of `float`
+        Transmission values corresponding to `wav`.
+    properties : `dict`
+        Additional filter properties, also set individually as instance
+        attributes.
+    WavelengthCen : `astropy.units.Quantity`
+        Central wavelength of the filter. Taken from `properties` if
+        given, otherwise computed as the mean of `wav`.
+    """
+
     def __init__(
         self,
         instrument: Union[None, str, Instrument],
@@ -64,6 +107,39 @@ class Filter:
         SVO_facility_name: Optional[str] = None,
         SVO_instr_name: Optional[str] = None,
     ):
+        """Construct a `Filter` by querying the SVO Filter Profile Service.
+
+        Retrieves the transmission curve and associated properties (e.g.
+        central wavelength, FWHM) for the given facility/instrument/filter
+        combination from SVO, and builds a `Filter` instance from them.
+
+        Parameters
+        ----------
+        facility : `str`
+            Name of the facility (e.g. ``"JWST"``).
+        instrument : `str`
+            Name of the `Instrument` subclass (e.g. ``"NIRCam"``).
+        filter_name : `str`
+            Name of the filter/band to retrieve (e.g. ``"F444W"``).
+        SVO_facility_name : `str`, optional
+            Facility name as known to SVO, overriding the name derived
+            from `instrument`. Default is `None`.
+        SVO_instr_name : `str`, optional
+            Instrument name as known to SVO, overriding the name derived
+            from `instrument`. Default is `None`.
+
+        Returns
+        -------
+        `Filter`
+            New `Filter` instance populated with the transmission curve
+            and properties retrieved from SVO.
+
+        Raises
+        ------
+        Exception
+            If the transmission data, or the facility/instrument
+            properties, cannot be retrieved from SVO.
+        """
         full_name = f"{facility}/{instrument}.{filter_name}"
         try:
             filter_profile = SvoFps.get_transmission_data(full_name)
@@ -119,6 +195,19 @@ class Filter:
 
     @classmethod
     def from_filt_name(cls, filt_name: str):
+        """Construct a `Filter` from a filter name string alone.
+
+        Parameters
+        ----------
+        filt_name : `str`
+            Filter name, optionally including facility/instrument, e.g.
+            ``"F444W"``, ``"NIRCam.F444W"``, or ``"JWST/NIRCam.F444W"``.
+
+        Returns
+        -------
+        `Filter`
+            New `Filter` instance retrieved from SVO.
+        """
         return cls.from_SVO(*cls._get_facility_instrument_filt(filt_name))
 
     def __str__(self):
@@ -210,10 +299,12 @@ class Filter:
 
     @property
     def instrument_name(self) -> str:
+        """`str`: Class name of the instrument this filter belongs to."""
         return self.instrument.__class__.__name__
-    
+
     @property
     def facility_name(self) -> str:
+        """`str`: Class name of the facility this filter's instrument belongs to."""
         return self.instrument.facility.__class__.__name__
 
     @staticmethod
@@ -300,6 +391,15 @@ class Filter:
     #    self.wavs = self.wavs[self.trans > 1e-1]
 
     def make_PSF(self, data: Data, method: str):
+        """Generate a PSF for this filter via its parent instrument.
+
+        Parameters
+        ----------
+        data : `Data`
+            Data object used to construct the PSF.
+        method : `str`
+            Name of the PSF construction method to use.
+        """
         self.instrument.make_PSF(self, method)
 
     def plot(
@@ -318,6 +418,46 @@ class Filter:
         show: bool = False,
         fmt: str = "png",
     ):
+        """Plot this filter's transmission profile on a matplotlib axis.
+
+        Parameters
+        ----------
+        ax : `matplotlib.axes.Axes`
+            Axis to plot the filter transmission profile on.
+        wav_units : `astropy.units.Quantity`, optional
+            Wavelength unit to convert `wav` to before plotting. Default
+            is `u.um`.
+        trans_scaling : `float`, optional
+            Multiplicative scaling factor applied to the transmission
+            curve. Default is `1.0`.
+        colour : `str`, optional
+            Fill/label colour of the transmission profile. Default is
+            ``"black"``.
+        save_name : `str`, optional
+            Name of the file to save the plot to, excluding directory.
+            If `None` and `save` is `True`, derived from the annotation
+            title (requires `annotate=True`). Default is `None`.
+        save_dir : `str`, optional
+            Directory to save the plot to. Default is `None`, saving to
+            the current directory.
+        label : `bool`, optional
+            Whether to annotate the filter name above its transmission
+            curve. Default is `True`.
+        label_offset : `float`, optional
+            Vertical offset of the filter name label above the peak
+            transmission. Default is `0.03`.
+        label_fontsize : `int`, optional
+            Font size of the filter name label. Default is `10`.
+        annotate : `bool`, optional
+            Whether to set the axis title, labels and y-limits. Default
+            is `False`.
+        save : `bool`, optional
+            Whether to save the plot to disk. Default is `False`.
+        show : `bool`, optional
+            Whether to call `plt.show()`. Default is `False`.
+        fmt : `str`, optional
+            File format to save the plot in. Default is ``"png"``.
+        """
         # convert wavelength units
         wavs = funcs.convert_wav_units(self.wav, wav_units).value
         # add extra points to ensure the plot is closed
@@ -372,6 +512,43 @@ class Filter:
 
 
 class Tophat_Filter(Filter):
+    """`Filter` with a flat (top-hat) transmission profile.
+
+    Constructs a rectangular transmission profile of constant throughput
+    between `lower_wav` and `upper_wav`, sampled at fixed `resolution`.
+
+    Parameters
+    ----------
+    filt_name : `str`
+        Name of the filter/band.
+    lower_wav : `astropy.units.Quantity`
+        Lower wavelength edge of the top-hat profile.
+    upper_wav : `astropy.units.Quantity`
+        Upper wavelength edge of the top-hat profile.
+    throughput : `float`, optional
+        Constant transmission value within the top-hat. Default is `1.0`.
+    resolution : `astropy.units.Quantity`, optional
+        Wavelength spacing of the sampled profile. Default is
+        `1.0 * u.AA`.
+    properties : `Dict[str, Any]`, optional
+        Additional filter properties, passed on to `Filter.__init__`.
+        Default is ``{}``.
+
+    Attributes
+    ----------
+    instrument : `None`
+        Top-hat filters have no associated instrument.
+    filt_name : `str`
+        Name of the filter/band.
+    wav : `astropy.units.Quantity`
+        Wavelength array of the top-hat transmission profile.
+    trans : `list` of `float`
+        Constant transmission values corresponding to `wav`.
+    properties : `dict`
+        Additional filter properties, including ``"WavelengthCen"`` and
+        ``"FWHM"`` computed from `lower_wav` and `upper_wav`.
+    """
+
     def __init__(
         self: Self,
         filt_name: str,
@@ -400,6 +577,17 @@ class Tophat_Filter(Filter):
 
 
 class U(Tophat_Filter):
+    """Rest-frame U-band `Tophat_Filter` spanning 3320-3980 Angstrom.
+
+    Parameters
+    ----------
+    throughput : `float`, optional
+        Constant transmission value within the top-hat. Default is `1.0`.
+    resolution : `astropy.units.Quantity`, optional
+        Wavelength spacing of the sampled profile. Default is
+        `1.0 * u.AA`.
+    """
+
     def __init__(
         self: Self,
         throughput: float = 1.0,
@@ -415,6 +603,17 @@ class U(Tophat_Filter):
 
 
 class V(Tophat_Filter):
+    """Rest-frame V-band `Tophat_Filter` spanning 5070-5950 Angstrom.
+
+    Parameters
+    ----------
+    throughput : `float`, optional
+        Constant transmission value within the top-hat. Default is `1.0`.
+    resolution : `astropy.units.Quantity`, optional
+        Wavelength spacing of the sampled profile. Default is
+        `1.0 * u.AA`.
+    """
+
     def __init__(
         self: Self,
         throughput: float = 1.0,
@@ -430,6 +629,17 @@ class V(Tophat_Filter):
 
 
 class J(Tophat_Filter):
+    """Rest-frame J-band `Tophat_Filter` spanning 11135-13265 Angstrom.
+
+    Parameters
+    ----------
+    throughput : `float`, optional
+        Constant transmission value within the top-hat. Default is `1.0`.
+    resolution : `astropy.units.Quantity`, optional
+        Wavelength spacing of the sampled profile. Default is
+        `1.0 * u.AA`.
+    """
+
     def __init__(
         self: Self,
         throughput: float = 1.0,
@@ -445,6 +655,28 @@ class J(Tophat_Filter):
 
 
 class Multiple_Filter:
+    """Ordered collection of `Filter` objects (a filter set).
+
+    Wraps a list of `Filter` instances, providing collection-like access
+    (indexing, iteration, addition/subtraction of filters), sorting by
+    wavelength, and construction helpers from facilities/instruments.
+
+    Parameters
+    ----------
+    filters : `list` of `Filter`
+        Filters making up this filter set.
+    sort_order : `str`, optional
+        Order to sort `filters` in by central wavelength. Currently only
+        ``"ascending"`` is supported. Default is ``"ascending"``.
+
+    Attributes
+    ----------
+    filters : `list` of `Filter`
+        Filters making up this filter set, sorted by `sort_order`.
+    sort_order : `str`
+        Order `filters` is sorted in by central wavelength.
+    """
+
     def __init__(
         self: Type[Self],
         filters: List[Filter],
@@ -468,6 +700,31 @@ class Multiple_Filter:
         sort_order: str = "ascending",
         keep_suffix: str = "All",
     ) -> Self:
+        """Construct a `Multiple_Filter` combining filters from several facilities.
+
+        Parameters
+        ----------
+        facility_arr : `list` of `str` or `Facility`
+            Facilities to combine filters from.
+        excl_bands : `str`, `Filter`, `Multiple_Filter`, or `list`, optional
+            Filter(s) to exclude from the resulting filter set. Default
+            is ``[]``.
+        origin : `str`, optional
+            Source to retrieve filter profiles from. Default is
+            ``"SVO"``.
+        sort_order : `str`, optional
+            Order to sort the resulting filters in by central
+            wavelength. Default is ``"ascending"``.
+        keep_suffix : `str`, optional
+            Filter name suffix(es) to keep, or ``"All"`` to keep every
+            filter regardless of suffix. Default is ``"All"``.
+
+        Returns
+        -------
+        `Multiple_Filter`
+            Filter set combining the filters from every facility in
+            `facility_arr`.
+        """
         for i, facility in enumerate(facility_arr):
             filterset_ = cls.from_facility(
                 facility, excl_bands, origin, sort_order, keep_suffix
@@ -477,7 +734,7 @@ class Multiple_Filter:
             else:
                 filterset += filterset_
         return filterset
-        
+
 
     @classmethod
     def from_facility(
@@ -493,6 +750,40 @@ class Multiple_Filter:
         sort_order: str = "ascending",
         keep_suffix: str = "All",
     ) -> Self:
+        """Construct a `Multiple_Filter` containing every filter of a facility.
+
+        Combines the filter sets of all `Instrument` subclasses belonging
+        to `facility`.
+
+        Parameters
+        ----------
+        facility : `str` or `Facility`
+            Facility (or its class name) to retrieve filters for.
+        excl_bands : `str`, `Filter`, `Multiple_Filter`, or `list`, optional
+            Filter(s) to exclude from the resulting filter set. Default
+            is ``[]``.
+        origin : `str`, optional
+            Source to retrieve filter profiles from. Default is
+            ``"SVO"``.
+        sort_order : `str`, optional
+            Order to sort the resulting filters in by central
+            wavelength. Default is ``"ascending"``.
+        keep_suffix : `str`, optional
+            Filter name suffix(es) to keep, or ``"All"`` to keep every
+            filter regardless of suffix. Default is ``"All"``.
+
+        Returns
+        -------
+        `Multiple_Filter`
+            Filter set containing every (non-excluded) filter belonging
+            to `facility`.
+
+        Raises
+        ------
+        TypeError
+            If `facility` is not a `str`, `Facility` instance, or
+            `Facility` subclass.
+        """
         if isinstance(facility, type):
             if issubclass(facility, Facility):
                 facility = facility.__name__
@@ -532,6 +823,31 @@ class Multiple_Filter:
         sort_order: str = "ascending",
         keep_suffix: str = "All",
     ) -> Self:
+        """Construct a `Multiple_Filter` combining filters from several instruments.
+
+        Parameters
+        ----------
+        instruments : `list` of `str` or `Instrument`
+            Instruments to combine filters from.
+        excl_bands : `str`, `Filter`, `Multiple_Filter`, or `list`, optional
+            Filter(s) to exclude from the resulting filter set. Default
+            is ``[]``.
+        origin : `str`, optional
+            Source to retrieve filter profiles from. Default is
+            ``"SVO"``.
+        sort_order : `str`, optional
+            Order to sort the resulting filters in by central
+            wavelength. Default is ``"ascending"``.
+        keep_suffix : `str`, optional
+            Filter name suffix(es) to keep, or ``"All"`` to keep every
+            filter regardless of suffix. Default is ``"All"``.
+
+        Returns
+        -------
+        `Multiple_Filter`
+            Filter set combining the filters from every instrument in
+            `instruments`.
+        """
         assert len(instruments) > 0
         for i, instrument in enumerate(instruments):
             new_multi_filt = cls.from_instrument(
@@ -557,6 +873,43 @@ class Multiple_Filter:
         sort_order: str = "ascending",
         keep_suffix: Union[str, List[str]] = "All",
     ) -> Self:
+        """Construct a `Multiple_Filter` containing all filters of an instrument.
+
+        Retrieves the list of available filters for `instrument` from
+        `origin`, excluding any named in `excl_bands` and keeping only
+        those whose name ends with one of `keep_suffix`.
+
+        Parameters
+        ----------
+        instrument : `str` or `Instrument`
+            Instrument (or its class name) to retrieve filters for.
+        excl_bands : `str`, `Filter`, `Multiple_Filter`, or `list`, optional
+            Filter(s) belonging to `instrument` to exclude. Default is
+            ``[]``.
+        origin : `str`, optional
+            Source to retrieve the filter list from. Currently only
+            ``"SVO"`` is implemented. Default is ``"SVO"``.
+        sort_order : `str`, optional
+            Order to sort the resulting filters in by central
+            wavelength. Default is ``"ascending"``.
+        keep_suffix : `str` or `list` of `str`, optional
+            Filter name suffix(es) to keep, or ``"All"`` to keep every
+            filter regardless of suffix. Default is ``"All"``.
+
+        Returns
+        -------
+        `Multiple_Filter`
+            Filter set containing every (non-excluded) filter of
+            `instrument`.
+
+        Raises
+        ------
+        TypeError
+            If `instrument` is not a `str`, `Instrument` instance, or
+            `Instrument` subclass.
+        NotImplementedError
+            If `origin` is not ``"SVO"``.
+        """
         # convert instrument object to string
         if isinstance(instrument, type):
             if issubclass(instrument, Instrument):
@@ -906,18 +1259,22 @@ class Multiple_Filter:
 
     @property
     def filt_names(self) -> List[str]:
+        """`list` of `str`: Names of the filters in this filter set."""
         return [band.filt_name for band in self]
 
     @property
     def instrument_names(self) -> List[str]:
+        """`list` of `str`: Instrument class name for each filter in this filter set."""
         return [band.instrument_name for band in self]
-    
+
     @property
     def facility_names(self) -> List[str]:
+        """`list` of `str`: Facility class name for each filter in this filter set."""
         return [band.facility_name for band in self]
 
     @property
     def band_wavelengths(self):
+        """`astropy.units.Quantity`: Central wavelengths of the filters in this filter set, in Angstrom."""
         # Central wavelengths
         return (
             np.array(
@@ -1003,6 +1360,13 @@ class Multiple_Filter:
             return new_filters
 
     def sort_bands(self) -> None:
+        """Sort `self.filters` in place by ascending central wavelength.
+
+        Raises
+        ------
+        NotImplementedError
+            If `self.sort_order` is not ``"ascending"``.
+        """
         if self.sort_order == "ascending":
             # sort filters from blue -> red
             self.filters = [
@@ -1031,6 +1395,52 @@ class Multiple_Filter:
         save: bool = False,
         fmt: str = "png",
     ) -> NoReturn:
+        """Plot the transmission profiles of every filter in this filter set.
+
+        Parameters
+        ----------
+        ax : `matplotlib.axes.Axes`
+            Axis to plot the filter transmission profiles on.
+        wav_units : `astropy.units.Unit`, optional
+            Wavelength unit to convert wavelengths to before plotting.
+            Default is `u.um`.
+        trans_scaling : `float`, optional
+            Multiplicative scaling factor applied to each transmission
+            curve. Default is `1.0`.
+        cmap_name : `str`, optional
+            Name of the matplotlib colormap used to colour each filter.
+            Default is ``"Spectral_r"``.
+        save_name : `str`, optional
+            Name of the file to save the plot to, excluding directory.
+            If `None` and `save` is `True`, derived from the instrument
+            name. Default is `None`.
+        save_dir : `str`, optional
+            Directory to save the plot to. Default is `None`, saving to
+            the current working directory.
+        label : `bool`, optional
+            Whether to annotate each filter's name above its
+            transmission curve. Default is `True`.
+        label_offset : `float`, optional
+            Vertical offset of the filter name labels, alternated above
+            and below this value for adjacent filters. Default is
+            `0.03`.
+        label_fontsize : `float`, optional
+            Font size of the filter name labels. Default is `8.0`.
+        annotate : `bool`, optional
+            Whether to set the axis title, labels and y-limits. Default
+            is `True`.
+        show : `bool`, optional
+            Whether to call `plt.show()`. Default is `False`.
+        save : `bool`, optional
+            Whether to save the plot to disk. Default is `False`.
+        fmt : `str`, optional
+            File format to save the plot in. Default is ``"png"``.
+
+        Returns
+        -------
+        `NoReturn`
+            This method does not return a value.
+        """
         # determine appropriate colours from the colour map
         cmap = plt.get_cmap(cmap_name, len(self))
         norm = Normalize(vmin=0, vmax=len(self) - 1)
@@ -1078,6 +1488,18 @@ class Multiple_Filter:
 
 
 class UVJ(Multiple_Filter):
+    """`Multiple_Filter` filter set of the rest-frame U, V and J top-hat filters.
+
+    Convenience filter set combining `U`, `V` and `J`, used e.g. to
+    compute rest-frame UVJ colours for galaxy classification.
+
+    Parameters
+    ----------
+    sort_order : `str`, optional
+        Order to sort the filters in by central wavelength. Default is
+        ``"ascending"``.
+    """
+
     def __init__(
         self: Self,
         sort_order: str = "ascending"

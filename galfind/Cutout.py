@@ -61,15 +61,29 @@ from . import useful_funcs_austind as funcs
 
 
 class Cutout_Base(ABC):
+    """Abstract base class defining the common interface for cutout objects.
+
+    Declares the properties and methods that any cutout-like object (single
+    band cutouts, stacked cutouts, RGB combinations, and collections
+    thereof) must implement, and provides shared plotting utilities.
+    """
 
     @property
     @abstractmethod
     def ID(self) -> str:
+        """`str`: Unique identifier for the object the cutout was made from.
+
+        Must be implemented by subclasses.
+        """
         pass
 
     @property
     @abstractmethod
     def meta(self) -> dict:
+        """`dict`: Metadata associated with the cutout (e.g. sky position, size).
+
+        Must be implemented by subclasses.
+        """
         pass
 
     @abstractmethod
@@ -77,10 +91,34 @@ class Cutout_Base(ABC):
         self: Self,
         hdu_name: str = "SCI",
     ) -> Union[Dict[str, Tuple[Dict[str, Any], np.ndarray]], Tuple[Dict[str, Any], np.ndarray]]:
+        """Load cutout data (and header) from the saved cutout file.
+
+        Parameters
+        ----------
+        hdu_name : `str`, optional
+            Name of the FITS extension to load. If `None`, all extensions
+            are loaded. Default is ``"SCI"``.
+
+        Returns
+        -------
+        `dict` or `tuple`
+            If `hdu_name` is `None`, a dictionary mapping extension name to
+            ``(header, data)`` tuples for every extension. Otherwise, the
+            ``(header, data)`` tuple for the requested extension.
+        """
         pass
 
     @abstractmethod
     def plot(self) -> plt.Axes:
+        """Plot the cutout.
+
+        Must be implemented by subclasses.
+
+        Returns
+        -------
+        `matplotlib.axes.Axes`
+            The axes the cutout was plotted on.
+        """
         pass
 
     def _plot_regions(
@@ -159,6 +197,32 @@ class Cutout_Base(ABC):
 
 
 class Band_Cutout_Base(Cutout_Base, ABC):
+    """Abstract base class for a single-band image cutout.
+
+    Wraps a saved cutout ``.fits`` file for one filter/band, providing
+    access to its data/metadata extensions (e.g. ``SCI``, ``RMS_ERR``,
+    ``WHT``, ``SEG``) and shared plotting functionality. Concrete
+    subclasses (`Band_Cutout`, `Stacked_Band_Cutout`) implement the
+    construction of the underlying cutout file.
+
+    Parameters
+    ----------
+    cutout_path : `str`
+        Path to the saved cutout ``.fits`` file. Must already exist.
+    band_data : `Band_Data`
+        Band data object the cutout was extracted from.
+    cutout_size : `astropy.units.Quantity`
+        Angular size of the cutout.
+
+    Attributes
+    ----------
+    cutout_path : `str`
+        Path to the saved cutout ``.fits`` file.
+    band_data : `Band_Data`
+        Band data object the cutout was extracted from.
+    cutout_size : `astropy.units.Quantity`
+        Angular size of the cutout.
+    """
 
     def __init__(
         self: Self, 
@@ -212,8 +276,9 @@ class Band_Cutout_Base(Cutout_Base, ABC):
     # ensure this is in the correct class
     @property
     def ID(self) -> str:
+        """`str`: Unique identifier for the cutout, derived from its metadata."""
         return self._get_ID(self.meta)
-        
+
     @staticmethod
     def _get_ID(meta: Dict[str, Any]) -> str:
         if "ID" in meta:
@@ -223,6 +288,7 @@ class Band_Cutout_Base(Cutout_Base, ABC):
 
     @property
     def instr_name(self) -> str:
+        """`str`: Name of the instrument the cutout's band belongs to, derived from its metadata."""
         return self._get_instr_name(self.meta)
 
     @staticmethod
@@ -234,26 +300,31 @@ class Band_Cutout_Base(Cutout_Base, ABC):
 
     @property
     def meta(self) -> dict:
+        """`dict`: Metadata stored in the cutout's ``PRIMARY`` FITS header."""
         return dict(self.load("PRIMARY")[0])
 
     # sky_coord, survey, version may need to be stored in Cutout_Base
     @property
     def sky_coord(self) -> SkyCoord:
+        """`astropy.coordinates.SkyCoord`: Sky position the cutout is centred on."""
         return SkyCoord(
             ra=self.meta["RA"] * u.deg,
             dec=self.meta["DEC"] * u.deg,
         )
-    
+
     @property
     def survey(self) -> str:
+        """`str`: Survey the cutout's band data belongs to."""
         return self.band_data.survey
-    
+
     @property
     def version(self) -> str:
+        """`str`: Data reduction version of the cutout's band data."""
         return self.band_data.version
-    
+
     @property
     def filt_name(self) -> Filter:
+        """`str`: Name of the filter the cutout was made in, taken from `band_data`."""
         return self.band_data.filt_name
 
     @staticmethod
@@ -301,6 +372,23 @@ class Band_Cutout_Base(Cutout_Base, ABC):
         self: Self, 
         hdu_name: str = "SCI",
     ) -> Union[Dict[str, Tuple[Dict[str, Any], np.ndarray]], Tuple[Dict[str, Any], np.ndarray]]:
+        """Load cutout data (and header) from `cutout_path`.
+
+        Parameters
+        ----------
+        hdu_name : `str`, optional
+            Name of the FITS extension to load (e.g. ``"SCI"``,
+            ``"RMS_ERR"``, ``"WHT"``, ``"SEG"``, ``"PRIMARY"``). If `None`,
+            all extensions in the file are loaded. Default is ``"SCI"``.
+
+        Returns
+        -------
+        `dict` or `tuple`
+            If `hdu_name` is `None`, a dictionary mapping extension name to
+            ``(header, data)`` tuples for every extension in the cutout
+            file. Otherwise, the ``(header, data)`` tuple for the requested
+            extension.
+        """
         if hdu_name is None:
             hdul = fits.open(self.cutout_path, ignore_missing_simple = True)
             return {hdu.name: (dict(hdu.header), hdu.data) for hdu in hdul}
@@ -313,6 +401,20 @@ class Band_Cutout_Base(Cutout_Base, ABC):
         morph_results: Union[Morphology_Result, List[Morphology_Result]],
         overwrite: bool = False,
     ) -> NoReturn:
+        """Store one or more morphology fitting results on this cutout.
+
+        Results are stored in the `morph_fits` dictionary, keyed by the
+        fitter's name.
+
+        Parameters
+        ----------
+        morph_results : `Morphology_Result` or `list` of `Morphology_Result`
+            Morphology fit result(s) to add.
+        overwrite : `bool`, optional
+            If `True` (or if `morph_fits` does not yet exist), any existing
+            `morph_fits` dictionary is reset before adding the new results.
+            Default is `False`.
+        """
         from . import Morphology_Result
         if overwrite or not hasattr(self, "morph_fits"):
             self.morph_fits = {}
@@ -334,6 +436,52 @@ class Band_Cutout_Base(Cutout_Base, ABC):
         *args,
         **kwargs,
     ) -> NoReturn:
+        """Plot the cutout image on a matplotlib axis.
+
+        Loads the requested extension and displays it with `Axes.imshow`.
+        Segmentation maps (``plot_type="SEG"``) are remapped so that unique
+        segment IDs are evenly spread over ``[0, 1]`` to improve contrast.
+        Supports an ``"EPOCHS"`` normalisation preset (via
+        `_EPOCHS_cutout_scaling`), a text label, plotted regions (via
+        `_plot_regions`), and angular/physical scalebars, and can save the
+        resulting figure as an SVG.
+
+        Parameters
+        ----------
+        ax : `matplotlib.axes.Axes`, optional
+            Axis to plot on. If `None`, a new figure and axis are created.
+            Default is `None`.
+        plot_type : `str`, optional
+            Name of the FITS extension to plot (e.g. ``"SCI"``, ``"SEG"``).
+            Default is ``"SCI"``.
+        imshow_kwargs : `dict`, optional
+            Keyword arguments passed to `Axes.imshow`. If ``"norm"`` is the
+            string ``"EPOCHS"``, `_EPOCHS_cutout_scaling` is used to rescale
+            the cutout data and compute the normalisation instead. Default
+            is ``{}``.
+        norm_kwargs : `dict`, optional
+            Keyword arguments passed to `_EPOCHS_cutout_scaling` when the
+            ``"EPOCHS"`` normalisation is requested. Default is ``{}``.
+        label_kwargs : `dict`, optional
+            Keyword arguments controlling an optional text label (e.g.
+            ``"label"``, ``"xpos"``, ``"ypos"``, ``"c"``, ``"fontsize"``)
+            drawn in axis-fraction coordinates. Default is ``{}``.
+        plot_regions : `list` of `dict`, optional
+            Regions to overlay on the cutout, passed to `_plot_regions`.
+            Default is ``[]``.
+        scalebars : `dict`, optional
+            Mapping of scalebar type (``"angular"`` or ``"physical"``) to
+            keyword arguments for that scalebar (e.g. ``"as_length"``,
+            ``"z"``, ``"pix_length"``, ``"loc"``). Default is ``[]``.
+        show : `bool`, optional
+            Whether to call `matplotlib.pyplot.show` after plotting.
+            Default is `False`.
+        save : `bool`, optional
+            Whether to save the figure as an SVG to the standard cutout
+            path. Default is `True`.
+        *args, **kwargs
+            Additional positional/keyword arguments (currently unused).
+        """
         #        high_dyn_range: bool = False,
         #        SNR: Optional[float] = None,
         if ax is None:
@@ -503,6 +651,12 @@ class Band_Cutout_Base(Cutout_Base, ABC):
 
 
 class Band_Cutout(Band_Cutout_Base):
+    """A single-band image cutout for one galaxy/position and filter.
+
+    Instances are constructed by making (or loading a previously made)
+    cutout ``.fits`` file for a `Band_Data` object at a given sky position,
+    via the `from_gal_band_data` or `from_data_skycoord` class methods.
+    """
 
     @classmethod
     def from_gal_band_data(
@@ -512,6 +666,30 @@ class Band_Cutout(Band_Cutout_Base):
         cutout_size: u.Quantity,
         overwrite: bool = False,
     ) -> Self:
+        """Construct a `Band_Cutout` centred on a `Galaxy`'s sky position.
+
+        Builds cutout metadata from available SExtractor-derived galaxy
+        properties (e.g. size, magnitude, flux, Kron radius, image shape
+        parameters) in addition to the galaxy's ID and instrument name, then
+        delegates cutout creation to `from_data_skycoord`.
+
+        Parameters
+        ----------
+        gal : `Galaxy`
+            Galaxy to centre the cutout on.
+        band_data : `Band_Data`
+            Band data to extract the cutout from.
+        cutout_size : `astropy.units.Quantity`
+            Angular size of the cutout.
+        overwrite : `bool`, optional
+            Whether to overwrite an existing cutout file. Default is
+            `False`.
+
+        Returns
+        -------
+        `Band_Cutout`
+            The constructed (or loaded) cutout.
+        """
         # TODO: ensure in some way that the galaxy arises from the data
         # extract the position of the galaxy
         sky_coord = gal.sky_coord
@@ -551,6 +729,33 @@ class Band_Cutout(Band_Cutout_Base):
         overwrite: bool = False,
         **meta: Any,
     ) -> Self:
+        """Construct a `Band_Cutout` at a given sky position.
+
+        Assembles cutout metadata (survey, version, position, size), makes
+        (or reuses) the cutout ``.fits`` file via `_make_cutout`, updates
+        the associated `Band_Data` object to point at the cutout, and
+        returns the resulting `Band_Cutout` instance.
+
+        Parameters
+        ----------
+        band_data : `Band_Data`
+            Band data to extract the cutout from.
+        sky_coord : `astropy.coordinates.SkyCoord`
+            Sky position to centre the cutout on.
+        cutout_size : `astropy.units.Quantity`
+            Angular size of the cutout.
+        overwrite : `bool`, optional
+            Whether to overwrite an existing cutout file. Default is
+            `False`.
+        **meta : `Any`
+            Additional metadata to store in the cutout's ``PRIMARY`` FITS
+            header.
+
+        Returns
+        -------
+        `Band_Cutout`
+            The constructed (or loaded) cutout.
+        """
         # make cutout from data at the sky co-ordinate and save
         meta = {
             **meta,
@@ -715,6 +920,30 @@ class Band_Cutout(Band_Cutout_Base):
 
 
 class Stacked_Band_Cutout(Band_Cutout_Base):
+    """An inverse-variance-weighted stack of single-band cutouts.
+
+    Represents a cutout formed by stacking multiple `Band_Cutout` images
+    (for the same filter, sky position and cutout size) into a single
+    ``SCI``/``RMS_ERR``/``WHT`` cutout. Instances are typically constructed
+    via `from_cat`, `from_data_skycoords` or `from_cutouts`.
+
+    Parameters
+    ----------
+    cutout_path : `str`
+        Path to the saved stacked cutout ``.fits`` file.
+    band_data : `Band_Data`
+        Band data object representing the stacked cutout.
+    cutout_size : `astropy.units.Quantity`
+        Angular size of the cutout.
+    origin_paths : `list` of `str`
+        Paths to the individual cutout files that were stacked.
+
+    Attributes
+    ----------
+    origin_paths : `list` of `str`
+        Paths to the individual cutout files that were stacked.
+    """
+
     def __init__(
         self,
         cutout_path: str,
@@ -733,7 +962,29 @@ class Stacked_Band_Cutout(Band_Cutout_Base):
         cutout_size: u.Quantity,
         overwrite: bool = False
     ) -> Self:
-        
+        """Construct a stacked cutout for one filter from all galaxies in a `Catalogue`.
+
+        Loads SExtractor-derived metadata onto the catalogue, makes an
+        individual `Band_Cutout` for every galaxy in `cat` in the given
+        filter, and stacks them via `from_cutouts`.
+
+        Parameters
+        ----------
+        cat : `Catalogue`
+            Catalogue whose galaxies are stacked.
+        filt : `str` or `Filter`
+            Filter (or filter name) to make the stacked cutout for.
+        cutout_size : `astropy.units.Quantity`
+            Angular size of the cutout.
+        overwrite : `bool`, optional
+            Whether to overwrite existing individual/stacked cutout files.
+            Default is `False`.
+
+        Returns
+        -------
+        `Stacked_Band_Cutout`
+            The stacked cutout.
+        """
         # load sextractor parameters for metadata inclusion
         cat.load_sextractor_auto_mags()
         cat.load_sextractor_auto_fluxes()
@@ -760,6 +1011,32 @@ class Stacked_Band_Cutout(Band_Cutout_Base):
         save_path: str = None,
         overwrite: bool = False
     ) -> Self:
+        """Construct a stacked cutout for one filter at a set of sky positions.
+
+        Makes an individual `Band_Cutout` for every sky position in
+        `sky_coords` and stacks them via `from_cutouts`.
+
+        Parameters
+        ----------
+        data : `Data`
+            Data object to extract the cutouts from.
+        filt : `str` or `Filter`
+            Filter (or filter name) to make the stacked cutout for.
+        sky_coords : `astropy.coordinates.SkyCoord` or `list` of `SkyCoord`
+            Sky position(s) to make and stack cutouts at.
+        cutout_size : `astropy.units.Quantity`
+            Angular size of the cutout.
+        save_path : `str`, optional
+            Path to save the stacked cutout to. Default is `None`.
+        overwrite : `bool`, optional
+            Whether to overwrite existing individual/stacked cutout files.
+            Default is `False`.
+
+        Returns
+        -------
+        `Stacked_Band_Cutout`
+            The stacked cutout.
+        """
         # make every individual cutout from the data at the given SkyCoord
         cutouts = [
             Band_Cutout.from_data_skycoord(data, filt, sky_coord, cutout_size, overwrite = overwrite)
@@ -774,6 +1051,24 @@ class Stacked_Band_Cutout(Band_Cutout_Base):
         save_path: str,
         overwrite: bool = False
     ) -> Self:
+        """Construct a `Stacked_Band_Cutout` by stacking a list of `Band_Cutout` objects.
+
+        Parameters
+        ----------
+        cutouts : `list` of `Band_Cutout`
+            Cutouts to stack. Must all share the same filter and cutout
+            size.
+        save_path : `str`
+            Path to save the stacked cutout ``.fits`` file to.
+        overwrite : `bool`, optional
+            Whether to overwrite an existing stacked cutout file. Default
+            is `False`.
+
+        Returns
+        -------
+        `Stacked_Band_Cutout`
+            The stacked cutout.
+        """
         # ensure all cutouts are from the same filter
         assert all([cutout.filt_name == cutouts[0].filt_name for cutout in cutouts])
         assert all([cutout.cutout_size == cutouts[0].cutout_size for cutout in cutouts])
@@ -883,12 +1178,35 @@ class Stacked_Band_Cutout(Band_Cutout_Base):
 
 
 class RGB_Base(Cutout_Base, ABC):
+    """Abstract base class for a three-colour (RGB) combination of band cutouts.
+
+    Combines cutouts from up to three colour channels (``"B"``, ``"G"``,
+    ``"R"``), each of which may itself contain multiple filters, and
+    provides shared RGB-image construction/plotting functionality. Concrete
+    subclasses (`RGB`, `Stacked_RGB`) implement construction from
+    individual or stacked band cutouts.
+
+    Parameters
+    ----------
+    cutouts : `dict` of `str` -> `list` of `Band_Cutout_Base`
+        Mapping of colour channel (``"B"``, ``"G"``, ``"R"``) to the list of
+        cutouts to combine into that channel. All cutouts across all
+        channels must be from different filters.
+
+    Attributes
+    ----------
+    cutouts : `dict` of `str` -> `list` of `Band_Cutout_Base`
+        Mapping of colour channel to the cutouts combined into it.
+    """
     def __init__(
         self: Type[Self], 
         cutouts: Dict[str, List[Type[Band_Cutout_Base]]],
     ) -> Self:
         # ensure cutouts have ['B', 'G', 'R'] keys
-        assert list(cutouts.keys()) == ["B", "G", "R"]
+        assert all(colour in list(cutouts.keys()) for colour in ["B", "G", "R"]), \
+            galfind_logger.critical(
+                f"['B', 'G', 'R'], not {list(cutouts.keys())=}"
+            )
         # ensure all cutouts are from different filters
         cutout_filt_names = [
             cutout.band_data.filt_name
@@ -943,30 +1261,38 @@ class RGB_Base(Cutout_Base, ABC):
 
     @property
     def ID(self) -> str:
+        """`str`: Unique identifier shared by all cutouts making up the RGB image."""
         ID_list = [cutout.ID for cutout in np.array([val for val in self.cutouts.values()]).flatten()]
         assert all([ID == ID_list[0] for ID in ID_list])
         return ID_list[0]
 
     @property
     def survey(self) -> str:
+        """`str`: Survey shared by all cutouts making up the RGB image."""
         survey_list = [cutout.survey for cutout in np.array([val for val in self.cutouts.values()]).flatten()]
         assert all([survey == survey_list[0] for survey in survey_list])
         return survey_list[0]
-    
+
     @property
     def version(self) -> str:
+        """`str`: Data reduction version shared by all cutouts making up the RGB image."""
         version_list = [cutout.version for cutout in np.array([val for val in self.cutouts.values()]).flatten()]
         assert all([version == version_list[0] for version in version_list])
         return version_list[0]
 
     @property
     def cutout_size(self) -> u.Quantity:
+        """`astropy.units.Quantity`: Angular cutout size shared by all cutouts making up the RGB image."""
         cutout_size_list = [cutout.cutout_size for cutout in np.array([val for val in self.cutouts.values()]).flatten()]
         assert all([cutout_size == cutout_size_list[0] for cutout_size in cutout_size_list])
         return cutout_size_list[0]
 
     @property
     def meta(self) -> dict:
+        """`dict`: Metadata of the first cutout making up the RGB image.
+
+        Consistency of metadata across cutouts is not currently enforced.
+        """
         meta_list = [cutout.meta for cutout in np.array([val for val in self.cutouts.values()]).flatten()]
         # TODO: ensure the same meta for all cutouts
         # try:
@@ -977,6 +1303,7 @@ class RGB_Base(Cutout_Base, ABC):
 
     @property
     def name(self):
+        """`str`: Human-readable description of the RGB colour-filter mapping (e.g. ``"B=F090W,G=F150W,R=F200W"``)."""
         return ",".join(
             f"{colour}={'+'.join(self.get_colour_filt_names(colour))}"
             for colour in ["B", "G", "R"]
@@ -984,6 +1311,7 @@ class RGB_Base(Cutout_Base, ABC):
 
     @property
     def filt_names(self) -> List[str]:
+        """`list` of `str`: Names of all filters making up the RGB image, across all colour channels."""
         return [
             cutout.band_data.filt_name
             for colour in ["B", "G", "R"]
@@ -992,18 +1320,32 @@ class RGB_Base(Cutout_Base, ABC):
 
     @property
     def filterset(self) -> Dict[Multiple_Filter]:
+        """`dict` of `str` -> `Multiple_Filter`: Filters making up each colour channel of the RGB image."""
         return {
             colour: Multiple_Filter(
                 [deepcopy(cutout.filt) for cutout in cutouts]
             )
             for colour, cutouts in self.items()
         }
-    
+
     @property
     def instr_name(self) -> Optional[str]:
+        """`str` or `None`: Name of the instrument for the RGB image's blue-channel cutouts."""
         return self.cutouts["B"][0].instr_name
 
     def get_colour_filt_names(self: Self, colour: str) -> List[str]:
+        """Get the filter names making up a given colour channel.
+
+        Parameters
+        ----------
+        colour : `str`
+            Colour channel to query, one of ``"B"``, ``"G"``, ``"R"``.
+
+        Returns
+        -------
+        `list` of `str`
+            Names of the filters combined into `colour`.
+        """
         assert colour in ["B", "G", "R"]
         return [cutout.band_data.filt.filt_name for cutout in self[colour]]
 

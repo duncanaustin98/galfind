@@ -18,6 +18,23 @@ from . import galfind_logger
 
 
 def run_in_dir(path):
+    """Decorator factory that runs the wrapped function inside a given directory.
+
+    Changes the current working directory to `path` (creating it first if
+    it does not already exist) before calling the wrapped function, and
+    restores the original working directory afterwards.
+
+    Parameters
+    ----------
+    path : `str`
+        Path to the directory to change into before calling the wrapped
+        function.
+
+    Returns
+    -------
+    `callable`
+        Decorator that wraps a function to be run inside `path`.
+    """
     def decorated(func):
         def wrapper(*args, **kwargs):
             cwd = os.getcwd()
@@ -33,6 +50,25 @@ def run_in_dir(path):
     return decorated
 
 def run_in_self_dir(get_dir):
+    """Decorator factory that runs a bound method inside a `self`-dependent directory.
+
+    Like `run_in_dir`, but for instance methods: the directory to run
+    inside is obtained by calling `get_dir(self)` at call time (rather than
+    being fixed at decoration time), created if it does not already exist,
+    and the original working directory is restored afterwards.
+
+    Parameters
+    ----------
+    get_dir : `callable`
+        Function taking the instance (`self`) and returning the `str`
+        directory path to run the wrapped method inside.
+
+    Returns
+    -------
+    `callable`
+        Decorator that wraps an instance method to be run inside the
+        directory returned by `get_dir(self)`.
+    """
     def decorator(func):
         def wrapper(self, *args, **kwargs):
             dir = get_dir(self)  # Access self attribute at call time
@@ -48,6 +84,26 @@ def run_in_self_dir(get_dir):
 
 
 def log_time(logging_level, out_unit: u.Quantity = u.hour):
+    """Decorator factory that logs the execution time of the wrapped function.
+
+    Logs an INFO-level message before the wrapped function is called, and
+    a message at `logging_level` reporting the elapsed execution time
+    (converted to `out_unit`) once it returns.
+
+    Parameters
+    ----------
+    logging_level : `int`
+        Logging level (e.g. `logging.INFO`) to log the elapsed execution
+        time at.
+    out_unit : `astropy.units.Quantity`, optional
+        Unit to convert the measured execution time into before logging.
+        Default is `astropy.units.hour`.
+
+    Returns
+    -------
+    `callable`
+        Decorator that wraps a function to log its execution time.
+    """
     def decorated(func):
         def wrapper(*args, **kwargs):
             galfind_logger.info(
@@ -69,6 +125,19 @@ def log_time(logging_level, out_unit: u.Quantity = u.hour):
 
 
 def hour_timer(func):
+    """Decorator that prints the execution time of the wrapped function, in hours.
+
+    Parameters
+    ----------
+    func : `callable`
+        Function to time.
+
+    Returns
+    -------
+    `callable`
+        Wrapped version of `func` that prints its execution time (converted
+        to hours) to stdout after it returns.
+    """
     def wrapper(*args, **kwargs):
         t1 = time.time()
         return_value = func(*args, **kwargs)
@@ -82,6 +151,19 @@ def hour_timer(func):
 
 
 def ignore_warnings(func):
+    """Decorator that suppresses all warnings raised while the wrapped function runs.
+
+    Parameters
+    ----------
+    func : `callable`
+        Function to run with warnings suppressed.
+
+    Returns
+    -------
+    `callable`
+        Wrapped version of `func` that runs inside a
+        `warnings.catch_warnings()` context with all warnings ignored.
+    """
     def wrapper(*args, **kwargs):
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
@@ -96,6 +178,32 @@ def email_update(
     send_start=False,
     send_end=True,
 ):
+    """Decorator factory that emails status updates about the wrapped function.
+
+    Uses `yagmail` (with a hardcoded OAuth2 credential file) to send an
+    email when the wrapped function starts, an email when it ends
+    successfully, and a termination email (before re-raising) if it raises
+    an exception.
+
+    Parameters
+    ----------
+    to : `str`, optional
+        Email address to send the update(s) to. Default is
+        `"duncan.austin@postgrad.manchester.ac.uk"`.
+    send_start : `bool`, optional
+        Intended to control whether a start email is sent; not currently
+        read by the wrapped function, which always sends the start email.
+        Default is `False`.
+    send_end : `bool`, optional
+        Intended to control whether an end email is sent; not currently
+        read by the wrapped function, which always sends the end email on
+        success. Default is `True`.
+
+    Returns
+    -------
+    `callable`
+        Decorator that wraps a function to send email status updates.
+    """
     def decorated(func):
         def wrapper(*args, **kwargs):
             # setup gmail
@@ -134,6 +242,21 @@ def email_update(
 
 # Parallelization decorators
 def n_cores(n):
+    """Placeholder decorator factory intended to run the wrapped function using `n` cores.
+
+    As currently implemented, the core/thread allocation logic is not yet
+    filled in, so the wrapped function is simply called unchanged.
+
+    Parameters
+    ----------
+    n : `int`
+        Intended number of cores to run the wrapped function with.
+
+    Returns
+    -------
+    `callable`
+        Decorator that wraps a function, currently calling it unmodified.
+    """
     def decorated(func):
         def wrapper(*args, **kwargs):
             # setup how many cores to use here with argument 'n'

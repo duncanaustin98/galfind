@@ -31,6 +31,41 @@ from .Catalogue import open_galfind_cat
 
 
 class Combined_Catalogue_Creator:
+    """Lightweight cat-creator counterpart used by `Combined_Catalogue`.
+
+    Stores the metadata (survey, version, filterset, aperture diameters,
+    catalogue path and crops) needed to open/write the FITS catalogue
+    underlying a `Combined_Catalogue`, mirroring the interface of
+    `Catalogue_Creator` for a catalogue formed from multiple surveys.
+
+    Parameters
+    ----------
+    survey : `str`
+        Name of the (combined) survey, typically formed by joining the
+        names of the individual surveys that make up the combination.
+    version : `str`
+        Pipeline version string of the combined catalogue.
+    filterset : `Multiple_Filter`
+        Filterset comprising the union of bands from all input catalogues.
+    aper_diams : `list` of `astropy.units.Quantity`
+        Aperture diameters shared by all input catalogues.
+    cat_path : `str`, optional
+        Path to the combined catalogue FITS file. Default is `None`.
+    crops : `list` of `str`, optional
+        Names of crops/selections applied to the input catalogues, shared
+        across all of them. Default is `None`, stored internally as an
+        empty list.
+    open_cat : `Callable`, optional
+        Function used to open the catalogue file, taking a path and HDU
+        name and returning an `astropy.table.Table` (or `None`). Default
+        is `open_galfind_cat`.
+
+    Attributes
+    ----------
+    crop_name : `list` of `str`
+        Human-readable name(s) describing the crops applied, derived from
+        `crops`.
+    """
     # TODO: Should inherit from 'Catalogue_Creator' parent
 
     def __init__(
@@ -56,11 +91,36 @@ class Combined_Catalogue_Creator:
     # Copied and pasted from Catalogue_Creator
     @property
     def crop_name(self) -> List[str]:
+        """`list` of `str`: Name(s) describing the crops applied to the catalogue."""
         return funcs.get_crop_name(self.crops)
 
 
 class Combined_Catalogue(Catalogue_Base):
-    
+    """A catalogue formed by combining multiple `Catalogue` objects.
+
+    Concatenates the galaxies and underlying FITS tables of several
+    per-field `Catalogue` instances (e.g. from different surveys) into a
+    single object that behaves like a `Catalogue_Base`, while retaining
+    the original catalogues in `cat_arr` so per-field operations (e.g.
+    Vmax calculation, depth plotting) can still be dispatched to them.
+
+    Parameters
+    ----------
+    gals : `list` of `Galaxy`
+        Galaxies making up the combined catalogue, typically the
+        concatenation of the galaxy lists of the input catalogues.
+    cat_creator : `Combined_Catalogue_Creator`
+        Creator object describing the combined catalogue's metadata.
+    **kwargs
+        Additional keyword arguments (currently unused).
+
+    Attributes
+    ----------
+    cat_arr : `list` of `Catalogue`
+        The original per-field catalogues that were combined, set when
+        constructed via `from_cats`.
+    """
+
     def __init__(
         self: Self,
         gals: List[Galaxy],
@@ -84,6 +144,54 @@ class Combined_Catalogue(Catalogue_Base):
         overwrite: bool = False,
         crop_fits: bool = False,
     ):
+        """Build a `Combined_Catalogue` from a list of `Catalogue` objects.
+
+        Combines the FITS tables of all input catalogues (writing a new
+        combined FITS file if one does not already exist at `cat_path`,
+        or if `overwrite` is `True`), assigning each row a `UNIQUE_ID`
+        across the combined catalogue, and constructs the corresponding
+        `Combined_Catalogue_Creator` and galaxy list.
+
+        Parameters
+        ----------
+        cat_arr : `list` of `Catalogue`
+            Catalogues to combine. Must share the same aperture diameters
+            and (if `cat_path` is not given) the same forced photometry
+            band and crops.
+        cat_path : `str`, optional
+            Path to write/read the combined catalogue FITS file. If
+            `None`, a path is constructed from `survey`, `version`, the
+            combined filterset and the forced photometry band. Default is
+            `None`.
+        survey : `str`, optional
+            Name of the combined survey. If `None`, formed by joining the
+            sorted unique survey names of `cat_arr`. Default is `None`.
+        version : `str`, optional
+            Version string of the combined catalogue. If `None`, formed
+            by joining the sorted unique version strings of `cat_arr`.
+            Default is `None`.
+        overwrite : `bool`, optional
+            Whether to overwrite an existing combined catalogue FITS file
+            at `cat_path`. Default is `False`.
+        crop_fits : `bool`, optional
+            Whether to open each input catalogue's HDUs already cropped
+            when building the combined table. Default is `False`.
+
+        Returns
+        -------
+        `Combined_Catalogue`
+            The combined catalogue, with `cat_arr` set to `cat_arr`.
+
+        Raises
+        ------
+        AssertionError
+            If the input catalogues have different aperture diameters,
+            if `survey`/`version` cannot be resolved to strings, if the
+            catalogues lack a shared forced photometry band (when
+            `cat_path` is `None`), if any catalogue is missing an
+            'OBJECTS' HDU, if an ID column cannot be resolved for an HDU,
+            or if the input catalogues have different crops applied.
+        """
         # ensure all catalogues have the same aperture diameters
         assert all(cat.aper_diams == cat_arr[0].aper_diams for cat in cat_arr), \
             galfind_logger.critical(
@@ -267,6 +375,23 @@ class Combined_Catalogue(Catalogue_Base):
         self: Self,
         selector: Type[Selector]
     ) -> Self:
+        """Apply a selection criterion to this catalogue and its constituent catalogues.
+
+        Crops each catalogue in `cat_arr` that has not already had
+        `selector` applied, refreshes `gals` from the (now cropped)
+        constituent catalogues, and then applies the crop to `self` via
+        the parent class.
+
+        Parameters
+        ----------
+        selector : `Type` [`Selector`]
+            Selection criterion to apply.
+
+        Returns
+        -------
+        `Self`
+            This catalogue, cropped in place and returned for chaining.
+        """
         [cat.crop(selector) for cat in self.cat_arr if selector not in cat.crops]
         self.gals = list(chain.from_iterable([cat.gals for cat in self.cat_arr]))
         return super().crop(selector)
@@ -277,6 +402,17 @@ class Combined_Catalogue(Catalogue_Base):
             (tab["SURVEY"] == gal.survey))]["UNIQUE_ID"]) for gal in self]
 
     def load_sextractor_ext_src_corrs(self):
+        """Load SExtractor extended source corrections for every constituent catalogue.
+
+        Delegates to `load_sextractor_ext_src_corrs` on each catalogue in
+        `cat_arr`.
+
+        Raises
+        ------
+        ValueError
+            If `ext_src_corrs` were not loaded into the `aper_phot`
+            objects of the first galaxy for every aperture diameter.
+        """
         for cat in self.cat_arr:
             cat.load_sextractor_ext_src_corrs()
         # TODO: Check that all galaxies have loaded ext_src_corrs
@@ -294,6 +430,42 @@ class Combined_Catalogue(Catalogue_Base):
         Vmax_method: str = "uniform_depth",
         n_jobs: int = 1,
     ) -> None:
+        """Calculate and combine maximum observable volumes (Vmax) across constituent catalogues.
+
+        Computes Vmax for each galaxy's selection in every constituent
+        field/region via `_calc_Vmax` on each catalogue in `cat_arr`,
+        sums the per-field volumes for each galaxy (treating invalid
+        entries as zero), and saves/loads the combined result to/from an
+        ecsv file at `get_Vmax_ecsv_path`.
+
+        Parameters
+        ----------
+        z_bin : `list` of `float`
+            Redshift bin edges over which Vmax is computed.
+        aper_diam : `astropy.units.Quantity`
+            Aperture diameter for which Vmax is calculated.
+        SED_fit_code : `SED_code`
+            SED fitting code whose results/selection define the sample.
+        z_step : `float`, optional
+            Redshift step size used in the Vmax integration. Default is
+            `0.01`.
+        unmasked_area : `str` or `astropy.units.Quantity`, optional
+            Unmasked survey area to use, or `"selection"` to use the area
+            appropriate to the applied selection. Default is
+            `"selection"`.
+        Vmax_method : `str`, optional
+            Method used to compute Vmax (e.g. `"uniform_depth"`). Default
+            is `"uniform_depth"`.
+        n_jobs : `int`, optional
+            Number of parallel jobs to use for the calculation. Default
+            is `1`.
+
+        Returns
+        -------
+        `None`
+            Loads the combined `Vmax_total` values onto the galaxies in
+            place.
+        """
         # # calculate Vmax for galaxy selection in their origin field
         # [
         #     cat.calc_Vmax(
@@ -364,6 +536,20 @@ class Combined_Catalogue(Catalogue_Base):
 
     
     def plot_phot_diagnostics(self, *args, **kwargs):
+        """Plot photometric diagnostics for every constituent catalogue.
+
+        Delegates to `plot_phot_diagnostics` on each catalogue in
+        `cat_arr`, forwarding all arguments.
+
+        Parameters
+        ----------
+        *args
+            Positional arguments forwarded to each catalogue's
+            `plot_phot_diagnostics`.
+        **kwargs
+            Keyword arguments forwarded to each catalogue's
+            `plot_phot_diagnostics`.
+        """
         for cat in self.cat_arr:
             cat.plot_phot_diagnostics(*args, **kwargs)
     
@@ -380,6 +566,32 @@ class Combined_Catalogue(Catalogue_Base):
         aper_diam=0.32 * u.arcsec,
         cmap="viridis",
     ):
+        """Plot the combined area-depth relation across constituent catalogues.
+
+        Gathers the per-band area-depth arrays from every catalogue in
+        `cat_arr` (via `Data.plot_area_depth`), combines the areas and
+        depth distributions band-by-band, and plots the cumulative
+        area-depth curve for each band on a single figure.
+
+        Parameters
+        ----------
+        save_path : `str`
+            Path to save the figure to, used only if `save` is `True`.
+        save : `bool`, optional
+            Whether to save the figure to `save_path`. Default is
+            `False`.
+        show : `bool`, optional
+            Whether to display the figure. Default is `False`.
+        mode : `str`, optional
+            Depth-estimation mode forwarded to `Data.plot_area_depth`.
+            Default is `"n_nearest"`.
+        aper_diam : `astropy.units.Quantity`, optional
+            Aperture diameter for which depths are computed. Default is
+            `0.32 * u.arcsec`.
+        cmap : `str`, optional
+            Name of the matplotlib colormap used to colour each band.
+            Default is `"viridis"`.
+        """
         all_array = []
         max_area = 0
         for cat in self.cat_arr:

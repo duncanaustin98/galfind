@@ -41,6 +41,34 @@ def open_PSF_model(
     PSF_loc=config["DEFAULT"]["PSF_DIR"],
     PSF_name=["PSF_", "cen_G5V_fov299px_ISIM41"],
 ):
+    """Load a PSF model FITS image and its pixel scale.
+
+    Parameters
+    ----------
+    band : `str`
+        Band name, used to construct the PSF filename (lowercase ``"f"``
+        is converted to uppercase ``"F"``).
+    PSF_loc : `str`, optional
+        Directory containing the PSF FITS file. Default is
+        ``config["DEFAULT"]["PSF_DIR"]``.
+    PSF_name : `str`, optional
+        Name of the PSF FITS file (without the ``.fits`` extension),
+        appended to `PSF_loc`. Default is
+        ``["PSF_", "cen_G5V_fov299px_ISIM41"]``.
+
+    Returns
+    -------
+    `tuple`
+        ``(PSFdata, pixel_scale)``: the PSF image data (byte-swapped to
+        native order for use with SExtractor/`sep`) and the pixel scale
+        (`astropy.units.Quantity` in arcsec) read from the ``PIXELSCL``
+        FITS header keyword.
+
+    Raises
+    ------
+    Exception
+        If the FITS header does not contain a ``PIXELSCL`` keyword.
+    """
     # load PSF .fits image
     band = band.replace("f", "F")
     PSF_path = PSF_loc + "/" + PSF_name
@@ -76,6 +104,53 @@ def calc_aper_corr(
     print_output=True,
     tot_aper_size=None,
 ):
+    """Compute the aperture correction for a PSF model at a given aperture diameter.
+
+    Measures the flux within a circular aperture of diameter `aper_diam`
+    centred at ``(x_cen, y_cen)``, divides it by the flux within a larger
+    circular aperture of diameter `tot_aper_size` (assumed to approximate
+    the total flux), and converts the resulting flux fraction into a
+    magnitude-space aperture correction.
+
+    Parameters
+    ----------
+    PSFdata : `NDArray`
+        2D PSF model image data (in pixels).
+    x_cen : `float`
+        x pixel coordinate of the PSF centre.
+    y_cen : `float`
+        y pixel coordinate of the PSF centre.
+    band : `str`
+        Band name, used for plot labelling only.
+    aper_diam : `float`
+        Aperture diameter, in pixels.
+    extract_code : `str`, optional
+        Which photometry code to use to measure the aperture flux, either
+        ``"sep"`` or ``"photutils"``. Default is ``"sep"``.
+    plot_PSF : `bool`, optional
+        Whether to plot the PSF image with the aperture and total-flux
+        aperture overlaid. Default is `True`.
+    PSF_loc : `str`, optional
+        Unused directly here; present for interface compatibility.
+        Default is ``config["DEFAULT"]["PSF_DIR"]``.
+    PSF_name : `str`, optional
+        Unused directly here; present for interface compatibility.
+        Default is ``["PSF_", "cen_G5V_fov299px_ISIM41"]``.
+    print_output : `bool`, optional
+        Whether to print the computed flux percentage and aperture
+        correction. Default is `True`.
+    tot_aper_size : `float`, optional
+        Diameter, in pixels, of the aperture used to approximate the total
+        PSF flux. Default is `None`.
+
+    Returns
+    -------
+    `tuple`
+        ``(flux_pc, aper_corr, x_cen, y_cen)``: the fraction of total flux
+        contained within `aper_diam`, the corresponding aperture
+        correction in magnitudes (``-2.5 * log10(flux_pc)``), and the
+        (unmodified) input centre coordinates.
+    """
     # calculate flux in the aperture
     if extract_code == "sep":
         flux_aper, fluxerr_aper, flag_aper = sep.sum_circle(

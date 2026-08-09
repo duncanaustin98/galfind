@@ -32,6 +32,34 @@ from . import useful_funcs_austind as funcs
 
 
 class Catalogue_Base:
+    """Base class for galaxy catalogue containers.
+
+    Wraps a list of `Galaxy` objects together with a `Catalogue_Creator`
+    used to read/write the underlying FITS catalogue, providing
+    catalogue-level operations such as cropping, cross-matching,
+    concatenation, plotting and FITS I/O. Subclassed by e.g. `Catalogue`
+    and `Spectral_Catalogue`. Attributes not defined directly on the
+    instance (e.g. ``survey``, ``version``, ``filterset``, ``cat_path``)
+    are looked up on `cat_creator`, or computed per-galaxy from the
+    `Galaxy` objects in `gals`, via `__getattr__`.
+
+    Parameters
+    ----------
+    gals : `list` of `Galaxy`
+        Galaxies making up this catalogue.
+    cat_creator : `Catalogue_Creator`
+        Object responsible for reading/writing the underlying FITS
+        catalogue and tracking applied crops.
+
+    Attributes
+    ----------
+    gals : `list` of `Galaxy`
+        Galaxies making up this catalogue.
+    cat_creator : `Catalogue_Creator`
+        Object responsible for reading/writing the underlying FITS
+        catalogue and tracking applied crops.
+    """
+
     # later on, the gal_arr should be calculated from the Instrument and sex_cat path, with SED codes already given
     def __init__(
         self,
@@ -180,6 +208,23 @@ class Catalogue_Base:
         self: Self,
         selector: Type[Selector],
     ) -> Self:
+        """Crop this catalogue in place to galaxies satisfying a selector.
+
+        If `selector` has not already been applied (tracked via
+        `self.crops`), runs it on every galaxy (if not already run) and
+        keeps only those satisfying it, recording `selector` as an
+        applied crop on `self.cat_creator`.
+
+        Parameters
+        ----------
+        selector : `Selector`
+            Selection criterion to crop the catalogue with.
+
+        Returns
+        -------
+        `Self`
+            This catalogue, cropped in place.
+        """
         if not any(crops._selection_name == selector._selection_name for crops in self.crops):
             if len(self) == 0:
                 galfind_logger.warning(
@@ -525,6 +570,7 @@ class Catalogue_Base:
 
     @property
     def crop_name(self) -> List[str]:
+        """`list` of `str`: Names of the crops applied to this catalogue, delegated to `cat_creator.crop_name`."""
         return self.cat_creator.crop_name
 
     # # Need to save the cross-match distances
@@ -546,14 +592,17 @@ class Catalogue_Base:
 
     @property
     def cat_dir(self):
+        """`str`: Directory component of `self.cat_path`."""
         return funcs.split_dir_name(self.cat_path, "dir")
 
     @property
     def cat_name(self):
+        """`str`: File name component of `self.cat_path`."""
         return funcs.split_dir_name(self.cat_path, "name")
 
     @property
     def ra_range(self):
+        """`astropy.units.Quantity`: [min, max] right ascension of the galaxies in this catalogue, cached after first access."""
         try:
             return self._ra_range
         except:
@@ -562,14 +611,16 @@ class Catalogue_Base:
 
     @property
     def dec_range(self):
+        """`astropy.units.Quantity`: [min, max] declination of the galaxies in this catalogue, cached after first access."""
         try:
             return self._dec_range
         except:
             self._dec_range = [np.min(self.DEC.value), np.max(self.DEC.value)] * self.DEC.unit
             return self._dec_range
-        
+
     @property
     def select_colnames(self) -> List[str]:
+        """`list` of `str`: Column names of the boolean selection flags stored in the ``"SELECTION"`` HDU, or `[]` if that HDU does not exist."""
         tab = self.cat_creator._open_tab("SELECTION")
         if tab is None:
             return []
@@ -582,6 +633,31 @@ class Catalogue_Base:
         other: Type[Catalogue_Base],
         max_sep: u.Quantity,
     ) -> Dict[Galaxy, List[Tuple[float, Galaxy]]]:
+        """Cross-match the galaxies in this catalogue against another catalogue.
+
+        Finds all pairs of galaxies (one from this catalogue, one from
+        `other`) separated on sky by less than `max_sep`.
+
+        Parameters
+        ----------
+        other : `Catalogue_Base`
+            Catalogue to cross-match this catalogue's galaxies against.
+        max_sep : `astropy.units.Quantity`
+            Maximum on-sky separation for a pair of galaxies to be
+            considered a match.
+
+        Returns
+        -------
+        `dict`
+            Dictionary keyed by `Galaxy`, with values given by a list of
+            ``(separation, Galaxy)`` tuples for each matched galaxy
+            within `max_sep`.
+
+        Raises
+        ------
+        AssertionError
+            If `max_sep` is `None`.
+        """
         assert max_sep is not None, \
             galfind_logger.critical(
                 "No max_sep provided for cross-match!"
@@ -614,6 +690,17 @@ class Catalogue_Base:
 
     # TODO: should be __sub__ instead
     def remove_gal(self, index=None, id=None):
+        """Remove a galaxy from `self.gals` by index or ID.
+
+        Parameters
+        ----------
+        index : `int`, optional
+            Index of the galaxy to remove from `self.gals`. Default is
+            `None`.
+        id : `int`, optional
+            ID of the galaxy to remove from `self.gals`. Only used if
+            `index` is `None`. Default is `None`.
+        """
         if index is not None:
             self.gals = np.delete(self.gals, index)
         elif id is not None:
@@ -670,6 +757,31 @@ class Catalogue_Base:
         cropped: bool = False,
         hdu: Optional[str, Type[SED_code]] = None
     ) -> Optional[Table]:
+        """Read the FITS catalogue table for this catalogue.
+
+        Loads either the primary catalogue table or a named/`SED_code`
+        extension of `self.cat_path`, optionally cropping the resulting
+        table to only the galaxy IDs currently held in `self.gals` (or,
+        if this catalogue has no galaxies loaded, to the IDs satisfying
+        `self.crops` in the ``"SELECTION"`` HDU).
+
+        Parameters
+        ----------
+        cropped : `bool`, optional
+            Whether to crop the returned table to the galaxy IDs in this
+            catalogue (or, if empty, to the applied crops). Default is
+            `False`.
+        hdu : `str` or `SED_code`, optional
+            Name of the FITS extension to open, or an `SED_code` whose
+            `hdu_name` is used. If `None`, the primary catalogue table is
+            opened. Default is `None`.
+
+        Returns
+        -------
+        `astropy.table.Table` or `None`
+            The requested catalogue table, or `None` if the requested
+            `hdu` does not exist in `self.cat_path`.
+        """
         if hdu is None:
             fits_cat = Table.read(
                 self.cat_path,
@@ -772,10 +884,29 @@ class Catalogue_Base:
             return fits_cat
 
     def get_hdu_names(self):
+        """List the names of all non-primary FITS extensions.
+
+        Returns
+        -------
+        `list` of `str`
+            Names of every HDU in `self.cat_path` except ``"PRIMARY"``.
+        """
         hdul = fits.open(self.cat_path)
         return [hdu_.name for hdu_ in hdul if hdu_.name != "PRIMARY"]
 
     def check_hdu_exists(self: Self, hdu_name: str) -> bool:
+        """Check whether a named HDU extension exists in the FITS catalogue.
+
+        Parameters
+        ----------
+        hdu_name : `str`
+            Name of the FITS extension to check for.
+
+        Returns
+        -------
+        `bool`
+            `True` if `hdu_name` exists in `self.cat_path`, else `False`.
+        """
         # check whether the hdu extension exists
         hdul = fits.open(self.cat_path)
         return any(hdu_.name == hdu_name for hdu_ in hdul)
@@ -786,6 +917,18 @@ class Catalogue_Base:
         tab_names: List[str],
         cat_path: str,
     ) -> None:
+        """Write a set of tables to a multi-extension FITS catalogue.
+
+        Parameters
+        ----------
+        tab_arr : `list` of `astropy.table.Table`
+            Tables to write, one per FITS extension.
+        tab_names : `list` of `str`
+            Extension names corresponding to `tab_arr`.
+        cat_path : `str`
+            Path to write the FITS catalogue to. Overwrites any existing
+            file.
+        """
         self._write_cat(tab_arr, tab_names, cat_path)
         # TODO: check if self.cat_creator._tab_cache()
         # update is required here
@@ -823,6 +966,22 @@ class Catalogue_Base:
         cat_path: str,
         hdu_name: str,
     ) -> None:
+        """Update a single HDU of a FITS catalogue with new/updated columns.
+
+        Merges the columns of `new_tab` into the existing `hdu_name`
+        extension of `cat_path` (overwriting columns of the same name,
+        appending new ones, and updating table metadata), while
+        retaining all other extensions unchanged.
+
+        Parameters
+        ----------
+        new_tab : `astropy.table.Table`
+            Table containing the new/updated columns and metadata.
+        cat_path : `str`
+            Path to the FITS catalogue to update.
+        hdu_name : `str`
+            Name of the extension to update.
+        """
         # retain any pre-existing column and meta names
         orig_tab = Table.read(cat_path, hdu = hdu_name)
         # update original table with new master table columns
@@ -854,6 +1013,17 @@ class Catalogue_Base:
         )
     
     def write_hdu(self: Self, tab: Table, hdu: str) -> None:
+        """Write (or overwrite) a single HDU extension in the FITS catalogue.
+
+        Parameters
+        ----------
+        tab : `astropy.table.Table`
+            Table to write to the `hdu` extension.
+        hdu : `str`
+            Name of the extension to write `tab` to. If it already
+            exists it is overwritten in place; otherwise it is appended
+            as a new extension.
+        """
         # if hdu exists, overwrite it
         if self.check_hdu_exists(hdu):
             tab_arr = [
@@ -882,6 +1052,13 @@ class Catalogue_Base:
         self.write_cat(tab_arr, tab_names, self.cat_path)
 
     def del_hdu(self, hdu: str):
+        """Delete a named HDU extension from the FITS catalogue, if present.
+
+        Parameters
+        ----------
+        hdu : `str`
+            Name of the extension to delete.
+        """
         if self.check_hdu_exists(hdu.upper()):  # delete hdu if it exists
             tab_arr = [
                 self.open_cat(cropped=False, hdu=hdu_.name)
@@ -908,6 +1085,24 @@ class Catalogue_Base:
         hdr_names: List[str] = [],
         hdu: Optional[str] = None
     ) -> NoReturn:
+        """Delete columns and/or header keywords from a FITS extension.
+
+        Rewrites every extension of `self.cat_path`, removing the
+        `col_names` columns and `hdr_names` metadata keywords from the
+        `hdu` extension only; all other extensions are left unchanged.
+
+        Parameters
+        ----------
+        col_names : `list` of `str`, optional
+            Column names to remove from the `hdu` extension. Default is
+            ``[]``.
+        hdr_names : `list` of `str`, optional
+            Header/metadata keys to remove from the `hdu` extension.
+            Default is ``[]``.
+        hdu : `str`, optional
+            Name of the extension to remove `col_names`/`hdr_names` from.
+            Default is `None`.
+        """
         # open up all fits extensions
         tab_arr = []
         tab_names = []
@@ -943,6 +1138,47 @@ class Catalogue_Base:
         from_pdf: bool = True,
         **plot_kwargs: Dict[str, Any],
     ) -> NoReturn:
+        """Plot a histogram of a galaxy property across this catalogue.
+
+        Extracts values of `x_calculator` for every galaxy (either by
+        sampling from each galaxy's PDF or from single point estimates),
+        and plots a histogram of the resulting distribution. Skips
+        re-plotting if a plot already exists at the computed save path
+        and `overwrite` is `False`.
+
+        Parameters
+        ----------
+        x_calculator : `Property_Calculator_Base`
+            Property to histogram.
+        fig : `matplotlib.figure.Figure`, optional
+            Figure to plot on. Created along with `ax` if either is
+            `None`. Default is `None`.
+        ax : `matplotlib.axes.Axes`, optional
+            Axis to plot on. Created along with `fig` if either is
+            `None`. Default is `None`.
+        log : `bool`, optional
+            Whether to plot the base-10 logarithm of the extracted
+            values. Default is `False`.
+        save : `bool`, optional
+            Whether to save the resulting plot to disk. Default is
+            `True`.
+        show : `bool`, optional
+            Whether to call `plt.show()`. Default is `False`.
+        overwrite : `bool`, optional
+            Whether to remake and overwrite the plot if it already
+            exists at the computed save path. Default is `True`.
+        from_pdf : `bool`, optional
+            Whether to sample values from each galaxy's PDF (`True`) or
+            use single point estimates (`False`). Default is `True`.
+        **plot_kwargs : `dict`
+            Additional keyword arguments passed to `ax.hist`.
+
+        Raises
+        ------
+        NotImplementedError
+            If `x_calculator` is not a `Property_Calculator_Base`
+            subclass instance.
+        """
         save_path = f"{config['DEFAULT']['GALFIND_WORK']}/Plots/{self.version}/" + \
             f"{self.filterset.instrument_name}/{self.survey}/hist/" + \
             f"{self.crop_name}/{x_calculator.name}.png"
@@ -1024,6 +1260,127 @@ class Catalogue_Base:
         xlims: Optional[List[float]] = None,
         ylims: Optional[List[float]] = None,
     ) -> Optional[plt.Axes]:
+        """Scatter, contour, or stacked plot of one galaxy property against another.
+
+        Extracts `x_calculator` and `y_calculator` values (and
+        optionally `c_calculator` for colouring) for every galaxy in
+        this catalogue and plots them against each other, with three
+        possible plotting modes controlled by `plot_type`:
+
+        - ``"individual"``: scatter plot of per-galaxy point estimates,
+          optionally with error bars and/or colouring by `c_calculator`.
+        - ``"contour"``: contours of a 2D histogram built from samples
+          drawn from each galaxy's x/y PDFs.
+        - ``"stacked"``: a single point (with errors) from the sum of
+          every galaxy's x/y PDFs.
+
+        Parameters
+        ----------
+        x_calculator : `Property_Calculator_Base`
+            Property to plot on the x-axis.
+        y_calculator : `Property_Calculator_Base`
+            Property to plot on the y-axis.
+        c_calculator : `Property_Calculator_Base`, optional
+            Property to colour points by (only used for
+            ``plot_type="individual"``). Default is `None`.
+        incl_x_errs : `bool`, optional
+            Whether to include x errorbars. Default is `True`.
+        incl_y_errs : `bool`, optional
+            Whether to include y errorbars. Default is `True`.
+        log_x : `bool`, optional
+            Whether to plot log10(x). Also triggered automatically if
+            `x_calculator.full_name` is in `funcs.logged_properties`.
+            Default is `False`.
+        log_y : `bool`, optional
+            Whether to plot log10(y). Also triggered automatically if
+            `y_calculator.full_name` is in `funcs.logged_properties`.
+            Default is `False`.
+        log_c : `bool`, optional
+            Whether to colour by log10(c). Also triggered automatically
+            if `c_calculator.full_name` is in `funcs.logged_properties`.
+            Default is `False`.
+        mean_err : `bool`, optional
+            Whether to plot the mean error rather than per-point errors.
+            Currently unimplemented and has no effect. Default is
+            `False`.
+        annotate : `bool`, optional
+            Whether to set the axis title and labels. Default is `True`.
+        save : `bool`, optional
+            Whether to save the plot to disk. Default is `True`.
+        show : `bool`, optional
+            Whether to call `plt.show()`. Default is `False`.
+        legend_kwargs : `dict`, optional
+            Extra keyword arguments passed to `ax.legend`. Default is
+            ``{}``.
+        plot_legend : `bool`, optional
+            Whether to draw a legend. Default is `False`.
+        plot_kwargs : `dict`, optional
+            Extra keyword arguments passed to the scatter/errorbar
+            plotting calls. Default is ``{}``.
+        cmap : `str`, optional
+            Name of the colormap used for `c_calculator` colouring and
+            for the ``"contour"`` plot type. Default is ``"viridis"``.
+        save_path : `str`, optional
+            Path to save the plot to. If `None` and `save` is `True`, a
+            path is generated from the catalogue and property names.
+            Default is `None`.
+        fig : `matplotlib.figure.Figure`, optional
+            Figure to plot on. Created along with `ax` if either is
+            `None`. Default is `None`.
+        ax : `matplotlib.axes.Axes`, optional
+            Axis to plot on. Created along with `fig` if either is
+            `None`. Default is `None`.
+        plot_type : `str`, optional
+            One of ``"individual"``, ``"contour"`` or ``"stacked"``.
+            Default is ``"individual"``.
+        n_samples : `int`, optional
+            Number of samples drawn per galaxy PDF for
+            ``plot_type="contour"``. Default is `100_000`.
+        n_bins : `int`, optional
+            Number of bins per axis of the 2D histogram for
+            ``plot_type="contour"``. Default is `25`.
+        contour_levels : `list` of `float`, optional
+            Percentile levels of the 2D histogram to draw contours at.
+            Default is `[68., 95., 100.]`.
+        x_hist_ax : `matplotlib.axes.Axes`, optional
+            If given, an additional axis to plot a marginal histogram of
+            x values on. Default is `None`.
+        y_hist_ax : `matplotlib.axes.Axes`, optional
+            If given, an additional axis to plot a marginal histogram of
+            y values on. Default is `None`.
+        hist_kwargs : `dict`, optional
+            Extra keyword arguments passed to `x_hist_ax.hist`/
+            `y_hist_ax.hist`. Default is ``{}``.
+        plot_label : `str`, optional
+            Title to annotate the plot with. If ``"default"``, built
+            from the catalogue's version, instrument and survey names.
+            Default is ``"default"``.
+        plot_cbar : `bool`, optional
+            Whether to draw a colourbar when `c_calculator` is given.
+            Default is `True`.
+        inf_val : `float`, optional
+            Value substituted for infinities when converting y errors to
+            log space. Default is `1.0e6`.
+        xlims : `list` of `float`, optional
+            x-axis limits. Default is `None`.
+        ylims : `list` of `float`, optional
+            y-axis limits. Default is `None`.
+
+        Returns
+        -------
+        `matplotlib.axes.Axes` or `None`
+            The plotted scatter/errorbar artist for ``"individual"`` and
+            ``"stacked"`` plot types, or `None` for ``"contour"``.
+
+        Raises
+        ------
+        NotImplementedError
+            If `x_calculator`, `y_calculator` or `c_calculator` is not a
+            `Property_Calculator_Base` subclass instance.
+        Exception
+            If `plot_type` is not one of ``"individual"``, ``"contour"``
+            or ``"stacked"``.
+        """
         from . import Property_Calculator_Base
         x_name = x_calculator.full_name
         y_name = y_calculator.full_name
@@ -1304,6 +1661,23 @@ class Catalogue_Base:
         data: Data,
         Vmax_method: str = "uniform_depth",
     ) -> str:
+        """Construct the save path of this catalogue's Vmax .ecsv file.
+
+        Parameters
+        ----------
+        data : `Data`
+            Data object the Vmax values are computed with respect to.
+        Vmax_method : `str`, optional
+            Name of the Vmax calculation method. Default is
+            ``"uniform_depth"``.
+
+        Returns
+        -------
+        `str`
+            Path to the Vmax .ecsv file for this catalogue, `data` and
+            `Vmax_method`. The containing directory is created if it
+            does not already exist.
+        """
         full_data_name = funcs.get_full_survey_name(data.survey, data.version, data.filterset)
         save_path = f"{config['NumberDensityFunctions']['VMAX_DIR']}/" + \
             f"{self.version}/{self.filterset.instrument_name}/" + \

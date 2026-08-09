@@ -18,6 +18,49 @@ from . import useful_funcs_austind as funcs
 
 
 class PDF:
+    """Represents a 1D posterior probability distribution for a galaxy property.
+
+    Stores the property name, the grid of x values and corresponding
+    (normalised) probability density values, together with any
+    additional metadata. Provides utilities to reconstruct summary
+    statistics (median, percentiles, peaks), draw samples, combine
+    PDFs, save/load to disk, and plot the distribution.
+
+    Parameters
+    ----------
+    property_name : `str`
+        Name of the galaxy property this PDF represents (e.g. ``'z'``).
+    x : `astropy.units.Quantity`, `astropy.units.Magnitude`, or `astropy.units.Dex`
+        Grid of property values at which `p_x` is defined.
+    p_x : `numpy.ndarray`
+        Probability density evaluated at each point in `x`.
+    kwargs : `dict`, optional
+        Additional metadata to store with the PDF (e.g. saved to/loaded
+        from the ``.meta.npy`` file). Default is `{}`.
+    normed : `bool`, optional
+        Whether `p_x` is already normalised such that
+        ``numpy.trapz(p_x, x) == 1``. If `False`, `p_x` is normalised
+        in place upon construction. Default is `False`.
+
+    Attributes
+    ----------
+    property_name : `str`
+        Name of the galaxy property this PDF represents.
+    x : `astropy.units.Quantity`, `astropy.units.Magnitude`, or `astropy.units.Dex`
+        Grid of property values at which `p_x` is defined.
+    p_x : `numpy.ndarray`
+        Normalised probability density evaluated at each point in `x`.
+    kwargs : `dict`
+        Additional metadata stored with the PDF.
+    input_arr : `astropy.units.Quantity`, `astropy.units.Magnitude`, or `astropy.units.Dex`, optional
+        Underlying sample of values the PDF was constructed from, set
+        by `from_1D_arr`/`from_npy` if the PDF was built from a 1D
+        array rather than directly from ``x``/``p_x``.
+    save_path : `str`, optional
+        Path the PDF was last saved to or loaded from, set by `save`,
+        `add_save_path`, or `from_npy`.
+    """
+
     def __init__(
         self,
         property_name,
@@ -231,6 +274,21 @@ class PDF:
         
     @classmethod
     def from_npy(cls, path: str):
+        """Load a previously saved `PDF` from disk.
+
+        Parameters
+        ----------
+        path : `str`
+            Path to the ``.npy`` file containing the underlying sample
+            array, as previously written by `save`. The companion
+            metadata file is expected at the same path with ``.npy``
+            replaced by ``.meta.npy``.
+
+        Returns
+        -------
+        `PDF`
+            Reconstructed PDF, with `save_path` set to `path`.
+        """
         arr = np.load(path)
         meta = np.load(path.replace(".npy", ".meta.npy"), allow_pickle=True).item()
         property_name = meta["name"]
@@ -250,6 +308,43 @@ class PDF:
         normed: bool = False,
         ignore_nans: bool = True,
     ):
+        """Construct a `PDF` from a 1D array of sampled property values.
+
+        Bins `arr` into a histogram of `Nbins` bins to build the
+        `x`/`p_x` grid, and stores `arr` as `input_arr` on the
+        returned object.
+
+        Parameters
+        ----------
+        property_name : `str`
+            Name of the galaxy property the array represents.
+        arr : `astropy.units.Quantity`, `astropy.units.Magnitude`, or `astropy.units.Dex`
+            1D array of sampled values for the property.
+        kwargs : `dict`, optional
+            Additional metadata to store with the PDF. Default is `{}`.
+        Nbins : `int`, optional
+            Number of histogram bins used to construct the PDF.
+            Default is `50`.
+        normed : `bool`, optional
+            Passed through to the `PDF` constructor; whether the
+            resulting histogram density should be treated as already
+            normalised. Default is `False`.
+        ignore_nans : `bool`, optional
+            Whether to discard non-finite values from `arr` before
+            histogramming. Default is `True`.
+
+        Returns
+        -------
+        `PDF`
+            PDF constructed from the histogram of `arr`.
+
+        Raises
+        ------
+        AssertionError
+            If `arr` is not a `astropy.units.Quantity`,
+            `astropy.units.Magnitude`, or `astropy.units.Dex`, or if
+            no finite values remain after NaN-filtering.
+        """
         assert isinstance(arr, (u.Quantity, u.Magnitude, u.Dex)), \
             galfind_logger.critical(
                 f"{property_name=} 1D {arr=} with {type(arr)=}" + \
@@ -275,6 +370,12 @@ class PDF:
 
     @property
     def median(self):
+        """`astropy.units.Quantity`, `astropy.units.Magnitude`, or `astropy.units.Dex`: Median of the PDF.
+
+        Computed and cached from `input_arr` if available (via
+        `numpy.nanmedian`), otherwise derived from
+        `get_percentile(50.0)`.
+        """
         try:
             return self._median
         except AttributeError:
@@ -288,6 +389,11 @@ class PDF:
 
     @property
     def errs(self):
+        """`astropy.units.Quantity`, `astropy.units.Magnitude`, or `astropy.units.Dex`: Asymmetric 1-sigma errors on `median`, as ``[lower, upper]``.
+
+        Computed and cached from the 16th/84th percentiles of
+        `input_arr` if available, otherwise from `get_percentile`.
+        """
         try:
             return self._errs
         except AttributeError:
@@ -306,6 +412,19 @@ class PDF:
             return self._errs
 
     def draw_sample(self, size: int = 10_000):
+        """Draw a random sample of values from the PDF.
+
+        Parameters
+        ----------
+        size : `int`, optional
+            Number of samples to draw. Default is `10_000`.
+
+        Returns
+        -------
+        `astropy.units.Quantity`, `astropy.units.Magnitude`, or `astropy.units.Dex`
+            Random sample of `size` values drawn from `x`, weighted by
+            the (normalised) probability `p_x`.
+        """
         # draw a sample of specified size from the PDF
         return np.random.choice(self.x, size=size, p=self.p_x/np.sum(self.p_x)) * self.x.unit
 
@@ -314,6 +433,23 @@ class PDF:
         lower_x_lim: Union[int, float],
         upper_x_lim: Union[int, float],
     ):
+        """Integrate the PDF between two limits using the trapezium rule.
+
+        Parameters
+        ----------
+        lower_x_lim : `int` or `float`
+            Lower integration limit, compared directly against
+            `self.x` to find the nearest grid point.
+        upper_x_lim : `int` or `float`
+            Upper integration limit, compared directly against
+            `self.x` to find the nearest grid point.
+
+        Returns
+        -------
+        `float`
+            Integral of `p_x` over `x` between the grid points nearest
+            to `lower_x_lim` and `upper_x_lim`.
+        """
         # find index of closest values in self.x to lower_x_lim and upper_x_lim
         index_x_min = np.argmin(np.absolute(self.x - lower_x_lim))
         index_x_max = np.argmin(np.absolute(self.x - upper_x_lim))
@@ -328,6 +464,28 @@ class PDF:
         nth_peak: int,
         log: bool = False,
     ) -> float:
+        """Get the `nth_peak`-th peak of the PDF.
+
+        Not fully implemented: peaks are only populated externally
+        (e.g. via `SED_fit_PDF.load_peaks_from_best_fit`); if
+        `self.peaks` has not yet been set, this initialises it and, if
+        `nth_peak` is `0`, populates it with a placeholder peak whose
+        ``'value'`` and ``'chi_sq'`` are both `None`.
+
+        Parameters
+        ----------
+        nth_peak : `int`
+            Index of the peak to retrieve.
+        log : `bool`, optional
+            If `True`, return a copy of the peak with its ``'value'``
+            converted to ``log10`` (in dex). Default is `False`.
+
+        Returns
+        -------
+        `dict`
+            Dictionary with keys ``'value'`` and ``'chi_sq'`` for the
+            requested peak.
+        """
         # not properly implemented yet
         try:
             peaks = self.peaks[nth_peak]
@@ -352,6 +510,31 @@ class PDF:
         percentile: float,
         log: bool = False
     ) -> float:
+        """Get a given percentile of the PDF, with caching.
+
+        Computed and cached from `input_arr` via
+        `numpy.nanpercentile` if available, otherwise derived from the
+        cumulative distribution of `p_x` over `x`.
+
+        Parameters
+        ----------
+        percentile : `float`
+            Percentile to compute, in the range [0, 100].
+        log : `bool`, optional
+            If `True`, return ``log10`` of the percentile value
+            instead of the value itself. Default is `False`.
+
+        Returns
+        -------
+        `float` or `astropy.units.Quantity`
+            The requested percentile of the PDF, in the units of `x`
+            (or a dimensionless `float` if `log` is `True`).
+
+        Raises
+        ------
+        AssertionError
+            If `percentile` is not a `float`.
+        """
         assert isinstance(percentile, float), \
             galfind_logger.critical(
                 f"{percentile=} with {type(percentile)=} != float"
@@ -388,6 +571,39 @@ class PDF:
         size: int = 10_000,
         **kwargs,
     ):
+        """Create a new `PDF` by applying a transformation function to a sample.
+
+        Draws (or takes the last `size` elements of `input_arr`) a
+        sample of values from this PDF, applies `update_func` to it,
+        and rebuilds a new PDF of the same class from the transformed
+        sample.
+
+        Parameters
+        ----------
+        new_property_name : `str`
+            Property name for the new PDF.
+        update_func : `Callable`
+            Function applied to the sample array (plus any
+            `**kwargs`) to produce the transformed sample.
+        PDF_kwargs : `dict`, optional
+            Additional metadata merged with `self.kwargs` for the new
+            PDF. Default is `{}`.
+        size : `int`, optional
+            Size of the sample drawn/taken to transform. Default is
+            `10_000`.
+        **kwargs : `dict`
+            Additional keyword arguments forwarded to `update_func`.
+
+        Returns
+        -------
+        `PDF`
+            New PDF constructed from the transformed sample.
+
+        Raises
+        ------
+        AssertionError
+            If the drawn/taken sample does not have length `size`.
+        """
         if hasattr(self, "input_arr"):
             # take the last 'size' elements of the input array
             sample = self.input_arr[-size:]
@@ -408,6 +624,22 @@ class PDF:
         save_path: str, 
         size: int = 10_000,
     ) -> None:
+        """Save the PDF's underlying sample and metadata to disk.
+
+        Writes the sample array (`input_arr` if available, otherwise a
+        freshly drawn sample of size `size`) to ``<save_path>.npy``,
+        and its metadata (`kwargs` plus property name and units) to
+        ``<save_path>.meta.npy``.
+
+        Parameters
+        ----------
+        save_path : `str`
+            Path to save the PDF to. A ``.npy`` extension is appended
+            if not already present.
+        size : `int`, optional
+            Number of samples to draw if `input_arr` is not already
+            set. Default is `10_000`.
+        """
         if hasattr(self, "input_arr"):
             save_arr = self.input_arr
         else:
@@ -431,6 +663,18 @@ class PDF:
         funcs.change_file_permissions(meta_path)
 
     def add_save_path(self, path):  # -> self
+        """Set `save_path` on this PDF without writing to disk.
+
+        Parameters
+        ----------
+        path : `str`
+            Path to associate with this PDF as its `save_path`.
+
+        Returns
+        -------
+        `PDF`
+            This PDF instance, with `save_path` set.
+        """
         self.save_path = path
         return self
 
@@ -445,6 +689,42 @@ class PDF:
         label_kwargs: Dict[str, Any] = {},
         **pdf_kwargs,
     ) -> None:
+        """Plot the PDF as a filled curve on a matplotlib axis.
+
+        Interpolates the PDF onto a grid derived from a drawn/stored
+        sample, plots it as a line with a shaded region beneath, sets
+        the axis limits and x-axis label, and (if `annotate` is
+        `True`) marks the peak location and 1-sigma percentile range
+        with vertical lines and text annotations, including the
+        property value and chi-squared of the best-fit peak.
+
+        Parameters
+        ----------
+        ax : `matplotlib.axes.Axes`
+            Axis to plot the PDF onto.
+        annotate : `bool`, optional
+            Whether to annotate the plot with the peak value, 1-sigma
+            percentile lines, and chi-squared. Default is `True`.
+        colour : `str`, optional
+            Colour used for the line, shaded region, and annotations.
+            Default is `'black'`.
+        log : `bool`, optional
+            Whether to plot the PDF in ``log10`` of the property
+            value. Default is `False`.
+        hatch : `str`, optional
+            Matplotlib hatch pattern used for the shaded region
+            beneath the curve. Default is `'//'`.
+        label_kwargs : `dict`, optional
+            Additional keyword arguments passed to `ax.set_xlabel`.
+            Default is `{}`.
+        **pdf_kwargs : `dict`
+            Additional keyword arguments passed to `ax.plot` for the
+            PDF curve.
+
+        Returns
+        -------
+        None
+        """
 
         if not hasattr(self, "input_arr"):
             input_arr = self.draw_sample(10_000)
@@ -620,6 +900,35 @@ class PDF:
 
 
 class SED_fit_PDF(PDF):
+    """`PDF` subclass associated with a specific SED fitting code run.
+
+    Extends `PDF` by tracking the `SED_fit_params` of the SED fitting
+    run that produced this PDF, and by providing helpers to populate
+    peak locations from `SED_result` best-fit values.
+
+    Parameters
+    ----------
+    property_name : `str`
+        Name of the galaxy property this PDF represents.
+    x : `astropy.units.Quantity`, `astropy.units.Magnitude`, or `astropy.units.Dex`
+        Grid of property values at which `p_x` is defined.
+    p_x : `numpy.ndarray`
+        Probability density evaluated at each point in `x`.
+    SED_fit_params : `dict`
+        SED fitting parameters/options of the run that produced this
+        PDF.
+    kwargs : `dict`, optional
+        Additional metadata to store with the PDF. Default is `{}`.
+    normed : `bool`, optional
+        Whether `p_x` is already normalised. Default is `False`.
+
+    Attributes
+    ----------
+    SED_fit_params : `dict`
+        SED fitting parameters/options of the run that produced this
+        PDF.
+    """
+
     def __init__(
         self,
         property_name,
@@ -642,6 +951,32 @@ class SED_fit_PDF(PDF):
         Nbins=50,
         normed=False,
     ):
+        """Construct a `SED_fit_PDF` from a 1D array of sampled property values.
+
+        Parameters
+        ----------
+        property_name : `str`
+            Name of the galaxy property the array represents.
+        arr : `astropy.units.Quantity`, `astropy.units.Magnitude`, or `astropy.units.Dex`
+            1D array of sampled values for the property.
+        SED_fit_params : `dict`
+            SED fitting parameters/options of the run that produced
+            `arr`.
+        kwargs : `dict`, optional
+            Additional metadata to store with the PDF. Default is `{}`.
+        Nbins : `int`, optional
+            Number of histogram bins used to construct the PDF.
+            Default is `50`.
+        normed : `bool`, optional
+            Whether `arr`'s histogram density should be treated as
+            already normalised. Default is `False`.
+
+        Returns
+        -------
+        `SED_fit_PDF`
+            PDF constructed from the histogram of `arr`, with
+            `input_arr` set to `arr`.
+        """
         # super doesn't work here due to argument differences between PDF().__init__ and SED_fit_PDF().__init__
         PDF_obj = PDF.from_1D_arr(
             property_name, arr, kwargs, Nbins, normed
@@ -658,6 +993,29 @@ class SED_fit_PDF(PDF):
         return sed_fit_PDF
 
     def load_peaks_from_SED_result(self, SED_result, nth_peak=0):
+        """Populate the 0th peak of this PDF from an `SED_result`'s best-fit values.
+
+        Parameters
+        ----------
+        SED_result : `SED_result`
+            SED fitting result providing the best-fit property value
+            (via ``SED_result.properties[self.property_name]``) and
+            chi-squared (via ``SED_result.properties['chi_sq']``).
+        nth_peak : `int`, optional
+            Index of the peak to populate; must currently be `0`.
+            Default is `0`.
+
+        Returns
+        -------
+        `SED_fit_PDF`
+            This PDF instance, with its 0th peak populated (via
+            `load_peaks_from_best_fit`).
+
+        Raises
+        ------
+        AssertionError
+            If `nth_peak` is not an `int`, or is not `0`.
+        """
         assert isinstance(nth_peak, int), galfind_logger.critical(
             f"nth_peak with type = {type(nth_peak)} must be of type 'int'"
         )
@@ -698,6 +1056,21 @@ class SED_fit_PDF(PDF):
         return self
 
     def load_peaks_from_best_fit(self, property, chi_sq):
+        """Set the 0th peak of this PDF from an explicit value and chi-squared.
+
+        Parameters
+        ----------
+        property : `Any`
+            Best-fit property value to store as the 0th peak's value.
+        chi_sq : `float`
+            Chi-squared of the best fit, stored alongside the peak
+            value.
+
+        Returns
+        -------
+        `SED_fit_PDF`
+            This PDF instance, with its 0th peak set.
+        """
         zeroth_peak = {"value": property, "chi_sq": chi_sq}
         if not hasattr(self, "peaks"):
             self.peaks = []
@@ -709,6 +1082,25 @@ class SED_fit_PDF(PDF):
 
 
 class Redshift_PDF(SED_fit_PDF):
+    """`SED_fit_PDF` subclass specifically for redshift posterior distributions.
+
+    Fixes `property_name` to ``'z'``.
+
+    Parameters
+    ----------
+    z : `astropy.units.Quantity`, `astropy.units.Magnitude`, or `astropy.units.Dex`
+        Grid of redshift values at which `p_z` is defined.
+    p_z : `numpy.ndarray`
+        Probability density evaluated at each point in `z`.
+    SED_fit_params : `dict`
+        SED fitting parameters/options of the run that produced this
+        PDF.
+    kwargs : `dict`, optional
+        Additional metadata to store with the PDF. Default is `{}`.
+    normed : `bool`, optional
+        Whether `p_z` is already normalised. Default is `False`.
+    """
+
     def __init__(
         self,
         z,
@@ -728,6 +1120,30 @@ class Redshift_PDF(SED_fit_PDF):
         Nbins=50,
         normed=False,
     ):
+        """Construct a `Redshift_PDF` from a 1D array of sampled redshift values.
+
+        Parameters
+        ----------
+        z_arr : `astropy.units.Quantity`, `astropy.units.Magnitude`, or `astropy.units.Dex`
+            1D array of sampled redshift values.
+        SED_fit_params : `dict`
+            SED fitting parameters/options of the run that produced
+            `z_arr`.
+        kwargs : `dict`, optional
+            Additional metadata to store with the PDF. Default is `{}`.
+        Nbins : `int`, optional
+            Number of histogram bins used to construct the PDF.
+            Default is `50`.
+        normed : `bool`, optional
+            Whether `z_arr`'s histogram density should be treated as
+            already normalised. Default is `False`.
+
+        Returns
+        -------
+        `Redshift_PDF`
+            Redshift PDF constructed from the histogram of `z_arr`,
+            with `input_arr` set to `z_arr`.
+        """
         SED_fit_PDF_obj = SED_fit_PDF.from_1D_arr(
             "z", z_arr, SED_fit_params, kwargs, Nbins, normed
         )  # normalized here if not already
@@ -753,6 +1169,30 @@ class Redshift_PDF(SED_fit_PDF):
         z_min: float = 0.,
         z_max: float = 25.,
     ):
+        """Integrate the redshift PDF within a fractional window around the best-fit redshift.
+
+        Parameters
+        ----------
+        delta_z_over_z : `float`
+            Fractional redshift window; integration limits are
+            ``zbest * (1 ± delta_z_over_z)``.
+        zbest : `float`, optional
+            Best-fit redshift to center the window on. If `None`, the
+            0th peak of the PDF (via `get_peak`) is used. Default is
+            `None`.
+        z_min : `float`, optional
+            Minimum allowed redshift; integration limits are clipped
+            to this value. Default is `0.`.
+        z_max : `float`, optional
+            Maximum allowed redshift; integration limits are clipped
+            to this value. Default is `25.`.
+
+        Returns
+        -------
+        `float`
+            Integral of the PDF (via `PDF.integrate_between_lims`)
+            between the clipped lower and upper redshift limits.
+        """
         # find best fitting redshift from peak of the PDF distribution - not needed if peak is loaded in PDF object
         if zbest is None:
             zbest = self.get_peak(0)["value"]  # find first peak
@@ -769,6 +1209,27 @@ class Redshift_PDF(SED_fit_PDF):
 
 
 class PDF_nD:
+    """Joint N-dimensional representation of multiple 1D `PDF` objects.
+
+    Bundles several `PDF` instances (assumed to share the same number
+    of drawn/stored samples) so that a function of several galaxy
+    properties can be evaluated over their joint (unnormalised) sample
+    chains.
+
+    Parameters
+    ----------
+    ordered_PDFs : `list` of `PDF`
+        Ordered sequence of `PDF` objects to combine, each of which
+        must already have an `input_arr` attribute of the same length.
+
+    Attributes
+    ----------
+    dimensions : `int`
+        Number of `PDF` objects combined (i.e. the dimensionality).
+    PDFs : `list` of `PDF`
+        The combined `PDF` objects, in the order given.
+    """
+
     def __init__(self, ordered_PDFs):
         # ensure all PDFs have input arr of values, all of which are the same length
         try:
@@ -786,6 +1247,26 @@ class PDF_nD:
 
     @classmethod
     def from_matrix(cls, property_names, matrix):
+        """Construct a `PDF_nD` from a matrix of per-property sample rows.
+
+        Parameters
+        ----------
+        property_names : `list` of `str`
+            Names of the galaxy properties, one per row of `matrix`.
+        matrix : `numpy.ndarray`
+            2D array of shape ``(n_properties, n_samples)``; each row
+            is histogrammed into a `PDF` via `PDF.from_1D_arr`.
+
+        Returns
+        -------
+        `PDF_nD`
+            Joint PDF combining one `PDF` per row of `matrix`.
+
+        Raises
+        ------
+        AssertionError
+            If `len(property_names)` does not match `matrix.shape[0]`.
+        """
         assert len(property_names) == matrix.shape[0]  # 0 or 1 here, not sure
         ordered_PDFs = [
             PDF.from_1D_arr(property_name, row)

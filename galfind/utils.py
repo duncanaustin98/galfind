@@ -10,6 +10,31 @@ from . import useful_funcs_austind as funcs
 #from .Data import morgan_version_to_dir_dict
 
 def get_data_dir(galfind_data_dir, survey, version, instrument_names, pix_scale = 0.03 * u.arcsec, version_to_dir_dict = None):
+    """Construct the imaging data directory path(s) for each instrument.
+
+    Parameters
+    ----------
+    galfind_data_dir : `str`
+        Root GALFIND data directory.
+    survey : `str`
+        Name of the survey.
+    version : `str`
+        Data reduction version.
+    instrument_names : `list` of `str`
+        Names of the `Instrument` subclasses to build directories for.
+    pix_scale : `astropy.units.Quantity`, optional
+        Pixel scale used to name the resolution sub-directory. Default is
+        `0.03 * astropy.units.arcsec`.
+    version_to_dir_dict : `dict`, optional
+        Mapping from `version` to an on-disk directory name, used to
+        override `version` in the constructed path. Default is `None`
+        (use `version` directly).
+
+    Returns
+    -------
+    `numpy.ndarray` of `str`
+        One data directory path per entry in `instrument_names`.
+    """
     from . import Instrument
     out_dirs = []
     for instrument_name in instrument_names:
@@ -30,10 +55,47 @@ def get_data_dir(galfind_data_dir, survey, version, instrument_names, pix_scale 
     return np.array(out_dirs)
 
 def get_cat_dir(galfind_work_dir, survey, version, instrument_names):
+    """Construct the catalogue directory path for a combined instrument set.
+
+    Parameters
+    ----------
+    galfind_work_dir : `str`
+        Root GALFIND work directory.
+    survey : `str`
+        Name of the survey.
+    version : `str`
+        Catalogue version.
+    instrument_names : `list` of `str`
+        Instrument names, joined with `"+"` to form the directory's
+        instrument component.
+
+    Returns
+    -------
+    `numpy.ndarray` of `str`
+        Single-element array containing the catalogue directory path.
+    """
     instrument_name = "+".join(instrument_names)
     return np.array([f"{galfind_work_dir}/Catalogues/{version}/{instrument_name}/{survey}"])
 
 def get_depth_dir(galfind_work_dir, survey, version, instrument_names):
+    """Construct the depth directory path(s) for each instrument.
+
+    Parameters
+    ----------
+    galfind_work_dir : `str`
+        Root GALFIND work directory.
+    survey : `str`
+        Name of the survey.
+    version : `str`
+        Data reduction version.
+    instrument_names : `list` of `str`
+        Instrument names to build directories for.
+
+    Returns
+    -------
+    `numpy.ndarray` of `str`
+        One depth directory path per entry in `instrument_names`.
+    """
     out_dirs = []
     for instrument_name in instrument_names:
         out_dirs.append(f"{galfind_work_dir}/Depths/{instrument_name}/{version}/{survey}")
@@ -41,6 +103,26 @@ def get_depth_dir(galfind_work_dir, survey, version, instrument_names):
     return np.array(out_dirs)
 
 def get_eazy_dir(galfind_work_dir, survey, version, instrument_names):
+    """Construct the EAZY input and output directory paths for a combined instrument set.
+
+    Parameters
+    ----------
+    galfind_work_dir : `str`
+        Root GALFIND work directory.
+    survey : `str`
+        Name of the survey.
+    version : `str`
+        Data reduction version.
+    instrument_names : `list` of `str`
+        Instrument names, joined with `"+"` to form the directories'
+        instrument component.
+
+    Returns
+    -------
+    `numpy.ndarray` of `str`
+        Two-element array containing the EAZY `"input"` and `"output"`
+        directory paths, in that order.
+    """
     instrument_name = "+".join(instrument_names)
     out_dirs = []
     for subdir in ["input", "output"]:
@@ -48,21 +130,100 @@ def get_eazy_dir(galfind_work_dir, survey, version, instrument_names):
     return np.array(out_dirs)
 
 def get_mask_dir(galfind_work_dir, survey):
+    """Construct the mask directory path for a survey.
+
+    Parameters
+    ----------
+    galfind_work_dir : `str`
+        Root GALFIND work directory.
+    survey : `str`
+        Name of the survey.
+
+    Returns
+    -------
+    `numpy.ndarray` of `str`
+        Single-element array containing the mask directory path.
+    """
     return np.array([f"{galfind_work_dir}/Masks/{survey}"])
 
 def get_sex_dir(galfind_work_dir, survey, version, instrument_names):
+    """Construct the SExtractor directory path(s) for each instrument.
+
+    Parameters
+    ----------
+    galfind_work_dir : `str`
+        Root GALFIND work directory.
+    survey : `str`
+        Name of the survey.
+    version : `str`
+        Data reduction version.
+    instrument_names : `list` of `str`
+        Instrument names to build directories for.
+
+    Returns
+    -------
+    `numpy.ndarray` of `str`
+        One SExtractor directory path per entry in `instrument_names`.
+    """
     out_dirs = []
     for instrument_name in instrument_names:
         out_dirs.append(f"{galfind_work_dir}/SExtractor/{instrument_name}/{version}/{survey}")
     return np.array(out_dirs)
 
 def get_stacked_images_dir(galfind_work_dir, survey, version, instrument_names):
+    """Construct the stacked images directory path(s) for each instrument.
+
+    Parameters
+    ----------
+    galfind_work_dir : `str`
+        Root GALFIND work directory.
+    survey : `str`
+        Name of the survey.
+    version : `str`
+        Data reduction version.
+    instrument_names : `list` of `str`
+        Instrument names to build directories for.
+
+    Returns
+    -------
+    `numpy.ndarray` of `str`
+        One stacked-images directory path per entry in `instrument_names`.
+    """
     out_dirs = []
     for instrument_name in instrument_names:
         out_dirs.append(f"{galfind_work_dir}/Stacked_Images/{version}/{instrument_name}/{survey}")
     return np.array(out_dirs)
 
 def find_target_dir(galfind_dir, survey, version, instrument_names, keyword):
+    """Dispatch to the appropriate ``get_*_dir`` function based on a keyword.
+
+    Parameters
+    ----------
+    galfind_dir : `str`
+        Root GALFIND directory (data or work directory, depending on
+        `keyword`).
+    survey : `str`
+        Name of the survey.
+    version : `str`
+        Data reduction/catalogue version.
+    instrument_names : `list` of `str`
+        Instrument names to build directories for.
+    keyword : `str`
+        Selects which directory-lookup function to call. One of
+        `"Data"`, `"Catalogues"`, `"Depths"`, `"EAZY"`, `"Masks"`,
+        `"SExtractor"`, or `"Stacked_Images"`.
+
+    Returns
+    -------
+    `numpy.ndarray` of `str`
+        The directory path(s) returned by the corresponding
+        ``get_*_dir`` function.
+
+    Raises
+    ------
+    ValueError
+        If `keyword` is not one of the recognised values.
+    """
     if keyword == "Data":
         return get_data_dir(galfind_dir, survey, version, instrument_names)
     if keyword == "Catalogues":
@@ -81,6 +242,32 @@ def find_target_dir(galfind_dir, survey, version, instrument_names, keyword):
         raise ValueError(f"Keyword {keyword} not recognised")
 
 def symlink(target_galfind_dir, symlink_galfind_dir, survey, version, instrument_names, keywords):
+    """Symlink files from a target GALFIND directory tree into another.
+
+    For each `keyword`, looks up the corresponding target directories via
+    `find_target_dir`, then recursively symlinks every file found there
+    into the equivalent location under `symlink_galfind_dir` (formed by
+    replacing the `target_galfind_dir` prefix with `symlink_galfind_dir`).
+
+    Parameters
+    ----------
+    target_galfind_dir : `str`
+        Root GALFIND directory containing the real files to link to.
+    symlink_galfind_dir : `str`
+        Root GALFIND directory under which the symlinks are created.
+    survey : `str`
+        Name of the survey.
+    version : `str`
+        Data reduction/catalogue version.
+    instrument_names : `list` of `str`
+        Instrument names to build directories for.
+    keywords : `list` of `str`
+        Directory keywords (as accepted by `find_target_dir`) to symlink.
+
+    Returns
+    -------
+    `None`
+    """
     for keyword in keywords:
         target_dirs = find_target_dir(target_galfind_dir, survey, version, instrument_names, keyword)
         for target_dir in target_dirs:
@@ -90,6 +277,29 @@ def symlink(target_galfind_dir, symlink_galfind_dir, survey, version, instrument
                 funcs.symlink(target_path, symlink_path)
 
 def unlink(target_galfind_dir, survey, version, instrument_names, keywords):
+    """Remove symlinks previously created under a GALFIND directory tree.
+
+    For each `keyword`, looks up the corresponding target directories via
+    `find_target_dir`, then removes any file found there that is a
+    symlink. Regular (non-symlink) files are left untouched.
+
+    Parameters
+    ----------
+    target_galfind_dir : `str`
+        Root GALFIND directory to search for symlinks to remove.
+    survey : `str`
+        Name of the survey.
+    version : `str`
+        Data reduction/catalogue version.
+    instrument_names : `list` of `str`
+        Instrument names to build directories for.
+    keywords : `list` of `str`
+        Directory keywords (as accepted by `find_target_dir`) to unlink.
+
+    Returns
+    -------
+    `None`
+    """
     for keyword in keywords:
         target_dirs = find_target_dir(target_galfind_dir, survey, version, instrument_names, keyword)
         for target_dir in target_dirs:

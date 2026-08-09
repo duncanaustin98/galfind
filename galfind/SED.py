@@ -30,6 +30,33 @@ from .Emission_lines import line_diagnostics
 
 
 class SED:
+    """Base class representing a spectral energy distribution (SED).
+
+    Stores paired arrays of wavelength and magnitude/flux values as
+    :class:`astropy.units.Quantity` objects and provides unit conversion,
+    plotting, and photometric summary calculations (bandpass-averaged
+    fluxes, equivalent widths, UV slope inputs, UVJ colours) that are
+    shared by both rest-frame and observed-frame subclasses.
+
+    Parameters
+    ----------
+    wavs : array-like
+        Wavelength values (without units attached yet).
+    mags : array-like
+        Magnitude or flux density values (without units attached yet).
+    wav_units : `astropy.units.Unit`
+        Units to attach to `wavs`.
+    mag_units : `astropy.units.Unit`
+        Units to attach to `mags`.
+
+    Attributes
+    ----------
+    wavs : `astropy.units.Quantity`
+        Wavelength array with units.
+    mags : `astropy.units.Quantity`
+        Magnitude/flux array with units.
+    """
+
     # should include mag errors here
     def __init__(self, wavs, mags, wav_units, mag_units):
         self.wavs = wavs * wav_units
@@ -40,12 +67,56 @@ class SED:
         return "LOADED SED\n"
 
     def convert_wav_units(self, units, update=True):
+        """Convert the wavelength array to a new set of units.
+
+        Parameters
+        ----------
+        units : `astropy.units.Unit`
+            Target wavelength units.
+        update : `bool`, optional
+            Whether to overwrite `self.wavs` with the converted array.
+            Default is `True`.
+
+        Returns
+        -------
+        `astropy.units.Quantity`
+            The wavelength array converted to `units`.
+        """
         wavs = self.wavs.to(units)
         if update:
             self.wavs = wavs
         return wavs
 
     def convert_mag_units(self, units, update=True):
+        """Convert the magnitude/flux array to a new set of units.
+
+        Handles conversion between AB magnitudes, spectral flux density
+        (f_nu, e.g. Jy) and power density per unit wavelength (f_lambda,
+        e.g. erg / s / cm^2 / AA), using `self.wavs` to apply the
+        appropriate spectral density equivalency where required.
+
+        Parameters
+        ----------
+        units : `astropy.units.Unit`
+            Target magnitude/flux units. Must be `astropy.units.ABmag` or
+            have physical type 'spectral flux density',
+            'ABmag/spectral flux density', or
+            'power density/spectral flux density wav'.
+        update : `bool`, optional
+            Whether to overwrite `self.mags` with the converted array.
+            Default is `True`.
+
+        Returns
+        -------
+        `astropy.units.Quantity` or `astropy.units.Magnitude`
+            The magnitude/flux array converted to `units`.
+
+        Raises
+        ------
+        Exception
+            If `units` is not `ABmag` and does not have a recognised
+            spectral flux density physical type.
+        """
         if units == self.mags.unit:
             mags = self.mags
         elif units == u.ABmag:
@@ -109,6 +180,41 @@ class SED:
         plot_kwargs: Dict[str, Any] = {},
         legend_kwargs: Dict[str, Any] = {},
     ):
+        """Plot the SED as flux/magnitude versus wavelength.
+
+        Parameters
+        ----------
+        ax : `matplotlib.axes.Axes`, optional
+            Axes to plot on. If `None`, a new figure and axes are created.
+            Default is `None`.
+        wav_units : `astropy.units.Unit`, optional
+            Units to convert the wavelength axis to. Default is `astropy.units.AA`.
+        mag_units : `astropy.units.Unit`, optional
+            Units to convert the flux/magnitude axis to. Default is `astropy.units.ABmag`.
+        label : `str`, optional
+            Legend label for the plotted line. Overridden by
+            `self.template_name` if the SED has one. Default is `None`.
+        annotate : `bool`, optional
+            Whether to set axis labels and draw the legend. Default is `True`.
+        save_name : `str`, optional
+            If given, the filename (png or pdf) to save the plot to.
+            Default is `None`.
+        save_dir : `str`, optional
+            Directory to save the plot in when `save_name` is given.
+            Default is `f"{config['Other']['PLOT_DIR']}/SEDs"`.
+        log_fluxes : `bool`, optional
+            Whether to log-scale flux values when `mag_units` is not
+            `ABmag`. Default is `True`.
+        plot_kwargs : `dict`, optional
+            Extra keyword arguments passed to `ax.plot`. Default is `{}`.
+        legend_kwargs : `dict`, optional
+            Extra keyword arguments passed to `ax.legend`. Default is `{}`.
+
+        Returns
+        -------
+        `list` of `matplotlib.lines.Line2D`
+            The line artist(s) returned by `ax.plot`.
+        """
         if ax is None:
             fig, ax = plt.subplots()
 
@@ -160,6 +266,29 @@ class SED:
         filter_trans: Union[u.Quantity, u.Magnitude, u.Dex],
         detector_type: str = "photon",
     ):
+        """Calculate the bandpass-averaged flux of the SED through a filter.
+
+        Interpolates the SED (in f_lambda) onto the filter's wavelength
+        grid and computes the transmission-weighted average flux, using
+        either photon-counting or energy-integrating detector weighting.
+
+        Parameters
+        ----------
+        filter_wavs : `astropy.units.Quantity` or `astropy.units.Dex`
+            Wavelength grid of the filter transmission profile.
+        filter_trans : `astropy.units.Quantity`, `astropy.units.Magnitude`, or `astropy.units.Dex`
+            Filter transmission values corresponding to `filter_wavs`.
+        detector_type : `str`, optional
+            Either `"photon"` (weights by lambda * T(lambda)) or
+            `"energy"` (weights by T(lambda) only). Falls back to
+            `"photon"` with a warning if an unrecognised value is given.
+            Default is `"photon"`.
+
+        Returns
+        -------
+        `float`
+            The bandpass-averaged flux in f_lambda units (erg / s / cm^2 / AA).
+        """
         detector_type = detector_type.lower()
         if detector_type not in ["photon", "energy"]:
             galfind_logger.warning(
@@ -192,6 +321,35 @@ class SED:
         line_name: str,
         plot: bool = False,
     ):  # ONLY WORKS FOR EMISSION LINES, NOT ABSORPTION AT THIS POINT
+        """Calculate the rest-frame equivalent width of an emission line.
+
+        Only works for emission (not absorption) features. The continuum
+        is estimated by interpolating across the line-adjacent continuum
+        windows defined in `line_diagnostics`, and the line flux is
+        integrated only where it exceeds the continuum (negative
+        excursions are clipped to zero). Results are cached on `self`
+        under `line_EWs`, `line_fluxes`, and `line_cont`.
+
+        Parameters
+        ----------
+        line_name : `str`
+            Name of the emission line, must be a key in
+            `galfind.Emission_lines.line_diagnostics`.
+        plot : `bool`, optional
+            If `True`, plot the masked line-feature flux before returning.
+            Default is `False`.
+
+        Returns
+        -------
+        `astropy.units.Quantity`
+            The (rest-frame) equivalent width of the line.
+
+        Raises
+        ------
+        Exception
+            If called on an SED whose class name does not contain
+            `"rest"` or `"obs"`.
+        """
         wavs_AA = self.convert_wav_units(u.AA, update=True)
         flux_lambda = self.convert_mag_units(
             u.erg / (u.s * u.cm**2 * u.AA), update=False
@@ -283,6 +441,24 @@ class SED:
         self: Self,
         line_name: str = "Halpha"
     ) -> u.Quantity:
+        """Calculate the ionizing photon production efficiency, xi_ion.
+
+        Derives xi_ion = L(line) / (L_UV * 1.36e-12) assuming case B
+        recombination at T = 10^4 K and n_e = 10^2 cm^-3, using the
+        line luminosity (from `calc_line_EW`) and the UV continuum
+        luminosity at rest-frame 1500 AA (from `calc_mUV`). No dust
+        correction is applied.
+
+        Parameters
+        ----------
+        line_name : `str`, optional
+            Name of the recombination line to use. Default is `"Halpha"`.
+
+        Returns
+        -------
+        `astropy.units.Quantity`
+            The ionizing photon production efficiency, in Hz / erg.
+        """
         # Note that no dust correction is applied here
         self.calc_line_EW(line_name, plot = False)
         Ha_flux = self.line_fluxes[line_name]
@@ -302,6 +478,24 @@ class SED:
         return xi_ion
 
     def calc_UVJ_colours(self, resolution=1.0 * u.AA):
+        """Calculate rest-frame U-V and V-J colours using top-hat filters.
+
+        Builds synthetic top-hat U, V and J filters (fixed rest-frame
+        effective wavelengths and FWHMs), computes the bandpass-averaged
+        flux of the SED through each, and stores the resulting fluxes
+        and colours on `self`.
+
+        Parameters
+        ----------
+        resolution : `astropy.units.Quantity`, optional
+            Wavelength resolution used to sample each top-hat filter.
+            Default is `1.0 * astropy.units.AA`.
+
+        Returns
+        -------
+        `None`
+            Results are stored as `self.UVJ_fluxes` and `self.UVJ_colours`.
+        """
         UVJ_filters = {
             "U": {"lam_eff": 3_650.0 * u.AA, "lam_fwhm": 660.0 * u.AA},
             "V": {"lam_eff": 5_510.0 * u.AA, "lam_fwhm": 880.0 * u.AA},
@@ -356,6 +550,23 @@ class SED:
 
 
 class SED_rest(SED):
+    """A rest-frame spectral energy distribution.
+
+    Parameters
+    ----------
+    wavs : array-like
+        Rest-frame wavelength values (without units attached yet).
+    mags : array-like
+        Magnitude or flux density values (without units attached yet).
+    wav_units : `astropy.units.Unit`
+        Units to attach to `wavs`.
+    mag_units : `astropy.units.Unit`
+        Units to attach to `mags`.
+    wav_range : `astropy.units.Quantity`, optional
+        Rest-frame wavelength range to crop `wavs`/`mags` to.
+        Default is `[0, 10_000] * astropy.units.AA`.
+    """
+
     # should include mag errors here
     def __init__(
         self, wavs, mags, wav_units, mag_units, wav_range=[0, 10_000] * u.AA
@@ -376,6 +587,25 @@ class SED_rest(SED):
     
     @classmethod
     def from_SED_obs(cls, SED_obs, out_wav_units=u.AA, out_mag_units=u.ABmag):
+        """Construct a rest-frame SED from an observed-frame SED.
+
+        De-redshifts the wavelength array of `SED_obs` using its `z`
+        attribute.
+
+        Parameters
+        ----------
+        SED_obs : `SED_obs`
+            The observed-frame SED to de-redshift.
+        out_wav_units : `astropy.units.Unit`, optional
+            Wavelength units of the returned SED. Default is `astropy.units.AA`.
+        out_mag_units : `astropy.units.Unit`, optional
+            Magnitude/flux units of the returned SED. Default is `astropy.units.ABmag`.
+
+        Returns
+        -------
+        `SED_rest`
+            The corresponding rest-frame SED.
+        """
         wavs = funcs.convert_wav_units(
             SED_obs.wavs / (1 + SED_obs.z), out_wav_units
         )
@@ -390,6 +620,28 @@ class SED_rest(SED):
 
 
 class SED_obs(SED):
+    """An observed-frame spectral energy distribution.
+
+    Parameters
+    ----------
+    z : `float`
+        Redshift of the SED, used to relate rest- and observed-frame
+        quantities.
+    wavs : array-like
+        Observed-frame wavelength values (without units attached yet).
+    mags : array-like
+        Magnitude or flux density values (without units attached yet).
+    wav_units : `astropy.units.Unit`
+        Units to attach to `wavs`.
+    mag_units : `astropy.units.Unit`
+        Units to attach to `mags`.
+
+    Attributes
+    ----------
+    z : `float`
+        Redshift of the SED.
+    """
+
     # should include mag errors here
     def __init__(self, z, wavs, mags, wav_units, mag_units):
         self.z = z
@@ -397,6 +649,24 @@ class SED_obs(SED):
 
     @classmethod
     def from_SED_rest(cls, z_int, SED_rest):
+        """Construct an observed-frame SED from a rest-frame SED.
+
+        Redshifts the wavelength array of `SED_rest` to the observed
+        frame.
+
+        Parameters
+        ----------
+        z_int : `float`
+            Redshift to place the rest-frame SED at.
+        SED_rest : `SED_rest`
+            The rest-frame SED to redshift.
+
+        Returns
+        -------
+        `SED_obs`
+            The corresponding observed-frame SED, with magnitudes in
+            AB mag.
+        """
         wav_obs = funcs.wav_rest_to_obs(SED_rest.wavs, z_int)
         mag_obs = funcs.convert_mag_units(
             SED_rest.wavs, SED_rest.mags, u.ABmag
@@ -411,6 +681,30 @@ class SED_obs(SED):
         depths: Optional[u.Quantity] = None,
         min_flux_pc_err: float = 10.0,
     ) -> Mock_Photometry:
+        """Create mock photometry by integrating the SED through a filterset.
+
+        Computes the bandpass-averaged flux of the SED in each filter of
+        `filterset` and wraps the result in a `Mock_Photometry` object,
+        which is also cached on `self.mock_photometry`.
+
+        Parameters
+        ----------
+        filterset : `Multiple_Filter`
+            The set of filters to synthesize photometry through.
+        depths : `astropy.units.Quantity`, optional
+            Per-band depths to assume for the mock photometry. If `None`,
+            depths of 99 ABmag are assumed (i.e. very well detected).
+            Default is `None`.
+        min_flux_pc_err : `float`, optional
+            Minimum fractional flux error (percent) to assume in the mock
+            photometry. Default is `10.0`.
+
+        Returns
+        -------
+        `Mock_Photometry`
+            The synthesized mock photometry, also stored as
+            `self.mock_photometry`.
+        """
         # if depths not given, expect the galaxy to be very well detected
         if depths is None:
             depths = np.full(len(filterset), 99.0) * u.ABmag
@@ -442,6 +736,28 @@ class SED_obs(SED):
         return self.mock_photometry
 
     def calc_colour(self, filters, depths=[]):
+        """Calculate the AB magnitude colour between two filters.
+
+        Parameters
+        ----------
+        filters : `list`
+            A two-element list/array of filter objects (blue, red) to
+            compute the bandpass-averaged flux/magnitude in.
+        depths : `list` or `dict`, optional
+            Per-band depths; unused beyond validating the interface.
+            If empty, depths of 99.0 are assumed. Default is `[]`.
+
+        Returns
+        -------
+        `astropy.units.Magnitude`
+            The colour (blue filter magnitude minus red filter
+            magnitude).
+
+        Raises
+        ------
+        AssertionError
+            If `filters` is not a list/array of length 2.
+        """
         assert type(filters) in [np.array, list]
         assert len(filters) == 2
         if type(depths) == dict:
@@ -489,6 +805,31 @@ class SED_obs(SED):
         wav_range: u.Quantity = [1_450.0, 1_550.0] * u.AA,
         wav_resolution: u.Quantity = 1.0 * u.AA,
     ):
+        """Calculate the observed-frame apparent UV magnitude, m_UV.
+
+        Builds a rest-frame top-hat filter spanning `wav_range`, redshifts
+        it to the observed frame using `self.z`, and computes the
+        bandpass-averaged AB magnitude of the SED through it.
+
+        Parameters
+        ----------
+        wav_range : `astropy.units.Quantity`, optional
+            Rest-frame wavelength range defining the top-hat filter.
+            Default is `[1_450.0, 1_550.0] * astropy.units.AA`.
+        wav_resolution : `astropy.units.Quantity`, optional
+            Wavelength resolution used to sample the top-hat filter.
+            Default is `1.0 * astropy.units.AA`.
+
+        Returns
+        -------
+        `astropy.units.Magnitude`
+            The apparent UV magnitude, m_UV.
+
+        Raises
+        ------
+        AssertionError
+            If `wav_range[0]` is not less than `wav_range[1]`.
+        """
         assert wav_range[0] < wav_range[1], \
             galfind_logger.critical(
                 f"{wav_range[0]=}!<{wav_range[1]=}"
@@ -511,6 +852,25 @@ class SED_obs(SED):
         wav_range: u.Quantity = [1_450.0, 1_550.0] * u.AA,
         wav_resolution: u.Quantity = 1.0 * u.AA,
     ):
+        """Calculate the rest-frame absolute UV magnitude, M_UV.
+
+        Converts the apparent UV magnitude from `calc_mUV` to an absolute
+        magnitude using the luminosity distance at `self.z`.
+
+        Parameters
+        ----------
+        wav_range : `astropy.units.Quantity`, optional
+            Rest-frame wavelength range defining the top-hat filter used
+            in `calc_mUV`. Default is `[1_450.0, 1_550.0] * astropy.units.AA`.
+        wav_resolution : `astropy.units.Quantity`, optional
+            Wavelength resolution used to sample the top-hat filter.
+            Default is `1.0 * astropy.units.AA`.
+
+        Returns
+        -------
+        `float`
+            The absolute UV magnitude, M_UV.
+        """
         mUV = self.calc_mUV(wav_range, wav_resolution)
         dL = astropy_cosmo.luminosity_distance(self.z).to(u.pc).value
         MUV = mUV.value - 5 * np.log10(dL / 10.0) + 2.5 * np.log10(1.0 + self.z)
@@ -518,6 +878,37 @@ class SED_obs(SED):
 
 
 class Mock_SED_rest(SED_rest):  # , Mock_SED):
+    """A rest-frame SED representing a mock/template (rather than fitted) spectrum.
+
+    Extends `SED_rest` with a template name and metadata, and adds
+    classmethod loaders for various theoretical template libraries
+    (EAZY, Bagpipes, Yggdrasil Pop III, BPASS) as well as power-law
+    and normalization utilities.
+
+    Parameters
+    ----------
+    wavs : array-like
+        Rest-frame wavelength values (without units attached yet).
+    mags : array-like
+        Magnitude or flux density values (without units attached yet).
+    wav_units : `astropy.units.Unit`
+        Units to attach to `wavs`.
+    mag_units : `astropy.units.Unit`
+        Units to attach to `mags`.
+    template_name : `str`, optional
+        Name/identifier of the template. Default is `None`.
+    meta : `dict`, optional
+        Arbitrary metadata associated with the template (e.g. age,
+        metallicity). Default is `None`.
+
+    Attributes
+    ----------
+    template_name : `str` or `None`
+        Name/identifier of the template.
+    meta : `dict` or `None`
+        Metadata associated with the template.
+    """
+
     def __init__(
         self, wavs, mags, wav_units, mag_units, template_name=None, meta=None
     ):
@@ -529,6 +920,26 @@ class Mock_SED_rest(SED_rest):  # , Mock_SED):
     def from_Mock_SED_obs(
         cls, mock_SED_obs, out_wav_units=u.AA, out_mag_units=u.ABmag, IGM=None
     ):
+        """Construct a rest-frame mock SED from an observed-frame mock SED.
+
+        Parameters
+        ----------
+        mock_SED_obs : `Mock_SED_obs`
+            The observed-frame mock SED to de-redshift.
+        out_wav_units : `astropy.units.Unit`, optional
+            Wavelength units of the returned SED. Default is `astropy.units.AA`.
+        out_mag_units : `astropy.units.Unit`, optional
+            Magnitude/flux units of the returned SED. Default is `astropy.units.ABmag`.
+        IGM : `galfind.IGM_attenuation.IGM`, optional
+            Unused placeholder for future IGM un-attenuation support.
+            Default is `None`.
+
+        Returns
+        -------
+        `Mock_SED_rest`
+            The corresponding rest-frame mock SED, inheriting the
+            template name of `mock_SED_obs`.
+        """
         wavs = funcs.convert_wav_units(
             mock_SED_obs.wavs / (1 + mock_SED_obs.z), out_wav_units
         )
@@ -559,6 +970,27 @@ class Mock_SED_rest(SED_rest):  # , Mock_SED):
         wav_res=1.0 * u.AA,
         template_name=None,
     ):
+        """Construct a power-law mock rest-frame SED, f_lambda ~ lambda^beta.
+
+        Parameters
+        ----------
+        beta : `float`
+            The UV continuum power-law slope index.
+        m_UV : `astropy.units.Quantity` or `astropy.units.Magnitude`
+            Apparent UV magnitude to normalize the resulting SED to.
+        wav_range : `astropy.units.Quantity`, optional
+            Rest-frame wavelength range to construct the SED over.
+            Default is `[912.0, 10_000.0] * astropy.units.AA`.
+        wav_res : `astropy.units.Quantity`, optional
+            Wavelength resolution/step size. Default is `1.0 * astropy.units.AA`.
+        template_name : `str`, optional
+            Name/identifier for the resulting SED. Default is `None`.
+
+        Returns
+        -------
+        `Mock_SED_rest`
+            The normalized power-law rest-frame SED.
+        """
         wavs = (
             np.linspace(
                 wav_range[0].value,
@@ -586,6 +1018,33 @@ class Mock_SED_rest(SED_rest):  # , Mock_SED):
     def load_SED_in_template(
         cls, code_name, m_UV, template_set, template_number
     ):
+        """Load a single rest-frame template SED for a given fitting code.
+
+        Dispatches to `load_EAZY_in_template` or `load_pipes_in_template`
+        depending on `code_name`.
+
+        Parameters
+        ----------
+        code_name : `str`
+            Name of the SED-fitting code the template belongs to, either
+            `"EAZY"` or `"Bagpipes"`.
+        m_UV : `astropy.units.Quantity` or `astropy.units.Magnitude`
+            Apparent UV magnitude to normalize the template to.
+        template_set : `str`
+            Name of the template set to load from.
+        template_number : `int` or `str`
+            Index or filename of the template within the set.
+
+        Returns
+        -------
+        `Mock_SED_rest`
+            The loaded and normalized template SED.
+
+        Raises
+        ------
+        Exception
+            If `code_name` is not `"EAZY"` or `"Bagpipes"`.
+        """
         if code_name == "EAZY":
             return cls.load_EAZY_in_template(
                 m_UV, template_set, template_number
@@ -601,6 +1060,26 @@ class Mock_SED_rest(SED_rest):  # , Mock_SED):
 
     @classmethod
     def load_EAZY_in_template(cls, m_UV, template_set, template_filename):
+        """Load a single EAZY rest-frame template SED from disk.
+
+        Parameters
+        ----------
+        m_UV : `astropy.units.Quantity` or `astropy.units.Magnitude`
+            Apparent UV magnitude to normalize the template to.
+        template_set : `str`
+            Name of the EAZY template set (e.g. `"fsps_larson"`); also
+            used to look up the units for that set and the `.txt` file
+            listing available template filenames.
+        template_filename : `str` or `int`
+            Filename of the template ascii file, or an integer index
+            into the template set's `.txt` listing file.
+
+        Returns
+        -------
+        `Mock_SED_rest`
+            The loaded template SED, converted to Jy/AA and normalized
+            to `m_UV`.
+        """
         EAZY_template_units = {
             "fsps_larson": {
                 "wavs": u.AA,
@@ -636,6 +1115,26 @@ class Mock_SED_rest(SED_rest):  # , Mock_SED):
 
     @classmethod
     def load_pipes_in_template(cls, m_UV, template_set, template_filename):
+        """Load a single Bagpipes rest-frame template SED from disk.
+
+        Parameters
+        ----------
+        m_UV : `astropy.units.Quantity` or `astropy.units.Magnitude`
+            Apparent UV magnitude to normalize the template to.
+        template_set : `str`
+            Subdirectory of `config['Bagpipes']['BAGPIPES_TEMPLATE_DIR']`
+            containing the template.
+        template_filename : `int`
+            Integer index used to glob for the matching `.ecsv` file
+            within the template set directory.
+
+        Returns
+        -------
+        `Mock_SED_rest`
+            The loaded template SED, converted to Jy/AA and normalized
+            to `m_UV`, with `meta` populated from the ecsv file's
+            metadata.
+        """
         pipes_template_units = {
             "wavs": u.AA,
             "mags": u.erg / (u.s * (u.cm**2)),
@@ -665,6 +1164,26 @@ class Mock_SED_rest(SED_rest):  # , Mock_SED):
     def load_Yggdrasil_popIII_in_template(
         cls, imf, fcov, sfh, template_filename
     ):
+        """Load a single Yggdrasil Pop III rest-frame template SED from disk.
+
+        Parameters
+        ----------
+        imf : `str`
+            Initial mass function identifier used in the grid directory name.
+        fcov : `float` or `str`
+            Covering fraction used in the grid directory name.
+        sfh : `str`
+            Star formation history identifier used in the grid directory
+            name.
+        template_filename : `str`
+            Filename of the template ascii file within the grid directory.
+
+        Returns
+        -------
+        `Mock_SED_rest`
+            The loaded template SED, converted to Jy/AA, with `age`
+            (from the file's metadata) attached as an attribute.
+        """
         # print("Incorrect normalization for yggdrasil input templates!")
         yggdrasil_dir = f"/Users/user/Documents/PGR/yggdrasil_grids/{imf}_fcov_{str(fcov)}_SFR_{sfh}_Spectra"
         # if isinstance(template_filename, int):
@@ -695,6 +1214,24 @@ class Mock_SED_rest(SED_rest):  # , Mock_SED):
         return template_obj
 
     def normalize_to_m_UV(self, m_UV):
+        """Rescale the SED in place so its flux at rest-frame 1500 AA matches m_UV.
+
+        Parameters
+        ----------
+        m_UV : `astropy.units.Quantity` or `astropy.units.Magnitude` or `None`
+            Target apparent UV magnitude at rest-frame 1500 AA. If `None`,
+            no normalization is performed.
+
+        Returns
+        -------
+        `None`
+            `self.mags` is rescaled in place.
+
+        Raises
+        ------
+        AssertionError
+            If `m_UV` is not `None` and not a `Quantity`/`Magnitude`.
+        """
         if m_UV is not None:
             assert type(m_UV) in [u.Quantity, u.Magnitude]
             norm = (
@@ -711,6 +1248,26 @@ class Mock_SED_rest(SED_rest):  # , Mock_SED):
     def renorm_at_wav(
         self, wav, mag
     ):  # this mag can also be a flux, but must have astropy units
+        """Rescale the SED in place so its flux at a given wavelength matches `mag`.
+
+        Parameters
+        ----------
+        wav : `astropy.units.Quantity`
+            Wavelength (with units of length) at which to match the flux.
+        mag : `astropy.units.Quantity` or `astropy.units.Magnitude`
+            Target magnitude or flux at `wav`.
+
+        Returns
+        -------
+        `None`
+            `self.mags` is rescaled in place.
+
+        Raises
+        ------
+        AssertionError
+            If `wav` is not a `Quantity` with physical type 'length', or
+            `mag` is not a `Quantity`/`Magnitude`.
+        """
         assert isinstance(wav, u.Quantity)
         assert isinstance(mag, (u.Quantity, u.Magnitude))
         assert u.get_physical_type(wav.unit) == "length"
@@ -725,6 +1282,27 @@ class Mock_SED_rest(SED_rest):  # , Mock_SED):
         )
 
     def calc_UV_slope(self, output_errs=False, method="Calzetti+94"):
+        """Fit the UV continuum power-law slope (beta) of the SED.
+
+        Crops the SED to the Calzetti+94 UV continuum windows, converts
+        to f_lambda if necessary, and fits `A * lambda^beta` via
+        `scipy.optimize.curve_fit`.
+
+        Parameters
+        ----------
+        output_errs : `bool`, optional
+            If `True`, also return the 1-sigma uncertainties on the
+            fitted amplitude and slope. Default is `False`.
+        method : `str`, optional
+            Method used to select the continuum windows. Only
+            `"Calzetti+94"` is currently supported. Default is `"Calzetti+94"`.
+
+        Returns
+        -------
+        `tuple` of `float`
+            `(A, beta)`, or `(A, beta, A_err, beta_err)` if `output_errs`
+            is `True`.
+        """
         if method == "Calzetti+94":
             # crop to Calzetti+94 filters
             wavs, mags = funcs.crop_to_Calzetti94_filters(self.wavs, self.mags)
@@ -755,6 +1333,29 @@ class Mock_SED_rest(SED_rest):  # , Mock_SED):
             return A, beta
 
     def add_emission_lines(self, emission_lines):
+        """Add emission line profiles to the SED spectrum in place.
+
+        Each line's profile is interpolated onto the SED's wavelength
+        grid (zero outside the profile's own range) and added directly
+        to `self.mags`.
+
+        Parameters
+        ----------
+        emission_lines : `list`
+            List of emission line objects, each exposing a
+            `line_profile` dict with `"wavs"` and `"flux"` `Quantity`
+            entries.
+
+        Returns
+        -------
+        `None`
+            `self.mags` is updated in place.
+
+        Raises
+        ------
+        AssertionError
+            If `emission_lines` is not a list or `numpy.array`.
+        """
         assert type(emission_lines) in [list, np.array]
         for emission_line in emission_lines:
             # update units
@@ -785,6 +1386,25 @@ class Mock_SED_rest(SED_rest):  # , Mock_SED):
             )  # * emission_line.line_flux / line_flux
 
     def add_dust_attenuation(self, dust_attenuation, E_BminusV):
+        """Apply dust attenuation to the SED spectrum in place.
+
+        Converts the SED to flux density (Jy) and multiplies by the
+        attenuation curve evaluated at `E_BminusV`.
+
+        Parameters
+        ----------
+        dust_attenuation : object
+            A dust attenuation law object exposing an
+            `attenuate(wavs, E_BminusV)` method returning A(lambda) in
+            magnitudes.
+        E_BminusV : `float`
+            Colour excess, E(B-V), to apply.
+
+        Returns
+        -------
+        `None`
+            `self.mags` is updated in place; `self.colours` is reset.
+        """
         self.colours = {}  # reset colours
         self.dust_attenuation = dust_attenuation
         self.E_BminusV = E_BminusV
@@ -797,6 +1417,42 @@ class Mock_SED_rest(SED_rest):  # , Mock_SED):
         )
 
 class Mock_SED_obs(SED_obs):
+    """An observed-frame SED representing a mock/template (rather than fitted) spectrum.
+
+    Extends `SED_obs` with a template name, metadata, and (optionally)
+    IGM attenuation applied automatically at construction time.
+
+    Parameters
+    ----------
+    z : `float`
+        Redshift of the SED.
+    wavs : array-like
+        Observed-frame wavelength values (without units attached yet).
+    mags : array-like
+        Magnitude or flux density values (without units attached yet).
+    wav_units : `astropy.units.Unit`
+        Units to attach to `wavs`.
+    mag_units : `astropy.units.Unit`
+        Units to attach to `mags`.
+    template_name : `str`, optional
+        Name/identifier of the template. Default is `None`.
+    IGM : `galfind.IGM_attenuation.IGM`, optional
+        IGM attenuation prescription to apply immediately after
+        construction. If `None`, no attenuation is applied.
+        Default is a new `IGM_attenuation.IGM()` instance.
+    meta : `dict`, optional
+        Arbitrary metadata associated with the template. Default is `None`.
+
+    Attributes
+    ----------
+    template_name : `str` or `None`
+        Name/identifier of the template.
+    meta : `dict` or `None`
+        Metadata associated with the template.
+    IGM : `galfind.IGM_attenuation.IGM` or `None`
+        The IGM attenuation prescription that has been applied, if any.
+    """
+
     def __init__(
         self,
         z,
@@ -823,6 +1479,27 @@ class Mock_SED_obs(SED_obs):
         out_mag_units=u.ABmag,
         IGM=IGM_attenuation.IGM(),
     ):
+        """Construct an observed-frame mock SED from a rest-frame mock SED.
+
+        Parameters
+        ----------
+        mock_SED_rest : `Mock_SED_rest`
+            The rest-frame mock SED to redshift.
+        z : `float`
+            Redshift to place the SED at.
+        out_wav_units : `astropy.units.Unit`, optional
+            Wavelength units of the returned SED. Default is `astropy.units.AA`.
+        out_mag_units : `astropy.units.Unit`, optional
+            Magnitude/flux units of the returned SED. Default is `astropy.units.ABmag`.
+        IGM : `galfind.IGM_attenuation.IGM`, optional
+            IGM attenuation prescription to apply. Default is a new
+            `IGM_attenuation.IGM()` instance.
+
+        Returns
+        -------
+        `Mock_SED_obs`
+            The corresponding observed-frame mock SED.
+        """
         mags = mock_SED_rest.convert_mag_units(out_mag_units)
         wavs = (mock_SED_rest.wavs * (1 + z)).to(out_wav_units)
         mock_SED_obs_obj = cls(
@@ -841,6 +1518,32 @@ class Mock_SED_obs(SED_obs):
     def power_law_from_beta_M_UV(
         cls, z, beta, M_UV, template_name=None, IGM=IGM_attenuation.IGM()
     ):
+        """Construct a power-law mock observed-frame SED from beta and M_UV.
+
+        Converts the absolute UV magnitude to an apparent magnitude at
+        `z`, builds a rest-frame power-law SED via
+        `Mock_SED_rest.power_law_from_beta_m_UV`, and redshifts and
+        IGM-attenuates it.
+
+        Parameters
+        ----------
+        z : `float`
+            Redshift to place the SED at.
+        beta : `float`
+            The UV continuum power-law slope index.
+        M_UV : `astropy.units.Quantity` or `astropy.units.Magnitude`
+            Absolute UV magnitude.
+        template_name : `str`, optional
+            Name/identifier for the resulting SED. Default is `None`.
+        IGM : `galfind.IGM_attenuation.IGM`, optional
+            IGM attenuation prescription to apply. Default is a new
+            `IGM_attenuation.IGM()` instance.
+
+        Returns
+        -------
+        `Mock_SED_obs`
+            The normalized, redshifted, IGM-attenuated power-law SED.
+        """
         lum_distance = astropy_cosmo.luminosity_distance(z).to(u.pc)
         m_UV = (
             M_UV.to(u.ABmag).value
@@ -855,6 +1558,28 @@ class Mock_SED_obs(SED_obs):
         return obs_SED
 
     def attenuate_IGM(self, IGM=IGM_attenuation.IGM()):
+        """Apply IGM attenuation to the SED spectrum in place.
+
+        A no-op if the SED has already been attenuated (`self.IGM` is
+        already set to a non-`None` `IGM` object).
+
+        Parameters
+        ----------
+        IGM : `galfind.IGM_attenuation.IGM`, optional
+            IGM attenuation prescription to apply. Default is a new
+            `IGM_attenuation.IGM()` instance.
+
+        Returns
+        -------
+        `None`
+            `self.mags` is updated in place, and `self.IGM` is set to
+            `IGM`.
+
+        Raises
+        ------
+        Exception
+            If `IGM` is not an instance of `galfind.IGM_attenuation.IGM`.
+        """
         if not hasattr(self, "IGM"):
             self.IGM = None
         if isinstance(IGM, IGM_attenuation.IGM):
@@ -880,6 +1605,26 @@ class Mock_SED_obs(SED_obs):
             )
 
     def calc_UV_slope(self, output_errs=False, method="Calzetti+94"):
+        """Fit the UV continuum power-law slope (beta) of the SED.
+
+        De-redshifts to a rest-frame `Mock_SED_rest` and delegates the
+        fit to `Mock_SED_rest.calc_UV_slope`.
+
+        Parameters
+        ----------
+        output_errs : `bool`, optional
+            If `True`, also return the 1-sigma uncertainties on the
+            fitted amplitude and slope. Default is `False`.
+        method : `str`, optional
+            Method used to select the continuum windows. Only
+            `"Calzetti+94"` is currently supported. Default is `"Calzetti+94"`.
+
+        Returns
+        -------
+        `tuple` of `float`
+            `(A, beta)`, or `(A, beta, A_err, beta_err)` if `output_errs`
+            is `True`.
+        """
         # create rest frame mock SED object
         mock_sed_rest = Mock_SED_rest.from_Mock_SED_obs(self)
         # calculate amplitude and beta of power law fit
@@ -889,6 +1634,28 @@ class Mock_SED_obs(SED_obs):
         return A, beta
 
     def get_colour(self, colour_name):
+        """Calculate an AB magnitude colour from the mock photometry.
+
+        Requires `create_mock_photometry` to have been called first.
+        Caches the result on `self.colours`.
+
+        Parameters
+        ----------
+        colour_name : `str`
+            Colour to compute, formatted as `"<band1>-<band2>"`, where
+            both bands must exist in `self.mock_photometry`.
+
+        Returns
+        -------
+        `float`
+            The colour in AB magnitudes (`<band1>` minus `<band2>`).
+
+        Raises
+        ------
+        AssertionError
+            If `colour_name` does not split into exactly two bands, or
+            if the mock photometry fluxes are not in Jy.
+        """
         if "mock_photometry" in self.__dict__:
             bands = colour_name.split("-")
             assert len(bands) == 2
@@ -915,6 +1682,21 @@ class Mock_SED_obs(SED_obs):
             )
 
     def add_DLA(self, DLA_obj):
+        """Apply damped Lyman-alpha (DLA) absorption to the SED in place.
+
+        Converts the SED to flux density (Jy) and multiplies by the
+        DLA transmission curve evaluated at the rest-frame wavelengths.
+
+        Parameters
+        ----------
+        DLA_obj : object
+            A DLA object exposing a `transmission(rest_wavs)` method.
+
+        Returns
+        -------
+        `None`
+            `self.mags` is updated in place; `self.colours` is reset.
+        """
         self.colours = {}  # reset colours
         self.DLA = DLA_obj
         self.wavs = funcs.convert_wav_units(self.wavs, u.AA)
@@ -922,6 +1704,25 @@ class Mock_SED_obs(SED_obs):
         self.mags *= DLA_obj.transmission(self.wavs / (1 + self.z))
 
     def add_dust_attenuation(self, dust_attenuation, E_BminusV):
+        """Apply dust attenuation to the SED spectrum in place.
+
+        Converts the SED to flux density (Jy) and multiplies by the
+        attenuation curve evaluated at `E_BminusV`.
+
+        Parameters
+        ----------
+        dust_attenuation : object
+            A dust attenuation law object exposing an
+            `attenuate(wavs, E_BminusV)` method returning A(lambda) in
+            magnitudes.
+        E_BminusV : `float`
+            Colour excess, E(B-V), to apply.
+
+        Returns
+        -------
+        `None`
+            `self.mags` is updated in place; `self.colours` is reset.
+        """
         self.colours = {}  # reset colours
         self.dust_attenuation = dust_attenuation
         self.E_BminusV = E_BminusV
@@ -934,10 +1735,42 @@ class Mock_SED_obs(SED_obs):
         )
 
     def add_emission_lines(self, line_diagnostics):
+        """Not yet implemented for observed-frame mock SEDs.
+
+        Parameters
+        ----------
+        line_diagnostics : `dict`
+            Emission line diagnostic information (currently unused).
+
+        Returns
+        -------
+        `None`
+            This method is currently a no-op.
+        """
         pass
 
 
 class Mock_SED_template_set(ABC):
+    """Abstract base class for an ordered, iterable collection of mock SEDs.
+
+    Concrete subclasses (`Mock_SED_rest_template_set`,
+    `Mock_SED_obs_template_set`) provide classmethod constructors that
+    load a whole template library into a list of `Mock_SED_rest`/
+    `Mock_SED_obs` objects; this base class provides the shared sequence
+    protocol (`len`, iteration, indexing) and bulk photometry creation.
+
+    Parameters
+    ----------
+    mock_SED_arr : `list`
+        List of `Mock_SED_rest` or `Mock_SED_obs` objects making up the
+        template set.
+
+    Attributes
+    ----------
+    SED_arr : `list`
+        The underlying list of mock SED objects.
+    """
+
     def __init__(self, mock_SED_arr):
         self.SED_arr = mock_SED_arr
 
@@ -960,6 +1793,19 @@ class Mock_SED_template_set(ABC):
         return len(self.SED_arr)
 
     def create_mock_photometry(self, filterset):
+        """Create mock photometry for every SED in the template set.
+
+        Parameters
+        ----------
+        filterset : `Multiple_Filter`
+            The set of filters to synthesize photometry through.
+
+        Returns
+        -------
+        `None`
+            Each SED's `mock_photometry` attribute is populated in
+            place; results are not collected or returned.
+        """
         [sed.create_mock_photometry(filterset) for sed in self.SED_arr]
 
     # @abstractmethod
@@ -968,15 +1814,41 @@ class Mock_SED_template_set(ABC):
 
 
 class Mock_SED_rest_template_set(Mock_SED_template_set):
+    """A collection of rest-frame mock SED templates.
+
+    Parameters
+    ----------
+    mock_SED_rest_arr : `list`
+        List of `Mock_SED_rest` objects making up the template set.
+    """
+
     def __init__(self, mock_SED_rest_arr):
         super().__init__(mock_SED_rest_arr)
 
     @classmethod
     def load_SED_in_templates():
+        """Not yet implemented."""
         pass
 
     @classmethod
     def load_EAZY_in_templates(cls, m_UV, template_set):
+        """Load an entire EAZY rest-frame template set from disk.
+
+        Reads the `<template_set>.txt` listing file and loads each
+        listed template via `Mock_SED_rest.load_EAZY_in_template`.
+
+        Parameters
+        ----------
+        m_UV : `astropy.units.Quantity` or `astropy.units.Magnitude`
+            Apparent UV magnitude to normalize each template to.
+        template_set : `str`
+            Name of the EAZY template set.
+
+        Returns
+        -------
+        `Mock_SED_rest_template_set`
+            The loaded set of template SEDs.
+        """
         mock_SED_rest_arr = []
         # read in .txt file if it exists
         template_labels = open(
@@ -993,6 +1865,23 @@ class Mock_SED_rest_template_set(Mock_SED_template_set):
 
     @classmethod
     def load_Yggdrasil_popIII_in_templates(cls, imf, fcov, sfh):
+        """Load an entire Yggdrasil Pop III rest-frame template grid from disk.
+
+        Parameters
+        ----------
+        imf : `str`
+            Initial mass function identifier used in the grid directory name.
+        fcov : `float` or `str`
+            Covering fraction used in the grid directory name.
+        sfh : `str`
+            Star formation history identifier used in the grid directory
+            name.
+
+        Returns
+        -------
+        `Mock_SED_rest_template_set`
+            The loaded set of template SEDs (one per `.ecsv` file found).
+        """
         mock_SED_rest_arr = []
         yggdrasil_dir = f"/Users/user/Documents/PGR/yggdrasil_grids/{imf}_fcov_{str(fcov)}_SFR_{sfh}_Spectra"
         SED_filenames = glob.glob(f"{yggdrasil_dir}/*.ecsv")
@@ -1017,6 +1906,46 @@ class Mock_SED_rest_template_set(Mock_SED_template_set):
         grain_name="ng",
         logU=-1.0,
     ):
+        """Load an entire BPASS rest-frame template grid at a set of ages.
+
+        Parameters
+        ----------
+        metallicity : `str`, optional
+            BPASS metallicity identifier. Default is `"z020"`.
+        imf : `str`, optional
+            BPASS IMF identifier. Default is `"imf135_300"`.
+        model_type : `str`, optional
+            `"bin"` for binary or `"sin"` for single-star models.
+            Default is `"bin"`.
+        alpha_enhancement : `str`, optional
+            Alpha enhancement identifier (BPASS v2.3 only). Default is `"a+06"`.
+        log_ages : array-like or `str`, optional
+            Array of log10(age / yr) values to load, or `"all"` to load
+            every available age. Default is
+            `np.linspace(6.0, 9.0, int(np.round(3 / 0.1)) + 1)`.
+        bpass_version : `str`, optional
+            BPASS release version, `"2.3"` or `"2.2_cloudy"`. Default is `"2.3"`.
+        m_UV_norm : `astropy.units.Quantity` or `astropy.units.Magnitude`, optional
+            Apparent UV magnitude to normalize each loaded template to.
+            If `None`, no normalization is applied. Default is `26.0 * astropy.units.ABmag`.
+        grain_name : `str`, optional
+            Dust grain type for `"2.2_cloudy"` models, `"ng"` or `"gr"`.
+            Default is `"ng"`.
+        logU : `float`, optional
+            Ionization parameter for `"2.2_cloudy"` models, must be one
+            of the keys of the internal `logU_dict`. Default is `-1.0`.
+
+        Returns
+        -------
+        `Mock_SED_rest_template_set`
+            The loaded set of template SEDs, one per requested age.
+
+        Raises
+        ------
+        AssertionError
+            If `bpass_version == "2.2_cloudy"` and `grain_name` or
+            `logU` is not a recognised value.
+        """
         meta = {
             "metallicity": metallicity,
             "imf": imf,
@@ -1099,10 +2028,19 @@ class Mock_SED_rest_template_set(Mock_SED_template_set):
         return cls(mock_SED_rest_arr)
 
     def calc_mock_beta_phot(self, m_UV, template_set, instrument, depths):
+        """Not yet implemented."""
         pass
 
 
 class Mock_SED_obs_template_set(Mock_SED_template_set):
+    """A collection of observed-frame mock SED templates.
+
+    Parameters
+    ----------
+    mock_SED_obs_arr : `list`
+        List of `Mock_SED_obs` objects making up the template set.
+    """
+
     def __init__(self, mock_SED_obs_arr):
         super().__init__(mock_SED_obs_arr)
 
@@ -1110,6 +2048,21 @@ class Mock_SED_obs_template_set(Mock_SED_template_set):
     def from_Mock_SED_rest_template_set(
         cls, Mock_SED_rest_template_set, z_arr
     ):
+        """Redshift every SED in a rest-frame template set to build an observed-frame set.
+
+        Parameters
+        ----------
+        Mock_SED_rest_template_set : `Mock_SED_rest_template_set`
+            The rest-frame template set to redshift.
+        z_arr : `float`, `int`, or array-like
+            Redshift(s) to apply. If a scalar, the same redshift is
+            applied to every SED in the set.
+
+        Returns
+        -------
+        `Mock_SED_obs_template_set`
+            The corresponding observed-frame template set.
+        """
         if type(z_arr) in [float, int]:
             z_arr = np.full(len(Mock_SED_rest_template_set), z_arr)
         return cls(
@@ -1120,6 +2073,18 @@ class Mock_SED_obs_template_set(Mock_SED_template_set):
         )
 
     def get_colours(self, colour_names):
+        """Calculate colours for every SED in the template set.
+
+        Parameters
+        ----------
+        colour_names : `list` of `str`
+            Colours to compute for each SED, e.g. `["U-V", "V-J"]`.
+
+        Returns
+        -------
+        `list` of `float`
+            Flattened list of colours (SED-major, colour-minor order).
+        """
         return [
             sed.get_colour(colour)
             for sed in self.SED_arr
@@ -1137,6 +2102,42 @@ class Mock_SED_obs_template_set(Mock_SED_template_set):
         show=False,
         save_dir="/nvme/scratch/work/austind/EPOCHS_I_plots",
     ):
+        """Plot an evolutionary colour-colour track for the template set.
+
+        Assumes the SEDs in the template set are already sorted by age,
+        starting with the youngest. The youngest SED is marked with a
+        star; SEDs at `shown_log_ages` are marked with squares.
+
+        Parameters
+        ----------
+        ax : `matplotlib.axes.Axes`
+            Axes to plot the track on.
+        colour_x_name : `str`
+            Name of the colour (previously computed via `get_colour`) to
+            plot on the x-axis.
+        colour_y_name : `str`
+            Name of the colour (previously computed via `get_colour`) to
+            plot on the y-axis.
+        shown_log_ages : `list` of `float`, optional
+            log10(age / yr) values at which to mark square symbols along
+            the track. Default is `[7.0, 8.0, 9.0]`.
+        line_kwargs : `dict`, optional
+            Keyword arguments passed to `ax.plot` and used for marker
+            colour/path effects (`"c"` and `"path_effects"` keys are
+            required for the marker calls). Default is `{}`.
+        save : `bool`, optional
+            Whether to save the resulting figure to `save_dir`.
+            Default is `False`.
+        show : `bool`, optional
+            Whether to call `plt.show()`. Default is `False`.
+        save_dir : `str`, optional
+            Directory to save the figure in when `save` is `True`.
+            Default is `"/nvme/scratch/work/austind/EPOCHS_I_plots"`.
+
+        Returns
+        -------
+        `None`
+        """
         # assumes the SEDs are already sorted by age, starting with the youngest
         colour_x = np.array(
             [sed.colours[colour_x_name] for sed in self.SED_arr]
@@ -1187,6 +2188,32 @@ class Mock_SED_obs_template_set(Mock_SED_template_set):
 
 
 class SED_2D:
+    """An ensemble of SED posterior draws (e.g. from Bagpipes) sharing a class.
+
+    Represents a collection of individual `SED` objects (all of the same
+    subclass, e.g. all `SED_obs`) that together sample a posterior
+    distribution of possible spectra — for example, one draw per
+    posterior sample from a Bagpipes fit. Since each draw generally has
+    its own redshift, the draws are not simply stacked; `plot` handles
+    combining them carefully (see its docstring) to avoid smearing
+    artifacts near sharp spectral features such as the Lyman break.
+
+    Parameters
+    ----------
+    SED_arr : `list` of `SED`
+        List of SED objects (all instances of the same class) making up
+        the ensemble.
+
+    Attributes
+    ----------
+    SED_arr : `list` of `SED`
+        The underlying list of SED draws.
+
+    Raises
+    ------
+    AssertionError
+        If the SEDs in `SED_arr` are not all of the same class.
+    """
 
     def __init__(
         self: Self,
@@ -1251,7 +2278,58 @@ class SED_2D:
         plot_kwargs: Dict[str, Any] = {},
         legend_kwargs: Dict[str, Any] = {},
     ): # -> plt.Axes: #Tuple[plt.Figure, plt.Axes]:
-        
+        """Plot the median SED of the ensemble with a 16th-84th percentile band.
+
+        Each draw in the ensemble generally has its own redshift, so the
+        draws cannot simply be averaged point-by-point on a shared
+        wavelength grid: a draw's observed-frame coverage shifts with its
+        own redshift, and extrapolating a draw across a steep feature
+        such as the Lyman break would fabricate flux it never
+        constrained. To avoid this, near-zero/negative model flux is
+        first floored to a tiny positive value (so the AB mag conversion
+        does not produce +inf/nan for physically-zero flux, e.g. from
+        near-total Lyman-limit/IGM attenuation), then each draw's
+        spectrum is interpolated onto the first draw's wavelength grid
+        with `bounds_error=False, fill_value=np.nan` so it is never
+        extrapolated beyond its own native wavelength coverage. The 16th,
+        50th and 84th percentiles are then taken across draws with
+        `numpy.nanpercentile`, which ignores the `nan`-filled gaps on a
+        per-wavelength basis rather than smearing out-of-coverage draws
+        into the combined statistic.
+
+        Parameters
+        ----------
+        ax : `matplotlib.axes.Axes`, optional
+            Axes to plot on. If `None`, a new figure and axes are created.
+            Default is `None`.
+        wav_units : `astropy.units.Unit`, optional
+            Units to convert the wavelength axis to. Default is `astropy.units.AA`.
+        mag_units : `astropy.units.Unit`, optional
+            Units to convert the flux/magnitude axis to. Default is `astropy.units.ABmag`.
+        label : `str`, optional
+            Legend label for the plotted median line. Overridden by
+            `self.template_name` if the ensemble has one. Default is `None`.
+        annotate : `bool`, optional
+            Whether to set axis labels and draw the legend. Default is `True`.
+        save_name : `str`, optional
+            If given, the filename (png or pdf) to save the plot to.
+            Default is `None`.
+        log_fluxes : `bool`, optional
+            Whether to log-scale flux values when `mag_units` is not
+            `ABmag`. Default is `True`.
+        plot_chains : `bool`, optional
+            Currently unused. Default is `False`.
+        plot_kwargs : `dict`, optional
+            Extra keyword arguments passed to `ax.plot` for the median
+            line. Default is `{}`.
+        legend_kwargs : `dict`, optional
+            Extra keyword arguments passed to `ax.legend`. Default is `{}`.
+
+        Returns
+        -------
+        `list` of `matplotlib.lines.Line2D`
+            The line artist(s) returned by `ax.plot` for the median SED.
+        """
         if ax is None:
             fig, ax = plt.subplots()
 
@@ -1330,6 +2408,35 @@ class SED_2D:
         return plot
 
     def create_mock_photometry(self: Self, *args, **kwargs):
+        """Create ensemble-median mock photometry across all SED draws.
+
+        Creates mock photometry independently for each draw (must yield
+        the same length, depths, `min_flux_pc_err`, and flux unit across
+        all draws), then takes the median flux in each band to produce a
+        single representative `Mock_Photometry` object.
+
+        Parameters
+        ----------
+        *args
+            Positional arguments forwarded to each draw's
+            `create_mock_photometry` (typically a `Multiple_Filter`
+            filterset).
+        **kwargs
+            Keyword arguments forwarded to each draw's
+            `create_mock_photometry`.
+
+        Returns
+        -------
+        `Mock_Photometry`
+            The median mock photometry across all draws, also stored as
+            `self.mock_photometry`.
+
+        Raises
+        ------
+        AssertionError
+            If the per-draw mock photometry lengths, depths,
+            `min_flux_pc_err`, or flux units are not all identical.
+        """
         mock_phot_arr = [sed.create_mock_photometry(*args, **kwargs) for sed in self.SED_arr]
         assert all([len(mock_phot) == len(mock_phot_arr[0]) for mock_phot in mock_phot_arr]), \
             galfind_logger.critical(

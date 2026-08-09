@@ -27,6 +27,42 @@ from .. import useful_funcs_austind as funcs
 
 
 class Grid:
+    """2D histogram grid of galaxy counts over two binned properties (e.g. redshift and M_UV).
+
+    Stores a 2D count array `N` binned in `x` and `y`, together with the
+    names of the properties/columns used to construct it. Pairs of `Grid`
+    instances (a "simulated" grid and a "selected" grid) are combined by
+    `Grid_2D` to build selection-function/completeness grids.
+
+    Parameters
+    ----------
+    x : `astropy.units.Quantity`
+        Bin edges (or centres) along the x-axis.
+    y : `astropy.units.Quantity`
+        Bin edges (or centres) along the y-axis.
+    N : `numpy.ndarray`
+        2D histogram of galaxy counts binned in `x` and `y`.
+    x_name : `str`
+        Name of the property/column binned along the x-axis.
+    y_name : `str`
+        Name of the property/column binned along the y-axis.
+
+    Attributes
+    ----------
+    x : `astropy.units.Quantity`
+        Bin edges (or centres) along the x-axis.
+    y : `astropy.units.Quantity`
+        Bin edges (or centres) along the y-axis.
+    N : `numpy.ndarray`
+        2D histogram of galaxy counts.
+    x_name : `str`
+        Name of the property binned along the x-axis.
+    y_name : `str`
+        Name of the property binned along the y-axis.
+    h5_path : `str`
+        Path to this grid's saved ``.h5`` file. Only set once the grid
+        has been loaded via `from_h5` or saved via `save_h5`.
+    """
 
     def __init__(
         self: Self,
@@ -141,6 +177,46 @@ class Grid:
         select_colnames: Optional[List[str]] = None,
         select_hdu: Optional[str] = None,
     ):
+        """Construct a `Grid` by histogramming two columns of a FITS catalogue.
+
+        Parameters
+        ----------
+        cat_path : `str`
+            Path to the FITS catalogue to read.
+        x_arr : `numpy.ndarray`
+            Bin edges along the x-axis, passed to `numpy.histogram2d`.
+        y_arr : `numpy.ndarray`
+            Bin edges along the y-axis, passed to `numpy.histogram2d`.
+        x_name : `str`
+            Name of the column to bin along the x-axis.
+        y_name : `str`
+            Name of the column to bin along the y-axis.
+        x_hdu : `str`, optional
+            FITS HDU/extension name containing the x column. Default is
+            `None` (the table's default HDU).
+        y_hdu : `str`, optional
+            FITS HDU/extension name containing the y column. Default is
+            `None` (the table's default HDU).
+        select_colnames : `list` of `str`, optional
+            Names of boolean selection columns to combine (via logical
+            AND) and apply as a row mask before histogramming. Default is
+            `None` (no selection applied).
+        select_hdu : `str`, optional
+            FITS HDU/extension name containing the `select_colnames`
+            columns. Only used if `select_colnames` is given. Default is
+            `None`.
+
+        Returns
+        -------
+        `Grid`
+            The grid of counts binned in `x_name` and `y_name`.
+
+        Raises
+        ------
+        ValueError
+            If the selection table has a different number of rows than
+            the x or y table.
+        """
         x_tab = Table.read(cat_path, hdu = x_hdu)
         y_tab = Table.read(cat_path, hdu = y_hdu)
         if select_colnames is not None:
@@ -168,6 +244,18 @@ class Grid:
         cls: Type[Self],
         save_path: str
     ) -> Self:
+        """Load a `Grid` from a saved ``.h5`` file.
+
+        Parameters
+        ----------
+        save_path : `str`
+            Path to the ``.h5`` file previously written by `save_h5`.
+
+        Returns
+        -------
+        `Grid`
+            The loaded grid, with `h5_path` set to `save_path`.
+        """
         hf = h5py.File(save_path, "r")
         x_arr = hf["x"][:]
         x_name = hf["x"].attrs["x_name"]
@@ -186,6 +274,20 @@ class Grid:
         self: Self,
         save_path: str,
     ) -> None:
+        """Save this grid's `x`, `y`, and `N` arrays to an ``.h5`` file.
+
+        Does nothing (other than logging a warning) if this grid already
+        has an associated ``.h5`` file.
+
+        Parameters
+        ----------
+        save_path : `str`
+            Path to write the ``.h5`` file to.
+
+        Returns
+        -------
+        `None`
+        """
         if not hasattr(self, "h5_path"):
             galfind_logger.info(f"Saving grid to {save_path}!")
             self.h5_path = save_path
@@ -207,6 +309,28 @@ class Grid:
 
 
 class Grid_2D:
+    """Pair of `Grid` instances used to compute a 2D selection fraction/completeness.
+
+    Combines a "simulated" grid (counts of all simulated galaxies) with a
+    "selected" grid (counts of galaxies passing some selection), binned
+    identically in the same two properties, so that the ratio
+    `select_grid.N / sim_grid.N` gives the selection fraction
+    (completeness) per bin.
+
+    Parameters
+    ----------
+    sim_grid : `Grid`
+        Grid of counts for all simulated galaxies.
+    select_grid : `Grid`
+        Grid of counts for galaxies passing the selection.
+
+    Attributes
+    ----------
+    sim_grid : `Grid`
+        Grid of counts for all simulated galaxies.
+    select_grid : `Grid`
+        Grid of counts for galaxies passing the selection.
+    """
 
     def __init__(
         self: Self,
@@ -243,6 +367,94 @@ class Grid_2D:
         save_PDFs: bool = True,
         save_SEDs: bool = True,
     ) -> Self:
+        """Construct a `Grid_2D` from a simulated catalogue by scattering, fitting, and selecting.
+
+        Builds (or loads, if already saved) a "scattered" version of
+        `sim_cat` with fluxes, flux errors, and depths drawn according to
+        `mode` and `depth_region`, runs each SED fitting code in
+        `SED_fitter_arr` on it, applies `sampler` to obtain a selected
+        sub-catalogue, and then delegates to `from_fits_tabs` to
+        histogram the simulated and selected catalogues into a `Grid_2D`.
+
+        Parameters
+        ----------
+        sim_cat : `Catalogue`
+            The (unscattered) simulated input catalogue. Its `cat_creator`
+            must not apply a galaxy/instrument mask.
+        SED_fitter_arr : `list` of `SED_code`
+            SED fitting codes to run on the scattered simulated catalogue.
+        sampler : `Selector`
+            Iterable of selector(s) applied to the scattered catalogue
+            (and a copy of it) to determine the selected sub-sample. If
+            `None`, no selection is applied.
+        aper_diam : `astropy.units.Quantity`
+            Aperture diameter of the photometry to scatter and fit.
+        x_arr : `numpy.ndarray`
+            Bin edges along the x-axis.
+        y_arr : `numpy.ndarray`
+            Bin edges along the y-axis.
+        x_simname : `str`
+            Name of the column to bin along the x-axis for the simulated
+            grid.
+        y_simname : `str`
+            Name of the column to bin along the y-axis for the simulated
+            grid.
+        x_selectname : `str`
+            Name of the column to bin along the x-axis for the selected
+            grid.
+        y_selectname : `str`
+            Name of the column to bin along the y-axis for the selected
+            grid.
+        xsim_hdu : `str`, optional
+            FITS HDU containing `x_simname`. Default is `None`.
+        ysim_hdu : `str`, optional
+            FITS HDU containing `y_simname`. Default is `None`.
+        xselect_hdu : `str`, optional
+            FITS HDU containing `x_selectname`. Default is `None`.
+        yselect_hdu : `str`, optional
+            FITS HDU containing `y_selectname`. Default is `None`.
+        mode : `str`, optional
+            Photometric scattering mode passed to `Catalogue.scatter`.
+            Default is `"n_nearest"`.
+        depth_region : `str`, optional
+            Depth region to use when scattering the photometry. Default
+            is `"all"`.
+        sim_filterset : `Multiple_Filter`, optional
+            Filterset of the simulated catalogue. Required if `sim_cat`
+            has no associated `Data` object. Default is `None`.
+        data_filterset : `Multiple_Filter`, optional
+            Filterset used to add the scattered flux/error/depth columns.
+            Required if `sim_cat` has no associated `Data` object.
+            Default is `None`.
+        aper_diams : `list` of `astropy.units.Quantity`, optional
+            Aperture diameters available in the catalogue. Required if
+            `sim_cat` has no associated `Data` object. Default is `None`.
+        depth_labels_func : `callable`, optional
+            Function used to derive depth column labels for the scattered
+            catalogue creator. Defaults to `galfind_depth_labels` if
+            `None`.
+        phot_labels_func : `callable`, optional
+            Function used to derive photometry column labels for the
+            scattered catalogue creator. Defaults to
+            `scattered_phot_labels` if `None`.
+        save_PDFs : `bool`, optional
+            Whether to save SED-fitting PDFs when running
+            `SED_fitter_arr`. Default is `True`.
+        save_SEDs : `bool`, optional
+            Whether to save best-fit SEDs when running `SED_fitter_arr`.
+            Default is `True`.
+
+        Returns
+        -------
+        `Grid_2D`
+            The grid pair built from the scattered simulated and selected
+            catalogues.
+
+        Raises
+        ------
+        AssertionError
+            If `sim_cat.cat_creator.apply_gal_instr_mask` is `True`.
+        """
         #assert sim_cat.cat_creator.load_mask_func is None 
         assert not sim_cat.cat_creator.apply_gal_instr_mask
 
@@ -378,6 +590,48 @@ class Grid_2D:
         select_colnames: Optional[List[str]] = None,
         select_hdu: Optional[str] = "SELECTION",
     ) -> Self:
+        """Construct a `Grid_2D` by histogramming simulated and selected FITS catalogues.
+
+        Parameters
+        ----------
+        sim_cat_path : `str`
+            Path to the FITS catalogue of all simulated galaxies.
+        select_cat_path : `str`
+            Path to the FITS catalogue of galaxies passing selection.
+        x_arr : `numpy.ndarray`
+            Bin edges along the x-axis.
+        y_arr : `numpy.ndarray`
+            Bin edges along the y-axis.
+        x_simname : `str`
+            Name of the column to bin along the x-axis in `sim_cat_path`.
+        y_simname : `str`
+            Name of the column to bin along the y-axis in `sim_cat_path`.
+        x_selectname : `str`
+            Name of the column to bin along the x-axis in
+            `select_cat_path`.
+        y_selectname : `str`
+            Name of the column to bin along the y-axis in
+            `select_cat_path`.
+        xsim_hdu : `str`, optional
+            FITS HDU containing `x_simname`. Default is `None`.
+        ysim_hdu : `str`, optional
+            FITS HDU containing `y_simname`. Default is `None`.
+        xselect_hdu : `str`, optional
+            FITS HDU containing `x_selectname`. Default is `None`.
+        yselect_hdu : `str`, optional
+            FITS HDU containing `y_selectname`. Default is `None`.
+        select_colnames : `list` of `str`, optional
+            Names of boolean selection columns to apply as a row mask
+            before histogramming `select_cat_path`. Default is `None`.
+        select_hdu : `str`, optional
+            FITS HDU containing `select_colnames`. Default is
+            `"SELECTION"`.
+
+        Returns
+        -------
+        `Grid_2D`
+            The grid pair built from `sim_cat_path` and `select_cat_path`.
+        """
         sim_grid = Grid.from_fits_cat(
             sim_cat_path,
             x_arr,
@@ -446,11 +700,38 @@ class Grid_2D:
 
     @classmethod
     def from_h5(cls: Type[Self], sim_path: str, select_path: str) -> Self:
+        """Load a `Grid_2D` from a pair of saved ``.h5`` files.
+
+        Parameters
+        ----------
+        sim_path : `str`
+            Path to the saved simulated `Grid` ``.h5`` file.
+        select_path : `str`
+            Path to the saved selected `Grid` ``.h5`` file.
+
+        Returns
+        -------
+        `Grid_2D`
+            The loaded grid pair.
+        """
         sim_grid = Grid.from_h5(sim_path)
         select_grid = Grid.from_h5(select_path)
         return cls(sim_grid, select_grid)
 
     def save_h5(self: Self, sim_path: str, select_path: str) -> None:
+        """Save this grid pair's `sim_grid` and `select_grid` to ``.h5`` files.
+
+        Parameters
+        ----------
+        sim_path : `str`
+            Path to write the simulated `Grid` ``.h5`` file to.
+        select_path : `str`
+            Path to write the selected `Grid` ``.h5`` file to.
+
+        Returns
+        -------
+        `None`
+        """
         self.sim_grid.save_h5(sim_path)
         self.select_grid.save_h5(select_path)
 
@@ -495,6 +776,40 @@ class Grid_2D:
         save_path: Optional[str] = None,
         close: bool = True,
     ) -> None:
+        """Plot the selection fraction grid as a pcolormesh, labelling each bin's counts.
+
+        Plots `select_grid.N / sim_grid.N` as a colour mesh over the
+        shared `x`/`y` bins, annotating each populated bin with
+        `"{n_selected}/{n_simulated}"`.
+
+        Parameters
+        ----------
+        fig : `matplotlib.figure.Figure`, optional
+            Figure to plot on. A new figure/axes pair is created if both
+            `fig` and `ax` are `None`. Default is `None`.
+        ax : `matplotlib.axes.Axes`, optional
+            Axes to plot on. Default is `None`.
+        cmap : `str`, optional
+            Colormap name used if `"cmap"` is not already present in
+            `cmesh_kwargs`. Default is `"viridis"`.
+        cbar_label : `str`, optional
+            Label for the colorbar. Default is `"Completeness"`.
+        cmesh_kwargs : `dict`, optional
+            Additional keyword arguments passed to `Axes.pcolormesh`.
+            Default is `{}`.
+        survey_version_label : `str`, optional
+            If given, annotated in the upper-right corner of the plot.
+            Default is `None`.
+        save_path : `str`, optional
+            If given, the path to save the figure to. Default is `None`.
+        close : `bool`, optional
+            Whether to close the figure after (optionally) saving it.
+            Default is `True`.
+
+        Returns
+        -------
+        `None`
+        """
         if "cmap" not in cmesh_kwargs.keys():
             cmesh_kwargs["cmap"] = cmap
         if fig is None and ax is None:

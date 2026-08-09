@@ -32,6 +32,20 @@ from . import astropy_cosmo, galfind_logger, config
 # fluxes and magnitudes
 
 def convert_wav_units(wavs, units):
+    """Convert a wavelength quantity to the requested units.
+
+    Parameters
+    ----------
+    wavs : `astropy.units.Quantity`
+        Wavelength value(s) to convert.
+    units : `astropy.units.Unit`
+        Target wavelength units.
+
+    Returns
+    -------
+    `astropy.units.Quantity`
+        ``wavs`` converted to ``units`` (returned unchanged if already in ``units``).
+    """
     if units == wavs.unit:
         return wavs
     else:
@@ -39,6 +53,34 @@ def convert_wav_units(wavs, units):
 
 
 def convert_mag_units(wavs, mags, units):
+    """Convert a magnitude/flux quantity between AB magnitude, f_nu, and f_lambda representations.
+
+    Uses the astropy spectral density equivalency (with the associated
+    wavelengths) whenever converting between f_lambda and AB magnitude/f_nu
+    representations.
+
+    Parameters
+    ----------
+    wavs : `astropy.units.Quantity`
+        Wavelength(s) associated with ``mags``, used for the spectral density equivalency.
+    mags : `astropy.units.Quantity` or `astropy.units.Magnitude`
+        Magnitude or flux density value(s) to convert.
+    units : `astropy.units.Unit`
+        Target units: either `astropy.units.ABmag`, or a unit with physical type
+        "spectral flux density"/"ABmag/spectral flux density" (f_nu), or
+        "power density/spectral flux density wav" (f_lambda).
+
+    Returns
+    -------
+    `astropy.units.Quantity` or `astropy.units.Magnitude`
+        ``mags`` converted to ``units``.
+
+    Raises
+    ------
+    Exception
+        If ``units`` is not `astropy.units.ABmag` and does not have a recognised
+        spectral flux density physical type.
+    """
     if units == mags.unit:
         pass
     elif units == u.ABmag:
@@ -87,6 +129,33 @@ def convert_mag_units(wavs, mags, units):
 
 
 def convert_mag_err_units(wavs, mags, mag_errs, units):
+    """Convert asymmetric magnitude/flux errors to the requested units.
+
+    Parameters
+    ----------
+    wavs : `astropy.units.Quantity`
+        Wavelength(s) associated with ``mags``, used for spectral density equivalencies.
+    mags : `astropy.units.Quantity` or `astropy.units.Magnitude`
+        Central magnitude/flux value(s).
+    mag_errs : `list` of `astropy.units.Quantity`
+        Two-element ``[lower, upper]`` 1-sigma errors on ``mags``, in the same units as ``mags``.
+    units : `astropy.units.Unit`
+        Target units to convert the errors into.
+
+    Returns
+    -------
+    `list` of `astropy.units.Quantity`
+        Two-element ``[lower, upper]`` errors on ``mags``, converted to ``units``.
+
+    Raises
+    ------
+    AssertionError
+        If ``mags`` and ``mag_errs`` do not share the same units, or ``mag_errs``
+        is not a two-element sequence of array-likes each with length > 1.
+    Exception
+        If ``units`` is not `astropy.units.ABmag` and does not have a recognised
+        spectral flux density physical type.
+    """
     assert (
         mags.unit == mag_errs[0].unit == mag_errs[1].unit
     ), galfind_logger.critical(
@@ -143,12 +212,43 @@ def convert_mag_err_units(wavs, mags, mag_errs, units):
 
 
 def log_scale_fluxes(fluxes):  # removes unit
+    """Take the base-10 logarithm of flux values, discarding their unit.
+
+    Parameters
+    ----------
+    fluxes : `astropy.units.Quantity`
+        Flux value(s).
+
+    Returns
+    -------
+    `numpy.ndarray`
+        ``log10(fluxes.value)``, unitless.
+    """
     log_flux_unit = fluxes.unit
     log_fluxes = np.log10(fluxes.value)
     return log_fluxes
 
 
 def log_scale_flux_errors(fluxes, flux_errs):  # removes unit
+    """Propagate asymmetric flux errors into log10 space.
+
+    Parameters
+    ----------
+    fluxes : `astropy.units.Quantity`
+        Central flux value(s).
+    flux_errs : `list` of `astropy.units.Quantity`
+        Two-element ``[lower, upper]`` 1-sigma flux errors, in the same units as ``fluxes``.
+
+    Returns
+    -------
+    `list` of `numpy.ndarray`
+        Two-element ``[lower, upper]`` errors on ``log10(fluxes)``.
+
+    Raises
+    ------
+    AssertionError
+        If ``flux_errs`` does not have length 2, or its units do not match ``fluxes``.
+    """
     assert len(flux_errs) == 2, galfind_logger.warning(
         f"{flux_errs=} with {len(flux_errs)=} != 2"
     )
@@ -167,6 +267,28 @@ def log_scale_flux_errors(fluxes, flux_errs):  # removes unit
 
 
 def calc_flux_from_ra_dec(ra, dec, im_data, wcs, r, unit="deg"):
+    """Compute the aperture flux at a sky position from image data using SEP.
+
+    Parameters
+    ----------
+    ra : `float` or array-like
+        Right ascension of the aperture centre(s).
+    dec : `float` or array-like
+        Declination of the aperture centre(s).
+    im_data : `numpy.ndarray`
+        2D image array to sum flux from.
+    wcs : `astropy.wcs.WCS`
+        WCS solution used to convert the sky position(s) to pixel coordinates.
+    r : `float`
+        Aperture radius in pixels.
+    unit : `str`, optional
+        Unit of ``ra``/``dec``, as accepted by `astropy.coordinates.SkyCoord`. Default is "deg".
+
+    Returns
+    -------
+    `numpy.ndarray`
+        Summed flux within the aperture(s), in image units.
+    """
     x_pix, y_pix = skycoord_to_pixel(SkyCoord(ra, dec, unit=unit), wcs)
     flux, fluxerr, flag = sep.sum_circle(im_data, x_pix, y_pix, r)
     return flux  # image units
@@ -176,6 +298,20 @@ def calc_1sigma_flux(
     depth: Union[float, u.Magnitude],
     zero_point: float,
 ) -> float:
+    """Convert a 5-sigma depth to the corresponding 1-sigma flux.
+
+    Parameters
+    ----------
+    depth : `float` or `astropy.units.Magnitude`
+        5-sigma limiting magnitude depth.
+    zero_point : `float`
+        Magnitude zero point.
+
+    Returns
+    -------
+    `float`
+        1-sigma flux, in image units consistent with ``zero_point``.
+    """
     if isinstance(depth, u.Magnitude):
         depth = depth.value
     flux_1sigma = (10 ** ((depth - zero_point) / -2.5)) / 5
@@ -187,12 +323,42 @@ def n_sigma_detection(
     mag,
     zero_point,
 ):  # mag here is non aperture corrected
+    """Compute the detection significance (in units of sigma) of a magnitude relative to a depth.
+
+    Parameters
+    ----------
+    depth : `float` or `astropy.units.Magnitude`
+        5-sigma limiting magnitude depth.
+    mag : `float`
+        Non-aperture-corrected magnitude of the source.
+    zero_point : `float`
+        Magnitude zero point.
+
+    Returns
+    -------
+    `float`
+        Ratio of the source flux to the 1-sigma flux (i.e. detection significance in sigma).
+    """
     flux_1sigma = calc_1sigma_flux(depth, zero_point)
     flux = 10 ** ((mag - zero_point) / -2.5)
     return flux / flux_1sigma
 
 
 def flux_to_mag(flux, zero_point):
+    """Convert flux to magnitude given a zero point.
+
+    Parameters
+    ----------
+    flux : `float` or `astropy.units.Quantity`
+        Flux value(s); if a `Quantity` is given, its unit is stripped.
+    zero_point : `float`
+        Magnitude zero point.
+
+    Returns
+    -------
+    `float`
+        Magnitude corresponding to ``flux``.
+    """
     try:
         flux = flux.value
     except:
@@ -202,21 +368,71 @@ def flux_to_mag(flux, zero_point):
 
 
 def mag_to_flux(mag, zero_point):
+    """Convert magnitude to flux given a zero point.
+
+    Parameters
+    ----------
+    mag : `float`
+        Magnitude value(s).
+    zero_point : `float`
+        Magnitude zero point.
+
+    Returns
+    -------
+    `float`
+        Flux corresponding to ``mag``, in units consistent with ``zero_point``.
+    """
     flux = 10 ** ((mag - zero_point) / -2.5)
     return flux
 
 
 def flux_to_mag_ratio(flux_ratio):
+    """Convert a flux ratio to a magnitude difference.
+
+    Parameters
+    ----------
+    flux_ratio : `float`
+        Ratio of two fluxes.
+
+    Returns
+    -------
+    `float`
+        Corresponding magnitude difference.
+    """
     mag_ratio = -2.5 * np.log10(flux_ratio)
     return mag_ratio
 
 
 def mag_to_flux_ratio(mag_ratio):
+    """Convert a magnitude difference to a flux ratio.
+
+    Parameters
+    ----------
+    mag_ratio : `float`
+        Magnitude difference.
+
+    Returns
+    -------
+    `float`
+        Corresponding flux ratio.
+    """
     flux_ratio = 10 ** (mag_ratio / -2.5)
     return flux_ratio
 
 
 def flux_pc_to_mag_err(flux_pc_err):
+    """Convert a fractional flux error to a magnitude error.
+
+    Parameters
+    ----------
+    flux_pc_err : `float`
+        Fractional error on flux (i.e. ``flux_err / flux``).
+
+    Returns
+    -------
+    `float`
+        Corresponding magnitude error.
+    """
     mag_err = (
         2.5 * flux_pc_err / (np.log(10))
     )  # divide by 100 here to convert into percentage?
@@ -224,6 +440,20 @@ def flux_pc_to_mag_err(flux_pc_err):
 
 
 def flux_image_to_Jy(fluxes, zero_points):
+    """Convert flux(es) in image (zero-point) units to Jy.
+
+    Parameters
+    ----------
+    fluxes : `float`, `list`, or `numpy.ndarray`
+        Flux value(s) in image units.
+    zero_points : `float` or array-like
+        Magnitude zero point(s) corresponding to ``fluxes``.
+
+    Returns
+    -------
+    `astropy.units.Quantity`
+        Flux(es) converted to Jy.
+    """
     # convert flux from image units to Jy
     if isinstance(fluxes, (list, np.ndarray,)):
         return (
@@ -243,6 +473,25 @@ def five_to_n_sigma_mag(
     five_sigma_depth: Union[int, float, u.Magnitude],
     n: Union[int, float],
 ):
+    """Convert a 5-sigma limiting magnitude to the n-sigma limiting magnitude.
+
+    Parameters
+    ----------
+    five_sigma_depth : `int`, `float`, or `astropy.units.Magnitude`
+        5-sigma limiting magnitude.
+    n : `int` or `float`
+        Target significance level in sigma; must be > 0.
+
+    Returns
+    -------
+    `float`
+        n-sigma limiting magnitude.
+
+    Raises
+    ------
+    AssertionError
+        If ``n`` is not greater than 0.
+    """
     assert n > 0, galfind_logger.critical(f"{n=} must be > 0")
     if isinstance(five_sigma_depth, u.Magnitude):
         five_sigma_depth = five_sigma_depth.value
@@ -253,10 +502,38 @@ def five_to_n_sigma_mag(
 
 
 def flux_err_to_loc_depth(flux_err, zero_point):
+    """Convert a 1-sigma flux error to a local 5-sigma depth.
+
+    Parameters
+    ----------
+    flux_err : `float`
+        1-sigma flux error.
+    zero_point : `float`
+        Magnitude zero point.
+
+    Returns
+    -------
+    `float`
+        5-sigma limiting magnitude (local depth).
+    """
     return -2.5 * np.log10(flux_err * 5) + zero_point
 
 
 def loc_depth_to_flux_err(loc_depth, zero_point):
+    """Convert a local 5-sigma depth to a 1-sigma flux error.
+
+    Parameters
+    ----------
+    loc_depth : `float`
+        5-sigma limiting magnitude (local depth).
+    zero_point : `float`
+        Magnitude zero point.
+
+    Returns
+    -------
+    `float`
+        1-sigma flux error.
+    """
     return (10 ** ((loc_depth - zero_point) / -2.5)) / 5
 
 
@@ -270,34 +547,134 @@ def loc_depth_to_flux_err(loc_depth, zero_point):
 def flux_Jy_to_lambda(
     flux_Jy, wav
 ):  # must already have associated astropy units
+    """Convert a flux density from f_nu to f_lambda.
+
+    Parameters
+    ----------
+    flux_Jy : `astropy.units.Quantity`
+        Flux density in f_nu units (e.g. Jy).
+    wav : `astropy.units.Quantity`
+        Wavelength associated with ``flux_Jy``.
+
+    Returns
+    -------
+    `astropy.units.Quantity`
+        Flux density in f_lambda units (erg / s / cm^2 / Angstrom).
+    """
     return (flux_Jy * const.c / (wav**2)).to(
         u.erg / (u.s * (u.cm**2) * u.Angstrom)
     )
 
 
 def flux_lambda_to_Jy(flux_lambda, wav):
+    """Convert a flux density from f_lambda to f_nu.
+
+    Parameters
+    ----------
+    flux_lambda : `astropy.units.Quantity`
+        Flux density in f_lambda units.
+    wav : `astropy.units.Quantity`
+        Wavelength associated with ``flux_lambda``.
+
+    Returns
+    -------
+    `astropy.units.Quantity`
+        Flux density in Jy.
+    """
     return (flux_lambda * (wav**2) / const.c).to(u.Jy)
 
 
 def lum_nu_to_lum_lam(lum_nu, wav):
+    """Convert a specific luminosity from L_nu to L_lambda.
+
+    Parameters
+    ----------
+    lum_nu : `astropy.units.Quantity`
+        Specific luminosity per unit frequency.
+    wav : `astropy.units.Quantity`
+        Wavelength associated with ``lum_nu``.
+
+    Returns
+    -------
+    `astropy.units.Quantity`
+        Specific luminosity per unit wavelength (units not automatically simplified).
+    """
     return lum_nu * const.c / (wav**2)
 
 
 def lum_lam_to_lum_nu(lum_wav, wav):
+    """Convert a specific luminosity from L_lambda to L_nu.
+
+    Parameters
+    ----------
+    lum_wav : `astropy.units.Quantity`
+        Specific luminosity per unit wavelength.
+    wav : `astropy.units.Quantity`
+        Wavelength associated with ``lum_wav``.
+
+    Returns
+    -------
+    `astropy.units.Quantity`
+        Specific luminosity per unit frequency (units not automatically simplified).
+    """
     return lum_wav * (wav**2) / const.c
 
 
 def wav_obs_to_rest(wav_obs, z):
+    """Convert an observed-frame wavelength to the rest frame.
+
+    Parameters
+    ----------
+    wav_obs : `astropy.units.Quantity` or `float`
+        Observed-frame wavelength.
+    z : `float`
+        Redshift.
+
+    Returns
+    -------
+    same type as ``wav_obs``
+        Rest-frame wavelength, ``wav_obs / (1 + z)``.
+    """
     wav_rest = wav_obs / (1 + z)
     return wav_rest
 
 
 def wav_rest_to_obs(wav_rest, z):
+    """Convert a rest-frame wavelength to the observed frame.
+
+    Parameters
+    ----------
+    wav_rest : `astropy.units.Quantity` or `float`
+        Rest-frame wavelength.
+    z : `float`
+        Redshift.
+
+    Returns
+    -------
+    same type as ``wav_rest``
+        Observed-frame wavelength, ``wav_rest * (1 + z)``.
+    """
     wav_obs = wav_rest * (1 + z)
     return wav_obs
 
 
 def flux_lambda_obs_to_rest(flux_lambda_obs, z):
+    """Convert an observed-frame f_lambda flux density to the rest frame.
+
+    Applies the ``(1 + z) ** 2`` k-correction factor appropriate for f_lambda.
+
+    Parameters
+    ----------
+    flux_lambda_obs : array-like
+        Observed-frame f_lambda flux density values.
+    z : `float`
+        Redshift.
+
+    Returns
+    -------
+    array-like
+        Rest-frame f_lambda flux density.
+    """
     flux_lambda_rest = flux_lambda_obs * (
         (1 + np.full(len(flux_lambda_obs), z)) ** 2
     )
@@ -305,9 +682,32 @@ def flux_lambda_obs_to_rest(flux_lambda_obs, z):
 
 
 def luminosity_to_flux(lum, wavs, z, cosmo=astropy_cosmo, out_units=u.Jy):
+    """Convert an intrinsic (rest-frame) luminosity to an observed-frame flux.
 
-    """
-        Input luminosity should be intrinsic (i.e. rest frame luminosity), leading to observed frame output flux units.
+    Parameters
+    ----------
+    lum : `astropy.units.Quantity`
+        Rest-frame (intrinsic) specific luminosity, either L_lambda (physical
+        type "yank") or L_nu (physical type "energy/torque/work").
+    wavs : `astropy.units.Quantity`
+        Rest-frame wavelength(s) associated with ``lum``.
+    z : `float`
+        Redshift.
+    cosmo : `astropy.cosmology.FLRW`, optional
+        Cosmology used to compute the luminosity distance. Default is `astropy_cosmo`.
+    out_units : `astropy.units.Unit`, optional
+        Desired output flux units. Default is `astropy.units.Jy`.
+
+    Returns
+    -------
+    `astropy.units.Quantity`
+        Observed-frame flux density in ``out_units``.
+
+    Raises
+    ------
+    Exception
+        If ``lum``'s physical type is L_lambda or L_nu but ``out_units`` is not
+        a recognised flux physical type.
     """
 
     # calculate luminosity distance
@@ -347,15 +747,32 @@ def luminosity_to_flux(lum, wavs, z, cosmo=astropy_cosmo, out_units=u.Jy):
 
 
 def flux_to_luminosity(
-    flux, 
-    wavs, 
-    z, 
+    flux,
+    wavs,
+    z,
     cosmo = astropy_cosmo,
     out_units = u.erg / (u.s * u.Hz),
 ):
-    
-    """
-        Input should be in observed frame units, leading to output intrinsic luminosity units.
+    """Convert an observed-frame flux to an intrinsic (rest-frame) luminosity.
+
+    Parameters
+    ----------
+    flux : `astropy.units.Quantity`
+        Observed-frame flux density (`astropy.units.ABmag` or a spectral flux
+        density unit).
+    wavs : `astropy.units.Quantity`
+        Wavelength(s) associated with ``flux``.
+    z : `float`
+        Redshift.
+    cosmo : `astropy.cosmology.FLRW`, optional
+        Cosmology used to compute the luminosity distance. Default is `astropy_cosmo`.
+    out_units : `astropy.units.Unit`, optional
+        Desired output luminosity units. Default is ``erg / (s * Hz)``.
+
+    Returns
+    -------
+    `astropy.units.Quantity`
+        Rest-frame intrinsic luminosity in ``out_units``.
     """
 
     # sort out the units
@@ -408,6 +825,21 @@ def flux_to_luminosity(
 
 
 def dust_correct(lum, dust_mag):
+    """Apply a per-element dust attenuation correction to luminosity values.
+
+    Parameters
+    ----------
+    lum : `astropy.units.Quantity`
+        Luminosity value(s) (array-like).
+    dust_mag : `astropy.units.Quantity`
+        Dust attenuation in magnitudes for each element of ``lum``; elements
+        ``<= 0`` are left uncorrected.
+
+    Returns
+    -------
+    `astropy.units.Quantity`
+        Dust-corrected luminosity values.
+    """
     return [
         lum_i * (10 ** (dust_mag_i / 2.5)) if dust_mag_i > 0.0 else lum_i
         for lum_i, dust_mag_i in zip(lum.value, dust_mag.value)
@@ -419,7 +851,7 @@ SFR_conversions = {
 
 fesc_from_beta_conversions = {
     "Chisholm22": lambda beta: np.random.normal(1.3, 0.6, len(beta))
-        * 10 ** (-4.0 - np.random.normal(1.22, 0.1, len(beta)) * beta) 
+        * 10 ** (-4.0 - np.random.normal(1.22, 0.1, len(beta)) * beta)
 }
 
 # unit labelling
@@ -446,10 +878,43 @@ property_name_to_label = {
 
 
 def label_log(label):
+    """Wrap a LaTeX label string in a base-10 logarithm expression.
+
+    Parameters
+    ----------
+    label : `str`
+        LaTeX label to wrap, e.g. an axis label.
+
+    Returns
+    -------
+    `str`
+        ``label`` wrapped as ``$\\log_{10}(...)$``.
+    """
     return r"$\log_{10}($" + label + r"$)$"
 
 
 def label_wavelengths(unit, is_log_scaled, frame):
+    """Build a LaTeX axis label for a wavelength quantity.
+
+    Parameters
+    ----------
+    unit : `astropy.units.Unit`
+        Wavelength unit; must be a key of ``unit_labels_dict``.
+    is_log_scaled : `bool`
+        Whether to wrap the label in a log10 expression.
+    frame : `str`
+        Reference-frame subscript, one of ``""``, ``"rest"``, or ``"obs"``.
+
+    Returns
+    -------
+    `str`
+        LaTeX-formatted wavelength axis label.
+
+    Raises
+    ------
+    AssertionError
+        If ``frame`` is not one of ``""``, ``"rest"``, ``"obs"``.
+    """
     assert frame in ["", "rest", "obs"]
     wavelength_label = r"$\lambda_{%s}~/~$" % frame
     wavelength_label += unit_labels_dict[unit]
@@ -460,6 +925,26 @@ def label_wavelengths(unit, is_log_scaled, frame):
 
 
 def label_fluxes(unit, is_log_scaled):
+    """Build a LaTeX axis label for a flux density quantity.
+
+    Parameters
+    ----------
+    unit : `astropy.units.Unit`
+        Flux unit; must be a key of ``unit_labels_dict``.
+    is_log_scaled : `bool`
+        Whether to wrap the label in a log10 expression. Must be `False` when ``unit`` is `astropy.units.ABmag`.
+
+    Returns
+    -------
+    `str`
+        LaTeX-formatted flux axis label (f_nu or f_lambda notation, or the AB magnitude label).
+
+    Raises
+    ------
+    AssertionError
+        If ``unit`` is not a recognised key of ``unit_labels_dict``, or if
+        ``unit`` is `astropy.units.ABmag` and ``is_log_scaled`` is `True`.
+    """
     assert unit in unit_labels_dict.keys()
     if unit == u.ABmag:
         assert not is_log_scaled
@@ -535,6 +1020,18 @@ default_lims = {
 
 
 def get_z_bin_name(z_bin: Union[list, np.array]) -> str:
+    """Format a redshift bin as a ``"zmin<z<zmax"`` string.
+
+    Parameters
+    ----------
+    z_bin : `list` or `numpy.array`
+        Two-element ``[zmin, zmax]`` redshift bin edges.
+
+    Returns
+    -------
+    `str`
+        Formatted bin name, e.g. ``"6.0<z<7.0"``.
+    """
     return f"{z_bin[0]:.1f}<z<{z_bin[1]:.1f}"
 
 
@@ -543,10 +1040,42 @@ def get_SED_fit_label_aper_diam_z_bin_name(
     aper_diam: u.Quantity,
     z_bin: Union[list, np.array]
 ) -> str:
+    """Build a combined label identifying an SED-fitting run, aperture diameter, and redshift bin.
+
+    Parameters
+    ----------
+    SED_fit_params_key : `str`
+        Label identifying the SED-fitting configuration.
+    aper_diam : `astropy.units.Quantity`
+        Aperture diameter.
+    z_bin : `list` or `numpy.array`
+        Two-element ``[zmin, zmax]`` redshift bin edges.
+
+    Returns
+    -------
+    `str`
+        Combined label of the form ``"{SED_fit_params_key}_{aper_diam}as_{zmin}<z<{zmax}"``.
+    """
     return f"{SED_fit_params_key}_{aper_diam.to(u.arcsec).value:.2f}as_{get_z_bin_name(z_bin)}"
 
 
 def get_crop_name(crops: List[Selector]) -> str:
+    """Build a descriptive name summarising a list of selection/crop objects.
+
+    Concatenates the aperture diameter (if common to all crops), the
+    SED-fitter label (if common to all crops, with an EAZY-specific "zfree"
+    suffix), and each selector's own name.
+
+    Parameters
+    ----------
+    crops : `list` of `Selector`
+        Selection objects applied to a catalogue/galaxy.
+
+    Returns
+    -------
+    `str`
+        Combined crop name, or an empty string if ``crops`` is `None`.
+    """
     from . import EAZY
     if crops is not None:
         aper_diam = np.unique([selector.aper_diam.to(u.arcsec).value for selector \
@@ -586,9 +1115,41 @@ def get_full_survey_name(
     version: str,
     filterset: Multiple_Filter,
 ) -> str:
+    """Build the full identifying name of a survey/version/instrument combination.
+
+    Parameters
+    ----------
+    survey : `str`
+        Survey name.
+    version : `str`
+        Data reduction version.
+    filterset : `Multiple_Filter`
+        Filter set defining the instrument combination.
+
+    Returns
+    -------
+    `str`
+        Combined name ``"{survey}_{version}_{filterset.instrument_name}"``.
+    """
     return f"{survey}_{version}_{filterset.instrument_name}"
 
 def calc_Vmax(area, zmin, zmax):
+    """Compute the comoving volume subtended by a sky area between two redshifts.
+
+    Parameters
+    ----------
+    area : `astropy.units.Quantity`
+        Sky (solid) angle.
+    zmin : `float`
+        Lower redshift bound.
+    zmax : `float`
+        Upper redshift bound.
+
+    Returns
+    -------
+    `astropy.units.Quantity`
+        Comoving volume in Mpc^3.
+    """
     return (
         (4 / 3 * np.pi)
         * (area / (4.0 * np.pi * u.sr))
@@ -600,9 +1161,24 @@ def calc_Vmax(area, zmin, zmax):
 
 
 def poisson_interval(k, alpha=0.05):
-    """
-    uses chisquared info to get the poisson interval. Uses scipy.stats
-    From https://stackoverflow.com/questions/14813530/poisson-confidence-interval-with-numpy
+    """Compute the Poisson confidence interval for a count using the chi-squared method.
+
+    Parameters
+    ----------
+    k : `int`
+        Observed count.
+    alpha : `float`, optional
+        Significance level (e.g. 0.05 for a 95% interval). Default is 0.05.
+
+    Returns
+    -------
+    `tuple` of `float`
+        ``(low, high)`` confidence interval bounds on the Poisson rate.
+
+    Notes
+    -----
+    Uses `scipy.stats.chi2`. Adapted from
+    https://stackoverflow.com/questions/14813530/poisson-confidence-interval-with-numpy
     """
     low, high = (
         chi2.ppf(alpha / 2.0, 2 * k) / 2,
@@ -621,6 +1197,35 @@ def calc_cv_proper(
     data_region: Union[str, int] = "all",
     **kwargs: Dict[str, Any],
 ) -> float:
+    """Estimate the cosmic variance of number counts across one or more survey fields.
+
+    Combines the (approximately) rectangular-field cosmic variance recipe in
+    quadrature across multiple fields/data regions.
+
+    Parameters
+    ----------
+    z_bin : `list` or `numpy.array`
+        Two-element ``[zmin, zmax]`` redshift bin edges.
+    data_arr : `list` or `numpy.array`
+        Data objects (one per field), each requiring a ``calc_unmasked_area``
+        method and a ``full_name`` attribute.
+    masked_selector : `type`
+        A `Mask_Selector` subclass/instance used to compute the unmasked area of each field.
+    rectangular_geometry_y_to_x : `int`, `float`, `list`, `numpy.array`, or `dict`, optional
+        Ratio of the rectangular field's y to x dimension: a single value
+        applied to all fields, one value per field, or a `dict` keyed by
+        ``data.full_name``. Default is 1.0.
+    data_region : `str` or `int`, optional
+        Region identifier passed through to ``calc_unmasked_area``. Default is "all".
+    **kwargs : `dict`
+        Additional keyword arguments passed to ``data.calc_unmasked_area``.
+
+    Returns
+    -------
+    `float`
+        Combined fractional cosmic variance across all fields (0.0 if the
+        total area is zero).
+    """
     if isinstance(data_region, int):
         data_region = str(data_region)
     if isinstance(rectangular_geometry_y_to_x, int):
@@ -699,6 +1304,21 @@ def calc_cv_proper(
 # general functions
 
 def adjust_errs(data, data_err):
+    """Convert lower/upper bound values into lower/upper 1-sigma errors relative to the data.
+
+    Parameters
+    ----------
+    data : array-like
+        Central data value(s).
+    data_err : `list` or `tuple` of array-like
+        Two-element ``[lower_bound, upper_bound]`` values.
+
+    Returns
+    -------
+    `tuple`
+        ``(data, data_err)`` where ``data_err`` is now a stacked 2xN array of
+        ``[lower_error, upper_error]``.
+    """
     # print("adjusting errors:", plot_data, code)
     data_l1 = data - data_err[0]
     data_u1 = data_err[1] - data
@@ -707,6 +1327,31 @@ def adjust_errs(data, data_err):
 
 
 def errs_to_log(data, data_err, uplim_sigma = None, uplim_arrowsize = 0.2, inf_val = 1e6):
+    """Propagate data and asymmetric errors into log10 space, handling upper limits.
+
+    Parameters
+    ----------
+    data : `numpy.ndarray`
+        Data value(s).
+    data_err : `list` of `numpy.ndarray`
+        Two-element ``[lower, upper]`` 1-sigma errors on ``data``.
+    uplim_sigma : `float`, optional
+        If given, points where the log upper error is undefined are treated as
+        upper limits: ``data`` is replaced by ``log10(data + uplim_sigma * upper_err)``
+        at those points. Default is `None`.
+    uplim_arrowsize : `float`, optional
+        Lower log-error value assigned to upper-limit points when ``uplim_sigma`` is set. Default is 0.2.
+    inf_val : `float`, optional
+        Value substituted for the lower log error where it would otherwise be undefined
+        (e.g. ``data - err <= 0``). Default is 1e6.
+
+    Returns
+    -------
+    `tuple`
+        If ``uplim_sigma`` is not `None`: ``(log_data, [log_l1, log_u1], uplim_indices)``
+        where ``uplim_indices`` is a boolean mask of upper-limit points.
+        Otherwise: ``(log_data, [log_l1, log_u1], all_false_mask)``.
+    """
     log_data = np.log10(data)
     log_l1 = log_data - np.log10(data - data_err[0])
     log_u1 = np.log10(data + data_err[1]) - log_data
@@ -734,6 +1379,30 @@ def PDF_hist(
     rest_UV_wavs=[1250.0, 3000.0],
     conv_filt=False,
 ):
+    """Plot (and optionally save) a histogram of a PDF for a single object.
+
+    Does nothing if every value in ``PDF`` equals -99.0 (flagged as invalid).
+
+    Parameters
+    ----------
+    PDF : array-like
+        Sampled PDF values.
+    save_dir : `str`
+        Base output directory used to construct the save path.
+    obs_name : `str`
+        Name of the quantity being histogrammed (used as the x-axis label).
+    ID : `int` or `str`
+        Object ID (used as the legend label and file name).
+    show : `bool`, optional
+        Whether to draw the legend (and, if not saving, display the figure). Default is `True`.
+    save : `bool`, optional
+        Whether to save the figure to disk (only applies if ``show`` is `True`);
+        otherwise the figure is displayed with `matplotlib.pyplot.show`. Default is `True`.
+    rest_UV_wavs : `list`, optional
+        Rest-frame UV wavelength range passed to `PDF_path`. Default is ``[1250.0, 3000.0]``.
+    conv_filt : `bool`, optional
+        Passed through to `PDF_path`. Default is `False`.
+    """
     if not all(value == -99.0 for value in PDF):
         plt.hist(PDF, label=ID)
         # print(f"Plotting {obs_name} hist for {ID}")
@@ -752,25 +1421,105 @@ def PDF_hist(
 
 
 def split_dir_name(save_path, output):
+    """Split a file path into its directory or its base file name.
+
+    Parameters
+    ----------
+    save_path : `str`
+        Full path to a file.
+    output : `str`
+        Either ``"dir"`` to return the directory portion (with trailing slash),
+        or ``"name"`` to return the file name.
+
+    Returns
+    -------
+    `str`
+        The requested portion of ``save_path``.
+    """
     if output == "dir":
         return "/".join(np.array(save_path.split("/")[:-1])) + "/"
     elif output == "name":
         return save_path.split("/")[-1]
-    
+
 
 def gauss_func(x, mu, sigma):
+    """Evaluate a Gaussian-shaped function of ``x``.
+
+    Note the normalisation prefactor used here is ``pi * sigma`` rather than
+    the standard ``1 / (sigma * sqrt(2 * pi))``.
+
+    Parameters
+    ----------
+    x : array-like
+        Points at which to evaluate the function.
+    mu : `float`
+        Mean.
+    sigma : `float`
+        Standard deviation.
+
+    Returns
+    -------
+    array-like
+        Function values at ``x``.
+    """
     return (np.pi * sigma) * np.exp(-0.5 * ((x - mu) / sigma) ** 2)
 
 
 def power_law_func(x, A, slope):
+    """Evaluate a power law ``A * x ** slope``.
+
+    Parameters
+    ----------
+    x : array-like
+        Points at which to evaluate the function.
+    A : `float`
+        Normalisation.
+    slope : `float`
+        Power-law index.
+
+    Returns
+    -------
+    array-like
+        Function values at ``x``.
+    """
     return A * (x**slope)
 
 
 def simple_power_law_func(x, c, m):
+    """Evaluate a linear function ``m * x + c``.
+
+    Parameters
+    ----------
+    x : array-like
+        Points at which to evaluate the function.
+    c : `float`
+        Intercept.
+    m : `float`
+        Slope.
+
+    Returns
+    -------
+    array-like
+        Function values at ``x``.
+    """
     return (m * x) + c
 
 
 def cat_from_path(path, crop_names=None):
+    """Load a catalogue table from disk, optionally cropping rows and recording the source path.
+
+    Parameters
+    ----------
+    path : `str`
+        Path to the catalogue file (read via `astropy.table.Table.read`).
+    crop_names : `list` of `str`, optional
+        Column names; rows are kept only where every listed column is `True`. Default is `None` (no crop).
+
+    Returns
+    -------
+    `astropy.table.Table`
+        Loaded (and optionally cropped) catalogue, with ``cat_path`` stored in ``.meta``.
+    """
     cat = Table.read(path, character_as_bytes=False)
     if crop_names != None:
         for name in crop_names:
@@ -787,6 +1536,26 @@ def get_phot_cat_path(
     aper_diams: u.Quantity,
     forced_phot_filt_name: Optional[str],
 ):
+    """Construct the standard path to a photometric catalogue FITS file, creating its directory.
+
+    Parameters
+    ----------
+    survey : `str`
+        Survey name.
+    version : `str`
+        Data reduction version.
+    instrument_name : `str`
+        Combined instrument name string.
+    aper_diams : `astropy.units.Quantity`
+        Aperture diameters used in the catalogue.
+    forced_phot_filt_name : `str` or `None`
+        Name of the forced-photometry detection band/image, or `None` if not applicable.
+
+    Returns
+    -------
+    `str`
+        Full path to the catalogue FITS file.
+    """
     save_dir = (
         f"{config['DEFAULT']['GALFIND_WORK']}/Catalogues/{version}/" + \
         f"{instrument_name}/{survey}/{aper_diams_to_str(aper_diams)}"
@@ -806,6 +1575,28 @@ def fits_cat_to_np(
     column_labels: List[str],
     reshape_by_aper_diams: bool = True
 ):
+    """Extract a subset of columns from a FITS table into a plain numpy array.
+
+    Parameters
+    ----------
+    fits_cat : `astropy.table.Table`
+        Source catalogue.
+    column_labels : `list` of `str`
+        Columns to extract.
+    reshape_by_aper_diams : `bool`, optional
+        If `True`, reshape the output to ``(n_rows, n_columns, n_aper_diams)``,
+        inferring ``n_aper_diams`` from the first row/column entry. Default is `True`.
+
+    Returns
+    -------
+    `numpy.ndarray`
+        Extracted data, reshaped as described.
+
+    Raises
+    ------
+    AssertionError
+        If ``fits_cat`` is empty.
+    """
     new_cat = fits_cat[column_labels].as_array()
     assert len(new_cat) > 0, \
         galfind_logger.critical(
@@ -829,6 +1620,18 @@ def fits_cat_to_np(
 
 
 def lowz_label(lowz_zmax):
+    """Build the label used for a low-redshift-restricted SED-fitting run.
+
+    Parameters
+    ----------
+    lowz_zmax : `float` or `None`
+        Maximum redshift imposed on the fit, or `None` for an unrestricted ("zfree") fit.
+
+    Returns
+    -------
+    `str`
+        ``"zmax={lowz_zmax:.1f}"``, or ``"zfree"`` if ``lowz_zmax`` is `None`.
+    """
     if lowz_zmax != None:
         label = f"zmax={lowz_zmax:.1f}"
     else:
@@ -837,6 +1640,18 @@ def lowz_label(lowz_zmax):
 
 
 def zmax_from_lowz_label(label):
+    """Recover the zmax value encoded in a low-redshift fit label.
+
+    Parameters
+    ----------
+    label : `str`
+        Label produced by `lowz_label`.
+
+    Returns
+    -------
+    `float` or `None`
+        The zmax value, or `None` if ``label`` is ``"zfree"``.
+    """
     if label == "zfree":
         zmax = None
     else:
@@ -847,6 +1662,28 @@ def zmax_from_lowz_label(label):
 def get_z_PDF_paths(
     fits_cat, IDs, codes, templates_arr, lowz_zmaxs, fits_cat_path=None
 ):
+    """Build the redshift-PDF file paths for a set of objects and SED-fitting codes.
+
+    Parameters
+    ----------
+    fits_cat : `astropy.table.Table`
+        Catalogue; its ``.meta["cat_path"]`` is used as the base path if available.
+    IDs : `list`
+        Object IDs to build paths for.
+    codes : `list` of `SED_code`
+        SED-fitting code instance(s) providing ``z_PDF_paths_from_cat_path``.
+    templates_arr : `list`
+        Template set identifier corresponding to each entry in ``codes``.
+    lowz_zmaxs : `list`
+        Low-redshift zmax value (or `None`) corresponding to each entry in ``codes``.
+    fits_cat_path : `str`, optional
+        Explicit catalogue path to use instead of ``fits_cat.meta["cat_path"]``. Default is `None`.
+
+    Returns
+    -------
+    `list`
+        Flattened list of PDF file paths for every ``(code, templates, lowz_zmax)`` x ``ID`` combination.
+    """
     try:
         fits_cat_path = fits_cat.meta["cat_path"]
     except:
@@ -863,6 +1700,28 @@ def get_z_PDF_paths(
 def get_SED_paths(
     fits_cat, IDs, codes, templates_arr, lowz_zmaxs, fits_cat_path=None
 ):
+    """Build the best-fit SED file paths for a set of objects and SED-fitting codes.
+
+    Parameters
+    ----------
+    fits_cat : `astropy.table.Table`
+        Catalogue; its ``.meta["cat_path"]`` is used as the base path if available.
+    IDs : `list`
+        Object IDs to build paths for.
+    codes : `list` of `SED_code`
+        SED-fitting code instance(s) providing ``SED_paths_from_cat_path``.
+    templates_arr : `list`
+        Template set identifier corresponding to each entry in ``codes``.
+    lowz_zmaxs : `list`
+        Low-redshift zmax value (or `None`) corresponding to each entry in ``codes``.
+    fits_cat_path : `str`, optional
+        Explicit catalogue path to use instead of ``fits_cat.meta["cat_path"]``. Default is `None`.
+
+    Returns
+    -------
+    `list`
+        Flattened list of SED file paths for every ``(code, templates, lowz_zmax)`` x ``ID`` combination.
+    """
     try:
         fits_cat_path = fits_cat.meta["cat_path"]
     except:
@@ -877,6 +1736,18 @@ def get_SED_paths(
 
 
 def ordinal(n: int):
+    """Convert an integer to its ordinal string representation.
+
+    Parameters
+    ----------
+    n : `int`
+        Integer to convert.
+
+    Returns
+    -------
+    `str`
+        ``n`` with the appropriate ordinal suffix appended (e.g. ``"1st"``, ``"22nd"``).
+    """
     if 11 <= (n % 100) <= 13:
         suffix = "th"
     else:
@@ -885,6 +1756,18 @@ def ordinal(n: int):
 
 
 def date_finder(text: str):
+    """Find ISO- or slash/dash-formatted dates within a string.
+
+    Parameters
+    ----------
+    text : `str`
+        Text to search.
+
+    Returns
+    -------
+    `list` of `str`
+        All date-like substrings matched in ``text``.
+    """
     pattern = r"\b\d{4}-\d{2}-\d{2}\b|\b\d{2}[/-]\d{2}[/-]\d{4}\b"
     dates = re.findall(pattern, text)
     return dates
@@ -894,6 +1777,26 @@ def validate_quantity(
     quant: Optional[Any],
     physical_type: str,
 ):
+    """Validate that a value is an `astropy.units.Quantity` of the expected physical type.
+
+    Parameters
+    ----------
+    quant : `Any`, optional
+        Value to validate; may be `None`.
+    physical_type : `str`
+        Required astropy physical type string (as returned by `astropy.units.get_physical_type`).
+
+    Returns
+    -------
+    `astropy.units.Quantity` or `None`
+        ``quant`` unchanged if it is a `Quantity` of the correct physical type;
+        `None` if ``quant`` is `None` or not a `Quantity`.
+
+    Raises
+    ------
+    AssertionError
+        If ``quant`` is a `Quantity` but does not have the required ``physical_type``.
+    """
     if quant is not None:
         if not isinstance(quant, u.Quantity):
             galfind_logger.warning(
@@ -910,9 +1813,39 @@ def validate_quantity(
 
 # beta slope function
 def beta_slope_power_law_func(wav_rest, A, beta):
+    """Evaluate a UV continuum power-law spectrum ``f(wav) = 10 ** A * wav ** beta``.
+
+    Parameters
+    ----------
+    wav_rest : array-like
+        Rest-frame wavelength(s).
+    A : `float`
+        Log-normalisation.
+    beta : `float`
+        UV continuum slope.
+
+    Returns
+    -------
+    array-like
+        Function values at ``wav_rest``.
+    """
     return (10**A) * (wav_rest**beta)
 
 def crop_to_Calzetti94_filters(wavs, mags):
+    """Crop wavelength/magnitude arrays to the Calzetti (1994) UV continuum windows.
+
+    Parameters
+    ----------
+    wavs : `astropy.units.Quantity`
+        Wavelengths, convertible to Angstrom.
+    mags : array-like
+        Magnitude or flux values corresponding to ``wavs``.
+
+    Returns
+    -------
+    `tuple` of (`astropy.units.Quantity`, array-like)
+        ``(wavs, mags)`` cropped to only the points falling within the Calzetti94 filter windows.
+    """
     wavs = wavs.to(u.AA)
     Calzetti94_filter_indices = np.logical_or.reduce(
         [
@@ -929,11 +1862,27 @@ def crop_to_Calzetti94_filters(wavs, mags):
 
 
 def inspect_info():
+    """Get the file name, function name, and line number of the calling frame.
+
+    Returns
+    -------
+    `tuple` of (`str`, `str`, `int`)
+        ``(filename, function_name, line_number)`` of the caller.
+    """
     info = inspect.getframeinfo(inspect.stack()[1][0])
     return info.filename, info.function, info.lineno
 
 
 def make_dirs(path, permissions=0o777):
+    """Create the parent directory of a file path if it doesn't exist, and set its permissions.
+
+    Parameters
+    ----------
+    path : `str`
+        File path whose parent directory should be created.
+    permissions : `int`, optional
+        Octal permissions to apply to the created directory. Default is ``0o777``.
+    """
     os.makedirs(split_dir_name(path, "dir"), exist_ok=True)
     try:
         os.chmod(split_dir_name(path, "dir"), permissions)
@@ -944,6 +1893,17 @@ def make_dirs(path, permissions=0o777):
 
 
 def change_file_permissions(path, permissions=0o777, log=False):
+    """Change file permissions for one or more files, silently ignoring missing files or permission errors.
+
+    Parameters
+    ----------
+    path : `str` or `list` of `str`
+        File path(s) to change the permissions of.
+    permissions : `int`, optional
+        Octal permissions to apply. Default is ``0o777``.
+    log : `bool`, optional
+        Whether to log successful permission changes at INFO level. Default is `False`.
+    """
     if type(path) != list:
         path = [path]
     for p in path:
@@ -958,6 +1918,22 @@ def change_file_permissions(path, permissions=0o777, log=False):
 
 
 def source_separation(sky_coord_1, sky_coord_2, z):
+    """Compute the transverse proper separation between two sky positions at a given redshift.
+
+    Parameters
+    ----------
+    sky_coord_1 : `astropy.coordinates.SkyCoord`
+        First sky position.
+    sky_coord_2 : `astropy.coordinates.SkyCoord`
+        Second sky position.
+    z : `float`
+        Redshift used to convert angular separation to a physical separation.
+
+    Returns
+    -------
+    `astropy.units.Quantity`
+        Separation in kpc.
+    """
     # calculate separation in arcmin
     arcmin_sep = sky_coord_1.separation(sky_coord_2).to(u.arcmin)
     # print(arcmin_sep.to(u.arcsec))
@@ -986,6 +1962,34 @@ def tex_to_fits(
     empty=["-"],
     comment="%",
 ):
+    """Parse a LaTeX table into a FITS catalogue.
+
+    Reads a LaTeX tabular file line by line, strips LaTeX formatting/markup,
+    splits each row into columns, inserts NaNs for missing/placeholder
+    entries, and writes the result to disk as a FITS table.
+
+    Parameters
+    ----------
+    tex_path : `str`
+        Path to the input LaTeX table file.
+    col_names : `list` of `str`
+        Base column names, one per data column (excluding auto-generated error columns).
+    col_errs : `list` of `bool`
+        Flags (one per entry in ``col_names``) indicating whether that column
+        has associated upper/lower error columns immediately following it in the LaTeX table.
+    replace : `dict`, optional
+        Mapping of LaTeX substrings to their plain-text replacement, applied to every line.
+    empty : `list` of `str`, optional
+        Placeholder tokens treated as missing data. Default is ``["-"]``.
+    comment : `str`, optional
+        Line prefix marking comment lines to skip. Default is ``"%"``.
+
+    Returns
+    -------
+    None
+        Writes a FITS file to disk (path derived from ``tex_path`` by replacing
+        ``".txt"`` with ``"_as_fits.fits"``).
+    """
     # note which columns are error columns
     is_err = col_errs.copy()
     for i in col_errs:
@@ -1046,6 +2050,24 @@ def tex_to_fits(
 
 
 def ext_source_corr(data, corr_factor, is_log_data=True):
+    """Apply an extended-source correction factor to a (possibly logged) quantity.
+
+    Parameters
+    ----------
+    data : array-like
+        Data value(s) to correct.
+    corr_factor : array-like
+        Multiplicative correction factor.
+    is_log_data : `bool`, optional
+        If `True`, ``data`` is assumed to be in log10 space and
+        ``log10(corr_factor)`` is added to it; otherwise ``data`` is
+        multiplied by ``corr_factor`` directly. Default is `True`.
+
+    Returns
+    -------
+    array-like
+        Corrected data.
+    """
     if is_log_data:
         return data + np.log10(corr_factor)
     else:
@@ -1053,10 +2075,36 @@ def ext_source_corr(data, corr_factor, is_log_data=True):
 
 
 def power_law_beta_func(wav, A, beta):
+    """Evaluate a power law ``A * wav ** beta``.
+
+    Parameters
+    ----------
+    wav : array-like
+        Wavelength(s) at which to evaluate the function.
+    A : `float`
+        Normalisation.
+    beta : `float`
+        Power-law index.
+
+    Returns
+    -------
+    array-like
+        Function values at ``wav``.
+    """
     return A * (wav**beta)
 
 
 class Singleton(object):
+    """Base class implementing the singleton design pattern.
+
+    Subclassing `Singleton` and instantiating the subclass multiple times
+    always returns the same shared instance.
+
+    Attributes
+    ----------
+    _instance : `object` or `None`
+        The single shared instance, created on first instantiation.
+    """
     _instance = None
 
     def __new__(cls, *args, **kwargs):
@@ -1070,17 +2118,60 @@ line_sep = "*" * 40 + "\n"
 band_sep = "-" * 10 + "\n"
 
 def aper_diams_to_str(aper_diams: u.Quantity):
+    """Format aperture diameters as a compact string label.
+
+    Parameters
+    ----------
+    aper_diams : `astropy.units.Quantity`
+        Array of aperture diameters.
+
+    Returns
+    -------
+    `str`
+        Comma-separated diameters (2 d.p., in arcsec) wrapped in parentheses
+        with an "as" suffix, e.g. ``"(0.32,0.50)as"``.
+    """
     return f"({','.join([f'{aper_diam:.2f}' for aper_diam in aper_diams.value])})as"
 
 def calc_unmasked_area(
     mask: Union[np.ndarray, Tuple[np.ndarray]],
     pixel_scale: u.Quantity
 ) -> u.Quantity:
+    """Compute the sky area covered by unmasked (`True`) pixels.
+
+    Parameters
+    ----------
+    mask : `numpy.ndarray` or `tuple` of `numpy.ndarray`
+        Boolean mask array, or a tuple of boolean masks combined with a logical AND.
+    pixel_scale : `astropy.units.Quantity`
+        Angular size of one pixel.
+
+    Returns
+    -------
+    `astropy.units.Quantity`
+        Unmasked area in arcmin^2.
+    """
     if isinstance(mask, tuple):
         mask = np.logical_and.reduce(mask)
     return ((np.sum(mask)) * (pixel_scale ** 2)).to(u.arcmin**2)
 
 def sort_band_data_arr(band_data_arr: List[Type[Band_Data_Base]]):
+    """Sort band-data objects blue to red by central wavelength.
+
+    Any `Stacked_Band_Data` objects are appended, unsorted, after the sorted
+    `Band_Data` objects.
+
+    Parameters
+    ----------
+    band_data_arr : `list` of `Band_Data_Base`
+        Mixture of `Band_Data` and `Stacked_Band_Data` objects.
+
+    Returns
+    -------
+    `list` of `Band_Data_Base`
+        `Band_Data` objects sorted by ascending central wavelength, followed
+        by any `Stacked_Band_Data` objects.
+    """
     stacked_band_data_arr = [band_data for band_data in band_data_arr if band_data.__class__.__name__ == "Stacked_Band_Data"]
     sorted_band_data_arr = [
         band_data
@@ -1093,13 +2184,38 @@ def sort_band_data_arr(band_data_arr: List[Type[Band_Data_Base]]):
     return sorted_band_data_arr
 
 def rolling_average(y_array, window_size):
+    """Compute a rolling (moving) average of an array using a boxcar kernel.
+
+    Parameters
+    ----------
+    y_array : array-like
+        Input data.
+    window_size : `int`
+        Number of samples to average over.
+
+    Returns
+    -------
+    `numpy.ndarray`
+        Rolling average, with length ``len(y_array) - window_size + 1`` (valid-mode convolution).
+    """
     kernel = np.ones(window_size) / window_size
     return np.convolve(y_array, kernel, mode='valid')
 
 # The below makes TQDM work with joblib
 @contextlib.contextmanager
 def tqdm_joblib(tqdm_object):
-    """Context manager to patch joblib to report into tqdm progress bar given as argument"""
+    """Context manager that reports joblib parallel progress into a tqdm progress bar.
+
+    Parameters
+    ----------
+    tqdm_object : `tqdm.tqdm`
+        A tqdm progress bar instance to update as joblib batches complete.
+
+    Yields
+    ------
+    `tqdm.tqdm`
+        The same ``tqdm_object``, updated as batches complete.
+    """
 
     class TqdmBatchCompletionCallback(joblib.parallel.BatchCompletionCallBack):
         def __call__(self, *args, **kwargs):
@@ -1122,8 +2238,24 @@ def get_first_bluewards_band(
     ref_wav: u.Quantity,
     ignore_bands: Optional[Union[str, List[str]]] = None,
 ) -> Optional[str]:
-    """
-    Get the first band bluewards of a reference wavelength, ignoring required bands
+    """Find the reddest filter that lies entirely bluewards of a redshifted reference wavelength.
+
+    Parameters
+    ----------
+    z : `float`
+        Redshift; if negative, no band is returned.
+    filterset : `Multiple_Filter`
+        Filter set ordered blue to red.
+    ref_wav : `astropy.units.Quantity`
+        Rest-frame reference wavelength.
+    ignore_bands : `str` or `list` of `str`, optional
+        Band name(s) to exclude from consideration. Default is `None`.
+
+    Returns
+    -------
+    `str` or `None`
+        Name of the first (reddest) band found bluewards of ``ref_wav * (1 + z)``,
+        or `None` if none is found or ``z < 0``.
     """
     # convert ignore_bands to List[str] if not already
     if ignore_bands is None:
@@ -1148,8 +2280,24 @@ def get_first_redwards_band(
     ref_wav: u.Quantity,
     ignore_bands: Optional[Union[str, List[str]]] = None,
 ) -> Optional[str]:
-    """
-    Get the first band redwards of a reference wavelength, ignoring required bands
+    """Find the bluest filter that lies entirely redwards of a redshifted reference wavelength.
+
+    Parameters
+    ----------
+    z : `float`
+        Redshift.
+    filterset : `Multiple_Filter`
+        Filter set ordered blue to red.
+    ref_wav : `astropy.units.Quantity`
+        Rest-frame reference wavelength.
+    ignore_bands : `str` or `list` of `str`, optional
+        Band name(s) to exclude from consideration. Default is `None`.
+
+    Returns
+    -------
+    `str` or `None`
+        Name of the first (bluest) band found redwards of ``ref_wav * (1 + z)``,
+        or `None` if none is found.
     """
     # convert ignore_bands to List[str] if not already
     if ignore_bands is None:
@@ -1169,22 +2317,21 @@ def group_positions(
     sky_coords: SkyCoord,
     match_radius: u.Quantity = 2.0 * u.arcsec
 ) -> Dict[int, List[int]]:
-    """
-    Group sky positions by proximity within a matching radius.
+    """Group sky positions by proximity within a matching radius.
 
     Parameters
     ----------
-    ra_list : array-like
-        List of Right Ascensions in degrees.
-    dec_list : array-like
-        List of Declinations in degrees.
-    match_radius : astropy.units.Quantity
-        Matching radius (default 2 arcsec).
+    sky_coords : `astropy.coordinates.SkyCoord`
+        Sky positions to group.
+    match_radius : `astropy.units.Quantity`, optional
+        Matching radius. Default is 2 arcsec.
 
     Returns
     -------
-    groups : dict
-        Dictionary mapping group_id -> list of indices belonging to that group.
+    `dict`
+        Mapping of a group name (derived from the median RA/Dec of the group,
+        e.g. ``"j1234p5678"``) to the list of indices into ``sky_coords``
+        belonging to that group.
     """
 
     # adjacency matrix for matches
@@ -1216,8 +2363,19 @@ def group_positions(
     return groups
 
 def parse_s_region(s_region):
-    """
-    Parse S_REGION polygon string into matplotlib Polygon coordinates.
+    """Parse an S_REGION FITS header polygon string into vertex coordinates.
+
+    Parameters
+    ----------
+    s_region : `str`
+        S_REGION string of the form ``"POLYGON <frame> ra1 dec1 ra2 dec2 ..."``.
+
+    Returns
+    -------
+    `numpy.ndarray` or `None`
+        Nx2 array of ``(ra, dec)`` vertex coordinates, or `None` if
+        ``s_region`` does not match the expected polygon format or has an
+        invalid number of values.
     """
     # Expect "POLYGON ICRS ra1 dec1 ra2 dec2 ..."
     m = re.search(r'POLYGON\s+\w+\s+(.+)', s_region, flags=re.IGNORECASE)
@@ -1230,8 +2388,18 @@ def parse_s_region(s_region):
     return coords
 
 def footprints_from_files(files):
-    """
-    Extract matplotlib Polygons from files with S_REGION.
+    """Extract sky-region footprint polygons from the S_REGION header keyword of a list of FITS files.
+
+    Parameters
+    ----------
+    files : `list` of `str`
+        Paths to FITS files with an ``"SCI"`` extension containing an S_REGION header keyword.
+
+    Returns
+    -------
+    `dict`
+        Mapping of file path to Nx2 `numpy.ndarray` of ``(ra, dec)`` polygon
+        vertices, for files where a valid S_REGION was found and parsed.
     """
     from astropy.io import fits
     from matplotlib.patches import Polygon
@@ -1250,19 +2418,24 @@ def footprints_from_files(files):
 
 @njit
 def linear_fit(x: NDArray[np.float64], y: NDArray[np.float64]) -> Tuple[float, float]:
-    """
-    Performs linear least-squares fitting: y = slope * x + intercept.
-    
-    Parameters:
-        x (ndarray): The independent variable (1D array).
-        y (ndarray): The dependent variable (1D array).
-        
-    Returns:
-        slope (float): The slope of the best-fit line.
-        intercept (float): The intercept of the best-fit line.
+    """Perform a linear least-squares fit ``y = slope * x + intercept``.
+
+    Compiled with numba (`@njit`) for performance.
+
+    Parameters
+    ----------
+    x : `numpy.ndarray` of `float64`
+        Independent variable (1D array).
+    y : `numpy.ndarray` of `float64`
+        Dependent variable (1D array).
+
+    Returns
+    -------
+    `tuple` of `float`
+        ``(slope, intercept)`` of the best-fit line.
     """
     n = len(x)
-    
+
     # Compute sums for least squares
     sum_x = 0.0
     sum_y = 0.0
@@ -1273,7 +2446,7 @@ def linear_fit(x: NDArray[np.float64], y: NDArray[np.float64]) -> Tuple[float, f
         sum_y += y[i]
         sum_x2 += x[i] * x[i]
         sum_xy += x[i] * y[i]
-    
+
     # Calculate slope and intercept
     slope = (n * sum_xy - sum_x * sum_y) / (n * sum_x2 - sum_x ** 2)
     intercept = (sum_y - slope * sum_x) / n
@@ -1281,13 +2454,46 @@ def linear_fit(x: NDArray[np.float64], y: NDArray[np.float64]) -> Tuple[float, f
 
 @njit
 def interpolate_linear_fit(x: NDArray[np.float64], y: NDArray[np.float64], x_out: float) -> float:
+    """Evaluate a linear least-squares fit of ``(x, y)`` at a new point.
+
+    Compiled with numba (`@njit`) for performance.
+
+    Parameters
+    ----------
+    x : `numpy.ndarray` of `float64`
+        Independent variable used to fit the line.
+    y : `numpy.ndarray` of `float64`
+        Dependent variable used to fit the line.
+    x_out : `float`
+        Point at which to evaluate the fitted line.
+
+    Returns
+    -------
+    `float`
+        Fitted y value at ``x_out``.
+    """
     slope, intercept = linear_fit(x, y)
     return slope * x_out + intercept
 
 @njit
 def residual_sum_of_squares(params, x, y):
-    """
-    Calculate the residual sum of squares for a linear model y = mx + b.
+    """Compute the residual sum of squares for a linear model ``y = m * x + c``.
+
+    Compiled with numba (`@njit`) for performance.
+
+    Parameters
+    ----------
+    params : array-like
+        Two-element ``(m, c)`` linear model parameters.
+    x : array-like
+        Independent variable.
+    y : array-like
+        Observed dependent variable.
+
+    Returns
+    -------
+    `float`
+        Sum of squared residuals between ``y`` and the model prediction.
     """
     m, c = params
     residuals = y - (m * x + c)
@@ -1295,29 +2501,60 @@ def residual_sum_of_squares(params, x, y):
 
 @njit
 def gradient_descent_beta_fit(x, y, initial_params, learning_rate=0.01, max_iter=1000, tol=1e-6):
-    """
-    Perform gradient descent to minimize the residual sum of squares.
+    """Fit a linear model to ``(x, y)`` via gradient descent on the residual sum of squares.
+
+    Compiled with numba (`@njit`) for performance.
+
+    Parameters
+    ----------
+    x : array-like
+        Independent variable.
+    y : array-like
+        Dependent variable.
+    initial_params : array-like
+        Initial ``(m, c)`` parameter guess.
+    learning_rate : `float`, optional
+        Gradient descent step size. Default is 0.01.
+    max_iter : `int`, optional
+        Maximum number of iterations. Default is 1000.
+    tol : `float`, optional
+        Convergence tolerance on the gradient norm. Default is 1e-6.
+
+    Returns
+    -------
+    `tuple`
+        ``(params, i)`` where ``params`` is the array ``[m, c]`` of fitted
+        parameters and ``i`` is the number of iterations taken.
     """
     params = np.array(initial_params, dtype=np.float64)
     for i in range(max_iter):
         m, c = params
         residuals = y - (m * x + c)
-        
+
         # Compute gradients
         grad_m = -2 * np.sum(x * residuals)
         grad_c = -2 * np.sum(residuals)
-        
+
         # Update parameters
         params[0] -= learning_rate * grad_m
         params[1] -= learning_rate * grad_c
-        
+
         # Check for convergence
         if np.sqrt(grad_m ** 2 + grad_c ** 2) < tol:
             break
-            
+
     return params, i  # Return optimized parameters and iterations taken
 
 def symlink(target_path, symlink_path):
+    """Create a symlink to a target file, creating parent directories as needed.
+
+    Parameters
+    ----------
+    target_path : `str`
+        Path to the file the symlink should point to.
+    symlink_path : `str`
+        Path at which to create the symlink.
+    """
     make_dirs(symlink_path)
     if Path(target_path).is_file():
         try:
@@ -1330,12 +2567,48 @@ def symlink(target_path, symlink_path):
         galfind_logger.warning(f"Target file does not exist for symlink: {target_path}")
 
 def get_depth_dir(galfind_work_dir, survey, version, instrument_names):
+    """Build the depths output directory path(s) for each instrument.
+
+    Parameters
+    ----------
+    galfind_work_dir : `str`
+        Root GALFIND working directory.
+    survey : `str`
+        Survey name.
+    version : `str`
+        Data reduction version.
+    instrument_names : `list` of `str`
+        Instrument names to build a directory for.
+
+    Returns
+    -------
+    `numpy.ndarray` of `str`
+        One depths directory path per instrument.
+    """
     out_dirs = []
     for instrument_name in instrument_names:
         out_dirs.append(f"{galfind_work_dir}/Depths/{instrument_name}/{version}/{survey}")
     return np.array(out_dirs)
 
 def get_eazy_dir(galfind_work_dir, survey, version, instrument_names):
+    """Build the EAZY input/output directory paths for a combined instrument set.
+
+    Parameters
+    ----------
+    galfind_work_dir : `str`
+        Root GALFIND working directory.
+    survey : `str`
+        Survey name.
+    version : `str`
+        Data reduction version.
+    instrument_names : `list` of `str`
+        Instrument names, combined with ``"+"`` into a single identifier.
+
+    Returns
+    -------
+    `numpy.ndarray` of `str`
+        Two paths: ``[input_dir, output_dir]``.
+    """
     instrument_name = "+".join(instrument_names)
     out_dirs = []
     for subdir in ["input", "output"]:
@@ -1343,21 +2616,96 @@ def get_eazy_dir(galfind_work_dir, survey, version, instrument_names):
     return np.array(out_dirs)
 
 def get_mask_dir(galfind_work_dir, survey):
+    """Build the mask directory path for a survey.
+
+    Parameters
+    ----------
+    galfind_work_dir : `str`
+        Root GALFIND working directory.
+    survey : `str`
+        Survey name.
+
+    Returns
+    -------
+    `numpy.ndarray` of `str`
+        Single-element array containing the masks directory path.
+    """
     return np.array([f"{galfind_work_dir}/Masks/{survey}"])
 
 def get_sex_dir(galfind_work_dir, survey, version, instrument_names):
+    """Build the SExtractor output directory path(s) for each instrument.
+
+    Parameters
+    ----------
+    galfind_work_dir : `str`
+        Root GALFIND working directory.
+    survey : `str`
+        Survey name.
+    version : `str`
+        Data reduction version.
+    instrument_names : `list` of `str`
+        Instrument names to build a directory for.
+
+    Returns
+    -------
+    `numpy.ndarray` of `str`
+        One SExtractor directory path per instrument.
+    """
     out_dirs = []
     for instrument_name in instrument_names:
         out_dirs.append(f"{galfind_work_dir}/SExtractor/{instrument_name}/{version}/{survey}")
     return np.array(out_dirs)
 
 def get_stacked_images_dir(galfind_work_dir, survey, version, instrument_names):
+    """Build the stacked-images directory path(s) for each instrument.
+
+    Parameters
+    ----------
+    galfind_work_dir : `str`
+        Root GALFIND working directory.
+    survey : `str`
+        Survey name.
+    version : `str`
+        Data reduction version.
+    instrument_names : `list` of `str`
+        Instrument names to build a directory for.
+
+    Returns
+    -------
+    `numpy.ndarray` of `str`
+        One stacked-images directory path per instrument.
+    """
     out_dirs = []
     for instrument_name in instrument_names:
         out_dirs.append(f"{galfind_work_dir}/Stacked_Images/{version}/{instrument_name}/{survey}")
     return np.array(out_dirs)
 
 def find_target_dir(galfind_work_dir, survey, version, instrument_names, keyword):
+    """Dispatch to the appropriate directory-builder function based on a keyword.
+
+    Parameters
+    ----------
+    galfind_work_dir : `str`
+        Root GALFIND working directory.
+    survey : `str`
+        Survey name.
+    version : `str`
+        Data reduction version.
+    instrument_names : `list` of `str`
+        Instrument names.
+    keyword : `str`
+        One of ``"Depths"``, ``"EAZY"``, ``"Masks"``, ``"SExtractor"``, ``"Stacked_Images"``.
+
+    Returns
+    -------
+    `numpy.ndarray` of `str`
+        Directory path(s) for the requested product type.
+
+    Raises
+    ------
+    ValueError
+        If ``keyword`` is not one of the recognised values.
+    """
     if keyword == "Depths":
         return get_depth_dir(galfind_work_dir, survey, version, instrument_names)
     elif keyword == "EAZY":
@@ -1372,6 +2720,23 @@ def find_target_dir(galfind_work_dir, survey, version, instrument_names, keyword
         raise ValueError(f"Keyword {keyword} not recognised")
 
 def make_symlinks(target_galfind_work, symlink_galfind_work, survey, version, instrument_names, keywords):
+    """Create symlinks mirroring a set of GALFIND work-directory products into another location.
+
+    Parameters
+    ----------
+    target_galfind_work : `str`
+        Source GALFIND working directory containing the real files.
+    symlink_galfind_work : `str`
+        Destination GALFIND working directory in which to create symlinks.
+    survey : `str`
+        Survey name.
+    version : `str`
+        Data reduction version.
+    instrument_names : `list` of `str`
+        Instrument names.
+    keywords : `list` of `str`
+        Product-type keywords (as accepted by `find_target_dir`) to symlink.
+    """
     for keyword in keywords:
         target_dirs = find_target_dir(target_galfind_work, survey, version, instrument_names, keyword)
         for target_dir in target_dirs:
@@ -1386,12 +2751,38 @@ def get_ext_src_corr(
     ext_src_uplim: Optional[Union[int, float]] = 10.0,
     ref_wav: u.Quantity = 1_500.0 * u.AA,
 ) -> float:
+    """Look up (and clip) the extended-source photometric correction for a galaxy.
+
+    Parameters
+    ----------
+    phot_rest : `Photometry_rest`
+        Rest-frame photometry object providing ``filterset``, ``z``, and ``ext_src_corrs``.
+    ext_src_key : `str`, optional
+        Either ``"UV"`` to select the correction from the band nearest
+        ``ref_wav`` in the rest frame, a specific band name, or `None` to
+        disable the correction entirely. Default is ``"UV"``.
+    ext_src_uplim : `int` or `float`, optional
+        Upper limit clipped onto the correction factor; `None` disables clipping. Default is 10.0.
+    ref_wav : `astropy.units.Quantity`, optional
+        Rest-frame reference wavelength used when ``ext_src_key`` is ``"UV"``. Default is 1500 Angstrom.
+
+    Returns
+    -------
+    `float`
+        Extended source correction factor (``>= 1.0``), or ``1.0`` if
+        ``ext_src_key`` is `None`, or `numpy.nan` if ``phot_rest`` has no filters.
+
+    Raises
+    ------
+    AttributeError
+        If ``phot_rest`` has no ``ext_src_corrs`` attribute.
+    """
     if ext_src_key is None:
         return 1.0
     else:
         if len(phot_rest.filterset) == 0:
             galfind_logger.debug(
-                f"{repr(phot_rest)} has {len(phot_rest.filterset)=}! " + 
+                f"{repr(phot_rest)} has {len(phot_rest.filterset)=}! " +
                 "Unable to compute extended source correction!"
             )
             return np.nan
@@ -1420,6 +2811,20 @@ def get_ext_src_corr_label(
     ext_src_key: Optional[str] = "UV",
     ext_src_uplim: Optional[Union[int, float]] = 10.0,
 ) -> str:
+    """Build the catalogue column-name suffix identifying an extended-source correction configuration.
+
+    Parameters
+    ----------
+    ext_src_key : `str`, optional
+        Band or ``"UV"`` key identifying the correction; `None` disables the suffix. Default is ``"UV"``.
+    ext_src_uplim : `int` or `float`, optional
+        Upper limit applied to the correction, appended to the label if given. Default is 10.0.
+
+    Returns
+    -------
+    `str`
+        Label suffix, e.g. ``"_extsrc_UV<10"``, or ``""`` if ``ext_src_key`` is `None`.
+    """
     if ext_src_key is None:
         return ""
     else:
@@ -1429,8 +2834,25 @@ def get_ext_src_corr_label(
         else:
             ext_src_lim_label = f"<{ext_src_uplim:.0f}"
         return ext_src_name + ext_src_lim_label
-    
+
 def truncate_colname(col):
+    """Truncate a FITS column name to the 68-character FITS format limit.
+
+    Attempts to shorten the name by stripping filter-name letter codes
+    (``'F'``, ``'W'``, ``'M'``, ``'LP'``) from any embedded JWST/HST-style
+    filter names before falling back to a hard truncation.
+
+    Parameters
+    ----------
+    col : `str`
+        Candidate column name.
+
+    Returns
+    -------
+    `str`
+        ``col`` unchanged if its length is <= 68 characters; otherwise a
+        shortened name, hard-truncated to 68 characters if still too long.
+    """
     out_colname = col
     if len(col) > 68:
         # truncate column name to 68 characters for fits format
@@ -1455,6 +2877,18 @@ def truncate_colname(col):
     return out_colname
 
 def all_subclasses(cls):
+    """Recursively collect every (in)direct subclass of a class.
+
+    Parameters
+    ----------
+    cls : `type`
+        Class to walk the subclass tree of.
+
+    Returns
+    -------
+    `tuple` of `type`
+        All (in)direct subclasses of ``cls``.
+    """
     out = set()
     stack = [cls]
     while stack:
@@ -1471,6 +2905,28 @@ def cat_from_gal(
     data: Optional[Data],
     gal_creator_kwargs: Optional[Dict[str, Any]],
 ) -> Catalogue:
+    """Build a length-1 `Catalogue` containing a single `Galaxy` object.
+
+    Parameters
+    ----------
+    gal : `Galaxy`
+        Galaxy to wrap in a catalogue.
+    data : `Data`
+        `Data` object the galaxy belongs to; must be an instance of `Data`.
+    gal_creator_kwargs : `dict`, optional
+        Keyword arguments used to construct a `Galaxy_Creator` if ``gal`` does
+        not already have one attached.
+
+    Returns
+    -------
+    `Catalogue`
+        A `Catalogue` object containing only ``gal``.
+
+    Raises
+    ------
+    AssertionError
+        If ``data`` is not an instance of `Data`.
+    """
     from . import Data, Galaxy_Creator, Catalogue
     assert isinstance(data, Data), \
         galfind_logger.critical(
