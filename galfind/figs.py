@@ -84,16 +84,21 @@ def make_cutout_ax(
     cutout_ax_list = []
     for i in range(n_x * n_y):
         cutout_ax = fig.add_subplot(gridspec_cutout[i])
-        cutout_ax.set_aspect("equal", adjustable="box", anchor="N")
+        cutout_ax.set_aspect("equal", adjustable="box", anchor="S")
         cutout_ax.set_xticks([])
         cutout_ax.set_yticks([])
         cutout_ax_list.extend([cutout_ax])
     ax_arr = np.array(cutout_ax_list, dtype=object).flatten()
     return ax_arr
 
-def make_phot_diagnostic_fig(n_cutouts: int):
+def make_phot_diagnostic_fig(
+    n_cutouts: int,
+    fig_kwargs: Dict[str, Any] = {},
+) -> Tuple[plt.Figure, List[plt.Axes]]:
     # figure size may well depend on how many bands there are
-    overall_fig = plt.figure(figsize=(8, 7), constrained_layout=True)
+    fig_kwargs.setdefault("figsize", (8.0, 7.0))
+    fig_kwargs.setdefault("constrained_layout", True)
+    overall_fig = plt.figure(**fig_kwargs)
     fig, cutout_fig = overall_fig.subfigures(
         2,
         1,

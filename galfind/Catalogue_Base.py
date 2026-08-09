@@ -780,8 +780,18 @@ class Catalogue_Base:
         hdul = fits.open(self.cat_path)
         return any(hdu_.name == hdu_name for hdu_ in hdul)
 
-    @staticmethod
     def write_cat(
+        self: Self,
+        tab_arr: List[Table],
+        tab_names: List[str],
+        cat_path: str,
+    ) -> None:
+        self._write_cat(tab_arr, tab_names, cat_path)
+        # TODO: check if self.cat_creator._tab_cache()
+        # update is required here
+
+    @staticmethod
+    def _write_cat(
         tab_arr: List[Table],
         tab_names: List[str],
         cat_path: str,
@@ -871,8 +881,8 @@ class Catalogue_Base:
             ] + [hdu]
         self.write_cat(tab_arr, tab_names, self.cat_path)
 
-    def del_hdu(self, hdu):
-        if self.check_hdu_exists(hdu):  # delete hdu if it exists
+    def del_hdu(self, hdu: str):
+        if self.check_hdu_exists(hdu.upper()):  # delete hdu if it exists
             tab_arr = [
                 self.open_cat(cropped=False, hdu=hdu_.name)
                 for hdu_ in fits.open(self.cat_path)

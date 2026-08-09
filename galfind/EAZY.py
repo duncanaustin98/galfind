@@ -97,8 +97,12 @@ class EAZY(SED_code):
 
     ID_label = "IDENT"
     #ext_src_corr_properties = []
-    def __init__(self: Self, SED_fit_params: Dict[str, Any]):
-        super().__init__(SED_fit_params)
+    def __init__(
+        self: Self,
+        SED_fit_params: Dict[str, Any],
+        **kwargs: Dict[str, Any],
+    ):
+        super().__init__(SED_fit_params, **kwargs)
 
     @classmethod
     def from_label(cls, label: str) -> Type[SED_code]:

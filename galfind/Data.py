@@ -2958,6 +2958,8 @@ class Data:
                 other = self._indices_from_filt_names(other)
         if isinstance(other, list):
             item = list(np.array(self.band_data_arr)[other])
+        elif isinstance(other, np.ndarray) and other.dtype == bool:
+            item = list(np.array(self.band_data_arr)[other])
         else:
             item = self.band_data_arr[other]
         if isinstance(item, Band_Data):

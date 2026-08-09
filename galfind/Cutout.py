@@ -374,11 +374,12 @@ class Band_Cutout_Base(Cutout_Base, ABC):
             "zorder": 10,
             "fontweight": "bold",
         }
-        for key, value in label_kwargs.items():
-            def_label_kwargs[key] = value
-        label = def_label_kwargs.pop("label", None)
+        for key, value in def_label_kwargs.items():
+            label_kwargs.setdefault(key, value)
+            #def_label_kwargs[key] = value
+        label = label_kwargs.pop("label", None)
         if label is not None:
-            text_unpack_kwargs = deepcopy(def_label_kwargs)
+            text_unpack_kwargs = deepcopy(label_kwargs)
             text_unpack_kwargs.pop("xpos")
             text_unpack_kwargs.pop("ypos")
             # plot text for band label
@@ -1375,22 +1376,23 @@ class Multiple_Cutout_Base(ABC):
         n_rows: int = 1,
         fig_scaling: float = 1.5,
         split_by_instr: bool = False,
+        split_by_instr_cmap: str = "plasma",
         imshow_kwargs: Dict[str, Any] = {},
         norm_kwargs: Dict[str, Any] = {},
+        label_kwargs: Dict[str, Any] = {},
         plot_regions: Dict[str, List[Union[Dict[str, Any], Type[Patch]]]] = {},
         scalebars: Optional[Dict] = [],
         mask: Optional[List[bool]] = None,
-        instr_split_cmap: str = "Spectral_r",
         incl_title: bool = False,
         overwrite: bool = False,
         show: bool = False,
         save: bool = True,
         save_path: Optional[str] = None,
         close_fig: bool = False,
+        gridspec_kwargs: Dict[str, Any] = {},
         *args,
         **kwargs,
     ) -> List[plt.Figure, plt.Axes]:
-        
         assert n_rows > 0
         if n_rows > len(self):
             n_y = len(self)
@@ -1407,7 +1409,7 @@ class Multiple_Cutout_Base(ABC):
             fig = figs.make_fig(n_x, n_y, scaling = fig_scaling)
         # make appropriate axes from the figure and ax_ratio
         if ax_arr is None:
-            ax_arr = figs.make_cutout_ax(fig, n_x, n_y)
+            ax_arr = figs.make_cutout_ax(fig, n_x, n_y, **gridspec_kwargs)
             # remove blank axes
             n_blank_ax = n_x * n_y - len(self)
             [fig.delaxes(ax_arr[-(i + 1)]) for i in range(n_blank_ax)]
@@ -1419,7 +1421,7 @@ class Multiple_Cutout_Base(ABC):
             #instr_names = [name for name in json.loads( \
             #    config["Other"]["INSTRUMENT_NAMES"]) if name in instr_names]
             # determine appropriate colours from the colour map
-            instr_split_cmap = plt.get_cmap(instr_split_cmap, len(instr_names))
+            instr_split_cmap = plt.get_cmap(split_by_instr_cmap, len(instr_names))
             norm = Normalize(vmin=0, vmax=len(instr_names) - 1)
             colours = {name: instr_split_cmap(norm(i)) for i, name in enumerate(instr_names)}
             plot_band_counts = {name: 0 for name in instr_names}
@@ -1480,13 +1482,12 @@ class Multiple_Cutout_Base(ABC):
                 else:
                     plot_regions_band = []
 
-            label_kwargs = {
-                "label": "\n".join([
+            if "label" not in label_kwargs.keys():
+                label_kwargs["label"] = "\n".join([
                     str(getattr(cutout, name, "")) for name in attrs
                     if name not in shared_attrs.keys()
                     and hasattr(cutout, name)
-                ]),
-            }
+                ])
             
             cutout.plot(
                 ax,

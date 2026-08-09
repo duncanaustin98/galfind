@@ -393,10 +393,13 @@ class Photometry:
                 if mag_units == u.ABmag:
                     # swap l1 / u1 errors
                     uplim_u1_vals = (uplim_l1_vals - uplim_vals).value
-                    uplim_l1_vals = [np.nan for i in uplim_indices]
+                    # 0.0 (not nan) since ax.errorbar() multiplies this side by
+                    # zero for lolims/uplims points; nan * 0 = nan, which
+                    # breaks the line connecting the point to the arrow
+                    uplim_l1_vals = [0.0 for i in uplim_indices]
                 else:
                     uplim_l1_vals = (uplim_vals - uplim_l1_vals).value
-                    uplim_u1_vals = [np.nan for i in uplim_indices]
+                    uplim_u1_vals = [0.0 for i in uplim_indices]
                 yerr = []
                 for i, uplim_errs in enumerate([uplim_l1_vals, uplim_u1_vals]):
                     mag_errs = mag_errs_new_units[i].value
@@ -458,12 +461,13 @@ class Photometry:
 
         if auto_scale:
             # auto-scale the x-axis
+            xlim_pad = funcs.convert_wav_units(0.15 * u.um, wav_units).value
             if plot_errs["x"]:
-                lower_xlim = np.min(wavs_to_plot - xerr[0]) * 0.95
-                upper_xlim = np.max(wavs_to_plot + xerr[1]) * 1.05
+                lower_xlim = np.min(wavs_to_plot - xerr[0]) - xlim_pad
+                upper_xlim = np.max(wavs_to_plot + xerr[1]) + xlim_pad
             else:
-                lower_xlim = np.min(wavs_to_plot) * 0.95
-                upper_xlim = np.max(wavs_to_plot) * 1.05
+                lower_xlim = np.min(wavs_to_plot) - xlim_pad
+                upper_xlim = np.max(wavs_to_plot) + xlim_pad
             ax.set_xlim(lower_xlim, upper_xlim)
             # auto-scale the y-axis based on plotting units
             if mag_units == u.ABmag:

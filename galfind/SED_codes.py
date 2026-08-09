@@ -17,11 +17,11 @@ import logging
 import numpy as np
 from copy import deepcopy
 from numpy.typing import NDArray
-from astropy.table import Table, join
+from astropy.table import Table, vstack
 from tqdm import tqdm
 from typing import TYPE_CHECKING, NoReturn, Tuple, Union, List, Dict, Any, Optional
 if TYPE_CHECKING:
-    from . import Catalogue, Spectral_Catalogue, Multiple_Filter, SED_obs, PDF
+    from . import Galaxy, Catalogue, Spectral_Catalogue, Multiple_Filter, SED_obs, PDF
 try:
     from typing import Self, Type  # python 3.11+
 except ImportError:
@@ -34,6 +34,7 @@ class SED_code(ABC):
     def __init__(
         self,
         SED_fit_params: Dict[str, Any],
+        **kwargs: Dict[str, Any],
     ):
         # assert isinstance(SED_fit_params, dict), \
         #     galfind_logger.critical(
@@ -44,6 +45,8 @@ class SED_code(ABC):
         self._load_gal_property_labels()
         self._load_gal_property_err_labels()
         self._load_gal_property_units()
+        for key, val in kwargs.items():
+            setattr(self, key, val)
 
     @classmethod
     @abstractmethod
@@ -194,7 +197,6 @@ class SED_code(ABC):
             galfind_logger.critical(
                 f"{self.SED_fit_params['excl_bands']=} != list"
             )
-
     
     def __str__(self) -> str:
         output_str = funcs.line_sep
@@ -260,7 +262,9 @@ class SED_code(ABC):
             )
             # TODO: check loading from cache
             fits_cat = cat.open_cat(hdu=self)
-            if target.ID in fits_cat[self.ID_label]:
+            if fits_cat is None:
+                fit = True
+            elif target.ID in np.array(fits_cat[self.ID_label], dtype=int):
                 fit = False
             else:
                 fit = True
@@ -277,6 +281,7 @@ class SED_code(ABC):
                 load_PDFs = load_PDFs,
                 load_SEDs = load_SEDs,
                 overwrite = overwrite,
+                update = update,
                 save_name = save_name,
                 fit = fit,
                 **fit_kwargs,
@@ -296,7 +301,7 @@ class SED_code(ABC):
         # run the SED fitting if not already done so or if wanted overwriting
         self.pre_fitting(target, aper_diam, overwrite, save_name = save_name)
         # TODO: check loading from cache
-        if fit_kwargs.get("fit", None):
+        if fit_kwargs.get("fit", None) is not None:
             fit = fit_kwargs["fit"]
         else:
             fits_cat = target.open_cat(hdu=self)
@@ -306,7 +311,6 @@ class SED_code(ABC):
                 fit = True
             else:
                 fit = False
-        breakpoint()
         if fit:
             galfind_logger.info(
                 f"Making .in file for {self.label} SED fitting for {repr(target)}!"
@@ -315,7 +319,6 @@ class SED_code(ABC):
             galfind_logger.info(
                 f"Made .in file for {self.label} SED fitting for {repr(target)}!"
             )
-
             self.fit(
                 target,
                 aper_diam,
@@ -326,7 +329,6 @@ class SED_code(ABC):
                 **fit_kwargs
             )
             self.make_fits_from_out(out_path, save_name = save_name)
-            breakpoint()
             self.update_fits_cat(target, fits_out_path)
 
         if timed:
@@ -343,12 +345,13 @@ class SED_code(ABC):
                 in zip(aper_phot_IDs, SED_fit_IDs)), galfind_logger.critical(
                 f"IDs in SED_fit_cat do not match those in the catalogue"
             )
+
             cat_properties = [{gal_property: SED_fit_cat[label][i] * \
                 self.gal_property_units[gal_property] if gal_property in \
                 self.gal_property_units.keys() else SED_fit_cat[label][i] * \
                 u.dimensionless_unscaled for gal_property, label in \
                 self.gal_property_labels.items()} for i in range(len(aper_phot_IDs))]
-            
+
             # TODO: When instantiating the class, ensure that all errors have an associated property
             assert all(
                 err_key in self.gal_property_labels.keys()
@@ -451,7 +454,7 @@ class SED_code(ABC):
                 target.SED_results[aper_diam] = []
             target.SED_results[aper_diam].append(self)
 
-        return target #_SED_results
+        return target
             
 
     def _load_phot(self,
@@ -580,22 +583,35 @@ class SED_code(ABC):
         if orig_tab is None:
             cat.write_hdu(SED_fitting_tab, hdu=self.hdu_name.upper())
         else:
+            if all(
+                name in orig_tab.colnames for name in SED_fitting_tab.colnames
+            ) and all(
+                name in SED_fitting_tab.colnames for name in orig_tab.colnames
+            ):
+                # combine catalogues
+                combined_tab = vstack(
+                    [orig_tab, SED_fitting_tab],
+                    metadata_conflicts = "silent",
+                )
+                # sort by ID
+                combined_tab = combined_tab[np.argsort(combined_tab[self.ID_label].astype(int))]
+                # write out ID
+                cat.write_hdu(combined_tab, hdu=self.hdu_name.upper())
             # if any of the column names are the same
-            if any(name in orig_tab.colnames for name in SED_fitting_tab.colnames if name != self.ID_label):
+            elif any(name in orig_tab.colnames for name in SED_fitting_tab.colnames if name != self.ID_label):
                 galfind_logger.warning(
                     f"Column names in {self.hdu_name=} table already exist in catalogue table. " + \
                     "Will not update catalogue table."
                 )
                 # TODO: merge tables appropriately
-            else:
-                # combine catalogues
-                combined_tab = join(
-                    orig_tab,
-                    SED_fitting_tab,
-                    keys=self.ID_label,
-                    join_type="outer",
+                raise NotImplementedError(
+                    "Merging tables with non-totally overlapping column names is not yet implemented."
                 )
-                cat.write_hdu(combined_tab, hdu=self.hdu_name.upper())
+            else:
+                err_msg = f"Column names in {self.hdu_name=} != those in {fits_out_path}. " + \
+                    "Will not update catalogue table."
+                galfind_logger.critical(err_msg)
+                raise Exception(err_msg)
 
     # def update_lowz_zmax(SED_results):
     #     if "dz" in SED_fit_params.keys():

@@ -434,7 +434,7 @@ unit_labels_dict = {
     u.Jy: r"$\mathrm{Jy}$",
     u.nJy: r"$\mathrm{nJy}$",
     u.uJy: r"$\mathrm{\mu Jy}$",
-    u.ABmag: r"$\mathrm{AB mag}$",
+    u.ABmag: r"$m_{\rm AB}$",
     u.Hz / u.erg: r"$\mathrm{Hz}\mathrm{erg}^{-1}$",
 }
 

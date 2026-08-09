@@ -6,6 +6,7 @@ import astropy.units as u
 from astropy.utils.masked import Masked
 import matplotlib.patheffects as pe
 import matplotlib.pyplot as plt
+from matplotlib.transforms import Bbox
 import numpy as np
 from numpy.typing import NDArray
 from tqdm import tqdm
@@ -15,7 +16,7 @@ from photutils.aperture import (
     CircularAperture,
     aperture_photometry,
 )
-from typing import TYPE_CHECKING, Union, List, Dict, NoReturn, Optional
+from typing import TYPE_CHECKING, Union, List, Dict, Any, NoReturn, Optional
 if TYPE_CHECKING:
     from . import Multiple_Filter, Multiple_Band_Cutout, PSF_Base
 try:
@@ -512,6 +513,7 @@ class Photometry_obs(Photometry):
         uplim_sigma: float = 2.0,
         auto_scale: bool = True,
         SNR_labelsize: Optional[float] = 7.5,
+        SNR_label_kwargs: Dict[str, Any] = {},
         errorbar_kwargs: dict = {
             "ls": "",
             "marker": "o",
@@ -541,7 +543,7 @@ class Photometry_obs(Photometry):
         )
 
         if SNR_labelsize is not None:
-            label_kwargs = {
+            default_SNR_label_kwargs = {
                 "ha": "center",
                 "fontsize": SNR_labelsize,
                 "path_effects": [
@@ -549,78 +551,85 @@ class Photometry_obs(Photometry):
                 ],
                 "zorder": 1_000.0,
             }
+            for key, value in default_SNR_label_kwargs.items():
+                SNR_label_kwargs.setdefault(key, value)
+            label_kwargs = SNR_label_kwargs
             label_func = (
                 lambda SNR: f"{SNR:.1f}" + r"$\sigma$"
                 if SNR < 100
                 else f"{SNR:.0f}" + r"$\sigma$"
             )
+            mag_l1 = np.asarray(yerr[0])
+            mag_u1 = np.asarray(yerr[1])
+            uplims_arr = np.asarray(uplims)
             if mag_units == u.ABmag:
-                offset = 0.15
-                [
-                    ax.annotate(
-                        label_func(SNR),
-                        (
-                            wav,
-                            mag - offset
-                            if is_uplim
-                            else mag + mag_u1 + offset,
-                        ),
-                        **label_kwargs,
-                    )
-                    for i, (
-                        SNR,
-                        wav,
-                        mag,
-                        mag_l1,
-                        mag_u1,
-                        is_uplim,
-                    ) in enumerate(
-                        zip(
-                            self.SNR,
-                            wavs_to_plot,
-                            mags_to_plot,
-                            yerr[0],
-                            yerr[1],
-                            uplims,
-                        )
-                    )
-                ]
+                offset = 0.3
+                # brighter (smaller mag) / fainter (larger mag) candidate positions
+                pos_above = mags_to_plot - mag_l1 - offset
+                pos_below = mags_to_plot + mag_u1 + offset
             else:
                 offset = {
-                    "power density/spectral flux density wav": 0.1,
-                    "ABmag/spectral flux density": 0.1,
-                    "spectral flux density": 0.1,
+                    "power density/spectral flux density wav": 0.2,
+                    "ABmag/spectral flux density": 0.2,
+                    "spectral flux density": 0.2,
                 }[str(u.get_physical_type(mag_units))]
-                [
-                    ax.annotate(
-                        label_func(SNR),
-                        (
-                            wav,
-                            mag + offset
-                            if is_uplim
-                            else mag - mag_l1 - offset,
-                        ),
-                        **label_kwargs,
+                # brighter (larger value) / fainter (smaller value) candidate positions
+                pos_above = mags_to_plot + mag_u1 + offset
+                pos_below = mags_to_plot - mag_l1 - offset
+            # place uplims on the side away from their arrow, detections below their errorbar
+            default_pos = np.where(uplims_arr, pos_above, pos_below)
+            alt_pos = np.where(uplims_arr, pos_below, pos_above)
+
+            annotations = [
+                ax.annotate(label_func(SNR), (wav, pos), **label_kwargs)
+                for SNR, wav, pos in zip(self.SNR, wavs_to_plot, default_pos)
+            ]
+
+            # if a label overlaps another label or another band's data point
+            # (marker + errorbar/arrow), flip it to the other side of its own
+            # data point, provided that side still lies within the axis limits
+            fig = ax.get_figure()
+            fig.canvas.draw()
+            renderer = fig.canvas.get_renderer()
+            marker_px = errorbar_kwargs.get("ms", 4.0) * fig.dpi / 72.0
+            data_point_bboxes = [
+                Bbox.from_extents(
+                    x_px - marker_px,
+                    min(y_lo_px, y_hi_px),
+                    x_px + marker_px,
+                    max(y_lo_px, y_hi_px),
+                )
+                for (x_px, y_lo_px), (_, y_hi_px) in (
+                    (
+                        ax.transData.transform((wav, mag - l1)),
+                        ax.transData.transform((wav, mag + u1)),
                     )
-                    for i, (
-                        SNR,
-                        wav,
-                        mag,
-                        mag_l1,
-                        mag_u1,
-                        is_uplim,
-                    ) in enumerate(
-                        zip(
-                            self.SNR,
-                            wavs_to_plot,
-                            mags_to_plot,
-                            yerr[0],
-                            yerr[1],
-                            uplims,
-                        )
+                    for wav, mag, l1, u1 in zip(
+                        wavs_to_plot, mags_to_plot, mag_l1, mag_u1
                     )
-                ]
-                
+                )
+            ]
+
+            def _overlaps_others(i, bbox, label_bboxes):
+                return any(
+                    j != i and bbox.overlaps(label_bboxes[j])
+                    for j in range(len(label_bboxes))
+                ) or any(bbox.overlaps(b) for b in data_point_bboxes)
+
+            bboxes = [ann.get_window_extent(renderer) for ann in annotations]
+            ylim = sorted(ax.get_ylim())
+            for i, ann in enumerate(annotations):
+                overlaps = _overlaps_others(i, bboxes[i], bboxes)
+                if overlaps and ylim[0] <= alt_pos[i] <= ylim[1]:
+                    ann.set_position((wavs_to_plot[i], alt_pos[i]))
+                    flipped_bbox = ann.get_window_extent(renderer)
+                    still_overlaps = _overlaps_others(i, flipped_bbox, bboxes)
+                    if still_overlaps:
+                        # flipping didn't help; revert to the default side
+                        ann.set_position((wavs_to_plot[i], default_pos[i]))
+                    else:
+                        bboxes[i] = flipped_bbox
+
         if annotate:
             # x/y labels etc here
             ax.set_xlabel(f"Wavelength ({wav_units})")

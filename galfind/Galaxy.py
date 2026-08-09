@@ -359,10 +359,27 @@ class Galaxy:
         norm_kwargs: Dict[str, Any] = {},
         aper_kwargs: Dict[str, Any] = {},
         kron_kwargs: Dict[str, Any] = {},
+        cutout_label_kwargs: Dict[str, Any] = {},
+        cutout_gridspec_kwargs: Dict[str, Any] = {},
         n_rows: int = 2,
+        incl_nodata_cutouts: bool = False,
+        split_by_instr: bool = True,
+        split_by_instr_cmap: str = "plasma"
     ):
-        multi_band_cutout = self.make_cutouts(data, cutout_size)
-
+        if incl_nodata_cutouts:
+            data_ = data
+        else:
+            data_ = deepcopy(data)
+            gal_filterset_mask = np.array([
+                True if band_data.filt_name in self.aper_phot[aper_diam].filterset.filt_names \
+                else False for band_data in data_
+            ])
+            data_.band_data_arr = data_[gal_filterset_mask]
+        
+        multi_band_cutout = self.make_cutouts(
+            data_,
+            cutout_size,
+        )
         # # make intructions for radii to plot
         # sex_radius = None
         # aper_kwargs = {
@@ -429,11 +446,9 @@ class Galaxy:
         # ]
 
         # make fixed aperture regions to plot
-        aper_kwargs = {
-            "linestyle": "-",
-            "color": "green",
-            "path_effects": [pe.withStroke(linewidth = 3., foreground = "white")]
-        }
+        aper_kwargs.setdefault("linestyle", "-")
+        aper_kwargs.setdefault("color", "green")
+        aper_kwargs.setdefault("path_effects", [pe.withStroke(linewidth = 3.0, foreground = "white")])
         fixed_apertures = np.full(
             len(self.aper_phot[aper_diam]),
             {"aper_diam": aper_diam, **aper_kwargs}
@@ -445,7 +460,7 @@ class Galaxy:
             kron_kwargs = {
                 "linestyle": "--",
                 "color": "blue",
-                "path_effects": [pe.withStroke(linewidth = 3., foreground = "white")]
+                "path_effects": [pe.withStroke(linewidth = 3.0, foreground = "white")]
             }
             kron_apertures = [
                 Ellipse(
@@ -466,12 +481,15 @@ class Galaxy:
             fig = fig,
             n_rows = n_rows,
             # fig_scaling: float = 1.5,
-            split_by_instr = True,
+            split_by_instr = split_by_instr,
+            split_by_instr_cmap = split_by_instr_cmap,
             imshow_kwargs = imshow_kwargs,
             norm_kwargs = norm_kwargs,
             plot_regions = plot_regions,
+            label_kwargs = cutout_label_kwargs,
             # scalebars: Optional[Dict] = [],
             # mask: Optional[List[bool]] = None,
+            gridspec_kwargs = cutout_gridspec_kwargs,
             show = False,
             save = False,
             close_fig = False,
@@ -519,7 +537,7 @@ class Galaxy:
         ax: Optional[Tuple[plt.Figure, List[plt.Axes], List[plt.Axes]]] = None,
         plot_lowz: bool = True,
         lowz_dz: float = 0.5,
-        n_cutout_rows: int = 1,
+        n_cutout_rows: Optional[int] = None,
         wav_unit = u.um,
         flux_unit = u.ABmag,
         log_fluxes: bool = False,
@@ -533,17 +551,35 @@ class Galaxy:
         norm_kwargs: Dict[str, Any] = {},
         aper_kwargs: Dict[str, Any] = {},
         kron_kwargs: Dict[str, Any] = {},
+        cutout_label_kwargs: Dict[str, Any] = {},
+        sed_plot_kwargs: Dict[str, Any] = {},
+        cutout_gridspec_kwargs: Dict[str, Any] = {},
+        legend_kwargs: Dict[str, Any] = {"loc": "best"},
+        errorbar_kwargs: Dict[str, Any] = {},
+        SNR_label_kwargs: Dict[str, Any] = {},
+        phot_axes_labels_kwargs: Dict[str, Any] = {},
+        phot_axes_ticks_kwargs: Dict[str, Any] = {},
+        PDF_axes_ticks_kwargs: Dict[str, Any] = {},
+        PDF_axes_labels_kwargs: Dict[str, Any] = {},
+        PDF_axes_title_kwargs: Dict[str, Any] = {},
+        title_kwargs: Dict[str, Any] = {},
+        title: Optional[str] = None,
+        split_by_instr: bool = True,
+        split_by_instr_cmap: str = "plasma",
+        incl_nodata_cutouts: bool = False,
+        SED_cmap: Optional[str] = None,
         overwrite: bool = False,
         save: bool = True,
         show: bool = False,
         dpi: int = 300,
-    ):
+        ext: str = "png",
+    ) -> Optional[Tuple[plt.Figure, plt.Figure, List[plt.Axes], List[plt.Axes]]]:
 
         out_path = f"{config['Other']['PLOT_DIR']}/{data.version}/" + \
             f"{data.filterset.instrument_name}/{data.survey}/SED_plots/" + \
-            f"{aper_diam.to(u.arcsec).value:.2f}as/{self.ID}.png"
+            f"{aper_diam.to(u.arcsec).value:.2f}as/{self.ID}.{ext}"
 
-        if not Path(out_path).is_file() or overwrite:
+        if not Path(out_path).is_file() or overwrite or not save:
 
             if fig is None or ax is None:
                 fig, ax = figs.make_phot_diagnostic_fig(len(data))
@@ -560,14 +596,23 @@ class Galaxy:
                 SED_arr.extend(self._extract_lowz_codes(aper_diam, SED_arr, lowz_dz))
                 zPDF_arr.extend(self._extract_lowz_codes(aper_diam, zPDF_arr, lowz_dz))
 
-            zPDF_labels = [code.label for code in zPDF_arr]
+            zPDF_labels = [
+                code.display_label if hasattr(code, "display_label")
+                else code.label for code in zPDF_arr
+            ]
             # reset parameters
+            default_PDF_axes_title_kwargs = {"fontsize": "medium"}
+            for key, value in default_PDF_axes_title_kwargs.items():
+                PDF_axes_title_kwargs.setdefault(key, value)
             for ax_, label in zip(PDF_ax, zPDF_labels):
                 ax_.set_yticks([])
-                ax_.set_xlabel(r"Redshift, $z$")
-                ax_.set_title(label, fontsize="medium")
+                ax_.tick_params(**PDF_axes_ticks_kwargs)
+                ax_.set_title(label, **PDF_axes_title_kwargs)
 
             # plot cutouts (assuming reference SED_fit_params is at 0th index)
+            if n_cutout_rows is None:
+                # determine n_cutout_rows dynamically
+                raise NotImplementedError("Dynamic n_cutout_rows not implemented yet!")
             self.plot_cutouts(
                 cutout_fig,
                 data,
@@ -580,12 +625,24 @@ class Galaxy:
                 norm_kwargs = norm_kwargs,
                 aper_kwargs = aper_kwargs,
                 kron_kwargs = kron_kwargs,
+                cutout_label_kwargs = cutout_label_kwargs,
+                cutout_gridspec_kwargs = cutout_gridspec_kwargs,
                 n_rows = n_cutout_rows,
+                incl_nodata_cutouts = incl_nodata_cutouts,
+                split_by_instr = split_by_instr,
+                split_by_instr_cmap = split_by_instr_cmap
             )
 
             # plot specified SEDs and save colours
-            SED_colours = {}
-            errorbar_kwargs = {
+            if SED_cmap is None:
+                SED_colours = {}
+            else:
+                SED_cmap_ = plt.get_cmap(SED_cmap)
+                SED_colours = {
+                    code.label: SED_cmap_(i / (len(SED_arr) - 1) if len(SED_arr) > 1 else 0.5)
+                        for i, code in enumerate(SED_arr) for i, code in enumerate(SED_arr)
+                }
+            mock_errorbar_kwargs = {
                 "ls": "",
                 "marker": "o",
                 "ms": 8.0,
@@ -596,14 +653,18 @@ class Galaxy:
             }
             for code in reversed(SED_arr):
                 if self.aper_phot[aper_diam].SED_results[code.label].SED is not None:
+                    if code.label in SED_colours.keys():
+                        sed_plot_kwargs["color"] = SED_colours.get(code.label)
                     SED_plot = self.aper_phot[aper_diam].SED_results[code.label].SED.plot(
                         phot_ax,
                         wav_unit,
                         flux_unit,
                         log_fluxes = log_fluxes,
-                        label = code.label,
+                        label = code.display_label if hasattr(code, "display_label") else code.label,
+                        plot_kwargs = sed_plot_kwargs,
                     )
-                    SED_colours[code.label] = SED_plot[0].get_color()
+                    if SED_cmap is None:
+                        SED_colours[code.label] = SED_plot[0].get_color()
                     # plot the mock photometry
                     self.aper_phot[aper_diam].SED_results[code.label].SED.create_mock_photometry(
                         self.aper_phot[aper_diam].filterset,
@@ -617,7 +678,7 @@ class Galaxy:
                         uplim_sigma=None,
                         auto_scale=False,
                         plot_errs={"x": False, "y": False},
-                        errorbar_kwargs=errorbar_kwargs,
+                        errorbar_kwargs=mock_errorbar_kwargs,
                         label=None,
                         filled=False,
                         colour=SED_colours[code.label],
@@ -625,6 +686,15 @@ class Galaxy:
                     )
                     # ax_photo.scatter(band_wavs_lowz, band_mags_lowz, edgecolors=eazy_color_lowz, marker='o', facecolor='none', s=80, zorder=4.5)
 
+            default_errorbar_kwargs = {
+                "ls": "",
+                "marker": "o",
+                "ms": 4.0,
+                "zorder": 100.0,
+                "path_effects": [pe.withStroke(linewidth=2.0, foreground="white")],
+            }
+            for key, value in default_errorbar_kwargs.items():
+                errorbar_kwargs.setdefault(key, value)
             self.aper_phot[aper_diam].plot(
                 phot_ax,
                 wav_unit,
@@ -633,29 +703,38 @@ class Galaxy:
                 # uplim_sigma = 2.0,
                 # auto_scale = True,
                 # label_SNRs = True,
-                # errorbar_kwargs = {
-                #     "ls": "",
-                #     "marker": "o",
-                #     "ms": 4.0,
-                #     "zorder": 100.0,
-                #     "path_effects": [pe.withStroke(linewidth=2.0, foreground="white")],
-                # },
+                errorbar_kwargs = errorbar_kwargs,
                 # filled = True,
                 # colour = "black",
                 # label = "Photometry",
                 SNR_labelsize = 7.5,
+                SNR_label_kwargs = SNR_label_kwargs,
                 log_scale = log_fluxes,
             )
 
+            # photometry axis x/y labels and ticks
+            phot_ax.set_xlabel(phot_ax.get_xlabel(), **phot_axes_labels_kwargs)
+            phot_ax.set_ylabel(phot_ax.get_ylabel(), **phot_axes_labels_kwargs)
+            phot_ax.tick_params(**phot_axes_ticks_kwargs)
+
             # photometry axis title
-            phot_ax.set_title(f"{data.survey} {self.ID} ({data.version})")
+            if title is None:
+                title = f"{data.survey} {self.ID} ({data.version})"
+            phot_ax.set_title(title, **title_kwargs)
             # plot rejected reasons somewhere
             # if plot_rejected_reasons:
             #     rejected = str(row[f'rejected_reasons{col_ext}'][0])
             #     if rejected != '':
             #         phot_ax.annotate(rejected, (0.9, 0.95), ha='center', fontsize='small', xycoords = 'axes fraction', zorder=5)
             # photometry axis legend
-            phot_ax.legend(loc="best", fontsize=8.0, frameon=True)
+            default_legend_kwargs = {
+                "loc": "best",
+                "fontsize": 8.0,
+                "frameon": True,
+            }
+            for key, value in default_legend_kwargs.items():
+                legend_kwargs.setdefault(key, value)
+            phot_ax.legend(**legend_kwargs)
             for text in phot_ax.get_legend().get_texts():
                 text.set_path_effects(
                     [pe.withStroke(linewidth=3, foreground="white")]
@@ -680,21 +759,21 @@ class Galaxy:
                     ax,
                     annotate=annotate_PDFs,
                     colour=colour,
+                    label_kwargs=PDF_axes_labels_kwargs,
                 )
 
             if save:
                 funcs.make_dirs(out_path)
                 plt.savefig(out_path, dpi = dpi) #, bbox_inches="tight")
                 funcs.change_file_permissions(out_path)
-
-            if show:
-                plt.show()
-            else:
-                # for ax in [phot_ax] + PDF_ax:
-                #     ax.clear()
-                plt.close(fig)
-
-        return out_path
+                if show:
+                    plt.show()
+                else:
+                    # for ax in [phot_ax] + PDF_ax:
+                    #     ax.clear()
+                    plt.close(fig)
+        
+        return fig, cutout_fig, phot_ax, PDF_ax
 
     # Spectroscopy
 

@@ -7,7 +7,7 @@ import matplotlib.patheffects as pe
 from scipy.stats import gaussian_kde
 import numpy as np
 from astropy.table import Table
-from typing import Callable, Union, Optional, TYPE_CHECKING
+from typing import Callable, Union, Optional, Dict, Any, TYPE_CHECKING
 try:
     from typing import Self, Type  # python 3.11+
 except ImportError:
@@ -442,6 +442,7 @@ class PDF:
         colour: str = "black",
         log: bool = False,
         hatch: str = "//",
+        label_kwargs: Dict[str, Any] = {},
         **pdf_kwargs,
     ) -> None:
 
@@ -504,7 +505,8 @@ class PDF:
             )
         if log:
             x_plot_name = r"$\log_{10}($" + x_plot_name + r"$)$"
-        ax.set_xlabel(x_plot_name, fontsize="medium")
+        label_kwargs.setdefault("fontsize", "medium")
+        ax.set_xlabel(x_plot_name, **label_kwargs)
         # turn off grid
         ax.grid(False)
         # turn off y axis tick labels

@@ -199,7 +199,7 @@ class Combined_Catalogue(Catalogue_Base):
                 #full_tab.meta["INSTR_NAME"] = full_cat_instr_name
                 full_tab_hdus[i] = full_tab
             # save table
-            Catalogue_Base.write_cat(full_tab_hdus, unique_hdu_names, cat_path)
+            Catalogue_Base._write_cat(full_tab_hdus, unique_hdu_names, cat_path)
             #funcs.make_dirs(cat_path)
             #full_tab.write(cat_path, format="fits")
             #galfind_logger.info(f"Saved combined catalogue to {cat_path}")

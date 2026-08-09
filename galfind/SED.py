@@ -1259,12 +1259,20 @@ class SED_2D:
             funcs.convert_wav_units(sed.wavs, wav_units)
             for sed in self
         ]
+        # floor zero/negative model flux (e.g. from near-total Lyman-limit/
+        # IGM attenuation) to a tiny positive value; log10 of a <=0 flux
+        # (via the AB mag conversion or log_scale_fluxes) gives +inf/nan
+        sed_mags = [
+            np.maximum(sed.mags.value, 1e-10) * sed.mags.unit
+            if sed.mags.unit != u.ABmag else sed.mags
+            for sed in self
+        ]
         mags_arr = [
             funcs.log_scale_fluxes(
-                funcs.convert_mag_units(sed.wavs, sed.mags, mag_units)
+                funcs.convert_mag_units(sed.wavs, mags, mag_units)
             ) if mag_units != u.ABmag and log_fluxes else
-            funcs.convert_mag_units(sed.wavs, sed.mags, mag_units).value
-            for sed in self
+            funcs.convert_mag_units(sed.wavs, mags, mag_units).value
+            for sed, mags in zip(self, sed_mags)
         ]
 
         if label is not None and hasattr(self, "template_name"):
@@ -1273,20 +1281,25 @@ class SED_2D:
         # interpolate mags onto common wavelength grid
         #all_wavs = np.concatenate([wavs_arr_ for wavs_arr_ in wavs_arr])
         wavs_interp = wavs_arr[0] #np.linspace(np.min(all_wavs), np.max(all_wavs), 10_000)
+        # each draw generally has its own redshift, so its observed-frame
+        # wavelength grid doesn't exactly span wavs_interp; don't extrapolate
+        # past a draw's own coverage (extrapolating across the steep Lyman
+        # break slope shoots to zero/negative flux, i.e. +inf/nan AB mag at
+        # the edges) - mark those points nan instead and combine nan-safely
         mags_interp = np.array([
             interp1d(
                 wavs,
                 mags,
-                #bounds_error=False,
-                fill_value="extrapolate",
+                bounds_error=False,
+                fill_value=np.nan,
             )(wavs_interp)
             for wavs, mags in zip(wavs_arr, mags_arr)
         ])
 
         # determine 16th, 50th and 84th percentiles of the interpolated mags
-        mags_16 = np.percentile(mags_interp, 16, axis=0)
-        mags_50 = np.percentile(mags_interp, 50, axis=0)
-        mags_84 = np.percentile(mags_interp, 84, axis=0)
+        mags_16 = np.nanpercentile(mags_interp, 16, axis=0)
+        mags_50 = np.nanpercentile(mags_interp, 50, axis=0)
+        mags_84 = np.nanpercentile(mags_interp, 84, axis=0)
         #breakpoint()
         plot = ax.plot(wavs_interp.value, mags_50, label=label, **plot_kwargs)
         ax.fill_between(wavs_interp.value, mags_16, mags_84, alpha=0.5, color=plot[0].get_color())
