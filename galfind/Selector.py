@@ -1,3 +1,11 @@
+"""Galaxy sample selection criteria and selectors.
+
+This module defines the abstract and concrete selector classes used to
+apply well-defined selection criteria to galaxies in a catalogue. Selectors
+encapsulate individual selection criteria (e.g., redshift cuts, signal-to-noise
+cuts, masking criteria) that can be applied to individual galaxies or entire
+catalogues.
+"""
 
 from __future__ import annotations
 
