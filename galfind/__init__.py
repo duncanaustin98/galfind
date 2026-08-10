@@ -36,6 +36,11 @@ config.read(config_path)
 config.set("DEFAULT", "GALFIND_DIR", galfind_dir)
 config.set("DEFAULT", "CONFIG_DIR",  f"{galfind_dir}/../configs")
 
+# on ReadTheDocs, override machine-specific paths with writable defaults
+if os.environ.get("READTHEDOCS") == "True":
+    config.set("DEFAULT", "GALFIND_WORK", "/tmp/galfind_docs_build")
+    config.set("DEFAULT", "GALFIND_DATA", "/tmp/galfind_docs_build")
+
 # Make IS_CLUSTER variable from the config parameters
 if config["DEFAULT"]["SURVEY"] in json.loads(config.get("Other", "CLUSTER_FIELDS")):
     config.set("DEFAULT", "IS_CLUSTER", "YES")

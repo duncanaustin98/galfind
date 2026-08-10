@@ -31,7 +31,6 @@ numpydoc_show_class_members = False
 class_members_toctree = False
 nbsphinx_allow_errors = True
 autosummary_generate = True
-suppress_warnings = ["autosummary"]
 
 intersphinx_mapping = {
     "python": ("https://docs.python.org/3/", None),
