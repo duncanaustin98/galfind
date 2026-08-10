@@ -209,7 +209,18 @@ class Photometry_obs(Photometry):
         return result
 
     @property
+    @property
     def SNR(self):
+        """Signal-to-noise ratios for each band.
+
+        Calculates SNR from flux and depth, accounting for aperture
+        corrections if applicable and simulated vs. real data.
+
+        Returns
+        -------
+        `list`
+            SNR values for each band.
+        """
         if isinstance(self.flux, u.Quantity):
             fluxes = self.flux
         else:
@@ -236,6 +247,16 @@ class Photometry_obs(Photometry):
 
     @property
     def aper_corrs(self):
+        """Aperture corrections for each band.
+
+        Retrieves the magnitude corrections needed to convert aperture
+        photometry to total photometry, or NaN if unavailable.
+
+        Returns
+        -------
+        `list`
+            Aperture corrections in magnitudes for each band.
+        """
         if self.simulated or self.psfs is None:
             return [
                 np.nan for filt in self.filterset
@@ -255,7 +276,7 @@ class Photometry_obs(Photometry):
                 ) for filt in self.filterset
             ]
 
-    @classmethod # not a gal object here, more like a catalogue row
+    @classmethod
     def from_fits_cat(
         cls,
         fits_cat_row,
@@ -266,7 +287,33 @@ class Photometry_obs(Photometry):
         codes,
         lowz_zmaxs,
         templates,
-    ):
+    ) -> Self:
+        """Create observed photometry from FITS catalogue row.
+
+        Parameters
+        ----------
+        fits_cat_row : `astropy.table.Row`
+            Row from photometry FITS catalogue.
+        instrument : `Instrument`
+            Instrument information.
+        cat_creator : `Catalogue_Creator`
+            Catalogue creator for loading photometry.
+        aper_diam : `astropy.units.Quantity`
+            Aperture diameter.
+        min_flux_pc_err : `int` or `float`
+            Minimum flux percentage error threshold.
+        codes : `list`
+            SED code objects to load results.
+        lowz_zmaxs : `list`
+            Low-redshift maximum redshifts.
+        templates : `list`
+            Template information for SED fitting.
+
+        Returns
+        -------
+        `Photometry_obs`
+            Observed photometry with SED results.
+        """
         galfind_logger.warning(
             "SED_fit_params should be included in this function"
         )
@@ -291,7 +338,25 @@ class Photometry_obs(Photometry):
         aper_diam: u.Quantity,
         min_flux_pc_err: Union[int, float],
         SED_results: Dict[str, SED_result] = {},
-    ):
+    ) -> Self:
+        """Create observed photometry from base photometry object.
+
+        Parameters
+        ----------
+        phot : `Photometry`
+            Base photometry object with flux and errors.
+        aper_diam : `astropy.units.Quantity`
+            Aperture diameter.
+        min_flux_pc_err : `int` or `float`
+            Minimum flux percentage error threshold.
+        SED_results : `dict`, optional
+            Dictionary of SED results by code label. Default is empty dict.
+
+        Returns
+        -------
+        `Photometry_obs`
+            Observed photometry object.
+        """
         return cls(
             phot.instrument,
             phot.flux,
@@ -301,13 +366,27 @@ class Photometry_obs(Photometry):
             phot.depths,
             SED_results,
         )
-    
+
     @classmethod
     def from_multiple_band_cutout(
         cls: Type[Self],
         multi_band_cutout: Multiple_Band_Cutout,
         aper_diam: u.Quantity,
     ) -> Self:
+        """Create observed photometry from multi-band cutout images.
+
+        Parameters
+        ----------
+        multi_band_cutout : `Multiple_Band_Cutout`
+            Collection of cutouts for multiple bands.
+        aper_diam : `astropy.units.Quantity`
+            Aperture diameter for photometry.
+
+        Returns
+        -------
+        `Photometry_obs`
+            Observed photometry extracted from cutouts.
+        """
         # run photutils on every band_data in stacked_band_cutout
         xpos = multi_band_cutout[0].meta["SIZE_PIX"] / 2
         ypos = multi_band_cutout[0].meta["SIZE_PIX"] / 2
@@ -341,9 +420,16 @@ class Photometry_obs(Photometry):
             )
 
     def update_SED_result(
-        self: Self, 
-        gal_SED_result: SED_result
+        self: Self,
+        gal_SED_result: SED_result,
     ) -> None:
+        """Add or update an SED result in the photometry.
+
+        Parameters
+        ----------
+        gal_SED_result : `SED_result`
+            SED fitting result to store.
+        """
         if isinstance(gal_SED_result.SED_code, str):
             label = gal_SED_result.SED_code
         else:
@@ -359,9 +445,30 @@ class Photometry_obs(Photometry):
         SED_result_key: str,
         zmax_info: Dict[str, Dict[str, Union[float, u.Quantity, u.Magnitude, u.Dex]]],
     ) -> None:
+        """Update low-redshift maximum redshift information for an SED result.
+
+        Parameters
+        ----------
+        SED_result_key : `str`
+            Key/label of the SED result to update.
+        zmax_info : `dict`
+            Dictionary containing low-z redshift maximum information.
+        """
         return self.SED_results[SED_result_key].update_lowz_zmax_properties(zmax_info)
 
     def get_SED_fit_params_arr(self, code) -> list:
+        """Extract SED fitting parameters for all fitted codes.
+
+        Parameters
+        ----------
+        code : `SED_code`
+            SED code to extract parameters from.
+
+        Returns
+        -------
+        `list`
+            List of SED fitting parameter dictionaries.
+        """
         return [
             code.SED_fit_params_from_label(label)
             for label in self.SED_results.keys()
@@ -370,6 +477,15 @@ class Photometry_obs(Photometry):
     def load_property(
         self, gal_property: Union[dict, u.Quantity], save_name: str
     ) -> None:
+        """Load a derived property into the photometry object.
+
+        Parameters
+        ----------
+        gal_property : `dict` or `astropy.units.Quantity`
+            Property value or mapping to store.
+        save_name : `str`
+            Attribute name to save the property under.
+        """
         setattr(self, save_name, gal_property)
 
     def load_fixz_SED_result(
@@ -377,6 +493,18 @@ class Photometry_obs(Photometry):
         z_value: float,
         z_label: str = "z",
     ) -> NoReturn:
+        """Load a fixed redshift SED result for this photometry.
+
+        Creates and stores an SED result containing only a fixed redshift value,
+        useful for cases where the redshift is known precisely.
+
+        Parameters
+        ----------
+        z_value : `float`
+            Redshift value to fix.
+        z_label : `str`, optional
+            Label for the redshift result. Default is "z".
+        """
         if z_label in self.SED_results.keys():
             galfind_logger.warning(
                 f"{z_label} already in {self.SED_results.keys()}, overwriting!"
@@ -552,7 +680,45 @@ class Photometry_obs(Photometry):
         colour: str = "black",
         label: str = "Photometry",
         log_scale: bool = False,
-    ):
+    ) -> plt.Axes:
+        """Plot observed-frame photometry with SNR annotations.
+
+        Parameters
+        ----------
+        ax : `matplotlib.axes.Axes`, optional
+            Axes to plot on. Created if None. Default is None.
+        wav_units : `astropy.units.Unit`, optional
+            Wavelength unit. Default is Angstrom.
+        mag_units : `astropy.units.Unit`, optional
+            Magnitude/flux unit. Default is Jy.
+        plot_errs : `dict`, optional
+            Whether to plot x/y errors. Default is {"x": False, "y": True}.
+        annotate : `bool`, optional
+            Whether to add axis labels and legend. Default is True.
+        uplim_sigma : `float`, optional
+            Sigma level for upper limits. Default is 2.0.
+        auto_scale : `bool`, optional
+            Whether to auto-scale axes. Default is True.
+        SNR_labelsize : `float`, optional
+            Font size for SNR labels. Default is 7.5.
+        SNR_label_kwargs : `dict`, optional
+            Additional kwargs for SNR label text. Default is empty dict.
+        errorbar_kwargs : `dict`, optional
+            Kwargs for errorbar plot. Default includes markers and styling.
+        filled : `bool`, optional
+            Whether to fill between errors. Default is True.
+        colour : `str`, optional
+            Color for the plot. Default is "black".
+        label : `str`, optional
+            Label for legend. Default is "Photometry".
+        log_scale : `bool`, optional
+            Whether to use log scale. Default is False.
+
+        Returns
+        -------
+        `matplotlib.axes.Axes`
+            The axes with the plot.
+        """
         plot, wavs_to_plot, mags_to_plot, yerr, uplims = super().plot(
             ax,
             wav_units,
@@ -666,10 +832,24 @@ class Photometry_obs(Photometry):
         return plot
     
     def load_sextractor_ext_src_corrs(
-        self: Self, 
+        self: Self,
         filt_names: Optional[List[str]] = None,
         aper_corrs: Optional[Dict[str, float]] = None,
     ) -> NoReturn:
+        """Load extended source corrections from SExtractor photometry.
+
+        Computes corrections between aperture photometry and SExtractor FLUX_AUTO
+        measurements for all or selected filters.
+
+        Parameters
+        ----------
+        filt_names : `list` of `str`, optional
+            Filter names to compute corrections for. All filters used if None.
+            Default is None.
+        aper_corrs : `dict`, optional
+            Aperture corrections by filter name. Computed from PSF if None.
+            Default is None.
+        """
         if filt_names is None:
             filt_names = self.filterset.filt_names
 
@@ -842,9 +1022,30 @@ class Multiple_Photometry_obs:
         return self.phot_obs_arr[index]
 
     @classmethod
+    @classmethod
     def from_fits_cat(
         cls, fits_cat, instrument, cat_creator, SED_fit_params_arr, timed=False
-    ):
+    ) -> Self:
+        """Create multiple photometry from FITS catalogue for multiple galaxies.
+
+        Parameters
+        ----------
+        fits_cat : `astropy.table.Table`
+            FITS table containing photometry for multiple galaxies.
+        instrument : `Instrument`
+            Instrument information.
+        cat_creator : `Catalogue_Creator`
+            Catalogue creator for loading photometry.
+        SED_fit_params_arr : `list`
+            List of SED fitting parameter dictionaries.
+        timed : `bool`, optional
+            Whether to show progress bars. Default is False.
+
+        Returns
+        -------
+        `Multiple_Photometry_obs`
+            Collection of photometry objects for all galaxies.
+        """
         flux_arr, flux_errs_arr, gal_band_mask = cat_creator.load_photometry(
             fits_cat, instrument.filt_names, timed=timed
         )

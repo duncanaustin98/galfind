@@ -6182,6 +6182,24 @@ class EPOCHS_Selector(Multiple_SED_fit_Selector):
 #     return self.select_min_bands(len(self.instrument))
 
 class Rest_Frame_Property_Kwarg_Selector(SED_fit_Selector):
+    """Select galaxies based on rest-frame property calculator keyword arguments.
+
+    Selects galaxies by comparing specific keyword argument values used in
+    rest-frame property calculations to a target value.
+
+    Parameters
+    ----------
+    aper_diam : `astropy.units.Quantity`
+        Aperture diameter for photometry selection.
+    SED_fitter : `SED_code`
+        SED code providing the SED results.
+    property_calculator : `Type[Rest_Frame_Property_Calculator]`
+        Property calculator class to extract keywords from.
+    kwarg_name : `str`
+        Name of the keyword argument to match.
+    kwarg_val : `int` or `float`
+        Target value for the keyword argument.
+    """
 
     def __init__(
         self: Self,
@@ -6191,7 +6209,7 @@ class Rest_Frame_Property_Kwarg_Selector(SED_fit_Selector):
         kwarg_name: str,
         kwarg_val: Union[int, float],
     ):
-        # TODO: Add more assertions here to ensure the 
+        # TODO: Add more assertions here to ensure the
         # kwarg name is in the photometry_rest object
         kwargs = {
             "property_calculator": property_calculator,

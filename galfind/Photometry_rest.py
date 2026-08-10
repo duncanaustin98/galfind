@@ -95,7 +95,26 @@ class Photometry_rest(Photometry):
 
     # these class methods need updating!
     @classmethod
-    def from_fits_cat(cls, fits_cat_row, filterset, cat_creator, code):
+    @classmethod
+    def from_fits_cat(cls, fits_cat_row, filterset, cat_creator, code) -> Self:
+        """Create rest-frame photometry from FITS catalogue row.
+
+        Parameters
+        ----------
+        fits_cat_row : `astropy.table.Row`
+            Row from photometry FITS catalogue.
+        filterset : `Multiple_Filter`
+            Filter set for the galaxy.
+        cat_creator : `Catalogue_Creator`
+            Catalogue creator for loading photometry.
+        code : `SED_code`
+            SED code with galaxy property labels.
+
+        Returns
+        -------
+        `Photometry_rest`
+            Rest-frame photometry at the catalogue redshift.
+        """
         phot = Photometry.from_fits_cat(fits_cat_row, filterset, cat_creator)
         # TODO: mask the photometry object
         return cls.from_phot(
@@ -103,11 +122,37 @@ class Photometry_rest(Photometry):
         )
 
     @classmethod
-    def from_phot(cls, phot, z):
+    def from_phot(cls, phot, z) -> Self:
+        """Create rest-frame photometry from observed photometry and redshift.
+
+        Parameters
+        ----------
+        phot : `Photometry`
+            Observed-frame photometry object.
+        z : `float`
+            Galaxy redshift.
+
+        Returns
+        -------
+        `Photometry_rest`
+            Rest-frame photometry at the specified redshift.
+        """
         return cls(phot.filterset, phot.flux, phot.flux_errs, phot.depths, z)
 
     @classmethod
-    def from_phot_obs(cls, phot):
+    def from_phot_obs(cls, phot) -> Self:
+        """Create rest-frame photometry from observed-frame photometry object.
+
+        Parameters
+        ----------
+        phot : `Photometry_obs`
+            Observed-frame photometry object.
+
+        Returns
+        -------
+        `Photometry_rest`
+            Rest-frame photometry at the galaxy's redshift.
+        """
         return cls(
             phot.filterset,
             phot.flux,
@@ -228,13 +273,41 @@ class Photometry_rest(Photometry):
         ref_wav: u.Quantity,
         ignore_bands: Optional[Union[str, List[str]]] = None,
     ) -> Optional[str]:
+        """Get the first filter redward of a reference wavelength.
+
+        Parameters
+        ----------
+        ref_wav : `astropy.units.Quantity`
+            Reference wavelength.
+        ignore_bands : `str` or `list` of `str`, optional
+            Filter names to exclude from consideration. Default is `None`.
+
+        Returns
+        -------
+        `str` or `None`
+            Name of the first filter redward of the reference, or `None`.
+        """
         return funcs.get_first_redwards_band(self.z, self.filterset, ref_wav, ignore_bands)
-    
+
     def get_first_bluewards_band(
         self: Self,
         ref_wav: u.Quantity,
         ignore_bands: Optional[Union[str, List[str]]] = None,
     ) -> Optional[str]:
+        """Get the first filter blueward of a reference wavelength.
+
+        Parameters
+        ----------
+        ref_wav : `astropy.units.Quantity`
+            Reference wavelength.
+        ignore_bands : `str` or `list` of `str`, optional
+            Filter names to exclude from consideration. Default is `None`.
+
+        Returns
+        -------
+        `str` or `None`
+            Name of the first filter blueward of the reference, or `None`.
+        """
         return funcs.get_first_bluewards_band(self.z, self.filterset, ref_wav, ignore_bands)
 
     def _make_phot_from_scattered_fluxes(
@@ -297,7 +370,19 @@ class Photometry_rest(Photometry):
     #         for i in range(n_scatter)
     #     ]
 
-    def is_correctly_UV_cropped(self, rest_UV_wav_lims):
+    def is_correctly_UV_cropped(self, rest_UV_wav_lims) -> bool:
+        """Check if photometry is correctly UV-cropped to specified wavelength range.
+
+        Parameters
+        ----------
+        rest_UV_wav_lims : `astropy.units.Quantity`
+            UV wavelength limits to check against.
+
+        Returns
+        -------
+        `bool`
+            `True` if photometry is correctly cropped, `False` otherwise.
+        """
         if hasattr(self, "UV_wav_range"):
             if self.UV_wav_range == self.rest_UV_wavs_name(rest_UV_wav_lims):
                 assert (
@@ -307,7 +392,19 @@ class Photometry_rest(Photometry):
                 return True
         return False
 
-    def PL_amplitude_name(self, rest_UV_wav_lims):
+    def PL_amplitude_name(self, rest_UV_wav_lims) -> str:
+        """Generate property name for UV power-law amplitude.
+
+        Parameters
+        ----------
+        rest_UV_wav_lims : `astropy.units.Quantity`
+            UV wavelength limits.
+
+        Returns
+        -------
+        `str`
+            Property name of the form "A_PL_{wavelength_range}".
+        """
         return f"A_PL_{self.rest_UV_wavs_name(rest_UV_wav_lims)}"
 
     def _calc_property(

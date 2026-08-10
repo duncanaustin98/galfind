@@ -1779,6 +1779,11 @@ class Stacked_RGB(RGB_Base):
 
 
 class Multiple_Cutout_Base(ABC):
+    """Base class for collections of cutouts.
+
+    Provides common interface for managing multiple cutout objects with
+    shared attributes and plotting capabilities.
+    """
     def __init__(
         self: Self,
         cutouts: List[Type[Cutout_Base]],
@@ -2104,11 +2109,27 @@ class Multiple_Band_Cutout(Multiple_Cutout_Base):
     # Each plot is a different Filter
     @classmethod
     def from_cat(
-        cls: Type[Self], 
-        cat: Catalogue, 
+        cls: Type[Self],
+        cat: Catalogue,
         cutout_size: u.Quantity,
-        overwrite: bool = False
+        overwrite: bool = False,
     ) -> Self:
+        """Create cutouts for all galaxies in a catalogue.
+
+        Parameters
+        ----------
+        cat : `Catalogue`
+            Catalogue of galaxies.
+        cutout_size : `astropy.units.Quantity`
+            Size of the cutout region.
+        overwrite : `bool`, optional
+            Whether to overwrite existing cutout files. Default is `False`.
+
+        Returns
+        -------
+        `Multiple_Cutout_Base`
+            Collection of cutouts for the catalogue.
+        """
         # make a cutout for each filter
         cutouts = [
             Stacked_Band_Cutout.from_cat(cat, filt, cutout_size, overwrite)
@@ -2118,12 +2139,30 @@ class Multiple_Band_Cutout(Multiple_Cutout_Base):
 
     @classmethod
     def from_gal_data(
-        cls: Type[Self], 
-        gal: Galaxy, 
-        data: Data, 
-        cutout_size: u.Quantity, 
-        overwrite: bool = False
+        cls: Type[Self],
+        gal: Galaxy,
+        data: Data,
+        cutout_size: u.Quantity,
+        overwrite: bool = False,
     ) -> Self:
+        """Create cutouts from galaxy data across all bands.
+
+        Parameters
+        ----------
+        gal : `Galaxy`
+            Galaxy object to create cutouts for.
+        data : `Data`
+            Data object containing band information.
+        cutout_size : `astropy.units.Quantity`
+            Size of the cutout region.
+        overwrite : `bool`, optional
+            Whether to overwrite existing cutout files. Default is `False`.
+
+        Returns
+        -------
+        `Multiple_Cutout_Base`
+            Collection of cutouts for each band.
+        """
         # make a cutout for each filter
         cutouts = [
             Band_Cutout.from_gal_band_data(
@@ -2144,6 +2183,24 @@ class Multiple_Band_Cutout(Multiple_Cutout_Base):
         cutout_size: u.Quantity,
         **meta,
     ) -> Self:
+        """Create cutouts at a given sky coordinate from data.
+
+        Parameters
+        ----------
+        data : `Data`
+            Data object containing band information.
+        sky_coord : `astropy.coordinates.SkyCoord`
+            Sky coordinate for the cutout center.
+        cutout_size : `astropy.units.Quantity`
+            Size of the cutout region.
+        **meta
+            Additional metadata for the cutouts.
+
+        Returns
+        -------
+        `Multiple_Cutout_Base`
+            Collection of cutouts for each band at the specified coordinate.
+        """
         # make a cutout for each filter
         cutouts = [
             Band_Cutout.from_data_skycoord(band_data, sky_coord, cutout_size, **meta)
@@ -2158,6 +2215,22 @@ class Multiple_Band_Cutout(Multiple_Cutout_Base):
         sky_coords: Union[SkyCoord, List[SkyCoord]],
         cutout_size: u.Quantity,
     ) -> Self:
+        """Create stacked cutouts at multiple sky coordinates.
+
+        Parameters
+        ----------
+        data : `Data`
+            Data object containing band information.
+        sky_coords : `astropy.coordinates.SkyCoord` or `list` of `SkyCoord`
+            Sky coordinates for cutout centers.
+        cutout_size : `astropy.units.Quantity`
+            Size of the cutout region.
+
+        Returns
+        -------
+        `Multiple_Cutout_Base`
+            Collection of stacked cutouts for each band.
+        """
         # make a cutout for each filter
         cutouts = [
             Stacked_Band_Cutout.from_data_skycoord(
@@ -2169,6 +2242,13 @@ class Multiple_Band_Cutout(Multiple_Cutout_Base):
 
     @property
     def ID(self) -> str:
+        """Galaxy or object identifier (same for all cutouts).
+
+        Returns
+        -------
+        `str`
+            ID of the galaxy or object.
+        """
         assert all([cutout.ID == self[0].ID for cutout in self])
         return self[0].ID
 

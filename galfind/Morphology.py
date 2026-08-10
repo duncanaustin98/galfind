@@ -198,27 +198,70 @@ class Galfit_Result(Morphology_Result):
         super().__init__(fitter, chi2, Ndof, properties, property_errs, property_pdfs, rff, cutout = cutout)
 
     @property
+    @property
     def id(self: Self) -> str:
+        """Galaxy identifier extracted from file path.
+
+        Returns
+        -------
+        `str`
+            Galaxy ID.
+        """
         return self.im_path.split("/")[-1].split("_")[0]
 
     @property
     def version(self: Self) -> str:
+        """Data reduction version extracted from file path.
+
+        Returns
+        -------
+        `str`
+            Version identifier.
+        """
         return self.im_path.replace(config['GALFIT']['OUTPUT_DIR'], "").split("/")[1]
 
     @property
     def instr_name(self: Self) -> str:
+        """Instrument name extracted from file path.
+
+        Returns
+        -------
+        `str`
+            Instrument identifier.
+        """
         return self.im_path.replace(config['GALFIT']['OUTPUT_DIR'], "").split("/")[2]
 
     @property
     def survey(self: Self) -> str:
+        """Survey name extracted from file path.
+
+        Returns
+        -------
+        `str`
+            Survey identifier.
+        """
         return self.im_path.replace(config['GALFIT']['OUTPUT_DIR'], "").split("/")[3]
-    
+
     @property
     def filt_name(self: Self) -> str:
+        """Filter name extracted from file path.
+
+        Returns
+        -------
+        `str`
+            Filter identifier.
+        """
         return self.im_path.replace(config['GALFIT']['OUTPUT_DIR'], "").split("/")[4]
-    
+
     @property
     def plot_path(self: Self) -> str:
+        """Path for saving the Galfit output plot.
+
+        Returns
+        -------
+        `str`
+            Full path to the plot file.
+        """
         return f"{'/'.join(self.im_path.replace(config['GALFIT']['OUTPUT_DIR'], config['GALFIT']['GALFIT_PLOT_DIR']).split('/')[:-1]).replace(self.id + '/', '')}/{self.id}.png"
 
     def plot(
@@ -232,6 +275,27 @@ class Galfit_Result(Morphology_Result):
         save: bool = True,
         show: bool = False,
     ) -> None:
+        """Plot Galfit results showing original, model, and residual images.
+
+        Parameters
+        ----------
+        fig : `matplotlib.figure.Figure`, optional
+            Figure to plot on. Created if `None`. Default is `None`.
+        title : `str`, optional
+            Plot title. Auto-generated if `None`. Default is `None`.
+        cmap : `str`, optional
+            Colormap for original and residual. Default is `"gray_r"`.
+        model_cmap : `str`, optional
+            Colormap for model image. Default is `"gray_r"`.
+        annotate_properties : `list` of `str`, optional
+            Properties to annotate on the model. Default is `["n", "r_e"]`.
+        neighbours : `dict`, optional
+            Neighboring objects to overlay. Default is `None`.
+        save : `bool`, optional
+            Whether to save the figure. Default is `True`.
+        show : `bool`, optional
+            Whether to display the figure. Default is `False`.
+        """
         if fig is None:
             fig, axs = plt.subplots(1, 3, figsize=(10, 4))
 
@@ -435,6 +499,13 @@ class Morphology_Fitter(ABC):
     
     @property
     def name(self: Self) -> str:
+        """Morphology fitter name combining model and filter.
+
+        Returns
+        -------
+        `str`
+            Name of the form "{CodeName}_{filter}_{model}".
+        """
         return self.__class__.__name__.split("_")[0] + \
             f"_{self.psf.cutout.filt_name}_{self.model}"
 

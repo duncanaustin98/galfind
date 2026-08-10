@@ -172,6 +172,10 @@ class Band_Data_Base(ABC):
         aper_diams: Optional[u.Quantity] = None,
         psf: Optional[Type[PSF_Base]] = None,
     ):
+        """Initialize the Band_Data_Base instance.
+
+        See the class docstring for detailed parameter descriptions.
+        """
         self.survey = survey
         self.version = version
         self.im_path = im_path
@@ -251,9 +255,23 @@ class Band_Data_Base(ABC):
         return self.load_im()[0].shape
 
     def __repr__(self) -> str:
+        """Return the official string representation of the Band_Data object.
+
+        Returns
+        -------
+        `str`
+            Representation showing class name, instrument, and filter.
+        """
         return f"{self.__class__.__name__}({self.instr_name}/{self.filt_name})"
-    
+
     def __str__(self) -> str:
+        """Return a human-readable string representation of the Band_Data object.
+
+        Returns
+        -------
+        `str`
+            Formatted string with survey details, paths, and depth information.
+        """
         output_str = funcs.line_sep
         output_str += f"{repr(self)} {self.__class__.__name__.upper().replace('_', ' ')}:\n"
         output_str += funcs.band_sep
@@ -290,6 +308,21 @@ class Band_Data_Base(ABC):
         
 
     def __eq__(self, other: Type[Band_Data_Base]) -> bool:
+        """Compare two Band_Data objects for equality.
+
+        Checks if all configuration attributes (paths, extensions, pixel scale)
+        are identical between two Band_Data instances.
+
+        Parameters
+        ----------
+        other : `Band_Data_Base`
+            Another Band_Data object to compare with.
+
+        Returns
+        -------
+        `bool`
+            `True` if all attributes are equal, `False` otherwise.
+        """
         if not isinstance(other, tuple(Band_Data_Base.__subclasses__())):
             return False
         else:
@@ -310,6 +343,13 @@ class Band_Data_Base(ABC):
             )
 
     def __copy__(self) -> Type[Band_Data_Base]:
+        """Create a shallow copy of the Band_Data object.
+
+        Returns
+        -------
+        `Band_Data_Base`
+            A shallow copy of this Band_Data instance.
+        """
         # copy the object
         cls = self.__class__
         result = cls.__new__(cls)
@@ -318,6 +358,18 @@ class Band_Data_Base(ABC):
         return result
 
     def __deepcopy__(self, memo):
+        """Create a deep copy of the Band_Data object.
+
+        Parameters
+        ----------
+        memo : `dict`
+            Memo dictionary tracking already-copied objects.
+
+        Returns
+        -------
+        `Band_Data_Base`
+            A deep copy of this Band_Data instance.
+        """
         cls = self.__class__
         result = cls.__new__(cls)
         memo[id(self)] = result
@@ -336,6 +388,18 @@ class Band_Data_Base(ABC):
         incl_rms_err: bool = True,
         incl_wht: bool = True
     ):
+        """Validate and normalize the data file configuration.
+
+        Ensures all FITS extension names are in list format and checks that
+        required science image and error/weight data are available.
+
+        Parameters
+        ----------
+        incl_rms_err : `bool`, optional
+            Whether to require RMS error data. Default is `True`.
+        incl_wht : `bool`, optional
+            Whether to require weight data. Default is `True`.
+        """
         # make im_ext_name lists if not already
         if isinstance(self.im_ext_name, str):
             self.im_ext_name = [self.im_ext_name]
@@ -371,6 +435,17 @@ class Band_Data_Base(ABC):
             )
 
     def _check_aper_diams(self: Self) -> NoReturn:
+        """Validate that aperture diameters are properly configured.
+
+        Checks that aperture diameters have been loaded and are astropy
+        Quantities with angular units.
+
+        Raises
+        ------
+        Exception
+            If aperture diameters are not defined, not a Quantity, or don't
+            have angular units.
+        """
         if hasattr(self, "aper_diams"):
             if not isinstance(self.aper_diams, u.Quantity):
                 err_message = (
@@ -896,6 +971,14 @@ class Band_Data_Base(ABC):
     
     @staticmethod
     def _parallel_psf_homogenize(params: Dict[str, Any]) -> None:
+        """Perform PSF homogenization for a single band (parallel worker function).
+
+        Parameters
+        ----------
+        params : `dict`
+            Dictionary containing ``band_data`` (Band_Data instance),
+            ``psf`` (PSF object), ``use_fft_conv`` (bool), and ``overwrite`` (bool).
+        """
         # unpack parameters
         band_data, psf, use_fft_conv, overwrite = params
         # run psf homogenization
@@ -1961,6 +2044,10 @@ class Band_Data(Band_Data_Base):
         aper_diams: Optional[u.Quantity] = None,
         psf: Optional[Type[PSF_Base]] = None,
     ):
+        """Initialize the Band_Data instance.
+
+        See the class docstring for detailed parameter descriptions.
+        """
         self.filt = filt
         super().__init__(
             survey,
@@ -2429,6 +2516,10 @@ class Stacked_Band_Data(Band_Data_Base):
         aper_diams: Optional[u.Quantity] = None,
         psf: Optional[Type[PSF_Base]] = None,
     ):
+        """Initialize the Stacked_Band_Data instance.
+
+        See the class docstring for detailed parameter descriptions.
+        """
         # ensure every band_data is from the same survey and version,
         # have the same pixel scale and are from different filters
         self.filterset = filterset
@@ -3084,6 +3175,10 @@ class Data:
         ] = None,
         #xy_align_filt_name: str = "F444W",
     ):
+        """Initialize the Data container with band data objects.
+
+        See the class docstring for detailed parameter descriptions.
+        """
         # save and sort band_arr by central wavelength
         self.band_data_arr = funcs.sort_band_data_arr(band_data_arr)
         #self._xy_align(xy_align_filt_name)
@@ -5532,6 +5627,23 @@ class Data:
         save: bool = False,
         show: bool = True,
     ) -> NoReturn:
+        """Plot image data for a specific band.
+
+        Parameters
+        ----------
+        band : `int`, `str`, `Filter`, `list` of `Filter`, or `Multiple_Filter`
+            Band(s) to plot (identifier, name, or object).
+        ax : `matplotlib.axes.Axes`, optional
+            Axes to plot on. A new one is created if `None`. Default is `None`.
+        ext : `str`, optional
+            FITS extension name to plot (e.g., "SCI", "ERR"). Default is "SCI".
+        norm : `matplotlib.colors.Normalize`, optional
+            Normalization for the image. Default is ``LogNorm(vmin=0.0, vmax=10.0)``.
+        save : `bool`, optional
+            Whether to save the figure. Default is `False`.
+        show : `bool`, optional
+            Whether to display the figure. Default is `True`.
+        """
         self[band].plot(ax, ext, norm, save, show)
 
     def plot_psf_eec(

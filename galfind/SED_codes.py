@@ -761,6 +761,18 @@ class SED_code(ABC):
         cat: Catalogue,
         fits_out_path: str,
     ) -> None:
+        """Update catalogue FITS file with SED fitting results.
+
+        Adds or merges SED fitting results into the appropriate HDU of the
+        catalogue FITS file, handling various column name conflict scenarios.
+
+        Parameters
+        ----------
+        cat : `Catalogue`
+            Catalogue to update.
+        fits_out_path : `str`
+            Path to the FITS file containing SED fitting results.
+        """
         # open relevant catalogue hdu extension
         orig_tab = cat.open_cat(hdu=self)
         SED_fitting_tab = Table.read(fits_out_path)

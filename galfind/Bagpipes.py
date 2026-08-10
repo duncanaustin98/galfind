@@ -816,6 +816,35 @@ class Bagpipes(SED_code):
         save_name: Optional[str] = None,
         **kwargs: Dict[str, Any],
     ) -> NoReturn:
+        """Fit SED models to a catalogue of galaxies or spectra.
+
+        Performs Bagpipes SED fitting on photometric or spectroscopic data,
+        handling filter validation, redshift configuration, and file management.
+
+        Parameters
+        ----------
+        cat : `Catalogue` or `Spectral_Catalogue`
+            Catalogue of galaxies or spectra to fit.
+        aper_diam : `astropy.units.Quantity`
+            Aperture diameter for photometry (ignored for spectroscopy).
+        save_SEDs : `bool`, optional
+            Whether to save SEDs. Default is `True`.
+        save_PDFs : `bool`, optional
+            Whether to save posterior PDFs. Default is `False`.
+        overwrite : `bool`, optional
+            Whether to overwrite existing results. Default is `False`.
+        save_name : `str`, optional
+            Custom name for output files. Default is `None`.
+        **kwargs : dict
+            Additional keyword arguments including:
+            - `plot` : `bool` - whether to make plots (default `True`)
+            - `plot_csfh` : `bool` - whether to plot cumulative SFH (default `False`)
+            - `temp_label` : `str` - temporary directory label
+            - `rerun` : `bool` - whether to rerun failed fits
+            - `spec_calibration_order` : `int` - spectral calibration polynomial order (default 2)
+            - `spec_fit_instructions` : `dict` - additional spectral fit parameters
+            - `R_boost_factor` : `float` - resolution boost factor (default 1.0)
+        """
         from galfind import Catalogue
         if isinstance(cat, Catalogue):
             is_spec = False
@@ -1077,7 +1106,25 @@ class Bagpipes(SED_code):
         save_PDFs: bool = True,
         overwrite: bool = False,
         **kwargs: Dict[str, Any],
-    ):
+    ) -> None:
+        """Fit SED models to a spectroscopic catalogue with multiple gratings.
+
+        Groups spectra by grating and fits each group independently to ensure
+        proper handling of resolution curves and calibration.
+
+        Parameters
+        ----------
+        cat : `Spectral_Catalogue`
+            Catalogue of spectra to fit, may contain multiple gratings.
+        save_SEDs : `bool`, optional
+            Whether to save SEDs. Default is `True`.
+        save_PDFs : `bool`, optional
+            Whether to save posterior PDFs. Default is `True`.
+        overwrite : `bool`, optional
+            Whether to overwrite existing results. Default is `False`.
+        **kwargs : dict
+            Additional keyword arguments passed to `fit` method.
+        """
         # fit all spectra in a Spectral_Catalogue with the same grating
         unique_gratings = np.unique(
             [spec.instrument.grating.name for spec_arr in cat for spec in spec_arr]
@@ -1148,11 +1195,25 @@ class Bagpipes(SED_code):
         return fit_instructions
 
     def make_fits_from_out(
-        self: Self, 
+        self: Self,
         out_path: str,
         overwrite: bool = True,
         save_name: Optional[str] = None,
     ) -> NoReturn:
+        """Extract and update galaxy properties from Bagpipes output table.
+
+        Reads Bagpipes output FITS table and updates the internal property
+        mapping based on available columns.
+
+        Parameters
+        ----------
+        out_path : `str`
+            Path to the Bagpipes output FITS file.
+        overwrite : `bool`, optional
+            Whether to overwrite existing FITS files. Default is `True`.
+        save_name : `str`, optional
+            Custom save name for the output. Default is `None`.
+        """
         # update properties from bagpipes output table column names
         tab = Table.read(out_path)
         self._update_gal_properties(tab.colnames)
@@ -1266,11 +1327,34 @@ class Bagpipes(SED_code):
 
     def extract_SEDs(
         self: Self,
-        IDs: List[int], 
+        IDs: List[int],
         SED_paths: Union[str, List[str]],
         *args,
         **kwargs,
     ) -> List[SED_obs]:
+        """Extract SED posteriors from Bagpipes output files.
+
+        Loads model SEDs from Bagpipes HDF5 output files and converts them
+        to observed-frame fluxes at the appropriate redshifts.
+
+        Parameters
+        ----------
+        IDs : `list` of `int`
+            Galaxy IDs corresponding to the SED paths.
+        SED_paths : `str` or `list` of `str`
+            Path(s) to Bagpipes output HDF5 files containing SEDs.
+        **kwargs : dict
+            Additional keyword arguments including:
+            - `cat` : `Catalogue` - catalogue of galaxies (required)
+            - `aper_diam` : `astropy.units.Quantity` - aperture diameter (required)
+            - `zPDFs` : `list` of `PDF` - redshift PDFs if not fixing redshift
+            - `spectrum_type` : `str` - spectrum type to extract (default "spectrum_full")
+
+        Returns
+        -------
+        `list` of `SED_2D`
+            List of 2D SED objects containing model posteriors.
+        """
         # ensure this works if only extracting 1 galaxy
         if isinstance(IDs, (str, int, float)):
             IDs = np.array([int(IDs)])
@@ -1438,11 +1522,30 @@ class Bagpipes(SED_code):
         return spectrum_full #spectrum_med
 
     def extract_PDFs(
-        self: Self, 
-        gal_property: str, 
-        IDs: List[int], 
-        PDF_paths: str, 
+        self: Self,
+        gal_property: str,
+        IDs: List[int],
+        PDF_paths: str,
     ) -> List[Type[PDF]]:
+        """Extract posterior PDFs for a specific galaxy property.
+
+        Loads probability distribution functions for a given galaxy property
+        from Bagpipes output files.
+
+        Parameters
+        ----------
+        gal_property : `str`
+            Name of the galaxy property (e.g., "mass", "z", "sfr").
+        IDs : `list` of `int`
+            Galaxy IDs corresponding to the PDF paths.
+        PDF_paths : `str`
+            Path to Bagpipes output containing the PDFs.
+
+        Returns
+        -------
+        `list` of `PDF`
+            List of PDF objects for the requested property.
+        """
         pass
         # breakpoint()
         # pdfs = PDF.from_1D_arr(
@@ -1514,10 +1617,28 @@ class Bagpipes(SED_code):
         # return pdfs
     
     def load_cat_property_PDFs(
-        self: Self, 
+        self: Self,
         PDF_paths: List[str],
-        IDs: List[int]
+        IDs: List[int],
     ) -> List[Dict[str, Optional[Type[PDF]]]]:
+        """Load all property PDFs for a catalogue from Bagpipes output.
+
+        Extracts all available posterior PDFs (except ignored properties)
+        from Bagpipes HDF5 output files for each galaxy in the catalogue.
+
+        Parameters
+        ----------
+        PDF_paths : `list` of `str`
+            Paths to Bagpipes output HDF5 files (one per galaxy).
+        IDs : `list` of `int`
+            Galaxy IDs corresponding to PDF paths.
+
+        Returns
+        -------
+        `list` of `dict`
+            Each element is a dictionary mapping property names to PDF objects,
+            with values of `None` if PDFs are unavailable or ignored.
+        """
         from . import PDF
         assert len(IDs) == len(PDF_paths), \
             galfind_logger.critical(
@@ -1551,20 +1672,61 @@ class Bagpipes(SED_code):
         cat: Catalogue,
         aper_diam: u.Quantity,
         save_name: Optional[str] = None,
-    ):
+    ) -> List[SFH]:
+        """Load star formation history models from Bagpipes output.
+
+        Reads posterior SFH samples from Bagpipes output HDF5 files
+        for all galaxies in the catalogue.
+
+        Parameters
+        ----------
+        cat : `Catalogue`
+            Catalogue of galaxies.
+        aper_diam : `astropy.units.Quantity`
+            Aperture diameter used in fitting.
+        save_name : `str`, optional
+            Custom save name for identifying output files. Default is `None`.
+
+        Returns
+        -------
+        `list` of `SFH`
+            Star formation history objects for each galaxy.
+        """
         PDF_paths = self._get_out_paths(cat, aper_diam, save_name = save_name)[3]
         sfh_arr = [SFH.from_pipes_post(path) for path in PDF_paths]
         return sfh_arr
 
 
     @staticmethod
-    def get_galfind_fits_path(path):
+    def get_galfind_fits_path(path: str) -> str:
+        """Convert a Bagpipes output path to galfind FITS path.
+
+        Parameters
+        ----------
+        path : `str`
+            Original Bagpipes output file path.
+
+        Returns
+        -------
+        `str`
+            Path to galfind-formatted FITS file.
+        """
         return path #.replace(".fits", "_galfind.fits")
 
-    def load_pipes_fit_obj(self):
+    def load_pipes_fit_obj(self) -> None:
+        """Load a Bagpipes fit object from stored output.
+
+        Reconstructs a Bagpipes fit object from previously saved output files,
+        allowing for post-processing and analysis of results.
+        """
         pass
 
-    def make_templates(self):
+    def make_templates(self) -> None:
+        """Generate templates for Bagpipes SED fitting.
+
+        Creates necessary template files and configurations required by
+        Bagpipes for the fitting procedure.
+        """
         pass
 
     @staticmethod

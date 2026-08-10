@@ -1311,5 +1311,10 @@ class PDF_nD:
                 func_l1_med_u1[:, 2],
             ]
 
-    def plot_corner(self):
+    def plot_corner(self) -> None:
+        """Plot corner plot of 2D PDF posteriors.
+
+        Generates a corner plot (pairwise parameter posteriors) for visualization
+        of multidimensional probability distributions.
+        """
         pass

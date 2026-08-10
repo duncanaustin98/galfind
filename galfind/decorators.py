@@ -37,6 +37,7 @@ def run_in_dir(path):
     """
     def decorated(func):
         def wrapper(*args, **kwargs):
+            """Internal wrapper function."""
             cwd = os.getcwd()
             if not os.path.exists(path):
                 os.makedirs(path)
@@ -71,6 +72,7 @@ def run_in_self_dir(get_dir):
     """
     def decorator(func):
         def wrapper(self, *args, **kwargs):
+            """Internal wrapper function."""
             dir = get_dir(self)  # Access self attribute at call time
             cwd = os.getcwd()
             if not os.path.exists(dir):
@@ -106,6 +108,7 @@ def log_time(logging_level, out_unit: u.Quantity = u.hour):
     """
     def decorated(func):
         def wrapper(*args, **kwargs):
+            """Internal wrapper function."""
             galfind_logger.info(
                 f"Running {func.__name__}!"
             )
@@ -139,7 +142,7 @@ def hour_timer(func):
         to hours) to stdout after it returns.
     """
     def wrapper(*args, **kwargs):
-        t1 = time.time()
+        """Internal wrapper function."""
         return_value = func(*args, **kwargs)
         t2 = time.time()
         print(
@@ -165,6 +168,7 @@ def ignore_warnings(func):
         `warnings.catch_warnings()` context with all warnings ignored.
     """
     def wrapper(*args, **kwargs):
+        """Internal wrapper function."""
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             return func(*args, **kwargs)
@@ -206,6 +210,7 @@ def email_update(
     """
     def decorated(func):
         def wrapper(*args, **kwargs):
+            """Internal wrapper function."""
             # setup gmail
             setup = yagmail.SMTP(
                 "tcharvey303",
@@ -259,6 +264,7 @@ def n_cores(n):
     """
     def decorated(func):
         def wrapper(*args, **kwargs):
+            """Internal wrapper function."""
             # setup how many cores to use here with argument 'n'
             return_value = func(*args, **kwargs)
             # revert to default number of cores

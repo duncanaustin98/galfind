@@ -314,6 +314,7 @@ def fit_2d_moffatt(PSFdata, maxfev=10000):
         Fitted Moffat parameters (A, a, b, xcen, ycen) and covariance matrix.
     """
     def moffatcurve(xdata_tuple, A, a, b, xcen, ycen):
+        """2D Moffat profile function for PSF fitting."""
         (x, y) = xdata_tuple
         d = -b
         g = A * (1 + (((x - xcen) ** 2 + (y - ycen) ** 2) / a**2)) ** d
@@ -345,7 +346,26 @@ def main(
     plot_PSF,
     aper_diams=json.loads(config.get("SExtractor", "APERTURE_DIAMS"))
     * u.arcsec,
-):
+) -> None:
+    """Calculate and plot aperture corrections for PSF models.
+
+    Parameters
+    ----------
+    in_bands : `list` of `str`
+        Band names to process.
+    extract_code : `str`
+        Photometry extraction code used.
+    save_loc : `str`
+        Directory to save output files.
+    PSF_loc : `str`
+        Directory containing PSF model files.
+    PSF_name : `str`
+        PSF file name prefix.
+    plot_PSF : `bool`
+        Whether to generate diagnostic plots.
+    aper_diams : `astropy.units.Quantity`, optional
+        Aperture diameters to calculate corrections for.
+    """
     print("extract code =", extract_code)
     print_line = [
         ["# aper_diam / arcsec"]

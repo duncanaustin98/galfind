@@ -2292,7 +2292,21 @@ def get_gal_bias_fitter(
         )
 
     class Galaxy_Bias_Fitter(fitter):
-        
+        """MCMC fitter for galaxy bias across multiple surveys.
+
+        Extends the base MCMC fitter to include a galaxy bias parameter that
+        is fit independently for each survey, accounting for survey-dependent
+        systematic uncertainties.
+
+        Parameters
+        ----------
+        surveys_arr : `list` of `str`
+            List of survey names corresponding to data.
+        **kwargs
+            Additional keyword arguments passed to base MCMC fitter,
+            including 'priors' which must include a 'b_gal' prior.
+        """
+
         def __init__(
             self: Self,
             surveys_arr: List[str],

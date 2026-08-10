@@ -162,6 +162,22 @@ class Galaxy_Creator(Catalogue_Creator):
         id: int,
         **kwargs,
     ) -> Self:
+        """Create a galaxy creator from Data object and ID.
+
+        Parameters
+        ----------
+        data : `Data`
+            Data object containing survey, version, and filter information.
+        id : `int`
+            Galaxy ID to create a creator for.
+        **kwargs
+            Additional keyword arguments passed to constructor.
+
+        Returns
+        -------
+        `Galaxy_Creator`
+            Galaxy creator instance initialized from data.
+        """
         gal_creator = cls(
             data.survey,
             data.version,
@@ -248,7 +264,12 @@ class Galaxy_Creator(Catalogue_Creator):
         self: Self,
         *args,
         **kwargs,
-    ):
+    ) -> None:
+        """Load crop mask for this galaxy from catalogue.
+
+        Loads the photometric catalogue and creates a boolean mask
+        identifying rows corresponding to this galaxy's ID.
+        """
         super().load_crops(crops = None)
         # load table
         tab = self.open_cat(self.cat_path, "ID")

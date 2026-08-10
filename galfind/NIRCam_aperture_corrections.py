@@ -338,6 +338,28 @@ def fit_2d_moffatt(PSFdata, maxfev=10000):
         Fitted parameters (A, a, b, xcen, ycen) and covariance.
     """
     def moffatcurve(xdata_tuple, A, a, b, xcen, ycen):
+        """2D Moffat function for curve fitting.
+
+        Parameters
+        ----------
+        xdata_tuple : `tuple` of `numpy.ndarray`
+            (x, y) coordinate arrays.
+        A : `float`
+            Amplitude parameter.
+        a : `float`
+            Scale parameter.
+        b : `float`
+            Power-law index parameter.
+        xcen : `float`
+            Center x coordinate.
+        ycen : `float`
+            Center y coordinate.
+
+        Returns
+        -------
+        `numpy.ndarray`
+            Flattened Moffat profile.
+        """
         (x, y) = xdata_tuple
         d = -b
         g = A * (1 + (((x - xcen) ** 2 + (y - ycen) ** 2) / a**2)) ** d

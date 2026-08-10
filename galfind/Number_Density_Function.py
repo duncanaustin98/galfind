@@ -985,6 +985,30 @@ class Number_Density_Function(Base_Number_Density_Function):
         completeness: Optional[Completeness] = None,
         Vmax_method: str = "uniform_depth",
     ) -> str:
+        """Get file path for saving number density function data.
+
+        Parameters
+        ----------
+        origin_surveys : `str`
+            Survey name(s) that contributed to the data.
+        SED_fit_params_key : `str`
+            Key for SED fitting parameters.
+        x_name : `str`
+            Name of the property (x-axis).
+        crop_name : `str`
+            Redshift bin or region identifier.
+        ext : `str`, optional
+            File extension. Default is ".ecsv".
+        completeness : `Completeness`, optional
+            Completeness corrections applied. Default is None.
+        Vmax_method : `str`, optional
+            Vmax calculation method. Default is "uniform_depth".
+
+        Returns
+        -------
+        `str`
+            Full path for the data file.
+        """
         if completeness is None:
             compl_name = ""
         else:
@@ -999,9 +1023,20 @@ class Number_Density_Function(Base_Number_Density_Function):
         funcs.make_dirs(save_path)
         return save_path
 
-    # cv_origin == "Driver2010"
     @staticmethod
-    def extract_info_from_save_path(save_path):
+    def extract_info_from_save_path(save_path) -> Tuple[str, str, str, NDArray[float]]:
+        """Extract NDF metadata from file path.
+
+        Parameters
+        ----------
+        save_path : `str`
+            Path to NDF data file.
+
+        Returns
+        -------
+        `tuple`
+            (SED_fit_params_key, x_name, origin_surveys, z_bin)
+        """
         split_save_path = save_path.split("/")
         SED_fit_params_key = split_save_path[-4]
         x_name = split_save_path[-3]
@@ -1015,6 +1050,18 @@ class Number_Density_Function(Base_Number_Density_Function):
         return SED_fit_params_key, x_name, origin_surveys, z_bin
 
     def crop_to_xbin(self: Type[Self], x_bin: List[float]) -> Optional[Self]:
+        """Create a new NDF cropped to a specific x-axis range.
+
+        Parameters
+        ----------
+        x_bin : `list` of `float`
+            [x_min, x_max] range to crop to.
+
+        Returns
+        -------
+        `Self` or `None`
+            Cropped NDF object, or None if no data in range.
+        """
         # check if x_bin is within self.x_bins
         if x_bin[0] < self.x_bins[0][0] and x_bin[1] > self.x_bins[-1][1]:
             galfind_logger.warning(
@@ -1067,6 +1114,13 @@ class Number_Density_Function(Base_Number_Density_Function):
     #     return f"{self.z_bin[0]:.1f}<z<{self.z_bin[1]:.1f}"
 
     def get_plot_path(self) -> str:
+        """Get file path for saving NDF plots.
+
+        Returns
+        -------
+        `str`
+            Path for the plot file.
+        """
         plot_path = self.get_save_path(
             self.origin_surveys,
             self.x_origin,
@@ -1088,12 +1142,33 @@ class Number_Density_Function(Base_Number_Density_Function):
         fit_type: Type[MCMC_Fitter],
         priors: Priors,
         fixed_params: Dict[str, float],
-        n_walkers: int, 
+        n_walkers: int,
         n_steps: int,
         n_processes: int = 1,
         backend_filename: Optional[str] = None,
         incl_cv_errs: bool = True,
     ) -> NoReturn:
+        """Fit a model to the number density function using MCMC.
+
+        Parameters
+        ----------
+        fit_type : `Type[MCMC_Fitter]`
+            MCMC fitter class to use.
+        priors : `Priors`
+            Prior distributions for model parameters.
+        fixed_params : `dict`
+            Parameters to fix during fitting.
+        n_walkers : `int`
+            Number of MCMC walkers.
+        n_steps : `int`
+            Number of MCMC steps.
+        n_processes : `int`, optional
+            Number of parallel processes. Default is 1.
+        backend_filename : `str`, optional
+            Path for MCMC state file. Auto-generated if None.
+        incl_cv_errs : `bool`, optional
+            Whether to include cosmic variance errors. Default is True.
+        """
         if backend_filename is None:
             backend_filename = self.get_save_path(
                 self.origin_surveys,
@@ -1135,6 +1210,13 @@ class Number_Density_Function(Base_Number_Density_Function):
         self.fitter(n_steps, n_processes)
 
     def save(self, save_path: Optional[str] = None) -> NoReturn:
+        """Save the number density function to a file.
+
+        Parameters
+        ----------
+        save_path : `str`, optional
+            Path for saving the NDF data. Auto-generated if None.
+        """
         if save_path is None:
             save_path = self.get_save_path(
                 self.origin_surveys,
@@ -1190,14 +1272,39 @@ class Number_Density_Function(Base_Number_Density_Function):
         legend_kwargs: Dict[str, Any] = {},
         x_lims: Optional[Union[List[float], str]] = "default",
         y_lims: Optional[List[float]] = None,
-        title: Optional[str] = None,
-        obs_author_years: Dict[str, Any] = {},
-        sim_author_years: Dict[str, Any] = {},
-        save_path: Optional[str] = None,
-        plot_cv_errs: bool = False,
-        offset: float = 0.0,
     ) -> Tuple[plt.Figure, plt.Axes]:
-        
+        """Plot the number density function.
+
+        Parameters
+        ----------
+        fig : `matplotlib.figure.Figure`, optional
+            Figure to plot on. Created if None. Default is None.
+        ax : `matplotlib.axes.Axes`, optional
+            Axes to plot on. Created if None. Default is None.
+        log_x : `bool`, optional
+            Whether to use log scale on x-axis. Default is False.
+        log_y : `bool`, optional
+            Whether to use log scale on y-axis. Default is False.
+        annotate : `bool`, optional
+            Whether to add axis labels. Default is True.
+        save : `bool`, optional
+            Whether to save the figure. Default is True.
+        show : `bool`, optional
+            Whether to display the figure. Default is False.
+        plot_kwargs : `dict`, optional
+            Kwargs for plot styling. Default is empty dict.
+        legend_kwargs : `dict`, optional
+            Kwargs for legend. Default is empty dict.
+        x_lims : `list` or `str`, optional
+            X-axis limits or "default". Default is "default".
+        y_lims : `list`, optional
+            Y-axis limits. Default is None.
+
+        Returns
+        -------
+        `tuple`
+            (fig, ax) matplotlib objects.
+        """
         if all(_x is None for _x in [fig, ax]):
             fig_, ax_ = plt.subplots()
         else:
