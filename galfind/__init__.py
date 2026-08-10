@@ -194,8 +194,6 @@ from .SED import (
     Mock_SED_rest,
     Mock_SED_obs,
     SED_2D,
-)
-from .SED import (
     Mock_SED_template_set,
     Mock_SED_rest_template_set,
     Mock_SED_obs_template_set,
@@ -258,7 +256,7 @@ from .Emission_lines import Emission_line, wav_lyman_alpha, line_diagnostics
 from . import IGM_attenuation
 from . import lyman_alpha_damping_wing
 from .DLA import DLA
-from .Dust_Attenuation import Dust_Law, Calzetti00, SMC, Reddy15, Salim18, Modified_Calzetti00, Power_Law_Dust, M99, Reddy15, Reddy18, AUV_from_beta
+from .Dust_Attenuation import Dust_Law, Calzetti00, SMC, Reddy15, Salim18, Modified_Calzetti00, Power_Law_Dust, M99, Reddy18, AUV_from_beta
 from .Spectrum import (
     Spectral_Catalogue,
     Spectrum,
