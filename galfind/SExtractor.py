@@ -22,6 +22,14 @@ from . import useful_funcs_austind as funcs
 from .decorators import run_in_dir
 
 def get_code() -> str:
+    """Get the installed SExtractor version information.
+
+    Returns
+    -------
+    `str`
+        The SExtractor version string, or a default message if SExtractor
+        is not installed.
+    """
     try:
         # of order 0.1s per call
         output = (
@@ -37,7 +45,24 @@ def get_code() -> str:
 def get_segmentation_path(
     self: Type[Band_Data_Base],
     err_map_type: str,
-) -> str: 
+) -> str:
+    """Generate the standard path for a SExtractor segmentation map.
+
+    Constructs the path where a segmentation map FITS file should be stored
+    based on instrument, survey, version, filter, and error map type.
+
+    Parameters
+    ----------
+    self : `Type[Band_Data_Base]`
+        Band data instance providing survey, filter, version, and instrument info.
+    err_map_type : `str`
+        Type of error map used ("MAP_RMS" or "MAP_WEIGHT").
+
+    Returns
+    -------
+    `str`
+        Path to the segmentation map FITS file.
+    """
     seg_dir = f"{config['SExtractor']['SEX_DIR']}/{self.instr_name}/{self.version}/{self.survey}/{err_map_type}/segmentation"
     seg_name = f"{self.survey}_{self.filt_name}_{self.filt_name}_sel_cat_{self.version}"
     if self.is_native:
@@ -51,6 +76,26 @@ def get_forced_phot_path(
     err_map_type: str,
     forced_phot_band: Optional[Type[Band_Data_Base]] = None,
 ) -> str:
+    """Generate the standard path for a SExtractor forced photometry catalogue.
+
+    Constructs the path for a forced photometry FITS catalogue based on the
+    detection band and measurement band information.
+
+    Parameters
+    ----------
+    self : `Type[Band_Data_Base]`
+        Band data instance (typically the measurement band).
+    err_map_type : `str`
+        Type of error map used.
+    forced_phot_band : `Type[Band_Data_Base]` or `None`, optional
+        The band used for source detection. If `None`, uses the same band
+        as ``self``. Default is `None`.
+
+    Returns
+    -------
+    `str`
+        Path to the forced photometry catalogue FITS file.
+    """
     forced_phot_dir = f"{config['SExtractor']['SEX_DIR']}/{self.instr_name}/{self.version}/{self.survey}/{err_map_type}/forced_phot/{funcs.aper_diams_to_str(self.aper_diams)}"
     if forced_phot_band is None:
         select_filt_name = self.filt_name
@@ -63,6 +108,31 @@ def get_forced_phot_path(
 def get_err_map(
     self: Type[Band_Data_Base], err_type: str
 ) -> Union[Tuple[str, int, str], NoReturn]:
+    """Retrieve or create an error map for SExtractor photometry.
+
+    Returns the path and metadata for either an RMS error map or a weight map,
+    creating one if necessary.
+
+    Parameters
+    ----------
+    self : `Type[Band_Data_Base]`
+        Band data instance.
+    err_type : `str`
+        Type of error map: either "rms_err" (RMS error map) or "wht" (weight map).
+
+    Returns
+    -------
+    `tuple` of (`str`, `int`, `str`)
+        Tuple containing:
+        - Path to the error map FITS file
+        - FITS extension index
+        - SExtractor header keyword name for the map
+
+    Raises
+    ------
+    Exception
+        If ``err_type`` is neither "rms_err" nor "wht".
+    """
     if err_type == "rms_err":
         if self.rms_err_path is not None and self.rms_err_ext is not None:
             pass
@@ -96,7 +166,31 @@ def segment(
     params_name: str = "default.param",
     overwrite: bool = False,
 ) -> str:
-    
+    """Run SExtractor source detection and create segmentation and background maps.
+
+    Executes the SExtractor segmentation pipeline, creating pixel-level
+    segmentation and background maps for the band's image. Handles long
+    file paths by using temporary files when paths exceed 256 characters.
+
+    Parameters
+    ----------
+    self : `Type[Band_Data_Base]`
+        Band data instance to segment.
+    err_type : `str`, optional
+        Error map type to use ("rms_err" or "wht"). Default is "rms_err".
+    config_name : `str`, optional
+        Name of the SExtractor `.sex` configuration file. Default is "default.sex".
+    params_name : `str`, optional
+        Name of the SExtractor `.param` parameters file. Default is "default.param".
+    overwrite : `bool`, optional
+        Regenerate segmentation even if it already exists. Default is `False`.
+
+    Returns
+    -------
+    `str`
+        Path to the output segmentation map FITS file.
+    """
+
     sex_config_path = f"{config['SExtractor']['SEX_CONFIG_DIR']}/{config_name}"
     params_path = f"{config['SExtractor']['SEX_CONFIG_DIR']}/{params_name}"
 
@@ -169,6 +263,18 @@ def segment(
 
 
 def update_sex_params_aper_diam_len(aper_diam_length: int, params_path: str) -> None:
+    """Update a SExtractor parameters file to include apertures for a given number of diameters.
+
+    Modifies the `.param` file to generate the correct aperture photometry
+    columns (MAG_APER, FLUX_APER, etc.) for all specified aperture diameters.
+
+    Parameters
+    ----------
+    aper_diam_length : `int`
+        Number of aperture diameters to include.
+    params_path : `str`
+        Path to the SExtractor `.param` parameters file to modify.
+    """
     with open(params_path, "r") as f:
         lines = f.readlines()
         f.close()
@@ -204,6 +310,34 @@ def perform_forced_phot(
     timed: bool = True,
     overwrite: bool = False,
 ) -> str:
+    """Perform forced photometry on one band using sources detected in another band.
+
+    Measures photometry in the current band using source positions from a
+    detection band (typically a deeper or bluer image), useful for detecting
+    faint sources in shorter-wavelength bands.
+
+    Parameters
+    ----------
+    self : `Type[Band_Data_Base]`
+        The measurement band (where photometry is measured).
+    forced_phot_band : `Type[Band_Data_Base]`
+        The detection band (where source positions come from).
+    err_type : `str`, optional
+        Error map type ("rms_err" or "wht"). Default is "rms_err".
+    config_name : `str`, optional
+        SExtractor `.sex` configuration file name. Default is "default.sex".
+    params_name : `str`, optional
+        SExtractor `.param` parameters file name. Default is "default.param".
+    timed : `bool`, optional
+        Log the execution time. Default is `True`.
+    overwrite : `bool`, optional
+        Regenerate even if cached. Default is `False`.
+
+    Returns
+    -------
+    `str`
+        Path to the forced photometry catalogue FITS file.
+    """
 
     sex_config_path = f"{config['SExtractor']['SEX_CONFIG_DIR']}/{config_name}"
     params_path = f"{config['SExtractor']['SEX_CONFIG_DIR']}/{params_name}"

@@ -2053,6 +2053,23 @@ class Catalogue(Catalogue_Base):
         versions: List[str] = ["v1", "v2", "v3", "v4_2"],
         **match_kwargs: Dict[str, Any],
     ) -> Self:
+        """Cross-match with available spectra from JWST DJA spectroscopic releases.
+
+        Queries and cross-matches this photometric catalogue with spectroscopic
+        observations from specified JWST DJA data release versions.
+
+        Parameters
+        ----------
+        versions : `list` of `str`, optional
+            DJA release versions to query. Default is ["v1", "v2", "v3", "v4_2"].
+        **match_kwargs
+            Additional keyword arguments passed to cross-matching functions.
+
+        Returns
+        -------
+        `Catalogue`
+            New catalogue containing only galaxies with matching spectroscopy.
+        """
         # make catalogue consisting of spectra downloaded from the DJA
         for i, version in enumerate(versions):
             DJA_cat_ = Spectral_Catalogue.from_DJA(
@@ -2191,7 +2208,17 @@ class Catalogue(Catalogue_Base):
     # def calc_new_property(self, func: Callable[..., float], arg_names: Union[list, np.array]):
     #     pass
 
-    def load_sextractor_Re(self):
+    def load_sextractor_Re(self) -> None:
+        """Load SExtractor effective radius (Re) for all galaxies and bands.
+
+        Extracts the FLUX_RADIUS parameter from SExtractor catalogues and
+        converts to physical units (arcsec) accounting for pixel scale.
+
+        Raises
+        ------
+        Exception
+            If data object is not available for unit conversion.
+        """
         if hasattr(self, "data"):
             # load Re from SExtractor
             pix_to_as_dict = {band_data.filt_name: band_data.pix_scale for band_data in self.data}
@@ -2202,7 +2229,11 @@ class Catalogue(Catalogue_Base):
             galfind_logger.critical(err_message)
             raise Exception(err_message)
         
-    def load_sextractor_auto_mags(self):
+    def load_sextractor_auto_mags(self) -> None:
+        """Load SExtractor AUTO magnitudes for all galaxies and bands.
+
+        Extracts MAG_AUTO (isophotal magnitudes) from SExtractor catalogues.
+        """
         if hasattr(self, "data"):
             # load Re from SExtractor
             self.load_band_properties_from_cat("MAG_AUTO", "sex_MAG_AUTO", multiply_factor = u.ABmag)
@@ -2219,6 +2250,22 @@ class Catalogue(Catalogue_Base):
         self: Self,
         multiply_factor: Optional[Dict[str, float]] = None
     ) -> None:
+        """Load SExtractor AUTO fluxes for all galaxies and bands.
+
+        Extracts FLUX_AUTO from SExtractor catalogues, converting to Jansky
+        using zero-points if data object is available.
+
+        Parameters
+        ----------
+        multiply_factor : `dict` of `str`: `float` or `None`, optional
+            Per-band multiplication factor for flux conversion. If `None`,
+            computed from data object zero-points. Default is `None`.
+
+        Raises
+        ------
+        Exception
+            If neither data object nor multiply_factor is provided.
+        """
         if hasattr(self, "data") or multiply_factor is not None:
             # load Re from SExtractor
             if multiply_factor is None:
@@ -2255,7 +2302,12 @@ class Catalogue(Catalogue_Base):
             galfind_logger.critical(err_message)
             raise Exception(err_message)
         
-    def load_sextractor_kron_radii(self):
+    def load_sextractor_kron_radii(self) -> None:
+        """Load SExtractor Kron radii and morphological parameters.
+
+        Extracts Kron radius, A_IMAGE, B_IMAGE, and THETA_IMAGE parameters
+        from SExtractor catalogues for morphological analysis.
+        """
         if hasattr(self, "data"):
             # load Kron radius from SExtractor
             kron_radii = self.load_band_properties_from_cat(
@@ -2332,8 +2384,20 @@ class Catalogue(Catalogue_Base):
     def load_sextractor_ext_src_corrs(
         self: Self,
         multiply_factor: Optional[Dict[str, float]] = None,
-        aper_corrs: Optional[Dict[str, float]] = None, 
+        aper_corrs: Optional[Dict[str, float]] = None,
     ) -> None:
+        """Load extended source corrections from SExtractor AUTO fluxes.
+
+        Computes corrections to aperture photometry for extended sources
+        by comparing AUTO flux estimates with aperture photometry.
+
+        Parameters
+        ----------
+        multiply_factor : `dict` or `None`, optional
+            Per-band flux conversion factors. Default is `None`.
+        aper_corrs : `dict` or `None`, optional
+            Per-aperture correction values. Default is `None`.
+        """
         if multiply_factor is None:
             filt_names = None
         else:
@@ -2359,6 +2423,11 @@ class Catalogue(Catalogue_Base):
                         self._append_property_to_tab(f"ext_src_corr_{aper_diam.to(u.arcsec).value:.2f}as_{filt.filt_name}", "OBJECTS", dtype = float)
 
     def load_sextractor_params(self) -> None:
+        """Load all SExtractor parameters for all galaxies.
+
+        Convenience method that loads effective radius, AUTO magnitudes/fluxes,
+        Kron radii, and extended source corrections in sequence.
+        """
         self.load_sextractor_auto_mags()
         self.load_sextractor_auto_fluxes()
         self.load_sextractor_kron_radii()
@@ -2370,6 +2439,28 @@ class Catalogue(Catalogue_Base):
         cat_colname: str,
         save_name: str,
         multiply_factor: Union[dict, u.Quantity, u.Magnitude, None] = None,
+    ) -> dict:
+        """Load a per-band property from the catalogue for all galaxies.
+
+        Reads a set of per-band columns from the catalogue FITS file,
+        optionally applies unit conversions, and stores on each galaxy object.
+
+        Parameters
+        ----------
+        cat_colname : `str`
+            Base name of the catalogue column (e.g., "FLUX_RADIUS").
+            Per-band columns are named as ``{colname}_{filt_name}``.
+        save_name : `str`
+            Name to store the property as on each galaxy object.
+        multiply_factor : `dict`, `Quantity`, `Magnitude`, or `None`, optional
+            Per-band multiplication factor(s) for unit conversion. Can be a
+            single value (applied to all bands) or a dictionary mapping filter
+            names to factors. Default is `None` (no conversion).
+
+        Returns
+        -------
+        `dict`
+            Dictionary mapping galaxy indices to per-band property dictionaries.
         dest: str = "gal",
         update: bool = True,
     ) -> Optional[List[Dict[str, Union[u.Quantity, u.Magnitude, u.Dex]]]]:
@@ -2450,8 +2541,25 @@ class Catalogue(Catalogue_Base):
         cat_colname: str,
         save_name: str,
         multiply_factor: Union[u.Quantity, u.Magnitude] = 1.0 * u.dimensionless_unscaled,
-        dest: str = "gal",
-    ):
+    ) -> None:
+        """Load a single property column from the catalogue for all galaxies.
+
+        Reads a catalogue column and stores it on each galaxy object,
+        optionally applying a unit conversion factor.
+
+        Parameters
+        ----------
+        cat_colname : `str`
+            Name of the catalogue column to load.
+        save_name : `str`
+            Name to store the property as on each galaxy object.
+        multiply_factor : `Quantity` or `Magnitude`, optional
+            Multiplication factor for unit conversion. Default is dimensionless.
+        dest : `str`, optional
+            Destination: ``"gal"`` to store on galaxy, or ``"phot_obs"`` to
+            store on photometry object. Default is ``"gal"``.
+        """
+        dest = "gal"
         assert dest in ["gal", "phot_obs"]
         if dest == "gal":
             has_attr = hasattr(self[0], save_name)
@@ -2485,7 +2593,12 @@ class Catalogue(Catalogue_Base):
                     f"{cat_colname=} does not exist in {self.cat_path}, skipping!"
                 )
 
-    def load_sex_flux_mag_autos(self):
+    def load_sex_flux_mag_autos(self) -> None:
+        """Load SExtractor AUTO fluxes and magnitudes into photometry objects.
+
+        Extracts FLUX_AUTO and MAG_AUTO from SExtractor catalogues and
+        stores them on each galaxy's photometry object, converting fluxes to Jansky.
+        """
         # sex_filt_names = [filt_name for filt_name, cat_type in self.data.sex_cat_types.items() if "SExtractor" in cat_type]
         flux_im_to_Jy_conv = {
             filt_name: funcs.flux_image_to_Jy(1.0, self.data.im_zps[filt_name])
@@ -2509,7 +2622,23 @@ class Catalogue(Catalogue_Base):
         aper_diam: u.Quantity,
         z_arr: Union[List[float], NDArray[float]],
         z_label: str = "z",
-    ) -> NoReturn:
+    ) -> None:
+        """Load pre-computed fixed-redshift SED fitting results.
+
+        Parameters
+        ----------
+        aper_diam : `astropy.units.Quantity`
+            Aperture diameter that results correspond to.
+        z_arr : `list` or `ndarray` of `float`
+            Redshift value for each galaxy. Must have same length as catalogue.
+        z_label : `str`, optional
+            Label for the redshift parameter. Default is ``"z"``.
+
+        Raises
+        ------
+        AssertionError
+            If redshift array length doesn't match catalogue length.
+        """
         assert len(z_arr) == len(self), \
             galfind_logger.critical(
                 f"{len(z_arr)} != {len(self)}! {z_arr=} and {self=}"
@@ -2522,6 +2651,23 @@ class Catalogue(Catalogue_Base):
         cutout_size: Union[u.Quantity, dict] = 0.96 * u.arcsec,
         native: bool = False,
     ) -> List[Dict[str, Type[Band_Cutout_Base]]]:
+        """Generate multi-band cutout images for all galaxies in the catalogue.
+
+        Parameters
+        ----------
+        cutout_size : `astropy.units.Quantity` or `dict`, optional
+            Size of cutouts in angular units. Can be a single value (applied
+            to all bands) or a dictionary mapping band names to sizes.
+            Default is 0.96 arcsec.
+        native : `bool`, optional
+            Whether to use native (non-PSF-homogenized) data. Default is `False`.
+
+        Returns
+        -------
+        `list` of `dict`
+            List of cutout dictionaries, one per galaxy, each mapping band
+            names to `Band_Cutout_Base` objects.
+        """
         if native:
             assert hasattr(self.data, "native"), \
                 galfind_logger.critical("Native data not available")
@@ -2537,6 +2683,24 @@ class Catalogue(Catalogue_Base):
         native: bool = False,
         overwrite: bool = False,
     ) -> List[Band_Cutout]:
+        """Generate single-band cutout images for all galaxies.
+
+        Parameters
+        ----------
+        filt : `str` or `Filter`
+            Filter/band to extract cutouts for.
+        cutout_size : `astropy.units.Quantity`, optional
+            Size of cutouts. Default is 0.96 arcsec.
+        native : `bool`, optional
+            Whether to use native data. Default is `False`.
+        overwrite : `bool`, optional
+            Whether to regenerate cutouts. Default is `False`.
+
+        Returns
+        -------
+        `list` of `Band_Cutout`
+            Cutout objects, one per galaxy, for the specified band.
+        """
         if native:
             assert hasattr(self.data, "native"), \
                 galfind_logger.critical("Native data not available")
@@ -2563,6 +2727,17 @@ class Catalogue(Catalogue_Base):
         #save_name: Optional[str] = None,
         plot_kwargs: Dict[str, Any] = {},
         crop_name: Optional[str] = None,
+    ) -> None:
+        """Plot multi-band cutout images for all galaxies.
+
+        Parameters
+        ----------
+        cutout_size : `astropy.units.Quantity`, optional
+            Size of cutouts. Default is 0.96 arcsec.
+        plot_kwargs : `dict`, optional
+            Keyword arguments for plotting. Default is empty.
+        crop_name : `str` or `None`, optional
+            Crop/selection name for organizing plots. Default is `None`.
         collate_dir: Optional[str] = None,
         overwrite: bool = False,
         overwrite_sample: bool = True,

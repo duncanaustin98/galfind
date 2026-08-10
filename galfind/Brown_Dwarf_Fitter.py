@@ -53,6 +53,17 @@ class Template_Fitter(SED_code):
         SED_fit_params: Dict[str, Any],
         fit_instrument: str = "NIRCam",
     ):
+        """Initialize a Template_Fitter instance.
+
+        Parameters
+        ----------
+        SED_fit_params : `dict`
+            Dictionary of SED fitting parameters/options. Must contain
+            the key ``"templates"``.
+        fit_instrument : `str`, optional
+            Name of the instrument whose bands are used for fitting.
+            Default is ``"NIRCam"``.
+        """
         self.fit_instrument = fit_instrument
         super().__init__(SED_fit_params)
 
@@ -127,6 +138,10 @@ class Template_Fitter(SED_code):
 
     #@abstractmethod
     def _load_gal_property_labels(self) -> NoReturn:
+        """Load mappings from internal property names to output column names.
+
+        Implements the `SED_code._load_gal_property_labels` interface.
+        """
         self.gal_property_labels = {
             "chi_sq": "chi2",
             "red_chi_sq": "red_chi2",
@@ -141,9 +156,18 @@ class Template_Fitter(SED_code):
 
     #@abstractmethod
     def _load_gal_property_err_labels(self) -> NoReturn:
+        """Load mappings for property error column names.
+
+        Implements the `SED_code._load_gal_property_err_labels` interface.
+        Sets empty dict since this fitter does not provide error estimates.
+        """
         super()._load_gal_property_err_labels({})
 
     def _load_gal_property_units(self) -> NoReturn:
+        """Load the astropy units for each fitted property.
+
+        Implements the `SED_code._load_gal_property_units` interface.
+        """
         self.gal_property_units = {
             **{gal_property: u.dimensionless_unscaled for gal_property in ["chi_sq", "red_chi_sq"]},
             "temp": u.K,
@@ -302,6 +326,23 @@ class Template_Fitter(SED_code):
         cat: Catalogue,
         aper_diam: u.Quantity
     ) -> Tuple[str, str, str, Dict[str, List[str]], List[str]]:
+        """Construct output file paths for this fitting run.
+
+        Implements the `SED_code._get_out_paths` interface.
+
+        Parameters
+        ----------
+        cat : `Catalogue`
+            Catalogue being fit.
+        aper_diam : `astropy.units.Quantity`
+            Aperture diameter used in the fit.
+
+        Returns
+        -------
+        `tuple`
+            ``(None, out_path, out_path, None, SED_path)`` where ``out_path``
+            is the FITS catalogue output file and ``SED_path`` is the HDF5 SED file.
+        """
         aper_diams_str = funcs.aper_diams_to_str(np.array([aper_diam.to(u.arcsec).value]) * u.arcsec)
         out_path = f"{config['TemplateFitting']['BROWN_DWARF_OUT_DIR']}/{cat.version}/" + \
             f"{cat.filterset.instrument_name}/{cat.survey}/{aper_diams_str}/" + \
@@ -413,6 +454,12 @@ class Template_Fitter(SED_code):
         )
 
     def _assert_SED_fit_params(self) -> NoReturn:
+        """Validate that required SED fitting parameters are present.
+
+        Implements the `SED_code._assert_SED_fit_params` interface. Checks
+        that all required keys are present in `SED_fit_params` and initializes
+        ``excl_bands`` if not already present.
+        """
         for key in self.required_SED_fit_params:
             assert key in self.SED_fit_params.keys(), galfind_logger.critical(
                 f"'{key}' not in SED_fit_params keys = {list(self.SED_fit_params.keys())}"
@@ -447,6 +494,14 @@ class Brown_Dwarf_Fitter(Template_Fitter):
         self: Self,
         fit_instrument: str = "NIRCam"
     ):
+        """Initialize a Brown_Dwarf_Fitter with Sonora template libraries.
+
+        Parameters
+        ----------
+        fit_instrument : `str`, optional
+            Name of the instrument whose bands are used for fitting.
+            Default is ``"NIRCam"``.
+        """
         SED_fit_params = {"templates": ["sonora_bobcat", "sonora_cholla", "sonora_elf_owl", "sonora_diamondback", "low-z"]}
         super().__init__(SED_fit_params, fit_instrument)
 

@@ -397,6 +397,27 @@ class Galfit_Result(Morphology_Result):
     
 
 class Morphology_Fitter(ABC):
+    """Abstract base class for morphological fitting of galaxy images.
+
+    Provides interface for fitting parametric models (e.g., Sérsic) to galaxy
+    surface brightness profiles, using PSF convolution. Subclasses implement
+    specific fitting codes (Galfit, etc.).
+
+    Parameters
+    ----------
+    psf : `Type[PSF_Base]`
+        PSF model for convolution.
+    model : `str`
+        Model name or combination (e.g., "sersic", "sersic+sersic").
+        Must be in ``_available_models``.
+
+    Attributes
+    ----------
+    psf : `Type[PSF_Base]`
+        The PSF model.
+    model : `str`
+        The fitting model(s), lowercased.
+    """
 
     def __init__(
         self: Self,
@@ -481,6 +502,35 @@ class Morphology_Fitter(ABC):
 
 
 class Galfit_Fitter(Morphology_Fitter):
+    """Morphological fitting using the Galfit code.
+
+    Fits Sérsic or other parametric profiles to galaxy images using Galfit,
+    with support for PSF convolution and neighboring source fitting.
+
+    Parameters
+    ----------
+    psf : `Type[PSF_Base]`
+        PSF model for convolution in Galfit.
+    model : `str`
+        Galfit model type (e.g., "sersic", "sersic+psf").
+    primary_constraints : `dict` or `None`, optional
+        Parameter constraints for the primary galaxy component.
+        Default includes reasonable bounds for Sérsic parameters.
+    neighbour_constraints : `dict` or `None`, optional
+        Parameter constraints for neighboring objects. Default is similar
+        to primary constraints.
+    neighbours_model : `str` or `None`, optional
+        Model to use for neighboring sources. Default is "sersic".
+    fid_params : `dict`, optional
+        Fiducial parameters for components (e.g., Sérsic index n=1 for disk).
+
+    Attributes
+    ----------
+    model_to_code_dict : `dict`
+        Maps model names to Galfit function codes (ss, ds, ss_psf, psf).
+    property_units : `dict`
+        Maps property names to their astropy units.
+    """
 
     model_to_code_dict = {
         "sersic": "ss",

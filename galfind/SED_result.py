@@ -27,6 +27,36 @@ from .Photometry_rest import Photometry_rest
 
 
 class SED_result:
+    """Results of a single SED fit to a galaxy's photometry.
+
+    Stores best-fit parameters, uncertainties, and posterior probability
+    distributions from an SED fitting code (e.g., LePhare, EAZY, Bagpipes).
+
+    Parameters
+    ----------
+    SED_code : `str` or `SED_code` instance
+        The SED fitting code or code label used for this fit.
+    phot : `Photometry_obs`
+        Observed photometry data for the galaxy.
+    properties : `dict`
+        Best-fit property values (e.g., ``{"z": 1.5 * u.dimensionless_unscaled, ...}``).
+    property_errs : `dict`
+        Uncertainties on each property in ``properties``.
+    property_PDFs : `dict` or `None`
+        Posterior probability distributions for each property, keyed by
+        property name.
+    SED : `SED` instance or `None`
+        The fitted SED object, or `None` if not loaded.
+
+    Attributes
+    ----------
+    z : `astropy.units.Quantity`
+        Redshift (set to 0.0 if not in properties).
+    phot_rest : `Photometry_rest`
+        Rest-frame photometry derived from observed photometry and redshift.
+    aper_diam : `astropy.units.Quantity`
+        Aperture diameter used for photometry.
+    """
     def __init__(
         self,
         SED_code,
@@ -207,6 +237,23 @@ class SED_result:
 
 
 class Galaxy_SED_results:
+    """Container for SED fitting results from multiple SED codes for a single galaxy.
+
+    Organizes multiple `SED_result` objects (one per SED fitting code/configuration)
+    for a single galaxy, keyed by code/template/redshift configuration labels.
+
+    Parameters
+    ----------
+    SED_fit_params_arr : `list` of `dict`
+        List of SED fitting parameter dictionaries, one per code.
+    SED_result_arr : `list` of `SED_result`
+        Corresponding `SED_result` objects.
+
+    Attributes
+    ----------
+    SED_results : `dict`
+        Dictionary mapping code labels to `SED_result` objects.
+    """
     def __init__(self, SED_fit_params_arr, SED_result_arr):
         self.SED_results = {
             SED_fit_params["code"].label_from_SED_fit_params(
@@ -274,6 +321,23 @@ class Galaxy_SED_results:
 
 
 class Catalogue_SED_results:
+    """Container for SED fitting results for all galaxies in a catalogue.
+
+    Aggregates `Galaxy_SED_results` objects for each galaxy in a catalogue,
+    with optional loading of posterior PDFs and fitted SED objects.
+
+    Parameters
+    ----------
+    SED_fit_params_arr : `list` of `dict`
+        List of SED fitting parameter dictionaries.
+    cat_SED_results : `list` of `list` of `SED_result`
+        Per-galaxy lists of `SED_result` objects (one list per galaxy).
+
+    Attributes
+    ----------
+    SED_results : `list` of `dict`
+        Per-galaxy dictionaries of `SED_result` objects, keyed by code label.
+    """
     def __init__(self, SED_fit_params_arr, cat_SED_results):
         self.SED_results = [
             Galaxy_SED_results(SED_fit_params_arr, SED_result_arr).SED_results

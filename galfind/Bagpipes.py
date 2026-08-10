@@ -76,6 +76,22 @@ pipes_unit_dict = {
 }
 
 def get_pipes_unit(label: str) -> u.Unit:
+    """Get the astropy unit for a Bagpipes output parameter label.
+
+    Maps Bagpipes parameter names to their corresponding `astropy.units.Unit`
+    based on an internal dictionary. If no exact match, looks for partial matches;
+    if no match, returns dimensionless units.
+
+    Parameters
+    ----------
+    label : `str`
+        Bagpipes parameter label (e.g., "mass", "sfr", "metallicity").
+
+    Returns
+    -------
+    `astropy.units.Unit`
+        The unit associated with the parameter, or dimensionless if not found.
+    """
     if label in pipes_unit_dict.keys():
         return pipes_unit_dict[label]
     elif any(key in label for key in pipes_unit_dict.keys()):
@@ -94,6 +110,17 @@ def get_pipes_unit(label: str) -> u.Unit:
 
 
 class Bagpipes(SED_code):
+    """SED fitting using the Bagpipes code (Carnall et al. 2018).
+
+    Interface to the Bagpipes SED fitting code, inheriting from `SED_code`
+    and implementing methods to run fits, load results, and extract parameters
+    with proper unit handling.
+
+    Attributes
+    ----------
+    ID_label : `str`
+        Column name for object IDs in Bagpipes output ("# ID").
+    """
 
     ID_label = "#ID"
 
@@ -114,6 +141,19 @@ class Bagpipes(SED_code):
 
     @classmethod
     def from_label(cls, label: str) -> Type[SED_code]:
+        """Construct a Bagpipes SED-fitter from a label string.
+
+        Parameters
+        ----------
+        label : `str`
+            Label string encoding the SED-fitting parameters (format:
+            ``"Bagpipes_sfh_<sfh>_<dust>_<dust_prior>_Z_<metallicity_prior>_<sps_model>_<z_config>"``).
+
+        Returns
+        -------
+        `Bagpipes`
+            A Bagpipes SED-fitter instance with parsed parameters.
+        """
         # TODO: For continuity SFH, add z used to calculate bins 
         # into the SED fit params from_label extractor
         breakpoint()
@@ -170,6 +210,13 @@ class Bagpipes(SED_code):
 
     @property
     def label(self) -> str:
+        """SED-fitter label string encoding the configuration.
+
+        Returns
+        -------
+        `str`
+            Label string of the form ``"Bagpipes_sfh_<sfh>_<dust>_<dust_prior>_Z_<metallicity_prior>_<sps_model>_<z_config>"``
+        """
         # should be generalized more here including e.g. SED_fit_params assertions
         if hasattr(self, "custom_label"):
             return self.custom_label
@@ -261,12 +308,26 @@ class Bagpipes(SED_code):
 
     @property
     def hdu_name(self) -> str:
+        """HDU name for storing results in FITS files.
+
+        Returns
+        -------
+        `str`
+            HDU name (same as the label).
+        """
         # TODO: Copied from EAZY
         #return f"{self.__class__.__name__}_{self.SED_fit_params['templates']}"
         return self.label
 
     @property
     def tab_suffix(self) -> str:
+        """Suffix for catalogue table files.
+
+        Returns
+        -------
+        `str`
+            Table suffix (label without the "Bagpipes_" prefix).
+        """
         # TODO: Copied from EAZY
         # return f"{self.SED_fit_params['templates']}_" + \
         #     f"{funcs.lowz_label(self.SED_fit_params['lowz_zmax'])}"
@@ -274,10 +335,24 @@ class Bagpipes(SED_code):
 
     @property
     def required_SED_fit_params(self) -> List[str]:
+        """Required SED fitting parameters for Bagpipes.
+
+        Returns
+        -------
+        `list` of `str`
+            List of required parameter names.
+        """
         return ["sps_model", "IMF", "fix_z"]
 
     @property
     def are_errs_percentiles(self) -> bool:
+        """Whether Bagpipes errors are in percentile form.
+
+        Returns
+        -------
+        `bool`
+            Always `True` for Bagpipes.
+        """
         return True
 
     # @property
@@ -320,6 +395,17 @@ class Bagpipes(SED_code):
         super()._assert_SED_fit_params()
 
     def reload(self: Self) -> types.ModuleType:
+        """Reload the Bagpipes module, configuring it for the SPS model.
+
+        Sets the ``use_bpass`` environment variable based on the
+        configured SPS model, then reloads the bagpipes module to
+        apply the configuration.
+
+        Returns
+        -------
+        `types.ModuleType`
+            The reloaded bagpipes module.
+        """
         # re-load to take into account sps model
         if self.SED_fit_params["sps_model"] == "BPASS":
             # set environment variable to use BPASS
@@ -404,6 +490,24 @@ class Bagpipes(SED_code):
         n_draws: int = 10_000,
         h5_suffix: Optional[str] = None
     ) -> str:
+        """Extract and save Bagpipes prior distributions for a given redshift.
+
+        Parameters
+        ----------
+        filterset : `Multiple_Filter`
+            Filter set for the fitting.
+        redshift : `float`
+            Redshift at which to evaluate the priors.
+        n_draws : `int`, optional
+            Number of prior samples to draw. Default is 10000.
+        h5_suffix : `str`, optional
+            Suffix to append to the output HDF5 filename. Default is `None`.
+
+        Returns
+        -------
+        `str`
+            Path to the saved HDF5 file containing prior samples.
+        """
         save_path = f"{config['Bagpipes']['PIPES_OUT_DIR']}/priors/{self.label}_z{redshift:.1f}.h5"
         if h5_suffix is not None:
             save_path = save_path.replace(".h5", f"_{h5_suffix}.h5")
@@ -472,6 +576,19 @@ class Bagpipes(SED_code):
         overwrite: bool = False,
         save_name: Optional[str] = None,
     ) -> None:
+        """Perform pre-fitting setup including fit instruction generation.
+
+        Parameters
+        ----------
+        cat : `Catalogue` or `Spectral_Catalogue`
+            Catalogue to prepare for fitting.
+        aper_diam : `astropy.units.Quantity`
+            Aperture diameter for photometry.
+        overwrite : `bool`, optional
+            Whether to overwrite existing output files. Default is `False`.
+        save_name : `str`, optional
+            Custom name for output files. Default is `None`.
+        """
         self._load_fit_instructions()
         if "sfh" in self.SED_fit_params.keys() and "continuity" in self.SED_fit_params["sfh"]:
             self._update_continuity_sfh_fit_instructions(cat)
@@ -489,6 +606,24 @@ class Bagpipes(SED_code):
         overwrite: bool = False,
         save_name: Optional[str] = None,
     ) -> str:
+        """Generate Bagpipes input (.in) file for the catalogue.
+
+        Parameters
+        ----------
+        cat : `Catalogue` or `Spectral_Catalogue`
+            Catalogue to generate input files for.
+        aper_diam : `astropy.units.Quantity`
+            Aperture diameter for photometry.
+        overwrite : `bool`, optional
+            Whether to overwrite existing files. Default is `False`.
+        save_name : `str`, optional
+            Custom name for output files. Default is `None`.
+
+        Returns
+        -------
+        `str`
+            Path to the generated input file.
+        """
         pass
 
 
@@ -1884,6 +2019,34 @@ class Bagpipes(SED_code):
 
 
 def calculate_bins(redshift, redshift_sfr_start=20, log_time=True, output_unit = 'yr', return_flat = False, num_bins=6, fixed_bin_ages = [10.0] * u.Myr): #, cosmo = funcs.astropy_cosmo):
+    """Calculate age bins for SFH modeling in Bagpipes.
+
+    Computes time/age bins for star formation history based on redshift,
+    with fixed ages for recent star formation and logarithmic spacing for older ages.
+
+    Parameters
+    ----------
+    redshift : `float`
+        Redshift of the galaxy.
+    redshift_sfr_start : `float`, optional
+        Redshift at which to start the SFR lookback time. Default is 20.
+    log_time : `bool`, optional
+        Use logarithmic spacing (not fully implemented). Default is `True`.
+    output_unit : `str`, optional
+        Output time unit ("yr", "Gyr", etc.). Default is "yr".
+    return_flat : `bool`, optional
+        Flatten the output array. Default is `False`.
+    num_bins : `int`, optional
+        Number of logarithmic bins. Default is 6.
+    fixed_bin_ages : `list` of `astropy.units.Quantity`, optional
+        Fixed ages for the first bins (e.g., [10 Myr, 100 Myr]).
+        Default is [10 Myr].
+
+    Returns
+    -------
+    `numpy.ndarray`
+        Age bin edges (or flattened if ``return_flat=True``).
+    """
     time_observed = cosmo.lookback_time(redshift)
     time_sfr_start = cosmo.lookback_time(redshift_sfr_start)
     time_dif = abs(time_observed - time_sfr_start)

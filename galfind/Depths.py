@@ -2381,11 +2381,25 @@ def plot_depth_diagnostic(
         plt.clf()
 
 def _plot_rolling_average(
-    fig: plt.Figure, 
-    ax: plt.Axes, 
+    fig: plt.Figure,
+    ax: plt.Axes,
     hf_output: Dict[str, Any],
     cmap: plt.Colormap
 ) -> NoReturn:
+    """Plot rolling-average depth map with filter size indicator circle.
+
+    Parameters
+    ----------
+    fig : `matplotlib.figure.Figure`
+        Figure to which the colorbar will be added.
+    ax : `matplotlib.axes.Axes`
+        Axes on which to draw the depth map.
+    hf_output : `dict`
+        Output from a depth calculation function containing ``nmad_grid``,
+        ``region_radius_used_pix``, and ``step_size``.
+    cmap : `matplotlib.colors.Colormap`
+        Colormap for the depth map visualization.
+    """
     # Make vmin and vmax the 1st and 99th percentile of the nmad_grid
     vmin, vmax = (
         np.nanpercentile(hf_output["nmad_grid"], 1),
@@ -2425,11 +2439,24 @@ def _plot_rolling_average(
     ax.set_title(r"Rolling Average 5$\sigma$ Depth")
 
 def _plot_rolling_average_diagnostic(
-    fig: plt.Figure, 
-    ax: plt.Axes, 
+    fig: plt.Figure,
+    ax: plt.Axes,
     hf_output: Dict[str, Any],
     cmap: plt.Colormap
 ) -> NoReturn:
+    """Plot rolling-average aperture count diagnostic map.
+
+    Parameters
+    ----------
+    fig : `matplotlib.figure.Figure`
+        Figure to which the colorbar will be added.
+    ax : `matplotlib.axes.Axes`
+        Axes on which to draw the diagnostic map.
+    hf_output : `dict`
+        Output from depth calculation containing ``num_grid`` (aperture counts).
+    cmap : `matplotlib.colors.Colormap`
+        Colormap for the diagnostic map visualization.
+    """
     mappable = ax.imshow(hf_output["num_grid"], origin="lower", cmap=cmap)
     divider = make_axes_locatable(ax)
     cax = divider.append_axes("right", size="5%", pad=0.05)
@@ -2440,6 +2467,28 @@ def _get_labels(
     hf_output: Dict[str, Any],
     cmap_name: str = "Set2"
 ) -> Tuple[List[str], List[int], List[plt.Color], plt.Colormap]:
+    """Extract and assign labels and colors for depth regions.
+
+    Parameters
+    ----------
+    hf_output : `dict`
+        Output from depth calculation containing ``labels_grid`` and ``nmad_grid``.
+    cmap_name : `str`, optional
+        Matplotlib colormap name for label colors. Default is ``"Set2"``.
+
+    Returns
+    -------
+    `tuple`
+        ``(labels_arr, possible_labels, colours, labels_cmap)`` where ``labels_arr``
+        are readable labels (e.g. "Shallow", "Deep"), ``possible_labels`` are unique
+        label values, ``colours`` are the assigned colors, and ``labels_cmap`` is
+        the colormap used.
+
+    Raises
+    ------
+    Exception
+        If more than 2 unique regions are found (currently unsupported).
+    """
     possible_labels = np.unique(hf_output["labels_grid"])
     av_depths = [
         np.nanmedian(hf_output["nmad_grid"][hf_output["labels_grid"] == label])
@@ -2475,6 +2524,17 @@ def _plot_labels(
     hf_output: Dict[str, Any],
     cmap: plt.Colormap,
 ) -> Tuple[List[str], List[int], List[plt.Color]]:
+    """Plot the labeled depth regions.
+
+    Parameters
+    ----------
+    ax : `matplotlib.axes.Axes`
+        Axes on which to draw the labels map.
+    hf_output : `dict`
+        Output from depth calculation containing ``labels_grid``.
+    cmap : `matplotlib.colors.Colormap`
+        Colormap for rendering the labeled regions.
+    """
     ax.imshow(
         hf_output["labels_grid"], cmap=cmap, origin="lower", interpolation="None"
     )
@@ -2489,6 +2549,25 @@ def _plot_cat_depths(
     cat_y: np.ndarray,
     combined_mask: np.ndarray,
 ) -> NoReturn:
+    """Plot catalogue source depths with region overlays.
+
+    Parameters
+    ----------
+    fig : `matplotlib.figure.Figure`
+        Figure to which the colorbar will be added.
+    ax : `matplotlib.axes.Axes`
+        Axes on which to draw the catalogue depths.
+    hf_output : `dict`
+        Output from depth calculation containing ``depths`` and ``final_labels``.
+    cmap : `matplotlib.colors.Colormap`
+        Colormap for the depth values.
+    cat_x : `numpy.ndarray`
+        x-coordinates of catalogue sources (pixels).
+    cat_y : `numpy.ndarray`
+        y-coordinates of catalogue sources (pixels).
+    combined_mask : `numpy.ndarray`
+        Boolean mask of valid regions.
+    """
     ax.set_title("Catalogue Depths")
     m = ax.scatter(
         cat_x, cat_y, s=1, zorder=5, c=hf_output["depths"], cmap=cmap, edgecolors=None
@@ -2522,6 +2601,25 @@ def _plot_cat_diagnostic(
     cat_y: np.ndarray,
     combined_mask: np.ndarray,
 ) -> NoReturn:
+    """Plot catalogue source diagnostic information.
+
+    Parameters
+    ----------
+    fig : `matplotlib.figure.Figure`
+        Figure to which the colorbar will be added.
+    ax : `matplotlib.axes.Axes`
+        Axes on which to draw the diagnostic plot.
+    hf_output : `dict`
+        Output from depth calculation containing ``diagnostic`` measurements.
+    cmap : `matplotlib.colors.Colormap`
+        Colormap for the diagnostic values.
+    cat_x : `numpy.ndarray`
+        x-coordinates of catalogue sources (pixels).
+    cat_y : `numpy.ndarray`
+        y-coordinates of catalogue sources (pixels).
+    combined_mask : `numpy.ndarray`
+        Boolean mask of valid regions.
+    """
     ax.set_title("Catalogue Diagnostic")
     m = ax.scatter(
         cat_x,
@@ -2551,6 +2649,29 @@ def _plot_depth_hist(
     label_suffix: Optional[str] = None,
     title: Optional[str] = None # default None prints "Depth Histogram"
 ) -> NoReturn:
+    """Plot histogram of depths, optionally split by region labels.
+
+    Parameters
+    ----------
+    fig : `matplotlib.figure.Figure`
+        Figure object (for reference).
+    ax : `matplotlib.axes.Axes`
+        Axes on which to draw the histogram.
+    hf_output : `dict`
+        Output from depth calculation containing ``nmad_grid`` and ``labels_grid``.
+    labels_arr : `list` of `str`
+        Readable labels for each region (e.g. ["Shallow", "Deep"]).
+    possible_labels : `list` of `int`
+        Label indices corresponding to ``labels_arr``.
+    colours : `list` of `matplotlib.colors.Color`
+        Colors for each label's histogram bars.
+    annotate : `bool`, optional
+        Whether to add depth value annotations to the bars. Default is `True`.
+    label_suffix : `str`, optional
+        Suffix to append to region labels in the legend. Default is `None`.
+    title : `str`, optional
+        Plot title. Default is `None` (uses "Depth Histogram").
+    """
     set_labels = [
         hf_output["depths"][hf_output["depth_labels"] == label] for label in possible_labels
     ]

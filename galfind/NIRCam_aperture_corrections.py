@@ -23,8 +23,23 @@ from scipy import optimize
 from . import config
 
 
-def log_transform(im):  # function to transform fits image to log scaling
-    """returns log(image) scaled to the interval [0,1]"""
+def log_transform(im):
+    """Apply logarithmic scaling to an image for improved visualization.
+
+    Scales image values to the interval ``[0, 1]`` using the logarithm,
+    with fallback to the original image if the transformation fails.
+
+    Parameters
+    ----------
+    im : `numpy.ndarray`
+        Input image array.
+
+    Returns
+    -------
+    `numpy.ndarray`
+        Image scaled to ``[0, 1]`` in log space, or the original image if
+        transformation fails or values are invalid.
+    """
     try:
         (min, max) = (im[im > 0].min(), im.max())
         if (max > min) and (max > 0):
@@ -209,6 +224,36 @@ def plot_flux_curve(
     tot_aper_size=None,
     aper_diams=[],
 ):
+    """Plot encircled energy curve with NIRCam aperture corrections.
+
+    Similar to plot_flux_curve in calc_aper_corr.py but configured for
+    NIRCam PSF models and save locations.
+
+    Parameters
+    ----------
+    PSFdata : `numpy.ndarray`
+        2D PSF image.
+    pixel_scale : `astropy.units.Quantity`
+        Pixel scale (arcsec/pixel).
+    x_cen, y_cen : `float`
+        PSF center (pixels).
+    band : `str`
+        Filter name.
+    flux_pcs : `array-like`
+        Flux fractions in apertures.
+    aper_corrs : `array-like`
+        Aperture corrections (mag).
+    PSF_loc : `str`, optional
+        PSF directory.
+    PSF_name : `list`, optional
+        PSF name components.
+    save_loc : `str`, optional
+        Output directory.
+    tot_aper_size : `float` or `None`, optional
+        Total aperture size (pixels).
+    aper_diams : `list`, optional
+        Aperture diameters to mark.
+    """
     mpl.rcParams.update(mpl.rcParamsDefault)
     rlist = (
         np.arange(0, tot_aper_size * pixel_scale.value / 2, 0.01) / pixel_scale
@@ -276,6 +321,22 @@ def plot_additional_flux_curve(band):
 
 
 def fit_2d_moffatt(PSFdata, maxfev=10000):
+    """Fit 2D Moffat profile to NIRCam PSF data.
+
+    Fits an analytic 2D Moffat function to a NIRCam PSF image.
+
+    Parameters
+    ----------
+    PSFdata : `numpy.ndarray`
+        2D PSF image to fit.
+    maxfev : `int`, optional
+        Maximum function evaluations. Default is 10,000.
+
+    Returns
+    -------
+    `tuple`
+        Fitted parameters (A, a, b, xcen, ycen) and covariance.
+    """
     def moffatcurve(xdata_tuple, A, a, b, xcen, ycen):
         (x, y) = xdata_tuple
         d = -b
@@ -310,6 +371,36 @@ def main(
     * u.arcsec,
     instrument_name="NIRCam",
 ):
+    """Compute and plot NIRCam aperture corrections from PSF models.
+
+    Loads PSF models for each band, fits a 2D Moffat profile to find the
+    center, measures the flux within specified apertures, computes aperture
+    corrections, and generates an encircled energy plot. Results are saved
+    to disk.
+
+    Parameters
+    ----------
+    in_bands : `list`
+        Filter band names to process.
+    extract_code : `str`, optional
+        Photometry code to use, either ``"sep"`` or ``"photutils"``.
+        Default is ``"sep"``.
+    save_loc : `str`, optional
+        Output directory for results. Default is
+        ``config['DEFAULT']['GALFIND_WORK']/Aperture_corrections``.
+    PSF_loc : `str`, optional
+        Directory containing PSF FITS files. Default is
+        ``config["DEFAULT"]["PSF_DIR"]``.
+    PSF_name : `str`, optional
+        PSF filename prefix. Default is ``"PSF_MIRI_in_flight_opd_filter_"``.
+    plot_PSF : `bool`, optional
+        Whether to display PSF plots during processing. Default is `True`.
+    aper_diams : `astropy.units.Quantity`, optional
+        Aperture diameters to compute corrections for. Default is loaded from
+        config ``SExtractor.APERTURE_DIAMS``.
+    instrument_name : `str`, optional
+        Instrument name used in output filename. Default is ``"NIRCam"``.
+    """
     print("extract code =", extract_code)
     print_line = [
         ["# aper_diam / arcsec"]

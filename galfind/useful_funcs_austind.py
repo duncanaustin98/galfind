@@ -2108,6 +2108,13 @@ class Singleton(object):
     _instance = None
 
     def __new__(cls, *args, **kwargs):
+        """Instantiate or retrieve the singleton instance.
+
+        Returns
+        -------
+        `object`
+            The singleton instance, created on first call and reused thereafter.
+        """
         if cls._instance is None:
             cls._instance = super(Singleton, cls).__new__(cls, *args, **kwargs)
         return cls._instance
@@ -2218,7 +2225,17 @@ def tqdm_joblib(tqdm_object):
     """
 
     class TqdmBatchCompletionCallback(joblib.parallel.BatchCompletionCallBack):
+        """Callback that updates a tqdm progress bar when a joblib batch completes.
+
+        Extends `joblib.parallel.BatchCompletionCallBack` to notify the parent
+        tqdm progress bar each time a batch of parallel jobs finishes.
+        """
         def __call__(self, *args, **kwargs):
+            """Invoke the callback, updating the tqdm progress bar.
+
+            Updates the associated tqdm progress bar by the batch size and then
+            calls the parent callback implementation.
+            """
             tqdm_object.update(n=self.batch_size)
             return super().__call__(*args, **kwargs)
 

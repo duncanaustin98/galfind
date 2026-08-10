@@ -784,8 +784,40 @@ def get_fluxes(wav_rest, A, beta, trans, norm):
 
 @njit
 def fit_beta_gradient_descent(wav_rest, mid_wav_rest, flux, trans, norm, init_A, init_beta, learning_rate=1e-6, max_iter=1000, tol=1e-6):
-    """
-    Perform gradient descent to minimize the residual sum of squares.
+    """Perform gradient descent to minimize the residual sum of squares.
+
+    Fits power-law parameters A and beta to synthesized photometry by
+    minimizing the residual sum of squares via gradient descent.
+
+    Parameters
+    ----------
+    wav_rest : `numpy.ndarray`
+        Rest-frame wavelength grid for each filter, one row per filter.
+    mid_wav_rest : `numpy.ndarray`
+        Mid-wavelength (in Angstrom) for each filter.
+    flux : `numpy.ndarray`
+        Observed photometric fluxes for each filter.
+    trans : `numpy.ndarray`
+        Filter transmission curve for each filter, one row per filter,
+        matching the shape of `wav_rest`.
+    norm : `numpy.ndarray`
+        Normalisation (integral of the transmission curve over
+        `wav_rest`) for each filter.
+    init_A : `float`
+        Initial power-law amplitude (in log10 space).
+    init_beta : `float`
+        Initial power-law (UV continuum slope) index.
+    learning_rate : `float`, optional
+        Learning rate for gradient descent updates. Default is `1e-6`.
+    max_iter : `int`, optional
+        Maximum number of gradient descent iterations. Default is `1000`.
+    tol : `float`, optional
+        Convergence tolerance for gradient magnitude. Default is `1e-6`.
+
+    Returns
+    -------
+    `float`
+        The fitted power-law slope (beta).
     """
     A = init_A
     beta = init_beta

@@ -19,6 +19,14 @@ class Multiple_Data:
     """
 
     def __init__(self, data_arr):
+        """Store a list of ``Data`` objects.
+
+        Parameters
+        ----------
+        data_arr : `list`
+            Array of `Data`-like objects, one per survey, to be stored on the
+            instance.
+        """
         self.data_arr = data_arr
 
     @classmethod

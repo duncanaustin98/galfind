@@ -59,6 +59,11 @@ class SFH:
         sfh_post: NDArray[float],
         type: str = "continuity_bursty",
     ):
+        """Initialize an SFH instance.
+
+        Stores the redshift, age grid, SFH posterior samples, and SFH type
+        for later use and visualization.
+        """
         self.z = z
         self.ages = ages
         self.sfh_post = sfh_post
@@ -139,6 +144,13 @@ class SFH:
         return cls(z, ages, sfh, sfh_type)
 
     def __repr__(self: Self) -> str:
+        """Return a string representation of the SFH instance.
+
+        Returns
+        -------
+        `str`
+            A concise representation showing the redshift and SFH type.
+        """
         return f"SFH(z={self.z:.2f}, type={self.type})"
     
     @property

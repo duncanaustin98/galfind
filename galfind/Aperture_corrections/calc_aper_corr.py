@@ -38,6 +38,22 @@ def log_transform(im):  # function to transform fits image to log scaling
 
 
 def open_PSF_model(band, PSF_loc, PSF_name):
+    """Load a PSF model FITS image and extract its pixel scale.
+
+    Parameters
+    ----------
+    band : `str`
+        Filter/band name (e.g., "F200W").
+    PSF_loc : `str`
+        Directory containing PSF FITS files.
+    PSF_name : `str`
+        Base name of PSF file (without band suffix or .fits extension).
+
+    Returns
+    -------
+    `tuple` of (`numpy.ndarray`, `astropy.units.Quantity`)
+        PSF image data and pixel scale (in arcsec/pixel).
+    """
     # load PSF .fits image
     band = band.replace("f", "F")
     PSF_path = PSF_loc + PSF_name + band
@@ -73,6 +89,42 @@ def calc_aper_corr(
     print_output=True,
     tot_aper_size=None,
 ):
+    """Calculate aperture correction from PSF data.
+
+    Computes the magnitude correction needed when measuring flux in a smaller
+    aperture compared to a large total-light aperture, based on the PSF.
+
+    Parameters
+    ----------
+    PSFdata : `numpy.ndarray`
+        2D PSF image array.
+    x_cen : `float`
+        X-coordinate of PSF center (pixels).
+    y_cen : `float`
+        Y-coordinate of PSF center (pixels).
+    band : `str`
+        Filter/band name (for labeling).
+    aper_diam : `astropy.units.Quantity`
+        Aperture diameter.
+    extract_code : `str`, optional
+        Photometry code: "sep" or "photutils". Default is "sep".
+    plot_PSF : `bool`, optional
+        Plot the PSF with apertures overlaid. Default is `True`.
+    PSF_loc : `str`, optional
+        PSF directory (unused if PSFdata provided). Default is a placeholder path.
+    PSF_name : `str`, optional
+        PSF name prefix (unused if PSFdata provided).
+    print_output : `bool`, optional
+        Print flux and correction values. Default is `True`.
+    tot_aper_size : `float` or `None`, optional
+        Total aperture size (pixels) for normalizing flux. Default is `None`.
+
+    Returns
+    -------
+    `tuple` of (`float`, `float`, `float`, `float`)
+        Fraction of flux in aperture, aperture correction (mag),
+        x_center, y_center.
+    """
     # calculate flux in the aperture
     if extract_code == "sep":
         flux_aper, fluxerr_aper, flag_aper = sep.sum_circle(
@@ -131,6 +183,37 @@ def plot_flux_curve(
     tot_aper_size=None,
     aper_diams=[],
 ):
+    """Plot the encircled energy curve with aperture corrections.
+
+    Displays the cumulative flux as a function of radius for a PSF,
+    with marked positions for specified aperture diameters and their
+    corresponding aperture corrections.
+
+    Parameters
+    ----------
+    PSFdata : `numpy.ndarray`
+        2D PSF image array.
+    pixel_scale : `astropy.units.Quantity`
+        Pixel scale (arcsec/pixel).
+    x_cen, y_cen : `float`
+        PSF center coordinates (pixels).
+    band : `str`
+        Filter/band name.
+    flux_pcs : `array-like`
+        Fraction of total flux in each aperture.
+    aper_corrs : `array-like`
+        Aperture corrections (magnitude) for each aperture.
+    PSF_loc : `str`, optional
+        PSF directory (for reference).
+    PSF_name : `str`, optional
+        PSF name (for plot title).
+    save_loc : `str`, optional
+        Directory to save plot. Default is current directory.
+    tot_aper_size : `float` or `None`, optional
+        Total aperture size (pixels).
+    aper_diams : `list`, optional
+        Aperture diameters to mark. Default is empty list.
+    """
     rlist = (
         np.arange(0, tot_aper_size * pixel_scale.value / 2, 0.01) / pixel_scale
     )
@@ -213,6 +296,23 @@ def plot_additional_flux_curve(band):
 
 
 def fit_2d_moffatt(PSFdata, maxfev=10000):
+    """Fit a 2D Moffat profile to PSF data.
+
+    Fits an analytic 2D Moffat function to a PSF image to extract
+    profile parameters and enable analytical flux calculations.
+
+    Parameters
+    ----------
+    PSFdata : `numpy.ndarray`
+        2D PSF image to fit.
+    maxfev : `int`, optional
+        Maximum function evaluations for the fitter. Default is 10,000.
+
+    Returns
+    -------
+    `tuple`
+        Fitted Moffat parameters (A, a, b, xcen, ycen) and covariance matrix.
+    """
     def moffatcurve(xdata_tuple, A, a, b, xcen, ycen):
         (x, y) = xdata_tuple
         d = -b

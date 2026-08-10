@@ -42,6 +42,51 @@ from .Catalogue import (
 )
 
 class Galaxy_Creator(Catalogue_Creator):
+    """Factory for creating individual Galaxy objects from catalogue data.
+
+    Inherits from `Catalogue_Creator` and specializes in loading data for
+    a single galaxy (identified by ID) from a FITS catalogue, including
+    photometry, masks, depths, and optional SED fit results.
+
+    Parameters
+    ----------
+    survey : `str`
+        Survey name.
+    version : `str`
+        Data release version.
+    id : `int`
+        Unique galaxy identifier in the catalogue.
+    cat_path : `str`
+        Path to the FITS catalogue file.
+    filterset : `Multiple_Filter`
+        Set of filters for the survey.
+    aper_diams : `astropy.units.Quantity`
+        Aperture diameters for photometry.
+    open_cat : callable, optional
+        Function to open the catalogue file. Default is `open_galfind_cat`.
+    open_hdr : callable, optional
+        Function to extract the catalogue header. Default is `open_galfind_hdr`.
+    load_ID_func : callable or `None`, optional
+        Function to load galaxy ID. Default is `load_IDs_Table`.
+    load_skycoords_func : callable or `None`, optional
+        Function to load RA/DEC. Default is `load_skycoords_Table`.
+    load_phot_func : callable, optional
+        Function to load photometry. Default is `load_galfind_phot`.
+    load_mask_func : callable or `None`, optional
+        Function to load masks. Default is `load_galfind_mask`.
+    load_depth_func : callable or `None`, optional
+        Function to load depth maps. Default is `load_galfind_depths`.
+    load_selection_func : callable or `None`, optional
+        Function to load selection/boolean flags. Default is `load_bool_Table`.
+    load_SED_result_func : callable or `None`, optional
+        Function to load SED fit results. Default is `None`.
+    apply_gal_instr_mask : `bool`, optional
+        Apply instrument masks to the galaxy. Default is `True`.
+    simulated : `bool`, optional
+        Whether the galaxy is from a simulation. Default is `False`.
+    **kwargs
+        Additional keyword arguments passed to parent class.
+    """
 
     def __init__(
         self: Self,

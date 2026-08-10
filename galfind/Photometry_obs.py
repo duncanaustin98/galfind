@@ -30,6 +30,33 @@ from . import useful_funcs_austind as funcs
 from . import galfind_logger
 
 class Photometry_obs(Photometry):
+    """Observed photometry for a single source across multiple filters.
+
+    Stores flux measurements and uncertainties for one source, including
+    depth information, PSF objects, and optional SED fitting results.
+    Inherits from `Photometry` and adds observational-specific attributes.
+
+    Parameters
+    ----------
+    filterset : `Multiple_Filter`
+        Set of filters in which photometry is measured.
+    flux : `Masked[astropy.units.Quantity]`
+        Flux measurements in each filter (may be masked for non-detections).
+    flux_errs : `Masked[astropy.units.Quantity]`
+        Flux measurement uncertainties.
+    depths : `dict` of `str` to `float`, or `list` of `float`
+        Depth/sensitivity information for each filter.
+    aper_diam : `astropy.units.Quantity`
+        Aperture diameter used for photometry.
+    psfs : `list` or `array` of `PSF_Base`, optional
+        PSF models for each filter. Default is `None`.
+    SED_results : `dict` of `str` to `SED_result`, optional
+        SED fitting results keyed by code/configuration label. Default is `{}`.
+    simulated : `bool`, optional
+        Whether this is simulated data. Default is `False`.
+    timed : `bool`, optional
+        Log initialization time. Default is `False`.
+    """
     def __init__(
         self: Self,
         filterset: Multiple_Filter,
@@ -709,6 +736,31 @@ class Photometry_obs(Photometry):
 
 
 class Multiple_Photometry_obs:
+    """Observed photometry from multiple instruments for a single source.
+
+    Aggregates `Photometry_obs` objects from different instruments/filters
+    into a unified photometry object, managing flux measurements, depths, and
+    SED results across all instrument combinations.
+
+    Parameters
+    ----------
+    instrument_arr : `list`
+        List of instrument/filterset objects.
+    flux_arr : `list`
+        List of flux arrays (one per instrument).
+    flux_errs_arr : `list`
+        List of flux error arrays (one per instrument).
+    aper_diam : `astropy.units.Quantity`
+        Aperture diameter used for photometry.
+    min_flux_pc_err : `float`
+        Minimum flux as a percentage of error.
+    loc_depths_arr : `list`
+        List of local depth measurements.
+    SED_results_arr : `list`, optional
+        SED fitting results for each instrument. Default is `[]`.
+    timed : `bool`, optional
+        Log initialization time. Default is `True`.
+    """
     def __init__(
         self,
         instrument_arr,

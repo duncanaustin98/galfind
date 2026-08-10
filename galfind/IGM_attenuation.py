@@ -449,6 +449,11 @@ class IGM:
         delta_z=0.01,
         n_wav_rest=10_000,
     ):
+        """Initialize the IGM transmission grid.
+
+        Creates or loads a precomputed IGM transmission grid for the specified
+        prescription and redshift/wavelength ranges.
+        """
         self.prescription = prescription
         # make IGM grid if it doesn't exist, else load it
         if not Path(

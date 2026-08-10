@@ -160,6 +160,30 @@ class Galaxy:
         survey: Optional[str] = None,
         simulated: bool = False,
     ):
+        """Initialize a Galaxy instance.
+
+        Parameters
+        ----------
+        ID : `int`
+            Unique identifier for this galaxy.
+        sky_coord : `astropy.coordinates.SkyCoord`
+            Sky coordinates of the galaxy.
+        aper_phot : `dict`
+            Dictionary mapping aperture diameters (`astropy.units.Quantity`)
+            to `Photometry_obs` objects.
+        selection_flags : `dict`, optional
+            Selection flags (e.g. detection status) per aperture diameter.
+            Default is `None` (empty dict).
+        selection_kwargs : `dict`, optional
+            Additional selection metadata per aperture diameter. Default is
+            `None` (empty dict).
+        cat_filterset : `Multiple_Filter`, optional
+            Filter set of the source catalogue. Default is `None`.
+        survey : `str`, optional
+            Name of the survey. Default is `None`.
+        simulated : `bool`, optional
+            Whether this is a simulated galaxy. Default is `False`.
+        """
         self.ID = int(ID)
         self.sky_coord = sky_coord
         self.aper_phot = aper_phot
@@ -211,11 +235,25 @@ class Galaxy:
         return gal_creator(psfs = data.psfs)
 
     def __repr__(self):
+        """Return a concise string representation of the galaxy.
+
+        Returns
+        -------
+        `str`
+            String showing class name, ID, and sky coordinates.
+        """
         return f"{self.__class__.__name__}({self.ID}, " + \
             f"[{self.RA.to(u.deg).value:.5f}," + \
             f"{self.DEC.to(u.deg).value:.5f}]deg)"
 
     def __str__(self):
+        """Return a detailed multi-line string representation of the galaxy.
+
+        Returns
+        -------
+        `str`
+            Formatted string showing photometry and selection information.
+        """
         output_str = funcs.line_sep
         output_str += f"{repr(self)}\n"
         output_str += funcs.line_sep
@@ -244,6 +282,26 @@ class Galaxy:
     #         raise(Exception(f"obj = {obj} must be 'gal'!"))
 
     def __getattr__(self, property_name: str) -> Any:
+        """Dynamically retrieve galaxy attributes including RA/DEC and selection flags.
+
+        Provides access to RA and DEC from the sky coordinate, as well as
+        selection flags and kwargs stored in the dictionaries.
+
+        Parameters
+        ----------
+        property_name : `str`
+            Name of the property to retrieve.
+
+        Returns
+        -------
+        `Any`
+            The requested property value.
+
+        Raises
+        ------
+        AttributeError
+            If the property is not found or is a special pickling method.
+        """
         #if property_name in self.__dict__.keys():
         #    return self.__getattribute__(property_name)
 
@@ -275,6 +333,18 @@ class Galaxy:
         #    return self.phot.__getattr__(property_name, origin)
 
     def __deepcopy__(self, memo):
+        """Create a deep copy of this galaxy.
+
+        Parameters
+        ----------
+        memo : `dict`
+            Dictionary tracking already-copied objects for recursive copying.
+
+        Returns
+        -------
+        `Galaxy`
+            A new Galaxy instance with all attributes deep-copied.
+        """
         cls = self.__class__
         result = cls.__new__(cls)
         memo[id(self)] = result
@@ -817,6 +887,26 @@ class Galaxy:
         SED_arr: List[SED_code],
         lowz_dz: float = 0.5
     ) -> List[SED_code]:
+        """Extract low-redshift SED codes compatible with the galaxy's redshift.
+
+        Identifies SED fitting codes with restricted maximum redshifts that are
+        consistent with this galaxy's fitted redshift, allowing for a tolerance
+        specified by ``lowz_dz``.
+
+        Parameters
+        ----------
+        aper_diam : `astropy.units.Quantity`
+            Aperture diameter used to access the galaxy's SED results.
+        SED_arr : `list` of `SED_code`
+            Array of SED fitting codes to search for low-z variants.
+        lowz_dz : `float`, optional
+            Redshift tolerance for matching (in units of redshift). Default is 0.5.
+
+        Returns
+        -------
+        `list` of `SED_code`
+            Low-redshift SED codes compatible with this galaxy.
+        """
         lowz_codes = []
         none_zmax_codes = [code for code in SED_arr \
             if code.SED_fit_params.get("lowz_zmax", False) is None]
@@ -2261,6 +2351,40 @@ class Galaxy:
         area: u.Quantity,
         z_step: float = 0.01,
     ) -> float:
+        """Compute the comoving volume (Vmax) within which this galaxy would be detected.
+
+        Redshifts the galaxy's best-fit SED to different redshifts within
+        the specified range, creates mock photometry, and applies selection
+        criteria to determine the volume in which the galaxy would be visible.
+
+        Parameters
+        ----------
+        zmin : `float`
+            Minimum redshift for Vmax calculation.
+        zmax : `float`
+            Maximum redshift for Vmax calculation.
+        filterset : `Multiple_Filter`
+            Filter set used for the observations.
+        depths : `list` of `float`
+            5-sigma limiting depths for each filter (ABmag).
+        aper_diam : `astropy.units.Quantity`
+            Aperture diameter used for photometry.
+        psfs : `dict` or `None`
+            PSF dictionary for aperture corrections.
+        SED_fit_code : `SED_code`
+            SED fitting code instance providing the fit.
+        Vmax_crops : `list` of `Selector`
+            Selection criteria applied to determine detectability.
+        area : `astropy.units.Quantity`
+            Sky area (solid angle) over which the galaxy could be detected.
+        z_step : `float`, optional
+            Redshift grid spacing for volume calculation. Default is 0.01.
+
+        Returns
+        -------
+        `float`
+            Comoving volume (Mpc^3) within which the galaxy would be detected.
+        """
         sed_result = self.aper_phot[aper_diam].SED_results[SED_fit_code.label]
         distance_detect = astropy_cosmo.luminosity_distance(sed_result.z)
         sed_obs = sed_result.SED

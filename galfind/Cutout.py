@@ -1366,12 +1366,27 @@ class RGB_Base(Cutout_Base, ABC):
         filt_name: str,
         hdu_name: str = "SCI",
     ) -> Union[Dict[str, Tuple[Dict[str, Any], np.ndarray]], Tuple[Dict[str, Any], np.ndarray]]:
+        """Load cutout data for a specific filter.
+
+        Parameters
+        ----------
+        filt_name : `str`
+            Filter name to load data for.
+        hdu_name : `str`, optional
+            Name of the HDU to load from the FITS file. Default is ``"SCI"``.
+
+        Returns
+        -------
+        `dict` or `tuple`
+            Cutout data for the specified filter; either a tuple of
+            ``(header, data)`` or a dictionary of such tuples.
+        """
         assert filt_name in self.filt_names
         return self[filt_name].load(hdu_name)
 
     def plot(
         self: Self,
-        ax: Optional[plt.Axes] = None, 
+        ax: Optional[plt.Axes] = None,
         method: str = "lupton",
         plot_type: str = "SCI",
         unit: Optional[u.Unit] = u.uJy,
@@ -1384,6 +1399,51 @@ class RGB_Base(Cutout_Base, ABC):
         *args,
         **kwargs,
     ) -> Optional[List[plt.Text]]:
+        """Plot an RGB color composite cutout image.
+
+        Creates a false-color RGB image from the cutouts using either
+        Lupton or Trilogy method, optionally overlaying regions,
+        saving and/or displaying the figure.
+
+        Parameters
+        ----------
+        ax : `matplotlib.axes.Axes`, optional
+            Axes to plot on. A new figure/axes is created if `None`.
+            Default is `None`.
+        method : `str`, optional
+            Plotting method: either ``"lupton"`` (matplotlib-based RGB
+            rendering) or ``"trilogy"`` (Trilogy software). Default is
+            ``"lupton"``.
+        plot_type : `str`, optional
+            HDU name to plot (e.g. ``"SCI"`` or ``"WEIGHT"``). Default
+            is ``"SCI"``.
+        unit : `astropy.units.Unit`, optional
+            Flux unit for the image arrays. Default is `astropy.units.uJy`.
+        rgb_kwargs : `dict`, optional
+            Keyword arguments passed to `make_lupton_rgb`. Default is
+            an empty dict.
+        plot_regions : `list` of `dict`, optional
+            Region specifications to overlay on the image. Default is
+            an empty list.
+        save : `bool`, optional
+            Whether to save the figure to disk. Default is `False`.
+        show : `bool`, optional
+            Whether to display the figure. Default is `False`.
+        overwrite : `bool`, optional
+            Whether to overwrite existing files (Trilogy only). Default
+            is `False`.
+        imshow_kwargs : `dict`, optional
+            Keyword arguments passed to `ax.imshow`. Default is an
+            empty dict.
+        **kwargs
+            Additional keyword arguments (currently unused).
+
+        Returns
+        -------
+        `list` of `matplotlib.text.Text` or `None`
+            For Lupton method, a list of text labels for RGB filter names.
+            For Trilogy method, `None`.
+        """
         method = method.lower()  # make method lowercase
         # construct out_path
         # save_path = f"{config['Cutouts']['CUTOUT_DIR']}/{data.version}/{data.survey}/{self.name}/{method}/{self.ID}.pdf"
@@ -1495,12 +1555,31 @@ class RGB_Base(Cutout_Base, ABC):
             return all_texts
     
     @staticmethod
-    def channel_scale(arr, satpercent = 0.001):
+    def channel_scale(arr, satpercent=0.001):
+        """Scale an image array to [0, 1] with saturation at high percentiles.
+
+        Parameters
+        ----------
+        arr : array-like
+            Input image array.
+        satpercent : `float`, optional
+            Saturation percentile; pixels above the ``(100 - satpercent)``th
+            percentile are clipped. Default is 0.001.
+
+        Returns
+        -------
+        array-like
+            Scaled array with values in [0, 1].
+        """
         vmax = np.nanpercentile(arr, 100 - satpercent)
         vmin = np.nanpercentile(arr, 10)
         return (arr - vmin) / (vmax - vmin)
 
 class RGB(RGB_Base):
+    """RGB color image cutout for a single galaxy.
+
+    Combines band cutouts in RGB channels to create a false-color image.
+    """
     @classmethod
     def from_gal_data(
         cls: Type[Self],
@@ -1510,6 +1589,28 @@ class RGB(RGB_Base):
         cutout_size: u.Quantity,
         overwrite: bool = False,
     ) -> Self:
+        """Create an RGB cutout from a galaxy and data object.
+
+        Parameters
+        ----------
+        gal : `Galaxy`
+            Galaxy to extract cutout for.
+        data : `Data`
+            Data object containing the survey and bands. Must have the
+            same survey as `gal`.
+        rgb_bands : `dict` of `str` to `str` or `list` of `str`
+            Mapping of RGB channel names (``"B"``, ``"G"``, ``"R"``) to
+            filter name(s).
+        cutout_size : `astropy.units.Quantity`
+            Size of the cutout region.
+        overwrite : `bool`, optional
+            Whether to overwrite existing cutout files. Default is `False`.
+
+        Returns
+        -------
+        `RGB`
+            An RGB cutout object.
+        """
         rgb_bands = {
             key: [val] if isinstance(val, str) else val
             for key, val in rgb_bands.items() if key in ["B", "G", "R"]
@@ -1533,6 +1634,23 @@ class RGB(RGB_Base):
         sky_coord: SkyCoord,
         rgb_bands: Dict[str, List[str]],
     ) -> Self:
+        """Create an RGB cutout from a data object and sky coordinate.
+
+        Parameters
+        ----------
+        data : `Data`
+            Data object containing the survey and bands.
+        sky_coord : `astropy.coordinates.SkyCoord`
+            Sky position to extract the cutout around.
+        rgb_bands : `dict` of `str` to `list` of `str`
+            Mapping of RGB channel names (``"B"``, ``"G"``, ``"R"``) to
+            filter names.
+
+        Returns
+        -------
+        `RGB`
+            An RGB cutout object.
+        """
         # make a cutout for each filter
         cutouts = {
             colour: Band_Cutout.from_data_skycoord(data, filt, sky_coord)
@@ -1544,6 +1662,13 @@ class RGB(RGB_Base):
     
     @property
     def ID(self) -> str:
+        """Object ID from the cutout.
+
+        Returns
+        -------
+        `str`
+            ID of the object (same for all cutouts in the RGB).
+        """
         ID_list = [
             cutout.ID for cutout in \
             np.array([val for val in self.cutouts.values()]).flatten()
@@ -1553,8 +1678,15 @@ class RGB(RGB_Base):
 
     @property
     def survey(self) -> str:
+        """Survey name for the cutout.
+
+        Returns
+        -------
+        `str`
+            Survey name (same for all cutouts in the RGB).
+        """
         surveys = np.unique([
-            cutout.band_data.survey for cutout in 
+            cutout.band_data.survey for cutout in
             np.array([val for val in self.cutouts.values()]).flatten()
         ])
         assert len(surveys) == 1, galfind_logger.critical(
@@ -1564,27 +1696,37 @@ class RGB(RGB_Base):
 
 
 class Stacked_RGB(RGB_Base):
+    """RGB color composite from multiple stacked-band cutouts.
+
+    Combines stacked band cutouts in RGB channels.
+    """
+
     @classmethod
     def from_cat(
-        cls: Type[Self], 
+        cls: Type[Self],
         cat: Catalogue,
         rgb_bands: Dict[str, Union[str, List[str]]],
         cutout_size: u.Quantity,
         overwrite: bool = False
     ) -> Self:
-        """
-        Create an instance of the class from a Catalogue object.
+        """Create a stacked RGB cutout from a catalogue.
 
-        This class method generates a stacked cutout for each filter in the
-        provided Catalogue and returns an instance of the class containing
-        these stacked cutouts.
+        Parameters
+        ----------
+        cat : `Catalogue`
+            Catalogue object containing the data and filterset.
+        rgb_bands : `dict` of `str` to `str` or `list` of `str`
+            Mapping of RGB channel names (``"B"``, ``"G"``, ``"R"``) to
+            filter names.
+        cutout_size : `astropy.units.Quantity`
+            Size of the cutout region.
+        overwrite : `bool`, optional
+            Whether to overwrite existing cutout files. Default is `False`.
 
-        Args:
-            cat (Catalogue): The Catalogue object containing the data and
-                filterset information.
-
-        Returns:
-            Self: An instance of the class with the generated stacked cutouts.
+        Returns
+        -------
+        `Stacked_RGB`
+            A stacked RGB cutout object.
         """
         
         # make a stacked cutout for each filter
@@ -1606,19 +1748,23 @@ class Stacked_RGB(RGB_Base):
         sky_coords: Union[SkyCoord, List[SkyCoord]],
         rgb_bands: Dict[str, List[str]],
     ) -> Self:
-        """
-        Create a new instance of the class from data and sky coordinates.
+        """Create a stacked RGB cutout from a data object and sky coordinates.
 
-        This class method generates a stacked cutout for each filter in the provided data
-        and returns a new instance of the class containing these stacked cutouts.
+        Parameters
+        ----------
+        data : `Data`
+            Data object containing the survey and bands.
+        sky_coords : `astropy.coordinates.SkyCoord` or `list` of `astropy.coordinates.SkyCoord`
+            Sky position(s) to extract the cutout(s) around. If a list,
+            cutouts are stacked.
+        rgb_bands : `dict` of `str` to `list` of `str`
+            Mapping of RGB channel names (``"B"``, ``"G"``, ``"R"``) to
+            filter names.
 
-        Args:
-            data (Data): The data object containing the necessary information for creating cutouts.
-            sky_coords (Union[SkyCoord, List[SkyCoord]]): The sky coordinates for which the cutouts are to be made.
-                This can be a single SkyCoord object or a list of SkyCoord objects.
-
-        Returns:
-            Self: A new instance of the class containing the stacked cutouts for each filter.
+        Returns
+        -------
+        `Stacked_RGB`
+            A stacked RGB cutout object.
         """
         # make a stacked cutout for each filter
         stacked_cutouts = {
@@ -1681,21 +1827,49 @@ class Multiple_Cutout_Base(ABC):
 
     @property
     def cutout_size(self) -> u.Quantity:
+        """Cutout region size.
+
+        Returns
+        -------
+        `astropy.units.Quantity`
+            Size of the cutout (same for all cutouts).
+        """
         assert all([cutout.cutout_size == self[0].cutout_size for cutout in self])
         return self[0].cutout_size
 
     @property
     def survey(self) -> str:
+        """Survey name.
+
+        Returns
+        -------
+        `str`
+            Survey name (same for all cutouts).
+        """
         assert all([cutout.survey == self[0].survey for cutout in self])
         return self[0].survey
-    
+
     @property
     def version(self) -> str:
+        """Data reduction version.
+
+        Returns
+        -------
+        `str`
+            Version identifier (same for all cutouts).
+        """
         assert all([cutout.version == self[0].version for cutout in self])
         return self[0].version
 
     @property
     def instr_name(self) -> str:
+        """Instrument name.
+
+        Returns
+        -------
+        `str`
+            Instrument identifier (same for all cutouts).
+        """
         assert all([cutout.instr_name == self[0].instr_name for cutout in self])
         return self[0].instr_name
 
@@ -1735,6 +1909,69 @@ class Multiple_Cutout_Base(ABC):
         *args,
         **kwargs,
     ) -> List[plt.Figure, plt.Axes]:
+        """Plot multiple cutouts in a grid.
+
+        Parameters
+        ----------
+        fig : `matplotlib.figure.Figure`, optional
+            Figure to plot on. A new one is created if `None`. Default
+            is `None`.
+        ax_arr : `numpy.ndarray`, optional
+            Array of axes to plot on. Axes are generated from `fig` if
+            `None`. Default is `None`.
+        n_rows : `int`, optional
+            Number of rows in the subplot grid. Default is 1.
+        fig_scaling : `float`, optional
+            Figure size scaling factor. Default is 1.5.
+        split_by_instr : `bool`, optional
+            Whether to color-code cutouts by instrument. Default is
+            `False`.
+        split_by_instr_cmap : `str`, optional
+            Colormap used to color-code instruments. Default is
+            ``"plasma"``.
+        imshow_kwargs : `dict`, optional
+            Keyword arguments passed to `ax.imshow`. Default is an
+            empty dict.
+        norm_kwargs : `dict`, optional
+            Keyword arguments for image normalization. Default is an
+            empty dict.
+        label_kwargs : `dict`, optional
+            Keyword arguments for labels. Default is an empty dict.
+        plot_regions : `dict`, optional
+            Regions to overlay, keyed by filter name. Default is an
+            empty dict.
+        scalebars : `list`, optional
+            Scalebar specifications for each cutout. Default is an
+            empty list.
+        mask : `list` of `bool`, optional
+            Boolean mask to select which cutouts to plot. Default is
+            `None` (plot all).
+        incl_title : `bool`, optional
+            Whether to include a title on the figure. Default is `False`.
+        overwrite : `bool`, optional
+            Whether to overwrite existing saved figures. Default is
+            `False`.
+        show : `bool`, optional
+            Whether to display the figure. Default is `False`.
+        save : `bool`, optional
+            Whether to save the figure. Default is `True`.
+        save_path : `str`, optional
+            Custom path to save the figure. Default is `None` (uses
+            default naming).
+        close_fig : `bool`, optional
+            Whether to close the figure after plotting. Default is
+            `False`.
+        gridspec_kwargs : `dict`, optional
+            Keyword arguments for the grid layout. Default is an empty
+            dict.
+        **kwargs
+            Additional keyword arguments (currently unused).
+
+        Returns
+        -------
+        `list` of [`matplotlib.figure.Figure`, `numpy.ndarray`]
+            The figure and axes used for plotting.
+        """
         assert n_rows > 0
         if n_rows > len(self):
             n_y = len(self)
@@ -1863,6 +2100,7 @@ class Multiple_Cutout_Base(ABC):
 
 # Galaxy_Cutouts
 class Multiple_Band_Cutout(Multiple_Cutout_Base):
+    """Collection of band cutouts for a single galaxy across multiple filters."""
     # Each plot is a different Filter
     @classmethod
     def from_cat(
@@ -1954,12 +2192,25 @@ class Multiple_Band_Cutout(Multiple_Cutout_Base):
 
 
 class Catalogue_Cutouts(Multiple_Cutout_Base):
+    """Collection of band cutouts for multiple galaxies in a single filter.
+
+    Each cutout is for a different galaxy in the same filter.
+    """
 
     def __init__(
-        self: Self, 
+        self: Self,
         cutouts: List[Type[Cutout_Base]],
         ID: str
     ) -> Self:
+        """Initialize a catalogue cutouts collection.
+
+        Parameters
+        ----------
+        cutouts : `list` of `Cutout_Base`
+            Band cutouts for multiple galaxies.
+        ID : `str`
+            Identifier for the cutout collection.
+        """
         # each plot is a different galaxy using the same filter
         self.ID = ID
         super().__init__(cutouts)
@@ -1972,6 +2223,24 @@ class Catalogue_Cutouts(Multiple_Cutout_Base):
         cutout_size: u.Quantity,
         overwrite: bool = False
     ) -> Self:
+        """Create catalogue cutouts for a specific filter.
+
+        Parameters
+        ----------
+        cat : `Catalogue`
+            Catalogue containing the galaxies to extract cutouts for.
+        filt : `str` or `Filter`
+            Filter name or object to create cutouts for.
+        cutout_size : `astropy.units.Quantity`
+            Size of the cutout region.
+        overwrite : `bool`, optional
+            Whether to overwrite existing cutout files. Default is `False`.
+
+        Returns
+        -------
+        `Catalogue_Cutouts`
+            A catalogue cutouts object.
+        """
         if isinstance(filt, Filter):
             filt = filt.filt_name
         cutouts = [Band_Cutout.from_gal_band_data
@@ -1981,23 +2250,37 @@ class Catalogue_Cutouts(Multiple_Cutout_Base):
     
     @property
     def survey(self) -> str:
+        """Survey name(s) for the cutouts.
+
+        Returns
+        -------
+        `str`
+            Combined survey names (``"+"`` separated if multiple).
+        """
         unique_surveys = np.unique([cutout.survey for cutout in self])
         return "+".join(unique_surveys)
-        # NOT GENERAL
-        #assert all([cutout.survey == self[0].survey for cutout in self])
-        #return self[0].survey
-    
+
     @property
     def version(self) -> str:
+        """Data reduction version(s).
+
+        Returns
+        -------
+        `str`
+            Combined version identifiers (``"+"`` separated if multiple).
+        """
         unique_versions = np.unique([cutout.version for cutout in self])
         return "+".join(unique_versions)
-        # NOT GENERAL
-        #assert all([cutout.version == self[0].version for cutout in self])
-        #return self[0].version
 
     @property
     def instr_name(self) -> str:
-        # NOT GENERAL
+        """Instrument name.
+
+        Returns
+        -------
+        `str`
+            Instrument identifier (same for all cutouts).
+        """
         assert all([cutout.instr_name == self[0].instr_name for cutout in self])
         return self[0].instr_name
     
@@ -2028,6 +2311,44 @@ class Catalogue_Cutouts(Multiple_Cutout_Base):
         *args,
         **kwargs,
     ) -> plt.Figure:
+        """Plot catalogue cutouts in an automatically-sized grid.
+
+        Parameters
+        ----------
+        fig : `matplotlib.figure.Figure`, optional
+            Figure to plot on. A new one is created if `None`. Default
+            is `None`.
+        fig_scaling : `float`, optional
+            Figure size scaling factor. Default is 1.5.
+        imshow_kwargs : `dict`, optional
+            Keyword arguments passed to `ax.imshow`. Default is an
+            empty dict.
+        norm_kwargs : `dict`, optional
+            Keyword arguments for image normalization. Default is an
+            empty dict.
+        plot_regions : `list` of `list` of `dict`, optional
+            Regions to overlay. Default is an empty dict.
+        scalebars : `list`, optional
+            Scalebar specifications for each cutout. Default is an
+            empty list.
+        mask : `list` of `bool`, optional
+            Boolean mask to select which cutouts to plot. Default is
+            `None` (plot all).
+        show : `bool`, optional
+            Whether to display the figure. Default is `False`.
+        save : `bool`, optional
+            Whether to save the figure. Default is `True`.
+        save_path : `str`, optional
+            Custom path to save the figure. Default is `None` (uses
+            default naming).
+        **kwargs
+            Additional keyword arguments passed to parent `plot` method.
+
+        Returns
+        -------
+        `matplotlib.figure.Figure`
+            The figure object.
+        """
         n_rows = np.sqrt(2 * len(self))
         n_rows = int(n_rows // 1)
         if n_rows % 1 != 0:
@@ -2049,6 +2370,7 @@ class Catalogue_Cutouts(Multiple_Cutout_Base):
 
 
 class Multiple_RGB(Multiple_Cutout_Base):
+    """Collection of RGB cutouts for multiple galaxies."""
     # Each plot is a different Galaxy
 
     @classmethod
@@ -2058,6 +2380,23 @@ class Multiple_RGB(Multiple_Cutout_Base):
         rgb_bands: Dict[str, List[str]],
         cutout_size: u.Quantity,
     ) -> Self:
+        """Create multiple RGB cutouts from a catalogue.
+
+        Parameters
+        ----------
+        cat : `Catalogue`
+            Catalogue of galaxies to extract cutouts for.
+        rgb_bands : `dict` of `str` to `list` of `str`
+            Mapping of RGB channel names (``"B"``, ``"G"``, ``"R"``) to
+            filter names.
+        cutout_size : `astropy.units.Quantity`
+            Size of the cutout region.
+
+        Returns
+        -------
+        `Multiple_RGB`
+            A multiple RGB cutouts object.
+        """
         # make a cutout for each filter
         cutouts = [
             RGB.from_gal_data(
@@ -2076,6 +2415,23 @@ class Multiple_RGB(Multiple_Cutout_Base):
         sky_coords: Union[SkyCoord, List[SkyCoord]],
         rgb_bands: Dict[str, List[str]],
     ) -> Self:
+        """Create multiple RGB cutouts from sky coordinates.
+
+        Parameters
+        ----------
+        data : `Data`
+            Data object containing the survey and bands.
+        sky_coords : `list` of `astropy.coordinates.SkyCoord`
+            Sky positions to extract cutouts around.
+        rgb_bands : `dict` of `str` to `list` of `str`
+            Mapping of RGB channel names (``"B"``, ``"G"``, ``"R"``) to
+            filter names.
+
+        Returns
+        -------
+        `Multiple_RGB`
+            A multiple RGB cutouts object.
+        """
         # make a cutout for each filter
         cutouts = [
             RGB.from_data_skycoord(data, sky_coord, rgb_bands)
@@ -2089,6 +2445,21 @@ class Multiple_RGB(Multiple_Cutout_Base):
         cats: Union[List[Catalogue], Multiple_Catalogue],
         rgb_bands: Dict[str, List[str]],
     ) -> Self:
+        """Create stacked RGB cutouts from multiple catalogues.
+
+        Parameters
+        ----------
+        cats : `list` of `Catalogue` or `Multiple_Catalogue`
+            Catalogues to extract stacked cutouts from.
+        rgb_bands : `dict` of `str` to `list` of `str`
+            Mapping of RGB channel names (``"B"``, ``"G"``, ``"R"``) to
+            filter names.
+
+        Returns
+        -------
+        `Multiple_RGB`
+            A multiple RGB cutouts object.
+        """
         # make a cutout for each filter
         cutouts = [Stacked_RGB.from_cat(cat, rgb_bands) for cat in cats]
         return cls(cutouts)
@@ -2100,6 +2471,24 @@ class Multiple_RGB(Multiple_Cutout_Base):
         sky_coords: Union[List[SkyCoord], List[List[SkyCoord]]],
         rgb_bands: Dict[str, List[str]],
     ) -> Self:
+        """Create stacked RGB cutouts from multiple data objects and sky coordinates.
+
+        Parameters
+        ----------
+        data_arr : `list` of `Data` or `Multiple_Data`
+            Data objects providing the survey and bands.
+        sky_coords : `list` of `astropy.coordinates.SkyCoord` or `list` of `list` of `astropy.coordinates.SkyCoord`
+            Sky position(s) for each data object. If lists of lists,
+            cutouts are stacked.
+        rgb_bands : `dict` of `str` to `list` of `str`
+            Mapping of RGB channel names (``"B"``, ``"G"``, ``"R"``) to
+            filter names.
+
+        Returns
+        -------
+        `Multiple_RGB`
+            A multiple RGB cutouts object.
+        """
         # make a cutout for each filter
         cutouts = [
             Stacked_RGB.from_data_skycoords(data, sky_coord, rgb_bands)
@@ -2109,6 +2498,13 @@ class Multiple_RGB(Multiple_Cutout_Base):
 
     @property
     def rgb_bands(self: Self) -> Dict[str, List[str]]:
+        """RGB filter bands.
+
+        Returns
+        -------
+        `dict` of `str` to `list` of `str`
+            Mapping of RGB channel names to filter names (same for all cutouts).
+        """
         assert all([cutout.rgb_bands == rgb_bands for cutout in self]), \
             galfind_logger.critical(
                 "All cutout rgb_bands must be the same!"
@@ -2141,6 +2537,34 @@ class Multiple_RGB(Multiple_Cutout_Base):
         *args,
         **kwargs,
     ) -> Tuple[plt.Figure, plt.Axes]:
+        """Plot multiple RGB cutouts using the Trilogy method.
+
+        Parameters
+        ----------
+        method : `str`, optional
+            Plotting method; currently only ``"trilogy"`` is supported.
+            Default is ``"trilogy"``.
+        plot_regions : `dict`, optional
+            Regions to overlay on each cutout. Default is `None`.
+        save : `bool`, optional
+            Whether to save the figure to disk. Default is `True`.
+        overwrite : `bool`, optional
+            Whether to overwrite existing Trilogy outputs. Default is
+            `False`.
+        gridspec_kwargs : `dict`, optional
+            Keyword arguments for the subplot grid layout. Default is
+            an empty dict.
+        imshow_kwargs : `dict`, optional
+            Keyword arguments for `ax.imshow`. Default is
+            ``{"rasterized": True}``.
+        **kwargs
+            Additional keyword arguments (currently unused).
+
+        Returns
+        -------
+        `tuple` of (`matplotlib.figure.Figure`, `numpy.ndarray`)
+            The figure and axes array used for plotting.
+        """
         
         if method == "trilogy":
             # make axes

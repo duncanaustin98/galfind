@@ -33,6 +33,34 @@ from .Emission_lines import line_diagnostics, strong_optical_lines
 
 
 class Photometry_rest(Photometry):
+    """Rest-frame photometry for a source at a given redshift.
+
+    Stores flux measurements and uncertainties shifted to rest-frame wavelengths,
+    derived from observed-frame photometry and a source redshift. Includes optional
+    computed rest-frame properties and their posterior distributions.
+
+    Parameters
+    ----------
+    filterset : `Multiple_Filter`
+        Set of rest-frame filters.
+    flux : `astropy.units.Quantity`
+        Rest-frame flux measurements.
+    flux_errs : `astropy.units.Quantity`
+        Rest-frame flux uncertainties.
+    depths : `astropy.units.Quantity`
+        Rest-frame depth/sensitivity measurements.
+    z : `float`
+        Redshift used to shift to rest frame.
+    properties : `dict` or `None`, optional
+        Best-fit rest-frame properties (e.g., absolute magnitude, stellar mass).
+        Default is `None`.
+    property_errs : `dict` or `None`, optional
+        Uncertainties on properties. Default is `None`.
+    property_PDFs : `dict` or `None`, optional
+        Posterior distributions for properties. Default is `None`.
+    property_kwargs : `dict` or `None`, optional
+        Configuration dictionaries for property calculators. Default is `None`.
+    """
     def __init__(
         self: Self,
         filterset: Multiple_Filter,

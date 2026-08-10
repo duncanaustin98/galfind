@@ -54,9 +54,23 @@ class Dust_Law(ABC):
         self: Self,
         label: Optional[str] = None
     ) -> NoReturn:
+        """Initialize a dust attenuation law.
+
+        Parameters
+        ----------
+        label : `str`, optional
+            Class label (usually author and year). Default is `None`.
+        """
         self.label = label
 
     def __str__(self):
+        """Return a formatted string representation of the dust attenuation law.
+
+        Returns
+        -------
+        `str`
+            Multi-line string containing dust law properties and parameters.
+        """
         output_str = funcs.line_sep
         output_str += f"DUST ATTENUATION LAW: {self.__class__.__name__}\n"
         output_str += funcs.band_sep
@@ -235,6 +249,10 @@ class Calzetti00(Dust_Law):
     """
 
     def __init__(self):
+        """Initialize a Calzetti+00 dust attenuation curve.
+
+        Sets the label to ``"Calzetti+00"``.
+        """
         #self._n = 0.7
         label = "Calzetti+00"
         super().__init__(label)
@@ -645,12 +663,37 @@ class AUV_from_beta(ABC):
     """
 
     def __init__(self, beta_int, slope, dust_law, ref_wav):
+        """Initialize a UV continuum slope to dust attenuation converter.
+
+        Parameters
+        ----------
+        beta_int : `float`
+            Intrinsic (dust-free) UV continuum slope.
+        slope : `float`
+            Slope of the linear beta-A(UV) relation.
+        dust_law : `Dust_Law`
+            Dust attenuation law the relation was calibrated for.
+        ref_wav : `astropy.units.Quantity`
+            Reference wavelength the UV slope/attenuation are defined at.
+        """
         self.beta_int = beta_int
         self.slope = slope
         self.dust_law = dust_law
         self.ref_wav = ref_wav
 
     def __call__(self, beta):
+        """Convert a UV continuum slope to UV dust attenuation.
+
+        Parameters
+        ----------
+        beta : `astropy.units.Quantity` or `float`
+            UV continuum slope.
+
+        Returns
+        -------
+        `astropy.units.Quantity`
+            Dust attenuation at the reference wavelength (ABmag).
+        """
         # beta = beta_int + slope * A_UV
         return ((beta - self.beta_int) / self.slope).value * u.ABmag
 
@@ -680,6 +723,7 @@ class M99(AUV_from_beta):
     """
 
     def __init__(self):
+        """Initialize a Meurer et al. (1999) beta-A(UV) relation instance."""
         super().__init__(-4.43 / 1.99, 1.0 / 1.99, Calzetti00(), 1_600.0 * u.AA)
 
 
@@ -691,6 +735,7 @@ class Reddy15_conv(AUV_from_beta):
     """
 
     def __init__(self):
+        """Initialize a Reddy et al. (2015) beta-A(UV) relation instance."""
         super().__init__(
             -4.48 / 1.84, 1.0 / 1.84, Reddy15(), 1_600.0 * u.AA
         )
@@ -729,6 +774,16 @@ class Reddy18(AUV_from_beta):
         dust_law: Type[Dust_Law] = Reddy15(),
         BPASS_age: u.Quantity = 100 * u.Myr
     ) -> NoReturn:
+        """Initialize a Reddy et al. (2018) beta-A(UV) relation instance.
+
+        Parameters
+        ----------
+        dust_law : `Dust_Law`, optional
+            Dust attenuation law. Must be `SMC`, `Calzetti00` or `Reddy15`.
+            Default is `Reddy15`.
+        BPASS_age : `astropy.units.Quantity`, optional
+            BPASS stellar population age (100 or 300 Myr). Default is 100 Myr.
+        """
         assert dust_law.__class__.__name__ in ["SMC", "Calzetti00", "Reddy15"]
         assert BPASS_age in [100 * u.Myr, 300 * u.Myr]
         beta_int = {100 * u.Myr: -2.520, 300 * u.Myr: -2.616}

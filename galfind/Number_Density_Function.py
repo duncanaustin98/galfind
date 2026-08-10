@@ -32,11 +32,47 @@ from .SED_codes import SED_code
 
 
 class Base_Number_Density_Function:
+    """Base class for number density functions (UVLFs, mass functions, etc.).
+
+    Stores binned number density measurements at a reference redshift, including
+    measurements and their uncertainties. Subclasses add additional functionality
+    for computing densities and handling multiple functions.
+
+    Parameters
+    ----------
+    x_name : `str`
+        Property name (e.g., "UVLF", "stellar_mass").
+    x_mid_bins : `numpy.ndarray`
+        Bin centers for the property x.
+    z_ref : `str`, `int`, or `float`
+        Reference redshift for this measurement.
+    phi : `numpy.ndarray`
+        Number density measurements.
+    phi_errs_cv : `numpy.ndarray`
+        Uncertainties on number densities (including cosmic variance).
+    author_year : `str`
+        Citation identifier (e.g., "Finkelstein2016").
+
+    Attributes
+    ----------
+    x_name : `str`
+        Property name.
+    x_mid_bins : `numpy.ndarray`
+        Bin centers.
+    z_ref : `float`
+        Reference redshift.
+    phi : `numpy.ndarray`
+        Number densities.
+    phi_errs_cv : `numpy.ndarray`
+        Density uncertainties.
+    author_year : `str`
+        Citation.
+    """
     def __init__(
         self: Self,
         x_name: str,
         x_mid_bins: NDArray[float],
-        z_ref: Union[str, int, float], 
+        z_ref: Union[str, int, float],
         phi: NDArray[float],
         phi_errs_cv: NDArray[float],
         author_year: str
@@ -51,11 +87,27 @@ class Base_Number_Density_Function:
     # obsolete after Base_Number_Density_Function.from_flags_repo()
     @classmethod
     def from_ecsv(
-        cls, 
-        x_name: str, 
-        z_ref: Union[str, int, float], 
+        cls,
+        x_name: str,
+        z_ref: Union[str, int, float],
         author_year: str
     ) -> Self:
+        """Load a number density function from an ECSV data file.
+
+        Parameters
+        ----------
+        x_name : `str`
+            Property name (e.g., ``"M1500"``, ``"M_UV"``, ``"stellar_mass"``).
+        z_ref : `str`, `int`, or `float`
+            Reference redshift.
+        author_year : `str`
+            Author and year label for the publication.
+
+        Returns
+        -------
+        `Base_Number_Density_Function`
+            A number density function object loaded from ECSV.
+        """
         if x_name in ["M1500", "M_UV", "MUV"]:
             x_name = "UVLF"
         if isinstance(z_ref, (str, int)):
@@ -76,6 +128,25 @@ class Base_Number_Density_Function:
         author_year: str,
         obs_or_models: str = "obs",
     ) -> Optional[Self]:
+        """Load a number density function from the FLAGS data repository.
+
+        Parameters
+        ----------
+        x_name : `str`
+            Property name.
+        z_bin : `list` or `numpy.ndarray`
+            Redshift bin edges ``[z_min, z_max]``.
+        author_year : `str`
+            Author and year label for the publication.
+        obs_or_models : `str`, optional
+            Data type: ``"obs"`` for observations or ``"models/binned"`` for models.
+            Default is ``"obs"``.
+
+        Returns
+        -------
+        `Base_Number_Density_Function` or `None`
+            A number density function object, or `None` if not found.
+        """
         assert obs_or_models in ["obs", "models/binned"]
         sys.path.insert(1, config["NumberDensityFunctions"]["FLAGS_DATA_DIR"])
         try:
@@ -202,6 +273,13 @@ class Base_Number_Density_Function:
         return len(self.phi)
 
     def get_z_bin_name(self) -> str:
+        """Get the redshift bin name label.
+
+        Returns
+        -------
+        `str`
+            Label of the form ``"z=<z_ref>"``.
+        """
         return f"z={float(self.z_ref):.1f}"
 
     def plot(
@@ -222,6 +300,46 @@ class Base_Number_Density_Function:
         plot_cv_errs: bool = True,
         offset: float = 0.0,
     ) -> Tuple[plt.Figure, plt.Axes]:
+        """Plot the number density function.
+
+        Parameters
+        ----------
+        fig : `matplotlib.figure.Figure`, optional
+            Figure to plot on. Default is `None`.
+        ax : `matplotlib.axes.Axes`, optional
+            Axes to plot on. Default is `None`.
+        log_x : `bool`, optional
+            Whether to use log scale for x-axis. Default is `False`.
+        log_y : `bool`, optional
+            Whether to use log scale for y-axis. Default is `False`.
+        annotate : `bool`, optional
+            Whether to add annotations. Default is `False`.
+        save : `bool`, optional
+            Whether to save the figure. Default is `False`.
+        show : `bool`, optional
+            Whether to display the figure. Default is `False`.
+        plot_kwargs : `dict`, optional
+            Keyword arguments for plotting. Default is empty dict.
+        legend_kwargs : `dict`, optional
+            Keyword arguments for legend. Default is empty dict.
+        x_lims : `list` of `float` or `str`, optional
+            X-axis limits or ``"default"``. Default is ``"default"``.
+        y_lims : `list` of `float`, optional
+            Y-axis limits. Default is `None`.
+        title : `str`, optional
+            Plot title. Default is `None`.
+        save_path : `str`, optional
+            Path to save figure. Default is `None`.
+        plot_cv_errs : `bool`, optional
+            Whether to plot cosmic variance errors. Default is `True`.
+        offset : `float`, optional
+            X-axis offset. Default is 0.0.
+
+        Returns
+        -------
+        `tuple` of (`matplotlib.figure.Figure`, `matplotlib.axes.Axes`)
+            Figure and axes used for plotting.
+        """
 
         if all(i is None for i in [fig, ax]):
             fig_, ax_ = plt.subplots()
@@ -359,6 +477,41 @@ class Base_Number_Density_Function:
 
 
 class Number_Density_Function(Base_Number_Density_Function):
+    """Number density function computed from a galaxy sample.
+
+    Computes and stores binned number densities for a property (e.g., UV luminosity,
+    stellar mass) from a galaxy catalogue, including cosmic variance and completeness
+    corrections.
+
+    Parameters
+    ----------
+    x_name : `str`
+        Property name (e.g., "M_UV", "log_M_*").
+    x_bins : array-like
+        Bin edges for the property.
+    x_origin : `str`
+        Data source for the property.
+    z_bin : `tuple` of (`float`, `float`)
+        Redshift bin (z_min, z_max).
+    Ngals : `int`
+        Number of galaxies in the sample.
+    phi : `numpy.ndarray`
+        Number density per bin.
+    phi_errs : `numpy.ndarray`
+        Poisson uncertainties (2 elements: lower, upper).
+    cv_errs : `float`
+        Cosmic variance as a fractional uncertainty.
+    origin_surveys : `str`
+        Comma-separated survey names.
+    crop_name : `str`
+        Name of the spatial crop/region.
+    cv_origin : `str`
+        Source of cosmic variance estimates.
+    completeness : `Completeness` or `None`, optional
+        Completeness correction object. Default is `None`.
+    Vmax_method : `str`, optional
+        Method for volume calculation. Default is "uniform_depth".
+    """
     def __init__(
         self,
         x_name: str,
@@ -409,9 +562,23 @@ class Number_Density_Function(Base_Number_Density_Function):
     @classmethod
     def from_ecsv(
         cls: Type[Number_Density_Function],
-        save_path: str, 
+        save_path: str,
         completeness: Optional[Completeness] = None
     ) -> Self:
+        """Load a number density function from an ECSV file.
+
+        Parameters
+        ----------
+        save_path : `str`
+            Path to the ECSV file.
+        completeness : `Completeness`, optional
+            Completeness correction object. Default is `None`.
+
+        Returns
+        -------
+        `Number_Density_Function`
+            Loaded number density function.
+        """
         tab = Table.read(save_path)
         x_bins_up = np.array(tab["x_bins_up"])
         x_bins_low = np.array(tab["x_bins_low"])
@@ -474,6 +641,49 @@ class Number_Density_Function(Base_Number_Density_Function):
         Vmax_method: str = "uniform_depth",
         n_Vmax_jobs: int = 1,
     ) -> Optional[Self]:
+        """Compute a number density function from a catalogue.
+
+        Parameters
+        ----------
+        cat : `Catalogue_Base`
+            Source catalogue.
+        x_calculator : `Property_Calculator`
+            Calculator for the property binned in the function.
+        x_bin_edges : `list` of `float`
+            Bin edges for the property.
+        z_bin : `list` of `float`
+            Redshift bin ``[z_min, z_max]``.
+        aper_diam : `astropy.units.Quantity`
+            Aperture diameter.
+        SED_fit_code : `SED_code`
+            SED-fitter code.
+        x_origin : `str`, optional
+            Origin label for the property. Default is ``"phot_rest"``.
+        z_step : `float`, optional
+            Redshift step for z-dependent corrections. Default is 0.01.
+        cv_origin : `str`, optional
+            Source of cosmic variance estimates. Default is
+            ``"Driver2010"``.
+        completeness : `dict`, optional
+            Completeness corrections. Default is `None`.
+        unmasked_area : `str`, `list`, `Quantity`, or `Mask_Selector`, optional
+            Unmasked area specification. Default is ``"selection"``.
+        plot : `bool`, optional
+            Whether to plot the result. Default is `True`.
+        save : `bool`, optional
+            Whether to save the result. Default is `True`.
+        timed : `bool`, optional
+            Whether to time the computation. Default is `False`.
+        Vmax_method : `str`, optional
+            Method for volume calculation. Default is ``"uniform_depth"``.
+        n_Vmax_jobs : `int`, optional
+            Number of parallel jobs for Vmax. Default is 1.
+
+        Returns
+        -------
+        `Number_Density_Function` or `None`
+            The computed number density function, or `None` if calculation fails.
+        """
         from . import Combined_Catalogue
         if isinstance(cat, Combined_Catalogue):
             plot = False
@@ -1099,8 +1309,25 @@ class Number_Density_Function(Base_Number_Density_Function):
 
 # Specific class written to allow for fitting of galaxy bias
 class Multiple_Number_Density_Function(Number_Density_Function):
+    """Combine multiple number density functions for the same property.
+
+    Aggregates several independently-computed number density functions
+    (e.g., from different surveys or data releases) into one dataset,
+    handling differences in sample sizes and errors.
+
+    Parameters
+    ----------
+    number_density_functions : `list` of `Base_Number_Density_Function`
+        List of number density functions to combine. All must have the
+        same binning, redshift, and other key properties.
+
+    Attributes
+    ----------
+    number_density_functions : `list`
+        The input list of density functions.
+    """
     def __init__(
-        self: Self, 
+        self: Self,
         number_density_functions: List[Type[Base_Number_Density_Function]],
     ):
         self.number_density_functions = number_density_functions

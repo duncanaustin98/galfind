@@ -4782,6 +4782,24 @@ class Data:
         self: Self,
         stacked_band_data_arr: Union[str, List[str], Multiple_Filter, List[Multiple_Filter]],
     ) -> None:
+        """Load or create a stacked band data from a filter combination.
+
+        Creates a `Stacked_Band_Data` object from the specified filter(s)
+        and stores it in this Data object.
+
+        Parameters
+        ----------
+        stacked_band_data_arr : `str`, `list` of `str`, `Multiple_Filter`, or `list` of `Multiple_Filter`
+            Filter name(s) or `Multiple_Filter` object(s) identifying the
+            filters to stack together.
+
+        Raises
+        ------
+        AssertionError
+            If the resulting stacked band data is not a `Stacked_Band_Data` instance.
+        NotImplementedError
+            If a stacked band data has already been loaded.
+        """
         if isinstance(stacked_band_data_arr, list) and isinstance(stacked_band_data_arr[0], Multiple_Filter):
             stacked_band_data_arr = [
                 self._make_band_data_base(stacked_band_data.filt_names)
@@ -4810,6 +4828,24 @@ class Data:
         self: Self,
         forced_phot_band: Optional[Union[str, List[str], Type[Band_Data_Base]]],
     ) -> Optional[Type[Band_Data_Base]]:
+        """Load or retrieve the forced photometry reference band.
+
+        Parameters
+        ----------
+        forced_phot_band : `str`, `list` of `str`, `Band_Data_Base`, or `None`
+            Filter name, list of filter names, or band data object identifying
+            the detection/forced-photometry band. If `None`, returns `None`.
+
+        Returns
+        -------
+        `Band_Data_Base` or `None`
+            The forced photometry band, or `None` if not specified.
+
+        Raises
+        ------
+        AssertionError
+            If a different forced photometry band has already been loaded.
+        """
         if forced_phot_band is not None:
             forced_phot_band = self._make_band_data_base(forced_phot_band)
             # save forced phot band in self
@@ -4949,6 +4985,41 @@ class Data:
         gaia_row_lim: Union[int, List[int], Dict[str, int]] = 500,
         overwrite: Union[bool, List[bool], Dict[str, bool]] = False,
     ) -> Union[None, NoReturn]:
+        """Create or load bad-pixel masks for all bands in the Data object.
+
+        Delegates to each `Band_Data`'s `mask()` method with the specified
+        parameters, creating or loading edge masks, star masks, and other
+        exclusion masks as configured.
+
+        Parameters
+        ----------
+        method : `str`, `list`, or `dict`, optional
+            Masking method: ``"auto"`` (automatic masking) or ``"manual"``
+            (user-provided masks). Default is ``"auto"``.
+        fits_mask_path : `str`, `list`, or `dict`, optional
+            Path(s) to pre-made FITS mask files. Default is `None`.
+        star_mask_params : `dict`, optional
+            Parameters for automatic star masking (central/spike regions).
+        edge_mask_distance : `int`, `float`, `list`, or `dict`, optional
+            Distance from image edge to mask (pixels). Default is 50.
+        scale_extra : `float`, `list`, or `dict`, optional
+            Extra scaling factor for mask regions. Default is 0.2.
+        exclude_gaia_galaxies : `bool`, `list`, or `dict`, optional
+            Whether to mask GAIA extended objects. Default is `True`.
+        angle : `float`, `list`, `dict`, or `None`, optional
+            Rotation angle for masks (degrees). Default is `None`.
+        edge_value : `float`, `list`, or `dict`, optional
+            Pixel value for edge mask. Default is 0.0.
+        edge_threshold : `float`, `list`, `dict`, or `None`, optional
+            Threshold for edge detection. Default is `None`.
+        element : `str`, `list`, or `dict`, optional
+            Morphological element shape: ``"ELLIPSE"``, ``"BOX"``, etc.
+            Default is ``"ELLIPSE"``.
+        gaia_row_lim : `int`, `list`, or `dict`, optional
+            Maximum GAIA row index to include in mask. Default is 500.
+        overwrite : `bool`, `list`, or `dict`, optional
+            Whether to regenerate masks even if they exist. Default is `False`.
+        """
         assert method in ["auto", "manual"], galfind_logger.warning(
             f"Method {method} not recognised. Must be 'auto' or 'manual'"
         )
@@ -5041,6 +5112,47 @@ class Data:
         overwrite: Union[bool, List[bool], Dict[str, bool]] = False,
         timed: bool = False,
     ) -> NoReturn:
+        """Calculate photometric depths for all bands.
+
+        Computes depth (sensitivity) information for each band using a variety
+        of algorithms (e.g., nearest-neighbor, grid-based) and optionally
+        generates diagnostic plots.
+
+        Parameters
+        ----------
+        mode : `str`, `list`, or `dict`, optional
+            Depth calculation method. Default is ``"n_nearest"``.
+        scatter_size : `float`, `list`, or `dict`, optional
+            Size of scatter in plot generation. Default is 0.1.
+        distance_to_mask : `int`, `float`, `list`, or `dict`, optional
+            Minimum distance from masked pixels (pixels). Default is 30.
+        region_radius_used_pix : `int`, `float`, `list`, or `dict`, optional
+            Radius of depth calculation region (pixels). Default is 300.
+        n_nearest : `int`, `list`, or `dict`, optional
+            Number of nearest sources for nearest-neighbor mode. Default is 200.
+        coord_type : `str`, `list`, or `dict`, optional
+            Coordinate type: ``"sky"`` or ``"pixel"``. Default is ``"sky"``.
+        split_depth_min_size : `int`, `list`, or `dict`, optional
+            Minimum size for splitting depth calculations. Default is 100,000.
+        split_depths_factor : `int`, `list`, or `dict`, optional
+            Scaling factor for split depth. Default is 5.
+        step_size : `int`, `list`, or `dict`, optional
+            Step size for grid calculations (pixels). Default is 100.
+        n_jobs : `int`, optional
+            Number of parallel jobs. Default is 1 (serial).
+        n_split : `str`, `int`, `list`, or `dict`, optional
+            Number of splits. Default is ``"auto"``.
+        n_retry_box : `int`, `list`, or `dict`, optional
+            Number of retry attempts. Default is 1.
+        grid_offset_times : `int`, `list`, or `dict`, optional
+            Number of grid offset attempts. Default is 1.
+        plot : `bool`, `list`, or `dict`, optional
+            Whether to generate diagnostic plots. Default is `True`.
+        overwrite : `bool`, `list`, or `dict`, optional
+            Whether to recalculate depths even if cached. Default is `False`.
+        timed : `bool`, optional
+            Whether to time the calculation. Default is `False`.
+        """
         if timed:
             start = time.time()
         if hasattr(self, "phot_cat_path"):
@@ -5170,10 +5282,25 @@ class Data:
         self,
         band: Union[int, str, Filter, List[Filter], Multiple_Filter],
         aper_diam: u.Quantity,
-        save: bool = False, 
+        save: bool = False,
         show: bool = False,
         overwrite: bool = True,
     ) -> NoReturn:
+        """Plot depth diagnostic for a single band and aperture diameter.
+
+        Parameters
+        ----------
+        band : `int`, `str`, `Filter`, `list` of `Filter`, or `Multiple_Filter`
+            Band to plot (by index, filter name, or filter object).
+        aper_diam : `astropy.units.Quantity`
+            Aperture diameter to plot depth for.
+        save : `bool`, optional
+            Whether to save the plot. Default is `False`.
+        show : `bool`, optional
+            Whether to display the plot. Default is `False`.
+        overwrite : `bool`, optional
+            Whether to overwrite existing plots. Default is `True`.
+        """
         try:
             master_cat_path = self._get_phot_cat_path()
         except:
@@ -5191,6 +5318,15 @@ class Data:
         save: bool = False,
         overwrite: bool = True,
     ) -> NoReturn:
+        """Plot depth diagnostics for all bands and aperture diameters.
+
+        Parameters
+        ----------
+        save : `bool`, optional
+            Whether to save plots. Default is `False`.
+        overwrite : `bool`, optional
+            Whether to overwrite existing plots. Default is `True`.
+        """
         try:
             master_cat_path = self._get_phot_cat_path()
         except:
@@ -5212,6 +5348,35 @@ class Data:
         z: Optional[float] = None,
         plot: bool = True,
     ) -> Tuple[Dict[str, NDArray[float]], Dict[str, NDArray[float]], Dict[str, float]]:
+        """Calculate depth as a function of unmasked area.
+
+        Computes how depth varies with the unmasked survey area for a given
+        aperture diameter, optionally restricting to a region or redshift bin.
+
+        Parameters
+        ----------
+        aper_diam : `astropy.units.Quantity`
+            Aperture diameter.
+        mask_selector : `str`, `list`, or `Mask_Selector`, optional
+            Selector defining masked regions. Default is `None`.
+        mask_type : `str` or `list`, optional
+            Type of mask to apply. Default is ``"MASK"``.
+        region_selector : `Region_Selector`, `list`, or `None`, optional
+            Region to restrict depth calculation to. Default is `None`.
+        invert_region : `bool`, optional
+            Whether to invert the region selection. Default is `False`.
+        z : `float` or `None`, optional
+            Redshift bin identifier. Default is `None`.
+        plot : `bool`, optional
+            Whether to generate diagnostic plots. Default is `True`.
+
+        Returns
+        -------
+        `tuple` of (3 items)
+            - Depth values by band
+            - Depth errors by band
+            - Unmasked area by band (in square arcsec)
+        """
 
         # extract zbin label
         if z is not None:
@@ -5310,6 +5475,37 @@ class Data:
         close: bool = True,
         **kwargs: Dict[str, Any],
     ) -> None:
+        """Plot depth as a function of unmasked survey area.
+
+        Parameters
+        ----------
+        aper_diam : `astropy.units.Quantity`
+            Aperture diameter.
+        mask_selector : `str`, `list`, or `Mask_Selector`, optional
+            Selector defining masked regions. Default is `None`.
+        mask_type : `str` or `list`, optional
+            Type of mask. Default is ``"MASK"``.
+        region_selector : `Region_Selector`, `list`, or `None`, optional
+            Region to restrict to. Default is `None`.
+        invert_region : `bool`, optional
+            Whether to invert region. Default is `False`.
+        fig : `matplotlib.figure.Figure` or `None`, optional
+            Existing figure to plot in. Default is `None` (creates new).
+        ax : `matplotlib.axes.Axes` or `None`, optional
+            Existing axes to plot in. Default is `None` (creates new).
+        cmap_name : `str`, optional
+            Colormap name. Default is ``"RdYlBu_r"``.
+        overwrite : `bool`, optional
+            Whether to overwrite existing plots. Default is `False`.
+        save : `bool`, optional
+            Whether to save the plot. Default is `True`.
+        show : `bool`, optional
+            Whether to display the plot. Default is `False`.
+        close : `bool`, optional
+            Whether to close the figure after. Default is `True`.
+        **kwargs
+            Additional arguments passed to plotting function.
+        """
         return Depths.plot_data_area_depth(
             self,
             aper_diam,
@@ -5348,6 +5544,25 @@ class Data:
         close: bool = True,
         **kwargs: Dict[str, Any],
     ):
+        """Plot encircled energy curves (EEC) for PSFs in all bands.
+
+        Parameters
+        ----------
+        fig : `matplotlib.figure.Figure` or `None`, optional
+            Existing figure to plot in. Default is `None` (creates new).
+        ax : `matplotlib.axes.Axes` or `None`, optional
+            Existing axes to plot in. Default is `None` (creates new).
+        cmap : `str`, optional
+            Colormap name for band-dependent colors. Default is ``"cmr.guppy_r"``.
+        save : `bool`, optional
+            Whether to save the plot. Default is `True`.
+        show : `bool`, optional
+            Whether to display the plot. Default is `False`.
+        close : `bool`, optional
+            Whether to close figure after. Default is `True`.
+        **kwargs
+            Additional keyword arguments passed to plotting function.
+        """
         if fig is None or ax is None:
             fig, ax = plt.subplots()
         colours = cm.get_cmap(cmap)(np.linspace(0.0, 1.0, len(self)))
@@ -5385,6 +5600,29 @@ class Data:
         red_bands: List[Union[str, Filter]] = ["F444W"],
         method: str = "trilogy",
     ):
+        """Create and display a false-color RGB image from three bands.
+
+        Combines specified bands to create a composite RGB image using the
+        specified method (e.g., "trilogy").
+
+        Parameters
+        ----------
+        ax : `matplotlib.axes.Axes` or `None`, optional
+            Axes to plot RGB image in. Default is `None`.
+        blue_bands : `list`, optional
+            Filter names for blue channel. Default is ``["F090W"]``.
+        green_bands : `list`, optional
+            Filter names for green channel. Default is ``["F200W"]``.
+        red_bands : `list`, optional
+            Filter names for red channel. Default is ``["F444W"]``.
+        method : `str`, optional
+            RGB creation method: ``"trilogy"`` or similar. Default is ``"trilogy"``.
+
+        Raises
+        ------
+        AssertionError
+            If any of the specified bands are not available in this Data object.
+        """
         # ensure all blue, green and red bands are contained in the data object
         assert all(
             band in self.instrument.filt_names
@@ -5455,6 +5693,17 @@ class Data:
         update: bool = True,
         overwrite: bool = False,
     ) -> None:
+        """Append local depth columns to the photometric catalogue.
+
+        Parameters
+        ----------
+        min_flux_pc_err : `int` or `float`
+            Minimum flux fraction error threshold.
+        update : `bool`, optional
+            Whether to update the catalogue in-place. Default is `True`.
+        overwrite : `bool`, optional
+            Whether to overwrite existing columns. Default is `False`.
+        """
         return Depths.append_loc_depth_cols(
             self,
             min_flux_pc_err = min_flux_pc_err,
@@ -5466,6 +5715,16 @@ class Data:
         self: Self,
         overwrite: bool = False,
     ) -> NoReturn:
+        """Append aperture correction columns to the photometric catalogue.
+
+        Adds corrected magnitudes for each aperture diameter using the stored
+        aperture correction values.
+
+        Parameters
+        ----------
+        overwrite : `bool`, optional
+            Whether to overwrite existing columns. Default is `False`.
+        """
         cat = Table.read(self.phot_cat_path)
         if f"MAG_APER_{self[0].filt_name}_aper_corr" not in cat.colnames or overwrite:
             # ensure aperture diameters are the same for all bands
@@ -5598,6 +5857,21 @@ class Data:
         self: Self,
         overwrite: bool = False,
     ) -> None:
+        """Append mask flag columns to the photometric catalogue.
+
+        Adds flags indicating which sources are masked in each band and aperture.
+
+        Parameters
+        ----------
+        overwrite : `bool`, optional
+            Whether to overwrite existing columns. Default is `False`.
+
+        Raises
+        ------
+        AssertionError
+            If forced photometry has not been performed on all bands or if
+            RA/DEC labels differ across bands.
+        """
         # ensure forced photometry has been run on every band in catalogue
         assert all(hasattr(band_data, "forced_phot_args") for band_data in self), \
             galfind_logger.critical(
@@ -5818,6 +6092,18 @@ class Data:
     #     f.close()
 
     def get_area_tab_path(self: Self) -> str:
+        """Get the unmasked-area table path (must be the same for all bands).
+
+        Returns
+        -------
+        `str`
+            Path to the unmasked-area table.
+
+        Raises
+        ------
+        AssertionError
+            If bands have different area table paths.
+        """
         area_tab_paths = [band_data.get_area_tab_path() for band_data in self]
         assert all(area_tab_path == area_tab_paths[0] for area_tab_path in area_tab_paths), \
             galfind_logger.critical(
@@ -5834,6 +6120,31 @@ class Data:
         out_units: u.Quantity = u.arcmin ** 2,
         **kwargs: Dict[str, Any],
     ) -> u.Quantity:
+        """Calculate the total unmasked survey area.
+
+        Computes the area of the survey that is unmasked, accounting for
+        specified mask types and regions.
+
+        Parameters
+        ----------
+        mask_selector : `str`, `list`, or `Mask_Selector`
+            Selector defining mask types to exclude.
+        mask_type : `str` or `list`, optional
+            Mask extension type(s). Default is ``"MASK"``.
+        region_selector : `Region_Selector`, `list`, or `None`, optional
+            Region to restrict calculation to. Default is `None`.
+        invert_region : `bool`, optional
+            Whether to invert region selection. Default is `True`.
+        out_units : `astropy.units.Quantity`, optional
+            Output units for area. Default is arcmin² .
+        **kwargs
+            Additional keyword arguments.
+
+        Returns
+        -------
+        `astropy.units.Quantity`
+            Unmasked area in the specified units.
+        """
 
         from . import Mask_Selector, Redshift_Selector, Multiple_Mask_Selector
 

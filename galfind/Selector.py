@@ -5794,6 +5794,7 @@ class Kokorev24_LRD_Selector(Multiple_Photometry_Selector):
 
 
 class Unmasked_Bands_Selector(Multiple_Mask_Selector):
+    """Select unmasked pixels across all bands."""
 
     def __init__(
         self: Self, 
@@ -5814,6 +5815,7 @@ class Unmasked_Bands_Selector(Multiple_Mask_Selector):
 
 
 class Unmasked_Instrument_Selector(Multiple_Mask_Selector):
+    """Select unmasked pixels within an instrument."""
 
     def __init__(
         self: Self, 
@@ -5851,6 +5853,7 @@ class Unmasked_Instrument_Selector(Multiple_Mask_Selector):
 
 
 class Sextractor_Bands_Radius_Selector(Multiple_Data_Selector):
+    """Select sources by SExtractor radius across bands."""
 
     def __init__(
         self: Self,
@@ -5872,6 +5875,7 @@ class Sextractor_Bands_Radius_Selector(Multiple_Data_Selector):
 
 
 class Sextractor_Instrument_Radius_Selector(Multiple_Data_Selector):
+    """Select sources by SExtractor radius within an instrument."""
 
     def __init__(
         self: Self,
@@ -5911,6 +5915,7 @@ class Sextractor_Instrument_Radius_Selector(Multiple_Data_Selector):
 
 
 class Sextractor_Instrument_Radius_PSF_FWHM_Selector(Multiple_Data_Selector):
+    """Select sources by SExtractor radius and PSF FWHM."""
 
     def __init__(
         self: Self,
@@ -5959,6 +5964,7 @@ class Sextractor_Instrument_Radius_PSF_FWHM_Selector(Multiple_Data_Selector):
 
     
 class Brown_Dwarf_Selector(Multiple_SED_fit_Selector):
+    """Select brown dwarf candidates from SED fits."""
 
     def __init__(
         self: Self,
@@ -6029,7 +6035,8 @@ class Brown_Dwarf_Selector(Multiple_SED_fit_Selector):
 
 
 class Hainline24_TY_Brown_Dwarf_Selector_1(Multiple_Photometry_Selector):
-    
+    """Select T/Y brown dwarfs using Hainline+24 criteria (method 1)."""
+
     def __init__(
         self: Self,
         aper_diam: u.Quantity,
@@ -6060,7 +6067,8 @@ class Hainline24_TY_Brown_Dwarf_Selector_1(Multiple_Photometry_Selector):
 
 
 class Hainline24_TY_Brown_Dwarf_Selector_2(Multiple_Photometry_Selector):
-    
+    """Select T/Y brown dwarfs using Hainline+24 criteria (method 2)."""
+
     def __init__(
         self: Self,
         aper_diam: u.Quantity,
@@ -6091,6 +6099,7 @@ class Hainline24_TY_Brown_Dwarf_Selector_2(Multiple_Photometry_Selector):
 
 
 class EPOCHS_unmasked_criteria(Multiple_Mask_Selector):
+    """Select unmasked pixels meeting EPOCHS survey criteria."""
 
     def __init__(
         self: Self,
@@ -6113,6 +6122,7 @@ class EPOCHS_unmasked_criteria(Multiple_Mask_Selector):
 
 
 class EPOCHS_Selector(Multiple_SED_fit_Selector):
+    """Select sources based on EPOCHS survey-specific SED criteria."""
 
     def __init__(
         self: Self,

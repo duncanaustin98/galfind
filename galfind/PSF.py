@@ -49,6 +49,27 @@ from . import useful_funcs_austind as funcs
 
 
 class PSF_Base(ABC):
+    """Abstract base class for Point Spread Function (PSF) models.
+
+    Stores encircled energy curve (EEC) data and PSF metadata. Subclasses
+    implement PSF generation and manipulation methods.
+
+    Parameters
+    ----------
+    eec_path : `str`
+        Path to HDF5 file containing the encircled energy curve data.
+    name : `str`
+        Descriptive name for this PSF model.
+    **kwargs
+        Additional attributes to set on the instance.
+
+    Attributes
+    ----------
+    eec_path : `str`
+        Path to encircled energy curve file.
+    name : `str`
+        PSF model name.
+    """
 
     def __init__(
         self: Self,
@@ -132,6 +153,34 @@ class PSF_Base(ABC):
 
 
 class PSF_Cutout(PSF_Base):
+    """PSF derived from a cutout image of a star or point source.
+
+    Generates an encircled energy curve from a star/PSF cutout image,
+    storing it for use in photometric operations.
+
+    Parameters
+    ----------
+    cutout : `Band_Cutout`
+        Cutout image of the PSF reference source (typically a star).
+    eec_path : `str`
+        Path where the generated EEC should be saved.
+    name : `str`
+        Name for this PSF model.
+    is_kernel : `bool`, optional
+        Whether this PSF is meant for use as a convolution kernel.
+        Default is `False`.
+    overwrite : `bool`, optional
+        Regenerate EEC even if it already exists. Default is `False`.
+    **kwargs
+        Additional attributes to set.
+
+    Attributes
+    ----------
+    cutout : `Band_Cutout`
+        The source cutout image.
+    is_kernel : `bool`
+        Whether used as a kernel.
+    """
 
     def __init__(
         self: Self,
@@ -848,6 +897,47 @@ def find_stars(
     mask_type: Optional[str] = None,
     clip_sigma: Union[int, float] = 3.5,
 ):
+    """Find and characterize point sources (stars) in a band image.
+
+    Detects peaks in the image, filters by magnitude and morphology,
+    and characterizes their properties for PSF extraction.
+
+    Parameters
+    ----------
+    band_data : `Band_Data`
+        Image data to search for stars.
+    block_size : `int`, optional
+        Block size for noise estimation. Default is 5.
+    npeaks : `int`, optional
+        Maximum number of peaks to detect. Default is 1,000.
+    size : `float`, optional
+        Characteristic size of cutouts around stars. Default is 20.
+    radii : `numpy.ndarray` or `None`, optional
+        Radii (in pixels) for aperture measurements. Default is [0.5, 1.0, 2.0, 4.0, 7.5].
+    range : `list`, optional
+        Magnitude range for filtering stars. Default is [0, 4].
+    mag_lims : `tuple` of (`float`, `float`), optional
+        Magnitude limits for candidate stars. Default is (18.0, 25.0).
+    threshold_min : `float`, optional
+        Minimum detection threshold. Default is -0.5.
+    threshold_mode : `list`, optional
+        Mode detection threshold range. Default is [-0.2, 0.2].
+    shift_lim : `int`, optional
+        Maximum shift (pixels) allowed in centroid. Default is 2.
+    r_lims : `tuple` of (`float`, `float`), optional
+        Radius limits for stars. Default is (1.2, 5.0).
+    plot : `bool`, optional
+        Generate diagnostic plots. Default is `True`.
+    mask_type : `str` or `None`, optional
+        Type of mask to apply ("MASK", etc.). Default is `None`.
+    clip_sigma : `int` or `float`, optional
+        Sigma for clipping outliers. Default is 3.5.
+
+    Returns
+    -------
+    `astropy.table.Table`
+        Table of detected stars with positions, magnitudes, and other metrics.
+    """
     im_data, hdr = band_data.load_im()
     wcs = band_data.load_wcs()
     
@@ -1079,6 +1169,35 @@ def psf_from_stars(
     name: Optional[str] = None,
     overwrite: bool = False,
 ) -> Optional[str]:
+    """Create a PSF model by stacking cutouts of multiple stars.
+
+    Combines star cutouts after quality filtering (SNR threshold, sigma clipping)
+    to produce an empirical PSF, then saves it as a PSF_Cutout object.
+
+    Parameters
+    ----------
+    band_data : `Band_Data`
+        Band data object providing image metadata and configuration.
+    stars : `list` of `Cutout2D`
+        Cutout images of individual stars to stack.
+    size : `astropy.units.Quantity`, optional
+        Size of the PSF model field-of-view. Default is 4.0 arcsec.
+    snr_lim : `int` or `float`, optional
+        Minimum signal-to-noise ratio for including a star. Default is 1,000.
+    stack_sigma : `float`, optional
+        Sigma level for clipping during stacking. Default is 2.8.
+    exclude_ids : `list` or `array` of `int`, optional
+        Star IDs to exclude from stacking. Default is `None`.
+    name : `str` or `None`, optional
+        Name for the PSF model. Default is `None` (auto-generated).
+    overwrite : `bool`, optional
+        Regenerate PSF even if cached. Default is `False`.
+
+    Returns
+    -------
+    `str` or `None`
+        Path to the saved PSF FITS file, or `None` if no suitable stars found.
+    """
 
     psf_filepath = PSF_Cutout.get_empirical_psf_path(band_data, name = name, size = size)
     
@@ -1428,6 +1547,29 @@ def stack_psfs(
     stack_sigma: float = 2.8,
     maxiters: int = 2,
 ) -> Optional[NDArray[float]]:
+    """Stack PSF models from multiple bands into a single combined PSF.
+
+    Combines empirical PSF data from each band, applying sigma clipping to
+    reject outliers and produce a robust average PSF.
+
+    Parameters
+    ----------
+    multi_band_data : `Multiple_Band_Data_Base`
+        Multi-band data object containing PSF models for each band.
+    name : `str` or `None`, optional
+        Name of the PSF model set. Default is `None`.
+    size : `astropy.units.Quantity`, optional
+        Size of each PSF model. Default is 4.0 arcsec.
+    stack_sigma : `float`, optional
+        Sigma threshold for clipping outliers. Default is 2.8.
+    maxiters : `int`, optional
+        Maximum iterations for sigma clipping. Default is 2.
+
+    Returns
+    -------
+    `numpy.ndarray` or `None`
+        The stacked PSF model, or `None` if no PSF data found.
+    """
     data = []
     for band_data in multi_band_data:
         psf_filepath = PSF_Cutout.get_empirical_psf_path(band_data, name = name, size = size)
@@ -1449,6 +1591,29 @@ def stack_psfs(
         return psfmodel
 
 def sigma_clip_3d(data, maxiters=2, axis=0, **kwargs):
+    """Perform iterative sigma-clipping on 3D data along a specified axis.
+
+    Clips outliers from a 3D array along the given axis, returning both the
+    clipped data and a mask of clipped pixels.
+
+    Parameters
+    ----------
+    data : `numpy.ndarray`
+        3D array to clip.
+    maxiters : `int`, optional
+        Maximum number of clipping iterations. Default is 2.
+    axis : `int`, optional
+        Axis along which to perform clipping. Default is 0.
+    **kwargs
+        Additional keyword arguments passed to `astropy.stats.sigma_clip()`.
+
+    Returns
+    -------
+    `tuple` of (`numpy.ndarray`, `numpy.ndarray`)
+        Tuple containing:
+        - clipped data (same shape as input, with outliers set to median)
+        - mask of clipped pixels (True where outliers were found)
+    """
     from skimage.morphology import disk
     clipped_data = data.copy()
     for i in range(maxiters):
