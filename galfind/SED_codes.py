@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""
-Created on Wed May 31 00:17:39 2023
+"""Abstract base class for external SED-fitting code wrappers.
 
-@author: austind
+Defines uniform interface for building input catalogues, running fits,
+and parsing results into GALFIND-native objects for SED fitting codes.
 """
 
 from __future__ import annotations

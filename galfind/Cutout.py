@@ -1,3 +1,9 @@
+"""Image cutout classes for single bands and RGB combinations.
+
+Provides cutout image functionality including loading, visualization with size scales
+and contours, and support for stacked and multiple-cutout operations.
+"""
+
 from __future__ import annotations
 
 from abc import ABC, abstractmethod

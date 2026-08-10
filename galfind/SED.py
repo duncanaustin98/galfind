@@ -1,3 +1,8 @@
+"""Spectral energy distribution (SED) representation and manipulation.
+
+Provides classes for storing and manipulating SEDs as wavelength/magnitude/flux pairs
+with unit conversion, plotting, and photometric summary calculations.
+"""
 
 from __future__ import annotations
 

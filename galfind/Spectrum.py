@@ -1,4 +1,8 @@
-# Spectrum.py
+"""Spectral data and spectroscopic instrument configuration.
+
+Provides classes for handling spectral data and NIRSpec grating configuration,
+including dispersion, resolution, and transmission curves for named gratings.
+"""
 
 from __future__ import annotations
 

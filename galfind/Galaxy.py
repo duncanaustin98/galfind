@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""
-Created on Thu Jul 13 14:11:23 2023
+"""Single astronomical source with photometry, SED fits, morphology, and cutouts.
 
-@author: austind
+Represents one galaxy (or other source) identified in a GALFIND catalogue
+with sky position, aperture photometry for multiple diameters, and methods
+for creating image cutouts, RGB images, and diagnostic plots.
 """
 
 from __future__ import annotations

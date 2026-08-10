@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""
-Created on Wed May 17 14:20:31 2023
+"""Imaging data management for single photometric bands.
 
-@author: austind
+Provides Band_Data_Base abstract class and concrete Band_Data class for wrapping
+science images, RMS/weight maps, segmentation maps, masks, PSFs, and depths.
+Handles loading, masking, segmentation, forced photometry, and depth calculation.
 """
 
 from __future__ import annotations

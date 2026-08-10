@@ -1,3 +1,9 @@
+"""Observed-frame photometry with aperture and PSF information.
+
+Extends Photometry with aperture diameter, PSF objects, and storage of SED fitting
+results in the observed frame.
+"""
+
 from __future__ import annotations
 
 import inspect

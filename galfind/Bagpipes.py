@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""
-Created on Tue Jun  6 14:55:57 2023
+"""Wrapper around Bagpipes SED-fitting code.
 
-@author: austind
+Handles galaxy template fitting, SED model construction, and posterior
+distribution parsing from Bagpipes SED fitter.
 """
 
 from __future__ import annotations

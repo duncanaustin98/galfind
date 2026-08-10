@@ -1,4 +1,9 @@
-# Depths.py
+"""Depth/sensitivity map calculation and visualization utilities.
+
+Provides aperture photometry functions and grid placement algorithms for
+identifying unmasked regions and calculating depth measurements.
+"""
+
 from __future__ import annotations
 
 # import automask as am

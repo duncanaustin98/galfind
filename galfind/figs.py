@@ -1,3 +1,9 @@
+"""Matplotlib figure and axis layout utilities.
+
+Provides functions for creating rectangular and square axis grids with
+automatic scaling and layout configuration.
+"""
+
 import numpy as np
 import matplotlib.pyplot as plt
 from typing import Union, List, Tuple, Dict, Any

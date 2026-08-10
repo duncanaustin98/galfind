@@ -1,3 +1,8 @@
+"""MCMC prior distributions and posterior sampling utilities.
+
+Provides Prior abstract base class with implementations (Flat, Gaussian) for
+MCMC sampling and parameter estimation with posterior visualization.
+"""
 
 from __future__ import annotations
 

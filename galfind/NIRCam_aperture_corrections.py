@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""
-Created on Thu Dec  1 12:47:06 2022
+"""NIRCam aperture correction calculation from PSF models.
 
-@author: u92876da
+Computes aperture corrections from PSF models and measured flux profiles
+for photometric calibration and aperture-dependent corrections.
 """
 
 # calc_aper_corr.py

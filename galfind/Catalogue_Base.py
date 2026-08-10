@@ -1,4 +1,8 @@
-# Catalogue_Base.py
+"""Base class for galaxy catalogue containers.
+
+Provides abstract base class wrapping Galaxy lists with catalogue-level operations
+including cropping, cross-matching, and concatenation.
+"""
 
 from __future__ import annotations
 

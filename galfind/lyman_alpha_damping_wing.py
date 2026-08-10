@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""
-Created on Tue Nov 21 14:03:59 2023
+"""Lyman-alpha damping wing calculations.
 
-@author: u92876da
+Miralda-Escude (1998) integral evaluation, background HI density calculations
+for damping wing optical depth computation in Lyman-alpha systems.
 """
 
 # lyman alpha damping wing and DLAs

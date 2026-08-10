@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""
-Created on Tue Jun  6 14:52:36 2023
+"""Wrapper around EAZY-py photo-z and SED-fitting tool.
 
-@author: austind
+Handles input catalogue construction, filter response file setup, PhotoZ fitter
+execution, and result parsing into GALFIND-native objects.
 """
 
 from __future__ import annotations

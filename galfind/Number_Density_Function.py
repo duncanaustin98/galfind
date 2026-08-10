@@ -1,3 +1,9 @@
+"""Number density function containers and statistical fitting.
+
+Provides classes for storing binned number densities (UVLFs, mass functions) with
+uncertainties and includes MCMC/Schechter fitters for function fitting.
+"""
+
 from __future__ import annotations
 
 import os

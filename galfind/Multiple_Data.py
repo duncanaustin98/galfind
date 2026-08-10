@@ -1,4 +1,8 @@
-# Multiple_Data.py
+"""Container for imaging data spanning multiple surveys.
+
+Manages Data objects across multiple surveys with normalization of versions,
+instrument names, and excluded bands.
+"""
 
 import numpy as np
 

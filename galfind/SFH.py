@@ -1,3 +1,9 @@
+"""Star formation history container and visualization.
+
+Stores lookback-time grids with SFR posterior samples from SED fitting
+(e.g., Bagpipes) and provides plotting utilities for visualization.
+"""
+
 import h5py
 from copy import deepcopy
 from pathlib import Path

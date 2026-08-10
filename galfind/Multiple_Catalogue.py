@@ -1,3 +1,8 @@
+"""Container combining multiple Catalogue objects from different surveys.
+
+Provides Combined_Catalogue for managing multi-survey galaxy catalogues with
+combined survey metadata and crop tracking.
+"""
 
 from __future__ import annotations
 

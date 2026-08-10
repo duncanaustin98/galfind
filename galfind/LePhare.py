@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""
-Created on Tue Jun  6 14:44:23 2023
+"""Wrapper around LePhare photo-z and SED-fitting tool.
 
-@author: austind
+Manages LePhare filter/binary/template libraries, input catalogue construction,
+and result parsing from .out and .spec output files.
 """
 
 from __future__ import annotations

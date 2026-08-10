@@ -1,3 +1,8 @@
+"""Utility functions for constructing standardized GALFIND directory paths.
+
+Provides functions to construct standard data, catalogue, and depth directory paths
+based on survey name, data reduction version, and instrument configuration.
+"""
 
 import os
 import numpy as np

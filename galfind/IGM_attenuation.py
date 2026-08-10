@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""
-Created on Wed Nov  1 12:27:07 2023
+"""Intergalactic medium attenuation calculations.
 
-@author: u92876da
+Implements Inoue et al. (2014) Lyman series LAF and DLA optical depth functions
+for IGM absorption in galaxy spectra.
 """
 
 # IGM_attenuation.py

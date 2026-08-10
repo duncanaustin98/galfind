@@ -1,3 +1,8 @@
+"""General utility functions and helpers for GALFIND operations.
+
+Provides unit conversion utilities, coordinates transformation, statistical
+calculations, and miscellaneous helper functions used throughout galfind.
+"""
 
 from __future__ import annotations
 

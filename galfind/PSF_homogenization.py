@@ -1,3 +1,9 @@
+"""PSF homogenization across imaging filters.
+
+Utilities for convolving PSFs across multiple bands to achieve consistent
+PSF properties (currently experimental/incomplete).
+"""
+
 #     kernel_dir,
 #     match_band="F444W",
 #     override_bands=None,

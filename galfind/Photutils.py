@@ -1,3 +1,8 @@
+"""Photutils-based source detection and aperture photometry.
+
+Alternative to SExtractor using photutils library for source detection
+and aperture photometry with forced photometry catalogue generation.
+"""
 
 from __future__ import annotations
 import numpy as np

@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""
-Created on Mon Jul 17 15:04:24 2023
+"""Rest-frame photometry at a given redshift.
 
-@author: austind
+Stores rest-frame flux measurements shifted from observed frame with computed
+rest-frame properties and posterior probability distributions.
 """
 
 from __future__ import annotations

@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""
-Created on Sat Dec 16 19:14:15 2023
+"""Emission line diagnostics and wavelength definitions.
 
-@author: u92876da
+Stores Lyman-alpha and optical emission line parameters including wavelengths,
+feature widths, and continuum band definitions for emission line analysis.
 """
 
 # Emission_lines.py

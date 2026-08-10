@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""
-Created on Mon May 22 13:27:47 2023
+"""Galaxy catalogue with FITS I/O and catalogue-level operations.
 
-@author: austind
+Provides Catalogue class as a collection of Galaxy objects with FITS read/write,
+cropping, cross-matching, concatenation, and visualization capabilities.
 """
 
 from __future__ import annotations

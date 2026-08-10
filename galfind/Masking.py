@@ -1,3 +1,9 @@
+"""Mask creation and management for imaging data.
+
+Provides functions to extract masking parameters from FITS headers and supports
+both automatic and manual masking methods with configuration parameters.
+"""
+
 from __future__ import annotations
 
 import astropy.units as u

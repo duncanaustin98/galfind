@@ -1,4 +1,8 @@
-# Purpose: Class to hold PSF data
+"""Point spread function (PSF) model classes and utilities.
+
+Provides PSF_Base for storing encircled energy curves and PSF metadata, along
+with utilities for PSF generation, manipulation, visualization, and star detection.
+"""
 
 from __future__ import annotations
 

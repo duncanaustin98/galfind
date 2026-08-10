@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""
-Created on Mon Jun  5 11:43:05 2023
+"""Decorator factories for function and method wrapping.
 
-@author: austind
+Provides decorators for working directory context management (run_in_dir,
+run_in_self_dir) and execution timing (log_time).
 """
 
 # decorators.py

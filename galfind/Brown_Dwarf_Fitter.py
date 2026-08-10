@@ -1,3 +1,8 @@
+"""Template fitter for stellar and brown-dwarf SED fitting.
+
+Wraps external BDFit.StarFit fitter for fitting SEDs against template grids
+(e.g., Sonora atmosphere models) for low-mass stars and brown dwarfs.
+"""
 
 from __future__ import annotations
 

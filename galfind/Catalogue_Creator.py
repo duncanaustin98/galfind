@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""
-Created on Wed Jun  7 13:59:59 2023
+"""Factory for creating Galaxy objects from catalogue data.
 
-@author: austind
+Loads data for single galaxies (ID, photometry, masks, depths, optional SED results)
+from FITS catalogue files.
 """
 

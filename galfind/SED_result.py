@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""
-Created on Mon Jul 17 16:50:27 2023
+"""SED fit results with best-fit parameters and posterior distributions.
 
-@author: austind
+Stores best-fit SED parameters, uncertainties, and posterior PDFs from SED fitting
+codes; includes rest-frame photometry and aperture diameter metadata.
 """
 
 from __future__ import annotations

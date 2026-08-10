@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""
-Created on Tue Jan 16 10:36:38 2024
+"""Damped Lyman-alpha absorption system models.
 
-@author: austind
+Stores HI column density, Doppler broadening, and velocity offset; computes
+Voigt profiles and photon absorption cross-sections for DLA modeling.
 """
 
 # DLA.py

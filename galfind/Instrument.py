@@ -1,4 +1,10 @@
-# Instrument.py
+"""Astronomical facility and instrument definitions.
+
+Defines Facility class representing observing facilities (HST, JWST, Spitzer, etc.)
+and Instrument subclasses for specific instruments (NIRCam, MIRI, ACS_WFC, etc.)
+with their filter configurations and metadata.
+"""
+
 from __future__ import annotations
 
 from typing import NoReturn, Dict, Any, Union, List, TYPE_CHECKING

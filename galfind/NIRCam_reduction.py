@@ -1,3 +1,9 @@
+"""JWST NIRCam raw data reduction and calibration.
+
+Wraps MAST queries and JWST calibration pipeline Stages 1-3 (detector-level,
+image-level, and association-based resampling) for NIRCam data.
+"""
+
 from __future__ import annotations
 
 import os

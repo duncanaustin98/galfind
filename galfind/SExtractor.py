@@ -1,3 +1,9 @@
+"""SExtractor-based source detection and forced photometry.
+
+Provides utilities for constructing standard paths for SExtractor segmentation
+maps and forced photometry catalogues.
+"""
+
 from __future__ import annotations
 
 import numpy as np

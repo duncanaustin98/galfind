@@ -1,3 +1,8 @@
+"""Morphological fitting results and fitter classes.
+
+Provides Morphology_Result for storing best-fit morphological properties
+(Sérsic index, effective radius, etc.) from morphology fitters like Galfit.
+"""
 
 from __future__ import annotations
 

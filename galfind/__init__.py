@@ -1,3 +1,19 @@
+"""GALFIND: A comprehensive galaxy photometry and SED fitting framework.
+
+GALFIND provides tools for galaxy photometry, SED fitting, morphological analysis,
+and statistical characterization, with deep integrations for JWST/HST data processing
+and multiple external SED fitting codes (EAZY, LePhare, Bagpipes).
+
+Key components:
+    - Galaxy: Represents individual sources with photometry and SED fits
+    - Catalogue: Collection of Galaxy objects with FITS I/O
+    - Data, Filter, Instrument: Imaging data and instrumental setup
+    - Photometry, SED, SED_result: Photometry and SED fit storage
+    - Selector: Galaxy sample selection with customizable criteria
+    - Property_calculator: Derived property computation with uncertainties
+    - Morphology, Spectrum: Morphological and spectroscopic data
+"""
+
 # __init__.py
 
 import time

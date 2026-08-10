@@ -1,3 +1,10 @@
+"""1D posterior probability distribution containers and operations.
+
+Stores property names, evaluation grids, and probability densities for posterior
+distributions from SED fitting and other analyses. Provides median/percentile
+extraction, sampling, PDF combination, and persistence operations.
+"""
+
 from __future__ import annotations
 
 import time

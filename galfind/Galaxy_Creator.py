@@ -1,3 +1,9 @@
+"""Factory for creating individual Galaxy objects from catalogue FITS data.
+
+Specializes in loading single-galaxy data with customizable loading functions for
+photometry, masks, depths, and optional SED results.
+"""
+
 from __future__ import annotations
 
 import numpy as np

@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""
-Created on Thu Jul 13 14:14:30 2023
+"""Photometry across a set of filters.
 
-@author: austind
+Stores per-filter flux densities, flux uncertainties and optional depths, with
+utilities for indexing, error propagation, Monte Carlo flux scattering, and plotting.
 """
 
 from __future__ import annotations

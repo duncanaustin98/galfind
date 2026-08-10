@@ -1,3 +1,8 @@
+"""Rest-frame property calculators for galaxies.
+
+Derives rest-frame properties from rest-frame photometry with flux scattering,
+uncertainty propagation, and PDF caching for efficient computation.
+"""
 
 from __future__ import annotations
 

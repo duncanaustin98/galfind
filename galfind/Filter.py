@@ -1,4 +1,9 @@
-# Filter.py
+"""Photometric filter transmission profiles and utilities.
+
+Provides Filter class for storing wavelength grids and transmission curves of
+photometric bandpasses with SVO Filter Profile Service integration.
+"""
+
 from __future__ import annotations
 
 import astropy.units as u

@@ -1,3 +1,9 @@
+"""Dust attenuation law implementations and utilities.
+
+Provides abstract Dust_Law base class with implementations for different attenuation
+curves (Calzetti, Meurer 1999, etc.) with wavelength-dependent attenuation calculations.
+"""
+
 from __future__ import annotations
 
 from abc import ABC, abstractmethod

@@ -1,3 +1,8 @@
+"""Derived galaxy property calculators with uncertainty propagation.
+
+Provides abstract base class for computing derived galaxy properties (UV magnitude,
+UV slope, stellar mass) from photometry/SED results with uncertainty propagation.
+"""
 
 from __future__ import annotations
 
