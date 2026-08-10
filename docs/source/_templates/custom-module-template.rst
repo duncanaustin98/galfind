@@ -2,49 +2,67 @@
 
 .. automodule:: {{ fullname }}
 
+   {% block attributes %}
    {% if attributes %}
-   .. rubric:: Attributes
+   .. rubric:: Module Attributes
 
    .. autosummary::
       :toctree:
-
    {% for item in attributes %}
       {{ item }}
    {%- endfor %}
    {% endif %}
+   {% endblock %}
 
+   {% block functions %}
    {% if functions %}
-   .. rubric:: Functions
+   .. rubric:: {{ _('Functions') }}
 
    .. autosummary::
       :toctree:
-
+      :nosignatures:
    {% for item in functions %}
       {{ item }}
    {%- endfor %}
    {% endif %}
+   {% endblock %}
 
+   {% block classes %}
    {% if classes %}
-   .. rubric:: Classes
+   .. rubric:: {{ _('Classes') }}
 
    .. autosummary::
       :toctree:
       :template: custom-class-template.rst
-
+      :nosignatures:
    {% for item in classes %}
       {{ item }}
    {%- endfor %}
    {% endif %}
+   {% endblock %}
 
-   {% if modules %}
-   .. rubric:: Modules
+   {% block exceptions %}
+   {% if exceptions %}
+   .. rubric:: {{ _('Exceptions') }}
 
    .. autosummary::
       :toctree:
-      :template: custom-module-template.rst
-      :recursive:
-
-   {% for item in modules %}
+   {% for item in exceptions %}
       {{ item }}
    {%- endfor %}
    {% endif %}
+   {% endblock %}
+
+{% block modules %}
+{% if modules %}
+.. rubric:: Modules
+
+.. autosummary::
+   :toctree:
+   :template: custom-module-template.rst
+   :recursive:
+{% for item in modules %}
+   {{ item }}
+{%- endfor %}
+{% endif %}
+{% endblock %}
