@@ -44,7 +44,6 @@ master_doc = "index"
 
 # Autodoc configuration for better API documentation
 autodoc_default_options = {
-    'members': True,
     'undoc-members': False,
     'show-inheritance': True,
     'member-order': 'bysource',

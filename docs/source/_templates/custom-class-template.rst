@@ -5,4 +5,4 @@
 .. autoclass:: {{ objname }}
    :members:
    :show-inheritance:
-   :noindex:
+   :undoc-members:
