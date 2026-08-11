@@ -1120,15 +1120,26 @@ class Catalogue_Creator:
         #     setattr(cat, "extra_crops", extra_crops)
         if load_gals and cropped and len(self._crops_to_perform) != 0:
             # perform the crops
+            crops_performed = set()
             for crop in self._crops_to_perform:
                 galfind_logger.info(f"Performing {repr(crop)}!")
                 crop(cat, return_copy = False)
+                crops_performed.add(id(crop))
+            # Only recurse if there are new crops to perform
             self.load_crops(self.crops)
-            cat = self(
-                psfs = psfs,
-                cropped = True,
-                load_gals = load_gals,
-            )
+            if self._crops_to_perform and not all(
+                id(c) in crops_performed for c in self._crops_to_perform
+            ):
+                cat = self(
+                    psfs = psfs,
+                    cropped = True,
+                    load_gals = load_gals,
+                )
+            else:
+                # point to data if provided
+                if hasattr(self, "data"):
+                    cat.data = self.data
+                galfind_logger.info(f"Made {self.cat_path} catalogue!")
         else:
             # point to data if provided
             if hasattr(self, "data"):

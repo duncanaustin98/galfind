@@ -934,8 +934,10 @@ class Catalogue_Base:
             file.
         """
         self._write_cat(tab_arr, tab_names, cat_path)
-        # TODO: check if self.cat_creator._tab_cache()
-        # update is required here
+        # Update cache with written tables
+        if hasattr(self, 'cat_creator'):
+            for tab, name in zip(tab_arr, tab_names):
+                self.cat_creator._tab_cache[name] = tab
 
     @staticmethod
     def _write_cat(
@@ -1054,6 +1056,7 @@ class Catalogue_Base:
                 if hdu_.name != "PRIMARY"
             ] + [hdu]
         self.write_cat(tab_arr, tab_names, self.cat_path)
+        # Cache is updated by write_cat()
 
     def del_hdu(self, hdu: str):
         """Delete a named HDU extension from the FITS catalogue, if present.
@@ -1075,6 +1078,9 @@ class Catalogue_Base:
                 if hdu_.name != hdu.upper() and hdu_.name != "PRIMARY"
             ]
             self.write_cat(tab_arr, tab_names, self.cat_path)
+            # Remove deleted HDU from cache
+            if hasattr(self, 'cat_creator') and hdu.upper() in self.cat_creator._tab_cache:
+                del self.cat_creator._tab_cache[hdu.upper()]
             galfind_logger.info(
                 f"Deleted {hdu.upper()=} from {self.cat_path=}!"
             )

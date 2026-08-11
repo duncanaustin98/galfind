@@ -215,7 +215,6 @@ class Photometry_obs(Photometry):
         return result
 
     @property
-    @property
     def SNR(self):
         """Signal-to-noise ratios for each band.
 
