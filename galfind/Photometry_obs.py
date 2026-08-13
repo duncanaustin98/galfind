@@ -107,9 +107,12 @@ class Photometry_obs(Photometry):
         output_str += funcs.band_sep
         output_str += f"APERTURE DIAMETER: {self.aper_diam}\n"
         output_str += super().__str__(print_cls_name=False)
-        for result in self.SED_results.values():
-            output_str += str(result)
-        output_str += f"SNR: {[np.round(snr, 2) for snr in self.SNR]}\n"
+        if self.SED_results:
+            output_str += f"SED RESULTS: {list(self.SED_results.keys())}\n"
+        # Show SNR summary instead of all values for speed
+        snr_array = self.SNR if hasattr(self, 'SNR') else []
+        if len(snr_array) > 0:
+            output_str += f"SNR RANGE: {np.min(snr_array):.2f} - {np.max(snr_array):.2f}\n"
         output_str += funcs.line_sep
         return output_str
 

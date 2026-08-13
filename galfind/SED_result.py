@@ -122,10 +122,9 @@ class SED_result:
         )
 
     def __repr__(self):
-        if isinstance(self.SED_code, str):
-            return f"SED_result({self.SED_code})"
-        else:
-            return f"SED_result({self.SED_code.label})"
+        """Return the official string representation of the SED_result object."""
+        code_label = self.SED_code if isinstance(self.SED_code, str) else self.SED_code.label
+        return f"SED_result({code_label}, z={self.z:.3f})"
 
     def __str__(self) -> str:
         output_str = funcs.line_sep

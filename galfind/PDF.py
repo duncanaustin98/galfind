@@ -87,6 +87,11 @@ class PDF:
             p_x /= np.trapz(p_x, x.value)
         self.p_x = p_x
 
+    def __repr__(self):
+        """Return the official string representation of the PDF."""
+        unit_str = f"{self.x.unit}" if self.x.unit != u.dimensionless_unscaled else "dimensionless"
+        return f"PDF({self.property_name}, {unit_str})"
+
     def __str__(self, print_peaks=False):
         line_sep = "*" * 40 + "\n"
         band_sep = "-" * 10 + "\n"

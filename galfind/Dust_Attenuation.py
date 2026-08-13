@@ -69,6 +69,10 @@ class Dust_Law(ABC):
         """
         self.label = label
 
+    def __repr__(self):
+        """Return the official string representation of the dust attenuation law."""
+        return f"Dust_Attenuation({self.label}, R_V={self.R_V})"
+
     def __str__(self):
         """Return a formatted string representation of the dust attenuation law.
 

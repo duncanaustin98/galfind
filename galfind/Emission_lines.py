@@ -180,10 +180,19 @@ class Emission_line:
         Returns
         -------
         `str`
-            String containing the instance dictionary.
+            String with emission line name and wavelength.
         """
-        # string representation of what is stored in this class
-        return str(self.__dict__)
+        return f"Emission_Line({self.name}, {self.lambda_0})"
+
+    def __str__(self):
+        """Return a detailed string representation of the emission line."""
+        output_str = f"Emission Line: {self.name}\n"
+        output_str += f"  Rest wavelength: {self.lambda_0}\n"
+        if hasattr(self, 'doppler_b'):
+            output_str += f"  Doppler parameter (b): {self.doppler_b}\n"
+        if hasattr(self, 'oscillator_strength'):
+            output_str += f"  Oscillator strength: {self.oscillator_strength}\n"
+        return output_str
 
     @property
     def delta_lambda(self):

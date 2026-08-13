@@ -159,6 +159,7 @@ class Galaxy:
         selection_kwargs: Optional[Dict[u.Quantity, Dict[str, Dict[str, Any]]]] = None,
         cat_filterset: Optional[Multiple_Filter] = None,
         survey: Optional[str] = None,
+        version: Optional[str] = None,
         simulated: bool = False,
     ):
         """Initialize a Galaxy instance.
@@ -182,6 +183,8 @@ class Galaxy:
             Filter set of the source catalogue. Default is `None`.
         survey : `str`, optional
             Name of the survey. Default is `None`.
+        version : `str`, optional
+            Catalogue version. Default is `None`.
         simulated : `bool`, optional
             Whether this is a simulated galaxy. Default is `False`.
         """
@@ -196,6 +199,7 @@ class Galaxy:
         self.selection_kwargs = selection_kwargs
         self.cat_filterset = cat_filterset
         self.survey = survey
+        self.version = version
         self.simulated = simulated
 
     @classmethod
@@ -2458,6 +2462,10 @@ class Galaxy:
                 {aper_diam: test_phot_obs},
                 selection_flags = {},
                 selection_kwargs = {},
+                cat_filterset = self.cat_filterset,
+                survey = self.survey,
+                version = self.version,
+                simulated = self.simulated,
             )
             # run selection methods on new galaxy
             [

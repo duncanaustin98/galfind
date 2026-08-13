@@ -266,6 +266,7 @@ class Galaxy_Creator(Catalogue_Creator):
             selection_kwargs = selection_kwargs,
             cat_filterset = self.filterset,
             survey = self.survey,
+            version = self.version,
             simulated = self.simulated,
         )
         if not hasattr(gal, "gal_creator"):

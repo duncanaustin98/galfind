@@ -172,14 +172,26 @@ class Photometry_rest(Photometry):
             ext_src_corrs=ext_src_corrs,
         )
 
+    def __repr__(self: Self) -> str:
+        """Return the official string representation of the Photometry_rest object."""
+        return f"Photometry_rest({self.filterset.instrument_name}, z={self.z:.3f})"
+
     def __str__(self: Self) -> str:
+        """Return a detailed string representation of the rest-frame photometry."""
         output_str = funcs.line_sep
-        output_str += f"PHOTOMETRY_REST: z = {self.z}\n"
+        output_str += f"PHOTOMETRY_REST: {self.filterset.instrument_name} at z={self.z:.3f}\n"
         output_str += funcs.band_sep
-        # don't print the photometry here, only the derived properties
-        #if print_PDFs:
-        #for PDF_obj in self.property_PDFs.values():
-        #    output_str += str(PDF_obj)
+        output_str += f"N FILTERS: {len(self.filterset)}\n"
+        if self.properties:
+            output_str += funcs.band_sep
+            output_str += "PROPERTIES:\n"
+            for key, value in self.properties.items():
+                output_str += f"{key}: {value}\n"
+        if self.ext_src_corrs:
+            output_str += funcs.band_sep
+            output_str += "EXTENDED SOURCE CORRECTIONS:\n"
+            for filt_name, corr in self.ext_src_corrs.items():
+                output_str += f"{filt_name}: {corr:.4f}\n"
         output_str += funcs.line_sep
         return output_str
 

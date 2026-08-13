@@ -112,28 +112,24 @@ class Photometry:
                     f"Not all ['flux', 'flux_errs', 'depths'] are {len(self.filterset)=} or None!"
                 )
 
-    def __str__(self) -> str:
-        output_str = funcs.line_sep
-        output_str += f"{self.__class__.__name__.upper()}:\n"
-        output_str += funcs.band_sep
+    def __repr__(self) -> str:
+        """Return the official string representation of the Photometry object."""
+        n_bands = len(self.filterset)
+        return f"{self.__class__.__name__}({n_bands} bands)"
+
+    def __str__(self, print_cls_name: bool = True) -> str:
+        output_str = ""
+        if print_cls_name:
+            output_str += funcs.line_sep
+            output_str += f"{self.__class__.__name__.upper()}:\n"
+            output_str += funcs.band_sep
+        else:
+            output_str += funcs.band_sep
         #if print_instrument:
         if hasattr(self, "instrument"):
             output_str += str(self.instrument)
-        # if print_fluxes:
-        fluxes_str = [
-            "%.1f ± %.1f nJy"
-            % (flux.to(u.nJy).value, flux_err.to(u.nJy).value)
-            for flux, flux_err in zip(
-                self.flux.filled(fill_value=np.nan),
-                self.flux_errs.filled(fill_value=np.nan),
-            )
-        ]
-        output_str += f"FLUXES: {fluxes_str}\n"
-        output_str += f"MAGS: {[np.round(mag, 2) for mag in self.flux.filled(fill_value = np.nan).to(u.ABmag).value]}\n"
-        # if print_depths:
-        output_str += (
-            f"DEPTHS: {[np.round(depth, 2) for depth in self.depths.value]}\n"
-        )
+        # Show brief summary for speed - avoid expensive min/max operations
+        output_str += f"N FILTERS: {len(self.filterset)}\n"
         output_str += funcs.line_sep
         return output_str
 

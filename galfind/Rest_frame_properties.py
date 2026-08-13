@@ -144,6 +144,29 @@ class Rest_Frame_Property_Calculator(Property_Calculator):
         overwrite: bool = False,
         n_jobs: int = 1,
     ) -> Optional[Union[Type[Catalogue_Base], Galaxy, Photometry_rest]]:
+        """Calculate and cache rest-frame properties for galaxy/catalogue objects.
+
+        Computes prerequisite properties first, then calculates this property.
+        PDFs are cached to disk when applicable.
+
+        Parameters
+        ----------
+        object : `Catalogue_Base`, `Galaxy`, or `Photometry_rest`
+            Object to process (catalogue, single galaxy, or photometry).
+        n_chains : `int`, optional
+            Number of PDF chains for uncertainty estimation. Default is `10_000`.
+        output : `bool`, optional
+            Whether to return the modified object. Default is `True`.
+        overwrite : `bool`, optional
+            Whether to overwrite existing cached properties. Default is `False`.
+        n_jobs : `int`, optional
+            Number of parallel jobs for catalogue processing. Default is `1`.
+
+        Returns
+        -------
+        Modified object or `None`
+            If `output=True`, returns the modified object. Otherwise returns `None`.
+        """
         # calculate pre-requisite properties first
         [rest_frame_property(object, n_chains, output = False, \
             overwrite = overwrite, n_jobs = n_jobs) for \
@@ -171,6 +194,28 @@ class Rest_Frame_Property_Calculator(Property_Calculator):
         n_jobs: int = 1,
         dtype: np.dtype = np.float32,
     ) -> Optional[Catalogue]:
+        """Calculate and cache properties for all galaxies in a catalogue.
+
+        Parameters
+        ----------
+        cat : `Catalogue`
+            Catalogue of galaxies to process.
+        n_chains : `int`, optional
+            Number of PDF chains. Default is `10_000`.
+        output : `bool`, optional
+            Whether to return the modified catalogue. Default is `False`.
+        overwrite : `bool`, optional
+            Whether to overwrite existing properties. Default is `False`.
+        n_jobs : `int`, optional
+            Number of parallel jobs. Default is `1`.
+        dtype : `numpy.dtype`, optional
+            Floating-point precision for saved arrays. Default is `numpy.float32`.
+
+        Returns
+        -------
+        `Catalogue` or `None`
+            Modified catalogue if `output=True`, else `None`.
+        """
         assert isinstance(n_jobs, int), \
             galfind_logger.critical(
                 f"{n_jobs=} with {type(n_jobs)=} != int"
@@ -312,9 +357,33 @@ class Rest_Frame_Property_Calculator(Property_Calculator):
         n_chains: int = 10_000,
         output: bool = False,
         overwrite: bool = False,
-        save_dir: str = "",
+        save_dir: Optional[str] = None,
         dtype: np.dtype = np.float32,
     ) -> Optional[Galaxy]:
+        """Update the relevant Photometry_rest object stored in the Galaxy.
+
+        Parameters
+        ----------
+        gal : `Galaxy`
+            Galaxy object to process.
+        n_chains : `int`, optional
+            Number of PDF chains. Default is `10_000`.
+        output : `bool`, optional
+            Whether to return the modified galaxy. Default is `False`.
+        overwrite : `bool`, optional
+            Whether to overwrite existing properties. Default is `False`.
+        save_dir : `str` or `None`, optional
+            Directory to save PDFs. If `None`, auto-constructs path from config.
+            If provided, should already include property name in path.
+            Default is `None`.
+        dtype : `numpy.dtype`, optional
+            Floating-point precision for saved arrays. Default is `numpy.float32`.
+
+        Returns
+        -------
+        `Galaxy` or `None`
+            Modified galaxy if `output=True`, else `None`.
+        """
         # update the relevant Photometry_rest object stored in the Galaxy
         assert self.aper_diam in gal.aper_phot.keys(), \
             galfind_logger.critical(
@@ -325,16 +394,30 @@ class Rest_Frame_Property_Calculator(Property_Calculator):
                 f"{self.SED_fit_label=} not in " + \
                 "+".join(list(gal.aper_phot[self.aper_diam].SED_results.keys()))
             )
-        if save_dir != "":
-            save_dir += "/"
-        save_path = f"{save_dir}{gal.ID}.npy"
+        # Auto-construct save_dir if not provided
+        if save_dir is None:
+            # Use full path structure if survey and version are available, else use simpler fallback
+            if gal.survey is not None and gal.version is not None:
+                save_dir = f"{config['PhotProperties']['PDF_SAVE_DIR']}/" + \
+                    f"{gal.version}/{gal.survey}/{gal.cat_filterset.instrument_name}/" + \
+                    f"{self.aper_diam.to(u.arcsec).value:.2f}as" + \
+                    f"/{self.SED_fit_label}/{self.name}"
+            else:
+                # Fallback path for galaxies without survey/version metadata
+                save_dir = f"{config['PhotProperties']['PDF_SAVE_DIR']}/" + \
+                    f"uncatalogued/{gal.cat_filterset.instrument_name}/" + \
+                    f"{self.aper_diam.to(u.arcsec).value:.2f}as" + \
+                    f"/{self.SED_fit_label}/{self.name}"
+        else:
+            save_dir = save_dir.rstrip("/")
+        save_path = f"{save_dir}/{gal.ID}.npy"
         self._call_phot_rest(gal.aper_phot[self.aper_diam]. \
-            SED_results[self.SED_fit_label].phot_rest, n_chains = n_chains, 
+            SED_results[self.SED_fit_label].phot_rest, n_chains = n_chains,
             output = False, overwrite = overwrite, save_path = save_path, dtype = dtype)
         
         if output:
             return gal
-    
+
     def _call_phot_rest(
         self: Self,
         phot_rest: Photometry_rest,
@@ -345,6 +428,31 @@ class Rest_Frame_Property_Calculator(Property_Calculator):
         save_scattered_fluxes: bool = False,
         dtype: np.dtype = np.float32,
     ) -> Optional[Photometry_rest]:
+        """Calculate and cache rest-frame properties for photometry.
+
+        Parameters
+        ----------
+        phot_rest : `Photometry_rest`
+            Rest-frame photometry object to calculate properties for.
+        n_chains : `int`, optional
+            Number of PDF chains for uncertainty estimation. Default is `10_000`.
+        output : `bool`, optional
+            Whether to return the modified photometry. Default is `False`.
+        overwrite : `bool`, optional
+            Whether to overwrite existing properties. Default is `False`.
+        save_path : `str` or `None`, optional
+            Full path (including filename) to save PDF. If `None`, PDFs are not
+            saved to disk. Default is `None`.
+        save_scattered_fluxes : `bool`, optional
+            Whether to save scattered fluxes alongside PDF. Default is `False`.
+        dtype : `numpy.dtype`, optional
+            Floating-point precision for saved arrays. Default is `numpy.float32`.
+
+        Returns
+        -------
+        `Photometry_rest` or `None`
+            Modified photometry if `output=True`, else `None`.
+        """
         property_name = self.name
         calculated = False
         # if any pre-requisite properties are NaN, set this property to NaN
@@ -987,6 +1095,9 @@ class UV_Beta_Calculator(Rest_Frame_Property_Calculator):
             self.obj_kwargs["rest_UV_band_wavs"],
             fluxes_arr, u.erg / (u.s * u.AA * u.cm**2),
             ).value)
+        # ensure fluxes_arr is always 2D (n_chains, n_bands)
+        if fluxes_arr.ndim == 1:
+            fluxes_arr = fluxes_arr[np.newaxis, :]
         beta_arr = np.array([funcs.linear_fit(np.log10(self.obj_kwargs \
             ["rest_UV_band_wavs"].value, dtype=np.float64), \
             fluxes)[0] for fluxes in fluxes_arr]) * u.dimensionless_unscaled
@@ -1361,7 +1472,9 @@ class mUV_Calculator(Rest_Frame_Property_Calculator):
         # appropriately convert flux units to rest frame
         fluxes_arr = np.log10(funcs.convert_mag_units(band_wavs, \
             fluxes_arr, u.erg / (u.s * u.AA * u.cm ** 2)).value)
-        # calculate fit amplitudes
+        # calculate fit amplitudes - ensure fluxes_arr is always 2D (n_chains, n_bands)
+        if fluxes_arr.ndim == 1:
+            fluxes_arr = fluxes_arr[np.newaxis, :]
         amplitude_arr = np.array([funcs.linear_fit(np.log10( \
             band_wavs.value, dtype=np.float64), \
             fluxes)[1] for fluxes in fluxes_arr]) \

@@ -68,8 +68,23 @@ class SED:
         self.mags = mags * mag_units
         # self.mag_units = mag_units
 
+    def __repr__(self) -> str:
+        """Return the official string representation of the SED object."""
+        # Use first/last instead of min/max to avoid scanning entire array
+        wav_range = f"{self.wavs[0]:.1f}-{self.wavs[-1]:.1f}"
+        return f"SED({wav_range}, {len(self.wavs)} points)"
+
     def __str__(self):
-        return "LOADED SED\n"
+        """Return a detailed string representation of the SED."""
+        output_str = f"SED Object:\n"
+        # Use first/last values instead of min/max to avoid scanning entire array
+        output_str += f"  Wavelength range: {self.wavs[0]:.3f} - {self.wavs[-1]:.3f} {self.wavs.unit}\n"
+        output_str += f"  Number of points: {len(self.wavs)}\n"
+        if hasattr(self, 'file'):
+            output_str += f"  File: {self.file}\n"
+        if hasattr(self, 'z'):
+            output_str += f"  Redshift: {self.z:.4f}\n"
+        return output_str
 
     def convert_wav_units(self, units, update=True):
         """Convert the wavelength array to a new set of units.
@@ -2232,7 +2247,17 @@ class SED_2D:
         self.SED_arr = SED_arr
 
     def __repr__(self: Self) -> str:
-        return f"{self.__class__.__name__}{len(self)}"
+        """Return the official string representation of the SED_2D collection."""
+        return f"SED_2D({len(self)} SEDs)"
+
+    def __str__(self: Self) -> str:
+        """Return a detailed string representation of the SED_2D collection."""
+        output_str = f"SED_2D Collection:\n"
+        output_str += f"  Number of SEDs: {len(self)}\n"
+        if len(self) > 0:
+            first_sed = self.SED_arr[0] if isinstance(self.SED_arr, (list, np.ndarray)) else next(iter(self.SED_arr))
+            output_str += f"  First SED wavelength range: {first_sed.wavs.min():.1f} - {first_sed.wavs.max():.1f}\n"
+        return output_str
 
     def __len__(self) -> int:
         return len(self.SED_arr)

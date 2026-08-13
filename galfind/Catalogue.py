@@ -1120,8 +1120,9 @@ class Catalogue_Creator:
                     selection_kwargs = selection_kwargs,
                     cat_filterset = self.filterset,
                     survey = self.survey,
+                    version = self.version,
                     simulated = self.simulated
-                ) for ID, sky_coord, phot_obs, selection_flags, selection_kwargs in 
+                ) for ID, sky_coord, phot_obs, selection_flags, selection_kwargs in
                 zip(IDs, sky_coords, phot_obs_arr, selection_flags_arr, selection_kwargs_arr)
             ]
             # if len(extra_crops) > 0:

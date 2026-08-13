@@ -93,6 +93,24 @@ class Combined_Catalogue_Creator:
         self.crops = crops
         self.open_cat = open_cat
 
+    def __repr__(self: Self) -> str:
+        """Return the official string representation of the Combined_Catalogue_Creator."""
+        crop_str = f", {self.crops}" if self.crops else ""
+        return f"Combined_Catalogue_Creator({self.survey}, {self.version}{crop_str})"
+
+    def __str__(self: Self) -> str:
+        """Return a detailed string representation of the Combined_Catalogue_Creator."""
+        output_str = f"Combined Catalogue Creator:\n"
+        output_str += f"  Survey: {self.survey}\n"
+        output_str += f"  Version: {self.version}\n"
+        output_str += f"  Filterset: {self.filterset.instrument_name}\n"
+        output_str += f"  Aperture diameters: {self.aper_diams}\n"
+        if self.cat_path:
+            output_str += f"  Catalogue path: {self.cat_path}\n"
+        if self.crops:
+            output_str += f"  Crops applied: {', '.join(self.crops)}\n"
+        return output_str
+
     # Copied and pasted from Catalogue_Creator
     @property
     def crop_name(self) -> List[str]:
